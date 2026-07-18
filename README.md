@@ -3,9 +3,10 @@
 Internal management / intranet suite for a Chilean CESFAM (primary-healthcare centre), built as a
 **white-label Nextcloud** deployment (official image, **no source fork**), self-hosted via Docker.
 
-> **Status: 🚧 Bootstrapping.** The repository foundation is in place (BMad Method installed, dev-stack
-> boot-checked on Nextcloud 33). **Features are defined next**, via the BMad product-brief — nothing is
-> assumed. See [`ROADMAP.md`](ROADMAP.md).
+> **Status: 🚧 Planning.** Repository foundation in place; dev-stack boot-checked on Nextcloud 33. The
+> **product brief** and **PRD (v1)** are done — v1 is the *developer-facing* Foundation (Epic 0) + the initial
+> Spine A document structure the devs build on. **Architecture is next.** See [`ROADMAP.md`](ROADMAP.md) and
+> [`docs/planning/`](docs/planning/).
 
 ## What this is (and isn't)
 
