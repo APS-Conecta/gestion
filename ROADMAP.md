@@ -9,9 +9,14 @@ Status doc. Repo-first SSOT. Updated as work lands.
   PostgreSQL 16 come up cleanly (`occ status: installed`). Pins validated: `nextcloud:33-apache`,
   `postgres:16-alpine`.
 
+- **Product brief (2026-07-18):** `docs/planning/briefs/brief-apsconecta-gestion-2026-07-18/brief.md` —
+  v1 = Foundation (Epic 0) + Spine A documents; rest is roadmap. Vision, users, scope, non-goals, and
+  cross-cutting pillars (GitHub SSOT · OSS-first · role-based access · es-CL/English split · Chile Legal)
+  captured.
+
 ## Current focus
 
-- **BMad `product-brief`** — define the suite's features and CESFAM users (nothing assumed).
+- **BMad `PRD`** — turn the brief into concrete requirements (Foundation + Spine A first).
 
 ## Next (standard BMad Method, pure order)
 
