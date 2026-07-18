@@ -1,0 +1,18 @@
+# Secrets / environment (never commit)
+.env
+.env.*
+!.env.example
+
+# Local data & Docker volumes (synthetic dev data only, never committed)
+/data/
+*.sqlite3
+
+# BMad: commit project config (_bmad/config.toml, _bmad/custom/config.toml),
+# ignore personal answers + the regenerable engine skills (run `bmad install`).
+_bmad/config.user.toml
+_bmad/custom/config.user.toml
+.claude/skills/
+
+# IDE / OS
+*.code-workspace
+.DS_Store
