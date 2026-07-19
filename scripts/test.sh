@@ -14,7 +14,9 @@ fi
 check docker compose -f compose.yaml config -q
 check docker compose -f compose.yaml -f compose.dev.yaml config -q
 check docker compose --profile collabora --profile eurooffice config -q
-for s in scripts/*.sh; do check bash -n "$s"; done
+for s in scripts/*.sh provisioning/*.sh provisioning/phases/*.sh; do
+  [ -e "$s" ] && check bash -n "$s"
+done
 check test -f dev/xdebug.ini
 
 echo "== smoke (only if a stack is running) =="
