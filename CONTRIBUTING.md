@@ -18,8 +18,8 @@ Three developers collaborate here. This file is the operational contract; keep i
 2. Commit with **Conventional Commits** (`feat:`, `fix:`, `docs:`, `chore:`, `test:`…).
 3. Open a PR → **1 human approval required** before merge. This gate is by **team convention** (GitHub
    free plan does not enforce branch protection on private repos) — respect it.
-4. AI-assisted PRs must be **labeled** and disclose AI involvement in the description.
-5. CI is deferred; the gate is local `make test` + `make smoke` (arrives with Epic 0).
+4. AI-assisted PRs must be **labeled** (`ai-assisted`) and disclose AI involvement in the description.
+5. CI is deferred; the gate is **local `make test`** (static checks + smoke) — run it before opening a PR.
 
 `CODEOWNERS` auto-requests reviewers. Prefer small, reviewable PRs.
 
@@ -31,10 +31,27 @@ via Claude Code; `.claude/skills/` is regenerable (`bmad install`) and gitignore
 
 ## Local dev environment
 
-> **Delivered in Epic 0 (Foundation).** Portable, machine-agnostic Docker Compose (Nextcloud 34 +
-> PostgreSQL + Redis) with Xdebug + VS Code config + a `Makefile`. Each dev runs it **locally**. The
-> quickstart (`clone → cp .env.example .env → make up → http://localhost:${HTTP_PORT}`) and per-OS notes
-> land here once that epic ships.
+Portable, machine-agnostic Docker Compose (Nextcloud 34 + PostgreSQL 18 + Redis 8) with Xdebug, VS Code
+config, and a `Makefile`; each dev runs it **locally**. The step-by-step quickstart and the full `make`
+reference live in **[`README.md`](README.md#quickstart)** — one owner per fact; don't duplicate them here.
+Two invariants when you touch the stack: nothing VPS-specific or absolute-pathed in the core compose
+(`host.docker.internal` must work cross-OS), and **all desired state goes through `make seed`** — never
+hand-click config into the running instance (AD-2).
+
+## Documentation rules
+
+Docs must let someone **rebuild** the system, not just read about it. When you write or change a doc:
+
+1. **Numbered steps, one action each** — the exact copyable command.
+2. **Every step states its expected output and what to do if it fails.** A step you can't verify isn't one.
+3. **Every command says where it runs** — host, or which container and as which user.
+4. **Never assert what you haven't run.** If it's untested, the doc says so *there*, not in a preface.
+5. **One owner per fact.** Others link; they don't repeat. A second copy desyncs the day it's written.
+6. **Prefer generated over hand-written** (e.g. `make help` is the target list; don't copy it).
+7. **Don't copy a gate's count into prose** — say what the gate *proves*; let it print the number.
+
+And the guard that keeps it honest: **if a doc mentions something retired, it must acknowledge somewhere that
+it is** (dated history — ADRs, changelogs — is exempt; its date is the label).
 
 ## Reference docs
 

@@ -58,8 +58,8 @@ development_status:
   0-3-xdebug-derived-dev-profile: done
   0-4-makefile-targets-smoke-test-gate: done
   0-5-provisioning-framework: done
-  0-6-fixtures-mechanism-sample-users: review
-  0-7-repo-as-ssot-onboarding: backlog
+  0-6-fixtures-mechanism-sample-users: done
+  0-7-repo-as-ssot-onboarding: review
   0-8-custom-app-theme-live-mounts: backlog
   epic-0-retrospective: optional
 
