@@ -3,13 +3,15 @@
 # Office backends (Story 0.2) are switchable one-at-a-time (AD-11):
 #   `make office-collabora`  → Collabora CODE   (richdocuments/WOPI)
 #   `make office-eurooffice` → Euro-Office      (eurooffice/JWT)
-# `make seed` / `smoke` / `test` arrive in later Epic-0 stories (0.4, 0.5).
+# `make smoke` / `make test` = the local quality gate (Story 0.4); `make seed` runs provisioning
+# (the pipeline content arrives in Story 0.5).
 .DEFAULT_GOAL := help
-.PHONY: help up up-dev down office-collabora office-eurooffice office-smoke office-down
+.PHONY: help up up-dev down seed smoke test office-collabora office-eurooffice office-smoke office-down
 
 OCC = docker compose exec -T --user www-data nextcloud php occ
 NET = apsconecta-gestion_default
-# Read office settings from .env (empty when .env is absent — office targets precheck for it).
+# Read settings from .env (empty when .env is absent — targets that need them precheck for it).
+HTTP_PORT := $(shell [ -f .env ] && grep -E '^HTTP_PORT=' .env | cut -d= -f2)
 OFFICE_PORT := $(shell [ -f .env ] && grep -E '^OFFICE_PORT=' .env | cut -d= -f2)
 OFFICE_JWT_SECRET := $(shell [ -f .env ] && grep -E '^OFFICE_JWT_SECRET=' .env | cut -d= -f2)
 
@@ -26,6 +28,16 @@ up-dev: ## Start the core stack with the Xdebug derived dev image (step-debuggin
 
 down: ## Stop the stack (keeps volumes)
 	docker compose down
+
+seed: ## Run the provisioning pipeline (services must be up; content arrives in Story 0.5)
+	@test -f .env || { echo "No .env found — run: cp .env.example .env"; exit 1; }
+	@if [ -x provisioning/seed.sh ]; then provisioning/seed.sh; else echo "Provisioning pipeline arrives in Story 0.5 (provisioning/seed.sh not present yet)."; fi
+
+smoke: ## Health-gate the running core stack (exit 0 healthy / non-0 broken)
+	@HTTP_PORT=$(HTTP_PORT) bash scripts/smoke.sh
+
+test: ## Local quality gate — static checks + smoke (the CI stand-in)
+	@bash scripts/test.sh
 
 office-collabora: ## Switch office backend → Collabora CODE (enable richdocuments, disable eurooffice)
 	@test -f .env || { echo "No .env found — run: cp .env.example .env"; exit 1; }
