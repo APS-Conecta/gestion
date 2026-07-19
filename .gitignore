@@ -3,6 +3,9 @@
 .env.*
 !.env.example
 
+# Generated local credentials sheet (real secrets — `make credentials`). NEVER commit.
+/CREDENTIALS.local.md
+
 # Local data & Docker volumes (synthetic dev data only, never committed)
 /data/
 *.sqlite3

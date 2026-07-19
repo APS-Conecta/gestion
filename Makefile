@@ -6,7 +6,7 @@
 # `make smoke` / `make test` = the local quality gate (Story 0.4); `make seed` runs provisioning
 # (the pipeline content arrives in Story 0.5).
 .DEFAULT_GOAL := help
-.PHONY: help up up-dev down seed smoke test fix-mount-perms office-collabora office-eurooffice office-smoke office-formats office-down
+.PHONY: help up up-dev down seed smoke test credentials fix-mount-perms office-collabora office-eurooffice office-smoke office-formats office-down
 
 OCC = docker compose exec -T --user www-data nextcloud php occ
 NET = apsconecta-gestion_default
@@ -39,6 +39,9 @@ down: ## Stop the stack (keeps volumes)
 seed: ## Run the provisioning pipeline (services must be up; content arrives in Story 0.5)
 	@test -f .env || { echo "No .env found — run: cp .env.example .env"; exit 1; }
 	@if [ -x provisioning/seed.sh ]; then provisioning/seed.sh; else echo "Provisioning pipeline arrives in Story 0.5 (provisioning/seed.sh not present yet)."; fi
+
+credentials: ## Write CREDENTIALS.local.md (all stack secrets from .env — gitignored, mode 600)
+	@bash scripts/dump-credentials.sh
 
 smoke: ## Health-gate the running core stack (exit 0 healthy / non-0 broken)
 	@HTTP_PORT=$(HTTP_PORT) bash scripts/smoke.sh
