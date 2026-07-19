@@ -49,6 +49,11 @@ services:
         condition: service_healthy
     volumes:
       - nextcloud_data:/var/www/html
+      # Custom code lives in the repo, live-mounted for edit-without-rebuild (Story 0.8, AD-9).
+      # These overlay the named volume at the two custom paths the image actually reads
+      # (custom_apps = writable apps path; themes = server-side custom themes). No fork (AD-1).
+      - ./apps:/var/www/html/custom_apps
+      - ./themes:/var/www/html/themes
     environment:
       # Container-to-container over the compose network by service name (AD-8)
       POSTGRES_HOST: db
