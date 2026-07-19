@@ -20,7 +20,7 @@ exists (UX/tutorials are a production-version deliverable).
 
 ### Functional Requirements
 
-FR-1: A developer can bring the full stack (Nextcloud 33 + PostgreSQL 16 + Redis + Collabora) up locally from a clean clone with one documented command, reaching a running Nextcloud in the browser.
+FR-1: A developer can bring the full stack (Nextcloud 34 + PostgreSQL 18 + Redis + office suite) up locally from a clean clone with one documented command, reaching a running Nextcloud in the browser.
 FR-2: A developer can step-debug the running Nextcloud (breakpoints, variable inspection) from their editor against the containerized PHP.
 FR-3: A developer can run one command that verifies the stack is healthy and runnable (the local smoke/test gate).
 FR-4: A developer can seed the instance with deterministic synthetic fixtures (users, role groups, folder structure) — no real data.
@@ -55,13 +55,13 @@ NFR-6: Footprint (dev-scale) — v1 targets local dev on an ordinary laptop; pro
 - AR-2 (AD-2): **One idempotent `occ` provisioning script** is the single writer of desired state — idempotent-by-guard (query-before-create; `groupfolders:create` is not idempotent by name), fixed **phase order** (branding/locale → groups → group folders → ACLs → user→group membership → sample-content fixtures), and a **structure-vs-fixtures ownership partition**.
 - AR-3 (AD-3): Data ownership — Nextcloud data volume (content), PostgreSQL (metadata), Redis (cache/locks); repo owns recipe + config only; no product data/secrets in git.
 - AR-4 (AD-4 + Group Registry): RBAC via **Group Folders**, group-only principals. Canonical registry: 21 `role-*` IDs + slugs + role→category map; `cat-*` categories; **`all-staff` (every user)**; parameterizable `prog-*` / `sector-*` team groups. Mount model: Transversal = 1 group folder; each program/unit/sector = its own group folder. ACL = **allow-refinement, no DENY rules**.
-- AR-5 (AD-5): Office editing via **standalone `collabora/code` container** through the **Nextcloud Office (`richdocuments`) WOPI** app; the built-in `richdocumentscode` is **not installed**. (collabora/code supports arm64 for Apple-Silicon devs.)
+- AR-5 (AD-5, AD-11): Office editing via a **standalone document-server container**, **switchable between Collabora CODE** (`collabora/code` via `richdocuments`/WOPI) **and Euro-Office** (`ghcr.io/euro-office/documentserver` via the `eurooffice` connector/JWT) — separate containers, **exactly one active at a time**; the built-in `richdocumentscode` is **not installed**. (Both images support arm64 for Apple-Silicon devs.)
 - AR-6 (AD-6): Branding via `occ theming:config` (name/logo/favicon/primary_color/background_color/slogan/url/background) + `disable-user-theming yes`; assets bind-mounted local files.
 - AR-7 (AD-7): `default_language=es_419` + `default_locale=es_CL` set via `occ`, **unlocked** (not forced).
 - AR-8 (AD-8): Portable compose; **container↔container via compose service names** (`http://collabora:9980`, `http://nextcloud`); `host.docker.internal` only host↔container (Linux: `extra_hosts: host.docker.internal:host-gateway`). WOPI uses three distinct URLs.
 - AR-9 (AD-9): Custom-code boundary (future) — apps in `apps/`→`custom_apps`, depend on Nextcloud only via OCP public APIs; core never depends on a custom app.
 - AR-10 (AD-10): Xdebug as a **derived dev-only image/profile** (`compose.dev.yaml`), never in the base image.
-- AR-11 (Stack, verified 2026-07-19): `nextcloud:33-apache` · `postgres:16-alpine` · `redis:8-alpine` (AGPL) · `collabora/code` · `richdocuments` + `groupfolders` apps (NC33 line). No formal starter template — the starter is the official NC33 image + Docker Compose.
+- AR-11 (Stack, verified 2026-07-19): `nextcloud:34-apache` · `postgres:18-alpine` · `redis:8-alpine` (AGPL) · office servers `collabora/code` **or** `ghcr.io/euro-office/documentserver` · `richdocuments` + `eurooffice` + `groupfolders` apps (NC34 line). No formal starter template — the starter is the official NC34 image + Docker Compose.
 - AR-12 (Conventions): Makefile targets `up` (services only, no seed) · `down` · `seed` (idempotent provisioning) · `smoke`/`test` (gate); `.env.example` → `.env` (gitignored).
 - AR-13 (Deferred pointers): committed **License-outline** artifact (NFR-3; incl. Redis 8 AGPL vs Valkey BSD) and the **Legal/Chile data-governance SSOT** (Ley 19.628/21.719, MINSAL) — tracked from the start; low v1 exposure.
 
@@ -94,9 +94,9 @@ FR-17: Epic 4 — OSS format support
 ## Epic List
 
 ### Epic 0: Foundation & Local Dev Environment
-A developer can bring the full white-label stack (Nextcloud 33 + PostgreSQL 16 + Redis + Collabora) up locally on any OS with one command, step-debug the running PHP, run a green smoke/test gate (including a **Collabora/WOPI editing smoke**), and extend it via live-mounted `apps/`/`themes/`. Epic 0 delivers the **provisioning framework** — a phase-structured `provisioning/` directory of numbered, separate phase files (`10-branding`, `20-groups`, `30-folders`, `40-acl`, `50-users`, `60-fixtures`), idempotency-guard helpers, and `make seed` wiring — so later epics **append a phase file** rather than editing one monolithic script. FR-4 here = the fixtures *mechanism* + sample users seeded into `all-staff`; per-epic seed content lands with Epics 2–3.
+A developer can bring the full white-label stack (Nextcloud 34 + PostgreSQL 18 + Redis + office suite) up locally on any OS with one command, step-debug the running PHP, run a green smoke/test gate (including an **office editing smoke** — Collabora or Euro-Office), and extend it via live-mounted `apps/`/`themes/`. Epic 0 delivers the **provisioning framework** — a phase-structured `provisioning/` directory of numbered, separate phase files (`10-branding`, `20-groups`, `30-folders`, `40-acl`, `50-users`, `60-fixtures`), idempotency-guard helpers, and `make seed` wiring — so later epics **append a phase file** rather than editing one monolithic script. FR-4 here = the fixtures *mechanism* + sample users seeded into `all-staff`; per-epic seed content lands with Epics 2–3.
 **FRs covered:** FR-1, FR-2, FR-3, FR-4 (mechanism), FR-5, FR-6
-**Governing ARs:** AR-1, AR-2 (phase-file framework + idempotency guards), AR-3, AR-8 (incl. Collabora WOPI smoke), AR-10, AR-11, AR-12
+**Governing ARs:** AR-1, AR-2 (phase-file framework + idempotency guards), AR-3, AR-8 (incl. office editing smoke), AR-10, AR-11, AR-12
 
 ### Epic 1: White-label Identity & Localization
 The instance presents as APS Conecta in Chilean Spanish — branding (name, logo, colors) via `occ theming:config` and es-CL language/formatting defaults — as the first provisioning phase every later capability inherits.
@@ -114,13 +114,13 @@ Staff have one organized, permissioned home: the four-area hybrid tree (Transver
 **Governing ARs:** AR-4 (mount model + ACL), AR-2
 
 ### Epic 4: Live Collaborative Editing
-Staff open and co-edit office documents (text/spreadsheet/presentation) live in the browser via standalone Collabora CODE, with concurrent changes converging and common formats supported — no paid license.
+Staff open and co-edit office documents (text/spreadsheet/presentation) live in the browser via the active standalone office server (Collabora or Euro-Office), with concurrent changes converging and common formats supported — no paid license.
 **FRs covered:** FR-15, FR-16, FR-17
-**Governing ARs:** AR-5, AR-8 (WOPI networking), AR-13
+**Governing ARs:** AR-5, AR-8 (connector networking), AR-13
 
 ### Sequencing & dependencies
 - **Epic 0** is foundational — every later epic needs its provisioning framework, gate, and stack.
-- **Epic 4** (editing) depends only on Epic 0 (stack + Collabora), independent of RBAC/folders — build it **right after Epic 0** to de-risk the WOPI integration early.
+- **Epic 4** (editing) depends only on Epic 0 (stack + office server), independent of RBAC/folders — build it **right after Epic 0** to de-risk the office/connector integration early.
 - **Epics 1 & 2** are parallelizable (branding phase file vs groups phase file — no shared edits).
 - **Epic 3** is strictly **after Epic 2** (its folder ACLs bind the `all-staff` / role / team groups Epic 2 creates).
 - No epic edits another epic's provisioning phase file, so parallel epics don't conflict.
@@ -132,14 +132,14 @@ Delivers the runnable, debuggable, portable stack + the provisioning framework l
 ### Story 0.1: Portable core Compose stack
 
 As a developer,
-I want to bring up Nextcloud 33 + PostgreSQL 16 + Redis with one command on any OS,
+I want to bring up Nextcloud 34 + PostgreSQL 18 + Redis with one command on any OS,
 So that I can start working without hand-assembling services.
 
 **Acceptance Criteria:**
 
 **Given** a clean clone and `cp .env.example .env`
 **When** I run the single documented bring-up command (`make up`)
-**Then** Nextcloud, PostgreSQL 16, and Redis start and Nextcloud is reachable at the documented local URL
+**Then** Nextcloud, PostgreSQL 18, and Redis start and Nextcloud is reachable at the documented local URL
 **And** `occ status` reports `installed: true` against PostgreSQL, with Redis active for caching/locking
 
 **Given** a Linux host
@@ -147,25 +147,29 @@ So that I can start working without hand-assembling services.
 **Then** `host.docker.internal` resolves via `extra_hosts: host.docker.internal:host-gateway`
 **And** the core compose contains no absolute host paths and nothing VPS-specific
 
-### Story 0.2: Collabora CODE service + WOPI plumbing + smoke
+### Story 0.2: Dual office suite — Collabora + Euro-Office, switchable, with editing smoke
 
 As a developer,
-I want a standalone Collabora CODE container wired to Nextcloud over WOPI with a smoke check,
-So that the editing pipe is proven before feature work.
+I want each office backend (Collabora CODE and Euro-Office) as its own standalone container reachable from Nextcloud Office through its own connector, switchable one-at-a-time, each with a smoke check,
+So that we can trial both suites and pick the best, with the editing pipe proven before feature work.
 
 **Acceptance Criteria:**
 
-**Given** the compose is up
-**When** it starts
-**Then** a standalone `collabora/code` container runs and the built-in `richdocumentscode` app is NOT installed
+**Given** the compose defines an `office` profile per backend (`collabora` → `collabora/code`; `eurooffice` → `ghcr.io/euro-office/documentserver`)
+**When** I bring up one profile
+**Then** exactly one office server container runs, the built-in `richdocumentscode` app is NOT installed, and each backend is reached from Nextcloud Office via its own connector app (`richdocuments` for Collabora, `eurooffice` for Euro-Office) pointed at that server's own URL
 
-**Given** the `richdocuments` app is enabled
-**When** Nextcloud and Collabora communicate
-**Then** they use compose service names (`http://collabora:9980`, `http://nextcloud`), the WOPI allow-list includes the compose subnet, and dev runs with `--o:ssl.enable=false`
+**Given** I run `make office-collabora`
+**When** it completes
+**Then** the `collabora/code` container is up, the `richdocuments` connector is enabled and configured to `http://collabora:9980`, the `eurooffice` connector is disabled, container↔container uses compose service names, the WOPI allow-list includes the compose subnet, and dev runs with `--o:ssl.enable=false`
 
-**Given** the WOPI smoke runs
+**Given** I run `make office-eurooffice`
+**When** it completes
+**Then** the Euro-Office `documentserver` container is up, the `eurooffice` connector is enabled and configured to that server's URL with a shared `OFFICE_JWT_SECRET`, and the `richdocuments` connector is disabled — so exactly one backend claims docx/xlsx/pptx (no MIME conflict, AD-11)
+
+**Given** the active backend's editing smoke runs
 **When** it opens a scratch document as admin
-**Then** the document loads in the Collabora editor and the smoke passes (and fails on WOPI/host errors)
+**Then** the document loads in that backend's editor and the smoke passes (and fails on connector/host errors)
 
 ### Story 0.3: Xdebug derived dev profile
 
@@ -411,7 +415,7 @@ So that the structure stays tidy as content grows.
 
 ## Epic 4: Live Collaborative Editing
 
-Staff co-edit office documents live via Collabora. *(Depends only on Epic 0's stack + Collabora.)*
+Staff co-edit office documents live via the active office backend (Collabora or Euro-Office). *(Depends only on Epic 0's stack + office server.)*
 
 ### Story 4.1: In-browser office editing
 
@@ -423,7 +427,7 @@ So that I stop emailing files around.
 
 **Given** a supported document in Nextcloud
 **When** I open it
-**Then** it launches in the Collabora editor against the running stack
+**Then** it launches in the active office backend's editor (Collabora or Euro-Office) against the running stack
 
 **Given** the editor
 **When** I create a new document

@@ -3,7 +3,7 @@
 Internal management / intranet suite for a Chilean CESFAM (primary-healthcare centre), built as a
 **white-label Nextcloud** deployment (official image, **no source fork**), self-hosted via Docker.
 
-> **Status: 🚧 Planning → Build.** Repository foundation in place; dev-stack boot-checked on Nextcloud 33.
+> **Status: 🚧 Planning → Build.** Repository foundation in place; dev-stack boot-checked on Nextcloud 34.
 > The **product brief**, **PRD (v1)**, **architecture**, and **epics & stories** are done — v1 is the
 > *developer-facing* Foundation (Epic 0) + the initial Spine A document structure the devs build on.
 > **Implementation of Epic 0 (Foundation & Dev Environment) is next.** See
@@ -12,7 +12,7 @@ Internal management / intranet suite for a Chilean CESFAM (primary-healthcare ce
 
 ## What this is (and isn't)
 
-- **Is:** staff-facing internal operations (documents, coordination, announcements) on Nextcloud 33 +
+- **Is:** staff-facing internal operations (documents, coordination, announcements) on Nextcloud 34 +
   PostgreSQL + Redis, run locally per developer via Docker Compose.
 - **Isn't:** a clinical/patient-records system. **No patient data** — dev uses **synthetic fixtures only**.
 

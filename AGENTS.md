@@ -4,7 +4,7 @@ Rules for any AI agent (Claude Code, BMad agents) working in this repo. `CLAUDE.
 
 ## What this project is
 
-White-label **Nextcloud 33** suite (internal ops for a Chilean CESFAM), official Docker image — **never a
+White-label **Nextcloud 34** suite (internal ops for a Chilean CESFAM), official Docker image — **never a
 Nextcloud source fork**. Stack: Nextcloud + **PostgreSQL** + **Redis**. Internal ops only, **no patient
 data**.
 

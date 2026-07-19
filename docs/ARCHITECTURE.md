@@ -1,7 +1,7 @@
 # Architecture — APS Conecta Gestión
 
 Technical architecture for **v1**: the developer-facing Foundation (Epic 0) + the initial Spine A document
-structure, built as a **white-label Nextcloud 33** deployment. This document is the human-facing reference;
+structure, built as a **white-label Nextcloud 34** deployment. This document is the human-facing reference;
 the terse invariant contract (the `AD` decisions builders must not violate) lives in
 [`docs/planning/architecture/architecture-apsconecta-gestion-2026-07-18/ARCHITECTURE-SPINE.md`](planning/architecture/architecture-apsconecta-gestion-2026-07-18/ARCHITECTURE-SPINE.md),
 and the requirements it satisfies live in the
@@ -9,7 +9,7 @@ and the requirements it satisfies live in the
 
 ## Design paradigm
 
-**Vanilla platform + configuration-as-code, no fork.** Nextcloud 33 is the platform and owns the runtime and
+**Vanilla platform + configuration-as-code, no fork.** Nextcloud 34 is the platform and owns the runtime and
 all product data. The repository adds **only** declarative customization — configuration, theming, and
 group/folder/ACL provisioning. There is **no source fork, no core patch, and zero custom PHP in v1**. The
 running instance is a *projection* of the repository's recipe applied over the official image: reproducible,
@@ -30,20 +30,20 @@ to the same state; there is no second source of truth and no manual admin-UI ste
 
 | Component | Image / package | Role |
 | --- | --- | --- |
-| Nextcloud | `nextcloud:33-apache` (rolling 33.x; 33.0.6 head, supported ~monthly to ~Feb 2027) | Platform, web UI, files, users/groups |
-| PostgreSQL | `postgres:16-alpine` | Metadata (users, groups, shares, ACLs, file index) |
+| Nextcloud | `nextcloud:34-apache` (rolling 34.x; 34.0.1 head, supported to ~June 2027) | Platform, web UI, files, users/groups |
+| PostgreSQL | `postgres:18-alpine` (PG18, NC-recommended) | Metadata (users, groups, shares, ACLs, file index) |
 | Redis | `redis:8-alpine` (Redis 8 = AGPL, OSS-restored) | Cache + file/transaction locking |
-| Collabora Online CODE | `collabora/code` (standalone) | Collaborative office editing engine |
-| Nextcloud Office | `richdocuments` app | Nextcloud↔Collabora integration (WOPI) |
+| Office server A — Collabora CODE | `collabora/code` (standalone container) + `richdocuments`/WOPI | Office editing engine (whitest-label) |
+| Office server B — Euro-Office | `ghcr.io/euro-office/documentserver` (standalone container) + `eurooffice` connector | Office editing engine (OnlyOffice-fidelity) |
 | Group Folders | `groupfolders` app | Team/role-scoped shared folders + ACLs |
 | Tooling | Docker Compose · Make · Xdebug (dev) | Orchestration, task runner, step-debug |
 
-The `nextcloud:33-apache` tag rolls forward across 33.x patch releases; pin the exact patch
-(`nextcloud:33.0.6-apache`) if byte-identical environments across machines become necessary. Nextcloud 33 was
-chosen over 34 as the longest-soaked current line for a greenfield internal-ops deployment. All components are
-OSS (per the OSS-first mandate): Nextcloud/richdocuments/groupfolders AGPL-3.0, Collabora CODE MPL-2.0,
-PostgreSQL PostgreSQL-License, Redis 8 AGPL-3.0 — with **Valkey** (BSD-3) as the permissive drop-in alternative
-to Redis, to be settled in the committed License-outline artifact.
+The `nextcloud:34-apache` tag rolls forward across 34.x patch releases; pin the exact patch
+(`nextcloud:34.0.1-apache`) if byte-identical environments across machines become necessary. NC34 (the current
+line) is used so both office suites can be trialed — **Euro-Office requires NC34+**. All components are OSS (per
+the OSS-first mandate): Nextcloud / richdocuments / groupfolders / eurooffice AGPL-3.0, Collabora CODE MPL-2.0,
+Euro-Office AGPL-3.0, PostgreSQL PostgreSQL-License, Redis 8 AGPL-3.0 — with **Valkey** (BSD-3) as the permissive
+drop-in alternative to Redis, to be settled in the committed License-outline artifact.
 
 ## Runtime topology
 
@@ -51,10 +51,10 @@ v1 runs as a single Docker Compose stack, one per developer machine, portable ac
 
 ```mermaid
 graph TD
-  B[Browser] --> NC[Nextcloud 33 · apache/php]
-  NC --> PG[(PostgreSQL 16)]
+  B[Browser] --> NC[Nextcloud 34 · apache/php]
+  NC --> PG[(PostgreSQL 18)]
   NC --> R[(Redis)]
-  NC <-->|WOPI · host.docker.internal| C[Collabora CODE]
+  NC <-->|connector · compose service name| C[office backend · Collabora OR Euro-Office]
   PROV[provisioning: occ script + fixtures] -->|make seed| NC
   A[apps/ → custom_apps · empty v1] -.bind mount.-> NC
   T[themes/ · empty v1] -.bind mount.-> NC
@@ -78,9 +78,12 @@ Each datum has exactly one owner:
   It holds **no product data and no secrets**. Secrets live in `.env` (gitignored); dev data is **synthetic
   fixtures only** (no patient or clinical data, ever).
 
-Editing flow: a user opens a document in the browser → Nextcloud (`richdocuments`) hands off to the standalone
-Collabora CODE server over **WOPI** → Collabora renders and co-edits in-browser, writing back through the WOPI
-callback. Multiple documents open as independent sessions (side-by-side tabs).
+Editing flow: a user opens a document in the browser → Nextcloud hands off to the **active** standalone office
+server via its connector — Collabora over `richdocuments`/**WOPI**, or Euro-Office over the `eurooffice`
+connector/**JWT** — each a separate container reachable at its own server URL → the server renders and co-edits
+in-browser, writing back through the callback. Exactly one backend is active at a time (AD-11); the switch
+(`make office-collabora` / `make office-eurooffice`) toggles the connectors. Multiple documents open as
+independent sessions (side-by-side tabs).
 
 ## Access model (RBAC)
 
@@ -134,13 +137,14 @@ assignments, and the final validated matrix are parameterizable and settled with
 v1 targets **local development per developer only** — a single Compose stack brought up with one command.
 
 Everything operational for a live deployment is intentionally **deferred**: hosting/provider, a TLS
-reverse-proxy for Collabora with a hardened WOPI allow-list (dev runs Collabora with `--o:ssl.enable=false`),
-backups and RTO/RPO, sizing/HA, and production observability. The v1 operational surface is `occ status` plus
-the `make smoke` gate.
+reverse-proxy for the active office server with a hardened allow-list (dev runs Collabora with
+`--o:ssl.enable=false`; Euro-Office uses a shared JWT secret), backups and RTO/RPO, sizing/HA, and production
+observability. The v1 operational surface is `occ status` plus the `make smoke` gate.
 
-Collabora capacity is resource-bound, not license-bound: roughly **10 concurrent editors per CPU thread and
-~50 MB RAM per editor**, so ~20–30 concurrent editors need ~3–4 vCPU and ~3 GB RAM for Collabora — comfortable
-on a laptop for dev and modest on a server later.
+Both office suites are resource-bound (uncapped, OSS): **Collabora** ~10 editors per CPU thread + ~50 MB per
+editor (~20–30 editors ≈ 3–4 vCPU + ~3 GB RAM); **Euro-Office** is heavier (~8 GB RAM recommended for
+multi-user). Only **one** office backend runs at a time (AD-11), so the dev footprint stays modest —
+comfortable on a laptop.
 
 ## Extension boundary (beyond v1)
 

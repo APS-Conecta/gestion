@@ -29,7 +29,7 @@ includedDocuments:
 
 ### Functional Requirements (17)
 
-- FR-1 One-command local bring-up (NC33 + PG16 + Redis + Collabora)
+- FR-1 One-command local bring-up (NC34 + PG18 + Redis + office suite)
 - FR-2 Live PHP step-debug from the editor
 - FR-3 Smoke/test gate (one command)
 - FR-4 Synthetic fixtures seeding (users, role groups, folder structure)

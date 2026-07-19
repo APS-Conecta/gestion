@@ -63,7 +63,7 @@ Médicos, Matronas, TENS, Administrativos, Farmacia.** Deployed as a **live pilo
 
 ## Success Criteria
 
-**Milestone 1 — Foundation (first success, = Epic 0).** The complete repo + **Nextcloud 33 Docker image**
+**Milestone 1 — Foundation (first success, = Epic 0).** The complete repo + **Nextcloud 34 Docker image**
 + installation exist and run, set up so the **3 devs can read and work on apps and code** (build, run,
 debug, test the environment locally). This is the first definition of success.
 
@@ -75,7 +75,7 @@ pendrives, and Google Drive. Success = staff adoption for real documents during 
 ## Scope
 
 **In (v1):**
-1. **Foundation (Epic 0):** complete repo + Nextcloud 33 Docker image + install + local dev environment
+1. **Foundation (Epic 0):** complete repo + Nextcloud 34 Docker image + install + local dev environment
    (read/build/run/debug/test apps and code).
 2. **Spine A — documents:** vanilla Nextcloud + **Collabora / NC Office** live editing + **role-based
    access** + an organized, permissioned folder/group structure. That is the whole pilot feature set.
