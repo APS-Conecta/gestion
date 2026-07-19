@@ -271,8 +271,8 @@ reverse-proxy + hardened WOPI allow-list, backups/RTO-RPO, sizing/HA, observabil
 ## Deferred
 
 - **Operational envelope (production):** hosting/provider, Collabora TLS reverse-proxy + hardened WOPI
-  allow-list (v1 dev uses `--o:ssl.enable=false`), backups/RTO-RPO, sizing/HA, observability — v1 is dev-only
-  (PRD NFR-6).
+  allow-list (v1 dev Collabora serves self-signed HTTPS, wired via `richdocuments
+  disable_certificate_verification`), backups/RTO-RPO, sizing/HA, observability — v1 is dev-only (PRD NFR-6).
 - **License-outline SSOT artifact (NFR-3):** the committed enumeration of every image/app/dependency license
   (cores noted in Stack) — including the **Redis 8 AGPL vs Valkey BSD** choice — produced as a repo artifact.
 - **Legal / Chile data-governance SSOT (PRD §10):** the committed Legal artifact + compliance checklist (Ley
