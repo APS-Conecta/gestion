@@ -70,16 +70,16 @@ development_status:
   epic-1-retrospective: optional
 
   # ── Epic 2: Roles & Access Model ──
-  epic-2: in-progress
-  2-1-provision-the-group-registry: review
-  2-2-user-provisioning-multi-role-membership: review
+  epic-2: done
+  2-1-provision-the-group-registry: done
+  2-2-user-provisioning-multi-role-membership: done
   epic-2-retrospective: optional
 
   # ── Epic 3: Document Home (Spine A) ──
-  epic-3: backlog
-  3-1-provision-the-four-area-group-folders-tree: backlog
-  3-2-apply-the-first-cut-access-matrix: backlog
-  3-3-organization-conventions: backlog
+  epic-3: in-progress
+  3-1-provision-the-four-area-group-folders-tree: review
+  3-2-apply-the-first-cut-access-matrix: review
+  3-3-organization-conventions: review
   epic-3-retrospective: optional
 
   # ── Epic 4: Live Collaborative Editing ──

@@ -7,6 +7,13 @@
 /data/
 *.sqlite3
 
+# apps/ is bind-mounted to custom_apps, so app-STORE apps (groupfolders, office connectors) install
+# INTO it — don't commit their code. Only our scaffolding is tracked; un-ignore a real custom app
+# explicitly with `!/apps/<app-id>/` when we ship one (v1 ships none — AD-1).
+/apps/*
+!/apps/.gitkeep
+!/apps/README.md
+
 # BMad: commit project config (_bmad/config.toml, _bmad/custom/config.toml),
 # ignore personal answers + the regenerable engine skills (run `bmad install`).
 _bmad/config.user.toml
