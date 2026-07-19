@@ -38,6 +38,11 @@ Two invariants when you touch the stack: nothing VPS-specific or absolute-pathed
 (`host.docker.internal` must work cross-OS), and **all desired state goes through `make seed`** — never
 hand-click config into the running instance (AD-2).
 
+**Secrets:** all passwords live in your gitignored `.env` (copy from `.env.example`). For a single
+readable sheet of every stack credential (Nextcloud admin, PostgreSQL, Collabora, Euro-Office JWT, fixture
+users), run **`make credentials`** → writes `CREDENTIALS.local.md` (gitignored, mode 600, generated from
+`.env` — never hand-edit; re-run after a rotation). Never commit `.env` or that file.
+
 ## Documentation rules
 
 Docs must let someone **rebuild** the system, not just read about it. When you write or change a doc:
