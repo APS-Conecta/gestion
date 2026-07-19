@@ -48,22 +48,31 @@ Status doc. Repo-first SSOT. Updated as work lands.
 - **Stack upgrade → NC34 + PG18 + dual office (2026-07-19):** re-pinned `nextcloud:34-apache` (34.0.1) +
   `postgres:18-alpine` (PG18, NC-recommended); office editing now **switchable between Collabora and
   Euro-Office** (separate standalone containers, connector-based, one active at a time — AD-5/AD-11). SSOT
-  swept; fresh NC34+PG18 install re-verified. Enables the Collabora-vs-Euro-Office comparison (Euro-Office is
-  NC34-only).
+  swept; fresh NC34+PG18 install re-verified (PR #9). Enables the Collabora-vs-Euro-Office comparison.
+
+- **Epic 0 — Foundation & Dev Environment (2026-07-19):** all 8 stories built and verified live on
+  NC34.0.1 + PG18.4, each its own PR:
+  - **0.1** portable core compose stack · **0.2** dual switchable office suite (Collabora ↔ Euro-Office,
+    PR #10) · **0.3** Xdebug derived dev profile (PR #11) · **0.4** Makefile `seed`/`smoke`/`test` gate
+    (PR #12) · **0.5** phase-structured idempotent provisioning framework (PR #13) · **0.6** fixtures
+    mechanism + synthetic sample users (PR #14) · **0.7** repo-as-SSOT onboarding (PR #15) · **0.8**
+    custom app/theme live-mounts (this PR). A dev can now clone → `make up` → debug → gate → `make seed` →
+    extend, all locally and portably.
 
 ## Current focus
 
-- **Build — story cycle** (`bmad-create-story` → `bmad-dev-story`), **Epic 0 first**. Story 0.1 is **done**;
-  the stack is now **NC34 + PG18**. **Next: Story 0.2 — dual switchable office suite (Collabora ↔
-  Euro-Office)**, then the rest of Epic 0.
+- **Epic 0 complete** (pending 0.8 merge). **Next: feature epics.** Per the sequencing, **Epic 4 (Live
+  Collaborative Editing)** can follow immediately (independent — de-risks the office/connector work, largely
+  proven in 0.2); **Epics 1 (branding + es-CL locale) & 2 (roles/groups)** are parallelizable; **Epic 3
+  (Document Home)** after Epic 2. Each fills its own provisioning phase file (`10`/`20`/`30`+`40`).
 
 ## Next (standard BMad Method, pure order)
 
-1. `product-brief` → `PRD` → `architecture` (ratifies the dev-stack + feature architecture).
-2. `create-epics-and-stories` → **Epic 0 (Foundation & Dev Environment) first**, then feature epics.
-3. `check-implementation-readiness` → `sprint-planning` → story cycle (implement **Epic 0 first**:
-   Docker Compose + Xdebug + VS Code config + `Makefile` + onboarding).
+1. **Epic-0 retrospective** (optional) → then feature epics via the story cycle
+   (`bmad-create-story` → `bmad-dev-story`), one phase-file per epic.
+2. Recommended order: **Epic 4** (editing) → **Epics 1 & 2** (parallel) → **Epic 3** (after 2).
 
 ## Future
 
-- Feature epics (defined by the brief/PRD), implemented on top of the Epic-0 foundation.
+- Roadmap beyond v1 (defined by the brief/PRD): Nextcloud **Tables** → **REM app** (first Layer-2 custom
+  app) → full-text **search** → **Paperless-ngx** → **Analytics** → local **AI** layer.
