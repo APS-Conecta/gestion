@@ -49,8 +49,14 @@ user_exists() { occ user:info "$1" >/dev/null 2>&1; }  # UID
 ensure_user() {  # UID DISPLAY PASSWORD
   local uid="$1" display="$2" pass="$3"
   if user_exists "$uid"; then log "user $uid exists"; return 0; fi
-  OC_PASS="$pass" occ user:add --password-from-env --display-name="$display" "$uid" >/dev/null \
-    && log "user $uid created"
+  # OC_PASS must reach the php process INSIDE the container — `docker compose exec` does not forward
+  # host env, so pass it explicitly with -e (never on the command line; --password-from-env reads it).
+  if docker compose exec -T --user www-data -e OC_PASS="$pass" nextcloud \
+       php occ user:add --password-from-env --display-name="$display" "$uid" >/dev/null; then
+    log "user $uid created"
+  else
+    log "FAILED to create user $uid"; return 1
+  fi
 }
 add_user_to_group() {  # UID GID  (group:adduser tolerates an existing member)
   if occ group:adduser "$2" "$1" >/dev/null 2>&1; then log "user $1 added to group $2"; else
@@ -73,4 +79,16 @@ ensure_groupfolder() {  # MOUNT -> ensures it exists, prints its id
     id="$(occ groupfolders:create "$mount" 2>/dev/null | grep -oE '[0-9]+' | head -1)"
     log "groupfolder '$mount' created (id $id)"; fi
   printf '%s\n' "$id"
+}
+
+# --- content fixtures (query-before-create): put a file in a user's Files, then index it ---
+ensure_sample_file() {  # UID RELPATH CONTENT
+  local uid="$1" rel="$2" content="$3" base="data/$1/files"
+  if docker compose exec -T --user www-data nextcloud test -f "/var/www/html/$base/$rel" 2>/dev/null; then
+    log "file $uid:$rel exists"; return 0
+  fi
+  docker compose exec -T --user www-data -e SAMPLE="$content" nextcloud \
+    sh -c "mkdir -p '/var/www/html/$base' && printf '%s' \"\$SAMPLE\" > '/var/www/html/$base/$rel'"
+  occ files:scan "$uid" >/dev/null 2>&1 || true
+  log "file $uid:$rel created + indexed"
 }
