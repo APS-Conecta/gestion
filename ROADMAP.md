@@ -29,10 +29,16 @@ Status doc. Repo-first SSOT. Updated as work lands.
   via one **idempotent `occ` provisioning script**; locale = `es_419`/`es_CL` unlocked. Reviewer gate (lint +
   4 lenses): strong, 0 critical/high after fixes.
 
+- **Epics & Stories (2026-07-19):** `docs/planning/epics.md` — **5 epics, 18 stories** (Given/When/Then),
+  Epic 0 (Foundation) first; all 17 FRs covered. Hardened via an Advanced-Elicitation pass (phase-file
+  provisioning framework so epics append not edit; Epic 4 early to de-risk WOPI). Final validation: no forward
+  deps, no leftover placeholders.
+
 ## Current focus
 
-- **BMad `create-epics-and-stories`** — break v1 into epics/stories from the PRD + architecture spine,
-  **Epic 0 (Foundation & Dev Environment) first**.
+- **BMad `check-implementation-readiness`** → `sprint-planning` → the story cycle — implement **Epic 0
+  (Foundation & Dev Environment) first** (Docker Compose + Collabora/WOPI + Xdebug + Makefile + the
+  phase-structured provisioning framework + onboarding).
 
 ## Next (standard BMad Method, pure order)
 
