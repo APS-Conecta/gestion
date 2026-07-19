@@ -21,11 +21,18 @@ Status doc. Repo-first SSOT. Updated as work lands.
   access matrix · Collabora), cross-cutting NFRs, Chile Legal, OSS license-outline. Reviewer gate: **strong**
   (0 critical/high). Roadmap items (Tables → REM → search → Paperless → Analytics → AI) deferred.
 
+- **Architecture (2026-07-19):**
+  `docs/planning/architecture/architecture-apsconecta-gestion-2026-07-18/ARCHITECTURE-SPINE.md` +
+  `docs/ARCHITECTURE.md` — initiative spine, **10 ADs**. Paradigm: vanilla **NC33 + configuration-as-code**,
+  no fork, zero custom PHP in v1. Resolved the deferred mechanism decisions: office = **standalone Collabora
+  CODE** (>20 concurrent, whitest-label); RBAC = **Group Folders** + flat role/category/team groups (registry)
+  via one **idempotent `occ` provisioning script**; locale = `es_419`/`es_CL` unlocked. Reviewer gate (lint +
+  4 lenses): strong, 0 critical/high after fixes.
+
 ## Current focus
 
-- **BMad `architecture`** — ratify the dev-stack (NC33 + PG16 + Redis, Compose + Xdebug) and the feature
-  architecture from the PRD; resolve the deferred mechanism decisions (RBAC category modeling, Collabora
-  deployment shape, es-CL locale) noted in the PRD addendum.
+- **BMad `create-epics-and-stories`** — break v1 into epics/stories from the PRD + architecture spine,
+  **Epic 0 (Foundation & Dev Environment) first**.
 
 ## Next (standard BMad Method, pure order)
 

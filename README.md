@@ -4,8 +4,9 @@ Internal management / intranet suite for a Chilean CESFAM (primary-healthcare ce
 **white-label Nextcloud** deployment (official image, **no source fork**), self-hosted via Docker.
 
 > **Status: 🚧 Planning.** Repository foundation in place; dev-stack boot-checked on Nextcloud 33. The
-> **product brief** and **PRD (v1)** are done — v1 is the *developer-facing* Foundation (Epic 0) + the initial
-> Spine A document structure the devs build on. **Architecture is next.** See [`ROADMAP.md`](ROADMAP.md) and
+> **product brief**, **PRD (v1)**, and **architecture** are done — v1 is the *developer-facing* Foundation
+> (Epic 0) + the initial Spine A document structure the devs build on. **Epics & stories are next** (Epic 0
+> first). See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`ROADMAP.md`](ROADMAP.md), and
 > [`docs/planning/`](docs/planning/).
 
 ## What this is (and isn't)
