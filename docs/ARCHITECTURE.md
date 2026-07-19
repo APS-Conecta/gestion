@@ -137,9 +137,10 @@ assignments, and the final validated matrix are parameterizable and settled with
 v1 targets **local development per developer only** — a single Compose stack brought up with one command.
 
 Everything operational for a live deployment is intentionally **deferred**: hosting/provider, a TLS
-reverse-proxy for the active office server with a hardened allow-list (dev runs Collabora with
-`--o:ssl.enable=false`; Euro-Office uses a shared JWT secret), backups and RTO/RPO, sizing/HA, and production
-observability. The v1 operational surface is `occ status` plus the `make smoke` gate.
+reverse-proxy for the active office server with a hardened allow-list (dev Collabora serves self-signed
+HTTPS, wired with `richdocuments disable_certificate_verification`; Euro-Office uses a shared JWT secret),
+backups and RTO/RPO, sizing/HA, and production observability. The v1 operational surface is `occ status` plus
+the `make smoke` gate.
 
 Both office suites are resource-bound (uncapped, OSS): **Collabora** ~10 editors per CPU thread + ~50 MB per
 editor (~20–30 editors ≈ 3–4 vCPU + ~3 GB RAM); **Euro-Office** is heavier (~8 GB RAM recommended for
