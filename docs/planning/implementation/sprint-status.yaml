@@ -52,8 +52,8 @@ story_location: docs/planning/implementation
 
 development_status:
   # ── Epic 0: Foundation & Local Dev Environment ──
-  epic-0: backlog
-  0-1-portable-core-compose-stack: backlog
+  epic-0: in-progress
+  0-1-portable-core-compose-stack: review
   0-2-collabora-code-service-wopi-plumbing-smoke: backlog
   0-3-xdebug-derived-dev-profile: backlog
   0-4-makefile-targets-smoke-test-gate: backlog
