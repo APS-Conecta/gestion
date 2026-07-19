@@ -64,15 +64,15 @@ development_status:
   epic-0-retrospective: optional
 
   # ── Epic 1: White-label Identity & Localization ──
-  epic-1: in-progress
-  1-1-white-label-branding-phase: review
-  1-2-es-cl-locale-defaults: review
+  epic-1: done
+  1-1-white-label-branding-phase: done
+  1-2-es-cl-locale-defaults: done
   epic-1-retrospective: optional
 
   # ── Epic 2: Roles & Access Model ──
-  epic-2: backlog
-  2-1-provision-the-group-registry: backlog
-  2-2-user-provisioning-multi-role-membership: backlog
+  epic-2: in-progress
+  2-1-provision-the-group-registry: review
+  2-2-user-provisioning-multi-role-membership: review
   epic-2-retrospective: optional
 
   # ── Epic 3: Document Home (Spine A) ──
