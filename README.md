@@ -105,11 +105,11 @@ convergence, cursor presence, open/save fidelity — are a human runbook at
 | `scripts/` | `smoke.sh`, `test.sh`, `office-smoke.sh`, `office-formats.sh` — the gate + office checks. |
 | `provisioning/` | The single idempotent provisioning writer: `seed.sh` runner, `lib.sh` guard helpers, `phases/10-60`, and [`provisioning/README.md`](provisioning/README.md). |
 | `apps/`, `themes/` | Custom apps / theming, live-mounted (arrives in Story 0.8). |
-| `docs/planning/` | Committed SSOT: brief, PRD, architecture, epics, stories, sprint status, [`AGILE-OPERATING-MODEL.md`](docs/planning/AGILE-OPERATING-MODEL.md). |
+| `docs/planning/` | Committed SSOT: brief, PRD, architecture, epics, stories, sprint status. |
 | `docs/ARCHITECTURE.md` | The architecture overview (spine in `docs/planning/architecture/…`). |
-| `ROADMAP.md` · `CHANGELOG.md` · `BUGS.md` | Roadmap narrative · thin tagged-release history · known bugs. |
+| `ROADMAP.md` · `BUGS.md` | Roadmap narrative · known bugs. Work in progress is on the [Projects board](https://github.com/orgs/APS-Conecta/projects/5). |
 | `LICENSE` · [`docs/LICENSING.md`](docs/LICENSING.md) | Our code's license (proprietary) · full third-party license audit. |
-| `CONTRIBUTING.md` · `AGENTS.md` · `CODE_OF_CONDUCT.md` · `CONTRIBUTORS.md` | Contribution rules · AI-agent invariants · conduct · the team. |
+| `CONTRIBUTING.md` · `AGENTS.md` · `CONTRIBUTORS.md` | Contribution rules + how we track work · AI-agent invariants · the team. |
 | `.github/` | `CODEOWNERS`, PR + issue templates, `SECURITY.md`. |
 
 ## Current state (what `make seed` provisions today)

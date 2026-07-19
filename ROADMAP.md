@@ -93,10 +93,10 @@ Status doc. Repo-first SSOT. Updated as work lands.
   multi-role users, and the permissioned four-area document tree — plus switchable live office editing. The
   only remaining v1 work is a **human browser acceptance run** (`docs/ACCEPTANCE-EDITING.md`); it can't be
   driven headlessly.
-- **Org governance & docs in place (2026-07-19).** `LICENSE` (proprietary) + `docs/LICENSING.md` (full
-  third-party audit), `.github/` scaffolding (CODEOWNERS + PR/issue templates + `SECURITY.md`),
-  `CONTRIBUTORS.md`, `CODE_OF_CONDUCT.md`, `CHANGELOG.md`, and `docs/planning/AGILE-OPERATING-MODEL.md`
-  (continuous-flow/Kanban). Public org profile prepared for `github.com/APS-Conecta`.
+- **Org governance & GitHub setup in place (2026-07-19).** `LICENSE` (proprietary) + `docs/LICENSING.md`
+  (verified third-party audit); `.github/` scaffolding (CODEOWNERS, PR + issue templates, `SECURITY.md`);
+  `CONTRIBUTORS.md`. Public org profile live at `github.com/APS-Conecta`; work is tracked on the
+  [Projects board](https://github.com/orgs/APS-Conecta/projects/5) — continuous flow, see `CONTRIBUTING.md`.
 
 ## Next (standard BMad Method, pure order)
 
