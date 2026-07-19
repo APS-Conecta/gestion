@@ -104,7 +104,7 @@ convergence, cursor presence, open/save fidelity — are a human runbook at
 | `Makefile` | The dev lifecycle (`make help`). |
 | `scripts/` | `smoke.sh`, `test.sh`, `office-smoke.sh`, `office-formats.sh` — the gate + office checks. |
 | `provisioning/` | The single idempotent provisioning writer: `seed.sh` runner, `lib.sh` guard helpers, `phases/10-60`, and [`provisioning/README.md`](provisioning/README.md). |
-| `apps/`, `themes/` | Custom apps / theming, live-mounted (arrives in Story 0.8). |
+| `apps/`, `themes/` | Custom apps / theming, live-mounted (v1 ships none — the Layer-2 seam). |
 | `docs/planning/` | Committed SSOT: brief, PRD, architecture, epics, stories, sprint status. |
 | `docs/ARCHITECTURE.md` | The architecture overview (spine in `docs/planning/architecture/…`). |
 | `ROADMAP.md` · `BUGS.md` | Roadmap narrative · known bugs. Work in progress is on the [Projects board](https://github.com/orgs/APS-Conecta/projects/5). |
@@ -120,6 +120,61 @@ es-CL locale** (phase 10), the **role/team group registry** (phase 20), the **fo
 first-cut access matrix** (phases 30–40), and synthetic **fixture users + a sample file** (phases 50–60).
 Live collaborative editing is native to the office backend (`make office-collabora` / `make office-eurooffice`).
 The one remaining v1 step is the human browser-acceptance run ([`docs/ACCEPTANCE-EDITING.md`](docs/ACCEPTANCE-EDITING.md)).
+
+## Developing — how to implement a feature
+
+The paradigm is **vanilla Nextcloud + configuration-as-code, no fork**: the platform owns runtime and data;
+this repo adds only *declarative* customization (config, theming, groups/folders/ACLs) — **no core patch,
+zero custom PHP in v1** — and the running instance is a disposable *projection* of the repo's recipe. **The
+only thing that changes instance state is `make seed`** — one idempotent `occ` script (AD-2). Never hand-click
+configuration into the running app; if it isn't scripted, it isn't real.
+
+### The loop
+
+1. `make up` (or `make up-dev` for Xdebug on `:9003`) — start services. Proves the stack boots.
+2. Edit the recipe — a `provisioning/phases/NN-*.sh`, or `apps/` / `themes/`, or `.env`.
+3. `make seed` — apply desired state. Idempotent: safe to re-run; it converges. (`SEED_FIXTURES=0 make seed`
+   applies structure only, skipping the fixture phases.)
+4. `make smoke` / `make test` — health-gate + the local quality gate (the CI stand-in). Green before a PR.
+5. Open a PR — see [`CONTRIBUTING.md`](CONTRIBUTING.md) (GitHub Flow, Conventional Commits, `ai-assisted`, 1
+   approval); work is tracked on the [Projects board](https://github.com/orgs/APS-Conecta/projects/5).
+
+### A feature = one provisioning phase
+
+Features are applied by numbered scripts in `provisioning/phases/`, run in **fixed order 10 → 60** by
+`make seed` (structure 10–40 before fixtures 50–60). **One epic owns one file** (see each file's `# OWNER:`
+header) — a new epic adds its own `NN-*.sh` at the right position and `seed.sh` picks it up automatically (it
+globs + sorts `phases/[0-9]*.sh`); no central registration, so parallel epics never collide. Each phase maps
+to a BMad story under [`docs/planning/implementation/`](docs/planning/implementation/).
+
+Each phase is framed by `phase_begin "NN-name" "…"` … `phase_end`, and its body uses only the
+**query-before-create guard helpers** in `provisioning/lib.sh`, so re-running converges instead of duplicating
+— e.g. `config_system_set`, `config_app_set`, `theming_set`, `ensure_group`, `ensure_user`, `ensure_app`,
+`ensure_groupfolder`, `gf_grant`, `ensure_gf_file`. **Never blind-create.** Verify by re-running `make seed`
+(every line should log "exists" / "already =") then `make test`. Full helper list + the contract:
+[`provisioning/README.md`](provisioning/README.md).
+
+### Custom apps & themes
+
+`apps/` (→ `custom_apps`) and `themes/` are **bind-mounted for live edit** — no rebuild, no fork; `make up`
+runs `make fix-mount-perms` so the container (uid 33) can write them. A custom app talks to Nextcloud **only
+through OCP public APIs (`OCP\…`)** — never patch core (AD-9) — carries an `appinfo/info.xml`
+(`min-version="34"`), and is enabled with `occ app:enable <id>`. **v1 ships none** (config-as-code only); these
+dirs are the Layer-2 roadmap seam (e.g. the REM app). White-labeling in v1 is **config, not theme files** (the
+`10-branding` phase).
+
+### Switching the office backend
+
+`make office-collabora` or `make office-eurooffice` — **exactly one active at a time** (AD-11); each toggles
+its connector and runs an editing smoke. `make office-formats` audits the active backend.
+
+### Guardrails you must not break
+
+No source fork / no core patch / zero custom PHP (v1) · **no patient data**, synthetic fixtures only · never
+commit `.env`, secrets, or volumes · portable (nothing VPS-specific or absolute-pathed; `host.docker.internal`
+must work cross-OS) · language split (code/docs English, UI Spanish) · ACLs are **allow-only, no DENY**. These
+are the [`AGENTS.md`](AGENTS.md) invariants and the `AD-*` decisions in
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Contributing & conventions
 
