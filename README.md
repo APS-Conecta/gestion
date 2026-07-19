@@ -105,17 +105,21 @@ convergence, cursor presence, open/save fidelity — are a human runbook at
 | `scripts/` | `smoke.sh`, `test.sh`, `office-smoke.sh`, `office-formats.sh` — the gate + office checks. |
 | `provisioning/` | The single idempotent provisioning writer: `seed.sh` runner, `lib.sh` guard helpers, `phases/10-60`, and [`provisioning/README.md`](provisioning/README.md). |
 | `apps/`, `themes/` | Custom apps / theming, live-mounted (arrives in Story 0.8). |
-| `docs/planning/` | Committed SSOT: brief, PRD, architecture, epics, stories, sprint status. |
+| `docs/planning/` | Committed SSOT: brief, PRD, architecture, epics, stories, sprint status, [`AGILE-OPERATING-MODEL.md`](docs/planning/AGILE-OPERATING-MODEL.md). |
 | `docs/ARCHITECTURE.md` | The architecture overview (spine in `docs/planning/architecture/…`). |
+| `ROADMAP.md` · `CHANGELOG.md` · `BUGS.md` | Roadmap narrative · thin tagged-release history · known bugs. |
+| `LICENSE` · [`docs/LICENSING.md`](docs/LICENSING.md) | Our code's license (proprietary) · full third-party license audit. |
+| `CONTRIBUTING.md` · `AGENTS.md` · `CODE_OF_CONDUCT.md` · `CONTRIBUTORS.md` | Contribution rules · AI-agent invariants · conduct · the team. |
+| `.github/` | `CODEOWNERS`, PR + issue templates, `SECURITY.md`. |
 
 ## Current state (what `make seed` provisions today)
 
-Config-as-code is applied only by `make seed`, in fixed phase order (`provisioning/README.md`). **Done:**
-the provisioning framework + guard helpers, and the **fixtures** (synthetic users + a sample file, phases
-50–60). **Pending later epics — still no-op stubs:** `10-branding` (APS Conecta branding + **es-CL locale**,
-Epic 1), `20-groups` (role/team registry, Epic 2), `30-folders`/`40-acl` (document tree + access, Epic 3).
-So a freshly-seeded instance has sample users but **not yet** branding, Spanish locale, roles, or the folder
-structure — those land as their epics fill their phase file.
+Config-as-code is applied only by `make seed`, in fixed phase order (`provisioning/README.md`). As of v1
+(Epics 0–4 merged), a full `make seed` applies the whole white-label instance: APS Conecta **branding +
+es-CL locale** (phase 10), the **role/team group registry** (phase 20), the **four-area Document Home tree +
+first-cut access matrix** (phases 30–40), and synthetic **fixture users + a sample file** (phases 50–60).
+Live collaborative editing is native to the office backend (`make office-collabora` / `make office-eurooffice`).
+The one remaining v1 step is the human browser-acceptance run ([`docs/ACCEPTANCE-EDITING.md`](docs/ACCEPTANCE-EDITING.md)).
 
 ## Contributing & conventions
 

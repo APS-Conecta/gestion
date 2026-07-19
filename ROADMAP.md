@@ -87,11 +87,16 @@ Status doc. Repo-first SSOT. Updated as work lands.
 
 ## Current focus
 
-- **v1 feature-complete (Foundation + Spine A).** Epics 0–4 built and merged (Epic 4 = this PR). A dev can
-  `make up` → `make seed` and get the whole white-label CESFAM intranet as config-as-code: APS Conecta
-  branding + es-CL, the 21-role RBAC taxonomy with sample multi-role users, and the permissioned four-area
-  document tree — plus switchable live office editing. The only remaining Epic-4 work is a **human browser
-  acceptance run** (`docs/ACCEPTANCE-EDITING.md`); it can't be driven headlessly.
+- **v1 feature-complete (Foundation + Spine A).** Epics 0–4 built and merged (PRs #7–#20); PR #21 added the
+  `make credentials` local secrets sheet. A dev can `make up` → `make seed` and get the whole white-label
+  CESFAM intranet as config-as-code: APS Conecta branding + es-CL, the role/access taxonomy with sample
+  multi-role users, and the permissioned four-area document tree — plus switchable live office editing. The
+  only remaining v1 work is a **human browser acceptance run** (`docs/ACCEPTANCE-EDITING.md`); it can't be
+  driven headlessly.
+- **Org governance & docs in place (2026-07-19).** `LICENSE` (proprietary) + `docs/LICENSING.md` (full
+  third-party audit), `.github/` scaffolding (CODEOWNERS + PR/issue templates + `SECURITY.md`),
+  `CONTRIBUTORS.md`, `CODE_OF_CONDUCT.md`, `CHANGELOG.md`, and `docs/planning/AGILE-OPERATING-MODEL.md`
+  (continuous-flow/Kanban). Public org profile prepared for `github.com/APS-Conecta`.
 
 ## Next (standard BMad Method, pure order)
 
