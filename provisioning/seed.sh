@@ -9,6 +9,9 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 . "$HERE/lib.sh"
 
+# Load .env (host-side) so phase files can read config like FIXTURE_USER_PASSWORD.
+if [ -f "$HERE/../.env" ]; then set -a; . "$HERE/../.env"; set +a; fi
+
 SEED_FIXTURES="${SEED_FIXTURES:-1}"
 
 echo "== APS Conecta provisioning (make seed) =="
