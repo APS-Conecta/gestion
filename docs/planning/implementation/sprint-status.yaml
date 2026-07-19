@@ -44,7 +44,7 @@
 # (independent — de-risks the office/connector integration); Epics 1 & 2 parallelizable; Epic 3 strictly after Epic 2.
 
 generated: 2026-07-19
-last_updated: 2026-07-19  # Story 0.2 contexted → ready-for-dev
+last_updated: 2026-07-19  # Epic 3 done (PR #19); Epic 4 in review (this PR)
 project: APS Conecta Gestión
 project_key: NOKEY
 tracking_system: file-system
@@ -76,15 +76,15 @@ development_status:
   epic-2-retrospective: optional
 
   # ── Epic 3: Document Home (Spine A) ──
-  epic-3: in-progress
-  3-1-provision-the-four-area-group-folders-tree: review
-  3-2-apply-the-first-cut-access-matrix: review
-  3-3-organization-conventions: review
+  epic-3: done
+  3-1-provision-the-four-area-group-folders-tree: done
+  3-2-apply-the-first-cut-access-matrix: done
+  3-3-organization-conventions: done
   epic-3-retrospective: optional
 
   # ── Epic 4: Live Collaborative Editing ──
-  epic-4: backlog
-  4-1-in-browser-office-editing: backlog
-  4-2-concurrent-co-editing: backlog
-  4-3-oss-format-support: backlog
+  epic-4: in-progress
+  4-1-in-browser-office-editing: review
+  4-2-concurrent-co-editing: review
+  4-3-oss-format-support: review
   epic-4-retrospective: optional

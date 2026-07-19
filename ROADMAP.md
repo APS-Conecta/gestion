@@ -59,18 +59,46 @@ Status doc. Repo-first SSOT. Updated as work lands.
     custom app/theme live-mounts (this PR). A dev can now clone → `make up` → debug → gate → `make seed` →
     extend, all locally and portably.
 
+- **Epic 1 — White-label Identity & Localization (2026-07-19):** `provisioning/phases/10-branding.sh` —
+  APS Conecta theming (name/slogan/URL/primary color, user-theming disabled) + es-CL locale
+  (`default_language=es_419`, `default_locale=es_CL`, `default_phone_region=CL`), idempotent. Verified live on
+  NC34.0.1 (PR #17). Gotcha logged: NC34 `occ theming:config` sets text/color only — logo/favicon are an
+  admin-UI step.
+
+- **Epic 2 — Roles & Access Model (2026-07-19):** `provisioning/phases/20-groups.sh` + `50-users.sh` — the
+  full group registry (all-staff · 4 categories · 21 role-* from the spine · 5 team placeholders) and 4
+  synthetic fixture users incl. a **multi-role** demo (`dev.medico`), all query-before-create idempotent.
+  Verified live (PR #18).
+
+- **Epic 3 — Document Home / Spine A (2026-07-19):** `provisioning/phases/30-folders.sh` + `40-acl.sh` +
+  `docs/CONVENTIONS.md` — installed `groupfolders`, built the **12-folder four-area tree** (Transversal ·
+  Programas · Unidades · Sectores) + the **first-cut access matrix** (allow-refinement, no DENY;
+  FR-13 verified at grant level) + Spanish conventions surfaced in-folder. Verified live (PR #19). Surfaced +
+  fixed 3 latent infra gaps: groupfolders never installed, custom_apps mount not www-data-writable
+  (`make fix-mount-perms`), and a `mountPoint` vs `mount_point` helper bug.
+
+- **Epic 4 — Live Collaborative Editing (2026-07-19):** the final feature epic. Editing is a **native
+  capability** of the office server built in Story 0.2 — no new provisioning. Added `scripts/office-formats.sh`
+  (`make office-formats`): a headless audit asserting the active backend can **edit all 6 formats** (odt/docx,
+  ods/xlsx, odp/pptx — read from the server's own `/hosting/discovery`) and is **OSS with no paid license**
+  (Collabora CODE "Development Edition"). Verified live: 6/6 + OSS, green. The browser-only ACs (render, live
+  convergence, cursor presence, open/save fidelity) are a numbered **human acceptance runbook**,
+  `docs/ACCEPTANCE-EDITING.md`, honestly opened as not-yet-run.
+
 ## Current focus
 
-- **Epic 0 complete** (pending 0.8 merge). **Next: feature epics.** Per the sequencing, **Epic 4 (Live
-  Collaborative Editing)** can follow immediately (independent — de-risks the office/connector work, largely
-  proven in 0.2); **Epics 1 (branding + es-CL locale) & 2 (roles/groups)** are parallelizable; **Epic 3
-  (Document Home)** after Epic 2. Each fills its own provisioning phase file (`10`/`20`/`30`+`40`).
+- **v1 feature-complete (Foundation + Spine A).** Epics 0–4 built and merged (Epic 4 = this PR). A dev can
+  `make up` → `make seed` and get the whole white-label CESFAM intranet as config-as-code: APS Conecta
+  branding + es-CL, the 21-role RBAC taxonomy with sample multi-role users, and the permissioned four-area
+  document tree — plus switchable live office editing. The only remaining Epic-4 work is a **human browser
+  acceptance run** (`docs/ACCEPTANCE-EDITING.md`); it can't be driven headlessly.
 
 ## Next (standard BMad Method, pure order)
 
-1. **Epic-0 retrospective** (optional) → then feature epics via the story cycle
-   (`bmad-create-story` → `bmad-dev-story`), one phase-file per epic.
-2. Recommended order: **Epic 4** (editing) → **Epics 1 & 2** (parallel) → **Epic 3** (after 2).
+1. **Human acceptance run** of `docs/ACCEPTANCE-EDITING.md` against a live backend (Collabora/Euro-Office) —
+   fill its execution-record table.
+2. **Epic retrospectives** (all optional) via the BMad retrospective flow.
+3. Then the post-v1 production roadmap (below).
 
 ## Future
 

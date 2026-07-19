@@ -6,7 +6,7 @@
 # `make smoke` / `make test` = the local quality gate (Story 0.4); `make seed` runs provisioning
 # (the pipeline content arrives in Story 0.5).
 .DEFAULT_GOAL := help
-.PHONY: help up up-dev down seed smoke test fix-mount-perms office-collabora office-eurooffice office-smoke office-down
+.PHONY: help up up-dev down seed smoke test fix-mount-perms office-collabora office-eurooffice office-smoke office-formats office-down
 
 OCC = docker compose exec -T --user www-data nextcloud php occ
 NET = apsconecta-gestion_default
@@ -82,6 +82,9 @@ office-eurooffice: ## Switch office backend → Euro-Office (enable eurooffice, 
 
 office-smoke: ## Smoke-check the active office backend (auto-detects which is enabled)
 	@OFFICE_PORT=$(OFFICE_PORT) bash scripts/office-smoke.sh
+
+office-formats: ## Audit the active backend — 6 editable formats + OSS/no-paid-licence (Story 4.3)
+	@OFFICE_PORT=$(OFFICE_PORT) bash scripts/office-formats.sh
 
 office-down: ## Stop both office backends (core stack keeps running)
 	docker compose stop collabora eurooffice 2>/dev/null || true
