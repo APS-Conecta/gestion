@@ -1,6 +1,7 @@
 # Contributing — APS Conecta Gestión
 
-Three developers collaborate here. This file is the operational contract; keep it current.
+A three-person team collaborates here — an owner (product, requirements, UAT sign-off) and two developers
+(see [`CONTRIBUTORS.md`](CONTRIBUTORS.md)). This file is the operational contract; keep it current.
 
 ## Principles (non-negotiable)
 
