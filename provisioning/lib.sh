@@ -49,10 +49,14 @@ group_exists() {  # GID
     'import sys,json;d=json.load(sys.stdin);k=d if isinstance(d,list) else list(d);sys.exit(0 if sys.argv[1] in k else 1)' \
     "$1" 2>/dev/null
 }
-ensure_group() {  # GID
-  local gid="$1"
-  if group_exists "$gid"; then log "group $gid exists"; else
-    occ group:add "$gid" >/dev/null && log "group $gid created"; fi
+ensure_group() {  # GID [DISPLAY]
+  local gid="$1" display="${2:-}"
+  if group_exists "$gid"; then log "group $gid exists"; return 0; fi
+  if [ -n "$display" ]; then
+    occ group:add --display-name="$display" "$gid" >/dev/null && log "group $gid created ($display)"
+  else
+    occ group:add "$gid" >/dev/null && log "group $gid created"
+  fi
 }
 
 # --- users (fixtures; query-before-create) ---
@@ -69,9 +73,13 @@ ensure_user() {  # UID DISPLAY PASSWORD
     log "FAILED to create user $uid"; return 1
   fi
 }
-add_user_to_group() {  # UID GID  (group:adduser tolerates an existing member)
-  if occ group:adduser "$2" "$1" >/dev/null 2>&1; then log "user $1 added to group $2"; else
-    log "user $1 already in group $2"; fi
+user_in_group() {  # UID GID
+  occ user:info "$1" --output=json 2>/dev/null | python3 -c \
+    'import sys,json;g=json.load(sys.stdin).get("groups",[]);sys.exit(0 if sys.argv[1] in g else 1)' "$2" 2>/dev/null
+}
+add_user_to_group() {  # UID GID  (query-before-add: accurate + idempotent)
+  if user_in_group "$1" "$2"; then log "user $1 already in group $2"; else
+    occ group:adduser "$2" "$1" >/dev/null 2>&1 && log "user $1 added to group $2"; fi
 }
 
 # --- group folders: groupfolders:create is NOT idempotent by name, so ALWAYS query first ---
