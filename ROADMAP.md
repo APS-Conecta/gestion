@@ -34,11 +34,15 @@ Status doc. Repo-first SSOT. Updated as work lands.
   provisioning framework so epics append not edit; Epic 4 early to de-risk WOPI). Final validation: no forward
   deps, no leftover placeholders.
 
+- **Implementation readiness (2026-07-19):** `docs/planning/implementation-readiness-report-2026-07-19.md` —
+  **READY**; 100% FR coverage (17/17), 0 critical / 0 major / 3 justified minors, UX absent by design. Cleared
+  to build Epic 0.
+
 ## Current focus
 
-- **BMad `check-implementation-readiness`** → `sprint-planning` → the story cycle — implement **Epic 0
-  (Foundation & Dev Environment) first** (Docker Compose + Collabora/WOPI + Xdebug + Makefile + the
-  phase-structured provisioning framework + onboarding).
+- **BMad `sprint-planning`** → the story cycle (`create-story` / `dev-story`) — implement **Epic 0 (Foundation
+  & Dev Environment) first** (Docker Compose + Collabora/WOPI + Xdebug + Makefile + the phase-structured
+  provisioning framework + onboarding).
 
 ## Next (standard BMad Method, pure order)
 
