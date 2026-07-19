@@ -55,8 +55,8 @@ development_status:
   epic-0: in-progress
   0-1-portable-core-compose-stack: done
   0-2-dual-office-suite-switchable: done
-  0-3-xdebug-derived-dev-profile: review
-  0-4-makefile-targets-smoke-test-gate: backlog
+  0-3-xdebug-derived-dev-profile: done
+  0-4-makefile-targets-smoke-test-gate: review
   0-5-provisioning-framework: backlog
   0-6-fixtures-mechanism-sample-users: backlog
   0-7-repo-as-ssot-onboarding: backlog
