@@ -19,11 +19,10 @@ and reasons about whether running them triggers any obligation on our own code.
    with **no redistribution intent**. A permissive or copyleft license would give the work away for no
    benefit the project needs; proprietary keeps every option open (including open-sourcing later, which
    a proprietary start does not foreclose).
-3. **Copyright holder** = **ddespinoza personally.** No legal entity ("razón social") for "APS Conecta"
-   exists yet, so copyright vests in the individual. **[needs confirmation]** the `LICENSE` copyright
-   line should carry the holder's **full legal name**; it currently shows the GitHub handle pending
-   that. If a legal entity is later formed, or if this work is deemed commissioned by / funded for a
-   third party (e.g. the health center), the holder must be revisited — **[needs legal sign-off]**.
+3. **Copyright holder** = **Daniel Espinoza Charrier** (individually). No legal entity ("razón social")
+   for "APS Conecta" exists yet, so copyright vests in the individual. If a legal entity is later formed,
+   or if this work is deemed commissioned by / funded for a third party (e.g. the health center), the
+   holder must be revisited — **[needs legal sign-off]**.
 
 ## 2. "OSS-first" and "proprietary" are not in conflict
 
@@ -98,11 +97,12 @@ and forces us to open it. Our reasoning — **[needs legal sign-off]**:
 
 ## 5. Summary
 
-- **Our code:** proprietary, holder ddespinoza (full legal name to confirm).
+- **Our code:** proprietary, holder Daniel Espinoza Charrier.
 - **Every dependency:** OSS, self-hosted, free — no paid license.
 - **No copyleft reach** onto our code under the unmodified-official-images / mere-aggregation reading.
 - **Our own §13 duty (as operator):** because we *run* AGPL components, we must offer their unmodified
   source to people who interact with them — a separate, trivially-met obligation (point to each project's
   public upstream). It does not affect our own code's license.
-- **Open items:** legal-name on `LICENSE`; entity/commissioning question; Euro-Office §7 dispute if it's
-  chosen for production; re-run §4 if we ever modify or fork a component.
+- **Open items:** entity/commissioning question (holder revisited if a legal entity forms or the work is
+  deemed commissioned); Euro-Office §7 dispute if it's chosen for production; re-run §4 if we ever modify or
+  fork a component.
