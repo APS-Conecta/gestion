@@ -3,10 +3,10 @@
 Internal management / intranet suite for a Chilean CESFAM (primary-healthcare centre), built as a
 **white-label Nextcloud** deployment (official image, **no source fork**), self-hosted via Docker.
 
-> **Status: 🚧 Building Epic 0 (Foundation).** The dev stack, debugger, quality gate, and provisioning
-> framework are in place and run locally per developer. Branding, es-CL locale, roles/access, and the
-> document-folder tree are **later epics** (see *Current state* below). No patient data — dev uses
-> **synthetic fixtures only**.
+> **Status: ✅ v1 feature-complete (Foundation + Spine A).** Epics 0–4 are merged — dev stack + debugger +
+> quality gate + provisioning, APS Conecta branding + es-CL locale, roles/access, the four-area document
+> tree, and switchable live office editing. The one remaining v1 step is a human browser-acceptance run
+> (see *Current state* below). No patient data — dev uses **synthetic fixtures only**.
 
 ## What this is (and isn't)
 
