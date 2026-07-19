@@ -24,6 +24,15 @@ A three-person team collaborates here — an owner (product, requirements, UAT s
 
 `CODEOWNERS` auto-requests reviewers. Prefer small, reviewable PRs.
 
+## How we track work
+
+Work is tracked on the org **[GitHub Projects board](https://github.com/orgs/APS-Conecta/projects/5)** as
+continuous flow — no fixed sprints; we work PR-by-PR. Cards move
+**Backlog → Ready → In Progress → In Review → UAT → Done**: the owner fills Backlog, sets Ready priority, and
+signs off **UAT** (acceptance); the developers pull from Ready through In Review. File new work as an issue
+using the templates in [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE) (a technical *Dev task/bug* and a
+plain-language *Solicitud*).
+
 ## Planning (BMad Method)
 
 Planning is driven by the **standard BMad Method**; run the `bmad-help` skill to find the next step.
