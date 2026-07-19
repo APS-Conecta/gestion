@@ -1,0 +1,11 @@
+# DEV overlay — layers the derived Xdebug image onto the base stack (Story 0.3, AD-10).
+# Opt-in only:  docker compose -f compose.yaml -f compose.dev.yaml up -d --build   (== `make up-dev`).
+# Everything else (ports, env, volumes, extra_hosts, healthcheck, depends_on) is inherited from
+# compose.yaml — this file changes ONLY how the `nextcloud` service image is sourced. The base
+# compose.yaml and the official image are never mutated.
+services:
+  nextcloud:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: apsconecta-gestion/nextcloud-xdebug:dev

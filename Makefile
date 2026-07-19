@@ -5,7 +5,7 @@
 #   `make office-eurooffice` → Euro-Office      (eurooffice/JWT)
 # `make seed` / `smoke` / `test` arrive in later Epic-0 stories (0.4, 0.5).
 .DEFAULT_GOAL := help
-.PHONY: help up down office-collabora office-eurooffice office-smoke office-down
+.PHONY: help up up-dev down office-collabora office-eurooffice office-smoke office-down
 
 OCC = docker compose exec -T --user www-data nextcloud php occ
 NET = apsconecta-gestion_default
@@ -19,6 +19,10 @@ help: ## Show available targets
 up: ## Start the core stack (services only)
 	@test -f .env || { echo "No .env found — run: cp .env.example .env  (then edit the passwords)"; exit 1; }
 	docker compose up -d
+
+up-dev: ## Start the core stack with the Xdebug derived dev image (step-debugging on :9003)
+	@test -f .env || { echo "No .env found — run: cp .env.example .env  (then edit the passwords)"; exit 1; }
+	docker compose -f compose.yaml -f compose.dev.yaml up -d --build
 
 down: ## Stop the stack (keeps volumes)
 	docker compose down
