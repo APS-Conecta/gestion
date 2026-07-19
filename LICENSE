@@ -1,5 +1,5 @@
 APS Conecta Gestión — Proprietary License
-Copyright (c) 2026 ddespinoza. All rights reserved.
+Copyright (c) 2026 Daniel Espinoza Charrier. All rights reserved.
 
 This license covers ONLY the project's own original work in this repository — the code
 authored for it (under apps/, themes/, provisioning/, scripts/) together with this
@@ -17,6 +17,3 @@ INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PA
 PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY
 CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 OR ITS USE.
-
-Note: the copyright line should record the holder's full legal name. It currently shows
-the GitHub handle "ddespinoza" pending that confirmation (see docs/LICENSING.md).
