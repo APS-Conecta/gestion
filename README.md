@@ -78,6 +78,7 @@ To stop: `make down` (keeps your data volumes). That's the whole loop.
 | `make smoke` | Health-gate the running stack (0 = healthy). |
 | `make test` | Local quality gate — static checks + smoke (the CI stand-in). |
 | `make office-collabora` / `make office-eurooffice` | Switch the office backend (exactly one active — AD-11). |
+| `make office-formats` | Audit the active backend: 6 editable formats + OSS/no-paid-license (Epic 4). |
 | `make office-down` | Stop both office backends. |
 
 **Step-debugging:** `make up-dev`, then in VS Code run the committed **"Listen for Xdebug"** config
@@ -85,8 +86,13 @@ To stop: `make down` (keeps your data volumes). That's the whole loop.
 
 **Office suite:** `make office-collabora` (Collabora CODE, self-signed HTTPS on `:9980`) or
 `make office-eurooffice` (Euro-Office). One at a time; each wires its own Nextcloud Office connector and
-runs an editing smoke. For in-browser editing, accept Collabora's self-signed cert once at
-`https://localhost:9980`.
+runs an editing smoke. `make office-formats` then audits the active backend (6 editable formats + OSS/no
+paid license). For in-browser editing, accept Collabora's self-signed cert once at `https://localhost:9980`.
+
+**Live editing acceptance (Epic 4):** the editor/WOPI pipe and format/OSS coverage are machine-verified
+(`make office-smoke`, `make office-formats`); the browser-only checks — in-browser render, live co-editing
+convergence, cursor presence, open/save fidelity — are a human runbook at
+[`docs/ACCEPTANCE-EDITING.md`](docs/ACCEPTANCE-EDITING.md).
 
 ## Where things live
 
@@ -96,7 +102,7 @@ runs an editing smoke. For in-browser editing, accept Collabora's self-signed ce
 | `compose.dev.yaml`, `Dockerfile.dev`, `dev/xdebug.ini` | The derived Xdebug dev image (AD-10). |
 | `.env.example` | Template for your gitignored `.env`. **Never commit `.env`.** |
 | `Makefile` | The dev lifecycle (`make help`). |
-| `scripts/` | `smoke.sh`, `test.sh`, `office-smoke.sh` — the gate + office checks. |
+| `scripts/` | `smoke.sh`, `test.sh`, `office-smoke.sh`, `office-formats.sh` — the gate + office checks. |
 | `provisioning/` | The single idempotent provisioning writer: `seed.sh` runner, `lib.sh` guard helpers, `phases/10-60`, and [`provisioning/README.md`](provisioning/README.md). |
 | `apps/`, `themes/` | Custom apps / theming, live-mounted (arrives in Story 0.8). |
 | `docs/planning/` | Committed SSOT: brief, PRD, architecture, epics, stories, sprint status. |
