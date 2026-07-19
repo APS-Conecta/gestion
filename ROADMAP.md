@@ -38,11 +38,15 @@ Status doc. Repo-first SSOT. Updated as work lands.
   **READY**; 100% FR coverage (17/17), 0 critical / 0 major / 3 justified minors, UX absent by design. Cleared
   to build Epic 0.
 
+- **Sprint plan (2026-07-19):** `docs/planning/implementation/sprint-status.yaml` — 5 epics · 18 stories · 5
+  retrospectives, all `backlog`. **Planning phase complete** (brief → PRD → architecture → epics/stories →
+  readiness → sprint plan).
+
 ## Current focus
 
-- **BMad `sprint-planning`** → the story cycle (`create-story` / `dev-story`) — implement **Epic 0 (Foundation
-  & Dev Environment) first** (Docker Compose + Collabora/WOPI + Xdebug + Makefile + the phase-structured
-  provisioning framework + onboarding).
+- **Build — story cycle** (`bmad-create-story` → `bmad-dev-story`): implement **Epic 0 (Foundation & Dev
+  Environment) first**, starting with **Story 0.1 (portable Compose stack)**. This writes real code — Docker
+  Compose + Collabora/WOPI + Xdebug + Makefile + the phase-structured provisioning framework + onboarding.
 
 ## Next (standard BMad Method, pure order)
 
