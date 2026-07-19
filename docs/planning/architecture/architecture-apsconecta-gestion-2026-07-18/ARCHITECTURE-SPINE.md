@@ -4,7 +4,7 @@ type: architecture-spine
 purpose: build-substrate
 altitude: initiative
 paradigm: 'Vanilla platform + configuration-as-code (Nextcloud-as-platform, no fork)'
-scope: 'v1 = Foundation (Epic 0) + initial Spine A (documents) on white-label Nextcloud 33'
+scope: 'v1 = Foundation (Epic 0) + initial Spine A (documents) on white-label Nextcloud 34'
 status: final
 created: '2026-07-18'
 updated: '2026-07-19'
@@ -21,7 +21,7 @@ companions: []
 
 ## Design Paradigm
 
-**Vanilla platform + configuration-as-code, no fork.** Nextcloud 33 is the platform and owns the runtime and
+**Vanilla platform + configuration-as-code, no fork.** Nextcloud 34 is the platform and owns the runtime and
 all product data. The repository contributes **only** declarative customization — configuration, theming,
 group/folder/ACL provisioning — never a fork or a core patch. In v1 there is **zero custom PHP**. Desired state
 is applied by one idempotent `occ`-based provisioning script; the running instance is a *projection* of the
@@ -40,8 +40,8 @@ Dependency direction (a unit may depend only in the arrow's direction):
 
 ```mermaid
 graph LR
-  PROV[provisioning script] -->|occ, one-way| NC[Nextcloud 33 core]
-  NC --> PG[(PostgreSQL 16)]
+  PROV[provisioning script] -->|occ, one-way| NC[Nextcloud 34 core]
+  NC --> PG[(PostgreSQL 18)]
   NC --> REDIS[(Redis 8)]
   NC <-->|WOPI| COOL[Collabora CODE]
   APPS[future custom apps] -->|OCP public API only| NC
@@ -84,14 +84,14 @@ graph LR
   (+ `cat-jefaturas` read), minimal ACL. ACL uses **allow-refinement**: grant least at the folder base, add
   explicit **allow** rules; **no DENY rules** (deny overrides allow and would break a multi-role user's union).
 
-### AD-5 — Office editing via standalone Collabora CODE + WOPI  `[ADOPTED]`
+### AD-5 — Office editing via a standalone document server, switchable Collabora ↔ Euro-Office  `[ADOPTED]`
 - **Binds:** live collaborative editing (FR-15..FR-17)
-- **Prevents:** the built-in server's small-team cap (documented ~10 documents / 20 connections); a
-  non-white-label editor; a paid dependency
-- **Rule:** Editing is served by a **standalone `collabora/code` container** integrated through the **Nextcloud
-  Office (`richdocuments`) WOPI** app. The built-in `richdocumentscode` app is **not installed** (enabling
-  external CODE disables it; the small-team cap lives only there). WOPI wiring uses three distinct URLs
-  (AD-8): browser→Collabora public URL, Nextcloud→Collabora and Collabora→Nextcloud over the compose network.
+- **Prevents:** the built-in server's small-team cap; a paid dependency; a single hard-wired office backend
+- **Rule:** Editing is served by a **standalone document-server container**, with the backend **switchable
+  between two OSS options**: **Collabora Online CODE** (`collabora/code`, via the `richdocuments`/WOPI app) and
+  **Euro-Office** (`ghcr.io/euro-office/documentserver`, via the `eurooffice` connector + shared JWT). Both are
+  NC34+ standalone servers with no concurrency cap. The built-in `richdocumentscode` app is **not installed**.
+  Container↔container URLs use compose service names (AD-8). The comparison picks a winner later (Deferred).
 
 ### AD-6 — White-label as config, not a theme file  `[ADOPTED]`
 - **Binds:** branding (FR-7)
@@ -128,6 +128,14 @@ graph LR
 - **Prevents:** Xdebug in the base/prod image; a debug fork
 - **Rule:** Step-debugging comes from a **derived** image/compose profile (`compose.dev.yaml`) layered on the
   official image, enabled only in dev — never baked into the base image or the committed core.
+
+### AD-11 — Exactly one office backend active at a time
+- **Binds:** the office-suite switch (FR-15..FR-17, AD-5)
+- **Prevents:** two office backends fighting over the same docx/xlsx/pptx file handlers
+- **Rule:** Collabora and Euro-Office are **never both active** on one instance. The switch
+  (`make office-collabora` / `make office-eurooffice`) brings up the chosen server's compose **profile**,
+  enables its connector, and **disables the other's** — so exactly one connector claims each MIME type, and
+  only the active office server runs.
 
 ## Group Registry
 
@@ -183,17 +191,19 @@ mandate (NFR-3); the full enumeration is the committed License-outline artifact 
 
 | Name | Version | License |
 | --- | --- | --- |
-| Nextcloud (official image) | `nextcloud:33-apache` (rolling 33.x; 33.0.6 head, EOL ~Feb 2027) | AGPL-3.0 |
-| PostgreSQL | `postgres:16-alpine` | PostgreSQL License |
+| Nextcloud (official image) | `nextcloud:34-apache` (rolling 34.x; 34.0.1 head, EOL ~June 2027) | AGPL-3.0 |
+| PostgreSQL | `postgres:18-alpine` (PG18, NC-recommended) | PostgreSQL License |
 | Redis | `redis:8-alpine` (Redis 8 restored OSS licensing) | AGPL-3.0 |
-| Collabora Online CODE | `collabora/code` (current) | MPL-2.0 |
-| Nextcloud Office | `richdocuments` (NC33 line) | AGPL-3.0 |
-| Group Folders | `groupfolders` (NC33 line; surfaced as "Team folders") | AGPL-3.0 |
+| Office server A — Collabora CODE | `collabora/code` (current) + `richdocuments`/WOPI | MPL-2.0 / AGPL-3.0 |
+| Office server B — Euro-Office | `ghcr.io/euro-office/documentserver` (v9.3.x) + `eurooffice` connector | AGPL-3.0 |
+| Group Folders | `groupfolders` (NC34 line; surfaced as "Team folders") | AGPL-3.0 |
 | Orchestration / tooling | Docker Compose · Make · Xdebug (dev only) | — |
 
-`nextcloud:33-apache` rolls across 33.x patches; pin an exact patch if byte-identical environments become
-necessary. **Redis 8** re-added OSS licensing (AGPL-3.0); **Valkey** (`valkey/valkey`, BSD-3, drop-in) is the
-permissive alternative to settle in the License outline if preferred.
+`nextcloud:34-apache` rolls across 34.x patches; pin an exact patch if byte-identical environments become
+necessary. Both office suites are OSS/AGPL, uncapped, and >20-concurrent-capable; **Collabora** is the
+whiter-label ("Nextcloud Office"), **Euro-Office** (an AGPL OnlyOffice fork) has stronger MS-Office fidelity but
+a heavier ~8 GB footprint (vs Collabora ~3 GB). **Redis 8** re-added OSS licensing (AGPL-3.0); **Valkey**
+(`valkey/valkey`, BSD-3, drop-in) is the permissive alternative to settle in the License outline if preferred.
 
 ## Structural Seed
 
@@ -201,11 +211,11 @@ Container / runtime topology (v1 = local dev, one compose per developer):
 
 ```mermaid
 graph TD
-  B[Browser] -->|localhost| NC[nextcloud:33-apache]
-  B -->|localhost:9980| C[collabora/code]
-  NC --> PG[(postgres:16-alpine)]
+  B[Browser] -->|localhost| NC[nextcloud:34-apache]
+  B -->|localhost| C[office backend · Collabora OR Euro-Office]
+  NC --> PG[(postgres:18-alpine)]
   NC --> R[(redis:8-alpine)]
-  NC <-->|WOPI · compose service names| C
+  NC <-->|connector WOPI/JWT · compose service names| C
   PROV[provisioning occ script + fixtures] -->|make seed| NC
   A[apps/ → custom_apps · empty v1] -.bind mount.-> NC
   T[themes/ · empty v1] -.bind mount.-> NC
@@ -256,7 +266,7 @@ reverse-proxy + hardened WOPI allow-list, backups/RTO-RPO, sizing/HA, observabil
 | FR-9..FR-11 roles & access | Group Registry + `provisioning/` | AD-4, AD-2 |
 | FR-12..FR-13 Document Home | Group Folders (per-area/program/unit/sector) + ACL | AD-4 |
 | FR-14 organization conventions | in-repo/in-folder convention docs | Conventions |
-| FR-15..FR-17 live editing | `collabora/code` + `richdocuments` | AD-5, AD-8 |
+| FR-15..FR-17 live editing | `collabora/code`/`richdocuments` **or** Euro-Office/`eurooffice` (switchable) | AD-5, AD-8, AD-11 |
 
 ## Deferred
 
@@ -272,6 +282,7 @@ reverse-proxy + hardened WOPI allow-list, backups/RTO-RPO, sizing/HA, observabil
   the **AI layer** — roadmap; AD-9 fixes where they attach.
 - **Final CESFAM-validated access matrix** + concrete `prog-*`/`sector-*` names — parameterizable first cut;
   validated with a specific CESFAM later.
-- **Prod-like Collabora TLS profile** and **exact rolling-vs-pinned image policy** — fixed at/after Epic 0.
-- **Euro-Office** re-evaluation as an office server — only on **NC34+**.
+- **Prod-like office-server TLS profile** and **exact rolling-vs-pinned image policy** — fixed at/after Epic 0.
+- **Office-suite winner** — after the Collabora vs Euro-Office comparison, narrow AD-5 to the chosen backend
+  (or keep the switch if a per-deployment choice is wanted).
 - **`disable-user-theming` relaxation** — revisit if per-user dev themes are ever wanted.

@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 #
 # SEQUENCING (from epics.md + readiness): Epic 0 first; Epic 4 can follow Epic 0 immediately
-# (independent — de-risks WOPI); Epics 1 & 2 parallelizable; Epic 3 strictly after Epic 2.
+# (independent — de-risks the office/connector integration); Epics 1 & 2 parallelizable; Epic 3 strictly after Epic 2.
 
 generated: 2026-07-19
 last_updated: 2026-07-19
@@ -54,7 +54,7 @@ development_status:
   # ── Epic 0: Foundation & Local Dev Environment ──
   epic-0: in-progress
   0-1-portable-core-compose-stack: done
-  0-2-collabora-code-service-wopi-plumbing-smoke: backlog
+  0-2-dual-office-suite-switchable: backlog
   0-3-xdebug-derived-dev-profile: backlog
   0-4-makefile-targets-smoke-test-gate: backlog
   0-5-provisioning-framework: backlog

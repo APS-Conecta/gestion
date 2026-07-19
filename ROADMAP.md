@@ -5,9 +5,9 @@ Status doc. Repo-first SSOT. Updated as work lands.
 ## Completed
 
 - **Bootstrap (2026-07-18):** repo cloned; **BMad Method v6.10.0** installed (module `bmm`, in-repo
-  artifacts under `docs/planning/`, portable config); dev-stack **boot-checked** — Nextcloud **33.0.6** +
-  PostgreSQL 16 come up cleanly (`occ status: installed`). Pins validated: `nextcloud:33-apache`,
-  `postgres:16-alpine`.
+  artifacts under `docs/planning/`, portable config); dev-stack **boot-checked** — Nextcloud + PostgreSQL +
+  Redis come up cleanly (`occ status: installed`). *(Stack later upgraded to NC34 + PG18 — see Stack upgrade
+  below.)*
 
 - **Product brief (2026-07-18):** `docs/planning/briefs/brief-apsconecta-gestion-2026-07-18/brief.md` —
   v1 = Foundation (Epic 0) + Spine A documents; rest is roadmap. Vision, users, scope, non-goals, and
@@ -18,14 +18,14 @@ Status doc. Repo-first SSOT. Updated as work lands.
   v1 scoped **developer-facing**: Foundation (Epic 0) + the *initial* Spine A structure the 3 devs build on
   (live rollout/tutorials/validated measurement deferred to a later production version). **17 FRs** across 5
   features (Foundation · Branding/Locale · RBAC role taxonomy · Document Home 4-area hybrid tree + first-cut
-  access matrix · Collabora), cross-cutting NFRs, Chile Legal, OSS license-outline. Reviewer gate: **strong**
+  access matrix · office suite), cross-cutting NFRs, Chile Legal, OSS license-outline. Reviewer gate: **strong**
   (0 critical/high). Roadmap items (Tables → REM → search → Paperless → Analytics → AI) deferred.
 
 - **Architecture (2026-07-19):**
   `docs/planning/architecture/architecture-apsconecta-gestion-2026-07-18/ARCHITECTURE-SPINE.md` +
-  `docs/ARCHITECTURE.md` — initiative spine, **10 ADs**. Paradigm: vanilla **NC33 + configuration-as-code**,
-  no fork, zero custom PHP in v1. Resolved the deferred mechanism decisions: office = **standalone Collabora
-  CODE** (>20 concurrent, whitest-label); RBAC = **Group Folders** + flat role/category/team groups (registry)
+  `docs/ARCHITECTURE.md` — initiative spine, **11 ADs**. Paradigm: vanilla **NC + configuration-as-code**,
+  no fork, zero custom PHP in v1. Resolved the deferred mechanism decisions: office = **switchable Collabora ↔
+  Euro-Office** (both >20-concurrent, standalone containers); RBAC = **Group Folders** + flat role/category/team groups (registry)
   via one **idempotent `occ` provisioning script**; locale = `es_419`/`es_CL` unlocked. Reviewer gate (lint +
   4 lenses): strong, 0 critical/high after fixes.
 
@@ -42,11 +42,20 @@ Status doc. Repo-first SSOT. Updated as work lands.
   retrospectives, all `backlog`. **Planning phase complete** (brief → PRD → architecture → epics/stories →
   readiness → sprint plan).
 
+- **Story 0.1 — Foundation compose stack (2026-07-19):** `compose.yaml` + `.env.example` + `Makefile` —
+  one-command portable bring-up; implemented, reviewed (PR #7), review-findings fixed (PR #8), **done**.
+
+- **Stack upgrade → NC34 + PG18 + dual office (2026-07-19):** re-pinned `nextcloud:34-apache` (34.0.1) +
+  `postgres:18-alpine` (PG18, NC-recommended); office editing now **switchable between Collabora and
+  Euro-Office** (separate standalone containers, connector-based, one active at a time — AD-5/AD-11). SSOT
+  swept; fresh NC34+PG18 install re-verified. Enables the Collabora-vs-Euro-Office comparison (Euro-Office is
+  NC34-only).
+
 ## Current focus
 
-- **Build — story cycle** (`bmad-create-story` → `bmad-dev-story`): implement **Epic 0 (Foundation & Dev
-  Environment) first**, starting with **Story 0.1 (portable Compose stack)**. This writes real code — Docker
-  Compose + Collabora/WOPI + Xdebug + Makefile + the phase-structured provisioning framework + onboarding.
+- **Build — story cycle** (`bmad-create-story` → `bmad-dev-story`), **Epic 0 first**. Story 0.1 is **done**;
+  the stack is now **NC34 + PG18**. **Next: Story 0.2 — dual switchable office suite (Collabora ↔
+  Euro-Office)**, then the rest of Epic 0.
 
 ## Next (standard BMad Method, pure order)
 

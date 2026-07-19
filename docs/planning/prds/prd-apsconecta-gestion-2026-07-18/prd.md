@@ -34,14 +34,14 @@ scattered across WhatsApp, email, pendrives and Google Drive — where there is 
 **data is quietly lost** — with one permissioned, live-collaborative home. The **core bet** is turning that
 scattered content into a **structured, searchable database** the CESFAM can analyze and use to run its
 processes: the data itself is the value, with a later AI layer as assist *on top*, not the source of it. It is
-built **white-label on Nextcloud 33** (official image, never a source fork), self-hosted and OSS-first, and it
+built **white-label on Nextcloud 34** (official image, never a source fork), self-hosted and OSS-first, and it
 deliberately is **not** an HR, finance, or shift/absence system: it is process- and knowledge-management for
 staff working on their own data.
 
-**v1 delivers the foundation that makes all of that buildable.** It is a running, white-label Nextcloud 33 +
+**v1 delivers the foundation that makes all of that buildable.** It is a running, white-label Nextcloud 34 +
 PostgreSQL + Redis stack that any of the three developers can bring up locally with one command, debug and
 test, plus the **initial Spine A structure**: a role-based access model over an organized, permissioned
-folder tree with live collaborative editing (Collabora / Nextcloud Office) working end to end. v1 is the
+folder tree with live collaborative editing (Nextcloud Office — Collabora or Euro-Office) working end to end. v1 is the
 scaffold the team improves on — correct in its bones (branding, locale, roles, permissions, editing), and
 deliberately thin everywhere the real answer depends on watching real staff use it.
 
@@ -97,15 +97,19 @@ introduced elsewhere is a discipline violation.*
 - **CESFAM** — *Centro de Salud Familiar*, a Chilean primary-healthcare centre. The eventual deploy target is
   one real CESFAM.
 - **Nextcloud (Hub)** — the OSS self-hosted collaboration platform the suite is built on, pinned to
-  **Nextcloud 33** (`33-apache`), used **white-label** via the official image — **never a source fork**.
-- **Collabora / Nextcloud Office** — the integrated office suite providing **live collaborative editing** of
-  documents inside Nextcloud.
+  **Nextcloud 34** (`34-apache`), used **white-label** via the official image — **never a source fork**.
+- **Office suite (via Nextcloud Office)** — the integrated engine providing **live collaborative editing** of
+  documents inside Nextcloud, delivered by a **standalone document-server container**. v1 ships **two
+  switchable backends** to trial and compare — **Collabora CODE** (`richdocuments` connector) and
+  **Euro-Office** (`eurooffice` connector) — each its own container reached from Nextcloud Office via its own
+  connector and URL, **exactly one active at a time**.
 - **White-label** — Nextcloud re-branded as *APS Conecta* (name, logo, theme, locale) via supported theming,
   with no fork of Nextcloud source.
-- **Foundation (Epic 0)** — the first deliverable and first definition of success: the repo + Nextcloud 33
+- **Foundation (Epic 0)** — the first deliverable and first definition of success: the repo + Nextcloud 34
   stack + local dev/debug environment where the three developers read, build, run, debug and test the suite.
-- **Spine A** — the **documents** track of v1: vanilla Nextcloud + Collabora live editing + role-based access +
-  an organized, permissioned folder/group structure. v1's feature scope is Foundation + Spine A only.
+- **Spine A** — the **documents** track of v1: vanilla Nextcloud + office-suite live editing (Collabora or
+  Euro-Office) + role-based access + an organized, permissioned folder/group structure. v1's feature scope is
+  Foundation + Spine A only.
 - **Layer 1 / Layer 2 / Layer 3** — Layer 1 = native Nextcloud apps configured/white-labeled; Layer 2 = custom
   CESFAM apps (e.g. the future REM app); Layer 3 = the AI layer (local models). v1 is Foundation + Layer 1
   (Spine A); Layers 2–3 are roadmap.
@@ -147,7 +151,7 @@ live in `addendum.md` and are settled by `bmad-architecture`.*
 ### 4.1 Foundation & Local Dev Environment (Epic 0)
 
 **Description:** The first deliverable and first definition of success. A developer clones the repo and brings
-the entire suite up locally — **Nextcloud 33 + PostgreSQL + Redis** — with one command, then debugs, tests,
+the entire suite up locally — **Nextcloud 34 + PostgreSQL + Redis** — with one command, then debugs, tests,
 and extends it. Because v1's users *are* the three developers, this feature is the product's core: a portable,
 reproducible, debuggable environment plus a repo that teaches its own use. Custom code and themes live in the
 repo and are bind-mounted so edits are live. No step depends on one developer's machine.
@@ -162,7 +166,7 @@ running Nextcloud in a browser.
 **Consequences (testable):**
 - From `clone → copy the example env → one `make`-style command`, the stack starts with **no manual
   per-service steps**.
-- Nextcloud reports installed and healthy (`occ status` → `installed: true`) against PostgreSQL 16, with Redis
+- Nextcloud reports installed and healthy (`occ status` → `installed: true`) against PostgreSQL 18, with Redis
   active for caching/locking.
 - The instance is reachable at a documented local URL/port defined in committed config.
 
@@ -394,11 +398,14 @@ as content grows.
 - `[NON-GOAL for MVP]` automated enforcement / AI auto-sorting of documents — that is a roadmap AI-layer
   capability, not v1.
 
-### 4.5 Live Collaborative Editing (Collabora / Nextcloud Office)
+### 4.5 Live Collaborative Editing (Nextcloud Office — Collabora or Euro-Office)
 
 **Description:** Documents are edited live, in the browser, inside Nextcloud — the capability that makes the
-Document Home a working replacement for emailing files around. Collabora / Nextcloud Office runs as part of the
-stack so multiple users co-edit the same document with changes converging.
+Document Home a working replacement for emailing files around. The office engine runs as a **standalone
+document-server container** wired to Nextcloud Office; multiple users co-edit the same document with changes
+converging. v1 ships **two switchable backends** so the team can trial and compare them — **Collabora CODE**
+and **Euro-Office** — **exactly one active at a time**; the requirements below hold for whichever backend is
+active.
 
 **Functional Requirements:**
 
@@ -408,8 +415,8 @@ A user can open and edit office documents (text, spreadsheet, presentation) dire
 Nextcloud.
 
 **Consequences (testable):**
-- Opening a supported document launches the in-browser editor against the running stack (Collabora / NC
-  Office reachable from the instance).
+- Opening a supported document launches the in-browser editor against the running stack (the active office
+  backend — Collabora or Euro-Office — reachable from the instance via Nextcloud Office).
 - Create-new works for at least text, spreadsheet, and presentation document types.
 
 #### FR-16: Concurrent live co-editing
@@ -464,7 +471,7 @@ What APS Conecta Gestión is **not**, and what v1 will **not** do — so no epic
 The **developer-facing v1**: a runnable, debuggable, white-label foundation plus the initial Spine A document
 structure.
 
-- **Foundation / Epic 0** (FR-1…FR-6): one-command local bring-up (NC 33 + PostgreSQL 16 + Redis), live PHP
+- **Foundation / Epic 0** (FR-1…FR-6): one-command local bring-up (NC 34 + PostgreSQL 18 + Redis), live PHP
   debugging, smoke/test gate, synthetic fixtures, repo-as-SSOT onboarding, custom app/theme live-mounts.
 - **White-label branding & locale** (FR-7…FR-8): APS Conecta identity; es-CL / America-Santiago / Chilean
   formats as defaults.
@@ -472,8 +479,8 @@ structure.
   roles); group-based access; user provisioning with multi-role.
 - **Document Home / Spine A** (FR-12…FR-14): the first-cut hybrid tree (Transversal · Programas · Unidades ·
   Sectores) as group folders; the first-cut access matrix; organization conventions.
-- **Live collaborative editing** (FR-15…FR-17): Collabora / Nextcloud Office integrated; concurrent co-editing;
-  OSS format support, no paid license.
+- **Live collaborative editing** (FR-15…FR-17): Nextcloud Office integrated with a switchable office backend
+  (Collabora or Euro-Office, one active); concurrent co-editing; OSS format support, no paid license.
 
 ### 6.2 Out of Scope for MVP
 
@@ -541,7 +548,8 @@ sets no adoption/wellbeing targets.
   primary access control. Real data and secrets never enter git, Docker volumes, or Syncthing.
 - **NFR-3 · OSS-first & license clarity.** All components are **open-source, self-hosted, and free — no paid
   licenses**; prefer the most permissive licenses that allow free modification; copyleft cores (Nextcloud
-  AGPL, Collabora, and future Paperless-ngx GPL) are accepted for self-hosting. An explicit **License outline**
+  AGPL, Euro-Office AGPL, and future Paperless-ngx GPL — Collabora CODE is MPL-2.0) are accepted for
+  self-hosting. Both office backends are OSS and free at CESFAM scale. An explicit **License outline**
   enumerating every app/stack/dependency license is a committed SSOT artifact.
 - **NFR-4 · Language split.** All **user-facing UI is Spanish (es-CL)**; all **code, backend, identifiers,
   comments, and docs are English** — consistently.
@@ -578,10 +586,11 @@ data).*
 
 ## 11. Integration & Dependencies
 
-- **Collabora / Nextcloud Office** — service dependency for live collaborative editing (FR-15–FR-17); part of
-  the dev stack.
-- **Core stack** — **Nextcloud 33** (official image), **PostgreSQL 16**, **Redis**. Exact pins and topology are
-  ratified by `bmad-architecture` (already boot-checked: NC 33.0.6 + PG 16 come up clean).
+- **Office suite (Nextcloud Office)** — service dependency for live collaborative editing (FR-15–FR-17);
+  **two switchable standalone backends** — Collabora CODE and Euro-Office — one active at a time, part of the
+  dev stack. Euro-Office requires NC34+, which drives the NC34 pin.
+- **Core stack** — **Nextcloud 34** (official image), **PostgreSQL 18**, **Redis**. Exact pins and topology are
+  ratified by `bmad-architecture`; the stack is re-verified fresh on NC34 + PG18 in Story 0.1.
 - **GitHub** — the **project SSOT** and the manager of developer access/collaboration (repo-first, repo
   canonical). Distinct from **product content** — the CESFAM's documents/data live in Nextcloud, not GitHub.
 - **Context7 MCP** — reference documentation (Nextcloud admin/dev/OCP, Vue kit) is pulled **live** and never
@@ -606,7 +615,9 @@ perform it.
 4. **RBAC category modeling** — flat groups vs nested groups vs naming convention for the four categories
    (architecture decision; see Assumptions).
 5. **es-CL locale handling** in Nextcloud — discrete es-CL vs `es`/`es_419` fallback (architecture).
-6. **Collabora deployment shape** — bundled CODE vs separate Collabora Online service (architecture).
+6. **Which office suite wins?** Deployment shape is resolved (standalone document-server containers, switchable
+   via Nextcloud Office, one active — AD-5/AD-11); the open call is **Collabora vs Euro-Office** after trialing
+   both in v1.
 7. **License outline** — enumerate every component/dependency license and confirm copyleft acceptance per item
    (committed SSOT artifact).
 8. **Production concerns** — hosting, sizing, backup, RTO/RPO — out of v1; to be defined for the production

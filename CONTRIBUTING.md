@@ -31,7 +31,7 @@ via Claude Code; `.claude/skills/` is regenerable (`bmad install`) and gitignore
 
 ## Local dev environment
 
-> **Delivered in Epic 0 (Foundation).** Portable, machine-agnostic Docker Compose (Nextcloud 33 +
+> **Delivered in Epic 0 (Foundation).** Portable, machine-agnostic Docker Compose (Nextcloud 34 +
 > PostgreSQL + Redis) with Xdebug + VS Code config + a `Makefile`. Each dev runs it **locally**. The
 > quickstart (`clone → cp .env.example .env → make up → http://localhost:${HTTP_PORT}`) and per-OS notes
 > land here once that epic ships.
