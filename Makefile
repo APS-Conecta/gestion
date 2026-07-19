@@ -6,7 +6,7 @@
 # `make smoke` / `make test` = the local quality gate (Story 0.4); `make seed` runs provisioning
 # (the pipeline content arrives in Story 0.5).
 .DEFAULT_GOAL := help
-.PHONY: help up up-dev down seed smoke test office-collabora office-eurooffice office-smoke office-down
+.PHONY: help up up-dev down seed smoke test fix-mount-perms office-collabora office-eurooffice office-smoke office-down
 
 OCC = docker compose exec -T --user www-data nextcloud php occ
 NET = apsconecta-gestion_default
@@ -21,10 +21,17 @@ help: ## Show available targets
 up: ## Start the core stack (services only)
 	@test -f .env || { echo "No .env found — run: cp .env.example .env  (then edit the passwords)"; exit 1; }
 	docker compose up -d
+	@$(MAKE) --no-print-directory fix-mount-perms
 
 up-dev: ## Start the core stack with the Xdebug derived dev image (step-debugging on :9003)
 	@test -f .env || { echo "No .env found — run: cp .env.example .env  (then edit the passwords)"; exit 1; }
 	docker compose -f compose.yaml -f compose.dev.yaml up -d --build
+	@$(MAKE) --no-print-directory fix-mount-perms
+
+fix-mount-perms: ## Make the bind-mounted apps/ + themes/ writable by the container (www-data / uid 33)
+	@# Linux bind mounts keep host ownership; Nextcloud (uid 33) must own custom_apps/themes to install
+	@# apps (groupfolders, office connectors) there. Done in-container so no host sudo is needed.
+	@docker compose exec -T -u root nextcloud chown www-data:www-data /var/www/html/custom_apps /var/www/html/themes 2>/dev/null || true
 
 down: ## Stop the stack (keeps volumes)
 	docker compose down

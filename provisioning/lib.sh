@@ -82,13 +82,24 @@ add_user_to_group() {  # UID GID  (query-before-add: accurate + idempotent)
     occ group:adduser "$2" "$1" >/dev/null 2>&1 && log "user $1 added to group $2"; fi
 }
 
+# --- apps (install-or-enable; idempotent) ---
+ensure_app() {  # APPID
+  local app="$1"
+  [ "$(occ config:app:get "$app" enabled 2>/dev/null | tr -d '\r')" = "yes" ] && { log "app $app enabled"; return 0; }
+  if occ app:install "$app" >/dev/null 2>&1 || occ app:enable "$app" >/dev/null 2>&1; then
+    log "app $app installed/enabled"
+  else log "FAILED to install/enable app $app (is custom_apps writable? see make up chown)"; return 1; fi
+}
+
 # --- group folders: groupfolders:create is NOT idempotent by name, so ALWAYS query first ---
+# NB: the groupfolders app (v22+) uses the JSON key `mountPoint` (camelCase). Accept the older
+# `mount_point` too for safety.
 groupfolder_id() {  # MOUNT -> prints the folder id, or empty
   occ groupfolders:list --output=json 2>/dev/null | python3 -c \
     'import sys,json
 d=json.load(sys.stdin)
 for r in (d.values() if isinstance(d,dict) else d):
-    if r.get("mount_point")==sys.argv[1]:
+    if (r.get("mountPoint") or r.get("mount_point"))==sys.argv[1]:
         print(r.get("id")); break' "$1" 2>/dev/null
 }
 ensure_groupfolder() {  # MOUNT -> ensures it exists, prints its id
@@ -98,6 +109,35 @@ ensure_groupfolder() {  # MOUNT -> ensures it exists, prints its id
     id="$(occ groupfolders:create "$mount" 2>/dev/null | grep -oE '[0-9]+' | head -1)"
     log "groupfolder '$mount' created (id $id)"; fi
   printf '%s\n' "$id"
+}
+# Grant a group access to a group folder (allow-only; empty perms = read-only). Idempotent.
+gf_grant() {  # MOUNT GROUP [read] [write] ...
+  local mount="$1" group="$2"; shift 2
+  local id; id="$(groupfolder_id "$mount")"
+  [ -n "$id" ] || { log "groupfolder '$mount' not found — cannot grant $group"; return 1; }
+  occ groupfolders:group "$id" "$group" "$@" >/dev/null 2>&1 && log "grant '$mount' -> $group [${*:-read}]"
+}
+# Create a text file inside a group folder's storage, then index it. Idempotent (test -f).
+ensure_gf_file() {  # MOUNT RELPATH CONTENT
+  local mount="$1" rel="$2" content="$3" id; id="$(groupfolder_id "$mount")"
+  [ -n "$id" ] || { log "groupfolder '$mount' not found — cannot write $rel"; return 1; }
+  local path="/var/www/html/data/__groupfolders/$id/$rel"
+  if docker compose exec -T --user www-data nextcloud test -f "$path" 2>/dev/null; then
+    log "  file $mount/$rel exists"; return 0; fi
+  docker compose exec -T --user www-data -e GFC="$content" nextcloud sh -c "printf '%s' \"\$GFC\" > '$path'"
+  occ groupfolders:scan "$id" >/dev/null 2>&1 || true
+  log "  file $mount/$rel created"
+}
+# Create a regular subfolder inside a group folder's storage, then index it. Idempotent (test -d).
+ensure_gf_subfolder() {  # MOUNT SUBFOLDER
+  local mount="$1" sub="$2" id; id="$(groupfolder_id "$mount")"
+  [ -n "$id" ] || { log "groupfolder '$mount' not found — cannot add $sub"; return 1; }
+  local path="/var/www/html/data/__groupfolders/$id/$sub"
+  if docker compose exec -T --user www-data nextcloud test -d "$path" 2>/dev/null; then
+    log "  subfolder $mount/$sub exists"; return 0; fi
+  docker compose exec -T --user www-data nextcloud mkdir -p "$path"
+  occ groupfolders:scan "$id" >/dev/null 2>&1 || true
+  log "  subfolder $mount/$sub created"
 }
 
 # --- content fixtures (query-before-create): put a file in a user's Files, then index it ---
