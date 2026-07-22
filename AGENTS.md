@@ -26,8 +26,8 @@ data**.
 
 ## Do not touch (sibling projects on the same host)
 
-`FEATURES/REM ANALYZER`, `/srv/syncthing/CESFAMS`, and co-located tenants (Jomy, mailcow, glitchtip,
-coolify, homepage, syncthing). This repo is self-contained under its own clone.
+`/srv/syncthing/CESFAMS` and co-located tenants (Jomy, mailcow, glitchtip, coolify, homepage, syncthing).
+This repo is self-contained under its own clone.
 
 ## Tooling notes
 

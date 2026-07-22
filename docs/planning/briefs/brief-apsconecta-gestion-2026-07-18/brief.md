@@ -123,5 +123,4 @@ America)**. This is a first-class, tracked concern with its own committed **Lega
 
 A CESFAM whose knowledge and processes live in one secure, **structured, searchable** place — where an
 **AI layer running locally on the CESFAM's own data** auto-organizes documents, flags expiring protocols,
-finds cross-reference errors, and assists program analysis. Sibling project **REM ANALYZER** integrates
-here.
+finds cross-reference errors, and assists program analysis.
