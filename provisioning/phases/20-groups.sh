@@ -1,5 +1,5 @@
 # Phase 20 — groups.  OWNER: Epic 2 (only Epic 2 edits this file).
-# Provisions the canonical Group Registry (ARCHITECTURE-SPINE.md#Group-Registry): all-staff, the 4 cat-*
+# Provisions the canonical Group Registry (docs/planning/architecture/architecture-apsconecta-gestion-2026-07-18/ARCHITECTURE-SPINE.md): all-staff, the 4 cat-*
 # categories, the 21 role-* groups, and example prog-*/sector-* team placeholders. English IDs, Spanish
 # display names. Idempotent (ensure_group = query-before-create). Grants target IDs, never display names.
 phase_begin "20-groups" "Role / category / team group registry (Epic 2)"

@@ -5,13 +5,9 @@ A three-person team collaborates here — an owner (product, requirements, UAT s
 
 ## Principles (non-negotiable)
 
-- **DRY** — one source per fact/behaviour, no duplication.
-- **SOLID** — single responsibility, clear boundaries, decoupled, self-documenting.
-- **KISS + YAGNI (ponytail)** — the simplest thing that works; delete over add; no speculative abstraction.
-- **Language split** — **code, backend, identifiers, comments, and these docs in English**; **all
-  user-facing UI text in Spanish** (`es`, Chile).
-- **Data** — internal ops only, **no patient/clinical data**. Dev uses **synthetic fixtures only**; real
-  data and secrets never enter git, Docker volumes, or Syncthing.
+Defined once in [`AGENTS.md`](AGENTS.md) — DRY/SOLID/KISS·YAGNI, the language split (code/docs English, UI
+Spanish), and the data/secrets invariants (no patient data, synthetic fixtures only, secrets never in git).
+They bind every contributor and agent.
 
 ## Workflow (GitHub Flow)
 
@@ -33,11 +29,10 @@ signs off **UAT** (acceptance); the developers pull from Ready through In Review
 using the templates in [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE) (a technical *Dev task/bug* and a
 plain-language *Solicitud*).
 
-## Planning (BMad Method)
+## Planning
 
-Planning is driven by the **standard BMad Method**; run the `bmad-help` skill to find the next step.
-All artifacts are committed under `docs/planning/` — the repo is the SSOT, GitHub is its mirror. BMad runs
-via Claude Code; `.claude/skills/` is regenerable (`bmad install`) and gitignored.
+All planning artifacts are committed under `docs/planning/` (brief → PRD → architecture → epics/stories →
+sprint status) — the repo is the SSOT, GitHub is its mirror.
 
 ## Local dev environment
 

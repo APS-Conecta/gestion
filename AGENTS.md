@@ -1,6 +1,6 @@
 # AGENTS.md — APS Conecta Gestión (canonical repo rules)
 
-Rules for any AI agent (Claude Code, BMad agents) working in this repo. `CLAUDE.md` imports this file.
+Rules for any AI agent (e.g. Claude Code) working in this repo. `CLAUDE.md` imports this file.
 
 ## What this project is
 
@@ -10,8 +10,8 @@ data**.
 
 ## How we work
 
-- **Methodology:** standard **BMad Method** (v6.10.0). Planning artifacts are the committed SSOT under
-  `docs/planning/`; architecture in `docs/ARCHITECTURE.md`. Repo-first SSOT (repo wins; any wiki mirrors).
+- **Planning SSOT:** committed under `docs/planning/`; architecture in `docs/ARCHITECTURE.md`.
+  Repo-first SSOT (repo wins; any wiki mirrors).
 - **Principles:** DRY · SOLID · KISS/YAGNI (ponytail — minimal, delete over add). See `CONTRIBUTING.md`.
 - **Language split:** code/backend/docs in **English**; user-facing UI in **Spanish**.
 - **Coordination:** GitHub Flow, PR + 1 approval (convention gate), private repo. Conventional Commits.
@@ -28,8 +28,3 @@ data**.
 
 `/srv/syncthing/CESFAMS` and co-located tenants (Jomy, mailcow, glitchtip, coolify, homepage, syncthing).
 This repo is self-contained under its own clone.
-
-## Tooling notes
-
-BMad runs via Claude Code; `.claude/skills/` is regenerable (`bmad install`) and gitignored. BMad config
-(`_bmad/config.toml`, `_bmad/custom/config.toml`) is committed and uses `{project-root}`-relative paths.

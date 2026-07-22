@@ -25,23 +25,6 @@ config_system_set() {  # KEY VALUE
   if [ "$cur" = "$val" ]; then log "system:$key already = $val"; else
     occ config:system:set "$key" --value="$val" >/dev/null && log "system:$key -> $val"; fi
 }
-config_app_set() {  # APP KEY VALUE
-  local app="$1" key="$2" val="$3" cur
-  cur="$(occ config:app:get "$app" "$key" 2>/dev/null | tr -d '\r')"
-  if [ "$cur" = "$val" ]; then log "app:$app:$key already = $val"; else
-    occ config:app:set "$app" "$key" --value="$val" >/dev/null && log "app:$app:$key -> $val"; fi
-}
-
-# --- theming (idempotent set-if-different; NC34 CLI supports text/color keys, NOT image keys) ---
-_norm() { case "$1" in yes|true|1|on) echo 1;; no|false|0|off|"") echo 0;; *) echo "$1";; esac; }
-theming_set() {  # KEY VALUE
-  local key="$1" val="$2" raw cur
-  # `occ theming:config <key>` returns a sentence ("<key> is currently set to <value>"), not the bare value.
-  raw="$(occ theming:config "$key" 2>/dev/null | tr -d '\r')"
-  case "$raw" in *"is currently set to "*) cur="${raw#*is currently set to }";; *) cur="";; esac
-  if [ "$(_norm "$cur")" = "$(_norm "$val")" ]; then log "theming:$key already = $val"; else
-    occ theming:config "$key" "$val" >/dev/null && log "theming:$key -> $val"; fi
-}
 
 # --- groups (query-before-create) ---
 group_exists() {  # GID

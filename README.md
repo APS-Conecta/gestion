@@ -4,7 +4,7 @@ Internal management / intranet suite for a Chilean CESFAM (primary-healthcare ce
 **white-label Nextcloud** deployment (official image, **no source fork**), self-hosted via Docker.
 
 > **Status: ✅ v1 feature-complete (Foundation + Spine A).** Epics 0–4 are merged — dev stack + debugger +
-> quality gate + provisioning, APS Conecta branding + es-CL locale, roles/access, the four-area document
+> quality gate + provisioning, es-CL locale, roles/access, the four-area document
 > tree, and switchable live office editing. The one remaining v1 step is a human browser-acceptance run
 > (see *Current state* below). No patient data — dev uses **synthetic fixtures only**.
 
@@ -115,10 +115,11 @@ convergence, cursor presence, open/save fidelity — are a human runbook at
 ## Current state (what `make seed` provisions today)
 
 Config-as-code is applied only by `make seed`, in fixed phase order (`provisioning/README.md`). As of v1
-(Epics 0–4 merged), a full `make seed` applies the whole white-label instance: APS Conecta **branding +
-es-CL locale** (phase 10), the **role/team group registry** (phase 20), the **four-area Document Home tree +
-first-cut access matrix** (phases 30–40), and synthetic **fixture users + a sample file** (phases 50–60).
-Live collaborative editing is native to the office backend (`make office-collabora` / `make office-eurooffice`).
+(Epics 0–4 merged), a full `make seed` applies **es-CL locale** (phase 10), the **role/team group
+registry** (phase 20), the **four-area Document Home tree + first-cut access matrix** (phases 30–40), and
+synthetic **fixture users + a sample file** (phases 50–60). White-label branding is not applied in v1 —
+the instance runs the default Nextcloud theme. Live collaborative editing is native to the office backend
+(`make office-collabora` / `make office-eurooffice`).
 The one remaining v1 step is the human browser-acceptance run ([`docs/ACCEPTANCE-EDITING.md`](docs/ACCEPTANCE-EDITING.md)).
 
 ## Developing — how to implement a feature
@@ -145,11 +146,11 @@ Features are applied by numbered scripts in `provisioning/phases/`, run in **fix
 `make seed` (structure 10–40 before fixtures 50–60). **One epic owns one file** (see each file's `# OWNER:`
 header) — a new epic adds its own `NN-*.sh` at the right position and `seed.sh` picks it up automatically (it
 globs + sorts `phases/[0-9]*.sh`); no central registration, so parallel epics never collide. Each phase maps
-to a BMad story under [`docs/planning/implementation/`](docs/planning/implementation/).
+to a story under [`docs/planning/implementation/`](docs/planning/implementation/).
 
 Each phase is framed by `phase_begin "NN-name" "…"` … `phase_end`, and its body uses only the
 **query-before-create guard helpers** in `provisioning/lib.sh`, so re-running converges instead of duplicating
-— e.g. `config_system_set`, `config_app_set`, `theming_set`, `ensure_group`, `ensure_user`, `ensure_app`,
+— e.g. `config_system_set`, `ensure_group`, `ensure_user`, `ensure_app`,
 `ensure_groupfolder`, `gf_grant`, `ensure_gf_file`. **Never blind-create.** Verify by re-running `make seed`
 (every line should log "exists" / "already =") then `make test`. Full helper list + the contract:
 [`provisioning/README.md`](provisioning/README.md).
@@ -160,8 +161,8 @@ Each phase is framed by `phase_begin "NN-name" "…"` … `phase_end`, and its b
 runs `make fix-mount-perms` so the container (uid 33) can write them. A custom app talks to Nextcloud **only
 through OCP public APIs (`OCP\…`)** — never patch core (AD-9) — carries an `appinfo/info.xml`
 (`min-version="34"`), and is enabled with `occ app:enable <id>`. **v1 ships none** (config-as-code only); these
-dirs are the Layer-2 roadmap seam (e.g. the REM app). White-labeling in v1 is **config, not theme files** (the
-`10-branding` phase).
+dirs are the Layer-2 roadmap seam (e.g. the REM app). White-labeling is **config, not theme files** (AD-6);
+v1 applies no branding (default theme) — only es-CL locale, in the `10-locale` phase.
 
 ### Switching the office backend
 
@@ -170,11 +171,8 @@ its connector and runs an editing smoke. `make office-formats` audits the active
 
 ### Guardrails you must not break
 
-No source fork / no core patch / zero custom PHP (v1) · **no patient data**, synthetic fixtures only · never
-commit `.env`, secrets, or volumes · portable (nothing VPS-specific or absolute-pathed; `host.docker.internal`
-must work cross-OS) · language split (code/docs English, UI Spanish) · ACLs are **allow-only, no DENY**. These
-are the [`AGENTS.md`](AGENTS.md) invariants and the `AD-*` decisions in
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+Defined once in [`AGENTS.md`](AGENTS.md) (the invariants) and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+(the `AD-*` decisions). Read them before you touch the stack.
 
 ## Contributing & conventions
 
@@ -183,9 +181,9 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) — GitHub Flow + the PR review gate, p
 
 ## How we build it
 
-Driven by the **standard BMad Method** (v6.10.0). Planning artifacts are the committed **single source of
-truth** under [`docs/planning/`](docs/planning/); architecture in
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Start with the `bmad-help` skill to see the next step.
+Planning artifacts are the committed **single source of truth** under
+[`docs/planning/`](docs/planning/) (brief → PRD → architecture → epics/stories → sprint status);
+architecture overview in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Reference docs (pulled live via Context7 MCP — never hardcode)
 
@@ -195,4 +193,3 @@ truth** under [`docs/planning/`](docs/planning/); architecture in
 | Nextcloud app development | `/websites/nextcloud_server_developer_manual` |
 | Nextcloud PHP / OCP API | `/websites/nextcloud-server_netlify_app` |
 | Nextcloud Vue UI kit | `/nextcloud-libraries/nextcloud-vue` |
-| BMad Method (full) | https://docs.bmad-method.org/llms-full.txt |
