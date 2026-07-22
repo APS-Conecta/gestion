@@ -7,8 +7,7 @@ updated: 2026-07-18
 
 # Product Brief: APS Conecta — Gestión
 
-> **Status: ready.** The WHAT for the APS Conecta Gestión rebuild — feeds the PRD (the HOW). Audit trail
-> in `.memlog.md`.
+> **Status: ready.** The WHAT for the APS Conecta Gestión rebuild — feeds the PRD (the HOW).
 
 **Naming & brand.** *APS Conecta* is the umbrella **brand/project**; ***APS Conecta Gestión*** is **this
 app** — the management app. The white-label Nextcloud carries the **APS Conecta** brand, and future sibling
