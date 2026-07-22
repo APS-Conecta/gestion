@@ -17,7 +17,6 @@ can.
 The dev stack runs locally, bound to loopback, with synthetic data. These are **deliberate local-dev
 conveniences**, not production weaknesses, and are out of scope for vulnerability reports:
 
-- Collabora's **self-signed HTTPS** on `localhost:9980`.
 - **Redis without a password** (internal to the compose network, not published).
 - Services bound to **`127.0.0.1`** only; office images tracked at `:latest` (see `docs/LICENSING.md`).
 

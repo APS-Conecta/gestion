@@ -2,7 +2,7 @@
 # Vanilla Nextcloud 34 + PostgreSQL 18 + Redis, official images only (no fork — AD-1).
 # `make up` starts these services ONLY. Provisioning (branding/groups/folders/fixtures)
 # is the separate `make seed` pipeline from Story 0.5 onward (AD-2). The office suite
-# (Collabora / Euro-Office, switchable — AD-5/AD-11) is Story 0.2.
+# (Euro-Office — AD-5) is Story 0.2.
 #
 # Required vars come from .env (copy .env.example → .env). The ${VAR:?...} guards fail
 # fast with a clear message if a required value is missing or empty.
@@ -74,43 +74,13 @@ services:
       retries: 10
       start_period: 120s
 
-  # ── Office backend A: Collabora CODE (profile: collabora) — Story 0.2, AD-5/AD-11 ──
-  # Only comes up under `--profile collabora`. Wired to Nextcloud Office via `richdocuments`/WOPI
-  # by `make office-collabora`. Never runs alongside eurooffice (AD-11).
-  collabora:
-    image: collabora/code:latest
-    profiles: ["collabora"]
-    restart: "no"
-    cap_add:
-      - MKNOD
-    environment:
-      # aliasgroup1 = the Nextcloud host the BROWSER uses (regex; escape dots on real domains). Replaces
-      # the deprecated `domain=`. host<->container only — server-side WOPI uses the service name (AD-8).
-      - "aliasgroup1=http://localhost:${HTTP_PORT}"
-      - "username=${COLLABORA_ADMIN_USER:?set COLLABORA_ADMIN_USER in .env}"
-      - "password=${COLLABORA_ADMIN_PASSWORD:?set COLLABORA_ADMIN_PASSWORD in .env}"
-      - "dictionaries=en_US es_ES"
-      # This CODE image ignores `--o:ssl.enable=false` and always serves HTTPS (self-signed) on 9980.
-      # So we embrace it: the connector is wired over https:// with cert verification disabled
-      # (`richdocuments disable_certificate_verification=yes`, set by `make office-collabora`). For
-      # in-browser editing, accept the self-signed cert once at https://localhost:${OFFICE_PORT}.
-    ports:
-      # Loopback only (rule 16). Shared OFFICE_PORT — only one office backend runs at a time (AD-11).
-      - "127.0.0.1:${OFFICE_PORT:?set OFFICE_PORT in .env}:9980"
-    # Lets Collabora reach Nextcloud's host-published port for the WOPI callback round-trip (AD-8).
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    # No compose healthcheck: the image ships its OWN (`coolwsd --probe`) and lacks `curl`/`sh` for a
-    # CMD/CMD-SHELL probe anyway. Reachability is also asserted host-side (Makefile wait) + by the smoke
-    # (NC→collabora over https). Nothing `depends_on` collabora, so no extra health gate is needed.
-
-  # ── Office backend B: Euro-Office documentserver (profile: eurooffice) — Story 0.2, AD-5/AD-11 ──
+  # ── Office backend: Euro-Office documentserver (profile: eurooffice) — Story 0.2, AD-5 ──
   # Only comes up under `--profile eurooffice`. Wired via the `eurooffice` connector + shared JWT by
   # `make office-eurooffice`. Self-contained image (bundles its own PG/Redis/RabbitMQ) — do NOT wire
-  # it to the core db/redis. Never runs alongside collabora (AD-11).
+  # it to the core db/redis.
   eurooffice:
-    # No semver release tag is published on GHCR (only `latest` + CI build tags) — use `latest`,
-    # consistent with collabora/code:latest. Pin a digest if byte-reproducibility becomes necessary.
+    # No semver release tag is published on GHCR (only `latest` + CI build tags) — use `latest`.
+    # Pin a digest if byte-reproducibility becomes necessary.
     image: ghcr.io/euro-office/documentserver:latest
     profiles: ["eurooffice"]
     restart: "no"
@@ -120,7 +90,7 @@ services:
       # Required so the doc server may fetch documents over the private compose network (ONLYOFFICE-fork gotcha).
       - "ALLOW_PRIVATE_IP_ADDRESS=true"
     ports:
-      # Loopback only (rule 16). Internal port is 80. Shared OFFICE_PORT (one backend at a time, AD-11).
+      # Loopback only (rule 16). Internal port is 80, published on the host as OFFICE_PORT.
       - "127.0.0.1:${OFFICE_PORT:?set OFFICE_PORT in .env}:80"
     # Lets Euro-Office reach Nextcloud's host-published port for callbacks if needed (AD-8).
     extra_hosts:

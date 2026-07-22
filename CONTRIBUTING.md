@@ -31,8 +31,8 @@ plain-language *Solicitud*).
 
 ## Planning
 
-All planning artifacts are committed under `docs/planning/` (brief → PRD → architecture → epics/stories →
-sprint status) — the repo is the SSOT, GitHub is its mirror.
+The design is committed under `docs/` (architecture in `docs/ARCHITECTURE.md`); status narrative in
+`ROADMAP.md` — the repo is the SSOT, GitHub is its mirror.
 
 ## Local dev environment
 
@@ -44,7 +44,7 @@ Two invariants when you touch the stack: nothing VPS-specific or absolute-pathed
 hand-click config into the running instance (AD-2).
 
 **Secrets:** all passwords live in your gitignored `.env` (copy from `.env.example`). For a single
-readable sheet of every stack credential (Nextcloud admin, PostgreSQL, Collabora, Euro-Office JWT, fixture
+readable sheet of every stack credential (Nextcloud admin, PostgreSQL, Euro-Office JWT, fixture
 users), run **`make credentials`** → writes `CREDENTIALS.local.md` (gitignored, mode 600, generated from
 `.env` — never hand-edit; re-run after a rotation). Never commit `.env` or that file.
 

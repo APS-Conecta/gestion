@@ -5,14 +5,13 @@ Internal management / intranet suite for a Chilean CESFAM (primary-healthcare ce
 
 > **Status: ✅ v1 feature-complete (Foundation + Spine A).** Epics 0–4 are merged — dev stack + debugger +
 > quality gate + provisioning, es-CL locale, roles/access, the four-area document
-> tree, and switchable live office editing. The one remaining v1 step is a human browser-acceptance run
+> tree, and live office editing. The one remaining v1 step is a human browser-acceptance run
 > (see *Current state* below). No patient data — dev uses **synthetic fixtures only**.
 
 ## What this is (and isn't)
 
 - **Is:** staff-facing internal operations (documents, coordination) on **Nextcloud 34 + PostgreSQL 18 +
-  Redis 8**, run locally per developer via Docker Compose, with a switchable office suite (Collabora or
-  Euro-Office).
+  Redis 8**, run locally per developer via Docker Compose, with a self-hosted **Euro-Office** office suite.
 - **Isn't:** a clinical/patient-records system. **No patient data** — dev uses **synthetic fixtures only**.
 
 ## Quickstart
@@ -32,7 +31,7 @@ from the repo root unless noted.
    cp .env.example .env
    ```
    Then **edit `.env`** and replace every `change-me…` placeholder with your own dev values (admin +
-   PostgreSQL passwords at minimum; `OFFICE_JWT_SECRET` if you'll trial Euro-Office — `openssl rand -hex 32`).
+   PostgreSQL passwords at minimum; `OFFICE_JWT_SECRET` if you'll run Euro-Office — `openssl rand -hex 32`).
    *The stack boots with the placeholders, but don't leave real deployments on them.*
 
 3. **Start the core stack** (services only — no provisioning, per AD-2).
@@ -77,19 +76,17 @@ To stop: `make down` (keeps your data volumes). That's the whole loop.
 | `make seed` | Run the idempotent provisioning pipeline (`provisioning/`). |
 | `make smoke` | Health-gate the running stack (0 = healthy). |
 | `make test` | Local quality gate — static checks + smoke (the CI stand-in). |
-| `make office-collabora` / `make office-eurooffice` | Switch the office backend (exactly one active — AD-11). |
-| `make office-formats` | Audit the active backend: 6 editable formats + OSS/no-paid-license (Epic 4). |
-| `make office-down` | Stop both office backends. |
+| `make office-eurooffice` | Bring up the Euro-Office backend and wire the connector (AD-5). |
+| `make office-formats` | Audit the backend: OSS/no-paid-license (Epic 4). |
+| `make office-down` | Stop the office backend. |
 
 **Step-debugging:** `make up-dev`, then in VS Code run the committed **"Listen for Xdebug"** config
 (`.vscode/launch.json`, port 9003) and send a request carrying the Xdebug trigger.
 
-**Office suite:** `make office-collabora` (Collabora CODE, self-signed HTTPS on `:9980`) or
-`make office-eurooffice` (Euro-Office). One at a time; each wires its own Nextcloud Office connector and
-runs an editing smoke. `make office-formats` then audits the active backend (6 editable formats + OSS/no
-paid license). For in-browser editing, accept Collabora's self-signed cert once at `https://localhost:9980`.
+**Office suite:** `make office-eurooffice` brings up Euro-Office, wires the Nextcloud Office connector, and
+runs an editing smoke. `make office-formats` then audits the backend (OSS/no paid license).
 
-**Live editing acceptance (Epic 4):** the editor/WOPI pipe and format/OSS coverage are machine-verified
+**Live editing acceptance (Epic 4):** the editor pipe and OSS coverage are machine-verified
 (`make office-smoke`, `make office-formats`); the browser-only checks — in-browser render, live co-editing
 convergence, cursor presence, open/save fidelity — are a human runbook at
 [`docs/ACCEPTANCE-EDITING.md`](docs/ACCEPTANCE-EDITING.md).
@@ -98,15 +95,14 @@ convergence, cursor presence, open/save fidelity — are a human runbook at
 
 | Path | What |
 |---|---|
-| `compose.yaml` | Core stack (nextcloud/db/redis) + office profiles (collabora/eurooffice). |
+| `compose.yaml` | Core stack (nextcloud/db/redis) + the `eurooffice` office profile. |
 | `compose.dev.yaml`, `Dockerfile.dev`, `dev/xdebug.ini` | The derived Xdebug dev image (AD-10). |
 | `.env.example` | Template for your gitignored `.env`. **Never commit `.env`.** |
 | `Makefile` | The dev lifecycle (`make help`). |
 | `scripts/` | `smoke.sh`, `test.sh`, `office-smoke.sh`, `office-formats.sh` — the gate + office checks. |
 | `provisioning/` | The single idempotent provisioning writer: `seed.sh` runner, `lib.sh` guard helpers, `phases/10-60`, and [`provisioning/README.md`](provisioning/README.md). |
 | `apps/`, `themes/` | Custom apps / theming, live-mounted (v1 ships none — the Layer-2 seam). |
-| `docs/planning/` | Committed SSOT: brief, PRD, architecture, epics, stories, sprint status. |
-| `docs/ARCHITECTURE.md` | The architecture overview (spine in `docs/planning/architecture/…`). |
+| `docs/ARCHITECTURE.md` | The architecture overview (design SSOT). |
 | `ROADMAP.md` · `BUGS.md` | Roadmap narrative · known bugs. Work in progress is on the [Projects board](https://github.com/orgs/APS-Conecta/projects/5). |
 | `LICENSE` · [`docs/LICENSING.md`](docs/LICENSING.md) | Our code's license (proprietary) · full third-party license audit. |
 | `CONTRIBUTING.md` · `AGENTS.md` · `CONTRIBUTORS.md` | Contribution rules + how we track work · AI-agent invariants · the team. |
@@ -119,7 +115,7 @@ Config-as-code is applied only by `make seed`, in fixed phase order (`provisioni
 registry** (phase 20), the **four-area Document Home tree + first-cut access matrix** (phases 30–40), and
 synthetic **fixture users + a sample file** (phases 50–60). White-label branding is not applied in v1 —
 the instance runs the default Nextcloud theme. Live collaborative editing is native to the office backend
-(`make office-collabora` / `make office-eurooffice`).
+(`make office-eurooffice`).
 The one remaining v1 step is the human browser-acceptance run ([`docs/ACCEPTANCE-EDITING.md`](docs/ACCEPTANCE-EDITING.md)).
 
 ## Developing — how to implement a feature
@@ -145,8 +141,7 @@ configuration into the running app; if it isn't scripted, it isn't real.
 Features are applied by numbered scripts in `provisioning/phases/`, run in **fixed order 10 → 60** by
 `make seed` (structure 10–40 before fixtures 50–60). **One epic owns one file** (see each file's `# OWNER:`
 header) — a new epic adds its own `NN-*.sh` at the right position and `seed.sh` picks it up automatically (it
-globs + sorts `phases/[0-9]*.sh`); no central registration, so parallel epics never collide. Each phase maps
-to a story under [`docs/planning/implementation/`](docs/planning/implementation/).
+globs + sorts `phases/[0-9]*.sh`); no central registration, so parallel epics never collide.
 
 Each phase is framed by `phase_begin "NN-name" "…"` … `phase_end`, and its body uses only the
 **query-before-create guard helpers** in `provisioning/lib.sh`, so re-running converges instead of duplicating
@@ -164,15 +159,15 @@ through OCP public APIs (`OCP\…`)** — never patch core (AD-9) — carries an
 dirs are the Layer-2 roadmap seam (e.g. the REM app). White-labeling is **config, not theme files** (AD-6);
 v1 applies no branding (default theme) — only es-CL locale, in the `10-locale` phase.
 
-### Switching the office backend
+### The office backend
 
-`make office-collabora` or `make office-eurooffice` — **exactly one active at a time** (AD-11); each toggles
-its connector and runs an editing smoke. `make office-formats` audits the active backend.
+`make office-eurooffice` brings up Euro-Office (AD-5), wires its connector, and runs an editing smoke.
+`make office-formats` audits the backend.
 
 ### Guardrails you must not break
 
 Defined once in [`AGENTS.md`](AGENTS.md) (the invariants) and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-(the `AD-*` decisions). Read them before you touch the stack.
+(the design paradigm). Read them before you touch the stack.
 
 ## Contributing & conventions
 
@@ -181,9 +176,9 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) — GitHub Flow + the PR review gate, p
 
 ## How we build it
 
-Planning artifacts are the committed **single source of truth** under
-[`docs/planning/`](docs/planning/) (brief → PRD → architecture → epics/stories → sprint status);
-architecture overview in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+The committed **single source of truth** for the design is [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+(the architecture overview); the code itself (`provisioning/phases/`, `compose.yaml`) is authoritative for
+behavior. Status narrative lives in [`ROADMAP.md`](ROADMAP.md).
 
 ## Reference docs (pulled live via Context7 MCP — never hardcode)
 
