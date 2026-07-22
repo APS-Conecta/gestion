@@ -4,18 +4,10 @@
 # Exits non-zero on ANY failure (so it fails loudly on a connector/host/round-trip error).
 set -euo pipefail
 
-OCC="docker compose exec -T --user www-data nextcloud php occ"
-OFFICE_PORT="${OFFICE_PORT:-9980}"
+. "$(dirname "$0")/office-lib.sh"
+office_detect  # sets $rich/$euro, enforces AD-11 (exactly one active)
 
-# An app is enabled iff its appconfig `enabled` value is "yes".
-enabled() { [ "$($OCC config:app:get "$1" enabled 2>/dev/null || true)" = "yes" ]; }
-
-rich=off; euro=off
-enabled richdocuments && rich=on
-enabled eurooffice     && euro=on
-
-# AD-11: exactly one connector active.
-if [ "$rich" = on ] && [ "$euro" = off ]; then
+if [ "$rich" = on ]; then
   echo "Active office backend: Collabora (richdocuments)"
   # Collabora CODE serves HTTPS (self-signed) — use -k. Browser path (host) then server-side (NC container).
   curl -skf "https://localhost:${OFFICE_PORT}/hosting/discovery" >/dev/null \
@@ -26,15 +18,11 @@ if [ "$rich" = on ] && [ "$euro" = off ]; then
   [ -n "$wopi" ] || { echo "FAIL: richdocuments wopi_url is not configured"; exit 1; }
   echo "PASS: Collabora smoke — discovery reachable (host + nextcloud), wopi_url=${wopi}"
 
-elif [ "$euro" = on ] && [ "$rich" = off ]; then
+else
   echo "Active office backend: Euro-Office (eurooffice)"
   curl -sf "http://localhost:${OFFICE_PORT}/healthcheck" >/dev/null \
     || { echo "FAIL: Euro-Office /healthcheck not reachable from host"; exit 1; }
   $OCC eurooffice:documentserver --check \
     || { echo "FAIL: 'occ eurooffice:documentserver --check' reported the server unreachable"; exit 1; }
   echo "PASS: Euro-Office smoke — /healthcheck 200 + documentserver --check OK"
-
-else
-  echo "FAIL: expected exactly ONE office connector enabled (AD-11); got richdocuments=${rich}, eurooffice=${euro}"
-  exit 1
 fi

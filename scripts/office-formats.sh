@@ -11,11 +11,7 @@
 # FIDELITY are human/browser checks — see docs/ACCEPTANCE-EDITING.md.
 set -euo pipefail
 
-OCC="docker compose exec -T --user www-data nextcloud php occ"
-OFFICE_PORT="${OFFICE_PORT:-9980}"
-
-# An app is enabled iff its appconfig `enabled` value is "yes" (same test as office-smoke.sh).
-enabled() { [ "$($OCC config:app:get "$1" enabled 2>/dev/null || true)" = "yes" ]; }
+. "$(dirname "$0")/office-lib.sh"
 
 # The six formats we must be able to EDIT, as "mimetype|ext" pairs (odt/docx, ods/xlsx, odp/pptx).
 FORMATS=(
@@ -27,12 +23,9 @@ FORMATS=(
   "application/vnd.openxmlformats-officedocument.presentationml.presentation|pptx"
 )
 
-rich=off; euro=off
-enabled richdocuments && rich=on
-enabled eurooffice     && euro=on
+office_detect  # sets $rich/$euro, enforces AD-11 (exactly one active)
 
-# AD-11: exactly one connector active.
-if [ "$rich" = on ] && [ "$euro" = off ]; then
+if [ "$rich" = on ]; then
   echo "Active office backend: Collabora (richdocuments)"
 
   disc="$(curl -skf "https://localhost:${OFFICE_PORT}/hosting/discovery")" \
@@ -68,7 +61,7 @@ sys.exit(0 if editable else 1)' "$mime"; then
 
   echo "PASS: Collabora — 6/6 formats editable + OSS build, no paid licence"
 
-elif [ "$euro" = on ] && [ "$rich" = off ]; then
+else
   echo "Active office backend: Euro-Office (eurooffice)"
   # Euro-Office (OnlyOffice-derived, AGPL) exposes no WOPI discovery to parse per-format, so the
   # authoritative per-format EDIT proof for this backend is the human acceptance run
@@ -81,8 +74,4 @@ elif [ "$euro" = on ] && [ "$rich" = off ]; then
     *) echo "FAIL: unexpected Euro-Office image '${img}'"; exit 1;;
   esac
   echo "PASS: Euro-Office — server healthy + OSS image (per-format editing: see docs/ACCEPTANCE-EDITING.md)"
-
-else
-  echo "FAIL: expected exactly ONE office connector enabled (AD-11); got richdocuments=${rich}, eurooffice=${euro}"
-  exit 1
 fi

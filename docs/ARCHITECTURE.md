@@ -18,9 +18,9 @@ disposable, and upgrade-safe.
 The single mechanism that mutates instance state is one **idempotent `occ`-based provisioning script**
 (`provisioning/`, run by `make seed`). It is **idempotent by guard** — it queries before it creates
 (`occ group:list`, `groupfolders:list`, a recorded folder-id map) and skips or patches what already exists,
-because `groupfolders:create` is not idempotent by name. It runs a fixed **phase order**: (1) branding +
-locale → (2) groups → (3) group folders → (4) ACLs → (5) user→group membership → (6) sample-content fixtures.
-Responsibilities are partitioned: **provisioning owns structure** (groups, folders, ACLs, branding, locale);
+because `groupfolders:create` is not idempotent by name. It runs a fixed **phase order**: (1) locale →
+(2) groups → (3) group folders → (4) ACLs → (5) user→group membership → (6) sample-content fixtures.
+Responsibilities are partitioned: **provisioning owns structure** (groups, folders, ACLs, locale);
 **fixtures own only sample content and sample users** placed into already-existing groups. Re-running converges
 to the same state; there is no second source of truth and no manual admin-UI step that isn't scripted.
 
@@ -122,11 +122,11 @@ assignments, and the final validated matrix are parameterizable and settled with
 
 ## Branding & localization
 
-- **White-label** is applied via `occ theming:config` (`name`, `logo`, `favicon`, `primary_color`,
-  `background_color`, `slogan`, `url`, `background`) with `disable-user-theming yes` for brand consistency —
-  no fork, no `themes/` file, no `defaults.php`
-  (which would need an opcache reset and is the fork-adjacent path to avoid). Branding assets are bind-mounted
-  local files.
+- **White-label branding is not applied in v1** — the instance runs the default Nextcloud theme. The
+  chosen path (when a brand guide lands) is `occ theming:config` (text + color keys) with
+  `disable-user-theming yes`, config-as-code — no fork, no `themes/` file, no `defaults.php` (which would
+  need an opcache reset and is the fork-adjacent path to avoid). NC34's CLI sets text/color only;
+  logo/favicon are admin-UI uploads.
 - **Locale** defaults are seeded but **not** forced: `default_language=es_419` (Latin-American Spanish; a
   discrete `es_CL` UI translation does not exist) and `default_locale=es_CL` (Chilean date/number formatting).
   Users and developers may change them. Timezone America/Santiago is per-user (browser auto-detected). UI text

@@ -16,8 +16,6 @@ SEED_FIXTURES="${SEED_FIXTURES:-1}"
 
 echo "== APS Conecta provisioning (make seed) =="
 require_installed
-# Idempotent framework marker — exercises the query-before-write guard on every run.
-config_app_set provisioning framework_version 1
 
 run=0; skipped=0
 for phase in "$HERE"/phases/[0-9]*.sh; do

@@ -53,7 +53,7 @@ esta guía.
 
 4. Iniciar sesión. **Dónde:** navegador, en `http://localhost:<HTTP_PORT>` (ver `HTTP_PORT` en `.env`).
    Usar `admin`, o un usuario de fixtures tras `make seed` (p. ej. `dev.medico`).
-   **Esperado:** carga la interfaz de Nextcloud con la marca APS Conecta.
+   **Esperado:** carga la interfaz de Nextcloud (tema por defecto; el branding no se aplica en v1) en es-CL.
 
 ---
 

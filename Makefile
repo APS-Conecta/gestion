@@ -3,8 +3,7 @@
 # Office backends (Story 0.2) are switchable one-at-a-time (AD-11):
 #   `make office-collabora`  → Collabora CODE   (richdocuments/WOPI)
 #   `make office-eurooffice` → Euro-Office      (eurooffice/JWT)
-# `make smoke` / `make test` = the local quality gate (Story 0.4); `make seed` runs provisioning
-# (the pipeline content arrives in Story 0.5).
+# `make smoke` / `make test` = the local quality gate; `make seed` runs the provisioning pipeline.
 .DEFAULT_GOAL := help
 .PHONY: help up up-dev down seed smoke test credentials fix-mount-perms office-collabora office-eurooffice office-smoke office-formats office-down
 
@@ -36,9 +35,9 @@ fix-mount-perms: ## Make the bind-mounted apps/ + themes/ writable by the contai
 down: ## Stop the stack (keeps volumes)
 	docker compose down
 
-seed: ## Run the provisioning pipeline (services must be up; content arrives in Story 0.5)
+seed: ## Run the provisioning pipeline (services must be up)
 	@test -f .env || { echo "No .env found — run: cp .env.example .env"; exit 1; }
-	@if [ -x provisioning/seed.sh ]; then provisioning/seed.sh; else echo "Provisioning pipeline arrives in Story 0.5 (provisioning/seed.sh not present yet)."; fi
+	provisioning/seed.sh
 
 credentials: ## Write CREDENTIALS.local.md (all stack secrets from .env — gitignored, mode 600)
 	@bash scripts/dump-credentials.sh
@@ -69,9 +68,7 @@ office-collabora: ## Switch office backend → Collabora CODE (enable richdocume
 office-eurooffice: ## Switch office backend → Euro-Office (enable eurooffice, disable richdocuments)
 	@test -f .env || { echo "No .env found — run: cp .env.example .env"; exit 1; }
 	docker compose stop collabora 2>/dev/null || true
-	docker compose --profile eurooffice up -d eurooffice
-	@echo "Waiting for Euro-Office healthcheck on :$(OFFICE_PORT) ..."
-	@for i in $$(seq 1 90); do curl -sf http://localhost:$(OFFICE_PORT)/healthcheck >/dev/null 2>&1 && break; sleep 2; done
+	docker compose --profile eurooffice up -d --wait eurooffice
 	$(OCC) app:install eurooffice 2>/dev/null || $(OCC) app:enable eurooffice
 	# The doc server fetches documents from Nextcloud at the StorageUrl host (`nextcloud`); it must be a
 	# trusted domain or Nextcloud answers HTTP 400. Idempotent (install-time env doesn't retro-apply).
