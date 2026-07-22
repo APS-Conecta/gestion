@@ -50,7 +50,7 @@ so that the local quality gate — the project's CI stand-in — is a single com
 **Extends Story 0.1/0.2/0.3** (`Makefile`, `scripts/`). New shell under `scripts/`, same idioms as `scripts/office-smoke.sh` (read `.env`, labeled FAIL, exit non-zero, `set -euo pipefail`).
 
 - **AD-2 (provisioning boundary):** `up` starts services only; `seed` is the **separate** provisioning entry. This story delivers `seed` as the stable interface; the phase-file provisioning content is Story 0.5. `smoke`/`test` must **not** perform provisioning. [Source: ARCHITECTURE-SPINE.md#AD-2; epics.md Conventions]
-- **The gate is local, by design.** No CI pipeline story up front — the quality gate is `make smoke` / `make test`, run by a contributor before a PR (readiness M3; `CONTRIBUTING.md`). [Source: implementation-readiness-report-2026-07-19.md#M3]
+- **The gate is local, by design.** No CI pipeline story up front — the quality gate is `make smoke` / `make test`, run by a contributor before a PR (local gate; `CONTRIBUTING.md`). [Source: CONTRIBUTING.md]
 - **`occ` invocation:** `docker compose exec -T --user www-data nextcloud php occ <cmd>` (as elsewhere). For a down stack, `exec` fails — the smoke must detect "container not running" and FAIL cleanly, not hang.
 - **Distinct from `office-smoke`:** `scripts/smoke.sh` checks the **core** stack (db/redis/nextcloud); `scripts/office-smoke.sh` (Story 0.2) checks the **active office backend**. `test` may call `smoke` but not `office-smoke` (office is a profile, not always up).
 - **Scope guards:** provisioning content = Story 0.5; fixtures = 0.6; `apps/`+`themes/` = 0.8. Only the Makefile + `scripts/` are touched here.
@@ -63,7 +63,6 @@ so that the local quality gate — the project's CI stand-in — is a single com
 
 - [Source: docs/planning/epics.md#Story 0.4] — user story + ACs
 - [Source: docs/planning/architecture/architecture-apsconecta-gestion-2026-07-18/ARCHITECTURE-SPINE.md#AD-2]
-- [Source: docs/planning/implementation-readiness-report-2026-07-19.md#M3] — local gate, CI deferred
 - [Source: docs/planning/implementation/0-1-portable-core-compose-stack.md, 0-2-…, 0-3-…] — Makefile/scripts patterns extended
 - [Source: CONTRIBUTING.md] — convention gate, local quality gate
 

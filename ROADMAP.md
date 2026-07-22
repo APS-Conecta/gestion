@@ -34,9 +34,8 @@ Status doc. Repo-first SSOT. Updated as work lands.
   provisioning framework so epics append not edit; Epic 4 early to de-risk WOPI). Final validation: no forward
   deps, no leftover placeholders.
 
-- **Implementation readiness (2026-07-19):** `docs/planning/implementation-readiness-report-2026-07-19.md` —
-  **READY**; 100% FR coverage (17/17), 0 critical / 0 major / 3 justified minors, UX absent by design. Cleared
-  to build Epic 0.
+- **Implementation readiness (2026-07-19):** **READY**; 100% FR coverage (17/17), 0 critical / 0 major /
+  3 justified minors, UX absent by design. Cleared to build Epic 0.
 
 - **Sprint plan (2026-07-19):** `docs/planning/implementation/sprint-status.yaml` — 5 epics · 18 stories · 5
   retrospectives, all `backlog`. **Planning phase complete** (brief → PRD → architecture → epics/stories →

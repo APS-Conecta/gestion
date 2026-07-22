@@ -7,8 +7,7 @@ updated: 2026-07-18
 
 # Product Brief: APS Conecta — Gestión
 
-> **Status: ready.** The WHAT for the APS Conecta Gestión rebuild — feeds the PRD (the HOW). Audit trail
-> in `.memlog.md`.
+> **Status: ready.** The WHAT for the APS Conecta Gestión rebuild — feeds the PRD (the HOW).
 
 **Naming & brand.** *APS Conecta* is the umbrella **brand/project**; ***APS Conecta Gestión*** is **this
 app** — the management app. The white-label Nextcloud carries the **APS Conecta** brand, and future sibling
@@ -124,5 +123,4 @@ America)**. This is a first-class, tracked concern with its own committed **Lega
 
 A CESFAM whose knowledge and processes live in one secure, **structured, searchable** place — where an
 **AI layer running locally on the CESFAM's own data** auto-organizes documents, flags expiring protocols,
-finds cross-reference errors, and assists program analysis. Sibling project **REM ANALYZER** integrates
-here.
+finds cross-reference errors, and assists program analysis.
