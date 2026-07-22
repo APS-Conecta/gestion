@@ -25,7 +25,7 @@ body:
     id: refs
     attributes:
       label: References
-      description: Related epic / story / ADR — e.g. `Story 3.2`, `AD-11`, `docs/planning/…`.
+      description: Related epic / story / ADR — e.g. `Story 3.2`, `AD-5`, `docs/ARCHITECTURE.md`.
   - type: textarea
     id: repro
     attributes:

@@ -10,8 +10,8 @@ data**.
 
 ## How we work
 
-- **Planning SSOT:** committed under `docs/planning/`; architecture in `docs/ARCHITECTURE.md`.
-  Repo-first SSOT (repo wins; any wiki mirrors).
+- **Design SSOT:** architecture in `docs/ARCHITECTURE.md`; the code (`provisioning/phases/`,
+  `compose.yaml`) is authoritative for behavior. Repo-first SSOT (repo wins; any wiki mirrors).
 - **Principles:** DRY · SOLID · KISS/YAGNI (ponytail — minimal, delete over add). See `CONTRIBUTING.md`.
 - **Language split:** code/backend/docs in **English**; user-facing UI in **Spanish**.
 - **Coordination:** GitHub Flow, PR + 1 approval (convention gate), private repo. Conventional Commits.

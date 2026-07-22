@@ -13,7 +13,7 @@ if [ ! -f .env ]; then
 fi
 check docker compose -f compose.yaml config -q
 check docker compose -f compose.yaml -f compose.dev.yaml config -q
-check docker compose --profile collabora --profile eurooffice config -q
+check docker compose --profile eurooffice config -q
 for s in scripts/*.sh provisioning/*.sh provisioning/phases/*.sh; do
   [ -e "$s" ] && check bash -n "$s"
 done

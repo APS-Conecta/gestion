@@ -24,8 +24,6 @@ NC_PASS="$(getenv NEXTCLOUD_ADMIN_PASSWORD)"
 PG_DB="$(getenv POSTGRES_DB)"
 PG_USER="$(getenv POSTGRES_USER)"
 PG_PASS="$(getenv POSTGRES_PASSWORD)"
-CO_USER="$(getenv COLLABORA_ADMIN_USER)"
-CO_PASS="$(getenv COLLABORA_ADMIN_PASSWORD)"
 JWT="$(getenv OFFICE_JWT_SECRET)"
 FIX_PASS="$(getenv FIXTURE_USER_PASSWORD)"
 
@@ -45,7 +43,7 @@ cat > "$OUT" <<EOF
 | What | URL |
 |------|-----|
 | Nextcloud (the app) | http://localhost:$HTTP_PORT |
-| Collabora admin console | http://localhost:$OFFICE_PORT/browser/dist/admin/admin.html |
+| Euro-Office document server | http://localhost:$OFFICE_PORT |
 
 ## 1. Nextcloud — admin account
 | Item | Value |
@@ -64,22 +62,14 @@ cat > "$OUT" <<EOF
 | Where | \`.env\` → \`POSTGRES_PASSWORD\`; used by \`db\` + \`nextcloud\` services |
 | Host | Not published to the host — reachable only inside the compose network as \`db:5432\` |
 
-## 3. Collabora CODE — admin console
-| Item | Value |
-|------|-------|
-| Username | \`$CO_USER\` |
-| Password | \`$CO_PASS\` |
-| Where | \`.env\` → \`COLLABORA_ADMIN_PASSWORD\`; passed to the \`collabora\` service |
-| Use | coolwsd admin console (active sessions/metrics) — only when the Collabora backend is up |
-
-## 4. Euro-Office — document-server JWT
+## 3. Euro-Office — document-server JWT
 | Item | Value |
 |------|-------|
 | Shared secret | \`$JWT\` |
 | Where | \`.env\` → \`OFFICE_JWT_SECRET\`; documentserver \`JWT_SECRET\` ↔ \`eurooffice\` connector \`jwt_secret\` |
 | Use | Signs traffic between Nextcloud and Euro-Office — only when the Euro-Office backend is up. Not a login. |
 
-## 5. Fixture dev users (synthetic — \`make seed\`, phase 50)
+## 4. Fixture dev users (synthetic — \`make seed\`, phase 50)
 Throwaway accounts on the local instance (Story 0.6). **All share one password.**
 
 | Username | Display | Password |

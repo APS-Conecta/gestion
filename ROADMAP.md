@@ -1,17 +1,15 @@
 # Roadmap — APS Conecta Gestión
 
-Status doc, repo-first SSOT. Per-story status lives in
-[`docs/planning/implementation/sprint-status.yaml`](docs/planning/implementation/sprint-status.yaml) and
-scope in [`docs/planning/epics.md`](docs/planning/epics.md); this file is the narrative — where we are and
-where we're going.
+Status doc, repo-first SSOT. This file is the narrative — where we are and where we're going;
+architecture in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Where we are
 
 **v1 feature-complete (Foundation + Spine A).** Planning (brief → PRD → architecture → epics/stories →
 sprint plan, 2026-07-18/19) plus Epics 0–4 are done and merged (PRs #7–#21) on Nextcloud 34.0.1 + PG18:
 
-- **Epic 0 — Foundation & dev environment:** portable Compose stack, switchable Collabora ↔ Euro-Office
-  office backend, Xdebug dev profile, the `make seed`/`smoke`/`test` gate, the phase-structured idempotent
+- **Epic 0 — Foundation & dev environment:** portable Compose stack, the Euro-Office office backend,
+  Xdebug dev profile, the `make seed`/`smoke`/`test` gate, the phase-structured idempotent
   provisioning framework, synthetic fixtures, repo-as-SSOT onboarding, and live app/theme mounts.
 - **Epic 1 — Localization:** es-CL locale defaults (`10-locale` phase). White-label branding is **not
   applied in v1** — the instance runs the default Nextcloud theme until a brand guide + CLI-uploadable
@@ -21,7 +19,7 @@ sprint plan, 2026-07-18/19) plus Epics 0–4 are done and merged (PRs #7–#21) 
 - **Epic 3 — Document Home / Spine A:** the 12-folder four-area tree (Transversal · Programas · Unidades ·
   Sectores) + the first-cut allow-only access matrix + Spanish conventions.
 - **Epic 4 — Live collaborative editing:** native to the office backend; `make office-formats` audits the
-  6 editable formats + OSS/no-paid-licence.
+  OSS/no-paid-licence image.
 
 Org governance is in place: `LICENSE` (proprietary) + `docs/LICENSING.md`, `.github/` scaffolding
 (CODEOWNERS, PR + issue templates, `SECURITY.md`), and `CONTRIBUTORS.md`. Work is tracked on the
@@ -30,7 +28,7 @@ Org governance is in place: `LICENSE` (proprietary) + `docs/LICENSING.md`, `.git
 ## Next
 
 1. **Human acceptance run** of [`docs/ACCEPTANCE-EDITING.md`](docs/ACCEPTANCE-EDITING.md) against a live
-   backend (Collabora/Euro-Office) — the one v1 step that can't be driven headlessly.
+   Euro-Office backend — the one v1 step that can't be driven headlessly.
 2. **Epic retrospectives** (optional).
 
 ## Future

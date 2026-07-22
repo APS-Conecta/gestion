@@ -5,17 +5,16 @@
 > esperado y qué hacer si falla. Lo que **sí** está verificado por máquina se marca abajo.
 
 Esta guía valida que el personal puede **abrir, crear y co-editar** documentos de oficina en el navegador
-contra el backend de oficina activo (Collabora **o** Euro-Office). El backend se elige antes de empezar y
-**solo uno está activo a la vez** (AD-11).
+contra el backend de oficina **Euro-Office** (AD-5).
 
 ## Qué está verificado por máquina (no requiere navegador)
 
 Estas partes de la Épica 4 las comprueba el gate y **pasan en verde**; no hace falta repetirlas a mano:
 
-- **`make office-smoke`** — el backend activo sirve el editor y responde en la ruta WOPI (host + servidor).
-- **`make office-formats`** — el backend activo declara los **6 formatos editables** (odt/docx, ods/xlsx,
-  odp/pptx) leídos de su propio `/hosting/discovery`, y es una compilación **OSS sin licencia de pago**
-  (Historia 4.3, segundo criterio: *el stack es OSS y self-hosted, sin licencia de pago*).
+- **`make office-smoke`** — Euro-Office sirve el editor y responde en `/healthcheck` (host + servidor).
+- **`make office-formats`** — Euro-Office corre sobre una imagen **OSS sin licencia de pago**
+  (Historia 4.3, segundo criterio: *el stack es OSS y self-hosted, sin licencia de pago*). Euro-Office no
+  expone un descubrimiento WOPI por formato, así que la edición **por formato** se valida a mano abajo.
 
 ## Qué requiere una persona con navegador (este runbook)
 
@@ -34,22 +33,19 @@ esta guía.
    **Esperado:** los contenedores `nextcloud`, `db`, `redis` quedan *healthy*.
    **Si falla:** revisar `docker compose ps` y `make smoke`.
 
-2. Activar un backend de oficina (elegir **uno**). **Dónde:** host.
+2. Levantar el backend de oficina. **Dónde:** host.
    ```bash
-   make office-collabora     # Collabora CODE
-   # — o —
    make office-eurooffice    # Euro-Office (≈8 GB RAM; verificar antes con `free -h`)
    ```
    **Esperado:** termina con `PASS: … smoke …`.
-   **Si falla:** ver la sección *Office* del `README.md` y los logs `docker compose logs collabora`
-   (o `eurooffice`).
+   **Si falla:** ver la sección *Office* del `README.md` y los logs `docker compose logs eurooffice`.
 
-3. Confirmar formatos + OSS por máquina antes de la prueba manual. **Dónde:** host.
+3. Confirmar OSS por máquina antes de la prueba manual. **Dónde:** host.
    ```bash
    make office-formats
    ```
-   **Esperado:** `PASS: … 6/6 formats editable + OSS build, no paid licence`.
-   **Si falla:** no continuar — el backend no está declarando algún formato; revisar el backend activo.
+   **Esperado:** `PASS: Euro-Office — server healthy + OSS image`.
+   **Si falla:** no continuar — el backend no está sano; revisar `docker compose logs eurooffice`.
 
 4. Iniciar sesión. **Dónde:** navegador, en `http://localhost:<HTTP_PORT>` (ver `HTTP_PORT` en `.env`).
    Usar `admin`, o un usuario de fixtures tras `make seed` (p. ej. `dev.medico`).
@@ -61,9 +57,9 @@ esta guía.
 
 5. Abrir un documento existente. **Dónde:** navegador → app **Archivos** → una carpeta de grupo (p. ej.
    *Transversal*) → clic en el `.md`/documento de ejemplo, o subir un `.odt` de prueba y abrirlo.
-   **Esperado:** el documento abre **dentro del editor del backend activo** en el navegador (no se descarga).
-   **Si falla:** confirmar `make office-smoke` en verde; revisar `public_wopi_url`
-   (`occ config:app:get richdocuments public_wopi_url` debe apuntar a `https://localhost:<OFFICE_PORT>`).
+   **Esperado:** el documento abre **dentro del editor de Euro-Office** en el navegador (no se descarga).
+   **Si falla:** confirmar `make office-smoke` en verde; revisar la config del conector
+   (`occ config:app:get eurooffice DocumentServerUrl` debe apuntar a `http://localhost:<OFFICE_PORT>/`).
 
 6. Crear un documento nuevo de cada tipo. **Dónde:** navegador → **Archivos** → botón **+ Nuevo** →
    *Nuevo documento* / *Nueva hoja de cálculo* / *Nueva presentación*.
@@ -88,8 +84,9 @@ esta guía.
 
 ## Historia 4.3 — Soporte de formatos OSS (fidelidad, mitad humana)
 
-> El *conjunto* de formatos editables y la ausencia de licencia de pago ya están verificados por
-> `make office-formats`. Este paso valida solo la **fidelidad de apertura/guardado** en el navegador.
+> La ausencia de licencia de pago ya está verificada por `make office-formats`. Como Euro-Office no expone
+> un descubrimiento por formato, este paso valida a mano **tanto la edición por formato como la fidelidad
+> de apertura/guardado** en el navegador.
 
 10. Para **cada** formato — `odt`, `docx`, `ods`, `xlsx`, `odp`, `pptx` — subir un archivo de ejemplo,
     abrirlo, hacer una edición pequeña y guardar. **Dónde:** navegador → **Archivos**.
@@ -101,10 +98,10 @@ esta guía.
 
 ## Registro de la ejecución
 
-Al correr esta aceptación por primera vez en un navegador, anotar aquí la fecha, el backend probado
-(Collabora / Euro-Office) y el resultado por historia (4.1 / 4.2 / 4.3), para que este runbook deje de
-"abrir admitiendo que no se ha ejecutado" y pase a ser evidencia.
+Al correr esta aceptación por primera vez en un navegador, anotar aquí la fecha y el resultado por
+historia (4.1 / 4.2 / 4.3), para que este runbook deje de "abrir admitiendo que no se ha ejecutado" y
+pase a ser evidencia.
 
-| Fecha | Backend | 4.1 | 4.2 | 4.3 | Notas |
-|-------|---------|-----|-----|-----|-------|
-| _pendiente_ | | | | | |
+| Fecha | 4.1 | 4.2 | 4.3 | Notas |
+|-------|-----|-----|-----|-------|
+| _pendiente_ | | | | |

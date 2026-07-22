@@ -1,11 +1,9 @@
 # Architecture — APS Conecta Gestión
 
 Technical architecture for **v1**: the developer-facing Foundation (Epic 0) + the initial Spine A document
-structure, built as a **white-label Nextcloud 34** deployment. This document is the human-facing reference;
-the terse invariant contract (the `AD` decisions builders must not violate) lives in
-[`docs/planning/architecture/architecture-apsconecta-gestion-2026-07-18/ARCHITECTURE-SPINE.md`](planning/architecture/architecture-apsconecta-gestion-2026-07-18/ARCHITECTURE-SPINE.md),
-and the requirements it satisfies live in the
-[PRD](planning/prds/prd-apsconecta-gestion-2026-07-18/prd.md).
+structure, built as a **white-label Nextcloud 34** deployment. This document is the design SSOT; the code
+(`provisioning/phases/`, `compose.yaml`) is authoritative for behavior, and the invariants builders must
+not violate are in [`AGENTS.md`](../AGENTS.md).
 
 ## Design paradigm
 
@@ -33,16 +31,15 @@ to the same state; there is no second source of truth and no manual admin-UI ste
 | Nextcloud | `nextcloud:34-apache` (rolling 34.x; 34.0.1 head, supported to ~June 2027) | Platform, web UI, files, users/groups |
 | PostgreSQL | `postgres:18-alpine` (PG18, NC-recommended) | Metadata (users, groups, shares, ACLs, file index) |
 | Redis | `redis:8-alpine` (Redis 8 = AGPL, OSS-restored) | Cache + file/transaction locking |
-| Office server A — Collabora CODE | `collabora/code` (standalone container) + `richdocuments`/WOPI | Office editing engine (whitest-label) |
-| Office server B — Euro-Office | `ghcr.io/euro-office/documentserver` (standalone container) + `eurooffice` connector | Office editing engine (OnlyOffice-fidelity) |
+| Office server — Euro-Office | `ghcr.io/euro-office/documentserver` (standalone container) + `eurooffice` connector | Office editing engine (OnlyOffice-fidelity) |
 | Group Folders | `groupfolders` app | Team/role-scoped shared folders + ACLs |
 | Tooling | Docker Compose · Make · Xdebug (dev) | Orchestration, task runner, step-debug |
 
 The `nextcloud:34-apache` tag rolls forward across 34.x patch releases; pin the exact patch
 (`nextcloud:34.0.1-apache`) if byte-identical environments across machines become necessary. NC34 (the current
-line) is used so both office suites can be trialed — **Euro-Office requires NC34+**. All components are OSS (per
-the OSS-first mandate): Nextcloud / richdocuments / groupfolders / eurooffice AGPL-3.0, Collabora CODE MPL-2.0,
-Euro-Office AGPL-3.0, PostgreSQL PostgreSQL-License, Redis 8 AGPL-3.0 — with **Valkey** (BSD-3) as the permissive
+line) is used because **Euro-Office requires NC34+**. All components are OSS (per
+the OSS-first mandate): Nextcloud / groupfolders / eurooffice AGPL-3.0, Euro-Office AGPL-3.0,
+PostgreSQL PostgreSQL-License, Redis 8 AGPL-3.0 — with **Valkey** (BSD-3) as the permissive
 drop-in alternative to Redis, to be settled in the committed License-outline artifact.
 
 ## Runtime topology
@@ -54,15 +51,15 @@ graph TD
   B[Browser] --> NC[Nextcloud 34 · apache/php]
   NC --> PG[(PostgreSQL 18)]
   NC --> R[(Redis)]
-  NC <-->|connector · compose service name| C[office backend · Collabora OR Euro-Office]
+  NC <-->|eurooffice connector · compose service name| C[office backend · Euro-Office]
   PROV[provisioning: occ script + fixtures] -->|make seed| NC
   A[apps/ → custom_apps · empty v1] -.bind mount.-> NC
   T[themes/ · empty v1] -.bind mount.-> NC
 ```
 
 Portability is an invariant: the core compose carries nothing VPS-specific and no absolute host paths.
-**Container↔container** traffic (Nextcloud↔Collabora↔PostgreSQL↔Redis, including the WOPI callbacks) uses
-**compose service names** (e.g. `http://collabora:9980`, `http://nextcloud`); **`host.docker.internal` is only
+**Container↔container** traffic (Nextcloud↔Euro-Office↔PostgreSQL↔Redis, including the document-server
+callbacks) uses **compose service names** (e.g. `http://eurooffice`, `http://nextcloud`); **`host.docker.internal` is only
 for host↔container** — the browser or a container reaching a host-published port (on Linux via
 `extra_hosts: host.docker.internal:host-gateway`). Step-debugging is delivered by a **derived** dev-only
 image/profile (`compose.dev.yaml`) layered on the official image — never baked into the base.
@@ -78,12 +75,10 @@ Each datum has exactly one owner:
   It holds **no product data and no secrets**. Secrets live in `.env` (gitignored); dev data is **synthetic
   fixtures only** (no patient or clinical data, ever).
 
-Editing flow: a user opens a document in the browser → Nextcloud hands off to the **active** standalone office
-server via its connector — Collabora over `richdocuments`/**WOPI**, or Euro-Office over the `eurooffice`
-connector/**JWT** — each a separate container reachable at its own server URL → the server renders and co-edits
-in-browser, writing back through the callback. Exactly one backend is active at a time (AD-11); the switch
-(`make office-collabora` / `make office-eurooffice`) toggles the connectors. Multiple documents open as
-independent sessions (side-by-side tabs).
+Editing flow: a user opens a document in the browser → Nextcloud hands off to the standalone Euro-Office
+server over the `eurooffice` connector/**JWT** — a separate container reachable at its own server URL → the
+server renders and co-edits in-browser, writing back through the callback. `make office-eurooffice` brings up
+the server and wires the connector. Multiple documents open as independent sessions (side-by-side tabs).
 
 ## Access model (RBAC)
 
@@ -137,14 +132,12 @@ assignments, and the final validated matrix are parameterizable and settled with
 v1 targets **local development per developer only** — a single Compose stack brought up with one command.
 
 Everything operational for a live deployment is intentionally **deferred**: hosting/provider, a TLS
-reverse-proxy for the active office server with a hardened allow-list (dev Collabora serves self-signed
-HTTPS, wired with `richdocuments disable_certificate_verification`; Euro-Office uses a shared JWT secret),
+reverse-proxy for the office server with a hardened allow-list (Euro-Office uses a shared JWT secret),
 backups and RTO/RPO, sizing/HA, and production observability. The v1 operational surface is `occ status` plus
 the `make smoke` gate.
 
-Both office suites are resource-bound (uncapped, OSS): **Collabora** ~10 editors per CPU thread + ~50 MB per
-editor (~20–30 editors ≈ 3–4 vCPU + ~3 GB RAM); **Euro-Office** is heavier (~8 GB RAM recommended for
-multi-user). Only **one** office backend runs at a time (AD-11), so the dev footprint stays modest —
+Euro-Office is resource-bound (uncapped, OSS) and fairly heavy (~8 GB RAM recommended for multi-user), but
+the dev footprint stays modest since it only runs when brought up with `make office-eurooffice` —
 comfortable on a laptop.
 
 ## Extension boundary (beyond v1)

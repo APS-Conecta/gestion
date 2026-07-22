@@ -37,23 +37,21 @@ things**, so both hold at once:
 
 ## 3. Third-party component inventory (verified)
 
-Every runtime component. The five **services** are pinned as images in [`compose.yaml`](../compose.yaml);
-the two **Nextcloud apps** (`groupfolders`, `richdocuments`) are installed into Nextcloud by provisioning
-via `occ`, not as compose services. All are open-source, self-hosted, and free — **no paid license, no
-license key** anywhere in the stack.
+Every runtime component. The **services** are pinned as images in [`compose.yaml`](../compose.yaml);
+the two **Nextcloud apps** (`groupfolders`, `eurooffice`) are installed into Nextcloud via `occ`, not as
+compose services. All are open-source, self-hosted, and free — **no paid license, no license key** anywhere
+in the stack.
 
 | Component | Pinned / installed as | License | SPDX | Source |
 |-----------|------------------------|---------|------|--------|
 | Nextcloud Server | image `nextcloud:34-apache` | GNU AGPL v3 or later | `AGPL-3.0-or-later` | nextcloud/server `COPYING` + README |
 | PostgreSQL | image `postgres:18-alpine` | PostgreSQL License (permissive) | `PostgreSQL` | postgresql.org/about/licence |
 | Redis | image `redis:8-alpine` | Tri-license — **we elect AGPL v3** | `AGPL-3.0-or-later` | redis `LICENSE.txt` (8.x) |
-| Collabora CODE (office A) | image `collabora/code:latest` | Mozilla Public License 2.0 | `MPL-2.0` | CollaboraOnline/online `COPYING` |
-| Euro-Office (office B) | image `ghcr.io/euro-office/documentserver:latest` | GNU AGPL v3 | `AGPL-3.0-only` | Euro-Office/DocumentServer `LICENSE` |
+| Euro-Office (office) | image `ghcr.io/euro-office/documentserver:latest` | GNU AGPL v3 | `AGPL-3.0-only` | Euro-Office/DocumentServer `LICENSE` |
 | Group Folders | NC app `groupfolders` (occ-installed) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | nextcloud/groupfolders `info.xml` |
-| Nextcloud Office connector | NC app `richdocuments` (occ-installed) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | nextcloud/richdocuments `info.xml` |
+| Euro-Office connector | NC app `eurooffice` (occ-installed) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | eurooffice `info.xml` |
 
 Notes:
-- Only **one** office backend runs at a time (AD-11): Collabora **or** Euro-Office, never both.
 - The `-alpine` base-image OS layers carry their own separate licenses; the component license above is
   the one that matters for our audit.
 
@@ -70,15 +68,7 @@ Euro-Office's `LICENSE` is the verbatim GNU AGPL v3 (`AGPL-3.0-only`) — the id
 there is an **active, public dispute**: ONLYOFFICE (which Euro-Office forks) has alleged the fork
 violates ONLYOFFICE's asserted AGPL §7 additional terms (e.g. logo-retention); the FSF/SFC position is
 that a logo-retention obligation is not a valid §7 term. This does **not** change the SPDX identifier,
-but it is worth awareness when choosing Euro-Office over Collabora. Collabora CODE (MPL-2.0) is the
-lower-risk default; the stack supports switching either way. **[needs legal sign-off if Euro-Office is
-adopted for production.]**
-
-### 3.3 Collabora CODE vs commercial
-
-`collabora/code` is the **free CODE build (Development Edition)** tracking the **MPL-2.0** source — not
-the commercially-licensed Collabora Online binary. The underlying LibreOffice engine is dual
-`LGPL-3.0-or-later OR MPL-2.0`. No paid license is involved.
+but it is worth awareness. **[needs legal sign-off if Euro-Office is adopted for production.]**
 
 ## 4. Do the copyleft components reach our own code? (Aggregation analysis)
 
@@ -89,8 +79,8 @@ and forces us to open it. Our reasoning — **[needs legal sign-off]**:
    invariant: "never a Nextcloud source fork"). We do not modify, statically link, or embed their source.
 2. Our own code interacts with them only across process/network boundaries (occ CLI, HTTP/WOPI) — the
    classic **"mere aggregation"** situation, not the creation of a **derivative work**.
-3. Under that reading, the AGPL of Nextcloud/Redis/Euro-Office and the MPL of Collabora impose **no
-   copyleft obligation on APS Conecta's own original code**, which may therefore remain proprietary (§1).
+3. Under that reading, the AGPL of Nextcloud/Redis/Euro-Office imposes **no copyleft obligation on APS
+   Conecta's own original code**, which may therefore remain proprietary (§1).
 4. **Caveat that would change this:** the moment we *modify* an AGPL component's source, or bundle/fork it
    rather than pull the official image, the AGPL's network-copyleft (§13) can attach. v1 does neither
    (zero custom PHP, no fork). If that ever changes, this analysis must be redone.
