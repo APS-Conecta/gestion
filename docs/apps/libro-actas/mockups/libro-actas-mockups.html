@@ -1,0 +1,441 @@
+<title>Libro de Actas — Mockups</title>
+<style>
+  :root{
+    --accent:#1a7f8e; --accent-strong:#156b78; --accent-soft:#e2f0f2;
+    --bg:#f5f7f8; --surface:#ffffff; --surface-2:#eef2f3; --border:#e971;
+    --border:#e2e8ea; --text:#1f2a2e; --muted:#5a6b70; --muted-2:#8798a0;
+    --ok:#2f9e6f; --ok-soft:#e3f3ec; --warn:#b9791a; --warn-soft:#f6ecd8;
+    --danger:#c0483c; --danger-soft:#f7e4e2;
+    --radius:10px; --shadow:0 1px 2px rgba(20,40,45,.06),0 4px 16px rgba(20,40,45,.05);
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --accent:#3fb2c1; --accent-strong:#5cc4d1; --accent-soft:#173037;
+      --bg:#12181a; --surface:#1a2225; --surface-2:#212b2e; --border:#2b363a;
+      --text:#e6edf0; --muted:#9bacb2; --muted-2:#6f8087;
+      --ok:#4cb98a; --ok-soft:#152b23; --warn:#d29a3e; --warn-soft:#2c2415;
+      --danger:#d76a5e; --danger-soft:#2e1a18;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.25);
+    }
+  }
+  :root[data-theme="dark"]{
+    --accent:#3fb2c1; --accent-strong:#5cc4d1; --accent-soft:#173037;
+    --bg:#12181a; --surface:#1a2225; --surface-2:#212b2e; --border:#2b363a;
+    --text:#e6edf0; --muted:#9bacb2; --muted-2:#6f8087;
+    --ok:#4cb98a; --ok-soft:#152b23; --warn:#d29a3e; --warn-soft:#2c2415;
+    --danger:#d76a5e; --danger-soft:#2e1a18;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.25);
+  }
+  :root[data-theme="light"]{
+    --accent:#1a7f8e; --accent-strong:#156b78; --accent-soft:#e2f0f2;
+    --bg:#f5f7f8; --surface:#ffffff; --surface-2:#eef2f3; --border:#e2e8ea;
+    --text:#1f2a2e; --muted:#5a6b70; --muted-2:#8798a0;
+    --ok:#2f9e6f; --ok-soft:#e3f3ec; --warn:#b9791a; --warn-soft:#f6ecd8;
+    --danger:#c0483c; --danger-soft:#f7e4e2;
+    --shadow:0 1px 2px rgba(20,40,45,.06),0 4px 16px rgba(20,40,45,.05);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);
+    font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  h1,h2,h3{margin:0;text-wrap:balance;font-weight:650}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .wrap{max-width:1120px;margin:0 auto;padding:24px 20px 64px}
+  .intro{margin-bottom:18px}
+  .intro h1{font-size:22px;letter-spacing:-.01em}
+  .intro p{color:var(--muted);margin:6px 0 0;max-width:70ch}
+  .note{font-size:12px;color:var(--muted-2)}
+
+  /* app shell */
+  .app{border:1px solid var(--border);border-radius:14px;overflow:hidden;
+    box-shadow:var(--shadow);background:var(--surface)}
+  .topbar{display:flex;align-items:center;gap:12px;padding:10px 16px;
+    background:var(--accent);color:#fff}
+  .topbar .logo{width:26px;height:26px;border-radius:7px;background:rgba(255,255,255,.2);
+    display:grid;place-items:center;font-weight:700;font-size:13px}
+  .topbar h2{font-size:15px;font-weight:600}
+  .topbar .brand{margin-left:auto;font-size:12px;opacity:.85}
+  .shell{display:grid;grid-template-columns:210px 1fr;min-height:520px}
+  .side{border-right:1px solid var(--border);background:var(--surface-2);padding:12px 10px;
+    display:flex;flex-direction:column;gap:3px}
+  .newbtn{background:var(--accent);color:#fff;border:none;border-radius:8px;
+    padding:9px 12px;font-weight:600;font-size:13px;cursor:pointer;margin-bottom:8px;
+    font-family:inherit;display:flex;align-items:center;gap:7px}
+  .navitem{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;
+    color:var(--text);cursor:pointer;font-size:13px;border:none;background:none;
+    width:100%;text-align:left;font-family:inherit}
+  .navitem:hover{background:var(--surface)}
+  .navitem.active{background:var(--accent-soft);color:var(--accent-strong);font-weight:600}
+  .navitem .dot{width:8px;height:8px;border-radius:50%;background:var(--muted-2)}
+  .navitem .count{margin-left:auto;font-size:11px;background:var(--warn-soft);
+    color:var(--warn);padding:1px 7px;border-radius:20px;font-weight:600}
+  .main{padding:20px;overflow-x:auto}
+  .screen{display:none}
+  .screen.on{display:block;animation:fade .25s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1}}
+  @media (prefers-reduced-motion:reduce){.screen.on{animation:none}}
+
+  .head{display:flex;align-items:baseline;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+  .head h3{font-size:17px}
+  .head .sub{color:var(--muted);font-size:12.5px}
+
+  /* chips & pills */
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;
+    padding:2px 9px;border-radius:20px;white-space:nowrap;line-height:1.7}
+  .chip.reserv{background:var(--danger-soft);color:var(--danger)}
+  .chip.pub{background:var(--ok-soft);color:var(--ok)}
+  .chip.pend{background:var(--warn-soft);color:var(--warn)}
+  .chip.plain{background:var(--surface-2);color:var(--muted)}
+  .chip .d{width:6px;height:6px;border-radius:50%;background:currentColor}
+  .pill{font-size:11.5px;font-weight:600;padding:2px 9px;border-radius:6px}
+  .pill.fin{background:var(--accent-soft);color:var(--accent-strong)}
+  .pill.brr{background:var(--surface-2);color:var(--muted)}
+  .pill.ok{background:var(--ok-soft);color:var(--ok)}
+
+  /* filters */
+  .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  .fld{border:1px solid var(--border);background:var(--surface);border-radius:8px;
+    padding:7px 11px;font-size:12.5px;color:var(--text);min-width:0}
+  .fld.sel::after{content:"▾";margin-left:8px;color:var(--muted-2)}
+  .fld.search{flex:1;min-width:160px;color:var(--muted-2)}
+
+  /* table */
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  thead th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;
+    color:var(--muted-2);font-weight:600;padding:0 12px 8px}
+  tbody td{padding:11px 12px;border-top:1px solid var(--border);vertical-align:middle}
+  tbody tr:hover{background:var(--surface-2)}
+  .actarow{cursor:pointer}
+  .cellchips{display:flex;gap:6px;flex-wrap:wrap}
+
+  /* form */
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  .card{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);
+    padding:16px;margin-bottom:16px}
+  .card > .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted-2);
+    font-weight:700;margin-bottom:12px;display:block}
+  .field{margin-bottom:12px}
+  .field label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+  .input{width:100%;border:1px solid var(--border);background:var(--surface);border-radius:8px;
+    padding:8px 11px;font-size:13px;color:var(--text);font-family:inherit}
+  .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .attendees{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+  .att{background:var(--accent-soft);color:var(--accent-strong);border-radius:20px;
+    padding:3px 10px 3px 4px;font-size:12px;display:flex;align-items:center;gap:6px}
+  .att .av{width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;
+    display:grid;place-items:center;font-size:10px;font-weight:700}
+  .addbtn{border:1px dashed var(--border);background:none;color:var(--muted);border-radius:20px;
+    padding:4px 12px;font-size:12px;cursor:pointer;font-family:inherit}
+  textarea.input{min-height:92px;resize:vertical}
+  .warnbar{display:flex;gap:10px;align-items:flex-start;background:var(--warn-soft);
+    border:1px solid color-mix(in srgb,var(--warn) 30%,transparent);border-radius:8px;
+    padding:9px 12px;font-size:12.5px;color:var(--text);margin-bottom:10px}
+  .warnbar b{color:var(--warn)}
+  .detected{font-size:11.5px;color:var(--danger);margin-top:6px;display:flex;align-items:center;gap:6px}
+  .autosave{font-size:11.5px;color:var(--muted-2);display:flex;align-items:center;gap:6px}
+  .autosave .live{width:7px;height:7px;border-radius:50%;background:var(--ok)}
+  .formfoot{display:flex;align-items:center;gap:12px;margin-top:4px}
+  .btn{border:none;border-radius:8px;padding:9px 16px;font-weight:600;font-size:13px;
+    cursor:pointer;font-family:inherit}
+  .btn.primary{background:var(--accent);color:#fff}
+  .btn.ghost{background:var(--surface-2);color:var(--text)}
+
+  /* acuerdos list */
+  .acu{display:flex;align-items:center;gap:14px;padding:12px 14px;border:1px solid var(--border);
+    border-radius:var(--radius);margin-bottom:8px;background:var(--surface)}
+  .acu .body{flex:1;min-width:0}
+  .acu .txt{font-size:13.5px}
+  .acu .meta{font-size:12px;color:var(--muted);margin-top:2px;display:flex;gap:12px;flex-wrap:wrap}
+  .acu .age{font-size:11.5px;color:var(--warn);font-weight:600}
+
+  /* review / quarantine cards */
+  .qcard{border:1px solid var(--border);border-left:3px solid var(--warn);border-radius:var(--radius);
+    background:var(--surface);padding:15px 16px;margin-bottom:12px}
+  .qcard h4{margin:0;font-size:14px}
+  .qcard .why{font-size:12.5px;color:var(--muted);margin:6px 0 12px}
+  .qcard .why b{color:var(--danger)}
+  .preview{background:var(--surface-2);border-radius:8px;padding:11px 13px;font-size:12.5px;
+    color:var(--muted);margin-bottom:12px;line-height:1.6}
+  .mask{background:var(--text);color:var(--text);border-radius:3px;padding:0 2px;user-select:none}
+  .qactions{display:flex;gap:8px}
+
+  /* disclaimer modal */
+  .viewer{position:relative;border:1px solid var(--border);border-radius:var(--radius);
+    overflow:hidden;min-height:300px}
+  .blurred{filter:blur(6px);opacity:.5;padding:18px;pointer-events:none;user-select:none}
+  .blurred p{margin:6px 0;color:var(--muted)}
+  .overlay{position:absolute;inset:0;display:grid;place-items:center;
+    background:color-mix(in srgb,var(--bg) 55%,transparent)}
+  .modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    box-shadow:var(--shadow);max-width:440px;padding:22px;text-align:center}
+  .modal .ic{width:44px;height:44px;border-radius:12px;background:var(--danger-soft);color:var(--danger);
+    display:grid;place-items:center;margin:0 auto 12px;font-size:20px;font-weight:700}
+  .modal h4{font-size:16px;margin-bottom:8px}
+  .modal p{color:var(--muted);font-size:13px;margin:0 0 8px}
+  .modal .law{font-size:11.5px;color:var(--muted-2);background:var(--surface-2);border-radius:7px;
+    padding:8px 10px;margin:12px 0 16px}
+  .modal .acts{display:flex;gap:8px;justify-content:center}
+
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:18px;font-size:12px;color:var(--muted)}
+  .legend .chip{cursor:default}
+  footer{margin-top:20px;font-size:12px;color:var(--muted-2);text-align:center}
+  .themebtn{position:fixed;top:14px;right:14px;z-index:10;border:1px solid var(--border);
+    background:var(--surface);color:var(--text);border-radius:8px;padding:7px 12px;font-size:12px;
+    cursor:pointer;font-family:inherit;box-shadow:var(--shadow)}
+  @media (max-width:720px){.shell{grid-template-columns:1fr}.side{flex-direction:row;overflow-x:auto}
+    .grid2{grid-template-columns:1fr}.newbtn{display:none}}
+</style>
+
+<button class="themebtn" onclick="var r=document.documentElement;r.dataset.theme=(r.dataset.theme==='dark'?'light':'dark')">◐ Tema</button>
+
+<div class="wrap">
+  <div class="intro">
+    <h1>Libro de Actas — Mockups</h1>
+    <p>Pantallas base del app (NC34 · <span class="mono">@nextcloud/vue</span>). UI en español, estado
+      codificado en chips. Paleta placeholder (teal institucional) hasta la guía de marca. Cambia de pantalla
+      en el menú lateral.</p>
+    <p class="note">Wireframe de alta fidelidad — no es el app real; ilustra el diseño acordado en el spec.</p>
+  </div>
+
+  <div class="app">
+    <div class="topbar">
+      <div class="logo">AC</div>
+      <h2>Libro de Actas</h2>
+      <span class="brand">APS Conecta · Gestión</span>
+    </div>
+    <div class="shell">
+      <nav class="side">
+        <button class="newbtn" onclick="go('nueva')">＋ Nueva acta</button>
+        <button class="navitem active" data-s="registro" onclick="go('registro')"><span class="dot"></span>Registro</button>
+        <button class="navitem" data-s="acuerdos" onclick="go('acuerdos')"><span class="dot" style="background:var(--warn)"></span>Acuerdos pendientes</button>
+        <button class="navitem" data-s="revision" onclick="go('revision')"><span class="dot" style="background:var(--danger)"></span>En revisión<span class="count">2</span></button>
+        <button class="navitem" data-s="nueva" onclick="go('nueva')"><span class="dot"></span>Nueva / editar</button>
+        <button class="navitem" data-s="ver" onclick="go('ver')"><span class="dot"></span>Ver acta (sensible)</button>
+        <button class="navitem" style="margin-top:auto" data-s="config" onclick="go('config')"><span class="dot"></span>Configuración</button>
+      </nav>
+      <div class="main">
+
+        <!-- REGISTRO -->
+        <section class="screen on" id="registro">
+          <div class="head"><h3>Registro de actas</h3>
+            <span class="sub">Listado según tu acceso · los borradores solo los ve su autor</span></div>
+          <div class="filters">
+            <span class="fld sel">Programa / Equipo</span>
+            <span class="fld sel">Tipo de reunión</span>
+            <span class="fld sel">Estado</span>
+            <span class="fld sel">Fecha</span>
+            <span class="fld sel">Tags</span>
+            <span class="fld search">🔍 Buscar folio, asistente, acuerdo…</span>
+          </div>
+          <table>
+            <thead><tr><th>Folio</th><th>Fecha</th><th>Equipo</th><th>Tipo</th><th>Estado</th><th>Marcas</th><th>Registró</th></tr></thead>
+            <tbody>
+              <tr class="actarow" onclick="go('ver')">
+                <td class="mono">SM-2026-014</td><td class="mono">18-07-2026</td><td>Salud Mental</td>
+                <td>Equipo clínico</td><td><span class="pill fin">Finalizada</span></td>
+                <td><span class="cellchips"><span class="chip reserv"><span class="d"></span>Reservada</span></span></td>
+                <td>Dra. P. Rojas</td>
+              </tr>
+              <tr class="actarow">
+                <td class="mono">CV-2026-009</td><td class="mono">15-07-2026</td><td>Cardiovascular</td>
+                <td>Consejo Desarrollo Local</td><td><span class="pill fin">Finalizada</span></td>
+                <td><span class="cellchips"><span class="chip pub"><span class="d"></span>Copia transversal</span></span></td>
+                <td>J. Muñoz</td>
+              </tr>
+              <tr class="actarow">
+                <td class="mono">DIR-2026-003</td><td class="mono">12-07-2026</td><td>Dirección</td>
+                <td>Junta administrativa</td><td><span class="pill fin">Finalizada</span></td>
+                <td><span class="cellchips"><span class="chip pend"><span class="d"></span>En revisión</span></span></td>
+                <td>M. Salinas</td>
+              </tr>
+              <tr class="actarow">
+                <td class="mono">SM-2026-015</td><td class="mono">—</td><td>Salud Mental</td>
+                <td>Equipo clínico</td><td><span class="pill brr">Borrador</span></td>
+                <td><span class="cellchips"><span class="chip plain">Solo tú</span></span></td>
+                <td>Tú</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="legend">
+            <span class="chip reserv"><span class="d"></span>Reservada</span> contiene datos sensibles — acceso con firma
+            <span class="chip pub"><span class="d"></span>Copia transversal</span> copia saneada publicada a todo el personal
+            <span class="chip pend"><span class="d"></span>En revisión</span> esperando aprobación de jefatura
+          </div>
+        </section>
+
+        <!-- NUEVA ACTA -->
+        <section class="screen" id="nueva">
+          <div class="head"><h3>Nueva acta — Salud Mental</h3>
+            <span class="autosave"><span class="live"></span>Borrador guardado hace 12 s · privado</span></div>
+          <div class="grid2">
+            <div>
+              <div class="card">
+                <span class="lbl">Datos de la reunión</span>
+                <div class="row2">
+                  <div class="field"><label>Equipo</label><div class="input">Salud Mental ▾</div></div>
+                  <div class="field"><label>Tipo de reunión</label><div class="input">Equipo clínico ▾</div></div>
+                </div>
+                <div class="row3">
+                  <div class="field"><label>Fecha</label><div class="input mono">18-07-2026</div></div>
+                  <div class="field"><label>Hora inicio</label><div class="input mono">15:00</div></div>
+                  <div class="field"><label>Hora término</label><div class="input mono">16:20</div></div>
+                </div>
+                <div class="row2">
+                  <div class="field"><label>Lugar</label><div class="input">Sala reuniones 2</div></div>
+                  <div class="field"><label>Quórum</label><div class="input">Sí · 7 participantes ▾</div></div>
+                </div>
+              </div>
+              <div class="card">
+                <span class="lbl">Asistentes</span>
+                <div class="attendees">
+                  <span class="att"><span class="av">PR</span>P. Rojas</span>
+                  <span class="att"><span class="av">JM</span>J. Muñoz</span>
+                  <span class="att"><span class="av">CV</span>C. Vera</span>
+                  <button class="addbtn">＋ usuario</button>
+                  <button class="addbtn">＋ invitado</button>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div class="card">
+                <span class="lbl">Acuerdos</span>
+                <div class="acu" style="margin-bottom:8px">
+                  <div class="body"><div class="txt">Gestionar 20 cupos de psicólogo</div>
+                    <div class="meta"><span>Resp: C. Vera</span><span>Compromiso: 30-07</span></div></div>
+                  <span class="chip pend"><span class="d"></span>Pendiente</span>
+                </div>
+                <button class="addbtn" style="border-radius:8px">＋ Agregar acuerdo</button>
+              </div>
+              <div class="card">
+                <span class="lbl">Desarrollo (contenido libre)</span>
+                <div class="warnbar"><span>⚠</span><span><b>No incluya datos de pacientes</b> (RUT, nombres, direcciones). Se detectan y protegen automáticamente; use "el paciente", "el usuario".</span></div>
+                <textarea class="input">Se revisó la situación de un usuario derivado desde CESFAM. Se acuerda seguimiento. RUT 12.345.678-5…</textarea>
+                <div class="detected">● Detectado: 1 RUT → esta acta se marcará <b style="margin:0 4px">Reservada</b> y se cifrará.</div>
+              </div>
+              <div class="card">
+                <span class="lbl">Próxima reunión</span>
+                <div class="input mono" style="max-width:220px">01-08-2026 · 15:00</div>
+              </div>
+            </div>
+          </div>
+          <div class="formfoot">
+            <button class="btn primary" onclick="go('ver')">Firmar y finalizar</button>
+            <button class="btn ghost">Guardar borrador</button>
+            <span class="note">Firmar congela el acta (inmutable). Correcciones posteriores = adenda.</span>
+          </div>
+        </section>
+
+        <!-- VER ACTA + DISCLAIMER -->
+        <section class="screen" id="ver">
+          <div class="head"><h3 class="mono">SM-2026-014</h3><span class="chip reserv"><span class="d"></span>Reservada</span>
+            <span class="sub">Salud Mental · Equipo clínico · 18-07-2026</span></div>
+          <div class="viewer">
+            <div class="blurred">
+              <p><b>Asistentes:</b> P. Rojas, J. Muñoz, C. Vera + 4</p>
+              <p><b>Acuerdos:</b> Gestionar 20 cupos de psicólogo (C. Vera, 30-07) — Pendiente</p>
+              <p><b>Desarrollo:</b> Se revisó la situación de un usuario derivado…</p>
+              <p><b>Próxima reunión:</b> 01-08-2026 15:00</p>
+            </div>
+            <div class="overlay">
+              <div class="modal">
+                <div class="ic">🔒</div>
+                <h4>Acceso registrado</h4>
+                <p>Esta acta contiene <b>información sensible</b>. Al continuar, verá el contenido completo y
+                  se registrará su acceso.</p>
+                <div class="law">Se guardará <b>usuario · fecha · hora</b> como respaldo de acceso,
+                  conforme a la Ley 21.719 sobre protección de datos personales.</div>
+                <div class="acts"><button class="btn ghost" onclick="go('registro')">Cancelar</button>
+                  <button class="btn primary" onclick="document.querySelector('#ver .overlay').style.display='none';document.querySelector('#ver .blurred').style.filter='none';document.querySelector('#ver .blurred').style.opacity='1'">Aceptar y ver</button></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ACUERDOS PENDIENTES -->
+        <section class="screen" id="acuerdos">
+          <div class="head"><h3>Acuerdos pendientes</h3><span class="sub">Por equipo · se arrastran entre reuniones hasta cumplirse</span></div>
+          <div class="acu">
+            <div class="body"><div class="txt">Gestionar 20 cupos de psicólogo</div>
+              <div class="meta"><span>Salud Mental</span><span>Resp: C. Vera</span><span>Compromiso: 30-07-2026</span></div></div>
+            <span class="age">Pendiente hace 3 reuniones</span>
+            <span class="chip pend"><span class="d"></span>Pendiente</span>
+          </div>
+          <div class="acu">
+            <div class="body"><div class="txt">Actualizar protocolo de derivación cardiovascular</div>
+              <div class="meta"><span>Cardiovascular</span><span>Resp: J. Muñoz</span><span>Compromiso: 22-07-2026</span></div></div>
+            <span class="age">Pendiente hace 1 reunión</span>
+            <span class="chip pend"><span class="d"></span>Pendiente</span>
+          </div>
+          <div class="acu">
+            <div class="body"><div class="txt">Coordinar campaña de vacunación 2026 con SOME</div>
+              <div class="meta"><span>Dirección</span><span>Resp: M. Salinas</span><span>Compromiso: 05-08-2026</span></div></div>
+            <span class="age" style="color:var(--muted)">Nuevo</span>
+            <span class="chip pend"><span class="d"></span>Pendiente</span>
+          </div>
+        </section>
+
+        <!-- EN REVISIÓN -->
+        <section class="screen" id="revision">
+          <div class="head"><h3>En revisión — publicación transversal</h3>
+            <span class="sub">Jefatura/Dirección/SOME · aprobar copia saneada antes de publicarla a todo el personal</span></div>
+          <div class="qcard">
+            <h4 class="mono">CV-2026-009 · Cardiovascular</h4>
+            <p class="why">Marcada para copia transversal, pero el escaneo nocturno detectó <b>1 RUT</b> en el desarrollo. Revise y apruebe la versión saneada.</p>
+            <div class="preview"><b>Desarrollo (vista saneada):</b> Se acuerda seguimiento del usuario
+              <span class="mono">RUT <span class="mask">••••••••</span></span>, derivado desde el consultorio…</div>
+            <div class="qactions">
+              <button class="btn primary">Aprobar y publicar copia</button>
+              <button class="btn ghost">Editar máscara</button>
+              <button class="btn ghost">Mantener reservada</button>
+            </div>
+          </div>
+          <div class="qcard">
+            <h4 class="mono">DIR-2026-003 · Dirección</h4>
+            <p class="why">El registrante la declaró <b>sensible</b>. Solo se publicará metadatos + acuerdos (sin desarrollo).</p>
+            <div class="preview"><b>Copia automática:</b> folio, fecha, equipo, asistentes, quórum, acuerdos, próxima reunión + <i>"Para el detalle, ingrese a Libro de Actas."</i></div>
+            <div class="qactions">
+              <button class="btn primary">Confirmar publicación</button>
+              <button class="btn ghost">Mantener reservada</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- CONFIG -->
+        <section class="screen" id="config">
+          <div class="head"><h3>Configuración</h3><span class="sub">Solo administración · vocabularios y retención</span></div>
+          <div class="grid2">
+            <div class="card"><span class="lbl">Tipos de reunión</span>
+              <div class="attendees">
+                <span class="att" style="padding-left:10px">Consejo Desarrollo Local</span>
+                <span class="att" style="padding-left:10px">Equipo clínico</span>
+                <span class="att" style="padding-left:10px">Junta administrativa</span>
+                <button class="addbtn">＋</button>
+              </div>
+              <p class="note" style="margin-top:12px">Programa/Equipo, rol y asistentes se sincronizan solos desde los grupos y usuarios de la suite.</p>
+            </div>
+            <div class="card"><span class="lbl">Retención del contenido reservado</span>
+              <div class="field"><label>Ventana antes de purgar los datos sensibles (cifrados)</label>
+                <div class="input">Permanente (sin purga) ▾</div></div>
+              <p class="note">Configurable. La ley 21.719 exige una ventana definida antes de la puesta en marcha (ver EIPD).</p>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </div>
+
+  <footer>Diseño acordado en <span class="mono">docs/apps/libro-actas/specs/…</span> · pantallas ilustrativas.</footer>
+</div>
+
+<script>
+  function go(id){
+    document.querySelectorAll('.screen').forEach(s=>s.classList.toggle('on',s.id===id));
+    document.querySelectorAll('.navitem').forEach(n=>n.classList.toggle('active',n.dataset.s===id));
+    // reset the disclaimer each time we open the viewer
+    if(id==='ver'){var o=document.querySelector('#ver .overlay'),b=document.querySelector('#ver .blurred');
+      if(o)o.style.display='grid';if(b){b.style.filter='blur(6px)';b.style.opacity='.5';}}
+  }
+</script>
