@@ -18,6 +18,26 @@
 - **Terms:** use `CONTEXT.md` verbatim — `equipo` (any team group), `acta`, `borrador`, `firma`, `folio`, `registrante`, `contenido_libre`.
 - **Commits:** Conventional Commits; end each with `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.
 
+## Deltas from the approved design (apply while implementing)
+
+The design was refined after this plan's first draft. Apply these when executing the tasks below:
+
+- **Detector (Task 3) → data-driven pattern table (D5).** Structure `PiiDetector` as one list of rows
+  `{name,label?,value?,validate?}` with a single `scan()` loop; return `{rut, causa, email, phone, any}`.
+  The **`causa`** row covers legal-cause codes **RIT/RIC/RUC/ROL** (dot variants `R.I.C.`), protected under the
+  *deber de secreto*. Names/surnames/addresses are the **fuzzy tier** — not regex'd (manual + deferred NER).
+- **Encryption is unconditional** — `contenido_libre` is always encrypted at rest regardless of `is_sensitive`.
+- **`la_compliance_ack`** table (Task 2): `uid, accepted_at, version`. **One-time compliance commitment** (D8):
+  `AccessGuard` requires it before first access; `version` is a **code constant** (S5).
+- **Capabilities hardcoded (S1)** — `AccessGuard::hasCapability(uid,cap)` uses default group constants
+  (`view_sensitive` = owning equipo + `cat-jefaturas`; `review_access_log` = `cat-jefaturas`). Admin config UI
+  is **deferred to PR7** — do not build it here.
+- **Scan is synchronous at finalize (S2)** — no background job in this PR.
+- **Registro: simple list, no pagination (S4)** — access-scoped list with a sane hard limit.
+- **Frontend (Task 10):** nav order (D1: `+ Nueva acta` · Registro · En revisión[PR4] · Configuración),
+  theming via NC CSS vars only (D4, no hardcoded colors), responsive (D3). **No `Inicio` view here** — the
+  dashboard moves to **PR2** (S3). Legend + "Crear adenda" also land in PR2.
+
 ---
 
 ## File Structure
@@ -252,7 +272,19 @@ class PiiDetectorTest extends TestCase {
     }
     public function testScanDetectsRutOnlyWhenCheckDigitValid(): void {
         $this->assertTrue($this->d->scan('paciente RUT 12.345.678-5 derivado')['rut']);
-        $this->assertFalse($this->d->scan('el código 12.345.678-9 no es rut')['rut']);
+        $this->assertFalse($this->d->scan('el código 12.345.678-9 no es válido')['rut']);
+    }
+    public function testScanHandlesRutFormatVariants(): void {
+        foreach (['12.345.678-5','12345678-5','123456785','12.345.678-K' /* if valid DV */ === '12.345.678-K'
+                    ? '12.345.678-5' : '12.345.678-5'] as $v) {
+            $this->assertTrue($this->d->scan("dato $v aquí")['rut'], "should detect $v");
+        }
+    }
+    public function testScanTreatsRutRunLabelAsSignal(): void {
+        // the label itself flags it, even if the number is malformed/partial
+        $this->assertTrue($this->d->scan('RUN del usuario: 12.345.678')['rut']);
+        $this->assertTrue($this->d->scan('R.U.T. en la ficha')['rut']);
+        $this->assertTrue($this->d->scan('run 9.876.543')['rut']);
     }
     public function testScanEmailPhoneRit(): void {
         $this->assertTrue($this->d->scan('correo a b@c.cl')['email']);
@@ -278,11 +310,21 @@ Expected: FAIL — class `PiiDetector` not found. (If phpunit.xml is missing, cr
 declare(strict_types=1);
 namespace OCA\LibroActas\Service;
 
+/**
+ * Deterministic detector for the STRUCTURED identifiers: RUT/RUN, email, phone, RIT.
+ * NOT a name/address detector — those are the fuzzy class, handled by the registrante's manual
+ * "sensible" declaration and the deferred local NER (Layer-3). A missed name cannot leak:
+ * contenido_libre is ALWAYS encrypted at rest, and the allowlist publication never auto-publishes prose.
+ * This scan only decides auto-flagging (disclaimer/audit), so false negatives on names are tolerable.
+ */
 class PiiDetector {
-    /** Chilean RUT check digit (módulo 11). */
+    // RUT/RUN label with punctuation/spacing variants: RUT, RUN, R.U.T., R.U.N., "r u t"
+    private const RUT_LABEL = '/\bR\.?\s?U\.?\s?[TN]\.?/i';
+
+    /** Chilean RUT/RUN check digit (módulo 11); accepts dotted, dashed, or bare forms. */
     public function isValidRut(string $rut): bool {
-        $rut = strtolower(str_replace(['.', ' '], '', $rut));
-        if (!preg_match('/^(\d{7,8})-([\dk])$/', $rut, $m)) return false;
+        $rut = strtolower(str_replace(['.', ' ', '-'], '', $rut));
+        if (!preg_match('/^(\d{7,8})([\dk])$/', $rut, $m)) return false;
         [$num, $dv] = [$m[1], $m[2]];
         $sum = 0; $mul = 2;
         for ($i = strlen($num) - 1; $i >= 0; $i--) {
@@ -295,8 +337,11 @@ class PiiDetector {
     }
     /** @return array{rut:bool,email:bool,phone:bool,rit:bool,any:bool} */
     public function scan(string $text): array {
-        $rut = false;
-        if (preg_match_all('/\b\d{1,2}\.?\d{3}\.?\d{3}-?[\dkK]\b/', $text, $mm)) {
+        // (1) a RUT/RUN label anywhere is itself a signal, regardless of the number's format
+        $rut = (bool)preg_match(self::RUT_LABEL, $text);
+        // (2) DV-validated numbers with flexible separators: 12.345.678-5 / 12345678-5 / 123456785 / ...-K
+        if (!$rut && preg_match_all(
+                '/\b\d{1,2}[.\s]?\d{3}[.\s]?\d{3}[-.\s]?[\dkK]\b|\b\d{7,8}[-.\s]?[\dkK]\b/', $text, $mm)) {
             foreach ($mm[0] as $cand) { if ($this->isValidRut($cand)) { $rut = true; break; } }
         }
         $email = (bool)preg_match('/[\w.+-]+@[\w-]+\.[\w.-]+/', $text);

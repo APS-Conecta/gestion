@@ -39,10 +39,15 @@ which point they get promoted (per the CONTEXT-MAP rules).
   author edits it; the team sees nothing until it is signed. Any programa member may create a borrador for
   their programa (no dedicated secretario/a role). Signing (*firma*) turns it into a finalized, immutable acta.
 
-- **Sensitive span** — a fragment of free-text that is personal/legal PII: RUT, nombre, apellido,
-  dirección, email, teléfono, causas legales, RIT, causas judiciales. Detected deterministically
-  (parsers/regex) first; a local-only NER model is a last-resort fallback (detection only, never leaves
-  the instance).
+- **Sensitive span** — a fragment of free-text that is personal/legal PII. **Two tiers:**
+  - *Deterministic* (detected by a data-driven pattern table, synchronous at finalize): **RUT/RUN**
+    (label `R.?U.?[TN]` or a DV-validated número, any format), **legal causes RIT/RIC/RUC/ROL** (protected
+    under the *deber de secreto*, Art. 14 bis), **email**, **teléfono**.
+  - *Fuzzy* (NOT regex'd): **nombres, apellidos, direcciones** — handled by the registrante's manual
+    declaration + a deferred local-only NER (detection only, never leaves the instance).
+  Detection is a best-effort **auto-flagger**, not the security boundary: the free-text is protected
+  **wholesale** (always encrypted at rest + gated + prose never auto-published), so detection need not be
+  exhaustive — a missed name cannot leak.
 
 - **Sensitive acta** — an acta record flagged as containing at least one sensitive span (flagged by the
   registrante, or auto-flagged when detection finds a span). Only sensitive actas trigger the
@@ -69,7 +74,8 @@ which point they get promoted (per the CONTEXT-MAP rules).
   the original stays intact, the addendum chain is the follow-up trail. Information can be *fixed*, not *altered*.
 
 - **Acuerdo** — a **living** agreement/commitment tracked across meetings (`texto`, `responsable`,
-  `fecha compromiso`, `programa`, `estado`: pendiente/cumplido, `creado_en_acta`, `cerrado_en_acta`). It
+  `fecha compromiso`, `equipo`, `estado`: **pendiente / cumplido / anulado** (anulado needs a `motivo`),
+  `creado_en_acta`, `cerrado_en_acta`). It
   **outlives** any single acta. Its current `estado` is a projection of its acuerdo-events. Optional structure:
   only `texto` is required; owner/date/estado are opt-in per acuerdo (agnostic to loose vs tracked styles).
 
@@ -111,6 +117,17 @@ which point they get promoted (per the CONTEXT-MAP rules).
   honeypot and is not built; complete content is reviewed per-acta instead). Role-restricted
   (jefatura/dirección/SOME), **access-scoped**, requires **disclaimer + firma + audit-log**, and is
   **watermarked** with exporter + timestamp so a leaked copy is traceable.
+
+- **Capability** — a named permission mapped to Nextcloud **groups** (never per-user, AD-4):
+  `view_sensitive`, `review_access_log`, `publish_transversal`, `export`. MVP ships hardcoded sensible
+  defaults; the admin config UI is deferred.
+
+- **Compromiso de cumplimiento** — a one-time, recorded, explicit acknowledgment each user accepts before
+  first access: the data may be sensitive, access is logged, and they commit to lawful use under Ley 21.719.
+  Stored once per user (`la_compliance_ack`, versioned by a code constant); re-accept on version bump.
+
+- **Revisión de accesos** — the read-only screen (gated by `review_access_log`) listing access-log entries
+  (quién / cuándo al minuto / qué acción) per acta/user/date. The *respaldo* for Dirección/SOME.
 
 ## Data-protection law (Ley 21.719, in force 2026-12-01)
 

@@ -59,6 +59,7 @@ be recorded before code lands.
 - **`acta_access_log`** — acta_id (or export scope), uid, ts (to the minute), action (view/export), disclaimer.
 - **`acta_drafts`** — per-author borrador payload (autosave); private until finalized.
 - **`acta_calendar_link`** — acta_id → calendar event ref.
+- **`la_compliance_ack`** — uid, accepted_at, version — the one-time *compromiso de cumplimiento* (D8).
 - **App config** — vocabularies: tipo_reunion, tipo_actividad, estado, tags (admin settings, seeded).
 
 ## 5. Field model & vocabularies
@@ -73,10 +74,14 @@ be recorded before code lands.
 
 - **Discourage first (Art. 16 bis):** the UI prompts the registrante to **remove patient identifiers**; PII
   is residual, not designed-for.
-- **At rest:** `contenido_libre` encrypted via `OCP\Security\ICrypto` (key from instance secret, outside DB).
-- **Detection (deterministic-first):** parsers for RUT (**módulo-11 check digit**), email, teléfono, RIT;
-  a match **auto-sets is_sensitive** and warns. Local NER (Layer-3, optional, behind a toggle) is a later
-  fallback for fuzzy PII (names/addresses) — **always local, detection-only**.
+- **At rest:** `contenido_libre` is **always** encrypted via `OCP\Security\ICrypto` (key from instance secret,
+  outside DB), regardless of the sensitive flag — so even undetected PII is protected (see §22 key management).
+- **Detection = one data-driven pattern table (D5), synchronous at finalize.** Deterministic tier: **RUT/RUN**
+  (label `R.?U.?[TN]` **or** DV-validated número, all formats), **legal causes RIT/RIC/RUC/ROL** (protected
+  under the *deber de secreto*, Art. 14 bis), **email**, **teléfono**. A match **auto-sets is_sensitive**.
+  Adding a type = one table row (DRY). **Fuzzy tier (names/surnames/addresses) is NOT regex'd** — manual
+  declaration + deferred local NER (Layer-3, always local). **This is safe because detection isn't the
+  boundary**: free-text is always encrypted and its prose is never auto-published, so a missed name can't leak.
 - **Access gate:** opening a **sensitive** acta requires accepting a disclaimer → writes `acta_access_log`.
   Accountability gate, **not** a barrier — cleared viewers see everything (§8).
 - **Search isolation:** `contenido_libre` is never indexed / never sent to any search or AI pipeline.
@@ -88,8 +93,10 @@ be recorded before code lands.
 - **Transversal copy (opt-in, allowlist):** auto level = metadata + structured + acuerdos, published to
   `Transversal/Actas de reuniones/«equipo»` (all-staff). **Free prose never auto-published.** Narrative →
   human-reviewed **quarantine** approval (jefatura/dirección/SOME). **Clinical = hard floor** (no prose).
-- **Held-until-cleared:** every candidate public copy waits for an overnight background scan; clean → auto;
-  flagged/declared → quarantine queue (with **notifications** to reviewers).
+- **Publication decision at publish time:** the deterministic scan is synchronous (S2), so a candidate public
+  copy is classified inline — clean → auto (allowlist level); flagged/declared → quarantine queue (with
+  **notifications** to reviewers). A held-until-cleared overnight pass applies only once the deferred **NER**
+  tier exists.
 - **Search (v1):** in-app Registro filters (equipo, tipo, estado, fecha range, tags, attendee/guest names) —
   never `contenido_libre`. Unified-search provider deferred.
 
@@ -112,8 +119,11 @@ friction. Guarantees "si se necesita, alguien autorizado lo revisa completo." Pr
 
 - Optional structure: only `texto` required; responsable/fecha/estado opt-in (agnostic to loose vs tracked).
 - **Living entity** with immutable `texto`; estado moves via `acuerdo_history` rows anchored to actas.
-- **Acuerdos pendientes** view per equipo; **lectura del acta anterior** auto-loads open acuerdos to review;
-  "no aprobada" → prompt an addendum to the prior acta.
+- **States: `pendiente / cumplido / anulado`** — `anulado` carries a required `motivo` (logged as an
+  acuerdo-event); anulados drop off the pendientes view (D13).
+- **Acuerdos pendientes** view per equipo; **lectura del acta anterior** — the previous acta is **auto-suggested**
+  (last finalized acta of the same equipo) with **manual override** (D12); it auto-loads that acta's open
+  acuerdos to review; "no aprobada" → prompt an addendum to the prior acta.
 
 ## 11. Generar Acta
 
@@ -156,26 +166,37 @@ obligations. **In force 01-DIC-2026.**
 
 ## 16. Notifications, jobs, i18n, a11y
 
+- **PII scan is synchronous at finalize** (S2) — the deterministic scan (§6) is milliseconds, so it runs inline
+  and sets `is_sensitive` at finalize. An **overnight background job** exists **only** for the deferred local
+  **NER** tier (a later PR), not for the deterministic path.
 - **Notifications** (OCP) — acta awaiting quarantine review (to jefaturas), acta finalized in your equipo.
-- **Background jobs** — overnight publication scan; retention purge (when a window is set).
+- **Background jobs** — retention purge (when a window is set); NER scan (later, with NER).
 - **i18n/l10n** — Spanish UI via Nextcloud gettext/.po; **a11y** via `@nextcloud/vue` + WCAG basics.
 - **Fixtures/provisioning (AD-2)** — seed vocabularies, sample actas, create+group-share per-team calendars.
 
 ## 17. Phasing (reviewable PRs, each leaves the app working)
 
+Scope reflects the **ponytail cuts (S1–S7)**: hardcoded capability defaults (config UI deferred), synchronous
+scan (no overnight batch in core), Inicio → PR2, no pagination in MVP, access-review viewing → later PR.
+
 - **PR0 · Foundations** — ADR-0001, this spec, CONTEXT, compliance map; app skeleton (`info.xml`, enable).
-- **PR1 · Core + security spine (MVP)** — model + migrations; directory-synced vocabularies + admin settings;
-  create/edit **private borrador** + autosave; **firma → finalize → immutable**; folio (atomic)/quórum/times/
-  attendees+guests; **encryption + is_sensitive + deterministic RUT(módulo-11)/email/tel/RIT scan +
-  disclaimer/audit gate**; access-scoped Registro.
-- **PR2 · Acuerdos** — entity + history + pendientes view + lectura/aprobación anterior + **addenda**.
-- **PR3 · Generar Acta** — PhpWord `.docx`/`.odt` → vault.
-- **PR4 · Transversal publication** — allowlist copy + **quarantine queue** + overnight scan job + jefatura
-  approval + **notifications**.
+- **PR1 · Core + security spine (MVP)** — model + migrations (incl. `la_compliance_ack`); directory-synced
+  vocabularies; create/edit **private borrador** + autosave; **firma → finalize → immutable**; folio
+  (atomic)/quórum/times/attendees+guests; **encryption (always) + is_sensitive + synchronous deterministic
+  scan (RUT módulo-11, legal causes RIT/RIC/RUC/ROL, email, phone) + disclaimer/audit gate with one-time
+  compliance-ack** (hardcoded capability defaults); **access-scoped Registro (simple list, no pagination)**;
+  lean Vue SPA (nav order D1, theming via NC vars D4, responsive D3).
+- **PR2 · Acuerdos + Inicio** — acuerdo entity + history + states (pendiente/cumplido/anulado) + pendientes
+  view + lectura/aprobación anterior + **addenda** (+ "Crear adenda" button, legend); **Inicio dashboard**
+  (counts + próximas reuniones + acuerdos pendientes).
+- **PR3 · Generar Acta** — PhpWord `.docx`/`.odt` → vault; **password-protected PDF + signature/metadata block (D9)**.
+- **PR4 · Transversal publication** — allowlist copy + **quarantine queue** + jefatura approval + **notifications**.
 - **PR5 · Calendar sync** — one-way, per-equipo calendar (+ provisioning).
 - **PR6 · Retention** — configurable purge job (default off/permanent).
-- **PR7 · Bulk export** — sanitized compilado, signed/audited/watermarked.
-- **later** — local-AI NER fallback; unified-search provider; attachments; multi-team actas; PDF.
+- **PR7 · Bulk export + access-review + capability config** — sanitized compilado (signed/audited/watermarked);
+  **access-review screen (D7)**; **admin capability→group config UI (S1)**.
+- **later** — local-AI NER fallback (+ its overnight job); unified-search provider; attachments; multi-team
+  actas; NC Dashboard widget; help affordance.
 
 ## 18. Testing
 
@@ -187,3 +208,60 @@ projection, generator); the repo's `make test` static+smoke gate before each PR.
 - Component kit: `@nextcloud/vue` — https://nextcloud-vue-components.netlify.app/ (pull live docs via Context7).
 - Nextcloud app dev docs (via Context7 MCP, per README).
 - Laws: `docs/legal/` · Compliance map: `../compliance-ley-21719.md` · Glossary: `../CONTEXT.md` · ADR: `adr/`.
+
+## 20. UI: navigation, responsive, theming
+
+- **Navigation order (D1)** — primary action pinned top, destinations in workflow order, admin pinned bottom.
+  "Nueva/editar" and "Ver acta" are routes, not nav items.
+  ```
+  [ + Nueva acta ]   (primary, top)
+    Inicio           (PR2)      Registro
+    Acuerdos pendientes (PR2)   En revisión (badge, PR4)
+    ──────────
+    Configuración    (admin, bottom)
+  ```
+- **Theming follows Nextcloud, live (D4 — hard rule).** Style **only** through Nextcloud CSS custom properties
+  (`--color-primary(-element)`, `--color-main-background/-text`, `--color-background-hover`, `--color-border`,
+  `--color-error/-warning/-success`, `--border-radius(-large)`) and `@nextcloud/vue` components. **No hardcoded
+  colors in app CSS.** White-label branding, dark mode, and any admin theme then propagate with zero code change
+  (satisfies AD-6/AD-7). Semantic chips → `--color-error/-warning/-success`. *(The mockup's teal palette is
+  illustrative only — a standalone file, not the app.)*
+- **Responsive (D3)** — `NcContent + NcAppNavigation` (collapses to a toggle on narrow viewports) `+ NcAppContent`;
+  forms single-column on mobile, inputs full-width, targets ≥44px; Registro → stacked cards on mobile (never
+  horizontal body scroll); `NcModal` full-screen on mobile. Verify at ≤720px.
+- **UI polish (D17)** — empty/loading states, Spanish actionable error toasts, confirm on destructive actions
+  (delete borrador); autosave = last-write-wins per author (single-author drafts); disclaimer modal focus-trapped.
+
+## 21. Access, capabilities & disclaimer
+
+- **Capability → group model (D6).** Named capabilities map to **groups** (reuse the directory, no per-user ACL,
+  AD-4): `view_sensitive`, `review_access_log`, `publish_transversal`, `export`. **MVP ships hardcoded sensible
+  defaults** (`view_sensitive` = owning equipo + `cat-jefaturas`; `review_access_log` = `cat-jefaturas`); the
+  **admin config UI is deferred** (S1) to PR7.
+- **One-time compliance commitment + gate (D8).** First use: the user accepts an explicit, law-anchored
+  **compromiso de cumplimiento** (Ley 21.719), recorded in `la_compliance_ack` (uid, accepted_at, version — a
+  **code constant**, S5). Thereafter the full disclaimer re-appears only on **sensitive** actas; **every** open
+  is logged regardless (trace everything).
+- **Access-review screen (D7)** — read-only list of `la_access_log` (quién / cuándo al minuto / qué acción),
+  gated by `review_access_log`. The *respaldo* for Dirección/SOME. Ships in PR7 (the log is written from PR1).
+
+## 22. Encryption key management (D11 — operational/EIPD)
+
+`ICrypto` derives from the Nextcloud **instance secret**. If it is lost or rotated without re-encryption, **all
+reserved free-text becomes permanently unreadable** (mass data loss; it is also the crypto-shred mechanism).
+Runbook + EIPD item: back up the instance secret, never rotate casually, treat rotation as a re-encryption
+migration (Art. 14 quinquies — availability/resilience, burden of proof).
+
+## 23. State machines, API & DB notes
+
+- **State machines** — Acta: `borrador → finalizada → (addendum*)` (finalizada terminal for content).
+  Acuerdo: `pendiente → cumplido | anulado`. Quarantine: `pendiente-revisión → publicada | mantenida-reservada`.
+- **API (D15)** — JSON error envelope `{error, message(es)}` + correct codes (403/404/422); server-side
+  required-field validation on finalize. **Pagination deferred** (S4) — Registro returns an access-scoped list
+  with a hard limit; add pagination when volume demands.
+- **DB (D14)** — indices on `la_actas(equipo, fecha, folio)`, `acuerdos(equipo, estado)`,
+  `acuerdo_history(acuerdo_id)`, `la_access_log(acta_id, uid, logged_at)`. No DB foreign keys (NC convention) —
+  referential integrity in services. `hora_*` as `HH:MM` strings. Access-log **kept long-term** as the respaldo
+  (D18; EIPD confirms). Access-log integrity = trust-DB for v1 (hash-chain a later option, D16).
+- **EIPD items** — derecho de acceso vs non-indexed free-text (served over structured data; patient data
+  shouldn't be in actas); access-log retention stance; key management (§22).

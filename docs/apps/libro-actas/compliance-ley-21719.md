@@ -40,19 +40,24 @@ residual** PII that slips into free-text — not to host patient data on purpose
 | 10b | 7 | **Derecho de supresión vs acta immutability** — a titular may request deletion; actas are immutable permanent records. | BOTH | Supresión served on the **reserved PII** (redact/delete that datum via the retention mechanism); the administrative record stays under the **official-records exemption**. Exact reconciliation decided in the **EIPD**. |
 | 10c | 14 ter l) | **Disclose automated processing** — the transparency notice must mention the automated PII **scanning/flagging**. | ORG | Privacy policy names the deterministic scan (+ optional local NER); no automated decisions with legal effect on titulares. |
 | 10d | — | **All-local processing** (no cloud AI, no external processor, no cross-border transfer). | — | **Compliance asset:** no *encargado* obligations, no international-transfer safeguards needed. Why detection/NER must stay local. |
-| 11 | 5 | **Derecho de acceso** | BOTH | Registrante + access-log make an individual's data locatable; ORG process to answer requests. |
+| 11 | 5 | **Derecho de acceso** | BOTH | Served over **structured** data (registrante, attendees, access-log). **Limitation (EIPD):** patient mentions buried in encrypted, unindexed free-text are not systematically retrievable — *by design* (minimization); patient data should not be in actas at all (row 10). |
 | 12 | 7 | **Derecho de supresión** | BOTH | Actas deletable/anonymizable by authorized role; retention job (row 15). |
 | 13 | — | **Rectificación / oposición** | BOTH | Edit + draft workflow; ORG process. |
 | 14 | 9 | **Derecho a la portabilidad** | APP | Structured actas export (docx/odt already; structured data export on request). |
 | 15 | 14 quáter / principio calidad | **Retention limits** — no indefinite storage; delete/anonymize past purpose. | APP | **Split retention:** administrative acta = permanent record (no PII → no limit); reserved free-text (PII) = **configurable crypto-shred window, default permanent** for now, logged as an anonymization event (preserves immutability). App is compliant-capable; **EIPD must set a real window before go-live** (permanent PII retention is a live Art. 14 quáter risk). |
 | 16 | primero transit. | **Entry into force 01-DIC-2026.** | — | Compliance must be in place before go-live and before this date. |
+| 17 | 14 quinquies | **Availability/resilience + burden of proof** — the responsable must prove the security measures work. | BOTH | Encryption via `ICrypto` (instance secret). **Key-management risk (D11):** losing/rotating the secret without re-encryption = permanent loss of all reserved free-text → back up the secret, treat rotation as a re-encryption migration (runbook). Access-log = evidence of measures. |
+| 18 | 14 ter / 14 bis | **Explicit commitment + accountability** — user acknowledges lawful use; who accessed sensitive data is traceable. | APP | **Compromiso de cumplimiento** (one-time, versioned) + **all opens logged** + **Revisión de accesos** screen (D7/D8) = the *respaldo*. |
+| 19 | 14 quáter | **Access log is itself personal data.** | APP/EIPD | Kept **long-term** as the accountability respaldo (aligned with official-records retention); documented tension with minimization — **EIPD confirms the stance** (D18). |
 
 ## Open compliance actions (not code)
 
-- [ ] **EIPD/DPIA** for the actas processing (Art. 15 ter) — companion doc, before go-live.
-- [ ] **Política de tratamiento de datos** published by the CESFAM (Art. 14 ter).
+- [ ] **EIPD/DPIA** for the actas processing (Art. 15 ter) — companion doc, before go-live. Must cover: retention
+  windows (reserved PII + access log), derecho-de-acceso limitation over free-text, legal basis per category.
+- [ ] **Política de tratamiento de datos** published by the CESFAM (Art. 14 ter) — names the automated scan.
 - [ ] **Security-measures document** + **breach-response runbook & register** (Art. 14 quinquies, 14 sexies).
-- [ ] **Retention policy** value (window) agreed with the CESFAM (Art. 14 quáter / calidad).
+- [ ] **Instance-secret backup + rotation-as-re-encryption** runbook (D11 — key management).
+- [ ] **Retention policy** values agreed with the CESFAM (reserved-PII window + access-log stance).
 - [ ] Confirm **legal basis** for any health data reaching actas rests on health legislation, not app consent (Art. 16 bis).
 
 > These files are a reference copy for analysis; the BCN pages are the legal SSOT. Legal review by a

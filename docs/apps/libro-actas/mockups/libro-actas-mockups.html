@@ -196,7 +196,9 @@
     <p>Pantallas base del app (NC34 · <span class="mono">@nextcloud/vue</span>). UI en español, estado
       codificado en chips. Paleta placeholder (teal institucional) hasta la guía de marca. Cambia de pantalla
       en el menú lateral.</p>
-    <p class="note">Wireframe de alta fidelidad — no es el app real; ilustra el diseño acordado en el spec.</p>
+    <p class="note">Wireframe de alta fidelidad — no es el app real; ilustra el diseño acordado en el spec.
+      Los colores son <b>placeholder</b>: el app real usa solo variables de tema de Nextcloud
+      (<span class="mono">--color-*</span>) y se re-tematiza solo con la marca/modo oscuro de la suite.</p>
   </div>
 
   <div class="app">
@@ -211,8 +213,6 @@
         <button class="navitem active" data-s="registro" onclick="go('registro')"><span class="dot"></span>Registro</button>
         <button class="navitem" data-s="acuerdos" onclick="go('acuerdos')"><span class="dot" style="background:var(--warn)"></span>Acuerdos pendientes</button>
         <button class="navitem" data-s="revision" onclick="go('revision')"><span class="dot" style="background:var(--danger)"></span>En revisión<span class="count">2</span></button>
-        <button class="navitem" data-s="nueva" onclick="go('nueva')"><span class="dot"></span>Nueva / editar</button>
-        <button class="navitem" data-s="ver" onclick="go('ver')"><span class="dot"></span>Ver acta (sensible)</button>
         <button class="navitem" style="margin-top:auto" data-s="config" onclick="go('config')"><span class="dot"></span>Configuración</button>
       </nav>
       <div class="main">
