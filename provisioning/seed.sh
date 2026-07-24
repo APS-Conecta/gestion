@@ -27,7 +27,14 @@ for phase in "$HERE"/phases/[0-9]*.sh; do
   # Run each phase in a subshell with `set -e` for fault isolation: a failing phase stops the run
   # (named), and no phase can leak shell state into the next — cross-phase state goes through
   # Nextcloud and is re-queried by the guard helpers (AD-2), never via shell vars.
-  if ! ( set -e; . "$phase" ); then
+  #
+  # Run the subshell as its OWN command and test $? afterwards. Do NOT fold it back into
+  # `if ! ( set -e; . "$phase" ); then` — bash suppresses errexit inside a command used as an `if`
+  # condition, and the suppression reaches into the subshell, so `set -e` there becomes a no-op: the
+  # phase runs past its first failure and reports success. That silently skipped every group folder
+  # and the whole ACL matrix on a real run.
+  ( set -e; . "$phase" )
+  if [ $? -ne 0 ]; then
     echo "FATAL: phase $(basename "$phase") failed" >&2
     exit 1
   fi
