@@ -3,9 +3,9 @@
 Internal management / intranet suite for a Chilean CESFAM (primary-healthcare centre), built as a
 **white-label Nextcloud** deployment (official image, **no source fork**), self-hosted via Docker.
 
-> **Status: ✅ v1 feature-complete (Foundation + Spine A).** Epics 0–4 are merged — dev stack + debugger +
+> **Status: ✅ v1 done (Foundation + Spine A).** Epics 0–4 are merged — dev stack + debugger +
 > quality gate + provisioning, es-CL locale, roles/access, the four-area document
-> tree, and live office editing. The one remaining v1 step is a human browser-acceptance run
+> tree, and live office editing — and the browser acceptance run passed on **2026-07-24**
 > (see *Current state* below). No patient data — dev uses **synthetic fixtures only**.
 
 ## What this is (and isn't)
@@ -86,10 +86,16 @@ To stop: `make down` (keeps your data volumes). That's the whole loop.
 **Office suite:** `make office-eurooffice` brings up Euro-Office, wires the Nextcloud Office connector, and
 runs an editing smoke. `make office-formats` then audits the backend (OSS/no paid license).
 
-**Live editing acceptance (Epic 4):** the editor pipe and OSS coverage are machine-verified
-(`make office-smoke`, `make office-formats`); the browser-only checks — in-browser render, live co-editing
-convergence, cursor presence, open/save fidelity — are a human runbook at
-[`docs/ACCEPTANCE-EDITING.md`](docs/ACCEPTANCE-EDITING.md).
+**Live editing acceptance (Epic 4) — done.** Run in a browser on **2026-07-24** (issue #30, since closed;
+the standing runbook `docs/ACCEPTANCE-EDITING.md` was retired with it). In-browser render, create/edit/save
+round-trip, live co-editing convergence and cursor presence all passed; edits were confirmed inside the
+*stored* file bytes, not just on screen. `make office-smoke` and `make office-formats` remain the machine
+gate for the pipe and the OSS/no-paid-licence claim.
+
+**Which formats you can actually edit.** OOXML — `docx`, `xlsx`, `pptx` — opens and edits normally.
+**ODF — `odt`, `ods`, `odp` — opens and renders correctly but is view-only**: the connector declares those
+`lossy-edit`/`auto-convert` rather than `edit`, so it will not edit them in place. Use *Archivo → Guardar
+copia como* to convert to OOXML first. Whether to enable lossy ODF editing is an open decision — issue #45.
 
 ## Where things live
 
@@ -116,7 +122,8 @@ registry** (phase 20), the **four-area Document Home tree + first-cut access mat
 synthetic **fixture users + a sample file** (phases 50–60). White-label branding is not applied in v1 —
 the instance runs the default Nextcloud theme. Live collaborative editing is native to the office backend
 (`make office-eurooffice`).
-The one remaining v1 step is the human browser-acceptance run ([`docs/ACCEPTANCE-EDITING.md`](docs/ACCEPTANCE-EDITING.md)).
+The browser acceptance run passed on 2026-07-24, so v1 is complete; ODF is view-only (see *Office suite*
+above).
 
 ## Developing — how to implement a feature
 

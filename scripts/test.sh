@@ -18,6 +18,10 @@ for s in scripts/*.sh provisioning/*.sh provisioning/phases/*.sh; do
   [ -e "$s" ] && check bash -n "$s"
 done
 check test -f dev/xdebug.ini
+# Regression guard (#39): the phase runner must not wrap its `set -e` subshell in an `if` condition —
+# bash suppresses errexit there, so a failing phase would run on and report success. Comment lines are
+# stripped first: seed.sh documents the wrong shape on purpose, and the guard must not match that.
+check bash -c '! grep -vE "^[[:space:]]*#" provisioning/seed.sh | grep -qE "if +! +\( *set -e"'
 
 echo "== smoke (only if a stack is running) =="
 if docker compose ps --status running --services 2>/dev/null | grep -qx nextcloud; then

@@ -3,8 +3,9 @@
 # For the Euro-Office backend it asserts the backend is OSS / self-hosted with NO paid licence.
 #
 # NOT covered here (no gate can): in-browser rendering, live convergence, cursor presence, and open/save
-# FIDELITY — and, for Euro-Office, per-format editing (it exposes no WOPI discovery to parse) — are
-# human/browser checks. See docs/ACCEPTANCE-EDITING.md.
+# FIDELITY — and, for Euro-Office, per-format editing (it exposes no WOPI discovery to parse). Those were
+# checked by hand in a browser on 2026-07-24 and passed; the standing runbook was retired with that run.
+# Outcome and the ODF caveat live in README.md ("Office suite").
 set -euo pipefail
 
 . "$(dirname "$0")/office-lib.sh"
@@ -19,4 +20,4 @@ case "$img" in
   *euro-office/documentserver*) echo "  ✓ OSS image: ${img} (Euro-Office, AGPL — no paid licence)";;
   *) echo "FAIL: unexpected Euro-Office image '${img}'"; exit 1;;
 esac
-echo "PASS: Euro-Office — server healthy + OSS image (per-format editing: see docs/ACCEPTANCE-EDITING.md)"
+echo "PASS: Euro-Office — server healthy + OSS image (OOXML edits in place; ODF is view-only — see README)"
