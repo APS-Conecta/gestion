@@ -56,13 +56,17 @@ office-eurooffice: ## Bring up the Euro-Office backend and wire the eurooffice c
 	@test -f .env || { echo "No .env found — run: cp .env.example .env"; exit 1; }
 	docker compose --profile eurooffice up -d --wait eurooffice
 	$(OCC) app:install eurooffice 2>/dev/null || $(OCC) app:enable eurooffice
-	# The doc server fetches documents from Nextcloud at the StorageUrl host (`nextcloud`); it must be a
-	# trusted domain or Nextcloud answers HTTP 400. Idempotent (install-time env doesn't retro-apply).
+	@# The doc server fetches documents from Nextcloud at the StorageUrl host (`nextcloud`); it must be a
+	@# trusted domain or Nextcloud answers HTTP 400. Idempotent (install-time env doesn't retro-apply).
 	$(OCC) config:system:get trusted_domains | grep -qx nextcloud || $(OCC) config:system:set trusted_domains $$($(OCC) config:system:get trusted_domains | grep -c .) --value=nextcloud
 	$(OCC) config:app:set eurooffice DocumentServerUrl --value="http://localhost:$(OFFICE_PORT)/"
 	$(OCC) config:app:set eurooffice DocumentServerInternalUrl --value="http://eurooffice/"
 	$(OCC) config:app:set eurooffice StorageUrl --value="http://nextcloud/"
-	$(OCC) config:app:set eurooffice jwt_secret --value="$(OFFICE_JWT_SECRET)"
+	@# `@` + silenced output: this is the only secret on the wire here, and neither make's command echo
+	@# nor occ's "is now set to '…'" confirmation may leak it (NFR-2/AD-3 — cf. scripts/dump-credentials.sh,
+	@# which writes secrets to a mode-600 file and never to stdout).
+	@$(OCC) config:app:set eurooffice jwt_secret --value="$(OFFICE_JWT_SECRET)" >/dev/null
+	@echo "Config value 'jwt_secret' for app 'eurooffice' is set (value not printed)."
 	@OFFICE_PORT=$(OFFICE_PORT) bash scripts/office-smoke.sh
 
 office-smoke: ## Smoke-check the Euro-Office backend
