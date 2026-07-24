@@ -67,11 +67,16 @@ add_user_to_group() {  # UID GID  (query-before-add: accurate + idempotent)
 
 # --- apps (install-or-enable; idempotent) ---
 ensure_app() {  # APPID
-  local app="$1"
+  local app="$1" err
   [ "$(occ config:app:get "$app" enabled 2>/dev/null | tr -d '\r')" = "yes" ] && { log "app $app enabled"; return 0; }
-  if occ app:install "$app" >/dev/null 2>&1 || occ app:enable "$app" >/dev/null 2>&1; then
+  # Keep occ's own error: it is the only thing that says WHY. Guessing a cause here once sent an
+  # operator hunting file permissions when the real failure was an app store timeout (#41).
+  if err="$(occ app:install "$app" 2>&1)" || err="$(occ app:enable "$app" 2>&1)"; then
     log "app $app installed/enabled"
-  else log "FAILED to install/enable app $app (is custom_apps writable? see make up chown)"; return 1; fi
+  else
+    log "FAILED to install/enable app $app — occ said: $(printf '%s' "$err" | tr '\n' ' ' | tail -c 300)"
+    return 1
+  fi
 }
 
 # --- group folders: groupfolders:create is NOT idempotent by name, so ALWAYS query first ---
