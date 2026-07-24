@@ -7,6 +7,8 @@
 .PHONY: help up up-dev down seed smoke test credentials fix-mount-perms office-eurooffice office-smoke office-formats office-down
 
 OCC = docker compose exec -T --user www-data nextcloud php occ
+# Your host group, so the container can hand the bind mounts back to you (fix-mount-perms).
+HOST_GID := $(shell id -g)
 # Read settings from .env (empty when .env is absent — targets that need them precheck for it).
 HTTP_PORT := $(shell [ -f .env ] && grep -E '^HTTP_PORT=' .env | cut -d= -f2)
 OFFICE_PORT := $(shell [ -f .env ] && grep -E '^OFFICE_PORT=' .env | cut -d= -f2)
@@ -25,10 +27,14 @@ up-dev: ## Start the core stack with the Xdebug derived dev image (step-debuggin
 	docker compose -f compose.yaml -f compose.dev.yaml up -d --build
 	@$(MAKE) --no-print-directory fix-mount-perms
 
-fix-mount-perms: ## Make the bind-mounted apps/ + themes/ writable by the container (www-data / uid 33)
+fix-mount-perms: ## Make the bind-mounted apps/ + themes/ writable by BOTH the container (uid 33) and you
 	@# Linux bind mounts keep host ownership; Nextcloud (uid 33) must own custom_apps/themes to install
 	@# apps (groupfolders, office connectors) there. Done in-container so no host sudo is needed.
-	@docker compose exec -T -u root nextcloud chown www-data:www-data /var/www/html/custom_apps /var/www/html/themes 2>/dev/null || true
+	@# Owner www-data (container installs apps) + your host group with g+w (you edit them live — AD-9).
+	@# `chown www-data:www-data` would leave the host side read-only, defeating the live-edit mount.
+	@# Recursive: apps already installed have their own subtree. Re-applied on every `make up`.
+	@docker compose exec -T -u root nextcloud chown -R www-data:$(HOST_GID) /var/www/html/custom_apps /var/www/html/themes 2>/dev/null || true
+	@docker compose exec -T -u root nextcloud chmod -R g+w /var/www/html/custom_apps /var/www/html/themes 2>/dev/null || true
 
 down: ## Stop the stack (keeps volumes)
 	docker compose down
