@@ -57,19 +57,34 @@ it: **ODF (`odt`/`ods`/`odp`) is view-only**; only OOXML edits in place (issue #
    ADR-0001 § Corrections — so the spike collapsed into P1. Nothing remaining can invalidate a
    decision; what is left is verification and bug-fixing.
 
-   - [ ] **P1 — Verification, single pass.** `make up && make seed`. `15-branding.sh` has never
-         executed, so expect a fix-and-rerun cycle before anything is judged. Then, browser-driven:
-         registration took (`logoMime`/`faviconMime`/`backgroundMime` all set, and `make seed` twice
-         is stable); the variable map vs NC34 via the ADR-0001 console snippet; "Nextcloud" leaks on
-         login/header/Settings; `apple-itunes-app` / `1125420102` (a number — `grep Nextcloud` misses
-         it); Appearance selector absent; `/apps/theming/manifest`; PWA at 360 px;
-         `document.fonts.check()` for the brand fonts; `occ app:list` + `grep -L currentColor` for
-         clashing icons. Recorded as a GIF, mirroring the 2026-07-24 run.
-         **Judgement call carried into this phase:** `background` is the whole-UI background, not
-         just the login screen. Look at it behind a real file list and dashboard and decide whether
-         the gradient survives an 8-hour shift. Fallback is one line:
-         `theming:config background backgroundColor` — which also drops the branded login, since
-         both are the same key.
+   - [x] **P1 — Verification, single pass.** ✅ **Done 2026-07-27 on live NC 34.0.1.** The branding
+         is live: violet header, Fraunces + Nunito Sans actually applied, all four images registered
+         (`*Mime` = `image/svg+xml`), no `productName` leak in `status.php`, **no iOS banner** (which
+         validates keeping `defaults.php`), themed webmanifest, and it renders **light even under a
+         dark-mode OS**, so `enforce_theme` holds. The background legibility call resolved in favour
+         of keeping the image — it reads as a subtle wash, text stays clearly legible.
+         Two bugs fixed en route (`26dd40f`): a pre-existing `lib.sh` phase-killer where a
+         query-before-set read of an *unset* key aborted the phase silently under `pipefail`+`set -e`,
+         and `disable-user-theming` rewriting itself every seed. Three new items fell out — P1.5 below.
+   - [ ] **P1.5 — Decide what the theme still owns** *(new, from P1; blocks P2)*
+         - **Our `:root` variables are inert.** Nextcloud scopes themes to `body[data-theme-light]`
+           and our `server.css` loads *first*, so body-scoped rules win inside `<body>`. Measured:
+           `--color-main-text` `#222222` (ours `#101828`), `--color-border` `#ededed` (ours `#e2e5e9`),
+           `--border-radius` `4px` (ours `6px`), `--color-error` `#FFE7E7` (ours `#ea003e`),
+           `--color-success` `#D8F3DA` (ours `#009764`). Only `--color-primary-element` matches, and
+           only because `occ` set `primary_color`. **NC34 also changed the semantics** of
+           `--color-error`/`--color-success` from foreground colours to light background tints, so
+           forcing our values there would be wrong, not merely overridden. What actually delivers the
+           brand today: the Theming app (violet, images, name) plus our `@font-face` rules, which work
+           because they are element selectors rather than variables. Decide whether to fight the
+           cascade with higher specificity, or shrink `server.css` to what genuinely lands and rewrite
+           `MAPEO.md` to match. **Owner call — do not pick this one unilaterally.**
+         - **The header logo is illegible.** `logo-header-oficial.svg` is the full lockup, wordmark
+           and tagline, crushed into ~62×34 px. Needs a header-specific mark.
+         - **"Nextcloud Office" leaks** in the admin sidebar — the `eurooffice` app's own display
+           name, admin-only. Fixable with custom l10n, not theming.
+         *Not yet run from P1's checklist:* PWA at 360 px, and `occ app:list` + `grep -L currentColor`
+         for clashing icons (P1d). Neither blocks P1.5.
    - [ ] **P2 — Fold results into docs.** Resolve ADR-0001's Pending section with what was observed.
          Retire `PLAN-IMPLEMENTACION.html` + `doc-page.js`, salvaging its §2 (how Nextcloud theming
          works) and §3 (the four-layer model) into a short `docs/THEMING-MODEL.md` — the rest

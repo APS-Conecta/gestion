@@ -122,7 +122,10 @@ const expected = {
   '--border-radius':'6px',
   '--border-radius-large':'8px',
 };
-const cs = getComputedStyle(document.documentElement);
+// NOTE: read document.body, NOT documentElement. Nextcloud scopes its themes to
+// body[data-theme-light] / [data-theme-dark]; <html> only ever sees the :root layer, which
+// under a dark OS resolves to dark values and produces a false alarm. Verified 2026-07-27.
+const cs = getComputedStyle(document.body);
 const drift = Object.entries(expected).filter(([k, v]) => {
   const real = cs.getPropertyValue(k).trim();
   if (real.toLowerCase() !== v.toLowerCase()) { console.warn(k, 'esperado', v, '→ real', real || 'AUSENTE'); return true; }
