@@ -30,7 +30,7 @@ theming_set background_color "#ffffff"
 # setAppValueBool, and the theming ConfigLexicon types it. Writing the string "yes" directly
 # would bypass that conversion.
 config_system_set enforce_theme light
-theming_set disable-user-theming yes
+theming_set disable-user-theming yes 1   # writes 'yes', stores '1' — see theming_set in lib.sh
 
 # --- Brand images ---
 # occ DOES set these on NC34 — ImageManager::SUPPORTED_IMAGE_KEYS is

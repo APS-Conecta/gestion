@@ -19,26 +19,37 @@ require_installed() {
 }
 
 # --- idempotent config: set only if the current value differs ---
+#
+# Every helper below reads the current value first. `occ config:*:get` exits 1 when the key is
+# UNSET, and seed.sh runs with `pipefail` while each phase adds `set -e` — so the read of a
+# not-yet-configured key would abort the whole phase, silently, because stderr is discarded.
+# That is why each read ends in `|| cur=""`: an unset key is a legitimate answer ("no value"),
+# not an error. Do not remove it — the failure mode is a phase that dies with no message.
 config_system_set() {  # KEY VALUE
   local key="$1" val="$2" cur
-  cur="$(occ config:system:get "$key" 2>/dev/null | tr -d '\r')"
+  cur="$(occ config:system:get "$key" 2>/dev/null | tr -d '\r')" || cur=""
   if [ "$cur" = "$val" ]; then log "system:$key already = $val"; else
     occ config:system:set "$key" --value="$val" >/dev/null && log "system:$key -> $val"; fi
 }
 
 app_config_set() {  # APP KEY VALUE
   local app="$1" key="$2" val="$3" cur
-  cur="$(occ config:app:get "$app" "$key" 2>/dev/null | tr -d '\r')"
+  cur="$(occ config:app:get "$app" "$key" 2>/dev/null | tr -d '\r')" || cur=""
   if [ "$cur" = "$val" ]; then log "app:$app:$key already = $val"; else
     occ config:app:set "$app" "$key" --value="$val" >/dev/null && log "app:$app:$key -> $val"; fi
 }
 
 # Reads through config:app:get (where theming:config stores) but WRITES through
 # theming:config, so any side effects of the theming command still happen.
-theming_set() {  # KEY VALUE
-  local key="$1" val="$2" cur
-  cur="$(occ config:app:get theming "$key" 2>/dev/null | tr -d '\r')"
-  if [ "$cur" = "$val" ]; then log "theming:$key already = $val"; else
+#
+# STORED_FORM exists because for boolean keys the value you must WRITE differs from the value
+# Nextcloud STORES: `disable-user-theming` only accepts 'yes'/'true' (ThemingController tests
+# `$value === 'yes' || $value === 'true'`) but persists it as `1` via setAppValueBool. Without
+# this, the comparison never matches and the key is rewritten on every seed. Defaults to VALUE.
+theming_set() {  # KEY VALUE [STORED_FORM]
+  local key="$1" val="$2" stored="${3:-$2}" cur
+  cur="$(occ config:app:get theming "$key" 2>/dev/null | tr -d '\r')" || cur=""
+  if [ "$cur" = "$stored" ]; then log "theming:$key already = $val"; else
     occ theming:config "$key" "$val" >/dev/null && log "theming:$key -> $val"; fi
 }
 
