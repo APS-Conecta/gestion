@@ -40,7 +40,15 @@ facts AD-6 did not have:
   `getiTunesAppId()` returning `''`, which kills the iOS "Nextcloud — Abrir" banner. No
   config key can do this. Everything else in it is fallback; `occ` remains the source of
   truth for identity.
-- Activation is `occ config:system:set theme --value apsconecta` — still config-as-code.
+- Activation is `occ config:system:set theme --value apsconecta` — still config-as-code, applied by
+  `provisioning/phases/15-branding.sh` so `make seed` remains the only thing that mutates instance
+  state (AD-2). The standalone `occ-theming.sh` from the brand kit is deleted; it was a second
+  state-changing entry point.
+- **Fonts ship as woff2 only, with no TTF fallback.** Every browser Nextcloud 34 supports has had
+  woff2 since ~2016, so the fallback protected nobody — and it actively hid a bug: `server.css`
+  declared four `.woff2` files that were never generated, and the TTF fallback swallowed the 404s.
+  One format has no hiding place. Payload dropped 1.85 MB → 856 KB. `make test` now asserts every
+  `url()` in `server.css` resolves to a file on disk, which is what replaces the fallback.
 
 **Per-app icons (`apps/<appid>/img/`) are permitted but deliberately near-empty.** An app's
 icon is overridden **only if it clashes**, defined objectively as: *its shipped SVG lacks
@@ -53,9 +61,12 @@ imperceptible delta. Expected steady state: 0–3 files.
 
 **Accepted costs**
 
-- A container restart is required after any `defaults.php` change (opcache). `make seed`
-  cannot restart its own container, so the restart's home in the provisioning flow is
-  **still open** — see Pending below.
+- A container restart is required after **editing** `defaults.php` (opcache). This is narrower than
+  it first appears: `defaults.php` is bind-mounted and present before PHP boots, so a fresh
+  `make up` compiles it on first use with no restart. The restart is a dev-loop concern —
+  `docker compose restart nextcloud`. (Note `provisioning/lib.sh:8` runs `occ` via
+  `docker compose exec` from the *host*, so a phase could restart the container if that ever
+  becomes necessary; it isn't today.)
 - The theme must be re-verified on every Nextcloud major upgrade. The kit's variable map was
   authored against NC33; the stack runs 34.0.1.
 - `themes/` is proprietary under `docs/LICENSING.md` §1. The kit's AGPL-3.0 claim for the
@@ -121,7 +132,11 @@ console.log(drift.length ? `✗ deriva en ${drift.length}/${Object.keys(expected
    the login background and favicon-generation pipelines must honour them. If they lose, the
    fallback is the OCS API (`/apps/theming/ajax/uploadImage`, documented in the kit) driven
    from a provisioning phase — which reintroduces admin credentials in the seed runner.
-2. **Where the container restart lives** — a `make` target, a documented post-seed step, or
-   a provisioning phase that shells out.
-3. **Which icons clash** — needs `occ app:list`, then grep each app's `img/` for
-   `currentColor`.
+   Related: `INSTALACION-NEXTCLOUD.md` §7 notes Nextcloud's default background is a *wallpaper*,
+   not a colour, and `background_color` does not remove it. We rely on our own background image
+   winning; if it doesn't, set `config:app:set theming backgroundMime backgroundColor`.
+2. **Which icons clash** — needs `occ app:list`, then grep each app's `img/` for `currentColor`.
+3. **A branding gate.** `scripts/smoke.sh` check 5 already curls `/status.php`, which is exactly
+   where "Nextcloud" leaks when `productName` is unset — the most-cited trap in the plan. It
+   throws the body away. Grepping it is ~2 lines and would catch the highest-value branding
+   regression, but it needs a running stack to write honestly.

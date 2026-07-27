@@ -14,26 +14,30 @@
    Fonts are NOT subset (subsetting = Modified Version under OFL-1.1).
    ===================================================================== */
 
-/* ---- Self-hosted webfonts (zero egress) ---- */
+/* ---- Self-hosted webfonts (zero egress) ----
+   woff2 ONLY, deliberately — no TTF fallback. Every browser Nextcloud 34 supports
+   has had woff2 since ~2016, so the fallback protected nobody. It did actively hide
+   bugs: a missing or corrupt woff2 silently fell through to the TTF, so nothing ever
+   surfaced the failure. One format has no hiding place, and `make test` now asserts
+   every url() here exists on disk.
+   Regenerate after a font update:
+     python3 -c "from fontTools.ttLib.woff2 import compress; compress('X.ttf','X.woff2')"
+   Format conversion is neither subsetting nor renaming, so OFL-1.1 is satisfied. */
 @font-face {
   font-family: "Fraunces"; font-style: normal; font-weight: 400 800; font-display: swap;
-  src: url("/themes/apsconecta/core/fonts/Fraunces.woff2") format("woff2"),
-       url("/themes/apsconecta/core/fonts/Fraunces.ttf") format("truetype");
+  src: url("/themes/apsconecta/core/fonts/Fraunces.woff2") format("woff2");
 }
 @font-face {
   font-family: "Fraunces"; font-style: italic; font-weight: 400 800; font-display: swap;
-  src: url("/themes/apsconecta/core/fonts/Fraunces-Italic.woff2") format("woff2"),
-       url("/themes/apsconecta/core/fonts/Fraunces-Italic.ttf") format("truetype");
+  src: url("/themes/apsconecta/core/fonts/Fraunces-Italic.woff2") format("woff2");
 }
 @font-face {
   font-family: "Nunito Sans"; font-style: normal; font-weight: 400 800; font-display: swap;
-  src: url("/themes/apsconecta/core/fonts/NunitoSans.woff2") format("woff2"),
-       url("/themes/apsconecta/core/fonts/NunitoSans.ttf") format("truetype");
+  src: url("/themes/apsconecta/core/fonts/NunitoSans.woff2") format("woff2");
 }
 @font-face {
   font-family: "Nunito Sans"; font-style: italic; font-weight: 400 800; font-display: swap;
-  src: url("/themes/apsconecta/core/fonts/NunitoSans-Italic.woff2") format("woff2"),
-       url("/themes/apsconecta/core/fonts/NunitoSans-Italic.ttf") format("truetype");
+  src: url("/themes/apsconecta/core/fonts/NunitoSans-Italic.woff2") format("woff2");
 }
 
 :root {

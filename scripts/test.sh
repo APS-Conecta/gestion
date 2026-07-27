@@ -22,6 +22,10 @@ check test -f dev/xdebug.ini
 # bash suppresses errexit there, so a failing phase would run on and report success. Comment lines are
 # stripped first: seed.sh documents the wrong shape on purpose, and the guard must not match that.
 check bash -c '! grep -vE "^[[:space:]]*#" provisioning/seed.sh | grep -qE "if +! +\( *set -e"'
+# Regression guard (ADR-0001): every asset server.css references must exist on disk. server.css
+# shipped for months declaring four .woff2 files that were never generated — the TTF fallback
+# swallowed the 404s, so nothing surfaced it. The fallback is gone; this is what replaces it.
+check bash -c 'grep -oE "/themes/apsconecta[^)]+" themes/apsconecta/core/css/server.css | tr -d "\"" | sed "s|^/||" | while read -r f; do [ -f "$f" ] || exit 1; done'
 
 echo "== smoke (only if a stack is running) =="
 if docker compose ps --status running --services 2>/dev/null | grep -qx nextcloud; then
