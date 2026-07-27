@@ -52,19 +52,24 @@ it: **ODF (`odt`/`ods`/`odp`) is view-only**; only OOXML edits in place (issue #
    tokens, logos and the living brandbook, which the public apsconecta.cl site also consumes. The rule
    throughout: *runs on the server → `gestion/`; feeds a designer or the website → the kit.*
 
-   - [ ] **P0 — De-risk spike.** `make up && make seed`, then answer exactly one question and stop:
-         **which URL serves the brand images?** `read_network_requests` on the login page decides it.
-         `/themes/apsconecta/core/img/…` → theme images win, ADR-0001 holds, proceed.
-         `/apps/theming/image/…` → they lose; stop and redesign onto the OCS API, which puts admin
-         credentials in the seed runner. Nothing else happens until this answers.
-         *Known soft spot:* the result may be **mixed** — the header logo served straight from the
-         theme while favicon rasterisation and the login background still run through the Theming
-         app's generation pipelines. A mixed result de-risks nothing and forces a per-asset decision.
-   - [ ] **P1 — Full verification** (only if P0 passes). Variable map vs NC34 via the ADR-0001 console
-         snippet; "Nextcloud" leaks on login/header/Settings; `apple-itunes-app` / `1125420102` (a
-         number — `grep Nextcloud` misses it); Appearance selector absent; `/apps/theming/manifest`;
-         PWA at 360 px; `document.fonts.check()` for the brand fonts; `occ app:list` +
-         `grep -L currentColor` for clashing icons. Recorded as a GIF, mirroring the 2026-07-24 run.
+   *There is no de-risking spike.* One was planned, to establish how brand images reach Nextcloud.
+   Reading the shipped source in the pinned image settled it without running anything — see
+   ADR-0001 § Corrections — so the spike collapsed into P1. Nothing remaining can invalidate a
+   decision; what is left is verification and bug-fixing.
+
+   - [ ] **P1 — Verification, single pass.** `make up && make seed`. `15-branding.sh` has never
+         executed, so expect a fix-and-rerun cycle before anything is judged. Then, browser-driven:
+         registration took (`logoMime`/`faviconMime`/`backgroundMime` all set, and `make seed` twice
+         is stable); the variable map vs NC34 via the ADR-0001 console snippet; "Nextcloud" leaks on
+         login/header/Settings; `apple-itunes-app` / `1125420102` (a number — `grep Nextcloud` misses
+         it); Appearance selector absent; `/apps/theming/manifest`; PWA at 360 px;
+         `document.fonts.check()` for the brand fonts; `occ app:list` + `grep -L currentColor` for
+         clashing icons. Recorded as a GIF, mirroring the 2026-07-24 run.
+         **Judgement call carried into this phase:** `background` is the whole-UI background, not
+         just the login screen. Look at it behind a real file list and dashboard and decide whether
+         the gradient survives an 8-hour shift. Fallback is one line:
+         `theming:config background backgroundColor` — which also drops the branded login, since
+         both are the same key.
    - [ ] **P2 — Fold results into docs.** Resolve ADR-0001's Pending section with what was observed.
          Retire `PLAN-IMPLEMENTACION.html` + `doc-page.js`, salvaging its §2 (how Nextcloud theming
          works) and §3 (the four-layer model) into a short `docs/THEMING-MODEL.md` — the rest

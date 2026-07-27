@@ -3,9 +3,6 @@
 # Rationale, accepted costs and the live-verification snippet: docs/adr/0001-server-theme-for-branding.md
 #
 # What is NOT here, deliberately:
-#   · Images. Logo, favicon and login background are FILES in themes/apsconecta/core/img/, served by
-#     Nextcloud's theme-first image lookup. NC34's occ cannot set them, and uploading them through the
-#     admin UI would be the hand-clicking AD-2 forbids.
 #   · A container restart. defaults.php is bind-mounted and present before PHP boots, so on a fresh
 #     `make up` it compiles on first use. A restart is only needed after EDITING defaults.php, which
 #     is a dev-loop concern — `docker compose restart nextcloud` then.
@@ -27,10 +24,31 @@ theming_set primary_color    "#7f21fe"
 theming_set background_color "#ffffff"
 
 # --- Light theme only (owner decision — no dark mode) ---
-# Complementary, both wanted: enforce_theme removes theme/appearance selection;
-# disable-user-theming stops per-user background and colour overrides.
+# Complementary, both wanted: enforce_theme removes theme/appearance selection (a SYSTEM value,
+# read by ThemesService); disable-user-theming stops per-user background and colour overrides.
+# The latter is a theming:config key, NOT a raw app config: ThemingController stores it with
+# setAppValueBool, and the theming ConfigLexicon types it. Writing the string "yes" directly
+# would bypass that conversion.
 config_system_set enforce_theme light
-app_config_set theming disable-user-theming yes
+theming_set disable-user-theming yes
+
+# --- Brand images ---
+# occ DOES set these on NC34 — ImageManager::SUPPORTED_IMAGE_KEYS is
+# ['background','logo','logoheader','favicon'] — it just requires an ABSOLUTE path that exists
+# inside the container. themes/ is bind-mounted, so the theme's own files are already reachable.
+# Using the Theming app's pipeline (rather than leaving these to theme-first image lookup) is what
+# makes favicon rasterisation, the webmanifest and branded emails work — and it is the only way to
+# set `background` at all, since core ships no background image for a theme to override.
+# SVG is accepted for every key; only `favicon` requires imagick with the SVG delegate, which the
+# nextcloud:34-apache image has.
+IMG=/var/www/html/themes/apsconecta/core/img
+theming_image_set logo       "$IMG/logo/logo.svg"
+theming_image_set logoheader "$IMG/logo/logo.svg"
+theming_image_set favicon    "$IMG/favicon.svg"
+# NOTE: this is the whole-UI background, not just the login screen — CommonThemeTrait feeds it into
+# --image-background for the app theme. Under review for 8-hour legibility (ROADMAP Epic 5, P1).
+# Fallback if it reads badly behind a file list:  theming:config background backgroundColor
+theming_image_set background "$IMG/background.svg"
 
 # --- Activate the server theme (themes/apsconecta, bind-mounted by compose.yaml) ---
 config_system_set theme apsconecta

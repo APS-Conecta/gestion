@@ -42,6 +42,16 @@ theming_set() {  # KEY VALUE
     occ theming:config "$key" "$val" >/dev/null && log "theming:$key -> $val"; fi
 }
 
+# Brand images. Deliberately NOT query-before-set: theming:config stores <key>Mime,
+# not the path, so a changed file with an unchanged mime is undetectable — comparing
+# would make `make seed` silently ignore an edited SVG. Re-registering every run is
+# cheap (four small files) and is what makes editing an asset actually propagate.
+# PATH must be absolute and resolvable INSIDE the container; themes/ is bind-mounted.
+theming_image_set() {  # KEY ABSOLUTE_PATH
+  local key="$1" path="$2"
+  occ theming:config "$key" "$path" >/dev/null && log "theming:$key <- $path"
+}
+
 # --- groups (query-before-create) ---
 group_exists() {  # GID
   occ group:list --output=json 2>/dev/null | python3 -c \

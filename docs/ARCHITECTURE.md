@@ -120,8 +120,11 @@ assignments, and the final validated matrix are parameterizable and settled with
 - **White-label branding ships as a server theme**, `themes/apsconecta/`, activated with
   `occ config:system:set theme --value apsconecta`. Identity (name, slogan, URL, colors, `productName`)
   stays config-as-code via `occ theming:config`, with `enforce_theme=light` + `disable-user-theming yes`.
-  Logo, favicon and login background are **files in the theme** (`core/img/`), not admin-UI uploads —
-  NC34's CLI sets text/color only, and uploading by hand would break AD-2. `defaults.php` is carried for
+  Logo, favicon and login background are **files in the theme** (`core/img/`), registered by the
+  `15-branding` phase with `occ theming:config <key> <absolute-path>` pointing at the bind-mounted
+  theme directory — never admin-UI uploads, which would break AD-2. (`occ` *does* set all four
+  image keys on NC34; it requires an absolute path. An earlier claim here that the CLI sets
+  text/colour only was wrong — see ADR-0001 § Corrections.) `defaults.php` is carried for
   one reason only: `getiTunesAppId()` → `''`, which kills the iOS "Nextcloud — Abrir" banner; it is
   opcached, so **a container restart is required after changing it**.
   This supersedes **AD-6** (config-only, no `themes/` file, no `defaults.php`) — reasoning and accepted

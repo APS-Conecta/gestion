@@ -15,10 +15,9 @@ The brand guide has now landed: a complete kit (tokens in 6 formats, logo set, a
 `server.css`, self-hosted variable fonts, a living brandbook). Applying it surfaced three
 facts AD-6 did not have:
 
-1. **`occ` on NC34 cannot set images.** It sets text and colour keys only; logo, favicon
-   and login background are admin-UI uploads. That collides with **AD-2** ("the only thing
-   that changes instance state is `make seed` — never hand-click"). Layer A alone therefore
-   *cannot* deliver a branded instance reproducibly.
+1. ~~**`occ` on NC34 cannot set images.**~~ **This was wrong — see Corrections below.** `occ`
+   sets all four image keys; it simply requires an absolute path. The claim was inherited from
+   `docs/ARCHITECTURE.md`. The decision below survives without it, on fact 2 alone.
 2. **Brand typography is unreachable from config.** Fraunces and Nunito Sans need
    `@font-face` with paths a theme serves. The Custom CSS app cannot self-host fonts, so
    the config-only path silently drops half the visual identity.
@@ -33,9 +32,15 @@ facts AD-6 did not have:
 
 - `core/css/server.css` — brand tokens mapped onto Nextcloud's CSS variables.
 - `core/fonts/*.ttf` — Fraunces + Nunito Sans, self-hosted, zero egress.
-- `core/img/` — logo, favicon and login background ship **as theme files**, relying on
-  Nextcloud's theme-first image lookup. No upload, no API call, no admin credentials in the
-  seed runner. This is what keeps AD-2 intact.
+- `core/img/` — logo, favicon and login background live here as files, and `15-branding.sh`
+  **registers them with the Theming app** via `theming:config <key> <absolute-path>`, pointing at
+  the bind-mounted theme directory (`/var/www/html/themes/apsconecta/core/img/…`). Still
+  config-as-code, still no upload, no API call and no admin credentials in the seed runner, so
+  AD-2 is intact. Registration (rather than relying on theme-first lookup) is what makes favicon
+  rasterisation, the webmanifest and branded emails work — and it is the *only* way to set
+  `background`, since core ships no background image for a theme to override.
+  Note `background` is the **whole-UI** background, not only the login screen
+  (`CommonThemeTrait` feeds it into `--image-background`); its 8-hour legibility is under review.
 - `defaults.php` — accepted despite AD-6's objection. Its one irreplaceable job is
   `getiTunesAppId()` returning `''`, which kills the iOS "Nextcloud — Abrir" banner. No
   config key can do this. Everything else in it is fallback; `occ` remains the source of
@@ -125,6 +130,36 @@ const drift = Object.entries(expected).filter(([k, v]) => {
 });
 console.log(drift.length ? `✗ deriva en ${drift.length}/${Object.keys(expected).length}` : '✓ sin deriva');
 ```
+
+## Corrections (2026-07-26)
+
+Recorded rather than quietly edited, because the original reasoning was published with a false
+premise and the audit trail matters more than looking right.
+
+**Believed:** NC34's `occ` sets text and colour only; brand images must be uploaded through the
+admin UI, which AD-2 forbids. This drove the plan to ship images as theme files and rely on
+theme-first lookup.
+
+**Found:** `apps/theming/lib/Command/UpdateConfig.php:103-113` handles every key in
+`ImageManager::SUPPORTED_IMAGE_KEYS` = `['background','logo','logoheader','favicon']`. The only
+constraints are `str_starts_with($value, '/')` and `file_exists($value)`. The brand kit's original
+`occ-theming.sh` failed because it passed `./logo-header-oficial.svg` — a *relative* path. A
+path-format bug, not a missing capability. Two further findings fell out:
+
+- **`core/img/background.svg` resolved to nothing.** Core ships no background image; backgrounds
+  live in `apps/theming/img/background/`. Theme-first lookup could never have served the login
+  background. Registration is the only route.
+- **SVG is accepted for all four keys.** `getSupportedUploadImageFormats()` restricts SVG only for
+  `favicon`, and only when imagick lacks the SVG delegate — which `nextcloud:34-apache` has
+  (`queryFormats('SVG')` → `['SVG']`).
+
+**Verified by** reading the shipped source in the pinned image, not by running the stack:
+`docker run --rm nextcloud:34-apache`.
+
+**Effect on the decision:** none. Fact 2 (brand typography needs `@font-face` paths only a theme
+serves) is sufficient on its own to require `themes/`, and fact 3 stands. What changed is *how*
+images arrive: `15-branding.sh` now registers them through the Theming app instead of leaning on
+theme-first lookup. `docs/ARCHITECTURE.md` carried the same false sentence and is corrected.
 
 ## Pending — must be closed before this ADR is proven
 
