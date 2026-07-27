@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1280" width="1920" height="1280" preserveAspectRatio="xMidYMid slice" role="img" aria-label="APS Conecta — fondo de acceso">
+  <defs>
+    
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#893dff"></stop>
+      <stop offset="1" stop-color="#5315a8"></stop>
+    </linearGradient>
+    <radialGradient id="glow" cx="28%" cy="26%" r="65%">
+      <stop offset="0" stop-color="#a477ff" stop-opacity="0.45"></stop>
+      <stop offset="1" stop-color="#a477ff" stop-opacity="0"></stop>
+    </radialGradient>
+    <radialGradient id="glow2" cx="82%" cy="88%" r="55%">
+      <stop offset="0" stop-color="#26094f" stop-opacity="0.55"></stop>
+      <stop offset="1" stop-color="#26094f" stop-opacity="0"></stop>
+    </radialGradient>
+  </defs>
+  <rect width="1920" height="1280" fill="url(#bg)"></rect>
+  <rect width="1920" height="1280" fill="url(#glow)"></rect>
+  <rect width="1920" height="1280" fill="url(#glow2)"></rect>
+
+  
+  <g fill="#ffffff" opacity="0.5">
+    <circle cx="300" cy="220" r="2.2"></circle><circle cx="520" cy="160" r="1.6"></circle><circle cx="760" cy="300" r="2"></circle>
+    <circle cx="1150" cy="180" r="1.8"></circle><circle cx="1420" cy="260" r="2.4"></circle><circle cx="1650" cy="150" r="1.5"></circle>
+    <circle cx="200" cy="620" r="1.7"></circle><circle cx="480" cy="760" r="2.1"></circle><circle cx="880" cy="880" r="1.6"></circle>
+    <circle cx="1300" cy="820" r="2"></circle><circle cx="1600" cy="700" r="1.7"></circle><circle cx="1780" cy="980" r="2.2"></circle>
+    <circle cx="360" cy="1080" r="1.9"></circle><circle cx="720" cy="1160" r="1.5"></circle><circle cx="1120" cy="1120" r="2"></circle>
+    <circle cx="1480" cy="1060" r="1.6"></circle>
+  </g>
+
+  
+  <g transform="translate(820 500) scale(4.5)" opacity="0.92">
+    <path d="M32 12 L45 23 M32 12 L19 23 M45 23 L38 39 M19 23 L26 39 M38 39 L26 39 M38 39 L45 51 M26 39 L19 51" stroke="#ffffff" stroke-width="1.4" stroke-linecap="round" opacity="0.4"></path>
+    <path d="M11 33 Q23 27 32 33 T53 30" fill="none" stroke="#f28f36" stroke-width="2" stroke-linecap="round" opacity="0.95"></path>
+    <circle cx="45" cy="23" r="2.5" fill="#fff"></circle><circle cx="19" cy="23" r="2.5" fill="#fff"></circle>
+    <circle cx="38" cy="39" r="2.3" fill="#fff"></circle><circle cx="26" cy="39" r="2.3" fill="#fff"></circle>
+    <circle cx="45" cy="51" r="2.1" fill="#fff"></circle><circle cx="19" cy="51" r="2.1" fill="#fff"></circle>
+    <path d="M32 7.2 L33.25 10.75 L36.8 12 L33.25 13.25 L32 16.8 L30.75 13.25 L27.2 12 L30.75 10.75 Z" fill="#f28f36"></path>
+  </g>
+</svg>

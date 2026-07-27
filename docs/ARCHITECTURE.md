@@ -117,11 +117,15 @@ assignments, and the final validated matrix are parameterizable and settled with
 
 ## Branding & localization
 
-- **White-label branding is not applied in v1** — the instance runs the default Nextcloud theme. The
-  chosen path (when a brand guide lands) is `occ theming:config` (text + color keys) with
-  `disable-user-theming yes`, config-as-code — no fork, no `themes/` file, no `defaults.php` (which would
-  need an opcache reset and is the fork-adjacent path to avoid). NC34's CLI sets text/color only;
-  logo/favicon are admin-UI uploads.
+- **White-label branding ships as a server theme**, `themes/apsconecta/`, activated with
+  `occ config:system:set theme --value apsconecta`. Identity (name, slogan, URL, colors, `productName`)
+  stays config-as-code via `occ theming:config`, with `enforce_theme=light` + `disable-user-theming yes`.
+  Logo, favicon and login background are **files in the theme** (`core/img/`), not admin-UI uploads —
+  NC34's CLI sets text/color only, and uploading by hand would break AD-2. `defaults.php` is carried for
+  one reason only: `getiTunesAppId()` → `''`, which kills the iOS "Nextcloud — Abrir" banner; it is
+  opcached, so **a container restart is required after changing it**.
+  This supersedes **AD-6** (config-only, no `themes/` file, no `defaults.php`) — reasoning and accepted
+  costs in [ADR-0001](adr/0001-server-theme-for-branding.md).
 - **Locale** defaults are seeded but **not** forced: `default_language=es_419` (Latin-American Spanish; a
   discrete `es_CL` UI translation does not exist) and `default_locale=es_CL` (Chilean date/number formatting).
   Users and developers may change them. Timezone America/Santiago is per-user (browser auto-detected). UI text
