@@ -99,7 +99,6 @@ gestion/themes/apsconecta/core/img/
 ├── logo/logo.svg          ← clave `logo`: tarjeta de login (lockup completo)
 ├── logo/logo-header.svg   ← clave `logoheader`: cabecera, hueco de 62x44 px (SOLO la marca;
 │                            el lockup completo ahí deja el texto en ~4 px, ilegible)
-├── logo/logo-mono.svg     ← variante monocroma (no registrada; arte de reserva)
 ├── favicon.svg            ← clave `favicon`
 └── background.svg         ← clave `background`: telón de TODA la UI, no solo del login
 ```
@@ -107,7 +106,7 @@ gestion/themes/apsconecta/core/img/
 > **No pintes encima del fondo.** `server.css` tenía un degradado claro sobre `body`/`#content`
 > que tapaba `background.svg` por completo: estaba registrado, servido y no se vio nunca. Se
 > eliminó el 2026-07-27.
-
+>
 > **Resuelto el 2026-07-27** (ADR-0001 § Pending). La pregunta original —«¿ganan las imágenes del
 > tema a los valores que la app Theming guarda en BD?»— quedó **sin objeto**: no dependemos de esa
 > búsqueda, las registramos nosotros. Verificado en vivo: las cuatro claves registradas, favicon
@@ -143,6 +142,7 @@ Ya **no** hay `defaults.php` (§7) ni `apps/<appid>/img/` (§6: cero iconos en c
    ```bash
    python3 -c "from fontTools.ttLib.woff2 import compress; compress('X.ttf','X.woff2')"
    ```
+
    Convertir de formato no es subsetear ni renombrar, así que la SIL OFL se cumple.
 
 *(La app **Custom CSS** queda descartada como alternativa: no puede auto-hospedar fuentes, así que perdería la tipografía de marca.)*
@@ -167,6 +167,7 @@ Los iconos Material de serie (`files`, `calendar`, `contacts`, `tables`, `forms`
 multitinta, así que `themes/apsconecta/apps/` no existe y no hace falta.
 
 Cómo decidir, con el stack arriba:
+
 ```bash
 occ app:list                      # qué hay realmente instalado
 # ¿choca? Cuenta tintas distintas en el app.svg; más de una → sí.
@@ -231,14 +232,18 @@ grep -oE '#[0-9a-fA-F]{3,8}' <app>/img/app.svg | sort -u
    `make smoke` (`/status.php` responde 200 y **no** contiene "Nextcloud").
 
 ## 10. Cómo ver el brandbook
+
 Desde la carpeta del kit (`../APS Conecta Nextcloud/`, hermana de este repo):
+
 ```bash
 cd "../APS Conecta Nextcloud" && python3 -m http.server 8080
 # abre http://localhost:8080/sistema-diseno.html
 ```
+
 (Con `file://` las fuentes y algunos assets no cargan; usa el servidor local.)
 
 ## 11. Licencias
+
 Tokens y logos **MIT** (los consume también el sitio apsconecta.cl) · fuentes Fraunces y Nunito Sans **SIL OFL 1.1** (no subsetear ni renombrar) · iconografía en idioma Material (**Apache-2.0 / MIT**).
 
 El **tema y las apps propias son propietarios**: viven en el repo `gestion/`, cubierto por su `LICENSE` (propietario, todos los derechos reservados) y detallado en `gestion/docs/LICENSING.md` §1. La marca AGPL-3.0 que este documento declaraba antes se retira: era una elección libre, no una obligación — al ser solo capas blandas, el §13 de la AGPL nunca se dispara.

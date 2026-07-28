@@ -108,9 +108,11 @@ gestion/themes/apsconecta/       ← the only copy; what runs
   core/css/server.css
   core/fonts/*.woff2             ← the ONLY reason this directory exists
   core/img/{favicon,background}.svg
-  core/img/logo/{logo,logo-header,logo-mono}.svg
+  core/img/logo/{logo,logo-header}.svg
                                  ← logo = login card (full lockup)
                                    logo-header = header, 62x44 slot (mark only)
+                                   Nothing unregistered lives here: the mono lockup moved to
+                                   the kit on 2026-07-27 as reserve art, per the split rule.
   (no defaults.php — deleted 2026-07-27)
   (no apps/<appid>/img/ — measured zero clashing icons)
 
