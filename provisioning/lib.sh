@@ -25,17 +25,24 @@ require_installed() {
 # not-yet-configured key would abort the whole phase, silently, because stderr is discarded.
 # That is why each read ends in `|| cur=""`: an unset key is a legitimate answer ("no value"),
 # not an error. Do not remove it — the failure mode is a phase that dies with no message.
+# An UNSET key and a key set to "" both read back as the empty string, so a plain
+# `[ "$cur" = "$val" ]` treats "set this to empty" as already-done and never writes. That is
+# not hypothetical: `customclient_ios_appid ""` (the iOS banner kill) logged "already = " on a
+# fresh instance and the banner stayed up — caught in the browser on 2026-07-27, not by a gate.
+# So capture whether the READ succeeded: occ config:*:get exits non-zero when the key is unset.
+# Keep the `|| rc=1` — it is what stops the read from killing the phase under pipefail + set -e
+# when the key does not exist yet (see BUGS.md, fixed in 26dd40f).
 config_system_set() {  # KEY VALUE
-  local key="$1" val="$2" cur
-  cur="$(occ config:system:get "$key" 2>/dev/null | tr -d '\r')" || cur=""
-  if [ "$cur" = "$val" ]; then log "system:$key already = $val"; else
+  local key="$1" val="$2" cur rc
+  cur="$(occ config:system:get "$key" 2>/dev/null | tr -d '\r')" && rc=0 || rc=1
+  if [ "$rc" -eq 0 ] && [ "$cur" = "$val" ]; then log "system:$key already = $val"; else
     occ config:system:set "$key" --value="$val" >/dev/null && log "system:$key -> $val"; fi
 }
 
 app_config_set() {  # APP KEY VALUE
-  local app="$1" key="$2" val="$3" cur
-  cur="$(occ config:app:get "$app" "$key" 2>/dev/null | tr -d '\r')" || cur=""
-  if [ "$cur" = "$val" ]; then log "app:$app:$key already = $val"; else
+  local app="$1" key="$2" val="$3" cur rc
+  cur="$(occ config:app:get "$app" "$key" 2>/dev/null | tr -d '\r')" && rc=0 || rc=1
+  if [ "$rc" -eq 0 ] && [ "$cur" = "$val" ]; then log "app:$app:$key already = $val"; else
     occ config:app:set "$app" "$key" --value="$val" >/dev/null && log "app:$app:$key -> $val"; fi
 }
 
@@ -58,6 +65,11 @@ theming_set() {  # KEY VALUE [STORED_FORM]
 # would make `make seed` silently ignore an edited SVG. Re-registering every run is
 # cheap (four small files) and is what makes editing an asset actually propagate.
 # PATH must be absolute and resolvable INSIDE the container; themes/ is bind-mounted.
+# Writes UNCONDITIONALLY, and that is deliberate — do not "fix" it into query-before-set.
+# theming:config stores the image bytes in appdata plus a <key>Mime entry; it does not store the
+# source path, so there is nothing to compare against that would notice the FILE changed. A
+# query-before-set here would mean edits to the SVGs never reach the instance. Cost of the
+# unconditional write: every `make seed` bumps the theming cachebuster. That is the cheaper bug.
 theming_image_set() {  # KEY ABSOLUTE_PATH
   local key="$1" path="$2"
   occ theming:config "$key" "$path" >/dev/null && log "theming:$key <- $path"

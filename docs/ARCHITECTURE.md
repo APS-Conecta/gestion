@@ -124,11 +124,19 @@ assignments, and the final validated matrix are parameterizable and settled with
   `15-branding` phase with `occ theming:config <key> <absolute-path>` pointing at the bind-mounted
   theme directory — never admin-UI uploads, which would break AD-2. (`occ` *does* set all four
   image keys on NC34; it requires an absolute path. An earlier claim here that the CLI sets
-  text/colour only was wrong — see ADR-0001 § Corrections.) `defaults.php` is carried for
-  one reason only: `getiTunesAppId()` → `''`, which kills the iOS "Nextcloud — Abrir" banner; it is
-  opcached, so **a container restart is required after changing it**.
-  This supersedes **AD-6** (config-only, no `themes/` file, no `defaults.php`) — reasoning and accepted
-  costs in [ADR-0001](adr/0001-server-theme-for-branding.md).
+  text/colour only was wrong — see ADR-0001 § Corrections.) The iOS "Nextcloud — Abrir" banner is
+  killed with `occ config:system:set customclient_ios_appid ""`; **there is no `defaults.php`**
+  (deleted 2026-07-27, and with it the opcache restart it required).
+  This supersedes **AD-6** on `themes/` files, but AD-6 was *right* to reject `defaults.php` —
+  reasoning and accepted costs in [ADR-0001](adr/0001-server-theme-for-branding.md).
+- **What the theme can actually change is narrow.** Nextcloud scopes its CSS variables to
+  `body[data-theme-light]` and a server theme loads *first*, so variables declared in `:root` are
+  inert; element selectors win, variables do not. `server.css` therefore ships fonts, display
+  typography, the header, focus rings and the high-contrast block — not a token→variable map. The
+  rules, the full knob inventory and the verification snippet are in
+  [`THEMING-MODEL.md`](THEMING-MODEL.md); `themes/` itself is undocumented legacy in Nextcloud and
+  must be re-verified on every major upgrade.
+- **Navigation** uses the third-party `side_menu` app, installed by the same `15-branding` phase.
 - **Locale** defaults are seeded but **not** forced: `default_language=es_419` (Latin-American Spanish; a
   discrete `es_CL` UI translation does not exist) and `default_locale=es_CL` (Chilean date/number formatting).
   Users and developers may change them. Timezone America/Santiago is per-user (browser auto-detected). UI text

@@ -12,9 +12,12 @@ sprint plan, 2026-07-18/19) plus Epics 0–4 are done and merged (PRs #7–#21) 
   Xdebug dev profile, the `make seed`/`smoke`/`test` gate, the phase-structured idempotent
   provisioning framework, synthetic fixtures, repo-as-SSOT onboarding, and live app/theme mounts.
 - **Epic 1 — Localization:** es-CL locale defaults (`10-locale` phase). White-label branding was **not
-  applied in v1** — the instance ran the default Nextcloud theme. (The condition stated here was "a brand
-  guide + CLI-uploadable logo/favicon". The brand guide landed; CLI-uploadable images turned out not to
-  exist on NC34, which is why Epic 5 ships them as theme files instead — see ADR-0001.)
+  applied in v1** — the instance ran the default Nextcloud theme. The condition stated here was "a brand
+  guide + CLI-uploadable logo/favicon", and the brand guide landed.
+  *(This line used to add that CLI-uploadable images "turned out not to exist on NC34" — that was
+  wrong: `occ` sets all four image keys, it just needs an absolute path. Epic 5 ships them as theme
+  files for a different reason: brand fonts need `@font-face` paths a theme serves. See ADR-0001
+  § Corrections.)*
 - **Epic 2 — Roles & access:** the group registry (all-staff · 4 categories · 21 roles · team
   placeholders) + synthetic fixture users including a multi-role demo.
 - **Epic 3 — Document Home / Spine A:** the 12-folder four-area tree (Transversal · Programas · Unidades ·
@@ -36,12 +39,15 @@ it: **ODF (`odt`/`ods`/`odp`) is view-only**; only OOXML edits in place (issue #
 
 1. **Decide on ODF** — accept view-only, or enable lossy ODF editing via `make office-eurooffice`
    (issue #45). Owner call.
-2. **Epic 5 — white-label branding** (in progress). The brand guide landed, which was the condition
+2. **Epic 5 — white-label branding** ✅ **closed 2026-07-27.** The brand guide landed, which was the condition
    this was deferred on, so it opens as the first post-v1 increment — v1 stays exactly as accepted on
    2026-07-24. Branding ships as the `themes/apsconecta/` **server theme**, superseding AD-6's
    config-only rule; reasoning in [`docs/adr/0001-server-theme-for-branding.md`](docs/adr/0001-server-theme-for-branding.md).
-   **Done:** the theme (`server.css`, woff2 fonts, brand images, `defaults.php`), the `15-branding`
-   provisioning phase, and a `make test` guard asserting every asset `server.css` references exists.
+   **Shipped:** the theme (`server.css`, woff2 fonts, brand images), the `15-branding` provisioning
+   phase, `side_menu`, and two gates — every asset `server.css` references must exist *and* every
+   theme SVG must parse, plus a `/status.php` branding check in `make smoke`. There is no
+   `defaults.php` and no per-app icon directory; both turned out to be unnecessary.
+   Working rules for anyone touching this: [`docs/THEMING-MODEL.md`](docs/THEMING-MODEL.md).
 
    **Close-out plan.** Ordered so the one item that can still invalidate a decision is settled before
    anything is written on top of it. Verification is browser-driven; gates are written *after*
@@ -59,48 +65,66 @@ it: **ODF (`odt`/`ods`/`odp`) is view-only**; only OOXML edits in place (issue #
 
    - [x] **P1 — Verification, single pass.** ✅ **Done 2026-07-27 on live NC 34.0.1.** The branding
          is live: violet header, Fraunces + Nunito Sans actually applied, all four images registered
-         (`*Mime` = `image/svg+xml`), no `productName` leak in `status.php`, **no iOS banner** (which
-         validates keeping `defaults.php`), themed webmanifest, and it renders **light even under a
-         dark-mode OS**, so `enforce_theme` holds. The background legibility call resolved in favour
-         of keeping the image — it reads as a subtle wash, text stays clearly legible.
+         (`*Mime` = `image/svg+xml`), no `productName` leak in `status.php`, **no iOS banner**,
+         themed webmanifest, and it renders **light even under a dark-mode OS**, so `enforce_theme`
+         holds. *(Two conclusions from this pass were later overturned: the absent iOS banner was
+         read as validating `defaults.php`, but a config key does the same job and the file is now
+         deleted; and "the background reads as a subtle wash" was judging `server.css`'s own light
+         gradient — the brand background image was covered and had never been visible at all.)*
          Two bugs fixed en route (`26dd40f`): a pre-existing `lib.sh` phase-killer where a
          query-before-set read of an *unset* key aborted the phase silently under `pipefail`+`set -e`,
          and `disable-user-theming` rewriting itself every seed. Three new items fell out — P1.5 below.
-   - [ ] **P1.5 — Decide what the theme still owns** *(new, from P1; blocks P2)*
-         - **Our `:root` variables are inert.** Nextcloud scopes themes to `body[data-theme-light]`
-           and our `server.css` loads *first*, so body-scoped rules win inside `<body>`. Measured:
-           `--color-main-text` `#222222` (ours `#101828`), `--color-border` `#ededed` (ours `#e2e5e9`),
-           `--border-radius` `4px` (ours `6px`), `--color-error` `#FFE7E7` (ours `#ea003e`),
-           `--color-success` `#D8F3DA` (ours `#009764`). Only `--color-primary-element` matches, and
-           only because `occ` set `primary_color`. **NC34 also changed the semantics** of
-           `--color-error`/`--color-success` from foreground colours to light background tints, so
-           forcing our values there would be wrong, not merely overridden. What actually delivers the
-           brand today: the Theming app (violet, images, name) plus our `@font-face` rules, which work
-           because they are element selectors rather than variables. Decide whether to fight the
-           cascade with higher specificity, or shrink `server.css` to what genuinely lands and rewrite
-           `MAPEO.md` to match. **Owner call — do not pick this one unilaterally.**
-         - **The header logo is illegible.** `logo-header-oficial.svg` is the full lockup, wordmark
-           and tagline, crushed into ~62×34 px. Needs a header-specific mark.
-         - **"Nextcloud Office" leaks** in the admin sidebar — the `eurooffice` app's own display
-           name, admin-only. Fixable with custom l10n, not theming.
-         *Not yet run from P1's checklist:* PWA at 360 px, and `occ app:list` + `grep -L currentColor`
-         for clashing icons (P1d). Neither blocks P1.5.
-   - [ ] **P2 — Fold results into docs.** Resolve ADR-0001's Pending section with what was observed.
-         Retire `PLAN-IMPLEMENTACION.html` + `doc-page.js`, salvaging its §2 (how Nextcloud theming
-         works) and §3 (the four-layer model) into a short `docs/THEMING-MODEL.md` — the rest
-         duplicates MAPEO/BRANDING/LICENSING/ROADMAP, and that duplication is what caused the drift.
-         Move first, then fix in place: `MAPEO.md` → beside `server.css`, `INSTALACION-NEXTCLOUD.md`
-         → `docs/BRANDING.md`; then correct the stale lines there and in the kit's `README.md`,
-         `README-BRANDING.md` and `sistema-diseno.html`. Moving first keeps the corrections from
-         being made twice.
-   - [ ] **P3 — Governance.** Define `AD-1/2/5/9/10` — cited in six files, defined in none; `docs/adr/`
-         is now their home. Give `ADR-iconos` a home or point it at ADR-0001. Push
-         `feat/brand-server-theme` and open the PR against `main`.
-   - [ ] **P4 — Gates.** Grep the `/status.php` body `scripts/smoke.sh` already fetches for
-         `Nextcloud`, catching the `productName` leak in ~2 lines. Promote the drift snippet to a
-         script only if P1 showed real NC34 divergence.
-   - [ ] **P5 — Kit loose ends.** `theme-custom.css` (obsolete, untracked — delete or keep) and which
-         of `logo-header.svg` / `logo-header-oficial.svg` is canonical.
+   - [x] **P1.5 — Decide what the theme still owns.** ✅ **Done 2026-07-27.** Owner call:
+         *shrink `server.css` to what lands.* The `:root` block is deleted — measured 7 of 30
+         variables arriving, and two of them (`--color-error`/`--color-success`) were in slots NC34
+         documents as element **backgrounds**, so the brand values there were wrong, not merely
+         overridden. What remains: `@font-face`, `--font-face` (the one documented typography
+         variable, set with `!important` because four component-scoped NC rules read it and outrank
+         any `body` selector), Fraunces on element selectors, the header gradient, focus rings and
+         the high-contrast block. The header logo is fixed: `logoheader` now points at a
+         **mark-only** `logo-header.svg` (the 62×44 slot rendered the full lockup's wordmark at
+         ~4 px). `MAPEO.md` was rewritten to describe reality and moved beside `server.css`.
+         Dead code removed: `body.aps-hc` (stamped by `apsconecta_tablero`, an app that exists
+         nowhere) and a dangling "B10 regression" citation (`BUGS.md` defines B-001…B-007).
+   - [x] **P2 — Fold results into docs.** ✅ Done. New [`docs/THEMING-MODEL.md`](docs/THEMING-MODEL.md)
+         (rules + full knob inventory + verification). `MAPEO.md` → `themes/apsconecta/`,
+         `INSTALACION-NEXTCLOUD.md` → [`docs/BRANDING.md`](docs/BRANDING.md). Deleted from the kit:
+         `PLAN-IMPLEMENTACION.html`, `doc-page.js`, `README-BRANDING.md`, `theme-custom.css`.
+         ADR-0001 gained a second Corrections entry and its Pending section is closed.
+   - [x] **P4 — Gates.** ✅ Done, both verified in each direction. `scripts/smoke.sh` greps the
+         `/status.php` body it already fetched for `Nextcloud`. `scripts/test.sh` now *parses*
+         every theme SVG — added after a malformed one (double hyphen in an XML comment) was
+         served with a 200 and rendered nothing while every gate stayed green.
+   - [x] **P5 — Kit loose ends.** ✅ Done. `theme-custom.css` deleted. Canonical header art is
+         `themes/apsconecta/core/img/logo/logo-header.svg`; the kit's `logo-header.svg` is design
+         reference only.
+   - [x] **P3 — Governance.** ✅ Done. [`docs/adr/0000-inherited-decisions.md`](docs/adr/0000-inherited-decisions.md)
+         defines `AD-1/2/4/5/6/7/9/10` in one file — they were cited in ~19 places and defined in
+         none. No citation was rewritten. `ADR-iconos`, cited with no home, is folded into ADR-0001
+         § *Per-app icons*.
+
+   **Fixed along the way, not originally planned:**
+   - **Black text and inverted icons over the violet backdrop** — the bug that prompted this pass.
+     Root cause was a config contradiction, not CSS: `background_color` was `#ffffff` while the
+     background image is violet, and `CommonThemeTrait.php:82` derives the backdrop text colour
+     (and `:83` the icon inversion) from *that value*, not from the image. Now `#5315a8`.
+   - **The brand background image had never been visible.** `server.css` painted a light gradient
+     over `body`/`#content` that covered it completely; P1's "reads as a subtle wash" was judging
+     our own gradient. The wash is deleted, so `background.svg` finally shows.
+   - **`defaults.php` deleted.** ADR-0001 kept it for `getiTunesAppId()`, claiming no config key
+     could do it. False: `occ config:system:set customclient_ios_appid ""` does exactly that, and
+     the opcache container restart — the ADR's headline accepted cost — went with it.
+   - **A latent `lib.sh` bug:** `config_system_set`/`app_config_set` could not set a key *to* an
+     empty string, because an unset key and an empty one read back identically, so the guard
+     skipped the write. It silently no-op'd the iOS-banner fix. Now the read's exit status is
+     checked.
+   - **`side_menu` installed** for sidebar navigation, via `ensure_app` in the same phase.
+   - **Zero per-app icon overrides needed** — measured; and ADR-0001's "lacks `currentColor`" half
+     of the clash criterion was itself wrong.
+
+   **Deferred by the owner:** a full audit of every remaining black-on-violet surface. The
+   root-cause fix is in; anything still wrong gets logged rather than chased. Also unverified:
+   the PWA at 360 px (the browser resize did not take during this pass).
 3. **Epic retrospectives** (optional).
 
 ## Future

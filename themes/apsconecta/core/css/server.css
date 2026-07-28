@@ -1,13 +1,32 @@
 /* =====================================================================
-   APS Conecta Gestión — Nextcloud derived theme (server.css)
+   APS Conecta Gestión — Nextcloud server theme (server.css)
    LIGHT ONLY. enforce_theme=light (owner decision 2026-07-12).
-   Do NOT reintroduce a dark block here — it is unreachable and would lie.
+   Do NOT reintroduce a dark block: it is unreachable and would lie.
    ([data-theme="dark"] lives only in the MIT brand package for the website.)
 
-   Maps the APS Conecta brand tokens onto Nextcloud's real --color-* vars.
-   Values are HEX (Nextcloud SCSS color functions expect hex, not oklch).
-   Every deviation from tokens.json is documented in MAPEO.md (kit root)
-   with its measured reason (Collabora gold #9a4c00, radius 6/8px vs 0.5rem token…).
+   WHAT THIS FILE CAN AND CANNOT DO — measured on the live instance 2026-07-27.
+
+   It used to map ~25 brand tokens onto Nextcloud's --color-* variables. Almost
+   none of them arrived. Nextcloud declares its theme variables on
+   body[data-theme-light], and this stylesheet loads BEFORE the theming app's,
+   so anything declared here in :root is overridden for everything inside <body>.
+   Measured: --color-main-text stayed #222222 (not #101828), --border-radius 4px
+   (not 6px), --color-border #ededed, --color-error #FFE7E7. Only 7 of 30 landed,
+   and those only because they already matched Nextcloud's own value.
+
+   Worse than useless in two slots: NC34 defines --color-error and --color-success
+   as element BACKGROUNDS, not text ("this should not be used for text but for
+   element backgrounds"). The brand rose/green sat in variables meaning the
+   opposite of what the map assumed. Foreground brand colour belongs in
+   --color-text-error / --color-element-error, which are body-scoped too.
+
+   So the variable map is gone. What survives is what actually reaches the page:
+   element selectors (which DO beat core's, because this file loads after core CSS)
+   plus --font-face, which is the one documented typography variable.
+
+   Before adding ANY variable here, check on document.body in devtools whether
+   Nextcloud already declares it. If it does, yours will not arrive.
+   Full reasoning: docs/THEMING-MODEL.md and MAPEO.md (beside this file).
 
    Fonts are declared with ABSOLUTE paths as Nextcloud serves them.
    Outside NC these 404 — sistema-diseno.html redeclares them relatively.
@@ -22,7 +41,11 @@
    every url() here exists on disk.
    Regenerate after a font update:
      python3 -c "from fontTools.ttLib.woff2 import compress; compress('X.ttf','X.woff2')"
-   Format conversion is neither subsetting nor renaming, so OFL-1.1 is satisfied. */
+   Format conversion is neither subsetting nor renaming, so OFL-1.1 is satisfied.
+
+   Serving the fonts is the ONLY reason this theme directory exists. Images are
+   registered with `occ theming:config` from absolute paths and would work from
+   anywhere; identity and colour are config. See docs/adr/0001-server-theme-for-branding.md. */
 @font-face {
   font-family: "Fraunces"; font-style: normal; font-weight: 400 800; font-display: swap;
   src: url("/themes/apsconecta/core/fonts/Fraunces.woff2") format("woff2");
@@ -40,94 +63,28 @@
   src: url("/themes/apsconecta/core/fonts/NunitoSans-Italic.woff2") format("woff2");
 }
 
-:root {
-  /* ---- Brand primary (violet #7f21fe = 5.57:1 on light base ✓ AA) ---- */
-  --color-primary:            #7f21fe;
-  --color-primary-default:    #7f21fe;
-  --color-primary-text:       #ffffff;
-  --color-primary-hover:      #6c1bd9;
-  --color-primary-light:      #ece6ff;
-  --color-primary-light-text: #5315a8;
-  --color-primary-light-hover:#d9cdff;
-
-  /* Interactive element (buttons, links, toggles, checkboxes) */
-  --color-primary-element:             #7f21fe;
-  --color-primary-element-hover:       #6c1bd9;
-  --color-primary-element-text:        #ffffff;
-  --color-primary-element-text-dark:   #ece6ff;
-  --color-primary-element-light:       #ece6ff;
-  --color-primary-element-light-hover: #d9cdff;
-  --color-primary-element-light-text:  #5315a8;
-
-  /* Radius — deviation from token 0.5rem: NC uses px, tuned for its
-     control heights. See MAPEO.md (kit root). */
-  --border-radius:            6px;
-  --border-radius-large:      8px;
-  --border-radius-element:    8px;
-  --border-radius-rounded:    999px;
-  --border-radius-pill:       999px;
-
-  /* Clickable area floor (WCAG target size) */
-  --default-clickable-area:   34px;
-
-  /* Semantic — gold/rose are fills/borders/large-text only, never body */
-  --color-error:      #ea003e;   /* 4.33:1 — NOT body text */
-  --color-warning:    #f34700;
-  --color-success:    #009764;
-  --color-info:       #0082ce;
-
-  /* Brand gold badge accent (#e06f00 = 3.07:1, fills/icons only) */
-  --aps-accent:       #e06f00;
-
-  /* ---- Light surfaces (white system bg, brand on top) ---- */
-  --color-main-background:        #ffffff;
-  --color-main-background-rgb:    255, 255, 255;
-  --color-main-text:              #101828;
-  --color-text-maxcontrast:       #485363;
-  --color-text-light:             #101828;
-  --color-text-lighter:           #485363;
-
-  --color-background-hover:       #f1f2f4;
-  --color-background-dark:        #f1f2f4;
-  --color-background-darker:      #e2e5e9;
-  --color-background-plain:       #5315a8;   /* guest/plain backdrop */
-
-  --color-border:                 #e2e5e9;
-  --color-border-dark:            #d5d7dd;
-  --color-border-maxcontrast:     #b7bcc6;
-
-  --color-box-shadow-rgb:         16, 24, 40;
-}
-
 /* =====================================================================
-   WORK CANVAS — light wash as background-image on body/#content.
-   NEVER put a gradient in --color-main-background: it is consumed as a
-   <color> in dozens of NC rules and rgb(var(--color-main-background-rgb)).
-   Keep that a solid color; paint the wash here instead.
-   ===================================================================== */
-body,
-#content,
-#content-vue {
-  background-image: linear-gradient(160deg, #f7f8fa 0%, #f5f3ff 100%);
-  background-attachment: fixed;
-}
+   TYPOGRAPHY — body text through the documented variable, display face
+   through element selectors.
 
-/* =====================================================================
-   HEADER — brand gradient, but NOT on the guest (login) header, where
-   the header is a bare box and the gradient paints an ugly strip.
-   ===================================================================== */
-#header:not(.header-guest) {
-  background: linear-gradient(90deg, #5315a8, #7f21fe) !important;
-}
+   --font-face is Nextcloud's own typography variable and 6 shipped rules read it,
+   four of them component-scoped: .tooltip, .mx-datepicker-main,
+   .rich-contenteditable__input and a colour-picker label. Those class selectors
+   outrank any `body` rule we could write, so tooltips, date pickers and rich-text
+   inputs rendered in system-ui while the rest of the UI was branded. Setting the
+   variable once fixes all four; chasing them with element selectors would take four
+   more rules and would miss the next component to use it.
 
-/* =====================================================================
-   TYPOGRAPHY — Fraunces display (h1–h3, big figures, slogans) only;
-   Nunito Sans everything else, including form controls.
+   !important is required, not decorative: Nextcloud sets --font-face on
+   body[data-theme-light], which outranks `body` AND loads later. On a custom
+   property, !important wins regardless of specificity or order.
+
+   There is no documented variable for a display face, so Fraunces stays on element
+   selectors. Keeping NC's --default-font-size (15px) and --default-line-height (1.5)
+   untouched, so @nextcloud/vue's density is not disturbed.
    ===================================================================== */
-body,
-input, button, select, textarea,
-.app-name {
-  font-family: "Nunito Sans", system-ui, -apple-system, sans-serif;
+body {
+  --font-face: "Nunito Sans", system-ui, -apple-system, sans-serif !important;
 }
 h1, h2, h3,
 #header .header-appname,
@@ -137,13 +94,46 @@ h1, h2, h3,
 }
 
 /* =====================================================================
-   ACCESSIBILITY — closes the B10 regression without a dark mode.
+   HEADER — brand gradient, but NOT on the guest (login) header, where
+   the header is a bare box and the gradient paints an ugly strip.
+
+   NB: because this gradient is ours rather than Nextcloud's, Nextcloud sizes the
+   contrast of everything in the header from `background_color`, not from what is
+   painted here. That value MUST stay dark (#5315a8) or the header icons get
+   inverted to black on violet. See provisioning/phases/15-branding.sh.
+   ===================================================================== */
+#header:not(.header-guest) {
+  background: linear-gradient(90deg, #5315a8, #7f21fe) !important;
+}
+
+/* NOTE: there is deliberately no work-canvas rule here.
+   This file used to paint `body, #content, #content-vue` with a light gradient
+   (#f7f8fa → #f5f3ff). That rule covered the brand background image completely —
+   background.svg was registered, served, and never once visible. It also put white
+   text on a near-white canvas once background_color was corrected to violet, because
+   Nextcloud derives --color-background-plain-text from that colour. The brand
+   background is the backdrop now; do not paint over it again.
+
+   And never put a gradient in --color-main-background: Nextcloud consumes it as a
+   solid <color> and as rgb(var(--color-main-background-rgb)) in dozens of rules. */
+
+/* =====================================================================
+   ACCESSIBILITY — this is the instance's ONLY high-contrast affordance.
+
+   enforce_theme=light does more than remove dark mode: ThemesService::getThemes()
+   returns exactly three providers when it is set (default, dark, enforced), so
+   HighContrastTheme, DarkHighContrastTheme and DyslexiaFont are unreachable for
+   every user here. That makes the block below the whole story, not a nicety.
+
+   It is scoped to `body` with !important for the same reason as --font-face:
+   body[data-theme-light] both outranks a bare `body` and loads later. Declared in
+   :root (as it was until 2026-07-27) it did nothing at all.
    ===================================================================== */
 @media (prefers-contrast: more) {
-  :root {
-    --color-text-maxcontrast:   #2b3442;
-    --color-border-maxcontrast: #6b7280;
-    --color-border:             #b7bcc6;
+  body {
+    --color-text-maxcontrast:   #2b3442 !important;
+    --color-border-maxcontrast: #6b7280 !important;
+    --color-border:             #b7bcc6 !important;
   }
   :focus-visible {
     outline-width: 3px !important;
@@ -170,11 +160,3 @@ textarea:focus-visible,
   outline-offset: 2px;
   border-radius: var(--border-radius);
 }
-
-/* User-toggled high-contrast class (stamped on <body> by apsconecta_tablero) */
-body.aps-hc {
-  --color-text-maxcontrast:   #1c2430;
-  --color-border-maxcontrast: #4b5563;
-  --color-border:             #9aa0ab;
-}
-body.aps-hc a { text-decoration: underline; }
