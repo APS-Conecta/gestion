@@ -122,9 +122,26 @@ it: **ODF (`odt`/`ods`/`odp`) is view-only**; only OOXML edits in place (issue #
    - **Zero per-app icon overrides needed** — measured; and ADR-0001's "lacks `currentColor`" half
      of the clash criterion was itself wrong.
 
-   **Deferred by the owner:** a full audit of every remaining black-on-violet surface. The
-   root-cause fix is in; anything still wrong gets logged rather than chased. Also unverified:
-   the PWA at 360 px (the browser resize did not take during this pass).
+   - [x] **P6 — The three loose ends, closed 2026-07-28.** They had been carried as prose in this
+         file and in PR #47's *Not done*, with no issue holding them, so they were cleared before
+         merge rather than after.
+         - **The `eurooffice` name.** Fixed for the sidebar entry and page title. The reason this
+           file previously gave for not fixing it was wrong: it is not reachable by l10n at all —
+           `lib/AdminSection.php`'s `getName()` returns a bare literal with no `t()` call. Two
+           line-scoped `sed`s in `make office-eurooffice`, plus an unconditional gate in
+           `office-smoke.sh`, because `sed` exits 0 on no-match and would fail silently. No
+           container restart needed (`opcache.validate_timestamps=On`). Vendoring the app into git
+           was rejected on measurement: 11 MB, 410 files, and it would pin the version. The
+           settings *page body* keeps ~20 upstream strings — B-008, deliberate.
+         - **Responsive at 360 px.** Verified; the theme passes. `resize_window` is a no-op under
+           this window manager — which is exactly why the previous pass could not confirm it — so
+           the width is now checked before judging, with a 360 px same-origin iframe as the
+           substitute. The one clipped heading is Nextcloud's designed `text-overflow`: it clips
+           with the stock font stack too, so it is not attributable to Fraunces.
+         - **Backdrop contrast sweep.** Zero findings across six surfaces; every text on violet is
+           white at 10.29:1 or 5.91:1. Recorded in `docs/THEMING-MODEL.md` §5 **as a sample, not a
+           proof**, with its uncovered surfaces named. Two product-name leaks turned up instead and
+           went to B-008 — one of them on `/settings/user`, so user-visible, not admin-only.
 3. **Epic retrospectives** (optional).
 
 ## Future

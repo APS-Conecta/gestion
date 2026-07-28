@@ -37,6 +37,20 @@ Two consequences seen in practice: the brand kit's standalone `occ-theming.sh` w
 being a second entry point (ADR-0001), and brand images are *registered* from theme files rather
 than uploaded through the admin UI, which also keeps admin credentials out of the seed runner.
 
+**Correction (2026-07-28) — `make office-eurooffice` is a second writer, and always was.** As
+written above, this decision reads as if `seed.sh` were the only path that mutates the instance. It
+is not: the office target runs `app:install`, six `config:app:set` calls and a `trusted_domains`
+write, and has done since Story 0.2. Recording it rather than leaving it implicit, because Epic 5
+added a step there and the omission made that look like a new exception.
+
+The office backend is deliberately out of the seed pipeline — it is an optional profile brought up
+on demand (AD-5), and a phase that needs an app the pipeline has not installed yet would have to
+either skip silently on a clean bring-up or force the profile on everyone. So AD-2's *rule* is
+narrower than its wording: **desired state is declared in git and applied by a make target that is
+idempotent and re-runnable**, and `seed.sh` is the writer for everything in the core stack. What
+AD-2 actually forbids — hand-clicking, and one-off scripts nobody re-runs — still holds without
+exception.
+
 ### AD-4 — Group Folders with allow-refinement, never deny
 
 The Document Home is built from Nextcloud Group Folders. Access grants are **allow-only**: a group

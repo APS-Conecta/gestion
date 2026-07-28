@@ -135,6 +135,30 @@ Brand SVGs are parsed as XML when loaded as images. A double hyphen inside an XM
 parse error, so the file silently renders as nothing while every existence check stays green.
 `make test` now parses every SVG in the theme.
 
+### Rule 8 — a vendored app's display name is not always reachable by l10n.
+
+This file used to say that renaming the `eurooffice` connector "means custom l10n inside a vendored
+app". That was wrong, and worth recording because the wrong reason made the job look bigger than it
+is. There is no `t()` call to hook: the name is a bare PHP literal returned by
+`lib/AdminSection.php`'s `getName()` (the `IIconSection` the admin sidebar renders), and the apps
+list reads `<name>` from `appinfo/info.xml`. Two literals, no translation layer.
+
+So the rename is two line-scoped `sed`s in `make office-eurooffice`, run in the container as
+`www-data` like every `occ` call beside them. Three consequences to keep in mind:
+
+- **It cannot be committed.** `/apps/*` is gitignored (AD-1), so the patch lives outside git and any
+  app update reverts it. Re-running the target restores it.
+- **It needs no container restart.** The pinned image ships `opcache.validate_timestamps=On` with
+  `revalidate_freq=60`, so a patched PHP file is picked up within a minute. Verified by reading the
+  image, not by guessing: `docker run --rm nextcloud:34-apache php -i`.
+- **It needs a gate, because `sed` exits 0 when it matches nothing.** An upstream change to either
+  line would turn the rename into a silent no-op — the same failure shape as B-001 and the `lib.sh`
+  query-before-set bug. `scripts/office-smoke.sh` asserts the *desired* state (`Euro-Office`
+  present) rather than the absence of `Nextcloud Office`, because that string legitimately stays in
+  `info.xml`'s `<summary>`/`<description>`, and a positive check also catches an upstream
+  restructure where the old pattern is gone and the new value never got written. It is
+  unconditional: `office_detect` already required the app, so there is no skip branch to hide in.
+
 ## 4. What this theme does *not* do
 
 - **No per-app icon overrides.** ADR-0001 allowed them for icons that "clash". Scanned every enabled
@@ -144,9 +168,13 @@ parse error, so the file silently renders as nothing while every existence check
 - **No dark mode.** Owner decision, 2026-07-12. Dark tokens exist only in the brand kit, for the
   website.
 - **No component restyling, no SCSS, no core edits, no `@nextcloud/vue` fork.**
-- **The `eurooffice` app still shows "Nextcloud Office"** in the admin sidebar. That is the vendored
-  app's own display name; fixing it means custom l10n inside a vendored app, which is
-  upgrade-fragile. Admin-only, accepted.
+- **No renaming of the `eurooffice` settings *page body*.** The connector's sidebar entry and page
+  title are white-labeled to "Euro-Office" by `make office-eurooffice` (see Rule 8), but the page it
+  opens keeps ~20 translated strings that still say "Nextcloud Office". They are not chased on
+  purpose: a blanket rename would make some of them **false** — "Conectarse al servidor de Nextcloud
+  Office *de demostración*" points at Nextcloud's own demo server, which is not Euro-Office. Forcing
+  a value that then lies is the exact failure this epic already paid for once (`background_color`).
+  Admin-only. Logged as B-008.
 
 ## 5. How to verify
 
@@ -169,9 +197,61 @@ And from the shell:
 ```sh
 make test                              # SVGs parse, every url() in server.css resolves
 make smoke                             # /status.php 200 and free of "Nextcloud"
+make office-smoke                      # backend wired AND the Euro-Office rename still applied
 curl -s localhost:8180/login | grep -c apple-itunes-app   # expect 0
 ```
 
 `make seed` twice in a row must change nothing except the four image registrations, which rewrite
 by design (there is no stored path to compare against, so skipping would mean edits never reach the
 instance).
+
+### The logged-out page
+
+`/login` cannot be measured while a session is live — Nextcloud redirects to the dashboard, in a
+tab **and inside a same-origin iframe**. Rather than log out, read what the server actually sends
+to the guest context:
+
+```sh
+curl -s localhost:8180/login | grep -o 'id="body-login"\|header-guest'
+curl -s 'localhost:8180/apps/theming/theme/light.css?plain=1' \
+  | grep -o -- '--color-background-plain-text:[^;]*;'
+```
+
+The backdrop variables are derived server-side from `background_color`, so they are the same value
+the authenticated pages get; what is page-specific is that `server.css`'s gradient deliberately
+excludes `.header-guest`, leaving the guest header to `core/css/guest.css`.
+
+### "PWA at 360 px" was two different checks
+
+They are separated here because conflating them hid the fact that one was already done:
+
+- **Themed webmanifest** — config, verified with `curl`. Width is irrelevant to it.
+- **Responsive rendering at 360 px** — nothing to do with the PWA.
+
+For the second, **confirm the width before judging anything**: `resize_window` reports success and
+is a **no-op** under a tiling/maximising window manager, which is why the 2026-07-27 pass recorded
+this as unverified. Check `window.innerWidth` first. When the window will not resize, a same-origin
+`<iframe style="width:360px">` is a valid substitute — media queries evaluate against the iframe
+viewport (`matchMedia('(max-width: 1024px)')` confirms it).
+
+Scope the verdict to what the theme owns: horizontal overflow, `.header-appname` (absent at this
+width — Nextcloud hides it), Fraunces headings, and the logo slot. Stock Nextcloud narrowness is an
+observation, not a branding defect. Attribute any clipping by swapping `fontFamily` to the stock
+stack and re-measuring `scrollWidth` — if it clips both ways, it is Nextcloud's designed
+`text-overflow`, not ours.
+
+### Backdrop contrast sweep — 2026-07-28
+
+Measured every text-bearing element whose *effective* background (nearest non-transparent ancestor)
+resolves to violet, on: dashboard · files · `/settings/user` · `/settings/admin/overview` ·
+`/login` (via served CSS) · header with a popover open · the same at 360 px.
+
+**Zero contrast findings.** Every such text is `#ffffff`, at 10.29:1 over the backdrop `#5315a8`
+and 5.91:1 over the light end of the header gradient `#7f21fe` — both above AA.
+
+This is a **sample, not a proof**. Not covered: disabled apps, error and empty states, mail
+templates, public share views, print styles. It is bounded on purpose — the root cause was config
+(`background_color`), it is fixed, and violet reaches the UI by only two routes: the backdrop,
+governed by `--color-background-plain-text`, and `server.css`'s single `#header:not(.header-guest)`
+rule. Measure the first element of a probe against its *own* ancestors, not the container's
+inherited `color`, or containers report false positives.
