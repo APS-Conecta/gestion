@@ -87,7 +87,8 @@ repo was v1 feature-complete on paper but had never actually been run start to f
   Euro-Office. Forcing a value that then lies is precisely the failure this epic already paid for
   with `background_color` (see `docs/THEMING-MODEL.md` §4). For (1), the honest fix is disabling the
   promo rather than renaming it, which is a config decision, not a theming one.
-- **Fix:** none yet. Owner decision on (1); (2) accepted as admin-only.
+- **Fix:** none yet. Owner decision on (1); (2) accepted as admin-only. Tracked in
+  [#48](https://github.com/APS-Conecta/gestion/issues/48).
 
 <!-- Template:
 ## B-00N — <short title>
