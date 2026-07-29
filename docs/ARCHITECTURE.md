@@ -157,7 +157,7 @@ comfortable on a laptop.
 
 ## Extension boundary (beyond v1)
 
-The roadmap (Nextcloud Tables → the REM custom app → full-text search → Paperless-ngx → Analytics → a
-local-model AI layer) attaches at a fixed seam: custom apps live in `apps/` → `custom_apps` and may depend on
+The roadmap (the REM custom app → full-text search → Paperless-ngx → Analytics → a local-model AI
+layer — Tables was dropped, see ROADMAP.md § Future) attaches at a fixed seam: custom apps live in `apps/` → `custom_apps` and may depend on
 Nextcloud **only through OCP public APIs** — never patching core, never relying on private internals, and core
 never depends on a custom app. This keeps the platform upgrade-safe as capabilities are added one at a time.
