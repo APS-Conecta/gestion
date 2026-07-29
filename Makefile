@@ -10,21 +10,26 @@ NCEXEC = docker compose exec -T --user www-data nextcloud
 OCC = $(NCEXEC) php occ
 # Your host group, so the container can hand the bind mounts back to you (fix-mount-perms).
 HOST_GID := $(shell id -g)
-# Read settings from .env (empty when .env is absent — targets that need them precheck for it).
-HTTP_PORT := $(shell [ -f .env ] && grep -E '^HTTP_PORT=' .env | cut -d= -f2)
+# Read from .env only for the two values a RECIPE LINE here consumes directly. The scripts source
+# .env themselves now, so they behave the same whether you run `make smoke` or `bash
+# scripts/smoke.sh` — which was not true before: run directly, smoke.sh fell back to its built-in
+# 8180 and probed the wrong port on any instance that had changed HTTP_PORT.
 OFFICE_PORT := $(shell [ -f .env ] && grep -E '^OFFICE_PORT=' .env | cut -d= -f2)
 OFFICE_JWT_SECRET := $(shell [ -f .env ] && grep -E '^OFFICE_JWT_SECRET=' .env | cut -d= -f2)
+
+# Same guard, four targets. One message, one place to change it.
+REQUIRE_ENV = test -f .env || { echo "No .env found — run: cp .env.example .env  (then edit the passwords)"; exit 1; }
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
 up: ## Start the core stack (services only)
-	@test -f .env || { echo "No .env found — run: cp .env.example .env  (then edit the passwords)"; exit 1; }
+	@$(REQUIRE_ENV)
 	docker compose up -d
 	@$(MAKE) --no-print-directory fix-mount-perms
 
 up-dev: ## Start the core stack with the Xdebug derived dev image (step-debugging on :9003)
-	@test -f .env || { echo "No .env found — run: cp .env.example .env  (then edit the passwords)"; exit 1; }
+	@$(REQUIRE_ENV)
 	docker compose -f compose.yaml -f compose.dev.yaml up -d --build
 	@$(MAKE) --no-print-directory fix-mount-perms
 
@@ -41,7 +46,7 @@ down: ## Stop the stack (keeps volumes)
 	docker compose down
 
 seed: ## Run the provisioning pipeline (services must be up)
-	@test -f .env || { echo "No .env found — run: cp .env.example .env"; exit 1; }
+	@$(REQUIRE_ENV)
 	provisioning/seed.sh
 
 seed-idempotent: ## Assert a SECOND seed writes nothing (run right after `make seed`)
@@ -51,13 +56,13 @@ credentials: ## Write CREDENTIALS.local.md (all stack secrets from .env — giti
 	@bash scripts/dump-credentials.sh
 
 smoke: ## Health-gate the running core stack (exit 0 healthy / non-0 broken)
-	@HTTP_PORT=$(HTTP_PORT) bash scripts/smoke.sh
+	@bash scripts/smoke.sh
 
 test: ## Local quality gate — static checks + smoke (same script CI runs)
 	@bash scripts/test.sh
 
 office-eurooffice: ## Bring up the Euro-Office backend and wire the eurooffice connector
-	@test -f .env || { echo "No .env found — run: cp .env.example .env"; exit 1; }
+	@$(REQUIRE_ENV)
 	docker compose --profile eurooffice up -d --wait eurooffice
 	@# The connector app and its white-labelling patches belong to `make seed` (phase 12-apps,
 	@# ADR-0002) — this target owns only the backend wiring. Run `make seed` first on a new instance.
@@ -84,13 +89,13 @@ office-eurooffice: ## Bring up the Euro-Office backend and wire the eurooffice c
 	@# which writes secrets to a mode-600 file and never to stdout).
 	@$(OCC) config:app:set eurooffice jwt_secret --value="$(OFFICE_JWT_SECRET)" >/dev/null
 	@echo "Config value 'jwt_secret' for app 'eurooffice' is set (value not printed)."
-	@OFFICE_PORT=$(OFFICE_PORT) bash scripts/office-smoke.sh
+	@bash scripts/office-smoke.sh
 
 office-smoke: ## Smoke-check the Euro-Office backend
-	@OFFICE_PORT=$(OFFICE_PORT) bash scripts/office-smoke.sh
+	@bash scripts/office-smoke.sh
 
 office-formats: ## Audit the Euro-Office backend — OSS/no-paid-licence (Story 4.3)
-	@OFFICE_PORT=$(OFFICE_PORT) bash scripts/office-formats.sh
+	@bash scripts/office-formats.sh
 
 office-down: ## Stop the office backend (core stack keeps running)
 	docker compose stop eurooffice 2>/dev/null || true

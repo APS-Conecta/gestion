@@ -11,7 +11,8 @@ echo "== static checks (no running stack needed) =="
 if [ ! -f .env ]; then
   echo "  note: .env absent — compose interpolation will fail; run 'cp .env.example .env' first"
 fi
-check docker compose -f compose.yaml config -q
+# Two parses, not three: `--profile eurooffice` reads the same compose.yaml and adds a service, so
+# a bare `-f compose.yaml config -q` could only fail where this one already does.
 check docker compose -f compose.yaml -f compose.dev.yaml config -q
 check docker compose --profile eurooffice config -q
 for s in scripts/*.sh provisioning/*.sh provisioning/phases/*.sh; do

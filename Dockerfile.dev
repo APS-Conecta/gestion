@@ -10,15 +10,8 @@ RUN pecl install xdebug \
 # zz- prefix so this ini loads last and wins. Config lives in dev/xdebug.ini (single source).
 COPY dev/xdebug.ini /usr/local/etc/php/conf.d/zz-xdebug.ini
 
-# Home for the log named in dev/xdebug.ini, owned by www-data (uid 33) — PHP cannot create it itself in
-# a root-owned dir. Without this, every request (including every `occ` call in `make seed`) printed
-# "Xdebug: [Log Files] File '…' could not be opened." and no log was ever written.
-# Deliberately NOT /tmp: it is world-writable (drwxrwxrwt), and Xdebug refuses to open a log it does not
-# own inside such a directory — which made the warning persist for root-run PHP even after a chown.
-# The FILE is pre-created too, not just the dir: at boot the entrypoint runs PHP as root, so root would
-# create it first and own it, and then www-data could not open it. Baking it fixes the owner either way
-# (root writes regardless, since it bypasses permission checks outside a world-writable dir).
-RUN mkdir -p /var/log/xdebug \
-    && touch /var/log/xdebug/xdebug.log \
-    && chown -R www-data:www-data /var/log/xdebug \
-    && chmod 755 /var/log/xdebug && chmod 664 /var/log/xdebug/xdebug.log
+# No xdebug.log, and therefore no log directory. Twelve lines of mkdir/touch/chown/chmod used to
+# live here to make one optional diagnostic file openable by both root and www-data — a whole
+# ownership dance (and a /tmp trap) serving a file nobody reads while step-debugging works.
+# Add it back the day you need to debug the debugger itself: set xdebug.log in dev/xdebug.ini and
+# restore a dir www-data owns outside any world-writable path.
