@@ -60,19 +60,22 @@ repo was v1 feature-complete on paper but had never actually been run start to f
   file pre-created for `www-data` in `Dockerfile.dev` so there is no race.
 
 ## B-007 — ODF (`odt`/`ods`/`odp`) opens read-only
-- **Status:** open — needs an owner decision
+- **Status:** fixed
 - **Repro:** `make office-eurooffice`, then click an `.odt` in Files → nothing happens. Opened explicitly
   at `/apps/eurooffice/<fileid>` it renders correctly but with only `Archivo | Vista`, no ribbon and no
   "Edit". OOXML (`docx`/`xlsx`/`pptx`) edits normally.
 - **Cause:** the connector declares ODF `lossy-edit`/`auto-convert` rather than `edit`
-  (`apps/eurooffice/assets/document-formats/onlyoffice-docs-formats.json`), so it ships them unticked in
-  the default-open matrix, and `make office-eurooffice` never sets `defFormats`.
-- **Decision needed:** accept view-only ODF, or enable lossy editing. If the latter it must go through
-  `make office-eurooffice` via `occ config:app:set eurooffice defFormats …` — never hand-ticked in the
-  admin UI (AD-2). Tracked in [#45](https://github.com/APS-Conecta/gestion/issues/45).
+  (`apps/eurooffice/assets/document-formats/onlyoffice-docs-formats.json`), so it shipped them unticked
+  in the default-open matrix, and `make office-eurooffice` set neither format key.
+- **Fix:** [#45](https://github.com/APS-Conecta/gestion/issues/45) — owner decision: enable lossy ODF
+  editing, scripted in `make office-eurooffice` (AD-2, never hand-ticked). Two keys, not the one the
+  issue named: `editFormats` sets the `edit` flag, `defFormats` makes a click in Files open here at
+  all; `AppConfig.php:1209` crosses them. The conversion loss is accepted because the alternative was
+  staff converting to `.docx` by hand — same fidelity loss, plus a duplicate file, against
+  `docs/CONVENTIONS.md` § *Una sola copia viva*.
 
 ## B-008 — "Nextcloud" still leaks into two UI surfaces after white-labeling
-- **Status:** open — cosmetic, deliberately not chased in Epic 5
+- **Status:** fixed — (1) suppressed, (2) accepted as admin-only
 - **Found:** 2026-07-28, during the Epic 5 close-out sweep. Not from the first bring-up like B-001…B-007.
 - **Repro:**
   1. `/settings/user` (every user, not just admin) shows a link *"Razones para usar Nextcloud en su
@@ -87,8 +90,13 @@ repo was v1 feature-complete on paper but had never actually been run start to f
   Euro-Office. Forcing a value that then lies is precisely the failure this epic already paid for
   with `background_color` (see `docs/THEMING-MODEL.md` §4). For (1), the honest fix is disabling the
   promo rather than renaming it, which is a config decision, not a theming one.
-- **Fix:** none yet. Owner decision on (1); (2) accepted as admin-only. Tracked in
-  [#48](https://github.com/APS-Conecta/gestion/issues/48).
+- **Fix:** `b66c5ac` — (1) hides `.section.development-notice` from `server.css`. Hiding the one
+  link revealed the rest of its container, so the whole vendor block goes: the promo PDF, the
+  "developed by the Nextcloud community" credit and five social follow links. No config lever exists
+  — `ServerDevNotice::getSection()` returns `null` only with a paid Nextcloud subscription. Gated in
+  `scripts/test.sh` against the shipped template, because a selector that stops matching fails
+  silently. (2) stays: a blanket rename would make some strings false (the "Nextcloud Office demo
+  server" really is Nextcloud's). Tracked in [#48](https://github.com/APS-Conecta/gestion/issues/48).
 
 <!-- Template:
 ## B-00N — <short title>

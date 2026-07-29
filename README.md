@@ -93,9 +93,11 @@ round-trip, live co-editing convergence and cursor presence all passed; edits we
 gate for the pipe and the OSS/no-paid-licence claim.
 
 **Which formats you can actually edit.** OOXML — `docx`, `xlsx`, `pptx` — opens and edits normally.
-**ODF — `odt`, `ods`, `odp` — opens and renders correctly but is view-only**: the connector declares those
-`lossy-edit`/`auto-convert` rather than `edit`, so it will not edit them in place. Use *Archivo → Guardar
-copia como* to convert to OOXML first. Whether to enable lossy ODF editing is an open decision — issue #45.
+**ODF — `odt`, `ods`, `odp` — is editable too, through conversion, so expect some formatting loss on
+save**: the connector declares those `lossy-edit` rather than `edit`. Enabled deliberately (#45,
+B-007) because the alternative — converting to `.docx` by hand — loses the same fidelity and leaves a
+duplicate file behind, which [`docs/CONVENTIONS.md`](docs/CONVENTIONS.md) § *Una sola copia viva*
+exists to prevent. Set by `make office-eurooffice`, never in the admin UI (AD-2).
 
 ## Where things live
 
@@ -122,8 +124,8 @@ registry** (phase 20), the **four-area Document Home tree + first-cut access mat
 synthetic **fixture users + a sample file** (phases 50–60). White-label branding is not applied in v1 —
 the instance runs the default Nextcloud theme. Live collaborative editing is native to the office backend
 (`make office-eurooffice`).
-The browser acceptance run passed on 2026-07-24, so v1 is complete; ODF is view-only (see *Office suite*
-above).
+The browser acceptance run passed on 2026-07-24, so v1 is complete; ODF edits through conversion (see
+*Office suite* above).
 
 ## Developing — how to implement a feature
 
