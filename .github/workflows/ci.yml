@@ -52,6 +52,10 @@ jobs:
       # meets a key that does not exist yet. Deliberately without --profile eurooffice: the ~2 GB
       # documentserver is only needed for the healthcheck, not for install-and-patch.
       - run: make seed
+      # The only place a first AND a second seed both exist. Idempotency is the pipeline's defining
+      # property (AD-2) and nothing else asserts it: a warm dev box cannot tell "already correct"
+      # from "silently did nothing", because on a warm box those are the same thing.
+      - run: make seed-idempotent
       - run: make test
       - name: Logs on failure
         if: failure()
