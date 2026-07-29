@@ -32,11 +32,20 @@ require_installed() {
 # So capture whether the READ succeeded: occ config:*:get exits non-zero when the key is unset.
 # Keep the `|| rc=1` — it is what stops the read from killing the phase under pipefail + set -e
 # when the key does not exist yet (see BUGS.md, fixed in 26dd40f).
-config_system_set() {  # KEY VALUE
-  local key="$1" val="$2" cur rc
+# Optional TYPE (string|integer|double|boolean) is passed through to occ. occ defaults to
+# "string", and Nextcloud's getSystemValueInt()/Bool() cast on read, so omitting it is harmless
+# for behaviour — but a numeric key then sits in config.php quoted, which misreports its own type
+# to the next reader. Pass it where the documented type is not a string.
+config_system_set() {  # KEY VALUE [TYPE]
+  local key="$1" val="$2" type="${3:-}" cur rc
   cur="$(occ config:system:get "$key" 2>/dev/null | tr -d '\r')" && rc=0 || rc=1
-  if [ "$rc" -eq 0 ] && [ "$cur" = "$val" ]; then log "system:$key already = $val"; else
-    occ config:system:set "$key" --value="$val" >/dev/null && log "system:$key -> $val"; fi
+  if [ "$rc" -eq 0 ] && [ "$cur" = "$val" ]; then
+    log "system:$key already = $val"
+  elif [ -n "$type" ]; then
+    occ config:system:set "$key" --type="$type" --value="$val" >/dev/null && log "system:$key -> $val ($type)"
+  else
+    occ config:system:set "$key" --value="$val" >/dev/null && log "system:$key -> $val"
+  fi
 }
 
 app_config_set() {  # APP KEY VALUE
