@@ -22,12 +22,17 @@ require_installed() {
 #
 # One `config:list` per phase feeds every read below, instead of one `config:*:get` per key.
 #
-# NOT `--private`, deliberately: that flag is what would put dbpassword, secret and passwordsalt
-# into a shell variable for the rest of the phase. The price is that Nextcloud redacts the keys it
-# flags sensitive, and it flags more than you would guess — `theming slogan`, `url`, `imprintUrl`
-# and `privacyUrl` all come back as ***REMOVED SENSITIVE VALUE***, while `name` and the colours do
-# not. conf_get re-reads exactly those, one call each, instead of trading the whole config's
-# privacy for them.
+# NOT `--private`: that flag adds the instance's crypto material — dbpassword, secret, passwordsalt
+# — to a variable this process would then hold for the rest of the phase. Nothing here needs them.
+#
+# What it does NOT buy is a secret-free cache, and it is worth being exact about that rather than
+# comfortable. Nextcloud's redaction follows its own sensitivity flags, which are narrower than
+# intuition: `theming` slogan/url/imprintUrl/privacyUrl come back ***REMOVED SENSITIVE VALUE***,
+# while `eurooffice jwt_secret` comes back in the clear. So this cache does hold one app secret.
+# It is not a new exposure — seed.sh sources .env, so OFFICE_JWT_SECRET is already in this same
+# process — but do not add `set -x` to a phase, and do not print CONF_CACHE.
+#
+# conf_get re-reads the redacted keys individually rather than trading the whole config for them.
 #
 # Unlike the group caches further down, this one is NOT written back after a set: no phase reads a
 # key it just wrote. If one ever does, the stale read costs a redundant write of the SAME value —

@@ -64,31 +64,22 @@ test: ## Local quality gate — static checks + smoke (same script CI runs)
 office-eurooffice: ## Bring up the Euro-Office backend and wire the eurooffice connector
 	@$(REQUIRE_ENV)
 	docker compose --profile eurooffice up -d --wait eurooffice
-	@# The connector app and its white-labelling patches belong to `make seed` (phase 12-apps,
-	@# ADR-0002) — this target owns only the backend wiring. Run `make seed` first on a new instance.
+	@# This target owns the BACKEND: the ~2 GB documentserver container above, the trusted_domains
+	@# repair below, and the smoke. The CONNECTOR's configuration — server URLs, editor theme, ODF
+	@# formats, the JWT secret — is provisioning/phases/14-office.sh, so it gets query-before-set and
+	@# the idempotency gate. The connector app itself and its patches are phase 12-apps (ADR-0002).
+	@# Run `make seed` first on a new instance; re-run it after this to wire the connector.
 	@# The doc server fetches documents from Nextcloud at the StorageUrl host (`nextcloud`); it must be a
-	@# trusted domain or Nextcloud answers HTTP 400. Idempotent (install-time env doesn't retro-apply).
+	@# trusted domain or Nextcloud answers HTTP 400. Stays here: it repairs an INSTALL-time value
+	@# (NEXTCLOUD_TRUSTED_DOMAINS already covers a fresh instance) and indexes into an array, which the
+	@# config guards do not model. Idempotent (install-time env doesn't retro-apply).
 	$(OCC) config:system:get trusted_domains | grep -qx nextcloud || $(OCC) config:system:set trusted_domains $$($(OCC) config:system:get trusted_domains | grep -c .) --value=nextcloud
-	$(OCC) config:app:set eurooffice DocumentServerUrl --value="http://localhost:$(OFFICE_PORT)/"
-	$(OCC) config:app:set eurooffice DocumentServerInternalUrl --value="http://eurooffice/"
-	$(OCC) config:app:set eurooffice StorageUrl --value="http://nextcloud/"
-	@# Force the editor light (#52). The connector's customizationTheme defaults to "theme-system",
-	@# which follows the USER'S OPERATING SYSTEM — so the same instance rendered a light editor on a
-	@# light-mode machine and a dark one on a dark-mode machine. That is precisely what this instance
-	@# decided against: enforce_theme=light + disable-user-theming=yes exist so a personal OS setting
-	@# cannot change what staff see. The editor was the last surface opting out of that decision.
-	@# Accepted values are theme-system | default-light | default-dark (AppConfig.php:894).
-	$(OCC) config:app:set eurooffice customizationTheme --value=default-light
-	@# ODF editing, lossy via OOXML conversion (#45). Both keys, different jobs: editFormats sets the
-	@# `edit` flag, defFormats makes a click in Files open here at all (crossed in AppConfig.php:1209).
-	@# Only the ODF names: formatsSetting() overrides just the keys present, so OOXML keeps its defaults.
-	$(OCC) config:app:set eurooffice editFormats --value='{"odt":true,"ods":true,"odp":true}'
-	$(OCC) config:app:set eurooffice defFormats --value='{"odt":true,"ods":true,"odp":true}'
-	@# `@` + silenced output: this is the only secret on the wire here, and neither make's command echo
-	@# nor occ's "is now set to '…'" confirmation may leak it (NFR-2/AD-3 — cf. scripts/dump-credentials.sh,
-	@# which writes secrets to a mode-600 file and never to stdout).
-	@$(OCC) config:app:set eurooffice jwt_secret --value="$(OFFICE_JWT_SECRET)" >/dev/null
-	@echo "Config value 'jwt_secret' for app 'eurooffice' is set (value not printed)."
+	@# Then apply the connector config through the pipeline that owns it. The whole seed runs, not
+	@# just phase 14 — phases are sourced by seed.sh and are not independently runnable — which is
+	@# affordable precisely because it is idempotent and now takes ~25s. Output is NOT silenced: a
+	@# target that reprovisions should say so rather than surprise you.  SEED_FIXTURES=0: bringing up
+	@# an office backend is no reason to create sample users.
+	SEED_FIXTURES=0 provisioning/seed.sh
 	@bash scripts/office-smoke.sh
 
 office-smoke: ## Smoke-check the Euro-Office backend

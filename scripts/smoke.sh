@@ -98,30 +98,32 @@ printf '%s' "$login_html" | grep -q 'rel="manifest" href="[^"]*themes/apsconecta
 # `enabled` is the whole state: "yes" = everyone, "no" = off, ["admin"] = admin only
 # (AppManager::enableAppForGroups stores json_encode($groupIds)). So reading that one key per app
 # is an exact assertion, not a proxy for one.
-policy=$(docker compose exec -T --user www-data nextcloud php -r '
-// "disabled" is TWO valid values, not one: the literal "no" (was enabled, then disabled) and an
-// ABSENT key (never enabled here). `occ app:disable` on an already-absent key is a no-op and does
-// not write "no", so demanding the literal would fail forever on a fresh instance. Measured
-// 2026-07-29 by deleting the key and re-seeding. Restricted apps have exactly one valid value.
-$want = [
-  "support" => ["[\"admin\"]"], "updatenotification" => ["[\"admin\"]"], "serverinfo" => ["[\"admin\"]"],
-  "recommendations" => ["[\"admin\"]"], "related_resources" => ["[\"admin\"]"], "weather_status" => ["[\"admin\"]"],
-  "survey_client" => ["no", ""], "nextcloud_announcements" => ["no", ""],
-];
-require "/var/www/html/lib/base.php";
-// \OC::$server->getConfig() was REMOVED in Nextcloud 34 — resolve through the container instead,
-// or this whole check silently degrades to "could not read app config" and reports drift that
-// is not there.
-$c = \OC::$server->get(\OCP\IAppConfig::class);
-$bad = [];
-foreach ($want as $app => $accepted) {
-  $cur = $c->getValueString($app, "enabled", "");
-  if (!in_array($cur, $accepted, true)) {
-    $shown = array_map(fn($v) => $v === "" ? "unset" : $v, $accepted);
-    $bad[] = "$app=" . ($cur === "" ? "unset" : $cur) . " (want " . implode(" or ", $shown) . ")";
-  }
-}
-echo $bad ? implode("; ", $bad) : "OK";
+#
+# This used to be 25 lines of PHP that booted the server (`require lib/base.php`) to read eight
+# strings, and it carried its own footgun: \OC::$server->getConfig() was REMOVED in NC34, so the
+# obvious spelling degrades silently to "could not read app config" and reports drift that is not
+# there. `occ config:list` answers the same question from outside, in the same single round-trip,
+# with no server API to track across versions. Same source the provisioning guards read.
+policy=$(docker compose exec -T --user www-data nextcloud php occ config:list --output=json 2>/dev/null | python3 -c '
+import sys, json
+# "disabled" is TWO valid values, not one: the literal "no" (was enabled, then disabled) and an
+# ABSENT key (never enabled here). `occ app:disable` on an already-absent key is a no-op and does
+# not write "no", so demanding the literal would fail forever on a fresh instance. Measured
+# 2026-07-29 by deleting the key and re-seeding. Restricted apps have exactly one valid value.
+ADMIN_ONLY = "[\"admin\"]"
+UNSET = "unset"
+want = {a: [ADMIN_ONLY] for a in
+        ("support", "updatenotification", "serverinfo", "recommendations", "related_resources", "weather_status")}
+want.update({"survey_client": ["no", ""], "nextcloud_announcements": ["no", ""]})
+
+apps = json.load(sys.stdin)["apps"]
+bad = []
+for app, accepted in want.items():
+    cur = apps.get(app, {}).get("enabled", "")
+    if cur not in accepted:
+        shown = " or ".join(v or UNSET for v in accepted)
+        bad.append(f"{app}={cur or UNSET} (want {shown})")
+print("; ".join(bad) if bad else "OK")
 ' 2>/dev/null | tr -d '\r')
 [ "$policy" = "OK" ] \
   || fail "app policy drift (phase 16-app-policy): ${policy:-could not read app config}"
