@@ -4,8 +4,17 @@
 # Exits non-zero on ANY failure (so it fails loudly on a connector/host/round-trip error).
 set -euo pipefail
 
-. "$(dirname "$0")/office-lib.sh"
-office_detect  # require the eurooffice connector (AD-5)
+# Read .env so this behaves the same run directly as through `make` (cf. scripts/smoke.sh).
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if [ -f "$ROOT/.env" ]; then set -a; . "$ROOT/.env"; set +a; fi
+
+OCC="docker compose exec -T --user www-data nextcloud php occ"
+OFFICE_PORT="${OFFICE_PORT:-80}"
+
+# Require the eurooffice connector — the sole office backend (AD-5). An app is enabled iff its
+# appconfig `enabled` value is "yes".
+[ "$($OCC config:app:get eurooffice enabled 2>/dev/null || true)" = "yes" ] \
+  || { echo "FAIL: eurooffice connector not enabled — run: make office-eurooffice"; exit 1; }
 
 echo "Office backend: Euro-Office (eurooffice)"
 

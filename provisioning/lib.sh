@@ -20,26 +20,78 @@ require_installed() {
 
 # --- idempotent config: set only if the current value differs ---
 #
-# Every helper below reads the current value first. `occ config:*:get` exits 1 when the key is
-# UNSET, and seed.sh runs with `pipefail` while each phase adds `set -e` — so the read of a
-# not-yet-configured key would abort the whole phase, silently, because stderr is discarded.
-# That is why each read ends in `|| cur=""`: an unset key is a legitimate answer ("no value"),
-# not an error. Do not remove it — the failure mode is a phase that dies with no message.
-# An UNSET key and a key set to "" both read back as the empty string, so a plain
-# `[ "$cur" = "$val" ]` treats "set this to empty" as already-done and never writes. That is
-# not hypothetical: `customclient_ios_appid ""` (the iOS banner kill) logged "already = " on a
-# fresh instance and the banner stayed up — caught in the browser on 2026-07-27, not by a gate.
-# So capture whether the READ succeeded: occ config:*:get exits non-zero when the key is unset.
-# Keep the `|| rc=1` — it is what stops the read from killing the phase under pipefail + set -e
-# when the key does not exist yet (see BUGS.md, fixed in 26dd40f).
+# One `config:list` per phase feeds every read below, instead of one `config:*:get` per key.
+#
+# NOT `--private`, deliberately: that flag is what would put dbpassword, secret and passwordsalt
+# into a shell variable for the rest of the phase. The price is that Nextcloud redacts the keys it
+# flags sensitive, and it flags more than you would guess — `theming slogan`, `url`, `imprintUrl`
+# and `privacyUrl` all come back as ***REMOVED SENSITIVE VALUE***, while `name` and the colours do
+# not. conf_get re-reads exactly those, one call each, instead of trading the whole config's
+# privacy for them.
+#
+# Unlike the group caches further down, this one is NOT written back after a set: no phase reads a
+# key it just wrote. If one ever does, the stale read costs a redundant write of the SAME value —
+# same final state, and scripts/seed-idempotent.sh reports it rather than hiding it.
+# Per-phase, like every cache here: seed.sh's subshell-per-phase resets it (see below).
+CONF_CACHE=""
+conf_load() {
+  [ -n "$CONF_CACHE" ] && return 0
+  CONF_CACHE="$(occ config:list --output=json 2>/dev/null)"
+}
+
+# Prints a value from the cached listing, and EXITS 1 WHEN THE KEY IS ABSENT. That distinction is
+# the reason this helper exists rather than a plain lookup.
+#
+# An unset key and a key set to "" both read back as the empty string, so a plain
+# `[ "$cur" = "$val" ]` treats "set this to empty" as already-done and never writes. Not
+# hypothetical: `customclient_ios_appid ""` (the iOS banner kill) logged "already = " on a fresh
+# instance and the banner stayed up — caught in a browser on 2026-07-27, not by a gate. The old code
+# recovered the distinction from occ's exit status, which also meant every read needed `|| rc=1` to
+# stop an unset key from killing the phase under pipefail + set -e. Here it is structural: the key
+# is either a member of the JSON object or it is not. Nothing to remember, nothing to forget.
+#
+# Values are rendered EXACTLY as `occ config:*:get` prints them, because that is what every
+# comparison in this file was written against:
+#   bool -> "1" / ""   int -> "0"   str -> verbatim, empty string included
+# The bool case is load-bearing. `theming disable-user-theming` comes back from config:list as JSON
+# `true`, while occ prints `1` — which is the STORED_FORM theming_set already passes. Render it
+# "true" and that key rewrites itself on every single seed.
+#
+# CALL conf_load FROM THE CALLER, never from here — same subshell trap documented at groupfolder_id:
+# every caller reads through `cur="$(conf_get …)"`, and a cache filled inside a command substitution
+# dies with it.
+conf_get() {  # system KEY | app APP KEY
+  local out
+  out="$(printf '%s' "$CONF_CACHE" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+if sys.argv[1] == "system":
+    node, key = d.get("system", {}), sys.argv[2]
+else:
+    node, key = d.get("apps", {}).get(sys.argv[2], {}), sys.argv[3]
+if key not in node: sys.exit(1)
+v = node[key]
+print(("1" if v else "") if isinstance(v, bool) else v if isinstance(v, str) else json.dumps(v))
+' "$@")" || return 1
+  # A redacted value is not a value. Fall back to a direct read for just that key — which keeps this
+  # correct for any key Nextcloud decides to flag in future, with no list here to maintain.
+  if [ "$out" = "***REMOVED SENSITIVE VALUE***" ]; then
+    case "$1" in
+      system) out="$(occ config:system:get "$2" 2>/dev/null | tr -d '\r')" || return 1 ;;
+      *)      out="$(occ config:app:get "$2" "$3" 2>/dev/null | tr -d '\r')" || return 1 ;;
+    esac
+  fi
+  printf '%s\n' "$out"
+}
+
 # Optional TYPE (string|integer|double|boolean) is passed through to occ. occ defaults to
 # "string", and Nextcloud's getSystemValueInt()/Bool() cast on read, so omitting it is harmless
 # for behaviour — but a numeric key then sits in config.php quoted, which misreports its own type
 # to the next reader. Pass it where the documented type is not a string.
 config_system_set() {  # KEY VALUE [TYPE]
-  local key="$1" val="$2" type="${3:-}" cur rc
-  cur="$(occ config:system:get "$key" 2>/dev/null | tr -d '\r')" && rc=0 || rc=1
-  if [ "$rc" -eq 0 ] && [ "$cur" = "$val" ]; then
+  local key="$1" val="$2" type="${3:-}" cur
+  conf_load
+  if cur="$(conf_get system "$key")" && [ "$cur" = "$val" ]; then
     log "system:$key already = $val"
   elif [ -n "$type" ]; then
     occ config:system:set "$key" --type="$type" --value="$val" >/dev/null && log "system:$key -> $val ($type)"
@@ -49,13 +101,13 @@ config_system_set() {  # KEY VALUE [TYPE]
 }
 
 app_config_set() {  # APP KEY VALUE
-  local app="$1" key="$2" val="$3" cur rc
-  cur="$(occ config:app:get "$app" "$key" 2>/dev/null | tr -d '\r')" && rc=0 || rc=1
-  if [ "$rc" -eq 0 ] && [ "$cur" = "$val" ]; then log "app:$app:$key already = $val"; else
+  local app="$1" key="$2" val="$3" cur
+  conf_load
+  if cur="$(conf_get app "$app" "$key")" && [ "$cur" = "$val" ]; then log "app:$app:$key already = $val"; else
     occ config:app:set "$app" "$key" --value="$val" >/dev/null && log "app:$app:$key -> $val"; fi
 }
 
-# Reads through config:app:get (where theming:config stores) but WRITES through
+# Reads through the cached app config (where theming:config stores) but WRITES through
 # theming:config, so any side effects of the theming command still happen.
 #
 # STORED_FORM exists because for boolean keys the value you must WRITE differs from the value
@@ -64,7 +116,8 @@ app_config_set() {  # APP KEY VALUE
 # this, the comparison never matches and the key is rewritten on every seed. Defaults to VALUE.
 theming_set() {  # KEY VALUE [STORED_FORM]
   local key="$1" val="$2" stored="${3:-$2}" cur
-  cur="$(occ config:app:get theming "$key" 2>/dev/null | tr -d '\r')" || cur=""
+  conf_load
+  cur="$(conf_get app theming "$key")" || cur=""
   if [ "$cur" = "$stored" ]; then log "theming:$key already = $val"; else
     occ theming:config "$key" "$val" >/dev/null && log "theming:$key -> $val"; fi
 }
@@ -161,7 +214,8 @@ add_user_to_group() {  # UID GID  (query-before-add: accurate + idempotent)
 # --- apps (install-or-enable; idempotent) ---
 ensure_app() {  # APPID
   local app="$1" err
-  [ "$(occ config:app:get "$app" enabled 2>/dev/null | tr -d '\r')" = "yes" ] && { log "app $app enabled"; return 0; }
+  conf_load
+  [ "$(conf_get app "$app" enabled 2>/dev/null || true)" = "yes" ] && { log "app $app enabled"; return 0; }
   # Keep occ's own error: it is the only thing that says WHY. Guessing a cause here once sent an
   # operator hunting file permissions when the real failure was an app store timeout (#41).
   if err="$(occ app:install "$app" 2>&1)" || err="$(occ app:enable "$app" 2>&1)"; then
@@ -211,8 +265,8 @@ app_restrict_to_groups() {  # APP GROUP [GROUP...]
   local app="$1"; shift
   local want cur; local -a gargs=()
   local g; for g in "$@"; do gargs+=(--groups="$g"); done
-  want="$(printf '%s' "$*" | python3 -c 'import sys,json;print(json.dumps(sys.stdin.read().split()))')"
-  cur="$(occ config:app:get "$app" enabled 2>/dev/null | tr -d '\r')" || cur=""
+  want="$(printf '"%s",' "$@")"; want="[${want%,}]"
+  conf_load; cur="$(conf_get app "$app" enabled)" || cur=""
   if [ "$cur" = "$want" ]; then log "app $app already restricted to $want"; return 0; fi
   if occ app:enable "${gargs[@]}" "$app" >/dev/null 2>&1; then
     log "app $app -> restricted to $want"
@@ -225,7 +279,7 @@ app_restrict_to_groups() {  # APP GROUP [GROUP...]
 # server-side and therefore unaffected by who can see them (see survey_client in 16-app-policy).
 app_disable() {  # APPID
   local app="$1" cur
-  cur="$(occ config:app:get "$app" enabled 2>/dev/null | tr -d '\r')" || cur=""
+  conf_load; cur="$(conf_get app "$app" enabled)" || cur=""
   # Nextcloud represents "not enabled" in TWO ways, and both are correct: the literal "no" (an app
   # that was enabled and then disabled) and an ABSENT key (an app never enabled on this instance).
   # `occ app:disable` on an app whose key is already absent is a no-op — it does NOT write "no" —

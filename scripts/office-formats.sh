@@ -8,16 +8,29 @@
 # Outcome and the ODF caveat live in README.md ("Office suite").
 set -euo pipefail
 
-. "$(dirname "$0")/office-lib.sh"
+# Read .env so this behaves the same run directly as through `make` (cf. scripts/smoke.sh).
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if [ -f "$ROOT/.env" ]; then set -a; . "$ROOT/.env"; set +a; fi
 
-office_detect  # require the eurooffice connector (AD-5)
+OCC="docker compose exec -T --user www-data nextcloud php occ"
+OFFICE_PORT="${OFFICE_PORT:-80}"
+
+# Require the eurooffice connector — the sole office backend (AD-5). An app is enabled iff its
+# appconfig `enabled` value is "yes".
+[ "$($OCC config:app:get eurooffice enabled 2>/dev/null || true)" = "yes" ] \
+  || { echo "FAIL: eurooffice connector not enabled — run: make office-eurooffice"; exit 1; }
 
 echo "Office backend: Euro-Office (eurooffice)"
 curl -sf "http://localhost:${OFFICE_PORT}/healthcheck" >/dev/null \
   || { echo "FAIL: Euro-Office /healthcheck not reachable"; exit 1; }
-img="$(docker inspect apsconecta-gestion-eurooffice-1 --format '{{.Config.Image}}' 2>/dev/null || true)"
+# Resolve the container through compose rather than naming it: `apsconecta-gestion-eurooffice-1`
+# hardcoded the project name, so this check silently found nothing under COMPOSE_PROJECT_NAME —
+# which is exactly how the clean-boot rehearsal runs.
+img="$(docker inspect "$(docker compose ps -q eurooffice)" --format '{{.Config.Image}}' 2>/dev/null || true)"
 case "$img" in
   *euro-office/documentserver*) echo "  ✓ OSS image: ${img} (Euro-Office, AGPL — no paid licence)";;
   *) echo "FAIL: unexpected Euro-Office image '${img}'"; exit 1;;
 esac
-echo "PASS: Euro-Office — server healthy + OSS image (OOXML edits in place; ODF is view-only — see README)"
+# "ODF is view-only" until #45 shipped lossy ODF editing via OOXML conversion (`editFormats` +
+# `defFormats` in `make office-eurooffice`). The gate was still printing the old claim on every run.
+echo "PASS: Euro-Office — server healthy + OSS image (OOXML edits in place; ODF edits via conversion, lossy — see README)"

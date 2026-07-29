@@ -8,6 +8,26 @@
 # fast with a clear message if a required value is missing or empty.
 name: apsconecta-gestion
 
+# `nextcloud` and `cron` MUST run the same image off the same three volumes: cron.php loads the
+# apps, so it needs custom_apps and themes too, or app-owned jobs fail in a container that looks
+# healthy. That used to be a comment asking the two service blocks to stay in step by hand. It is
+# an anchor now, so they cannot drift: there is one definition and both services merge it.
+x-nextcloud-base: &nextcloud-base
+  image: nextcloud:34-apache
+  restart: "no"
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  volumes:
+    - nextcloud_data:/var/www/html
+    # Custom code lives in the repo, live-mounted for edit-without-rebuild (Story 0.8, AD-9).
+    # These overlay the named volume at the two custom paths the image actually reads
+    # (custom_apps = writable apps path; themes = server-side custom themes). No fork (AD-1).
+    - ./apps:/var/www/html/custom_apps
+    - ./themes:/var/www/html/themes
+
 services:
   db:
     image: postgres:18-alpine
@@ -37,23 +57,10 @@ services:
       retries: 5
 
   nextcloud:
-    image: nextcloud:34-apache
-    restart: "no"
+    <<: *nextcloud-base
     # Loopback only — never expose the dev instance on the LAN (global rule 16).
     ports:
       - "127.0.0.1:${HTTP_PORT:?set HTTP_PORT in .env}:80"
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - nextcloud_data:/var/www/html
-      # Custom code lives in the repo, live-mounted for edit-without-rebuild (Story 0.8, AD-9).
-      # These overlay the named volume at the two custom paths the image actually reads
-      # (custom_apps = writable apps path; themes = server-side custom themes). No fork (AD-1).
-      - ./apps:/var/www/html/custom_apps
-      - ./themes:/var/www/html/themes
     environment:
       # Container-to-container over the compose network by service name (AD-8)
       POSTGRES_HOST: db
@@ -85,23 +92,12 @@ services:
   # the same way production does — a dev stack whose job behaviour differs from production is
   # exactly where this class of bug hides.
   #
-  # Same image and the same three volumes as `nextcloud`, on purpose: cron.php loads the apps, so
-  # it needs custom_apps and themes too, or app-owned jobs fail in a container that looks healthy.
-  # The image already ships `*/5 * * * * php -f /var/www/html/cron.php` for www-data, and /cron.sh
-  # is just `busybox crond -f`. No env is needed — config.php comes from the shared volume.
+  # Shares x-nextcloud-base with `nextcloud` (see the anchor for why the volumes must match). The
+  # image already ships `*/5 * * * * php -f /var/www/html/cron.php` for www-data, and /cron.sh is
+  # just `busybox crond -f`. No env is needed — config.php comes from the shared volume.
   cron:
-    image: nextcloud:34-apache
-    restart: "no"
+    <<: *nextcloud-base
     entrypoint: /cron.sh
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - nextcloud_data:/var/www/html
-      - ./apps:/var/www/html/custom_apps
-      - ./themes:/var/www/html/themes
     healthcheck:
       # `-f` is required, not cosmetic: /cron.sh does `exec busybox crond -f`, so PID 1's comm is
       # "busybox" and only its argv contains "crond". A bare `pgrep crond` never matches and the
