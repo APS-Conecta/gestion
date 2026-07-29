@@ -117,7 +117,7 @@ repo was v1 feature-complete on paper but had never actually been run start to f
 - **Fix:** `default_language = es`, plus `force_language = es` so a personal browser setting
   cannot change what staff see — the same call already made for `enforce_theme` and the editor's
   `customizationTheme`. `default_locale = es_CL` was correct and is unchanged: only the language
-  slot was wrong. Subsumes [#50](https://github.com/APS-Conecta/gestion/issues/50), whose
+  slot was wrong. Tracked in [#60](https://github.com/APS-Conecta/gestion/issues/60). Subsumes [#50](https://github.com/APS-Conecta/gestion/issues/50), whose
   document-template question resolved through the same `getLanguageCode()`.
 
 <!-- Template:
