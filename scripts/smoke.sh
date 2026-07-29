@@ -49,7 +49,33 @@ jobs_mode=$($OCC config:app:get core backgroundjobs_mode 2>/dev/null | tr -d '\r
 [ "$jobs_mode" = "cron" ] \
   || fail "backgroundjobs_mode is '${jobs_mode:-unset}', expected 'cron' — run 'make seed' (phase 06-jobs)"
 
-# 7. Session posture: the login form must not offer "remember me" (phase 05-security).
+# 7. App policy holds: staff do not see Nextcloud's product surface (phase 16-app-policy).
+# One container round-trip, not one per app — smoke runs on every `make test`.
+# `enabled` is the whole state: "yes" = everyone, "no" = off, ["admin"] = admin only
+# (AppManager::enableAppForGroups stores json_encode($groupIds)). So reading that one key per app
+# is an exact assertion, not a proxy for one.
+policy=$(docker compose exec -T --user www-data nextcloud php -r '
+$want = [
+  "support" => "[\"admin\"]", "updatenotification" => "[\"admin\"]", "serverinfo" => "[\"admin\"]",
+  "recommendations" => "[\"admin\"]", "related_resources" => "[\"admin\"]", "weather_status" => "[\"admin\"]",
+  "survey_client" => "no", "nextcloud_announcements" => "no",
+];
+require "/var/www/html/lib/base.php";
+// \OC::$server->getConfig() was REMOVED in Nextcloud 34 — resolve through the container instead,
+// or this whole check silently degrades to "could not read app config" and reports drift that
+// is not there.
+$c = \OC::$server->get(\OCP\IAppConfig::class);
+$bad = [];
+foreach ($want as $app => $exp) {
+  $cur = $c->getValueString($app, "enabled", "");
+  if ($cur !== $exp) { $bad[] = "$app=" . ($cur === "" ? "unset" : $cur) . " (want $exp)"; }
+}
+echo $bad ? implode("; ", $bad) : "OK";
+' 2>/dev/null | tr -d '\r')
+[ "$policy" = "OK" ] \
+  || fail "app policy drift (phase 16-app-policy): ${policy:-could not read app config}"
+
+# 8. Session posture: the login form must not offer "remember me" (phase 05-security).
 # Assert the EFFECT, not the config key. `occ config:system:get` would confirm we wrote 0 while
 # telling us nothing about whether the form still offers the option — and the option is the thing
 # that matters. Nextcloud renders `loginCanRememberme` into the page's initial state from
@@ -76,4 +102,4 @@ case "$remember" in
   *)     fail "session posture: could not read loginCanRememberme from /login (got '${remember}') — upstream may have renamed the initial state key" ;;
 esac
 
-echo "PASS: core stack healthy — installed, PostgreSQL ready, Redis PONG, /status.php 200, no branding leak, no remember-me"
+echo "PASS: core stack healthy — installed, PostgreSQL ready, Redis PONG, /status.php 200, no branding leak, cron scheduling, app policy, no remember-me"

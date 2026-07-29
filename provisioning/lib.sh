@@ -137,6 +137,42 @@ ensure_app() {  # APPID
   fi
 }
 
+# Restrict an app to one or more groups: installed and available to those groups only, invisible
+# to everyone else. The lever of choice over disabling, because a restricted app is still present
+# for the custom apps on the roadmap to build on.
+#
+# AppManager::enableAppForGroups() stores json_encode($groupIds) in appconfig `enabled`
+# (lib/private/App/AppManager.php:673), where a globally-enabled app stores the string "yes". So
+# the current value IS the comparison — no separate state to track — and query-before-set is exact.
+#
+# NOT every app can be restricted. Apps declaring types filesystem / authentication / logging /
+# prelogin / prevent_group_restriction are refused by Nextcloud, and `occ` fails with a clear
+# message rather than silently enabling globally. Verified on 2026-07-28: nextcloud_announcements
+# (logging), photos + federation (authentication), sharebymail + circles (filesystem) and logreader
+# (logging) all refuse. For those the only levers are an app config switch or a full disable.
+app_restrict_to_groups() {  # APP GROUP [GROUP...]
+  local app="$1"; shift
+  local want cur; local -a gargs=()
+  local g; for g in "$@"; do gargs+=(--groups="$g"); done
+  want="$(printf '%s' "$*" | python3 -c 'import sys,json;print(json.dumps(sys.stdin.read().split()))')"
+  cur="$(occ config:app:get "$app" enabled 2>/dev/null | tr -d '\r')" || cur=""
+  if [ "$cur" = "$want" ]; then log "app $app already restricted to $want"; return 0; fi
+  if occ app:enable "${gargs[@]}" "$app" >/dev/null 2>&1; then
+    log "app $app -> restricted to $want"
+  else
+    log "FAILED to restrict $app to $want — does it declare a blocking type?"; return 1
+  fi
+}
+
+# Disable an app outright. Reserved for apps that cannot be restricted or whose behaviour is
+# server-side and therefore unaffected by who can see them (see survey_client in 16-app-policy).
+app_disable() {  # APPID
+  local app="$1" cur
+  cur="$(occ config:app:get "$app" enabled 2>/dev/null | tr -d '\r')" || cur=""
+  if [ "$cur" = "no" ] || [ -z "$cur" ]; then log "app $app already disabled"; return 0; fi
+  occ app:disable "$app" >/dev/null 2>&1 && log "app $app -> disabled"
+}
+
 # --- group folders: groupfolders:create is NOT idempotent by name, so ALWAYS query first ---
 # NB: the groupfolders app (v22+) uses the JSON key `mountPoint` (camelCase). Accept the older
 # `mount_point` too for safety.
