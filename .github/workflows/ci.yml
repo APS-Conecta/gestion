@@ -1,0 +1,58 @@
+# The repo is private, so Actions minutes are billed. Hence the split: the cheap checks run on
+# every push, and the full bring-up runs weekly or on demand.
+name: CI
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1"          # Mondays 06:00 UTC — the clean-boot path, weekly
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: Static gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # .env.example's placeholders are non-empty, which is all compose's ${VAR:?} guards ask.
+      # No secret is needed: nothing here starts a container.
+      - run: cp .env.example .env
+      # scripts/test.sh already skips the checks that need a running stack, so it needs no flag.
+      # Covers: compose config on all three profiles, bash -n on every script, the #39 phase-runner
+      # guard, every url() in server.css existing, and every theme SVG parsing.
+      - run: bash scripts/test.sh
+
+  cleanboot:
+    name: Clean boot
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: cp .env.example .env
+      - run: make up
+      # `make up` returns when the containers start, not when Nextcloud has finished installing
+      # itself, and `make seed` fails fast on a half-installed instance.
+      - name: Wait for the installer
+        run: |
+          for _ in $(seq 60); do
+            if docker compose exec -T --user www-data nextcloud php occ status --output=json 2>/dev/null | grep -q '"installed":true'; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Nextcloud did not finish installing in 10 minutes"; docker compose logs nextcloud | tail -50; exit 1
+      # This is the path nothing else exercises: a checkout has an empty apps/, so 12-apps installs
+      # every app from the store and applies its patches for real, and every query-before-set guard
+      # meets a key that does not exist yet. Deliberately without --profile eurooffice: the ~2 GB
+      # documentserver is only needed for the healthcheck, not for install-and-patch.
+      - run: make seed
+      - run: make test
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --tail=100
