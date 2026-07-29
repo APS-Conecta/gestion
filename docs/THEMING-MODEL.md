@@ -168,6 +168,16 @@ So the rename is two line-scoped `sed`s in `make office-eurooffice`, run in the 
 - **No dark mode.** Owner decision, 2026-07-12. Dark tokens exist only in the brand kit, for the
   website.
 - **No component restyling, no SCSS, no core edits, no `@nextcloud/vue` fork.**
+  *Suppressing upstream vendor marketing is a different act, and is allowed.* Restyling changes how
+  a Nextcloud component looks; suppression declines to show Nextcloud's advertising inside a
+  white-labeled product. The distinction is drawn explicitly because the rule as written would have
+  been quietly broken instead — the first such case, B-008's *"Razones para usar Nextcloud"* panel
+  in every user's personal settings, has no config lever at all: `ServerDevNotice::getSection()`
+  returns `null` only when `IRegistry::delegateHasValidSubscription()` is true, i.e. only with a
+  paid subscription.
+  **Every suppression carries a gate.** A CSS selector that stops matching fails *silently* and the
+  promo reappears, so `make test` asserts the targeted id still exists in the shipped upstream
+  template. One rule, one gate, and the id named in both — not a growing pile of blind selectors.
 - **No renaming of the `eurooffice` settings *page body*.** The connector's sidebar entry and page
   title are white-labeled to "Euro-Office" by `make office-eurooffice` (see Rule 8), but the page it
   opens keeps ~20 translated strings that still say "Nextcloud Office". They are not chased on
