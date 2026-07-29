@@ -4,7 +4,7 @@
 #   `make office-eurooffice` → Euro-Office (eurooffice/JWT)
 # `make smoke` / `make test` = the local quality gate; `make seed` runs the provisioning pipeline.
 .DEFAULT_GOAL := help
-.PHONY: help up up-dev down seed seed-idempotent smoke test credentials fix-mount-perms office-eurooffice office-smoke office-formats office-down
+.PHONY: help up up-dev down seed seed-idempotent smoke test fix-mount-perms office-eurooffice office-smoke office-formats office-down
 
 NCEXEC = docker compose exec -T --user www-data nextcloud
 OCC = $(NCEXEC) php occ
@@ -51,9 +51,6 @@ seed: ## Run the provisioning pipeline (services must be up)
 
 seed-idempotent: ## Assert a SECOND seed writes nothing (run right after `make seed`)
 	@bash scripts/seed-idempotent.sh
-
-credentials: ## Write CREDENTIALS.local.md (all stack secrets from .env — gitignored, mode 600)
-	@bash scripts/dump-credentials.sh
 
 smoke: ## Health-gate the running core stack (exit 0 healthy / non-0 broken)
 	@bash scripts/smoke.sh

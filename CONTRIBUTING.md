@@ -43,10 +43,24 @@ Two invariants when you touch the stack: nothing VPS-specific or absolute-pathed
 (`host.docker.internal` must work cross-OS), and **all desired state goes through `make seed`** — never
 hand-click config into the running instance (AD-2).
 
-**Secrets:** all passwords live in your gitignored `.env` (copy from `.env.example`). For a single
-readable sheet of every stack credential (Nextcloud admin, PostgreSQL, Euro-Office JWT, fixture
-users), run **`make credentials`** → writes `CREDENTIALS.local.md` (gitignored, mode 600, generated from
-`.env` — never hand-edit; re-run after a rotation). Never commit `.env` or that file.
+**Secrets:** all passwords live in your gitignored `.env` (copy from `.env.example`) — that file is
+the whole list, and the canonical vault is **Proton Pass**. Never commit it.
+
+There used to be a `make credentials` target that rendered `.env` into a `CREDENTIALS.local.md`
+sheet, gitignored and mode 600. It was deleted on 2026-07-29: mode 600 stops you *committing* a
+plaintext secrets sheet, but the real exposure is one sitting in the working tree where it gets
+opened, selected and pasted — which is exactly how an admin password ended up in a chat transcript
+and had to be rotated. `.env` already holds every value; a second copy only adds a place to leak
+from. `grep -v '^#' .env` if you want them on one screen.
+
+Rotating the admin password: `.env` is read at INSTALL time only, so editing it does not change an
+existing account. Reset it in Nextcloud first, then update `.env` to match:
+
+```bash
+NEW="$(openssl rand -hex 20)"        # hex: never contains the '$' Compose would interpolate
+docker compose exec -T --user www-data -e OC_PASS="$NEW" nextcloud \
+  php occ user:resetpassword --password-from-env admin
+```
 
 ## Documentation rules
 
