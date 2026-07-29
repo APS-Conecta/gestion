@@ -87,6 +87,24 @@ ensure_app side_menu
 app_config_set side_menu background-color "#5315a8"
 app_config_set side_menu background-color-to "#5315a8"
 
+# --- New users start with an empty home, not Nextcloud's (#49) ---
+# Nextcloud copies core/skeleton/ into every new user's files at creation: an English Readme.md
+# whose heading renders as "Welcome to Nextcloud!" at the top of the Files view, plus English
+# Documents/ Photos/ Templates/ folders. On an es-CL instance that is both a white-label leak and a
+# language leak, and it sits on the landing view of the app staff use all day — a more visible leak
+# than B-008 ever was.
+#
+# Empty rather than a Spanish skeleton: Epic 3 already put the real structure in Team Folders, so a
+# second personal tree would compete with it for attention and staff would have to learn which one
+# matters. Owner decision 2026-07-29. If a personal starter structure is ever wanted, Nextcloud
+# resolves a {lang} placeholder in this path natively (TemplateManager::copySkeleton), so it stays a
+# directory we ship rather than code we write.
+#
+# TemplateManager::copySkeleton() guards the copy with `if (!empty($skeletonDirectory))`, so the
+# empty string genuinely means "copy nothing" — it is not a fallback to the default.
+# Affects NEW users only; the fixture users created before this keep their English tree.
+config_system_set skeletondirectory ""
+
 # --- Activate the server theme (themes/apsconecta, bind-mounted by compose.yaml) ---
 config_system_set theme apsconecta
 

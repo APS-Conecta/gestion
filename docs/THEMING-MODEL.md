@@ -215,6 +215,31 @@ curl -s localhost:8180/login | grep -c apple-itunes-app   # expect 0
 by design (there is no stored path to compare against, so skipping would mean edits never reach the
 instance).
 
+### Why your CSS or colour change did nothing
+
+Two caching traps. Both produce the same symptom — **a change that is correct on disk and correct
+on the wire, but invisible in the browser** — and both have cost real debugging time. Check these
+before looking for a bug in your rule.
+
+**Editing `server.css` does not bump the cachebuster.** Nextcloud serves the theme stylesheet as
+`server.css?v=<hash>-<n>`, where `-<n>` moves when *theming config* changes, not when the CSS file
+changes. So after an edit the browser keeps the previous stylesheet under an unchanged URL. Seen
+directly: a new rule was present on disk and in `curl` output while `document.styleSheets` in the
+page had 13 rules and did not include it.
+
+→ **`make seed` is the reliable bust.** It re-registers the four brand images unconditionally
+(deliberately — see `lib.sh`), which bumps the cachebuster as a side effect.
+
+**`side_menu` serves its stylesheet at a permanently static `?v=0`.** Colour changes made with
+`occ config:app:set side_menu …` never reach a returning browser. Verified: the server response
+carried both the derived default and our configured value, ours last (so ours wins), while the
+browser kept reporting the old one.
+
+→ Confirm what the **server** sends before doubting the config:
+`curl -s 'localhost:8180/apps/side_menu/css/stylesheet?v=0' | grep -o -- '--side-menu-background-color: *[^;]*'`
+
+Tracked in #53.
+
 ### The logged-out page
 
 `/login` cannot be measured while a session is live — Nextcloud redirects to the dashboard, in a
