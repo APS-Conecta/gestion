@@ -5,9 +5,6 @@
 # (groupfolders:create is NOT idempotent by name — always query first). Grants are phase 40-acl.
 phase_begin "30-folders" "Hybrid four-area Group Folders tree (Epic 3)"
 
-# The groupfolders (Team folders) app is a structural dependency — install/enable it here.
-ensure_app groupfolders
-
 # Group folders (mount points). Program/unit/sector names are CESFAM-parameterizable placeholders.
 folders=(
   "Transversal"

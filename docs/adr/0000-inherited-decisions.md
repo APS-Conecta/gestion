@@ -64,6 +64,11 @@ Collaborative editing runs on the Euro-Office document server, brought up and wi
 `make office-eurooffice`, on an OSS image with no paid licence (audited by `make office-formats`).
 `scripts/office-smoke.sh` proves the pipe end to end.
 
+**Clarified by [ADR-0002](0002-app-patches.md):** what is opt-in is the ~2 GB documentserver
+container behind `--profile eurooffice`. The `eurooffice` *connector app* is installed by
+`make seed` (phase `12-apps`) on every instance — it is inert until this target gives it a URL
+and a secret, and being installed is what lets its patches be re-applied each seed.
+
 ### AD-6 — White-labeling is config, not theme files *(superseded)*
 
 Originally: branding would be `occ theming:config` plus `disable-user-theming`, with **no `themes/`

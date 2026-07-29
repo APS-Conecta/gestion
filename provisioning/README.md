@@ -8,8 +8,15 @@ running `seed.sh`, which sources the numbered phase files in `phases/` in fixed 
 provisioning/
   seed.sh            # the runner (make seed → this)
   lib.sh             # shared idempotency-guard helpers (source, don't execute)
+  apps/              # per-app *.patch files, applied by 12-apps (ADR-0002)
+    eurooffice/
   phases/
+    05-security.sh   # session hardening + outbound defaults
+    06-jobs.sh       # background jobs from cron, not ajax
     10-locale.sh     # Epic 1 — es-CL locale defaults
+    12-apps.sh       # ADR-0002 — which apps we install, and the edits inside them
+    15-branding.sh   # Epic 5 — APS Conecta white-label
+    16-app-policy.sh # admin keeps everything; staff get the reduced set
     20-groups.sh     # Epic 2 — role/category/team group registry
     30-folders.sh    # Epic 3 — hybrid four-area Group Folders tree
     40-acl.sh        # Epic 3 — first-cut access matrix (allow-refinement, no DENY)
@@ -19,7 +26,7 @@ provisioning/
 
 ## Contract
 
-- **Fixed phase order 10 → 60.** `seed.sh` sorts numerically. Structure (10–40) before fixtures (50–60).
+- **Fixed phase order 05 → 60.** `seed.sh` sorts numerically. Structure (05–40) before fixtures (50–60).
 - **One epic per file.** Each phase file is owned by exactly one epic/story (see the header of each). An
   epic **only edits its own** phase file — so parallel epics never conflict. Add capability by *filling a
   stub*, never by editing another epic's file or a monolith.

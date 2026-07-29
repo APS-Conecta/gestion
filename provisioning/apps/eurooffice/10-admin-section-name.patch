@@ -1,0 +1,11 @@
+--- a/lib/AdminSection.php
++++ b/lib/AdminSection.php
+@@ -53,7 +53,7 @@
+      * Name of the section
+      */
+     public function getName(): string {
+-        return "Nextcloud Office";
++        return "Euro-Office";
+     }
+ 
+     /**

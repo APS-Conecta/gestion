@@ -3,9 +3,17 @@
 # users/devs may change them.
 phase_begin "10-locale" "es-CL locale defaults (Epic 1)"
 
-# es_419 = the UI translation Nextcloud actually ships (a discrete es_CL translation does not exist);
-# es_CL = a valid ICU locale for Chilean date/number formatting. Timezone is a per-user setting.
-config_system_set default_language "es_419"
+# `es` is the only Spanish TRANSLATION NC34 core ships (alongside es_EC and es_MX). es_419 was set
+# here until B-009: it is a valid ICU *locale* but not a language, so languageExists() rejects it
+# and Factory::findLanguage() step 4 can never return it — the key was inert and the browser's
+# Accept-Language decided, with English as the floor. Language and locale are separate slots and
+# only the language one was wrong: es_CL remains correct for Chilean date/number formatting.
+config_system_set default_language "es"
+# Without this the default only applies to users whose browser asks for nothing Nextcloud has —
+# findLanguage() reads the request header BEFORE the default, and persists it as a user setting.
+# Same call this instance already made for the theme (enforce_theme) and the editor
+# (customizationTheme): a personal client setting does not change what staff see.
+config_system_set force_language "es"
 config_system_set default_locale "es_CL"
 config_system_set default_phone_region "CL"
 
