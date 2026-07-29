@@ -169,6 +169,12 @@ app_restrict_to_groups() {  # APP GROUP [GROUP...]
 app_disable() {  # APPID
   local app="$1" cur
   cur="$(occ config:app:get "$app" enabled 2>/dev/null | tr -d '\r')" || cur=""
+  # Nextcloud represents "not enabled" in TWO ways, and both are correct: the literal "no" (an app
+  # that was enabled and then disabled) and an ABSENT key (an app never enabled on this instance).
+  # `occ app:disable` on an app whose key is already absent is a no-op — it does NOT write "no" —
+  # so anything asserting the literal "no" will fail forever on a fresh instance. Measured
+  # 2026-07-29 by deleting the key and re-seeding: the phase logged success and the value stayed
+  # unset. Treat both as disabled here, and make any gate accept both too.
   if [ "$cur" = "no" ] || [ -z "$cur" ]; then log "app $app already disabled"; return 0; fi
   occ app:disable "$app" >/dev/null 2>&1 && log "app $app -> disabled"
 }

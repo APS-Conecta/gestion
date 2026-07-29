@@ -92,10 +92,14 @@ printf '%s' "$login_html" | grep -q 'rel="manifest" href="[^"]*themes/apsconecta
 # (AppManager::enableAppForGroups stores json_encode($groupIds)). So reading that one key per app
 # is an exact assertion, not a proxy for one.
 policy=$(docker compose exec -T --user www-data nextcloud php -r '
+// "disabled" is TWO valid values, not one: the literal "no" (was enabled, then disabled) and an
+// ABSENT key (never enabled here). `occ app:disable` on an already-absent key is a no-op and does
+// not write "no", so demanding the literal would fail forever on a fresh instance. Measured
+// 2026-07-29 by deleting the key and re-seeding. Restricted apps have exactly one valid value.
 $want = [
-  "support" => "[\"admin\"]", "updatenotification" => "[\"admin\"]", "serverinfo" => "[\"admin\"]",
-  "recommendations" => "[\"admin\"]", "related_resources" => "[\"admin\"]", "weather_status" => "[\"admin\"]",
-  "survey_client" => "no", "nextcloud_announcements" => "no",
+  "support" => ["[\"admin\"]"], "updatenotification" => ["[\"admin\"]"], "serverinfo" => ["[\"admin\"]"],
+  "recommendations" => ["[\"admin\"]"], "related_resources" => ["[\"admin\"]"], "weather_status" => ["[\"admin\"]"],
+  "survey_client" => ["no", ""], "nextcloud_announcements" => ["no", ""],
 ];
 require "/var/www/html/lib/base.php";
 // \OC::$server->getConfig() was REMOVED in Nextcloud 34 — resolve through the container instead,
@@ -103,9 +107,12 @@ require "/var/www/html/lib/base.php";
 // is not there.
 $c = \OC::$server->get(\OCP\IAppConfig::class);
 $bad = [];
-foreach ($want as $app => $exp) {
+foreach ($want as $app => $accepted) {
   $cur = $c->getValueString($app, "enabled", "");
-  if ($cur !== $exp) { $bad[] = "$app=" . ($cur === "" ? "unset" : $cur) . " (want $exp)"; }
+  if (!in_array($cur, $accepted, true)) {
+    $shown = array_map(fn($v) => $v === "" ? "unset" : $v, $accepted);
+    $bad[] = "$app=" . ($cur === "" ? "unset" : $cur) . " (want " . implode(" or ", $shown) . ")";
+  }
 }
 echo $bad ? implode("; ", $bad) : "OK";
 ' 2>/dev/null | tr -d '\r')
