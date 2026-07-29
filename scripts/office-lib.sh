@@ -2,7 +2,8 @@
 # Shared helpers for the office scripts — asserts the Euro-Office backend is wired (AD-5).
 # Source this; do not execute it.
 
-OCC="docker compose exec -T --user www-data nextcloud php occ"
+NCEXEC="docker compose exec -T --user www-data nextcloud"
+OCC="$NCEXEC php occ"
 OFFICE_PORT="${OFFICE_PORT:-80}"
 
 # An app is enabled iff its appconfig `enabled` value is "yes".

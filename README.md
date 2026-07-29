@@ -163,8 +163,11 @@ Each phase is framed by `phase_begin "NN-name" "…"` … `phase_end`, and its b
 runs `make fix-mount-perms` so the container (uid 33) can write them. A custom app talks to Nextcloud **only
 through OCP public APIs (`OCP\…`)** — never patch core (AD-9) — carries an `appinfo/info.xml`
 (`min-version="34"`), and is enabled with `occ app:enable <id>`. **v1 ships none** (config-as-code only); these
-dirs are the Layer-2 roadmap seam (e.g. the REM app). White-labeling is **config, not theme files** (AD-6);
-v1 applies no branding (default theme) — only es-CL locale, in the `10-locale` phase.
+dirs are the Layer-2 roadmap seam (e.g. the REM app). White-labeling ships as the **`themes/apsconecta/`
+server theme** — AD-6's config-only rule is superseded by
+[ADR-0001](docs/adr/0001-server-theme-for-branding.md). How the theming actually behaves (and why most of
+it is config rather than CSS) is [`docs/THEMING-MODEL.md`](docs/THEMING-MODEL.md); the deploy guide is
+[`docs/BRANDING.md`](docs/BRANDING.md). Locale stays in the `10-locale` phase.
 
 ### The office backend
 

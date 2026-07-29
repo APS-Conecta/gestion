@@ -71,6 +71,25 @@ repo was v1 feature-complete on paper but had never actually been run start to f
   `make office-eurooffice` via `occ config:app:set eurooffice defFormats …` — never hand-ticked in the
   admin UI (AD-2). Tracked in [#45](https://github.com/APS-Conecta/gestion/issues/45).
 
+## B-008 — "Nextcloud" still leaks into two UI surfaces after white-labeling
+- **Status:** open — cosmetic, deliberately not chased in Epic 5
+- **Found:** 2026-07-28, during the Epic 5 close-out sweep. Not from the first bring-up like B-001…B-007.
+- **Repro:**
+  1. `/settings/user` (every user, not just admin) shows a link *"Razones para usar Nextcloud en su
+     organización"* — a stock Nextcloud PDF promo. This is the more visible of the two: it is on a
+     page ordinary staff open.
+  2. `/settings/admin/eurooffice` — the sidebar entry and page title now read "Euro-Office", but the
+     page **body** keeps ~20 translated strings saying "Nextcloud Office" (`l10n/es.json`).
+- **Cause:** both are strings owned by upstream code, not by our theme. Nextcloud's theming app
+  rewrites the product name in chrome it controls; it does not rewrite app-supplied copy.
+- **Why not fixed:** for (2), a blanket rename would make some strings **false** — *"Conectarse al
+  servidor de Nextcloud Office de demostración"* points at Nextcloud's own demo server, which is not
+  Euro-Office. Forcing a value that then lies is precisely the failure this epic already paid for
+  with `background_color` (see `docs/THEMING-MODEL.md` §4). For (1), the honest fix is disabling the
+  promo rather than renaming it, which is a config decision, not a theming one.
+- **Fix:** none yet. Owner decision on (1); (2) accepted as admin-only. Tracked in
+  [#48](https://github.com/APS-Conecta/gestion/issues/48).
+
 <!-- Template:
 ## B-00N — <short title>
 - **Status:** open | fixed

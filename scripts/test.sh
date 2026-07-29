@@ -22,6 +22,21 @@ check test -f dev/xdebug.ini
 # bash suppresses errexit there, so a failing phase would run on and report success. Comment lines are
 # stripped first: seed.sh documents the wrong shape on purpose, and the guard must not match that.
 check bash -c '! grep -vE "^[[:space:]]*#" provisioning/seed.sh | grep -qE "if +! +\( *set -e"'
+# Regression guard (ADR-0001): every asset server.css references must exist on disk. server.css
+# shipped for months declaring four .woff2 files that were never generated — the TTF fallback
+# swallowed the 404s, so nothing surfaced it. The fallback is gone; this is what replaces it.
+check bash -c 'grep -oE "/themes/apsconecta[^)]+" themes/apsconecta/core/css/server.css | tr -d "\"" | sed "s|^/||" | while read -r f; do [ -f "$f" ] || exit 1; done'
+# Regression guard: every brand SVG must PARSE, not merely exist. Nextcloud serves a malformed
+# SVG with a 200 and the browser then renders nothing — silent, and the existence check above
+# cannot see it. Cost us a debugging round on 2026-07-27: a double hyphen inside an XML comment
+# in logo-header.svg (it quoted CSS variable names) made the whole file unparseable, so the
+# header logo vanished while every gate stayed green.
+check python3 -c 'import glob,sys,xml.etree.ElementTree as ET
+bad=[]
+for f in sorted(glob.glob("themes/apsconecta/core/img/**/*.svg", recursive=True)):
+    try: ET.parse(f)
+    except Exception as e: bad.append(f"{f}: {e}")
+if bad: print("\n".join(bad)); sys.exit(1)'
 
 echo "== smoke (only if a stack is running) =="
 if docker compose ps --status running --services 2>/dev/null | grep -qx nextcloud; then

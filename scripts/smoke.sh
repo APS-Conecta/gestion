@@ -25,8 +25,17 @@ docker compose exec -T db pg_isready -q 2>/dev/null \
 [ "$(docker compose exec -T redis redis-cli ping 2>/dev/null | tr -d '\r')" = "PONG" ] \
   || fail "Redis is not responding to PING"
 
-# 5. HTTP surface: GET /status.php → 200 (loopback).
-code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${HTTP_PORT}/status.php" 2>/dev/null || echo 000)
+# 5. HTTP surface: GET /status.php → 200 (loopback), and the body carries OUR product name.
+# We already fetch this body, so grepping it is nearly free — and /status.php is the single
+# highest-value branding regression: it is unauthenticated, and if `theming productName` is
+# ever unset the response says "Nextcloud" to anyone who asks. Same string also leaks through
+# OC.theme, the OCS capabilities and the public-share button, so this one grep covers the family.
+body=$(curl -s -w '\n%{http_code}' "http://localhost:${HTTP_PORT}/status.php" 2>/dev/null || echo $'\n000')
+code=${body##*$'\n'}
+body=${body%$'\n'*}
 [ "$code" = "200" ] || fail "GET http://localhost:${HTTP_PORT}/status.php returned HTTP ${code} (expected 200)"
+if printf '%s' "$body" | grep -qi 'nextcloud'; then
+  fail "branding leak: /status.php still says Nextcloud — is 'occ config:app:set theming productName' set? Body: ${body}"
+fi
 
-echo "PASS: core stack healthy — installed, PostgreSQL ready, Redis PONG, /status.php 200"
+echo "PASS: core stack healthy — installed, PostgreSQL ready, Redis PONG, /status.php 200, no branding leak"

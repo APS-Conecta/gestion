@@ -1,0 +1,162 @@
+/* =====================================================================
+   APS Conecta Gestión — Nextcloud server theme (server.css)
+   LIGHT ONLY. enforce_theme=light (owner decision 2026-07-12).
+   Do NOT reintroduce a dark block: it is unreachable and would lie.
+   ([data-theme="dark"] lives only in the MIT brand package for the website.)
+
+   WHAT THIS FILE CAN AND CANNOT DO — measured on the live instance 2026-07-27.
+
+   It used to map ~25 brand tokens onto Nextcloud's --color-* variables. Almost
+   none of them arrived. Nextcloud declares its theme variables on
+   body[data-theme-light], and this stylesheet loads BEFORE the theming app's,
+   so anything declared here in :root is overridden for everything inside <body>.
+   Measured: --color-main-text stayed #222222 (not #101828), --border-radius 4px
+   (not 6px), --color-border #ededed, --color-error #FFE7E7. Only 7 of 30 landed,
+   and those only because they already matched Nextcloud's own value.
+
+   Worse than useless in two slots: NC34 defines --color-error and --color-success
+   as element BACKGROUNDS, not text ("this should not be used for text but for
+   element backgrounds"). The brand rose/green sat in variables meaning the
+   opposite of what the map assumed. Foreground brand colour belongs in
+   --color-text-error / --color-element-error, which are body-scoped too.
+
+   So the variable map is gone. What survives is what actually reaches the page:
+   element selectors (which DO beat core's, because this file loads after core CSS)
+   plus --font-face, which is the one documented typography variable.
+
+   Before adding ANY variable here, check on document.body in devtools whether
+   Nextcloud already declares it. If it does, yours will not arrive.
+   Full reasoning: docs/THEMING-MODEL.md and MAPEO.md (beside this file).
+
+   Fonts are declared with ABSOLUTE paths as Nextcloud serves them.
+   Outside NC these 404 — sistema-diseno.html redeclares them relatively.
+   Fonts are NOT subset (subsetting = Modified Version under OFL-1.1).
+   ===================================================================== */
+
+/* ---- Self-hosted webfonts (zero egress) ----
+   woff2 ONLY, deliberately — no TTF fallback. Every browser Nextcloud 34 supports
+   has had woff2 since ~2016, so the fallback protected nobody. It did actively hide
+   bugs: a missing or corrupt woff2 silently fell through to the TTF, so nothing ever
+   surfaced the failure. One format has no hiding place, and `make test` now asserts
+   every url() here exists on disk.
+   Regenerate after a font update:
+     python3 -c "from fontTools.ttLib.woff2 import compress; compress('X.ttf','X.woff2')"
+   Format conversion is neither subsetting nor renaming, so OFL-1.1 is satisfied.
+
+   Serving the fonts is the ONLY reason this theme directory exists. Images are
+   registered with `occ theming:config` from absolute paths and would work from
+   anywhere; identity and colour are config. See docs/adr/0001-server-theme-for-branding.md. */
+@font-face {
+  font-family: "Fraunces"; font-style: normal; font-weight: 400 800; font-display: swap;
+  src: url("/themes/apsconecta/core/fonts/Fraunces.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Fraunces"; font-style: italic; font-weight: 400 800; font-display: swap;
+  src: url("/themes/apsconecta/core/fonts/Fraunces-Italic.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Nunito Sans"; font-style: normal; font-weight: 400 800; font-display: swap;
+  src: url("/themes/apsconecta/core/fonts/NunitoSans.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Nunito Sans"; font-style: italic; font-weight: 400 800; font-display: swap;
+  src: url("/themes/apsconecta/core/fonts/NunitoSans-Italic.woff2") format("woff2");
+}
+
+/* =====================================================================
+   TYPOGRAPHY — body text through the documented variable, display face
+   through element selectors.
+
+   --font-face is Nextcloud's own typography variable and 6 shipped rules read it,
+   four of them component-scoped: .tooltip, .mx-datepicker-main,
+   .rich-contenteditable__input and a colour-picker label. Those class selectors
+   outrank any `body` rule we could write, so tooltips, date pickers and rich-text
+   inputs rendered in system-ui while the rest of the UI was branded. Setting the
+   variable once fixes all four; chasing them with element selectors would take four
+   more rules and would miss the next component to use it.
+
+   !important is required, not decorative: Nextcloud sets --font-face on
+   body[data-theme-light], which outranks `body` AND loads later. On a custom
+   property, !important wins regardless of specificity or order.
+
+   There is no documented variable for a display face, so Fraunces stays on element
+   selectors. Keeping NC's --default-font-size (15px) and --default-line-height (1.5)
+   untouched, so @nextcloud/vue's density is not disturbed.
+   ===================================================================== */
+body {
+  --font-face: "Nunito Sans", system-ui, -apple-system, sans-serif !important;
+}
+h1, h2, h3,
+#header .header-appname,
+.app-menu-main .app-menu-entry__label {
+  font-family: "Fraunces", Georgia, serif;
+  letter-spacing: -0.015em;
+}
+
+/* =====================================================================
+   HEADER — brand gradient, but NOT on the guest (login) header, where
+   the header is a bare box and the gradient paints an ugly strip.
+
+   NB: because this gradient is ours rather than Nextcloud's, Nextcloud sizes the
+   contrast of everything in the header from `background_color`, not from what is
+   painted here. That value MUST stay dark (#5315a8) or the header icons get
+   inverted to black on violet. See provisioning/phases/15-branding.sh.
+   ===================================================================== */
+#header:not(.header-guest) {
+  background: linear-gradient(90deg, #5315a8, #7f21fe) !important;
+}
+
+/* NOTE: there is deliberately no work-canvas rule here.
+   This file used to paint `body, #content, #content-vue` with a light gradient
+   (#f7f8fa → #f5f3ff). That rule covered the brand background image completely —
+   background.svg was registered, served, and never once visible. It also put white
+   text on a near-white canvas once background_color was corrected to violet, because
+   Nextcloud derives --color-background-plain-text from that colour. The brand
+   background is the backdrop now; do not paint over it again.
+
+   And never put a gradient in --color-main-background: Nextcloud consumes it as a
+   solid <color> and as rgb(var(--color-main-background-rgb)) in dozens of rules. */
+
+/* =====================================================================
+   ACCESSIBILITY — this is the instance's ONLY high-contrast affordance.
+
+   enforce_theme=light does more than remove dark mode: ThemesService::getThemes()
+   returns exactly three providers when it is set (default, dark, enforced), so
+   HighContrastTheme, DarkHighContrastTheme and DyslexiaFont are unreachable for
+   every user here. That makes the block below the whole story, not a nicety.
+
+   It is scoped to `body` with !important for the same reason as --font-face:
+   body[data-theme-light] both outranks a bare `body` and loads later. Declared in
+   :root (as it was until 2026-07-27) it did nothing at all.
+   ===================================================================== */
+@media (prefers-contrast: more) {
+  body {
+    --color-text-maxcontrast:   #2b3442 !important;
+    --color-border-maxcontrast: #6b7280 !important;
+    --color-border:             #b7bcc6 !important;
+  }
+  :focus-visible {
+    outline-width: 3px !important;
+    outline-offset: 2px !important;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Visible focus on every interactive element */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid #7f21fe;
+  outline-offset: 2px;
+  border-radius: var(--border-radius);
+}

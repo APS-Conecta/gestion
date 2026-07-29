@@ -6,7 +6,8 @@
 .DEFAULT_GOAL := help
 .PHONY: help up up-dev down seed smoke test credentials fix-mount-perms office-eurooffice office-smoke office-formats office-down
 
-OCC = docker compose exec -T --user www-data nextcloud php occ
+NCEXEC = docker compose exec -T --user www-data nextcloud
+OCC = $(NCEXEC) php occ
 # Your host group, so the container can hand the bind mounts back to you (fix-mount-perms).
 HOST_GID := $(shell id -g)
 # Read settings from .env (empty when .env is absent — targets that need them precheck for it).
@@ -56,6 +57,17 @@ office-eurooffice: ## Bring up the Euro-Office backend and wire the eurooffice c
 	@test -f .env || { echo "No .env found — run: cp .env.example .env"; exit 1; }
 	docker compose --profile eurooffice up -d --wait eurooffice
 	$(OCC) app:install eurooffice 2>/dev/null || $(OCC) app:enable eurooffice
+	@# White-label the connector's own display name (Epic 5). It is NOT reachable by l10n: the admin
+	@# section name is a bare PHP literal with no `t()` call (lib/AdminSection.php, IIconSection::getName),
+	@# and the apps list reads <name> from appinfo/info.xml. Both are line-scoped on purpose —
+	@# info.xml's <summary>/<description>/<author> keep naming the real upstream, which is accurate.
+	@# apps/ is gitignored (AD-1), so the patch cannot be committed and any app update reverts it;
+	@# re-running this target restores it, and office-smoke.sh fails loudly if the pattern ever stops
+	@# matching (sed exits 0 on no-match, so the silent no-op is the failure mode that needs a gate).
+	@# Run in the container as www-data — same writer as every occ call here, so it does not depend on
+	@# the host-side mount ownership that `fix-mount-perms` has to repair.
+	$(NCEXEC) sed -i 's|return "Nextcloud Office";|return "Euro-Office";|' custom_apps/eurooffice/lib/AdminSection.php
+	$(NCEXEC) sed -i 's|<name>Nextcloud Office</name>|<name>Euro-Office</name>|' custom_apps/eurooffice/appinfo/info.xml
 	@# The doc server fetches documents from Nextcloud at the StorageUrl host (`nextcloud`); it must be a
 	@# trusted domain or Nextcloud answers HTTP 400. Idempotent (install-time env doesn't retro-apply).
 	$(OCC) config:system:get trusted_domains | grep -qx nextcloud || $(OCC) config:system:set trusted_domains $$($(OCC) config:system:get trusted_domains | grep -c .) --value=nextcloud

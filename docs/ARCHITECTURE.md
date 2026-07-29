@@ -117,11 +117,26 @@ assignments, and the final validated matrix are parameterizable and settled with
 
 ## Branding & localization
 
-- **White-label branding is not applied in v1** — the instance runs the default Nextcloud theme. The
-  chosen path (when a brand guide lands) is `occ theming:config` (text + color keys) with
-  `disable-user-theming yes`, config-as-code — no fork, no `themes/` file, no `defaults.php` (which would
-  need an opcache reset and is the fork-adjacent path to avoid). NC34's CLI sets text/color only;
-  logo/favicon are admin-UI uploads.
+- **White-label branding ships as a server theme**, `themes/apsconecta/`, activated with
+  `occ config:system:set theme --value apsconecta`. Identity (name, slogan, URL, colors, `productName`)
+  stays config-as-code via `occ theming:config`, with `enforce_theme=light` + `disable-user-theming yes`.
+  Logo, favicon and login background are **files in the theme** (`core/img/`), registered by the
+  `15-branding` phase with `occ theming:config <key> <absolute-path>` pointing at the bind-mounted
+  theme directory — never admin-UI uploads, which would break AD-2. (`occ` *does* set all four
+  image keys on NC34; it requires an absolute path. An earlier claim here that the CLI sets
+  text/colour only was wrong — see ADR-0001 § Corrections.) The iOS "Nextcloud — Abrir" banner is
+  killed with `occ config:system:set customclient_ios_appid ""`; **there is no `defaults.php`**
+  (deleted 2026-07-27, and with it the opcache restart it required).
+  This supersedes **AD-6** on `themes/` files, but AD-6 was *right* to reject `defaults.php` —
+  reasoning and accepted costs in [ADR-0001](adr/0001-server-theme-for-branding.md).
+- **What the theme can actually change is narrow.** Nextcloud scopes its CSS variables to
+  `body[data-theme-light]` and a server theme loads *first*, so variables declared in `:root` are
+  inert; element selectors win, variables do not. `server.css` therefore ships fonts, display
+  typography, the header, focus rings and the high-contrast block — not a token→variable map. The
+  rules, the full knob inventory and the verification snippet are in
+  [`THEMING-MODEL.md`](THEMING-MODEL.md); `themes/` itself is undocumented legacy in Nextcloud and
+  must be re-verified on every major upgrade.
+- **Navigation** uses the third-party `side_menu` app, installed by the same `15-branding` phase.
 - **Locale** defaults are seeded but **not** forced: `default_language=es_419` (Latin-American Spanish; a
   discrete `es_CL` UI translation does not exist) and `default_locale=es_CL` (Chilean date/number formatting).
   Users and developers may change them. Timezone America/Santiago is per-user (browser auto-detected). UI text
