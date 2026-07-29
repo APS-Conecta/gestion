@@ -38,6 +38,22 @@ for f in sorted(glob.glob("themes/apsconecta/core/img/**/*.svg", recursive=True)
     except Exception as e: bad.append(f"{f}: {e}")
 if bad: print("\n".join(bad)); sys.exit(1)'
 
+# Regression guard (B-008 / #48): server.css hides Nextcloud's vendor-marketing block in personal
+# settings — the "Reasons to use Nextcloud" PDF link, the "developed by the Nextcloud community"
+# credit, and follow buttons for their Facebook/Bluesky/Mastodon/blog/newsletter. A CSS selector
+# that stops matching fails SILENTLY: the rule does nothing and the whole block reappears on every
+# staff member's settings page. So assert the CONTRACT against the shipped template — both the
+# container class we hide AND the link id, because an upstream restructure could move either.
+# Reads the running container's copy, which is the code actually serving pages.
+if docker compose ps --status running --services 2>/dev/null | grep -qx nextcloud; then
+  check docker compose exec -T --user www-data nextcloud \
+    grep -q 'class="section development-notice"' apps/settings/templates/settings/personal/development.notice.php
+  check docker compose exec -T --user www-data nextcloud \
+    grep -q "open-reasons-use-nextcloud-pdf" apps/settings/templates/settings/personal/development.notice.php
+else
+  echo "  skipped: upstream vendor-block checks (need a running stack)"
+fi
+
 echo "== smoke (only if a stack is running) =="
 if docker compose ps --status running --services 2>/dev/null | grep -qx nextcloud; then
   if bash scripts/smoke.sh; then echo "  ok:   smoke"; else echo "  FAIL: smoke"; fail=1; fi

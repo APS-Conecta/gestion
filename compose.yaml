@@ -74,6 +74,44 @@ services:
       retries: 10
       start_period: 120s
 
+  # ── Background job scheduler ────────────────────────────────────────────────────────────
+  # Without this, Nextcloud falls back to `ajax` mode: jobs run only when a user loads a page,
+  # one job per request. That is invisible on a dev box someone is clicking, and wrong everywhere
+  # else — housekeeping (versions, previews, trash, token cleanup, and later full-text indexing)
+  # simply stops whenever nobody is browsing. It also hid an armed `survey_client` monthly report
+  # for days: the job was scheduled and had never fired.
+  #
+  # Deliberately NOT behind a profile. `make up` starts it, so a developer's stack schedules jobs
+  # the same way production does — a dev stack whose job behaviour differs from production is
+  # exactly where this class of bug hides.
+  #
+  # Same image and the same three volumes as `nextcloud`, on purpose: cron.php loads the apps, so
+  # it needs custom_apps and themes too, or app-owned jobs fail in a container that looks healthy.
+  # The image already ships `*/5 * * * * php -f /var/www/html/cron.php` for www-data, and /cron.sh
+  # is just `busybox crond -f`. No env is needed — config.php comes from the shared volume.
+  cron:
+    image: nextcloud:34-apache
+    restart: "no"
+    entrypoint: /cron.sh
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - nextcloud_data:/var/www/html
+      - ./apps:/var/www/html/custom_apps
+      - ./themes:/var/www/html/themes
+    healthcheck:
+      # `-f` is required, not cosmetic: /cron.sh does `exec busybox crond -f`, so PID 1's comm is
+      # "busybox" and only its argv contains "crond". A bare `pgrep crond` never matches and the
+      # container sits permanently unhealthy while cron is in fact running fine.
+      test: ["CMD-SHELL", "pgrep -f 'busybox crond' > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
   # ── Office backend: Euro-Office documentserver (profile: eurooffice) — Story 0.2, AD-5 ──
   # Only comes up under `--profile eurooffice`. Wired via the `eurooffice` connector + shared JWT by
   # `make office-eurooffice`. Self-contained image (bundles its own PG/Redis/RabbitMQ) — do NOT wire

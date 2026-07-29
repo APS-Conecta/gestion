@@ -106,6 +106,26 @@ h1, h2, h3,
   background: linear-gradient(90deg, #5315a8, #7f21fe) !important;
 }
 
+/* LOGIN LOGO SLOT — reshape the box, not the art.
+   core/css/guest.css sizes this slot 175x130 (aspect 1.35). Our logo.svg is 205x34
+   (aspect 6.03), so `background-size: contain` fits it BY WIDTH and draws it at
+   175x29 — 22% of the slot's height, with 101px of dead space around it, on the first
+   page every user sees. Measured 2026-07-28.
+
+   This is the same defect P1.5 fixed at the other end: the 62x44 header slot was
+   rendering the full lockup's wordmark at ~4px. There the answer was mark-only art;
+   here the lockup is right and the box is wrong, so the box moves.
+
+   SCOPING IS LOAD-BEARING. Both layouts render `.logo` inside `#header` —
+   layout.guest.php:48 is `<div class="logo">`, layout.user.php:70 is
+   `<div class="logo logo-icon">`. A bare `#header .logo` rule would resize the
+   authenticated header logo too and undo P1.5. `.header-guest` is the deliberate
+   mirror of the gradient rule above: one rule for the app header, one for the guest. */
+#header.header-guest .logo {
+  width: 240px;
+  height: 44px;
+}
+
 /* NOTE: there is deliberately no work-canvas rule here.
    This file used to paint `body, #content, #content-vue` with a light gradient
    (#f7f8fa → #f5f3ff). That rule covered the brand background image completely —
@@ -116,6 +136,66 @@ h1, h2, h3,
 
    And never put a gradient in --color-main-background: Nextcloud consumes it as a
    solid <color> and as rgb(var(--color-main-background-rgb)) in dozens of rules. */
+
+/* =====================================================================
+   TRANSLUCENT SURFACES — raise the card opacity so the brand backdrop stops
+   reading through text.
+
+   Nextcloud paints every translucent surface with the same pair:
+     background-color: var(--color-main-background-blur);
+     backdrop-filter:  var(--filter-background-blur);
+   That covers the login card (.guest-box), the dashboard widgets and the
+   #app-navigation sidebar — one variable governs all of them.
+
+   The blur half is NOT ours to fix: apps/theming/lib/Themes/DefaultTheme.php:128
+   resolves `--filter-background-blur` to 'none' whenever the browser is Chromium
+   (`$workingBlur = ... default => !$isChromium`). Firefox blurs the backdrop; Chrome
+   does not. Worth knowing that every visual check of this theme so far ran in Chrome,
+   i.e. the worst case — the cards look BETTER on Firefox, not worse.
+
+   So with an 80% white card and no blur, background.svg's constellation crossed the
+   login heading and the dashboard widget titles. Contrast never failed (measured
+   10.86:1 body text, 4.78:1 placeholders — and light art composites LIGHTER under a
+   white card, which helps dark text). This is a legibility and polish fix, not a
+   contrast fix; do not re-file it as an accessibility bug.
+
+   .92 rather than 1: the backdrop still reads at the page edges where no card sits,
+   which is where the brand is meant to be seen. !important for the same reason as
+   --font-face: Nextcloud declares this on body[data-theme-light], which both outranks
+   a bare `body` and loads later.
+   ===================================================================== */
+body {
+  --color-main-background-blur: rgba(255, 255, 255, 0.92) !important;
+}
+
+/* =====================================================================
+   UPSTREAM VENDOR PROMO — suppressed, not restyled.
+
+   §4 of docs/THEMING-MODEL.md forbids component restyling. Hiding an upstream
+   marketing surface is a different act and is allowed under the rule added there:
+   we are not changing how a Nextcloud component looks, we are declining to show
+   Nextcloud's advertising inside a white-labeled product.
+
+   apps/settings ships a personal-settings section that EVERY user sees, not just admin.
+   There is no config lever: ServerDevNotice::getSection() returns null ONLY when
+   IRegistry::delegateHasValidSubscription() is true, i.e. only with a paid Nextcloud
+   subscription. CSS is the only remaining option.
+
+   TARGET THE SECTION, NOT THE LINK. The first version of this rule hid
+   #open-reasons-use-nextcloud-pdf alone, which is what B-008 named. Checking it in the
+   browser showed that was one link out of a whole marketing block: the same container
+   (templates/settings/personal/development.notice.php) also carries a "developed by the
+   Nextcloud community" credit and follow buttons for Nextcloud's Facebook, Bluesky,
+   Mastodon, blog and newsletter — with icons. Hiding the link left "comunidad Nextcloud"
+   and five social links on every staff member's settings page.
+
+   GATED, because a selector that stops matching fails SILENTLY and the block quietly
+   returns. `make test` asserts BOTH the container class and the link id still exist in
+   the shipped template — see scripts/test.sh. B-008, issue #48.
+   ===================================================================== */
+.section.development-notice {
+  display: none;
+}
 
 /* =====================================================================
    ACCESSIBILITY — this is the instance's ONLY high-contrast affordance.

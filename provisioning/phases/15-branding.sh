@@ -78,6 +78,15 @@ theming_image_set background "$IMG/background.svg"
 # already excludes (/apps/*), so nothing extra is committed.
 ensure_app side_menu
 
+# side_menu paints itself from a DERIVED colour, not a brand one. CssController.php:87 reads its
+# own `background-color` app value and falls back to getDarkenPrimaryColor() — a 20%-darker
+# primary, which came out as #661bcc. That is a third violet sitting between brand primary
+# (#7f21fe) and brand backdrop (#5315a8): not wrong, but not a colour anyone chose.
+# Pointing it at the backdrop violet the brand already defines collapses three near-identical
+# purples into two, so the palette reads as a system rather than a gradient of accidents.
+app_config_set side_menu background-color "#5315a8"
+app_config_set side_menu background-color-to "#5315a8"
+
 # --- Activate the server theme (themes/apsconecta, bind-mounted by compose.yaml) ---
 config_system_set theme apsconecta
 

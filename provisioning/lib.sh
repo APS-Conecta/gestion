@@ -32,11 +32,20 @@ require_installed() {
 # So capture whether the READ succeeded: occ config:*:get exits non-zero when the key is unset.
 # Keep the `|| rc=1` — it is what stops the read from killing the phase under pipefail + set -e
 # when the key does not exist yet (see BUGS.md, fixed in 26dd40f).
-config_system_set() {  # KEY VALUE
-  local key="$1" val="$2" cur rc
+# Optional TYPE (string|integer|double|boolean) is passed through to occ. occ defaults to
+# "string", and Nextcloud's getSystemValueInt()/Bool() cast on read, so omitting it is harmless
+# for behaviour — but a numeric key then sits in config.php quoted, which misreports its own type
+# to the next reader. Pass it where the documented type is not a string.
+config_system_set() {  # KEY VALUE [TYPE]
+  local key="$1" val="$2" type="${3:-}" cur rc
   cur="$(occ config:system:get "$key" 2>/dev/null | tr -d '\r')" && rc=0 || rc=1
-  if [ "$rc" -eq 0 ] && [ "$cur" = "$val" ]; then log "system:$key already = $val"; else
-    occ config:system:set "$key" --value="$val" >/dev/null && log "system:$key -> $val"; fi
+  if [ "$rc" -eq 0 ] && [ "$cur" = "$val" ]; then
+    log "system:$key already = $val"
+  elif [ -n "$type" ]; then
+    occ config:system:set "$key" --type="$type" --value="$val" >/dev/null && log "system:$key -> $val ($type)"
+  else
+    occ config:system:set "$key" --value="$val" >/dev/null && log "system:$key -> $val"
+  fi
 }
 
 app_config_set() {  # APP KEY VALUE
@@ -126,6 +135,42 @@ ensure_app() {  # APPID
     log "FAILED to install/enable app $app — occ said: $(printf '%s' "$err" | tr '\n' ' ' | tail -c 300)"
     return 1
   fi
+}
+
+# Restrict an app to one or more groups: installed and available to those groups only, invisible
+# to everyone else. The lever of choice over disabling, because a restricted app is still present
+# for the custom apps on the roadmap to build on.
+#
+# AppManager::enableAppForGroups() stores json_encode($groupIds) in appconfig `enabled`
+# (lib/private/App/AppManager.php:673), where a globally-enabled app stores the string "yes". So
+# the current value IS the comparison — no separate state to track — and query-before-set is exact.
+#
+# NOT every app can be restricted. Apps declaring types filesystem / authentication / logging /
+# prelogin / prevent_group_restriction are refused by Nextcloud, and `occ` fails with a clear
+# message rather than silently enabling globally. Verified on 2026-07-28: nextcloud_announcements
+# (logging), photos + federation (authentication), sharebymail + circles (filesystem) and logreader
+# (logging) all refuse. For those the only levers are an app config switch or a full disable.
+app_restrict_to_groups() {  # APP GROUP [GROUP...]
+  local app="$1"; shift
+  local want cur; local -a gargs=()
+  local g; for g in "$@"; do gargs+=(--groups="$g"); done
+  want="$(printf '%s' "$*" | python3 -c 'import sys,json;print(json.dumps(sys.stdin.read().split()))')"
+  cur="$(occ config:app:get "$app" enabled 2>/dev/null | tr -d '\r')" || cur=""
+  if [ "$cur" = "$want" ]; then log "app $app already restricted to $want"; return 0; fi
+  if occ app:enable "${gargs[@]}" "$app" >/dev/null 2>&1; then
+    log "app $app -> restricted to $want"
+  else
+    log "FAILED to restrict $app to $want — does it declare a blocking type?"; return 1
+  fi
+}
+
+# Disable an app outright. Reserved for apps that cannot be restricted or whose behaviour is
+# server-side and therefore unaffected by who can see them (see survey_client in 16-app-policy).
+app_disable() {  # APPID
+  local app="$1" cur
+  cur="$(occ config:app:get "$app" enabled 2>/dev/null | tr -d '\r')" || cur=""
+  if [ "$cur" = "no" ] || [ -z "$cur" ]; then log "app $app already disabled"; return 0; fi
+  occ app:disable "$app" >/dev/null 2>&1 && log "app $app -> disabled"
 }
 
 # --- group folders: groupfolders:create is NOT idempotent by name, so ALWAYS query first ---
