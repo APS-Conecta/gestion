@@ -74,6 +74,13 @@ office-eurooffice: ## Bring up the Euro-Office backend and wire the eurooffice c
 	$(OCC) config:app:set eurooffice DocumentServerUrl --value="http://localhost:$(OFFICE_PORT)/"
 	$(OCC) config:app:set eurooffice DocumentServerInternalUrl --value="http://eurooffice/"
 	$(OCC) config:app:set eurooffice StorageUrl --value="http://nextcloud/"
+	@# Force the editor light (#52). The connector's customizationTheme defaults to "theme-system",
+	@# which follows the USER'S OPERATING SYSTEM — so the same instance rendered a light editor on a
+	@# light-mode machine and a dark one on a dark-mode machine. That is precisely what this instance
+	@# decided against: enforce_theme=light + disable-user-theming=yes exist so a personal OS setting
+	@# cannot change what staff see. The editor was the last surface opting out of that decision.
+	@# Accepted values are theme-system | default-light | default-dark (AppConfig.php:894).
+	$(OCC) config:app:set eurooffice customizationTheme --value=default-light
 	@# `@` + silenced output: this is the only secret on the wire here, and neither make's command echo
 	@# nor occ's "is now set to '…'" confirmation may leak it (NFR-2/AD-3 — cf. scripts/dump-credentials.sh,
 	@# which writes secrets to a mode-600 file and never to stdout).
