@@ -75,7 +75,7 @@ To stop: `make down` (keeps your data volumes). That's the whole loop.
 | `make down` | Stop the stack (keeps volumes). |
 | `make seed` | Run the idempotent provisioning pipeline (`provisioning/`). |
 | `make smoke` | Health-gate the running stack (0 = healthy). |
-| `make test` | Local quality gate — static checks + smoke (the CI stand-in). |
+| `make test` | Local quality gate — static checks + smoke (same script CI runs). |
 | `make office-eurooffice` | Bring up the Euro-Office backend and wire the connector (AD-5). |
 | `make office-formats` | Audit the backend: OSS/no-paid-license (Epic 4). |
 | `make office-down` | Stop the office backend. |
@@ -141,7 +141,7 @@ configuration into the running app; if it isn't scripted, it isn't real.
 2. Edit the recipe — a `provisioning/phases/NN-*.sh`, or `apps/` / `themes/`, or `.env`.
 3. `make seed` — apply desired state. Idempotent: safe to re-run; it converges. (`SEED_FIXTURES=0 make seed`
    applies structure only, skipping the fixture phases.)
-4. `make smoke` / `make test` — health-gate + the local quality gate (the CI stand-in). Green before a PR.
+4. `make smoke` / `make test` — health-gate + the local quality gate. Green before a PR — CI runs the same script.
 5. Open a PR — see [`CONTRIBUTING.md`](CONTRIBUTING.md) (GitHub Flow, Conventional Commits, `ai-assisted`, 1
    approval); work is tracked on the [Projects board](https://github.com/orgs/APS-Conecta/projects/5).
 

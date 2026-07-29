@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Local quality gate — the CI stand-in (Story 0.4). Runs the STATIC checks that need no running
+# Local quality gate, run locally and by .github/workflows/ci.yml (Story 0.4). Runs the STATIC checks that need no running
 # stack, then the smoke check when a stack is up. Exits non-zero if anything fails.
 # NOT `set -e`: we run every check and aggregate, so one failure doesn't hide the rest.
 set -uo pipefail

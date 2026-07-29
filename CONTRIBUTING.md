@@ -16,7 +16,7 @@ They bind every contributor and agent.
 3. Open a PR → **1 human approval required** before merge. This gate is by **team convention** (GitHub
    free plan does not enforce branch protection on private repos) — respect it.
 4. AI-assisted PRs must be **labeled** (`ai-assisted`) and disclose AI involvement in the description.
-5. CI is deferred; the gate is **local `make test`** (static checks + smoke) — run it before opening a PR.
+5. The gate is `make test` (static checks + smoke) — run it before opening a PR. CI runs the same script on every push; the full clean boot runs weekly (`.github/workflows/ci.yml`).
 
 `CODEOWNERS` auto-requests reviewers. Prefer small, reviewable PRs.
 

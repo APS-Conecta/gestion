@@ -50,7 +50,7 @@ credentials: ## Write CREDENTIALS.local.md (all stack secrets from .env — giti
 smoke: ## Health-gate the running core stack (exit 0 healthy / non-0 broken)
 	@HTTP_PORT=$(HTTP_PORT) bash scripts/smoke.sh
 
-test: ## Local quality gate — static checks + smoke (the CI stand-in)
+test: ## Local quality gate — static checks + smoke (same script CI runs)
 	@bash scripts/test.sh
 
 office-eurooffice: ## Bring up the Euro-Office backend and wire the eurooffice connector
