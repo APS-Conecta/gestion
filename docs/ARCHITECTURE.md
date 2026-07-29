@@ -136,7 +136,7 @@ assignments, and the final validated matrix are parameterizable and settled with
   rules, the full knob inventory and the verification snippet are in
   [`THEMING-MODEL.md`](THEMING-MODEL.md); `themes/` itself is undocumented legacy in Nextcloud and
   must be re-verified on every major upgrade.
-- **Navigation** uses the third-party `side_menu` app, installed by the same `15-branding` phase.
+- **Navigation** uses the third-party `side_menu` app, installed by `12-apps` and coloured by `15-branding`.
 - **Locale** defaults are seeded but **not** forced: `default_language=es_419` (Latin-American Spanish; a
   discrete `es_CL` UI translation does not exist) and `default_locale=es_CL` (Chilean date/number formatting).
   Users and developers may change them. Timezone America/Santiago is per-user (browser auto-detected). UI text

@@ -137,6 +137,28 @@ ensure_app() {  # APPID
   fi
 }
 
+# Re-apply a file edit inside an app's code (ADR-0002). apps/ is gitignored, so these edits cannot
+# be committed and an app update wipes them; running on every seed is what restores them.
+#
+# THREE outcomes, not two. `patch --dry-run` forward says it applies; in reverse it says it is
+# ALREADY applied. Neither means upstream moved and the patch must be regenerated — that aborts
+# the phase. The usual `--forward --dry-run && patch` idiom collapses that third case into the
+# second, which is the silent no-op this repo has already paid for five times (see BUGS.md B-001
+# and the sed it replaces here).
+apply_patch() {  # APPID PATCHFILE
+  local app="$1" p="$2" name; name="$(basename "$p")"
+  local in="cd custom_apps/$app && patch -p1 --silent"
+  if occ_sh "$in --dry-run" < "$p"; then
+    occ_sh "$in" < "$p" && log "patch $app/$name applied"
+  elif occ_sh "$in --dry-run --reverse" < "$p"; then
+    log "patch $app/$name already applied"
+  else
+    log "FAILED patch $app/$name — no longer applies; upstream moved, regenerate it"; return 1
+  fi
+}
+# Shell inside the nextcloud container, stdin forwarded (apply_patch pipes the .patch in).
+occ_sh() { docker compose exec -T --user www-data nextcloud sh -c "$1" >/dev/null 2>&1; }
+
 # Restrict an app to one or more groups: installed and available to those groups only, invisible
 # to everyone else. The lever of choice over disabling, because a restricted app is still present
 # for the custom apps on the roadmap to build on.

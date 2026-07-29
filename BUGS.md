@@ -98,6 +98,28 @@ repo was v1 feature-complete on paper but had never actually been run start to f
   silently. (2) stays: a blanket rename would make some strings false (the "Nextcloud Office demo
   server" really is Nextcloud's). Tracked in [#48](https://github.com/APS-Conecta/gestion/issues/48).
 
+## B-009 — `default_language=es_419` is inert; the browser decides the UI language
+- **Status:** fixed
+- **Found:** 2026-07-29, chasing the residual half of #50 (which document language new files get).
+- **Repro:** on a seeded instance, `occ config:system:get default_language` returns `es_419`, yet
+  `php -r '\OC::$server->get(\OCP\L10N\IFactory::class)->languageExists(null, "es_419")'` is
+  **false**, and `findAvailableLanguages()` lists only `es`, `es_EC`, `es_MX` for Spanish. NC34
+  core ships no `es_419` translation — there is no `core/l10n/es_419.json`.
+- **Cause:** `es_419` is a valid ICU **locale** but not a **language**, and the two are separate
+  config slots. `Factory::findLanguage()` step 4 returns `default_language` *only if*
+  `languageExists()` accepts it, so this value could never be returned. What actually decided
+  each user's language was the `Accept-Language` request header (step 4 reads it *before* the
+  default, and persists the result as a per-user setting), falling back to `en` at step 5.
+  `phases/10-locale.sh` asserted the opposite in a comment — *"es_419 = the UI translation
+  Nextcloud actually ships"* — which is why it survived Epic 1 review.
+- **Why nobody saw it:** `admin` carries an explicit `core lang = es` user setting, so the admin
+  UI renders in Spanish. None of the four fixture staff users has one.
+- **Fix:** `default_language = es`, plus `force_language = es` so a personal browser setting
+  cannot change what staff see — the same call already made for `enforce_theme` and the editor's
+  `customizationTheme`. `default_locale = es_CL` was correct and is unchanged: only the language
+  slot was wrong. Subsumes [#50](https://github.com/APS-Conecta/gestion/issues/50), whose
+  document-template question resolved through the same `getLanguageCode()`.
+
 <!-- Template:
 ## B-00N — <short title>
 - **Status:** open | fixed

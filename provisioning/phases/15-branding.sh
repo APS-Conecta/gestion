@@ -73,11 +73,8 @@ theming_image_set background "$IMG/background.svg"
 
 # --- Navigation chrome ---
 # Sidebar navigation instead of the top app grid. Third-party (Simon Vieille, NC34-supported).
-# Installed here rather than in a phase of its own, following 30-folders.sh's precedent of
-# installing an app in the phase that needs it. It lands in custom_apps, which .gitignore
-# already excludes (/apps/*), so nothing extra is committed.
-ensure_app side_menu
-
+# Installed by 12-apps; only its colour is configured here.
+#
 # side_menu paints itself from a DERIVED colour, not a brand one. CssController.php:87 reads its
 # own `background-color` app value and falls back to getDarkenPrimaryColor() — a 20%-darker
 # primary, which came out as #661bcc. That is a third violet sitting between brand primary
