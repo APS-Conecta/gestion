@@ -38,7 +38,18 @@ if printf '%s' "$body" | grep -qi 'nextcloud'; then
   fail "branding leak: /status.php still says Nextcloud — is 'occ config:app:set theming productName' set? Body: ${body}"
 fi
 
-# 6. Session posture: the login form must not offer "remember me" (phase 05-security).
+# 6. Background jobs are scheduled, not traffic-driven (phase 06-jobs + the `cron` service).
+# Both halves are checked because either alone is a silent half-fix: the mode set without the
+# container means Nextcloud waits for a cron that never runs (worse than ajax — jobs stop
+# entirely), and the container without the mode means it runs while Nextcloud still self-serves
+# on page loads.
+docker compose ps --status running --services 2>/dev/null | grep -qx cron \
+  || fail "the cron container is not running — background jobs would fall back to page-load scheduling (did you 'make up'?)"
+jobs_mode=$($OCC config:app:get core backgroundjobs_mode 2>/dev/null | tr -d '\r')
+[ "$jobs_mode" = "cron" ] \
+  || fail "backgroundjobs_mode is '${jobs_mode:-unset}', expected 'cron' — run 'make seed' (phase 06-jobs)"
+
+# 7. Session posture: the login form must not offer "remember me" (phase 05-security).
 # Assert the EFFECT, not the config key. `occ config:system:get` would confirm we wrote 0 while
 # telling us nothing about whether the form still offers the option — and the option is the thing
 # that matters. Nextcloud renders `loginCanRememberme` into the page's initial state from
