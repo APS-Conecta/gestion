@@ -81,6 +81,11 @@ office-eurooffice: ## Bring up the Euro-Office backend and wire the eurooffice c
 	@# cannot change what staff see. The editor was the last surface opting out of that decision.
 	@# Accepted values are theme-system | default-light | default-dark (AppConfig.php:894).
 	$(OCC) config:app:set eurooffice customizationTheme --value=default-light
+	@# ODF editing, lossy via OOXML conversion (#45). Both keys, different jobs: editFormats sets the
+	@# `edit` flag, defFormats makes a click in Files open here at all (crossed in AppConfig.php:1209).
+	@# Only the ODF names: formatsSetting() overrides just the keys present, so OOXML keeps its defaults.
+	$(OCC) config:app:set eurooffice editFormats --value='{"odt":true,"ods":true,"odp":true}'
+	$(OCC) config:app:set eurooffice defFormats --value='{"odt":true,"ods":true,"odp":true}'
 	@# `@` + silenced output: this is the only secret on the wire here, and neither make's command echo
 	@# nor occ's "is now set to '…'" confirmation may leak it (NFR-2/AD-3 — cf. scripts/dump-credentials.sh,
 	@# which writes secrets to a mode-600 file and never to stdout).
