@@ -148,6 +148,18 @@ formatting loss that implies** (issue #45).
 
 ## Future
 
-Post-v1 roadmap (from the brief/PRD): white-label **branding** *(now in progress as Epic 5, above)* ·
-Nextcloud **Tables** → **REM app** (first Layer-2 custom app) → full-text **search** → **Paperless-ngx** →
+Post-v1 roadmap (from the brief/PRD): white-label **branding** *(shipped as Epic 5, above)* ·
+**REM app** (first Layer-2 custom app — **in progress**) → full-text **search** → **Paperless-ngx** →
 **Analytics** → local **AI** layer.
+
+**Nextcloud Tables is no longer in the chain** (#24, closed 2026-07-29). It was queued as the
+substrate for the REM app; that premise was wrong. The app owns its own schema — `rem_fact`,
+`rem_hoja_status`, `rem_source` through Nextcloud's mapper layer — and never references Tables, so
+Tables had no dependent. Adding it would put an app on the instance that nothing needs, on an
+instance where `16-app-policy` exists to keep the app surface small.
+
+The **REM app** does not live in this repo: it is [`APS-Conecta/analizador-rem`](https://github.com/APS-Conecta/analizador-rem),
+a separate Nextcloud app with its own tests, docs and `docs/ESTADO.md`. Its state belongs there and
+is deliberately not mirrored here — one owner per fact. What this repo owns is the platform it
+installs onto (`apps/` → `custom_apps`, the extension boundary in
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)).
