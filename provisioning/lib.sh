@@ -84,11 +84,41 @@ theming_image_set() {  # KEY ABSOLUTE_PATH
   occ theming:config "$key" "$path" >/dev/null && log "theming:$key <- $path"
 }
 
+# --- per-phase query caches ---
+#
+# The guard helpers below used to ask the server once per ITEM: 27 `group:list` calls to create 27
+# groups, another 25 `groupfolders:list` to place 25 ACLs. Every one of those is a
+# `docker compose exec` at ~0.8 s, so most of `make seed`'s wall clock was spent re-reading a list
+# that had not changed since the line above.
+#
+# Each cache fills on FIRST use and is updated in place on every write, so it cannot go stale
+# within a phase. It cannot go stale ACROSS phases either, and that falls out of the runner rather
+# than from care taken here: seed.sh runs each phase in its own subshell, so these variables revert
+# to the parent's empty value at every phase boundary and the first helper to need one re-reads the
+# server. A phase always sees what the phases before it did — which is AD-2's rule (cross-phase
+# state goes through Nextcloud, never through shell vars) holding unchanged.
+GROUPS_CACHE=""
+GF_CACHE=""
+
 # --- groups (query-before-create) ---
+#
+# `group:list --output=json` returns {gid: [members]}, so ONE call answers both questions the
+# phases ask: does this group exist, and is this user in it. Cached as one line per gid plus one
+# "gid<TAB>uid" line per membership — a bare gid line can never collide with a membership line,
+# so `grep -qxF` is an exact test for either.
+groups_load() {
+  [ -n "$GROUPS_CACHE" ] && return 0
+  GROUPS_CACHE="$(occ group:list --output=json 2>/dev/null | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+if isinstance(d, list): d = {gid: [] for gid in d}
+for gid, members in d.items():
+    print(gid)
+    for uid in members: print(f"{gid}\t{uid}")
+')"
+}
 group_exists() {  # GID
-  occ group:list --output=json 2>/dev/null | python3 -c \
-    'import sys,json;d=json.load(sys.stdin);k=d if isinstance(d,list) else list(d);sys.exit(0 if sys.argv[1] in k else 1)' \
-    "$1" 2>/dev/null
+  groups_load; printf '%s\n' "$GROUPS_CACHE" | grep -qxF "$1"
 }
 ensure_group() {  # GID [DISPLAY]
   local gid="$1" display="${2:-}"
@@ -98,6 +128,9 @@ ensure_group() {  # GID [DISPLAY]
   else
     occ group:add "$gid" >/dev/null && log "group $gid created"
   fi
+  # Only reached when the create SUCCEEDED: the `&&` above leaves a non-zero status on failure and
+  # every phase runs under `set -e`, so a failed create aborts before it can be cached as present.
+  GROUPS_CACHE="$gid"$'\n'"$GROUPS_CACHE"
 }
 
 # --- users (fixtures; query-before-create) ---
@@ -114,13 +147,15 @@ ensure_user() {  # UID DISPLAY PASSWORD
     log "FAILED to create user $uid"; return 1
   fi
 }
-user_in_group() {  # UID GID
-  occ user:info "$1" --output=json 2>/dev/null | python3 -c \
-    'import sys,json;g=json.load(sys.stdin).get("groups",[]);sys.exit(0 if sys.argv[1] in g else 1)' "$2" 2>/dev/null
-}
+# Membership comes from the same cached listing as existence — the separate `user:info` query this
+# used to run answered a question `group:list` had already answered for free.
 add_user_to_group() {  # UID GID  (query-before-add: accurate + idempotent)
-  if user_in_group "$1" "$2"; then log "user $1 already in group $2"; else
-    occ group:adduser "$2" "$1" >/dev/null 2>&1 && log "user $1 added to group $2"; fi
+  groups_load
+  if printf '%s\n' "$GROUPS_CACHE" | grep -qxF "$2"$'\t'"$1"; then
+    log "user $1 already in group $2"; return 0
+  fi
+  occ group:adduser "$2" "$1" >/dev/null 2>&1 && log "user $1 added to group $2"
+  GROUPS_CACHE="$2"$'\t'"$1"$'\n'"$GROUPS_CACHE"
 }
 
 # --- apps (install-or-enable; idempotent) ---
@@ -202,34 +237,79 @@ app_disable() {  # APPID
 }
 
 # --- group folders: groupfolders:create is NOT idempotent by name, so ALWAYS query first ---
+#
+# One listing answers everything phases 30 and 40 ask: `groupfolders:list --output=json` carries
+# `groups_list` ({gid: permission bits}) alongside the mount point and id. Cached as one
+# "mount<TAB>id" line per folder plus one "mount<TAB>gid<TAB>perms" line per grant; the field count
+# tells the two apart. Compared with awk, not a regex — mount points contain spaces, slashes and
+# accents (`Unidades/Estadística-REM`), none of which survive being pasted into a pattern.
 # NB: the groupfolders app (v22+) uses the JSON key `mountPoint` (camelCase). Accept the older
 # `mount_point` too for safety.
+gf_load() {
+  [ -n "$GF_CACHE" ] && return 0
+  GF_CACHE="$(occ groupfolders:list --output=json 2>/dev/null | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+for r in (d.values() if isinstance(d, dict) else d):
+    mount = r.get("mountPoint") or r.get("mount_point")
+    folder_id = r.get("id")
+    print(f"{mount}\t{folder_id}")
+    for gid, perms in (r.get("groups_list") or {}).items():
+        print(f"{mount}\t{gid}\t{perms}")
+')"
+}
+# CALL gf_load FROM THE CALLER, never from groupfolder_id. Every caller reads the id through
+# `id="$(groupfolder_id …)"`, and a command substitution runs in a SUBSHELL — so a gf_load in here
+# fills a cache that dies with the substitution, leaving the parent's copy empty (or, after the
+# first write, holding only that write, which then reads back as "folder not found"). Both
+# symptoms, one cause. groupfolder_id is a pure reader; loading is the caller's job.
 groupfolder_id() {  # MOUNT -> prints the folder id, or empty
-  occ groupfolders:list --output=json 2>/dev/null | python3 -c \
-    'import sys,json
-d=json.load(sys.stdin)
-for r in (d.values() if isinstance(d,dict) else d):
-    if (r.get("mountPoint") or r.get("mount_point"))==sys.argv[1]:
-        print(r.get("id")); break' "$1" 2>/dev/null
+  printf '%s\n' "$GF_CACHE" | awk -F'\t' -v m="$1" 'NF==2 && $1==m {print $2; exit}'
 }
 ensure_groupfolder() {  # MOUNT -> ensures it exists, prints its id
   local mount="$1" id
-  id="$(groupfolder_id "$mount")"
+  gf_load; id="$(groupfolder_id "$mount")"
   if [ -n "$id" ]; then log "groupfolder '$mount' exists (id $id)"; else
     id="$(occ groupfolders:create "$mount" 2>/dev/null | grep -oE '[0-9]+' | head -1)"
-    log "groupfolder '$mount' created (id $id)"; fi
+    log "groupfolder '$mount' created (id $id)"
+    # Prepended, not appended: the lookups above stop at the first match, so the freshest line wins.
+    GF_CACHE="$mount"$'\t'"$id"$'\n'"$GF_CACHE"; fi
   printf '%s\n' "$id"
 }
-# Grant a group access to a group folder (allow-only; empty perms = read-only). Idempotent.
-gf_grant() {  # MOUNT GROUP [read] [write] ...
+# Grant a group access to a group folder (allow-only; empty perms = read-only).
+#
+# Query-before-set, like every other guard here. `groupfolders:group` builds its bitmask as
+# READ|<each word> starting from 1 (apps/groupfolders/lib/Command/Group.php:91-103: read=1,
+# write=UPDATE|CREATE=6, share=16, delete=8), and `groups_list` reports exactly that integer back —
+# so the current value IS the comparison, no separate state to track. Same trick as
+# app_restrict_to_groups.
+#
+# This used to re-apply every grant unconditionally, which was harmless but indistinguishable in
+# the log from a real write — and the log is what scripts/seed-idempotent.sh reads to decide
+# whether a second seed changed anything. An unconditional write there would have made that gate
+# permanently red and therefore worthless.
+gf_grant() {  # MOUNT GROUP [read] [write] [share] [delete]
   local mount="$1" group="$2"; shift 2
-  local id; id="$(groupfolder_id "$mount")"
+  local id want=1 cur p
+  gf_load; id="$(groupfolder_id "$mount")"
   [ -n "$id" ] || { log "groupfolder '$mount' not found — cannot grant $group"; return 1; }
+  for p in "$@"; do case "$p" in
+    read)   ;;
+    write)  want=$((want | 6));;
+    share)  want=$((want | 16));;
+    delete) want=$((want | 8));;
+    # Unparseable: occ rejects it too (getNewPermissions returns 0). Force the write and let occ
+    # fail loudly rather than silently deciding this grant was already in place.
+    *)      want=0;;
+  esac; done
+  cur="$(printf '%s\n' "$GF_CACHE" | awk -F'\t' -v m="$mount" -v g="$group" 'NF==3 && $1==m && $2==g {print $3; exit}')"
+  if [ "$cur" = "$want" ]; then log "grant '$mount' $group already [$want]"; return 0; fi
   occ groupfolders:group "$id" "$group" "$@" >/dev/null 2>&1 && log "grant '$mount' -> $group [${*:-read}]"
+  GF_CACHE="$mount"$'\t'"$group"$'\t'"$want"$'\n'"$GF_CACHE"
 }
 # Create a text file inside a group folder's storage, then index it. Idempotent (test -f).
 ensure_gf_file() {  # MOUNT RELPATH CONTENT
-  local mount="$1" rel="$2" content="$3" id; id="$(groupfolder_id "$mount")"
+  local mount="$1" rel="$2" content="$3" id; gf_load; id="$(groupfolder_id "$mount")"
   [ -n "$id" ] || { log "groupfolder '$mount' not found — cannot write $rel"; return 1; }
   local path="/var/www/html/data/__groupfolders/$id/$rel"
   if docker compose exec -T --user www-data nextcloud test -f "$path" 2>/dev/null; then
@@ -240,7 +320,7 @@ ensure_gf_file() {  # MOUNT RELPATH CONTENT
 }
 # Create a regular subfolder inside a group folder's storage, then index it. Idempotent (test -d).
 ensure_gf_subfolder() {  # MOUNT SUBFOLDER
-  local mount="$1" sub="$2" id; id="$(groupfolder_id "$mount")"
+  local mount="$1" sub="$2" id; gf_load; id="$(groupfolder_id "$mount")"
   [ -n "$id" ] || { log "groupfolder '$mount' not found — cannot add $sub"; return 1; }
   local path="/var/www/html/data/__groupfolders/$id/$sub"
   if docker compose exec -T --user www-data nextcloud test -d "$path" 2>/dev/null; then
