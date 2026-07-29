@@ -24,7 +24,7 @@ There is no production deployment in this repo. If one is ever built, these must
 
 ## Secrets & the merge gate
 
-Secret handling (gitignored `.env` / `CREDENTIALS.local.md`, mode 600, `make credentials`) and the 1-approval
+Secret handling (all secrets in the gitignored `.env`, vault = Proton Pass) and the 1-approval
 PR gate — including why the free plan can't *enforce* it — are owned by
 **[`CONTRIBUTING.md`](../CONTRIBUTING.md)**; see it rather than a second copy here. A local pre-commit guard
 (`.githooks/pre-commit`, enabled with `git config core.hooksPath .githooks`) blocks committing secret files.

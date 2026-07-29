@@ -3,7 +3,8 @@
 .env.*
 !.env.example
 
-# Generated local credentials sheet (real secrets — `make credentials`). NEVER commit.
+# Belt and braces: the generator was deleted 2026-07-29, but if anyone hand-writes a secrets
+# sheet here it must never be committed. .githooks/pre-commit blocks it too.
 /CREDENTIALS.local.md
 
 # Local data & Docker volumes (synthetic dev data only, never committed)
