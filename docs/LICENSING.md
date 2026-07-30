@@ -50,6 +50,9 @@ in the stack.
 | Euro-Office (office) | image `ghcr.io/euro-office/documentserver:latest` | GNU AGPL v3 | `AGPL-3.0-only` | Euro-Office/DocumentServer `LICENSE` |
 | Group Folders | NC app `groupfolders` (occ-installed) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | nextcloud/groupfolders `info.xml` |
 | Euro-Office connector | NC app `eurooffice` (occ-installed) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | eurooffice `info.xml` |
+| Side menu | NC app `side_menu` (occ-installed) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `side_menu` `info.xml` |
+| Fraunces | `themes/apsconecta/core/fonts/*.woff2` (served by the theme) | SIL Open Font License 1.1 | `OFL-1.1` | Fraunces `OFL.txt` |
+| Nunito Sans | `themes/apsconecta/core/fonts/*.woff2` (served by the theme) | SIL Open Font License 1.1 | `OFL-1.1` | Nunito Sans `OFL.txt` |
 
 Notes:
 - The `-alpine` base-image OS layers carry their own separate licenses; the component license above is
@@ -62,7 +65,23 @@ was added in Redis 8.0, May 2025). Only AGPLv3 is OSI-approved / free-software. 
 OSS-first mandate, **APS Conecta elects the AGPLv3 option.** If a fully permissive drop-in is ever
 wanted, **Valkey** (`valkey/valkey`, BSD-3-Clause) is the documented alternative (spine, deferred).
 
-### 3.2 Euro-Office — clean license, contested §7 terms **[awareness note]**
+### 3.2 The brand fonts are OFL-1.1, and we ship them two ways
+
+Both faces are redistributed, so OFL-1.1's terms apply to this repo directly.
+
+- **Served as `.woff2`** by the theme: format conversion from the upstream `.ttf`. Not subsetting, not
+  renaming — the Original Version, in another container. Nothing further is required.
+- **Embedded as a subset inside the lockup SVGs** (`core/img/logo/*.svg`, produced by
+  `tools/embed-fonts.py`): a subset **is** a Modified Version under OFL-1.1. That is expressly
+  permitted — §1 allows modification, and §2's conditions are met because the fonts are not sold on
+  their own and travel with the licence. The Reserved Font Names are **not** used for the modified
+  copies: the subsets are embedded, never distributed as installable font files under the original
+  names.
+
+Stated because three documents used to say flatly that "fonts are not subset", which was true of the
+`.woff2` and false of the SVGs.
+
+### 3.3 Euro-Office — clean license, contested §7 terms **[awareness note]**
 
 Euro-Office's `LICENSE` is the verbatim GNU AGPL v3 (`AGPL-3.0-only`) — the identifier is clean. But
 there is an **active, public dispute**: ONLYOFFICE (which Euro-Office forks) has alleged the fork

@@ -16,8 +16,9 @@ disposable, and upgrade-safe.
 The single mechanism that mutates instance state is one **idempotent `occ`-based provisioning script**
 (`provisioning/`, run by `make seed`). It is **idempotent by guard** — it queries before it creates
 (`occ group:list`, `groupfolders:list`, a recorded folder-id map) and skips or patches what already exists,
-because `groupfolders:create` is not idempotent by name. It runs a fixed **phase order**: (1) locale →
-(2) groups → (3) group folders → (4) ACLs → (5) user→group membership → (6) sample-content fixtures.
+because `groupfolders:create` is not idempotent by name. It runs its phase files in a fixed numeric
+order, structure (05–40) before fixtures (50–60); **[`provisioning/README.md`](../provisioning/README.md)
+is the one place that lists what each phase does** — do not restate it here.
 Responsibilities are partitioned: **provisioning owns structure** (groups, folders, ACLs, locale);
 **fixtures own only sample content and sample users** placed into already-existing groups. Re-running converges
 to the same state; there is no second source of truth and no manual admin-UI step that isn't scripted.
@@ -33,6 +34,7 @@ to the same state; there is no second source of truth and no manual admin-UI ste
 | Redis | `redis:8-alpine` (Redis 8 = AGPL, OSS-restored) | Cache + file/transaction locking |
 | Office server — Euro-Office | `ghcr.io/euro-office/documentserver` (standalone container) + `eurooffice` connector | Office editing engine (OnlyOffice-fidelity) |
 | Group Folders | `groupfolders` app | Team/role-scoped shared folders + ACLs |
+| Job scheduler | `cron` service — same image and volumes as `nextcloud`, via a compose anchor | Runs `cron.php` on a schedule instead of on page loads (phase `06-jobs`) |
 | Tooling | Docker Compose · Make · Xdebug (dev) | Orchestration, task runner, step-debug |
 
 The `nextcloud:34-apache` tag rolls forward across 34.x patch releases; pin the exact patch
@@ -51,10 +53,12 @@ graph TD
   B[Browser] --> NC[Nextcloud 34 · apache/php]
   NC --> PG[(PostgreSQL 18)]
   NC --> R[(Redis)]
+  CR[cron · same image + volumes] --> PG
+  CR --> R
   NC <-->|eurooffice connector · compose service name| C[office backend · Euro-Office]
   PROV[provisioning: occ script + fixtures] -->|make seed| NC
-  A[apps/ → custom_apps · empty v1] -.bind mount.-> NC
-  T[themes/ · empty v1] -.bind mount.-> NC
+  A[apps/ → custom_apps · store apps, gitignored] -.bind mount.-> NC
+  T[themes/apsconecta · server theme] -.bind mount.-> NC
 ```
 
 Portability is an invariant: the core compose carries nothing VPS-specific and no absolute host paths.

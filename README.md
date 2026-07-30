@@ -38,8 +38,8 @@ from the repo root unless noted.
    ```bash
    make up
    ```
-   *Expected:* `db`, `redis`, then `nextcloud` start; on **first boot** the official image auto-installs
-   Nextcloud from your `.env` (admin + DB vars). This takes **~1–2 minutes** the first time.
+   *Expected:* `db`, `redis`, then `nextcloud` and `cron` start; on **first boot** the official image
+   auto-installs Nextcloud from your `.env` (admin + DB vars). This takes **~1–2 minutes** the first time.
    *If it errors* `No .env found` — you skipped step 2.
 
 4. **Wait until it's ready, then verify.** The HTTP surface comes up a little **after** the install
@@ -47,7 +47,8 @@ from the repo root unless noted.
    ```bash
    make smoke
    ```
-   *Expected:* `PASS: core stack healthy — installed, PostgreSQL ready, Redis PONG, /status.php 200`.
+   *Expected:* a single line beginning `PASS: core stack healthy — …`, listing every check it ran.
+   (The list itself is printed by `scripts/smoke.sh`; it is not copied here, so it cannot drift.)
    *If it FAILs right after `make up`* the container is still warming up (`docker compose ps` shows
    nextcloud `health: starting`) — wait until it shows `(healthy)` and re-run. First boot only.
 
@@ -66,30 +67,19 @@ To stop: `make down` (keeps your data volumes). That's the whole loop.
 
 ## Make targets
 
-`make help` is the authoritative list (it reads the Makefile). The ones you'll use:
-
-| Target | What it does |
-|---|---|
-| `make up` | Start the core stack (services only — no seeding). |
-| `make up-dev` | Start with the **Xdebug** derived dev image (step-debugging on port 9003). |
-| `make down` | Stop the stack (keeps volumes). |
-| `make seed` | Run the idempotent provisioning pipeline (`provisioning/`). |
-| `make smoke` | Health-gate the running stack (0 = healthy). |
-| `make test` | Local quality gate — static checks + smoke (same script CI runs). |
-| `make office-eurooffice` | Bring up the Euro-Office backend and wire the connector (AD-5). |
-| `make office-formats` | Audit the backend: OSS/no-paid-license (Epic 4). |
-| `make office-down` | Stop the office backend. |
+Run **`make help`** — it reads the Makefile, so it cannot drift. (A hand-copied table used to live
+here and had already lost four targets.)
 
 **Step-debugging:** `make up-dev`, then in VS Code run the committed **"Listen for Xdebug"** config
 (`.vscode/launch.json`, port 9003) and send a request carrying the Xdebug trigger.
 
 **Office suite:** `make office-eurooffice` brings up Euro-Office, wires the Nextcloud Office connector, and
-runs an editing smoke. `make office-formats` then audits the backend (OSS/no paid license).
+runs an editing smoke that also audits the image (OSS, no paid licence).
 
 **Live editing acceptance (Epic 4) — done.** Run in a browser on **2026-07-24** (issue #30, since closed;
 the standing runbook `docs/ACCEPTANCE-EDITING.md` was retired with it). In-browser render, create/edit/save
 round-trip, live co-editing convergence and cursor presence all passed; edits were confirmed inside the
-*stored* file bytes, not just on screen. `make office-smoke` and `make office-formats` remain the machine
+*stored* file bytes, not just on screen. `make office-smoke` remains the machine
 gate for the pipe and the OSS/no-paid-licence claim.
 
 **Which formats you can actually edit.** OOXML — `docx`, `xlsx`, `pptx` — opens and edits normally.
@@ -97,13 +87,13 @@ gate for the pipe and the OSS/no-paid-licence claim.
 save**: the connector declares those `lossy-edit` rather than `edit`. Enabled deliberately (#45,
 B-007) because the alternative — converting to `.docx` by hand — loses the same fidelity and leaves a
 duplicate file behind, which [`docs/CONVENTIONS.md`](docs/CONVENTIONS.md) § *Una sola copia viva*
-exists to prevent. Set by `make office-eurooffice`, never in the admin UI (AD-2).
+exists to prevent. Set by `provisioning/phases/14-office.sh`, never in the admin UI (AD-2).
 
 ## Where things live
 
 | Path | What |
 |---|---|
-| `compose.yaml` | Core stack (nextcloud/db/redis) + the `eurooffice` office profile. |
+| `compose.yaml` | Core stack (nextcloud/db/redis/cron) + the `eurooffice` office profile. |
 | `compose.dev.yaml`, `Dockerfile.dev`, `dev/xdebug.ini` | The derived Xdebug dev image (AD-10). |
 | `.env.example` | Template for your gitignored `.env`. **Never commit `.env`.** |
 | `Makefile` | The dev lifecycle (`make help`). |
@@ -116,17 +106,11 @@ exists to prevent. Set by `make office-eurooffice`, never in the admin UI (AD-2)
 | `CONTRIBUTING.md` · `AGENTS.md` · `CONTRIBUTORS.md` | Contribution rules + how we track work · AI-agent invariants · the team. |
 | `.github/` | `CODEOWNERS`, PR + issue templates, `SECURITY.md`. |
 
-## Current state (what `make seed` provisions today)
+## Current state
 
-Config-as-code is applied only by `make seed`, in fixed phase order. The phase table in
-[`provisioning/README.md`](provisioning/README.md) is the one place that lists what each phase does —
-this file used to keep a second summary and it drifted: it named six of the twelve phases and said
-white-label branding was not applied, months after Epic 5 shipped it. A developer who believed that
-would read `make smoke`'s branding check as broken and delete it.
-
-Live collaborative editing is native to the office backend (`make office-eurooffice`).
-The browser acceptance run passed on 2026-07-24, so v1 is complete; ODF edits through conversion (see
-*Office suite* above).
+v1 is complete: the browser acceptance run passed on 2026-07-24, with ODF edits through conversion
+(see *Office suite* above). What each provisioning phase does is listed once, in
+[`provisioning/README.md`](provisioning/README.md).
 
 ## Developing — how to implement a feature
 
@@ -148,17 +132,15 @@ configuration into the running app; if it isn't scripted, it isn't real.
 
 ### A feature = one provisioning phase
 
-Features are applied by numbered scripts in `provisioning/phases/`, run in **fixed order 10 → 60** by
-`make seed` (structure 10–40 before fixtures 50–60). **One epic owns one file** (see each file's `# OWNER:`
-header) — a new epic adds its own `NN-*.sh` at the right position and `seed.sh` picks it up automatically (it
-globs + sorts `phases/[0-9]*.sh`); no central registration, so parallel epics never collide.
+Features are applied by numbered scripts in `provisioning/phases/`, run in **fixed order 05 → 60** by
+`make seed` (structure before fixtures). **One epic owns one file** (see each file's `# OWNER:` header) — a
+new epic adds its own `NN-*.sh` and `seed.sh` picks it up automatically, so parallel epics never collide.
+Its body uses only the **query-before-create guard helpers**, so re-running converges instead of
+duplicating. **Never blind-create.** Verify by re-running `make seed` (every line should log "exists" /
+"already =") then `make test`.
 
-Each phase is framed by `phase_begin "NN-name" "…"` … `phase_end`, and its body uses only the
-**query-before-create guard helpers** in `provisioning/lib.sh`, so re-running converges instead of duplicating
-— e.g. `config_system_set`, `ensure_group`, `ensure_user`, `ensure_app`,
-`ensure_groupfolder`, `gf_grant`, `ensure_gf_file`. **Never blind-create.** Verify by re-running `make seed`
-(every line should log "exists" / "already =") then `make test`. Full helper list + the contract:
-[`provisioning/README.md`](provisioning/README.md).
+The phase list, the contract and the full helper list live in
+[`provisioning/README.md`](provisioning/README.md) — one owner per fact, so they are not repeated here.
 
 ### Custom apps & themes
 
@@ -179,7 +161,7 @@ says what and why. Locale stays in the `10-locale` phase.
 ### The office backend
 
 `make office-eurooffice` brings up Euro-Office (AD-5), wires its connector, and runs an editing smoke.
-`make office-formats` audits the backend.
+It also audits the image provenance (OSS, no paid licence).
 
 ### Guardrails you must not break
 

@@ -10,7 +10,8 @@ El árbol tiene cuatro áreas, provisionadas como Group Folders (ver `docs/ARCHI
 acceso en el PRD §4.4):
 
 - **Transversal** — conocimiento compartido de todo el personal (Protocolos, Flujogramas, Documentación,
-  Registro de redes, Actas de reuniones). Lectura para todo el personal; gestión por Jefaturas.
+  Registro de redes, Actas de reuniones). Pensada como lectura para todo el personal y gestión por
+  Jefaturas.
 - **Programas/«programa»** — una carpeta por programa, gestionada por su Jefatura y su equipo.
 - **Unidades/«unidad»** — carpetas funcionales (SOME, Farmacia, Dental, OIRS, Estadística-REM, Dirección),
   gestionadas por el rol dueño.
@@ -18,6 +19,12 @@ acceso en el PRD §4.4):
 
 Si dudas dónde archivar algo: si sirve a todo el personal → **Transversal**; si es de un programa/unidad/sector
 específico → su carpeta.
+
+> **Permisos, hoy.** Los niveles descritos arriba son la intención, no lo que el servidor aplica en este
+> momento: mientras se reorganiza el árbol, **todo el personal puede editar y eliminar en todas las
+> carpetas** (decisión del 2026-07-30 — mover un archivo exige permiso de borrado en el origen). Cada
+> Team Folder conserva su propia papelera, así que un borrado se puede recuperar. El estado real vive en
+> [`provisioning/phases/40-acl.sh`](../provisioning/phases/40-acl.sh), que es la fuente única.
 
 ## Nombre de archivos
 

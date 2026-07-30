@@ -1,22 +1,16 @@
-# `apps/` — custom Nextcloud apps (live-mounted)
+# `apps/` — Nextcloud apps (live-mounted, gitignored)
 
-This directory is bind-mounted to **`/var/www/html/custom_apps`** in the running Nextcloud
-(`compose.yaml`), so you can add and **edit custom app code and see it live** — no image rebuild, no fork.
+Bind-mounted to **`/var/www/html/custom_apps`** by `compose.yaml`. Two things land here, and only
+this README is tracked (`.gitignore` un-ignores it explicitly):
 
-- **One directory per app**, named by the app id, each with an `appinfo/info.xml`. Nextcloud discovers it on
-  the next request / `occ` scan; enable with `docker compose exec --user www-data nextcloud php occ app:enable <id>`.
-- **Boundary (AD-9):** custom apps may depend on Nextcloud **only through OCP public APIs**
-  (`OCP\…`) — never patch core, never rely on private internals; core never depends on a custom app.
-- **v1 ships no custom app** (config-as-code only, AD-1) — this dir stays empty but mounted, ready for
-  Layer-2 apps (e.g. the REM app on the roadmap).
+- **Store apps** installed by `provisioning/phases/12-apps.sh` — `groupfolders`, `side_menu`,
+  `eurooffice`. Their code is not committed; edits to them are committed as `*.patch` files under
+  `provisioning/apps/`, per [ADR-0002](../docs/adr/0002-app-patches.md).
+- **Custom apps**, one directory per app id with an `appinfo/info.xml`. **v1 ships none** (AD-1); the
+  first is the REM app, which lives in its own repo and installs onto this platform.
 
-Minimal app skeleton:
+**Boundary (AD-9):** a custom app may depend on Nextcloud only through `OCP\…` public APIs — never
+patch core, never rely on private internals, and core never depends on a custom app.
 
-```
-apps/my_app/
-  appinfo/info.xml     # <id>my_app</id>, <version>, <dependencies><nextcloud min-version="34"/></dependencies>
-  lib/                 # PHP (OCP APIs only)
-```
-
-**Linux ownership:** the container runs as `www-data` (uid 33). App *code* only needs to be readable, so a
-normally-owned checkout works as-is. If discovery/enable fails on your host, run `sudo chown -R 33:33 apps`.
+**Linux ownership:** the container runs as `www-data` (uid 33). `make up` handles this via
+`fix-mount-perms`; if discovery or enable still fails, `sudo chown -R 33:33 apps`.
