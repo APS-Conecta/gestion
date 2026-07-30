@@ -155,6 +155,23 @@ Euro-Office is resource-bound (uncapped, OSS) and fairly heavy (~8 GB RAM recomm
 the dev footprint stays modest since it only runs when brought up with `make office-eurooffice` —
 comfortable on a laptop.
 
+### Logs — three facts nobody had written down
+
+Established 2026-07-30, when the admin Overview's *"errors in the logs"* warning was mistaken for a live
+fault:
+
+- **Where.** `data/nextcloud.log`, inside the `nextcloud_data` **named volume** — not a bind mount, so it
+  is invisible from the repo tree and survives `make down`. Read it with
+  `docker compose exec nextcloud tail /var/www/html/data/nextcloud.log`, or `occ log:tail`.
+- **Rotation is an inherited default, not a decision.** 100 MiB, from
+  `lib/private/Log/Rotate.php` in the pinned image, with a single roll to `nextcloud.log.1`. Nothing in
+  this repo sets `log_rotate_size`. At this instance's growth (~150 KB/week) it will effectively never
+  fire — which is fine, and is why no value is pinned. That rotation job runs at all only because of the
+  `cron` service and `06-jobs.sh`.
+- **A nonzero error count on a dev box is history, not a fault.** The 15 errors that warning counts are
+  from 2026-07-28/29, with **zero since**; four of them were this repo's own retired smoke script calling
+  `OC\Server::getConfig()`, removed in NC34. Read the timestamps before treating the warning as news.
+
 ## Extension boundary (beyond v1)
 
 The roadmap (the REM custom app → full-text search → Paperless-ngx → Analytics → a local-model AI

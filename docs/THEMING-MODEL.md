@@ -43,7 +43,7 @@ are pure config. Only `@font-face` needs a path Nextcloud serves.
 | `primary_color` | `occ theming:config` | `#7f21fe` | Buttons, checkboxes, folder icons, and the whole `--color-primary-*` family |
 | `background_color` | `occ theming:config` | `#5315a8` | **Not decorative.** Text colour over the background and the header icon inversion — see §3 rule 5 |
 | `logo` | `occ theming:config` | `core/img/logo/logo.svg` | Login card. Full lockup |
-| `logoheader` | `occ theming:config` | `core/img/logo/logo-header.svg` | Header. Full lockup — `server.css` widens the slot from 62×44 to 200×44 and adds the INICIO label |
+| `logoheader` | `occ theming:config` | `core/img/logo/logo-header.svg` | Header. Full lockup — `server.css` widens the slot from 62×44 to 200×44 and adds the INICIO label, **above 601 px only**; below that it swaps `.logo` to the unregistered `logo-mark.svg` and core's geometry returns |
 | `favicon` | `occ theming:config` | `core/img/favicon.svg` | Favicon, touch icons, webmanifest |
 | `background` | `occ theming:config` | `core/img/background.svg` | The **whole-UI** backdrop, not just login |
 | `disable-user-theming` | `occ theming:config` | `yes` (stored `1`) | Stops per-user background/colour overrides |

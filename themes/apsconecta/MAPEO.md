@@ -131,8 +131,40 @@ pasa de 86×46 a 299×46 px (medido en vivo el 2026-07-30). A dónde va lo decid
 Espacio: con `side_menu` el menú de apps de arriba está vacío (`#app-menu-container` mide 0×0), así
 que `.header-start` usaba 134 px de 1059. Esto gasta 138 de los ~925 libres.
 
-Coste declarado, no resuelto: el contenido generado lo anuncian casi todos los lectores de pantalla,
-así que la AT oye «INICIO» **y** el `aria-label` («Ir a Dashboard»). No es arreglable desde CSS.
+### Puerta de ancho: todo lo anterior vive por encima de 600 px
+
+El header **solo encoge por flex** — `core/css/header.scss` no tiene ni una media query — así que
+cuando falta sitio nada se recoloca: se recorta en silencio. Medido el 2026-07-30 con el iframe de
+360 px (`resize_window` es un no-op aquí, ver `docs/THEMING-MODEL.md`):
+
+| Ancho | Qué pasaba sin puerta |
+|---|---|
+| 360 px | `#nextcloud` ofrecía 224 px para 299 px de contenido, y los 200 px de arte se metían **32 px por debajo** de `.header-end` |
+| 490 px | seguía recortado (293 px disponibles) |
+| 500 px | primer ancho donde entra entero |
+
+Por eso el ensanche y la etiqueta van dentro de `@media (min-width: 601px)`: ~100 px de holgura
+sobre el fallo medido. Por debajo, el header recupera la geometría de core **sin reglas de deshacer**
+(nada que mantener sincronizado con 86/62 px), y una segunda media query cambia el arte a
+`logo-mark.svg` — la figura sola —, porque el lockup registrado en `logoheader` contiene su texto a
+~4 px en un hueco de 62×44. El arte estrecho **no** está registrado en theming: es un `background-image`
+del tema y nada de provisioning lo conoce.
+
+El único breakpoint de Nextcloud es `$breakpoint-mobile: 1024px` (`variables.scss:100`), una variable
+SCSS ya compilada: inalcanzable desde un tema, y demasiado ancha — tiraría el lockup en tablets donde
+entra de sobra.
+
+### Lectores de pantalla: lo que se creía y lo que se midió
+
+Esta sección **afirmaba** que la AT oye «INICIO» *y* el `aria-label`, y que no era arreglable desde
+CSS. Medido el 2026-07-30 en el árbol de accesibilidad: el nombre accesible del enlace era ya
+**«Ir a Dashboard» y nada más**, porque un `aria-label` explícito gana sobre *name-from-content*, así
+que la palabra generada nunca entró en el nombre. La duplicación que se temía no existía.
+
+Queda la otra mitad — los lectores que verbalizan contenido generado al navegar — y para eso el
+`content` lleva **texto alternativo vacío**: `content: "INICIO" / ""`. Chrome 150 lo parsea
+(`CSS.supports('content', '"x" / ""')` = `true`); un navegador que no lo soporte anuncia la palabra,
+que es exactamente el comportamiento de antes. Degrada sin romper nada.
 
 ## 8. Qué NO toca el tema
 

@@ -127,22 +127,56 @@ h1, h2, h3,
    12px inset + 200px art = 212 < 224. Measured in the live DOM 2026-07-30: with
    side_menu installed the top app menu (`#app-menu-container`) is empty, and
    .header-start uses 134px of 1059, so this spends 138 of ~925 free px.
-   ===================================================================== */
-#header:not(.header-guest) #nextcloud       { padding-inline-start: 224px; }
-#header:not(.header-guest) #nextcloud .logo { width: 200px; }
 
-#header:not(.header-guest) #nextcloud::after {
-  content: "INICIO";
-  font-family: "Nunito Sans", system-ui, sans-serif;
-  font-size: 13px; font-weight: 700; letter-spacing: 0.08em;
-  /* White, derived by Nextcloud from background_color (#5315a8) — not hardcoded, so it
-     follows if that value ever changes. See 15-branding.sh. */
-  color: var(--color-background-plain-text);
-  /* The rule reads as "brand | action", so INICIO is not mistaken for part of the name.
-     align-self + height because a flex item's border would otherwise be text-height. */
-  align-self: center; height: 26px; display: flex; align-items: center;
-  border-inline-start: 1px solid rgba(255, 255, 255, 0.4);
-  margin-inline-start: 2px; padding-inline-start: 14px; padding-inline-end: 12px;
+   WIDTH GATE, measured not guessed (2026-07-30, 360px same-origin iframe per
+   THEMING-MODEL.md — resize_window is a no-op here). The header only flex-shrinks;
+   core/css/header.scss has no media query of its own, so nothing reflows and the
+   overflow just gets clipped:
+     360px — #nextcloud offered 224px for 299px of content, and the 200px art ran
+             32px underneath .header-end. Broken, silently.
+     490px — still clipped (293px offered).
+     500px — first width where the whole thing fits.
+   So the enhancement lives above 600px, which leaves ~100px of headroom over the
+   measured failure, and below that the header keeps core's own geometry untouched.
+   Nextcloud's only breakpoint is $breakpoint-mobile: 1024px (variables.scss:100), a
+   SCSS variable compiled away — unreachable from a theme, and far too wide anyway:
+   it would drop the lockup on every tablet where it fits with room to spare.
+   ===================================================================== */
+@media (min-width: 601px) {
+  #header:not(.header-guest) #nextcloud       { padding-inline-start: 224px; }
+  #header:not(.header-guest) #nextcloud .logo { width: 200px; }
+
+  #header:not(.header-guest) #nextcloud::after {
+    /* The empty string after the slash is ALT TEXT for generated content, and it is the
+       reason this is not an accessibility regression: it tells assistive tech to announce
+       nothing for the decoration. Measured 2026-07-30: the accessible name was already
+       "Ir a Dashboard" alone, because an explicit aria-label outranks name-from-content —
+       so the word never reached the name. The alt text covers the other half, screen
+       readers that voice pseudo-content while browsing. Chrome 150 parses it
+       (CSS.supports 'content: "x" / ""' = true); a browser that does not simply announces
+       the word, which is exactly today's behaviour. */
+    content: "INICIO" / "";
+    font-family: "Nunito Sans", system-ui, sans-serif;
+    font-size: 13px; font-weight: 700; letter-spacing: 0.08em;
+    /* White, derived by Nextcloud from background_color (#5315a8) — not hardcoded, so it
+       follows if that value ever changes. See 15-branding.sh. */
+    color: var(--color-background-plain-text);
+    /* The rule reads as "brand | action", so INICIO is not mistaken for part of the name.
+       align-self + height because a flex item's border would otherwise be text-height. */
+    align-self: center; height: 26px; display: flex; align-items: center;
+    border-inline-start: 1px solid rgba(255, 255, 255, 0.4);
+    margin-inline-start: 2px; padding-inline-start: 14px; padding-inline-end: 12px;
+  }
+}
+
+/* Below the gate: core's 62x44 slot returns on its own, but the art registered with theming
+   is the 200x34 lockup, which contains down to a ~4px wordmark in that box. So the narrow
+   header gets the mark alone. This is a CSS-only swap — `logoheader` stays the lockup, and
+   nothing in provisioning knows about this file. */
+@media (max-width: 600px) {
+  #header:not(.header-guest) #nextcloud .logo {
+    background-image: url("/themes/apsconecta/core/img/logo/logo-mark.svg");
+  }
 }
 
 /* LOGIN LOGO SLOT — reshape the box, not the art.
