@@ -18,9 +18,20 @@ OFFICE_PORT="${OFFICE_PORT:-80}"
 
 echo "Office backend: Euro-Office (eurooffice)"
 
-# The white-label rename is no longer checked here: it moved to .patch files applied by phase
-# 12-apps, and `patch` — unlike the `sed` it replaced — fails when its context stops matching, so
-# `make seed` is now the gate (ADR-0002).
+# The white-label rename, asserted on the files actually being served.
+#
+# This check was deleted when the rename moved from `sed` to .patch files, on the reasoning that
+# `patch` fails loudly when its context stops matching and so `make seed` is the gate. True, but it
+# only gates the moment the patch is applied. apps/ is gitignored, so any `occ app:update` — or an
+# admin updating from Settings > Apps — replaces these files and reverts the rename, and nothing
+# runs `make seed` afterwards. Between those two events every gate stayed green while the admin
+# section and app list said "Nextcloud Office" (B-008, ADR-0002).
+for f_want in "lib/AdminSection.php:Euro-Office" "appinfo/info.xml:<name>Euro-Office</name>"; do
+  f="${f_want%%:*}"; want="${f_want#*:}"
+  docker compose exec -T --user www-data nextcloud grep -qF "$want" "custom_apps/eurooffice/$f" \
+    || { echo "FAIL: white-label rename missing from eurooffice/$f — was the app updated? run 'make seed'"; exit 1; }
+done
+
 curl -sf "http://localhost:${OFFICE_PORT}/healthcheck" >/dev/null \
   || { echo "FAIL: Euro-Office /healthcheck not reachable from host"; exit 1; }
 $OCC eurooffice:documentserver --check \

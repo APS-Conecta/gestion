@@ -333,7 +333,11 @@ ensure_groupfolder() {  # MOUNT -> ensures it exists, prints its id
   local mount="$1" id
   gf_load; id="$(groupfolder_id "$mount")"
   if [ -n "$id" ]; then log "groupfolder '$mount' exists (id $id)"; else
-    id="$(occ groupfolders:create "$mount" 2>/dev/null | grep -oE '[0-9]+' | head -1)"
+    # stderr kept, and the id asserted: a failed create used to yield an empty id, which was logged
+    # as "created (id )" and cached as if real, so every later grant reported "not found" instead of
+    # naming the actual failure.
+    id="$(occ groupfolders:create "$mount" | grep -oE '[0-9]+' | head -1)"
+    [ -n "$id" ] || { log "FAILED to create groupfolder '$mount' — occ printed no id"; return 1; }
     log "groupfolder '$mount' created (id $id)"
     # Prepended, not appended: the lookups above stop at the first match, so the freshest line wins.
     GF_CACHE="$mount"$'\t'"$id"$'\n'"$GF_CACHE"; fi
