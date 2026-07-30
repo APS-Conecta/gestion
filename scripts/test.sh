@@ -15,18 +15,41 @@ fi
 # a bare `-f compose.yaml config -q` could only fail where this one already does.
 check docker compose -f compose.yaml -f compose.dev.yaml config -q
 check docker compose --profile eurooffice config -q
+linted=0
 for s in scripts/*.sh provisioning/*.sh provisioning/phases/*.sh; do
-  [ -e "$s" ] && check bash -n "$s"
+  [ -e "$s" ] || continue
+  linted=$((linted + 1)); check bash -n "$s"
 done
+# A glob that matches nothing stays literal, `[ -e ]` skips it, and the gate reports only the checks
+# it did run — so a renamed directory would silently lint nothing and still print all-ok. Floor, not
+# an exact count, so adding a script does not break the gate.
+check test "$linted" -ge 15
 check test -f dev/xdebug.ini
-# Regression guard (#39): the phase runner must not wrap its `set -e` subshell in an `if` condition —
-# bash suppresses errexit there, so a failing phase would run on and report success. Comment lines are
-# stripped first: seed.sh documents the wrong shape on purpose, and the guard must not match that.
-check bash -c '! grep -vE "^[[:space:]]*#" provisioning/seed.sh | grep -qE "if +! +\( *set -e"'
+# Regression guard (#39): the phase runner must not consume its `set -e` subshell's status in a
+# conditional context — bash suppresses errexit there, so a failing phase runs on and reports success.
+# Comment lines are stripped first: seed.sh documents the wrong shape on purpose.
+#
+# Matches on what precedes the subshell rather than listing the bad forms. The old pattern spelled out
+# `if ! ( set -e` and so passed the un-negated `if ( set -e; . "$phase" ); then`, which suppresses
+# errexit identically — the guard bought with B-001 could be defeated by deleting one `!`. `while`,
+# `until`, `&&` and `||` do the same thing and were never covered either. The subshell must stand
+# alone as its own command, so nothing but whitespace may precede its `(` on that line.
+check bash -c '! grep -vE "^[[:space:]]*#" provisioning/seed.sh | grep -qE "[^[:space:]][[:space:]]*\([[:space:]]*set[[:space:]]+-e"'
 # Regression guard (ADR-0001): every asset server.css references must exist on disk. server.css
 # shipped for months declaring four .woff2 files that were never generated — the TTF fallback
 # swallowed the 404s, so nothing surfaced it. The fallback is gone; this is what replaces it.
-check bash -c 'grep -oE "/themes/apsconecta[^)]+" themes/apsconecta/core/css/server.css | tr -d "\"" | sed "s|^/||" | while read -r f; do [ -f "$f" ] || exit 1; done'
+#
+# The count is asserted BEFORE the existence loop, and that is the whole point. `grep … | while read`
+# runs the loop zero times when grep matches nothing and exits 0, so the guard passed on a server.css
+# with no themed url() at all — switch the fonts to relative paths or rename the theme directory and
+# it stayed green while every .woff2 404'd. Requiring every url() in the file to be a themed absolute
+# path also catches one of the four drifting, which a bare "at least one" check would not.
+check bash -c '
+  css=themes/apsconecta/core/css/server.css
+  total=$(grep -oE "url\(\"" "$css" | wc -l)   # the quote matters: server.css says "url()" in prose
+  themed=$(grep -oE "url\(\"/themes/apsconecta[^\"]+\"" "$css" | wc -l)
+  [ "$total" -ge 1 ] && [ "$total" -eq "$themed" ] || exit 1
+  grep -oE "/themes/apsconecta[^\")]+" "$css" | sed "s|^/||" | while read -r f; do [ -f "$f" ] || exit 1; done'
 # Regression guard: every brand SVG must PARSE, not merely exist. Nextcloud serves a malformed
 # SVG with a 200 and the browser then renders nothing — silent, and the existence check above
 # cannot see it. Cost us a debugging round on 2026-07-27: a double hyphen inside an XML comment
