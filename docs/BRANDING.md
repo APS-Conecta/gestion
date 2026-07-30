@@ -97,8 +97,12 @@ webmanifest y los correos con marca:
 ```
 gestion/themes/apsconecta/core/img/
 ├── logo/logo.svg          ← clave `logo`: tarjeta de login (lockup completo)
-├── logo/logo-header.svg   ← clave `logoheader`: cabecera, hueco de 62x44 px (SOLO la marca;
-│                            el lockup completo ahí deja el texto en ~4 px, ilegible)
+├── logo/logo-header.svg   ← clave `logoheader`: cabecera (lockup completo, con teja). El hueco
+│                            nativo de 62x44 px dejaba el texto en ~4 px; server.css lo ensancha
+│                            a 200x44 y añade la etiqueta INICIO
+│                            AMBOS lockups llevan su propia subset de Fraunces/Nunito Sans
+│                            embebida: un SVG servido como imagen no ve el @font-face de
+│                            server.css (B-011). Regenerar con tools/embed-fonts.py
 ├── favicon.svg            ← clave `favicon`
 └── background.svg         ← clave `background`: telón de TODA la UI, no solo del login
 ```

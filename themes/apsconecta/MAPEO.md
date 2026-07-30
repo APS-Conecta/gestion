@@ -112,7 +112,29 @@ registrada, servida y no se vio jamás. El telón de marca es el fondo ahora.
 La cabecera lleva degradado **solo** en `#header:not(.header-guest)` — en el login, un header
 desnudo mostraría una tira fea.
 
-## 7. Qué NO toca el tema
+## 7. Cabecera — la marca y la palabra INICIO (2026-07-30)
+
+`#nextcloud` **siempre fue** el enlace al inicio (`layout.user.php:67`), pero solo lo decía a los
+lectores de pantalla vía `aria-label`. El tema ahora lo dice a todo el mundo:
+
+- `padding-inline-start: 224px` en `#nextcloud` y `width: 200px` en `.logo`. **El padding ES el
+  ancho del elemento** (no hay contenido en flujo salvo el `::after`), así que los dos se mueven
+  juntos o el logo desborda sobre el menú de apps: 12 px de inset + 200 px de arte = 212 < 224.
+- `::after` con el texto `INICIO`, filete de 1 px a la izquierda, en `--color-background-plain-text`
+  (blanco derivado de `background_color`, no escrito a mano).
+
+Dos cosas que hacen que esto sea CSS y no JavaScript: `#nextcloud` es `display:flex`, así que su
+`::after` **es un flex item dentro del ancla** — la palabra hereda el área clicable, y el objetivo
+pasa de 86×46 a 299×46 px (medido en vivo el 2026-07-30). A dónde va lo decide `defaultapp` en
+`provisioning/phases/15-branding.sh`, no el tema.
+
+Espacio: con `side_menu` el menú de apps de arriba está vacío (`#app-menu-container` mide 0×0), así
+que `.header-start` usaba 134 px de 1059. Esto gasta 138 de los ~925 libres.
+
+Coste declarado, no resuelto: el contenido generado lo anuncian casi todos los lectores de pantalla,
+así que la AT oye «INICIO» **y** el `aria-label` («Ir a Dashboard»). No es arreglable desde CSS.
+
+## 8. Qué NO toca el tema
 
 Sin editar el core · sin forkear `@nextcloud/vue` · sin CSS por componente · sin SCSS (retirado por
 NC) · sin modo oscuro · **sin iconos por app** (escaneadas todas las apps activas el 2026-07-27:

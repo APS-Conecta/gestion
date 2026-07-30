@@ -110,7 +110,9 @@ gestion/themes/apsconecta/       ← the only copy; what runs
   core/img/{favicon,background}.svg
   core/img/logo/{logo,logo-header}.svg
                                  ← logo = login card (full lockup)
-                                   logo-header = header, 62x44 slot (mark only)
+                                   logo-header = header (full lockup; server.css widens the
+                                   native 62x44 slot to 200x44 — see THEMING-MODEL.md)
+  tools/embed-fonts.py           ← subsets the brand fonts INTO the two lockups (B-011)
                                    Nothing unregistered lives here: the mono lockup moved to
                                    the kit on 2026-07-27 as reserve art, per the split rule.
   (no defaults.php — deleted 2026-07-27)

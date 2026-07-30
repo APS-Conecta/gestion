@@ -142,6 +142,29 @@ repo was v1 feature-complete on paper but had never actually been run start to f
   which is exactly what an `occ app:update` from Settings › Apps does. A warning already cached
   clears from the **Rescan…** link inside it.
 
+## B-011 — the brand lockups render Georgia, not Fraunces
+- **Status:** fixed
+- **Found:** 2026-07-30, while moving the full lockup into the header (the widened slot made the
+  wordmark large enough to see what typeface it actually was).
+- **Repro:** `fc-match Fraunces` on any machine without the font installed → a fallback
+  (`Noto Sans` here). Both lockups declare `font-family="Fraunces, Georgia, serif"`, so the login
+  card has been drawing its wordmark in **Georgia** on every Windows machine since Epic 5, and in
+  whatever `fc-match` returns elsewhere. Confirmed side by side in a browser: the shipped art next
+  to the same string as HTML text in the real webfont — different letterforms.
+- **Cause:** an SVG served as an image (`background-image`, `<img>`, the Theming pipeline) is an
+  **isolated document**. It cannot see `server.css`'s `@font-face`, so only fonts installed on the
+  viewer's OS are available. Epic 5's P1 pass verified "Fraunces + Nunito Sans actually applied" —
+  true, but that measured page CSS, and the lockups are not page CSS.
+- **Why nobody saw it:** the failure is invisible by construction. The wordmark still renders and
+  still reads "APS Conecta"; only the typeface is wrong, and at the 62×44 header slot it was ~4 px
+  tall anyway. No gate looked at fonts inside images.
+- **Fix:** `themes/apsconecta/tools/embed-fonts.py` subsets each font to the glyphs that lockup
+  actually draws and embeds it in the SVG as a `data:` `@font-face` — a data URL is not an external
+  fetch, so it survives the isolation. 5.5 KB for Fraunces, ~3 KB for Nunito Sans; both files stay
+  under 14 KB. The OS fallbacks are removed from `font-family` so a miss fails visibly instead of
+  silently substituting. Gate: `scripts/test.sh` fails if any theme SVG draws `<text>` without an
+  embedded face, or keeps a comma-separated fallback. Verified in both directions.
+
 <!-- Template:
 ## B-00N — <short title>
 - **Status:** open | fixed

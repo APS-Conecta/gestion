@@ -85,6 +85,9 @@ formatting loss that implies** (issue #45).
          the high-contrast block. The header logo is fixed: `logoheader` now points at a
          **mark-only** `logo-header.svg` (the 62×44 slot rendered the full lockup's wordmark at
          ~4 px). `MAPEO.md` was rewritten to describe reality and moved beside `server.css`.
+         *(Superseded 2026-07-30: mark-only was the right answer only while the slot stayed 62 px.
+         `server.css` now widens it to 200 px and labels the link **INICIO**, so `logoheader`
+         carries the full lockup again — see § Home affordance below.)*
          Dead code removed: `body.aps-hc` (stamped by `apsconecta_tablero`, an app that exists
          nowhere) and a dangling "B10 regression" citation (`BUGS.md` defines B-001…B-007).
    - [x] **P2 — Fold results into docs.** ✅ Done. New [`docs/THEMING-MODEL.md`](docs/THEMING-MODEL.md)
@@ -143,7 +146,21 @@ formatting loss that implies** (issue #45).
            white at 10.29:1 or 5.91:1. Recorded in `docs/THEMING-MODEL.md` §5 **as a sample, not a
            proof**, with its uncovered surfaces named. Two product-name leaks turned up instead and
            went to B-008 — one of them on `/settings/user`, so user-visible, not admin-only.
-3. **Epic retrospectives** (optional).
+3. **Home affordance — shipped 2026-07-30.** The header carried the mark alone, which read as
+   decoration, and nothing on screen said it was the way back to Inicio. `server.css` widens the
+   slot to 200 px (so the lockup renders at its design size instead of a ~4 px wordmark), hangs the
+   word **INICIO** off `#nextcloud::after` behind a hairline rule, and `15-branding.sh` pins
+   `defaultapp` so where that word lands is a decision rather than an upstream fallback.
+   No markup, no JS: `#nextcloud` is `display:flex`, so its `::after` is a flex item **inside the
+   anchor** — the word is part of the link, and the target grows from 86×46 to 299×46 px.
+   Measured, and the reason the old width objection died: with `side_menu` the top app menu is
+   empty (`#app-menu-container` is 0×0), so `.header-start` had ~925 px free.
+   Two things fell out of doing it: **B-011** (the lockups were rendering Georgia, because an SVG
+   served as an image cannot reach the theme's `@font-face` — fonts are now subset into the art)
+   and a declared, unfixable cost: screen readers announce both the generated word and the
+   `aria-label`. Six variants were rendered at true geometry before choosing; the mockup is not in
+   the repo, it was a decision aid.
+4. **Epic retrospectives** (optional).
 
 ## Future
 

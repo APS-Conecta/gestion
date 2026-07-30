@@ -61,6 +61,23 @@ for f in sorted(glob.glob("themes/apsconecta/core/img/**/*.svg", recursive=True)
     try: ET.parse(f)
     except Exception as e: bad.append(f"{f}: {e}")
 if bad: print("\n".join(bad)); sys.exit(1)'
+# Regression guard (B-011): a lockup that draws text must carry the font that text is set in.
+# An SVG served as an image is an isolated document — it cannot see server.css's @font-face — so
+# `font-family="Fraunces"` silently falls back to whatever the OS has (Georgia on Windows, Noto
+# here). The failure is invisible: the wordmark still renders, just in the wrong typeface, which
+# nobody reports as a bug. themes/apsconecta/tools/embed-fonts.py is what puts the subset in;
+# this asserts nobody shipped new art without running it.
+check python3 -c 'import glob,sys,re
+bad=[]
+for f in sorted(glob.glob("themes/apsconecta/core/img/**/*.svg", recursive=True)):
+    s = open(f, encoding="utf-8").read()
+    if not re.search(r"<text[ >]", s): continue
+    if "@font-face" not in s or "data:font/woff2;base64," not in s:
+        bad.append(f"{f}: draws <text> with no embedded @font-face — run themes/apsconecta/tools/embed-fonts.py")
+    for fam in set(re.findall(r"font-family=\"([^\"]+)\"", s)):
+        if "," in fam:
+            bad.append(f"{f}: font-family=\"{fam}\" keeps an OS fallback; the embedded face must be the only option")
+if bad: print("\n".join(bad)); sys.exit(1)'
 
 # Regression guard (B-008 / #48): server.css hides Nextcloud's vendor-marketing block in personal
 # settings — the "Reasons to use Nextcloud" PDF link, the "developed by the Nextcloud community"
@@ -74,6 +91,13 @@ if docker compose ps --status running --services 2>/dev/null | grep -qx nextclou
     grep -q 'class="section development-notice"' apps/settings/templates/settings/personal/development.notice.php
   check docker compose exec -T --user www-data nextcloud \
     grep -q "open-reasons-use-nextcloud-pdf" apps/settings/templates/settings/personal/development.notice.php
+  # The home affordance rests on one upstream element: `<a id="nextcloud">` in the authenticated
+  # layout. server.css widens it to 224px, hangs INICIO off its ::after, and the click works only
+  # because that element is the home link. If upstream renames or restructures it, every one of
+  # those silently stops applying — the header keeps rendering, just without the branding and
+  # without the affordance. Assert the anchor and its id, on the template actually being served.
+  check docker compose exec -T --user www-data nextcloud \
+    grep -qE 'id="nextcloud"' core/templates/layout.user.php
 else
   echo "  skipped: upstream vendor-block checks (need a running stack)"
 fi

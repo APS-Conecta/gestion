@@ -62,8 +62,13 @@ theming_set disable-user-theming yes 1   # writes 'yes', stores '1' — see them
 # nextcloud:34-apache image has.
 IMG=/var/www/html/themes/apsconecta/core/img
 theming_image_set logo       "$IMG/logo/logo.svg"
-# The header slot measures 62x44 px (measured 2026-07-27), so the full lockup renders its
-# wordmark at ~4 px. logoheader gets the mark ALONE; logo keeps the lockup for the login card.
+# Both keys carry the full lockup. The header slot was 62x44 px, which drew the wordmark at ~4 px
+# and is why this used to be a mark-only file; server.css now widens that slot to 224 px and adds
+# the INICIO label, so the lockup fits at its design size (owner decision 2026-07-30).
+#
+# BOTH lockups embed their own subset of Fraunces/Nunito Sans. An SVG served as an image is an
+# isolated document and cannot reach server.css's @font-face, so `Fraunces, Georgia, serif` had
+# been rendering GEORGIA on every page (B-011). Regenerate with themes/apsconecta/tools/embed-fonts.py.
 theming_image_set logoheader "$IMG/logo/logo-header.svg"
 theming_image_set favicon    "$IMG/favicon.svg"
 # NOTE: this is the whole-UI background, not just the login screen — CommonThemeTrait feeds it into
@@ -83,6 +88,21 @@ theming_image_set background "$IMG/background.svg"
 # purples into two, so the palette reads as a system rather than a gradient of accidents.
 app_config_set side_menu background-color "#5315a8"
 app_config_set side_menu background-color-to "#5315a8"
+
+# Where INICIO lands. server.css labels `#nextcloud` (which has always been the home link) with the
+# word INICIO; this is the other half — what "home" means. Measured chain in NC34,
+# URLGenerator::linkToDefaultPageUrl():  ?redirect_url  →  appconfig core/defaultpage (a path)  →
+# per-user core/defaultapp  →  system defaultapp  →  hardcoded 'dashboard,files'.
+#
+# Both keys were unset here, so the destination was the hardcoded fallback: correct by accident.
+# Setting it explicitly pins today's behaviour so an upstream change to that fallback cannot move
+# where a word we put on screen goes. Comma-separated, first entry that is an ENABLED navigation
+# entry wins (NavigationManager::getDefaultEntryIds filters against the live entries), so `files`
+# is the fallback if dashboard is ever restricted by 16-app-policy.
+#
+# Not set: `core/defaultpage`. It would win over all of this and takes a raw path, which is the
+# lever if "home" ever needs to be a specific folder — a decision, not a default.
+config_system_set defaultapp "dashboard,files"
 
 # --- New users start with an empty home, not Nextcloud's (#49) ---
 # Nextcloud copies core/skeleton/ into every new user's files at creation: an English Readme.md

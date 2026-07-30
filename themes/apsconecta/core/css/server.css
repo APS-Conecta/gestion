@@ -106,15 +106,54 @@ h1, h2, h3,
   background: linear-gradient(90deg, #5315a8, #7f21fe) !important;
 }
 
+/* =====================================================================
+   HOME AFFORDANCE — the full lockup plus the word INICIO, in the header line.
+
+   Two problems this fixes, both raised by the owner:
+   1. The mark alone read as decoration. It could not, because core sizes the slot
+      62x44 with `background-size: contain`, so a 200x34 lockup drew its 15px
+      wordmark at ~4.6px. That is a SLOT problem, not an art problem.
+   2. Nobody knew the mark was the way home. `#nextcloud` has always BEEN the home
+      link (layout.user.php:67, `<a href="/" id="nextcloud">`), and it says so only
+      to screen readers, through aria-label. The word says it to everyone else.
+
+   The word costs no markup and no JS: `#nextcloud` is `display:flex`, so its
+   ::after is a flex item INSIDE the anchor — clicking the word follows the link,
+   and the target grows from 86x46 to ~299x46 px, which is the accessibility half
+   of the change. Where it lands is provisioning/phases/15-branding.sh (`defaultapp`).
+
+   The padding IS the element's width — `#nextcloud` has no in-flow content besides
+   the ::after — so `.logo`'s width and that padding must always move together:
+   12px inset + 200px art = 212 < 224. Measured in the live DOM 2026-07-30: with
+   side_menu installed the top app menu (`#app-menu-container`) is empty, and
+   .header-start uses 134px of 1059, so this spends 138 of ~925 free px.
+   ===================================================================== */
+#header:not(.header-guest) #nextcloud       { padding-inline-start: 224px; }
+#header:not(.header-guest) #nextcloud .logo { width: 200px; }
+
+#header:not(.header-guest) #nextcloud::after {
+  content: "INICIO";
+  font-family: "Nunito Sans", system-ui, sans-serif;
+  font-size: 13px; font-weight: 700; letter-spacing: 0.08em;
+  /* White, derived by Nextcloud from background_color (#5315a8) — not hardcoded, so it
+     follows if that value ever changes. See 15-branding.sh. */
+  color: var(--color-background-plain-text);
+  /* The rule reads as "brand | action", so INICIO is not mistaken for part of the name.
+     align-self + height because a flex item's border would otherwise be text-height. */
+  align-self: center; height: 26px; display: flex; align-items: center;
+  border-inline-start: 1px solid rgba(255, 255, 255, 0.4);
+  margin-inline-start: 2px; padding-inline-start: 14px; padding-inline-end: 12px;
+}
+
 /* LOGIN LOGO SLOT — reshape the box, not the art.
    core/css/guest.css sizes this slot 175x130 (aspect 1.35). Our logo.svg is 205x34
    (aspect 6.03), so `background-size: contain` fits it BY WIDTH and draws it at
    175x29 — 22% of the slot's height, with 101px of dead space around it, on the first
    page every user sees. Measured 2026-07-28.
 
-   This is the same defect P1.5 fixed at the other end: the 62x44 header slot was
-   rendering the full lockup's wordmark at ~4px. There the answer was mark-only art;
-   here the lockup is right and the box is wrong, so the box moves.
+   Same defect as the header slot had, at the other end, and now with the same answer:
+   there 62x44 drew the lockup's wordmark at ~4px, and the box moved to 224px (see
+   HOME AFFORDANCE above). The art was right in both places; the box was wrong.
 
    SCOPING IS LOAD-BEARING. Both layouts render `.logo` inside `#header` —
    layout.guest.php:48 is `<div class="logo">`, layout.user.php:70 is
