@@ -34,7 +34,7 @@ provisioning/
   skip/patch — never blind-create. `make seed` is safe to run any number of times. Use the `lib.sh` helpers:
   - `ensure_group GID` — via `occ group:list`
   - `ensure_user UID DISPLAY PASSWORD`, `add_user_to_group UID GID`
-  - `ensure_groupfolder MOUNT` → prints id — via `occ groupfolders:list` (**`groupfolders:create` is NOT
+  - `ensure_groupfolder MOUNT` — via `occ groupfolders:list` (**`groupfolders:create` is NOT
     idempotent by name** — always query first)
   - `config_system_set KEY VALUE` — set only if different
   - `require_installed`, and `phase_begin`/`phase_end`/`log`

@@ -86,9 +86,13 @@
 body {
   --font-face: "Nunito Sans", system-ui, -apple-system, sans-serif !important;
 }
+/* `.header-appname` exists in ONE template — layout.public.php:51, the public share header — so
+   this reaches the share title and nothing else. Kept deliberately: an external recipient is the
+   one visitor who sees only that page. `.app-menu-entry__label` used to be listed here and matched
+   nothing anywhere (side_menu's class is `app-menu-entry--label`, two hyphens); not corrected,
+   because per-component CSS on a third-party app is what THEMING-MODEL.md §4 forbids. */
 h1, h2, h3,
-#header .header-appname,
-.app-menu-main .app-menu-entry__label {
+#header .header-appname {
   font-family: "Fraunces", Georgia, serif;
   letter-spacing: -0.015em;
 }
@@ -128,6 +132,15 @@ h1, h2, h3,
    side_menu installed the top app menu (`#app-menu-container`) is empty, and
    .header-start uses 134px of 1059, so this spends 138 of ~925 free px.
 
+   SCOPED TO `a#nextcloud`, and the element type is the whole scope. Three layouts render a
+   header: layout.user.php:67 is `<a id="nextcloud">` (no class, logo only), layout.public.php:51
+   is `<div id="nextcloud" class="header-appname">` (logo PLUS a share title), and
+   layout.guest.php has no #nextcloud at all. A `#header:not(.header-guest) #nextcloud` selector
+   therefore also matched the PUBLIC SHARE page — where the 224px padding sat on an element that
+   does have in-flow content, .logo's 200px blew out the share header, and INICIO landed inside a
+   div, unclickable. `a#` separates the two exactly, and makes :not(.header-guest) redundant here.
+   scripts/test.sh asserts both templates still carry the shapes this depends on.
+
    WIDTH GATE, measured not guessed (2026-07-30, 360px same-origin iframe per
    THEMING-MODEL.md — resize_window is a no-op here). The header only flex-shrinks;
    core/css/header.scss has no media query of its own, so nothing reflows and the
@@ -143,10 +156,10 @@ h1, h2, h3,
    it would drop the lockup on every tablet where it fits with room to spare.
    ===================================================================== */
 @media (min-width: 601px) {
-  #header:not(.header-guest) #nextcloud       { padding-inline-start: 224px; }
-  #header:not(.header-guest) #nextcloud .logo { width: 200px; }
+  #header a#nextcloud       { padding-inline-start: 224px; }
+  #header a#nextcloud .logo { width: 200px; }
 
-  #header:not(.header-guest) #nextcloud::after {
+  #header a#nextcloud::after {
     /* The empty string after the slash is ALT TEXT for generated content, and it is the
        reason this is not an accessibility regression: it tells assistive tech to announce
        nothing for the decoration. Measured 2026-07-30: the accessible name was already
@@ -174,7 +187,7 @@ h1, h2, h3,
    header gets the mark alone. This is a CSS-only swap — `logoheader` stays the lockup, and
    nothing in provisioning knows about this file. */
 @media (max-width: 600px) {
-  #header:not(.header-guest) #nextcloud .logo {
+  #header a#nextcloud .logo {
     background-image: url("/themes/apsconecta/core/img/logo/logo-mark.svg");
   }
 }
@@ -302,14 +315,16 @@ body {
   }
 }
 
-/* Visible focus on every interactive element */
+/* Visible focus on every interactive element. The colour comes from the variable, not the hex it
+   currently resolves to, so it follows primary_color. No border-radius here: `outline` already
+   traces the element's own shape, and setting --border-radius (4px) squared off every
+   @nextcloud/vue pill button the moment it took focus. */
 a:focus-visible,
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
 [tabindex]:focus-visible {
-  outline: 2px solid #7f21fe;
+  outline: 2px solid var(--color-primary-element);
   outline-offset: 2px;
-  border-radius: var(--border-radius);
 }

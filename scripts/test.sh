@@ -91,13 +91,18 @@ if docker compose ps --status running --services 2>/dev/null | grep -qx nextclou
     grep -q 'class="section development-notice"' apps/settings/templates/settings/personal/development.notice.php
   check docker compose exec -T --user www-data nextcloud \
     grep -q "open-reasons-use-nextcloud-pdf" apps/settings/templates/settings/personal/development.notice.php
-  # The home affordance rests on one upstream element: `<a id="nextcloud">` in the authenticated
-  # layout. server.css widens it to 224px, hangs INICIO off its ::after, and the click works only
-  # because that element is the home link. If upstream renames or restructures it, every one of
-  # those silently stops applying — the header keeps rendering, just without the branding and
-  # without the affordance. Assert the anchor and its id, on the template actually being served.
+  # The home affordance rests on `<a id="nextcloud">` in the authenticated layout: server.css
+  # widens it to 224px and hangs INICIO off its ::after, and the click works only because that
+  # element is the home link. It scopes on the ELEMENT TYPE because the PUBLIC SHARE header
+  # renders the same id as `<div class="header-appname">` with a share title inside it — an
+  # unscoped rule put the 224px padding and a 200px logo on the page external recipients see.
+  # So assert both shapes: authenticated is an anchor, public is not. If upstream renames the id,
+  # or ever makes the two the same element, every rule stops applying (or starts leaking) with
+  # the header still rendering — silently, which is why this is a gate and not a comment.
+  check docker compose exec -T --user www-data nextcloud sh -c \
+    'grep -B3 -- '"'"'id="nextcloud"'"'"' core/templates/layout.user.php | grep -q -- "<a "'
   check docker compose exec -T --user www-data nextcloud \
-    grep -qE 'id="nextcloud"' core/templates/layout.user.php
+    grep -qE '<div id="nextcloud" class="header-appname"' core/templates/layout.public.php
 else
   echo "  skipped: upstream vendor-block checks (need a running stack)"
 fi

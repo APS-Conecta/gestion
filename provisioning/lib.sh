@@ -329,7 +329,7 @@ for r in (d.values() if isinstance(d, dict) else d):
 groupfolder_id() {  # MOUNT -> prints the folder id, or empty
   printf '%s\n' "$GF_CACHE" | awk -F'\t' -v m="$1" 'NF==2 && $1==m {print $2; exit}'
 }
-ensure_groupfolder() {  # MOUNT -> ensures it exists, prints its id
+ensure_groupfolder() {  # MOUNT -> ensures it exists
   local mount="$1" id
   gf_load; id="$(groupfolder_id "$mount")"
   if [ -n "$id" ]; then log "groupfolder '$mount' exists (id $id)"; else
@@ -341,7 +341,6 @@ ensure_groupfolder() {  # MOUNT -> ensures it exists, prints its id
     log "groupfolder '$mount' created (id $id)"
     # Prepended, not appended: the lookups above stop at the first match, so the freshest line wins.
     GF_CACHE="$mount"$'\t'"$id"$'\n'"$GF_CACHE"; fi
-  printf '%s\n' "$id"
 }
 # Grant a group access to a group folder (allow-only; empty perms = read-only).
 #
