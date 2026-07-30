@@ -359,6 +359,8 @@ gf_grant() {  # MOUNT GROUP [read] [write] [share] [delete]
   local id want=1 cur p
   gf_load; id="$(groupfolder_id "$mount")"
   [ -n "$id" ] || { log "groupfolder '$mount' not found — cannot grant $group"; return 1; }
+  # `read` is a no-op ARM, not a dead one: want already starts at 1 (READ), and without an explicit
+  # arm the word would fall through to the catch-all below and zero every grant in 40-acl.sh.
   for p in "$@"; do case "$p" in
     read)   ;;
     write)  want=$((want | 6));;

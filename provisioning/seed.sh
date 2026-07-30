@@ -19,8 +19,11 @@ require_installed
 
 run=0; skipped=0
 for phase in "$HERE"/phases/[0-9]*.sh; do
-  [ -e "$phase" ] || continue
-  num="$(basename "$phase" | grep -oE '^[0-9]+')"
+  # A glob that matches nothing stays literal. This used to be `|| continue`, which turned "the
+  # phases directory is gone" into `0 phase(s) run` and exit 0 — a green run that provisioned
+  # nothing. Same detection, opposite conclusion.
+  [ -e "$phase" ] || { echo "FATAL: no phase files matched $HERE/phases/[0-9]*.sh" >&2; exit 1; }
+  num="${phase##*/}"; num="${num%%-*}"
   if [ "$num" -ge 50 ] && [ "$SEED_FIXTURES" != "1" ]; then
     echo "▷ skipping $(basename "$phase") (SEED_FIXTURES=0)"; skipped=$((skipped + 1)); continue
   fi

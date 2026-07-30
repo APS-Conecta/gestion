@@ -9,9 +9,3 @@ RUN pecl install xdebug \
 
 # zz- prefix so this ini loads last and wins. Config lives in dev/xdebug.ini (single source).
 COPY dev/xdebug.ini /usr/local/etc/php/conf.d/zz-xdebug.ini
-
-# No xdebug.log, and therefore no log directory. Twelve lines of mkdir/touch/chown/chmod used to
-# live here to make one optional diagnostic file openable by both root and www-data — a whole
-# ownership dance (and a /tmp trap) serving a file nobody reads while step-debugging works.
-# Add it back the day you need to debug the debugger itself: set xdebug.log in dev/xdebug.ini and
-# restore a dir www-data owns outside any world-writable path.

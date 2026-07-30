@@ -12,7 +12,9 @@ from fontTools.ttLib import TTFont
 from fontTools.subset import Subsetter, Options
 from fontTools.varLib.instancer import instantiateVariableFont
 
-REPO = pathlib.Path("/home/dani/Descargas/CESFAM-Intranet/gestion")
+# Derived from this file's own location (themes/apsconecta/tools/ → repo root), not hardcoded:
+# an absolute home directory made the tool runnable by exactly one person on one machine.
+REPO = pathlib.Path(__file__).resolve().parents[3]
 FONTS = REPO / "themes/apsconecta/core/fonts"
 
 def subset_b64(woff2, text, wght):

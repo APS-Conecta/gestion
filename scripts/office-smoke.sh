@@ -9,7 +9,7 @@ set -euo pipefail
 . "$(dirname "$0")/env.sh"
 
 OCC="docker compose exec -T --user www-data nextcloud php occ"
-OFFICE_PORT="${OFFICE_PORT:-80}"
+: "${OFFICE_PORT:?set OFFICE_PORT in .env}"
 
 # Require the eurooffice connector — the sole office backend (AD-5). An app is enabled iff its
 # appconfig `enabled` value is "yes".

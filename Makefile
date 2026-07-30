@@ -10,12 +10,8 @@ NCEXEC = docker compose exec -T --user www-data nextcloud
 OCC = $(NCEXEC) php occ
 # Your host group, so the container can hand the bind mounts back to you (fix-mount-perms).
 HOST_GID := $(shell id -g)
-# Read from .env only for the two values a RECIPE LINE here consumes directly. The scripts source
-# .env themselves now, so they behave the same whether you run `make smoke` or `bash
-# scripts/smoke.sh` — which was not true before: run directly, smoke.sh fell back to its built-in
-# 8180 and probed the wrong port on any instance that had changed HTTP_PORT.
-OFFICE_PORT := $(shell [ -f .env ] && grep -E '^OFFICE_PORT=' .env | cut -d= -f2)
-OFFICE_JWT_SECRET := $(shell [ -f .env ] && grep -E '^OFFICE_JWT_SECRET=' .env | cut -d= -f2)
+# No .env reading here: every script sources scripts/env.sh itself, so `make smoke` and
+# `bash scripts/smoke.sh` behave identically. Nothing in a recipe below needs a value from .env.
 
 # Same guard, four targets. One message, one place to change it.
 REQUIRE_ENV = test -f .env || { echo "No .env found — run: cp .env.example .env  (then edit the passwords)"; exit 1; }

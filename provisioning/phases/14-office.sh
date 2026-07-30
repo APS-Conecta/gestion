@@ -14,7 +14,10 @@
 # container opt-in, not the connector's config.
 phase_begin "14-office" "Euro-Office connector configuration (AD-5)"
 
-OFFICE_PORT="${OFFICE_PORT:-9980}"
+# No default. This used to fall back to 9980 while the two office scripts fell back to 80, so a
+# .env missing the key produced three different answers and wrote a silently-wrong browser URL.
+# .env.example ships it and compose.yaml requires it, so absence means a broken .env — say so.
+: "${OFFICE_PORT:?set OFFICE_PORT in .env}"
 
 # Where the BROWSER reaches the document server, and where the two containers reach each other
 # (AD-8: container-to-container by service name, never localhost).
