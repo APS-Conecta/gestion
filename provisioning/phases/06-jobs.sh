@@ -20,4 +20,14 @@ phase_begin "06-jobs" "background jobs run from cron, not ajax"
 # rewriting the key every run.
 app_config_set core backgroundjobs_mode cron
 
+# WHEN the expensive daily jobs run. Unset means Nextcloud spreads them across the day, so a
+# CESFAM's file scans and DB cleanups land in the middle of a working morning — and the admin
+# Overview says so, permanently, which is how this was found (2026-07-30).
+#
+# The value is an HOUR IN UTC, and the window is four hours long. 5 UTC = 01:00 CLT (UTC-4), so
+# the heavy work happens overnight local and is finished long before staff arrive. This is the one
+# number here that is timezone-dependent: if the instance ever serves a different timezone, this
+# moves with it and `default_locale`/`default_phone_region` in 10-locale do not.
+config_system_set maintenance_window_start 5 integer
+
 phase_end
