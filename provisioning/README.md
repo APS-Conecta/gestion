@@ -46,14 +46,10 @@ provisioning/
 
 ## Filling a stub (worked example)
 
-Epic 1 fills `phases/10-locale.sh` — the `phase_begin`/`phase_end` frame stays; the body uses guarded
-helpers:
+A filled phase keeps the `phase_begin`/`phase_end` frame and uses the guarded helpers for its body.
+Read [`phases/10-locale.sh`](phases/10-locale.sh) — it is short, and it is the live one.
 
-```bash
-phase_begin "10-locale" "es-CL locale defaults (Epic 1)"
-config_system_set default_language es_419
-config_system_set default_locale es_CL
-phase_end
-```
-
-Then `make seed` (or just re-run it) applies it idempotently alongside every other phase.
+There used to be a worked example here. It was copied from an early draft of that phase and still
+set `default_language=es_419`, which B-009 later proved inert: a valid ICU locale but not a
+language, so `languageExists()` rejects it and the browser decides the UI language instead. A
+copy-pasteable snippet that reintroduces a fixed bug is worse than no snippet.

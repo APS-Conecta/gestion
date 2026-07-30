@@ -9,8 +9,13 @@ on:
     - cron: "0 6 * * 1"          # Mondays 06:00 UTC — the clean-boot path, weekly
   workflow_dispatch:
 
+# The event is part of the group, so a push can only ever cancel another push. Without it, the
+# weekly clean boot and ordinary pushes to main shared one group: merge a PR while Monday's 30-minute
+# bring-up is running and it is cancelled — and a cancelled run is not a failure, so there is no
+# notification and no red check. The one job that proves the stack comes up from empty would simply
+# have stopped happening, quietly.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
