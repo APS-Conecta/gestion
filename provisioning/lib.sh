@@ -3,9 +3,9 @@
 # Sourced by seed.sh, which then sources each phase; every mutating helper is QUERY-BEFORE-CREATE:
 # it inspects current state and skips/patches rather than blind-creating, so `make seed` is safe to
 # re-run. Source this file; do not execute it. Host has python3 (no jq assumed) for JSON parsing.
-
-# occ inside the running nextcloud container.
-occ() { docker compose exec -T --user www-data nextcloud php occ "$@"; }
+#
+# REQUIRES scripts/env.sh to have been sourced first — it provides occ(), which nearly every helper
+# below calls. seed.sh sources them in that order.
 
 # --- logging ---
 log()         { printf '    %s\n' "$*"; }
@@ -408,33 +408,46 @@ gf_prune() {
     log "revoked '$mount' -> $group (not in the matrix)"
   done
 }
-# Content goes under $id/files/, NOT $id/. The storage root also holds trash/ and versions/, and the
-# mount is a Jail rooted at files/ (groupfolders FolderStorageManager), so anything written one level
-# up is on disk but outside the mount and no user can see it. Everything seeded here landed there
-# from 2026-07-24 until this was fixed, and `test -f` kept passing on the wrong path, so re-seeding
-# reported "exists" and never repaired it.
+# --- group-folder content ---
+#
+# THE JAIL RULE, in one place because getting it wrong is silent. Content goes under $id/files/,
+# NOT $id/: the storage root also holds trash/ and versions/, and the mount is a Jail rooted at
+# files/ (groupfolders FolderStorageManager), so anything written one level up is on disk but
+# outside the mount and no user can see it. Everything seeded landed there from 2026-07-24 until
+# this was fixed, and `test -f` kept passing on the wrong path, so re-seeding reported "exists" and
+# never repaired it. Both writers below build their path through here, so there is one path to be
+# wrong about rather than one per writer.
+#
+# CALL gf_load FROM THE CALLER, never from here — same subshell trap documented at groupfolder_id.
+# Every caller reads through `path="$(gf_files_path …)"`, and a cache filled inside a command
+# substitution dies with it, so the next lookup would re-read the server (or find nothing).
+gf_files_path() {  # MOUNT REL -> absolute in-container path, or fails
+  local id; id="$(groupfolder_id "$1")"
+  [ -n "$id" ] || { log "groupfolder '$1' not found — cannot write $2"; return 1; }
+  printf '/var/www/html/data/__groupfolders/%s/files/%s\n' "$id" "$2"
+}
+# Reindex the folder a path belongs to. Best-effort: a failed scan leaves the file on disk and the
+# next seed's `test` still finds it, so failing the phase here would be louder than the problem.
+gf_scan() { occ groupfolders:scan "$(groupfolder_id "$1")" >/dev/null 2>&1 || true; }
 
 # Create a text file inside a group folder, then index it. Idempotent (test -f).
 ensure_gf_file() {  # MOUNT RELPATH CONTENT
-  local mount="$1" rel="$2" content="$3" id; gf_load; id="$(groupfolder_id "$mount")"
-  [ -n "$id" ] || { log "groupfolder '$mount' not found — cannot write $rel"; return 1; }
-  local path="/var/www/html/data/__groupfolders/$id/files/$rel"
+  local mount="$1" rel="$2" content="$3" path
+  gf_load; path="$(gf_files_path "$mount" "$rel")" || return 1
   if docker compose exec -T --user www-data nextcloud test -f "$path" 2>/dev/null; then
     log "  file $mount/$rel exists"; return 0; fi
   docker compose exec -T --user www-data -e GFC="$content" nextcloud sh -c "printf '%s' \"\$GFC\" > '$path'"
-  occ groupfolders:scan "$id" >/dev/null 2>&1 || true
+  gf_scan "$mount"
   log "  file $mount/$rel created"
 }
 # Create a regular subfolder inside a group folder, then index it. Idempotent (test -d).
-# Same files/ jail as ensure_gf_file above.
 ensure_gf_subfolder() {  # MOUNT SUBFOLDER
-  local mount="$1" sub="$2" id; gf_load; id="$(groupfolder_id "$mount")"
-  [ -n "$id" ] || { log "groupfolder '$mount' not found — cannot add $sub"; return 1; }
-  local path="/var/www/html/data/__groupfolders/$id/files/$sub"
+  local mount="$1" sub="$2" path
+  gf_load; path="$(gf_files_path "$mount" "$sub")" || return 1
   if docker compose exec -T --user www-data nextcloud test -d "$path" 2>/dev/null; then
     log "  subfolder $mount/$sub exists"; return 0; fi
   docker compose exec -T --user www-data nextcloud mkdir -p "$path"
-  occ groupfolders:scan "$id" >/dev/null 2>&1 || true
+  gf_scan "$mount"
   log "  subfolder $mount/$sub created"
 }
 

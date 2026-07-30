@@ -29,7 +29,7 @@ set -uo pipefail
 # the fixture users are absent, phases 50/60 did not run and must not run now. An explicit
 # SEED_FIXTURES always wins.
 if [ -z "${SEED_FIXTURES:-}" ]; then
-  if docker compose exec -T --user www-data nextcloud php occ user:info dev.direccion >/dev/null 2>&1; then
+  if occ user:info dev.direccion >/dev/null 2>&1; then
     SEED_FIXTURES=1
   else
     SEED_FIXTURES=0

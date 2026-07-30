@@ -6,11 +6,12 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib.sh
-. "$HERE/lib.sh"
-# cd to the repo root + load .env the way compose reads it. See scripts/env.sh.
+# env.sh FIRST: it cds to the repo root, loads .env the way compose reads it, and defines occ(),
+# which every helper in lib.sh calls.
 # shellcheck source=../scripts/env.sh
 . "$HERE/../scripts/env.sh"
+# shellcheck source=lib.sh
+. "$HERE/lib.sh"
 
 SEED_FIXTURES="${SEED_FIXTURES:-1}"
 

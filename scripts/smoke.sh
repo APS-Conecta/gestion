@@ -10,7 +10,6 @@ set -uo pipefail
 . "$(dirname "$0")/env.sh"
 
 HTTP_PORT="${HTTP_PORT:-8180}"
-OCC="docker compose exec -T --user www-data nextcloud php occ"
 
 fail() { echo "FAIL: $*"; exit 1; }
 
@@ -19,7 +18,7 @@ docker compose ps --status running --services 2>/dev/null | grep -qx nextcloud \
   || fail "nextcloud container is not running (did you 'make up'?)"
 
 # 2. Nextcloud installed + reachable via occ.
-$OCC status --output=json 2>/dev/null | grep -q '"installed":true' \
+occ status --output=json 2>/dev/null | grep -q '"installed":true' \
   || fail "occ status: Nextcloud not installed / not reachable"
 
 # 3. PostgreSQL accepting connections.
@@ -50,7 +49,7 @@ fi
 # on page loads.
 docker compose ps --status running --services 2>/dev/null | grep -qx cron \
   || fail "the cron container is not running — background jobs would fall back to page-load scheduling (did you 'make up'?)"
-jobs_mode=$($OCC config:app:get core backgroundjobs_mode 2>/dev/null | tr -d '\r')
+jobs_mode=$(occ config:app:get core backgroundjobs_mode 2>/dev/null | tr -d '\r')
 [ "$jobs_mode" = "cron" ] \
   || fail "backgroundjobs_mode is '${jobs_mode:-unset}', expected 'cron' — run 'make seed' (phase 06-jobs)"
 
@@ -102,7 +101,7 @@ printf '%s' "$login_html" | grep -q 'rel="manifest" href="[^"]*themes/apsconecta
 # obvious spelling degrades silently to "could not read app config" and reports drift that is not
 # there. `occ config:list` answers the same question from outside, in the same single round-trip,
 # with no server API to track across versions. Same source the provisioning guards read.
-policy=$(docker compose exec -T --user www-data nextcloud php occ config:list --output=json 2>/dev/null | python3 -c '
+policy=$(occ config:list --output=json 2>/dev/null | python3 -c '
 import sys, json
 # "disabled" is TWO valid values, not one: the literal "no" (was enabled, then disabled) and an
 # ABSENT key (never enabled here). `occ app:disable` on an already-absent key is a no-op and does

@@ -4,10 +4,9 @@
 #   `make office-eurooffice` → Euro-Office (eurooffice/JWT)
 # `make smoke` / `make test` = the local quality gate; `make seed` runs the provisioning pipeline.
 .DEFAULT_GOAL := help
-.PHONY: help up up-dev down seed seed-idempotent smoke test fix-mount-perms office-eurooffice office-smoke office-formats office-down
+.PHONY: help up up-dev down seed seed-idempotent smoke test fix-mount-perms office-eurooffice office-smoke office-down
 
-NCEXEC = docker compose exec -T --user www-data nextcloud
-OCC = $(NCEXEC) php occ
+OCC = docker compose exec -T --user www-data nextcloud php occ
 # Your host group, so the container can hand the bind mounts back to you (fix-mount-perms).
 HOST_GID := $(shell id -g)
 # No .env reading here: every script sources scripts/env.sh itself, so `make smoke` and
@@ -77,9 +76,6 @@ office-eurooffice: ## Bring up the Euro-Office backend and wire the eurooffice c
 
 office-smoke: ## Smoke-check the Euro-Office backend
 	@bash scripts/office-smoke.sh
-
-office-formats: ## Audit the Euro-Office backend — OSS/no-paid-licence (Story 4.3)
-	@bash scripts/office-formats.sh
 
 office-down: ## Stop the office backend (core stack keeps running)
 	docker compose stop eurooffice 2>/dev/null || true
