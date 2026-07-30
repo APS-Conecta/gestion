@@ -137,9 +137,9 @@ assignments, and the final validated matrix are parameterizable and settled with
   [`THEMING-MODEL.md`](THEMING-MODEL.md); `themes/` itself is undocumented legacy in Nextcloud and
   must be re-verified on every major upgrade.
 - **Navigation** uses the third-party `side_menu` app, installed by `12-apps` and coloured by `15-branding`.
-- **Locale** defaults are seeded but **not** forced: `default_language=es_419` (Latin-American Spanish; a
-  discrete `es_CL` UI translation does not exist) and `default_locale=es_CL` (Chilean date/number formatting).
-  Users and developers may change them. Timezone America/Santiago is per-user (browser auto-detected). UI text
+- **Locale**: `default_language=es` (the only Spanish translation NC34 ships) plus `force_language=es`,
+  and `default_locale=es_CL` for Chilean date/number formatting. Language is forced because
+  `findLanguage()` reads the browser's Accept-Language *before* the default; the locale is not. Timezone America/Santiago is per-user (browser auto-detected). UI text
   is Spanish; all code, identifiers, and config keys are English.
 
 ## Environments

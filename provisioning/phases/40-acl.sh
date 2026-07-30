@@ -46,4 +46,8 @@ gf_grant "Unidades/Dirección"       cat-jefaturas read write delete
 gf_grant "Sectores/Sector 1"    sector-1    read write delete; gf_grant "Sectores/Sector 1"    cat-jefaturas read write delete
 gf_grant "Sectores/Sector Azul" sector-azul read write delete; gf_grant "Sectores/Sector Azul" cat-jefaturas read write delete
 
+# Anything granted on these folders that is NOT declared above is revoked, so deleting a line here
+# actually removes the access. Until this existed, gf_grant could only add.
+gf_prune
+
 phase_end

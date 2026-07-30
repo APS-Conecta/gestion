@@ -203,7 +203,7 @@ grep -oE '#[0-9a-fA-F]{3,8}' <app>/img/app.svg | sort -u
 - **`enforce_theme=light` también quita el alto contraste** y la fuente para dislexia:
   `ThemesService::getThemes()` solo devuelve `default`, `dark` y el forzado. Por eso el bloque
   `@media (prefers-contrast: more)` de `server.css` es la única vía de alto contraste que queda.
-- **Idioma:** no existe una traducción `es_CL`. El repo ya lo resuelve en `provisioning/phases/10-locale.sh`: `default_language=es_419` (la traducción que Nextcloud sí trae), `default_locale=es_CL` (formato chileno de fechas/números) y `default_phone_region=CL`. No uses `es` a secas.
+- **Idioma:** no existe una traducción `es_CL`. `provisioning/phases/10-locale.sh` usa `default_language=es` — la única traducción española que NC34 trae — más `force_language=es`, `default_locale=es_CL` (formato chileno) y `default_phone_region=CL`. **No uses `es_419`:** es un *locale* ICU válido pero no un idioma, así que `languageExists()` lo rechaza y decide el navegador (B-009).
 - **Reinicio:** ya no hace falta ninguno; era solo por el opcache de `defaults.php`, eliminado.
 - **Acceso clientless:** si tu instancia bloquea `status.php` a red externa (`Require local`), las apps de escritorio/móvil oficiales no conectan a propósito — la vía móvil es la **PWA**.
 

@@ -369,6 +369,8 @@ gf_grant() {  # MOUNT GROUP [read] [write] [share] [delete]
     # fail loudly rather than silently deciding this grant was already in place.
     *)      want=0;;
   esac; done
+  # Declared either way — gf_prune must not revoke a grant just because it was already correct.
+  GF_DECLARED="$mount"$'\t'"$group"$'\n'"$GF_DECLARED"
   cur="$(printf '%s\n' "$GF_CACHE" | awk -F'\t' -v m="$mount" -v g="$group" 'NF==3 && $1==m && $2==g {print $3; exit}')"
   if [ "$cur" = "$want" ]; then log "grant '$mount' $group already [$want]"; return 0; fi
   # Plain command, and stderr kept: see ensure_group. A renamed group makes occ print
@@ -377,6 +379,33 @@ gf_grant() {  # MOUNT GROUP [read] [write] [share] [delete]
   occ groupfolders:group "$id" "$group" "$@" >/dev/null
   log "grant '$mount' -> $group [${*:-read}]"
   GF_CACHE="$mount"$'\t'"$group"$'\t'"$want"$'\n'"$GF_CACHE"
+}
+
+# Every (mount, group) gf_grant has touched this phase, granted or already correct. gf_prune reads it.
+GF_DECLARED=""
+
+# Revoke every grant on the phase-30 folders that the matrix did not declare, making the phase file
+# the whole truth about who has access.
+#
+# Without this, gf_grant could only ever ADD: deleting a line from the matrix left the access in
+# place, so the committed file quietly stopped describing the instance and no gate noticed. Access
+# that outlives the line that created it is the kind of thing nobody discovers until an audit.
+#
+# Only folders the matrix mentions are pruned, so a folder managed elsewhere is left alone. Call it
+# once, at the end of the ACL phase, after every gf_grant.
+gf_prune() {
+  local mounts line mount group
+  # Re-read rather than trusting GF_CACHE: the cache holds what this run wrote, and pruning needs
+  # what the SERVER currently has.
+  GF_CACHE=""; gf_load
+  mounts="$(printf '%s\n' "$GF_DECLARED" | cut -f1 | sort -u)"
+  printf '%s\n' "$GF_CACHE" | awk -F'\t' 'NF==3 {print $1 "\t" $2}' | while IFS=$'\t' read -r mount group; do
+    [ -n "$mount" ] || continue
+    printf '%s\n' "$mounts" | grep -qxF "$mount" || continue          # folder not in the matrix
+    printf '%s\n' "$GF_DECLARED" | grep -qxF "$mount"$'\t'"$group" && continue
+    occ groupfolders:group "$(groupfolder_id "$mount")" "$group" --delete >/dev/null
+    log "revoked '$mount' -> $group (not in the matrix)"
+  done
 }
 # Content goes under $id/files/, NOT $id/. The storage root also holds trash/ and versions/, and the
 # mount is a Jail rooted at files/ (groupfolders FolderStorageManager), so anything written one level

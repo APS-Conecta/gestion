@@ -39,8 +39,7 @@ formatting loss that implies** (issue #45).
 ## Next
 
 1. **ODF — decided and shipped.** Lossy ODF editing is on, scripted in `make office-eurooffice`
-   (#45 / B-007). The remaining office item is #50: whether `es_419` resolves to the `es-ES`
-   document template or falls back to `en-US`.
+   (#45 / B-007).
 2. **Epic 5 — white-label branding** ✅ **closed 2026-07-27.** The brand guide landed, which was the condition
    this was deferred on, so it opens as the first post-v1 increment — v1 stays exactly as accepted on
    2026-07-24. Branding ships as the `themes/apsconecta/` **server theme**, superseding AD-6's

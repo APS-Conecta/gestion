@@ -81,10 +81,14 @@ typography needs `@font-face` with paths only a theme serves. **AD-6 was right a
 
 ### AD-7 — Locale defaults are seeded, not forced
 
-`10-locale.sh` sets `default_language=es_419` (the Latin-American Spanish translation Nextcloud
-actually ships; a discrete `es_CL` UI translation does not exist), `default_locale=es_CL` for
-Chilean date and number formatting, and `default_phone_region=CL`. These are **defaults**: users
-and developers may change them. Timezone stays per-user, browser-detected. UI text is Spanish; all
+`10-locale.sh` sets `default_language=es`, `default_locale=es_CL` for Chilean date and number
+formatting, and `default_phone_region=CL`. The locale stays a **default** users may change.
+
+*Corrected 2026-07-30.* As written this decision said `es_419` and called it "the Latin-American
+Spanish translation Nextcloud actually ships". It ships no such translation: `es_419` is a valid ICU
+locale but not a language, so `languageExists()` rejects it and the key was inert (B-009). The
+language is now `es` and is **forced** (`force_language=es`), because `findLanguage()` consults the
+browser's Accept-Language before the default. The locale half was always right. Timezone stays per-user, browser-detected. UI text is Spanish; all
 code, identifiers and config keys are English.
 
 ### AD-9 — Custom apps use OCP public APIs only; core is never patched

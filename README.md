@@ -107,9 +107,9 @@ exists to prevent. Set by `make office-eurooffice`, never in the admin UI (AD-2)
 | `compose.dev.yaml`, `Dockerfile.dev`, `dev/xdebug.ini` | The derived Xdebug dev image (AD-10). |
 | `.env.example` | Template for your gitignored `.env`. **Never commit `.env`.** |
 | `Makefile` | The dev lifecycle (`make help`). |
-| `scripts/` | `smoke.sh`, `test.sh`, `office-smoke.sh`, `office-formats.sh` — the gate + office checks. |
+| `scripts/` | `test.sh` + `smoke.sh` (the gate), `seed-idempotent.sh`, the two office checks, and `env.sh` (shared preamble). |
 | `provisioning/` | The single idempotent provisioning writer: `seed.sh` runner, `lib.sh` guard helpers, `phases/05-60`, `apps/` (per-app patches — [ADR-0002](docs/adr/0002-app-patches.md)), and [`provisioning/README.md`](provisioning/README.md). |
-| `apps/`, `themes/` | Custom apps / theming, live-mounted (v1 ships none — the Layer-2 seam). |
+| `apps/`, `themes/` | Live-mounted. `apps/` is vendored upstream apps (gitignored); `themes/apsconecta/` is the white-label server theme. |
 | `docs/ARCHITECTURE.md` | The architecture overview (design SSOT). |
 | `ROADMAP.md` · `BUGS.md` | Roadmap narrative · known bugs. Work in progress is on the [Projects board](https://github.com/orgs/APS-Conecta/projects/5). |
 | `LICENSE` · [`docs/LICENSING.md`](docs/LICENSING.md) | Our code's license (proprietary) · full third-party license audit. |
@@ -118,12 +118,13 @@ exists to prevent. Set by `make office-eurooffice`, never in the admin UI (AD-2)
 
 ## Current state (what `make seed` provisions today)
 
-Config-as-code is applied only by `make seed`, in fixed phase order (`provisioning/README.md`). As of v1
-(Epics 0–4 merged), a full `make seed` applies **es-CL locale** (phase 10), the **role/team group
-registry** (phase 20), the **four-area Document Home tree + first-cut access matrix** (phases 30–40), and
-synthetic **fixture users + a sample file** (phases 50–60). White-label branding is not applied in v1 —
-the instance runs the default Nextcloud theme. Live collaborative editing is native to the office backend
-(`make office-eurooffice`).
+Config-as-code is applied only by `make seed`, in fixed phase order. The phase table in
+[`provisioning/README.md`](provisioning/README.md) is the one place that lists what each phase does —
+this file used to keep a second summary and it drifted: it named six of the twelve phases and said
+white-label branding was not applied, months after Epic 5 shipped it. A developer who believed that
+would read `make smoke`'s branding check as broken and delete it.
+
+Live collaborative editing is native to the office backend (`make office-eurooffice`).
 The browser acceptance run passed on 2026-07-24, so v1 is complete; ODF edits through conversion (see
 *Office suite* above).
 
@@ -164,8 +165,9 @@ Each phase is framed by `phase_begin "NN-name" "…"` … `phase_end`, and its b
 `apps/` (→ `custom_apps`) and `themes/` are **bind-mounted for live edit** — no rebuild, no fork; `make up`
 runs `make fix-mount-perms` so the container (uid 33) can write them. A custom app talks to Nextcloud **only
 through OCP public APIs (`OCP\…`)** — never patch core (AD-9) — carries an `appinfo/info.xml`
-(`min-version="34"`), and is enabled with `occ app:enable <id>`. **v1 ships none** (config-as-code only); these
-dirs are the Layer-2 roadmap seam (e.g. the REM app). White-labeling ships as the **`themes/apsconecta/`
+(`min-version="34"`), and is enabled with `occ app:enable <id>`. **No custom app lives here yet** — `apps/`
+currently holds only vendored upstream apps (gitignored), and the first Layer-2 app, the REM analyzer, has
+its own repository. White-labeling ships as the **`themes/apsconecta/`
 server theme** — AD-6's config-only rule is superseded by
 [ADR-0001](docs/adr/0001-server-theme-for-branding.md). How the theming actually behaves (and why most of
 it is config rather than CSS) is [`docs/THEMING-MODEL.md`](docs/THEMING-MODEL.md); the deploy guide is
