@@ -20,6 +20,10 @@
 # Local agent tooling (regenerable, never committed)
 .claude/skills/
 
+# Python bytecode — themes/apsconecta/tools/ is a one-shot art generator, not a package
+__pycache__/
+*.pyc
+
 # IDE / OS
 *.code-workspace
 .DS_Store
