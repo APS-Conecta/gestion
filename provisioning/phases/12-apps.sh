@@ -23,10 +23,23 @@ APPS="groupfolders side_menu eurooffice"
 
 for app in $APPS; do
   ensure_app "$app"
+  patched=
   for patch in "$HERE"/apps/"$app"/*.patch; do
     [ -e "$patch" ] || continue
     apply_patch "$app" "$patch"
+    patched=1
   done
+
+  # A store app ships appinfo/signature.json, a vendor claim that its files are as shipped. Our
+  # patches make that claim false, so the integrity check fails and admin > Overview shows a
+  # permanent red warning (#71). Nextcloud verifies a NON-shipped app only if that file is present
+  # (lib/private/IntegrityCheck/Checker.php:546 in the pinned image), so deleting the claim we just
+  # invalidated is both the fix and the honest description of what we did. Core and every unpatched
+  # app keep their check. Query-before-set: the second seed finds nothing to drop.
+  sig="custom_apps/$app/appinfo/signature.json"
+  if [ -n "$patched" ] && occ_sh "test -e $sig"; then
+    occ_sh "rm -f $sig" && log "signature dropped for $app (patched, so it no longer describes the files)"
+  fi
 done
 
 phase_end
