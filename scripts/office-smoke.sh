@@ -5,8 +5,8 @@
 set -euo pipefail
 
 # Read .env so this behaves the same run directly as through `make` (cf. scripts/smoke.sh).
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-if [ -f "$ROOT/.env" ]; then set -a; . "$ROOT/.env"; set +a; fi
+# shellcheck source=env.sh
+. "$(dirname "$0")/env.sh"
 
 OCC="docker compose exec -T --user www-data nextcloud php occ"
 OFFICE_PORT="${OFFICE_PORT:-80}"
