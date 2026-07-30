@@ -22,22 +22,14 @@ require_installed() {
 #
 # One `config:list` per phase feeds every read below, instead of one `config:*:get` per key.
 #
-# NOT `--private`: that flag adds the instance's crypto material — dbpassword, secret, passwordsalt
-# — to a variable this process would then hold for the rest of the phase. Nothing here needs them.
+# NOT `--private`: that would pull dbpassword/secret/passwordsalt into a variable held for the rest
+# of the phase, and nothing here needs them. It is NOT a secret-free cache either — Nextcloud's
+# redaction is narrower than intuition (`theming` slogan/url come back REMOVED, `eurooffice
+# jwt_secret` comes back in the clear), so DO NOT `set -x` in a phase and DO NOT print CONF_CACHE.
 #
-# What it does NOT buy is a secret-free cache, and it is worth being exact about that rather than
-# comfortable. Nextcloud's redaction follows its own sensitivity flags, which are narrower than
-# intuition: `theming` slogan/url/imprintUrl/privacyUrl come back ***REMOVED SENSITIVE VALUE***,
-# while `eurooffice jwt_secret` comes back in the clear. So this cache does hold one app secret.
-# It is not a new exposure — seed.sh sources .env, so OFFICE_JWT_SECRET is already in this same
-# process — but do not add `set -x` to a phase, and do not print CONF_CACHE.
-#
-# conf_get re-reads the redacted keys individually rather than trading the whole config for them.
-#
-# Unlike the group caches further down, this one is NOT written back after a set: no phase reads a
-# key it just wrote. If one ever does, the stale read costs a redundant write of the SAME value —
-# same final state, and scripts/seed-idempotent.sh reports it rather than hiding it.
-# Per-phase, like every cache here: seed.sh's subshell-per-phase resets it (see below).
+# Not written back after a set, unlike the group caches below: no phase reads a key it just wrote,
+# and if one ever does the stale read costs a redundant write of the same value, which
+# seed-idempotent.sh reports rather than hides.
 CONF_CACHE=""
 conf_load() {
   [ -n "$CONF_CACHE" ] && return 0
@@ -45,26 +37,18 @@ conf_load() {
 }
 
 # Prints a value from the cached listing, and EXITS 1 WHEN THE KEY IS ABSENT. That distinction is
-# the reason this helper exists rather than a plain lookup.
+# the whole reason this exists rather than a plain lookup: an unset key and a key set to "" both
+# read back empty, so `[ "$cur" = "$val" ]` treats "set this to empty" as already-done and never
+# writes. That is how `customclient_ios_appid ""` logged "already = " on a fresh instance while the
+# iOS banner stayed up (B-009 family). Membership in the JSON object is structural — nothing to
+# remember.
 #
-# An unset key and a key set to "" both read back as the empty string, so a plain
-# `[ "$cur" = "$val" ]` treats "set this to empty" as already-done and never writes. Not
-# hypothetical: `customclient_ios_appid ""` (the iOS banner kill) logged "already = " on a fresh
-# instance and the banner stayed up — caught in a browser on 2026-07-27, not by a gate. The old code
-# recovered the distinction from occ's exit status, which also meant every read needed `|| rc=1` to
-# stop an unset key from killing the phase under pipefail + set -e. Here it is structural: the key
-# is either a member of the JSON object or it is not. Nothing to remember, nothing to forget.
+# Values render EXACTLY as `occ config:*:get` prints them, which is what every comparison here was
+# written against:  bool -> "1" / ""   int -> "0"   str -> verbatim, empty included.
+# The bool case is load-bearing: `disable-user-theming` is JSON `true` in config:list but `1` from
+# occ, and rendering it "true" makes that key rewrite itself on every seed.
 #
-# Values are rendered EXACTLY as `occ config:*:get` prints them, because that is what every
-# comparison in this file was written against:
-#   bool -> "1" / ""   int -> "0"   str -> verbatim, empty string included
-# The bool case is load-bearing. `theming disable-user-theming` comes back from config:list as JSON
-# `true`, while occ prints `1` — which is the STORED_FORM theming_set already passes. Render it
-# "true" and that key rewrites itself on every single seed.
-#
-# CALL conf_load FROM THE CALLER, never from here — same subshell trap documented at groupfolder_id:
-# every caller reads through `cur="$(conf_get …)"`, and a cache filled inside a command substitution
-# dies with it.
+# CALL conf_load FROM THE CALLER, never from here — same subshell trap documented at groupfolder_id.
 conf_get() {  # system KEY | app APP KEY
   local out
   out="$(printf '%s' "$CONF_CACHE" | python3 -c '
@@ -127,16 +111,11 @@ theming_set() {  # KEY VALUE [STORED_FORM]
     occ theming:config "$key" "$val" >/dev/null && log "theming:$key -> $val"; fi
 }
 
-# Brand images. Deliberately NOT query-before-set: theming:config stores <key>Mime,
-# not the path, so a changed file with an unchanged mime is undetectable — comparing
-# would make `make seed` silently ignore an edited SVG. Re-registering every run is
-# cheap (four small files) and is what makes editing an asset actually propagate.
+# Brand images. Writes UNCONDITIONALLY — do not "fix" this into query-before-set. theming:config
+# stores the image bytes plus a <key>Mime entry, never the source path, so there is nothing to
+# compare that would notice the FILE changed: a guard here would mean an edited SVG never reaches
+# the instance. Cost of writing every run is a bumped theming cachebuster. That is the cheaper bug.
 # PATH must be absolute and resolvable INSIDE the container; themes/ is bind-mounted.
-# Writes UNCONDITIONALLY, and that is deliberate — do not "fix" it into query-before-set.
-# theming:config stores the image bytes in appdata plus a <key>Mime entry; it does not store the
-# source path, so there is nothing to compare against that would notice the FILE changed. A
-# query-before-set here would mean edits to the SVGs never reach the instance. Cost of the
-# unconditional write: every `make seed` bumps the theming cachebuster. That is the cheaper bug.
 theming_image_set() {  # KEY ABSOLUTE_PATH
   local key="$1" path="$2"
   occ theming:config "$key" "$path" >/dev/null && log "theming:$key <- $path"
@@ -144,17 +123,11 @@ theming_image_set() {  # KEY ABSOLUTE_PATH
 
 # --- per-phase query caches ---
 #
-# The guard helpers below used to ask the server once per ITEM: 27 `group:list` calls to create 27
-# groups, another 25 `groupfolders:list` to place 25 ACLs. Every one of those is a
-# `docker compose exec` at ~0.8 s, so most of `make seed`'s wall clock was spent re-reading a list
-# that had not changed since the line above.
-#
-# Each cache fills on FIRST use and is updated in place on every write, so it cannot go stale
-# within a phase. It cannot go stale ACROSS phases either, and that falls out of the runner rather
-# than from care taken here: seed.sh runs each phase in its own subshell, so these variables revert
-# to the parent's empty value at every phase boundary and the first helper to need one re-reads the
-# server. A phase always sees what the phases before it did — which is AD-2's rule (cross-phase
-# state goes through Nextcloud, never through shell vars) holding unchanged.
+# The guards below used to ask the server once per ITEM — 27 `group:list` calls to create 27 groups
+# — and every one is a `docker compose exec` at ~0.8 s. Each cache fills on first use and is
+# updated in place on every write, so it cannot go stale within a phase; seed.sh's subshell-per-
+# phase resets it at every boundary, so it cannot go stale across phases either. AD-2's rule
+# (cross-phase state goes through Nextcloud, never shell vars) holds unchanged.
 GROUPS_CACHE=""
 GF_CACHE=""
 
@@ -257,19 +230,16 @@ apply_patch() {  # APPID PATCHFILE
 # Shell inside the nextcloud container, stdin forwarded (apply_patch pipes the .patch in).
 occ_sh() { docker compose exec -T --user www-data nextcloud sh -c "$1" >/dev/null 2>&1; }
 
-# Restrict an app to one or more groups: installed and available to those groups only, invisible
-# to everyone else. The lever of choice over disabling, because a restricted app is still present
-# for the custom apps on the roadmap to build on.
+# Restrict an app to groups: installed and usable by them, invisible to everyone else. Preferred
+# over disabling, because a restricted app is still there for the roadmap's custom apps to build on.
 #
-# AppManager::enableAppForGroups() stores json_encode($groupIds) in appconfig `enabled`
-# (lib/private/App/AppManager.php:673), where a globally-enabled app stores the string "yes". So
-# the current value IS the comparison — no separate state to track — and query-before-set is exact.
+# enableAppForGroups() stores json_encode($groupIds) in appconfig `enabled` where a globally-enabled
+# app stores "yes", so the current value IS the comparison and query-before-set is exact.
 #
-# NOT every app can be restricted. Apps declaring types filesystem / authentication / logging /
-# prelogin / prevent_group_restriction are refused by Nextcloud, and `occ` fails with a clear
-# message rather than silently enabling globally. Verified on 2026-07-28: nextcloud_announcements
-# (logging), photos + federation (authentication), sharebymail + circles (filesystem) and logreader
-# (logging) all refuse. For those the only levers are an app config switch or a full disable.
+# NOT every app can be restricted: types filesystem/authentication/logging/prelogin/
+# prevent_group_restriction are refused, loudly rather than by silently enabling globally. Verified
+# 2026-07-28 — nextcloud_announcements, photos, federation, sharebymail, circles and logreader all
+# refuse. For those the levers are an app config switch or a full disable.
 app_restrict_to_groups() {  # APP GROUP [GROUP...]
   local app="$1"; shift
   local want cur; local -a gargs=()
@@ -289,12 +259,9 @@ app_restrict_to_groups() {  # APP GROUP [GROUP...]
 app_disable() {  # APPID
   local app="$1" cur
   conf_load; cur="$(conf_get app "$app" enabled)" || cur=""
-  # Nextcloud represents "not enabled" in TWO ways, and both are correct: the literal "no" (an app
-  # that was enabled and then disabled) and an ABSENT key (an app never enabled on this instance).
-  # `occ app:disable` on an app whose key is already absent is a no-op — it does NOT write "no" —
-  # so anything asserting the literal "no" will fail forever on a fresh instance. Measured
-  # 2026-07-29 by deleting the key and re-seeding: the phase logged success and the value stayed
-  # unset. Treat both as disabled here, and make any gate accept both too.
+  # "Not enabled" has TWO valid representations: the literal "no" (was enabled, then disabled) and
+  # an ABSENT key (never enabled here). `occ app:disable` on an absent key is a no-op and does not
+  # write "no", so asserting the literal fails forever on a fresh instance. Gates must accept both.
   if [ "$cur" = "no" ] || [ -z "$cur" ]; then log "app $app already disabled"; return 0; fi
   occ app:disable "$app" >/dev/null 2>&1 && log "app $app -> disabled"
 }
@@ -302,10 +269,10 @@ app_disable() {  # APPID
 # --- group folders: groupfolders:create is NOT idempotent by name, so ALWAYS query first ---
 #
 # One listing answers everything phases 30 and 40 ask: `groupfolders:list --output=json` carries
-# `groups_list` ({gid: permission bits}) alongside the mount point and id. Cached as one
-# "mount<TAB>id" line per folder plus one "mount<TAB>gid<TAB>perms" line per grant; the field count
-# tells the two apart. Compared with awk, not a regex — mount points contain spaces, slashes and
-# accents (`Unidades/Estadística-REM`), none of which survive being pasted into a pattern.
+# `groups_list` ({gid: perms}) alongside the mount point and id. Cached as one "mount<TAB>id" line
+# per folder plus one "mount<TAB>gid<TAB>perms" line per grant; the field count tells them apart.
+# Matched with awk, not a regex — mount points contain spaces, slashes and accents
+# (`Unidades/Estadística-REM`), none of which survive being pasted into a pattern.
 # NB: the groupfolders app (v22+) uses the JSON key `mountPoint` (camelCase). Accept the older
 # `mount_point` too for safety.
 gf_load() {
@@ -344,16 +311,11 @@ ensure_groupfolder() {  # MOUNT -> ensures it exists
 }
 # Grant a group access to a group folder (allow-only; empty perms = read-only).
 #
-# Query-before-set, like every other guard here. `groupfolders:group` builds its bitmask as
-# READ|<each word> starting from 1 (apps/groupfolders/lib/Command/Group.php:91-103: read=1,
-# write=UPDATE|CREATE=6, share=16, delete=8), and `groups_list` reports exactly that integer back —
-# so the current value IS the comparison, no separate state to track. Same trick as
-# app_restrict_to_groups.
-#
-# This used to re-apply every grant unconditionally, which was harmless but indistinguishable in
-# the log from a real write — and the log is what scripts/seed-idempotent.sh reads to decide
-# whether a second seed changed anything. An unconditional write there would have made that gate
-# permanently red and therefore worthless.
+# Query-before-set. `groupfolders:group` builds its bitmask as READ|<each word> from 1
+# (Group.php:91-103: read=1, write=UPDATE|CREATE=6, share=16, delete=8) and `groups_list` reports
+# that same integer back, so the current value IS the comparison. Guarding matters beyond speed:
+# seed-idempotent.sh reads the log to decide whether a second seed changed anything, so an
+# unconditional write here would make that gate permanently red and therefore worthless.
 gf_grant() {  # MOUNT GROUP [read] [write] [share] [delete]
   local mount="$1" group="$2"; shift 2
   local id want=1 cur p
@@ -385,11 +347,9 @@ gf_grant() {  # MOUNT GROUP [read] [write] [share] [delete]
 # Every (mount, group) gf_grant has touched this phase, granted or already correct. gf_prune reads it.
 GF_DECLARED=""
 
-# Revoke every grant on the phase-30 folders that the matrix did not declare, making the phase file
-# the whole truth about who has access.
-#
-# Without this, gf_grant could only ever ADD: deleting a line from the matrix left the access in
-# place, so the committed file quietly stopped describing the instance and no gate noticed. Access
+# Revoke every grant on the phase-30 folders the matrix did not declare, so the phase file is the
+# whole truth about who has access. Without this gf_grant could only ADD: deleting a line left the
+# access in place and the committed file quietly stopped describing the instance. Access
 # that outlives the line that created it is the kind of thing nobody discovers until an audit.
 #
 # Only folders the matrix mentions are pruned, so a folder managed elsewhere is left alone. Call it

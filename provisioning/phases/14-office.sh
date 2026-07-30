@@ -1,17 +1,10 @@
 # Phase 14 — Euro-Office connector configuration.  OWNER: AD-5.
 # Runs after 12-apps (which installs the `eurooffice` connector) and before 15-branding.
 #
-# These keys used to live in `make office-eurooffice` as eight bare `occ config:app:set` calls:
-# config-as-code sitting outside the config-as-code pipeline, with no query-before-set, writing on
-# every invocation and invisible to scripts/seed-idempotent.sh. Here they get the guards for free.
-#
-# What stays in the Makefile is what this phase cannot do: starting the ~2 GB documentserver
-# container (`--profile eurooffice`), the install-time trusted_domains repair, and the smoke.
-# That target owns the BACKEND; this phase owns the CONNECTOR's configuration.
-#
-# Setting these without the backend running is harmless and deliberate: the connector is a PHP app
-# that does nothing until a document server answers at DocumentServerUrl. AD-5 makes the ~2 GB
-# container opt-in, not the connector's config.
+# This phase owns the CONNECTOR's configuration; `make office-eurooffice` owns the BACKEND — the
+# ~2 GB documentserver container, the install-time trusted_domains repair and the smoke. Setting
+# these with no backend running is harmless: the connector does nothing until a document server
+# answers at DocumentServerUrl. AD-5 makes the container opt-in, not the config.
 phase_begin "14-office" "Euro-Office connector configuration (AD-5)"
 
 # No default. This used to fall back to 9980 while the two office scripts fell back to 80, so a

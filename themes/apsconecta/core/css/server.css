@@ -1,51 +1,33 @@
 /* =====================================================================
    APS Conecta Gestión — Nextcloud server theme (server.css)
-   LIGHT ONLY. enforce_theme=light (owner decision 2026-07-12).
-   Do NOT reintroduce a dark block: it is unreachable and would lie.
-   ([data-theme="dark"] lives only in the MIT brand package for the website.)
 
-   WHAT THIS FILE CAN AND CANNOT DO — measured on the live instance 2026-07-27.
+   LIGHT ONLY (enforce_theme=light). Do NOT add a dark block: it is unreachable
+   and would lie.
 
-   It used to map ~25 brand tokens onto Nextcloud's --color-* variables. Almost
-   none of them arrived. Nextcloud declares its theme variables on
-   body[data-theme-light], and this stylesheet loads BEFORE the theming app's,
-   so anything declared here in :root is overridden for everything inside <body>.
-   Measured: --color-main-text stayed #222222 (not #101828), --border-radius 4px
-   (not 6px), --color-border #ededed, --color-error #FFE7E7. Only 7 of 30 landed,
-   and those only because they already matched Nextcloud's own value.
+   THE ONE RULE: a variable declared here in :root is INERT. Nextcloud declares
+   its theme variables on body[data-theme-light] and loads after this file, so
+   :root loses for everything inside body. Before adding any variable, check on
+   document.body in devtools whether Nextcloud already declares it — if it does,
+   yours will not arrive. What does reach the page: element selectors, and
+   body-scoped custom properties with !important.
+   Why, and the full measurement: docs/THEMING-MODEL.md.
 
-   Worse than useless in two slots: NC34 defines --color-error and --color-success
-   as element BACKGROUNDS, not text ("this should not be used for text but for
-   element backgrounds"). The brand rose/green sat in variables meaning the
-   opposite of what the map assumed. Foreground brand colour belongs in
-   --color-text-error / --color-element-error, which are body-scoped too.
-
-   So the variable map is gone. What survives is what actually reaches the page:
-   element selectors (which DO beat core's, because this file loads after core CSS)
-   plus --font-face, which is the one documented typography variable.
-
-   Before adding ANY variable here, check on document.body in devtools whether
-   Nextcloud already declares it. If it does, yours will not arrive.
-   Full reasoning: docs/THEMING-MODEL.md and MAPEO.md (beside this file).
-
-   Fonts are declared with ABSOLUTE paths as Nextcloud serves them.
-   Outside NC these 404 — sistema-diseno.html redeclares them relatively.
-   Fonts are NOT subset (subsetting = Modified Version under OFL-1.1).
+   Serving the fonts is the ONLY reason this theme directory exists — images are
+   registered by occ from absolute paths, identity and colour are config.
+   See docs/adr/0001-server-theme-for-branding.md.
    ===================================================================== */
 
 /* ---- Self-hosted webfonts (zero egress) ----
-   woff2 ONLY, deliberately — no TTF fallback. Every browser Nextcloud 34 supports
-   has had woff2 since ~2016, so the fallback protected nobody. It did actively hide
-   bugs: a missing or corrupt woff2 silently fell through to the TTF, so nothing ever
-   surfaced the failure. One format has no hiding place, and `make test` now asserts
-   every url() here exists on disk.
+   Absolute paths, as Nextcloud serves them; outside Nextcloud they 404.
+   woff2 ONLY, no TTF fallback: it protected nobody (woff2 is universal since
+   ~2016) and actively hid a missing or corrupt file by silently falling through.
+   One format has no hiding place, and `make test` asserts every asset referenced
+   below exists on disk.
    Regenerate after a font update:
      python3 -c "from fontTools.ttLib.woff2 import compress; compress('X.ttf','X.woff2')"
-   Format conversion is neither subsetting nor renaming, so OFL-1.1 is satisfied.
-
-   Serving the fonts is the ONLY reason this theme directory exists. Images are
-   registered with `occ theming:config` from absolute paths and would work from
-   anywhere; identity and colour are config. See docs/adr/0001-server-theme-for-branding.md. */
+   THESE FILES ARE NOT SUBSET — format conversion is neither subsetting nor
+   renaming, so OFL-1.1 is satisfied. (The lockup SVGs are a separate case: they
+   embed a subset, which OFL permits as a Modified Version. See docs/LICENSING.md.) */
 @font-face {
   font-family: "Fraunces"; font-style: normal; font-weight: 400 800; font-display: swap;
   src: url("/themes/apsconecta/core/fonts/Fraunces.woff2") format("woff2");
@@ -63,26 +45,13 @@
   src: url("/themes/apsconecta/core/fonts/NunitoSans-Italic.woff2") format("woff2");
 }
 
-/* =====================================================================
-   TYPOGRAPHY — body text through the documented variable, display face
-   through element selectors.
-
-   --font-face is Nextcloud's own typography variable and 6 shipped rules read it,
-   four of them component-scoped: .tooltip, .mx-datepicker-main,
-   .rich-contenteditable__input and a colour-picker label. Those class selectors
-   outrank any `body` rule we could write, so tooltips, date pickers and rich-text
-   inputs rendered in system-ui while the rest of the UI was branded. Setting the
-   variable once fixes all four; chasing them with element selectors would take four
-   more rules and would miss the next component to use it.
-
-   !important is required, not decorative: Nextcloud sets --font-face on
-   body[data-theme-light], which outranks `body` AND loads later. On a custom
-   property, !important wins regardless of specificity or order.
-
-   There is no documented variable for a display face, so Fraunces stays on element
-   selectors. Keeping NC's --default-font-size (15px) and --default-line-height (1.5)
-   untouched, so @nextcloud/vue's density is not disturbed.
-   ===================================================================== */
+/* TYPOGRAPHY. --font-face is Nextcloud's own variable, read by 6 shipped rules — four of them
+   component-scoped (.tooltip, .mx-datepicker-main, .rich-contenteditable__input, a colour-picker
+   label) whose class selectors outrank any `body` rule, so those components rendered in system-ui
+   while the rest was branded. Setting the variable once fixes all four and covers the next
+   component to use it. !important is required, not decorative — see THE ONE RULE above.
+   No documented variable exists for a display face, so Fraunces stays on element selectors.
+   --default-font-size and --default-line-height are left alone: they set @nextcloud/vue's density. */
 body {
   --font-face: "Nunito Sans", system-ui, -apple-system, sans-serif !important;
 }
@@ -97,49 +66,32 @@ h1, h2, h3,
   letter-spacing: -0.015em;
 }
 
-/* =====================================================================
-   HEADER — brand gradient, but NOT on the guest (login) header, where
-   the header is a bare box and the gradient paints an ugly strip.
-
-   NB: because this gradient is ours rather than Nextcloud's, Nextcloud sizes the
-   contrast of everything in the header from `background_color`, not from what is
-   painted here. That value MUST stay dark (#5315a8) or the header icons get
-   inverted to black on violet. See provisioning/phases/15-branding.sh.
-   ===================================================================== */
+/* HEADER gradient — not on the guest (login) header, where it paints a bare strip. Nextcloud sizes
+   header contrast from `background_color`, NOT from what is painted here, so that value must stay
+   dark (#5315a8) or the header icons invert to black on violet. See 15-branding.sh. */
 #header:not(.header-guest) {
   background: linear-gradient(90deg, #5315a8, #7f21fe) !important;
 }
 
 /* =====================================================================
-   HOME AFFORDANCE — the full lockup plus the word INICIO, in the header line.
+   HOME AFFORDANCE — the full lockup plus the word INICIO in the header line.
 
-   Two problems this fixes, both raised by the owner:
-   1. The mark alone read as decoration. It could not, because core sizes the slot
-      62x44 with `background-size: contain`, so a 200x34 lockup drew its 15px
-      wordmark at ~4.6px. That is a SLOT problem, not an art problem.
-   2. Nobody knew the mark was the way home. `#nextcloud` has always BEEN the home
-      link (layout.user.php:67, `<a href="/" id="nextcloud">`), and it says so only
-      to screen readers, through aria-label. The word says it to everyone else.
+   `#nextcloud` has always BEEN the home link, but said so only to screen readers via aria-label,
+   and core's 62x44 slot drew the lockup's wordmark at ~4.6px so the mark read as decoration. Both
+   are SLOT problems. The word costs no markup and no JS: `#nextcloud` is display:flex, so its
+   ::after is a flex item INSIDE the anchor — clicking it follows the link, and the target grows
+   from 86x46 to ~299x46. Where it lands is `defaultapp` in 15-branding.sh.
 
-   The word costs no markup and no JS: `#nextcloud` is `display:flex`, so its
-   ::after is a flex item INSIDE the anchor — clicking the word follows the link,
-   and the target grows from 86x46 to ~299x46 px, which is the accessibility half
-   of the change. Where it lands is provisioning/phases/15-branding.sh (`defaultapp`).
+   The padding IS the element's width, so `.logo`'s width and that padding move together:
+   12px inset + 200px art = 212 < 224.
 
-   The padding IS the element's width — `#nextcloud` has no in-flow content besides
-   the ::after — so `.logo`'s width and that padding must always move together:
-   12px inset + 200px art = 212 < 224. Measured in the live DOM 2026-07-30: with
-   side_menu installed the top app menu (`#app-menu-container`) is empty, and
-   .header-start uses 134px of 1059, so this spends 138 of ~925 free px.
-
-   SCOPED TO `a#nextcloud`, and the element type is the whole scope. Three layouts render a
-   header: layout.user.php:67 is `<a id="nextcloud">` (no class, logo only), layout.public.php:51
-   is `<div id="nextcloud" class="header-appname">` (logo PLUS a share title), and
-   layout.guest.php has no #nextcloud at all. A `#header:not(.header-guest) #nextcloud` selector
-   therefore also matched the PUBLIC SHARE page — where the 224px padding sat on an element that
-   does have in-flow content, .logo's 200px blew out the share header, and INICIO landed inside a
-   div, unclickable. `a#` separates the two exactly, and makes :not(.header-guest) redundant here.
-   scripts/test.sh asserts both templates still carry the shapes this depends on.
+   SCOPED TO `a#nextcloud`, and the element type is the whole scope. layout.user.php renders
+   `<a id="nextcloud">` (logo only); layout.public.php renders `<div id="nextcloud"
+   class="header-appname">` with a share title inside; layout.guest.php has no #nextcloud at all.
+   An unscoped rule therefore hit the PUBLIC SHARE page — 224px padding on an element that does
+   have in-flow content, a blown-out logo slot, and INICIO inside a div where it is not clickable.
+   `a#` separates them exactly and makes :not(.header-guest) redundant here; scripts/test.sh
+   asserts both template shapes.
 
    WIDTH GATE, measured not guessed (2026-07-30, 360px same-origin iframe per
    THEMING-MODEL.md — resize_window is a no-op here). The header only flex-shrinks;
@@ -160,22 +112,17 @@ h1, h2, h3,
   #header a#nextcloud .logo { width: 200px; }
 
   #header a#nextcloud::after {
-    /* The empty string after the slash is ALT TEXT for generated content, and it is the
-       reason this is not an accessibility regression: it tells assistive tech to announce
-       nothing for the decoration. Measured 2026-07-30: the accessible name was already
-       "Ir a Dashboard" alone, because an explicit aria-label outranks name-from-content —
-       so the word never reached the name. The alt text covers the other half, screen
-       readers that voice pseudo-content while browsing. Chrome 150 parses it
-       (CSS.supports 'content: "x" / ""' = true); a browser that does not simply announces
-       the word, which is exactly today's behaviour. */
+    /* The empty string after the slash is ALT TEXT for generated content: it tells assistive tech
+       to announce nothing for the decoration, which is why this is not an a11y regression. The
+       accessible name is unaffected either way — an explicit aria-label outranks
+       name-from-content. A browser that does not parse the syntax just announces the word. */
     content: "INICIO" / "";
     font-family: "Nunito Sans", system-ui, sans-serif;
     font-size: 13px; font-weight: 700; letter-spacing: 0.08em;
-    /* White, derived by Nextcloud from background_color (#5315a8) — not hardcoded, so it
-       follows if that value ever changes. See 15-branding.sh. */
+    /* Derived by Nextcloud from background_color, so it follows if that changes. */
     color: var(--color-background-plain-text);
-    /* The rule reads as "brand | action", so INICIO is not mistaken for part of the name.
-       align-self + height because a flex item's border would otherwise be text-height. */
+    /* The rule reads as "brand | action". align-self + height because a flex item's border would
+       otherwise be text-height. */
     align-self: center; height: 26px; display: flex; align-items: center;
     border-inline-start: 1px solid rgba(255, 255, 255, 0.4);
     margin-inline-start: 2px; padding-inline-start: 14px; padding-inline-end: 12px;
@@ -192,109 +139,49 @@ h1, h2, h3,
   }
 }
 
-/* LOGIN LOGO SLOT — reshape the box, not the art.
-   core/css/guest.css sizes this slot 175x130 (aspect 1.35). Our logo.svg is 205x34
-   (aspect 6.03), so `background-size: contain` fits it BY WIDTH and draws it at
-   175x29 — 22% of the slot's height, with 101px of dead space around it, on the first
-   page every user sees. Measured 2026-07-28.
-
-   Same defect as the header slot had, at the other end, and now with the same answer:
-   there 62x44 drew the lockup's wordmark at ~4px, and the box moved to 224px (see
-   HOME AFFORDANCE above). The art was right in both places; the box was wrong.
-
-   SCOPING IS LOAD-BEARING. Both layouts render `.logo` inside `#header` —
-   layout.guest.php:48 is `<div class="logo">`, layout.user.php:70 is
-   `<div class="logo logo-icon">`. A bare `#header .logo` rule would resize the
-   authenticated header logo too and undo P1.5. `.header-guest` is the deliberate
-   mirror of the gradient rule above: one rule for the app header, one for the guest. */
+/* LOGIN LOGO SLOT — reshape the box, not the art. guest.css sizes it 175x130 (aspect 1.35) and the
+   lockup is 205x34 (aspect 6.03), so `contain` fit it BY WIDTH at 175x29 — 22% of the slot height,
+   with 101px of dead space, on the first page every user sees. Same defect as the header slot had
+   at the other end, same answer: the art was right, the box was wrong.
+   SCOPING IS LOAD-BEARING — both layouts render `.logo` inside `#header`, so a bare
+   `#header .logo` would resize the authenticated header logo too. */
 #header.header-guest .logo {
   width: 240px;
   height: 44px;
 }
 
-/* NOTE: there is deliberately no work-canvas rule here.
-   This file used to paint `body, #content, #content-vue` with a light gradient
-   (#f7f8fa → #f5f3ff). That rule covered the brand background image completely —
-   background.svg was registered, served, and never once visible. It also put white
-   text on a near-white canvas once background_color was corrected to violet, because
-   Nextcloud derives --color-background-plain-text from that colour. The brand
-   background is the backdrop now; do not paint over it again.
+/* DELIBERATELY no work-canvas rule. Painting `body, #content, #content-vue` covered the brand
+   background image completely — it was registered, served, and never once visible — and put white
+   text on a near-white canvas, since Nextcloud derives --color-background-plain-text from
+   background_color. Do not paint over the backdrop again. And never put a gradient in
+   --color-main-background: Nextcloud consumes it as a solid <color> in dozens of rules. */
 
-   And never put a gradient in --color-main-background: Nextcloud consumes it as a
-   solid <color> and as rgb(var(--color-main-background-rgb)) in dozens of rules. */
-
-/* =====================================================================
-   TRANSLUCENT SURFACES — raise the card opacity so the brand backdrop stops
-   reading through text.
-
-   Nextcloud paints every translucent surface with the same pair:
-     background-color: var(--color-main-background-blur);
-     backdrop-filter:  var(--filter-background-blur);
-   That covers the login card (.guest-box), the dashboard widgets and the
-   #app-navigation sidebar — one variable governs all of them.
-
-   The blur half is NOT ours to fix: apps/theming/lib/Themes/DefaultTheme.php:128
-   resolves `--filter-background-blur` to 'none' whenever the browser is Chromium
-   (`$workingBlur = ... default => !$isChromium`). Firefox blurs the backdrop; Chrome
-   does not. Worth knowing that every visual check of this theme so far ran in Chrome,
-   i.e. the worst case — the cards look BETTER on Firefox, not worse.
-
-   So with an 80% white card and no blur, background.svg's constellation crossed the
-   login heading and the dashboard widget titles. Contrast never failed (measured
-   10.86:1 body text, 4.78:1 placeholders — and light art composites LIGHTER under a
-   white card, which helps dark text). This is a legibility and polish fix, not a
-   contrast fix; do not re-file it as an accessibility bug.
-
-   .92 rather than 1: the backdrop still reads at the page edges where no card sits,
-   which is where the brand is meant to be seen. !important for the same reason as
-   --font-face: Nextcloud declares this on body[data-theme-light], which both outranks
-   a bare `body` and loads later.
-   ===================================================================== */
+/* TRANSLUCENT SURFACES. One variable governs the login card, the dashboard widgets and the
+   #app-navigation sidebar. Its blur half is not ours to fix — DefaultTheme.php:128 resolves
+   --filter-background-blur to 'none' on Chromium — so at 80% with no blur the backdrop art crossed
+   the login heading and widget titles. Contrast never failed (10.86:1 body text): this is
+   legibility and polish, NOT an accessibility bug, so do not re-file it as one.
+   .92 rather than 1 so the backdrop still reads at the page edges, where the brand is meant to be
+   seen. !important for the same reason as --font-face. */
 body {
   --color-main-background-blur: rgba(255, 255, 255, 0.92) !important;
 }
 
-/* =====================================================================
-   UPSTREAM VENDOR PROMO — suppressed, not restyled.
-
-   §4 of docs/THEMING-MODEL.md forbids component restyling. Hiding an upstream
-   marketing surface is a different act and is allowed under the rule added there:
-   we are not changing how a Nextcloud component looks, we are declining to show
-   Nextcloud's advertising inside a white-labeled product.
-
-   apps/settings ships a personal-settings section that EVERY user sees, not just admin.
-   There is no config lever: ServerDevNotice::getSection() returns null ONLY when
-   IRegistry::delegateHasValidSubscription() is true, i.e. only with a paid Nextcloud
-   subscription. CSS is the only remaining option.
-
-   TARGET THE SECTION, NOT THE LINK. The first version of this rule hid
-   #open-reasons-use-nextcloud-pdf alone, which is what B-008 named. Checking it in the
-   browser showed that was one link out of a whole marketing block: the same container
-   (templates/settings/personal/development.notice.php) also carries a "developed by the
-   Nextcloud community" credit and follow buttons for Nextcloud's Facebook, Bluesky,
-   Mastodon, blog and newsletter — with icons. Hiding the link left "comunidad Nextcloud"
-   and five social links on every staff member's settings page.
-
-   GATED, because a selector that stops matching fails SILENTLY and the block quietly
-   returns. `make test` asserts BOTH the container class and the link id still exist in
-   the shipped template — see scripts/test.sh. B-008, issue #48.
-   ===================================================================== */
+/* UPSTREAM VENDOR PROMO — suppressed, not restyled. THEMING-MODEL.md §4 forbids restyling a
+   Nextcloud component; declining to show Nextcloud's advertising in a white-labeled product is a
+   different act and is allowed there. No config lever exists — ServerDevNotice::getSection()
+   returns null only with a paid subscription — and every user sees the section, not just admin.
+   TARGET THE SECTION, NOT THE LINK: hiding #open-reasons-use-nextcloud-pdf alone (what B-008
+   named) left the "Nextcloud community" credit and five social links behind. GATED in
+   scripts/test.sh, because a selector that stops matching fails silently. B-008, issue #48. */
 .section.development-notice {
   display: none;
 }
 
-/* =====================================================================
-   ACCESSIBILITY — this is the instance's ONLY high-contrast affordance.
-
-   enforce_theme=light does more than remove dark mode: ThemesService::getThemes()
-   returns exactly three providers when it is set (default, dark, enforced), so
-   HighContrastTheme, DarkHighContrastTheme and DyslexiaFont are unreachable for
-   every user here. That makes the block below the whole story, not a nicety.
-
-   It is scoped to `body` with !important for the same reason as --font-face:
-   body[data-theme-light] both outranks a bare `body` and loads later. Declared in
-   :root (as it was until 2026-07-27) it did nothing at all.
-   ===================================================================== */
+/* ACCESSIBILITY — the instance's ONLY high-contrast affordance, not a nicety. enforce_theme=light
+   makes ThemesService return three providers, so HighContrastTheme, DarkHighContrastTheme and
+   DyslexiaFont are unreachable for every user here. Scoped to `body` with !important for the same
+   reason as --font-face; in :root it did nothing at all. */
 @media (prefers-contrast: more) {
   body {
     --color-text-maxcontrast:   #2b3442 !important;

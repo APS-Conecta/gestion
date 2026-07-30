@@ -79,19 +79,11 @@ services:
       start_period: 120s
 
   # ── Background job scheduler ────────────────────────────────────────────────────────────
-  # Without this, Nextcloud falls back to `ajax` mode: jobs run only when a user loads a page,
-  # one job per request. That is invisible on a dev box someone is clicking, and wrong everywhere
-  # else — housekeeping (versions, previews, trash, token cleanup, and later full-text indexing)
-  # simply stops whenever nobody is browsing. It also hid an armed `survey_client` monthly report
-  # for days: the job was scheduled and had never fired.
-  #
-  # Deliberately NOT behind a profile. `make up` starts it, so a developer's stack schedules jobs
-  # the same way production does — a dev stack whose job behaviour differs from production is
-  # exactly where this class of bug hides.
-  #
-  # Shares x-nextcloud-base with `nextcloud` (see the anchor for why the volumes must match). The
-  # image already ships `*/5 * * * * php -f /var/www/html/cron.php` for www-data, and /cron.sh is
-  # just `busybox crond -f`. No env is needed — config.php comes from the shared volume.
+  # Without this Nextcloud falls back to `ajax`: jobs run only when a user loads a page, so
+  # housekeeping stops whenever nobody is browsing (see phase 06-jobs). Deliberately NOT behind a
+  # profile — a dev stack whose job behaviour differs from production is where that bug hides.
+  # No env needed: config.php comes from the shared volume, and the image already ships the
+  # crontab. Shares x-nextcloud-base, so the volumes cannot drift from `nextcloud`.
   cron:
     <<: *nextcloud-base
     entrypoint: /cron.sh

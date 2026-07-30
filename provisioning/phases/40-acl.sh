@@ -4,25 +4,21 @@
 # IDs only (FR-10). Category granularity ("Dirección/Jefaturas" = cat-jefaturas); per-role refinement is
 # deferred to the CESFAM-validated matrix. Idempotent (gf_grant re-applies the same grant).
 #
-# Manage includes DELETE (owner decision 2026-07-30). "read write" alone is READ|UPDATE|CREATE, which
-# makes a folder append-only: a wrong upload can never be removed, and files cannot even be moved,
-# because a move needs delete on the source. Only admin could tidy up, and staff work around it by
-# leaving _v2/_final copies — the opposite of docs/CONVENTIONS.md's one-live-copy rule. Group folders
-# keep their own trash, so a delete stays recoverable.
+# Manage includes DELETE (owner decision 2026-07-30). "read write" alone is READ|UPDATE|CREATE,
+# which makes a folder append-only — a wrong upload can never be removed and files cannot be moved,
+# since a move needs delete on the source. Group folders keep their own trash, so it stays recoverable.
 #
-# TEMPORARY — EVERY grant here is currently "read write delete", including the rows that were
-# read-only: all-staff on Transversal, and cat-jefaturas on the five Unidades. Owner decision
-# 2026-07-30: the folder tree is about to be reorganised and routes defined, and moving anything
-# needs delete on the source, so read-only rows would block the restructuring itself.
+# TEMPORARY — EVERY grant below is "read write delete", including rows that were read-only
+# (all-staff on Transversal, cat-jefaturas on the five Unidades). Owner decision 2026-07-30: the
+# tree is about to be reorganised, and moving anything needs delete on the source.
 #
-# What this costs while it lasts: any staff account can delete anything in any Team Folder,
-# including the shared protocols in Transversal. Recoverable from each folder's trash, but there is
-# no longer any difference between "can read" and "can manage" — which is what FR-10 and the PRD §4.4
-# matrix exist to express. This file therefore records WHO has access to WHAT, but no longer at what
-# level.
+# COST WHILE IT LASTS: any staff account can delete anything in any Team Folder, including the
+# shared protocols in Transversal. This file still records WHO has access to WHAT, but no longer at
+# what level — which is what FR-10 exists to express. docs/CONVENTIONS.md describes the INTENDED
+# levels, not these.
 #
 # Restore before real staff use: put the read-only rows back to a bare `gf_grant "Mount" group`
-# (bitmask 1) once the tree is settled. Both halves are one edit away and the seed is idempotent.
+# (bitmask 1) once the tree is settled. One edit, and the seed is idempotent.
 phase_begin "40-acl" "First-cut access matrix — allow-refinement ACLs (Epic 3)"
 
 # Transversal — all-staff readable; jefaturas manage.

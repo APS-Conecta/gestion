@@ -29,11 +29,10 @@ up-dev: ## Start the core stack with the Xdebug derived dev image (step-debuggin
 	@$(MAKE) --no-print-directory fix-mount-perms
 
 fix-mount-perms: ## Make the bind-mounted apps/ + themes/ writable by BOTH the container (uid 33) and you
-	@# Linux bind mounts keep host ownership; Nextcloud (uid 33) must own custom_apps/themes to install
-	@# apps (groupfolders, office connectors) there. Done in-container so no host sudo is needed.
-	@# Owner www-data (container installs apps) + your host group with g+w (you edit them live — AD-9).
-	@# `chown www-data:www-data` would leave the host side read-only, defeating the live-edit mount.
-	@# Recursive: apps already installed have their own subtree. Re-applied on every `make up`.
+	@# Linux bind mounts keep host ownership, but uid 33 must own custom_apps/themes to install apps
+	@# there. Owner www-data + your host group with g+w, so both sides can write (AD-9) — plain
+	@# `chown www-data:www-data` would leave the host read-only and defeat the live-edit mount.
+	@# Done in-container so no host sudo is needed; recursive, and re-applied on every `make up`.
 	@docker compose exec -T -u root nextcloud chown -R www-data:$(HOST_GID) /var/www/html/custom_apps /var/www/html/themes 2>/dev/null || true
 	@docker compose exec -T -u root nextcloud chmod -R g+w /var/www/html/custom_apps /var/www/html/themes 2>/dev/null || true
 
@@ -56,21 +55,16 @@ test: ## Local quality gate — static checks + smoke (same script CI runs)
 office-eurooffice: ## Bring up the Euro-Office backend and wire the eurooffice connector
 	@$(REQUIRE_ENV)
 	docker compose --profile eurooffice up -d --wait eurooffice
-	@# This target owns the BACKEND: the ~2 GB documentserver container above, the trusted_domains
-	@# repair below, and the smoke. The CONNECTOR's configuration — server URLs, editor theme, ODF
-	@# formats, the JWT secret — is provisioning/phases/14-office.sh, so it gets query-before-set and
-	@# the idempotency gate. The connector app itself and its patches are phase 12-apps (ADR-0002).
-	@# Run `make seed` first on a new instance; re-run it after this to wire the connector.
-	@# The doc server fetches documents from Nextcloud at the StorageUrl host (`nextcloud`); it must be a
-	@# trusted domain or Nextcloud answers HTTP 400. Stays here: it repairs an INSTALL-time value
-	@# (NEXTCLOUD_TRUSTED_DOMAINS already covers a fresh instance) and indexes into an array, which the
-	@# config guards do not model. Idempotent (install-time env doesn't retro-apply).
+	@# This target owns the BACKEND: the container above, the trusted_domains repair below, and the
+	@# smoke. The CONNECTOR's config is phase 14-office.sh; the app and its patches are 12-apps.
+	@# The doc server fetches from Nextcloud at the StorageUrl host (`nextcloud`), which must be a
+	@# trusted domain or Nextcloud answers HTTP 400. It stays here because it repairs an INSTALL-time
+	@# value and indexes into an array, which the config guards do not model. Idempotent.
 	$(OCC) config:system:get trusted_domains | grep -qx nextcloud || $(OCC) config:system:set trusted_domains $$($(OCC) config:system:get trusted_domains | grep -c .) --value=nextcloud
-	@# Then apply the connector config through the pipeline that owns it. The whole seed runs, not
-	@# just phase 14 — phases are sourced by seed.sh and are not independently runnable — which is
-	@# affordable precisely because it is idempotent and now takes ~25s. Output is NOT silenced: a
-	@# target that reprovisions should say so rather than surprise you.  SEED_FIXTURES=0: bringing up
-	@# an office backend is no reason to create sample users.
+	@# Then the connector config, through the pipeline that owns it. The WHOLE seed runs — phases are
+	@# sourced by seed.sh, not independently runnable — which is affordable because it is idempotent.
+	@# Output is not silenced: a target that reprovisions should say so. SEED_FIXTURES=0 because
+	@# bringing up an office backend is no reason to create sample users.
 	SEED_FIXTURES=0 provisioning/seed.sh
 	@bash scripts/office-smoke.sh
 
