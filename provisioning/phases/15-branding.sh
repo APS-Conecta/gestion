@@ -100,6 +100,13 @@ app_config_set side_menu background-color-to "#5315a8"
 # TemplateManager::copySkeleton() guards the copy with `if (!empty($skeletonDirectory))`, so the
 # empty string genuinely means "copy nothing" — it is not a fallback to the default.
 # Affects NEW users only; the fixture users created before this keep their English tree.
+#
+# IT ALSO TURNS OFF DOCUMENT TEMPLATES, which was not the intent and is now an accepted cost (owner
+# decision 2026-07-30). initializeTemplateDirectory() is called INSIDE that same guard
+# (TemplateManager.php:485-492), so new users get no Templates/ folder and the Files "+ New" menu
+# offers no "from template" entries. Accepted because nobody has asked for templates; revisit when
+# someone wants a standard acta or informe, and check whether the `templatedirectory` system key can
+# restore them without bringing back the English skeleton — unverified against the pinned image.
 config_system_set skeletondirectory ""
 
 # --- Activate the server theme (themes/apsconecta, bind-mounted by compose.yaml) ---

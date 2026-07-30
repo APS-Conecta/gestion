@@ -181,13 +181,15 @@ group_exists() {  # GID
 ensure_group() {  # GID [DISPLAY]
   local gid="$1" display="${2:-}"
   if group_exists "$gid"; then log "group $gid exists"; return 0; fi
+  # occ runs as a plain command, NOT as the left side of `&&`. errexit ignores a failure inside an
+  # `&&` list, so `occ … && log …` followed by any further statement returns 0 and the phase carries
+  # on past a failed create. That is how B-001 looked: a green seed that had skipped its work.
   if [ -n "$display" ]; then
-    occ group:add --display-name="$display" "$gid" >/dev/null && log "group $gid created ($display)"
+    occ group:add --display-name="$display" "$gid" >/dev/null
   else
-    occ group:add "$gid" >/dev/null && log "group $gid created"
+    occ group:add "$gid" >/dev/null
   fi
-  # Only reached when the create SUCCEEDED: the `&&` above leaves a non-zero status on failure and
-  # every phase runs under `set -e`, so a failed create aborts before it can be cached as present.
+  log "group $gid created${display:+ ($display)}"
   GROUPS_CACHE="$gid"$'\n'"$GROUPS_CACHE"
 }
 
@@ -212,7 +214,9 @@ add_user_to_group() {  # UID GID  (query-before-add: accurate + idempotent)
   if printf '%s\n' "$GROUPS_CACHE" | grep -qxF "$2"$'\t'"$1"; then
     log "user $1 already in group $2"; return 0
   fi
-  occ group:adduser "$2" "$1" >/dev/null 2>&1 && log "user $1 added to group $2"
+  # Plain command, and stderr kept: see ensure_group. occ's message is the only thing that says why.
+  occ group:adduser "$2" "$1" >/dev/null
+  log "user $1 added to group $2"
   GROUPS_CACHE="$2"$'\t'"$1"$'\n'"$GROUPS_CACHE"
 }
 
@@ -363,25 +367,36 @@ gf_grant() {  # MOUNT GROUP [read] [write] [share] [delete]
   esac; done
   cur="$(printf '%s\n' "$GF_CACHE" | awk -F'\t' -v m="$mount" -v g="$group" 'NF==3 && $1==m && $2==g {print $3; exit}')"
   if [ "$cur" = "$want" ]; then log "grant '$mount' $group already [$want]"; return 0; fi
-  occ groupfolders:group "$id" "$group" "$@" >/dev/null 2>&1 && log "grant '$mount' -> $group [${*:-read}]"
+  # Plain command, and stderr kept: see ensure_group. A renamed group makes occ print
+  # "group/team not found" and exit non-zero — which used to abort the phase and stopped doing so
+  # when the cache write was appended after the `&&`.
+  occ groupfolders:group "$id" "$group" "$@" >/dev/null
+  log "grant '$mount' -> $group [${*:-read}]"
   GF_CACHE="$mount"$'\t'"$group"$'\t'"$want"$'\n'"$GF_CACHE"
 }
-# Create a text file inside a group folder's storage, then index it. Idempotent (test -f).
+# Content goes under $id/files/, NOT $id/. The storage root also holds trash/ and versions/, and the
+# mount is a Jail rooted at files/ (groupfolders FolderStorageManager), so anything written one level
+# up is on disk but outside the mount and no user can see it. Everything seeded here landed there
+# from 2026-07-24 until this was fixed, and `test -f` kept passing on the wrong path, so re-seeding
+# reported "exists" and never repaired it.
+
+# Create a text file inside a group folder, then index it. Idempotent (test -f).
 ensure_gf_file() {  # MOUNT RELPATH CONTENT
   local mount="$1" rel="$2" content="$3" id; gf_load; id="$(groupfolder_id "$mount")"
   [ -n "$id" ] || { log "groupfolder '$mount' not found — cannot write $rel"; return 1; }
-  local path="/var/www/html/data/__groupfolders/$id/$rel"
+  local path="/var/www/html/data/__groupfolders/$id/files/$rel"
   if docker compose exec -T --user www-data nextcloud test -f "$path" 2>/dev/null; then
     log "  file $mount/$rel exists"; return 0; fi
   docker compose exec -T --user www-data -e GFC="$content" nextcloud sh -c "printf '%s' \"\$GFC\" > '$path'"
   occ groupfolders:scan "$id" >/dev/null 2>&1 || true
   log "  file $mount/$rel created"
 }
-# Create a regular subfolder inside a group folder's storage, then index it. Idempotent (test -d).
+# Create a regular subfolder inside a group folder, then index it. Idempotent (test -d).
+# Same files/ jail as ensure_gf_file above.
 ensure_gf_subfolder() {  # MOUNT SUBFOLDER
   local mount="$1" sub="$2" id; gf_load; id="$(groupfolder_id "$mount")"
   [ -n "$id" ] || { log "groupfolder '$mount' not found — cannot add $sub"; return 1; }
-  local path="/var/www/html/data/__groupfolders/$id/$sub"
+  local path="/var/www/html/data/__groupfolders/$id/files/$sub"
   if docker compose exec -T --user www-data nextcloud test -d "$path" 2>/dev/null; then
     log "  subfolder $mount/$sub exists"; return 0; fi
   docker compose exec -T --user www-data nextcloud mkdir -p "$path"
