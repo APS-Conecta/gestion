@@ -3,7 +3,7 @@
 - **Status:** accepted, 2026-07-29
 - **Clarifies:** AD-5 (what "opt-in" covers)
 - **Affects:** `provisioning/phases/12-apps.sh`, `provisioning/apps/`, `provisioning/lib.sh`,
-  `Makefile`, `scripts/office-smoke.sh`
+  `Makefile`, `scripts/office-smoke.sh`, `scripts/smoke.sh`
 
 ## Context
 
@@ -43,6 +43,9 @@ store updates stop arriving.
 - **The seed does not update apps.** `occ app:update` is a deliberate act; run it, then
   `make seed`, which re-applies or fails loudly. Auto-updating would make two identical seeds
   produce different instances depending on the day.
+- **A patched app loses its vendor signature** — `12-apps.sh` deletes `appinfo/signature.json`
+  after patching. That file asserts the app's files are exactly as the vendor shipped them; our
+  patches make the assertion false. See *Code integrity* below.
 
 ### AD-5's "opt-in" means the container, not the app
 
@@ -51,6 +54,29 @@ optional is the ~2 GB documentserver behind `--profile eurooffice`. The connecto
 that does nothing until `make office-eurooffice` gives it a URL and a secret, and having it
 installed on every instance is what lets its patches be re-applied on every seed. It also lets
 CI exercise install-and-patch without pulling the image.
+
+## Code integrity
+
+Store apps ship a signed manifest, so patching one fails Nextcloud's code-integrity check and
+`Settings > Administration > Overview` shows a permanent red *"Some files have not passed the
+integrity check"* (#71 — the warning is cached in appconfig, so it survives page loads).
+
+Measured in the pinned image, `lib/private/IntegrityCheck/Checker.php:536-555`: an app is verified
+if it is **shipped**, *or* if it carries `appinfo/signature.json`. A store app is not shipped, so
+that file is the only reason it is checked at all.
+
+**We delete it after patching.** The alternative readings were worse: keeping a signature that no
+longer describes the files leaves one alarm permanently red, which trains admins to ignore the one
+signal that would catch real tampering — the always-green sin of B-001 with the colour reversed.
+Dropping the patches instead would put "Nextcloud Office" back in the admin sidebar and app list,
+and vendoring the app was already rejected at 11 MB / 410 files.
+
+What this costs, stated plainly: **no tamper detection for `eurooffice`.** Core keeps its check, so
+does every unpatched app, and `scripts/smoke.sh` check 10 fails if a patched app is signed again —
+which is what an `occ app:update` from the UI does, since it restores the pristine files *and* the
+signature. Recovery from a warning already cached is the **Rescan…** link inside the warning
+(`CheckSetupController::rescanFailedIntegrityCheck` → `runInstanceVerification`, which clears the
+cached result first); a core upgrade does the same.
 
 ## Three words this repo was using as one
 

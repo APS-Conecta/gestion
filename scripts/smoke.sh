@@ -149,4 +149,21 @@ case "$remember" in
   *)     fail "session posture: could not read loginCanRememberme from /login (got '${remember}') — upstream may have renamed the initial state key" ;;
 esac
 
-echo "PASS: core stack healthy — installed, PostgreSQL ready, Redis PONG, /status.php 200, no branding leak, cron scheduling, app policy, no remember-me"
+# 10. No patched app still carries its vendor signature (#71, ADR-0002, phase 12-apps).
+# appinfo/signature.json asserts the files are as the vendor shipped them; our patches make that
+# false, and Nextcloud verifies a non-shipped app ONLY if that file is present
+# (lib/private/IntegrityCheck/Checker.php:546). Its absence is therefore the whole reason
+# admin > Overview is not permanently red — and an `occ app:update` from Settings > Apps restores
+# both the pristine files and the signature, with nothing running `make seed` afterwards. Same gap
+# the rename assertion in office-smoke.sh exists for, so it is asserted the same way: on the files.
+# The list comes from provisioning/apps/, so an app added there is covered without touching this.
+patched=$(find provisioning/apps -mindepth 1 -maxdepth 1 -type d -printf '%f ' 2>/dev/null)
+if [ -n "$patched" ]; then
+  signed=$(docker compose exec -T --user www-data nextcloud sh -c \
+    "for a in $patched; do [ -e \"custom_apps/\$a/appinfo/signature.json\" ] && echo \"\$a\"; done; :" \
+    2>/dev/null | tr -d '\r' | tr '\n' ' ')
+  [ -z "${signed// /}" ] \
+    || fail "patched app(s) still signed: ${signed}— the code-integrity check will fail and admin > Overview will show a red warning. Run 'make seed' (phase 12-apps drops it), then click 'Rescan…' in that warning"
+fi
+
+echo "PASS: core stack healthy — installed, PostgreSQL ready, Redis PONG, /status.php 200, no branding leak, cron scheduling, app policy, no remember-me, no stale app signature"

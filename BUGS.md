@@ -120,6 +120,28 @@ repo was v1 feature-complete on paper but had never actually been run start to f
   slot was wrong. Tracked in [#60](https://github.com/APS-Conecta/gestion/issues/60). Subsumes [#50](https://github.com/APS-Conecta/gestion/issues/50), whose
   document-template question resolved through the same `getLanguageCode()`.
 
+## B-010 — the eurooffice patches turn admin › Overview permanently red
+- **Status:** fixed
+- **Found:** 2026-07-30, reviewing the patch structure ADR-0002 had just landed. Finding 6 of 16;
+  the only one that needed a decision rather than a fix.
+- **Repro:** `make seed`, then `occ integrity:check-app eurooffice` → `INVALID_HASH` for
+  `appinfo/info.xml` and `lib/AdminSection.php`, and **Settings › Administration › Overview** shows
+  *"Some files have not passed the integrity check"*. The result is cached in appconfig
+  (`core` / `oc.integritycheck.checker`), so it survives page loads rather than flickering.
+- **Cause:** `apply_patch` edits two files of a **store-installed** app that ships
+  `appinfo/signature.json` — a vendor claim that its files are byte-for-byte as shipped, which our
+  patches make false. `apps/settings/lib/SetupChecks/CodeIntegrity.php:42` re-runs the verification
+  whenever no result is cached. ADR-0002 had weighed what patching costs — updates wipe it, `apps/`
+  is gitignored, `make seed` restores it — but never signatures, and no gate looked at them, so the
+  warning waited for whoever opened the admin Overview.
+- **Fix:** [#71](https://github.com/APS-Conecta/gestion/issues/71) — `12-apps.sh` deletes the
+  signature it just invalidated. `IntegrityCheck/Checker.php:546` verifies a **non-shipped** app
+  only if that file is present, so the app is skipped while core and every unpatched app keep their
+  check. Owner decision, with the three rejected alternatives, in `docs/adr/0002-app-patches.md`
+  § *Code integrity*. Gate: `scripts/smoke.sh` check 10 fails if a patched app is signed again —
+  which is exactly what an `occ app:update` from Settings › Apps does. A warning already cached
+  clears from the **Rescan…** link inside it.
+
 <!-- Template:
 ## B-00N — <short title>
 - **Status:** open | fixed
