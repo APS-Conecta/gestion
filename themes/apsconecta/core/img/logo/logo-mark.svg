@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="8 5 48 50" width="192" height="200" role="img" aria-label="APS Conecta Gestión">
+  <!-- NARROW-VIEWPORT header mark: the Ofiuco figure ALONE, no wordmark, no tagline.
+       Not registered with theming. server.css swaps `.logo` to this file below 600 px, where
+       the registered lockup does not fit: measured 2026-07-30 in a 360 px viewport, the label
+       clipped (299 px of content in a 224 px box) and the 200 px art ran 32 px under the
+       right-hand icons. Above 600 px the lockup and the INICIO label are the header.
+
+       Any art in this slot must be legible at 62x44 px with background-size: contain. That is
+       why the lockup cannot be used here: at 205x34 it renders its wordmark at ~4 px.
+
+       Colours are explicit #ffffff / #f28f36, never currentColor: Nextcloud serves this as a
+       standalone background-image, where currentColor resolves to black and the mark
+       disappears against the violet header. No invert filter applies either, because
+       header.scss:80 only falls back to the invert variable when no custom logoheader is
+       registered, and CommonThemeTrait.php:104 marks one as custom as soon as it is.
+
+       WARNING: keep double hyphens out of these comments. An SVG loaded as an image is parsed
+       as XML, where a double hyphen inside a comment is a parse error, and the browser then
+       renders NOTHING while still serving the file with a 200. That cost one debugging round
+       here on 2026-07-27 (the CSS variable names were spelled out in full). -->
+  <path d="M32 12 L45 23 M32 12 L19 23 M45 23 L38 39 M19 23 L26 39 M38 39 L26 39 M38 39 L45 51 M26 39 L19 51" fill="none" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"></path>
+  <path d="M11 33 Q23 27 32 33 T53 30" fill="none" stroke="#f28f36" stroke-width="2" stroke-linecap="round"></path>
+  <circle cx="45" cy="23" r="2.5" fill="#ffffff"></circle><circle cx="19" cy="23" r="2.5" fill="#ffffff"></circle>
+  <circle cx="38" cy="39" r="2.3" fill="#ffffff"></circle><circle cx="26" cy="39" r="2.3" fill="#ffffff"></circle>
+  <circle cx="45" cy="51" r="2.1" fill="#ffffff"></circle><circle cx="19" cy="51" r="2.1" fill="#ffffff"></circle>
+  <path d="M32 7.2 L33.25 10.75 L36.8 12 L33.25 13.25 L32 16.8 L30.75 13.25 L27.2 12 L30.75 10.75 Z" fill="#f28f36"></path>
+</svg>

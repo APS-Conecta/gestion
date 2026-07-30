@@ -218,14 +218,26 @@ grep -oE '#[0-9a-fA-F]{3,8}' <app>/img/app.svg | sort -u
 - Nextcloud **genera el webmanifest** desde el theming. Verifícalo: `curl https://TU-HOST/apps/theming/manifest`.
   Mapeo: `name ← productName` · `short_name ← name` · `theme_color ← primary_color` · `background_color` · iconos ← `favicon`/`img/app.svg` por app · `display ← theming.standalone_window.enabled`.
 - Las **apps oficiales de Android e iOS sincronizan el tema del servidor** automáticamente (color, logo, fondo): al tematizar el servidor quedan coherentes web, PWA, Android e iOS.
-- La PWA debe verse bien en **360px** de ancho (el tema es responsive y está verificado a ese ancho).
+- **360 px, medido el 2026-07-30 (no es lo mismo que «la PWA»** — son dos comprobaciones distintas,
+  ver [`THEMING-MODEL.md`](THEMING-MODEL.md) §*«PWA a 360px» eran dos comprobaciones*). A ese ancho el
+  header **no cabe**: el lockup y la etiqueta INICIO necesitan 299 px y solo hay 224, y el arte se
+  metía 32 px por debajo de los iconos de la derecha. Por eso `server.css` los limita a
+  `@media (min-width: 601px)` y por debajo sirve `logo-mark.svg`, la figura sola, con la geometría
+  de core. Verificado en un iframe de 360 px, que es el sustituto válido porque `resize_window` es
+  un no-op bajo este gestor de ventanas: sin recorte, sin solape y sin scroll horizontal.
 
 ---
 
 ## 9. Verificación final
 
 1. **Refresca fuerte:** Ctrl/Cmd + Shift + R.
-2. Comprueba: login (degradado + logo), header (marca oficial flotante), correos, favicon, PWA (`/apps/theming/manifest`), y que **no** aparezca "Nextcloud" ni el número `1125420102`.
+2. Comprueba: login (degradado + logo), header (lockup + INICIO por encima de 601 px, marca sola por
+   debajo), favicon, PWA (`/apps/theming/manifest`), y que **no** aparezca "Nextcloud" ni el número
+   `1125420102`.
+   **Los correos no se pueden comprobar todavía:** no hay SMTP configurado en ninguna parte del repo,
+   así que la instancia no puede enviar nada. Este paso queda bloqueado por la decisión de correo
+   aplazada (ver la sección *Future* de `ROADMAP.md`); el tema sí llega a las plantillas de correo,
+   pero eso no se ha visto en un mensaje real.
 3. Confirma que **no existe** el selector de tema y que el modo oscuro es inalcanzable (`enforce_theme=light`).
 4. **Comprueba el tema realmente cargado.** Pega el fragmento de consola de
    [`THEMING-MODEL.md` §5](THEMING-MODEL.md) en las devtools **sobre una página de Nextcloud**,

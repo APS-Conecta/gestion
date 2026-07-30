@@ -157,9 +157,23 @@ formatting loss that implies** (issue #45).
    empty (`#app-menu-container` is 0×0), so `.header-start` had ~925 px free.
    Two things fell out of doing it: **B-011** (the lockups were rendering Georgia, because an SVG
    served as an image cannot reach the theme's `@font-face` — fonts are now subset into the art)
-   and a declared, unfixable cost: screen readers announce both the generated word and the
-   `aria-label`. Six variants were rendered at true geometry before choosing; the mockup is not in
-   the repo, it was a decision aid.
+   and a declared cost that turned out not to exist. Six variants were rendered at true geometry
+   before choosing; the mockup is not in the repo, it was a decision aid.
+
+   **Closed out 2026-07-30, same day.** Both items this shipped with as *Not done* were settled by
+   measuring rather than by arguing:
+   - **360 px was broken, and is now gated.** The header only flex-shrinks — `header.scss` has no
+     media query — so at 360 px `#nextcloud` offered 224 px for 299 px of content and the art ran
+     32 px under `.header-end`, silently. The enhancement now lives in `@media (min-width: 601px)`
+     (fits from 500 px; ~100 px of headroom), and below it a second query swaps `.logo` to
+     `logo-mark.svg`, the figure alone, since the registered lockup contains to a ~4 px wordmark in
+     a 62×44 box. Nextcloud's own `$breakpoint-mobile: 1024px` is a compiled SCSS variable, so it is
+     both unreachable from a theme and too wide to use.
+   - **The screen-reader duplication was never real.** The accessible name was already
+     *"Ir a Dashboard"* alone, because an explicit `aria-label` outranks name-from-content. The
+     generated word never entered the name. `content: "INICIO" / ""` now adds empty alt text for the
+     other half — readers that voice pseudo-content while browsing — and degrades to today's
+     behaviour where unsupported.
 4. **Epic retrospectives** (optional).
 
 ## Future
@@ -167,6 +181,13 @@ formatting loss that implies** (issue #45).
 Post-v1 roadmap (from the brief/PRD): white-label **branding** *(shipped as Epic 5, above)* ·
 **REM app** (first Layer-2 custom app — **in progress**) → full-text **search** → **Paperless-ngx** →
 **Analytics** → local **AI** layer.
+
+**Production posture is deferred until a target host exists** — TLS/HSTS, SMTP, 2FA enforcement, the
+AppAPI daemon and the server id, all held with their measurements in
+[#75](https://github.com/APS-Conecta/gestion/issues/75). They are what admin › Overview reports on a
+dev box, and none is a code defect. The deferral itself is stated in
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) § *Environments*; the issue holds the specifics so they
+resurface when there is a machine instead of being rediscovered on that page.
 
 **Nextcloud Tables is no longer in the chain** (#24, closed 2026-07-29). It was queued as the
 substrate for the REM app; that premise was wrong. The app owns its own schema — `rem_fact`,
