@@ -8,9 +8,9 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 . "$HERE/lib.sh"
-
-# Load .env (host-side) so phase files can read config like FIXTURE_USER_PASSWORD.
-if [ -f "$HERE/../.env" ]; then set -a; . "$HERE/../.env"; set +a; fi
+# cd to the repo root + load .env the way compose reads it. See scripts/env.sh.
+# shellcheck source=../scripts/env.sh
+. "$HERE/../scripts/env.sh"
 
 SEED_FIXTURES="${SEED_FIXTURES:-1}"
 

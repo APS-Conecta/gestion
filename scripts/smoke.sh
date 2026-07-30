@@ -4,12 +4,10 @@
 # Checks the core invariants only — the office backend has its own scripts/office-smoke.sh.
 set -uo pipefail
 
-# Read .env the same way provisioning/seed.sh does, so `bash scripts/smoke.sh` and `make smoke`
-# probe the same port. The Makefile used to pass HTTP_PORT in; run directly, this fell back to the
-# built-in 8180 and reported a healthy stack as unreachable on any instance that had changed it.
-# Sourcing is safe by the same contract seed.sh relies on — .env.example quotes values with spaces.
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-if [ -f "$ROOT/.env" ]; then set -a; . "$ROOT/.env"; set +a; fi
+# cd to the repo root + load .env, so `bash scripts/smoke.sh` and `make smoke` behave identically
+# from any cwd. See scripts/env.sh for why .env is parsed rather than sourced.
+# shellcheck source=env.sh
+. "$(dirname "$0")/env.sh"
 
 HTTP_PORT="${HTTP_PORT:-8180}"
 OCC="docker compose exec -T --user www-data nextcloud php occ"
