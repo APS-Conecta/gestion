@@ -24,9 +24,10 @@ now defined below, harvested from those sites like the rest.
 
 ### AD-1 — v1 ships no custom app; config-as-code only
 
-The v1 scope is a *configured* Nextcloud, not a *programmed* one. `apps/` stays empty but mounted,
-ready for Layer-2 apps on the roadmap (e.g. the REM app). This is why `/apps/*` is gitignored and
-only `apps/README.md` is tracked.
+The v1 scope is a *configured* Nextcloud, not a *programmed* one. `apps/` carries **no committed**
+app — it is mounted and holds the store-installed ones at run time — and stays ready for Layer-2 apps
+on the roadmap (e.g. the REM app). This is why `/apps/*` is gitignored and only `apps/README.md` is
+tracked.
 
 ### AD-2 — `make seed` is the single writer of instance state
 
@@ -117,8 +118,13 @@ the IDE (`dev/xdebug.ini`, AD-10).
 ### AD-9 — Custom apps use OCP public APIs only; core is never patched
 
 A custom app may depend on Nextcloud only through `OCP\…`, never through private internals, and core
-never depends on a custom app. Patching core or a third-party app would trigger AGPL §13 and would
-be lost at the next upgrade. This is also why `apps/` and `themes/` are bind-mounted for live edit
+never depends on a custom app. Patching core or a third-party app would be lost at the next upgrade.
+
+**Clarified by [ADR-0002](0002-app-patches.md) (2026-07-29):** third-party apps *are* patched, from
+committed `.patch` files re-applied by phase `12-apps` on every seed — which is how the upgrade loss
+is handled rather than avoided. **Core** is still never patched. The AGPL §13 half of the sentence
+was this decision's own reasoning, not a licence finding; [`LICENSING.md`](../LICENSING.md) §4 owns
+it and re-examined it on 2026-07-30. This is also why `apps/` and `themes/` are bind-mounted for live edit
 rather than baked into a forked image.
 
 ### AD-10 — Xdebug lives in a derived dev image, off by default

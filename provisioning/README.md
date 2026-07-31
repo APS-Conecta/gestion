@@ -71,7 +71,8 @@ later is one line in `SITE_FOLDERS` plus its rows in `SITE_ACL`.
   - `ensure_groupfolder MOUNT` — via `occ groupfolders:list` (**`groupfolders:create` is NOT
     idempotent by name** — always query first)
   - `config_system_set KEY VALUE [TYPE]`, `app_config_set APP KEY VALUE`, `theming_set KEY VALUE` —
-    set only if different
+    set only if different; `theming_image_set KEY ABSOLUTE_PATH` for the brand images (the one
+    helper that rewrites on every run — `seed-idempotent.sh` exempts it by name)
   - `ensure_app APPID`, `apply_patch APPID PATCHFILE`, `app_restrict_to_groups`, `app_disable`
   - `gf_grant MOUNT GROUP [read|write|share|delete]`, then `gf_prune` once at the end of the ACL phase
   - `ensure_gf_subfolder`, `ensure_gf_file`, `ensure_sample_file`

@@ -103,13 +103,12 @@ gestion/themes/apsconecta/       ← the only copy; what runs
   core/css/server.css
   core/fonts/*.woff2             ← the ONLY reason this directory exists
   core/img/{favicon,background}.svg
-  core/img/logo/{logo,logo-header}.svg
-                                 ← logo = login card (full lockup)
-                                   logo-header = header (full lockup; server.css widens the
-                                   native 62x44 slot to 200x44 — see THEMING-MODEL.md)
+  core/img/manifest.json         ← the webmanifest smoke check 7 asserts
+  core/img/logo/{logo,logo-header,logo-mark}.svg
+                                 ← logo = login card, logo-header = header (both full lockups),
+                                   logo-mark = the narrow header below the breakpoint.
+                                   Header geometry: MAPEO.md §3 owns the numbers.
   tools/embed-fonts.py           ← subsets the brand fonts INTO the two lockups (B-011)
-                                   Nothing unregistered lives here: the mono lockup moved to
-                                   the kit on 2026-07-27 as reserve art, per the split rule.
   (no defaults.php — deleted 2026-07-27)
   (no apps/<appid>/img/ — measured zero clashing icons)
 

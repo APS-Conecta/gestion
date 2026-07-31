@@ -25,9 +25,9 @@ for app in support updatenotification serverinfo recommendations related_resourc
   app_restrict_to_groups "$app" admin
 done
 
-# NOT restricted pending verification: `office`, a SEPARATE app from `eurooffice` that registers its
-# own "Office" navigation entry. Whether that duplicates the Euro-Office entry has to be seen in the
-# app menu, not guessed from appinfo. Left enabled deliberately, not by omission.
+# NOT restricted, verified 2026-07-31: `office` is a SEPARATE app from `eurooffice` and the only one
+# of the two that registers a navigation entry (`eurooffice`'s info.xml declares none), so the single
+# "Office" tile in the app menu is not a duplicate. Left enabled deliberately, not by omission.
 
 # firstrunwizard: a config switch beats restriction. The tour is the first thing a new staff member
 # sees and is entirely Nextcloud's product voice, but the app also owns a personal-settings section,
