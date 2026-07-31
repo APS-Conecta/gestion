@@ -113,8 +113,12 @@ graph LR
 ```
 
 The initial Document Home is the four-area hybrid tree from the PRD (Transversal · Programas · Unidades ·
-Sectores) with a first-cut access matrix; the `prog-*`/`sector-*` names, role→program and sector→team
-assignments, and the final validated matrix are parameterizable and settled with a specific CESFAM later.
+Sectores) with a first-cut access matrix; the final validated matrix is settled with a specific CESFAM later.
+
+**What varies per clinic is data, not code.** The `prog-*`/`sector-*` teams, the folder tree, the whole
+grant matrix and the clinic's identity live in `sites/<slug>/site.sh`; phases 20/30/40 only loop over it.
+The `role-*`, `cat-*` and `all-staff` groups do not vary and stay in the phases. How that file is written
+and read: [`provisioning/README.md`](../provisioning/README.md).
 
 > **Note:** the Nextcloud Activity stream may surface names of ACL-hidden items — keep genuinely sensitive
 > names out of ACL-restricted subfolders (relevant for a CESFAM).

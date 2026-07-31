@@ -15,6 +15,19 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 SEED_FIXTURES="${SEED_FIXTURES:-1}"
 
+# The clinic this stack serves (#78). SITE names a directory under sites/ and arrives from .env like
+# every other setting. Sourced HERE, in the parent shell: each phase runs in a subshell of this one,
+# so all of it is visible to every phase and none of it can leak back out.
+SITE="${SITE:?FATAL: SITE is unset — set it in .env to the clinic this stack serves}"
+[ -f "$HERE/../sites/$SITE/site.sh" ] || {
+  echo "FATAL: no sites/$SITE/site.sh — no clinic ships in this repo; write yours with:" >&2
+  echo "         scripts/deis.py cesfam <comuna>              # find the DEIS code" >&2
+  echo "         scripts/deis.py <codigo> --new $SITE" >&2
+  exit 1
+}
+# shellcheck disable=SC1090  # the path is SITE, resolved at run time
+. "$HERE/../sites/$SITE/site.sh"
+
 echo "== APS Conecta provisioning (make seed) =="
 require_installed
 
