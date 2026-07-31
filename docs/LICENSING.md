@@ -7,8 +7,9 @@ and reasons about whether running them triggers any obligation on our own code.
 > **Not legal advice.** This is an engineering audit. The third-party license facts are verified
 > against each project's authoritative source (below); the *reasoning* about obligations is ours and
 > the points marked **[needs legal sign-off]** should be confirmed by a lawyer before being relied on.
-> Third-party licenses verified **2026-07-19** against the versions this repo runs — the services pinned in
-> `compose.yaml` plus the two Nextcloud apps installed by provisioning (`occ`).
+> Third-party licenses verified **2026-07-19**, extended **2026-07-30** to `side_menu`, Fraunces and
+> Nunito Sans — against the versions this repo runs: the services pinned in `compose.yaml` plus the
+> three Nextcloud apps installed by provisioning (`occ`).
 
 ## 1. APS Conecta's own code — Proprietary / all rights reserved
 
@@ -38,7 +39,7 @@ things**, so both hold at once:
 ## 3. Third-party component inventory (verified)
 
 Every runtime component. The **services** are pinned as images in [`compose.yaml`](../compose.yaml);
-the two **Nextcloud apps** (`groupfolders`, `eurooffice`) are installed into Nextcloud via `occ`, not as
+the three **Nextcloud apps** (`groupfolders`, `eurooffice`, `side_menu`) are installed into Nextcloud via `occ`, not as
 compose services. All are open-source, self-hosted, and free — **no paid license, no license key** anywhere
 in the stack.
 
@@ -101,8 +102,15 @@ and forces us to open it. Our reasoning — **[needs legal sign-off]**:
 3. Under that reading, the AGPL of Nextcloud/Redis/Euro-Office imposes **no copyleft obligation on APS
    Conecta's own original code**, which may therefore remain proprietary (§1).
 4. **Caveat that would change this:** the moment we *modify* an AGPL component's source, or bundle/fork it
-   rather than pull the official image, the AGPL's network-copyleft (§13) can attach. v1 does neither
-   (zero custom PHP, no fork). If that ever changes, this analysis must be redone.
+   rather than pull the official image, the AGPL's network-copyleft (§13) can attach.
+5. **Re-examined 2026-07-30, after [ADR-0002](adr/0002-app-patches.md) (2026-07-29) met that trigger.**
+   Provisioning now applies committed `.patch` files to two AGPL apps (`eurooffice`, `side_menu`) inside
+   the running container. The conclusion is unchanged, for three reasons that all have to hold: the image
+   is pulled unmodified and never rebuilt; the patches are applied at run time to a private instance and
+   **nothing is redistributed** — §13's duty is to *our users*, and it is discharged by pointing them at
+   upstream source, which the patch does not alter; and the patched apps' own AGPL text still reaches
+   anyone who asks. What *would* break it: shipping a patched image, or offering the patched apps to
+   third parties. **[needs legal sign-off]**
 
 ## 5. Summary
 

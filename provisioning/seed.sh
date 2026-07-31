@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # provisioning/seed.sh — the single idempotent provisioning runner (Story 0.5, AD-2).
 # Invoked by `make seed`. Requires an installed stack, then applies desired state by sourcing the
-# numbered phase files under phases/ in fixed order (10 -> 60). Idempotent: safe to re-run.
+# numbered phase files under phases/ in fixed order (05 -> 60). Idempotent: safe to re-run.
 # Fixture phases (>= 50) are skipped when SEED_FIXTURES=0 (the structure-vs-fixtures partition).
 set -uo pipefail
 

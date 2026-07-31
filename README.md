@@ -53,28 +53,31 @@ from the repo root unless noted.
    auto-installs Nextcloud from your `.env` (admin + DB vars). This takes **~1–2 minutes** the first time.
    *If it errors* `No .env found` — you skipped step 2.
 
-5. **Wait until it's ready, then verify.** The HTTP surface comes up a little **after** the install
-   finishes, so give it a moment:
+5. **Provision it.** `make up` returns before Nextcloud finishes installing itself, so this is also
+   the wait: it refuses to touch a half-installed instance and says so.
+   ```bash
+   make seed
+   ```
+   *Expected:* 12 phases — hardening, locale, apps and their patches, the office connector, branding,
+   app policy, then your clinic's groups, folder tree and access matrix from step 3, and finally ~4
+   clearly-synthetic sample users (`dev.*`, "(fixture)") and a sample file. Idempotent — re-running
+   never duplicates. Structure only, without the fixtures: `SEED_FIXTURES=0 make seed`.
+   No real data, ever.
+   *If it errors* `Nextcloud is not installed/reachable` — the container is still warming up
+   (`docker compose ps` shows `health: starting`); wait for `(healthy)` and re-run. First boot only.
+
+6. **Verify.**
    ```bash
    make smoke
    ```
    *Expected:* a single line beginning `PASS: core stack healthy — …`, listing every check it ran.
    (The list itself is printed by `scripts/smoke.sh`; it is not copied here, so it cannot drift.)
-   *If it FAILs right after `make up`* the container is still warming up (`docker compose ps` shows
-   nextcloud `health: starting`) — wait until it shows `(healthy)` and re-run. First boot only.
+   **After seeding, not before** — five of its checks assert values that only a provisioning phase
+   writes, so on an unseeded stack it is *supposed* to fail.
 
-6. **Open the app.**
+7. **Open the app.**
    Browse to **`http://localhost:8180`** (the `HTTP_PORT` from your `.env`) and sign in with the
    `NEXTCLOUD_ADMIN_USER` / `NEXTCLOUD_ADMIN_PASSWORD` you set. You now have a running instance.
-
-7. **Provision it.**
-   ```bash
-   make seed
-   ```
-   *Expected:* your clinic's groups, folder tree and access matrix from step 3, plus ~4
-   clearly-synthetic sample users (`dev.*`, "(fixture)") and a sample file. Idempotent — re-running
-   never duplicates. Structure only, without the fixtures: `SEED_FIXTURES=0 make seed`.
-   No real data, ever.
 
 To stop: `make down` (keeps your data volumes). That's the whole loop.
 
@@ -110,10 +113,10 @@ exists to prevent. Set by `provisioning/phases/14-office.sh`, never in the admin
 | `compose.dev.yaml`, `Dockerfile.dev`, `dev/xdebug.ini` | The derived Xdebug dev image (AD-10). |
 | `.env.example` | Template for your gitignored `.env`. **Never commit `.env`.** |
 | `Makefile` | The dev lifecycle (`make help`). |
-| `scripts/` | `test.sh` + `smoke.sh` (the gate), `seed-idempotent.sh`, the two office checks, and `env.sh` (shared preamble). |
+| `scripts/` | `test.sh` + `smoke.sh` (the gate), `seed-idempotent.sh`, `office-smoke.sh`, and `env.sh` (shared preamble). |
 | `provisioning/` | The single idempotent provisioning writer: `seed.sh` runner, `lib.sh` guard helpers, `phases/05-60`, `apps/` (per-app patches — [ADR-0002](docs/adr/0002-app-patches.md)), and [`provisioning/README.md`](provisioning/README.md). |
-| `sites/` | One `<slug>/site.sh` per CESFAM — its teams, folders, ACL matrix and identity — plus the DEIS register they are picked from. `sites/dev/` is a synthetic example; no real clinic is committed. Written by `scripts/deis.py`. |
-| `apps/`, `themes/` | Live-mounted. `apps/` is vendored upstream apps (gitignored); `themes/apsconecta/` is the white-label server theme. |
+| `sites/` | One `<slug>/site.sh` per CESFAM — its teams, folders, ACL matrix and identity — plus the DEIS register they are picked from. **No clinic is committed** — you write yours with `scripts/deis.py`. |
+| `apps/`, `themes/` | Live-mounted. `apps/` holds store-installed apps, patched at seed time and gitignored ([ADR-0002](docs/adr/0002-app-patches.md)); `themes/apsconecta/` is the white-label server theme. |
 | `docs/ARCHITECTURE.md` | The architecture overview (design SSOT). |
 | `ROADMAP.md` · `BUGS.md` | Roadmap narrative · known bugs. Work in progress is on the [Projects board](https://github.com/orgs/APS-Conecta/projects/5). |
 | `LICENSE` · [`docs/LICENSING.md`](docs/LICENSING.md) | Our code's license (proprietary) · full third-party license audit. |
@@ -162,7 +165,7 @@ The phase list, the contract and the full helper list live in
 runs `make fix-mount-perms` so the container (uid 33) can write them. A custom app talks to Nextcloud **only
 through OCP public APIs (`OCP\…`)** — never patch core (AD-9) — carries an `appinfo/info.xml`
 (`min-version="34"`), and is enabled with `occ app:enable <id>`. **No custom app lives here yet** — `apps/`
-currently holds only vendored upstream apps (gitignored), and the first Layer-2 app, the REM analyzer, has
+currently holds only store-installed upstream apps (gitignored), and the first Layer-2 app, the REM analyzer, has
 its own repository. White-labeling ships as the **`themes/apsconecta/`
 server theme** — AD-6's config-only rule is superseded by
 [ADR-0001](docs/adr/0001-server-theme-for-branding.md). How the theming actually behaves (and why most of

@@ -41,8 +41,9 @@ The `nextcloud:34-apache` tag rolls forward across 34.x patch releases; pin the 
 (`nextcloud:34.0.1-apache`) if byte-identical environments across machines become necessary. NC34 (the current
 line) is used because **Euro-Office requires NC34+**. All components are OSS (per
 the OSS-first mandate): Nextcloud / groupfolders / eurooffice AGPL-3.0, Euro-Office AGPL-3.0,
-PostgreSQL PostgreSQL-License, Redis 8 AGPL-3.0 — with **Valkey** (BSD-3) as the permissive
-drop-in alternative to Redis, to be settled in the committed License-outline artifact.
+PostgreSQL PostgreSQL-License, Redis 8 AGPL-3.0 — settled 2026-07-19 in
+[`LICENSING.md`](LICENSING.md) §3.1, which elects AGPLv3 for Redis rather than switching to
+**Valkey** (BSD-3), its permissive drop-in.
 
 ## Runtime topology
 

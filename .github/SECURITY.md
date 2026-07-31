@@ -47,7 +47,8 @@ PR gate — including why the free plan can't *enforce* it — are owned by
 ### Medium
 - [ ] **Least-privilege base permission** (org base = Read/None; the two devs get explicit **Write**).
 - [ ] **One Owner**: confirm the two devs are `member`, not org admin.
-- [ ] **Keep GitHub Actions disabled** until CI actually lands; pre-set workflow permissions to read-only.
+- [x] **GitHub Actions**: landed 2026-07-29 and now the merge gate — do not disable. Workflow
+      permissions stay read-only.
 - [ ] **Restrict third-party OAuth apps + require approval for fine-grained PATs** at the org level.
 
 ### Low

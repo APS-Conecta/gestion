@@ -38,7 +38,12 @@ Lo que **alimenta a diseño** está en el kit hermano `../APS Conecta Nextcloud/
   - Docker: `docker exec -u www-data <contenedor> php occ …`
 - Para que Nextcloud **genere favicons e iconos de pantalla de inicio** a partir del logo hace falta **PHP imagick con soporte SVG** (p. ej. `libmagickcore-*-extra`). Si no lo tienes, sube tú el favicon en las opciones avanzadas de Theming.
 
-> **Regla de oro:** nunca edites el core de Nextcloud ni las apps de terceros. Solo capas blandas: el panel Theming, comandos `occ`, un tema de servidor propio (`themes/apsconecta/`) y CSS/l10n propios. Así no se dispara la obligación AGPL §13 ni se rompe la vía de actualización.
+> **Regla de oro:** nunca edites el core de Nextcloud. Prefiere capas blandas: el panel Theming,
+> comandos `occ`, un tema de servidor propio (`themes/apsconecta/`) y CSS/l10n propios.
+>
+> *Matizado por [ADR-0002](adr/0002-app-patches.md) el 2026-07-29:* las apps de terceros **sí** se
+> parchan, en tiempo de ejecución y desde `.patch` versionados, cuando no hay otra vía. Qué implica
+> eso para la AGPL §13 lo resuelve [`LICENSING.md`](LICENSING.md) §4, que es su dueño.
 
 ---
 
@@ -87,12 +92,14 @@ webmanifest y los correos con marca:
 gestion/themes/apsconecta/core/img/
 ├── logo/logo.svg          ← clave `logo`: tarjeta de login (lockup completo)
 ├── logo/logo-header.svg   ← clave `logoheader`: cabecera (lockup completo, con teja). El hueco
-│                            nativo de 62x44 px dejaba el texto en ~4 px; server.css lo ensancha
-│                            a 224 px (200 px de arte) y añade INICIO
+│                            nativo dejaba el texto en ~4 px; server.css lo ensancha y añade
+│                            INICIO — las medidas las manda MAPEO.md §3
 │                            AMBOS lockups llevan su propia subset de Fraunces/Nunito Sans
 │                            embebida: un SVG servido como imagen no ve el @font-face de
 │                            server.css (B-011). Regenerar con tools/embed-fonts.py
+├── logo/logo-mark.svg     ← la figura sola: cabecera por debajo del corte (§ cabecera)
 ├── favicon.svg            ← clave `favicon`
+├── manifest.json          ← el webmanifest que verifica `smoke.sh` (control 7)
 └── background.svg         ← clave `background`: telón de TODA la UI, no solo del login
 ```
 
@@ -119,7 +126,7 @@ gestion/themes/apsconecta/
     ├── css/server.css          ← fuentes, display, cabecera, foco, alto contraste
     ├── fonts/*.woff2           ← Fraunces + Nunito Sans (zero-egress). La ÚNICA razón
     │                             de que este directorio exista
-    └── img/                    ← logo, logo-header, favicon, fondo (§3)
+    └── img/                    ← el listado completo vive en §3, no se repite aquí
 ```
 
 Ya **no** hay `defaults.php` — su único trabajo lo hace `customclient_ios_appid` — ni
@@ -223,6 +230,8 @@ cd "../APS Conecta Nextcloud" && python3 -m http.server 8080
 
 ## 10. Licencias
 
-Tokens y logos **MIT** (los consume también el sitio apsconecta.cl) · fuentes Fraunces y Nunito Sans **SIL OFL 1.1** (no subsetear ni renombrar) · iconografía en idioma Material (**Apache-2.0 / MIT**).
+Tokens y logos **MIT** (los consume también el sitio apsconecta.cl) · fuentes Fraunces y Nunito Sans **SIL OFL 1.1** (ver [`LICENSING.md`](LICENSING.md) §3.2: los
+lockups SVG sí llevan subset, lo permite la licencia; lo que no se hace es renombrarlas) · iconografía en idioma Material (**Apache-2.0 / MIT**).
 
-El **tema y las apps propias son propietarios**: viven en el repo `gestion/`, cubierto por su `LICENSE` (propietario, todos los derechos reservados) y detallado en `gestion/docs/LICENSING.md` §1. La marca AGPL-3.0 que este documento declaraba antes se retira: era una elección libre, no una obligación — al ser solo capas blandas, el §13 de la AGPL nunca se dispara.
+El **tema y las apps propias son propietarios**: viven en el repo `gestion/`, cubierto por su `LICENSE` (propietario, todos los derechos reservados) y detallado en `gestion/docs/LICENSING.md` §1. La marca AGPL-3.0 que este documento declaraba antes se retira: era una elección libre, no una obligación — el análisis del §13 lo
+resuelve [`LICENSING.md`](LICENSING.md) §4, incluidos los parches de ADR-0002.

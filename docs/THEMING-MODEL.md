@@ -43,7 +43,7 @@ are pure config. Only `@font-face` needs a path Nextcloud serves.
 | `primary_color` | `occ theming:config` | `#7f21fe` | Buttons, checkboxes, folder icons, and the whole `--color-primary-*` family |
 | `background_color` | `occ theming:config` | `#5315a8` | **Not decorative.** Text colour over the background and the header icon inversion — see §3 rule 5 |
 | `logo` | `occ theming:config` | `core/img/logo/logo.svg` | Login card. Full lockup |
-| `logoheader` | `occ theming:config` | `core/img/logo/logo-header.svg` | Header. Full lockup — `server.css` widens the slot from 62×44 to 200×44 and adds the INICIO label, **above 601 px only**; below that it swaps `.logo` to the unregistered `logo-mark.svg` and core's geometry returns |
+| `logoheader` | `occ theming:config` | `core/img/logo/logo-header.svg` | Header. Full lockup — `server.css` widens the slot and adds the INICIO label above 600 px; below that it swaps `.logo` to `logo-mark.svg` and core's geometry returns. The two numbers that move together live in [`MAPEO.md`](../themes/apsconecta/MAPEO.md) §3, which owns them |
 | `favicon` | `occ theming:config` | `core/img/favicon.svg` | Favicon, touch icons, webmanifest |
 | `background` | `occ theming:config` | `core/img/background.svg` | The **whole-UI** backdrop, not just login |
 | `disable-user-theming` | `occ theming:config` | `yes` (stored `1`) | Stops per-user background/colour overrides |
@@ -124,7 +124,7 @@ and never once seen.
 
 The `themes/` mechanism appears in **neither** the admin manual nor the developer manual, online or
 in the local clone. Its loader lives in `lib/private/legacy/OC_Defaults.php`. It works, and
-`compose.yaml:56` bind-mounts it — but being undocumented, it carries no deprecation notice.
+`compose.yaml` bind-mounts it — but being undocumented, it carries no deprecation notice.
 
 If it ever breaks, the fallback is a small branding **app** shipping the CSS and fonts, which is the
 documented path — `apps/text` and `apps/viewer` both self-host `.woff2` under `apps/<id>/css/fonts/`.
@@ -135,7 +135,7 @@ Brand SVGs are parsed as XML when loaded as images. A double hyphen inside an XM
 parse error, so the file silently renders as nothing while every existence check stays green.
 `make test` now parses every SVG in the theme.
 
-### Rule 8 — a vendored app's display name is not reachable by l10n, and is not a theming job.
+### Rule 8 — a store app's display name is not reachable by l10n, and is not a theming job.
 
 Renaming the `eurooffice` connector looks like a theming problem and is not one. There is no `t()`
 call to hook: the name is a bare PHP literal returned by `lib/AdminSection.php`'s `getName()`, and
@@ -171,7 +171,7 @@ exiting 0 on no match. All three were superseded by ADR-0002 on 2026-07-29.*
   promo reappears, so `make test` asserts the targeted id still exists in the shipped upstream
   template. One rule, one gate, and the id named in both — not a growing pile of blind selectors.
 - **No renaming of the `eurooffice` settings *page body*.** The connector's sidebar entry and page
-  title are white-labeled to "Euro-Office" by `make office-eurooffice` (see Rule 8), but the page it
+  title are white-labeled to "Euro-Office" by phase `12-apps` (see Rule 8), but the page it
   opens keeps ~20 translated strings that still say "Nextcloud Office". They are not chased on
   purpose: a blanket rename would make some of them **false** — "Conectarse al servidor de Nextcloud
   Office *de demostración*" points at Nextcloud's own demo server, which is not Euro-Office. Forcing
@@ -230,7 +230,8 @@ browser kept reporting the old one.
 → Confirm what the **server** sends before doubting the config:
 `curl -s 'localhost:8180/apps/side_menu/css/stylesheet?v=0' | grep -o -- '--side-menu-background-color: *[^;]*'`
 
-Tracked in #53.
+Recorded in #53, closed 2026-07-29: both traps are permanent upstream behaviour, not a defect
+awaiting a fix.
 
 ### The logged-out page
 
