@@ -135,29 +135,21 @@ Brand SVGs are parsed as XML when loaded as images. A double hyphen inside an XM
 parse error, so the file silently renders as nothing while every existence check stays green.
 `make test` now parses every SVG in the theme.
 
-### Rule 8 — a vendored app's display name is not always reachable by l10n.
+### Rule 8 — a vendored app's display name is not reachable by l10n, and is not a theming job.
 
-This file used to say that renaming the `eurooffice` connector "means custom l10n inside a vendored
-app". That was wrong, and worth recording because the wrong reason made the job look bigger than it
-is. There is no `t()` call to hook: the name is a bare PHP literal returned by
-`lib/AdminSection.php`'s `getName()` (the `IIconSection` the admin sidebar renders), and the apps
-list reads `<name>` from `appinfo/info.xml`. Two literals, no translation layer.
+Renaming the `eurooffice` connector looks like a theming problem and is not one. There is no `t()`
+call to hook: the name is a bare PHP literal returned by `lib/AdminSection.php`'s `getName()`, and
+the apps list reads `<name>` from `appinfo/info.xml`. Two literals, no translation layer, and
+nothing a stylesheet can reach.
 
-So the rename is two line-scoped `sed`s in `make office-eurooffice`, run in the container as
-`www-data` like every `occ` call beside them. Three consequences to keep in mind:
+**How it is actually done is [ADR-0002](adr/0002-app-patches.md), not this file:** committed
+`*.patch` files under `provisioning/apps/eurooffice/`, applied by phase `12-apps`.
+`scripts/office-smoke.sh` asserts the *desired* state on the served files, because `apps/` is
+gitignored and an `occ app:update` reverts the edit with nothing running `make seed` afterwards.
 
-- **It cannot be committed.** `/apps/*` is gitignored (AD-1), so the patch lives outside git and any
-  app update reverts it. Re-running the target restores it.
-- **It needs no container restart.** The pinned image ships `opcache.validate_timestamps=On` with
-  `revalidate_freq=60`, so a patched PHP file is picked up within a minute. Verified by reading the
-  image, not by guessing: `docker run --rm nextcloud:34-apache php -i`.
-- **It needs a gate, because `sed` exits 0 when it matches nothing.** An upstream change to either
-  line would turn the rename into a silent no-op — the same failure shape as B-001 and the `lib.sh`
-  query-before-set bug. `scripts/office-smoke.sh` asserts the *desired* state (`Euro-Office`
-  present) rather than the absence of `Nextcloud Office`, because that string legitimately stays in
-  `info.xml`'s `<summary>`/`<description>`, and a positive check also catches an upstream
-  restructure where the old pattern is gone and the new value never got written. It is
-  unconditional: `office_detect` already required the app, so there is no skip branch to hide in.
+*Corrected 2026-07-30 — this rule previously described two line-scoped `sed`s in
+`make office-eurooffice`, said the patch "cannot be committed", and justified a gate by `sed`
+exiting 0 on no match. All three were superseded by ADR-0002 on 2026-07-29.*
 
 ## 4. What this theme does *not* do
 

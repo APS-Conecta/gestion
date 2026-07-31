@@ -10,7 +10,6 @@ set -uo pipefail
 . "$(dirname "$0")/env.sh"
 
 HTTP_PORT="${HTTP_PORT:-8180}"
-OCC="docker compose exec -T --user www-data nextcloud php occ"
 
 fail() { echo "FAIL: $*"; exit 1; }
 
@@ -19,7 +18,7 @@ docker compose ps --status running --services 2>/dev/null | grep -qx nextcloud \
   || fail "nextcloud container is not running (did you 'make up'?)"
 
 # 2. Nextcloud installed + reachable via occ.
-$OCC status --output=json 2>/dev/null | grep -q '"installed":true' \
+occ status --output=json 2>/dev/null | grep -q '"installed":true' \
   || fail "occ status: Nextcloud not installed / not reachable"
 
 # 3. PostgreSQL accepting connections.
@@ -30,11 +29,10 @@ docker compose exec -T db pg_isready -q 2>/dev/null \
 [ "$(docker compose exec -T redis redis-cli ping 2>/dev/null | tr -d '\r')" = "PONG" ] \
   || fail "Redis is not responding to PING"
 
-# 5. HTTP surface: GET /status.php → 200 (loopback), and the body carries OUR product name.
-# We already fetch this body, so grepping it is nearly free — and /status.php is the single
-# highest-value branding regression: it is unauthenticated, and if `theming productName` is
-# ever unset the response says "Nextcloud" to anyone who asks. Same string also leaks through
-# OC.theme, the OCS capabilities and the public-share button, so this one grep covers the family.
+# 5. HTTP surface: GET /status.php → 200, and the body carries OUR product name. The highest-value
+# branding regression there is: unauthenticated, and if `theming productName` is unset it says
+# "Nextcloud" to anyone who asks. The same string leaks through OC.theme, the OCS capabilities and
+# the public-share button, so this one grep covers the family.
 body=$(curl -s -w '\n%{http_code}' "http://localhost:${HTTP_PORT}/status.php" 2>/dev/null || echo $'\n000')
 code=${body##*$'\n'}
 body=${body%$'\n'*}
@@ -43,14 +41,13 @@ if printf '%s' "$body" | grep -qi 'nextcloud'; then
   fail "branding leak: /status.php still says Nextcloud — is 'occ config:app:set theming productName' set? Body: ${body}"
 fi
 
-# 6. Background jobs are scheduled, not traffic-driven (phase 06-jobs + the `cron` service).
-# Both halves are checked because either alone is a silent half-fix: the mode set without the
-# container means Nextcloud waits for a cron that never runs (worse than ajax — jobs stop
-# entirely), and the container without the mode means it runs while Nextcloud still self-serves
-# on page loads.
+# 6. Background jobs are scheduled, not traffic-driven (phase 06-jobs + the `cron` service). Both
+# halves, because either alone is a silent half-fix: the mode without the container means Nextcloud
+# waits for a cron that never runs (worse than ajax), the container without the mode means it runs
+# while Nextcloud still self-serves on page loads.
 docker compose ps --status running --services 2>/dev/null | grep -qx cron \
   || fail "the cron container is not running — background jobs would fall back to page-load scheduling (did you 'make up'?)"
-jobs_mode=$($OCC config:app:get core backgroundjobs_mode 2>/dev/null | tr -d '\r')
+jobs_mode=$(occ config:app:get core backgroundjobs_mode 2>/dev/null | tr -d '\r')
 [ "$jobs_mode" = "cron" ] \
   || fail "backgroundjobs_mode is '${jobs_mode:-unset}', expected 'cron' — run 'make seed' (phase 06-jobs)"
 
@@ -61,14 +58,12 @@ login_code=${login_html##*$'\n'}
 login_html=${login_html%$'\n'*}
 [ "$login_code" = "200" ] || fail "GET /login returned HTTP ${login_code} (expected 200)"
 
-# 7. The login page serves OUR webmanifest, and it has not drifted from the themed one.
-# Nextcloud's guest layout hardcodes image_path('core', 'manifest.json') — layout.user.php and
-# layout.public.php pass the appid so theming intercepts, but layout.guest.php does not. So the
-# login page advertised {"name":"Nextcloud"} to anything offering "install app". The fix is a file
-# at themes/<theme>/core/img/manifest.json, which URLGenerator::imagePath() prefers over core's.
-#
-# It is a STATIC copy of values that live in `occ theming:config`, so the failure mode is drift,
-# not absence. Compare against the app's generated manifest, which is the source of truth.
+# 7. The login page serves OUR webmanifest, and it has not drifted. layout.guest.php hardcodes
+# image_path('core', 'manifest.json') without the appid, so theming cannot intercept and the login
+# page advertised {"name":"Nextcloud"} to anything offering "install app". The fix is a static file
+# at themes/<theme>/core/img/manifest.json, which URLGenerator::imagePath() prefers over core's —
+# and being static, its failure mode is DRIFT from `occ theming:config`, not absence. So compare
+# against the app's generated manifest, which is the source of truth.
 theme_man=$(curl -s "http://localhost:${HTTP_PORT}/apps/theming/manifest" 2>/dev/null)
 static_man=$(curl -s "http://localhost:${HTTP_PORT}/themes/apsconecta/core/img/manifest.json" 2>/dev/null)
 drift=$(printf '%s\n---SPLIT---\n%s' "$theme_man" "$static_man" | python3 -c '
@@ -92,17 +87,11 @@ printf '%s' "$login_html" | grep -q 'rel="manifest" href="[^"]*themes/apsconecta
   || fail "login page still links Nextcloud's manifest, not ours — if the file exists, flush the cache (docker compose exec redis redis-cli FLUSHALL)"
 
 # 8. App policy holds: staff do not see Nextcloud's product surface (phase 16-app-policy).
-# One container round-trip, not one per app — smoke runs on every `make test`.
-# `enabled` is the whole state: "yes" = everyone, "no" = off, ["admin"] = admin only
-# (AppManager::enableAppForGroups stores json_encode($groupIds)). So reading that one key per app
-# is an exact assertion, not a proxy for one.
-#
-# This used to be 25 lines of PHP that booted the server (`require lib/base.php`) to read eight
-# strings, and it carried its own footgun: \OC::$server->getConfig() was REMOVED in NC34, so the
-# obvious spelling degrades silently to "could not read app config" and reports drift that is not
-# there. `occ config:list` answers the same question from outside, in the same single round-trip,
-# with no server API to track across versions. Same source the provisioning guards read.
-policy=$(docker compose exec -T --user www-data nextcloud php occ config:list --output=json 2>/dev/null | python3 -c '
+# `enabled` is the whole state — "yes" = everyone, "no" = off, ["admin"] = admin only — so reading
+# that one key per app is an exact assertion, not a proxy. One round-trip for all of them, because
+# smoke runs on every `make test`, and through `occ config:list` rather than a PHP script that
+# boots the server: \OC::$server->getConfig() was REMOVED in NC34 and degrades silently.
+policy=$(occ config:list --output=json 2>/dev/null | python3 -c '
 import sys, json
 # "disabled" is TWO valid values, not one: the literal "no" (was enabled, then disabled) and an
 # ABSENT key (never enabled here). `occ app:disable` on an already-absent key is a no-op and does
@@ -126,12 +115,10 @@ print("; ".join(bad) if bad else "OK")
 [ "$policy" = "OK" ] \
   || fail "app policy drift (phase 16-app-policy): ${policy:-could not read app config}"
 
-# 9. Session posture: the login form must not offer "remember me" (phase 05-security).
-# Assert the EFFECT, not the config key. `occ config:system:get` would confirm we wrote 0 while
-# telling us nothing about whether the form still offers the option — and the option is the thing
-# that matters. Nextcloud renders `loginCanRememberme` into the page's initial state from
-# core/Controller/LoginController.php:153 (`remember_login_cookie_lifetime > 0`), so this reads
-# back Nextcloud's own conclusion. Unauthenticated, so no credentials in the runner (AD-2).
+# 9. Session posture: the login form must not offer "remember me" (phase 05-security). Assert the
+# EFFECT, not the key — `config:system:get` would confirm we wrote 0 while saying nothing about
+# whether the form still offers the option, which is the thing that matters. `loginCanRememberme`
+# is Nextcloud's own conclusion from that key. Unauthenticated, so no credentials in the runner.
 remember=$(printf '%s' "$login_html" | python3 -c '
 import sys, re, base64, html
 h = sys.stdin.read()
@@ -149,14 +136,11 @@ case "$remember" in
   *)     fail "session posture: could not read loginCanRememberme from /login (got '${remember}') — upstream may have renamed the initial state key" ;;
 esac
 
-# 10. No patched app still carries its vendor signature (#71, ADR-0002, phase 12-apps).
-# appinfo/signature.json asserts the files are as the vendor shipped them; our patches make that
-# false, and Nextcloud verifies a non-shipped app ONLY if that file is present
-# (lib/private/IntegrityCheck/Checker.php:546). Its absence is therefore the whole reason
-# admin > Overview is not permanently red — and an `occ app:update` from Settings > Apps restores
-# both the pristine files and the signature, with nothing running `make seed` afterwards. Same gap
-# the rename assertion in office-smoke.sh exists for, so it is asserted the same way: on the files.
-# The list comes from provisioning/apps/, so an app added there is covered without touching this.
+# 10. No patched app still carries its vendor signature (#71, ADR-0002, phase 12-apps). Its absence
+# is the whole reason admin > Overview is not permanently red, and an `occ app:update` from
+# Settings > Apps restores both the pristine files and the signature with nothing running
+# `make seed` afterwards — the same gap the rename assertion in office-smoke.sh covers, asserted the
+# same way. The list comes from provisioning/apps/, so a new patched app is covered automatically.
 patched=$(find provisioning/apps -mindepth 1 -maxdepth 1 -type d -printf '%f ' 2>/dev/null)
 if [ -n "$patched" ]; then
   signed=$(docker compose exec -T --user www-data nextcloud sh -c \

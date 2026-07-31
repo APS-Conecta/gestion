@@ -1,22 +1,16 @@
 # `themes/` — custom Nextcloud themes (live-mounted)
 
-This directory is bind-mounted to **`/var/www/html/themes`** in the running Nextcloud (`compose.yaml`), so
-custom server-side theme code can be edited live — no image rebuild, no fork.
+Bind-mounted to **`/var/www/html/themes`** by `compose.yaml`, so theme code is edited live — no image
+rebuild, no fork. The mount masks the `example/` scaffold the official image ships there; that is
+safe, it was never an active theme.
 
-- This mount **masks** the example theme template the official image ships at `/var/www/html/themes/example`
-  (a reference scaffold, not an active theme — safe to mask). See the Nextcloud theming docs (via Context7)
-  or copy that `example/` out of the image if you want it as a starting point.
-- **White-labeling ships as a server theme** — `apsconecta/`, here. AD-6 said config-only, no theme files;
-  it is **superseded by [ADR-0001](../docs/adr/0001-server-theme-for-branding.md)**. The reason is narrower
-  than that ADR first claimed: brand fonts need `@font-face` paths a theme serves. (`occ` *can* set all four
-  images — it just needs an absolute path — and it registers them from here.) Identity keys come from `occ`;
-  this directory carries `server.css`, the fonts, the brand images and `MAPEO.md`.
-- **There is no `defaults.php`** — deleted 2026-07-27. Its one job (killing the iOS banner) is
-  `occ config:system:set customclient_ios_appid ""`, so the opcache restart it used to require is gone too.
-- **`themes/` is undocumented legacy in Nextcloud** — it appears in no manual and its loader lives in
-  `lib/private/legacy/`. It works, but re-verify after every major upgrade. Before editing `server.css`,
-  read [`docs/THEMING-MODEL.md`](../docs/THEMING-MODEL.md): variables declared in `:root` here are **inert**,
-  because Nextcloud scopes its own to `body[data-theme-light]` and loads them after this file.
+White-labeling ships as the `apsconecta/` server theme here, superseding AD-6 —
+[ADR-0001](../docs/adr/0001-server-theme-for-branding.md) has the decision and what it rests on.
 
-**Linux ownership:** the container runs as `www-data` (uid 33). If a theme placed here isn't picked up, run
-`sudo chown -R 33:33 themes`.
+**Before editing `server.css`, read [`docs/THEMING-MODEL.md`](../docs/THEMING-MODEL.md).** It is the
+one place the theming mechanism is written down, and the first rule — variables declared in `:root`
+are inert — is the one that costs an afternoon if you meet it by surprise. The brand palette and
+type decisions are in [`apsconecta/MAPEO.md`](apsconecta/MAPEO.md).
+
+**Linux ownership:** the container runs as `www-data` (uid 33). `make up` fixes this for you via
+`fix-mount-perms`; if a theme placed here still isn't picked up, `sudo chown -R 33:33 themes`.

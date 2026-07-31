@@ -14,7 +14,6 @@ name: apsconecta-gestion
 # an anchor now, so they cannot drift: there is one definition and both services merge it.
 x-nextcloud-base: &nextcloud-base
   image: nextcloud:34-apache
-  restart: "no"
   depends_on:
     db:
       condition: service_healthy
@@ -31,7 +30,6 @@ x-nextcloud-base: &nextcloud-base
 services:
   db:
     image: postgres:18-alpine
-    restart: "no"
     volumes:
       # postgres:18+ stores data in a major-version subdir; mount the parent, not /data
       # (see docker-library/postgres#1259). Mounting /data errors on boot.
@@ -49,7 +47,6 @@ services:
 
   redis:
     image: redis:8-alpine
-    restart: "no"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -82,19 +79,11 @@ services:
       start_period: 120s
 
   # ── Background job scheduler ────────────────────────────────────────────────────────────
-  # Without this, Nextcloud falls back to `ajax` mode: jobs run only when a user loads a page,
-  # one job per request. That is invisible on a dev box someone is clicking, and wrong everywhere
-  # else — housekeeping (versions, previews, trash, token cleanup, and later full-text indexing)
-  # simply stops whenever nobody is browsing. It also hid an armed `survey_client` monthly report
-  # for days: the job was scheduled and had never fired.
-  #
-  # Deliberately NOT behind a profile. `make up` starts it, so a developer's stack schedules jobs
-  # the same way production does — a dev stack whose job behaviour differs from production is
-  # exactly where this class of bug hides.
-  #
-  # Shares x-nextcloud-base with `nextcloud` (see the anchor for why the volumes must match). The
-  # image already ships `*/5 * * * * php -f /var/www/html/cron.php` for www-data, and /cron.sh is
-  # just `busybox crond -f`. No env is needed — config.php comes from the shared volume.
+  # Without this Nextcloud falls back to `ajax`: jobs run only when a user loads a page, so
+  # housekeeping stops whenever nobody is browsing (see phase 06-jobs). Deliberately NOT behind a
+  # profile — a dev stack whose job behaviour differs from production is where that bug hides.
+  # No env needed: config.php comes from the shared volume, and the image already ships the
+  # crontab. Shares x-nextcloud-base, so the volumes cannot drift from `nextcloud`.
   cron:
     <<: *nextcloud-base
     entrypoint: /cron.sh
@@ -117,7 +106,6 @@ services:
     # Pin a digest if byte-reproducibility becomes necessary.
     image: ghcr.io/euro-office/documentserver:latest
     profiles: ["eurooffice"]
-    restart: "no"
     environment:
       - "JWT_ENABLED=true"
       - "JWT_SECRET=${OFFICE_JWT_SECRET:?set OFFICE_JWT_SECRET in .env}"
@@ -126,9 +114,9 @@ services:
     ports:
       # Loopback only (rule 16). Internal port is 80, published on the host as OFFICE_PORT.
       - "127.0.0.1:${OFFICE_PORT:?set OFFICE_PORT in .env}:80"
-    # Lets Euro-Office reach Nextcloud's host-published port for callbacks if needed (AD-8).
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    # No extra_hosts: every path between these two containers goes by SERVICE NAME (AD-8) —
+    # StorageUrl is http://nextcloud/, which is also why `make office-eurooffice` adds `nextcloud`
+    # to trusted_domains. Add host.docker.internal back only if a callback actually needs it.
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost/healthcheck || exit 1"]
       interval: 15s

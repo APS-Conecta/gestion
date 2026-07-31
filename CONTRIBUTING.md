@@ -3,11 +3,8 @@
 A three-person team collaborates here — an owner (product, requirements, UAT sign-off) and two developers
 (see [`CONTRIBUTORS.md`](CONTRIBUTORS.md)). This file is the operational contract; keep it current.
 
-## Principles (non-negotiable)
-
-Defined once in [`AGENTS.md`](AGENTS.md) — DRY/SOLID/KISS·YAGNI, the language split (code/docs English, UI
-Spanish), and the data/secrets invariants (no patient data, synthetic fixtures only, secrets never in git).
-They bind every contributor and agent.
+Principles, the language split and the data/secrets invariants are defined in
+[`AGENTS.md`](AGENTS.md) and bind every contributor and agent.
 
 ## Workflow (GitHub Flow)
 
@@ -46,12 +43,9 @@ hand-click config into the running instance (AD-2).
 **Secrets:** all passwords live in your gitignored `.env` (copy from `.env.example`) — that file is
 the whole list, and the canonical vault is **Proton Pass**. Never commit it.
 
-There used to be a `make credentials` target that rendered `.env` into a `CREDENTIALS.local.md`
-sheet, gitignored and mode 600. It was deleted on 2026-07-29: mode 600 stops you *committing* a
-plaintext secrets sheet, but the real exposure is one sitting in the working tree where it gets
-opened, selected and pasted — which is exactly how an admin password ended up in a chat transcript
-and had to be rotated. `.env` already holds every value; a second copy only adds a place to leak
-from. `grep -v '^#' .env` if you want them on one screen.
+`grep -v '^#' .env` if you want them on one screen. There is deliberately no target that renders
+them into a file: a second copy only adds a place to leak from (the `make credentials` sheet was
+deleted 2026-07-29 after one was pasted into a chat transcript).
 
 Rotating the admin password: `.env` is read at INSTALL time only, so editing it does not change an
 existing account. Reset it in Nextcloud first, then update `.env` to match:

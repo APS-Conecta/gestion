@@ -5,14 +5,15 @@ Rules for any AI agent (e.g. Claude Code) working in this repo. `CLAUDE.md` impo
 ## What this project is
 
 White-label **Nextcloud 34** suite (internal ops for a Chilean CESFAM), official Docker image — **never a
-Nextcloud source fork**. Stack: Nextcloud + **PostgreSQL** + **Redis**. Internal ops only, **no patient
+Nextcloud source fork**. Stack: Nextcloud + **PostgreSQL** + **Redis** + a `cron` container for
+background jobs. Internal ops only, **no patient
 data**.
 
 ## How we work
 
 - **Design SSOT:** architecture in `docs/ARCHITECTURE.md`; the code (`provisioning/phases/`,
   `compose.yaml`) is authoritative for behavior. Repo-first SSOT (repo wins; any wiki mirrors).
-- **Principles:** DRY · SOLID · KISS/YAGNI (ponytail — minimal, delete over add). See `CONTRIBUTING.md`.
+- **Principles:** DRY · SOLID · KISS/YAGNI (ponytail — minimal, delete over add). Defined here; `CONTRIBUTING.md` is the operational contract (workflow, docs rules, secrets handling).
 - **Language split:** code/backend/docs in **English**; user-facing UI in **Spanish**.
 - **Coordination:** GitHub Flow, PR + 1 approval (convention gate), private repo. Conventional Commits.
 

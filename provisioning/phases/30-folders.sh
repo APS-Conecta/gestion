@@ -13,7 +13,7 @@ folders=(
   "Unidades/Estadística-REM" "Unidades/Dirección"
   "Sectores/Sector 1" "Sectores/Sector Azul"
 )
-for f in "${folders[@]}"; do ensure_groupfolder "$f" >/dev/null; done
+for f in "${folders[@]}"; do ensure_groupfolder "$f"; done
 
 # Transversal's shared-knowledge subfolders (regular folders inside the one Transversal group folder).
 # Per-subfolder ACL refinement (e.g. Registro de redes, Actas) is deferred to the validated matrix.

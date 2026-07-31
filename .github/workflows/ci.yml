@@ -21,6 +21,10 @@ concurrency:
 jobs:
   static:
     name: Static gate
+    # Skipped on the weekly clean boot: `cleanboot` runs `make test`, which is this same script,
+    # against a stack that is actually up — a strict superset. Running both burned the checks
+    # twice on a private repo whose minutes are billed.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,7 +34,7 @@ jobs:
       # scripts/test.sh already skips the checks that need a running stack, so it needs no flag.
       # Covers: compose config on all three profiles, bash -n on every script, the #39 phase-runner
       # guard, every url() in server.css existing, and every theme SVG parsing.
-      - run: bash scripts/test.sh
+      - run: make test
 
   cleanboot:
     name: Clean boot

@@ -26,47 +26,37 @@ done
 check test "$linted" -ge 15
 check test -f dev/xdebug.ini
 # Regression guard (#39): the phase runner must not consume its `set -e` subshell's status in a
-# conditional context — bash suppresses errexit there, so a failing phase runs on and reports success.
-# Comment lines are stripped first: seed.sh documents the wrong shape on purpose.
-#
-# Matches on what precedes the subshell rather than listing the bad forms. The old pattern spelled out
-# `if ! ( set -e` and so passed the un-negated `if ( set -e; . "$phase" ); then`, which suppresses
-# errexit identically — the guard bought with B-001 could be defeated by deleting one `!`. `while`,
-# `until`, `&&` and `||` do the same thing and were never covered either. The subshell must stand
-# alone as its own command, so nothing but whitespace may precede its `(` on that line.
+# conditional context — bash suppresses errexit there, so a failing phase runs on and reports
+# success. Matches on what PRECEDES the subshell rather than listing bad forms, because `if`,
+# `while`, `until`, `&&` and `||` all do it: nothing but whitespace may precede the `(`.
+# Comments are stripped first, since seed.sh documents the wrong shape on purpose.
 check bash -c '! grep -vE "^[[:space:]]*#" provisioning/seed.sh | grep -qE "[^[:space:]][[:space:]]*\([[:space:]]*set[[:space:]]+-e"'
-# Regression guard (ADR-0001): every asset server.css references must exist on disk. server.css
-# shipped for months declaring four .woff2 files that were never generated — the TTF fallback
-# swallowed the 404s, so nothing surfaced it. The fallback is gone; this is what replaces it.
-#
-# The count is asserted BEFORE the existence loop, and that is the whole point. `grep … | while read`
-# runs the loop zero times when grep matches nothing and exits 0, so the guard passed on a server.css
-# with no themed url() at all — switch the fonts to relative paths or rename the theme directory and
-# it stayed green while every .woff2 404'd. Requiring every url() in the file to be a themed absolute
-# path also catches one of the four drifting, which a bare "at least one" check would not.
+# Regression guard (ADR-0001): every asset server.css references must exist on disk. It shipped for
+# months declaring four .woff2 files that were never generated, and the TTF fallback swallowed the
+# 404s. The COUNT is asserted before the existence loop, and that is the point: `grep | while read`
+# runs zero times when grep matches nothing and exits 0, so the guard passed on a file with no themed
+# reference at all. Requiring every reference to be a themed absolute path also catches one of four
+# drifting, which "at least one" would not.
 check bash -c '
   css=themes/apsconecta/core/css/server.css
   total=$(grep -oE "url\(\"" "$css" | wc -l)   # the quote matters: server.css says "url()" in prose
   themed=$(grep -oE "url\(\"/themes/apsconecta[^\"]+\"" "$css" | wc -l)
   [ "$total" -ge 1 ] && [ "$total" -eq "$themed" ] || exit 1
   grep -oE "/themes/apsconecta[^\")]+" "$css" | sed "s|^/||" | while read -r f; do [ -f "$f" ] || exit 1; done'
-# Regression guard: every brand SVG must PARSE, not merely exist. Nextcloud serves a malformed
-# SVG with a 200 and the browser then renders nothing — silent, and the existence check above
-# cannot see it. Cost us a debugging round on 2026-07-27: a double hyphen inside an XML comment
-# in logo-header.svg (it quoted CSS variable names) made the whole file unparseable, so the
-# header logo vanished while every gate stayed green.
+# Regression guard: every brand SVG must PARSE, not merely exist. Nextcloud serves a malformed SVG
+# with a 200 and the browser renders nothing — silent, and the existence check above cannot see it.
+# A double hyphen inside an XML comment once made logo-header.svg unparseable and the header logo
+# vanished while every gate stayed green.
 check python3 -c 'import glob,sys,xml.etree.ElementTree as ET
 bad=[]
 for f in sorted(glob.glob("themes/apsconecta/core/img/**/*.svg", recursive=True)):
     try: ET.parse(f)
     except Exception as e: bad.append(f"{f}: {e}")
 if bad: print("\n".join(bad)); sys.exit(1)'
-# Regression guard (B-011): a lockup that draws text must carry the font that text is set in.
-# An SVG served as an image is an isolated document — it cannot see server.css's @font-face — so
-# `font-family="Fraunces"` silently falls back to whatever the OS has (Georgia on Windows, Noto
-# here). The failure is invisible: the wordmark still renders, just in the wrong typeface, which
-# nobody reports as a bug. themes/apsconecta/tools/embed-fonts.py is what puts the subset in;
-# this asserts nobody shipped new art without running it.
+# Regression guard (B-011): a lockup that draws text must carry the font that text is set in. An SVG
+# served as an image is an isolated document and cannot see server.css's @font-face, so the wordmark
+# still renders — just in the OS fallback, which nobody reports as a bug.
+# themes/apsconecta/tools/embed-fonts.py puts the subset in; this asserts it was run.
 check python3 -c 'import glob,sys,re
 bad=[]
 for f in sorted(glob.glob("themes/apsconecta/core/img/**/*.svg", recursive=True)):
@@ -80,24 +70,27 @@ for f in sorted(glob.glob("themes/apsconecta/core/img/**/*.svg", recursive=True)
 if bad: print("\n".join(bad)); sys.exit(1)'
 
 # Regression guard (B-008 / #48): server.css hides Nextcloud's vendor-marketing block in personal
-# settings — the "Reasons to use Nextcloud" PDF link, the "developed by the Nextcloud community"
-# credit, and follow buttons for their Facebook/Bluesky/Mastodon/blog/newsletter. A CSS selector
-# that stops matching fails SILENTLY: the rule does nothing and the whole block reappears on every
-# staff member's settings page. So assert the CONTRACT against the shipped template — both the
-# container class we hide AND the link id, because an upstream restructure could move either.
-# Reads the running container's copy, which is the code actually serving pages.
+# settings. A CSS selector that stops matching fails SILENTLY — the rule does nothing and the block
+# reappears for every staff member — so assert the CONTRACT against the shipped template: both the
+# container class and the link id, since an upstream restructure could move either.
+# Everything below reads the running container's copy, the code actually serving pages.
 if docker compose ps --status running --services 2>/dev/null | grep -qx nextcloud; then
   check docker compose exec -T --user www-data nextcloud \
     grep -q 'class="section development-notice"' apps/settings/templates/settings/personal/development.notice.php
   check docker compose exec -T --user www-data nextcloud \
     grep -q "open-reasons-use-nextcloud-pdf" apps/settings/templates/settings/personal/development.notice.php
-  # The home affordance rests on one upstream element: `<a id="nextcloud">` in the authenticated
-  # layout. server.css widens it to 224px, hangs INICIO off its ::after, and the click works only
-  # because that element is the home link. If upstream renames or restructures it, every one of
-  # those silently stops applying — the header keeps rendering, just without the branding and
-  # without the affordance. Assert the anchor and its id, on the template actually being served.
+  # The home affordance rests on `<a id="nextcloud">` in the authenticated layout: server.css
+  # widens it to 224px and hangs INICIO off its ::after, and the click works only because that
+  # element is the home link. It scopes on the ELEMENT TYPE because the PUBLIC SHARE header
+  # renders the same id as `<div class="header-appname">` with a share title inside it — an
+  # unscoped rule put the 224px padding and a 200px logo on the page external recipients see.
+  # So assert both shapes: authenticated is an anchor, public is not. If upstream renames the id,
+  # or ever makes the two the same element, every rule stops applying (or starts leaking) with
+  # the header still rendering — silently, which is why this is a gate and not a comment.
+  check docker compose exec -T --user www-data nextcloud sh -c \
+    'grep -B3 -- '"'"'id="nextcloud"'"'"' core/templates/layout.user.php | grep -q -- "<a "'
   check docker compose exec -T --user www-data nextcloud \
-    grep -qE 'id="nextcloud"' core/templates/layout.user.php
+    grep -qE '<div id="nextcloud" class="header-appname"' core/templates/layout.public.php
 else
   echo "  skipped: upstream vendor-block checks (need a running stack)"
 fi

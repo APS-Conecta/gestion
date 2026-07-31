@@ -1,173 +1,34 @@
 # Bugs — APS Conecta Gestión
 
-Known bugs, repro steps, and fix log. Repo-first SSOT; GitHub issues are the mirror.
+Fix log. Repo-first SSOT; GitHub issues are the mirror. **No bug is currently open.**
 
-All of B-001…B-007 came out of the **first end-to-end bring-up on a clean machine (2026-07-24)** — the
-repo was v1 feature-complete on paper but had never actually been run start to finish.
+B-001…B-007 all came out of the **first end-to-end bring-up on a clean machine (2026-07-24)** — the repo
+was v1 feature-complete on paper but had never been run start to finish. B-008…B-012 came out of Epic 5
+and the hardening pass that followed.
 
-## B-001 — `make seed` reports success when a phase fails
-- **Status:** fixed
-- **Repro:** make a phase fail (e.g. `ensure_app definitely-not-a-real-app`) and run `make seed`. Before
-  the fix the runner printed `✓ phase …` and `provisioning complete` and exited **0**. Seen for real when
-  an app-store timeout broke `ensure_app groupfolders`: all 12 group folders and the whole ACL matrix were
-  skipped, and the run still looked green.
-- **Cause:** `if ! ( set -e; . "$phase" ); then` — bash suppresses `errexit` inside a command used as an
-  `if` condition, and the suppression reaches into the subshell, so `set -e` was a no-op.
-- **Fix:** [#39](https://github.com/APS-Conecta/gestion/issues/39) — run the subshell as its own command
-  and test `$?`; static guard added to `make test`.
+Each row names the cause and where the fix lives. The reasoning that made a fix non-obvious is a comment
+beside the code it protects, not here — a second copy desyncs the day it is written.
 
-## B-002 — `fix-mount-perms` leaves `apps/` and `themes/` read-only for the host developer
-- **Status:** fixed
-- **Repro:** host, repo root, as the normal dev user: `make up && touch themes/.probe` →
-  `Permission denied`. `ls -ld themes` showed `775 www-data:www-data`.
-- **Cause:** `chown www-data:www-data` gave the container write access but left the host side `r-x`,
-  defeating the live-edit bind mount (AD-9). Container-side writes still worked, which hid it.
-- **Fix:** [#40](https://github.com/APS-Conecta/gestion/issues/40) — chown to `www-data:$(HOST_GID)`
-  with `g+w`, recursive.
+| # | Symptom | Cause | Fix |
+|---|---|---|---|
+| B-001 | `make seed` reported success when a phase failed | `if ! ( set -e; … )` — bash suppresses `errexit` inside a command used as an `if` condition, and the suppression reaches into the subshell | [#39](https://github.com/APS-Conecta/gestion/issues/39) — run the subshell as its own command and test `$?`. Gated in `scripts/test.sh` |
+| B-002 | `apps/`, `themes/` read-only for the host developer | `chown www-data:www-data` gave the container write access but left the host side `r-x` | [#40](https://github.com/APS-Conecta/gestion/issues/40) — chown to `www-data:$(HOST_GID)` plus `g+w` (`fix-mount-perms`) |
+| B-003 | `ensure_app` blamed file permissions for every failure | both `occ` calls discarded stderr, then the helper asserted a cause it never checked | [#41](https://github.com/APS-Conecta/gestion/issues/41) — surface `occ`'s own error |
+| B-004 | unquoted `NEXTCLOUD_TRUSTED_DOMAINS` broke `.env` | the value was sourced by the shell, so a space ran `nextcloud` as a command | [#42](https://github.com/APS-Conecta/gestion/issues/42) — quote it. `.env` is now parsed rather than sourced (`scripts/env.sh`) |
+| B-005 | `make office-eurooffice` printed `OFFICE_JWT_SECRET` | the recipe line was echoed, and `occ` echoed it back | [#43](https://github.com/APS-Conecta/gestion/issues/43) — `@` the line, silence `occ`, print a neutral confirmation |
+| B-006 | Xdebug log never writable; a warning on every request | `/tmp` is world-writable and Xdebug refuses to open a log it does not own there | [#44](https://github.com/APS-Conecta/gestion/issues/44) — later simplified away: no log file at all (`dev/xdebug.ini`) |
+| B-007 | ODF opened read-only | the connector declares ODF `lossy-edit`/`auto-convert`, not `edit` | [#45](https://github.com/APS-Conecta/gestion/issues/45) — owner decision: lossy ODF editing on, via `editFormats`/`defFormats` in `14-office.sh` |
+| B-008 | "Nextcloud" leaked into two UI surfaces after white-labeling | both strings are owned by upstream code, not by the theme, and the vendor block has no config lever without a paid subscription | `b66c5ac` — `server.css` hides `.section.development-notice`; the second surface accepted as admin-only. Both gated in `scripts/test.sh` |
+| B-009 | `default_language=es_419` inert; the browser chose the UI language | `es_419` is a valid ICU **locale** but not a **language**, so `languageExists()` rejects it | `default_language=es` plus `force_language=es` (`10-locale.sh`). AD-7 corrected |
+| B-010 | the eurooffice patches turned admin › Overview permanently red | patched files invalidate the `appinfo/signature.json` a store app ships | [#71](https://github.com/APS-Conecta/gestion/issues/71) — `12-apps.sh` drops the signature it just invalidated. Gated in `scripts/smoke.sh` |
+| B-011 | the brand lockups rendered Georgia, not Fraunces | an SVG served as an image is an isolated document and cannot reach `server.css`'s `@font-face` | `themes/apsconecta/tools/embed-fonts.py` embeds a per-lockup subset as a `data:` URL, and the OS fallbacks are removed so a miss fails visibly. Gated in `scripts/test.sh` |
+| B-012 | the header rules leaked onto public share pages; phase 30 discarded its own logs | `#header:not(.header-guest) #nextcloud` also matched `layout.public.php`, where that id is a `<div>` with content; and `ensure_groupfolder … >/dev/null` swallowed the lines `seed-idempotent.sh` greps for, so the gate could not fail on any group folder | `a36b458` — scope on `a#nextcloud`; drop the unused id `printf` and the redirect. Both gated in `scripts/test.sh` |
 
-## B-003 — `ensure_app` blames file permissions for every failure
-- **Status:** fixed
-- **Repro:** break app installation any way at all (e.g. unreachable app store) and run `make seed`.
-  Message: `FAILED to install/enable app … (is custom_apps writable? see make up chown)` — even though the
-  real cause was `cURL error 28: Operation timed out … 10256066 out of 12433483 bytes received` and
-  `custom_apps` was writable.
-- **Cause:** both `occ` calls discarded stderr, then the helper asserted a cause it never checked.
-- **Fix:** [#41](https://github.com/APS-Conecta/gestion/issues/41) — surface `occ`'s own error.
+## Reporting a new one
 
-## B-004 — unquoted `NEXTCLOUD_TRUSTED_DOMAINS` breaks sourcing `.env`
-- **Status:** fixed
-- **Repro:** `cp .env.example .env && make seed` → `.env: line 18: nextcloud: command not found`, on every
-  run. Compose parsed the value fine; `provisioning/seed.sh:13` sources the same file with `.`, so the
-  shell read `…=localhost` and tried to run `nextcloud` as a command.
-- **Fix:** [#42](https://github.com/APS-Conecta/gestion/issues/42) — quote the value (Compose strips the
-  quotes; verified with `docker compose config`).
+Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and the gate
+that stops it recurring in `scripts/test.sh` or `scripts/smoke.sh`.
 
-## B-005 — `make office-eurooffice` prints `OFFICE_JWT_SECRET` to the terminal
-- **Status:** fixed
-- **Repro:** `make office-eurooffice` → the secret appears twice, once in make's echoed command line and
-  once in `occ`'s `is now set to '…'` confirmation. It then lives in scrollback and in any captured log.
-- **Fix:** [#43](https://github.com/APS-Conecta/gestion/issues/43) — `@` the recipe line, silence `occ`,
-  print a neutral confirmation. Gate: `make office-eurooffice 2>&1 | grep -c "$OFFICE_JWT_SECRET"` = 0.
-
-## B-006 — Xdebug log never writable, warning on every request
-- **Status:** fixed
-- **Repro:** `make up-dev`, then any `occ` call → `Xdebug: [Log Files] File '/tmp/xdebug.log' could not be
-  opened.` Noise on every `make seed` line, and no Xdebug log when you need one.
-- **Cause:** two stacked, both worth remembering. `/tmp` is world-writable, and Xdebug refuses to open a
-  log it does not own in such a directory — so chowning the file fixed `www-data` but not root. And the
-  entrypoint runs PHP as root at boot, so whoever ran first owned the file and locked the other out.
-- **Fix:** [#44](https://github.com/APS-Conecta/gestion/issues/44) — log to `/var/log/xdebug/`, with the
-  file pre-created for `www-data` in `Dockerfile.dev` so there is no race.
-
-## B-007 — ODF (`odt`/`ods`/`odp`) opens read-only
-- **Status:** fixed
-- **Repro:** `make office-eurooffice`, then click an `.odt` in Files → nothing happens. Opened explicitly
-  at `/apps/eurooffice/<fileid>` it renders correctly but with only `Archivo | Vista`, no ribbon and no
-  "Edit". OOXML (`docx`/`xlsx`/`pptx`) edits normally.
-- **Cause:** the connector declares ODF `lossy-edit`/`auto-convert` rather than `edit`
-  (`apps/eurooffice/assets/document-formats/onlyoffice-docs-formats.json`), so it shipped them unticked
-  in the default-open matrix, and `make office-eurooffice` set neither format key.
-- **Fix:** [#45](https://github.com/APS-Conecta/gestion/issues/45) — owner decision: enable lossy ODF
-  editing, scripted in `make office-eurooffice` (AD-2, never hand-ticked). Two keys, not the one the
-  issue named: `editFormats` sets the `edit` flag, `defFormats` makes a click in Files open here at
-  all; `AppConfig.php:1209` crosses them. The conversion loss is accepted because the alternative was
-  staff converting to `.docx` by hand — same fidelity loss, plus a duplicate file, against
-  `docs/CONVENTIONS.md` § *Una sola copia viva*.
-
-## B-008 — "Nextcloud" still leaks into two UI surfaces after white-labeling
-- **Status:** fixed — (1) suppressed, (2) accepted as admin-only
-- **Found:** 2026-07-28, during the Epic 5 close-out sweep. Not from the first bring-up like B-001…B-007.
-- **Repro:**
-  1. `/settings/user` (every user, not just admin) shows a link *"Razones para usar Nextcloud en su
-     organización"* — a stock Nextcloud PDF promo. This is the more visible of the two: it is on a
-     page ordinary staff open.
-  2. `/settings/admin/eurooffice` — the sidebar entry and page title now read "Euro-Office", but the
-     page **body** keeps ~20 translated strings saying "Nextcloud Office" (`l10n/es.json`).
-- **Cause:** both are strings owned by upstream code, not by our theme. Nextcloud's theming app
-  rewrites the product name in chrome it controls; it does not rewrite app-supplied copy.
-- **Why not fixed:** for (2), a blanket rename would make some strings **false** — *"Conectarse al
-  servidor de Nextcloud Office de demostración"* points at Nextcloud's own demo server, which is not
-  Euro-Office. Forcing a value that then lies is precisely the failure this epic already paid for
-  with `background_color` (see `docs/THEMING-MODEL.md` §4). For (1), the honest fix is disabling the
-  promo rather than renaming it, which is a config decision, not a theming one.
-- **Fix:** `b66c5ac` — (1) hides `.section.development-notice` from `server.css`. Hiding the one
-  link revealed the rest of its container, so the whole vendor block goes: the promo PDF, the
-  "developed by the Nextcloud community" credit and five social follow links. No config lever exists
-  — `ServerDevNotice::getSection()` returns `null` only with a paid Nextcloud subscription. Gated in
-  `scripts/test.sh` against the shipped template, because a selector that stops matching fails
-  silently. (2) stays: a blanket rename would make some strings false (the "Nextcloud Office demo
-  server" really is Nextcloud's). Tracked in [#48](https://github.com/APS-Conecta/gestion/issues/48).
-
-## B-009 — `default_language=es_419` is inert; the browser decides the UI language
-- **Status:** fixed
-- **Found:** 2026-07-29, chasing the residual half of #50 (which document language new files get).
-- **Repro:** on a seeded instance, `occ config:system:get default_language` returns `es_419`, yet
-  `php -r '\OC::$server->get(\OCP\L10N\IFactory::class)->languageExists(null, "es_419")'` is
-  **false**, and `findAvailableLanguages()` lists only `es`, `es_EC`, `es_MX` for Spanish. NC34
-  core ships no `es_419` translation — there is no `core/l10n/es_419.json`.
-- **Cause:** `es_419` is a valid ICU **locale** but not a **language**, and the two are separate
-  config slots. `Factory::findLanguage()` step 4 returns `default_language` *only if*
-  `languageExists()` accepts it, so this value could never be returned. What actually decided
-  each user's language was the `Accept-Language` request header (step 4 reads it *before* the
-  default, and persists the result as a per-user setting), falling back to `en` at step 5.
-  `phases/10-locale.sh` asserted the opposite in a comment — *"es_419 = the UI translation
-  Nextcloud actually ships"* — which is why it survived Epic 1 review.
-- **Why nobody saw it:** `admin` carries an explicit `core lang = es` user setting, so the admin
-  UI renders in Spanish. None of the four fixture staff users has one.
-- **Fix:** `default_language = es`, plus `force_language = es` so a personal browser setting
-  cannot change what staff see — the same call already made for `enforce_theme` and the editor's
-  `customizationTheme`. `default_locale = es_CL` was correct and is unchanged: only the language
-  slot was wrong. Tracked in [#60](https://github.com/APS-Conecta/gestion/issues/60). Subsumes [#50](https://github.com/APS-Conecta/gestion/issues/50), whose
-  document-template question resolved through the same `getLanguageCode()`.
-
-## B-010 — the eurooffice patches turn admin › Overview permanently red
-- **Status:** fixed
-- **Found:** 2026-07-30, reviewing the patch structure ADR-0002 had just landed. Finding 6 of 16;
-  the only one that needed a decision rather than a fix.
-- **Repro:** `make seed`, then `occ integrity:check-app eurooffice` → `INVALID_HASH` for
-  `appinfo/info.xml` and `lib/AdminSection.php`, and **Settings › Administration › Overview** shows
-  *"Some files have not passed the integrity check"*. The result is cached in appconfig
-  (`core` / `oc.integritycheck.checker`), so it survives page loads rather than flickering.
-- **Cause:** `apply_patch` edits two files of a **store-installed** app that ships
-  `appinfo/signature.json` — a vendor claim that its files are byte-for-byte as shipped, which our
-  patches make false. `apps/settings/lib/SetupChecks/CodeIntegrity.php:42` re-runs the verification
-  whenever no result is cached. ADR-0002 had weighed what patching costs — updates wipe it, `apps/`
-  is gitignored, `make seed` restores it — but never signatures, and no gate looked at them, so the
-  warning waited for whoever opened the admin Overview.
-- **Fix:** [#71](https://github.com/APS-Conecta/gestion/issues/71) — `12-apps.sh` deletes the
-  signature it just invalidated. `IntegrityCheck/Checker.php:546` verifies a **non-shipped** app
-  only if that file is present, so the app is skipped while core and every unpatched app keep their
-  check. Owner decision, with the three rejected alternatives, in `docs/adr/0002-app-patches.md`
-  § *Code integrity*. Gate: `scripts/smoke.sh` check 10 fails if a patched app is signed again —
-  which is exactly what an `occ app:update` from Settings › Apps does. A warning already cached
-  clears from the **Rescan…** link inside it.
-
-## B-011 — the brand lockups render Georgia, not Fraunces
-- **Status:** fixed
-- **Found:** 2026-07-30, while moving the full lockup into the header (the widened slot made the
-  wordmark large enough to see what typeface it actually was).
-- **Repro:** `fc-match Fraunces` on any machine without the font installed → a fallback
-  (`Noto Sans` here). Both lockups declare `font-family="Fraunces, Georgia, serif"`, so the login
-  card has been drawing its wordmark in **Georgia** on every Windows machine since Epic 5, and in
-  whatever `fc-match` returns elsewhere. Confirmed side by side in a browser: the shipped art next
-  to the same string as HTML text in the real webfont — different letterforms.
-- **Cause:** an SVG served as an image (`background-image`, `<img>`, the Theming pipeline) is an
-  **isolated document**. It cannot see `server.css`'s `@font-face`, so only fonts installed on the
-  viewer's OS are available. Epic 5's P1 pass verified "Fraunces + Nunito Sans actually applied" —
-  true, but that measured page CSS, and the lockups are not page CSS.
-- **Why nobody saw it:** the failure is invisible by construction. The wordmark still renders and
-  still reads "APS Conecta"; only the typeface is wrong, and at the 62×44 header slot it was ~4 px
-  tall anyway. No gate looked at fonts inside images.
-- **Fix:** `themes/apsconecta/tools/embed-fonts.py` subsets each font to the glyphs that lockup
-  actually draws and embeds it in the SVG as a `data:` `@font-face` — a data URL is not an external
-  fetch, so it survives the isolation. 5.5 KB for Fraunces, ~3 KB for Nunito Sans; both files stay
-  under 14 KB. The OS fallbacks are removed from `font-family` so a miss fails visibly instead of
-  silently substituting. Gate: `scripts/test.sh` fails if any theme SVG draws `<text>` without an
-  embedded face, or keeps a comma-separated fallback. Verified in both directions.
-
-<!-- Template:
-## B-00N — <short title>
-- **Status:** open | fixed
-- **Repro:** <steps>
-- **Fix:** <commit / PR when resolved>
--->
+```
+| B-0NN | <symptom> | <cause> | <commit or issue> |
+```

@@ -34,8 +34,11 @@ store updates stop arriving.
 - An app needing edits gets `provisioning/apps/<appid>/`, whose `*.patch` files are applied in
   name order. Apps with nothing to patch have no directory — no placeholder files.
 - Patches are applied with `patch`, not `sed`. **`patch` fails when its context stops matching**,
-  so the silent no-op is gone by construction rather than by a gate placed next to it. The greps
-  in `office-smoke.sh` were removed as redundant.
+  so the silent no-op is gone by construction rather than by a gate placed next to it.
+  *(Amended 2026-07-30: this originally said the greps in `office-smoke.sh` "were removed as
+  redundant". They were, and then restored — `patch` only gates the moment it is applied, and an
+  `occ app:update` reverts the edit with nothing running `make seed` afterwards. The greps assert
+  the state of the served files and are load-bearing; do not delete them on this ADR's authority.)*
 - `apply_patch` (`provisioning/lib.sh`) distinguishes **three** outcomes: forward `--dry-run`
   succeeds → apply; reverse `--dry-run` succeeds → already applied, continue; neither → upstream
   moved, **abort the seed** naming the file. The common `--forward --dry-run && patch` idiom
@@ -85,7 +88,7 @@ They have different lifetimes, which is why they live in different places:
 | | What | Survives an app update? | Where it lives |
 |---|---|---|---|
 | **install** | `occ app:install` | n/a | `12-apps.sh` |
-| **configure** | `occ config:app:set` | **yes** — it is in the database | `15-branding`, `16-app-policy`, `make office-eurooffice` |
+| **configure** | `occ config:app:set` | **yes** — it is in the database | `14-office`, `15-branding`, `16-app-policy` |
 | **patch** | editing files in `apps/<id>/` | **no** — wiped | `provisioning/apps/<id>/*.patch` |
 
 Reading "we changed the app" as one act is what put the connector's rename in the `Makefile`
