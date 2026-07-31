@@ -49,8 +49,10 @@ def snapshot_from(root):
     """Trim the DEIS pipeline's export down to the register this repo ships.
 
     KEPT: establishments in operation whose type comes from the primary-care codebook (CESFAM, PSR,
-    CECOSF, CGR, CGU) plus COSAM. Dropped: hospitals, the urgency network, and the whole private
-    sector — 3,100 rows nobody installing this would ever pick.
+    CECOSF, CGR, CGU), plus COSAM, plus the primary-care urgency network (SAPU, SAR, SUR) — those
+    are APS devices, usually dependent on a CESFAM. Dropped: the private sector, and hospitals with
+    them, so hospital urgency (UEH) never appears — it is an attribute of the hospital, not a row of
+    its own. Also dropped: the single SAMU row, a regional dispatch centre, not an establishment.
 
     The date comes from the pipeline's own data/raw/<date>/ capture, not from today's clock: the
     filename must name when MINSAL published, not when we happened to run this."""
@@ -71,10 +73,21 @@ def snapshot_from(root):
         for r in csv.DictReader(fh):
             tipo = r["tipo_estab_norma_codigo"] or r["tipo_estab_inferido_codigo"]
             glosa = r["tipo_estab_norma_glosa"] or r["tipo_estab_inferido_glosa"]
+            origen = r["tipo_establecimiento_glosa_origen"]
             if r["esta_vigente"] != "true":
                 continue
-            if r["tipo_estab_norma_campo"] != "TipoEstabPubAtenPrimCodigo" and "COSAM" not in glosa:
+            urgencia = glosa == "Establecimientos Públicos de la Red de Urgencia"
+            if r["tipo_estab_norma_campo"] != "TipoEstabPubAtenPrimCodigo" \
+                    and "COSAM" not in glosa and not urgencia:
                 continue
+            if urgencia:
+                # The norm gives the whole urgency network one code, and that code (3) collides with
+                # "Centros de Salud Privados" in the private codebook. The sigla the DEIS writes in
+                # its own glosa — "… de Urgencia (SAPU)" — is the only thing that tells them apart.
+                sigla = origen[origen.rfind("(") + 1:origen.rfind(")")] if "(" in origen else ""
+                if sigla == "SAMU":
+                    continue
+                tipo = sigla
             calle = " ".join(x for x in (r["tipo_via_glosa"], r["nombre_via"], r["numero"]) if x)
             w.writerow([r["establecimiento_codigo"], tipo, r["establecimiento_glosa"], calle.strip(),
                         r["comuna_codigo"], r["comuna_glosa_origen"], r["region_codigo"],
