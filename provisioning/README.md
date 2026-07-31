@@ -32,9 +32,9 @@ One stack serves one CESFAM, and everything specific to it is **data**: `sites/<
 the phase loop — each phase already runs in a subshell of that, so every phase sees the arrays and
 none can write back. An unset `SITE`, or a missing file, is fatal before any phase runs.
 
-**No real clinic ships in this repo.** `sites/dev/` is a synthetic example — "CESFAM de Prueba",
-`Sector 1` / `Sector 2`, no DEIS code — that exists so a fresh clone can `make seed` and so the
-clean-boot job has something to run. Write your own for a real clinic and point `SITE` at it.
+**No clinic ships in this repo** — a fresh clone has no site at all, and `make seed` refuses to run
+until you write one. Choosing the clinic is the first step of an install, not a file you inherit.
+The weekly clean-boot job does exactly the same thing before it seeds, so that path is tested.
 
 | In the site file | In the phases (identical everywhere) |
 |---|---|

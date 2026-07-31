@@ -128,7 +128,10 @@ def ask(question, word, gid_prefix):
     print(f"\n{question} (one per line, blank line to finish)")
     out = []
     while True:
-        name = input(f"  {len(out) + 1}: ").strip()
+        try:
+            name = input(f"  {len(out) + 1}: ").strip()
+        except EOFError:  # answers piped in and exhausted — a traceback would bury the real cause
+            sys.exit(f"\nFATAL: input ended while asking: {question}")
         if not name:
             return out
         bare = name[len(word):].strip() if fold(name).startswith(word) else name

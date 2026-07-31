@@ -33,15 +33,19 @@ from the repo root unless noted.
    Then **edit `.env`** and replace every `change-me…` placeholder with your own dev values (admin +
    PostgreSQL passwords at minimum; `OFFICE_JWT_SECRET` if you'll run Euro-Office — `openssl rand -hex 32`).
    *The stack boots with the placeholders, but don't leave real deployments on them.*
-   `SITE` names the clinic under `sites/` that `make seed` will provision. `SITE=dev` is the
-   synthetic example site the repo ships; for a real CESFAM, write your own first:
-   ```bash
-   scripts/deis.py cesfam la-florida        # find it in the DEIS register
-   scripts/deis.py 114302 --new mi-cesfam   # writes sites/mi-cesfam/site.sh, then set SITE=mi-cesfam
-   ```
-   No real clinic is committed here ([`provisioning/README.md`](provisioning/README.md)).
+   Leave `SITE` for step 3 — it names your clinic, which does not exist yet.
 
-3. **Start the core stack** (services only — no provisioning, per AD-2).
+3. **Choose your CESFAM.** No clinic ships in this repo — the DEIS register does, and you pick from it.
+   ```bash
+   scripts/deis.py cesfam "la florida"        # search: type, comuna, name — accent-blind
+   scripts/deis.py 114302 --new mi-cesfam     # writes sites/mi-cesfam/site.sh
+   ```
+   *Expected:* the second command asks for your **sectors** and **programs** — one per line, blank
+   line to finish — because no register knows them. Then set `SITE=mi-cesfam` in `.env`.
+   Everything else about the clinic (folders, the access matrix) is in that file, and it is yours to
+   edit. *If you skip this*, `make seed` stops and prints these same two commands.
+
+4. **Start the core stack** (services only — no provisioning, per AD-2).
    ```bash
    make up
    ```
@@ -49,7 +53,7 @@ from the repo root unless noted.
    auto-installs Nextcloud from your `.env` (admin + DB vars). This takes **~1–2 minutes** the first time.
    *If it errors* `No .env found` — you skipped step 2.
 
-4. **Wait until it's ready, then verify.** The HTTP surface comes up a little **after** the install
+5. **Wait until it's ready, then verify.** The HTTP surface comes up a little **after** the install
    finishes, so give it a moment:
    ```bash
    make smoke
@@ -59,16 +63,18 @@ from the repo root unless noted.
    *If it FAILs right after `make up`* the container is still warming up (`docker compose ps` shows
    nextcloud `health: starting`) — wait until it shows `(healthy)` and re-run. First boot only.
 
-5. **Open the app.**
+6. **Open the app.**
    Browse to **`http://localhost:8180`** (the `HTTP_PORT` from your `.env`) and sign in with the
    `NEXTCLOUD_ADMIN_USER` / `NEXTCLOUD_ADMIN_PASSWORD` you set. You now have a running instance.
 
-6. **(Optional) Seed synthetic dev data.**
+7. **Provision it.**
    ```bash
    make seed
    ```
-   *Expected:* creates ~4 clearly-synthetic sample users (`dev.*`, "(fixture)") + a sample file,
-   idempotently. Re-running never duplicates. No real data, ever.
+   *Expected:* your clinic's groups, folder tree and access matrix from step 3, plus ~4
+   clearly-synthetic sample users (`dev.*`, "(fixture)") and a sample file. Idempotent — re-running
+   never duplicates. Structure only, without the fixtures: `SEED_FIXTURES=0 make seed`.
+   No real data, ever.
 
 To stop: `make down` (keeps your data volumes). That's the whole loop.
 
