@@ -1,15 +1,21 @@
-# Centro de Salud Familiar Los Castaños — everything about this clinic that the provisioning phases read.
-# Written by scripts/deis.py; edited by hand from here on. Sourced once by seed.sh, before the
-# phase loop, so every phase sees it and none of it can leak back out.
+# SYNTHETIC dev site — not a real CESFAM, and no real CESFAM is committed here.
+# Its job is to give `make seed`, the idempotency gate and the clean-boot job a site to run against
+# on a fresh clone, exercising every shape a real one has (NFR-2: synthetic fixtures only).
+#
+# For a real clinic, write your own and point SITE at it — the register is already in the repo:
+#   scripts/deis.py cesfam <comuna>          # find the DEIS code
+#   scripts/deis.py <codigo> --new <slug>    # writes sites/<slug>/site.sh
+#
+# Sourced once by seed.sh, before the phase loop; every phase sees it, none can write back.
 
-# --- Identity — DEIS 114302, snapshot 2026-07-23 (scripts/deis.py 114302) ---
-SITE_DEIS=114302
+# --- Identity. No DEIS code: this establishment does not exist. ---
+SITE_DEIS=
 SITE_TIPO=CESFAM
-SITE_NOMBRE="Centro de Salud Familiar Los Castaños"
-SITE_NOMBRE_CORTO="CESFAM Los Castaños"
-SITE_DIRECCION="Calle Diagonal Los Castaños 5820"
-SITE_COMUNA="La Florida"
-SITE_SERVICIO_SALUD="Servicio de Salud Metropolitano Sur Oriente"
+SITE_NOMBRE="Centro de Salud Familiar de Prueba"
+SITE_NOMBRE_CORTO="CESFAM de Prueba"
+SITE_DIRECCION="Calle Falsa 123"
+SITE_COMUNA="Comuna de Prueba"
+SITE_SERVICIO_SALUD="Servicio de Salud de Prueba"
 
 # Forward hook for the production posture (#75). Empty = local dev, reached over the host port.
 SITE_DOMINIO=""
@@ -22,10 +28,8 @@ SITE_TEAMS=(
   "prog-salud-mental|Programa Salud Mental"
   "prog-infantil|Programa Infantil"
   "prog-cardiovascular|Programa Cardiovascular"
-  "sector-estrella|Sector Estrella"
-  "sector-lucero|Sector Lucero"
-  "sector-sol|Sector Sol"
-  "sector-luna|Sector Luna"
+  "sector-1|Sector 1"
+  "sector-2|Sector 2"
 )
 
 # --- Group folders. They cannot nest; the slashes only give the tree look. ---
@@ -40,10 +44,8 @@ SITE_FOLDERS=(
   "Unidades/OIRS"
   "Unidades/Estadística-REM"
   "Unidades/Dirección"
-  "Sectores/Sector Estrella"
-  "Sectores/Sector Lucero"
-  "Sectores/Sector Sol"
-  "Sectores/Sector Luna"
+  "Sectores/Sector 1"
+  "Sectores/Sector 2"
 )
 
 SITE_SUBFOLDERS=( "Protocolos" "Flujogramas" "Documentación" "Registro de redes" "Actas de reuniones" )
@@ -74,12 +76,8 @@ SITE_ACL=(
   "Unidades/Estadística-REM|role-estadistica-rem|read write delete"
   "Unidades/Estadística-REM|cat-jefaturas|read write delete"
   "Unidades/Dirección|cat-jefaturas|read write delete"
-  "Sectores/Sector Estrella|sector-estrella|read write delete"
-  "Sectores/Sector Estrella|cat-jefaturas|read write delete"
-  "Sectores/Sector Lucero|sector-lucero|read write delete"
-  "Sectores/Sector Lucero|cat-jefaturas|read write delete"
-  "Sectores/Sector Sol|sector-sol|read write delete"
-  "Sectores/Sector Sol|cat-jefaturas|read write delete"
-  "Sectores/Sector Luna|sector-luna|read write delete"
-  "Sectores/Sector Luna|cat-jefaturas|read write delete"
+  "Sectores/Sector 1|sector-1|read write delete"
+  "Sectores/Sector 1|cat-jefaturas|read write delete"
+  "Sectores/Sector 2|sector-2|read write delete"
+  "Sectores/Sector 2|cat-jefaturas|read write delete"
 )

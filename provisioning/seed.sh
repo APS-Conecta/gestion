@@ -18,9 +18,13 @@ SEED_FIXTURES="${SEED_FIXTURES:-1}"
 # The clinic this stack serves (#78). SITE names a directory under sites/ and arrives from .env like
 # every other setting. Sourced HERE, in the parent shell: each phase runs in a subshell of this one,
 # so all of it is visible to every phase and none of it can leak back out.
-SITE="${SITE:?FATAL: SITE is unset — name a directory under sites/ (e.g. SITE=los-castanos)}"
-[ -f "$HERE/../sites/$SITE/site.sh" ] || { echo "FATAL: no sites/$SITE/site.sh" >&2; exit 1; }
-# shellcheck source=../sites/los-castanos/site.sh
+SITE="${SITE:?FATAL: SITE is unset — set it in .env (SITE=dev is the synthetic example site)}"
+[ -f "$HERE/../sites/$SITE/site.sh" ] || {
+  echo "FATAL: no sites/$SITE/site.sh — create it with:" >&2
+  echo "         scripts/deis.py <DEIS code> --new $SITE      (find the code: scripts/deis.py cesfam <comuna>)" >&2
+  exit 1
+}
+# shellcheck source=../sites/dev/site.sh
 . "$HERE/../sites/$SITE/site.sh"
 
 echo "== APS Conecta provisioning (make seed) =="
