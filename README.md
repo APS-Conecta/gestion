@@ -33,6 +33,8 @@ from the repo root unless noted.
    Then **edit `.env`** and replace every `change-me…` placeholder with your own dev values (admin +
    PostgreSQL passwords at minimum; `OFFICE_JWT_SECRET` if you'll run Euro-Office — `openssl rand -hex 32`).
    *The stack boots with the placeholders, but don't leave real deployments on them.*
+   `SITE` names the clinic under `sites/` that `make seed` will provision — leave it at
+   `los-castanos` unless you are standing up a different CESFAM ([`provisioning/README.md`](provisioning/README.md)).
 
 3. **Start the core stack** (services only — no provisioning, per AD-2).
    ```bash
@@ -99,6 +101,7 @@ exists to prevent. Set by `provisioning/phases/14-office.sh`, never in the admin
 | `Makefile` | The dev lifecycle (`make help`). |
 | `scripts/` | `test.sh` + `smoke.sh` (the gate), `seed-idempotent.sh`, the two office checks, and `env.sh` (shared preamble). |
 | `provisioning/` | The single idempotent provisioning writer: `seed.sh` runner, `lib.sh` guard helpers, `phases/05-60`, `apps/` (per-app patches — [ADR-0002](docs/adr/0002-app-patches.md)), and [`provisioning/README.md`](provisioning/README.md). |
+| `sites/` | One `<slug>/site.sh` per CESFAM — its teams, folders, ACL matrix and identity — plus the DEIS register the identity is picked from. Written by `scripts/deis.py`. |
 | `apps/`, `themes/` | Live-mounted. `apps/` is vendored upstream apps (gitignored); `themes/apsconecta/` is the white-label server theme. |
 | `docs/ARCHITECTURE.md` | The architecture overview (design SSOT). |
 | `ROADMAP.md` · `BUGS.md` | Roadmap narrative · known bugs. Work in progress is on the [Projects board](https://github.com/orgs/APS-Conecta/projects/5). |

@@ -39,15 +39,8 @@ roles=(
 )
 for entry in "${roles[@]}"; do ensure_group "${entry%%|*}" "${entry#*|}"; done
 
-# Team-group placeholders — parameterized PER CESFAM (names/colours vary). These are example dev seeds;
-# a real deployment renames/extends them. Epic-3 folders bind to these team IDs.
-teams=(
-  "prog-salud-mental|Programa Salud Mental"
-  "prog-infantil|Programa Infantil"
-  "prog-cardiovascular|Programa Cardiovascular"
-  "sector-1|Sector 1"
-  "sector-azul|Sector Azul"
-)
-for entry in "${teams[@]}"; do ensure_group "${entry%%|*}" "${entry#*|}"; done
+# Team groups — programs and territorial sectors, which differ in every clinic. Data, not code:
+# sites/$SITE/site.sh. Epic-3 folders bind to these team IDs.
+for entry in "${SITE_TEAMS[@]}"; do ensure_group "${entry%%|*}" "${entry#*|}"; done
 
 phase_end

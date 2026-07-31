@@ -5,25 +5,19 @@
 # (groupfolders:create is NOT idempotent by name — always query first). Grants are phase 40-acl.
 phase_begin "30-folders" "Hybrid four-area Group Folders tree (Epic 3)"
 
-# Group folders (mount points). Program/unit/sector names are CESFAM-parameterizable placeholders.
-folders=(
-  "Transversal"
-  "Programas/Salud Mental" "Programas/Infantil" "Programas/Cardiovascular"
-  "Unidades/SOME" "Unidades/Farmacia" "Unidades/Dental" "Unidades/OIRS"
-  "Unidades/Estadística-REM" "Unidades/Dirección"
-  "Sectores/Sector 1" "Sectores/Sector Azul"
-)
-for f in "${folders[@]}"; do ensure_groupfolder "$f"; done
+# Group folders (mount points) — the tree is this clinic's, so it comes from sites/$SITE/site.sh.
+for f in "${SITE_FOLDERS[@]}"; do ensure_groupfolder "$f"; done
 
 # Transversal's shared-knowledge subfolders (regular folders inside the one Transversal group folder).
 # Per-subfolder ACL refinement (e.g. Registro de redes, Actas) is deferred to the validated matrix.
-for sub in "Protocolos" "Flujogramas" "Documentación" "Registro de redes" "Actas de reuniones"; do
+for sub in "${SITE_SUBFOLDERS[@]}"; do
   ensure_gf_subfolder "Transversal" "$sub"
 done
 
-# Surface the organization conventions where staff will see them (FR-14).
+# Surface the organization conventions where staff will see them (FR-14). The text is product; only
+# the clinic's name is per-site.
 ensure_gf_file "Transversal" "LÉEME — Convenciones.md" \
-"# Convenciones de organización — APS Conecta
+"# Convenciones de organización — $SITE_NOMBRE_CORTO
 
 Cómo mantener ordenada esta carpeta. Detalle completo: docs/CONVENTIONS.md en el repositorio.
 
