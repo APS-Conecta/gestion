@@ -43,39 +43,30 @@ from the repo root unless noted.
    *Expected:* the second command asks for your **sectors** and **programs** — one per line, blank
    line to finish — because no register knows them. Then set `SITE=mi-cesfam` in `.env`.
    Everything else about the clinic (folders, the access matrix) is in that file, and it is yours to
-   edit. *If you skip this*, `make seed` stops and prints these same two commands.
+   edit. *If you skip this*, `make install` stops and prints these same two commands.
 
-4. **Start the core stack** (services only — no provisioning, per AD-2).
+4. **Install it.** One command: it starts the stack, waits for Nextcloud's own installer to finish,
+   provisions everything, and health-checks the result.
    ```bash
-   make up
+   make install
    ```
-   *Expected:* `db`, `redis`, then `nextcloud` and `cron` start; on **first boot** the official image
-   auto-installs Nextcloud from your `.env` (admin + DB vars). This takes **~1–2 minutes** the first time.
-   *If it errors* `No .env found` — you skipped step 2.
-
-5. **Provision it.** `make up` returns before Nextcloud finishes installing itself, so this is also
-   the wait: it refuses to touch a half-installed instance and says so.
-   ```bash
-   make seed
+   *Expected:* one line per phase, then a summary naming your clinic and its counts:
    ```
-   *Expected:* 12 phases — hardening, locale, apps and their patches, the office connector, branding,
-   app policy, then your clinic's groups, folder tree and access matrix from step 3, and finally ~4
-   clearly-synthetic sample users (`dev.*`, "(fixture)") and a sample file. Idempotent — re-running
-   never duplicates. Structure only, without the fixtures: `SEED_FIXTURES=0 make seed`.
-   No real data, ever.
-   *If it errors* `Nextcloud is not installed/reachable` — the container is still warming up
-   (`docker compose ps` shows `health: starting`); wait for `(healthy)` and re-run. First boot only.
-
-6. **Verify.**
-   ```bash
-   make smoke
+   ▸ stack
+   ▸ provisioning — full log: .install.log
+       security
+       jobs
+       …
+   ✓ CESFAM Los Castaños — 7 teams, 14 group folders, 29 grants
+     health: PASS
+     http://localhost:8180
    ```
-   *Expected:* a single line beginning `PASS: core stack healthy — …`, listing every check it ran.
-   (The list itself is printed by `scripts/smoke.sh`; it is not copied here, so it cannot drift.)
-   **After seeding, not before** — five of its checks assert values that only a provisioning phase
-   writes, so on an unseeded stack it is *supposed* to fail.
+   **Run it again** whenever you edit `sites/<slug>/site.sh` or `git pull` — it converges, and
+   everything already applied is skipped in seconds. It deliberately does **not** move the Nextcloud
+   image or app versions; those stay separate, deliberate acts.
+   *If a phase fails*, the last 20 log lines are printed and the whole command is the retry.
 
-7. **Open the app.**
+5. **Open the app.**
    Browse to **`http://localhost:8180`** (the `HTTP_PORT` from your `.env`) and sign in with the
    `NEXTCLOUD_ADMIN_USER` / `NEXTCLOUD_ADMIN_PASSWORD` you set. You now have a running instance.
 
@@ -113,7 +104,7 @@ exists to prevent. Set by `provisioning/phases/14-office.sh`, never in the admin
 | `compose.dev.yaml`, `Dockerfile.dev`, `dev/xdebug.ini` | The derived Xdebug dev image (AD-10). |
 | `.env.example` | Template for your gitignored `.env`. **Never commit `.env`.** |
 | `Makefile` | The dev lifecycle (`make help`). |
-| `scripts/` | `test.sh` + `smoke.sh` (the gate), `seed-idempotent.sh`, `office-smoke.sh`, and `env.sh` (shared preamble). |
+| `scripts/` | `install.sh` (the one command) + `wait-ready.sh`, `test.sh` + `smoke.sh` (the gate), `seed-idempotent.sh`, `office-smoke.sh`, `deis.py`, and `env.sh` (shared preamble). |
 | `provisioning/` | The single idempotent provisioning writer: `seed.sh` runner, `lib.sh` guard helpers, `phases/05-60`, `apps/` (per-app patches — [ADR-0002](docs/adr/0002-app-patches.md)), and [`provisioning/README.md`](provisioning/README.md). |
 | `sites/` | One `<slug>/site.sh` per CESFAM — its teams, folders, ACL matrix and identity — plus the DEIS register they are picked from. **No clinic is committed** — you write yours with `scripts/deis.py`. |
 | `apps/`, `themes/` | Live-mounted. `apps/` holds store-installed apps, patched at seed time and gitignored ([ADR-0002](docs/adr/0002-app-patches.md)); `themes/apsconecta/` is the white-label server theme. |
@@ -134,17 +125,18 @@ v1 is complete: the browser acceptance run passed on 2026-07-24, with ODF edits 
 The paradigm is **vanilla Nextcloud + configuration-as-code, no fork**: the platform owns runtime and data;
 this repo adds only *declarative* customization (config, theming, groups/folders/ACLs) — **no core patch,
 zero custom PHP in v1** — and the running instance is a disposable *projection* of the repo's recipe. **The
-only thing that changes instance state is `make seed`** — one idempotent `occ` script (AD-2). Never hand-click
+only thing that changes instance state is `make seed`**, which `make install` wraps — one idempotent `occ`
+script (AD-2). Never hand-click
 configuration into the running app; if it isn't scripted, it isn't real.
 
 ### The loop
 
-1. `make up` (or `make up-dev` for Xdebug on `:9003`) — start services. Proves the stack boots.
-2. Edit the recipe — a `provisioning/phases/NN-*.sh`, or `apps/` / `themes/`, or `.env`.
-3. `make seed` — apply desired state. Idempotent: safe to re-run; it converges. (`SEED_FIXTURES=0 make seed`
-   applies structure only, skipping the fixture phases.)
-4. `make smoke` / `make test` — health-gate + the local quality gate. Green before a PR — CI runs the same script.
-5. Open a PR — see [`CONTRIBUTING.md`](CONTRIBUTING.md) (GitHub Flow, Conventional Commits, `ai-assisted`, 1
+1. Edit the recipe — a `provisioning/phases/NN-*.sh`, `sites/<slug>/site.sh`, `apps/` / `themes/`, or `.env`.
+2. `make install` — converge. Same command as the first time; it is idempotent by construction.
+   (`make up-dev` first if you want Xdebug on `:9003`; `SEED_FIXTURES=0 make seed` applies structure
+   only, skipping the fixture phases; `make seed` is the verbose inner pipeline.)
+3. `make smoke` / `make test` — health-gate + the local quality gate. Green before a PR — CI runs the same script.
+4. Open a PR — see [`CONTRIBUTING.md`](CONTRIBUTING.md) (GitHub Flow, Conventional Commits, `ai-assisted`, 1
    approval); work is tracked on the [Projects board](https://github.com/orgs/APS-Conecta/projects/5).
 
 ### A feature = one provisioning phase

@@ -4,6 +4,11 @@ The **single writer of desired state** for the APS Conecta instance (AD-2). `mak
 services only; **`make seed`** applies all configuration/groups/folders/ACLs/fixtures by
 running `seed.sh`, which sources the numbered phase files in `phases/` in fixed order.
 
+**`make install` is the front door** ([#79](https://github.com/APS-Conecta/gestion/issues/79)): it
+brings the stack up, waits for Nextcloud's own installer, runs this pipeline with the phase log going
+to `.install.log`, and health-checks the result. `make seed` stays the verbose inner command — it is
+what `scripts/seed-idempotent.sh` runs and greps, so its output format is load-bearing.
+
 ```
 provisioning/
   seed.sh            # the runner (make seed → this)

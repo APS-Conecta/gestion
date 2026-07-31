@@ -4,7 +4,7 @@
 #   `make office-eurooffice` → Euro-Office (eurooffice/JWT)
 # `make smoke` / `make test` = the local quality gate; `make seed` runs the provisioning pipeline.
 .DEFAULT_GOAL := help
-.PHONY: help up up-dev down seed seed-idempotent smoke test fix-mount-perms office-eurooffice office-smoke office-down
+.PHONY: help install up up-dev down seed seed-idempotent smoke test fix-mount-perms office-eurooffice office-smoke office-down
 
 OCC = docker compose exec -T --user www-data nextcloud php occ
 # Your host group, so the container can hand the bind mounts back to you (fix-mount-perms).
@@ -15,18 +15,23 @@ HOST_GID := $(shell id -g)
 # Same guard, four targets. One message, one place to change it.
 REQUIRE_ENV = test -f .env || { echo "No .env found — run: cp .env.example .env  (then edit the passwords)"; exit 1; }
 
+install: ## Stand this clinic up, or converge it after editing site.sh / git pull (the one command)
+	@bash scripts/install.sh
+
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
-up: ## Start the core stack (services only)
+up: ## Start the core stack (services only) and wait until Nextcloud is installed
 	@$(REQUIRE_ENV)
-	docker compose up -d
+	@docker compose up -d
 	@$(MAKE) --no-print-directory fix-mount-perms
+	@bash scripts/wait-ready.sh
 
 up-dev: ## Start the core stack with the Xdebug derived dev image (step-debugging on :9003)
 	@$(REQUIRE_ENV)
-	docker compose -f compose.yaml -f compose.dev.yaml up -d --build
+	@docker compose -f compose.yaml -f compose.dev.yaml up -d --build
 	@$(MAKE) --no-print-directory fix-mount-perms
+	@bash scripts/wait-ready.sh
 
 fix-mount-perms: ## Make the bind-mounted apps/ + themes/ writable by BOTH the container (uid 33) and you
 	@# Linux bind mounts keep host ownership, but uid 33 must own custom_apps/themes to install apps
@@ -39,7 +44,7 @@ fix-mount-perms: ## Make the bind-mounted apps/ + themes/ writable by BOTH the c
 down: ## Stop the stack (keeps volumes)
 	docker compose down
 
-seed: ## Run the provisioning pipeline (services must be up)
+seed: ## Run the provisioning pipeline verbosely (make install wraps this)
 	@$(REQUIRE_ENV)
 	provisioning/seed.sh
 

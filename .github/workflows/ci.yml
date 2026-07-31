@@ -44,18 +44,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: cp .env.example .env
-      - run: make up
-      # `make up` returns when the containers start, not when Nextcloud has finished installing
-      # itself, and `make seed` fails fast on a half-installed instance.
-      - name: Wait for the installer
-        run: |
-          for _ in $(seq 60); do
-            if docker compose exec -T --user www-data nextcloud php occ status --output=json 2>/dev/null | grep -q '"installed":true'; then
-              exit 0
-            fi
-            sleep 10
-          done
-          echo "Nextcloud did not finish installing in 10 minutes"; docker compose logs nextcloud | tail -50; exit 1
       # No clinic ships in the repo, so the first thing an install does is choose one — and this is
       # the only place that command is exercised. Piped answers stand in for the operator's; the
       # appended SITE line wins over anything .env.example says, because env.sh takes the last
@@ -64,11 +52,13 @@ jobs:
         run: |
           printf 'Sector 1\nSector 2\n\nSalud Mental\nInfantil\n\n' | scripts/deis.py 114302 --new ci
           echo "SITE=ci" >> .env
-      # This is the path nothing else exercises: a checkout has an empty apps/, so 12-apps installs
-      # every app from the store and applies its patches for real, and every query-before-set guard
-      # meets a key that does not exist yet. Deliberately without --profile eurooffice: the ~2 GB
-      # documentserver is only needed for the healthcheck, not for install-and-patch.
-      - run: make seed
+      # The whole install, exactly as an operator runs it: `make up` now owns the wait for Nextcloud's
+      # own installer (this job used to carry its own nine-line copy of that loop), and provisioning
+      # follows. This is also the path nothing else exercises — a checkout has an empty apps/, so
+      # 12-apps installs every app from the store and applies its patches for real, and every
+      # query-before-set guard meets a key that does not exist yet. Deliberately without
+      # --profile eurooffice: the ~2 GB documentserver is only needed for the healthcheck.
+      - run: make install
       # The only place a first AND a second seed both exist. Idempotency is the pipeline's defining
       # property (AD-2) and nothing else asserts it: a warm dev box cannot tell "already correct"
       # from "silently did nothing", because on a warm box those are the same thing.
