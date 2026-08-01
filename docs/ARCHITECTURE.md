@@ -89,8 +89,9 @@ Each datum has exactly one owner:
 
 Editing flow: a user opens a document in the browser → Nextcloud hands off to the standalone Euro-Office
 server over the `eurooffice` connector/**JWT** — a separate container reachable at its own server URL → the
-server renders and co-edits in-browser, writing back through the callback. `make office-eurooffice` brings up
-the server and wires the connector. Multiple documents open as independent sessions (side-by-side tabs).
+server renders and co-edits in-browser, writing back through the callback. The server comes up with the stack
+and `make install` wires the connector (#81). Documents open in a **new window** (`sameTab=false`), so an
+editor never replaces the folder it was opened from; multiple documents are independent sessions.
 
 ## Access model (RBAC)
 
@@ -167,9 +168,10 @@ reverse-proxy for the office server with a hardened allow-list (Euro-Office uses
 backups and RTO/RPO, sizing/HA, and production observability. The v1 operational surface is `occ status` plus
 the `make smoke` gate.
 
-Euro-Office is resource-bound (uncapped, OSS) and fairly heavy (~8 GB RAM recommended for multi-user), but
-the dev footprint stays modest since it only runs when brought up with `make office-eurooffice` —
-comfortable on a laptop.
+Euro-Office is resource-bound (uncapped, OSS) and fairly heavy (~8 GB RAM recommended for multi-user). Since
+#81 dropped its compose profile it comes up with the stack, so that is now a **hard floor for every clinic
+host and every dev box**, not a number that only applies when someone opts in. `make office-down` stops just
+the document server when the work does not need it.
 
 ### Logs — three facts nobody had written down
 

@@ -40,20 +40,26 @@ Two consequences seen in practice: the brand kit's standalone `occ-theming.sh` w
 being a second entry point (ADR-0001), and brand images are *registered* from theme files rather
 than uploaded through the admin UI, which also keeps admin credentials out of the seed runner.
 
-**Correction (2026-07-28, narrowed 2026-07-30) — `make office-eurooffice` is a second writer.** As
-written above, this decision reads as if `seed.sh` were the only path that mutates the instance.
-It is not, though it is now much closer than it was: the app install moved to phase `12-apps` and
-the connector's config to phase `14-office`, so all that remains outside the pipeline is one
-`trusted_domains` repair (an install-time value, indexed into an array, which the config guards do
-not model). The target then runs `seed.sh` itself.
+**Exception retired (2026-08-01, #81). AD-2 now holds without an asterisk: `seed.sh` is the only
+writer.**
 
-The office backend is deliberately out of the seed pipeline — it is an optional profile brought up
-on demand (AD-5), and a phase that needs an app the pipeline has not installed yet would have to
-either skip silently on a clean bring-up or force the profile on everyone. So AD-2's *rule* is
-narrower than its wording: **desired state is declared in git and applied by a make target that is
-idempotent and re-runnable**, and `seed.sh` is the writer for everything in the core stack. What
-AD-2 actually forbids — hand-clicking, and one-off scripts nobody re-runs — still holds without
-exception.
+The history is worth keeping, because it shows what the exception actually rested on. From
+2026-07-28 this decision carried a correction: `make office-eurooffice` was a second writer. It was
+narrowed twice — the app install moved to phase `12-apps`, the connector's config to phase
+`14-office` — until all that remained outside the pipeline was one `trusted_domains` repair, kept
+out on the grounds that it was an install-time value indexed into an array, which the config guards
+do not model.
+
+That was never the real reason. The real reason was that the office backend sat behind
+`profiles: ["eurooffice"]`: a phase could not depend on a service the pipeline might never start, so
+it would have had to skip silently on a clean bring-up or force the profile on everyone.
+[#81](https://github.com/APS-Conecta/gestion/issues/81) dropped the profile, and with it the premise.
+The repair moved into `14-office` — query-before-set done directly rather than through
+`config_system_set`, since the key to write is the next free array index — and
+`make office-eurooffice` was deleted as a redundant second entry point.
+
+The narrowed wording the correction proposed (*"applied by a make target that is idempotent and
+re-runnable"*) is no longer needed. AD-2 as originally written is now literally true.
 
 ### AD-3 — Secrets live in `.env`, never in git and never in a log
 
@@ -72,14 +78,21 @@ allows, never by subtracting.
 
 ### AD-5 — Euro-Office is the office backend
 
-Collaborative editing runs on the Euro-Office document server, brought up and wired by
-`make office-eurooffice`, on an OSS image with no paid licence. `scripts/office-smoke.sh` proves the
-pipe end to end and asserts the image provenance.
+Collaborative editing runs on the Euro-Office document server, on an OSS image with no paid licence.
+`scripts/office-smoke.sh` proves the pipe end to end and asserts the image provenance.
 
-**Clarified by [ADR-0002](0002-app-patches.md):** what is opt-in is the ~2 GB documentserver
-container behind `--profile eurooffice`. The `eurooffice` *connector app* is installed by
-`make seed` (phase `12-apps`) on every instance — it is inert until this target gives it a URL
-and a secret, and being installed is what lets its patches be re-applied each seed.
+**Nothing about it is opt-in any more (2026-08-01, [#81](https://github.com/APS-Conecta/gestion/issues/81)).**
+ADR-0002 had clarified that the opt-in part was the ~2.5 GB documentserver behind
+`--profile eurooffice`, the connector app being installed by `make seed` regardless. Measuring
+before deciding showed how little that profile was holding back: `12-apps` installed the connector
+and `14-office` configured it on *every* seed, so the container was the only thing standing between
+an install and a working editor — and `make install` is meant to yield a clinic that can open a
+document. The profile is gone, `make office-eurooffice` with it, and `office-smoke` joined
+`make test` now that the service it needs is always running.
+
+**Accepted costs, named:** every `make up` runs the document server, including for a CSS edit
+(`make office-down` reclaims the RAM), the ~8 GB multi-user floor becomes a hard requirement for
+every clinic host, and CI's clean boot downloads 2.56 GB it used to skip.
 
 ### AD-6 — White-labeling is config, not theme files *(superseded)*
 
@@ -108,8 +121,8 @@ code, identifiers and config keys are English.
 Container-to-container traffic uses the compose service name over the compose network — `nextcloud`,
 `db`, `redis`, `eurooffice` — never `localhost` and never a host-published port. That is why
 `14-office.sh` sets `DocumentServerInternalUrl=http://eurooffice/` and `StorageUrl=http://nextcloud/`
-while `DocumentServerUrl` (the BROWSER's view) uses `localhost:$OFFICE_PORT`, and why
-`make office-eurooffice` must add `nextcloud` to `trusted_domains`.
+while `DocumentServerUrl` (the BROWSER's view) uses `localhost:$OFFICE_PORT`, and why the same phase
+adds `nextcloud` to `trusted_domains` — Nextcloud answers HTTP 400 to a fetch at an untrusted host.
 
 `host.docker.internal` is reserved for the other direction, container -> host, and on Linux it needs
 an explicit `extra_hosts: host-gateway` mapping. Its one real consumer is Xdebug connecting out to

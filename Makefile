@@ -1,12 +1,10 @@
 # APS Conecta Gestión — dev lifecycle.
-# `make up` starts the core services ONLY (no seeding/provisioning — AD-2).
-# The office backend (Story 0.2) is Euro-Office (AD-5):
-#   `make office-eurooffice` → Euro-Office (eurooffice/JWT)
+# `make up` starts every service, Euro-Office included (AD-5, promoted by #81) — but seeds nothing
+# (AD-2). `make office-down` stops just the document server when 2.5 GB is not worth a CSS edit.
 # `make smoke` / `make test` = the local quality gate; `make seed` runs the provisioning pipeline.
 .DEFAULT_GOAL := help
-.PHONY: help setup install up up-dev down seed seed-idempotent smoke test fix-mount-perms office-eurooffice office-smoke office-down
+.PHONY: help setup install up up-dev down seed seed-idempotent smoke test images images-check fix-mount-perms office-smoke office-down
 
-OCC = docker compose exec -T --user www-data nextcloud php occ
 # Your host group, so the container can hand the bind mounts back to you (fix-mount-perms).
 HOST_GID := $(shell id -g)
 # No .env reading here: every script sources scripts/env.sh itself, so `make smoke` and
@@ -25,9 +23,14 @@ install: ## Stand this clinic up, or converge it after editing site.sh / git pul
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
-up: ## Start the core stack (services only) and wait until Nextcloud is installed
+up: ## Start every service (Euro-Office included) and wait until Nextcloud is installed
 	@$(REQUIRE_ENV)
-	@docker compose up -d
+	@# --wait, because Euro-Office joined the stack in #81 and `make test` now smokes it: without
+	@# this, `up` returned while the document server was still inside its 120s start_period and the
+	@# gate raced it. Every service here has a healthcheck, so this waits on all five. It is free on
+	@# a warm box (already healthy) and costs the office boot on a cold one — which is the cost #81
+	@# accepted. The timeout turns a service that never goes healthy into a failure rather than a hang.
+	@docker compose up -d --wait --wait-timeout 420
 	@$(MAKE) --no-print-directory fix-mount-perms
 	@bash scripts/wait-ready.sh
 
@@ -67,21 +70,10 @@ images: ## Refresh the pinned image digests to what each tag points at today (#1
 images-check: ## Report whether any tag has moved past its pin (changes nothing)
 	@bash scripts/image-digests.sh --check
 
-office-eurooffice: ## Bring up the Euro-Office backend and wire the eurooffice connector
-	@$(REQUIRE_ENV)
-	docker compose --profile eurooffice up -d --wait eurooffice
-	@# This target owns the BACKEND: the container above, the trusted_domains repair below, and the
-	@# smoke. The CONNECTOR's config is phase 14-office.sh; the app and its patches are 12-apps.
-	@# The doc server fetches from Nextcloud at the StorageUrl host (`nextcloud`), which must be a
-	@# trusted domain or Nextcloud answers HTTP 400. It stays here because it repairs an INSTALL-time
-	@# value and indexes into an array, which the config guards do not model. Idempotent.
-	$(OCC) config:system:get trusted_domains | grep -qx nextcloud || $(OCC) config:system:set trusted_domains $$($(OCC) config:system:get trusted_domains | grep -c .) --value=nextcloud
-	@# Then the connector config, through the pipeline that owns it. The WHOLE seed runs — phases are
-	@# sourced by seed.sh, not independently runnable — which is affordable because it is idempotent.
-	@# Output is not silenced: a target that reprovisions should say so. SEED_FIXTURES=0 because
-	@# bringing up an office backend is no reason to create sample users.
-	SEED_FIXTURES=0 provisioning/seed.sh
-	@bash scripts/office-smoke.sh
+# `office-eurooffice` was DELETED here by #81. Once the profile was dropped and the trusted_domains
+# repair moved into phase 14-office, the target was `make up` + `make seed` + a smoke — a second
+# entry point for something `make install` already does, which is exactly what ADR-0001 deleted
+# occ-theming.sh for. Use `make install`; use `make office-smoke` to check the backend alone.
 
 office-smoke: ## Smoke-check the Euro-Office backend
 	@bash scripts/office-smoke.sh

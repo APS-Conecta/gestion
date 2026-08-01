@@ -10,9 +10,10 @@
 # make two identical seeds produce different instances depending on the day. Run it, then
 # `make seed`, which re-applies the patches or fails loudly if upstream moved.
 #
-# eurooffice is installed here, not by `make office-eurooffice`. AD-5's opt-in is the ~2 GB
-# documentserver container; the connector is a PHP app that does nothing until that target gives it
-# a URL and a secret, and having it installed is what lets its patches be re-applied every seed.
+# eurooffice is installed here; 14-office configures it. That split predates #81 and outlived the
+# reason for it — AD-5's opt-in was the ~2 GB documentserver, which is now an ordinary service — but
+# the split is still right: this phase owns which apps exist and what is patched inside them, and
+# having the connector installed on every seed is what lets its patches be re-applied every seed.
 phase_begin "12-apps" "apps this instance runs, plus the edits inside them"
 
 APPS="groupfolders side_menu eurooffice"

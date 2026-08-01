@@ -110,10 +110,18 @@ services:
       retries: 3
       start_period: 20s
 
-  # ── Office backend: Euro-Office documentserver (profile: eurooffice) — Story 0.2, AD-5 ──
-  # Only comes up under `--profile eurooffice`. Wired via the `eurooffice` connector + shared JWT by
-  # `make office-eurooffice`. Self-contained image (bundles its own PG/Redis/RabbitMQ) — do NOT wire
-  # it to the core db/redis.
+  # ── Office backend: Euro-Office documentserver — Story 0.2, AD-5, promoted by #81 ──
+  # Comes up with the stack. It sat behind `profiles: ["eurooffice"]` until #81: measuring showed
+  # most of "mandatory" was already true — 12-apps installs the connector and 14-office configures
+  # it on EVERY seed — and only this ~2.5 GB container stood between an install and a working
+  # editor. `make install` is supposed to yield a clinic that can open a document.
+  #
+  # ACCEPTED COSTS, named rather than discovered: every `make up` now runs this, including when the
+  # work is a CSS edit (`make office-down` is the escape hatch), and the ~8 GB multi-user floor in
+  # docs/ARCHITECTURE.md becomes a hard requirement for every clinic host. CI pays it too — the
+  # clean boot downloads 2.56 GB it used to skip.
+  #
+  # Self-contained image (bundles its own PG/Redis/RabbitMQ) — do NOT wire it to the core db/redis.
   eurooffice:
     # No semver release tag is published on GHCR (only `latest` + CI build tags), so the tag says
     # `latest` and the digest says which one. That is the reverse of #81's reading: `latest` sounds
@@ -122,7 +130,6 @@ services:
     # is unpredictable: when it does move there is no version to reason about, which is exactly why
     # it needs the digest more than the others, not less.
     image: ghcr.io/euro-office/documentserver:latest@sha256:5a1a8b7083856b309f09a5b06aa96f80182cbdfccddcae6c082ecf7a2b3cbf2b
-    profiles: ["eurooffice"]
     environment:
       - "JWT_ENABLED=true"
       - "JWT_SECRET=${OFFICE_JWT_SECRET:?set OFFICE_JWT_SECRET in .env}"
@@ -132,8 +139,8 @@ services:
       # Loopback only (rule 16). Internal port is 80, published on the host as OFFICE_PORT.
       - "127.0.0.1:${OFFICE_PORT:?set OFFICE_PORT in .env}:80"
     # No extra_hosts: every path between these two containers goes by SERVICE NAME (AD-8) —
-    # StorageUrl is http://nextcloud/, which is also why `make office-eurooffice` adds `nextcloud`
-    # to trusted_domains. Add host.docker.internal back only if a callback actually needs it.
+    # StorageUrl is http://nextcloud/, which is also why phase 14-office adds `nextcloud` to
+    # trusted_domains. Add host.docker.internal back only if a callback actually needs it.
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost/healthcheck || exit 1"]
       interval: 15s

@@ -98,8 +98,9 @@ here and had already lost four targets.)
 **Step-debugging:** `make up-dev`, then in VS Code run the committed **"Listen for Xdebug"** config
 (`.vscode/launch.json`, port 9003) and send a request carrying the Xdebug trigger.
 
-**Office suite:** `make office-eurooffice` brings up Euro-Office, wires the Nextcloud Office connector, and
-runs an editing smoke that also audits the image (OSS, no paid licence).
+**Office suite:** Euro-Office comes up with the stack and `make install` wires the connector — nothing extra
+to run (#81). `make office-smoke` checks the pipe end to end and audits the image (OSS, no paid licence);
+`make office-down` stops just the document server when you want the ~2.5 GB back.
 
 **Live editing acceptance (Epic 4) — done.** Run in a browser on **2026-07-24** (issue #30, since closed;
 the standing runbook `docs/ACCEPTANCE-EDITING.md` was retired with it). In-browser render, create/edit/save
@@ -187,8 +188,9 @@ says what and why. Locale stays in the `10-locale` phase.
 
 ### The office backend
 
-`make office-eurooffice` brings up Euro-Office (AD-5), wires its connector, and runs an editing smoke.
-It also audits the image provenance (OSS, no paid licence).
+Euro-Office (AD-5) is part of the stack, not an add-on: #81 dropped its compose profile, so `make install`
+yields a clinic that can open a document. `make office-smoke` runs the editing smoke and audits the image
+provenance (OSS, no paid licence); it is also part of `make test` now that the service is always up.
 
 ### Guardrails you must not break
 
