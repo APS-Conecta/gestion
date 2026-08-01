@@ -28,6 +28,16 @@ SITE_TEAMS=(
   "sector-luna|Sector Luna"
 )
 
+# --- Roles this clinic adds beyond the 22 every CESFAM has (id|display|category) (#103) ---
+# Empty because Los Castaños has no SAR, SAPU or SUR — every position it carries is already in the
+# shared registry. A clinic that runs one declares its people here, e.g.
+#   "role-jefe-sar|Jefe/a de SAR|cat-jefaturas"    <- gets a standing account, like the other jefaturas
+#   "role-tens-sar|TENS – SAR|cat-tecnicos"        <- a job title; the people arrive with the roster
+# The category is which cat-* an account holding the role must also join. It is what carries the
+# access: grants target cat-* wherever possible, so a new lead inherits them without an ACL edit.
+# Only the four shared categories are accepted; phase 20 fails loudly on anything else.
+SITE_ROLES=()
+
 # --- Group folders. They cannot nest; the slashes only give the tree look. ---
 SITE_FOLDERS=(
   "Transversal"

@@ -62,6 +62,14 @@ jobs:
         run: |
           printf 'Sector 1\nSector 2\n\nSalud Mental\nInfantil\n\n' | scripts/deis.py 114302 --new ci
           echo "SITE=ci" >> .env
+          # Clinic-local roles (#103). Los Castaños has no SAR, so its SITE_ROLES is empty and the
+          # create path never runs on the reference clinic — CI is the only place it executes. One of
+          # each kind on purpose: a jefatura, which must ALSO produce a standing account, and a
+          # technical role, which must not. Appended rather than generated, because deis.py writes an
+          # empty array by design and a clinic with a SAR is not the default.
+          cat >> sites/ci/site.sh <<'ROLES'
+          SITE_ROLES+=( "role-jefe-sar|Jefe/a de SAR|cat-jefaturas" "role-tens-sar|TENS – SAR|cat-tecnicos" )
+          ROLES
       # The whole install, exactly as an operator runs it: `make up` owns the wait for Nextcloud's
       # own installer, and provisioning follows. This is also the path nothing else exercises — a
       # checkout has an empty apps/, so 12-apps installs every app from the store and applies its
@@ -72,6 +80,21 @@ jobs:
       # clean boot proves a document can actually be opened rather than only that the connector was
       # configured.
       - run: make install
+      # Paired with the SITE_ROLES appended above (#103), because "the seed did not crash" is not the
+      # same as "the roles landed". Asserts both halves of the rule: a cat-jefaturas role is a
+      # POSITION and gets a standing account; a cat-tecnicos one is a job title held by people who
+      # arrive with the roster (#86), so it must NOT. The negative is the half that would rot
+      # silently — an over-eager loop creating accounts for every local role looks like success.
+      - name: Clinic-local roles landed, and only the jefatura got an account
+        run: |
+          occ() { docker compose exec -T --user www-data nextcloud php occ "$@"; }
+          occ group:list | grep -q role-jefe-sar
+          occ group:list | grep -q role-tens-sar
+          occ user:info jefe.sar > /dev/null
+          if occ user:info tens.sar > /dev/null 2>&1; then
+            echo "FAIL: tens.sar exists — a cat-tecnicos role must not create a standing account" >&2
+            exit 1
+          fi
       # The only place a first AND a second seed both exist. Idempotency is the pipeline's defining
       # property (AD-2) and nothing else asserts it: a warm dev box cannot tell "already correct"
       # from "silently did nothing", because on a warm box those are the same thing.
