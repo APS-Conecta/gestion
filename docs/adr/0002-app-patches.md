@@ -30,7 +30,22 @@ Three problems had accumulated:
 measurement: `eurooffice` alone is 11 MB and 410 files, and committing it pins the version so
 store updates stop arriving.
 
-- `provisioning/phases/12-apps.sh` names every app in one `APPS` line and installs them.
+> **Reversed 2026-08-01 by [#98](https://github.com/APS-Conecta/gestion/issues/98) — the repo now
+> holds the app AND the patch.** Both halves of the rejection turned out to be arguments *for*
+> vendoring. The size was measured wrong: 11 MB is the *unpacked* app, and the tarball is 4.3 MB —
+> ~12 MB for all three, taking the repo from 7.3 MB to ~19 MB. And "store updates stop arriving" is
+> the point, not the cost: `occ app:install` takes an app id and nothing else, so a clean install got
+> whatever was newest that day while `10-admin-section-name.patch` is anchored to a line number in
+> 11.0.1. What actually decided it is a third thing neither side had weighed — **the app store is
+> the only dependency whose failure leaves the instance half-built.** A failed image pull stops the
+> install; a failed app install leaves the app missing, its folders absent and its patches unapplied.
+>
+> Unchanged: the tarballs are **unmodified upstream**. Committing them already patched was rejected
+> in #82 and is still rejected — it hides a four-line change inside 409 files and makes upstream
+> drift silent, where a patch that stops applying aborts the phase and says so.
+
+- `provisioning/phases/12-apps.sh` names every app in one `APPS` line; each has a tarball and a
+  `VENDOR` file (version, upstream URL, sha256) beside its patches, and is unpacked then enabled.
 - An app needing edits gets `provisioning/apps/<appid>/`, whose `*.patch` files are applied in
   name order. Apps with nothing to patch have no directory — no placeholder files.
 - Patches are applied with `patch`, not `sed`. **`patch` fails when its context stops matching**,
@@ -91,9 +106,14 @@ They have different lifetimes, which is why they live in different places:
 
 | | What | Survives an app update? | Where it lives |
 |---|---|---|---|
-| **install** | `occ app:install` | n/a | `12-apps.sh` |
+| **install** | unpack the vendored tarball, then `occ app:enable` | n/a | `12-apps.sh` + `provisioning/apps/<id>/*.tar.gz` |
 | **configure** | `occ config:app:set` | **yes** — it is in the database | `14-office`, `15-branding`, `16-app-policy` |
 | **patch** | editing files in `apps/<id>/` | **no** — wiped | `provisioning/apps/<id>/*.patch` |
+
+*Install changed on 2026-08-01 ([#98](https://github.com/APS-Conecta/gestion/issues/98)): it was
+`occ app:install`, which reads the app store. The tarballs are committed unmodified beside their
+patches, with a `VENDOR` file recording version, upstream URL and sha256. `app:enable` never
+contacts the store, so nothing in a clean install does.*
 
 Reading "we changed the app" as one act is what put the connector's rename in the `Makefile`
 next to its JWT secret, where a `make seed` could not restore it.
@@ -103,7 +123,13 @@ next to its JWT secret, where a `make seed` could not restore it.
 - An app update that moves a patched line **stops the seed**. That is the intended cost: the
   alternative is the rename silently reverting and nobody noticing until a user sees "Nextcloud
   Office". Regenerate the patch and re-run.
-- Adding an app is one word in `APPS`; adding an edit is one file in a directory.
+- Adding an app is one word in `APPS` **plus its tarball and `VENDOR` file**; adding an edit is one
+  file in a directory. Bumping a vendored app is a deliberate act, like `occ app:update`: replace the
+  tarball, update all three `VENDOR` lines, run `make seed`, and the patches are the gate — they
+  either still apply or the phase stops and says which one moved.
+- The repo carries ~12 MB of tarballs (7.3 MB → ~19 MB) and **git keeps every version forever**, so
+  each bump adds another full copy to every clone. Recorded rather than discovered later. Nobody is
+  yet named as the owner of those bumps — the same gap that left #82's `appstore-timeout` unbuilt.
 - Nothing outside `make seed` installs the connector, so on a fresh instance the seed must run
   before the office backend is usable. It already had to, for groups and folders.
 

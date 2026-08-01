@@ -193,17 +193,91 @@ add_user_to_group() {  # UID GID  (query-before-add: accurate + idempotent)
   GROUPS_CACHE="$2"$'\t'"$1"$'\n'"$GROUPS_CACHE"
 }
 
-# --- apps (install-or-enable; idempotent) ---
-ensure_app() {  # APPID
-  local app="$1" err
+# --- apps (unpack the vendored tarball, then enable; idempotent) ---
+#
+# NOT `occ app:install` (#98). The app store is the only dependency whose failure leaves the
+# instance HALF-BUILT: a failed image pull stops the install outright, while a failed app install
+# leaves the app missing, its folders absent and its patches unapplied — an instance that looks
+# installed and is not. That is a different class of failure from "slow", and it does not depend on
+# how often the store is slow. `occ app:install` also takes an app id and nothing else, so a clean
+# install got whatever was newest that day while `eurooffice/10-admin-section-name.patch` is
+# anchored to a line number in 11.0.1.
+#
+# The store stays ENABLED on the instance: turning it off also removes the admin Update button,
+# whose absence is itself a guard (#82).
+#
+# The tarballs are UNMODIFIED upstream, and stay that way. Committing them already patched was
+# rejected in #82 and is still rejected: it hides a four-line change inside 409 files and makes
+# upstream drift silent, where a patch that stops applying aborts the phase and says so.
+ensure_vendored_app() {  # APPID
+  # Two statements, not one. Bash expands every word of a `local` BEFORE assigning any of them, so
+  # `local app="$1" dir=".../$app"` reads whatever `app` meant in the CALLER — which here is phase
+  # 12's loop variable of the same name, so it produced the right answer for the wrong reason and
+  # would have broken the moment anything called this from a different loop.
+  local app="$1"
+  local dir="$HERE/apps/$app" tgz want sha cur
+  local -a tarballs=("$dir"/*.tar.gz)
+
+  # EVERY READ BELOW IS GUARDED ON THE FILE EXISTING FIRST, and none of them is a pipeline. Not
+  # style: seed.sh runs each phase as `( set -e; . "$phase" )` and inherits `pipefail` from its own
+  # `set -uo pipefail`, so a `cmd file | head` where the file is absent makes the whole assignment
+  # non-zero and errexit kills the phase — printing NOTHING, not even the `log` line written to
+  # explain that exact case. The first version of this function did that and reported a missing app
+  # directory as a bare "FATAL: phase 12-apps.sh failed". If you add a read here, guard it or it
+  # will swallow its own error message.
+  [ -f "${tarballs[0]}" ] || { log "FAILED $app — no vendored tarball in provisioning/apps/$app/"; return 1; }
+  [ "${#tarballs[@]}" -eq 1 ] || { log "FAILED $app — ${#tarballs[@]} tarballs in provisioning/apps/$app/, expected 1"; return 1; }
+  tgz="${tarballs[0]}"
+  [ -f "$dir/VENDOR" ] || { log "FAILED $app — provisioning/apps/$app/VENDOR is missing"; return 1; }
+  want="$(sed -n 's/^version=//p' "$dir/VENDOR")" || want=""
+  sha="$(sed -n 's/^sha256=//p' "$dir/VENDOR")" || sha=""
+  [ -n "$want" ] && [ -n "$sha" ] || { log "FAILED $app — VENDOR is missing version= or sha256="; return 1; }
+
+  # The tarball is committed, so git already guarantees the bytes survived the clone. This catches
+  # the other thing: a bump where the file and the VENDOR line stopped describing each other.
+  echo "$sha  $tgz" | sha256sum --check --status \
+    || { log "FAILED $app — tarball does not match sha256 in VENDOR; re-download it from url="; return 1; }
+
+  # apps/ is bind-mounted, so the host can read the installed version without occ. awk rather than
+  # `sed | head`: one process, exits 0 on no match, and no pipeline to inherit a status from.
+  cur=""
+  if [ -f "apps/$app/appinfo/info.xml" ]; then
+    cur="$(awk -F'[<>]' '/<version>/ {print $3; exit}' "apps/$app/appinfo/info.xml")"
+  fi
+
+  if [ "$cur" = "$want" ]; then
+    log "app $app $want vendored, already unpacked"
+  elif [ -n "$cur" ]; then
+    # DIVERGENCE IS REPORTED, NOT REPAIRED. Whether `make install` re-imposes the vendored version
+    # over a different installed one is the one question #98 left open, so this does not answer it
+    # by acting. Unpacking anyway would also be the destructive-looking half of #85 on the only file
+    # tree a human might have touched deliberately. The patches below still run, and if upstream
+    # moved under them the phase fails loudly — which is the signal that matters.
+    log "app $app is $cur but $want is vendored — NOT re-imposed; see #98"
+  else
+    # Streamed into the container and unpacked as www-data, rather than on the host: files must be
+    # writable by uid 33 or the patches below cannot apply. Ownership ends up www-data:www-data and
+    # `make fix-mount-perms` restores the host group on the next `make up` (AD-9), which is why
+    # nothing does it here.
+    if docker compose exec -T --user www-data nextcloud \
+         tar xzf - -C /var/www/html/custom_apps < "$tgz"; then
+      log "app $app $want unpacked from $(basename "$tgz")"
+    else
+      log "FAILED to unpack $app from $(basename "$tgz")"; return 1
+    fi
+  fi
+
   conf_load
   [ "$(conf_get app "$app" enabled 2>/dev/null || true)" = "yes" ] && { log "app $app enabled"; return 0; }
-  # Keep occ's own error: it is the only thing that says WHY. Guessing a cause here once sent an
-  # operator hunting file permissions when the real failure was an app store timeout (#41).
-  if err="$(occ app:install "$app" 2>&1)" || err="$(occ app:enable "$app" 2>&1)"; then
-    log "app $app installed/enabled"
+  # `app:enable` alone, never `app:install` — enable reads what is on disk and never contacts the
+  # store, which is the whole point. Keep occ's own error: it is the only thing that says WHY.
+  # Guessing a cause here once sent an operator hunting file permissions when the real failure was
+  # an app store timeout (#41).
+  local err
+  if err="$(occ app:enable "$app" 2>&1)"; then
+    log "app $app enabled"
   else
-    log "FAILED to install/enable app $app — occ said: $(printf '%s' "$err" | tr '\n' ' ' | tail -c 300)"
+    log "FAILED to enable app $app — occ said: $(printf '%s' "$err" | tr '\n' ' ' | tail -c 300)"
     return 1
   fi
 }

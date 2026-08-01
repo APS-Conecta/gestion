@@ -65,7 +65,7 @@ graph TD
   CR --> R
   NC <-->|eurooffice connector · compose service name| C[office backend · Euro-Office]
   PROV[provisioning: occ script + fixtures] -->|make seed| NC
-  A[apps/ → custom_apps · store apps, gitignored] -.bind mount.-> NC
+  A[apps/ → custom_apps · vendored apps, gitignored] -.bind mount.-> NC
   T[themes/apsconecta · server theme] -.bind mount.-> NC
 ```
 

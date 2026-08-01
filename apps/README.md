@@ -3,9 +3,10 @@
 Bind-mounted to **`/var/www/html/custom_apps`** by `compose.yaml`. Two things land here, and only
 this README is tracked (`.gitignore` un-ignores it explicitly):
 
-- **Store apps** installed by `provisioning/phases/12-apps.sh` — `groupfolders`, `side_menu`,
-  `eurooffice`. Their code is not committed; edits to them are committed as `*.patch` files under
-  `provisioning/apps/`, per [ADR-0002](../docs/adr/0002-app-patches.md).
+- **Vendored apps** unpacked here by `provisioning/phases/12-apps.sh` — `groupfolders`, `side_menu`,
+  `eurooffice`. Their upstream tarballs *are* committed, under `provisioning/apps/<id>/`, beside the
+  `*.patch` files that edit them and a `VENDOR` file naming the version, URL and sha256. Nothing in a
+  clean install contacts the app store (#98). See [ADR-0002](../docs/adr/0002-app-patches.md).
 - **Custom apps**, one directory per app id with an `appinfo/info.xml`. **v1 ships none** (AD-1); the
   first is the REM app, which lives in its own repo and installs onto this platform.
 

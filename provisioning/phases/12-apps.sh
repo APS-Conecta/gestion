@@ -1,14 +1,23 @@
 # Phase 12 — the apps this instance runs, and the edits we make inside them.  OWNER: ADR-0002.
 # Runs before 15-branding and 30-folders, which use side_menu and groupfolders.
 #
-# APPS is the inventory; provisioning/apps/<appid>/*.patch are the edits, applied in name order
-# after install. So this file says what we install, `ls provisioning/apps/` says what we edit.
+# APPS is the inventory; provisioning/apps/<appid>/ holds the vendored tarball, its VENDOR
+# provenance file, and the *.patch edits applied in name order after unpacking. So this file says
+# WHICH apps we run and that directory says which bytes and which edits.
+#
+# NOTHING HERE CONTACTS THE APP STORE (#98). The store was the only dependency whose failure left
+# the instance half-built — an app missing, its folders absent, its patches unapplied — where a
+# failed image pull merely stops. ~12 MB of committed tarballs buys that away. The cost is recorded
+# rather than hidden: the repo went from 7.3 MB to ~19 MB and git keeps every future version
+# forever, so each bump adds another full copy for every clone.
 # Only FILE edits belong here — `occ config:app:set` lives in the database, survives an app update,
 # and stays in 15-branding / 16-app-policy / 14-office.
 #
 # This phase does NOT update apps: `occ app:update` is a deliberate act, and updating here would
 # make two identical seeds produce different instances depending on the day. Run it, then
-# `make seed`, which re-applies the patches or fails loudly if upstream moved.
+# `make seed`, which re-applies the patches or fails loudly if upstream moved. Bumping a vendored
+# app is the same kind of act — new tarball, new VENDOR lines, then `make seed` — and the patches
+# are the gate either way.
 #
 # eurooffice is installed here; 14-office configures it. That split predates #81 and outlived the
 # reason for it — AD-5's opt-in was the ~2 GB documentserver, which is now an ordinary service — but
@@ -19,7 +28,7 @@ phase_begin "12-apps" "apps this instance runs, plus the edits inside them"
 APPS="groupfolders side_menu eurooffice"
 
 for app in $APPS; do
-  ensure_app "$app"
+  ensure_vendored_app "$app"
   patched=
   for patch in "$HERE"/apps/"$app"/*.patch; do
     [ -e "$patch" ] || continue
