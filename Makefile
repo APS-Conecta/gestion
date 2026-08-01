@@ -61,6 +61,12 @@ smoke: ## Health-gate the running core stack (exit 0 healthy / non-0 broken)
 test: ## Local quality gate — static checks + smoke (same script CI runs)
 	@bash scripts/test.sh
 
+images: ## Refresh the pinned image digests to what each tag points at today (#109)
+	@bash scripts/image-digests.sh
+
+images-check: ## Report whether any tag has moved past its pin (changes nothing)
+	@bash scripts/image-digests.sh --check
+
 office-eurooffice: ## Bring up the Euro-Office backend and wire the eurooffice connector
 	@$(REQUIRE_ENV)
 	docker compose --profile eurooffice up -d --wait eurooffice

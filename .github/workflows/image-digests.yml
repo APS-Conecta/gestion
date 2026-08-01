@@ -1,0 +1,54 @@
+# Weekly: has any image tag moved past the digest we pinned? (#109)
+#
+# The pins are what make two clinics provably the same build. This is the other half — without it a
+# pin silently becomes a fossil, and the reason for pinning (knowing WHICH version is deployed)
+# quietly turns into never updating at all.
+#
+# IT REPORTS, IT DOES NOT BUMP. A red run here is not an incident: no installed clinic is affected,
+# because nothing pulls a new image on its own — there is no `docker compose pull` in `make up` or
+# `make install`, and `up -d` only pulls when an image is absent. It means "new bytes exist,
+# somebody decide". A human runs `make images`, commits, and opens a PR, where `cleanboot` does a
+# full clean bring-up against the NEW bytes before it can merge.
+#
+# WHY NOT OPEN THE PR ITSELF. Two reasons, and the second is fatal. A bot that merged its own image
+# bump would put a Nextcloud nobody had booted into a clinic. And GitHub does not run workflows on
+# PRs opened with GITHUB_TOKEN, so cleanboot would not run on that PR at all — the bump would arrive
+# looking green and be untested. Automating the detection is the part that has value; automating the
+# merge removes the only gate.
+name: Image digests
+
+on:
+  schedule:
+    - cron: "0 5 * * 1"          # Mondays 05:00 UTC, an hour before the clean boot
+  workflow_dispatch:
+  # Also on PRs that touch a pin, so a hand-edited or malformed digest fails before it lands. The
+  # script rejects an unpinned image outright, which is the guard that keeps a newly added service
+  # from reintroducing a rolling tag.
+  pull_request:
+    paths:
+      - 'compose*.yaml'
+      - 'Dockerfile.dev'
+      - 'scripts/image-digests.sh'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  digests:
+    name: Pins current
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      # Offline, and true of every commit: no unpinned image, no malformed digest. This is what the
+      # pull_request trigger is for — it catches a service added on a rolling tag.
+      - name: Every image is pinned
+        run: bash scripts/image-digests.sh --validate
+      # NOT on pull_request. A tag moving upstream has nothing to do with the branch, and a check
+      # that goes red for reasons the author cannot fix is a check everyone learns to ignore.
+      # Reads the registries' manifests only — no image is pulled, so this costs seconds rather
+      # than the 3.3 GB behind these four tags.
+      - name: Has any tag moved past its pin?
+        if: github.event_name != 'pull_request'
+        run: make images-check

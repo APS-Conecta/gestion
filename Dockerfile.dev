@@ -1,7 +1,10 @@
 # Derived DEV-ONLY image: the official Nextcloud image + Xdebug for step-debugging (AD-10).
 # Never used by the base compose.yaml / in production — built on demand via compose.dev.yaml
 # (`make up-dev`). Adds nothing but Xdebug; entrypoint/CMD are inherited from the base image.
-FROM nextcloud:34-apache
+# Pinned to the SAME digest compose.yaml runs (#109), and kept in step by `make images`. Leaving
+# this on the bare tag is how a dev box ends up debugging a different build from the one it deploys
+# — which is #96, on the one image where the difference is hardest to see.
+FROM nextcloud:34-apache@sha256:b52f7bc0e496f227b0e85e3b88571a42c68b6245ccde29d577e733227715dcf5
 
 # Xdebug 3 via PECL (base is php:8.5-apache; ships pecl + docker-php-ext-enable, no xdebug).
 RUN pecl install xdebug \
