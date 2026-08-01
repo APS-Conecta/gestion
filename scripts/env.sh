@@ -27,13 +27,15 @@ occ() { docker compose exec -T --user www-data nextcloud php occ "$@"; }
 require_site() {
   [ -n "${SITE:-}" ] || {
     echo "FATAL: SITE is unset — .env must name the clinic this stack serves." >&2
-    echo "       No .env yet? cp .env.example .env, then fill it in." >&2
+    echo "       Set SITE=los-castanos to use the reference clinic that ships," >&2
+    echo "       or see README step 3 to write your own. No .env yet? cp .env.example .env" >&2
     return 1
   }
   [ -f "sites/$SITE/site.sh" ] || {
-    echo "FATAL: no sites/$SITE/site.sh — no clinic ships in this repo; write yours with:" >&2
+    echo "FATAL: no sites/$SITE/site.sh — write it with:" >&2
     echo "         scripts/deis.py cesfam <comuna>              # find the DEIS code" >&2
     echo "         scripts/deis.py <codigo> --new $SITE" >&2
+    echo "       Or use the reference clinic that ships: SITE=los-castanos" >&2
     return 1
   }
 }

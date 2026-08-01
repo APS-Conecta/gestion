@@ -33,9 +33,12 @@ from the repo root unless noted.
    Then **edit `.env`** and replace every `change-me…` placeholder with your own dev values (admin +
    PostgreSQL passwords at minimum; `OFFICE_JWT_SECRET` if you'll run Euro-Office — `openssl rand -hex 32`).
    *The stack boots with the placeholders, but don't leave real deployments on them.*
-   Leave `SITE` for step 3 — it names your clinic, which does not exist yet.
+   Leave `SITE` for step 3 — it names the clinic this stack serves.
 
-3. **Choose your CESFAM.** No clinic ships in this repo — the DEIS register does, and you pick from it.
+3. **Choose your CESFAM.** One clinic ships as a working reference: **CESFAM Los Castaños**, in
+   `sites/los-castanos/site.sh`. To run it as-is, set `SITE=los-castanos` in `.env` and skip to step 4.
+
+   For any *other* clinic, the DEIS register ships too and you pick from it:
    ```bash
    scripts/deis.py cesfam "la florida"        # search: type, comuna, name — accent-blind
    scripts/deis.py 114302 --new mi-cesfam     # writes sites/mi-cesfam/site.sh
@@ -43,7 +46,11 @@ from the repo root unless noted.
    *Expected:* the second command asks for your **sectors** and **programs** — one per line, blank
    line to finish — because no register knows them. Then set `SITE=mi-cesfam` in `.env`.
    Everything else about the clinic (folders, the access matrix) is in that file, and it is yours to
-   edit. *If you skip this*, `make install` stops and prints these same two commands.
+   edit.
+
+   *If you skip this*, `make install` stops before starting anything. It prints the two commands
+   above when `SITE` names a clinic that has no `sites/<slug>/site.sh`; when `SITE` is unset
+   entirely it points you back at `.env`, which is this step's other half.
 
 4. **Install it.** One command: it starts the stack, waits for Nextcloud's own installer to finish,
    provisions everything, and health-checks the result.
