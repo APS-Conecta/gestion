@@ -182,12 +182,18 @@ and read: [`provisioning/README.md`](../provisioning/README.md).
 
 ## Environments
 
-v1 targets **local development per developer only** — a single Compose stack brought up with one command.
+A single Compose stack, brought up with one command, on **a developer's machine or a clinic's** — those
+are the same stack and the same command. `make setup && make install` stands up a named CESFAM from a clean
+checkout, and #77's whole effort was making that true of a machine nobody has seen. *(Until 2026-08-01 this
+paragraph said v1 targeted "local development per developer only". That stopped being true when the
+installer landed; it was left standing longer than the claim was.)*
 
-Everything operational for a live deployment is intentionally **deferred**: hosting/provider, a TLS
-reverse-proxy for the office server with a hardened allow-list (Euro-Office uses a shared JWT secret),
-backups and RTO/RPO, sizing/HA, and production observability. The v1 operational surface is `occ status` plus
-the `make smoke` gate.
+What is still **deferred** is everything that makes a host reachable and survivable rather than everything
+that makes it run: hosting/provider, a TLS reverse-proxy for the office server with a hardened allow-list
+(Euro-Office uses a shared JWT secret), backups and RTO/RPO, sizing/HA, and production observability — all
+owned by #75, which is why staff password delivery (#106) waits on it. **There is no backup story in this
+repo**, and that absence is load-bearing elsewhere: it is why convergence reports rather than deletes (#85).
+The operational surface is `occ status` plus the `make smoke` gate.
 
 Euro-Office is resource-bound (uncapped, OSS) and fairly heavy (~8 GB RAM recommended for multi-user). Since
 #81 dropped its compose profile it comes up with the stack, so that is now a **hard floor for every clinic
