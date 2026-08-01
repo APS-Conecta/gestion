@@ -184,6 +184,15 @@ SITE_TEAMS=(
   {nl.join(teams)}
 )
 
+# --- Roles this clinic adds beyond the 22 every CESFAM has (id|display|category) (#103) ---
+# Empty is the right default: the shared registry covers a CESFAM with no local unit. Add one here
+# if this clinic runs a SAR, SAPU or SUR, e.g.
+#   "role-jefe-sar|Jefe/a de SAR|cat-jefaturas"    <- gets a standing account, like the other jefaturas
+#   "role-tens-sar|TENS – SAR|cat-tecnicos"        <- a job title; the people arrive with the roster
+# The category is which cat-* an account holding the role must also join, and it is what carries the
+# access. Only the four shared categories are accepted; phase 20 fails loudly on anything else.
+SITE_ROLES=()
+
 # --- Group folders. They cannot nest; the slashes only give the tree look. ---
 SITE_FOLDERS=(
   {nl.join(f'"{f}"' for f in folders)}

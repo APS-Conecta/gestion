@@ -97,8 +97,17 @@ editor never replaces the folder it was opened from; multiple documents are inde
 
 Authorization is entirely **group-based — never per individual**, delivered through the Group Folders app.
 
-- Each of the ~21 CESFAM **roles** is a flat Nextcloud group (`role-*`); Nextcloud groups do not nest. IDs,
-  slugs, and the role→category mapping are fixed in the spine's **Group Registry**.
+- **The group is the only access key.** Every grant in the system takes a group id and nothing else —
+  `gf_grant` for folders, `app_restrict_to_groups` for apps, `add_user_to_group` for people — so "what may
+  this user reach" is answered entirely by "which groups is this user in". Custom apps added later plug into
+  the same key; there is no second mechanism. The rule that follows: **grant on the broadest group that is
+  still correct** (`cat-*` over `role-*` unless the job title is genuinely the point), which is what lets a
+  clinic add a role and have it inherit every existing grant without one being edited.
+- Each CESFAM **role** is a flat Nextcloud group (`role-*`); Nextcloud groups do not nest. **22 are shared by
+  every clinic** — the vocabulary that keeps one clinic's ACL matrix readable beside another's — with IDs,
+  slugs and the role→category mapping fixed in the spine's **Group Registry**. A clinic running a **SAR, SAPU
+  or SUR** adds its own in `SITE_ROLES` (`id|display|category`), since it could already declare the unit, its
+  folder and its grants but had no way to name who leads it (#103).
 - Coarse and cross-role access use **parallel groups**: the four categories (`cat-jefaturas`, `cat-clinicos`,
   `cat-tecnicos`, `cat-administrativos`), an **`all-staff`** group **every user belongs to** (the single
   encoding of "all staff"), and parameterizable **team groups** `prog-*` (program teams) and `sector-*`
@@ -126,7 +135,9 @@ Sectores) with a first-cut access matrix; the final validated matrix is settled 
 
 **What varies per clinic is data, not code.** The `prog-*`/`sector-*` teams, the folder tree, the whole
 grant matrix and the clinic's identity live in `sites/<slug>/site.sh`; phases 20/30/40 only loop over it.
-The `role-*`, `cat-*` and `all-staff` groups do not vary and stay in the phases. How that file is written
+`cat-*` and `all-staff` do not vary — the four categories are what make one clinic's matrix comparable to
+another's, so they are deliberately not site-definable. `role-*` is **both**: 22 shared ones stay in the
+phase and a clinic may add its own in `SITE_ROLES` (#103). How that file is written
 and read: [`provisioning/README.md`](../provisioning/README.md).
 
 > **Note:** the Nextcloud Activity stream may surface names of ACL-hidden items — keep genuinely sensitive

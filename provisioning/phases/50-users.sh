@@ -33,11 +33,29 @@ for entry in "${SITE_TEAMS[@]}"; do
   esac
 done
 
+# The same move for roles the clinic added itself (#103). A jefatura is a POSITION and this phase
+# creates one account per position, so a clinic-local Jefe/a de SAR gets one exactly as the four
+# fixed jefaturas do. ONLY cat-jefaturas: a local clinical or technical role — a SAR's TENS, say —
+# describes many people rather than a post, and those accounts arrive with the roster (#86).
+#
+# The uid is DERIVED, not declared: `role-jefe-sar` -> `jefe.sar`, which is the convention the fixed
+# jefaturas below already follow. A fourth field would be a second name for the same thing and a
+# second thing to get out of step. Same `declare -p` guard as phase 20 — see the note there for why
+# `${SITE_ROLES[@]:-}` would run the loop once on an empty array.
+declare -p SITE_ROLES >/dev/null 2>&1 || SITE_ROLES=()
+local_jefes=()
+for entry in "${SITE_ROLES[@]}"; do
+  id="${entry%%|*}"; rest="${entry#*|}"; display="${rest%%|*}"; category="${rest##*|}"
+  [ "$category" = cat-jefaturas ] || continue
+  uid="${id#role-}"; uid="${uid//-/.}"
+  local_jefes+=("${uid}|${display}|${id} ${category} all-staff")
+done
+
 # The positions every CESFAM has, whatever its sectors. Each entry:
 #   uid | display | groups  (space-separated: role-*, cat-*, all-staff, optional team ids)
 # cat-jefaturas is load-bearing rather than decorative: SITE_ACL grants it on every Unidades folder,
 # so a lead outside it would lead a unit it cannot open.
-# A clinic with a SAR, SAPU or other local unit needs a role this list cannot express — see #103.
+# A clinic with a SAR, SAPU or other local unit declares its lead in SITE_ROLES (#103) — see above.
 users=(
   "director|Director/a de CESFAM|role-director-cesfam cat-jefaturas all-staff"
   "subdirector|Subdirector/a Médico o Jefe Técnico|role-subdirector-jefe-tecnico cat-jefaturas all-staff"
@@ -45,6 +63,7 @@ users=(
   "jefe.farmacia|Jefe/a de Farmacia (Químico/a Farmacéutico/a)|role-quimico-farmaceutico cat-jefaturas all-staff"
   "jefe.some|Jefe/a de SOME|role-jefe-some cat-jefaturas all-staff"
   "${sector_jefes[@]}"
+  "${local_jefes[@]}"
 )
 
 for entry in "${users[@]}"; do
