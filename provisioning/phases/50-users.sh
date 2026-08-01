@@ -1,33 +1,57 @@
-# Phase 50 — sample users (FIXTURE, dev-only — gated by SEED_FIXTURES).  OWNER: Story 0.6.
-# Creates a small set of clearly-synthetic sample users via ensure_user (idempotent), and adds
-# them to all-staff ONLY if that group already exists (Epic 2 owns it — fixtures never create
-# structure, AD-2). Structure lives in phases 20–40.
-phase_begin "50-users" "Synthetic sample users into existing groups (Story 0.6)"
+# Phase 50 — the clinic's standing leadership accounts.  OWNER: Story 0.6, redefined 2026-08-01.
+# Creates one account per POSITION every CESFAM has, idempotently via ensure_user, and adds each to
+# groups phase 20 already created (this phase never creates structure — AD-2). The ordering that
+# guarantees is the runner's own: 20-groups -> 30-folders -> 40-acl -> here.
+#
+# WHAT CHANGED AND WHY. This used to create four accounts called `dev.medico`, `DEV Matrona
+# (fixture)` and so on — deliberately ugly so nobody mistook them for staff. Their real job was to
+# prove the role-union: one person in four groups receiving the sum of their permissions. But the
+# positions they modelled were arbitrary, and an instance shown to clinic staff was full of accounts
+# named DEV. These are the positions a CESFAM actually has, so the instance now demonstrates the
+# design rather than merely exercising it. The union check did not leave with them: every jefe de
+# sector below holds a role, a sector team and a category at once — the same union, on an account
+# that means something.
+#
+# STILL GATED BY SEED_FIXTURES, and still one shared password. These are POSITIONS, not people.
+# Real staff, real accounts and real password delivery are #86; until that lands, each account here
+# stands in for someone not yet named. Do not treat this phase as having onboarded anybody.
+phase_begin "50-users" "The clinic's standing leadership accounts"
 
 : "${FIXTURE_USER_PASSWORD:?set FIXTURE_USER_PASSWORD in .env}"
 
-# Team ids belong to the clinic, so take the first of each kind from the site file instead of naming
-# them. Hardcoding `sector-1` made the union fixture silently lose its sector leg on every CESFAM
-# that numbers its sectors differently — which, once sites/ exists, is all of them.
-teams_of() { for e in "${SITE_TEAMS[@]}"; do case "${e%%|*}" in "$1"*) printf '%s ' "${e%%|*}" ;; esac; done; }
-# shellcheck disable=SC2046  # word splitting is the point: one team id per positional
-set -- $(teams_of prog-); prog1="${1:-}"; prog2="${2:-$prog1}"
-set -- $(teams_of sector-); sector1="${1:-}"
+# One jefe PER SECTOR, derived from the site file rather than named here: Los Castaños has four, a
+# clinic with two gets two, and this file does not change. A single jefe holding every sector team
+# could open every sector's folder, which would leave the per-sector ACL matrix true on paper and
+# untested in practice — the separation is the part worth demonstrating.
+sector_jefes=()
+for entry in "${SITE_TEAMS[@]}"; do
+  id="${entry%%|*}"; display="${entry#*|}"
+  case "$id" in
+    # `sector-estrella` -> `jefe.estrella`, and the display name carries the sector's own label, so
+    # it reads as the clinic wrote it, accents included.
+    sector-*) sector_jefes+=("jefe.${id#sector-}|Jefe/a de ${display}|role-jefe-sector-mais ${id} cat-jefaturas all-staff") ;;
+  esac
+done
 
-# Clearly-synthetic fixtures + their multi-role membership (Story 2.2). Each entry:
-#   uid | display | groups  (space-separated: role-*, cat-*, all-staff, optional prog-*/sector-* teams)
-# dev.medico is deliberately multi-membership to exercise the role-union (Story 2.2 AC).
+# The positions every CESFAM has, whatever its sectors. Each entry:
+#   uid | display | groups  (space-separated: role-*, cat-*, all-staff, optional team ids)
+# cat-jefaturas is load-bearing rather than decorative: SITE_ACL grants it on every Unidades folder,
+# so a lead outside it would lead a unit it cannot open.
+# A clinic with a SAR, SAPU or other local unit needs a role this list cannot express — see #103.
 users=(
-  "dev.direccion|DEV Dirección (fixture)|role-director-cesfam cat-jefaturas all-staff"
-  "dev.some|DEV SOME (fixture)|role-administrativo-some cat-administrativos all-staff"
-  "dev.medico|DEV Médico (fixture)|role-medico cat-clinicos all-staff $prog1 $sector1"
-  "dev.matrona|DEV Matrona (fixture)|role-matroneria cat-clinicos all-staff $prog2"
+  "director|Director/a de CESFAM|role-director-cesfam cat-jefaturas all-staff"
+  "subdirector|Subdirector/a Médico o Jefe Técnico|role-subdirector-jefe-tecnico cat-jefaturas all-staff"
+  # The Químico Farmacéutico IS the pharmacy's technical director — one position, not two.
+  "jefe.farmacia|Jefe/a de Farmacia (Químico/a Farmacéutico/a)|role-quimico-farmaceutico cat-jefaturas all-staff"
+  "jefe.some|Jefe/a de SOME|role-jefe-some cat-jefaturas all-staff"
+  "${sector_jefes[@]}"
 )
 
 for entry in "${users[@]}"; do
   uid="${entry%%|*}"; rest="${entry#*|}"; display="${rest%%|*}"; groups="${rest#*|}"
   ensure_user "$uid" "$display" "$FIXTURE_USER_PASSWORD"
-  # Add to each group ONLY if it exists (Epic 2's phase 20 owns/creates them; fixtures never create groups).
+  # Add to each group ONLY if it exists (phase 20 owns them). A missing group is logged, not fatal:
+  # a clinic may legitimately not carry a position, and the account is still worth having.
   for g in $groups; do
     if group_exists "$g"; then add_user_to_group "$uid" "$g"
     else log "group $g not provisioned — skipping for $uid (phase 20 must run first)"; fi
