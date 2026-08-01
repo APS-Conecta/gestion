@@ -132,7 +132,16 @@ h1, h2, h3,
      `.cm-logo` shows it at full size. Dropping 200px of art for a 40px mark frees 172px, and
      that is not cosmetic: "Centro de Salud Familiar Dr. Fernando Maffioletti" (DEIS 114316,
      49 chars) truncated at the old width and fits whole at this one. */
-  #header a#nextcloud       { padding-inline-start: 52px; gap: 10px; }
+  /* 68, NOT 52 (#102). Core positions `.logo` ABSOLUTELY — `left:12px` + `width:46px`, so it ends
+     at 58 — and the padding is what reserves room for it. At 52 the flex row started 6px INSIDE the
+     mark: the two boxes overlapped, and the house's hover highlight ran under the mark's art.
+     The numbers this lands on are optical, not geometric. Each slot centres art of a different size
+     in a different box (mark 34-in-46 = 6 slack a side, house 19-in-36 = 8.5, name = 12 padding), so
+     an equal `gap` produces unequal-LOOKING gaps. 68 + 4 puts ink-to-ink at 24.5px on BOTH sides —
+     which is what #84 designed before the overlap ate one of them. Measured, not guessed.
+     Changing `.logo`'s width, the house's 36px or the name's padding breaks this; recompute both
+     gaps rather than nudging `gap` until it looks right. */
+  #header a#nextcloud       { padding-inline-start: 68px; gap: 4px; }
   #header a#nextcloud .logo {
     width: 46px;
     background-image: url("/themes/apsconecta/core/img/logo/logo-mark.svg");
@@ -227,10 +236,28 @@ h1, h2, h3,
 /* THE PLATFORM BRAND, IN THE SIDE MENU (#84). The header gave its 200px lockup to the clinic
    name, so the lockup needs somewhere to live — and side_menu already ships the slot, then hides
    it: `.cm-logo{display:none}` with `.cm-logo img{max-width:60%;max-height:100px}` still standing
-   above it. Un-hiding is the whole change; the size rules were already the app's.
+   above it. Un-hiding was the whole change until #102 found the app's own size rules leave it at
+   174x29 — the sizing below is the second half.
    The image comes from `logoheader`, registered by 15-branding — the same bytes as before,
    just shown where there is room for them instead of squeezed into a 46px slot. */
 .cm-logo { display: block; }
+
+/* WIDTH, NOT MAX-WIDTH (#102). Un-hiding alone left the lockup at 174x29 — barely bigger than the
+   46px mark it replaced. `max-width` is the wrong lever and raising it does nothing: it CAPS, never
+   grows, and logo-header.svg is 205px wide natively, so anything past 71% simply stops constraining
+   and you get 205. `max-height` is worse — the app's own `max-width:60%` binds first, so it changes
+   nothing at all. Both were measured on the instance before this was written.
+   So: kill the cap, then drive the width. 90% of the 290px panel is 261x43 — a 50% gain — and the
+   left edge lands at 14.5px against the app menu's own 13px icon gutter, which is what makes it
+   read as aligned rather than floating. 100% touches both panel edges. A PERCENTAGE because
+   side_menu takes its panel width from admin config; a px value would stop fitting the moment
+   someone changes it. Height stays derived — the lockup is 6:1 and must never be squashed.
+
+   `.cm` IS LOAD-BEARING, not tidiness. side_menu emits its CSS from a controller as an INLINE
+   <style>, which lands after every stylesheet including this one — so a bare `.cm-logo img` ties on
+   specificity and loses on order, silently. `.cm` (the panel root) wins on specificity instead,
+   which is order-proof. Do not flatten this selector, and do not reach for !important. */
+.cm .cm-logo img { max-width: none; width: 90%; height: auto; }
 
 /* DELIBERATELY no work-canvas rule. Painting `body, #content, #content-vue` covered the brand
    background image completely — it was registered, served, and never once visible — and put white
