@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# Keep the pinned image digests honest (#109).
+#
+#   scripts/image-digests.sh --validate every image is pinned and well formed (no network)
+#   scripts/image-digests.sh --check    report drift, change nothing, exit 1 if any moved
+#   scripts/image-digests.sh            rewrite every pin to what its tag points at TODAY
+#
+# --validate and --check answer different questions and only one belongs on a PR. "Is every image
+# pinned?" must be true of every commit. "Is every pin the newest?" must NOT gate a PR — a tag
+# moving upstream has nothing to do with the branch, and wiring it to the PR would turn an unrelated
+# change red and train everyone to ignore the check that matters.
+#
+# WHY THE PINS EXIST. Rolling tags meant two clinics installed a fortnight apart ran different
+# software while both looked identical — measured 2026-08-01, `nextcloud:34-apache` and
+# `redis:8-alpine` had BOTH moved since this repo's own box pulled them. That is #96 made permanent
+# by a fleet. The digest is the only name for "the version I tested".
+#
+# WHY THIS IS NOT AUTOMATIC ALL THE WAY. The weekly workflow runs --check and fails loudly; the
+# rewrite is run by a human, whose commit goes through a PR, where `cleanboot` does a full clean
+# bring-up against the NEW bytes before anyone can merge. A bot that merged its own image bump would
+# ship a Nextcloud nobody had booted into a clinic — which is the failure this file exists to stop.
+# GitHub also will not run cleanboot on a PR opened with GITHUB_TOKEN, so a self-merging version
+# would be untested twice over.
+set -uo pipefail
+cd "$(dirname "$0")/.."
+
+# Every file that names an image. Both, always: Dockerfile.dev deriving from a different build than
+# compose.yaml runs is #96 on the one image where it is hardest to notice.
+FILES=(compose.yaml Dockerfile.dev)
+
+check_only=0; validate_only=0
+case "${1:-}" in
+  --check)    check_only=1 ;;
+  --validate) validate_only=1 ;;
+  "")         ;;
+  *) echo "usage: $0 [--check|--validate]" >&2; exit 2 ;;
+esac
+
+# An UNPINNED reference is a bug, not a thing to resolve: someone added an image and skipped the
+# pin, so the fleet is already drifting. Fail on it rather than silently pinning it to today —
+# today's bytes have not been booted, and quietly adopting them is the opposite of the point.
+if unpinned=$(grep -nE '^\s*(image:|FROM) +[^ ]+$' "${FILES[@]}" | grep -v '@sha256:'); then
+  echo "FATAL: image reference with no digest (#109 requires every image pinned):" >&2
+  echo "$unpinned" >&2
+  echo "Add the digest by running this script without --check, then commit it." >&2
+  exit 1
+fi
+
+# `name` keeps the tag (`nextcloud:34-apache`); only the digest after @ is replaced.
+refs=$(grep -hoE '(image:|FROM) +[^ ]+@sha256:[0-9a-f]{64}' "${FILES[@]}" | awk '{print $2}' | sort -u)
+[ -n "$refs" ] || { echo "FATAL: no pinned images found in ${FILES[*]}" >&2; exit 1; }
+
+if [ "$validate_only" = 1 ]; then
+  printf '%s\n' "$refs" | sed 's/^/  pinned: /'
+  echo "every image is pinned, every digest well formed"
+  exit 0
+fi
+
+drift=0
+for ref in $refs; do
+  name="${ref%@*}"; old="${ref#*@}"
+  # The INDEX digest, not a per-platform manifest — pinning one architecture's manifest would make
+  # the stack unresolvable on any other. `imagetools inspect` reads the registry without pulling
+  # the ~3.3 GB behind it.
+  new=$(docker buildx imagetools inspect "$name" --format '{{.Manifest.Digest}}' 2>/dev/null)
+  case "$new" in
+    sha256:*) ;;
+    *) echo "FATAL: could not resolve $name from its registry" >&2; exit 1 ;;
+  esac
+
+  if [ "$new" = "$old" ]; then
+    printf '  = %s\n' "$name"
+    continue
+  fi
+
+  drift=1
+  printf '  ~ %s\n      %s\n   -> %s\n' "$name" "$old" "$new"
+  # `|` as the delimiter: an image ref contains / and : but never a pipe, so nothing needs escaping.
+  [ "$check_only" = 1 ] || sed -i "s|${name}@${old}|${name}@${new}|g" "${FILES[@]}"
+done
+
+if [ "$drift" = 0 ]; then
+  echo "all pins current"
+  exit 0
+fi
+
+if [ "$check_only" = 1 ]; then
+  cat >&2 <<'MSG'
+
+A tag has moved past its pin. Nothing was changed.
+This is not urgent: no installed clinic is affected, because nothing pulls a new image on its own.
+
+  To take the new bytes:  make images   then commit the diff and open a PR.
+  cleanboot runs a full clean bring-up on that PR — do not merge it red.
+MSG
+  exit 1
+fi
+
+echo
+echo "Digests rewritten. Commit the diff and open a PR so cleanboot boots the new bytes."

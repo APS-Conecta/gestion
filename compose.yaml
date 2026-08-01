@@ -12,8 +12,21 @@ name: apsconecta-gestion
 # apps, so it needs custom_apps and themes too, or app-owned jobs fail in a container that looks
 # healthy. That used to be a comment asking the two service blocks to stay in step by hand. It is
 # an anchor now, so they cannot drift: there is one definition and both services merge it.
+# EVERY IMAGE IS PINNED BY DIGEST (#109). The tag stays for readability; the digest is what
+# actually resolves. Rolling tags meant two clinics installed a fortnight apart ran different
+# software while both looked identical — measured 2026-08-01, `34-apache` and `8-alpine` had BOTH
+# moved since this repo's own box pulled them. That is #96 exactly, and a fleet makes it permanent.
+#
+# Pinning costs nothing that was ever being paid for: no `docker compose pull` exists in `make up`
+# or `make install`, and `up -d` only pulls when an image is ABSENT — so an installed clinic never
+# picked up a patch anyway. Rolling tags were producing variance between installs and nothing else.
+#
+# These are INDEX digests (the multi-arch pointer), not per-platform manifests, so arm64 still
+# resolves. Refresh them with `make images`, which rewrites this file and Dockerfile.dev together;
+# the weekly `image-digests` workflow reports when a tag has moved past a pin. Never hand-edit a
+# digest — the whole point is that the bytes here were tested before they were written.
 x-nextcloud-base: &nextcloud-base
-  image: nextcloud:34-apache
+  image: nextcloud:34-apache@sha256:b52f7bc0e496f227b0e85e3b88571a42c68b6245ccde29d577e733227715dcf5
   depends_on:
     db:
       condition: service_healthy
@@ -29,7 +42,7 @@ x-nextcloud-base: &nextcloud-base
 
 services:
   db:
-    image: postgres:18-alpine
+    image: postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
     volumes:
       # postgres:18+ stores data in a major-version subdir; mount the parent, not /data
       # (see docker-library/postgres#1259). Mounting /data errors on boot.
@@ -46,7 +59,7 @@ services:
       start_period: 45s
 
   redis:
-    image: redis:8-alpine
+    image: redis:8-alpine@sha256:300e3d24d1a6aeeed5adb42d54735cdd2bcee1107509946adeaeb33b0e1697ad
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -102,9 +115,13 @@ services:
   # `make office-eurooffice`. Self-contained image (bundles its own PG/Redis/RabbitMQ) — do NOT wire
   # it to the core db/redis.
   eurooffice:
-    # No semver release tag is published on GHCR (only `latest` + CI build tags) — use `latest`.
-    # Pin a digest if byte-reproducibility becomes necessary.
-    image: ghcr.io/euro-office/documentserver:latest
+    # No semver release tag is published on GHCR (only `latest` + CI build tags), so the tag says
+    # `latest` and the digest says which one. That is the reverse of #81's reading: `latest` sounds
+    # like the volatile one, but measured 2026-08-01 it was the ONLY tag here that had not moved in
+    # five weeks — while both Docker Official Images had. An unversioned tag is not slow-moving, it
+    # is unpredictable: when it does move there is no version to reason about, which is exactly why
+    # it needs the digest more than the others, not less.
+    image: ghcr.io/euro-office/documentserver:latest@sha256:5a1a8b7083856b309f09a5b06aa96f80182cbdfccddcae6c082ecf7a2b3cbf2b
     profiles: ["eurooffice"]
     environment:
       - "JWT_ENABLED=true"

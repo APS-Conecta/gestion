@@ -25,11 +25,15 @@ to the same state; there is no second source of truth and no manual admin-UI ste
 
 ## Stack
 
-*Verified current 2026-07-19; pins are seed — the running code owns them thereafter.*
+*Verified current 2026-08-01; pins are seed — the running code owns them thereafter.*
+
+**Every image is pinned by digest** (#109). The tags below are what you read; the digest beside each
+in `compose.yaml` is what resolves. Refresh with `make images`; `make images-check` reports when a
+tag has moved past its pin, and the weekly `image-digests` workflow runs that check for you.
 
 | Component | Image / package | Role |
 | --- | --- | --- |
-| Nextcloud | `nextcloud:34-apache` (rolling 34.x; 34.0.1 head, supported to ~June 2027) | Platform, web UI, files, users/groups |
+| Nextcloud | `nextcloud:34-apache` (34.x line, 34.0.1 head, supported to ~June 2027) | Platform, web UI, files, users/groups |
 | PostgreSQL | `postgres:18-alpine` (PG18, NC-recommended) | Metadata (users, groups, shares, ACLs, file index) |
 | Redis | `redis:8-alpine` (Redis 8 = AGPL, OSS-restored) | Cache + file/transaction locking |
 | Office server — Euro-Office | `ghcr.io/euro-office/documentserver` (standalone container) + `eurooffice` connector | Office editing engine (OnlyOffice-fidelity) |
@@ -37,8 +41,11 @@ to the same state; there is no second source of truth and no manual admin-UI ste
 | Job scheduler | `cron` service — same image and volumes as `nextcloud`, via a compose anchor | Runs `cron.php` on a schedule instead of on page loads (phase `06-jobs`) |
 | Tooling | Docker Compose · Make · Xdebug (dev) | Orchestration, task runner, step-debug |
 
-The `nextcloud:34-apache` tag rolls forward across 34.x patch releases; pin the exact patch
-(`nextcloud:34.0.1-apache`) if byte-identical environments across machines become necessary. NC34 (the current
+The `nextcloud:34-apache` tag rolls forward across 34.x patch releases, which is why the digest and
+not the tag is what `compose.yaml` resolves: byte-identical environments across machines stopped
+being optional once the same install has to reach more than one clinic (#109). Measured 2026-08-01,
+this tag and `redis:8-alpine` had both moved since this repo's own box pulled them — two boxes a
+fortnight apart were already running different builds. NC34 (the current
 line) is used because **Euro-Office requires NC34+**. All components are OSS (per
 the OSS-first mandate): Nextcloud / groupfolders / eurooffice AGPL-3.0, Euro-Office AGPL-3.0,
 PostgreSQL PostgreSQL-License, Redis 8 AGPL-3.0 — settled 2026-07-19 in
