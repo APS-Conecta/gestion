@@ -1,4 +1,4 @@
-# Weekly: has any image tag moved past the digest we pinned? (#109)
+# Weekly: is anything we pinned now behind upstream? Images (#109) and vendored apps (#117).
 #
 # The pins are what make two clinics provably the same build. This is the other half — without it a
 # pin silently becomes a fossil, and the reason for pinning (knowing WHICH version is deployed)
@@ -6,9 +6,14 @@
 #
 # IT REPORTS, IT DOES NOT BUMP. A red run here is not an incident: no installed clinic is affected,
 # because nothing pulls a new image on its own — there is no `docker compose pull` in `make up` or
-# `make install`, and `up -d` only pulls when an image is absent. It means "new bytes exist,
-# somebody decide". A human runs `make images`, commits, and opens a PR, where `cleanboot` does a
-# full clean bring-up against the NEW bytes before it can merge.
+# `make install`, and `up -d` only pulls when an image is absent. Nor does an install ever fetch an
+# app: it unpacks the tarball committed in provisioning/apps/. A red run means "new bytes exist,
+# somebody decide". A human runs `make images` (or swaps a tarball), commits, and opens a PR, where
+# `cleanboot` does a full clean bring-up against the NEW bytes before it can merge.
+#
+# THIS RUN IS THE TRIGGER, and the cadence is the answer to #117: when it goes red, someone looks
+# within the week. That is the whole ownership story — deliberately a person reading a weekly report
+# rather than a schedule or a bot, because a bump changes what every clinic runs.
 #
 # WHY NOT OPEN THE PR ITSELF. Two reasons, and the second is fatal. A bot that merged its own image
 # bump would put a Nextcloud nobody had booted into a clinic. And GitHub does not run workflows on
@@ -52,3 +57,11 @@ jobs:
       - name: Has any tag moved past its pin?
         if: github.event_name != 'pull_request'
         run: make images-check
+      # Apps, the other half of the same question (#117). Without this, "the weekly report is the
+      # trigger" was only true of images and a new groupfolders would have gone unnoticed forever.
+      # `always()` so an image bump does not hide an app bump — two independent facts, both wanted.
+      # This one DOES contact the app store: #98 kept the store out of the INSTALL path, where a
+      # failure leaves an instance half-built. Reading a version number in CI risks nothing.
+      - name: Has any vendored app released a newer version?
+        if: always() && github.event_name != 'pull_request'
+        run: make apps-check

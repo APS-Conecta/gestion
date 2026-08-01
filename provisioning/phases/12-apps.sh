@@ -13,11 +13,15 @@
 # Only FILE edits belong here — `occ config:app:set` lives in the database, survives an app update,
 # and stays in 15-branding / 16-app-policy / 14-office.
 #
-# This phase does NOT update apps: `occ app:update` is a deliberate act, and updating here would
-# make two identical seeds produce different instances depending on the day. Run it, then
-# `make seed`, which re-applies the patches or fails loudly if upstream moved. Bumping a vendored
-# app is the same kind of act — new tarball, new VENDOR lines, then `make seed` — and the patches
-# are the gate either way.
+# This phase converges apps ON THE VENDORED VERSION and never on "whatever is newest" (#117). It
+# re-imposes the committed tarball when the instance is running something else, which is
+# deterministic — two identical seeds produce identical instances. `occ app:update` is the opposite
+# and stays a deliberate separate act: it asks the store what is newest today, so running it here
+# would make the same seed produce different instances depending on the day.
+#
+# Bumping a vendored app is therefore an edit, not a command: new tarball, new VENDOR lines, then
+# `make seed` re-imposes it everywhere. The patches are the gate either way — one that no longer
+# applies stops the phase and names itself.
 #
 # eurooffice is installed here; 14-office configures it. That split predates #81 and outlived the
 # reason for it — AD-5's opt-in was the ~2 GB documentserver, which is now an ordinary service — but

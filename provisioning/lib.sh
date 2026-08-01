@@ -247,23 +247,47 @@ ensure_vendored_app() {  # APPID
 
   if [ "$cur" = "$want" ]; then
     log "app $app $want vendored, already unpacked"
-  elif [ -n "$cur" ]; then
-    # DIVERGENCE IS REPORTED, NOT REPAIRED. Whether `make install` re-imposes the vendored version
-    # over a different installed one is the one question #98 left open, so this does not answer it
-    # by acting. Unpacking anyway would also be the destructive-looking half of #85 on the only file
-    # tree a human might have touched deliberately. The patches below still run, and if upstream
-    # moved under them the phase fails loudly — which is the signal that matters.
-    log "app $app is $cur but $want is vendored — NOT re-imposed; see #98"
   else
+    # RE-IMPOSE, not report (#117, answering the question #98 left open). App code is not content —
+    # #85 classifies re-imposing it as reversible — and the vendored tarball plus the patches beside
+    # it reproduce the result exactly, so the instance converging on the repo is the whole point of
+    # `make install`. What is NEVER re-imposed is anything that holds files: folders, users, content.
+    if [ -n "$cur" ]; then
+      # Cleared first so the result IS the tarball. Untarring over a different version leaves
+      # whatever that version had and this one dropped — an app that is neither release, which is
+      # worse than either. Brief window where the app directory does not exist; the phase fails
+      # loudly if the unpack then fails, and re-running restores it from git.
+      occ_sh "rm -rf custom_apps/$app" \
+        || { log "FAILED to clear $app before re-imposing $want"; return 1; }
+    fi
     # Streamed into the container and unpacked as www-data, rather than on the host: files must be
     # writable by uid 33 or the patches below cannot apply. Ownership ends up www-data:www-data and
     # `make fix-mount-perms` restores the host group on the next `make up` (AD-9), which is why
     # nothing does it here.
     if docker compose exec -T --user www-data nextcloud \
          tar xzf - -C /var/www/html/custom_apps < "$tgz"; then
-      log "app $app $want unpacked from $(basename "$tgz")"
+      log "app $app ${cur:+$cur -> }$want unpacked from $(basename "$tgz")"
     else
       log "FAILED to unpack $app from $(basename "$tgz")"; return 1
+    fi
+
+    # NEW FILES ARE HALF THE JOB. Nextcloud records each app's version in appconfig, independently
+    # of what is on disk, and a mismatch sets needsDbUpgrade — after which occ answers only a
+    # handful of commands ("Nextcloud or one of the apps require upgrade") and every later phase
+    # fails. Measured 2026-08-01, which is the only reason this line exists.
+    #
+    # `occ upgrade` is the right tool and not a heavy-handed one: it runs the app's own migrations
+    # from the files on disk and never contacts the store. Setting installed_version by hand would
+    # be lighter and would SKIP those migrations, which is how an app ends up running new code
+    # against an old schema. Only on a version change, so a normal seed never pays for it.
+    if [ -n "$cur" ]; then
+      if occ upgrade --no-interaction >/dev/null 2>&1; then
+        log "app $app schema reconciled to $want (occ upgrade)"
+      else
+        log "FAILED to reconcile $app to $want — 'occ upgrade' errored; instance may be mid-upgrade"
+        return 1
+      fi
+      CONF_CACHE=""   # installed_version moved under it
     fi
   fi
 

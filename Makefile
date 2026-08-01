@@ -3,7 +3,7 @@
 # (AD-2). `make office-down` stops just the document server when 2.5 GB is not worth a CSS edit.
 # `make smoke` / `make test` = the local quality gate; `make seed` runs the provisioning pipeline.
 .DEFAULT_GOAL := help
-.PHONY: help setup install up up-dev down seed seed-idempotent smoke test divergence images images-check fix-mount-perms office-smoke office-down
+.PHONY: help setup install up up-dev down seed seed-idempotent smoke test divergence images images-check apps-check fix-mount-perms office-smoke office-down
 
 # Your host group, so the container can hand the bind mounts back to you (fix-mount-perms).
 HOST_GID := $(shell id -g)
@@ -72,6 +72,9 @@ images: ## Refresh the pinned image digests to what each tag points at today (#1
 
 images-check: ## Report whether any tag has moved past its pin (changes nothing)
 	@bash scripts/image-digests.sh --check
+
+apps-check: ## Report whether any vendored app has a newer release (changes nothing)
+	@bash scripts/app-versions.sh
 
 # `office-eurooffice` was DELETED here by #81. Once the profile was dropped and the trusted_domains
 # repair moved into phase 14-office, the target was `make up` + `make seed` + a smoke — a second

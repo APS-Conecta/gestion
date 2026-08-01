@@ -129,7 +129,7 @@ exists to prevent. Set by `provisioning/phases/14-office.sh`, never in the admin
 | `compose.dev.yaml`, `Dockerfile.dev`, `dev/xdebug.ini` | The derived Xdebug dev image (AD-10). |
 | `.env.example` | Template for your gitignored `.env`. **Never commit `.env`.** |
 | `Makefile` | The dev lifecycle (`make help`). |
-| `scripts/` | `install.sh` (the one command) + `wait-ready.sh`, `test.sh` + `smoke.sh` (the gate), `seed-idempotent.sh`, `office-smoke.sh`, `divergence.sh` (what is live but undeclared), `image-digests.sh` (pin drift), `deis.py`, and `env.sh` (shared preamble). |
+| `scripts/` | `install.sh` (the one command) + `wait-ready.sh`, `test.sh` + `smoke.sh` (the gate), `seed-idempotent.sh`, `office-smoke.sh`, `divergence.sh` (what is live but undeclared), `image-digests.sh` + `app-versions.sh` (is anything we pinned behind upstream), `deis.py`, and `env.sh` (shared preamble). |
 | `provisioning/` | The single idempotent provisioning writer: `seed.sh` runner, `lib.sh` guard helpers, `phases/05-60`, `apps/` (per app: the vendored tarball, its `VENDOR` file and its patches — [ADR-0002](docs/adr/0002-app-patches.md)), and [`provisioning/README.md`](provisioning/README.md). |
 | `sites/` | One `<slug>/site.sh` per CESFAM — its teams, folders, ACL matrix and identity — plus the DEIS register they are picked from. **`los-castanos` ships as the reference clinic**; write another with `scripts/deis.py`. |
 | `apps/`, `themes/` | Live-mounted. `apps/` is gitignored and holds the apps unpacked from the tarballs committed in `provisioning/apps/`, patched at seed time ([ADR-0002](docs/adr/0002-app-patches.md)); `themes/apsconecta/` is the white-label server theme. |
