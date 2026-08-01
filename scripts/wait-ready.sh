@@ -12,6 +12,32 @@ set -uo pipefail
 
 ready() { occ status --output=json 2>/dev/null | grep -q '"installed":true'; }
 
+# `installed:true` means the installer FINISHED, not that Nextcloud stopped writing — it keeps
+# setting config of its own (`maintenance_window_start`, `default_language`) for a few seconds after.
+# Provisioning inside that window loses whichever key it wrote first, and the second seed then
+# rewrites it: #96, where three CI runs failed on two DIFFERENT keys and passed once. So wait for the
+# config to stop moving, which is the surface that actually broke. Self-scaling by construction — a
+# fast machine settles fast, a slow one waits longer, and it was machine speed that hid this (CI
+# reached installed:true in 15 s, a dev laptop in 35 s).
+settled() { occ config:list --output=json 2>/dev/null | sha256sum; }
+
+quiesce() {
+  local prev cur i
+  prev="$(settled)"
+  for i in $(seq "${WAIT_SETTLE_TRIES:-24}"); do
+    sleep 5
+    cur="$(settled)"
+    [ "$cur" = "$prev" ] && return 0
+    printf '~'   # config still moving
+    prev="$cur"
+  done
+  echo >&2
+  echo "FATAL: Nextcloud config never stopped changing (2 minutes after install)." >&2
+  return 1
+}
+
+# Only reached on a COLD boot. A warm stack is already quiesced by definition, and `make up` runs on
+# every dev loop — making it pay for the settle check daily would buy nothing.
 ready && exit 0
 
 # Ten minutes: a first boot pulls no images (compose did that) but does create the schema. CI's own
@@ -20,7 +46,10 @@ printf 'waiting for Nextcloud to finish installing itself'
 for _ in $(seq "${WAIT_READY_TRIES:-120}"); do
   sleep 5
   printf '.'
-  if ready; then printf ' ready\n'; exit 0; fi
+  if ready; then
+    quiesce || exit 1
+    printf ' ready\n'; exit 0
+  fi
 done
 
 printf '\n'

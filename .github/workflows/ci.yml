@@ -67,3 +67,15 @@ jobs:
       - name: Logs on failure
         if: failure()
         run: docker compose logs --tail=100
+      # `make install` prints phase names and sends the detail to .install.log, so without this the
+      # one job that exists to catch a broken install cannot show what broke — #96 was diagnosed only
+      # after adding it. include-hidden-files because .install.log is a dotfile and upload-artifact@v4
+      # skips those by default, which silently uploaded nothing on the first attempt.
+      - name: Provisioning log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-log
+          path: .install.log
+          include-hidden-files: true
+          if-no-files-found: warn
