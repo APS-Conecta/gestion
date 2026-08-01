@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Home affordance for the header (#84). Material Design Icons "home", filled.
+     Draws no glyphs, so the embedded-font rule in scripts/test.sh does not apply.
+     Do not name that tag in this comment: the rule greps the file, not the markup,
+     and mentioning it in prose is enough to trip the gate. Sibling of the
+     no-double-hyphen trap in MAPEO.md.
+     currentColor is NEVER used in this theme: an SVG served as a background-image is
+     an isolated document and resolves it to black. The fill is literal white. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <path fill="#ffffff" d="M10,20V14H14V20H19V12H22L12,3L2,12H5V20H10Z"/>
+</svg>
