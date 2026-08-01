@@ -1,0 +1,87 @@
+# The full bring-up: install a clinic from nothing and prove it converges. ~3 minutes.
+#
+# It lives in its own file because GitHub filters paths per WORKFLOW, not per job — the only way to
+# run this on the PRs that can break it while the static gate still runs on all of them.
+#
+# WHY IT RUNS ON PULL REQUESTS (#97). It used to be schedule/dispatch only, and in the repo's first
+# 150 commits it had never executed once: every run was push or pull_request, which reaches the
+# static gate alone. The first dispatch, on 2026-08-01, failed immediately — provisioning was racing
+# Nextcloud's own post-install config writes (#96), on a bug already merged to main. A gate nobody
+# triggers is not a gate. This one would have caught #96 on the PR that introduced it.
+#
+# It cannot be a REQUIRED check: branch protection needs GitHub Pro or a public repo, and this is a
+# private repo on Free. The red X is advisory — which is exactly why the trigger matters, since
+# visibility is the whole mechanism.
+name: Clean boot
+
+on:
+  # Everything a clean install reads. Docs, themes and apps/ are deliberately absent — they cannot
+  # change what `make install` builds. sites/** drives the groups, folders and ACL matrix, and
+  # .env.example is copied verbatim by the first step below and has broken that step before.
+  pull_request:
+    paths:
+      - 'provisioning/**'
+      - 'compose*.yaml'
+      - 'Makefile'
+      - 'scripts/**'
+      - 'sites/**'
+      - '.env.example'
+      - '.github/workflows/cleanboot.yml'
+  # Kept as the backstop for drift no PR causes: `nextcloud:34-apache` is a rolling tag and the app
+  # store is not pinned (#98), so main can break without anyone touching it.
+  schedule:
+    - cron: "0 6 * * 1"          # Mondays 06:00 UTC
+  workflow_dispatch:
+
+# The event is part of the group, so a push can only ever cancel another push. Without it, the
+# weekly clean boot and ordinary pushes to main shared one group: merge a PR while Monday's
+# bring-up is running and it is cancelled — and a cancelled run is not a failure, so there is no
+# notification and no red check. The one job that proves the stack comes up from empty would simply
+# have stopped happening, quietly.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  cleanboot:
+    name: Clean boot
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: cp .env.example .env
+      # A reference clinic ships (sites/los-castanos), but CI writes its own so the `--new` path is
+      # exercised somewhere — it is the only place that command runs. Piped answers stand in for the
+      # operator's; the appended SITE line wins over anything .env.example says, because env.sh takes
+      # the last assignment it reads.
+      - name: Choose a clinic, the way an operator would
+        run: |
+          printf 'Sector 1\nSector 2\n\nSalud Mental\nInfantil\n\n' | scripts/deis.py 114302 --new ci
+          echo "SITE=ci" >> .env
+      # The whole install, exactly as an operator runs it: `make up` owns the wait for Nextcloud's
+      # own installer, and provisioning follows. This is also the path nothing else exercises — a
+      # checkout has an empty apps/, so 12-apps installs every app from the store and applies its
+      # patches for real, and every query-before-set guard meets a key that does not exist yet.
+      # Deliberately without --profile eurooffice: the ~2 GB documentserver is only needed for the
+      # healthcheck.
+      - run: make install
+      # The only place a first AND a second seed both exist. Idempotency is the pipeline's defining
+      # property (AD-2) and nothing else asserts it: a warm dev box cannot tell "already correct"
+      # from "silently did nothing", because on a warm box those are the same thing.
+      - run: make seed-idempotent
+      - run: make test
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --tail=100
+      # `make install` prints phase names and sends the detail to .install.log, so without this the
+      # one job that exists to catch a broken install cannot show what broke — #96 was diagnosed only
+      # after adding it. include-hidden-files because .install.log is a dotfile and upload-artifact@v4
+      # skips those by default, which silently uploaded nothing on the first attempt.
+      - name: Provisioning log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-log
+          path: .install.log
+          include-hidden-files: true
+          if-no-files-found: warn
