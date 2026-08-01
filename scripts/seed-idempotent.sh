@@ -18,11 +18,11 @@ set -uo pipefail
 
 # Match the fixture setting of the seed that just ran, inferred from the instance so no state is
 # carried between runs: absent fixture users mean phases 50/60 did not run and must not run now.
-# Without this, a gate run after `make office-eurooffice` (SEED_FIXTURES=0) created the four dev.*
+# Without this, a gate run after `make office-eurooffice` (SEED_FIXTURES=0) created the standing
 # accounts for the FIRST time and then reported those correct creations as a failure.
 # An explicit SEED_FIXTURES always wins.
 if [ -z "${SEED_FIXTURES:-}" ]; then
-  if occ user:info dev.direccion >/dev/null 2>&1; then
+  if occ user:info director >/dev/null 2>&1; then
     SEED_FIXTURES=1
   else
     SEED_FIXTURES=0

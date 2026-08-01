@@ -32,6 +32,10 @@ roles=(
   "role-tens-farmacia|TENS – Farmacia / PNAC"
   "role-tons|TONS (Técnico en Odontología)"
   "role-administrativo-some|Administrativo SOME"
+  # The SOME LEAD, distinct from the clerks above. Its own group rather than "an administrativo who
+  # is also in cat-jefaturas", so it reads the same way Director and Jefe de Sector already do —
+  # and so a grant can name the lead without naming the whole counter.
+  "role-jefe-some|Jefe/a de SOME"
   "role-oirs|Encargado/a OIRS"
   "role-estadistica-rem|Encargado/a de Estadística (REM)"
   "role-conductor|Conductor (Ambulancia / Traslado)"
