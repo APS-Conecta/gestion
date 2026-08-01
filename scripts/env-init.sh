@@ -43,7 +43,10 @@ fi
 # /dev/urandom rather than openssl: the install host is assumed to have python3, bash, git and
 # docker (#77) — openssl is on most machines and guaranteed on none, and this needs no cipher, only
 # bytes. 32 bytes = 64 hex chars, which also satisfies OFFICE_JWT_SECRET's documented >=32.
-secret() { LC_ALL=C tr -dc 'a-f0-9' </dev/urandom | head -c "${1:-64}"; }
+# `od` reads exactly N bytes and stops, rather than streaming until `head` slams the pipe shut —
+# which made tr print "write error: Broken pipe" four times on the first command an operator runs.
+# The value was always correct; it just looked like a failure. Argument is BYTES, output is 2N hex.
+secret() { od -An -tx1 -N"${1:-32}" /dev/urandom | LC_ALL=C tr -d ' \n'; }
 
 # Replace a key's VALUE and nothing else: the template's comments explain what each key is for and
 # are worth keeping. Anchored to the line start so a key named inside a comment is untouched.
@@ -61,10 +64,10 @@ cp "$TEMPLATE" "$ENV_FILE"
 # to type a passphrase — but it is the difference between "in a file" and "in a file anyone can open".
 chmod 600 "$ENV_FILE"
 
-set_key NEXTCLOUD_ADMIN_PASSWORD "$(secret 32)" || exit 1
-set_key POSTGRES_PASSWORD        "$(secret 32)" || exit 1
-set_key OFFICE_JWT_SECRET        "$(secret 64)" || exit 1
-set_key FIXTURE_USER_PASSWORD    "$(secret 24)" || exit 1
+set_key NEXTCLOUD_ADMIN_PASSWORD "$(secret 16)" || exit 1
+set_key POSTGRES_PASSWORD        "$(secret 16)" || exit 1
+set_key OFFICE_JWT_SECRET        "$(secret 32)" || exit 1
+set_key FIXTURE_USER_PASSWORD    "$(secret 12)" || exit 1
 
 echo "✓ $ENV_FILE created, four secrets generated, mode 600"
 echo
