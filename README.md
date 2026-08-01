@@ -84,6 +84,12 @@ from the repo root unless noted.
    image or app versions; those stay separate, deliberate acts.
    *If a phase fails*, the last 20 log lines are printed and the whole command is the retry.
 
+   **It adds and never deletes.** Take a sector out of `site.sh` and the group and its folder stay
+   put — the run ends by *naming* them and the command that would remove them, and you decide
+   ([#85](https://github.com/APS-Conecta/gestion/issues/85)). Deleting a group folder deletes its
+   files, and a typo in a data file must not be able to do that. `make divergence` asks the same
+   question on demand.
+
 5. **Open the app.**
    Browse to **`http://localhost:8180`** (the `HTTP_PORT` from your `.env`) and sign in with the
    `NEXTCLOUD_ADMIN_USER` / `NEXTCLOUD_ADMIN_PASSWORD` you set. You now have a running instance.
@@ -119,12 +125,12 @@ exists to prevent. Set by `provisioning/phases/14-office.sh`, never in the admin
 
 | Path | What |
 |---|---|
-| `compose.yaml` | Core stack (nextcloud/db/redis/cron) + the `eurooffice` office profile. |
+| `compose.yaml` | Every service — nextcloud/db/redis/cron + `eurooffice` (no longer a profile, #81). All four images pinned by digest (#109). |
 | `compose.dev.yaml`, `Dockerfile.dev`, `dev/xdebug.ini` | The derived Xdebug dev image (AD-10). |
 | `.env.example` | Template for your gitignored `.env`. **Never commit `.env`.** |
 | `Makefile` | The dev lifecycle (`make help`). |
-| `scripts/` | `install.sh` (the one command) + `wait-ready.sh`, `test.sh` + `smoke.sh` (the gate), `seed-idempotent.sh`, `office-smoke.sh`, `deis.py`, and `env.sh` (shared preamble). |
-| `provisioning/` | The single idempotent provisioning writer: `seed.sh` runner, `lib.sh` guard helpers, `phases/05-60`, `apps/` (per-app patches — [ADR-0002](docs/adr/0002-app-patches.md)), and [`provisioning/README.md`](provisioning/README.md). |
+| `scripts/` | `install.sh` (the one command) + `wait-ready.sh`, `test.sh` + `smoke.sh` (the gate), `seed-idempotent.sh`, `office-smoke.sh`, `divergence.sh` (what is live but undeclared), `image-digests.sh` (pin drift), `deis.py`, and `env.sh` (shared preamble). |
+| `provisioning/` | The single idempotent provisioning writer: `seed.sh` runner, `lib.sh` guard helpers, `phases/05-60`, `apps/` (per app: the vendored tarball, its `VENDOR` file and its patches — [ADR-0002](docs/adr/0002-app-patches.md)), and [`provisioning/README.md`](provisioning/README.md). |
 | `sites/` | One `<slug>/site.sh` per CESFAM — its teams, folders, ACL matrix and identity — plus the DEIS register they are picked from. **`los-castanos` ships as the reference clinic**; write another with `scripts/deis.py`. |
 | `apps/`, `themes/` | Live-mounted. `apps/` is gitignored and holds the apps unpacked from the tarballs committed in `provisioning/apps/`, patched at seed time ([ADR-0002](docs/adr/0002-app-patches.md)); `themes/apsconecta/` is the white-label server theme. |
 | `docs/ARCHITECTURE.md` | The architecture overview (design SSOT). |

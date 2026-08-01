@@ -3,10 +3,14 @@
 # later run converges on whatever the repo and the site file now say. Run it after editing
 # sites/<slug>/site.sh, and after `git pull`.
 #
-# What it deliberately does NOT do: pull a newer Nextcloud image (`34-apache` is a rolling tag) or
-# run `occ app:update` (ADR-0002 refuses it — it reverts our patches and restores signature.json).
-# Moving the platform under a live clinic needs a window and a rollback story, so it stays a
-# deliberate separate act.
+# What it deliberately does NOT do: pull a newer Nextcloud image (the digests are pinned — #109,
+# bumped by `make images`) or run `occ app:update` (ADR-0002 refuses it — it reverts our patches and
+# restores signature.json). Moving the platform under a live clinic needs a window and a rollback
+# story, so it stays a deliberate separate act.
+#
+# And it never DELETES (#85). It converges everything reversible — memberships, grants, config — and
+# only reports what is live but no longer declared, because the three operations that lose content
+# (group folders, users, files) must never be automatic and there is no backup story to gate them on.
 #
 # It refuses rather than bootstraps: .env holds passwords no script can invent, and a clinic needs
 # answers only a human has.
@@ -49,3 +53,13 @@ else
   printf '  health: FAIL — see %s\n' "$LOG"
 fi
 printf '  http://localhost:%s\n' "${HTTP_PORT:-8080}"
+
+# What is live that the repo no longer declares (#85). Printed HERE rather than from inside the
+# seed, for two reasons. The phases write and this reads, so it does not belong among them. And the
+# seed's output goes to $LOG — only phase names reach the terminal — so a report printed there would
+# be seen by nobody, which is the one thing a report cannot afford.
+#
+# --quiet, so a clean install ends clean. It exits 0 whatever it finds: this converges the
+# reversible and reports the rest, and a non-zero exit here would fail `make install` for the rest
+# of time after one deliberate removal.
+bash scripts/divergence.sh --quiet
