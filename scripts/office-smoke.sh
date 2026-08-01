@@ -22,7 +22,7 @@ set -euo pipefail
 # Require the eurooffice connector — the sole office backend (AD-5). An app is enabled iff its
 # appconfig `enabled` value is "yes".
 [ "$(occ config:app:get eurooffice enabled 2>/dev/null || true)" = "yes" ] \
-  || { echo "FAIL: eurooffice connector not enabled — run: make office-eurooffice"; exit 1; }
+  || { echo "FAIL: eurooffice connector not enabled — run: make install"; exit 1; }
 
 echo "Office backend: Euro-Office (eurooffice)"
 

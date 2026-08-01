@@ -50,13 +50,17 @@ store updates stop arriving.
   after patching. That file asserts the app's files are exactly as the vendor shipped them; our
   patches make the assertion false. See *Code integrity* below.
 
-### AD-5's "opt-in" means the container, not the app
+### AD-5's "opt-in" means the container, not the app *(and since #81, neither)*
 
-`eurooffice` is installed by `make seed` now. The office backend is still opt-in: what is
-optional is the ~2 GB documentserver behind `--profile eurooffice`. The connector is a PHP app
-that does nothing until `make office-eurooffice` gives it a URL and a secret, and having it
-installed on every instance is what lets its patches be re-applied on every seed. It also lets
-CI exercise install-and-patch without pulling the image.
+`eurooffice` is installed by `make seed`, and having it installed on every instance is what lets its
+patches be re-applied on every seed — which is the part of this that still matters.
+
+*Superseded on the opt-in half (2026-08-01,
+[#81](https://github.com/APS-Conecta/gestion/issues/81)):* the ~2.5 GB documentserver behind
+`--profile eurooffice` was the last optional piece, and the profile is gone. One consequence lands
+here: CI used to exercise install-and-patch **without** pulling the image, and now pulls it. That is
+a straight trade — the clean boot costs 2.56 GB more and in exchange proves a document can be opened,
+rather than only that the connector was configured.
 
 ## Code integrity
 
@@ -100,8 +104,8 @@ next to its JWT secret, where a `make seed` could not restore it.
   alternative is the rename silently reverting and nobody noticing until a user sees "Nextcloud
   Office". Regenerate the patch and re-run.
 - Adding an app is one word in `APPS`; adding an edit is one file in a directory.
-- `make office-eurooffice` no longer installs anything, so on a fresh instance `make seed` must
-  run first. It already had to, for groups and folders.
+- Nothing outside `make seed` installs the connector, so on a fresh instance the seed must run
+  before the office backend is usable. It already had to, for groups and folders.
 
 ## Verified
 

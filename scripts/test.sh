@@ -11,10 +11,10 @@ echo "== static checks (no running stack needed) =="
 if [ ! -f .env ]; then
   echo "  note: .env absent — compose interpolation will fail; run 'cp .env.example .env' first"
 fi
-# Two parses, not three: `--profile eurooffice` reads the same compose.yaml and adds a service, so
-# a bare `-f compose.yaml config -q` could only fail where this one already does.
+# One parse, not two: the `--profile eurooffice` run went with the profile in #81 — Euro-Office is
+# an ordinary service now, so this parse already covers it. The dev overlay is included because it
+# is the only other file that can change what compose resolves.
 check docker compose -f compose.yaml -f compose.dev.yaml config -q
-check docker compose --profile eurooffice config -q
 linted=0
 for s in scripts/*.sh provisioning/*.sh provisioning/phases/*.sh; do
   [ -e "$s" ] || continue
@@ -100,6 +100,21 @@ if docker compose ps --status running --services 2>/dev/null | grep -qx nextclou
   if bash scripts/smoke.sh; then echo "  ok:   smoke"; else echo "  FAIL: smoke"; fail=1; fi
 else
   echo "  skipped: no running stack (static-only gate)"
+fi
+
+# Euro-Office joined the standard gate in #81, because it joined the stack: office-smoke was
+# separate only because it needed a service that might not be running. Its rename assertions are
+# load-bearing (ADR-0002 amendment) — an `occ app:update` from the admin UI reverts our patches with
+# nothing running `make seed` — so folding them in widens their coverage rather than duplicating it.
+#
+# Still guarded on the service, not assumed: this script runs in the static CI gate with no stack at
+# all, and `make office-down` is a documented way to reclaim the RAM. `make up --wait` is what makes
+# this deterministic when the stack IS up — without it the gate raced the 120s start_period.
+echo "== office smoke (only if the document server is running) =="
+if docker compose ps --status running --services 2>/dev/null | grep -qx eurooffice; then
+  if bash scripts/office-smoke.sh; then echo "  ok:   office-smoke"; else echo "  FAIL: office-smoke"; fail=1; fi
+else
+  echo "  skipped: eurooffice not running"
 fi
 
 if [ "$fail" -eq 0 ]; then

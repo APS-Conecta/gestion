@@ -66,8 +66,11 @@ jobs:
       # own installer, and provisioning follows. This is also the path nothing else exercises — a
       # checkout has an empty apps/, so 12-apps installs every app from the store and applies its
       # patches for real, and every query-before-set guard meets a key that does not exist yet.
-      # Deliberately without --profile eurooffice: the ~2 GB documentserver is only needed for the
-      # healthcheck.
+      # Euro-Office comes up with it since #81 dropped the profile, so this job now downloads the
+      # 2.56 GB documentserver it used to skip and waits out its 120s start_period. That cost buys
+      # the thing the old skip made impossible: `make test` below smokes the office backend, so the
+      # clean boot proves a document can actually be opened rather than only that the connector was
+      # configured.
       - run: make install
       # The only place a first AND a second seed both exist. Idempotency is the pipeline's defining
       # property (AD-2) and nothing else asserts it: a warm dev box cannot tell "already correct"

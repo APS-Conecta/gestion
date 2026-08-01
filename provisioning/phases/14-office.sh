@@ -1,10 +1,10 @@
 # Phase 14 — Euro-Office connector configuration.  OWNER: AD-5.
 # Runs after 12-apps (which installs the `eurooffice` connector) and before 15-branding.
 #
-# This phase owns the CONNECTOR's configuration; `make office-eurooffice` owns the BACKEND — the
-# ~2 GB documentserver container, the install-time trusted_domains repair and the smoke. Setting
-# these with no backend running is harmless: the connector does nothing until a document server
-# answers at DocumentServerUrl. AD-5 makes the container opt-in, not the config.
+# This phase owns EVERYTHING the connector needs, including the trusted_domains repair that used to
+# live in a make target (#81). The document server is no longer opt-in: `profiles: ["eurooffice"]`
+# is gone from compose.yaml, so the backend comes up with the stack and `make office-eurooffice` was
+# deleted as a redundant second entry point — it had become `make install` plus a smoke.
 phase_begin "14-office" "Euro-Office connector configuration (AD-5)"
 
 # No default. This used to fall back to 9980 while the two office scripts fell back to 80, so a
@@ -17,6 +17,34 @@ phase_begin "14-office" "Euro-Office connector configuration (AD-5)"
 app_config_set eurooffice DocumentServerUrl         "http://localhost:$OFFICE_PORT/"
 app_config_set eurooffice DocumentServerInternalUrl "http://eurooffice/"
 app_config_set eurooffice StorageUrl                "http://nextcloud/"
+
+# The other half of StorageUrl, and the one piece of this that is not appconfig. The document server
+# fetches documents FROM Nextcloud at the service name `nextcloud`, which Nextcloud rejects with
+# HTTP 400 unless it is a trusted domain.
+#
+# WHY IT IS HERE NOW. It lived in `make office-eurooffice` and ADR-0000 named it AD-2's ONE
+# documented exception — "an install-time value, indexed into an array, which the config guards do
+# not model". That justification rested on the backend being an optional profile: a phase could not
+# depend on a service the pipeline might never start. #81 dropped the profile, so the premise is
+# gone and the exception retires with it. seed.sh is now the only writer, without an asterisk.
+#
+# Not through config_system_set: that helper compares a scalar, and this is an ARRAY where the key
+# to write is the next free INDEX. Query-before-set is done directly instead — `occ` prints one
+# domain per line, so a fixed-string whole-line match is the membership test and the line count is
+# the index. Reading through conf_get would return the whole array as JSON and still need parsing.
+if occ config:system:get trusted_domains 2>/dev/null | grep -qxF nextcloud; then
+  log "system:trusted_domains already carries nextcloud"
+else
+  _td_idx=$(occ config:system:get trusted_domains 2>/dev/null | grep -c . || true)
+  occ config:system:set trusted_domains "${_td_idx:-0}" --value=nextcloud >/dev/null \
+    && log "system:trusted_domains[${_td_idx:-0}] -> nextcloud"
+fi
+
+# Open documents in a NEW window (#81). AppConfig.php:642 reads this with a default of "true", so
+# without this key an editor replaces whatever the user was looking at — including the folder they
+# opened it from. Stored as a JSON string by setSameTab(), which is why the value is the word and
+# not a bool.
+app_config_set eurooffice sameTab false
 
 # Force the editor light (#52). The connector's customizationTheme defaults to "theme-system",
 # which follows the USER'S OPERATING SYSTEM — so the same instance rendered a light editor on a
@@ -37,12 +65,12 @@ app_config_set eurooffice defFormats  '{"odt":true,"ods":true,"odp":true}'
 # would put the secret on stdout (NFR-2/AD-3). The log still carries the ` -> ` write marker so
 # scripts/seed-idempotent.sh can see a rewrite; it just never carries the value.
 #
-# Absent rather than fatal when unset: AD-5 makes the office backend opt-in, so a seed must not die
-# because someone has not set up an optional component. `make office-smoke` is where that failure
-# belongs, and it is loud there.
-if [ -z "${OFFICE_JWT_SECRET:-}" ]; then
-  log "app:eurooffice:jwt_secret skipped — set OFFICE_JWT_SECRET in .env before using the office backend"
-elif [ "$(conf_get app eurooffice jwt_secret 2>/dev/null || true)" = "$OFFICE_JWT_SECRET" ]; then
+# REQUIRED, not skipped-when-absent (#81). It used to log a skip, because a seed must not die over
+# an optional component. The component is not optional any more, and the skip branch had become
+# unreachable in any case: compose.yaml guards this key with ${OFFICE_JWT_SECRET:?}, so an unset
+# value stops the stack from starting long before a phase could run against it.
+: "${OFFICE_JWT_SECRET:?set OFFICE_JWT_SECRET in .env}"
+if [ "$(conf_get app eurooffice jwt_secret 2>/dev/null || true)" = "$OFFICE_JWT_SECRET" ]; then
   log "app:eurooffice:jwt_secret already set (value not printed)"
 else
   occ config:app:set eurooffice jwt_secret --value="$OFFICE_JWT_SECRET" >/dev/null \

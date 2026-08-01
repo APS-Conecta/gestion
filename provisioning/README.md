@@ -20,7 +20,7 @@ provisioning/
     06-jobs.sh       # background jobs from cron, not ajax
     10-locale.sh     # Epic 1 — es-CL locale defaults
     12-apps.sh       # ADR-0002 — which apps we install, and the edits inside them
-    14-office.sh     # AD-5 — Euro-Office CONNECTOR config (the backend is `make office-eurooffice`)
+    14-office.sh     # AD-5 — Euro-Office: connector config + the trusted_domains repair (#81)
     15-branding.sh   # Epic 5 — APS Conecta white-label
     16-app-policy.sh # admin keeps everything; staff get the reduced set
     20-groups.sh     # Epic 2 — role/category/team group registry
