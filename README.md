@@ -126,7 +126,7 @@ exists to prevent. Set by `provisioning/phases/14-office.sh`, never in the admin
 | `scripts/` | `install.sh` (the one command) + `wait-ready.sh`, `test.sh` + `smoke.sh` (the gate), `seed-idempotent.sh`, `office-smoke.sh`, `deis.py`, and `env.sh` (shared preamble). |
 | `provisioning/` | The single idempotent provisioning writer: `seed.sh` runner, `lib.sh` guard helpers, `phases/05-60`, `apps/` (per-app patches — [ADR-0002](docs/adr/0002-app-patches.md)), and [`provisioning/README.md`](provisioning/README.md). |
 | `sites/` | One `<slug>/site.sh` per CESFAM — its teams, folders, ACL matrix and identity — plus the DEIS register they are picked from. **`los-castanos` ships as the reference clinic**; write another with `scripts/deis.py`. |
-| `apps/`, `themes/` | Live-mounted. `apps/` holds store-installed apps, patched at seed time and gitignored ([ADR-0002](docs/adr/0002-app-patches.md)); `themes/apsconecta/` is the white-label server theme. |
+| `apps/`, `themes/` | Live-mounted. `apps/` is gitignored and holds the apps unpacked from the tarballs committed in `provisioning/apps/`, patched at seed time ([ADR-0002](docs/adr/0002-app-patches.md)); `themes/apsconecta/` is the white-label server theme. |
 | `docs/ARCHITECTURE.md` | The architecture overview (design SSOT). |
 | `ROADMAP.md` · `BUGS.md` | Roadmap narrative · known bugs. Work in progress is on the [Projects board](https://github.com/orgs/APS-Conecta/projects/5). |
 | `LICENSE` · [`docs/LICENSING.md`](docs/LICENSING.md) | Our code's license (proprietary) · full third-party license audit. |
@@ -176,7 +176,7 @@ The phase list, the contract and the full helper list live in
 runs `make fix-mount-perms` so the container (uid 33) can write them. A custom app talks to Nextcloud **only
 through OCP public APIs (`OCP\…`)** — never patch core (AD-9) — carries an `appinfo/info.xml`
 (`min-version="34"`), and is enabled with `occ app:enable <id>`. **No custom app lives here yet** — `apps/`
-currently holds only store-installed upstream apps (gitignored), and the first Layer-2 app, the REM analyzer, has
+currently holds only upstream apps unpacked from the vendored tarballs (gitignored), and the first Layer-2 app, the REM analyzer, has
 its own repository. White-labeling ships as the **`themes/apsconecta/`
 server theme** — AD-6's config-only rule is superseded by
 [ADR-0001](docs/adr/0001-server-theme-for-branding.md). How the theming actually behaves (and why most of

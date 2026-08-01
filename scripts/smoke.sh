@@ -141,7 +141,13 @@ esac
 # Settings > Apps restores both the pristine files and the signature with nothing running
 # `make seed` afterwards — the same gap the rename assertion in office-smoke.sh covers, asserted the
 # same way. The list comes from provisioning/apps/, so a new patched app is covered automatically.
-patched=$(find provisioning/apps -mindepth 1 -maxdepth 1 -type d -printf '%f ' 2>/dev/null)
+#
+# PATCHED means "has a .patch file", not "has a directory under provisioning/apps/". Those were the
+# same thing until #98 put a vendored tarball in every app's directory — after which this read all
+# three apps as patched and failed on the two that carry an untouched upstream signature, correctly
+# describing a state that was fine. Only a patched app's signature is a lie.
+patched=$(find provisioning/apps -mindepth 2 -maxdepth 2 -name '*.patch' -printf '%h\n' 2>/dev/null \
+          | sort -u | xargs -r -n1 basename | tr '\n' ' ')
 if [ -n "$patched" ]; then
   signed=$(docker compose exec -T --user www-data nextcloud sh -c \
     "for a in $patched; do [ -e \"custom_apps/\$a/appinfo/signature.json\" ] && echo \"\$a\"; done; :" \
