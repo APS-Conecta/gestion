@@ -59,11 +59,14 @@ SITE_FOLDERS=(
 SITE_SUBFOLDERS=( "Protocolos" "Flujogramas" "Documentación" "Registro de redes" "Actas de reuniones" )
 
 # --- Access matrix: mount|group|perms. Three fields ALWAYS; an empty third = read-only. ---
-# TEMPORARY: every row is "read write delete" while the tree is reorganised, including the ones
-# meant to be read-only (all-staff on Transversal, cat-jefaturas on the Unidades).
+# The six read-only rows are back (#116): staff READ Transversal and the Jefaturas manage it, and a
+# Jefatura reads a Unidad it does not own while the owning role manages it. They were widened to
+# "read write delete" on 2026-07-30 so the tree could be reorganised — moving a file needs delete on
+# the SOURCE — and that reorganisation is done.
+# Unidades/Dirección keeps cat-jefaturas at manage on purpose: it is the Jefaturas' own folder.
 # Anything granted on these folders and not listed here is revoked (gf_prune).
 SITE_ACL=(
-  "Transversal|all-staff|read write delete"
+  "Transversal|all-staff|"
   "Transversal|cat-jefaturas|read write delete"
   "Programas/Salud Mental|prog-salud-mental|read write delete"
   "Programas/Salud Mental|cat-jefaturas|read write delete"
@@ -72,17 +75,17 @@ SITE_ACL=(
   "Programas/Cardiovascular|prog-cardiovascular|read write delete"
   "Programas/Cardiovascular|cat-jefaturas|read write delete"
   "Unidades/SOME|role-administrativo-some|read write delete"
-  "Unidades/SOME|cat-jefaturas|read write delete"
+  "Unidades/SOME|cat-jefaturas|"
   "Unidades/Farmacia|role-quimico-farmaceutico|read write delete"
   "Unidades/Farmacia|role-tens-farmacia|read write delete"
-  "Unidades/Farmacia|cat-jefaturas|read write delete"
+  "Unidades/Farmacia|cat-jefaturas|"
   "Unidades/Dental|role-dentista|read write delete"
   "Unidades/Dental|role-tons|read write delete"
-  "Unidades/Dental|cat-jefaturas|read write delete"
+  "Unidades/Dental|cat-jefaturas|"
   "Unidades/OIRS|role-oirs|read write delete"
-  "Unidades/OIRS|cat-jefaturas|read write delete"
+  "Unidades/OIRS|cat-jefaturas|"
   "Unidades/Estadística-REM|role-estadistica-rem|read write delete"
-  "Unidades/Estadística-REM|cat-jefaturas|read write delete"
+  "Unidades/Estadística-REM|cat-jefaturas|"
   "Unidades/Dirección|cat-jefaturas|read write delete"
   "Sectores/Sector Estrella|sector-estrella|read write delete"
   "Sectores/Sector Estrella|cat-jefaturas|read write delete"

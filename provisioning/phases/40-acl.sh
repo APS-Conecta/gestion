@@ -8,17 +8,23 @@
 # which makes a folder append-only — a wrong upload can never be removed and files cannot be moved,
 # since a move needs delete on the source. Group folders keep their own trash, so it stays recoverable.
 #
-# TEMPORARY — EVERY grant in the site file is "read write delete", including rows that were read-only
-# (all-staff on Transversal, cat-jefaturas on the five Unidades). Owner decision 2026-07-30: the
-# tree is about to be reorganised, and moving anything needs delete on the source.
+# TWO LEVELS AGAIN (#116). Between 2026-07-30 and 2026-08-01 EVERY grant was "read write delete",
+# including the six that were read-only — a deliberate widening so the tree could be reorganised,
+# since moving a file needs delete on the SOURCE. That work is done and the rows are back:
 #
-# COST WHILE IT LASTS: any staff account can delete anything in any Team Folder, including the
-# shared protocols in Transversal. This file still records WHO has access to WHAT, but no longer at
-# what level — which is what FR-10 exists to express. docs/CONVENTIONS.md describes the INTENDED
-# levels, not these.
+#   Transversal              all-staff      read     staff read the shared area, Jefaturas curate it
+#   Unidades/<owned>         cat-jefaturas  read     a Jefatura reads a unit the owning role manages
+#   Unidades/Dirección       cat-jefaturas  manage   no owning role, so the Jefaturas are it
+#   everything else                         manage
 #
-# Restore before real staff use: put the read-only rows back to a bare `gf_grant "Mount" group`
-# (bitmask 1) once the tree is settled. One edit, and the seed is idempotent.
+# Read-only is spelled as an EMPTY third field in the site file, which reaches gf_grant as no
+# permission words at all — the bare form, bitmask 1. That is why the third field is passed
+# unquoted below, and why the site file's own comment says "three fields ALWAYS".
+#
+# Narrowing works: gf_grant compares the live bitmask to the wanted one and re-issues when they
+# differ, so this downgrades 15 -> 1 on an instance that already ran the wide version. Verified on
+# the running instance 2026-08-01, not assumed — the alternative reading, that a grant helper only
+# ever adds, would have made the fix cosmetic.
 phase_begin "40-acl" "First-cut access matrix — allow-refinement ACLs (Epic 3)"
 
 # The matrix is this clinic's — sites/$SITE/site.sh, rows of mount|group|perms. Unquoted "$perms"

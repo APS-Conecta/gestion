@@ -157,12 +157,21 @@ def write_site(row, snapshot, name, sectors, programs):
     folders = ["Transversal"] + [f"Programas/{bare}" for _, _, bare in programs]
     folders += [f"Unidades/{u}" for u, _ in units] + [f"Sectores/{d}" for _, d, _ in sectors]
 
-    P = "read write delete"  # TEMPORARY, as in phase 40 — every grant while the tree is reorganised
-    acl = [f"Transversal|all-staff|{P}", f"Transversal|cat-jefaturas|{P}"]
+    # Two levels, and the empty string is the point: phase 40 passes the third field UNQUOTED to
+    # gf_grant, so "" reaches it as no permission words at all — a bare grant, which is READ (#116).
+    # Every clinic written before 2026-08-01 got P on every row; that was the temporary widening for
+    # the tree reorganisation and it is over.
+    P, R = "read write delete", ""
+    acl = [f"Transversal|all-staff|{R}",          # staff read the shared area...
+           f"Transversal|cat-jefaturas|{P}"]      # ...Jefaturas curate it
     for gid, _, bare in programs:
         acl += [f"Programas/{bare}|{gid}|{P}", f"Programas/{bare}|cat-jefaturas|{P}"]
     for unit, roles in units:
-        acl += [f"Unidades/{unit}|{r}|{P}" for r in roles.split()] + [f"Unidades/{unit}|cat-jefaturas|{P}"]
+        # A Jefatura READS a unit that has an owning role and MANAGES one that does not. Keyed on
+        # `roles` rather than on the name "Dirección", so a clinic that adds an unowned unit gets the
+        # right answer without editing this, and one that gives Dirección an owner does too.
+        acl += [f"Unidades/{unit}|{r}|{P}" for r in roles.split()]
+        acl += [f"Unidades/{unit}|cat-jefaturas|{R if roles.split() else P}"]
     for gid, display, _ in sectors:
         acl += [f"Sectores/{display}|{gid}|{P}", f"Sectores/{display}|cat-jefaturas|{P}"]
 
@@ -201,9 +210,9 @@ SITE_FOLDERS=(
 SITE_SUBFOLDERS=( "Protocolos" "Flujogramas" "Documentación" "Registro de redes" "Actas de reuniones" )
 
 # --- Access matrix: mount|group|perms. Three fields ALWAYS; an empty third = read-only. ---
-# TEMPORARY: every row is "read write delete" while the tree is reorganised, including the ones
-# meant to be read-only (all-staff on Transversal, cat-jefaturas on the Unidades).
-# Anything granted on these folders and not listed here is revoked (gf_prune).
+# Staff READ Transversal and the Jefaturas curate it; a Jefatura READS a Unidad that has an owning
+# role and manages one that does not. Anything granted on these folders and not listed here is
+# revoked (gf_prune).
 SITE_ACL=(
   {nl.join(f'"{a}"' for a in acl)}
 )

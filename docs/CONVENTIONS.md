@@ -20,11 +20,16 @@ acceso en el PRD §4.4):
 Si dudas dónde archivar algo: si sirve a todo el personal → **Transversal**; si es de un programa/unidad/sector
 específico → su carpeta.
 
-> **Permisos, hoy.** Los niveles descritos arriba son la intención, no lo que el servidor aplica en este
-> momento: mientras se reorganiza el árbol, **todo el personal puede editar y eliminar en todas las
-> carpetas** (decisión del 2026-07-30 — mover un archivo exige permiso de borrado en el origen). Cada
-> Team Folder conserva su propia papelera, así que un borrado se puede recuperar. El estado real vive en
-> [`provisioning/phases/40-acl.sh`](../provisioning/phases/40-acl.sh), que es la fuente única.
+> **Permisos.** Los niveles descritos arriba son los que el servidor aplica: en **Transversal** todo el
+> personal lee y las Jefaturas gestionan; en cada **Unidad** gestiona el rol dueño y las Jefaturas leen;
+> en **Programas** y **Sectores** gestionan el equipo y las Jefaturas. `Unidades/Dirección` no tiene rol
+> dueño, así que ahí las Jefaturas gestionan.
+>
+> Entre el 2026-07-30 y el 2026-08-01 todo el personal pudo editar y eliminar en todas las carpetas
+> — una decisión temporal para poder reorganizar el árbol, ya revertida. Cada Team Folder conserva su
+> propia papelera, así que un borrado siempre se puede recuperar. La matriz real vive en
+> `sites/<slug>/site.sh`, aplicada por
+> [`provisioning/phases/40-acl.sh`](../provisioning/phases/40-acl.sh).
 
 ## Nombre de archivos
 
