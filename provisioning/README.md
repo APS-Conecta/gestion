@@ -37,9 +37,10 @@ One stack serves one CESFAM, and everything specific to it is **data**: `sites/<
 the phase loop — each phase already runs in a subshell of that, so every phase sees the arrays and
 none can write back. An unset `SITE`, or a missing file, is fatal before any phase runs.
 
-**No clinic ships in this repo** — a fresh clone has no site at all, and `make seed` refuses to run
-until you write one. Choosing the clinic is the first step of an install, not a file you inherit.
-The weekly clean-boot job does exactly the same thing before it seeds, so that path is tested.
+**One clinic ships** — `sites/los-castanos/site.sh`, the reference this repo serves. Any other CESFAM
+is a file you write, and `make seed` refuses to run until `SITE` names one that exists. Choosing the
+clinic is the first step of an install. The clean-boot job writes its own with `scripts/deis.py`
+rather than reusing the committed one, so the `--new` path stays tested.
 
 | In the site file | In the phases (identical everywhere) |
 |---|---|
