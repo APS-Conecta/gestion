@@ -23,6 +23,16 @@ Responsibilities are partitioned: **provisioning owns structure** (groups, folde
 **fixtures own only sample content and sample users** placed into already-existing groups. Re-running converges
 to the same state; there is no second source of truth and no manual admin-UI step that isn't scripted.
 
+**Convergence is one-directional: it adds and never deletes** (#85). Everything reversible is converged —
+group membership, ACL grants, app enablement, config keys — and `gf_prune` already revokes grants the matrix
+no longer declares, because revoking a grant loses nothing and the files stay. The three operations that
+*do* lose content — deleting a group folder, a user, or files — are never automatic and have no flag that
+makes them so. Deleting a group is in the same bucket for a different reason: it strands any group folder it
+was sole grantee of. What is live but no longer declared is **reported** at the end of `make install`, and on
+demand via `make divergence` — naming the object and the command that would remove it, exit 0 either way. The
+usual justification for a guarded destructive mode is a backup to fall back on, and there is none in this
+repo yet (see *Environments* below, and #75).
+
 ## Stack
 
 *Verified current 2026-08-01; pins are seed — the running code owns them thereafter.*

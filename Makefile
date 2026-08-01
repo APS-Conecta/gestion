@@ -3,7 +3,7 @@
 # (AD-2). `make office-down` stops just the document server when 2.5 GB is not worth a CSS edit.
 # `make smoke` / `make test` = the local quality gate; `make seed` runs the provisioning pipeline.
 .DEFAULT_GOAL := help
-.PHONY: help setup install up up-dev down seed seed-idempotent smoke test images images-check fix-mount-perms office-smoke office-down
+.PHONY: help setup install up up-dev down seed seed-idempotent smoke test divergence images images-check fix-mount-perms office-smoke office-down
 
 # Your host group, so the container can hand the bind mounts back to you (fix-mount-perms).
 HOST_GID := $(shell id -g)
@@ -63,6 +63,9 @@ smoke: ## Health-gate the running core stack (exit 0 healthy / non-0 broken)
 
 test: ## Local quality gate — static checks + smoke (same script CI runs)
 	@bash scripts/test.sh
+
+divergence: ## List what is live on the instance that the repo no longer declares (#85)
+	@bash scripts/divergence.sh
 
 images: ## Refresh the pinned image digests to what each tag points at today (#109)
 	@bash scripts/image-digests.sh
