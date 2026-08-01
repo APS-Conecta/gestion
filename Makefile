@@ -4,7 +4,7 @@
 #   `make office-eurooffice` → Euro-Office (eurooffice/JWT)
 # `make smoke` / `make test` = the local quality gate; `make seed` runs the provisioning pipeline.
 .DEFAULT_GOAL := help
-.PHONY: help install up up-dev down seed seed-idempotent smoke test fix-mount-perms office-eurooffice office-smoke office-down
+.PHONY: help setup install up up-dev down seed seed-idempotent smoke test fix-mount-perms office-eurooffice office-smoke office-down
 
 OCC = docker compose exec -T --user www-data nextcloud php occ
 # Your host group, so the container can hand the bind mounts back to you (fix-mount-perms).
@@ -12,8 +12,12 @@ HOST_GID := $(shell id -g)
 # No .env reading here: every script sources scripts/env.sh itself, so `make smoke` and
 # `bash scripts/smoke.sh` behave identically. Nothing in a recipe below needs a value from .env.
 
-# Same guard, four targets. One message, one place to change it.
-REQUIRE_ENV = test -f .env || { echo "No .env found — run: cp .env.example .env  (then edit the passwords)"; exit 1; }
+# Same guard, four targets. One message, one place to change it. It names `make setup` rather than
+# the copy it replaced: hand-copying leaves four placeholder passwords in a file nothing checks.
+REQUIRE_ENV = test -f .env || { echo "No .env found — run: make setup"; exit 1; }
+
+setup: ## Create .env with four generated secrets, mode 600 (run once, before install)
+	@bash scripts/env-init.sh
 
 install: ## Stand this clinic up, or converge it after editing site.sh / git pull (the one command)
 	@bash scripts/install.sh

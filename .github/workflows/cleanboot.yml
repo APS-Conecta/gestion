@@ -49,7 +49,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - run: cp .env.example .env
+      # `make setup` rather than `cp`, so the generator itself is exercised: it is the only place
+      # the four secrets are produced, and it cannot be tested on a dev box that already has an env
+      # file. A clean runner is the one environment where the create path actually runs.
+      - run: make setup
       # A reference clinic ships (sites/los-castanos), but CI writes its own so the `--new` path is
       # exercised somewhere — it is the only place that command runs. Piped answers stand in for the
       # operator's; the appended SITE line wins over anything .env.example says, because env.sh takes

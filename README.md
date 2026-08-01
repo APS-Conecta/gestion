@@ -28,11 +28,22 @@ from the repo root unless noted.
 
 2. **Create your local env file** (gitignored — never committed).
    ```bash
-   cp .env.example .env
+   make setup
    ```
-   Then **edit `.env`** and replace every `change-me…` placeholder with your own dev values (admin +
-   PostgreSQL passwords at minimum; `OFFICE_JWT_SECRET` if you'll run Euro-Office — `openssl rand -hex 32`).
-   *The stack boots with the placeholders, but don't leave real deployments on them.*
+   *Expected:* it generates all four secrets — admin password, PostgreSQL, `OFFICE_JWT_SECRET`,
+   fixture password — writes them to `.env` and sets it to mode 600, so only your account can read
+   it. Hex values, because Compose interprets `$` and a generated `$` would break the file.
+
+   **Your admin password lives in that file and nowhere else.** Nothing prints it and no second copy
+   is kept — a rendered credentials sheet was deleted on 2026-07-29 after one was pasted into a chat
+   transcript. Read it once and put it in your password manager:
+   ```bash
+   grep '^NEXTCLOUD_ADMIN_PASSWORD=' .env
+   ```
+   It **refuses** if `.env` already exists: Nextcloud reads the admin password only when it first
+   installs itself, so rewriting the file on a live stack changes no login and only makes the file
+   disagree with the database.
+
    Leave `SITE` for step 3 — it names the clinic this stack serves.
 
 3. **Choose your CESFAM.** One clinic ships as a working reference: **CESFAM Los Castaños**, in
