@@ -27,3 +27,6 @@ __pycache__/
 # IDE / OS
 *.code-workspace
 .DS_Store
+
+# `make install` writes the full provisioning log here.
+.install.log
