@@ -70,12 +70,12 @@ La fase hace, en orden:
 4. **Tema claro forzado:** `enforce_theme = light` + `disable-user-theming = yes`. Son claves **complementarias**: la primera elimina la elección de tema/apariencia, la segunda impide que cada usuario cambie fondo y color por su cuenta.
 5. **Banner iOS:** `config:system:set customclient_ios_appid ""` — mata el meta
    `apple-itunes-app`. Sustituye al antiguo `defaults.php`, eliminado el 2026-07-27.
-6. **Navegación:** `ensure_app side_menu` (app de terceros, soportada en NC34).
+6. **Navegación:** el color de `side_menu` (`background-color` / `background-color-to`). La app la
+   instala la fase `12-apps` desde su tarball vendorizado (#98), no ésta.
 7. **Activación del tema:** `config:system:set theme --value apsconecta`.
 
-**Sí sube imágenes**, con `occ theming:config <clave> <ruta-absoluta>` (§3). La afirmación
-anterior — que el `occ` de NC34 solo fija texto y color — era **falsa**; solo exige ruta absoluta.
-Lo que sigue prohibido es subirlas por el panel: sería el "hand-click" que AD-2 veta.
+**Sí sube imágenes**, con `occ theming:config <clave> <ruta-absoluta>` (§3) — solo exige ruta
+absoluta. Subirlas por el panel sigue prohibido: sería el "hand-click" que AD-2 veta.
 
 > **Revertir cualquier clave:** `occ theming:config <clave> --reset`.
 
@@ -91,13 +91,15 @@ webmanifest y los correos con marca:
 ```
 gestion/themes/apsconecta/core/img/
 ├── logo/logo.svg          ← clave `logo`: tarjeta de login (lockup completo)
-├── logo/logo-header.svg   ← clave `logoheader`: cabecera (lockup completo, con teja). El hueco
-│                            nativo dejaba el texto en ~4 px; server.css lo ensancha y añade
-│                            INICIO — las medidas las manda MAPEO.md §3
+├── logo/logo-header.svg   ← clave `logoheader`: el lockup completo. Desde #84 se muestra en el
+│                            panel de side_menu (`.cm-logo`), no en la cabecera — medidas en
+│                            MAPEO.md §3
 │                            AMBOS lockups llevan su propia subset de Fraunces/Nunito Sans
 │                            embebida: un SVG servido como imagen no ve el @font-face de
 │                            server.css (B-011). Regenerar con tools/embed-fonts.py
-├── logo/logo-mark.svg     ← la figura sola: cabecera por debajo del corte (§ cabecera)
+├── logo/logo-mark.svg     ← la figura sola: la cabecera, a cualquier ancho
+├── home.svg               ← el icono de casa de la cabecera (#84). Lo usa server.css; no es
+│                            clave de theming, así que la fase no lo registra
 ├── favicon.svg            ← clave `favicon`
 ├── manifest.json          ← el webmanifest que verifica `smoke.sh` (control 7)
 └── background.svg         ← clave `background`: telón de TODA la UI, no solo del login
@@ -107,11 +109,8 @@ gestion/themes/apsconecta/core/img/
 > que tapaba `background.svg` por completo: estaba registrado, servido y no se vio nunca. Se
 > eliminó el 2026-07-27.
 >
-> **Resuelto el 2026-07-27** (ADR-0001 § Pending). La pregunta original —«¿ganan las imágenes del
-> tema a los valores que la app Theming guarda en BD?»— quedó **sin objeto**: no dependemos de esa
-> búsqueda, las registramos nosotros. Verificado en vivo: las cuatro claves registradas, favicon
-> rasterizado y webmanifest tematizado. El plan B por API OCS (que habría metido credenciales de
-> admin en el runner del seed) no hizo falta.
+> **Resuelto el 2026-07-27** ([ADR-0001](adr/0001-server-theme-for-branding.md) § *Pending*):
+> registramos las cuatro claves nosotros, así que la precedencia tema-vs-BD quedó sin objeto.
 
 ---
 
@@ -190,19 +189,21 @@ texto, `enforce_theme` quitando el alto contraste, un SVG que no parsea) están 
 - Las **apps oficiales de Android e iOS sincronizan el tema del servidor** automáticamente (color, logo, fondo): al tematizar el servidor quedan coherentes web, PWA, Android e iOS.
 - **360 px, medido el 2026-07-30 (no es lo mismo que «la PWA»** — son dos comprobaciones distintas,
   ver [`THEMING-MODEL.md`](THEMING-MODEL.md) §*«PWA a 360px» eran dos comprobaciones*). A ese ancho el
-  header **no cabe**: el lockup y la etiqueta INICIO necesitan 299 px y solo hay 224, y el arte se
-  metía 32 px por debajo de los iconos de la derecha. Por eso `server.css` los limita a
-  `@media (min-width: 601px)` y por debajo sirve `logo-mark.svg`, la figura sola, con la geometría
-  de core. Verificado en un iframe de 360 px, que es el sustituto válido porque `resize_window` es
-  un no-op bajo este gestor de ventanas: sin recorte, sin solape y sin scroll horizontal.
+  nombre de la clínica se metía bajo los iconos de la derecha, así que `server.css` retira por
+  debajo de 601 px las dos ranuras generadas (casa y nombre) y deja la marca sola con la geometría
+  de core. (Antes de #84 el problema era otro: el lockup más la etiqueta INICIO, ya retirada, pedían
+  299 px y solo había 224.) Verificado en un iframe de 360 px, que es el sustituto válido porque
+  `resize_window` es un no-op bajo este gestor de ventanas: sin recorte, sin solape y sin scroll
+  horizontal.
 
 ---
 
 ## 8. Verificación final
 
 1. **Refresca fuerte:** Ctrl/Cmd + Shift + R.
-2. Comprueba: login (degradado + logo), header (lockup + INICIO por encima de 601 px, marca sola por
-   debajo), favicon, PWA (`/apps/theming/manifest`), y que **no** aparezca "Nextcloud" ni el número
+2. Comprueba: login (degradado + logo), header (marca + icono de casa + nombre de la clínica por
+   encima de 601 px; marca sola por debajo), favicon, PWA (`/apps/theming/manifest`), y que **no**
+   aparezca "Nextcloud" ni el número
    `1125420102`.
    **Los correos no se pueden comprobar todavía:** no hay SMTP configurado en ninguna parte del repo,
    así que la instancia no puede enviar nada. Este paso queda bloqueado por la decisión de correo

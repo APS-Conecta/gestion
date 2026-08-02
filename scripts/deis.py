@@ -185,7 +185,8 @@ def write_site(row, snapshot, name, sectors, programs):
 # Forward hook for the production posture (#75). Empty = local dev, reached over the host port.
 SITE_DOMINIO=""
 
-# Staff roster, kept OUTSIDE the repo. Path on the install host; empty = no staff phase.
+# Staff roster, kept OUTSIDE the repo. Path on the install host. Nothing reads it yet — the reader
+# waits on password delivery (#106).
 SITE_ROSTER=""
 
 # --- Teams: programs and territorial sectors (id|display) ---

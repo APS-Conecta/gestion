@@ -20,7 +20,10 @@ SEED_FIXTURES="${SEED_FIXTURES:-1}"
 # so all of it is visible to every phase and none of it can leak back out.
 require_site || exit 1
 # shellcheck disable=SC1090  # the path is SITE, resolved at run time
-. "$HERE/../sites/$SITE/site.sh"
+. "$HERE/../sites/$SITE/site.sh" || { echo "FATAL: sites/$SITE/site.sh failed to load" >&2; exit 1; }
+# SITE_ROLES is optional; declare it so "unset" and "empty" both mean none. `${SITE_ROLES[@]:-}` in a
+# phase would NOT do — on an empty array it expands to one empty word and runs the body once.
+declare -p SITE_ROLES >/dev/null 2>&1 || SITE_ROLES=()
 
 echo "== APS Conecta provisioning (make seed) =="
 require_installed

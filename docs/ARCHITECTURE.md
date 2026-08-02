@@ -53,9 +53,7 @@ tag has moved past its pin, and the weekly `image-digests` workflow runs that ch
 
 The `nextcloud:34-apache` tag rolls forward across 34.x patch releases, which is why the digest and
 not the tag is what `compose.yaml` resolves: byte-identical environments across machines stopped
-being optional once the same install has to reach more than one clinic (#109). Measured 2026-08-01,
-this tag and `redis:8-alpine` had both moved since this repo's own box pulled them — two boxes a
-fortnight apart were already running different builds. NC34 (the current
+being optional once the same install has to reach more than one clinic (#109). NC34 (the current
 line) is used because **Euro-Office requires NC34+**. All components are OSS (per
 the OSS-first mandate): Nextcloud / groupfolders / eurooffice AGPL-3.0, Euro-Office AGPL-3.0,
 PostgreSQL PostgreSQL-License, Redis 8 AGPL-3.0 — settled 2026-07-19 in
@@ -64,7 +62,8 @@ PostgreSQL PostgreSQL-License, Redis 8 AGPL-3.0 — settled 2026-07-19 in
 
 ## Runtime topology
 
-v1 runs as a single Docker Compose stack, one per developer machine, portable across OSes.
+v1 runs as a single Docker Compose stack — one per clinic, or one per developer machine — portable
+across OSes.
 
 ```mermaid
 graph TD
@@ -160,10 +159,8 @@ and read: [`provisioning/README.md`](../provisioning/README.md).
   stays config-as-code via `occ theming:config`, with `enforce_theme=light` + `disable-user-theming yes`.
   Logo, favicon and login background are **files in the theme** (`core/img/`), registered by the
   `15-branding` phase with `occ theming:config <key> <absolute-path>` pointing at the bind-mounted
-  theme directory — never admin-UI uploads, which would break AD-2. (`occ` *does* set all four
-  image keys on NC34; it requires an absolute path. An earlier claim here that the CLI sets
-  text/colour only was wrong — see ADR-0001 § Corrections.) The iOS "Nextcloud — Abrir" banner is
-  killed with `occ config:system:set customclient_ios_appid ""`; **there is no `defaults.php`**
+  theme directory — never admin-UI uploads, which would break AD-2. The iOS "Nextcloud — Abrir" banner
+  is killed with `occ config:system:set customclient_ios_appid ""`; **there is no `defaults.php`**
   (deleted 2026-07-27, and with it the opcache restart it required).
   This supersedes **AD-6** on `themes/` files, but AD-6 was *right* to reject `defaults.php` —
   reasoning and accepted costs in [ADR-0001](adr/0001-server-theme-for-branding.md).
@@ -184,9 +181,7 @@ and read: [`provisioning/README.md`](../provisioning/README.md).
 
 A single Compose stack, brought up with one command, on **a developer's machine or a clinic's** — those
 are the same stack and the same command. `make setup && make install` stands up a named CESFAM from a clean
-checkout, and #77's whole effort was making that true of a machine nobody has seen. *(Until 2026-08-01 this
-paragraph said v1 targeted "local development per developer only". That stopped being true when the
-installer landed; it was left standing longer than the claim was.)*
+checkout, and #77's whole effort was making that true of a machine nobody has seen.
 
 What is still **deferred** is everything that makes a host reachable and survivable rather than everything
 that makes it run: hosting/provider, a TLS reverse-proxy for the office server with a hardened allow-list

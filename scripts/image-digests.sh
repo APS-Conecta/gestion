@@ -15,12 +15,8 @@
 # `redis:8-alpine` had BOTH moved since this repo's own box pulled them. That is #96 made permanent
 # by a fleet. The digest is the only name for "the version I tested".
 #
-# WHY THIS IS NOT AUTOMATIC ALL THE WAY. The weekly workflow runs --check and fails loudly; the
-# rewrite is run by a human, whose commit goes through a PR, where `cleanboot` does a full clean
-# bring-up against the NEW bytes before anyone can merge. A bot that merged its own image bump would
-# ship a Nextcloud nobody had booted into a clinic — which is the failure this file exists to stop.
-# GitHub also will not run cleanboot on a PR opened with GITHUB_TOKEN, so a self-merging version
-# would be untested twice over.
+# NOT AUTOMATIC ALL THE WAY: the weekly workflow runs --check, a human runs the rewrite, and the PR
+# is where cleanboot boots the new bytes. Why no bot opens it: .github/workflows/image-digests.yml.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -39,7 +35,9 @@ esac
 # An UNPINNED reference is a bug, not a thing to resolve: someone added an image and skipped the
 # pin, so the fleet is already drifting. Fail on it rather than silently pinning it to today —
 # today's bytes have not been booted, and quietly adopting them is the opposite of the point.
-if unpinned=$(grep -nE '^\s*(image:|FROM) +[^ ]+$' "${FILES[@]}" | grep -v '@sha256:'); then
+# Deliberately not $-anchored: `FROM x:tag AS build` and `image: x:tag  # note` used to slip past it.
+# An internal multi-stage `FROM base AS x` gets flagged too, which is loud rather than silent.
+if unpinned=$(grep -nE '^\s*(image:|FROM) ' "${FILES[@]}" | grep -v '@sha256:'); then
   echo "FATAL: image reference with no digest (#109 requires every image pinned):" >&2
   echo "$unpinned" >&2
   echo "Add the digest by running this script without --check, then commit it." >&2

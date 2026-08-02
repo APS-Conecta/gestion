@@ -4,27 +4,18 @@
 # is the separate `make seed` pipeline from Story 0.5 onward (AD-2). The office suite
 # (Euro-Office — AD-5) is Story 0.2.
 #
-# Required vars come from .env (copy .env.example → .env). The ${VAR:?...} guards fail
+# Required vars come from .env (created by `make setup`). The ${VAR:?...} guards fail
 # fast with a clear message if a required value is missing or empty.
 name: apsconecta-gestion
 
 # `nextcloud` and `cron` MUST run the same image off the same three volumes: cron.php loads the
 # apps, so it needs custom_apps and themes too, or app-owned jobs fail in a container that looks
-# healthy. That used to be a comment asking the two service blocks to stay in step by hand. It is
-# an anchor now, so they cannot drift: there is one definition and both services merge it.
-# EVERY IMAGE IS PINNED BY DIGEST (#109). The tag stays for readability; the digest is what
-# actually resolves. Rolling tags meant two clinics installed a fortnight apart ran different
-# software while both looked identical — measured 2026-08-01, `34-apache` and `8-alpine` had BOTH
-# moved since this repo's own box pulled them. That is #96 exactly, and a fleet makes it permanent.
-#
-# Pinning costs nothing that was ever being paid for: no `docker compose pull` exists in `make up`
-# or `make install`, and `up -d` only pulls when an image is ABSENT — so an installed clinic never
-# picked up a patch anyway. Rolling tags were producing variance between installs and nothing else.
-#
+# healthy. The anchor below makes that structural instead of a request to stay in step.
+# EVERY IMAGE IS PINNED BY DIGEST (#109). The tag stays for readability; the digest is what actually
+# resolves. Why, and why a tag moving upstream is not an incident: .github/workflows/image-digests.yml.
 # These are INDEX digests (the multi-arch pointer), not per-platform manifests, so arm64 still
-# resolves. Refresh them with `make images`, which rewrites this file and Dockerfile.dev together;
-# the weekly `image-digests` workflow reports when a tag has moved past a pin. Never hand-edit a
-# digest — the whole point is that the bytes here were tested before they were written.
+# resolves. Refresh with `make images`, which rewrites this file and Dockerfile.dev together. Never
+# hand-edit a digest — the whole point is that the bytes here were tested before they were written.
 x-nextcloud-base: &nextcloud-base
   image: nextcloud:34-apache@sha256:b52f7bc0e496f227b0e85e3b88571a42c68b6245ccde29d577e733227715dcf5
   depends_on:

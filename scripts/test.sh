@@ -9,14 +9,14 @@ check() { if "$@" >/dev/null 2>&1; then echo "  ok:   $*"; else echo "  FAIL: $*
 
 echo "== static checks (no running stack needed) =="
 if [ ! -f .env ]; then
-  echo "  note: .env absent — compose interpolation will fail; run 'cp .env.example .env' first"
+  echo "  note: .env absent — compose interpolation will fail; run 'make setup' first"
 fi
 # One parse, not two: the `--profile eurooffice` run went with the profile in #81 — Euro-Office is
 # an ordinary service now, so this parse already covers it. The dev overlay is included because it
 # is the only other file that can change what compose resolves.
 check docker compose -f compose.yaml -f compose.dev.yaml config -q
 linted=0
-for s in scripts/*.sh provisioning/*.sh provisioning/phases/*.sh; do
+for s in scripts/*.sh provisioning/*.sh provisioning/phases/*.sh sites/*/site.sh; do
   [ -e "$s" ] || continue
   linted=$((linted + 1)); check bash -n "$s"
 done
@@ -79,9 +79,10 @@ if docker compose ps --status running --services 2>/dev/null | grep -qx nextclou
     grep -q 'class="section development-notice"' apps/settings/templates/settings/personal/development.notice.php
   check docker compose exec -T --user www-data nextcloud \
     grep -q "open-reasons-use-nextcloud-pdf" apps/settings/templates/settings/personal/development.notice.php
-  # The home affordance rests on `<a id="nextcloud">` in the authenticated layout: server.css
-  # widens it to 224px and hangs INICIO off its ::after, and the click works only because that
-  # element is the home link. It scopes on the ELEMENT TYPE because the PUBLIC SHARE header
+  # The home affordance rests on `<a id="nextcloud">` in the authenticated layout: server.css reserves
+  # 68px for the mark, hangs the home icon off ::before and the clinic name off ::after, and the click
+  # works only because that element is the home link.
+  # It scopes on the ELEMENT TYPE because the PUBLIC SHARE header
   # renders the same id as `<div class="header-appname">` with a share title inside it — an
   # unscoped rule put the 224px padding and a 200px logo on the page external recipients see.
   # So assert both shapes: authenticated is an anchor, public is not. If upstream renames the id,
@@ -91,6 +92,9 @@ if docker compose ps --status running --services 2>/dev/null | grep -qx nextclou
     'grep -B3 -- '"'"'id="nextcloud"'"'"' core/templates/layout.user.php | grep -q -- "<a "'
   check docker compose exec -T --user www-data nextcloud \
     grep -qE '<div id="nextcloud" class="header-appname"' core/templates/layout.public.php
+  # Same silent-failure shape as B-008: server.css hangs the clinic name off `.login-form__headline`.
+  check docker compose exec -T --user www-data nextcloud \
+    grep -q "login-form__headline" dist/core-login.js
 else
   echo "  skipped: upstream vendor-block checks (need a running stack)"
 fi

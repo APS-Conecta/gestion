@@ -13,7 +13,9 @@ Principles, the language split and the data/secrets invariants are defined in
 3. Open a PR → **1 human approval required** before merge. This gate is by **team convention** (GitHub
    free plan does not enforce branch protection on private repos) — respect it.
 4. AI-assisted PRs must be **labeled** (`ai-assisted`) and disclose AI involvement in the description.
-5. The gate is `make test` (static checks + smoke) — run it before opening a PR. CI runs the same script on every push; the full clean boot runs weekly (`.github/workflows/ci.yml`).
+5. The gate is `make test` (static checks + smoke) — run it before opening a PR. CI runs the same
+   script on every PR and on pushes to `main` (`.github/workflows/ci.yml`); the full clean boot runs
+   on PRs that touch the install path, and weekly (`.github/workflows/cleanboot.yml`).
 
 `CODEOWNERS` auto-requests reviewers. Prefer small, reviewable PRs.
 
@@ -40,7 +42,7 @@ Two invariants when you touch the stack: nothing VPS-specific or absolute-pathed
 (`host.docker.internal` must work cross-OS), and **all desired state goes through `make seed`** — never
 hand-click config into the running instance (AD-2).
 
-**Secrets:** all passwords live in your gitignored `.env` (copy from `.env.example`) — that file is
+**Secrets:** all passwords live in your gitignored `.env`, created by `make setup` — that file is
 the whole list, and the canonical vault is **Proton Pass**. Never commit it.
 
 `grep -v '^#' .env` if you want them on one screen. There is deliberately no target that renders

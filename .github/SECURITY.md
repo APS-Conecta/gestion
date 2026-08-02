@@ -18,7 +18,7 @@ The dev stack runs locally, bound to loopback, with synthetic data. These are **
 conveniences**, not production weaknesses, and are out of scope for vulnerability reports:
 
 - **Redis without a password** (internal to the compose network, not published).
-- Services bound to **`127.0.0.1`** only; office images tracked at `:latest` (see `docs/LICENSING.md`).
+- Services bound to **`127.0.0.1`** only.
 
 There is no production deployment in this repo. If one is ever built, these must be revisited.
 

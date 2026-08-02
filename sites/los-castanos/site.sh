@@ -14,7 +14,8 @@ SITE_SERVICIO_SALUD="Servicio de Salud Metropolitano Sur Oriente"
 # Forward hook for the production posture (#75). Empty = local dev, reached over the host port.
 SITE_DOMINIO=""
 
-# Staff roster, kept OUTSIDE the repo. Path on the install host; empty = no staff phase.
+# Staff roster, kept OUTSIDE the repo. Path on the install host. Nothing reads it yet — the reader
+# waits on password delivery (#106).
 SITE_ROSTER=""
 
 # --- Teams: programs and territorial sectors (id|display) ---
@@ -59,10 +60,8 @@ SITE_FOLDERS=(
 SITE_SUBFOLDERS=( "Protocolos" "Flujogramas" "Documentación" "Registro de redes" "Actas de reuniones" )
 
 # --- Access matrix: mount|group|perms. Three fields ALWAYS; an empty third = read-only. ---
-# The six read-only rows are back (#116): staff READ Transversal and the Jefaturas manage it, and a
-# Jefatura reads a Unidad it does not own while the owning role manages it. They were widened to
-# "read write delete" on 2026-07-30 so the tree could be reorganised — moving a file needs delete on
-# the SOURCE — and that reorganisation is done.
+# Six rows are read-only (#116): staff READ Transversal and the Jefaturas manage it; a Jefatura reads
+# a Unidad it does not own while the owning role manages it. Model: provisioning/phases/40-acl.sh.
 # Unidades/Dirección keeps cat-jefaturas at manage on purpose: it is the Jefaturas' own folder.
 # Anything granted on these folders and not listed here is revoked (gf_prune).
 SITE_ACL=(

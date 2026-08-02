@@ -3,18 +3,9 @@
 # groups phase 20 already created (this phase never creates structure — AD-2). The ordering that
 # guarantees is the runner's own: 20-groups -> 30-folders -> 40-acl -> here.
 #
-# WHAT CHANGED AND WHY. This used to create four accounts called `dev.medico`, `DEV Matrona
-# (fixture)` and so on — deliberately ugly so nobody mistook them for staff. Their real job was to
-# prove the role-union: one person in four groups receiving the sum of their permissions. But the
-# positions they modelled were arbitrary, and an instance shown to clinic staff was full of accounts
-# named DEV. These are the positions a CESFAM actually has, so the instance now demonstrates the
-# design rather than merely exercising it. The union check did not leave with them: every jefe de
-# sector below holds a role, a sector team and a category at once — the same union, on an account
-# that means something.
-#
-# STILL GATED BY SEED_FIXTURES, and still one shared password. These are POSITIONS, not people.
-# Real staff, real accounts and real password delivery are #86; until that lands, each account here
-# stands in for someone not yet named. Do not treat this phase as having onboarded anybody.
+# GATED BY SEED_FIXTURES, one shared password. These are POSITIONS, not people: #86 settled the
+# roster format and closed 2026-08-01, and the reader waits on password delivery (#106). Every jefe
+# de sector holds a role, a sector team and a category at once — the role-union this phase shows.
 phase_begin "50-users" "The clinic's standing leadership accounts"
 
 : "${FIXTURE_USER_PASSWORD:?set FIXTURE_USER_PASSWORD in .env}"
@@ -36,13 +27,11 @@ done
 # The same move for roles the clinic added itself (#103). A jefatura is a POSITION and this phase
 # creates one account per position, so a clinic-local Jefe/a de SAR gets one exactly as the four
 # fixed jefaturas do. ONLY cat-jefaturas: a local clinical or technical role — a SAR's TENS, say —
-# describes many people rather than a post, and those accounts arrive with the roster (#86).
+# describes many people rather than a post, and those accounts arrive with the roster (#106).
 #
 # The uid is DERIVED, not declared: `role-jefe-sar` -> `jefe.sar`, which is the convention the fixed
 # jefaturas below already follow. A fourth field would be a second name for the same thing and a
-# second thing to get out of step. Same `declare -p` guard as phase 20 — see the note there for why
-# `${SITE_ROLES[@]:-}` would run the loop once on an empty array.
-declare -p SITE_ROLES >/dev/null 2>&1 || SITE_ROLES=()
+# second thing to get out of step.
 local_jefes=()
 for entry in "${SITE_ROLES[@]}"; do
   id="${entry%%|*}"; rest="${entry#*|}"; display="${rest%%|*}"; category="${rest##*|}"

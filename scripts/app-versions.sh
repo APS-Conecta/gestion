@@ -1,13 +1,8 @@
 #!/usr/bin/env bash
 # Has any vendored app released a newer version? (#117)
 #
-# The images have `make images-check`; the app tarballs had nothing. So "the weekly report is the
-# trigger" was only half true — a new groupfolders would have gone unnoticed forever, which is the
-# exact failure #117 exists to prevent. This is the other half.
-#
-# IT ASKS THE APP STORE, AND THAT IS FINE. #98 kept the store out of the INSTALL path, because a
-# failed app install leaves an instance half-built. Reading a version number in CI risks nothing:
-# nobody is mid-install, and a failure here reports rather than breaks.
+# It asks the app store, and that is fine: #98 kept the store out of the INSTALL path, where a failure
+# leaves an instance half-built. Reading a version number in CI risks nothing.
 #
 # REPORTS ONLY. Bumping is an edit — new tarball, new VENDOR lines — and deliberately not automated:
 # a tarball swap changes what every clinic runs, and it goes through a PR where `cleanboot` boots it.
@@ -55,7 +50,7 @@ for a in apps:
         continue
     seen.add(a["id"])
     have = want[a["id"]]
-    releases = [r["version"] for r in a.get("releases", []) if not r.get("isNightly")]
+    releases = [r["version"] for r in a.get("releases", []) if not r.get("isNightly") and "-" not in r["version"]]
     newest = max(releases, key=key) if releases else have
     aid = a["id"]
     if key(newest) > key(have):

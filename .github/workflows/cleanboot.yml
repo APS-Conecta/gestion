@@ -3,15 +3,10 @@
 # It lives in its own file because GitHub filters paths per WORKFLOW, not per job — the only way to
 # run this on the PRs that can break it while the static gate still runs on all of them.
 #
-# WHY IT RUNS ON PULL REQUESTS (#97). It used to be schedule/dispatch only, and in the repo's first
-# 150 commits it had never executed once: every run was push or pull_request, which reaches the
-# static gate alone. The first dispatch, on 2026-08-01, failed immediately — provisioning was racing
-# Nextcloud's own post-install config writes (#96), on a bug already merged to main. A gate nobody
-# triggers is not a gate. This one would have caught #96 on the PR that introduced it.
-#
-# It cannot be a REQUIRED check: branch protection needs GitHub Pro or a public repo, and this is a
-# private repo on Free. The red X is advisory — which is exactly why the trigger matters, since
-# visibility is the whole mechanism.
+# WHY IT RUNS ON PULL REQUESTS (#97). Schedule/dispatch only, it never ran on its own; the first
+# dispatch, on 2026-08-01, failed on #96 — a bug already merged to main that this gate would have
+# caught on its PR. It cannot be a REQUIRED check (branch protection needs GitHub Pro or a public
+# repo), so the red X is advisory — exactly why the trigger matters: visibility is the mechanism.
 name: Clean boot
 
 on:
@@ -27,9 +22,9 @@ on:
       - 'sites/**'
       - '.env.example'
       - '.github/workflows/cleanboot.yml'
-  # Kept as the backstop for drift no PR causes. The images stopped being a source of it in #109 —
-  # all four are pinned by digest now — but the app store is still unpinned until #98 is built, so
-  # main can break without anyone touching it. `image-digests` covers the other half an hour earlier.
+  # Kept as the backstop for drift no PR causes. Our own bytes stopped being a source of it — images
+  # pinned by digest (#109), apps vendored as committed tarballs (#98) — so what still moves untouched
+  # is the runner image and the actions. `image-digests` reports the other half an hour earlier.
   schedule:
     - cron: "0 6 * * 1"          # Mondays 06:00 UTC
   workflow_dispatch:
@@ -71,19 +66,17 @@ jobs:
           SITE_ROLES+=( "role-jefe-sar|Jefe/a de SAR|cat-jefaturas" "role-tens-sar|TENS – SAR|cat-tecnicos" )
           ROLES
       # The whole install, exactly as an operator runs it: `make up` owns the wait for Nextcloud's
-      # own installer, and provisioning follows. This is also the path nothing else exercises — a
-      # checkout has an empty apps/, so 12-apps installs every app from the store and applies its
-      # patches for real, and every query-before-set guard meets a key that does not exist yet.
-      # Euro-Office comes up with it since #81 dropped the profile, so this job now downloads the
-      # 2.56 GB documentserver it used to skip and waits out its 120s start_period. That cost buys
-      # the thing the old skip made impossible: `make test` below smokes the office backend, so the
-      # clean boot proves a document can actually be opened rather than only that the connector was
-      # configured.
+      # own installer, and provisioning follows. This is also the path nothing else exercises — so
+      # 12-apps unpacks every vendored tarball into an empty apps/ and applies its patches for real,
+      # and every query-before-set guard meets a key that does not exist yet.
+      # Euro-Office comes up with it since #81 dropped the profile: this job downloads the 2.56 GB
+      # documentserver it used to skip and waits out its 120s start_period, and in exchange
+      # `make test` below proves a document can be opened, not only that the connector was configured.
       - run: make install
       # Paired with the SITE_ROLES appended above (#103), because "the seed did not crash" is not the
       # same as "the roles landed". Asserts both halves of the rule: a cat-jefaturas role is a
       # POSITION and gets a standing account; a cat-tecnicos one is a job title held by people who
-      # arrive with the roster (#86), so it must NOT. The negative is the half that would rot
+      # arrive with the roster (#106), so it must NOT. The negative is the half that would rot
       # silently — an over-eager loop creating accounts for every local role looks like success.
       - name: Clinic-local roles landed, and only the jefatura got an account
         run: |

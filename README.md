@@ -5,13 +5,14 @@ Internal management / intranet suite for a Chilean CESFAM (primary-healthcare ce
 
 > **Status: ✅ v1 done (Foundation + Spine A).** Epics 0–4 are merged — dev stack + debugger +
 > quality gate + provisioning, es-CL locale, roles/access, the four-area document
-> tree, and live office editing — and the browser acceptance run passed on **2026-07-24**
-> (see *Current state* below). No patient data — dev uses **synthetic fixtures only**.
+> tree, and live office editing — and the browser acceptance run passed on **2026-07-24**.
+> No patient data — dev uses **synthetic fixtures only**.
 
 ## What this is (and isn't)
 
 - **Is:** staff-facing internal operations (documents, coordination) on **Nextcloud 34 + PostgreSQL 18 +
-  Redis 8**, run locally per developer via Docker Compose, with a self-hosted **Euro-Office** office suite.
+  Redis 8**, run on a clinic's host or a developer's machine via Docker Compose, with a self-hosted
+  **Euro-Office** office suite.
 - **Isn't:** a clinical/patient-records system. **No patient data** — dev uses **synthetic fixtures only**.
 
 ## Quickstart
@@ -34,9 +35,9 @@ from the repo root unless noted.
    fixture password — writes them to `.env` and sets it to mode 600, so only your account can read
    it. Hex values, because Compose interprets `$` and a generated `$` would break the file.
 
-   **Your admin password lives in that file and nowhere else.** Nothing prints it and no second copy
-   is kept — a rendered credentials sheet was deleted on 2026-07-29 after one was pasted into a chat
-   transcript. Read it once and put it in your password manager:
+   **Your admin password lives in that file and nowhere else** — why there is no rendered copy is in
+   [`CONTRIBUTING.md`](CONTRIBUTING.md) § *Local dev environment*. Read it once into your password
+   manager:
    ```bash
    grep '^NEXTCLOUD_ADMIN_PASSWORD=' .env
    ```
@@ -81,7 +82,8 @@ from the repo root unless noted.
    ```
    **Run it again** whenever you edit `sites/<slug>/site.sh` or `git pull` — it converges, and
    everything already applied is skipped in seconds. It deliberately does **not** move the Nextcloud
-   image or app versions; those stay separate, deliberate acts.
+   image, and it converges apps onto the *vendored* tarball rather than onto whatever is newest
+   (#117) — bumping either stays a separate, deliberate act.
    *If a phase fails*, the last 20 log lines are printed and the whole command is the retry.
 
    **It adds and never deletes.** Take a sector out of `site.sh` and the group and its folder stay
@@ -108,11 +110,9 @@ here and had already lost four targets.)
 to run (#81). `make office-smoke` checks the pipe end to end and audits the image (OSS, no paid licence);
 `make office-down` stops just the document server when you want the ~2.5 GB back.
 
-**Live editing acceptance (Epic 4) — done.** Run in a browser on **2026-07-24** (issue #30, since closed;
-the standing runbook `docs/ACCEPTANCE-EDITING.md` was retired with it). In-browser render, create/edit/save
-round-trip, live co-editing convergence and cursor presence all passed; edits were confirmed inside the
-*stored* file bytes, not just on screen. `make office-smoke` remains the machine
-gate for the pipe and the OSS/no-paid-licence claim.
+**Live editing acceptance (Epic 4) — done**, in a browser on **2026-07-24**
+([#30](https://github.com/APS-Conecta/gestion/issues/30), closed). What was run and what it proved:
+[`ROADMAP.md`](ROADMAP.md) § *Where we are*.
 
 **Which formats you can actually edit.** OOXML — `docx`, `xlsx`, `pptx` — opens and edits normally.
 **ODF — `odt`, `ods`, `odp` — is editable too, through conversion, so expect some formatting loss on
@@ -129,7 +129,7 @@ exists to prevent. Set by `provisioning/phases/14-office.sh`, never in the admin
 | `compose.dev.yaml`, `Dockerfile.dev`, `dev/xdebug.ini` | The derived Xdebug dev image (AD-10). |
 | `.env.example` | Template for your gitignored `.env`. **Never commit `.env`.** |
 | `Makefile` | The dev lifecycle (`make help`). |
-| `scripts/` | `install.sh` (the one command) + `wait-ready.sh`, `test.sh` + `smoke.sh` (the gate), `seed-idempotent.sh`, `office-smoke.sh`, `divergence.sh` (what is live but undeclared), `image-digests.sh` + `app-versions.sh` (is anything we pinned behind upstream), `deis.py`, and `env.sh` (shared preamble). |
+| `scripts/` | `env-init.sh` (`make setup`) + `install.sh` (the one command) + `wait-ready.sh`, `test.sh` + `smoke.sh` (the gate), `seed-idempotent.sh`, `office-smoke.sh`, `divergence.sh` (what is live but undeclared), `image-digests.sh` + `app-versions.sh` (is anything we pinned behind upstream), `deis.py`, and `env.sh` (shared preamble). |
 | `provisioning/` | The single idempotent provisioning writer: `seed.sh` runner, `lib.sh` guard helpers, `phases/05-60`, `apps/` (per app: the vendored tarball, its `VENDOR` file and its patches — [ADR-0002](docs/adr/0002-app-patches.md)), and [`provisioning/README.md`](provisioning/README.md). |
 | `sites/` | One `<slug>/site.sh` per CESFAM — its teams, folders, ACL matrix and identity — plus the DEIS register they are picked from. **`los-castanos` ships as the reference clinic**; write another with `scripts/deis.py`. |
 | `apps/`, `themes/` | Live-mounted. `apps/` is gitignored and holds the apps unpacked from the tarballs committed in `provisioning/apps/`, patched at seed time ([ADR-0002](docs/adr/0002-app-patches.md)); `themes/apsconecta/` is the white-label server theme. |
@@ -138,12 +138,6 @@ exists to prevent. Set by `provisioning/phases/14-office.sh`, never in the admin
 | `LICENSE` · [`docs/LICENSING.md`](docs/LICENSING.md) | Our code's license (proprietary) · full third-party license audit. |
 | `CONTRIBUTING.md` · `AGENTS.md` · `CONTRIBUTORS.md` | Contribution rules + how we track work · AI-agent invariants · the team. |
 | `.github/` | `CODEOWNERS`, PR + issue templates, `SECURITY.md`. |
-
-## Current state
-
-v1 is complete: the browser acceptance run passed on 2026-07-24, with ODF edits through conversion
-(see *Office suite* above). What each provisioning phase does is listed once, in
-[`provisioning/README.md`](provisioning/README.md).
 
 ## Developing — how to implement a feature
 
@@ -188,9 +182,9 @@ server theme** — AD-6's config-only rule is superseded by
 [ADR-0001](docs/adr/0001-server-theme-for-branding.md). How the theming actually behaves (and why most of
 it is config rather than CSS) is [`docs/THEMING-MODEL.md`](docs/THEMING-MODEL.md); how to apply the
 brand to an instance, step by step, is [`docs/BRANDING.md`](docs/BRANDING.md). Neither is a hosting
-guide — **there is no deployment documentation, deliberately**: everything operational for a live
-deployment is deferred, and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) § *Out of scope for v1*
-says what and why. Locale stays in the `10-locale` phase.
+guide — **there is no deployment documentation, deliberately**:
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) § *Environments* says what is still deferred and why
+(#75). Locale stays in the `10-locale` phase.
 
 ### The office backend
 

@@ -52,14 +52,12 @@ if bash scripts/smoke.sh >>"$LOG" 2>&1; then
 else
   printf '  health: FAIL — see %s\n' "$LOG"
 fi
-printf '  http://localhost:%s\n' "${HTTP_PORT:-8080}"
+printf '  http://localhost:%s\n' "$HTTP_PORT"
 
 # What is live that the repo no longer declares (#85). Printed HERE rather than from inside the
 # seed, for two reasons. The phases write and this reads, so it does not belong among them. And the
 # seed's output goes to $LOG — only phase names reach the terminal — so a report printed there would
 # be seen by nobody, which is the one thing a report cannot afford.
 #
-# --quiet, so a clean install ends clean. It exits 0 whatever it finds: this converges the
-# reversible and reports the rest, and a non-zero exit here would fail `make install` for the rest
-# of time after one deliberate removal.
+# --quiet, so a clean install ends clean. It exits 0 whatever it finds — see scripts/divergence.sh.
 bash scripts/divergence.sh --quiet

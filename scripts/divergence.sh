@@ -13,16 +13,15 @@
 # removal, which teaches people either to ignore the check or to stop running updates. Neither is a
 # state worth having.
 #
-# NO WRITE VERBS IN THE OUTPUT. scripts/seed-idempotent.sh greps a seed for ` -> `, ` created`,
-# ` added to group`, `installed/enabled` and `patch X applied`. A report line matching any of those
-# would redden the idempotency gate on an instance that is behaving correctly, so the wording here
-# is load-bearing: things are "live but not declared", never "created".
+# NO WRITE VERBS IN THE OUTPUT. scripts/seed-idempotent.sh greps a seed's log for them, so a report
+# line matching one would redden the idempotency gate on an instance that is behaving correctly:
+# things are "live but not declared", never "created".
 #
 # NOT COVERED: users. Deleting one deletes their files, so the classification in #85 makes it
 # never-automatic like the rest — but a report needs a DECLARED set to compare against, and beyond
-# the standing positions in phase 50 there is not one until the roster lands (#86). Reporting every
+# the standing positions in phase 50 there is not one until the roster lands (#106). Reporting every
 # hand-added personal account as divergence would be noise, and noise is how a report stops being
-# read. Add users here when #86 gives them a declared set.
+# read. Add users here when #106 gives them a declared set.
 set -uo pipefail
 
 # shellcheck source=env.sh
@@ -103,11 +102,11 @@ fi
 # apps/ is gitignored and bind-mounted, so anything here arrived outside provisioning. Not an error:
 # a custom app in development lives here legitimately (AD-9). It is worth SAYING so that a clean
 # reinstall does not surprise anyone by not reproducing it.
-declared_apps="$(sed -n 's/^APPS="\(.*\)"/\1/p' "$PHASE12" | tr ' ' '\n' | grep -c . || true)"
+apps_list="$(sed -n 's/^APPS="\(.*\)"/\1/p' "$PHASE12" | tr ' ' '\n')"
+declared_apps="$(printf '%s\n' "$apps_list" | grep -c . || true)"
 if [ "$declared_apps" -eq 0 ]; then
   note "cannot check apps: no APPS= line parsed out of $PHASE12"
 else
-  apps_list="$(sed -n 's/^APPS="\(.*\)"/\1/p' "$PHASE12" | tr ' ' '\n')"
   for d in apps/*/; do
     [ -d "$d" ] || continue
     a="$(basename "$d")"

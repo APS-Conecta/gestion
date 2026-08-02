@@ -90,51 +90,35 @@ h1, h2, h3,
 }
 
 /* =====================================================================
-   THE HEADER LINE — mark, home, clinic. Three slots, no markup (#84).
+   THE HEADER LINE — mark, home icon, clinic name. Three slots, no markup (#84). Until then the
+   header carried the PLATFORM (a 200px lockup + the word INICIO); one stack serves one CESFAM and
+   nothing on screen said which, so the lockup moved to the side menu (`.cm-logo`, below) and the
+   header carries the INSTANCE. `#nextcloud` has always BEEN the home link —
+   `<a id="nextcloud" aria-label="Go to %s">` (layout.user.php:67-69) — it just never looked like one.
 
-   WHAT IT SAYS AND WHY. Until #84 the header carried the PLATFORM: a 200px lockup plus the word
-   INICIO. But one stack serves one CESFAM, on its own machine, and nothing on screen said which.
-   So the header now carries the INSTANCE — mark, a home icon, and the clinic's name — and the
-   platform lockup moved to the side menu, where `.cm-logo` has room for it. Trading 200px of art
-   for a 40px mark frees 172px, which is what lets a real name fit: "Centro de Salud Familiar Dr.
-   Fernando Maffioletti" (DEIS 114316, 49 chars) truncated before and does not now.
+   SCOPED TO `a#nextcloud`, and the element type is the whole scope: layout.user.php renders
+   `<a id="nextcloud">`, layout.public.php renders `<div id="nextcloud" class="header-appname">`
+   with a share title inside, layout.guest.php has neither. Unscoped, these rules hit the PUBLIC
+   SHARE page. scripts/test.sh asserts both template shapes.
 
-   AN ICON, NOT A WORD. INICIO said "this is a link" in Spanish only, and it is the one thing here
-   a user must recognise instantly. A house needs no language. `#nextcloud` has always BEEN the
-   home link — `<a id="nextcloud" aria-label="Go to %s">` — it just never looked like one.
-
-   ONLY THE HOUSE IS CLICKABLE. The anchor takes `pointer-events:none` and ::before takes it back,
-   so the mouse can only hit the part that acts. Keyboard is untouched, because pointer-events
-   governs hit-testing and not focus: Tab still reaches the anchor and Enter still goes home. The
-   mark and the name are inert TODAY and are not expected to stay that way, which is why all three
-   share one height and one radius — see the geometry note at the rules.
-
-   SCOPED TO `a#nextcloud`, and the element type is the whole scope. layout.user.php renders
-   `<a id="nextcloud">` (logo only); layout.public.php renders `<div id="nextcloud"
-   class="header-appname">` with a share title inside; layout.guest.php has no `#nextcloud` at all.
-   An unscoped rule therefore hit the PUBLIC SHARE page — padding on an element that does have
-   in-flow content, a blown-out logo slot, and a clinic name inside a div where it means nothing.
-   `a#` separates them exactly; scripts/test.sh asserts both template shapes.
-
-   WIDTH GATE, measured not guessed (2026-07-30, 360px same-origin iframe per THEMING-MODEL.md —
-   resize_window is a no-op here). The header only flex-shrinks; core/css/header.scss has no media
-   query of its own, so nothing reflows and the overflow just gets clipped. At 224px of slot the
-   failure was at 490px and below. The mark-only slot is 52px, so the art itself now fits
-   everywhere — but the NAME does not, and at 360px it still ran under .header-end. The gate
-   therefore stays at 601px and stands the two generated slots down below it, leaving core's own
-   62x44 geometry and the bare mark. Nextcloud's only breakpoint is $breakpoint-mobile: 1024px
-   (variables.scss:100), a SCSS variable compiled away — unreachable from a theme, and far too wide
-   anyway: it would drop the name on every tablet where it fits with room to spare.
+   601px GATE, measured 2026-07-30 (360px same-origin iframe per THEMING-MODEL.md — resize_window is
+   a no-op here): the header only flex-shrinks and core/css/header.scss has no media query of its
+   own, so nothing reflows — the clinic name ran under .header-end and was clipped. Nextcloud's own
+   $breakpoint-mobile (core/css/variables.scss:100, 1024px) is a SCSS variable, compiled away and
+   unreachable from a theme — and far too wide anyway.
    ===================================================================== */
+#header a#nextcloud .logo { background-image: url("/themes/apsconecta/core/img/logo/logo-mark.svg"); }
+
 @media (min-width: 601px) {
   /* THE MARK, NOT THE LOCKUP (#84). The header carries the INSTANCE's identity — which clinic
      this is — and the lockup is the PLATFORM's. The platform moved to the side menu, where
      `.cm-logo` shows it at full size. Dropping 200px of art for a 40px mark frees 172px, and
      that is not cosmetic: "Centro de Salud Familiar Dr. Fernando Maffioletti" (DEIS 114316,
      49 chars) truncated at the old width and fits whole at this one. */
-  /* 68, NOT 52 (#102). Core positions `.logo` ABSOLUTELY — `left:12px` + `width:46px`, so it ends
-     at 58 — and the padding is what reserves room for it. At 52 the flex row started 6px INSIDE the
-     mark: the two boxes overlapped, and the house's hover highlight ran under the mark's art.
+  /* 68, NOT 52 (#102). Core positions `.logo` ABSOLUTELY at `inset-inline-start:12px` (header.scss:68-77,
+     its own width 62); we narrow it to 46 below, so it ends at 58 — and the padding is what reserves that room.
+     At 52 the flex row started 6px INSIDE the mark: the two boxes overlapped, and the house's hover
+     highlight ran under the mark's art.
      The numbers this lands on are optical, not geometric. Each slot centres art of a different size
      in a different box (mark 34-in-46 = 6 slack a side, house 19-in-36 = 8.5, name = 12 padding), so
      an equal `gap` produces unequal-LOOKING gaps. 68 + 4 puts ink-to-ink at 24.5px on BOTH sides —
@@ -144,7 +128,6 @@ h1, h2, h3,
   #header a#nextcloud       { padding-inline-start: 68px; gap: 4px; }
   #header a#nextcloud .logo {
     width: 46px;
-    background-image: url("/themes/apsconecta/core/img/logo/logo-mark.svg");
     background-size: 34px 30px;
   }
 
@@ -192,11 +175,18 @@ h1, h2, h3,
     padding-inline: 12px; white-space: nowrap;
     max-width: 46ch; overflow: hidden; text-overflow: ellipsis;
   }
+
+  /* Core's focus underline lands on this same pseudo-element (header.scss:84-101, (2,1,1)) and beat
+     ours (2,0,2), replacing the clinic name with a 12x2 dash on Tab. Re-assert at (2,1,2). */
+  #header a#nextcloud:focus-visible::after {
+    content: var(--aps-clinic, "APS Conecta Gestión") / "";
+    position: static; width: auto; height: 36px; border-radius: 8px;
+    transform: none; background-color: transparent;
+  }
 }
 
-/* Below the gate core's 62x44 slot returns on its own, and the mark is already what we serve
-   above it, so only the generated slots need standing down: at 360px the clinic name alone
-   overran .header-end. The mark stays, unlabelled, exactly as core draws it. */
+/* Below the gate only the generated slots stand down; core's 62x44 contain geometry returns and
+   draws the same mark, unlabelled. At 360px the clinic name alone overran .header-end. */
 @media (max-width: 600px) {
   #header a#nextcloud::before,
   #header a#nextcloud::after { content: none; }
@@ -222,8 +212,8 @@ h1, h2, h3,
    So the clinic is added HERE instead: the heading keeps the product, and the clinic sits
    above it in the brand serif.
    `.login-form__headline` is a BEM class, not a hashed Vue one — stable enough to target, and
-   scripts/test.sh asserts it still exists so a Nextcloud upgrade that renames it fails loudly
-   rather than silently dropping the name. */
+   scripts/test.sh greps it out of core's login bundle in the running container, so a Nextcloud
+   upgrade that renames it fails loudly rather than silently dropping the name. */
 .login-form__headline::before {
   content: var(--aps-clinic, "APS Conecta Gestión");
   display: block;
@@ -242,21 +232,15 @@ h1, h2, h3,
    just shown where there is room for them instead of squeezed into a 46px slot. */
 .cm-logo { display: block; }
 
-/* WIDTH, NOT MAX-WIDTH (#102). Un-hiding alone left the lockup at 174x29 — barely bigger than the
-   46px mark it replaced. `max-width` is the wrong lever and raising it does nothing: it CAPS, never
-   grows, and logo-header.svg is 205px wide natively, so anything past 71% simply stops constraining
-   and you get 205. `max-height` is worse — the app's own `max-width:60%` binds first, so it changes
-   nothing at all. Both were measured on the instance before this was written.
-   So: kill the cap, then drive the width. 90% of the 290px panel is 261x43 — a 50% gain — and the
-   left edge lands at 14.5px against the app menu's own 13px icon gutter, which is what makes it
-   read as aligned rather than floating. 100% touches both panel edges. A PERCENTAGE because
-   side_menu takes its panel width from admin config; a px value would stop fitting the moment
-   someone changes it. Height stays derived — the lockup is 6:1 and must never be squashed.
-
-   `.cm` IS LOAD-BEARING, not tidiness. side_menu emits its CSS from a controller as an INLINE
-   <style>, which lands after every stylesheet including this one — so a bare `.cm-logo img` ties on
-   specificity and loses on order, silently. `.cm` (the panel root) wins on specificity instead,
-   which is order-proof. Do not flatten this selector, and do not reach for !important. */
+/* WIDTH, NOT MAX-WIDTH (#102). side_menu caps the lockup at `max-width:60%` of the 290px panel =
+   174x30. `max-width` only CAPS: logo-header.svg is 200px native, so past 69% it stops constraining
+   and you get 200. So kill the cap and drive the width — 90% = 261x44, whose left edge lands at
+   14.5px against the app menu's own 13px icon gutter. A PERCENTAGE because side_menu takes the panel
+   width from admin config. `height:auto`: the lockup is 6:1 and must never be squashed.
+   `.cm` IS LOAD-BEARING. Those caps ship inside side_menu's JS bundle (js/side_menu-menu.js,
+   injected as a runtime <style>), which lands after every stylesheet including this one — a bare
+   `.cm-logo img` ties on specificity and loses on order, silently. `.cm` (the panel root) wins on
+   specificity instead, which is order-proof. Do not flatten this selector, and do not use !important. */
 .cm .cm-logo img { max-width: none; width: 90%; height: auto; }
 
 /* DELIBERATELY no work-canvas rule. Painting `body, #content, #content-vue` covered the brand
