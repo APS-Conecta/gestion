@@ -32,11 +32,12 @@ if [ -z "${SEED_FIXTURES:-}" ]; then
 fi
 export SEED_FIXTURES
 
-# Write verbs, in lib.sh order: config/theming/restrict/disable/grant (`->`), group + user +
-# groupfolder + file + subfolder creation, group membership, app install, patch application.
+# Write verbs, in lib.sh order: config/theming/restrict/disable/grant and app enable/unpack (`->`),
+# group + user + groupfolder + file + subfolder creation, group membership, schema reconcile after a
+# re-imposed unpack, signature drop (12-apps.sh), patch application.
 # `patch X applied` is anchored to two fields so it cannot match the skip line, `patch X already
 # applied`.
-WRITES=' -> | created| added to group|installed/enabled|^ +patch [^ ]+ applied$'
+WRITES=' -> | created| added to group| schema reconciled | signature dropped |^ +patch [^ ]+ applied$'
 
 out="$(provisioning/seed.sh 2>&1)"; rc=$?
 printf '%s\n' "$out"

@@ -52,7 +52,7 @@ if bash scripts/smoke.sh >>"$LOG" 2>&1; then
 else
   printf '  health: FAIL — see %s\n' "$LOG"
 fi
-printf '  http://localhost:%s\n' "${HTTP_PORT:-8080}"
+printf '  http://localhost:%s\n' "$HTTP_PORT"
 
 # What is live that the repo no longer declares (#85). Printed HERE rather than from inside the
 # seed, for two reasons. The phases write and this reads, so it does not belong among them. And the

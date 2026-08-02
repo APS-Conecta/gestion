@@ -20,7 +20,7 @@ SEED_FIXTURES="${SEED_FIXTURES:-1}"
 # so all of it is visible to every phase and none of it can leak back out.
 require_site || exit 1
 # shellcheck disable=SC1090  # the path is SITE, resolved at run time
-. "$HERE/../sites/$SITE/site.sh"
+. "$HERE/../sites/$SITE/site.sh" || { echo "FATAL: sites/$SITE/site.sh failed to load" >&2; exit 1; }
 
 echo "== APS Conecta provisioning (make seed) =="
 require_installed

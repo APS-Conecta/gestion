@@ -55,7 +55,7 @@ for a in apps:
         continue
     seen.add(a["id"])
     have = want[a["id"]]
-    releases = [r["version"] for r in a.get("releases", []) if not r.get("isNightly")]
+    releases = [r["version"] for r in a.get("releases", []) if not r.get("isNightly") and "-" not in r["version"]]
     newest = max(releases, key=key) if releases else have
     aid = a["id"]
     if key(newest) > key(have):

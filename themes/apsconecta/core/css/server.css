@@ -126,15 +126,18 @@ h1, h2, h3,
    (variables.scss:100), a SCSS variable compiled away — unreachable from a theme, and far too wide
    anyway: it would drop the name on every tablet where it fits with room to spare.
    ===================================================================== */
+#header a#nextcloud .logo { background-image: url("/themes/apsconecta/core/img/logo/logo-mark.svg"); }
+
 @media (min-width: 601px) {
   /* THE MARK, NOT THE LOCKUP (#84). The header carries the INSTANCE's identity — which clinic
      this is — and the lockup is the PLATFORM's. The platform moved to the side menu, where
      `.cm-logo` shows it at full size. Dropping 200px of art for a 40px mark frees 172px, and
      that is not cosmetic: "Centro de Salud Familiar Dr. Fernando Maffioletti" (DEIS 114316,
      49 chars) truncated at the old width and fits whole at this one. */
-  /* 68, NOT 52 (#102). Core positions `.logo` ABSOLUTELY — `left:12px` + `width:46px`, so it ends
-     at 58 — and the padding is what reserves room for it. At 52 the flex row started 6px INSIDE the
-     mark: the two boxes overlapped, and the house's hover highlight ran under the mark's art.
+  /* 68, NOT 52 (#102). Core positions `.logo` ABSOLUTELY at `inset-inline-start:12px` (header.scss:68-77,
+     its own width 62); we narrow it to 46 below, so it ends at 58 — and the padding is what reserves that room.
+     At 52 the flex row started 6px INSIDE the mark: the two boxes overlapped, and the house's hover
+     highlight ran under the mark's art.
      The numbers this lands on are optical, not geometric. Each slot centres art of a different size
      in a different box (mark 34-in-46 = 6 slack a side, house 19-in-36 = 8.5, name = 12 padding), so
      an equal `gap` produces unequal-LOOKING gaps. 68 + 4 puts ink-to-ink at 24.5px on BOTH sides —
@@ -144,7 +147,6 @@ h1, h2, h3,
   #header a#nextcloud       { padding-inline-start: 68px; gap: 4px; }
   #header a#nextcloud .logo {
     width: 46px;
-    background-image: url("/themes/apsconecta/core/img/logo/logo-mark.svg");
     background-size: 34px 30px;
   }
 
@@ -192,11 +194,18 @@ h1, h2, h3,
     padding-inline: 12px; white-space: nowrap;
     max-width: 46ch; overflow: hidden; text-overflow: ellipsis;
   }
+
+  /* Core's focus underline lands on this same pseudo-element (header.scss:84-101, (2,1,1)) and beat
+     ours (2,0,2), replacing the clinic name with a 12x2 dash on Tab. Re-assert at (2,1,2). */
+  #header a#nextcloud:focus-visible::after {
+    content: var(--aps-clinic, "APS Conecta Gestión") / "";
+    position: static; width: auto; height: 36px; border-radius: 8px;
+    transform: none; background-color: transparent;
+  }
 }
 
-/* Below the gate core's 62x44 slot returns on its own, and the mark is already what we serve
-   above it, so only the generated slots need standing down: at 360px the clinic name alone
-   overran .header-end. The mark stays, unlabelled, exactly as core draws it. */
+/* Below the gate only the generated slots stand down; core's 62x44 contain geometry returns and
+   draws the same mark, unlabelled. At 360px the clinic name alone overran .header-end. */
 @media (max-width: 600px) {
   #header a#nextcloud::before,
   #header a#nextcloud::after { content: none; }

@@ -188,9 +188,9 @@ server theme** — AD-6's config-only rule is superseded by
 [ADR-0001](docs/adr/0001-server-theme-for-branding.md). How the theming actually behaves (and why most of
 it is config rather than CSS) is [`docs/THEMING-MODEL.md`](docs/THEMING-MODEL.md); how to apply the
 brand to an instance, step by step, is [`docs/BRANDING.md`](docs/BRANDING.md). Neither is a hosting
-guide — **there is no deployment documentation, deliberately**: everything operational for a live
-deployment is deferred, and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) § *Out of scope for v1*
-says what and why. Locale stays in the `10-locale` phase.
+guide — **there is no deployment documentation, deliberately**:
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) § *Environments* says what is still deferred and why
+(#75). Locale stays in the `10-locale` phase.
 
 ### The office backend
 

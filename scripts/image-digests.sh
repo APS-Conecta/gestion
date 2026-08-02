@@ -39,7 +39,9 @@ esac
 # An UNPINNED reference is a bug, not a thing to resolve: someone added an image and skipped the
 # pin, so the fleet is already drifting. Fail on it rather than silently pinning it to today —
 # today's bytes have not been booted, and quietly adopting them is the opposite of the point.
-if unpinned=$(grep -nE '^\s*(image:|FROM) +[^ ]+$' "${FILES[@]}" | grep -v '@sha256:'); then
+# Deliberately not $-anchored: `FROM x:tag AS build` and `image: x:tag  # note` used to slip past it.
+# An internal multi-stage `FROM base AS x` gets flagged too, which is loud rather than silent.
+if unpinned=$(grep -nE '^\s*(image:|FROM) ' "${FILES[@]}" | grep -v '@sha256:'); then
   echo "FATAL: image reference with no digest (#109 requires every image pinned):" >&2
   echo "$unpinned" >&2
   echo "Add the digest by running this script without --check, then commit it." >&2

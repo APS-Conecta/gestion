@@ -13,10 +13,9 @@
 # removal, which teaches people either to ignore the check or to stop running updates. Neither is a
 # state worth having.
 #
-# NO WRITE VERBS IN THE OUTPUT. scripts/seed-idempotent.sh greps a seed for ` -> `, ` created`,
-# ` added to group`, `installed/enabled` and `patch X applied`. A report line matching any of those
-# would redden the idempotency gate on an instance that is behaving correctly, so the wording here
-# is load-bearing: things are "live but not declared", never "created".
+# NO WRITE VERBS IN THE OUTPUT. scripts/seed-idempotent.sh greps a seed's log for them, so a report
+# line matching one would redden the idempotency gate on an instance that is behaving correctly:
+# things are "live but not declared", never "created".
 #
 # NOT COVERED: users. Deleting one deletes their files, so the classification in #85 makes it
 # never-automatic like the rest — but a report needs a DECLARED set to compare against, and beyond

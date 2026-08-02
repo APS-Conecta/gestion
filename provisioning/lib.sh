@@ -266,7 +266,7 @@ ensure_vendored_app() {  # APPID
     # nothing does it here.
     if docker compose exec -T --user www-data nextcloud \
          tar xzf - -C /var/www/html/custom_apps < "$tgz"; then
-      log "app $app ${cur:+$cur -> }$want unpacked from $(basename "$tgz")"
+      log "app $app ${cur:+$cur }-> $want unpacked from $(basename "$tgz")"
     else
       log "FAILED to unpack $app from $(basename "$tgz")"; return 1
     fi
@@ -299,7 +299,7 @@ ensure_vendored_app() {  # APPID
   # an app store timeout (#41).
   local err
   if err="$(occ app:enable "$app" 2>&1)"; then
-    log "app $app enabled"
+    log "app $app -> enabled"
   else
     log "FAILED to enable app $app — occ said: $(printf '%s' "$err" | tr '\n' ' ' | tail -c 300)"
     return 1
@@ -361,7 +361,8 @@ app_disable() {  # APPID
   # an ABSENT key (never enabled here). `occ app:disable` on an absent key is a no-op and does not
   # write "no", so asserting the literal fails forever on a fresh instance. Gates must accept both.
   if [ "$cur" = "no" ] || [ -z "$cur" ]; then log "app $app already disabled"; return 0; fi
-  occ app:disable "$app" >/dev/null 2>&1 && log "app $app -> disabled"
+  if occ app:disable "$app" >/dev/null; then log "app $app -> disabled"
+  else log "FAILED to disable $app"; return 1; fi
 }
 
 # --- group folders: groupfolders:create is NOT idempotent by name, so ALWAYS query first ---
@@ -494,7 +495,8 @@ ensure_gf_file() {  # MOUNT RELPATH CONTENT
   gf_load; path="$(gf_files_path "$mount" "$rel")" || return 1
   if docker compose exec -T --user www-data nextcloud test -f "$path" 2>/dev/null; then
     log "  file $mount/$rel exists"; return 0; fi
-  docker compose exec -T --user www-data -e GFC="$content" nextcloud sh -c "printf '%s' \"\$GFC\" > '$path'"
+  docker compose exec -T --user www-data -e GFC="$content" -e GFP="$path" nextcloud \
+    sh -c 'printf "%s" "$GFC" > "$GFP"'
   gf_scan "$mount"
   log "  file $mount/$rel created"
 }
@@ -515,8 +517,8 @@ ensure_sample_file() {  # UID RELPATH CONTENT
   if docker compose exec -T --user www-data nextcloud test -f "/var/www/html/$base/$rel" 2>/dev/null; then
     log "file $uid:$rel exists"; return 0
   fi
-  docker compose exec -T --user www-data -e SAMPLE="$content" nextcloud \
-    sh -c "mkdir -p '/var/www/html/$base' && printf '%s' \"\$SAMPLE\" > '/var/www/html/$base/$rel'"
+  docker compose exec -T --user www-data -e SAMPLE="$content" -e DEST="/var/www/html/$base/$rel" nextcloud \
+    sh -c 'mkdir -p "$(dirname "$DEST")" && printf "%s" "$SAMPLE" > "$DEST"'
   occ files:scan "$uid" >/dev/null 2>&1 || true
   log "file $uid:$rel created + indexed"
 }

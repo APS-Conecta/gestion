@@ -45,13 +45,17 @@ iconos de cabecera (regla 5 de THEMING-MODEL).
 
 ## 3. Geometría de la cabecera
 
-La ranura de `#nextcloud` mide **224 px de padding para 200 px de arte** — dos números distintos que
-se mueven juntos (12 px de inset + 200 = 212 < 224). Solo por encima de **600 px**; por debajo vuelve
-la ranura 62×44 de Nextcloud y se sirve `logo-mark.svg`.
+La ranura de `#nextcloud` reserva **68 px de padding** para la marca, que core posiciona en
+absoluto (`inset-inline-start:12px`, con ancho propio de 62); `server.css` la estrecha a 46, así
+que termina en 58. 68 y no 52 (#102): a 52 la fila flex empezaba 6 px dentro de la marca. Se sirve `logo-mark.svg` a 34×30 dentro de esos 46. Las tres ranuras — marca,
+casa (19 px dentro de 36) y nombre de la clínica (12 px de padding) — miden 36 px de alto y radio
+8, para que el resalte de hover caiga igual en cada una. Solo por encima de **601 px**; por debajo
+se retiran las dos ranuras generadas (`content: none`) y vuelve la ranura 62×44 de core, con la
+misma marca.
 
 Las reglas se acotan a `a#nextcloud`, no a `#nextcloud`: la cabecera de **enlace público** usa ese
-mismo id sobre un `<div>` con contenido propio, y sin acotar se le aplicaban los 224 px. Lo verifica
-`scripts/test.sh` sobre las dos plantillas.
+mismo id sobre un `<div>` con contenido propio, y sin acotar se le aplicaba el padding de la
+cabecera. Lo verifica `scripts/test.sh` sobre las dos plantillas.
 
 ## 4. Qué NO toca el tema
 

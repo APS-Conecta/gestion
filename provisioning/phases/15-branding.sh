@@ -46,8 +46,9 @@ theming_set disable-user-theming yes 1   # writes 'yes', stores '1' — see them
 # work, and is the only way to set `background` at all, since core ships no background image.
 IMG=/var/www/html/themes/apsconecta/core/img
 theming_image_set logo       "$IMG/logo/logo.svg"
-# Both keys carry the full lockup — server.css widens the 62x44 header slot to 224px and adds the
-# INICIO label, so it fits at design size. BOTH lockups embed their own font subset: an SVG served
+# `logo` is the login lockup; `logoheader` is the lockup the SIDE MENU shows (`.cm-logo`), because
+# server.css swaps the header slot's art for `logo-mark.svg` (#84).
+# BOTH lockups embed their own font subset: an SVG served
 # as an image cannot reach server.css's @font-face, so `Fraunces, Georgia, serif` rendered GEORGIA
 # on every page (B-011). Regenerate with themes/apsconecta/tools/embed-fonts.py.
 theming_image_set logoheader "$IMG/logo/logo-header.svg"
@@ -64,8 +65,8 @@ theming_image_set background "$IMG/background.svg"
 app_config_set side_menu background-color "#5315a8"
 app_config_set side_menu background-color-to "#5315a8"
 
-# Where INICIO lands. server.css labels `#nextcloud` (always the home link) with the word; this is
-# the other half — what "home" means. URLGenerator::linkToDefaultPageUrl() resolves
+# Where the header's home icon lands. server.css turns `#nextcloud` (always the home link) into
+# a house; this is the other half — what "home" means. URLGenerator::linkToDefaultPageUrl() resolves
 # ?redirect_url -> core/defaultpage -> per-user defaultapp -> system defaultapp -> hardcoded
 # 'dashboard,files'. Both keys were unset, so the destination was that hardcoded fallback: correct
 # by accident. Setting it pins today's behaviour. First ENABLED navigation entry wins, so `files`

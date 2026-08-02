@@ -1,12 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="8 5 48 50" width="192" height="200" role="img" aria-label="APS Conecta Gestión">
-  <!-- NARROW-VIEWPORT header mark: the Ofiuco figure ALONE, no wordmark, no tagline.
-       Not registered with theming. server.css swaps `.logo` to this file below 600 px, where
-       the registered lockup does not fit: measured 2026-07-30 in a 360 px viewport, the label
-       clipped (299 px of content in a 224 px box) and the 200 px art ran 32 px under the
-       right-hand icons. Above 600 px the lockup and the INICIO label are the header.
-
-       Any art in this slot must be legible at 62x44 px with background-size: contain. That is
-       why the lockup cannot be used here: at 205x34 it renders its wordmark at ~4 px.
+  <!-- Header mark: the Ofiuco figure ALONE, no wordmark, no tagline. Not registered with theming;
+       server.css sets it as `.logo`'s background-image at EVERY width. The registered lockup
+       cannot do this job: at 200x34, `background-size: contain` in core's 62px slot renders its
+       wordmark at ~4 px (measured 2026-07-30, 360 px viewport). Above 601 px server.css narrows
+       the slot to 46 px and draws this art at 34x30; below it core's 62x44 contain box returns.
+       Art here must stay legible in both.
 
        Colours are explicit #ffffff / #f28f36, never currentColor: Nextcloud serves this as a
        standalone background-image, where currentColor resolves to black and the mark
