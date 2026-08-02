@@ -86,17 +86,12 @@ Collaborative editing runs on the Euro-Office document server, on an OSS image w
 `scripts/office-smoke.sh` proves the pipe end to end and asserts the image provenance.
 
 **Nothing about it is opt-in any more (2026-08-01, [#81](https://github.com/APS-Conecta/gestion/issues/81)).**
-ADR-0002 had clarified that the opt-in part was the ~2.5 GB documentserver behind
-`--profile eurooffice`, the connector app being installed by `make seed` regardless. Measuring
-before deciding showed how little that profile was holding back: `12-apps` installed the connector
-and `14-office` configured it on *every* seed, so the container was the only thing standing between
-an install and a working editor — and `make install` is meant to yield a clinic that can open a
-document. The profile is gone, `make office-eurooffice` with it, and `office-smoke` joined
-`make test` now that the service it needs is always running.
-
-**Accepted costs, named:** every `make up` runs the document server, including for a CSS edit
-(`make office-down` reclaims the RAM), the ~8 GB multi-user floor becomes a hard requirement for
-every clinic host, and CI's clean boot downloads 2.56 GB it used to skip.
+The `--profile eurooffice` container was the last optional piece: `12-apps` installed the connector
+and `14-office` configured it on *every* seed regardless, so only the container stood between an
+install and a working editor. The profile is gone, `make office-eurooffice` with it, and
+`office-smoke` joined `make test`. What the exception rested on is in AD-2 above; the accepted costs
+are named where they are paid — [`ARCHITECTURE.md`](../ARCHITECTURE.md) § *Environments* (the ~8 GB
+floor) and `.github/workflows/cleanboot.yml` (the CI pull).
 
 ### AD-6 — White-labeling is config, not theme files *(superseded)*
 

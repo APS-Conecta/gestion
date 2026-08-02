@@ -90,41 +90,22 @@ h1, h2, h3,
 }
 
 /* =====================================================================
-   THE HEADER LINE — mark, home, clinic. Three slots, no markup (#84).
+   THE HEADER LINE — mark, home icon, clinic name. Three slots, no markup (#84). Until then the
+   header carried the PLATFORM (a 200px lockup + the word INICIO); one stack serves one CESFAM and
+   nothing on screen said which, so the lockup moved to the side menu (`.cm-logo`, below) and the
+   header carries the INSTANCE. `#nextcloud` has always BEEN the home link —
+   `<a id="nextcloud" aria-label="Go to %s">` (layout.user.php:67-69) — it just never looked like one.
 
-   WHAT IT SAYS AND WHY. Until #84 the header carried the PLATFORM: a 200px lockup plus the word
-   INICIO. But one stack serves one CESFAM, on its own machine, and nothing on screen said which.
-   So the header now carries the INSTANCE — mark, a home icon, and the clinic's name — and the
-   platform lockup moved to the side menu, where `.cm-logo` has room for it. Trading 200px of art
-   for a 40px mark frees 172px, which is what lets a real name fit: "Centro de Salud Familiar Dr.
-   Fernando Maffioletti" (DEIS 114316, 49 chars) truncated before and does not now.
+   SCOPED TO `a#nextcloud`, and the element type is the whole scope: layout.user.php renders
+   `<a id="nextcloud">`, layout.public.php renders `<div id="nextcloud" class="header-appname">`
+   with a share title inside, layout.guest.php has neither. Unscoped, these rules hit the PUBLIC
+   SHARE page. scripts/test.sh asserts both template shapes.
 
-   AN ICON, NOT A WORD. INICIO said "this is a link" in Spanish only, and it is the one thing here
-   a user must recognise instantly. A house needs no language. `#nextcloud` has always BEEN the
-   home link — `<a id="nextcloud" aria-label="Go to %s">` — it just never looked like one.
-
-   ONLY THE HOUSE IS CLICKABLE. The anchor takes `pointer-events:none` and ::before takes it back,
-   so the mouse can only hit the part that acts. Keyboard is untouched, because pointer-events
-   governs hit-testing and not focus: Tab still reaches the anchor and Enter still goes home. The
-   mark and the name are inert TODAY and are not expected to stay that way, which is why all three
-   share one height and one radius — see the geometry note at the rules.
-
-   SCOPED TO `a#nextcloud`, and the element type is the whole scope. layout.user.php renders
-   `<a id="nextcloud">` (logo only); layout.public.php renders `<div id="nextcloud"
-   class="header-appname">` with a share title inside; layout.guest.php has no `#nextcloud` at all.
-   An unscoped rule therefore hit the PUBLIC SHARE page — padding on an element that does have
-   in-flow content, a blown-out logo slot, and a clinic name inside a div where it means nothing.
-   `a#` separates them exactly; scripts/test.sh asserts both template shapes.
-
-   WIDTH GATE, measured not guessed (2026-07-30, 360px same-origin iframe per THEMING-MODEL.md —
-   resize_window is a no-op here). The header only flex-shrinks; core/css/header.scss has no media
-   query of its own, so nothing reflows and the overflow just gets clipped. At 224px of slot the
-   failure was at 490px and below. The mark-only slot is 52px, so the art itself now fits
-   everywhere — but the NAME does not, and at 360px it still ran under .header-end. The gate
-   therefore stays at 601px and stands the two generated slots down below it, leaving core's own
-   62x44 geometry and the bare mark. Nextcloud's only breakpoint is $breakpoint-mobile: 1024px
-   (variables.scss:100), a SCSS variable compiled away — unreachable from a theme, and far too wide
-   anyway: it would drop the name on every tablet where it fits with room to spare.
+   601px GATE, measured 2026-07-30 (360px same-origin iframe per THEMING-MODEL.md — resize_window is
+   a no-op here): the header only flex-shrinks and core/css/header.scss has no media query of its
+   own, so nothing reflows — the clinic name ran under .header-end and was clipped. Nextcloud's own
+   $breakpoint-mobile (core/css/variables.scss:100, 1024px) is a SCSS variable, compiled away and
+   unreachable from a theme — and far too wide anyway.
    ===================================================================== */
 #header a#nextcloud .logo { background-image: url("/themes/apsconecta/core/img/logo/logo-mark.svg"); }
 

@@ -147,10 +147,6 @@ nothing a stylesheet can reach.
 `scripts/office-smoke.sh` asserts the *desired* state on the served files, because `apps/` is
 gitignored and an `occ app:update` reverts the edit with nothing running `make seed` afterwards.
 
-*Corrected 2026-07-30 — this rule previously described two line-scoped `sed`s in
-`make office-eurooffice`, said the patch "cannot be committed", and justified a gate by `sed`
-exiting 0 on no match. All three were superseded by ADR-0002 on 2026-07-29.*
-
 ## 4. What this theme does *not* do
 
 - **No per-app icon overrides.** ADR-0001 allowed them for icons that "clash". Scanned every enabled
@@ -160,13 +156,11 @@ exiting 0 on no match. All three were superseded by ADR-0002 on 2026-07-29.*
 - **No dark mode.** Owner decision, 2026-07-12. Dark tokens exist only in the brand kit, for the
   website.
 - **No component restyling, no SCSS, no core edits, no `@nextcloud/vue` fork.**
-  *Suppressing upstream vendor marketing is a different act, and is allowed.* Restyling changes how
-  a Nextcloud component looks; suppression declines to show Nextcloud's advertising inside a
-  white-labeled product. The distinction is drawn explicitly because the rule as written would have
-  been quietly broken instead — the first such case, B-008's *"Razones para usar Nextcloud"* panel
-  in every user's personal settings, has no config lever at all: `ServerDevNotice::getSection()`
-  returns `null` only when `IRegistry::delegateHasValidSubscription()` is true, i.e. only with a
-  paid subscription.
+  *Suppressing upstream vendor marketing is a different act, and is allowed* — restyling changes how a
+  component looks; suppression declines to show its advertising. Upstream leaves no
+  lever for the first such case, B-008's *«Razones para usar Nextcloud»* panel in every user's
+  personal settings: `ServerDevNotice::getSection()` returns `null` only when
+  `IRegistry::delegateHasValidSubscription()` is true (paid subscription).
   **Every suppression carries a gate.** A CSS selector that stops matching fails *silently* and the
   promo reappears, so `make test` asserts the targeted id still exists in the shipped upstream
   template. One rule, one gate, and the id named in both — not a growing pile of blind selectors.
@@ -209,29 +203,17 @@ instance).
 
 ### Why your CSS or colour change did nothing
 
-Two caching traps. Both produce the same symptom — **a change that is correct on disk and correct
-on the wire, but invisible in the browser** — and both have cost real debugging time. Check these
-before looking for a bug in your rule.
-
-**Editing `server.css` does not bump the cachebuster.** Nextcloud serves the theme stylesheet as
-`server.css?v=<hash>-<n>`, where `-<n>` moves when *theming config* changes, not when the CSS file
-changes. So after an edit the browser keeps the previous stylesheet under an unchanged URL. Seen
-directly: a new rule was present on disk and in `curl` output while `document.styleSheets` in the
-page had 13 rules and did not include it.
-
-→ **`make seed` is the reliable bust.** It re-registers the four brand images unconditionally
-(deliberately — see `lib.sh`), which bumps the cachebuster as a side effect.
-
-**`side_menu` serves its stylesheet at a permanently static `?v=0`.** Colour changes made with
-`occ config:app:set side_menu …` never reach a returning browser. Verified: the server response
-carried both the derived default and our configured value, ours last (so ours wins), while the
-browser kept reporting the old one.
-
-→ Confirm what the **server** sends before doubting the config:
-`curl -s 'localhost:8180/apps/side_menu/css/stylesheet?v=0' | grep -o -- '--side-menu-background-color: *[^;]*'`
-
-Recorded in #53, closed 2026-07-29: both traps are permanent upstream behaviour, not a defect
-awaiting a fix.
+> Two upstream caching traps (#53, closed 2026-07-29), both giving the same symptom — a change
+> correct on disk and on the wire, invisible in the browser:
+>
+> - **Editing `server.css` does not bump the cachebuster.** `server.css?v=<hash>-<n>` moves when
+>   *theming config* changes, not when the file does (seen: a rule present on disk and in `curl` was
+>   absent from the page's 13 `document.styleSheets` rules). → `make seed` busts it — it
+>   re-registers the four brand images unconditionally (`lib.sh`).
+> - **`side_menu` serves its stylesheet at a static `?v=0`**, so `occ config:app:set side_menu …`
+>   never reaches a returning browser. Confirm what the **server** sends — it carries both the
+>   derived default and ours, ours last, so ours wins — before doubting the config:
+>   `curl -s 'localhost:8180/apps/side_menu/css/stylesheet?v=0' | grep -o -- '--side-menu-background-color: *[^;]*'`
 
 ### The logged-out page
 

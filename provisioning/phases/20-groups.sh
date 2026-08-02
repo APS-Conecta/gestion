@@ -4,13 +4,8 @@
 # English IDs, Spanish display names. Idempotent (ensure_group = query-before-create). Grants target
 # IDs, never display names.
 #
-# THE GROUP IS THE ONLY ACCESS KEY THIS SYSTEM HAS (#103). Every helper that grants anything takes a
-# group id and nothing else — gf_grant for folders, app_restrict_to_groups for apps,
-# add_user_to_group for people — so "what may this user reach" is answered entirely by "which groups
-# is this user in". Any custom app added later plugs into the same key; there is no second mechanism
-# to design. The standing rule that follows: GRANT ON THE BROADEST GROUP THAT IS STILL CORRECT,
-# which means cat-* over role-* unless the job title is genuinely the point. That is what lets a
-# clinic add a Jefe de SAR and have it inherit every existing grant without one being edited.
+# THE GROUP IS THE ONLY ACCESS KEY, and the rule that follows — grant on the broadest group that is
+# still correct — is stated once, in docs/ARCHITECTURE.md § Access model, named above (#103).
 phase_begin "20-groups" "Role / category / team group registry (Epic 2)"
 
 # Every user belongs here.
@@ -55,9 +50,7 @@ roles=(
 for entry in "${roles[@]}"; do ensure_group "${entry%%|*}" "${entry#*|}"; done
 
 # --- Roles this clinic adds for itself (#103) — id|display|category, from sites/$SITE/site.sh ---
-# The 22 above are every CESFAM's. A clinic running a SAR, SAPU or SUR needs roles this file cannot
-# name: it could already declare the unit, its folder and its grants, and then had no way to say who
-# leads it. Same split as SITE_TEAMS below — shared vocabulary in code, local additions in data.
+# Same split as SITE_TEAMS below — shared vocabulary in code, local additions in data (#103).
 #
 # THE CATEGORY IS LOAD-BEARING, not a label. Nextcloud groups do not nest, so a role grants nothing
 # by "belonging to" a category; what gives a person access is the set of groups they are IN. The

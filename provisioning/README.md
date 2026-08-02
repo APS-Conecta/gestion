@@ -99,5 +99,4 @@ later is one line in `SITE_FOLDERS` plus its rows in `SITE_ACL`.
 
 Keep the `phase_begin`/`phase_end` frame and use the guarded helpers for the body. Read
 [`phases/10-locale.sh`](phases/10-locale.sh) — it is short, live, and the model to copy. No snippet
-is reproduced here on purpose: the one that used to be had drifted from the file it described and
-still carried a bug the real phase had already fixed.
+is copied here — a copy drifts from the file it describes.

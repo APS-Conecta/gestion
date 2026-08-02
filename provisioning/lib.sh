@@ -20,16 +20,11 @@ require_installed() {
 
 # --- idempotent config: set only if the current value differs ---
 #
-# One `config:list` per phase feeds every read below, instead of one `config:*:get` per key.
-#
-# NOT `--private`: that would pull dbpassword/secret/passwordsalt into a variable held for the rest
-# of the phase, and nothing here needs them. It is NOT a secret-free cache either — Nextcloud's
-# redaction is narrower than intuition (`theming` slogan/url come back REMOVED, `eurooffice
-# jwt_secret` comes back in the clear), so DO NOT `set -x` in a phase and DO NOT print CONF_CACHE.
-#
-# Not written back after a set, unlike the group caches below: no phase reads a key it just wrote,
-# and if one ever does the stale read costs a redundant write of the same value, which
-# seed-idempotent.sh reports rather than hides.
+# One `config:list` per phase feeds every read below. NOT `--private`: it would pull
+# dbpassword/secret/passwordsalt into a variable nothing here needs. Not secret-free either —
+# `theming` slogan/url come back REMOVED but `eurooffice jwt_secret` comes back in the clear, so
+# never `set -x` in a phase and never print CONF_CACHE. Not written back after a set: a stale read
+# costs one redundant write, which seed-idempotent.sh reports rather than hides.
 CONF_CACHE=""
 conf_load() {
   [ -n "$CONF_CACHE" ] && return 0
@@ -191,20 +186,13 @@ add_user_to_group() {  # UID GID  (query-before-add: accurate + idempotent)
 
 # --- apps (unpack the vendored tarball, then enable; idempotent) ---
 #
-# NOT `occ app:install` (#98). The app store is the only dependency whose failure leaves the
-# instance HALF-BUILT: a failed image pull stops the install outright, while a failed app install
-# leaves the app missing, its folders absent and its patches unapplied — an instance that looks
-# installed and is not. That is a different class of failure from "slow", and it does not depend on
-# how often the store is slow. `occ app:install` also takes an app id and nothing else, so a clean
-# install got whatever was newest that day while `eurooffice/10-admin-section-name.patch` is
-# anchored to a line number in 11.0.1.
-#
-# The store stays ENABLED on the instance: turning it off also removes the admin Update button,
-# whose absence is itself a guard (#82).
-#
-# The tarballs are UNMODIFIED upstream, and stay that way. Committing them already patched was
-# rejected in #82 and is still rejected: it hides a four-line change inside 409 files and makes
-# upstream drift silent, where a patch that stops applying aborts the phase and says so.
+# NOT `occ app:install` (#98): a failed store install leaves the app missing and its patches
+# unapplied — an instance that looks installed and is not — and it pins no version, while
+# `eurooffice/10-admin-section-name.patch` is anchored to a line number in 11.0.1.
+# The store stays ENABLED: turning it off also removes the admin Update button, itself a guard (#82).
+# The tarballs are UNMODIFIED upstream and stay that way (#82): committing them pre-patched hides a
+# four-line change inside 409 files and makes upstream drift silent, where a patch that stops
+# applying aborts the phase and says so.
 ensure_vendored_app() {  # APPID
   # Two statements, not one. Bash expands every word of a `local` BEFORE assigning any of them, so
   # `local app="$1" dir=".../$app"` reads whatever `app` meant in the CALLER — which here is phase
@@ -214,13 +202,8 @@ ensure_vendored_app() {  # APPID
   local dir="$HERE/apps/$app" tgz want sha cur
   local -a tarballs=("$dir"/*.tar.gz)
 
-  # EVERY READ BELOW IS GUARDED ON THE FILE EXISTING FIRST, and none of them is a pipeline. Not
-  # style: seed.sh runs each phase as `( set -e; . "$phase" )` and inherits `pipefail` from its own
-  # `set -uo pipefail`, so a `cmd file | head` where the file is absent makes the whole assignment
-  # non-zero and errexit kills the phase — printing NOTHING, not even the `log` line written to
-  # explain that exact case. The first version of this function did that and reported a missing app
-  # directory as a bare "FATAL: phase 12-apps.sh failed". If you add a read here, guard it or it
-  # will swallow its own error message.
+  # GUARD EVERY READ ON THE FILE EXISTING, and use no pipelines: phases run under `set -e` + `pipefail`,
+  # so an unguarded read of a missing file kills the phase before its own `log` line can run.
   [ -f "${tarballs[0]}" ] || { log "FAILED $app — no vendored tarball in provisioning/apps/$app/"; return 1; }
   [ "${#tarballs[@]}" -eq 1 ] || { log "FAILED $app — ${#tarballs[@]} tarballs in provisioning/apps/$app/, expected 1"; return 1; }
   tgz="${tarballs[0]}"

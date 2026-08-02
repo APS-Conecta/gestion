@@ -3,15 +3,10 @@
 # It lives in its own file because GitHub filters paths per WORKFLOW, not per job — the only way to
 # run this on the PRs that can break it while the static gate still runs on all of them.
 #
-# WHY IT RUNS ON PULL REQUESTS (#97). It used to be schedule/dispatch only, and in the repo's first
-# 150 commits it had never executed once: every run was push or pull_request, which reaches the
-# static gate alone. The first dispatch, on 2026-08-01, failed immediately — provisioning was racing
-# Nextcloud's own post-install config writes (#96), on a bug already merged to main. A gate nobody
-# triggers is not a gate. This one would have caught #96 on the PR that introduced it.
-#
-# It cannot be a REQUIRED check: branch protection needs GitHub Pro or a public repo, and this is a
-# private repo on Free. The red X is advisory — which is exactly why the trigger matters, since
-# visibility is the whole mechanism.
+# WHY IT RUNS ON PULL REQUESTS (#97). Schedule/dispatch only, it never ran on its own; the first
+# dispatch, on 2026-08-01, failed on #96 — a bug already merged to main that this gate would have
+# caught on its PR. It cannot be a REQUIRED check (branch protection needs GitHub Pro or a public
+# repo), so the red X is advisory — exactly why the trigger matters: visibility is the mechanism.
 name: Clean boot
 
 on:
@@ -74,11 +69,9 @@ jobs:
       # own installer, and provisioning follows. This is also the path nothing else exercises — so
       # 12-apps unpacks every vendored tarball into an empty apps/ and applies its patches for real,
       # and every query-before-set guard meets a key that does not exist yet.
-      # Euro-Office comes up with it since #81 dropped the profile, so this job now downloads the
-      # 2.56 GB documentserver it used to skip and waits out its 120s start_period. That cost buys
-      # the thing the old skip made impossible: `make test` below smokes the office backend, so the
-      # clean boot proves a document can actually be opened rather than only that the connector was
-      # configured.
+      # Euro-Office comes up with it since #81 dropped the profile: this job downloads the 2.56 GB
+      # documentserver it used to skip and waits out its 120s start_period, and in exchange
+      # `make test` below proves a document can be opened, not only that the connector was configured.
       - run: make install
       # Paired with the SITE_ROLES appended above (#103), because "the seed did not crash" is not the
       # same as "the roles landed". Asserts both halves of the rule: a cat-jefaturas role is a

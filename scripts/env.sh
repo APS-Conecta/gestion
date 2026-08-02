@@ -16,9 +16,7 @@
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || { echo "FAIL: cannot cd to the repo root" >&2; exit 1; }
 
-# 3. occ inside the running nextcloud container. Lives here because every caller of this file
-#    needs it and each used to spell the same 8-word docker invocation out again — six copies,
-#    one of which (smoke.sh) ignored its own variable two lines after defining it.
+# 3. occ inside the running nextcloud container — one definition, for every caller of this file.
 occ() { docker compose exec -T --user www-data nextcloud php occ "$@"; }
 
 # 4. The clinic this stack serves, for the callers that need one — seed.sh, install.sh and

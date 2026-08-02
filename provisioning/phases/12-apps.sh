@@ -5,28 +5,14 @@
 # provenance file, and the *.patch edits applied in name order after unpacking. So this file says
 # WHICH apps we run and that directory says which bytes and which edits.
 #
-# NOTHING HERE CONTACTS THE APP STORE (#98). The store was the only dependency whose failure left
-# the instance half-built — an app missing, its folders absent, its patches unapplied — where a
-# failed image pull merely stops. ~12 MB of committed tarballs buys that away. The cost is recorded
-# rather than hidden: the repo went from 7.3 MB to ~19 MB and git keeps every future version
-# forever, so each bump adds another full copy for every clone.
-# Only FILE edits belong here — `occ config:app:set` lives in the database, survives an app update,
-# and stays in 15-branding / 16-app-policy / 14-office.
-#
-# This phase converges apps ON THE VENDORED VERSION and never on "whatever is newest" (#117). It
-# re-imposes the committed tarball when the instance is running something else, which is
-# deterministic — two identical seeds produce identical instances. `occ app:update` is the opposite
-# and stays a deliberate separate act: it asks the store what is newest today, so running it here
-# would make the same seed produce different instances depending on the day.
-#
-# Bumping a vendored app is therefore an edit, not a command: new tarball, new VENDOR lines, then
-# `make seed` re-imposes it everywhere. The patches are the gate either way — one that no longer
-# applies stops the phase and names itself.
-#
-# eurooffice is installed here; 14-office configures it. That split predates #81 and outlived the
-# reason for it — AD-5's opt-in was the ~2 GB documentserver, which is now an ordinary service — but
-# the split is still right: this phase owns which apps exist and what is patched inside them, and
-# having the connector installed on every seed is what lets its patches be re-applied every seed.
+# NOTHING HERE CONTACTS THE APP STORE (#98) — the reasoning lives on ensure_vendored_app in lib.sh.
+# Cost recorded, not hidden: ~12 MB of tarballs (repo 7.3 -> ~19 MB), plus a full copy per bump.
+# Only FILE edits belong here — `occ config:app:set` lives in the database, so it survives an app
+# update, and stays in 15-branding, 16-app-policy and 14-office.
+# Converges on the VENDORED version, never "whatever is newest" (#117): the same seed produces the
+# same instance. Bumping an app is an edit, not a command — new tarball, new VENDOR lines, re-seed.
+# eurooffice is installed here and configured in 14-office: this phase owns which apps exist and
+# what is patched inside them.
 phase_begin "12-apps" "apps this instance runs, plus the edits inside them"
 
 APPS="groupfolders side_menu eurooffice"

@@ -3,18 +3,9 @@
 # groups phase 20 already created (this phase never creates structure — AD-2). The ordering that
 # guarantees is the runner's own: 20-groups -> 30-folders -> 40-acl -> here.
 #
-# WHAT CHANGED AND WHY. This used to create four accounts called `dev.medico`, `DEV Matrona
-# (fixture)` and so on — deliberately ugly so nobody mistook them for staff. Their real job was to
-# prove the role-union: one person in four groups receiving the sum of their permissions. But the
-# positions they modelled were arbitrary, and an instance shown to clinic staff was full of accounts
-# named DEV. These are the positions a CESFAM actually has, so the instance now demonstrates the
-# design rather than merely exercising it. The union check did not leave with them: every jefe de
-# sector below holds a role, a sector team and a category at once — the same union, on an account
-# that means something.
-#
-# STILL GATED BY SEED_FIXTURES, and still one shared password. These are POSITIONS, not people.
-# #86 settled the roster format and closed 2026-08-01; the reader waits on password delivery (#106),
-# so no phase reads a roster yet and each account here stands in for someone not yet named.
+# GATED BY SEED_FIXTURES, one shared password. These are POSITIONS, not people: #86 settled the
+# roster format and closed 2026-08-01, and the reader waits on password delivery (#106). Every jefe
+# de sector holds a role, a sector team and a category at once — the role-union this phase shows.
 phase_begin "50-users" "The clinic's standing leadership accounts"
 
 : "${FIXTURE_USER_PASSWORD:?set FIXTURE_USER_PASSWORD in .env}"

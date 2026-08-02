@@ -77,10 +77,8 @@ images-check: ## Report whether any tag has moved past its pin (changes nothing)
 apps-check: ## Report whether any vendored app has a newer release (changes nothing)
 	@bash scripts/app-versions.sh
 
-# `office-eurooffice` was DELETED here by #81. Once the profile was dropped and the trusted_domains
-# repair moved into phase 14-office, the target was `make up` + `make seed` + a smoke — a second
-# entry point for something `make install` already does, which is exactly what ADR-0001 deleted
-# occ-theming.sh for. Use `make install`; use `make office-smoke` to check the backend alone.
+# `office-eurooffice` was DELETED here by #81 — a second entry point for what `make install` already
+# does, which is what ADR-0001 deleted occ-theming.sh for. `make office-smoke` checks the backend alone.
 
 office-smoke: ## Smoke-check the Euro-Office backend
 	@bash scripts/office-smoke.sh

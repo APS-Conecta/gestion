@@ -71,11 +71,8 @@ store updates stop arriving.
 patches be re-applied on every seed — which is the part of this that still matters.
 
 *Superseded on the opt-in half (2026-08-01,
-[#81](https://github.com/APS-Conecta/gestion/issues/81)):* the ~2.5 GB documentserver behind
-`--profile eurooffice` was the last optional piece, and the profile is gone. One consequence lands
-here: CI used to exercise install-and-patch **without** pulling the image, and now pulls it. That is
-a straight trade — the clean boot costs 2.56 GB more and in exchange proves a document can be opened,
-rather than only that the connector was configured.
+[#81](https://github.com/APS-Conecta/gestion/issues/81)):* the profile is gone, and with it the last
+optional piece. [ADR-0000](0000-inherited-decisions.md) §AD-5 owns what that changed and what it cost.
 
 ## Code integrity
 

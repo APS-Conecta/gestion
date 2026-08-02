@@ -79,9 +79,6 @@ Both faces are redistributed, so OFL-1.1's terms apply to this repo directly.
   copies: the subsets are embedded, never distributed as installable font files under the original
   names.
 
-Stated because three documents used to say flatly that "fonts are not subset", which was true of the
-`.woff2` and false of the SVGs.
-
 ### 3.3 Euro-Office — clean license, contested §7 terms **[awareness note]**
 
 Euro-Office's `LICENSE` is the verbatim GNU AGPL v3 (`AGPL-3.0-only`) — the identifier is clean. But
