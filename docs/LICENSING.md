@@ -48,7 +48,7 @@ in the stack.
 | Nextcloud Server | image `nextcloud:34-apache` | GNU AGPL v3 or later | `AGPL-3.0-or-later` | nextcloud/server `COPYING` + README |
 | PostgreSQL | image `postgres:18-alpine` | PostgreSQL License (permissive) | `PostgreSQL` | postgresql.org/about/licence |
 | Redis | image `redis:8-alpine` | Tri-license — **we elect AGPL v3** | `AGPL-3.0-or-later` | redis `LICENSE.txt` (8.x) |
-| Euro-Office (office) | image `ghcr.io/euro-office/documentserver:latest` | GNU AGPL v3 | `AGPL-3.0-only` | Euro-Office/DocumentServer `LICENSE` |
+| Euro-Office (office) | image `ghcr.io/euro-office/documentserver` | GNU AGPL v3 | `AGPL-3.0-only` | Euro-Office/DocumentServer `LICENSE` |
 | Group Folders | NC app `groupfolders` (occ-installed) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | nextcloud/groupfolders `info.xml` |
 | Euro-Office connector | NC app `eurooffice` (occ-installed) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | eurooffice `info.xml` |
 | Side menu | NC app `side_menu` (occ-installed) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `side_menu` `info.xml` |

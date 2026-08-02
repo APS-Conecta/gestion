@@ -231,8 +231,8 @@ h1, h2, h3,
    So the clinic is added HERE instead: the heading keeps the product, and the clinic sits
    above it in the brand serif.
    `.login-form__headline` is a BEM class, not a hashed Vue one — stable enough to target, and
-   scripts/test.sh asserts it still exists so a Nextcloud upgrade that renames it fails loudly
-   rather than silently dropping the name. */
+   scripts/test.sh greps it out of core's login bundle in the running container, so a Nextcloud
+   upgrade that renames it fails loudly rather than silently dropping the name. */
 .login-form__headline::before {
   content: var(--aps-clinic, "APS Conecta Gestión");
   display: block;
@@ -251,21 +251,15 @@ h1, h2, h3,
    just shown where there is room for them instead of squeezed into a 46px slot. */
 .cm-logo { display: block; }
 
-/* WIDTH, NOT MAX-WIDTH (#102). Un-hiding alone left the lockup at 174x29 — barely bigger than the
-   46px mark it replaced. `max-width` is the wrong lever and raising it does nothing: it CAPS, never
-   grows, and logo-header.svg is 205px wide natively, so anything past 71% simply stops constraining
-   and you get 205. `max-height` is worse — the app's own `max-width:60%` binds first, so it changes
-   nothing at all. Both were measured on the instance before this was written.
-   So: kill the cap, then drive the width. 90% of the 290px panel is 261x43 — a 50% gain — and the
-   left edge lands at 14.5px against the app menu's own 13px icon gutter, which is what makes it
-   read as aligned rather than floating. 100% touches both panel edges. A PERCENTAGE because
-   side_menu takes its panel width from admin config; a px value would stop fitting the moment
-   someone changes it. Height stays derived — the lockup is 6:1 and must never be squashed.
-
-   `.cm` IS LOAD-BEARING, not tidiness. side_menu emits its CSS from a controller as an INLINE
-   <style>, which lands after every stylesheet including this one — so a bare `.cm-logo img` ties on
-   specificity and loses on order, silently. `.cm` (the panel root) wins on specificity instead,
-   which is order-proof. Do not flatten this selector, and do not reach for !important. */
+/* WIDTH, NOT MAX-WIDTH (#102). side_menu caps the lockup at `max-width:60%` of the 290px panel =
+   174x30. `max-width` only CAPS: logo-header.svg is 200px native, so past 69% it stops constraining
+   and you get 200. So kill the cap and drive the width — 90% = 261x44, whose left edge lands at
+   14.5px against the app menu's own 13px icon gutter. A PERCENTAGE because side_menu takes the panel
+   width from admin config. `height:auto`: the lockup is 6:1 and must never be squashed.
+   `.cm` IS LOAD-BEARING. Those caps ship inside side_menu's JS bundle (js/side_menu-menu.js,
+   injected as a runtime <style>), which lands after every stylesheet including this one — a bare
+   `.cm-logo img` ties on specificity and loses on order, silently. `.cm` (the panel root) wins on
+   specificity instead, which is order-proof. Do not flatten this selector, and do not use !important. */
 .cm .cm-logo img { max-width: none; width: 90%; height: auto; }
 
 /* DELIBERATELY no work-canvas rule. Painting `body, #content, #content-vue` covered the brand

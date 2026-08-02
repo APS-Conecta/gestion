@@ -64,7 +64,8 @@ PostgreSQL PostgreSQL-License, Redis 8 AGPL-3.0 — settled 2026-07-19 in
 
 ## Runtime topology
 
-v1 runs as a single Docker Compose stack, one per developer machine, portable across OSes.
+v1 runs as a single Docker Compose stack — one per clinic, or one per developer machine — portable
+across OSes.
 
 ```mermaid
 graph TD
@@ -160,10 +161,8 @@ and read: [`provisioning/README.md`](../provisioning/README.md).
   stays config-as-code via `occ theming:config`, with `enforce_theme=light` + `disable-user-theming yes`.
   Logo, favicon and login background are **files in the theme** (`core/img/`), registered by the
   `15-branding` phase with `occ theming:config <key> <absolute-path>` pointing at the bind-mounted
-  theme directory — never admin-UI uploads, which would break AD-2. (`occ` *does* set all four
-  image keys on NC34; it requires an absolute path. An earlier claim here that the CLI sets
-  text/colour only was wrong — see ADR-0001 § Corrections.) The iOS "Nextcloud — Abrir" banner is
-  killed with `occ config:system:set customclient_ios_appid ""`; **there is no `defaults.php`**
+  theme directory — never admin-UI uploads, which would break AD-2. The iOS "Nextcloud — Abrir" banner
+  is killed with `occ config:system:set customclient_ios_appid ""`; **there is no `defaults.php`**
   (deleted 2026-07-27, and with it the opcache restart it required).
   This supersedes **AD-6** on `themes/` files, but AD-6 was *right* to reject `defaults.php` —
   reasoning and accepted costs in [ADR-0001](adr/0001-server-theme-for-branding.md).

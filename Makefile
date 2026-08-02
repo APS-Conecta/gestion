@@ -10,8 +10,9 @@ HOST_GID := $(shell id -g)
 # No .env reading here: every script sources scripts/env.sh itself, so `make smoke` and
 # `bash scripts/smoke.sh` behave identically. Nothing in a recipe below needs a value from .env.
 
-# Same guard, four targets. One message, one place to change it. It names `make setup` rather than
-# the copy it replaced: hand-copying leaves four placeholder passwords in a file nothing checks.
+# One guard for every target that needs .env. One message, one place to change it. It names
+# `make setup` rather than the copy it replaced: hand-copying leaves four placeholder passwords in a
+# file nothing checks.
 REQUIRE_ENV = test -f .env || { echo "No .env found — run: make setup"; exit 1; }
 
 setup: ## Create .env with four generated secrets, mode 600 (run once, before install)

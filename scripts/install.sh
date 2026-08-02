@@ -59,7 +59,5 @@ printf '  http://localhost:%s\n' "$HTTP_PORT"
 # seed's output goes to $LOG — only phase names reach the terminal — so a report printed there would
 # be seen by nobody, which is the one thing a report cannot afford.
 #
-# --quiet, so a clean install ends clean. It exits 0 whatever it finds: this converges the
-# reversible and reports the rest, and a non-zero exit here would fail `make install` for the rest
-# of time after one deliberate removal.
+# --quiet, so a clean install ends clean. It exits 0 whatever it finds — see scripts/divergence.sh.
 bash scripts/divergence.sh --quiet

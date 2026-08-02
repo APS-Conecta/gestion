@@ -74,9 +74,8 @@ La fase hace, en orden:
    instala la fase `12-apps` desde su tarball vendorizado (#98), no ésta.
 7. **Activación del tema:** `config:system:set theme --value apsconecta`.
 
-**Sí sube imágenes**, con `occ theming:config <clave> <ruta-absoluta>` (§3). La afirmación
-anterior — que el `occ` de NC34 solo fija texto y color — era **falsa**; solo exige ruta absoluta.
-Lo que sigue prohibido es subirlas por el panel: sería el "hand-click" que AD-2 veta.
+**Sí sube imágenes**, con `occ theming:config <clave> <ruta-absoluta>` (§3) — solo exige ruta
+absoluta. Subirlas por el panel sigue prohibido: sería el "hand-click" que AD-2 veta.
 
 > **Revertir cualquier clave:** `occ theming:config <clave> --reset`.
 
@@ -99,6 +98,8 @@ gestion/themes/apsconecta/core/img/
 │                            embebida: un SVG servido como imagen no ve el @font-face de
 │                            server.css (B-011). Regenerar con tools/embed-fonts.py
 ├── logo/logo-mark.svg     ← la figura sola: la cabecera, a cualquier ancho
+├── home.svg               ← el icono de casa de la cabecera (#84). Lo usa server.css; no es
+│                            clave de theming, así que la fase no lo registra
 ├── favicon.svg            ← clave `favicon`
 ├── manifest.json          ← el webmanifest que verifica `smoke.sh` (control 7)
 └── background.svg         ← clave `background`: telón de TODA la UI, no solo del login
@@ -108,11 +109,8 @@ gestion/themes/apsconecta/core/img/
 > que tapaba `background.svg` por completo: estaba registrado, servido y no se vio nunca. Se
 > eliminó el 2026-07-27.
 >
-> **Resuelto el 2026-07-27** (ADR-0001 § Pending). La pregunta original —«¿ganan las imágenes del
-> tema a los valores que la app Theming guarda en BD?»— quedó **sin objeto**: no dependemos de esa
-> búsqueda, las registramos nosotros. Verificado en vivo: las cuatro claves registradas, favicon
-> rasterizado y webmanifest tematizado. El plan B por API OCS (que habría metido credenciales de
-> admin en el runner del seed) no hizo falta.
+> **Resuelto el 2026-07-27** ([ADR-0001](adr/0001-server-theme-for-branding.md) § *Pending*):
+> registramos las cuatro claves nosotros, así que la precedencia tema-vs-BD quedó sin objeto.
 
 ---
 

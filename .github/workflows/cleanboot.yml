@@ -27,9 +27,9 @@ on:
       - 'sites/**'
       - '.env.example'
       - '.github/workflows/cleanboot.yml'
-  # Kept as the backstop for drift no PR causes. The images stopped being a source of it in #109 —
-  # all four are pinned by digest now — but the app store is still unpinned until #98 is built, so
-  # main can break without anyone touching it. `image-digests` covers the other half an hour earlier.
+  # Kept as the backstop for drift no PR causes. Our own bytes stopped being a source of it — images
+  # pinned by digest (#109), apps vendored as committed tarballs (#98) — so what still moves untouched
+  # is the runner image and the actions. `image-digests` reports the other half an hour earlier.
   schedule:
     - cron: "0 6 * * 1"          # Mondays 06:00 UTC
   workflow_dispatch:
@@ -71,9 +71,9 @@ jobs:
           SITE_ROLES+=( "role-jefe-sar|Jefe/a de SAR|cat-jefaturas" "role-tens-sar|TENS – SAR|cat-tecnicos" )
           ROLES
       # The whole install, exactly as an operator runs it: `make up` owns the wait for Nextcloud's
-      # own installer, and provisioning follows. This is also the path nothing else exercises — a
-      # checkout has an empty apps/, so 12-apps installs every app from the store and applies its
-      # patches for real, and every query-before-set guard meets a key that does not exist yet.
+      # own installer, and provisioning follows. This is also the path nothing else exercises — so
+      # 12-apps unpacks every vendored tarball into an empty apps/ and applies its patches for real,
+      # and every query-before-set guard meets a key that does not exist yet.
       # Euro-Office comes up with it since #81 dropped the profile, so this job now downloads the
       # 2.56 GB documentserver it used to skip and waits out its 120s start_period. That cost buys
       # the thing the old skip made impossible: `make test` below smokes the office backend, so the
@@ -83,7 +83,7 @@ jobs:
       # Paired with the SITE_ROLES appended above (#103), because "the seed did not crash" is not the
       # same as "the roles landed". Asserts both halves of the rule: a cat-jefaturas role is a
       # POSITION and gets a standing account; a cat-tecnicos one is a job title held by people who
-      # arrive with the roster (#86), so it must NOT. The negative is the half that would rot
+      # arrive with the roster (#106), so it must NOT. The negative is the half that would rot
       # silently — an over-eager loop creating accounts for every local role looks like success.
       - name: Clinic-local roles landed, and only the jefatura got an account
         run: |

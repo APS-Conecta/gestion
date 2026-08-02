@@ -62,18 +62,13 @@ for entry in "${roles[@]}"; do ensure_group "${entry%%|*}" "${entry#*|}"; done
 # THE CATEGORY IS LOAD-BEARING, not a label. Nextcloud groups do not nest, so a role grants nothing
 # by "belonging to" a category; what gives a person access is the set of groups they are IN. The
 # third field declares which cat-* an account holding this role must ALSO join — 50-users reads it
-# for the standing jefaturas it creates, and the roster reader (#86) will read it for everyone else.
+# for the standing jefaturas it creates, and the roster reader (#106) will read it for everyone else.
 # It is declared per role rather than defaulted to cat-jefaturas because a local unit needs both:
 # a lead (cat-jefaturas) and its technicians (cat-tecnicos). Unit folders are granted BY ROLE, so
 # without a local role a SAR's folder would open to every TENS in the building.
 #
 # The four categories are NOT site-definable: they are what makes an ACL matrix comparable across
 # clinics. A typo here would create a group nothing ever grants on, so it fails loudly instead.
-#
-# `${SITE_ROLES[@]:-}` is WRONG here and reads as correct — on an EMPTY array it expands to one
-# empty word and runs the body once on it. Declaring the array when the site file omits it makes
-# "unset" and "empty" both mean none.
-declare -p SITE_ROLES >/dev/null 2>&1 || SITE_ROLES=()
 for entry in "${SITE_ROLES[@]}"; do
   id="${entry%%|*}"; rest="${entry#*|}"; display="${rest%%|*}"; category="${rest##*|}"
   case "$id" in

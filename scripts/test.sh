@@ -9,7 +9,7 @@ check() { if "$@" >/dev/null 2>&1; then echo "  ok:   $*"; else echo "  FAIL: $*
 
 echo "== static checks (no running stack needed) =="
 if [ ! -f .env ]; then
-  echo "  note: .env absent — compose interpolation will fail; run 'cp .env.example .env' first"
+  echo "  note: .env absent — compose interpolation will fail; run 'make setup' first"
 fi
 # One parse, not two: the `--profile eurooffice` run went with the profile in #81 — Euro-Office is
 # an ordinary service now, so this parse already covers it. The dev overlay is included because it
@@ -92,6 +92,9 @@ if docker compose ps --status running --services 2>/dev/null | grep -qx nextclou
     'grep -B3 -- '"'"'id="nextcloud"'"'"' core/templates/layout.user.php | grep -q -- "<a "'
   check docker compose exec -T --user www-data nextcloud \
     grep -qE '<div id="nextcloud" class="header-appname"' core/templates/layout.public.php
+  # Same silent-failure shape as B-008: server.css hangs the clinic name off `.login-form__headline`.
+  check docker compose exec -T --user www-data nextcloud \
+    grep -q "login-form__headline" dist/core-login.js
 else
   echo "  skipped: upstream vendor-block checks (need a running stack)"
 fi

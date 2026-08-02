@@ -13,8 +13,8 @@
 # that means something.
 #
 # STILL GATED BY SEED_FIXTURES, and still one shared password. These are POSITIONS, not people.
-# Real staff, real accounts and real password delivery are #86; until that lands, each account here
-# stands in for someone not yet named. Do not treat this phase as having onboarded anybody.
+# #86 settled the roster format and closed 2026-08-01; the reader waits on password delivery (#106),
+# so no phase reads a roster yet and each account here stands in for someone not yet named.
 phase_begin "50-users" "The clinic's standing leadership accounts"
 
 : "${FIXTURE_USER_PASSWORD:?set FIXTURE_USER_PASSWORD in .env}"
@@ -36,13 +36,11 @@ done
 # The same move for roles the clinic added itself (#103). A jefatura is a POSITION and this phase
 # creates one account per position, so a clinic-local Jefe/a de SAR gets one exactly as the four
 # fixed jefaturas do. ONLY cat-jefaturas: a local clinical or technical role — a SAR's TENS, say —
-# describes many people rather than a post, and those accounts arrive with the roster (#86).
+# describes many people rather than a post, and those accounts arrive with the roster (#106).
 #
 # The uid is DERIVED, not declared: `role-jefe-sar` -> `jefe.sar`, which is the convention the fixed
 # jefaturas below already follow. A fourth field would be a second name for the same thing and a
-# second thing to get out of step. Same `declare -p` guard as phase 20 — see the note there for why
-# `${SITE_ROLES[@]:-}` would run the loop once on an empty array.
-declare -p SITE_ROLES >/dev/null 2>&1 || SITE_ROLES=()
+# second thing to get out of step.
 local_jefes=()
 for entry in "${SITE_ROLES[@]}"; do
   id="${entry%%|*}"; rest="${entry#*|}"; display="${rest%%|*}"; category="${rest##*|}"

@@ -29,6 +29,10 @@ app — it is mounted and holds the store-installed ones at run time — and sta
 on the roadmap (e.g. the REM app). This is why `/apps/*` is gitignored and only `apps/README.md` is
 tracked.
 
+**Amended (2026-08-01, [#98](https://github.com/APS-Conecta/gestion/issues/98)). The upstream apps
+are committed as tarballs under `provisioning/apps/`; `apps/` still carries no app in git and is
+filled at seed time, not from the store.**
+
 ### AD-2 — `make seed` is the single writer of instance state
 
 Nothing else may mutate the running instance: no admin-panel clicking, no standalone scripts, no

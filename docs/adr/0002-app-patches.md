@@ -46,8 +46,8 @@ store updates stop arriving.
 
 - `provisioning/phases/12-apps.sh` names every app in one `APPS` line; each has a tarball and a
   `VENDOR` file (version, upstream URL, sha256) beside its patches, and is unpacked then enabled.
-- An app needing edits gets `provisioning/apps/<appid>/`, whose `*.patch` files are applied in
-  name order. Apps with nothing to patch have no directory — no placeholder files.
+- Every app has `provisioning/apps/<appid>/`; one needing edits adds `*.patch` files there, applied
+  in name order (#98 — before it, only patched apps had a directory).
 - Patches are applied with `patch`, not `sed`. **`patch` fails when its context stops matching**,
   so the silent no-op is gone by construction rather than by a gate placed next to it.
   *(Amended 2026-07-30: this originally said the greps in `office-smoke.sh` "were removed as
@@ -128,8 +128,9 @@ next to its JWT secret, where a `make seed` could not restore it.
   tarball, update all three `VENDOR` lines, run `make seed`, and the patches are the gate — they
   either still apply or the phase stops and says which one moved.
 - The repo carries ~12 MB of tarballs (7.3 MB → ~19 MB) and **git keeps every version forever**, so
-  each bump adds another full copy to every clone. Recorded rather than discovered later. Nobody is
-  yet named as the owner of those bumps — the same gap that left #82's `appstore-timeout` unbuilt.
+  each bump adds another full copy to every clone. Recorded rather than discovered later. *Owner named
+  2026-08-02 by [#117](https://github.com/APS-Conecta/gestion/issues/117): the weekly `image-digests`
+  workflow runs `make apps-check`, and a red run is the trigger for a human to bump.*
 - Nothing outside `make seed` installs the connector, so on a fresh instance the seed must run
   before the office backend is usable. It already had to, for groups and folders.
 

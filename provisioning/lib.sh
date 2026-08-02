@@ -151,18 +151,14 @@ for gid, members in d.items():
 group_exists() {  # GID
   groups_load; printf '%s\n' "$GROUPS_CACHE" | grep -qxF "$1"
 }
-ensure_group() {  # GID [DISPLAY]
-  local gid="$1" display="${2:-}"
+ensure_group() {  # GID DISPLAY
+  local gid="$1" display="$2"
   if group_exists "$gid"; then log "group $gid exists"; return 0; fi
   # occ runs as a plain command, NOT as the left side of `&&`. errexit ignores a failure inside an
   # `&&` list, so `occ … && log …` followed by any further statement returns 0 and the phase carries
   # on past a failed create. That is how B-001 looked: a green seed that had skipped its work.
-  if [ -n "$display" ]; then
-    occ group:add --display-name="$display" "$gid" >/dev/null
-  else
-    occ group:add "$gid" >/dev/null
-  fi
-  log "group $gid created${display:+ ($display)}"
+  occ group:add --display-name="$display" "$gid" >/dev/null
+  log "group $gid created ($display)"
   GROUPS_CACHE="$gid"$'\n'"$GROUPS_CACHE"
 }
 

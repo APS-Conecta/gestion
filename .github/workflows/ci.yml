@@ -25,6 +25,4 @@ jobs:
       # No secret is needed: nothing here starts a container.
       - run: cp .env.example .env
       # scripts/test.sh already skips the checks that need a running stack, so it needs no flag.
-      # Covers: compose config on all three profiles, bash -n on every script, the #39 phase-runner
-      # guard, every url() in server.css existing, and every theme SVG parsing.
       - run: make test

@@ -15,6 +15,7 @@ provisioning/
   lib.sh             # shared idempotency-guard helpers (source, don't execute)
   apps/              # per app: the vendored tarball, its VENDOR file, and *.patch edits (#98)
     eurooffice/
+    <appid>/         # one per app in 12-apps.sh's APPS
   phases/
     05-security.sh   # session hardening + outbound defaults
     06-jobs.sh       # background jobs from cron, not ajax
@@ -26,7 +27,7 @@ provisioning/
     20-groups.sh     # Epic 2 — role/category/team group registry
     30-folders.sh    # Epic 3 — hybrid four-area Group Folders tree
     40-acl.sh        # Epic 3 — first-cut access matrix (allow-refinement, no DENY)
-    50-users.sh      # Story 0.6 — synthetic sample users  (FIXTURE)
+    50-users.sh      # Story 0.6 — the clinic's standing leadership accounts  (FIXTURE)
     60-fixtures.sh   # Story 0.6 — synthetic sample content (FIXTURE)
 ```
 
@@ -44,7 +45,7 @@ rather than reusing the committed one, so the `--new` path stays tested.
 
 | In the site file | In the phases (identical everywhere) |
 |---|---|
-| Identity: name, type, address, comuna, DEIS code | `all-staff`, the four `cat-*`, the 21 `role-*` |
+| Identity: name, type, address, comuna, DEIS code | `all-staff`, the four `cat-*`, the shared `role-*` registry |
 | `SITE_TEAMS` — the `prog-*` and `sector-*` teams | The `LÉEME — Convenciones.md` text |
 | `SITE_FOLDERS`, `SITE_SUBFOLDERS` | Phases 05, 06, 10, 12, 14, 15, 16 |
 | `SITE_ACL` — the whole grant matrix, `mount\|group\|perms` | |
@@ -72,7 +73,7 @@ later is one line in `SITE_FOLDERS` plus its rows in `SITE_ACL`.
   a phase file, never by editing another epic's file or a monolith.
 - **Idempotent by guard (query-before-create).** Every mutating step must inspect current state and
   skip/patch — never blind-create. `make seed` is safe to run any number of times. Use the `lib.sh` helpers:
-  - `ensure_group GID` — via `occ group:list`
+  - `ensure_group GID DISPLAY` — via `occ group:list`
   - `ensure_user UID DISPLAY PASSWORD`, `add_user_to_group UID GID`
   - `ensure_groupfolder MOUNT` — via `occ groupfolders:list` (**`groupfolders:create` is NOT
     idempotent by name** — always query first)
@@ -89,9 +90,9 @@ later is one line in `SITE_FOLDERS` plus its rows in `SITE_ACL`.
   `occ` itself comes from [`scripts/env.sh`](../scripts/env.sh), which `seed.sh` sources before
   `lib.sh`.
 - **Structure-vs-fixtures partition.** Phases 05–40 own *structure* (locale, groups, folders, ACLs).
-  Phases 50–60 own *only* fixtures (synthetic sample users into **already-existing** groups, and
-  sample content). Run structure-only with `SEED_FIXTURES=0 make seed` (production would). One owner per
-  artifact — fixtures never create structure.
+  Phases 50–60 own *only* fixtures (the clinic's standing leadership accounts into
+  **already-existing** groups, and sample content). Run structure-only with `SEED_FIXTURES=0 make seed`
+  (production would). One owner per artifact — fixtures never create structure.
 - **No real data, ever.** Fixtures are deterministic synthetic dev data only (NFR-2).
 
 ## Adding a phase

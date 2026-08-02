@@ -22,11 +22,8 @@ app_config_set eurooffice StorageUrl                "http://nextcloud/"
 # fetches documents FROM Nextcloud at the service name `nextcloud`, which Nextcloud rejects with
 # HTTP 400 unless it is a trusted domain.
 #
-# WHY IT IS HERE NOW. It lived in `make office-eurooffice` and ADR-0000 named it AD-2's ONE
-# documented exception — "an install-time value, indexed into an array, which the config guards do
-# not model". That justification rested on the backend being an optional profile: a phase could not
-# depend on a service the pipeline might never start. #81 dropped the profile, so the premise is
-# gone and the exception retires with it. seed.sh is now the only writer, without an asterisk.
+# It lived in `make office-eurooffice` and was AD-2's one documented exception until #81 dropped the
+# eurooffice profile and retired it — docs/adr/0000-inherited-decisions.md §AD-2 owns that history.
 #
 # Not through config_system_set: that helper compares a scalar, and this is an ARRAY where the key
 # to write is the next free INDEX. Query-before-set is done directly instead — `occ` prints one

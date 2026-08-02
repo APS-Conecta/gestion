@@ -11,5 +11,5 @@
       }
     }
   ],
-  "//": "custom_apps ↔ apps/ is ready for the Story 0.8 bind mount. Bring the stack up with `make up-dev`, then start this listener and send a request carrying the Xdebug trigger (XDEBUG_TRIGGER cookie/GET, or the browser Xdebug helper). To debug Nextcloud core instead, add a mapping like \"/var/www/html\": \"<path to a checked-out NC 34 source tree>\"."
+  "//": "custom_apps ↔ apps/ mirrors the bind mount in compose.yaml. Bring the stack up with `make up-dev`, then start this listener and send a request carrying the Xdebug trigger (XDEBUG_TRIGGER cookie/GET, or the browser Xdebug helper). To debug Nextcloud core instead, add a mapping like \"/var/www/html\": \"<path to a checked-out NC 34 source tree>\"."
 }

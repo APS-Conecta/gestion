@@ -4,7 +4,7 @@
 # is the separate `make seed` pipeline from Story 0.5 onward (AD-2). The office suite
 # (Euro-Office — AD-5) is Story 0.2.
 #
-# Required vars come from .env (copy .env.example → .env). The ${VAR:?...} guards fail
+# Required vars come from .env (created by `make setup`). The ${VAR:?...} guards fail
 # fast with a clear message if a required value is missing or empty.
 name: apsconecta-gestion
 
