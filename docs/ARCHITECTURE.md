@@ -9,7 +9,10 @@ not violate are in [`AGENTS.md`](../AGENTS.md).
 
 **Vanilla platform + configuration-as-code, no fork.** Nextcloud 34 is the platform and owns the runtime and
 all product data. The repository adds **only** declarative customization — configuration, theming, and
-group/folder/ACL provisioning. There is **no source fork, no core patch, and zero custom PHP in v1**. The
+group/folder/ACL provisioning. There is **no source fork and no core patch**. There is **one custom app**,
+`epidemiologia`, installed from its own repository and declared in provisioning
+([ADR-0003](adr/0003-this-stack-ships-a-custom-app.md), reversing AD-1); it reaches the platform only
+through `OCP\…`, so the boundary in AD-9 still holds. The
 running instance is a *projection* of the repository's recipe applied over the official image: reproducible,
 disposable, and upgrade-safe.
 

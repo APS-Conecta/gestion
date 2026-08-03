@@ -17,6 +17,20 @@ phase_begin "12-apps" "apps this instance runs, plus the edits inside them"
 
 APPS="groupfolders side_menu eurooffice"
 
+# Apps WE write (ADR-0003, reversing AD-1). They ship as a tarball under provisioning/apps/ exactly
+# like the ones above, built from a release tag of their own repository — so an install needs no
+# network, no git and no GitHub. A separate list because they need one extra thing the others do
+# not: on a DEVELOPMENT machine apps/<id> is a live git clone rather than an unpacked tarball, and
+# unpacking over it would delete a working tree. ensure_own_app dispatches on whether .git is there.
+# `make divergence` reads both lists.
+# Format: <appid>=<clone url>, one per line, no spaces around the `=`. The URL is only ever printed,
+# to tell a developer where the code lives — nothing in an install fetches it.
+OWN_APPS="epidemiologia=https://github.com/APS-Conecta/epidemiologia.git"
+
+for entry in $OWN_APPS; do
+  ensure_own_app "${entry%%=*}" "${entry#*=}"
+done
+
 for app in $APPS; do
   ensure_vendored_app "$app"
   patched=

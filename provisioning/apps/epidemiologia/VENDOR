@@ -1,0 +1,20 @@
+# Where the tarball beside this file came from (#98). Update all three lines together on a bump,
+# then re-run `make seed`.
+#
+# THIS ONE IS BUILT, NOT DOWNLOADED — it is our own app (ADR-0003), so there is no upstream release
+# to fetch. `url=` names the tag it was built from rather than a download link, and the build is one
+# command, run from the repo root:
+#
+#   git -C apps/epidemiologia archive --format=tar --prefix=epidemiologia/ v0.3.0 \
+#     | gzip -n9 > provisioning/apps/epidemiologia/epidemiologia-0.3.0.tar.gz
+#
+# `--prefix=epidemiologia/` because ensure_vendored_app unpacks into custom_apps/ and Nextcloud
+# needs the app id as the top directory — the same layout every other tarball here has. `gzip -n`
+# keeps the mtime out of the header, so rebuilding the same tag yields the same bytes and the
+# sha256 below stays checkable.
+#
+# `git archive` exports the TRACKED tree, which is why 288 MB of node_modules and 14 MB of tools/
+# are not in here: both are gitignored in the app's repo. Result is 505 KB.
+version=0.3.0
+sha256=e346ac4bf6577336a89eafefd6811b76c2bc0f2798d3160f595e72b9deaf7d45
+url=https://github.com/APS-Conecta/epidemiologia/tree/v0.3.0

@@ -285,6 +285,69 @@ ensure_vendored_app() {  # APPID
   fi
 }
 
+# An app WE write (ADR-0003). It ships as a tarball like every other app here, built from a release
+# tag of its own repository — so an install needs no network, no git, and no GitHub.
+#
+# The one thing that differs is a DEVELOPMENT MACHINE, where apps/<id> is not an unpacked tarball
+# but a live git clone that someone is editing. ensure_vendored_app clears the directory before
+# unpacking, which there would mean `rm -rf` over a working tree: uncommitted work, .git and all.
+#
+# So this dispatches on a fact rather than a flag — `apps/<id>/.git` exists or it does not. A server
+# never has it and gets the pinned, re-imposed tarball, which is what reproducibility needs. A
+# developer always has it and gets left alone. Nobody has to remember to set anything, and the
+# wrong answer is not reachable by forgetting.
+ensure_own_app() {  # APPID CLONE_URL
+  local app="$1" url="$2"
+  local info="apps/$app/appinfo/info.xml" disk installed
+
+  # Not a checkout: production. Hand it to the tested path, which pins the sha256, re-imposes the
+  # bytes and reconciles the schema exactly as it does for the third-party apps.
+  if [ ! -d "apps/$app/.git" ]; then
+    ensure_vendored_app "$app"
+    return
+  fi
+
+  # A checkout with no info.xml is a half-clone, not a dev machine. Say the command: apps/ is
+  # gitignored, so a clean gestion checkout has an empty apps/ and this is what a new operator hits.
+  if [ ! -f "$info" ]; then
+    log "FAILED $app — apps/$app has a .git but no $info. Finish the clone:"
+    log "        git clone $url apps/$app"
+    return 1
+  fi
+
+  disk="$(awk -F'[<>]' '/<version>/ {print $3; exit}' "$info")"
+  [ -n "$disk" ] || { log "FAILED $app — no <version> in $info"; return 1; }
+
+  conf_load
+  installed="$(conf_get app "$app" installed_version 2>/dev/null || true)"
+
+  # Same trap ensure_vendored_app documents, reached by a different route: here the version moves
+  # when someone runs `git pull`, and Nextcloud then answers almost nothing until `occ upgrade`
+  # runs. Doing it inside the phase means a pull followed by `make seed` is enough, and nobody has
+  # to remember the second command. Only on a change, so a normal seed never pays for it.
+  if [ -n "$installed" ] && [ "$installed" != "$disk" ]; then
+    if occ upgrade --no-interaction >/dev/null 2>&1; then
+      log "app $app $installed -> $disk schema reconciled (occ upgrade)"
+      CONF_CACHE=""
+      conf_load
+    else
+      log "FAILED to reconcile $app to $disk — 'occ upgrade' errored; instance may be mid-upgrade"
+      return 1
+    fi
+  else
+    log "app $app $disk from apps/$app (git working tree, not re-imposed)"
+  fi
+
+  [ "$(conf_get app "$app" enabled 2>/dev/null || true)" = "yes" ] && { log "app $app enabled"; return 0; }
+  local err
+  if err="$(occ app:enable "$app" 2>&1)"; then
+    log "app $app -> enabled"
+  else
+    log "FAILED to enable app $app — occ said: $(printf '%s' "$err" | tr '\n' ' ' | tail -c 300)"
+    return 1
+  fi
+}
+
 # Re-apply a file edit inside an app's code (ADR-0002). apps/ is gitignored, so these edits cannot
 # be committed and an app update wipes them; running on every seed is what restores them.
 #

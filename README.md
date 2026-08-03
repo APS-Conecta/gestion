@@ -175,9 +175,11 @@ The phase list, the contract and the full helper list live in
 `apps/` (→ `custom_apps`) and `themes/` are **bind-mounted for live edit** — no rebuild, no fork; `make up`
 runs `make fix-mount-perms` so the container (uid 33) can write them. A custom app talks to Nextcloud **only
 through OCP public APIs (`OCP\…`)** — never patch core (AD-9) — carries an `appinfo/info.xml`
-(`min-version="34"`), and is enabled with `occ app:enable <id>`. **No custom app lives here yet** — `apps/`
-currently holds only upstream apps unpacked from the vendored tarballs (gitignored), and the first Layer-2 app, the REM analyzer, has
-its own repository. White-labeling ships as the **`themes/apsconecta/`
+(`min-version="34"`), and is enabled with `occ app:enable <id>`. **One custom app lives here**,
+`epidemiologia`, declared in `OWN_APPS` and unpacked from its own vendored tarball like every other app
+([ADR-0003](docs/adr/0003-this-stack-ships-a-custom-app.md), reversing AD-1) — so an install still needs no
+network. On a development machine the same directory is a git clone instead, and provisioning leaves it
+alone. All of `apps/` is gitignored either way. The REM analyzer is the next Layer-2 app, on the same terms. White-labeling ships as the **`themes/apsconecta/`
 server theme** — AD-6's config-only rule is superseded by
 [ADR-0001](docs/adr/0001-server-theme-for-branding.md). How the theming actually behaves (and why most of
 it is config rather than CSS) is [`docs/THEMING-MODEL.md`](docs/THEMING-MODEL.md); how to apply the

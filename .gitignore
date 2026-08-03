@@ -12,8 +12,14 @@
 *.sqlite3
 
 # apps/ is bind-mounted to custom_apps, so app-STORE apps (groupfolders, office connectors) install
-# INTO it — don't commit their code. Only our scaffolding is tracked; un-ignore a real custom app
-# explicitly with `!/apps/<app-id>/` when we ship one (v1 ships none — AD-1).
+# INTO it — don't commit their code. Only our scaffolding is tracked.
+#
+# Our own apps stay ignored too, and deliberately: epidemiologia has its OWN repository, so
+# committing it here would give the same files two histories (ADR-0003). What this repo carries is
+# its RELEASE TARBALL, under provisioning/apps/epidemiologia/, which is what a server installs from.
+# On a dev machine this directory is a clone instead, and provisioning leaves it alone.
+# So do NOT "fix" this by un-ignoring /apps/epidemiologia — the declaration is OWN_APPS in
+# 12-apps.sh, not an entry here.
 /apps/*
 !/apps/README.md
 

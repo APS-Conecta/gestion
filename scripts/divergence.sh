@@ -102,7 +102,10 @@ fi
 # apps/ is gitignored and bind-mounted, so anything here arrived outside provisioning. Not an error:
 # a custom app in development lives here legitimately (AD-9). It is worth SAYING so that a clean
 # reinstall does not surprise anyone by not reproducing it.
-apps_list="$(sed -n 's/^APPS="\(.*\)"/\1/p' "$PHASE12" | tr ' ' '\n')"
+# Both inventories: APPS is vendored third-party, OWN_APPS is ours (ADR-0003) and carries a clone
+# URL after an `=`, so strip that back to the app id before comparing.
+apps_list="$( { sed -n 's/^APPS="\(.*\)"/\1/p' "$PHASE12"
+                sed -n 's/^OWN_APPS="\(.*\)"/\1/p' "$PHASE12"; } | tr ' ' '\n' | sed 's/=.*//')"
 declared_apps="$(printf '%s\n' "$apps_list" | grep -c . || true)"
 if [ "$declared_apps" -eq 0 ]; then
   note "cannot check apps: no APPS= line parsed out of $PHASE12"
