@@ -29,37 +29,55 @@ produces an instance without the app**, silently, because nothing declares it.
 **This stack ships a custom app, and provisioning installs it.** AD-1 is reversed, not clarified —
 its premise ("no custom app") no longer describes reality, so narrowing it would be fiction.
 
-The app is installed from **its own git repository**, cloned into `apps/<appid>`, not from a
-vendored tarball:
+**The app ships as a tarball, exactly like every other app here** — `provisioning/apps/epidemiologia/`
+holds `epidemiologia-0.3.0.tar.gz` (505 KB) and a `VENDOR` file pinning version, sha256 and the tag
+it was built from. **An install needs no network, no git and no GitHub**, which is the property the
+whole `#98` design exists to protect and there is no reason our own app should be the exception.
+
+The tarball is *built*, not downloaded, because there is no upstream to fetch from:
 
 ```sh
-OWN_APPS="epidemiologia=https://github.com/APS-Conecta/epidemiologia.git"
+git -C apps/epidemiologia archive --format=tar --prefix=epidemiologia/ v0.3.0 \
+  | gzip -n9 > provisioning/apps/epidemiologia/epidemiologia-0.3.0.tar.gz
 ```
 
-A second inventory beside `APPS`, and a second function beside `ensure_vendored_app`, because the
-two kinds of app are installed by **opposite rules**:
+`git archive` exports the tracked tree, so the 288 MB of `node_modules` and 14 MB of `tools/` that
+sit in a developer's checkout are simply absent — they are gitignored in the app's repo. `gzip -n`
+keeps the mtime out of the header, so rebuilding the same tag reproduces the same bytes and the
+pinned sha256 stays checkable.
 
-| | Vendored (`APPS`) | Ours (`OWN_APPS`) |
+**The one real difference from a third-party app is the development machine.** There, `apps/<id>` is
+not an unpacked tarball but a live git clone with uncommitted work in it, and `ensure_vendored_app`
+clears the directory before unpacking — which would be `rm -rf` over a working tree.
+
+So `ensure_own_app` **dispatches on a fact rather than a flag**: does `apps/<id>/.git` exist?
+
+| | `.git` absent — a server | `.git` present — a developer |
 | --- | --- | --- |
-| Bytes come from | a tarball pinned by sha256 in `VENDOR` | a git repository we control |
-| On a version change | **re-imposed** — the instance converges on the repo (#117) | **checked and reported**, never overwritten |
-| Why | the app store must never decide what runs here (#98) | `apps/` may hold a working tree someone is editing |
+| What happens | hands off to `ensure_vendored_app`: pinned sha256, re-imposed, schema reconciled | checks the version, runs `occ upgrade` if it moved, **never overwrites** |
+| Why | reproducibility: the same seed must produce the same instance (#117) | `make seed` must never discard someone's work in progress |
 
-Both then share the parts that are the same and easy to forget by hand: `occ upgrade` when the
-installed version and the on-disk version disagree, and `occ app:enable`.
+Nobody has to remember to set anything, and the wrong branch is not reachable by forgetting. The
+`OWN_APPS` entry carries a clone URL, but **nothing in an install fetches it** — it is only printed,
+to tell a developer where the code lives.
 
-`scripts/divergence.sh` reads both lists, so the check that found this stays able to find the next
-one.
+`scripts/divergence.sh` reads both inventories, so the check that found this stays able to find the
+next one.
 
 ## Considered options
 
-- **Vendor a release tarball, like the store apps.** Rejected: it adds a release step and a second
-  copy of bytes we already own, and buys nothing here — a tarball's value is pinning code we do not
-  control. Recorded in the app's own issue #21 alongside the measurement that a git tree is 2.2 MB
-  with no `node_modules`, because `node_modules` and `tools/` are gitignored there.
-- **Re-impose the working tree from git on every seed**, mirroring `ensure_vendored_app`. Rejected:
-  `make seed` would silently discard uncommitted work in `apps/epidemiologia`. Re-imposition is
-  right for third-party bytes and wrong for a working tree.
+- **Clone from GitHub at install time**, with no tarball at all. **Tried first and rejected**: it
+  makes a clinic install depend on git being present, on network egress to GitHub, and on that
+  repository staying reachable — three new failure modes for a server that is meant to come up from
+  the bytes in this repo. It also cannot be pinned: a tag can move. The whole reason `#98` stopped
+  the installer contacting the app store applies here word for word.
+- **Re-impose the working tree from git on every seed**, mirroring `ensure_vendored_app`
+  unconditionally. Rejected: on a development machine `make seed` would `rm -rf` a live checkout.
+  Re-imposition is right for bytes that came from a tarball and wrong for a working tree, which is
+  why the dispatch above exists rather than a single rule.
+- **Commit the app's source into `apps/`** by un-ignoring it. Rejected: the same files would then
+  have two histories, and every change would need committing twice. `.gitignore` now says this
+  explicitly so nobody "fixes" it that way.
 - **Leave AD-1 and note the exception in prose.** Rejected: three documents and a `.gitignore`
   comment already assert the opposite of what is running. A rule that the practice contradicts is
   worse than no rule, because a reader believes it.
@@ -71,12 +89,17 @@ one.
 
 ## Consequences
 
-- **`make install` on a clean machine now needs the clone.** `apps/` is gitignored, so a fresh
-  gestion checkout has an empty `apps/`. `ensure_repo_app` fails loudly and prints the exact
-  `git clone` command rather than reporting a missing directory.
-- **A `git pull` in the app is enough**, followed by `make seed`: the phase notices the version
-  moved and runs `occ upgrade` itself. Without that, Nextcloud answers almost nothing until an
-  operator remembers the second command.
+- **`make install` on a clean machine needs nothing but this repo.** The tarball is committed, so a
+  clinic server with no git and no internet still gets the app. That is the point of the change.
+- **Releasing the app is now two steps, not one.** Tag it, then rebuild the tarball and update all
+  three `VENDOR` lines together — the same discipline the third-party apps already carry. If the
+  tarball and `VENDOR` stop describing each other, `ensure_vendored_app` refuses on the sha256 check
+  rather than installing something nobody chose.
+- **Cost in the repo: 505 KB per release**, and a full copy per bump, recorded here rather than
+  hidden — the same accounting `12-apps.sh` already does for the ~12 MB of third-party tarballs.
+- **On a development machine nothing changes.** `apps/epidemiologia` stays a git checkout, `make seed`
+  reports its version and leaves it alone, and a `git pull` followed by `make seed` is enough — the
+  phase notices the version moved and runs `occ upgrade` itself.
 - **AD-9 is untouched and worth restating**: this app reaches Nextcloud only through `OCP\…`, and
   core is not patched. The app's own `AGENTS.md` and its ADRs keep it that way. Reversing AD-1 says
   a custom app exists; it says nothing about how it may reach the platform.

@@ -285,26 +285,32 @@ ensure_vendored_app() {  # APPID
   fi
 }
 
-# An app WE write, living in its own git repository, cloned into apps/ (ADR-0003).
+# An app WE write (ADR-0003). It ships as a tarball like every other app here, built from a release
+# tag of its own repository — so an install needs no network, no git, and no GitHub.
 #
-# A sibling of ensure_vendored_app, not a flag on it. They differ in the one thing that matters:
-# who owns the bytes. A vendored app is third-party code pinned to a sha256 we re-impose, because
-# the store must never decide what this instance runs. Our own app's bytes come from a repository
-# we control and a working tree someone may legitimately be editing — re-imposing them would mean
-# `make seed` silently reverting a developer's work in progress, which is the opposite of what
-# convergence is for. So: this one CHECKS and REPORTS, it never overwrites.
+# The one thing that differs is a DEVELOPMENT MACHINE, where apps/<id> is not an unpacked tarball
+# but a live git clone that someone is editing. ensure_vendored_app clears the directory before
+# unpacking, which there would mean `rm -rf` over a working tree: uncommitted work, .git and all.
 #
-# What it does own is the rest of the install, which is identical either way and easy to forget by
-# hand: the schema reconciliation and the enable.
-ensure_repo_app() {  # APPID CLONE_URL
+# So this dispatches on a fact rather than a flag — `apps/<id>/.git` exists or it does not. A server
+# never has it and gets the pinned, re-imposed tarball, which is what reproducibility needs. A
+# developer always has it and gets left alone. Nobody has to remember to set anything, and the
+# wrong answer is not reachable by forgetting.
+ensure_own_app() {  # APPID CLONE_URL
   local app="$1" url="$2"
   local info="apps/$app/appinfo/info.xml" disk installed
 
-  # apps/ is gitignored (AD-9 keeps app code out of this repo), so a clean clone of gestion has an
-  # empty apps/ and this is the FIRST thing a new operator hits. Say the exact command rather than
-  # "missing": the whole cost of this branch is one person not knowing where the code comes from.
+  # Not a checkout: production. Hand it to the tested path, which pins the sha256, re-imposes the
+  # bytes and reconciles the schema exactly as it does for the third-party apps.
+  if [ ! -d "apps/$app/.git" ]; then
+    ensure_vendored_app "$app"
+    return
+  fi
+
+  # A checkout with no info.xml is a half-clone, not a dev machine. Say the command: apps/ is
+  # gitignored, so a clean gestion checkout has an empty apps/ and this is what a new operator hits.
   if [ ! -f "$info" ]; then
-    log "FAILED $app — apps/$app is empty. It is a git repository, not a vendored tarball:"
+    log "FAILED $app — apps/$app has a .git but no $info. Finish the clone:"
     log "        git clone $url apps/$app"
     return 1
   fi

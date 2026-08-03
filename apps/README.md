@@ -9,10 +9,11 @@ this README is tracked (`.gitignore` un-ignores it explicitly):
   clean install contacts the app store (#98). See [ADR-0002](../docs/adr/0002-app-patches.md).
 - **Custom apps**, one directory per app id with an `appinfo/info.xml`. **v1 ships one**,
   `epidemiologia` — [ADR-0003](../docs/adr/0003-this-stack-ships-a-custom-app.md) reverses AD-1.
-  It lives in its own git repository and is declared in `OWN_APPS` in `12-apps.sh`, which **checks
-  and reports** rather than re-imposing: `apps/` may hold a working tree someone is editing. A clean
-  machine needs the clone first, and the phase prints the exact command if it is missing. The REM
-  analyzer is the next one, on the same terms.
+  It is declared in `OWN_APPS` in `12-apps.sh` and installs from a **tarball** under
+  `provisioning/apps/epidemiologia/`, built from a release tag of its own repository: an install
+  needs no network and no git. On a development machine, where this directory is a live clone
+  instead, `ensure_own_app` sees the `.git` and leaves the working tree alone. The REM analyzer is
+  the next one, on the same terms.
 
 **Boundary (AD-9):** a custom app may depend on Nextcloud only through `OCP\…` public APIs — never
 patch core, never rely on private internals, and core never depends on a custom app.

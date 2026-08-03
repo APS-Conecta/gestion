@@ -14,9 +14,12 @@
 # apps/ is bind-mounted to custom_apps, so app-STORE apps (groupfolders, office connectors) install
 # INTO it — don't commit their code. Only our scaffolding is tracked.
 #
-# Our own apps stay ignored too, and deliberately: epidemiologia has its OWN repository and is
-# cloned in here (ADR-0003). Committing it would give the same files two histories. What declares it
-# is OWN_APPS in 12-apps.sh, not this file — so do NOT "fix" this by un-ignoring /apps/epidemiologia.
+# Our own apps stay ignored too, and deliberately: epidemiologia has its OWN repository, so
+# committing it here would give the same files two histories (ADR-0003). What this repo carries is
+# its RELEASE TARBALL, under provisioning/apps/epidemiologia/, which is what a server installs from.
+# On a dev machine this directory is a clone instead, and provisioning leaves it alone.
+# So do NOT "fix" this by un-ignoring /apps/epidemiologia — the declaration is OWN_APPS in
+# 12-apps.sh, not an entry here.
 /apps/*
 !/apps/README.md
 
