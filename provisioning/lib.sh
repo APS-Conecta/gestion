@@ -501,3 +501,70 @@ ensure_sample_file() {  # UID RELPATH CONTENT
   occ files:scan "$uid" >/dev/null 2>&1 || true
   log "file $uid:$rel created + indexed"
 }
+
+# --- TLS intermediates (#28) -------------------------------------------------
+# Some hosts we read serve ONLY their leaf certificate and omit the intermediate. Browsers hide it
+# by chasing the leaf's authorityInfoAccess pointer; server-side clients do not, so Nextcloud's
+# IClientService fails verification with ssl_verify_result=20 and the fetch simply returns nothing.
+# Measured 2026-08-02 on www.ispch.gob.cl (24 ISP alert feeds) and estadistica.ssmso.cl (this site's
+# own Servicio de Salud) — News loses those feeds at import with only a server log to say so.
+#
+# The intermediate is taken from the leaf's OWN AIA pointer at run time rather than vendored,
+# because that survives a CA rotation: the leaf always names its current issuer, a committed .pem
+# does not. The price is that THIS IS THE FIRST PHASE THAT CONTACTS THE NETWORK — #98 kept the app
+# store out of a clean install, and while a CA is not the app store, an offline install now skips
+# this phase rather than failing it. That is why every failure below is a warning, not an error:
+# a clinic with no internet at seed time must still finish provisioning.
+ensure_aia_intermediate() {  # HOST
+  local host="$1" aia name
+
+  # occ security:certificates prints one row per imported file; the file name is the key.
+  aia="$(docker compose exec -T nextcloud sh -c "
+    echo | openssl s_client -connect '$host:443' -servername '$host' 2>/dev/null \
+    | openssl x509 -noout -text 2>/dev/null \
+    | sed -n 's|.*CA Issuers - URI:||p' | head -1 | tr -d '[:space:]'" 2>/dev/null | tr -d '\r')"
+
+  if [ -z "$aia" ]; then
+    log "certs: $host published no CA-Issuers pointer (offline?) — skipped, feeds from it will fail"
+    return 0
+  fi
+
+  name="$(basename "$aia" .crt).pem"
+  if occ security:certificates 2>/dev/null | grep -qF " $name "; then
+    log "certs: $name already imported"
+    return 0
+  fi
+
+  # GlobalSign serves DER; others serve PEM. Try DER, fall back to PEM, and let openssl be the
+  # gate: an HTML error page must never reach the bundle as a "certificate". Empty output means
+  # one of fetch or parse failed, and either way there is nothing to import.
+  docker compose exec -T nextcloud sh -c "
+      tmp=\$(mktemp)
+      trap 'rm -f \$tmp' EXIT
+      curl -fsS --max-time 20 -o \"\$tmp\" '$aia' || exit 1
+      openssl x509 -inform DER -in \"\$tmp\" -outform PEM 2>/dev/null \
+        || openssl x509 -in \"\$tmp\" -outform PEM 2>/dev/null
+    " > "/tmp/$name" 2>/dev/null || true
+
+  if [ ! -s "/tmp/$name" ]; then
+    log "certs: could not fetch or parse $aia — skipped, feeds from $host will fail"
+    rm -f "/tmp/$name"
+    return 0
+  fi
+
+  docker compose cp "/tmp/$name" "nextcloud:/tmp/$name" >/dev/null 2>&1
+  rm -f "/tmp/$name"
+
+  if occ security:certificates:import "/tmp/$name" >/dev/null 2>&1; then
+    log "certs: imported $name for $host"
+  else
+    log "certs: import of $name FAILED"
+  fi
+
+  # `docker compose cp` writes as root, so www-data cannot unlink it from a sticky /tmp. Left
+  # unguarded this was the LAST command in the function, so a failed cleanup became the function's
+  # exit status and killed the phase after the first host — caught by removing both certificates
+  # and re-running, which imported ispch and then aborted before ssmso.
+  docker compose exec -T nextcloud rm -f "/tmp/$name" >/dev/null 2>&1 || true
+  return 0
+}
