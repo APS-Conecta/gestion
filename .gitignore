@@ -12,8 +12,11 @@
 *.sqlite3
 
 # apps/ is bind-mounted to custom_apps, so app-STORE apps (groupfolders, office connectors) install
-# INTO it — don't commit their code. Only our scaffolding is tracked; un-ignore a real custom app
-# explicitly with `!/apps/<app-id>/` when we ship one (v1 ships none — AD-1).
+# INTO it — don't commit their code. Only our scaffolding is tracked.
+#
+# Our own apps stay ignored too, and deliberately: epidemiologia has its OWN repository and is
+# cloned in here (ADR-0003). Committing it would give the same files two histories. What declares it
+# is OWN_APPS in 12-apps.sh, not this file — so do NOT "fix" this by un-ignoring /apps/epidemiologia.
 /apps/*
 !/apps/README.md
 

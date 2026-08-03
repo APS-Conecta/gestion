@@ -33,6 +33,12 @@ tracked.
 are committed as tarballs under `provisioning/apps/`; `apps/` still carries no app in git and is
 filled at seed time, not from the store.**
 
+**REVERSED (2026-08-03) by [ADR-0003](0003-this-stack-ships-a-custom-app.md).** This stack ships a
+custom app — `epidemiologia`, running here since 2026-08-01 — so the premise above no longer holds
+and is not narrowed but withdrawn. What survives unchanged: `apps/` still carries no app **in git**,
+because our own app has its own repository and is cloned in, declared by `OWN_APPS` in `12-apps.sh`.
+AD-9's boundary is untouched.
+
 ### AD-2 — `make seed` is the single writer of instance state
 
 Nothing else may mutate the running instance: no admin-panel clicking, no standalone scripts, no

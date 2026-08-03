@@ -285,6 +285,63 @@ ensure_vendored_app() {  # APPID
   fi
 }
 
+# An app WE write, living in its own git repository, cloned into apps/ (ADR-0003).
+#
+# A sibling of ensure_vendored_app, not a flag on it. They differ in the one thing that matters:
+# who owns the bytes. A vendored app is third-party code pinned to a sha256 we re-impose, because
+# the store must never decide what this instance runs. Our own app's bytes come from a repository
+# we control and a working tree someone may legitimately be editing — re-imposing them would mean
+# `make seed` silently reverting a developer's work in progress, which is the opposite of what
+# convergence is for. So: this one CHECKS and REPORTS, it never overwrites.
+#
+# What it does own is the rest of the install, which is identical either way and easy to forget by
+# hand: the schema reconciliation and the enable.
+ensure_repo_app() {  # APPID CLONE_URL
+  local app="$1" url="$2"
+  local info="apps/$app/appinfo/info.xml" disk installed
+
+  # apps/ is gitignored (AD-9 keeps app code out of this repo), so a clean clone of gestion has an
+  # empty apps/ and this is the FIRST thing a new operator hits. Say the exact command rather than
+  # "missing": the whole cost of this branch is one person not knowing where the code comes from.
+  if [ ! -f "$info" ]; then
+    log "FAILED $app — apps/$app is empty. It is a git repository, not a vendored tarball:"
+    log "        git clone $url apps/$app"
+    return 1
+  fi
+
+  disk="$(awk -F'[<>]' '/<version>/ {print $3; exit}' "$info")"
+  [ -n "$disk" ] || { log "FAILED $app — no <version> in $info"; return 1; }
+
+  conf_load
+  installed="$(conf_get app "$app" installed_version 2>/dev/null || true)"
+
+  # Same trap ensure_vendored_app documents, reached by a different route: here the version moves
+  # when someone runs `git pull`, and Nextcloud then answers almost nothing until `occ upgrade`
+  # runs. Doing it inside the phase means a pull followed by `make seed` is enough, and nobody has
+  # to remember the second command. Only on a change, so a normal seed never pays for it.
+  if [ -n "$installed" ] && [ "$installed" != "$disk" ]; then
+    if occ upgrade --no-interaction >/dev/null 2>&1; then
+      log "app $app $installed -> $disk schema reconciled (occ upgrade)"
+      CONF_CACHE=""
+      conf_load
+    else
+      log "FAILED to reconcile $app to $disk — 'occ upgrade' errored; instance may be mid-upgrade"
+      return 1
+    fi
+  else
+    log "app $app $disk from apps/$app (git working tree, not re-imposed)"
+  fi
+
+  [ "$(conf_get app "$app" enabled 2>/dev/null || true)" = "yes" ] && { log "app $app enabled"; return 0; }
+  local err
+  if err="$(occ app:enable "$app" 2>&1)"; then
+    log "app $app -> enabled"
+  else
+    log "FAILED to enable app $app — occ said: $(printf '%s' "$err" | tr '\n' ' ' | tail -c 300)"
+    return 1
+  fi
+}
+
 # Re-apply a file edit inside an app's code (ADR-0002). apps/ is gitignored, so these edits cannot
 # be committed and an app update wipes them; running on every seed is what restores them.
 #

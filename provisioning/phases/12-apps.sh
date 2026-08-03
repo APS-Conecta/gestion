@@ -17,6 +17,17 @@ phase_begin "12-apps" "apps this instance runs, plus the edits inside them"
 
 APPS="groupfolders side_menu eurooffice"
 
+# Apps WE write (ADR-0003, reversing AD-1). Two lists rather than one, because the two kinds are
+# installed by opposite rules: a vendored app is third-party bytes we re-impose from a pinned
+# tarball, ours is a git working tree we check and never overwrite. One list with a flag would hide
+# that difference behind a lookup; `make divergence` reads both.
+# Format: <appid>=<clone url>, one per line, no spaces around the `=`.
+OWN_APPS="epidemiologia=https://github.com/APS-Conecta/epidemiologia.git"
+
+for entry in $OWN_APPS; do
+  ensure_repo_app "${entry%%=*}" "${entry#*=}"
+done
+
 for app in $APPS; do
   ensure_vendored_app "$app"
   patched=
