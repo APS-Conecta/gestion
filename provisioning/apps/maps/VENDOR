@@ -1,0 +1,12 @@
+# Where the tarball beside this file came from (#98). Update all three lines together on a bump,
+# then re-run `make seed`.
+#
+# PUBLISHED FROM nextcloud-releases, NOT nextcloud. The obvious URL —
+# github.com/nextcloud/maps/releases/download/v1.7.1/maps-1.7.1.tar.gz — is a 404, and so is
+# maps.tar.gz there. The release lives under the nextcloud-releases org with a `v` in the FILENAME
+# as well as the tag. Checked by hand, after guessing wrong twice.
+#
+# 22 MB, the largest tarball here: it carries bundled map assets. See calendar's note on cost.
+version=1.7.1
+sha256=470b73a2ecf834415954ee95f18bc873d0b29ff28167e800632e427050ef46f7
+url=https://github.com/nextcloud-releases/maps/releases/download/v1.7.1/maps-v1.7.1.tar.gz

@@ -124,10 +124,17 @@ next to its JWT secret, where a `make seed` could not restore it.
   file in a directory. Bumping a vendored app is a deliberate act, like `occ app:update`: replace the
   tarball, update all three `VENDOR` lines, run `make seed`, and the patches are the gate — they
   either still apply or the phase stops and says which one moved.
-- The repo carries ~12 MB of tarballs (7.3 MB → ~19 MB) and **git keeps every version forever**, so
+- The repo carries ~61 MB of tarballs (7.3 MB → ~72 MB) and **git keeps every version forever**, so
   each bump adds another full copy to every clone. Recorded rather than discovered later. *Owner named
   2026-08-02 by [#117](https://github.com/APS-Conecta/gestion/issues/117): the weekly `image-digests`
   workflow runs `make apps-check`, and a red run is the trigger for a human to bump.*
+  > **Restated 2026-08-03.** It was ~12 MB for three apps when this was written, and the blockquote
+  > above records that figure as it was measured then. `calendar`, `contacts`, `maps` and `news` had
+  > been enabled by hand and were running undeclared, which `make divergence` reported on every run;
+  > declaring them took the tarballs to ~61 MB. **calendar (19 MB) and maps (22 MB) are 42 of those
+  > 61**, and both release often, so the per-bump cost this bullet warns about is now mostly theirs.
+  > The trade was made with the numbers on the table: reproducing a clean install was judged worth
+  > the weight.
 - Nothing outside `make seed` installs the connector, so on a fresh instance the seed must run
   before the office backend is usable. It already had to, for groups and folders.
 

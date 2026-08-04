@@ -1,0 +1,10 @@
+# Where the tarball beside this file came from (#98). Update all three lines together on a bump,
+# then re-run `make seed`.
+#
+# 19 MB, the second largest thing in this repo after maps, and git keeps a FULL COPY per bump
+# because a gzip stream does not delta-compress. Calendar releases often. If the repo ever has to
+# go on a diet, this file and maps' are where the weight is — the alternative is contacting the
+# app store at install time, which #98 decided against.
+version=6.5.2
+sha256=86c7d9c5d0455b3e23154e44b12c92458663577285e59778a03825c8436ab143
+url=https://github.com/nextcloud-releases/calendar/releases/download/v6.5.2/calendar-v6.5.2.tar.gz

@@ -14,9 +14,21 @@ cd "$(dirname "$0")/.."
 # happily report a release that requires NC35 and send someone chasing an upgrade that cannot apply.
 INDEX="https://apps.nextcloud.com/api/v1/platform/34.0.0/apps.json"
 
+# OUR OWN APPS ARE NOT IN THE STORE AND NEVER WILL BE (ADR-0003). They are vendored the same way
+# and so they have a VENDOR file, but asking the store about `epidemiologia` gets "not in the NC34
+# store index at all" and this script exits 1 — which it did, on every run, from the moment the app
+# was vendored. The list is READ OUT OF PHASE 12 rather than restated here, the same way
+# scripts/divergence.sh reads both inventories, so declaring a second app of ours needs no edit
+# to this file.
+own="$(sed -n 's/^OWN_APPS="\(.*\)"/\1/p' provisioning/phases/12-apps.sh | tr ' ' '\n' | sed 's/=.*//' | grep -v '^$' || true)"
+
 vendored="$(for v in provisioning/apps/*/VENDOR; do
   [ -f "$v" ] || continue
-  printf '%s\t%s\n' "$(basename "$(dirname "$v")")" "$(sed -n 's/^version=//p' "$v")"
+  id="$(basename "$(dirname "$v")")"
+  # grep -x against a possibly-empty list: -q with an empty pattern file matches nothing, which is
+  # the behaviour we want before the first own app is declared.
+  printf '%s\n' "$own" | grep -qxF -- "$id" && continue
+  printf '%s\t%s\n' "$id" "$(sed -n 's/^version=//p' "$v")"
 done)"
 [ -n "$vendored" ] || { echo "FATAL: no provisioning/apps/*/VENDOR files found" >&2; exit 1; }
 

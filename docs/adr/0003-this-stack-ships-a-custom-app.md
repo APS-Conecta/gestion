@@ -95,8 +95,10 @@ next one.
   three `VENDOR` lines together — the same discipline the third-party apps already carry. If the
   tarball and `VENDOR` stop describing each other, `ensure_vendored_app` refuses on the sha256 check
   rather than installing something nobody chose.
-- **Cost in the repo: 505 KB per release**, and a full copy per bump, recorded here rather than
-  hidden — the same accounting `12-apps.sh` already does for the ~12 MB of third-party tarballs.
+- **Cost in the repo: 532 KB per release**, and a full copy per bump, recorded here rather than
+  hidden — the same accounting `12-apps.sh` already does for the ~61 MB of third-party tarballs.
+  Ours is the cheapest thing in `provisioning/apps/` by two orders of magnitude: `git archive`
+  exports the tracked tree, so no `node_modules` and no toolchain.
 - **On a development machine nothing changes.** `apps/epidemiologia` stays a git checkout, `make seed`
   reports its version and leaves it alone, and a `git pull` followed by `make seed` is enough — the
   phase notices the version moved and runs `occ upgrade` itself.
