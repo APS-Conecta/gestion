@@ -5,16 +5,25 @@
 # to fetch. `url=` names the tag it was built from rather than a download link, and the build is one
 # command, run from the repo root:
 #
-#   git -C apps/epidemiologia archive --format=tar --prefix=epidemiologia/ v0.3.0 \
-#     | gzip -n9 > provisioning/apps/epidemiologia/epidemiologia-0.3.0.tar.gz
+#   git -C apps/epidemiologia archive --format=tar --prefix=epidemiologia/ v0.4.0 \
+#     | gzip -n9 > provisioning/apps/epidemiologia/epidemiologia-0.4.0.tar.gz
 #
 # `--prefix=epidemiologia/` because ensure_vendored_app unpacks into custom_apps/ and Nextcloud
 # needs the app id as the top directory — the same layout every other tarball here has. `gzip -n`
 # keeps the mtime out of the header, so rebuilding the same tag yields the same bytes and the
 # sha256 below stays checkable.
 #
+# TAG AFTER THE REBUILD, not before. @nextcloud/vite-config reads appinfo/info.xml and bakes
+# <version> into the bundle, so a release commit that raises the version without running
+# `npm run build` leaves js/ saying the OLD number inside an app that says the new one. v0.4.0 was
+# cut that way and had to be moved. `scripts/smoke.sh` is what catches it: it builds, then compares
+# the tree. Run it before tagging.
+#
 # `git archive` exports the TRACKED tree, which is why 288 MB of node_modules and 14 MB of tools/
-# are not in here: both are gitignored in the app's repo. Result is 505 KB.
-version=0.3.0
-sha256=e346ac4bf6577336a89eafefd6811b76c2bc0f2798d3160f595e72b9deaf7d45
-url=https://github.com/APS-Conecta/epidemiologia/tree/v0.3.0
+# are not in here: both are gitignored in the app's repo. Result is 532 KB over 101 files.
+#
+# ONE tarball in this directory, ever: ensure_vendored_app globs *.tar.gz and fails on anything
+# other than exactly one. A bump deletes the previous file, it does not sit beside it.
+version=0.4.0
+sha256=497f7332d1fd424e1456cf82ee8300612953b7d62598d597d214d3384ec9adec
+url=https://github.com/APS-Conecta/epidemiologia/tree/v0.4.0
