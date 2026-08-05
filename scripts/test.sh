@@ -138,6 +138,25 @@ if docker compose ps --status running --services 2>/dev/null | grep -qx nextclou
   # Same silent-failure shape as B-008: server.css hangs the clinic name off `.login-form__headline`.
   check docker compose exec -T --user www-data nextcloud \
     grep -q "login-form__headline" dist/core-login.js
+  # The two the theme leans on hardest, and neither was asserted until now: `#header` carries 19
+  # rules in server.css and `.logo` eight. A rename upstream does not break the page — it silently
+  # un-brands it, which is the whole failure class this block exists for. Measured 2026-08-05: of
+  # the 14 upstream selectors the theme depends on, these were the two most used and unguarded.
+  #
+  # All three layouts, because the header is drawn by all three and the theme scopes rules on
+  # `:not(.header-guest)` to tell them apart — losing the id in only one of them is the shape that
+  # produced B-012, a rule leaking onto the public share page.
+  check docker compose exec -T --user www-data nextcloud sh -c \
+    'for t in user guest public; do grep -q "id=\"header\"" "core/templates/layout.$t.php" || exit 1; done'
+  check docker compose exec -T --user www-data nextcloud \
+    grep -q 'class="logo logo-icon"' core/templates/layout.user.php
+  # NOT core: `.cm-logo` belongs to side_menu, a store app. No image digest pins it and an
+  # `occ app:update` from the admin UI replaces it in place — the same route that reverts our
+  # patches (ADR-0002, smoke.sh check 10). server.css un-hides and widens that element to put the
+  # platform lockup in the side menu (#84/#102); if the class moves, the lockup silently vanishes
+  # and nothing else in the suite would notice.
+  check docker compose exec -T --user www-data nextcloud \
+    grep -rq "cm-logo" custom_apps/side_menu/js/
   # ENUMERATION GATE (ADR-0004). guest.css brands the screens Nextcloud draws through the legacy
   # Template::printPage(), which dispatches no event and so gets no themed CSS. There are SEVEN such
   # call sites in TWO files on NC34 — four in lib/base.php, three in TemplateManager. Every screen in
