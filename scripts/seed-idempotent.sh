@@ -37,7 +37,11 @@ export SEED_FIXTURES
 # re-imposed unpack, signature drop (12-apps.sh), patch application.
 # `patch X applied` is anchored to two fields so it cannot match the skip line, `patch X already
 # applied`.
-WRITES=' -> | created| added to group| schema reconciled | signature dropped |^ +patch [^ ]+ applied$'
+# `^ +certs: imported ` is ANCHORED on purpose, and the anchor is the whole point: the noop line
+# for the same helper reads "certs: <name> already imported", so a bare ` imported` would match it
+# and redden every second seed. Added 2026-08-05 — it was the one write in provisioning/ that no
+# alternative covered, so a cert re-import reported PASS. test.sh asserts both halves.
+WRITES=' -> | created| added to group| schema reconciled | signature dropped |^ +patch [^ ]+ applied$|^ +certs: imported '
 
 out="$(provisioning/seed.sh 2>&1)"; rc=$?
 printf '%s\n' "$out"
