@@ -17,7 +17,7 @@ name: apsconecta-gestion
 # resolves. Refresh with `make images`, which rewrites this file and Dockerfile.dev together. Never
 # hand-edit a digest — the whole point is that the bytes here were tested before they were written.
 x-nextcloud-base: &nextcloud-base
-  image: nextcloud:34-apache@sha256:b52f7bc0e496f227b0e85e3b88571a42c68b6245ccde29d577e733227715dcf5
+  image: nextcloud:34-apache@sha256:eea6e621ded409a0f878db118cd8aec619b555172d30f50d04f9bc2e5e852b4c
   depends_on:
     db:
       condition: service_healthy
@@ -50,7 +50,7 @@ services:
       start_period: 45s
 
   redis:
-    image: redis:8-alpine@sha256:300e3d24d1a6aeeed5adb42d54735cdd2bcee1107509946adeaeb33b0e1697ad
+    image: redis:8-alpine@sha256:978f0e01593e65eed801f2402944efcd936d43b5027e4908a7897baf88ed6241
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -120,7 +120,7 @@ services:
     # five weeks — while both Docker Official Images had. An unversioned tag is not slow-moving, it
     # is unpredictable: when it does move there is no version to reason about, which is exactly why
     # it needs the digest more than the others, not less.
-    image: ghcr.io/euro-office/documentserver:latest@sha256:5a1a8b7083856b309f09a5b06aa96f80182cbdfccddcae6c082ecf7a2b3cbf2b
+    image: ghcr.io/euro-office/documentserver:latest@sha256:6068075cc247f9283d337b2cf9a105d9df49fcd8cd6b5e82fa90640df1552e80
     environment:
       - "JWT_ENABLED=true"
       - "JWT_SECRET=${OFFICE_JWT_SECRET:?set OFFICE_JWT_SECRET in .env}"
