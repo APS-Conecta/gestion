@@ -29,9 +29,14 @@ done
 # `git ls-files` instead — the one list that grows when a script is added anywhere. Adding a script
 # to an existing directory still costs nothing; adding a directory now fails loudly, which is the
 # whole point.
+# SUBSET, not equality. The sweep legitimately lints files git has never heard of: cleanboot.yml
+# generates sites/ci/site.sh to install a clinic from nothing, and linting it is correct — it is
+# real shell that a real install sources. Demanding the two lists MATCH failed there and only there,
+# which is the worst shape a gate can have: green on every developer's machine, red only in CI.
+# What actually matters is that nothing TRACKED escapes the sweep, so subtract and require empty.
 check bash -c '
-  diff <(git ls-files "*.sh" | sort) \
-       <(ls scripts/*.sh provisioning/*.sh provisioning/phases/*.sh sites/*/site.sh 2>/dev/null | sort)'
+  [ -z "$(comm -23 <(git ls-files "*.sh" | sort) \
+                   <(ls scripts/*.sh provisioning/*.sh provisioning/phases/*.sh sites/*/site.sh 2>/dev/null | sort))" ]'
 check test -f dev/xdebug.ini
 # THE GATE'S OWN GATE. scripts/seed-idempotent.sh decides whether a second seed wrote anything by
 # grepping the log for write verbs. Every alternative in that regex is a claim about vocabulary
