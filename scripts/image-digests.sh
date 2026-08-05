@@ -54,16 +54,36 @@ if [ "$validate_only" = 1 ]; then
   exit 0
 fi
 
+# Stderr from the registry lands here so a failure can quote it. Removed on any exit, including the
+# FATAL paths below, which is why it is a trap and not an rm at the end.
+errf=$(mktemp); trap 'rm -f "$errf"' EXIT
+
 drift=0
 for ref in $refs; do
   name="${ref%@*}"; old="${ref#*@}"
   # The INDEX digest, not a per-platform manifest — pinning one architecture's manifest would make
   # the stack unresolvable on any other. `imagetools inspect` reads the registry without pulling
   # the ~3.3 GB behind it.
-  new=$(docker buildx imagetools inspect "$name" --format '{{.Manifest.Digest}}' 2>/dev/null)
+  # Retry once before giving up, and KEEP the registry's own words. Discarding stderr made every
+  # cause print the same sentence — a missing tag, a Docker Hub rate limit and a dropped connection
+  # were indistinguishable, and the message asserted "could not resolve" without having checked why.
+  # Same defect as B-003. Observed 2026-08-05: a run reported postgres:18-alpine unresolvable while
+  # the tag was fine and resolved by hand seconds later, which is the anonymous-pull rate limit —
+  # a weekly unattended job hits it precisely because it inspects several images back to back.
+  # ONE call per attempt — stderr to a file rather than a second invocation, because inspecting
+  # twice to read the error would double the registry traffic that causes the failure.
+  new=$(docker buildx imagetools inspect "$name" --format '{{.Manifest.Digest}}' 2>"$errf")
   case "$new" in
     sha256:*) ;;
-    *) echo "FATAL: could not resolve $name from its registry" >&2; exit 1 ;;
+    *) sleep 3   # one retry: the observed failure was transient
+       new=$(docker buildx imagetools inspect "$name" --format '{{.Manifest.Digest}}' 2>"$errf") ;;
+  esac
+  case "$new" in
+    sha256:*) ;;
+    *) echo "FATAL: could not resolve $name from its registry (twice, 3s apart)." >&2
+       sed 's/^/       registry said: /' "$errf" >&2
+       echo "       a rate limit and a deleted tag both land here — read the line above before assuming drift." >&2
+       exit 1 ;;
   esac
 
   if [ "$new" = "$old" ]; then
