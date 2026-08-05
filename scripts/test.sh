@@ -21,10 +21,48 @@ for s in scripts/*.sh provisioning/*.sh provisioning/phases/*.sh sites/*/site.sh
   linted=$((linted + 1)); check bash -n "$s"
 done
 # A glob that matches nothing stays literal, `[ -e ]` skips it, and the gate reports only the checks
-# it did run — so a renamed directory would silently lint nothing and still print all-ok. Floor, not
-# an exact count, so adding a script does not break the gate.
-check test "$linted" -ge 15
+# it did run — so a renamed directory would silently lint nothing and still print all-ok.
+#
+# The floor this replaced (`-ge 15`) could not see the case it was written for. It counted what the
+# globs matched, and the globs are what define that set: a script added in a NEW directory is absent
+# from both sides, so the count never moves and the floor stays green. Compare the sweep against
+# `git ls-files` instead — the one list that grows when a script is added anywhere. Adding a script
+# to an existing directory still costs nothing; adding a directory now fails loudly, which is the
+# whole point.
+check bash -c '
+  diff <(git ls-files "*.sh" | sort) \
+       <(ls scripts/*.sh provisioning/*.sh provisioning/phases/*.sh sites/*/site.sh 2>/dev/null | sort)'
 check test -f dev/xdebug.ini
+# THE GATE'S OWN GATE. scripts/seed-idempotent.sh decides whether a second seed wrote anything by
+# grepping the log for write verbs. Every alternative in that regex is a claim about vocabulary
+# lib.sh's log() actually emits — and when one stops being true the gate does not fail, it silently
+# stops looking. That is not hypothetical: `installed/enabled` sat in WRITES matching nothing that
+# any phase emits, so on `main` the idempotency gate was structurally incapable of failing on an app
+# enable (found 2026-08-02, fixed in #121).
+#
+# So: assert every alternative still matches something the code can print. The corpus is every
+# log()/printf literal under provisioning/, with ${...} and $(...) blanked — a write verb is a
+# constant, the values around it are not. This is the direction that catches the real bug; the
+# reverse (a write verb no alternative covers) needs a judgement about which log lines ARE writes,
+# and a heuristic for that flags correct code, which is why the 2026-08-02 sweep rejected it.
+check python3 -c '
+import re, glob, sys
+corpus = []
+for f in glob.glob("provisioning/**/*.sh", recursive=True):
+    for line in open(f, encoding="utf-8"):
+        for m in re.finditer(r"(?:log|printf)\s+([\"\x27])(.*?)\1", line):
+            corpus.append("    " + re.sub(r"\$\{[^}]*\}|\$\([^)]*\)|\$[A-Za-z_]\w*", "X", m.group(2)))
+src = ""
+for line in open("scripts/seed-idempotent.sh", encoding="utf-8"):
+    if line.startswith("WRITES="):
+        src = line.split("=", 1)[1].strip().strip("\x27\"")
+dead = [a for a in src.split("|") if not any(re.search(a, c) for c in corpus)]
+if dead:
+    print("WRITES alternatives that match nothing provisioning/ can emit: " + repr(dead))
+    print("seed-idempotent.sh cannot fail on these. Fix the regex or the log line.")
+    sys.exit(1)
+if not src:
+    print("could not read WRITES= from scripts/seed-idempotent.sh"); sys.exit(1)'
 # Regression guard (#39): the phase runner must not consume its `set -e` subshell's status in a
 # conditional context — bash suppresses errexit there, so a failing phase runs on and reports
 # success. Matches on what PRECEDES the subshell rather than listing bad forms, because `if`,
