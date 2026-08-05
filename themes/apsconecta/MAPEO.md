@@ -61,3 +61,12 @@ cabecera. Lo verifica `scripts/test.sh` sobre las dos plantillas.
 
 Sin modo oscuro (`enforce_theme=light`), sin iconos por app (se midieron: cero iconos multitinta) y
 sin regla de lienzo — pintar `body`/`#content` tapaba por completo la imagen de fondo de marca.
+
+**Sí toca, desde 2026-08-04, las pantallas que Nextcloud dibuja por la vía antigua** —
+mantenimiento, las dos de actualización, 429, la de excepción, dominio no confiable, error de
+configuración y las tres de instalación. Esas pantallas no emiten el evento del que cuelga
+`server.css`, así que llegaban en el azul de Nextcloud y con su logo. Las cubre `core/css/guest.css`
+(con `defaults.php` para los textos de identidad, porque en un dominio no confiable Nextcloud ni
+siquiera consulta la configuración de marca). Es la única parte del tema que declara variables en
+`:root` sin `!important`, y es a propósito: así gana en esas pantallas y queda inerte en el resto.
+El detalle completo está en `docs/adr/0004-branding-the-legacy-render-path.md`.

@@ -4,7 +4,8 @@ Fix log. Repo-first SSOT; GitHub issues are the mirror. **No bug is currently op
 
 B-001…B-007 all came out of the **first end-to-end bring-up on a clean machine (2026-07-24)** — the repo
 was v1 feature-complete on paper but had never been run start to finish. B-008…B-012 came out of Epic 5
-and the hardening pass that followed.
+and the hardening pass that followed. B-013 came out of looking at the screens that only appear when
+something is wrong — the one class no routine check ever renders.
 
 Each row names the cause and where the fix lives. The reasoning that made a fix non-obvious is a comment
 beside the code it protects, not here — a second copy desyncs the day it is written.
@@ -23,6 +24,7 @@ beside the code it protects, not here — a second copy desyncs the day it is wr
 | B-010 | the eurooffice patches turned admin › Overview permanently red | patched files invalidate the `appinfo/signature.json` a store app ships | [#71](https://github.com/APS-Conecta/gestion/issues/71) — `12-apps.sh` drops the signature it just invalidated. Gated in `scripts/smoke.sh` |
 | B-011 | the brand lockups rendered Georgia, not Fraunces | an SVG served as an image is an isolated document and cannot reach `server.css`'s `@font-face` | `themes/apsconecta/tools/embed-fonts.py` embeds a per-lockup subset as a `data:` URL, and the OS fallbacks are removed so a miss fails visibly. Gated in `scripts/test.sh` |
 | B-012 | the header rules leaked onto public share pages; phase 30 discarded its own logs | `#header:not(.header-guest) #nextcloud` also matched `layout.public.php`, where that id is a `<div>` with content; and `ensure_groupfolder … >/dev/null` swallowed the lines `seed-idempotent.sh` greps for, so the gate could not fail on any group folder | `a36b458` — scope on `a#nextcloud`; drop the unused id `printf` and the redirect. Both gated in `scripts/test.sh` |
+| B-013 | eight screens — maintenance, the two upgrade screens, 429, the fatal exception, untrusted domain, the config error and the three setup screens — rendered in stock Nextcloud blue with Nextcloud's own logo | they render through the legacy `Template::printPage()`, which dispatches no `BeforeTemplateRenderedEvent`, and that event is the only thing that adds `server.css`; on an untrusted host `ThemingDefaults` is bypassed too, so even the identity strings came from a raw `\OC_Defaults` | [ADR-0004](docs/adr/0004-branding-the-legacy-render-path.md) — `themes/apsconecta/core/css/guest.css`, `themes/apsconecta/defaults.php`, a two-key `core/l10n/es.json` and the three icon files. Gated in both `scripts/test.sh` (enumeration of the 7 render sites) and `scripts/smoke.sh` (the screen itself) |
 
 ## Reporting a new one
 

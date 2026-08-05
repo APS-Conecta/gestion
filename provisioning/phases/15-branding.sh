@@ -3,9 +3,13 @@
 # Rationale and accepted costs: docs/adr/0001-server-theme-for-branding.md. What the theme's CSS can
 # and cannot reach: docs/THEMING-MODEL.md — most of the brand arrives through the keys set here.
 #
-# Deliberately absent: a container restart (only ever needed for defaults.php's opcache, and that
-# file is gone) and per-app icon overrides (every enabled app was scanned: zero multi-tint icons, so
-# themes/apsconecta/apps/ does not exist).
+# Deliberately absent: per-app icon overrides (every enabled app was scanned: zero multi-tint icons,
+# so themes/apsconecta/apps/ does not exist).
+#
+# themes/apsconecta/defaults.php CAME BACK in ADR-0004, so the opcache restart this phase used to
+# note is real again — but it is not this phase's job. That file is static and committed, identical
+# on every install, and nothing here writes it: it changes on a git pull, not on a seed. Restart the
+# container after one of those, never after this.
 phase_begin "15-branding" "APS Conecta white-label (Epic 5)"
 
 # --- Identity ---

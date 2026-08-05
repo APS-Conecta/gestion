@@ -85,6 +85,15 @@ print("; ".join(bad) if bad else "OK")
 # core's until the cache is flushed — the symptom looks like the fix silently not working.
 printf '%s' "$login_html" | grep -q 'rel="manifest" href="[^"]*themes/apsconecta' \
   || fail "login page still links Nextcloud's manifest, not ours — if the file exists, flush the cache (docker compose exec redis redis-cli FLUSHALL)"
+# The three icon links are the same static-file mechanism as the manifest and share its failure mode
+# (ADR-0004). They are here rather than beside it because they cost nothing extra — this HTML is
+# already fetched — and because imagePath() caches under a key holding NO cachebuster and NO theme,
+# so adding a file to the theme is invisible until the cache is flushed. Without this the icons are
+# silently Nextcloud's and the tab shows the vendor's mark on every screen.
+for rel in icon apple-touch-icon mask-icon; do
+  printf '%s' "$login_html" | grep -q "rel=\"${rel}\"[^>]*href=\"[^\"]*themes/apsconecta" \
+    || fail "login page links Nextcloud's ${rel}, not ours — if themes/apsconecta/core/img/ has the file, flush the cache (docker compose exec redis redis-cli FLUSHALL)"
+done
 
 # 8. App policy holds: staff do not see Nextcloud's product surface (phase 16-app-policy).
 # `enabled` is the whole state — "yes" = everyone, "no" = off, ["admin"] = admin only — so reading
@@ -152,4 +161,27 @@ if [ -n "$patched" ]; then
     || fail "patched app(s) still signed: ${signed}— the code-integrity check will fail and admin > Overview will show a red warning. Run 'make seed' (phase 12-apps drops it), then click 'Rescan…' in that warning"
 fi
 
-echo "PASS: core stack healthy — installed, PostgreSQL ready, Redis PONG, /status.php 200, no branding leak, cron scheduling, app policy, no remember-me, no stale app signature"
+# 11. The legacy render path is branded (ADR-0004). An untrusted Host is the ONLY screen in that
+# class reachable without mutating the instance — maintenance, the upgrade screens and the setup
+# screens all have to be staged — and it is also the strictest of them: failing isTrustedDomain()
+# is what makes Server.php hand out a raw \OC_Defaults instead of ThemingDefaults, so this one
+# request exercises BOTH halves of the fix at once. The themed stylesheet proves guest.css arrived;
+# the absence of the vendor name proves defaults.php did. Everything else in the class shares the
+# same two stylesheets and the same layout, so this stands in for all of them.
+untrusted=$(curl -s -H 'Host: untrusted.invalid' "http://localhost:${HTTP_PORT}/" 2>/dev/null)
+printf '%s' "$untrusted" | grep -q 'themes/apsconecta/core/css/guest.css' \
+  || fail "legacy-rendered screens carry no theme CSS — themes/apsconecta/core/css/guest.css is not linked on the untrusted-domain screen (maintenance, upgrade, 429 and the setup screens render through the same path)"
+# Two vendor URLs are EXEMPT and are listed here rather than assumed (CONTEXT.md, "vendor
+# reference"): the admin documentation link, whose visible label is "documentación" and which is the
+# real page explaining trusted_domains, and the sync-client URL, which points at clients that can
+# actually be installed. Renaming either would ship a lie, which is the worse defect. They are
+# stripped by exact host so that ANY other occurrence — including a different nextcloud.com link, or
+# the word in visible text — still fails. Backslashes go first: both appear JSON-escaped in the
+# initial state as well as in href attributes.
+visible=$(printf '%s' "$untrusted" | tr -d '\\' \
+  | sed -e 's|https://docs\.nextcloud\.com[^" ]*||g' -e 's|https://nextcloud\.com/install[^" ]*||g')
+if printf '%s' "$visible" | grep -qi 'nextcloud'; then
+  fail "branding leak on the legacy render path: the untrusted-domain screen names Nextcloud outside the two exempt URLs — themes/apsconecta/defaults.php is the only thing that answers there (ThemingDefaults is bypassed for an untrusted host)"
+fi
+
+echo "PASS: core stack healthy — installed, PostgreSQL ready, Redis PONG, /status.php 200, no branding leak, cron scheduling, app policy, no remember-me, no stale app signature, legacy screens branded"

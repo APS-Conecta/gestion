@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="APS Conecta">
+  <!-- Safari pinned-tab mask. Monochrome by contract: Safari discards these colours and repaints
+       the silhouette in the mask-icon link's own colour, so every shape is solid black and the
+       tile background of favicon.svg is dropped. The 0.5 opacity the constellation legs carry in
+       favicon.svg is dropped too: a mask has no alpha, and a translucent leg renders identically
+       to an opaque one here while reading as a mistake in the source. -->
+  <path d="M32 14 L47 28 M32 14 L17 28" fill="none" stroke="#000000" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M12 40 Q32 30 52 38" fill="none" stroke="#000000" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="47" cy="28" r="3.6" fill="#000000"/>
+  <circle cx="17" cy="28" r="3.6" fill="#000000"/>
+  <path d="M32 7 L33.82 12.18 L39 14 L33.82 15.82 L32 21 L30.18 15.82 L25 14 L30.18 12.18 Z" fill="#000000"/>
+</svg>

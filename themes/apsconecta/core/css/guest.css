@@ -1,0 +1,59 @@
+/* =====================================================================
+   APS Conecta Gestión — Nextcloud server theme (guest.css)
+
+   THE SCREENS server.css NEVER REACHED.
+   server.css is never requested by name — it rides on core's own server.css,
+   which core/Listener/BeforeTemplateRenderedListener.php adds when
+   BeforeTemplateRenderedEvent fires. Seven call sites render through the
+   legacy Template::printPage() and dispatch nothing:
+     lib/base.php            maintenance · upgrade required · update in
+                             progress · untrusted domain
+     TemplateManager.php:52  printGuestPage — 429, the three setup screens,
+                             and the server-config error (lib/base.php:785)
+     TemplateManager.php:134 the fatal exception page
+     TemplateManager.php:96  printErrorPage's catch-block fallback only; its
+                             normal path DOES dispatch the event and is fine
+   Those screens loaded stock Nextcloud blue and Nextcloud's own logo. In
+   maintenance mode lib/base.php dies before loadApps(), so no app can reach
+   them either — this directory is the only mechanism that can.
+   Measured against NC 34.0.1; the render sites are gated in scripts/test.sh.
+   Full record: docs/adr/0004-branding-the-legacy-render-path.md
+
+   WHY :root WORKS HERE, WHEN server.css SAYS IT DOES NOT.
+   Both are true and they never overlap. The theming app's GENERATED sheets
+   declare these same variables and load after this file — but only on screens
+   that reach the theming app at all. On the legacy screens the only sheets
+   present are the theming app's STATIC default.css and core's guest.css, and
+   the theme's copy appends directly after both, so the block below wins. On
+   /login, which loads this file too, the generated sheets land later and
+   overrule it — which is correct, because there the theming app is already
+   right. That makes this file self-limiting, and it is why there is no
+   !important anywhere in it: one would break exactly that.
+
+   Product values, never the clinic's — these screens stay byte-identical on
+   every install. The same two colours are written into the theming app by
+   provisioning/phases/15-branding.sh; that file is where they change.
+   DO NOT WRITE A THEMED PATH IN PROSE HERE — scripts/test.sh greps this file
+   for them and resolves each one on disk. Same trap as server.css.
+   ===================================================================== */
+
+/* MUST be first: CSS ignores @import after any other rule. Pulls in the fonts
+   and typography, which otherwise reach none of these screens — they are what
+   makes the text render as ours rather than in system-ui. Costs nothing on
+   /login, where the browser already has the file. */
+@import "/themes/apsconecta/core/css/server.css";
+
+/* The five that core/css/guest.css reads and gets wrong. --image-logo is the
+   one the static default.css does not declare AT ALL, so core's own
+   `url("../../core/img/logo/logo.svg")` fallback applied; the other four it
+   declares with stock values (#00679e, and Nextcloud's photographic backdrop).
+   Deliberately absent: --color-background-plain-text and
+   --color-primary-element-text are already #ffffff there, and white on #5315a8
+   is 10.3:1. Restating a correct value only creates a second place to drift. */
+:root {
+  --image-logo: url("/themes/apsconecta/core/img/logo/logo.svg");
+  --image-background: url("/themes/apsconecta/core/img/background.svg");
+  --color-background-plain: #5315a8;
+  --color-primary-element: #7f21fe;
+  --color-primary-element-hover: #6b01fa;
+}

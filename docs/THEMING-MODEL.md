@@ -72,6 +72,16 @@ block do.
 *Note the asymmetry:* our **element selectors** (`h1`, `#header`, `:focus-visible`) do win, because
 they beat core's rules. Variables lose; selectors win.
 
+**The one exception, and it is deliberate.** `themes/apsconecta/core/css/guest.css` declares five
+variables in `:root` with no `!important`, and they land. The rule above holds only where the
+Theming app's *generated* sheets are present to declare the same variables later — which is every
+framework-rendered screen and no legacy-rendered one (§4). On the legacy screens the only sheets are
+the static `apps/theming/css/default.css` and `core/css/guest.css`, and the theme's copy appends
+after both, so plain `:root` wins. On `/login`, which loads the same file, the generated sheets land
+later and overrule it. That asymmetry *is* the design: it keeps the file self-limiting to the
+screens that need it. Adding `!important` here would make it win on `/login` too, where the Theming
+app is already right. See ADR-0004.
+
 ### Rule 2 — Measure on `document.body`, never `document.documentElement`.
 
 `<html>` only ever sees the `:root` layer, which under a dark-mode OS resolves to dark values and
@@ -146,6 +156,29 @@ nothing a stylesheet can reach.
 `*.patch` files under `provisioning/apps/eurooffice/`, applied by phase `12-apps`.
 `scripts/office-smoke.sh` asserts the *desired* state on the served files, because `apps/` is
 gitignored and an `occ app:update` reverts the edit with nothing running `make seed` afterwards.
+
+### The legacy render path — the boundary, and where it is crossed
+
+Two classes of screen, and only one announces itself. A **framework-rendered** screen dispatches
+`BeforeTemplateRenderedEvent`; that event is what adds `core/css/server.css`, beside which the
+resource locator appends the theme's copy, and it is what makes the Theming app inject its variable
+sheets. Nothing links `server.css` by name — it rides on that event entirely.
+
+A **legacy-rendered** screen goes through `Template::printPage()` and dispatches nothing. On NC34
+there are **seven such call sites in two files**, covering maintenance, both upgrade screens, 429,
+the fatal exception, untrusted domain, the server-config error and the three setup screens. They
+loaded stock `#00679e` and Nextcloud's own logo until ADR-0004. Two things make this class different
+from every other gap in this document:
+
+- **No app can reach it.** In maintenance mode `lib/base.php` dies before `loadApps()`. `themes/` is
+  the only mechanism, which retires ADR-0001's "small branding app" fallback for these screens.
+- **`ThemingDefaults` is not always what answers.** `Server.php` falls back to a raw `\OC_Defaults`
+  — hardcoded literals, no config keys — when the host is untrusted or `installed` is false. So on
+  those screens even the identity strings needed `themes/apsconecta/defaults.php`.
+
+`scripts/test.sh` asserts the count of those call sites is still 7. That is the only check here that
+can notice a *new* unbranded screen in a future Nextcloud major; everything else in §5 verifies the
+instance in front of you.
 
 ## 4. What this theme does *not* do
 
@@ -259,8 +292,10 @@ resolves to violet, on: dashboard · files · `/settings/user` · `/settings/adm
 **Zero contrast findings.** Every such text is `#ffffff`, at 10.29:1 over the backdrop `#5315a8`
 and 5.91:1 over the light end of the header gradient `#7f21fe` — both above AA.
 
-This is a **sample, not a proof**. Not covered: disabled apps, error and empty states, mail
-templates, public share views, print styles. It is bounded on purpose — the root cause was config
+This is a **sample, not a proof**. Not covered: disabled apps, empty states, mail templates, public
+share views, print styles. *Error states left this list on 2026-08-04* — the eight legacy-rendered
+screens are branded and gated (ADR-0004), and the backdrop they use is the same `#5315a8` measured
+above, so the 10.29:1 figure carries over unchanged. It is bounded on purpose — the root cause was config
 (`background_color`), it is fixed, and violet reaches the UI by only two routes: the backdrop,
 governed by `--color-background-plain-text`, and `server.css`'s single `#header:not(.header-guest)`
 rule. Measure the first element of a probe against its *own* ancestors, not the container's

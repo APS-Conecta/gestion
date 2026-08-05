@@ -43,7 +43,9 @@ facts AD-6 did not have:
 - **No `defaults.php`.** An earlier draft accepted one, over AD-6's objection, to kill the iOS
   "Nextcloud — Abrir" banner. That claim was false: `customclient_ios_appid ""` does the same job,
   so the file was deleted 2026-07-27 and **AD-6 was right about this one**. Identity stays with
-  `occ`.
+  `occ`. — *Reversed for a different reason on 2026-08-04; see Correction 4 and ADR-0004. The banner
+  argument stays dead; the file came back because `occ` identity is unreachable on screens where
+  Nextcloud never consults the Theming app.*
 - Activation is `occ config:system:set theme --value apsconecta` — still config-as-code, applied by
   `provisioning/phases/15-branding.sh` so `make seed` remains the only thing that mutates instance
   state (AD-2). The standalone `occ-theming.sh` from the brand kit is deleted; it was a second
@@ -132,7 +134,8 @@ that compared against it went with it. How to verify the theme that actually loa
 ## Corrections
 
 Recorded rather than quietly edited: the original reasoning was published with false premises, and
-the audit trail matters more than looking right. Three rounds, consolidated here 2026-07-30.
+the audit trail matters more than looking right. Three rounds consolidated here 2026-07-30; a fourth
+added 2026-08-04.
 
 **1 — `occ` does set brand images (2026-07-26).** Believed: NC34's `occ` sets text and colour only,
 so images must go through the admin UI, which AD-2 forbids. Found: `UpdateConfig.php:103-113` handles
@@ -150,12 +153,24 @@ AD-6 was right about `defaults.php` after all.
 declaration was inert: 7 of 30 matched, and only because they already equalled Nextcloud's own value.
 `server.css` was cut to what element selectors and `--font-face` actually deliver.
 
+**4 — identity is not pure config, and the app fallback does not cover everything (2026-08-04).**
+Believed: every identity string reaches every screen through `occ`, because `ThemingDefaults` reads
+the DB. Found: `Server.php:1052-1056` hands out `ThemingDefaults` only for a **trusted host** on an
+**installed** instance, and `lib/base.php:390` builds `\OC_Defaults` directly regardless. On the
+screens where those tests fail — untrusted domain, the three setup screens, both upgrade screens —
+identity comes from hardcoded literals with no config key, and only `themes/apsconecta/defaults.php`
+can answer. The file is back, on new grounds; Correction 2's banner reasoning is untouched and still
+correct. See ADR-0004.
+
 **What this leaves.** `themes/` is undocumented legacy — it appears in no manual and its loader lives
 in `lib/private/legacy/` — so re-verify after every major upgrade. **Fact 2, that brand typography
-needs `@font-face` with paths a theme serves, is now the only load-bearing justification for this
-decision**, since images register from any absolute path and identity is pure config. If `themes/`
-is ever withdrawn, the fallback is a small branding **app** shipping the CSS and fonts, which is the
-documented path: `apps/text` and `apps/viewer` both self-host `.woff2` under `apps/<id>/css/fonts/`.
+needs `@font-face` with paths a theme serves, is no longer the only load-bearing justification**:
+Correction 4 adds identity on the legacy render path, and ADR-0004 adds the CSS for it. If `themes/`
+is ever withdrawn, the fallback is a small branding **app** shipping the CSS and fonts
+(`apps/text` and `apps/viewer` both self-host `.woff2` under `apps/<id>/css/fonts/`) — **but that
+fallback does not reach the eight legacy-rendered screens**, because in maintenance mode
+`lib/base.php` dies before `loadApps()` and no app is loaded at all. For that class there is no
+second mechanism.
 
 ## Pending — all closed 2026-07-27
 

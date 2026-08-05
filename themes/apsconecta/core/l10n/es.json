@@ -1,0 +1,6 @@
+{
+    "translations": {
+        "This %s instance is currently in maintenance mode, which may take a while.": "Esta instancia de %s está en modo mantenimiento, y puede tardar un rato.",
+        "It looks like you are trying to reinstall your Nextcloud. However the file CAN_INSTALL is missing from your config directory. Please create the file CAN_INSTALL in your config folder to continue.": "Parece que estás intentando reinstalar APS Conecta Gestión. Sin embargo, el archivo CAN_INSTALL no se encuentra en la carpeta config. Por favor, crea el archivo CAN_INSTALL en la carpeta config para continuar."
+    }
+}
