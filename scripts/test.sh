@@ -38,6 +38,24 @@ check bash -c '
   [ -z "$(comm -23 <(git ls-files "*.sh" | sort) \
                    <(ls scripts/*.sh provisioning/*.sh provisioning/phases/*.sh sites/*/site.sh 2>/dev/null | sort))" ]'
 check test -f dev/xdebug.ini
+# The other half of the WRITES meta-gate, and the half it cannot express: an alternative must match
+# the WRITE line of a helper and NOT its noop line. `certs:` is the pair that proves it — the write
+# says "certs: imported X for Y", the noop says "certs: X already imported", and an unanchored
+# ` imported` matches both, which would fail a second seed that did nothing. Asserted rather than
+# commented because the anchor is one character away from being deleted as noise.
+check python3 -c '
+import re, sys
+src = ""
+for line in open("scripts/seed-idempotent.sh", encoding="utf-8"):
+    if line.startswith("WRITES="):
+        src = line.split("=", 1)[1].strip().strip("\x27\"")
+write = "    certs: imported gsgccr6 for www.ispch.gob.cl"
+noop  = "    certs: gsgccr6 already imported"
+hit = lambda s: any(re.search(a, s) for a in src.split("|"))
+if not hit(write):
+    print("WRITES no longer matches the cert import — a re-import would report PASS"); sys.exit(1)
+if hit(noop):
+    print("WRITES matches the cert NOOP line — every second seed would fail"); sys.exit(1)'
 # THE GATE'S OWN GATE. scripts/seed-idempotent.sh decides whether a second seed wrote anything by
 # grepping the log for write verbs. Every alternative in that regex is a claim about vocabulary
 # lib.sh's log() actually emits — and when one stops being true the gate does not fail, it silently
