@@ -4,7 +4,7 @@
 # Pinned to the SAME digest compose.yaml runs (#109), and kept in step by `make images`. Leaving
 # this on the bare tag is how a dev box ends up debugging a different build from the one it deploys
 # — which is #96, on the one image where the difference is hardest to see.
-FROM nextcloud:34-apache@sha256:b52f7bc0e496f227b0e85e3b88571a42c68b6245ccde29d577e733227715dcf5
+FROM nextcloud:34-apache@sha256:eea6e621ded409a0f878db118cd8aec619b555172d30f50d04f9bc2e5e852b4c
 
 # Xdebug 3 via PECL (base is php:8.5-apache; ships pecl + docker-php-ext-enable, no xdebug).
 RUN pecl install xdebug \
