@@ -95,6 +95,23 @@ if docker compose ps --status running --services 2>/dev/null | grep -qx nextclou
   # Same silent-failure shape as B-008: server.css hangs the clinic name off `.login-form__headline`.
   check docker compose exec -T --user www-data nextcloud \
     grep -q "login-form__headline" dist/core-login.js
+  # ENUMERATION GATE (ADR-0004). guest.css brands the screens Nextcloud draws through the legacy
+  # Template::printPage(), which dispatches no event and so gets no themed CSS. There are SEVEN such
+  # call sites in TWO files on NC34 — four in lib/base.php, three in TemplateManager. Every screen in
+  # the class routes through one of them, so the COUNT is the whole contract: an NC35 that adds an
+  # eighth site has added a screen nobody has looked at, and no other check here can see that. This
+  # is the only assertion that delivers "every Nextcloud major"; the rest verify today's instance.
+  # When it fails, read the new site, decide whether guest.css already covers it, then move the 7.
+  # -e for the pattern, NOT `--`: `--` ends option parsing, so a --include after it is read as a
+  # FILENAME. The count came out right anyway (the call appears only in .php files) while grep
+  # errored on every run into check's discarded stderr — a gate passing for the wrong reason.
+  check docker compose exec -T --user www-data nextcloud sh -c \
+    'test "$(grep -r --include="*.php" -e "->printPage()" lib core index.php | wc -l)" -eq 7'
+  # And that core still READS what guest.css declares. Both variables carry a fallback to Nextcloud's
+  # own art inside core's guest.css, so an upstream rename does not break the page — it silently
+  # restores the vendor logo and backdrop on exactly the screens nobody visits on a good day.
+  check docker compose exec -T --user www-data nextcloud sh -c \
+    'grep -q -- "var(--image-logo" core/css/guest.css && grep -q -- "var(--image-background" core/css/guest.css'
 else
   echo "  skipped: upstream vendor-block checks (need a running stack)"
 fi
