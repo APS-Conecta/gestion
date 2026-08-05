@@ -1,4 +1,8 @@
-# Centro de Salud Familiar Los Castaños — everything about this clinic that the provisioning phases read.
+# Centro de Salud Familiar Los Castaños — this clinic's record, and the structure the provisioning
+# phases build from it. The identity block below is a RECORD: `scripts/deis.py` writes all seven
+# fields from the official DEIS register, and provisioning reads two of them (SITE_NOMBRE and
+# SITE_NOMBRE_CORTO). The other five are kept on purpose — they are how an operator standing up a
+# second clinic confirms they edited the right file — and are not a promise that code consumes them.
 # Written by scripts/deis.py; edited by hand from here on. Sourced once by seed.sh, before the
 # phase loop, so every phase sees it and none of it can leak back out.
 
