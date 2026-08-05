@@ -24,7 +24,10 @@ settled() { occ config:list --output=json 2>/dev/null | sha256sum; }
 quiesce() {
   local prev cur i
   prev="$(settled)"
-  for i in $(seq "${WAIT_SETTLE_TRIES:-24}"); do
+  # 24 x 5s = the 2 minutes the FATAL below names. Was ${WAIT_SETTLE_TRIES:-24}, an override nothing
+  # set, exported or documented — so the default was the only value that ever ran. Inlined rather
+  # than documented: a knob no one can find is not a knob.
+  for i in $(seq 24); do
     sleep 5
     cur="$(settled)"
     [ "$cur" = "$prev" ] && return 0
@@ -43,7 +46,7 @@ ready && exit 0
 # Ten minutes: a first boot pulls no images (compose did that) but does create the schema. CI's own
 # loop allowed the same, and it has never needed more.
 printf 'waiting for Nextcloud to finish installing itself'
-for _ in $(seq "${WAIT_READY_TRIES:-120}"); do
+for _ in $(seq 120); do   # 120 x 5s = the ten minutes above. Same retired override as quiesce().
   sleep 5
   printf '.'
   if ready; then
