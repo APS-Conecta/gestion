@@ -10,8 +10,9 @@
 
 AD-1 said the v1 scope is a *configured* Nextcloud rather than a *programmed* one, and that `apps/`
 carries no committed app. That was true when it was written and it is **false now**: the
-`epidemiologia` app has been running on this instance since 2026-08-01 and is at 0.4.0 — a Nextcloud
-34 app with its own repository, 66 unit tests, an OCS contract and a daily background job.
+`epidemiologia` app has been running on this instance since 2026-08-01 and was at 0.4.0 when this was
+written — a Nextcloud 34 app with its own repository, 66 unit tests, an OCS contract and a daily
+background job. `VENDOR` carries the version now; this line is not kept up to date.
 
 The repo did not notice. Before this ADR, `grep -ri epidemiolog` over the tracked tree returned
 **zero matches**, while `make divergence` reported the opposite from the running instance:
@@ -30,16 +31,14 @@ produces an instance without the app**, silently, because nothing declares it.
 its premise ("no custom app") no longer describes reality, so narrowing it would be fiction.
 
 **The app ships as a tarball, exactly like every other app here** — `provisioning/apps/epidemiologia/`
-holds `epidemiologia-0.4.0.tar.gz` (532 KB) and a `VENDOR` file pinning version, sha256 and the tag
-it was built from. **An install needs no network, no git and no GitHub**, which is the property the
-whole `#98` design exists to protect and there is no reason our own app should be the exception.
+holds exactly one `epidemiologia-<version>.tar.gz` (~550 KB) and a `VENDOR` file pinning version,
+sha256 and the tag it was built from. **An install needs no network, no git and no GitHub**, which is
+the property the whole `#98` design exists to protect and there is no reason our own app should be
+the exception.
 
-The tarball is *built*, not downloaded, because there is no upstream to fetch from:
-
-```sh
-git -C apps/epidemiologia archive --format=tar --prefix=epidemiologia/ v0.4.0 \
-  | gzip -n9 > provisioning/apps/epidemiologia/epidemiologia-0.4.0.tar.gz
-```
+The tarball is *built*, not downloaded, because there is no upstream to fetch from. The exact command
+lives in that `VENDOR` file beside the pin it produces, so a bump edits one place rather than two —
+this ADR deliberately does not repeat it.
 
 `git archive` exports the tracked tree, so the 288 MB of `node_modules` and 14 MB of `tools/` that
 sit in a developer's checkout are simply absent — they are gitignored in the app's repo. `gzip -n`
