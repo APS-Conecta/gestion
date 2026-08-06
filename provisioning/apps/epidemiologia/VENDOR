@@ -5,8 +5,8 @@
 # to fetch. `url=` names the tag it was built from rather than a download link, and the build is one
 # command, run from the repo root:
 #
-#   git -C apps/epidemiologia archive --format=tar --prefix=epidemiologia/ v0.7.0 \
-#     | gzip -n9 > provisioning/apps/epidemiologia/epidemiologia-0.7.0.tar.gz
+#   git -C apps/epidemiologia archive --format=tar --prefix=epidemiologia/ v0.8.0 \
+#     | gzip -n9 > provisioning/apps/epidemiologia/epidemiologia-0.8.0.tar.gz
 #
 # `--prefix=epidemiologia/` because ensure_vendored_app unpacks into custom_apps/ and Nextcloud
 # needs the app id as the top directory — the same layout every other tarball here has. `gzip -n`
@@ -20,10 +20,10 @@
 # the tree. Run it before tagging.
 #
 # `git archive` exports the TRACKED tree, which is why 288 MB of node_modules and 14 MB of tools/
-# are not in here: both are gitignored in the app's repo. Result is 576 KB over 111 files.
+# are not in here: both are gitignored in the app's repo. Result is 576 KB over 113 files.
 #
 # ONE tarball in this directory, ever: ensure_vendored_app globs *.tar.gz and fails on anything
 # other than exactly one. A bump deletes the previous file, it does not sit beside it.
-version=0.7.0
-sha256=db04a02a4f91371df31b50402bdf778e27ede895b467f9e7fb828c6f63dc2b83
-url=https://github.com/APS-Conecta/epidemiologia/tree/v0.7.0
+version=0.8.0
+sha256=66d55b0cbe09becd1fec161ae360f0e02451ba9b4feb9a36095bbcdba2bc83b8
+url=https://github.com/APS-Conecta/epidemiologia/tree/v0.8.0
