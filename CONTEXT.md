@@ -1,9 +1,9 @@
 # APS Conecta Gestión
 
 The white-label Nextcloud suite one Chilean CESFAM runs for its internal operations. This glossary
-fixes the words the repo uses for branding, identity and the screens branding has to reach. It is a
-glossary only — the mechanism lives in [`docs/THEMING-MODEL.md`](docs/THEMING-MODEL.md) and the
-decisions in [`docs/adr/`](docs/adr/).
+fixes the words the repo uses for branding, identity, the screens branding has to reach, and the
+line between what we develop and what a clinic installs. It is a glossary only — the mechanism lives
+in [`docs/THEMING-MODEL.md`](docs/THEMING-MODEL.md) and the decisions in [`docs/adr/`](docs/adr/).
 
 ## Language
 
@@ -59,3 +59,34 @@ Text that names a real external system this instance talks to, in a place where 
 accurately is what makes the text true. Exempt from the bar: renaming it would ship a lie, which
 is a worse defect than the leak. Every exemption is listed, never assumed.
 _Avoid_: leak, leftover string
+
+### Environments and releases
+
+**Production instance**:
+The Nextcloud a clinic runs, installed from a release. None exists yet.
+_Avoid_: PRD, prod, live, PROD environment
+
+**Dev stack**:
+The local Docker Compose stack a developer runs. Disposable: `make install` rebuilds it.
+_Avoid_: dev environment, local, staging
+
+**Release**:
+A tagged commit of this repo that a clinic may install. `main` is the trunk, never the release.
+_Avoid_: build, deploy, version
+
+**Shipped app**:
+An app a release installs, pinned by version and sha256. Two kinds, below.
+_Avoid_: installed app, enabled app
+
+**Vendored app**:
+A shipped app someone else wrote; its tarball comes from upstream unchanged.
+_Avoid_: third-party app, store app
+
+**Own app**:
+A shipped app we wrote; its tarball is built from a tag of its own repository (ADR-0003).
+_Avoid_: custom app, internal app
+
+**Lab app**:
+An app of ours under development: a clone in `apps/`, declared in `dev/lab-apps.sh`, never in a
+release.
+_Avoid_: custom app, WIP app, experimental app

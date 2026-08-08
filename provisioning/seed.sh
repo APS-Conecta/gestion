@@ -25,7 +25,11 @@ require_site || exit 1
 # phase would NOT do — on an empty array it expands to one empty word and runs the body once.
 declare -p SITE_ROLES >/dev/null 2>&1 || SITE_ROLES=()
 
-echo "== APS Conecta provisioning (make seed) =="
+# WHICH gestion this is (ADR-0005). A release is a tag, so `git describe` is the answer and there is
+# no VERSION file to drift from it; `--always` degrades to a short sha on an untagged trunk and the
+# fallback covers a checkout with no .git at all. Header line, not `log`: seed-idempotent.sh reads
+# the log for write verbs, and a per-run string must never look like one.
+echo "== APS Conecta provisioning (make seed) — gestion $(git describe --tags --always --dirty 2>/dev/null || echo unknown) =="
 require_installed
 
 run=0; skipped=0

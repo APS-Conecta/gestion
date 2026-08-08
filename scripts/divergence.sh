@@ -98,14 +98,18 @@ for g in (d.keys() if isinstance(d, dict) else d): print(g)
   done <<< "$extra_groups"
 fi
 
-# --- apps unpacked into apps/ that the inventory does not name ---
-# apps/ is gitignored and bind-mounted, so anything here arrived outside provisioning. Not an error:
-# a custom app in development lives here legitimately (AD-9). It is worth SAYING so that a clean
-# reinstall does not surprise anyone by not reproducing it.
-# Both inventories: APPS is vendored third-party, OWN_APPS is ours (ADR-0003) and carries a clone
-# URL after an `=`, so strip that back to the app id before comparing.
+# --- apps unpacked into apps/ that no inventory names ---
+# apps/ is gitignored and bind-mounted, so anything here arrived outside provisioning. Worth SAYING,
+# so a clean reinstall does not surprise anyone by not reproducing it.
+# THREE inventories: APPS is vendored, OWN_APPS is ours and shipped (ADR-0003), LAB_APPS is ours and
+# under development (ADR-0005). The last two carry a clone URL after an `=`; strip it to the app id.
+# LAB_APPS is SOURCED, not sed'd: dev/lab-apps.sh is a shell file, and a parser that reads it as text
+# would silently report every lab app the day its formatting changes.
+# shellcheck source=../dev/lab-apps.sh
+[ -f dev/lab-apps.sh ] && . dev/lab-apps.sh
 apps_list="$( { sed -n 's/^APPS="\(.*\)"/\1/p' "$PHASE12"
-                sed -n 's/^OWN_APPS="\(.*\)"/\1/p' "$PHASE12"; } | tr ' ' '\n' | sed 's/=.*//')"
+                sed -n 's/^OWN_APPS="\(.*\)"/\1/p' "$PHASE12"
+                printf '%s\n' "${LAB_APPS:-}"; } | tr ' ' '\n' | sed 's/=.*//')"
 declared_apps="$(printf '%s\n' "$apps_list" | grep -c . || true)"
 if [ "$declared_apps" -eq 0 ]; then
   note "cannot check apps: no APPS= line parsed out of $PHASE12"

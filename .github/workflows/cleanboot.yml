@@ -13,6 +13,8 @@ on:
   # Everything a clean install reads. Docs, themes and apps/ are deliberately absent — they cannot
   # change what `make install` builds. sites/** drives the groups, folders and ACL matrix, and
   # .env.example is copied verbatim by the first step below and has broken that step before.
+  # dev/** is here because 12-apps SOURCES dev/lab-apps.sh (ADR-0005): the file is inert on a clinic,
+  # but a syntax error in it still kills the phase, so it is part of the install path now.
   pull_request:
     paths:
       - 'provisioning/**'
@@ -20,6 +22,7 @@ on:
       - 'Makefile'
       - 'scripts/**'
       - 'sites/**'
+      - 'dev/**'
       - '.env.example'
       - '.github/workflows/cleanboot.yml'
   # Kept as the backstop for drift no PR causes. Our own bytes stopped being a source of it — images
