@@ -1,7 +1,9 @@
 # Contributing — APS Conecta Gestión
 
-A three-person team collaborates here — an owner (product, requirements, UAT sign-off) and two developers
-(see [`CONTRIBUTORS.md`](CONTRIBUTORS.md)). This file is the operational contract; keep it current.
+One maintainer works here, owner and developer both (see [`CONTRIBUTORS.md`](CONTRIBUTORS.md)). The
+review conventions below are written for more than one person on purpose: they are what makes the
+history readable later, and they are the first thing that has to hold if anyone else joins. This file
+is the operational contract; keep it current.
 
 Principles, the language split and the data/secrets invariants are defined in
 [`AGENTS.md`](AGENTS.md) and bind every contributor and agent.

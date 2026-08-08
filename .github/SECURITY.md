@@ -2,15 +2,17 @@
 
 ## Scope
 
-Internal-operations tool for a single CESFAM. It holds **no patient/clinical data**; development uses
-**synthetic fixtures only**. The `gestion` repository is **private**; only the organization profile is public.
+Internal-operations tool for a CESFAM's own staff — one establishment per install, named in that
+install's configuration and never in this repository. It holds **no patient/clinical data**;
+development uses **synthetic fixtures only**. The `gestion` repository is **private**; only the
+organization profile is public.
 
 ## Reporting a vulnerability
 
 **Do not open a public issue for a security problem.** Use the repo's
 **[Report a vulnerability](https://github.com/APS-Conecta/gestion/security/advisories/new)** button (GitHub
-Private Vulnerability Reporting) to reach the maintainers privately. We'll respond as fast as a 3-person team
-can.
+Private Vulnerability Reporting) to reach the maintainer privately. One person reads these, so expect a
+first response in days rather than hours.
 
 ## Intentional local-dev choices (NOT vulnerabilities)
 
@@ -41,18 +43,21 @@ PR gate — including why the free plan can't *enforce* it — are owned by
 - [ ] **Secret scanning + push protection on the public `.github` repo** (free for public repos).
 - [ ] **Lock repo visibility & deletion to owners** (Org → Member privileges) so `gestion` can't be flipped
       public by accident.
-- [ ] **Enable Dependabot alerts + security updates** on `gestion` (free on private repos; zero config).
+- [x] **Enable Dependabot alerts + security updates** on `gestion` (free on private repos; zero config).
 - [ ] **Enable the local secret-guard hook** on every clone.
 
 ### Medium
-- [ ] **Least-privilege base permission** (org base = Read/None; the two devs get explicit **Write**).
-- [ ] **One Owner**: confirm the two devs are `member`, not org admin.
+- [ ] **Least-privilege base permission** (org base = Read/None). Grant explicit **Write** per person
+      if anyone is added; today the only account with access is the owner.
+- [x] **One Owner**: the organisation has one member, who is the owner. Re-check when that changes.
 - [x] **GitHub Actions**: landed 2026-07-29 and now the merge gate — do not disable. Workflow
       permissions stay read-only.
 - [ ] **Restrict third-party OAuth apps + require approval for fine-grained PATs** at the org level.
 
 ### Low
-- [ ] Keep the public `.github` repo to **only** the profile README.
+- [ ] Keep the public `.github` repo to the profile README plus the four generic org defaults
+      [ADR-0012](../docs/adr/0012-only-the-generic-half-is-published-as-an-org-default.md) allows —
+      and nothing that states security posture, a host path, or a person.
 - [ ] `.gitignore` catch-alls for `*.pem`, `*.key`, `*.p12`, `id_rsa*`.
 - [ ] Quarterly **visibility audit**: `gh repo list APS-Conecta --json name,visibility` — `gestion` private,
       `.github` public.

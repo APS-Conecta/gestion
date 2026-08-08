@@ -1,6 +1,8 @@
 # APS Conecta Gestión
 
-The white-label Nextcloud suite one Chilean CESFAM runs for its internal operations. This glossary
+The white-label Nextcloud suite a Chilean CESFAM installs for its internal operations. *Which* CESFAM
+is instance configuration and never part of the product — see **Product identity** and **Clinic
+identity** below, and note that no **production instance** exists yet. This glossary
 fixes the words the repo uses for branding, identity, the screens branding has to reach, and the
 line between what we develop and what a clinic installs. It is a glossary only — the mechanism lives
 in [`docs/THEMING-MODEL.md`](docs/THEMING-MODEL.md) and the decisions in [`docs/adr/`](docs/adr/).

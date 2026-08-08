@@ -16,7 +16,7 @@ and reasons about whether running them triggers any obligation on our own code.
 1. The project's **own original work** (code under `apps/`, `themes/`, `provisioning/`, `scripts/`,
    plus this repo's configuration and documentation) is licensed **AGPL-3.0-or-later** — see
    [`LICENSE`](../LICENSE) and
-   [ADR-0010](../../aps-conecta-web/docs/adr/0010-agpl-across-the-org.md).
+   [ADR-0010](adr/0010-agpl-across-the-org.md).
 2. **Why AGPL (reasoning, not assertion).** For *this* repository the licence was a free choice —
    §4 below shows the copyleft of the components we run never reaches our code. It was not free
    elsewhere: `territorio`, `analizador-rem` and `epidemiologia` compile `@nextcloud/vue`
@@ -105,7 +105,10 @@ and forces us to open it. Our reasoning — **[needs legal sign-off]**:
 2. Our own code interacts with them only across process/network boundaries (occ CLI, HTTP/WOPI) — the
    classic **"mere aggregation"** situation, not the creation of a **derivative work**.
 3. Under that reading, the AGPL of Nextcloud/Redis/Euro-Office imposes **no copyleft obligation on APS
-   Conecta's own original code**, which may therefore remain proprietary (§1).
+   Conecta's own original code**, which is therefore AGPL by *choice* rather than by obligation — see
+   §1.2. This paragraph read "may therefore remain proprietary" until 2026-08-08, citing a §1 that
+   ADR-0010 had already reversed: the aggregation analysis survived the relicence, its conclusion
+   did not.
 4. **Caveat that would change this:** the moment we *modify* an AGPL component's source, or bundle/fork it
    rather than pull the official image, the AGPL's network-copyleft (§13) can attach.
 5. **Re-examined 2026-07-30, after [ADR-0002](adr/0002-app-patches.md) (2026-07-29) met that trigger.**
