@@ -38,6 +38,20 @@ check bash -c '
   [ -z "$(comm -23 <(git ls-files "*.sh" | sort) \
                    <(ls scripts/*.sh provisioning/*.sh provisioning/phases/*.sh sites/*/site.sh dev/*.sh 2>/dev/null | sort))" ]'
 check test -f dev/xdebug.ini
+# #143: ensure_aia_intermediate must not read "could not ask" as "not imported" — that re-imports a
+# certificate already in the bundle, which is a write on a provisioned instance and reddens
+# seed-idempotent intermittently, here and in cleanboot. Behavioural, not a grep for the fix: occ is
+# stubbed to fail the way a busy container fails, and the assertion is which branch the guard takes.
+# Two cases, and the second exists because the first fix broke a clean install: phases run under
+# `set -e`, so "certificate absent" — a legitimate non-zero — must not kill the phase. Only cleanboot
+# saw it, because a machine that already holds both certificates never takes the absent branch.
+check bash -c '
+  . provisioning/lib.sh
+  docker() { [[ "$*" == *s_client* ]] && echo "http://secure.globalsign.com/cacert/ca.crt"; return 0; }
+  occ() { return 1; }                     # cannot answer -> skip, never import
+  ensure_aia_intermediate example.test 2>&1 | grep -q "could not read the certificate list" || exit 1
+  occ() { echo "[]"; }                    # answers "absent", under errexit -> must survive
+  ( set -e; ensure_aia_intermediate example.test >/dev/null 2>&1 )'
 # The other half of the WRITES meta-gate, and the half it cannot express: an alternative must match
 # the WRITE line of a helper and NOT its noop line. `certs:` is the pair that proves it — the write
 # says "certs: imported X for Y", the noop says "certs: X already imported", and an unanchored
