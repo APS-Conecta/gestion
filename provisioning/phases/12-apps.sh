@@ -6,9 +6,8 @@
 # WHICH apps we run and that directory says which bytes and which edits.
 #
 # NOTHING HERE CONTACTS THE APP STORE (#98) — the reasoning lives on ensure_vendored_app in lib.sh.
-# Cost recorded, not hidden: ~61 MB of tarballs across seven apps (repo 7.3 -> ~72 MB), plus a full
-# copy per bump. It was ~12 MB for three until calendar (19 MB) and maps (22 MB) were declared on
-# 2026-08-03; those two are 42 of the 61 and are the first place to look if this ever has to shrink.
+# Cost recorded, not hidden: ~36 MB of tarballs, plus a full copy per bump. calendar is 19 of those
+# and is the first place to look if this ever has to shrink.
 # Only FILE edits belong here — `occ config:app:set` lives in the database, so it survives an app
 # update, and stays in 15-branding, 16-app-policy and 14-office.
 # Converges on the VENDORED version, never "whatever is newest" (#117): the same seed produces the
@@ -17,11 +16,15 @@
 # what is patched inside them.
 phase_begin "12-apps" "apps this instance runs, plus the edits inside them"
 
-# calendar, contacts, maps and news were enabled by hand and ran undeclared until 2026-08-03, so a
-# clean install did not reproduce them — `make divergence` had been saying so on every run. They are
-# vendored like the rest: 50 MB of tarballs, which roughly triples this repo and is the price #98
-# set for an install that needs no network. calendar and maps are 42 of those 50.
-APPS="groupfolders side_menu eurooffice calendar contacts maps news"
+# calendar and contacts were enabled by hand and ran undeclared until 2026-08-03, so a clean install
+# did not reproduce them — `make divergence` had been saying so on every run.
+#
+# DROPPED 2026-08-08, ~25 MB: `maps`, because geography is Territorio's and it is a standalone app
+# by that repo's ADR-0001, not a Nextcloud Maps layer; `news`, because epidemiologia now carries the
+# MINSAL and ISP feeds it was there for. Neither was configured by any phase. Removing an app from
+# this list does NOT uninstall it — nothing here deletes — so a live instance also needs
+# `occ app:remove <id>` once, by hand, which is what `make divergence` reports until you do.
+APPS="groupfolders side_menu eurooffice calendar contacts"
 
 # Apps WE write (ADR-0003, reversing AD-1). They ship as a tarball under provisioning/apps/ exactly
 # like the ones above, built from a release tag of their own repository — so an install needs no
@@ -36,6 +39,23 @@ OWN_APPS="epidemiologia=https://github.com/APS-Conecta/epidemiologia.git"
 for entry in $OWN_APPS; do
   ensure_own_app "${entry%%=*}" "${entry#*=}"
 done
+
+# Lab apps: ours, under development, NEVER shipped (ADR-0005). Inventory in dev/lab-apps.sh, which
+# is tracked but inert — a clinic reads it and falls through here.
+#
+# THE .git TEST IS THE WHOLE MECHANISM, not a nicety. ensure_own_app hands a directory with no .git
+# to ensure_vendored_app, and a lab app has no tarball to unpack: dropping this line was run on
+# 2026-08-08 and phase 12 died with "FAILED territorio — no vendored tarball", i.e. every clinic
+# install. Guard here rather than inside ensure_own_app, which is right to keep that fallthrough for
+# the apps we DO ship.
+if [ -f dev/lab-apps.sh ]; then
+  . dev/lab-apps.sh
+  for entry in ${LAB_APPS:-}; do
+    app="${entry%%=*}"
+    [ -d "apps/$app/.git" ] || continue
+    ensure_own_app "$app" "${entry#*=}"
+  done
+fi
 
 for app in $APPS; do
   ensure_vendored_app "$app"

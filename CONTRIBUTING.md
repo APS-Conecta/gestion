@@ -19,6 +19,21 @@ Principles, the language split and the data/secrets invariants are defined in
 
 `CODEOWNERS` auto-requests reviewers. Prefer small, reviewable PRs.
 
+## Releases (ADR-0005)
+
+`main` is the trunk and the **dev stack** installs from it. A **release** is a tag — that is the only
+thing a clinic installs, and the only answer to "which bytes does that instance have?".
+
+1. `main` stays installable: nothing merges without CI green and 1 approval.
+2. After UAT sign-off, tag `vX.Y.Z` on `main` and publish a **GitHub Release**.
+3. The Release's auto-generated notes are the changelog. There is no `CHANGELOG.md`.
+4. Name in the notes which app versions that release pins (`provisioning/apps/*/VENDOR`).
+5. A clinic installs from the tag: `git clone --branch vX.Y.Z --depth 1 <url>`.
+
+**Our own apps are pinned at a milestone, not at every tag.** `epidemiologia` released six times in
+one week (#137–#141); gestion bumps when we decide a version is the one to ship. There is no branch
+called `production` and no second repository — the tag *is* the production artifact.
+
 ## How we track work
 
 Work is tracked on the org **[GitHub Projects board](https://github.com/orgs/APS-Conecta/projects/5)** as

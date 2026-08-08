@@ -21,8 +21,13 @@ Everything below was run on a clean checkout; each step names where it runs and 
 **Prerequisites:** Docker Engine 24+ with Compose v2, `make`, and `git`. All commands run on the **host**
 from the repo root unless noted.
 
-1. **Clone and enter the repo.**
+1. **Clone and enter the repo.** A clinic installs a **release tag**; `main` is the development
+   trunk and is not what goes live (ADR-0005).
    ```bash
+   # standing up a clinic — pick the newest tag from the Releases page
+   git clone --branch vX.Y.Z --depth 1 git@github.com:APS-Conecta/gestion.git apsconecta-gestion
+
+   # developing on this repo
    git clone git@github.com:APS-Conecta/gestion.git apsconecta-gestion
    cd apsconecta-gestion
    ```

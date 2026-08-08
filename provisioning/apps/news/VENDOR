@@ -1,9 +1,0 @@
-# Where the tarball beside this file came from (#98). Update all three lines together on a bump,
-# then re-run `make seed`.
-#
-# THE ODD ONE OUT, twice over: published from the `nextcloud` org rather than `nextcloud-releases`,
-# the tag carries no leading `v` (28.6.0, not v28.6.0), and the asset is a bare `news.tar.gz` with
-# no version in its name. Do not derive this URL from the pattern the others follow.
-version=28.6.0
-sha256=db957222f57b779fe1bd6b93d085f3a60ca02d81d1ae6a87836a5af904292bdd
-url=https://github.com/nextcloud/news/releases/download/28.6.0/news.tar.gz

@@ -18,6 +18,14 @@ Internal ops only, **no patient data**.
   Spanish: `docs/CONVENTIONS.md` (staff-facing), `docs/BRANDING.md` and `themes/apsconecta/MAPEO.md`
   (authored with the brand kit).
 - **Coordination:** GitHub Flow, PR + 1 approval (convention gate), private repo. Conventional Commits.
+  `main` is the trunk; a **release is a tag**, and a clinic installs from one (ADR-0005).
+
+## How we write
+
+- Code, comments, docs and commits in English. UI text in Spanish.
+- A comment gives the rule and the reason, once. If it is longer than the code it guards, cut it.
+- No comment repeats the code. No comment restates a doc — link the doc.
+- Plans and instructions are numbered steps, one action per step.
 
 ## Invariants
 

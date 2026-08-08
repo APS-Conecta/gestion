@@ -16,7 +16,7 @@ fi
 # is the only other file that can change what compose resolves.
 check docker compose -f compose.yaml -f compose.dev.yaml config -q
 linted=0
-for s in scripts/*.sh provisioning/*.sh provisioning/phases/*.sh sites/*/site.sh; do
+for s in scripts/*.sh provisioning/*.sh provisioning/phases/*.sh sites/*/site.sh dev/*.sh; do
   [ -e "$s" ] || continue
   linted=$((linted + 1)); check bash -n "$s"
 done
@@ -36,7 +36,7 @@ done
 # What actually matters is that nothing TRACKED escapes the sweep, so subtract and require empty.
 check bash -c '
   [ -z "$(comm -23 <(git ls-files "*.sh" | sort) \
-                   <(ls scripts/*.sh provisioning/*.sh provisioning/phases/*.sh sites/*/site.sh 2>/dev/null | sort))" ]'
+                   <(ls scripts/*.sh provisioning/*.sh provisioning/phases/*.sh sites/*/site.sh dev/*.sh 2>/dev/null | sort))" ]'
 check test -f dev/xdebug.ini
 # The other half of the WRITES meta-gate, and the half it cannot express: an alternative must match
 # the WRITE line of a helper and NOT its noop line. `certs:` is the pair that proves it — the write

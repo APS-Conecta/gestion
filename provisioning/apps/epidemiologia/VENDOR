@@ -1,6 +1,11 @@
 # Where the tarball beside this file came from (#98). Update all three lines together on a bump,
 # then re-run `make seed`.
 #
+# BUMP AT A MILESTONE, NOT AT EVERY TAG (ADR-0005). The app releases on its own cadence — six times
+# in the week to 2026-08-05 (#137–#141), each one a permanent ~570 KB blob here. gestion pins the
+# version it decided to ship, so this file moves when a gestion release wants it to, not when the
+# app tags.
+#
 # THIS ONE IS BUILT, NOT DOWNLOADED — it is our own app (ADR-0003), so there is no upstream release
 # to fetch. `url=` names the tag it was built from rather than a download link, and the build is one
 # command, run from the repo root:
