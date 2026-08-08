@@ -135,7 +135,7 @@ exists to prevent. Set by `provisioning/phases/14-office.sh`, never in the admin
 | `apps/`, `themes/` | Live-mounted. `apps/` is gitignored and holds the apps unpacked from the tarballs committed in `provisioning/apps/`, patched at seed time ([ADR-0002](docs/adr/0002-app-patches.md)); `themes/apsconecta/` is the white-label server theme. |
 | `docs/ARCHITECTURE.md` | The architecture overview (design SSOT). |
 | `ROADMAP.md` · `BUGS.md` | Roadmap narrative · known bugs. Work in progress is on the [Projects board](https://github.com/orgs/APS-Conecta/projects/5). |
-| `LICENSE` · [`docs/LICENSING.md`](docs/LICENSING.md) | Our code's license (proprietary) · full third-party license audit. |
+| `LICENSE` · [`docs/LICENSING.md`](docs/LICENSING.md) | Our code's license (AGPL-3.0-or-later) · full third-party license audit. |
 | `CONTRIBUTING.md` · `AGENTS.md` · `CONTRIBUTORS.md` | Contribution rules + how we track work · AI-agent invariants · the team. |
 | `.github/` | `CODEOWNERS`, PR + issue templates, `SECURITY.md`. |
 

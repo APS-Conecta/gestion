@@ -8,33 +8,41 @@ and reasons about whether running them triggers any obligation on our own code.
 > against each project's authoritative source (below); the *reasoning* about obligations is ours and
 > the points marked **[needs legal sign-off]** should be confirmed by a lawyer before being relied on.
 > Third-party licenses verified **2026-07-19**, extended **2026-07-30** to `side_menu`, Fraunces and
-> Nunito Sans — against the versions this repo runs: the services pinned in `compose.yaml` plus the
+> Nunito Sans; own-code licence changed to AGPL-3.0-or-later **2026-08-07** (ADR-0009) — against the versions this repo runs: the services pinned in `compose.yaml` plus the
 > three Nextcloud apps installed by provisioning (`occ`).
 
-## 1. APS Conecta's own code — Proprietary / all rights reserved
+## 1. APS Conecta's own code — AGPL-3.0-or-later
 
 1. The project's **own original work** (code under `apps/`, `themes/`, `provisioning/`, `scripts/`,
-   plus this repo's configuration and documentation) is **proprietary, all rights reserved** — see
-   [`LICENSE`](../LICENSE).
-2. **Why proprietary (reasoning, not assertion).** It is a private internal tool for a single CESFAM,
-   with **no redistribution intent**. A permissive or copyleft license would give the work away for no
-   benefit the project needs; proprietary keeps every option open (including open-sourcing later, which
-   a proprietary start does not foreclose).
-3. **Copyright holder** = **Daniel Espinoza Charrier** (individually). No legal entity ("razón social")
-   for "APS Conecta" exists yet, so copyright vests in the individual. If a legal entity is later formed,
-   or if this work is deemed commissioned by / funded for a third party (e.g. the health center), the
-   holder must be revisited — **[needs legal sign-off]**.
+   plus this repo's configuration and documentation) is licensed **AGPL-3.0-or-later** — see
+   [`LICENSE`](../LICENSE) and
+   [ADR-0009](../../aps-conecta-web/docs/adr/0009-agpl-across-the-org.md).
+2. **Why AGPL (reasoning, not assertion).** For *this* repository the licence was a free choice —
+   §4 below shows the copyleft of the components we run never reaches our code. It was not free
+   elsewhere: `territorio`, `analizador-rem` and `epidemiologia` compile `@nextcloud/vue`
+   (AGPL-3.0-or-later) into the bundles they ship, so those three were obliged. Given that, one
+   licence across the organisation was worth more than keeping this repository proprietary on its
+   own. ADR-0009 records the trade in full.
+3. **Copyright holder** = **Daniel Espinoza Charrier** (individually). No legal entity ("razón
+   social") for "APS Conecta" exists yet, so copyright vests in the individual. If a legal entity is
+   later formed, or if this work is deemed commissioned by / funded for a third party (e.g. the
+   health center), the holder must be revisited — **[needs legal sign-off]**.
+4. **The brand is carved out.** The logo, mono logo, lockup and favicon in
+   `aps-conecta-web/themes/apsconecta/assets/logo/` are all rights reserved and the marks are
+   reserved under AGPL §7(e). Colour tokens ship under the AGPL with the code.
 
-## 2. "OSS-first" and "proprietary" are not in conflict
+## 2. "OSS-first" now extends to our own work
 
-The project's OSS-first mandate (brief / PRD NFR-3) and the proprietary license above govern **different
-things**, so both hold at once:
+The project's OSS-first mandate (brief / PRD NFR-3) used to govern only our **inputs**; our own
+output was proprietary, and the two were reconciled by noting they addressed different things.
 
-- **OSS-first governs the *dependencies* we consume** — every component the stack runs is open-source,
-  self-hosted, and free, with **no paid licenses** (verified in §3). That mandate is satisfied.
-- **Proprietary governs only our *own original code*** — which we author and do not redistribute. Nothing
-  in the OSS-first mandate requires us to license our *own* work openly; it requires our *inputs* to be
-  open. No contradiction.
+That reconciliation is no longer needed. Since ADR-0009 the mandate and the licence point the same
+way: every component the stack runs is open-source, self-hosted and free (verified in §3), **and**
+the code we write is open-source too. The organisation may now describe its own work as open
+source — the previous instruction not to is withdrawn.
+
+What has not changed: we still do not *redistribute* anything. The AGPL's duties are owed to whoever
+receives the code or uses it over a network, which today means clinic staff.
 
 ## 3. Third-party component inventory (verified)
 
@@ -111,12 +119,14 @@ and forces us to open it. Our reasoning — **[needs legal sign-off]**:
 
 ## 5. Summary
 
-- **Our code:** proprietary, holder Daniel Espinoza Charrier.
+- **Our code:** AGPL-3.0-or-later, holder Daniel Espinoza Charrier (brand assets carved out).
 - **Every dependency:** OSS, self-hosted, free — no paid license.
-- **No copyleft reach** onto our code under the unmodified-official-images / mere-aggregation reading.
+- **No copyleft reach** onto *this* repository's code under the unmodified-official-images /
+  mere-aggregation reading — §4 stands. The AGPL here is chosen, not compelled. It *is* compelled in
+  the three Nextcloud apps, which bundle `@nextcloud/vue`.
 - **Our own §13 duty (as operator):** because we *run* AGPL components, we must offer their unmodified
   source to people who interact with them — a separate, trivially-met obligation (point to each project's
-  public upstream). It does not affect our own code's license.
+  public upstream). Since ADR-0009 our own code carries the same duty, discharged the same way.
 - **Open items:** entity/commissioning question (holder revisited if a legal entity forms or the work is
   deemed commissioned); Euro-Office §7 dispute if it's chosen for production; re-run §4 if we ever modify or
   fork a component.
