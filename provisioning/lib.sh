@@ -609,12 +609,17 @@ ensure_aia_intermediate() {  # HOST
   # `grep -F " $name "` was really asking "which other certificates are installed?". Parsed the way
   # divergence.sh parses occ's JSON. 0 = present, 1 = absent, 2 = could not be read, which is the
   # same non-answer as a failed occ and takes the same exit.
+  # `|| rc=$?`, never a bare pipeline followed by `rc=$?`: phases run under `set -e` (seed.sh), and
+  # "certificate absent" is a legitimate non-zero that would kill the phase before the assignment
+  # ran. An OR list is exempt from errexit; an `if` condition is too, which is why the old shape
+  # never hit this. Caught by cleanboot, not locally — a machine that already holds both
+  # certificates never takes the absent branch.
+  rc=0
   printf '%s' "$listed" | python3 -c '
 import json, sys
 try: rows = json.load(sys.stdin)
 except Exception: sys.exit(2)
-sys.exit(0 if any(r.get("name") == sys.argv[1] for r in rows) else 1)' "$name"
-  rc=$?
+sys.exit(0 if any(r.get("name") == sys.argv[1] for r in rows) else 1)' "$name" || rc=$?
   case "$rc" in
     0) log "certs: $name already imported"; return 0 ;;
     2) log "certs: certificate list was unreadable — skipped, leaving $name as it is"; return 0 ;;
