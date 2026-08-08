@@ -593,10 +593,32 @@ ensure_aia_intermediate() {  # HOST
   fi
 
   name="$(basename "$aia" .crt).pem"
-  if occ security:certificates 2>/dev/null | grep -qF " $name "; then
-    log "certs: $name already imported"
+
+  # "Not imported" and "could not ask" are DIFFERENT ANSWERS (#143). This used to pipe occ straight
+  # into grep with stderr discarded, so a container that was briefly too busy to answer looked
+  # exactly like an empty bundle — and re-importing a certificate that is already there is a WRITE
+  # on a provisioned instance, which reddens seed-idempotent and, through cleanboot, CI. Capture
+  # first and let the exit status decide whether the output means anything.
+  local listed rc
+  if ! listed="$(occ security:certificates --output=json 2>/dev/null)"; then
+    log "certs: could not read the certificate list — skipped, leaving $name as it is"
     return 0
   fi
+
+  # --output=json, not the rendered table: that table pads every column to its widest row, so
+  # `grep -F " $name "` was really asking "which other certificates are installed?". Parsed the way
+  # divergence.sh parses occ's JSON. 0 = present, 1 = absent, 2 = could not be read, which is the
+  # same non-answer as a failed occ and takes the same exit.
+  printf '%s' "$listed" | python3 -c '
+import json, sys
+try: rows = json.load(sys.stdin)
+except Exception: sys.exit(2)
+sys.exit(0 if any(r.get("name") == sys.argv[1] for r in rows) else 1)' "$name"
+  rc=$?
+  case "$rc" in
+    0) log "certs: $name already imported"; return 0 ;;
+    2) log "certs: certificate list was unreadable — skipped, leaving $name as it is"; return 0 ;;
+  esac
 
   # GlobalSign serves DER; others serve PEM. Try DER, fall back to PEM, and let openssl be the
   # gate: an HTML error page must never reach the bundle as a "certificate". Empty output means
