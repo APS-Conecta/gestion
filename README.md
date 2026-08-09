@@ -8,7 +8,6 @@ none, and `sites/` is where a clinic's own values live.
 > **Status: ✅ v1 done (Foundation + Spine A).** Epics 0–4 are merged — dev stack + debugger +
 > quality gate + provisioning, es-CL locale, roles/access, the four-area document
 > tree, and live office editing — and the browser acceptance run passed on **2026-07-24**.
-> No patient data — dev uses **synthetic fixtures only**.
 
 ## What this is (and isn't)
 

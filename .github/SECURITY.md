@@ -45,12 +45,9 @@ PR gate — including why the free plan can't *enforce* it — are owned by
       public by accident.
 - [x] **Enable Dependabot alerts** on `gestion` (free on private repos; zero config).
 - [ ] **Enable Dependabot security updates** — the automatic fix PRs, a *separate* setting from
-      alerts. Alerts tell you; updates open the pull request. This line and the one above were one
-      checkbox until 2026-08-08, which could not be ticked honestly in either direction because alerts
-      were on and updates were off.
+      alerts, which is why this is its own line.
 - [x] **Enable the local secret-guard hook** on every clone — `.githooks/pre-commit`, enabled with
-      `git config core.hooksPath .githooks`. It was committed non-executable in five repositories, so
-      git skipped it silently; fixed 2026-08-08, and the docs gate now fails a hook that cannot run.
+      `git config core.hooksPath .githooks`. The docs gate fails a hook that is not executable.
 
 ### Medium
 - [ ] **Least-privilege base permission** (org base = Read/None). Grant explicit **Write** per person

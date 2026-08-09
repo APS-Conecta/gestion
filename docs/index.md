@@ -33,8 +33,7 @@ same fact, the one named here as its authority wins and the other should link in
 | [`BRANDING.md`](BRANDING.md) | *Spanish.* The `occ` keys that apply the brand |
 | [`../themes/apsconecta/MAPEO.md`](../themes/apsconecta/MAPEO.md) | *Spanish.* Brand-kit token mapping |
 
-Those three are Spanish deliberately, and `AGENTS.md` says so: two were authored with the brand kit
-and one is read by clinic staff. Everything else is English.
+Those three are Spanish deliberately; [`AGENTS.md`](../AGENTS.md) owns the list and the reason.
 
 ## Status and history
 

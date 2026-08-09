@@ -120,8 +120,7 @@ Authorization is entirely **group-based — never per individual**, delivered th
   display names and the role→category mapping declared in
   [`provisioning/phases/20-groups.sh`](../provisioning/phases/20-groups.sh), which **is** the registry —
   the phase that creates them is the authority, and this document deliberately does not restate the
-  list. It previously cited "the spine's Group Registry", a document that does not exist, while that
-  script cited this section as the registry: the pair pointed at each other and neither held the ids. A clinic running a **SAR, SAPU
+  list. A clinic running a **SAR, SAPU
   or SUR** adds its own in `SITE_ROLES` (`id|display|category`), since it could already declare the unit, its
   folder and its grants but had no way to name who leads it (#103).
 - Coarse and cross-role access use **parallel groups**: the four categories (`cat-jefaturas`, `cat-clinicos`,
