@@ -12,7 +12,6 @@ phase_begin "05-security" "session hardening + outbound defaults"
 #
 # HONEST LIMIT: not a guarantee. Chrome's "Continue where you left off" and Firefox's session
 # restore keep session cookies across a browser restart; closing that needs a workstation policy.
-# Said plainly because "logout on close" reads like a promise and is not one.
 config_system_set remember_login_cookie_lifetime 0 integer
 
 # Make the lookup-server opt-out explicit. Changes no behaviour today — lookup_server_connector's

@@ -1,0 +1,88 @@
+{
+  "_comment": "Decisions APS-Conecta made. Extends _base.json; lists concatenate, scalars override.",
+  "org": "APS-Conecta",
+  "holder": "Daniel Espinoza Charrier",
+  "exemplar": "gestion",
+  "_comment_licence": "ADR 0010 supersedes 0007: AGPL-3.0-or-later across every repo. The apps link @nextcloud/vue (AGPL), so the obligation is inherited, not chosen.",
+  "licence_posture": "agpl",
+  "_comment_language": "Repo docs English. Only the org profile/README.md is bilingual ES/EN.",
+  "doc_language": "en",
+  "_comment_language_exempt": "Deliberately Spanish, named as such in gestion/AGENTS.md: the staff-facing conventions, the two brand documents authored with the brand kit, and a glossary OF Spanish domain terms — reference material about Spanish, not documentation written in it. Everything else in Spanish is a finding.",
+  "doc_language_exempt": [
+    "docs/CONVENTIONS.md",
+    "docs/BRANDING.md",
+    "MAPEO.md",
+    "GLOSARIO.md"
+  ],
+  "stack_markers": {
+    "appinfo/info.xml": "nextcloud-app",
+    "functions.php": "wordpress-theme"
+  },
+  "archetypes": {
+    "nextcloud-app": {
+      "extra": [
+        "install",
+        "config"
+      ]
+    }
+  },
+  "_comment_versions": "Components whose documented version must match compose.yaml.",
+  "stack_version_components": {
+    "nextcloud": "Nextcloud",
+    "postgres": "PostgreSQL",
+    "redis": "Redis"
+  },
+  "_comment_leak": "Added to the universal set — Spanish wording and our own infrastructure notes.",
+  "internal_patterns": [
+    [
+      "redis[^.\\n]{0,30}without a password|sin contrase",
+      "discloses an infra weakness"
+    ]
+  ],
+  "names": [
+    "Espinoza",
+    "Charrier"
+  ],
+  "_comment_boxes": "Checklist wording in our SECURITY.md, mapped to the setting that settles it.",
+  "claim_boxes": [
+    [
+      "org-wide 2FA|two-factor",
+      "org-2fa"
+    ],
+    [
+      "Dependabot security updates",
+      "dependabot-security-updates"
+    ],
+    [
+      "Dependabot alerts",
+      "dependabot-alerts"
+    ],
+    [
+      "Private [Vv]ulnerability [Rr]eporting",
+      "private-vuln-reporting"
+    ],
+    [
+      "[Ss]ecret scanning",
+      "secret-scanning"
+    ]
+  ],
+  "notices_doc": [
+    "THIRD-PARTY-NOTICES.md",
+    "docs/LICENSING.md"
+  ],
+  "_comment_single_tenant": "Wording that presumes one clinic where the software is multi-site: sites/<slug>/site.sh, a 2655-row DEIS register, and epidemiologia ADR-0003 (establishment is instance configuration). 'CESFAM' as a clinic TYPE is correct and must not match.",
+  "single_tenant": [
+    ["\\bfor a\\b[^.]{0,40}CESFAM", "presumes a single clinic"],
+    ["para un CESFAM", "presumes a single clinic"],
+    ["de un CESFAM", "presumes a single clinic"],
+    ["\\bfor one\\b[^.]{0,40}CESFAM", "presumes a single clinic"]
+  ],
+  "_comment_code_owners": "Who reviews. One account today; every commit in every repository is his and no other account has access.",
+  "code_owners": "@ddespinoza",
+  "_comment_root": "Where the clones live is machine-local, not policy: see config.json.",
+  "repo_archetypes": {
+    "repo-docs": "cli",
+    "aps-conecta-web": "website",
+    "common": "library"
+  }
+}

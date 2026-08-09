@@ -16,7 +16,7 @@ and reasons about whether running them triggers any obligation on our own code.
 1. The project's **own original work** (code under `apps/`, `themes/`, `provisioning/`, `scripts/`,
    plus this repo's configuration and documentation) is licensed **AGPL-3.0-or-later** — see
    [`LICENSE`](../LICENSE) and
-   [ADR-0010](../../aps-conecta-web/docs/adr/0010-agpl-across-the-org.md).
+   [ADR-0010](adr/0010-agpl-across-the-org.md).
 2. **Why AGPL (reasoning, not assertion).** For *this* repository the licence was a free choice —
    §4 below shows the copyleft of the components we run never reaches our code. It was not free
    elsewhere: `territorio`, `analizador-rem` and `epidemiologia` compile `@nextcloud/vue`
@@ -47,9 +47,17 @@ receives the code or uses it over a network, which today means clinic staff.
 ## 3. Third-party component inventory (verified)
 
 Every runtime component. The **services** are pinned as images in [`compose.yaml`](../compose.yaml);
-the three **Nextcloud apps** (`groupfolders`, `eurooffice`, `side_menu`) are installed into Nextcloud via `occ`, not as
-compose services. All are open-source, self-hosted, and free — **no paid license, no license key** anywhere
-in the stack.
+the **six Nextcloud apps** a release installs are installed via `occ`, not as compose services — the
+authority for which ones is `APPS` and `OWN_APPS` in
+[`provisioning/phases/12-apps.sh`](../provisioning/phases/12-apps.sh), and this table must list every
+entry in both. All are open-source, self-hosted, and free — **no paid license, no license key**
+anywhere in the stack.
+
+*Corrected 2026-08-08.* This section said "the three Nextcloud apps" and listed three, while
+provisioning installed six: `calendar`, `contacts` and our own `epidemiologia` were absent. That last
+omission mattered most — `epidemiologia` is the app whose `@nextcloud/vue` bundle is *why* the AGPL is
+compelled on this organisation at all (§1.2), so the inventory was missing its own cause. Licences
+below were read from each app's `appinfo/info.xml` inside the shipped tarball, not from memory.
 
 | Component | Pinned / installed as | License | SPDX | Source |
 |-----------|------------------------|---------|------|--------|
@@ -60,6 +68,9 @@ in the stack.
 | Group Folders | NC app `groupfolders` (occ-installed) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | nextcloud/groupfolders `info.xml` |
 | Euro-Office connector | NC app `eurooffice` (occ-installed) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | eurooffice `info.xml` |
 | Side menu | NC app `side_menu` (occ-installed) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `side_menu` `info.xml` |
+| Calendar | NC app `calendar` 6.5.2 (occ-installed) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `calendar` `info.xml` (`<licence>agpl</licence>`) |
+| Contacts | NC app `contacts` 8.7.5 (occ-installed) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `contacts` `info.xml` |
+| Epidemiología | NC app `epidemiologia` 0.8.0 — **ours**, built from a tag of its own repo | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `epidemiologia` `info.xml`; compiles `@nextcloud/vue`, which is why §1 is not a free choice |
 | Fraunces | `themes/apsconecta/core/fonts/*.woff2` (served by the theme) | SIL Open Font License 1.1 | `OFL-1.1` | Fraunces `OFL.txt` |
 | Nunito Sans | `themes/apsconecta/core/fonts/*.woff2` (served by the theme) | SIL Open Font License 1.1 | `OFL-1.1` | Nunito Sans `OFL.txt` |
 
@@ -105,7 +116,10 @@ and forces us to open it. Our reasoning — **[needs legal sign-off]**:
 2. Our own code interacts with them only across process/network boundaries (occ CLI, HTTP/WOPI) — the
    classic **"mere aggregation"** situation, not the creation of a **derivative work**.
 3. Under that reading, the AGPL of Nextcloud/Redis/Euro-Office imposes **no copyleft obligation on APS
-   Conecta's own original code**, which may therefore remain proprietary (§1).
+   Conecta's own original code**, which is therefore AGPL by *choice* rather than by obligation — see
+   §1.2. This paragraph read "may therefore remain proprietary" until 2026-08-08, citing a §1 that
+   ADR-0010 had already reversed: the aggregation analysis survived the relicence, its conclusion
+   did not.
 4. **Caveat that would change this:** the moment we *modify* an AGPL component's source, or bundle/fork it
    rather than pull the official image, the AGPL's network-copyleft (§13) can attach.
 5. **Re-examined 2026-07-30, after [ADR-0002](adr/0002-app-patches.md) (2026-07-29) met that trigger.**

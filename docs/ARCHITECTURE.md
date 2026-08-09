@@ -117,7 +117,10 @@ Authorization is entirely **group-based — never per individual**, delivered th
   clinic add a role and have it inherit every existing grant without one being edited.
 - Each CESFAM **role** is a flat Nextcloud group (`role-*`); Nextcloud groups do not nest. **22 are shared by
   every clinic** — the vocabulary that keeps one clinic's ACL matrix readable beside another's — with IDs,
-  slugs and the role→category mapping fixed in the spine's **Group Registry**. A clinic running a **SAR, SAPU
+  display names and the role→category mapping declared in
+  [`provisioning/phases/20-groups.sh`](../provisioning/phases/20-groups.sh), which **is** the registry —
+  the phase that creates them is the authority, and this document deliberately does not restate the
+  list. A clinic running a **SAR, SAPU
   or SUR** adds its own in `SITE_ROLES` (`id|display|category`), since it could already declare the unit, its
   folder and its grants but had no way to name who leads it (#103).
 - Coarse and cross-role access use **parallel groups**: the four categories (`cat-jefaturas`, `cat-clinicos`,
@@ -163,10 +166,16 @@ and read: [`provisioning/README.md`](../provisioning/README.md).
   Logo, favicon and login background are **files in the theme** (`core/img/`), registered by the
   `15-branding` phase with `occ theming:config <key> <absolute-path>` pointing at the bind-mounted
   theme directory — never admin-UI uploads, which would break AD-2. The iOS "Nextcloud — Abrir" banner
-  is killed with `occ config:system:set customclient_ios_appid ""`; **there is no `defaults.php`**
-  (deleted 2026-07-27, and with it the opcache restart it required).
-  This supersedes **AD-6** on `themes/` files, but AD-6 was *right* to reject `defaults.php` —
-  reasoning and accepted costs in [ADR-0001](adr/0001-server-theme-for-branding.md).
+  is killed with `occ config:system:set customclient_ios_appid ""`, which replaced what
+  `defaults.php` was doing at the time (deleted 2026-07-27, and with it the opcache restart).
+  **`themes/apsconecta/defaults.php` exists again** since 2026-08-04, on entirely different grounds:
+  where Nextcloud hands out `\OC_Defaults` instead of `ThemingDefaults` — an untrusted host, the three
+  setup screens, both upgrade screens — identity comes from hardcoded literals with no config key, and
+  only that file can answer. It reintroduces the opcache dependency, so editing it needs a container
+  restart. See [ADR-0004](adr/0004-branding-the-legacy-render-path.md).
+  This supersedes **AD-6** on `themes/` files. AD-6 was *right* to reject `defaults.php` **for the
+  banner**; ADR-0004 brought it back for identity on the legacy render path — reasoning and accepted
+  costs in [ADR-0001](adr/0001-server-theme-for-branding.md) and its Corrections 2 and 4.
 - **What the theme can actually change is narrow.** Nextcloud scopes its CSS variables to
   `body[data-theme-light]` and a server theme loads *first*, so variables declared in `:root` are
   inert; element selectors win, variables do not. `server.css` therefore ships fonts, display
@@ -185,6 +194,18 @@ and read: [`provisioning/README.md`](../provisioning/README.md).
 A single Compose stack, brought up with one command, on **a developer's machine or a clinic's** — those
 are the same stack and the same command. `make setup && make install` stands up a named CESFAM from a clean
 checkout, and #77's whole effort was making that true of a machine nobody has seen.
+
+**`main` is the trunk; a release is a tag.** The dev stack installs from `main`; a clinic installs a
+tag, and that tag is the only answer to "which bytes does that instance have?"
+([ADR-0005](adr/0005-gestion-is-the-development-trunk.md)). Three kinds of app follow from it and a
+release ships only two: **vendored** apps, whose upstream tarballs are committed under
+`provisioning/apps/<id>/` with a `VENDOR` file naming version, URL and sha256; one **own** app,
+`epidemiologia`, installed from a tarball built from a tag of its own repository; and **lab** apps —
+`territorio` and `analizador-rem` — which exist only as clones in `apps/`, are declared in
+`dev/lab-apps.sh`, and are **never in a release**: phase 12 acts on an entry only where
+`apps/<id>/.git` exists, so a clinic falls straight through.
+[`apps/README.md`](../apps/README.md) is the authority for that boundary and for the app-id ↔
+repository-name mapping (`analizador-rem` → `apps/analizador_rem`); this document does not restate it.
 
 What is still **deferred** is everything that makes a host reachable and survivable rather than everything
 that makes it run: hosting/provider, a TLS reverse-proxy for the office server with a hardened allow-list

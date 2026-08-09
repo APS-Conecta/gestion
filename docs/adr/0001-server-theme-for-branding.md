@@ -135,7 +135,7 @@ that compared against it went with it. How to verify the theme that actually loa
 
 Recorded rather than quietly edited: the original reasoning was published with false premises, and
 the audit trail matters more than looking right. Three rounds consolidated here 2026-07-30; a fourth
-added 2026-08-04.
+added 2026-08-04, a fifth 2026-08-08.
 
 **1 — `occ` does set brand images (2026-07-26).** Believed: NC34's `occ` sets text and colour only,
 so images must go through the admin UI, which AD-2 forbids. Found: `UpdateConfig.php:103-113` handles
@@ -161,6 +161,19 @@ screens where those tests fail — untrusted domain, the three setup screens, bo
 identity comes from hardcoded literals with no config key, and only `themes/apsconecta/defaults.php`
 can answer. The file is back, on new grounds; Correction 2's banner reasoning is untouched and still
 correct. See ADR-0004.
+
+**5 — the theme is not proprietary, and the tokens and logos are not MIT (2026-08-08).** This ADR's
+consequences said `themes/` is proprietary "under `docs/LICENSING.md` §1", that "the kit's AGPL-3.0
+claim for the theme is retracted; it was a free choice, not an obligation", and that tokens and logos
+"stay MIT in the brand kit". All three are reversed by [ADR-0010](0010-agpl-across-the-org.md)
+(2026-08-07), which put every repository under **AGPL-3.0-or-later** — inherited from what the apps
+link, never chosen — and protects the identity by **trademark** instead: the logo, mono logo, lockup
+and favicon are all rights reserved with the marks reserved under AGPL §7(e), while **colour tokens
+ship under the AGPL**, because colour values are functional data and copyright barely reaches them.
+So the retraction was itself retracted. MIT over the logo files is specifically the grant ADR-0007 was
+written to withdraw — it permits sublicensing and sale of the visual identity — and it must not be
+restated anywhere. The clause above also cited §1 of `LICENSING.md` as its authority; that section now
+reads AGPL-3.0-or-later, so the citation was pointing at a section saying the opposite.
 
 **What this leaves.** `themes/` is undocumented legacy — it appears in no manual and its loader lives
 in `lib/private/legacy/` — so re-verify after every major upgrade. **Fact 2, that brand typography

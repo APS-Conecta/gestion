@@ -21,10 +21,14 @@ gestion/
 ├── provisioning/phases/15-branding.sh   ← el ÚNICO sitio que escribe la marca
 └── themes/apsconecta/            ← una sola copia; compose.yaml la monta
     ├── MAPEO.md
+    ├── defaults.php               ← identidad en el camino heredado (ADR-0004)
+    ├── tools/
     └── core/{css,fonts,img}/
 ```
 
-Lo que **alimenta a diseño** está en el kit hermano `../APS Conecta Nextcloud/` (MIT, fuera de git):
+Lo que **alimenta a diseño** está en el kit hermano `../APS Conecta Nextcloud/` (fuera de git; su
+licencia MIT se retiró el 2026-08-08 — las marcas quedan reservadas según el §7(e) de la AGPL y los
+tokens van con el código, ver §10):
 `tokens/`, `logo/`, `css/apsconecta.css`, `sistema-diseno.html` (brandbook vivo),
 `brandbook-agnostico.html`, `README-MARCA.md`.
 
@@ -69,7 +73,9 @@ La fase hace, en orden:
    (corregido el 2026-07-27). Ver regla 5 de `THEMING-MODEL.md`.
 4. **Tema claro forzado:** `enforce_theme = light` + `disable-user-theming = yes`. Son claves **complementarias**: la primera elimina la elección de tema/apariencia, la segunda impide que cada usuario cambie fondo y color por su cuenta.
 5. **Banner iOS:** `config:system:set customclient_ios_appid ""` — mata el meta
-   `apple-itunes-app`. Sustituye al antiguo `defaults.php`, eliminado el 2026-07-27.
+   `apple-itunes-app`. Sustituye a `defaults.php` **para esta tarea**: por eso se eliminó el
+   2026-07-27. El fichero volvió el 2026-08-04 por otro motivo — identidad en el camino heredado
+   ([ADR-0004](adr/0004-branding-the-legacy-render-path.md)).
 6. **Navegación:** el color de `side_menu` (`background-color` / `background-color-to`). La app la
    instala la fase `12-apps` desde su tarball vendorizado (#98), no ésta.
 7. **Activación del tema:** `config:system:set theme --value apsconecta`.
@@ -121,6 +127,9 @@ Ya está instalado: vive en **`gestion/themes/apsconecta/`**, que `compose.yaml`
 ```
 gestion/themes/apsconecta/
 ├── MAPEO.md                    ← qué entrega server.css de verdad, y por qué tan poco
+├── defaults.php                ← identidad en el camino heredado (ADR-0004). Pasa por opcache:
+│                                 editarlo exige reiniciar el contenedor
+├── tools/                      ← generador de arte, de un solo uso; no es un paquete
 └── core/
     ├── css/server.css          ← fuentes, display, cabecera, foco, alto contraste
     ├── fonts/*.woff2           ← Fraunces + Nunito Sans (zero-egress). La ÚNICA razón
@@ -128,7 +137,9 @@ gestion/themes/apsconecta/
     └── img/                    ← el listado completo vive en §3, no se repite aquí
 ```
 
-Ya **no** hay `defaults.php` — su único trabajo lo hace `customclient_ios_appid` — ni
+`defaults.php` **sí existe**: volvió el 2026-08-04 ([ADR-0004](adr/0004-branding-the-legacy-render-path.md)).
+Ya no mata el banner iOS —eso lo hace `customclient_ios_appid`— sino que entrega la identidad en las
+pantallas del camino heredado, donde no hay clave de configuración que responda. Lo que no hay es
 `apps/<appid>/img/` (§5: cero iconos en conflicto).
 
 > **Lo que el CSS del tema puede cambiar es poco.** Nextcloud declara sus variables en
@@ -137,7 +148,8 @@ Ya **no** hay `defaults.php` — su único trabajo lo hace `customclient_ios_app
 > elemento sí ganan. Lee `THEMING-MODEL.md` antes de tocar `server.css`.
 
 1. **Activa el tema:** lo hace la fase `15-branding` (`config:system:set theme --value apsconecta`).
-2. **Reinicio:** ninguno. Hacía falta solo por el opcache de `defaults.php`, que ya no existe.
+2. **Reinicio:** ninguno para las claves `occ` de este documento. Sí hace falta si tocas
+   `defaults.php`, que vuelve a estar y sigue pasando por el opcache.
 3. **Fuentes:** Fraunces y Nunito Sans en **woff2 variable** (un fichero por familia cubre pesos 400–800, más las itálicas), en `core/fonts/`, declaradas por `@font-face` con rutas absolutas `/themes/apsconecta/core/fonts/` — **zero-egress, sin Google Fonts**. **Solo woff2, sin fallback a TTF**: ningún navegador que soporte Nextcloud 34 carece de woff2, y el fallback escondía errores (un woff2 ausente caía al TTF en silencio). `make test` verifica que cada `url()` de `server.css` existe en disco. Regenerar tras actualizar una fuente:
    ```bash
    python3 -c "from fontTools.ttLib.woff2 import compress; compress('X.ttf','X.woff2')"
@@ -231,8 +243,22 @@ cd "../APS Conecta Nextcloud" && python3 -m http.server 8080
 
 ## 10. Licencias
 
-Tokens y logos **MIT** (los consume también el sitio apsconecta.cl) · fuentes Fraunces y Nunito Sans **SIL OFL 1.1** (ver [`LICENSING.md`](LICENSING.md) §3.2: los
-lockups SVG sí llevan subset, lo permite la licencia; lo que no se hace es renombrarlas) · iconografía en idioma Material (**Apache-2.0 / MIT**).
+Todo el código propio va bajo **AGPL-3.0-or-later**, incluidos este tema y las apps propias. Es una
+obligación **heredada** de lo que las apps enlazan (`@nextcloud/vue`), no una elección: lo decide
+[ADR-0010](adr/0010-agpl-across-the-org.md) y el detalle está en [`LICENSING.md`](LICENSING.md) §1,
+que también resuelve el §13 y los parches de ADR-0002 en su §4.
 
-El **tema y las apps propias son propietarios**: viven en el repo `gestion/`, cubierto por su `LICENSE` (propietario, todos los derechos reservados) y detallado en `gestion/docs/LICENSING.md` §1. La marca AGPL-3.0 que este documento declaraba antes se retira: era una elección libre, no una obligación — el análisis del §13 lo
-resuelve [`LICENSING.md`](LICENSING.md) §4, incluidos los parches de ADR-0002.
+La **identidad visual se protege por marca, no por copyright**: logo, logo monocromo, lockup y favicon
+quedan con **todos los derechos reservados**, con las marcas reservadas según el artículo **7(e)** de
+la AGPL. Los **tokens de color sí van bajo AGPL** junto al código — un valor de color es dato
+funcional y el copyright apenas lo alcanza.
+
+De terceros: fuentes Fraunces y Nunito Sans **SIL OFL 1.1** (ver [`LICENSING.md`](LICENSING.md) §3.2:
+los lockups SVG sí llevan subset, lo permite la licencia; lo que no se hace es renombrarlas) ·
+iconografía en idioma Material (**Apache-2.0 / MIT**).
+
+*Corregido el 2026-08-08.* Esta sección declaraba «tokens y logos **MIT**», afirmaba que «el tema y las
+apps propias son **propietarios**», y **retiraba** explícitamente la marca AGPL-3.0. Las tres quedaron
+revertidas por ADR-0010, así que la retirada quedó a su vez retirada. MIT sobre los archivos del logo es
+exactamente la licencia que ADR-0007 existió para quitar: permite sublicenciar y vender la identidad
+visual que esos archivos establecen.

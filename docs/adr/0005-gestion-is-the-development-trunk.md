@@ -1,7 +1,9 @@
 # ADR-0005 — `main` is the development trunk; a release is a tag
 
 - **Status:** accepted (2026-08-08)
-- **Affects:** `CONTRIBUTING.md`, `README.md`, `CONTEXT.md`, `AGENTS.md`, `dev/lab-apps.sh`,
+- **Affects:** `CONTRIBUTING.md`, `README.md`, `CONTEXT.md`, `AGENTS.md`, `docs/ARCHITECTURE.md`
+  (added 2026-08-08 — the design SSOT had no mention of this decision, and the omission from this
+  list is why), `dev/lab-apps.sh`,
   `provisioning/phases/12-apps.sh`, `provisioning/seed.sh`, `scripts/divergence.sh`,
   `scripts/test.sh`, `.github/workflows/cleanboot.yml`
 
