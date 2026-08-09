@@ -30,10 +30,11 @@ same fact, the one named here as its authority wins and the other should link in
 | [`../provisioning/README.md`](../provisioning/README.md) | The provisioning phases and their order |
 | [`../themes/README.md`](../themes/README.md) | The server theme directory |
 | [`CONVENTIONS.md`](CONVENTIONS.md) | *Spanish, staff-facing.* The shared folder structure a clinic works in |
-| [`BRANDING.md`](BRANDING.md) | *Spanish.* The `occ` keys that apply the brand |
-| [`../themes/apsconecta/MAPEO.md`](../themes/apsconecta/MAPEO.md) | *Spanish.* Brand-kit token mapping |
+| [`BRANDING.md`](BRANDING.md) | The `occ` keys that apply the brand |
+| [`../themes/apsconecta/MAPEO.md`](../themes/apsconecta/MAPEO.md) | Brand-kit token mapping |
 
-Those three are Spanish deliberately; [`AGENTS.md`](../AGENTS.md) owns the list and the reason.
+`CONVENTIONS.md` is Spanish deliberately, because clinic staff read it; [`AGENTS.md`](../AGENTS.md)
+owns the rule.
 
 ## Status and history
 
