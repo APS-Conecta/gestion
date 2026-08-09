@@ -591,29 +591,17 @@ def required(level: str, org_mode: bool, archetype: str = None) -> tuple:
     return P["levels"][level]
 
 
-_ORG_DEFAULTS = None
-
-
-def org_defaults_served() -> set:
-    """What the organisation's public .github repository actually serves. GitHub applies these to any
-    repository that has no copy of its own, so for those repositories the file is present in the only
-    sense a reader experiences — and a local copy is justified only where it must DIFFER."""
-    global _ORG_DEFAULTS
-    if _ORG_DEFAULTS is None:
-        _ORG_DEFAULTS = set()
-        root = discover()["repos"].get(".github")
-        if root:
-            p = Path(root)
-            for name in (P.get("org_inheritable") or []):
-                if (p / name).exists() or (p / ".github" / name).exists():
-                    _ORG_DEFAULTS.add(name)
-    return _ORG_DEFAULTS
-
-
 def gaps(facts: dict, level: str, org_mode: bool) -> list:
     have = set(facts["health"])
     if facts.get("archetype") != "org-profile":
-        have |= org_defaults_served()
+        # GitHub serves these from the org's public .github repository to every repo without its own,
+        # so demanding a local copy asks for the duplication org-before-repo exists to prevent.
+        #
+        # Read from the profile, NOT by looking for a sibling .github clone: this same file runs
+        # vendored in CI, where no sibling exists, and inferring "absent" there failed three repos on
+        # a checkout layout rather than on their documentation. The presence of the org files is
+        # verified where it belongs — `org_level` requires all five when auditing `.github` itself.
+        have |= set(P.get("org_inheritable") or [])
     return [r for r in required(level, org_mode, facts.get("archetype")) if r not in have]
 
 
@@ -1673,7 +1661,11 @@ def selftest() -> None:
             assert any(f.rule == "adr-status" for f in _r_adr(ctx))
             assert any(f.rule == "fact-contradiction" for f in _r_contradiction(ctx)), \
                 "three-person vs single developer must contradict"
-            assert "SECURITY.md" in gaps(facts, "full", False)
+            # CODEOWNERS, not SECURITY.md: GitHub cannot default CODEOWNERS, so it is always a gap when
+            # absent, whereas SECURITY.md is legitimately inherited from the org and must NOT be.
+            g = gaps(facts, "full", False)
+            assert "CODEOWNERS" in g, g
+            assert "SECURITY.md" not in g, "an org-inheritable file must not be reported as missing"
 
             # A hook without its executable bit is inert in every clone, and git records the bit
             # (100755 vs 100644). --fix wrote the text only, so 5 of 6 repos carried a dead
