@@ -21,10 +21,28 @@ import sys
 import tempfile
 from pathlib import Path
 
-SKILL = Path(__file__).resolve().parent.parent
-CANON_DIR = SKILL / "canon"
-PUBLIC_DIR = SKILL / "public"
-PROFILES = SKILL / "profiles"
+_HERE = Path(__file__).resolve().parent
+
+
+def _resource(name: str) -> Path:
+    """Resolve a resource directory from EITHER location this file runs from.
+
+    As `repo-docs/scripts/docs.py` the resources sit one level up. As the copy each repo vendors at
+    `.github/repo-docs.py` they sit beside it, because there is no level up to speak of. Assuming the
+    first meant `PROFILES` was `<repo>/profiles/`, which no repo has, so `P` was `{}` and every
+    vendored invocation died in argparse with `KeyError: 'levels'` before doing any work. The docs
+    workflow in every repository therefore advertised a gate that had never run once — confirmed by a
+    real failed run on aps-conecta-web PR #1."""
+    for base in (_HERE.parent, _HERE):
+        if (base / name).is_dir():
+            return base / name
+    return _HERE.parent / name
+
+
+SKILL = _HERE.parent
+CANON_DIR = _resource("canon")
+PUBLIC_DIR = _resource("public")
+PROFILES = _resource("profiles")
 
 # ---- craft vs decision (ADR 0002) --------------------------------------------------
 # Every rule below is craft: true of documentation anywhere. Every rule's PARAMETERS are
@@ -950,6 +968,14 @@ def _r_canon(ctx):
     # anyway (ADR-0012 in gestion). Without this, --fix on the org repo published all four.
     publishable = P.get("canon_org") or []
     is_org = ctx["org_mode"] or ctx["facts"].get("archetype") == "org-profile"
+    if not CANON_DIR.is_dir():
+        # The vendored CI copy has profiles beside it but not canon/, so every source file is absent
+        # and this rule would compare nothing and pass. Say so instead: an unevaluated rule that
+        # reports green is the defect this whole pass has been removing.
+        DEGRADED.append("rule 'canon-drift': canon/ is not available to this copy of the checker")
+        SKIPPED_RULES.add("canon-drift")
+        print("SKIP    canon-drift          canon/ not vendored beside this checker — not evaluated")
+        return
     for canon_rel, repo_rel in P["canon"].items():
         dst, src = ctx["path"] / repo_rel, CANON_DIR / canon_rel
         if canon_rel in P["canon_seed_only"] or not src.exists():
@@ -1112,6 +1138,12 @@ def _r_boxes(ctx):
                 continue
             done = SETTINGS[key][0]("probe", ctx)
             marked = "[x]" in line.lower()
+            if done is None:
+                # We could not read the setting. Never rewrite a claim from a reading we did not make:
+                # --fix editing a document to match a failed probe is a worse defect than a stale box.
+                yield Finding("claim-boxes", "warn", f, i + 1,
+                              f"{key}: could not read the setting — box left as it is")
+                continue
             if done == marked:
                 continue
             if ctx["fix"]:
@@ -1312,12 +1344,37 @@ RATIONALE = {
 
 # ---------------------------------------------------------------- settings
 
+@setting("dependabot-security-updates")
+def _s_dependabot_fixes(action, ctx):
+    """Separate from alerts, and easy to conflate with them: alerts tell you, updates open the PR.
+    gestion's checklist asked for both on one line while alerts were on and updates were off, so the
+    line could not be honestly ticked either way."""
+    repo = ctx["facts"]["repo"]
+    if action == "probe":
+        got = gh("api", f"repos/{ORG}/{repo}/automated-security-fixes")
+        if not isinstance(got, dict) or "enabled" not in got:
+            return None                     # gh() already recorded the failure
+        return got["enabled"] is True
+    return sh(["gh", "api", "-X", "PUT",
+               f"repos/{ORG}/{repo}/automated-security-fixes"])[0] == 0
+
+
 @setting("dependabot-alerts")
 def _s_dependabot(action, ctx):
     repo = ctx["facts"]["repo"]
     if action == "probe":
-        code, _, _ = sh(["gh", "api", f"repos/{ORG}/{repo}/vulnerability-alerts"])
-        return code == 0
+        # 204 = on, 404 = off, anything else = we could not tell. `code == 0` collapsed the third case
+        # into "off", and because --fix rewrites a checkbox to match the probe, one failed call
+        # silently edited SECURITY.md to claim a security feature was disabled while it was on.
+        _, out, _ = sh(["gh", "api", "-i", f"repos/{ORG}/{repo}/vulnerability-alerts"])
+        m = re.search(r"HTTP/[\d.]+ (\d{3})", out or "")
+        status = int(m.group(1)) if m else None
+        if status in (204, 200):
+            return True
+        if status == 404:
+            return False
+        DEGRADED.append(f"setting 'dependabot-alerts': unreadable (status {status})")
+        return None
     return sh(["gh", "api", "-X", "PUT", f"repos/{ORG}/{repo}/vulnerability-alerts"])[0] == 0
 
 
