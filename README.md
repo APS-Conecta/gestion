@@ -1,9 +1,10 @@
 # APS Conecta — Gestión
 
-Internal management / intranet suite for Chilean CESFAMs (primary-healthcare centres), built as a
-**white-label Nextcloud** deployment (official image, **no source fork**), self-hosted via Docker.
-Each install serves **one establishment**, named in that install's configuration — the product names
-none, and `sites/` is where a clinic's own values live.
+Internal management / intranet suite for Chilean primary-healthcare establishments — CESFAM and the
+rest of the APS network — built as a **white-label Nextcloud** deployment (official image, **no
+source fork**), self-hosted via Docker. Each install serves **one establishment**, named in that
+install's configuration — the product names none, ships none, and `sites/` is where your own values
+land.
 
 > **Status: ✅ v1 done (Foundation + Spine A).** Epics 0–4 are merged — dev stack + debugger +
 > quality gate + provisioning, es-CL locale, roles/access, the four-area document
@@ -51,23 +52,27 @@ from the repo root unless noted.
    installs itself, so rewriting the file on a live stack changes no login and only makes the file
    disagree with the database.
 
-   Leave `SITE` for step 3 — it names the clinic this stack serves.
+   Leave `SITE` for step 3 — it names the establishment this stack serves.
 
-3. **Choose your CESFAM.** One clinic ships as a working reference: **CESFAM Los Castaños**, in
-   `sites/los-castanos/site.sh`. To run it as-is, set `SITE=los-castanos` in `.env` and skip to step 4.
-
-   For any *other* clinic, the DEIS register ships too and you pick from it:
+3. **Choose your establishment.** **None ships.** The product names no establishment, so a clone
+   carries none: you pick yours from the DEIS register of Chilean primary-care establishments, which
+   *does* ship.
    ```bash
-   scripts/deis.py cesfam "la florida"        # search: type, comuna, name — accent-blind
-   scripts/deis.py 114302 --new mi-cesfam     # writes sites/mi-cesfam/site.sh
+   scripts/deis.py                                     # search, then pick a number from the list
+   scripts/deis.py cesfam "la florida"                 # or filter — every term must match, accent-blind
+   scripts/deis.py <codigo> --new mi-establecimiento   # writes sites/mi-establecimiento/site.sh
    ```
-   *Expected:* the second command asks for your **sectors** and **programs** — one per line, blank
-   line to finish — because no register knows them. Then set `SITE=mi-cesfam` in `.env`.
-   Everything else about the clinic (folders, the access matrix) is in that file, and it is yours to
-   edit.
+   Any primary-care establishment in the register works — CESFAM, PSR, CECOSF, CGR, CGU, COSAM,
+   SAPU, SAR or SUR. The `cesfam` above is a search *word*, not a required type.
 
-   *If you skip this*, `make install` stops before starting anything. It prints the two commands
-   above when `SITE` names a clinic that has no `sites/<slug>/site.sh`; when `SITE` is unset
+   *Expected:* the last command asks for your **sectors** and **programs** — one per line, blank
+   line to finish — because no register knows them. Then set `SITE=mi-establecimiento` in `.env`.
+   Everything else about the establishment (folders, the access matrix) is in that file, and it is
+   yours to edit. That file is **gitignored**, like `.env`: your configuration stays yours, and it
+   survives a `git pull` untouched.
+
+   *If you skip this*, `make install` stops before starting anything. It prints the commands above
+   when `SITE` names an establishment that has no `sites/<slug>/site.sh`; when `SITE` is unset
    entirely it points you back at `.env`, which is this step's other half.
 
 4. **Install it.** One command: it starts the stack, waits for Nextcloud's own installer to finish,
@@ -75,14 +80,14 @@ from the repo root unless noted.
    ```bash
    make install
    ```
-   *Expected:* one line per phase, then a summary naming your clinic and its counts:
+   *Expected:* one line per phase, then a summary naming your establishment and its counts:
    ```
    ▸ stack
    ▸ provisioning — full log: .install.log
        security
        jobs
        …
-   ✓ CESFAM Los Castaños — 7 teams, 14 group folders, 29 grants
+   ✓ <your establishment> — N teams, N group folders, N grants
      health: PASS
      http://localhost:8180
    ```
@@ -137,7 +142,7 @@ exists to prevent. Set by `provisioning/phases/14-office.sh`, never in the admin
 | `Makefile` | The dev lifecycle (`make help`). |
 | `scripts/` | `env-init.sh` (`make setup`) + `install.sh` (the one command) + `wait-ready.sh`, `test.sh` + `smoke.sh` (the gate), `seed-idempotent.sh`, `office-smoke.sh`, `divergence.sh` (what is live but undeclared), `image-digests.sh` + `app-versions.sh` (is anything we pinned behind upstream), `deis.py`, and `env.sh` (shared preamble). |
 | `provisioning/` | The single idempotent provisioning writer: `seed.sh` runner, `lib.sh` guard helpers, `phases/05-60`, `apps/` (per app: the vendored tarball, its `VENDOR` file and its patches — [ADR-0002](docs/adr/0002-app-patches.md)), and [`provisioning/README.md`](provisioning/README.md). |
-| `sites/` | One `<slug>/site.sh` per CESFAM — its teams, folders, ACL matrix and identity — plus the DEIS register they are picked from. **`los-castanos` ships as the reference clinic**; write another with `scripts/deis.py`. |
+| `sites/` | The DEIS register of primary-care establishments, tracked — it is what you pick from. Your `<slug>/site.sh` (teams, folders, ACL matrix, identity) lands here and is **gitignored**: it depends on which establishment you install, so it is install-local like `.env`. **No establishment ships**; write yours with `scripts/deis.py`. |
 | `apps/`, `themes/` | Live-mounted. `apps/` is gitignored and holds the apps unpacked from the tarballs committed in `provisioning/apps/`, patched at seed time ([ADR-0002](docs/adr/0002-app-patches.md)); `themes/apsconecta/` is the white-label server theme. |
 | `docs/ARCHITECTURE.md` | The architecture overview (design SSOT). |
 | `ROADMAP.md` · `BUGS.md` | Roadmap narrative · known bugs. Work in progress is on the [Projects board](https://github.com/orgs/APS-Conecta/projects/5). |

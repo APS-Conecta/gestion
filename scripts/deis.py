@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
-"""Find a clinic in the DEIS register and write its site file (sites/<slug>/site.sh).
+"""Find an establishment in the DEIS register and write its site file (sites/<slug>/site.sh).
 
   scripts/deis.py                     interactive: search, then pick a number from the list
   scripts/deis.py cesfam florida      filter: every term must appear in the row (accent-blind)
-  scripts/deis.py 114302              exact code: print that clinic's identity block
-  scripts/deis.py 114302 --new <slug> write sites/<slug>/site.sh, asking what the register cannot
-                                      know: which sectors and programs the clinic has
+  scripts/deis.py <codigo>            exact code: print that establishment's identity block
+  scripts/deis.py <codigo> --new <slug>  write sites/<slug>/site.sh, asking what the register cannot
+                                      know: which sectors and programs it has
   scripts/deis.py --snapshot <dir>    regenerate the register from a clone of the DEIS pipeline
 
+No establishment ships with this repository; running this is how an install gets one, and the file it
+writes is gitignored because its content depends on which establishment you chose.
+
 The register is the newest sites/establecimientos-deis-*.csv: public primary-care establishments in
-operation, trimmed to the ten columns an install needs. The date in the filename IS the provenance —
-never edit the file by hand, regenerate it with --snapshot.
+operation, trimmed to the ten columns an install needs. It carries the whole APS network — CESFAM,
+PSR, CECOSF, CGR, CGU, COSAM, SAPU, SAR, SUR — and the filter is a plain term match, so `cesfam`
+above is a search word and not a required type: `deis.py sapu florida` works the same way. The date
+in the filename IS the provenance — never edit the file by hand, regenerate it with --snapshot.
 
 Python, not bash: the CSV quotes fields that contain commas ("Sargento Aldea, Florida Alto"), and
 awk -F, gets those wrong. python3 is already assumed by provisioning/lib.sh; jq is not.
@@ -177,9 +182,10 @@ def write_site(row, snapshot, name, sectors, programs):
 
     nl = "\n  "
     with open(path, "w", encoding="utf-8") as fh:
-        fh.write(f"""# {row['nombre']} — everything about this clinic that the provisioning phases read.
+        fh.write(f"""# {row['nombre']} — everything about this establishment that the provisioning phases read.
 # Written by scripts/deis.py; edited by hand from here on. Sourced once by seed.sh, before the
 # phase loop, so every phase sees it and none of it can leak back out.
+# NOT TRACKED: this file is yours, gitignored like .env, and survives a git pull untouched.
 
 {block(row, snapshot)}
 # Forward hook for the production posture (#75). Empty = local dev, reached over the host port.
@@ -194,9 +200,9 @@ SITE_TEAMS=(
   {nl.join(teams)}
 )
 
-# --- Roles this clinic adds beyond the 22 every CESFAM has (id|display|category) (#103) ---
-# Empty is the right default: the shared registry covers a CESFAM with no local unit. Add one here
-# if this clinic runs a SAR, SAPU or SUR, e.g.
+# --- Roles this establishment adds beyond the 22 in the shared registry (id|display|category) (#103) ---
+# Empty is the right default: those 22 are a CESFAM's standard positions and cover an establishment
+# with no local unit of its own. Add one here if this one runs a SAR, SAPU or SUR, e.g.
 #   "role-jefe-sar|Jefe/a de SAR|cat-jefaturas"    <- gets a standing account, like the other jefaturas
 #   "role-tens-sar|TENS – SAR|cat-tecnicos"        <- a job title; the people arrive with the roster
 # The category is which cat-* an account holding the role must also join, and it is what carries the

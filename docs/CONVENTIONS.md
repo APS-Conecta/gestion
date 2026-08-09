@@ -17,7 +17,7 @@ El árbol tiene cuatro áreas:
 - **Programas/«programa»** — una carpeta por programa, gestionada por su Jefatura y su equipo.
 - **Unidades/«unidad»** — carpetas funcionales (SOME, Farmacia, Dental, OIRS, Estadística-REM, Dirección),
   gestionadas por el rol dueño.
-- **Sectores/«sector»** — espacios de equipo por sector territorial del CESFAM (nombres propios de cada CESFAM).
+- **Sectores/«sector»** — espacios de equipo por sector territorial del establecimiento (nombres propios de cada uno).
 
 Si dudas dónde archivar algo: si sirve a todo el personal → **Transversal**; si es de un programa/unidad/sector
 específico → su carpeta.
@@ -52,5 +52,5 @@ El problema que resolvemos es *“no hay una versión confiable”*. Por eso:
 ## Alcance (v1)
 
 - Cumplimiento **humano** — sin enforcement automático (NON-GOAL de v1; la auto-organización por IA es roadmap).
-- La matriz de acceso y la lista de programas/sectores son un **primer corte** parametrizable por CESFAM; la
+- La matriz de acceso y la lista de programas/sectores son un **primer corte** parametrizable por establecimiento; la
   matriz validada final llega después.

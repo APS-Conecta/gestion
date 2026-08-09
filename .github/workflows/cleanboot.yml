@@ -52,19 +52,18 @@ jobs:
       # the four secrets are produced, and it cannot be tested on a dev box that already has an env
       # file. A clean runner is the one environment where the create path actually runs.
       - run: make setup
-      # A reference clinic ships (sites/los-castanos), but CI writes its own so the `--new` path is
-      # exercised somewhere — it is the only place that command runs. Piped answers stand in for the
+      # No establishment ships, so this is not merely a test of the `--new` path — it IS the install
+      # path every operator walks, and this job is where it is proven. Piped answers stand in for the
       # operator's; the appended SITE line wins over anything .env.example says, because env.sh takes
       # the last assignment it reads.
-      - name: Choose a clinic, the way an operator would
+      - name: Choose an establishment, the way an operator would
         run: |
           printf 'Sector 1\nSector 2\n\nSalud Mental\nInfantil\n\n' | scripts/deis.py 114302 --new ci
           echo "SITE=ci" >> .env
-          # Clinic-local roles (#103). Los Castaños has no SAR, so its SITE_ROLES is empty and the
-          # create path never runs on the reference clinic — CI is the only place it executes. One of
-          # each kind on purpose: a jefatura, which must ALSO produce a standing account, and a
-          # technical role, which must not. Appended rather than generated, because deis.py writes an
-          # empty array by design and a clinic with a SAR is not the default.
+          # Establishment-local roles (#103). deis.py writes SITE_ROLES empty by design — most
+          # establishments add nothing beyond the shared registry — so the create path would never
+          # execute anywhere if CI did not append one here. One of each kind on purpose: a jefatura,
+          # which must ALSO produce a standing account, and a technical role, which must not.
           cat >> sites/ci/site.sh <<'ROLES'
           SITE_ROLES+=( "role-jefe-sar|Jefe/a de SAR|cat-jefaturas" "role-tens-sar|TENS – SAR|cat-tecnicos" )
           ROLES

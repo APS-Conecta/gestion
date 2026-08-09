@@ -7,6 +7,15 @@
 # sheet here it must never be committed. .githooks/pre-commit blocks it too.
 /CREDENTIALS.local.md
 
+# Per-install artifacts: if its content depends on WHICH establishment is installed, git does not
+# track it. The product names no establishment (README, AGENTS.md § What this project is), and the
+# only way that claim survives daily use is if provisioning writes nothing tracked. Both of these are
+# written on the install host — the site file by scripts/deis.py, the CSS by phase 15 — and both come
+# back on the next `make install`. The DEIS register is NOT per-install: it is the public catalogue
+# you pick FROM, so `sites/*/` deliberately matches directories only and leaves the CSV tracked.
+/sites/*/
+/themes/apsconecta/core/css/site.css
+
 # Local data & Docker volumes (synthetic dev data only, never committed)
 /data/
 *.sqlite3
@@ -23,8 +32,12 @@
 /apps/*
 !/apps/README.md
 
-# Local agent tooling (regenerable, never committed)
-.claude/skills/
+# Local agent tooling (regenerable, never committed). The OpenSpec CLI writes these from openspec/,
+# so they are output, not source — and they are one vendor's file layout, while AGENTS.md is the
+# canonical rules file every agent reads. What IS tracked is openspec/ itself: a spec is a shared
+# decision, and ADR-0005 already ruled that those do not live in a working tree.
+/.claude/
+/.agents/
 
 # Python bytecode — themes/apsconecta/tools/ is a one-shot art generator, not a package
 __pycache__/
