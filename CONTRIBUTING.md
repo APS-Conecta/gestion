@@ -96,7 +96,10 @@ Docs must let someone **rebuild** the system, not just read about it. When you w
 7. **Don't copy a gate's count into prose** — say what the gate *proves*; let it print the number.
 
 And the guard that keeps it honest: **if a doc mentions something retired, it must acknowledge somewhere that
-it is** (dated history — ADRs, changelogs — is exempt; its date is the label).
+it is** (dated history is exempt; its date is the label). Dated history means **ADRs, `CHANGELOG.md`,
+`BUGS.md` and `ROADMAP.md`** — the same four `repo-docs` exempts mechanically, named here so the two
+cannot drift. They did: this line said "ADRs, changelogs" while the tool also exempted bug logs, and
+`BUGS.md` relied on that exemption to name a retired `make` target.
 
 ## Reference docs
 
