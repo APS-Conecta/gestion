@@ -92,7 +92,7 @@ image/profile (`compose.dev.yaml`) layered on the official image — never baked
 
 Each datum has exactly one owner:
 
-- **Nextcloud data volume** — product content (the CESFAM's documents). Never in git.
+- **Nextcloud data volume** — product content (the establishment's documents). Never in git.
 - **PostgreSQL** — all metadata: accounts, groups, group-folder definitions, ACL rules, the file index.
 - **Redis** — ephemeral cache and file/transaction locks.
 - **The repository** — the *desired-state recipe* (provisioning script), configuration, and branding assets.
@@ -146,7 +146,7 @@ graph LR
 ```
 
 The initial Document Home is the four-area hybrid tree from the PRD (Transversal · Programas · Unidades ·
-Sectores) with a first-cut access matrix; the final validated matrix is settled with a specific CESFAM later.
+Sectores) with a first-cut access matrix; the final validated matrix is settled with a specific establishment later.
 
 **What varies per clinic is data, not code.** The `prog-*`/`sector-*` teams, the folder tree, the whole
 grant matrix and the clinic's identity live in `sites/<slug>/site.sh`; phases 20/30/40 only loop over it.
@@ -156,7 +156,7 @@ phase and a clinic may add its own in `SITE_ROLES` (#103). How that file is writ
 and read: [`provisioning/README.md`](../provisioning/README.md).
 
 > **Note:** the Nextcloud Activity stream may surface names of ACL-hidden items — keep genuinely sensitive
-> names out of ACL-restricted subfolders (relevant for a CESFAM).
+> names out of ACL-restricted subfolders (relevant for any establishment).
 
 ## Branding & localization
 
@@ -192,7 +192,7 @@ and read: [`provisioning/README.md`](../provisioning/README.md).
 ## Environments
 
 A single Compose stack, brought up with one command, on **a developer's machine or a clinic's** — those
-are the same stack and the same command. `make setup && make install` stands up a named CESFAM from a clean
+are the same stack and the same command. `make setup && make install` stands up a named establishment from a clean
 checkout, and #77's whole effort was making that true of a machine nobody has seen.
 
 **`main` is the trunk; a release is a tag.** The dev stack installs from `main`; a clinic installs a

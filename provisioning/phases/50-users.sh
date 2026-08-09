@@ -10,10 +10,10 @@ phase_begin "50-users" "The clinic's standing leadership accounts"
 
 : "${FIXTURE_USER_PASSWORD:?set FIXTURE_USER_PASSWORD in .env}"
 
-# One jefe PER SECTOR, derived from the site file rather than named here: Los Castaños has four, a
-# clinic with two gets two, and this file does not change. A single jefe holding every sector team
-# could open every sector's folder, which would leave the per-sector ACL matrix true on paper and
-# untested in practice — the separation is the part worth demonstrating.
+# One jefe PER SECTOR, derived from the site file rather than named here: an establishment with four
+# sectors gets four, one with two gets two, and this file does not change. A single jefe holding
+# every sector team could open every sector's folder, which would leave the per-sector ACL matrix
+# true on paper and untested in practice — the separation is the part worth demonstrating.
 sector_jefes=()
 for entry in "${SITE_TEAMS[@]}"; do
   id="${entry%%|*}"; display="${entry#*|}"

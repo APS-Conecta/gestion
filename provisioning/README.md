@@ -31,17 +31,18 @@ provisioning/
     60-fixtures.sh   # Story 0.6 — synthetic sample content (FIXTURE)
 ```
 
-## The clinic's own data
+## The establishment's own data
 
-One stack serves one CESFAM, and everything specific to it is **data**: `sites/<slug>/site.sh`.
+One stack serves one establishment, and everything specific to it is **data**: `sites/<slug>/site.sh`.
 `SITE` in `.env` names the directory; `seed.sh` sources the file once, in the parent shell, *before*
 the phase loop — each phase already runs in a subshell of that, so every phase sees the arrays and
 none can write back. An unset `SITE`, or a missing file, is fatal before any phase runs.
 
-**One clinic ships** — `sites/los-castanos/site.sh`, the reference this repo serves. Any other CESFAM
-is a file you write, and `make seed` refuses to run until `SITE` names one that exists. Choosing the
-clinic is the first step of an install. The clean-boot job writes its own with `scripts/deis.py`
-rather than reusing the committed one, so the `--new` path stays tested.
+**No establishment ships.** The site file is one you write, it is gitignored like `.env` because its
+content depends on which establishment is installed, and `make seed` refuses to run until `SITE`
+names one that exists. Choosing the establishment is therefore the first step of every install, ours
+included. The clean-boot job walks that same path with `scripts/deis.py` on a clean runner, which is
+what keeps it proven.
 
 | In the site file | In the phases (identical everywhere) |
 |---|---|
@@ -50,14 +51,14 @@ rather than reusing the committed one, so the `--new` path stays tested.
 | `SITE_FOLDERS`, `SITE_SUBFOLDERS` | Phases 05, 06, 10, 12, 14, 15, 16 |
 | `SITE_ACL` — the whole grant matrix, `mount\|group\|perms` | |
 
-Write a new one with [`scripts/deis.py`](../scripts/deis.py): it finds the clinic in the shipped DEIS
-register, fills the identity from it, and **asks** for the sectors and programs — a register knows
-neither how many sectors a CESFAM has nor whether they are numbered, coloured or named after a
-neighbourhood.
+Write one with [`scripts/deis.py`](../scripts/deis.py): it finds the establishment in the shipped DEIS
+register — CESFAM, PSR, CECOSF, CGR, CGU, COSAM, SAPU, SAR or SUR — fills the identity from it, and
+**asks** for the sectors and programs, because a register knows neither how many sectors an
+establishment has nor whether they are numbered, coloured or named after a neighbourhood.
 
 ```
-scripts/deis.py cesfam florida        # find the code
-scripts/deis.py 114302 --new mi-cesfam
+scripts/deis.py cesfam florida        # find the code — any term matches, no type is required
+scripts/deis.py <codigo> --new mi-establecimiento
 ```
 
 The file it writes is complete and standalone: **nothing is inherited at seed time**. Adding a unit

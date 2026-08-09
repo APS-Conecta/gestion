@@ -106,18 +106,26 @@ if not src:
 # `while`, `until`, `&&` and `||` all do it: nothing but whitespace may precede the `(`.
 # Comments are stripped first, since seed.sh documents the wrong shape on purpose.
 check bash -c '! grep -vE "^[[:space:]]*#" provisioning/seed.sh | grep -qE "[^[:space:]][[:space:]]*\([[:space:]]*set[[:space:]]+-e"'
-# Regression guard (ADR-0001): every asset server.css references must exist on disk. It shipped for
-# months declaring four .woff2 files that were never generated, and the TTF fallback swallowed the
+# Regression guard (ADR-0001): every STATIC asset server.css references must exist on disk. It shipped
+# for months declaring four .woff2 files that were never generated, and the TTF fallback swallowed the
 # 404s. The COUNT is asserted before the existence loop, and that is the point: `grep | while read`
 # runs zero times when grep matches nothing and exits 0, so the guard passed on a file with no themed
 # reference at all. Requiring every reference to be a themed absolute path also catches one of four
 # drifting, which "at least one" would not.
+#
+# ONE path is excluded, by exact name and never by pattern: site.css is @import-ed by server.css but
+# is GENERATED per install by phase 15 and is not tracked, so a checkout that has never been
+# provisioned legitimately does not have it — and server.css declares the fallback that renders the
+# product's own name until it does. A `*.css` or directory-wide exclusion here would silently stop
+# checking assets added later, which is the exact shape of the bug this guard exists for.
 check bash -c '
   css=themes/apsconecta/core/css/server.css
   total=$(grep -oE "url\(\"" "$css" | wc -l)   # the quote matters: server.css says "url()" in prose
   themed=$(grep -oE "url\(\"/themes/apsconecta[^\"]+\"" "$css" | wc -l)
   [ "$total" -ge 1 ] && [ "$total" -eq "$themed" ] || exit 1
-  grep -oE "/themes/apsconecta[^\")]+" "$css" | sed "s|^/||" | while read -r f; do [ -f "$f" ] || exit 1; done'
+  grep -oE "/themes/apsconecta[^\")]+" "$css" | sed "s|^/||" \
+    | grep -vFx "themes/apsconecta/core/css/site.css" \
+    | while read -r f; do [ -f "$f" ] || exit 1; done'
 # Regression guard: every brand SVG must PARSE, not merely exist. Nextcloud serves a malformed SVG
 # with a 200 and the browser renders nothing — silent, and the existence check above cannot see it.
 # A double hyphen inside an XML comment once made logo-header.svg unparseable and the header logo

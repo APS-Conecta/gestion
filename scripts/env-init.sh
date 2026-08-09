@@ -80,8 +80,9 @@ echo
 if grep -qE '^SITE=.+' "$ENV_FILE"; then
   echo "  SITE is already set. Next:  make install"
 else
-  echo "  Still needed — which clinic this serves. Either:"
-  echo "      echo 'SITE=los-castanos' >> $ENV_FILE     # the reference clinic that ships"
-  echo "      scripts/deis.py cesfam <comuna>           # or pick another from the register"
+  echo "  Still needed — which establishment this serves. None ships; pick yours:"
+  echo "      scripts/deis.py                           # search the DEIS register, pick a number"
+  echo "      scripts/deis.py <codigo> --new <slug>     # write sites/<slug>/site.sh"
+  echo "      echo 'SITE=<slug>' >> $ENV_FILE"
   echo "  Then:  make install"
 fi

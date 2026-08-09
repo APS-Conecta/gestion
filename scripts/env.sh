@@ -25,16 +25,18 @@ occ() { docker compose exec -T --user www-data nextcloud php occ "$@"; }
 #    that has no clinic yet.
 require_site() {
   [ -n "${SITE:-}" ] || {
-    echo "FATAL: SITE is unset — .env must name the clinic this stack serves." >&2
-    echo "       Set SITE=los-castanos to use the reference clinic that ships," >&2
-    echo "       or see README step 3 to write your own. No .env yet? run: make setup" >&2
+    echo "FATAL: SITE is unset — .env must name the establishment this stack serves." >&2
+    echo "       No establishment ships with this repo; pick yours from the DEIS register:" >&2
+    echo "         scripts/deis.py                              # search, then pick a number" >&2
+    echo "       then set SITE=<slug> in .env. README step 3 walks it." >&2
+    echo "       No .env yet? run: make setup" >&2
     return 1
   }
   [ -f "sites/$SITE/site.sh" ] || {
     echo "FATAL: no sites/$SITE/site.sh — write it with:" >&2
-    echo "         scripts/deis.py cesfam <comuna>              # find the DEIS code" >&2
+    echo "         scripts/deis.py <tipo> <comuna>              # find the DEIS code" >&2
     echo "         scripts/deis.py <codigo> --new $SITE" >&2
-    echo "       Or use the reference clinic that ships: SITE=los-castanos" >&2
+    echo "       Any primary-care establishment in the register works, not only a CESFAM." >&2
     return 1
   }
 }

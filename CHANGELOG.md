@@ -21,6 +21,18 @@ image digests live there and are deliberately not copied here — one fact, one 
   consequences ADR-0010 recorded when it moved the organisation to AGPL-3.0-or-later are now carried
   through every document that had gone on describing the code as proprietary.
 
+### Removed
+
+- **No establishment ships with the product any more.** `sites/los-castanos/site.sh` and the
+  generated `themes/apsconecta/core/css/site.css` are no longer tracked: both are per-install
+  artifacts, and the repository promised in `README.md` and `AGENTS.md` to name no establishment
+  while shipping a real one as the suggested default. A fresh clone now stops at "choose your
+  establishment" and you pick one from the DEIS register with `scripts/deis.py`.
+
+  **Before updating an existing working copy, copy your `sites/<slug>/` somewhere outside the
+  repository.** Taking this change deletes the previously-tracked site file from your working tree.
+  Restore it afterwards — it is ignored from now on, and `make install` converges exactly as before.
+
 ### Fixed
 
 - `docs/LICENSING.md` §4.3 concluded that our own code "may therefore remain proprietary", citing a
