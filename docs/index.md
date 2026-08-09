@@ -53,6 +53,11 @@ keeping the numbers they were cited by, because renumbering them would have brok
 that already pointed at them ([ADR-0011](adr/0011-org-wide-facts-live-in-gestion.md)). Three missing
 files would otherwise read as three deletions.
 
+`0013` arrived the same way from `epidemiologia` on 2026-08-09, but **took a new number**: unlike
+`0007` and `0010`, its old number was already taken here. Its old address keeps a stub, and `0003`
+in this series remains a different decision — five repositories have an `ADR-0003` and no two are
+the same, so a citation of one names its repository.
+
 `ADR-0000` is not a decision. It defines the `AD-1`…`AD-10` decisions that predate the ADR series and
 are cited throughout the code, so that a reader meeting `AD-2` in a shell comment can find out what it
 requires.
