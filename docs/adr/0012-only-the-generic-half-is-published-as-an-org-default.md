@@ -3,7 +3,7 @@
 - **Status:** accepted (2026-08-08)
 - **Affects:** `APS-Conecta/.github` (`CONTRIBUTING.md`, `SECURITY.md`, `ISSUE_TEMPLATE/`,
   `PULL_REQUEST_TEMPLATE.md`), `.github/SECURITY.md` here, and the `missing-required` findings in
-  `common`, `epidemiologia`, `territorio` and `analizador-rem`
+  `common`, `epidemiologia` and `territorio`
 
 ## Context
 
@@ -13,7 +13,7 @@ never once been executed. `git ls-files` in that repository returns **exactly on
 `profile/README.md`. Nothing has ever been served to anything.
 
 The result is not neutral. `common` has no `CONTRIBUTING.md`, no `SECURITY.md`, no `CODEOWNERS`, no
-pull-request template and no issue forms at all; `territorio` and `analizador-rem` are the same;
+pull-request template and no issue forms at all; `territorio` is the same;
 `epidemiologia` lacks four of them. Sixty-odd `missing-required` findings across the organisation are
 one unimplemented rule.
 

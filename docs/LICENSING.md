@@ -19,8 +19,8 @@ and reasons about whether running them triggers any obligation on our own code.
    [ADR-0010](adr/0010-agpl-across-the-org.md).
 2. **Why AGPL (reasoning, not assertion).** For *this* repository the licence was a free choice —
    §4 below shows the copyleft of the components we run never reaches our code. It was not free
-   elsewhere: `territorio`, `analizador-rem` and `epidemiologia` compile `@nextcloud/vue`
-   (AGPL-3.0-or-later) into the bundles they ship, so those three were obliged. Given that, one
+   elsewhere: `territorio` and `epidemiologia` compile `@nextcloud/vue`
+   (AGPL-3.0-or-later) into the bundles they ship, so those two were obliged. Given that, one
    licence across the organisation was worth more than keeping this repository proprietary on its
    own. ADR-0010 records the trade in full.
 3. **Copyright holder** = **Daniel Espinoza Charrier** (individually). No legal entity ("razón

@@ -16,9 +16,8 @@ Internal ops only, **no patient data**.
   `compose.yaml`) is authoritative for behavior. Repo-first SSOT (repo wins; any wiki mirrors).
 - **Principles:** DRY · SOLID · KISS/YAGNI (ponytail — minimal, delete over add). Defined here; `CONTRIBUTING.md` is the operational contract (workflow, docs rules, secrets handling).
 - **Language split:** code/backend/docs in **English**; user-facing UI in **Spanish**. A doc is
-  Spanish only when its reader is, or when Spanish is its subject: `docs/CONVENTIONS.md` (clinic
-  staff read it) and [analizador-rem's `docs/GLOSARIO.md`](https://github.com/APS-Conecta/analizador-rem/blob/main/docs/GLOSARIO.md)
-  (a glossary *of* Spanish domain terms). `docs/BRANDING.md`
+  Spanish only when its reader is — `docs/CONVENTIONS.md` (clinic staff read it) — or when Spanish
+  is its subject, which is what a glossary *of* Spanish domain terms is. `docs/BRANDING.md`
   and `themes/apsconecta/MAPEO.md` were exempt as "authored with the brand kit" and were translated
   on 2026-08-09: both are read by whoever deploys or edits the theme, which is a developer.
 - **Coordination:** GitHub Flow, PR + 1 approval (convention gate), private repo. Conventional Commits.

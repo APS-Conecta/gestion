@@ -201,11 +201,11 @@ tag, and that tag is the only answer to "which bytes does that instance have?"
 release ships only two: **vendored** apps, whose upstream tarballs are committed under
 `provisioning/apps/<id>/` with a `VENDOR` file naming version, URL and sha256; one **own** app,
 `epidemiologia`, installed from a tarball built from a tag of its own repository; and **lab** apps —
-`territorio` and `analizador-rem` — which exist only as clones in `apps/`, are declared in
+`territorio` — which exist only as clones in `apps/`, are declared in
 `dev/lab-apps.sh`, and are **never in a release**: phase 12 acts on an entry only where
 `apps/<id>/.git` exists, so a clinic falls straight through.
 [`apps/README.md`](../apps/README.md) is the authority for that boundary and for the app-id ↔
-repository-name mapping (`analizador-rem` → `apps/analizador_rem`); this document does not restate it.
+repository-name mapping; this document does not restate it.
 
 What is still **deferred** is everything that makes a host reachable and survivable rather than everything
 that makes it run: hosting/provider, a TLS reverse-proxy for the office server with a hardened allow-list

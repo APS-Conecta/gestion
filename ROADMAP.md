@@ -72,7 +72,7 @@ the stylesheet. It is not restated here; this table is an index, not a second co
 ## Future
 
 Post-v1 roadmap (from the brief/PRD): white-label **branding** *(shipped as Epic 5, above)* ·
-**REM app** (first Layer-2 custom app — **in progress**) → full-text **search** → **Paperless-ngx** →
+**REM app** (first Layer-2 custom app) → full-text **search** → **Paperless-ngx** →
 **Analytics** → local **AI** layer.
 
 **Production posture is deferred until a target host exists** — TLS/HSTS, SMTP, 2FA enforcement, the
@@ -83,9 +83,8 @@ dev box, and none is a code defect. The deferral itself is stated in
 resurface when there is a machine instead of being rediscovered on that page.
 
 **Nextcloud Tables is no longer in the chain** (#24, closed 2026-07-29). It was queued as the
-substrate for the REM app; that premise was wrong — the app owns its own schema (`rem_fact`,
-`rem_hoja_status`, `rem_source`, through Nextcloud's mapper layer) and never references Tables.
+substrate for the REM app; that premise was wrong — a custom app owns its own schema through
+Nextcloud's mapper layer and never references Tables.
 
-The **REM app** lives in [`APS-Conecta/analizador-rem`](https://github.com/APS-Conecta/analizador-rem),
-with its own `docs/ESTADO.md`; this repo owns only the platform it installs onto
+Whatever builds REM, this repo owns only the platform it installs onto
 ([`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) § *Extension boundary*).
