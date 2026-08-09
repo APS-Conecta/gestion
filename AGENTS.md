@@ -4,7 +4,8 @@ Rules for any AI agent (e.g. Claude Code) working in this repo. `CLAUDE.md` impo
 
 ## What this project is
 
-White-label **Nextcloud 34** suite (internal ops for a Chilean CESFAM), official Docker image — **never a
+White-label **Nextcloud 34** suite for Chilean CESFAMs — internal ops, one establishment per install,
+named in that install's configuration and never in the product. Official Docker image, **never a
 Nextcloud source fork**. Stack: Nextcloud + **PostgreSQL** + **Redis** + a `cron` container for background
 jobs + the **Euro-Office** document server (not opt-in since #81; see `docs/ARCHITECTURE.md` § Stack).
 Internal ops only, **no patient data**.
@@ -32,6 +33,13 @@ Internal ops only, **no patient data**.
 - **Portability:** the dev stack must run on any dev's machine (local Docker). Nothing VPS-specific
   (Tailscale, absolute paths) in the core compose. `host.docker.internal` must work cross-OS.
 - **Secrets/data:** never commit `.env`, secrets, real data, or Docker volumes. Synthetic dev fixtures only.
+  The rule covers the **whole working root**, not only what git tracks — an identifiable clinical
+  extract sitting beside the clones is exposure whether or not it was committed, and
+  `repo-docs/config.json` aims the documentation audit at that root, so "not in git" is not a
+  boundary. Real extracts, credentials and `.env` copies belong **outside** the root entirely.
+  Every "no patient data" claim in this repository is a claim about the software and its
+  repositories; it says nothing about a developer's own working directory, and must not be read as
+  if it did.
 - **Custom code** lives in `apps/` (→ `custom_apps`) and `themes/`, bind-mounted for live edit. Xdebug is a
   **derived dev-only image**, not a fork.
 

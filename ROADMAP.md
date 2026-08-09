@@ -25,7 +25,8 @@ in `sites/<slug>/site.sh` — on that clinic's host or on a developer's machine:
 - **Epic 4 — Live collaborative editing:** native to the office backend; `make office-smoke` audits the
   OSS/no-paid-licence image.
 
-Org governance is in place: `LICENSE` (proprietary) + `docs/LICENSING.md`, `.github/` scaffolding
+Org governance is in place: `LICENSE` (AGPL-3.0-or-later since 2026-08-07, ADR-0010) +
+`docs/LICENSING.md`, `.github/` scaffolding
 (CODEOWNERS, PR + issue templates, `SECURITY.md`), and `CONTRIBUTORS.md`. Work is tracked on the
 [Projects board](https://github.com/orgs/APS-Conecta/projects/5).
 

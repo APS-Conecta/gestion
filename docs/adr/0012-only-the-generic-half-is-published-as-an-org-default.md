@@ -72,3 +72,9 @@ forbids exactly that in exactly that repository.
 - Two `SECURITY.md` documents now exist with different jobs: the public one routes a report, the
   local one states posture. Neither may drift into the other's territory, and the split is the reason
   the public one can exist at all.
+- **`.github` now carries the same `LICENSE`.** [ADR-0010](0010-agpl-across-the-org.md) enumerates
+  seven *code* repositories and does not name this one, so it had none — and a repository with no
+  licence is all-rights-reserved by default. That was tolerable while it served one page to nobody;
+  now that it publishes four documents the organisation asks other people to work from, an unstated
+  posture on the only world-readable repository is the one place ambiguity costs something. Same file,
+  byte for byte, as the other seven.

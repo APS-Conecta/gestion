@@ -12,23 +12,31 @@ Principles, the language split and the data/secrets invariants are defined in
 
 1. Branch off `main` (short-lived): `feat/…`, `fix/…`, `docs/…`, `chore/…`.
 2. Commit with **Conventional Commits** (`feat:`, `fix:`, `docs:`, `chore:`, `test:`…).
-3. Open a PR → **1 human approval required** before merge. This gate is by **team convention** (GitHub
-   free plan does not enforce branch protection on private repos) — respect it.
+3. Open a PR and review it before merging. With one maintainer that is a **self-review checkpoint**,
+   not an approval GitHub can record: it forbids approving your own pull request, and a private
+   repository on the free plan cannot have protected branches or rulesets at all
+   (`gh api repos/APS-Conecta/gestion/rulesets` → 403, *"Upgrade to GitHub Pro or make this
+   repository public"*). So **CI green is the only mechanical gate there is.** Read your own diff as
+   if someone else wrote it — that is the entire convention, and nothing enforces it but you.
 4. AI-assisted PRs must be **labeled** (`ai-assisted`) and disclose AI involvement in the description.
 5. The gate is `make test` (static checks + smoke) — run it before opening a PR. CI runs the same
    script on every PR and on pushes to `main` (`.github/workflows/ci.yml`); the full clean boot runs
    on PRs that touch the install path, and weekly (`.github/workflows/cleanboot.yml`).
 
-`CODEOWNERS` auto-requests reviewers. Prefer small, reviewable PRs.
+`CODEOWNERS` will auto-request reviewers the day a second account has access; with one owner GitHub
+requests nobody, because it never asks a pull request's own author. Prefer small, reviewable PRs.
 
 ## Releases (ADR-0005)
 
 `main` is the trunk and the **dev stack** installs from it. A **release** is a tag — that is the only
 thing a clinic installs, and the only answer to "which bytes does that instance have?".
 
-1. `main` stays installable: nothing merges without CI green and 1 approval.
+1. `main` stays installable: nothing merges without CI green and a review pass.
 2. After UAT sign-off, tag `vX.Y.Z` on `main` and publish a **GitHub Release**.
-3. The Release's auto-generated notes are the changelog. There is no `CHANGELOG.md`.
+3. The Release notes carry the detail — what a version pins, and why.
+   [`CHANGELOG.md`](CHANGELOG.md) is the in-repo index: one entry per version linking to its release,
+   plus the `Unreleased` section, which a published release cannot hold. It links rather than
+   repeats, so the pinned versions and digests have exactly one home.
 4. Name in the notes which app versions that release pins (`provisioning/apps/*/VENDOR`).
 5. A clinic installs from the tag: `git clone --branch vX.Y.Z --depth 1 <url>`.
 

@@ -1,6 +1,10 @@
 # Bugs — APS Conecta Gestión
 
-Fix log. Repo-first SSOT; GitHub issues are the mirror. **No bug is currently open.**
+Fix log: what was wrong, and why the fix is right. **What is open right now lives in the issue
+tracker** — [`label:bug`](https://github.com/APS-Conecta/gestion/issues?q=is%3Aissue+is%3Aopen+label%3Abug)
+is the authority, and this file deliberately does not restate its count. It said "No bug is currently
+open" until 2026-08-08, while three were: a sentence that can only ever be right by accident is the
+always-green failure B-001 is in this very table for.
 
 B-001…B-007 all came out of the **first end-to-end bring-up on a clean machine (2026-07-24)** — the repo
 was v1 feature-complete on paper but had never been run start to finish. B-008…B-012 came out of Epic 5

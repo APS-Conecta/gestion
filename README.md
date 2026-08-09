@@ -1,7 +1,9 @@
 # APS Conecta — Gestión
 
-Internal management / intranet suite for a Chilean CESFAM (primary-healthcare centre), built as a
+Internal management / intranet suite for Chilean CESFAMs (primary-healthcare centres), built as a
 **white-label Nextcloud** deployment (official image, **no source fork**), self-hosted via Docker.
+Each install serves **one establishment**, named in that install's configuration — the product names
+none, and `sites/` is where a clinic's own values live.
 
 > **Status: ✅ v1 done (Foundation + Spine A).** Epics 0–4 are merged — dev stack + debugger +
 > quality gate + provisioning, es-CL locale, roles/access, the four-area document

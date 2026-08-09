@@ -58,6 +58,8 @@ FACTS: dict = {}
 # run degraded, and a degraded run may not be written to the baseline: doing so records everything it
 # failed to evaluate as "resolved". One flaky API call silently retired four real findings once.
 DEGRADED: list = []
+# Rules that did not run this pass. Their previous findings are UNKNOWN, never resolved.
+SKIPPED_RULES: set = set()
 SETTINGS: dict = {}
 
 P: dict = {}          # active profile — set by use_profile()
@@ -279,11 +281,27 @@ def tracked_md(repo: Path) -> list:
     if code != 0:
         return []
     rel = [f for f in out.split("\0") if f and not denied(f)]
-    return [r for r in rel if not (repo / r.split("/")[0] / ".git").exists()]
+
+    def inside_nested_repo(r: str) -> bool:
+        # Every ancestor, not just the first segment. All three app clones live at `apps/<id>`, so
+        # testing only `r.split("/")[0]` asked whether `apps/.git` existed — it does not, and the
+        # boundary held by luck: gestion tracks nothing under `apps/`. CONTEXT.md promises this
+        # boundary unconditionally.
+        parts = r.split("/")[:-1]
+        return any((repo.joinpath(*parts[:i + 1]) / ".git").exists() for i in range(len(parts)))
+
+    return [r for r in rel if not inside_nested_repo(r)]
 
 
 def governed(repo: Path) -> list:
-    return tracked_md(repo)
+    # A file git still tracks but the working tree no longer has is a real state — mid-rename, or a
+    # deletion not yet staged. Every rule then read it and the whole run died on a traceback instead
+    # of reporting one file. Absence is reported by `tracked-not-present`, never crashed on.
+    return [f for f in tracked_md(repo) if (repo / f).exists()]
+
+
+def tracked_but_absent(repo: Path) -> list:
+    return [f for f in tracked_md(repo) if not (repo / f).exists()]
 
 
 def detect_stacks(repo: Path) -> list:
@@ -323,7 +341,8 @@ def find_health(repo: Path) -> dict:
     for name in ("README.md", "LICENSE", "CHANGELOG.md"):
         if (repo / name).exists():
             hits[name] = name
-    for extra in ("docs/index.md", ".githooks/pre-commit", ".github/workflows/docs.yml", "docs/adr"):
+    for extra in ("docs/index.md", ".githooks/pre-commit", ".github/workflows/docs.yml", "docs/adr",
+                  "profile/README.md"):     # the org level requires it, so it must be detectable
         if (repo / extra).exists():
             hits[extra] = extra
     return hits
@@ -494,7 +513,8 @@ def scan(repo: Path) -> dict:
 def canon_vars(facts: dict) -> dict:
     return {"org": ORG, "repo": facts.get("repo") or "",
             "branch": facts.get("default_branch") or "main",
-            "holder": HOLDER, "year": "2026"}
+            "holder": HOLDER, "year": "2026",
+            "code_owners": P.get("code_owners") or ""}
 
 
 def contract(archetype: str) -> list:
@@ -543,13 +563,40 @@ def harvest(exemplar: Path) -> list:
     return written
 
 
-def required(level: str, org_mode: bool) -> tuple:
-    return P["org_level"] if org_mode else P["levels"][level]
+def required(level: str, org_mode: bool, archetype: str = None) -> tuple:
+    # Derived from the archetype, not only the operator flag. `check --all` passes ONE flag for eight
+    # repos, so keying on it alone meant a sweep could never be right about both the org repo and the
+    # other seven: it demanded a LICENSE and a CODEOWNERS that this tool's own layout.md forbids
+    # there, while identifying the repo BY the profile/README.md it reported missing.
+    if org_mode or archetype == "org-profile":
+        return P["org_level"]
+    return P["levels"][level]
+
+
+_ORG_DEFAULTS = None
+
+
+def org_defaults_served() -> set:
+    """What the organisation's public .github repository actually serves. GitHub applies these to any
+    repository that has no copy of its own, so for those repositories the file is present in the only
+    sense a reader experiences — and a local copy is justified only where it must DIFFER."""
+    global _ORG_DEFAULTS
+    if _ORG_DEFAULTS is None:
+        _ORG_DEFAULTS = set()
+        root = discover()["repos"].get(".github")
+        if root:
+            p = Path(root)
+            for name in (P.get("org_inheritable") or []):
+                if (p / name).exists() or (p / ".github" / name).exists():
+                    _ORG_DEFAULTS.add(name)
+    return _ORG_DEFAULTS
 
 
 def gaps(facts: dict, level: str, org_mode: bool) -> list:
     have = set(facts["health"])
-    return [r for r in required(level, org_mode) if r not in have]
+    if facts.get("archetype") != "org-profile":
+        have |= org_defaults_served()
+    return [r for r in required(level, org_mode, facts.get("archetype")) if r not in have]
 
 
 def scaffold(repo: Path, level: str, org_mode: bool, write: bool) -> list:
@@ -575,14 +622,17 @@ def scaffold(repo: Path, level: str, org_mode: bool, write: bool) -> list:
             elif missing == "README.md":
                 dest.write_text(outline(facts["archetype"], facts["repo"] or dest.parent.name))
             else:
-                title = Path(missing).stem.replace("-", " ").replace("_", " ").title()
-                dest.write_text(f"# {title}\n\n$PLACEHOLDER — authored, never templated.\n")
-    if org_mode and write:
-        for name in ("CONTRIBUTING.md", "SECURITY.md"):
-            src = PUBLIC_DIR / name
-            dst = repo / name
-            if src.exists() and not dst.exists():
-                dst.write_text(string.Template(src.read_text()).safe_substitute(vars_))
+                # In org mode the shareable documents are already authored, in public/. This branch
+                # used to run first and claim the filename with a placeholder, so the block that
+                # copied public/ found dst.exists() and never fired — the org repo was published
+                # carrying "$PLACEHOLDER — authored, never templated" as its CONTRIBUTING and
+                # SECURITY. Nothing caught it, because an untracked file is not yet governed.
+                pub = (PUBLIC_DIR / missing) if org_mode else None
+                if pub is not None and pub.exists():
+                    dest.write_text(string.Template(pub.read_text()).safe_substitute(vars_))
+                else:
+                    title = Path(missing).stem.replace("-", " ").replace("_", " ").title()
+                    dest.write_text(f"# {title}\n\n$PLACEHOLDER — authored, never templated.\n")
     return out
 
 
@@ -593,6 +643,11 @@ def _claims(repo: Path, files: list, pattern: re.Pattern, norm, subj=None):
     'Redis 8' are complementary, not contradictory."""
     out = []
     for f in files:
+        if is_history(f):
+            # A changelog that records a corrected fact necessarily still contains the old value —
+            # the entry saying team size was wrong quotes "a 3-person team" in order to retire it.
+            # Dated history states what WAS true; only live prose makes a claim.
+            continue
         for i, line in enumerate((repo / f).read_text(errors="replace").splitlines(), 1):
             m = pattern.search(line)
             if m:
@@ -747,6 +802,46 @@ def _r_missing(ctx):
         yield Finding("missing-required", "error", None, None, f"absent: {miss}")
 
 
+@rule("github-metadata", "error", offline=False)
+def _r_gh_meta(ctx):
+    """A repository's description is the most-read documentation it has — it appears in every list,
+    every search result and the organisation's front page — and nothing governed it. Three were
+    single-tenant, three were Spanish and one was empty, none of it visible to this tool."""
+    name = ctx["facts"]["repo"]
+    if not name:
+        return
+    meta = gh("api", f"repos/{ORG}/{name}", "--jq", "{d:.description}")
+    if not isinstance(meta, dict):
+        return                      # gh() already recorded the failure; never guess from silence
+    desc = (meta.get("d") or "").strip()
+    if not desc:
+        yield Finding("github-metadata", "error", None, None,
+                      "no repository description — the first documentation anyone reads")
+        return
+    for pat, why in (P.get("single_tenant") or []):
+        if re.search(pat, desc, re.I):
+            yield Finding("github-metadata", "error", None, None,
+                          f"description {why}: {desc[:70]!r}")
+    want = P.get("doc_language")
+    words = re.findall(r"[a-záéíóúñ]+", desc.lower())
+    hits = sum(w in set(P["es_stopwords"]) for w in words)
+    # A description is a handful of words, so two stopwords is a high bar: "Sitio web de APS Conecta"
+    # scores one. Short text gets the lower threshold.
+    if want == "en" and (hits >= 2 or (hits >= 1 and len(words) <= 6)):
+        yield Finding("github-metadata", "warn", None, None,
+                      f"description is Spanish; repo docs are {want!r}: {desc[:60]!r}")
+
+
+@rule("tracked-not-present", "error")
+def _r_tracked_absent(ctx):
+    """Reported rather than crashed on: every rule used to read the file and the run died on a
+    traceback, naming a path with no explanation of why the whole audit stopped."""
+    for f in tracked_but_absent(ctx["path"]):
+        yield Finding("tracked-not-present", "error", f, None,
+                      "git tracks it but the working tree does not have it — stage the deletion "
+                      "or restore the file")
+
+
 @rule("license-posture", "error")
 def _r_licence(ctx):
     want = P.get("licence_posture")
@@ -791,8 +886,11 @@ def _r_licence_prose(ctx):
     want = P.get("licence_posture")
     if not want or want == "proprietary":
         return
+    notices = tuple(P.get("notices_doc") or ())
     for f in ctx["files"]:
-        if is_history(f):
+        # The notices document exists to reproduce other people's licence text, much of which says
+        # "all rights reserved" about work that is not ours.
+        if is_history(f) or (notices and f.endswith(notices)):
             continue
         lines = (ctx["path"] / f).read_text(errors="replace").splitlines()
         for i, line in enumerate(lines, 1):
@@ -835,30 +933,28 @@ def _r_licence_inventory(ctx):
                           f"{fam!r} is used by a dependency but absent from the notices")
 
 
-@rule("licence-copyleft", "warn")
-def _r_copyleft(ctx):
-    """Copyleft under a proprietary product is a question for a human, not a regex:
-    running alongside AGPL software is fine, linking it into proprietary code is not."""
-    if P.get("licence_posture") != "proprietary":
-        return
-    hits = {}
-    for comp, lic, src, phase in inventory(ctx["path"]):
-        if phase != "runtime":
-            continue
-        if lic in (P.get("copyleft") or []):
-            hits.setdefault(lic, []).append(comp)
-    for lic, comps in sorted(hits.items()):
-        yield Finding("licence-copyleft", "warn", None, None,
-                      f"{len(comps)} {lic} dependencies in a proprietary product "
-                      f"(e.g. {', '.join(comps[:3])}) — confirm arm's length, not linked")
+# `licence-copyleft` was deleted here. It asked whether copyleft dependencies were safe under a
+# PROPRIETARY posture, and ADR 0010 made the organisation AGPL-3.0-or-later, so its first line
+# returned before it could ever fire again. The question that replaces it — is a dependency
+# *incompatible* with AGPL-3.0-or-later, GPL-2.0-only being the one that bites — cannot be asked of
+# `inventory()`, which resolves licences to coarse families: `gpl` alone does not say whether the
+# "or later" option exists to take. Documenting a check we cannot run would be the exact defect this
+# skill exists to find, so there is no rule here until the inventory carries SPDX identifiers.
 
 
 @rule("canon-drift", "error")
 def _r_canon(ctx):
     vars_ = canon_vars(ctx["facts"])
+    # The org repo is world-readable and only some canon may be published there: CODEOWNERS names a
+    # person, the hook and workflow describe our gate, and GitHub cannot inherit any of the three
+    # anyway (ADR-0012 in gestion). Without this, --fix on the org repo published all four.
+    publishable = P.get("canon_org") or []
+    is_org = ctx["org_mode"] or ctx["facts"].get("archetype") == "org-profile"
     for canon_rel, repo_rel in P["canon"].items():
         dst, src = ctx["path"] / repo_rel, CANON_DIR / canon_rel
         if canon_rel in P["canon_seed_only"] or not src.exists():
+            continue
+        if is_org and canon_rel not in publishable:
             continue
         if not dst.exists():
             # Absence is drift too. A directory requirement is satisfied by its canon
@@ -905,7 +1001,11 @@ def _r_secrets(ctx):
 
 @rule("public-leak", "error")
 def _r_public(ctx):
-    if not ctx["org_mode"]:
+    # Keyed on what the repository IS, not on how it was invoked. Gated on --org, this rule was off
+    # during every `check --all` — that is, off for every sweep of the one repository in the
+    # organisation that the whole world can read.
+    if not (ctx["org_mode"] or ctx["facts"].get("archetype") == "org-profile"
+            or ctx.get("private") is False):
         return
     for f in ctx["files"]:
         text = (ctx["path"] / f).read_text(errors="replace")
@@ -1101,30 +1201,13 @@ def _r_readme(ctx):
                           f"no section covering {want!r} — {prompt}")
 
 
-@rule("orphan-reference", "warn")
-def _r_orphan(ctx):
-    def norm(x):
-        import unicodedata
-        x = unicodedata.normalize("NFKD", x.strip().lower())
-        return "".join(c for c in x if not unicodedata.combining(c)).replace(" ", "-")
-    known = {norm(k) for k in ctx["known_repos"]}
-    local = {p.name for p in ROOT.glob("custom apps/*") if p.is_dir()}
-    orphans = {n.strip() for n in local if norm(n) not in known}
-    for f in ctx["files"]:
-        if is_history(f):
-            continue        # a dated record of a past mention is not a live dangling reference
-        for i, line in enumerate((ctx["path"] / f).read_text(errors="replace").splitlines(), 1):
-            spans = _code_spans(line)
-            for name in orphans:
-                m = re.search(rf"\b{re.escape(name)}\b", line)
-                # Same craft as commands: prose is the ordinary word, code voice is the reference.
-                # 'Farmacia' in CONVENTIONS.md's list of clinic units (SOME, Dental, OIRS…) is a
-                # pharmacy, not a missing repository.
-                if not m or not (any(s <= m.start() < e for s, e in spans)
-                                 or PROJECT_VOICE.search(line)):
-                    continue
-                yield Finding("orphan-reference", "warn", f, i,
-                              f"mentions {name!r} — no such repo in {ORG}")
+# `orphan-reference` was deleted here. It flagged a governed doc that mentioned an app concept under
+# `custom apps/` having no repository — but it derived that registry from `ROOT.glob("custom apps/*")`
+# hardcoded in the ENGINE, which is a machine-local path and a decision in the one place ADR 0002 says
+# a decision may never live. The drawer it read was retired by gestion #142, four of its seven folders
+# are empty, and the rule's only firing across the org was a false positive: "Farmacia" in a Spanish
+# list of clinic units (SOME, Dental, OIRS, Estadística-REM, Dirección) is a pharmacy. A registry of
+# four empty human-named folders is worse than no registry, because it looks like one.
 
 
 @rule("absolute-path", "warn")
@@ -1187,6 +1270,7 @@ def _r_branch(ctx):
 
 RATIONALE = {
     "missing-required": "Community-standard files absent; 5 repos lack CONTRIBUTING today.",
+    "tracked-not-present": "A tracked file the tree lacks used to kill the run with a traceback.",
     "license-posture": "ADR 0010: AGPL-3.0-or-later org-wide, inherited from what the apps link.",
     "canon-drift": "Mechanical files have one correct form; drift is a bug, not a variant.",
     "secrets": "gestion/.githooks/pre-commit already chose this posture; propagate it.",
@@ -1199,12 +1283,10 @@ RATIONALE = {
     "unfilled-contract": "A shipped outline looks like documentation and is not.",
     "licence-declaration": "Apps declare a licence in appinfo, composer and package at once.",
     "licence-inventory": "The notices document must match what is actually installed.",
-    "licence-copyleft": "A dependency incompatible with AGPL-3.0-or-later needs a human call.",
     "licence-prose": "SKILL.md and the public profile still called the org proprietary after 0010.",
     "phantom-command": "A documented command with no target is a lie, not a gap.",
     "unverified-command": "8 of gestion's 14 documented make commands are run by no gate.",
     "readme-sections": "Presence, never order; archetype decides the extras.",
-    "orphan-reference": "custom apps/ holds 7 dirs with no repo in the org.",
     "absolute-path": "AGENTS.md:32 hardcodes /srv/syncthing/CESFAMS.",
     "personal-data": "Names and personal addresses belong in CONTRIBUTORS/LICENSE only.",
     "doc-language": "Repo docs English; only the org profile is bilingual.",
@@ -1245,10 +1327,17 @@ def _s_scanning(action, ctx):
 
 
 def _guard_2fa():
-    """Non-negotiable pre-flight. Enforcing 2FA removes members who lack it —
-    and the only member is the owner."""
+    """Non-negotiable pre-flight. Enforcing 2FA removes members who lack it — and the only member is
+    the owner.
+
+    It fails CLOSED, and that is the whole point. `gh()` returns None when the call fails, so
+    `str(out or "")` read a request that never reached GitHub as "nobody lacks 2FA" and would have
+    gone on to enforce it. Losing control of the organisation is not an acceptable outcome of a flaky
+    network. Asserted in `selftest`, as ADR 0003 requires."""
     out = gh("api", f"orgs/{ORG}/members?filter=2fa_disabled", "--jq", ".[].login")
-    return [m for m in str(out or "").split("\n") if m]
+    if out is None:
+        return ["<could not read the 2FA-disabled member list — refusing to enforce>"]
+    return [m for m in str(out).split("\n") if m]
 
 
 @setting("org-2fa", guard=_guard_2fa)
@@ -1299,7 +1388,12 @@ def check(repo: Path, level="full", org_mode=False, offline=False, fix=False,
           f"{facts['license_kind']}]  {len(ctx['files'])} governed docs")
     for name, severity, is_offline, fn in CHECKS:
         if offline and not is_offline:
+            # A skipped rule knows nothing. Recording it as degraded stops the baseline diff calling
+            # its findings "resolved" — which it did, reporting analizador-rem's `master` default
+            # branch as fixed in the same run that printed SKIP for the rule that finds it.
             print(f"SKIP    {name:<20} needs org-scoped auth (--offline)")
+            DEGRADED.append(f"rule {name!r}: skipped (--offline)")
+            SKIPPED_RULES.add(name)
             continue
         try:
             found = list(fn(ctx))
@@ -1333,18 +1427,24 @@ def baseline_diff(current: dict, save: bool) -> int:
     total_new = total_gone = 0
     for repo, fps in sorted(current.items()):
         was, now = set(old.get(repo, [])), set(fps)
-        added, gone = sorted(now - was), sorted(was - now)
+        added, absent = sorted(now - was), sorted(was - now)
+        # A finding from a rule that did not run has not been resolved; nobody looked.
+        unknown = [fp for fp in absent if fp.split("|")[0] in SKIPPED_RULES]
+        gone = [fp for fp in absent if fp.split("|")[0] not in SKIPPED_RULES]
         total_new += len(added)
         total_gone += len(gone)
         if not old:
             print(f"  {repo:<16} {len(now)} findings recorded (first baseline)")
             continue
-        print(f"  {repo:<16} +{len(added)} new  -{len(gone)} resolved  ={len(now & was)} open")
+        tail = f"  ?{len(unknown)} unknown" if unknown else ""
+        print(f"  {repo:<16} +{len(added)} new  -{len(gone)} resolved  ={len(now & was)} open{tail}")
         for fp in added[:6]:
             print(f"      NEW      {fp}")
             new_by_rule.setdefault(fp.split('|')[0], set()).add(repo)
         for fp in gone[:6]:
             print(f"      RESOLVED {fp}")
+        for fp in unknown[:6]:
+            print(f"      UNKNOWN  {fp}  (its rule did not run)")
     # A rule appearing across most repos at once is a rule change; documentation does not
     # rot in lockstep. Requiring ALL of them was too strict — one already-compliant repo
     # (repo-docs itself) was enough to silence the warning.
@@ -1424,7 +1524,21 @@ def open_pr(repo: Path, paths: list, level: str) -> str:
 
 
 def selftest() -> None:
-    global ROOT
+    global ROOT, gh
+
+    # ADR 0003 says the org-2FA pre-flight "is asserted in the selftest and must never become
+    # advisory". It said so while nothing asserted it. Enforcing 2FA removes every member who lacks
+    # it, and this organisation has exactly one member, so a guard that fails OPEN when it cannot
+    # reach GitHub can lock the owner out of everything.
+    _real_gh = gh
+    try:
+        gh = lambda *a, **k: None                    # noqa: E731 — simulate a failed API call
+        assert _guard_2fa(), "org-2fa pre-flight must BLOCK when it cannot read the member list"
+        gh = lambda *a, **k: ""                      # noqa: E731 — reachable, nobody lacks 2FA
+        assert _guard_2fa() == [], "empty member list must not block"
+    finally:
+        gh = _real_gh
+
     with tempfile.TemporaryDirectory() as td:
         base = Path(td) / "with space"
         repo = base / "demo"
