@@ -166,8 +166,9 @@ configuration into the running app; if it isn't scripted, it isn't real.
    (`make up-dev` first if you want Xdebug on `:9003`; `SEED_FIXTURES=0 make seed` applies structure
    only, skipping the fixture phases; `make seed` is the verbose inner pipeline.)
 3. `make smoke` / `make test` — health-gate + the local quality gate. Green before a PR — CI runs the same script.
-4. Open a PR — see [`CONTRIBUTING.md`](CONTRIBUTING.md) (GitHub Flow, Conventional Commits, `ai-assisted`, 1
-   approval); work is tracked on the [Projects board](https://github.com/orgs/APS-Conecta/projects/5).
+4. Open a PR — see [`CONTRIBUTING.md`](CONTRIBUTING.md) (GitHub Flow, Conventional Commits,
+   `ai-assisted`, self-review); work is tracked on the
+   [Projects board](https://github.com/orgs/APS-Conecta/projects/5).
 
 ### A feature = one provisioning phase
 

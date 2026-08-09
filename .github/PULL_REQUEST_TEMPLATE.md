@@ -11,7 +11,9 @@ Closes #
 - [ ] Title follows **Conventional Commits** (`feat:`, `fix:`, `docs:`, `chore:`, `test:`…).
 - [ ] The repository's own gate passes locally — the same one CI runs.
 - [ ] Docs updated where a fact changed (one owner per fact — no duplication).
-- [ ] Small and reviewable; **1 approval** before merge.
+- [ ] Small and reviewable; **self-reviewed** — read your own diff as if someone else wrote it.
+      (One maintainer: GitHub cannot record an approval on your own PR, so CI green plus this
+      checkbox is the whole gate. An approval is required once a second account has access.)
 
 ## AI involvement
 

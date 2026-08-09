@@ -21,8 +21,11 @@ Internal ops only, **no patient data**.
   (a glossary *of* Spanish domain terms). `docs/BRANDING.md`
   and `themes/apsconecta/MAPEO.md` were exempt as "authored with the brand kit" and were translated
   on 2026-08-09: both are read by whoever deploys or edits the theme, which is a developer.
-- **Coordination:** GitHub Flow, PR + 1 approval (convention gate), private repo. Conventional Commits.
-  `main` is the trunk; a **release is a tag**, and a clinic installs from one (ADR-0005).
+- **Coordination:** GitHub Flow, PR + **self-review**, private repo. Conventional Commits. One
+  maintainer works here, so CI green is the only mechanical gate — GitHub forbids approving your own
+  PR and the free plan gives a private repo no protected branches. `CONTRIBUTING.md` § *Workflow*
+  owns this fact and states it in full; an approval becomes required the day a second account has
+  access. `main` is the trunk; a **release is a tag**, and a clinic installs from one (ADR-0005).
 
 ## How we write
 
