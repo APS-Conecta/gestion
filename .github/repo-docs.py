@@ -956,23 +956,38 @@ def _r_canon(ctx):
             continue
         if is_org and canon_rel not in publishable:
             continue
+        # A hook that is not executable is not a hook. `scaffold` chmods; `--fix` only wrote the text,
+        # so every hook it installed was inert — 5 of 6 repos, recorded in git as 100644, which means
+        # every clone got a dead secret-guard while CONTRIBUTING.md documented it as a gate. Mode is
+        # part of the artifact, so a wrong mode is drift.
+        needs_exec = canon_rel in (P.get("canon_executable") or [])
         if not dst.exists():
             # Absence is drift too. A directory requirement is satisfied by its canon
             # members, never by the directory existing with one file in it.
             if ctx["fix"]:
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 dst.write_text(render(canon_rel, canon_vars(ctx["facts"])))
+                if needs_exec:
+                    dst.chmod(0o755)
                 yield Finding("canon-drift", "error", repo_rel, None, "added from canon/", True)
             else:
                 yield Finding("canon-drift", "error", repo_rel, None,
                               f"missing; canon/{canon_rel} defines it")
             continue
         want = render(canon_rel, vars_)
-        if dst.read_text(errors="replace") == want:
+        inert = needs_exec and not os.access(dst, os.X_OK)
+        if dst.read_text(errors="replace") == want and not inert:
             continue
         if ctx["fix"]:
             dst.write_text(want)
-            yield Finding("canon-drift", "error", repo_rel, None, "restored from canon/", True)
+            if needs_exec:
+                dst.chmod(0o755)
+            yield Finding("canon-drift", "error", repo_rel, None,
+                          "mode fixed — it was not executable" if inert else "restored from canon/",
+                          True)
+        elif inert:
+            yield Finding("canon-drift", "error", repo_rel, None,
+                          "present but NOT EXECUTABLE — it never runs; --fix sets the mode")
         else:
             yield Finding("canon-drift", "error", repo_rel, None,
                           f"differs from canon/{canon_rel} — --fix restores it")
@@ -1602,6 +1617,18 @@ def selftest() -> None:
             assert any(f.rule == "fact-contradiction" for f in _r_contradiction(ctx)), \
                 "three-person vs single developer must contradict"
             assert "SECURITY.md" in gaps(facts, "full", False)
+
+            # A hook without its executable bit is inert in every clone, and git records the bit
+            # (100755 vs 100644). --fix wrote the text only, so 5 of 6 repos carried a dead
+            # secret-guard while CONTRIBUTING.md documented it as a gate.
+            hook = repo / ".githooks" / "pre-commit"
+            hook.parent.mkdir(parents=True, exist_ok=True)
+            hook.write_text(render("pre-commit", canon_vars(facts)))
+            hook.chmod(0o644)
+            assert any("NOT EXECUTABLE" in f.msg for f in _r_canon(dict(ctx, fix=False))), \
+                "a present-but-inert hook must be reported as drift"
+            list(_r_canon(dict(ctx, fix=True)))
+            assert os.access(hook, os.X_OK), "--fix must set the executable bit"
 
             before = sorted(p.name for p in repo.rglob("*"))
             scaffold(repo, "full", False, write=False)
