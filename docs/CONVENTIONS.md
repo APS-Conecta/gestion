@@ -1,13 +1,15 @@
 # Convenciones de organización — Document Home (APS Conecta Gestión)
 
 Reglas mínimas para que el Document Home siga ordenado a medida que crece (FR-14). En v1 se **siguen a
-mano** — no hay auto-clasificación ni IA (eso es capa de roadmap). También se surfacean dentro de la carpeta
-`Transversal` (`LÉEME — Convenciones.md`).
+mano** — no hay auto-clasificación ni IA (eso es capa de roadmap).
+
+> Este archivo se instala tal cual dentro de la carpeta **Transversal**, como
+> `LÉEME — Convenciones.md`, para que se pueda leer sin salir de la intranet. Por eso está escrito
+> para el personal y no menciona rutas del repositorio.
 
 ## Dónde va cada documento (áreas)
 
-El árbol tiene cuatro áreas, provisionadas como Group Folders (ver `docs/ARCHITECTURE.md` y la matriz de
-acceso en el PRD §4.4):
+El árbol tiene cuatro áreas:
 
 - **Transversal** — conocimiento compartido de todo el personal (Protocolos, Flujogramas, Documentación,
   Registro de redes, Actas de reuniones). Pensada como lectura para todo el personal y gestión por
@@ -27,9 +29,7 @@ específico → su carpeta.
 >
 > Entre el 2026-07-30 y el 2026-08-01 todo el personal pudo editar y eliminar en todas las carpetas
 > — una decisión temporal para poder reorganizar el árbol, ya revertida. Cada Team Folder conserva su
-> propia papelera, así que un borrado siempre se puede recuperar. La matriz real vive en
-> `sites/<slug>/site.sh`, aplicada por
-> [`provisioning/phases/40-acl.sh`](../provisioning/phases/40-acl.sh).
+> propia papelera, así que un borrado siempre se puede recuperar.
 
 ## Nombre de archivos
 
