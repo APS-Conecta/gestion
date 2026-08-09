@@ -14,17 +14,12 @@ for sub in "${SITE_SUBFOLDERS[@]}"; do
   ensure_gf_subfolder "Transversal" "$sub"
 done
 
-# Surface the organization conventions where staff will see them (FR-14). The text is product; only
-# the clinic's name is per-site.
-ensure_gf_file "Transversal" "LÉEME — Convenciones.md" \
-"# Convenciones de organización — $SITE_NOMBRE_CORTO
-
-Cómo mantener ordenada esta carpeta. Detalle completo: docs/CONVENTIONS.md en el repositorio.
-
-- **Nombre de archivo:** \`AAAA-MM-DD_area_tema_vN.ext\` (fecha ISO, sin acentos en el nombre técnico).
-- **Dónde va cada documento:** Transversal = conocimiento compartido; Programas = por programa;
-  Unidades = por unidad funcional; Sectores = por sector territorial.
-- **Una sola copia viva:** edita el documento en su lugar (Nextcloud Office) en vez de duplicar archivos.
-"
+# Surface the organization conventions where staff will see them (FR-14). Shipped verbatim from
+# docs/CONVENTIONS.md, which is the reviewable source: staff cannot open a private repository, so a
+# summary pointing at that path was a dead end (#148). Keep that file staff-readable — no repo paths.
+# ponytail: idempotent by existence, so an edited CONVENTIONS.md does not reach an instance that
+# already has the file. Deliberate — staff may have annotated it, and overwriting is data loss.
+# If it must propagate, diff first and write only when the file is byte-identical to the last ship.
+ensure_gf_file "Transversal" "LÉEME — Convenciones.md" "$(cat docs/CONVENTIONS.md)"
 
 phase_end

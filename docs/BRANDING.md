@@ -1,264 +1,229 @@
-# BRANDING.md — Instalación de la marca en Nextcloud
+# BRANDING.md — installing the brand on Nextcloud
 
-Guía paso a paso para vestir la instancia con la identidad de **APS Conecta Gestión**
-(tema **claro único**) sobre **Nextcloud 34**.
+Step-by-step guide to dressing the instance in the **APS Conecta Gestión** identity
+(**light theme only**) on **Nextcloud 34**.
 
-> Cómo se comporta el theming de Nextcloud por dentro, y las reglas que no se pueden romper, están
-> en [`THEMING-MODEL.md`](THEMING-MODEL.md). Esta guía es el *qué hacer*; aquella es el *por qué*.
-> Este fichero se llamaba `INSTALACION-NEXTCLOUD.md` y vivía en el kit de marca; se mudó al repo el
-> 2026-07-27 porque describe lo que corre en el servidor.
+> How Nextcloud theming behaves internally, and the rules that cannot be broken, are in
+> [`THEMING-MODEL.md`](THEMING-MODEL.md). This guide is the *what to do*; that one is the *why*.
+> This file was called `INSTALACION-NEXTCLOUD.md` and lived in the brand kit; it moved into the repo
+> on 2026-07-27 because it describes what runs on the server, and was translated to English on
+> 2026-08-09 for the same reason — its reader deploys the brand, they do not design it.
 
 ---
 
-## 0. Qué contiene esta carpeta
+## 0. What this folder holds
 
-Lo que **corre** está en este repo:
+What **runs** is in this repo:
 
 ```
 gestion/
-├── docs/BRANDING.md              ← esta guía
-├── docs/THEMING-MODEL.md         ← reglas, estructura de ajustes, verificación
-├── provisioning/phases/15-branding.sh   ← el ÚNICO sitio que escribe la marca
-└── themes/apsconecta/            ← una sola copia; compose.yaml la monta
+├── docs/BRANDING.md              ← this guide
+├── docs/THEMING-MODEL.md         ← rules, settings structure, verification
+├── provisioning/phases/15-branding.sh   ← the ONLY place that writes the brand
+└── themes/apsconecta/            ← a single copy; compose.yaml mounts it
     ├── MAPEO.md
-    ├── defaults.php               ← identidad en el camino heredado (ADR-0004)
-    ├── tools/
-    └── core/{css,fonts,img}/
+    ├── defaults.php               ← identity on the legacy render path (ADR-0004)
+    ├── tools/                     ← art generator, single-use; not a package
+    └── core/{css,fonts,img}/      ← the img/ listing is in §3
 ```
 
-Lo que **alimenta a diseño** está en el kit hermano `../APS Conecta Nextcloud/` (fuera de git; su
-licencia MIT se retiró el 2026-08-08 — las marcas quedan reservadas según el §7(e) de la AGPL y los
-tokens van con el código, ver §10):
-`tokens/`, `logo/`, `css/apsconecta.css`, `sistema-diseno.html` (brandbook vivo),
+What **feeds design** is in the sibling kit `../APS Conecta Nextcloud/` (outside git; its MIT licence
+was withdrawn on 2026-08-08 — see [`LICENSING.md`](LICENSING.md), which owns this):
+`tokens/`, `logo/`, `css/apsconecta.css`, `sistema-diseno.html` (living brandbook),
 `brandbook-agnostico.html`, `README-MARCA.md`.
 
-> **Regla:** *corre en el servidor → `gestion/`; alimenta a un diseñador o al sitio web → el kit.*
+> **Rule:** *runs on the server → `gestion/`; feeds a designer or the website → the kit.*
 
-## 1. Requisitos
+## 1. Requirements
 
-- Nextcloud **34** con la app **Theming** activada (viene por defecto).
-- Acceso a **`occ`** como el usuario web:
-  - Instalación normal: `sudo -u www-data php occ …`
-  - Docker: `docker exec -u www-data <contenedor> php occ …`
-- Para que Nextcloud **genere favicons e iconos de pantalla de inicio** a partir del logo hace falta **PHP imagick con soporte SVG** (p. ej. `libmagickcore-*-extra`). Si no lo tienes, sube tú el favicon en las opciones avanzadas de Theming.
+- Nextcloud **34** with the **Theming** app enabled (on by default).
+- Access to **`occ`** as the web user:
+  - Normal install: `sudo -u www-data php occ …`
+  - Docker: `docker exec -u www-data <container> php occ …`
+- For Nextcloud to **generate favicons and home-screen icons** from the logo you need **PHP imagick with SVG support** (e.g. `libmagickcore-*-extra`). Without it, upload the favicon yourself in Theming's advanced options.
 
-> **Regla de oro:** nunca edites el core de Nextcloud. Prefiere capas blandas: el panel Theming,
-> comandos `occ`, un tema de servidor propio (`themes/apsconecta/`) y CSS/l10n propios.
+> **Golden rule:** never edit Nextcloud core. Prefer soft layers: the Theming panel, `occ` commands,
+> our own server theme (`themes/apsconecta/`) and our own CSS/l10n.
 >
-> *Matizado por [ADR-0002](adr/0002-app-patches.md) el 2026-07-29:* las apps de terceros **sí** se
-> parchan, en tiempo de ejecución y desde `.patch` versionados, cuando no hay otra vía. Qué implica
-> eso para la AGPL §13 lo resuelve [`LICENSING.md`](LICENSING.md) §4, que es su dueño.
+> *Qualified by [ADR-0002](adr/0002-app-patches.md) on 2026-07-29:* third-party apps **are** patched,
+> at runtime and from versioned `.patch` files, when there is no other way. What that means for
+> AGPL §13 is settled by [`LICENSING.md`](LICENSING.md) §4, which owns it.
 
 ---
 
-## 2. Vía reproducible — `make seed` (la única)
+## 2. The reproducible path — `make seed` (the only one)
 
-No hay script suelto que ejecutar. La capa de identidad es una **fase de provisioning**,
-`gestion/provisioning/phases/15-branding.sh`, y se aplica con el resto:
+There is no loose script to run. The identity layer is a **provisioning phase**,
+`gestion/provisioning/phases/15-branding.sh`, applied with the rest:
 
 ```bash
 cd gestion
-make up      # levanta el stack (bind-monta ./themes)
-make seed    # aplica locale, marca, grupos, carpetas, ACL…
+make up      # brings up the stack (bind-mounts ./themes)
+make seed    # applies locale, brand, groups, folders, ACL…
 ```
 
-Es idempotente: cada clave se lee antes de escribirse, así que re-ejecutar no hace nada.
-La fase hace, en orden:
-1. **Identidad:** `name`, `slogan`, `url`, `imprintUrl`, `privacyUrl`.
-2. **`productName`** (clave separada — **imprescindible**): sin ella, "Nextcloud" se filtra por `status.php`, `OC.theme`, las capabilities OCS y el botón de shares públicos.
-3. **Colores:** `primary_color #7f21fe`, `background_color #5315a8`.
-   `background_color` **no es decorativo**: de él deriva Nextcloud el color del texto sobre el
-   fondo y la inversión de los iconos de cabecera. Tiene que coincidir con el tono dominante de
-   `background.svg`. Ponerlo en blanco pintaba texto negro e iconos invertidos sobre violeta
-   (corregido el 2026-07-27). Ver regla 5 de `THEMING-MODEL.md`.
-4. **Tema claro forzado:** `enforce_theme = light` + `disable-user-theming = yes`. Son claves **complementarias**: la primera elimina la elección de tema/apariencia, la segunda impide que cada usuario cambie fondo y color por su cuenta.
-5. **Banner iOS:** `config:system:set customclient_ios_appid ""` — mata el meta
-   `apple-itunes-app`. Sustituye a `defaults.php` **para esta tarea**: por eso se eliminó el
-   2026-07-27. El fichero volvió el 2026-08-04 por otro motivo — identidad en el camino heredado
-   ([ADR-0004](adr/0004-branding-the-legacy-render-path.md)).
-6. **Navegación:** el color de `side_menu` (`background-color` / `background-color-to`). La app la
-   instala la fase `12-apps` desde su tarball vendorizado (#98), no ésta.
-7. **Activación del tema:** `config:system:set theme --value apsconecta`.
+It is idempotent: every key is read before it is written, so re-running does nothing.
+The phase does, in order:
+1. **Identity:** `name`, `slogan`, `url`, `imprintUrl`, `privacyUrl`.
+2. **`productName`** (a separate key — **essential**): without it, "Nextcloud" leaks through `status.php`, `OC.theme`, the OCS capabilities and the public-share button.
+3. **Colours:** `primary_color #7f21fe`, `background_color #5315a8`.
+   `background_color` is **not decorative**: Nextcloud derives the text colour over the backdrop and
+   the header icon inversion from it. It has to match the dominant tone of `background.svg`. Setting
+   it to white painted black text and inverted icons over violet (fixed 2026-07-27). See rule 5 of
+   `THEMING-MODEL.md`.
+4. **Forced light theme:** `enforce_theme = light` + `disable-user-theming = yes`. The keys are **complementary**: the first removes the theme/appearance choice, the second stops each user changing background and colour on their own.
+5. **iOS banner:** `config:system:set customclient_ios_appid ""` — kills the `apple-itunes-app`
+   meta tag. It replaces `defaults.php` **for this task**, which is why that file was deleted on
+   2026-07-27. The file came back on 2026-08-04 for a different reason — identity on the legacy
+   render path ([ADR-0004](adr/0004-branding-the-legacy-render-path.md)).
+6. **Navigation:** the `side_menu` colour (`background-color` / `background-color-to`). The app
+   itself is installed by phase `12-apps` from its vendored tarball (#98), not by this one.
+7. **Theme activation:** `config:system:set theme --value apsconecta`.
 
-**Sí sube imágenes**, con `occ theming:config <clave> <ruta-absoluta>` (§3) — solo exige ruta
-absoluta. Subirlas por el panel sigue prohibido: sería el "hand-click" que AD-2 veta.
+**It does upload images**, with `occ theming:config <key> <absolute-path>` (§3) — an absolute path is
+the only requirement. Uploading them through the panel is still forbidden: that would be the
+"hand-click" AD-2 vetoes.
 
-> **Revertir cualquier clave:** `occ theming:config <clave> --reset`.
+> **Reverting any key:** `occ theming:config <key> --reset`.
 
 ---
 
-## 3. Las imágenes de marca (sin subir nada)
+## 3. The brand images (nothing is uploaded)
 
-Los ficheros viven en el tema y la fase los **registra** con `occ theming:config <clave>
-<ruta-absoluta>` apuntando al bind-mount. No se sube nada por el panel, no hace falta la API ni
-credenciales de admin, y el registro es lo que hace funcionar la rasterización del favicon, el
-webmanifest y los correos con marca:
+The files live in the theme and the phase **registers** them with `occ theming:config <key>
+<absolute-path>` pointing at the bind-mount. Nothing goes through the panel, no API and no admin
+credentials are needed, and it is that registration which makes favicon rasterisation, the
+webmanifest and branded email work:
 
 ```
 gestion/themes/apsconecta/core/img/
-├── logo/logo.svg          ← clave `logo`: tarjeta de login (lockup completo)
-├── logo/logo-header.svg   ← clave `logoheader`: el lockup completo. Desde #84 se muestra en el
-│                            panel de side_menu (`.cm-logo`), no en la cabecera — medidas en
-│                            MAPEO.md §3
-│                            AMBOS lockups llevan su propia subset de Fraunces/Nunito Sans
-│                            embebida: un SVG servido como imagen no ve el @font-face de
-│                            server.css (B-011). Regenerar con tools/embed-fonts.py
-├── logo/logo-mark.svg     ← la figura sola: la cabecera, a cualquier ancho
-├── home.svg               ← el icono de casa de la cabecera (#84). Lo usa server.css; no es
-│                            clave de theming, así que la fase no lo registra
-├── favicon.svg            ← clave `favicon`
-├── manifest.json          ← el webmanifest que verifica `smoke.sh` (control 7)
-└── background.svg         ← clave `background`: telón de TODA la UI, no solo del login
+├── logo/logo.svg          ← key `logo`: login card (full lockup)
+├── logo/logo-header.svg   ← key `logoheader`: the full lockup. Since #84 it shows in the
+│                            side_menu panel (`.cm-logo`), not in the header — measurements
+│                            in MAPEO.md §3
+│                            BOTH lockups carry their own embedded subset of Fraunces/Nunito
+│                            Sans: an SVG served as an image cannot see server.css's
+│                            @font-face (B-011). Regenerate with tools/embed-fonts.py
+├── logo/logo-mark.svg     ← the figure alone: the header, at any width
+├── home.svg               ← the header's home icon (#84). server.css uses it; it is not a
+│                            theming key, so the phase does not register it
+├── favicon.svg            ← key `favicon`
+├── manifest.json          ← the webmanifest `smoke.sh` verifies (check 7)
+└── background.svg         ← key `background`: backdrop for the WHOLE UI, not just login
 ```
 
-> **No pintes encima del fondo.** `server.css` tenía un degradado claro sobre `body`/`#content`
-> que tapaba `background.svg` por completo: estaba registrado, servido y no se vio nunca. Se
-> eliminó el 2026-07-27.
+> **Do not paint over the backdrop.** `server.css` had a light gradient on `body`/`#content` that
+> hid `background.svg` completely: it was registered, served, and never once seen. Removed
+> 2026-07-27.
 >
-> **Resuelto el 2026-07-27** ([ADR-0001](adr/0001-server-theme-for-branding.md) § *Pending*):
-> registramos las cuatro claves nosotros, así que la precedencia tema-vs-BD quedó sin objeto.
+> **Resolved 2026-07-27** ([ADR-0001](adr/0001-server-theme-for-branding.md) § *Pending*): we
+> register all four keys ourselves, so theme-vs-DB precedence became moot.
 
 ---
 
-## 4. El tema de servidor
+## 4. The server theme
 
-Ya está instalado: vive en **`gestion/themes/apsconecta/`**, que `compose.yaml` monta en `/var/www/html/themes`. Lo que está en git *es* lo que corre — no hay paso de copia.
+Already installed: it lives in **`gestion/themes/apsconecta/`**, which `compose.yaml` mounts at `/var/www/html/themes`. What is in git *is* what runs — there is no copy step. The tree is in §0; what `server.css` actually delivers is in [`MAPEO.md`](../themes/apsconecta/MAPEO.md).
 
-```
-gestion/themes/apsconecta/
-├── MAPEO.md                    ← qué entrega server.css de verdad, y por qué tan poco
-├── defaults.php                ← identidad en el camino heredado (ADR-0004). Pasa por opcache:
-│                                 editarlo exige reiniciar el contenedor
-├── tools/                      ← generador de arte, de un solo uso; no es un paquete
-└── core/
-    ├── css/server.css          ← fuentes, display, cabecera, foco, alto contraste
-    ├── fonts/*.woff2           ← Fraunces + Nunito Sans (zero-egress). La ÚNICA razón
-    │                             de que este directorio exista
-    └── img/                    ← el listado completo vive en §3, no se repite aquí
-```
+`defaults.php` **does exist**: it came back on 2026-08-04 ([ADR-0004](adr/0004-branding-the-legacy-render-path.md)).
+It no longer kills the iOS banner — `customclient_ios_appid` does that — but delivers the identity on
+the legacy-render-path screens, where no config key answers. What does not exist is
+`apps/<appid>/img/` (§5: zero clashing icons).
 
-`defaults.php` **sí existe**: volvió el 2026-08-04 ([ADR-0004](adr/0004-branding-the-legacy-render-path.md)).
-Ya no mata el banner iOS —eso lo hace `customclient_ios_appid`— sino que entrega la identidad en las
-pantallas del camino heredado, donde no hay clave de configuración que responda. Lo que no hay es
-`apps/<appid>/img/` (§5: cero iconos en conflicto).
+> **A theme stylesheet can change very little**, and why — `:root` inert, element selectors not —
+> is rule 1 of [`THEMING-MODEL.md`](THEMING-MODEL.md). Read it before touching `server.css`.
 
-> **Lo que el CSS del tema puede cambiar es poco.** Nextcloud declara sus variables en
-> `body[data-theme-light]` y el tema carga *antes*, así que lo que pongas en `:root` **no llega**.
-> Medido: 7 de 30 variables coincidían, y solo porque ya valían lo mismo. Los selectores de
-> elemento sí ganan. Lee `THEMING-MODEL.md` antes de tocar `server.css`.
-
-1. **Activa el tema:** lo hace la fase `15-branding` (`config:system:set theme --value apsconecta`).
-2. **Reinicio:** ninguno para las claves `occ` de este documento. Sí hace falta si tocas
-   `defaults.php`, que vuelve a estar y sigue pasando por el opcache.
-3. **Fuentes:** Fraunces y Nunito Sans en **woff2 variable** (un fichero por familia cubre pesos 400–800, más las itálicas), en `core/fonts/`, declaradas por `@font-face` con rutas absolutas `/themes/apsconecta/core/fonts/` — **zero-egress, sin Google Fonts**. **Solo woff2, sin fallback a TTF**: ningún navegador que soporte Nextcloud 34 carece de woff2, y el fallback escondía errores (un woff2 ausente caía al TTF en silencio). `make test` verifica que cada `url()` de `server.css` existe en disco. Regenerar tras actualizar una fuente:
+1. **Activate the theme:** phase `15-branding` does it (`config:system:set theme --value apsconecta`).
+2. **Restart:** none for the `occ` keys in this document. One is needed if you touch
+   `defaults.php`, which is back and still goes through opcache.
+3. **Fonts:** Fraunces and Nunito Sans as **variable woff2** (one file per family covers weights 400–800, plus the italics), in `core/fonts/`, declared by `@font-face` with absolute paths `/themes/apsconecta/core/fonts/` — **zero-egress, no Google Fonts**. **woff2 only, no TTF fallback**: no browser Nextcloud 34 supports lacks woff2, and the fallback hid errors (a missing woff2 fell back to the TTF silently). `make test` verifies every `url()` in `server.css` exists on disk. Regenerate after updating a font:
    ```bash
    python3 -c "from fontTools.ttLib.woff2 import compress; compress('X.ttf','X.woff2')"
    ```
 
-   Convertir de formato no es subsetear ni renombrar, así que la SIL OFL se cumple.
+   Converting format is neither subsetting nor renaming, so the SIL OFL is satisfied.
 
-*(La app **Custom CSS** queda descartada como alternativa: no puede auto-hospedar fuentes, así que perdería la tipografía de marca.)*
+*(The **Custom CSS** app is ruled out as an alternative: it cannot self-host fonts, so the brand typography would be lost.)*
 
 ---
 
-## 5. Iconos por app — no hay ninguno
+## 5. Per-app icons — there are none
 
-Nextcloud busca las imágenes primero dentro del tema, así que un SVG en
-`themes/apsconecta/apps/<appid>/img/` reemplazaría el icono de una app sin tocarla. **No se usa:**
-se escanearon todas las apps activas el 2026-07-27 y ninguna trae un icono multitinta, que es el
-único criterio que justificaría sustituirlo. `themes/apsconecta/apps/` no existe.
-
-El criterio y el porqué de conservar los iconos Material de serie están en
+`themes/apsconecta/apps/` does not exist and there is nothing to deploy here. The replacement
+criterion, the measurement that left it empty, and why the stock Material icons are kept are in
+[`THEMING-MODEL.md`](THEMING-MODEL.md) §4 and
 [`ADR-0001`](adr/0001-server-theme-for-branding.md) § *Per-app icons*.
 
 ---
 
-## 6. Trampas conocidas
+## 6. Known traps
 
-Las trampas del **mecanismo** de theming (`:root` inerte, `background_color` decidiendo el color del
-texto, `enforce_theme` quitando el alto contraste, un SVG que no parsea) están en
-[`THEMING-MODEL.md`](THEMING-MODEL.md) §3, una sola vez. Aquí quedan las específicas de marca:
+The traps of the theming **mechanism** (`:root` inert, `background_color` deciding the text colour,
+`enforce_theme` removing high contrast, an SVG that does not parse) are in
+[`THEMING-MODEL.md`](THEMING-MODEL.md) §3, once. What stays here is brand-specific:
 
-- **Nombre del producto:** `productName` es una clave aparte (`config:app:set theming productName`).
-  Sin ella «Nextcloud» se filtra por `status.php`, `OC.theme` y el botón de compartir.
-- **Banner iOS «Nextcloud — Abrir»:** el leak es un **número**, así que `grep Nextcloud` no lo ve.
-  Se neutraliza con `customclient_ios_appid ""`. Comprueba:
+- **Product name:** `productName` is a separate key (`config:app:set theming productName`).
+  Without it "Nextcloud" leaks through `status.php`, `OC.theme` and the share button.
+- **The iOS "Nextcloud — Abrir" banner:** the leak is a **number**, so `grep Nextcloud` does not see
+  it. Neutralised with `customclient_ios_appid ""`. Check:
   `curl -s localhost:8180/login | grep -c apple-itunes-app` → `0`.
-- **El fondo azul de Nextcloud es un *wallpaper*, no un color:** `background_color` no lo quita.
-  Aquí se sustituye por `background.svg`; si algún día se retira la imagen, el fondo plano se pone
-  con `theming:config background backgroundColor` — y hay que reajustar `background_color` con él.
-- **Idioma:** no existe traducción `es_CL`. Se usa `default_language=es` + `force_language=es`, con
-  `default_locale=es_CL` para el formato chileno. **No uses `es_419`** (B-009).
-- **Acceso clientless:** si la instancia bloquea `status.php` a red externa, las apps oficiales de
-  escritorio y móvil no conectan a propósito — la vía móvil es la **PWA**.
+- **Nextcloud's blue background is a *wallpaper*, not a colour:** `background_color` does not remove
+  it. Here it is replaced by `background.svg`; if the image is ever withdrawn, the flat background is
+  set with `theming:config background backgroundColor` — and `background_color` must be readjusted
+  with it.
+- **Language:** there is no `es_CL` translation. We use `default_language=es` + `force_language=es`,
+  with `default_locale=es_CL` for Chilean formatting. **Do not use `es_419`** (B-009).
+- **Clientless access:** if the instance blocks `status.php` from the external network, the official
+  desktop and mobile apps deliberately cannot connect — the mobile route is the **PWA**.
 
 ---
 
-## 7. PWA y apps móviles
+## 7. PWA and mobile apps
 
-- Nextcloud **genera el webmanifest** desde el theming. Verifícalo: `curl https://TU-HOST/apps/theming/manifest`.
-  Mapeo: `name ← productName` · `short_name ← name` · `theme_color ← primary_color` · `background_color` · iconos ← `favicon`/`img/app.svg` por app · `display ← theming.standalone_window.enabled`.
-- Las **apps oficiales de Android e iOS sincronizan el tema del servidor** automáticamente (color, logo, fondo): al tematizar el servidor quedan coherentes web, PWA, Android e iOS.
-- **360 px, medido el 2026-07-30 (no es lo mismo que «la PWA»** — son dos comprobaciones distintas,
-  ver [`THEMING-MODEL.md`](THEMING-MODEL.md) §*«PWA a 360px» eran dos comprobaciones*). A ese ancho el
-  nombre de la clínica se metía bajo los iconos de la derecha, así que `server.css` retira por
-  debajo de 601 px las dos ranuras generadas (casa y nombre) y deja la marca sola con la geometría
-  de core. (Antes de #84 el problema era otro: el lockup más la etiqueta INICIO, ya retirada, pedían
-  299 px y solo había 224.) Verificado en un iframe de 360 px, que es el sustituto válido porque
-  `resize_window` es un no-op bajo este gestor de ventanas: sin recorte, sin solape y sin scroll
-  horizontal.
+- Nextcloud **generates the webmanifest** from theming. Verify it: `curl https://YOUR-HOST/apps/theming/manifest`.
+  Mapping: `name ← productName` · `short_name ← name` · `theme_color ← primary_color` · `background_color` · icons ← `favicon`/per-app `img/app.svg` · `display ← theming.standalone_window.enabled`.
+- The **official Android and iOS apps sync the server theme** automatically (colour, logo, background): theming the server keeps web, PWA, Android and iOS coherent.
+- **"The PWA" and "360 px" are two different checks**, and only the first belongs to this document;
+  how the second is measured is in [`THEMING-MODEL.md`](THEMING-MODEL.md) §*"PWA at 360 px" was two
+  different checks*, and what the header does at that width is fixed by
+  [`MAPEO.md`](../themes/apsconecta/MAPEO.md) §3, which owns the numbers.
 
 ---
 
-## 8. Verificación final
+## 8. Final verification
 
-1. **Refresca fuerte:** Ctrl/Cmd + Shift + R.
-2. Comprueba: login (degradado + logo), header (marca + icono de casa + nombre de la clínica por
-   encima de 601 px; marca sola por debajo), favicon, PWA (`/apps/theming/manifest`), y que **no**
-   aparezca "Nextcloud" ni el número
-   `1125420102`.
-   **Los correos no se pueden comprobar todavía:** no hay SMTP configurado en ninguna parte del repo,
-   así que la instancia no puede enviar nada. Este paso queda bloqueado por la decisión de correo
-   aplazada (ver la sección *Future* de `ROADMAP.md`); el tema sí llega a las plantillas de correo,
-   pero eso no se ha visto en un mensaje real.
-3. Confirma que **no existe** el selector de tema y que el modo oscuro es inalcanzable (`enforce_theme=light`).
-4. **Comprueba el tema realmente cargado.** Pega el fragmento de consola de
-   [`THEMING-MODEL.md` §5](THEMING-MODEL.md) en las devtools **sobre una página de Nextcloud**,
-   leyendo `document.body`. (El panel «Deriva» del brandbook hacía esto entre ficheros y se
-   eliminó el 2026-07-27: no podía ver una instancia en marcha, que es justo por lo que nunca
-   detectó que el mapa entero era inerte.)
-5. **Puertas automáticas:** `make test` (los SVG parsean, cada `url()` de `server.css` existe) y
-   `make smoke` (`/status.php` responde 200 y **no** contiene "Nextcloud").
+1. **Hard refresh:** Ctrl/Cmd + Shift + R.
+2. Check: login (gradient + logo), header (mark + home icon + clinic name above 601 px; mark alone
+   below), favicon, PWA (`/apps/theming/manifest`), and that neither "Nextcloud" nor the number
+   `1125420102` appears.
+   **Email cannot be checked yet:** no SMTP is configured anywhere in the repo, so the instance
+   cannot send anything. This step is blocked by the deferred mail decision (see the *Future*
+   section of `ROADMAP.md`); the theme does reach the mail templates, but that has not been seen in
+   a real message.
+3. Confirm the theme selector **does not exist** and dark mode is unreachable (`enforce_theme=light`).
+4. **Check the theme that actually loaded.** Paste the console snippet from
+   [`THEMING-MODEL.md` §5](THEMING-MODEL.md) into devtools **on a Nextcloud page**, reading
+   `document.body`. (The brandbook's "Deriva" panel did this between files and was removed on
+   2026-07-27: it could not see a running instance, which is exactly why it never noticed the whole
+   map was inert.)
+5. **Automatic gates:** `make test` (SVGs parse, every `url()` in `server.css` exists) and
+   `make smoke` (`/status.php` returns 200 and does **not** contain "Nextcloud").
 
-## 9. Cómo ver el brandbook
+## 9. Viewing the brandbook
 
-Desde la carpeta del kit (`../APS Conecta Nextcloud/`, hermana de este repo):
+From the kit folder (`../APS Conecta Nextcloud/`, sibling of this repo):
 
 ```bash
 cd "../APS Conecta Nextcloud" && python3 -m http.server 8080
-# abre http://localhost:8080/sistema-diseno.html
+# open http://localhost:8080/sistema-diseno.html
 ```
 
-(Con `file://` las fuentes y algunos assets no cargan; usa el servidor local.)
+(Under `file://` the fonts and some assets do not load; use the local server.)
 
-## 10. Licencias
+## 10. Licensing
 
-Todo el código propio va bajo **AGPL-3.0-or-later**, incluidos este tema y las apps propias. Es una
-obligación **heredada** de lo que las apps enlazan (`@nextcloud/vue`), no una elección: lo decide
-[ADR-0010](adr/0010-agpl-across-the-org.md) y el detalle está en [`LICENSING.md`](LICENSING.md) §1,
-que también resuelve el §13 y los parches de ADR-0002 en su §4.
-
-La **identidad visual se protege por marca, no por copyright**: logo, logo monocromo, lockup y favicon
-quedan con **todos los derechos reservados**, con las marcas reservadas según el artículo **7(e)** de
-la AGPL. Los **tokens de color sí van bajo AGPL** junto al código — un valor de color es dato
-funcional y el copyright apenas lo alcanza.
-
-De terceros: fuentes Fraunces y Nunito Sans **SIL OFL 1.1** (ver [`LICENSING.md`](LICENSING.md) §3.2:
-los lockups SVG sí llevan subset, lo permite la licencia; lo que no se hace es renombrarlas) ·
-iconografía en idioma Material (**Apache-2.0 / MIT**).
-
-*Corregido el 2026-08-08.* Esta sección declaraba «tokens y logos **MIT**», afirmaba que «el tema y las
-apps propias son **propietarios**», y **retiraba** explícitamente la marca AGPL-3.0. Las tres quedaron
-revertidas por ADR-0010, así que la retirada quedó a su vez retirada. MIT sobre los archivos del logo es
-exactamente la licencia que ADR-0007 existió para quitar: permite sublicenciar y vender la identidad
-visual que esos archivos establecen.
+[`LICENSING.md`](LICENSING.md) owns this, and [ADR-0010](adr/0010-agpl-across-the-org.md) is the
+decision. What matters when deploying the brand: our own code — this theme included — is
+**AGPL-3.0-or-later** (§1), the logo artwork is reserved by **trademark** under AGPL **§7(e)** while
+the colour tokens ship AGPL with the code, and the brand fonts are **SIL OFL 1.1** (§3.2 — the SVG
+lockups do embed a subset, which the licence permits; what is not done is renaming them).

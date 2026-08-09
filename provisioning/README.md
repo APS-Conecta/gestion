@@ -46,7 +46,7 @@ rather than reusing the committed one, so the `--new` path stays tested.
 | In the site file | In the phases (identical everywhere) |
 |---|---|
 | Identity: name, type, address, comuna, DEIS code | `all-staff`, the four `cat-*`, the shared `role-*` registry |
-| `SITE_TEAMS` — the `prog-*` and `sector-*` teams | The `LÉEME — Convenciones.md` text |
+| `SITE_TEAMS` — the `prog-*` and `sector-*` teams | The `LÉEME — Convenciones.md` text, shipped verbatim from [`docs/CONVENTIONS.md`](../docs/CONVENTIONS.md) |
 | `SITE_FOLDERS`, `SITE_SUBFOLDERS` | Phases 05, 06, 10, 12, 14, 15, 16 |
 | `SITE_ACL` — the whole grant matrix, `mount\|group\|perms` | |
 
