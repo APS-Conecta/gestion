@@ -28,8 +28,8 @@ chased the number and never the path, because the path had never worked.
 Bare numbers fail the same way. `repo-docs/SKILL.md` cited "ADR 0007" and "ADR 0002" with no
 repository named, while its own ADRs stop at 0003 — the 0007 it meant belonged to another repository
 entirely. Numbers collide across the organisation: `gestion` 0000–0005, `aps-conecta-web` 0001–0010,
-`repo-docs` 0001–0003, `epidemiologia` 0001–0013, `territorio` 0001–0013, and `common`,
-`analizador-rem` and `.github` have none. An ADR number is unique inside a repository and meaningless
+`repo-docs` 0001–0003, `epidemiologia` 0002–0013, `territorio` 0001–0013, and `common`
+and `.github` have none. An ADR number is unique inside a repository and meaningless
 outside one.
 
 `gestion` is already where the organisation's doctrine lives: `AGENTS.md` holds the canonical repo

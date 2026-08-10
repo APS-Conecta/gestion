@@ -15,11 +15,11 @@ explicitly rejected splitting the licence.
 
 An audit of what the repositories actually link showed that posture was not available.
 
-**The Nextcloud apps cannot be proprietary.** `territorio`, `analizador-rem` and
+**The Nextcloud apps cannot be proprietary.** `territorio` and
 `epidemiologia` each import `@nextcloud/vue`, which is AGPL-3.0-or-later, and webpack
 compiles it into the bundles committed under `js/` and served to staff. They also link
 `@nextcloud/axios`, `initial-state`, `router` and `l10n`, all GPL-3.0-or-later. The
-obligation is inherited from what the apps link; it was never ours to choose. All three
+obligation is inherited from what the apps link; it was never ours to choose. Both
 already declared AGPL in `composer.json` and `package.json`, so ADR 0007 had been
 contradicted in practice from the start — `territorio` and `common` simply shipped no
 `LICENSE` file at all, which is how it went unnoticed.
@@ -35,7 +35,7 @@ splitting off.
 
 ## Decision
 
-Every repository is **AGPL-3.0-or-later**: `gestion`, `territorio`, `analizador-rem`,
+Every repository is **AGPL-3.0-or-later**: `gestion`, `territorio`,
 `epidemiologia`, `common`, `aps-conecta-web`, `repo-docs`. One identical `LICENSE` file in
 each.
 

@@ -3,12 +3,12 @@
 - **Status:** accepted (2026-08-02). **Moved here 2026-08-09** from
   [`epidemiologia/docs/adr/0003-establishment-is-instance-configuration.md`](https://github.com/APS-Conecta/epidemiologia/blob/main/docs/adr/0003-establishment-is-instance-configuration.md),
   which keeps a stub. Nothing about the decision changed; only its address did.
-- **Affects:** every app in `apps/` — `epidemiologia`, `territorio`, `analizador_rem` and any lab
+- **Affects:** every app in `apps/` — `epidemiologia`, `territorio` and any lab
   app — plus `sites/<slug>/site.sh`, `scripts/deis.py` and `provisioning/seed.sh`
 
 ## Context
 
-This decision binds all four apps, and it was written in one of them. Three of the four cannot see
+This decision binds every app, and it was written in one of them. The others cannot see
 that repository from theirs, and its body is almost entirely about files in *this* repository — the
 same defect [ADR-0011](0011-org-wide-facts-live-in-gestion.md) exists to prevent, and the reason it
 moved. It is also the rule the 2026-08-08 documentation campaign leaned on hardest: it is the
@@ -32,19 +32,19 @@ deployment — the shape #77 and #110 build toward — not a picker.
 ## Considered options
 
 - **A run-time selector over the national extract.** Nearly free on the data side, but it reverses
-  `analizador_rem`'s explicit non-goal (*"No se construye… multi-CESFAM"*), and putting another
-  clinic's figures in front of our staff is a governance decision nobody has taken.
+  one establishment per install, and putting another clinic's figures in front of our staff is a
+  governance decision nobody has taken.
 - **A configured default plus one comparison clinic.** Same question, narrower. Deferred until
   someone can say who may compare against whom.
 
 ## Consequences
 
-- Agnosticism costs nothing at the data layer: the DEIS extracts are national, `rem_fact.deis` and
-  `rem_source.deis` already exist, and which clinic we show is a **filter value**, not a pipeline.
-- The REM read API takes the DEIS code as a **parameter**, not an implicit "ours", so a selector
+- Agnosticism costs nothing at the data layer: the DEIS extracts are national, and which clinic we
+  show is a **filter value**, not a pipeline.
+- Any REM read API takes the DEIS code as a **parameter**, not an implicit "ours", so a selector
   stays additive if the governance question is ever answered.
-- `grep 114302` is a runnable check: before this decision it matched only prose in `analizador_rem`'s
-  `docs/ESTADO.md`, and Epidemiología had no notion of an establishment at all. Both must keep
+- `grep 114302` is a runnable check: before this decision it matched only prose, and Epidemiología
+  had no notion of an establishment at all. It must keep
   returning nothing in code — fixtures and tests included, or agnosticism is untested.
 - **"ADR-0003" alone is ambiguous across this organisation** — five repositories have one, and they
   are five different decisions. Cite it with its repository, which is what moving this one fixes for

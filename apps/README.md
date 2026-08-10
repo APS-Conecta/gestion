@@ -14,12 +14,12 @@ this README is tracked (`.gitignore` un-ignores it explicitly):
   `provisioning/apps/epidemiologia/`, built from a release tag of its own repository: an install
   needs no network and no git. On a development machine, where this directory is a live clone
   instead, `ensure_own_app` sees the `.git` and leaves the working tree alone.
-- **Lab apps** — ours, under development, **never in a release**: `territorio`, `analizador_rem`.
+- **Lab apps** — ours, under development, **never in a release**: `territorio`.
   They are clones here and declared in [`dev/lab-apps.sh`](../dev/lab-apps.sh), which is tracked but
   inert — `12-apps.sh` acts on an entry only where `apps/<id>/.git` exists, so a clinic falls
   through. See [ADR-0005](../docs/adr/0005-gestion-is-the-development-trunk.md). To add one: clone it
-  here under its **app id** (`analizador-rem` → `apps/analizador_rem`), add a line to
-  `dev/lab-apps.sh`, then `make fix-mount-perms && make seed`.
+  here under its **app id**, which is the directory name and need not match the repository name; add
+  a line to `dev/lab-apps.sh`, then `make fix-mount-perms && make seed`.
 
 **Boundary (AD-9):** a custom app may depend on Nextcloud only through `OCP\…` public APIs — never
 patch core, never rely on private internals, and core never depends on a custom app.
