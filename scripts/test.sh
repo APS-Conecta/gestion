@@ -51,7 +51,13 @@ check bash -c '
   occ() { return 1; }                     # cannot answer -> skip, never import
   ensure_aia_intermediate example.test 2>&1 | grep -q "could not read the certificate list" || exit 1
   occ() { echo "[]"; }                    # answers "absent", under errexit -> must survive
-  ( set -e; ensure_aia_intermediate example.test >/dev/null 2>&1 )'
+  ( set -e; ensure_aia_intermediate example.test >/dev/null 2>&1 ) || exit 1
+  # Offline: the handshake itself fails. The stub used to return 0 for everything, so this
+  # branch was invisible to the gate — and a change that made the phase FATAL without a
+  # network passed it. Every failure in this helper is a warning by design (lib.sh:579).
+  docker() { [[ "$*" == *s_client* ]] && return 1; return 0; }
+  ( set -e -o pipefail; ensure_aia_intermediate example.test 2>&1 | grep -q "no CA-Issuers pointer" ) || exit 1
+  ( set -e -o pipefail; ensure_aia_intermediate example.test >/dev/null 2>&1 )'
 # The other half of the WRITES meta-gate, and the half it cannot express: an alternative must match
 # the WRITE line of a helper and NOT its noop line. `certs:` is the pair that proves it — the write
 # says "certs: imported X for Y", the noop says "certs: X already imported", and an unanchored
@@ -217,6 +223,33 @@ if docker compose ps --status running --services 2>/dev/null | grep -qx nextclou
 else
   echo "  skipped: upstream vendor-block checks (need a running stack)"
 fi
+
+# The AIA URI is read out of a REMOTE certificate over an unverified handshake, so it is
+# attacker-chosen input that used to be interpolated into a `sh -c` string. The strip that
+# looked like a mitigation (`tr -d '[:space:]'`) is not one: a payload needs no whitespace.
+check bash -c '
+  source provisioning/lib.sh
+  q=$(printf "\047")
+  aia_is_safe "https://ca.example.org/int.crt"   || exit 1
+  aia_is_safe "http://ca.example.org/int.crt"    || exit 1
+  aia_is_safe ""                                 && exit 1
+  aia_is_safe "file:///etc/passwd"               && exit 1
+  aia_is_safe "https://x.org/a;id>/tmp/pwned;"   && exit 1
+  aia_is_safe "https://x.org/a${q}b"             && exit 1
+  aia_is_safe "https://x.org/\$(id)"             && exit 1
+  aia_is_safe "https://x.org/a b"                && exit 1
+  # A LINE-anchored match would let this through: the first line is clean.
+  aia_is_safe "$(printf "https://ok.example.org/a\n;id")" && exit 1
+  # The two pointers this actually follows in production. Nothing else pins them, and
+  # refusing a legal one silently kills the feeds the whole function exists to keep.
+  aia_is_safe "http://secure.globalsign.com/cacert/gsgccr6alphasslca2025.crt" || exit 1
+  aia_is_safe "http://secure.globalsign.com/cacert/gsrsaovsslca2018.crt"      || exit 1
+  # Legal AIA forms a tighter set would have refused (AD CS emits %20).
+  aia_is_safe "http://ca.example.org/a%20b.crt" || exit 1
+  aia_is_safe "http://ca.example.org/a+b.crt"   || exit 1
+  aia_is_safe "HTTP://ca.example.org/a.crt"     || exit 1
+  aia_is_safe "http://ca.example.org/a.crt?id=7" || exit 1
+  exit 0'
 
 echo "== smoke (only if a stack is running) =="
 if docker compose ps --status running --services 2>/dev/null | grep -qx nextcloud; then

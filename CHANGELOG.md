@@ -11,6 +11,32 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ## [Unreleased]
 
+### Security
+
+- **The cert phase ran a string an attacker on the network chose.**
+  `ensure_aia_intermediate` read a certificate's authorityInfoAccess pointer from a **remote** host
+  over an `openssl s_client` handshake that verifies nothing, then interpolated it into a
+  `docker compose exec … sh -c "…"`. A single quote closed the literal and the rest was a command —
+  demonstrated in a container with `x'; touch /tmp/PWNED; echo '`.
+
+  Neither apparent mitigation held. The `tr -d '[:space:]'` strip does not stop a payload that needs
+  no whitespace, and "it is only root inside the container" names the wrong party: the operator
+  running `make seed` already holds the docker socket, while **the network** — which otherwise has
+  none — was being handed execution in the container that holds the database credentials.
+
+  The pointer and the host now go through the environment, the pattern `ensure_sample_file` already
+  used; anything that is not a plain `http(s)` URL of safe characters is refused rather than escaped;
+  and the fetched certificate must now chain to a root the container **already trusts**, for a leaf
+  that is **for this host** (`openssl verify -untrusted … -verify_hostname`), before it joins
+  Nextcloud's trust bundle.
+
+  That last check was got wrong once on the way. `-partial_chain -trusted` proves only that the
+  fetched certificate signed the certificate the handshake presented — and an on-path attacker
+  chooses both, so it accepted a forged pair in testing. A parse is not a verification, and neither
+  is verifying against something the attacker supplied. The pointer and the leaf are also now read
+  from a **single** handshake, so the certificate being verified is the one whose pointer was
+  followed.
+
 ### Changed
 
 - Documentation consistency pass across the organisation. Org-wide decisions now live in this

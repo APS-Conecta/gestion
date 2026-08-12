@@ -578,17 +578,48 @@ ensure_sample_file() {  # UID RELPATH CONTENT
 # store out of a clean install, and while a CA is not the app store, an offline install now skips
 # this phase rather than failing it. That is why every failure below is a warning, not an error:
 # a clinic with no internet at seed time must still finish provisioning.
+# Whether an AIA pointer is safe to hand to a shell and to curl.
+#
+# It is read out of a REMOTE certificate over a handshake nothing verifies, so it is
+# attacker-chosen input. An allowlist rather than an escape: escaping is an argument about
+# which characters matter, and this needs no argument. The strip that used to look like a
+# mitigation, `tr -d '[:space:]'`, is not one — `;id>/tmp/p;` carries no whitespace.
+aia_is_safe() {
+  # `[[ =~ ]]`, not `grep`: grep matches a LINE, so a two-line value whose first line is
+  # clean would pass. Bash anchors the whole string.
+  #
+  # `%` and `+` are in the set because real AIA URIs carry them — AD CS emits `%20` — and
+  # refusing a legal pointer silently kills the feeds this function exists to keep.
+  [[ $1 =~ ^[Hh][Tt][Tt][Pp][Ss]?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~%+/-]*)?(\?[A-Za-z0-9._~%+/=\&-]*)?$ ]]
+}
+
 ensure_aia_intermediate() {  # HOST
   local host="$1" aia name
 
   # occ security:certificates prints one row per imported file; the file name is the key.
-  aia="$(docker compose exec -T nextcloud sh -c "
-    echo | openssl s_client -connect '$host:443' -servername '$host' 2>/dev/null \
-    | openssl x509 -noout -text 2>/dev/null \
-    | sed -n 's|.*CA Issuers - URI:||p' | head -1 | tr -d '[:space:]'" 2>/dev/null | tr -d '\r')"
+  # One handshake, and it yields both halves: the pointer on the first line, the leaf after
+  # it. Read separately they came from two connections, so behind a load balancer mid-rotation
+  # the certificate being verified was not the one whose pointer was followed.
+  local handshake leaf_pem
+  handshake="$(docker compose exec -T -e HOST="$host" nextcloud sh -c '
+    leaf=$(mktemp); trap "rm -f $leaf" EXIT
+    echo | openssl s_client -connect "$HOST:443" -servername "$HOST" 2>/dev/null \
+      | openssl x509 -outform PEM > "$leaf" 2>/dev/null || exit 1
+    openssl x509 -in "$leaf" -noout -text 2>/dev/null \
+      | sed -n "s|.*CA Issuers - URI:||p" | tr -d " \t\r" | grep -m1 -i "^http"
+    echo
+    cat "$leaf"' 2>/dev/null | tr -d '\r')" || true
+
+  aia="$(printf '%s' "$handshake" | head -1)"
+  leaf_pem="$(printf '%s' "$handshake" | tail -n +2)"
 
   if [ -z "$aia" ]; then
     log "certs: $host published no CA-Issuers pointer (offline?) — skipped, feeds from it will fail"
+    return 0
+  fi
+
+  if ! aia_is_safe "$aia"; then
+    log "certs: $host published a CA-Issuers pointer that is not a plain URL — refused, feeds from it will fail"
     return 0
   fi
 
@@ -628,13 +659,28 @@ sys.exit(0 if any(r.get("name") == sys.argv[1] for r in rows) else 1)' "$name" |
   # GlobalSign serves DER; others serve PEM. Try DER, fall back to PEM, and let openssl be the
   # gate: an HTML error page must never reach the bundle as a "certificate". Empty output means
   # one of fetch or parse failed, and either way there is nothing to import.
-  docker compose exec -T nextcloud sh -c "
-      tmp=\$(mktemp)
-      trap 'rm -f \$tmp' EXIT
-      curl -fsS --max-time 20 -o \"\$tmp\" '$aia' || exit 1
-      openssl x509 -inform DER -in \"\$tmp\" -outform PEM 2>/dev/null \
-        || openssl x509 -in \"\$tmp\" -outform PEM 2>/dev/null
-    " > "/tmp/$name" 2>/dev/null || true
+  # The URI and the host go through the environment, never into the script text: the one is
+  # attacker-chosen and the other has no business being quoted by hand.
+  #
+  # And the fetched certificate must actually have ISSUED the leaf. Without that check the
+  # unverified handshake above is the whole attack: whoever answers for the host picks the
+  # pointer, and Nextcloud trusts whatever comes back for every later server-side fetch.
+  # It must chain to a root the container ALREADY trusts, and the leaf must be for this host.
+  # `-partial_chain -trusted` was tried first and is theatre: it proves only that the fetched
+  # certificate signed the certificate the handshake presented, and an on-path attacker chooses
+  # both — verified by forging a leaf and its CA, which that form accepted and this one refuses.
+  # Nothing legitimate is lost: an intermediate that does not reach a public root would not fix
+  # the feed either.
+  docker compose exec -T -e AIA="$aia" -e HOST="$host" -e LEAF="$leaf_pem" nextcloud sh -c '
+      leaf=$(mktemp); blob=$(mktemp); pem=$(mktemp)
+      trap "rm -f $leaf $blob $pem" EXIT
+      printf "%s\n" "$LEAF" > "$leaf"   # a PEM without its final newline is not one
+      curl -fsS --max-time 20 -o "$blob" "$AIA" || exit 1
+      openssl x509 -inform DER -in "$blob" -outform PEM > "$pem" 2>/dev/null \
+        || openssl x509 -in "$blob" -outform PEM > "$pem" 2>/dev/null || exit 1
+      openssl verify -untrusted "$pem" -verify_hostname "$HOST" "$leaf" >/dev/null 2>&1 || exit 1
+      cat "$pem"
+    ' > "/tmp/$name" 2>/dev/null || true
 
   if [ ! -s "/tmp/$name" ]; then
     log "certs: could not fetch or parse $aia — skipped, feeds from $host will fail"
