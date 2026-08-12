@@ -96,7 +96,14 @@ check bash -c '
     occ() { echo "$shape"; }
     ensure_aia_intermediate example.test 2>&1 | grep -q "unreadable" || exit 1
   done
+  # And every status that is not 0 or 1 is a non-answer too. The case listed only 0 and 2,
+  # so a python3 the kernel kills — 137 — fell through to "absent" and re-imported.
+  python3() { return 137; }
   occ() { echo "[]"; }
+  ensure_aia_intermediate example.test 2>&1 | grep -q "unreadable" || exit 1
+  unset -f python3
+  # The positive control, last: an empty list really does mean absent, and if the guards
+  # above have swallowed that too they have swallowed the answer along with the non-answers.
   ensure_aia_intermediate example.test 2>&1 | grep -q "imported ca.pem" || exit 1'
 # The other half of the WRITES meta-gate, and the half it cannot express: an alternative must match
 # the WRITE line of a helper and NOT its noop line. `certs:` is the pair that proves it — the write
@@ -146,12 +153,21 @@ if dead:
     sys.exit(1)
 if not src:
     print("could not read WRITES= from scripts/seed-idempotent.sh"); sys.exit(1)'
-# Regression guard (#39): the phase runner must not consume its `set -e` subshell's status in a
-# conditional context — bash suppresses errexit there, so a failing phase runs on and reports
-# success. Matches on what PRECEDES the subshell rather than listing bad forms, because `if`,
-# `while`, `until`, `&&` and `||` all do it: nothing but whitespace may precede the `(`.
+# Regression guard (#39): a `set -e` subshell's status must not be consumed in a conditional
+# context — bash suppresses errexit inside it, so what reads as a guard runs on and reports
+# success. Two shapes, because the second is the one that shipped:
+#   - something TESTS it from the left: `if (`, `while (`, `&& (`. Matched on what PRECEDES
+#     the `(` rather than by listing keywords — nothing but whitespace may.
+#   - something tests it from the right: `( set -e … ) || exit 1`. This reads exactly like a
+#     guard and is not one, and two assertions in THIS file were written that way and
+#     asserted nothing across three audit rounds. Which is why the sweep now reads
+#     scripts/ too: the original guard looked only at seed.sh, and the defect moved.
 # Comments are stripped first, since seed.sh documents the wrong shape on purpose.
-check bash -c '! grep -vE "^[[:space:]]*#" provisioning/seed.sh | grep -qE "[^[:space:]][[:space:]]*\([[:space:]]*set[[:space:]]+-e"'
+check bash -c '
+  body() { grep -hvE "^[[:space:]]*#" provisioning/*.sh provisioning/phases/*.sh scripts/*.sh; }
+  body | grep -qE "[^[:space:]][[:space:]]*\([[:space:]]*set[[:space:]]+-e" && exit 1
+  body | grep -qE "\([[:space:]]*set[[:space:]]+-e.*\)[[:space:]]*(\|\||&&)" && exit 1
+  exit 0'
 # Regression guard (ADR-0001): every STATIC asset server.css references must exist on disk. It shipped
 # for months declaring four .woff2 files that were never generated, and the TTF fallback swallowed the
 # 404s. The COUNT is asserted before the existence loop, and that is the point: `grep | while read`
@@ -293,6 +309,9 @@ check bash -c '
   # value goes on to be an argv entry and a path component. At 128KB `basename` cannot
   # exec at all, which under the phase errexit is fatal — measured rc 126.
   aia_is_safe "http://ca.example.org/$(printf "a%.0s" $(seq 1 200000)).crt" && exit 1
+  # `[A-Za-z]` is a range, and a range collates: under es_CL.UTF-8 — the locale a Chilean
+  # dev runs — an accented byte falls inside it, so the allowlist read narrower than it was.
+  aia_is_safe "http://ca.example.org/café.crt" && exit 1
   exit 0'
 
 echo "== smoke (only if a stack is running) =="

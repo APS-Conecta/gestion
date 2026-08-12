@@ -585,6 +585,10 @@ ensure_sample_file() {  # UID RELPATH CONTENT
 # which characters matter, and this needs no argument. The strip that used to look like a
 # mitigation, `tr -d '[:space:]'`, is not one — `;id>/tmp/p;` carries no whitespace.
 aia_is_safe() {
+  # C collation, because `[A-Za-z]` is a RANGE and a range is locale-dependent: under the
+  # es_CL.UTF-8 a Chilean dev actually runs, `é` collates inside it and the allowlist is
+  # quietly wider than it reads.
+  local LC_ALL=C
   # Length first, because what follows treats this value as an argv entry and a path
   # component, and both have ceilings a remote host can reach: at 128KB `basename`
   # fails to exec (E2BIG), and well before that `/tmp/$name` is too long to remove.
@@ -669,7 +673,12 @@ except Exception: sys.exit(2)
 sys.exit(0 if found else 1)' "$name" || rc=$?
   case "$rc" in
     0) log "certs: $name already imported"; return 0 ;;
-    2) log "certs: certificate list was unreadable — skipped, leaving $name as it is"; return 0 ;;
+    1) ;;  # absent: the one answer that means carry on and import
+    # Everything else is a non-answer, not an absence, and must take the same exit as a
+    # failed occ. Listing only 2 left every other status meaning "absent" — a python3 the
+    # kernel kills returns 137 — and answering a non-answer with an import is the #143
+    # WRITE this whole block exists to prevent.
+    *) log "certs: certificate list was unreadable — skipped, leaving $name as it is"; return 0 ;;
   esac
 
   # GlobalSign serves DER; others serve PEM. Try DER, fall back to PEM, and let openssl be the
