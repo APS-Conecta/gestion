@@ -21,8 +21,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # .env.example's placeholders are non-empty, which is all compose's ${VAR:?} guards ask.
-      # No secret is needed: nothing here starts a container.
-      - run: cp .env.example .env
+      # `make setup`, not `cp`, for the reason cleanboot.yml gives — the generator is exercised
+      # nowhere else — and for one this job owns: the gate now refuses to provision with the
+      # secrets this repository publishes, and a CI env file that IS that hand-copy would have to
+      # be exempted from the check to keep passing. An exemption is how the check stops meaning
+      # anything. Nothing here starts a container; the values only have to be real.
+      - run: make setup
       # scripts/test.sh already skips the checks that need a running stack, so it needs no flag.
       - run: make test

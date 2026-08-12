@@ -19,6 +19,7 @@ set -uo pipefail
 # shellcheck source=env.sh
 . "$(dirname "$0")/env.sh"
 require_site || exit 1
+require_real_secrets || exit 1
 
 LOG=.install.log
 

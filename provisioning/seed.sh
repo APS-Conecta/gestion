@@ -19,6 +19,7 @@ SEED_FIXTURES="${SEED_FIXTURES:-1}"
 # every other setting. Sourced HERE, in the parent shell: each phase runs in a subshell of this one,
 # so all of it is visible to every phase and none of it can leak back out.
 require_site || exit 1
+require_real_secrets || exit 1
 # shellcheck disable=SC1090  # the path is SITE, resolved at run time
 . "$HERE/../sites/$SITE/site.sh" || { echo "FATAL: sites/$SITE/site.sh failed to load" >&2; exit 1; }
 # SITE_ROLES is optional; declare it so "unset" and "empty" both mean none. `${SITE_ROLES[@]:-}` in a

@@ -41,6 +41,44 @@ require_site() {
   }
 }
 
+# 5. Refuse to provision a clinic with the secrets this repository publishes.
+#    env-init.sh generates all four from /dev/urandom, so a placeholder only survives a hand-copy
+#    of the template — which is exactly what README step 2 used to ask for, and what somebody does
+#    when `make setup` refuses because .env already exists. The result is a CESFAM whose admin
+#    password is readable by anyone who can read this repo.
+#
+#    Read out of .env.example rather than listed here: the template is what defines a placeholder,
+#    so one that gets reworded does not quietly stop being one, and a secret added there is covered
+#    on the day it is added. A function for the same reason require_site is one — the read-only
+#    callers of this file must keep working on a checkout that has no .env at all.
+require_real_secrets() {
+  [ -f .env.example ] || {
+    echo "FATAL: no .env.example — cannot tell a real secret from the one this repo ships." >&2
+    return 1
+  }
+
+  local still=() line key shipped
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in ''|'#'*) continue ;; *=*) ;; *) continue ;; esac
+    key=${line%%=*}
+    shipped=${line#*=}
+    case "$key" in *[!A-Za-z0-9_]*|'') continue ;; esac
+    # Only the keys the template deliberately leaves for a human to replace.
+    case "$shipped" in *change-me*) ;; *) continue ;; esac
+    [ "${!key:-}" = "$shipped" ] && still+=("$key")
+  done < .env.example
+
+  [ ${#still[@]} -eq 0 ] || {
+    echo "FATAL: .env still holds the placeholder .env.example ships for: ${still[*]}" >&2
+    echo "       Those values are published in this repository, so anyone who can read it can" >&2
+    echo "       read them. A clinic must not be installed with them." >&2
+    echo "         rm .env && make setup     # generates every secret from /dev/urandom" >&2
+    echo "       Only do that on a stack that has not been installed yet — .env is the one copy" >&2
+    echo "       of the secrets a running instance was installed with." >&2
+    return 1
+  }
+}
+
 if [ -f .env ]; then
   while IFS= read -r _line || [ -n "$_line" ]; do
     case "$_line" in ''|'#'*) continue ;; *=*) ;; *) continue ;; esac

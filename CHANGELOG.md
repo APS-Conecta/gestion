@@ -13,6 +13,16 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Security
 
+- **Provisioning refuses to run with the secrets this repository publishes.** `make setup` generates
+  all four from `/dev/urandom`, so a placeholder only survives a hand-copy of `.env.example` — which
+  is what README step 2 used to ask for, and what somebody does when `make setup` refuses because
+  `.env` already exists. The result is a clinic whose admin password is readable by anyone who can
+  read this repo. `install.sh` and `seed.sh` now stop, naming the keys. What counts as a placeholder
+  is read out of `.env.example`, so rewording one does not quietly stop it being one, and a secret
+  added there is covered on the day it is added.
+
+### Security
+
 - **The cert phase ran a string an attacker on the network chose.**
   `ensure_aia_intermediate` read a certificate's authorityInfoAccess pointer from a **remote** host
   over an `openssl s_client` handshake that verifies nothing, then interpolated it into a
