@@ -57,6 +57,15 @@ check bash -c '
   # network passed it. Every failure in this helper is a warning by design (lib.sh:579).
   docker() { [[ "$*" == *s_client* ]] && return 1; return 0; }
   ( set -e -o pipefail; ensure_aia_intermediate example.test 2>&1 | grep -q "no CA-Issuers pointer" ) || exit 1
+  ( set -e -o pipefail; ensure_aia_intermediate example.test >/dev/null 2>&1 ) || exit 1
+  # A leaf past the pipe buffer. Splitting the handshake with `head -1` closed the pipe on line
+  # two, so the writer took SIGPIPE and the assignment returned 141 — fatal under pipefail. The
+  # leaf is as big as the remote host cares to make it, and every stub above emits a few bytes,
+  # which is exactly why the gate could not see it.
+  docker() {
+    [[ "$*" == *s_client* ]] && { echo "http://secure.globalsign.com/cacert/ca.crt"; echo; printf "%*s" 200000 ""; echo; }
+    return 0
+  }
   ( set -e -o pipefail; ensure_aia_intermediate example.test >/dev/null 2>&1 )'
 # The other half of the WRITES meta-gate, and the half it cannot express: an alternative must match
 # the WRITE line of a helper and NOT its noop line. `certs:` is the pair that proves it — the write

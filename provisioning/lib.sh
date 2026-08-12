@@ -610,8 +610,12 @@ ensure_aia_intermediate() {  # HOST
     echo
     cat "$leaf"' 2>/dev/null | tr -d '\r')" || true
 
-  aia="$(printf '%s' "$handshake" | head -1)"
-  leaf_pem="$(printf '%s' "$handshake" | tail -n +2)"
+  # Split in the shell, not through `head`/`tail`: `head -1` closes the pipe on line
+  # two, so a large leaf makes `printf` take SIGPIPE and the assignment return 141 —
+  # which under this phase's `pipefail` is fatal. The leaf's size is chosen by the
+  # remote host, so that turns a phase that only warns into one a server can kill.
+  aia="${handshake%%$'\n'*}"
+  leaf_pem="${handshake#*$'\n'}"
 
   if [ -z "$aia" ]; then
     log "certs: $host published no CA-Issuers pointer (offline?) — skipped, feeds from it will fail"
