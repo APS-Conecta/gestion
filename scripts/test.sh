@@ -163,11 +163,34 @@ if not src:
 #     asserted nothing across three audit rounds. Which is why the sweep now reads
 #     scripts/ too: the original guard looked only at seed.sh, and the defect moved.
 # Comments are stripped first, since seed.sh documents the wrong shape on purpose.
-check bash -c '
-  body() { grep -hvE "^[[:space:]]*#" provisioning/*.sh provisioning/phases/*.sh scripts/*.sh; }
-  body | grep -qE "[^[:space:]][[:space:]]*\([[:space:]]*set[[:space:]]+-e" && exit 1
-  body | grep -qE "\([[:space:]]*set[[:space:]]+-e.*\)[[:space:]]*(\|\||&&)" && exit 1
-  exit 0'
+# Over `git ls-files`, not a hand-written list of directories: a third copy of that list is a
+# third thing to forget, and a sweep that matches nothing passes — which is the very hole the
+# lint sweep above was rewritten to close. Python rather than grep because the subshell and the
+# `||` that tests it are not always on one line.
+check python3 -c '
+import re, subprocess, sys
+
+ERREXIT = r"set\s+(-[a-z]*e|-o[ \t]+errexit)"
+FROM_THE_LEFT = re.compile(r"\S[ \t]*\(\s*" + ERREXIT)
+FROM_THE_RIGHT = re.compile(r"\(\s*" + ERREXIT + r"[^()]*\)[ \t]*(\|\||&&)")
+
+files = subprocess.run(["git", "ls-files", "-z", "*.sh"],
+                       capture_output=True, text=True, check=True).stdout.split("\0")
+bad = []
+for name in filter(None, files):
+    with open(name, encoding="utf-8") as handle:
+        # Comments are stripped first: seed.sh documents the wrong shape on purpose.
+        body = "".join(l for l in handle if not l.lstrip().startswith("#"))
+    for hit in FROM_THE_LEFT.finditer(body):
+        bad.append(f"{name}: tested from the left — {hit.group(0).strip()!r}")
+    for hit in FROM_THE_RIGHT.finditer(body):
+        bad.append(f"{name}: tested from the right — the {hit.group(2)} after the subshell")
+
+if bad:
+    print("errexit is suppressed in a tested context, so these guard nothing:")
+    for line in bad:
+        print("  " + line)
+    sys.exit(1)'
 # Regression guard (ADR-0001): every STATIC asset server.css references must exist on disk. It shipped
 # for months declaring four .woff2 files that were never generated, and the TTF fallback swallowed the
 # 404s. The COUNT is asserted before the existence loop, and that is the point: `grep | while read`
@@ -313,6 +336,12 @@ check bash -c '
   # dev runs — an accented byte falls inside it, so the allowlist read narrower than it was.
   aia_is_safe "http://ca.example.org/café.crt" && exit 1
   exit 0'
+# The café case above is behavioural, and load-bearing only under a COLLATING locale — which a
+# Chilean dev has and GitHub's runners do not, defaulting to C.UTF-8 where that range refuses `é`
+# anyway. So CI stays green on a revert, and CI is the only mechanical gate (AGENTS.md). This is
+# the half CI can see. A grep for the fix, deliberately: where it runs, the behaviour is not
+# observable at all, and a check that cannot fail there is worse than one that admits what it is.
+check grep -q "local LC_ALL=C" provisioning/lib.sh
 
 echo "== smoke (only if a stack is running) =="
 if docker compose ps --status running --services 2>/dev/null | grep -qx nextcloud; then
