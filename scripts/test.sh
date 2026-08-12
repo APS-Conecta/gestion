@@ -38,6 +38,18 @@ check bash -c '
   [ -z "$(comm -23 <(git ls-files "*.sh" | sort) \
                    <(ls scripts/*.sh provisioning/*.sh provisioning/phases/*.sh sites/*/site.sh dev/*.sh 2>/dev/null | sort))" ]'
 check test -f dev/xdebug.ini
+# Every service must come back after the host reboots. Read from the RESOLVED config rather than
+# grepped: two of them take the policy from the shared anchor, and a service added later must not
+# be able to arrive without one — the person who would notice a stack that stayed down is a CESFAM
+# administrator with no reason to know `make up`.
+check python3 -c '
+import json, subprocess, sys
+config = json.loads(subprocess.run(["docker", "compose", "config", "--format", "json"],
+                                   capture_output=True, text=True, check=True).stdout)
+missing = sorted(name for name, service in config["services"].items() if not service.get("restart"))
+if missing:
+    print("no restart policy: " + ", ".join(missing))
+    sys.exit(1)'
 # #143: ensure_aia_intermediate must not read "could not ask" as "not imported" — that re-imports a
 # certificate already in the bundle, which is a write on a provisioned instance and reddens
 # seed-idempotent intermittently, here and in cleanboot. Behavioural, not a grep for the fix: occ is
