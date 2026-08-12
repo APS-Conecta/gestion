@@ -50,6 +50,18 @@ missing = sorted(name for name, service in config["services"].items() if not ser
 if missing:
     print("no restart policy: " + ", ".join(missing))
     sys.exit(1)'
+# A clinic must never be installed with the secrets this repository publishes. env-init.sh generates
+# all four, so a placeholder survives only a hand-copy of the template — which is what somebody does
+# when `make setup` refuses because .env is already there. Behavioural, and driven from
+# .env.example: the template is what defines a placeholder, so this cannot rot when one is reworded.
+check bash -c '
+  . scripts/env.sh
+  require_real_secrets || exit 1
+  shipped() { grep "^$1=" .env.example | cut -d= -f2-; }
+  for key in NEXTCLOUD_ADMIN_PASSWORD POSTGRES_PASSWORD OFFICE_JWT_SECRET FIXTURE_USER_PASSWORD; do
+    ( export "$key=$(shipped "$key")"; require_real_secrets 2>/dev/null ) && exit 1
+  done
+  exit 0'
 # #143: ensure_aia_intermediate must not read "could not ask" as "not imported" — that re-imports a
 # certificate already in the bundle, which is a write on a provisioned instance and reddens
 # seed-idempotent intermittently, here and in cleanboot. Behavioural, not a grep for the fix: occ is
