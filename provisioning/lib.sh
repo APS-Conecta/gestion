@@ -578,17 +578,62 @@ ensure_sample_file() {  # UID RELPATH CONTENT
 # store out of a clean install, and while a CA is not the app store, an offline install now skips
 # this phase rather than failing it. That is why every failure below is a warning, not an error:
 # a clinic with no internet at seed time must still finish provisioning.
+# Whether an AIA pointer is safe to hand to a shell and to curl.
+#
+# It is read out of a REMOTE certificate over a handshake nothing verifies, so it is
+# attacker-chosen input. An allowlist rather than an escape: escaping is an argument about
+# which characters matter, and this needs no argument. The strip that used to look like a
+# mitigation, `tr -d '[:space:]'`, is not one — `;id>/tmp/p;` carries no whitespace.
+aia_is_safe() {
+  # C collation, because `[A-Za-z]` is a RANGE and a range is locale-dependent: under the
+  # es_CL.UTF-8 a Chilean dev actually runs, `é` collates inside it and the allowlist is
+  # quietly wider than it reads.
+  local LC_ALL=C
+  # Length first, because what follows treats this value as an argv entry and a path
+  # component, and both have ceilings a remote host can reach: at 128KB `basename`
+  # fails to exec (E2BIG), and well before that `/tmp/$name` is too long to remove.
+  # Either is fatal under the phase's errexit. 2048 is far above any real pointer.
+  [ "${#1}" -le 2048 ] || return 1
+
+  # `[[ =~ ]]`, not `grep`: grep matches a LINE, so a two-line value whose first line is
+  # clean would pass. Bash anchors the whole string.
+  #
+  # `%` and `+` are in the set because real AIA URIs carry them — AD CS emits `%20` — and
+  # refusing a legal pointer silently kills the feeds this function exists to keep.
+  [[ $1 =~ ^[Hh][Tt][Tt][Pp][Ss]?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~%+/-]*)?(\?[A-Za-z0-9._~%+/=\&-]*)?$ ]]
+}
+
 ensure_aia_intermediate() {  # HOST
   local host="$1" aia name
 
   # occ security:certificates prints one row per imported file; the file name is the key.
-  aia="$(docker compose exec -T nextcloud sh -c "
-    echo | openssl s_client -connect '$host:443' -servername '$host' 2>/dev/null \
-    | openssl x509 -noout -text 2>/dev/null \
-    | sed -n 's|.*CA Issuers - URI:||p' | head -1 | tr -d '[:space:]'" 2>/dev/null | tr -d '\r')"
+  # One handshake, and it yields both halves: the pointer on the first line, the leaf after
+  # it. Read separately they came from two connections, so behind a load balancer mid-rotation
+  # the certificate being verified was not the one whose pointer was followed.
+  local handshake leaf_pem
+  handshake="$(docker compose exec -T -e HOST="$host" nextcloud sh -c '
+    leaf=$(mktemp); trap "rm -f $leaf" EXIT
+    echo | openssl s_client -connect "$HOST:443" -servername "$HOST" 2>/dev/null \
+      | openssl x509 -outform PEM > "$leaf" 2>/dev/null || exit 1
+    openssl x509 -in "$leaf" -noout -text 2>/dev/null \
+      | sed -n "s|.*CA Issuers - URI:||p" | tr -d " \t\r" | grep -m1 -i "^http"
+    echo
+    cat "$leaf"' 2>/dev/null | tr -d '\r')" || true
+
+  # Split in the shell, not through `head`/`tail`: `head -1` closes the pipe on line
+  # two, so a large leaf makes `printf` take SIGPIPE and the assignment return 141 —
+  # which under this phase's `pipefail` is fatal. The leaf's size is chosen by the
+  # remote host, so that turns a phase that only warns into one a server can kill.
+  aia="${handshake%%$'\n'*}"
+  leaf_pem="${handshake#*$'\n'}"
 
   if [ -z "$aia" ]; then
     log "certs: $host published no CA-Issuers pointer (offline?) — skipped, feeds from it will fail"
+    return 0
+  fi
+
+  if ! aia_is_safe "$aia"; then
+    log "certs: $host published a CA-Issuers pointer that is not a plain URL — refused, feeds from it will fail"
     return 0
   fi
 
@@ -615,35 +660,69 @@ ensure_aia_intermediate() {  # HOST
   # never hit this. Caught by cleanboot, not locally — a machine that already holds both
   # certificates never takes the absent branch.
   rc=0
+  # The search is inside the `try` with the parse, not after it: valid JSON of the wrong
+  # shape — an object, a string, a list of anything but objects — raises on `.get` rather
+  # than on `load`, and an uncaught raise exits 1, which this reads as "absent" and
+  # answers with the re-import #143 exists to prevent. Unreadable is unreadable however
+  # it fails to be read.
   printf '%s' "$listed" | python3 -c '
 import json, sys
-try: rows = json.load(sys.stdin)
+try:
+    found = any(r.get("name") == sys.argv[1] for r in json.load(sys.stdin))
 except Exception: sys.exit(2)
-sys.exit(0 if any(r.get("name") == sys.argv[1] for r in rows) else 1)' "$name" || rc=$?
+sys.exit(0 if found else 1)' "$name" || rc=$?
   case "$rc" in
     0) log "certs: $name already imported"; return 0 ;;
-    2) log "certs: certificate list was unreadable — skipped, leaving $name as it is"; return 0 ;;
+    1) ;;  # absent: the one answer that means carry on and import
+    # Everything else is a non-answer, not an absence, and must take the same exit as a
+    # failed occ. Listing only 2 left every other status meaning "absent" — a python3 the
+    # kernel kills returns 137 — and answering a non-answer with an import is the #143
+    # WRITE this whole block exists to prevent.
+    *) log "certs: certificate list was unreadable — skipped, leaving $name as it is"; return 0 ;;
   esac
 
   # GlobalSign serves DER; others serve PEM. Try DER, fall back to PEM, and let openssl be the
   # gate: an HTML error page must never reach the bundle as a "certificate". Empty output means
   # one of fetch or parse failed, and either way there is nothing to import.
-  docker compose exec -T nextcloud sh -c "
-      tmp=\$(mktemp)
-      trap 'rm -f \$tmp' EXIT
-      curl -fsS --max-time 20 -o \"\$tmp\" '$aia' || exit 1
-      openssl x509 -inform DER -in \"\$tmp\" -outform PEM 2>/dev/null \
-        || openssl x509 -in \"\$tmp\" -outform PEM 2>/dev/null
-    " > "/tmp/$name" 2>/dev/null || true
+  # The URI and the host go through the environment, never into the script text: the one is
+  # attacker-chosen and the other has no business being quoted by hand.
+  #
+  # And the fetched certificate must actually have ISSUED the leaf. Without that check the
+  # unverified handshake above is the whole attack: whoever answers for the host picks the
+  # pointer, and Nextcloud trusts whatever comes back for every later server-side fetch.
+  # It must chain to a root the container ALREADY trusts, and the leaf must be for this host.
+  # `-partial_chain -trusted` was tried first and is theatre: it proves only that the fetched
+  # certificate signed the certificate the handshake presented, and an on-path attacker chooses
+  # both — verified by forging a leaf and its CA, which that form accepted and this one refuses.
+  # Nothing legitimate is lost: an intermediate that does not reach a public root would not fix
+  # the feed either.
+  docker compose exec -T -e AIA="$aia" -e HOST="$host" -e LEAF="$leaf_pem" nextcloud sh -c '
+      leaf=$(mktemp); blob=$(mktemp); pem=$(mktemp)
+      trap "rm -f $leaf $blob $pem" EXIT
+      printf "%s\n" "$LEAF" > "$leaf"   # a PEM without its final newline is not one
+      curl -fsS --max-time 20 -o "$blob" "$AIA" || exit 1
+      openssl x509 -inform DER -in "$blob" -outform PEM > "$pem" 2>/dev/null \
+        || openssl x509 -in "$blob" -outform PEM > "$pem" 2>/dev/null || exit 1
+      openssl verify -untrusted "$pem" -verify_hostname "$HOST" "$leaf" >/dev/null 2>&1 || exit 1
+      cat "$pem"
+    ' > "/tmp/$name" 2>/dev/null || true
 
+  # Every cleanup and copy below is `|| true` or guarded, for one reason: this helper
+  # warns and returns 0 on every failure it already knows about, and a phase that dies
+  # on the tidying instead is the same defect wearing a different hat. `docker compose
+  # cp` in particular fails for the ordinary reason of a container still starting.
   if [ ! -s "/tmp/$name" ]; then
     log "certs: could not fetch or parse $aia — skipped, feeds from $host will fail"
-    rm -f "/tmp/$name"
+    rm -f "/tmp/$name" || true
     return 0
   fi
 
-  docker compose cp "/tmp/$name" "nextcloud:/tmp/$name" >/dev/null 2>&1
-  rm -f "/tmp/$name"
+  if ! docker compose cp "/tmp/$name" "nextcloud:/tmp/$name" >/dev/null 2>&1; then
+    log "certs: could not copy $name into the container — skipped, feeds from $host will fail"
+    rm -f "/tmp/$name" || true
+    return 0
+  fi
+  rm -f "/tmp/$name" || true
 
   if occ security:certificates:import "/tmp/$name" >/dev/null 2>&1; then
     log "certs: imported $name for $host"

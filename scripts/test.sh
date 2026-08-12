@@ -47,11 +47,64 @@ check test -f dev/xdebug.ini
 # saw it, because a machine that already holds both certificates never takes the absent branch.
 check bash -c '
   . provisioning/lib.sh
+  # Every "the phase must survive this" assertion goes through here, and none of them may
+  # be written `( set -e … ) || exit 1`: bash propagates the tested-context of a `||` into
+  # the subshell, so errexit is suppressed inside it and the assertion tests nothing.
+  # Two of these guards were written that way and were silently inert. Capture the status.
+  survives() {
+    ( set -e -o pipefail; ensure_aia_intermediate example.test >/dev/null 2>&1 )
+    [ $? -eq 0 ] || exit 1
+  }
   docker() { [[ "$*" == *s_client* ]] && echo "http://secure.globalsign.com/cacert/ca.crt"; return 0; }
   occ() { return 1; }                     # cannot answer -> skip, never import
   ensure_aia_intermediate example.test 2>&1 | grep -q "could not read the certificate list" || exit 1
   occ() { echo "[]"; }                    # answers "absent", under errexit -> must survive
-  ( set -e; ensure_aia_intermediate example.test >/dev/null 2>&1 )'
+  survives
+  # Offline: the handshake itself fails. The stub used to return 0 for everything, so this
+  # branch was invisible to the gate — and a change that made the phase FATAL without a
+  # network passed it. Every failure in this helper is a warning by design (lib.sh:579).
+  docker() { [[ "$*" == *s_client* ]] && return 1; return 0; }
+  ensure_aia_intermediate example.test 2>&1 | grep -q "no CA-Issuers pointer" || exit 1
+  survives
+  # A leaf past the pipe buffer. Splitting the handshake with `head -1` closed the pipe on line
+  # two, so the writer took SIGPIPE and the assignment returned 141 — fatal under pipefail. The
+  # leaf is as big as the remote host cares to make it, and every stub above emits a few bytes,
+  # which is exactly why the gate could not see it.
+  docker() {
+    [[ "$*" == *s_client* ]] && { echo "http://secure.globalsign.com/cacert/ca.crt"; echo; printf "%*s" 200000 ""; echo; }
+    return 0
+  }
+  survives
+  # `docker compose cp` fails for the most ordinary reason there is — a container still
+  # starting — and it was the one unguarded command left on the path. Fatal, and it took
+  # the second host with it, since the phase never got there.
+  docker() {
+    case "$*" in
+      *s_client*) echo "http://secure.globalsign.com/cacert/ca.crt"; echo; echo LEAF ;;
+      *cp*) return 1 ;;
+      *) echo PEM ;;
+    esac
+    return 0
+  }
+  survives
+  # Valid JSON of the wrong shape raises on `.get`, not on `load`. Uncaught that exits 1,
+  # which this function reads as "absent" and answers with the re-import #143 exists to
+  # prevent — a WRITE on a provisioned instance. It must read as unreadable instead, and
+  # an empty list must still mean absent or the guard has swallowed the real answer too.
+  docker() { case "$*" in *s_client*) echo "http://x.test/ca.crt"; echo; echo LEAF ;; *) echo PEM ;; esac; return 0; }
+  for shape in "{\"a\":1}" "\"x\"" "[1,2]"; do
+    occ() { echo "$shape"; }
+    ensure_aia_intermediate example.test 2>&1 | grep -q "unreadable" || exit 1
+  done
+  # And every status that is not 0 or 1 is a non-answer too. The case listed only 0 and 2,
+  # so a python3 the kernel kills — 137 — fell through to "absent" and re-imported.
+  python3() { return 137; }
+  occ() { echo "[]"; }
+  ensure_aia_intermediate example.test 2>&1 | grep -q "unreadable" || exit 1
+  unset -f python3
+  # The positive control, last: an empty list really does mean absent, and if the guards
+  # above have swallowed that too they have swallowed the answer along with the non-answers.
+  ensure_aia_intermediate example.test 2>&1 | grep -q "imported ca.pem" || exit 1'
 # The other half of the WRITES meta-gate, and the half it cannot express: an alternative must match
 # the WRITE line of a helper and NOT its noop line. `certs:` is the pair that proves it — the write
 # says "certs: imported X for Y", the noop says "certs: X already imported", and an unanchored
@@ -100,12 +153,44 @@ if dead:
     sys.exit(1)
 if not src:
     print("could not read WRITES= from scripts/seed-idempotent.sh"); sys.exit(1)'
-# Regression guard (#39): the phase runner must not consume its `set -e` subshell's status in a
-# conditional context — bash suppresses errexit there, so a failing phase runs on and reports
-# success. Matches on what PRECEDES the subshell rather than listing bad forms, because `if`,
-# `while`, `until`, `&&` and `||` all do it: nothing but whitespace may precede the `(`.
+# Regression guard (#39): a `set -e` subshell's status must not be consumed in a conditional
+# context — bash suppresses errexit inside it, so what reads as a guard runs on and reports
+# success. Two shapes, because the second is the one that shipped:
+#   - something TESTS it from the left: `if (`, `while (`, `&& (`. Matched on what PRECEDES
+#     the `(` rather than by listing keywords — nothing but whitespace may.
+#   - something tests it from the right: `( set -e … ) || exit 1`. This reads exactly like a
+#     guard and is not one, and two assertions in THIS file were written that way and
+#     asserted nothing across three audit rounds. Which is why the sweep now reads
+#     scripts/ too: the original guard looked only at seed.sh, and the defect moved.
 # Comments are stripped first, since seed.sh documents the wrong shape on purpose.
-check bash -c '! grep -vE "^[[:space:]]*#" provisioning/seed.sh | grep -qE "[^[:space:]][[:space:]]*\([[:space:]]*set[[:space:]]+-e"'
+# Over `git ls-files`, not a hand-written list of directories: a third copy of that list is a
+# third thing to forget, and a sweep that matches nothing passes — which is the very hole the
+# lint sweep above was rewritten to close. Python rather than grep because the subshell and the
+# `||` that tests it are not always on one line.
+check python3 -c '
+import re, subprocess, sys
+
+ERREXIT = r"set\s+(-[a-z]*e|-o[ \t]+errexit)"
+FROM_THE_LEFT = re.compile(r"\S[ \t]*\(\s*" + ERREXIT)
+FROM_THE_RIGHT = re.compile(r"\(\s*" + ERREXIT + r"[^()]*\)[ \t]*(\|\||&&)")
+
+files = subprocess.run(["git", "ls-files", "-z", "*.sh"],
+                       capture_output=True, text=True, check=True).stdout.split("\0")
+bad = []
+for name in filter(None, files):
+    with open(name, encoding="utf-8") as handle:
+        # Comments are stripped first: seed.sh documents the wrong shape on purpose.
+        body = "".join(l for l in handle if not l.lstrip().startswith("#"))
+    for hit in FROM_THE_LEFT.finditer(body):
+        bad.append(f"{name}: tested from the left — {hit.group(0).strip()!r}")
+    for hit in FROM_THE_RIGHT.finditer(body):
+        bad.append(f"{name}: tested from the right — the {hit.group(2)} after the subshell")
+
+if bad:
+    print("errexit is suppressed in a tested context, so these guard nothing:")
+    for line in bad:
+        print("  " + line)
+    sys.exit(1)'
 # Regression guard (ADR-0001): every STATIC asset server.css references must exist on disk. It shipped
 # for months declaring four .woff2 files that were never generated, and the TTF fallback swallowed the
 # 404s. The COUNT is asserted before the existence loop, and that is the point: `grep | while read`
@@ -217,6 +302,46 @@ if docker compose ps --status running --services 2>/dev/null | grep -qx nextclou
 else
   echo "  skipped: upstream vendor-block checks (need a running stack)"
 fi
+
+# The AIA URI is read out of a REMOTE certificate over an unverified handshake, so it is
+# attacker-chosen input that used to be interpolated into a `sh -c` string. The strip that
+# looked like a mitigation (`tr -d '[:space:]'`) is not one: a payload needs no whitespace.
+check bash -c '
+  source provisioning/lib.sh
+  q=$(printf "\047")
+  aia_is_safe "https://ca.example.org/int.crt"   || exit 1
+  aia_is_safe "http://ca.example.org/int.crt"    || exit 1
+  aia_is_safe ""                                 && exit 1
+  aia_is_safe "file:///etc/passwd"               && exit 1
+  aia_is_safe "https://x.org/a;id>/tmp/pwned;"   && exit 1
+  aia_is_safe "https://x.org/a${q}b"             && exit 1
+  aia_is_safe "https://x.org/\$(id)"             && exit 1
+  aia_is_safe "https://x.org/a b"                && exit 1
+  # A LINE-anchored match would let this through: the first line is clean.
+  aia_is_safe "$(printf "https://ok.example.org/a\n;id")" && exit 1
+  # The two pointers this actually follows in production. Nothing else pins them, and
+  # refusing a legal one silently kills the feeds the whole function exists to keep.
+  aia_is_safe "http://secure.globalsign.com/cacert/gsgccr6alphasslca2025.crt" || exit 1
+  aia_is_safe "http://secure.globalsign.com/cacert/gsrsaovsslca2018.crt"      || exit 1
+  # Legal AIA forms a tighter set would have refused (AD CS emits %20).
+  aia_is_safe "http://ca.example.org/a%20b.crt" || exit 1
+  aia_is_safe "http://ca.example.org/a+b.crt"   || exit 1
+  aia_is_safe "HTTP://ca.example.org/a.crt"     || exit 1
+  aia_is_safe "http://ca.example.org/a.crt?id=7" || exit 1
+  # Length is a safety property here, not tidiness: every character is legal, and the
+  # value goes on to be an argv entry and a path component. At 128KB `basename` cannot
+  # exec at all, which under the phase errexit is fatal — measured rc 126.
+  aia_is_safe "http://ca.example.org/$(printf "a%.0s" $(seq 1 200000)).crt" && exit 1
+  # `[A-Za-z]` is a range, and a range collates: under es_CL.UTF-8 — the locale a Chilean
+  # dev runs — an accented byte falls inside it, so the allowlist read narrower than it was.
+  aia_is_safe "http://ca.example.org/café.crt" && exit 1
+  exit 0'
+# The café case above is behavioural, and load-bearing only under a COLLATING locale — which a
+# Chilean dev has and GitHub's runners do not, defaulting to C.UTF-8 where that range refuses `é`
+# anyway. So CI stays green on a revert, and CI is the only mechanical gate (AGENTS.md). This is
+# the half CI can see. A grep for the fix, deliberately: where it runs, the behaviour is not
+# observable at all, and a check that cannot fail there is worse than one that admits what it is.
+check grep -q "local LC_ALL=C" provisioning/lib.sh
 
 echo "== smoke (only if a stack is running) =="
 if docker compose ps --status running --services 2>/dev/null | grep -qx nextcloud; then
