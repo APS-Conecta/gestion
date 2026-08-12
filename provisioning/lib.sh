@@ -585,6 +585,12 @@ ensure_sample_file() {  # UID RELPATH CONTENT
 # which characters matter, and this needs no argument. The strip that used to look like a
 # mitigation, `tr -d '[:space:]'`, is not one — `;id>/tmp/p;` carries no whitespace.
 aia_is_safe() {
+  # Length first, because what follows treats this value as an argv entry and a path
+  # component, and both have ceilings a remote host can reach: at 128KB `basename`
+  # fails to exec (E2BIG), and well before that `/tmp/$name` is too long to remove.
+  # Either is fatal under the phase's errexit. 2048 is far above any real pointer.
+  [ "${#1}" -le 2048 ] || return 1
+
   # `[[ =~ ]]`, not `grep`: grep matches a LINE, so a two-line value whose first line is
   # clean would pass. Bash anchors the whole string.
   #
@@ -650,11 +656,17 @@ ensure_aia_intermediate() {  # HOST
   # never hit this. Caught by cleanboot, not locally — a machine that already holds both
   # certificates never takes the absent branch.
   rc=0
+  # The search is inside the `try` with the parse, not after it: valid JSON of the wrong
+  # shape — an object, a string, a list of anything but objects — raises on `.get` rather
+  # than on `load`, and an uncaught raise exits 1, which this reads as "absent" and
+  # answers with the re-import #143 exists to prevent. Unreadable is unreadable however
+  # it fails to be read.
   printf '%s' "$listed" | python3 -c '
 import json, sys
-try: rows = json.load(sys.stdin)
+try:
+    found = any(r.get("name") == sys.argv[1] for r in json.load(sys.stdin))
 except Exception: sys.exit(2)
-sys.exit(0 if any(r.get("name") == sys.argv[1] for r in rows) else 1)' "$name" || rc=$?
+sys.exit(0 if found else 1)' "$name" || rc=$?
   case "$rc" in
     0) log "certs: $name already imported"; return 0 ;;
     2) log "certs: certificate list was unreadable — skipped, leaving $name as it is"; return 0 ;;
@@ -686,14 +698,22 @@ sys.exit(0 if any(r.get("name") == sys.argv[1] for r in rows) else 1)' "$name" |
       cat "$pem"
     ' > "/tmp/$name" 2>/dev/null || true
 
+  # Every cleanup and copy below is `|| true` or guarded, for one reason: this helper
+  # warns and returns 0 on every failure it already knows about, and a phase that dies
+  # on the tidying instead is the same defect wearing a different hat. `docker compose
+  # cp` in particular fails for the ordinary reason of a container still starting.
   if [ ! -s "/tmp/$name" ]; then
     log "certs: could not fetch or parse $aia — skipped, feeds from $host will fail"
-    rm -f "/tmp/$name"
+    rm -f "/tmp/$name" || true
     return 0
   fi
 
-  docker compose cp "/tmp/$name" "nextcloud:/tmp/$name" >/dev/null 2>&1
-  rm -f "/tmp/$name"
+  if ! docker compose cp "/tmp/$name" "nextcloud:/tmp/$name" >/dev/null 2>&1; then
+    log "certs: could not copy $name into the container — skipped, feeds from $host will fail"
+    rm -f "/tmp/$name" || true
+    return 0
+  fi
+  rm -f "/tmp/$name" || true
 
   if occ security:certificates:import "/tmp/$name" >/dev/null 2>&1; then
     log "certs: imported $name for $host"

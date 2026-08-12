@@ -47,17 +47,25 @@ check test -f dev/xdebug.ini
 # saw it, because a machine that already holds both certificates never takes the absent branch.
 check bash -c '
   . provisioning/lib.sh
+  # Every "the phase must survive this" assertion goes through here, and none of them may
+  # be written `( set -e … ) || exit 1`: bash propagates the tested-context of a `||` into
+  # the subshell, so errexit is suppressed inside it and the assertion tests nothing.
+  # Two of these guards were written that way and were silently inert. Capture the status.
+  survives() {
+    ( set -e -o pipefail; ensure_aia_intermediate example.test >/dev/null 2>&1 )
+    [ $? -eq 0 ] || exit 1
+  }
   docker() { [[ "$*" == *s_client* ]] && echo "http://secure.globalsign.com/cacert/ca.crt"; return 0; }
   occ() { return 1; }                     # cannot answer -> skip, never import
   ensure_aia_intermediate example.test 2>&1 | grep -q "could not read the certificate list" || exit 1
   occ() { echo "[]"; }                    # answers "absent", under errexit -> must survive
-  ( set -e; ensure_aia_intermediate example.test >/dev/null 2>&1 ) || exit 1
+  survives
   # Offline: the handshake itself fails. The stub used to return 0 for everything, so this
   # branch was invisible to the gate — and a change that made the phase FATAL without a
   # network passed it. Every failure in this helper is a warning by design (lib.sh:579).
   docker() { [[ "$*" == *s_client* ]] && return 1; return 0; }
-  ( set -e -o pipefail; ensure_aia_intermediate example.test 2>&1 | grep -q "no CA-Issuers pointer" ) || exit 1
-  ( set -e -o pipefail; ensure_aia_intermediate example.test >/dev/null 2>&1 ) || exit 1
+  ensure_aia_intermediate example.test 2>&1 | grep -q "no CA-Issuers pointer" || exit 1
+  survives
   # A leaf past the pipe buffer. Splitting the handshake with `head -1` closed the pipe on line
   # two, so the writer took SIGPIPE and the assignment returned 141 — fatal under pipefail. The
   # leaf is as big as the remote host cares to make it, and every stub above emits a few bytes,
@@ -66,7 +74,30 @@ check bash -c '
     [[ "$*" == *s_client* ]] && { echo "http://secure.globalsign.com/cacert/ca.crt"; echo; printf "%*s" 200000 ""; echo; }
     return 0
   }
-  ( set -e -o pipefail; ensure_aia_intermediate example.test >/dev/null 2>&1 )'
+  survives
+  # `docker compose cp` fails for the most ordinary reason there is — a container still
+  # starting — and it was the one unguarded command left on the path. Fatal, and it took
+  # the second host with it, since the phase never got there.
+  docker() {
+    case "$*" in
+      *s_client*) echo "http://secure.globalsign.com/cacert/ca.crt"; echo; echo LEAF ;;
+      *cp*) return 1 ;;
+      *) echo PEM ;;
+    esac
+    return 0
+  }
+  survives
+  # Valid JSON of the wrong shape raises on `.get`, not on `load`. Uncaught that exits 1,
+  # which this function reads as "absent" and answers with the re-import #143 exists to
+  # prevent — a WRITE on a provisioned instance. It must read as unreadable instead, and
+  # an empty list must still mean absent or the guard has swallowed the real answer too.
+  docker() { case "$*" in *s_client*) echo "http://x.test/ca.crt"; echo; echo LEAF ;; *) echo PEM ;; esac; return 0; }
+  for shape in "{\"a\":1}" "\"x\"" "[1,2]"; do
+    occ() { echo "$shape"; }
+    ensure_aia_intermediate example.test 2>&1 | grep -q "unreadable" || exit 1
+  done
+  occ() { echo "[]"; }
+  ensure_aia_intermediate example.test 2>&1 | grep -q "imported ca.pem" || exit 1'
 # The other half of the WRITES meta-gate, and the half it cannot express: an alternative must match
 # the WRITE line of a helper and NOT its noop line. `certs:` is the pair that proves it — the write
 # says "certs: imported X for Y", the noop says "certs: X already imported", and an unanchored
@@ -258,6 +289,10 @@ check bash -c '
   aia_is_safe "http://ca.example.org/a+b.crt"   || exit 1
   aia_is_safe "HTTP://ca.example.org/a.crt"     || exit 1
   aia_is_safe "http://ca.example.org/a.crt?id=7" || exit 1
+  # Length is a safety property here, not tidiness: every character is legal, and the
+  # value goes on to be an argv entry and a path component. At 128KB `basename` cannot
+  # exec at all, which under the phase errexit is fatal — measured rc 126.
+  aia_is_safe "http://ca.example.org/$(printf "a%.0s" $(seq 1 200000)).crt" && exit 1
   exit 0'
 
 echo "== smoke (only if a stack is running) =="
