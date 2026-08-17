@@ -12,7 +12,9 @@ phase_begin "14-office" "Euro-Office connector configuration (AD-5)"
 
 # Where the BROWSER reaches the document server, and where the two containers reach each other
 # (AD-8: container-to-container by service name, never localhost).
-app_config_set eurooffice DocumentServerUrl         "http://localhost:$OFFICE_PORT/"
+# Unset = localhost, right for every posture this repo ships: compose.yaml publishes both ports on
+# 127.0.0.1. Set it when something proxies them outward, so the seed converges instead of clobbering.
+app_config_set eurooffice DocumentServerUrl         "${OFFICE_PUBLIC_URL:-http://localhost:$OFFICE_PORT/}"
 app_config_set eurooffice DocumentServerInternalUrl "http://eurooffice/"
 app_config_set eurooffice StorageUrl                "http://nextcloud/"
 

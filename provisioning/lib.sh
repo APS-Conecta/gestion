@@ -610,10 +610,14 @@ ensure_aia_intermediate() {  # HOST
   # One handshake, and it yields both halves: the pointer on the first line, the leaf after
   # it. Read separately they came from two connections, so behind a load balancer mid-rotation
   # the certificate being verified was not the one whose pointer was followed.
+  # `timeout 20` sits INSIDE the payload: host-side around `docker compose exec` it kills the CLI
+  # and orphans openssl in the container; around `sh -c` it SIGTERMs dash, which skips the EXIT
+  # trap below and leaks the leaf. 20 is the `curl --max-time 20` further down — a live handshake
+  # is sub-second.
   local handshake leaf_pem
   handshake="$(docker compose exec -T -e HOST="$host" nextcloud sh -c '
     leaf=$(mktemp); trap "rm -f $leaf" EXIT
-    echo | openssl s_client -connect "$HOST:443" -servername "$HOST" 2>/dev/null \
+    echo | timeout 20 openssl s_client -connect "$HOST:443" -servername "$HOST" 2>/dev/null \
       | openssl x509 -outform PEM > "$leaf" 2>/dev/null || exit 1
     openssl x509 -in "$leaf" -noout -text 2>/dev/null \
       | sed -n "s|.*CA Issuers - URI:||p" | tr -d " \t\r" | grep -m1 -i "^http"
