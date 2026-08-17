@@ -184,4 +184,14 @@ if printf '%s' "$visible" | grep -qi 'nextcloud'; then
   fail "branding leak on the legacy render path: the untrusted-domain screen names Nextcloud outside the two exempt URLs — themes/apsconecta/defaults.php is the only thing that answers there (ThemingDefaults is bypassed for an untrusted host)"
 fi
 
-echo "PASS: core stack healthy — installed, PostgreSQL ready, Redis PONG, /status.php 200, no branding leak, cron scheduling, app policy, no remember-me, no stale app signature, legacy screens branded"
+# 12. admin's home carries no stock skeleton. Check 5 is /status.php only and every other branding
+# assertion here reads unauthenticated HTML, so none of them can see this. A config read would be
+# vacuous — phase 15 writes '' into config.php either way; only the files regress. The listing is
+# captured, not piped: an EMPTY home is the passing state, so "clean" and "could not look" are
+# indistinguishable by value and only the exit status separates them. Hence no 2>/dev/null.
+home=$(docker compose exec -T --user www-data nextcloud ls -A "/var/www/html/data/${NEXTCLOUD_ADMIN_USER:-admin}/files") \
+  || fail "cannot list admin's home — check 12 cannot answer, so it must not report clean"
+printf '%s' "$home" | grep -qi 'nextcloud' \
+  && fail "stock Nextcloud skeleton in admin's home — is NC_skeletondirectory still in compose.yaml? phase 15's skeletondirectory arrives after the image has already created and logged in admin"
+
+echo "PASS: core stack healthy — installed, PostgreSQL ready, Redis PONG, /status.php 200, no branding leak, cron scheduling, app policy, no remember-me, no stale app signature, legacy screens branded, clean admin home"
