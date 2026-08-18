@@ -23,6 +23,7 @@ awk -F, gets those wrong. python3 is already assumed by provisioning/lib.sh; jq 
 import csv
 import glob
 import os
+import shlex
 import sys
 import unicodedata
 
@@ -108,14 +109,19 @@ def block(row, snapshot):
     long_form = SIGLA.get(row["tipo"])
     if long_form and fold(short).startswith(fold(long_form)):
         short = f'{row["tipo"]} {short[len(long_form):].strip()}'
+    # Quoted because seed.sh SOURCES this: a `"` or a backtick in a register value is
+    # shell syntax, not data. Six values in the register are: DEIS 113314's backtick is a
+    # syntax error, DEIS 201079's quotes parse clean and leave SITE_NOMBRE EMPTY.
+    # Not codigo/tipo — digits and a nine-word enum, so quoting them is a zero-delta edit.
+    q = shlex.quote
     return f"""# --- Identity — DEIS {row['codigo']}, snapshot {snapshot} (scripts/deis.py {row['codigo']}) ---
 SITE_DEIS={row['codigo']}
 SITE_TIPO={row['tipo']}
-SITE_NOMBRE="{row['nombre']}"
-SITE_NOMBRE_CORTO="{short}"
-SITE_DIRECCION="{row['direccion']}"
-SITE_COMUNA="{row['comuna']}"
-SITE_SERVICIO_SALUD="{row['servicio_salud']}"
+SITE_NOMBRE={q(row['nombre'])}
+SITE_NOMBRE_CORTO={q(short)}
+SITE_DIRECCION={q(row['direccion'])}
+SITE_COMUNA={q(row['comuna'])}
+SITE_SERVICIO_SALUD={q(row['servicio_salud'])}
 """
 
 
@@ -155,10 +161,11 @@ def write_site(row, snapshot, name, sectors, programs):
     # The units are the one part taken on faith: most primary-care establishments have these, so
     # they are not worth a prompt. Which ones the tree really carries, and which role manages each,
     # is settled with the clinic — by editing the file this writes.
+    q = shlex.quote
     units = [("SOME", "role-administrativo-some"), ("Farmacia", "role-quimico-farmaceutico role-tens-farmacia"),
                 ("Dental", "role-dentista role-tons"), ("OIRS", "role-oirs"),
                 ("Estadística-REM", "role-estadistica-rem"), ("Dirección", "")]
-    teams = [f'"{gid}|{display}"' for gid, display, _ in programs + sectors]
+    teams = [q(f"{gid}|{display}") for gid, display, _ in programs + sectors]
     folders = ["Transversal"] + [f"Programas/{bare}" for _, _, bare in programs]
     folders += [f"Unidades/{u}" for u, _ in units] + [f"Sectores/{d}" for _, d, _ in sectors]
 
@@ -211,7 +218,7 @@ SITE_ROLES=()
 
 # --- Group folders. They cannot nest; the slashes only give the tree look. ---
 SITE_FOLDERS=(
-  {nl.join(f'"{f}"' for f in folders)}
+  {nl.join(q(f) for f in folders)}
 )
 
 SITE_SUBFOLDERS=( "Protocolos" "Flujogramas" "Documentación" "Registro de redes" "Actas de reuniones" )
@@ -221,7 +228,7 @@ SITE_SUBFOLDERS=( "Protocolos" "Flujogramas" "Documentación" "Registro de redes
 # role and manages one that does not. Anything granted on these folders and not listed here is
 # revoked (gf_prune).
 SITE_ACL=(
-  {nl.join(f'"{a}"' for a in acl)}
+  {nl.join(q(a) for a in acl)}
 )
 """)
     print(f"wrote {os.path.relpath(path, os.path.join(HERE, '..'))} — "

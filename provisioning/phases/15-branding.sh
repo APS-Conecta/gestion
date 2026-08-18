@@ -114,7 +114,9 @@ config_system_set theme apsconecta
 # so an unconditional log line would redden a second seed that changed nothing.
 SITE_CSS=themes/apsconecta/core/css/site.css
 # A double quote in a clinic name would close the CSS string early and swallow the rest of the
-# file. DEIS has none today; escaping is two characters and removes the question.
+# file. This said "DEIS has none today", which was never true — four names in the shipped
+# register carry one, e.g. DEIS 201079 `SAPU "Dr. Juan Lozic Perez"`. The escape below was
+# always the thing doing the work, not the premise above it.
 _clinic_escaped=$(printf '%s' "$SITE_NOMBRE_CORTO" | sed 's/["\\]/\\&/g')
 if ! grep -qF -- "--aps-clinic: \"${_clinic_escaped}\";" "$SITE_CSS" 2>/dev/null; then
   cat > "$SITE_CSS" <<CSS
