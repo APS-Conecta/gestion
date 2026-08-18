@@ -61,6 +61,12 @@ store updates stop arriving.
 - **The seed does not update apps.** `occ app:update` is a deliberate act; run it, then
   `make seed`, which re-applies or fails loudly. Auto-updating would make two identical seeds
   produce different instances depending on the day.
+  *(Made true 2026-08-18, #163. It was not: `ensure_vendored_app`'s `occ upgrade` re-fetched every
+  enabled app from the store — `Updater.php:244` — so two identical seeds produced exactly the
+  differing instances this bullet forbids, and `make seed-idempotent` could never converge. The
+  store is now off instance-wide, `compose.yaml`/`NC_appstoreenabled`. #98 had said it stayed
+  enabled because losing the admin Update button cost us a guard; #82 left that question open and
+  called that button a thing that reverts our patches.)*
 - **A patched app loses its vendor signature** — `12-apps.sh` deletes `appinfo/signature.json`
   after patching. That file asserts the app's files are exactly as the vendor shipped them; our
   patches make the assertion false. See *Code integrity* below.

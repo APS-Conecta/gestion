@@ -193,7 +193,8 @@ add_user_to_group() {  # UID GID  (query-before-add: accurate + idempotent)
 # NOT `occ app:install` (#98): a failed store install leaves the app missing and its patches
 # unapplied — an instance that looks installed and is not — and it pins no version, while
 # `eurooffice/10-admin-section-name.patch` is anchored to a line number in 11.0.1.
-# The store stays ENABLED: turning it off also removes the admin Update button, itself a guard (#82).
+# The store is OFF instance-wide (compose.yaml, NC_appstoreenabled) — #163. #82 left that open and
+# named the admin Update button as a thing to be rid of, not a guard: it reverts our patches.
 # The tarballs are UNMODIFIED upstream and stay that way (#82): committing them pre-patched hides a
 # four-line change inside 409 files and makes upstream drift silent, where a patch that stops
 # applying aborts the phase and says so.
@@ -260,7 +261,8 @@ ensure_vendored_app() {  # APPID
     # fails. Measured 2026-08-01, which is the only reason this line exists.
     #
     # `occ upgrade` is the right tool and not a heavy-handed one: it runs the app's own migrations
-    # from the files on disk and never contacts the store. Setting installed_version by hand would
+    # from the files on disk. It ALSO re-fetches every enabled app from the store (Updater.php:244),
+    # which is why the store is off in compose.yaml (#163). Setting installed_version by hand would
     # be lighter and would SKIP those migrations, which is how an app ends up running new code
     # against an old schema. Only on a version change, so a normal seed never pays for it.
     if [ -n "$cur" ]; then
