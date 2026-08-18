@@ -101,8 +101,12 @@ app_config_set() {  # APP KEY VALUE
 theming_set() {  # KEY VALUE [STORED_FORM]
   local key="$1" val="$2" stored="${3:-$2}" cur
   conf_load
-  cur="$(conf_get app theming "$key")" || cur=""
-  if [ "$cur" = "$stored" ]; then log "theming:$key already = $val"; else
+  # Folded into the `if`, exactly like app_config_set above, and for the reason conf_get returns
+  # non-zero at all: `|| cur=""` collapses "key is absent" into "key is empty", so a STORED_FORM
+  # of "" would compare equal on an instance that has never had the key and the write would be
+  # skipped for ever. Inert today — every call site passes a non-empty literal — which is why it
+  # is worth closing now rather than after someone adds the first empty one.
+  if cur="$(conf_get app theming "$key")" && [ "$cur" = "$stored" ]; then log "theming:$key already = $val"; else
     occ theming:config "$key" "$val" >/dev/null && log "theming:$key -> $val"; fi
 }
 

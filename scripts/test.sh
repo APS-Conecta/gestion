@@ -38,6 +38,39 @@ check bash -c '
   [ -z "$(comm -23 <(git ls-files "*.sh" | sort) \
                    <(ls scripts/*.sh provisioning/*.sh provisioning/phases/*.sh sites/*/site.sh dev/*.sh 2>/dev/null | sort))" ]'
 check test -f dev/xdebug.ini
+# Same three assertions `ensure_vendored_app` already makes (lib.sh:211-222), moved from seed time to
+# PR time. At seed time they run on a CLINIC, during `make install` — the worst place to learn that a
+# tarball and its manifest stopped describing each other, because the operator is mid-install and the
+# failure reads as the install being broken. Here it needs no stack, no .env, no clock and no network,
+# so it runs in any pull request, including a hotfix opened from a clinic.
+# NOT a replacement for the seed-time check: that one guards the bytes that actually get unpacked.
+# B-012's other half. That bug was two defects sharing a row: a CSS rule leaking onto share pages
+# (guarded below, in the running-stack block) and `ensure_groupfolder … >/dev/null`, which swallowed
+# the very lines `seed-idempotent.sh` greps for — so the idempotency gate could not fail on any group
+# folder. Only the CSS half was ever gated. A phase's STDOUT IS its contract with that gate.
+# Redirecting `occ` is fine and common (the helper logs afterwards, via `&&`); redirecting a HELPER
+# is what blinds it. The function list is read out of lib.sh rather than typed here, so it cannot
+# drift the way a second hand-maintained list would.
+# When this one goes red, `check` has already swallowed the offending line (see its definition at the
+# top of this file): re-run the grep below by hand to see which phase and which line number.
+check bash -c '
+  fns=$(grep -oE "^[a-z_]+\(\)" provisioning/lib.sh | tr -d "()" | sort -u | paste -sd"|" -)
+  bad=$(grep -rnE "(^|[;&[:space:]])($fns)([[:space:]][^|]*)?>[[:space:]]*/dev/null" \
+          provisioning/phases/*.sh provisioning/seed.sh 2>/dev/null || true)
+  [ -z "$bad" ] || { printf "%s\n" "$bad" >&2; exit 1; }'
+check bash -c '
+  rc=0
+  for v in provisioning/apps/*/VENDOR; do
+    d=$(dirname "$v"); id=$(basename "$d")
+    n=$(ls "$d"/*.tar.gz 2>/dev/null | wc -l)
+    if [ "$n" -ne 1 ]; then echo "$id: expected exactly one *.tar.gz, found $n" >&2; rc=1; continue; fi
+    t=$(ls "$d"/*.tar.gz)
+    ver=$(sed -n "s/^version=//p" "$v"); sha=$(sed -n "s/^sha256=//p" "$v")
+    if [ -z "$ver" ] || [ -z "$sha" ]; then echo "$id: VENDOR lacks version= or sha256=" >&2; rc=1; continue; fi
+    [ "$(basename "$t")" = "$id-$ver.tar.gz" ] || { echo "$id: $(basename "$t") is not $id-$ver.tar.gz" >&2; rc=1; }
+    echo "$sha  $t" | sha256sum --check --status || { echo "$id: bytes do not match sha256= in VENDOR" >&2; rc=1; }
+  done
+  exit $rc'
 # Every service must come back after the host reboots. Read from the RESOLVED config rather than
 # grepped: two of them take the policy from the shared anchor, and a service added later must not
 # be able to arrive without one — the person who would notice a stack that stayed down is a CESFAM

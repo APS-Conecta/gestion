@@ -100,17 +100,31 @@ done
 # that one key per app is an exact assertion, not a proxy. One round-trip for all of them, because
 # smoke runs on every `make test`, and through `occ config:list` rather than a PHP script that
 # boots the server: \OC::$server->getConfig() was REMOVED in NC34 and degrades silently.
-policy=$(occ config:list --output=json 2>/dev/null | python3 -c '
-import sys, json
+# The inventory is read from provisioning/app-policy.sh, the same declaration phase 16 applies —
+# it used to be typed out again here, which is two lists that must silently agree.
+. provisioning/app-policy.sh
+policy=$(occ config:list --output=json 2>/dev/null | POLICY_ADMIN_ONLY="${POLICY_ADMIN_ONLY:-}" \
+  POLICY_DISABLED="${POLICY_DISABLED:-}" POLICY_CONFIG="${POLICY_CONFIG:-}" python3 -c '
+import sys, json, os
 # "disabled" is TWO valid values, not one: the literal "no" (was enabled, then disabled) and an
 # ABSENT key (never enabled here). `occ app:disable` on an already-absent key is a no-op and does
 # not write "no", so demanding the literal would fail forever on a fresh instance. Measured
 # 2026-07-29 by deleting the key and re-seeding. Restricted apps have exactly one valid value.
 ADMIN_ONLY = "[\"admin\"]"
 UNSET = "unset"
-want = {a: [ADMIN_ONLY] for a in
-        ("support", "updatenotification", "serverinfo", "recommendations", "related_resources", "weather_status")}
-want.update({"survey_client": ["no", ""], "nextcloud_announcements": ["no", ""]})
+admin_only = os.environ["POLICY_ADMIN_ONLY"].split()
+disabled = os.environ["POLICY_DISABLED"].split()
+config = os.environ["POLICY_CONFIG"].split()
+
+# Reading the policy from a file means the file can fail to arrive, and an EMPTY want-set satisfies
+# every assertion below — the check would print OK while asserting nothing at all. That is the one
+# failure this shape adds over the hand-typed copy it replaces, so it is refused first.
+if not admin_only or not disabled or not config:
+    print("app-policy.sh declared nothing — POLICY_ADMIN_ONLY/DISABLED/CONFIG empty or unsourced")
+    raise SystemExit
+
+want = {a: [ADMIN_ONLY] for a in admin_only}
+want.update({a: ["no", ""] for a in disabled})
 
 apps = json.load(sys.stdin)["apps"]
 bad = []
@@ -119,6 +133,13 @@ for app, accepted in want.items():
     if cur not in accepted:
         shown = " or ".join(v or UNSET for v in accepted)
         bad.append(f"{app}={cur or UNSET} (want {shown})")
+# The config switches are policy too, and the only lever with no visible effect on `enabled`:
+# firstrunwizard stays enabled by design, so nothing above would notice its tour coming back on.
+for entry in config:
+    app, key, val = entry.split(":", 2)
+    cur = apps.get(app, {}).get(key, "")
+    if cur != val:
+        bad.append(f"{app}.{key}={cur or UNSET} (want {val})")
 print("; ".join(bad) if bad else "OK")
 ' 2>/dev/null | tr -d '\r')
 [ "$policy" = "OK" ] \
