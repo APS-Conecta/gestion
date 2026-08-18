@@ -82,6 +82,12 @@ services:
       REDIS_HOST: redis
       NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USER:?set NEXTCLOUD_ADMIN_USER in .env}
       NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD:?set NEXTCLOUD_ADMIN_PASSWORD in .env}
+      # admin is created AND logged straight in by the image's `occ maintenance:install`
+      # (first-login listener -> copySkeleton, 62 MB of Nextcloud marketing) before `make up`
+      # returns, so phase 15's `config_system_set skeletondirectory ""` is minutes too late for
+      # this one account. NC_* is Nextcloud's own system-config override, read before config.php —
+      # the only lever that arrives in time. "" , not null (null = inherit the default).
+      NC_skeletondirectory: ""
       NEXTCLOUD_TRUSTED_DOMAINS: ${NEXTCLOUD_TRUSTED_DOMAINS:?set NEXTCLOUD_TRUSTED_DOMAINS in .env}
     # host.docker.internal is ONLY for host<->container; on Linux it needs host-gateway (AD-8).
     extra_hosts:
