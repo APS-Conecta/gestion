@@ -48,7 +48,7 @@ what keeps it proven.
 |---|---|
 | Identity: name, type, address, comuna, DEIS code | `all-staff`, the four `cat-*`, the shared `role-*` registry |
 | `SITE_TEAMS` — the `prog-*` and `sector-*` teams | The `LÉEME — Convenciones.md` text, shipped verbatim from [`docs/CONVENTIONS.md`](../docs/CONVENTIONS.md) |
-| `SITE_FOLDERS`, `SITE_SUBFOLDERS` | Phases 05, 06, 10, 12, 14, 15, 16 |
+| `SITE_FOLDERS`, `SITE_SUBFOLDERS` | Phases 05, 06, 10, 12, 14, 15, 16 — phase 16's app inventory is declared in [`app-policy.sh`](app-policy.sh), sourced by the phase and by `scripts/smoke.sh` |
 | `SITE_ACL` — the whole grant matrix, `mount\|group\|perms` | |
 
 Write one with [`scripts/deis.py`](../scripts/deis.py): it finds the establishment in the shipped DEIS
