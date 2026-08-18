@@ -88,6 +88,14 @@ services:
       # this one account. NC_* is Nextcloud's own system-config override, read before config.php —
       # the only lever that arrives in time. "" , not null (null = inherit the default).
       NC_skeletondirectory: ""
+      # The app store is OFF (#163). Env and not a phase: the image's /entrypoint.sh runs
+      # `occ upgrade` on any image bump, before a seed can run, and that upgrade re-downloads
+      # every enabled app from the store (Updater.php:244) — which is what made the VENDOR pins
+      # fiction. "0", not "false": NC_* arrives as a string and getSystemValueBool is a (bool)
+      # cast, under which "false" is TRUE. To install one deliberately, pass it back for the one
+      # command: `docker compose exec -e NC_appstoreenabled=1 --user www-data nextcloud php occ
+      # app:install <id>` — the key is never in config.php, so `occ config:system:set` no-ops.
+      NC_appstoreenabled: "0"
       NEXTCLOUD_TRUSTED_DOMAINS: ${NEXTCLOUD_TRUSTED_DOMAINS:?set NEXTCLOUD_TRUSTED_DOMAINS in .env}
     # host.docker.internal is ONLY for host<->container; on Linux it needs host-gateway (AD-8).
     extra_hosts:
@@ -103,11 +111,16 @@ services:
   # Without this Nextcloud falls back to `ajax`: jobs run only when a user loads a page, so
   # housekeeping stops whenever nobody is browsing (see phase 06-jobs). Deliberately NOT behind a
   # profile — a dev stack whose job behaviour differs from production is where that bug hides.
-  # No env needed: config.php comes from the shared volume, and the image already ships the
-  # crontab. Shares x-nextcloud-base, so the volumes cannot drift from `nextcloud`.
+  # config.php comes from the shared volume and the image already ships the crontab, so the only
+  # env here is the store flag: cron.php runs UpdateAvailableNotifications, which is gated on
+  # having internet and not on anything this repo sets. Shares x-nextcloud-base, so the volumes
+  # cannot drift from `nextcloud`. NOT in the anchor — `<<` is a shallow merge and `nextcloud`
+  # defines its own `environment:`, which would drop an anchored one without a word.
   cron:
     <<: *nextcloud-base
     entrypoint: /cron.sh
+    environment:
+      NC_appstoreenabled: "0"   # same flag, same reason (#163)
     healthcheck:
       # `-f` is required, not cosmetic: /cron.sh does `exec busybox crond -f`, so PID 1's comm is
       # "busybox" and only its argv contains "crond". A bare `pgrep crond` never matches and the

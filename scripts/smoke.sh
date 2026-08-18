@@ -215,4 +215,18 @@ home=$(docker compose exec -T --user www-data nextcloud ls -A "/var/www/html/dat
 printf '%s' "$home" | grep -qi 'nextcloud' \
   && fail "stock Nextcloud skeleton in admin's home — is NC_skeletondirectory still in compose.yaml? phase 15's skeletondirectory arrives after the image has already created and logged in admin"
 
-echo "PASS: core stack healthy — installed, PostgreSQL ready, Redis PONG, /status.php 200, no branding leak, cron scheduling, app policy, no remember-me, no stale app signature, legacy screens branded, clean admin home"
+# 13. The app store is off, in BOTH containers (#163). `occ upgrade` — run by ensure_vendored_app
+# after a re-impose, and by the image's /entrypoint.sh on any image bump — re-downloads every
+# enabled app from the store unless this is set, and a VENDOR pin then means "whatever the store
+# published today". cron is checked too because cron.php runs UpdateAvailableNotifications.
+# This asserts the LEVER, not the drift it prevents: a disk-vs-VENDOR comparison only diverges once
+# the store HAS something newer, so it passes on a clean boot with the fix reverted — green for the
+# wrong reason, which is the failure mode this file exists to avoid. An absent key reads "" and is
+# not "0", so this cannot fail open.
+for svc in nextcloud cron; do
+  got=$(docker compose exec -T --user www-data "$svc" php occ config:system:get appstoreenabled 2>/dev/null | tr -d '\r')
+  [ "$got" = "0" ] \
+    || fail "the app store is enabled in '$svc' (read '$got') — is NC_appstoreenabled still in compose.yaml, and was the container recreated after adding it? occ upgrade then re-downloads every enabled app and the VENDOR pins stop meaning anything (#163)"
+done
+
+echo "PASS: core stack healthy — installed, PostgreSQL ready, Redis PONG, /status.php 200, no branding leak, cron scheduling, app policy, no remember-me, no stale app signature, legacy screens branded, clean admin home, app store off"
