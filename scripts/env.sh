@@ -57,15 +57,21 @@ require_real_secrets() {
     return 1
   }
 
-  local still=() line key shipped
+  local still=() line key
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in ''|'#'*) continue ;; *=*) ;; *) continue ;; esac
     key=${line%%=*}
-    shipped=${line#*=}
     case "$key" in *[!A-Za-z0-9_]*|'') continue ;; esac
-    # Only the keys the template deliberately leaves for a human to replace.
-    case "$shipped" in *change-me*) ;; *) continue ;; esac
-    [ "${!key:-}" = "$shipped" ] && still+=("$key")
+    # The MARKER decides, not equality with the template's bytes. This used to read the
+    # template's value raw and compare it with the exported one — and the exported one has
+    # been through the loader below, which strips one layer of quotes and undoes compose's
+    # `$$`. Both transforms match conventions .env.example already uses (line 21 quotes a
+    # value on purpose; lines 5-6 instruct that a `$` be written `$$`), so the day a
+    # placeholder gained either, the comparison stopped matching, `still` stayed empty, and
+    # a clinic installed with a secret this repository publishes. It failed OPEN, silently.
+    # Testing the live value for the marker cannot be defeated by either transform, and it
+    # deletes the second dotenv reader that disagreed with the first.
+    case "${!key:-}" in *change-me*) still+=("$key") ;; esac
   done < .env.example
 
   [ ${#still[@]} -eq 0 ] || {

@@ -94,6 +94,12 @@ check bash -c '
   for key in NEXTCLOUD_ADMIN_PASSWORD POSTGRES_PASSWORD OFFICE_JWT_SECRET FIXTURE_USER_PASSWORD; do
     ( export "$key=$(shipped "$key")"; require_real_secrets 2>/dev/null ) && exit 1
   done
+  # And a value that CARRIES the marker without EQUALING the template byte for byte. That is
+  # what a quoted placeholder becomes once the loader in env.sh strips its quotes, and what a
+  # `$$` one becomes once it undoes the escape — both conventions .env.example already uses,
+  # at line 21 and lines 5-6. The equality test this replaced let exactly this through: the
+  # gate failed OPEN, silently, and a clinic would install with a published secret.
+  ( export NEXTCLOUD_ADMIN_PASSWORD="\"$(shipped NEXTCLOUD_ADMIN_PASSWORD)\""; require_real_secrets 2>/dev/null ) && exit 1
   exit 0'
 # #143: ensure_aia_intermediate must not read "could not ask" as "not imported" — that re-imports a
 # certificate already in the bundle, which is a write on a provisioned instance and reddens
