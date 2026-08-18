@@ -393,6 +393,56 @@ check bash -c '
   # dev runs — an accented byte falls inside it, so the allowlist read narrower than it was.
   aia_is_safe "http://ca.example.org/café.crt" && exit 1
   exit 0'
+# scripts/deis.py writes sites/<slug>/site.sh and provisioning/seed.sh SOURCES it, so every value
+# it emits is shell syntax unless it is quoted. It was not: five register fields went into the file
+# inside double quotes, raw. Six values in the shipped register carry a `"` or a backtick, and the
+# two failure modes are different sizes of bad — DEIS 113314's address holds a backtick, which is a
+# syntax error that kills the phase loop, while DEIS 201079's name holds quotes, which parses CLEAN,
+# runs `Juan` as a command and leaves SITE_NOMBRE EMPTY. A clinic provisioned with no name, silently.
+#
+# Behavioural, and over the WHOLE register rather than the six known-bad rows: the register is
+# regenerated from DEIS by `--snapshot`, so tomorrow's hostile value is one nobody has seen. Every
+# row is emitted, sourced by a real bash, and compared byte-for-byte with what the CSV holds — one
+# bash process for all of them, because 2655 forks is a gate nobody would keep.
+#
+# `bash -n` alone would not catch it: the DEIS 201079 shape passes a syntax check and still loses
+# the value. The round trip is the assertion.
+check python3 -c '
+import csv, glob, subprocess, sys, os
+sys.path.insert(0, "scripts")
+import deis
+
+register = sorted(glob.glob("sites/establecimientos-deis-*.csv"))[-1]
+rows = list(csv.DictReader(open(register, encoding="utf-8")))
+if len(rows) < 100:
+    print("register looks truncated: " + str(len(rows)) + " rows"); sys.exit(1)
+
+FIELDS = {"SITE_NOMBRE": "nombre", "SITE_DIRECCION": "direccion",
+          "SITE_COMUNA": "comuna", "SITE_SERVICIO_SALUD": "servicio_salud"}
+
+script = ["set -u"]
+for row in rows:
+    script.append(deis.block(row, "gate"))
+    for var in FIELDS:
+        script.append("printf \"%s\\n\" \"$" + var + "\"")
+# On stdin, not argv: 2655 blocks is past ARG_MAX and bash never starts.
+out = subprocess.run(["bash"], input="\n".join(script), capture_output=True, text=True)
+if out.returncode != 0:
+    print("sourcing the generated identity blocks failed: " + out.stderr.strip()[:300]); sys.exit(1)
+
+got = out.stdout.split("\n")
+bad = []
+for i, row in enumerate(rows):
+    for j, (var, field) in enumerate(FIELDS.items()):
+        want, have = row[field], got[i * len(FIELDS) + j]
+        if want != have:
+            bad.append("DEIS " + row["codigo"] + " " + var + ": wrote " + repr(want) + ", bash read " + repr(have))
+if bad:
+    print("values the generated site.sh does not round-trip (" + str(len(bad)) + "):")
+    for line in bad[:5]:
+        print("  " + line)
+    sys.exit(1)'
+
 # The café case above is behavioural, and load-bearing only under a COLLATING locale — which a
 # Chilean dev has and GitHub's runners do not, defaulting to C.UTF-8 where that range refuses `é`
 # anyway. So CI stays green on a revert, and CI is the only mechanical gate (AGENTS.md). This is
