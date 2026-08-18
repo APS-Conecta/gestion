@@ -44,6 +44,20 @@ check test -f dev/xdebug.ini
 # failure reads as the install being broken. Here it needs no stack, no .env, no clock and no network,
 # so it runs in any pull request, including a hotfix opened from a clinic.
 # NOT a replacement for the seed-time check: that one guards the bytes that actually get unpacked.
+# B-012's other half. That bug was two defects sharing a row: a CSS rule leaking onto share pages
+# (guarded below, in the running-stack block) and `ensure_groupfolder … >/dev/null`, which swallowed
+# the very lines `seed-idempotent.sh` greps for — so the idempotency gate could not fail on any group
+# folder. Only the CSS half was ever gated. A phase's STDOUT IS its contract with that gate.
+# Redirecting `occ` is fine and common (the helper logs afterwards, via `&&`); redirecting a HELPER
+# is what blinds it. The function list is read out of lib.sh rather than typed here, so it cannot
+# drift the way a second hand-maintained list would.
+# When this one goes red, `check` has already swallowed the offending line (see its definition at the
+# top of this file): re-run the grep below by hand to see which phase and which line number.
+check bash -c '
+  fns=$(grep -oE "^[a-z_]+\(\)" provisioning/lib.sh | tr -d "()" | sort -u | paste -sd"|" -)
+  bad=$(grep -rnE "(^|[;&[:space:]])($fns)([[:space:]][^|]*)?>[[:space:]]*/dev/null" \
+          provisioning/phases/*.sh provisioning/seed.sh 2>/dev/null || true)
+  [ -z "$bad" ] || { printf "%s\n" "$bad" >&2; exit 1; }'
 check bash -c '
   rc=0
   for v in provisioning/apps/*/VENDOR; do
