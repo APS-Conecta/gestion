@@ -50,5 +50,7 @@ Internal ops only, **no patient data**.
 
 ## Do not touch (sibling projects on the same host)
 
-`/srv/syncthing/CESFAMS` and co-located tenants (Jomy, mailcow, glitchtip, coolify, homepage, syncthing).
+`/srv/syncthing/CESFAMS` and co-located tenants (Jomy, glitchtip, coolify, homepage, syncthing).
+(`mailcow` was on this list until 2026-08-27; the stack was removed from the host, so there is
+nothing left to avoid. The remaining five are still live — keep the guard rail.)
 This repo is self-contained under its own clone.
