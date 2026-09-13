@@ -192,7 +192,7 @@ add_user_to_group() {  # UID GID  (query-before-add: accurate + idempotent)
 #
 # NOT `occ app:install` (#98): a failed store install leaves the app missing and its patches
 # unapplied — an instance that looks installed and is not — and it pins no version, while
-# `eurooffice/10-admin-section-name.patch` is anchored to a line number in 11.0.1.
+# `eurooffice/10-admin-section-name.patch` is anchored to a line number in 11.0.4.
 # The store is OFF instance-wide (compose.yaml, NC_appstoreenabled) — #163. #82 left that open and
 # named the admin Update button as a thing to be rid of, not a guard: it reverts our patches.
 # The tarballs are UNMODIFIED upstream and stay that way (#82): committing them pre-patched hides a

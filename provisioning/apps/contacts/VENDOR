@@ -1,5 +1,5 @@
 # Where the tarball beside this file came from (#98). Update all three lines together on a bump,
 # then re-run `make seed`.
-version=8.7.5
-sha256=9935218201ce3f8d06b3be31a0b6df9fbba23f6993724ff3799686dd873c3ea9
-url=https://github.com/nextcloud-releases/contacts/releases/download/v8.7.5/contacts-v8.7.5.tar.gz
+version=8.8.1
+sha256=2ae3edbd90edcc44ab8c2d3172661e5d1948205aa0a4d3e712fc66d2501329f7
+url=https://github.com/nextcloud-releases/contacts/releases/download/v8.8.1/contacts-v8.8.1.tar.gz

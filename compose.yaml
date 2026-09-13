@@ -26,7 +26,7 @@ name: apsconecta-gestion
 # boot, Euro-Office's 2.5 GB included. `make down` is the way out and keeps working.
 x-nextcloud-base: &nextcloud-base
   restart: unless-stopped
-  image: nextcloud:34-apache@sha256:eea6e621ded409a0f878db118cd8aec619b555172d30f50d04f9bc2e5e852b4c
+  image: nextcloud:34-apache@sha256:0c74fb931e7e5115c833b3cab8d1eb2a4894ff95cd5fa2e84124ac9d3e1fea09
   depends_on:
     db:
       condition: service_healthy
@@ -42,7 +42,7 @@ x-nextcloud-base: &nextcloud-base
 
 services:
   db:
-    image: postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+    image: postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
     restart: unless-stopped
     volumes:
       # postgres:18+ stores data in a major-version subdir; mount the parent, not /data
@@ -60,7 +60,7 @@ services:
       start_period: 45s
 
   redis:
-    image: redis:8-alpine@sha256:978f0e01593e65eed801f2402944efcd936d43b5027e4908a7897baf88ed6241
+    image: redis:8-alpine@sha256:becdda6c7f4b3fb42e42fd7f120bbf5c54c4caaaf16f26da24e4563d2c1f0576
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -150,7 +150,7 @@ services:
     # five weeks — while both Docker Official Images had. An unversioned tag is not slow-moving, it
     # is unpredictable: when it does move there is no version to reason about, which is exactly why
     # it needs the digest more than the others, not less.
-    image: ghcr.io/euro-office/documentserver:latest@sha256:6068075cc247f9283d337b2cf9a105d9df49fcd8cd6b5e82fa90640df1552e80
+    image: ghcr.io/euro-office/documentserver:latest@sha256:889e681923d2dcc8bdfb92fe128d10e185fcff880d302b6a0c0c7bf339499290
     restart: unless-stopped
     environment:
       - "JWT_ENABLED=true"
