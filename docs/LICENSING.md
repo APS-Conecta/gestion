@@ -68,8 +68,8 @@ below were read from each app's `appinfo/info.xml` inside the shipped tarball, n
 | Group Folders | NC app `groupfolders` (occ-installed) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | nextcloud/groupfolders `info.xml` |
 | Euro-Office connector | NC app `eurooffice` (occ-installed) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | eurooffice `info.xml` |
 | Side menu | NC app `side_menu` (occ-installed) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `side_menu` `info.xml` |
-| Calendar | NC app `calendar` 6.5.2 (occ-installed) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `calendar` `info.xml` (`<licence>agpl</licence>`) |
-| Contacts | NC app `contacts` 8.7.5 (occ-installed) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `contacts` `info.xml` |
+| Calendar | NC app `calendar` 6.5.4 (occ-installed) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `calendar` `info.xml` (`<licence>agpl</licence>`) |
+| Contacts | NC app `contacts` 8.8.1 (occ-installed) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `contacts` `info.xml` |
 | Epidemiología | NC app `epidemiologia` 0.8.0 — **ours**, built from a tag of its own repo | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `epidemiologia` `info.xml`; compiles `@nextcloud/vue`, which is why §1 is not a free choice |
 | Fraunces | `themes/apsconecta/core/fonts/*.woff2` (served by the theme) | SIL Open Font License 1.1 | `OFL-1.1` | Fraunces `OFL.txt` |
 | Nunito Sans | `themes/apsconecta/core/fonts/*.woff2` (served by the theme) | SIL Open Font License 1.1 | `OFL-1.1` | Nunito Sans `OFL.txt` |

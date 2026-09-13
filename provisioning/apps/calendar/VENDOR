@@ -5,6 +5,6 @@
 # because a gzip stream does not delta-compress. Calendar releases often. If the repo ever has to
 # go on a diet, this file and maps' are where the weight is — the alternative is contacting the
 # app store at install time, which #98 decided against.
-version=6.5.2
-sha256=86c7d9c5d0455b3e23154e44b12c92458663577285e59778a03825c8436ab143
-url=https://github.com/nextcloud-releases/calendar/releases/download/v6.5.2/calendar-v6.5.2.tar.gz
+version=6.5.4
+sha256=67c777a6ea974409e9d228c23fc60f2be8e675d376531b6b1b125f2f0365738d
+url=https://github.com/nextcloud-releases/calendar/releases/download/v6.5.4/calendar-v6.5.4.tar.gz
