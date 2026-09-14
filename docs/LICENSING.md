@@ -65,14 +65,21 @@ below were read from each app's `appinfo/info.xml` inside the shipped tarball, n
 | PostgreSQL | image `postgres:18-alpine` | PostgreSQL License (permissive) | `PostgreSQL` | postgresql.org/about/licence |
 | Redis | image `redis:8-alpine` | Tri-license — **we elect AGPL v3** | `AGPL-3.0-or-later` | redis `LICENSE.txt` (8.x) |
 | Euro-Office (office) | image `ghcr.io/euro-office/documentserver` | GNU AGPL v3 | `AGPL-3.0-only` | Euro-Office/DocumentServer `LICENSE` |
-| Group Folders | NC app `groupfolders` (occ-installed) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | nextcloud/groupfolders `info.xml` |
-| Euro-Office connector | NC app `eurooffice` (occ-installed) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | eurooffice `info.xml` |
-| Side menu | NC app `side_menu` (occ-installed) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `side_menu` `info.xml` |
-| Calendar | NC app `calendar` 6.5.4 (occ-installed) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `calendar` `info.xml` (`<licence>agpl</licence>`) |
-| Contacts | NC app `contacts` 8.8.1 (occ-installed) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `contacts` `info.xml` |
+| Group Folders | NC app `groupfolders` 22.0.6 (vendored tarball, #98) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `groupfolders` `info.xml` |
+| Euro-Office connector | NC app `eurooffice` 11.0.4 (vendored tarball, #98) | GNU AGPL v3 **only** | `AGPL-3.0-only` | `eurooffice` `info.xml` (`<licence>AGPL-3.0-only</licence>`) |
+| Side menu | NC app `side_menu` 6.0.1 (vendored tarball, #98) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `side_menu` `info.xml` (`<licence>agpl</licence>`) |
+| Calendar | NC app `calendar` 6.5.4 (vendored tarball, #98) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `calendar` `info.xml` (`<licence>agpl</licence>`) |
+| Contacts | NC app `contacts` 8.8.1 (vendored tarball, #98) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `contacts` `info.xml` |
 | Epidemiología | NC app `epidemiologia` 0.8.0 — **ours**, built from a tag of its own repo | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `epidemiologia` `info.xml`; compiles `@nextcloud/vue`, which is why §1 is not a free choice |
 | Fraunces | `themes/apsconecta/core/fonts/*.woff2` (served by the theme) | SIL Open Font License 1.1 | `OFL-1.1` | Fraunces `OFL.txt` |
 | Nunito Sans | `themes/apsconecta/core/fonts/*.woff2` (served by the theme) | SIL Open Font License 1.1 | `OFL-1.1` | Nunito Sans `OFL.txt` |
+
+> **`agpl` is not a typo.** Nextcloud's schema has always accepted the bare string, and the app
+> store renders it as AGPL v3 or later; `calendar` and `side_menu` still declare it that way while
+> `groupfolders`, `contacts` and `eurooffice` have moved to SPDX. The SPDX column above says what
+> each app's own `info.xml` declares, normalised — and `scripts/test.sh` now fails if this table and
+> an `info.xml` disagree, because reading is what missed `eurooffice` being `-only` through two
+> documentation audits (#87, #88) and a version bump (#167) that edited the very same row.
 
 Notes:
 - The `-alpine` base-image OS layers carry their own separate licenses; the component license above is

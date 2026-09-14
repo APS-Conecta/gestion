@@ -11,6 +11,43 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ## [Unreleased]
 
+### Added
+
+- **The licence table is now gated against the apps themselves.** `scripts/test.sh` reads
+  `appinfo/info.xml` out of each vendored tarball — tracked, so it needs no network and no running
+  stack — and fails if `docs/LICENSING.md` disagrees or has no row for a vendored app. Nextcloud's
+  legacy bare `agpl` normalises to `AGPL-3.0-or-later` rather than failing, since `calendar`,
+  `side_menu` and `epidemiologia` still declare it that way. The SPDX column is located by reading
+  the header, not by a fixed index: the Source column also contains backticks, and an inserted
+  column would otherwise shift the check onto its neighbour. Validated by seeding four cases —
+  the original defect, a deleted row, an inserted column, and a table with no SPDX column at all.
+
+### Fixed
+
+- **`docs/LICENSING.md` stated the wrong grant for the Euro-Office connector** (#171). The table
+  said `AGPL-3.0-or-later`; `eurooffice`'s own `info.xml` declares **`AGPL-3.0-only`** — materially
+  different grants. It survived two documentation audits (#87, #88) and a version bump (#167) that
+  edited that exact row without looking one cell to the left. Five rows also still said
+  *(occ-installed)*, false since #98 vendored them as tarballs; they now name the pinned version and
+  the tarball.
+
+- **`provisioning/apps/calendar/VENDOR` described its own size against an app that was deleted**
+  (#172): *"the second largest thing in this repo after maps"*, pointing at maps' file. `maps` was
+  dropped in ADR-0005/#142. It is the largest thing in the repo now — 18.9 MB against the next at
+  4.7 MB — and the comment says so without naming a sibling that can be dropped again.
+  `CONTRIBUTING.md` gains **"What the docs gate does not govern"**, recording that `VENDOR` files,
+  `Makefile` comments and code comments are outside `repo-docs`' corpus deliberately, so the
+  retirement rule applies to them by review rather than by gate.
+
+- **`provisioning/apps/side_menu/VENDOR` pointed at a source nobody can reach** (#169).
+  `gitnet.fr` — deblan's self-hosted forge and the app's only source, with no mirror anywhere —
+  resolves and then blackholes the SYN on both 80 and 443 (`http=000`, `time_connect=0.000000`).
+  Measured 2026-08-13 and again 2026-09-14, unchanged. Nothing is broken: the 6.0.1 tarball is
+  committed, sha-pinned and installs. But `make apps-check` stays red on that one line and **that
+  red is not actionable** — 6.1.0 exists and cannot be fetched from here by anyone. The file now
+  records the outage, that 6.0.1 is pinned deliberately, and the three ways out.
+
+
 ### Security
 
 - **Provisioning refuses to run with the secrets this repository publishes.** `make setup` generates

@@ -101,6 +101,20 @@ it is** (dated history is exempt; its date is the label). Dated history means **
 cannot drift. They did: this line said "ADRs, changelogs" while the tool also exempted bug logs, and
 `BUGS.md` relied on that exemption to name a retired `make` target.
 
+### What the docs gate does not govern
+
+`repo-docs` checks `*.md` and `*.markdown` (`tracked_md`). **`VENDOR` files, `Makefile` comments and
+comments inside shell and PHP are outside that corpus**, deliberately: the corpus is what a reader
+is pointed at, and widening it to every comment in the tree would make the gate a linter for prose
+nobody navigates by.
+
+The cost is real and has been paid once. `provisioning/apps/calendar/VENDOR` described its own size
+*"after maps"* for the whole time `maps` did not exist (#172) — the retirement rule above applies to
+it, and nothing could enforce it. **So the rule for these files is the rule for code comments: a
+comment that names something retired is a defect, caught in review, not by a gate.** Prefer to
+write one that cannot rot — measure a file against itself, not against a sibling that may be
+dropped.
+
 ## Reference docs
 
 Pull current docs from **Context7 MCP** (never hardcode) — see the table in [`README.md`](README.md).
