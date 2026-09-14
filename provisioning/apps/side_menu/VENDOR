@@ -10,11 +10,14 @@ url=https://gitnet.fr/deblan/side_menu/releases/download/v6.0.1/side_menu_v6.0.1
 # SYN on both 80 and 443 — `curl --max-time 10` returns http=000 with time_connect=0.000000, which
 # is a firewall dropping packets, not a service that is down. Re-measured 2026-09-14, unchanged.
 #
-# So `make apps-check` stays red on this one line, and that red is NOT actionable: 6.1.0 exists
-# upstream and cannot be fetched by anyone from here. Nothing is broken — the 6.0.1 tarball beside
+# So the `frozen=` line below tells `make apps-check` to report this app without failing on it:
+# 6.1.0 exists upstream and cannot be fetched by anyone from here, so a red line here could never be
+# acted on. It is still listed on every run, with the version it cannot take, because a freeze that
+# stops being visible is how a pin becomes a fossil. Nothing is broken — the 6.0.1 tarball beside
 # this file is committed, sha-pinned and installs — but there is no route to a newer version until
 # either the forge returns or someone mirrors it.
 #
-# If it comes back: bump all three lines together and re-run `make seed`, as above. If it does not,
-# the choices are to keep 6.0.1 indefinitely (today's decision), mirror the tarball somewhere we
-# control, or drop the app. Tracked in #169.
+# If it comes back: bump all three lines together, DELETE the `frozen=` line, and re-run `make seed`.
+# If it does not, the choices are to keep 6.0.1 indefinitely (today's decision), mirror the tarball
+# somewhere we control, or drop the app. Decided in #169.
+frozen=gitnet.fr, the app's only source, has been unreachable since 2026-08-13 (#169)
