@@ -1,10 +1,16 @@
 # Where the tarball beside this file came from (#98). Update all three lines together on a bump,
 # then re-run `make seed`.
 #
-# 19 MB, the second largest thing in this repo after maps, and git keeps a FULL COPY per bump
-# because a gzip stream does not delta-compress. Calendar releases often. If the repo ever has to
-# go on a diet, this file and maps' are where the weight is — the alternative is contacting the
-# app store at install time, which #98 decided against.
+# 19 MB, the largest thing in this repo, and git keeps a FULL COPY per bump because a gzip stream
+# does not delta-compress. Calendar releases often. If the repo ever has to go on a diet, this file
+# is where the weight is — the alternative is contacting the app store at install time, which #98
+# decided against.
+#
+# This comment used to measure itself against `maps` ("the second largest thing… after maps") and
+# point at maps' file. `maps` was dropped in ADR-0005/#142 and has not existed since, so the
+# comparison described nothing. CONTRIBUTING requires a retired thing to be acknowledged as retired,
+# but VENDOR files are outside the docs checker's corpus by design — see CONTRIBUTING, "What the
+# docs gate does not govern".
 version=6.5.4
 sha256=67c777a6ea974409e9d228c23fc60f2be8e675d376531b6b1b125f2f0365738d
 url=https://github.com/nextcloud-releases/calendar/releases/download/v6.5.4/calendar-v6.5.4.tar.gz

@@ -71,6 +71,52 @@ check bash -c '
     echo "$sha  $t" | sha256sum --check --status || { echo "$id: bytes do not match sha256= in VENDOR" >&2; rc=1; }
   done
   exit $rc'
+# docs/LICENSING.md claims a licence per app and says it was read "from each app'"'"'s appinfo/info.xml
+# inside the shipped tarball". Nothing checked that it still was. `eurooffice` is AGPL-3.0-ONLY and
+# the table said -or-later -- materially different grants -- through two documentation audits (#87,
+# #88) and a version bump (#167) that edited that very row without looking one cell to the left
+# (#171). Reading is what failed; so this reads the tarball, which is tracked and needs no network.
+# `agpl` is Nextcloud'"'"'s legacy bare string for AGPL v3 or later -- calendar, side_menu and
+# epidemiologia still declare it -- so it normalises rather than failing.
+# The empty case FAILS: a table that describes no app, or a glob that matches nothing, is not a pass.
+check python3 -c '
+import glob, re, sys, tarfile, xml.etree.ElementTree as ET
+NORM = {"agpl": "AGPL-3.0-or-later", "agpl3": "AGPL-3.0-or-later", "AGPL3": "AGPL-3.0-or-later"}
+declarado = {}
+for d in sorted(glob.glob("provisioning/apps/*/")):
+    app = d.rstrip("/").split("/")[-1]
+    tars = glob.glob(d + "*.tar.gz")
+    if not tars:
+        print(f"{app}: no tarball to read a licence from"); sys.exit(1)
+    with tarfile.open(tars[0]) as t:
+        info = [n for n in t.getnames() if n.endswith("appinfo/info.xml")]
+        if not info:
+            print(f"{app}: {tars[0]} carries no appinfo/info.xml"); sys.exit(1)
+        x = ET.fromstring(t.extractfile(info[0]).read())
+    lic = (x.findtext("licence") or x.findtext("license") or "").strip()
+    declarado[app] = NORM.get(lic, lic)
+if not declarado:
+    print("no vendored app found under provisioning/apps/ -- this check measured nothing"); sys.exit(1)
+tabla, col = {}, None
+for linea in open("docs/LICENSING.md", encoding="utf-8"):
+    celdas = [c.strip() for c in linea.strip().strip("|").split("|")]
+    # The column is read from the header, never hard-coded: the Source column also holds
+    # backticks, so "the last backticked cell" picks the wrong one, and a column inserted
+    # later would silently shift a fixed index onto its neighbour.
+    if "SPDX" in celdas: col = celdas.index("SPDX"); continue
+    m = re.search(r"NC app `([a-z_]+)`", linea)
+    if not m or col is None: continue
+    tabla[m.group(1)] = celdas[col].strip("`") if col < len(celdas) else None
+if col is None:
+    print("docs/LICENSING.md has no SPDX column -- this check measured nothing"); sys.exit(1)
+mal = []
+for app, lic in sorted(declarado.items()):
+    if app not in tabla:
+        mal.append(f"{app}: vendored, but docs/LICENSING.md has no row for it")
+    elif tabla[app] != lic:
+        mal.append(f"{app}: info.xml says {lic}, docs/LICENSING.md says {tabla[app]}")
+if mal:
+    print("\n".join(mal)); sys.exit(1)'
 # Every service must come back after the host reboots. Read from the RESOLVED config rather than
 # grepped: two of them take the policy from the shared anchor, and a service added later must not
 # be able to arrive without one — the person who would notice a stack that stayed down is a CESFAM

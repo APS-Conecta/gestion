@@ -3,3 +3,18 @@
 version=6.0.1
 sha256=445a70c6b955fa2dbea8925f2d3916fc28bc92deb493c4bf88a9905ca2494705
 url=https://gitnet.fr/deblan/side_menu/releases/download/v6.0.1/side_menu_v6.0.1.tar.gz
+#
+# PINNED AT 6.0.1 DELIBERATELY — the url above is unreachable and has been since at least
+# 2026-08-13. gitnet.fr is deblan's self-hosted forge and the app's ONLY source: no GitHub mirror,
+# no app-store tarball, nothing on archive.org. It resolves (90.100.102.191) and then blackholes the
+# SYN on both 80 and 443 — `curl --max-time 10` returns http=000 with time_connect=0.000000, which
+# is a firewall dropping packets, not a service that is down. Re-measured 2026-09-14, unchanged.
+#
+# So `make apps-check` stays red on this one line, and that red is NOT actionable: 6.1.0 exists
+# upstream and cannot be fetched by anyone from here. Nothing is broken — the 6.0.1 tarball beside
+# this file is committed, sha-pinned and installs — but there is no route to a newer version until
+# either the forge returns or someone mirrors it.
+#
+# If it comes back: bump all three lines together and re-run `make seed`, as above. If it does not,
+# the choices are to keep 6.0.1 indefinitely (today's decision), mirror the tarball somewhere we
+# control, or drop the app. Tracked in #169.
