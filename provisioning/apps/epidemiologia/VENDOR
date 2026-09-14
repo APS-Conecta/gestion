@@ -10,8 +10,8 @@
 # to fetch. `url=` names the tag it was built from rather than a download link, and the build is one
 # command, run from the repo root:
 #
-#   git -C apps/epidemiologia archive --format=tar --prefix=epidemiologia/ v0.8.0 \
-#     | gzip -n9 > provisioning/apps/epidemiologia/epidemiologia-0.8.0.tar.gz
+#   git -C apps/epidemiologia archive --format=tar --prefix=epidemiologia/ v0.9.0 \
+#     | gzip -n9 > provisioning/apps/epidemiologia/epidemiologia-0.9.0.tar.gz
 #
 # `--prefix=epidemiologia/` because ensure_vendored_app unpacks into custom_apps/ and Nextcloud
 # needs the app id as the top directory — the same layout every other tarball here has. `gzip -n`
@@ -29,6 +29,6 @@
 #
 # ONE tarball in this directory, ever: ensure_vendored_app globs *.tar.gz and fails on anything
 # other than exactly one. A bump deletes the previous file, it does not sit beside it.
-version=0.8.0
-sha256=66d55b0cbe09becd1fec161ae360f0e02451ba9b4feb9a36095bbcdba2bc83b8
-url=https://github.com/APS-Conecta/epidemiologia/tree/v0.8.0
+version=0.9.0
+sha256=c4ca9ad559ce6cdf9ab78d9556c93ef755e1decf58e486d62ab3d78cc0e2d52b
+url=https://github.com/APS-Conecta/epidemiologia/tree/v0.9.0
