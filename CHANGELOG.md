@@ -43,9 +43,12 @@ image digests live there and are deliberately not copied here — one fact, one 
   `gitnet.fr` — deblan's self-hosted forge and the app's only source, with no mirror anywhere —
   resolves and then blackholes the SYN on both 80 and 443 (`http=000`, `time_connect=0.000000`).
   Measured 2026-08-13 and again 2026-09-14, unchanged. Nothing is broken: the 6.0.1 tarball is
-  committed, sha-pinned and installs. But `make apps-check` stays red on that one line and **that
-  red is not actionable** — 6.1.0 exists and cannot be fetched from here by anyone. The file now
-  records the outage, that 6.0.1 is pinned deliberately, and the three ways out.
+  committed, sha-pinned and installs. The file records the outage, that 6.0.1 is pinned
+  deliberately, and the three ways out — and a `frozen=` line beside the pin now tells
+  `make apps-check` to **report this app without failing on it**, because a red line nobody can act
+  on is one everyone learns to ignore, which is what the weekly workflow's own header warns against.
+  The app is still listed on every run with the version it cannot take, so the freeze stays
+  reviewable; a stale pin on any other app still fails the gate.
 
 
 ### Security

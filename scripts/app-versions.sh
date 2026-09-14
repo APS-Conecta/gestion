@@ -22,13 +22,18 @@ INDEX="https://apps.nextcloud.com/api/v1/platform/34.0.0/apps.json"
 # to this file.
 own="$(sed -n 's/^OWN_APPS="\(.*\)"/\1/p' provisioning/phases/12-apps.sh | tr ' ' '\n' | sed 's/=.*//' | grep -v '^$' || true)"
 
+# A FROZEN APP IS STILL REPORTED, IT JUST DOES NOT FAIL (#169). `side_menu`'s only source has been
+# unreachable since 2026-08-13, so its line could never go green again — and this workflow's own
+# header says a check that goes red for reasons the reader cannot fix is one everyone learns to
+# ignore. `frozen=` in a VENDOR file names why; the app keeps appearing in the report, with the
+# newer version it cannot take, so the freeze stays reviewable instead of becoming invisible.
 vendored="$(for v in provisioning/apps/*/VENDOR; do
   [ -f "$v" ] || continue
   id="$(basename "$(dirname "$v")")"
   # grep -x against a possibly-empty list: -q with an empty pattern file matches nothing, which is
   # the behaviour we want before the first own app is declared.
   printf '%s\n' "$own" | grep -qxF -- "$id" && continue
-  printf '%s\t%s\n' "$id" "$(sed -n 's/^version=//p' "$v")"
+  printf '%s\t%s\t%s\n' "$id" "$(sed -n 's/^version=//p' "$v")" "$(sed -n 's/^frozen=//p' "$v")"
 done)"
 [ -n "$vendored" ] || { echo "FATAL: no provisioning/apps/*/VENDOR files found" >&2; exit 1; }
 
@@ -41,7 +46,14 @@ printf '%s' "$json" | python3 -c '
 import sys, json
 from itertools import zip_longest
 
-want = dict(line.split("\t") for line in sys.argv[1].splitlines() if line)
+want, frozen = {}, {}
+for line in sys.argv[1].splitlines():
+    if not line:
+        continue
+    aid, have, why = (line.split("\t") + ["", ""])[:3]
+    want[aid] = have
+    if why:
+        frozen[aid] = why
 try:
     apps = json.load(sys.stdin)
 except Exception:
@@ -65,13 +77,18 @@ for a in apps:
     releases = [r["version"] for r in a.get("releases", []) if not r.get("isNightly") and "-" not in r["version"]]
     newest = max(releases, key=key) if releases else have
     aid = a["id"]
-    if key(newest) > key(have):
+    if key(newest) > key(have) and aid in frozen:
+        print(f"  # {aid}  frozen at {have} ({newest} available) — {frozen[aid]}")
+    elif key(newest) > key(have):
         behind += 1
         print(f"  ~ {aid}  vendored {have}  ->  {newest} available")
     else:
         print(f"  = {aid}  {have}")
 
 for missing in sorted(set(want) - seen):
+    if missing in frozen:
+        print(f"  # {missing}  frozen at {want[missing]} — {frozen[missing]}")
+        continue
     behind += 1
     print(f"  ? {missing}  vendored {want[missing]} — not in the NC34 store index at all; "
           f"has it been renamed, unpublished, or dropped NC34 support?")
@@ -87,5 +104,6 @@ an install only ever unpacks what is committed here.
     3. make seed        — the patches either still apply or the phase says which one moved
     4. open a PR; cleanboot boots it before it can merge""", file=sys.stderr)
     raise SystemExit(1)
-print("every vendored app is the newest the NC34 store offers")
+print("every vendored app is the newest the NC34 store offers"
+      + (f" ({len(frozen)} frozen, listed above)" if frozen else ""))
 ' "$vendored"
