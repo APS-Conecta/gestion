@@ -12,6 +12,7 @@ same fact, the one named here as its authority wins and the other should link in
 | [`CONTEXT.md`](../CONTEXT.md) | reference | **The vocabulary.** Product identity, clinic identity, screens, releases, the four kinds of app |
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | how-to | **The documentation doctrine** every repository in the organisation inherits, and how work is run and reviewed |
 | [`AGENTS.md`](../AGENTS.md) | reference | The repo rules an AI agent must follow, and the invariants |
+| [`ORG-MAP.md`](ORG-MAP.md) | reference | **Which repository owns what**, why two live inside another, which decisions were reversed, and what has no owner |
 
 ## Explanation — why it is built this way
 
