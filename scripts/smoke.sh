@@ -229,4 +229,38 @@ for svc in nextcloud cron; do
     || fail "the app store is enabled in '$svc' (read '$got') — is NC_appstoreenabled still in compose.yaml, and was the container recreated after adding it? occ upgrade then re-downloads every enabled app and the VENDOR pins stop meaning anything (#163)"
 done
 
-echo "PASS: core stack healthy — installed, PostgreSQL ready, Redis PONG, /status.php 200, no branding leak, cron scheduling, app policy, no remember-me, no stale app signature, legacy screens branded, clean admin home, app store off"
+# 14. The browser-facing office URL agrees with how this instance is actually reached (B-019).
+#
+# `DocumentServerUrl` is the address the BROWSER loads the editor from, and it defaults to
+# localhost — correct while the browser is on this box, wrong the moment somebody opens the suite
+# from a laptop, where localhost means THEIR loopback. It surfaces as a token/security complaint,
+# which sends the search to OFFICE_JWT_SECRET, where nothing is wrong.
+#
+# This CANNOT be tested from the browser's side: this script runs on the box, where localhost:9980
+# answers 200, so a reachability probe passes on precisely the broken configuration. What IS visible
+# from here is the CONTRADICTION — an instance that publishes a non-loopback trusted domain is
+# reached from somewhere else, and a loopback editor URL cannot be right for that somewhere.
+# Both halves must be true to fail, so the local-only posture this repo ships stays green.
+_office_url=$(docker compose exec -T --user www-data nextcloud php occ config:app:get eurooffice DocumentServerUrl 2>/dev/null | tr -d '\r')
+if [ -n "$_office_url" ]; then
+  # Loopback in the value, and any trusted domain that is neither a loopback name nor the compose
+  # service name phase 14 adds for the callback.
+  _remote_domain=$(docker compose exec -T --user www-data nextcloud php occ config:system:get trusted_domains 2>/dev/null \
+    | tr -d '\r' | grep -vxE 'localhost|127\.0\.0\.1|\[::1\]|nextcloud|' | head -1)
+  case "$_office_url" in
+    *localhost*|*127.0.0.1*|*'[::1]'*)
+      [ -z "$_remote_domain" ] \
+        || fail "eurooffice DocumentServerUrl is '$_office_url' but this instance is also reached at '$_remote_domain' — the browser loads the editor from that URL, so for anyone not sitting at this box it points at their OWN loopback and the editor never comes up. It reports a token/security problem, which is not what is wrong: set OFFICE_PUBLIC_URL in .env and re-seed (B-019)" ;;
+  esac
+  # Scheme, the second half of the same mistake: an http editor inside an https page is blocked as
+  # mixed content, so the address can be perfectly reachable and the pane still stays blank.
+  _proto=$(docker compose exec -T --user www-data nextcloud php occ config:system:get overwriteprotocol 2>/dev/null | tr -d '\r')
+  if [ "$_proto" = "https" ]; then
+    case "$_office_url" in
+      https://*) ;;
+      *) fail "overwriteprotocol is https but eurooffice DocumentServerUrl is '$_office_url' — the browser blocks an http editor inside an https page as mixed content, and the pane stays blank with only a console entry. Give OFFICE_PUBLIC_URL an https address and re-seed (B-019)" ;;
+    esac
+  fi
+fi
+
+echo "PASS: core stack healthy — installed, PostgreSQL ready, Redis PONG, /status.php 200, no branding leak, cron scheduling, app policy, no remember-me, no stale app signature, legacy screens branded, clean admin home, app store off, office URL matches how this instance is reached"
