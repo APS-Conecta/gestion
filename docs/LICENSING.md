@@ -70,12 +70,14 @@ below were read from each app's `appinfo/info.xml` inside the shipped tarball, n
 | Side menu | NC app `side_menu` 6.0.1 (vendored tarball, #98) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `side_menu` `info.xml` (`<licence>agpl</licence>`) |
 | Calendar | NC app `calendar` 6.5.4 (vendored tarball, #98) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `calendar` `info.xml` (`<licence>agpl</licence>`) |
 | Contacts | NC app `contacts` 8.8.1 (vendored tarball, #98) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `contacts` `info.xml` |
+| Talk | NC app `spreed` 24.0.5 (vendored tarball, #98) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `spreed` `info.xml` (`<licence>agpl</licence>`) |
+| Desktop Workspace | NC app `desktop_workspace` 0.18.2 (vendored tarball, #98) — **third party**, `canisdata`, not the Nextcloud organisation | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `desktop_workspace` `info.xml` |
 | Epidemiología | NC app `epidemiologia` 0.9.0 — **ours**, built from a tag of its own repo | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `epidemiologia` `info.xml`; compiles `@nextcloud/vue`, which is why §1 is not a free choice |
 | Fraunces | `themes/apsconecta/core/fonts/*.woff2` (served by the theme) | SIL Open Font License 1.1 | `OFL-1.1` | Fraunces `OFL.txt` |
 | Nunito Sans | `themes/apsconecta/core/fonts/*.woff2` (served by the theme) | SIL Open Font License 1.1 | `OFL-1.1` | Nunito Sans `OFL.txt` |
 
 > **`agpl` is not a typo.** Nextcloud's schema has always accepted the bare string, and the app
-> store renders it as AGPL v3 or later; `calendar` and `side_menu` still declare it that way while
+> store renders it as AGPL v3 or later; `calendar`, `side_menu` and `spreed` still declare it that way while
 > `groupfolders`, `contacts` and `eurooffice` have moved to SPDX. The SPDX column above says what
 > each app's own `info.xml` declares, normalised — and `scripts/test.sh` now fails if this table and
 > an `info.xml` disagree, because reading is what missed `eurooffice` being `-only` through two

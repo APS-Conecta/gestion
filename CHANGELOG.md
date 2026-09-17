@@ -13,6 +13,17 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Added
 
+- **Talk (`spreed` 24.0.5) and Desktop Workspace (`desktop_workspace` 0.18.2) are part of the
+  suite**, vendored as pinned tarballs like every other app, so a clean install still needs no
+  network and no app store (#98). Two things about Talk are recorded in its `VENDOR` file rather
+  than left to be found: it reaches an **external STUN server** (`stun.nextcloud.com:443`) by
+  default to discover a caller's own address, and **group calls stay small — around four people —
+  without a High Performance Backend**, which this stack does not run. Chat and one-to-one calls are
+  unaffected by the second. Talk's tarball is 52 MB, more than every other vendored app put
+  together, and git keeps a full copy per bump: it is now the first place to look if this repo has
+  to go on a diet. `desktop_workspace` is third-party (`canisdata`), the same posture as
+  `side_menu`.
+
 - **The licence table is now gated against the apps themselves.** `scripts/test.sh` reads
   `appinfo/info.xml` out of each vendored tarball — tracked, so it needs no network and no running
   stack — and fails if `docs/LICENSING.md` disagrees or has no row for a vendored app. Nextcloud's

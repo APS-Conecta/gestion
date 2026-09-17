@@ -24,7 +24,11 @@ phase_begin "12-apps" "apps this instance runs, plus the edits inside them"
 # MINSAL and ISP feeds it was there for. Neither was configured by any phase. Removing an app from
 # this list does NOT uninstall it — nothing here deletes — so a live instance also needs
 # `occ app:remove <id>` once, by hand, which is what `make divergence` reports until you do.
-APPS="groupfolders side_menu eurooffice calendar contacts"
+# spreed (Talk) and desktop_workspace added 2026-09-17. Talk is 52 MB, more than every other
+# tarball here put together, and its VENDOR file carries the two caveats that do not show up in an
+# app list: it reaches an external STUN server by default, and group calls stay small without a
+# High Performance Backend this stack does not run.
+APPS="groupfolders side_menu eurooffice calendar contacts spreed desktop_workspace"
 
 # Apps WE write (ADR-0003, reversing AD-1). They ship as a tarball under provisioning/apps/ exactly
 # like the ones above, built from a release tag of their own repository — so an install needs no

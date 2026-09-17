@@ -1,0 +1,16 @@
+# Where the tarball beside this file came from (#98). Update all three lines together on a bump,
+# then re-run `make seed`.
+#
+# 776 KB, the smallest vendored app here.
+#
+# NOT A NEXTCLOUD-ORG APP. `canisdata` is a third party, which puts this in the same class as
+# `side_menu` rather than `calendar`: the upstream is one person's repository and can go away, as
+# side_menu's did (gitnet.fr, unreachable since 2026-08-13). The tarball is committed, so an install
+# does not depend on the URL above still resolving — that line records provenance, not a fetch.
+#
+# Declares `>=33 <=35`, so it spans this stack's Nextcloud 34 with room either side. That is a wider
+# window than the Nextcloud-org apps here give, which usually pin one major exactly; read it as the
+# author's claim rather than as something the app store tested.
+version=0.18.2
+sha256=ff0748f37b523cd6656aed7e4bf6a0f72e564440fedb7f579ccb076a938cf9a8
+url=https://github.com/canisdata/desktop_workspace/releases/download/v0.18.2/desktop_workspace.tar.gz
