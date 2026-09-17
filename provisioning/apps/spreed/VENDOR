@@ -1,0 +1,28 @@
+# Where the tarball beside this file came from (#98). Update all three lines together on a bump,
+# then re-run `make seed`.
+#
+# 52 MB — larger than every other vendored app in this repo PUT TOGETHER (36 MB before this one
+# arrived), and git keeps a FULL COPY per bump because a gzip stream does not delta-compress. Talk
+# releases often. This is now the first place to look if the repo has to go on a diet, ahead of
+# calendar, and the cost was accepted deliberately rather than discovered later: the alternative is
+# contacting the app store at install time, which #98 decided against and which `make install`
+# running offline depends on.
+#
+# TWO THINGS TALK DOES THAT THIS REPO OTHERWISE DOES NOT, recorded here because neither is visible
+# from the app list and both are decisions waiting to be made:
+#
+#   1. EXTERNAL EGRESS BY DEFAULT. Talk ships `stun.nextcloud.com:443` as its STUN server, so a call
+#      reaches a third party to discover its own address. Nothing here changes that — installing an
+#      app and silently altering what it does are different acts, and an empty `stun_servers` breaks
+#      calls between networks rather than making them private. The lever, when the clinic wants it,
+#      is `occ config:app:set spreed stun_servers` (and `turn_servers`) pointed at a self-hosted
+#      coturn, which is also the only way to make calls work behind a symmetric NAT.
+#      `weather_status` is restricted in app-policy.sh for a smaller version of this same reason.
+#
+#   2. GROUP CALLS ARE SMALL WITHOUT A HIGH PERFORMANCE BACKEND. Peer-to-peer WebRTC means every
+#      participant sends their stream to every other one, so a call stops being usable at roughly
+#      four people. Chat, one-to-one calls and the Files integration are unaffected. A 12-team
+#      clinic meeting needs the HPB (a separate signaling server), which is not in this stack.
+version=24.0.5
+sha256=7228913aa7051b9b4fe3d2312bdc0c0bace6c96f43085556748dc2910af9a584
+url=https://github.com/nextcloud-releases/spreed/releases/download/v24.0.5/spreed-v24.0.5.tar.gz
