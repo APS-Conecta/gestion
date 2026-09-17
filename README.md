@@ -14,7 +14,7 @@ land.
 
 - **Is:** staff-facing internal operations (documents, coordination) on **Nextcloud 34 + PostgreSQL 18 +
   Redis 8**, run on a clinic's host or a developer's machine via Docker Compose, with a self-hosted
-  **Euro-Office** office suite.
+  **Euro-Office** office suite and **Talk** for staff chat and calls.
 - **Isn't:** a clinical/patient-records system. **No patient data** — dev uses **synthetic fixtures only**.
 
 ## Quickstart

@@ -46,11 +46,13 @@ tag has moved past its pin, and the weekly `image-digests` workflow runs that ch
 
 | Component | Image / package | Role |
 | --- | --- | --- |
-| Nextcloud | `nextcloud:34-apache` (34.x line, 34.0.1 head, supported to ~June 2027) | Platform, web UI, files, users/groups |
+| Nextcloud | `nextcloud:34-apache` (34.x line, 34.0.4 head, supported to ~June 2027) | Platform, web UI, files, users/groups |
 | PostgreSQL | `postgres:18-alpine` (PG18, NC-recommended) | Metadata (users, groups, shares, ACLs, file index) |
 | Redis | `redis:8-alpine` (Redis 8 = AGPL, OSS-restored) | Cache + file/transaction locking |
 | Office server — Euro-Office | `ghcr.io/euro-office/documentserver` (standalone container) + `eurooffice` connector | Office editing engine (OnlyOffice-fidelity) |
 | Group Folders | `groupfolders` app | Team/role-scoped shared folders + ACLs |
+| Talk | `spreed` app (vendored tarball) | Chat and calls between staff. Two properties this stack does not otherwise have, both recorded in its `VENDOR`: it reaches an **external STUN server** by default, and group calls stay small (~4) without a High Performance Backend, which is not part of this stack |
+| Desktop Workspace | `desktop_workspace` app (vendored tarball) | Desktop-style workspace surface. **Third party** (`canisdata`), not a Nextcloud-org app — the same posture as `side_menu` |
 | Job scheduler | `cron` service — same image and volumes as `nextcloud`, via a compose anchor | Runs `cron.php` on a schedule instead of on page loads (phase `06-jobs`) |
 | Tooling | Docker Compose · Make · Xdebug (dev) | Orchestration, task runner, step-debug |
 
