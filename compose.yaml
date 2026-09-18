@@ -170,6 +170,38 @@ services:
       retries: 20
       start_period: 120s
 
+  # The basemap. Replaces OpenStreetMap's public raster tiles, which answered 403:
+  # that server is a P2 best-effort service under a Tile Usage Policy, and their own
+  # answer to a blocked application is to run your own or use a third party. This is
+  # running our own.
+  #
+  # One file, /srv/tiles/chile.pmtiles — all of Chile INCLUDING Isla de Pascua and
+  # Juan Fernandez (bbox -110,-56,-66.4,-17.5), zoom 0-15, 1.04 GB. The islands cost
+  # 4.7 MB of that; a bbox stopping at the mainland silently excludes two comunas that
+  # have health facilities. Kept OUT of the repo on purpose: it is a gigabyte of
+  # generated data with a refresh schedule, not source.
+  tiles:
+    image: nginx@sha256:c8497b180665e631ec92a5091125bec5b214f0e2b99409e30653a125b37557da
+    restart: unless-stopped
+    volumes:
+      # Relative, like ./apps and ./themes, because "the core compose carries nothing
+      # VPS-specific and no absolute host paths" is an invariant of this repo
+      # (docs/ARCHITECTURE.md). The directory is gitignored: it holds a gigabyte of
+      # generated data with a refresh schedule, not source.
+      - ./tiles:/srv/tiles:ro
+      - ./tiles.nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      # Loopback only (rule 16); reached from outside over `tailscale serve`.
+      - "127.0.0.1:${TILES_PORT:?set TILES_PORT in .env}:80"
+    healthcheck:
+      # HEAD the archive itself: nginx being up says nothing about whether the mount
+      # carried the file, and an empty basemap is what that failure looks like.
+      test: ["CMD-SHELL", "wget -q --spider http://localhost/chile.pmtiles || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
 volumes:
   postgres_data:
   nextcloud_data:

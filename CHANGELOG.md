@@ -13,6 +13,57 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Added
 
+- **The suite serves its own basemap** — a new `tiles` service (`nginx:alpine`, digest-pinned)
+  publishing one Protomaps PMTiles archive on loopback, reached from outside over `tailscale serve`.
+
+  **Because OpenStreetMap's public tile service answered `403`.** That is a *block*, not an outage:
+  their wiki files `tile.openstreetmap.org` as a P2 best-effort service under a Tile Usage Policy,
+  and their own answer to a blocked application is to run your own tile server or use a third
+  party. Territorio's ADR-0019 has the full reasoning and the app-side half of the fix.
+
+  **Not a tile server.** PMTiles is a single file the *browser* reads with HTTP **Range** requests,
+  so this is a static file server that honours ranges and sets CORS — nothing more. The arrow in
+  `docs/ARCHITECTURE.md` goes browser → tiles, not Nextcloud → tiles, which is why the address is
+  `TILES_PUBLIC_URL` and not a compose service name: the browser is not in this network.
+
+  **~1 GB in `./tiles/`, gitignored.** All of Chile at zoom 0–15, including Isla de Pascua and Juan
+  Fernández — a bbox stopping at the mainland silently drops two comunas with health facilities,
+  and including them costs 4.7 MB. It is generated data with a refresh schedule, not source. A
+  client pulls about 0.5–1 MB per screenful, not the file.
+
+  The mount is `./tiles`, relative like `./apps` and `./themes`. An early draft of this service
+  mounted `/srv/tiles` and would have broken "the core compose carries nothing VPS-specific and no
+  absolute host paths" without anything failing.
+
+- **`scripts/refresh-basemap.sh` rebuilds the archive**, and verifies the artefact rather than an
+  exit code.
+
+  Two things make it a script rather than a cron one-liner. **The source URL cannot be pinned** —
+  Protomaps publishes dated planet builds and removes old ones, and one nine days old already
+  answered `404`, so the date is discovered newest-first. And **a zero exit proves nothing**: a
+  truncated download, an error page saved under the right name, or an archive of the wrong region
+  all leave something returning success. The new file has to carry the PMTiles magic, declare
+  zoom 0–15, declare bounds that *contain* the comuna, answer for a real tile **in bytes**, and be
+  over 500 MB, before it is allowed to replace a working archive — which it does by `mv` on the
+  same filesystem, so a reader sees the whole old file or the whole new one.
+
+  Each of those was tested by seeding the violation it exists for. One failed: the obvious
+  `pmtiles tile … >/dev/null || fail` form **can never fail**, because that command exits 0 and
+  prints nothing for a tile it does not hold — an archive of Amsterdam passed it for a tile over
+  Santiago. Hence the byte count, and hence the bounds check beside it.
+
+### Changed
+
+- **Provisioning phase 16 writes Territorio's `tile_url`** from `TILES_PUBLIC_URL`, the same shape
+  and for the same reason as phase 14's `DocumentServerUrl`: which address staff browsers use is a
+  per-install answer, never a repository fact. The default is the loopback one, which works for a
+  developer on the box and for nobody else — an honest failure, since Territorio then says
+  «No se pudo cargar el fondo de mapa» instead of showing a map that is quietly wrong.
+
+  It is a line of its own rather than an entry in `POLICY_CONFIG`, for a mechanical reason: that
+  list is space-separated `app:key:value` triples and cannot carry a value with a variable expanded
+  into it.
+
 - **Talk (`spreed` 24.0.5) and Desktop Workspace (`desktop_workspace` 0.18.2) are part of the
   suite**, vendored as pinned tarballs like every other app, so a clean install still needs no
   network and no app store (#98). Two things about Talk are recorded in its `VENDOR` file rather
