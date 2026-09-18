@@ -52,6 +52,14 @@ image digests live there and are deliberately not copied here — one fact, one 
   prints nothing for a tile it does not hold — an archive of Amsterdam passed it for a tile over
   Santiago. Hence the byte count, and hence the bounds check beside it.
 
+  Scheduled by **`territorio-basemap.timer`** on the host (monthly, the 4th at 04:30,
+  `Persistent=true`, `Nice=15`, `IOSchedulingClass=idle`) — units live outside this repo because
+  they are host configuration, and are recorded in `/root/SERVICES.md`. Monthly rather than nightly
+  because this is OpenStreetMap cartography, which does not move fast enough to be worth a gigabyte
+  a night; the 4th to land clear of the 02:30 site backup and the 03:32 offsite run. Measured on
+  2026-09-18: 21 s of CPU, 1.2 GB transferred, exit 0, and the running `tiles` service picked up the
+  new archive without a restart because the replacement is an `mv` on the same filesystem.
+
 ### Changed
 
 - **Provisioning phase 16 writes Territorio's `tile_url`** from `TILES_PUBLIC_URL`, the same shape
