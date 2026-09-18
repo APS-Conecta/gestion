@@ -194,9 +194,20 @@ services:
       # Loopback only (rule 16); reached from outside over `tailscale serve`.
       - "127.0.0.1:${TILES_PORT:?set TILES_PORT in .env}:80"
     healthcheck:
-      # HEAD the archive itself: nginx being up says nothing about whether the mount
-      # carried the file, and an empty basemap is what that failure looks like.
-      test: ["CMD-SHELL", "wget -q --spider http://localhost/chile.pmtiles || exit 1"]
+      # Liveness only. This used to HEAD /chile.pmtiles, on the reasoning that nginx being up says
+      # nothing about whether the mount carried the file. True, and still the wrong check: the
+      # archive is gitignored generated data, so a fresh clone has none, the container never went
+      # healthy, and `make install` failed for the WHOLE suite over an optional asset. CI's clean
+      # boot caught it. Whether the archive is present is Territorio's question — it reads the first
+      # bytes on mount and warns — and the refresh script's, which verifies the artefact before
+      # putting one in place. Not this container's.
+      # 127.0.0.1 and NOT localhost. nginx listens on 0.0.0.0:80, the image's /etc/hosts maps
+      # `localhost` to both 127.0.0.1 and ::1, and busybox wget tries ::1 first and gets
+      # "connection refused". So the `localhost` form could never pass — measured, with nginx up
+      # and serving the whole time, because a failing healthcheck does not stop a container
+      # serving. It only fails `--wait`, which is how CI's clean boot found it and how it had been
+      # quietly unhealthy here too.
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/healthz || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 5

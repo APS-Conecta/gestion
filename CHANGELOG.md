@@ -52,6 +52,17 @@ image digests live there and are deliberately not copied here — one fact, one 
   prints nothing for a tile it does not hold — an archive of Amsterdam passed it for a tile over
   Santiago. Hence the byte count, and hence the bounds check beside it.
 
+  **Its healthcheck is liveness and nothing more**, after the first version of it failed CI's clean
+  boot two ways at once. It HEADed `/chile.pmtiles`, on the reasoning that nginx being up says
+  nothing about whether the mount carried the file — true, and still the wrong check, because the
+  archive is gitignored generated data: a fresh clone has none, so the container never went healthy
+  and `make install` died for the **whole suite** over an optional asset. And it used `http://localhost`,
+  which **could never pass at all**: nginx listens on `0.0.0.0:80`, the image maps `localhost` to
+  both `127.0.0.1` and `::1`, and busybox wget tries `::1` first and is refused. That second fault
+  was the one CI actually reported, and it had been failing here too — invisibly, because an
+  unhealthy container still serves. Now `wget --spider http://127.0.0.1/healthz`, measured healthy
+  both with the archive present and with `tiles/` empty.
+
   Scheduled by **`territorio-basemap.timer`** on the host (monthly, the 4th at 04:30,
   `Persistent=true`, `Nice=15`, `IOSchedulingClass=idle`) — units live outside this repo because
   they are host configuration, and are recorded in `/root/SERVICES.md`. Monthly rather than nightly
