@@ -38,7 +38,7 @@ APPS="groupfolders side_menu eurooffice calendar contacts spreed desktop_workspa
 # `make divergence` reads both lists.
 # Format: <appid>=<clone url>, one per line, no spaces around the `=`. The URL is only ever printed,
 # to tell a developer where the code lives — nothing in an install fetches it.
-OWN_APPS="epidemiologia=https://github.com/APS-Conecta/epidemiologia.git"
+OWN_APPS="epidemiologia=https://github.com/APS-Conecta/epidemiologia.git farmacia=https://github.com/APS-Conecta/farmacia.git"
 
 for entry in $OWN_APPS; do
   ensure_own_app "${entry%%=*}" "${entry#*=}"
