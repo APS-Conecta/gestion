@@ -73,6 +73,7 @@ below were read from each app's `appinfo/info.xml` inside the shipped tarball, n
 | Talk | NC app `spreed` 24.0.5 (vendored tarball, #98) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `spreed` `info.xml` (`<licence>agpl</licence>`) |
 | Desktop Workspace | NC app `desktop_workspace` 0.18.2 (vendored tarball, #98) — **third party**, `canisdata`, not the Nextcloud organisation | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `desktop_workspace` `info.xml` |
 | Epidemiología | NC app `epidemiologia` 0.9.0 — **ours**, built from a tag of its own repo | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `epidemiologia` `info.xml`; compiles `@nextcloud/vue`, which is why §1 is not a free choice |
+| Farmacia | NC app `farmacia` 0.11.1 — **ours**, built from a tag of its own repo | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `farmacia` `info.xml` |
 | Fraunces | `themes/apsconecta/core/fonts/*.woff2` (served by the theme) | SIL Open Font License 1.1 | `OFL-1.1` | Fraunces `OFL.txt` |
 | Nunito Sans | `themes/apsconecta/core/fonts/*.woff2` (served by the theme) | SIL Open Font License 1.1 | `OFL-1.1` | Nunito Sans `OFL.txt` |
 
