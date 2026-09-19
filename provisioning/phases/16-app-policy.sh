@@ -20,6 +20,20 @@ for entry in ${POLICY_CONFIG:-}; do
   app_config_set "$_app" "${_rest%%:*}" "${_rest#*:}"
 done
 
+# Territorio's basemap (ADR-0019 in that repo). NOT in POLICY_CONFIG above, and the reason is
+# mechanical: that list is space-separated `app:key:value` triples, so it cannot carry a value that
+# needs a variable expanded into it. Same shape and same reason as 14-office's DocumentServerUrl.
+#
+# This is instance configuration, never a repository fact. The archive is served by the `tiles`
+# service on this stack, but the address STAFF BROWSERS use to reach it is a per-install answer —
+# the browser is not in the compose network and cannot resolve a service name.
+#
+# The default is the loopback one on purpose. It works for a developer on this box and for nobody
+# else, which is the honest failure: a browser on another machine cannot reach it, and Territorio
+# says «No se pudo cargar el fondo de mapa» rather than showing a map that is quietly wrong. A
+# wrong-but-plausible public URL would fail silently instead.
+app_config_set territorio tile_url "${TILES_PUBLIC_URL:-http://localhost:${TILES_PORT:-8084}/chile.pmtiles}"
+
 for app in ${POLICY_DISABLED:-}; do
   app_disable "$app"
 done
