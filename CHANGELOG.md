@@ -71,6 +71,17 @@ image digests live there and are deliberately not copied here — one fact, one 
   2026-09-18: 21 s of CPU, 1.2 GB transferred, exit 0, and the running `tiles` service picked up the
   new archive without a restart because the replacement is an `mv` on the same filesystem.
 
+- **Every custom app's mount shows a branded loading state instead of a blank frame.** One
+  app-agnostic component (territorio arch-review L0-04, generalized on the developer's directive):
+  a spinner + `<noscript>` fragment pasted inside each bare mount — `#territorio`,
+  `#territorio-admin`, `#farmacia`, `#epidemiologia` — and the CSS served once to every page by
+  the theme (`server.css`; canonical fragment in `MAPEO.md` §5).
+
+  **Because the frame was blank until the webpack bundle mounted** — nothing for a slow load or a
+  JS-disabled browser, on every custom app. A spinner, not a skeleton: a skeleton must imitate each
+  app's layout and cannot be agnostic. Vue's container mount replaces the mount's children on
+  boot, so the stub removes itself — no cleanup code anywhere.
+
 ### Changed
 
 - **Provisioning phase 16 writes Territorio's `tile_url`** from `TILES_PUBLIC_URL`, the same shape
