@@ -181,7 +181,14 @@ services:
   # have health facilities. Kept OUT of the repo on purpose: it is a gigabyte of
   # generated data with a refresh schedule, not source.
   tiles:
-    image: nginx@sha256:abe47724e466aeab9a345d8e46a221c2fa8953c7848bb4a3bd9976a7199f8cf2
+    # The tag in the name is LOAD-BEARING, not decoration: `make images` resolves the name
+    # as written, and the bare `nginx` it read here pinned `nginx:latest` — the DEBIAN image,
+    # which installs curl and carries no wget at all — so the healthcheck below turned into
+    # "command not found" and a clean install failed on an optional static server (caught by
+    # cleanboot on the re-pin; measured: the pre-existing digest was nginx:alpine's). Every
+    # reference in this file carries its tag for exactly this reason — image-digests.sh keeps
+    # it when re-pinning.
+    image: nginx:alpine@sha256:62ff2089abf5a9ed33bd232895bef5e22f7bb4b200675cec49a5ebc48e3d4ac8
     restart: unless-stopped
     volumes:
       # Relative, like ./apps and ./themes, because "the core compose carries nothing
