@@ -70,3 +70,22 @@ identity strings, because on an untrusted domain Nextcloud does not even consult
 It is the only part of the theme that declares variables in `:root` without `!important`, and that is
 deliberate: it wins on those screens and stays inert everywhere else. The full detail is in
 `docs/adr/0004-branding-the-legacy-render-path.md`.
+
+## 5. SPA mount stub
+
+The perceived-load state every custom app's mount carries — arch-review L0-04, generalized on the
+developer's 2026-09-19 directive from territorio-only to one component for all apps. The CSS lives
+once, in `core/css/server.css` (`.aps-mount-loading`, `.aps-mount-noscript`): the theme contract
+serves it to every page, so the component is app-agnostic by construction. Each app pastes the
+fragment below inside its mount div — byte-identical everywhere, generic wording, nothing to adapt.
+Vue's container mount replaces the mount's children on boot, so the stub removes itself. A
+skeleton was rejected on agnosticism grounds: it must imitate each app's layout.
+
+```html
+<div class="aps-mount-loading" role="status" aria-live="polite">Cargando…</div>
+<noscript><p class="aps-mount-noscript">Esta aplicación necesita JavaScript activado.</p></noscript>
+```
+
+Carriers today: territorio (`templates/index.php`, `templates/admin.php`), farmacia
+(`templates/index.php`), epidemiologia (`templates/index.php`). A new app opts in by pasting the
+fragment into its own mount — no other wiring, no packaging, no runtime coupling.

@@ -122,6 +122,31 @@ else
   done
 fi
 
+# --- territorio's comuna keys: identity in app config, checked against the site file ---
+# App-config keys are not a folder/group/app inventory; these two are checked alone because
+# they are identity-bearing: an empty or wrong comuna_cut silently disarms the
+# refuseAnotherComuna import door (apps/territorio ImportService::refuseAnotherComuna) while imports
+# keep working. tile_url is deliberately absent — it carries the per-install TILES_PUBLIC_URL
+# posture and phase 16 converges it on every seed. The territorio admin UI is a second writer
+# of these rows (ComunaConfig::set), so a deliberate re-choice appears here exactly like a
+# hand-edited site file does.
+if [ -z "${SITE_COMUNA_CUT:-}" ]; then
+  note "sites/$SITE/site.sh carries no SITE_COMUNA_CUT — phase 16 fails loudly until the file is regenerated (scripts/deis.py <codigo> --new <slug>)"
+elif ! occ status >/dev/null 2>&1; then
+  # "could not ask" is not "not present" (#143): config:app:get also exits 1 for an ABSENT
+  # key (measured on the live stack), so the reads below must not read its exit code as
+  # failure. occ answering is established here once with a key-independent probe; after it,
+  # an absent key lands as the empty string — which is exactly the drift this section
+  # exists to name, and a section that cannot tell an absent key from a broken occ is a
+  # section that reports nothing on the install that needs it most.
+  note "cannot read territorio's comuna keys — occ did not answer; nothing was checked"
+else
+  have="$(occ config:app:get territorio comuna_cut 2>/dev/null || true)"
+  [ "$have" = "$SITE_COMUNA_CUT" ] || note "territorio comuna_cut is '${have:-<unset>}' but sites/$SITE/site.sh says '$SITE_COMUNA_CUT' — make install re-converges it, or the admin UI re-chooses the comuna deliberately"
+  have="$(occ config:app:get territorio comuna_name 2>/dev/null || true)"
+  [ "$have" = "${SITE_COMUNA:-}" ] || note "territorio comuna_name is '${have:-<unset>}' but sites/$SITE/site.sh says '${SITE_COMUNA:-}' — make install re-converges it"
+fi
+
 if [ "${#notes[@]}" -eq 0 ]; then
   [ "$quiet" -eq 1 ] || echo "  nothing live that the repo does not declare"
   exit 0

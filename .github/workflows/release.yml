@@ -1,0 +1,40 @@
+# The release workflow: one tag, one GitHub Release, one machine-readable manifest asset.
+# docs.yml's minimal shape + the write permission the upload needs. The tree keeps only the tag;
+# the manifest JSON lives on the Release, regenerated per tag — never committed.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+
+jobs:
+  release:
+    name: Emit and attach the release manifest
+    runs-on: ubuntu-latest
+    # JOB-level env: the Attach step needs RELEASE_TAG too, and a step's env never crosses the
+    # step boundary — the first draft defined it inside Emit, and the Attach step expanded it to
+    # the empty string (caught in verification).
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+      # AFTER the FRD's retag job has published ghcr.io/aps-conecta/*:$TAG — the emit resolves
+      # the suite digests from the registry; a tag that does not exist yet is unreachable, and
+      # the script distinguishes that from 'moved' with its own message. (Recorded in Ordering
+      # Constraints: the retag job is the FRD's, the emit is this repo's, and the tag-time order
+      # is retag-then-emit.)
+      - name: Emit the manifest
+        run: bash scripts/release-manifest.sh --emit > "apsconecta-$RELEASE_TAG.manifest.json"
+      - name: Attach to the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$RELEASE_TAG" --verify-tag --generate-notes \
+            "apsconecta-$RELEASE_TAG.manifest.json" 2>/dev/null \
+          || gh release upload "$RELEASE_TAG" "apsconecta-$RELEASE_TAG.manifest.json" --clobber

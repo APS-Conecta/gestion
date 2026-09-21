@@ -1,0 +1,56 @@
+{
+  "schema_version": "1.0",
+  "purpose": "One ~200 MB fetch + a seconds-long cut per install, instead of 346 pre-cut artifacts that rot between releases. The recipes are PARAMETRIC in CUT — comuna-package.sh substitutes; there is one recipe per master, not one per comuna.",
+  "comuna_reference": {
+    "file": "comunas-deis.csv",
+    "origin": "the DEIS comuna reference sheet ('Codigo Comuna DEIS.ods') — the coding authority: 346 comunas incl. 12202 Antártica, zero numeric conflicts with any in-repo source",
+    "source_sha256": "d29d92e7c623e69419a59fd237230119e4f5e980b6d4c2c211b5a2529b4cc5f6",
+    "conversion": "codes zfill(5) — the sheet stores FLOATS and regions 01–09 lost their leading zero (206 of 347 rows); glosas NBSP -> regular space (Isla de Pascua, Pedro Aguirre Cerda); the 99999/Ignorada sentinel kept and marked — DEIS's 'unknown comuna', not a comuna; no register row references it",
+    "records": 347
+  },
+  "masters": [
+    {
+      "id": "unidades-vecinales-2024",
+      "origin": "https://bid-ckan-dataset.ministeriodesarrollosocial.gob.cl/dataset/65358355-8f0c-4f9b-98fb-3a7ee5435387/resource/b8b93fc2-1a58-4b87-84e4-824a450ce3f4/download/unidades-vecinales_2024.zip",
+      "sha256": "33e2b5b4276e48c133b6a4e7a8819f9d9d386b72f338d899a65fc7eb785597d6",
+      "records": 6887,
+      "notes": "the national UV cadastre (.shp inside; the warehouse's derived GeoJSON conversion is sources.json:351's pattern — ogr2ogr, once per host); t_com codes are 5-digit strings but one carries a LEADING SPACE (' 04301' Ovalle) — trim before comparing"
+    },
+    {
+      "id": "minsal-deis-establecimientos",
+      "origin": "https://datos.gob.cl/dataset/establecimientos-de-salud-vigentes/resource/2c44d782-3365-44e3-aefb-2c8b8363a1bc/download",
+      "sha256": "4f348cb85fff31586b0bee4f2e90ccbeba0363e38f72ad58ffae6fb327e17844",
+      "records": 5743,
+      "notes": "the national facility registry, raw schema — NOT the register gestion ships: the register is the primary-care trim of the DEIS pipeline's normalized export (a different artifact of the same registry); the codes agree (verified: every register comuna_codigo exists in the comuna reference). Pinned to the resource's own download URL in its stable no-filename form — it serves the current edition regardless of the dated asset name behind it (the catalog row moves monthly; a moved master fails the fetch-verify loudly and is re-recorded by edit). FORMAT TRAPS, measured at implement: the dump is SEMICOLON-delimited (csv.DictReader needs delimiter=';'), and TipoEstablecimientoGlosa carries FULL phrases ('Centro de Salud Familiar (CESFAM)'), so the subcategory map matches on substrings, never on bare siglas"
+    },
+    {
+      "id": "geoportal-dpa-comunas-2023",
+      "origin": "https://geoportal.cl/geoportal/catalog/download/912598ad-ac92-35f6-8045-098f214bd9c2",
+      "sha256": "8ac1ce872230b645c3cf04db2d980c1968e78f602144347f4513119dc9b945db",
+      "records": 345,
+      "notes": "comuna BOUNDARIES only — 345 comunas, NO Antártica; geometry source, never the coding authority (that is comunas-deis.csv)"
+    }
+  ],
+  "recipes": [
+    {
+      "master": "unidades-vecinales-2024",
+      "selector": "trim(t_com) zfill(5) == CUT — the trim is REQUIRED, not hygiene: the app-side tool compares t_com RAW (apps/territorio tools/comuna-cut.php:67) and the master carries one leading-space code (' 04301' Ovalle, sources.json:354)",
+      "transform": "uid = the official t_id_uv_ca; category/subcategory = division_territorial/unidad_vecinal; collection-level comuna claim '<CUT>' — the claim is what arms refuseAnotherComuna per-file (apps/territorio ImportService::refuseAnotherComuna)",
+      "conversion": "zip holds a .shp — ogr2ogr converts once per host (the tool comuna-cut.php names for exactly this); the warehouse's own conversion used pyshp 3.1.6 (sources.json:354 records it + the leading-space caveat)",
+      "output": "uv-<CUT>.geojson",
+      "import": "occ territorio:import uv-<CUT>.geojson --dataset=unidades-vecinales --label='Unidades Vecinales'"
+    },
+    {
+      "master": "minsal-deis-establecimientos",
+      "tool": "CSV filter (semicolon-delimited) + the sources.json:394 transformations",
+      "selector": "trim(ComunaCodigo) zfill(5) == CUT",
+      "transform": "uid='deis:<EstablecimientoCodigo>'; subcategory by glosa phrase — 'CESFAM' in TipoEstablecimientoGlosa -> cesfam, 'SAPU' -> sapu, else establecimiento (measured: the dump writes full phrases, and the pilot's own cut counts 9/8/27); address=TipoViaGlosa+NombreVia+Numero; collection-level comuna claim '<CUT>'; keep the 3 coordinate-less rows of a cut OUT (a Point needs coordinates)",
+      "output": "deis-establecimientos-<CUT>.geojson",
+      "import": "occ territorio:import deis-establecimientos-<CUT>.geojson --dataset=deis-establecimientos"
+    }
+  ],
+  "basemap": {
+    "contract": "the verify contract only — bbox, the REF derivation (the establishment's own DEIS point, scripts/refresh-basemap.sh), min size 500 MB; the source URL is un-pinnable by design (dated builds, old ones 404)",
+    "sha256": null
+  }
+}

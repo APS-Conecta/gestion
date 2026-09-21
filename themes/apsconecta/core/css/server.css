@@ -310,3 +310,44 @@ textarea:focus-visible,
   outline: 2px solid var(--color-primary-element);
   outline-offset: 2px;
 }
+
+/* ---- SPA mount stub — every custom app's perceived-load state -----------------
+   Arch-review L0-04, generalized on the developer's 2026-09-19 directive: one app-agnostic
+   component for all apps, not territorio-only. The theme contract serves this block to every
+   page, so any app opts in by pasting the canonical fragment (MAPEO.md §5) inside its mount
+   div — the bytes are identical in every app, generic wording, nothing to adapt. Vue's
+   container mount replaces the mount's children on boot, so the stub self-removes. Spinner +
+   text, never a skeleton: a skeleton must imitate each app's layout and cannot be agnostic.
+   The spinner head follows primary_color (fill and icon use — ledger-permitted); the track is
+   core's border variable. The reduced-motion block above freezes the rotation, and the text
+   carries the meaning. No asset references in this block: the themed-path gate reads this
+   file, and a path in prose is checked like a real one. */
+.aps-mount-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 5rem 0;
+  font-weight: 600;
+  color: #485363; /* ledger: Muted — secondary text */
+}
+.aps-mount-loading::before {
+  content: "";
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 3px solid var(--color-border, #d4d4d4);
+  border-top-color: var(--color-primary-element, #7f21fe);
+  animation: aps-spin 0.8s linear infinite;
+}
+.aps-mount-noscript {
+  margin: 4rem auto;
+  max-width: 42ch;
+  padding: 0 1rem;
+  text-align: center;
+  color: #485363;
+}
+@keyframes aps-spin {
+  to { transform: rotate(1turn); }
+}

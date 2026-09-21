@@ -11,8 +11,31 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-09-21
+
 ### Added
 
+- **Territorio's comuna door is armed per install** — the register's `comuna_codigo` lands in
+  territorio's app config (`comuna_cut`/`comuna_name`, written by phase 16 and watched by
+  divergence), so `refuseAnotherComuna` compares against THIS install's comuna, and the import
+  door opens for exactly one comuna and no other.
+- **The uninstall** — `make uninstall`: preservation copy, a verified-restorable dump, typed
+  confirmation, `down -v`, generated artifacts, the basemap timer, and a clean-slate report. The
+  one command that finally deletes, on purpose.
+- **The migration runbook** — `docs/MIGRATION.md`: the rehearsal-first choreography for moving
+  the pilot (or any install) to the AIO stack, the data-dir markers, the autoupdate trap, the
+  preservation-doc template.
+- **Territorio ships** — v0.74.0, from lab app to own app: the tarball, the LICENSING row, the
+  inventory move. ADR-0003's two own apps.
+- **The comuna data packages** — the national masters pinned in `provisioning/data/packages.json`,
+  the DEIS comuna reference derived beside them, and `scripts/comuna-package.sh`: one fetch, one
+  seconds-long cut, the exact import commands printed.
+- **The release manifest** — `scripts/release-manifest.sh` + the tag-triggered workflow: every
+  release gets a machine-readable union of what it pins, as a GitHub Release asset.
+- **notify_push, vendored for the AIO bake** — this stack installs it from no inventory; the bake
+  needs the bytes with provenance.
+- **The establishment-agnostic gates** — the shape-based ADR-0013 check, the sites/ register-only
+  check, and the neutral cleanboot fixture (a deterministic register pick, not a fixed clinic).
 - **The suite serves its own basemap** — a new `tiles` service (`nginx:alpine`, digest-pinned)
   publishing one Protomaps PMTiles archive on loopback, reached from outside over `tailscale serve`.
 
@@ -71,8 +94,28 @@ image digests live there and are deliberately not copied here — one fact, one 
   2026-09-18: 21 s of CPU, 1.2 GB transferred, exit 0, and the running `tiles` service picked up the
   new archive without a restart because the replacement is an `mv` on the same filesystem.
 
+- **Every custom app's mount shows a branded loading state instead of a blank frame.** One
+  app-agnostic component (territorio arch-review L0-04, generalized on the developer's directive):
+  a spinner + `<noscript>` fragment pasted inside each bare mount — `#territorio`,
+  `#territorio-admin`, `#farmacia`, `#epidemiologia` — and the CSS served once to every page by
+  the theme (`server.css`; canonical fragment in `MAPEO.md` §5).
+
+  **Because the frame was blank until the webpack bundle mounted** — nothing for a slow load or a
+  JS-disabled browser, on every custom app. A spinner, not a skeleton: a skeleton must imitate each
+  app's layout and cannot be agnostic. Vue's container mount replaces the mount's children on
+  boot, so the stub removes itself — no cleanup code anywhere.
+
 ### Changed
 
+- **The basemap anchor is the establishment's own DEIS point** — read from territorio's import at
+  refresh time, not hand-picked constants; the tile checks derive from the point they must agree with.
+- **Connector 11.0.5 + documentserver 9.3.4, bumped together** — both white-label patches
+  regenerated, the DS digest re-pinned, and office-smoke now ASSERTS the running documentserver's
+  version: the pairing is a gate, not a coincidence.
+- **07-certs serves national hosts only** — the regional statistics host is per-establishment
+  instance configuration (ADR-0013), and no app consumes it.
+- **The repo stops naming its pilot** — living docs AND dated history (ADR-0013 carries a dated
+  correction; the register CSV, the public MINSAL catalogue, is untouched).
 - **Provisioning phase 16 writes Territorio's `tile_url`** from `TILES_PUBLIC_URL`, the same shape
   and for the same reason as phase 14's `DocumentServerUrl`: which address staff browsers use is a
   per-install answer, never a repository fact. The default is the loopback one, which works for a
@@ -180,7 +223,7 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Removed
 
-- **No establishment ships with the product any more.** `sites/los-castanos/site.sh` and the
+- **No establishment ships with the product any more.** The pilot's `sites/<slug>/site.sh` and the
   generated `themes/apsconecta/core/css/site.css` are no longer tracked: both are per-install
   artifacts, and the repository promised in `README.md` and `AGENTS.md` to name no establishment
   while shipping a real one as the suggested default. A fresh clone now stops at "choose your
@@ -226,6 +269,7 @@ Same pinned apps and image digests as 0.1.0 — no functional change for a clini
   tarball verified by sha256 ([#98](https://github.com/APS-Conecta/gestion/issues/98)). Images are
   pinned by digest rather than tag.
 
-[Unreleased]: https://github.com/APS-Conecta/gestion/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/APS-Conecta/gestion/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/APS-Conecta/gestion/releases/tag/v0.2.0
 [0.1.1]: https://github.com/APS-Conecta/gestion/releases/tag/v0.1.1
 [0.1.0]: https://github.com/APS-Conecta/gestion/releases/tag/v0.1.0

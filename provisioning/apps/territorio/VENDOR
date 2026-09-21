@@ -1,0 +1,25 @@
+# Where the tarball beside this file came from. Update all three lines together on a bump,
+# then re-run `make seed`.
+#
+# THIS ONE IS BUILT, NOT DOWNLOADED — it is our own app (ADR-0003), so there is no upstream release
+# to fetch. `url=` names the tag it was built from rather than a download link, and the build is one
+# command, run from the repo root:
+#
+#   git -C apps/territorio archive --format=tar --prefix=territorio/ v0.74.0 \
+#     | gzip -n9 > provisioning/apps/territorio/territorio-0.74.0.tar.gz
+#
+# `--prefix=territorio/` because ensure_vendored_app unpacks into custom_apps/ and Nextcloud needs
+# the app id as the top directory. `gzip -n` keeps the mtime out of the header, so rebuilding the
+# same tag yields the same bytes and the sha256 below stays checkable.
+#
+# TAG AFTER THE REBUILD, not before — the trap epidemiologia's VENDOR records: @nextcloud/vite-config
+# reads appinfo/info.xml and bakes <version> into that app's bundle. territorio's own webpack build
+# does NOT bake it — measured at v0.74.0: rebuilding against the bumped info.xml left the tracked
+# js/ byte-identical, and that is the check this order exists for: run the build, read `git status`,
+# then tag. The app repo's own smoke runs before the tag too.
+#
+# ONE tarball in this directory, ever: ensure_vendored_app globs *.tar.gz and fails on anything
+# other than exactly one. A bump deletes the previous file, it does not sit beside it.
+version=0.74.0
+sha256=1b61976963822d19890044616690a254bb423551aed22ce2745034540ff1cc11
+url=https://github.com/APS-Conecta/territorio/tree/v0.74.0

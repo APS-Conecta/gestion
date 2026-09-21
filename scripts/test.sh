@@ -460,7 +460,7 @@ check bash -c '
 # `bash -n` alone would not catch it: the DEIS 201079 shape passes a syntax check and still loses
 # the value. The round trip is the assertion.
 check python3 -c '
-import csv, glob, subprocess, sys, os
+import csv, glob, re, subprocess, sys, os
 sys.path.insert(0, "scripts")
 import deis
 
@@ -470,7 +470,8 @@ if len(rows) < 100:
     print("register looks truncated: " + str(len(rows)) + " rows"); sys.exit(1)
 
 FIELDS = {"SITE_NOMBRE": "nombre", "SITE_DIRECCION": "direccion",
-          "SITE_COMUNA": "comuna", "SITE_SERVICIO_SALUD": "servicio_salud"}
+          "SITE_COMUNA": "comuna", "SITE_SERVICIO_SALUD": "servicio_salud",
+          "SITE_COMUNA_CUT": "comuna_codigo"}
 
 script = ["set -u"]
 for row in rows:
@@ -493,6 +494,15 @@ if bad:
     print("values the generated site.sh does not round-trip (" + str(len(bad)) + "):")
     for line in bad[:5]:
         print("  " + line)
+    sys.exit(1)
+# The CUT parity half: territorio'"'"'s Comuna::of() accepts exactly five digits, and a register
+# value that missed that shape would disarm the import door silently on every install — the
+# phase writes whatever the register says. Wrong-shaped CUTs are a register defect, and this
+# is where it goes red instead.
+bad_cut = [r["codigo"] for r in rows if not re.fullmatch(r"[0-9]{5}", r["comuna_codigo"])]
+if bad_cut:
+    print("comuna_codigo values Comuna::of() would refuse (not 5 digits) — a phase 16 write"
+          " of any of these silently disarms the import door: " + ", ".join(bad_cut[:5]))
     sys.exit(1)'
 
 # The café case above is behavioural, and load-bearing only under a COLLATING locale — which a
@@ -501,6 +511,121 @@ if bad:
 # the half CI can see. A grep for the fix, deliberately: where it runs, the behaviour is not
 # observable at all, and a check that cannot fail there is worse than one that admits what it is.
 check grep -q "local LC_ALL=C" provisioning/lib.sh
+
+# --- gate: the tree stays establishment-agnostic (ADR-0013, generalized from the one-code grep) ---
+# Shape-based, not literal: the pilot's residue was a hardcoded `deis.py` call in CI's fixture and steering
+# examples in docs. A literal grep on one clinic's code is the pilot's number all over again — the next
+# clinic's code passes it. The SHAPE is the contract: no tracked file may hand deis.py a DEIS
+# code. Only the register CSVs are excluded — they ARE the codes, by design — and dated history
+# is scrubbed (slice 5), so nothing else gets a pass. git grep, not grep -r: tracked files only,
+# so a developer's sites/<slug>/site.sh (untracked, generated) never trips it. The shape lives in
+# ONE exported variable so the self-test below red-tests the same bytes this check runs — and the
+# planted literal is ASSEMBLED at run time (%s + a fabricated code), because a literal here would
+# itself be a tracked hit and the gate would trip on its own detector test forever.
+AGNOSTIC_SHAPE='deis\.py [0-9]{4,6}'
+export AGNOSTIC_SHAPE
+check bash -c '
+  hits=$(git grep -nE "$AGNOSTIC_SHAPE" -- . ":(exclude)sites/establecimientos-deis-*.csv" 2>/dev/null || true)
+  [ -z "$hits" ] || { printf "establishment-agnostic gate — tracked files naming a DEIS code:\n%s\n" "$hits" >&2; exit 1; }'
+# The negative half: the detector must detect, and must not fire on a clean line. Same shape
+# variable, fabricated corpus, run-time-assembled plant.
+check bash -c '
+  tmp=$(mktemp); trap "rm -f $tmp" EXIT
+  printf "run: scripts/deis.py %s --new x\nclean line, no code\n" 999999 > "$tmp"
+  grep -nE "$AGNOSTIC_SHAPE" "$tmp" >/dev/null || { echo "agnostic detector: planted literal went undetected" >&2; exit 1; }
+  printf "nothing here at all\n" | grep -nE "$AGNOSTIC_SHAPE" >/dev/null && { echo "agnostic detector: false positive on a clean line" >&2; exit 1; }
+  exit 0'
+
+# --- gate: sites/ ships the register and NOTHING else ------------------------------------
+# The register CSVs are tracked under sites/ beside generated site trees that .gitignore keeps
+# out by DIRECTORY — which stops nothing from `git add -f sites/x/site.sh` landing a real site
+# record (identity, teams, folders, ACL — a clinic's whole shape) in the public repo. The list
+# comes from git ls-files (sites/-PREFIXED paths), piped; the filter is a function so the
+# self-test exercises the same bytes. The register is a FLOOR, not an option: an empty listing
+# (register deleted, glob renamed) is the empty-glob-goes-green class — red, not green.
+sites_register_only() {  # sites/-prefixed file list on stdin; exit 0 = only register CSVs, >=1
+  local list n bad
+  # Captured ONCE: two greps over one stdin would race — the first consumes the stream and the
+  # second reads an exhausted pipe, outputs nothing, and the intruder check goes green vacuously
+  # (caught by sanity-running the fence against the real repo, not by review).
+  list=$(cat)
+  n=$(printf "%s\n" "$list" | grep -cE "^sites/establecimientos-deis-[0-9]{4}-[0-9]{2}-[0-9]{2}\.csv$" || true)
+  [ "$n" -ge 1 ] || { printf "no register CSV tracked under sites/ — the register is the floor\n" >&2; return 1; }
+  bad=$(printf "%s\n" "$list" | grep -vE "^sites/establecimientos-deis-[0-9]{4}-[0-9]{2}-[0-9]{2}\.csv$" || true)
+  [ -z "$bad" ] || { printf "unexpected tracked files under sites/:\n%s\n" "$bad" >&2; return 1; }
+}
+export -f sites_register_only
+check bash -c 'git ls-files sites/ | sites_register_only'
+# Negative half, fabricated lists through the same function: a site.sh must be flagged, an
+# empty listing must be flagged, the register alone must pass.
+check bash -c '
+  printf "sites/establecimientos-deis-2026-07-23.csv\nsites/x/site.sh\n" | sites_register_only \
+    && { echo "sites gate: a tracked site.sh was not flagged" >&2; exit 1; }
+  printf "" | sites_register_only && { echo "sites gate: an empty listing went green" >&2; exit 1; }
+  printf "sites/establecimientos-deis-2026-07-23.csv\n" | sites_register_only'
+
+# --- the dump + uninstall detectors red-test themselves (docker daemon, no stack) -------------
+if docker info >/dev/null 2>&1; then
+  check bash scripts/db-dump.sh --self-test
+  check bash scripts/uninstall.sh --self-test
+else
+  echo "  skipped: dump/uninstall self-tests (no docker daemon)"
+fi
+
+# --- office-smoke's DS pairing pattern: extracted from its source, proven both directions -------
+# (the LC_ALL precedent — where a static gate cannot observe the behaviour, assert the fix's
+# presence; here the extracted regex can also be behaviorally tested, so both.)
+check bash -c '
+  pat=$(sed -n "s/^DS_VERSION_PATTERN=\x27\(.*\)\x27$/\1/p" scripts/office-smoke.sh)
+  [ -n "$pat" ] || { echo "DS pairing pattern not found in office-smoke.sh" >&2; exit 1; }
+  printf "Document server https://x/ version 9.3.4.37 is successfully connected\n" | grep -qE "$pat" \
+    || { echo "DS pairing detector: missed the right version" >&2; exit 1; }
+  printf "Document server https://x/ version 9.2.1.5 is successfully connected\n" | grep -qE "$pat" \
+    && { echo "DS pairing detector: matched the wrong version" >&2; exit 1; }
+  exit 0'
+
+# --- gate: the data manifest and the comuna reference describe each other ---------------------
+# packages.json pins the masters; comunas-deis.csv is the coding authority the recipes validate
+# against. One python block holds the validator ONCE and runs it on the real corpus AND on three
+# fabricated defect corpora (single-sourced: the self-test exercises the same bytes the real check
+# runs — slice 4's locked lesson). The row-count expectation is READ FROM THE MANIFEST, not
+# restated: a future ODS refresh (a 347th comuna) is one manifest edit + one CSV regen, and this
+# gate follows — never three uncoordinated literals.
+check python3 -c '
+import json, re, sys
+def validate(rows, why, expect):
+    if len(rows) != expect: print(why + ": " + str(len(rows)) + " rows, expected " + str(expect)); sys.exit(1)
+    for cut, glosa in rows:
+        if not re.fullmatch(r"[0-9]{5}", cut): print(why + ": CUT " + repr(cut) + " is not 5 digits"); sys.exit(1)
+        if "\xa0" in glosa: print(why + ": glosa of " + cut + " carries a non-breaking space"); sys.exit(1)
+    if not any(c == "99999" for c, _ in rows): print(why + ": the 99999/Ignorada sentinel row is gone"); sys.exit(1)
+m = json.load(open("provisioning/data/packages.json"))
+assert m["masters"], "no masters in the data manifest"
+for x in m["masters"]:
+    for k in ("id", "origin", "sha256", "records"):
+        if not x.get(k): print("master " + x.get("id", "?") + ": missing " + k); sys.exit(1)
+expect = m["comuna_reference"]["records"]
+real = [l.rstrip("\n").split(",", 1) for l in open("provisioning/data/comunas-deis.csv", encoding="utf-8")][1:]
+validate(real, "comunas-deis.csv", expect)
+# The negative half — three corpora, one defect each, through the SAME validator:
+try:
+    validate([("1311", "Cuatro"), ("99999", "Ignorada"), ("13110", "Santiago")], "4-digit CUT", expect)
+except SystemExit: pass
+else: print("fabricated 4-digit corpus passed"); sys.exit(1)
+try:
+    validate([("99999", "Ignorada"), ("13110", "NBSP\xa0glosa")], "NBSP glosa", 2)
+except SystemExit: pass
+else: print("fabricated NBSP corpus passed"); sys.exit(1)
+try:
+    validate([("13110", "Santiago"), ("13101", "Providencia")], "missing sentinel", 2)
+except SystemExit: pass
+else: print("fabricated sentinel-less corpus passed"); sys.exit(1)
+print("ok")'
+check bash scripts/comuna-package.sh --self-test
+
+# --- gate: the release manifest's form — every pin present, every category counted -------------
+check bash scripts/release-manifest.sh --validate
+check bash scripts/release-manifest.sh --self-test
 
 echo "== smoke (only if a stack is running) =="
 if docker compose ps --status running --services 2>/dev/null | grep -qx nextcloud; then

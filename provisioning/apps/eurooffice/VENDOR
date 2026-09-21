@@ -1,5 +1,5 @@
 # Where the tarball beside this file came from (#98). Update all three lines together on a bump,
 # then re-run `make seed`: the patches either still apply or the phase says so and stops.
-version=11.0.4
-sha256=90a4d3d7f770bab4e5db8b3793e256f2ab88dfe9a8640e1271ed54437bc232f2
-url=https://github.com/nextcloud-releases/eurooffice/releases/download/v11.0.4/eurooffice-v11.0.4.tar.gz
+version=11.0.5
+sha256=96bfa9be44820731d147d150492c20b3f6dc4472950029d0a59072b4d9c64f74
+url=https://github.com/nextcloud-releases/eurooffice/releases/download/v11.0.5/eurooffice-v11.0.5.tar.gz

@@ -42,8 +42,20 @@ done
 
 curl -sf "http://localhost:${OFFICE_PORT}/healthcheck" >/dev/null \
   || { echo "FAIL: Euro-Office /healthcheck not reachable from host"; exit 1; }
-occ eurooffice:documentserver --check \
+
+# The pairing check: connector 11.0.5 ↔ documentserver 9.3.4, certified as a set — and the AIO
+# fork's Dockerfile base rides the same suite release, so one version string must not describe
+# two pairings. The version source is the connector's own --check line: it asks the DS itself
+# (measured output: "… version 9.3.4.37 is successfully connected"), so this asserts the RUNNING
+# version, not the configured image. The BUILD suffix is not the contract — a hotfix rebuild
+# moves .37 inside 9.3.4 — the x.y.z is. The pattern lives in one variable so test.sh can extract
+# it and red-test both directions.
+DS_VERSION_PATTERN='version 9\.3\.4(\.| )'
+ds_check="$(occ eurooffice:documentserver --check)" \
   || { echo "FAIL: 'occ eurooffice:documentserver --check' reported the server unreachable"; exit 1; }
+printf '%s' "$ds_check" | grep -qE "$DS_VERSION_PATTERN" \
+  || { echo "FAIL: documentserver is not 9.3.4 — this release pairs the connector with DS 9.3.4:" >&2
+       printf '%s\n' "$ds_check" >&2; exit 1; }
 
 # OSS / no-paid-licence. Resolve the container through compose rather than naming it:
 # `apsconecta-gestion-eurooffice-1` hardcoded the project name, so this silently found nothing
@@ -54,5 +66,5 @@ case "$img" in
   *) echo "FAIL: unexpected Euro-Office image '${img}'"; exit 1;;
 esac
 
-echo "PASS: Euro-Office — /healthcheck 200, documentserver --check OK, rename intact, OSS image"
+echo "PASS: Euro-Office — /healthcheck 200, documentserver --check OK (DS 9.3.4), rename intact, OSS image"
 echo "      (OOXML edits in place; ODF edits via conversion, lossy — see README)"

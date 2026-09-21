@@ -19,6 +19,7 @@ provisioning/
   phases/
     05-security.sh   # session hardening + outbound defaults
     06-jobs.sh       # background jobs from cron, not ajax
+    07-certs.sh      # #28 — TLS intermediates for national hosts that serve only their leaf
     10-locale.sh     # Epic 1 — es-CL locale defaults
     12-apps.sh       # ADR-0002 — unpack the vendored apps, patch them; never the app store
     14-office.sh     # AD-5 — Euro-Office: connector config + the trusted_domains repair (#81)
@@ -57,7 +58,7 @@ register — CESFAM, PSR, CECOSF, CGR, CGU, COSAM, SAPU, SAR or SUR — fills th
 establishment has nor whether they are numbered, coloured or named after a neighbourhood.
 
 ```
-scripts/deis.py cesfam florida        # find the code — any term matches, no type is required
+scripts/deis.py cesfam <comuna>       # find the code — any term matches, no type is required
 scripts/deis.py <codigo> --new mi-establecimiento
 ```
 

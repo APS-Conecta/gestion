@@ -18,7 +18,7 @@ sector_jefes=()
 for entry in "${SITE_TEAMS[@]}"; do
   id="${entry%%|*}"; display="${entry#*|}"
   case "$id" in
-    # `sector-estrella` -> `jefe.estrella`, and the display name carries the sector's own label, so
+    # `sector-norte` -> `jefe.norte`, and the display name carries the sector's own label, so
     # it reads as the clinic wrote it, accents included.
     sector-*) sector_jefes+=("jefe.${id#sector-}|Jefe/a de ${display}|role-jefe-sector-mais ${id} cat-jefaturas all-staff") ;;
   esac

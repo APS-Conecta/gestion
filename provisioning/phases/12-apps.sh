@@ -36,9 +36,14 @@ APPS="groupfolders side_menu eurooffice calendar contacts spreed desktop_workspa
 # not: on a DEVELOPMENT machine apps/<id> is a live git clone rather than an unpacked tarball, and
 # unpacking over it would delete a working tree. ensure_own_app dispatches on whether .git is there.
 # `make divergence` reads both lists.
-# Format: <appid>=<clone url>, one per line, no spaces around the `=`. The URL is only ever printed,
-# to tell a developer where the code lives — nothing in an install fetches it.
-OWN_APPS="epidemiologia=https://github.com/APS-Conecta/epidemiologia.git farmacia=https://github.com/APS-Conecta/farmacia.git"
+# Format: <appid>=<clone url>, SPACE-SEPARATED inside one quoted string on ONE line — the two
+# downstream parsers (scripts/app-versions.sh:23, scripts/divergence.sh:111) sed the single line
+# and split on spaces; a literal one-entry-per-line split would leave only the LAST assignment
+# live for the phase loop while the sed readers still saw both lines — two inventories
+# disagreeing. The URL is only ever printed, to tell a developer where the code lives.
+# farmacia rides this line from the landing sequence's step-1 merge of feat/farmacia-joins-the-suite
+# (v0.11.1); territorio joined at v0.74.0 (2026-09): the lab period is over, the app ships.
+OWN_APPS="epidemiologia=https://github.com/APS-Conecta/epidemiologia.git farmacia=https://github.com/APS-Conecta/farmacia.git territorio=https://github.com/APS-Conecta/territorio.git"
 
 for entry in $OWN_APPS; do
   ensure_own_app "${entry%%=*}" "${entry#*=}"

@@ -12,7 +12,7 @@
 The question that produced this ADR was "gestion is production, we should develop the apps
 somewhere else". Measuring the repo said otherwise on both halves.
 
-**gestion is not production.** `sites/los-castanos/site.sh` sets `SITE_DOMINIO=""` — *"Empty = local
+**gestion is not production.** The tracked site file `sites/<slug>/site.sh` set `SITE_DOMINIO=""` — *"Empty = local
 dev"* — the production posture is #75 and unbuilt, and no clinic runs this. gestion is the dev stack.
 
 **Development is already outside this repo's history.** `git ls-files apps` returns **one** file

@@ -575,8 +575,8 @@ ensure_sample_file() {  # UID RELPATH CONTENT
 # Some hosts we read serve ONLY their leaf certificate and omit the intermediate. Browsers hide it
 # by chasing the leaf's authorityInfoAccess pointer; server-side clients do not, so Nextcloud's
 # IClientService fails verification with ssl_verify_result=20 and the fetch simply returns nothing.
-# Measured 2026-08-02 on www.ispch.gob.cl (24 ISP alert feeds) and estadistica.ssmso.cl (this site's
-# own Servicio de Salud) — News loses those feeds at import with only a server log to say so.
+# Measured 2026-08-02 on www.ispch.gob.cl (24 ISP alert feeds) — epidemiologia loses those feeds at import
+# with only a server log to say so.
 #
 # The intermediate is taken from the leaf's OWN AIA pointer at run time rather than vendored,
 # because that survives a CA rotation: the leaf always names its current issuer, a committed .pem
@@ -743,7 +743,7 @@ sys.exit(0 if found else 1)' "$name" || rc=$?
   # `docker compose cp` writes as root, so www-data cannot unlink it from a sticky /tmp. Left
   # unguarded this was the LAST command in the function, so a failed cleanup became the function's
   # exit status and killed the phase after the first host — caught by removing both certificates
-  # and re-running, which imported ispch and then aborted before ssmso.
+  # and re-running, which imported ispch and then aborted before the second host.
   docker compose exec -T nextcloud rm -f "/tmp/$name" >/dev/null 2>&1 || true
   return 0
 }
