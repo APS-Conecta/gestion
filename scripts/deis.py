@@ -2,7 +2,7 @@
 """Find an establishment in the DEIS register and write its site file (sites/<slug>/site.sh).
 
   scripts/deis.py                     interactive: search, then pick a number from the list
-  scripts/deis.py cesfam florida      filter: every term must appear in the row (accent-blind)
+  scripts/deis.py cesfam <comuna>     filter: every term must appear in the row (accent-blind)
   scripts/deis.py <codigo>            exact code: print that establishment's identity block
   scripts/deis.py <codigo> --new <slug>  write sites/<slug>/site.sh, asking what the register cannot
                                       know: which sectors and programs it has
@@ -14,7 +14,7 @@ writes is gitignored because its content depends on which establishment you chos
 The register is the newest sites/establecimientos-deis-*.csv: public primary-care establishments in
 operation, trimmed to the ten columns an install needs. It carries the whole APS network — CESFAM,
 PSR, CECOSF, CGR, CGU, COSAM, SAPU, SAR, SUR — and the filter is a plain term match, so `cesfam`
-above is a search word and not a required type: `deis.py sapu florida` works the same way. The date
+above is a search word and not a required type: `deis.py sapu <comuna>` works the same way. The date
 in the filename IS the provenance — never edit the file by hand, regenerate it with --snapshot.
 
 Python, not bash: the CSV quotes fields that contain commas ("Sargento Aldea, Florida Alto"), and
@@ -113,6 +113,9 @@ def block(row, snapshot):
     # shell syntax, not data. Six values in the register are: DEIS 113314's backtick is a
     # syntax error, DEIS 201079's quotes parse clean and leave SITE_NOMBRE EMPTY.
     # Not codigo/tipo — digits and a nine-word enum, so quoting them is a zero-delta edit.
+    # SITE_COMUNA_CUT rides unquoted beside them for the same reason: comuna codes are five
+    # zero-padded digits, and territorio's Comuna::of() accepts exactly that shape — it is
+    # the value the import door (refuseAnotherComuna) compares a file's comuna claim against.
     q = shlex.quote
     return f"""# --- Identity — DEIS {row['codigo']}, snapshot {snapshot} (scripts/deis.py {row['codigo']}) ---
 SITE_DEIS={row['codigo']}
@@ -121,6 +124,7 @@ SITE_NOMBRE={q(row['nombre'])}
 SITE_NOMBRE_CORTO={q(short)}
 SITE_DIRECCION={q(row['direccion'])}
 SITE_COMUNA={q(row['comuna'])}
+SITE_COMUNA_CUT={row['comuna_codigo']}
 SITE_SERVICIO_SALUD={q(row['servicio_salud'])}
 """
 
@@ -134,7 +138,7 @@ def ask(question, word, gid_prefix):
     and what they are called. Sectors are numbered here, coloured there, named after a neighbourhood
     somewhere else — so ask. Returns (gid, display, bare) per line, empty line to finish.
 
-    "Estrella", "Sector Estrella" and "SECTOR estrella" all land on the same three strings, so it
+    "Norte", "Sector Norte" and "SECTOR norte" all land on the same three strings, so it
     does not matter whether the operator repeats the word."""
     print(f"\n{question} (one per line, blank line to finish)")
     out = []

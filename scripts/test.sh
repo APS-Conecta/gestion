@@ -460,7 +460,7 @@ check bash -c '
 # `bash -n` alone would not catch it: the DEIS 201079 shape passes a syntax check and still loses
 # the value. The round trip is the assertion.
 check python3 -c '
-import csv, glob, subprocess, sys, os
+import csv, glob, re, subprocess, sys, os
 sys.path.insert(0, "scripts")
 import deis
 
@@ -470,7 +470,8 @@ if len(rows) < 100:
     print("register looks truncated: " + str(len(rows)) + " rows"); sys.exit(1)
 
 FIELDS = {"SITE_NOMBRE": "nombre", "SITE_DIRECCION": "direccion",
-          "SITE_COMUNA": "comuna", "SITE_SERVICIO_SALUD": "servicio_salud"}
+          "SITE_COMUNA": "comuna", "SITE_SERVICIO_SALUD": "servicio_salud",
+          "SITE_COMUNA_CUT": "comuna_codigo"}
 
 script = ["set -u"]
 for row in rows:
@@ -493,6 +494,15 @@ if bad:
     print("values the generated site.sh does not round-trip (" + str(len(bad)) + "):")
     for line in bad[:5]:
         print("  " + line)
+    sys.exit(1)
+# The CUT parity half: territorio'"'"'s Comuna::of() accepts exactly five digits, and a register
+# value that missed that shape would disarm the import door silently on every install — the
+# phase writes whatever the register says. Wrong-shaped CUTs are a register defect, and this
+# is where it goes red instead.
+bad_cut = [r["codigo"] for r in rows if not re.fullmatch(r"[0-9]{5}", r["comuna_codigo"])]
+if bad_cut:
+    print("comuna_codigo values Comuna::of() would refuse (not 5 digits) — a phase 16 write"
+          " of any of these silently disarms the import door: " + ", ".join(bad_cut[:5]))
     sys.exit(1)'
 
 # The café case above is behavioural, and load-bearing only under a COLLATING locale — which a
