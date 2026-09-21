@@ -584,6 +584,45 @@ check bash -c '
     && { echo "DS pairing detector: matched the wrong version" >&2; exit 1; }
   exit 0'
 
+# --- gate: the data manifest and the comuna reference describe each other ---------------------
+# packages.json pins the masters; comunas-deis.csv is the coding authority the recipes validate
+# against. One python block holds the validator ONCE and runs it on the real corpus AND on three
+# fabricated defect corpora (single-sourced: the self-test exercises the same bytes the real check
+# runs — slice 4's locked lesson). The row-count expectation is READ FROM THE MANIFEST, not
+# restated: a future ODS refresh (a 347th comuna) is one manifest edit + one CSV regen, and this
+# gate follows — never three uncoordinated literals.
+check python3 -c '
+import json, re, sys
+def validate(rows, why, expect):
+    if len(rows) != expect: print(why + ": " + str(len(rows)) + " rows, expected " + str(expect)); sys.exit(1)
+    for cut, glosa in rows:
+        if not re.fullmatch(r"[0-9]{5}", cut): print(why + ": CUT " + repr(cut) + " is not 5 digits"); sys.exit(1)
+        if "\xa0" in glosa: print(why + ": glosa of " + cut + " carries a non-breaking space"); sys.exit(1)
+    if not any(c == "99999" for c, _ in rows): print(why + ": the 99999/Ignorada sentinel row is gone"); sys.exit(1)
+m = json.load(open("provisioning/data/packages.json"))
+assert m["masters"], "no masters in the data manifest"
+for x in m["masters"]:
+    for k in ("id", "origin", "sha256", "records"):
+        if not x.get(k): print("master " + x.get("id", "?") + ": missing " + k); sys.exit(1)
+expect = m["comuna_reference"]["records"]
+real = [l.rstrip("\n").split(",", 1) for l in open("provisioning/data/comunas-deis.csv", encoding="utf-8")][1:]
+validate(real, "comunas-deis.csv", expect)
+# The negative half — three corpora, one defect each, through the SAME validator:
+try:
+    validate([("1311", "Cuatro"), ("99999", "Ignorada"), ("13110", "Santiago")], "4-digit CUT", expect)
+except SystemExit: pass
+else: print("fabricated 4-digit corpus passed"); sys.exit(1)
+try:
+    validate([("99999", "Ignorada"), ("13110", "NBSP\xa0glosa")], "NBSP glosa", 2)
+except SystemExit: pass
+else: print("fabricated NBSP corpus passed"); sys.exit(1)
+try:
+    validate([("13110", "Santiago"), ("13101", "Providencia")], "missing sentinel", 2)
+except SystemExit: pass
+else: print("fabricated sentinel-less corpus passed"); sys.exit(1)
+print("ok")'
+check bash scripts/comuna-package.sh --self-test
+
 echo "== smoke (only if a stack is running) =="
 if docker compose ps --status running --services 2>/dev/null | grep -qx nextcloud; then
   if bash scripts/smoke.sh; then echo "  ok:   smoke"; else echo "  FAIL: smoke"; fail=1; fi
