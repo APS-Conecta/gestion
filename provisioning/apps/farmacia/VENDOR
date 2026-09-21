@@ -1,0 +1,34 @@
+# Where the tarball beside this file came from (#98). Update all three lines together on a bump,
+# then re-run `make seed`.
+#
+# BUMP AT A MILESTONE, NOT AT EVERY TAG (ADR-0005). The app releases on its own cadence; gestion
+# pins the version it decided to ship, so this file moves when a gestion release wants it to, not
+# when the app tags.
+#
+# THIS ONE IS BUILT, NOT DOWNLOADED — it is our own app (ADR-0003), so there is no upstream release
+# to fetch. `url=` names the tag it was built from rather than a download link, and the build is one
+# command, run from the repo root:
+#
+#     git -C apps/farmacia archive --format=tar --prefix=farmacia/ v0.11.1 \
+#       | gzip -n9 > provisioning/apps/farmacia/farmacia-0.11.1.tar.gz
+#
+# `--prefix=farmacia/` because ensure_vendored_app unpacks into custom_apps/ and Nextcloud
+# needs the app id as the top directory — the same layout every other tarball here has. `gzip -n`
+# keeps the mtime out of the header, so rebuilding the same tag yields the same bytes and the
+# sha256 below stays checkable.
+#
+# TAG AFTER THE REBUILD, not before. Farmacia's webpack bundle bakes no version into itself, but a
+# release commit whose committed js/ is not what `npm run build` produces ships a bundle that lies
+# about the tree it came from. The app's own gates catch that before tagging — MetadataTest's
+# version agreement and the zero-diff `git status --porcelain js/` drift check after a rebuild,
+# both under `make test` in the app repo. v0.11.1 was cut with them green.
+#
+# `git archive` exports the TRACKED tree, which is why node_modules/, vendor/ and tools/ are not
+# in here: all three are gitignored in the app's repo. Result is 469 KB over 101 files.
+#
+# ONE tarball in this directory, ever: ensure_vendored_app globs *.tar.gz and fails on anything
+# other than exactly one. A bump deletes the previous file, it does not sit beside it.
+
+version=0.11.1
+sha256=22eb9ef582157138974c702527952aadd7a8455aee34a04fa598203343f52241
+url=https://github.com/APS-Conecta/farmacia/tree/v0.11.1
