@@ -3,7 +3,7 @@
 # (AD-2). `make office-down` stops just the document server when 2.5 GB is not worth a CSS edit.
 # `make smoke` / `make test` = the local quality gate; `make seed` runs the provisioning pipeline.
 .DEFAULT_GOAL := help
-.PHONY: help setup install up up-dev down seed seed-idempotent smoke test divergence images images-check apps-check fix-mount-perms office-smoke office-down
+.PHONY: help setup install up up-dev down uninstall seed seed-idempotent smoke test divergence images images-check apps-check fix-mount-perms office-smoke office-down
 
 # Your host group, so the container can hand the bind mounts back to you (fix-mount-perms).
 HOST_GID := $(shell id -g)
@@ -51,6 +51,10 @@ fix-mount-perms: ## Make the bind-mounted apps/ + themes/ writable by BOTH the c
 
 down: ## Stop the stack (keeps volumes)
 	docker compose down
+
+uninstall: ## Destroy the stack FOR REAL — verified dump + typed confirmation first (scripts/uninstall.sh)
+	@$(REQUIRE_ENV)
+	@bash scripts/uninstall.sh
 
 seed: ## Run the provisioning pipeline verbosely (make install wraps this)
 	@$(REQUIRE_ENV)

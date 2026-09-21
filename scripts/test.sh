@@ -564,6 +564,14 @@ check bash -c '
   printf "" | sites_register_only && { echo "sites gate: an empty listing went green" >&2; exit 1; }
   printf "sites/establecimientos-deis-2026-07-23.csv\n" | sites_register_only'
 
+# --- the dump + uninstall detectors red-test themselves (docker daemon, no stack) -------------
+if docker info >/dev/null 2>&1; then
+  check bash scripts/db-dump.sh --self-test
+  check bash scripts/uninstall.sh --self-test
+else
+  echo "  skipped: dump/uninstall self-tests (no docker daemon)"
+fi
+
 echo "== smoke (only if a stack is running) =="
 if docker compose ps --status running --services 2>/dev/null | grep -qx nextcloud; then
   if bash scripts/smoke.sh; then echo "  ok:   smoke"; else echo "  FAIL: smoke"; fail=1; fi
