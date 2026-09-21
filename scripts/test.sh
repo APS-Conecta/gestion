@@ -623,6 +623,10 @@ else: print("fabricated sentinel-less corpus passed"); sys.exit(1)
 print("ok")'
 check bash scripts/comuna-package.sh --self-test
 
+# --- gate: the release manifest's form — every pin present, every category counted -------------
+check bash scripts/release-manifest.sh --validate
+check bash scripts/release-manifest.sh --self-test
+
 echo "== smoke (only if a stack is running) =="
 if docker compose ps --status running --services 2>/dev/null | grep -qx nextcloud; then
   if bash scripts/smoke.sh; then echo "  ok:   smoke"; else echo "  FAIL: smoke"; fail=1; fi

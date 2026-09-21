@@ -65,3 +65,11 @@ jobs:
       - name: Has any vendored app released a newer version?
         if: always() && github.event_name != 'pull_request'
         run: make apps-check
+      # The release manifest's drift half (D12), with --no-delegate: this workflow ALREADY runs the
+      # image and app halves as its own steps (with red semantics this script's `|| echo` would
+      # swallow), and re-inspecting the registries would double the documented rate-limit failure.
+      # The masters note is the half only the manifest adds. `always()` keeps the halves
+      # independent — one red does not hide the next.
+      - name: Release manifest drift report
+        if: always() && github.event_name != 'pull_request'
+        run: bash scripts/release-manifest.sh --check --no-delegate
