@@ -512,6 +512,58 @@ if bad_cut:
 # observable at all, and a check that cannot fail there is worse than one that admits what it is.
 check grep -q "local LC_ALL=C" provisioning/lib.sh
 
+# --- gate: the tree stays establishment-agnostic (ADR-0013, generalized from the 114302 grep) ---
+# Shape-based, not literal: the pilot's residue was a hardcoded `deis.py` call in CI's fixture and steering
+# examples in docs. A literal grep on one clinic's code is the pilot's number all over again — the next
+# clinic's code passes it. The SHAPE is the contract: no tracked file may hand deis.py a DEIS
+# code. Only the register CSVs are excluded — they ARE the codes, by design — and dated history
+# is scrubbed (slice 5), so nothing else gets a pass. git grep, not grep -r: tracked files only,
+# so a developer's sites/<slug>/site.sh (untracked, generated) never trips it. The shape lives in
+# ONE exported variable so the self-test below red-tests the same bytes this check runs — and the
+# planted literal is ASSEMBLED at run time (%s + a fabricated code), because a literal here would
+# itself be a tracked hit and the gate would trip on its own detector test forever.
+AGNOSTIC_SHAPE='deis\.py [0-9]{4,6}'
+export AGNOSTIC_SHAPE
+check bash -c '
+  hits=$(git grep -nE "$AGNOSTIC_SHAPE" -- . ":(exclude)sites/establecimientos-deis-*.csv" 2>/dev/null || true)
+  [ -z "$hits" ] || { printf "establishment-agnostic gate — tracked files naming a DEIS code:\n%s\n" "$hits" >&2; exit 1; }'
+# The negative half: the detector must detect, and must not fire on a clean line. Same shape
+# variable, fabricated corpus, run-time-assembled plant.
+check bash -c '
+  tmp=$(mktemp); trap "rm -f $tmp" EXIT
+  printf "run: scripts/deis.py %s --new x\nclean line, no code\n" 999999 > "$tmp"
+  grep -nE "$AGNOSTIC_SHAPE" "$tmp" >/dev/null || { echo "agnostic detector: planted literal went undetected" >&2; exit 1; }
+  printf "nothing here at all\n" | grep -nE "$AGNOSTIC_SHAPE" >/dev/null && { echo "agnostic detector: false positive on a clean line" >&2; exit 1; }
+  exit 0'
+
+# --- gate: sites/ ships the register and NOTHING else ------------------------------------
+# The register CSVs are tracked under sites/ beside generated site trees that .gitignore keeps
+# out by DIRECTORY — which stops nothing from `git add -f sites/x/site.sh` landing a real site
+# record (identity, teams, folders, ACL — a clinic's whole shape) in the public repo. The list
+# comes from git ls-files (sites/-PREFIXED paths), piped; the filter is a function so the
+# self-test exercises the same bytes. The register is a FLOOR, not an option: an empty listing
+# (register deleted, glob renamed) is the empty-glob-goes-green class — red, not green.
+sites_register_only() {  # sites/-prefixed file list on stdin; exit 0 = only register CSVs, >=1
+  local list n bad
+  # Captured ONCE: two greps over one stdin would race — the first consumes the stream and the
+  # second reads an exhausted pipe, outputs nothing, and the intruder check goes green vacuously
+  # (caught by sanity-running the fence against the real repo, not by review).
+  list=$(cat)
+  n=$(printf "%s\n" "$list" | grep -cE "^sites/establecimientos-deis-[0-9]{4}-[0-9]{2}-[0-9]{2}\.csv$" || true)
+  [ "$n" -ge 1 ] || { printf "no register CSV tracked under sites/ — the register is the floor\n" >&2; return 1; }
+  bad=$(printf "%s\n" "$list" | grep -vE "^sites/establecimientos-deis-[0-9]{4}-[0-9]{2}-[0-9]{2}\.csv$" || true)
+  [ -z "$bad" ] || { printf "unexpected tracked files under sites/:\n%s\n" "$bad" >&2; return 1; }
+}
+export -f sites_register_only
+check bash -c 'git ls-files sites/ | sites_register_only'
+# Negative half, fabricated lists through the same function: a site.sh must be flagged, an
+# empty listing must be flagged, the register alone must pass.
+check bash -c '
+  printf "sites/establecimientos-deis-2026-07-23.csv\nsites/x/site.sh\n" | sites_register_only \
+    && { echo "sites gate: a tracked site.sh was not flagged" >&2; exit 1; }
+  printf "" | sites_register_only && { echo "sites gate: an empty listing went green" >&2; exit 1; }
+  printf "sites/establecimientos-deis-2026-07-23.csv\n" | sites_register_only'
+
 echo "== smoke (only if a stack is running) =="
 if docker compose ps --status running --services 2>/dev/null | grep -qx nextcloud; then
   if bash scripts/smoke.sh; then echo "  ok:   smoke"; else echo "  FAIL: smoke"; fail=1; fi

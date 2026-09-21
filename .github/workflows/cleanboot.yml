@@ -58,12 +58,38 @@ jobs:
       # the last assignment it reads.
       - name: Choose an establishment, the way an operator would
         run: |
-          printf 'Sector 1\nSector 2\n\nSalud Mental\nInfantil\n\n' | scripts/deis.py 114302 --new ci
+          # A deterministic pick over the register, not a fixed code: every clinic in the register
+          # is a valid install, and CI booting the same one every time is a fixture that steers —
+          # and names a real clinic in a public log. sha256 over the sorted codes makes the pick
+          # stable per register content: it moves only when the register moves, and sites/**
+          # already triggers this workflow, so every new snapshot is booted against a fresh pick.
+          pick=$(python3 - <<'PY'
+          import csv, glob, hashlib, sys
+          files = sorted(glob.glob("sites/establecimientos-deis-*.csv"))
+          if not files:
+              sys.exit("FATAL: no sites/establecimientos-deis-*.csv — nothing to boot against")
+          with open(files[-1], encoding="utf-8") as fh:
+              rows = list(csv.DictReader(fh))
+          if not rows:
+              sys.exit("FATAL: the register is empty — refusing to boot a silent green (B-001)")
+          codes = sorted(r["codigo"] for r in rows)
+          pick = codes[int(hashlib.sha256("\n".join(codes).encode()).hexdigest(), 16) % len(codes)]
+          row = next(r for r in rows if r["codigo"] == pick)
+          print(pick + "\t" + row["nombre"] + " (" + row["comuna"] + ")")
+          PY
+          ) || exit 1
+          code=${pick%%$'\t'*}
+          [ -n "$code" ] || { echo "FATAL: empty register pick" >&2; exit 1; }
+          echo "cleanboot: register pick — DEIS $code: ${pick#*$'\t'}"
+          # The piped answers are generic by construction — ask() always asks sectors then
+          # programs, for every tipo — so they survive the moving pick unchanged.
+          printf 'Sector 1\nSector 2\n\nSalud Mental\nInfantil\n\n' | scripts/deis.py "$code" --new ci
           echo "SITE=ci" >> .env
           # Establishment-local roles (#103). deis.py writes SITE_ROLES empty by design — most
           # establishments add nothing beyond the shared registry — so the create path would never
           # execute anywhere if CI did not append one here. One of each kind on purpose: a jefatura,
           # which must ALSO produce a standing account, and a technical role, which must not.
+          # Works for any pick: deis.py:217 always writes SITE_ROLES=() for the += to append to.
           cat >> sites/ci/site.sh <<'ROLES'
           SITE_ROLES+=( "role-jefe-sar|Jefe/a de SAR|cat-jefaturas" "role-tens-sar|TENS – SAR|cat-tecnicos" )
           ROLES
