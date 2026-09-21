@@ -26,7 +26,7 @@ name: apsconecta-gestion
 # boot, Euro-Office's 2.5 GB included. `make down` is the way out and keeps working.
 x-nextcloud-base: &nextcloud-base
   restart: unless-stopped
-  image: nextcloud:34-apache@sha256:0c74fb931e7e5115c833b3cab8d1eb2a4894ff95cd5fa2e84124ac9d3e1fea09
+  image: nextcloud:34-apache@sha256:c8aff72362dbf286a0d1d679ba746a1f391208422a43c725e0cf7fe1485b58be
   depends_on:
     db:
       condition: service_healthy
@@ -42,7 +42,7 @@ x-nextcloud-base: &nextcloud-base
 
 services:
   db:
-    image: postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
+    image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
     restart: unless-stopped
     volumes:
       # postgres:18+ stores data in a major-version subdir; mount the parent, not /data
@@ -60,7 +60,7 @@ services:
       start_period: 45s
 
   redis:
-    image: redis:8-alpine@sha256:becdda6c7f4b3fb42e42fd7f120bbf5c54c4caaaf16f26da24e4563d2c1f0576
+    image: redis:8-alpine@sha256:ba6e394f6acc2a695ef1b6944f161b9ca813711739be68319fa0db3470673f1d
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -181,7 +181,7 @@ services:
   # have health facilities. Kept OUT of the repo on purpose: it is a gigabyte of
   # generated data with a refresh schedule, not source.
   tiles:
-    image: nginx@sha256:c8497b180665e631ec92a5091125bec5b214f0e2b99409e30653a125b37557da
+    image: nginx@sha256:abe47724e466aeab9a345d8e46a221c2fa8953c7848bb4a3bd9976a7199f8cf2
     restart: unless-stopped
     volumes:
       # Relative, like ./apps and ./themes, because "the core compose carries nothing

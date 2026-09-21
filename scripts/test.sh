@@ -572,6 +572,18 @@ else
   echo "  skipped: dump/uninstall self-tests (no docker daemon)"
 fi
 
+# --- office-smoke's DS pairing pattern: extracted from its source, proven both directions -------
+# (the LC_ALL precedent — where a static gate cannot observe the behaviour, assert the fix's
+# presence; here the extracted regex can also be behaviorally tested, so both.)
+check bash -c '
+  pat=$(sed -n "s/^DS_VERSION_PATTERN=\x27\(.*\)\x27$/\1/p" scripts/office-smoke.sh)
+  [ -n "$pat" ] || { echo "DS pairing pattern not found in office-smoke.sh" >&2; exit 1; }
+  printf "Document server https://x/ version 9.3.4.37 is successfully connected\n" | grep -qE "$pat" \
+    || { echo "DS pairing detector: missed the right version" >&2; exit 1; }
+  printf "Document server https://x/ version 9.2.1.5 is successfully connected\n" | grep -qE "$pat" \
+    && { echo "DS pairing detector: matched the wrong version" >&2; exit 1; }
+  exit 0'
+
 echo "== smoke (only if a stack is running) =="
 if docker compose ps --status running --services 2>/dev/null | grep -qx nextcloud; then
   if bash scripts/smoke.sh; then echo "  ok:   smoke"; else echo "  FAIL: smoke"; fail=1; fi
