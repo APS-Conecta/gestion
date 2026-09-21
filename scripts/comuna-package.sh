@@ -48,7 +48,20 @@ echo "comuna-package: CUT $CUT — $GLOSA"
 command -v ogr2ogr >/dev/null 2>&1 || { echo "comuna-package: ogr2ogr not on PATH — install gdal-bin (once per host; the UV master is a .shp)" >&2; exit 1; }
 command -v python3 >/dev/null 2>&1 || { echo "comuna-package: python3 required" >&2; exit 1; }
 
-work=$(mktemp -d); trap 'rm -rf "$work"' EXIT INT TERM
+# The work dir. Default: a mktemp dir whose trap cleans the partial fetches on failure — on
+# success the trap comes OFF at the end so the cuts outlive the child ("import them, then
+# remove"). WORK_DIR set: the work dir is created INSIDE it from the start and the trap is
+# skipped entirely — an explicit WORK_DIR is the operator's keep-them mode, and the contract
+# the installer's datos arm (Phase 21) passes so its docker cp knows exactly where the cuts land.
+WORK_DIR="${WORK_DIR:-}"
+if [ -n "$WORK_DIR" ]; then
+  mkdir -p "$WORK_DIR"
+  work="$WORK_DIR/comuna-package.$$"
+  mkdir "$work"
+else
+  work=$(mktemp -d)
+  trap 'rm -rf "$work"' EXIT INT TERM
+fi
 fetch_verify() {  # ID URL SHA256 DEST
   curl -fL --max-time 600 -o "$4" "$2" \
     || { echo "comuna-package: fetching $1 failed — is the master still at its recorded URL? (a moved master is re-recorded by edit, never silently cut)" >&2; exit 1; }

@@ -31,6 +31,21 @@ jobs:
       # is retag-then-emit.)
       - name: Emit the manifest
         run: bash scripts/release-manifest.sh --emit > "apsconecta-$RELEASE_TAG.manifest.json"
+      - name: Fill host_bundle.sha256 with the tag archive's sha256
+        run: |
+          # The host bundle (S7) is cut from the tagged tree, and the manifest's host_bundle.sha256
+          # is the number the INSTALLER.md §2 anchor references — null no more. git archive is
+          # deterministic per tag (mtime = commit date, the commit id embedded), so the sha256 is
+          # reproducible from any clone of the tag. The ref fetch is insurance: checkout@v4 on a
+          # tag event fetches the tag ref, but the manifest asset must never fail on that assumption.
+          git fetch --tags --force origin >/dev/null 2>&1 || git fetch origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          sha="$(git archive --format=tar.gz "$RELEASE_TAG" | sha256sum | cut -d' ' -f1)"
+          jq --arg sha "$sha" \
+             '.host_bundle.sha256 = $sha
+              | .host_bundle.note = "the sha256 of the tag archive — the bytes the host bundle (S7) is cut from; the INSTALLER.md §2 anchor"' \
+             "apsconecta-$RELEASE_TAG.manifest.json" > manifest.tmp \
+            && mv manifest.tmp "apsconecta-$RELEASE_TAG.manifest.json"
+          echo "host_bundle.sha256 = $sha"
       - name: Attach to the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

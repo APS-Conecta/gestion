@@ -53,6 +53,23 @@ BEFORE first start — the restore only fires when `PG_VERSION` is absent in the
 and the dump is present, so the dump must land in the `nextcloud_aio_database_dump` volume
 before the database container's first start.
 
+The codetree half — `config.php` and `version.php` must be in the nextcloud volume before the
+first start too. AIO's entrypoint decides fresh-vs-existing from `/var/www/html/version.php`
+(entrypoint.sh:131-140): the file ABSENT is the Fresh-Install branch (:343-347), which runs
+`maintenance:install` INTO the restored database — and the first boot dies `install.failed`. The
+hand-built volumes must replicate both files, copied from the live stack's codetree volume
+(the same `apsconecta-gestion_nextcloud_data` volume the data-dir copy above reads — the volume
+is the codetree, `data/` lives inside it):
+
+```bash
+mkdir -p preserved-codetree
+docker run --rm -v apsconecta-gestion_nextcloud_data:/src:ro -v "$PWD/preserved-codetree":/dst alpine \
+  cp -a /src/config /src/version.php /dst/
+```
+
+— `config/` keeps its directory (the target wants `config/config.php` beside the `version.php`
+at the volume root); both halves land in the target's nextcloud volume before its first start.
+
 The markers, or the entrypoint's update pass can spin against a store that cannot answer (the
 store is off in this suite — patch 020): `skip.update` and `fingerprint.update` in the data dir
 are the supported escape — AIO's own backuprestore writes exactly these.
