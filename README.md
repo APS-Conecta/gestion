@@ -59,7 +59,7 @@ from the repo root unless noted.
    *does* ship.
    ```bash
    scripts/deis.py                                     # search, then pick a number from the list
-   scripts/deis.py cesfam "la florida"                 # or filter — every term must match, accent-blind
+   scripts/deis.py cesfam <comuna>                     # or filter — every term must match, accent-blind
    scripts/deis.py <codigo> --new mi-establecimiento   # writes sites/mi-establecimiento/site.sh
    ```
    Any primary-care establishment in the register works — CESFAM, PSR, CECOSF, CGR, CGU, COSAM,

@@ -17,7 +17,7 @@ PSR, CECOSF, CGR, CGU, COSAM, SAPU, SAR, SUR — and the filter is a plain term 
 above is a search word and not a required type: `deis.py sapu <comuna>` works the same way. The date
 in the filename IS the provenance — never edit the file by hand, regenerate it with --snapshot.
 
-Python, not bash: the CSV quotes fields that contain commas ("Sargento Aldea, Florida Alto"), and
+Python, not bash: the CSV quotes fields that contain commas ("Calle Diego Portales, La Junta"), and
 awk -F, gets those wrong. python3 is already assumed by provisioning/lib.sh; jq is not.
 """
 import csv

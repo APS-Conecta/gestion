@@ -1,9 +1,9 @@
 ## 1. Preserve the pilot before anything is removed
 
-- [x] 1.1 Copy `sites/los-castanos/` to a location outside the repo working root and confirm the
+- [x] 1.1 Copy `sites/<slug>/` to a location outside the repo working root and confirm the
       copy is readable — this is the only copy of the pilot's team, folder and ACL matrix once it
       leaves git tracking.
-- [x] 1.2 Record in `CHANGELOG.md` under the unreleased heading that `sites/los-castanos/site.sh` is
+- [x] 1.2 Record in `CHANGELOG.md` under the unreleased heading that `sites/<slug>/site.sh` is
       removed from git and that any working copy must preserve its own site file before updating.
 
 ## 2. Stop tracking establishment configuration
@@ -12,7 +12,7 @@
       stating the rule once: an artifact whose content depends on which establishment is installed is
       install-local, like `.env`. Confirm the pattern leaves `sites/establecimientos-deis-*.csv`
       tracked.
-- [x] 2.2 `git rm -r --cached sites/los-castanos` and delete the working copy (task 1.1 holds it).
+- [x] 2.2 `git rm -r --cached sites/<slug>` and delete the working copy (task 1.1 holds it).
 - [x] 2.3 `git rm --cached themes/apsconecta/core/css/site.css`, leaving the file on disk — the next
       install rewrites it and nothing an operator authored lives in it.
 - [x] 2.4 Verify with `git ls-files sites/ themes/` that only the register CSV and the static theme
@@ -33,7 +33,7 @@
       `scripts/test.sh` — the gate genuinely depends on this file, and the earlier plan was wrong to
       call that claim stale.
 - [x] 3.4 Rewrite the two `require_site()` failure messages in `scripts/env.sh` so neither offers
-      `SITE=los-castanos`: the unset case points at `.env` and the register search, the missing-file
+      a pilot `SITE`: the unset case points at `.env` and the register search, the missing-file
       case keeps the two `deis.py` commands it already prints.
 - [x] 3.5 Rewrite the post-`make setup` next-step block in `scripts/env-init.sh` (the `SITE` branch)
       so the only offered path is searching the register and writing a site file.
@@ -47,11 +47,11 @@
       choosing a primary-care establishment from the register — `deis.py` search, then
       `deis.py <codigo> --new <slug>`, then `SITE=<slug>` in `.env`. State that no establishment
       ships and that `make install` stops here until one is chosen.
-- [x] 4.2 `README.md` step 4: replace the sample output's `✓ CESFAM Los Castaños — 7 teams, 14 group
-      folders, 29 grants` with a placeholder that names no real establishment.
+- [x] 4.2 `README.md` step 4: replace the sample output's named-establishment line (`✓ <clinic> —
+      7 teams, 14 group folders, 29 grants`) with a placeholder that names no real establishment.
 - [x] 4.3 `README.md` § *Where things live*: rewrite the `sites/` row — one `<slug>/site.sh` per
       establishment, gitignored as install-local configuration, plus the tracked DEIS register they
-      are picked from. Drop "`los-castanos` ships as the reference clinic".
+      are picked from. Drop "the pilot ships as the reference clinic".
 - [x] 4.4 `provisioning/README.md` § *The clinic's own data*: replace the "**One clinic ships**"
       paragraph with the no-default rule, keeping the existing points that `seed.sh` sources the file
       once before the phase loop and that `make seed` refuses until `SITE` names one that exists.
@@ -69,7 +69,7 @@
 
 ## 5. Make the picker read as what it is
 
-- [x] 5.1 `scripts/deis.py` docstring: change the `deis.py cesfam florida` example so it does not
+- [x] 5.1 `scripts/deis.py` docstring: change the `deis.py <tipo> <comuna>` example so it does not
       read as a type filter, and state that the register carries CESFAM, PSR, CECOSF, CGR, CGU,
       COSAM, SAPU, SAR and SUR. Verify no picker logic changes — the search already matches any term.
 - [x] 5.2 Check the interactive prompt strings and the comments `write_site` emits into a generated
@@ -100,7 +100,7 @@
 
 ## 7. Restore the pilot and close
 
-- [x] 7.1 Restore the preserved `sites/los-castanos/` into the working tree, confirm `git status`
+- [x] 7.1 Restore the preserved `sites/<slug>/` into the working tree, confirm `git status`
       ignores it, and run `make install` to confirm the live suite converges unchanged — and that the
       tree is still clean afterwards, with the pilot's name present only in ignored files.
 - [x] 7.2 Re-read the rendered `README.md` on the branch as a newcomer would, and confirm no

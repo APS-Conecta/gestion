@@ -512,7 +512,7 @@ if bad_cut:
 # observable at all, and a check that cannot fail there is worse than one that admits what it is.
 check grep -q "local LC_ALL=C" provisioning/lib.sh
 
-# --- gate: the tree stays establishment-agnostic (ADR-0013, generalized from the 114302 grep) ---
+# --- gate: the tree stays establishment-agnostic (ADR-0013, generalized from the one-code grep) ---
 # Shape-based, not literal: the pilot's residue was a hardcoded `deis.py` call in CI's fixture and steering
 # examples in docs. A literal grep on one clinic's code is the pilot's number all over again — the next
 # clinic's code passes it. The SHAPE is the contract: no tracked file may hand deis.py a DEIS

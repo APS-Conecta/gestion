@@ -39,7 +39,7 @@ DAYS="${DAYS:-10}"
 # One point and one tile inside the territory, used to prove COVERAGE rather than shape. The anchor
 # IS the establishment this stack serves — its DEIS point, read from territorio's own import
 # (external_id 'deis:<SITE_DEIS>': the cut artifact's uid contract, apps/territorio
-# datasets/_registry/sources.json). Not a hand-picked constant: the La Florida pair this replaces was
+# datasets/_registry/sources.json). Not a hand-picked constant: the comuna-center pair this replaces was
 # already one tile row off the comuna center it claimed to be, and the map exists so THIS
 # establishment's territory is navigable.
 #

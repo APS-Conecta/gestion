@@ -191,7 +191,7 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Removed
 
-- **No establishment ships with the product any more.** `sites/los-castanos/site.sh` and the
+- **No establishment ships with the product any more.** The pilot's `sites/<slug>/site.sh` and the
   generated `themes/apsconecta/core/css/site.css` are no longer tracked: both are per-install
   artifacts, and the repository promised in `README.md` and `AGENTS.md` to name no establishment
   while shipping a real one as the suggested default. A fresh clone now stops at "choose your

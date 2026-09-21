@@ -43,9 +43,20 @@ deployment — the shape #77 and #110 build toward — not a picker.
   show is a **filter value**, not a pipeline.
 - Any REM read API takes the DEIS code as a **parameter**, not an implicit "ours", so a selector
   stays additive if the governance question is ever answered.
-- `grep 114302` is a runnable check: before this decision it matched only prose, and Epidemiología
-  had no notion of an establishment at all. It must keep
+- A shape-based runnable check holds agnosticism: no tracked file may hand `deis.py` a DEIS code
+  (the gate lives in `scripts/test.sh`). Before the establishment-agnostic work, prose named one
+  real code, and Epidemiología had no notion of an establishment at all. It must keep
   returning nothing in code — fixtures and tests included, or agnosticism is untested.
 - **"ADR-0003" alone is ambiguous across this organisation** — five repositories have one, and they
   are five different decisions. Cite it with its repository, which is what moving this one fixes for
   the only case that crossed a repo boundary.
+
+---
+
+**Dated correction (2026-09-19).** The runnable check above was generalized — it is now the
+shape-based establishment-agnostic gate in `scripts/test.sh`, which catches the next clinic's
+number as readily as any one code. And with gestion going public at release (ADR-0010), this
+record stops naming the pilot: the clinic's identity in dated records is a privacy concern the
+2026-08-09 change did not have to weigh, and its "history is not purged" stance is superseded —
+living docs AND dated history now stop naming the establishment. The register CSV (the public
+MINSAL catalogue) and git history are untouched.
