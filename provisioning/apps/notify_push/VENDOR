@@ -1,0 +1,20 @@
+# Where the tarball beside this file came from — and why a tarball this stack never installs is
+# vendored at all.
+#
+# THE AIO BAKE NEEDS IT. AIO's entrypoint installs notify_push on every start (Containers/nextcloud/
+# entrypoint.sh:726-733) and the notify-push container exits 1 without the binary (Containers/
+# notify-push/start.sh:31-42). With the store off in this suite (patch 020), first boot fails unless
+# the bake carries the app — and the bake needs bytes with provenance: vendoring survives an
+# offline install (#98), a store that moved (#163), and D7's no-source-fork rule.
+#
+# THIS STACK DOES NOT INSTALL IT: notify_push is in NO inventory (APPS, OWN_APPS). gestion's
+# compose stack runs no push server; the tarball exists so the AIO bake can copy it in. The
+# static gates still hold it to every rule — exactly one tarball, name id-version.tar.gz, sha256
+# matching, a LICENSING row — because both glob provisioning/apps/*/ without asking any inventory.
+#
+# The version is the newest NC34-compatible store release, resolved via the platform index
+# (https://apps.nextcloud.com/api/v1/platform/34.0.0/apps.json — scripts/app-versions.sh's INDEX,
+# same scoping rule: platform-scoped already means "runs on the NC this suite pins").
+version=1.4.1
+sha256=0bfda35cba6e21bc6358ede431bde790b039efadae54bbb393560fcff6127e36
+url=https://github.com/nextcloud-releases/notify_push/releases/download/v1.4.1/notify_push-v1.4.1.tar.gz
