@@ -609,15 +609,15 @@ real = [l.rstrip("\n").split(",", 1) for l in open("provisioning/data/comunas-de
 validate(real, "comunas-deis.csv", expect)
 # The negative half — three corpora, one defect each, through the SAME validator:
 try:
-    validate([("1311", "Cuatro"), ("99999", "Ignorada"), ("13110", "Santiago")], "4-digit CUT", expect)
+    validate([("1234", "Cuatro"), ("99999", "Ignorada"), ("12345", "Santiago")], "4-digit CUT", expect)
 except SystemExit: pass
 else: print("fabricated 4-digit corpus passed"); sys.exit(1)
 try:
-    validate([("99999", "Ignorada"), ("13110", "NBSP\xa0glosa")], "NBSP glosa", 2)
+    validate([("99999", "Ignorada"), ("12345", "NBSP\xa0glosa")], "NBSP glosa", 2)
 except SystemExit: pass
 else: print("fabricated NBSP corpus passed"); sys.exit(1)
 try:
-    validate([("13110", "Santiago"), ("13101", "Providencia")], "missing sentinel", 2)
+    validate([("12345", "Santiago"), ("13101", "Providencia")], "missing sentinel", 2)
 except SystemExit: pass
 else: print("fabricated sentinel-less corpus passed"); sys.exit(1)
 print("ok")'
