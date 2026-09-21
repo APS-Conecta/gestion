@@ -63,9 +63,14 @@ if [ "$SELF_TEST" = 1 ]; then
   cs_no_project apsconecta-selftest && { echo "self-test: project detector green on a live project" >&2; exit 1; }
   docker compose -p apsconecta-selftest -f "$proj/compose.yaml" down -v >/dev/null 2>&1
   cs_no_project apsconecta-selftest || { echo "self-test: project detector still red after down" >&2; exit 1; }
-  touch themes/apsconecta/core/css/site.css 2>/dev/null || { mkdir -p themes/apsconecta/core/css && touch themes/apsconecta/core/css/site.css; }
-  cs_no_file themes/apsconecta/core/css/site.css && { echo "self-test: file detector green on an existing file" >&2; exit 1; }
-  rm -f themes/apsconecta/core/css/site.css
+  # The file-detector red is fabricated under a SELF-TEST-ONLY name, never the real site.css
+  # path the report checks: this self-test runs on warm dev trees (and CI's cleanboot) where the
+  # generated site.css genuinely exists, and a `touch` + `rm -f` on the real path deletes a live
+  # artifact — the next seed regenerates it, writes a WRITES line, and reddens seed-idempotent
+  # (caught on the live tree). Same doctrine as the volume/network fabrications above.
+  touch themes/apsconecta/core/css/selftest-site.css 2>/dev/null || { mkdir -p themes/apsconecta/core/css && touch themes/apsconecta/core/css/selftest-site.css; }
+  cs_no_file themes/apsconecta/core/css/selftest-site.css && { echo "self-test: file detector green on an existing file" >&2; exit 1; }
+  rm -f themes/apsconecta/core/css/selftest-site.css
   mkdir -p sites/selftest
   cs_sites_clean && { echo "self-test: sites detector green on a stray tree" >&2; exit 1; }
   rmdir sites/selftest

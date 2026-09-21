@@ -9,9 +9,9 @@ not violate are in [`AGENTS.md`](../AGENTS.md).
 
 **Vanilla platform + configuration-as-code, no fork.** Nextcloud 34 is the platform and owns the runtime and
 all product data. The repository adds **only** declarative customization — configuration, theming, and
-group/folder/ACL provisioning. There is **no source fork and no core patch**. There is **one custom app**,
-`epidemiologia`, installed from its own repository and declared in provisioning
-([ADR-0003](adr/0003-this-stack-ships-a-custom-app.md), reversing AD-1); it reaches the platform only
+group/folder/ACL provisioning. There is **no source fork and no core patch**. There are **three custom apps**,
+`epidemiologia`, `farmacia` and `territorio`, installed from their own repositories and declared in provisioning
+([ADR-0003](adr/0003-this-stack-ships-a-custom-app.md), reversing AD-1); they reach the platform only
 through `OCP\…`, so the boundary in AD-9 still holds. The
 running instance is a *projection* of the repository's recipe applied over the official image: reproducible,
 disposable, and upgrade-safe.
@@ -209,11 +209,11 @@ checkout, and #77's whole effort was making that true of a machine nobody has se
 **`main` is the trunk; a release is a tag.** The dev stack installs from `main`; a clinic installs a
 tag, and that tag is the only answer to "which bytes does that instance have?"
 ([ADR-0005](adr/0005-gestion-is-the-development-trunk.md)). Three kinds of app follow from it and a
-release ships only two: **vendored** apps, whose upstream tarballs are committed under
-`provisioning/apps/<id>/` with a `VENDOR` file naming version, URL and sha256; one **own** app,
-`epidemiologia`, installed from a tarball built from a tag of its own repository; and **lab** apps —
-`territorio` — which exist only as clones in `apps/`, are declared in
-`dev/lab-apps.sh`, and are **never in a release**: phase 12 acts on an entry only where
+release ships only two kinds of app: **vendored** apps, whose upstream tarballs are committed under
+`provisioning/apps/<id>/` with a `VENDOR` file naming version, URL and sha256; and **own** apps —
+`epidemiologia`, `farmacia` and `territorio` — installed from tarballs built from tags of their own
+repositories. The third kind, **lab** apps (none today), exist only as clones in `apps/`, are
+declared in `dev/lab-apps.sh`, and are **never in a release**: phase 12 acts on an entry only where
 `apps/<id>/.git` exists, so a clinic falls straight through.
 [`apps/README.md`](../apps/README.md) is the authority for that boundary and for the app-id ↔
 repository-name mapping; this document does not restate it.

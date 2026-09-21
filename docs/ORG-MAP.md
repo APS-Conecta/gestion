@@ -39,7 +39,11 @@ Three corrections the table depends on, because each is widely assumed and each 
 
 They are **not submodules**. There is no `.gitmodules` and nothing here pins a commit of either app. That is also why the inventory is generated from remotes: on disk they look like directories of `gestion`, and only the remote says otherwise.
 
-An install never uses those clones. `epidemiologia` ships to a clinic as a vendored tarball under `provisioning/apps/`, verified by checksum with its provenance recorded beside it; `territorio` is a lab app and ships to nobody yet. [`../apps/README.md`](../apps/README.md) explains the directory, and [`../CONTEXT.md`](../CONTEXT.md) defines shipped, vendored, own and lab apps — the words that make the distinction sayable.
+An install never uses those clones. `epidemiologia` and `territorio` both ship to a clinic as
+vendored tarballs under `provisioning/apps/`, verified by checksum with their provenance recorded
+beside them — `territorio` moved from lab to own at v0.74.0 (2026-09). [`../apps/README.md`](../apps/README.md)
+explains the directory, and [`../CONTEXT.md`](../CONTEXT.md) defines shipped, vendored, own and lab
+apps — the words that make the distinction sayable.
 
 ## Decisions that were reversed
 

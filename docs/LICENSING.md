@@ -9,7 +9,7 @@ and reasons about whether running them triggers any obligation on our own code.
 > the points marked **[needs legal sign-off]** should be confirmed by a lawyer before being relied on.
 > Third-party licenses verified **2026-07-19**, extended **2026-07-30** to `side_menu`, Fraunces and
 > Nunito Sans; own-code licence changed to AGPL-3.0-or-later **2026-08-07** (ADR-0010) — against the versions this repo runs: the services pinned in `compose.yaml` plus the
-> three Nextcloud apps installed by provisioning (`occ`).
+> ten Nextcloud apps installed by provisioning (`occ`).
 
 ## 1. APS Conecta's own code — AGPL-3.0-or-later
 
@@ -47,7 +47,7 @@ receives the code or uses it over a network, which today means clinic staff.
 ## 3. Third-party component inventory (verified)
 
 Every runtime component. The **services** are pinned as images in [`compose.yaml`](../compose.yaml);
-the **six Nextcloud apps** a release installs are installed via `occ`, not as compose services — the
+the **ten Nextcloud apps** a release installs are installed via `occ`, not as compose services — the
 authority for which ones is `APPS` and `OWN_APPS` in
 [`provisioning/phases/12-apps.sh`](../provisioning/phases/12-apps.sh), and this table must list every
 entry in both. All are open-source, self-hosted, and free — **no paid license, no license key**
@@ -74,6 +74,7 @@ below were read from each app's `appinfo/info.xml` inside the shipped tarball, n
 | Desktop Workspace | NC app `desktop_workspace` 0.18.2 (vendored tarball, #98) — **third party**, `canisdata`, not the Nextcloud organisation | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `desktop_workspace` `info.xml` |
 | Epidemiología | NC app `epidemiologia` 0.9.0 — **ours**, built from a tag of its own repo | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `epidemiologia` `info.xml`; compiles `@nextcloud/vue`, which is why §1 is not a free choice |
 | Farmacia | NC app `farmacia` 0.11.1 — **ours**, built from a tag of its own repo | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `farmacia` `info.xml` |
+| Territorio | NC app `territorio` 0.74.0 — **ours**, built from a tag of its own repo | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `territorio` `info.xml` (`<licence>AGPL-3.0-or-later</licence>`); compiles `@nextcloud/vue`, so §1.2 applies to it exactly as to `epidemiologia` |
 | Fraunces | `themes/apsconecta/core/fonts/*.woff2` (served by the theme) | SIL Open Font License 1.1 | `OFL-1.1` | Fraunces `OFL.txt` |
 | Nunito Sans | `themes/apsconecta/core/fonts/*.woff2` (served by the theme) | SIL Open Font License 1.1 | `OFL-1.1` | Nunito Sans `OFL.txt` |
 
@@ -147,7 +148,8 @@ and forces us to open it. Our reasoning — **[needs legal sign-off]**:
 - **Every dependency:** OSS, self-hosted, free — no paid license.
 - **No copyleft reach** onto *this* repository's code under the unmodified-official-images /
   mere-aggregation reading — §4 stands. The AGPL here is chosen, not compelled. It *is* compelled in
-  the three Nextcloud apps, which bundle `@nextcloud/vue`.
+  the Nextcloud apps that bundle `@nextcloud/vue` — ours among them: `epidemiologia`, `farmacia` and
+  `territorio`.
 - **Our own §13 duty (as operator):** because we *run* AGPL components, we must offer their unmodified
   source to people who interact with them — a separate, trivially-met obligation (point to each project's
   public upstream). Since ADR-0010 our own code carries the same duty, discharged the same way.
