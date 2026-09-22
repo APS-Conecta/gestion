@@ -1,6 +1,0 @@
-✓ contenedor aps-conecta-tiles creado (digest de compose.yaml, conf montada, 127.0.0.1:8084)
-
-self-test: 18 checks OK
-✓ contenedor aps-conecta-tiles creado (digest de compose.yaml, conf montada, 127.0.0.1:8084)
-
-self-test: 18 checks OK
