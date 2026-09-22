@@ -1,0 +1,27 @@
+[Unit]
+# The monthly basemap refresh (FRD S9): Protomaps' dated planet builds expire — one nine days
+# old already answered 404 when the compose script was written — so the archive is a
+# scheduled re-extract, never a pinned URL (refresh-basemap.sh's own header). A failed run
+# leaves the serving archive untouched: the script verifies the artefact five ways and swaps
+# atomically, so this unit firing red never degrades the map — it just leaves it stale.
+Description=APS Conecta: refresco mensual del fondo de mapa
+Documentation=file:///opt/aps-conecta/gestion/docs/INSTALLER.md
+After=network-online.target docker.service
+Wants=network-online.target
+# The executable is the documented symlink (INSTALLER.md owns the wiring — the same
+# ConditionFileIsExecutable posture as aps-conecta.service: a missing symlink fails loudly
+# instead of the timer firing a silent no-op).
+ConditionFileIsExecutable=/usr/local/bin/aps-conecta
+
+[Service]
+Type=oneshot
+# The bundle CLI's thin hand-off — the same ExecStart surface the operator types.
+ExecStart=/usr/local/bin/aps-conecta tiles refresh
+# The systemd-native bound for a oneshot (RuntimeMaxSec is a no-op here — measured). The
+# script's own timeout wraps the same call interactively; 90 min against a ~1 GB pull
+# measured at minutes on this VPS leaves multiples of margin.
+TimeoutStartSec=5400
+User=root
+
+[Install]
+WantedBy=multi-user.target

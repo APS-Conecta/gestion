@@ -7,6 +7,22 @@
 # `docker inspect`. Two files meant two chances for the shared half to drift, and the licence half
 # ran only when someone remembered `make office-formats`. Now the licence check runs on every smoke.
 #
+# THE AIO LEGS (S8, slice 20 — the completion the port deferred): the document server is the
+# wizard's sibling nextcloud-aio-eurooffice behind apache's /eurooffice, so every leg answers the
+# stack an operator actually runs. The healthcheck goes through the PUBLIC path — the exact leg
+# that failed in upstream #8433 (the DS's own port can answer while the public route is broken).
+# The version assert pins the 9.3.x line: the connector's own floor is only "DS > 6.0"
+# (DocumentService.php:415), so a drifted documentserver generation would pass --check silently —
+# R3's verified pairing is connector 11.0.5 ↔ DS 9.3.x. The image assert accepts the two
+# namespaces this distribution's lifecycle runs — nextcloud-releases (the probe's stock bring-up,
+# slice 1's harness) and aps-conecta (the suite's channel; the retag preserves the manifest, D12) —
+# and anything else (a stranger's DS, Collabora, OnlyOffice) reds.
+#
+# The white-label rename grep RETIRED here (slice 13's routing): under the suite nothing can
+# revert the rename between builds — the store is off (patch 020) and a published tag's digests
+# never move (D12) — so the runtime grep's threat model is empty. scripts/bake.sh owns the pair as
+# build-time asserts, and the brand-gate's 030 row pins the mechanism to the fork's own script.
+
 # NOT covered here, because no gate can: in-browser rendering, live convergence, cursor presence,
 # and open/save FIDELITY — plus per-format editing, since Euro-Office exposes no WOPI discovery to
 # parse. Checked by hand in a browser on 2026-07-24 and passed; the standing runbook retired with
@@ -17,7 +33,12 @@ set -euo pipefail
 # shellcheck source=env.sh
 . "$(dirname "$0")/env.sh"
 
-: "${OFFICE_PORT:?set OFFICE_PORT in .env}"
+# The apache surface every smoke curl rides — smoke's own key and default (smoke.sh sets the
+# same line; its first curl consumer is check 5, /status.php).
+# Under AIO the DS answers behind apache's /eurooffice route, never a publish of its own, so the
+# compose-era OFFICE_PORT require retired with the compose legs.
+HTTP_PORT="${HTTP_PORT:-8180}"
+
 
 # Require the eurooffice connector — the sole office backend (AD-5). An app is enabled iff its
 # appconfig `enabled` value is "yes".
@@ -26,45 +47,45 @@ set -euo pipefail
 
 echo "Office backend: Euro-Office (eurooffice)"
 
-# The white-label rename, asserted on the files actually being served.
-#
-# This check was deleted when the rename moved from `sed` to .patch files, on the reasoning that
-# `patch` fails loudly when its context stops matching and so `make seed` is the gate. True, but it
-# only gates the moment the patch is applied. apps/ is gitignored, so any `occ app:update` — or an
-# admin updating from Settings > Apps — replaces these files and reverts the rename, and nothing
-# runs `make seed` afterwards. Between those two events every gate stayed green while the admin
-# section and app list said "Nextcloud Office" (B-008, ADR-0002).
-for f_want in "lib/AdminSection.php:Euro-Office" "appinfo/info.xml:<name>Euro-Office</name>"; do
-  f="${f_want%%:*}"; want="${f_want#*:}"
-  docker compose exec -T --user www-data nextcloud grep -qF "$want" "custom_apps/eurooffice/$f" \
-    || { echo "FAIL: white-label rename missing from eurooffice/$f — was the app updated? run 'make seed'"; exit 1; }
-done
 
-curl -sf "http://localhost:${OFFICE_PORT}/healthcheck" >/dev/null \
-  || { echo "FAIL: Euro-Office /healthcheck not reachable from host"; exit 1; }
+# The public-path healthcheck — through apache, never the DS's own port (#8433's exact leg: this
+# is the URL that goes dark on hairpin-NAT / split-DNS breakage while the container stays green).
+curl -sf "http://localhost:${HTTP_PORT}/eurooffice/healthcheck" >/dev/null \
+  || { echo "FAIL: Euro-Office /healthcheck not reachable through the public path (http://localhost:${HTTP_PORT}/eurooffice) — on a clinic, check the reverse-proxy/hairpin route (D10); on the probe, the loopback apache"; exit 1; }
 
-# The pairing check: connector 11.0.5 ↔ documentserver 9.3.4, certified as a set — and the AIO
-# fork's Dockerfile base rides the same suite release, so one version string must not describe
-# two pairings. The version source is the connector's own --check line: it asks the DS itself
-# (measured output: "… version 9.3.4.37 is successfully connected"), so this asserts the RUNNING
-# version, not the configured image. The BUILD suffix is not the contract — a hotfix rebuild
-# moves .37 inside 9.3.4 — the x.y.z is. The pattern lives in one variable so test.sh can extract
-# it and red-test both directions.
-DS_VERSION_PATTERN='version 9\.3\.4(\.| )'
-ds_check="$(occ eurooffice:documentserver --check)" \
-  || { echo "FAIL: 'occ eurooffice:documentserver --check' reported the server unreachable"; exit 1; }
-printf '%s' "$ds_check" | grep -qE "$DS_VERSION_PATTERN" \
-  || { echo "FAIL: documentserver is not 9.3.4 — this release pairs the connector with DS 9.3.4:" >&2
-       printf '%s\n' "$ds_check" >&2; exit 1; }
 
-# OSS / no-paid-licence. Resolve the container through compose rather than naming it:
-# `apsconecta-gestion-eurooffice-1` hardcoded the project name, so this silently found nothing
-# under COMPOSE_PROJECT_NAME — which is exactly how the clean-boot rehearsal runs.
-img="$(docker inspect "$(docker compose ps -q eurooffice)" --format '{{.Config.Image}}' 2>/dev/null || true)"
-case "$img" in
-  *euro-office/documentserver*) echo "  ✓ OSS image: ${img} (Euro-Office, AGPL — no paid licence)";;
-  *) echo "FAIL: unexpected Euro-Office image '${img}'"; exit 1;;
+# --check proves the whole wire at once: healthcheck + JWT + the version floor + a real docx
+# conversion round-trip via StorageUrl (DocumentService.php:383-425). Under AIO the wizard's
+# entrypoint owns the connector's URLs and jwt_secret (rewrites both on every boot), and phase
+# 14's AIO arm (slice 16) leaves them alone — so this leg asserts the ENTRYPOINT's values,
+# never phase 14's, which is the only posture that can be true on a running instance.
+out="$(occ eurooffice:documentserver --check 2>&1)" \
+  || { echo "FAIL: 'occ eurooffice:documentserver --check' reported the server unreachable"; printf '%s\n' "$out"; exit 1; }
+
+# The version pin, read from --check's own success line ("Document server $url version $v is
+# successfully connected" — lib/Command/DocumentServer.php:84). The ANSI strip is belt-and-braces:
+# occ strips its own <info> tags when stdout is not a TTY (docker exec), but the parse must not
+# depend on that detection. An unreadable version fails CLOSED — a parser that reads nothing
+# must never pass (B-014).
+ver="$(printf '%s\n' "$out" | sed 's/\x1b\[[0-9;]*m//g' | sed -n 's/.* version \([0-9][0-9.]*\) is successfully connected.*/\1/p' | head -1)"
+[ -n "$ver" ] || { echo "FAIL: could not read the document server version from --check's output:"; printf '%s\n' "$out"; exit 1; }
+case "$ver" in
+  9.3.*) echo "  ✓ document server ${ver} (the pinned pairing line, R3)" ;;
+  *) echo "FAIL: document server version '${ver}' is outside the pinned 9.3.x line — the suite pairs connector 11.0.5 with DS 9.3.x (R3); check which image the wizard started"; exit 1 ;;
 esac
 
-echo "PASS: Euro-Office — /healthcheck 200, documentserver --check OK (DS 9.3.4), rename intact, OSS image"
+# The DS image: the one this distribution's channel shipped. Resolved through `docker ps` by
+# NAME (the transport port's rule — no compose context exists on an AIO host), the same name
+# test.sh's office gate matches, so the two cannot drift.
+img="$(docker inspect "$(docker ps -q --filter name=nextcloud-aio-eurooffice | head -1)" --format '{{.Config.Image}}' 2>/dev/null || true)"
+# (P35, implement-time — measured on the probe) upstream's office image is named aio-eurooffice
+# (the aio- prefix, like aio-nextcloud); the fork's retag keeps the name and swaps the namespace.
+# The unprefixed eurooffice shapes the fence carried never exist.
+case "$img" in
+  ghcr.io/nextcloud-releases/aio-eurooffice*|ghcr.io/aps-conecta/aio-eurooffice*) echo "  ✓ DS image: ${img}" ;;
+  *) echo "FAIL: unexpected document server image '${img}' (expected ghcr.io/nextcloud-releases/aio-eurooffice or ghcr.io/aps-conecta/aio-eurooffice)"; exit 1 ;;
+esac
+
+echo "PASS: Euro-Office — public-path /healthcheck 200, documentserver --check OK (DS ${ver}), connector enabled, ${img}"
 echo "      (OOXML edits in place; ODF edits via conversion, lossy — see README)"
+

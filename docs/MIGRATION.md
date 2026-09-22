@@ -74,6 +74,22 @@ The markers, or the entrypoint's update pass can spin against a store that canno
 store is off in this suite — patch 020): `skip.update` and `fingerprint.update` in the data dir
 are the supported escape — AIO's own backuprestore writes exactly these.
 
+The codetree half (the amendment — the first boot breaks without it): the entrypoint decides
+fresh-vs-existing from `/var/www/html/version.php` (entrypoint.sh:131-140 — absent →
+`occ maintenance:install` runs into the restored database → `install.failed`). AIO's own borg
+restore never hits this because its archive carries the whole codetree volume
+(backupscript.sh:32,88); hand-built volumes must replicate the two load-bearing files:
+
+```bash
+# config.php, rewritten to the AIO form (migrate-to-aio.sh prepare does all of this):
+bash scripts/migrate-to-aio.sh prepare --domain <dominio>   # dump + datadir + config + version.php
+```
+
+The tool refuses a dump without the owner line AIO greps (start.sh:16), an owner equal to
+`oc_nextcloud` (start.sh:116-120's own refusal, hoisted to prepare time), and an
+already-initialized `nextcloud_aio_database` (`PG_VERSION` present — the restore would never
+fire, and the prepare would silently stack a second instance under the running one).
+
 The wizard publishes on an alternate port (8080 is open-webui on this host; 8443 is free).
 
 After first boot, assert the two survivals:
@@ -90,6 +106,26 @@ docker exec nextcloud-aio-database psql -U oc_nextcloud -d nextcloud_database -A
 ```
 
 Then tear the throwaway down completely (its volumes too) before §3 — same VPS, one stack.
+
+## 2½. The tool for any clinic
+
+The pilot's §1–§2 mechanics are `scripts/migrate-to-aio.sh`; the window and the rollback story
+are unchanged and remain THIS document's:
+
+- `prepare --domain <dominio>` — the reversible half: the verified dump into
+  `nextcloud_aio_database_dump`, the datadir (`cp -a`, dotfiles, `.ncdata`) with the two
+  markers into `nextcloud_aio_nextcloud_data`, config.php rewritten (dbhost/dbuser/dbname/
+  datadirectory/trusted_domains/overwriteprotocol/overwrite.cli.url; the redis password dies —
+  AIO's redis is passwordless) and version.php from the suite image, both into
+  `nextcloud_aio_nextcloud`. Re-run is safe until the first start; every stage refuses loudly.
+- After the first boot settles: `verify --domain <dominio>` — the three survivals (eurooffice
+  enabled, the restored table count, the datadir marker), the B-019 leg, and — once
+  `aps-conecta provision` has converged the site — the revalidate sweep + `make seed-idempotent`.
+
+The rehearsal window: run the whole flow against a THROWAWAY first (the same suite tag, a
+scratch domain), tear it down, and only then run it for the window. The live stack is the
+rollback until the moment of §3; after it, the dump + the preserved site record are the clinic
+(the Rollback section below).
 
 ## 3. The uninstall (the irreversible step)
 
@@ -151,6 +187,10 @@ scripts/comuna-package.sh 13110     # prints the exact territorio:import command
 - `scripts/refresh-basemap.sh` green with the derived anchor (the establishment's own DEIS point)
 - `occ app:list` shows eurooffice under **Enabled** (the §2 section-aware assert — under "Disabled:" is the JWT rewrite having won: red); the DS reports 9.3.4 (office-smoke asserts it)
 - the daily-backup flag line says `automaticUpdatesAreNotEnabled`
+- B-019's remote-user leg: `migrate-to-aio.sh verify` asserts the config shape
+  (`DocumentServerUrl` in the public form, `overwriteprotocol` https) — and the human leg it
+  cannot automate: open a document from ANOTHER machine. A green office gate says the server
+  is healthy, never that a remote person can work (BUGS.md B-019's own lesson).
 
 ## 6. The fresh-VM pass (the other half)
 
@@ -185,3 +225,17 @@ Rollback:       until down -v: the live stack (abort = do nothing). After: the d
 Before §3: aborting costs nothing — the live stack never noticed. After §3: the verified dump
 plus the preserved site record are the clinic; §2's procedure (adapted to the real install, not
 a throwaway) is the restore path. This is why §1 verifies the dump twice and §2 once more.
+
+## 9. The permanent traps (running index)
+
+One home for the failure modes that are postures, not bugs — each points back at the section
+that carries its story:
+
+- §1: the datadir copy must keep EVERY dotfile — `.ncdata` is the marker (never filter hidden files);
+- §2: the dump must land BEFORE the database container's first start (`PG_VERSION` present = the
+  restore never fires — `migrate-to-aio.sh prepare` refuses otherwise); the `skip.update` +
+  `fingerprint.update` markers must ride the datadir (the entrypoint's first-boot passes);
+- §2½: the first-boot DS wait (≈90 s, entrypoint.sh:885-893) disables the connector if the
+  document server is slow — one restart re-enables it; `verify` catches it;
+- §4: the wizard's daily-backup screen ships the autoupdate box PRE-CHECKED — uncheck it
+  (the suite is a lockstep set; any component moving alone breaks the pairing).

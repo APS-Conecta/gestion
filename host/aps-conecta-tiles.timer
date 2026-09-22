@@ -1,0 +1,22 @@
+[Unit]
+# The monthly trigger (FRD S9's cadence). Monthly, not weekly: the archive is 1.04 GB of
+# generated data — Protomaps re-builds the planet daily, OSM reality changes slower, and a
+# monthly cadence matches the masters' own "on new edition" posture (sources.json). The
+# re-provision timer (weekly) and this one never collide: different jobs, different loads.
+Description=APS Conecta: temporizador mensual del fondo de mapa
+Documentation=file:///opt/aps-conecta/gestion/docs/INSTALLER.md
+
+[Timer]
+# NOT OnCalendar=monthly: the special string normalizes to *-*-01 00:00:00 (measured with
+# systemd-analyze calendar) — the 1st at midnight, i.e. INSIDE the nightly borg window
+# (AIO's backup container), and every clinic would cluster there. The 4th at 05:00: clear
+# of the 1st's patch-day clustering, clear of the nightly window, and RandomizedDelaySec
+# spreads clinics anyway (the aps-conecta.timer's own politeness rationale, applied to a
+# heavier job).
+OnCalendar=*-*-04 05:00
+Persistent=true
+Unit=aps-conecta-tiles.service
+RandomizedDelaySec=2h
+
+[Install]
+WantedBy=timers.target

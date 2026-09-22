@@ -1,0 +1,2 @@
+
+self-test: 20 checks OK

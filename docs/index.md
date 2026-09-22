@@ -8,7 +8,9 @@ same fact, the one named here as its authority wins and the other should link in
 
 | Document | Mode | It is the authority for |
 |---|---|---|
-| [`README.md`](../README.md) | how-to + reference | How to stand the stack up, and what a release pins |
+| [`README.md`](../README.md) | how-to + reference | How to stand the **dev stack** up, and what a release pins; the clinic install lives in INSTALLER.md |
+| [`INSTALLER.md`](INSTALLER.md) | how-to | **How to stand a clinic up** (the AIO installer: preflight, wizard, Provisionador, timers, backups, the map, updates) |
+| [`GUIA-CLINICA.md`](GUIA-CLINICA.md) | how-to (Spanish) | The same clinic walkthrough in the operator's language — the eight manual-QA scenarios and the credentials ritual |
 | [`CONTEXT.md`](../CONTEXT.md) | reference | **The vocabulary.** Product identity, clinic identity, screens, releases, the four kinds of app |
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | how-to | **The documentation doctrine** every repository in the organisation inherits, and how work is run and reviewed |
 | [`AGENTS.md`](../AGENTS.md) | reference | The repo rules an AI agent must follow, and the invariants |

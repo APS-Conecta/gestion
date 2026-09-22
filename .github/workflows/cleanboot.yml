@@ -1,4 +1,8 @@
-# The full bring-up: install a clinic from nothing and prove it converges. ~3 minutes.
+# The full bring-up: install a clinic from nothing and prove it converges. Since the docker-exec
+# port, "from nothing" means the disposable AIO probe bed (scripts/aio-testbed.sh, slice 1):
+# upstream images, the wizard on :8080, apache loopback-only — the SAME kind of instance an
+# operator gets, with no S1 dependency, which is what keeps this job green continuously through
+# the port. Wall time is now ~15 min with the image pulls (the compose-era ~3).
 #
 # It lives in its own file because GitHub filters paths per WORKFLOW, not per job — the only way to
 # run this on the PRs that can break it while the static gate still runs on all of them.
@@ -41,28 +45,103 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
+# The full bring-up: install a clinic from nothing and prove it converges. Since the docker-exec
+# port, "from nothing" means the disposable AIO probe bed (scripts/aio-testbed.sh, slice 1):
+# upstream images, the wizard on :8080, apache loopback-only — the SAME kind of instance an
+# operator gets, with no S1 dependency, which is what keeps this job green continuously through
+# the port. The bring-up itself runs ~15 min with the image pulls (the compose-era ~3); the
+# gate stack below adds the reboot + re-seed arms on top (each bounded, minutes).
+#
+# THE GATE STACK (S8, slice 20): the job does not stop at "the install completed" — it ends with
+# the handoff contract: the divergence gate green on the clean install (the FRD S8 acceptance:
+# divergence-empty INCLUDING user coverage), the store-off reboot chain RUN (slice 13 verified it
+# against the shipped sources; this job is the only place it ever executes), the seed converging
+# again after that reboot (idempotency across a restart, the hardened seed-twice), and make test
+# with the office gate answering the probe (the AIO legs landed with this slice).
+#
+# It lives in its own file because GitHub filters paths per WORKFLOW, not per job — the only way
+# to run this on the PRs that can break it while the static gate still runs on all of them.
+#
+# WHY IT RUNS ON PULL REQUESTS (#97). Schedule/dispatch only, it never ran on its own; the first
+# dispatch, on 2026-08-01, failed on #96 — a bug already merged to main that this gate would have
+# caught on its PR. It cannot be a REQUIRED check (branch protection needs GitHub Pro or a public
+# repo), so the red X is advisory — exactly why the trigger matters: visibility is the mechanism.
+name: Clean boot
+
+# on:, schedule:, workflow_dispatch: and concurrency: are UNCHANGED (on disk).
+
 jobs:
   cleanboot:
     name: Clean boot
+    # THE RUNNER DECISION (S8, this slice — the commitment the artifact's Decisions and
+    # Performance rows deferred here "with evidence from the probe"): GitHub-hosted ubuntu-latest
+    # ADOPTED. The margins, from the probe's own measured numbers: the harness's RAM floor is
+    # ≥3.5 GiB available for the container set (its check_ram) against the runner's 16 GB; the
+    # image pull budget ~6 GB (start_post's bound) against ~14 GB of SSD. Both hold with
+    # multiples to spare, so no self-hosted runner is warranted. The recorded lever if a future
+    # runner shape goes tight (disk or minutes): the harness's minimal-sibling toggles — the
+    # upgrade path, not needed at adoption.
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 60, not the port-era 45: the gate stack adds the reboot arm (a 10-min-bounded re-settle)
+    # plus a second seed-idempotent and two divergence reads on top of the bring-up's own
+    # bounds. Every arm still fails loudly INSIDE its own bound — this number is only the CI
+    # backstop above those, and 45 would cut a legitimately slow reboot mid-walk.
+    timeout-minutes: 60
+    env:
+      # One identity, derived everywhere below. The harness installs this throwaway domain
+      # (SKIP_DOMAIN_VALIDATION + RFC-2606 .invalid: no DNS, no Let's Encrypt), and the
+      # OFFICE_PUBLIC_URL append must equal the value the AIO entrypoint itself writes
+      # (https://$NC_DOMAIN/eurooffice) so phase 14's query-before-set converges on it instead of
+      # clobbering it — and so smoke's check 14 reads a non-loopback editor URL, which the
+      # compose default (localhost:$OFFICE_PORT) would redden the moment the domain landed in
+      # trusted_domains. The connector's own wire under AIO is the entrypoint's end to end: it
+      # rewrites DocumentServerUrl/InternalUrl/StorageUrl and jwt_secret on every boot, phase
+      # 14's AIO arm (slice 16) leaves those alone, and office-smoke's legs (slice 20) assert
+      # against exactly those values — --check answers the internal URL, the healthcheck the
+      # public path, so the probe exercises the office wire without any DNS for the domain.
+      AIO_TEST_DOMAIN: aio-ci.invalid
+      # The probe's apache binds 127.0.0.1:${AIO_TEST_APACHE_PORT} and runs auto_https OFF
+      # (APACHE_PORT != 443): plain HTTP — which is what lets smoke's curls answer
+      # http://localhost:${HTTP_PORT} with zero HTTP-surface changes. The port is
+      # docker-transport-only by design.
+      AIO_TEST_APACHE_PORT: "11000"
     steps:
       - uses: actions/checkout@v4
+      # The probe bed FIRST, so a harness preflight failure (RAM, ports, ghcr reachability) is
+      # the first thing a red log shows. Every wait inside is bounded, and `up` ends in its own
+      # port gate — the runner never claims 80/443, and :8080 is the only publish.
+      - name: Bring up the disposable AIO instance
+        run: bash scripts/aio-testbed.sh up
+      # FIRST BOOT, the one sibling whose absence kills a first boot: the notify-push
+      # container's own start dies when the app binary is absent (Containers/notify-push/
+      # start.sh:31-41) — the FRD S3 first-boot acceptance, whose CI owner this step is (the
+      # interim images boot-smoke checks the wizard only). On this stock probe the entrypoint
+      # installed the app from the store at first boot (the store is still on until the
+      # harness's probe state lands); on a suite clinic the bake ships the binary and the store
+      # never answers — both postures converge to the same observable: the sibling runs. The
+      # store-off reboot below re-asserts it.
+      - name: First boot — the notify-push sibling converged
+        run: |
+          docker ps --filter name=nextcloud-aio-notify-push --filter status=running --format '{{.Names}}' \
+            | grep -qx nextcloud-aio-notify-push \
+            || { echo "FAIL: nextcloud-aio-notify-push is not running after first boot (the S3 first-boot acceptance) — diagnose: docker ps -a --filter name=nextcloud-aio-notify-push ; docker logs nextcloud-aio-notify-push" >&2; exit 1; }
       # `make setup` rather than `cp`, so the generator itself is exercised: it is the only place
-      # the four secrets are produced, and it cannot be tested on a dev box that already has an env
-      # file. A clean runner is the one environment where the create path actually runs.
+      # the four secrets are produced, and it cannot be tested on a dev box that already has an
+      # env file. A clean runner is the one environment where the create path actually runs.
       - run: make setup
-      # No establishment ships, so this is not merely a test of the `--new` path — it IS the install
-      # path every operator walks, and this job is where it is proven. Piped answers stand in for the
-      # operator's; the appended SITE line wins over anything .env.example says, because env.sh takes
-      # the last assignment it reads.
+      # No establishment ships, so this is not merely a test of the `--new` path — it IS the
+      # install path every operator walks, and this job is where it is proven. Piped answers
+      # stand in for the operator's; the appended SITE line wins over anything .env.example
+      # says, because env.sh takes the last assignment it reads.
       - name: Choose an establishment, the way an operator would
         run: |
-          # A deterministic pick over the register, not a fixed code: every clinic in the register
-          # is a valid install, and CI booting the same one every time is a fixture that steers —
-          # and names a real clinic in a public log. sha256 over the sorted codes makes the pick
-          # stable per register content: it moves only when the register moves, and sites/**
-          # already triggers this workflow, so every new snapshot is booted against a fresh pick.
+          # A deterministic pick over the register, not a fixed code (FINDINGS P2 — the slice-20
+          # fence carries the design's literal; the on-disk file keeps the pick machinery, the
+          # same P2 resolution): every clinic in the register is a valid install, and CI booting
+          # the same one every time is a fixture that steers — and names a real clinic in a
+          # public log. sha256 over the sorted codes makes the pick stable per register content,
+          # and satisfies the establishment-agnostic gate (ADR-0013): no tracked file may hand
+          # deis.py a DEIS code — a literal here reddens `make test` (AGNOSTIC_SHAPE).
           pick=$(python3 - <<'PY'
           import csv, glob, hashlib, sys
           files = sorted(glob.glob("sites/establecimientos-deis-*.csv"))
@@ -86,29 +165,38 @@ jobs:
           printf 'Sector 1\nSector 2\n\nSalud Mental\nInfantil\n\n' | scripts/deis.py "$code" --new ci
           echo "SITE=ci" >> .env
           # Establishment-local roles (#103). deis.py writes SITE_ROLES empty by design — most
-          # establishments add nothing beyond the shared registry — so the create path would never
-          # execute anywhere if CI did not append one here. One of each kind on purpose: a jefatura,
-          # which must ALSO produce a standing account, and a technical role, which must not.
-          # Works for any pick: deis.py:217 always writes SITE_ROLES=() for the += to append to.
+          # establishments add nothing beyond the shared registry — so the create path would
+          # never execute anywhere if CI did not append one here. One of each kind on purpose: a
+          # jefatura, which must ALSO produce a standing account, and a technical role, which
+          # must not.
           cat >> sites/ci/site.sh <<'ROLES'
           SITE_ROLES+=( "role-jefe-sar|Jefe/a de SAR|cat-jefaturas" "role-tens-sar|TENS – SAR|cat-tecnicos" )
           ROLES
-      # The whole install, exactly as an operator runs it: `make up` owns the wait for Nextcloud's
-      # own installer, and provisioning follows. This is also the path nothing else exercises — so
-      # 12-apps unpacks every vendored tarball into an empty apps/ and applies its patches for real,
-      # and every query-before-set guard meets a key that does not exist yet.
-      # Euro-Office comes up with it since #81 dropped the profile: this job downloads the 2.56 GB
-      # documentserver it used to skip and waits out its 120s start_period, and in exchange
-      # `make test` below proves a document can be opened, not only that the connector was configured.
+      # The probe's own surfaces, appended AFTER `make setup` so they win (env.sh takes the last
+      # assignment it reads — the same rule the SITE line above rides):
+      #   HTTP_PORT → the loopback apache, where every one of smoke's curls lands;
+      #   OFFICE_PUBLIC_URL → the entrypoint's own DocumentServerUrl value (see the env note).
+      - name: Point the seed at the probe's HTTP and office surfaces
+        run: |
+          echo "HTTP_PORT=${AIO_TEST_APACHE_PORT}" >> .env
+          echo "OFFICE_PUBLIC_URL=https://${AIO_TEST_DOMAIN}/eurooffice" >> .env
+      # The whole provisioning pipeline, exactly as an operator runs it after the wizard starts
+      # the containers. The harness's bounded waits own what `make up` used to own on compose —
+      # the instance is installed and quiesced before this step runs. This is also the path
+      # nothing else exercises: every query-before-set guard meets a key that does not exist
+      # yet, and 12-apps applies its patches for real.
       - run: make install
-      # Paired with the SITE_ROLES appended above (#103), because "the seed did not crash" is not the
-      # same as "the roles landed". Asserts both halves of the rule: a cat-jefaturas role is a
-      # POSITION and gets a standing account; a cat-tecnicos one is a job title held by people who
-      # arrive with the roster (#106), so it must NOT. The negative is the half that would rot
-      # silently — an over-eager loop creating accounts for every local role looks like success.
+      # Paired with the SITE_ROLES appended above (#103), because "the seed did not crash" is
+      # not the same as "the roles landed". Asserts both halves of the rule: a cat-jefaturas
+      # role is a POSITION and gets a standing account; a cat-tecnicos one is a job title held
+      # by people who arrive with the roster (#106), so it must NOT. The negative is the half
+      # that would rot silently — an over-eager loop creating accounts for every local role
+      # looks like success. One occ() definition, sourced (slice 2) — and the seam's default
+      # IS this job's container: the harness brought up nextcloud-aio-nextcloud, so the
+      # NC_CONTAINER stopgap died here with the compose bring-up it existed to bridge.
       - name: Clinic-local roles landed, and only the jefatura got an account
         run: |
-          occ() { docker compose exec -T --user www-data nextcloud php occ "$@"; }
+          source scripts/env.sh
           occ group:list | grep -q role-jefe-sar
           occ group:list | grep -q role-tens-sar
           occ user:info jefe.sar > /dev/null
@@ -116,18 +204,91 @@ jobs:
             echo "FAIL: tens.sar exists — a cat-tecnicos role must not create a standing account" >&2
             exit 1
           fi
-      # The only place a first AND a second seed both exist. Idempotency is the pipeline's defining
-      # property (AD-2) and nothing else asserts it: a warm dev box cannot tell "already correct"
-      # from "silently did nothing", because on a warm box those are the same thing.
+      # (P35, implement-time — measured on the probe) the entrypoint writes only the PUBLIC
+      # DocumentServerUrl; a real clinic's public DNS answers every server-side office leg. The
+      # probe's .invalid domain has no DNS and its apache listens on $AIO_TEST_APACHE_PORT
+      # internally, so the office wire's server-to-server legs get the internal names — the
+      # same probe-adaptation posture HTTP_PORT/OFFICE_PUBLIC_URL already carry.
+      - name: Probe office wire — the internal URLs the loopback-only probe needs
+        run: |
+          source scripts/env.sh
+          occ config:app:set eurooffice DocumentServerInternalUrl --value http://nextcloud-aio-eurooffice/
+          occ config:app:set eurooffice StorageUrl --value "http://nextcloud-aio-apache:${AIO_TEST_APACHE_PORT}/"
+          occ config:system:set trusted_domains 2 --value=nextcloud-aio-apache
+      # The only place a first AND a second seed both exist. Idempotency is the pipeline's
+      # defining property (AD-2) and nothing else asserts it: a warm dev box cannot tell
+      # "already correct" from "silently did nothing", because on a warm box those are the
+      # same thing.
       - run: make seed-idempotent
+      # THE HANDOFF CONTRACT (S8's acceptance): divergence-empty on a clean install, users
+      # included — the gate-only domain (slice 5). The gate reads the declared set (the SITE_
+      # ROSTER roster — legitimately absent on this install, an operator that never ran the
+      # Provisionador has no roster — the standings re-derived from sites/ci/site.sh, and the
+      # install's own admin) and the live set in-container, and exits 1 on ANY note: drift,
+      # parser rot, transport rot. A green here is the FRD's S8 line, in CI, on a real install.
+      - name: Divergence gate — the clean install's handoff contract
+        run: bash scripts/divergence.sh --gate
+      # THE UPDATE-DAY POSTURE, run for real (slice 13 verified the store-off reboot chain
+      # against the shipped v34.0.4 sources — AppStoreFetcher::get returns [] with
+      # appstoreenabled=0, so the entrypoint's app:update legs answer "up-to-date" and exit 0;
+      # the unbounded store-reachability wait fires only on image-bump boots — but no probe
+      # ever REBOOTED with the store off: the gap this arm closes). A same-image restart re-runs
+      # the whole entrypoint under the probe's store-off posture; the bound is the harness's
+      # own install-wait shape.
+      - name: Reboot the instance with the store off — the update-day posture
+        run: |
+          docker restart nextcloud-aio-nextcloud
+          boot_t0=$(date +%s)
+          for i in $(seq 60); do
+            st="$(docker exec --user www-data nextcloud-aio-nextcloud php /var/www/html/occ status --output=json 2>/dev/null || true)"
+            case "$st" in *'"installed":true'*) echo "occ status ready (attempt $i)"; break ;; esac
+            sleep 10
+          done
+          # (P34, implement-time — measured on the probe) occ-status-ready is NOT entrypoint-done:
+          # the app walk (support/spreed re-enabled globally) lands ~2 min later. Wait for fpm's
+          # ready line before any seed touches the state the walk rewrites.
+          for i in $(seq 60); do
+            if docker logs --since "$(( $(date +%s) - boot_t0 - 5 ))s" nextcloud-aio-nextcloud 2>&1 | grep -q "ready to handle connections"; then
+              echo "entrypoint settled (attempt $i)"; exit 0
+            fi
+            sleep 10
+          done
+          echo "FAIL: the instance never settled within 10 min of the store-off reboot — docker logs nextcloud-aio-nextcloud" >&2
+          exit 1
+      # THE HARDENED SEED-TWICE: the third seed runs against a REBOOTED instance, not a warm
+      # one — idempotency across a restart, the strongest form this job can run — and the
+      # divergence gate answers again post-reboot (the entrypoint's re-run changed nothing the
+      # declared set does not name). The notify-push sibling re-assert: it survived the reboot
+      # of the container it pushes FOR.
+      - name: The post-reboot seed still converges, and the gates stay green
+        run: |
+          # (P34, implement-time) the entrypoint's boot re-enables its own apps (support, spreed)
+          # globally — the update-day doctrine is converge-then-prove: the convergence seed
+          # re-asserts the declared set over whatever the entrypoint reset, and the idempotence
+          # proof then holds on the converged state (measured green on the probe).
+          make seed
+          make seed-idempotent
+          bash scripts/divergence.sh --gate
+          docker ps --filter name=nextcloud-aio-notify-push --filter status=running --format '{{.Names}}' \
+            | grep -qx nextcloud-aio-notify-push \
+            || { echo "FAIL: nextcloud-aio-notify-push is not running after the store-off reboot" >&2; exit 1; }
+      # The full local gate — smoke's 14 checks through the probe's loopback apache, the
+      # office gate answering the AIO sibling since this slice (office-smoke's AIO legs:
+      # public-path healthcheck + --check + the DS 9.3.x pin + the image namespaces), and the
+      # two hermetic self-tests riding test.sh's static section.
       - run: make test
+      # No compose context exists on this runner anymore: the probe's logs come from docker
+      # itself, and the container listing is what shows a sibling that never converged.
       - name: Logs on failure
         if: failure()
-        run: docker compose logs --tail=100
-      # `make install` prints phase names and sends the detail to .install.log, so without this the
-      # one job that exists to catch a broken install cannot show what broke — #96 was diagnosed only
-      # after adding it. include-hidden-files because .install.log is a dotfile and upload-artifact@v4
-      # skips those by default, which silently uploaded nothing on the first attempt.
+        run: |
+          docker ps -a --filter name=nextcloud-aio- --format 'table {{.Names}}\t{{.Status}}'
+          docker logs --tail=100 nextcloud-aio-nextcloud
+      # `make install` prints phase names and sends the detail to .install.log, so without this
+      # the one job that exists to catch a broken install cannot show what broke — #96 was
+      # diagnosed only after adding it. include-hidden-files because .install.log is a dotfile
+      # and upload-artifact@v4 skips those by default, which silently uploaded nothing on the
+      # first attempt.
       - name: Provisioning log on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -136,3 +297,10 @@ jobs:
           path: .install.log
           include-hidden-files: true
           if-no-files-found: warn
+      # Scoped teardown, always — the harness removes only nextcloud-aio* containers and volumes
+      # (name/label-filtered) plus its own state dir, so `down` after a failed `up` is safe by
+      # construction. On an ephemeral runner this is hygiene; it also keeps the job honest
+      # about never leaving the wizard port published.
+      - name: Probe teardown
+        if: always()
+        run: bash scripts/aio-testbed.sh down

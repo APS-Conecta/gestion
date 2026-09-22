@@ -24,7 +24,16 @@ require_real_secrets || exit 1
 LOG=.install.log
 
 printf '▸ stack\n'
-make --no-print-directory up || exit 1
+# The stack step went AIO-aware with the docker-exec port: an AIO instance IS the stack — the
+# wizard owns bring-up, so `up` here would try to stand a compose nextcloud BESIDE it (and its
+# 127.0.0.1:${HTTP_PORT} bind collides with the probe's loopback apache). Compose dev and the
+# live pre-AIO stack (the D5 interim until S10) keep `make up` exactly as before. Detection is
+# the same docker-ps-by-name shape smoke's check 1 and test.sh's gates use.
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx nextcloud-aio-nextcloud; then
+  printf '  nextcloud-aio-nextcloud up — the wizard owns the stack; provisioning only\n'
+else
+  make --no-print-directory up || exit 1
+fi
 
 # The phase log is the operator-facing register, so it goes to the file and only the phase names
 # reach the terminal. Nothing is prettified away — `make seed` still prints all of it, which is what

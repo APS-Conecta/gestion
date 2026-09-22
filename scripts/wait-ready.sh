@@ -57,5 +57,8 @@ done
 
 printf '\n'
 echo "FATAL: Nextcloud did not finish installing in 10 minutes." >&2
-docker compose logs --tail=50 nextcloud >&2
+# The tail rides the seam's own target — the same container occ() above talked to, via the same
+# env default (NC_CONTAINER), so `make up` on a compose stack (D5 interim: NC_CONTAINER in .env)
+# and an AIO bring-up both name the right container. `docker logs` needs no compose context.
+docker logs --tail=50 "${NC_CONTAINER:-nextcloud-aio-nextcloud}" >&2
 exit 1
