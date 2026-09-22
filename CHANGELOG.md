@@ -11,6 +11,45 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-09-22
+
+### Added
+
+- **The Provisionador** (`scripts/provisionador.py`) — the host-side wizard that walks an operator
+  from a fresh AIO install to a provisioned clinic: the DEIS cascade, sectors/programs, the users
+  CSV with sealed credentials, the executor (`.env` convergence → seed → roster → divergence gate),
+  and the eight es-CL screens over the same JSON APIs. 100-check hermetic self-test.
+- **The host bundle** (`host/aps-conecta`) — `preflight`, `run-command` (the one `docker run`
+  string), `provision [--reponer]` (the weekly headless re-provision), `revalidate`, `respaldo`,
+  `tiles`, `datos`; the weekly re-provision and monthly tiles-refresh systemd units.
+- **The tiles stack** (`host/tiles.sh`) — the digest-pinned nginx + the sha256-gated pmtiles CLI
+  + the `TILES_PUBLIC_URL` convergence + the 18-check self-test; the archive at
+  `/srv/aps-conecta` (outside borg's scope by design).
+- **The migration tool** (`scripts/migrate-to-aio.sh`) — dump + datadir + config.php +
+  version.php into AIO's own volumes before first start, and the post-restore verify hook;
+  20-check self-test. `docs/MIGRATION.md` gains the codetree-half amendment, §2½, the B-019
+  remote-user leg, and §9's permanent-traps index.
+- **The operator docs** — `docs/INSTALLER.md` (the English clinic runbook) and
+  `docs/GUIA-CLINICA.md` (the es-CL walkthrough: the eight screens, the planilla, the
+  credentials ritual, «tras actualizar», «¿y el mapa?»).
+- **The final-validation harness** (`scripts/final-validation.sh`) — the whole-installer
+  acceptance ritual, 17 numbered steps, 5-check self-test.
+- **Four hermetic self-tests in `make test`** — provisionador (100), host bundle (39), tiles (18),
+  migrate (20): no docker, no stack, every PR.
+
+### Changed
+
+- **`cleanboot.yml` is the S8 acceptance** — the first-boot notify-push sibling assert, the
+  divergence-gate handoff on the clean install, the store-off reboot (settle-wait +
+  converge-then-prove), the office AIO legs, and the deterministic register pick.
+- **`office-smoke.sh` answers the AIO stack** — the public-path healthcheck through apache, the
+  DS 9.3.x pin read from `--check`'s own line, the image namespaces; the white-label pair
+  retired to build time. `test.sh`'s office gate flips to the AIO sibling (the visible skip
+  under compose).
+- **`14-office.sh` carries the AIO arm** — the entrypoint owns the office wire under AIO; the
+  compose writes live inside their branch.
+- **README/docs index/ARCHITECTURE** — the two-worlds posture: the dev stack stays this README,
+  the clinic is APS Conecta AIO (`INSTALLER.md`).
 ## [0.2.0] — 2026-09-21
 
 ### Added
@@ -271,5 +310,6 @@ Same pinned apps and image digests as 0.1.0 — no functional change for a clini
 
 [Unreleased]: https://github.com/APS-Conecta/gestion/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/APS-Conecta/gestion/releases/tag/v0.2.0
+[0.3.0]: https://github.com/APS-Conecta/gestion/releases/tag/v0.3.0
 [0.1.1]: https://github.com/APS-Conecta/gestion/releases/tag/v0.1.1
 [0.1.0]: https://github.com/APS-Conecta/gestion/releases/tag/v0.1.0
