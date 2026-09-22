@@ -66,7 +66,6 @@ concurrency:
 # dispatch, on 2026-08-01, failed on #96 — a bug already merged to main that this gate would have
 # caught on its PR. It cannot be a REQUIRED check (branch protection needs GitHub Pro or a public
 # repo), so the red X is advisory — exactly why the trigger matters: visibility is the mechanism.
-name: Clean boot
 
 # on:, schedule:, workflow_dispatch: and concurrency: are UNCHANGED (on disk).
 
