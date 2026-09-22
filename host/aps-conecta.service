@@ -1,0 +1,28 @@
+[Unit]
+# The weekly idempotent re-provision (FRD S7): drift self-healing — the seed's
+# query-before-write contract makes the re-run a no-op on a converged host, and the
+# divergence gate's verdict is the process exit code, so a drifted host shows as a FAILED
+# unit in `systemctl --failed`, which is the surface a clinic IT person actually looks at.
+# Re-provision ONLY: backups and restores are AIO's own (the borgbackup container + the
+# wizard's backup section) — this unit never touches them (the research's S7 correction).
+Description=APS Conecta: re-provisión idempotente semanal
+Documentation=file:///opt/aps-conecta/gestion/docs/INSTALLER.md
+After=network-online.target docker.service
+Wants=network-online.target
+# The executable is the documented symlink (INSTALLER.md owns the wiring:
+#   sudo ln -s <repo>/host/aps-conecta /usr/local/bin/aps-conecta
+# ) — a missing symlink fails the unit loudly instead of the timer firing a silent no-op.
+ConditionFileIsExecutable=/usr/local/bin/aps-conecta
+
+[Service]
+Type=oneshot
+# The headless arm: start the Provisionador, POST modo=ejecutar, exit the gate's code.
+# Bounded internally (the banner read is 30 s; the executor's own TIMEOUTS bound each phase;
+# the curl is -m 1800) — no unbounded hang anywhere (B-015).
+ExecStart=/usr/local/bin/aps-conecta provision --reponer
+# root: the executor rides docker exec (the ported occ) — the docker group alone also works,
+# root is the documented posture for a single-purpose clinic host.
+User=root
+# Journald owns the log — the unit adds nothing (no StandardOutput files to rotate).
+[Install]
+WantedBy=multi-user.target

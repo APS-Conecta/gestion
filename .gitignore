@@ -53,3 +53,7 @@ __pycache__/
 # The basemap archive: ~1 GB of generated data, rebuilt by scripts/refresh-basemap.sh
 # (Territorio ADR-0019). The nginx config beside it IS tracked.
 /tiles/
+
+# implement-time evidence transcripts — local only, never tracked (the sites-register and lint-sweep gates own these paths)
+/sites/*.txt
+/derisk-transcripts/

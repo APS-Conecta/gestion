@@ -1,0 +1,780 @@
+#!/usr/bin/env bash
+# aps-conecta — the host bundle CLI (FRD S7). Thin glue on purpose: every heavy thing already
+# lives somewhere with its own gate — the Provisionador (scripts/provisionador.py, its own
+# --self-test), the seed phases (provisioning/, seed-idempotent), the divergence gate
+# (scripts/divergence.sh --gate). This script only: checks the host before install, prints the
+# ONE docker run string, hands the operator to the Provisionador, re-provisions weekly, and
+# wires the backup scope. English here, es-CL for the operator (the house register rule).
+#
+# Usage:
+#   aps-conecta preflight            host checks + the run command (the FRD's pre-install gate)
+#   aps-conecta run-command          just the docker run string (one source, never re-typed)
+#   aps-conecta provision            start the Provisionador (interactive; Ctrl+C stops it)
+#   aps-conecta provision --reponer  headless weekly re-provision (the systemd timer's job)
+#   aps-conecta respaldo             wire /opt/aps-conecta into AIO's backup scope (idempotent)
+#   aps-conecta revalidate          post-update gate sweep: smoke + office-smoke + divergence
+#   aps-conecta tiles …            the basemap stack (install | refresh | check — host/tiles.sh)
+#   aps-conecta datos [CUT]        the comuna data packages, cut + checksum-verified + staged
+#   aps-conecta --self-test          the self-check (no docker needed — PATH shims)
+#
+# The install host is assumed to carry bash, git, python3, docker and curl — preflight checks
+# every one of them and fails closed with a fix hint (never a half-answer).
+set -uo pipefail
+
+HOST_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+ROOT="$(cd "$HOST_DIR/.." && pwd)"
+# No PROV global: ROOT can be overridden (the self-test does exactly that), so every
+# caller resolves scripts/provisionador.py from the CURRENT root.
+prov_path() { printf '%s' "$ROOT/scripts/provisionador.py"; }
+
+# The docker API floor is not ours to invent: AIO's own tested requirement is v1.44
+# (php/src/Docker/DockerActionManager.php:19); the mastercontainer itself enforces it at start
+# (start.sh:125-145). Preflight only says it BEFORE the wizard does, with a fix hint.
+API_FLOOR=144        # 1.44 as major*100+minor
+WIZARD_PORTS="80 443 8080 8443"   # the wizard needs 8080; apache takes 443; 80/8443 are the
+                                  # reverse-proxy companions upstream's install path expects
+PROV_PORTS="8081 8082 8083"        # the Provisionador's fallback chain (slice 14) — INFO only
+
+die() { echo "FATAL: $*" >&2; exit 1; }
+ok()  { printf '✓ %s\n' "$*"; }
+bad() { printf '✗ %s\n' "$1"; printf '  → %s\n' "$2"; FAIL=1; }
+info(){ printf '· %s\n' "$*"; }
+FAIL=0
+
+# ── preflight arms ──────────────────────────────────────────────────────────────────────────
+
+need_tool() {  # NAME — the prereq sweep; a missing tool is a red with its install hint
+  if command -v "$1" >/dev/null 2>&1; then
+    ok "$1 presente"
+  else
+    bad "$1 no está instalado" "instale $1 y vuelva a ejecutar aps-conecta preflight"
+  fi
+}
+
+check_docker() {  # API floor measured, not assumed — docker version is the only source
+  local api
+  api="$(docker version --format '{{.Server.APIVersion}}' 2>/dev/null)" || api=""
+  case "$api" in
+    [0-9]*.[0-9]*) ;;
+    *) bad "docker no responde (daemon caído o sin permisos)" \
+         "inicie el servicio docker y asegure que su usuario esté en el grupo docker"; return ;;
+  esac
+  local major minor num
+  major="${api%%.*}"; minor="${api#*.}"
+  num=$((major * 100 + minor))
+  if [ "$num" -ge "$API_FLOOR" ]; then
+    ok "docker (API $api — el mínimo de AIO es 1.44)"
+  else
+    bad "docker API $api es menor que el mínimo 1.44 de AIO" \
+      "actualice docker (los repos de Ubuntu suelen quedar atrás: use el repositorio oficial de Docker)"
+  fi
+}
+
+check_compose() {
+  if docker compose version >/dev/null 2>&1; then
+    ok "compose v2 presente"
+  else
+    bad "docker compose v2 no está disponible" \
+      "el plugin compose v2 viene con el docker oficial; «docker-compose» suelto no sirve"
+  fi
+}
+
+port_free() {  # PORT — the rule-10 discipline (the slice-3 testbed's own idiom)
+  ss -ltn "sport = :$1" 2>/dev/null | tail -n +2 | grep -q . && return 1
+  return 0
+}
+
+check_ports() {  # the four wizard-facing ports; a busy one names its holder
+  local p holder
+  for p in $WIZARD_PORTS; do
+    if port_free "$p"; then
+      ok "puerto $p libre"
+    else
+      holder="$(ss -ltnp "sport = :$p" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1)"
+      bad "puerto $p ocupado${holder:+ (pid $holder)}" \
+        "detenga el servicio que usa el puerto $p o desinstálelo antes del asistente"
+    fi
+  done
+}
+
+site_file() {  # the single establishment's site.sh (D13) — empty if none, error text if many
+  local f found=""
+  for f in "$ROOT"/sites/*/site.sh; do
+    [ -f "$f" ] || continue
+    [ -n "$found" ] && { echo "MÁS DE UN SITIO"; return; }
+    found="$f"
+  done
+  printf '%s' "$found"
+}
+
+site_domain() {  # SITE_DOMINIO from the site record (#75 hook) — empty when unset
+  local f; f="$(site_file)"
+  case "$f" in "" | "MÁS DE UN SITIO") return 1 ;; esac
+  grep -m1 '^SITE_DOMINIO=' "$f" 2>/dev/null | sed 's/^SITE_DOMINIO=//; s/^"//; s/"$//' || true
+}
+
+check_dns() {  # resolves the SITE record's own domain — the wizard asks for the same one
+  local d; d="$(site_domain || true)"
+  if [ -z "$d" ]; then
+    info "SITE_DOMINIO aún vacío — el asistente le pedirá el dominio; esta prueba corre tras elegirlo"
+    return
+  fi
+  if getent hosts "$d" >/dev/null 2>&1; then
+    ok "DNS responde para $d"
+  else
+    bad "DNS no responde para $d" \
+      "cree el registro A (o AAAA) del dominio apuntando a la IP pública de este servidor"
+  fi
+}
+
+check_arch() {  # x86-64 is the clinic posture; arm64 publishes exist, so it passes with evidence
+  case "$(uname -m)" in
+    x86_64) ok "x86-64" ;;
+    aarch64) ok "arm64 (las imágenes -arm64 de la suite existen — la mirada clínica es x86-64)" ;;
+    *) bad "arquitectura $(uname -m) no soportada" "la suite publica x86-64 y arm64 únicamente" ;;
+  esac
+}
+
+check_prov_ports() {  # INFO + the routed liveness probe (slices 14/15): GET / answers the
+  # identity JSON with no auth and no secrets — the one honest way to tell a running
+  # provisionador from a stranger on the same port. Never a gate: the Provisionador owns
+  # its own fallback chain.
+  local p busy=0 body
+  for p in $PROV_PORTS; do
+    if ! port_free "$p"; then
+      busy=1
+      body="$(curl -s -m 5 "http://127.0.0.1:$p/" 2>/dev/null || true)"
+      if printf '%s' "$body" | grep -q '"servicio"'; then
+        info "puerto $p: un provisionador ya corre ahí (la identidad GET / responde) — reutilícelo o deténgalo con Ctrl+C"
+      else
+        info "puerto $p ocupado por otro servicio — el provisionador elegirá un puerto libre de la cadena 8081→8083"
+      fi
+    fi
+  done
+  [ "$busy" -eq 0 ] && info "cadena del provisionador libre (8081→8083 — elige sola)"
+  return 0
+}
+
+check_hairpin() {  # the D10 leg (#8433): the HOST curls its own public domain — the exact
+  # failing hop (hairpin NAT). Runs only when the stack is up; preflight on a fresh host says so.
+  local d; d="$(site_domain || true)"
+  [ -z "$d" ] && return
+  if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^nextcloud-aio-apache$'; then
+    info "stack aún no instalado — tras el asistente, «aps-conecta preflight» prueba $d desde acá"
+    return
+  fi
+  if curl -sk --max-time 10 "https://$d/status.php" >/dev/null 2>&1; then
+    ok "https://$d/status.php responde desde el host (la pierna hairpin funciona)"
+  else
+    bad "https://$d/status.php NO responde desde el propio host (hairpin-NAT, el fallo #8433)" \
+      "permita el reflejo: «ufw route allow proto tcp from 172.18.0.0/16 to any port 443» (el rodeiro registrado del upstream #8433), o split-DNS: dnsmasq local con registro A del dominio, o el dns del daemon.json de docker; NO use SKIP_DOMAIN_VALIDATION — no resuelve esta pierna"
+  fi
+  if curl -sk --max-time 10 "https://$d/eurooffice/healthcheck" >/dev/null 2>&1; then
+    ok "https://$d/eurooffice/healthcheck responde desde el host"
+  else
+    bad "el healthcheck de eurooffice NO responde desde el host" \
+      "misma pierna hairpin que status.php — el camino interno (nombres DNS de contenedor) es el respaldo documentado"
+  fi
+}
+
+# ── the run-command generator ─────────────────────────────────────────────────────────────
+# ONE source. preflight prints it, INSTALLER.md quotes it, the operator pastes it. The tag is
+# the gestion release this checkout ships as (D12: suite tag = gestion release tag); override
+# with APS_SUITE_TAG only for rehearsed installs (the migration window, slice 22's rehearsal).
+
+suite_tag() {
+  if [ -n "${APS_SUITE_TAG:-}" ]; then printf '%s' "$APS_SUITE_TAG"; return; fi
+  git -C "$ROOT" describe --tags --abbrev=0 2>/dev/null && return
+  echo ""
+}
+
+run_command() {  # prints the operator's docker run string (never executes it)
+  local tag; tag="$(suite_tag)"
+  [ -n "$tag" ] || die "no pude leer la etiqueta de versión (¿git tags?) — o exporte APS_SUITE_TAG"
+  cat <<EOF
+docker run --init --sig-proxy=false --name nextcloud-aio-mastercontainer \\
+  --restart always \\
+  --publish 8080:8080 \\
+  --env APACHE_PORT=443 \\
+  --env NEXTCLOUD_STARTUP_APPS="" \\
+  --volume nextcloud_aio_mastercontainer:/mnt/docker-aio-config \\
+  --volume /var/run/docker.sock:/var/run/docker.sock:ro \\
+  ghcr.io/aps-conecta/all-in-one:$tag
+EOF
+}
+
+# NEXTCLOUD_STARTUP_APPS is deliberately EMPTY, not absent: the apps and the theme are baked
+# into the image (D4), so boot-time app:install attempts would be noise at every fresh start —
+# and an empty value is also the verified way past the mastercontainer's [ -n ]-gated charset
+# validator (start.sh:291-298). Both facts are the slice-5 amendment's own finding (the ratified
+# forced amendment, ledgered in its History row).
+
+# ── provision ─────────────────────────────────────────────────────────────────────────────
+
+cmd_provision() {  # [--reponer]
+  if [ "${1:-}" = "--reponer" ]; then reponer; return; fi
+  # Interactive: the Provisionador's banner is the operator's only copy of URL + token, its
+  # stdout is line-buffered (slice 14) and the URL now lands on the login screen (slice 17).
+  # exec — one process, no wrapper to wedge between the operator and Ctrl+C.
+  exec python3 "$(prov_path)"
+}
+
+banner_read() {  # FD — the REAL banner() shape (slice 14's locked bytes, unchanged by 17):
+  #   ✓ Provisionador APS Conecta
+  #     Registro DEIS: instantánea … (N establecimientos)
+  #     Abra http://127.0.0.1:PORT — desde otro equipo de la red, …
+  #     Token de acceso ( cópielo en la pantalla de inicio ):
+  #       <64 hex>
+  # The URL rides the «Abra» line; the token is the line AFTER the «Token de acceso» label.
+  # Bounded: 30 s, no unbounded hang (B-015).
+  local fd="$1" deadline=$((SECONDS + 30)) url="" tok="" ln seen_label=0
+  while :; do
+    # (plan-local fix, Step 5: read moves into the body — its timeout return must not fail
+    #  the loop condition, or the first silent second ends the read and the 30 s deadline
+    #  is dead code; silent seconds are tolerated, the deadline is the only exit)
+    IFS= read -r -t 1 -u "$fd" ln || { [ "$SECONDS" -ge "$deadline" ] && return 1; continue; }
+    if [ "$seen_label" -eq 1 ]; then
+      tok="$(printf '%s' "$ln" | tr -d '[:space:]')"
+      seen_label=0
+      if [ -n "$url" ] && [ "${#tok}" -eq 64 ]; then
+        printf '%s\n%s' "$url" "$tok"; return 0
+      fi
+    fi
+    case "$ln" in
+      *"Abra http://127.0.0.1:"*)
+        url="http://127.0.0.1:${ln#*http://127.0.0.1:}"; url="${url%% *}" ;;
+      *"Token de acceso"*) seen_label=1 ;;
+    esac
+    [ "$SECONDS" -ge "$deadline" ] && return 1
+  done <&"$fd"
+  return 1
+}
+
+site_codigo() {  # the site directory IS the DEIS codigo (slice 14: sites/<codigo>/site.sh)
+  local f; f="$(site_file)"
+  case "$f" in
+    "") echo ""; return 1 ;;
+    "MÁS DE UN SITIO") echo ""; return 1 ;;
+    *) basename "$(dirname "$f")" ;;
+  esac
+}
+
+reponer() {  # the weekly headless re-provision (the timer's whole job): start the
+  # Provisionador, read its banner, POST modo=ejecutar, print the run + the gate verdict,
+  # exit the gate's code — drift self-healing or a loud red, never a silent no-op.
+  local codigo; codigo="$(site_codigo)" || true
+  if [ -z "$codigo" ]; then
+    die "no hay un sitio único en sites/ (D13: un establecimiento por instalación) — ejecute primero el provisionador"
+  fi
+  local fifo provpid
+  fifo="$(mktemp -u)"; mkfifo "$fifo"
+  python3 "$(prov_path)" > "$fifo" 2>&1 & provpid=$!
+  exec 3< "$fifo"
+  local _b=() url tok
+  readarray -t _b < <(banner_read 3)
+  if [ "${#_b[@]}" -ne 2 ]; then
+    exec 3>&-; kill "$provpid" 2>/dev/null; rm -f "$fifo"
+    die "no leí el banner del provisionador (30 s — ¿arrancó python3?)"
+  fi
+  url="${_b[0]}"; tok="${_b[1]}"
+  info "re-provisión semanal: modo=ejecutar para $codigo (token leído del banner — no se imprime)"
+  local body code
+  # read_json is JSON-only (provisionador.py:1477-1481 — a form-encoded body 400s), and
+  # api_generar reads {"codigo", "modo"} from the decoded object — the locked contract
+  body="$(curl -s -m 1800 -w '\n%{http_code}' \
+    -H "Authorization: Bearer $tok" \
+    -H 'Content-Type: application/json' \
+    --data "$(printf '{"codigo": "%s", "modo": "ejecutar"}' "$codigo")" \
+    "$url/api/generar" 2>/dev/null)" ; code="${body##*$'\n'}"
+  exec 3>&- ; kill "$provpid" 2>/dev/null; rm -f "$fifo"
+  # WHERE never WHAT: the token was used in the header; nothing here echoes it.
+  if [ "$code" = "200" ]; then
+    local vacia
+    vacia="$(printf '%s' "$body" | head -n -1 | grep -oP '"divergencia_vacia":\s*\K(true|false)' || true)"
+    printf '%s\n' "$(printf '%s' "$body" | head -n -1)"
+    if [ "$vacia" = "true" ]; then
+      ok "divergencia vacía — la re-provisión semanal no encontró deriva"
+      exit 0
+    fi
+    bad "divergencia NO vacía — la deriva semanal se muestra arriba" \
+      "revise el informe; «aps-conecta provision» abre el provisionador para corregir"
+    exit 1
+  fi
+  bad "la ejecución falló (HTTP $code)" "el detalle llega arriba — cada fase nombra su propio error"
+  exit 1
+}
+
+# ── respaldo ───────────────────────────────────────────────────────────────────────────────
+
+cmd_respaldo() {  # wire /opt/aps-conecta into AIO's backup scope — idempotent, via the
+  # mastercontainer's own data file: GetDataDirectory() is /mnt/docker-aio-config/data/
+  # (php/src/Data/DataConst.php:6-13 — start.sh:406 mkdirs it every start), so the file is
+  # /mnt/docker-aio-config/data/additional_backup_directories, one path per line
+  # (DataConst.php:39-40; the wizard's backup form loads the same file, so the line survives
+  # a later form save).
+  local target=/opt/aps-conecta mc=nextcloud-aio-mastercontainer
+  local datafile=/mnt/docker-aio-config/data/additional_backup_directories
+  if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$mc"; then
+    die "el mastercontainer ($mc) no está corriendo — el wiring va después del asistente"
+  fi
+  if docker exec "$mc" sh -c "grep -qxF '$target' '$datafile' 2>/dev/null"; then
+    ok "$target ya está en el alcance de las copias de seguridad"
+  else
+    docker exec "$mc" sh -c "echo '$target' >> '$datafile'" \
+      || die "no pude escribir el alcance en el mastercontainer"
+    ok "$target agregado al alcance de las copias de seguridad"
+  fi
+  info "ojo: los directorios adicionales se RESPALDAN pero no se restauran junto con la instancia (comportamiento propio de AIO, documentado en el asistente) — /opt/aps-conecta se restaura a mano desde el archivo borg"
+}
+
+# ── revalidate ─────────────────────────────────────────────────────────────────────────────
+
+cmd_revalidate() {  # post-update: run every read-only gate against the running instance
+  # The FRD S8's post-update revalidation suite. WHEN the operator runs it: right after the
+  # clinic's stack moves — a new suite tag on purpose (D12: a published tag's digests never
+  # move, so an update IS a deliberate new-tag run) or a container reboot. The three gates are
+  # the read-only half of this program's gate stack: smoke (the 14 core invariants),
+  # office-smoke (the office wire: public-path healthcheck + --check + the 9.3.x pin), and
+  # divergence --gate (live state vs the declared set — the handoff contract the executor and
+  # the weekly timer already ride). All three are read-only by their locked contracts, so this
+  # arm never writes — the --reponer timer owns convergence; revalidate only measures.
+  # ALL THREE run, first-fail is not the shape: after an update, clinic IT needs the complete
+  # picture (WHICH gates are red), not the first one (test.sh's aggregation lesson). The exit
+  # code is the aggregate — 0 iff all three green — the same verdict shape --reponer exits, so
+  # a red revalidate reads identically to a red weekly unit wherever operators look.
+  local rc=0 out st name
+  for name in smoke office-smoke divergence-gate; do
+    case "$name" in
+      smoke)           out="$(bash "$ROOT/scripts/smoke.sh" 2>&1)"; st=$? ;;
+      office-smoke)    out="$(bash "$ROOT/scripts/office-smoke.sh" 2>&1)"; st=$? ;;
+      divergence-gate) out="$(bash "$ROOT/scripts/divergence.sh" --gate 2>&1)"; st=$? ;;
+    esac
+    if [ "$st" -eq 0 ]; then
+      printf '  ✓ %s — %s\n' "$name" "$(printf '%s\n' "$out" | tail -1)"
+    else
+      printf '  ✗ %s — el detalle completo:\n' "$name"
+      printf '%s\n' "$out"
+      rc=1
+    fi
+  done
+  if [ "$rc" -eq 0 ]; then
+    echo "REVALIDACIÓN: PASS — humo ✓, oficina ✓, divergencia vacía ✓ (la instancia sigue convergida)"
+  else
+    echo "REVALIDACIÓN: FAIL — lo de arriba quedó tras la actualización; «aps-conecta provision» re-converge el estado declarado, y el informe de divergencia nombra el resto" >&2
+  fi
+  return "$rc"
+}
+
+# ── tiles + datos (slice 21, FRD S9) ─────────────────────────────────────────────────────
+NC=nextcloud-aio-nextcloud           # the AIO posture: respaldo hardcodes the mastercontainer
+                                      # the same way; NC_CONTAINER is the seed's knob, not ours
+DATOS_HOME="${DATOS_HOME:-/srv/aps-conecta/datos}"   # beside the tiles home — regenerable
+                                      # generated data, outside borg's scope by the same argument
+
+site_comuna_cut() {  # the site record's own CUT (v0.2.0's seam — deis.py emits it post-v0.2.0)
+  local f; f="$(site_file)"
+  case "$f" in "" | "MÁS DE UN SITIO") return 1 ;; esac
+  grep -m1 '^SITE_COMUNA_CUT=' "$f" 2>/dev/null | sed 's/^SITE_COMUNA_CUT=//' || true
+}
+
+cmd_datos() {  # [CUT] — S9's data-package leg: the national masters, sha256-verified, cut to
+  # THIS install's comuna, staged durably, with the AIO import translation printed. Thin on
+  # purpose: scripts/comuna-package.sh (v0.2.0's slice-11 artifact) owns the fetch-verify
+  # and the cut — this arm resolves the CUT, stages the output, and translates the import
+  # form. It never imports: the import is a deliberate operator paste with the backup step
+  # visible beside it (IMPORT_DESIGN's own rule: pg_dump beforehand, revert from the
+  # browser, ADR-0009) — an install-time auto-import would bypass every one of those
+  # disciplines.
+  local cut="${1:-}"
+  # Territorio is S12-gated: at v1.0 the app is not baked and the wizard's own card says
+  # «pendiente de empaquetado». Nothing can receive the data — the honest skip, never a
+  # silent fetch of ~93 MB of masters for an app that cannot import (the office-skip
+  # precedent: visible, exit 0, no work done).
+  if ! docker exec "$NC" sh -c 'test -d /var/www/html/custom_apps/territorio' >/dev/null 2>&1; then
+    info "territorio: pendiente de empaquetado (la tarjeta del asistente lo dice) — este comando no descarga nada"
+    info "cuando territorio esté disponible, re-ejecute «aps-conecta datos»: traerá y verificará los paquetes de su comuna"
+    return 0
+  fi
+  if [ -z "$cut" ]; then
+    cut="$(site_comuna_cut || true)"
+    [ -n "$cut" ] || die "el registro del sitio no trae SITE_COMUNA_CUT — regenere el sitio con el provisionador (lo escribe desde v0.2.0)"
+  fi
+  local stage="$DATOS_HOME/$cut"
+  mkdir -p "$stage" || die "no pude crear $stage"
+  info "cortando los paquetes de la comuna $cut (maestros nacionales, sha256 verificado por comuna-package.sh — la primera vez descarga ~93 MB)"
+  # WORK_DIR: the routed v0.2.0 amendment — without it comuna-package.sh's EXIT-trap kills
+  # the cuts with the child, and its own closing line ("import them, then remove") promises
+  # a persistence the trap denies (the design-time find, its own criteria row). Staged here,
+  # the cuts survive for the docker cp the AIO form needs.
+  if ! WORK_DIR="$stage" bash "$ROOT/scripts/comuna-package.sh" "$cut"; then
+    die "comuna-package falló — arriba queda el canal que quebró (un maestro que se movió se re-registra por edición, nunca se corta a ciegas)"
+  fi
+  echo
+  echo "los paquetes quedaron bajo $stage (impórtelos y luego elimínelos). Bajo AIO, cada comando «occ territorio:import …» que comuna-package.sh imprimió arriba se ejecuta así:"
+  local f base
+  while IFS= read -r f; do
+    base="$(basename "$f")"
+    echo "  1. docker cp '$f' $NC:/tmp/"
+    echo "  2. docker exec -u www-data $NC php /var/www/html/occ territorio:import '/tmp/$base' …(los argumentos que comuna-package.sh imprimió)"
+    echo "  3. docker exec $NC rm -f '/tmp/$base'"
+  done < <(find "$stage" -type f -name '*.geojson' | sort)
+  echo
+  info "re-importar el MISMO archivo imprime «created: 0» — si crea filas, el esquema uid quebró (territorio IMPORT_DESIGN, regla 6): deténgase y corríjalo"
+  info "antes del primer import tome su respaldo habitual — cada import queda revertible desde el navegador del administrador (ADR-0009 de territorio)"
+}
+
+# ── preflight (the whole sweep) ────────────────────────────────────────────────────────────
+
+cmd_preflight() {
+  echo "Preflight del instalador APS Conecta AIO"
+  # bash checks itself (this script IS bash); the rest are real prerequisites
+  need_tool git; need_tool python3; need_tool curl; need_tool docker
+  check_docker; check_compose; check_ports; check_dns; check_arch; check_prov_ports
+  check_hairpin
+  echo
+  if [ "$FAIL" -gt 0 ]; then
+    echo "PREFLIGHT: ✗ — corrija lo marcado arriba antes de instalar"
+    exit 1
+  fi
+  ok "host listo — copie y ejecute el comando siguiente"
+  echo
+  run_command
+}
+
+# ── self-test ──────────────────────────────────────────────────────────────────────────────
+# PATH shims, planted fixtures, a stub provisionador — no docker, no network, no host state.
+# Every arm proves a real arm of the CLI: the checks against planted tool output, the generator
+# string, the banner parse, the site discovery, and --reponer end to end against the stub.
+
+selftest() {
+  local n=0 tshim tmp ROOT_BAK="$ROOT"
+  tmp="$(mktemp -d)"
+  tshim="$tmp/bin"; mkdir -p "$tshim"
+
+  check() {  # NAME COND
+    n=$((n + 1))
+    if eval "$2"; then :; else echo "  FAIL: $1" >&2; FAILED=$((FAILED + 1)); fi
+  }
+  FAILED=0
+
+  # ── shims: a fake world, one per arm ──
+  mk_docker() {  # API [ps-name] — an EMPTY first arg means the daemon is dead: the no-colon
+  # expansions keep a set-but-null argument null (${1:-…} would substitute the default and
+  # turn a dead daemon into a healthy one — this shim's own first draft did exactly that)
+    cat > "$tshim/docker" <<EOF
+#!/usr/bin/env bash
+case "\$1 \$2" in
+  "version --format") echo "${1-1.56}" ;;
+  "compose version") exit ${5-0} ;;
+  "ps --format") echo "${2-}" ;;
+  *) exit 0 ;;
+esac
+EOF
+    chmod +x "$tshim/docker"
+  }
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/ss"; chmod +x "$tshim/ss"
+  printf '#!/usr/bin/env bash\necho x86_64\n' > "$tshim/uname"; chmod +x "$tshim/uname"
+  printf '#!/usr/bin/env bash\necho 127.0.0.1\n' > "$tshim/getent"; chmod +x "$tshim/getent"
+
+  export PATH="$tshim:$PATH"
+
+  # ── the generator: ONE string, the FRD's own shape ──
+  ROOT="$tmp/repo"; mkdir -p "$ROOT"
+  git -C "$ROOT" init -q && git -C "$ROOT" -c user.email=self@t -c user.name=self commit -q --allow-empty -m x && git -C "$ROOT" tag v9.9.9
+  RC="$(run_command)"
+  check "generator: the full operator run string at the release tag" \
+    '[ "$RC" = "docker run --init --sig-proxy=false --name nextcloud-aio-mastercontainer \\
+  --restart always \\
+  --publish 8080:8080 \\
+  --env APACHE_PORT=443 \\
+  --env NEXTCLOUD_STARTUP_APPS=\"\" \\
+  --volume nextcloud_aio_mastercontainer:/mnt/docker-aio-config \\
+  --volume /var/run/docker.sock:/var/run/docker.sock:ro \\
+  ghcr.io/aps-conecta/all-in-one:v9.9.9" ]'
+  check "generator: the deliberate empty startup-apps posture rides the string" \
+    'case "$RC" in *"--env NEXTCLOUD_STARTUP_APPS=\"\""*) ;; *) false;; esac'
+  APS_SUITE_TAG=v0.2.0-rc1; export APS_SUITE_TAG
+  check "generator: APS_SUITE_TAG override wins over the git tag" \
+    '[ "$(suite_tag)" = "v0.2.0-rc1" ]'
+  unset APS_SUITE_TAG
+
+  # ── the checks against planted tool worlds ──
+  mk_docker 1.44 ""
+  FAIL=0; out="$(check_docker)"
+  check "docker: API 1.44 is the floor, passing at exactly the floor" \
+    'case "$out" in ✓*) ;; *) false;; esac'
+  mk_docker 1.43 ""
+  out="$(check_docker)"
+  check "docker: API 1.43 reds with the upgrade hint" \
+    'case "$out" in ✗*"menor que el mínimo 1.44"*"actualice docker"*) ;; *) false;; esac'
+  mk_docker "" ""
+  out="$(check_docker)"
+  check "docker: a dead daemon reds with the daemon fix hint, never half-answers" \
+    'case "$out" in ✗*"docker no responde"*) ;; *) false;; esac'
+
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$tshim/docker"; chmod +x "$tshim/docker"
+  out="$(check_compose)"
+  check "compose: a broken/absent plugin reds with its fix hint" \
+    'case "$out" in ✗*"compose v2 no está disponible"*) ;; *) false;; esac'
+
+  printf '#!/usr/bin/env bash\nif [ "$2" = "sport = :8080" ]; then echo "State Recv-Q"; echo "LISTEN 0 0 *:8080"; fi\nexit 0\n' > "$tshim/ss"; chmod +x "$tshim/ss"
+  out="$(port_free 8080 && echo FREE)"
+  check "ports: a listener on 8080 is seen busy (rule 10: check before docker fails)" \
+    '[ "$out" != FREE ]'
+  # check_ports end to end: the busy port names its holder and its fix hint; the free ones pass
+  out="$(check_ports)"
+  check "ports: the sweep reds the busy one (with holder + hint) and greens the free ones" \
+    'case "$out" in *"✗ puerto 8080 ocupado"*"detenga el servicio"*) ;; *) false;; esac'
+  check "ports: the free ports of the sweep print their ok lines" \
+    'case "$out" in *"puerto 443 libre"*"puerto 8443 libre"*) ;; *) false;; esac'
+
+  # ── site discovery + DNS + arch ──
+  mkdir -p "$ROOT/sites/113314"; printf 'SITE_DOMINIO="clinic.example"\n' > "$ROOT/sites/113314/site.sh"
+  check "site: the single site's codigo is the directory (D13)" '[ "$(site_codigo)" = 113314 ]'
+  mkdir -p "$ROOT/sites/999999"; printf 'SITE_DOMINIO=""\n' > "$ROOT/sites/999999/site.sh"
+  check "site: two sites refuse loudly (one establishment per install)" '[ -z "$(site_codigo || true)" ]'
+  rm -rf "$ROOT/sites/999999"
+  check "dns: the site record's own domain is read (the #75 hook)" '[ "$(site_domain)" = clinic.example ]'
+  out="$(check_dns)"
+  check "dns: a resolving domain greens (getent alive)" \
+    'case "$out" in *"DNS responde para clinic.example"*) ;; *) false;; esac'
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$tshim/getent"; chmod +x "$tshim/getent"
+  out="$(check_dns)"
+  check "dns: a dead resolution reds with the registro-A hint" \
+    'case "$out" in *"✗ DNS no responde"*"registro A"*) ;; *) false;; esac'
+  printf '#!/usr/bin/env bash\necho 127.0.0.1\n' > "$tshim/getent"; chmod +x "$tshim/getent"
+
+  # arch: all three postures measured through the real function
+  out="$(check_arch)"
+  check "arch: x86_64 greens" 'case "$out" in *"✓ x86-64"*) ;; *) false;; esac'
+  printf '#!/usr/bin/env bash\necho aarch64\n' > "$tshim/uname"; chmod +x "$tshim/uname"
+  out="$(check_arch)"
+  check "arch: aarch64 passes with the -arm64 evidence (the suite publishes both)" \
+    'case "$out" in *"✓ arm64"*"-arm64"*) ;; *) false;; esac'
+  printf '#!/usr/bin/env bash\necho riscv64\n' > "$tshim/uname"; chmod +x "$tshim/uname"
+  out="$(check_arch)"
+  check "arch: anything else reds with the supported-architectures hint" \
+    'case "$out" in *"✗ arquitectura riscv64 no soportada"*) ;; *) false;; esac'
+  printf '#!/usr/bin/env bash\necho x86_64\n' > "$tshim/uname"; chmod +x "$tshim/uname"
+
+  # the provisionador chain: free chain, stranger-busy, and provisionador-busy (the routed
+  # GET / identity probe — no auth, no secrets, slices 14/15)
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/ss"; chmod +x "$tshim/ss"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/curl"; chmod +x "$tshim/curl"
+  out="$(check_prov_ports)"
+  check "prov-ports: the free chain prints its INFO" 'case "$out" in *"cadena del provisionador libre"*) ;; *) false;; esac'
+  printf '#!/usr/bin/env bash\nif [ "$2" = "sport = :8081" ]; then echo "State"; echo "LISTEN 0 0 *:8081"; fi\nexit 0\n' > "$tshim/ss"; chmod +x "$tshim/ss"
+  out="$(check_prov_ports)"
+  check "prov-ports: a stranger on 8081 is named a stranger (the identity probe saw no servicio key)" \
+    'case "$out" in *"ocupado por otro servicio"*) ;; *) false;; esac'
+  cat > "$tshim/curl" <<'CSHIM'
+#!/usr/bin/env bash
+printf '{"servicio": "Provisionador APS Conecta", "estado": "listo", "registro": "2026-07-23", "establecimientos": 2655}'
+CSHIM
+  chmod +x "$tshim/curl"
+  out="$(check_prov_ports)"
+  check "prov-ports: a running provisionador is recognized via GET / (the routed liveness probe)" \
+    'case "$out" in *"un provisionador ya corre ahí"*"GET / responde"*) ;; *) false;; esac'
+
+  # the hairpin probes: green pair and the #8433 red with R4's recorded recipe
+  printf '#!/usr/bin/env bash\nif [ "$1" = ps ]; then echo nextcloud-aio-apache; exit 0; fi\nexit 0\n' > "$tshim/docker"; chmod +x "$tshim/docker"
+  out="$(check_hairpin)"
+  check "hairpin: status.php + healthcheck green from the host (the stack up, the domain set)" \
+    'case "$out" in *"status.php responde desde el host"*"eurooffice/healthcheck responde"*) ;; *) false;; esac'
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$tshim/curl"; chmod +x "$tshim/curl"
+  out="$(check_hairpin)"
+  check "hairpin: the #8433 red carries R4's ufw recipe and the split-DNS legs, and never SKIP_DOMAIN_VALIDATION as advice" \
+    'case "$out" in *"172.18.0.0/16"*"dnsmasq"*"daemon.json"*"NO use SKIP_DOMAIN_VALIDATION"*) ;; *) false;; esac'
+
+  # ── respaldo: idempotent via the mastercontainer's own file ──
+  : > "$tmp/mc-additional"
+  cat > "$tshim/docker" <<'DSHIM'
+#!/usr/bin/env bash
+if [ "$1" = ps ]; then echo nextcloud-aio-mastercontainer; exit 0; fi
+if [ "$1" = exec ]; then
+  case "$5" in
+    *data/additional_backup_directories*)
+      case "$5" in
+        *grep*) grep -qxF /opt/aps-conecta "$MC_ADDITIONAL" 2>/dev/null; exit $? ;;
+        *echo*) echo /opt/aps-conecta >> "$MC_ADDITIONAL"; exit 0 ;;
+      esac ;;
+    *) exit 1 ;;   # a write to the WRONG path must fail loudly — the R1 find's guard
+  esac
+fi
+exit 0
+DSHIM
+  chmod +x "$tshim/docker"
+  export MC_ADDITIONAL="$tmp/mc-additional"
+  out="$(cmd_respaldo 2>&1)"
+  check "respaldo: first wiring adds the target; the no-restore caveat prints (the honest cost)" \
+    'case "$out" in *"agregado al alcance"*"no se restauran"*) ;; *) false;; esac'
+  out="$(cmd_respaldo 2>&1)"
+  check "respaldo: second wiring is the idempotent no-op, caveat still printed" \
+    'case "$out" in *"ya está en el alcance"*"no se restauran"*) ;; *) false;; esac'
+  check "respaldo: the mastercontainer's file actually carries the line" \
+    'grep -qxF /opt/aps-conecta "$tmp/mc-additional"'
+
+  # ── --reponer end to end: a stub provisionador with the banner format + a canned verdict ──
+  # the reponer arm needs the REAL curl (the POST must leave the process) — the hairpin
+  # arms left their curl shim behind, and a shimmed curl silently turned every verdict into
+  # an HTTP-000 red (this arm's own find: the shim world is per-arm, restore the real tool)
+  rm -f "$tshim/curl"
+  mkdir -p "$ROOT/scripts"
+  cat > "$ROOT/scripts/provisionador.py" <<'EOF'
+# stub: the real banner shape (slice 14: URL line, token line) then one canned POST answer
+import sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+VACIA = "true"
+# the stub's banner is byte-shaped like provisionador.py's own banner() — the parse must
+# survive the REAL lines («Abra …» with the URL mid-line, the label line, the indented hex)
+class H(BaseHTTPRequestHandler):
+    def do_POST(self):
+        # the stub enforces the LOCKED contract (read_json: JSON-only, codigo+modo) — a
+        # form-encoded body must 400 here exactly as the real provisionador would, so the
+        # self-test catches a wrapper that drifts off the JSON contract (R2's hollow-stub find)
+        import json as J
+        n = int(self.headers.get("Content-Length", 0))
+        try:
+            payload = J.loads(self.rfile.read(n).decode("utf-8"))
+            assert isinstance(payload, dict) and payload.get("codigo") and payload.get("modo") == "ejecutar"
+        except Exception:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(b'{"error": "el cuerpo debe ser JSON codificado en UTF-8"}')
+            return
+        body = '{"salida": "fase 10: ok\\nfase 20: ok", "divergencia_vacia": ' + VACIA + '}'
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(body.encode())
+    def log_message(self, *a): pass
+# port 0: the OS picks a free one — a hardcoded port collides with whatever the test host
+# already serves (this VPS serves :8081; the stub's first draft died on bind and the POST hit
+# a stranger — the self-test's own find)
+srv = HTTPServer(("127.0.0.1", 0), H)
+print("\u2713 Provisionador APS Conecta")
+print("  Registro DEIS: instant\u00e1nea 2026-07-23 (2655 establecimientos)")
+print("  Abra http://127.0.0.1:%d \u2014 desde otro equipo de la red, reemplace 127.0.0.1 por la IP de este servidor." % srv.server_port)
+print("  Token de acceso ( c\u00f3pielo en la pantalla de inicio ):")
+print("    0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+sys.stdout.flush()
+srv.serve_forever()
+EOF
+  out="$(reponer 2>&1)"; rc=$?
+  check "reponer: reads the stub banner, POSTs modo=ejecutar, exits the gate's code (0 on empty divergence)" \
+    '[ "$rc" -eq 0 ] && case "$out" in *"re-provisión semanal"*"divergencia vacía"*) ;; *) false;; esac'
+  check "reponer: the token is used, never printed (WHERE never WHAT)" \
+    'case "$out" in *0123456789abcdef*) false;; *) true;; esac'
+
+  # a red gate must exit 1 — prove-it-red for the timer's failure surface
+  sed -i 's/VACIA = "true"/VACIA = "false"/' "$ROOT/scripts/provisionador.py"
+  out="$(reponer 2>&1)"; rc=$?
+  check "reponer: non-empty divergence exits 1 (the weekly drift red reaches systemd)" \
+    '[ "$rc" -eq 1 ]'
+  check "reponer: the red names the drift and the fix path" \
+    'case "$out" in *"divergencia NO vacía"*"aps-conecta provision"*) ;; *) false;; esac'
+
+  # an HTTP 500 (a failed phase) must exit 1 with the HTTP code — the executor's own contract
+  sed -i 's/self.send_response(200)/self.send_response(500)/' "$ROOT/scripts/provisionador.py"
+  sed -i 's/VACIA = "false"/VACIA = "true"/' "$ROOT/scripts/provisionador.py"
+  out="$(reponer 2>&1)"; rc=$?
+  check "reponer: a phase failure (HTTP 500) exits 1 naming the code" \
+    '[ "$rc" -eq 1 ] && case "$out" in *"HTTP 500"*) ;; *) false;; esac'
+
+  # the revalidate arm (slice 20): three stub gate scripts under a fixture root — the
+  # aggregation + the exit contract, never first-fail. The command substitution scopes the
+  # ROOT override (a bare ROOT=x prefix on a function call persists AFTER the call in bash —
+  # the control-knob lesson's function-call variant).
+  local rvd="$tmp/reval" rout rrc
+  mkdir -p "$rvd/scripts"
+  printf '#!/usr/bin/env bash\necho "PASS: smoke stub"\nexit 0\n'      > "$rvd/scripts/smoke.sh"
+  printf '#!/usr/bin/env bash\necho "FAIL: office stub red"\nexit 1\n' > "$rvd/scripts/office-smoke.sh"
+  printf '#!/usr/bin/env bash\necho "no notes"\nexit 0\n'             > "$rvd/scripts/divergence.sh"
+  chmod +x "$rvd/scripts/"*.sh
+  rout="$(ROOT="$rvd" cmd_revalidate 2>&1)"; rrc=$?
+  check "revalidate reports every gate (a red office beside a green smoke + divergence)" \
+    '[ "$rrc" -eq 1 ] && printf "%s" "$rout" | grep -q "office-smoke" && printf "%s" "$rout" | grep -q "smoke — PASS"'
+  printf '#!/usr/bin/env bash\necho "PASS: office stub"\nexit 0\n' > "$rvd/scripts/office-smoke.sh"
+  rout="$(ROOT="$rvd" cmd_revalidate 2>&1)"; rrc=$?
+  check "revalidate aggregates green (exit 0 + the PASS line)" \
+    '[ "$rrc" -eq 0 ] && printf "%s" "$rout" | grep -q "REVALIDACIÓN: PASS"'
+
+  # the datos arm (slice 21): the territorio gate, the CUT resolution, the staged translation
+  local droot="$tmp/datos-repo" dlog="$tmp/datos.log"
+  mkdir -p "$droot/scripts"
+  # a stub comuna-package.sh that HONORS WORK_DIR (the routed v0.2.0 amendment's shape) and
+  # logs its argv — the self-test proves the WRAPPER's contract, comuna-package.sh's own gates
+  # are v0.2.0's to prove (the stub stands in for the Phase-0 artifact, named for what it is)
+  cat > "$droot/scripts/comuna-package.sh" <<EOF
+#!/usr/bin/env bash
+printf 'argv=%s WORK_DIR=%s\n' "\$*" "\$WORK_DIR" >> "$dlog"
+mkdir -p "\$WORK_DIR"/tmp.x
+printf '{"type": "FeatureCollection"}\n' > "\$WORK_DIR"/tmp.x/unidades-vecinales-13110.geojson
+printf '{"type": "FeatureCollection"}\n' > "\$WORK_DIR"/tmp.x/deis-establecimientos-13110.geojson
+echo "comuna-package stub: 37 unidades vecinales, 44 establecimientos — los comandos occ siguen"
+exit 0
+EOF
+  chmod +x "$droot/scripts/comuna-package.sh"
+  # ── arm 1: territorio absent (v1.0's own posture) → the pending skip, ZERO channel work
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$tshim/docker"; chmod +x "$tshim/docker"  # exec → test -d fails: no app
+  : > "$dlog"
+  local dout drc
+  dout="$(ROOT="$droot" DATOS_HOME="$tmp/datos" cmd_datos 2>&1)"; drc=$?
+  check "datos: territorio ausente → la postura pendiente, exit 0, y comuna-package JAMÁS corrió (nada se descarga)" \
+    '[ "$drc" -eq 0 ] && [ ! -s "$dlog" ] \
+     && case "$dout" in *"pendiente de empaquetado"*"no descarga nada"*) ;; *) false;; esac'
+  # ── arm 2: territorio present → CUT resolution from the site record. The site rides
+  # $droot — the ROOT cmd_datos actually runs under (a fixture split between two roots
+  # was the de-risk's own catch: the CUT read $droot/sites and found nothing).
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/docker"; chmod +x "$tshim/docker"  # exec → test -d passes
+  mkdir -p "$droot/sites/113314"
+  printf 'SITE_DEIS=113314\nSITE_COMUNA_CUT=13110\n' > "$droot/sites/113314/site.sh"
+  check "datos: el CUT del registro del sitio se lee (el seam de v0.2.0)" \
+    '[ "$(ROOT="$droot" site_comuna_cut)" = 13110 ]'
+  : > "$dlog"
+  dout="$(ROOT="$droot" DATOS_HOME="$tmp/datos" cmd_datos 2>&1)"; drc=$?
+  check "datos: el flujo completo corre por el stub — WORK_DIR apunta al staging, el CUT pasa" \
+    '[ "$drc" -eq 0 ] && grep -q "argv=13110 WORK_DIR=$tmp/datos/13110" "$dlog" \
+     && [ -f "$tmp/datos/13110/tmp.x/unidades-vecinales-13110.geojson" ]'
+  check "datos: la traducción AIO se imprime por cada .geojson — cp, exec occ, rm — con las notas de idempotencia y respaldo" \
+    'printf "%s" "$dout" | grep -qF "docker cp '"'"'$tmp/datos/13110/tmp.x/unidades-vecinales-13110.geojson'"'"' $NC:/tmp/" \
+     && printf "%s" "$dout" | grep -qF "php /var/www/html/occ territorio:import '"'"'/tmp/unidades-vecinales-13110.geojson'"'"'" \
+     && printf "%s" "$dout" | grep -q "created: 0" \
+     && printf "%s" "$dout" | grep -q "revertible"'
+  # ── arm 3: no site record → the refuse with its fix hint (never a silent default CUT)
+  rm -rf "$droot/sites/113314"
+  dout="$(ROOT="$droot" DATOS_HOME="$tmp/datos" cmd_datos 2>&1)"; drc=$?
+  check "datos: sin registro de sitio se rehúsa con la corrección nombrada" \
+    '[ "$drc" -ne 0 ] && case "$dout" in *"SITE_COMUNA_CUT"*"provisionador"*) ;; *) false;; esac'
+
+  # ── the units parse (systemd-analyze verify, offline) ──
+  if command -v systemd-analyze >/dev/null 2>&1; then
+    u="$(systemd-analyze verify "$HOST_DIR/aps-conecta.service" "$HOST_DIR/aps-conecta.timer" 2>&1 || true)"
+    # the executable-path complaint is this box's expected state (no symlink on a dev
+    # box — INSTALLER.md owns the wiring); any OTHER output is a unit defect
+    leftovers="$(printf '%s' "$u" | grep -v 'aps-conecta' || true)"
+    check "units: systemd-analyze leaves only the unwired ExecStart path (INSTALLER.md owns the symlink; no syntax errors, no unknown directives)" \
+      'case "$u" in *"Failed to parse"*|*"Unknown"*|*"Invalid"*) false;; *) true;; esac && [ -z "$leftovers" ]'
+  fi
+
+  ROOT="$ROOT_BAK"
+  rm -rf "$tmp"
+  echo
+  echo "self-test: $n checks OK"
+  [ "$FAILED" -eq 0 ] || { echo "self-test: $FAILED FAILED" >&2; exit 1; }
+  return 0
+}
+
+# ── dispatch ──────────────────────────────────────────────────────────────────────────────
+
+case "${1:-}" in
+  preflight)    shift; cmd_preflight "$@" ;;
+  run-command)  run_command ;;
+  provision)    shift; cmd_provision "${1:-}" ;;
+  revalidate)   cmd_revalidate ;;
+  respaldo)     cmd_respaldo ;;
+  tiles)        shift; exec bash "$HOST_DIR/tiles.sh" "$@" ;;
+  datos)        shift; cmd_datos "${1:-}" ;;
+  --self-test)  selftest ;;
+  *) sed -n '2,23p' "$0"; echo; echo "uso: aps-conecta {preflight|run-command|provision [--reponer]|revalidate|respaldo|tiles …|datos [CUT]|--self-test}" ;;
+esac

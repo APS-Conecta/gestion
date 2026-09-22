@@ -16,7 +16,7 @@ fi
 # is the only other file that can change what compose resolves.
 check docker compose -f compose.yaml -f compose.dev.yaml config -q
 linted=0
-for s in scripts/*.sh provisioning/*.sh provisioning/phases/*.sh sites/*/site.sh dev/*.sh; do
+for s in scripts/*.sh provisioning/*.sh provisioning/phases/*.sh sites/*/site.sh dev/*.sh host/*.sh; do
   [ -e "$s" ] || continue
   linted=$((linted + 1)); check bash -n "$s"
 done
@@ -36,7 +36,7 @@ done
 # What actually matters is that nothing TRACKED escapes the sweep, so subtract and require empty.
 check bash -c '
   [ -z "$(comm -23 <(git ls-files "*.sh" | sort) \
-                   <(ls scripts/*.sh provisioning/*.sh provisioning/phases/*.sh sites/*/site.sh dev/*.sh 2>/dev/null | sort))" ]'
+                   <(ls scripts/*.sh provisioning/*.sh provisioning/phases/*.sh sites/*/site.sh dev/*.sh host/*.sh 2>/dev/null | sort))" ]'
 check test -f dev/xdebug.ini
 # Same three assertions `ensure_vendored_app` already makes (lib.sh:211-222), moved from seed time to
 # PR time. At seed time they run on a CLINIC, during `make install` — the worst place to learn that a
@@ -154,7 +154,13 @@ check bash -c '
 # Two cases, and the second exists because the first fix broke a clean install: phases run under
 # `set -e`, so "certificate absent" — a legitimate non-zero — must not kill the phase. Only cleanboot
 # saw it, because a machine that already holds both certificates never takes the absent branch.
+# Sources env.sh first since the docker-exec port (slice 2): lib.sh's transport now rides
+# nc_exec(), and lib.sh's own REQUIRES contract names env.sh — this gate was quietly exempt
+# because occ() and docker() were both stubbed, which covered every external call the old
+# transport made. The REAL seam running into the stubbed docker() is the stronger gate: a seam
+# that misparsed its own options would turn this red, not just the seed.
 check bash -c '
+  . scripts/env.sh
   . provisioning/lib.sh
   # Every "the phase must survive this" assertion goes through here, and none of them may
   # be written `( set -e … ) || exit 1`: bash propagates the tested-context of a `||` into
@@ -184,7 +190,7 @@ check bash -c '
     return 0
   }
   survives
-  # `docker compose cp` fails for the most ordinary reason there is — a container still
+  # `docker cp` fails for the most ordinary reason there is — a container still
   # starting — and it was the one unguarded command left on the path. Fatal, and it took
   # the second host with it, since the phase never got there.
   docker() {
@@ -351,11 +357,15 @@ if bad: print("\n".join(bad)); sys.exit(1)'
 # reappears for every staff member — so assert the CONTRACT against the shipped template: both the
 # container class and the link id, since an upstream restructure could move either.
 # Everything below reads the running container's copy, the code actually serving pages.
-if docker compose ps --status running --services 2>/dev/null | grep -qx nextcloud; then
-  check docker compose exec -T --user www-data nextcloud \
-    grep -q 'class="section development-notice"' apps/settings/templates/settings/personal/development.notice.php
-  check docker compose exec -T --user www-data nextcloud \
-    grep -q "open-reasons-use-nextcloud-pdf" apps/settings/templates/settings/personal/development.notice.php
+# env.sh sourced in THIS process (not just inside the #143 gate's subshell) because the ported
+# vendor-block calls nc_exec directly — without the source every check below fails with
+# "command not found" while the stack is up and detected (live-measured on the probe, P5).
+. scripts/env.sh
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx nextcloud-aio-nextcloud; then
+  check nc_exec --user www-data -- \
+    grep -q 'class="section development-notice"' /var/www/html/apps/settings/templates/settings/personal/development.notice.php
+  check nc_exec --user www-data -- \
+    grep -q "open-reasons-use-nextcloud-pdf" /var/www/html/apps/settings/templates/settings/personal/development.notice.php
   # The home affordance rests on `<a id="nextcloud">` in the authenticated layout: server.css reserves
   # 68px for the mark, hangs the home icon off ::before and the clinic name off ::after, and the click
   # works only because that element is the home link.
@@ -365,13 +375,13 @@ if docker compose ps --status running --services 2>/dev/null | grep -qx nextclou
   # So assert both shapes: authenticated is an anchor, public is not. If upstream renames the id,
   # or ever makes the two the same element, every rule stops applying (or starts leaking) with
   # the header still rendering — silently, which is why this is a gate and not a comment.
-  check docker compose exec -T --user www-data nextcloud sh -c \
-    'grep -B3 -- '"'"'id="nextcloud"'"'"' core/templates/layout.user.php | grep -q -- "<a "'
-  check docker compose exec -T --user www-data nextcloud \
-    grep -qE '<div id="nextcloud" class="header-appname"' core/templates/layout.public.php
+  check nc_exec --user www-data -- sh -c \
+    'grep -B3 -- '"'"'id="nextcloud"'"'"' /var/www/html/core/templates/layout.user.php | grep -q -- "<a "'
+  check nc_exec --user www-data -- \
+    grep -qE '<div id="nextcloud" class="header-appname"' /var/www/html/core/templates/layout.public.php
   # Same silent-failure shape as B-008: server.css hangs the clinic name off `.login-form__headline`.
-  check docker compose exec -T --user www-data nextcloud \
-    grep -q "login-form__headline" dist/core-login.js
+  check nc_exec --user www-data -- \
+    grep -q "login-form__headline" /var/www/html/dist/core-login.js
   # The two the theme leans on hardest, and neither was asserted until now: `#header` carries 19
   # rules in server.css and `.logo` eight. A rename upstream does not break the page — it silently
   # un-brands it, which is the whole failure class this block exists for. Measured 2026-08-05: of
@@ -380,17 +390,17 @@ if docker compose ps --status running --services 2>/dev/null | grep -qx nextclou
   # All three layouts, because the header is drawn by all three and the theme scopes rules on
   # `:not(.header-guest)` to tell them apart — losing the id in only one of them is the shape that
   # produced B-012, a rule leaking onto the public share page.
-  check docker compose exec -T --user www-data nextcloud sh -c \
-    'for t in user guest public; do grep -q "id=\"header\"" "core/templates/layout.$t.php" || exit 1; done'
-  check docker compose exec -T --user www-data nextcloud \
-    grep -q 'class="logo logo-icon"' core/templates/layout.user.php
+  check nc_exec --user www-data -- sh -c \
+    'for t in user guest public; do grep -q "id=\"header\"" "/var/www/html/core/templates/layout.$t.php" || exit 1; done'
+  check nc_exec --user www-data -- \
+    grep -q 'class="logo logo-icon"' /var/www/html/core/templates/layout.user.php
   # NOT core: `.cm-logo` belongs to side_menu, a store app. No image digest pins it and an
   # `occ app:update` from the admin UI replaces it in place — the same route that reverts our
   # patches (ADR-0002, smoke.sh check 10). server.css un-hides and widens that element to put the
   # platform lockup in the side menu (#84/#102); if the class moves, the lockup silently vanishes
   # and nothing else in the suite would notice.
-  check docker compose exec -T --user www-data nextcloud \
-    grep -rq "cm-logo" custom_apps/side_menu/js/
+  check nc_exec --user www-data -- \
+    grep -rq "cm-logo" /var/www/html/custom_apps/side_menu/js/
   # ENUMERATION GATE (ADR-0004). guest.css brands the screens Nextcloud draws through the legacy
   # Template::printPage(), which dispatches no event and so gets no themed CSS. There are SEVEN such
   # call sites in TWO files on NC34 — four in lib/base.php, three in TemplateManager. Every screen in
@@ -401,15 +411,15 @@ if docker compose ps --status running --services 2>/dev/null | grep -qx nextclou
   # -e for the pattern, NOT `--`: `--` ends option parsing, so a --include after it is read as a
   # FILENAME. The count came out right anyway (the call appears only in .php files) while grep
   # errored on every run into check's discarded stderr — a gate passing for the wrong reason.
-  check docker compose exec -T --user www-data nextcloud sh -c \
-    'test "$(grep -r --include="*.php" -e "->printPage()" lib core index.php | wc -l)" -eq 7'
+  check nc_exec --user www-data -- sh -c \
+    'test "$(grep -r --include="*.php" -e "->printPage()" /var/www/html/lib /var/www/html/core /var/www/html/index.php | wc -l)" -eq 7'
   # And that core still READS what guest.css declares. Both variables carry a fallback to Nextcloud's
   # own art inside core's guest.css, so an upstream rename does not break the page — it silently
   # restores the vendor logo and backdrop on exactly the screens nobody visits on a good day.
-  check docker compose exec -T --user www-data nextcloud sh -c \
-    'grep -q -- "var(--image-logo" core/css/guest.css && grep -q -- "var(--image-background" core/css/guest.css'
+  check nc_exec --user www-data -- sh -c \
+    'grep -q -- "var(--image-logo" /var/www/html/core/css/guest.css && grep -q -- "var(--image-background" /var/www/html/core/css/guest.css'
 else
-  echo "  skipped: upstream vendor-block checks (need a running stack)"
+  echo "  skipped: upstream vendor-block checks (need the AIO stack — nextcloud-aio-nextcloud)"
 fi
 
 # The AIA URI is read out of a REMOTE certificate over an unverified handshake, so it is
@@ -575,14 +585,22 @@ fi
 # --- office-smoke's DS pairing pattern: extracted from its source, proven both directions -------
 # (the LC_ALL precedent — where a static gate cannot observe the behaviour, assert the fix's
 # presence; here the extracted regex can also be behaviorally tested, so both.)
-check bash -c '
-  pat=$(sed -n "s/^DS_VERSION_PATTERN=\x27\(.*\)\x27$/\1/p" scripts/office-smoke.sh)
-  [ -n "$pat" ] || { echo "DS pairing pattern not found in office-smoke.sh" >&2; exit 1; }
-  printf "Document server https://x/ version 9.3.4.37 is successfully connected\n" | grep -qE "$pat" \
-    || { echo "DS pairing detector: missed the right version" >&2; exit 1; }
-  printf "Document server https://x/ version 9.2.1.5 is successfully connected\n" | grep -qE "$pat" \
-    && { echo "DS pairing detector: matched the wrong version" >&2; exit 1; }
-  exit 0'
+# (P36, implement-time) slice 20 replaced office-smoke's DS_VERSION_PATTERN variable with the
+# ver-parse + 9.3.* case pin; the detector below extracts the parse from the script's own bytes
+# (a named function — the extraction needs quotes the bash -c wrapper cannot nest) and proves
+# BOTH directions through the same case arm the script carries.
+ds_pairing_detect() {
+  local parse v v2
+  parse="$(grep -m1 -oF "sed -n 's/.* version \([0-9][0-9.]*\) is successfully connected.*/\1/p'" scripts/office-smoke.sh \
+    | sed 's/^sed -n .//; s/.$//')"
+  [ -n "$parse" ] || { echo "DS version parse not found in office-smoke.sh" >&2; return 1; }
+  v="$(printf 'Document server https://x/ version 9.3.4.37 is successfully connected\n' | sed -n "$parse")"
+  [ "$v" = "9.3.4.37" ] || { echo "DS pairing detector: missed the right version" >&2; return 1; }
+  case "$v" in 9.3.*) ;; *) echo "DS pairing detector: the case rejects the right version" >&2; return 1;; esac
+  v2="$(printf 'Document server https://x/ version 9.2.1.5 is successfully connected\n' | sed -n "$parse")"
+  case "$v2" in 9.3.*) echo "DS pairing detector: the case accepts the wrong version" >&2; return 1;; *) :;; esac
+}
+check ds_pairing_detect
 
 # --- gate: the data manifest and the comuna reference describe each other ---------------------
 # packages.json pins the masters; comunas-deis.csv is the coding authority the recipes validate
@@ -627,11 +645,31 @@ check bash scripts/comuna-package.sh --self-test
 check bash scripts/release-manifest.sh --validate
 check bash scripts/release-manifest.sh --self-test
 
+echo "== self-tests (hermetic — no docker, no stack) =="
+# The Provisionador's own --self-test (slices 14-17: 100 named checks over its stub oracle)
+# and the host bundle's (slice 19: 34 — this slice adds the revalidate arm's 2) run everywhere
+# test.sh runs — every PR, any box — because neither needs a stack (the slice-14 routing: the
+# stub oracle rides --self-test, so the runner needs no docker; cleanboot inherits both through
+# its make test). Output is captured, not drowned: a green arm prints its own last line, a red
+# one its tail — the #96 lesson, a red log must carry its diagnosis.
+st_out="$(python3 scripts/provisionador.py --self-test 2>&1)" \
+  && echo "  ok:   provisionador --self-test ($(printf '%s\n' "$st_out" | tail -1))" \
+  || { echo "  FAIL: provisionador --self-test"; printf '%s\n' "$st_out" | tail -25; fail=1; }
+hb_out="$(bash host/aps-conecta --self-test 2>&1)" \
+  && echo "  ok:   host bundle --self-test ($(printf '%s\n' "$hb_out" | tail -1))" \
+  || { echo "  FAIL: host bundle --self-test"; printf '%s\n' "$hb_out" | tail -25; fail=1; }
+tl_out="$(bash host/tiles.sh --self-test 2>&1)" \
+  && echo "  ok:   tiles --self-test ($(printf '%s\n' "$tl_out" | tail -1))" \
+  || { echo "  FAIL: tiles --self-test"; printf '%s\n' "$tl_out" | tail -25; fail=1; }
+mg_out="$(bash scripts/migrate-to-aio.sh --self-test 2>&1)" \
+  && echo "  ok:   migrate-to-aio --self-test ($(printf '%s\n' "$mg_out" | tail -1))" \
+  || { echo "  FAIL: migrate-to-aio --self-test"; printf '%s\n' "$mg_out" | tail -25; fail=1; }
+
 echo "== smoke (only if a stack is running) =="
-if docker compose ps --status running --services 2>/dev/null | grep -qx nextcloud; then
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx nextcloud-aio-nextcloud; then
   if bash scripts/smoke.sh; then echo "  ok:   smoke"; else echo "  FAIL: smoke"; fail=1; fi
 else
-  echo "  skipped: no running stack (static-only gate)"
+  echo "  skipped: no running AIO stack (static-only gate)"
 fi
 
 # Euro-Office joined the standard gate in #81, because it joined the stack: office-smoke was
@@ -643,10 +681,16 @@ fi
 # all, and `make office-down` is a documented way to reclaim the RAM. `make up --wait` is what makes
 # this deterministic when the stack IS up — without it the gate raced the 120s start_period.
 echo "== office smoke (only if the document server is running) =="
-if docker compose ps --status running --services 2>/dev/null | grep -qx eurooffice; then
+# The gate and office-smoke's own inspect match the SAME name — the AIO sibling AIO's own
+# containers.json pins (nextcloud-aio-eurooffice), deterministic on every AIO host the way the
+# compose project name was on compose — so the two cannot drift. The AIO legs landed with S8
+# (slice 20): public-path healthcheck, the DS 9.3.x pin, the image namespaces. A compose dev
+# stack reads as skipped here BY DESIGN (the D5 interim: its install and seed stay green through
+# NC_CONTAINER; office answers the AIO stack) — the skip is visible, never silent.
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx nextcloud-aio-eurooffice; then
   if bash scripts/office-smoke.sh; then echo "  ok:   office-smoke"; else echo "  FAIL: office-smoke"; fail=1; fi
 else
-  echo "  skipped: eurooffice not running"
+  echo "  skipped: no AIO document server (nextcloud-aio-eurooffice)"
 fi
 
 if [ "$fail" -eq 0 ]; then

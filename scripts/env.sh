@@ -16,8 +16,31 @@
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || { echo "FAIL: cannot cd to the repo root" >&2; exit 1; }
 
-# 3. occ inside the running nextcloud container — one definition, for every caller of this file.
-occ() { docker compose exec -T --user www-data nextcloud php occ "$@"; }
+# 3. occ + raw exec inside the running Nextcloud container — one seam, for every caller of this
+#    file. THE D5 SEAM (docker-exec port): the transport is `docker exec` against the AIO nextcloud
+#    container, whose name is env-overridable — default nextcloud-aio-nextcloud (fixed by AIO's
+#    php/containers.json:145). A compose dev stack or the pre-AIO live stack points NC_CONTAINER at
+#    its own compose container (compose.yaml's `name:` pins ours: apsconecta-gestion-nextcloud-1;
+#    set it in .env — the loader below exports it like any other key) until S10 migrates the stack.
+#
+#    nc_exec's contract is forced by docker exec's own grammar — options BEFORE the container,
+#    command AFTER — so every docker-exec option word comes first, then `--`, then the command.
+#    A missing `--` fails loudly rather than letting an option word run as the command (B-014: a
+#    seam that can misparse silently is not a seam). No -T (docker exec has no such flag — no TTY
+#    is its default, which is what compose's -T was buying); -i only where a caller streams stdin
+#    (occ_sh's patch bytes, the vendored-tarball unpack — passed per-site in lib.sh; occ() itself
+#    takes none: no caller pipes stdin into it). www-data is upstream's own console form (AIO
+#    readme.md:822) — root occ trips Nextcloud's console config-owner check — and the occ path is
+#    ABSOLUTE because the AIO image sets no WORKDIR, so the relative `php occ` the compose
+#    transport allowed cannot resolve there.
+nc_exec() {  # [docker-exec option words…] -- COMMAND [args…] — exec into the Nextcloud container
+  local -a opts=()
+  while [ $# -gt 0 ] && [ "$1" != "--" ]; do opts+=("$1"); shift; done
+  [ $# -gt 0 ] || { echo "FATAL: nc_exec: missing the -- that separates options from the command" >&2; return 2; }
+  shift
+  docker exec "${opts[@]}" "${NC_CONTAINER:-nextcloud-aio-nextcloud}" "$@"
+}
+occ() { nc_exec --user www-data -- php /var/www/html/occ "$@"; }
 
 # 4. The clinic this stack serves, for the callers that need one — seed.sh, install.sh and
 #    divergence.sh. A function, not a check at source time: smoke.sh, office-smoke.sh,

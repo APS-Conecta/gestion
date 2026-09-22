@@ -202,9 +202,13 @@ and read: [`provisioning/README.md`](../provisioning/README.md).
 
 ## Environments
 
-A single Compose stack, brought up with one command, on **a developer's machine or a clinic's** — those
-are the same stack and the same command. `make setup && make install` stands up a named establishment from a clean
-checkout, and #77's whole effort was making that true of a machine nobody has seen.
+Two environments. The **dev stack**: a single Compose stack, brought up with one command, on a
+developer's machine — `make setup && make install` stands up a named establishment from a clean
+checkout, and #77's whole effort was making that true of a machine nobody has seen. The
+**clinic**: APS Conecta AIO, the all-in-one installer — the wizard owns the container set as a
+lockstep image suite, and this repo's host bundle drives the **same provisioning phases**
+over `docker exec`; the runbook is [`INSTALLER.md`](INSTALLER.md), the Spanish walkthrough
+[`GUIA-CLINICA.md`](GUIA-CLINICA.md).
 
 **`main` is the trunk; a release is a tag.** The dev stack installs from `main`; a clinic installs a
 tag, and that tag is the only answer to "which bytes does that instance have?"

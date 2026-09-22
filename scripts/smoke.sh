@@ -13,21 +13,29 @@ HTTP_PORT="${HTTP_PORT:-8180}"
 
 fail() { echo "FAIL: $*"; exit 1; }
 
-# 1. nextcloud container running (exec would hang/err on a down stack — detect first).
-docker compose ps --status running --services 2>/dev/null | grep -qx nextcloud \
-  || fail "nextcloud container is not running (did you 'make up'?)"
+# 1. nextcloud container running (exec would hang/err on a down stack — detect first). Detection
+# flipped with the docker-exec port: the compose-era stack listing needed compose context, which
+# neither the probe bed nor an AIO clinic has; `docker ps` by NAME works everywhere and names the
+# same container the seam targets. A compose dev stack reads as down here BY DESIGN — its install
+# and seed stay addressable through NC_CONTAINER (D5 interim), and this check answering "no AIO
+# stack" is the labeled failure, not a compose-context false answer.
+docker ps --format '{{.Names}}' 2>/dev/null | grep -qx nextcloud-aio-nextcloud \
+  || fail "nextcloud-aio-nextcloud is not running — smoke answers an AIO instance (probe: scripts/aio-testbed.sh up; a clinic: the wizard's container start)"
 
 # 2. Nextcloud installed + reachable via occ.
 occ status --output=json 2>/dev/null | grep -q '"installed":true' \
   || fail "occ status: Nextcloud not installed / not reachable"
 
-# 3. PostgreSQL accepting connections.
-docker compose exec -T db pg_isready -q 2>/dev/null \
-  || fail "PostgreSQL (db) is not accepting connections"
+# 3. PostgreSQL accepting connections. Direct docker exec against the AIO sibling's fixed name —
+# these two cannot ride the seam (it targets the nextcloud container) and need no compose context.
+docker exec nextcloud-aio-database pg_isready -q 2>/dev/null \
+  || fail "PostgreSQL (nextcloud-aio-database) is not accepting connections"
 
-# 4. Redis responding to PING.
-[ "$(docker compose exec -T redis redis-cli ping 2>/dev/null | tr -d '\r')" = "PONG" ] \
-  || fail "Redis is not responding to PING"
+# 4. Redis responding to PING. AIO's redis runs with requirepass — the password is read
+# IN-CONTAINER from its own env (REDIS_HOST_PASSWORD), never on the host argv (the OC_PASS
+# discipline): a bare `redis-cli ping` answers NOAUTH on every real AIO instance (FINDINGS.md P3).
+[ "$(docker exec nextcloud-aio-redis sh -c 'redis-cli -a "$REDIS_HOST_PASSWORD" ping' 2>/dev/null | tr -d '\r')" = "PONG" ] \
+  || fail "Redis (nextcloud-aio-redis) is not responding to PING"
 
 # 5. HTTP surface: GET /status.php → 200, and the body carries OUR product name. The highest-value
 # branding regression there is: unauthenticated, and if `theming productName` is unset it says
@@ -41,12 +49,16 @@ if printf '%s' "$body" | grep -qi 'nextcloud'; then
   fail "branding leak: /status.php still says Nextcloud — is 'occ config:app:set theming productName' set? Body: ${body}"
 fi
 
-# 6. Background jobs are scheduled, not traffic-driven (phase 06-jobs + the `cron` service). Both
-# halves, because either alone is a silent half-fix: the mode without the container means Nextcloud
-# waits for a cron that never runs (worse than ajax), the container without the mode means it runs
-# while Nextcloud still self-serves on page loads.
-docker compose ps --status running --services 2>/dev/null | grep -qx cron \
-  || fail "the cron container is not running — background jobs would fall back to page-load scheduling (did you 'make up'?)"
+# 6. Background jobs are scheduled, not traffic-driven (phase 06-jobs). Under AIO there is no cron
+# CONTAINER: cron.php runs from a 5-minute loop (cron.sh, started by the container's own dinit)
+# inside the nextcloud container, so the compose-era "cron service is running" half becomes an
+# assertion on that loop process. Both halves still get asserted, because either alone is a silent
+# half-fix: the mode without the loop means Nextcloud waits for a cron that never runs (worse than
+# ajax), the loop without the mode means it runs while Nextcloud still self-serves jobs on page
+# loads.
+if ! nc_exec --user www-data -- pgrep -f cron.sh >/dev/null 2>&1; then
+  fail "the cron loop (cron.sh) is not running inside nextcloud-aio-nextcloud — background jobs would fall back to page-load scheduling"
+fi
 jobs_mode=$(occ config:app:get core backgroundjobs_mode 2>/dev/null | tr -d '\r')
 [ "$jobs_mode" = "cron" ] \
   || fail "backgroundjobs_mode is '${jobs_mode:-unset}', expected 'cron' — run 'make seed' (phase 06-jobs)"
@@ -84,7 +96,7 @@ print("; ".join(bad) if bad else "OK")
 # distributed cache, so on an instance whose cache was warm before the file existed this stays
 # core's until the cache is flushed — the symptom looks like the fix silently not working.
 printf '%s' "$login_html" | grep -q 'rel="manifest" href="[^"]*themes/apsconecta' \
-  || fail "login page still links Nextcloud's manifest, not ours — if the file exists, flush the cache (docker compose exec redis redis-cli FLUSHALL)"
+  || fail "login page still links Nextcloud's manifest, not ours — if the file exists, flush the cache (docker exec nextcloud-aio-redis sh -c 'redis-cli -a \"$REDIS_HOST_PASSWORD\" FLUSHALL')"
 # The three icon links are the same static-file mechanism as the manifest and share its failure mode
 # (ADR-0004). They are here rather than beside it because they cost nothing extra — this HTML is
 # already fetched — and because imagePath() caches under a key holding NO cachebuster and NO theme,
@@ -92,7 +104,7 @@ printf '%s' "$login_html" | grep -q 'rel="manifest" href="[^"]*themes/apsconecta
 # silently Nextcloud's and the tab shows the vendor's mark on every screen.
 for rel in icon apple-touch-icon mask-icon; do
   printf '%s' "$login_html" | grep -q "rel=\"${rel}\"[^>]*href=\"[^\"]*themes/apsconecta" \
-    || fail "login page links Nextcloud's ${rel}, not ours — if themes/apsconecta/core/img/ has the file, flush the cache (docker compose exec redis redis-cli FLUSHALL)"
+    || fail "login page links Nextcloud's ${rel}, not ours — if themes/apsconecta/core/img/ has the file, flush the cache (docker exec nextcloud-aio-redis sh -c 'redis-cli -a \"$REDIS_HOST_PASSWORD\" FLUSHALL')"
 done
 
 # 8. App policy holds: staff do not see Nextcloud's product surface (phase 16-app-policy).
@@ -175,20 +187,42 @@ esac
 patched=$(find provisioning/apps -mindepth 2 -maxdepth 2 -name '*.patch' -printf '%h\n' 2>/dev/null \
           | sort -u | xargs -r -n1 basename | tr '\n' ' ')
 if [ -n "$patched" ]; then
-  signed=$(docker compose exec -T --user www-data nextcloud sh -c \
-    "for a in $patched; do [ -e \"custom_apps/\$a/appinfo/signature.json\" ] && echo \"\$a\"; done; :" \
+  signed=$(nc_exec --user www-data -- sh -c \
+    "for a in $patched; do [ -e \"/var/www/html/custom_apps/\$a/appinfo/signature.json\" ] && echo \"\$a\"; done; :" \
     2>/dev/null | tr -d '\r' | tr '\n' ' ')
   [ -z "${signed// /}" ] \
     || fail "patched app(s) still signed: ${signed}— the code-integrity check will fail and admin > Overview will show a red warning. Run 'make seed' (phase 12-apps drops it), then click 'Rescan…' in that warning"
 fi
 
-# 11. The legacy render path is branded (ADR-0004). An untrusted Host is the ONLY screen in that
+# 11. The legacy render path is branded (ADR-0004). TWO TRANSPORTS, because the reachable screen
+# differs. On a compose stack (no overwritehost) an untrusted Host is the ONLY screen in that
 # class reachable without mutating the instance — maintenance, the upgrade screens and the setup
 # screens all have to be staged — and it is also the strictest of them: failing isTrustedDomain()
 # is what makes Server.php hand out a raw \OC_Defaults instead of ThemingDefaults, so this one
 # request exercises BOTH halves of the fix at once. The themed stylesheet proves guest.css arrived;
 # the absence of the vendor name proves defaults.php did. Everything else in the class shares the
 # same two stylesheets and the same layout, so this stands in for all of them.
+#
+# Under AIO the screen is structurally unreachable by HTTP: the entrypoint sets overwritehost=
+# <domain>, and NC redirects an untrusted Host to the canonical base URL BEFORE the legacy 400 can
+# render (measured on the probe bed, FINDINGS.md P4 — even a direct request to the apache
+# container's internal httpd bounces). AIO's own protection of the legacy class IS that bounce,
+# so there the check asserts (a) the bounce still holds — a drift to the raw page means the legacy
+# screens became HTTP-reachable, and this goes red for exactly that — and (b) the two branding
+# inputs the legacy path reads when it does render: the active theme's guest.css and defaults.php,
+# read in-container through the seam (the same contract style as test.sh's vendor-block).
+if [ -n "$(occ config:system:get overwritehost 2>/dev/null | tr -d '\r')" ]; then
+  _bounce=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: untrusted.invalid' "http://localhost:${HTTP_PORT}/" 2>/dev/null)
+  case "${_bounce:-000}" in
+    302) : ;;
+    *) fail "untrusted-host requests no longer bounce to the canonical domain (HTTP ${_bounce:-none}, expected 302) — the legacy render class became HTTP-reachable; eyeball whether its screens are still branded (ADR-0004)" ;;
+  esac
+  _theme="$(occ config:system:get theme 2>/dev/null | tr -d '\r')"
+  nc_exec --user www-data -- test -f "/var/www/html/themes/${_theme:-apsconecta}/core/css/guest.css" 2>/dev/null \
+    || fail "the active theme ships no core/css/guest.css — the legacy render path cannot be branded (ADR-0004)"
+  nc_exec --user www-data -- test -f "/var/www/html/themes/${_theme:-apsconecta}/defaults.php" 2>/dev/null \
+    || fail "the active theme ships no defaults.php — the legacy render path would name the vendor (ADR-0004)"
+else
 untrusted=$(curl -s -H 'Host: untrusted.invalid' "http://localhost:${HTTP_PORT}/" 2>/dev/null)
 printf '%s' "$untrusted" | grep -q 'themes/apsconecta/core/css/guest.css' \
   || fail "legacy-rendered screens carry no theme CSS — themes/apsconecta/core/css/guest.css is not linked on the untrusted-domain screen (maintenance, upgrade, 429 and the setup screens render through the same path)"
@@ -204,30 +238,37 @@ visible=$(printf '%s' "$untrusted" | tr -d '\\' \
 if printf '%s' "$visible" | grep -qi 'nextcloud'; then
   fail "branding leak on the legacy render path: the untrusted-domain screen names Nextcloud outside the two exempt URLs — themes/apsconecta/defaults.php is the only thing that answers there (ThemingDefaults is bypassed for an untrusted host)"
 fi
+fi
 
 # 12. admin's home carries no stock skeleton. Check 5 is /status.php only and every other branding
 # assertion here reads unauthenticated HTML, so none of them can see this. A config read would be
 # vacuous — phase 15 writes '' into config.php either way; only the files regress. The listing is
 # captured, not piped: an EMPTY home is the passing state, so "clean" and "could not look" are
 # indistinguishable by value and only the exit status separates them. Hence no 2>/dev/null.
-home=$(docker compose exec -T --user www-data nextcloud ls -A "/var/www/html/data/${NEXTCLOUD_ADMIN_USER:-admin}/files") \
+# The default names the account on both stacks: AIO installs with ADMIN_USER=admin (its
+# containers.json), and compose's official image takes the user from the same .env key. The
+# data DIRECTORY is read from the instance instead of assumed — AIO installs with
+# --data-dir /mnt/ncdata, compose with the image default /var/www/html/data — one occ read,
+# correct on both, and failing to read it must not read as a clean home.
+datadir=$(occ config:system:get datadirectory 2>/dev/null | tr -d '\r')
+[ -n "$datadir" ] \
+  || fail "cannot read datadirectory — check 12 cannot answer, so it must not report clean"
+home=$(nc_exec --user www-data -- ls -A "${datadir%/}/${NEXTCLOUD_ADMIN_USER:-admin}/files") \
   || fail "cannot list admin's home — check 12 cannot answer, so it must not report clean"
 printf '%s' "$home" | grep -qi 'nextcloud' \
   && fail "stock Nextcloud skeleton in admin's home — is NC_skeletondirectory still in compose.yaml? phase 15's skeletondirectory arrives after the image has already created and logged in admin"
 
-# 13. The app store is off, in BOTH containers (#163). `occ upgrade` — run by ensure_vendored_app
-# after a re-impose, and by the image's /entrypoint.sh on any image bump — re-downloads every
-# enabled app from the store unless this is set, and a VENDOR pin then means "whatever the store
-# published today". cron is checked too because cron.php runs UpdateAvailableNotifications.
-# This asserts the LEVER, not the drift it prevents: a disk-vs-VENDOR comparison only diverges once
-# the store HAS something newer, so it passes on a clean boot with the fix reverted — green for the
-# wrong reason, which is the failure mode this file exists to avoid. An absent key reads "" and is
-# not "0", so this cannot fail open.
-for svc in nextcloud cron; do
-  got=$(docker compose exec -T --user www-data "$svc" php occ config:system:get appstoreenabled 2>/dev/null | tr -d '\r')
-  [ "$got" = "0" ] \
-    || fail "the app store is enabled in '$svc' (read '$got') — is NC_appstoreenabled still in compose.yaml, and was the container recreated after adding it? occ upgrade then re-downloads every enabled app and the VENDOR pins stop meaning anything (#163)"
-done
+# 13. The app store is off (#163). The compose-era loop checked nextcloud AND cron — two
+# containers that had to agree. Under AIO there is ONE container to ask: cron.php runs inside
+# nextcloud-aio-nextcloud (check 6's loop), so the pair collapses into a single read and the loop
+# is deleted rather than kept degenerate. The lever moved with it — from compose.yaml's
+# NC_appstoreenabled to the suite's own posture: the probe harness sets the key at bring-up, and
+# the suite bakes NC_appstoreenabled="0" into the aio-nextcloud image (patch 020). This asserts
+# the LEVER, not the drift it prevents; an absent key reads "" and is not "0", so this cannot
+# fail open.
+got=$(occ config:system:get appstoreenabled 2>/dev/null | tr -d '\r')
+[ "$got" = "0" ] \
+  || fail "the app store is enabled (read '$got') — the probe sets appstoreenabled=0 at bring-up and the suite bakes NC_appstoreenabled=0 via patch 020; occ upgrade then re-downloads every enabled app and the VENDOR pins stop meaning anything (#163)"
 
 # 14. The browser-facing office URL agrees with how this instance is actually reached (B-019).
 #
@@ -241,11 +282,11 @@ done
 # from here is the CONTRADICTION — an instance that publishes a non-loopback trusted domain is
 # reached from somewhere else, and a loopback editor URL cannot be right for that somewhere.
 # Both halves must be true to fail, so the local-only posture this repo ships stays green.
-_office_url=$(docker compose exec -T --user www-data nextcloud php occ config:app:get eurooffice DocumentServerUrl 2>/dev/null | tr -d '\r')
+_office_url=$(occ config:app:get eurooffice DocumentServerUrl 2>/dev/null | tr -d '\r')
 if [ -n "$_office_url" ]; then
   # Loopback in the value, and any trusted domain that is neither a loopback name nor the compose
   # service name phase 14 adds for the callback.
-  _remote_domain=$(docker compose exec -T --user www-data nextcloud php occ config:system:get trusted_domains 2>/dev/null \
+  _remote_domain=$(occ config:system:get trusted_domains 2>/dev/null \
     | tr -d '\r' | grep -vxE 'localhost|127\.0\.0\.1|\[::1\]|nextcloud|' | head -1)
   case "$_office_url" in
     *localhost*|*127.0.0.1*|*'[::1]'*)
@@ -254,7 +295,7 @@ if [ -n "$_office_url" ]; then
   esac
   # Scheme, the second half of the same mistake: an http editor inside an https page is blocked as
   # mixed content, so the address can be perfectly reachable and the pane still stays blank.
-  _proto=$(docker compose exec -T --user www-data nextcloud php occ config:system:get overwriteprotocol 2>/dev/null | tr -d '\r')
+  _proto=$(occ config:system:get overwriteprotocol 2>/dev/null | tr -d '\r')
   if [ "$_proto" = "https" ]; then
     case "$_office_url" in
       https://*) ;;

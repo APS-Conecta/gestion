@@ -1,0 +1,20 @@
+[Unit]
+# The weekly trigger (FRD S7). Weekly, not daily: the seed is idempotent so more frequent
+# runs add nothing but load, and a weekly drift check matches the clinic's maintenance
+# rhythm (the research's own cadence note). Persistent=true is the self-healing half: a
+# host that was off/down at the scheduled instant runs the missed re-provision at boot —
+# drift found late is still found.
+Description=APS Conecta: temporizador semanal de re-provisión
+Documentation=file:///opt/aps-conecta/gestion/docs/INSTALLER.md
+
+[Timer]
+OnCalendar=weekly
+Persistent=true
+Unit=aps-conecta.service
+# RandomizedDelaySec: spread the moment inside the hour so every clinic in a health
+# service does not re-provision in the same minute (politeness to shared infrastructure,
+# and borg's nightly window stays undisturbed — weekly and nightly never collide).
+RandomizedDelaySec=30min
+
+[Install]
+WantedBy=timers.target

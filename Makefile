@@ -46,8 +46,15 @@ fix-mount-perms: ## Make the bind-mounted apps/ + themes/ writable by BOTH the c
 	@# there. Owner www-data + your host group with g+w, so both sides can write (AD-9) — plain
 	@# `chown www-data:www-data` would leave the host read-only and defeat the live-edit mount.
 	@# Done in-container so no host sudo is needed; recursive, and re-applied on every `make up`.
-	@docker compose exec -T -u root nextcloud chown -R www-data:$(HOST_GID) /var/www/html/custom_apps /var/www/html/themes 2>/dev/null || true
-	@docker compose exec -T -u root nextcloud chmod -R g+w /var/www/html/custom_apps /var/www/html/themes 2>/dev/null || true
+	@#
+	@# Ported off the compose-era exec (the Makefile's two transport sites): docker exec against the
+	@# seam's own target. Each recipe shells out and sources scripts/env.sh FIRST — make recipes never
+	@# read .env, and without the loader the compose interim (NC_CONTAINER in .env, D5) would not
+	@# reach this shell and the default would name a container the compose stack does not have.
+	@#
+	@# $${...} below is SHELL syntax (a bare ${...} would be a make variable); $(HOST_GID) stays one.
+	@bash -c '. scripts/env.sh && docker exec -u root "$${NC_CONTAINER:-nextcloud-aio-nextcloud}" chown -R www-data:$(HOST_GID) /var/www/html/custom_apps /var/www/html/themes' 2>/dev/null || true
+	@bash -c '. scripts/env.sh && docker exec -u root "$${NC_CONTAINER:-nextcloud-aio-nextcloud}" chmod -R g+w /var/www/html/custom_apps /var/www/html/themes' 2>/dev/null || true
 
 down: ## Stop the stack (keeps volumes)
 	docker compose down

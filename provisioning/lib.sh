@@ -4,8 +4,9 @@
 # it inspects current state and skips/patches rather than blind-creating, so `make seed` is safe to
 # re-run. Source this file; do not execute it. Host has python3 (no jq assumed) for JSON parsing.
 #
-# REQUIRES scripts/env.sh to have been sourced first — it provides occ(), which nearly every helper
-# below calls. seed.sh sources them in that order.
+# REQUIRES scripts/env.sh to have been sourced first — it provides occ() and nc_exec(), the docker-
+# exec seam every helper below rides; raw sites pass their options before nc_exec's `--`. seed.sh
+# sources them in that order.
 
 # --- logging ---
 log()         { printf '    %s\n' "$*"; }
@@ -123,12 +124,24 @@ theming_image_set() {  # KEY ABSOLUTE_PATH
 # --- per-phase query caches ---
 #
 # The guards below used to ask the server once per ITEM — 27 `group:list` calls to create 27 groups
-# — and every one is a `docker compose exec` at ~0.8 s. Each cache fills on first use and is
+# — and every one is a `docker exec` at ~0.8 s. Each cache fills on first use and is
 # updated in place on every write, so it cannot go stale within a phase; seed.sh's subshell-per-
 # phase resets it at every boundary, so it cannot go stale across phases either. AD-2's rule
 # (cross-phase state goes through Nextcloud, never shell vars) holds unchanged.
 GROUPS_CACHE=""
 GF_CACHE=""
+# The instance's data directory — same contract as the caches above: one read per phase. Compose
+# installs at the image default, AIO at /mnt/ncdata (--data-dir at install), and the content
+# helpers below used to HARDCODE the compose path: under AIO phase 30/60 would have written a
+# phantom tree with every gate green — the silent-green class this repo exists never to repeat.
+# Fails CLOSED: an unreadable datadirectory is never guessed at, so a data path can only be built
+# from an answer the instance actually gave.
+DATADIR=""
+datadir_load() {
+  [ -n "$DATADIR" ] && return 0
+  DATADIR="$(occ config:system:get datadirectory 2>/dev/null | tr -d '\r')" || DATADIR=""
+  [ -n "$DATADIR" ] || { log "cannot read datadirectory — data paths cannot be answered, refusing to guess"; return 1; }
+}
 
 # --- groups (query-before-create) ---
 #
@@ -166,10 +179,12 @@ user_exists() { occ user:info "$1" >/dev/null 2>&1; }  # UID
 ensure_user() {  # UID DISPLAY PASSWORD
   local uid="$1" display="$2" pass="$3"
   if user_exists "$uid"; then log "user $uid exists"; return 0; fi
-  # OC_PASS must reach the php process INSIDE the container — `docker compose exec` does not forward
-  # host env, so pass it explicitly with -e (never on the command line; --password-from-env reads it).
-  if docker compose exec -T --user www-data -e OC_PASS="$pass" nextcloud \
-       php occ user:add --password-from-env --display-name="$display" "$uid" >/dev/null; then
+  # OC_PASS must reach the php process INSIDE the container — `docker exec` does not forward host
+  # env either, so pass it explicitly with -e (never on the command line; --password-from-env reads
+  # it). Not via occ(): the seam's one job is occ's argv; the -e belongs to this site. The occ path
+  # is ABSOLUTE for the same reason it is in env.sh — the AIO image sets no WORKDIR.
+  if nc_exec --user www-data -e OC_PASS="$pass" -- \
+       php /var/www/html/occ user:add --password-from-env --display-name="$display" "$uid" >/dev/null; then
     log "user $uid created"
   else
     log "FAILED to create user $uid"; return 1
@@ -186,6 +201,23 @@ add_user_to_group() {  # UID GID  (query-before-add: accurate + idempotent)
   occ group:adduser "$2" "$1" >/dev/null
   log "user $1 added to group $2"
   GROUPS_CACHE="$2"$'\t'"$1"$'\n'"$GROUPS_CACHE"
+}
+
+# The version of an app as the INSTANCE has it, read in-container from custom_apps — the bake-wins
+# probe, shared by both app helpers below. The compose-era read was host-side through the apps/
+# bind mount (compose.yaml), free but blind under AIO: no bind mount means no host-side file, the
+# probe answers "" for every app, `cur=""` means re-impose, and seed-idempotent stays permanently
+# red. The instance is the only source of truth for what the instance runs.
+# ONE exec, no guard: awk's own open-failure IS the absent-app answer (a fresh install has not
+# unpacked anything yet), so `|| true` keeps the set -e/pipefail phases alive and empty output
+# carries the meaning the old `cur=""` initialization did. A transport-level failure reads the
+# same as "absent" and fails LOUDLY one step later at the unpack/enable — the same failure shape
+# the compose-era exec guard had.
+# busybox awk (the AIO image's Alpine base) parses -F'[<>]' identically to gawk — verified.
+app_installed_version() {  # APPID -> prints the installed version, or nothing when absent
+  local app="$1"
+  nc_exec --user www-data -- awk -F'[<>]' '/<version>/ {print $3; exit}' \
+    "/var/www/html/custom_apps/$app/appinfo/info.xml" 2>/dev/null || true
 }
 
 # --- apps (unpack the vendored tarball, then enable; idempotent) ---
@@ -222,12 +254,7 @@ ensure_vendored_app() {  # APPID
   echo "$sha  $tgz" | sha256sum --check --status \
     || { log "FAILED $app — tarball does not match sha256 in VENDOR; re-download it from url="; return 1; }
 
-  # apps/ is bind-mounted, so the host can read the installed version without occ. awk rather than
-  # `sed | head`: one process, exits 0 on no match, and no pipeline to inherit a status from.
-  cur=""
-  if [ -f "apps/$app/appinfo/info.xml" ]; then
-    cur="$(awk -F'[<>]' '/<version>/ {print $3; exit}' "apps/$app/appinfo/info.xml")"
-  fi
+  cur="$(app_installed_version "$app")"
 
   if [ "$cur" = "$want" ]; then
     log "app $app $want vendored, already unpacked"
@@ -248,7 +275,8 @@ ensure_vendored_app() {  # APPID
     # writable by uid 33 or the patches below cannot apply. Ownership ends up www-data:www-data and
     # `make fix-mount-perms` restores the host group on the next `make up` (AD-9), which is why
     # nothing does it here.
-    if docker compose exec -T --user www-data nextcloud \
+    # -i: docker exec closes stdin without it, and the tarball arrives on stdin.
+    if nc_exec -i --user www-data -- \
          tar xzf - -C /var/www/html/custom_apps < "$tgz"; then
       log "app $app ${cur:+$cur }-> $want unpacked from $(basename "$tgz")"
     else
@@ -321,8 +349,13 @@ ensure_own_app() {  # APPID CLONE_URL
     return 1
   fi
 
-  disk="$(awk -F'[<>]' '/<version>/ {print $3; exit}' "$info")"
-  [ -n "$disk" ] || { log "FAILED $app — no <version> in $info"; return 1; }
+  # disk is the INSTALLED version, read in-container through the same probe as the vendored path:
+  # on a dev machine the apps/ bind mount makes the two reads identical bytes, and under AIO this
+  # branch is unreachable by construction (apps/ has no .git, so the dispatch above already sent
+  # the app to the vendored path). The half-clone guard above stays host-side on purpose — it
+  # describes the CHECKOUT, not the instance.
+  disk="$(app_installed_version "$app")"
+  [ -n "$disk" ] || { log "FAILED $app — no <version> readable in custom_apps/$app/appinfo/info.xml (tag absent, or the stack is down)"; return 1; }
 
   conf_load
   installed="$(conf_get app "$app" installed_version 2>/dev/null || true)"
@@ -364,17 +397,40 @@ ensure_own_app() {  # APPID CLONE_URL
 # and the sed it replaces here).
 apply_patch() {  # APPID PATCHFILE
   local app="$1" p="$2" name; name="$(basename "$p")"
-  local in="cd custom_apps/$app && patch -p1 --silent"
-  if occ_sh "$in --dry-run" < "$p"; then
+  # The patch tool must exist IN THE CONTAINER, and the two images disagree: compose's Debian
+  # image ships GNU patch; AIO's Alpine image ships NEITHER GNU patch nor the busybox patch
+  # applet (verified: alpine:3.24 busybox has no patch applet, and the image's apk list has
+  # grep/git/coreutils but no patch) — but it DOES ship git, and `git apply` carries the same
+  # three outcomes outside any repository (--check forward, --check --reverse, apply). Probe per
+  # call — two patch files exist today, one exec each. patch FIRST, so the compose transport
+  # keeps its exact current behavior: git apply is stricter (no fuzzy context), which makes it
+  # the right fallback and a stricter gate on the suite, not a silently different one.
+  local tool dry
+  if occ_sh "command -v patch >/dev/null"; then
+    tool="patch -p1 --silent"; dry="--dry-run"
+  elif occ_sh "command -v git >/dev/null"; then
+    tool="git apply -p1"; dry="--check"
+  else
+    log "FAILED patch $app/$name — the container has neither patch nor git; app edits cannot apply"
+    return 1
+  fi
+  local in="cd custom_apps/$app && $tool"
+  if occ_sh "$in $dry" < "$p"; then
     occ_sh "$in" < "$p" && log "patch $app/$name applied"
-  elif occ_sh "$in --dry-run --reverse" < "$p"; then
+  elif occ_sh "$in $dry --reverse" < "$p"; then
     log "patch $app/$name already applied"
   else
     log "FAILED patch $app/$name — no longer applies; upstream moved, regenerate it"; return 1
   fi
 }
-# Shell inside the nextcloud container, stdin forwarded (apply_patch pipes the .patch in).
-occ_sh() { docker compose exec -T --user www-data nextcloud sh -c "$1" >/dev/null 2>&1; }
+# Shell inside the nextcloud container, stdin forwarded (apply_patch pipes the .patch in) — hence
+# -i: docker exec closes stdin without it. The FOLD: every occ_sh payload is web-root-relative
+# (apply_patch's `cd custom_apps/$app && …` above, the signature test/rm in 12-apps.sh, the
+# re-impose clear in ensure_vendored_app), and the AIO image sets no WORKDIR, so docker exec
+# starts them in / — folding the absolute cd into the ONE shared function fixes every caller at
+# once. A failed cd is loud, which is the point: a payload that silently ran from / would be the
+# B-014 seam-misparse class wearing a new hat.
+occ_sh() { nc_exec -i --user www-data -- sh -c "cd /var/www/html && $1" >/dev/null 2>&1; }
 
 # Restrict an app to groups: installed and usable by them, invisible to everyone else. Preferred
 # over disabling, because a restricted app is still there for the roadmap's custom apps to build on.
@@ -531,7 +587,13 @@ gf_prune() {
 gf_files_path() {  # MOUNT REL -> absolute in-container path, or fails
   local id; id="$(groupfolder_id "$1")"
   [ -n "$id" ] || { log "groupfolder '$1' not found — cannot write $2"; return 1; }
-  printf '/var/www/html/data/__groupfolders/%s/files/%s\n' "$id" "$2"
+  # Derived from datadir_load, not hardcoded: the compose image default and AIO's /mnt/ncdata
+  # both flow through the same answer, and the jail rule above stays the one path to be wrong
+  # about. Self-heals when a caller skipped the load (a cache filled inside a command
+  # substitution dies with it — documented above — but the VALUE still flows out), so a caller
+  # that forgets datadir_load pays one exec, never a wrong path.
+  datadir_load || return 1
+  printf '%s/__groupfolders/%s/files/%s\n' "$DATADIR" "$id" "$2"
 }
 # Reindex the folder a path belongs to. Best-effort: a failed scan leaves the file on disk and the
 # next seed's `test` still finds it, so failing the phase here would be louder than the problem.
@@ -540,10 +602,13 @@ gf_scan() { occ groupfolders:scan "$(groupfolder_id "$1")" >/dev/null 2>&1 || tr
 # Create a text file inside a group folder, then index it. Idempotent (test -f).
 ensure_gf_file() {  # MOUNT RELPATH CONTENT
   local mount="$1" rel="$2" content="$3" path
-  gf_load; path="$(gf_files_path "$mount" "$rel")" || return 1
-  if docker compose exec -T --user www-data nextcloud test -f "$path" 2>/dev/null; then
+  # datadir_load HERE, parent-side of the command substitution below — gf_files_path's own load
+  # would die with the substitution and every call would re-pay the exec. gf_load for the same
+  # reason, per its own contract above.
+  gf_load; datadir_load || return 1; path="$(gf_files_path "$mount" "$rel")" || return 1
+  if nc_exec --user www-data -- test -f "$path" 2>/dev/null; then
     log "  file $mount/$rel exists"; return 0; fi
-  docker compose exec -T --user www-data -e GFC="$content" -e GFP="$path" nextcloud \
+  nc_exec --user www-data -e GFC="$content" -e GFP="$path" -- \
     sh -c 'printf "%s" "$GFC" > "$GFP"'
   gf_scan "$mount"
   log "  file $mount/$rel created"
@@ -551,21 +616,26 @@ ensure_gf_file() {  # MOUNT RELPATH CONTENT
 # Create a regular subfolder inside a group folder, then index it. Idempotent (test -d).
 ensure_gf_subfolder() {  # MOUNT SUBFOLDER
   local mount="$1" sub="$2" path
-  gf_load; path="$(gf_files_path "$mount" "$sub")" || return 1
-  if docker compose exec -T --user www-data nextcloud test -d "$path" 2>/dev/null; then
+  gf_load; datadir_load || return 1; path="$(gf_files_path "$mount" "$sub")" || return 1
+  if nc_exec --user www-data -- test -d "$path" 2>/dev/null; then
     log "  subfolder $mount/$sub exists"; return 0; fi
-  docker compose exec -T --user www-data nextcloud mkdir -p "$path"
+  nc_exec --user www-data -- mkdir -p "$path"
   gf_scan "$mount"
   log "  subfolder $mount/$sub created"
 }
 
 # --- content fixtures (query-before-create): put a file in a user's Files, then index it ---
 ensure_sample_file() {  # UID RELPATH CONTENT
-  local uid="$1" rel="$2" content="$3" base="data/$1/files"
-  if docker compose exec -T --user www-data nextcloud test -f "/var/www/html/$base/$rel" 2>/dev/null; then
+  local uid="$1" rel="$2" content="$3"
+  # Datadir-derived (see datadir_load): the compose-era `data/$uid/files` was the image default
+  # written out by hand; under AIO it is a phantom tree with every gate green. One load here,
+  # parent-side — this helper runs in the phase shell itself, no substitution, so the cache holds
+  # for the rest of the phase.
+  datadir_load || return 1
+  if nc_exec --user www-data -- test -f "$DATADIR/$uid/files/$rel" 2>/dev/null; then
     log "file $uid:$rel exists"; return 0
   fi
-  docker compose exec -T --user www-data -e SAMPLE="$content" -e DEST="/var/www/html/$base/$rel" nextcloud \
+  nc_exec --user www-data -e SAMPLE="$content" -e DEST="$DATADIR/$uid/files/$rel" -- \
     sh -c 'mkdir -p "$(dirname "$DEST")" && printf "%s" "$SAMPLE" > "$DEST"'
   occ files:scan "$uid" >/dev/null 2>&1 || true
   log "file $uid:$rel created + indexed"
@@ -616,12 +686,12 @@ ensure_aia_intermediate() {  # HOST
   # One handshake, and it yields both halves: the pointer on the first line, the leaf after
   # it. Read separately they came from two connections, so behind a load balancer mid-rotation
   # the certificate being verified was not the one whose pointer was followed.
-  # `timeout 20` sits INSIDE the payload: host-side around `docker compose exec` it kills the CLI
+  # `timeout 20` sits INSIDE the payload: host-side around `docker exec` it kills the CLI
   # and orphans openssl in the container; around `sh -c` it SIGTERMs dash, which skips the EXIT
   # trap below and leaks the leaf. 20 is the `curl --max-time 20` further down — a live handshake
   # is sub-second.
   local handshake leaf_pem
-  handshake="$(docker compose exec -T -e HOST="$host" nextcloud sh -c '
+  handshake="$(nc_exec -e HOST="$host" -- sh -c '
     leaf=$(mktemp); trap "rm -f $leaf" EXIT
     echo | timeout 20 openssl s_client -connect "$HOST:443" -servername "$HOST" 2>/dev/null \
       | openssl x509 -outform PEM > "$leaf" 2>/dev/null || exit 1
@@ -706,7 +776,7 @@ sys.exit(0 if found else 1)' "$name" || rc=$?
   # both — verified by forging a leaf and its CA, which that form accepted and this one refuses.
   # Nothing legitimate is lost: an intermediate that does not reach a public root would not fix
   # the feed either.
-  docker compose exec -T -e AIA="$aia" -e HOST="$host" -e LEAF="$leaf_pem" nextcloud sh -c '
+  nc_exec -e AIA="$aia" -e HOST="$host" -e LEAF="$leaf_pem" -- sh -c '
       leaf=$(mktemp); blob=$(mktemp); pem=$(mktemp)
       trap "rm -f $leaf $blob $pem" EXIT
       printf "%s\n" "$LEAF" > "$leaf"   # a PEM without its final newline is not one
@@ -719,15 +789,17 @@ sys.exit(0 if found else 1)' "$name" || rc=$?
 
   # Every cleanup and copy below is `|| true` or guarded, for one reason: this helper
   # warns and returns 0 on every failure it already knows about, and a phase that dies
-  # on the tidying instead is the same defect wearing a different hat. `docker compose
-  # cp` in particular fails for the ordinary reason of a container still starting.
+  # on the tidying instead is the same defect wearing a different hat. `docker cp` in
+  # particular fails for the ordinary reason of a container still starting.
   if [ ! -s "/tmp/$name" ]; then
     log "certs: could not fetch or parse $aia — skipped, feeds from $host will fail"
     rm -f "/tmp/$name" || true
     return 0
   fi
 
-  if ! docker compose cp "/tmp/$name" "nextcloud:/tmp/$name" >/dev/null 2>&1; then
+  # The one transport site that is not an exec — docker cp takes the container name itself, so the
+  # seam's default is stated here too (cp cannot route through nc_exec).
+  if ! docker cp "/tmp/$name" "${NC_CONTAINER:-nextcloud-aio-nextcloud}:/tmp/$name" >/dev/null 2>&1; then
     log "certs: could not copy $name into the container — skipped, feeds from $host will fail"
     rm -f "/tmp/$name" || true
     return 0
@@ -740,10 +812,10 @@ sys.exit(0 if found else 1)' "$name" || rc=$?
     log "certs: import of $name FAILED"
   fi
 
-  # `docker compose cp` writes as root, so www-data cannot unlink it from a sticky /tmp. Left
+  # `docker cp` writes as root, so www-data cannot unlink it from a sticky /tmp. Left
   # unguarded this was the LAST command in the function, so a failed cleanup became the function's
   # exit status and killed the phase after the first host — caught by removing both certificates
   # and re-running, which imported ispch and then aborted before the second host.
-  docker compose exec -T nextcloud rm -f "/tmp/$name" >/dev/null 2>&1 || true
+  nc_exec -- rm -f "/tmp/$name" >/dev/null 2>&1 || true
   return 0
 }
