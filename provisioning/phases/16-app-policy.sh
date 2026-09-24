@@ -15,6 +15,10 @@ done
 # Config switches BEFORE disables, and not as a style choice: survey_client's own kill switch has
 # to be written while the app is still enabled, or MonthlyReport::run() never runs to remove its
 # own job. app-policy.sh says so at both entries; this loop is where the ordering is enforced.
+# The intravox triple rides the same list as a LITERAL (free-tier-always): the value is a
+# repository constant, not a per-install answer, so nothing here expands a variable into it.
+# Writing it before the app exists anywhere is harmless — occ config:app:set stores the row
+# whatever the inventory says — and it means the pin is already in place the day the app ships.
 for entry in ${POLICY_CONFIG:-}; do
   _app="${entry%%:*}"; _rest="${entry#*:}"
   app_config_set "$_app" "${_rest%%:*}" "${_rest#*:}"

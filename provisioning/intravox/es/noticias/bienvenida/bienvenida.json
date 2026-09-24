@@ -1,0 +1,34 @@
+{
+  "uniqueId": "page-aps-00000003-0000-4000-8000-000000000003",
+  "title": "Bienvenida a la intranet",
+  "language": "es",
+  "layout": {
+    "columns": 1,
+    "rows": [
+      {
+        "columns": 1,
+        "backgroundColor": "var(--color-primary-element)",
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Noticias", "level": 3 },
+          { "type": "heading", "column": 1, "order": 2, "content": "Bienvenida a la intranet de __SITE_NOMBRE_CORTO__", "level": 1 },
+          { "type": "text",    "column": 1, "order": 3, "content": "Esta es la puerta de entrada del centro: bienvenida y bienvenida de vuelta." }
+        ]
+      },
+      {
+        "columns": 1,
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Qué encuentras dónde", "level": 2 },
+          { "type": "text", "column": 1, "order": 2, "content": "- **Inicio** — la pantalla de bienvenida: avisos, accesos rápidos, noticias y la vida del centro.\n- **Noticias** — comunicaciones del centro, con avisos vigentes arriba.\n- **Equipos** — la guía de equipos del centro: quién es quién, y una página por programa y sector con sus recursos y noticias.\n- **Documentos** — protocolos y documentos transversales vigentes." }
+        ]
+      },
+      {
+        "columns": 1,
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Quién publica", "level": 2 },
+          { "type": "text", "column": 1, "order": 2, "content": "Publican las jefaturas y quienes encargan comunicaciones (grupo Editores), tras la revisión de Dirección u OIRS. Si algo falta o está desactualizado, habla con tu jefatura directa o escríbenos por OIRS.\n\nLas fotografías se publican solo con consentimiento documentado del equipo." }
+        ]
+      }
+    ],
+    "sideColumns": []
+  }
+}

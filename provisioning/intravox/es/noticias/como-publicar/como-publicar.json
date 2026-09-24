@@ -1,0 +1,41 @@
+{
+  "uniqueId": "page-aps-00000004-0000-4000-8000-000000000004",
+  "title": "Cómo publicar",
+  "language": "es",
+  "layout": {
+    "columns": 1,
+    "rows": [
+      {
+        "columns": 1,
+        "backgroundColor": "var(--color-primary-element)",
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Noticias", "level": 3 },
+          { "type": "heading", "column": 1, "order": 2, "content": "Cómo publicar", "level": 1 },
+          { "type": "text",    "column": 1, "order": 3, "content": "La guía editorial para noticias y avisos" }
+        ]
+      },
+      {
+        "columns": 1,
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "El circuito", "level": 2 },
+          { "type": "text", "column": 1, "order": 2, "content": "1. **Borrador** — un Editor crea la página en su carpeta de noticias o avisos, en borrador.\n2. **Revisión** — Dirección u OIRS revisa el contenido antes de publicar.\n3. **Publicar** — la página pasa a publicada y aparece en las áreas de noticias correspondientes." }
+        ]
+      },
+      {
+        "columns": 1,
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Los avisos vencen — el vencimiento es editorial", "level": 2 },
+          { "type": "text", "column": 1, "order": 2, "content": "Un aviso vigente no se baja solo: cuando un aviso caduca (la campaña terminó, el plazo pasó), un Editor lo pasa de vuelta a borrador. Esa revisión es parte del deber de quien publica — revisa tus avisos cada semana." }
+        ]
+      },
+      {
+        "columns": 1,
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Fotografías", "level": 2 },
+          { "type": "text", "column": 1, "order": 2, "content": "Las fotografías del equipo requieren consentimiento documentado antes de publicar. No se publican fotografías de pacientes ni de funcionarios sin autorización." }
+        ]
+      }
+    ],
+    "sideColumns": []
+  }
+}

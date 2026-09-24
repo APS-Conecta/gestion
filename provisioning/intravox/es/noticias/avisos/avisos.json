@@ -1,0 +1,29 @@
+{
+  "uniqueId": "page-aps-00000013-0000-4000-8000-000000000013",
+  "title": "Avisos",
+  "language": "es",
+  "layout": {
+    "columns": 1,
+    "rows": [
+      {
+        "columns": 1,
+        "backgroundColor": "var(--color-primary-element)",
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Comunicaciones", "level": 3 },
+          { "type": "heading", "column": 1, "order": 2, "content": "Avisos", "level": 1 },
+          { "type": "text",    "column": 1, "order": 3, "content": "Vigentes — revisados por quien los publica" }
+        ]
+      },
+      {
+        "columns": 1,
+        "widgets": [
+          { "type": "news", "column": 1, "order": 1, "title": "", "sourcePath": "noticias/avisos", "sourcePageId": "",
+            "layout": "list", "columns": 1, "limit": 20, "sortBy": "modified", "sortOrder": "desc",
+            "showImage": false, "showDate": true, "showExcerpt": true, "excerptLength": 160,
+            "autoplayInterval": 0, "filters": [], "filterOperator": "AND" }
+        ]
+      }
+    ],
+    "sideColumns": []
+  }
+}

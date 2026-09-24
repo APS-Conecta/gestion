@@ -11,6 +11,23 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ## [Unreleased]
 
+### Added
+
+- **The welcome screen (IntraVox)** — the intranet surface as seeded content, not a fork:
+  `provisioning/phases/41-intravox.sh` (engine setup, registry→engine group map, templated `es`
+  import, page ACL) + the clinic-agnostic Spanish payload under `provisioning/intravox/es/`
+  (homepage per Variante A, navigation, footer, news/avisos seeds, Vida CESFAM, Documentos, ten
+  role/category pages, the Guía de equipos hub, one generated page per `SITE_TEAMS` entry).
+  Zero upstream divergences, zero new `SITE_*` variables, `defaultapp` untouched until the
+  promotion commit. Telemetry pinned free-tier (`intravox:telemetry_enabled=false`);
+  divergence tolerances for the three engine groups + the `IntraVox` folder. ADRs
+  [0014](docs/adr/0014-intravox-is-the-default-landing-app.md),
+  [0015](docs/adr/0015-welcome-content-seeds-through-an-ungated-own-app-phase.md),
+  [0016](docs/adr/0016-personal-layer-stays-page-level.md),
+  [0017](docs/adr/0017-metavox-deferred-alert-expiry-is-editorial.md); operator/editor guide in
+  [docs/WELCOME-SCREEN.md](docs/WELCOME-SCREEN.md). Design:
+  `2026-09-24_aps-conecta-welcome-screen` (gestion workspace `.rpiv/artifacts/designs/`).
+
 ## [0.3.0] — 2026-09-22
 
 ### Added

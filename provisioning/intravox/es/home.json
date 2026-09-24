@@ -1,0 +1,68 @@
+{
+  "uniqueId": "page-aps-00000001-0000-4000-8000-000000000001",
+  "title": "Inicio",
+  "language": "es",
+  "layout": {
+    "columns": 1,
+    "rows": [
+      {
+        "columns": 1,
+        "backgroundColor": "var(--color-primary-element)",
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Bienvenida · Atención Primaria de Salud", "level": 3 },
+          { "type": "heading", "column": 1, "order": 2, "content": "__SITE_NOMBRE_CORTO__", "level": 1 },
+          { "type": "text",    "column": 1, "order": 3, "content": "__SITE_COMUNA__ · __SITE_SERVICIO_SALUD__" }
+        ]
+      },
+      {
+        "columns": 1,
+        "widgets": [
+          { "type": "news", "column": 1, "order": 1, "title": "Avisos", "sourcePath": "noticias/avisos", "sourcePageId": "",
+            "layout": "list", "columns": 1, "limit": 3, "sortBy": "modified", "sortOrder": "desc",
+            "showImage": false, "showDate": true, "showExcerpt": true, "excerptLength": 140,
+            "autoplayInterval": 0, "filters": [], "filterOperator": "AND" }
+        ]
+      },
+      {
+        "columns": 1,
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Accesos rápidos", "level": 2 },
+          { "type": "links", "column": 1, "order": 2, "title": "", "columns": 5, "items": [
+            { "title": "Recepción y admisión",   "text": "Cupos, reprogramación, orientación",   "url": "/apps/files/?dir=/Transversal",              "icon": "information-outline",       "target": "_self" },
+            { "title": "Protocolos y documentos", "text": "Vigentes, con responsable y fecha",    "url": "/apps/files/?dir=/Transversal/Protocolos",   "icon": "file-document-multiple-outline", "target": "_self" },
+            { "title": "Gestión y turnos",        "text": "Programación semanal del centro",      "url": "/apps/calendar/",                            "icon": "calendar-month-outline",    "target": "_self" },
+            { "title": "Teléfonos y anexos",      "text": "Directorio interno del CESFAM",        "url": "/apps/contacts/",                            "icon": "phone-classic",             "target": "_self" },
+            { "title": "Guía de equipos",          "text": "Quién es quién, anexos y correos",      "url": "/apps/intravox/p/page-aps-00000008-0000-4000-8000-000000000008", "icon": "account-group-outline", "target": "_self" }
+          ]}
+        ]
+      },
+      {
+        "columns": 1,
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Noticias", "level": 2 },
+          { "type": "news", "column": 1, "order": 2, "title": "", "sourcePath": "noticias", "sourcePageId": "",
+            "layout": "carousel", "columns": 3, "limit": 3, "sortBy": "modified", "sortOrder": "desc",
+            "showImage": true, "showDate": true, "showExcerpt": true, "excerptLength": 100,
+            "autoplayInterval": 6, "filters": [], "filterOperator": "AND" }
+        ]
+      },
+      {
+        "columns": 4,
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Vida CESFAM", "level": 2 },
+          { "type": "image", "column": 1, "order": 2, "src": "images/tile-vacunacion.svg", "alt": "Jornada de vacunación", "caption": "Jornada de vacunación", "objectFit": "cover" },
+          { "type": "image", "column": 2, "order": 3, "src": "images/tile-terreno.svg",    "alt": "Equipo de terreno",     "caption": "Equipo de terreno",     "objectFit": "cover" },
+          { "type": "image", "column": 3, "order": 4, "src": "images/tile-capacitacion.svg","alt": "Capacitación",         "caption": "Capacitación IRA",      "objectFit": "cover" },
+          { "type": "image", "column": 4, "order": 5, "src": "images/tile-concursable.svg","alt": "Fondo concursable",     "caption": "Fondo concursable",     "objectFit": "cover" }
+        ]
+      },
+      {
+        "columns": 1,
+        "widgets": [
+          { "type": "text", "column": 1, "order": 1, "content": "Las fotografías se publican con consentimiento del equipo (Vida CESFAM · política de consentimiento). No se publican fotografías de pacientes ni de funcionarios sin autorización documentada." }
+        ]
+      }
+    ],
+    "sideColumns": []
+  }
+}

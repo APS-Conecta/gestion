@@ -1,0 +1,41 @@
+{
+  "uniqueId": "page-aps-00000011-0000-4000-8000-000000000011",
+  "title": "OIRS",
+  "language": "es",
+  "layout": {
+    "columns": 1,
+    "rows": [
+      {
+        "columns": 1,
+        "backgroundColor": "var(--color-primary-element)",
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Área de trabajo", "level": 3 },
+          { "type": "heading", "column": 1, "order": 2, "content": "OIRS", "level": 1 },
+          { "type": "text",    "column": 1, "order": 3, "content": "Comunicaciones, fecas y reclamos de __SITE_NOMBRE_CORTO__ · visible para · role-oirs y cat-jefaturas" }
+        ]
+      },
+      {
+        "columns": 1,
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Recursos OIRS", "level": 2 },
+          { "type": "links", "column": 1, "order": 2, "title": "", "columns": 3, "items": [
+            { "title": "Fecas y reclamos",  "text": "Registro y seguimiento",         "url": "/apps/files/?dir=/Unidades/OIRS", "icon": "email-receive-outline", "target": "_self" },
+            { "title": "Guía de publicación", "text": "El circuito editorial",        "url": "/apps/intravox/p/page-aps-00000004-0000-4000-8000-000000000004", "icon": "book-open-variant", "target": "_self" },
+            { "title": "Comunicaciones",   "text": "Noticias y avisos del centro",    "url": "/apps/intravox/p/page-aps-00000002-0000-4000-8000-000000000002", "icon": "bullhorn-outline",    "target": "_self" }
+          ]}
+        ]
+      },
+      {
+        "columns": 1,
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Noticias para tu área", "level": 2 },
+          { "type": "news", "column": 1, "order": 2, "title": "", "sourcePath": "equipos/oirs", "sourcePageId": "",
+            "layout": "list", "columns": 1, "limit": 5, "sortBy": "modified", "sortOrder": "desc",
+            "showImage": false, "showDate": true, "showExcerpt": true, "excerptLength": 120,
+            "autoplayInterval": 0, "filters": [], "filterOperator": "AND" }
+        ]
+      }
+    ],
+    "sideColumns": []
+  }
+}

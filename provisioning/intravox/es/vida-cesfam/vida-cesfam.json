@@ -1,0 +1,35 @@
+{
+  "uniqueId": "page-aps-00000006-0000-4000-8000-000000000006",
+  "title": "Vida CESFAM",
+  "language": "es",
+  "layout": {
+    "columns": 1,
+    "rows": [
+      {
+        "columns": 1,
+        "backgroundColor": "var(--color-primary-element)",
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Nuestro CESFAM", "level": 3 },
+          { "type": "heading", "column": 1, "order": 2, "content": "Vida CESFAM", "level": 1 },
+          { "type": "text",    "column": 1, "order": 3, "content": "El centro en imágenes — jornadas, terreno, capacitación y fondos concursables" }
+        ]
+      },
+      {
+        "columns": 4,
+        "widgets": [
+          { "type": "image", "column": 1, "order": 1, "src": "images/tile-vacunacion.svg",  "alt": "Jornada de vacunación", "caption": "Jornada de vacunación", "objectFit": "cover" },
+          { "type": "image", "column": 2, "order": 2, "src": "images/tile-terreno.svg",     "alt": "Equipo de terreno",     "caption": "Equipo de terreno",     "objectFit": "cover" },
+          { "type": "image", "column": 3, "order": 3, "src": "images/tile-capacitacion.svg","alt": "Capacitación",          "caption": "Capacitación IRA",      "objectFit": "cover" },
+          { "type": "image", "column": 4, "order": 4, "src": "images/tile-concursable.svg", "alt": "Fondo concursable",     "caption": "Fondo concursable",     "objectFit": "cover" }
+        ]
+      },
+      {
+        "columns": 1,
+        "widgets": [
+          { "type": "text", "column": 1, "order": 1, "content": "Espacio para la vida del centro — se publica con consentimiento del equipo.\n\nLas fotografías se publican solo con autorización documentada. No se publican fotografías de pacientes ni de funcionarios sin consentimiento. Las imágenes actuales son marcadores de posición: el equipo de Edición las reemplaza por fotografías reales con su consentimiento respectivo." }
+        ]
+      }
+    ],
+    "sideColumns": []
+  }
+}

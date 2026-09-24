@@ -1,0 +1,41 @@
+{
+  "uniqueId": "page-aps-0000000c-0000-4000-8000-00000000000c",
+  "title": "Administrativos",
+  "language": "es",
+  "layout": {
+    "columns": 1,
+    "rows": [
+      {
+        "columns": 1,
+        "backgroundColor": "var(--color-primary-element)",
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Área de trabajo", "level": 3 },
+          { "type": "heading", "column": 1, "order": 2, "content": "Administrativos", "level": 1 },
+          { "type": "text",    "column": 1, "order": 3, "content": "Apoyo administrativo de __SITE_NOMBRE_CORTO__" }
+        ]
+      },
+      {
+        "columns": 1,
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Recursos administrativos", "level": 2 },
+          { "type": "links", "column": 1, "order": 2, "title": "", "columns": 3, "items": [
+            { "title": "Permisos administrativos", "text": "Circular y procedimiento vigentes", "url": "/apps/files/?dir=/Transversal", "icon": "account-check-outline", "target": "_self" },
+            { "title": "Normativas internas",     "text": "Reglamentos y circulares",         "url": "/apps/files/?dir=/Transversal/Documentación", "icon": "bookshelf", "target": "_self" },
+            { "title": "Formatos y plantillas",   "text": "Documentos de uso frecuente",       "url": "/apps/files/?dir=/Transversal", "icon": "file-document-outline", "target": "_self" }
+          ]}
+        ]
+      },
+      {
+        "columns": 1,
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Noticias para tu área", "level": 2 },
+          { "type": "news", "column": 1, "order": 2, "title": "", "sourcePath": "equipos/administrativos", "sourcePageId": "",
+            "layout": "list", "columns": 1, "limit": 5, "sortBy": "modified", "sortOrder": "desc",
+            "showImage": false, "showDate": true, "showExcerpt": true, "excerptLength": 120,
+            "autoplayInterval": 0, "filters": [], "filterOperator": "AND" }
+        ]
+      }
+    ],
+    "sideColumns": []
+  }
+}

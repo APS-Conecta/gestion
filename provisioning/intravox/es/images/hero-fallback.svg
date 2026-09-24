@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" role="img" aria-label="Marcador de bienvenida">
+  <!-- Hero fallback tile: a quiet brand wash for hero rows that want an image and have none yet. -->
+  <rect width="1200" height="400" fill="var(--color-primary-element, #7f21fe)" fill-opacity="0.12"/>
+  <g fill="var(--color-primary-element, #7f21fe)" fill-opacity="0.6">
+    <circle cx="600" cy="178" r="56" fill-opacity="0.18"/>
+    <rect x="572" y="150" width="20" height="56" rx="4"/>
+    <rect x="572" y="150" width="56" height="20" rx="4" transform="translate(18,18)"/>
+  </g>
+</svg>

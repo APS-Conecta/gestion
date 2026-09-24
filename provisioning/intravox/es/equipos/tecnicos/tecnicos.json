@@ -1,0 +1,41 @@
+{
+  "uniqueId": "page-aps-0000000b-0000-4000-8000-00000000000b",
+  "title": "Técnicos",
+  "language": "es",
+  "layout": {
+    "columns": 1,
+    "rows": [
+      {
+        "columns": 1,
+        "backgroundColor": "var(--color-primary-element)",
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Área de trabajo", "level": 3 },
+          { "type": "heading", "column": 1, "order": 2, "content": "Técnicos", "level": 1 },
+          { "type": "text",    "column": 1, "order": 3, "content": "TENS y TONS de __SITE_NOMBRE_CORTO__" }
+        ]
+      },
+      {
+        "columns": 1,
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Recursos técnicos", "level": 2 },
+          { "type": "links", "column": 1, "order": 2, "title": "", "columns": 3, "items": [
+            { "title": "Protocolos técnicos",  "text": "Procedimientos vigentes",            "url": "/apps/files/?dir=/Transversal/Protocolos", "icon": "file-cog-outline",    "target": "_self" },
+            { "title": "Cadena de frío",      "text": "Registro y procedimiento",           "url": "/apps/files/?dir=/Transversal",            "icon": "snowflake",           "target": "_self" },
+            { "title": "Pautas de trabajo",   "text": "Organización de la jornada",         "url": "/apps/files/?dir=/Transversal",            "icon": "clipboard-text-outline", "target": "_self" }
+          ]}
+        ]
+      },
+      {
+        "columns": 1,
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Noticias para tu área", "level": 2 },
+          { "type": "news", "column": 1, "order": 2, "title": "", "sourcePath": "equipos/tecnicos", "sourcePageId": "",
+            "layout": "list", "columns": 1, "limit": 5, "sortBy": "modified", "sortOrder": "desc",
+            "showImage": false, "showDate": true, "showExcerpt": true, "excerptLength": 120,
+            "autoplayInterval": 0, "filters": [], "filterOperator": "AND" }
+        ]
+      }
+    ],
+    "sideColumns": []
+  }
+}

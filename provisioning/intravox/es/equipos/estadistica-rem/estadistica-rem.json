@@ -1,0 +1,41 @@
+{
+  "uniqueId": "page-aps-00000010-0000-4000-8000-000000000010",
+  "title": "Estadística REM",
+  "language": "es",
+  "layout": {
+    "columns": 1,
+    "rows": [
+      {
+        "columns": 1,
+        "backgroundColor": "var(--color-primary-element)",
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Área de trabajo", "level": 3 },
+          { "type": "heading", "column": 1, "order": 2, "content": "Estadística REM", "level": 1 },
+          { "type": "text",    "column": 1, "order": 3, "content": "Plazos, plantillas y validadores REM de __SITE_NOMBRE_CORTO__ · visible para · role-estadistica-rem y cat-jefaturas" }
+        ]
+      },
+      {
+        "columns": 1,
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Recursos REM", "level": 2 },
+          { "type": "links", "column": 1, "order": 2, "title": "", "columns": 3, "items": [
+            { "title": "Plazos REM",      "text": "Calendario de envío del periodo",   "url": "/apps/files/?dir=/Unidades/Estadística-REM", "icon": "calendar-clock-outline", "target": "_self" },
+            { "title": "Plantillas",      "text": "Formatos de carga y revisión",      "url": "/apps/files/?dir=/Unidades/Estadística-REM", "icon": "file-table-outline",     "target": "_self" },
+            { "title": "Validadores",     "text": "Revisión previa al envío",          "url": "/apps/files/?dir=/Unidades/Estadística-REM", "icon": "check-decagram-outline", "target": "_self" }
+          ]}
+        ]
+      },
+      {
+        "columns": 1,
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Noticias para tu área", "level": 2 },
+          { "type": "news", "column": 1, "order": 2, "title": "", "sourcePath": "equipos/estadistica-rem", "sourcePageId": "",
+            "layout": "list", "columns": 1, "limit": 5, "sortBy": "modified", "sortOrder": "desc",
+            "showImage": false, "showDate": true, "showExcerpt": true, "excerptLength": 120,
+            "autoplayInterval": 0, "filters": [], "filterOperator": "AND" }
+        ]
+      }
+    ],
+    "sideColumns": []
+  }
+}

@@ -2064,7 +2064,7 @@ def selftest():
             check("generar: revision answers the plan — zero execs, zero writes",
                   st == 200 and body["modo"] == "revision" and body["usuarios"] == 2
                   and body["primer_admin"] == "elena.diaz" and body["contrasenas_selladas"] >= 2
-                  and len(body["fases"]) == 13 and execs[0] == 0 and same
+                  and len(body["fases"]) == 14 and execs[0] == 0 and same
                   and body["env"]["FIXTURE_USER_PASSWORD"] == "se generará")
 
             st, _ = generar("ejecutar-x")
@@ -2103,9 +2103,9 @@ def selftest():
 
             st, body = generar("ejecutar")
             drv_at = body["salida"].index("== provisioning complete")
-            check("generar: ejecutar runs the whole world green — 13 phases, 2 roster users, gate clean",
+            check("generar: ejecutar runs the whole world green — 14 phases, 2 roster users, gate clean",
                   st == 200 and body["ok"] and body["divergencia_vacia"]
-                  and "13 phase(s) run" in body["salida"] and "== roster: 2 usuario(s) ==" in body["salida"]
+                  and "14 phase(s) run" in body["salida"] and "== roster: 2 usuario(s) ==" in body["salida"]
                   and "user elena.diaz added to group admin" in body["salida"]
                   and "nothing live that the repo does not declare" in body["divergencia"])
             env_text = open(env_path, encoding="utf-8").read()

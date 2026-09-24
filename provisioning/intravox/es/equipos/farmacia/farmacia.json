@@ -1,0 +1,41 @@
+{
+  "uniqueId": "page-aps-0000000e-0000-4000-8000-00000000000e",
+  "title": "Farmacia",
+  "language": "es",
+  "layout": {
+    "columns": 1,
+    "rows": [
+      {
+        "columns": 1,
+        "backgroundColor": "var(--color-primary-element)",
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Área de trabajo", "level": 3 },
+          { "type": "heading", "column": 1, "order": 2, "content": "Farmacia", "level": 1 },
+          { "type": "text",    "column": 1, "order": 3, "content": "Farmacia y PNAC de __SITE_NOMBRE_CORTO__" }
+        ]
+      },
+      {
+        "columns": 1,
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Recursos de farmacia", "level": 2 },
+          { "type": "links", "column": 1, "order": 2, "title": "", "columns": 3, "items": [
+            { "title": "Farmacia (aplicación)", "text": "Stock y despacho",          "url": "/apps/farmacia/",           "icon": "pill",           "target": "_self" },
+            { "title": "PNAC",                  "text": "Programa de alimentación",  "url": "/apps/files/?dir=/Programas", "icon": "food-apple-outline", "target": "_self" },
+            { "title": "Minutas y registros",   "text": "Trabajo del equipo",        "url": "/apps/files/?dir=/Unidades/Farmacia", "icon": "file-document-outline", "target": "_self" }
+          ]}
+        ]
+      },
+      {
+        "columns": 1,
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Noticias para tu área", "level": 2 },
+          { "type": "news", "column": 1, "order": 2, "title": "", "sourcePath": "equipos/farmacia", "sourcePageId": "",
+            "layout": "list", "columns": 1, "limit": 5, "sortBy": "modified", "sortOrder": "desc",
+            "showImage": false, "showDate": true, "showExcerpt": true, "excerptLength": 120,
+            "autoplayInterval": 0, "filters": [], "filterOperator": "AND" }
+        ]
+      }
+    ],
+    "sideColumns": []
+  }
+}

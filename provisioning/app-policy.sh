@@ -35,7 +35,11 @@ POLICY_ADMIN_ONLY="support updatenotification serverinfo recommendations related
 #     key, so the tour dies while the app stays installed — leaving the hook available for an
 #     APS Conecta onboarding later.
 #   survey_client:never_again:true — the app's own kill switch. See below.
-POLICY_CONFIG="firstrunwizard:wizard_enabled:false survey_client:never_again:true"
+#   intravox:telemetry_enabled:false — free-tier-always posture, written before the app ships
+#     anywhere: TelemetryService::isEnabled() defaults ON and compares === 'true', so the literal
+#     'false' is the pin (exact string, repository constant — never a per-site lever).
+#     license_key needs no lever: absence IS the free tier, and it is never written.
+POLICY_CONFIG="firstrunwizard:wizard_enabled:false survey_client:never_again:true intravox:telemetry_enabled:false"
 
 # Disabled, because restriction cannot work for either.
 #   survey_client            — sends usage data TO Nextcloud. Restriction would be theatre:

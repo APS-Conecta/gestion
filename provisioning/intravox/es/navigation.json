@@ -1,0 +1,26 @@
+{
+  "type": "megamenu",
+  "items": [
+    { "id": "nav_inicio",   "title": "Inicio",         "uniqueId": "page-aps-00000001-0000-4000-8000-000000000001", "url": null, "target": null, "children": [] },
+    { "id": "nav_cesfam",   "title": "Nuestro CESFAM", "uniqueId": "page-aps-00000006-0000-4000-8000-000000000006", "url": null, "target": null,
+      "children": [
+        { "id": "nav_vida",  "title": "Vida CESFAM",   "uniqueId": "page-aps-00000006-0000-4000-8000-000000000006", "url": null, "target": null, "children": [] },
+        { "id": "nav_docs2", "title": "Documentos",    "uniqueId": "page-aps-00000007-0000-4000-8000-000000000007", "url": null, "target": null, "children": [] }
+      ] },
+    { "id": "nav_equipos", "title": "Equipos",        "uniqueId": "page-aps-00000008-0000-4000-8000-000000000008", "url": null, "target": null,
+      "children": [
+        { "id": "nav_eq_jef",   "title": "Jefaturas",      "uniqueId": "page-aps-00000009-0000-4000-8000-000000000009", "url": null, "target": null, "children": [] },
+        { "id": "nav_eq_cli",   "title": "Clínicos",       "uniqueId": "page-aps-0000000a-0000-4000-8000-00000000000a", "url": null, "target": null, "children": [] },
+        { "id": "nav_eq_tec",   "title": "Técnicos",       "uniqueId": "page-aps-0000000b-0000-4000-8000-00000000000b", "url": null, "target": null, "children": [] },
+        { "id": "nav_eq_adm",   "title": "Administrativos", "uniqueId": "page-aps-0000000c-0000-4000-8000-00000000000c", "url": null, "target": null, "children": [] },
+        { "id": "nav_eq_some",  "title": "SOME",           "uniqueId": "page-aps-0000000d-0000-4000-8000-00000000000d", "url": null, "target": null, "children": [] },
+        { "id": "nav_eq_far",   "title": "Farmacia",       "uniqueId": "page-aps-0000000e-0000-4000-8000-00000000000e", "url": null, "target": null, "children": [] },
+        { "id": "nav_eq_vac",   "title": "Vacunatorio",    "uniqueId": "page-aps-0000000f-0000-4000-8000-00000000000f", "url": null, "target": null, "children": [] },
+        { "id": "nav_eq_rem",   "title": "Estadística REM", "uniqueId": "page-aps-00000010-0000-4000-8000-000000000010", "url": null, "target": null, "children": [] },
+        { "id": "nav_eq_oirs",  "title": "OIRS",            "uniqueId": "page-aps-00000011-0000-4000-8000-000000000011", "url": null, "target": null, "children": [] },
+        { "id": "nav_eq_apo",   "title": "Apoyo",           "uniqueId": "page-aps-00000012-0000-4000-8000-000000000012", "url": null, "target": null, "children": [] }
+      ] },
+    { "id": "nav_documentos", "title": "Documentos",   "uniqueId": "page-aps-00000007-0000-4000-8000-000000000007", "url": null, "target": null, "children": [] },
+    { "id": "nav_noticias",  "title": "Noticias",      "uniqueId": "page-aps-00000002-0000-4000-8000-000000000002", "url": null, "target": null, "children": [] }
+  ]
+}

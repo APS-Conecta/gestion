@@ -1,0 +1,40 @@
+{
+  "uniqueId": "page-aps-00000012-0000-4000-8000-000000000012",
+  "title": "Apoyo",
+  "language": "es",
+  "layout": {
+    "columns": 1,
+    "rows": [
+      {
+        "columns": 1,
+        "backgroundColor": "var(--color-primary-element)",
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Área de trabajo", "level": 3 },
+          { "type": "heading", "column": 1, "order": 2, "content": "Apoyo", "level": 1 },
+          { "type": "text",    "column": 1, "order": 3, "content": "Conductores y auxiliares de servicio de __SITE_NOMBRE_CORTO__" }
+        ]
+      },
+      {
+        "columns": 1,
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Recursos de apoyo", "level": 2 },
+          { "type": "links", "column": 1, "order": 2, "title": "", "columns": 2, "items": [
+            { "title": "Turnos",             "text": "Programación de la semana",   "url": "/apps/calendar/",   "icon": "calendar-month-outline", "target": "_self" },
+            { "title": "Avisos de seguridad", "text": "Novedades y recordatorios", "url": "/apps/files/?dir=/Transversal", "icon": "shield-car", "target": "_self" }
+          ]}
+        ]
+      },
+      {
+        "columns": 1,
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Noticias para tu área", "level": 2 },
+          { "type": "news", "column": 1, "order": 2, "title": "", "sourcePath": "equipos/apoyo", "sourcePageId": "",
+            "layout": "list", "columns": 1, "limit": 5, "sortBy": "modified", "sortOrder": "desc",
+            "showImage": false, "showDate": true, "showExcerpt": true, "excerptLength": 120,
+            "autoplayInterval": 0, "filters": [], "filterOperator": "AND" }
+        ]
+      }
+    ],
+    "sideColumns": []
+  }
+}

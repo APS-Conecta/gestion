@@ -91,7 +91,9 @@ for r in (d.values() if isinstance(d, dict) else d):
     fid = r.get("id")
     if m: print(str(fid) + "\t" + m)
 ')"
-declared_folders="$(printf '%s\n' "${SITE_FOLDERS[@]}")"
+declared_folders="$(printf '%s\n%s\n' "${SITE_FOLDERS[@]}" "IntraVox")"   # engine mount (design §5): created by
+# intravox:setup, not in any SITE_FOLDERS matrix; gf_prune already leaves it alone (prune only
+# touches matrix mounts)
 while IFS=$'\t' read -r fid mount; do
   [ -n "${mount:-}" ] || continue
   printf '%s\n' "$declared_folders" | grep -qxF -- "$mount" && continue
@@ -110,7 +112,11 @@ shared_count="$(printf '%s\n' "$declared_shared" | grep -c . || true)"
 if [ "$shared_count" -lt 20 ]; then
   note "cannot check groups: only $shared_count declared groups parsed out of $PHASE20 (expected 27+). Its shape changed — fix the two sed expressions in $0 before trusting this report"
 else
-  declared_groups="$(printf '%s\n%s\n' "$declared_shared" "admin"
+  # The three engine groups (D5) join the declared set the same way: created by intravox:setup,
+  # membership mapped by phase 41 — not registry vocabulary, tolerated rather than declared in
+  # phase 20.
+  declared_groups="$(printf '%s\n%s\n%s\n%s\n%s\n' "$declared_shared" "admin" \
+                     "IntraVox Admins" "IntraVox Editors" "IntraVox Users"
                      for e in "${SITE_TEAMS[@]}"; do printf '%s\n' "${e%%|*}"; done
                      declare -p SITE_ROLES >/dev/null 2>&1 || SITE_ROLES=()
                      for e in "${SITE_ROLES[@]}"; do printf '%s\n' "${e%%|*}"; done)"

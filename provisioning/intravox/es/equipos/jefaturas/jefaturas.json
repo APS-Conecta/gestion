@@ -1,0 +1,42 @@
+{
+  "uniqueId": "page-aps-00000009-0000-4000-8000-000000000009",
+  "title": "Jefaturas",
+  "language": "es",
+  "layout": {
+    "columns": 1,
+    "rows": [
+      {
+        "columns": 1,
+        "backgroundColor": "var(--color-primary-element)",
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Área de trabajo", "level": 3 },
+          { "type": "heading", "column": 1, "order": 2, "content": "Jefaturas", "level": 1 },
+          { "type": "text",    "column": 1, "order": 3, "content": "Recursos, indicadores y noticias para jefaturas de __SITE_NOMBRE_CORTO__ · visible para · cat-jefaturas" }
+        ]
+      },
+      {
+        "columns": 1,
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Recursos de jefaturas", "level": 2 },
+          { "type": "links", "column": 1, "order": 2, "title": "", "columns": 4, "items": [
+            { "title": "Indicadores mensuales",    "text": "Tablero y serie histórica",        "url": "/apps/files/?dir=/Unidades/Dirección",   "icon": "chart-line",         "target": "_self" },
+            { "title": "Programación de turnos",   "text": "Semana en curso y próxima",         "url": "/apps/calendar/",                        "icon": "calendar-month-outline", "target": "_self" },
+            { "title": "Permisos y vacaciones",    "text": "Solicitud y estado del equipo",     "url": "/apps/files/?dir=/Transversal",          "icon": "account-check-outline", "target": "_self" },
+            { "title": "Actas y compromisos",      "text": "Últimas reuniones de dirección",    "url": "/apps/files/?dir=/Unidades/Dirección",   "icon": "file-document-outline", "target": "_self" }
+          ]}
+        ]
+      },
+      {
+        "columns": 1,
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Noticias para tu área", "level": 2 },
+          { "type": "news", "column": 1, "order": 2, "title": "", "sourcePath": "equipos/jefaturas", "sourcePageId": "",
+            "layout": "list", "columns": 1, "limit": 5, "sortBy": "modified", "sortOrder": "desc",
+            "showImage": false, "showDate": true, "showExcerpt": true, "excerptLength": 120,
+            "autoplayInterval": 0, "filters": [], "filterOperator": "AND" }
+        ]
+      }
+    ],
+    "sideColumns": []
+  }
+}
