@@ -8,6 +8,9 @@ is the operational contract; keep it current.
 Principles, the language split and the data/secrets invariants are defined in
 [`AGENTS.md`](AGENTS.md) and bind every contributor and agent.
 
+Cross-repo ADR citations are `repo#ADR-NNNN` (`territorio#ADR-0016`); in-repo citations stay bare. The org-wide contracts index lives in `gestion/docs/CONTRACTS.md`. Cross-repo consumption of any app's surface is a
+contract, not a grep accident: the index is the ADR-0011 home for those facts.
+
 ## Workflow (GitHub Flow)
 
 1. Branch off `main` (short-lived): `feat/…`, `fix/…`, `docs/…`, `chore/…`.
