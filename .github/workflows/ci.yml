@@ -52,3 +52,20 @@ jobs:
       - name: Install php-cli for the desktop_workspace pin seat
         run: sudo apt-get update && sudo apt-get install -y php-cli
       - run: make test
+
+  org-drift:
+    name: Org boilerplate drift (org L0-09)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      # The two apps the doctrine matured on + the package; epidemiologia joins
+      # per-check when its Phase-7 tree lands (the script's own exclusions name
+      # their reasons). Depth 1: the gate reads HEAD trees, never history.
+      - name: Clone the compared repos
+        run: |
+          git clone --depth 1 https://github.com/APS-Conecta/territorio.git apps/territorio
+          git clone --depth 1 https://github.com/APS-Conecta/farmacia.git apps/farmacia
+          git clone --depth 1 https://github.com/APS-Conecta/aps-common.git ../aps-common
+      - name: Drift gate — phpunit exact, core targets, eslint teeth, aps-sync parity
+        run: scripts/check-org-drift.sh apps

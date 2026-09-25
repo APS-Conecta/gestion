@@ -25,6 +25,21 @@ same fact, the one named here as its authority wins and the other should link in
 | [`LICENSING.md`](LICENSING.md) | Our own licence, every third-party licence the stack runs, and whether any obligation reaches our code |
 | [`adr/`](adr/) | Decisions, and the reasoning that was live when each was taken |
 
+## The operator manuals
+
+The four-suite manual set lives under [`manuals/`](manuals/) — moved under version control
+(org L8-03) after shipping as an unversioned orphan at the org root. One page per audience:
+
+| Manual | It is the authority for |
+|---|---|
+| [`manuals/USER_MANUAL.md`](manuals/USER_MANUAL.md) | Healthcare staff operations — the screens, the rituals, in the operator's language |
+| [`manuals/DEVELOPER_MANUAL.md`](manuals/DEVELOPER_MANUAL.md) | Developer reference — topology, app taxonomy, theming, licensing |
+| [`manuals/ADMIN_MANUAL.md`](manuals/ADMIN_MANUAL.md) | Server administration — the orchestrated topology and its operational boundaries |
+| [`manuals/INCONSISTENCIES_AND_DEBT.md`](manuals/INCONSISTENCIES_AND_DEBT.md) | The register of known inconsistencies, architectural debt and their resolutions |
+
+`manuals/README.md` is the suite's own cover page and carries the brand stylesheet
+(`manuals/style.css`); the screenshots it embeds live beside it.
+
 ## Reference and how-to for one directory
 
 | Document | It is the authority for |
