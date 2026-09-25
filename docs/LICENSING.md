@@ -75,6 +75,7 @@ below were read from each app's `appinfo/info.xml` inside the shipped tarball, n
 | Epidemiología | NC app `epidemiologia` 0.9.0 — **ours**, built from a tag of its own repo | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `epidemiologia` `info.xml`; compiles `@nextcloud/vue`, which is why §1 is not a free choice |
 | Farmacia | NC app `farmacia` 0.11.1 — **ours**, built from a tag of its own repo | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `farmacia` `info.xml` |
 | Territorio | NC app `territorio` 0.74.0 — **ours**, built from a tag of its own repo | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `territorio` `info.xml` (`<licence>AGPL-3.0-or-later</licence>`); compiles `@nextcloud/vue`, so §1.2 applies to it exactly as to `epidemiologia` |
+| IntraVox | NC app `intravox` 3.1.0 (`v3.1.0-aps1`) — **ours, forked**: upstream `voxcloud/intravox`, modified in-repo per doctrine; built from a tag of our fork | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `intravox` `info.xml` (`<licence>agpl</licence>`) |
 | Notify Push | NC app `notify_push` 1.4.1 (vendored for the AIO bake — this stack installs it from no inventory) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `notify_push` `info.xml` |
 | Fraunces | `themes/apsconecta/core/fonts/*.woff2` (served by the theme) | SIL Open Font License 1.1 | `OFL-1.1` | Fraunces `OFL.txt` |
 | Nunito Sans | `themes/apsconecta/core/fonts/*.woff2` (served by the theme) | SIL Open Font License 1.1 | `OFL-1.1` | Nunito Sans `OFL.txt` |

@@ -407,6 +407,7 @@ ensure_own_app() {  # APPID CLONE_URL
 # and the sed it replaces here).
 apply_patch() {  # APPID PATCHFILE
   local app="$1" p="$2" name; name="$(basename "$p")"
+  local dir; dir="$(dirname "$p")"
   # The patch tool must exist IN THE CONTAINER, and the two images disagree: compose's Debian
   # image ships GNU patch; AIO's Alpine image ships NEITHER GNU patch nor the busybox patch
   # applet (verified: alpine:3.24 busybox has no patch applet, and the image's apk list has
@@ -425,11 +426,54 @@ apply_patch() {  # APPID PATCHFILE
     return 1
   fi
   local in="cd custom_apps/$app && $tool"
-  if occ_sh "$in $dry" < "$p"; then
-    occ_sh "$in" < "$p" && log "patch $app/$name applied"
-  elif occ_sh "$in $dry --reverse" < "$p"; then
+  # CHAIN PROOF (B-027): a later patch that touches one of this patch's
+  # targets and is ITSELF applied proves the chain ran past this patch —
+  # believe that over a fuzzy forward match, which is how 06-test-pins'
+  # weak tail context stacked a second seam onto 07's split file.
+  _chain_proves_applied() {  # -> 0 with a log line when a later patch is applied
+    local tgt later
+    for tgt in $(sed -n 's|^--- a/\(.*\)$|\1|p' "$p" | sort -u); do
+      for later in "$dir"/*.patch; do
+        [[ "$later" > "$p" ]] || continue
+        grep -q "^--- a/$tgt\$" "$later" || continue
+        if occ_sh "$in $dry --reverse" < "$later" 2>/dev/null; then
+          log "patch $app/$name already applied ($(basename "$later") is applied and also edits $tgt — the chain ran past this patch, B-027)"
+          return 0
+        fi
+      done
+    done
+    return 1
+  }
+  # REVERSE FIRST. A seed is a convergence verb — re-runs are the norm, so the
+  # already-applied check must win over the forward branch: GNU patch fuzzy-
+  # matches weak-context hunks (06-test-pins' tail seam) onto an ALREADY
+  # patched file and re-applies them, stacking copies on every seed (B-027).
+  # On a pristine tree the reverse dry-run simply fails and forward runs.
+  if occ_sh "$in $dry --reverse" < "$p"; then
     log "patch $app/$name already applied"
+  elif _chain_proves_applied; then
+    :
+  elif occ_sh "$in $dry" < "$p"; then
+    occ_sh "$in" < "$p" && log "patch $app/$name applied"
   else
+    # B-026: neither branch fits the FINAL tree. One honest remaining case:
+    # a LATER patch in this chain also touches one of this patch's targets
+    # (desktop_workspace 01 edits the SettingsController that 09 deletes;
+    # 02 edits the desktop-shell.js that 07 reworks). Patches apply in name
+    # order, so a later patch's effect existing means this one ran before it
+    # — and a reverse check against the final tree cannot see through either
+    # a deletion or a context move. That is "already applied", not rot.
+    # No later patch touching the target → the tree genuinely diverged → FAILED stands.
+    local tgt later
+    for tgt in $(sed -n 's|^--- a/\(.*\)$|\1|p' "$p" | sort -u); do
+      for later in "$dir"/*.patch; do
+        [[ "$later" > "$p" ]] || continue
+        if grep -q "^--- a/$tgt\$" "$later"; then
+          log "patch $app/$name already applied ($(basename "$later") also edits $tgt later in the chain — the reverse check cannot see through it, B-026)"
+          return 0
+        fi
+      done
+    done
     log "FAILED patch $app/$name — no longer applies; upstream moved, regenerate it"; return 1
   fi
 }
