@@ -1,0 +1,14 @@
+--- a/js/desktop-shell.js
++++ b/js/desktop-shell.js
+@@ -3978,4 +3978,11 @@
+         };
+         renderAll();
+     }
++
++    // Test seam (L4-03): gestion's desktop_workspace pin seat (gestion/tests/desktop_workspace/)
++    // boots this file under Node against its DOM stubs and exercises the saveState→restoreWindows
++    // round-trip through these handles. Never read by the app itself in the browser.
++    if (typeof module === 'object' && module.exports) {
++        module.exports = { DWState: { windows, root }, saveState, restoreWindows, reconstructApp, loadState, getApps, openWindow, closeWindow, removeWindowEntry, uniqueWindowId, prepareWindowApp };
++    }
+ })();

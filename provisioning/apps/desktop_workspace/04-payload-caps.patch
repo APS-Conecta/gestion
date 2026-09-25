@@ -1,0 +1,34 @@
+--- a/lib/Controller/SettingsController.php
++++ b/lib/Controller/SettingsController.php
+@@ -280,9 +280,15 @@
+         if (!is_array($decoded) || !isset($decoded['windows']) || !is_array($decoded['windows'])) {
+             $decoded = ['windows' => []];
+         }
+-        // Hard cap: never store more than 40 windows.
++        // Hard cap: never store more than 40 windows, and never more than 32KB of JSON — the
++        // payload is re-emitted on every page load (PageController::index), so an unbounded
++        // blob taxes every future visit (L4-06).
+         $decoded['windows'] = array_slice($decoded['windows'], 0, 40);
+-        $this->config->setUserValue($user->getUID(), self::APP_ID, self::WINDOW_STATES_KEY, json_encode($decoded));
++        $encoded = json_encode($decoded);
++        if (strlen($encoded) > 32768) {
++            return new JSONResponse(['status' => 'error', 'message' => 'window_states_too_large'], 400);
++        }
++        $this->config->setUserValue($user->getUID(), self::APP_ID, self::WINDOW_STATES_KEY, $encoded);
+         return new JSONResponse(['status' => 'ok']);
+     }
+ 
+--- a/lib/Service/StatsService.php
++++ b/lib/Service/StatsService.php
+@@ -64,7 +64,10 @@
+     }
+ 
+     public function heartbeat(string $instanceId): void {
+-        if ($instanceId === '' || !$this->cacheFactory->isAvailable()) {
++        // The id becomes a cache key; accept only the shape the shell's own generator emits
++        // (desktop-shell.js startHeartbeat: `${Date.now()}-${Math.random().toString(36).slice(2)}`)
++        // so a hostile page cannot plant arbitrary-length keys (L4-06).
++        if ($instanceId === '' || preg_match('/^[A-Za-z0-9._-]{1,64}$/', $instanceId) !== 1 || !$this->cacheFactory->isAvailable()) {
+             return;
+         }
+         $cache = $this->cacheFactory->createDistributed(self::APP_ID);

@@ -1,0 +1,58 @@
+--- a/js/desktop-shell.js
++++ b/js/desktop-shell.js
+@@ -97,15 +97,16 @@
+             menu.style.setProperty('z-index', '100020', 'important');
+         });
+     }
++let headerMenuSettleTimer = null;
+ function scheduleHeaderEndMenuPositioning() {
+         bindNativeAccountMenuControls();
++        // Coalesced (L4-08): one rAF for layout-ready plus ONE settle pass at 300ms for
++        // menus that animate open. The former six staggered timeouts (80→2400ms) ran on
++        // EVERY body mutation the observer reports — an idle desktop scheduled that
++        // battery continuously. Rapid mutations now reschedule the single settle pass.
+         requestAnimationFrame(() => { positionHeaderEndMenus(); bindNativeAccountMenuControls(); });
+-        setTimeout(positionHeaderEndMenus, 80);
+-        setTimeout(positionHeaderEndMenus, 250);
+-        setTimeout(positionHeaderEndMenus, 700);
+-        setTimeout(positionHeaderEndMenus, 1200);
+-        setTimeout(positionHeaderEndMenus, 1800);
+-        setTimeout(positionHeaderEndMenus, 2400);
++        clearTimeout(headerMenuSettleTimer);
++        headerMenuSettleTimer = setTimeout(positionHeaderEndMenus, 300);
+     }
+ function observeHeaderEndMenus() {
+         if (DW.headerMenuPositionObserver) return;
+@@ -782,7 +783,17 @@
+         DW.openExternalWindow(buildHeaderLinkMeta(link, url));
+     }, true);
+ window.addEventListener('resize', positionHeaderEndMenus);
+-setInterval(positionHeaderEndMenus, 400);
++    // L4-08 timer audit — the 400ms menu repositioner is GONE (menus reposition on
++    // open, on resize, and on the body observer via scheduleHeaderEndMenuPositioning).
++    // What remains, and the event each stands in for:
++    //   trackIframeUrls     2s   per shell        — SPA navigation inside an iframe emits no 'load'; URL polling is the only signal
++    //   file-meta watcher   1s   per file window  — viewer title/icon changes have no event; polled only while the window is open
++    //   chrome priming      50ms bounded (≤80)    — startup only, self-clearing (primeIframeChromeHiding)
++    //   dynamicDataReload   30s  per shell        — admin policy propagation without a push channel
++    //   updateClock         30s  per shell        — minute display; next-minute alignment buys nothing at this cadence
++    //   heartbeat           60s  per shell        — StatsService liveness (ACTIVE_TTL 120s)
++    //   favorites render    5s   per shell        — guarded by desktopFolder && !document.hidden; WebDAV has no push
++    //   theming iframe sync 500ms per OPEN theming-settings iframe only (monitorThemingIframe)
+ search?.addEventListener('click', openUnifiedSearchOverlay);
+ moveHeaderEndToTaskbar();
+ observeHeaderEndMenus();
+--- a/js/theming.js
++++ b/js/theming.js
+@@ -93,7 +93,10 @@
+         window.addEventListener('storage', (event) => {
+             if (!DW.liveThemingApplied && (String(event.key || '').toLowerCase().includes('background') || String(event.key || '').toLowerCase().includes('theme'))) syncAppearance();
+         });
+-        setInterval(syncNativeAppearance, 5000);
++        // L4-08: the 5s setInterval(syncNativeAppearance) poll is gone — the attributes
++        // observer above (style/class/data-theme on html, body, #body-user), the storage
++        // listener, and the theming-iframe monitor cover every live-change path the poll
++        // was hedging, and each tick cost a getComputedStyle sweep on an idle desktop.
+     }
+ const themingIframeMonitors = new WeakMap();
+ const desktopLanguage = window.OC?.getLanguage?.() || document.documentElement.lang || navigator.language || '';

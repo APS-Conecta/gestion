@@ -16,7 +16,7 @@ fi
 # is the only other file that can change what compose resolves.
 check docker compose -f compose.yaml -f compose.dev.yaml config -q
 linted=0
-for s in scripts/*.sh provisioning/*.sh provisioning/phases/*.sh sites/*/site.sh dev/*.sh host/*.sh; do
+for s in scripts/*.sh provisioning/*.sh provisioning/phases/*.sh sites/*/site.sh dev/*.sh host/*.sh tests/*/*.sh; do
   [ -e "$s" ] || continue
   linted=$((linted + 1)); check bash -n "$s"
 done
@@ -36,7 +36,7 @@ done
 # What actually matters is that nothing TRACKED escapes the sweep, so subtract and require empty.
 check bash -c '
   [ -z "$(comm -23 <(git ls-files "*.sh" | sort) \
-                   <(ls scripts/*.sh provisioning/*.sh provisioning/phases/*.sh sites/*/site.sh dev/*.sh host/*.sh 2>/dev/null | sort))" ]'
+                   <(ls scripts/*.sh provisioning/*.sh provisioning/phases/*.sh sites/*/site.sh dev/*.sh host/*.sh tests/*/*.sh 2>/dev/null | sort))" ]'
 check test -f dev/xdebug.ini
 # Same three assertions `ensure_vendored_app` already makes (lib.sh:211-222), moved from seed time to
 # PR time. At seed time they run on a CLINIC, during `make install` — the worst place to learn that a
@@ -664,6 +664,15 @@ tl_out="$(bash host/tiles.sh --self-test 2>&1)" \
 mg_out="$(bash scripts/migrate-to-aio.sh --self-test 2>&1)" \
   && echo "  ok:   migrate-to-aio --self-test ($(printf '%s\n' "$mg_out" | tail -1))" \
   || { echo "  FAIL: migrate-to-aio --self-test"; printf '%s\n' "$mg_out" | tail -25; fail=1; }
+
+echo "== desktop_workspace pin seat (hermetic — unpacks the vendored tarball + applies its patches) =="
+# D2 (org plan Phase 8): the vendored app's pins live in gestion, not in upstream's
+# absent CI. Needs node always; the PHP arm rides php when present (CI installs it).
+if command -v node >/dev/null 2>&1; then
+  if bash tests/desktop_workspace/run.sh; then echo "  ok:   desktop_workspace pins"; else echo "  FAIL: desktop_workspace pins"; fail=1; fi
+else
+  echo "  skipped: desktop_workspace pins (no node on this box)"
+fi
 
 echo "== smoke (only if a stack is running) =="
 if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx nextcloud-aio-nextcloud; then

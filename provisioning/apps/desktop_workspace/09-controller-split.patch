@@ -1,0 +1,1461 @@
+--- a/appinfo/routes.php
++++ b/appinfo/routes.php
+@@ -4,20 +4,22 @@
+         // Shell
+         ['name' => 'page#index', 'url' => '/', 'verb' => 'GET'],
+         ['name' => 'page#dynamicData', 'url' => '/dynamic', 'verb' => 'GET'],
+-        ['name' => 'settings#saveAdminSettings', 'url' => '/settings/admin', 'verb' => 'POST'],
+-        ['name' => 'settings#saveDecorationPolicy', 'url' => '/settings/admin/decorations', 'verb' => 'POST'],
+-        ['name' => 'settings#saveFilesButtonPolicy', 'url' => '/settings/admin/files-button', 'verb' => 'POST'],
+-        ['name' => 'settings#savePersonalSettings', 'url' => '/settings/personal', 'verb' => 'POST'],
+-        ['name' => 'settings#heartbeat', 'url' => '/settings/heartbeat', 'verb' => 'POST'],
+-        ['name' => 'settings#saveIconPositions', 'url' => '/settings/iconpositions', 'verb' => 'POST'],
+-        ['name' => 'settings#saveAppPins', 'url' => '/settings/apppins', 'verb' => 'POST'],
+-        ['name' => 'settings#saveAppsMenuSize', 'url' => '/settings/appsmenu-size', 'verb' => 'POST'],
+-        ['name' => 'settings#migrateBrowserState', 'url' => '/settings/browser-state/migrate', 'verb' => 'POST'],
+-        ['name' => 'settings#resetIconPositions', 'url' => '/settings/iconpositions/reset', 'verb' => 'POST'],
+-        ['name' => 'settings#saveWindowStates', 'url' => '/settings/windowstates', 'verb' => 'POST'],
+-        ['name' => 'settings#resetWindowStates', 'url' => '/settings/windowstates/reset', 'verb' => 'POST'],
+-        ['name' => 'settings#resetAllPersonal', 'url' => '/settings/personal/reset', 'verb' => 'POST'],
+-        ['name' => 'settings#resetUserSettings', 'url' => '/settings/admin/resetuser', 'verb' => 'POST'],
++        // Settings split (L4-09): admin actions keep the default admin gate; personal
++        // actions carry #[NoAdminRequired] on the controller. URLs are unchanged.
++        ['name' => 'adminSettings#save', 'url' => '/settings/admin', 'verb' => 'POST'],
++        ['name' => 'adminSettings#saveDecorationPolicy', 'url' => '/settings/admin/decorations', 'verb' => 'POST'],
++        ['name' => 'adminSettings#saveFilesButtonPolicy', 'url' => '/settings/admin/files-button', 'verb' => 'POST'],
++        ['name' => 'adminSettings#resetUserSettings', 'url' => '/settings/admin/resetuser', 'verb' => 'POST'],
++        ['name' => 'personalSettings#save', 'url' => '/settings/personal', 'verb' => 'POST'],
++        ['name' => 'personalSettings#heartbeat', 'url' => '/settings/heartbeat', 'verb' => 'POST'],
++        ['name' => 'personalSettings#saveIconPositions', 'url' => '/settings/iconpositions', 'verb' => 'POST'],
++        ['name' => 'personalSettings#saveAppPins', 'url' => '/settings/apppins', 'verb' => 'POST'],
++        ['name' => 'personalSettings#saveAppsMenuSize', 'url' => '/settings/appsmenu-size', 'verb' => 'POST'],
++        ['name' => 'personalSettings#migrateBrowserState', 'url' => '/settings/browser-state/migrate', 'verb' => 'POST'],
++        ['name' => 'personalSettings#resetIconPositions', 'url' => '/settings/iconpositions/reset', 'verb' => 'POST'],
++        ['name' => 'personalSettings#saveWindowStates', 'url' => '/settings/windowstates', 'verb' => 'POST'],
++        ['name' => 'personalSettings#resetWindowStates', 'url' => '/settings/windowstates/reset', 'verb' => 'POST'],
++        ['name' => 'personalSettings#resetAllPersonal', 'url' => '/settings/personal/reset', 'verb' => 'POST'],
+ 
+         // Files module (formerly the standalone "desktopfiles" app)
+         ['name' => 'files#index', 'url' => '/files', 'verb' => 'GET'],
+--- /dev/null
++++ b/lib/Controller/AdminSettingsController.php
+@@ -0,0 +1,88 @@
++<?php
++namespace OCA\DesktopWorkspace\Controller;
++
++use OCA\DesktopWorkspace\SettingsKeys;
++use OCA\DesktopWorkspace\Service\FilesAvailability;
++use OCA\DesktopWorkspace\Service\PinService;
++use OCP\AppFramework\Controller;
++use OCP\AppFramework\Http\JSONResponse;
++use OCP\IConfig;
++use OCP\IRequest;
++use OCP\IUserManager;
++
++/**
++ * The admin half of the former SettingsController (L4-09 split, mirroring the
++ * settings-admin template). AUTHENTICATION: every action here is admin-only BY
++ * DEFAULT — the AppFramework applies the admin gate unless a method opts out with
++ * #[NoAdminRequired], and none does. A reflection pin in gestion's
++ * tests/desktop_workspace/ asserts no method ever opts out accidentally (L4-05).
++ */
++class AdminSettingsController extends Controller {
++    public function __construct(
++        string $appName,
++        IRequest $request,
++        private IConfig $config,
++        private IUserManager $userManager,
++        private PinService $pinService,
++    ) {
++        parent::__construct($appName, $request);
++    }
++
++    public function save(
++        string $experimental_disabled = 'no',
++        string $experimental_groups = '[]',
++        string $multi_window_apps = '[]',
++        string $user_decorations_enabled = 'yes',
++    ): JSONResponse {
++        $disabled = $experimental_disabled === 'yes' || $experimental_disabled === 'true' || $experimental_disabled === '1';
++        $this->config->setAppValue(SettingsKeys::APP_ID, FilesAvailability::DISABLED_KEY, $disabled ? 'yes' : 'no');
++
++        $groups = json_decode($experimental_groups, true);
++        if (!is_array($groups)) {
++            $groups = [];
++        }
++        $groups = array_values(array_filter($groups, 'is_string'));
++        $this->config->setAppValue(SettingsKeys::APP_ID, FilesAvailability::GROUPS_KEY, json_encode($groups));
++
++        $multi = json_decode($multi_window_apps, true);
++        if (!is_array($multi)) {
++            $multi = [];
++        }
++        $multi = array_values(array_filter($multi, 'is_string'));
++        $this->config->setAppValue(SettingsKeys::APP_ID, SettingsKeys::MULTI_WINDOW_KEY, json_encode($multi));
++
++        $userDecorationsEnabled = $user_decorations_enabled === 'yes' || $user_decorations_enabled === 'true' || $user_decorations_enabled === '1';
++        $this->config->setAppValue(SettingsKeys::APP_ID, SettingsKeys::USER_DECORATIONS_ENABLED_KEY, $userDecorationsEnabled ? 'yes' : 'no');
++
++        return new JSONResponse([
++            'status' => 'ok',
++            'experimentalDisabled' => $disabled,
++            'experimentalGroups' => $groups,
++            'multiWindowApps' => $multi,
++            'userDecorationsEnabled' => $userDecorationsEnabled,
++        ]);
++    }
++
++    public function saveDecorationPolicy(string $enabled = 'no'): JSONResponse {
++        $value = $enabled === 'yes' || $enabled === 'true' || $enabled === '1';
++        $this->config->setAppValue(SettingsKeys::APP_ID, SettingsKeys::USER_DECORATIONS_ENABLED_KEY, $value ? 'yes' : 'no');
++        return new JSONResponse(['status' => 'ok', 'userDecorationsEnabled' => $value]);
++    }
++
++    public function saveFilesButtonPolicy(string $enabled = 'no'): JSONResponse {
++        $value = $enabled === 'yes' || $enabled === 'true' || $enabled === '1';
++        $this->config->setAppValue(SettingsKeys::APP_ID, SettingsKeys::SHOW_FILES_NEW_TAB_KEY, $value ? 'yes' : 'no');
++        return new JSONResponse(['status' => 'ok', 'showFilesNewTab' => $value]);
++    }
++
++    /** Admin only (default gate — no #[NoAdminRequired]): wipe one user's desktop settings completely. */
++    public function resetUserSettings(string $userId = ''): JSONResponse {
++        $target = trim($userId);
++        if ($target === '' || $this->userManager->get($target) === null) {
++            return new JSONResponse(['status' => 'error', 'message' => 'unknown_user'], 404);
++        }
++        SettingsKeys::clearAllUserValues($this->config, $target);
++        $this->config->setUserValue($target, SettingsKeys::APP_ID, SettingsKeys::BROWSER_STATE_MIGRATION_KEY, '1');
++        return new JSONResponse(['status' => 'ok']);
++    }
++}
+--- a/lib/Controller/PageController.php
++++ b/lib/Controller/PageController.php
+@@ -3,6 +3,7 @@
+ 
+ use OCA\DesktopWorkspace\Service\DecorationService;
+ use OCA\DesktopWorkspace\Service\FilesAvailability;
++use OCA\DesktopWorkspace\SettingsKeys;
+ use OCP\AppFramework\Controller;
+ use OCP\AppFramework\Http\Attribute\NoAdminRequired;
+ use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
+@@ -31,7 +32,7 @@
+     }
+ 
+     private function navigationApps(): array {
+-        $multiWindow = json_decode($this->config->getAppValue(SettingsController::APP_ID, SettingsController::MULTI_WINDOW_KEY, '[]'), true);
++        $multiWindow = json_decode($this->config->getAppValue(SettingsKeys::APP_ID, SettingsKeys::MULTI_WINDOW_KEY, '[]'), true);
+         $multiWindow = is_array($multiWindow) ? $multiWindow : [];
+         $apps = [];
+         foreach ($this->navigationManager->getAll() as $entry) {
+@@ -70,10 +71,10 @@
+                 'Desktop Files' => $l->t('Desktop Files'),
+             ],
+             ...$this->decorationService->appearanceForUser($user?->getUID()),
+-            'windowControlsSide' => $uid !== null ? $this->config->getUserValue($uid, SettingsController::APP_ID, SettingsController::WINDOW_CONTROLS_SIDE_KEY, 'right') : 'right',
+-            'shellMode' => $uid !== null ? $this->config->getUserValue($uid, SettingsController::APP_ID, SettingsController::SHELL_MODE_KEY, 'taskbar') : 'taskbar',
+-            'dockAlwaysVisible' => $uid === null || $this->config->getUserValue($uid, SettingsController::APP_ID, SettingsController::DOCK_ALWAYS_VISIBLE_KEY, 'yes') !== 'no',
+-            'clockHourCycle' => $uid !== null ? $this->config->getUserValue($uid, SettingsController::APP_ID, SettingsController::CLOCK_HOUR_CYCLE_KEY, '24') : '24',
++            'windowControlsSide' => $uid !== null ? $this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::WINDOW_CONTROLS_SIDE_KEY, 'right') : 'right',
++            'shellMode' => $uid !== null ? $this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::SHELL_MODE_KEY, 'taskbar') : 'taskbar',
++            'dockAlwaysVisible' => $uid === null || $this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::DOCK_ALWAYS_VISIBLE_KEY, 'yes') !== 'no',
++            'clockHourCycle' => $uid !== null ? $this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::CLOCK_HOUR_CYCLE_KEY, '24') : '24',
+         ]);
+     }
+ 
+@@ -90,17 +91,17 @@
+         // First visit (also true again after a full reset): open the settings for the user.
+         $firstVisit = false;
+         if ($uid !== null) {
+-            $firstVisit = $this->config->getUserValue($uid, SettingsController::APP_ID, SettingsController::VISITED_KEY, 'no') !== 'yes';
++            $firstVisit = $this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::VISITED_KEY, 'no') !== 'yes';
+             if ($firstVisit) {
+-                $this->config->setUserValue($uid, SettingsController::APP_ID, SettingsController::VISITED_KEY, 'yes');
++                $this->config->setUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::VISITED_KEY, 'yes');
+             }
+         }
+ 
+         $appPins = '';
+         if ($uid !== null) {
+-            $fallbackPins = json_decode($this->config->getUserValue($uid, SettingsController::APP_ID, SettingsController::APP_PINS_KEY, ''), true);
+-            $taskbarPins = json_decode($this->config->getUserValue($uid, SettingsController::APP_ID, SettingsController::TASKBAR_PINS_KEY, 'null'), true);
+-            $desktopPins = json_decode($this->config->getUserValue($uid, SettingsController::APP_ID, SettingsController::DESKTOP_PINS_KEY, 'null'), true);
++            $fallbackPins = json_decode($this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::APP_PINS_KEY, ''), true);
++            $taskbarPins = json_decode($this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::TASKBAR_PINS_KEY, 'null'), true);
++            $desktopPins = json_decode($this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::DESKTOP_PINS_KEY, 'null'), true);
+             if (is_array($taskbarPins) || is_array($desktopPins) || is_array($fallbackPins)) {
+                 $appPins = json_encode([
+                     'taskbar' => is_array($taskbarPins) ? $taskbarPins : ($fallbackPins['taskbar'] ?? []),
+@@ -112,33 +113,33 @@
+         $response = new TemplateResponse('desktop_workspace', 'main', [
+             'apps' => $apps,
+             'firstVisit' => $firstVisit,
+-            'heartbeatUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.settings.heartbeat'),
++            'heartbeatUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.personalSettings.heartbeat'),
+             'dynamicDataUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.page.dynamicData'),
+             'desktopfilesEnabled' => $this->filesAvailability->enabledForUser($user),
+             'settingsUrl' => $this->urlGenerator->getAbsoluteURL('/index.php/settings/user/desktop_workspace'),
+             'filesUrl' => $this->urlGenerator->linkToRoute('files.view.index'),
+-            'showFilesNewTab' => $this->config->getAppValue(SettingsController::APP_ID, SettingsController::SHOW_FILES_NEW_TAB_KEY, 'yes') !== 'no',
+-            'personalSaveUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.settings.savePersonalSettings'),
+-            'iconPositions' => $uid !== null ? $this->config->getUserValue($uid, SettingsController::APP_ID, SettingsController::ICON_POSITIONS_KEY, '{}') : '{}',
+-            'iconSaveUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.settings.saveIconPositions'),
++            'showFilesNewTab' => $this->config->getAppValue(SettingsKeys::APP_ID, SettingsKeys::SHOW_FILES_NEW_TAB_KEY, 'yes') !== 'no',
++            'personalSaveUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.personalSettings.save'),
++            'iconPositions' => $uid !== null ? $this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::ICON_POSITIONS_KEY, '{}') : '{}',
++            'iconSaveUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.personalSettings.saveIconPositions'),
+             'appPins' => $appPins,
+-            'appPinsSaveUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.settings.saveAppPins'),
+-            'appsMenuSize' => $uid !== null ? $this->config->getUserValue($uid, SettingsController::APP_ID, SettingsController::APPS_MENU_SIZE_KEY, '') : '',
+-            'appsMenuSizeSaveUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.settings.saveAppsMenuSize'),
+-            'browserStateMigrated' => $uid !== null && $this->config->getUserValue($uid, SettingsController::APP_ID, SettingsController::BROWSER_STATE_MIGRATION_KEY, '') === '1',
+-            'browserStateMigrationUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.settings.migrateBrowserState'),
+-            'windowStates' => $uid !== null ? $this->config->getUserValue($uid, SettingsController::APP_ID, SettingsController::WINDOW_STATES_KEY, '{"windows":[]}') : '{"windows":[]}',
+-            'windowSaveUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.settings.saveWindowStates'),
+-            'showFavorites' => $uid !== null && $this->config->getUserValue($uid, SettingsController::APP_ID, SettingsController::SHOW_FAVORITES_KEY, 'no') === 'yes',
+-            'favoritesNoConfirm' => $uid !== null && $this->config->getUserValue($uid, SettingsController::APP_ID, SettingsController::FAV_NO_CONFIRM_KEY, 'no') === 'yes',
+-            'showTrash' => $uid !== null && $this->config->getUserValue($uid, SettingsController::APP_ID, SettingsController::SHOW_TRASH_KEY, 'no') === 'yes',
+-            'showHome' => $uid !== null && $this->config->getUserValue($uid, SettingsController::APP_ID, SettingsController::SHOW_HOME_KEY, 'no') === 'yes',
+-            'desktopFolder' => $uid !== null ? $this->config->getUserValue($uid, SettingsController::APP_ID, SettingsController::DESKTOP_FOLDER_KEY, '') : '',
+-            'trashNoConfirm' => $uid !== null && $this->config->getUserValue($uid, SettingsController::APP_ID, SettingsController::TRASH_NO_CONFIRM_KEY, 'no') === 'yes',
+-            'windowControlsSide' => $uid !== null ? $this->config->getUserValue($uid, SettingsController::APP_ID, SettingsController::WINDOW_CONTROLS_SIDE_KEY, 'right') : 'right',
+-            'shellMode' => $uid !== null ? $this->config->getUserValue($uid, SettingsController::APP_ID, SettingsController::SHELL_MODE_KEY, 'taskbar') : 'taskbar',
+-            'dockAlwaysVisible' => $uid === null || $this->config->getUserValue($uid, SettingsController::APP_ID, SettingsController::DOCK_ALWAYS_VISIBLE_KEY, 'yes') !== 'no',
+-            'clockHourCycle' => $uid !== null ? $this->config->getUserValue($uid, SettingsController::APP_ID, SettingsController::CLOCK_HOUR_CYCLE_KEY, '24') : '24',
++            'appPinsSaveUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.personalSettings.saveAppPins'),
++            'appsMenuSize' => $uid !== null ? $this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::APPS_MENU_SIZE_KEY, '') : '',
++            'appsMenuSizeSaveUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.personalSettings.saveAppsMenuSize'),
++            'browserStateMigrated' => $uid !== null && $this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::BROWSER_STATE_MIGRATION_KEY, '') === '1',
++            'browserStateMigrationUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.personalSettings.migrateBrowserState'),
++            'windowStates' => $uid !== null ? $this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::WINDOW_STATES_KEY, '{"windows":[]}') : '{"windows":[]}',
++            'windowSaveUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.personalSettings.saveWindowStates'),
++            'showFavorites' => $uid !== null && $this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::SHOW_FAVORITES_KEY, 'no') === 'yes',
++            'favoritesNoConfirm' => $uid !== null && $this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::FAV_NO_CONFIRM_KEY, 'no') === 'yes',
++            'showTrash' => $uid !== null && $this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::SHOW_TRASH_KEY, 'no') === 'yes',
++            'showHome' => $uid !== null && $this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::SHOW_HOME_KEY, 'no') === 'yes',
++            'desktopFolder' => $uid !== null ? $this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::DESKTOP_FOLDER_KEY, '') : '',
++            'trashNoConfirm' => $uid !== null && $this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::TRASH_NO_CONFIRM_KEY, 'no') === 'yes',
++            'windowControlsSide' => $uid !== null ? $this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::WINDOW_CONTROLS_SIDE_KEY, 'right') : 'right',
++            'shellMode' => $uid !== null ? $this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::SHELL_MODE_KEY, 'taskbar') : 'taskbar',
++            'dockAlwaysVisible' => $uid === null || $this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::DOCK_ALWAYS_VISIBLE_KEY, 'yes') !== 'no',
++            'clockHourCycle' => $uid !== null ? $this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::CLOCK_HOUR_CYCLE_KEY, '24') : '24',
+             ...$this->decorationService->appearanceForUser($uid),
+         ]);
+         $csp = new ContentSecurityPolicy();
+--- /dev/null
++++ b/lib/Controller/PersonalSettingsController.php
+@@ -0,0 +1,336 @@
++<?php
++namespace OCA\DesktopWorkspace\Controller;
++
++use OCA\DesktopWorkspace\SettingsKeys;
++use OCA\DesktopWorkspace\Service\DecorationService;
++use OCA\DesktopWorkspace\Service\FilesAvailability;
++use OCA\DesktopWorkspace\Service\FolderPolicy;
++use OCA\DesktopWorkspace\Service\PinService;
++use OCA\DesktopWorkspace\Service\StatsService;
++use OCP\AppFramework\Controller;
++use OCP\AppFramework\Http\Attribute\NoAdminRequired;
++use OCP\AppFramework\Http\JSONResponse;
++use OCP\IConfig;
++use OCP\IRequest;
++use OCP\IUserSession;
++
++/**
++ * The personal half of the former SettingsController (L4-09 split, mirroring the
++ * settings-personal template): heartbeat, icon positions, pins, the browser-state
++ * migration, window states, resets, and the personal settings writer. Every action
++ * carries the real #[NoAdminRequired] attribute — the pin/validation core lives in
++ * PinService, the desktop-folder policy in FolderPolicy.
++ */
++class PersonalSettingsController extends Controller {
++    public function __construct(
++        string $appName,
++        IRequest $request,
++        private IConfig $config,
++        private IUserSession $userSession,
++        private \OCA\DesktopWorkspace\Service\StatsService $statsService,
++        private \OCP\Files\IRootFolder $rootFolder,
++        private DecorationService $decorationService,
++        private PinService $pinService,
++        private FolderPolicy $folderPolicy,
++    ) {
++        parent::__construct($appName, $request);
++    }
++
++    #[NoAdminRequired]
++    public function heartbeat(string $instanceId = ''): JSONResponse {
++        $this->statsService->heartbeat($instanceId);
++        return new JSONResponse(['status' => 'ok']);
++    }
++
++    #[NoAdminRequired]
++    public function saveIconPositions(string $positions = '{}'): JSONResponse {
++        $user = $this->userSession->getUser();
++        if ($user === null) {
++            return new JSONResponse(['status' => 'error', 'message' => 'no user'], 403);
++        }
++        $decoded = json_decode($positions, true);
++        $clean = [];
++        if (is_array($decoded)) {
++            foreach ($decoded as $key => $value) {
++                if (is_array($value) && isset($value['col'], $value['row']) && is_numeric($value['col']) && is_numeric($value['row'])) {
++                    $clean[(string)$key] = ['col' => (int)$value['col'], 'row' => (int)$value['row']];
++                }
++            }
++        }
++        $this->config->setUserValue($user->getUID(), SettingsKeys::APP_ID, SettingsKeys::ICON_POSITIONS_KEY, json_encode($clean));
++        return new JSONResponse(['status' => 'ok']);
++    }
++
++    #[NoAdminRequired]
++    public function saveAppPins(string $location = '', string $pins = '[]'): JSONResponse {
++        $user = $this->userSession->getUser();
++        if ($user === null) {
++            return new JSONResponse(['status' => 'error', 'message' => 'no user'], 403);
++        }
++        if (!in_array($location, ['taskbar', 'desktop'], true)) {
++            return new JSONResponse(['status' => 'error', 'message' => 'invalid location'], 400);
++        }
++        $clean = $this->pinService->savePins($user->getUID(), $location, json_decode($pins, true));
++        if ($clean === null) {
++            return new JSONResponse(['status' => 'error', 'message' => 'invalid pins'], 400);
++        }
++        return new JSONResponse(['status' => 'ok', 'pins' => $this->pinService->storedAppPins($user->getUID())]);
++    }
++
++    #[NoAdminRequired]
++    public function migrateBrowserState(string $pins = '{"taskbar":[],"desktop":[]}', int $width = 0, int $height = 0): JSONResponse {
++        $user = $this->userSession->getUser();
++        if ($user === null) {
++            return new JSONResponse(['status' => 'error', 'message' => 'no user'], 403);
++        }
++        $uid = $user->getUID();
++        $decoded = json_decode($pins, true);
++        $taskbar = is_array($decoded) ? $this->pinService->cleanPinList($decoded['taskbar'] ?? null) : null;
++        $desktop = is_array($decoded) ? $this->pinService->cleanPinList($decoded['desktop'] ?? null) : null;
++        if (json_last_error() !== JSON_ERROR_NONE || $taskbar === null || $desktop === null) {
++            return new JSONResponse(['status' => 'error', 'message' => 'invalid migration state'], 400);
++        }
++        $migrationState = $this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::BROWSER_STATE_MIGRATION_KEY, '');
++        if ($migrationState !== '1') {
++            if (str_starts_with($migrationState, 'pending:') && (int)substr($migrationState, 8) < time() - 300) {
++                $this->config->deleteUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::BROWSER_STATE_MIGRATION_KEY);
++                $migrationState = '';
++            }
++            if ($migrationState !== '' || !$this->pinService->claimBrowserStateMigration($uid)) {
++                return new JSONResponse(['status' => 'pending'], 409);
++            }
++            $hasLegacyServerPins = $this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::APP_PINS_KEY, '') !== '';
++            if (!$hasLegacyServerPins && $this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::TASKBAR_PINS_KEY, '') === '') {
++                $this->config->setUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::TASKBAR_PINS_KEY, json_encode($taskbar));
++            }
++            if (!$hasLegacyServerPins && $this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::DESKTOP_PINS_KEY, '') === '') {
++                $this->config->setUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::DESKTOP_PINS_KEY, json_encode($desktop));
++            }
++            if ($this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::APPS_MENU_SIZE_KEY, '') === '') {
++                $this->config->setUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::APPS_MENU_SIZE_KEY, json_encode([
++                    'width' => max(0, min($width, 10000)),
++                    'height' => max(0, min($height, 10000)),
++                ]));
++            }
++            $this->config->setUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::BROWSER_STATE_MIGRATION_KEY, '1');
++        }
++        $size = json_decode($this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::APPS_MENU_SIZE_KEY, '{}'), true);
++        return new JSONResponse([
++            'status' => 'ok',
++            'pins' => $this->pinService->storedAppPins($uid),
++            'size' => is_array($size) ? $size : [],
++        ]);
++    }
++
++    #[NoAdminRequired]
++    public function saveAppsMenuSize(int $width = 0, int $height = 0): JSONResponse {
++        $user = $this->userSession->getUser();
++        if ($user === null) {
++            return new JSONResponse(['status' => 'error', 'message' => 'no user'], 403);
++        }
++        if ($width < 1 || $height < 1 || $width > 10000 || $height > 10000) {
++            return new JSONResponse(['status' => 'error', 'message' => 'invalid size'], 400);
++        }
++        $clean = ['width' => $width, 'height' => $height];
++        $this->config->setUserValue($user->getUID(), SettingsKeys::APP_ID, SettingsKeys::APPS_MENU_SIZE_KEY, json_encode($clean));
++        return new JSONResponse(['status' => 'ok', 'size' => $clean]);
++    }
++
++    #[NoAdminRequired]
++    public function resetIconPositions(): JSONResponse {
++        $user = $this->userSession->getUser();
++        if ($user === null) {
++            return new JSONResponse(['status' => 'error', 'message' => 'no user'], 403);
++        }
++        $this->config->deleteUserValue($user->getUID(), SettingsKeys::APP_ID, SettingsKeys::ICON_POSITIONS_KEY);
++        return new JSONResponse(['status' => 'ok']);
++    }
++
++    #[NoAdminRequired]
++    public function saveWindowStates(string $windows = '{"windows":[]}'): JSONResponse {
++        $user = $this->userSession->getUser();
++        if ($user === null) {
++            return new JSONResponse(['status' => 'error', 'message' => 'no user'], 403);
++        }
++        // Store as-is after a round-trip through json_decode/encode to guarantee valid JSON
++        // and to cap the payload. The client controls the schema; we only sanity-check it.
++        $decoded = json_decode($windows, true);
++        if (!is_array($decoded) || !isset($decoded['windows']) || !is_array($decoded['windows'])) {
++            $decoded = ['windows' => []];
++        }
++        // Hard cap: never store more than 40 windows, and never more than 32KB of JSON — the
++        // payload is re-emitted on every page load (PageController::index), so an unbounded
++        // blob taxes every future visit (L4-06).
++        $decoded['windows'] = array_slice($decoded['windows'], 0, 40);
++        $encoded = json_encode($decoded);
++        if (strlen($encoded) > 32768) {
++            return new JSONResponse(['status' => 'error', 'message' => 'window_states_too_large'], 400);
++        }
++        $this->config->setUserValue($user->getUID(), SettingsKeys::APP_ID, SettingsKeys::WINDOW_STATES_KEY, $encoded);
++        return new JSONResponse(['status' => 'ok']);
++    }
++
++    #[NoAdminRequired]
++    public function resetWindowStates(): JSONResponse {
++        $user = $this->userSession->getUser();
++        if ($user === null) {
++            return new JSONResponse(['status' => 'error', 'message' => 'no user'], 403);
++        }
++        $this->config->deleteUserValue($user->getUID(), SettingsKeys::APP_ID, SettingsKeys::WINDOW_STATES_KEY);
++        return new JSONResponse(['status' => 'ok']);
++    }
++
++    #[NoAdminRequired]
++    public function resetAllPersonal(): JSONResponse {
++        $user = $this->userSession->getUser();
++        if ($user === null) {
++            return new JSONResponse(['status' => 'error', 'message' => 'no user'], 403);
++        }
++        SettingsKeys::clearAllUserValues($this->config, $user->getUID());
++        $this->config->setUserValue($user->getUID(), SettingsKeys::APP_ID, SettingsKeys::BROWSER_STATE_MIGRATION_KEY, '1');
++        return new JSONResponse([
++            'status' => 'ok',
++            'settings' => [
++                'tryExperimentalFiles' => false,
++                'showFavorites' => false,
++                'favoritesNoConfirm' => false,
++                'showTrash' => false,
++                'showHome' => false,
++                'desktopFolder' => '',
++                'trashNoConfirm' => false,
++                'decoration' => DecorationService::STANDARD,
++                'decorationColor' => DecorationService::FOLLOW_NEXTCLOUD,
++                'iconDecorationLinked' => true,
++                'iconDecoration' => DecorationService::STANDARD,
++                'iconColor' => DecorationService::FOLLOW_NEXTCLOUD,
++                'windowControlsSide' => 'right',
++                'shellMode' => 'taskbar',
++                'dockAlwaysVisible' => true,
++                'clockHourCycle' => '24',
++            ],
++        ]);
++    }
++
++    #[NoAdminRequired]
++    public function save(
++        ?string $try_experimental_files = null,
++        ?string $show_favorites = null,
++        ?string $favorites_no_confirm = null,
++        ?string $show_trash = null,
++        ?string $show_home = null,
++        ?string $desktop_folder = null,
++        ?string $trash_no_confirm = null,
++        ?string $decoration = null,
++        ?string $decoration_color = null,
++        ?string $icon_decoration_linked = null,
++        ?string $icon_decoration = null,
++        ?string $icon_color = null,
++        ?string $window_controls_side = null,
++        ?string $shell_mode = null,
++        ?string $dock_always_visible = null,
++        ?string $clock_hour_cycle = null,
++    ): JSONResponse {
++        $user = $this->userSession->getUser();
++        if ($user === null) {
++            return new JSONResponse(['status' => 'error', 'message' => 'no user'], 403);
++        }
++        $uid = $user->getUID();
++        $truthy = static fn (string $v): bool => $v === 'yes' || $v === 'true' || $v === '1';
++        $result = ['status' => 'ok'];
++        if ($window_controls_side !== null) {
++            $value = $window_controls_side === 'left' ? 'left' : 'right';
++            $this->config->setUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::WINDOW_CONTROLS_SIDE_KEY, $value);
++            $result['windowControlsSide'] = $value;
++        }
++        if ($shell_mode !== null) {
++            $value = $shell_mode === 'dock' ? 'dock' : 'taskbar';
++            $this->config->setUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::SHELL_MODE_KEY, $value);
++            $result['shellMode'] = $value;
++        }
++        if ($dock_always_visible !== null) {
++            $value = $truthy($dock_always_visible);
++            $this->config->setUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::DOCK_ALWAYS_VISIBLE_KEY, $value ? 'yes' : 'no');
++            $result['dockAlwaysVisible'] = $value;
++        }
++        if ($clock_hour_cycle !== null) {
++            $value = $clock_hour_cycle === '12' ? '12' : '24';
++            $this->config->setUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::CLOCK_HOUR_CYCLE_KEY, $value);
++            $result['clockHourCycle'] = $value;
++        }
++        if ($decoration !== null) {
++            $selected = in_array($decoration, [DecorationService::STANDARD, DecorationService::REDMOND, DecorationService::RETRO], true)
++                ? $decoration
++                : DecorationService::STANDARD;
++            if (!$this->decorationService->userSelectionEnabled()) {
++                $selected = DecorationService::STANDARD;
++            }
++            $this->config->setUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::DECORATION_KEY, $selected);
++            $result['decoration'] = $selected;
++        }
++        if ($decoration_color !== null) {
++            $value = $this->decorationService->validatedColorMode($decoration_color, DecorationService::FOLLOW_NEXTCLOUD);
++            $this->config->setUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::DECORATION_COLOR_KEY, $value);
++            $result['decorationColor'] = $value;
++        }
++        if ($icon_decoration_linked !== null) {
++            $value = $truthy($icon_decoration_linked);
++            $this->config->setUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::ICON_DECORATION_LINKED_KEY, $value ? 'yes' : 'no');
++            $result['iconDecorationLinked'] = $value;
++        }
++        if ($icon_decoration !== null) {
++            $value = $this->decorationService->validatedDecoration($icon_decoration);
++            $this->config->setUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::ICON_DECORATION_KEY, $value);
++            $result['iconDecoration'] = $value;
++        }
++        if ($icon_color !== null) {
++            $value = $this->decorationService->validatedIconColorMode($icon_color);
++            $this->config->setUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::ICON_COLOR_KEY, $value);
++            $result['iconColor'] = $value;
++        }
++        if ($try_experimental_files !== null) {
++            $b = $truthy($try_experimental_files);
++            $this->config->setUserValue($uid, SettingsKeys::APP_ID, FilesAvailability::USER_OPT_IN_KEY, $b ? 'yes' : 'no');
++            $result['tryExperimentalFiles'] = $b;
++        }
++        if ($show_favorites !== null) {
++            $b = $truthy($show_favorites);
++            $this->config->setUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::SHOW_FAVORITES_KEY, $b ? 'yes' : 'no');
++            $result['showFavorites'] = $b;
++        }
++        if ($favorites_no_confirm !== null) {
++            $b = $truthy($favorites_no_confirm);
++            $this->config->setUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::FAV_NO_CONFIRM_KEY, $b ? 'yes' : 'no');
++            $result['favoritesNoConfirm'] = $b;
++        }
++        if ($show_trash !== null) {
++            $b = $truthy($show_trash);
++            $this->config->setUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::SHOW_TRASH_KEY, $b ? 'yes' : 'no');
++            $result['showTrash'] = $b;
++        }
++        if ($show_home !== null) {
++            $b = $truthy($show_home);
++            $this->config->setUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::SHOW_HOME_KEY, $b ? 'yes' : 'no');
++            $result['showHome'] = $b;
++        }
++        if ($trash_no_confirm !== null) {
++            $b = $truthy($trash_no_confirm);
++            $this->config->setUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::TRASH_NO_CONFIRM_KEY, $b ? 'yes' : 'no');
++            $result['trashNoConfirm'] = $b;
++        }
++        if ($desktop_folder !== null) {
++            $path = trim($desktop_folder);
++            if ($path === '') {
++                $this->config->deleteUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::DESKTOP_FOLDER_KEY);
++                $result['desktopFolder'] = '';
++            } else {
++                $verdict = $this->folderPolicy->validateDesktopFolder($uid, $path);
++                if (!$verdict['ok']) {
++                    return new JSONResponse(['status' => 'error', 'message' => $verdict['error']], $verdict['status']);
++                }
++                $this->config->setUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::DESKTOP_FOLDER_KEY, $verdict['path']);
++                $result['desktopFolder'] = $verdict['path'];
++            }
++        }
++        return new JSONResponse($result);
++    }
++}
+--- a/lib/Controller/SettingsController.php
++++ /dev/null
+@@ -1,506 +0,0 @@
+-<?php
+-namespace OCA\DesktopWorkspace\Controller;
+-
+-use OC\DB\Exceptions\DbalException;
+-use OCA\DesktopWorkspace\Service\DecorationService;
+-use OCA\DesktopWorkspace\Service\FilesAvailability;
+-use OCP\AppFramework\Controller;
+-use OCP\AppFramework\Http\Attribute\NoAdminRequired;
+-use OCP\AppFramework\Http\JSONResponse;
+-use OCP\Files\Folder;
+-use OCP\Files\IRootFolder;
+-use OCP\Files\NotFoundException;
+-use OCP\IConfig;
+-use OCP\IDBConnection;
+-use OCP\IRequest;
+-use OCP\IUserManager;
+-use OCP\IUserSession;
+-
+-class SettingsController extends Controller {
+-    // AUTHENTICATION NOTE: every action here is admin-only BY DEFAULT — the Nextcloud
+-    // AppFramework applies the admin gate unless a method opts out with #[NoAdminRequired].
+-    // The docblocks that said @AdminRequired were inert comments, NOT attributes: they
+-    // documented intent but enforced nothing (L4-05). Personal (opted-out) actions carry the
+-    // real #[NoAdminRequired] attribute. A reflection pin in gestion/tests/desktop_workspace/
+-    // asserts no admin action ever opts out accidentally.
+-    public const APP_ID = 'desktop_workspace';
+-    public const SHOW_FAVORITES_KEY = 'show_favorites';
+-    public const FAV_NO_CONFIRM_KEY = 'favorites_no_confirm';
+-    public const SHOW_TRASH_KEY = 'show_trash';
+-    public const SHOW_HOME_KEY = 'show_home';
+-    public const MULTI_WINDOW_KEY = 'multi_window_apps';
+-    public const ICON_POSITIONS_KEY = 'icon_positions';
+-    public const WINDOW_STATES_KEY = 'window_states';
+-    public const APP_PINS_KEY = 'app_pins';
+-    public const TASKBAR_PINS_KEY = 'taskbar_pins';
+-    public const DESKTOP_PINS_KEY = 'desktop_pins';
+-    public const APPS_MENU_SIZE_KEY = 'apps_menu_size';
+-    public const BROWSER_STATE_MIGRATION_KEY = 'browser_state_migration';
+-    public const VISITED_KEY = 'visited';
+-    public const DESKTOP_FOLDER_KEY = 'desktop_folder';
+-    public const TRASH_NO_CONFIRM_KEY = 'trash_no_confirm';
+-    public const USER_DECORATIONS_ENABLED_KEY = 'user_decorations_enabled';
+-    public const DECORATION_KEY = 'decoration';
+-    public const DECORATION_COLOR_KEY = 'decoration_color';
+-    public const ICON_DECORATION_LINKED_KEY = 'icon_decoration_linked';
+-    public const ICON_DECORATION_KEY = 'icon_decoration';
+-    public const ICON_COLOR_KEY = 'icon_color';
+-    public const WINDOW_CONTROLS_SIDE_KEY = 'window_controls_side';
+-    public const SHELL_MODE_KEY = 'shell_mode';
+-    public const DOCK_ALWAYS_VISIBLE_KEY = 'dock_always_visible';
+-    public const CLOCK_HOUR_CYCLE_KEY = 'clock_hour_cycle';
+-    public const SHOW_FILES_NEW_TAB_KEY = 'show_files_new_tab';
+-
+-    public function __construct(
+-        string $appName,
+-        IRequest $request,
+-        private IConfig $config,
+-        private IDBConnection $db,
+-        private IUserSession $userSession,
+-        private \OCA\DesktopWorkspace\Service\StatsService $statsService,
+-        private IRootFolder $rootFolder,
+-        private IUserManager $userManager,
+-        private DecorationService $decorationService,
+-    ) {
+-        parent::__construct($appName, $request);
+-    }
+-
+-    // Admin only (default gate — no #[NoAdminRequired] on this action).
+-    public function saveAdminSettings(
+-        string $experimental_disabled = 'no',
+-        string $experimental_groups = '[]',
+-        string $multi_window_apps = '[]',
+-        string $user_decorations_enabled = 'yes',
+-    ): JSONResponse {
+-        $disabled = $experimental_disabled === 'yes' || $experimental_disabled === 'true' || $experimental_disabled === '1';
+-        $this->config->setAppValue(self::APP_ID, FilesAvailability::DISABLED_KEY, $disabled ? 'yes' : 'no');
+-
+-        $groups = json_decode($experimental_groups, true);
+-        if (!is_array($groups)) {
+-            $groups = [];
+-        }
+-        $groups = array_values(array_filter($groups, 'is_string'));
+-        $this->config->setAppValue(self::APP_ID, FilesAvailability::GROUPS_KEY, json_encode($groups));
+-
+-        $multi = json_decode($multi_window_apps, true);
+-        if (!is_array($multi)) {
+-            $multi = [];
+-        }
+-        $multi = array_values(array_filter($multi, 'is_string'));
+-        $this->config->setAppValue(self::APP_ID, self::MULTI_WINDOW_KEY, json_encode($multi));
+-
+-        $userDecorationsEnabled = $user_decorations_enabled === 'yes' || $user_decorations_enabled === 'true' || $user_decorations_enabled === '1';
+-        $this->config->setAppValue(self::APP_ID, self::USER_DECORATIONS_ENABLED_KEY, $userDecorationsEnabled ? 'yes' : 'no');
+-
+-        return new JSONResponse([
+-            'status' => 'ok',
+-            'experimentalDisabled' => $disabled,
+-            'experimentalGroups' => $groups,
+-            'multiWindowApps' => $multi,
+-            'userDecorationsEnabled' => $userDecorationsEnabled,
+-        ]);
+-    }
+-
+-
+-    // Admin only (default gate — no #[NoAdminRequired] on this action).
+-    public function saveDecorationPolicy(string $enabled = 'no'): JSONResponse {
+-        $value = $enabled === 'yes' || $enabled === 'true' || $enabled === '1';
+-        $this->config->setAppValue(self::APP_ID, self::USER_DECORATIONS_ENABLED_KEY, $value ? 'yes' : 'no');
+-        return new JSONResponse(['status' => 'ok', 'userDecorationsEnabled' => $value]);
+-    }
+-
+-    // Admin only (default gate — no #[NoAdminRequired] on this action).
+-    public function saveFilesButtonPolicy(string $enabled = 'no'): JSONResponse {
+-        $value = $enabled === 'yes' || $enabled === 'true' || $enabled === '1';
+-        $this->config->setAppValue(self::APP_ID, self::SHOW_FILES_NEW_TAB_KEY, $value ? 'yes' : 'no');
+-        return new JSONResponse(['status' => 'ok', 'showFilesNewTab' => $value]);
+-    }
+-
+-    #[NoAdminRequired]
+-    public function heartbeat(string $instanceId = ''): JSONResponse {
+-        $this->statsService->heartbeat($instanceId);
+-        return new JSONResponse(['status' => 'ok']);
+-    }
+-
+-    #[NoAdminRequired]
+-    public function saveIconPositions(string $positions = '{}'): JSONResponse {
+-        $user = $this->userSession->getUser();
+-        if ($user === null) {
+-            return new JSONResponse(['status' => 'error', 'message' => 'no user'], 403);
+-        }
+-        $decoded = json_decode($positions, true);
+-        $clean = [];
+-        if (is_array($decoded)) {
+-            foreach ($decoded as $key => $value) {
+-                if (is_array($value) && isset($value['col'], $value['row']) && is_numeric($value['col']) && is_numeric($value['row'])) {
+-                    $clean[(string)$key] = ['col' => (int)$value['col'], 'row' => (int)$value['row']];
+-                }
+-            }
+-        }
+-        $this->config->setUserValue($user->getUID(), self::APP_ID, self::ICON_POSITIONS_KEY, json_encode($clean));
+-        return new JSONResponse(['status' => 'ok']);
+-    }
+-
+-    private function cleanPinList(mixed $values): ?array {
+-        if (!is_array($values) || !array_is_list($values)) {
+-            return null;
+-        }
+-        $clean = [];
+-        foreach ($values as $value) {
+-            if (!is_string($value) || $value === '' || strlen($value) > 255 || preg_match('/^[A-Za-z0-9_-]+$/', $value) !== 1) {
+-                return null;
+-            }
+-            $clean[] = $value;
+-        }
+-        return array_slice(array_values(array_unique($clean)), 0, 100);
+-    }
+-
+-    private function storedAppPins(string $uid): array {
+-        $decoded = json_decode($this->config->getUserValue($uid, self::APP_ID, self::APP_PINS_KEY, ''), true);
+-        $fallback = is_array($decoded) ? $decoded : [];
+-        $taskbar = json_decode($this->config->getUserValue($uid, self::APP_ID, self::TASKBAR_PINS_KEY, 'null'), true);
+-        $desktop = json_decode($this->config->getUserValue($uid, self::APP_ID, self::DESKTOP_PINS_KEY, 'null'), true);
+-        return [
+-            'taskbar' => $this->cleanPinList($taskbar) ?? $this->cleanPinList($fallback['taskbar'] ?? []) ?? [],
+-            'desktop' => $this->cleanPinList($desktop) ?? $this->cleanPinList($fallback['desktop'] ?? []) ?? [],
+-        ];
+-    }
+-
+-    #[NoAdminRequired]
+-    public function saveAppPins(string $location = '', string $pins = '[]'): JSONResponse {
+-        $user = $this->userSession->getUser();
+-        if ($user === null) {
+-            return new JSONResponse(['status' => 'error', 'message' => 'no user'], 403);
+-        }
+-        if (!in_array($location, ['taskbar', 'desktop'], true)) {
+-            return new JSONResponse(['status' => 'error', 'message' => 'invalid location'], 400);
+-        }
+-        $clean = $this->cleanPinList(json_decode($pins, true));
+-        if ($clean === null || json_last_error() !== JSON_ERROR_NONE) {
+-            return new JSONResponse(['status' => 'error', 'message' => 'invalid pins'], 400);
+-        }
+-        $key = $location === 'taskbar' ? self::TASKBAR_PINS_KEY : self::DESKTOP_PINS_KEY;
+-        $this->config->setUserValue($user->getUID(), self::APP_ID, $key, json_encode($clean));
+-        return new JSONResponse(['status' => 'ok', 'pins' => $this->storedAppPins($user->getUID())]);
+-    }
+-
+-    private function claimBrowserStateMigration(string $uid): bool {
+-        $query = $this->db->getQueryBuilder();
+-        $query->insert('preferences')->values([
+-            'userid' => $query->createNamedParameter($uid),
+-            'appid' => $query->createNamedParameter(self::APP_ID),
+-            'configkey' => $query->createNamedParameter(self::BROWSER_STATE_MIGRATION_KEY),
+-            'configvalue' => $query->createNamedParameter('pending:' . time()),
+-        ]);
+-        try {
+-            $query->executeStatement();
+-            return true;
+-        } catch (DbalException $e) {
+-            if ((int)$e->getCode() === 1062) {
+-                return false;
+-            }
+-            throw $e;
+-        }
+-    }
+-
+-    #[NoAdminRequired]
+-    public function migrateBrowserState(string $pins = '{"taskbar":[],"desktop":[]}', int $width = 0, int $height = 0): JSONResponse {
+-        $user = $this->userSession->getUser();
+-        if ($user === null) {
+-            return new JSONResponse(['status' => 'error', 'message' => 'no user'], 403);
+-        }
+-        $uid = $user->getUID();
+-        $decoded = json_decode($pins, true);
+-        $taskbar = is_array($decoded) ? $this->cleanPinList($decoded['taskbar'] ?? null) : null;
+-        $desktop = is_array($decoded) ? $this->cleanPinList($decoded['desktop'] ?? null) : null;
+-        if (json_last_error() !== JSON_ERROR_NONE || $taskbar === null || $desktop === null) {
+-            return new JSONResponse(['status' => 'error', 'message' => 'invalid migration state'], 400);
+-        }
+-        $migrationState = $this->config->getUserValue($uid, self::APP_ID, self::BROWSER_STATE_MIGRATION_KEY, '');
+-        if ($migrationState !== '1') {
+-            if (str_starts_with($migrationState, 'pending:') && (int)substr($migrationState, 8) < time() - 300) {
+-                $this->config->deleteUserValue($uid, self::APP_ID, self::BROWSER_STATE_MIGRATION_KEY);
+-                $migrationState = '';
+-            }
+-            if ($migrationState !== '' || !$this->claimBrowserStateMigration($uid)) {
+-                return new JSONResponse(['status' => 'pending'], 409);
+-            }
+-            $hasLegacyServerPins = $this->config->getUserValue($uid, self::APP_ID, self::APP_PINS_KEY, '') !== '';
+-            if (!$hasLegacyServerPins && $this->config->getUserValue($uid, self::APP_ID, self::TASKBAR_PINS_KEY, '') === '') {
+-                $this->config->setUserValue($uid, self::APP_ID, self::TASKBAR_PINS_KEY, json_encode($taskbar));
+-            }
+-            if (!$hasLegacyServerPins && $this->config->getUserValue($uid, self::APP_ID, self::DESKTOP_PINS_KEY, '') === '') {
+-                $this->config->setUserValue($uid, self::APP_ID, self::DESKTOP_PINS_KEY, json_encode($desktop));
+-            }
+-            if ($this->config->getUserValue($uid, self::APP_ID, self::APPS_MENU_SIZE_KEY, '') === '') {
+-                $this->config->setUserValue($uid, self::APP_ID, self::APPS_MENU_SIZE_KEY, json_encode([
+-                    'width' => max(0, min($width, 10000)),
+-                    'height' => max(0, min($height, 10000)),
+-                ]));
+-            }
+-            $this->config->setUserValue($uid, self::APP_ID, self::BROWSER_STATE_MIGRATION_KEY, '1');
+-        }
+-        $size = json_decode($this->config->getUserValue($uid, self::APP_ID, self::APPS_MENU_SIZE_KEY, '{}'), true);
+-        return new JSONResponse([
+-            'status' => 'ok',
+-            'pins' => $this->storedAppPins($uid),
+-            'size' => is_array($size) ? $size : [],
+-        ]);
+-    }
+-
+-    #[NoAdminRequired]
+-    public function saveAppsMenuSize(int $width = 0, int $height = 0): JSONResponse {
+-        $user = $this->userSession->getUser();
+-        if ($user === null) {
+-            return new JSONResponse(['status' => 'error', 'message' => 'no user'], 403);
+-        }
+-        if ($width < 1 || $height < 1 || $width > 10000 || $height > 10000) {
+-            return new JSONResponse(['status' => 'error', 'message' => 'invalid size'], 400);
+-        }
+-        $clean = ['width' => $width, 'height' => $height];
+-        $this->config->setUserValue($user->getUID(), self::APP_ID, self::APPS_MENU_SIZE_KEY, json_encode($clean));
+-        return new JSONResponse(['status' => 'ok', 'size' => $clean]);
+-    }
+-
+-    #[NoAdminRequired]
+-    public function resetIconPositions(): JSONResponse {
+-        $user = $this->userSession->getUser();
+-        if ($user === null) {
+-            return new JSONResponse(['status' => 'error', 'message' => 'no user'], 403);
+-        }
+-        $this->config->deleteUserValue($user->getUID(), self::APP_ID, self::ICON_POSITIONS_KEY);
+-        return new JSONResponse(['status' => 'ok']);
+-    }
+-
+-    #[NoAdminRequired]
+-    public function saveWindowStates(string $windows = '{"windows":[]}'): JSONResponse {
+-        $user = $this->userSession->getUser();
+-        if ($user === null) {
+-            return new JSONResponse(['status' => 'error', 'message' => 'no user'], 403);
+-        }
+-        // Store as-is after a round-trip through json_decode/encode to guarantee valid JSON
+-        // and to cap the payload. The client controls the schema; we only sanity-check it.
+-        $decoded = json_decode($windows, true);
+-        if (!is_array($decoded) || !isset($decoded['windows']) || !is_array($decoded['windows'])) {
+-            $decoded = ['windows' => []];
+-        }
+-        // Hard cap: never store more than 40 windows, and never more than 32KB of JSON — the
+-        // payload is re-emitted on every page load (PageController::index), so an unbounded
+-        // blob taxes every future visit (L4-06).
+-        $decoded['windows'] = array_slice($decoded['windows'], 0, 40);
+-        $encoded = json_encode($decoded);
+-        if (strlen($encoded) > 32768) {
+-            return new JSONResponse(['status' => 'error', 'message' => 'window_states_too_large'], 400);
+-        }
+-        $this->config->setUserValue($user->getUID(), self::APP_ID, self::WINDOW_STATES_KEY, $encoded);
+-        return new JSONResponse(['status' => 'ok']);
+-    }
+-
+-    #[NoAdminRequired]
+-    public function resetWindowStates(): JSONResponse {
+-        $user = $this->userSession->getUser();
+-        if ($user === null) {
+-            return new JSONResponse(['status' => 'error', 'message' => 'no user'], 403);
+-        }
+-        $this->config->deleteUserValue($user->getUID(), self::APP_ID, self::WINDOW_STATES_KEY);
+-        return new JSONResponse(['status' => 'ok']);
+-    }
+-
+-    /**
+-     * Remove every desktop setting for a user, so the next visit is like the first one.
+-     */
+-    private function clearAllUserValues(string $uid): void {
+-        foreach ($this->config->getUserKeys($uid, self::APP_ID) as $key) {
+-            $this->config->deleteUserValue($uid, self::APP_ID, $key);
+-        }
+-    }
+-
+-    #[NoAdminRequired]
+-    public function resetAllPersonal(): JSONResponse {
+-        $user = $this->userSession->getUser();
+-        if ($user === null) {
+-            return new JSONResponse(['status' => 'error', 'message' => 'no user'], 403);
+-        }
+-        $this->clearAllUserValues($user->getUID());
+-        $this->config->setUserValue($user->getUID(), self::APP_ID, self::BROWSER_STATE_MIGRATION_KEY, '1');
+-        return new JSONResponse([
+-            'status' => 'ok',
+-            'settings' => [
+-                'tryExperimentalFiles' => false,
+-                'showFavorites' => false,
+-                'favoritesNoConfirm' => false,
+-                'showTrash' => false,
+-                'showHome' => false,
+-                'desktopFolder' => '',
+-                'trashNoConfirm' => false,
+-                'decoration' => DecorationService::STANDARD,
+-                'decorationColor' => DecorationService::FOLLOW_NEXTCLOUD,
+-                'iconDecorationLinked' => true,
+-                'iconDecoration' => DecorationService::STANDARD,
+-                'iconColor' => DecorationService::FOLLOW_NEXTCLOUD,
+-                'windowControlsSide' => 'right',
+-                'shellMode' => 'taskbar',
+-                'dockAlwaysVisible' => true,
+-                'clockHourCycle' => '24',
+-            ],
+-        ]);
+-    }
+-
+-    // Admin only (default gate — no #[NoAdminRequired]): wipe one user's desktop settings completely.
+-    public function resetUserSettings(string $userId = ''): JSONResponse {
+-        $target = trim($userId);
+-        if ($target === '' || $this->userManager->get($target) === null) {
+-            return new JSONResponse(['status' => 'error', 'message' => 'unknown_user'], 404);
+-        }
+-        $this->clearAllUserValues($target);
+-        $this->config->setUserValue($target, self::APP_ID, self::BROWSER_STATE_MIGRATION_KEY, '1');
+-        return new JSONResponse(['status' => 'ok']);
+-    }
+-
+-    #[NoAdminRequired]
+-    public function savePersonalSettings(
+-        ?string $try_experimental_files = null,
+-        ?string $show_favorites = null,
+-        ?string $favorites_no_confirm = null,
+-        ?string $show_trash = null,
+-        ?string $show_home = null,
+-        ?string $desktop_folder = null,
+-        ?string $trash_no_confirm = null,
+-        ?string $decoration = null,
+-        ?string $decoration_color = null,
+-        ?string $icon_decoration_linked = null,
+-        ?string $icon_decoration = null,
+-        ?string $icon_color = null,
+-        ?string $window_controls_side = null,
+-        ?string $shell_mode = null,
+-        ?string $dock_always_visible = null,
+-        ?string $clock_hour_cycle = null,
+-    ): JSONResponse {
+-        $user = $this->userSession->getUser();
+-        if ($user === null) {
+-            return new JSONResponse(['status' => 'error', 'message' => 'no user'], 403);
+-        }
+-        $uid = $user->getUID();
+-        $truthy = static fn (string $v): bool => $v === 'yes' || $v === 'true' || $v === '1';
+-        $result = ['status' => 'ok'];
+-        if ($window_controls_side !== null) {
+-            $value = $window_controls_side === 'left' ? 'left' : 'right';
+-            $this->config->setUserValue($uid, self::APP_ID, self::WINDOW_CONTROLS_SIDE_KEY, $value);
+-            $result['windowControlsSide'] = $value;
+-        }
+-        if ($shell_mode !== null) {
+-            $value = $shell_mode === 'dock' ? 'dock' : 'taskbar';
+-            $this->config->setUserValue($uid, self::APP_ID, self::SHELL_MODE_KEY, $value);
+-            $result['shellMode'] = $value;
+-        }
+-        if ($dock_always_visible !== null) {
+-            $value = $truthy($dock_always_visible);
+-            $this->config->setUserValue($uid, self::APP_ID, self::DOCK_ALWAYS_VISIBLE_KEY, $value ? 'yes' : 'no');
+-            $result['dockAlwaysVisible'] = $value;
+-        }
+-        if ($clock_hour_cycle !== null) {
+-            $value = $clock_hour_cycle === '12' ? '12' : '24';
+-            $this->config->setUserValue($uid, self::APP_ID, self::CLOCK_HOUR_CYCLE_KEY, $value);
+-            $result['clockHourCycle'] = $value;
+-        }
+-        if ($decoration !== null) {
+-            $selected = in_array($decoration, [DecorationService::STANDARD, DecorationService::REDMOND, DecorationService::RETRO], true)
+-                ? $decoration
+-                : DecorationService::STANDARD;
+-            if (!$this->decorationService->userSelectionEnabled()) {
+-                $selected = DecorationService::STANDARD;
+-            }
+-            $this->config->setUserValue($uid, self::APP_ID, self::DECORATION_KEY, $selected);
+-            $result['decoration'] = $selected;
+-        }
+-        if ($decoration_color !== null) {
+-            $value = $this->decorationService->validatedColorMode($decoration_color, DecorationService::FOLLOW_NEXTCLOUD);
+-            $this->config->setUserValue($uid, self::APP_ID, self::DECORATION_COLOR_KEY, $value);
+-            $result['decorationColor'] = $value;
+-        }
+-        if ($icon_decoration_linked !== null) {
+-            $value = $truthy($icon_decoration_linked);
+-            $this->config->setUserValue($uid, self::APP_ID, self::ICON_DECORATION_LINKED_KEY, $value ? 'yes' : 'no');
+-            $result['iconDecorationLinked'] = $value;
+-        }
+-        if ($icon_decoration !== null) {
+-            $value = $this->decorationService->validatedDecoration($icon_decoration);
+-            $this->config->setUserValue($uid, self::APP_ID, self::ICON_DECORATION_KEY, $value);
+-            $result['iconDecoration'] = $value;
+-        }
+-        if ($icon_color !== null) {
+-            $value = $this->decorationService->validatedIconColorMode($icon_color);
+-            $this->config->setUserValue($uid, self::APP_ID, self::ICON_COLOR_KEY, $value);
+-            $result['iconColor'] = $value;
+-        }
+-        if ($try_experimental_files !== null) {
+-            $b = $truthy($try_experimental_files);
+-            $this->config->setUserValue($uid, self::APP_ID, FilesAvailability::USER_OPT_IN_KEY, $b ? 'yes' : 'no');
+-            $result['tryExperimentalFiles'] = $b;
+-        }
+-        if ($show_favorites !== null) {
+-            $b = $truthy($show_favorites);
+-            $this->config->setUserValue($uid, self::APP_ID, self::SHOW_FAVORITES_KEY, $b ? 'yes' : 'no');
+-            $result['showFavorites'] = $b;
+-        }
+-        if ($favorites_no_confirm !== null) {
+-            $b = $truthy($favorites_no_confirm);
+-            $this->config->setUserValue($uid, self::APP_ID, self::FAV_NO_CONFIRM_KEY, $b ? 'yes' : 'no');
+-            $result['favoritesNoConfirm'] = $b;
+-        }
+-        if ($show_trash !== null) {
+-            $b = $truthy($show_trash);
+-            $this->config->setUserValue($uid, self::APP_ID, self::SHOW_TRASH_KEY, $b ? 'yes' : 'no');
+-            $result['showTrash'] = $b;
+-        }
+-        if ($show_home !== null) {
+-            $b = $truthy($show_home);
+-            $this->config->setUserValue($uid, self::APP_ID, self::SHOW_HOME_KEY, $b ? 'yes' : 'no');
+-            $result['showHome'] = $b;
+-        }
+-        if ($trash_no_confirm !== null) {
+-            $b = $truthy($trash_no_confirm);
+-            $this->config->setUserValue($uid, self::APP_ID, self::TRASH_NO_CONFIRM_KEY, $b ? 'yes' : 'no');
+-            $result['trashNoConfirm'] = $b;
+-        }
+-        if ($desktop_folder !== null) {
+-            $path = trim($desktop_folder);
+-            if ($path === '') {
+-                $this->config->deleteUserValue($uid, self::APP_ID, self::DESKTOP_FOLDER_KEY);
+-                $result['desktopFolder'] = '';
+-            } else {
+-                try {
+-                    $userFolder = $this->rootFolder->getUserFolder($uid);
+-                    $node = $path === '/' ? $userFolder : $userFolder->get($path);
+-                    if (!($node instanceof Folder)) {
+-                        return new JSONResponse(['status' => 'error', 'message' => 'not_a_folder'], 400);
+-                    }
+-                    // Incoming shares remain invalid. External-storage mounts are valid Desktop
+-                    // folders, but Group folders/Team folders are not.
+-                    $storage = $node->getStorage();
+-                    if ($storage->instanceOfStorage('OCA\\Files_Sharing\\SharedStorage')) {
+-                        return new JSONResponse(['status' => 'error', 'message' => 'shared_not_allowed'], 400);
+-                    }
+-                    $mountType = strtolower((string)$node->getMountPoint()->getMountType());
+-                    $storageId = strtolower((string)$storage->getId());
+-                    if (str_contains($mountType, 'group') || str_contains($mountType, 'team')
+-                        || $storage->instanceOfStorage('OCA\\GroupFolders\\Mount\\GroupFolderStorage')
+-                        || str_starts_with($storageId, 'groupfolders::')) {
+-                        return new JSONResponse(['status' => 'error', 'message' => 'group_folder_not_allowed'], 400);
+-                    }
+-                    $owner = $node->getOwner();
+-                    if ($owner !== null && $owner->getUID() !== $uid) {
+-                        return new JSONResponse(['status' => 'error', 'message' => 'not_owned'], 400);
+-                    }
+-                    $clean = '/' . ltrim($userFolder->getRelativePath($node->getPath()) ?? '', '/');
+-                    $this->config->setUserValue($uid, self::APP_ID, self::DESKTOP_FOLDER_KEY, $clean);
+-                    $result['desktopFolder'] = $clean;
+-                } catch (NotFoundException $e) {
+-                    return new JSONResponse(['status' => 'error', 'message' => 'not_found'], 404);
+-                }
+-            }
+-        }
+-        return new JSONResponse($result);
+-    }
+-
+-}
+--- a/lib/Service/DecorationService.php
++++ b/lib/Service/DecorationService.php
+@@ -4,7 +4,7 @@
+ 
+ namespace OCA\DesktopWorkspace\Service;
+ 
+-use OCA\DesktopWorkspace\Controller\SettingsController;
++use OCA\DesktopWorkspace\SettingsKeys;
+ use OCP\IConfig;
+ 
+ class DecorationService {
+@@ -20,8 +20,8 @@
+ 
+     public function userSelectionEnabled(): bool {
+         return $this->config->getAppValue(
+-            SettingsController::APP_ID,
+-            SettingsController::USER_DECORATIONS_ENABLED_KEY,
++            SettingsKeys::APP_ID,
++            SettingsKeys::USER_DECORATIONS_ENABLED_KEY,
+             'yes',
+         ) !== 'no';
+     }
+@@ -29,8 +29,8 @@
+     public function savedForUser(string $uid): string {
+         $saved = $this->config->getUserValue(
+             $uid,
+-            SettingsController::APP_ID,
+-            SettingsController::DECORATION_KEY,
++            SettingsKeys::APP_ID,
++            SettingsKeys::DECORATION_KEY,
+             self::STANDARD,
+         );
+         return $this->validatedDecoration($saved);
+@@ -53,13 +53,13 @@
+             return ['decoration' => self::STANDARD, 'decorationColor' => self::FOLLOW_NEXTCLOUD, 'iconDecorationLinked' => true, 'iconDecoration' => self::STANDARD, 'iconColor' => self::FOLLOW_NEXTCLOUD];
+         }
+         $decoration = $this->effectiveForUser($uid);
+-        $linked = $this->config->getUserValue($uid, SettingsController::APP_ID, SettingsController::ICON_DECORATION_LINKED_KEY, 'yes') !== 'no';
++        $linked = $this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::ICON_DECORATION_LINKED_KEY, 'yes') !== 'no';
+         return [
+             'decoration' => $decoration,
+-            'decorationColor' => $this->validatedColorMode($this->config->getUserValue($uid, SettingsController::APP_ID, SettingsController::DECORATION_COLOR_KEY, self::FOLLOW_NEXTCLOUD), self::FOLLOW_NEXTCLOUD),
++            'decorationColor' => $this->validatedColorMode($this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::DECORATION_COLOR_KEY, self::FOLLOW_NEXTCLOUD), self::FOLLOW_NEXTCLOUD),
+             'iconDecorationLinked' => $linked,
+-            'iconDecoration' => $linked ? $decoration : $this->validatedDecoration($this->config->getUserValue($uid, SettingsController::APP_ID, SettingsController::ICON_DECORATION_KEY, self::STANDARD)),
+-            'iconColor' => $linked ? $this->validatedColorMode($this->config->getUserValue($uid, SettingsController::APP_ID, SettingsController::DECORATION_COLOR_KEY, self::FOLLOW_NEXTCLOUD), self::FOLLOW_NEXTCLOUD) : $this->validatedIconColorMode($this->config->getUserValue($uid, SettingsController::APP_ID, SettingsController::ICON_COLOR_KEY, self::FOLLOW_NEXTCLOUD)),
++            'iconDecoration' => $linked ? $decoration : $this->validatedDecoration($this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::ICON_DECORATION_KEY, self::STANDARD)),
++            'iconColor' => $linked ? $this->validatedColorMode($this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::DECORATION_COLOR_KEY, self::FOLLOW_NEXTCLOUD), self::FOLLOW_NEXTCLOUD) : $this->validatedIconColorMode($this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::ICON_COLOR_KEY, self::FOLLOW_NEXTCLOUD)),
+         ];
+     }
+ 
+--- /dev/null
++++ b/lib/Service/FolderPolicy.php
+@@ -0,0 +1,59 @@
++<?php
++namespace OCA\DesktopWorkspace\Service;
++
++use OCP\Files\Folder;
++use OCP\Files\IRootFolder;
++use OCP\Files\NotFoundException;
++
++/**
++ * The desktop-folder policy (L4-09 — extracted from SettingsController's personal
++ * writer, behavior-preserving): which user folder may serve as the desktop icons
++ * layer. Incoming shares are never valid; external-storage mounts are; group/team
++ * folders are not; the folder must be the user's own.
++ */
++class FolderPolicy {
++    public function __construct(
++        private IRootFolder $rootFolder,
++    ) {
++    }
++
++    /**
++     * @return array{ok:true,path:string}|array{ok:false,error:string,status:int}
++     *         error is the legacy machine word (not_a_folder, shared_not_allowed,
++     *         group_folder_not_allowed, not_owned, not_found); status the HTTP code.
++     */
++    public function validateDesktopFolder(string $uid, string $rawPath): array {
++        $path = trim($rawPath);
++        if ($path === '') {
++            return ['ok' => false, 'error' => 'empty', 'status' => 200];
++        }
++        try {
++            $userFolder = $this->rootFolder->getUserFolder($uid);
++            $node = $path === '/' ? $userFolder : $userFolder->get($path);
++            if (!($node instanceof Folder)) {
++                return ['ok' => false, 'error' => 'not_a_folder', 'status' => 400];
++            }
++            // Incoming shares remain invalid. External-storage mounts are valid Desktop
++            // folders, but Group folders/Team folders are not.
++            $storage = $node->getStorage();
++            if ($storage->instanceOfStorage('OCA\\Files_Sharing\\SharedStorage')) {
++                return ['ok' => false, 'error' => 'shared_not_allowed', 'status' => 400];
++            }
++            $mountType = strtolower((string)$node->getMountPoint()->getMountType());
++            $storageId = strtolower((string)$storage->getId());
++            if (str_contains($mountType, 'group') || str_contains($mountType, 'team')
++                || $storage->instanceOfStorage('OCA\\GroupFolders\\Mount\\GroupFolderStorage')
++                || str_starts_with($storageId, 'groupfolders::')) {
++                return ['ok' => false, 'error' => 'group_folder_not_allowed', 'status' => 400];
++            }
++            $owner = $node->getOwner();
++            if ($owner !== null && $owner->getUID() !== $uid) {
++                return ['ok' => false, 'error' => 'not_owned', 'status' => 400];
++            }
++            $clean = '/' . ltrim($userFolder->getRelativePath($node->getPath()) ?? '', '/');
++            return ['ok' => true, 'path' => $clean];
++        } catch (NotFoundException $e) {
++            return ['ok' => false, 'error' => 'not_found', 'status' => 404];
++        }
++    }
++}
+--- /dev/null
++++ b/lib/Service/PinService.php
+@@ -0,0 +1,90 @@
++<?php
++namespace OCA\DesktopWorkspace\Service;
++
++use OC\DB\Exceptions\DbalException;
++use OCA\DesktopWorkspace\SettingsKeys;
++use OCP\IConfig;
++use OCP\IDBConnection;
++
++/**
++ * Taskbar/desktop app pins: validation, storage, and the one-shot legacy
++ * browser-state migration claim (L4-09 — extracted from SettingsController,
++ * behavior-preserving).
++ */
++class PinService {
++    public function __construct(
++        private IConfig $config,
++        private IDBConnection $db,
++    ) {
++    }
++
++    /** @param mixed $values decoded JSON candidate */
++    public function cleanPinList(mixed $values): ?array {
++        if (!is_array($values) || !array_is_list($values)) {
++            return null;
++        }
++        $clean = [];
++        foreach ($values as $value) {
++            if (!is_string($value) || $value === '' || strlen($value) > 255 || preg_match('/^[A-Za-z0-9_-]+$/', $value) !== 1) {
++                return null;
++            }
++            $clean[] = $value;
++        }
++        return array_slice(array_values(array_unique($clean)), 0, 100);
++    }
++
++    /** @return array{taskbar:string[],desktop:string[]} */
++    public function storedAppPins(string $uid): array {
++        $decoded = json_decode($this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::APP_PINS_KEY, ''), true);
++        $fallback = is_array($decoded) ? $decoded : [];
++        $taskbar = json_decode($this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::TASKBAR_PINS_KEY, 'null'), true);
++        $desktop = json_decode($this->config->getUserValue($uid, SettingsKeys::APP_ID, SettingsKeys::DESKTOP_PINS_KEY, 'null'), true);
++        return [
++            'taskbar' => $this->cleanPinList($taskbar) ?? $this->cleanPinList($fallback['taskbar'] ?? []) ?? [],
++            'desktop' => $this->cleanPinList($desktop) ?? $this->cleanPinList($fallback['desktop'] ?? []) ?? [],
++        ];
++    }
++
++    /**
++     * Validate and persist one pin list. Returns the cleaned list, or null when the
++     * payload is invalid (caller answers 400).
++     *
++     * @param mixed $pins decoded JSON candidate
++     */
++    public function savePins(string $uid, string $location, mixed $pins): ?array {
++        if (!in_array($location, ['taskbar', 'desktop'], true)) {
++            return null;
++        }
++        $clean = $this->cleanPinList($pins);
++        if ($clean === null || json_last_error() !== JSON_ERROR_NONE) {
++            return null;
++        }
++        $key = $location === 'taskbar' ? SettingsKeys::TASKBAR_PINS_KEY : SettingsKeys::DESKTOP_PINS_KEY;
++        $this->config->setUserValue($uid, SettingsKeys::APP_ID, $key, json_encode($clean));
++        return $clean;
++    }
++
++    /**
++     * The one-shot migration claim: insert a preferences row keyed
++     * BROWSER_STATE_MIGRATION_KEY; a duplicate key means another session claimed it
++     * first. A stale claim (>300s pending) is expired by the caller before asking.
++     */
++    public function claimBrowserStateMigration(string $uid): bool {
++        $query = $this->db->getQueryBuilder();
++        $query->insert('preferences')->values([
++            'userid' => $query->createNamedParameter($uid),
++            'appid' => $query->createNamedParameter(SettingsKeys::APP_ID),
++            'configkey' => $query->createNamedParameter(SettingsKeys::BROWSER_STATE_MIGRATION_KEY),
++            'configvalue' => $query->createNamedParameter('pending:' . time()),
++        ]);
++        try {
++            $query->executeStatement();
++            return true;
++        } catch (DbalException $e) {
++            if ((int)$e->getCode() === 1062) {
++                return false;
++            }
++            throw $e;
++        }
++    }
++}
+--- a/lib/Settings/Admin.php
++++ b/lib/Settings/Admin.php
+@@ -4,7 +4,7 @@
+ 
+ namespace OCA\DesktopWorkspace\Settings;
+ 
+-use OCA\DesktopWorkspace\Controller\SettingsController;
++use OCA\DesktopWorkspace\SettingsKeys;
+ use OCA\DesktopWorkspace\Service\FilesAvailability;
+ use OCA\DesktopWorkspace\Service\StatsService;
+ use OCP\AppFramework\Http\TemplateResponse;
+@@ -38,7 +38,7 @@
+             ];
+         }
+ 
+-        $multiWindow = json_decode($this->config->getAppValue(SettingsController::APP_ID, SettingsController::MULTI_WINDOW_KEY, '[]'), true);
++        $multiWindow = json_decode($this->config->getAppValue(SettingsKeys::APP_ID, SettingsKeys::MULTI_WINDOW_KEY, '[]'), true);
+         $multiWindow = is_array($multiWindow) ? $multiWindow : [];
+         $apps = [];
+         foreach ($this->navigationManager->getAll() as $entry) {
+@@ -61,8 +61,8 @@
+         }
+ 
+         return new TemplateResponse('desktop_workspace', 'settings-admin', [
+-            'userDecorationsEnabled' => $this->config->getAppValue(SettingsController::APP_ID, SettingsController::USER_DECORATIONS_ENABLED_KEY, 'yes') !== 'no',
+-            'showFilesNewTab' => $this->config->getAppValue(SettingsController::APP_ID, SettingsController::SHOW_FILES_NEW_TAB_KEY, 'yes') !== 'no',
++            'userDecorationsEnabled' => $this->config->getAppValue(SettingsKeys::APP_ID, SettingsKeys::USER_DECORATIONS_ENABLED_KEY, 'yes') !== 'no',
++            'showFilesNewTab' => $this->config->getAppValue(SettingsKeys::APP_ID, SettingsKeys::SHOW_FILES_NEW_TAB_KEY, 'yes') !== 'no',
+             'experimentalDisabled' => $this->filesAvailability->globallyDisabled(),
+             'groups' => $groups,
+             'apps' => $apps,
+@@ -70,10 +70,10 @@
+             'activeCount' => $this->statsService->activeCount(),
+             'dailyStats' => $this->statsService->dailyCounts(7),
+             'weeklyStats' => $this->statsService->weeklyCounts(4),
+-            'saveUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.settings.saveAdminSettings'),
+-            'decorationPolicyUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.settings.saveDecorationPolicy'),
+-            'filesButtonPolicyUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.settings.saveFilesButtonPolicy'),
+-            'resetUserUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.settings.resetUserSettings'),
++            'saveUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.adminSettings.save'),
++            'decorationPolicyUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.adminSettings.saveDecorationPolicy'),
++            'filesButtonPolicyUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.adminSettings.saveFilesButtonPolicy'),
++            'resetUserUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.adminSettings.resetUserSettings'),
+         ]);
+     }
+ 
+--- a/lib/Settings/Personal.php
++++ b/lib/Settings/Personal.php
+@@ -4,7 +4,7 @@
+ 
+ namespace OCA\DesktopWorkspace\Settings;
+ 
+-use OCA\DesktopWorkspace\Controller\SettingsController;
++use OCA\DesktopWorkspace\SettingsKeys;
+ use OCA\DesktopWorkspace\Service\DecorationService;
+ use OCA\DesktopWorkspace\Service\FilesAvailability;
+ use OCP\AppFramework\Http\TemplateResponse;
+@@ -27,7 +27,7 @@
+         $user = $this->userSession->getUser();
+         $available = $user !== null && $this->filesAvailability->allowedForUser($user);
+         $optedIn = $user !== null
+-            && $this->config->getUserValue($user->getUID(), SettingsController::APP_ID, FilesAvailability::USER_OPT_IN_KEY, 'no') === 'yes';
++            && $this->config->getUserValue($user->getUID(), SettingsKeys::APP_ID, FilesAvailability::USER_OPT_IN_KEY, 'no') === 'yes';
+ 
+         $appearance = $this->decorationService->appearanceForUser($user?->getUID());
+ 
+@@ -38,33 +38,33 @@
+             'userDecorationsEnabled' => $this->decorationService->userSelectionEnabled(),
+             ...$appearance,
+             'windowControlsSide' => $user !== null
+-                ? $this->config->getUserValue($user->getUID(), SettingsController::APP_ID, SettingsController::WINDOW_CONTROLS_SIDE_KEY, 'right')
++                ? $this->config->getUserValue($user->getUID(), SettingsKeys::APP_ID, SettingsKeys::WINDOW_CONTROLS_SIDE_KEY, 'right')
+                 : 'right',
+             'shellMode' => $user !== null
+-                ? $this->config->getUserValue($user->getUID(), SettingsController::APP_ID, SettingsController::SHELL_MODE_KEY, 'taskbar')
++                ? $this->config->getUserValue($user->getUID(), SettingsKeys::APP_ID, SettingsKeys::SHELL_MODE_KEY, 'taskbar')
+                 : 'taskbar',
+             'dockAlwaysVisible' => $user === null
+-                || $this->config->getUserValue($user->getUID(), SettingsController::APP_ID, SettingsController::DOCK_ALWAYS_VISIBLE_KEY, 'yes') !== 'no',
++                || $this->config->getUserValue($user->getUID(), SettingsKeys::APP_ID, SettingsKeys::DOCK_ALWAYS_VISIBLE_KEY, 'yes') !== 'no',
+             'clockHourCycle' => $user !== null
+-                ? $this->config->getUserValue($user->getUID(), SettingsController::APP_ID, SettingsController::CLOCK_HOUR_CYCLE_KEY, '24')
++                ? $this->config->getUserValue($user->getUID(), SettingsKeys::APP_ID, SettingsKeys::CLOCK_HOUR_CYCLE_KEY, '24')
+                 : '24',
+             'showFavorites' => $user !== null
+-                && $this->config->getUserValue($user->getUID(), SettingsController::APP_ID, SettingsController::SHOW_FAVORITES_KEY, 'no') === 'yes',
++                && $this->config->getUserValue($user->getUID(), SettingsKeys::APP_ID, SettingsKeys::SHOW_FAVORITES_KEY, 'no') === 'yes',
+             'favoritesNoConfirm' => $user !== null
+-                && $this->config->getUserValue($user->getUID(), SettingsController::APP_ID, SettingsController::FAV_NO_CONFIRM_KEY, 'no') === 'yes',
++                && $this->config->getUserValue($user->getUID(), SettingsKeys::APP_ID, SettingsKeys::FAV_NO_CONFIRM_KEY, 'no') === 'yes',
+             'showTrash' => $user !== null
+-                && $this->config->getUserValue($user->getUID(), SettingsController::APP_ID, SettingsController::SHOW_TRASH_KEY, 'no') === 'yes',
++                && $this->config->getUserValue($user->getUID(), SettingsKeys::APP_ID, SettingsKeys::SHOW_TRASH_KEY, 'no') === 'yes',
+             'showHome' => $user !== null
+-                && $this->config->getUserValue($user->getUID(), SettingsController::APP_ID, SettingsController::SHOW_HOME_KEY, 'no') === 'yes',
++                && $this->config->getUserValue($user->getUID(), SettingsKeys::APP_ID, SettingsKeys::SHOW_HOME_KEY, 'no') === 'yes',
+             'desktopFolder' => $user !== null
+-                ? $this->config->getUserValue($user->getUID(), SettingsController::APP_ID, SettingsController::DESKTOP_FOLDER_KEY, '')
++                ? $this->config->getUserValue($user->getUID(), SettingsKeys::APP_ID, SettingsKeys::DESKTOP_FOLDER_KEY, '')
+                 : '',
+             'trashNoConfirm' => $user !== null
+-                && $this->config->getUserValue($user->getUID(), SettingsController::APP_ID, SettingsController::TRASH_NO_CONFIRM_KEY, 'no') === 'yes',
+-            'saveUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.settings.savePersonalSettings'),
+-            'resetIconsUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.settings.resetIconPositions'),
+-            'resetWindowsUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.settings.resetWindowStates'),
+-            'resetAllUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.settings.resetAllPersonal'),
++                && $this->config->getUserValue($user->getUID(), SettingsKeys::APP_ID, SettingsKeys::TRASH_NO_CONFIRM_KEY, 'no') === 'yes',
++            'saveUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.personalSettings.save'),
++            'resetIconsUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.personalSettings.resetIconPositions'),
++            'resetWindowsUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.personalSettings.resetWindowStates'),
++            'resetAllUrl' => $this->urlGenerator->linkToRoute('desktop_workspace.personalSettings.resetAllPersonal'),
+             'themingUrl' => $this->urlGenerator->getAbsoluteURL('/index.php/settings/user/theming'),
+         ]);
+     }
+--- /dev/null
++++ b/lib/SettingsKeys.php
+@@ -0,0 +1,47 @@
++<?php
++namespace OCA\DesktopWorkspace;
++
++/**
++ * The settings-key registry (L4-09): one home for every config key name the app
++ * reads or writes, shared by the controllers, the services and the Settings
++ * sections. Extracted from the former SettingsController's constants block.
++ */
++final class SettingsKeys {
++    public const APP_ID = 'desktop_workspace';
++    public const SHOW_FAVORITES_KEY = 'show_favorites';
++    public const FAV_NO_CONFIRM_KEY = 'favorites_no_confirm';
++    public const SHOW_TRASH_KEY = 'show_trash';
++    public const SHOW_HOME_KEY = 'show_home';
++    public const MULTI_WINDOW_KEY = 'multi_window_apps';
++    public const ICON_POSITIONS_KEY = 'icon_positions';
++    public const WINDOW_STATES_KEY = 'window_states';
++    public const APP_PINS_KEY = 'app_pins';
++    public const TASKBAR_PINS_KEY = 'taskbar_pins';
++    public const DESKTOP_PINS_KEY = 'desktop_pins';
++    public const APPS_MENU_SIZE_KEY = 'apps_menu_size';
++    public const BROWSER_STATE_MIGRATION_KEY = 'browser_state_migration';
++    public const VISITED_KEY = 'visited';
++    public const DESKTOP_FOLDER_KEY = 'desktop_folder';
++    public const TRASH_NO_CONFIRM_KEY = 'trash_no_confirm';
++    public const USER_DECORATIONS_ENABLED_KEY = 'user_decorations_enabled';
++    public const DECORATION_KEY = 'decoration';
++    public const DECORATION_COLOR_KEY = 'decoration_color';
++    public const ICON_DECORATION_LINKED_KEY = 'icon_decoration_linked';
++    public const ICON_DECORATION_KEY = 'icon_decoration';
++    public const ICON_COLOR_KEY = 'icon_color';
++    public const WINDOW_CONTROLS_SIDE_KEY = 'window_controls_side';
++    public const SHELL_MODE_KEY = 'shell_mode';
++    public const DOCK_ALWAYS_VISIBLE_KEY = 'dock_always_visible';
++    public const CLOCK_HOUR_CYCLE_KEY = 'clock_hour_cycle';
++    public const SHOW_FILES_NEW_TAB_KEY = 'show_files_new_tab';
++
++    /**
++     * Remove every desktop setting for a user, so the next visit is like the first one.
++     * Shared by the admin's per-user reset and the user's own "start fresh" (L4-09).
++     */
++    public static function clearAllUserValues(\OCP\IConfig $config, string $uid): void {
++        foreach ($config->getUserKeys($uid, self::APP_ID) as $key) {
++            $config->deleteUserValue($uid, self::APP_ID, $key);
++        }
++    }
++}

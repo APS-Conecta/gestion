@@ -1,0 +1,400 @@
+--- a/js/admin-settings.js
++++ b/js/admin-settings.js
+@@ -5,7 +5,8 @@
+     if (!root) return;
+ 
+     const tr = (s, p) => (window.OC && OC.L10N ? OC.L10N.translate('desktop_workspace', s, p) : s);
+-    const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
++    // One escapeHtml for the whole app (L4-10) — js/escape.js, loaded before this file.
++    const esc = window.DWEscape.escapeHtml;
+ 
+ 
+     const userDecorationsCb = document.getElementById('desktop-user-decorations-enabled');
+--- a/js/desktop-shell.js
++++ b/js/desktop-shell.js
+@@ -36,9 +36,9 @@
+ const taskbar = document.querySelector('.desktop-taskbar');
+ const dockReveal = document.getElementById('desktop-dock-reveal');
+ let dynamicLabels = {};
+-const escapeHtml = (value) => String(value).replace(/[&<>'"]/g, (char) => ({
+-        '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;',
+-    }[char]));
++// One escapeHtml for the whole app (L4-10): js/escape.js owns it; the hub aliases
++// and publishes it as DW.escapeHtml for the split modules.
++const escapeHtml = window.DWEscape.escapeHtml;
+ function preventHeaderEndDragging() {
+         if (!headerEndSlot) return;
+         headerEndSlot.querySelectorAll('a, img, [draggable]').forEach((element) => { element.draggable = false; });
+--- /dev/null
++++ b/js/escape.js
+@@ -0,0 +1,12 @@
++/*
++ * One escapeHtml for the whole app (L4-10): the shell, the two settings pages and
++ * the files module shipped four drifting copies. Loaded as the FIRST app script on
++ * every page that renders markup. The shell re-publishes it as DW.escapeHtml.
++ */
++(function (global) {
++    'use strict';
++    const escapeHtml = (value) => String(value).replace(/[&<>'"]/g, (char) => ({
++        '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;',
++    }[char]));
++    (global.DWEscape = global.DWEscape || {}).escapeHtml = escapeHtml;
++})(typeof window !== 'undefined' ? window : globalThis);
+--- /dev/null
++++ b/js/files/details-panels.js
+@@ -0,0 +1,47 @@
++/*
++ * Shared details-tab panels for the files module (L4-10): js/files/files.js (sidebar)
++ * and js/files/details.js (standalone page) shipped already-diverged copies. The
++ * sharing panel stays per-page (genuinely different features); everything identical
++ * lives here once. Consumers pass their page context: { t, escapeHtml, ocsUrl,
++ * requestHeaders, versionDavUrl }.
++ */
++(function (global) {
++    'use strict';
++    const humanSize = (bytes) => { const n = Number(bytes || 0); if (!n) return '—'; const units = ['B', 'KB', 'MB', 'GB']; let value = n, i = 0; while (value >= 1024 && i < units.length - 1) { value /= 1024; i++; } return `${value.toFixed(i ? 1 : 0)} ${units[i]}`; };
++    const cleanPath = (path) => `/${String(path || '/').split('/').filter(Boolean).join('/')}` || '/';
++    function detailsListHtml(item, ctx) {
++        const { t, escapeHtml } = ctx;
++        const type = item.isFolder ? t('Folder') : (item.mime || t('File'));
++        return `<dl class="desktop-files-detail-list"><dt>${escapeHtml(t('Location'))}</dt><dd>${escapeHtml(cleanPath(item.path))}</dd><dt>${escapeHtml(t('Type'))}</dt><dd>${escapeHtml(type)}</dd><dt>${escapeHtml(t('Size'))}</dt><dd>${item.isFolder ? '—' : escapeHtml(humanSize(item.size))}</dd><dt>${escapeHtml(t('Modified'))}</dt><dd>${escapeHtml(item.modified || '—')}</dd><dt>${escapeHtml(t('File ID'))}</dt><dd>${escapeHtml(item.fileId || '—')}</dd></dl>`;
++    }
++    async function activityPanelHtml(item, ctx) {
++        const { t, escapeHtml, ocsUrl, requestHeaders } = ctx;
++        if (!item.fileId) return `<p class="desktop-files-detail-note">${escapeHtml(t('No file id available.'))}</p>`;
++        const response = await fetch(ocsUrl('/apps/activity/api/v2/activity/filter', { object_type: 'files', object_id: item.fileId }), { credentials: 'same-origin', headers: requestHeaders({ 'OCS-APIRequest': 'true', Accept: 'application/json' }) });
++        if (!response.ok) throw new Error(`HTTP ${response.status}`);
++        const data = await response.json();
++        const activities = data.ocs?.data || [];
++        return activities.length ? `<ul class="desktop-files-api-list">${activities.map((a) => `
++            <li><strong>${escapeHtml(a.subject || a.type || t('Activity'))}</strong><span>${escapeHtml(a.message || '')}</span><time>${escapeHtml(a.datetime || '')}</time></li>`).join('')}</ul>` : `<p class="desktop-files-detail-note">${escapeHtml(t('No activity yet.'))}</p>`;
++    }
++    async function versionsPanelHtml(item, ctx) {
++        const { t, escapeHtml, versionDavUrl, requestHeaders } = ctx;
++        if (!item.fileId || item.isFolder) return `<p class="desktop-files-detail-note">${escapeHtml(t('Versions are available for files only.'))}</p>`;
++        const body = '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:nc="http://nextcloud.org/ns"><d:prop><d:getcontentlength/><d:getlastmodified/><d:getcontenttype/><d:getetag/><nc:version-label/><nc:version-author/><nc:has-preview/></d:prop></d:propfind>';
++        const response = await fetch(versionDavUrl(item.fileId), { method: 'PROPFIND', credentials: 'same-origin', headers: requestHeaders({ Depth: '1', 'Content-Type': 'application/xml; charset=utf-8' }), body });
++        if (response.status === 404) return `<p class="desktop-files-detail-note">${escapeHtml(t('No versions available.'))}</p>`;
++        if (!response.ok) throw new Error(`HTTP ${response.status}`);
++        const xml = new DOMParser().parseFromString(await response.text(), 'application/xml');
++        const versions = Array.from(xml.getElementsByTagNameNS('DAV:', 'response')).slice(1).map((node) => {
++            const href = node.getElementsByTagNameNS('DAV:', 'href')[0]?.textContent || '';
++            const version = decodeURIComponent(href.replace(/\/$/, '').split('/').pop() || '');
++            const size = node.getElementsByTagNameNS('DAV:', 'getcontentlength')[0]?.textContent || '0';
++            const modified = node.getElementsByTagNameNS('DAV:', 'getlastmodified')[0]?.textContent || '';
++            const label = node.getElementsByTagNameNS('http://nextcloud.org/ns', 'version-label')[0]?.textContent || '';
++            return { version, size, modified, label, href };
++        }).filter((v) => v.version).sort((a, b) => Number(b.version) - Number(a.version));
++        return versions.length ? `<ul class="desktop-files-api-list">${versions.map((v) => `
++            <li data-version="${escapeHtml(v.version)}"><strong>${escapeHtml(v.label || new Date(Number(v.version) * 1000).toLocaleString())}</strong><span>${escapeHtml(humanSize(v.size))} · ${escapeHtml(v.modified)}</span><a href="${escapeHtml(versionDavUrl(item.fileId, v.version))}" download>${escapeHtml(t('Download'))}</a><button type="button" data-version-restore="${escapeHtml(v.version)}">${escapeHtml(t('Restore'))}</button></li>`).join('')}</ul>` : `<p class="desktop-files-detail-note">${escapeHtml(t('No versions available.'))}</p>`;
++    }
++    global.DWFilesDetails = { humanSize, cleanPath, detailsListHtml, activityPanelHtml, versionsPanelHtml };
++})(typeof window !== 'undefined' ? window : globalThis);
+--- a/js/files/details.js
++++ b/js/files/details.js
+@@ -14,14 +14,17 @@
+     };
+     const uid = root.dataset.userId || OC?.getCurrentUser?.()?.uid || 'admin';
+     const panel = root.querySelector('.desktop-files-detail-panel');
+-    const escapeHtml = (value) => String(value).replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
++    // One escapeHtml for the whole app (L4-10) — js/escape.js, loaded before this file.
++    const escapeHtml = window.DWEscape.escapeHtml;
+     const iconHtml = (kind) => `<span class="desktop-files-symbol desktop-files-symbol-${kind}" aria-hidden="true"></span>`;
+     const cleanPath = (path) => `/${String(path || '/').split('/').filter(Boolean).join('/')}` || '/';
+     const parentPath = (path) => { const parts = cleanPath(path).split('/').filter(Boolean); parts.pop(); return `/${parts.join('/')}` || '/'; };
+-    const humanSize = (bytes) => { const n = Number(bytes || 0); if (!n) return '—'; const units = ['B', 'KB', 'MB', 'GB']; let value = n, i = 0; while (value >= 1024 && i < units.length - 1) { value /= 1024; i++; } return `${value.toFixed(i ? 1 : 0)} ${units[i]}`; };
++    // Shared details panels + humanSize (L4-10) — js/files/details-panels.js.
++    const { humanSize, detailsListHtml: detailsPanelHtml, activityPanelHtml, versionsPanelHtml } = window.DWFilesDetails;
+     const requestHeaders = (extra = {}) => ({ 'X-Requested-With': 'XMLHttpRequest', ...(window.OC?.requestToken ? { requesttoken: OC.requestToken } : {}), ...extra });
+     const ocsUrl = (path, params = {}) => { const query = new URLSearchParams({ format: 'json', ...params }); return `/ocs/v2.php/${path.replace(/^\//, '')}?${query}`; };
+     const versionDavUrl = (fileId, version = '') => `/remote.php/dav/versions/${encodeURIComponent(uid)}/versions/${encodeURIComponent(fileId)}${version ? `/${encodeURIComponent(version)}` : ''}`;
++    const panelCtx = { t, escapeHtml, ocsUrl, requestHeaders, versionDavUrl };
+     const filesUrl = (path) => `/index.php/apps/files/files?dir=${encodeURIComponent(path || '/')}`;
+     const davUrl = (path) => `/remote.php/dav/files/${encodeURIComponent(uid)}${cleanPath(path).split('/').map(encodeURIComponent).join('/')}`;
+     const typeOf = () => item.isFolder ? t('Folder') : (item.mime || t('File'));
+@@ -49,10 +52,6 @@
+         } catch (e) { /* keep whatever was passed in */ }
+     }
+ 
+-    function detailsPanelHtml() {
+-        const type = typeOf();
+-        return `<dl class="desktop-files-detail-list"><dt>${escapeHtml(t('Location'))}</dt><dd>${escapeHtml(cleanPath(item.path))}</dd><dt>${escapeHtml(t('Type'))}</dt><dd>${escapeHtml(type)}</dd><dt>${escapeHtml(t('Size'))}</dt><dd>${item.isFolder ? '—' : escapeHtml(humanSize(item.size))}</dd><dt>${escapeHtml(t('Modified'))}</dt><dd>${escapeHtml(item.modified || '—')}</dd><dt>${escapeHtml(t('File ID'))}</dt><dd>${escapeHtml(item.fileId || '—')}</dd></dl>`;
+-    }
+     async function sharingPanelHtml() {
+         const response = await fetch(ocsUrl('/apps/files_sharing/api/v1/shares', { path: item.path, reshares: 'true', subfiles: 'false' }), { credentials: 'same-origin', headers: requestHeaders({ 'OCS-APIRequest': 'true', Accept: 'application/json' }) });
+         if (!response.ok) throw new Error(`HTTP ${response.status}`);
+@@ -60,28 +59,11 @@
+         const list = shares.length ? `<ul class="desktop-files-api-list">${shares.map((share) => `<li data-share-id="${escapeHtml(share.id)}"><strong>${escapeHtml(share.share_with_displayname || share.share_with || share.token || t('Public link'))}</strong><span>${escapeHtml(share.url ? t('Public link') : `Type ${share.share_type}`)}</span>${share.url ? `<a href="${escapeHtml(share.url)}" target="_blank" rel="noreferrer">${escapeHtml(t('Open link'))}</a>` : ''}<button type="button" data-share-delete="${escapeHtml(share.id)}">${escapeHtml(t('Remove'))}</button></li>`).join('')}</ul>` : `<p class="desktop-files-detail-note">${escapeHtml(t('No shares yet.'))}</p>`;
+         return `${list}<div class="desktop-files-api-actions"><button type="button" data-share-create-link>${escapeHtml(t('Create public link'))}</button><button type="button" data-open-files-native>${escapeHtml(t('Open in Files for advanced sharing'))}</button></div>`;
+     }
+-    async function activityPanelHtml() {
+-        if (!item.fileId) return `<p class="desktop-files-detail-note">${escapeHtml(t('No file id available.'))}</p>`;
+-        const response = await fetch(ocsUrl('/apps/activity/api/v2/activity/filter', { object_type: 'files', object_id: item.fileId }), { credentials: 'same-origin', headers: requestHeaders({ 'OCS-APIRequest': 'true', Accept: 'application/json' }) });
+-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+-        const activities = (await response.json()).ocs?.data || [];
+-        return activities.length ? `<ul class="desktop-files-api-list">${activities.map((a) => `<li><strong>${escapeHtml(a.subject || a.type || t('Activity'))}</strong><span>${escapeHtml(a.message || '')}</span><time>${escapeHtml(a.datetime || '')}</time></li>`).join('')}</ul>` : `<p class="desktop-files-detail-note">${escapeHtml(t('No activity yet.'))}</p>`;
+-    }
+-    async function versionsPanelHtml() {
+-        if (!item.fileId || item.isFolder) return `<p class="desktop-files-detail-note">${escapeHtml(t('Versions are available for files only.'))}</p>`;
+-        const body = '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:nc="http://nextcloud.org/ns"><d:prop><d:getcontentlength/><d:getlastmodified/><d:getcontenttype/><d:getetag/><nc:version-label/><nc:version-author/><nc:has-preview/></d:prop></d:propfind>';
+-        const response = await fetch(versionDavUrl(item.fileId), { method: 'PROPFIND', credentials: 'same-origin', headers: requestHeaders({ Depth: '1', 'Content-Type': 'application/xml; charset=utf-8' }), body });
+-        if (response.status === 404) return `<p class="desktop-files-detail-note">${escapeHtml(t('No versions available.'))}</p>`;
+-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+-        const xml = new DOMParser().parseFromString(await response.text(), 'application/xml');
+-        const versions = Array.from(xml.getElementsByTagNameNS('DAV:', 'response')).slice(1).map((node) => { const href = node.getElementsByTagNameNS('DAV:', 'href')[0]?.textContent || ''; const version = decodeURIComponent(href.replace(/\/$/, '').split('/').pop() || ''); const size = node.getElementsByTagNameNS('DAV:', 'getcontentlength')[0]?.textContent || '0'; const modified = node.getElementsByTagNameNS('DAV:', 'getlastmodified')[0]?.textContent || ''; const label = node.getElementsByTagNameNS('http://nextcloud.org/ns', 'version-label')[0]?.textContent || ''; return { version, size, modified, label }; }).filter((v) => v.version).sort((a, b) => Number(b.version) - Number(a.version));
+-        return versions.length ? `<ul class="desktop-files-api-list">${versions.map((v) => `<li><strong>${escapeHtml(v.label || new Date(Number(v.version) * 1000).toLocaleString())}</strong><span>${escapeHtml(humanSize(v.size))} · ${escapeHtml(v.modified)}</span><a href="${escapeHtml(versionDavUrl(item.fileId, v.version))}" download>${escapeHtml(t('Download'))}</a><button type="button" data-version-restore="${escapeHtml(v.version)}">${escapeHtml(t('Restore'))}</button></li>`).join('')}</ul>` : `<p class="desktop-files-detail-note">${escapeHtml(t('No versions available.'))}</p>`;
+-    }
+     async function activate(tab) {
+         panel.querySelectorAll('.desktop-files-detail-tabs button').forEach((button) => button.classList.toggle('is-active', button.dataset.tab === tab));
+         const target = panel.querySelector('.desktop-files-tab-panel');
+         target.innerHTML = `<p class="desktop-files-detail-note">${escapeHtml(t('Loading…'))}</p>`;
+-        try { target.innerHTML = tab === 'details' ? detailsPanelHtml() : tab === 'sharing' ? await sharingPanelHtml() : tab === 'activity' ? await activityPanelHtml() : await versionsPanelHtml(); }
++        try { target.innerHTML = tab === 'details' ? detailsPanelHtml(item, panelCtx) : tab === 'sharing' ? await sharingPanelHtml() : tab === 'activity' ? await activityPanelHtml(item, panelCtx) : await versionsPanelHtml(item, panelCtx); }
+         catch (error) { target.innerHTML = `<p class="desktop-files-detail-note">${escapeHtml(t('Could not load {tab}: {message}', { tab, message: error.message }))}</p>`; }
+     }
+     async function createPublicLink() { const body = new URLSearchParams({ path: item.path, shareType: '3', permissions: item.isFolder ? '31' : '1' }); const response = await fetch('/ocs/v2.php/apps/files_sharing/api/v1/shares?format=json', { method: 'POST', credentials: 'same-origin', headers: requestHeaders({ 'OCS-APIRequest': 'true', Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' }), body }); if (!response.ok) throw new Error(`HTTP ${response.status}`); await activate('sharing'); }
+--- a/js/files/files.js
++++ b/js/files/files.js
+@@ -37,7 +37,8 @@
+     const dragRules = window.DesktopWorkspaceDragRules;
+ 
+ 
+-    const escapeHtml = (value) => String(value).replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
++    // One escapeHtml for the whole app (L4-10) — js/escape.js, loaded before this file.
++    const escapeHtml = window.DWEscape.escapeHtml;
+     const iconHtml = (kind) => `<span class="desktop-files-symbol desktop-files-symbol-${kind}" aria-hidden="true"></span>`;
+     const mimeIconUrl = (item) => (window.OC && OC.MimeType && OC.MimeType.getIconUrl)
+         ? OC.MimeType.getIconUrl(item.isFolder ? 'dir' : (item.mime || 'application/octet-stream'))
+@@ -73,12 +74,14 @@
+     function joinPath(base, name) { return cleanPath(`${cleanPath(base).replace(/\/$/, '')}/${name}`); }
+     function davUrl(path) { const clean = cleanPath(path); return `/remote.php/dav/files/${encodeURIComponent(uid)}${clean.split('/').map(encodeURIComponent).join('/')}`; }
+     function versionDavUrl(fileId, version = '') { return `/remote.php/dav/versions/${encodeURIComponent(uid)}/versions/${encodeURIComponent(fileId)}${version ? `/${encodeURIComponent(version)}` : ''}`; }
++    const panelCtx = { t, escapeHtml, ocsUrl, requestHeaders, versionDavUrl };
+     function ocsUrl(path, params = {}) { const query = new URLSearchParams({ format: 'json', ...params }); return `/ocs/v2.php/${path.replace(/^\//, '')}?${query}`; }
+     function requestHeaders(extra = {}) { return { 'X-Requested-With': 'XMLHttpRequest', ...(window.OC?.requestToken ? { requesttoken: OC.requestToken } : {}), ...extra }; }
+     function filesUrl(path = currentPath) { return `/index.php/apps/files/files?dir=${encodeURIComponent(path || '/')}`; }
+     function parentPath(path) { const parts = cleanPath(path).split('/').filter(Boolean); parts.pop(); return `/${parts.join('/')}` || '/'; }
+     function itemFromRow(row) { return currentItems.find((item) => item.path === row?.dataset.path) || null; }
+-    function humanSize(bytes) { const n = Number(bytes || 0); if (!n) return '—'; const units = ['B', 'KB', 'MB', 'GB']; let value = n; let i = 0; while (value >= 1024 && i < units.length - 1) { value /= 1024; i++; } return `${value.toFixed(i ? 1 : 0)} ${units[i]}`; }
++    // Shared details panels + humanSize (L4-10) — js/files/details-panels.js.
++    const { humanSize, detailsListHtml: detailsPanelHtml, activityPanelHtml, versionsPanelHtml } = window.DWFilesDetails;
+ 
+     const folderCapabilities = new Map();
+     async function propfind(path = '/', depth = '1') {
+@@ -224,18 +227,7 @@
+                 <button type="button" data-tab="activity">${escapeHtml(t('Activity'))}</button>
+                 ${item.isFolder ? '' : `<button type="button" data-tab="versions">${escapeHtml(t('Versions'))}</button>`}
+             </nav>
+-            <section class="desktop-files-tab-panel" data-current-tab="details">${detailsPanelHtml(item, type)}</section>`;
+-    }
+-
+-    function detailsPanelHtml(item, type = item.isFolder ? t('Folder') : (item.mime || t('File'))) {
+-        return `
+-            <dl class="desktop-files-detail-list">
+-                <dt>${escapeHtml(t('Location'))}</dt><dd>${escapeHtml(item.path)}</dd>
+-                <dt>${escapeHtml(t('Type'))}</dt><dd>${escapeHtml(type)}</dd>
+-                <dt>${escapeHtml(t('Size'))}</dt><dd>${item.isFolder ? '—' : escapeHtml(humanSize(item.size))}</dd>
+-                <dt>${escapeHtml(t('Modified'))}</dt><dd>${escapeHtml(item.modified || '—')}</dd>
+-                <dt>${escapeHtml(t('File ID'))}</dt><dd>${escapeHtml(item.fileId || '—')}</dd>
+-            </dl>`;
++            <section class="desktop-files-tab-panel" data-current-tab="details">${detailsPanelHtml(item, panelCtx)}</section>`;
+     }
+ 
+     async function activateDetailTab(tab) {
+@@ -246,10 +238,10 @@
+         panel.dataset.currentTab = tab;
+         panel.innerHTML = `<p class="desktop-files-detail-note">${escapeHtml(t('Loading…'))}</p>`;
+         try {
+-            if (tab === 'details') panel.innerHTML = detailsPanelHtml(selectedItem);
++            if (tab === 'details') panel.innerHTML = detailsPanelHtml(selectedItem, panelCtx);
+             else if (tab === 'sharing') panel.innerHTML = await sharingPanelHtml(selectedItem);
+-            else if (tab === 'activity') panel.innerHTML = await activityPanelHtml(selectedItem);
+-            else if (tab === 'versions') panel.innerHTML = await versionsPanelHtml(selectedItem);
++            else if (tab === 'activity') panel.innerHTML = await activityPanelHtml(selectedItem, panelCtx);
++            else if (tab === 'versions') panel.innerHTML = await versionsPanelHtml(selectedItem, panelCtx);
+         } catch (error) {
+             panel.innerHTML = `<p class="desktop-files-detail-note">${escapeHtml(t('Could not load {tab}: {message}', { tab, message: error.message }))}</p>`;
+         }
+@@ -328,35 +320,6 @@
+         await activateDetailTab('sharing');
+     }
+ 
+-    async function activityPanelHtml(item) {
+-        if (!item.fileId) return `<p class="desktop-files-detail-note">${escapeHtml(t('No file id available.'))}</p>`;
+-        const response = await fetch(ocsUrl('/apps/activity/api/v2/activity/filter', { object_type: 'files', object_id: item.fileId }), { credentials: 'same-origin', headers: requestHeaders({ 'OCS-APIRequest': 'true', Accept: 'application/json' }) });
+-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+-        const data = await response.json();
+-        const activities = data.ocs?.data || [];
+-        return activities.length ? `<ul class="desktop-files-api-list">${activities.map((a) => `
+-            <li><strong>${escapeHtml(a.subject || a.type || t('Activity'))}</strong><span>${escapeHtml(a.message || '')}</span><time>${escapeHtml(a.datetime || '')}</time></li>`).join('')}</ul>` : `<p class="desktop-files-detail-note">${escapeHtml(t('No activity yet.'))}</p>`;
+-    }
+-
+-    async function versionsPanelHtml(item) {
+-        if (!item.fileId || item.isFolder) return `<p class="desktop-files-detail-note">${escapeHtml(t('Versions are available for files only.'))}</p>`;
+-        const body = '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:nc="http://nextcloud.org/ns"><d:prop><d:getcontentlength/><d:getlastmodified/><d:getcontenttype/><d:getetag/><nc:version-label/><nc:version-author/><nc:has-preview/></d:prop></d:propfind>';
+-        const response = await fetch(versionDavUrl(item.fileId), { method: 'PROPFIND', credentials: 'same-origin', headers: requestHeaders({ Depth: '1', 'Content-Type': 'application/xml; charset=utf-8' }), body });
+-        if (response.status === 404) return `<p class="desktop-files-detail-note">${escapeHtml(t('No versions available.'))}</p>`;
+-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+-        const xml = new DOMParser().parseFromString(await response.text(), 'application/xml');
+-        const versions = Array.from(xml.getElementsByTagNameNS('DAV:', 'response')).slice(1).map((node) => {
+-            const href = node.getElementsByTagNameNS('DAV:', 'href')[0]?.textContent || '';
+-            const version = decodeURIComponent(href.replace(/\/$/, '').split('/').pop() || '');
+-            const size = node.getElementsByTagNameNS('DAV:', 'getcontentlength')[0]?.textContent || '0';
+-            const modified = node.getElementsByTagNameNS('DAV:', 'getlastmodified')[0]?.textContent || '';
+-            const label = node.getElementsByTagNameNS('http://nextcloud.org/ns', 'version-label')[0]?.textContent || '';
+-            return { version, size, modified, label, href };
+-        }).filter((v) => v.version).sort((a, b) => Number(b.version) - Number(a.version));
+-        return versions.length ? `<ul class="desktop-files-api-list">${versions.map((v) => `
+-            <li data-version="${escapeHtml(v.version)}"><strong>${escapeHtml(v.label || new Date(Number(v.version) * 1000).toLocaleString())}</strong><span>${escapeHtml(humanSize(v.size))} · ${escapeHtml(v.modified)}</span><a href="${escapeHtml(versionDavUrl(item.fileId, v.version))}" download>${escapeHtml(t('Download'))}</a><button type="button" data-version-restore="${escapeHtml(v.version)}">${escapeHtml(t('Restore'))}</button></li>`).join('')}</ul>` : `<p class="desktop-files-detail-note">${escapeHtml(t('No versions available.'))}</p>`;
+-    }
+-
+     async function restoreVersion(item, version) {
+         const response = await fetch(versionDavUrl(item.fileId, version), { method: 'MOVE', credentials: 'same-origin', headers: requestHeaders({ Destination: new URL(`/remote.php/dav/versions/${encodeURIComponent(uid)}/restore/target`, window.location.origin).toString(), Overwrite: 'T' }) });
+         if (!response.ok) throw new Error(`HTTP ${response.status}`);
+--- a/js/iframe-chrome.js
++++ b/js/iframe-chrome.js
+@@ -4,7 +4,6 @@
+  */
+ (function (DW) {
+     'use strict';
+-function applyDecoration(value) { DW.applyAppearance({ decoration: value }); }
+ const NATIVE_FILES_VIEW_LABELS = new Set([
+         'amharc', 'angalia', 'ansehen', 'ansicht', 'bekijken', 'görüntüle', 'harah', 'ikusi',
+         'nézet', 'näytä', 'podgląd', 'pogled', 'pogledaj', 'pregledaj', 'προβολή', 'режим просмотра',
+@@ -288,47 +287,11 @@
+             loadIframeFallback(app, target);
+         } catch (error) {
+             target.classList.remove('is-loading');
+-            target.innerHTML = `<div class="desktop-window-error"><div><strong>${DW.escapeHtml(DW.t('{name} could not be opened natively.', { name: app.name }))}</strong><p>${DW.escapeHtml(error.message)}</p><button class="desktop-window-open-full" type="button">${DW.escapeHtml(DW.t('Open as full page'))}</button></div></div>`;
++            target.innerHTML = `<div class="desktop-window-error"><div><strong>${DW.escapeHtml(DW.t('{name} could not be opened.', { name: app.name }))}</strong><p>${DW.escapeHtml(error.message)}</p><button class="desktop-window-open-full" type="button">${DW.escapeHtml(DW.t('Open as full page'))}</button></div></div>`;
+             target.querySelector('button')?.addEventListener('click', () => { window.location.href = app.href; });
+ 
+         }
+     }
+-async function loadNativeFiles(target, dir = '/') {
+-        const uid = OC?.getCurrentUser?.()?.uid || OC?.currentUser || 'admin';
+-        const cleanDir = dir.startsWith('/') ? dir : `/${dir}`;
+-        const davPath = `/remote.php/dav/files/${encodeURIComponent(uid)}${cleanDir.split('/').map(encodeURIComponent).join('/')}`;
+-        const response = await fetch(davPath, {
+-            method: 'PROPFIND',
+-            credentials: 'same-origin',
+-            headers: {
+-                Depth: '1',
+-                'Content-Type': 'application/xml; charset=utf-8',
+-                'X-Requested-With': 'XMLHttpRequest',
+-                ...(window.OC?.requestToken ? { requesttoken: OC.requestToken } : {}),
+-            },
+-            body: `<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:displayname/><d:getcontentlength/><d:getlastmodified/><d:resourcetype/></d:prop></d:propfind>`,
+-        });
+-        if (!response.ok) throw new Error(`WebDAV HTTP ${response.status}`);
+-        const xml = new DOMParser().parseFromString(await response.text(), 'application/xml');
+-        const rows = Array.from(xml.getElementsByTagNameNS('DAV:', 'response')).slice(1).map((node) => {
+-            const href = node.getElementsByTagNameNS('DAV:', 'href')[0]?.textContent || '';
+-            const name = decodeURIComponent(href.replace(/\/$/, '').split('/').pop() || '');
+-            const isFolder = Boolean(node.getElementsByTagNameNS('DAV:', 'collection')[0]);
+-            const size = node.getElementsByTagNameNS('DAV:', 'getcontentlength')[0]?.textContent || '';
+-            const modified = node.getElementsByTagNameNS('DAV:', 'getlastmodified')[0]?.textContent || '';
+-            return { name, isFolder, size, modified };
+-        }).filter((row) => row.name);
+-        target.classList.remove('is-loading');
+-        target.innerHTML = `
+-            <div class="desktop-files-native">
+-                <div class="desktop-files-toolbar"><strong>${DW.escapeHtml(DW.t('Files'))}</strong><span>${DW.escapeHtml(cleanDir)}</span><button type="button" data-refresh>${DW.escapeHtml(DW.t('Refresh'))}</button></div>
+-                <table class="desktop-files-table">
+-                    <thead><tr><th>${DW.escapeHtml(DW.t('Name'))}</th><th>${DW.escapeHtml(DW.t('Type'))}</th><th>${DW.escapeHtml(DW.t('Size'))}</th><th>${DW.escapeHtml(DW.t('Modified'))}</th></tr></thead>
+-                    <tbody>${rows.map((row) => `<tr><td>${row.isFolder ? '📁' : '📄'} ${DW.escapeHtml(row.name)}</td><td>${DW.escapeHtml(row.isFolder ? DW.t('Folder') : DW.t('File'))}</td><td>${row.isFolder ? '' : DW.escapeHtml(row.size)}</td><td>${DW.escapeHtml(row.modified)}</td></tr>`).join('') || `<tr><td colspan="4">${DW.escapeHtml(DW.t('No files'))}</td></tr>`}</tbody>
+-                </table>
+-            </div>`;
+-        target.querySelector('[data-refresh]')?.addEventListener('click', () => loadNativeFiles(target, cleanDir));
+-    }
+ function loadIframeFallback(app, target) {
+         const iframeUrl = new URL(app.href, window.location.href);
+         iframeUrl.searchParams.set('windowId', app.id);
+@@ -780,34 +743,7 @@
+ 
+         }
+     }
+-function extractSafeContent(doc) {
+-        doc.querySelectorAll('#header, header#header, .skip-navigation, #appmenu, .app-menu-main, .unified-search, script, noscript, style').forEach((node) => node.remove());
+-        const selected = doc.querySelector('#content-vue') || doc.querySelector('#content') || doc.querySelector('main') || doc.body;
+-        const wrapper = document.createElement('div');
+-        wrapper.className = 'desktop-native-content';
+-        wrapper.appendChild(document.importNode(selected, true));
+-        wrapper.querySelectorAll('[id]').forEach((node) => node.id = `desktop-native-${node.id}`);
+-        return wrapper;
+-    }
+-function rewriteRelativeUrls(container, baseHref) {
+-        for (const [selector, attr] of [['a', 'href'], ['form', 'action'], ['img', 'src'], ['source', 'src'], ['link', 'href']]) {
+-            container.querySelectorAll(`${selector}[${attr}]`).forEach((element) => {
+-                const value = element.getAttribute(attr);
+-                if (!value || value.startsWith('#') || value.startsWith('mailto:') || value.startsWith('tel:') || value.startsWith('javascript:')) return;
+-                element.setAttribute(attr, new URL(value, baseHref).toString());
+-            });
+-        }
+-        container.querySelectorAll('a[href]').forEach((link) => {
+-            link.addEventListener('click', (event) => {
+-                const href = link.getAttribute('href');
+-                if (!href || href.startsWith('#')) return;
+-                event.preventDefault();
+-                DW.openWindow({ id: `link_${Date.now()}`, name: link.textContent.trim() || 'Nextcloud', href, icon: '' });
+-            });
+-        });
+-    }
+     // --- publish ---
+-    DW.applyDecoration = applyDecoration;
+     DW.NATIVE_FILES_VIEW_LABELS = NATIVE_FILES_VIEW_LABELS;
+     DW.normaliseActionLabel = normaliseActionLabel;
+     DW.isDownloadLikeLink = isDownloadLikeLink;
+@@ -834,7 +770,6 @@
+     DW.isNotificationPopoverInteraction = isNotificationPopoverInteraction;
+     DW.handleDesktopLinkClick = handleDesktopLinkClick;
+     DW.loadNativeApp = loadNativeApp;
+-    DW.loadNativeFiles = loadNativeFiles;
+     DW.loadIframeFallback = loadIframeFallback;
+     DW.normalizeFileTitle = normalizeFileTitle;
+     DW.fileExtension = fileExtension;
+@@ -852,6 +787,4 @@
+     DW.primeIframeChromeHiding = primeIframeChromeHiding;
+     DW.fitEuroOfficeEditor = fitEuroOfficeEditor;
+     DW.hideIframeChrome = hideIframeChrome;
+-    DW.extractSafeContent = extractSafeContent;
+-    DW.rewriteRelativeUrls = rewriteRelativeUrls;
+ })(window.DW);
+--- a/templates/files/details.php
++++ b/templates/files/details.php
+@@ -1,5 +1,7 @@
+ <?php
+ \OCP\Util::addTranslations('desktop_workspace');
++script('desktop_workspace', 'escape');
++script('desktop_workspace', 'files/details-panels');
+ script('desktop_workspace', 'files/details');
+ style('desktop_workspace', 'files/files');
+ /** @var array $_ */
+--- a/templates/files/main.php
++++ b/templates/files/main.php
+@@ -1,5 +1,7 @@
+ <?php
+ \OCP\Util::addTranslations('desktop_workspace');
++script('desktop_workspace', 'escape');
++script('desktop_workspace', 'files/details-panels');
+ script('desktop_workspace', 'desktop-drag-rules');
+ script('desktop_workspace', 'files/files');
+ style('desktop_workspace', 'files/files');
+--- a/templates/main.php
++++ b/templates/main.php
+@@ -1,5 +1,6 @@
+ <?php
+ \OCP\Util::addTranslations('desktop_workspace');
++script('desktop_workspace', 'escape');
+ script('desktop_workspace', 'desktop-drag-rules');
+ script('desktop_workspace', 'native-files-drag');
+ script('desktop_workspace', 'desktop-shell');
+--- a/templates/settings-admin.php
++++ b/templates/settings-admin.php
+@@ -1,5 +1,6 @@
+ <?php
+ \OCP\Util::addTranslations('desktop_workspace');
++script('desktop_workspace', 'escape');
+ script('desktop_workspace', 'admin-settings');
+ style('desktop_workspace', 'admin');
+ style('desktop_workspace', 'support-callout');

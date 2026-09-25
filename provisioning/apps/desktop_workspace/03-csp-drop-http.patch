@@ -1,0 +1,14 @@
+--- a/lib/Controller/PageController.php
++++ b/lib/Controller/PageController.php
+@@ -143,8 +143,10 @@
+         ]);
+         $csp = new ContentSecurityPolicy();
+         $csp->addAllowedFrameDomain("'self'");
++        // Only https: frames — every frameable target in this deployment is same-origin or
++        // https (the External Sites app is not installed; L4-07). http: was dead weight that
++        // a future external-site misconfiguration could silently ride on.
+         $csp->addAllowedFrameDomain('https:');
+-        $csp->addAllowedFrameDomain('http:');
+         $response->setContentSecurityPolicy($csp);
+         // Chromium requires the top-level document to delegate fullscreen through every
+         // iframe in the chain (Desktop -> External Sites -> Jellyfin). Nextcloud still emits

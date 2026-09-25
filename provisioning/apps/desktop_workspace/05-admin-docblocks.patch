@@ -1,0 +1,54 @@
+--- a/lib/Controller/SettingsController.php
++++ b/lib/Controller/SettingsController.php
+@@ -17,6 +17,12 @@
+ use OCP\IUserSession;
+ 
+ class SettingsController extends Controller {
++    // AUTHENTICATION NOTE: every action here is admin-only BY DEFAULT — the Nextcloud
++    // AppFramework applies the admin gate unless a method opts out with #[NoAdminRequired].
++    // The docblocks that said @AdminRequired were inert comments, NOT attributes: they
++    // documented intent but enforced nothing (L4-05). Personal (opted-out) actions carry the
++    // real #[NoAdminRequired] attribute. A reflection pin in gestion/tests/desktop_workspace/
++    // asserts no admin action ever opts out accidentally.
+     public const APP_ID = 'desktop_workspace';
+     public const SHOW_FAVORITES_KEY = 'show_favorites';
+     public const FAV_NO_CONFIRM_KEY = 'favorites_no_confirm';
+@@ -59,9 +65,7 @@
+         parent::__construct($appName, $request);
+     }
+ 
+-    /**
+-     * @AdminRequired
+-     */
++    // Admin only (default gate — no #[NoAdminRequired] on this action).
+     public function saveAdminSettings(
+         string $experimental_disabled = 'no',
+         string $experimental_groups = '[]',
+@@ -98,14 +102,14 @@
+     }
+ 
+ 
+-    /** @AdminRequired */
++    // Admin only (default gate — no #[NoAdminRequired] on this action).
+     public function saveDecorationPolicy(string $enabled = 'no'): JSONResponse {
+         $value = $enabled === 'yes' || $enabled === 'true' || $enabled === '1';
+         $this->config->setAppValue(self::APP_ID, self::USER_DECORATIONS_ENABLED_KEY, $value ? 'yes' : 'no');
+         return new JSONResponse(['status' => 'ok', 'userDecorationsEnabled' => $value]);
+     }
+ 
+-    /** @AdminRequired */
++    // Admin only (default gate — no #[NoAdminRequired] on this action).
+     public function saveFilesButtonPolicy(string $enabled = 'no'): JSONResponse {
+         $value = $enabled === 'yes' || $enabled === 'true' || $enabled === '1';
+         $this->config->setAppValue(self::APP_ID, self::SHOW_FILES_NEW_TAB_KEY, $value ? 'yes' : 'no');
+@@ -342,9 +346,7 @@
+         ]);
+     }
+ 
+-    /**
+-     * Admin only (no @NoAdminRequired): wipe one user's desktop settings completely.
+-     */
++    // Admin only (default gate — no #[NoAdminRequired]): wipe one user's desktop settings completely.
+     public function resetUserSettings(string $userId = ''): JSONResponse {
+         $target = trim($userId);
+         if ($target === '' || $this->userManager->get($target) === null) {

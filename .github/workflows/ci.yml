@@ -28,4 +28,6 @@ jobs:
       # anything. Nothing here starts a container; the values only have to be real.
       - run: make setup
       # scripts/test.sh already skips the checks that need a running stack, so it needs no flag.
+      - name: Install php-cli for the desktop_workspace pin seat
+        run: sudo apt-get update && sudo apt-get install -y php-cli
       - run: make test

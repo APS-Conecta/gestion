@@ -304,4 +304,53 @@ if [ -n "$_office_url" ]; then
   fi
 fi
 
+# 15. Admin settings actions respond <500 (org review L4-01: the vendored desktop_workspace
+# shipped saveAdminSettings calling an undefined getLogPath() — every admin "Save" was a
+# 500 that lied while the settings PERSISTED). The only authenticated check in smoke: it
+# logs in as the admin whose credentials .env already holds, POSTs each admin settings
+# route with parameters READ BACK from the instance (query-before-write — a blind
+# default POST would reset an admin's real choices), and asserts no answer is a 5xx.
+# resetuser is probed with a user that cannot exist: unknown_user answers 404 (<500)
+# without writing anything. The password never touches argv — curl reads stdin.
+smoke_jar="$(mktemp)"
+smoke_login_page=$(curl -s -c "$smoke_jar" "http://localhost:${HTTP_PORT}/login" 2>/dev/null)
+smoke_token=$(printf '%s' "$smoke_login_page" | grep -o 'data-request-token="[^"]*"' | head -1 | cut -d'"' -f2)
+[ -n "$smoke_token" ] || fail "check 15: no request token on /login — cannot probe admin settings"
+code=$(printf 'user=%s&password=%s&requesttoken=%s' "$NEXTCLOUD_ADMIN_USER" "${NEXTCLOUD_ADMIN_PASSWORD:-}" "$smoke_token" \
+  | curl -s -o /dev/null -w '%{http_code}' -b "$smoke_jar" -c "$smoke_jar" \
+      -H 'Content-Type: application/x-www-form-urlencoded;charset=UTF-8' --data-binary @- \
+      "http://localhost:${HTTP_PORT}/login" 2>/dev/null)
+case "$code" in 200|302) ;; *) fail "check 15: admin login answered HTTP $code — cannot probe admin settings" ;; esac
+# a fresh token for authenticated POSTs (the login-page token was consumed by the login)
+smoke_page=$(curl -s -b "$smoke_jar" -c "$smoke_jar" "http://localhost:${HTTP_PORT}/index.php/apps/desktop_workspace/" 2>/dev/null)
+smoke_token=$(printf '%s' "$smoke_page" | grep -o 'data-request-token="[^"]*"' | head -1 | cut -d'"' -f2)
+# form-encode every read-back value: a group name carrying & + or % would otherwise
+# split/decode the body and turn the "no-op" POST into a real config write.
+enc() { printf '%s' "$1" | python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(), safe=""))'; }
+exp_dis=$(occ config:app:get desktop_workspace experimental_files_disabled 2>/dev/null | tr -d '\r'); [ -n "$exp_dis" ] || exp_dis=no
+read_exp_grp=$(occ config:app:get desktop_workspace experimental_files_groups 2>/dev/null | tr -d '\r'); [ -n "$read_exp_grp" ] || read_exp_grp='[]'
+exp_grp=$(enc "$read_exp_grp")
+read_multi=$(occ config:app:get desktop_workspace multi_window_apps 2>/dev/null | tr -d '\r'); [ -n "$read_multi" ] || read_multi='[]'
+multi=$(enc "$read_multi")
+deco=$(occ config:app:get desktop_workspace user_decorations_enabled 2>/dev/null | tr -d '\r'); [ -n "$deco" ] || deco=yes
+fbt=$(occ config:app:get desktop_workspace show_files_new_tab 2>/dev/null | tr -d '\r'); [ -n "$fbt" ] || fbt=yes
+smoke_body="$(mktemp)"
+smoke_post() {  # PATH PARAMS(already encoded) -> HTTP code
+  printf '%s&requesttoken=%s' "$2" "$smoke_token" > "$smoke_body"
+  curl -s -o /dev/null -w '%{http_code}' -b "$smoke_jar" -H "requesttoken: $smoke_token" \
+    -H 'Content-Type: application/x-www-form-urlencoded;charset=UTF-8' --data-binary "@$smoke_body" \
+    "http://localhost:${HTTP_PORT}/index.php/apps/desktop_workspace/$1" 2>/dev/null
+}
+for probe in \
+  "settings/admin|experimental_disabled=$exp_dis&experimental_groups=$exp_grp&multi_window_apps=$multi&user_decorations_enabled=$deco" \
+  "settings/admin/decorations|enabled=$deco" \
+  "settings/admin/files-button|enabled=$fbt" \
+  "settings/admin/resetuser|userId=__smoke_no_such_user__"
+do
+  p="${probe%%|*}"; q="${probe#*|}"
+  case "$(smoke_post "$p" "$q")" in
+    5*) fail "check 15: desktop_workspace /$p answered HTTP 5xx — an admin settings action is a 500 (org L4-01: is 01-settings-getlogpath.patch applied? run make seed)" ;;
+  esac
+done
+rm -f "$smoke_jar" "$smoke_body"
 echo "PASS: core stack healthy — installed, PostgreSQL ready, Redis PONG, /status.php 200, no branding leak, cron scheduling, app policy, no remember-me, no stale app signature, legacy screens branded, clean admin home, app store off, office URL matches how this instance is reached"

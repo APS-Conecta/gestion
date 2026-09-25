@@ -1,0 +1,9 @@
+--- a/lib/Controller/SettingsController.php
++++ b/lib/Controller/SettingsController.php
+@@ -94,7 +94,6 @@
+             'experimentalGroups' => $groups,
+             'multiWindowApps' => $multi,
+             'userDecorationsEnabled' => $userDecorationsEnabled,
+-            'logFile' => $this->getLogPath(),
+         ]);
+     }
