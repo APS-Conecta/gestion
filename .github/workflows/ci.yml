@@ -57,6 +57,13 @@ jobs:
     name: Org boilerplate drift (org L0-09)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      # (org L7-6 idiom, AIO's replay.yml owns the precedent) the three compared repos are
+      # PRIVATE — the anonymous clone died with 'could not read Username' on this job's first
+      # main run (2026-09-25). The PAT carries the clones on GIT_ASKPASS: never in a URL,
+      # never in argv. Empty until the owner adds APS_BOT_PAT (org-level would cover both
+      # repos); the step degrades to the loud anonymous failure below instead of a hang.
+      APS_BOT_PAT: ${{ secrets.APS_BOT_PAT }}
     steps:
       - uses: actions/checkout@v4
       # The two apps the doctrine matured on + the package; epidemiologia joins
@@ -64,6 +71,16 @@ jobs:
       # their reasons). Depth 1: the gate reads HEAD trees, never history.
       - name: Clone the compared repos
         run: |
+          if [ -n "${APS_BOT_PAT:-}" ]; then
+            askpass="$(mktemp)"
+            {
+              echo '#!/bin/sh'
+              echo 'case "$1" in *Username*) printf "x-access-token\n" ;; *) printf "%s\n" "$APS_BOT_PAT" ;; esac'
+            } >"$askpass"
+            chmod 700 "$askpass"
+            trap 'rm -f "$askpass"' EXIT
+            export GIT_ASKPASS="$askpass"
+          fi
           git clone --depth 1 https://github.com/APS-Conecta/territorio.git apps/territorio
           git clone --depth 1 https://github.com/APS-Conecta/farmacia.git apps/farmacia
           git clone --depth 1 https://github.com/APS-Conecta/aps-common.git ../aps-common
