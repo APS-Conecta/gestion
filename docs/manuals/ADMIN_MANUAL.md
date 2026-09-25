@@ -353,11 +353,11 @@ The interactive utility `scripts/deis.py` searches the official MINSAL Departmen
 # 1. Search the DEIS register by keyword or comuna (accent-blind)
 python3 scripts/deis.py cesfam la florida
 
-# 2. View details for a specific DEIS code (e.g., DEIS 114302)
-python3 scripts/deis.py 114302
+# 2. View details for a specific DEIS code
+python3 scripts/deis.py <codigo-deis>
 
 # 3. Generate a new establishment configuration file
-python3 scripts/deis.py 114302 --new los-castanos
+python3 scripts/deis.py <codigo-deis> --new los-castanos
 ```
 
 The tool writes the standalone configuration file to `sites/<slug>/site.sh` (e.g., `sites/los-castanos/site.sh`) and prompts for the establishment's territorial sectors and clinical programs.
