@@ -295,7 +295,12 @@ cmd_check() {  # the FRD S9 acceptance arm: tiles endpoint liveness, measured th
 
 selftest() {
   local n=0 tshim tmp ROOT_BAK="$ROOT" PORT_BAK="$TILES_PORT" \
-        BIN_BAK="$PMTILES_BIN" SHA_BAK="$PMTILES_SHA256" URL_BAK="$PMTILES_URL" HOME_BAK="$TILES_HOME"
+        BIN_BAK="$PMTILES_BIN" SHA_BAK="$PMTILES_SHA256" URL_BAK="$PMTILES_URL" HOME_BAK="$TILES_HOME" PUBURL_BAK="${TILES_PUBLIC_URL:-}"
+  # "no host state" must include the environment: converge_url's empty-argument
+  # fallback reads TILES_PUBLIC_URL, and on a provisioned box scripts/test.sh sources
+  # env.sh in its own process — an inherited value would write the fixture .env and
+  # redden the no-URL arm. Redirect the knob like every other one.
+  unset TILES_PUBLIC_URL
   tmp="$(mktemp -d)"; tshim="$tmp/bin"; mkdir -p "$tshim"
 
   check() {  # NAME COND
@@ -513,6 +518,7 @@ EOF
   ROOT="$ROOT_BAK"; TILES_HOME="$HOME_BAK"; ARCHIVE="$TILES_HOME/tiles/chile.pmtiles"
   ENV_FILE="$ROOT/.env"
   PMTILES_BIN="$BIN_BAK"; PMTILES_SHA256="$SHA_BAK"; PMTILES_URL="$URL_BAK"
+  [ -n "$PUBURL_BAK" ] && TILES_PUBLIC_URL="$PUBURL_BAK"
   rm -rf "$tmp"
   echo
   echo "self-test: $n checks OK"
