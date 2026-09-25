@@ -442,28 +442,28 @@ def site_arrays(site):
 
 
 def standing_uids(teams, roles):
-    """The accounts phase 50 will create for this site. A roster uid colliding with one of them
-    is one account existing twice — once as a POSITION, once as a person — which the divergence
-    gate would flag forever; refused here, at the earliest moment. The derivations replicate
-    50-users.sh exactly: every sector team `sector-X` gets `jefe.X`; every cat-jefaturas local
-    role gets its id minus `role-` with `-` turned into dots (`role-jefe-sar` -> `jefe.sar`);
-    the four fixed positions and the wizard's own `admin` account (divergence declares that one
-    on its own) are always reserved."""
+    """The accounts phase 50 will create for this site (org L5-11: DELEGATED — the derivation
+    lives once, in provisioning/standings.sh, sourced and called through bash; this python copy
+    used to re-implement it and could only drift). A roster uid colliding with one of them is
+    one account existing twice — once as a POSITION, once as a person — which the divergence
+    gate would flag forever; refused here, at the earliest moment. The `admin` account is added
+    on top: the wizard's own, not a phase-50 position (divergence declares it separately)."""
+    import pathlib, shlex, subprocess
+    standings = pathlib.Path(__file__).resolve().parent.parent / "provisioning" / "standings.sh"
+    _ = standings  # sourced via cwd below; kept for the path check in --self-test parity
+    import shlex
+    teams_lit = " ".join(shlex.quote(f"{gid}|{display}") for gid, display in teams)
+    roles_lit = " ".join(shlex.quote(f"{gid}|{display}|{category}") for gid, display, category in roles)
+    snippet = ["bash", "-c",
+               f'declare -a SITE_TEAMS=({teams_lit}); declare -a SITE_ROLES=({roles_lit}); '
+               'source provisioning/standings.sh; standing_uids']
+    cwd = pathlib.Path(__file__).resolve().parent.parent
+    out = subprocess.run(snippet, cwd=cwd, capture_output=True, text=True, check=True)
     reserved = {
-        "director": "cargo fijo de la fase 50 (Director/a de CESFAM)",
-        "subdirector": "cargo fijo de la fase 50 (Subdirector/a Médico o Jefe Técnico)",
-        "jefe.farmacia": "cargo fijo de la fase 50 (Jefe/a de Farmacia)",
-        "jefe.some": "cargo fijo de la fase 50 (Jefe/a de SOME)",
         "admin": "la cuenta administradora que crea el asistente de instalación",
     }
-    for gid, _ in teams:
-        if gid.startswith("sector-"):
-            reserved.setdefault("jefe." + gid[len("sector-"):],
-                                 f"cargo derivado del sector {gid} (fase 50)")
-    for gid, _display, category in roles:
-        if category == "cat-jefaturas":
-            reserved.setdefault(gid[len("role-"):].replace("-", "."),
-                                f"cargo derivado del rol local {gid} (fase 50)")
+    for uid in out.stdout.split():
+        reserved.setdefault(uid, "cargo de la fase 50 (derivación compartida: standings.sh)")
     return reserved
 
 
@@ -1852,11 +1852,14 @@ def selftest():
                                   ("jefe.sar", "Jefe", "SAR", "", "all-staff", "no"),
                                   ("admin", "Ad", "Min", "", "all-staff", "no"))})
             msgs = err_lines(body)
-            check("roster: standing uids refused — fixed cargo, sector-derived, role-derived, admin",
-                  st == 400 and "Director/a de CESFAM" in msgs
-                  and "derivado del sector sector-estrella" in msgs
-                  and "derivado del rol local role-jefe-sar" in msgs
-                  and "cuenta administradora" in msgs)
+            # org L5-11: the reasons now come from the shared derivation (one vocabulary for
+            # director/sector-derived/role-derived) plus admin's own wizard line.
+            check("roster: standing uids refused — the shared derivation's cargos and the wizard admin",
+                  st == 400
+                  and msgs.count("derivación compartida: standings.sh") == 3
+                  and "cuenta administradora" in msgs
+                  and all(f"«{uid}»" in msgs
+                          for uid in ("director", "jefe.estrella", "jefe.sar", "admin")))
 
             st, body = call("POST", "/api/usuarios", {"codigo": "113314",
                   "csv": planilla(("pedro.2", "Pedro", "Dos", "pedro2@example.cl",
@@ -2057,7 +2060,15 @@ def selftest():
                               os.path.join(deis.HERE, "..", "sites", "113314", "planilla-mia.csv"))}
             execs = [0]
             real_popen = subprocess.Popen
-            subprocess.Popen = lambda *a, **k: (execs.__setitem__(0, execs[0] + 1), real_popen(*a, **k))[1]
+            # org L5-11: standing_uids() delegates to provisioning/standings.sh through a real
+            # bash — that exec is part of re-deriving the world, not a write. Everything else
+            # revision does stays in-process, so the zero line is asserted EXCLUDING it.
+            def _counting_popen(*a, **k):
+                argv0 = a[0] if a else ()
+                delegation = isinstance(argv0, list) and "standings.sh" in " ".join(map(str, argv0))
+                execs.__setitem__(0, execs[0] + (0 if delegation else 1))
+                return real_popen(*a, **k)
+            subprocess.Popen = _counting_popen
             st, body = generar("revision")
             subprocess.Popen = real_popen
             same = all(hashlib.md5(open(p, "rb").read()).hexdigest() == h for p, h in snap.items())

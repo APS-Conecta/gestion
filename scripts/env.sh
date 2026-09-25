@@ -103,16 +103,102 @@ require_real_secrets() {
   }
 }
 
+# org L5-05 round-trip gate, in the repo's --self-test idiom (db-dump/uninstall/comuna
+# precedents). Three arms, all hermetic: (1) a fixture .env whose tricky-but-legal values
+# load exactly as the loader intends (comment strip, quoted hashes, $$ undo); (2) compose
+# parity over the same fixture — `docker compose --env-file config` resolves values the way
+# the runtime reader does, so parity is asserted, not assumed; (3) a multi-line quoted value
+# is REFUSED loudly instead of silently loading its first half. The fixture IS the scratch
+# root's .env because the loader reads ./.env relative to its own root — the scratch copy
+# makes both readers see the same bytes.
+env_self_test() {
+  local tmp rc=0
+  tmp="$(mktemp -d)" || return 1
+  local fx="$tmp/.env"
+  # every ${VAR:?} compose demands, placeholders — `config` resolves without starting
+  # anything, and the fixture only has to be PARSEABLE by both readers the same way
+  cat > "$fx" <<'FIX'
+POSTGRES_DB=apsconecta
+POSTGRES_USER=apsconecta
+POSTGRES_PASSWORD=fixture-not-a-real-secret
+NEXTCLOUD_ADMIN_USER=admin
+NEXTCLOUD_ADMIN_PASSWORD=fixture-not-a-real-secret
+NEXTCLOUD_TRUSTED_DOMAINS=localhost
+OFFICE_JWT_SECRET=fixture-not-a-real-secret
+HTTP_PORT=8180
+OFFICE_PORT=9980
+TILES_PORT=8084
+# a whole-line comment
+UNQUOTED_WITH_COMMENT=some-value # and a trailing one
+DOUBLE_QUOTED_HASH="value # stays"
+SINGLE_QUOTED_HASH='other # stays'
+DOLLAR_DOUBLED=abc$$def
+FIX
+  mkdir -p "$tmp/scripts"
+  cp "${BASH_SOURCE[0]}" "$tmp/scripts/env.sh"
+  ( cd "$tmp" && . ./scripts/env.sh 2>/dev/null
+    [ "${POSTGRES_DB:-}" = apsconecta ] && [ "${UNQUOTED_WITH_COMMENT:-}" = some-value ] \
+      && [ "${DOUBLE_QUOTED_HASH:-}" = 'value # stays' ] && [ "${SINGLE_QUOTED_HASH:-}" = 'other # stays' ] \
+      && [ "${DOLLAR_DOUBLED:-}" = 'abc$def' ]
+  ) || { echo "self-test FAIL: loader arm — the loader misparsed the fixture" >&2; rc=1; }
+  # the compose-parity arm: needs only the docker CLI (config resolves; nothing starts).
+  # POSTGRES_DB is observable in services.db.environment — the key the fixture shares with
+  # the real compose file, so both readers are compared on the SAME variable.
+  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 \
+     && [ -f "$(dirname -- "${BASH_SOURCE[0]}")/../compose.yaml" ]; then
+    local got
+    got="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && docker compose --env-file "$fx" -f compose.yaml config --format json 2>/dev/null \
+      | python3 -c 'import json,sys; print(json.load(sys.stdin)["services"]["db"]["environment"].get("POSTGRES_DB",""))' 2>/dev/null || true)"
+    [ "$got" = "apsconecta" ] || { echo "self-test FAIL: compose-parity arm — compose resolved POSTGRES_DB as '$got'" >&2; rc=1; }
+  else
+    echo "self-test note: docker/compose absent — parity arm skipped on this box"
+  fi
+  # the multi-line refusal arm: a quoted value split across lines must fail the whole load
+  printf 'BROKEN_MULTI="first half of a value\n' > "$fx"
+  printf 'still inside the quote"\nX=1\n' >> "$fx"
+  ( cd "$tmp" && . ./scripts/env.sh >/dev/null 2>&1 ) \
+    && { echo "self-test FAIL: multi-line arm — the loader accepted a split quoted value" >&2; rc=1; }
+  rm -rf "$tmp"
+  [ "$rc" = 0 ] && echo "self-test: env.sh loader arms OK"
+  return "$rc"
+}
+# Only when EXECUTED directly: db-dump.sh (and any future caller) sources this file BEFORE
+# its own --self-test dispatch, and a sourced case sees the caller's $1 — unguarded, env's
+# arms answered for db-dump and hollowed its detector arm to silent green (round-1 catch).
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  case "${1:-}" in
+    --self-test) env_self_test; exit $? ;;
+  esac
+fi
+
 if [ -f .env ]; then
+
   while IFS= read -r _line || [ -n "$_line" ]; do
     case "$_line" in ''|'#'*) continue ;; *=*) ;; *) continue ;; esac
     _key=${_line%%=*}
     _val=${_line#*=}
     # Ignore anything that is not a plain shell name, rather than trying to export it.
     case "$_key" in *[!A-Za-z0-9_]*|'') continue ;; esac
+    # org L5-05: compose strips an UNQUOTED trailing comment (`KEY=v # note` loads v), so the
+    # loader must too or the two readers disagree about the same file — the exact divergence
+    # this file exists to prevent. Quoted values keep their hashes: compose reads the quotes.
+    _unquoted=1
     case "$_val" in
-      \"*\") _val=${_val#\"}; _val=${_val%\"} ;;
-      \'*\') _val=${_val#\'}; _val=${_val%\'} ;;
+      \"*\") _unquoted=0; _val=${_val#\"}; _val=${_val%\"} ;;
+      \'*\') _unquoted=0; _val=${_val#\'}; _val=${_val%\'} ;;
+    esac
+    if [ "$_unquoted" = 1 ]; then
+      # the compose rule: `#` starts a comment only after whitespace, so a URL with a bare
+      # fragment survives while `v # note` loads v.
+      _val="${_val%%[[:space:]]#*}"
+    fi
+    # A quote character left in an UNQUOTED value means the value was split across lines
+    # (compose cannot read that file either) or a stray quote rode along: refuse loudly
+    # instead of loading a prefix the rest of the repo would treat as the whole secret.
+    # No legal unquoted value in this repo's dialect carries a quote (.env.example is the
+    # corpus — org L5-05).
+    case "$_val" in
+      *[\"\']*) printf 'FATAL: .env %s: quote in an unquoted value — a multi-line quoted value (compose cannot read it either) or a stray quote. Fix the line.\n' "$_key" >&2; exit 1 ;;
     esac
     export "$_key=${_val//\$\$/\$}"
   done < .env

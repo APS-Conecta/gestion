@@ -55,5 +55,26 @@ if [ -n "$writes" ]; then
   exit 1
 fi
 
+# --- org L5-06: the WEEKLY driver too. seed-idempotent gates seed.sh only; the roster
+# driver (provisionador's modo=ejecutar timer) is the other writer, asserted by nothing.
+# Same WRITES-grep discipline over a second usuarios.sh pass: the first pass creates one
+# fixture account, the second must log nothing but "already" vocabulary.
+ROSTER_FRAME="$(printf 'fixture.roster\nFixture Roster\n%s\nall-staff\nno\n\n' "${FIXTURE_USER_PASSWORD:?}")"
+roster_out="$(printf '%s' "$ROSTER_FRAME" | bash provisioning/usuarios.sh 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] || { echo "FAIL: the first roster pass did not complete (exit $rc)"; exit 1; }
+printf '%s\n' "$roster_out" | grep -q 'user fixture.roster created' \
+  || { echo "FAIL: the first roster pass created nothing — the gate cannot judge a second pass"; exit 1; }
+roster2_out="$(printf '%s' "$ROSTER_FRAME" | bash provisioning/usuarios.sh 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] || { echo "FAIL: the second roster pass did not complete (exit $rc)"; exit 1; }
+roster_writes="$(printf '%s\n' "$roster2_out" | grep -E "$WRITES")"
+if [ -n "$roster_writes" ]; then
+  echo
+  echo "FAIL: the second roster pass wrote. These lines must not appear on an already-ingested roster:"
+  printf '%s\n' "$roster_writes"
+  exit 1
+fi
+printf '%s\n' "$roster2_out" | tail -1
+
 echo
 echo "PASS: the second seed wrote nothing — provisioning is idempotent"
+echo "PASS: the second roster pass wrote nothing — the weekly driver is idempotent too"

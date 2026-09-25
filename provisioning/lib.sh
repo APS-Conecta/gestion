@@ -10,7 +10,17 @@
 
 # --- logging ---
 log()         { printf '    %s\n' "$*"; }
-phase_begin() { CURRENT_PHASE="$1"; printf '▶ phase %s — %s\n' "$1" "${2:-}"; }
+# org L5-03: phases only make sense inside the seed runner, which exports SEED_CTX after
+# sourcing the site file. Run standalone, a phase loops over unset SITE_* arrays and exits
+# green having written nothing — the silent no-op this guard turns into a named refusal.
+phase_begin() {
+  if [ -z "${SEED_CTX:-}" ]; then
+    echo "FATAL: phase ${1} run outside the seed — standalone phases are a silent no-op." >&2
+    echo "       Run the whole runner: make seed  (phases see the site file this way)." >&2
+    exit 1
+  fi
+  CURRENT_PHASE="$1"; printf '▶ phase %s — %s\n' "$1" "${2:-}"
+}
 phase_end()   { printf '✓ phase %s\n' "${CURRENT_PHASE:-?}"; }
 
 # --- preconditions ---
@@ -430,7 +440,20 @@ apply_patch() {  # APPID PATCHFILE
 # starts them in / — folding the absolute cd into the ONE shared function fixes every caller at
 # once. A failed cd is loud, which is the point: a payload that silently ran from / would be the
 # B-014 seam-misparse class wearing a new hat.
-occ_sh() { nc_exec -i --user www-data -- sh -c "cd /var/www/html && $1" >/dev/null 2>&1; }
+# org L5-08: stderr is the diagnosis, stdout is noise. The old form threw both away, so a
+# failing command printed only the caller's own FAILED line — #41's lesson ("occ's message
+# is the only thing that says WHY") applied to the shell-channel twin. Stderr is captured,
+# and its tail printed only on failure; success stays silent exactly as before.
+occ_sh() {  # SHELL_COMMAND — runs inside the NC container, www-data, web root
+  local _rc=0 _err
+  _err="$(nc_exec -i --user www-data -- sh -c "cd /var/www/html && $1" 2>&1 >/dev/null)" || _rc=$?
+  if [ "$_rc" -ne 0 ]; then
+    printf 'occ_sh: failed (rc=%s): %s\n' "$_rc" "$1" >&2
+    # tail, not all: a die() inside the command prints the whole web root's worth of context
+    printf '%s\n' "$_err" | tail -n 5 >&2
+  fi
+  return "$_rc"
+}
 
 # Restrict an app to groups: installed and usable by them, invisible to everyone else. Preferred
 # over disabling, because a restricted app is still there for the roadmap's custom apps to build on.

@@ -576,6 +576,26 @@ check bash -c '
 
 # --- the dump + uninstall detectors red-test themselves (docker daemon, no stack) -------------
 if docker info >/dev/null 2>&1; then
+  # org L5-10: tiles.nginx.conf's Range/CORS contract, asserted against the PINNED nginx
+  # itself — the weekly timer chain's serving half, nowhere in CI before. A fixture
+  # archive (any bytes; nginx ranges don't parse PMTiles) + the committed conf; a ranged
+  # GET must answer 206 with the CORS headers the map page needs cross-origin.
+  check bash -c '
+    tmp=$(mktemp -d); trap "docker rm -f tiles-contract >/dev/null 2>&1; rm -rf $tmp" EXIT
+    mkdir -p "$tmp/tiles"
+    head -c 8192 /dev/urandom > "$tmp/tiles/chile.pmtiles"
+    ref=$(grep -oE "nginx:alpine@sha256:[0-9a-f]{64}" compose.yaml | head -1)
+    [ -n "$ref" ] || { echo "no pinned nginx ref in compose.yaml"; exit 1; }
+    docker run --rm -d --name tiles-contract --publish 127.0.0.1:18084:80 \
+      --volume "$tmp/tiles:/srv/tiles:ro" --volume "$PWD/tiles.nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
+      "$ref" >/dev/null
+    for i in 1 2 3 4 5; do curl -sf -o /dev/null http://127.0.0.1:18084/healthz && break; sleep 1; done
+    hdrs=$(curl -s -D - -o /dev/null -H "Range: bytes=0-1023" -H "Origin: https://map.test" http://127.0.0.1:18084/chile.pmtiles)
+    echo "$hdrs" | grep -q "^HTTP/1.1 206" || { echo "no 206:"; echo "$hdrs"; exit 1; }
+    echo "$hdrs" | grep -qi "^access-control-allow-origin:" || { echo "no ACAO:"; echo "$hdrs"; exit 1; }
+    echo "$hdrs" | grep -qi "^content-range:" || { echo "no Content-Range:"; echo "$hdrs"; exit 1; }
+    sz=$(curl -s -H "Range: bytes=0-1023" -o /dev/null -w "%{size_download}" http://127.0.0.1:18084/chile.pmtiles)
+    [ "$sz" = "1024" ] || { echo "ranged GET delivered $sz bytes, expected 1024"; exit 1; }'
   check bash scripts/db-dump.sh --self-test
   check bash scripts/uninstall.sh --self-test
 else
@@ -645,6 +665,21 @@ check bash scripts/comuna-package.sh --self-test
 check bash scripts/release-manifest.sh --validate
 check bash scripts/release-manifest.sh --self-test
 
+# --- org L5-11/L5-05/L5-12: the provisioning self-tests (hermetic) ----------------------------
+# standings.sh: the one uid derivation's fixture parity; env.sh: the loader/compose
+# round-trip (skips its docker arm when compose is absent); usuarios.sh: the frame guards.
+check bash provisioning/standings.sh --self-test
+check bash scripts/env.sh --self-test
+check bash provisioning/usuarios.sh --self-test
+
+echo "== desktop_workspace pin seat (hermetic — unpacks the vendored tarball + applies its patches) =="
+# D2 (org plan Phase 8): the vendored app's pins live in gestion, not in upstream's
+# absent CI. Needs node always; the PHP arm rides php when present (CI installs it).
+if command -v node >/dev/null 2>&1; then
+  if bash tests/desktop_workspace/run.sh; then echo "  ok:   desktop_workspace pins"; else echo "  FAIL: desktop_workspace pins"; fail=1; fi
+else
+  echo "  skipped: desktop_workspace pins (no node on this box)"
+fi
 echo "== self-tests (hermetic — no docker, no stack) =="
 # The Provisionador's own --self-test (slices 14-17: 100 named checks over its stub oracle)
 # and the host bundle's (slice 19: 34 — this slice adds the revalidate arm's 2) run everywhere
@@ -664,15 +699,6 @@ tl_out="$(bash host/tiles.sh --self-test 2>&1)" \
 mg_out="$(bash scripts/migrate-to-aio.sh --self-test 2>&1)" \
   && echo "  ok:   migrate-to-aio --self-test ($(printf '%s\n' "$mg_out" | tail -1))" \
   || { echo "  FAIL: migrate-to-aio --self-test"; printf '%s\n' "$mg_out" | tail -25; fail=1; }
-
-echo "== desktop_workspace pin seat (hermetic — unpacks the vendored tarball + applies its patches) =="
-# D2 (org plan Phase 8): the vendored app's pins live in gestion, not in upstream's
-# absent CI. Needs node always; the PHP arm rides php when present (CI installs it).
-if command -v node >/dev/null 2>&1; then
-  if bash tests/desktop_workspace/run.sh; then echo "  ok:   desktop_workspace pins"; else echo "  FAIL: desktop_workspace pins"; fail=1; fi
-else
-  echo "  skipped: desktop_workspace pins (no node on this box)"
-fi
 
 echo "== smoke (only if a stack is running) =="
 if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx nextcloud-aio-nextcloud; then

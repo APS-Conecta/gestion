@@ -24,6 +24,18 @@ for arg in "$@"; do   # "$@" is zero words with no args — the ${@:-} shape wou
   esac
 done
 
+# --- posture gate (org L5-04): this is the COMPOSE uninstaller ------------------------------------------------
+# `docker compose down -v` below tears compose resources; on a migrated (AIO) host it would
+# no-op while every clean-slate detector reports green by absence — the report lying about a
+# live clinic whose data sits in nextcloud_aio_* volumes. Refuse instead: the AIO teardown
+# is a different runbook (docs/MIGRATION.md), never this script.
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx nextcloud-aio-nextcloud; then
+  echo "uninstall: the AIO stack is running — this tool tears down the COMPOSE world only." >&2
+  echo "  compose down -v would touch nothing while the report read green; the clinic's data" >&2
+  echo "  lives in nextcloud_aio_* volumes. Follow docs/MIGRATION.md for the AIO teardown." >&2
+  exit 1
+fi
+
 # --- the clean-slate detectors, parameterized so --self-test can fabricate each red -------------
 cs_no_project()  {  # [project] — clean = the compose project is gone. json+python3, not
   # `--format '{{.Name}}'`: docker 29's compose ls stopped parsing go-templates (measured:

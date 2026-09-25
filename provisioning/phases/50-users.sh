@@ -55,6 +55,20 @@ users=(
   "${local_jefes[@]}"
 )
 
+# org L5-11: the uids this phase will create must be exactly standing_uids()'s answer for
+# this site — the loops above build display names and groups (richer than the helper), but
+# the UID SET is the helper's contract with the roster, divergence and provisionador. A
+# mismatch means this file's loops drifted from the one derivation; refuse rather than
+# provision accounts nothing else can see.
+. "$(dirname -- "${BASH_SOURCE[0]}")/../standings.sh"
+_derived="$(printf '%s\n' "${users[@]%%|*}" | sort)"
+_expected="$(standing_uids | sort)"
+if [ "$_derived" != "$_expected" ]; then
+  echo "FATAL: 50-users uid set != standing_uids() — the derivation drifted:" >&2
+  diff <(printf '%s\n' "$_derived") <(printf '%s\n' "$_expected") >&2 || true
+  exit 1
+fi
+
 for entry in "${users[@]}"; do
   uid="${entry%%|*}"; rest="${entry#*|}"; display="${rest%%|*}"; groups="${rest#*|}"
   ensure_user "$uid" "$display" "$FIXTURE_USER_PASSWORD"

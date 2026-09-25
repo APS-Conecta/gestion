@@ -52,16 +52,29 @@ REF_Z="${REF_Z:-12}"
 REF_LON="${REF_LON:-}"
 REF_LAT="${REF_LAT:-}"
 if [ -z "$REF_LON" ] || [ -z "$REF_LAT" ]; then
+  # Posture-split probes (org L5-01): the compose read this script was born with is a permanent
+  # red on every AIO clinic — no compose db exists there, so nothing ever pinned REF_LON/REF_LAT
+  # and the monthly timer failed while MIGRATION.md listed it as a post-AIO gate. The AIO arm
+  # uses the names migrate-to-aio.sh:207 pins (DB=nextcloud-aio-database, user oc_nextcloud,
+  # database nextcloud_database); the detection is the docker-ps-by-name idiom install.sh,
+  # smoke's check 1 and test.sh's gates share.
+  psql_q() {  # SQL -> stdout, quiet
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx nextcloud-aio-nextcloud; then
+      docker exec nextcloud-aio-database psql -U oc_nextcloud -d nextcloud_database -Atc "$1" 2>/dev/null
+    else
+      docker compose exec -T db psql -U apsconecta -d apsconecta -Atc "$1" 2>/dev/null
+    fi
+  }
   # Probe with psql itself, not `exec db true`: a psql probe that answers distinguishes "stack
   # unreachable" from everything else, so the feature read below can only fail for data reasons
   # (no table, no row) — and both of those share one remedy, "import the comuna package first".
-  if ! docker compose exec -T db psql -U apsconecta -d apsconecta -Atc "SELECT 1" >/dev/null 2>&1; then
+  if ! psql_q "SELECT 1" >/dev/null; then
     echo "refresh-basemap: cannot query the stack for the DEIS point — is it running?" >&2
     exit 1
   fi
-  coords="$(docker compose exec -T db psql -U apsconecta -d apsconecta -Atc \
+  coords="$(psql_q \
     "SELECT geometry::json->'coordinates' FROM oc_territorio_feature WHERE external_id = 'deis:$SITE_DEIS' LIMIT 1" \
-    2>/dev/null || true)"
+    || true)"
   # Matched on external_id, not a dataset slug: --dataset is operator input (the pilot's own live
   # import landed under a different slug than the registry's convention — measured on the live
   # stack), while the 'deis:' uid namespace is the cut artifact's contract. The same code in two
@@ -153,3 +166,23 @@ mv "$tmp" "$DEST"
 trap - EXIT INT TERM
 chmod 644 "$DEST"
 echo "refresh-basemap: $DEST is now $size bytes"
+
+# --- the serving arm (org L5-01): the archive is only the deliverable because something serves it.
+# If the tiles container is running, prove the path a browser takes — a ranged GET must answer 206
+# with bytes from the archive just installed (the same Range contract tiles.nginx.conf declares and
+# test.sh's nginx arm asserts). If nothing serves on this host, say so loudly but do not fail: a
+# dev box refreshing an archive it serves through a container it has not brought up yet is the
+# supported case, and the unit's own contract is freshness.
+TILES_PORT="${TILES_PORT:-8084}"
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx aps-conecta-tiles; then
+  code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Range: bytes=0-1023' \
+    "http://localhost:${TILES_PORT}/chile.pmtiles" 2>/dev/null || echo 000)
+  [ "$code" = "206" ] || {
+    echo "refresh-basemap: the tiles container is running but a ranged GET answered HTTP ${code} (expected 206)" >&2
+    echo "  the archive was installed; the serving path is broken — check docker logs aps-conecta-tiles" >&2
+    exit 1
+  }
+  echo "refresh-basemap: serving arm green — ranged GET answered 206 from the new archive"
+else
+  echo "refresh-basemap: no tiles container running — archive refreshed, serving arm not exercised"
+fi

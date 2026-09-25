@@ -26,6 +26,12 @@ on:
       - 'Makefile'
       - 'scripts/**'
       - 'sites/**'
+      # org review L5-10: host/** and the nginx conf were outside every CI trigger — the
+      # weekly timer chain ran against a real instance nowhere. The Range/CORS contract
+      # they define is asserted in scripts/test.sh's docker-gated arm, which the step below
+      # runs on this same bring-up.
+      - 'host/**'
+      - 'tiles.nginx.conf'
       - 'dev/**'
       - '.env.example'
       - '.github/workflows/cleanboot.yml'

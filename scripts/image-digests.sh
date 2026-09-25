@@ -22,7 +22,7 @@ cd "$(dirname "$0")/.."
 
 # Every file that names an image. Both, always: Dockerfile.dev deriving from a different build than
 # compose.yaml runs is #96 on the one image where it is hardest to notice.
-FILES=(compose.yaml Dockerfile.dev)
+FILES=(compose.yaml Dockerfile.dev host/tiles.sh)
 
 check_only=0; validate_only=0
 case "${1:-}" in
@@ -37,7 +37,9 @@ esac
 # today's bytes have not been booted, and quietly adopting them is the opposite of the point.
 # Deliberately not $-anchored: `FROM x:tag AS build` and `image: x:tag  # note` used to slip past it.
 # An internal multi-stage `FROM base AS x` gets flagged too, which is loud rather than silent.
-if unpinned=$(grep -nE '^\s*(image:|FROM) ' "${FILES[@]}" | grep -v '@sha256:'); then
+# org L5-02: host/tiles.sh carries its nginx pin as NGINX_REF="…" — the assignment form joins
+# the unpinned sweep so losing the digest there is as loud as anywhere else.
+if unpinned=$( { grep -nE '^\s*(image:|FROM) ' "${FILES[@]}"; grep -nE '^NGINX_REF="[^"@]*"$' host/tiles.sh; } | grep -v '@sha256:' ); then
   echo "FATAL: image reference with no digest (#109 requires every image pinned):" >&2
   echo "$unpinned" >&2
   echo "Add the digest by running this script without --check, then commit it." >&2
@@ -45,7 +47,9 @@ if unpinned=$(grep -nE '^\s*(image:|FROM) ' "${FILES[@]}" | grep -v '@sha256:');
 fi
 
 # `name` keeps the tag (`nextcloud:34-apache`); only the digest after @ is replaced.
-refs=$(grep -hoE '(image:|FROM) +[^ ]+@sha256:[0-9a-f]{64}' "${FILES[@]}" | awk '{print $2}' | sort -u)
+refs=$( { grep -hoE '(image:|FROM) +[^ ]+@sha256:[0-9a-f]{64}' "${FILES[@]}" | awk '{print $2}';
+             grep -hoE 'NGINX_REF="[^"]+@sha256:[0-9a-f]{64}"' host/tiles.sh | sed 's/^NGINX_REF="//; s/"$//'
+           } | sort -u)
 [ -n "$refs" ] || { echo "FATAL: no pinned images found in ${FILES[*]}" >&2; exit 1; }
 
 if [ "$validate_only" = 1 ]; then

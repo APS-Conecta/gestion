@@ -22,9 +22,20 @@ require_site || exit 1
 require_real_secrets || exit 1
 # shellcheck disable=SC1090  # the path is SITE, resolved at run time
 . "$HERE/../sites/$SITE/site.sh" || { echo "FATAL: sites/$SITE/site.sh failed to load" >&2; exit 1; }
+# org L5-03: mark the seed context. Phases run in subshells of THIS shell, so an exported
+# marker is visible to every one of them — and lib.sh's phase_begin refuses to run without
+# it, closing the standalone-phase silent-green no-op (`bash phases/30-folders.sh` used to
+# loop over an unset SITE_FOLDERS, write nothing, and print a checkmark).
+export SEED_CTX=1
 # SITE_ROLES is optional; declare it so "unset" and "empty" both mean none. `${SITE_ROLES[@]:-}` in a
 # phase would NOT do — on an empty array it expands to one empty word and runs the body once.
 declare -p SITE_ROLES >/dev/null 2>&1 || SITE_ROLES=()
+# org L5-03, the array half: a site file edited halfway leaves an array unset, and a phase
+# looping over it would run zero iterations and log a checkmark. The seed contract refuses
+# that HERE, once, for every array phase: empty is legal (a clinic with no local roles),
+# unset is not.
+: "${SITE_FOLDERS:?sites/$SITE/site.sh must set SITE_FOLDERS (empty is legal, unset is not)}"
+: "${SITE_TEAMS:?sites/$SITE/site.sh must set SITE_TEAMS (empty is legal, unset is not)}"
 
 # WHICH gestion this is (ADR-0005). A release is a tag, so `git describe` is the answer and there is
 # no VERSION file to drift from it; `--always` degrades to a short sha on an untagged trunk and the

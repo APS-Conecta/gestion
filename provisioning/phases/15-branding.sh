@@ -10,7 +10,12 @@
 # note is real again — but it is not this phase's job. That file is static and committed, identical
 # on every install, and nothing here writes it: it changes on a git pull, not on a seed. Restart the
 # container after one of those, never after this.
-phase_begin "15-branding" "APS Conecta white-label (Epic 5)"
+phase_begin "15-branding"
+
+# org L5-03: this phase's OUTPUT is a pure function of the site identity. An unset name
+# writes `--aps-clinic: "";` into site.css and every following seed sees it "already right".
+# The :? forms refuse loudly instead — unset and empty are the same defect here.
+: "${SITE_NOMBRE_CORTO:?sites/$SITE/site.sh must set SITE_NOMBRE_CORTO}"
 
 # --- Identity ---
 theming_set name       "APS Conecta Gestión"

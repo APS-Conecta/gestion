@@ -353,4 +353,22 @@ do
   esac
 done
 rm -f "$smoke_jar" "$smoke_body"
+# 16. Territorio's tile_url is not the B-019 shape (org review L5-07 — the mirror of check 14
+# for the basemap): phase 16 defaults it to the loopback tiles service, which works for a
+# browser on this box and for nobody else — a public-domain install passes every other gate
+# green while every off-host browser shows «No se pudo cargar el fondo de mapa». The same
+# contradiction test as eurooffice's: a loopback tile_url together with a non-loopback
+# trusted domain cannot both be right. From THIS box the tiles URL is reachable either way,
+# so reachability is not the gate — the CONTRADICTION is (B-019's own lesson).
+_tiles_url=$(occ config:app:get territorio tile_url 2>/dev/null | tr -d '\r')
+if [ -n "$_tiles_url" ]; then
+  _remote_domain=$(occ config:system:get trusted_domains 2>/dev/null \
+    | tr -d '\r' | grep -vxE 'localhost|127\.0\.0\.1|\[::1\]|nextcloud|' | head -1)
+  case "$_tiles_url" in
+    *localhost*|*127.0.0.1*|*'[::1]'*)
+      [ -z "$_remote_domain" ] \
+        || fail "territorio tile_url is '$_tiles_url' but this instance is also reached at '$_remote_domain' — off-host browsers get no basemap. Set TILES_PUBLIC_URL in .env and re-seed (phase 16-app-policy) — the B-019 shape, mirrored (org L5-07)" ;;
+  esac
+fi
+
 echo "PASS: core stack healthy — installed, PostgreSQL ready, Redis PONG, /status.php 200, no branding leak, cron scheduling, app policy, no remember-me, no stale app signature, legacy screens branded, clean admin home, app store off, office URL matches how this instance is reached"

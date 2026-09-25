@@ -37,9 +37,11 @@ ARCHIVE="$TILES_HOME/tiles/chile.pmtiles"
 NGINX_NAME=aps-conecta-tiles
 TILES_PORT="${TILES_PORT:-8084}"   # the compose world's own default (.env.example:66); phase
                                    # 16's loopback default names the same port — bump both
-NGINX_REF="nginx@sha256:c8497b180665e631ec92a5091125bec5b214f0e2b99409e30653a125b37557da"
-# ^ compose.yaml:184's own pin, byte-copied (a digest IS this channel's checksum; bump both
-#   files together — the .codespellrc byte-coupled-copies precedent).
+NGINX_REF="nginx:alpine@sha256:62ff2089abf5a9ed33bd232895bef5e22f7bb4b200675cec49a5ebc48e3d4ac8"
+# ^ compose.yaml:191's own pin, same form and same bytes (org L5-02: the "byte-copied" pair had
+#   drifted — c8497b18 vs 62ff2089 — and nothing reconciled them because image-digests.sh never
+#   scanned this file). scripts/image-digests.sh now carries host/tiles.sh in FILES and rewrites
+#   both copies on `make images`, so "bump both" is machine-enforced instead of remembered.
 # The pmtiles CLI channel: version + the sha256 the release page PUBLISHES (measured at
 # design time — v1.31.2's underscore-form asset; the hyphen form 404s, FINDINGS row).
 PMTILES_VERSION="${PMTILES_VERSION:-1.31.2}"
@@ -318,6 +320,9 @@ selftest() {
   ARCHIVE="$TILES_HOME/tiles/chile.pmtiles"
   ENV_FILE="$ROOT/.env"
   mkdir -p "$ROOT" "$TILES_HOME/tiles" "$(dirname "$PMTILES_BIN")"
+  # org L5-02: the pin-pair check reads compose.yaml from the fixture ROOT — stage the REAL
+  # one (small, committed) so the self-test asserts the pair as shipped, not a stub.
+  cp "$ROOT_BAK/compose.yaml" "$ROOT/compose.yaml"
   printf '# server block fixture — the conf is a mount, its bytes are compose.yaml world\n' > "$ROOT/tiles.nginx.conf"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/ss";   chmod +x "$tshim/ss"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/systemctl"; chmod +x "$tshim/systemctl"
@@ -383,10 +388,16 @@ EOF
   check "container: the run argv carries the digest pin, the loopback publish, both mounts, unless-stopped and the compose healthcheck" \
     'grep -q -- "--restart unless-stopped" "$tmp/docker.log" \
      && grep -q -- "--publish 127.0.0.1:$TILES_PORT:80" "$tmp/docker.log" \
-     && grep -qF "nginx@sha256:c8497b180665e631ec92a5091125bec5b214f0e2b99409e30653a125b37557da" "$tmp/docker.log" \
+     && grep -qF -- "$NGINX_REF" "$tmp/docker.log" \
      && grep -qF -- "--volume $TILES_HOME/tiles:/srv/tiles:ro" "$tmp/docker.log" \
      && grep -qF -- "--volume $ROOT/tiles.nginx.conf:/etc/nginx/conf.d/default.conf:ro" "$tmp/docker.log" \
      && grep -qF -- "--health-cmd wget -q --spider http://127.0.0.1/healthz || exit 1" "$tmp/docker.log"'
+
+  # org L5-02: the pair itself. The argv assert above proves the wiring ($NGINX_REF reaches
+  # docker run); this proves the two files still agree — the drift image-digests.sh now owns,
+  # asserted here so a local selftest catches it without the registry round-trip.
+  check "pin pair: tiles.sh and compose.yaml carry the same nginx ref" \
+    "grep -qF -- \"$NGINX_REF\" \"$ROOT/compose.yaml\""
 
   # idempotence: a running container means NO second run (the argv log proves it — the ps
   # probes log too, so the assert is "no run/start line", never "an empty log")

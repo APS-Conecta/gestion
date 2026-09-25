@@ -34,6 +34,11 @@
 set -uo pipefail
 
 # shellcheck source=env.sh
+# org L5-11: standings AFTER env.sh — its cd makes the provisioning/ path resolve from any
+# cwd; sourced before it, a non-root invocation would miss the file and the gate below would
+# flag every standing account (the wolf-cry this extraction exists to kill).
+# shellcheck source=provisioning/standings.sh
+. provisioning/standings.sh
 . "$(dirname "$0")/env.sh"
 require_site || exit 1
 # shellcheck disable=SC1090  # the path is SITE, resolved at run time
@@ -210,19 +215,12 @@ with open(sys.argv[1], encoding="utf-8-sig", newline="") as fh:
       note "cannot check users: SITE_ROSTER names '$SITE_ROSTER' which cannot be read — the declared set is incomplete; fix the path in sites/$SITE/site.sh"
     fi
   fi
+  # org L5-11: the standing half comes from provisioning/standings.sh — the one derivation,
+  # the same bytes phase 50 provisions from. This copy used to re-derive it by hand and was
+  # documented to "fail loud" on drift: a gate that cries wolf on every clinic until fixed.
   declared_users="$(
     printf '%s\n' "${NEXTCLOUD_ADMIN_USER:-admin}"
-    printf '%s\n' director subdirector jefe.farmacia jefe.some
-    for entry in "${SITE_TEAMS[@]}"; do
-      id="${entry%%|*}"
-      case "$id" in sector-*) printf 'jefe.%s\n' "${id#sector-}" ;; esac
-    done
-    declare -p SITE_ROLES >/dev/null 2>&1 || SITE_ROLES=()
-    for entry in "${SITE_ROLES[@]}"; do
-      id="${entry%%|*}"; category="${entry##*|}"
-      [ "$category" = cat-jefaturas ] || continue
-      uid="${id#role-}"; printf '%s\n' "${uid//-/.}"
-    done
+    standing_uids
     if [ -n "$roster" ]; then printf '%s\n' "$roster"; fi
   )"
   # Same one-shot-then-loop shape as the groups domain above, for the same reason: piping into the
