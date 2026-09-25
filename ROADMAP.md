@@ -65,6 +65,9 @@ shipped and moved to **Done** below.
 | 2026-08-01 | **Divergence report** (#85) — names what is live but no longer declared, and never deletes it | `scripts/divergence.sh` |
 | 2026-08-01 | **The six read-only grants** (#116) — the access matrix gets a second level, read as well as manage | `provisioning/phases/40-acl.sh` |
 | 2026-08-01 | **Weekly app-version check** (#117) — `make install` re-imposes the vendored tarball, and CI reports when one is behind | `scripts/app-versions.sh`, `.github/workflows/image-digests.yml` |
+| 2026-09-22 | **AIO installer suite 0.3.0** (#187) — the Provisionador, the translated QA suite's gestion side, the host bundle, the CI gate stack, tiles+datos, the migration tool and docs | `provisionador/`, [`docs/INSTALLER.md`](docs/INSTALLER.md), release 0.3.0 |
+| 2026-09-24 | **Welcome screen (IntraVox) as phase 41** — engine setup + es payload + page ACL, telemetry pin, divergence tolerances | `provisioning/phases/41-intravox.sh`, ADRs 0014–0017; deferred ideas ledger in the program docs |
+| 2026-09-25 | **Org-wide hardening program (12 phases)** — postures, drift gates, manuals under version control, org CI template; validated pass | `.github/workflows/ci.yml`, `docs/adr/`, validation in the org artifacts repo |
 
 The reasoning behind each of these lives with the thing it describes — the ADR, the phase file, or
 the stylesheet. It is not restated here; this table is an index, not a second copy.
