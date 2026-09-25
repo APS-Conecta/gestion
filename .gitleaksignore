@@ -1,0 +1,8 @@
+# gitleaks 8.18.2 (pinned by .github/workflows/ci.yml) — hashicorp-tf-password false
+# positives, both the same shape: the Provisionador's es-CL STATUS DICTS that report whether
+# the env key FIXTURE_USER_PASSWORD is set. The matched "values" are status words
+# ("presente" / "se generará"), not secrets — the real value is a CSPRNG 24-hex generated at
+# runtime and written to the sealed .env (scripts/provisionador.py:906 documents the contract).
+# Fingerprints pin commit+line: editing either line re-flags it, which is the desired alarm.
+abf32c9ecec8ddfd598daa2a0b979fde437e23fe:scripts/provisionador.py:hashicorp-tf-password:785
+abf32c9ecec8ddfd598daa2a0b979fde437e23fe:scripts/provisionador.py:hashicorp-tf-password:922
