@@ -217,9 +217,31 @@ elif "groupfolders:create" in args:
     save(rows)
     print(nxt)
 elif "groupfolders:list" in args:
-    folders = [(r[1], r[2]) for r in rows if r[0] == "folder"]
-    print(json.dumps({fid: {"id": int(fid), "mountPoint": m, "groups_list": {}}
-                      for m, fid in folders}))
+    # a LIST of folder objects — real occ's shape (measured live: [{"id":1,...}]). This used
+    # to print a dict keyed by fid, which only survived because gf_load/divergence accept both
+    # shapes; phase 41's lookup iterates rows and .get()s the mount on each, so against the
+    # dict it AttributeError'd into 2>/dev/null and saw no folders at all.
+    print(json.dumps([{"id": int(r[2]), "mountPoint": r[1], "groups_list": {}}
+                      for r in rows if r[0] == "folder"]))
+elif "app:enable" in args:
+    # B-028: enabling an app writes the appconfig 'enabled' row real Nextcloud writes, and
+    # phase 41's enable-guard reads exactly that back (config:app:get intravox enabled -> yes).
+    # The old fall-through no-op'd without state, so the guard FATAL'd only in this sandbox
+    # while the real stack stayed green. Upsert, not append: idempotent re-runs re-enable.
+    app = find("app:enable")
+    if not any(r == ["appconfig", app, "enabled", "yes"] for r in rows):
+        rows.append(["appconfig", app, "enabled", "yes"])
+        save(rows)
+elif "intravox:setup" in args:
+    # B-028: SetupService creates the 'IntraVox' groupfolder, which phase 41 looks up by
+    # mount right after. Only the folder row is modelled: the engine groups and mount grants
+    # setup also creates are invisible to every parser here, and divergence declares the
+    # mount itself (declared_folders, divergence.sh). Query-first, ensure_groupfolder's
+    # discipline: a re-run must find it, never re-create it.
+    if not any(r[0] == "folder" and r[1] == "IntraVox" for r in rows):
+        nxt = 1 + max((int(r[2]) for r in rows if r[0] == "folder"), default=0)
+        rows.append(["folder", "IntraVox", str(nxt)])
+        save(rows)
 elif "config:system:get" in args and "datadirectory" in args:
     # implement-time arm (FINDINGS P15): the fence was authored against the pre-port tree whose
     # content helpers never asked for it; the ported datadir_load (lib.sh:142) fails CLOSED on an
@@ -1577,6 +1599,21 @@ def selftest():
         if not cond:
             bad.append(name)
 
+    def seed_died(body, name):
+        # B-028: a dead seed aborts WITH ITS OWN OUTPUT. Every later arm dereferences keys a
+        # 500 does not carry (the banner slice, body["env"], body["divergencia"]), so
+        # continuing past a dead seed trades the FATAL line for a bare ValueError/KeyError —
+        # the exact traceback B-028 was filed on. This is the "capture the sandbox seed's own
+        # output" the row asked for, standing between generar() and the banner-dependent arms.
+        print("---- generar: the seed died — its own output (last 25 lines) ----")
+        print("\n".join((body.get("salida") or "").splitlines()[-25:]))
+        print(f"---- api error: {body.get('error', '(no error field)')}")
+        check(name, False)
+        print(f"\nself-test: {len(bad)} de {n} checks fallaron:")
+        for _name in bad:
+            print(f"  FAIL: {_name}")
+        return 1
+
     old = deis.HERE
     old_cred, old_p20 = CRED_PATH, PHASE20
     # The stub world must not inherit the caller's exported seed knobs (P37, measured under
@@ -2113,7 +2150,8 @@ def selftest():
             os.remove(env_path)
 
             st, body = generar("ejecutar")
-            drv_at = body["salida"].index("== provisioning complete")
+            if st != 200:  # B-028: abort with the seed's own output — never a bare .index() ValueError
+                return seed_died(body, "generar: ejecutar runs the whole world green — the seed died (output above)")
             check("generar: ejecutar runs the whole world green — 14 phases, 2 roster users, gate clean",
                   st == 200 and body["ok"] and body["divergencia_vacia"]
                   and "14 phase(s) run" in body["salida"] and "== roster: 2 usuario(s) ==" in body["salida"]
@@ -2140,7 +2178,9 @@ def selftest():
 
             env_before = open(env_path, "rb").read()
             st, body = generar("ejecutar")
-            drv = body["salida"][body["salida"].index("== provisioning complete"):]
+            if st != 200:  # B-028: same guard on the re-run — its FATAL, not a ValueError
+                return seed_died(body, "generar: a re-run converges — the re-run seed died (output above)")
+            drv = body["salida"][body["salida"].index("== provisioning complete"):]  # safe: seed green above
             check("generar: a re-run converges — .env byte-stable, driver noops, gate clean",
                   st == 200 and open(env_path, "rb").read() == env_before
                   and "user maria.perez exists" in drv and "user maria.perez created" not in drv
