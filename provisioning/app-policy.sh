@@ -50,8 +50,14 @@ POLICY_CONFIG="firstrunwizard:wizard_enabled:false survey_client:never_again:tru
 #   nextcloud_announcements  — pushes Nextcloud's marketing into every user's notification bell. It
 #                              declares type `logging`, which Nextcloud refuses to group-restrict,
 #                              so it is all-or-nothing.
-POLICY_DISABLED="survey_client nextcloud_announcements"
-
-# NOT restricted, verified 2026-07-31: `office` is a SEPARATE app from `eurooffice` and the only one
-# of the two that registers a navigation entry (`eurooffice`'s info.xml declares none), so the single
-# "Office" tile in the app menu is not a duplicate. Left enabled deliberately, not by omission.
+#   office                  — Nextcloud 34's first-party "Office overview" app, enabled by default
+#                              from the image. NOT the suite's editor (that is `eurooffice`, which
+#                              has no nav entry and engages when a document is opened from Files)
+#                              and not wired to it either — no editor-url state is ever injected,
+#                              so its "Office" tile is an overview that bounces to /f/{fileid}.
+#                              Restriction is the wrong lever for the same reason as announcements:
+#                              it is Nextcloud's product surface, not a suite feature staff lose.
+#                              Decision flipped 2026-09-23 by the owner (the 2026-07-31 audit below
+#                              had left it enabled as "not a duplicate" — true, but a dead surface
+#                              with a confusing name is worse than no surface).
+POLICY_DISABLED="survey_client nextcloud_announcements office"
