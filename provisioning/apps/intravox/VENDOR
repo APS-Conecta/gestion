@@ -1,0 +1,36 @@
+# Where the tarball beside this file came from (#98). Update all three lines together on a bump,
+# then re-run `make seed`.
+#
+# BUMP AT A MILESTONE, NOT AT EVERY TAG (ADR-0005). The app releases on its own cadence; gestion
+# pins the version it decided to ship, so this file moves when a gestion release wants it to, not
+# when the app tags.
+#
+# THIS ONE IS BUILT, NOT DOWNLOADED — it is our own app (ADR-0003, the IntraVox fork: upstream
+# voxcloud/intravox, AGPL-3, modified in-repo per doctrine). `url=` names the fork tag it was
+# built from. The build, run from the org-root twin (any clone of the repo works — the archive
+# comes from the tag):
+#
+#     git -C IntraVox archive --format=tar --prefix=intravox/ v3.1.0-aps1 \
+#       | gzip -n9 > provisioning/apps/intravox/intravox-3.1.0.tar.gz
+#
+# `--prefix=intravox/` because ensure_vendored_app unpacks into custom_apps/ and Nextcloud needs
+# the app id as the top directory. `gzip -n` keeps the mtime out of the header, so rebuilding the
+# same tag yields the same bytes and the sha256 below stays checkable.
+#
+# TAG AFTER THE REBUILD, not before — this release is the proof: slugifyHeading's fold change
+# lives in src/, but production runs the built js/. The v3.1.0-aps1 bundle carries the shared
+# fold (measured: \p{Diacritic} present in js/intravox-main.js, absent in the pre-rebuild one);
+# a tag cut before the rebuild would have shipped the private regex forever. The app's own gates
+# (12 prebuild checks incl. check-aps-parity) ran green before the tag.
+#
+# 46 MB, 1546 files — the heavyweight of the vendored set (Talk is 52). The rider is upstream's
+# own shipping shape (l10n machine translations, demo-data, showcases, the 3.3 MB vendors
+# bundle); .gitattributes export-ignores already prune screenshots/internal docs. Recorded, not
+# hidden. First place to look if this ever has to shrink.
+#
+# ONE tarball in this directory, ever: ensure_vendored_app globs *.tar.gz and fails on anything
+# other than exactly one. A bump deletes the previous file, it does not sit beside it.
+
+version=3.1.0
+sha256=f2455e6284c151c39e06d2ba43a77f74847d27f17a3b187337a9eaa7faf7d058
+url=https://github.com/APS-Conecta/IntraVox/tree/v3.1.0-aps1

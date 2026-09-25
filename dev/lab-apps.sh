@@ -7,6 +7,6 @@
 # ONE LINE, space-separated <appid>=<clone url> — the shape OWN_APPS uses, so nothing needs a second
 # parser. The id is the DIRECTORY name too, and it is the app id, not necessarily the repository name.
 # territorio was the last one: lab at first, own at v0.74.0 (2026-09). intravox arrived 2026-09 for
-# the welcome-screen program's lab period (ADR-0014) — the engine runs from a live clone until the
-# promotion commit vendors it and empties this line again.
-LAB_APPS="intravox=https://github.com/APS-Conecta/IntraVox.git"
+# the welcome-screen program's lab period (ADR-0014) — promoted at v3.1.0-aps1 (2026-09-25): the
+# promotion commit vendors the engine and empties this line again.
+LAB_APPS=""
