@@ -7,3 +7,4 @@
 -            'logFile' => $this->getLogPath(),
          ]);
      }
+ 
