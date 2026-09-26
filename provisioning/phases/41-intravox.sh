@@ -45,6 +45,17 @@ fi
 # logs its own canonical write verbs; occ noise must never redden seed-idempotent on a re-run.
 occ intravox:setup --language es --skip-demo >/dev/null
 
+# Drift detector (fail loud, never silently manage around it): the demo marker set means demo
+# content lives in the groupfolder — the post-migration repair step's old behavior (pre-3.1.2)
+# or a deliberate `occ intravox:import-demo`. Either way it outranks the seeded welcome for
+# default-language users. Recovery: engine admin deletes the demo language trees (en/… —
+# everything but es/), `occ config:app:delete intravox demo_data_imported`, then `make seed`.
+# v3.1.2 removed the re-injection; this guard is what makes any regression of that loud.
+if [ -n "$(occ config:app:get intravox demo_data_imported 2>/dev/null || true)" ]; then
+  echo "FATAL: intravox demo_data_imported is set — demo content outranks the seeded welcome. Delete the demo language trees, occ config:app:delete intravox demo_data_imported, and re-seed." >&2
+  exit 1
+fi
+
 # Language convergence (install state, NOT staff data): upstream's enabled-languages default is
 # de,en,fr,nl — es is absent, so the admin UI would offer German but not the instance's own
 # language. Declare the suite's set: es (primary) + en (the non-removable fallback). The JSON-
@@ -164,6 +175,22 @@ for f in json.load(sys.stdin):
     if (f.get("mount_point") or f.get("mountPoint")) == "IntraVox": print(f["id"]); break')"
 [ -n "$_ivfid" ] || { echo "FATAL: IntraVox groupfolder not found after intravox:setup — setup did not converge." >&2; exit 1; }
 datadir_load || { echo "FATAL: datadir unresolved (fail-closed, lib.sh:139-148)." >&2; exit 1; }
+  # Same discipline for the EN fallback home: every content generator now stamps its output
+  # (seed/import → `page-aps` uniqueId, engine-generated → `_generated`), so a home carrying
+  # NEITHER is pre-3.1.1 setup boilerplate — the only marker-less generator that ever existed.
+  # Cleared so it cannot outrank the seeded es welcome (hasRealContent counts it as real). No
+  # clinic ever ran 3.1.1's predecessors in production (the app shipped 2026-09-25), so this
+  # arm cannot meet staff data; it exists to converge this lab box and any restored backup.
+  if nc_exec --user www-data -- test -f "$DATADIR/__groupfolders/$_ivfid/files/en/home.json" 2>/dev/null \
+     && ! nc_exec --user www-data -- grep -q -e "page-aps" -e "_generated" \
+          "$DATADIR/__groupfolders/$_ivfid/files/en/home.json" 2>/dev/null; then
+    docker exec "${NC_CONTAINER:?}" rm -f "$DATADIR/__groupfolders/$_ivfid/files/en/home.json"
+    # rescan: the rm bypassed the Files API, and a mounted view reads the file cache —
+    # without this the stale entry answers "exists" and the engine serves a ghost
+    occ files:scan --path="/__groupfolders/$_ivfid/files" >/dev/null 2>&1
+    log "  welcome: legacy marker-less en/home.json cleared (pre-3.1.1 boilerplate)"
+  fi
+
 # Import guard — gf_files_path shape (lib.sh:596): <DATADIR>/__groupfolders/<fid>/files/<rel>.
 # The marker is es/navigation.json, NOT home.json: `intravox:setup` pre-creates es/home.json
 # boilerplate on a FRESH install (createDefaultContent), and a home.json guard trips on it and
@@ -182,6 +209,7 @@ else
      && ! nc_exec --user www-data -- grep -q "page-aps" \
           "$DATADIR/__groupfolders/$_ivfid/files/es/home.json" 2>/dev/null; then
     docker exec "${NC_CONTAINER:?}" rm -f "$DATADIR/__groupfolders/$_ivfid/files/es/home.json"
+    occ files:scan --path="/__groupfolders/$_ivfid/files" >/dev/null 2>&1   # same cache discipline as the en arm
     log "  welcome: setup-boilerplate es/home.json cleared for import"
   fi
   # pre-clean: docker cp into an existing dir nests one level deeper and the retry imports
