@@ -10,8 +10,8 @@
 # built from. The build, run from the org-root twin (any clone of the repo works — the archive
 # comes from the tag):
 #
-#     git -C IntraVox archive --format=tar --prefix=intravox/ v3.1.0-aps1 \
-#       | gzip -n9 > provisioning/apps/intravox/intravox-3.1.0.tar.gz
+#     git -C IntraVox archive --format=tar --prefix=intravox/ <tag> \
+#       | gzip -n9 > provisioning/apps/intravox/intravox-<version>.tar.gz
 #
 # `--prefix=intravox/` because ensure_vendored_app unpacks into custom_apps/ and Nextcloud needs
 # the app id as the top directory. `gzip -n` keeps the mtime out of the header, so rebuilding the
@@ -31,6 +31,6 @@
 # ONE tarball in this directory, ever: ensure_vendored_app globs *.tar.gz and fails on anything
 # other than exactly one. A bump deletes the previous file, it does not sit beside it.
 
-version=3.1.0
-sha256=f2455e6284c151c39e06d2ba43a77f74847d27f17a3b187337a9eaa7faf7d058
-url=https://github.com/APS-Conecta/IntraVox/tree/v3.1.0-aps1
+version=3.1.1
+sha256=25698f184eddeaa2e45691003871200603829bc5c6cc04d2f1cdf527e83eb14f
+url=https://github.com/APS-Conecta/IntraVox/tree/v3.1.1-aps1

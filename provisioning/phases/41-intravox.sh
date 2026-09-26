@@ -45,6 +45,16 @@ fi
 # logs its own canonical write verbs; occ noise must never redden seed-idempotent on a re-run.
 occ intravox:setup --language es --skip-demo >/dev/null
 
+# Language convergence (install state, NOT staff data): upstream's enabled-languages default is
+# de,en,fr,nl — es is absent, so the admin UI would offer German but not the instance's own
+# language. Declare the suite's set: es (primary) + en (the non-removable fallback). The JSON-
+# array shape is LanguageService's own (CONFIG_KEY_ENABLED). Query-before-set, idempotent.
+_iv_langs="$(occ config:app:get intravox enabled_languages 2>/dev/null || true)"
+if [ "$_iv_langs" != '["es","en"]' ]; then
+  occ config:app:set intravox enabled_languages --value='["es","en"]' >/dev/null
+  log "  languages: enabled set converged to es+en (was: ${_iv_langs:-upstream default})"
+fi
+
 # --- 3. GROUP MAP (D5): adds-only, query-before-set; one group:list json answers both sides ------
 _groups_json="$(occ group:list --output=json 2>/dev/null)"
 _gmap() {  # SRC_GID ENGINE_GID — add every member of SRC present in the live roster
@@ -155,9 +165,25 @@ for f in json.load(sys.stdin):
 [ -n "$_ivfid" ] || { echo "FATAL: IntraVox groupfolder not found after intravox:setup — setup did not converge." >&2; exit 1; }
 datadir_load || { echo "FATAL: datadir unresolved (fail-closed, lib.sh:139-148)." >&2; exit 1; }
 # Import guard — gf_files_path shape (lib.sh:596): <DATADIR>/__groupfolders/<fid>/files/<rel>.
-if nc_exec --user www-data -- test -f "$DATADIR/__groupfolders/$_ivfid/files/es/home.json" 2>/dev/null; then
+# The marker is es/navigation.json, NOT home.json: `intravox:setup` pre-creates es/home.json
+# boilerplate on a FRESH install (createDefaultContent), and a home.json guard trips on it and
+# silently skips the import — the whole program no-ops on every clean clinic (found live on the
+# lab box when the flip audit traced which home actually renders). navigation.json is only ever
+# written by this import; setup cannot fake it.
+if nc_exec --user www-data -- test -f "$DATADIR/__groupfolders/$_ivfid/files/es/navigation.json" 2>/dev/null; then
   log "  welcome: es tree already imported (staff edits are data — import-once, D2)"
 else
+  # Setup boilerplate pre-clean (v3.1.1 discipline, same class as the marker fix): if setup
+  # left a home.json that does NOT carry the seeded `page-aps` uniqueId namespace (staff edits
+  # always carry it — every seeded page and every child of one does; setup boilerplate never
+  # does), clear it so the import can write ours. Query-before-set: a seeded home is never
+  # touched, so this arm is a noop on every box that already imported.
+  if nc_exec --user www-data -- test -f "$DATADIR/__groupfolders/$_ivfid/files/es/home.json" 2>/dev/null \
+     && ! nc_exec --user www-data -- grep -q "page-aps" \
+          "$DATADIR/__groupfolders/$_ivfid/files/es/home.json" 2>/dev/null; then
+    docker exec "${NC_CONTAINER:?}" rm -f "$DATADIR/__groupfolders/$_ivfid/files/es/home.json"
+    log "  welcome: setup-boilerplate es/home.json cleared for import"
+  fi
   # pre-clean: docker cp into an existing dir nests one level deeper and the retry imports
   # nothing, silently (territorio cp's single files into /tmp/ for the same reason)
   docker exec "${NC_CONTAINER:?}" rm -rf /tmp/intravox-welcome-es
