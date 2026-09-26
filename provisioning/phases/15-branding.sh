@@ -77,13 +77,18 @@ app_config_set side_menu background-color-to "#5315a8"
 # Where the header's home icon lands. server.css turns `#nextcloud` (always the home link) into
 # a house; this is the other half — what "home" means. URLGenerator::linkToDefaultPageUrl() resolves
 # ?redirect_url -> core/defaultpage -> per-user defaultapp -> system defaultapp -> hardcoded
-# 'dashboard,files'. Both keys were unset, so the destination was that hardcoded fallback: correct
-# by accident. Setting it pins today's behaviour. First ENABLED navigation entry wins, so `files`
-# covers dashboard ever being restricted by 16-app-policy.
+# 'dashboard,files'.
+#
+# intravox, ADR-0014: the welcome screen IS the intranet surface — a login lands on it. The
+# value is deliberately bare (no ,files tail): while the app is absent or disabled, resolution
+# falls through to the hardcoded 'dashboard,files', so rollback needs no counter-edit — disable
+# the app and the pre-flip landing is back. Browser-open proof preceded this flip (farmacia
+# lesson 2a32278): a default-language user opens on the seeded es welcome, verified live
+# 2026-09-26 with the promotion's vendored build before this line changed.
 #
 # Not set: `core/defaultpage`, which would win over all of this and takes a raw path — the lever if
 # "home" ever needs to be a specific folder.
-config_system_set defaultapp "dashboard,files"
+config_system_set defaultapp "intravox"
 
 # --- New users start with an empty home, not Nextcloud's (#49) ---
 # Nextcloud copies core/skeleton/ into every new user's files: an English Readme.md rendering as

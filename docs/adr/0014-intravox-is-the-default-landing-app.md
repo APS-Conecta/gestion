@@ -1,7 +1,11 @@
 # ADR-0014 — IntraVox is the default landing app
 
 - **Status:** accepted (2026-09-24, with this plan's approval). The flip itself lands only in the
-  promotion commit — never during the lab period.
+  promotion commit — never during the lab period. *(Landed 2026-09-26, one commit after the
+  promotion: missed in `32c6090`, caught by the state-recovery audit. The browser-open proof
+  preceded it as ordered — and earned its keep first: it exposed the lab-period demo `en`/`nl`
+  trees hijacking the landing for default-language users (a clean `--skip-demo` clinic never
+  has them), deleted from the lab box before the flip.)*
 - **Affects:** `provisioning/phases/15-branding.sh` (`defaultapp`), `dev/lab-apps.sh`,
   `provisioning/phases/12-apps.sh` (`OWN_APPS`), `scripts/uninstall.sh`, every staff login.
 
