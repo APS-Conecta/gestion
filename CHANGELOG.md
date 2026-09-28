@@ -28,6 +28,13 @@ image digests live there and are deliberately not copied here — one fact, one 
   [docs/WELCOME-SCREEN.md](docs/WELCOME-SCREEN.md). Design:
   `2026-09-24_aps-conecta-welcome-screen` (gestion workspace `.rpiv/artifacts/designs/`).
 
+### Changed
+
+- **Language reality is the IntraVox engine's** — phase 41 no longer converges
+  `intravox enabled_languages`; the engine's own defaults are the es-only deployment: `es`+`en`
+  enabled and `es` as the primary language when unset. gestion writes no language config.
+  [ADR-0018](docs/adr/0018-language-reality-is-the-engines-es-only-default.md).
+
 ## [0.3.0] — 2026-09-22
 
 ### Added
