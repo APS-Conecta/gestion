@@ -50,8 +50,7 @@ list the declared sections and nothing else; the home page's quick-access row is
 tiles (Recepción y admisión → the Transversal folder, Gestión y turnos, Teléfonos y anexos)
 followed by one tile per declared section. A row the library does not know, an unknown flag, or a
 page that would link a folder the site does not have stops the seed with a `FATAL` line before
-anything is imported. The `wall` flag is recorded now and enforced when the engine's walls ship
-(architecture review Phase 4).
+anything is imported. What `wall` does is described under «Walls» below.
 
 **A site file written before this block existed** stops `make seed` with
 `FATAL: sites/<slug>/site.sh must set SITE_WELCOME`. Add the block above by hand — `deis.py`
@@ -64,6 +63,26 @@ created — add its menu entry and home tile by hand` — the menu and home page
 then, so the seed does not touch them; add the entry in the admin menu editor. **Removing a
 row** changes nothing on the instance: `make divergence` lists the section as live but
 undeclared, and a person deletes the folder if that is intended.
+
+**Walls.** A section declared `wall` is fixed structure: the seed stamps `"protected": true` on
+its structure — the section's hub, every seeded page that has sub-pages (noticias' «Avisos», which
+the home's Avisos list reads), and for `equipos` the hub plus every team page — and the engine
+refuses to delete or move such a page: the page menu and the tree do not offer it, and a direct
+request answers `PAGE_PROTECTED`. A wall is still editable, its title included, but its folder
+cannot be renamed (the seam and the home's news widgets find a section by its folder), and
+restoring an older version keeps the wall. The seeded example posts («Aviso de
+ejemplo», «Bienvenida», «Cómo publicar») are not walls: like every post staff create later they
+are ordinary pages an editor can delete. The marker is per page, never a folder rule (the
+review's «seam writes no-delete ACL rules» was not followed — a group-folder rule would inherit
+onto every staff post in `noticias`, and nobody but administrators can delete under the seeded
+ACLs anyway). Removing a wall is a two-step for an administrator, on purpose: in the container,
+`occ intravox:protect <uniqueId> --off --user admin` (a version is snapshotted first), then delete
+or move the page; `--on` restores it and `--status` shows the state. An instance seeded before
+walls existed has no marker on its pages (the seed never rewrites an existing page): raise each
+with `occ intravox:protect <uniqueId> --on --user admin`. The marker lives in the page JSON, so
+administrator tools that work below the page API ignore it: the **Files app** (a group-folder
+admin can still delete the folder — the recovery procedure below relies on exactly that), a ZIP
+import with overwrite, and the admin clean-start reset.
 
 ## The editorial workflow
 
