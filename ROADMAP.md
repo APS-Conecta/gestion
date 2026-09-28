@@ -68,6 +68,7 @@ shipped and moved to **Done** below.
 | 2026-09-22 | **AIO installer suite 0.3.0** (#187) — the Provisionador, the translated QA suite's gestion side, the host bundle, the CI gate stack, tiles+datos, the migration tool and docs | `provisionador/`, [`docs/INSTALLER.md`](docs/INSTALLER.md), release 0.3.0 |
 | 2026-09-24 | **Welcome screen (IntraVox) as phase 41** — engine setup + es payload + page ACL, telemetry pin, divergence tolerances | `provisioning/phases/41-intravox.sh`, ADRs 0014–0017; deferred ideas ledger in the program docs |
 | 2026-09-25 | **Org-wide hardening program (12 phases)** — postures, drift gates, manuals under version control, org CI template; validated pass | `.github/workflows/ci.yml`, `docs/adr/`, validation in the org artifacts repo |
+| 2026-09-28 | Welcome tree declared per site and converged per section — IntraVox review Phase 3: `SITE_WELCOME`, one renderer, `occ intravox:import --skip-existing`, the ten static team pages retired; review Phases 4 (walls) and 5 (discoverability) are next | `docs/adr/0019-the-welcome-tree-is-declared-and-converged-per-section.md`, `provisioning/intravox/render.py`, `docs/WELCOME-SCREEN.md` |
 
 The reasoning behind each of these lives with the thing it describes — the ADR, the phase file, or
 the stylesheet. It is not restated here; this table is an index, not a second copy.

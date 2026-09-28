@@ -10,16 +10,59 @@ publishes news and avisos). Spanish strings are quoted as they appear on screen.
 
 Phase 41 runs on every `make seed`, on every clinic, ungated — the welcome structure is not a
 fixture. In order it: runs the engine's own setup (groups `IntraVox Admins/Editors/Users` + the
-`IntraVox` group folder, no demo content), maps registry groups into engine groups
-(all-staff → Users; cat-jefaturas + role-oirs → Editors; adds-only, never removes), imports the
-`es` page tree with the clinic's identity substituted (name, short name, comuna, servicio), and
-writes the page ACLs for the restricted pages.
+`IntraVox` group folder, no content), maps registry groups into engine groups (all-staff →
+Users; cat-jefaturas + role-oirs → Editors; adds-only, never removes), renders the tree the site
+**declared** (`SITE_WELCOME`, below) with the clinic's identity substituted, imports what is
+declared and missing, and writes the page ACLs for the team pages it just created.
 
-**Import-once:** the import guard is the presence of `es/navigation.json` in the IntraVox
-group folder — not `es/home.json`: setup runs bare under `--skip-demo` and creates no content,
-so nothing but the import can write the marker. A second `make seed` logs
-`welcome: es tree already imported` and writes nothing.
-Everything staff create or edit under the tree is data and survives every re-seed.
+**Converging, not import-once** (`docs/adr/0019-the-welcome-tree-is-declared-and-converged-per-section.md`):
+every seed adds the declared sections and team pages that do not exist yet and leaves everything
+that exists exactly as found. The first seed stages the whole rendered tree, a later one only the
+new sections and team pages; either is copied into the Nextcloud container and imported there as
+`www-data` with `occ intravox:import /tmp/intravox-welcome-es --language es --user admin
+--skip-existing` — the one managed content path (editors' ZIP imports are a different door), and
+the engine is told never to overwrite. A second `make seed` logs `welcome: section noticias
+exists` for each row and writes nothing. Everything staff create or edit under the tree is data
+and survives every re-seed — and so does what they delete: a seeded page removed from an existing
+section stays removed. The home page, the menu and the footer are rendered on the first seed
+only; after that they are yours to edit.
+
+## Declaring the tree
+
+`sites/<slug>/site.sh` carries one row per section, in the order they appear in the menu:
+
+```bash
+SITE_WELCOME=(
+  'noticias|wall'      # section|flag — wall = fixed structure, empty = editable
+  'vida-cesfam|'
+  'documentos|wall'
+)
+```
+
+`scripts/deis.py` writes this default for a new site. Sections are folders of the library under
+`provisioning/intravox/es/sections/`; `equipos` is the one section that is generated instead of
+copied — declare `'equipos|wall'` and the seed renders the «Guía de equipos» hub plus one page per
+`SITE_TEAMS` entry, each linking the team's own folder and readable by that team and the
+jefaturas. A role-restricted page (OIRS, Estadística REM) is a team row you add by hand, e.g.
+`'role-oirs|OIRS'`. The Documentos page links exactly `SITE_SUBFOLDERS`; the menu and the footer
+list the declared sections and nothing else; the home page's quick-access row is three fixed app
+tiles (Recepción y admisión → the Transversal folder, Gestión y turnos, Teléfonos y anexos)
+followed by one tile per declared section. A row the library does not know, an unknown flag, or a
+page that would link a folder the site does not have stops the seed with a `FATAL` line before
+anything is imported. The `wall` flag is recorded now and enforced when the engine's walls ship
+(architecture review Phase 4).
+
+**A site file written before this block existed** stops `make seed` with
+`FATAL: sites/<slug>/site.sh must set SITE_WELCOME`. Add the block above by hand — `deis.py`
+never rewrites an existing site file. On an instance already seeded with the old fixed tree,
+`equipos` is live: declare `'equipos|wall'` to keep converging its team pages, or leave it out and
+`make divergence` lists it; nothing is deleted either way.
+
+**Adding a section later:** add the row, `make seed`. The seed logs `welcome: section <name>
+created — add its menu entry and home tile by hand` — the menu and home page are staff data by
+then, so the seed does not touch them; add the entry in the admin menu editor. **Removing a
+row** changes nothing on the instance: `make divergence` lists the section as live but
+undeclared, and a person deletes the folder if that is intended.
 
 ## The editorial workflow
 
@@ -42,29 +85,44 @@ The seeded «Vida CESFAM» images are placeholders.
 
 The engine keeps a working set of pages; this deployment budgets **≤ 50**:
 
-- 19 fixed seeded pages + one per `SITE_TEAMS` entry (12 at the pilot = **31**).
+- The default declaration seeds 8 fixed pages; `equipos` adds one hub + one page per `SITE_TEAMS`
+  entry (12 at the pilot = **21** with equipos declared).
 - Drafts count. Trash does not (empty it when deleting for real).
 - Editors creating content should publish under the existing folders (news, avisos, team
   folders) rather than new top-level folders.
 
-## Recovery — when the tree must be reseeded
+## Recovery — when a section is broken
 
-The documented recovery for a broken or half-imported tree:
+There is no whole-tree recovery any more, and no reason for one: the seed converges per section.
 
-1. As a group-folder admin, delete the `es` tree inside the `IntraVox` group folder
-   (export anything you want to keep first — **staff edits under `es/` are lost**).
-2. `make seed` — the tree returns with the clinic's identity and the seed pages.
+1. In the browser, as a group-folder admin, open Files → `IntraVox` → `es` → the section's folder
+   and choose **⋯ → Descargar**. Expected: a ZIP of the section lands in your downloads — your
+   copy of every staff edit inside it, which the next step discards.
+2. Same place, **⋯ → Eliminar** on that folder only. Expected: the folder disappears from `es/`
+   (it sits in the trash bin for the usual retention; nothing else under `es/` changes). If the
+   menu offers no delete, you are not a group-folder admin — ask one.
+3. On the host, from the repo root: `make seed` (`NC_CONTAINER=…` as for every seed on the compose
+   lab). Expected in the log: `welcome: section <name> created` (its «add its menu entry» hint
+   does not apply here — the menu still points at the section's stable id) and, for `equipos`,
+   one `team page … created` + three `acl: … rule created` per team. If it prints
+   `welcome: section <name> exists` instead, the folder is still there — the trash bin does not
+   count, the marker is `es/<name>/<name>.json` itself.
 
-Template evolution (an edited payload in `provisioning/intravox/es/`) does **not** flow to
-already-seeded instances — import-once is deliberate. Changed templates ship as **new pages**;
-only the recovery reseeds the fixed tree.
+Template evolution follows one rule: **an existing section is never re-imported**. An edited
+library page, a new sub-page or a new image under `provisioning/intravox/es/sections/<name>/`
+reaches only instances that do not have that section yet, and a page or image staff deleted
+inside an existing section stays deleted. Changed templates ship as new sections — or, on one
+instance, through the recovery above, which discards that section's staff edits.
 
 ## Team changes
 
-Teams come from `SITE_TEAMS` in `sites/<slug>/site.sh`. A new team's page + ACL rules arrive
-only through the recovery path above (the import is one-shot); a content-only fix on an
-existing team page is an ordinary edit. `docs/adr/0016-personal-layer-stays-page-level.md`
-records why the personal layer stays page-level.
+Teams come from `SITE_TEAMS` in `sites/<slug>/site.sh`, and team pages exist only when
+`equipos` is declared in `SITE_WELCOME`. A new team's page + ACL rules arrive with the next
+`make seed` (the page is created, the rules ride its creation); a content-only fix on an existing
+team page is an ordinary edit. A team removed from `SITE_TEAMS` keeps its page until a person
+deletes it — `make divergence` does not (yet) list team pages, only sections.
+`docs/adr/0016-personal-layer-stays-page-level.md` records why the personal layer stays
+page-level.
 
 ## Divergence tolerances
 

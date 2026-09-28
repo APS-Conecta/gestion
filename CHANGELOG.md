@@ -35,6 +35,19 @@ image digests live there and are deliberately not copied here — one fact, one 
   enabled and `es` as the primary language when unset. gestion writes no language config.
   [ADR-0018](docs/adr/0018-language-reality-is-the-engines-es-only-default.md).
 
+- **The welcome tree is declared per site and converged per section** — `SITE_WELCOME` in
+  `sites/<slug>/site.sh` (written by `scripts/deis.py`; the default has no `equipos`) names the
+  sections, and phase 41 converges them on every seed: added when declared and missing, never
+  touched when present (a later seed imports only what is new, so a page staff deleted stays
+  deleted), reported by `make divergence` when live but undeclared; the engine is told
+  `--skip-existing` and never overwrites. `provisioning/intravox/render.py` renders the tree —
+  home tiles, menu, footer and the Documentos links come from the declaration; the ten
+  hand-written team pages are gone, a team page is a declared `SITE_TEAMS` entry under a declared
+  `equipos`. [ADR-0019](docs/adr/0019-the-welcome-tree-is-declared-and-converged-per-section.md)
+  supersedes ADR-0015's import-once. Existing site files need the `SITE_WELCOME` block by hand
+  ([docs/WELCOME-SCREEN.md](docs/WELCOME-SCREEN.md) § Declaring the tree). Needs an IntraVox
+  engine with `occ intravox:import --skip-existing`.
+
 ## [0.3.0] — 2026-09-22
 
 ### Added
