@@ -28,11 +28,7 @@
         "widgets": [
           { "type": "heading", "column": 1, "order": 1, "content": "Accesos rápidos", "level": 2 },
           { "type": "links", "column": 1, "order": 2, "title": "", "columns": 5, "items": [
-            { "title": "Recepción y admisión",   "text": "Cupos, reprogramación, orientación",   "url": "/apps/files/?dir=/Transversal",              "icon": "information-outline",       "target": "_self" },
-            { "title": "Protocolos y documentos", "text": "Vigentes, con responsable y fecha",    "url": "/apps/files/?dir=/Transversal/Protocolos",   "icon": "file-document-multiple-outline", "target": "_self" },
-            { "title": "Gestión y turnos",        "text": "Programación semanal del centro",      "url": "/apps/calendar/",                            "icon": "calendar-month-outline",    "target": "_self" },
-            { "title": "Teléfonos y anexos",      "text": "Directorio interno del CESFAM",        "url": "/apps/contacts/",                            "icon": "phone-classic",             "target": "_self" },
-            { "title": "Guía de equipos",          "text": "Quién es quién, anexos y correos",      "url": "/apps/intravox/p/page-aps-00000008-0000-4000-8000-000000000008", "icon": "account-group-outline", "target": "_self" }
+            __HOME_TILES__
           ]}
         ]
       },

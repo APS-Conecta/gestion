@@ -18,9 +18,7 @@
         "columns": 1,
         "widgets": [
           { "type": "links", "column": 1, "order": 1, "title": "", "columns": 3, "items": [
-            { "title": "Protocolos",    "text": "Vigentes, con responsable y fecha de revisión", "url": "/apps/files/?dir=/Transversal/Protocolos",   "icon": "file-document-outline",        "target": "_self" },
-            { "title": "Flujogramas",   "text": "Circuitos de atención y derivación",           "url": "/apps/files/?dir=/Transversal/Flujogramas",  "icon": "file-tree-outline",            "target": "_self" },
-            { "title": "Documentación", "text": "Normativa y documentación de referencia",      "url": "/apps/files/?dir=/Transversal/Documentación","icon": "bookshelf",                    "target": "_self" }
+            __SUBFOLDER_LINKS__
           ]}
         ]
       },

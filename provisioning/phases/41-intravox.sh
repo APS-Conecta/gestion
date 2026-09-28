@@ -1,22 +1,27 @@
 # Phase 41 — welcome screen: IntraVox engine setup, group map, es import, page ACL.
-# OWNER: welcome-screen program (this file + provisioning/intravox/es/ move together).
+# OWNER: welcome-screen program (this file + provisioning/intravox/ — render.py and the es/ library —
+# move together).
 #
 # The repo's first provisioning-driven own-app content import (ADR-0015). Territorio's import is
 # deliberately operator-paste (host/aps-conecta:380-424); this phase crosses that boundary with
 # the disciplines inherited: upsert-by-stable-id, write verbs visible to seed-idempotent.sh,
 # query-before-set, fail-closed guards on every optional value (L5-03 class).
 #
-# IMPORT-ONCE (D2): staff edits are page data. Guard = in-container presence of es/navigation.json
-# inside the IntraVox groupfolder (path via gf_files_path shape, lib.sh:596). A second seed logs
-# "already" and writes nothing. Template evolution ships as NEW pages; the documented recovery
-# for a half-imported tree is delete-es/-and-reseed (engine admin deletes the es tree, then
-# `make seed`). Avisos/news are data, never overwritten.
+# PER-SECTION CONVERGENCE (ADR-0019, supersedes D2's import-once): the tree is DECLARED per site
+# (SITE_WELCOME, sites/<slug>/site.sh) and every seed converges reality toward it — a declared
+# section whose <section>/<section>.json is absent from the groupfolder is rendered and imported;
+# everything that exists is left exactly as found (occ intravox:import --skip-existing: the engine
+# never overwrites); a section live on disk but absent from the declaration is REPORTED by
+# scripts/divergence.sh, never deleted. Staff edits are page data (D2's core principle, kept):
+# nothing here can flatten them. The core files (home/navigation/footer) render on the first
+# seed only — they are staff-editable afterwards, so a section declared later gets a log line
+# asking for its menu entry, not a merge. Template evolution still ships as NEW sections/pages.
 #
 # Runs after 40-acl.sh by numbering: needs phase-20 groups (step 3), the enabled app (phase 12 —
 # lab clone during the lab period, vendored after promotion), and groupfolders (APPS). Ungated
 # (< 50) by design: every clinic seeds its welcome screen (FR-5) — welcome structure is not a
-# fixture. Zero new SITE_* variables: the identity block (site.sh:9-14) carries every value
-# substituted here (D3).
+# fixture. Zero new identity variables: the identity block (site.sh:9-14) carries every value
+# substituted here (D3); the tree's shape is SITE_WELCOME (ADR-0019).
 phase_begin "41-intravox" "Welcome screen: engine setup, group map, es import, page ACL"
 
 # --- 1. GUARDS (16-app-policy.sh:54 shape — every value fails closed, never defaults) -----------
@@ -87,85 +92,31 @@ _gmap role-oirs           'IntraVox Editors'   # registry gid is role-oirs (20-g
 # Admins: engine default (setup seeds NC admins once). Adds-never-deletes: membership only grows;
 # leavers keep read — harmless, recorded (D5).
 
-# --- 4. RENDER + TRANSPORT (D3, territorio shape): staged sed-render → docker cp → occ → rm -----
-_src="provisioning/intravox/es"
+# --- 4. RENDER + CONVERGE (ADR-0019): declaration → render.py → per-section import ------------
+# render.py owns the whole "declare, don't hard-code" (review M3): identity substitution, the
+# sections the site declared, one team page per SITE_TEAMS entry when 'equipos' is declared, the
+# Documentos links from SITE_SUBFOLDERS, home tiles / navigation / footer from the declaration
+# (review L0-01, L0-06, L0-07). It fails closed (unknown flag, undeclared section, a Files link
+# to a folder the site does not have, invalid JSON) with one FATAL line on stderr. Arrays travel
+# newline-joined: bash cannot export an array, render.py reads the environment.
+_lib="provisioning/intravox/es"
 _stage="$(mktemp -d)"
 chmod 755 "$_stage"   # mktemp gives 700 root:root and docker cp PRESERVES it — occ runs as
 # www-data, every file_exists() in the importer reads false, and the import exits 0 having
 # imported NOTHING (the silent-green this repo exists never to repeat; verified live). Files
 # inside land 644 via umask — the directory mode is the whole fix.
-_esc() { printf '%s' "$1" | sed -e 's/[\\&]/\\&/g' -e 's/#/\\#/g'; }  # sed-replacement-safe
-_render_file() {  # IN OUT — the substitution set (§2): identity block only, zero new vars
-  sed -e "s#__SITE_NOMBRE__#$(_esc "$SITE_NOMBRE")#g" \
-      -e "s#__SITE_NOMBRE_CORTO__#$(_esc "$SITE_NOMBRE_CORTO")#g" \
-      -e "s#__SITE_DIRECCION__#$(_esc "$SITE_DIRECCION")#g" \
-      -e "s#__SITE_COMUNA__#$(_esc "$SITE_COMUNA")#g" \
-      -e "s#__SITE_SERVICIO_SALUD__#$(_esc "$SITE_SERVICIO_SALUD")#g" \
-      "$1" > "$2"
-}
-( cd "$_src" && find . -type f -not -name '*.tpl' | while IFS= read -r _f; do   # .tpl files
-    # are templates, rendered explicitly below — never staged raw
-    mkdir -p "$_stage/$(dirname "$_f")"
-    _render_file "$_f" "$_stage/$_f"
-  done )
-# equipos hub: rendered, not static — identity substitution first (the tpl carries __SITE_*__
-# and must never ship raw), then the slot is dropped via python: sed cannot reliably remove the
-# comma preceding the slot, and the fill (Phase 3) is python anyway. Target path is
-# equipos/equipos.json — the equipos/ folder must OWN its json so the importer recurses into its
-# children (ImportPagesCommand.php:242-246 recurses only through folders that own a <folder>.json;
-# a nested equipos/equipos/ would orphan the whole subtree). The staged-JSON gate one step later
-# backstops both.
-mkdir -p "$_stage/equipos"
-_render_file "$_src/equipos/equipos.json.tpl" "$_stage/equipos/equipos.json"   # identity first;
-# the __TEAM_LINKS__ slot is handled by the fill-or-delete python below — never shipped raw
-
-# 4b. Team pages — the agnostic dynamic (§1): one page per SITE_TEAMS entry; the hub grid is
-# regenerated by the same loop so a different DEIS site gets its own set from site.sh alone.
-_team_dir() {  # GID DISPLAY -> the team's Files mount (deis.py Programas/Sectores emission
-  # shape — scripts/deis.py:173-192; verified against the pilot's SITE_FOLDERS at implement)
-  case "$1" in
-    prog-*)   printf 'Programas/%s' "${2#Programa }" ;;
-    sector-*) printf 'Sectores/%s' "$2" ;;
-    *)        printf '%s' "$2" ;;
-  esac
-}
-for _x in "${SITE_TEAMS[@]}"; do printf '%s\n' "$_x"; done > "$_stage/.teams"
-while IFS= read -r _e; do
-  [ -n "$_e" ] || continue
-  _tg="${_e%%|*}"; _td="${_e#*|}"
-  mkdir -p "$_stage/equipos/$_tg"
-  _render_file "$_src/equipos/equipo.tpl" "$_stage/equipos/$_tg/$_tg.json"   # identity first
-  sed -i.bak -e "s#__TEAM_ID__#${_tg}#g" -e "s#__TEAM_DISPLAY__#$(_esc "$_td")#g" \
-      -e "s#__TEAM_DIR__#$(_esc "$(_team_dir "$_tg" "$_td")")#g" \
-      "$_stage/equipos/$_tg/$_tg.json" && rm -f "$_stage/equipos/$_tg/$_tg.json.bak"
-done < "$_stage/.teams"
-python3 - "$_stage/.teams" "$_stage/.team-links" <<'PY'
-import json, sys
-frags = []
-for line in open(sys.argv[1]):
-    gid, _, display = line.strip().partition("|")
-    if gid:
-        frags.append(json.dumps({"title": display, "text": "Actas, plan y noticias del equipo",
-            "url": f"/apps/intravox/p/page-aps-team-{gid}",
-            "icon": "account-group-outline", "target": "_self"}, ensure_ascii=False))
-open(sys.argv[2], "w").write(",\n          ".join(frags))
-PY
-# hub: fill (or, with no teams, delete) the slot — python both ways, same discipline
-python3 - "$_stage/equipos/equipos.json" "$_stage/.team-links" <<'PY'
-import re, sys
-page, frag = sys.argv[1], open(sys.argv[2]).read().strip()
-s = open(page).read()
-if frag:
-    s = s.replace("__TEAM_LINKS__", frag)
-else:
-    s = re.sub(r",\s*\n\s*__TEAM_LINKS__", "", s)   # Phase 2 shape: no teams -> drop slot+comma
-open(page, "w").write(s)
-PY
-rm -f "$_stage/.teams" "$_stage/.team-links"
-
-# fail-loud gate: the staged tree must be valid JSON before it ships — a shell-hostile DEIS byte
-# in any SITE_*/team value must FATAL here, never import a broken page.
-( cd "$_stage" && find . -name '*.json' -print0 | xargs -0 -n1 python3 -m json.tool >/dev/null ) || { echo "FATAL: rendered payload is not valid JSON — a site value broke a page; fix sites/$SITE/site.sh" >&2; exit 1; }
+# Nothing in sites/<slug>/site.sh is exported (seed.sh sources it; there is no set -a anywhere),
+# so EVERY value render.py reads is forwarded here by name — the identity block included. The
+# gate in scripts/test.sh asserts this list stays complete (a missing name is a FATAL on line one
+# of every seed, and a gate that hands python its environment directly would never see it).
+env SITE_NOMBRE="$SITE_NOMBRE" SITE_NOMBRE_CORTO="$SITE_NOMBRE_CORTO" SITE_DIRECCION="$SITE_DIRECCION" \
+    SITE_COMUNA="$SITE_COMUNA" SITE_SERVICIO_SALUD="$SITE_SERVICIO_SALUD" \
+    SITE_WELCOME="$(printf '%s\n' "${SITE_WELCOME[@]}")" \
+    SITE_TEAMS="$(printf '%s\n' "${SITE_TEAMS[@]}")" \
+    SITE_FOLDERS="$(printf '%s\n' "${SITE_FOLDERS[@]}")" \
+    SITE_SUBFOLDERS="$(printf '%s\n' "${SITE_SUBFOLDERS[@]}")" \
+    python3 provisioning/intravox/render.py "$_lib" "$_stage" >/dev/null \
+  || { echo "FATAL: the welcome tree did not render — the FATAL line above names the declaration row or site value that broke it (sites/$SITE/site.sh)" >&2; exit 1; }
 
 _ivfid="$(occ groupfolders:list --output=json 2>/dev/null | python3 -c '
 import sys, json
@@ -173,100 +124,128 @@ for f in json.load(sys.stdin):
     if (f.get("mount_point") or f.get("mountPoint")) == "IntraVox": print(f["id"]); break')"
 [ -n "$_ivfid" ] || { echo "FATAL: IntraVox groupfolder not found after intravox:setup — setup did not converge." >&2; exit 1; }
 datadir_load || { echo "FATAL: datadir unresolved (fail-closed, lib.sh:139-148)." >&2; exit 1; }
+_gf="$DATADIR/__groupfolders/$_ivfid/files"   # gf_files_path shape (lib.sh:596): <DATADIR>/__groupfolders/<fid>/files/<rel>
+_gf_has() { nc_exec --user www-data -- test -f "$_gf/$1" 2>/dev/null; }   # groupfolder-root-relative
+
   # Same discipline for the EN fallback home: every content generator now stamps its output
   # (seed/import → `page-aps` uniqueId, engine-generated → `_generated`), so a home carrying
   # NEITHER is pre-3.1.1 setup boilerplate — the only marker-less generator that ever existed.
   # Cleared so it cannot outrank the seeded es welcome (hasRealContent counts it as real). No
   # clinic ever ran 3.1.1's predecessors in production (the app shipped 2026-09-25), so this
   # arm cannot meet staff data; it exists to converge this lab box and any restored backup.
-  if nc_exec --user www-data -- test -f "$DATADIR/__groupfolders/$_ivfid/files/en/home.json" 2>/dev/null \
-     && ! nc_exec --user www-data -- grep -q -e "page-aps" -e "_generated" \
-          "$DATADIR/__groupfolders/$_ivfid/files/en/home.json" 2>/dev/null; then
-    docker exec "${NC_CONTAINER:?}" rm -f "$DATADIR/__groupfolders/$_ivfid/files/en/home.json"
+  if _gf_has en/home.json \
+     && ! nc_exec --user www-data -- grep -q -e "page-aps" -e "_generated" "$_gf/en/home.json" 2>/dev/null; then
+    docker exec "${NC_CONTAINER:?}" rm -f "$_gf/en/home.json"
     # rescan: the rm bypassed the Files API, and a mounted view reads the file cache —
     # without this the stale entry answers "exists" and the engine serves a ghost
     occ files:scan --path="/__groupfolders/$_ivfid/files" >/dev/null 2>&1
     log "  welcome: legacy marker-less en/home.json cleared (pre-3.1.1 boilerplate)"
   fi
 
-# Import guard — gf_files_path shape (lib.sh:596): <DATADIR>/__groupfolders/<fid>/files/<rel>.
-# The marker is es/navigation.json, NOT home.json: setup is BARE under --skip-demo (L1-03 —
-# no content, no boilerplate home), so SETUP can never fake the marker — the original
-# home.json guard tripped on setup boilerplate and silently skipped the whole program on
-# every clean clinic. (navigation.json has other writers in the engine — the admin menu
-# editor among them — but none of them runs on a bare fresh install before this import;
-# the marker's job is only to be unfakeable by setup/upgrade, which it is. A home.json
-# guard would still be the wrong marker for any box where the admin API's full-mode
-# setup endpoint ran — it creates a _generated boilerplate home; the pre-clean arm
-# below converges that.)
-if nc_exec --user www-data -- test -f "$DATADIR/__groupfolders/$_ivfid/files/es/navigation.json" 2>/dev/null; then
-  log "  welcome: es tree already imported (staff edits are data — import-once, D2)"
-else
+# Markers. Core = es/navigation.json (only the import ever writes it; setup is bare under
+# --skip-demo, so it cannot fake the marker — commit 5ff154e's lesson). Section = the section's
+# own hub page es/<s>/<s>.json — the exact thing the importer recurses through. Team page (when
+# 'equipos' is declared) = es/equipos/<gid>/<gid>.json. What is missing gets imported; what
+# exists is logged with the noop verb and never touched (--skip-existing is the engine-side
+# guarantee, these lines are the seam's own record).
+_first_run=0; _gf_has es/navigation.json || _first_run=1
+_new_sections=(); _new_teams=(); _equipos=0
+for _row in "${SITE_WELCOME[@]}"; do
+  _s="${_row%%|*}"
+  [ "$_s" = equipos ] && _equipos=1
+  if _gf_has "es/$_s/$_s.json"; then log "  welcome: section $_s exists"; else _new_sections+=("$_s"); fi
+done
+if [ "$_equipos" = 1 ]; then
+  for _e in "${SITE_TEAMS[@]}"; do
+    _tg="${_e%%|*}"
+    if _gf_has "es/equipos/$_tg/$_tg.json"; then log "  welcome: team page $_tg exists"; else _new_teams+=("$_tg"); fi
+  done
+fi
+
+if [ "$_first_run" = 1 ] || [ "${#_new_sections[@]}" -gt 0 ] || [ "${#_new_teams[@]}" -gt 0 ]; then
   # Setup boilerplate pre-clean (v3.1.1 discipline): if a home.json exists that does NOT
   # carry the seeded `page-aps` uniqueId namespace (staff edits always carry it — every
   # seeded page and every child of one does; setup boilerplate never does), clear it so the
   # import can write ours. Post-L1-03 bare setup never creates one; the live sources are the
   # admin API's full-mode setup endpoint (a `_generated` boilerplate home) and restored
-  # backups. Query-before-set: a seeded home is never touched.
-  if nc_exec --user www-data -- test -f "$DATADIR/__groupfolders/$_ivfid/files/es/home.json" 2>/dev/null \
-     && ! nc_exec --user www-data -- grep -q "page-aps" \
-          "$DATADIR/__groupfolders/$_ivfid/files/es/home.json" 2>/dev/null; then
-    docker exec "${NC_CONTAINER:?}" rm -f "$DATADIR/__groupfolders/$_ivfid/files/es/home.json"
+  # backups. Query-before-set: a seeded home is never touched. First run only — afterwards
+  # home.json is staff data and --skip-existing leaves it alone.
+  if [ "$_first_run" = 1 ] && _gf_has es/home.json \
+     && ! nc_exec --user www-data -- grep -q "page-aps" "$_gf/es/home.json" 2>/dev/null; then
+    docker exec "${NC_CONTAINER:?}" rm -f "$_gf/es/home.json"
     occ files:scan --path="/__groupfolders/$_ivfid/files" >/dev/null 2>&1   # same cache discipline as the en arm
     log "  welcome: setup-boilerplate es/home.json cleared for import"
+  fi
+  # What is imported (owner decision 2026-09-28): the FIRST seed takes the whole rendered tree —
+  # core files + every declared section. A later seed takes ONLY what is new: each new section's
+  # folder, and for a new team under an existing equipos the hub JSON (the importer recurses only
+  # through a folder that owns its JSON; the hub exists, so it is skipped) plus that team's folder.
+  # Never the whole tree again: --skip-existing skips what EXISTS but creates what is MISSING at
+  # every level, so a seeded page staff deleted on purpose («Aviso de ejemplo») would come back
+  # every time any section or team is added — a deletion is a staff edit too.
+  _import="$_stage"
+  if [ "$_first_run" = 0 ]; then
+    _import="$(mktemp -d)"; chmod 755 "$_import"   # the same docker-cp mode trap as $_stage
+    for _s in "${_new_sections[@]}"; do cp -a "$_stage/$_s" "$_import/"; done
+    if [ "${#_new_teams[@]}" -gt 0 ] && [ ! -d "$_import/equipos" ]; then
+      mkdir "$_import/equipos" && cp -a "$_stage/equipos/equipos.json" "$_import/equipos/"
+      for _tg in "${_new_teams[@]}"; do cp -a "$_stage/equipos/$_tg" "$_import/equipos/"; done
+    fi
   fi
   # pre-clean: docker cp into an existing dir nests one level deeper and the retry imports
   # nothing, silently (territorio cp's single files into /tmp/ for the same reason)
   docker exec "${NC_CONTAINER:?}" rm -rf /tmp/intravox-welcome-es
-  docker cp "$_stage" "${NC_CONTAINER:?}:/tmp/intravox-welcome-es"
-  occ intravox:import /tmp/intravox-welcome-es --language es --user admin >/dev/null
+  docker cp "$_import" "${NC_CONTAINER:?}:/tmp/intravox-welcome-es"
+  # --skip-existing is not optional, pruned import or not: without it the engine overwrites every
+  # existing node it meets (the equipos hub above; a first run over a restored tree), so a failing
+  # command is the correct outcome. An engine that predates the flag rejects it — promote the
+  # engine first; never drop the flag to get past it.
+  occ intravox:import /tmp/intravox-welcome-es --language es --user admin --skip-existing >/dev/null \
+    || { echo "FATAL: occ intravox:import --skip-existing failed — re-run it by hand without >/dev/null to see why; an IntraVox engine older than welcome-folders p3 rejects the flag: promote the engine before seeding (a tree is never overwritten to work around it)" >&2; exit 1; }
   docker exec "${NC_CONTAINER:?}" rm -rf /tmp/intravox-welcome-es
-  log "  welcome: es tree created"
-  _welcome_first_run=1   # arms the one-time ACL writes in step 5
+  [ "$_import" = "$_stage" ] || rm -rf "$_import"
+  if [ "$_first_run" = 1 ]; then
+    log "  welcome: es tree created"
+    for _s in "${_new_sections[@]}"; do log "  welcome: section $_s created"; done
+  else
+    for _s in "${_new_sections[@]}"; do
+      log "  welcome: section $_s created — add its menu entry and home tile by hand (navigation.json and home.json are staff data, ADR-0019)"
+    done
+  fi
+  for _tg in "${_new_teams[@]}"; do log "  welcome: team page $_tg created"; done
 fi
 rm -rf "$_stage"
 
-# --- 5. PAGE ACL (D4): baseline-deny + target-allow, written ONCE with the first import -------
+# --- 5. PAGE ACL (D4): baseline-deny + target-allow, written with the page it governs ---------
 # ACL.php's --test branch demands --user + <path> (ACL.php:72-82) — query-by-group is not a CLI
-# surface, so per-rule query-before-set is impossible. Instead the rule writes ride the first
-# run (armed by _welcome_first_run): rules are created exactly once, immediately after the
-# pages they govern exist — write-once to match import-once. A seed that dies between import
-# and rules is a half-imported tree; the documented recovery (delete es/ + reseed) covers it.
-# Verification uses --test with REAL USERS (T-4), never this block. Paths are groupfolder-root-
-# relative — pages live under es/ (ACL.php:152-154 resolves from the folder root). ACL must be
-# enabled before rule writes (setup does not enable it — verified live, T-5 lab fact); the
-# --enable setter is idempotent and a real failure surfaces in the rule writes, which demand
-# ACL on (ACL.php:99-101).
-occ groupfolders:permissions "$_ivfid" --enable >/dev/null 2>&1 || true
-_acl() {  # PATH GID PERM — one rule, first-run only (block comment above)
-  occ groupfolders:permissions "$_ivfid" "$1" --group "$2" -- "$3" >/dev/null
-  log "  acl: $1 rule created ($2 $3)"
-}
-# Restricted pages (path|gid). Phase 1 ships the section with an empty list; Phase 2 fills it
-# (registry gids per 20-groups.sh:49-50); Phase 3 appends the team loop in the same branch.
-# Gids are the registry ids — the design text's role-encargado-* names do not exist (plan-local
-# fix, design follow-up noted). Paths carry the es/ language segment: ACL resolves from the
-# groupfolder root (ACL.php:152-154) while import nests pages under es/.
-RESTRICTED_PAGES=(
-  'es/equipos/jefaturas|cat-jefaturas'
-  'es/equipos/estadistica-rem|role-estadistica-rem'
-  'es/equipos/estadistica-rem|cat-jefaturas'
-  'es/equipos/oirs|role-oirs'
-  'es/equipos/oirs|cat-jefaturas'
-)
-if [ "${_welcome_first_run:-}" = "1" ]; then
-  for _entry in "${RESTRICTED_PAGES[@]:-}"; do
-    [ -n "$_entry" ] || continue
-    _acl "${_entry%%|*}" 'IntraVox Users' '-read'   # baseline deny
-    _acl "${_entry%%|*}" "${_entry#*|}"   '+read'   # target allow
+# surface, so per-rule query-before-set is impossible. Instead a rule rides the creation of the
+# page it governs (the _new_teams list above): written exactly once, immediately after the page
+# exists — write-once to match add-once. A seed that dies between import and rules leaves a
+# team page without its rules; the next seed sees the page as existing and does NOT rewrite
+# them — recovery is `occ groupfolders:permissions` by hand for that page, or delete the page
+# folder and reseed (only that team's page is touched). Verification uses --test with REAL
+# USERS (T-4), never this block. Paths are groupfolder-root-relative — pages live under es/
+# (ACL.php:152-154 resolves from the folder root). ACL must be enabled before rule writes
+# (setup does not enable it — verified live, T-5 lab fact); the --enable setter is idempotent
+# and a real failure surfaces in the rule writes, which demand ACL on (ACL.php:99-101).
+# The static restricted pages (jefaturas, estadistica-rem, oirs) are gone with the static team
+# pages (review L0-07): a role-restricted page is a declared team, e.g. 'role-oirs|OIRS' — a row
+# you add by hand (deis.py emits programs and sectors only; the site file is yours after that).
+if [ "${#_new_teams[@]}" -gt 0 ]; then
+  occ groupfolders:permissions "$_ivfid" --enable >/dev/null 2>&1 || true
+  _acl() {  # PATH GID PERM — one rule, on page creation only (block comment above)
+    occ groupfolders:permissions "$_ivfid" "$1" --group "$2" -- "$3" >/dev/null
+    log "  acl: $1 rule created ($2 $3)"
+  }
+  for _tg in "${_new_teams[@]}"; do   # gid = the team itself (page-ACL by construction, FR-4)
+    _acl "es/equipos/$_tg" 'IntraVox Users' '-read'   # baseline deny
+    _acl "es/equipos/$_tg" "$_tg"           '+read'   # target allow
+    # Jefaturas read every team page — the same oversight the folder matrix gives them on every
+    # Unidad and Sector (site.sh SITE_ACL: "a Jefatura READS a Unidad that has an owning role"),
+    # and what the retired restricted-page rows gave estadistica-rem and oirs. Without it a
+    # declared role page ('role-oirs|OIRS') would lock its jefaturas out.
+    _acl "es/equipos/$_tg" cat-jefaturas    '+read'
   done
-  # Team pages: same two-rule pattern, gid = the team itself (page-ACL by construction, FR-4)
-  while IFS= read -r _e; do
-    [ -n "$_e" ] || continue
-    _tg="${_e%%|*}"
-    _acl "es/equipos/$_tg" 'IntraVox Users' '-read'
-    _acl "es/equipos/$_tg" "$_tg" '+read'
-  done <<< "$(for _x in "${SITE_TEAMS[@]}"; do printf '%s\n' "$_x"; done)"
 fi
 
 phase_end
