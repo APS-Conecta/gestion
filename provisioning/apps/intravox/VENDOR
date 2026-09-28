@@ -6,7 +6,7 @@
 # when the app tags.
 #
 # THIS ONE IS BUILT, NOT DOWNLOADED — it is our own app (ADR-0003, the IntraVox fork: upstream
-# voxcloud/intravox, AGPL-3, modified in-repo per doctrine). `url=https://github.com/APS-Conecta/IntraVox/tree/v3.1.2-aps1
+# voxcloud/intravox, AGPL-3, modified in-repo per doctrine). `url=` names the fork tag it was
 # built from. The build, run from the org-root twin (any clone of the repo works — the archive
 # comes from the tag):
 #
@@ -31,6 +31,6 @@
 # ONE tarball in this directory, ever: ensure_vendored_app globs *.tar.gz and fails on anything
 # other than exactly one. A bump deletes the previous file, it does not sit beside it.
 
-version=3.1.2
-sha256=f3738154002e5ef5427235434e67f82c55868c3945e79dc8c2538572191ca9fc
-url=https://github.com/APS-Conecta/IntraVox/tree/v3.1.2-aps1
+version=3.1.3
+sha256=343f778379e8cdf195298294dbf382e6414d80b8d912be38d59c6f6be6252831
+url=https://github.com/APS-Conecta/IntraVox/tree/v3.1.3-aps1
