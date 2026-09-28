@@ -211,6 +211,19 @@ SITE_TEAMS=(
   {nl.join(teams)}
 )
 
+# --- Welcome screen: the page tree phase 41 seeds and converges, one row per section (section|flag) ---
+# A section is a folder of the library under provisioning/intravox/es/sections/. The flag is the
+# protection attribute (review L0-04): `wall` = fixed structure staff cannot delete or move; empty =
+# editable. Recorded, not yet enforced: the engine walls arrive with review Phase 4. `equipos` is
+# deliberately absent — declare it ('equipos|wall') and phase 41 renders the hub plus one page per
+# SITE_TEAMS entry. Adding a row later and re-seeding ADDS that section and touches nothing else
+# (docs/WELCOME-SCREEN.md, ADR-0019).
+SITE_WELCOME=(
+  'noticias|wall'
+  'vida-cesfam|'
+  'documentos|wall'
+)
+
 # --- Roles this establishment adds beyond the 22 in the shared registry (id|display|category) (#103) ---
 # Empty is the right default: those 22 are a CESFAM's standard positions and cover an establishment
 # with no local unit of its own. Add one here if this one runs a SAR, SAPU or SUR, e.g.

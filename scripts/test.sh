@@ -514,6 +514,105 @@ if bad_cut:
     print("comuna_codigo values Comuna::of() would refuse (not 5 digits) — a phase 16 write"
           " of any of these silently disarms the import door: " + ", ".join(bad_cut[:5]))
     sys.exit(1)'
+# The welcome declaration has a WRITER (deis.py) and a READER (seed.sh's guard + phase 41). This
+# proves the writer's output is what the reader expects: written to a scratch tree (write_site
+# refuses an existing sites/<name>/), sourced by a real bash, the rows read back — and `equipos`
+# absent, because that is the product decision the default carries (review L0-01).
+check python3 -c '
+import csv, glob, os, shutil, subprocess, sys, tempfile
+sys.path.insert(0, "scripts")
+import deis
+register = sorted(glob.glob("sites/establecimientos-deis-*.csv"))[-1]
+row = next(csv.DictReader(open(register, encoding="utf-8")))
+tmp = tempfile.mkdtemp()
+try:
+    deis.HERE = os.path.join(tmp, "scripts"); os.makedirs(deis.HERE)
+    deis.write_site(row, "gate", "probe", sectors=[], programs=[])
+    out = subprocess.run(["bash", "-c", "set -u; . sites/probe/site.sh; printf \"%s\\n\" \"${SITE_WELCOME[@]}\""],
+                         cwd=tmp, capture_output=True, text=True)
+finally:
+    shutil.rmtree(tmp)
+if out.returncode != 0:
+    print("sourcing the written site file failed: " + out.stderr.strip()[:300]); sys.exit(1)
+rows = out.stdout.split()
+if rows != ["noticias|wall", "vida-cesfam|", "documentos|wall"]:
+    print("SITE_WELCOME default is not the three declared rows: " + repr(rows)); sys.exit(1)'
+# The reporter's welcome arm lists live sections with a fragment that runs INSIDE the container
+# (`sh -c` under nc_exec) — the parser class divergence.sh's header warns turns a report silently
+# green when it rots. Read out of the script (not restated) and run against a scratch groupfolder
+# tree: a folder that owns its JSON is a section, images/ and a JSON-less folder are not.
+check python3 -c '
+import os, re, subprocess, sys, tempfile
+src = open("scripts/divergence.sh", encoding="utf-8").read()
+m = re.search(r"# --- welcome sections.*?nc_exec --user www-data -- sh -c \x27(.*?)\x27 sh ", src, re.S)
+if not m:
+    print("welcome arm listing fragment not found in scripts/divergence.sh"); sys.exit(1)
+frag = m.group(1)
+root = tempfile.mkdtemp(); es = os.path.join(root, "__groupfolders", "20", "files", "es")
+for d in ("noticias", "images", "_resources", "campanas"): os.makedirs(os.path.join(es, d))
+open(os.path.join(es, "noticias", "noticias.json"), "w").write("{}")
+open(os.path.join(es, "images", "x.svg"), "w").write("<svg/>")
+out = subprocess.run(["sh", "-c", frag, "sh", root, "20"], capture_output=True, text=True)
+if out.returncode != 0 or out.stdout.split() != ["noticias"]:
+    print("welcome arm listing fragment answered " + repr(out.stdout) + " (want exactly noticias): " + out.stderr[:200]); sys.exit(1)
+out = subprocess.run(["sh", "-c", frag, "sh", root, "99"], capture_output=True, text=True)
+if out.returncode != 0 or out.stdout.strip() != "":
+    print("welcome arm listing fragment must answer nothing, exit 0, when the folder is absent"); sys.exit(1)'
+# The renderer is the seam's whole "declare, don't hard-code" (review M3) in one file, so it is
+# gated the way the identity round-trip is: real values in, the produced tree inspected, and the
+# refusals SEEDED — a renderer that cannot go red is not a gate. The register holds names with
+# quotes and backslashes (the deis round trip above), so one identity value carries both.
+check python3 -c '
+import json, os, shlex, subprocess, sys, tempfile
+R = "provisioning/intravox/render.py"; L = "provisioning/intravox/es"
+base = {"SITE_NOMBRE": "Centro de Salud Familiar Prueba", "SITE_NOMBRE_CORTO": "CESFAM Prueba",
+        "SITE_DIRECCION": "Calle 1", "SITE_COMUNA": "Comuna", "SITE_SERVICIO_SALUD": "SS Prueba",
+        "SITE_FOLDERS": "Transversal\nSectores/Sector 1\nProgramas/X\nUnidades/OIRS", "SITE_SUBFOLDERS": "Protocolos\nFlujogramas",
+        "SITE_TEAMS": "sector-1|Sector 1\nprog-x|Programa X", "SITE_WELCOME": "noticias|wall\nvida-cesfam|\ndocumentos|wall"}
+def run(env):
+    # The values sit in bash as PLAIN shell variables (what seed.sh has after sourcing the site
+    # file — nothing exported) and only the phase-shaped `env NAME="$NAME" …` line hands them to
+    # python. A name that line forgets is invisible to render.py, exactly as on a real seed; a
+    # gate that filled os.environ directly could never see that.
+    stage = tempfile.mkdtemp() + "/s"
+    shell = "; ".join(k + "=" + shlex.quote(v) for k, v in env.items())
+    forward = " ".join(k + "=\"$" + k + "\"" for k in env)
+    p = subprocess.run(["bash", "-c", shell + "; env " + forward + " python3 " + R + " " + L + " " + stage],
+                       env={k: v for k, v in os.environ.items() if not k.startswith("SITE_")}, capture_output=True, text=True)
+    return p, stage
+p, stage = run(base)
+if p.returncode != 0: print("default render failed: " + p.stderr.strip()); sys.exit(1)
+if os.path.isdir(stage + "/equipos"): print("default renders equipos — L0-01 says it ships without"); sys.exit(1)
+nav = json.load(open(stage + "/navigation.json"))
+if [i["id"] for i in nav["items"]] != ["nav_inicio", "nav_noticias", "nav_vida_cesfam", "nav_documentos"]:
+    print("nav is not Inicio + the declared sections in order: " + str([i["id"] for i in nav["items"]])); sys.exit(1)
+docs = open(stage + "/documentos/documentos.json").read()
+if "/Transversal/Protocolos" not in docs or "/Transversal/Documentación" in docs:
+    print("Documentos links are not the declared SITE_SUBFOLDERS"); sys.exit(1)
+if "__" in open(stage + "/home.json").read(): print("home.json shipped a raw placeholder"); sys.exit(1)
+p, stage = run({**base, "SITE_WELCOME": base["SITE_WELCOME"] + "\nequipos|wall"})
+if p.returncode != 0: print("equipos render failed: " + p.stderr.strip()); sys.exit(1)
+hub = json.load(open(stage + "/equipos/equipos.json"))
+links = [w for r in hub["layout"]["rows"] for w in r["widgets"] if w["type"] == "links"][0]["items"]
+if len(links) != 2 or not os.path.isfile(stage + "/equipos/sector-1/sector-1.json"):
+    print("equipos hub is not exactly the two declared teams"); sys.exit(1)
+if "/Sectores/Sector 1" not in open(stage + "/equipos/sector-1/sector-1.json").read():
+    print("team page does not link its own declared folder"); sys.exit(1)
+p, stage = run({**base, "SITE_WELCOME": base["SITE_WELCOME"] + "\nequipos|wall", "SITE_TEAMS": "role-oirs|OIRS",
+                "SITE_NOMBRE_CORTO": "CESFAM \"Dr. X\" \\ Sur"})
+if p.returncode != 0: print("role row / hostile identity render failed: " + p.stderr.strip()[-300:]); sys.exit(1)
+if "?dir=/Unidades/OIRS" not in json.dumps(json.load(open(stage + "/equipos/role-oirs/role-oirs.json")), ensure_ascii=False):
+    print("a role row does not link the declared folder named after it (Unidades/OIRS)"); sys.exit(1)
+hero = json.load(open(stage + "/home.json"))["layout"]["rows"][0]["widgets"][1]["content"]
+if hero != "CESFAM \"Dr. X\" \\ Sur": print("an identity value with a quote and a backslash did not round-trip: " + repr(hero)); sys.exit(1)
+for bad, why in [({"SITE_WELCOME": "noticias|fortress"}, "unknown flag"),
+                 ({"SITE_WELCOME": "campanas|"}, "undeclared library section"),
+                 ({"SITE_FOLDERS": "Sectores/Sector 1"}, "Files link to an undeclared root"),
+                 ({"SITE_WELCOME": base["SITE_WELCOME"] + "\nequipos|wall", "SITE_TEAMS": "sector-9|Sector 9"},
+                  "a team whose folder the site does not declare")]:
+    p, _ = run({**base, **bad})
+    if p.returncode == 0 or "FATAL:" not in p.stderr:
+        print("render.py accepted " + why); sys.exit(1)'
 
 # The café case above is behavioural, and load-bearing only under a COLLATING locale — which a
 # Chilean dev has and GitHub's runners do not, defaulting to C.UTF-8 where that range refuses `é`
