@@ -613,6 +613,39 @@ for bad, why in [({"SITE_WELCOME": "noticias|fortress"}, "unknown flag"),
     p, _ = run({**base, **bad})
     if p.returncode == 0 or "FATAL:" not in p.stderr:
         print("render.py accepted " + why); sys.exit(1)'
+# The wall flag is the only thing the seam hands the engine about protection (review L4-01):
+# per page, from the declaration, never a folder rule. Rendered and inspected, both ways. A wall
+# is the section's STRUCTURE (owner decision 2026-09-28): the hub, a seeded page with sub-pages
+# (noticias/avisos), every team page; the seeded example posts stay ordinary, deletable pages.
+check python3 -c '
+import json, os, shlex, subprocess, sys, tempfile
+R = "provisioning/intravox/render.py"; L = "provisioning/intravox/es"
+base = {"SITE_NOMBRE": "Centro de Salud Familiar Prueba", "SITE_NOMBRE_CORTO": "CESFAM Prueba",
+        "SITE_DIRECCION": "Calle 1", "SITE_COMUNA": "Comuna", "SITE_SERVICIO_SALUD": "SS Prueba",
+        "SITE_FOLDERS": "Transversal\nSectores/Sector 1\nProgramas/X", "SITE_SUBFOLDERS": "Protocolos\nFlujogramas",
+        "SITE_TEAMS": "sector-1|Sector 1\nprog-x|Programa X",
+        "SITE_WELCOME": "noticias|wall\nvida-cesfam|\ndocumentos|wall\nequipos|wall"}
+def run(env):
+    stage = tempfile.mkdtemp() + "/s"
+    shell = "; ".join(k + "=" + shlex.quote(v) for k, v in env.items())
+    forward = " ".join(k + "=\"$" + k + "\"" for k in env)
+    p = subprocess.run(["bash", "-c", shell + "; env " + forward + " python3 " + R + " " + L + " " + stage],
+                       env={k: v for k, v in os.environ.items() if not k.startswith("SITE_")}, capture_output=True, text=True)
+    return p, stage
+def walled(stage, rel):
+    return json.load(open(stage + "/" + rel)).get("protected") is True
+p, stage = run(base)
+if p.returncode != 0: print("render failed: " + p.stderr.strip()); sys.exit(1)
+for rel in ["noticias/noticias.json", "noticias/avisos/avisos.json", "documentos/documentos.json",
+            "equipos/equipos.json", "equipos/sector-1/sector-1.json", "equipos/prog-x/prog-x.json"]:
+    if not walled(stage, rel): print("wall page not stamped: " + rel); sys.exit(1)
+for rel in ["vida-cesfam/vida-cesfam.json", "home.json", "noticias/bienvenida/bienvenida.json",
+            "noticias/como-publicar/como-publicar.json", "noticias/avisos/aviso-ejemplo/aviso-ejemplo.json"]:
+    if walled(stage, rel): print("editable page stamped as a wall: " + rel); sys.exit(1)
+p, stage = run({**base, "SITE_WELCOME": "noticias|\nvida-cesfam|wall\ndocumentos|wall"})
+if p.returncode != 0: print("render failed: " + p.stderr.strip()); sys.exit(1)
+if walled(stage, "noticias/noticias.json") or not walled(stage, "vida-cesfam/vida-cesfam.json"):
+    print("the wall follows the library, not the declaration"); sys.exit(1)'
 
 # The café case above is behavioural, and load-bearing only under a COLLATING locale — which a
 # Chilean dev has and GitHub's runners do not, defaulting to C.UTF-8 where that range refuses `é`

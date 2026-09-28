@@ -6,6 +6,7 @@
 Environment (the phase exports them; arrays newline-joined, one entry per line):
   SITE_NOMBRE SITE_NOMBRE_CORTO SITE_DIRECCION SITE_COMUNA SITE_SERVICIO_SALUD   identity (D3)
   SITE_WELCOME    section|flag rows — WHICH sections exist (review L0-01); flag: wall | empty
+                  (wall = the section's structure is stamped "protected": true, stamp_walls below)
   SITE_TEAMS      gid|display rows — one team page each, only when 'equipos' is declared; each
                   links its own folder, which SITE_FOLDERS must declare (team_dir below)
   SITE_FOLDERS    group folders — the only Files roots a rendered link may point at (L0-06)
@@ -145,6 +146,27 @@ def main(library, stage):
                     shutil.copyfile(src, os.path.join(stage, rel))
                     written.append(rel)
 
+    def stamp_walls(section, every_page=False):
+        # Review L4-01: a `wall` section's STRUCTURE carries the engine's marker, which then
+        # refuses delete/move and survives every save. Structure = the section hub, every
+        # seeded page that has sub-pages (noticias/avisos — the home's Avisos list reads it),
+        # and for equipos every page (every_page: its pages ARE the declared SITE_TEAMS). The
+        # seeded example posts stay ordinary, deletable pages like every post staff create
+        # later (owner decision 2026-09-28). Per page, never a folder rule (ADR-0019).
+        for rel in written:
+            page_dir = os.path.dirname(os.path.join(stage, rel))
+            if not rel.startswith(section + "/") or rel != os.path.relpath(page_dir, stage) + "/" + os.path.basename(page_dir) + ".json":
+                continue  # not a page JSON of this section (a page is <dir>/<dir>.json)
+            has_subpages = any(os.path.isfile(os.path.join(page_dir, d, d + ".json"))
+                               for d in os.listdir(page_dir) if os.path.isdir(os.path.join(page_dir, d)))
+            if every_page or rel == f"{section}/{section}.json" or has_subpages:
+                path = os.path.join(stage, rel)
+                data = json.load(open(path, encoding="utf-8"))
+                data["protected"] = True
+                with open(path, "w", encoding="utf-8") as fh:
+                    json.dump(data, fh, ensure_ascii=False, indent=2)
+                    fh.write("\n")
+
     written = []
     if os.path.exists(stage) and os.listdir(stage):
         fatal(f"stage {stage} is not empty")
@@ -152,7 +174,7 @@ def main(library, stage):
 
     # sections: copy, and collect what nav/tiles/footer need from each hub page + sidecar
     entries = []  # (section, title, uniqueId, tile_text, tile_icon)
-    for section, _flag in welcome:
+    for section, flag in welcome:
         if section == "equipos":
             if not os.path.isfile(os.path.join(library, "equipos", "equipos.json.tpl")):
                 fatal("SITE_WELCOME declares 'equipos' but the library has no equipos/equipos.json.tpl")
@@ -173,6 +195,8 @@ def main(library, stage):
                 put(f"equipos/{gid}/{gid}.json", page)
             hub_data = json.loads(hub)
             entries.append(("equipos", hub_data["title"], hub_data["uniqueId"], "Quién es quién, anexos y correos", "account-group-outline"))
+            if flag == "wall":
+                stamp_walls("equipos", every_page=True)
             continue
         sdir = os.path.join(library, "sections", section)
         copy_tree(sdir, section)
@@ -186,6 +210,8 @@ def main(library, stage):
         side = json.load(open(os.path.join(sdir, "section.json"), encoding="utf-8")) if os.path.isfile(os.path.join(sdir, "section.json")) else {}
         tile = side.get("tile", {})
         entries.append((section, hub_data["title"], hub_data["uniqueId"], tile.get("text", hub_data["title"]), tile.get("icon", "file-document-outline")))
+        if flag == "wall":
+            stamp_walls(section)
 
     # core: home tiles, footer links, navigation — all from the declared sections
     tiles = [link(t, x, u, i) for t, x, u, i in APP_TILES if not u.startswith("/apps/files/") or "Transversal" in folders]
