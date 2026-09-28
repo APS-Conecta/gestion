@@ -15,8 +15,10 @@ fixture. In order it: runs the engine's own setup (groups `IntraVox Admins/Edito
 `es` page tree with the clinic's identity substituted (name, short name, comuna, servicio), and
 writes the page ACLs for the restricted pages.
 
-**Import-once:** the import guard is the presence of `es/home.json` in the IntraVox group
-folder. A second `make seed` logs `welcome: es tree already imported` and writes nothing.
+**Import-once:** the import guard is the presence of `es/navigation.json` in the IntraVox
+group folder — not `es/home.json`: setup runs bare under `--skip-demo` and creates no content,
+so nothing but the import can write the marker. A second `make seed` logs
+`welcome: es tree already imported` and writes nothing.
 Everything staff create or edit under the tree is data and survives every re-seed.
 
 ## The editorial workflow
