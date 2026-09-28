@@ -39,11 +39,15 @@ if [ -z "$_declared" ]; then
 fi
 [ "$(occ config:app:get intravox enabled 2>/dev/null || true)" = "yes" ] || { echo "FATAL: intravox is declared but not enabled — phase 12 did not converge. A silent skip here ships a clinic without its welcome screen." >&2; exit 1; }
 
-# --- 2. SETUP: es content tree, no demo pages (D10/D11) ----------------------------------------
+# --- 2. SETUP: groupfolder + groups + grants, no demo pages (D10/D11) --------------------------
 # ensure-style and re-run safe (SetupService: groups, 'IntraVox' groupfolder, mount grants,
-# one-time admin seeding behind the admin_access_provisioned marker). Output silenced: the phase
-# logs its own canonical write verbs; occ noise must never redden seed-idempotent on a re-run.
-occ intravox:setup --language es --skip-demo >/dev/null
+# one-time admin seeding behind the admin_access_provisioned marker). Setup may also leave a
+# detected-language boilerplate home (_generated-marked, so it can never outrank the seeded
+# welcome) — the real es/ tree arrives with the import in step 4. --language fed only the
+# demo-data branch, which --skip-demo disables — dropped as a dead flag (L0-03). Output
+# silenced: the phase logs its own canonical write verbs; occ noise must never redden
+# seed-idempotent on a re-run.
+occ intravox:setup --skip-demo >/dev/null
 
 # Drift detector (fail loud, never silently manage around it): the demo marker set means demo
 # content lives in the groupfolder — the post-migration repair step's old behavior (pre-3.1.2)
@@ -192,8 +196,9 @@ datadir_load || { echo "FATAL: datadir unresolved (fail-closed, lib.sh:139-148).
   fi
 
 # Import guard — gf_files_path shape (lib.sh:596): <DATADIR>/__groupfolders/<fid>/files/<rel>.
-# The marker is es/navigation.json, NOT home.json: `intravox:setup` pre-creates es/home.json
-# boilerplate on a FRESH install (createDefaultContent), and a home.json guard trips on it and
+# The marker is es/navigation.json, NOT home.json: `intravox:setup` pre-creates a boilerplate
+# home.json in its DETECTED language (en/nl only — detectDefaultLanguage never returns es) on a
+# FRESH install (createDefaultContent), and a home.json guard trips on it and
 # silently skips the import — the whole program no-ops on every clean clinic (found live on the
 # lab box when the flip audit traced which home actually renders). navigation.json is only ever
 # written by this import; setup cannot fake it.
