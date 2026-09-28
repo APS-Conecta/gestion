@@ -36,6 +36,9 @@ declare -p SITE_ROLES >/dev/null 2>&1 || SITE_ROLES=()
 # unset is not.
 : "${SITE_FOLDERS:?sites/$SITE/site.sh must set SITE_FOLDERS (empty is legal, unset is not)}"
 : "${SITE_TEAMS:?sites/$SITE/site.sh must set SITE_TEAMS (empty is legal, unset is not)}"
+# Existence, not index 0: `${arr:?}` reads `${arr[0]}` and refuses a declared-but-EMPTY array — the
+# shape the SITE_FOLDERS/SITE_TEAMS lines above still carry (pre-existing; out of this change's files).
+declare -p SITE_WELCOME >/dev/null 2>&1 || { echo "FATAL: sites/$SITE/site.sh must set SITE_WELCOME (empty is legal, unset is not) — a site file written before 2026-09-27 needs the block by hand; see docs/WELCOME-SCREEN.md" >&2; exit 1; }
 
 # WHICH gestion this is (ADR-0005). A release is a tag, so `git describe` is the answer and there is
 # no VERSION file to drift from it; `--always` degrades to a short sha on an untagged trunk and the

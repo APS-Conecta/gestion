@@ -514,6 +514,50 @@ if bad_cut:
     print("comuna_codigo values Comuna::of() would refuse (not 5 digits) — a phase 16 write"
           " of any of these silently disarms the import door: " + ", ".join(bad_cut[:5]))
     sys.exit(1)'
+# The welcome declaration has a WRITER (deis.py) and a READER (seed.sh's guard + phase 41). This
+# proves the writer's output is what the reader expects: written to a scratch tree (write_site
+# refuses an existing sites/<name>/), sourced by a real bash, the rows read back — and `equipos`
+# absent, because that is the product decision the default carries (review L0-01).
+check python3 -c '
+import csv, glob, os, shutil, subprocess, sys, tempfile
+sys.path.insert(0, "scripts")
+import deis
+register = sorted(glob.glob("sites/establecimientos-deis-*.csv"))[-1]
+row = next(csv.DictReader(open(register, encoding="utf-8")))
+tmp = tempfile.mkdtemp()
+try:
+    deis.HERE = os.path.join(tmp, "scripts"); os.makedirs(deis.HERE)
+    deis.write_site(row, "gate", "probe", sectors=[], programs=[])
+    out = subprocess.run(["bash", "-c", "set -u; . sites/probe/site.sh; printf \"%s\\n\" \"${SITE_WELCOME[@]}\""],
+                         cwd=tmp, capture_output=True, text=True)
+finally:
+    shutil.rmtree(tmp)
+if out.returncode != 0:
+    print("sourcing the written site file failed: " + out.stderr.strip()[:300]); sys.exit(1)
+rows = out.stdout.split()
+if rows != ["noticias|wall", "vida-cesfam|", "documentos|wall"]:
+    print("SITE_WELCOME default is not the three declared rows: " + repr(rows)); sys.exit(1)'
+# The reporter's welcome arm lists live sections with a fragment that runs INSIDE the container
+# (`sh -c` under nc_exec) — the parser class divergence.sh's header warns turns a report silently
+# green when it rots. Read out of the script (not restated) and run against a scratch groupfolder
+# tree: a folder that owns its JSON is a section, images/ and a JSON-less folder are not.
+check python3 -c '
+import os, re, subprocess, sys, tempfile
+src = open("scripts/divergence.sh", encoding="utf-8").read()
+m = re.search(r"# --- welcome sections.*?nc_exec --user www-data -- sh -c \x27(.*?)\x27 sh ", src, re.S)
+if not m:
+    print("welcome arm listing fragment not found in scripts/divergence.sh"); sys.exit(1)
+frag = m.group(1)
+root = tempfile.mkdtemp(); es = os.path.join(root, "__groupfolders", "20", "files", "es")
+for d in ("noticias", "images", "_resources", "campanas"): os.makedirs(os.path.join(es, d))
+open(os.path.join(es, "noticias", "noticias.json"), "w").write("{}")
+open(os.path.join(es, "images", "x.svg"), "w").write("<svg/>")
+out = subprocess.run(["sh", "-c", frag, "sh", root, "20"], capture_output=True, text=True)
+if out.returncode != 0 or out.stdout.split() != ["noticias"]:
+    print("welcome arm listing fragment answered " + repr(out.stdout) + " (want exactly noticias): " + out.stderr[:200]); sys.exit(1)
+out = subprocess.run(["sh", "-c", frag, "sh", root, "99"], capture_output=True, text=True)
+if out.returncode != 0 or out.stdout.strip() != "":
+    print("welcome arm listing fragment must answer nothing, exit 0, when the folder is absent"); sys.exit(1)'
 
 # The café case above is behavioural, and load-bearing only under a COLLATING locale — which a
 # Chilean dev has and GitHub's runners do not, defaulting to C.UTF-8 where that range refuses `é`

@@ -105,6 +105,27 @@ while IFS=$'\t' read -r fid mount; do
   note "group folder '$mount' is live but not in SITE_FOLDERS — it still holds its files; remove it deliberately with 'occ groupfolders:delete $fid' if that is intended"
 done <<< "$live_folders"
 
+# --- welcome sections: SITE_WELCOME is the declared set (phase 41, ADR-0019) ---
+# Live = the top-level page folders under es/ in the IntraVox group folder — a page folder OWNS
+# its own <dir>/<dir>.json (the engine importer's recursion rule, ManagedTreeImporter), so images/,
+# _resources/ and _templates/ never count. An undeclared section holds staff content: phase 41 adds
+# what is declared and missing and never deletes; this line is the only place a removed row is noticed.
+# Tolerated silently: an instance with no IntraVox group folder (the app is not shipped here).
+declare -p SITE_WELCOME >/dev/null 2>&1 || SITE_WELCOME=()   # site files written before 2026-09-27
+iv_fid="$(printf '%s\n' "$live_folders" | awk -F'\t' '$2=="IntraVox"{print $1; exit}')"   # from the group-folders arm above: one occ call, one parser
+if [ -n "$iv_fid" ]; then
+  datadir="$(occ config:system:get datadirectory 2>/dev/null || true)"
+  declared_sections="$(for e in "${SITE_WELCOME[@]}"; do printf '%s\n' "${e%%|*}"; done)"
+  live_sections="$(nc_exec --user www-data -- sh -c '
+    cd "$1/__groupfolders/$2/files/es" 2>/dev/null || exit 0
+    for d in */; do d=${d%/}; [ -f "$d/$d.json" ] && printf "%s\n" "$d"; done' sh "$datadir" "$iv_fid" 2>/dev/null || true)"
+  while read -r sec; do
+    [ -n "$sec" ] || continue
+    printf '%s\n' "$declared_sections" | grep -qxF -- "$sec" && continue
+    note "welcome section '$sec' is live in the IntraVox group folder but not in SITE_WELCOME — staff content is kept; delete es/$sec (and its ACL rules) deliberately if that is intended"
+  done <<< "$live_sections"
+fi
+
 # --- groups ---
 # The shared registry is READ OUT OF PHASE 20 rather than restated here, so there is one list and it
 # is the one that runs. The coupling is to that file's shape: `ensure_group <id>` lines and
