@@ -1,9 +1,11 @@
 # ADR-0018 — language reality is the engine's es-only default
 
-- **Status:** accepted (2026-09-27, with the es-only language mechanics plan's approval).
+- **Status:** accepted (2026-09-27, with the es-only language mechanics plan's approval;
+  amended 2026-09-28 before merge — the primary_language default).
 - **Affects:** `provisioning/phases/41-intravox.sh` (the enabled_languages convergence
-  step), the IntraVox engine's `LanguageService` (`DEFAULT_ENABLED_LANGUAGES`) and its
-  `Version001600Date20260609000000` migration seed.
+  step), the IntraVox engine's `LanguageService` (`DEFAULT_ENABLED_LANGUAGES` and
+  `getPrimaryLanguage()`'s unset-key default) and its `Version001600Date20260609000000`
+  migration seed.
 
 ## Context
 
@@ -32,19 +34,29 @@ companion docblock rewrites record the same supersession in place):
   languages) — the app shipped 2026-09-25, no install ever carried that set, and the
   vendor/upstream surface is deferred by the same class as the es demo data (L1-15).
 
+The same ownership covers `primary_language` (amended 2026-09-28, the owner's decision on
+the plan's validation #2): its unset-or-unavailable default is `es`, not `en`. Nobody
+writes that key on a managed install — the admin UI is its only writer, and gestion writes
+nothing — so with an `en` default every roster user (no `core/lang`) resolved the chain
+`['en']` and was served an `en` home, tree and news over `es`-only content. An admin's
+explicit choice still wins; `en` stays the engine's floor.
+
 The deprecated key keeps its legacy readers working unchanged; existing installs keep
 their stored value (the lab box: `["es","en"]` — identical to the new default, so nothing
-moves). A fresh clinic gets es+en from the engine (const default + migration seed) with no
-gestion step.
+moves). A fresh clinic gets es+en and an es primary from the engine (const defaults +
+migration seed) with no gestion step.
 
 ## Consequences
 
 - Phase 41 no longer writes app config for languages; its only remaining convergence
   concerns infrastructure (groupfolder, groups, grants). Seed-idempotence loses one write
   verb.
-- Feed/footer/admin-grid flows that consult `isLanguageEnabled('es')` are correct on
-  fresh installs without the seam write (they previously degraded es-profile users to
-  'en').
+- The admin grid shows es enabled and primary on fresh installs without a seam write.
+  Reads that resolve through the effective-language chain — home, tree, news, page links,
+  comments — serve es to roster users. Feed and footer consult `isLanguageEnabled` on the
+  reader's own `core/lang`: correct for es-profile users, but roster users with no
+  `core/lang` still get `en` there until the engine consolidates their language source
+  (L3-04).
 - The engine's multi-language capability stays dormant: content exists only where
   provisioned (es), reads derive served languages from real content, and en remains the
   engine's never-materialized fallback floor — not a deployment language.
