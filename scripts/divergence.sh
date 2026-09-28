@@ -114,7 +114,9 @@ done <<< "$live_folders"
 declare -p SITE_WELCOME >/dev/null 2>&1 || SITE_WELCOME=()   # site files written before 2026-09-27
 iv_fid="$(printf '%s\n' "$live_folders" | awk -F'\t' '$2=="IntraVox"{print $1; exit}')"   # from the group-folders arm above: one occ call, one parser
 if [ -n "$iv_fid" ]; then
-  datadir="$(occ config:system:get datadirectory 2>/dev/null || true)"
+  datadir="$(occ config:system:get datadirectory 2>/dev/null | tr -d '\r' || true)"
+  # unresolved = blindness (B-014): the listing below would cd nowhere and answer "no sections"
+  [ -n "$datadir" ] || note "cannot check welcome sections: occ answered no datadirectory — an empty list here would be blindness, not cleanliness"
   declared_sections="$(for e in "${SITE_WELCOME[@]}"; do printf '%s\n' "${e%%|*}"; done)"
   live_sections="$(nc_exec --user www-data -- sh -c '
     cd "$1/__groupfolders/$2/files/es" 2>/dev/null || exit 0

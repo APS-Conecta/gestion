@@ -6,7 +6,8 @@
 Environment (the phase exports them; arrays newline-joined, one entry per line):
   SITE_NOMBRE SITE_NOMBRE_CORTO SITE_DIRECCION SITE_COMUNA SITE_SERVICIO_SALUD   identity (D3)
   SITE_WELCOME    section|flag rows — WHICH sections exist (review L0-01); flag: wall | empty
-  SITE_TEAMS      gid|display rows — one team page each, only when 'equipos' is declared
+  SITE_TEAMS      gid|display rows — one team page each, only when 'equipos' is declared; each
+                  links its own folder, which SITE_FOLDERS must declare (team_dir below)
   SITE_FOLDERS    group folders — the only Files roots a rendered link may point at (L0-06)
   SITE_SUBFOLDERS Transversal's subfolders — the Documentos page links exactly these (L0-06)
 
@@ -21,9 +22,11 @@ Library layout (<library> = provisioning/intravox/es):
   equipos/equipos.json.tpl  the hub grid = __TEAM_LINKS__ only; equipos/equipo.tpl per team
 navigation.json is generated whole: Inicio + one entry per declared section, declaration order.
 
-Fail-closed (exit 1, one FATAL line): unknown flag, section without a library folder, a
-`/apps/files/?dir=/X` link whose X is not a declared Files root, a rendered file that is not JSON.
-Every write goes under <stage>; the library is read-only.
+Every substituted value is JSON-escaped (all placeholders sit inside JSON strings): a register
+name with a quote or a backslash renders as itself instead of breaking the page.
+Fail-closed (exit 1, one FATAL line): unknown flag, section without a library folder, a team whose
+folder the site does not declare, a `/apps/files/?dir=/X` link whose X is not a declared Files
+root, a rendered file that is not JSON. Every write goes under <stage>; the library is read-only.
 """
 import json
 import os
@@ -58,13 +61,34 @@ def rows(var):
     return out
 
 
-def team_dir(gid, display):
-    # deis.py's Programas/Sectores emission shape (scripts/deis.py:173-192); other gids = their display
+def team_dir(gid, display, folders):
+    """The declared folder a team page links, or None. Programs and sectors: deis.py's emission
+    shape (scripts/deis.py:173-192). Any other team — a role page added by hand, 'role-oirs|OIRS' —
+    the ONE declared folder whose last segment is its display name (Unidades/OIRS)."""
     if gid.startswith("prog-"):
-        return "Programas/" + display.removeprefix("Programa ")
-    if gid.startswith("sector-"):
-        return "Sectores/" + display
-    return display
+        cands = ["Programas/" + display.removeprefix("Programa ")]
+    elif gid.startswith("sector-"):
+        cands = ["Sectores/" + display]
+    else:
+        cands = [f for f in folders if f.rsplit("/", 1)[-1] == display]
+    hits = [c for c in cands if c in folders]
+    return hits[0] if len(hits) == 1 else None
+
+
+def esc(value):
+    """A value as the inside of a JSON string literal."""
+    return json.dumps(value, ensure_ascii=False)[1:-1]
+
+
+def strings(node):
+    if isinstance(node, str):
+        yield node
+    elif isinstance(node, dict):
+        for v in node.values():
+            yield from strings(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from strings(v)
 
 
 def link(title, text, url, icon):
@@ -77,7 +101,7 @@ def main(library, stage):
         val = os.environ.get(var, "")
         if not val:
             fatal(f"{var} is empty — the site file carries no value to substitute (D3)")
-        identity[f"__{var}__"] = val
+        identity[f"__{var}__"] = esc(val)
 
     welcome = rows("SITE_WELCOME")
     for section, flag in welcome:
@@ -94,7 +118,6 @@ def main(library, stage):
     folders = set(lines("SITE_FOLDERS"))
     subfolders = lines("SITE_SUBFOLDERS")
     allowed_roots = {f"/{f}" for f in folders} | {f"/Transversal/{s}" for s in subfolders if "Transversal" in folders}
-    allowed_roots |= {f"/{team_dir(g, d)}" for g, d in teams}
 
     def substitute(text):
         for k, v in identity.items():
@@ -140,8 +163,13 @@ def main(library, stage):
             put("equipos/equipos.json", hub)
             tpl = substitute(open(os.path.join(library, "equipos", "equipo.tpl"), encoding="utf-8").read())
             for gid, display in teams:
-                page = (tpl.replace("__TEAM_ID__", gid).replace("__TEAM_DISPLAY__", display)
-                           .replace("__TEAM_DIR__", team_dir(gid, display)))
+                tdir = team_dir(gid, display, folders)
+                if tdir is None:
+                    fatal(f"SITE_TEAMS row '{gid}|{display}': no single SITE_FOLDERS entry is its folder"
+                          f" (Programas/…, Sectores/… or one ending in /{display}) — a team page never links"
+                          " a folder the site does not have (L0-06)")
+                page = (tpl.replace("__TEAM_ID__", esc(gid)).replace("__TEAM_DISPLAY__", esc(display))
+                           .replace("__TEAM_DIR__", esc(tdir)))
                 put(f"equipos/{gid}/{gid}.json", page)
             hub_data = json.loads(hub)
             entries.append(("equipos", hub_data["title"], hub_data["uniqueId"], "Quién es quién, anexos y correos", "account-group-outline"))
@@ -165,7 +193,7 @@ def main(library, stage):
     home = substitute(open(os.path.join(library, "core", "home.json.tpl"), encoding="utf-8").read())
     put("home.json", home.replace("__HOME_TILES__", ",\n            ".join(json.dumps(t, ensure_ascii=False) for t in tiles)))
     footer = substitute(open(os.path.join(library, "core", "footer.json.tpl"), encoding="utf-8").read())
-    put("footer.json", footer.replace("__SECTION_LINKS__", " | ".join(f"[{title}](/apps/intravox/p/{uid})" for _s, title, uid, _t, _i in entries)))
+    put("footer.json", footer.replace("__SECTION_LINKS__", esc(" | ".join(f"[{title}](/apps/intravox/p/{uid})" for _s, title, uid, _t, _i in entries))))
     nav = {"type": "megamenu", "items": [
         {"id": "nav_inicio", "title": "Inicio", "uniqueId": HOME_ID, "url": None, "target": None, "children": []}]}
     for section, title, uid, _t, _i in entries:
@@ -177,12 +205,12 @@ def main(library, stage):
     for rel in written:
         if not rel.endswith(".json"):
             continue
-        text = open(os.path.join(stage, rel), encoding="utf-8").read()
         try:
-            json.loads(text)
+            data = json.load(open(os.path.join(stage, rel), encoding="utf-8"))
         except ValueError as e:
             fatal(f"{rel} is not valid JSON after rendering ({e}) — a site value broke a page")
-        for target in re.findall(r"/apps/files/\?dir=([^\"&]+)", text):
+        # the parsed strings, not the file text: a link is judged as the browser will read it
+        for target in (t for v in strings(data) for t in re.findall(r"/apps/files/\?dir=([^&]*)", v)):
             if target not in allowed_roots:
                 fatal(f"{rel} links to Files path '{target}' which no SITE_FOLDERS/SITE_SUBFOLDERS/SITE_TEAMS entry declares (L0-06)")
     print(f"rendered: {len(written)} files; sections: {', '.join(s for s, *_ in entries) or '(none)'}; teams: {len(teams) if any(s == 'equipos' for s, *_ in entries) else 0}")

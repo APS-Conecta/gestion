@@ -101,6 +101,7 @@ _gmap role-oirs           'IntraVox Editors'   # registry gid is role-oirs (20-g
 # newline-joined: bash cannot export an array, render.py reads the environment.
 _lib="provisioning/intravox/es"
 _stage="$(mktemp -d)"
+trap 'rm -rf "$_stage" ${_import:+"$_import"}' EXIT   # every exit path, FATALs included (own subshell)
 chmod 755 "$_stage"   # mktemp gives 700 root:root and docker cp PRESERVES it — occ runs as
 # www-data, every file_exists() in the importer reads false, and the import exits 0 having
 # imported NOTHING (the silent-green this repo exists never to repeat; verified live). Files
@@ -203,7 +204,6 @@ if [ "$_first_run" = 1 ] || [ "${#_new_sections[@]}" -gt 0 ] || [ "${#_new_teams
   occ intravox:import /tmp/intravox-welcome-es --language es --user admin --skip-existing >/dev/null \
     || { echo "FATAL: occ intravox:import --skip-existing failed — re-run it by hand without >/dev/null to see why; an IntraVox engine older than welcome-folders p3 rejects the flag: promote the engine before seeding (a tree is never overwritten to work around it)" >&2; exit 1; }
   docker exec "${NC_CONTAINER:?}" rm -rf /tmp/intravox-welcome-es
-  [ "$_import" = "$_stage" ] || rm -rf "$_import"
   if [ "$_first_run" = 1 ]; then
     log "  welcome: es tree created"
     for _s in "${_new_sections[@]}"; do log "  welcome: section $_s created"; done
@@ -214,7 +214,6 @@ if [ "$_first_run" = 1 ] || [ "${#_new_sections[@]}" -gt 0 ] || [ "${#_new_teams
   fi
   for _tg in "${_new_teams[@]}"; do log "  welcome: team page $_tg created"; done
 fi
-rm -rf "$_stage"
 
 # --- 5. PAGE ACL (D4): baseline-deny + target-allow, written with the page it governs ---------
 # ACL.php's --test branch demands --user + <path> (ACL.php:72-82) — query-by-group is not a CLI
@@ -230,7 +229,8 @@ rm -rf "$_stage"
 # and a real failure surfaces in the rule writes, which demand ACL on (ACL.php:99-101).
 # The static restricted pages (jefaturas, estadistica-rem, oirs) are gone with the static team
 # pages (review L0-07): a role-restricted page is a declared team, e.g. 'role-oirs|OIRS' — a row
-# you add by hand (deis.py emits programs and sectors only; the site file is yours after that).
+# you add by hand (deis.py emits programs and sectors only; the site file is yours after that);
+# its page links the one declared folder named after it (Unidades/OIRS), render.py refuses else.
 if [ "${#_new_teams[@]}" -gt 0 ]; then
   occ groupfolders:permissions "$_ivfid" --enable >/dev/null 2>&1 || true
   _acl() {  # PATH GID PERM — one rule, on page creation only (block comment above)

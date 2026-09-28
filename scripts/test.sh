@@ -560,13 +560,14 @@ if out.returncode != 0 or out.stdout.strip() != "":
     print("welcome arm listing fragment must answer nothing, exit 0, when the folder is absent"); sys.exit(1)'
 # The renderer is the seam's whole "declare, don't hard-code" (review M3) in one file, so it is
 # gated the way the identity round-trip is: real values in, the produced tree inspected, and the
-# three refusals SEEDED — a renderer that cannot go red is not a gate.
+# refusals SEEDED — a renderer that cannot go red is not a gate. The register holds names with
+# quotes and backslashes (the deis round trip above), so one identity value carries both.
 check python3 -c '
 import json, os, shlex, subprocess, sys, tempfile
 R = "provisioning/intravox/render.py"; L = "provisioning/intravox/es"
 base = {"SITE_NOMBRE": "Centro de Salud Familiar Prueba", "SITE_NOMBRE_CORTO": "CESFAM Prueba",
         "SITE_DIRECCION": "Calle 1", "SITE_COMUNA": "Comuna", "SITE_SERVICIO_SALUD": "SS Prueba",
-        "SITE_FOLDERS": "Transversal\nSectores/Sector 1", "SITE_SUBFOLDERS": "Protocolos\nFlujogramas",
+        "SITE_FOLDERS": "Transversal\nSectores/Sector 1\nProgramas/X\nUnidades/OIRS", "SITE_SUBFOLDERS": "Protocolos\nFlujogramas",
         "SITE_TEAMS": "sector-1|Sector 1\nprog-x|Programa X", "SITE_WELCOME": "noticias|wall\nvida-cesfam|\ndocumentos|wall"}
 def run(env):
     # The values sit in bash as PLAIN shell variables (what seed.sh has after sourcing the site
@@ -597,9 +598,18 @@ if len(links) != 2 or not os.path.isfile(stage + "/equipos/sector-1/sector-1.jso
     print("equipos hub is not exactly the two declared teams"); sys.exit(1)
 if "/Sectores/Sector 1" not in open(stage + "/equipos/sector-1/sector-1.json").read():
     print("team page does not link its own declared folder"); sys.exit(1)
+p, stage = run({**base, "SITE_WELCOME": base["SITE_WELCOME"] + "\nequipos|wall", "SITE_TEAMS": "role-oirs|OIRS",
+                "SITE_NOMBRE_CORTO": "CESFAM \"Dr. X\" \\ Sur"})
+if p.returncode != 0: print("role row / hostile identity render failed: " + p.stderr.strip()[-300:]); sys.exit(1)
+if "?dir=/Unidades/OIRS" not in json.dumps(json.load(open(stage + "/equipos/role-oirs/role-oirs.json")), ensure_ascii=False):
+    print("a role row does not link the declared folder named after it (Unidades/OIRS)"); sys.exit(1)
+hero = json.load(open(stage + "/home.json"))["layout"]["rows"][0]["widgets"][1]["content"]
+if hero != "CESFAM \"Dr. X\" \\ Sur": print("an identity value with a quote and a backslash did not round-trip: " + repr(hero)); sys.exit(1)
 for bad, why in [({"SITE_WELCOME": "noticias|fortress"}, "unknown flag"),
                  ({"SITE_WELCOME": "campanas|"}, "undeclared library section"),
-                 ({"SITE_FOLDERS": "Sectores/Sector 1"}, "Files link to an undeclared root")]:
+                 ({"SITE_FOLDERS": "Sectores/Sector 1"}, "Files link to an undeclared root"),
+                 ({"SITE_WELCOME": base["SITE_WELCOME"] + "\nequipos|wall", "SITE_TEAMS": "sector-9|Sector 9"},
+                  "a team whose folder the site does not declare")]:
     p, _ = run({**base, **bad})
     if p.returncode == 0 or "FATAL:" not in p.stderr:
         print("render.py accepted " + why); sys.exit(1)'

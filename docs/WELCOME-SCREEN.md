@@ -44,7 +44,8 @@ SITE_WELCOME=(
 copied — declare `'equipos|wall'` and the seed renders the «Guía de equipos» hub plus one page per
 `SITE_TEAMS` entry, each linking the team's own folder and readable by that team and the
 jefaturas. A role-restricted page (OIRS, Estadística REM) is a team row you add by hand, e.g.
-`'role-oirs|OIRS'`. The Documentos page links exactly `SITE_SUBFOLDERS`; the menu and the footer
+`'role-oirs|OIRS'`; its page links the one declared folder named after it (`Unidades/OIRS`), and a
+team whose folder the site does not declare stops the seed. The Documentos page links exactly `SITE_SUBFOLDERS`; the menu and the footer
 list the declared sections and nothing else; the home page's quick-access row is three fixed app
 tiles (Recepción y admisión → the Transversal folder, Gestión y turnos, Teléfonos y anexos)
 followed by one tile per declared section. A row the library does not know, an unknown flag, or a

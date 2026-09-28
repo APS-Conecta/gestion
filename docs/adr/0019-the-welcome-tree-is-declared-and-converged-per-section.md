@@ -42,8 +42,9 @@ ADR-0015's principle — staff edits are page data, never overwritten — was ri
    the menu and the footer list exactly the declared sections, and the home page's quick-access
    row is three fixed app tiles (Recepción → the Transversal folder, Gestión y turnos, Teléfonos)
    plus one tile per declared section. It fails closed —
-   an unknown flag, an undeclared section, a Files link to a folder the site does not have, a
-   page that is not JSON — with one `FATAL` line. The hand-written team pages are gone: a team
+   an unknown flag, an undeclared section, a team whose folder the site does not declare, a
+   Files link to a folder the site does not have, a page that is not JSON — with one `FATAL`
+   line. Every site value is JSON-escaped on the way in, so a name with a quote renders as itself. The hand-written team pages are gone: a team
    page is a declared entry.
 3. **Per-section convergence.** The marker of a section is its own hub page
    (`es/<section>/<section>.json`); of a team page, `es/equipos/<gid>/<gid>.json`; of the core
