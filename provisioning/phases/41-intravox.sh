@@ -6,7 +6,7 @@
 # the disciplines inherited: upsert-by-stable-id, write verbs visible to seed-idempotent.sh,
 # query-before-set, fail-closed guards on every optional value (L5-03 class).
 #
-# IMPORT-ONCE (D2): staff edits are page data. Guard = in-container presence of es/home.json
+# IMPORT-ONCE (D2): staff edits are page data. Guard = in-container presence of es/navigation.json
 # inside the IntraVox groupfolder (path via gf_files_path shape, lib.sh:596). A second seed logs
 # "already" and writes nothing. Template evolution ships as NEW pages; the documented recovery
 # for a half-imported tree is delete-es/-and-reseed (engine admin deletes the es tree, then
@@ -39,12 +39,11 @@ if [ -z "$_declared" ]; then
 fi
 [ "$(occ config:app:get intravox enabled 2>/dev/null || true)" = "yes" ] || { echo "FATAL: intravox is declared but not enabled — phase 12 did not converge. A silent skip here ships a clinic without its welcome screen." >&2; exit 1; }
 
-# --- 2. SETUP: groupfolder + groups + grants, no demo pages (D10/D11) --------------------------
+# --- 2. SETUP: bare — groupfolder + groups + grants, ZERO content (D10/D11, L1-03) -----
 # ensure-style and re-run safe (SetupService: groups, 'IntraVox' groupfolder, mount grants,
-# one-time admin seeding behind the admin_access_provisioned marker). Setup may also leave a
-# detected-language boilerplate home (_generated-marked, so it can never outrank the seeded
-# welcome) — the real es/ tree arrives with the import in step 4. --language fed only the
-# demo-data branch, which --skip-demo disables — dropped as a dead flag (L0-03). Output
+# one-time admin seeding behind the admin_access_provisioned marker). --skip-demo is bare
+# mode (L1-03): setup creates NO content — no language folder, no boilerplate home, no
+# _resources/_templates; the real es/ tree arrives with the import in step 4. Output
 # silenced: the phase logs its own canonical write verbs; occ noise must never redden
 # seed-idempotent on a re-run.
 occ intravox:setup --skip-demo >/dev/null
@@ -60,15 +59,10 @@ if [ -n "$(occ config:app:get intravox demo_data_imported 2>/dev/null || true)" 
   exit 1
 fi
 
-# Language convergence (install state, NOT staff data): upstream's enabled-languages default is
-# de,en,fr,nl — es is absent, so the admin UI would offer German but not the instance's own
-# language. Declare the suite's set: es (primary) + en (the non-removable fallback). The JSON-
-# array shape is LanguageService's own (CONFIG_KEY_ENABLED). Query-before-set, idempotent.
-_iv_langs="$(occ config:app:get intravox enabled_languages 2>/dev/null || true)"
-if [ "$_iv_langs" != '["es","en"]' ]; then
-  occ config:app:set intravox enabled_languages --value='["es","en"]' >/dev/null
-  log "  languages: enabled set converged to es+en (was: ${_iv_langs:-upstream default})"
-fi
+# L2-01 (ADR-0018): the enabled_languages convergence is RETIRED — the engine's
+# own unset-key default is the deployment reality (['es','en']: LanguageService's
+# DEFAULT_ENABLED_LANGUAGES + the Version001600 seed). The deprecated key keeps
+# its legacy readers working; gestion no longer writes it.
 
 # --- 3. GROUP MAP (D5): adds-only, query-before-set; one group:list json answers both sides ------
 _groups_json="$(occ group:list --output=json 2>/dev/null)"
@@ -196,20 +190,24 @@ datadir_load || { echo "FATAL: datadir unresolved (fail-closed, lib.sh:139-148).
   fi
 
 # Import guard — gf_files_path shape (lib.sh:596): <DATADIR>/__groupfolders/<fid>/files/<rel>.
-# The marker is es/navigation.json, NOT home.json: `intravox:setup` pre-creates a boilerplate
-# home.json in its DETECTED language (en/nl only — detectDefaultLanguage never returns es) on a
-# FRESH install (createDefaultContent), and a home.json guard trips on it and
-# silently skips the import — the whole program no-ops on every clean clinic (found live on the
-# lab box when the flip audit traced which home actually renders). navigation.json is only ever
-# written by this import; setup cannot fake it.
+# The marker is es/navigation.json, NOT home.json: setup is BARE under --skip-demo (L1-03 —
+# no content, no boilerplate home), so SETUP can never fake the marker — the original
+# home.json guard tripped on setup boilerplate and silently skipped the whole program on
+# every clean clinic. (navigation.json has other writers in the engine — the admin menu
+# editor among them — but none of them runs on a bare fresh install before this import;
+# the marker's job is only to be unfakeable by setup/upgrade, which it is. A home.json
+# guard would still be the wrong marker for any box where the admin API's full-mode
+# setup endpoint ran — it creates a _generated boilerplate home; the pre-clean arm
+# below converges that.)
 if nc_exec --user www-data -- test -f "$DATADIR/__groupfolders/$_ivfid/files/es/navigation.json" 2>/dev/null; then
   log "  welcome: es tree already imported (staff edits are data — import-once, D2)"
 else
-  # Setup boilerplate pre-clean (v3.1.1 discipline, same class as the marker fix): if setup
-  # left a home.json that does NOT carry the seeded `page-aps` uniqueId namespace (staff edits
-  # always carry it — every seeded page and every child of one does; setup boilerplate never
-  # does), clear it so the import can write ours. Query-before-set: a seeded home is never
-  # touched, so this arm is a noop on every box that already imported.
+  # Setup boilerplate pre-clean (v3.1.1 discipline): if a home.json exists that does NOT
+  # carry the seeded `page-aps` uniqueId namespace (staff edits always carry it — every
+  # seeded page and every child of one does; setup boilerplate never does), clear it so the
+  # import can write ours. Post-L1-03 bare setup never creates one; the live sources are the
+  # admin API's full-mode setup endpoint (a `_generated` boilerplate home) and restored
+  # backups. Query-before-set: a seeded home is never touched.
   if nc_exec --user www-data -- test -f "$DATADIR/__groupfolders/$_ivfid/files/es/home.json" 2>/dev/null \
      && ! nc_exec --user www-data -- grep -q "page-aps" \
           "$DATADIR/__groupfolders/$_ivfid/files/es/home.json" 2>/dev/null; then
