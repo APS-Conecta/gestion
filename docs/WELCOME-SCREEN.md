@@ -68,7 +68,9 @@ undeclared, and a person deletes the folder if that is intended.
 its structure — the section's hub, every seeded page that has sub-pages (noticias' «Avisos», which
 the home's Avisos list reads), and for `equipos` the hub plus every team page — and the engine
 refuses to delete or move such a page: the page menu and the tree do not offer it, and a direct
-request answers `PAGE_PROTECTED`. A wall is still editable. The seeded example posts («Aviso de
+request answers `PAGE_PROTECTED`. A wall is still editable, its title included, but its folder
+cannot be renamed (the seam and the home's news widgets find a section by its folder), and
+restoring an older version keeps the wall. The seeded example posts («Aviso de
 ejemplo», «Bienvenida», «Cómo publicar») are not walls: like every post staff create later they
 are ordinary pages an editor can delete. The marker is per page, never a folder rule (the
 review's «seam writes no-delete ACL rules» was not followed — a group-folder rule would inherit
@@ -78,8 +80,9 @@ ACLs anyway). Removing a wall is a two-step for an administrator, on purpose: in
 or move the page; `--on` restores it and `--status` shows the state. An instance seeded before
 walls existed has no marker on its pages (the seed never rewrites an existing page): raise each
 with `occ intravox:protect <uniqueId> --on --user admin`. The marker lives in the page JSON, so
-the **Files app** does not know it: a group-folder admin can still delete the folder from Files —
-the recovery procedure below relies on exactly that.
+administrator tools that work below the page API ignore it: the **Files app** (a group-folder
+admin can still delete the folder — the recovery procedure below relies on exactly that), a ZIP
+import with overwrite, and the admin clean-start reset.
 
 ## The editorial workflow
 
