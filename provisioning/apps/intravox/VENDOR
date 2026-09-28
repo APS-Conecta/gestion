@@ -31,6 +31,6 @@
 # ONE tarball in this directory, ever: ensure_vendored_app globs *.tar.gz and fails on anything
 # other than exactly one. A bump deletes the previous file, it does not sit beside it.
 
-version=3.1.5
-sha256=2fc96683efd87528e47ce7ea547a8b724dad5bbb7124d95b463b6c2159a8292b
-url=https://github.com/APS-Conecta/IntraVox/tree/v3.1.5-aps1
+version=3.1.6
+sha256=7b8701ab67298eb86248453bd94ba66930a19fb313e90e64be08e623ee1c9076
+url=https://github.com/APS-Conecta/IntraVox/tree/v3.1.6-aps1
