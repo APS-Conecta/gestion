@@ -36,6 +36,13 @@ image digests live there and are deliberately not copied here — one fact, one 
   of offering to delete the folder. Bienvenida and Cómo publicar say where pages live, naming
   `IV_MOUNT`. Needs an IntraVox engine with `MountName` (welcome-folders p5).
 
+- **Estadística's establishment** ([ADR-0013](docs/adr/0013-the-establishment-is-instance-configuration.md),
+  amended): phase 16 writes `deis_code`, `establishment_type` and `comuna_cut` from the site file,
+  and stops the install on a `SITE_DEIS` that is not six digits, which the app would read as no
+  establishment. `make divergence` reads the three back. Estadística is a lab app
+  (`dev/lab-apps.sh`), in no release; the roadmap names it where the REM app and Analytics stood,
+  and `docs/CONTRACTS.md` lists its OCS surface.
+
 ### Changed
 
 - **Language reality is the IntraVox engine's** — phase 41 no longer converges

@@ -11,6 +11,7 @@ decision, not a grep accident (review L0-06)._
 | territorio | `/ocs/v2.php/apps/territorio/api/v1/` (counts, features/{id}, subcategories/{c}/{s}/features) | territorio/openapi.json (generated) | stable (territorio#ADR-0020) |
 | farmacia | `/ocs/v2.php/apps/farmacia/api/v1/medicamentos` | farmacia/openapi.json | stable (typed payload; farmacia's ApiContractTest pins the schema) |
 | epidemiologia | `/ocs/v2.php/apps/epidemiologia/api/v1/sources` | epidemiologia/openapi.json | stable (epidemiologia#ADR-0006) |
+| estadistica | `/ocs/v2.php/apps/estadistica/api/v1/` (fuentes, fuentes/{id}, consultas, preguntas, preguntas/{id}, tableros, tableros/{id}, indicadores) | estadistica/openapi.json (generated) | lab — in no release until promoted (gestion#ADR-0005); the consulta answer is only extended, never reshaped (estadistica#ADR-0006), and its ApiContractTest pins the served keys |
 
 ## Injection services (in-instance, transactional)
 
@@ -37,8 +38,9 @@ name order (gestion#ADR-0002).
 | Repo | Path | Range |
 |---|---|---|
 | territorio | docs/adr/ | 0001–0020 |
-| epidemiologia | docs/adr/ | 0002–0014 |
-| gestion | docs/adr/ | 0000–0013 |
+| epidemiologia | docs/adr/ | 0002–0017 |
+| estadistica | docs/adr/ | 0001–0008 |
+| gestion | docs/adr/ | 0000–0020 |
 | aps-conecta-web | docs/adr/ | 0001–0023 |
 
 Cross-repo citations are `repo#ADR-NNNN` (org L0-08); in-repo citations

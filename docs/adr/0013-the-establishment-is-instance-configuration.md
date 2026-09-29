@@ -60,3 +60,24 @@ record stops naming the pilot: the clinic's identity in dated records is a priva
 2026-08-09 change did not have to weigh, and its "history is not purged" stance is superseded —
 living docs AND dated history now stop naming the establishment. The register CSV (the public
 MINSAL catalogue) and git history are untouched.
+
+---
+
+**Amended (2026-09-29): comparison yes, a selector no — and propagation is built.** Estadística,
+the first app to need the establishment, settles both things this record left open.
+
+- **Propagation.** Phase 16 writes Estadística's three keys: `deis_code` from `SITE_DEIS`,
+  `establishment_type` from `SITE_TIPO` and `comuna_cut` from `SITE_COMUNA_CUT`. It writes them
+  behind a guard that stops the install on anything but a six-digit code, because the app reads any
+  other value as no establishment and says nothing. `scripts/divergence.sh` reads the three back.
+  The app has no setter, so phase 16 is the only writer. Territorio's `comuna_cut` and `comuna_name`
+  are the other seam built since; the app's own admin section can also re-choose them.
+- **Comparison.** The owner, for Estadística's M1: «we show the local and national because we can
+  compare and that serves our purpose». The configured establishment's figures stand beside the
+  country's and a peer group's. A peer group is the establishments that share the traits the viewer
+  picks (tipo, servicio de salud, comuna, región…). Both are aggregates over every establishment
+  that reported to DEIS, which publishes them all.
+- **No selector.** No page lets anyone make another clinic «ours», and the option this record
+  rejected stays rejected, and the deferred one deferred. The consequence above holds as written:
+  Estadística's `consultas` take `establecimiento` as a parameter that defaults to config. The app's
+  own pages never send it, so a selector stays additive, and undecided.

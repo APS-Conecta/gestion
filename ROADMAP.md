@@ -77,8 +77,14 @@ the stylesheet. It is not restated here; this table is an index, not a second co
 ## Future
 
 Post-v1 roadmap (from the brief/PRD): white-label **branding** *(shipped as Epic 5, above)* ·
-**REM app** (first Layer-2 custom app) → full-text **search** → **Paperless-ngx** →
-**Analytics** → local **AI** layer.
+**Estadística** → full-text **search** → **Paperless-ngx** → local **AI** layer.
+
+**Estadística takes both the REM app's slot and Analytics'**, because they turned out to be one
+app: the center's REM figures beside the national and peer figures, and the Metas Sanitarias month
+by month, in [its own repository](https://github.com/APS-Conecta/estadistica). Its M1, the REM
+pillar, is a **lab app** (`dev/lab-apps.sh`), in no release until it is promoted to `OWN_APPS`.
+From this repo it needs only its establishment: phase 16 writes it and `scripts/divergence.sh`
+reads it back ([ADR-0013](docs/adr/0013-the-establishment-is-instance-configuration.md), as amended).
 
 **Production posture is deferred until a target host exists** — TLS/HSTS, SMTP, 2FA enforcement, the
 AppAPI daemon and the server id, all held with their measurements in
@@ -91,5 +97,5 @@ resurface when there is a machine instead of being rediscovered on that page.
 substrate for the REM app; that premise was wrong — a custom app owns its own schema through
 Nextcloud's mapper layer and never references Tables.
 
-Whatever builds REM, this repo owns only the platform it installs onto
+Estadística builds REM, and this repo owns only the platform it installs onto
 ([`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) § *Extension boundary*).
