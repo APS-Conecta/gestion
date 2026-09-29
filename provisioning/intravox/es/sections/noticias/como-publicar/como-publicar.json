@@ -18,7 +18,7 @@
         "columns": 1,
         "widgets": [
           { "type": "heading", "column": 1, "order": 1, "content": "El circuito", "level": 2 },
-          { "type": "text", "column": 1, "order": 2, "content": "1. **Borrador** — un Editor crea la página en su carpeta de noticias o avisos, en borrador.\n2. **Revisión** — Dirección u OIRS revisa el contenido antes de publicar.\n3. **Publicar** — la página pasa a publicada y aparece en las áreas de noticias correspondientes." }
+          { "type": "text", "column": 1, "order": 2, "content": "1. **Borrador** — un Editor crea la página en su carpeta de noticias o avisos, en borrador. Cada página es una carpeta en Archivos → Intranet → es → noticias; el menú ⋯ → «Abrir en Archivos» la abre.\n2. **Revisión** — Dirección u OIRS revisa el contenido antes de publicar.\n3. **Publicar** — la página pasa a publicada y aparece en las áreas de noticias correspondientes." }
         ]
       },
       {

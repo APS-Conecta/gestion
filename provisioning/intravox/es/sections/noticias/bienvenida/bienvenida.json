@@ -18,7 +18,7 @@
         "columns": 1,
         "widgets": [
           { "type": "heading", "column": 1, "order": 1, "content": "Qué encuentras dónde", "level": 2 },
-          { "type": "text", "column": 1, "order": 2, "content": "- **Inicio** — la pantalla de bienvenida: avisos, accesos rápidos, noticias y la vida del centro.\n- **Noticias** — comunicaciones del centro, con avisos vigentes arriba.\n- **Equipos** — la guía de equipos del centro: quién es quién, y una página por programa y sector con sus recursos y noticias.\n- **Documentos** — protocolos y documentos transversales vigentes." }
+          { "type": "text", "column": 1, "order": 2, "content": "- **Inicio** — la pantalla de bienvenida: avisos, accesos rápidos, noticias y la vida del centro.\n- **Noticias** — comunicaciones del centro, con avisos vigentes arriba.\n- **Equipos** — la guía de equipos del centro: quién es quién, y una página por programa y sector con sus recursos y noticias.\n- **Documentos** — protocolos y documentos transversales vigentes.\n- **Dónde vive todo esto** — cada página es una carpeta dentro de la carpeta compartida **Intranet** (Archivos → Intranet → es → …). Desde cualquier página, el menú ⋯ → «Abrir en Archivos» abre su carpeta." }
         ]
       },
       {
