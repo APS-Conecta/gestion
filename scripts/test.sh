@@ -646,6 +646,33 @@ p, stage = run({**base, "SITE_WELCOME": "noticias|\nvida-cesfam|wall\ndocumentos
 if p.returncode != 0: print("render failed: " + p.stderr.strip()); sys.exit(1)
 if walled(stage, "noticias/noticias.json") or not walled(stage, "vida-cesfam/vida-cesfam.json"):
     print("the wall follows the library, not the declaration"); sys.exit(1)'
+# The mount name has ONE seam-side home (env.sh) and ONE engine-side reader (appconfig
+# groupfolder_name, ADR-0020). Both readers here take it from env.sh; the sandbox stub derives the
+# folder row from the appconfig row — so a rename is one line, and a literal left behind is a mount
+# the seed cannot find. Seeded: the stub arm is exercised with no row, one row, and a re-set (the
+# config:app:set arm appends, so the LAST write must win, as it does in Nextcloud).
+check python3 -c '
+import re, sys
+env = open("scripts/env.sh", encoding="utf-8").read()
+if len(re.findall(r"^IV_MOUNT=", env, re.M)) != 1:
+    print("scripts/env.sh must define IV_MOUNT exactly once"); sys.exit(1)
+for f in ["provisioning/phases/41-intravox.sh", "scripts/divergence.sh"]:
+    src = open(f, encoding="utf-8").read()
+    if "$IV_MOUNT" not in src:
+        print(f + " does not read IV_MOUNT"); sys.exit(1)
+    if re.search(r"==\s*\"IntraVox\"|\"IntraVox\"\)", src):
+        print(f + " still looks a mount up by the literal"); sys.exit(1)
+stub = open("scripts/provisionador.py", encoding="utf-8").read()
+m = re.search(r"elif \"intravox:setup\" in args:\n(.*?)\nelif ", stub, re.S)
+if not m or "groupfolder_name" not in m.group(1):
+    print("provisionador: the intravox:setup arm does not derive the folder name from the appconfig row"); sys.exit(1)
+arm = "\n".join(l[4:] if l.startswith("    ") else l for l in m.group(1).splitlines())
+cfg = lambda v: ["appconfig", "intravox", "groupfolder_name", v]
+for rows, want in (([cfg("Intranet")], "Intranet"), ([], "IntraVox"), ([cfg("Intranet"), cfg("Sitio")], "Sitio")):
+    ns = {"rows": list(rows), "args": ["occ", "intravox:setup"], "save": lambda r: None}
+    exec(arm, ns)
+    if [r[1] for r in ns["rows"] if r[0] == "folder"] != [want]:
+        print("provisionador setup arm: expected one folder row named " + want + ", got " + repr(ns["rows"])); sys.exit(1)'
 
 # The café case above is behavioural, and load-bearing only under a COLLATING locale — which a
 # Chilean dev has and GitHub's runners do not, defaulting to C.UTF-8 where that range refuses `é`

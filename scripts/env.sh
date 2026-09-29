@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Shared preamble: source this first from anything that reads .env or runs `docker compose`.
-# Four jobs, all load-bearing; sourced by install.sh, seed.sh, divergence.sh, smoke.sh,
+# Six jobs, all load-bearing; sourced by install.sh, seed.sh, divergence.sh, smoke.sh,
 # office-smoke.sh, seed-idempotent.sh, wait-ready.sh and (transitively) every provisioning phase.
 #
 # 1. cd to the repo root. Every `docker compose` call resolves compose.yaml from the process cwd, so
@@ -204,3 +204,10 @@ if [ -f .env ]; then
   done < .env
   unset _line _key _val
 fi
+
+# 6. The engine's storage root, as staff will see it in Files (ADR-0020, IntraVox review L0-02).
+#    Phase 41 tells the engine the name (`occ config:app:set intravox groupfolder_name`) BEFORE
+#    `intravox:setup` creates the mount, then looks the mount up by it; divergence.sh declares it.
+#    After the loader, so .env (or the environment) can override it for a clinic that renamed by
+#    hand or keeps the engine's default; the default is the org's choice.
+IV_MOUNT="${IV_MOUNT:-Intranet}"

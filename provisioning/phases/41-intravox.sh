@@ -45,7 +45,25 @@ fi
 [ "$(occ config:app:get intravox enabled 2>/dev/null || true)" = "yes" ] || { echo "FATAL: intravox is declared but not enabled — phase 12 did not converge. A silent skip here ships a clinic without its welcome screen." >&2; exit 1; }
 
 # --- 2. SETUP: bare — groupfolder + groups + grants, ZERO content (D10/D11, L1-03) -----
-# ensure-style and re-run safe (SetupService: groups, 'IntraVox' groupfolder, mount grants,
+# The engine reads the mount name from app config (IntraVox MountName, review L1-01): set it
+# BEFORE setup so the group folder is CREATED as $IV_MOUNT on a fresh install. On an install that
+# still carries the default name, setup would not find $IV_MOUNT and would create a second mount
+# beside the old one — two trees, one of them empty. Refuse loudly: the rename is a deliberate
+# runbook (docs/WELCOME-SCREEN.md → "Renaming the storage folder on an existing install"), never
+# a seed side effect.
+_mounts="$(occ groupfolders:list --output=json 2>/dev/null | python3 -c '
+import sys, json
+try: d = json.load(sys.stdin)
+except Exception: sys.exit(0)
+for f in (d.values() if isinstance(d, dict) else d):
+    m = f.get("mount_point") or f.get("mountPoint")
+    if m: print(m)')"
+if ! printf '%s\n' "$_mounts" | grep -qxF -- "$IV_MOUNT" && printf '%s\n' "$_mounts" | grep -qxF -- "IntraVox"; then
+  echo "FATAL: the engine's group folder is still named 'IntraVox' but IV_MOUNT is '$IV_MOUNT' — rename it first (docs/WELCOME-SCREEN.md → Renaming the storage folder on an existing install), or set IV_MOUNT=IntraVox in .env for this install. Seeding now would create a second, empty mount." >&2
+  exit 1
+fi
+occ config:app:set intravox groupfolder_name --value="$IV_MOUNT" >/dev/null
+# ensure-style and re-run safe (SetupService: groups, the $IV_MOUNT groupfolder, mount grants,
 # one-time admin seeding behind the admin_access_provisioned marker). --skip-demo is bare
 # mode (L1-03): setup creates NO content — no language folder, no boilerplate home, no
 # _resources/_templates; the real es/ tree arrives with the import in step 4. Output
@@ -119,11 +137,11 @@ env SITE_NOMBRE="$SITE_NOMBRE" SITE_NOMBRE_CORTO="$SITE_NOMBRE_CORTO" SITE_DIREC
     python3 provisioning/intravox/render.py "$_lib" "$_stage" >/dev/null \
   || { echo "FATAL: the welcome tree did not render — the FATAL line above names the declaration row or site value that broke it (sites/$SITE/site.sh)" >&2; exit 1; }
 
-_ivfid="$(occ groupfolders:list --output=json 2>/dev/null | python3 -c '
-import sys, json
+_ivfid="$(occ groupfolders:list --output=json 2>/dev/null | env IV_MOUNT="$IV_MOUNT" python3 -c '
+import os, sys, json
 for f in json.load(sys.stdin):
-    if (f.get("mount_point") or f.get("mountPoint")) == "IntraVox": print(f["id"]); break')"
-[ -n "$_ivfid" ] || { echo "FATAL: IntraVox groupfolder not found after intravox:setup — setup did not converge." >&2; exit 1; }
+    if (f.get("mount_point") or f.get("mountPoint")) == os.environ["IV_MOUNT"]: print(f["id"]); break')"
+[ -n "$_ivfid" ] || { echo "FATAL: the '$IV_MOUNT' groupfolder was not found after intravox:setup — setup did not converge." >&2; exit 1; }
 datadir_load || { echo "FATAL: datadir unresolved (fail-closed, lib.sh:139-148)." >&2; exit 1; }
 _gf="$DATADIR/__groupfolders/$_ivfid/files"   # gf_files_path shape (lib.sh:596): <DATADIR>/__groupfolders/<fid>/files/<rel>
 _gf_has() { nc_exec --user www-data -- test -f "$_gf/$1" 2>/dev/null; }   # groupfolder-root-relative
