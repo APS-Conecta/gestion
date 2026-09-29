@@ -737,6 +737,56 @@ iv_mount_divergence_cases() {
     || { echo "divergence: a storage root was offered for deletion: $out" >&2; return 1; }
 }
 check iv_mount_divergence_cases
+# Estadística's establishment, both halves, extracted from the scripts: phase 16 writes the three
+# keys only behind a six-digit SITE_DEIS (anything else the app reads as no establishment, in
+# silence), and divergence.sh names each key that differs from the site file — and an occ that
+# cannot answer, never as a clean pass.
+estadistica_identity_cases() {
+  local guard section out rc want deis
+  guard="$(sed -n '/^case "\${SITE_DEIS:-}" in$/,/^app_config_set estadistica comuna_cut/p' provisioning/phases/16-app-policy.sh)"
+  [ -n "$guard" ] || { echo "estadistica guard: block not found in 16-app-policy.sh" >&2; return 1; }
+  while IFS='|' read -r want deis; do
+    out="$(SITE=lab SITE_DEIS="$deis" SITE_TIPO=CESFAM SITE_COMUNA_CUT=09999 bash -c '
+      app_config_set() { printf "SET %s %s %s\n" "$@"; }
+      eval "$1"' _ "$guard" 2>&1)"; rc=$?
+    case "$want" in
+      pass) [ "$rc" = 0 ] && [ "$(printf '%s\n' "$out" | grep -c '^SET estadistica ')" = 3 ] \
+        && printf '%s\n' "$out" | grep -qx "SET estadistica deis_code $deis" \
+        || { echo "estadistica guard: expected three writes for SITE_DEIS='$deis', got: $out" >&2; return 1; } ;;
+      fatal) [ "$rc" != 0 ] && [[ "$out" == FATAL:* ]] && ! printf '%s\n' "$out" | grep -q '^SET ' \
+        || { echo "estadistica guard: expected FATAL and no write for SITE_DEIS='$deis', got: $out" >&2; return 1; } ;;
+    esac
+  done <<'CASES'
+pass|999001
+fatal|
+fatal|99900
+fatal|9990011
+fatal|99900a
+fatal| 999001
+CASES
+  section="$(sed -n "/^# --- estadistica's establishment/,/^fi$/p" scripts/divergence.sh)"
+  [ -n "$section" ] || { echo "estadistica divergence: section not found in divergence.sh" >&2; return 1; }
+  out="$(SITE=lab SITE_DEIS=999001 SITE_TIPO=CESFAM SITE_COMUNA_CUT=09999 bash -c '
+    occ() { case "$1" in status) return 0 ;; config:app:get) case "$3" in deis_code) echo 999001 ;; establishment_type) echo CESFAM ;; comuna_cut) echo 09999 ;; esac ;; esac; }
+    note() { printf "NOTE %s\n" "$*"; }
+    eval "$1"' _ "$section" 2>&1)"
+  [ -z "$out" ] || { echo "estadistica divergence: matching keys were reported: $out" >&2; return 1; }
+  out="$(SITE=lab SITE_DEIS=999001 SITE_TIPO=CESFAM SITE_COMUNA_CUT=09999 bash -c '
+    occ() { case "$1" in status) return 0 ;; config:app:get) [ "$3" = deis_code ] && echo 999002; return 0 ;; esac; }
+    note() { printf "NOTE %s\n" "$*"; }
+    eval "$1"' _ "$section" 2>&1)"
+  printf '%s\n' "$out" | grep -q "^NOTE estadistica deis_code is '999002' but sites/lab/site.sh says '999001'" \
+    && printf '%s\n' "$out" | grep -q "^NOTE estadistica establishment_type is '<unset>' but sites/lab/site.sh says 'CESFAM'" \
+    && [ "$(printf '%s\n' "$out" | grep -c '^NOTE ')" = 3 ] \
+    || { echo "estadistica divergence: a wrong and two unset keys were not each reported: $out" >&2; return 1; }
+  out="$(SITE=lab SITE_DEIS=999001 bash -c '
+    occ() { return 1; }
+    note() { printf "NOTE %s\n" "$*"; }
+    eval "$1"' _ "$section" 2>&1)"
+  printf '%s\n' "$out" | grep -q "^NOTE cannot read estadistica's establishment keys" \
+    || { echo "estadistica divergence: an occ that did not answer passed: $out" >&2; return 1; }
+}
+check estadistica_identity_cases
 
 # The café case above is behavioural, and load-bearing only under a COLLATING locale — which a
 # Chilean dev has and GitHub's runners do not, defaulting to C.UTF-8 where that range refuses `é`

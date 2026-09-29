@@ -59,6 +59,24 @@ app_config_set territorio tile_url "${TILES_PUBLIC_URL:-http://localhost:${TILES
 app_config_set territorio comuna_cut "$SITE_COMUNA_CUT"
 app_config_set territorio comuna_name "$SITE_COMUNA"
 
+# Estadística's establishment — the DEIS code, the register's tipo and the comuna's CUT: the
+# identity ADR-0013 says an app reads from config and never chooses. The app has no setter
+# (apps/estadistica EstablishmentConfig), so this is the only writer, and divergence.sh reads the
+# three back. Written whether the app is installed or not, like the POLICY_CONFIG rows above: a
+# lab install has them the day the app is cloned.
+#
+# The guard is the app's own rule, not a style check. Establishment::of reads anything but six
+# digits as "no establishment", and the app then shows the country and the peers with no local
+# series and no error — the same silent disarm as an empty comuna_cut. The CUT is guarded above;
+# the tipo only labels the admin section's notice.
+case "${SITE_DEIS:-}" in
+  [0-9][0-9][0-9][0-9][0-9][0-9]) ;;
+  *) echo "FATAL: sites/$SITE/site.sh carries SITE_DEIS='${SITE_DEIS:-}', not a six-digit DEIS code. Regenerate the site file (scripts/deis.py <codigo> --new <slug>): Estadística reads anything else as no establishment, and says nothing." >&2; exit 1 ;;
+esac
+app_config_set estadistica deis_code "$SITE_DEIS"
+app_config_set estadistica establishment_type "${SITE_TIPO:-}"
+app_config_set estadistica comuna_cut "$SITE_COMUNA_CUT"
+
 for app in ${POLICY_DISABLED:-}; do
   app_disable "$app"
 done

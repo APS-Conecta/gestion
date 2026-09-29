@@ -299,6 +299,23 @@ else
   [ "$have" = "${SITE_COMUNA:-}" ] || note "territorio comuna_name is '${have:-<unset>}' but sites/$SITE/site.sh says '${SITE_COMUNA:-}' — make install re-converges it"
 fi
 
+# --- estadistica's establishment: identity in app config, checked against the site file ---
+# Same reason as territorio's pair above: a wrong deis_code does not fail, it shows another
+# clinic's figures as this one's, and an unset one shows none (apps/estadistica Establishment::of).
+# Unlike territorio, the app has no second writer, so any difference here is a hand-set key or a
+# site file edited after the last install. Checked whether the app is installed or not: phase 16
+# writes the keys either way.
+if [ -z "${SITE_DEIS:-}" ]; then
+  note "sites/$SITE/site.sh carries no SITE_DEIS — phase 16 fails loudly until the file is regenerated (scripts/deis.py <codigo> --new <slug>)"
+elif ! occ status >/dev/null 2>&1; then
+  note "cannot read estadistica's establishment keys — occ did not answer; nothing was checked"
+else
+  for pair in "deis_code=$SITE_DEIS" "establishment_type=${SITE_TIPO:-}" "comuna_cut=${SITE_COMUNA_CUT:-}"; do
+    have="$(occ config:app:get estadistica "${pair%%=*}" 2>/dev/null || true)"
+    [ "$have" = "${pair#*=}" ] || note "estadistica ${pair%%=*} is '${have:-<unset>}' but sites/$SITE/site.sh says '${pair#*=}' — make install re-converges it"
+  done
+fi
+
 if [ "${#notes[@]}" -eq 0 ]; then
   [ "$quiet" -eq 1 ] || echo "  nothing live that the repo does not declare"
   exit 0
