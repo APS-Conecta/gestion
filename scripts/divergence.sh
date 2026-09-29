@@ -96,12 +96,20 @@ for r in (d.values() if isinstance(d, dict) else d):
     fid = r.get("id")
     if m: print(str(fid) + "\t" + m)
 ')"
-declared_folders="$(printf '%s\n%s\n' "${SITE_FOLDERS[@]}" "IntraVox")"   # engine mount (design §5): created by
+declared_folders="$(printf '%s\n%s\n' "${SITE_FOLDERS[@]}" "$IV_MOUNT")"   # engine mount (design §5, ADR-0020): created by
 # intravox:setup, not in any SITE_FOLDERS matrix; gf_prune already leaves it alone (prune only
 # touches matrix mounts)
+iv_told="$(occ config:app:get intravox groupfolder_name 2>/dev/null || true)"   # what the engine was last told
 while IFS=$'\t' read -r fid mount; do
   [ -n "${mount:-}" ] || continue
   printf '%s\n' "$declared_folders" | grep -qxF -- "$mount" && continue
+  # The storage root under a name other than IV_MOUNT — the engine's default (seeded before
+  # ADR-0020) or the name it was told before IV_MOUNT changed — holds every page: the generic
+  # advice below would say to delete it. Point at the rename instead.
+  if [ "$mount" = IntraVox ] || { [ -n "$iv_told" ] && [ "$mount" = "$iv_told" ]; }; then
+    note "group folder '$mount' is the welcome screen's storage root under a name other than the declared '$IV_MOUNT' — it holds every page: rename it once (docs/WELCOME-SCREEN.md → Renaming the storage folder on an existing install), never delete it; the seed refuses to run until then"
+    continue
+  fi
   note "group folder '$mount' is live but not in SITE_FOLDERS — it still holds its files; remove it deliberately with 'occ groupfolders:delete $fid' if that is intended"
 done <<< "$live_folders"
 
@@ -112,7 +120,7 @@ done <<< "$live_folders"
 # what is declared and missing and never deletes; this line is the only place a removed row is noticed.
 # Tolerated silently: an instance with no IntraVox group folder (the app is not shipped here).
 declare -p SITE_WELCOME >/dev/null 2>&1 || SITE_WELCOME=()   # site files written before 2026-09-27
-iv_fid="$(printf '%s\n' "$live_folders" | awk -F'\t' '$2=="IntraVox"{print $1; exit}')"   # from the group-folders arm above: one occ call, one parser
+iv_fid="$(printf '%s\n' "$live_folders" | awk -F'\t' -v m="$IV_MOUNT" '$2==m{print $1; exit}')"   # from the group-folders arm above: one occ call, one parser
 if [ -n "$iv_fid" ]; then
   datadir="$(occ config:system:get datadirectory 2>/dev/null | tr -d '\r' || true)"
   # unresolved = blindness (B-014): the listing below would cd nowhere and answer "no sections"

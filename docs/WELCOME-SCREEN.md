@@ -10,7 +10,8 @@ publishes news and avisos). Spanish strings are quoted as they appear on screen.
 
 Phase 41 runs on every `make seed`, on every clinic, ungated — the welcome structure is not a
 fixture. In order it: runs the engine's own setup (groups `IntraVox Admins/Editors/Users` + the
-`IntraVox` group folder, no content), maps registry groups into engine groups (all-staff →
+`Intranet` group folder — the engine's mount, named by `IV_MOUNT` and told to the engine before
+setup, ADR-0020 — no content), maps registry groups into engine groups (all-staff →
 Users; cat-jefaturas + role-oirs → Editors; adds-only, never removes), renders the tree the site
 **declared** (`SITE_WELCOME`, below) with the clinic's identity substituted, imports what is
 declared and missing, and writes the page ACLs for the team pages it just created.
@@ -84,6 +85,45 @@ administrator tools that work below the page API ignore it: the **Files app** (a
 admin can still delete the folder — the recovery procedure below relies on exactly that), a ZIP
 import with overwrite, and the admin clean-start reset.
 
+## Renaming the storage folder on an existing install
+
+New installs get the folder name from `IV_MOUNT` (`scripts/env.sh`, default «Intranet»;
+overridable in `.env`): phase 41 writes it into the engine (`occ config:app:set intravox
+groupfolder_name`) before `intravox:setup` creates the mount, and every page's «Abrir en
+Archivos» (page menu ⋯) and the sidebar's Location link open the page's folder under that name.
+The seeded pages that say where content lives (Bienvenida, Cómo publicar) name the same folder:
+render.py substitutes `IV_MOUNT`. An install seeded before this existed carries the engine's
+default, `IntraVox`, and **the seed refuses to run against it** (`FATAL: the engine's group folder
+is still named 'IntraVox' …`) — seeding would create a second, empty mount; `make divergence`
+says the same instead of offering to delete it. The same refusal holds when `IV_MOUNT` later
+changes on an install whose folder already carries the previous name, and for a value the engine
+would refuse (empty, or with a `/`). Rename once, by hand, in this order, with no `make seed` in
+between. The commands
+run in the Nextcloud container as `www-data` (`occ` below). Steps 0–3 rehearsed end to end — rename,
+rollback, forward again — on a throwaway Nextcloud 34 instance running the welcome-folders p5
+engine (2026-09-29): their expected lines below are what it printed, and the page tree was
+identical before and after each direction. Not yet run on the lab or a clinic.
+
+0. Before anything: `occ intravox:reindex --user admin --dry-run` and note N in
+   `Would index N of M page file(s) across K language(s).`
+1. `occ config:app:set intravox groupfolder_name --value Intranet`. Expected: `Config value
+   'groupfolder_name' for app 'intravox' is now set to 'Intranet', stored as … in fast cache`.
+   From this moment the engine looks for «Intranet», so pages can answer *IntraVox folder not
+   found* until step 2 — do it right away.
+2. `occ groupfolders:list` → note the id of the folder mounted as `IntraVox`; then
+   `occ groupfolders:rename <id> Intranet` (silent on success). Expected: the list shows
+   `Intranet`. For a few seconds the web server can still answer with the previous name (the
+   rehearsal's page tree said *IntraVox folder not found* once, then was identical) — reload;
+   no restart is needed.
+3. `occ intravox:reindex --user admin`. Expected: `Indexed N of M page file(s) across K
+   language(s).` with the same N as step 0 — the index rows written under the old name are
+   retired.
+4. `make seed`. Expected: `welcome: section … exists` for every row, nothing created.
+
+Rollback is the same three commands with `IntraVox`, plus `IV_MOUNT=IntraVox` in `.env` so the
+seed agrees. Staff see the new name in Files at once; the page links follow the configured name
+without a cache flush.
+
 ## The editorial workflow
 
 1. **Draft** — an Editor creates a page under `noticias/` (news), `noticias/avisos/` (avisos)
@@ -115,7 +155,7 @@ The engine keeps a working set of pages; this deployment budgets **≤ 50**:
 
 There is no whole-tree recovery any more, and no reason for one: the seed converges per section.
 
-1. In the browser, as a group-folder admin, open Files → `IntraVox` → `es` → the section's folder
+1. In the browser, as a group-folder admin, open Files → `Intranet` → `es` → the section's folder
    and choose **⋯ → Descargar**. Expected: a ZIP of the section lands in your downloads — your
    copy of every staff edit inside it, which the next step discards.
 2. Same place, **⋯ → Eliminar** on that folder only. Expected: the folder disappears from `es/`
@@ -147,9 +187,11 @@ page-level.
 ## Divergence tolerances
 
 `make divergence` tolerates, by design: the three engine groups (`IntraVox Admins/Editors/
-Users`) and the `IntraVox` group folder — both created by the engine's setup, mapped by
-phase 41 (`docs/adr/0015-welcome-content-seeds-through-an-ungated-own-app-phase.md`). They
-appear in no site file and no phase-20 registry.
+Users`) and the engine's group folder named by `IV_MOUNT` (`Intranet`, ADR-0020) — both created
+by the engine's setup, mapped by phase 41
+(`docs/adr/0015-welcome-content-seeds-through-an-ungated-own-app-phase.md`). They appear in no
+site file and no phase-20 registry. A live `IntraVox` folder while `IV_MOUNT` says otherwise is
+reported as the storage root under its old name — rename it (above), never delete it.
 
 ## Promotion Milestone
 

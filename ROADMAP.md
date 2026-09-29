@@ -69,6 +69,7 @@ shipped and moved to **Done** below.
 | 2026-09-24 | **Welcome screen (IntraVox) as phase 41** — engine setup + es payload + page ACL, telemetry pin, divergence tolerances | `provisioning/phases/41-intravox.sh`, ADRs 0014–0017; deferred ideas ledger in the program docs |
 | 2026-09-25 | **Org-wide hardening program (12 phases)** — postures, drift gates, manuals under version control, org CI template; validated pass | `.github/workflows/ci.yml`, `docs/adr/`, validation in the org artifacts repo |
 | 2026-09-28 | Welcome tree declared per site and converged per section — IntraVox review Phase 3: `SITE_WELCOME`, one renderer, `occ intravox:import --skip-existing`, the ten static team pages retired; review Phases 4 (walls) and 5 (discoverability) are next | `docs/adr/0019-the-welcome-tree-is-declared-and-converged-per-section.md`, `provisioning/intravox/render.py`, `docs/WELCOME-SCREEN.md` |
+| 2026-09-29 | **Storage root named for staff** — IntraVox review Phase 5: `IV_MOUNT` → engine `groupfolder_name`, the seed refuses an unrenamed install, «Abrir en Archivos» on every page, the «dónde vive» note seeded | [`ADR-0020`](docs/adr/0020-the-storage-root-is-named-for-staff.md), [`docs/WELCOME-SCREEN.md`](docs/WELCOME-SCREEN.md) |
 
 The reasoning behind each of these lives with the thing it describes — the ADR, the phase file, or
 the stylesheet. It is not restated here; this table is an index, not a second copy.

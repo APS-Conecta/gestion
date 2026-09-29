@@ -11,6 +11,8 @@ Environment (the phase exports them; arrays newline-joined, one entry per line):
                   links its own folder, which SITE_FOLDERS must declare (team_dir below)
   SITE_FOLDERS    group folders — the only Files roots a rendered link may point at (L0-06)
   SITE_SUBFOLDERS Transversal's subfolders — the Documentos page links exactly these (L0-06)
+  IV_MOUNT        the storage root's name (scripts/env.sh, ADR-0020) — __IV_MOUNT__ in the pages
+                  that tell staff where content lives
 
 Library layout (<library> = provisioning/intravox/es):
   core/home.json.tpl        identity + __HOME_TILES__ (one tile per declared section)
@@ -103,6 +105,12 @@ def main(library, stage):
         if not val:
             fatal(f"{var} is empty — the site file carries no value to substitute (D3)")
         identity[f"__{var}__"] = esc(val)
+    # The folder the seeded pages send staff to must be the one phase 41 told the engine about —
+    # an install that keeps (or rolls back to) another name must not be told «Intranet».
+    mount = os.environ.get("IV_MOUNT", "")
+    if not mount.strip() or "/" in mount:
+        fatal(f"IV_MOUNT '{mount}' is not one folder name — the seeded pages name the storage folder (ADR-0020)")
+    identity["__IV_MOUNT__"] = esc(mount)
 
     welcome = rows("SITE_WELCOME")
     for section, flag in welcome:

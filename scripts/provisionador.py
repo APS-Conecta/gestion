@@ -233,14 +233,17 @@ elif "app:enable" in args:
         rows.append(["appconfig", app, "enabled", "yes"])
         save(rows)
 elif "intravox:setup" in args:
-    # B-028: SetupService creates the 'IntraVox' groupfolder, which phase 41 looks up by
-    # mount right after. Only the folder row is modelled: the engine groups and mount grants
-    # setup also creates are invisible to every parser here, and divergence declares the
-    # mount itself (declared_folders, divergence.sh). Query-first, ensure_groupfolder's
-    # discipline: a re-run must find it, never re-create it.
-    if not any(r[0] == "folder" and r[1] == "IntraVox" for r in rows):
+    # B-028: SetupService creates the groupfolder named by the `groupfolder_name` appconfig row
+    # (IntraVox MountName, default IntraVox) — phase 41 sets that row right before and looks
+    # the mount up by the same name after (ADR-0020). The config:app:set arm appends, so the
+    # LAST row is the live value, as in Nextcloud. Only the folder row is modelled: the engine
+    # groups and mount grants setup also creates are invisible to every parser here, and
+    # divergence declares the mount itself (declared_folders, divergence.sh). Query-first,
+    # ensure_groupfolder's discipline: a re-run must find it, never re-create it.
+    mount = next((r[3] for r in reversed(rows) if r[:3] == ["appconfig", "intravox", "groupfolder_name"] and r[3]), "IntraVox")
+    if not any(r[0] == "folder" and r[1] == mount for r in rows):
         nxt = 1 + max((int(r[2]) for r in rows if r[0] == "folder"), default=0)
-        rows.append(["folder", "IntraVox", str(nxt)])
+        rows.append(["folder", mount, str(nxt)])
         save(rows)
 elif "config:system:get" in args and "datadirectory" in args:
     # implement-time arm (FINDINGS P15): the fence was authored against the pre-port tree whose
@@ -1621,7 +1624,7 @@ def selftest():
     # env.sh never unsets, so the compose arm's clean fixture .env could not make the OFFICE_PORT
     # gate fire). Scrub the prefixes the phases read; restore in the finally.
     _scrub = tuple(("OFFICE_", "SITE_", "SEED_", "FIXTURE_", "NC_", "APS_", "TILES_", "HTTP_",
-                    "APACHE_", "NEXTCLOUD_", "COMPOSE_"))
+                    "APACHE_", "NEXTCLOUD_", "COMPOSE_", "IV_"))
     _scrubbed = {k: os.environ.pop(k) for k in list(os.environ) if k.startswith(_scrub)}
     # The fixture reuses the register's real hostile shapes, measured from the shipped register
     # (2026-07-23): 201079's name holds double quotes, 113314's address holds a backtick, 121567
