@@ -99,10 +99,10 @@ says the same instead of offering to delete it. The same refusal holds when `IV_
 changes on an install whose folder already carries the previous name, and for a value the engine
 would refuse (empty, or with a `/`). Rename once, by hand, in this order, with no `make seed` in
 between. The commands
-run in the Nextcloud container as `www-data` (`occ` below). Steps 0–3 rehearsed end to end — rename,
-rollback, forward again — on a throwaway Nextcloud 34 instance running the welcome-folders p5
-engine (2026-09-29): their expected lines below are what it printed, and the page tree was
-identical before and after each direction. Not yet run on the lab or a clinic.
+run in the Nextcloud container as `www-data` (`occ` below). Run on the compose lab on 2026-09-29
+(IntraVox 3.1.7: 30 pages, the page tree and all 97 files identical before and after, every page
+opening by its uniqueId). Before that, rename, rollback and forward again were rehearsed on a
+throwaway instance. Not yet run on a clinic.
 
 0. Before anything: `occ intravox:reindex --user admin --dry-run` and note N in
    `Would index N of M page file(s) across K language(s).`
@@ -117,7 +117,9 @@ identical before and after each direction. Not yet run on the lab or a clinic.
    no restart is needed.
 3. `occ intravox:reindex --user admin`. Expected: `Indexed N of M page file(s) across K
    language(s).` with the same N as step 0 — the index rows written under the old name are
-   retired.
+   retired. Run straight after step 2 it can answer `Reindex failed: IntraVox folder not found`
+   (the lab did, once: the renamed mount had not reached the cache yet) — wait a few seconds and
+   run it again; nothing was changed by the failed run.
 4. `make seed`. Expected: `welcome: section … exists` for every row, nothing created.
 
 Rollback is the same three commands with `IntraVox`, plus `IV_MOUNT=IntraVox` in `.env` so the
