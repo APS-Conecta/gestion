@@ -8,8 +8,8 @@
   engine's `groupfolder_name` before `intravox:setup`, refuses an unrenamed install, looks the
   mount up by the name), `scripts/divergence.sh` (declares it, and reports an unrenamed one
   instead of offering to delete it), `scripts/provisionador.py` (the sandbox derives the folder
-  row from the appconfig row), the two seeded pages that tell staff where content lives, and the
-  IntraVox engine's `MountName` (one configurable value behind every resolver, the one path
+  row from the appconfig row), `provisioning/intravox/render.py` (substitutes `IV_MOUNT` into
+  the two seeded pages that tell staff where content lives), and the IntraVox engine's `MountName` (one configurable value behind every resolver, the one path
   stripper and the Files links).
 
 ## Context
@@ -30,11 +30,12 @@ silently break on a rename (L2-03).
    folder, and nobody browses them.
 3. **An existing install renames by a runbook, never by the seed.** Three commands the platform
    already has (`config:app:set` → `groupfolders:rename` → `intravox:reindex`), documented in
-   `docs/WELCOME-SCREEN.md`; the seed refuses to run while the old name exists, because setup
+   `docs/WELCOME-SCREEN.md`; the seed refuses to run while a folder under the old name exists
+   (the engine's default, or the name it was told before `IV_MOUNT` changed), because setup
    would otherwise create a second, empty mount beside the real one.
-4. **Content says where it lives.** Bienvenida and Cómo publicar name the folder and the page
-   menu's «Abrir en Archivos»; the storage stays a group folder — the per-page ACL model rides
-   on it.
+4. **Content says where it lives.** Bienvenida and Cómo publicar name the folder — `IV_MOUNT`,
+   substituted at render — and the page menu's «Abrir en Archivos»; the storage stays a group
+   folder — the per-page ACL model rides on it.
 
 Rejected: an `occ intravox:rename-mount` command (three lines of shell wrapped in eighty of PHP);
 keying the engine on the folder id (a multi-site registry is a different decision); moving pages

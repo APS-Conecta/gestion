@@ -99,13 +99,15 @@ for r in (d.values() if isinstance(d, dict) else d):
 declared_folders="$(printf '%s\n%s\n' "${SITE_FOLDERS[@]}" "$IV_MOUNT")"   # engine mount (design §5, ADR-0020): created by
 # intravox:setup, not in any SITE_FOLDERS matrix; gf_prune already leaves it alone (prune only
 # touches matrix mounts)
+iv_told="$(occ config:app:get intravox groupfolder_name 2>/dev/null || true)"   # what the engine was last told
 while IFS=$'\t' read -r fid mount; do
   [ -n "${mount:-}" ] || continue
   printf '%s\n' "$declared_folders" | grep -qxF -- "$mount" && continue
-  # An install seeded before ADR-0020 still carries the engine's default name: that folder holds
-  # every page — the generic advice below would say to delete it. Point at the rename instead.
-  if [ "$mount" = IntraVox ]; then
-    note "group folder 'IntraVox' is the welcome screen's storage root under the engine's default name, not the declared '$IV_MOUNT' — it holds every page: rename it once (docs/WELCOME-SCREEN.md → Renaming the storage folder on an existing install), never delete it; the seed refuses to run until then"
+  # The storage root under a name other than IV_MOUNT — the engine's default (seeded before
+  # ADR-0020) or the name it was told before IV_MOUNT changed — holds every page: the generic
+  # advice below would say to delete it. Point at the rename instead.
+  if [ "$mount" = IntraVox ] || { [ -n "$iv_told" ] && [ "$mount" = "$iv_told" ]; }; then
+    note "group folder '$mount' is the welcome screen's storage root under a name other than the declared '$IV_MOUNT' — it holds every page: rename it once (docs/WELCOME-SCREEN.md → Renaming the storage folder on an existing install), never delete it; the seed refuses to run until then"
     continue
   fi
   note "group folder '$mount' is live but not in SITE_FOLDERS — it still holds its files; remove it deliberately with 'occ groupfolders:delete $fid' if that is intended"

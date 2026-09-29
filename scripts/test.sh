@@ -566,7 +566,7 @@ check python3 -c '
 import json, os, shlex, subprocess, sys, tempfile
 R = "provisioning/intravox/render.py"; L = "provisioning/intravox/es"
 base = {"SITE_NOMBRE": "Centro de Salud Familiar Prueba", "SITE_NOMBRE_CORTO": "CESFAM Prueba",
-        "SITE_DIRECCION": "Calle 1", "SITE_COMUNA": "Comuna", "SITE_SERVICIO_SALUD": "SS Prueba",
+        "SITE_DIRECCION": "Calle 1", "SITE_COMUNA": "Comuna", "SITE_SERVICIO_SALUD": "SS Prueba", "IV_MOUNT": "Intranet",
         "SITE_FOLDERS": "Transversal\nSectores/Sector 1\nProgramas/X\nUnidades/OIRS", "SITE_SUBFOLDERS": "Protocolos\nFlujogramas",
         "SITE_TEAMS": "sector-1|Sector 1\nprog-x|Programa X", "SITE_WELCOME": "noticias|wall\nvida-cesfam|\ndocumentos|wall"}
 def run(env):
@@ -590,6 +590,11 @@ docs = open(stage + "/documentos/documentos.json").read()
 if "/Transversal/Protocolos" not in docs or "/Transversal/Documentación" in docs:
     print("Documentos links are not the declared SITE_SUBFOLDERS"); sys.exit(1)
 if "__" in open(stage + "/home.json").read(): print("home.json shipped a raw placeholder"); sys.exit(1)
+p, stage = run({**base, "IV_MOUNT": "Sitio Web"})
+for rel in ["noticias/bienvenida/bienvenida.json", "noticias/como-publicar/como-publicar.json"]:
+    page = open(stage + "/" + rel, encoding="utf-8").read()
+    if "__IV_MOUNT__" in page or "Sitio Web" not in page or "Intranet" in page:
+        print(rel + " does not name the storage folder IV_MOUNT names (ADR-0020)"); sys.exit(1)
 p, stage = run({**base, "SITE_WELCOME": base["SITE_WELCOME"] + "\nequipos|wall"})
 if p.returncode != 0: print("equipos render failed: " + p.stderr.strip()); sys.exit(1)
 hub = json.load(open(stage + "/equipos/equipos.json"))
@@ -608,6 +613,7 @@ if hero != "CESFAM \"Dr. X\" \\ Sur": print("an identity value with a quote and 
 for bad, why in [({"SITE_WELCOME": "noticias|fortress"}, "unknown flag"),
                  ({"SITE_WELCOME": "campanas|"}, "undeclared library section"),
                  ({"SITE_FOLDERS": "Sectores/Sector 1"}, "Files link to an undeclared root"),
+                 ({"IV_MOUNT": "a/b"}, "a storage folder name with a slash"),
                  ({"SITE_WELCOME": base["SITE_WELCOME"] + "\nequipos|wall", "SITE_TEAMS": "sector-9|Sector 9"},
                   "a team whose folder the site does not declare")]:
     p, _ = run({**base, **bad})
@@ -621,7 +627,7 @@ check python3 -c '
 import json, os, shlex, subprocess, sys, tempfile
 R = "provisioning/intravox/render.py"; L = "provisioning/intravox/es"
 base = {"SITE_NOMBRE": "Centro de Salud Familiar Prueba", "SITE_NOMBRE_CORTO": "CESFAM Prueba",
-        "SITE_DIRECCION": "Calle 1", "SITE_COMUNA": "Comuna", "SITE_SERVICIO_SALUD": "SS Prueba",
+        "SITE_DIRECCION": "Calle 1", "SITE_COMUNA": "Comuna", "SITE_SERVICIO_SALUD": "SS Prueba", "IV_MOUNT": "Intranet",
         "SITE_FOLDERS": "Transversal\nSectores/Sector 1\nProgramas/X", "SITE_SUBFOLDERS": "Protocolos\nFlujogramas",
         "SITE_TEAMS": "sector-1|Sector 1\nprog-x|Programa X",
         "SITE_WELCOME": "noticias|wall\nvida-cesfam|\ndocumentos|wall\nequipos|wall"}
@@ -673,6 +679,64 @@ for rows, want in (([cfg("Intranet")], "Intranet"), ([], "IntraVox"), ([cfg("Int
     exec(arm, ns)
     if [r[1] for r in ns["rows"] if r[0] == "folder"] != [want]:
         print("provisionador setup arm: expected one folder row named " + want + ", got " + repr(ns["rows"])); sys.exit(1)'
+# Phase 41's refusal is the only thing between an install whose folder carries another name and
+# a second, empty mount (ADR-0020). Extracted from the phase's own bytes (a named function: the
+# stub needs quotes the bash -c wrapper cannot nest) and run against a stubbed occ, both ways:
+# a fresh install, the runbook's end state and an explicit override pass; the lab's unrenamed
+# folder, a half-done runbook, a later IV_MOUNT change, a dict-shaped listing and a name the
+# engine refuses all FATAL.
+iv_mount_guard_cases() {
+  local guard want mounts told iv out rc
+  guard="$(sed -n '/^case "\$IV_MOUNT" in$/,/^occ config:app:set intravox groupfolder_name/p' provisioning/phases/41-intravox.sh | sed '$d')"
+  [ -n "$guard" ] || { echo "iv mount guard: block not found in 41-intravox.sh" >&2; return 1; }
+  while IFS='|' read -r want mounts told iv; do
+    out="$(MOUNTS_JSON="$mounts" TOLD="$told" IV_MOUNT="$iv" bash -c '
+      occ() { case "$1" in
+        groupfolders:list) printf "%s" "$MOUNTS_JSON" ;;
+        config:app:get) [ -n "$TOLD" ] && printf "%s\n" "$TOLD" ;;
+      esac; }
+      eval "$1"; echo PASSED' _ "$guard" 2>&1)"; rc=$?
+    case "$want" in
+      pass) [ "$rc" = 0 ] && [ "${out##*$'\n'}" = PASSED ] || { echo "iv mount guard: expected pass for mounts=$mounts told=$told IV_MOUNT=$iv, got: $out" >&2; return 1; } ;;
+      fatal) [ "$rc" != 0 ] && [[ "$out" == FATAL:* ]] || { echo "iv mount guard: expected FATAL for mounts=$mounts told=$told IV_MOUNT=$iv, got: $out" >&2; return 1; } ;;
+    esac
+  done <<'CASES'
+pass|[]||Intranet
+pass|[{"id":1,"mount_point":"Intranet"}]|Intranet|Intranet
+pass|[{"id":1,"mount_point":"IntraVox"}]||IntraVox
+pass|[{"id":1,"mount_point":"Transversal"}]||Intranet
+fatal|[{"id":1,"mount_point":"IntraVox"}]||Intranet
+fatal|[{"id":1,"mount_point":"IntraVox"}]|Intranet|Intranet
+fatal|[{"id":1,"mount_point":"Intranet"}]|Intranet|Sitio Web
+fatal|{"1":{"id":1,"mount_point":"IntraVox"}}||Intranet
+fatal|[]||a/b
+fatal|[]||   
+CASES
+}
+check iv_mount_guard_cases
+# divergence.sh's side of the same rule: a live storage root under another name (the default, or
+# the name the engine was last told) is reported as a rename, never with the generic delete
+# advice; an unrelated undeclared folder still gets that advice. Extracted from the script.
+iv_mount_divergence_cases() {
+  local loop out
+  loop="$(sed -n '/^iv_told="\$(occ config:app:get intravox groupfolder_name/,/^done <<< "\$live_folders"$/p' scripts/divergence.sh)"
+  [ -n "$loop" ] || { echo "divergence mount loop not found" >&2; return 1; }
+  out="$(IV_MOUNT="Sitio Web" TOLD=Intranet bash -c '
+    occ() { [ "$1" = config:app:get ] && [ -n "$TOLD" ] && printf "%s\n" "$TOLD"; }
+    note() { printf "NOTE %s\n" "$*"; }
+    declared_folders="$(printf "%s\n" Transversal "$IV_MOUNT")"
+    live_folders="$(printf "1\tIntranet\n2\tIntraVox\n3\tViejo\n4\tTransversal\n")"
+    eval "$1"' _ "$loop" 2>&1)"
+  printf '%s\n' "$out" | grep -q "^NOTE group folder 'Intranet' is the welcome screen's storage root.*rename it once" \
+    || { echo "divergence: the told name is not reported as a rename: $out" >&2; return 1; }
+  printf '%s\n' "$out" | grep -q "^NOTE group folder 'IntraVox' is the welcome screen's storage root" \
+    || { echo "divergence: the default name is not reported as a rename: $out" >&2; return 1; }
+  printf '%s\n' "$out" | grep -q "^NOTE group folder 'Viejo' is live but not in SITE_FOLDERS" \
+    || { echo "divergence: an unrelated folder lost the generic note: $out" >&2; return 1; }
+  [ "$(printf '%s\n' "$out" | grep -c "groupfolders:delete [12]\b")" = 0 ] \
+    || { echo "divergence: a storage root was offered for deletion: $out" >&2; return 1; }
+}
+check iv_mount_divergence_cases
 
 # The café case above is behavioural, and load-bearing only under a COLLATING locale — which a
 # Chilean dev has and GitHub's runners do not, defaulting to C.UTF-8 where that range refuses `é`

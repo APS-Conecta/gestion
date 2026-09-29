@@ -46,11 +46,17 @@ fi
 
 # --- 2. SETUP: bare — groupfolder + groups + grants, ZERO content (D10/D11, L1-03) -----
 # The engine reads the mount name from app config (IntraVox MountName, review L1-01): set it
-# BEFORE setup so the group folder is CREATED as $IV_MOUNT on a fresh install. On an install that
-# still carries the default name, setup would not find $IV_MOUNT and would create a second mount
-# beside the old one — two trees, one of them empty. Refuse loudly: the rename is a deliberate
-# runbook (docs/WELCOME-SCREEN.md → "Renaming the storage folder on an existing install"), never
-# a seed side effect.
+# BEFORE setup so the group folder is CREATED as $IV_MOUNT on a fresh install. On an install whose
+# folder carries another name — the engine's default, or the name this install was told before
+# (its groupfolder_name) — setup would not find $IV_MOUNT and would create a second mount beside
+# the old one: two trees, one of them empty. Refuse loudly: a rename is a deliberate runbook
+# (docs/WELCOME-SCREEN.md → "Renaming the storage folder on an existing install"), never a seed
+# side effect. A name the engine refuses (MountName: one non-empty segment, no '/') is refused
+# here first — written to the engine, it would fail every page.
+case "$IV_MOUNT" in
+  */*|'') echo "FATAL: IV_MOUNT '$IV_MOUNT' is not one folder name (empty, or contains '/') — the engine refuses it (MOUNT_NAME_INVALID) and every page would fail. Fix IV_MOUNT in .env." >&2; exit 1 ;;
+esac
+[ -n "${IV_MOUNT//[[:space:]]/}" ] || { echo "FATAL: IV_MOUNT is blank — fix it in .env." >&2; exit 1; }
 _mounts="$(occ groupfolders:list --output=json 2>/dev/null | python3 -c '
 import sys, json
 try: d = json.load(sys.stdin)
@@ -58,9 +64,14 @@ except Exception: sys.exit(0)
 for f in (d.values() if isinstance(d, dict) else d):
     m = f.get("mount_point") or f.get("mountPoint")
     if m: print(m)')"
-if ! printf '%s\n' "$_mounts" | grep -qxF -- "$IV_MOUNT" && printf '%s\n' "$_mounts" | grep -qxF -- "IntraVox"; then
-  echo "FATAL: the engine's group folder is still named 'IntraVox' but IV_MOUNT is '$IV_MOUNT' — rename it first (docs/WELCOME-SCREEN.md → Renaming the storage folder on an existing install), or set IV_MOUNT=IntraVox in .env for this install. Seeding now would create a second, empty mount." >&2
-  exit 1
+if ! printf '%s\n' "$_mounts" | grep -qxF -- "$IV_MOUNT"; then
+  _told="$(occ config:app:get intravox groupfolder_name 2>/dev/null || true)"
+  for _old in IntraVox "${_told:-IntraVox}"; do
+    if [ "$_old" != "$IV_MOUNT" ] && printf '%s\n' "$_mounts" | grep -qxF -- "$_old"; then
+      echo "FATAL: the engine's group folder is still named '$_old' but IV_MOUNT is '$IV_MOUNT' — rename it first (docs/WELCOME-SCREEN.md → Renaming the storage folder on an existing install), or set IV_MOUNT=$_old in .env for this install. Seeding now would create a second, empty mount." >&2
+      exit 1
+    fi
+  done
 fi
 occ config:app:set intravox groupfolder_name --value="$IV_MOUNT" >/dev/null
 # ensure-style and re-run safe (SetupService: groups, the $IV_MOUNT groupfolder, mount grants,
@@ -134,12 +145,14 @@ env SITE_NOMBRE="$SITE_NOMBRE" SITE_NOMBRE_CORTO="$SITE_NOMBRE_CORTO" SITE_DIREC
     SITE_TEAMS="$(printf '%s\n' "${SITE_TEAMS[@]}")" \
     SITE_FOLDERS="$(printf '%s\n' "${SITE_FOLDERS[@]}")" \
     SITE_SUBFOLDERS="$(printf '%s\n' "${SITE_SUBFOLDERS[@]}")" \
+    IV_MOUNT="$IV_MOUNT" \
     python3 provisioning/intravox/render.py "$_lib" "$_stage" >/dev/null \
   || { echo "FATAL: the welcome tree did not render — the FATAL line above names the declaration row or site value that broke it (sites/$SITE/site.sh)" >&2; exit 1; }
 
 _ivfid="$(occ groupfolders:list --output=json 2>/dev/null | env IV_MOUNT="$IV_MOUNT" python3 -c '
 import os, sys, json
-for f in json.load(sys.stdin):
+d = json.load(sys.stdin)
+for f in (d.values() if isinstance(d, dict) else d):   # both shapes, as the guard above (B-028)
     if (f.get("mount_point") or f.get("mountPoint")) == os.environ["IV_MOUNT"]: print(f["id"]); break')"
 [ -n "$_ivfid" ] || { echo "FATAL: the '$IV_MOUNT' groupfolder was not found after intravox:setup — setup did not converge." >&2; exit 1; }
 datadir_load || { echo "FATAL: datadir unresolved (fail-closed, lib.sh:139-148)." >&2; exit 1; }

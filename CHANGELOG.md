@@ -30,10 +30,11 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 - **The storage folder is named for staff** ([ADR-0020](docs/adr/0020-the-storage-root-is-named-for-staff.md)):
   the seed tells the engine the mount name (`IV_MOUNT`, «Intranet») before creating it and
-  refuses to seed an install that still carries the engine's default — that rename is a
-  documented one-time runbook ([docs/WELCOME-SCREEN.md](docs/WELCOME-SCREEN.md)), and
-  `make divergence` points at it instead of offering to delete the folder. Bienvenida and Cómo
-  publicar say where pages live. Needs an IntraVox engine with `MountName` (welcome-folders p5).
+  refuses to seed an install whose folder still carries another name (the engine's default, or
+  a previous `IV_MOUNT`) — that rename is a documented one-time runbook
+  ([docs/WELCOME-SCREEN.md](docs/WELCOME-SCREEN.md)), and `make divergence` points at it instead
+  of offering to delete the folder. Bienvenida and Cómo publicar say where pages live, naming
+  `IV_MOUNT`. Needs an IntraVox engine with `MountName` (welcome-folders p5).
 
 ### Changed
 

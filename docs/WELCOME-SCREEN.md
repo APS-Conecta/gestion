@@ -91,23 +91,30 @@ New installs get the folder name from `IV_MOUNT` (`scripts/env.sh`, default «In
 overridable in `.env`): phase 41 writes it into the engine (`occ config:app:set intravox
 groupfolder_name`) before `intravox:setup` creates the mount, and every page's «Abrir en
 Archivos» (page menu ⋯) and the sidebar's Location link open the page's folder under that name.
-An install seeded before this existed carries the engine's default, `IntraVox`, and **the seed
-refuses to run against it** (`FATAL: the engine's group folder is still named 'IntraVox' …`) —
-seeding would create a second, empty mount; `make divergence` says the same instead of offering
-to delete it. Rename once, by hand, in this order, with no `make seed` in between. The commands
-run in the Nextcloud container as `www-data` (`occ` below); the expected outputs are the
-platform's and the engine's own messages, read from their source — this runbook has not been
-executed on a clinic yet.
+The seeded pages that say where content lives (Bienvenida, Cómo publicar) name the same folder:
+render.py substitutes `IV_MOUNT`. An install seeded before this existed carries the engine's
+default, `IntraVox`, and **the seed refuses to run against it** (`FATAL: the engine's group folder
+is still named 'IntraVox' …`) — seeding would create a second, empty mount; `make divergence`
+says the same instead of offering to delete it. The same refusal holds when `IV_MOUNT` later
+changes on an install whose folder already carries the previous name, and for a value the engine
+would refuse (empty, or with a `/`). Rename once, by hand, in this order, with no `make seed` in
+between. The commands
+run in the Nextcloud container as `www-data` (`occ` below). Steps 0–3 rehearsed end to end — rename,
+rollback, forward again — on a throwaway Nextcloud 34 instance running the welcome-folders p5
+engine (2026-09-29): their expected lines below are what it printed, and the page tree was
+identical before and after each direction. Not yet run on the lab or a clinic.
 
 0. Before anything: `occ intravox:reindex --user admin --dry-run` and note N in
    `Would index N of M page file(s) across K language(s).`
 1. `occ config:app:set intravox groupfolder_name --value Intranet`. Expected: `Config value
    'groupfolder_name' for app 'intravox' is now set to 'Intranet', stored as … in fast cache`.
-   From this moment the engine looks for «Intranet» — pages answer *IntraVox folder not found*
-   until step 2.
+   From this moment the engine looks for «Intranet», so pages can answer *IntraVox folder not
+   found* until step 2 — do it right away.
 2. `occ groupfolders:list` → note the id of the folder mounted as `IntraVox`; then
    `occ groupfolders:rename <id> Intranet` (silent on success). Expected: the list shows
-   `Intranet`; pages load again.
+   `Intranet`. For a few seconds the web server can still answer with the previous name (the
+   rehearsal's page tree said *IntraVox folder not found* once, then was identical) — reload;
+   no restart is needed.
 3. `occ intravox:reindex --user admin`. Expected: `Indexed N of M page file(s) across K
    language(s).` with the same N as step 0 — the index rows written under the old name are
    retired.
