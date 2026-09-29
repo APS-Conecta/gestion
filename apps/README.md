@@ -14,8 +14,8 @@ this README is tracked (`.gitignore` un-ignores it explicitly):
   `provisioning/apps/<id>/`, built from release tags of their own repositories: an install needs no
   network and no git. On a development machine, where such a directory is a live clone instead,
   `ensure_own_app` sees the `.git` and leaves the working tree alone.
-- **Lab apps** — ours, under development, **never in a release**. None today; `territorio` was the
-  first and moved to own at v0.74.0. They are clones here and declared in
+- **Lab apps** — ours, under development, **never in a release**. `estadistica` today;
+  `territorio` was the first and moved to own at v0.74.0. They are clones here and declared in
   [`dev/lab-apps.sh`](../dev/lab-apps.sh), which is tracked but inert — `12-apps.sh` acts on an
   entry only where `apps/<id>/.git` exists, so a clinic falls through. See
   [ADR-0005](../docs/adr/0005-gestion-is-the-development-trunk.md). To add one: clone it

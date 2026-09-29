@@ -8,5 +8,7 @@
 # parser. The id is the DIRECTORY name too, and it is the app id, not necessarily the repository name.
 # territorio was the last one: lab at first, own at v0.74.0 (2026-09). intravox arrived 2026-09 for
 # the welcome-screen program's lab period (ADR-0014) — promoted at v3.1.0-aps1 (2026-09-25): the
-# promotion commit vendors the engine and empties this line again.
-LAB_APPS=""
+# promotion commit vendors the engine and empties this line again. estadistica arrived 2026-09 (M1,
+# the REM pillar): lab until its own promotion adds the CI clone, the check-org-drift row and the
+# docs/LICENSING.md row, and moves it to OWN_APPS.
+LAB_APPS="estadistica=https://github.com/APS-Conecta/estadistica.git"
