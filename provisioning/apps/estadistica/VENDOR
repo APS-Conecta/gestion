@@ -1,0 +1,29 @@
+# Where the tarball beside this file came from. Update all three lines together on a bump,
+# then re-run `make seed`.
+#
+# BUMP AT A MILESTONE, NOT AT EVERY TAG (ADR-0005). The app releases on its own cadence; gestion
+# pins the version it decided to ship, so this file moves when a gestion release wants it to, not
+# when the app tags.
+#
+# THIS ONE IS BUILT, NOT DOWNLOADED — it is our own app (ADR-0003), so there is no upstream release
+# to fetch. `url=` names the tag it was built from rather than a download link, and the build is one
+# command, run from the repo root:
+#
+#   git -C apps/estadistica archive --format=tar --prefix=estadistica/ v0.1.0 \
+#     | gzip -n9 > provisioning/apps/estadistica/estadistica-0.1.0.tar.gz
+#
+# `--prefix=estadistica/` because ensure_vendored_app unpacks into custom_apps/ and Nextcloud needs
+# the app id as the top directory. `gzip -n` keeps the mtime out of the header, so rebuilding the
+# same tag yields the same bytes and the sha256 below stays checkable.
+#
+# TAG AFTER THE REBUILD, not before — js/ is committed and the bundle IS the deployment. The app's
+# CI rebuilds js/ and fails on any diff; that arm ran green on 8c635f1, the commit v0.1.0 names.
+#
+# The tarball is code only (179 files, 754 KB). The REM figures are not in it: after install the
+# app's RemJob downloads the DEIS window itself, ≈ 4.9 GB of database for the default 2023–2026.
+#
+# ONE tarball in this directory, ever: ensure_vendored_app globs *.tar.gz and fails on anything
+# other than exactly one. A bump deletes the previous file, it does not sit beside it.
+version=0.1.0
+sha256=16fa3e97c530eb86f830ff67ba61455b43287bba079e96f82104b728a85f1942
+url=https://github.com/APS-Conecta/estadistica/tree/v0.1.0

@@ -58,7 +58,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      # (org L7-6 idiom, AIO's replay.yml owns the precedent) the three compared repos are
+      # (org L7-6 idiom, AIO's replay.yml owns the precedent) the compared app repos are
       # PRIVATE — the anonymous clone died with 'could not read Username' on this job's first
       # main run (2026-09-25). The PAT carries the clones on GIT_ASKPASS: never in a URL,
       # never in argv. Empty until the owner adds APS_BOT_PAT (org-level would cover both
@@ -66,7 +66,8 @@ jobs:
       APS_BOT_PAT: ${{ secrets.APS_BOT_PAT }}
     steps:
       - uses: actions/checkout@v4
-      # The two apps the doctrine matured on + the package; epidemiologia joins
+      # The two apps the doctrine matured on, estadistica (compared since its promotion)
+      # + the package; epidemiologia joins
       # per-check when its Phase-7 tree lands (the script's own exclusions name
       # their reasons). Depth 1: the gate reads HEAD trees, never history.
       - name: Clone the compared repos
@@ -83,6 +84,7 @@ jobs:
           fi
           git clone --depth 1 https://github.com/APS-Conecta/territorio.git apps/territorio
           git clone --depth 1 https://github.com/APS-Conecta/farmacia.git apps/farmacia
+          git clone --depth 1 https://github.com/APS-Conecta/estadistica.git apps/estadistica
           git clone --depth 1 https://github.com/APS-Conecta/aps-common.git ../aps-common
       - name: Drift gate — phpunit exact, core targets, eslint teeth, aps-sync parity
         run: scripts/check-org-drift.sh apps

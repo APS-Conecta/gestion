@@ -82,7 +82,7 @@ Post-v1 roadmap (from the brief/PRD): white-label **branding** *(shipped as Epic
 **Estadística takes both the REM app's slot and Analytics'**, because they turned out to be one
 app: the center's REM figures beside the national and peer figures, and the Metas Sanitarias month
 by month, in [its own repository](https://github.com/APS-Conecta/estadistica). Its M1, the REM
-pillar, is a **lab app** (`dev/lab-apps.sh`), in no release until it is promoted to `OWN_APPS`.
+pillar, is **shipped**: promoted to `OWN_APPS` at v0.1.0, it installs from a vendored tarball.
 From this repo it needs only its establishment: phase 16 writes it and `scripts/divergence.sh`
 reads it back ([ADR-0013](docs/adr/0013-the-establishment-is-instance-configuration.md), as amended).
 

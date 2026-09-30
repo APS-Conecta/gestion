@@ -3,7 +3,8 @@
 # per-repo (GitHub requires it, the tarball doctrine requires it), and this gate is
 # the machine that notices when the copies stop agreeing.
 #
-# WHAT IT COMPARES (territorio ↔ farmacia, the two apps the doctrine matured on;
+# WHAT IT COMPARES (territorio ↔ farmacia, the two apps the doctrine matured on, and
+# estadistica, cut from farmacia's template and compared since its promotion at v0.1.0;
 # epidemiologia joins per-check when its Phase-7 tree lands — every exclusion here
 # names its reason, the AIO allowlist doctrine):
 #   phpunit.xml / phpunit.integration.xml  exact bytes — the suites' shape is shared
@@ -23,12 +24,12 @@
 # scope is explicit).
 #
 # Usage: scripts/check-org-drift.sh APPS_ROOT    (APPS_ROOT = the dir holding
-# territorio/ and farmacia/ — gestion's CI passes apps/; APS_ROOT names the
+# territorio/ farmacia/ estadistica/ — gestion's CI passes apps/; APS_ROOT names the
 # aps-common checkout when it is not the org-root sibling)
 set -uo pipefail
 
-APPS="${1:?usage: scripts/check-org-drift.sh APPS_ROOT (the dir holding territorio/ farmacia/)}"
-T="$APPS/territorio"; F="$APPS/farmacia"
+APPS="${1:?usage: scripts/check-org-drift.sh APPS_ROOT (the dir holding territorio/ farmacia/ estadistica/)}"
+T="$APPS/territorio"; F="$APPS/farmacia"; E="$APPS/estadistica"
 # org layout: APPS_ROOT is gestion/apps, aps-common is the org root's sibling of gestion
 APS="${APS_ROOT:-"$(cd "$APPS/../.." && pwd)/aps-common"}"
 fails=0
@@ -36,21 +37,25 @@ bad() { printf 'DRIFT: %s\n' "$*" >&2; fails=$((fails + 1)); }
 
 [ -d "$T" ] || { echo "FATAL: no territorio at $T" >&2; exit 2; }
 [ -d "$F" ] || { echo "FATAL: no farmacia at $F" >&2; exit 2; }
+[ -d "$E" ] || { echo "FATAL: no estadistica at $E" >&2; exit 2; }
 
 # — exact: the phpunit shapes (farmacia's three cosmetic deltas — cacheDirectory,
 # testsuite name case, trailing newline — and its missing doctrine comment were
 # normalized by the phase that added this gate; anything beyond them is new drift)
 for f in phpunit.xml phpunit.integration.xml; do
-  if [ -e "$T/$f" ] && [ -e "$F/$f" ]; then
-    cmp -s "$T/$f" "$F/$f" || bad "$f: territorio and farmacia differ — $(diff "$T/$f" "$F/$f" | wc -l) diff line(s); the suites' shape is shared, reconcile the copies"
-  elif [ -e "$T/$f" ] || [ -e "$F/$f" ]; then
-    bad "$f: exists in one app only — the shape is shared or absent, never half"
-  fi
+  for P in "$F" "$E"; do
+    p="$(basename "$P")"
+    if [ -e "$T/$f" ] && [ -e "$P/$f" ]; then
+      cmp -s "$T/$f" "$P/$f" || bad "$f: territorio and $p differ — $(diff "$T/$f" "$P/$f" | wc -l) diff line(s); the suites' shape is shared, reconcile the copies"
+    elif [ -e "$T/$f" ] || [ -e "$P/$f" ]; then
+      bad "$f: exists in only one of territorio and $p — the shape is shared or absent, never half"
+    fi
+  done
 done
 
 # — presence: the core Makefile targets every own app carries (the per-app
 # extras — smoke, openapi, test-js… — are the app's own and never compared)
-for app in "$T" "$F"; do
+for app in "$T" "$F" "$E"; do
   name="$(basename "$app")"
   for target in test clean instance-up instance-occ instance-down instance-clean aps-sync aps-drift; do
     grep -qE "(^|[[:space:]])$target([[:space:]]|:|\$)" "$app/Makefile" \
@@ -58,9 +63,9 @@ for app in "$T" "$F"; do
   done
 done
 
-# — doctrine pins: both eslint configs keep their teeth (whole-file equality is
+# — doctrine pins: each app's eslint config keeps its teeth (whole-file equality is
 # not the contract — the prose and the browser-globals block are per-app)
-for app in "$T" "$F"; do
+for app in "$T" "$F" "$E"; do
   name="$(basename "$app")"
   grep -q "'no-undef': *'error'" "$app/eslint.config.mjs" \
     || bad "$name/eslint.config.mjs no longer pins 'no-undef': 'error' — the one rule with teeth"
@@ -90,6 +95,9 @@ if [ -d "$APS/src" ]; then
   want_php="$(tree_digest "$APS" src)"
   [ "$t_aps" = "$f_aps" ] || bad "src/aps subtrees differ between territorio and farmacia — run make aps-sync in both"
   [ "$t_vendor" = "$f_vendor" ] || bad "vendor/aps/common/src subtrees differ — run make aps-sync in both"
+  e_aps="$(tree_digest "$E" src/aps)"; e_vendor="$(tree_digest "$E" vendor/aps/common/src)"
+  [ "$e_aps" = "$t_aps" ] || bad "src/aps subtrees differ between territorio and estadistica — run make aps-sync in both"
+  [ "$e_vendor" = "$t_vendor" ] || bad "vendor/aps/common/src subtrees differ between territorio and estadistica — run make aps-sync in both"
   [ "$t_aps" = "$want_js" ] || bad "territorio/src/aps is not aps-common's js/ — run make aps-sync and commit"
   [ "$t_vendor" = "$want_php" ] || bad "apps' vendor/aps/common/src is not aps-common's src/ — run make aps-sync and commit"
 else

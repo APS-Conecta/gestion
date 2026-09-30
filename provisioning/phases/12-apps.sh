@@ -45,7 +45,8 @@ APPS="groupfolders side_menu eurooffice calendar contacts spreed desktop_workspa
 # (v0.11.1); territorio joined at v0.74.0 (2026-09): the lab period is over, the app ships.
 # intravox joined at v3.1.0-aps1 (2026-09-25): the welcome-screen program's lab period closed —
 # the promotion commit vendors the engine and empties the LAB_APPS line.
-OWN_APPS="epidemiologia=https://github.com/APS-Conecta/epidemiologia.git farmacia=https://github.com/APS-Conecta/farmacia.git territorio=https://github.com/APS-Conecta/territorio.git intravox=https://github.com/APS-Conecta/IntraVox.git"
+# estadistica joined at v0.1.0 (2026-09-30): M1, the REM pillar, closes its lab period the same way.
+OWN_APPS="epidemiologia=https://github.com/APS-Conecta/epidemiologia.git farmacia=https://github.com/APS-Conecta/farmacia.git territorio=https://github.com/APS-Conecta/territorio.git intravox=https://github.com/APS-Conecta/IntraVox.git estadistica=https://github.com/APS-Conecta/estadistica.git"
 
 for entry in $OWN_APPS; do
   ensure_own_app "${entry%%=*}" "${entry#*=}"
