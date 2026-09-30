@@ -30,7 +30,7 @@ its Releases — anonymously, per the public-at-release decision (ADR-0010). Voc
 | [`AIO`](https://github.com/APS-Conecta/AIO) | The suite's container plumbing: the 20 `ghcr.io/aps-conecta/*` images (the mastercontainer + 19 siblings, retagged per suite release from upstream lockstep digests), the patch queue applied to every image build (010-080 — including 020 store-off and 030 notify_push from gestion's vendored tarball), the first-boot wizard, and the translated playwright suite that proves the reskin. Its own releases link gestion's Releases by absolute URL (ADR-0011) — the org-wide fact lives there, the pointer lives here. |
 | [`server`](https://github.com/APS-Conecta/server) | Patch-staging for the Nextcloud server core: the queue of hunks the suite carries against the official image, staged and replayed per release — **no source fork** (D7). Nothing ships for v0.2.0, and nothing is planned before v1.0; the repo exists so the day server-side patches are needed, they have a home that is not gestion. |
 | [`farmacia`](https://github.com/APS-Conecta/farmacia) | The pharmacy app: a Layer-2 own app of the suite (ADR-0003's kinds), released on its own tags (v0.11.0/v0.11.1) and vendored into gestion from them — the same shape epidemiologia and territorio use. Joins the suite at v0.2.0. |
-| [`estadistica`](https://github.com/APS-Conecta/estadistica) | The REM figures DEIS publishes for every establishment in the country, and the Metas Sanitarias: the vocabulary of fuentes, consultas, preguntas, tableros, pares and metas, and the OCS contract that exposes them to other apps. It stores only aggregate counts DEIS and FONASA publish, touches no patient data, and reads its establishment from config ([ADR-0013](adr/0013-the-establishment-is-instance-configuration.md)). A lab app (`dev/lab-apps.sh`), in no release until it is promoted. |
+| [`estadistica`](https://github.com/APS-Conecta/estadistica) | The REM figures DEIS publishes for every establishment in the country, and the Metas Sanitarias: the vocabulary of fuentes, consultas, preguntas, tableros, pares and metas, and the OCS contract that exposes them to other apps. It stores only aggregate counts DEIS and FONASA publish, touches no patient data, and reads its establishment from config ([ADR-0013](adr/0013-the-establishment-is-instance-configuration.md)). Own since v0.1.0 (2026-09): it ships to a clinic as a vendored tarball. |
 
 Three corrections the table depends on, because each is widely assumed and each is false:
 
@@ -46,9 +46,9 @@ Three corrections the table depends on, because each is widely assumed and each 
 
 They are **not submodules**. There is no `.gitmodules` and nothing here pins a commit of either app. That is also why the inventory is generated from remotes: on disk they look like directories of `gestion`, and only the remote says otherwise.
 
-An install never uses those clones. `epidemiologia` and `territorio` both ship to a clinic as
-vendored tarballs under `provisioning/apps/`, verified by checksum with their provenance recorded
-beside them — `territorio` moved from lab to own at v0.74.0 (2026-09). [`../apps/README.md`](../apps/README.md)
+An install never uses those clones. `epidemiologia`, `territorio` and `estadistica` ship to a clinic
+as vendored tarballs under `provisioning/apps/`, verified by checksum with their provenance recorded
+beside them — `territorio` moved from lab to own at v0.74.0, `estadistica` at v0.1.0 (2026-09). [`../apps/README.md`](../apps/README.md)
 explains the directory, and [`../CONTEXT.md`](../CONTEXT.md) defines shipped, vendored, own and lab
 apps — the words that make the distinction sayable.
 

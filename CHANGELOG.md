@@ -39,9 +39,13 @@ image digests live there and are deliberately not copied here — one fact, one 
 - **Estadística's establishment** ([ADR-0013](docs/adr/0013-the-establishment-is-instance-configuration.md),
   amended): phase 16 writes `deis_code`, `establishment_type` and `comuna_cut` from the site file,
   and stops the install on a `SITE_DEIS` that is not six digits, which the app would read as no
-  establishment. `make divergence` reads the three back. Estadística is a lab app
-  (`dev/lab-apps.sh`), in no release; the roadmap names it where the REM app and Analytics stood,
-  and `docs/CONTRACTS.md` lists its OCS surface.
+  establishment. `make divergence` reads the three back. The roadmap names Estadística where the
+  REM app and Analytics stood, and `docs/CONTRACTS.md` lists its OCS surface.
+- **Estadística ships** — promoted from lab to own at v0.1.0: `provisioning/apps/estadistica/`
+  holds the tarball built from the tag and its `VENDOR`, `OWN_APPS` carries it and
+  `dev/lab-apps.sh` is empty again. After install the app's RemJob downloads the DEIS window
+  itself, ≈ 4.9 GB of database for the default 2023–2026. `scripts/check-org-drift.sh` compares it
+  with territorio and CI clones it; `docs/LICENSING.md` has its row (twelve apps).
 
 ### Changed
 

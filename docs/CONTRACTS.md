@@ -11,7 +11,7 @@ decision, not a grep accident (review L0-06)._
 | territorio | `/ocs/v2.php/apps/territorio/api/v1/` (counts, features/{id}, subcategories/{c}/{s}/features) | territorio/openapi.json (generated) | stable (territorio#ADR-0020) |
 | farmacia | `/ocs/v2.php/apps/farmacia/api/v1/medicamentos` | farmacia/openapi.json | stable (typed payload; farmacia's ApiContractTest pins the schema) |
 | epidemiologia | `/ocs/v2.php/apps/epidemiologia/api/v1/sources` | epidemiologia/openapi.json | stable (epidemiologia#ADR-0006) |
-| estadistica | `/ocs/v2.php/apps/estadistica/api/v1/` (fuentes, fuentes/{id}, consultas, preguntas, preguntas/{id}, tableros, tableros/{id}, indicadores) | estadistica/openapi.json (generated) | lab — in no release until promoted (gestion#ADR-0005); the consulta answer is only extended, never reshaped (estadistica#ADR-0006), and its ApiContractTest pins the served keys |
+| estadistica | `/ocs/v2.php/apps/estadistica/api/v1/` (fuentes, fuentes/{id}, consultas, preguntas, preguntas/{id}, tableros, tableros/{id}, indicadores) | estadistica/openapi.json (generated) | shipped since v0.1.0 (vendored tarball); the consulta answer is only extended, never reshaped (estadistica#ADR-0006), and its ApiContractTest pins the served keys |
 
 ## Injection services (in-instance, transactional)
 
