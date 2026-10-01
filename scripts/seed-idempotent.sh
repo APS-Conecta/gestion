@@ -59,6 +59,15 @@ fi
 # driver (provisionador's modo=ejecutar timer) is the other writer, asserted by nothing.
 # Same WRITES-grep discipline over a second usuarios.sh pass: the first pass creates one
 # fixture account, the second must log nothing but "already" vocabulary.
+# The fixture account is this gate's own scratch, deleted on every exit once it exists (B-032):
+# left behind, the divergence gate flagged it as undeclared, the next run of this gate could not
+# judge a first pass, and an AIO verify left it on a clinic box. One that is already there is an
+# earlier run's leftover — refused, never adopted or deleted blind.
+if occ user:info fixture.roster >/dev/null 2>&1; then
+  echo "FAIL: user fixture.roster already exists — an earlier run of this gate left it; remove it (occ user:delete fixture.roster) and re-run"
+  exit 1
+fi
+trap 'occ user:info fixture.roster >/dev/null 2>&1 && { occ user:delete fixture.roster >/dev/null 2>&1 || echo "WARN: could not delete the fixture account fixture.roster — remove it by hand"; }' EXIT
 ROSTER_FRAME="$(printf 'fixture.roster\nFixture Roster\n%s\nall-staff\nno\n\n' "${FIXTURE_USER_PASSWORD:?}")"
 roster_out="$(printf '%s' "$ROSTER_FRAME" | bash provisioning/usuarios.sh 2>&1)"; rc=$?
 [ "$rc" -eq 0 ] || { echo "FAIL: the first roster pass did not complete (exit $rc)"; exit 1; }
