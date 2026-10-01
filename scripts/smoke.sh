@@ -326,8 +326,12 @@ smoke_token=$(printf '%s' "$smoke_login_page" | grep -oE 'data-request-?token="[
 # CSRF check), and a read-back group name carrying & + or % would otherwise split/decode the body
 # and turn the "no-op" POST below into a real config write. printf is a builtin: still no argv.
 enc() { printf '%s' "$1" | python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(), safe=""))'; }
+# Nextcloud 34 refuses a login POST whose Origin is absent or not a trusted domain («invalidOrigin»,
+# core/Controller/LoginController.php — the host[:port] is checked, not the scheme), and curl sends
+# none: name the instance's own first trusted domain.
+smoke_origin="http://$(occ config:system:get trusted_domains 0 2>/dev/null | tr -d '\r')"
 login=$(printf 'user=%s&password=%s&requesttoken=%s' "$(enc "$NEXTCLOUD_ADMIN_USER")" "$(enc "${NEXTCLOUD_ADMIN_PASSWORD:-}")" "$(enc "$smoke_token")" \
-  | curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -b "$smoke_jar" -c "$smoke_jar" \
+  | curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -b "$smoke_jar" -c "$smoke_jar" -H "Origin: $smoke_origin" \
       -H 'Content-Type: application/x-www-form-urlencoded;charset=UTF-8' --data-binary @- \
       "http://localhost:${HTTP_PORT}/login" 2>/dev/null)
 # Nextcloud 34 answers a login POST with 303 either way (B-031): only the target tells success
@@ -335,7 +339,7 @@ login=$(printf 'user=%s&password=%s&requesttoken=%s' "$(enc "$NEXTCLOUD_ADMIN_US
 code=${login%% *}; where=${login#* }
 case "$code" in
   200) ;;
-  302|303) case "$where" in */login*) fail "check 15: the admin login was refused — redirected back to ${where%%\?*} (NEXTCLOUD_ADMIN_PASSWORD, or a request token the login did not accept)" ;; esac ;;
+  302|303) case "$where" in */login*) fail "check 15: the admin login was refused — redirected back to ${where%%\?*} (NEXTCLOUD_ADMIN_PASSWORD, the request token, or Origin $smoke_origin not a trusted domain)" ;; esac ;;
   *) fail "check 15: admin login answered HTTP $code — cannot probe admin settings" ;;
 esac
 # a fresh token for authenticated POSTs (the login-page token was consumed by the login)
