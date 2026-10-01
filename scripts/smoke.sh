@@ -317,17 +317,25 @@ smoke_jar="$(mktemp)"
 smoke_login_page=$(curl -s -c "$smoke_jar" "http://localhost:${HTTP_PORT}/login" 2>/dev/null)
 smoke_token=$(printf '%s' "$smoke_login_page" | grep -oE 'data-request-?token="[^"]*"' | head -1 | cut -d'"' -f2)
 [ -n "$smoke_token" ] || fail "check 15: no request token on /login — cannot probe admin settings"
-code=$(printf 'user=%s&password=%s&requesttoken=%s' "$NEXTCLOUD_ADMIN_USER" "${NEXTCLOUD_ADMIN_PASSWORD:-}" "$smoke_token" \
-  | curl -s -o /dev/null -w '%{http_code}' -b "$smoke_jar" -c "$smoke_jar" \
+# form-encode every value: the token is base64 (a raw + decodes to a space and the login fails its
+# CSRF check), and a read-back group name carrying & + or % would otherwise split/decode the body
+# and turn the "no-op" POST below into a real config write. printf is a builtin: still no argv.
+enc() { printf '%s' "$1" | python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(), safe=""))'; }
+login=$(printf 'user=%s&password=%s&requesttoken=%s' "$(enc "$NEXTCLOUD_ADMIN_USER")" "$(enc "${NEXTCLOUD_ADMIN_PASSWORD:-}")" "$(enc "$smoke_token")" \
+  | curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -b "$smoke_jar" -c "$smoke_jar" \
       -H 'Content-Type: application/x-www-form-urlencoded;charset=UTF-8' --data-binary @- \
       "http://localhost:${HTTP_PORT}/login" 2>/dev/null)
-case "$code" in 200|302) ;; *) fail "check 15: admin login answered HTTP $code — cannot probe admin settings" ;; esac
+# Nextcloud 34 answers a login POST with 303 either way (B-031): only the target tells success
+# from a refusal, which goes back to /login (measured on the lab: 303 → /login?direct=1&user=…).
+code=${login%% *}; where=${login#* }
+case "$code" in
+  200) ;;
+  302|303) case "$where" in */login*) fail "check 15: the admin login was refused — redirected back to ${where%%\?*} (NEXTCLOUD_ADMIN_PASSWORD, or a request token the login did not accept)" ;; esac ;;
+  *) fail "check 15: admin login answered HTTP $code — cannot probe admin settings" ;;
+esac
 # a fresh token for authenticated POSTs (the login-page token was consumed by the login)
 smoke_page=$(curl -s -b "$smoke_jar" -c "$smoke_jar" "http://localhost:${HTTP_PORT}/index.php/apps/desktop_workspace/" 2>/dev/null)
 smoke_token=$(printf '%s' "$smoke_page" | grep -oE 'data-request-?token="[^"]*"' | head -1 | cut -d'"' -f2)
-# form-encode every read-back value: a group name carrying & + or % would otherwise
-# split/decode the body and turn the "no-op" POST into a real config write.
-enc() { printf '%s' "$1" | python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(), safe=""))'; }
 exp_dis=$(occ config:app:get desktop_workspace experimental_files_disabled 2>/dev/null | tr -d '\r'); [ -n "$exp_dis" ] || exp_dis=no
 read_exp_grp=$(occ config:app:get desktop_workspace experimental_files_groups 2>/dev/null | tr -d '\r'); [ -n "$read_exp_grp" ] || read_exp_grp='[]'
 exp_grp=$(enc "$read_exp_grp")
