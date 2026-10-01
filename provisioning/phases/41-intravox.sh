@@ -98,28 +98,9 @@ fi
 # DEFAULT_ENABLED_LANGUAGES + the Version001600 seed). The deprecated key keeps
 # its legacy readers working; gestion no longer writes it.
 
-# --- 3. GROUP MAP (D5): adds-only, query-before-set; one group:list json answers both sides ------
-_groups_json="$(occ group:list --output=json 2>/dev/null)"
-_gmap() {  # SRC_GID ENGINE_GID — add every member of SRC present in the live roster
-  local _uid
-  for _uid in $(printf '%s' "$_groups_json" | python3 -c '
-import sys, json
-d = json.load(sys.stdin)
-for uid in (d.get(sys.argv[1]) or []): print(uid)' "$1"); do
-    printf '%s' "$_groups_json" | python3 -c '
-import sys, json
-d = json.load(sys.stdin)
-sys.exit(0 if sys.argv[2] in (d.get(sys.argv[1]) or []) else 1)' "$2" "$_uid" && continue
-    occ group:adduser "$2" "$_uid" >/dev/null
-    log "  group: $_uid added to group $2"
-  done
-}
-_gmap all-staff           'IntraVox Users'
-_gmap cat-jefaturas       'IntraVox Editors'
-_gmap role-oirs           'IntraVox Editors'   # registry gid is role-oirs (20-groups.sh:49); the
-# design text said role-encargado-oirs, which does not exist — plan-local fix, design follow-up
-# Admins: engine default (setup seeds NC admins once). Adds-never-deletes: membership only grows;
-# leavers keep read — harmless, recorded (D5).
+# --- 3. GROUP MAP (D5): the engine's groups follow the registry's — lib.sh intravox_group_map --------
+# (phase 50 runs it again once the standing accounts exist — B-030)
+intravox_group_map
 
 # --- 4. RENDER + CONVERGE (ADR-0019): declaration → render.py → per-section import ------------
 # render.py owns the whole "declare, don't hard-code" (review M3): identity substitution, the
@@ -167,7 +148,7 @@ _gf_has() { nc_exec --user www-data -- test -f "$_gf/$1" 2>/dev/null; }   # grou
   # arm cannot meet staff data; it exists to converge this lab box and any restored backup.
   if _gf_has en/home.json \
      && ! nc_exec --user www-data -- grep -q -e "page-aps" -e "_generated" "$_gf/en/home.json" 2>/dev/null; then
-    docker exec "${NC_CONTAINER:?}" rm -f "$_gf/en/home.json"
+    nc_exec -- rm -f "$_gf/en/home.json"
     # rescan: the rm bypassed the Files API, and a mounted view reads the file cache —
     # without this the stale entry answers "exists" and the engine serves a ghost
     occ files:scan --path="/__groupfolders/$_ivfid/files" >/dev/null 2>&1
@@ -204,7 +185,7 @@ if [ "$_first_run" = 1 ] || [ "${#_new_sections[@]}" -gt 0 ] || [ "${#_new_teams
   # home.json is staff data and --skip-existing leaves it alone.
   if [ "$_first_run" = 1 ] && _gf_has es/home.json \
      && ! nc_exec --user www-data -- grep -q "page-aps" "$_gf/es/home.json" 2>/dev/null; then
-    docker exec "${NC_CONTAINER:?}" rm -f "$_gf/es/home.json"
+    nc_exec -- rm -f "$_gf/es/home.json"
     occ files:scan --path="/__groupfolders/$_ivfid/files" >/dev/null 2>&1   # same cache discipline as the en arm
     log "  welcome: setup-boilerplate es/home.json cleared for import"
   fi
@@ -226,15 +207,15 @@ if [ "$_first_run" = 1 ] || [ "${#_new_sections[@]}" -gt 0 ] || [ "${#_new_teams
   fi
   # pre-clean: docker cp into an existing dir nests one level deeper and the retry imports
   # nothing, silently (territorio cp's single files into /tmp/ for the same reason)
-  docker exec "${NC_CONTAINER:?}" rm -rf /tmp/intravox-welcome-es
-  docker cp "$_import" "${NC_CONTAINER:?}:/tmp/intravox-welcome-es"
+  nc_exec -- rm -rf /tmp/intravox-welcome-es
+  nc_cp "$_import" /tmp/intravox-welcome-es
   # --skip-existing is not optional, pruned import or not: without it the engine overwrites every
   # existing node it meets (the equipos hub above; a first run over a restored tree), so a failing
   # command is the correct outcome. An engine that predates the flag rejects it — promote the
   # engine first; never drop the flag to get past it.
   occ intravox:import /tmp/intravox-welcome-es --language es --user admin --skip-existing >/dev/null \
     || { echo "FATAL: occ intravox:import --skip-existing failed — re-run it by hand without >/dev/null to see why; an IntraVox engine older than welcome-folders p3 rejects the flag: promote the engine before seeding (a tree is never overwritten to work around it)" >&2; exit 1; }
-  docker exec "${NC_CONTAINER:?}" rm -rf /tmp/intravox-welcome-es
+  nc_exec -- rm -rf /tmp/intravox-welcome-es
   if [ "$_first_run" = 1 ]; then
     log "  welcome: es tree created"
     for _s in "${_new_sections[@]}"; do log "  welcome: section $_s created"; done

@@ -19,8 +19,9 @@ fail() { echo "FAIL: $*"; exit 1; }
 # same container the seam targets. A compose dev stack reads as down here BY DESIGN — its install
 # and seed stay addressable through NC_CONTAINER (D5 interim), and this check answering "no AIO
 # stack" is the labeled failure, not a compose-context false answer.
-docker ps --format '{{.Names}}' 2>/dev/null | grep -qx nextcloud-aio-nextcloud \
+is_aio \
   || fail "nextcloud-aio-nextcloud is not running — smoke answers an AIO instance (probe: scripts/aio-testbed.sh up; a clinic: the wizard's container start)"
+nc_container   # once: the occ calls below run in pipes and $(…), whose cache dies with them
 
 # 2. Nextcloud installed + reachable via occ.
 occ status --output=json 2>/dev/null | grep -q '"installed":true' \
@@ -306,27 +307,44 @@ fi
 
 # 15. Admin settings actions respond <500 (org review L4-01: the vendored desktop_workspace
 # shipped saveAdminSettings calling an undefined getLogPath() — every admin "Save" was a
-# 500 that lied while the settings PERSISTED). The only authenticated check in smoke: it
-# logs in as the admin whose credentials .env already holds, POSTs each admin settings
-# route with parameters READ BACK from the instance (query-before-write — a blind
-# default POST would reset an admin's real choices), and asserts no answer is a 5xx.
+# 500 that lied while the settings PERSISTED). The only authenticated check in smoke, and
+# DEVELOPER-ONLY (B-031): `make test` runs it (SMOKE_ADMIN_PROBE=1); the operator's smoke —
+# install's health line, `aps-conecta revalidate` — skips it: on AIO the admin password is
+# AIO's own, and a clinic needs no admin-settings regression probe. It logs in as the admin
+# whose credentials .env holds (Clean boot first gives the testbed's admin that password),
+# POSTs each admin settings route with parameters READ BACK from the instance (query-before-
+# write — a blind default POST would reset an admin's real choices), and asserts no answer is
+# a 5xx.
 # resetuser is probed with a user that cannot exist: unknown_user answers 404 (<500)
 # without writing anything. The password never touches argv — curl reads stdin.
+if [ "${SMOKE_ADMIN_PROBE:-0}" = 1 ]; then
 smoke_jar="$(mktemp)"
 smoke_login_page=$(curl -s -c "$smoke_jar" "http://localhost:${HTTP_PORT}/login" 2>/dev/null)
-smoke_token=$(printf '%s' "$smoke_login_page" | grep -o 'data-request-token="[^"]*"' | head -1 | cut -d'"' -f2)
+smoke_token=$(printf '%s' "$smoke_login_page" | grep -oE 'data-request-?token="[^"]*"' | head -1 | cut -d'"' -f2)
 [ -n "$smoke_token" ] || fail "check 15: no request token on /login — cannot probe admin settings"
-code=$(printf 'user=%s&password=%s&requesttoken=%s' "$NEXTCLOUD_ADMIN_USER" "${NEXTCLOUD_ADMIN_PASSWORD:-}" "$smoke_token" \
-  | curl -s -o /dev/null -w '%{http_code}' -b "$smoke_jar" -c "$smoke_jar" \
+# form-encode every value: the token is base64 (a raw + decodes to a space and the login fails its
+# CSRF check), and a read-back group name carrying & + or % would otherwise split/decode the body
+# and turn the "no-op" POST below into a real config write. printf is a builtin: still no argv.
+enc() { printf '%s' "$1" | python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(), safe=""))'; }
+# Nextcloud 34 refuses a login POST whose Origin is absent or not a trusted domain («invalidOrigin»,
+# core/Controller/LoginController.php — the host[:port] is checked, not the scheme), and curl sends
+# none: name the instance's own first trusted domain.
+smoke_origin="http://$(occ config:system:get trusted_domains 0 2>/dev/null | tr -d '\r')"
+login=$(printf 'user=%s&password=%s&requesttoken=%s' "$(enc "$NEXTCLOUD_ADMIN_USER")" "$(enc "${NEXTCLOUD_ADMIN_PASSWORD:-}")" "$(enc "$smoke_token")" \
+  | curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -b "$smoke_jar" -c "$smoke_jar" -H "Origin: $smoke_origin" \
       -H 'Content-Type: application/x-www-form-urlencoded;charset=UTF-8' --data-binary @- \
       "http://localhost:${HTTP_PORT}/login" 2>/dev/null)
-case "$code" in 200|302) ;; *) fail "check 15: admin login answered HTTP $code — cannot probe admin settings" ;; esac
+# Nextcloud 34 answers a login POST with 303 either way (B-031): only the target tells success
+# from a refusal, which goes back to /login (measured on the lab: 303 → /login?direct=1&user=…).
+code=${login%% *}; where=${login#* }
+case "$code" in
+  200) ;;
+  302|303) case "$where" in */login*) fail "check 15: the admin login was refused — redirected back to ${where%%\?*} (NEXTCLOUD_ADMIN_PASSWORD, the request token, or Origin $smoke_origin not a trusted domain)" ;; esac ;;
+  *) fail "check 15: admin login answered HTTP $code — cannot probe admin settings" ;;
+esac
 # a fresh token for authenticated POSTs (the login-page token was consumed by the login)
 smoke_page=$(curl -s -b "$smoke_jar" -c "$smoke_jar" "http://localhost:${HTTP_PORT}/index.php/apps/desktop_workspace/" 2>/dev/null)
-smoke_token=$(printf '%s' "$smoke_page" | grep -o 'data-request-token="[^"]*"' | head -1 | cut -d'"' -f2)
-# form-encode every read-back value: a group name carrying & + or % would otherwise
-# split/decode the body and turn the "no-op" POST into a real config write.
-enc() { printf '%s' "$1" | python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(), safe=""))'; }
+smoke_token=$(printf '%s' "$smoke_page" | grep -oE 'data-request-?token="[^"]*"' | head -1 | cut -d'"' -f2)
 exp_dis=$(occ config:app:get desktop_workspace experimental_files_disabled 2>/dev/null | tr -d '\r'); [ -n "$exp_dis" ] || exp_dis=no
 read_exp_grp=$(occ config:app:get desktop_workspace experimental_files_groups 2>/dev/null | tr -d '\r'); [ -n "$read_exp_grp" ] || read_exp_grp='[]'
 exp_grp=$(enc "$read_exp_grp")
@@ -353,6 +371,7 @@ do
   esac
 done
 rm -f "$smoke_jar" "$smoke_body"
+fi
 # 16. Territorio's tile_url is not the B-019 shape (org review L5-07 — the mirror of check 14
 # for the basemap): phase 16 defaults it to the loopback tiles service, which works for a
 # browser on this box and for nobody else — a public-domain install passes every other gate

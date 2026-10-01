@@ -180,11 +180,15 @@ jobs:
       # The probe's own surfaces, appended AFTER `make setup` so they win (env.sh takes the last
       # assignment it reads — the same rule the SITE line above rides):
       #   HTTP_PORT → the loopback apache, where every one of smoke's curls lands;
-      #   OFFICE_PUBLIC_URL → the entrypoint's own DocumentServerUrl value (see the env note).
-      - name: Point the seed at the probe's HTTP and office surfaces
+      #   OFFICE_PUBLIC_URL → the entrypoint's own DocumentServerUrl value (see the env note);
+      #   TILES_PUBLIC_URL → the basemap on the probe's own domain, the same-origin /tiles/ shape
+      #   L5 serves — smoke check 16 refuses a loopback tile_url on a domain-reached instance, and
+      #   like the office URL it judges the contradiction, not reachability (B-033).
+      - name: Point the seed at the probe's HTTP, office and tiles surfaces
         run: |
           echo "HTTP_PORT=${AIO_TEST_APACHE_PORT}" >> .env
           echo "OFFICE_PUBLIC_URL=https://${AIO_TEST_DOMAIN}/eurooffice" >> .env
+          echo "TILES_PUBLIC_URL=https://${AIO_TEST_DOMAIN}/tiles/chile.pmtiles" >> .env
       # The whole provisioning pipeline, exactly as an operator runs it after the wizard starts
       # the containers. The harness's bounded waits own what `make up` used to own on compose —
       # the instance is installed and quiesced before this step runs. This is also the path
@@ -281,6 +285,15 @@ jobs:
       # office gate answering the AIO sibling since this slice (office-smoke's AIO legs:
       # public-path healthcheck + --check + the DS 9.3.x pin + the image namespaces), and the
       # two hermetic self-tests riding test.sh's static section.
+      # Smoke's check 15 (developer-only, B-031) logs in as the admin .env names; on AIO that
+      # admin's password is AIO's own, so this throwaway testbed's admin takes .env's first.
+      # A clinic's admin login is never touched: install's health line skips check 15. The
+      # password rides docker exec -e, never argv.
+      - name: The testbed's admin takes .env's password — make test's admin-settings probe logs in with it
+        run: |
+          source scripts/env.sh
+          OC_PASS="$NEXTCLOUD_ADMIN_PASSWORD" nc_exec -e OC_PASS --user www-data -- \
+            php /var/www/html/occ user:resetpassword --password-from-env "$NEXTCLOUD_ADMIN_USER"
       - run: make test
       # No compose context exists on this runner anymore: the probe's logs come from docker
       # itself, and the container listing is what shows a sibling that never converged.

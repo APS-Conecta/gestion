@@ -24,9 +24,16 @@ phase_begin() {
 phase_end()   { printf '✓ phase %s\n' "${CURRENT_PHASE:-?}"; }
 
 # --- preconditions ---
-require_installed() {
-  occ status --output=json 2>/dev/null | grep -q '"installed":true' \
-    || { echo "FATAL: Nextcloud is not installed/reachable — run 'make up' first." >&2; exit 1; }
+require_installed() {  # the FATAL names the container and the cause; `make up` only off AIO
+  nc_container   # here, not inside the pipe below, so the message can name it
+  occ status --output=json 2>/dev/null | grep -q '"installed":true' && return 0
+  echo "FATAL: Nextcloud is not installed/reachable in $NC_CONTAINER." >&2
+  if ! is_aio; then
+    echo "  Run 'make up' first." >&2
+  elif [ "$NC_CONTAINER" != "$AIO_NC" ]; then
+    echo "  The AIO stack is running, but NC_CONTAINER=$NC_CONTAINER (environment or .env) overrides detection — delete that line from .env." >&2
+  fi
+  exit 1
 }
 
 # --- idempotent config: set only if the current value differs ---
@@ -211,6 +218,35 @@ add_user_to_group() {  # UID GID  (query-before-add: accurate + idempotent)
   occ group:adduser "$2" "$1" >/dev/null
   log "user $1 added to group $2"
   GROUPS_CACHE="$2"$'\t'"$1"$'\n'"$GROUPS_CACHE"
+}
+
+# The IntraVox group map (D5): the engine's own groups follow the registry's — adds-only,
+# query-before-set, one group:list json answers both sides. Phase 41 runs it once the engine's
+# setup has created the groups; phase 50 runs it again after the standing accounts exist, which on
+# a fresh instance they do not when phase 41 runs — without that second call the first seed maps
+# nobody and the second seed writes (B-030, Clean boot's seed-idempotent). Admins: engine default
+# (setup seeds NC admins once). Adds-never-deletes: membership only grows; leavers keep read —
+# harmless, recorded (D5).
+intravox_group_map() {
+  local _json; _json="$(occ group:list --output=json 2>/dev/null)"
+  _iv_gmap() {  # SRC_GID ENGINE_GID — add every member of SRC present in the live roster
+    local _uid
+    for _uid in $(printf '%s' "$_json" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+for uid in (d.get(sys.argv[1]) or []): print(uid)' "$1"); do
+      printf '%s' "$_json" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+sys.exit(0 if sys.argv[2] in (d.get(sys.argv[1]) or []) else 1)' "$2" "$_uid" && continue
+      occ group:adduser "$2" "$_uid" >/dev/null
+      log "  group: $_uid added to group $2"
+    done
+  }
+  _iv_gmap all-staff     'IntraVox Users'
+  _iv_gmap cat-jefaturas 'IntraVox Editors'
+  _iv_gmap role-oirs     'IntraVox Editors'   # registry gid is role-oirs (20-groups.sh:49); the
+  # design text said role-encargado-oirs, which does not exist — plan-local fix, design follow-up
 }
 
 # The version of an app as the INSTANCE has it, read in-container from custom_apps — the bake-wins
@@ -864,9 +900,9 @@ sys.exit(0 if found else 1)' "$name" || rc=$?
     return 0
   fi
 
-  # The one transport site that is not an exec — docker cp takes the container name itself, so the
-  # seam's default is stated here too (cp cannot route through nc_exec).
-  if ! docker cp "/tmp/$name" "${NC_CONTAINER:-nextcloud-aio-nextcloud}:/tmp/$name" >/dev/null 2>&1; then
+  # The one transport site that is not an exec — docker cp takes the container name itself, so it
+  # rides env.sh's nc_cp (same resolution as nc_exec).
+  if ! nc_cp "/tmp/$name" "/tmp/$name" >/dev/null 2>&1; then
     log "certs: could not copy $name into the container — skipped, feeds from $host will fail"
     rm -f "/tmp/$name" || true
     return 0

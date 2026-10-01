@@ -163,12 +163,11 @@ There is no whole-tree recovery any more, and no reason for one: the seed conver
 2. Same place, **⋯ → Eliminar** on that folder only. Expected: the folder disappears from `es/`
    (it sits in the trash bin for the usual retention; nothing else under `es/` changes). If the
    menu offers no delete, you are not a group-folder admin — ask one.
-3. On the host, from the repo root: `make seed` (`NC_CONTAINER=…` as for every seed on the compose
-   lab). Expected in the log: `welcome: section <name> created` (its «add its menu entry» hint
-   does not apply here — the menu still points at the section's stable id) and, for `equipos`,
-   one `team page … created` + three `acl: … rule created` per team. If it prints
-   `welcome: section <name> exists` instead, the folder is still there — the trash bin does not
-   count, the marker is `es/<name>/<name>.json` itself.
+3. On the host, from the repo root: `make seed`. Expected in the log: `welcome: section <name>
+   created` (its «add its menu entry» hint does not apply here — the menu still points at the
+   section's stable id) and, for `equipos`, one `team page … created` + three `acl: … rule
+   created` per team. If it prints `welcome: section <name> exists` instead, the folder is still
+   there — the trash bin does not count, the marker is `es/<name>/<name>.json` itself.
 
 Template evolution follows one rule: **an existing section is never re-imported**. An edited
 library page, a new sub-page or a new image under `provisioning/intravox/es/sections/<name>/`
@@ -190,7 +189,7 @@ page-level.
 
 `make divergence` tolerates, by design: the three engine groups (`IntraVox Admins/Editors/
 Users`) and the engine's group folder named by `IV_MOUNT` (`Intranet`, ADR-0020) — both created
-by the engine's setup, mapped by phase 41
+by the engine's setup, mapped by phases 41 and 50 (`lib.sh` `intravox_group_map`, B-030)
 (`docs/adr/0015-welcome-content-seeds-through-an-ungated-own-app-phase.md`). They appear in no
 site file and no phase-20 registry. A live `IntraVox` folder while `IV_MOUNT` says otherwise is
 reported as the storage root under its old name — rename it (above), never delete it.

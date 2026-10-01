@@ -45,6 +45,7 @@ declare -p SITE_WELCOME >/dev/null 2>&1 || { echo "FATAL: sites/$SITE/site.sh mu
 # fallback covers a checkout with no .git at all. Header line, not `log`: seed-idempotent.sh reads
 # the log for write verbs, and a per-run string must never look like one.
 echo "== APS Conecta provisioning (make seed) — gestion $(git describe --tags --always --dirty 2>/dev/null || echo unknown) =="
+nc_container   # once, after the header: phases (subshells) inherit it; occ in pipes/$(…) cannot cache
 require_installed
 
 run=0; skipped=0

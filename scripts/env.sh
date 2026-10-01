@@ -17,11 +17,35 @@
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || { echo "FAIL: cannot cd to the repo root" >&2; exit 1; }
 
 # 3. occ + raw exec inside the running Nextcloud container — one seam, for every caller of this
-#    file. THE D5 SEAM (docker-exec port): the transport is `docker exec` against the AIO nextcloud
-#    container, whose name is env-overridable — default nextcloud-aio-nextcloud (fixed by AIO's
-#    php/containers.json:145). A compose dev stack or the pre-AIO live stack points NC_CONTAINER at
-#    its own compose container (compose.yaml's `name:` pins ours: apsconecta-gestion-nextcloud-1;
-#    set it in .env — the loader below exports it like any other key) until S10 migrates the stack.
+#    file, and the one place that decides WHICH container (#197, R41). nc_container resolves it on
+#    first use and caches it in this shell: a value from the environment or .env wins (the loader
+#    below exports it); otherwise docker answers — the AIO container when it runs ($AIO_NC, fixed
+#    by AIO's php/containers.json:145), the compose one when only it runs (compose.yaml's `name:`
+#    pins apsconecta-gestion-nextcloud-1), else $AIO_NC, the production posture, so a stopped
+#    stack fails loudly at require_installed. Both up: AIO wins, so a checkout that serves the
+#    compose lab beside a running AIO testbed sets NC_CONTAINER in its .env.
+#    Lazy, never at source time: a docker ps here would run before every sourcer's first line — a
+#    hung daemon would then swallow the seed's own header (provisionador's SLOW arm) — and for
+#    callers that never touch the container. Not exported: install.sh sources this file before
+#    `make up` starts a compose stack, and an exported pre-bring-up answer would pin every child
+#    (wait-ready, seed) to the wrong container; every reader sources this file, so each process
+#    asks for itself (`export -n` also covers an empty NC_CONTAINER= line the loader exported).
+#    The cache is this shell's: occ inside a pipe or $(…) is a subshell, so scripts that make
+#    dozens of occ calls (seed, divergence, smoke) call nc_container once after their first output.
+#    is_aio = "the AIO stack is running", the question install, uninstall, smoke, test.sh,
+#    refresh-basemap and phase 14 ask. `grep -x >/dev/null`, not `-qx`: grep reads to EOF, so
+#    docker never takes a SIGPIPE that a pipefail caller would read as "not running".
+AIO_NC=nextcloud-aio-nextcloud
+is_aio() { docker ps --format '{{.Names}}' 2>/dev/null | grep -x "$AIO_NC" >/dev/null; }
+nc_container() {  # sets NC_CONTAINER once per shell; always returns 0
+  [ -n "${NC_CONTAINER:-}" ] && return 0
+  if ! is_aio && docker ps --format '{{.Names}}' 2>/dev/null | grep -x apsconecta-gestion-nextcloud-1 >/dev/null; then
+    NC_CONTAINER=apsconecta-gestion-nextcloud-1
+  else
+    NC_CONTAINER=$AIO_NC
+  fi
+  export -n NC_CONTAINER
+}
 #
 #    nc_exec's contract is forced by docker exec's own grammar — options BEFORE the container,
 #    command AFTER — so every docker-exec option word comes first, then `--`, then the command.
@@ -38,9 +62,13 @@ nc_exec() {  # [docker-exec option words…] -- COMMAND [args…] — exec into 
   while [ $# -gt 0 ] && [ "$1" != "--" ]; do opts+=("$1"); shift; done
   [ $# -gt 0 ] || { echo "FATAL: nc_exec: missing the -- that separates options from the command" >&2; return 2; }
   shift
-  docker exec "${opts[@]}" "${NC_CONTAINER:-nextcloud-aio-nextcloud}" "$@"
+  nc_container
+  docker exec "${opts[@]}" "$NC_CONTAINER" "$@"
 }
 occ() { nc_exec --user www-data -- php /var/www/html/occ "$@"; }
+# docker cp takes the container name itself, so it cannot ride nc_exec; same resolution, two sites
+# (lib.sh's certificate copy, phase 41's welcome tree).
+nc_cp() { nc_container; docker cp "$1" "$NC_CONTAINER:$2"; }  # HOST_PATH CONTAINER_PATH
 
 # 4. The clinic this stack serves, for the callers that need one — seed.sh, install.sh and
 #    divergence.sh. A function, not a check at source time: smoke.sh, office-smoke.sh,
@@ -104,11 +132,12 @@ require_real_secrets() {
 }
 
 # org L5-05 round-trip gate, in the repo's --self-test idiom (db-dump/uninstall/comuna
-# precedents). Three arms, all hermetic: (1) a fixture .env whose tricky-but-legal values
+# precedents). Four arms, all hermetic: (1) a fixture .env whose tricky-but-legal values
 # load exactly as the loader intends (comment strip, quoted hashes, $$ undo); (2) compose
 # parity over the same fixture — `docker compose --env-file config` resolves values the way
 # the runtime reader does, so parity is asserted, not assumed; (3) a multi-line quoted value
-# is REFUSED loudly instead of silently loading its first half. The fixture IS the scratch
+# is REFUSED loudly instead of silently loading its first half; (4) the container arms —
+# section 3's answer in every posture, fabricated with a stub docker (#197). The fixture IS the scratch
 # root's .env because the loader reads ./.env relative to its own root — the scratch copy
 # makes both readers see the same bytes.
 env_self_test() {
@@ -153,6 +182,52 @@ FIX
   else
     echo "self-test note: docker/compose absent — parity arm skipped on this box"
   fi
+  # the container arms (#197): which container occ talks to is decided in this file alone. A stub
+  # docker logs every call and answers `ps` with $STUB_NAMES, so each posture is fabricated without
+  # a daemon — AIO up (alone, or beside a compose one), compose only, nothing up, an empty .env key,
+  # and a .env value that must win. Each arm asserts that sourcing alone ran no docker (lazy), and
+  # that a DETECTED name stays unexported (section 3 says why).
+  mkdir -p "$tmp/bin"
+  cat > "$tmp/bin/docker" <<'STUB'
+#!/bin/sh
+echo "$*" >> "$STUB_CALLS"
+[ "$1" = ps ] && printf '%s\n' $STUB_NAMES
+exit 0
+STUB
+  chmod +x "$tmp/bin/docker"
+  nc_arm() {  # WANT_NAME WANT_IS_AIO(1|0) ENV_LINE [RUNNING_NAME…]
+    local want="$1" aio="$2" line="$3"; shift 3
+    printf '%s\n' "$line" > "$fx"; : > "$tmp/calls"
+    ( unset NC_CONTAINER; export PATH="$tmp/bin:$PATH" STUB_NAMES="$*" STUB_CALLS="$tmp/calls"
+      cd "$tmp" && . ./scripts/env.sh 2>/dev/null
+      [ ! -s "$tmp/calls" ] || exit 1
+      nc_container
+      [ "${NC_CONTAINER:-}" = "$want" ] || exit 1
+      if is_aio; then [ "$aio" = 1 ]; else [ "$aio" = 0 ]; fi || exit 1
+      case "$line" in *=?*) ;; *) [ -z "$(bash -c 'printf %s "${NC_CONTAINER-}"')" ] ;; esac
+    ) || { echo "self-test FAIL: container arm — want $want (is_aio=$aio) for '${line:-no .env value}' with [${*:-nothing}] running" >&2; rc=1; }
+  }
+  nc_arm nextcloud-aio-nextcloud 1 '' nextcloud-aio-nextcloud
+  nc_arm nextcloud-aio-nextcloud 1 '' apsconecta-gestion-nextcloud-1 nextcloud-aio-nextcloud
+  nc_arm apsconecta-gestion-nextcloud-1 0 '' apsconecta-gestion-nextcloud-1
+  nc_arm nextcloud-aio-nextcloud 0 ''
+  nc_arm nextcloud-aio-nextcloud 1 'NC_CONTAINER=' nextcloud-aio-nextcloud
+  nc_arm custom-nc 1 'NC_CONTAINER=custom-nc' nextcloud-aio-nextcloud
+  # ...and its failure names the cause (lib.sh's require_installed, the one place that dies on it):
+  # a configured name that is not the running AIO container is called out — a .env from the
+  # 2026-09-25 template still carries the compose name — and `make up` is advised only off AIO.
+  mkdir -p "$tmp/provisioning"
+  cp "$(dirname -- "${BASH_SOURCE[0]}")/../provisioning/lib.sh" "$tmp/provisioning/lib.sh"
+  ri_arm() {  # WANT_TEXT NOT_TEXT ENV_LINE [RUNNING_NAME…]
+    local want="$1" not="$2" line="$3" out; shift 3
+    printf '%s\n' "$line" > "$fx"
+    out="$( unset NC_CONTAINER; export PATH="$tmp/bin:$PATH" STUB_NAMES="$*" STUB_CALLS="$tmp/calls"
+      cd "$tmp" && . ./scripts/env.sh 2>/dev/null && . ./provisioning/lib.sh && require_installed 2>&1 )"
+    case "$out" in *"$want"*) case "$out" in *"$not"*) false ;; esac ;; *) false ;; esac \
+      || { echo "self-test FAIL: require_installed arm — want «$want», not «$not» for '${line:-no .env value}' with [${*:-nothing}] running" >&2; rc=1; }
+  }
+  ri_arm 'overrides detection' 'make up' 'NC_CONTAINER=apsconecta-gestion-nextcloud-1' nextcloud-aio-nextcloud
+  ri_arm 'make up' 'overrides detection' ''
   # the multi-line refusal arm: a quoted value split across lines must fail the whole load
   printf 'BROKEN_MULTI="first half of a value\n' > "$fx"
   printf 'still inside the quote"\nX=1\n' >> "$fx"

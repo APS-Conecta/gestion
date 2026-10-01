@@ -361,7 +361,7 @@ if bad: print("\n".join(bad)); sys.exit(1)'
 # vendor-block calls nc_exec directly — without the source every check below fails with
 # "command not found" while the stack is up and detected (live-measured on the probe, P5).
 . scripts/env.sh
-if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx nextcloud-aio-nextcloud; then
+if is_aio; then
   check nc_exec --user www-data -- \
     grep -q 'class="section development-notice"' /var/www/html/apps/settings/templates/settings/personal/development.notice.php
   check nc_exec --user www-data -- \
@@ -940,9 +940,15 @@ check bash scripts/release-manifest.sh --self-test
 
 # --- org L5-11/L5-05/L5-12: the provisioning self-tests (hermetic) ----------------------------
 # standings.sh: the one uid derivation's fixture parity; env.sh: the loader/compose
-# round-trip (skips its docker arm when compose is absent); usuarios.sh: the frame guards.
+# round-trip (skips its docker arm when compose is absent) + the container arms (stub docker);
+# usuarios.sh: the frame guards.
 check bash provisioning/standings.sh --self-test
 check bash scripts/env.sh --self-test
+# #197: the template ships no Nextcloud container and no caller restates its default or guards it
+# (`:-` `-` `:?` `?`) — env.sh section 3 is the one place it is decided. git grep exits 1 on no
+# match and 128 on error, so only a real "none found" passes (a tree without git is red, not green).
+# The [R] keeps the pattern from matching this line itself.
+check bash -c '! grep -q "^NC_CONTAINER=" .env.example && { git grep -qE "NC_CONTAINE[R]:?[?-]" -- . ":!scripts/env.sh"; [ $? -eq 1 ]; }'
 check bash provisioning/usuarios.sh --self-test
 
 echo "== desktop_workspace pin seat (hermetic — unpacks the vendored tarball + applies its patches) =="
@@ -974,8 +980,9 @@ mg_out="$(bash scripts/migrate-to-aio.sh --self-test 2>&1)" \
   || { echo "  FAIL: migrate-to-aio --self-test"; printf '%s\n' "$mg_out" | tail -25; fail=1; }
 
 echo "== smoke (only if a stack is running) =="
-if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx nextcloud-aio-nextcloud; then
-  if bash scripts/smoke.sh; then echo "  ok:   smoke"; else echo "  FAIL: smoke"; fail=1; fi
+if is_aio; then
+  # SMOKE_ADMIN_PROBE: check 15, the developer-only admin-settings probe (B-031)
+  if SMOKE_ADMIN_PROBE=1 bash scripts/smoke.sh; then echo "  ok:   smoke"; else echo "  FAIL: smoke"; fail=1; fi
 else
   echo "  skipped: no running AIO stack (static-only gate)"
 fi
