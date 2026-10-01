@@ -307,12 +307,17 @@ fi
 
 # 15. Admin settings actions respond <500 (org review L4-01: the vendored desktop_workspace
 # shipped saveAdminSettings calling an undefined getLogPath() — every admin "Save" was a
-# 500 that lied while the settings PERSISTED). The only authenticated check in smoke: it
-# logs in as the admin whose credentials .env already holds, POSTs each admin settings
-# route with parameters READ BACK from the instance (query-before-write — a blind
-# default POST would reset an admin's real choices), and asserts no answer is a 5xx.
+# 500 that lied while the settings PERSISTED). The only authenticated check in smoke, and
+# DEVELOPER-ONLY (B-031): `make test` runs it (SMOKE_ADMIN_PROBE=1); the operator's smoke —
+# install's health line, `aps-conecta revalidate` — skips it: on AIO the admin password is
+# AIO's own, and a clinic needs no admin-settings regression probe. It logs in as the admin
+# whose credentials .env holds (Clean boot first gives the testbed's admin that password),
+# POSTs each admin settings route with parameters READ BACK from the instance (query-before-
+# write — a blind default POST would reset an admin's real choices), and asserts no answer is
+# a 5xx.
 # resetuser is probed with a user that cannot exist: unknown_user answers 404 (<500)
 # without writing anything. The password never touches argv — curl reads stdin.
+if [ "${SMOKE_ADMIN_PROBE:-0}" = 1 ]; then
 smoke_jar="$(mktemp)"
 smoke_login_page=$(curl -s -c "$smoke_jar" "http://localhost:${HTTP_PORT}/login" 2>/dev/null)
 smoke_token=$(printf '%s' "$smoke_login_page" | grep -oE 'data-request-?token="[^"]*"' | head -1 | cut -d'"' -f2)
@@ -362,6 +367,7 @@ do
   esac
 done
 rm -f "$smoke_jar" "$smoke_body"
+fi
 # 16. Territorio's tile_url is not the B-019 shape (org review L5-07 — the mirror of check 14
 # for the basemap): phase 16 defaults it to the loopback tiles service, which works for a
 # browser on this box and for nobody else — a public-domain install passes every other gate

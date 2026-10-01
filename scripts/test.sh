@@ -981,7 +981,8 @@ mg_out="$(bash scripts/migrate-to-aio.sh --self-test 2>&1)" \
 
 echo "== smoke (only if a stack is running) =="
 if is_aio; then
-  if bash scripts/smoke.sh; then echo "  ok:   smoke"; else echo "  FAIL: smoke"; fail=1; fi
+  # SMOKE_ADMIN_PROBE: check 15, the developer-only admin-settings probe (B-031)
+  if SMOKE_ADMIN_PROBE=1 bash scripts/smoke.sh; then echo "  ok:   smoke"; else echo "  FAIL: smoke"; fail=1; fi
 else
   echo "  skipped: no running AIO stack (static-only gate)"
 fi

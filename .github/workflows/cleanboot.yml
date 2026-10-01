@@ -281,6 +281,15 @@ jobs:
       # office gate answering the AIO sibling since this slice (office-smoke's AIO legs:
       # public-path healthcheck + --check + the DS 9.3.x pin + the image namespaces), and the
       # two hermetic self-tests riding test.sh's static section.
+      # Smoke's check 15 (developer-only, B-031) logs in as the admin .env names; on AIO that
+      # admin's password is AIO's own, so this throwaway testbed's admin takes .env's first.
+      # A clinic's admin login is never touched: install's health line skips check 15. The
+      # password rides docker exec -e, never argv.
+      - name: The testbed's admin takes .env's password — make test's admin-settings probe logs in with it
+        run: |
+          source scripts/env.sh
+          OC_PASS="$NEXTCLOUD_ADMIN_PASSWORD" nc_exec -e OC_PASS --user www-data -- \
+            php /var/www/html/occ user:resetpassword --password-from-env "$NEXTCLOUD_ADMIN_USER"
       - run: make test
       # No compose context exists on this runner anymore: the probe's logs come from docker
       # itself, and the container listing is what shows a sibling that never converged.
