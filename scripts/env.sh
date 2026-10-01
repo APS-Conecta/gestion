@@ -22,7 +22,8 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.." || { echo "FAIL: cannot cd to the repo ro
 #    below exports it); otherwise docker answers — the AIO container when it runs ($AIO_NC, fixed
 #    by AIO's php/containers.json:145), the compose one when only it runs (compose.yaml's `name:`
 #    pins apsconecta-gestion-nextcloud-1), else $AIO_NC, the production posture, so a stopped
-#    stack fails loudly at require_installed.
+#    stack fails loudly at require_installed. Both up: AIO wins, so a checkout that serves the
+#    compose lab beside a running AIO testbed sets NC_CONTAINER in its .env.
 #    Lazy, never at source time: a docker ps here would run before every sourcer's first line — a
 #    hung daemon would then swallow the seed's own header (provisionador's SLOW arm) — and for
 #    callers that never touch the container. Not exported: install.sh sources this file before
@@ -212,6 +213,21 @@ STUB
   nc_arm nextcloud-aio-nextcloud 0 ''
   nc_arm nextcloud-aio-nextcloud 1 'NC_CONTAINER=' nextcloud-aio-nextcloud
   nc_arm custom-nc 1 'NC_CONTAINER=custom-nc' nextcloud-aio-nextcloud
+  # ...and its failure names the cause (lib.sh's require_installed, the one place that dies on it):
+  # a configured name that is not the running AIO container is called out — a .env from the
+  # 2026-09-25 template still carries the compose name — and `make up` is advised only off AIO.
+  mkdir -p "$tmp/provisioning"
+  cp "$(dirname -- "${BASH_SOURCE[0]}")/../provisioning/lib.sh" "$tmp/provisioning/lib.sh"
+  ri_arm() {  # WANT_TEXT NOT_TEXT ENV_LINE [RUNNING_NAME…]
+    local want="$1" not="$2" line="$3" out; shift 3
+    printf '%s\n' "$line" > "$fx"
+    out="$( unset NC_CONTAINER; export PATH="$tmp/bin:$PATH" STUB_NAMES="$*" STUB_CALLS="$tmp/calls"
+      cd "$tmp" && . ./scripts/env.sh 2>/dev/null && . ./provisioning/lib.sh && require_installed 2>&1 )"
+    case "$out" in *"$want"*) case "$out" in *"$not"*) false ;; esac ;; *) false ;; esac \
+      || { echo "self-test FAIL: require_installed arm — want «$want», not «$not» for '${line:-no .env value}' with [${*:-nothing}] running" >&2; rc=1; }
+  }
+  ri_arm 'overrides detection' 'make up' 'NC_CONTAINER=apsconecta-gestion-nextcloud-1' nextcloud-aio-nextcloud
+  ri_arm 'make up' 'overrides detection' ''
   # the multi-line refusal arm: a quoted value split across lines must fail the whole load
   printf 'BROKEN_MULTI="first half of a value\n' > "$fx"
   printf 'still inside the quote"\nX=1\n' >> "$fx"

@@ -24,9 +24,16 @@ phase_begin() {
 phase_end()   { printf '✓ phase %s\n' "${CURRENT_PHASE:-?}"; }
 
 # --- preconditions ---
-require_installed() {
-  occ status --output=json 2>/dev/null | grep -q '"installed":true' \
-    || { echo "FATAL: Nextcloud is not installed/reachable — run 'make up' first." >&2; exit 1; }
+require_installed() {  # the FATAL names the container and the cause; `make up` only off AIO
+  nc_container   # here, not inside the pipe below, so the message can name it
+  occ status --output=json 2>/dev/null | grep -q '"installed":true' && return 0
+  echo "FATAL: Nextcloud is not installed/reachable in $NC_CONTAINER." >&2
+  if ! is_aio; then
+    echo "  Run 'make up' first." >&2
+  elif [ "$NC_CONTAINER" != "$AIO_NC" ]; then
+    echo "  The AIO stack is running, but NC_CONTAINER=$NC_CONTAINER (environment or .env) overrides detection — delete that line from .env." >&2
+  fi
+  exit 1
 }
 
 # --- idempotent config: set only if the current value differs ---

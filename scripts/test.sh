@@ -945,9 +945,10 @@ check bash scripts/release-manifest.sh --self-test
 check bash provisioning/standings.sh --self-test
 check bash scripts/env.sh --self-test
 # #197: the template ships no Nextcloud container and no caller restates its default or guards it
-# with `:?` — env.sh section 3 is the one place it is decided. git grep exits 1 on no match and 128
-# on error, so only a real "none found" passes (a tree without git is red, not green).
-check bash -c '! grep -q "^NC_CONTAINER=" .env.example && { git grep -qE "NC_CONTAINER:[?-]" -- . ":!scripts/env.sh"; [ $? -eq 1 ]; }'
+# (`:-` `-` `:?` `?`) — env.sh section 3 is the one place it is decided. git grep exits 1 on no
+# match and 128 on error, so only a real "none found" passes (a tree without git is red, not green).
+# The [R] keeps the pattern from matching this line itself.
+check bash -c '! grep -q "^NC_CONTAINER=" .env.example && { git grep -qE "NC_CONTAINE[R]:?[?-]" -- . ":!scripts/env.sh"; [ $? -eq 1 ]; }'
 check bash provisioning/usuarios.sh --self-test
 
 echo "== desktop_workspace pin seat (hermetic — unpacks the vendored tarball + applies its patches) =="
