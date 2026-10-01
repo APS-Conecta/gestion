@@ -167,7 +167,7 @@ _gf_has() { nc_exec --user www-data -- test -f "$_gf/$1" 2>/dev/null; }   # grou
   # arm cannot meet staff data; it exists to converge this lab box and any restored backup.
   if _gf_has en/home.json \
      && ! nc_exec --user www-data -- grep -q -e "page-aps" -e "_generated" "$_gf/en/home.json" 2>/dev/null; then
-    docker exec "${NC_CONTAINER:?}" rm -f "$_gf/en/home.json"
+    nc_exec -- rm -f "$_gf/en/home.json"
     # rescan: the rm bypassed the Files API, and a mounted view reads the file cache —
     # without this the stale entry answers "exists" and the engine serves a ghost
     occ files:scan --path="/__groupfolders/$_ivfid/files" >/dev/null 2>&1
@@ -204,7 +204,7 @@ if [ "$_first_run" = 1 ] || [ "${#_new_sections[@]}" -gt 0 ] || [ "${#_new_teams
   # home.json is staff data and --skip-existing leaves it alone.
   if [ "$_first_run" = 1 ] && _gf_has es/home.json \
      && ! nc_exec --user www-data -- grep -q "page-aps" "$_gf/es/home.json" 2>/dev/null; then
-    docker exec "${NC_CONTAINER:?}" rm -f "$_gf/es/home.json"
+    nc_exec -- rm -f "$_gf/es/home.json"
     occ files:scan --path="/__groupfolders/$_ivfid/files" >/dev/null 2>&1   # same cache discipline as the en arm
     log "  welcome: setup-boilerplate es/home.json cleared for import"
   fi
@@ -226,15 +226,15 @@ if [ "$_first_run" = 1 ] || [ "${#_new_sections[@]}" -gt 0 ] || [ "${#_new_teams
   fi
   # pre-clean: docker cp into an existing dir nests one level deeper and the retry imports
   # nothing, silently (territorio cp's single files into /tmp/ for the same reason)
-  docker exec "${NC_CONTAINER:?}" rm -rf /tmp/intravox-welcome-es
-  docker cp "$_import" "${NC_CONTAINER:?}:/tmp/intravox-welcome-es"
+  nc_exec -- rm -rf /tmp/intravox-welcome-es
+  nc_cp "$_import" /tmp/intravox-welcome-es
   # --skip-existing is not optional, pruned import or not: without it the engine overwrites every
   # existing node it meets (the equipos hub above; a first run over a restored tree), so a failing
   # command is the correct outcome. An engine that predates the flag rejects it — promote the
   # engine first; never drop the flag to get past it.
   occ intravox:import /tmp/intravox-welcome-es --language es --user admin --skip-existing >/dev/null \
     || { echo "FATAL: occ intravox:import --skip-existing failed — re-run it by hand without >/dev/null to see why; an IntraVox engine older than welcome-folders p3 rejects the flag: promote the engine before seeding (a tree is never overwritten to work around it)" >&2; exit 1; }
-  docker exec "${NC_CONTAINER:?}" rm -rf /tmp/intravox-welcome-es
+  nc_exec -- rm -rf /tmp/intravox-welcome-es
   if [ "$_first_run" = 1 ]; then
     log "  welcome: es tree created"
     for _s in "${_new_sections[@]}"; do log "  welcome: section $_s created"; done

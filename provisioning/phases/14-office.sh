@@ -11,12 +11,12 @@ phase_begin "14-office" "Euro-Office connector configuration (AD-5)"
 # :911-916) and jwt_secret to match its own document server (:906-907), and its network has no
 # `eurooffice`/`nextcloud` service names for the internal URLs below to resolve — writing any
 # of them here would fight the entrypoint and break the connector until the next boot.
-# trusted_domains is equally the entrypoint's ($NC_DOMAIN, entrypoint :684). Detection is the
-# same docker-ps-by-name shape install.sh's AIO-aware stack step uses (slice 3's locked idiom),
-# so compose dev and the pre-AIO live stack keep every write below exactly as before (D5).
+# trusted_domains is equally the entrypoint's ($NC_DOMAIN, entrypoint :684). Detection is env.sh's
+# is_aio (seed.sh sources env.sh before every phase), so compose dev and the pre-AIO live stack
+# keep every write below exactly as before (D5).
 # The gestion-only keys — sameTab, customizationTheme, editFormats, defFormats — are the
 # migration notes' recorded split and are written in BOTH postures, unconditionally below.
-if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx nextcloud-aio-nextcloud; then
+if is_aio; then
   aio=1
   log "AIO: document server URLs, jwt_secret and trusted_domains belong to the entrypoint"
 else

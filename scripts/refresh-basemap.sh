@@ -56,10 +56,9 @@ if [ -z "$REF_LON" ] || [ -z "$REF_LAT" ]; then
   # red on every AIO clinic — no compose db exists there, so nothing ever pinned REF_LON/REF_LAT
   # and the monthly timer failed while MIGRATION.md listed it as a post-AIO gate. The AIO arm
   # uses the names migrate-to-aio.sh:207 pins (DB=nextcloud-aio-database, user oc_nextcloud,
-  # database nextcloud_database); the detection is the docker-ps-by-name idiom install.sh,
-  # smoke's check 1 and test.sh's gates share.
+  # database nextcloud_database); the detection is env.sh's is_aio.
   psql_q() {  # SQL -> stdout, quiet
-    if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx nextcloud-aio-nextcloud; then
+    if is_aio; then
       docker exec nextcloud-aio-database psql -U oc_nextcloud -d nextcloud_database -Atc "$1" 2>/dev/null
     else
       docker compose exec -T db psql -U apsconecta -d apsconecta -Atc "$1" 2>/dev/null

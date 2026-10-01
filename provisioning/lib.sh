@@ -864,9 +864,9 @@ sys.exit(0 if found else 1)' "$name" || rc=$?
     return 0
   fi
 
-  # The one transport site that is not an exec — docker cp takes the container name itself, so the
-  # seam's default is stated here too (cp cannot route through nc_exec).
-  if ! docker cp "/tmp/$name" "${NC_CONTAINER:-nextcloud-aio-nextcloud}:/tmp/$name" >/dev/null 2>&1; then
+  # The one transport site that is not an exec — docker cp takes the container name itself, so it
+  # rides env.sh's nc_cp (same resolution as nc_exec).
+  if ! nc_cp "/tmp/$name" "/tmp/$name" >/dev/null 2>&1; then
     log "certs: could not copy $name into the container — skipped, feeds from $host will fail"
     rm -f "/tmp/$name" || true
     return 0

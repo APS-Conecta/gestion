@@ -43,6 +43,7 @@ set -uo pipefail
 require_site || exit 1
 # shellcheck disable=SC1090  # the path is SITE, resolved at run time
 . "sites/$SITE/site.sh"
+nc_container   # once: the occ calls below run in pipes and $(…), whose cache dies with them
 
 PHASE20=provisioning/phases/20-groups.sh
 PHASE12=provisioning/phases/12-apps.sh

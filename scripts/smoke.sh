@@ -19,8 +19,9 @@ fail() { echo "FAIL: $*"; exit 1; }
 # same container the seam targets. A compose dev stack reads as down here BY DESIGN — its install
 # and seed stay addressable through NC_CONTAINER (D5 interim), and this check answering "no AIO
 # stack" is the labeled failure, not a compose-context false answer.
-docker ps --format '{{.Names}}' 2>/dev/null | grep -qx nextcloud-aio-nextcloud \
+is_aio \
   || fail "nextcloud-aio-nextcloud is not running — smoke answers an AIO instance (probe: scripts/aio-testbed.sh up; a clinic: the wizard's container start)"
+nc_container   # once: the occ calls below run in pipes and $(…), whose cache dies with them
 
 # 2. Nextcloud installed + reachable via occ.
 occ status --output=json 2>/dev/null | grep -q '"installed":true' \
