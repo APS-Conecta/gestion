@@ -150,8 +150,8 @@ if [ "$shared_count" -lt 20 ]; then
   note "cannot check groups: only $shared_count declared groups parsed out of $PHASE20 (expected 27+). Its shape changed — fix the two sed expressions in $0 before trusting this report"
 else
   # The three engine groups (D5) join the declared set the same way: created by intravox:setup,
-  # membership mapped by phase 41 — not registry vocabulary, tolerated rather than declared in
-  # phase 20.
+  # membership mapped by phases 41 and 50 (lib.sh intravox_group_map) — not registry vocabulary,
+  # tolerated rather than declared in phase 20.
   declared_groups="$(printf '%s\n%s\n%s\n%s\n%s\n' "$declared_shared" "admin" \
                      "IntraVox Admins" "IntraVox Editors" "IntraVox Users"
                      for e in "${SITE_TEAMS[@]}"; do printf '%s\n' "${e%%|*}"; done

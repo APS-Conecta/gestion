@@ -236,15 +236,20 @@ elif "intravox:setup" in args:
     # B-028: SetupService creates the groupfolder named by the `groupfolder_name` appconfig row
     # (IntraVox MountName, default IntraVox) — phase 41 sets that row right before and looks
     # the mount up by the same name after (ADR-0020). The config:app:set arm appends, so the
-    # LAST row is the live value, as in Nextcloud. Only the folder row is modelled: the engine
-    # groups and mount grants setup also creates are invisible to every parser here, and
-    # divergence declares the mount itself (declared_folders, divergence.sh). Query-first,
-    # ensure_groupfolder's discipline: a re-run must find it, never re-create it.
+    # LAST row is the live value, as in Nextcloud. The folder row and the three engine groups
+    # are modelled — the group map (lib.sh intravox_group_map) reads their members back, so a
+    # stub without them re-added every member on every seed; the mount grants stay invisible to
+    # every parser here, and divergence declares the mount itself (declared_folders,
+    # divergence.sh). Query-first, ensure_groupfolder's discipline: a re-run must find them,
+    # never re-create them.
     mount = next((r[3] for r in reversed(rows) if r[:3] == ["appconfig", "intravox", "groupfolder_name"] and r[3]), "IntraVox")
     if not any(r[0] == "folder" and r[1] == mount for r in rows):
         nxt = 1 + max((int(r[2]) for r in rows if r[0] == "folder"), default=0)
         rows.append(["folder", mount, str(nxt)])
-        save(rows)
+    for g in ("IntraVox Admins", "IntraVox Editors", "IntraVox Users"):
+        if ["group", g] not in rows:
+            rows.append(["group", g])
+    save(rows)
 elif "config:system:get" in args and "datadirectory" in args:
     # implement-time arm (FINDINGS P15): the fence was authored against the pre-port tree whose
     # content helpers never asked for it; the ported datadir_load (lib.sh:142) fails CLOSED on an
@@ -2178,6 +2183,12 @@ def selftest():
                   "DocumentServerUrl" not in log and "sameTab" in log
                   and "trusted_domains" not in log
                   and "belong to the entrypoint" in body["salida"])
+            # B-030: phase 50 creates the standing accounts AFTER phase 41 mapped the registry
+            # groups into the engine's, so the FIRST seed must map them too — or the second seed
+            # writes (Clean boot's seed-idempotent) and every fresh install converges one run late
+            check("generar: the first seed maps the standing accounts into the IntraVox groups (B-030)",
+                  "group: director added to group IntraVox Users" in body["salida"]
+                  and "group: director added to group IntraVox Editors" in body["salida"])
 
             env_before = open(env_path, "rb").read()
             st, body = generar("ejecutar")
@@ -2188,6 +2199,10 @@ def selftest():
                   st == 200 and open(env_path, "rb").read() == env_before
                   and "user maria.perez exists" in drv and "user maria.perez created" not in drv
                   and "user elena.diaz exists" in drv and body["divergencia_vacia"])
+            seed2 = body["salida"][:body["salida"].index("== provisioning complete")]
+            check("generar: the re-run seed maps no standing account again (B-030)",
+                  "group: director added to group IntraVox" not in seed2
+                  and "group: jefe." not in seed2)
 
             open(stubstate, "w").close()
             open(stublog, "w").close()

@@ -79,5 +79,8 @@ for entry in "${users[@]}"; do
     else log "group $g not provisioned — skipping for $uid (phase 20 must run first)"; fi
   done
 done
+# The accounts above did not exist when phase 41 mapped the registry groups into IntraVox's, so on
+# a fresh instance this is where they join them — or the second seed writes (B-030).
+intravox_group_map
 
 phase_end

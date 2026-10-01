@@ -98,28 +98,9 @@ fi
 # DEFAULT_ENABLED_LANGUAGES + the Version001600 seed). The deprecated key keeps
 # its legacy readers working; gestion no longer writes it.
 
-# --- 3. GROUP MAP (D5): adds-only, query-before-set; one group:list json answers both sides ------
-_groups_json="$(occ group:list --output=json 2>/dev/null)"
-_gmap() {  # SRC_GID ENGINE_GID — add every member of SRC present in the live roster
-  local _uid
-  for _uid in $(printf '%s' "$_groups_json" | python3 -c '
-import sys, json
-d = json.load(sys.stdin)
-for uid in (d.get(sys.argv[1]) or []): print(uid)' "$1"); do
-    printf '%s' "$_groups_json" | python3 -c '
-import sys, json
-d = json.load(sys.stdin)
-sys.exit(0 if sys.argv[2] in (d.get(sys.argv[1]) or []) else 1)' "$2" "$_uid" && continue
-    occ group:adduser "$2" "$_uid" >/dev/null
-    log "  group: $_uid added to group $2"
-  done
-}
-_gmap all-staff           'IntraVox Users'
-_gmap cat-jefaturas       'IntraVox Editors'
-_gmap role-oirs           'IntraVox Editors'   # registry gid is role-oirs (20-groups.sh:49); the
-# design text said role-encargado-oirs, which does not exist — plan-local fix, design follow-up
-# Admins: engine default (setup seeds NC admins once). Adds-never-deletes: membership only grows;
-# leavers keep read — harmless, recorded (D5).
+# --- 3. GROUP MAP (D5): the engine's groups follow the registry's — lib.sh intravox_group_map --------
+# (phase 50 runs it again once the standing accounts exist — B-030)
+intravox_group_map
 
 # --- 4. RENDER + CONVERGE (ADR-0019): declaration → render.py → per-section import ------------
 # render.py owns the whole "declare, don't hard-code" (review M3): identity substitution, the

@@ -220,6 +220,35 @@ add_user_to_group() {  # UID GID  (query-before-add: accurate + idempotent)
   GROUPS_CACHE="$2"$'\t'"$1"$'\n'"$GROUPS_CACHE"
 }
 
+# The IntraVox group map (D5): the engine's own groups follow the registry's — adds-only,
+# query-before-set, one group:list json answers both sides. Phase 41 runs it once the engine's
+# setup has created the groups; phase 50 runs it again after the standing accounts exist, which on
+# a fresh instance they do not when phase 41 runs — without that second call the first seed maps
+# nobody and the second seed writes (B-030, Clean boot's seed-idempotent). Admins: engine default
+# (setup seeds NC admins once). Adds-never-deletes: membership only grows; leavers keep read —
+# harmless, recorded (D5).
+intravox_group_map() {
+  local _json; _json="$(occ group:list --output=json 2>/dev/null)"
+  _iv_gmap() {  # SRC_GID ENGINE_GID — add every member of SRC present in the live roster
+    local _uid
+    for _uid in $(printf '%s' "$_json" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+for uid in (d.get(sys.argv[1]) or []): print(uid)' "$1"); do
+      printf '%s' "$_json" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+sys.exit(0 if sys.argv[2] in (d.get(sys.argv[1]) or []) else 1)' "$2" "$_uid" && continue
+      occ group:adduser "$2" "$_uid" >/dev/null
+      log "  group: $_uid added to group $2"
+    done
+  }
+  _iv_gmap all-staff     'IntraVox Users'
+  _iv_gmap cat-jefaturas 'IntraVox Editors'
+  _iv_gmap role-oirs     'IntraVox Editors'   # registry gid is role-oirs (20-groups.sh:49); the
+  # design text said role-encargado-oirs, which does not exist — plan-local fix, design follow-up
+}
+
 # The version of an app as the INSTANCE has it, read in-container from custom_apps — the bake-wins
 # probe, shared by both app helpers below. The compose-era read was host-side through the apps/
 # bind mount (compose.yaml), free but blind under AIO: no bind mount means no host-side file, the

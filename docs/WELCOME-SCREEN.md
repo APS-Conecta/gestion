@@ -189,7 +189,7 @@ page-level.
 
 `make divergence` tolerates, by design: the three engine groups (`IntraVox Admins/Editors/
 Users`) and the engine's group folder named by `IV_MOUNT` (`Intranet`, ADR-0020) — both created
-by the engine's setup, mapped by phase 41
+by the engine's setup, mapped by phases 41 and 50 (`lib.sh` `intravox_group_map`, B-030)
 (`docs/adr/0015-welcome-content-seeds-through-an-ungated-own-app-phase.md`). They appear in no
 site file and no phase-20 registry. A live `IntraVox` folder while `IV_MOUNT` says otherwise is
 reported as the storage root under its old name — rename it (above), never delete it.
