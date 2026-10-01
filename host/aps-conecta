@@ -59,11 +59,9 @@ PASOS=(
   "equipos|Cargar equipos y personas|navegador|Sectores, programas y planilla del personal.|Equipos y planilla validados."
   "ejecutar|Revisar y ejecutar|navegador|Revisión del plan y ejecución.|Instalación verificada."
 )
-REPO_URL="github.com/APS-Conecta/gestion"
 # phase 15's theming:slogan — this file runs before the repo exists, so it carries the copy and
 # the self-test pins the pair
 LEMA="La salud primaria que compartimos es la que mejora"
-RAYA="──────────────────────────────────────────────────────────────"
 RESULTADO_PASO=""   # a step that ends in a state other than its registry result says so here
 
 paso_campo() {  # N FIELD — field FIELD (1 id · 2 título · 3 dónde · 4 propósito · 5 resultado) of step N
@@ -81,7 +79,7 @@ paso_n() {  # ID — the step's number; non-zero for an id the registry does not
 }
 
 paso_cab() {  # N — the step header, the approved console's shape
-  printf '%s\n' "$RAYA"
+  printf '%s\n' "──────────────────────────────────────────────────────────────"
   printf 'Paso %s de %s · %s  %s\n' "$1" "${#PASOS[@]}" "$(paso_campo "$1" 2)" "$(paso_campo "$1" 3)"
   printf 'Objetivo  %s\n' "$(paso_campo "$1" 4)"
   printf 'Comando   aps-conecta %s\n' "$(paso_campo "$1" 1)"
@@ -125,7 +123,7 @@ bienvenida() {  # the welcome — the approved console's opening, line for line
   printf '  Instala la suite del establecimiento en %s pasos: %s en este servidor, %s en el navegador.\n\n' \
     "${#PASOS[@]}" "$nsrv" "$nnav"
   printf '  «%s»\n\n' "$LEMA"
-  printf '  AGPL-3.0-or-later · %s\n' "$REPO_URL"
+  printf '  AGPL-3.0-or-later · github.com/APS-Conecta/gestion\n'
   printf '  Desarrollado por Dani Espinoza Charrier · APS Conecta\n\n'
 }
 
@@ -212,16 +210,14 @@ port_free() {  # PORT — the rule-10 discipline (the slice-3 testbed's own idio
   return 0
 }
 
-check_ports() {  # the four wizard-facing ports; a busy one names its holder — unless the suite
-  # itself holds it (a re-run of the install after the suite started reads its own ports as ✓)
-  local p holder suite=""
+check_ports() {  # the four wizard-facing ports; a busy one names its holder — unless a suite
+  # container publishes it (a re-run of the install after the suite started reads its own as ✓)
+  local p holder publicados
+  publicados="$(docker ps --filter name=^nextcloud-aio- --format '{{.Ports}}' 2>/dev/null || true)"
   for p in $WIZARD_PORTS; do
     if port_free "$p"; then
       ok "puerto $p libre"
-      continue
-    fi
-    [ -n "$suite" ] || suite="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -c '^nextcloud-aio-' || true)"
-    if [ "${suite:-0}" -gt 0 ]; then
+    elif case "$publicados" in *":$p->"*) true ;; *) false ;; esac; then
       ok "puerto $p en uso por la suite (ya instalada)"
     else
       holder="$(ss -ltnp "sport = :$p" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1)"
@@ -863,12 +859,35 @@ EOF
     'case "$out_paso" in *"✗ no se encontraron aplicaciones"*"FAIL=1") ;; *) false;; esac && case "$out_paso" in *"correctas"*) false;; *) true;; esac'
   rm -rf "$ROOT/provisioning"
 
-  # a re-run after the suite started: its own listeners read as its own, a stranger still reds
-  printf '#!/usr/bin/env bash\nif [ "$2" = "sport = :8080" ]; then echo "State"; echo "LISTEN 0 0 *:8080"; fi\nexit 0\n' > "$tshim/ss"; chmod +x "$tshim/ss"
-  printf '#!/usr/bin/env bash\nif [ "$1" = ps ]; then echo nextcloud-aio-apache; fi\nexit 0\n' > "$tshim/docker"; chmod +x "$tshim/docker"
+  # the dispatch as the operator calls it: help is the usage, an unknown word reds, and every
+  # registry step answers by its id (browser steps say where they run; server steps have a body)
+  out_paso="$(bash "$HOST_DIR/aps-conecta" --help 2>&1)"; rcs=$?
+  check "dispatch: --help prints the usage and exits 0, with no ✗" \
+    '[ "$rcs" -eq 0 ] && case "$out_paso" in *"Pasos sueltos"*) ;; *) false;; esac && case "$out_paso" in *"✗"*) false;; *) true;; esac'
+  out_paso="$(bash "$HOST_DIR/aps-conecta" nada 2>&1)"; rcs=$?
+  check "dispatch: an unknown subcommand prints the usage, names itself and exits 2" \
+    '[ "$rcs" -eq 2 ] && case "$out_paso" in *"Pasos sueltos"*"✗ subcomando desconocido: nada"*) ;; *) false;; esac'
+  local sin_cuerpo=""
+  for i in $(seq 1 "${#PASOS[@]}"); do
+    if [ "$(paso_campo "$i" 3)" = servidor ]; then
+      declare -F "paso_$(paso_campo "$i" 1)" >/dev/null || sin_cuerpo+="$(paso_campo "$i" 1) "
+    else
+      case "$(bash "$HOST_DIR/aps-conecta" "$(paso_campo "$i" 1)" 2>&1)" in
+        *"el paso $i ("*"se hace en el navegador"*) ;; *) sin_cuerpo+="$(paso_campo "$i" 1) " ;;
+      esac
+    fi
+  done
+  check "dispatch: every registry step answers by its id — a server body, or the browser notice" '[ -z "$sin_cuerpo" ]'
+
+  # a re-run after the suite started: a port the suite publishes reads as its own; a stranger on a
+  # port the suite does not publish still reds (the mastercontainer publishes 8080 only)
+  printf '#!/usr/bin/env bash\ncase "$2" in "sport = :8080"|"sport = :80") echo "State"; echo "LISTEN 0 0 *:${2##*:}";; esac\nexit 0\n' > "$tshim/ss"; chmod +x "$tshim/ss"
+  printf '#!/usr/bin/env bash\ncase "$*" in *"{{.Names}}"*) echo nextcloud-aio-mastercontainer;; *"{{.Ports}}"*) echo "0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp";; esac\nexit 0\n' > "$tshim/docker"; chmod +x "$tshim/docker"
   out_paso="$(FAIL=0; check_ports; echo "FAIL=$FAIL")"
-  check "revisar: a port the running suite holds reads as the suite's own, so a re-run of install goes on" \
-    'case "$out_paso" in *"✓ puerto 8080 en uso por la suite (ya instalada)"*"FAIL=0") ;; *) false;; esac'
+  check "revisar: a port the running suite publishes reads as the suite's own, so a re-run of install goes on" \
+    'case "$out_paso" in *"✓ puerto 8080 en uso por la suite (ya instalada)"*) ;; *) false;; esac'
+  check "revisar: a stranger on a port the suite does not publish reds while the suite runs" \
+    'case "$out_paso" in *"✗ puerto 80 ocupado"*"FAIL=1") ;; *) false;; esac'
   printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/ss"; chmod +x "$tshim/ss"
   rm -f "$tshim/docker"
 
@@ -962,7 +981,7 @@ CSHIM
   printf '#!/usr/bin/env bash\nexit 1\n' > "$tshim/curl"; chmod +x "$tshim/curl"
   out="$(check_hairpin)"
   check "hairpin: the red carries the ufw recipe and the local-DNS legs, and never SKIP_DOMAIN_VALIDATION as advice" \
-    'case "$out" in *"172.18.0.0/16"*"dnsmasq"*"daemon.json"*"NO use SKIP_DOMAIN_VALIDATION"*) ;; *) false;; esac'
+    'case "$out" in *"172.18.0.0/16"*"dnsmasq"*"daemon.json"*"NO use SKIP_DOMAIN_VALIDATION"*"✗ el control de salud de la oficina NO responde"*) ;; *) false;; esac'
 
   # ── a5: usage and preflight are Spanish, with no source header, shell internals or internal ids ──
   local a5_ids='^[[:space:]]*#|set -uo|readlink|HOST_DIR|\$\{|\bslice\b|\bFRD\b|\bB-[0-9]{3}\b|\bR[0-9]{1,2}\b|\bD[0-9]{1,2}\b|#[0-9]{2,}'
@@ -1161,10 +1180,6 @@ EOF
 
 case "${1:-}" in
   install)      shift; cmd_install "$@" ;;
-  revisar|preparar|descargar|mapa|abrir)
-                paso_correr "$(paso_n "$1")" "aps-conecta $1" || exit 1 ;;
-  centro|suite|equipos|ejecutar)
-                paso_navegador "$(paso_n "$1")" ;;
   preflight)    shift; cmd_preflight "$@" ;;
   run-command)  run_command ;;
   provision)    shift; cmd_provision "${1:-}" ;;
@@ -1173,6 +1188,15 @@ case "${1:-}" in
   tiles)        shift; exec bash "$HOST_DIR/tiles.sh" "$@" ;;
   datos)        shift; cmd_datos "${1:-}" ;;
   --self-test)  selftest ;;
-  "")           uso ;;
-  *)            uso; echo; echo "✗ subcomando desconocido: $1" >&2; exit 2 ;;
+  ""|-h|--help) uso ;;
+  *)            # a step answers by its registry id — the list is the only place a step is named
+                if paso="$(paso_n "$1")"; then
+                  if [ "$(paso_campo "$paso" 3)" = servidor ]; then
+                    paso_correr "$paso" "aps-conecta $1" || exit 1
+                  else
+                    paso_navegador "$paso"
+                  fi
+                else
+                  uso; echo; echo "✗ subcomando desconocido: $1" >&2; exit 2
+                fi ;;
 esac
