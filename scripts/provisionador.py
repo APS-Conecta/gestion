@@ -111,6 +111,16 @@ EXEC_LOCK = threading.Lock()
 # a big clinic's N×0.8 s execs fit with margin; the gate only reads. The self-test patches this
 # dict for its timeout arm instead of a test-only env knob.
 TIMEOUTS = {"seed": 1800, "roster": 1800, "gate": 300}
+# The silent install's console (R42): one Spanish line per finished phase, keyed by the phase
+# file's stem — a self-test arm pins one title per file in provisioning/phases.
+PHASE_TITLES = {
+    "05-security": "Seguridad de sesión", "06-jobs": "Tareas programadas",
+    "07-certs": "Certificados intermedios", "10-locale": "Idioma y región (es-CL)",
+    "12-apps": "Aplicaciones de la suite", "14-office": "Oficina (Euro-Office)",
+    "15-branding": "Imagen de APS Conecta", "16-app-policy": "Aplicaciones por perfil",
+    "20-groups": "Grupos: roles, categorías y equipos", "30-folders": "Carpetas compartidas",
+    "40-acl": "Permisos de las carpetas", "41-intravox": "Portada (IntraVox)",
+    "50-users": "Cuentas de cargo", "60-fixtures": "Contenido de ejemplo"}
 
 
 STUB_DOCKER = r'''#!/usr/bin/env python3
@@ -367,6 +377,58 @@ def _site_exists_answer(codigo, path):
                               "DEIS — revíselo o elimínelo a mano"}
     return 409, {"error": f"sites/{codigo}/site.sh ya existe y pertenece al establecimiento "
                           f"DEIS {have} — revíselo o elimínelo a mano"}
+
+
+
+def site_import(payload):
+    """{"texto"} — the silent install's centre (`--paso sitio --archivo`): an operator's own site.sh,
+    placed at sites/<SITE_DEIS>/site.sh and read exactly as the executor reads /api/sitio's output
+    (fail closed). The same bytes already there are a re-run; a different file for the same centre,
+    or another centre's site, is refused — one install, one establishment, never overwritten."""
+    text = payload.get("texto")
+    if not isinstance(text, str) or not text.strip():
+        return 400, {"error": "el sitio está vacío"}
+    m = re.search(r"(?m)^SITE_DEIS=([0-9]+)$", text)
+    if not m or not CODIGO.fullmatch(m.group(1)):
+        return 400, {"error": "el sitio no declara SITE_DEIS=<código DEIS de 4 a 6 dígitos, sin comillas>"}
+    codigo = m.group(1)
+    if not re.search(r"(?m)^SITE_ROSTER=", text):
+        return 400, {"error": "el sitio no trae la línea SITE_ROSTER= (la que completa la planilla)"}
+    if not re.search(r'(?m)^SITE_DOMINIO="?[^"\s]+"?$', text):
+        return 400, {"error": 'el sitio no declara SITE_DOMINIO="<dominio del servidor>" — la suite se '
+                              "configura con él"}
+    with tempfile.TemporaryDirectory() as tmp:
+        probe = os.path.join(tmp, "site.sh")
+        with open(probe, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        try:
+            _teams, roles = site_arrays(probe)
+        except ValueError as e:
+            rel = os.path.relpath(probe, os.path.join(deis.HERE, ".."))
+            return 400, {"error": str(e).replace(rel, "el sitio")}
+    wrong = [f"{gid} → {cat}" for gid, _display, cat in roles
+             if cat not in ("cat-jefaturas", "cat-clinicos", "cat-tecnicos", "cat-administrativos")]
+    if wrong:  # 20-groups refuses these too, but only at step 9, after the suite is up
+        return 400, {"error": "el sitio nombra una categoría que no existe: " + ", ".join(wrong)
+                              + " — use cat-jefaturas, cat-clinicos, cat-tecnicos o cat-administrativos"}
+    dest = site_path(codigo)
+    sites = os.path.dirname(os.path.dirname(dest))
+    others = sorted(d for d in (os.listdir(sites) if os.path.isdir(sites) else [])
+                    if d != codigo and os.path.isfile(os.path.join(sites, d, "site.sh")))
+    if others:
+        return 409, {"error": f"este servidor ya tiene el sitio sites/{others[0]}/site.sh — una "
+                              "instalación sirve a un solo establecimiento"}
+    if os.path.exists(dest):
+        with open(dest, encoding="utf-8") as fh:
+            if fh.read() == text:
+                return 200, {"ok": True, "already": True, "site": _site_rel(codigo), "codigo": codigo}
+        return 409, {"error": f"{_site_rel(codigo)} ya existe y difiere del archivo entregado — "
+                              "compárelos y deje uno (la instalación no pisa un sitio)"}
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    with open(dest + ".tmp", "w", encoding="utf-8", newline="") as fh:
+        fh.write(text)
+    os.replace(dest + ".tmp", dest)  # never half a site: a re-run would read it as «difiere»
+    return 200, {"ok": True, "site": _site_rel(codigo), "codigo": codigo}
 
 
 def api_sitio(payload):
@@ -850,7 +912,11 @@ def api_generar(payload):
     if not EXEC_LOCK.acquire(blocking=False):
         return 409, {"error": "ya hay una ejecución en curso — espere a que termine e inténtelo "
                               "de nuevo"}
+    log = None
     try:
+        if payload.get("resumen") is True:
+            log = open(os.path.join(root, ".install.log"), "w", encoding="utf-8", buffering=1)
+        show = summary(log) if log else None
         try:
             env_report = env_converge(root, codigo)
         except ValueError as e:
@@ -858,7 +924,7 @@ def api_generar(payload):
         rc, seed_out = run_tee(["bash", "provisioning/seed.sh"], cwd=root,
                                timeout=TIMEOUTS["seed"],
                                env={**os.environ, "STANDING_PASSWORDS":
-                                    " ".join(f"{u}:{sealed[u][0]}" for u in cargos)})
+                                    " ".join(f"{u}:{sealed[u][0]}" for u in cargos)}, show=show)
         if rc is None:
             return 500, {"error": f"la preparación excedió el límite de {TIMEOUTS['seed']} s — "
                                   "revise la salida y el estado de la instancia",
@@ -879,7 +945,7 @@ def api_generar(payload):
         records.append("")  # the driver's terminator
         rc, roster_out = run_tee(["bash", "provisioning/usuarios.sh"], cwd=root,
                                   timeout=TIMEOUTS["roster"],
-                                  stdin_text="\n".join(records) + "\n")
+                                  stdin_text="\n".join(records) + "\n", show=show)
         if rc is None:
             return 500, {"error": f"la planilla excedió el límite de {TIMEOUTS['roster']} s — "
                                   "revise la salida y el estado de la instancia",
@@ -889,7 +955,7 @@ def api_generar(payload):
                           if ln.startswith("FATAL:")), "la planilla falló")
             return 500, {"error": fatal, "salida": seed_out + roster_out}
         rc, gate_out = run_tee(["bash", "scripts/divergence.sh", "--gate"], cwd=root,
-                               timeout=TIMEOUTS["gate"])
+                               timeout=TIMEOUTS["gate"], show=show)
         if rc is None:
             return 500, {"error": f"la divergencia excedió el límite de {TIMEOUTS['gate']} s",
                           "salida": seed_out + roster_out + gate_out}
@@ -900,6 +966,8 @@ def api_generar(payload):
                      "salida": seed_out + roster_out,
                      "divergencia_vacia": rc == 0, "divergencia": gate_out}
     finally:
+        if log:
+            log.close()
         EXEC_LOCK.release()
 
 
@@ -1002,7 +1070,22 @@ def env_converge(root, codigo):
     return report
 
 
-def run_tee(argv, cwd, timeout, stdin_text=None, env=None):
+
+def summary(log):
+    """The silent install's console (R42): every executor line goes whole to the log, and the
+    console gets one Spanish line per finished phase plus the roster's count — never the seed's
+    English vocabulary."""
+    def show(line):
+        log.write(line)
+        m = re.match(r"✓ phase (\S+)$", line.rstrip("\n"))
+        if m:
+            return f"  ✓ {PHASE_TITLES.get(m.group(1), m.group(1))}\n"
+        m = re.match(r"== roster: (\d+) usuario", line)
+        return f"  ✓ Planilla: {m.group(1)} personas\n" if m else None
+    return show
+
+
+def run_tee(argv, cwd, timeout, stdin_text=None, env=None, show=None):
     """One executor subprocess, its stdout BOTH on the provisionador's own stdout (the FRD's
     host-side record: the operator watching the terminal where `aps-conecta provision` printed
     the banner sees the phases live — slice 14's line-buffered stdout makes that real) and
@@ -1014,7 +1097,9 @@ def run_tee(argv, cwd, timeout, stdin_text=None, env=None):
     def pump():
         for line in p.stdout:
             out.append(line)
-            sys.stdout.write(line)
+            shown = line if show is None else show(line)  # the silent install's summary (R42)
+            if shown:
+                sys.stdout.write(shown)
         p.stdout.close()
 
     # NO start_new_session on purpose: Ctrl+C at the provisionador's terminal must reach the
@@ -1627,35 +1712,38 @@ def banner(url, token):
 
 
 def run_step(argv):
-    """`--paso usuarios --codigo C --planilla FILE` · `--paso generar --codigo C [--revision]` — the
+    """`--paso sitio --archivo FILE` · `--paso usuarios --codigo C --planilla FILE` ·
+    `--paso generar --codigo C [--revision] [--resumen]` — the
     installer's steps in this process, with no server: the same api_* functions the browser posts
     to (one home per step, S1b). The weekly re-provision and the silent install call them. Prints
     Spanish ✓/✗ lines; exit 0 done · 1 refused (the reason printed) · 2 usage."""
     opts, i = {}, 0
     while i < len(argv):
         arg = argv[i]
-        if arg in ("--paso", "--codigo", "--planilla"):
+        if arg in ("--paso", "--codigo", "--planilla", "--archivo"):
             if i + 1 >= len(argv) or argv[i + 1].startswith("--"):
                 print(f"✗ falta el valor de {arg}")
                 return 2
             opts[arg] = argv[i + 1]
             i += 2
-        elif arg == "--revision":
+        elif arg in ("--revision", "--resumen"):
             opts[arg] = True
             i += 1
         else:
-            print(f"✗ opción desconocida: {arg} — uso: provisionador.py --paso usuarios|generar "
-                  "--codigo <código> [--planilla <archivo.csv>] [--revision]")
+            print(f"✗ opción desconocida: {arg} — uso: provisionador.py --paso sitio|usuarios|generar "
+                  "[--archivo <site.sh>] [--codigo <código>] [--planilla <archivo.csv>] [--revision] "
+                  "[--resumen]")
             return 2
     step, code = opts.get("--paso"), opts.get("--codigo")
-    takes = {"usuarios": {"--planilla"}, "generar": {"--revision"}}
+    takes = {"sitio": {"--archivo"}, "usuarios": {"--codigo", "--planilla"},
+             "generar": {"--codigo", "--revision", "--resumen"}}
     if step not in takes:
-        print("✗ paso desconocido — use --paso usuarios o --paso generar")
+        print("✗ paso desconocido — use --paso sitio, usuarios o generar")
         return 2
-    if not code:
+    if not code and step != "sitio":  # the site file names its own centre
         print("✗ falta el código: --codigo <código>")
         return 2
-    extra = set(opts) - {"--paso", "--codigo"} - takes[step]
+    extra = set(opts) - {"--paso"} - takes[step]
     if extra:
         print(f"✗ {' '.join(sorted(extra))} no aplica a --paso {step}")
         return 2
@@ -1679,6 +1767,26 @@ def run_step(argv):
             print(f"✗ {body.get('error', f'el paso falló (código {status})')}")
         return 1
 
+    if step == "sitio":
+        path = opts.get("--archivo")
+        if not path:
+            print("✗ falta el sitio: --archivo <site.sh>")
+            return 2
+        try:
+            with open(path, encoding="utf-8-sig") as fh:
+                text = fh.read()
+        except OSError as e:
+            print(f"✗ no se pudo leer el sitio {path}: {why(e)}")
+            return 1
+        except UnicodeDecodeError:
+            print(f"✗ el sitio {path} no está en UTF-8")
+            return 1
+        status, body = call(site_import, {"texto": text})
+        if status != 200:
+            return refused(status, body)
+        print(f"✓ Sitio {'ya cargado' if body.get('already') else 'cargado'}: {body['site']} "
+              f"(DEIS {body['codigo']})")
+        return 0
     if step == "usuarios":
         path = opts.get("--planilla")
         if not path:
@@ -1702,8 +1810,12 @@ def run_step(argv):
               "nuevas (personas y cargos)")
         return 0
     mode = "revision" if opts.get("--revision") else "ejecutar"
-    status, body = call(api_generar, {"codigo": code, "modo": mode})
+    resumen = bool(opts.get("--resumen"))
+    log = os.path.normpath(os.path.join(deis.HERE, "..", ".install.log"))
+    status, body = call(api_generar, {"codigo": code, "modo": mode, "resumen": resumen})
     if status != 200:
+        if resumen and "salida" in body:  # the executor ran: its whole output is in the log
+            print(f"  registro completo: {log}")
         return refused(status, body)
     if mode == "revision":
         print(f"✓ Revisión: {len(body['fases'])} fases, {body['usuarios']} usuarios "
@@ -1712,8 +1824,8 @@ def run_step(argv):
     if body["divergencia_vacia"]:
         print("✓ divergencia vacía — la instalación coincide con lo declarado")
         return 0
-    print("✗ divergencia NO vacía — la deriva se muestra arriba; «aps-conecta provision» abre "
-          "el provisionador para corregir")
+    print(f"✗ divergencia NO vacía — la deriva se muestra {f'en el registro ({log})' if resumen else 'arriba'}; "
+          "«aps-conecta provision» abre el provisionador para corregir")
     return 1
 
 
@@ -2337,6 +2449,56 @@ def selftest():
                                capture_output=True, text=True, timeout=60)
             check("--paso as a real process: the exit code and the Spanish line reach a pipe (systemd's view)",
                   p.returncode == 2 and "✗ falta el código" in p.stdout)
+            check("titles: every phase file has its Spanish console title (R42)",
+                  {f[:-3] for f in os.listdir(os.path.dirname(PHASE20))
+                   if f[:1].isdigit() and f.endswith(".sh")} == set(PHASE_TITLES))
+            given = open(site_path("113314"), encoding="utf-8").read()
+            assert given.count('SITE_DOMINIO=""') == 1
+            given = given.replace('SITE_DOMINIO=""', 'SITE_DOMINIO="clinica.example"')
+            real_here, fresh = deis.HERE, tempfile.mkdtemp()
+            os.makedirs(os.path.join(fresh, "scripts"))
+            deis.HERE = os.path.join(fresh, "scripts")
+            try:
+                src = os.path.join(fresh, "site-dado.sh")
+
+                def given_site(text):
+                    open(src, "w", encoding="utf-8").write(text)
+                    return stepped(["--paso", "sitio", "--archivo", src])
+                first, again, bom = given_site(given), given_site(given), given_site("﻿" + given)
+                sin_dominio = given_site(given.replace('SITE_DOMINIO="clinica.example"', 'SITE_DOMINIO=""'))
+                mala_cat = given_site(given.replace("SITE_ROLES=(", 'SITE_ROLES=(\n  "role-x|X|cat-foo"', 1))
+                placed = open(os.path.join(fresh, "sites", "113314", "site.sh"), encoding="utf-8").read()
+                differs = given_site(given + "# editado\n")
+                other = given_site(given.replace("SITE_DEIS=113314", "SITE_DEIS=121567"))
+                sin_deis = given_site(given.replace("SITE_DEIS=113314", "SITE_DEIS=x"))
+                roto = given_site(given.replace("SITE_TEAMS=(", "SITE_TEAMS=(\n  roto sin cierre", 1))
+                usage = [stepped(a)[0] for a in (["--paso", "sitio"],
+                                                 ["--paso", "sitio", "--archivo", src, "--codigo", "1"])]
+            finally:
+                deis.HERE = real_here
+            check("--paso sitio: an operator's site.sh is placed at sites/<DEIS>/, byte for byte; the same file again is a re-run",
+                  first[0] == 0 and "✓ Sitio cargado: sites/113314/site.sh (DEIS 113314)" in first[1]
+                  and placed == given and again[0] == 0 and "✓ Sitio ya cargado" in again[1]
+                  and bom[0] == 0 and "✓ Sitio ya cargado" in bom[1])
+            check("--paso sitio: no SITE_DOMINIO, or a site role in a category that does not exist, is refused at step 6",
+                  sin_dominio[0] == 1 and "SITE_DOMINIO" in sin_dominio[1]
+                  and mala_cat[0] == 1 and "role-x → cat-foo" in mala_cat[1])
+            check("--paso sitio: a different file for the same centre, or a second centre, is refused — never overwritten",
+                  differs[0] == 1 and "difiere del archivo entregado" in differs[1]
+                  and other[0] == 1 and "un solo establecimiento" in other[1]
+                  and placed == open(os.path.join(fresh, "sites", "113314", "site.sh"), encoding="utf-8").read())
+            check("--paso sitio: no SITE_DEIS, or an unreadable array, is refused naming «el sitio», not a temp path; usage exits 2",
+                  sin_deis[0] == 1 and "SITE_DEIS=<código DEIS" in sin_deis[1]
+                  and roto[0] == 1 and "el sitio" in roto[1] and "/tmp" not in roto[1]
+                  and usage == [2, 2])
+            drift = stubbed(lambda _p: (200, {"modo": "ejecutar", "divergencia_vacia": False, "salida": ""}),
+                            ejecutar + ["--resumen"])
+            early = stubbed(lambda _p: (409, {"error": "no hay planilla cargada"}), ejecutar + ["--resumen"])
+            ran = stubbed(lambda _p: (500, {"error": "FATAL: algo", "salida": "x"}), ejecutar + ["--resumen"])
+            check("generar --resumen: a red gate points at the log, not «arriba»; the log is named only when the executor ran",
+                  drift[0] == 1 and "la deriva se muestra en el registro (" in drift[1] and "arriba" not in drift[1]
+                  and early[0] == 1 and "registro completo" not in early[1]
+                  and ran[0] == 1 and "registro completo:" in ran[1])
 
             st, _ = generar("ejecutar-x")
             st2, _ = api_generar({"codigo": "../etc", "modo": "revision"})
@@ -2439,7 +2601,9 @@ def selftest():
                   and "group: director added to group IntraVox Editors" in body["salida"])
 
             env_before = open(env_path, "rb").read()
-            st, body = generar("ejecutar")
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                st, body = api_generar({"codigo": "113314", "modo": "ejecutar", "resumen": True})
             if st != 200:  # B-028: same guard on the re-run — its FATAL, not a ValueError
                 return seed_died(body, "generar: a re-run converges — the re-run seed died (output above)")
             drv = body["salida"][body["salida"].index("== provisioning complete"):]  # safe: seed green above
@@ -2447,6 +2611,15 @@ def selftest():
                   st == 200 and open(env_path, "rb").read() == env_before
                   and "user maria.perez exists" in drv and "user maria.perez created" not in drv
                   and "user elena.diaz exists" in drv and body["divergencia_vacia"])
+            console = buf.getvalue()
+            log_text = open(os.path.join(deis.HERE, "..", ".install.log"), encoding="utf-8").read()
+            check("generar --resumen: one Spanish line per phase and the roster's count on the console, the whole log in .install.log (R42)",
+                  "  ✓ Grupos: roles, categorías y equipos\n" in console
+                  and "  ✓ Planilla: 2 personas\n" in console
+                  and console.count("  ✓ ") == len(PHASE_TITLES) + 1
+                  and all(ln.startswith("  ✓ ") for ln in console.splitlines() if ln.strip())
+                  and "▶ phase" not in console and "user " not in console
+                  and "▶ phase 20-groups" in log_text and "== roster: 2 usuario(s) ==" in log_text)
             seed2 = body["salida"][:body["salida"].index("== provisioning complete")]
             check("generar: the re-run seed maps no standing account again (B-030)",
                   "group: director added to group IntraVox" not in seed2
