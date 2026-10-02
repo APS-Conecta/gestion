@@ -47,7 +47,8 @@ WIZARD_PORTS="80 443 8080 8443"   # the wizard needs 8080; apache takes 443; 80/
                                   # reverse-proxy companions upstream's install path expects
 PROV_PORTS="8081 8082 8083"        # the Provisionador's fallback chain (slice 14) — INFO only
 
-die() { echo "✗ $*" >&2; exit 1; }
+CONSOLE_FD=2   # die's stream: the silent install sends stderr to its log and keeps die on the console
+die() { echo "✗ $*" >&"$CONSOLE_FD"; exit 1; }
 ok()  { printf '✓ %s\n' "$*"; }
 bad() { printf '✗ %s\n' "$1"; printf '  → %s\n' "$2"; FAIL=1; }
 info(){ printf '· %s\n' "$*"; }
@@ -73,6 +74,7 @@ STEPS=(
 # the self-test pins the pair
 MOTTO="La salud primaria que compartimos es la que mejora"
 STEP_RESULT=""   # a step that ends in a state other than its registry result says so here
+SILENT_SITE=""; SILENT_ROSTER=""; SILENT_LOG=""   # install --sitio/--planilla (a7): the files, the log
 
 step_field() {  # N FIELD — field FIELD (1 id · 2 título · 3 dónde · 4 propósito · 5 resultado) of step N
   local IFS='|' f
@@ -106,11 +108,13 @@ step_footer() {  # N — the result (the step's own override, else the registry'
 }
 
 step_run() {  # N RERUN — header, the step's body, footer; non-zero with a ✗ result on failure
-  local id rc
-  id="$(step_field "$1" 1)"
+  local id rc fn
+  id="$(step_field "$1" 1)"; fn="step_$id"
+  # the silent install runs the browser steps, «abrir» and «mapa» its own way (silent_*, a7)
+  if [ -n "$SILENT_SITE" ] && declare -F "silent_$id" >/dev/null; then fn="silent_$id"; fi
   step_header "$1"
   FAIL=0
-  "step_$id"; rc=$?
+  "$fn"; rc=$?
   if [ "$rc" -ne 0 ] || [ "$FAIL" -ne 0 ]; then
     printf 'Resultado ✗ el paso %s no terminó — corrija lo marcado y vuelva a ejecutar «%s»\n\n' "$1" "$2"
     return 1
@@ -130,27 +134,100 @@ welcome() {  # the welcome — the approved console's opening, line for line
   done
   echo
   printf '  APS Conecta Gestión   Instalador %s\n\n' "$v"
-  printf '  Instala la suite del establecimiento en %s pasos: %s en este servidor, %s en el navegador.\n\n' \
-    "${#STEPS[@]}" "$n_server" "$n_browser"
+  if [ -n "$SILENT_SITE" ]; then
+    printf '  Instala la suite del establecimiento en %s pasos, sin preguntas ni navegador.\n\n' "${#STEPS[@]}"
+  else
+    printf '  Instala la suite del establecimiento en %s pasos: %s en este servidor, %s en el navegador.\n\n' \
+      "${#STEPS[@]}" "$n_server" "$n_browser"
+  fi
   printf '  «%s»\n\n' "$MOTTO"
   printf '  AGPL-3.0-or-later · github.com/APS-Conecta/gestion\n'
   printf '  Desarrollado por Dani Espinoza Charrier · APS Conecta\n\n'
 }
 
-cmd_install() {  # the interactive install: the welcome, then the server steps in registry order —
-  # the last of them opens the web installer, which walks steps 6–9 from the same list. A failed
-  # step stops the run on its own ✗ lines; a re-run walks the steps again and each finds its own
-  # work done (the ports the suite already holds read as its own). The prompt waits only on a
-  # terminal: a pipe or CI runs straight through.
-  [ $# -eq 0 ] || die "«aps-conecta install» no recibe opciones: ejecútelo sin argumentos"
+# ── the silent install (a7): «install --sitio F --planilla F» walks the same nine steps, and these
+# stand in for the browser ones — each the Provisionador's own step run with --paso, or the suite.
+# The map comes last: it needs the site in .env and the suite's database (refresh-basemap.sh)
+silent_precheck() {  # the two files read before anything runs — a typo must not cost an install
+  grep -qE '^SITE_DEIS=[0-9]{4,6}$' "$SILENT_SITE" \
+    || die "el sitio no declara SITE_DEIS=<código DEIS> (sin comillas): $SILENT_SITE"
+  [ -n "$(domain_of "$SILENT_SITE")" ] \
+    || die "el sitio no declara SITE_DOMINIO=\"<dominio del servidor>\": $SILENT_SITE"
+  grep -q '^SITE_ROSTER=' "$SILENT_SITE" || die "el sitio no trae la línea SITE_ROSTER=: $SILENT_SITE"
+  head -1 "$SILENT_ROSTER" | sed 's/^\xef\xbb\xbf//' | tr -d '\r' \
+    | grep -qx 'usuario;nombre;apellidos;correo;grupos;primer_admin' \
+    || die "la planilla no empieza con la cabecera usuario;nombre;apellidos;correo;grupos;primer_admin: $SILENT_ROSTER"
+}
+silent_abrir() { STEP_RESULT="Sin instalador web: modo silencioso."; }
+silent_mapa() { STEP_RESULT="Mapa: se construye al final, con la suite en marcha."; }
+silent_centro() { python3 "$(prov_path)" --paso sitio --archivo "$SILENT_SITE"; }
+silent_suite() {
+  local domain; domain="$(site_domain || true)"
+  if [ -z "$domain" ]; then
+    bad "el sitio no declara SITE_DOMINIO" "agregue SITE_DOMINIO=\"<dominio del servidor>\" al sitio y vuelva a ejecutar"
+    return 0
+  fi
+  start_suite || return 0
+  ( cmd_aio_wizard --dominio "$domain" )
+}
+silent_equipos() { python3 "$(prov_path)" --paso usuarios --codigo "$(site_codigo)" --planilla "$SILENT_ROSTER"; }
+silent_ejecutar() { python3 "$(prov_path)" --paso generar --codigo "$(site_codigo)" --resumen; }
+silent_map_last() {  # the basemap, once the suite runs; its own output goes to the log
+  if [ "${APS_SKIP_MAP:-0}" = 1 ]; then
+    info "mapa omitido en esta instalación: «sudo aps-conecta mapa» lo construye"; return 0
+  fi
+  info "construyendo el mapa de Chile (~1,1 GB; unos minutos)"
+  if bash "$HOST_DIR/tiles.sh" install >&2; then
+    ok "Mapa listo"
+  else
+    bad "el mapa no se construyó" "ejecute «sudo aps-conecta mapa» — el detalle está en el registro"
+  fi
+}
+
+cmd_install() {  # the install: the welcome, then the steps in registry order. Interactive, the
+  # server steps run here and the last opens the web installer for 6–9; silent (--sitio/--planilla),
+  # all nine run here, the browser ones from the two files (silent_*), every tool's own output in the
+  # log and only Spanish lines on the console. A failed step stops the run on its own ✗ lines; a
+  # re-run walks the steps again and each finds its own work done. The prompt waits only on an
+  # interactive install's terminal.
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --sitio) [ -n "${2:-}" ] || die "falta el archivo: --sitio <site.sh>"; SILENT_SITE="$2"; shift 2 ;;
+      --planilla) [ -n "${2:-}" ] || die "falta el archivo: --planilla <usuarios.csv>"; SILENT_ROSTER="$2"; shift 2 ;;
+      *) die "opción desconocida: $1 — uso: sudo aps-conecta install [--sitio <site.sh> --planilla <usuarios.csv>]" ;;
+    esac
+  done
+  local again="sudo aps-conecta install"
+  if [ -n "$SILENT_SITE$SILENT_ROSTER" ]; then
+    [ -n "$SILENT_SITE" ] && [ -n "$SILENT_ROSTER" ] \
+      || die "--sitio y --planilla van juntos: sudo aps-conecta install --sitio <site.sh> --planilla <usuarios.csv>"
+    local f
+    for f in "$SILENT_SITE" "$SILENT_ROSTER"; do [ -r "$f" ] || die "no se puede leer $f"; done
+    SILENT_SITE="$(realpath "$SILENT_SITE")"; SILENT_ROSTER="$(realpath "$SILENT_ROSTER")"
+    silent_precheck
+    again="$again$(printf ' --sitio %q --planilla %q' "$SILENT_SITE" "$SILENT_ROSTER")"
+  fi
   is_root || die "la instalación necesita permisos de administrador: sudo bash aps-conecta install"
+  if [ -n "$SILENT_SITE" ]; then
+    SILENT_LOG="$APS_HOME/instalacion.log"
+    { mkdir -p "$APS_HOME" && exec 3>&2 2>>"$SILENT_LOG"; } || die "no se pudo abrir el registro $SILENT_LOG"
+    CONSOLE_FD=3
+  fi
   welcome
-  if [ -t 0 ]; then printf '  Enter para comenzar.'; IFS= read -r _; echo; fi
+  if [ -z "$SILENT_SITE" ] && [ -t 0 ]; then printf '  Enter para comenzar.'; IFS= read -r _; echo; fi
   local n
   for n in $(seq 1 "${#STEPS[@]}"); do
-    [ "$(step_field "$n" 3)" = servidor ] || break
-    step_run "$n" "sudo aps-conecta install" || exit 1
+    [ -n "$SILENT_SITE" ] || [ "$(step_field "$n" 3)" = servidor ] || break
+    step_run "$n" "$again" || exit 1
   done
+  [ -n "$SILENT_SITE" ] || return 0
+  FAIL=0; silent_map_last
+  if [ "$FAIL" -ne 0 ]; then
+    echo "INSTALACIÓN: la suite quedó instalada; falta el mapa — sudo aps-conecta mapa (registro: $SILENT_LOG)"
+    exit 1
+  fi
+  echo "INSTALACIÓN: ✓ — entregue a cada persona su fila: sudo cat /opt/aps-conecta/credentials.txt"
+  echo "  y verifique la instancia: aps-conecta revalidate (registro: $SILENT_LOG)"
 }
 
 usage() {  # Spanish, generated from the registry — never a slice of this file's own header
@@ -159,6 +236,7 @@ usage() {  # Spanish, generated from the registry — never a slice of this file
   echo
   echo "Instalación:"
   echo "  sudo aps-conecta install          instala la suite: bienvenida y pasos numerados"
+  echo "  sudo aps-conecta install --sitio S --planilla P   la misma instalación, sin preguntas ni navegador"
   echo
   echo "Pasos sueltos, en el orden de la instalación:"
   for n in $(seq 1 "${#STEPS[@]}"); do
@@ -259,8 +337,9 @@ site_file() {  # the single establishment's site.sh (D13) — empty if none, err
 site_domain() {  # SITE_DOMINIO from the site record (#75 hook) — empty when unset
   local f; f="$(site_file)"
   case "$f" in "" | "MÁS DE UN SITIO") return 1 ;; esac
-  grep -m1 '^SITE_DOMINIO=' "$f" 2>/dev/null | sed 's/^SITE_DOMINIO=//; s/^"//; s/"$//' || true
+  domain_of "$f"
 }
+domain_of() { grep -m1 '^SITE_DOMINIO=' "$1" 2>/dev/null | sed 's/^SITE_DOMINIO=//; s/^"//; s/"$//' || true; }
 
 PREFLIGHT_DOMAIN=""   # «preflight --dominio D»: the domain to probe before the site record names one (R6)
 
@@ -636,6 +715,29 @@ EOF
 # and an empty value is also the verified way past the mastercontainer's [ -n ]-gated charset
 # validator (start.sh:291-298). Both facts are the slice-5 amendment's own finding (the ratified
 # forced amendment, ledgered in its History row).
+
+start_suite() {  # the mastercontainer, once — the very command «preflight» prints, run detached
+  local state tag cmd
+  state="$(docker ps -a --format '{{.Names}} {{.State}}' 2>/dev/null)"   # captured: pipefail-safe
+  state="$(printf '%s\n' "$state" | sed -n 's/^nextcloud-aio-mastercontainer //p')"
+  case "$state" in
+    running) ok "La suite ya está iniciada"; return 0 ;;
+    "") ;;
+    *) if docker start nextcloud-aio-mastercontainer >/dev/null; then ok "Suite reanudada"; return 0; fi
+       bad "no se pudo reanudar la suite" "revise: docker logs nextcloud-aio-mastercontainer"; return 1 ;;
+  esac
+  tag="$(suite_tag)"   # checked before the eval: the tag is the only value the command carries
+  if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$ ]] || ! cmd="$(run_command)" || [ -z "$cmd" ]; then
+    bad "no se pudo leer la versión de la suite («$tag»)" "exporte APS_SUITE_TAG=vX.Y.Z y vuelva a ejecutar"
+    return 1
+  fi
+  info "iniciando la suite: descarga la imagen del asistente (unos minutos)"
+  if eval "$(sed '1s/^docker run /docker run -d /' <<<"$cmd")" >/dev/null; then
+    ok "Suite iniciada: ghcr.io/aps-conecta/all-in-one:$tag"
+  else
+    bad "no se pudo iniciar la suite" "revise: docker logs nextcloud-aio-mastercontainer"; return 1
+  fi
+}
 
 # ── provision ─────────────────────────────────────────────────────────────────────────────
 
@@ -1099,8 +1201,47 @@ EOF
   check "stepper: a failing step stops the run, names itself and the re-run, and exits 1" \
     '[ "$rcs" -eq 1 ] && case "$install_out" in *"✗ docker falta"*"Resultado ✗ el paso 2 no terminó"*"sudo aps-conecta install"*) ;; *) false;; esac && case "$install_out" in *"descargar-stub"*) false;; *) true;; esac'
   step_out="$( (cmd_install --sitio x) 2>&1)"; rcs=$?
-  check "stepper: install takes no options yet, and says so in Spanish" \
-    '[ "$rcs" -eq 1 ] && case "$step_out" in *"no recibe opciones"*) ;; *) false;; esac'
+  check "install --sitio: without --planilla it refuses, naming the pair" \
+    '[ "$rcs" -eq 1 ] && case "$step_out" in *"--sitio y --planilla van juntos"*) ;; *) false;; esac'
+  step_out="$( (cmd_install --otra) 2>&1)"; rcs=$?
+  check "install: an unknown option refuses with the usage, in Spanish" \
+    '[ "$rcs" -eq 1 ] && case "$step_out" in *"opción desconocida: --otra"*"--sitio <site.sh> --planilla <usuarios.csv>"*) ;; *) false;; esac'
+  step_out="$( (cmd_install --sitio "$tmp/no-existe.sh" --planilla "$tmp/no-existe.csv") 2>&1)"; rcs=$?
+  check "install --sitio: an unreadable file refuses before anything runs" \
+    '[ "$rcs" -eq 1 ] && case "$step_out" in *"no se puede leer $tmp/no-existe.sh"*) ;; *) false;; esac && case "$step_out" in *"Paso 1"*) false;; *) true;; esac'
+  printf 'SITE_DEIS=113314\nSITE_DOMINIO="clinica.example"\nSITE_ROSTER=\n' > "$tmp/dado.sh"
+  printf '\xef\xbb\xbfusuario;nombre;apellidos;correo;grupos;primer_admin\r\nana;Ana;Uno;;role-medico;si\r\n' > "$tmp/dado.csv"
+  printf 'SITE_DEIS="113314"\nSITE_DOMINIO="c.example"\nSITE_ROSTER=\n' > "$tmp/mal1.sh"
+  printf 'SITE_DEIS=113314\nSITE_DOMINIO=""\nSITE_ROSTER=\n' > "$tmp/mal2.sh"
+  printf 'usuario;nombre\n' > "$tmp/mal.csv"
+  pre1="$( (cmd_install --sitio "$tmp/mal1.sh" --planilla "$tmp/dado.csv") 2>&1)"
+  pre2="$( (cmd_install --sitio "$tmp/mal2.sh" --planilla "$tmp/dado.csv") 2>&1)"
+  pre3="$( (cmd_install --sitio "$tmp/dado.sh" --planilla "$tmp/mal.csv") 2>&1)"
+  check "install --sitio: a quoted SITE_DEIS, an empty SITE_DOMINIO or a planilla without its header refuses before step 1" \
+    'case "$pre1" in *"SITE_DEIS=<código DEIS> (sin comillas)"*) ;; *) false;; esac && case "$pre2" in *"SITE_DOMINIO="*) ;; *) false;; esac && case "$pre3" in *"cabecera usuario;nombre;apellidos;correo;grupos;primer_admin"*) ;; *) false;; esac && case "$pre1$pre2$pre3" in *"Paso 1"*) false;; *) true;; esac'
+  install_out="$(
+    step_revisar()   { ok "revisar-stub"; echo "Pulling from somewhere" >&2; }
+    step_preparar()  { ok "preparar-stub"; }
+    step_descargar() { ok "descargar-stub"; }
+    silent_centro()  { ok "centro-stub"; }
+    silent_suite()   { ok "suite-stub"; }
+    silent_equipos() { ok "equipos-stub"; }
+    silent_ejecutar() { ok "ejecutar-stub"; }
+    silent_map_last() { ok "mapa-final-stub"; }
+    cmd_install --sitio "$tmp/dado.sh" --planilla "$tmp/dado.csv" </dev/null 2>&1
+  )"; rcs=$?
+  check "install --sitio: the same nine steps in order — the browser ones from the files, the map last — then the verdict" \
+    '[ "$rcs" -eq 0 ] && case "$install_out" in *"sin preguntas ni navegador"*"Paso 1 de 9"*"Paso 4 de 9"*"Mapa: se construye al final, con la suite en marcha."*"Paso 5 de 9"*"Sin instalador web: modo silencioso."*"Paso 6 de 9"*"centro-stub"*"Paso 7 de 9"*"suite-stub"*"Paso 8 de 9"*"equipos-stub"*"Paso 9 de 9"*"ejecutar-stub"*"mapa-final-stub"*"INSTALACIÓN: ✓"*"sudo cat /opt/aps-conecta/credentials.txt"*"aps-conecta revalidate (registro: $APS_HOME/instalacion.log)"*) ;; *) false;; esac && case "$install_out" in *"Enter para comenzar"*) false;; *) true;; esac'
+  check "install --sitio: a tool's own stderr goes to the log, never the console" \
+    'case "$install_out" in *"Pulling from"*) false;; *) true;; esac && grep -q "Pulling from somewhere" "$APS_HOME/instalacion.log"'
+  install_out="$(
+    step_revisar()   { ok "revisar-stub"; }
+    step_preparar()  { ok "preparar-stub"; }
+    step_descargar() { die "descargar-muere"; }
+    cmd_install --sitio "$tmp/dado.sh" --planilla "$tmp/dado.csv" </dev/null 2>&1
+  )"; rcs=$?
+  check "install --sitio: a fatal refusal still reaches the console, not the log" \
+    '[ "$rcs" -eq 1 ] && case "$install_out" in *"✗ descargar-muere"*) ;; *) false;; esac'
   step_out="$( (export ID_U=1000; cmd_install </dev/null) 2>&1)"; rcs=$?
   check "stepper: install without sudo refuses before the welcome, naming the command to run" \
     '[ "$rcs" -eq 1 ] && case "$step_out" in *"✗ la instalación necesita permisos de administrador: sudo bash aps-conecta install"*) ;; *) false;; esac && case "$step_out" in *"Paso 1 de 9"*) false;; *) true;; esac'
@@ -1593,6 +1734,58 @@ EOF
   echo 2 > "$tmp/prov.rc"
   out="$(reponer 2>&1)"; rc=$?
   check "reponer: the step's own exit code reaches systemd unchanged" '[ "$rc" -eq 2 ]'
+
+  # ── install --sitio: the browser steps are the provisionador's own --paso steps (the same stub) ──
+  SILENT_SITE="$tmp/dado/site.sh"; SILENT_ROSTER="$tmp/dado/usuarios.csv"
+  echo 0 > "$tmp/prov.rc"
+  silent_centro >/dev/null 2>&1; argv_c="$(cat "$tmp/prov.argv")"
+  silent_equipos >/dev/null 2>&1; argv_e="$(cat "$tmp/prov.argv")"
+  echo 1 > "$tmp/prov.rc"
+  silent_ejecutar >/dev/null 2>&1; rc=$?; argv_x="$(cat "$tmp/prov.argv")"
+  check "install --sitio: the browser steps run --paso sitio, usuarios and generar --resumen, the files passed through, the exit code kept" \
+    '[ "$argv_c" = "--paso sitio --archivo $tmp/dado/site.sh" ] && [ "$argv_e" = "--paso usuarios --codigo 113314 --planilla $tmp/dado/usuarios.csv" ] && [ "$argv_x" = "--paso generar --codigo 113314 --resumen" ] && [ "$rc" -eq 1 ]'
+  out="$(step_run "$(step_number abrir)" x 2>&1)"; rc=$?
+  check "install --sitio: «abrir» opens no web installer in silent mode — its step says so, nothing runs" \
+    '[ "$rc" -eq 0 ] && case "$out" in *"Paso 5 de 9"*"Resultado Sin instalador web: modo silencioso."*) ;; *) false;; esac'
+  mkdir -p "$tmp/hd"
+  printf '#!/usr/bin/env bash\necho "refresh-basemap: using x"\necho "Pulling from y" >&2\nexit "$(cat %s)"\n' "$tmp/tiles.rc" > "$tmp/hd/tiles.sh"
+  echo 0 > "$tmp/tiles.rc"
+  out="$(HOST_DIR="$tmp/hd"; FAIL=0; silent_map_last 2>"$tmp/map.err"; echo "FAIL=$FAIL")"
+  check "install --sitio: the map is built last, its own English output in the log and «Mapa listo» on the console" \
+    'case "$out" in *"✓ Mapa listo"*"FAIL=0"*) ;; *) false;; esac && case "$out" in *"refresh-basemap"*|*"Pulling"*) false;; *) true;; esac && grep -q "refresh-basemap: using x" "$tmp/map.err"'
+  echo 1 > "$tmp/tiles.rc"
+  out="$(HOST_DIR="$tmp/hd"; FAIL=0; silent_map_last 2>/dev/null; echo "FAIL=$FAIL")"
+  out2="$(APS_SKIP_MAP=1; HOST_DIR="$tmp/hd"; FAIL=0; silent_map_last 2>/dev/null; echo "FAIL=$FAIL")"
+  check "install --sitio: a failed map names the command that builds it; APS_SKIP_MAP=1 leaves it for later" \
+    'case "$out" in *"✗ el mapa no se construyó"*"sudo aps-conecta mapa"*"FAIL=1"*) ;; *) false;; esac && case "$out2" in *"mapa omitido"*"FAIL=0"*) ;; *) false;; esac'
+  out="$(site_domain() { :; }; FAIL=0; silent_suite 2>&1; echo "FAIL=$FAIL")"
+  out2="$(site_domain() { echo c.example; }; start_suite() { bad "suite-muere" "x"; return 1; }; FAIL=0; silent_suite 2>&1; echo "FAIL=$FAIL")"
+  out3="$(site_domain() { echo c.example; }; start_suite() { ok s; }; cmd_aio_wizard() { exit 1; }; FAIL=0; silent_suite >/dev/null 2>&1; echo "rc=$?")"
+  check "install --sitio: no SITE_DOMINIO, a suite that does not start, or a wizard that fails — each fails the suite step" \
+    'case "$out" in *"✗ el sitio no declara SITE_DOMINIO"*"FAIL=1"*) ;; *) false;; esac && case "$out2" in *"✗ suite-muere"*"FAIL=1"*) ;; *) false;; esac && [ "$out3" = "rc=1" ]'
+  SILENT_SITE=""; SILENT_ROSTER=""
+  cp "$tshim/docker" "$tmp/docker.prev"
+  cat > "$tshim/docker" <<SHIM
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$tmp/mc.argv"
+case "\$1" in ps) cat "$tmp/mc.ps" 2>/dev/null ;; esac
+exit 0
+SHIM
+  chmod +x "$tshim/docker"; : > "$tmp/mc.argv"; : > "$tmp/mc.ps"
+  if only_shims docker; then
+    out="$(APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 2>&1; echo "FAIL=$FAIL")"
+    check "install --sitio: an absent suite starts detached — the command preflight prints, at the file's own tag" \
+      'grep -q "^run -d --init --sig-proxy=false --name nextcloud-aio-mastercontainer .*--env APACHE_PORT=443 .*ghcr.io/aps-conecta/all-in-one:v9.9.9\$" "$tmp/mc.argv" && case "$out" in *"✓ Suite iniciada: ghcr.io/aps-conecta/all-in-one:v9.9.9"*"FAIL=0"*) ;; *) false;; esac'
+    printf '%s\n' "nextcloud-aio-mastercontainer running" > "$tmp/mc.ps"; : > "$tmp/mc.argv"
+    out="$(APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 2>&1; echo "FAIL=$FAIL")"
+    check "install --sitio: a running suite is not started again" \
+      '! grep -q "^run" "$tmp/mc.argv" && case "$out" in *"✓ La suite ya está iniciada"*"FAIL=0"*) ;; *) false;; esac'
+    : > "$tmp/mc.ps"
+    out="$(APS_SUITE_TAG="v1;touch $tmp/pwned"; FAIL=0; start_suite 2>&1; echo "FAIL=$FAIL")"
+    check "install --sitio: an unreadable version is refused before docker run — nothing it carries is evaluated" \
+      '! grep -q "^run" "$tmp/mc.argv" && [ ! -e "$tmp/pwned" ] && case "$out" in *"FAIL=1"*) ;; *) false;; esac'
+  fi
+  cp "$tmp/docker.prev" "$tshim/docker"
 
   # the revalidate arm (slice 20): three stub gate scripts under a fixture root — the
   # aggregation + the exit contract, never first-fail. The command substitution scopes the
