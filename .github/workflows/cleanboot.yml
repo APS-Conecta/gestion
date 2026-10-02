@@ -112,6 +112,8 @@ jobs:
       AIO_TEST_APACHE_PORT: "11000"
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the tags: the install reads its own version from them (suite_tag)
       # The probe bed FIRST, so a harness preflight failure (RAM, ports, ghcr reachability) is
       # the first thing a red log shows. Every wait inside is bounded, and `up` ends in its own
       # port gate — the runner never claims 80/443, and :8080 is the only publish.
@@ -134,19 +136,17 @@ jobs:
       # the four secrets are produced, and it cannot be tested on a dev box that already has an
       # env file. A clean runner is the one environment where the create path actually runs.
       - run: make setup
-      # No establishment ships, so this is not merely a test of the `--new` path — it IS the
-      # install path every operator walks, and this job is where it is proven. Piped answers
-      # stand in for the operator's; the appended SITE line wins over anything .env.example
-      # says, because env.sh takes the last assignment it reads.
-      - name: Choose an establishment, the way an operator would
+      # No establishment ships: the site and the planilla a clinic brings are generated here, at run
+      # time, and handed to the silent install the way an operator hands them over. Piped answers
+      # stand in for the operator's; deis.py writes into sites/, so its file is moved out — the
+      # install's own «centro» step places it back (a7).
+      - name: The site and the planilla a clinic brings
         run: |
-          # A deterministic pick over the register, not a fixed code (FINDINGS P2 — the slice-20
-          # fence carries the design's literal; the on-disk file keeps the pick machinery, the
-          # same P2 resolution): every clinic in the register is a valid install, and CI booting
-          # the same one every time is a fixture that steers — and names a real clinic in a
-          # public log. sha256 over the sorted codes makes the pick stable per register content,
-          # and satisfies the establishment-agnostic gate (ADR-0013): no tracked file may hand
-          # deis.py a DEIS code — a literal here reddens `make test` (AGNOSTIC_SHAPE).
+          # A deterministic pick over the register, not a fixed code (FINDINGS P2): every clinic in
+          # the register is a valid install, and CI booting the same one every time is a fixture
+          # that steers — and names a real clinic in a public log. sha256 over the sorted codes
+          # makes the pick stable per register content, and satisfies the establishment-agnostic
+          # gate (ADR-0013): no tracked file may hand deis.py a DEIS code (AGNOSTIC_SHAPE).
           pick=$(python3 - <<'PY'
           import csv, glob, hashlib, sys
           files = sorted(glob.glob("sites/establecimientos-deis-*.csv"))
@@ -167,18 +167,31 @@ jobs:
           echo "cleanboot: register pick — DEIS $code: ${pick#*$'\t'}"
           # The piped answers are generic by construction — ask() always asks sectors then
           # programs, for every tipo — so they survive the moving pick unchanged.
-          printf 'Sector 1\nSector 2\n\nSalud Mental\nInfantil\n\n' | scripts/deis.py "$code" --new ci
-          echo "SITE=ci" >> .env
-          # Establishment-local roles (#103). deis.py writes SITE_ROLES empty by design — most
-          # establishments add nothing beyond the shared registry — so the create path would
-          # never execute anywhere if CI did not append one here. One of each kind on purpose: a
-          # jefatura, which must ALSO produce a standing account, and a technical role, which
-          # must not.
-          cat >> sites/ci/site.sh <<'ROLES'
-          SITE_ROLES+=( "role-jefe-sar|Jefe/a de SAR|cat-jefaturas" "role-tens-sar|TENS – SAR|cat-tecnicos" )
-          ROLES
+          printf 'Sector 1\nSector 2\n\nSalud Mental\nInfantil\n\n' | scripts/deis.py "$code" --new "$code"
+          mv "sites/$code/site.sh" "$RUNNER_TEMP/site.sh" && rmdir "sites/$code"
+          # The probe's domain, and the establishment-local roles (#103). deis.py writes both empty
+          # by design, so the create path would never run anywhere if CI did not add them. One of
+          # each kind on purpose: a jefatura, which must ALSO produce a standing account, and a
+          # technical role, which must not. Written in the array shape the Provisionador reads.
+          python3 - "$RUNNER_TEMP/site.sh" "$AIO_TEST_DOMAIN" <<'PY'
+          import sys
+          path, domain = sys.argv[1:3]
+          text = open(path, encoding="utf-8").read()
+          assert text.count('SITE_DOMINIO=""') == 1 and text.count("SITE_ROLES=()") == 1, path
+          text = text.replace('SITE_DOMINIO=""', f'SITE_DOMINIO="{domain}"').replace(
+              "SITE_ROLES=()", 'SITE_ROLES=(\n  "role-jefe-sar|Jefe/a de SAR|cat-jefaturas"\n'
+              '  "role-tens-sar|TENS – SAR|cat-tecnicos"\n)')
+          open(path, "w", encoding="utf-8").write(text)
+          PY
+          # Two people, one per kind of role — a shared one and the site's own technical one — and
+          # one of them the first administrator. Generic names: nothing identifies the clinic.
+          cat > "$RUNNER_TEMP/usuarios.csv" <<'PLANILLA'
+          usuario;nombre;apellidos;correo;grupos;primer_admin
+          ana.prueba;Ana;Prueba Uno;;role-medico;si
+          beto.prueba;Beto;Prueba Dos;;role-tens-sar;no
+          PLANILLA
       # The probe's own surfaces, appended AFTER `make setup` so they win (env.sh takes the last
-      # assignment it reads — the same rule the SITE line above rides):
+      # assignment it reads); the install's env_converge adds SITE and leaves these alone:
       #   HTTP_PORT → the loopback apache, where every one of smoke's curls lands;
       #   OFFICE_PUBLIC_URL → the entrypoint's own DocumentServerUrl value (see the env note);
       #   TILES_PUBLIC_URL → the basemap on the probe's own domain, the same-origin /tiles/ shape
@@ -189,12 +202,47 @@ jobs:
           echo "HTTP_PORT=${AIO_TEST_APACHE_PORT}" >> .env
           echo "OFFICE_PUBLIC_URL=https://${AIO_TEST_DOMAIN}/eurooffice" >> .env
           echo "TILES_PUBLIC_URL=https://${AIO_TEST_DOMAIN}/tiles/chile.pmtiles" >> .env
-      # The whole provisioning pipeline, exactly as an operator runs it after the wizard starts
-      # the containers. The harness's bounded waits own what `make up` used to own on compose —
-      # the instance is installed and quiesced before this step runs. This is also the path
-      # nothing else exercises: every query-before-set guard meets a key that does not exist
-      # yet, and 12-apps applies its patches for real.
-      - run: make install
+      # THE SILENT INSTALL (a6, a7): the command a clinic runs, as root, with no terminal — all nine
+      # steps, the seed with its gate included. The probe's suite is already up (the testbed above),
+      # so «suite» finds it running and drives nothing; AIO_STATE is the testbed's wizard state.
+      # Probe knobs only: the 1,1 GB basemap stays out (the gates read the TILES_PUBLIC_URL string,
+      # B-033), and the disk floor fits the runner. Root's writes in the checkout go back to the
+      # runner for the gates below.
+      - name: Install through the silent command a clinic runs
+        run: |
+          sudo env "PATH=$PATH" APS_SKIP_MAP=1 MIN_DISK_GB=2 AIO_STATE=/tmp/aio-testbed \
+            bash host/aps-conecta install --sitio "$RUNNER_TEMP/site.sh" --planilla "$RUNNER_TEMP/usuarios.csv" \
+            < /dev/null | tee "$RUNNER_TEMP/install.out"
+          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+      # a7's console contract on the real run — a5's two checks over what the operator saw: the
+      # verdict, no internals, no English (every tool's own output went to the install's log)
+      - name: The silent install printed only Spanish lines
+        run: |
+          out="$RUNNER_TEMP/install.out"
+          grep -q '^INSTALACIÓN: ✓' "$out"
+          ! grep -nE '^[[:space:]]*#|set -uo|readlink|HOST_DIR|\$\{|\bslice\b|\bFRD\b|\bB-[0-9]{3}\b|\bR[0-9]{1,2}\b|\bD[0-9]{1,2}\b|#[0-9]{2,}' "$out"
+          ! grep -niwE 'the|failed|not found|warning|missing|usage|error|pulling|phase' "$out"
+      # a8, on the instance the silent install left: every planilla user is in all-staff and the
+      # category of their role, and every cargo account has its own sealed first password
+      - name: The planilla landed by role, and each cargo has its own password
+        run: |
+          source scripts/env.sh
+          occ group:list --output=json > "$RUNNER_TEMP/groups.json"
+          python3 - "$RUNNER_TEMP/groups.json" <<'PY'
+          import json, sys
+          groups = json.load(open(sys.argv[1], encoding="utf-8"))
+          for uid, cat in (("ana.prueba", "cat-clinicos"), ("beto.prueba", "cat-tecnicos")):
+              assert uid in groups["all-staff"] and uid in groups[cat], f"{uid} not in all-staff + {cat}"
+          PY
+          sudo python3 - <<'PY'
+          import csv
+          with open("/opt/aps-conecta/credentials.txt", encoding="utf-8") as fh:
+              rows = [r for r in csv.reader(fh, delimiter=";") if r and not r[0].startswith("#") and r[0] != "usuario"]
+          cargos = [r for r in rows if r[1].startswith("Cargo ")]
+          assert len(cargos) >= 5, f"{len(cargos)} cargo rows"
+          assert len({r[2] for r in rows}) == len(rows), "two accounts share a password"
+          print(f"credentials: {len(rows)} rows, {len(cargos)} cargos, every password distinct")
+          PY
       # Paired with the SITE_ROLES appended above (#103), because "the seed did not crash" is
       # not the same as "the roles landed". Asserts both halves of the rule: a cat-jefaturas
       # role is a POSITION and gets a standing account; a cat-tecnicos one is a job title held
@@ -231,8 +279,8 @@ jobs:
       - run: make seed-idempotent
       # THE HANDOFF CONTRACT (S8's acceptance): divergence-empty on a clean install, users
       # included — the gate-only domain (slice 5). The gate reads the declared set (the SITE_
-      # ROSTER roster — legitimately absent on this install, an operator that never ran the
-      # Provisionador has no roster — the standings re-derived from sites/ci/site.sh, and the
+      # ROSTER roster the silent install loaded — the standings re-derived from the site it placed
+      # at sites/<DEIS>/site.sh, and the
       # install's own admin) and the live set in-container, and exits 1 on ANY note: drift,
       # parser rot, transport rot. A green here is the FRD's S8 line, in CI, on a real install.
       - name: Divergence gate — the clean install's handoff contract
@@ -302,6 +350,7 @@ jobs:
         run: |
           docker ps -a --filter name=nextcloud-aio- --format 'table {{.Names}}\t{{.Status}}'
           docker logs --tail=100 nextcloud-aio-nextcloud
+          sudo tail -n 100 /opt/aps-conecta/instalacion.log || true
       # `make install` prints phase names and sends the detail to .install.log, so without this
       # the one job that exists to catch a broken install cannot show what broke — #96 was
       # diagnosed only after adding it. include-hidden-files because .install.log is a dotfile

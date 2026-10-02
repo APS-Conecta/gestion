@@ -412,8 +412,8 @@ check_hairpin() {  # the D10 leg (upstream #8433): the HOST curls its own public
 # Each body prints ✓/✗ lines through ok/bad and returns; step_run reads FAIL. Later laps
 # replace bodies (L2 S2: «preparar» and «descargar» install instead of verify; L5: «mapa» before
 # the centre; L3: «abrir» hands over a one-time link), never the list.
-MIN_RAM_GIB=8                         # the approved Instalador UI's floors (stage V)
-MIN_DISK_GB=40
+MIN_RAM_GIB="${MIN_RAM_GIB:-8}"       # the approved Instalador UI's floors (stage V); only a
+MIN_DISK_GB="${MIN_DISK_GB:-40}"      # probe lowers them (Clean boot's runner has ~14 GB free)
 MEMINFO="${MEMINFO:-/proc/meminfo}"   # the self-test points it at a fixture
 ETC_DIR="${ETC_DIR:-/etc}"            # the self-test points it at a scratch tree: the arms that
                                       # install never write the real /etc
