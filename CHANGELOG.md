@@ -36,6 +36,17 @@ image digests live there and are deliberately not copied here — one fact, one 
     The choice can change until the site file is written.
   - One install, one establishment holds at every door: the browser's site step now refuses a
     second centre with 409, as the silent install already did. `/api/deis` is gone.
+- **«Cargar equipos y personas» in one screen** (L3 S3).
+  - Sectores and programas one per line, with the group code each derives shown underneath.
+  - Saving different teams answers with what is new and what goes. «Reemplazar» rewrites the
+    teams, folders and grants and keeps the rest of the site file. It is never a silent success.
+  - The planilla:
+    - a template built for the centre (`/api/plantilla`) that uploads back clean;
+    - every error at once, in clinic words;
+    - the valid groups listed when one is unknown;
+    - `sí` as the admin flag.
+  - The old sectores, componentes and planilla screens are gone. `--paso usuarios` prints a
+    whole-file error with no line number, and lists the valid groups.
 - **`aps-conecta estado`** — the last execution's verdict, each item with its fix, in Spanish, with
   no sudo (`/opt/aps-conecta/estado.txt`, 0644, written by every execution — the installer's, the
   silent install's and the weekly one). When the weekly re-provision finds drift or does not finish,

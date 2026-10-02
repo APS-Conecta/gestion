@@ -89,9 +89,10 @@ certificate, which it signs with OpenSSL 3 (Ubuntu 22.04+, Debian 12+; an older 
   certificate, L4, hangs from it). The leaf is re-signed for the link's address on every start.
 - **One installer at a time.** A second `abrir` while one is open is refused, naming the port.
 
-The browser flow — the centre (Región › Comuna › Tipo, or a search), the suite's containers,
-sectors/programs, the all-on components, the users CSV, review, execute — is walked step by step in
-[`GUIA-CLINICA.md`](GUIA-CLINICA.md) §4–6. The pages follow the registry's steps 6–9 (`aps-conecta pasos`).
+The browser flow — the centre (Región › Comuna › Tipo, or a search), the suite's containers, the
+teams and the users CSV (one screen, with the centre's own template), review, execute — is walked
+step by step in [`GUIA-CLINICA.md`](GUIA-CLINICA.md) §4–6. The pages follow the registry's steps
+6–9 (`aps-conecta pasos`).
 
 When «Revisar y ejecutar» comes back green, the installer closes itself: the port closes and the
 link stops working. The console then wires the timers (§6) and prints «Listo». Ctrl+C before that
