@@ -357,6 +357,30 @@ jobs:
           OC_PASS="$NEXTCLOUD_ADMIN_PASSWORD" nc_exec -e OC_PASS --user www-data -- \
             php /var/www/html/occ user:resetpassword --password-from-env "$NEXTCLOUD_ADMIN_USER"
       - run: make test
+      # a10 on the real weekly path, last (it re-runs the seed as the timer would): a hand-added group
+      # is drift — the unit fails, «aps-conecta estado» names the item and its fix without sudo, and the
+      # admin's notifications carry it; the group is removed afterwards
+      - name: A weekly drift reaches «aps-conecta estado» and the admin
+        run: |
+          source scripts/env.sh
+          occ group:add deriva-prueba >/dev/null
+          if sudo systemctl start aps-conecta.service; then
+            echo "FAIL: the weekly unit passed on a drifted instance" >&2; exit 1
+          fi
+          sudo journalctl -u aps-conecta.service --no-pager -n 40
+          if aps-conecta estado > "$RUNNER_TEMP/estado.out"; then
+            echo "FAIL: estado exited 0 on a drifted instance" >&2; exit 1
+          fi
+          cat "$RUNNER_TEMP/estado.out"
+          grep -q '✗ deriva' "$RUNNER_TEMP/estado.out"
+          grep -q "el grupo 'deriva-prueba' existe pero no está declarado" "$RUNNER_TEMP/estado.out"
+          grep -q "occ group:delete deriva-prueba" "$RUNNER_TEMP/estado.out"
+          curl -fsS -u "${NEXTCLOUD_ADMIN_USER:-admin}:${NEXTCLOUD_ADMIN_PASSWORD}" -H 'OCS-APIRequest: true' \
+            "http://localhost:${HTTP_PORT}/ocs/v2.php/apps/notifications/api/v2/notifications?format=json" \
+            | grep -q 'deriva-prueba' || { echo "FAIL: the admin has no notification naming the drift" >&2; exit 1; }
+          occ group:delete deriva-prueba >/dev/null
+          # the unit ran as root against this checkout: hand it back, as after the install
+          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
       # No compose context exists on this runner anymore: the probe's logs come from docker
       # itself, and the container listing is what shows a sibling that never converged.
       - name: Logs on failure

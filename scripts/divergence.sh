@@ -82,7 +82,7 @@ note() { notes+=("$1"); }
 # contract does not change); gate mode fails on it, which is the parser-rot rule applied to the
 # transport itself.
 occ status >/dev/null 2>&1 \
-  || note "cannot see the instance — every empty domain below would be blindness, not cleanliness; fix the stack before reading this answer"
+  || note "no se ve la instancia — una lista vacía aquí sería ceguera, no limpieza; ponga la suite en marcha antes de leer este resultado"
 
 
 # --- group folders: SITE_FOLDERS is the whole declared set ---
@@ -108,10 +108,10 @@ while IFS=$'\t' read -r fid mount; do
   # ADR-0020) or the name it was told before IV_MOUNT changed — holds every page: the generic
   # advice below would say to delete it. Point at the rename instead.
   if [ "$mount" = IntraVox ] || { [ -n "$iv_told" ] && [ "$mount" = "$iv_told" ]; }; then
-    note "group folder '$mount' is the welcome screen's storage root under a name other than the declared '$IV_MOUNT' — it holds every page: rename it once (docs/WELCOME-SCREEN.md → Renaming the storage folder on an existing install), never delete it; the seed refuses to run until then"
+    note "la carpeta compartida '$mount' guarda la portada con un nombre distinto del declarado '$IV_MOUNT' — contiene todas las páginas: cámbiele el nombre una vez (docs/WELCOME-SCREEN.md), nunca la borre; la preparación no corre hasta entonces"
     continue
   fi
-  note "group folder '$mount' is live but not in SITE_FOLDERS — it still holds its files; remove it deliberately with 'occ groupfolders:delete $fid' if that is intended"
+  note "la carpeta compartida '$mount' existe pero no está en SITE_FOLDERS — conserva sus archivos; elimínela a propósito con 'occ groupfolders:delete $fid' si es lo que quiere"
 done <<< "$live_folders"
 
 # --- welcome sections: SITE_WELCOME is the declared set (phase 41, ADR-0019) ---
@@ -125,7 +125,7 @@ iv_fid="$(printf '%s\n' "$live_folders" | awk -F'\t' -v m="$IV_MOUNT" '$2==m{pri
 if [ -n "$iv_fid" ]; then
   datadir="$(occ config:system:get datadirectory 2>/dev/null | tr -d '\r' || true)"
   # unresolved = blindness (B-014): the listing below would cd nowhere and answer "no sections"
-  [ -n "$datadir" ] || note "cannot check welcome sections: occ answered no datadirectory — an empty list here would be blindness, not cleanliness"
+  [ -n "$datadir" ] || note "no se pudieron revisar las secciones de la portada: occ no informó datadirectory — una lista vacía aquí sería ceguera, no limpieza"
   declared_sections="$(for e in "${SITE_WELCOME[@]}"; do printf '%s\n' "${e%%|*}"; done)"
   live_sections="$(nc_exec --user www-data -- sh -c '
     cd "$1/__groupfolders/$2/files/es" 2>/dev/null || exit 0
@@ -133,7 +133,7 @@ if [ -n "$iv_fid" ]; then
   while read -r sec; do
     [ -n "$sec" ] || continue
     printf '%s\n' "$declared_sections" | grep -qxF -- "$sec" && continue
-    note "welcome section '$sec' is live in the IntraVox group folder but not in SITE_WELCOME — staff content is kept; delete es/$sec (and its ACL rules) deliberately if that is intended"
+    note "la sección de portada '$sec' existe en la carpeta de IntraVox pero no en SITE_WELCOME — el contenido del personal se conserva; elimine es/$sec (y sus reglas de acceso) a propósito si es lo que quiere"
   done <<< "$live_sections"
 fi
 
@@ -147,7 +147,7 @@ declared_shared="$( { sed -n 's/^ *"\(\(role\|cat\)-[a-z0-9-]*\)|.*/\1/p' "$PHAS
                      sed -n 's/^ensure_group \([a-z0-9-]*\).*/\1/p' "$PHASE20"; } | sort -u )"
 shared_count="$(printf '%s\n' "$declared_shared" | grep -c . || true)"
 if [ "$shared_count" -lt 20 ]; then
-  note "cannot check groups: only $shared_count declared groups parsed out of $PHASE20 (expected 27+). Its shape changed — fix the two sed expressions in $0 before trusting this report"
+  note "no se pudieron revisar los grupos: solo $shared_count grupos declarados se leyeron de $PHASE20 (se esperan 27 o más) — cambió de forma; corrija las dos expresiones sed de $0 antes de confiar en este resultado"
 else
   # The three engine groups (D5) join the declared set the same way: created by intravox:setup,
   # membership mapped by phases 41 and 50 (lib.sh intravox_group_map) — not registry vocabulary,
@@ -172,7 +172,7 @@ for g in (d.keys() if isinstance(d, dict) else d): print(g)
     [ -n "$gid" ] || continue
     # Named, not deleted: a group that is a group folder's only grantee strands that folder when
     # removed, which is the one way "delete a group" reaches files without touching them.
-    note "group '$gid' is live but not declared in SITE_TEAMS, SITE_ROLES or $PHASE20 — check it is not a group folder's only grantee before 'occ group:delete $gid'"
+    note "el grupo '$gid' existe pero no está declarado en SITE_TEAMS, SITE_ROLES ni $PHASE20 — revise que no sea el único con acceso a una carpeta compartida antes de 'occ group:delete $gid'"
   done <<< "$extra_groups"
 fi
 
@@ -206,12 +206,12 @@ apps_list="$( { sed -n 's/^APPS="\(.*\)"/\1/p' "$PHASE12"
 tarballed="$(cd provisioning/apps 2>/dev/null && for d in */; do printf '%s\n' "${d%/}"; done)"
 declared_apps="$(printf '%s\n' "$apps_list" | grep -c . || true)"
 if [ "$declared_apps" -eq 0 ]; then
-  note "cannot check apps: no APPS= line parsed out of $PHASE12"
+  note "no se pudieron revisar las aplicaciones: $PHASE12 no trae la línea APPS="
 else
   while IFS= read -r a; do
     [ -n "${a:-}" ] || continue
     printf '%s\n' "$apps_list" "$tarballed" | grep -qxF -- "$a" && continue
-    note "app '$a' is unpacked in custom_apps but nothing declares it — not in APPS, OWN_APPS, LAB_APPS or provisioning/apps/ — provisioning will not reproduce it on a clean install"
+    note "la aplicación '$a' está en custom_apps pero nada la declara — ni APPS, ni OWN_APPS, ni LAB_APPS, ni provisioning/apps/ — una instalación limpia no la reproduce"
   done <<< "$(nc_exec --user www-data -- sh -c 'cd /var/www/html/custom_apps 2>/dev/null && for d in */; do printf "%s\n" "${d%/}"; done' 2>/dev/null || true)"
 fi
 
@@ -242,9 +242,9 @@ with open(sys.argv[1], encoding="utf-8-sig", newline="") as fh:
         u = (row.get("usuario") or "").strip()
         if u: print(u)
 ' "$SITE_ROSTER" 2>/dev/null)" \
-        || note "cannot check users: '$SITE_ROSTER' has no usuario column — the declared set is incomplete; fix the roster"
+        || note "no se pudieron revisar los usuarios: '$SITE_ROSTER' no tiene la columna usuario — lo declarado está incompleto; corrija la planilla"
     else
-      note "cannot check users: SITE_ROSTER names '$SITE_ROSTER' which cannot be read — the declared set is incomplete; fix the path in sites/$SITE/site.sh"
+      note "no se pudieron revisar los usuarios: SITE_ROSTER nombra '$SITE_ROSTER', que no se puede leer — lo declarado está incompleto; corrija la ruta en sites/$SITE/site.sh"
     fi
   fi
   # org L5-11: the standing half comes from provisioning/standings.sh — the one derivation,
@@ -270,7 +270,7 @@ for u in (d.keys() if isinstance(d, dict) else d): print(u)
 ' | grep -vxF -f <(printf '%s\n' "$declared_users") || true)"
   while read -r uid; do
     [ -n "$uid" ] || continue
-    note "user '$uid' is live but not declared — not in the roster, not a phase 50 standing account, not the install admin; deleting a user deletes their files, so remove deliberately with 'occ user:delete $uid' if that is intended"
+    note "el usuario '$uid' existe pero no está declarado — ni en la planilla, ni es cuenta de cargo, ni el administrador de la instalación; eliminar un usuario elimina sus archivos: hágalo a propósito con 'occ user:delete $uid' si es lo que quiere"
   done <<< "$extra_users"
 fi
 
@@ -284,7 +284,7 @@ fi
 # of these rows (ComunaConfig::set), so a deliberate re-choice appears here exactly like a
 # hand-edited site file does.
 if [ -z "${SITE_COMUNA_CUT:-}" ]; then
-  note "sites/$SITE/site.sh carries no SITE_COMUNA_CUT — phase 16 fails loudly until the file is regenerated (scripts/deis.py <codigo> --new <slug>)"
+  note "sites/$SITE/site.sh no trae SITE_COMUNA_CUT — la fase 16 falla hasta regenerar el archivo (scripts/deis.py <codigo> --new <slug>)"
 elif ! occ status >/dev/null 2>&1; then
   # "could not ask" is not "not present" (#143): config:app:get also exits 1 for an ABSENT
   # key (measured on the live stack), so the reads below must not read its exit code as
@@ -292,12 +292,12 @@ elif ! occ status >/dev/null 2>&1; then
   # an absent key lands as the empty string — which is exactly the drift this section
   # exists to name, and a section that cannot tell an absent key from a broken occ is a
   # section that reports nothing on the install that needs it most.
-  note "cannot read territorio's comuna keys — occ did not answer; nothing was checked"
+  note "no se pudieron leer las claves de comuna de territorio — occ no respondió; no se revisó nada"
 else
   have="$(occ config:app:get territorio comuna_cut 2>/dev/null || true)"
-  [ "$have" = "$SITE_COMUNA_CUT" ] || note "territorio comuna_cut is '${have:-<unset>}' but sites/$SITE/site.sh says '$SITE_COMUNA_CUT' — make install re-converges it, or the admin UI re-chooses the comuna deliberately"
+  [ "$have" = "$SITE_COMUNA_CUT" ] || note "territorio comuna_cut es '${have:-<sin valor>}' pero sites/$SITE/site.sh dice '$SITE_COMUNA_CUT' — la re-provisión lo vuelve a converger, o el administrador elige la comuna a propósito"
   have="$(occ config:app:get territorio comuna_name 2>/dev/null || true)"
-  [ "$have" = "${SITE_COMUNA:-}" ] || note "territorio comuna_name is '${have:-<unset>}' but sites/$SITE/site.sh says '${SITE_COMUNA:-}' — make install re-converges it"
+  [ "$have" = "${SITE_COMUNA:-}" ] || note "territorio comuna_name es '${have:-<sin valor>}' pero sites/$SITE/site.sh dice '${SITE_COMUNA:-}' — la re-provisión lo vuelve a converger"
 fi
 
 # --- estadistica's establishment: identity in app config, checked against the site file ---
@@ -307,18 +307,18 @@ fi
 # site file edited after the last install. Checked whether the app is installed or not: phase 16
 # writes the keys either way.
 if [ -z "${SITE_DEIS:-}" ]; then
-  note "sites/$SITE/site.sh carries no SITE_DEIS — phase 16 fails loudly until the file is regenerated (scripts/deis.py <codigo> --new <slug>)"
+  note "sites/$SITE/site.sh no trae SITE_DEIS — la fase 16 falla hasta regenerar el archivo (scripts/deis.py <codigo> --new <slug>)"
 elif ! occ status >/dev/null 2>&1; then
-  note "cannot read estadistica's establishment keys — occ did not answer; nothing was checked"
+  note "no se pudieron leer las claves del establecimiento en estadistica — occ no respondió; no se revisó nada"
 else
   for pair in "deis_code=$SITE_DEIS" "establishment_type=${SITE_TIPO:-}" "comuna_cut=${SITE_COMUNA_CUT:-}"; do
     have="$(occ config:app:get estadistica "${pair%%=*}" 2>/dev/null || true)"
-    [ "$have" = "${pair#*=}" ] || note "estadistica ${pair%%=*} is '${have:-<unset>}' but sites/$SITE/site.sh says '${pair#*=}' — make install re-converges it"
+    [ "$have" = "${pair#*=}" ] || note "estadistica ${pair%%=*} es '${have:-<sin valor>}' pero sites/$SITE/site.sh dice '${pair#*=}' — la re-provisión lo vuelve a converger"
   done
 fi
 
 if [ "${#notes[@]}" -eq 0 ]; then
-  [ "$quiet" -eq 1 ] || echo "  nothing live that the repo does not declare"
+  [ "$quiet" -eq 1 ] || echo "  nada en la instancia que el repositorio no declare"
   exit 0
 fi
 
@@ -326,10 +326,10 @@ fi
 # report exists so the decision is visible on the next install, not so anyone feels told off.
 # Gate mode is the one place a banner is the point: the consumer's contract is exit-code-first, and
 # a red run that ends without saying so is a red run nobody diagnoses.
-printf '\n  live on this instance, not declared in the repo:\n'
+printf '\n  en esta instancia, sin declarar en el repositorio:\n'
 printf '    %s\n' "${notes[@]}"
 if [ "$gate" -eq 1 ]; then
-  printf '\n  GATE: FAIL — the handoff is clean only when this list is empty; resolve or declare every item above\n'
+  printf '\n  DIVERGENCIA: ✗ — la entrega queda limpia solo con esta lista vacía; resuelva o declare cada elemento de arriba\n'
   exit 1
 fi
 exit 0

@@ -95,6 +95,7 @@ PHASE20 = os.path.join(HERE, "..", "provisioning", "phases", "20-groups.sh")
 # Where the sealed credentials sheet lives (FRD S5; the host bundle's directory — S7 wires
 # /opt/aps-conecta into backups). The self-test redirects it; this default is the only literal.
 CRED_PATH = "/opt/aps-conecta/credentials.txt"
+ESTADO_PATH = "/opt/aps-conecta/estado.txt"   # the last execution's verdict (a10): 0644, «aps-conecta estado»
 SEAL_BYTES = 12  # 24 hex chars — env-init's FIXTURE_USER_PASSWORD size, the human-typed precedent
 # The seal is a read-modify-write over one shared file, and the server is threaded: two
 # concurrent /api/usuarios posts (a double-submit is one double-click away) would share the
@@ -824,7 +825,56 @@ def api_usuarios(payload):
                  "contrasenas_nuevas": fresh, "contrasenas_selladas": sealed}
 
 
+def why(e):  # the OS's own text is English: the common cases in Spanish, else the errno name
+    return {errno.ENOENT: "no existe", errno.EACCES: "sin permiso", errno.EISDIR: "es un directorio",
+            errno.ENOSPC: "disco lleno"}.get(e.errno, errno.errorcode.get(e.errno, "error de archivo"))
+
+
+def record_state(body):
+    """The last execution's verdict, for «aps-conecta estado» and the admins' notification (a10): a
+    head line — the time in Santiago and the verdict — then each item with its fix (the gate's own
+    Spanish lines), or the cause of a run that stopped before the gate. 0644 and whole (tmp, then
+    rename): readable without sudo, never half a state."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    if body.get("divergencia_vacia"):
+        head, items = "✓ la instancia coincide con lo declarado", []
+    elif "divergencia_vacia" in body:
+        head = "✗ deriva: la instancia tiene lo que no se declaró"
+        items = [ln[4:] for ln in body.get("divergencia", "").splitlines()
+                 if ln.startswith("    ") and not ln.startswith("     ")]
+        if not items:  # the gate stopped before its list (a FATAL): its own last lines are the cause
+            head = "✗ la revisión de divergencia no terminó"
+            items = [ln.strip() for ln in body.get("divergencia", "").splitlines() if ln.strip()][-3:]
+    else:
+        head, items = "✗ la ejecución no terminó", [body.get("error", "")]
+    when = datetime.now(ZoneInfo("America/Santiago")).strftime("%Y-%m-%d %H:%M")
+    text = f"{when} (hora de Santiago) · {head}\n" + "".join(f"  · {i}\n" for i in items if i)
+    os.makedirs(os.path.dirname(ESTADO_PATH), exist_ok=True)
+    with open(ESTADO_PATH + ".tmp", "w", encoding="utf-8") as fh:
+        fh.write(text)
+    os.chmod(ESTADO_PATH + ".tmp", 0o644)
+    os.replace(ESTADO_PATH + ".tmp", ESTADO_PATH)
+
+
 def api_generar(payload):
+    """POST /api/generar — the step itself is _api_generar. An execution that ran (its output is in
+    the body) also leaves its verdict in ESTADO_PATH, whoever ran it: the web installer, the silent
+    install or the weekly timer (a10)."""
+    status, body = _api_generar(payload)
+    # a refusal before the run is a red run too (its cause is the record); another run in progress
+    # is not this instance's state
+    if payload.get("modo") == "ejecutar" and ("salida" in body or (status != 200 and "en curso" not in
+                                                                    body.get("error", ""))):
+        try:
+            record_state(body)
+        except Exception as e:  # the file mirrors the verdict; the verdict itself stands
+            print(f"  ✗ no se pudo escribir {ESTADO_PATH} "
+                  f"({why(e) if isinstance(e, OSError) else type(e).__name__})", file=sys.stderr)
+    return status, body
+
+
+def _api_generar(payload):
     """POST /api/generar {"codigo", "modo": "revision"|"ejecutar"} — the FRD's review/dry-run AND
     the executor, one endpoint (the FRD's four-endpoint budget; slice 15's R1 reconciliation
     owns it here). Both modes re-derive the whole world first — site, registry universe, the
@@ -1752,10 +1802,6 @@ def run_step(argv):
         print(f"✗ {' '.join(sorted(extra))} no aplica a --paso {step}")
         return 2
 
-    def why(e):  # the OS's own text is English: the common cases in Spanish, else the errno name
-        return {errno.ENOENT: "no existe", errno.EACCES: "sin permiso", errno.EISDIR: "es un directorio",
-                errno.ENOSPC: "disco lleno"}.get(e.errno, errno.errorcode.get(e.errno, "error de archivo"))
-
     def call(fn, payload):  # a file error is a Spanish ✗ line, not a traceback in the journal
         try:
             return fn(payload)
@@ -1839,7 +1885,7 @@ def selftest():
     real sites/ is never touched. The HTTP checks are real round-trips against a real server on an
     OS-assigned port — urllib, no frameworks. Every check is named and counted; a failure prints the
     list and exits 1 (B-014: a gate that cannot go red is not a gate)."""
-    global TOKEN, SNAPSHOT, ROWS, CRED_PATH, PHASE20
+    global TOKEN, SNAPSHOT, ROWS, CRED_PATH, PHASE20, ESTADO_PATH
     n = 0
     bad = []
 
@@ -2038,6 +2084,7 @@ def selftest():
             # registry file (repo content, read-only — the shared 27 are not site data) and is
             # swapped to a mangled copy only inside its own negative arm, restored immediately.
             CRED_PATH = os.path.join(tmp, "credenciales.txt")
+            ESTADO_PATH = os.path.join(tmp, "estado.txt")
 
             def planilla(*rows):
                 out = [";".join(ROSTER_HEADER)] + [";".join(r) for r in rows]
@@ -2515,6 +2562,10 @@ def selftest():
             st, body = api_generar({"codigo": "121567", "modo": "revision"})
             check("generar: a site without a roster answers 409 naming the planilla",
                   st == 409 and "no hay planilla cargada" in body.get("error", ""))
+            st, body = api_generar({"codigo": "121567", "modo": "ejecutar"})
+            check("estado: a run refused before it starts is red too — the record carries its cause (a10)",
+                  st == 409 and "· ✗ la ejecución no terminó\n  · no hay planilla cargada"
+                  in open(ESTADO_PATH, encoding="utf-8").read())
 
             roster_mia = os.path.join(deis.HERE, "..", "sites", "113314", "planilla-mia.csv")
             good_roster = open(roster_mia, encoding="utf-8").read()
@@ -2552,7 +2603,11 @@ def selftest():
                   st == 200 and body["ok"] and body["divergencia_vacia"]
                   and "14 phase(s) run" in body["salida"] and "== roster: 2 usuario(s) ==" in body["salida"]
                   and "user elena.diaz added to group admin" in body["salida"]
-                  and "nothing live that the repo does not declare" in body["divergencia"])
+                  and "nada en la instancia que el repositorio no declare" in body["divergencia"])
+            estado = open(ESTADO_PATH, encoding="utf-8").read()
+            check("estado: a green execution leaves its verdict, readable without sudo (0644), in Santiago time (a10)",
+                  re.match(r"\d{4}-\d\d-\d\d \d\d:\d\d \(hora de Santiago\) · ✓ la instancia coincide con lo declarado\n$", estado)
+                  and oct(os.stat(ESTADO_PATH).st_mode & 0o777) == "0o644")
             env_text = open(env_path, encoding="utf-8").read()
             check("generar: ejecutar converges .env — SITE written, fixtures forced, fixture password generated, 0600",
                   "SITE=113314" in env_text and "SEED_FIXTURES=1" in env_text
@@ -2637,6 +2692,8 @@ def selftest():
             open(site_path("113314"), "w", encoding="utf-8").write(site_text)
             check("generar: a failing phase answers its own cause, not the runner's «phase failed» line",
                   st == 500 and body["error"].startswith("FATAL: SITE_ROLES entry 'role-x' names category 'cat-foo'"))
+            check("estado: a run that stopped before the gate leaves its cause",
+                  "· ✗ la ejecución no terminó\n  · FATAL: SITE_ROLES entry 'role-x'" in open(ESTADO_PATH, encoding="utf-8").read())
             open(stubstate, "w").close()
             open(stublog, "w").close()
             open(stubctl, "w", encoding="utf-8").write("FAIL_ON=group:add\n")
@@ -2651,6 +2708,11 @@ def selftest():
             check("generar: a red gate is data — vacia False with the note naming the account",
                   st == 200 and body["divergencia_vacia"] is False
                   and "intruso.9" in body["divergencia"])
+            estado = open(ESTADO_PATH, encoding="utf-8").read()
+            check("estado: a red gate leaves each item with its fix, in Spanish (a10)",
+                  "· ✗ deriva: la instancia tiene lo que no se declaró\n" in estado
+                  and "  · el usuario 'intruso.9' existe pero no está declarado" in estado
+                  and "occ user:delete intruso.9" in estado)
             open(stubctl, "w").close()
 
             EXEC_LOCK.acquire()

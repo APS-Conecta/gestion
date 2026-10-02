@@ -256,6 +256,7 @@ usage() {  # Spanish, generated from the registry — never a slice of this file
   echo "  aps-conecta provision --reponer   re-provisión semanal (la ejecuta el temporizador)"
   echo "  aps-conecta asistente-aio --dominio D   configura e inicia la suite por la API del asistente, sin navegador"
   echo "  aps-conecta temporizadores        instala y activa la re-provisión semanal y el mapa mensual"
+  echo "  aps-conecta estado                el último resultado de la re-provisión, con cada arreglo (sin sudo)"
   echo "  aps-conecta revalidate            revisa la instancia después de una actualización"
   echo "  aps-conecta respaldo              agrega /opt/aps-conecta a las copias de seguridad"
   echo "  aps-conecta tiles install|refresh|check   el mapa base y su servicio"
@@ -1000,7 +1001,41 @@ reponer() {  # the weekly headless re-provision (the timer's whole job): the Pro
   fi
   info "re-provisión semanal del establecimiento $code"
   python3 "$(prov_path)" --paso generar --codigo "$code"
-  exit $?
+  local rc=$?
+  [ "$rc" -eq 0 ] || notify_admins
+  exit "$rc"
+}
+
+notify_admins() {  # a10: the last verdict, one notification to every admin — the same object each week,
+  # so it replaces the last one — at their next login. Best-effort: it never changes the run's exit code
+  local f="$APS_HOME/estado.txt" head body
+  [ -r "$f" ] || return 0
+  head="$(head -1 "$f")"
+  # whole lines within the long message's 4000 bytes — never half a UTF-8 character
+  body="$(tail -n +2 "$f" | python3 -c 'import sys
+t = sys.stdin.read(); b = t.encode()
+print(t if len(b) <= 3600 else b[:3600].decode("utf-8", "ignore").rsplit("\n", 1)[0] + "\n  · … (más en: aps-conecta estado)")')"
+  ( cd "$ROOT" && . scripts/env.sh >/dev/null 2>&1 || { echo "· no se pudo avisar: no se leyó la configuración" >&2; exit 0; }
+    admins="$(occ group:list --output=json 2>/dev/null | python3 -c 'import json, sys
+d = json.load(sys.stdin)
+print(" ".join([] if isinstance(d, list) else d.get("admin", [])))' 2>/dev/null)"
+    [ -n "$admins" ] || { echo "· no se pudo avisar: no se leyeron los administradores" >&2; exit 0; }
+    for u in $admins; do
+      occ notification:generate "$u" "APS Conecta — re-provisión semanal: ${head#* · }" \
+        -l "$body
+Detalle en el servidor: aps-conecta estado" --object-type aps-conecta --object-id estado >/dev/null 2>&1 \
+        || echo "· no se pudo avisar a $u" >&2
+    done ) || true
+}
+
+cmd_estado() {  # the last execution's verdict and each item with its fix — no sudo, no docker (a10)
+  local f="$APS_HOME/estado.txt"
+  if [ ! -r "$f" ]; then
+    info "todavía no hay un resultado: lo deja la primera ejecución (la instalación, o sudo systemctl start aps-conecta.service)"
+    return 0
+  fi
+  cat "$f"
+  case "$(head -1 "$f")" in *" · ✓ "*) return 0 ;; *) return 1 ;; esac
 }
 
 # ── respaldo ───────────────────────────────────────────────────────────────────────────────
@@ -1795,6 +1830,28 @@ EOF
   out="$(reponer 2>&1)"; rc=$?
   check "reponer: the step's own exit code reaches systemd unchanged" '[ "$rc" -eq 2 ]'
 
+  # ── a10: a red weekly run notifies every admin once (replacing the last); estado shows it, no sudo ──
+  cat > "$ROOT/scripts/env.sh" <<EOF
+occ() { printf '%s\n' "\$*" >> "$tmp/occ.argv"; case "\$1" in group:list) echo '{"admin":["admin","ana.prueba"],"all-staff":["x"]}' ;; esac; }
+EOF
+  mkdir -p "$tmp/aps"
+  printf '%s\n' "2026-10-04 03:00 (hora de Santiago) · ✗ deriva: la instancia tiene lo que no se declaró" \
+    "  · el grupo 'deriva-prueba' existe pero no está declarado — revise … antes de 'occ group:delete deriva-prueba'" > "$tmp/aps/estado.txt"
+  : > "$tmp/occ.argv"; echo 1 > "$tmp/prov.rc"
+  out="$(APS_HOME="$tmp/aps"; reponer 2>&1)"; rc=$?
+  check "reponer: a red run notifies every admin once (replacing the last), and its own exit code stands" \
+    '[ "$rc" -eq 1 ] && [ "$(grep -c "^notification:generate" "$tmp/occ.argv")" = 2 ] && grep -q "^notification:generate admin APS Conecta — re-provisión semanal: ✗ deriva" "$tmp/occ.argv" && grep -q "^notification:generate ana.prueba " "$tmp/occ.argv" && grep -q "deriva-prueba" "$tmp/occ.argv" && grep -q -- "--object-type aps-conecta --object-id estado$" "$tmp/occ.argv"'
+  : > "$tmp/occ.argv"; echo 0 > "$tmp/prov.rc"
+  out="$(APS_HOME="$tmp/aps"; reponer 2>&1)"; rc=$?
+  check "reponer: a clean run notifies no one" '[ "$rc" -eq 0 ] && [ ! -s "$tmp/occ.argv" ]'
+  rm -f "$ROOT/scripts/env.sh"
+  out="$(export ID_U=1000; APS_HOME="$tmp/aps"; cmd_estado 2>&1)"; rc=$?
+  out2="$(APS_HOME="$tmp/vacio"; cmd_estado 2>&1)"; rc2=$?
+  printf '%s\n' "2026-10-04 03:00 (hora de Santiago) · ✓ la instancia coincide con lo declarado" > "$tmp/aps/estado.txt"
+  out3="$(APS_HOME="$tmp/aps"; cmd_estado 2>&1)"; rc3=$?
+  check "estado: without sudo it shows the last verdict and each item with its fix — drift exits 1, clean 0, none yet says how to get one" \
+    '[ "$rc" -eq 1 ] && case "$out" in *"✗ deriva"*"deriva-prueba"*"occ group:delete deriva-prueba"*) ;; *) false;; esac && [ "$rc2" -eq 0 ] && case "$out2" in *"todavía no hay un resultado"*) ;; *) false;; esac && [ "$rc3" -eq 0 ] && case "$out3" in *"✓ la instancia coincide"*) ;; *) false;; esac'
+
   # ── install --sitio: the browser steps are the provisionador's own --paso steps (the same stub) ──
   SILENT_SITE="$tmp/dado/site.sh"; SILENT_ROSTER="$tmp/dado/usuarios.csv"
   echo 0 > "$tmp/prov.rc"
@@ -1970,6 +2027,7 @@ case "${1:-}" in
   provision)    shift; cmd_provision "${1:-}" ;;
   asistente-aio) shift; cmd_aio_wizard "$@" ;;
   temporizadores) FAIL=0; install_timers; [ "$FAIL" -eq 0 ] || exit 1 ;;
+  estado)       cmd_estado ;;
   revalidate)   cmd_revalidate ;;
   respaldo)     cmd_respaldo ;;
   tiles)        shift; exec bash "$HOST_DIR/tiles.sh" "$@" ;;

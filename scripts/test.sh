@@ -727,11 +727,11 @@ iv_mount_divergence_cases() {
     declared_folders="$(printf "%s\n" Transversal "$IV_MOUNT")"
     live_folders="$(printf "1\tIntranet\n2\tIntraVox\n3\tViejo\n4\tTransversal\n")"
     eval "$1"' _ "$loop" 2>&1)"
-  printf '%s\n' "$out" | grep -q "^NOTE group folder 'Intranet' is the welcome screen's storage root.*rename it once" \
+  printf '%s\n' "$out" | grep -q "^NOTE la carpeta compartida 'Intranet' guarda la portada.*cámbiele el nombre una vez" \
     || { echo "divergence: the told name is not reported as a rename: $out" >&2; return 1; }
-  printf '%s\n' "$out" | grep -q "^NOTE group folder 'IntraVox' is the welcome screen's storage root" \
+  printf '%s\n' "$out" | grep -q "^NOTE la carpeta compartida 'IntraVox' guarda la portada" \
     || { echo "divergence: the default name is not reported as a rename: $out" >&2; return 1; }
-  printf '%s\n' "$out" | grep -q "^NOTE group folder 'Viejo' is live but not in SITE_FOLDERS" \
+  printf '%s\n' "$out" | grep -q "^NOTE la carpeta compartida 'Viejo' existe pero no está en SITE_FOLDERS" \
     || { echo "divergence: an unrelated folder lost the generic note: $out" >&2; return 1; }
   [ "$(printf '%s\n' "$out" | grep -c "groupfolders:delete [12]\b")" = 0 ] \
     || { echo "divergence: a storage root was offered for deletion: $out" >&2; return 1; }
@@ -775,15 +775,15 @@ CASES
     occ() { case "$1" in status) return 0 ;; config:app:get) [ "$3" = deis_code ] && echo 999002; return 0 ;; esac; }
     note() { printf "NOTE %s\n" "$*"; }
     eval "$1"' _ "$section" 2>&1)"
-  printf '%s\n' "$out" | grep -q "^NOTE estadistica deis_code is '999002' but sites/lab/site.sh says '999001'" \
-    && printf '%s\n' "$out" | grep -q "^NOTE estadistica establishment_type is '<unset>' but sites/lab/site.sh says 'CESFAM'" \
+  printf '%s\n' "$out" | grep -q "^NOTE estadistica deis_code es '999002' pero sites/lab/site.sh dice '999001'" \
+    && printf '%s\n' "$out" | grep -q "^NOTE estadistica establishment_type es '<sin valor>' pero sites/lab/site.sh dice 'CESFAM'" \
     && [ "$(printf '%s\n' "$out" | grep -c '^NOTE ')" = 3 ] \
     || { echo "estadistica divergence: a wrong and two unset keys were not each reported: $out" >&2; return 1; }
   out="$(SITE=lab SITE_DEIS=999001 bash -c '
     occ() { return 1; }
     note() { printf "NOTE %s\n" "$*"; }
     eval "$1"' _ "$section" 2>&1)"
-  printf '%s\n' "$out" | grep -q "^NOTE cannot read estadistica's establishment keys" \
+  printf '%s\n' "$out" | grep -q "^NOTE no se pudieron leer las claves del establecimiento en estadistica" \
     || { echo "estadistica divergence: an occ that did not answer passed: $out" >&2; return 1; }
 }
 check estadistica_identity_cases

@@ -105,6 +105,11 @@ missing link would skip them without a word. Both fire on Santiago time (the zon
 03:00 (idempotent; a drifted host shows as a FAILED unit in `systemctl --failed`). The tiles timer
 re-extracts the basemap monthly (the 4th at 05:00, spread off borg's nightly window).
 
+When an execution finds drift, or does not finish, every member of the `admin` group gets a
+notification at their next login (one, replaced each week), and `aps-conecta estado` — no sudo —
+prints the last verdict with each item and its fix, in Spanish (`/opt/aps-conecta/estado.txt`,
+written by every execution: the installer's and the weekly one).
+
 ## 7. DNS: the host must reach its own domain (D10)
 
 The wizard and the gates curl the public domain **from the host itself** — the hairpin leg.
