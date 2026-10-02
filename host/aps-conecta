@@ -14,6 +14,7 @@
 #   aps-conecta provision            start the Provisionador (interactive; Ctrl+C stops it)
 #   aps-conecta provision --reponer  headless weekly re-provision (the systemd timer's job)
 #   aps-conecta respaldo             wire /opt/aps-conecta into AIO's backup scope (idempotent)
+#   aps-conecta asistente-aio --dominio D   drive the AIO wizard through its API (no browser)
 #   aps-conecta revalidate          post-update gate sweep: smoke + office-smoke + divergence
 #   aps-conecta tiles …            the basemap stack (install | refresh | check — host/tiles.sh)
 #   aps-conecta datos [CUT]        the comuna data packages, cut + checksum-verified + staged
@@ -170,6 +171,7 @@ usage() {  # Spanish, generated from the registry — never a slice of this file
   echo "  aps-conecta run-command           solo el comando de arranque de la suite"
   echo "  aps-conecta provision             abre el instalador web (lo mismo que el paso abrir)"
   echo "  aps-conecta provision --reponer   re-provisión semanal (la ejecuta el temporizador)"
+  echo "  aps-conecta asistente-aio --dominio D   configura e inicia la suite por la API del asistente, sin navegador"
   echo "  aps-conecta revalidate            revisa la instancia después de una actualización"
   echo "  aps-conecta respaldo              agrega /opt/aps-conecta a las copias de seguridad"
   echo "  aps-conecta tiles install|refresh|check   el mapa base y su servicio"
@@ -636,6 +638,187 @@ EOF
 # forced amendment, ledgered in its History row).
 
 # ── provision ─────────────────────────────────────────────────────────────────────────────
+
+# ── the AIO wizard, driven through its own API — no browser (silent mode, the CI testbed) ────
+# The request sequence upstream's initial-setup Playwright spec drives, minus the browser: capture
+# the one-time passphrase from the first GET /setup, log in, visit /containers, post the domain,
+# the timezone and the options, start, then wait bounded. ONE copy (a6): scripts/aio-testbed.sh
+# calls `aps-conecta asistente-aio`, and the silent install (L2 S4) calls these functions.
+AIO_URL="${AIO_URL:-https://127.0.0.1:8080}"   # the wizard (self-signed TLS); the testbed sets its port
+AIO_STATE="${AIO_STATE:-$APS_HOME/aio}"       # passphrase, session jar, admin password — 0600
+AIO_POLL="${AIO_POLL:-5}"                   # seconds between polls; the self-test sets 0
+AIO_SET="nextcloud-aio-apache nextcloud-aio-database nextcloud-aio-redis nextcloud-aio-notify-push nextcloud-aio-eurooffice"
+AIO_CSRF=()                                     # the session's CSRF pair, as curl arguments
+
+aio_curl() {  # ARGS… — the wizard with the session jar
+  curl -sk -b "$AIO_STATE/cookies" -c "$AIO_STATE/cookies" "$@"
+}
+
+aio_count() {  # how many of the six suite containers run
+  local c n=0 names
+  names="$(docker ps --format '{{.Names}}' 2>/dev/null)"
+  for c in "$NC" $AIO_SET; do printf '%s\n' "$names" | grep -qx "$c" && n=$((n + 1)); done
+  echo "$n"
+}
+
+aio_passphrase() {  # the passphrase GET /setup shows once (the page stops rendering it once the
+  # instance is configured): captured into a 0600 file the first time, reused on a re-run
+  local f="$AIO_STATE/master.pw" html="" pw i
+  if [ -s "$f" ]; then ok "Contraseña del asistente ya guardada ($f)"; return 0; fi
+  for i in $(seq 60); do
+    sleep "$AIO_POLL"   # first: the mastercontainer is still booting right after its docker run
+    html="$(curl -sk --max-time 5 "$AIO_URL/setup" 2>/dev/null || true)"
+    case "$html" in *'id="initial-password"'*) break ;; esac
+  done
+  pw="$(printf '%s' "$html" | sed -n 's/.*id="initial-password"[^>]*>\([^<]*\)<.*/\1/p' | head -1)"
+  if [ -z "$pw" ]; then
+    bad "el asistente no mostró su contraseña inicial en $AIO_URL/setup" \
+      "revise que la suite esté arrancando: docker logs nextcloud-aio-mastercontainer"
+    return 1
+  fi
+  ( umask 077 && printf '%s' "$pw" > "$f" )
+  ok "Contraseña del asistente guardada en $f (solo administrador)"
+}
+
+aio_login() {  # the CSRF pair comes from GET /login with the session jar and serves every POST
+  local html code
+  html="$(aio_curl --max-time 10 "$AIO_URL/login" 2>/dev/null)"
+  AIO_CSRF=(--data-urlencode "csrf_name=$(printf '%s' "$html" | sed -n 's/.*name="csrf_name" value="\([^"]*\)".*/\1/p' | head -1)"
+            --data-urlencode "csrf_value=$(printf '%s' "$html" | sed -n 's/.*name="csrf_value" value="\([^"]*\)".*/\1/p' | head -1)")
+  case "${AIO_CSRF[1]} ${AIO_CSRF[3]}" in
+    "csrf_name= "*|*" csrf_value=") bad "el asistente no entregó su formulario de ingreso ($AIO_URL/login)" \
+                                      "revise que la suite esté arrancando: docker logs nextcloud-aio-mastercontainer"
+                                    return 1 ;;
+  esac
+  # password@FILE: curl reads the passphrase from its 0600 file — it never sits in argv, where ps shows it
+  code="$(aio_curl -o /dev/null -w '%{http_code}' --max-time 20 --data-urlencode "password@$AIO_STATE/master.pw" \
+    "${AIO_CSRF[@]}" "$AIO_URL/api/auth/login" 2>/dev/null)"
+  if [ "$code" != 201 ]; then
+    bad "el asistente rechazó el ingreso (HTTP ${code:-sin respuesta})" \
+      "la contraseña guardada en $AIO_STATE/master.pw no es la de esta instancia"
+    return 1
+  fi
+  ok "Ingreso al asistente"
+}
+
+aio_containers_page() {  # GET /containers is load-bearing, not eye candy: serving it creates the
+  # nextcloud-aio network (ConnectMasterContainerToNetwork) — without it the first start dies
+  if ! aio_curl --max-time 15 -o /dev/null "$AIO_URL/containers" 2>/dev/null; then
+    bad "el asistente no abrió su página de contenedores ($AIO_URL/containers)" \
+      "sin ella no se crea la red de la suite: revise docker logs nextcloud-aio-mastercontainer"
+    return 1
+  fi
+}
+
+aio_post() {  # PATH --data-urlencode K=V… — the wizard's configuration API answers 201 or refuses
+  local endpoint="$1" code; shift
+  code="$(aio_curl -o /dev/null -w '%{http_code}' --max-time 15 "${AIO_CSRF[@]}" "$@" "$AIO_URL$endpoint" 2>/dev/null)"
+  if [ "$code" != 201 ]; then
+    bad "el asistente rechazó «${2%%=*}» (HTTP ${code:-sin respuesta})" \
+      "revise el valor; el asistente explica el motivo en su página ($AIO_URL)"
+    return 1
+  fi
+}
+
+aio_start() {  # POST /api/docker/start pulls, creates and starts the whole set INSIDE the request
+  # (up to 30 min on a slow link): it runs in the background while the console counts containers
+  local f="$AIO_STATE/inicio.code" pid n seen=""
+  info "iniciando la suite (descarga de imágenes: varios minutos)"
+  ( aio_curl -o /dev/null -w '%{http_code}' --max-time 1800 "${AIO_CSRF[@]}" "$AIO_URL/api/docker/start" \
+      > "$f" 2>/dev/null ) &
+  pid=$!
+  trap 'kill "$pid" 2>/dev/null; exit 130' INT TERM
+  while kill -0 "$pid" 2>/dev/null; do
+    n="$(aio_count)"
+    [ "$n" = "$seen" ] || { info "contenedores en marcha: $n de 6"; seen="$n"; }
+    sleep "$AIO_POLL"
+  done
+  wait "$pid"
+  trap - INT TERM
+  case "$(cat "$f" 2>/dev/null)" in
+    200|201|302) ok "Suite iniciada" ;;
+    *) bad "el asistente no pudo iniciar la suite (HTTP $(cat "$f" 2>/dev/null))" \
+         "revise la red y las imágenes: docker ps -a --filter name=nextcloud-aio-"
+       return 1 ;;
+  esac
+}
+
+aio_wait() {  # bounded: the six containers up (20 min), Nextcloud installed (10 min), its
+  # configuration no longer moving (2 min — probing a moving config is a race, #96)
+  local i st prev cur
+  for i in $(seq 240); do [ "$(aio_count)" = 6 ] && break; sleep "$AIO_POLL"; done
+  if [ "$(aio_count)" != 6 ]; then
+    bad "los contenedores no terminaron de arrancar en 20 minutos" "docker ps -a --filter name=nextcloud-aio-"
+    return 1
+  fi
+  for i in $(seq 120); do
+    st="$(docker exec --user www-data "$NC" php /var/www/html/occ status --output=json 2>/dev/null || true)"
+    case "$st" in *'"installed":true'*) break ;; esac
+    sleep "$AIO_POLL"
+  done
+  case "$st" in
+    *'"installed":true'*) ;;
+    *) bad "Nextcloud no terminó de instalarse en 10 minutos" "docker logs $NC"; return 1 ;;
+  esac
+  prev="$(docker exec --user www-data "$NC" php /var/www/html/occ config:list --output=json 2>/dev/null | sha256sum)"
+  for i in $(seq 24); do
+    sleep "$AIO_POLL"
+    cur="$(docker exec --user www-data "$NC" php /var/www/html/occ config:list --output=json 2>/dev/null | sha256sum)"
+    if [ "$cur" = "$prev" ]; then ok "Suite en marcha: 6 contenedores, Nextcloud instalado"; return 0; fi
+    prev="$cur"
+  done
+  bad "la configuración siguió cambiando 2 minutos después de instalar" "espere un momento y vuelva a ejecutar"
+  return 1
+}
+
+aio_admin() {  # /containers shows the generated Nextcloud admin password once the set is up
+  local pw
+  if [ -s "$AIO_STATE/nextcloud.pw" ]; then
+    ok "Contraseña del administrador de Nextcloud ya guardada ($AIO_STATE/nextcloud.pw)"; return 0
+  fi
+  pw="$(aio_curl --max-time 10 "$AIO_URL/containers" 2>/dev/null \
+    | sed -n 's/.*id="initial-nextcloud-password"[^>]*>\([^<]*\)<.*/\1/p' | head -1)"
+  if [ -n "$pw" ]; then
+    ( umask 077 && printf '%s\n' "$pw" > "$AIO_STATE/nextcloud.pw" )
+    ok "Contraseña del administrador de Nextcloud guardada en $AIO_STATE/nextcloud.pw"
+  else
+    info "el asistente no mostró la contraseña del administrador (la instalación crea sus propias cuentas)"
+  fi
+}
+
+cmd_aio_wizard() {  # --dominio D [--sin-validar-dominio] [--respaldo DIR]
+  local domain="" backup_dir="" options=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --dominio) domain="${2:-}"; shift 2 || shift ;;
+      --sin-validar-dominio) options+=(--data-urlencode skip_domain_validation=1); shift ;;
+      --respaldo) backup_dir="${2:-}"; shift 2 || shift ;;
+      *) die "opción desconocida: $1 — uso: aps-conecta asistente-aio --dominio <dominio> [--sin-validar-dominio] [--respaldo <directorio>]" ;;
+    esac
+  done
+  [[ "$domain" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] \
+    || die "falta un dominio válido: aps-conecta asistente-aio --dominio <dominio>"
+  ( umask 077 && mkdir -p "$AIO_STATE" ) || die "no se pudo crear $AIO_STATE"
+  FAIL=0
+  local names
+  names="$(docker ps --format '{{.Names}}' 2>/dev/null)"   # captured first: under pipefail an early
+  if printf '%s\n' "$names" | grep -qx nextcloud-aio-apache; then   # grep -q exit would SIGPIPE docker
+    ok "La suite ya está en marcha — el asistente no se vuelve a configurar"
+  else
+    aio_passphrase && aio_login && aio_containers_page \
+      && aio_post /api/configuration --data-urlencode "domain=$domain" "${options[@]}" && ok "Dominio: $domain" \
+      && aio_post /api/configuration --data-urlencode "timezone=America/Santiago" && ok "Zona horaria: America/Santiago" \
+      && aio_post /api/configuration --data-urlencode "options-form=1" \
+      && ok "Opciones: oficina incluida; Talk, pizarra e imágenes apagados" \
+      && { [ -z "$backup_dir" ] || { aio_post /api/configuration --data-urlencode "borg_backup_host_location=$backup_dir" \
+             --data-urlencode "borg_remote_repo=" && aio_post /api/configuration --data-urlencode "daily_backup_time=04:00" \
+             && ok "Respaldo diario a las 04:00 en $backup_dir"; }; } \
+      && aio_start || exit 1
+  fi
+  aio_wait || exit 1
+  aio_admin
+  [ "$FAIL" -eq 0 ] || exit 1
+}
 
 cmd_provision() {  # [--reponer]
   if [ "${1:-}" = "--reponer" ]; then reponer; return; fi
@@ -1324,6 +1507,75 @@ CSHIM
   check "hairpin: the red carries the ufw recipe and the local-DNS legs, and never SKIP_DOMAIN_VALIDATION as advice" \
     'case "$out" in *"172.18.0.0/16"*"dnsmasq"*"daemon.json"*"NO use SKIP_DOMAIN_VALIDATION"*"✗ el control de salud de la oficina NO responde"*) ;; *) false;; esac'
 
+  # ── asistente-aio: the AIO wizard driven through its API, against a stateful fake wizard ──
+  # curl answers the six endpoints the drive uses (honouring -o, printing -w's code) and logs every
+  # POST; docker answers ps from what the start "created" and occ from an installed instance
+  local AIO_URL="https://127.0.0.1:9999" AIO_STATE="$tmp/aio" AIO_POLL=0.05
+  : > "$tmp/aio.log"; : > "$tmp/aio.ps"; : > "$tmp/aio.argv"; rm -f "$tmp/aio.configured"
+  cat > "$tshim/curl" <<SHIM
+#!/usr/bin/env bash
+url=""; data=""; outfile=""; prev=""
+printf '%s\n' "\$*" >> "$tmp/aio.argv"
+for a in "\$@"; do
+  case "\$a" in https://*) url="\$a" ;; esac
+  if [ "\$prev" = --data-urlencode ]; then
+    case "\$a" in password@*) data="\$data password=\$(cat "\${a#password@}")" ;; *) data="\$data \$a" ;; esac
+  fi
+  [ "\$prev" = -o ] && outfile="\$a"
+  prev="\$a"
+done
+body=""; code=""
+case "\$url" in
+  */setup) [ -e "$tmp/aio.configured" ] || body='<p id="initial-password">frase uno dos</p>' ;;
+  */api/auth/login) echo "POST login\$data" >> "$tmp/aio.log"
+    case "\$data" in *"password=frase uno dos"*) code=201 ;; *) code=422 ;; esac ;;
+  */login) body='<input name="csrf_name" value="n1"><input name="csrf_value" value="v1">' ;;
+  */containers) body='<span id="initial-nextcloud-password">admin-secreta</span>' ;;
+  */api/configuration) echo "POST config\$data" >> "$tmp/aio.log"; touch "$tmp/aio.configured"
+    case "\$data" in *"domain=rechazado.example"*) code=422 ;; *) code=201 ;; esac ;;
+  */api/docker/start) echo "POST start\$data" >> "$tmp/aio.log"
+    printf '%s\n' nextcloud-aio-nextcloud nextcloud-aio-database nextcloud-aio-redis > "$tmp/aio.ps"; sleep 0.4
+    printf '%s\n' nextcloud-aio-nextcloud $AIO_SET > "$tmp/aio.ps"; code=200 ;;
+esac
+if [ -n "\$outfile" ]; then printf '%s\n' "\$body" > "\$outfile"; else [ -z "\$body" ] || printf '%s\n' "\$body"; fi
+[ -z "\$code" ] || printf '%s' "\$code"
+SHIM
+  cat > "$tshim/docker" <<SHIM
+#!/usr/bin/env bash
+case "\$1" in
+  ps) cat "$tmp/aio.ps" ;;
+  exec) case "\$*" in *"occ status"*) echo '{"installed":true}' ;; *"config:list"*) echo '{"system":{}}' ;; esac ;;
+esac
+SHIM
+  chmod +x "$tshim/curl" "$tshim/docker"
+  if only_shims curl docker; then
+    out="$( (cmd_aio_wizard --dominio clinica.example --sin-validar-dominio) 2>&1)"; rc=$?
+    check "asistente-aio: passphrase, login, domain, timezone, options, start with progress, the waits, the admin password — in order" \
+      '[ "$rc" -eq 0 ] && case "$out" in *"✓ Contraseña del asistente guardada en $AIO_STATE/master.pw"*"✓ Ingreso al asistente"*"✓ Dominio: clinica.example"*"✓ Zona horaria: America/Santiago"*"✓ Opciones: oficina incluida"*"· contenedores en marcha: 3 de 6"*"✓ Suite iniciada"*"✓ Suite en marcha: 6 contenedores, Nextcloud instalado"*"✓ Contraseña del administrador de Nextcloud guardada en $AIO_STATE/nextcloud.pw"*) ;; *) false;; esac'
+    check "asistente-aio: every POST carries the session's CSRF pair; the skip flag rides the domain; office is never posted" \
+      '[ -z "$(grep "^POST config\|^POST start" "$tmp/aio.log" | grep -v "csrf_name=n1 csrf_value=v1")" ] && grep -q "domain=clinica.example skip_domain_validation=1$" "$tmp/aio.log" && grep -q "timezone=America/Santiago$" "$tmp/aio.log" && grep -q "options-form=1$" "$tmp/aio.log" && ! grep -q office "$tmp/aio.log"'
+    check "asistente-aio: the passphrase reaches curl as a file (password@…), never in its arguments" \
+      'grep -q "password=frase uno dos" "$tmp/aio.log" && grep -q "password@$AIO_STATE/master.pw" "$tmp/aio.argv" && ! grep -q "frase uno dos" "$tmp/aio.argv"'
+    check "asistente-aio: both secrets are 0600 files and never reach the console" \
+      '[ "$(stat -c %a "$AIO_STATE/master.pw")" = 600 ] && [ "$(cat "$AIO_STATE/master.pw")" = "frase uno dos" ] && [ "$(stat -c %a "$AIO_STATE/nextcloud.pw")" = 600 ] && [ "$(cat "$AIO_STATE/nextcloud.pw")" = admin-secreta ] && case "$out" in *"frase uno dos"*|*admin-secreta*) false;; *) true;; esac'
+    : > "$tmp/aio.log"
+    out="$( (cmd_aio_wizard --dominio clinica.example --sin-validar-dominio) 2>&1)"; rc=$?
+    check "asistente-aio: a re-run on a running suite configures nothing and posts nothing" \
+      '[ "$rc" -eq 0 ] && case "$out" in *"✓ La suite ya está en marcha — el asistente no se vuelve a configurar"*) ;; *) false;; esac && [ ! -s "$tmp/aio.log" ]'
+    : > "$tmp/aio.ps"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; : > "$tmp/aio.log"
+    out="$( (cmd_aio_wizard --dominio backup.example --respaldo /mnt/backup) 2>&1)"; rc=$?
+    check "asistente-aio: --respaldo posts the borg location and the daily time — a location alone schedules nothing" \
+      '[ "$rc" -eq 0 ] && grep -q "borg_backup_host_location=/mnt/backup borg_remote_repo=$" "$tmp/aio.log" && grep -q "daily_backup_time=04:00$" "$tmp/aio.log" && case "$out" in *"✓ Respaldo diario a las 04:00 en /mnt/backup"*) ;; *) false;; esac'
+    : > "$tmp/aio.ps"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; : > "$tmp/aio.log"
+    out="$( (cmd_aio_wizard --dominio rechazado.example) 2>&1)"; rc=$?
+    check "asistente-aio: a domain the wizard refuses stops before the start, naming the field" \
+      '[ "$rc" -eq 1 ] && case "$out" in *"✗ el asistente rechazó «domain» (HTTP 422)"*) ;; *) false;; esac && ! grep -q "^POST start" "$tmp/aio.log"'
+    out="$( (cmd_aio_wizard --dominio -x) 2>&1)"; rc=$?
+    check "asistente-aio: a value that is not a domain is refused before any request" \
+      '[ "$rc" -eq 1 ] && [ "$out" = "✗ falta un dominio válido: aps-conecta asistente-aio --dominio <dominio>" ]'
+  fi
+  rm -f "$tshim/curl" "$tshim/docker"
+
   # ── a5: usage and preflight are Spanish, with no source header, shell internals or internal ids ──
   local a5_ids='^[[:space:]]*#|set -uo|readlink|HOST_DIR|\$\{|\bslice\b|\bFRD\b|\bB-[0-9]{3}\b|\bR[0-9]{1,2}\b|\bD[0-9]{1,2}\b|#[0-9]{2,}'
   local a5_en='the|failed|not found|warning|missing|usage'
@@ -1524,6 +1776,7 @@ case "${1:-}" in
   preflight)    shift; cmd_preflight "$@" ;;
   run-command)  run_command ;;
   provision)    shift; cmd_provision "${1:-}" ;;
+  asistente-aio) shift; cmd_aio_wizard "$@" ;;
   revalidate)   cmd_revalidate ;;
   respaldo)     cmd_respaldo ;;
   tiles)        shift; exec bash "$HOST_DIR/tiles.sh" "$@" ;;
