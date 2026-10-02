@@ -112,6 +112,7 @@ MAX_BODY = 8 * 1024 * 1024
 ROSTER_HEADER = ("usuario", "nombre", "apellidos", "correo", "grupos", "primer_admin")
 UID_RE = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")  # the register's own uids: director, jefe.farmacia…
 EMAIL_RE = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+UNKNOWN_GROUP = "no existe en este centro"   # the unknown-group line; the 400 keys its valid list on it
 # Phase 20 IS the group registry — parsed, never restated (registry_groups below).
 PHASE20 = os.path.join(HERE, "..", "provisioning", "phases", "20-groups.sh")
 # Where the sealed credentials sheet lives (FRD S5; the host bundle's directory — S7 wires
@@ -738,6 +739,30 @@ def equipos_actuales():
                  "cargos": cargos + [[g, d] for g, d, _c in roles], "planilla_cargada": cargada}
 
 
+def plantilla():
+    """GET /api/plantilla — the planilla template for this centre (R38, a15): the header and two
+    example people using the centre's own sector and program ids and two shared cargos, «sí» once,
+    UTF-8 with a BOM so Excel opens the accents right (the upload strips it). Uploaded as is, it
+    validates."""
+    st, eq = equipos_actuales()
+    if st != 200:
+        return st, eq
+    if not eq.get("guardados"):
+        return 409, {"error": "primero guarde los equipos: la plantilla usa sus códigos"}
+    sec = [g for g, _ in eq["equipos"] if g.startswith("sector-")]
+    prog = [g for g, _ in eq["equipos"] if g.startswith("prog-")]
+    cargos = [g for g, _ in eq["cargos"]]   # role_names refuses a short list, so never empty
+    enf = "role-enfermeria" if "role-enfermeria" in cargos else cargos[0]
+    med = "role-medico" if "role-medico" in cargos else cargos[-1]
+    filas = [ROSTER_HEADER,
+             ("ana.rojas", "Ana María", "Rojas Fuentes", "ana.rojas@example.cl",
+              " ".join(sec[:1] + prog[:1] + [enf]), "sí"),
+             ("pedro.munoz", "Pedro", "Muñoz Tapia", "pedro.munoz@example.cl",
+              " ".join((sec[1:2] or sec[:1]) + [med]), "no")]
+    return 200, {"csv": "\ufeff" + "".join(";".join(f) + "\n" for f in filas),
+                 "nombre": f"planilla-{eq['codigo']}.csv"}
+
+
 def registry_groups(path):
     """The shared group ids, READ out of phase 20 — "THIS FILE IS THE GROUP REGISTRY" is that
     file's own first rule — using the same two shapes divergence.sh's sed expressions read (the
@@ -749,14 +774,13 @@ def registry_groups(path):
         with open(path, encoding="utf-8") as fh:
             text = fh.read()
     except OSError:
-        raise ValueError(f"no se puede leer el registro de grupos ({path}) — falta en este "
-                         "paquete de aprovisionamiento")
+        raise ValueError("no se pueden leer los grupos compartidos: el paquete de instalación está "
+                         "incompleto — reinstálelo")
     ids = {m.group(1) for m in re.finditer(r'^ *"((?:role|cat)-[a-z0-9-]*)\|', text, re.M)}
     ids |= {m.group(1) for m in re.finditer(r"^ensure_group ([a-z0-9-]*)", text, re.M)}
     if len(ids) < 20:
-        raise ValueError(f"solo {len(ids)} grupos compartidos se pudieron leer del registro "
-                         f"({path}; se esperan 27: all-staff, 4 categorías cat-*, 22 roles "
-                         "role-*) — cambió de forma; corríjalo antes de validar la planilla")
+        raise ValueError(f"solo {len(ids)} de los 27 grupos compartidos se pudieron leer: el paquete "
+                         "de instalación cambió de forma — reinstálelo antes de validar la planilla")
     return ids
 
 
@@ -840,12 +864,16 @@ def standing_uids(teams, roles):
                f'declare -a SITE_TEAMS=({teams_lit}); declare -a SITE_ROLES=({roles_lit}); '
                'source provisioning/standings.sh; standing_uids']
     cwd = pathlib.Path(__file__).resolve().parent.parent
-    out = subprocess.run(snippet, cwd=cwd, capture_output=True, text=True, check=True)
+    try:
+        out = subprocess.run(snippet, cwd=cwd, capture_output=True, text=True, check=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as e:
+        raise ValueError("no se pudieron derivar los cargos del sitio — revise que bash y el paquete "
+                         "de aprovisionamiento estén completos") from e
     reserved = {
-        "admin": "la cuenta administradora que crea el asistente de instalación",
+        "admin": "la cuenta administradora de la suite",
     }
     for uid in out.stdout.split():
-        reserved.setdefault(uid, "cargo de la fase 50 (derivación compartida: standings.sh)")
+        reserved.setdefault(uid, "un cargo que la instalación crea sola")
     return reserved
 
 
@@ -892,8 +920,7 @@ def roster_parse(text, reserved, universe):
                               f"línea {seen[uid]}"))
                 ok = False
             elif uid in reserved:
-                errors.append((start, f"el usuario «{uid}» es {reserved[uid]} — los cargos se "
-                              "crean solos; quítelo de la planilla"))
+                errors.append((start, f"el usuario «{uid}» es {reserved[uid]}: quítelo de la planilla"))
                 ok = False
             else:
                 seen[uid] = start
@@ -905,7 +932,7 @@ def roster_parse(text, reserved, universe):
                 ok = False
             gids = grupos.split()
             if not gids:
-                errors.append((start, "ingrese al menos un grupo, p. ej. all-staff"))
+                errors.append((start, "indique al menos un sector, programa o cargo"))
                 ok = False
             for g in sorted(set(gids)):
                 if g == "admin":
@@ -913,25 +940,26 @@ def roster_parse(text, reserved, universe):
                                   "primer_admin, no en grupos"))
                     ok = False
                 elif g not in universe:
-                    errors.append((start, f"el grupo «{g}» no existe — use el registro "
-                                  "compartido (fase 20) o los equipos y roles del sitio"))
+                    errors.append((start, f"el grupo «{g}» {UNKNOWN_GROUP} (vea "
+                                  "«Grupos válidos»)"))
                     ok = False
             p = deis.fold(primer)
             if p not in ("si", "no"):
-                errors.append((start, f"primer_admin debe ser «si» o «no» — la fila dice "
+                errors.append((start, f"primer_admin debe ser «sí» o «no»; la fila dice "
                               f"«{primer}»"))
                 ok = False
             elif p == "si":
                 si_lines.append(start)
             if ok:
                 rows.append((uid, nombre, apellidos, correo, tuple(sorted(set(gids))), p == "si"))
-    except csv.Error as e:
-        return [], [(1, f"la planilla no se puede leer como CSV: {e}")]
+    except csv.Error:
+        return [], [(1, "la planilla no se puede leer como CSV: revise las comillas y que el "
+                        "separador sea «;»")]
     if rows and len(si_lines) != 1:
-        where = ", ".join(f"línea {n}" for n in si_lines) if si_lines else "ninguna"
-        errors.append((si_lines[0] if si_lines else 2,
-                       f"marque exactamente un primer_admin=si — hoy hay {len(si_lines)} "
-                       f"({where})"))
+        errors.append((0, "ninguna fila tiene primer_admin = sí: marque exactamente una (la persona "
+                          "que administrará la suite)" if not si_lines else
+                       f"{len(si_lines)} filas tienen primer_admin = sí "
+                       f"({', '.join(f'línea {n}' for n in si_lines)}): debe ser una"))
     elif not rows and not errors:
         errors.append((2, "la planilla no trae usuarios — agregue filas bajo la cabecera"))
     return rows, errors
@@ -1016,8 +1044,7 @@ def api_usuarios(payload):
         return 400, {"error": "el código DEIS debe ser de 4 a 6 dígitos"}
     site = site_path(codigo)
     if not os.path.exists(site):
-        return 404, {"error": f"no existe sites/{codigo}/site.sh — primero genere el sitio con "
-                              "el paso de sectores y programas"}
+        return 404, {"error": "primero guarde los equipos (sectores y programas) de este centro"}
     csv_text = payload.get("csv")
     if not isinstance(csv_text, str) or not csv_text.strip():
         return 400, {"error": "falta la planilla: envíe el texto CSV en el campo «csv»"}
@@ -1026,12 +1053,19 @@ def api_usuarios(payload):
         teams, roles = site_arrays(site)
     except ValueError as e:
         return 400, {"error": str(e)}
-    reserved = standing_uids(teams, roles)
+    try:
+        reserved = standing_uids(teams, roles)
+    except ValueError as e:
+        return 500, {"error": str(e)}
     universe = shared | {gid for gid, _ in teams} | {gid for gid, _, _ in roles}
 
     rows, errors = roster_parse(csv_text.lstrip("\ufeff"), reserved, universe)
     if errors:
-        return 400, {"ok": False, "errores": [{"linea": n, "error": m} for n, m in errors]}
+        body = {"ok": False, "errores": [{"linea": n, "error": m} for n, m in errors]}
+        if any(UNKNOWN_GROUP in m for _n, m in errors):   # R38: the list, not a guess
+            body["grupos_validos"] = ([g for g, _ in teams] + sorted(g for g in shared if g.startswith("role-"))
+                                      + [g for g, _, _ in roles])
+        return 400, body
 
     # — where the roster lives: the SITE_ROSTER line names it (empty = the default this sets).
     # The write surface is sites/<codigo>/ by construction (the /api/sitio discipline): a
@@ -1076,19 +1110,23 @@ def api_usuarios(payload):
         # Surgical: exactly the SITE_ROSTER line, byte-identical elsewhere — the file is the
         # operator's, hand-edited from /api/sitio onward, so a rewrite that touched anything
         # else would silently revert a hand edit (the silent-green class).
-        with open(site, "w", encoding="utf-8") as fh:
-            fh.write(re.sub(r"(?m)^SITE_ROSTER=.*$", f"SITE_ROSTER={default_rel}",
-                            site_text, count=1))
+        with SITE_LOCK:   # «Reemplazar» rewrites the same file
+            with open(site, encoding="utf-8") as fh:
+                actual = fh.read()
+            with open(site, "w", encoding="utf-8") as fh:
+                fh.write(re.sub(r"(?m)^SITE_ROSTER=.*$", f"SITE_ROSTER={default_rel}", actual, count=1))
     primer_uid = next((uid for uid, _n, _a, _c, _g, p in rows if p), None)
     if primer_uid is None:
         # roster_parse enforces exactly-one; this is the belt-and-braces arm — a future edit that
         # breaks that rule must answer JSON, never crash a thread mid-request (the tamper-test
         # caught exactly this: an unguarded next() dropped the connection).
-        return 500, {"error": "invariante rota: una planilla válida sin primer_admin=si — "
-                              "repórtelo como error del Provisionador"}
+        return 500, {"error": "invariante rota: una planilla válida sin primer_admin = sí — "
+                              "repórtelo como error del instalador"}
     return 200, {"ok": True, "usuarios": len(rows), "primer_admin": primer_uid,
                  "roster": roster_rel, "credenciales": CRED_PATH,
-                 "contrasenas_nuevas": fresh, "contrasenas_selladas": sealed}
+                 "contrasenas_nuevas": fresh, "contrasenas_selladas": sealed,
+                 "filas": [[uid, f"{nombre} {apellidos}", list(gids), primer]
+                           for uid, nombre, apellidos, _c, gids, primer in rows]}
 
 
 def why(e):  # the OS's own text is English: the common cases in Spanish, else the errno name
@@ -1171,7 +1209,10 @@ def _api_generar(payload):
         cats = role_categories(PHASE20, roles)
     except ValueError as e:
         return 400, {"error": str(e)}
-    reserved = standing_uids(teams, roles)
+    try:
+        reserved = standing_uids(teams, roles)
+    except ValueError as e:
+        return 500, {"error": str(e)}
     universe = shared | {gid for gid, _ in teams} | {gid for gid, _, _ in roles}
     try:
         roster_abs, roster_rel, _need, _default = roster_paths(site_text, root, rel, codigo)
@@ -1205,8 +1246,8 @@ def _api_generar(payload):
                               + " — vuelva a cargar la planilla para sellarlos"}
     primer_uid = next((uid for uid, _n, _a, _c, _g, p in rows if p), None)
     if primer_uid is None:  # the belt-and-braces arm — the 500 template, never a crash
-        return 500, {"error": "invariante rota: una planilla válida sin primer_admin=si — "
-                              "repórtelo como error del Provisionador"}
+        return 500, {"error": "invariante rota: una planilla válida sin primer_admin = sí — "
+                              "repórtelo como error del instalador"}
     phases = sorted(p for p in os.listdir(os.path.join(root, "provisioning", "phases"))
                     if p[:1].isdigit() and p.endswith(".sh"))
     est = env_state(root)
@@ -2178,6 +2219,18 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.send_html(screen_login())
             return
+        if path == "/api/plantilla":   # a file to save, not JSON
+            if not self.authorized():
+                self.send_json(401, {"error": "token ausente o inválido"},
+                               {"WWW-Authenticate": "Bearer"})
+                return
+            status, body = plantilla()
+            if status != 200:
+                self.send_json(status, body)
+                return
+            self.send_bytes(200, "text/csv; charset=utf-8", body["csv"].encode("utf-8"),
+                            {"Content-Disposition": f'attachment; filename="{body["nombre"]}"'})
+            return
         if path in ("/api/estado", "/api/centros", "/api/centro", "/api/equipos"):
             if not self.authorized():
                 self.send_json(401, {"error": "token ausente o inválido"},
@@ -2521,8 +2574,11 @@ def run_step(argv):
             return 500, {"error": "un archivo del establecimiento o el .env no está en UTF-8"}
 
     def refused(status, body):
-        for err in body.get("errores", []):
-            print(f"✗ línea {err['linea']}: {err['error']}")
+        for err in body.get("errores", []):   # a whole-file error (line 0) has no line to name
+            linea = f"línea {err['linea']}: " if err["linea"] else ""
+            print(f"✗ {linea}{err['error']}")
+        if body.get("grupos_validos"):
+            print("  grupos válidos: " + " ".join(body["grupos_validos"]))
         if "error" in body or not body.get("errores"):
             print(f"✗ {body.get('error', f'el paso falló (código {status})')}")
         return 1
@@ -3035,7 +3091,7 @@ def selftest():
             # director/sector-derived/role-derived) plus admin's own wizard line.
             check("roster: standing uids refused — the shared derivation's cargos and the wizard admin",
                   st == 400
-                  and msgs.count("derivación compartida: standings.sh") == 3
+                  and msgs.count("un cargo que la instalación crea sola") == 3
                   and "cuenta administradora" in msgs
                   and all(f"«{uid}»" in msgs
                           for uid in ("director", "jefe.estrella", "jefe.sar", "admin")))
@@ -3046,7 +3102,9 @@ def selftest():
             msgs = err_lines(body)
             check("roster: unknown groups and admin-in-grupos are line errors",
                   st == 400 and "«sar-desconocido» no existe" in msgs
-                  and "columna primer_admin" in msgs)
+                  and "columna primer_admin" in msgs
+                  and "sector-estrella" in body["grupos_validos"] and "role-medico" in body["grupos_validos"]
+                  and "all-staff" not in body["grupos_validos"])
 
             st, body = call("POST", "/api/usuarios", {"codigo": "113314",
                   "csv": planilla(("luis.3", "Luis", "Tres", "no-es-correo",
@@ -3056,8 +3114,8 @@ def selftest():
 
             st, body = call("POST", "/api/usuarios", {"codigo": "113314",
                   "csv": planilla(("sofia.4", "Sofía", "Cuatro", "", "", "no"))})
-            check("roster: empty grupos errors with the all-staff hint",
-                  st == 400 and "al menos un grupo" in err_lines(body))
+            check("roster: empty grupos names what a group is",
+                  st == 400 and "al menos un sector, programa o cargo" in err_lines(body))
 
             st, body = call("POST", "/api/usuarios", {"codigo": "113314",
                   "csv": planilla(("elena.5", "Elena", "Cinco", "", "all-staff", "SÍ"))})
@@ -3066,26 +3124,71 @@ def selftest():
 
             st, body = call("POST", "/api/usuarios", {"codigo": "113314",
                   "csv": planilla(("pepe.6", "Pepe", "Seis", "", "all-staff", "no"))})
-            check("roster: zero primer_admin=si is a file error naming it",
-                  st == 400 and "exactamente un primer_admin=si" in err_lines(body))
+            check("roster: zero primer_admin = sí is a whole-file error (no line) naming it",
+                  st == 400 and "primer_admin = sí" in err_lines(body)
+                  and body["errores"][-1]["linea"] == 0)
 
             st, body = call("POST", "/api/usuarios", {"codigo": "113314",
                   "csv": planilla(("pepe.6", "Pepe", "Seis", "", "all-staff", "si"),
                                   ("rosa.7", "Rosa", "Siete", "", "all-staff", "si"))})
             msgs = err_lines(body)
             check("roster: two primer_admin=si name both lines",
-                  st == 400 and "exactamente un primer_admin=si" in msgs
+                  st == 400 and "primer_admin = sí" in msgs
                   and "línea 2" in msgs and "línea 3" in msgs)
 
             st, body = call("POST", "/api/usuarios", {"codigo": "113314",
                   "csv": planilla(("pepe.6", "Pepe", "Seis", "", "all-staff", "ja"))})
             check("roster: primer_admin junk values are refused",
-                  st == 400 and "«si» o «no»" in err_lines(body))
+                  st == 400 and "«sí» o «no»" in err_lines(body))
+            st, body = call("POST", "/api/usuarios", {"codigo": "113314", "csv": planilla(
+                ("director", "Dir", "Fijo", "", "role-medico", "no"),
+                ("sofia.4", "Sofía", "Cuatro", "", "", "no"),
+                ("pedro.2", "Pedro", "Dos", "", "grupo-x", "quizás"))})
+            textos = err_lines(body)
+            check("roster: a sample of planilla messages (a cargo, no groups, an unknown group, a junk flag, no admin) speaks clinic terms — no phase, script, path or all-staff (a16, R38, R44)",
+                  st == 400 and len(body["errores"]) >= 4
+                  and not any(t in textos for t in ("fase", ".sh", "/", "all-staff", "standings")))
+            saved_path = os.environ["PATH"]
+            os.environ["PATH"] = os.path.join(tmp, "empty")   # no bash: the cargos cannot be derived
+            try:
+                st, body = call("POST", "/api/usuarios", {"codigo": "113314", "csv": planilla(maria)})
+            finally:
+                os.environ["PATH"] = saved_path
+            check("roster: the cargos' derivation failing is a Spanish 500, never a dropped connection",
+                  st == 500 and "no se pudieron derivar los cargos" in body.get("error", ""))
+            # the template round-trips (a15): on a fresh tree with its own sealed sheet
+            real_here, real_cred = deis.HERE, CRED_PATH
+            with tempfile.TemporaryDirectory() as pl:
+                deis.HERE = os.path.join(pl, "scripts")
+                os.makedirs(deis.HERE)
+                CRED_PATH = os.path.join(pl, "credenciales.txt")
+                try:
+                    previo_centro = CENTRO
+                    call("POST", "/api/centro", {"codigo": "113314"})
+                    st0, antes = call("GET", "/api/plantilla")
+                    call("POST", "/api/sitio", {"codigo": "113314", "sectors": ["Norte"],
+                                                "programs": ["Cardiovascular"]})
+                    req = urllib.request.Request(base + "/api/plantilla",
+                                                 headers={"Authorization": f"Bearer {TOKEN}"})
+                    with urllib.request.urlopen(req, timeout=10) as r:
+                        crudo, tipo, disp = (r.read(), r.headers.get("Content-Type", ""),
+                                             r.headers.get("Content-Disposition", ""))
+                    st2, subida = call("POST", "/api/usuarios", {"codigo": "113314",
+                                                                 "csv": crudo.decode("utf-8")})
+                finally:
+                    deis.HERE, CRED_PATH, CENTRO = real_here, real_cred, previo_centro
+            check("template: before the teams it says why; then this centre's ids, «sí», a BOM — and it uploads back clean (R38, a15)",
+                  st0 == 409 and "guarde los equipos" in antes["error"]
+                  and crudo.startswith(b"\xef\xbb\xbf") and "text/csv" in tipo
+                  and 'filename="planilla-113314.csv"' in disp
+                  and "sector-norte prog-cardiovascular role-enfermeria;sí" in crudo.decode("utf-8")
+                  and st2 == 200 and subida["primer_admin"] == "ana.rojas"
+                  and [f[0] for f in subida["filas"]] == ["ana.rojas", "pedro.munoz"])
 
             st, body = call("POST", "/api/usuarios", {"codigo": "110485",
                                                       "csv": planilla(maria)})
             check("roster: a site never written answers 404 with the next step",
-                  st == 404 and "primero genere el sitio" in body.get("error", ""))
+                  st == 404 and "primero guarde los equipos" in body.get("error", ""))
 
             st, _ = call("POST", "/api/usuarios", {"codigo": "113314", "csv": planilla(maria)},
                          token=None)
@@ -3101,7 +3204,8 @@ def selftest():
             finally:
                 PHASE20 = old_p20
             check("roster: a shape-changed phase 20 refuses validation instead of crying wolf",
-                  st == 400 and "cambió de forma" in body.get("error", ""))
+                  st == 400 and "cambió de forma" in body.get("error", "")
+                  and "all-staff" not in body["error"] and ".sh" not in body["error"])
             check("roster: the real shared registry parses 27 groups (positive control)",
                   len(registry_groups(old_p20)) == 27)
 
@@ -3281,6 +3385,14 @@ def selftest():
             rc, out = stepped(["--paso", "usuarios", "--codigo", "113314", "--planilla", broken])
             check("--paso usuarios: a broken planilla reds with its line errors, exit 1",
                   rc == 1 and "✗ línea 1:" in out)
+            sin_admin = os.path.join(tempfile.mkdtemp(), "sin-admin.csv")
+            open(sin_admin, "w", encoding="utf-8").write(
+                "usuario;nombre;apellidos;correo;grupos;primer_admin\nluz.1;Luz;Uno;;role-medico;no\n"
+                "sol.2;Sol;Dos;;grupo-x;no\n")
+            rc, out = stepped(["--paso", "usuarios", "--codigo", "113314", "--planilla", sin_admin])
+            check("--paso usuarios: a whole-file error has no line; an unknown group lists the valid ones (R38)",
+                  rc == 1 and "✗ ninguna fila tiene primer_admin = sí" in out and "línea 0" not in out
+                  and "  grupos válidos: " in out and "sector-estrella" in out)
             rc, out = stepped(["--paso", "usuarios", "--codigo", "113314", "--planilla", broken + ".nada"])
             check("--paso usuarios: an unreadable planilla names its path and why, in Spanish, exit 1",
                   rc == 1 and "✗ no se pudo leer la planilla" in out and out.rstrip().endswith(": no existe"))
