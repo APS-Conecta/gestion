@@ -28,6 +28,15 @@ ROOT="$(cd "$HOST_DIR/.." && pwd)"
 # No PROV global: ROOT can be overridden (the self-test does exactly that), so every
 # caller resolves scripts/provisionador.py from the CURRENT root.
 prov_path() { printf '%s' "$ROOT/scripts/provisionador.py"; }
+# The suite release this file installs when it runs on its own — the two-line bootstrap, before any
+# clone exists. The release commit sets it beside CHANGELOG's dated entry and the self-test pins
+# the two, so the file downloaded from tag vX clones exactly vX (CONTRIBUTING.md › Releases).
+BUNDLE_TAG="v0.3.0"
+APS_REPO_URL="${APS_REPO_URL:-https://github.com/APS-Conecta/gestion.git}"
+APS_HOME="${APS_HOME:-/opt/aps-conecta}"   # the bundle lands in $APS_HOME/gestion
+BIN_DIR="${BIN_DIR:-/usr/local/bin}"       # where the `aps-conecta` command is linked
+en_checkout() { [ -f "$(prov_path)" ]; }    # false only for the downloaded file, on its own
+en_checkout || APS_SUITE_TAG="${APS_SUITE_TAG:-$BUNDLE_TAG}"
 
 # The docker API floor is not ours to invent: AIO's own tested requirement is v1.44
 # (php/src/Docker/DockerActionManager.php:19); the mastercontainer itself enforces it at start
@@ -133,6 +142,7 @@ cmd_install() {  # the interactive install: the welcome, then the server steps i
   # work done (the ports the suite already holds read as its own). The prompt waits only on a
   # terminal: a pipe or CI runs straight through.
   [ $# -eq 0 ] || die "«aps-conecta install» no recibe opciones: ejecútelo sin argumentos"
+  es_root || die "la instalación necesita permisos de administrador: sudo bash aps-conecta install"
   bienvenida
   if [ -t 0 ]; then printf '  Enter para comenzar.'; IFS= read -r _; echo; fi
   local n
@@ -466,14 +476,68 @@ paso_preparar() {  # installs what is missing, then proves each piece with its o
   check_docker; check_compose; asegurar_grupo; asegurar_overcommit
 }
 
-paso_descargar() {  # the checkout this file runs from: its version and every vendored app against
-  # the sha256 its VENDOR pins — the seed's own check (provisioning/lib.sh), before any stack exists
-  local v vendor dir tars want got n=0 malos=0
+confiar_bundle() {  # DIR — the bundle is root's; the admin reads it too (`git describe`, preflight).
+  # git ≥ 2.35.2 refuses a repository another user owns unless it is listed as safe, and only the
+  # system scope works on every git the targets ship (`-c safe.directory` is ignored before 2.38)
+  local f="$ETC_DIR/gitconfig"
+  git config --file "$f" --get-all safe.directory 2>/dev/null | grep -qxF "$1" && return 0
+  git config --file "$f" --add safe.directory "$1" \
+    || bad "no se pudo registrar $1 como repositorio seguro" "sudo git config --system --add safe.directory $1"
+}
+
+enlazar() {  # $BIN_DIR/aps-conecta → this bundle's CLI; ln -sf replaces a stale link, a re-run never fails
+  local destino="$ROOT/host/aps-conecta"
+  if [ "$(readlink -f "$BIN_DIR/aps-conecta" 2>/dev/null)" = "$(readlink -f "$destino")" ]; then
+    ok "Comando aps-conecta enlazado ($BIN_DIR/aps-conecta)"; return 0
+  fi
+  if ! es_root; then
+    info "el comando aps-conecta se enlaza con permisos de administrador: sudo aps-conecta descargar"
+    return 0
+  fi
+  if ln -sf "$destino" "$BIN_DIR/aps-conecta" 2>/dev/null; then
+    ok "Comando aps-conecta enlazado ($BIN_DIR/aps-conecta → $destino)"
+  else
+    bad "no se pudo crear $BIN_DIR/aps-conecta" "sudo ln -sf $destino $BIN_DIR/aps-conecta"
+  fi
+}
+
+paso_descargar() {  # the bundle at its tag. On its own (the two-line bootstrap) this file clones the
+  # suite into $APS_HOME/gestion, root-owned, and the install goes on from that clone — the same
+  # tag, so the same code; in a checkout it verifies that checkout. Either way every vendored app
+  # is checked against the sha256 its VENDOR pins (the seed's own check, provisioning/lib.sh), and
+  # only a verified bundle is linked as the `aps-conecta` command
+  local v vendor dir tars want got n=0 malos=0 destino hay
   v="$(suite_tag)"
   if [ -z "$v" ]; then
     bad "no se pudo leer la versión de la suite en $ROOT" \
       "descargue la suite en una versión publicada (git clone --branch <versión>)"
     return 0
+  fi
+  if ! en_checkout; then
+    if ! es_root; then
+      bad "descargar la suite necesita permisos de administrador" "ejecute: sudo bash aps-conecta install"
+      return 0
+    fi
+    destino="$APS_HOME/gestion"
+    if [ -d "$destino/.git" ]; then
+      hay="$(git -C "$destino" describe --tags --exact-match 2>/dev/null)"
+      if [ "$hay" != "$v" ]; then
+        bad "ya existe una instalación en $destino (versión ${hay:-desconocida}), distinta de $v" \
+          "no se modifica: continúe desde esa copia con «sudo bash $destino/host/aps-conecta install»"
+        return 0
+      fi
+      ok "Suite $v ya descargada en $destino"
+    else
+      info "descargando la suite $v en $destino"
+      mkdir -p "$APS_HOME"
+      if ! ( umask 022 && git -c advice.detachedHead=false clone -q --branch "$v" --depth 1 "$APS_REPO_URL" "$destino" ); then
+        bad "no se pudo descargar la suite $v desde $APS_REPO_URL" \
+          "revise la red y vuelva a ejecutar: sudo bash aps-conecta install"
+        return 0
+      fi
+    fi
+    confiar_bundle "$destino"
+    ROOT="$destino"; HOST_DIR="$destino/host"   # the remaining steps read every file from the bundle
   fi
   for vendor in "$ROOT"/provisioning/apps/*/VENDOR; do
     [ -f "$vendor" ] || continue
@@ -493,7 +557,10 @@ paso_descargar() {  # the checkout this file runs from: its version and every ve
     return 0
   fi
   ok "Suite $v ($(du -sh "$ROOT/provisioning/apps" 2>/dev/null | cut -f1))"
-  [ "$malos" -eq 0 ] && ok "Sumas de verificación correctas (aplicaciones: $n)"
+  if [ "$malos" -eq 0 ]; then
+    ok "Sumas de verificación correctas (aplicaciones: $n)"
+    enlazar
+  fi
   return 0
 }
 
@@ -855,6 +922,8 @@ EOF
   check "welcome: the motto is phase 15's theming slogan (one string, two homes, pinned)" \
     'grep -F "\"$LEMA\"" "$ROOT_BAK/provisioning/phases/15-branding.sh" | grep -q "theming_set slogan"'
 
+  # install runs as root: the stepper arms answer `id -u` from a shim (ID_U=1000 plays the operator)
+  printf '#!/usr/bin/env bash\ncase "$1" in -u) echo "${ID_U:-0}" ;; -un) echo root ;; esac\n' > "$tshim/id"; chmod +x "$tshim/id"
   # the stepper end to end with every server step stubbed: the order, the approved header/footer,
   # the hand-over to the browser, and no prompt without a terminal
   salida="$(
@@ -880,6 +949,9 @@ EOF
   out_paso="$( (cmd_install --sitio x) 2>&1)"; rcs=$?
   check "stepper: install takes no options yet, and says so in Spanish" \
     '[ "$rcs" -eq 1 ] && case "$out_paso" in *"no recibe opciones"*) ;; *) false;; esac'
+  out_paso="$( (export ID_U=1000; cmd_install </dev/null) 2>&1)"; rcs=$?
+  check "stepper: install without sudo refuses before the welcome, naming the command to run" \
+    '[ "$rcs" -eq 1 ] && case "$out_paso" in *"✗ la instalación necesita permisos de administrador: sudo bash aps-conecta install"*) ;; *) false;; esac && case "$out_paso" in *"Paso 1 de 9"*) false;; *) true;; esac'
   out_paso="$(paso_navegador "$(paso_n centro)")"
   check "stepper: a browser step asked for at the console says where it runs" \
     'case "$out_paso" in *"el paso 6 («Elegir el centro») se hace en el navegador"*) ;; *) false;; esac'
@@ -992,6 +1064,9 @@ SHIM
   fi
   rm -f "$tshim"/{apt-get,usermod,systemctl,dpkg,sysctl,curl,git,python3,ca-certificates,docker,docker-ce-cli,containerd.io,docker-buildx-plugin,docker-compose-plugin}
 
+  # descargar in a checkout: the checkout is the bundle; a verified one is linked as the command
+  local BIN_DIR="$tmp/usr-local-bin" APS_HOME="$tmp/opt"
+  mkdir -p "$BIN_DIR" "$ROOT/scripts" "$ROOT/host"; : > "$ROOT/scripts/provisionador.py"; : > "$ROOT/host/aps-conecta"
   mkdir -p "$ROOT/provisioning/apps/demo"
   printf 'contenido\n' > "$tmp/demo.txt"
   tar czf "$ROOT/provisioning/apps/demo/demo-1.0.0.tar.gz" -C "$tmp" demo.txt
@@ -1000,6 +1075,11 @@ SHIM
   out_paso="$(FAIL=0; paso_descargar; echo "FAIL=$FAIL")"
   check "descargar: the checkout's version and every vendored app's sha256 green" \
     'case "$out_paso" in *"✓ Suite v9.9.9"*"✓ Sumas de verificación correctas (aplicaciones: 1)"*"FAIL=0") ;; *) false;; esac'
+  check "descargar: a verified checkout is linked as the aps-conecta command" \
+    '[ "$(readlink -f "$BIN_DIR/aps-conecta")" = "$ROOT/host/aps-conecta" ]'
+  out_paso="$(export ID_U=1000; BIN_DIR="$tmp/bin-sin-sudo"; mkdir -p "$BIN_DIR"; FAIL=0; paso_descargar; echo "FAIL=$FAIL")"
+  check "descargar: without sudo a verified checkout says the link needs sudo — not a red, no link" \
+    'case "$out_paso" in *"· el comando aps-conecta se enlaza con permisos de administrador"*"FAIL=0") ;; *) false;; esac && [ ! -e "$tmp/bin-sin-sudo/aps-conecta" ]'
   printf 'version=1.0.0\nsha256=%064d\n' 0 > "$ROOT/provisioning/apps/demo/VENDOR"
   out_paso="$(FAIL=0; paso_descargar; echo "FAIL=$FAIL")"
   check "descargar: a tarball that does not match its VENDOR reds and is never called correct" \
@@ -1009,6 +1089,44 @@ SHIM
   check "descargar: no vendored app at all reds — never a vacuous «correctas (aplicaciones: 0)»" \
     'case "$out_paso" in *"✗ no se encontraron aplicaciones"*"FAIL=1") ;; *) false;; esac && case "$out_paso" in *"correctas"*) false;; *) true;; esac'
   rm -rf "$ROOT/provisioning"
+
+  # the two-line bootstrap: this file on its own clones the suite at its tag, links the command and
+  # the install goes on from the clone; a re-run finds it done; another version is refused, untouched
+  mkdir -p "$tmp/suelto" "$tmp/remoto/scripts" "$tmp/remoto/host" "$tmp/remoto/provisioning/apps/demo"
+  : > "$tmp/remoto/scripts/provisionador.py"; : > "$tmp/remoto/host/aps-conecta"
+  tar czf "$tmp/remoto/provisioning/apps/demo/demo-1.0.0.tar.gz" -C "$tmp" demo.txt
+  printf 'version=1.0.0\nsha256=%s\n' "$(sha256sum "$tmp/remoto/provisioning/apps/demo/demo-1.0.0.tar.gz" | cut -d' ' -f1)" \
+    > "$tmp/remoto/provisioning/apps/demo/VENDOR"
+  git -C "$tmp/remoto" init -q && git -C "$tmp/remoto" add -A \
+    && git -C "$tmp/remoto" -c user.email=self@t -c user.name=self commit -q -m uno && git -C "$tmp/remoto" tag v1.0.0 \
+    && git -C "$tmp/remoto" -c user.email=self@t -c user.name=self commit -q --allow-empty -m dos && git -C "$tmp/remoto" tag v1.1.0
+  bootstrap() {  # TAG — paso_descargar as the downloaded file runs it: no checkout around it
+    ROOT="$tmp/suelto"; HOST_DIR="$tmp/suelto"; APS_SUITE_TAG="$1"; APS_REPO_URL="file://$tmp/remoto"
+    FAIL=0; paso_descargar; echo "FAIL=$FAIL ROOT=$ROOT"
+  }
+  out_paso="$(bootstrap v1.0.0 2>&1)"
+  check "descargar (bootstrap): clones the tag into APS_HOME/gestion, verifies it, links it, and the install goes on from it" \
+    'case "$out_paso" in *"· descargando la suite v1.0.0 en $APS_HOME/gestion"*"✓ Suite v1.0.0"*"✓ Sumas de verificación correctas (aplicaciones: 1)"*"✓ Comando aps-conecta enlazado"*"FAIL=0 ROOT=$APS_HOME/gestion") ;; *) false;; esac && [ "$(git -C "$APS_HOME/gestion" describe --tags)" = v1.0.0 ] && [ "$(readlink -f "$BIN_DIR/aps-conecta")" = "$APS_HOME/gestion/host/aps-conecta" ]'
+  check "descargar (bootstrap): the clone prints no git advice (English, about detached HEADs) to the operator" \
+    'case "$out_paso" in *"git switch"*|*advice*|*"detached HEAD"*) false;; *) true;; esac'
+  check "descargar (bootstrap): the root-owned bundle is a safe git directory system-wide, so the admin reads its tag" \
+    '[ "$(git config --file "$ETC_DIR/gitconfig" --get-all safe.directory)" = "$APS_HOME/gestion" ]'
+  out_paso="$(bootstrap v1.0.0 2>&1)"
+  check "descargar (bootstrap): a re-run finds the bundle and the link done and clones nothing" \
+    'case "$out_paso" in *"✓ Suite v1.0.0 ya descargada en $APS_HOME/gestion"*"✓ Comando aps-conecta enlazado ($BIN_DIR/aps-conecta)"*"FAIL=0"*) ;; *) false;; esac && case "$out_paso" in *descargando*) false;; *) true;; esac && [ "$(git config --file "$ETC_DIR/gitconfig" --get-all safe.directory | wc -l)" -eq 1 ]'
+  out_paso="$(bootstrap v1.1.0 2>&1)"
+  check "descargar (bootstrap): an installation of another version is refused and left untouched" \
+    'case "$out_paso" in *"✗ ya existe una instalación en $APS_HOME/gestion (versión v1.0.0), distinta de v1.1.0"*"sudo bash $APS_HOME/gestion/host/aps-conecta install"*"FAIL=1"*) ;; *) false;; esac && [ "$(git -C "$APS_HOME/gestion" describe --tags)" = v1.0.0 ]'
+  out_paso="$(export ID_U=1000; APS_HOME="$tmp/opt-sin-sudo"; bootstrap v1.0.0 2>&1)"
+  check "descargar (bootstrap): without sudo it says so and clones nothing" \
+    'case "$out_paso" in *"✗ descargar la suite necesita permisos de administrador"*"FAIL=1"*) ;; *) false;; esac && [ ! -e "$tmp/opt-sin-sudo" ]'
+  mkdir -p "$tmp/solo/host"; cp "$HOST_DIR/aps-conecta" "$tmp/solo/host/aps-conecta"
+  out_paso="$(env -u APS_SUITE_TAG bash "$tmp/solo/host/aps-conecta" run-command 2>&1)"
+  check "bootstrap: the file on its own installs its own release — BUNDLE_TAG — with no git around it" \
+    'case "$out_paso" in *"ghcr.io/aps-conecta/all-in-one:$BUNDLE_TAG") ;; *) false;; esac'
+  check "bootstrap: BUNDLE_TAG is CHANGELOG's newest release (the release commit sets both)" \
+    '[ "v$(grep -m1 -oE "^## \[[0-9][^]]*" "$ROOT_BAK/CHANGELOG.md" | cut -c5-)" = "$BUNDLE_TAG" ]'
+  rm -f "$tshim/id"
 
   # the dispatch as the operator calls it: help is the usage, an unknown word reds, and every
   # registry step answers by its id (browser steps say where they run; server steps have a body)

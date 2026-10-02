@@ -35,13 +35,20 @@ requests nobody, because it never asks a pull request's own author. Prefer small
 thing a clinic installs, and the only answer to "which bytes does that instance have?".
 
 1. `main` stays installable: nothing merges without CI green and a review pass.
-2. After UAT sign-off, tag `vX.Y.Z` on `main` and publish a **GitHub Release**.
+2. After UAT sign-off, the release commit dates the version's CHANGELOG entry **and** sets
+   `BUNDLE_TAG` in `host/aps-conecta` to the same `vX.Y.Z` — the host self-test refuses one without
+   the other. Then tag `vX.Y.Z` on that commit and publish a **GitHub Release**.
 3. The Release notes carry the detail — what a version pins, and why.
    [`CHANGELOG.md`](CHANGELOG.md) is the in-repo index: one entry per version linking to its release,
    plus the `Unreleased` section, which a published release cannot hold. It links rather than
    repeats, so the pinned versions and digests have exactly one home.
 4. Name in the notes which app versions that release pins (`provisioning/apps/*/VENDOR`).
-5. A clinic installs from the tag: `git clone --branch vX.Y.Z --depth 1 <url>`.
+5. A clinic installs from the tag with two lines — `curl -fsSL
+   https://raw.githubusercontent.com/APS-Conecta/gestion/vX.Y.Z/host/aps-conecta -o aps-conecta` and
+   `sudo bash aps-conecta install`. The file clones its own `BUNDLE_TAG` into `/opt/aps-conecta/gestion`
+   (by hand: `git clone --branch vX.Y.Z --depth 1 <url>`); a release candidate is installed with
+   `sudo APS_SUITE_TAG=vX.Y.Z-rcN bash aps-conecta install`. The two lines hold only from a release tag:
+   a file taken from `main` carries the previous release's `BUNDLE_TAG`.
 
 **Our own apps are pinned at a milestone, not at every tag.** `epidemiologia` released six times in
 one week (#137–#141); gestion bumps when we decide a version is the one to ship. There is no branch
