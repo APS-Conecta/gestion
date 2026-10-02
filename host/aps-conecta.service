@@ -16,9 +16,9 @@ ConditionFileIsExecutable=/usr/local/bin/aps-conecta
 
 [Service]
 Type=oneshot
-# The headless arm: start the Provisionador, POST modo=ejecutar, exit the gate's code.
-# Bounded internally (the banner read is 30 s; the executor's own TIMEOUTS bound each phase;
-# the curl is -m 1800) — no unbounded hang anywhere (B-015).
+# The headless arm: the Provisionador's own step in-process (`provisionador.py --paso generar`),
+# no server; the gate's verdict is the exit code. Bounded by the executor's TIMEOUTS, one per
+# phase (seed 30 min, roster 30 min, gate 5 min) — no unbounded hang anywhere (B-015).
 ExecStart=/usr/local/bin/aps-conecta provision --reponer
 # root: the executor rides docker exec (the ported occ) — the docker group alone also works,
 # root is the documented posture for a single-purpose clinic host.

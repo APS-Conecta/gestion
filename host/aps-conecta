@@ -832,36 +832,6 @@ cmd_provision() {  # [--reponer]
   exec python3 "$(prov_path)"
 }
 
-banner_read() {  # FD — the REAL banner() shape (slice 14's locked bytes, unchanged by 17):
-  #   ✓ Provisionador APS Conecta
-  #     Registro DEIS: instantánea … (N establecimientos)
-  #     Abra http://127.0.0.1:PORT — desde otro equipo de la red, …
-  #     Token de acceso ( cópielo en la pantalla de inicio ):
-  #       <64 hex>
-  # The URL rides the «Abra» line; the token is the line AFTER the «Token de acceso» label.
-  # Bounded: 30 s, no unbounded hang (B-015).
-  local fd="$1" deadline=$((SECONDS + 30)) url="" tok="" ln seen_label=0
-  while :; do
-    # (plan-local fix, Step 5: read moves into the body — its timeout return must not fail
-    #  the loop condition, or the first silent second ends the read and the 30 s deadline
-    #  is dead code; silent seconds are tolerated, the deadline is the only exit)
-    IFS= read -r -t 1 -u "$fd" ln || { [ "$SECONDS" -ge "$deadline" ] && return 1; continue; }
-    if [ "$seen_label" -eq 1 ]; then
-      tok="$(printf '%s' "$ln" | tr -d '[:space:]')"
-      seen_label=0
-      if [ -n "$url" ] && [ "${#tok}" -eq 64 ]; then
-        printf '%s\n%s' "$url" "$tok"; return 0
-      fi
-    fi
-    case "$ln" in
-      *"Abra http://127.0.0.1:"*)
-        url="http://127.0.0.1:${ln#*http://127.0.0.1:}"; url="${url%% *}" ;;
-      *"Token de acceso"*) seen_label=1 ;;
-    esac
-    [ "$SECONDS" -ge "$deadline" ] && return 1
-  done <&"$fd"
-  return 1
-}
 
 site_codigo() {  # the site directory IS the DEIS codigo (slice 14: sites/<codigo>/site.sh)
   local f; f="$(site_file)"
@@ -872,49 +842,17 @@ site_codigo() {  # the site directory IS the DEIS codigo (slice 14: sites/<codig
   esac
 }
 
-reponer() {  # the weekly headless re-provision (the timer's whole job): start the
-  # Provisionador, read its banner, POST modo=ejecutar, print the run + the gate verdict,
-  # exit the gate's code — drift self-healing or a loud red, never a silent no-op.
-  local codigo; codigo="$(site_codigo)" || true
-  if [ -z "$codigo" ]; then
+reponer() {  # the weekly headless re-provision (the timer's whole job): the Provisionador's own step,
+  # run in-process — `provisionador.py --paso generar`, no server, no banner, no token. The phases
+  # stream live and the gate's verdict is the exit code: drift self-healing or a loud red, never a
+  # silent no-op
+  local code; code="$(site_codigo)" || true
+  if [ -z "$code" ]; then
     die "no hay un único sitio en sites/ (una instalación sirve a un solo establecimiento) — elija el centro en el instalador web primero"
   fi
-  local fifo provpid
-  fifo="$(mktemp -u)"; mkfifo "$fifo"
-  python3 "$(prov_path)" > "$fifo" 2>&1 & provpid=$!
-  exec 3< "$fifo"
-  local _b=() url tok
-  readarray -t _b < <(banner_read 3)
-  if [ "${#_b[@]}" -ne 2 ]; then
-    exec 3>&-; kill "$provpid" 2>/dev/null; rm -f "$fifo"
-    die "no leí el banner del provisionador (30 s — ¿arrancó python3?)"
-  fi
-  url="${_b[0]}"; tok="${_b[1]}"
-  info "re-provisión semanal: modo=ejecutar para $codigo (token leído del banner — no se imprime)"
-  local body code
-  # read_json is JSON-only (provisionador.py:1477-1481 — a form-encoded body 400s), and
-  # api_generar reads {"codigo", "modo"} from the decoded object — the locked contract
-  body="$(curl -s -m 1800 -w '\n%{http_code}' \
-    -H "Authorization: Bearer $tok" \
-    -H 'Content-Type: application/json' \
-    --data "$(printf '{"codigo": "%s", "modo": "ejecutar"}' "$codigo")" \
-    "$url/api/generar" 2>/dev/null)" ; code="${body##*$'\n'}"
-  exec 3>&- ; kill "$provpid" 2>/dev/null; rm -f "$fifo"
-  # WHERE never WHAT: the token was used in the header; nothing here echoes it.
-  if [ "$code" = "200" ]; then
-    local vacia
-    vacia="$(printf '%s' "$body" | head -n -1 | grep -oP '"divergencia_vacia":\s*\K(true|false)' || true)"
-    printf '%s\n' "$(printf '%s' "$body" | head -n -1)"
-    if [ "$vacia" = "true" ]; then
-      ok "divergencia vacía — la re-provisión semanal no encontró deriva"
-      exit 0
-    fi
-    bad "divergencia NO vacía — la deriva semanal se muestra arriba" \
-      "revise el informe; «aps-conecta provision» abre el provisionador para corregir"
-    exit 1
-  fi
-  bad "la ejecución falló (HTTP $code)" "el detalle llega arriba — cada fase nombra su propio error"
-  exit 1
+  info "re-provisión semanal del establecimiento $code"
+  python3 "$(prov_path)" --paso generar --codigo "$code"
+  exit $?
 }
 
 # ── respaldo ───────────────────────────────────────────────────────────────────────────────
@@ -1065,7 +1003,7 @@ cmd_preflight() {
 # ── self-test ──────────────────────────────────────────────────────────────────────────────
 # PATH shims, planted fixtures, a stub provisionador — no docker, no network, no host state.
 # Every arm proves a real arm of the CLI: the checks against planted tool output, the generator
-# string, the banner parse, the site discovery, and --reponer end to end against the stub.
+# string, the site discovery, and --reponer against a stub provisionador that records its argv.
 
 selftest() {
   local n=0 tshim tmp ROOT_BAK="$ROOT"
@@ -1633,72 +1571,28 @@ DSHIM
   check "respaldo: the mastercontainer's file actually carries the line" \
     'grep -qxF /opt/aps-conecta "$tmp/mc-additional"'
 
-  # ── --reponer end to end: a stub provisionador with the banner format + a canned verdict ──
-  # the reponer arm needs the REAL curl (the POST must leave the process) — the hairpin
-  # arms left their curl shim behind, and a shimmed curl silently turned every verdict into
-  # an HTTP-000 red (this arm's own find: the shim world is per-arm, restore the real tool)
-  rm -f "$tshim/curl"
+  # ── --reponer end to end: the provisionador's own step, run in-process — a stub that records its
+  # argv and answers with the exit code the arm plants (the real step: provisionador.py --self-test)
   mkdir -p "$ROOT/scripts"
-  cat > "$ROOT/scripts/provisionador.py" <<'EOF'
-# stub: the real banner shape (slice 14: URL line, token line) then one canned POST answer
+  cat > "$ROOT/scripts/provisionador.py" <<EOF
 import sys
-from http.server import BaseHTTPRequestHandler, HTTPServer
-VACIA = "true"
-# the stub's banner is byte-shaped like provisionador.py's own banner() — the parse must
-# survive the REAL lines («Abra …» with the URL mid-line, the label line, the indented hex)
-class H(BaseHTTPRequestHandler):
-    def do_POST(self):
-        # the stub enforces the LOCKED contract (read_json: JSON-only, codigo+modo) — a
-        # form-encoded body must 400 here exactly as the real provisionador would, so the
-        # self-test catches a wrapper that drifts off the JSON contract (R2's hollow-stub find)
-        import json as J
-        n = int(self.headers.get("Content-Length", 0))
-        try:
-            payload = J.loads(self.rfile.read(n).decode("utf-8"))
-            assert isinstance(payload, dict) and payload.get("codigo") and payload.get("modo") == "ejecutar"
-        except Exception:
-            self.send_response(400)
-            self.end_headers()
-            self.wfile.write(b'{"error": "el cuerpo debe ser JSON codificado en UTF-8"}')
-            return
-        body = '{"salida": "fase 10: ok\\nfase 20: ok", "divergencia_vacia": ' + VACIA + '}'
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.end_headers()
-        self.wfile.write(body.encode())
-    def log_message(self, *a): pass
-# port 0: the OS picks a free one — a hardcoded port collides with whatever the test host
-# already serves (this VPS serves :8081; the stub's first draft died on bind and the POST hit
-# a stranger — the self-test's own find)
-srv = HTTPServer(("127.0.0.1", 0), H)
-print("\u2713 Provisionador APS Conecta")
-print("  Registro DEIS: instant\u00e1nea 2026-07-23 (2655 establecimientos)")
-print("  Abra http://127.0.0.1:%d \u2014 desde otro equipo de la red, reemplace 127.0.0.1 por la IP de este servidor." % srv.server_port)
-print("  Token de acceso ( c\u00f3pielo en la pantalla de inicio ):")
-print("    0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
-sys.stdout.flush()
-srv.serve_forever()
+open("$tmp/prov.argv", "w").write(" ".join(sys.argv[1:]))
+print("fase 10: ok")
+code = int(open("$tmp/prov.rc").read())
+print("✓ divergencia vacía" if code == 0 else "✗ divergencia NO vacía — «aps-conecta provision» abre el provisionador para corregir")
+sys.exit(code)
 EOF
+  echo 0 > "$tmp/prov.rc"
   out="$(reponer 2>&1)"; rc=$?
-  check "reponer: reads the stub banner, POSTs modo=ejecutar, exits the gate's code (0 on empty divergence)" \
-    '[ "$rc" -eq 0 ] && case "$out" in *"re-provisión semanal"*"divergencia vacía"*) ;; *) false;; esac'
-  check "reponer: the token is used, never printed (WHERE never WHAT)" \
-    'case "$out" in *0123456789abcdef*) false;; *) true;; esac'
-
-  # a red gate must exit 1 — prove-it-red for the timer's failure surface
-  sed -i 's/VACIA = "true"/VACIA = "false"/' "$ROOT/scripts/provisionador.py"
+  check "reponer: runs the provisionador's own step for the site — --paso generar, no server, no token" \
+    '[ "$rc" -eq 0 ] && [ "$(cat "$tmp/prov.argv")" = "--paso generar --codigo 113314" ] && case "$out" in *"re-provisión semanal del establecimiento 113314"*"✓ divergencia vacía"*) ;; *) false;; esac'
+  echo 1 > "$tmp/prov.rc"
   out="$(reponer 2>&1)"; rc=$?
-  check "reponer: non-empty divergence exits 1 (the weekly drift red reaches systemd)" \
-    '[ "$rc" -eq 1 ]'
-  check "reponer: the red names the drift and the fix path" \
-    'case "$out" in *"divergencia NO vacía"*"aps-conecta provision"*) ;; *) false;; esac'
-
-  # an HTTP 500 (a failed phase) must exit 1 with the HTTP code — the executor's own contract
-  sed -i 's/self.send_response(200)/self.send_response(500)/' "$ROOT/scripts/provisionador.py"
-  sed -i 's/VACIA = "false"/VACIA = "true"/' "$ROOT/scripts/provisionador.py"
+  check "reponer: a non-empty divergence exits 1 (the weekly drift red reaches systemd) and names the fix" \
+    '[ "$rc" -eq 1 ] && case "$out" in *"divergencia NO vacía"*"aps-conecta provision"*) ;; *) false;; esac'
+  echo 2 > "$tmp/prov.rc"
   out="$(reponer 2>&1)"; rc=$?
-  check "reponer: a phase failure (HTTP 500) exits 1 naming the code" \
-    '[ "$rc" -eq 1 ] && case "$out" in *"HTTP 500"*) ;; *) false;; esac'
+  check "reponer: the step's own exit code reaches systemd unchanged" '[ "$rc" -eq 2 ]'
 
   # the revalidate arm (slice 20): three stub gate scripts under a fixture root — the
   # aggregation + the exit contract, never first-fail. The command substitution scopes the
