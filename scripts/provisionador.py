@@ -1786,6 +1786,19 @@ details summary{cursor:pointer;font-weight:700;margin-top:.8rem}
 .enlace-btn:hover{background:none;color:var(--encima)}
 code{overflow-wrap:anywhere}
 [hidden]{display:none!important}
+.barra{height:6px;background:var(--linea);border-radius:3px;overflow:hidden;margin:.6rem 0 1rem}
+.barra>i{display:block;height:100%;width:100%;background:var(--primario);transform:scaleX(var(--p,0));
+transform-origin:left;transition:transform .2s linear}
+.lista-estado{list-style:none;margin:0;padding:0;display:grid;gap:.4rem;font-size:var(--t-s)}
+.lista-estado li{display:grid;grid-template-columns:1.4rem minmax(0,1fr);gap:.5rem;align-items:baseline}
+.lista-estado .ic{font-weight:800;color:var(--apagado)}
+.lista-estado .hecho .ic{color:var(--ok)}
+.lista-estado .ahora .ic{color:var(--oro)}
+.lista-estado .ahora{font-weight:700}
+.progreso-linea{font-weight:700;min-height:1.6em;margin-top:1rem}
+.dl dd.normal{font-weight:400}
+#x-plan h3.ceja{margin:1.6rem 0 .5rem}
+#x-plan .nota{margin-top:1.2rem}
 @media (max-width:860px){
 .marco{grid-template-columns:minmax(0,1fr)}
 .riel{display:none}
@@ -2265,58 +2278,101 @@ def screen_equipos():
 
 
 def screen_revision():
-    body = """<div class="tarjeta"><h2>Revisión</h2>
-<p>Revise el plan antes de ejecutar. La ejecución configura la instancia completa
-(minutos); su avance se ve en la consola del servidor.</p>
+    """Step 9, «Revisar y ejecutar» (L3 S4) — the approved design's: the plan in clinic terms (R40):
+    the centre, its sectors and programs, every person, the cargo accounts, the components (R37) and
+    the maintenance; then «Ejecutar», which starts the run on the server and follows it with one short
+    GET a second (a14): the steps in the console's own words, then the verdict. A reload finds the
+    run where it is; green is «Listo»; red shows its head line and where the detail is (a16: the
+    gate's notes stay in the console)."""
+    body = """<section class="tarjeta"><h2>Plan</h2>
 <div id="m">Preparando la revisión…</div>
-<button id="ejecutar" disabled>Ejecutar</button></div>
+<div id="x-plan"></div></section>
+<section class="tarjeta"><h2>Ejecutar</h2>
+<p>Crea los grupos, las carpetas y las cuentas, y aplica la marca: unos minutos. El avance se ve aquí
+y en la consola del servidor.</p>
+<div class="fila"><button type="button" id="x-ir" disabled>Ejecutar</button></div>
+<div id="x-error"></div>
+<div id="x-prog" hidden><p class="progreso-linea" id="x-linea" aria-live="polite"></p>
+<div class="barra" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="Avance de la ejecución"><i id="x-barra"></i></div>
+<ul class="lista-estado" id="x-lista"></ul><div id="x-fin"></div></div></section>
 <script>
 (async () => {
   const codigo = await centro();
   if (!codigo) return;
-  const r = await api("/api/generar", {codigo: codigo, modo: "revision"});
-  if (r.estado !== 200) {
-    zona("m").innerHTML = '<div class="error">' + escapear(r.error || r.errores) + "</div>"; return;
+  const lista = (xs) => xs.length ? xs.map(escapear).join(" · ") : "—";
+  const chip = (g) => '<span class="chip" translate="no">' + escapear(g) + "</span>";
+  let reloj = null, planOk = false, visto = "", fallos = 0;
+  function pintar(e) {   // the run as the server sees it, repainted only when it moved (one live line)
+    const clave = e.ejecucion + "|" + e.hechos.join("|");
+    if (clave === visto) return;
+    visto = clave;
+    const hechos = new Set(e.hechos), fin = e.ejecucion === "terminada";
+    const ahora = fin ? -1 : e.pasos.findIndex((p) => !hechos.has(p));
+    const parte = e.pasos.filter((p) => hechos.has(p)).length / e.pasos.length;
+    zona("x-prog").hidden = false;
+    zona("x-linea").textContent = fin ? e.veredicto.titulo : (e.pasos[ahora] || e.pasos[e.pasos.length - 1]) + "…";
+    zona("x-barra").style.setProperty("--p", parte);
+    zona("x-barra").parentNode.setAttribute("aria-valuenow", Math.round(100 * parte));
+    zona("x-lista").innerHTML = e.pasos.map((p, i) => {
+      const st = hechos.has(p) ? "hecho" : i === ahora ? "ahora" : "";
+      return '<li class="' + st + '"><span class="ic">' + (st === "hecho" ? "✓" : st === "ahora" ? "●" : "○") +
+        "</span><span>" + escapear(p) + "</span></li>";
+    }).join("");
+    zona("x-fin").innerHTML = fin && !e.veredicto.verde ? '<div class="error">El detalle y el arreglo, en la ' +
+      "consola del servidor: <code>aps-conecta estado</code>. Corrija y vuelva a ejecutar.</div>" : "";
   }
-  zona("m").innerHTML = "<table>" +
-    "<tr><th>Establecimiento</th><td>" + escapear(r.sitio) + "</td></tr>" +
-    "<tr><th>Usuarios</th><td>" + r.usuarios + " (primera administración: <code>" +
-      escapear(r.primer_admin) + "</code>)</td></tr>" +
-    "<tr><th>Fases</th><td>" + r.fases.length + ": " + r.fases.join(", ") + "</td></tr>" +
-    "<tr><th>Contraseñas</th><td>" + r.contrasenas_selladas + " selladas (personas y cargos)</td></tr>" +
-    "<tr><th>.env</th><td>SITE " + escapear(r.env.SITE) + ", " + escapear(r.env.SEED_FIXTURES) +
-      ", FIXTURE_USER_PASSWORD " + escapear(r.env.FIXTURE_USER_PASSWORD) + "</td></tr>" +
-    "</table><p>La divergencia se comprueba al final de la ejecución.</p>";
-  zona("ejecutar").disabled = false;
-  zona("ejecutar").addEventListener("click", async () => {
-    zona("ejecutar").disabled = true;
-    zona("ejecutar").textContent = "Ejecutando… vea la consola";
-    const r2 = await api("/api/generar", {codigo: codigo, modo: "ejecutar"});
-    sessionStorage.setItem("resultado", JSON.stringify(r2));
-    location.href = "/divergencia";
+  async function seguir() {   // one short GET a second (a14): no request held open
+    clearTimeout(reloj);
+    const e = await api("/api/ejecucion");
+    if (e.estado === 0 || e.estado >= 500) {   // a dropped answer is retried; a closed installer says so
+      if (++fallos >= 3 && visto) zona("x-error").innerHTML = '<div class="aviso">Sin respuesta del ' +
+        "instalador. Si la ejecución terminó bien, el instalador ya se cerró: el resultado está en la " +
+        "consola del servidor (<code>aps-conecta estado</code>).</div>";
+      reloj = setTimeout(seguir, 2000); return;
+    }
+    if (e.estado !== 200) { zona("x-error").innerHTML = '<div class="error">' + escapear(e.error) + "</div>"; return; }
+    if (fallos) { fallos = 0; zona("x-error").innerHTML = ""; }
+    if (e.ejecucion !== "sin_ejecutar") pintar(e);
+    if (e.ejecucion === "en_curso") { zona("x-ir").disabled = true; reloj = setTimeout(seguir, 1000); return; }
+    if (e.ejecucion === "terminada" && e.veredicto.verde) { location.replace("/listo"); return; }
+    zona("x-ir").disabled = !planOk;
+    if (e.ejecucion === "terminada") zona("x-ir").textContent = "Volver a ejecutar";
+  }
+  zona("x-ir").addEventListener("click", async () => {
+    zona("x-ir").disabled = true;
+    zona("x-error").innerHTML = "";
+    const r = await api("/api/generar", {codigo, modo: "ejecutar"});
+    if (r.estado === 202 || r.estado === 409) {   // started, or one already going: follow it
+      if (r.estado === 409) zona("x-error").innerHTML = '<div class="aviso">' + escapear(r.error) + "</div>";
+      seguir(); return;
+    }
+    zona("x-error").innerHTML = '<div class="error">' + escapear(r.error) + "</div>";
+    zona("x-ir").disabled = false;
   });
-})();
-</script>"""
-    return shell("ejecutar", body)
-
-
-def screen_divergencia():
-    body = """<div class="tarjeta"><h2>Divergencia</h2>
-<div id="m">Cargando el resultado…</div>
-<button onclick="location.href='/bienvenida'">Volver a la bienvenida</button></div>
-<script>
-(async () => {
-  const r = JSON.parse(sessionStorage.getItem("resultado") || "null");
-  if (!r) { zona("m").innerHTML =
-    '<div class="aviso">No hay un resultado en esta sesión. Ejecute de nuevo desde la revisión.</div>'; return; }
+  const r = await api("/api/generar", {codigo, modo: "revision"});
   if (r.estado !== 200) {
-    zona("m").innerHTML = '<div class="error">' + escapear(r.error) + "</div>" +
-      "<pre>" + escapear((r.salida || "").split("\\n").slice(-12).join("\\n")) + "</pre>"; return;
+    const errores = r.errores ? r.errores.map((x) => (x.linea ? "Línea " + x.linea + ": " : "") + x.error)
+      : [r.error];
+    zona("m").innerHTML = '<div class="error">' + errores.map(escapear).join("<br>") + "</div>" +
+      (r.errores ? '<p><a href="/equipos">Volver a «Cargar equipos y personas»</a></p>' : "");
+    seguir(); return;   // a run already going is still shown
   }
-  if (r.divergencia_vacia) { location.replace("/listo"); return; }
-  zona("m").innerHTML = '<div class="error"><strong>Hay divergencia.</strong> Revise las ' +
-    "notas y corrija; luego vuelva a ejecutar desde la revisión.</div>" +
-    "<pre>" + escapear(r.divergencia) + "</pre>";
+  zona("m").innerHTML = "";
+  zona("x-plan").innerHTML = '<dl class="dl"><dt>Centro</dt><dd>' + escapear(r.centro.nombre) + ", " +
+      escapear(r.centro.comuna) + " · DEIS " + escapear(r.centro.codigo) + "</dd>" +
+    "<dt>Sectores (" + r.sectores.length + ")</dt><dd>" + lista(r.sectores) + "</dd>" +
+    "<dt>Programas (" + r.programas.length + ")</dt><dd>" + lista(r.programas) + "</dd>" +
+    "<dt>Cuentas de cargo</dt><dd>" + r.cuentas_de_cargo + " (dirección y jefaturas; se crean solas)</dd></dl>" +
+    '<h3 class="ceja">Personas (' + r.personas.length + ")</h3><table><tr><th>Usuario</th><th>Nombre</th>" +
+    "<th>Grupos</th><th>Primera adm.</th></tr>" + r.personas.map(([u, n, g, p]) => "<tr><td>" +
+      escapear(u) + "</td><td>" + escapear(n) + "</td><td>" + g.map(chip).join(" ") + "</td><td>" +
+      (p ? "<b>sí</b>" : "no") + "</td></tr>").join("") + "</table>" +
+    '<h3 class="ceja">Componentes</h3><dl class="dl">' + r.componentes.map(([n, q]) => "<dt>" +
+      escapear(n) + '</dt><dd class="normal">' + escapear(q) + "</dd>").join("") + "</dl>" +
+    '<p class="nota">Mantención automática: domingo 03:00 (configuración) · día 4, 05:00 (mapa) · ' +
+    "hora de Santiago.</p>";
+  planOk = true;
+  seguir();
 })();
 </script>"""
     return shell("ejecutar", body)
@@ -2330,7 +2386,6 @@ ROUTES = {
     "/contenedores": screen_contenedores,
     "/equipos": screen_equipos,
     "/revision": screen_revision,
-    "/divergencia": screen_divergencia,
 }
 
 
@@ -4073,8 +4128,7 @@ def selftest():
                                     ("/contenedores", "Contenedores del asistente"),
                                     ("/centro", "Confirmar centro"),
                                     ("/equipos", "Planilla de personas"),
-                                    ("/revision", "Revise el plan"),
-                                    ("/divergencia", "Divergencia")):
+                                    ("/revision", "Crea los grupos, las carpetas y las cuentas")):
                     st, text, hdr, setc = b.req("GET", path)
                     check(f"screens: {path} renders with the cookie arm",
                           st == 200 and marca in text and "text/html" in hdr.get("Content-Type", ""))
@@ -4160,6 +4214,15 @@ def selftest():
                 st, equipos_html, hdr, setc = b.req("GET", "/contenedores")
                 check("screens: step 8 is one screen — the three old routes are gone, the suite hands off to /equipos (a16)",
                       gone == [404, 404, 404] and "location.href='/equipos'" in equipos_html)
+                st, rev_html, hdr, setc = b.req("GET", "/revision")
+                with open(os.path.join(ROOT_DIR, "host", "aps-conecta.timer"), encoding="utf-8") as fh:
+                    semanal = re.search(r"^OnCalendar=(.*)$", fh.read(), re.M).group(1)
+                with open(os.path.join(ROOT_DIR, "host", "aps-conecta-tiles.timer"), encoding="utf-8") as fh:
+                    mensual = re.search(r"^OnCalendar=(.*)$", fh.read(), re.M).group(1)
+                check("screens: step 9 is one screen — /divergencia is gone; the maintenance it states is the timers' own (Sun 03:00, day 4 05:00)",
+                      b.req("GET", "/divergencia")[0] == 404
+                      and semanal.startswith("Sun *-*-* 03:00") and "domingo 03:00" in rev_html
+                      and mensual.startswith("*-*-04 05:00") and "día 4, 05:00" in rev_html)
 
                 st, plan, hdr, setc = b.req("GET", "/equipos")
                 check("planilla: the browser decode-or-warn rides the screen (bytes, utf-8 fatal, cp1252)",
@@ -4286,8 +4349,7 @@ def selftest():
                         cargando = {"/contenedores": "Consultando el estado",
                                     "/centro": "Cargando el registro",
                                     "/equipos": "Cargando los equipos",
-                                    "/revision": "Preparando la revisión",   # the centre from the server, then the plan
-                                    "/divergencia": "Cargando el resultado"}
+                                    "/revision": "Preparando la revisión"}   # the centre from the server, then the plan
                         corrio = True
                         for ruta, texto in cargando.items():
                             try:
@@ -4430,6 +4492,65 @@ def selftest():
                                                  for x in provocados) == ["400", "409"]
                         check("browser: step 8 — ids under each list, save, a different save is a conflict, «Reemplazar»; the centre's template uploads back clean; an unknown group opens «Grupos válidos» (R35, R38, a15)",
                               paso8 and not errores)
+                        # step 9 in a real browser: the plan in clinic terms; «Ejecutar» on a run
+                        # that reports one phase, then a red verdict — the progress, the head line, the
+                        # way to the detail; a reload finds the verdict where it was (a14, a16)
+                        # step 8 hands off to /revision under a fixture that is gone by now: a late
+                        # answer from that page is not this arm's, so it judges its own lines only
+                        pg.goto("about:blank")
+                        desde = len(errores)
+                        verdadero, suelta = globals()["api_generar"], threading.Event()
+
+                        def lento(p):   # the plan is real; the run reports a phase and waits
+                            if p.get("modo") != "ejecutar":
+                                return verdadero(p)
+                            avance("✓ phase 05-security\n")
+                            suelta.wait(30)
+                            return 200, {"modo": "ejecutar", "divergencia_vacia": False,
+                                         "divergencia": "    algo de más\n"}
+                        globals()["api_generar"] = lento
+                        EJECUCION.update(estado="sin_ejecutar", hechos=[], veredicto=None)
+                        try:
+                            pg.goto(f"https://127.0.0.1:{tport}/revision")
+                            pg.wait_for_selector("#x-plan dl", timeout=15000)
+                            plan_txt = pg.inner_text("#x-plan")
+                            pg.wait_for_selector("#x-ir:enabled", timeout=10000)
+                            pg.click("#x-ir")
+                            pg.wait_for_selector(".lista-estado .hecho", timeout=10000)
+                            avance_txt = pg.inner_text("#x-prog")
+                            pg.reload()   # mid-run: the page finds the run and follows it
+                            pg.wait_for_selector(".lista-estado .hecho", timeout=15000)
+                            sigue = pg.is_disabled("#x-ir") and not pg.query_selector("#x-error .error")
+                            suelta.set()
+                            pg.wait_for_selector("#x-prog .error", timeout=10000)
+                            veredicto_txt = pg.inner_text("#x-prog")
+                            principal = pg.inner_text("#contenido")
+                            pg.reload()
+                            pg.wait_for_selector("#x-prog .error", timeout=15000)
+                            recargado = pg.inner_text("#x-prog")
+                            # a16 over everything step 9 shows: no app id, no file, no key, no jargon
+                            ids = "|".join([a for a, _n, _q in COMPONENTES] + list(PLUMBING_APPS))
+                            jerga = re.findall(rf"\b(?:{ids})\b|idempotente|\.sh\b|\.env\b|/|"
+                                               r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b", principal)
+                            paso9 = ("Cóndores de Chile, El Bosque · DEIS 113314" in plan_txt
+                                     and "Sector Estrella" in plan_txt and "elena.diaz" in plan_txt
+                                     and "maria.perez" in plan_txt and "Chat y videollamadas internas" in plan_txt
+                                     and "domingo 03:00" in plan_txt and "unos minutos" in principal
+                                     and jerga == [] and sigue
+                                     and "Seguridad de sesión" in avance_txt and "Comprobación final" in avance_txt
+                                     and "✗ deriva" in veredicto_txt and "aps-conecta estado" in veredicto_txt
+                                     and "algo de más" not in veredicto_txt
+                                     and "✗ deriva" in recargado
+                                     and pg.inner_text("#x-ir") == "Volver a ejecutar")
+                        except Exception as e:   # a Playwright timeout: the arm reports it
+                            paso9 = False
+                            errores.append(str(e))
+                        finally:
+                            suelta.set()
+                            globals()["api_generar"] = verdadero
+                            EJECUCION.update(estado="sin_ejecutar", hechos=[], veredicto=None)
+                        check("browser: step 9 — the plan in clinic terms, «Ejecutar» followed by polling and through a reload mid-run, a red verdict's head and the way to its detail (no gate notes), nothing a16 forbids on the page (R40, a14, a16)",
+                              paso9 and not errores[desde:])
                         limpio = nav.new_context(ignore_https_errors=True).new_page()
                         limpio.goto(f"https://127.0.0.1:{tport}/")
                         en_login = limpio.url.endswith("/login") and "Código de acceso" in limpio.content()
