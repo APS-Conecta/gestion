@@ -722,10 +722,11 @@ aio_post() {  # PATH --data-urlencode K=V… — the wizard's configuration API 
 
 aio_start() {  # POST /api/docker/start pulls, creates and starts the whole set INSIDE the request
   # (up to 30 min on a slow link): it runs in the background while the console counts containers
-  local f="$AIO_STATE/inicio.code" pid n seen=""
+  local f="$AIO_STATE/inicio.code" pid n seen="" code
   info "iniciando la suite (descarga de imágenes: varios minutos)"
-  ( aio_curl -o /dev/null -w '%{http_code}' --max-time 1800 "${AIO_CSRF[@]}" "$AIO_URL/api/docker/start" \
-      > "$f" 2>/dev/null ) &
+  # curl itself is the background job (not a subshell around it), so the trap's kill reaches it
+  curl -sk -b "$AIO_STATE/cookies" -c "$AIO_STATE/cookies" -o /dev/null -w '%{http_code}' --max-time 1800 \
+    "${AIO_CSRF[@]}" "$AIO_URL/api/docker/start" > "$f" 2>/dev/null &
   pid=$!
   trap 'kill "$pid" 2>/dev/null; exit 130' INT TERM
   while kill -0 "$pid" 2>/dev/null; do
@@ -735,9 +736,10 @@ aio_start() {  # POST /api/docker/start pulls, creates and starts the whole set 
   done
   wait "$pid"
   trap - INT TERM
-  case "$(cat "$f" 2>/dev/null)" in
+  code="$(cat "$f" 2>/dev/null)"
+  case "$code" in
     200|201|302) ok "Suite iniciada" ;;
-    *) bad "el asistente no pudo iniciar la suite (HTTP $(cat "$f" 2>/dev/null))" \
+    *) bad "el asistente no pudo iniciar la suite (HTTP ${code:-sin respuesta})" \
          "revise la red y las imágenes: docker ps -a --filter name=nextcloud-aio-"
        return 1 ;;
   esac
@@ -792,7 +794,9 @@ cmd_aio_wizard() {  # --dominio D [--sin-validar-dominio] [--respaldo DIR]
     case "$1" in
       --dominio) domain="${2:-}"; shift 2 || shift ;;
       --sin-validar-dominio) options+=(--data-urlencode skip_domain_validation=1); shift ;;
-      --respaldo) backup_dir="${2:-}"; shift 2 || shift ;;
+      --respaldo) [ -n "${2:-}" ] \
+                    || die "falta el directorio del respaldo: aps-conecta asistente-aio --dominio <dominio> --respaldo <directorio>"
+                  backup_dir="$2"; shift 2 ;;
       *) die "opción desconocida: $1 — uso: aps-conecta asistente-aio --dominio <dominio> [--sin-validar-dominio] [--respaldo <directorio>]" ;;
     esac
   done
@@ -1530,12 +1534,13 @@ case "\$url" in
   */api/auth/login) echo "POST login\$data" >> "$tmp/aio.log"
     case "\$data" in *"password=frase uno dos"*) code=201 ;; *) code=422 ;; esac ;;
   */login) body='<input name="csrf_name" value="n1"><input name="csrf_value" value="v1">' ;;
-  */containers) body='<span id="initial-nextcloud-password">admin-secreta</span>' ;;
+  */containers) echo "GET containers" >> "$tmp/aio.log"; body='<span id="initial-nextcloud-password">admin-secreta</span>' ;;
   */api/configuration) echo "POST config\$data" >> "$tmp/aio.log"; touch "$tmp/aio.configured"
     case "\$data" in *"domain=rechazado.example"*) code=422 ;; *) code=201 ;; esac ;;
   */api/docker/start) echo "POST start\$data" >> "$tmp/aio.log"
+    if [ -e "$tmp/aio.start-fails" ]; then code=500; else
     printf '%s\n' nextcloud-aio-nextcloud nextcloud-aio-database nextcloud-aio-redis > "$tmp/aio.ps"; sleep 0.4
-    printf '%s\n' nextcloud-aio-nextcloud $AIO_SET > "$tmp/aio.ps"; code=200 ;;
+    printf '%s\n' nextcloud-aio-nextcloud $AIO_SET > "$tmp/aio.ps"; code=200; fi ;;
 esac
 if [ -n "\$outfile" ]; then printf '%s\n' "\$body" > "\$outfile"; else [ -z "\$body" ] || printf '%s\n' "\$body"; fi
 [ -z "\$code" ] || printf '%s' "\$code"
@@ -1552,6 +1557,8 @@ SHIM
     out="$( (cmd_aio_wizard --dominio clinica.example --sin-validar-dominio) 2>&1)"; rc=$?
     check "asistente-aio: passphrase, login, domain, timezone, options, start with progress, the waits, the admin password — in order" \
       '[ "$rc" -eq 0 ] && case "$out" in *"✓ Contraseña del asistente guardada en $AIO_STATE/master.pw"*"✓ Ingreso al asistente"*"✓ Dominio: clinica.example"*"✓ Zona horaria: America/Santiago"*"✓ Opciones: oficina incluida"*"· contenedores en marcha: 3 de 6"*"✓ Suite iniciada"*"✓ Suite en marcha: 6 contenedores, Nextcloud instalado"*"✓ Contraseña del administrador de Nextcloud guardada en $AIO_STATE/nextcloud.pw"*) ;; *) false;; esac'
+    check "asistente-aio: the load-bearing GET /containers comes before the first configuration POST" \
+      '[ "$(grep -n "^GET containers" "$tmp/aio.log" | head -1 | cut -d: -f1)" -lt "$(grep -n "^POST config" "$tmp/aio.log" | head -1 | cut -d: -f1)" ]'
     check "asistente-aio: every POST carries the session's CSRF pair; the skip flag rides the domain; office is never posted" \
       '[ -z "$(grep "^POST config\|^POST start" "$tmp/aio.log" | grep -v "csrf_name=n1 csrf_value=v1")" ] && grep -q "domain=clinica.example skip_domain_validation=1$" "$tmp/aio.log" && grep -q "timezone=America/Santiago$" "$tmp/aio.log" && grep -q "options-form=1$" "$tmp/aio.log" && ! grep -q office "$tmp/aio.log"'
     check "asistente-aio: the passphrase reaches curl as a file (password@…), never in its arguments" \
@@ -1570,6 +1577,14 @@ SHIM
     out="$( (cmd_aio_wizard --dominio rechazado.example) 2>&1)"; rc=$?
     check "asistente-aio: a domain the wizard refuses stops before the start, naming the field" \
       '[ "$rc" -eq 1 ] && case "$out" in *"✗ el asistente rechazó «domain» (HTTP 422)"*) ;; *) false;; esac && ! grep -q "^POST start" "$tmp/aio.log"'
+    : > "$tmp/aio.ps"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; touch "$tmp/aio.start-fails"
+    out="$( (cmd_aio_wizard --dominio clinica.example) 2>&1)"; rc=$?
+    check "asistente-aio: a start the wizard refuses reds with its HTTP code and stops before the waits" \
+      '[ "$rc" -eq 1 ] && case "$out" in *"✗ el asistente no pudo iniciar la suite (HTTP 500)"*) ;; *) false;; esac && case "$out" in *"Suite en marcha"*) false;; *) true;; esac'
+    rm -f "$tmp/aio.start-fails"
+    out="$( (cmd_aio_wizard --dominio clinica.example --respaldo) 2>&1)"; rc=$?
+    check "asistente-aio: --respaldo without a directory refuses — never a silently skipped backup" \
+      '[ "$rc" -eq 1 ] && [ "$out" = "✗ falta el directorio del respaldo: aps-conecta asistente-aio --dominio <dominio> --respaldo <directorio>" ]'
     out="$( (cmd_aio_wizard --dominio -x) 2>&1)"; rc=$?
     check "asistente-aio: a value that is not a domain is refused before any request" \
       '[ "$rc" -eq 1 ] && [ "$out" = "✗ falta un dominio válido: aps-conecta asistente-aio --dominio <dominio>" ]'
@@ -1784,11 +1799,11 @@ case "${1:-}" in
   --self-test)  selftest ;;
   ""|-h|--help) usage ;;
   *)            # a step answers by its registry id — the list is the only place a step is named
-                if paso="$(step_number "$1")"; then
-                  if [ "$(step_field "$paso" 3)" = servidor ]; then
-                    step_run "$paso" "aps-conecta $1" || exit 1
+                if step="$(step_number "$1")"; then
+                  if [ "$(step_field "$step" 3)" = servidor ]; then
+                    step_run "$step" "aps-conecta $1" || exit 1
                   else
-                    step_browser "$paso"
+                    step_browser "$step"
                   fi
                 else
                   usage; echo; echo "✗ subcomando desconocido: $1" >&2; exit 2
