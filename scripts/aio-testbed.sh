@@ -18,13 +18,13 @@
 # auto_https off, and the mastercontainer's acme issuer is on-demand only, never triggered by
 # IP:8080 browsing.
 #
-# Wizard automation is the same request sequence upstream's initial-setup Playwright spec drives
-# minus the browser: capture the one-time initial password from the first GET /setup (login is
-# blocked once apache runs), log in, set the domain, set the timezone, save the options form
-# (ABSENCE disables: talk/whiteboard/imaginary stay off, office stays eurooffice by default),
-# start the containers, then wait bounded. SKIP_DOMAIN_VALIDATION + an RFC-2606 .invalid domain
-# installs without DNS; the domain is immutable afterwards, which a disposable instance does not
-# care about.
+# Wizard automation is the CLI's: `host/aps-conecta asistente-aio` drives the same request sequence
+# upstream's initial-setup Playwright spec drives, minus the browser — one copy (a6), so Clean boot
+# exercises the drive a clinic's silent install uses. This harness owns only what makes the probe
+# a probe: the mastercontainer's docker run (SKIP_DOMAIN_VALIDATION, a loopback apache on a high
+# port, the stock upstream image), the probe state the seed expects, and the port gate. The
+# RFC-2606 .invalid domain installs without DNS; the domain is immutable afterwards, which a
+# disposable instance does not care about.
 #
 # DELIBERATELY STANDALONE: no scripts/env.sh, no gestion occ() — the docker-exec port (slice 2)
 # is what will bind gestion to this instance, and the harness must work before that lands. Every
@@ -35,7 +35,7 @@
 # not fixed opportunistically (house rule).
 #
 # Usage:
-#   scripts/aio-testbed.sh up        preflight → run mastercontainer → capture → configure → start → bounded waits → probe state (store off, skeleton cleared, theme seeded) → gate
+#   scripts/aio-testbed.sh up        preflight → run mastercontainer → aps-conecta asistente-aio (the CLI's wizard drive) → probe state (store off, skeleton cleared, theme seeded) → gate
 #   scripts/aio-testbed.sh down      remove every nextcloud-aio* container, volume and the state dir
 #   scripts/aio-testbed.sh gate      assert no non-loopback port outside the wizard is claimed
 #   scripts/aio-testbed.sh status    what runs, what it publishes, where the passwords are
@@ -53,9 +53,6 @@ WIZARD_PORT="${AIO_TEST_PORT:-8080}"
 APACHE_PORT="${AIO_TEST_APACHE_PORT:-11000}"
 DOMAIN="${AIO_TEST_DOMAIN:-aio-test.invalid}"
 WIZ="https://127.0.0.1:${WIZARD_PORT}"
-# Enabled set after the options form: office stays eurooffice (suite default; phase 14 and
-# office-smoke need the DS), the three heavyweight optionals stay off. NC + five siblings.
-SIBLINGS="nextcloud-aio-apache nextcloud-aio-database nextcloud-aio-redis nextcloud-aio-notify-push nextcloud-aio-eurooffice"
 
 die() { echo "FATAL: $*" >&2; exit 1; }
 say()  { printf '  %s\n' "$*"; }
@@ -76,33 +73,6 @@ check_ram() {
   local la cores
   la="$(awk '{print int($1)}' /proc/loadavg)"; cores="$(nproc 2>/dev/null || echo 1)"
   [ "$la" -lt "$cores" ] || say "NOTE: load ${la} ≥ ${cores} cores — bring-up will be slow, not unsafe"
-}
-
-wpost() {  # PATH CSRF_NAME CSRF_VALUE [extra --data-urlencode args…] — POST the wizard config API
-  local path="$1" name="$2" value="$3"; shift 3
-  local code
-  code="$(curl -sk -b "$STATE/cookies" -c "$STATE/cookies" -o /dev/null -w '%{http_code}' --max-time 15 \
-    --data-urlencode "csrf_name=$name" --data-urlencode "csrf_value=$value" "$@" "$WIZ$path")" \
-    || die "POST $path: curl failed at the transport level"
-  # ConfigurationController answers 201 on success and 422 with the reason in the body; nothing else.
-  [ "$code" = "201" ] || die "POST $path returned $code (expected 201) — the configuration was rejected"
-}
-
-start_post() {  # CSRF_NAME CSRF_VALUE — POST api/docker/start
-  local name="$1" value="$2" code
-  # /api/docker/start is a SYNCHRONOUS streaming response: the recursive walk — delete,
-  # create-volume, PULL, create, start, per container — happens inside the request
-  # (DockerController.php:216-262, NonBufferedBody, ignore_user_abort). So the bound here is
-  # the PULL BUDGET, not a handshake timeout: 30 min covers the ~6 GB the container set costs
-  # on a slow VM. The state proof remains the container wait below; dying here means the pulls
-  # are too slow for this VM — worth stopping for, not watching a hang.
-  code="$(curl -sk -b "$STATE/cookies" -c "$STATE/cookies" -o /dev/null -w '%{http_code}' --max-time 1800 \
-    --data-urlencode "csrf_name=$name" --data-urlencode "csrf_value=$value" \
-    "$WIZ/api/docker/start" 2>/dev/null)" || die "POST api/docker/start: curl failed at the 30 min pull bound"
-  case "$code" in
-    200|201|302) say "start completed (HTTP $code)" ;;
-    *) die "POST api/docker/start returned $code — login or CSRF state is stale" ;;
-  esac
 }
 
 cmd_gate() {
@@ -179,96 +149,14 @@ cmd_up() {
     --volume /var/run/docker.sock:/var/run/docker.sock:ro \
     "$IMAGE" >/dev/null || die "docker run failed"
 
-  say "wait for the wizard (bounded 2 min)"
-  local setup_html="" i
-  for i in $(seq 60); do
-    sleep 2
-    setup_html="$(curl -sk --max-time 5 "$WIZ/setup" 2>/dev/null || true)"
-    case "$setup_html" in *'id="initial-password"'*) break ;; esac
-  done
-  case "$setup_html" in
-    *'id="initial-password"'*) ;;
-    *) die "wizard never served the initial password on $WIZ/setup within 2 min (docker logs $MC)" ;;
-  esac
-  # One-time page: the password is generated on the first GET and the page stops rendering it
-  # the moment the instance is configured. Capture now or never — after start, login is blocked
-  # while apache runs.
-  local pw
-  pw="$(printf '%s' "$setup_html" | sed -n 's/.*id="initial-password"[^>]*>\([^<]*\)<.*/\1/p' | head -1)"
-  [ -n "$pw" ] || die "found the setup page but no password in it"
-  printf '%s\n' "$pw" > "$STATE/master.pw"; chmod 600 "$STATE/master.pw"
-  say "wizard password captured — $STATE/master.pw (0600)"
-
-  say "login + configure through the wizard's own API"
-  local html name value code2
-  html="$(curl -sk -c "$STATE/cookies" --max-time 10 "$WIZ/login" 2>/dev/null)" || die "could not GET $WIZ/login"
-  name="$(printf '%s' "$html"  | sed -n 's/.*name="csrf_name" value="\([^"]*\)".*/\1/p' | head -1)"
-  value="$(printf '%s' "$html" | sed -n 's/.*name="csrf_value" value="\([^"]*\)".*/\1/p' | head -1)"
-  [ -n "$name" ] && [ -n "$value" ] || die "no CSRF pair on /login — the wizard API cannot be driven anonymously"
-  # Persistent-token mode: the pair is session-scoped and reused for every POST below.
-  code2="$(curl -sk -b "$STATE/cookies" -c "$STATE/cookies" -o /dev/null -w '%{http_code}' --max-time 20 \
-    --data-urlencode "password=$pw" \
-    --data-urlencode "csrf_name=$name" --data-urlencode "csrf_value=$value" \
-    "$WIZ/api/auth/login" 2>/dev/null)" || die "login POST failed at the transport level"
-  [ "$code2" = "201" ] || die "wizard login returned $code2 (expected 201) — check $STATE/master.pw"
-
-  # The containers page is a load-bearing step, not eye candy: serving it is where the
-  # mastercontainer creates the nextcloud-aio network (ConnectMasterContainerToNetwork,
-  # php/public/index.php:97). Every upstream flow — a human browsing the wizard, the Playwright
-  # suite (logInToContainersPage, initial-setup.spec.js:8) — loads it right after login, so by
-  # the time anyone presses Start the network exists. This API-driven harness skipped it, and
-  # the first sibling's start died with "network nextcloud-aio not found" (FINDINGS.md, probe
-  # P1, 2026-09-22). It also starts domaincheck (no domain set yet) — upstream first-run
-  # behavior, loopback-only via APACHE_IP_BINDING, and the start walk stops it again before
-  # apache. One GET, before any configuration POST.
-  curl -sk -b "$STATE/cookies" --max-time 15 "$WIZ/containers" -o /dev/null \
-    || die "GET /containers failed — the mastercontainer needs it to create the nextcloud-aio network"
-  say "containers page visited — the nextcloud-aio network exists"
-
-  wpost /api/configuration "$name" "$value" --data-urlencode "domain=$DOMAIN" --data-urlencode "skip_domain_validation=1"
-  say "domain accepted: $DOMAIN (validation skipped — env + posted flag)"
-  wpost /api/configuration "$name" "$value" --data-urlencode "timezone=America/Santiago"
-  # Options form: ABSENCE is the off-switch (isset semantics). Posting only the form key
-  # disables talk/whiteboard/imaginary and leaves office_suite alone — eurooffice is the
-  # default upstream and in the suite (D3), so it is never posted.
-  wpost /api/configuration "$name" "$value" --data-urlencode "options-form=1"
-  say "options saved: talk/whiteboard/imaginary off, office stays eurooffice"
-
-  start_post "$name" "$value"
-
-  say "asserting the container set (bounded 20 min — the POST above already pulled and started everything; this proves it converged)"
-  local c all
-  all=0
-  for i in $(seq 120); do
-    all=1
-    for c in "$NC" $SIBLINGS; do
-      docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$c" || { all=0; break; }
-    done
-    [ "$all" = 1 ] && break
-    sleep 10
-  done
-  [ "$all" = 1 ] || die "the container set never converged within 20 min — start with: docker ps -a --filter name=nextcloud-aio-"
-
-  say "waiting for Nextcloud to finish installing itself (bounded 10 min)"
-  local st=""
-  for i in $(seq 120); do
-    st="$(docker exec --user www-data "$NC" php /var/www/html/occ status --output=json 2>/dev/null || true)"
-    case "$st" in *'"installed":true'*) break ;; esac
-    sleep 5
-  done
-  case "$st" in *'"installed":true'*) ;; *) die "occ status never reported installed:true within 10 min (docker logs $NC)" ;; esac
-
-  say "waiting for the config to stop moving (wait-ready pattern, #96)"
-  local prev cur settled=0
-  prev="$(docker exec --user www-data "$NC" php /var/www/html/occ config:list --output=json 2>/dev/null | sha256sum)"
-  for i in $(seq 24); do
-    sleep 5
-    cur="$(docker exec --user www-data "$NC" php /var/www/html/occ config:list --output=json 2>/dev/null | sha256sum)"
-    if [ "$cur" = "$prev" ]; then settled=1; break; fi
-    prev="$cur"; printf '~'
-  done
-  echo
-  [ "$settled" = 1 ] || die "Nextcloud's config never stopped changing for 2 minutes after install (#96) — probing now would be a race"
+  # the wizard drive is the CLI's (one copy, a6): passphrase into $STATE (0600), login, the
+  # containers page (it creates the nextcloud-aio network), domain + skip, timezone, options,
+  # start with progress, the bounded waits, the Nextcloud admin password into $STATE
+  local repo_root
+  repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+  AIO_URL="$WIZ" AIO_STATE="$STATE" bash "$repo_root/host/aps-conecta" asistente-aio \
+    --dominio "$DOMAIN" --sin-validar-dominio \
+    || die "the CLI's wizard drive (host/aps-conecta asistente-aio) failed — its ✗ lines above name the step"
 
   # Probe state, set ONCE outside any seed (B-018's rule is about a PHASE re-writing the key
   # every run; this is the harness preparing the instance). The suite ships the same posture
@@ -300,24 +188,11 @@ cmd_up() {
   # deliberately seam-free. The source path resolves through $0 so the harness stays
   # cwd-independent; re-`up` after a theme edit re-copies fresh (up requires the clean slate
   # `down` gives).
-  local repo_root
-  repo_root="$(cd "$(dirname "$0")/.." && pwd)"
   [ -d "$repo_root/themes/apsconecta/core" ] \
     || die "no themes/apsconecta/core in this checkout — the probe brands with the repo's theme"
   docker cp "$repo_root/themes/apsconecta" "$NC":/var/www/html/themes/ >/dev/null \
     || die "could not copy themes/apsconecta into $NC — phase 15 and smoke's checks 7/11 need it in-container"
   say "theme seeded: themes/apsconecta -> $NC (the bake's stand-in on a stock image)"
-
-  # The containers page shows the generated Nextcloud admin password once the set is up — kept
-  # for manual inspection; automated gates use their own accounts.
-  local ncpw
-  ncpw="$(curl -sk -b "$STATE/cookies" --max-time 10 "$WIZ/containers" 2>/dev/null | sed -n 's/.*id="initial-nextcloud-password"[^>]*>\([^<]*\)<.*/\1/p' | head -1)"
-  if [ -n "$ncpw" ]; then
-    printf '%s\n' "$ncpw" > "$STATE/nextcloud.pw"; chmod 600 "$STATE/nextcloud.pw"
-    say "nextcloud admin password captured — $STATE/nextcloud.pw (0600)"
-  else
-    say "NOTE: no initial nextcloud password on /containers (harmless — seeds create their own users)"
-  fi
 
   cmd_gate || die "GATE FAILED — the probe claimed a port it must not claim; inspect with '$0 status'"
 
@@ -366,7 +241,7 @@ case "${1:-}" in
   status) cmd_status ;;
   *)
     echo "usage: $0 up|down|gate|status" >&2
-    echo "  up      preflight (RAM/ports/ghcr) → run → capture password → configure → start → bounded waits → gate" >&2
+    echo "  up      preflight (RAM/ports/ghcr) → run → aps-conecta asistente-aio (the wizard drive) → probe state → gate" >&2
     echo "  down    remove every nextcloud-aio* container, volume and the state dir" >&2
     echo "  gate    assert only the wizard port and loopback are claimed (can go red)" >&2
     echo "  status  containers, published ports, secret paths" >&2
