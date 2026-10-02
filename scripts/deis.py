@@ -153,11 +153,13 @@ def ask(question, word, gid_prefix):
         out.append((gid_prefix + "-".join(fold(bare).split()), f"{word.capitalize()} {bare}", bare))
 
 
-def write_site(row, snapshot, name, sectors, programs):
+def write_site(row, snapshot, name, sectors, programs, path=None):
     """Write a COMPLETE, standalone site file. Nothing is inherited at seed time: after this, the
     file is the whole truth for that clinic and is edited by hand — adding a Unidad or a grant is
-    adding a line. Adding a folder later also means adding its ACL rows; nothing generates them."""
-    path = os.path.join(HERE, "..", "sites", name, "site.sh")
+    adding a line. Adding a folder later also means adding its ACL rows; nothing generates them.
+    `path` writes the same file elsewhere: the web installer's «Reemplazar» builds a fresh copy and
+    takes its team blocks from it."""
+    path = path or os.path.join(HERE, "..", "sites", name, "site.sh")
     if os.path.exists(path):
         sys.exit(f"FATAL: {os.path.relpath(path)} already exists — edit it, or remove the directory")
     os.makedirs(os.path.dirname(path), exist_ok=True)
