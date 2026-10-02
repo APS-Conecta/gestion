@@ -2552,7 +2552,7 @@ def selftest():
                   st == 200 and body["ok"] and body["divergencia_vacia"]
                   and "14 phase(s) run" in body["salida"] and "== roster: 2 usuario(s) ==" in body["salida"]
                   and "user elena.diaz added to group admin" in body["salida"]
-                  and "nothing live that the repo does not declare" in body["divergencia"])
+                  and "nada en la instancia que el repositorio no declare" in body["divergencia"])
             env_text = open(env_path, encoding="utf-8").read()
             check("generar: ejecutar converges .env — SITE written, fixtures forced, fixture password generated, 0600",
                   "SITE=113314" in env_text and "SEED_FIXTURES=1" in env_text
