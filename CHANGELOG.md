@@ -13,6 +13,14 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Added
 
+- **Silent install: `sudo aps-conecta install --sitio site.sh --planilla usuarios.csv`** — the same
+  nine steps with no prompt and no browser. The centre comes from the operator's `site.sh` (it
+  must declare `SITE_DEIS` and `SITE_DOMINIO`; it is placed at `sites/<DEIS>/`, never over a
+  different one), the suite is started and its wizard driven (`asistente-aio`), the planilla
+  loaded, and the seed run with one Spanish line per phase — the whole log in `.install.log`.
+  It ends with what to do next: hand out `credentials.txt` row by row, run `aps-conecta
+  revalidate`. Clean boot now installs through it. New Provisionador steps: `--paso sitio
+  --archivo`, `--paso generar --resumen`.
 - **`provisionador.py --paso usuarios|generar`** — the installer's planilla and generate steps from a
   terminal, with no server: Spanish ✓/✗ lines and an exit code (0 done · 1 refused · 2 usage). The
   weekly `aps-conecta provision --reponer` now runs `--paso generar` in its own process — no second
