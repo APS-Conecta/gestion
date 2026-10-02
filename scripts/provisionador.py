@@ -427,6 +427,24 @@ def registry_groups(path):
     return ids
 
 
+
+def role_categories(path, site_roles):
+    """role id -> the cat-* every holder of the role also joins (a8): the third field of phase
+    20's 22 shared roles plus the site's own SITE_ROLES. Nextcloud groups do not nest, so the
+    roster frame adds the category itself. Only the four categories parse, so fewer than 22 means
+    the registry's shape moved or a category is misspelled — refused, registry_groups' floor
+    discipline. A site role never overrides a shared one (20-groups refuses a bad site category)."""
+    with open(path, encoding="utf-8") as fh:
+        cats = dict(re.findall(r'^ *"(role-[a-z0-9-]+)\|[^|"]*\|'
+                               r'(cat-(?:jefaturas|clinicos|tecnicos|administrativos))"', fh.read(), re.M))
+    if len(cats) < 22:
+        raise ValueError(f"solo {len(cats)} de los 22 roles compartidos declaran su categoría en "
+                         f"{path} — cambió de forma; corríjalo antes de ejecutar")
+    for gid, _display, category in site_roles:
+        cats.setdefault(gid, category)
+    return cats
+
+
 def site_arrays(site):
     """SITE_TEAMS and SITE_ROLES out of the site.sh /api/sitio wrote — line-based on the shape
     write_site emits: `NAME=(` alone on a line, then one `id|display[|category]` entry per line
@@ -764,6 +782,7 @@ def api_generar(payload):
     try:
         shared = registry_groups(PHASE20)
         teams, roles = site_arrays(site)
+        cats = role_categories(PHASE20, roles)
     except ValueError as e:
         return 400, {"error": str(e)}
     reserved = standing_uids(teams, roles)
@@ -839,7 +858,9 @@ def api_generar(payload):
             return 500, {"error": fatal, "salida": seed_out}
         records = []
         for uid, nombre, apellidos, _correo, gids, primer in rows:
-            records += [uid, f"{nombre} {apellidos}", sealed[uid][0], " ".join(gids),
+            # a8: every planilla user is staff and joins the category of each of their roles
+            groups = sorted(set(gids) | {"all-staff"} | {cats[g] for g in gids if g in cats})
+            records += [uid, f"{nombre} {apellidos}", sealed[uid][0], " ".join(groups),
                         "si" if primer else "no"]
         records.append("")  # the driver's terminator
         rc, roster_out = run_tee(["bash", "provisioning/usuarios.sh"], cwd=root,
@@ -1900,7 +1921,7 @@ def selftest():
             juan = ("juan.soto", "Juan", "Soto Ríos", "juan.soto@example.cl",
                     "all-staff role-medico", "si")
             elena = ("elena.diaz", "Elena", "Díaz Nueve", "",
-                     "all-staff role-matroneria", "si")
+                     "role-matroneria", "si")
             site_pre = open(site_path("113314"), encoding="utf-8").read()
 
             st, body = call("POST", "/api/usuarios", {"codigo": "113314",
@@ -2360,6 +2381,24 @@ def selftest():
             # B-030: phase 50 creates the standing accounts AFTER phase 41 mapped the registry
             # groups into the engine's, so the FIRST seed must map them too — or the second seed
             # writes (Clean boot's seed-idempotent) and every fresh install converges one run late
+            check("generar: a planilla user joins all-staff and the category of each role — only the role written (a8)",
+                  "user elena.diaz added to group all-staff" in body["salida"]
+                  and "user elena.diaz added to group cat-clinicos" in body["salida"]
+                  and "user elena.diaz added to group role-matroneria" in body["salida"])
+            cats = role_categories(PHASE20, [("role-jefe-sar", "Jefe/a de SAR", "cat-jefaturas"),
+                                             ("role-medico", "Médico", "cat-jefaturas")])
+            fams = [c for r, c in cats.items() if r != "role-jefe-sar"]
+            check("registry: the 22 shared roles name their category — 4 jefaturas, 10 clínicos, 3 técnicos, 5 administrativos; a site role adds its own, never overrides",
+                  len(fams) == 22 and [fams.count(f"cat-{k}") for k in
+                                       ("jefaturas", "clinicos", "tecnicos", "administrativos")] == [4, 10, 3, 5]
+                  and cats["role-quimico-farmaceutico"] == "cat-clinicos"
+                  and cats["role-jefe-sar"] == "cat-jefaturas" and cats["role-medico"] == "cat-clinicos")
+            try:
+                role_categories(junk20, [])
+                floor = False
+            except ValueError as e:
+                floor = "declaran su categoría" in str(e)
+            check("registry: a phase 20 whose roles lost their category is refused, not guessed", floor)
             check("generar: the first seed maps the standing accounts into the IntraVox groups (B-030)",
                   "group: director added to group IntraVox Users" in body["salida"]
                   and "group: director added to group IntraVox Editors" in body["salida"])
