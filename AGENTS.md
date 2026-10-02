@@ -54,3 +54,16 @@ Internal ops only, **no patient data**.
 (`mailcow` was on this list until 2026-08-27; the stack was removed from the host, so there is
 nothing left to avoid. The remaining five are still live — keep the guard rail.)
 This repo is self-contained under its own clone.
+
+## Scheduled Jules agent: 🗡️ Breaker (Mondays 02:00, Chile)
+
+gestion is the platform where patient data could live (staff Files, Talk, Mail), so it gets the red
+team only. The agent's prompt lives in the private `APS-Conecta/agents` repo; Claude reviews every PR.
+
+- **Scope:** platform security configuration — `provisioning/`, `sites/`, `host/`, compose files,
+  nginx configs. Read `docs/threat-model.md` first.
+- **Gate:** `make test` (static checks + smoke). A hardening change ships with a test or configuration
+  assertion that `make test` runs.
+- **Never:** commit `.env`, secrets, real data or Docker volumes; touch sibling projects on the host;
+  replace the official Nextcloud image; edit `.github/workflows/`.
+- **Journal:** `.jules/breaker.md` only (lowercase).
