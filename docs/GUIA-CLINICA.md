@@ -25,7 +25,9 @@ El recorrido completo, paso a paso con los comandos, está en `INSTALLER.md` §2
 4. `aps-conecta provision` — el Provisionador (§4).
 5. `sudo aps-conecta temporizadores` — activa la re-provisión semanal (domingo 03:00) y el
    refresco mensual del mapa (día 4, 05:00), en hora de Santiago. La instalación silenciosa lo hace
-   sola; tras una actualización se vuelve a ejecutar.
+   sola; tras una actualización se vuelve a ejecutar. Si una ejecución encuentra deriva (algo en la
+   instancia que no se declaró), cada administrador recibe un aviso al entrar, y `aps-conecta
+   estado` — sin sudo — muestra cada elemento con su arreglo.
 
 ## 3. El asistente (:8080)
 

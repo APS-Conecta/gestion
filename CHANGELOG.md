@@ -13,6 +13,12 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Added
 
+- **`aps-conecta estado`** — the last execution's verdict, each item with its fix, in Spanish, with
+  no sudo (`/opt/aps-conecta/estado.txt`, 0644, written by every execution — the installer's, the
+  silent install's and the weekly one). When the weekly re-provision finds drift or does not finish,
+  every member of the `admin` group gets one notification at their next login, replaced each week.
+  The divergence gate's notes and verdict are now Spanish, so the web installer's divergence screen
+  reads in Spanish too.
 - **`sudo aps-conecta temporizadores`** — installs the weekly re-provision and the monthly basemap
   units from the bundle, reloads systemd and enables the weekly timer (and the monthly one once the
   map exists); a re-run finds them in place. It refuses when `/usr/local/bin/aps-conecta` is not
