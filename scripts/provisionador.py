@@ -20,7 +20,7 @@ certificate. HTTPS on the LAN with that certificate (L3 S1, owner 2026-10-02; a1
 cookie crosses the LAN in clear): the CSPRNG token below is the only auth, so this never faces the
 public internet — preflight (S7) reports the port and the clinic's own firewall keeps the edge.
 
-deis.py is IMPORTED, never shelled out to: load/matches/write_site are the pure functions the
+deis.py is IMPORTED, never shelled out to: load/write_site are the pure functions the
 endpoints ride, and its ask() — input()-driven, terminal-shaped — is replaced by the UI here, with
 ask()'s (gid, display, bare) triple construction replicated exactly: gids flow into SITE_TEAMS,
 SITE_FOLDERS mounts and SITE_ACL rows, so a drift here is a divergence event, not a cosmetic one.
@@ -472,19 +472,19 @@ def api_centros():
 
 
 def centro_actual():
-    """GET /api/centro — this install's centre: the written site's («fijo», by its SITE_DEIS line),
-    else the one confirmed on the Centro screen; none yet is {"codigo": null} — a state, not an error
-    (a 404 would land in the browser console as one). Every later screen reads it here, so no code
-    rides a URL (L3 S2); «Listo» names the centre from it too."""
+    """GET /api/centro — this install's centre: the written site's («fijo»; its directory IS the
+    code, as for the host CLI's site_codigo and every other door), else the one confirmed on the
+    Centro screen; none yet is {"codigo": null} — a state, not an error (a 404 would land in the
+    browser console as one). A written code the register lacks (a silent install's own site.sh) is
+    still this install's centre, named plainly. Every later screen reads it here, so no code rides a
+    URL (L3 S2); «Listo» names the centre from it too."""
     sitios = written_sites()
-    codigo = (site_deis(site_path(sitios[0])) or sitios[0]) if sitios else CENTRO
-    row = find_row(codigo) if codigo else None
-    if row is None and sitios:
-        return 409, {"error": f"el sitio escrito nombra el DEIS {codigo}, que no está en el registro "
-                              f"{SNAPSHOT} — revíselo a mano"}
-    if row is None:
+    codigo = sitios[0] if sitios else CENTRO
+    if codigo is None:
         return 200, {"codigo": None}
-    return 200, {"codigo": codigo, "nombre": row["nombre"], "fijo": bool(sitios)}
+    row = find_row(codigo)
+    nombre = row["nombre"] if row else f"el establecimiento DEIS {codigo}"
+    return 200, {"codigo": codigo, "nombre": nombre, "fijo": bool(sitios)}
 
 
 def api_centro(payload):
@@ -1553,7 +1553,7 @@ async function centro(){
   const r = await api("/api/centro");
   if (r.estado === 200 && r.codigo) return r.codigo;
   zona("m").innerHTML = '<div class="error">' + escapear(r.error || "Falta el centro.") +
-    ' <a href="/centro">Elegir el centro</a></div>';
+    (r.estado === 200 ? ' <a href="/centro">Elegir el centro</a>' : "") + "</div>";
   return null;
 }
 </script>"""
@@ -1716,7 +1716,10 @@ autocomplete="off" spellcheck="false">
 (async () => {
   const $ = (s) => document.querySelector(s);
   const [d, actual] = await Promise.all([api("/api/centros"), api("/api/centro")]);
-  if (d.estado !== 200) { zona("m").innerHTML = '<div class="error">' + escapear(d.error) + "</div>"; return; }
+  if (d.estado !== 200) {
+    $("#c-btn").innerHTML = "<span><b>Registro no disponible</b></span>";
+    zona("m").innerHTML = '<div class="error">' + escapear(d.error) + "</div>"; return;
+  }
   // deis.fold's twin — NFD, combining marks stripped, lower case: «ramon» finds «Ramón»
   const fold = (s) => s.normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").toLowerCase();
   const miles = (n) => n.toLocaleString("es-CL");
@@ -1735,7 +1738,7 @@ autocomplete="off" spellcheck="false">
     $("#f-com").disabled = F.reg < 0;
     $("#f-com").innerHTML = F.reg < 0 ? '<option value="-1">Elija primero la región</option>' :
       `<option value="-1">Todas las comunas (${miles(bc.length)})</option>` +
-      d.comunas.map(([n, r], i) => r === F.reg ? `<option value="${i}"${i === F.com ? " selected" : ""}>${escapear(n)} (${bc.filter((x) => x.co === i).length})</option>` : "").join("");
+      d.comunas.map(([n, r], i) => r === F.reg ? `<option value="${i}"${i === F.com ? " selected" : ""}>${escapear(n)} (${miles(bc.filter((x) => x.co === i).length)})</option>` : "").join("");
     const bt = CEN.filter((x) => pasa(x, "tipo"));
     $("#f-tipo").innerHTML = `<option value="-1">Todos los tipos (${miles(bt.length)})</option>` +
       d.tipos.map(([t, n], i) => { const k = bt.filter((x) => x.t === i).length;
@@ -1750,7 +1753,7 @@ autocomplete="off" spellcheck="false">
     const fuera = qs.join("").length >= 3 ? CEN.filter((x) => !pasa(x) && hay(x)) : [];
     const MAX = 60;
     let h = dentro.length ? dentro.slice(0, MAX).map(opcion).join("") : '<li class="combo-grupo" role="presentation">Sin resultados</li>';
-    if (fuera.length) h += `<li class="combo-grupo" role="presentation">Fuera de los filtros (${miles(fuera.length)})</li>` + fuera.slice(0, 20).map(opcion).join("");
+    if (fuera.length) h += `<li class="combo-grupo" role="presentation">Fuera de los filtros (${fuera.length > 20 ? "20 de " : ""}${miles(fuera.length)})</li>` + fuera.slice(0, 20).map(opcion).join("");
     $("#c-lista").innerHTML = h;
     $("#c-pie").textContent = dentro.length > MAX ? `${MAX} de ${miles(dentro.length)}; filtre o busque.` :
       `${miles(dentro.length)} centro${dentro.length === 1 ? "" : "s"}.`;
@@ -1795,6 +1798,7 @@ autocomplete="off" spellcheck="false">
     selects(); if (!$("#c-panel").hidden) lista();
   });
   $("#c-ok").addEventListener("click", async () => {
+    if (actual.fijo) { location.href = "/contenedores"; return; }   // fixed: nothing to hand over
     $("#c-ok").disabled = true;
     const r = await api("/api/centro", {codigo: elegido});
     if (r.estado === 200) { location.href = "/contenedores"; return; }
@@ -1803,10 +1807,16 @@ autocomplete="off" spellcheck="false">
   });
   $("#c-nota").textContent = `Registro DEIS ${d.registro}: ${miles(CEN.length)} establecimientos de atención primaria.`;
   selects(); ficha();
-  if (actual.estado === 200 && POR.has(actual.codigo)) {
-    elegir(actual.codigo);
-    if (actual.fijo) zona("m").innerHTML = '<div class="aviso">Esta instalación ya sirve a ' +
-      escapear(actual.nombre) + ": una instalación, un solo establecimiento.</div>";
+  if (actual.estado !== 200) {
+    zona("m").innerHTML = '<div class="error">' + escapear(actual.error) + "</div>";
+  } else if (actual.codigo) {
+    if (POR.has(actual.codigo)) elegir(actual.codigo);
+    if (actual.fijo) {   // fixed by the site file: nothing to clear, nothing to pick
+      for (const s of ["#f-reg", "#f-com", "#f-tipo", "#c-btn"]) $(s).disabled = true;
+      $("#c-ok").disabled = false;
+      zona("m").innerHTML = '<div class="aviso">Esta instalación ya sirve a ' +
+        escapear(actual.nombre) + ": una instalación, un solo establecimiento.</div>";
+    }
   }
 })();
 </script>"""
@@ -2685,6 +2695,32 @@ def selftest():
                   and st2 == 409 and body2 == body and not os.path.exists(site_path("121567"))
                   and st3 == 200 and body3["codigo"] == "113314" and body3["fijo"] is True and st4 == 200
                   and installed_centre() == "Centro de Salud Familiar Cóndores de Chile")
+            # the directory IS the code (host/aps-conecta site_codigo): a hand-edited SITE_DEIS does
+            # not move the centre, and a code the register lacks is still this install's, named plainly
+            real_here = deis.HERE
+            with tempfile.TemporaryDirectory() as raro:
+                deis.HERE = os.path.join(raro, "scripts")
+                try:
+                    os.makedirs(deis.HERE)   # sites/ is reached through scripts/..
+                    os.makedirs(os.path.join(raro, "sites", "113314"))
+                    with open(os.path.join(raro, "sites", "113314", "site.sh"), "w", encoding="utf-8") as fh:
+                        fh.write("SITE_DEIS=121567\n")
+                    st, editado = call("GET", "/api/centro")
+                    os.remove(os.path.join(raro, "sites", "113314", "site.sh"))
+                    os.makedirs(os.path.join(raro, "sites", "999999"))
+                    with open(os.path.join(raro, "sites", "999999", "site.sh"), "w", encoding="utf-8") as fh:
+                        fh.write("SITE_DEIS=999999\n")
+                    st2, ajeno = call("GET", "/api/centro")
+                    st3, otro = call("POST", "/api/centro", {"codigo": "113314"})
+                    listo = installed_centre()
+                finally:
+                    deis.HERE = real_here
+            check("centro: the site directory is the code — a hand-edited SITE_DEIS does not move it; a code the register lacks is still this install's centre, named plainly (review I1, I2)",
+                  st == 200 and editado.get("codigo") == "113314" and editado.get("fijo") is True
+                  and st2 == 200 and ajeno == {"codigo": "999999", "nombre": "el establecimiento DEIS 999999",
+                                               "fijo": True}
+                  and st3 == 409 and "otro establecimiento (DEIS 999999)" in otro["error"]
+                  and listo == "el establecimiento DEIS 999999")
             # ── slice 15: the roster (FRD S5) — /api/usuarios + the credentials sealing ──
             # The credentials sheet redirects to the fixture (CRED_PATH); phase 20 stays the REAL
             # registry file (repo content, read-only — the shared 27 are not site data) and is
@@ -3705,6 +3741,19 @@ def selftest():
                             CENTRO = None
                         check("browser: Centro — every type by default; «ramon» finds San Ramón and sets its región; a filter that excludes it clears the choice; región › comuna, Enter, the card's seven fields; «Confirmar centro» holds the code server-side, none in the address (R36)",
                               cascada and not errores)
+                        try:   # the fixture tree's own site: the centre is fixed
+                            pg.goto(f"https://127.0.0.1:{tport}/centro")
+                            pg.wait_for_selector("#m .aviso", timeout=10000)
+                            fijo = (pg.is_disabled("#f-reg") and pg.is_disabled("#f-tipo")
+                                    and pg.is_disabled("#c-btn") and pg.is_enabled("#c-ok")
+                                    and "Cóndores de Chile" in pg.inner_text("#m"))
+                            pg.click("#c-ok")
+                            pg.wait_for_url("**/contenedores", timeout=10000)
+                        except Exception as e:   # a Playwright timeout: the arm reports it
+                            fijo = False
+                            errores.append(str(e))
+                        check("browser: a fixed centre locks the filters and the combobox; «Confirmar centro» just continues (D13)",
+                              fijo and not errores)
                         limpio = nav.new_context(ignore_https_errors=True).new_page()
                         limpio.goto(f"https://127.0.0.1:{tport}/")
                         en_login = limpio.url.endswith("/login") and "Código de acceso" in limpio.content()
