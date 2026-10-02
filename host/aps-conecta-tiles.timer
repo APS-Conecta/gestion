@@ -13,7 +13,7 @@ Documentation=file:///opt/aps-conecta/gestion/docs/INSTALLER.md
 # of the 1st's patch-day clustering, clear of the nightly window, and RandomizedDelaySec
 # spreads clinics anyway (the aps-conecta.timer's own politeness rationale, applied to a
 # heavier job).
-OnCalendar=*-*-04 05:00
+OnCalendar=*-*-04 05:00:00 America/Santiago
 Persistent=true
 Unit=aps-conecta-tiles.service
 RandomizedDelaySec=2h

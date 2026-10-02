@@ -8,7 +8,8 @@ Description=APS Conecta: temporizador semanal de re-provisión
 Documentation=file:///opt/aps-conecta/gestion/docs/INSTALLER.md
 
 [Timer]
-OnCalendar=weekly
+# Sunday 03:00 in the clinic's own time (a9): the zone rides the calendar, never the host's clock
+OnCalendar=Sun *-*-* 03:00:00 America/Santiago
 Persistent=true
 Unit=aps-conecta.service
 # RandomizedDelaySec: spread the moment inside the hour so every clinic in a health

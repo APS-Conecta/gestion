@@ -13,6 +13,12 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Added
 
+- **`sudo aps-conecta temporizadores`** — installs the weekly re-provision and the monthly basemap
+  units from the bundle, reloads systemd and enables the weekly timer (and the monthly one once the
+  map exists); a re-run finds them in place. It refuses when `/usr/local/bin/aps-conecta` is not
+  this bundle's — the units would be skipped without a word. The silent install runs it itself.
+  Both timers now fire on Santiago time (`OnCalendar=… America/Santiago`): the re-provision on
+  Sundays at 03:00, the basemap on the 4th at 05:00. INSTALLER §6 no longer copies unit files.
 - **Silent install: `sudo aps-conecta install --sitio site.sh --planilla usuarios.csv`** — the same
   nine steps with no prompt and no browser. The centre comes from the operator's `site.sh` (it
   must declare `SITE_DEIS` and `SITE_DOMINIO`; it is placed at `sites/<DEIS>/`, never over a

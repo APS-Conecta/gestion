@@ -214,6 +214,17 @@ jobs:
           sudo env "PATH=$PATH" APS_SKIP_MAP=1 MIN_DISK_GB=2 AIO_STATE=/tmp/aio-testbed \
             bash host/aps-conecta install --sitio "$RUNNER_TEMP/site.sh" --planilla "$RUNNER_TEMP/usuarios.csv" \
             < /dev/null | tee "$RUNNER_TEMP/install.out"
+      # a9 on real systemd: the silent install installed both units and enabled the weekly timer,
+      # on Santiago time; the monthly one stays off — the map was skipped (APS_SKIP_MAP)
+      - name: The timers are installed, in Santiago time
+        run: |
+          systemctl is-enabled aps-conecta.timer
+          systemctl is-active aps-conecta.timer
+          systemctl show aps-conecta.timer -p TimersCalendar | grep -qF 'Sun *-*-* 03:00:00 America/Santiago'
+          systemctl show aps-conecta-tiles.timer -p TimersCalendar | grep -qF '*-*-04 05:00:00 America/Santiago'
+          if systemctl is-enabled aps-conecta-tiles.timer >/dev/null 2>&1; then
+            echo "FAIL: the monthly basemap timer is enabled with no map built" >&2; exit 1
+          fi
       - name: Hand the checkout back to the runner
         if: always()
         run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"

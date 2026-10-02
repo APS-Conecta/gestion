@@ -226,9 +226,9 @@ cmd_install() {  # the install: the welcome, then the steps in registry order. I
     step_run "$n" "$again" || exit 1
   done
   [ -n "$SILENT_SITE" ] || return 0
-  FAIL=0; silent_map_last
+  FAIL=0; silent_map_last; install_timers
   if [ "$FAIL" -ne 0 ]; then
-    echo "INSTALACIÓN: la suite quedó instalada; falta el mapa — sudo aps-conecta mapa (registro: $SILENT_LOG)"
+    echo "INSTALACIÓN: la suite quedó instalada; falta lo marcado con ✗ arriba — ejecute el comando que nombra (registro: $SILENT_LOG)"
     exit 1
   fi
   echo "INSTALACIÓN: ✓ — entregue a cada persona su fila: sudo cat /opt/aps-conecta/credentials.txt"
@@ -255,6 +255,7 @@ usage() {  # Spanish, generated from the registry — never a slice of this file
   echo "  aps-conecta provision             abre el instalador web (lo mismo que el paso abrir)"
   echo "  aps-conecta provision --reponer   re-provisión semanal (la ejecuta el temporizador)"
   echo "  aps-conecta asistente-aio --dominio D   configura e inicia la suite por la API del asistente, sin navegador"
+  echo "  aps-conecta temporizadores        instala y activa la re-provisión semanal y el mapa mensual"
   echo "  aps-conecta revalidate            revisa la instancia después de una actualización"
   echo "  aps-conecta respaldo              agrega /opt/aps-conecta a las copias de seguridad"
   echo "  aps-conecta tiles install|refresh|check   el mapa base y su servicio"
@@ -721,6 +722,45 @@ EOF
 # and an empty value is also the verified way past the mastercontainer's [ -n ]-gated charset
 # validator (start.sh:291-298). Both facts are the slice-5 amendment's own finding (the ratified
 # forced amendment, ledgered in its History row).
+
+TILES_ARCHIVE="${TILES_HOME:-/srv/aps-conecta}/tiles/chile.pmtiles"   # tiles.sh's ARCHIVE (an arm pins it)
+install_timers() {  # the weekly re-provision and the monthly basemap (a9): the four units copied
+  # from this bundle into systemd, reloaded and enabled — a re-run finds them in place, and an update
+  # that changed a unit lands it. A fresh Persistent timer does not fire on enable: its first elapse
+  # is computed from now (no stamp yet), so the install never starts a re-provision of its own
+  local dir="$ETC_DIR/systemd/system" u changed=0 timers=aps-conecta.timer
+  if ! is_root; then
+    bad "los temporizadores necesitan permisos de administrador" "ejecute: sudo aps-conecta temporizadores"
+    return 0
+  fi
+  # the units run /usr/local/bin/aps-conecta under ConditionFileIsExecutable: a missing or foreign
+  # link SKIPS them without a word, so it is checked here, where it can still be said
+  if [ "$(readlink -f "$BIN_DIR/aps-conecta" 2>/dev/null)" != "$(readlink -f "$HOST_DIR/aps-conecta")" ]; then
+    bad "el comando aps-conecta no apunta a esta copia ($HOST_DIR)" "ejecute: sudo aps-conecta descargar"
+    return 0
+  fi
+  mkdir -p "$dir" || { bad "no se pudo crear $dir" "revise los permisos de $ETC_DIR"; return 0; }
+  for u in aps-conecta.service aps-conecta.timer aps-conecta-tiles.service aps-conecta-tiles.timer; do
+    cmp -s "$HOST_DIR/$u" "$dir/$u" && continue
+    install -m 0644 "$HOST_DIR/$u" "$dir/$u" || { bad "no se pudo instalar $u" "revise los permisos de $dir"; return 0; }
+    changed=1
+  done
+  if [ "$changed" = 1 ] && ! systemctl daemon-reload >/dev/null; then
+    bad "systemd no recargó las unidades" "revise: sudo systemctl daemon-reload"; return 0
+  fi
+  # the monthly refresh only refreshes: before a map exists it would fetch the 1,1 GB nobody built
+  [ ! -f "$TILES_ARCHIVE" ] || timers="$timers aps-conecta-tiles.timer"
+  # shellcheck disable=SC2086  # two fixed unit names, split on purpose
+  if ! systemctl enable --now $timers >/dev/null; then
+    bad "no se pudieron activar los temporizadores" "revise: systemctl status aps-conecta.timer"; return 0
+  fi
+  if [ -f "$TILES_ARCHIVE" ]; then
+    ok "Temporizadores activos, en hora de Santiago: re-provisión semanal y mapa mensual"
+  else
+    ok "Temporizador activo, en hora de Santiago: re-provisión semanal"
+    info "el mapa mensual se activa al construir el mapa: sudo aps-conecta mapa, luego sudo aps-conecta temporizadores"
+  fi
+}
 
 start_suite() {  # the mastercontainer, once — the very command «preflight» prints, run detached
   local state tag cmd
@@ -1240,10 +1280,11 @@ EOF
     silent_equipos() { ok "equipos-stub"; }
     silent_ejecutar() { ok "ejecutar-stub"; }
     silent_map_last() { ok "mapa-final-stub"; }
+    install_timers() { ok "temporizadores-stub"; }
     cmd_install --sitio "$tmp/dado.sh" --planilla "$tmp/dado.csv" </dev/null 2>&1
   )"; rcs=$?
   check "install --sitio: the same nine steps in order — the browser ones from the files, the map last — then the verdict" \
-    '[ "$rcs" -eq 0 ] && case "$install_out" in *"sin preguntas ni navegador"*"Paso 1 de 9"*"Paso 4 de 9"*"Mapa: se construye al final, con la suite en marcha."*"Paso 5 de 9"*"Sin instalador web: modo silencioso."*"Paso 6 de 9 · Elegir el centro  servidor"*"centro-stub"*"Paso 7 de 9"*"suite-stub"*"Paso 8 de 9"*"equipos-stub"*"Paso 9 de 9"*"ejecutar-stub"*"mapa-final-stub"*"INSTALACIÓN: ✓"*"sudo cat /opt/aps-conecta/credentials.txt"*"aps-conecta revalidate (registro: $APS_HOME/instalacion.log)"*) ;; *) false;; esac && case "$install_out" in *"Enter para comenzar"*|*"  navegador"*|*"(navegador)"*|*"Comando   aps-conecta centro"*) false;; *) true;; esac'
+    '[ "$rcs" -eq 0 ] && case "$install_out" in *"sin preguntas ni navegador"*"Paso 1 de 9"*"Paso 4 de 9"*"Mapa: se construye al final, con la suite en marcha."*"Paso 5 de 9"*"Sin instalador web: modo silencioso."*"Paso 6 de 9 · Elegir el centro  servidor"*"centro-stub"*"Paso 7 de 9"*"suite-stub"*"Paso 8 de 9"*"equipos-stub"*"Paso 9 de 9"*"ejecutar-stub"*"mapa-final-stub"*"temporizadores-stub"*"INSTALACIÓN: ✓"*"sudo cat /opt/aps-conecta/credentials.txt"*"aps-conecta revalidate (registro: $APS_HOME/instalacion.log)"*) ;; *) false;; esac && case "$install_out" in *"Enter para comenzar"*|*"  navegador"*|*"(navegador)"*|*"Comando   aps-conecta centro"*) false;; *) true;; esac'
   check "install --sitio: a tool's own stderr goes to the log, never the console" \
     'case "$install_out" in *"Pulling from"*) false;; *) true;; esac && grep -q "Pulling from somewhere" "$APS_HOME/instalacion.log"'
   install_out="$(
@@ -1806,6 +1847,35 @@ SHIM
   fi
   cp "$tmp/docker.prev" "$tshim/docker"
 
+  # ── temporizadores (a9): the four units into a scratch systemd dir, reloaded, enabled — shim systemctl
+  [ ! -e "$tshim/systemctl" ] || cp "$tshim/systemctl" "$tmp/systemctl.prev"
+  cat > "$tshim/systemctl" <<SHIM
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$tmp/systemctl.argv"
+exit 0
+SHIM
+  chmod +x "$tshim/systemctl"; : > "$tmp/systemctl.argv"
+  printf '#!/usr/bin/env bash\ncase "$1" in -u) echo "${ID_U:-0}" ;; -un) echo root ;; esac\n' > "$tshim/id"; chmod +x "$tshim/id"
+  mkdir -p "$tmp/bin-t"; ln -sf "$HOST_DIR/aps-conecta" "$tmp/bin-t/aps-conecta"
+  if only_shims systemctl id; then
+    out="$(BIN_DIR="$tmp/bin-t"; TILES_ARCHIVE="$tmp/chile.pmtiles"; touch "$TILES_ARCHIVE"; FAIL=0; install_timers 2>&1; echo "FAIL=$FAIL")"
+    check "temporizadores: the four units installed, systemd reloaded, both timers enabled once a map exists — in Santiago time" \
+      'for u in aps-conecta.service aps-conecta.timer aps-conecta-tiles.service aps-conecta-tiles.timer; do cmp -s "$HOST_DIR/$u" "$ETC_DIR/systemd/system/$u" || exit 1; done; grep -qx "daemon-reload" "$tmp/systemctl.argv" && grep -qx "enable --now aps-conecta.timer aps-conecta-tiles.timer" "$tmp/systemctl.argv" && case "$out" in *"✓ Temporizadores activos, en hora de Santiago"*"FAIL=0"*) ;; *) false;; esac'
+    : > "$tmp/systemctl.argv"; rm -f "$tmp/chile.pmtiles"
+    out="$(BIN_DIR="$tmp/bin-t"; TILES_ARCHIVE="$tmp/chile.pmtiles"; FAIL=0; install_timers 2>&1; echo "FAIL=$FAIL")"
+    check "temporizadores: a re-run reloads nothing; with no map yet only the weekly timer is enabled, and the map's way in is named" \
+      '! grep -q "daemon-reload" "$tmp/systemctl.argv" && grep -qx "enable --now aps-conecta.timer" "$tmp/systemctl.argv" && case "$out" in *"✓ Temporizador activo, en hora de Santiago: re-provisión semanal"*"sudo aps-conecta mapa, luego sudo aps-conecta temporizadores"*"FAIL=0"*) ;; *) false;; esac'
+    : > "$tmp/systemctl.argv"; ln -sf /bin/true "$tmp/bin-t/aps-conecta"
+    out="$(BIN_DIR="$tmp/bin-t"; FAIL=0; install_timers 2>&1; echo "FAIL=$FAIL")"
+    out2="$(export ID_U=1000; FAIL=0; install_timers 2>&1; echo "FAIL=$FAIL")"
+    check "temporizadores: a command linked to another copy, or no sudo, refuses before systemd is touched — naming the fix" \
+      '[ ! -s "$tmp/systemctl.argv" ] && case "$out" in *"no apunta a esta copia"*"sudo aps-conecta descargar"*"FAIL=1"*) ;; *) false;; esac && case "$out2" in *"sudo aps-conecta temporizadores"*"FAIL=1"*) ;; *) false;; esac'
+  fi
+  check "temporizadores: the map path is tiles.sh's own default" \
+    'grep -qF "TILES_HOME=\"\${TILES_HOME:-/srv/aps-conecta}\"" "$HOST_DIR/tiles.sh" && grep -qF "ARCHIVE=\"\$TILES_HOME/tiles/chile.pmtiles\"" "$HOST_DIR/tiles.sh"'
+  rm -f "$tshim/id" "$tshim/systemctl"
+  [ ! -e "$tmp/systemctl.prev" ] || cp "$tmp/systemctl.prev" "$tshim/systemctl"
+
   # the revalidate arm (slice 20): three stub gate scripts under a fixture root — the
   # aggregation + the exit contract, never first-fail. The command substitution scopes the
   # ROOT override (a bare ROOT=x prefix on a function call persists AFTER the call in bash —
@@ -1874,7 +1944,8 @@ EOF
 
   # ── the units parse (systemd-analyze verify, offline) ──
   if command -v systemd-analyze >/dev/null 2>&1; then
-    u="$(systemd-analyze verify "$HOST_DIR/aps-conecta.service" "$HOST_DIR/aps-conecta.timer" 2>&1 || true)"
+    u="$(systemd-analyze verify "$HOST_DIR/aps-conecta.service" "$HOST_DIR/aps-conecta.timer" \
+      "$HOST_DIR/aps-conecta-tiles.service" "$HOST_DIR/aps-conecta-tiles.timer" 2>&1 || true)"
     # the executable-path complaint is this box's expected state (no symlink on a dev
     # box — INSTALLER.md owns the wiring); any OTHER output is a unit defect
     leftovers="$(printf '%s' "$u" | grep -v 'aps-conecta' || true)"
@@ -1898,6 +1969,7 @@ case "${1:-}" in
   run-command)  run_command ;;
   provision)    shift; cmd_provision "${1:-}" ;;
   asistente-aio) shift; cmd_aio_wizard "$@" ;;
+  temporizadores) FAIL=0; install_timers; [ "$FAIL" -eq 0 ] || exit 1 ;;
   revalidate)   cmd_revalidate ;;
   respaldo)     cmd_respaldo ;;
   tiles)        shift; exec bash "$HOST_DIR/tiles.sh" "$@" ;;
