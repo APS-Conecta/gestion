@@ -174,6 +174,11 @@ SEAL_LOCK = threading.Lock()
 # One execution at a time (the executor's own stampede guard — SEAL_LOCK's shape): two concurrent
 # /api/generar ejecutar posts would run two seeds against the one instance. The 409 names it.
 EXEC_LOCK = threading.Lock()
+# The browser's «Ejecutar» (a14): the run happens on a worker and the page polls this every second —
+# no request is held open for minutes. One run at a time (EXEC_LOCK inside api_generar; EJEC_GUARD
+# makes check-and-start one step); read without a lock — plain values, a snapshot.
+EJECUCION = {"estado": "sin_ejecutar", "hechos": [], "veredicto": None}
+EJEC_GUARD = threading.Lock()
 # Every executor subprocess is bounded (B-015: a phase that hangs must not hang a thread forever).
 # The seed's bound is the harness's pull budget (30 min); the roster driver rides the same number —
 # a big clinic's N×0.8 s execs fit with margin; the gate only reads. The self-test patches this
@@ -206,6 +211,9 @@ COMPONENTES = (
     ("spreed", "Talk", "Chat y videollamadas internas."),
 )
 PLUMBING_APPS = ("desktop_workspace", "notify_push", "side_menu")
+# The browser's progress list (a14): the phases by their console titles, then the people, then the gate.
+PASO_PLANILLA, PASO_GATE = "Cuentas del personal", "Comprobación final"
+PASOS_EJECUCION = [PHASE_TITLES[k] for k in sorted(PHASE_TITLES)] + [PASO_PLANILLA, PASO_GATE]
 
 
 STUB_DOCKER = r'''#!/usr/bin/env python3
@@ -1221,6 +1229,68 @@ def api_generar(payload):
     return status, body
 
 
+def avance(line):
+    """An executor line → the browser's progress (a14), in the console's own words: a finished phase
+    by its title, the planilla once its accounts are in. Only a run the browser started is followed:
+    the silent install and the weekly timer share this path and have no page to feed."""
+    if EJECUCION["estado"] != "en_curso":
+        return
+    m = re.match(r"✓ phase (\S+)$", line.rstrip("\n"))
+    if m:
+        EJECUCION["hechos"].append(PHASE_TITLES.get(m.group(1), m.group(1)))
+    elif re.match(r"== roster: \d+ usuario", line):
+        EJECUCION["hechos"].append(PASO_PLANILLA)
+
+
+def iniciar_ejecucion(payload, server):
+    """POST /api/generar {"modo": "ejecutar"} from the browser: the run starts on a worker and the
+    answer leaves at once (202) — no request is held open for minutes (a14); GET /api/ejecucion
+    follows it. A second start while one runs is refused, as api_generar itself refuses it."""
+    codigo = payload.get("codigo")
+    if not isinstance(codigo, str) or not CODIGO.fullmatch(codigo):
+        return 400, {"error": "el código DEIS debe ser de 4 a 6 dígitos"}
+    with EJEC_GUARD:
+        if EJECUCION["estado"] == "en_curso" or EXEC_LOCK.locked():
+            return 409, {"error": "ya hay una ejecución en curso — espere a que termine"}
+        EJECUCION.update(estado="en_curso", hechos=[], veredicto=None)
+        try:
+            threading.Thread(target=ejecutar_web, args=(codigo, server), daemon=True).start()
+        except RuntimeError as e:   # no thread to run it on: nothing started, nothing left frozen
+            EJECUCION.update(estado="sin_ejecutar")
+            return 500, {"error": f"no se pudo iniciar la ejecución ({e})"}
+    return 202, {"ok": True, "en_curso": True}
+
+
+def ejecutar_web(codigo, server):
+    """The worker: api_generar as the silent install runs it (resumen: the console gets the Spanish
+    summary, the log the rest; the state file its verdict, a10), the verdict kept for the poll, and
+    a green one closes the installer (SEC-2) — from here, never from api_generar, which --paso
+    generar and the weekly timer share."""
+    try:
+        status, body = api_generar({"codigo": codigo, "modo": "ejecutar", "resumen": True})
+    except Exception as e:   # never a silent dead worker: the console and the state file get the cause
+        status, body = 500, {"error": f"la ejecución se detuvo ({type(e).__name__}: {e})"}
+        print(f"  ✗ {body['error']}", file=sys.stderr)
+        try:
+            record_state(body)
+        except Exception:   # the console line above already carries it
+            pass
+    verde = status == 200 and body.get("divergencia_vacia") is True
+    if "divergencia_vacia" in body:   # the gate ran: its row is done, whatever it found
+        EJECUCION["hechos"].append(PASO_GATE)
+    if verde:   # DONE before the poll can read green: /listo answers, a second start is refused (SEC-2)
+        server.close_after_success()
+    EJECUCION.update(estado="terminada", veredicto={"verde": verde, "titulo": veredicto(body)[0]})
+
+
+def estado_ejecucion():
+    """GET /api/ejecucion — the page's poll, once a second: the run as a snapshot (a14). The field is
+    «ejecucion», not «estado»: the page's api() already carries the HTTP status under that name."""
+    e = dict(EJECUCION)
+    return 200, {"ejecucion": e["estado"], "hechos": list(e["hechos"]), "pasos": PASOS_EJECUCION,
+                 "veredicto": e["veredicto"]}
+
+
 def _api_generar(payload):
     """POST /api/generar {"codigo", "modo": "revision"|"ejecutar"} — the FRD's review/dry-run AND
     the executor, one endpoint (the FRD's four-endpoint budget; slice 15's R1 reconciliation
@@ -1320,7 +1390,11 @@ def _api_generar(payload):
     try:
         if payload.get("resumen") is True:
             log = open(os.path.join(root, ".install.log"), "w", encoding="utf-8", buffering=1)
-        show = summary(log) if log else None
+        resumen = summary(log) if log else None
+
+        def show(line):   # the browser's progress (a14), then the console's own view
+            avance(line)
+            return resumen(line) if resumen else line
         try:
             env_report = env_converge(root, codigo)
         except ValueError as e:
@@ -2336,7 +2410,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_bytes(200, "text/csv; charset=utf-8", body["csv"].encode("utf-8"),
                             {"Content-Disposition": f'attachment; filename="{body["nombre"]}"'})
             return
-        if path in ("/api/estado", "/api/centros", "/api/centro", "/api/equipos"):
+        if path in ("/api/estado", "/api/centros", "/api/centro", "/api/equipos", "/api/ejecucion"):
             if not self.authorized():
                 self.send_json(401, {"error": "token ausente o inválido"},
                                {"WWW-Authenticate": "Bearer"})
@@ -2347,6 +2421,8 @@ class Handler(BaseHTTPRequestHandler):
                 status, body = api_centros()
             elif path == "/api/centro":
                 status, body = centro_actual()
+            elif path == "/api/ejecucion":
+                status, body = estado_ejecucion()
             else:
                 status, body = equipos_actuales()
             self.send_json(status, body)
@@ -2404,7 +2480,8 @@ class Handler(BaseHTTPRequestHandler):
             # must neither start a run the shutdown would cut nor change what the run just verified
             self.send_json(409, {"error": "la instalación ya terminó: el instalador se está cerrando"})
             return
-        if cambia and path != "/api/generar" and EXEC_LOCK.locked():
+        if (cambia and path != "/api/generar"
+                and (EXEC_LOCK.locked() or EJECUCION["estado"] == "en_curso")):
             # the centre, the teams and the planilla are the run's input: never changed under it
             self.send_json(409, {"error": "hay una ejecución en curso: espere a que termine"})
             return
@@ -2414,19 +2491,12 @@ class Handler(BaseHTTPRequestHandler):
             status, body = api_sitio(payload)
         elif path == "/api/usuarios":
             status, body = api_usuarios(payload)
+        elif path == "/api/generar" and payload.get("modo") == "ejecutar":
+            status, body = iniciar_ejecucion(payload, self.server)
         elif path == "/api/generar":
             status, body = api_generar(payload)
         else:
             status, body = 404, {"error": "ruta desconocida"}
-        finished = (path == "/api/generar" and status == 200 and body.get("modo") == "ejecutar"
-                    and body.get("divergencia_vacia") is True)
-        if finished:
-            # In the HTTP layer, never in api_generar: --paso generar (the silent install, the
-            # weekly timer) shares that function and must not close anything. Marked done BEFORE
-            # the answer leaves, so the browser's next request (/listo) already sees it; the
-            # shutdown waits out the grace.
-            self.close_connection = True   # the browser's next request opens a fresh socket
-            self.server.close_after_success()
         self.send_json(status, body)
 
     def authorized(self):
@@ -3542,6 +3612,67 @@ def selftest():
                   and veredicto({"divergencia_vacia": False, "divergencia": "FATAL: x\n"})[0].startswith(
                       "✗ la revisión de divergencia no terminó")
                   and veredicto({"error": "e"}) == ("✗ la ejecución no terminó", ["e"]))
+            EJECUCION.update(estado="sin_ejecutar", hechos=[], veredicto=None)
+            st, nada = call("GET", "/api/ejecucion")
+            avance("✓ phase 05-security\n")   # no run the browser started: nothing to follow
+            fuera = list(EJECUCION["hechos"])
+            EJECUCION.update(estado="en_curso")
+            for ln in ("▶ phase 05-security\n", "✓ phase 05-security\n", "otra línea\n",
+                       "✓ phase 14-office\n", "== roster: 3 usuario(s)\n"):
+                avance(ln)
+            check("ejecución: none yet answers «sin_ejecutar» with the 16 steps; a browser run's executor lines become the console's own titles, any other run's are not followed (a14)",
+                  st == 200 and nada["ejecucion"] == "sin_ejecutar" and nada["pasos"] == PASOS_EJECUCION
+                  and len(PASOS_EJECUCION) == 16 and fuera == []
+                  and EJECUCION["hechos"] == ["Seguridad de sesión", "Oficina en línea", "Cuentas del personal"])
+            EJECUCION.update(estado="sin_ejecutar", hechos=[])
+            verdadero, suelta = globals()["api_generar"], threading.Event()
+
+            def lento(_p):   # a run that reports one phase, then waits to be released
+                avance("✓ phase 05-security\n")
+                suelta.wait(5)
+                return 200, {"modo": "ejecutar", "divergencia_vacia": False, "divergencia": "    algo de más\n"}
+            globals()["api_generar"] = lento
+            try:
+                st1, _ = call("POST", "/api/generar", {"codigo": "113314", "modo": "ejecutar"})
+                st2, otra = call("POST", "/api/generar", {"codigo": "113314", "modo": "ejecutar"})
+                time.sleep(0.2)
+                st3, durante = call("GET", "/api/ejecucion")
+                suelta.set()
+                for _ in range(50):
+                    st4, final = call("GET", "/api/ejecucion")
+                    if final["ejecucion"] == "terminada":
+                        break
+                    time.sleep(0.1)
+            finally:
+                globals()["api_generar"] = verdadero
+            check("ejecución: «Ejecutar» answers at once (202) and runs on a worker; a second start is refused while it runs; the poll shows the progress, then a red verdict that keeps the installer open (a14, SEC-2)",
+                  st1 == 202 and st2 == 409 and "en curso" in otra["error"]
+                  and st3 == 200 and durante["ejecucion"] == "en_curso"
+                  and durante["hechos"] == ["Seguridad de sesión"]
+                  and final["ejecucion"] == "terminada" and final["veredicto"]["verde"] is False
+                  and final["veredicto"]["titulo"].startswith("✗ deriva") and not DONE.is_set())
+            EJECUCION.update(estado="sin_ejecutar", hechos=[], veredicto=None)
+
+            def roto(_p):
+                raise RuntimeError("prueba")
+            globals()["api_generar"] = roto
+            try:
+                with redirect_stderr(io.StringIO()) as consola:   # the worker's line, captured
+                    st1, _ = call("POST", "/api/generar", {"codigo": "113314", "modo": "ejecutar"})
+                    for _ in range(50):
+                        st4, final = call("GET", "/api/ejecucion")
+                        if final["ejecucion"] == "terminada":
+                            break
+                        time.sleep(0.1)
+            finally:
+                globals()["api_generar"] = verdadero
+            check("ejecución: a worker that crashes still ends red — the cause on the console and in the state file, the installer open",
+                  st1 == 202 and final["ejecucion"] == "terminada" and final["veredicto"]["verde"] is False
+                  and final["veredicto"]["titulo"] == "✗ la ejecución no terminó"
+                  and "RuntimeError: prueba" in consola.getvalue()
+                  and "RuntimeError: prueba" in open(ESTADO_PATH, encoding="utf-8").read()
+                  and not DONE.is_set())
+            EJECUCION.update(estado="sin_ejecutar", hechos=[], veredicto=None)
             planilla = os.path.join(deis.HERE, "..", "sites", "113314", "planilla-mia.csv")
             rc, out = stepped(["--paso", "usuarios", "--codigo", "113314", "--planilla", planilla])
             check("--paso usuarios: the loaded planilla re-validates — sealed once, 0 new passwords",
@@ -4325,6 +4456,7 @@ def selftest():
             def ejecutar_http(vacia):
                 globals()["api_generar"] = lambda _p: (200, {"modo": "ejecutar",
                                                               "divergencia_vacia": vacia})
+                EJECUCION.update(estado="sin_ejecutar")
                 try:
                     req = urllib.request.Request(
                         f"http://127.0.0.1:{fport}/api/generar", method="POST",
@@ -4332,15 +4464,21 @@ def selftest():
                         headers={"Content-Type": "application/json",
                                  "Authorization": f"Bearer {TOKEN}"})
                     with urllib.request.urlopen(req, timeout=10) as r:
-                        return r.status
+                        st = r.status
+                    for _ in range(100):   # the worker's verdict, before the stub goes
+                        if EJECUCION["estado"] == "terminada":
+                            break
+                        time.sleep(0.05)
+                    return st, DONE.is_set()   # DONE as the poll first sees the verdict (SEC-2)
                 finally:
                     globals()["api_generar"] = verdadero
+                    EJECUCION.update(estado="sin_ejecutar", hechos=[], veredicto=None)
 
-            st = ejecutar_http(False)
+            st, al_terminar = ejecutar_http(False)
             time.sleep(0.5)
             check("finish: a red verdict keeps the installer open for the correction",
-                  st == 200 and hilo.is_alive() and not DONE.is_set())
-            st = ejecutar_http(True)
+                  st == 202 and not al_terminar and hilo.is_alive() and not DONE.is_set())
+            st, al_terminar = ejecutar_http(True)
             hilo.join(5)
             try:
                 socket.create_connection(("127.0.0.1", fport), timeout=2).close()
@@ -4348,7 +4486,7 @@ def selftest():
             except OSError:
                 cerrado = True
             check("finish: a green verdict closes the port within the grace and serve() answers 0",
-                  st == 200 and not hilo.is_alive() and DONE.is_set() and cerrado and servido == [0])
+                  st == 202 and al_terminar and not hilo.is_alive() and DONE.is_set() and cerrado and servido == [0])
             st, body = call("POST", "/api/generar", {"codigo": "113314", "modo": "ejecutar"})
             check("finish: once done, a second execution inside the grace is refused 409 — nothing runs twice",
                   st == 409 and "ya terminó" in body.get("error", ""))
