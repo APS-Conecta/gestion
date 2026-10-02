@@ -13,6 +13,11 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Added
 
+- **`aps-conecta install`** — the install opens on a welcome screen and walks numbered steps,
+  each with its purpose, command, result, next step and where it runs, in Spanish. One list of
+  nine steps (five on the server, four in the browser) is also the CLI's subcommands
+  (`revisar`, `preparar`, `descargar`, `mapa`, `abrir`, …), and `aps-conecta` with no argument
+  prints a Spanish usage generated from it. Preflight and every operator error are Spanish too.
 - **The welcome screen (IntraVox)** — the intranet surface as seeded content, not a fork:
   `provisioning/phases/41-intravox.sh` (engine setup, registry→engine group map, templated `es`
   import, page ACL) + the clinic-agnostic Spanish payload under `provisioning/intravox/es/`

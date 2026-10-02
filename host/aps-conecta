@@ -6,7 +6,9 @@
 # ONE docker run string, hands the operator to the Provisionador, re-provisions weekly, and
 # wires the backup scope. English here, es-CL for the operator (the house register rule).
 #
-# Usage:
+# Usage (the operator's Spanish usage is `aps-conecta` with no argument — generated from PASOS):
+#   aps-conecta install              the interactive install: welcome, then the numbered server steps
+#   aps-conecta <step>               one step of the registry (revisar … ejecutar), header and footer
 #   aps-conecta preflight            host checks + the run command (the FRD's pre-install gate)
 #   aps-conecta run-command          just the docker run string (one source, never re-typed)
 #   aps-conecta provision            start the Provisionador (interactive; Ctrl+C stops it)
@@ -35,11 +37,135 @@ WIZARD_PORTS="80 443 8080 8443"   # the wizard needs 8080; apache takes 443; 80/
                                   # reverse-proxy companions upstream's install path expects
 PROV_PORTS="8081 8082 8083"        # the Provisionador's fallback chain (slice 14) — INFO only
 
-die() { echo "FATAL: $*" >&2; exit 1; }
+die() { echo "✗ $*" >&2; exit 1; }
 ok()  { printf '✓ %s\n' "$*"; }
 bad() { printf '✗ %s\n' "$1"; printf '  → %s\n' "$2"; FAIL=1; }
 info(){ printf '· %s\n' "$*"; }
 FAIL=0
+
+# ── the step registry: ONE list for the console, the browser and the silent mode ──────────────
+# One home per step (run plan, S1b): a server step is a subcommand of this file, a browser step
+# lives in the web installer, and every front end walks this list. Fields: id|título|dónde|
+# propósito|resultado. The order IS the install order and the id IS the subcommand — the approved
+# Instalador UI (stage V, variant A) renders the same nine steps with the same words.
+PASOS=(
+  "revisar|Revisar el servidor|servidor|Memoria, disco, puertos y red.|Servidor apto."
+  "preparar|Preparar el servidor|servidor|Docker, permisos y memoria.|Docker en marcha."
+  "descargar|Descargar APS Conecta|servidor|Descarga y verificación de la suite.|Suite verificada."
+  "mapa|Construir el mapa|servidor|Mapa de Chile local para Centro y Territorio (1,1 GB).|Mapa listo."
+  "abrir|Abrir el instalador web|servidor|Enlace único para continuar en el navegador.|Enlace entregado."
+  "centro|Elegir el centro|navegador|Establecimiento (2.655 de atención primaria) y ubicación.|Centro guardado."
+  "suite|Iniciar la suite|navegador|Contenedores y aplicaciones, con el asistente prellenado.|Suite en marcha."
+  "equipos|Cargar equipos y personas|navegador|Sectores, programas y planilla del personal.|Equipos y planilla validados."
+  "ejecutar|Revisar y ejecutar|navegador|Revisión del plan y ejecución.|Instalación verificada."
+)
+# phase 15's theming:slogan — this file runs before the repo exists, so it carries the copy and
+# the self-test pins the pair
+LEMA="La salud primaria que compartimos es la que mejora"
+RESULTADO_PASO=""   # a step that ends in a state other than its registry result says so here
+
+paso_campo() {  # N FIELD — field FIELD (1 id · 2 título · 3 dónde · 4 propósito · 5 resultado) of step N
+  local IFS='|' f
+  read -r -a f <<< "${PASOS[$(( $1 - 1 ))]}"
+  printf '%s' "${f[$(( $2 - 1 ))]}"
+}
+
+paso_n() {  # ID — the step's number; non-zero for an id the registry does not name
+  local i
+  for i in "${!PASOS[@]}"; do
+    if [ "${PASOS[$i]%%|*}" = "$1" ]; then echo $(( i + 1 )); return 0; fi
+  done
+  return 1
+}
+
+paso_cab() {  # N — the step header, the approved console's shape
+  printf '%s\n' "──────────────────────────────────────────────────────────────"
+  printf 'Paso %s de %s · %s  %s\n' "$1" "${#PASOS[@]}" "$(paso_campo "$1" 2)" "$(paso_campo "$1" 3)"
+  printf 'Objetivo  %s\n' "$(paso_campo "$1" 4)"
+  printf 'Comando   aps-conecta %s\n' "$(paso_campo "$1" 1)"
+}
+
+paso_pie() {  # N — the result (the step's own override, else the registry's) and the next step
+  local m=$(( $1 + 1 ))
+  printf 'Resultado %s\n' "${RESULTADO_PASO:-$(paso_campo "$1" 5)}"
+  RESULTADO_PASO=""
+  if [ "$m" -le "${#PASOS[@]}" ]; then
+    printf 'Siguiente Paso %s · %s (%s)\n' "$m" "$(paso_campo "$m" 2)" "$(paso_campo "$m" 3)"
+  fi
+  echo
+}
+
+paso_correr() {  # N RERUN — header, the step's body, footer; non-zero with a ✗ result on failure
+  local id rc
+  id="$(paso_campo "$1" 1)"
+  paso_cab "$1"
+  FAIL=0
+  "paso_$id"; rc=$?
+  if [ "$rc" -ne 0 ] || [ "$FAIL" -ne 0 ]; then
+    printf 'Resultado ✗ el paso %s no terminó — corrija lo marcado y vuelva a ejecutar «%s»\n\n' "$1" "$2"
+    return 1
+  fi
+  paso_pie "$1"
+}
+
+paso_navegador() {  # N — a browser step asked for from the console: where it runs, how to get there
+  info "el paso $1 («$(paso_campo "$1" 2)») se hace en el navegador, en el instalador web que abre «aps-conecta abrir»"
+}
+
+bienvenida() {  # the welcome — the approved console's opening, line for line
+  local v nsrv=0 nnav=0 i
+  v="$(suite_tag)"; [ -n "$v" ] || v="(versión sin etiqueta)"
+  for i in "${!PASOS[@]}"; do
+    case "${PASOS[$i]}" in *"|servidor|"*) nsrv=$((nsrv + 1)) ;; *) nnav=$((nnav + 1)) ;; esac
+  done
+  echo
+  printf '  APS Conecta Gestión   Instalador %s\n\n' "$v"
+  printf '  Instala la suite del establecimiento en %s pasos: %s en este servidor, %s en el navegador.\n\n' \
+    "${#PASOS[@]}" "$nsrv" "$nnav"
+  printf '  «%s»\n\n' "$LEMA"
+  printf '  AGPL-3.0-or-later · github.com/APS-Conecta/gestion\n'
+  printf '  Desarrollado por Dani Espinoza Charrier · APS Conecta\n\n'
+}
+
+cmd_install() {  # the interactive install: the welcome, then the server steps in registry order —
+  # the last of them opens the web installer, which walks steps 6–9 from the same list. A failed
+  # step stops the run on its own ✗ lines; a re-run walks the steps again and each finds its own
+  # work done (the ports the suite already holds read as its own). The prompt waits only on a
+  # terminal: a pipe or CI runs straight through.
+  [ $# -eq 0 ] || die "«aps-conecta install» no recibe opciones: ejecútelo sin argumentos"
+  bienvenida
+  if [ -t 0 ]; then printf '  Enter para comenzar.'; IFS= read -r _; echo; fi
+  local n
+  for n in $(seq 1 "${#PASOS[@]}"); do
+    [ "$(paso_campo "$n" 3)" = servidor ] || break
+    paso_correr "$n" "sudo aps-conecta install" || exit 1
+  done
+}
+
+uso() {  # Spanish, generated from the registry — never a slice of this file's own header
+  local n
+  echo "APS Conecta Gestión — instalación y mantenimiento del servidor"
+  echo
+  echo "Instalación:"
+  echo "  sudo aps-conecta install          instala la suite: bienvenida y pasos numerados"
+  echo
+  echo "Pasos sueltos, en el orden de la instalación:"
+  for n in $(seq 1 "${#PASOS[@]}"); do
+    printf '  aps-conecta %-21s %s · %s (%s)\n' \
+      "$(paso_campo "$n" 1)" "$n" "$(paso_campo "$n" 2)" "$(paso_campo "$n" 3)"
+  done
+  echo
+  echo "Mantenimiento:"
+  echo "  aps-conecta preflight             revisión completa del servidor y comando de arranque de la suite"
+  echo "  aps-conecta run-command           solo el comando de arranque de la suite"
+  echo "  aps-conecta provision             abre el instalador web (lo mismo que el paso abrir)"
+  echo "  aps-conecta provision --reponer   re-provisión semanal (la ejecuta el temporizador)"
+  echo "  aps-conecta revalidate            revisa la instancia después de una actualización"
+  echo "  aps-conecta respaldo              agrega /opt/aps-conecta a las copias de seguridad"
+  echo "  aps-conecta tiles install|refresh|check   el mapa base y su servicio"
+  echo "  aps-conecta datos [CUT]           los paquetes de datos de la comuna"
+  echo "  aps-conecta --self-test           autoprueba de este programa (sin docker)"
+}
 
 # ── preflight arms ──────────────────────────────────────────────────────────────────────────
 
@@ -84,11 +210,15 @@ port_free() {  # PORT — the rule-10 discipline (the slice-3 testbed's own idio
   return 0
 }
 
-check_ports() {  # the four wizard-facing ports; a busy one names its holder
-  local p holder
+check_ports() {  # the four wizard-facing ports; a busy one names its holder — unless a suite
+  # container publishes it (a re-run of the install after the suite started reads its own as ✓)
+  local p holder publicados
+  publicados="$(docker ps --filter name=^nextcloud-aio- --format '{{.Ports}}' 2>/dev/null || true)"
   for p in $WIZARD_PORTS; do
     if port_free "$p"; then
       ok "puerto $p libre"
+    elif case "$publicados" in *":$p->"*) true ;; *) false ;; esac; then
+      ok "puerto $p en uso por la suite (ya instalada)"
     else
       holder="$(ss -ltnp "sport = :$p" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1)"
       bad "puerto $p ocupado${holder:+ (pid $holder)}" \
@@ -116,7 +246,7 @@ site_domain() {  # SITE_DOMINIO from the site record (#75 hook) — empty when u
 check_dns() {  # resolves the SITE record's own domain — the wizard asks for the same one
   local d; d="$(site_domain || true)"
   if [ -z "$d" ]; then
-    info "SITE_DOMINIO aún vacío — el asistente le pedirá el dominio; esta prueba corre tras elegirlo"
+    info "el dominio aún no está definido — el asistente lo pide; esta prueba corre después de elegirlo"
     return
   fi
   if getent hosts "$d" >/dev/null 2>&1; then
@@ -155,26 +285,157 @@ check_prov_ports() {  # INFO + the routed liveness probe (slices 14/15): GET / a
   return 0
 }
 
-check_hairpin() {  # the D10 leg (#8433): the HOST curls its own public domain — the exact
+check_hairpin() {  # the D10 leg (upstream #8433): the HOST curls its own public domain — the exact
   # failing hop (hairpin NAT). Runs only when the stack is up; preflight on a fresh host says so.
   local d; d="$(site_domain || true)"
   [ -z "$d" ] && return
   if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^nextcloud-aio-apache$'; then
-    info "stack aún no instalado — tras el asistente, «aps-conecta preflight» prueba $d desde acá"
+    info "la suite aún no está instalada — después del asistente, «aps-conecta preflight» prueba $d desde aquí"
     return
   fi
   if curl -sk --max-time 10 "https://$d/status.php" >/dev/null 2>&1; then
-    ok "https://$d/status.php responde desde el host (la pierna hairpin funciona)"
+    ok "https://$d/status.php responde desde el propio servidor (se alcanza por su dominio)"
   else
-    bad "https://$d/status.php NO responde desde el propio host (hairpin-NAT, el fallo #8433)" \
-      "permita el reflejo: «ufw route allow proto tcp from 172.18.0.0/16 to any port 443» (el rodeiro registrado del upstream #8433), o split-DNS: dnsmasq local con registro A del dominio, o el dns del daemon.json de docker; NO use SKIP_DOMAIN_VALIDATION — no resuelve esta pierna"
+    bad "https://$d/status.php NO responde desde el propio servidor (el NAT no refleja el tráfico hacia su dominio)" \
+      "permita el reflejo: «ufw route allow proto tcp from 172.18.0.0/16 to any port 443», o DNS local: dnsmasq con un registro A del dominio, o el dns del daemon.json de docker; NO use SKIP_DOMAIN_VALIDATION — no resuelve este tramo"
   fi
   if curl -sk --max-time 10 "https://$d/eurooffice/healthcheck" >/dev/null 2>&1; then
-    ok "https://$d/eurooffice/healthcheck responde desde el host"
+    ok "https://$d/eurooffice/healthcheck responde desde el propio servidor"
   else
-    bad "el healthcheck de eurooffice NO responde desde el host" \
-      "misma pierna hairpin que status.php — el camino interno (nombres DNS de contenedor) es el respaldo documentado"
+    bad "el control de salud de la oficina NO responde desde el propio servidor" \
+      "es el mismo tramo que status.php — el camino interno (nombres DNS de contenedor) es el respaldo documentado"
   fi
+}
+
+# ── the server steps' bodies (the registry's first five) ────────────────────────────────────
+# Each body prints ✓/✗ lines through ok/bad and returns; paso_correr reads FAIL. Later laps
+# replace bodies (L2 S2: «preparar» and «descargar» install instead of verify; L5: «mapa» before
+# the centre; L3: «abrir» hands over a one-time link), never the list.
+MIN_RAM_GIB=8                         # the approved Instalador UI's floors (stage V)
+MIN_DISCO_GB=40
+MEMINFO="${MEMINFO:-/proc/meminfo}"   # the self-test points it at a fixture
+
+check_ram() {
+  local kb gib
+  kb="$(awk '/^MemTotal:/ {print $2}' "$MEMINFO" 2>/dev/null)"
+  gib=$(( (${kb:-0} + 524288) / 1048576 ))   # rounded: an «8 GB» server reports ~7,7 GiB
+  if [ "$gib" -ge "$MIN_RAM_GIB" ]; then
+    ok "Memoria $gib GiB (mín. $MIN_RAM_GIB)"
+  else
+    bad "Memoria $gib GiB — el mínimo es $MIN_RAM_GIB GiB" "use un servidor con al menos $MIN_RAM_GIB GiB de memoria"
+  fi
+}
+
+check_cpu() { ok "CPU $(nproc 2>/dev/null || echo '?') núcleos"; }
+
+check_disco() {  # where the images and the volumes land: docker's root, or / before docker exists
+  local dir=/var/lib/docker gb
+  [ -d "$dir" ] || dir=/
+  gb="$(df -B 1000000000 --output=avail "$dir" 2>/dev/null | tail -1 | tr -dc '0-9')"
+  if [ "${gb:-0}" -ge "$MIN_DISCO_GB" ]; then
+    ok "Disco $gb GB libres (mín. $MIN_DISCO_GB)"
+  else
+    bad "Disco ${gb:-0} GB libres — el mínimo es $MIN_DISCO_GB GB" "libere espacio en $dir o use un disco más grande"
+  fi
+}
+
+check_red() {  # outbound HTTPS and the clock — the image pulls and every certificate need both
+  local h fecha remota ahora dif
+  h="$(curl -sI -m 10 https://ghcr.io/v2/ 2>/dev/null | tr -d '\r')" || h=""
+  if [ -z "$h" ]; then
+    bad "sin acceso a internet (https://ghcr.io no responde)" "revise la red y el DNS de este servidor"
+    return
+  fi
+  fecha="$(printf '%s\n' "$h" | sed -n 's/^[Dd]ate: //p' | head -1)"
+  if [ -z "$fecha" ]; then
+    ok "Internet (la hora no se pudo comparar: la respuesta no trajo fecha)"
+    return
+  fi
+  remota="$(date -d "$fecha" +%s 2>/dev/null || echo 0)"; ahora="$(date +%s)"
+  dif=$(( ahora > remota ? ahora - remota : remota - ahora ))
+  if [ "$remota" -gt 0 ] && [ "$dif" -le 300 ]; then
+    ok "Internet y hora"
+  else
+    bad "la hora de este servidor difiere más de 5 minutos de la de internet" \
+      "active la sincronización de hora: sudo timedatectl set-ntp true"
+  fi
+}
+
+check_grupo() {  # the operator who ran sudo must reach docker without it, after a new login
+  local u="${SUDO_USER:-$(id -un)}"
+  if [ "$u" = root ] || id -nG "$u" 2>/dev/null | tr ' ' '\n' | grep -qx docker; then
+    ok "Usuario $u en el grupo docker"
+  else
+    bad "el usuario $u no está en el grupo docker" "sudo usermod -aG docker $u, y vuelva a iniciar sesión"
+  fi
+}
+
+check_overcommit() {  # Redis, inside the suite, warns and can fail its saves without it — the
+  # run's acceptance a3 requires vm.overcommit_memory = 1, and L2 S2 sets it (R30)
+  if [ "$(sysctl -n vm.overcommit_memory 2>/dev/null)" = 1 ]; then
+    ok "Memoria del sistema ajustada (vm.overcommit_memory = 1)"
+  else
+    bad "vm.overcommit_memory no es 1 (Redis lo necesita)" \
+      "echo 'vm.overcommit_memory = 1' | sudo tee /etc/sysctl.d/90-aps-conecta.conf && sudo sysctl --system"
+  fi
+}
+
+paso_revisar() { check_ram; check_cpu; check_disco; check_ports; check_red; check_arch; }
+
+paso_preparar() {  # verifies today; L2 S2 installs what is missing and keeps these as its proof
+  need_tool git; need_tool python3; need_tool curl; need_tool docker
+  check_docker; check_compose; check_grupo; check_overcommit
+}
+
+paso_descargar() {  # the checkout this file runs from: its version and every vendored app against
+  # the sha256 its VENDOR pins — the seed's own check (provisioning/lib.sh), before any stack exists
+  local v vendor dir tars want got n=0 malos=0
+  v="$(suite_tag)"
+  if [ -z "$v" ]; then
+    bad "no se pudo leer la versión de la suite en $ROOT" \
+      "descargue la suite en una versión publicada (git clone --branch <versión>)"
+    return 0
+  fi
+  for vendor in "$ROOT"/provisioning/apps/*/VENDOR; do
+    [ -f "$vendor" ] || continue
+    dir="$(dirname "$vendor")"; n=$((n + 1))
+    tars=("$dir"/*.tar.gz)
+    want="$(sed -n 's/^sha256=//p' "$vendor")"
+    got=""
+    [ -f "${tars[0]}" ] && got="$(sha256sum "${tars[0]}" | cut -d' ' -f1)"
+    if [ -z "$got" ] || [ "$got" != "$want" ]; then
+      bad "$(basename "$dir"): el archivo no coincide con su suma de verificación" \
+        "vuelva a descargar la suite; un archivo dañado nunca se instala"
+      malos=$((malos + 1))
+    fi
+  done
+  if [ "$n" -eq 0 ]; then
+    bad "no se encontraron aplicaciones en $ROOT/provisioning/apps" "vuelva a descargar la suite completa"
+    return 0
+  fi
+  ok "Suite $v ($(du -sh "$ROOT/provisioning/apps" 2>/dev/null | cut -f1))"
+  [ "$malos" -eq 0 ] && ok "Sumas de verificación correctas (aplicaciones: $n)"
+  return 0
+}
+
+paso_mapa() {  # the basemap needs the chosen centre today (L5 builds it before Centro): with no
+  # site yet the step says so and the install goes on — «aps-conecta mapa» builds it later
+  if [ -z "$(site_codigo || true)" ]; then
+    info "el mapa se construye después de elegir el centro: ejecute «sudo aps-conecta mapa» al terminar el paso 6"
+    RESULTADO_PASO="Mapa pendiente: se construye después de elegir el centro."
+    return 0
+  fi
+  info "se construye el mapa de Chile (~1,1 GB por rangos HTTP; unos minutos — la instalación sigue al terminar)"
+  bash "$HOST_DIR/tiles.sh" install
+}
+
+paso_abrir() {  # the web installer walks steps 6–9; this process becomes it (exec — Ctrl+C stops
+  # it, as «provision» always did), so the footer prints before the hand-over — and says what is
+  # about to happen, never that the link was already delivered
+  RESULTADO_PASO="El instalador web se abre aquí abajo, con su enlace y su código de acceso."
+  paso_pie "$(paso_n abrir)"
+  printf '  No cierre esta ventana hasta «Listo».\n\n'
+  exec python3 "$(prov_path)"
 }
 
 # ── the run-command generator ─────────────────────────────────────────────────────────────
@@ -264,7 +525,7 @@ reponer() {  # the weekly headless re-provision (the timer's whole job): start t
   # exit the gate's code — drift self-healing or a loud red, never a silent no-op.
   local codigo; codigo="$(site_codigo)" || true
   if [ -z "$codigo" ]; then
-    die "no hay un sitio único en sites/ (D13: un establecimiento por instalación) — ejecute primero el provisionador"
+    die "no hay un único sitio en sites/ (una instalación sirve a un solo establecimiento) — elija el centro en el instalador web primero"
   fi
   local fifo provpid
   fifo="$(mktemp -u)"; mkfifo "$fifo"
@@ -426,17 +687,17 @@ cmd_datos() {  # [CUT] — S9's data-package leg: the national masters, sha256-v
 # ── preflight (the whole sweep) ────────────────────────────────────────────────────────────
 
 cmd_preflight() {
-  echo "Preflight del instalador APS Conecta AIO"
+  echo "Revisión previa del instalador APS Conecta"
   # bash checks itself (this script IS bash); the rest are real prerequisites
   need_tool git; need_tool python3; need_tool curl; need_tool docker
   check_docker; check_compose; check_ports; check_dns; check_arch; check_prov_ports
   check_hairpin
   echo
   if [ "$FAIL" -gt 0 ]; then
-    echo "PREFLIGHT: ✗ — corrija lo marcado arriba antes de instalar"
+    echo "REVISIÓN: ✗ — corrija lo marcado arriba antes de instalar"
     exit 1
   fi
-  ok "host listo — copie y ejecute el comando siguiente"
+  ok "servidor listo — copie y ejecute el comando siguiente"
   echo
   run_command
 }
@@ -497,6 +758,142 @@ EOF
   check "generator: APS_SUITE_TAG override wins over the git tag" \
     '[ "$(suite_tag)" = "v0.2.0-rc1" ]'
   unset APS_SUITE_TAG
+
+  # ── the step registry, the welcome and the stepper (L2 S1, a4) ──
+  local dondes ids malformadas bienv salida rcs out_paso
+  dondes="$(for i in $(seq 1 "${#PASOS[@]}"); do printf '%s ' "$(paso_campo "$i" 3)"; done)"
+  ids="$(for i in $(seq 1 "${#PASOS[@]}"); do printf '%s ' "$(paso_campo "$i" 1)"; done)"
+  malformadas="$(printf '%s\n' "${PASOS[@]}" | awk -F'|' 'NF != 5 || $1 == "" || $2 == "" || $4 == "" || $5 == ""')"
+  check "registry: nine steps, the five server ones first, five non-empty fields each" \
+    '[ "${#PASOS[@]}" -eq 9 ] && [ "$dondes" = "servidor servidor servidor servidor servidor navegador navegador navegador navegador " ] && [ -z "$malformadas" ]'
+  check "registry: the ids are the approved console's subcommands, in order" \
+    '[ "$ids" = "revisar preparar descargar mapa abrir centro suite equipos ejecutar " ]'
+  check "registry: paso_n maps an id to its number and refuses an unknown one" \
+    '[ "$(paso_n mapa)" = 4 ] && ! paso_n nada >/dev/null'
+  bienv="$(bienvenida)"
+  check "welcome: name, version, the nine-step promise, the motto, the licence with the source, the credit" \
+    'case "$bienv" in *"APS Conecta Gestión   Instalador v9.9.9"*"en 9 pasos: 5 en este servidor, 4 en el navegador"*"«La salud primaria que compartimos es la que mejora»"*"AGPL-3.0-or-later · github.com/APS-Conecta/gestion"*"Desarrollado por Dani Espinoza Charrier · APS Conecta"*) ;; *) false;; esac'
+  check "welcome: the motto is phase 15's theming slogan (one string, two homes, pinned)" \
+    'grep -F "\"$LEMA\"" "$ROOT_BAK/provisioning/phases/15-branding.sh" | grep -q "theming_set slogan"'
+
+  # the stepper end to end with every server step stubbed: the order, the approved header/footer,
+  # the hand-over to the browser, and no prompt without a terminal
+  salida="$(
+    paso_revisar()   { ok "revisar-stub"; }
+    paso_preparar()  { ok "preparar-stub"; }
+    paso_descargar() { ok "descargar-stub"; }
+    paso_mapa()      { ok "mapa-stub"; }
+    paso_abrir()     { ok "abrir-stub"; }
+    cmd_install </dev/null 2>&1
+  )"; rcs=$?
+  check "stepper: the welcome, then steps 1-5 in order with header, purpose, command, result and next" \
+    '[ "$rcs" -eq 0 ] && case "$salida" in *"Instalador v9.9.9"*"Paso 1 de 9 · Revisar el servidor  servidor"*"Objetivo  Memoria, disco, puertos y red."*"Comando   aps-conecta revisar"*"revisar-stub"*"Resultado Servidor apto."*"Siguiente Paso 2 · Preparar el servidor (servidor)"*"Paso 5 de 9 · Abrir el instalador web  servidor"*"abrir-stub"*"Siguiente Paso 6 · Elegir el centro (navegador)"*) ;; *) false;; esac'
+  check "stepper: the browser steps never run from the console, and no prompt without a terminal" \
+    'case "$salida" in *"Paso 6 de 9"*|*"Enter para comenzar"*) false;; *) true;; esac'
+  salida="$(
+    paso_revisar()   { ok "revisar-stub"; }
+    paso_preparar()  { bad "docker falta" "instálelo"; }
+    paso_descargar() { ok "descargar-stub"; }
+    cmd_install </dev/null 2>&1
+  )"; rcs=$?
+  check "stepper: a failing step stops the run, names itself and the re-run, and exits 1" \
+    '[ "$rcs" -eq 1 ] && case "$salida" in *"✗ docker falta"*"Resultado ✗ el paso 2 no terminó"*"sudo aps-conecta install"*) ;; *) false;; esac && case "$salida" in *"descargar-stub"*) false;; *) true;; esac'
+  out_paso="$( (cmd_install --sitio x) 2>&1)"; rcs=$?
+  check "stepper: install takes no options yet, and says so in Spanish" \
+    '[ "$rcs" -eq 1 ] && case "$out_paso" in *"no recibe opciones"*) ;; *) false;; esac'
+  out_paso="$(paso_navegador "$(paso_n centro)")"
+  check "stepper: a browser step asked for at the console says where it runs" \
+    'case "$out_paso" in *"el paso 6 («Elegir el centro») se hace en el navegador"*) ;; *) false;; esac'
+
+  # the step bodies against shimmed tools (MEMINFO is a fixture; ss/uname/df/nproc/curl/id/sysctl/
+  # docker are shims planted here — never inherited from another arm)
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/ss"; chmod +x "$tshim/ss"
+  printf '#!/usr/bin/env bash\necho x86_64\n' > "$tshim/uname"; chmod +x "$tshim/uname"
+  printf 'MemTotal:        8058000 kB\n' > "$tmp/meminfo"; MEMINFO="$tmp/meminfo"
+  printf '#!/usr/bin/env bash\necho Avail; echo 142\n' > "$tshim/df"; chmod +x "$tshim/df"
+  printf '#!/usr/bin/env bash\necho 4\n' > "$tshim/nproc"; chmod +x "$tshim/nproc"
+  printf '#!/usr/bin/env bash\nprintf "HTTP/2 401\\r\\ndate: %%s\\r\\n\\r\\n" "$(date -u "+%%a, %%d %%b %%Y %%H:%%M:%%S GMT")"\n' > "$tshim/curl"; chmod +x "$tshim/curl"
+  out_paso="$(FAIL=0; paso_revisar; echo "FAIL=$FAIL")"
+  check "revisar: 7.7 GiB rounds to the 8 GiB floor; CPU, 142 GB, the ports, internet and clock, x86-64 all green" \
+    'case "$out_paso" in *"✓ Memoria 8 GiB (mín. 8)"*"✓ CPU 4 núcleos"*"✓ Disco 142 GB libres (mín. 40)"*"✓ Internet y hora"*"✓ x86-64"*"FAIL=0") ;; *) false;; esac'
+  printf 'MemTotal:        4000000 kB\n' > "$tmp/meminfo"
+  printf '#!/usr/bin/env bash\necho Avail; echo 12\n' > "$tshim/df"; chmod +x "$tshim/df"
+  printf '#!/usr/bin/env bash\nprintf "HTTP/2 401\\r\\ndate: %%s\\r\\n\\r\\n" "$(date -u -d "-1 hour" "+%%a, %%d %%b %%Y %%H:%%M:%%S GMT")"\n' > "$tshim/curl"; chmod +x "$tshim/curl"
+  out_paso="$(FAIL=0; paso_revisar; echo "FAIL=$FAIL")"
+  check "revisar: 4 GiB, 12 GB and an hour of clock skew red with their fixes" \
+    'case "$out_paso" in *"✗ Memoria 4 GiB — el mínimo es 8 GiB"*"✗ Disco 12 GB libres"*"✗ la hora de este servidor difiere"*"timedatectl set-ntp true"*"FAIL=1") ;; *) false;; esac'
+  printf '#!/usr/bin/env bash\nexit 7\n' > "$tshim/curl"; chmod +x "$tshim/curl"
+  out_paso="$(FAIL=0; check_red; echo "FAIL=$FAIL")"
+  check "revisar: no answer from the internet reds with the network fix" \
+    'case "$out_paso" in *"✗ sin acceso a internet"*"FAIL=1") ;; *) false;; esac'
+  rm -f "$tshim/curl" "$tshim/df" "$tshim/nproc"; MEMINFO=/proc/meminfo
+
+  mk_docker 1.56 ""
+  printf '#!/usr/bin/env bash\ncase "$1" in -un) echo operador ;; -nG) echo "operador docker" ;; esac\n' > "$tshim/id"; chmod +x "$tshim/id"
+  printf '#!/usr/bin/env bash\necho 1\n' > "$tshim/sysctl"; chmod +x "$tshim/sysctl"
+  out_paso="$(FAIL=0; SUDO_USER=operador paso_preparar; echo "FAIL=$FAIL")"
+  check "preparar: docker at the floor, compose, the group and the overcommit all green" \
+    'case "$out_paso" in *"✓ docker (API 1.56"*"✓ compose v2 presente"*"✓ Usuario operador en el grupo docker"*"✓ Memoria del sistema ajustada"*"FAIL=0") ;; *) false;; esac'
+  printf '#!/usr/bin/env bash\ncase "$1" in -un) echo operador ;; -nG) echo "operador sudo" ;; esac\n' > "$tshim/id"; chmod +x "$tshim/id"
+  printf '#!/usr/bin/env bash\necho 2\n' > "$tshim/sysctl"; chmod +x "$tshim/sysctl"
+  out_paso="$(FAIL=0; SUDO_USER=operador paso_preparar; echo "FAIL=$FAIL")"
+  check "preparar: a user outside the docker group and overcommit 2 red with their fixes" \
+    'case "$out_paso" in *"✗ el usuario operador no está en el grupo docker"*"usermod -aG docker operador"*"✗ vm.overcommit_memory no es 1"*"90-aps-conecta.conf"*"FAIL=1") ;; *) false;; esac'
+  rm -f "$tshim/id" "$tshim/sysctl"
+
+  mkdir -p "$ROOT/provisioning/apps/demo"
+  printf 'contenido\n' > "$tmp/demo.txt"
+  tar czf "$ROOT/provisioning/apps/demo/demo-1.0.0.tar.gz" -C "$tmp" demo.txt
+  printf 'version=1.0.0\nsha256=%s\n' "$(sha256sum "$ROOT/provisioning/apps/demo/demo-1.0.0.tar.gz" | cut -d' ' -f1)" \
+    > "$ROOT/provisioning/apps/demo/VENDOR"
+  out_paso="$(FAIL=0; paso_descargar; echo "FAIL=$FAIL")"
+  check "descargar: the checkout's version and every vendored app's sha256 green" \
+    'case "$out_paso" in *"✓ Suite v9.9.9"*"✓ Sumas de verificación correctas (aplicaciones: 1)"*"FAIL=0") ;; *) false;; esac'
+  printf 'version=1.0.0\nsha256=%064d\n' 0 > "$ROOT/provisioning/apps/demo/VENDOR"
+  out_paso="$(FAIL=0; paso_descargar; echo "FAIL=$FAIL")"
+  check "descargar: a tarball that does not match its VENDOR reds and is never called correct" \
+    'case "$out_paso" in *"✗ demo: el archivo no coincide con su suma de verificación"*"FAIL=1") ;; *) false;; esac && case "$out_paso" in *"Sumas de verificación correctas"*) false;; *) true;; esac'
+  rm -rf "$ROOT/provisioning/apps/demo"
+  out_paso="$(FAIL=0; paso_descargar; echo "FAIL=$FAIL")"
+  check "descargar: no vendored app at all reds — never a vacuous «correctas (aplicaciones: 0)»" \
+    'case "$out_paso" in *"✗ no se encontraron aplicaciones"*"FAIL=1") ;; *) false;; esac && case "$out_paso" in *"correctas"*) false;; *) true;; esac'
+  rm -rf "$ROOT/provisioning"
+
+  # the dispatch as the operator calls it: help is the usage, an unknown word reds, and every
+  # registry step answers by its id (browser steps say where they run; server steps have a body)
+  out_paso="$(bash "$HOST_DIR/aps-conecta" --help 2>&1)"; rcs=$?
+  check "dispatch: --help prints the usage and exits 0, with no ✗" \
+    '[ "$rcs" -eq 0 ] && case "$out_paso" in *"Pasos sueltos"*) ;; *) false;; esac && case "$out_paso" in *"✗"*) false;; *) true;; esac'
+  out_paso="$(bash "$HOST_DIR/aps-conecta" nada 2>&1)"; rcs=$?
+  check "dispatch: an unknown subcommand prints the usage, names itself and exits 2" \
+    '[ "$rcs" -eq 2 ] && case "$out_paso" in *"Pasos sueltos"*"✗ subcomando desconocido: nada"*) ;; *) false;; esac'
+  local sin_cuerpo=""
+  for i in $(seq 1 "${#PASOS[@]}"); do
+    if [ "$(paso_campo "$i" 3)" = servidor ]; then
+      declare -F "paso_$(paso_campo "$i" 1)" >/dev/null || sin_cuerpo+="$(paso_campo "$i" 1) "
+    else
+      case "$(bash "$HOST_DIR/aps-conecta" "$(paso_campo "$i" 1)" 2>&1)" in
+        *"el paso $i ("*"se hace en el navegador"*) ;; *) sin_cuerpo+="$(paso_campo "$i" 1) " ;;
+      esac
+    fi
+  done
+  check "dispatch: every registry step answers by its id — a server body, or the browser notice" '[ -z "$sin_cuerpo" ]'
+
+  # a re-run after the suite started: a port the suite publishes reads as its own; a stranger on a
+  # port the suite does not publish still reds (the mastercontainer publishes 8080 only)
+  printf '#!/usr/bin/env bash\ncase "$2" in "sport = :8080"|"sport = :80") echo "State"; echo "LISTEN 0 0 *:${2##*:}";; esac\nexit 0\n' > "$tshim/ss"; chmod +x "$tshim/ss"
+  printf '#!/usr/bin/env bash\ncase "$*" in *"{{.Names}}"*) echo nextcloud-aio-mastercontainer;; *"{{.Ports}}"*) echo "0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp";; esac\nexit 0\n' > "$tshim/docker"; chmod +x "$tshim/docker"
+  out_paso="$(FAIL=0; check_ports; echo "FAIL=$FAIL")"
+  check "revisar: a port the running suite publishes reads as the suite's own, so a re-run of install goes on" \
+    'case "$out_paso" in *"✓ puerto 8080 en uso por la suite (ya instalada)"*) ;; *) false;; esac'
+  check "revisar: a stranger on a port the suite does not publish reds while the suite runs" \
+    'case "$out_paso" in *"✗ puerto 80 ocupado"*"FAIL=1") ;; *) false;; esac'
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/ss"; chmod +x "$tshim/ss"
+  rm -f "$tshim/docker"
+
+  out_paso="$(paso_correr "$(paso_n mapa)" "aps-conecta mapa" 2>&1)"; rcs=$?
+  check "mapa: with no centre chosen yet the step says it is pending, and the install goes on" \
+    '[ "$rcs" -eq 0 ] && case "$out_paso" in *"Paso 4 de 9 · Construir el mapa"*"después de elegir el centro"*"Resultado Mapa pendiente: se construye después de elegir el centro."*"Siguiente Paso 5"*) ;; *) false;; esac'
 
   # ── the checks against planted tool worlds ──
   mk_docker 1.44 ""
@@ -580,11 +977,25 @@ CSHIM
   printf '#!/usr/bin/env bash\nif [ "$1" = ps ]; then echo nextcloud-aio-apache; exit 0; fi\nexit 0\n' > "$tshim/docker"; chmod +x "$tshim/docker"
   out="$(check_hairpin)"
   check "hairpin: status.php + healthcheck green from the host (the stack up, the domain set)" \
-    'case "$out" in *"status.php responde desde el host"*"eurooffice/healthcheck responde"*) ;; *) false;; esac'
+    'case "$out" in *"status.php responde desde el propio servidor"*"eurooffice/healthcheck responde desde el propio servidor"*) ;; *) false;; esac'
   printf '#!/usr/bin/env bash\nexit 1\n' > "$tshim/curl"; chmod +x "$tshim/curl"
   out="$(check_hairpin)"
-  check "hairpin: the #8433 red carries R4's ufw recipe and the split-DNS legs, and never SKIP_DOMAIN_VALIDATION as advice" \
-    'case "$out" in *"172.18.0.0/16"*"dnsmasq"*"daemon.json"*"NO use SKIP_DOMAIN_VALIDATION"*) ;; *) false;; esac'
+  check "hairpin: the red carries the ufw recipe and the local-DNS legs, and never SKIP_DOMAIN_VALIDATION as advice" \
+    'case "$out" in *"172.18.0.0/16"*"dnsmasq"*"daemon.json"*"NO use SKIP_DOMAIN_VALIDATION"*"✗ el control de salud de la oficina NO responde"*) ;; *) false;; esac'
+
+  # ── a5: usage and preflight are Spanish, with no source header, shell internals or internal ids ──
+  local a5_ids='^[[:space:]]*#|set -uo|readlink|HOST_DIR|\$\{|\bslice\b|\bFRD\b|\bB-[0-9]{3}\b|\bR[0-9]{1,2}\b|\bD[0-9]{1,2}\b|#[0-9]{2,}'
+  local a5_en='the|failed|not found|warning|missing|usage'
+  out="$(uso 2>&1)"
+  check "usage (a5): generated Spanish, every step listed, no source header, no internal id, no English word" \
+    '[ -n "$out" ] && ! printf "%s\n" "$out" | grep -qE "$a5_ids" && ! printf "%s\n" "$out" | grep -qiwE "$a5_en" && case "$out" in *"aps-conecta revisar"*"aps-conecta ejecutar"*) ;; *) false;; esac'
+  mk_docker 1.56 ""
+  out="$( (cmd_preflight) 2>&1)"
+  check "preflight (a5): a whole run is Spanish, with no internal id and no English word" \
+    '[ -n "$out" ] && ! printf "%s\n" "$out" | grep -qE "$a5_ids" && ! printf "%s\n" "$out" | grep -qiwE "$a5_en" && case "$out" in *"Revisión previa del instalador APS Conecta"*) ;; *) false;; esac'
+  out="$( (die "prueba") 2>&1)"
+  check "errors print the Spanish console's ✗ marker, with no English prefix" \
+    '[ "$out" = "✗ prueba" ]'
 
   # ── respaldo: idempotent via the mastercontainer's own file ──
   : > "$tmp/mc-additional"
@@ -768,6 +1179,7 @@ EOF
 # ── dispatch ──────────────────────────────────────────────────────────────────────────────
 
 case "${1:-}" in
+  install)      shift; cmd_install "$@" ;;
   preflight)    shift; cmd_preflight "$@" ;;
   run-command)  run_command ;;
   provision)    shift; cmd_provision "${1:-}" ;;
@@ -776,5 +1188,15 @@ case "${1:-}" in
   tiles)        shift; exec bash "$HOST_DIR/tiles.sh" "$@" ;;
   datos)        shift; cmd_datos "${1:-}" ;;
   --self-test)  selftest ;;
-  *) sed -n '2,23p' "$0"; echo; echo "uso: aps-conecta {preflight|run-command|provision [--reponer]|revalidate|respaldo|tiles …|datos [CUT]|--self-test}" ;;
+  ""|-h|--help) uso ;;
+  *)            # a step answers by its registry id — the list is the only place a step is named
+                if paso="$(paso_n "$1")"; then
+                  if [ "$(paso_campo "$paso" 3)" = servidor ]; then
+                    paso_correr "$paso" "aps-conecta $1" || exit 1
+                  else
+                    paso_navegador "$paso"
+                  fi
+                else
+                  uso; echo; echo "✗ subcomando desconocido: $1" >&2; exit 2
+                fi ;;
 esac
