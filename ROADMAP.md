@@ -39,10 +39,18 @@ formatting loss that implies** (issue #45).
 
 ## Next
 
-Only one item here is actually pending; everything else that used to sit under this heading has
-shipped and moved to **Done** below.
+**The installer run** ([#199](https://github.com/APS-Conecta/gestion/issues/199)) — an install a clinic
+can run end to end without a developer. Lap L1 shipped (see *Done*); the rest, in order:
 
-1. **Epic retrospectives** (optional).
+1. **L2 Silent core** — the step registry and terminal stepper, the root bootstrap, the AIO API drive
+   promoted into the CLI, `install --sitio --planilla`, and the `aps-conecta` timers.
+2. **L3 Web installer** — every screen of the approved *Instalador UI*, driven by the same registry.
+3. **L4 AIO fork** — one patch per finding (identity, pre-fill, refusals, Talk off by default).
+4. **L5 Map** — the basemap as a registry step, the Centro picker, same-origin `/tiles/`.
+5. **L6 Docs** — `docs/INSTALLER.md` ⇄ the clinic guide, mirrored step for step.
+6. **L7 Run acceptance** — a release candidate installed on three boxes by the rehearsal harness.
+
+Also open: **Epic retrospectives** (optional).
 
 ## Done
 
@@ -70,6 +78,7 @@ shipped and moved to **Done** below.
 | 2026-09-25 | **Org-wide hardening program (12 phases)** — postures, drift gates, manuals under version control, org CI template; validated pass | `.github/workflows/ci.yml`, `docs/adr/`, validation in the org artifacts repo |
 | 2026-09-28 | Welcome tree declared per site and converged per section — IntraVox review Phase 3: `SITE_WELCOME`, one renderer, `occ intravox:import --skip-existing`, the ten static team pages retired; review Phases 4 (walls) and 5 (discoverability) are next | `docs/adr/0019-the-welcome-tree-is-declared-and-converged-per-section.md`, `provisioning/intravox/render.py`, `docs/WELCOME-SCREEN.md` |
 | 2026-09-29 | **Storage root named for staff** — IntraVox review Phase 5: `IV_MOUNT` → engine `groupfolder_name`, the seed refuses an unrenamed install, «Abrir en Archivos» on every page, the «dónde vive» note seeded | [`ADR-0020`](docs/adr/0020-the-storage-root-is-named-for-staff.md), [`docs/WELCOME-SCREEN.md`](docs/WELCOME-SCREEN.md) |
+| 2026-10-01 | **Installer L1 — the Nextcloud container resolved once** (#200, closes #197, PR #207) — `nc_container`/`is_aio` in `scripts/env.sh` replace a template default, 4 restated defaults and 7 detection copies; **Clean boot green end to end on AIO** for the first time since 2026-09-21, after the run exposed and fixed B-030 (IntraVox group map order), B-031 (smoke check 15 on Nextcloud 34, now developer-only), B-032 (`seed-idempotent`'s leftover fixture account) and B-033 (the harness's tiles surface) | `scripts/env.sh` § 3, [`BUGS.md`](BUGS.md) B-029–B-033 |
 
 The reasoning behind each of these lives with the thing it describes — the ADR, the phase file, or
 the stylesheet. It is not restated here; this table is an index, not a second copy.
