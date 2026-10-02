@@ -57,13 +57,17 @@ This repo is self-contained under its own clone.
 
 ## Scheduled Jules agent: 🗡️ Breaker (Mondays 02:00, Chile)
 
-gestion is the platform where patient data could live (staff Files, Talk, Mail), so it gets the red
-team only. The agent's prompt lives in the private `APS-Conecta/agents` repo; Claude reviews every PR.
+The product holds no patient data (above), but nothing stops staff from uploading clinical files to
+Files or Talk, so every account, share and backup is secured as if it did. gestion gets the red team
+only. The agent's prompt lives in the private `APS-Conecta/agents` repo; Claude reviews every PR.
 
 - **Scope:** platform security configuration — `provisioning/`, `sites/`, `host/`, compose files,
   nginx configs. Read `docs/threat-model.md` first.
-- **Gate:** `make test` (static checks + smoke). A hardening change ships with a test or configuration
+- **Gate:** `make test` — static checks, then smoke only when a stack is up. A step that did not run is
+  named in the PR, never reported as passed. A hardening change ships with a test or configuration
   assertion that `make test` runs.
+- **Names:** code in English; a domain term keeps the spelling `CONTEXT.md` gives it.
 - **Never:** commit `.env`, secrets, real data or Docker volumes; touch sibling projects on the host;
-  replace the official Nextcloud image; edit `.github/workflows/`.
-- **Journal:** `.jules/breaker.md` only (lowercase).
+  replace the official Nextcloud image; edit `.github/workflows/`, `.github/repo-docs.py` or
+  `.github/profiles/*`.
+- **Journal:** `.jules/breaker.md` only (lowercase), each entry dated with today's `date +%F`.
