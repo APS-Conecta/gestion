@@ -1276,11 +1276,13 @@ def ejecutar_web(codigo, server):
         except Exception:   # the console line above already carries it
             pass
     verde = status == 200 and body.get("divergencia_vacia") is True
-    if "divergencia_vacia" in body:   # the gate ran: its row is done, whatever it found
-        EJECUCION["hechos"].append(PASO_GATE)
-    if verde:   # DONE before the poll can read green: /listo answers, a second start is refused (SEC-2)
-        server.close_after_success()
-    EJECUCION.update(estado="terminada", veredicto={"verde": verde, "titulo": veredicto(body)[0]})
+    try:
+        if "divergencia_vacia" in body:   # the gate ran: its row is done, whatever it found
+            EJECUCION["hechos"].append(PASO_GATE)
+        if verde:   # DONE before the poll can read green: /listo answers, a second start is refused (SEC-2)
+            server.close_after_success()
+    finally:   # whatever the close does, the run never stays «en curso»
+        EJECUCION.update(estado="terminada", veredicto={"verde": verde, "titulo": veredicto(body)[0]})
 
 
 def estado_ejecucion():
@@ -2325,7 +2327,7 @@ y en la consola del servidor.</p>
     clearTimeout(reloj);
     const e = await api("/api/ejecucion");
     if (e.estado === 0 || e.estado >= 500) {   // a dropped answer is retried; a closed installer says so
-      if (++fallos >= 3 && visto) zona("x-error").innerHTML = '<div class="aviso">Sin respuesta del ' +
+      if (++fallos >= 3) zona("x-error").innerHTML = '<div class="aviso">Sin respuesta del ' +
         "instalador. Si la ejecución terminó bien, el instalador ya se cerró: el resultado está en la " +
         "consola del servidor (<code>aps-conecta estado</code>).</div>";
       reloj = setTimeout(seguir, 2000); return;
@@ -2528,8 +2530,10 @@ class Handler(BaseHTTPRequestHandler):
             self.close_connection = True  # same framing rule: 413 never drained its body
             self.send_json(e.status, {"error": str(e)})
             return
+        # «vista» is /api/sitio's read-only preview: on any other path it changes nothing, so it
+        # exempts nothing from the freezes below
         cambia = (path in ("/api/generar", "/api/centro", "/api/sitio", "/api/usuarios")
-                  and payload.get("vista") is not True)
+                  and not (path == "/api/sitio" and payload.get("vista") is True))
         if cambia and DONE.is_set():
             # SEC-2: the installer is done and closing — a reload and a second click inside the grace
             # must neither start a run the shutdown would cut nor change what the run just verified
@@ -3692,6 +3696,9 @@ def selftest():
                 st2, otra = call("POST", "/api/generar", {"codigo": "113314", "modo": "ejecutar"})
                 time.sleep(0.2)
                 st3, durante = call("GET", "/api/ejecucion")
+                st_sitio, frena = call("POST", "/api/sitio", {"codigo": "113314", "sectors": ["Sector Estrella"],
+                                                              "programs": ["Programa Salud Mental"]})
+                st_vista, _ = call("POST", "/api/centro", {"codigo": "113314", "vista": True})
                 suelta.set()
                 for _ in range(50):
                     st4, final = call("GET", "/api/ejecucion")
@@ -3705,8 +3712,20 @@ def selftest():
                   and st3 == 200 and durante["ejecucion"] == "en_curso"
                   and durante["hechos"] == ["Seguridad de sesión"]
                   and final["ejecucion"] == "terminada" and final["veredicto"]["verde"] is False
-                  and final["veredicto"]["titulo"].startswith("✗ deriva") and not DONE.is_set())
+                  and final["veredicto"]["titulo"].startswith("✗ deriva") and not DONE.is_set()
+                  and final["hechos"] == ["Seguridad de sesión", "Comprobación final"])
+            check("ejecución: the run's input is frozen from the 202 on — before the executor's lock, «vista» or not",
+                  st_sitio == 409 and "en curso" in frena["error"] and st_vista == 409)
             EJECUCION.update(estado="sin_ejecutar", hechos=[], veredicto=None)
+            st_mal, _ = call("POST", "/api/generar", {"codigo": "12", "modo": "ejecutar"})
+            EXEC_LOCK.acquire()   # a run this page did not start holds the executor
+            try:
+                st_ocup, ocup = call("POST", "/api/generar", {"codigo": "113314", "modo": "ejecutar"})
+            finally:
+                EXEC_LOCK.release()
+            check("ejecución: a bad code is refused 400; a run already holding the executor refuses the start 409; nothing starts",
+                  st_mal == 400 and st_ocup == 409 and "en curso" in ocup["error"]
+                  and EJECUCION["estado"] == "sin_ejecutar")
 
             def roto(_p):
                 raise RuntimeError("prueba")
@@ -3727,6 +3746,22 @@ def selftest():
                   and "RuntimeError: prueba" in consola.getvalue()
                   and "RuntimeError: prueba" in open(ESTADO_PATH, encoding="utf-8").read()
                   and not DONE.is_set())
+            EJECUCION.update(estado="sin_ejecutar", hechos=[], veredicto=None)
+
+            class SinHilos:   # a server whose close cannot start its timer
+                def close_after_success(self):
+                    raise RuntimeError("sin hilos")
+            globals()["api_generar"] = lambda _p: (200, {"modo": "ejecutar", "divergencia_vacia": True})
+            EJECUCION.update(estado="en_curso", hechos=[], veredicto=None)
+            try:
+                ejecutar_web("113314", SinHilos())
+                cayo = False
+            except RuntimeError:
+                cayo = True
+            finally:
+                globals()["api_generar"] = verdadero
+            check("ejecución: a close that fails still publishes the verdict — the run never stays «en curso»",
+                  cayo and EJECUCION["estado"] == "terminada" and EJECUCION["veredicto"]["verde"] is True)
             EJECUCION.update(estado="sin_ejecutar", hechos=[], veredicto=None)
             planilla = os.path.join(deis.HERE, "..", "sites", "113314", "planilla-mia.csv")
             rc, out = stepped(["--paso", "usuarios", "--codigo", "113314", "--planilla", planilla])
@@ -4541,6 +4576,7 @@ def selftest():
                                      and "✗ deriva" in veredicto_txt and "aps-conecta estado" in veredicto_txt
                                      and "algo de más" not in veredicto_txt
                                      and "✗ deriva" in recargado
+                                     and pg.locator(".lista-estado .hecho").count() == 2
                                      and pg.inner_text("#x-ir") == "Volver a ejecutar")
                         except Exception as e:   # a Playwright timeout: the arm reports it
                             paso9 = False
@@ -4609,8 +4645,11 @@ def selftest():
             check("finish: a green verdict closes the port within the grace and serve() answers 0",
                   st == 202 and al_terminar and not hilo.is_alive() and DONE.is_set() and cerrado and servido == [0])
             st, body = call("POST", "/api/generar", {"codigo": "113314", "modo": "ejecutar"})
-            check("finish: once done, a second execution inside the grace is refused 409 — nothing runs twice",
-                  st == 409 and "ya terminó" in body.get("error", ""))
+            st_v, body_v = call("POST", "/api/generar", {"codigo": "113314", "modo": "ejecutar", "vista": True})
+            st_u, _ = call("POST", "/api/usuarios", {"codigo": "113314", "csv": "x", "vista": True})
+            check("finish: once done, a second execution inside the grace is refused 409 — nothing runs twice, «vista» or not",
+                  st == 409 and "ya terminó" in body.get("error", "")
+                  and st_v == 409 and "ya terminó" in body_v.get("error", "") and st_u == 409)
 
             class Interrumpido:   # Ctrl+C arriving while serve_forever runs
                 def serve_forever(self):
