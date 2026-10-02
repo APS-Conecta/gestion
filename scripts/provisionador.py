@@ -372,6 +372,8 @@ def team_lines(word, gid_prefix, names):
         name = name.strip()
         if not name:
             continue
+        if "|" in name or any(ord(c) < 32 for c in name):   # the site file's field separator, a line break
+            raise ValueError(f"«{name}» no puede llevar «|» ni saltos de línea")
         bare = name[len(word):].strip() if deis.fold(name).startswith(word) else name
         if not bare:  # the word alone ("sector") names nothing
             continue
@@ -602,8 +604,8 @@ def api_sitio(payload):
     if payload.get("vista") is True:
         return 200, {"ok": True, "equipos": equipos}
 
-    # ponytail: check-then-write is not atomic across threads — one operator, one link; a lock shared
-    # with api_centro if two ever drive one installer
+    # ponytail: the first write is check-then-write across threads — write_site refuses an existing
+    # file and the SystemExit arm below settles the race; the rewrites take SITE_LOCK
     refused = one_establishment(codigo)   # D13 at step 8 too, not only in the silent install
     if refused:
         return refused
@@ -682,15 +684,21 @@ def replace_teams(path, row, codigo, sectors, programs):
                              "reemplace los equipos a mano en el archivo del sitio")
         for viejo, otro in zip(actual, team_blocks(nuevo)):
             text = text.replace(viejo, otro, 1)
-        tmp_path = path + ".tmp"
-        try:
-            with open(tmp_path, "w", encoding="utf-8", newline="") as fh:
-                fh.write(text)
-            os.chmod(tmp_path, os.stat(path).st_mode & 0o7777)   # the operator's mode survives
-            os.replace(tmp_path, path)   # never half a site
-        finally:
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
+        write_site_text(path, text)
+
+
+def write_site_text(path, text):
+    """The site file replaced whole, never half-written: a tmp beside it, the operator's mode kept,
+    then os.replace — both rewrites («Reemplazar», the SITE_ROSTER line) go through here."""
+    tmp_path = path + ".tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8", newline="") as fh:
+            fh.write(text)
+        os.chmod(tmp_path, os.stat(path).st_mode & 0o7777)
+        os.replace(tmp_path, path)
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
 
 def role_names(path):
@@ -708,8 +716,8 @@ def role_names(path):
 def equipos_actuales():
     """GET /api/equipos — step 8's state, for the screen and after a reload: the saved teams (none
     before the first save), every cargo the planilla's role-* column accepts (phase 20's and the
-    site's own), and whether a loaded planilla still validates against them (one naming a team
-    «Reemplazar» removed no longer counts as loaded)."""
+    site's own), and whether «Revisar» would accept the loaded planilla (a replacement can make it
+    stale: a team it names gone, a new sector's cargo unsealed)."""
     codigo = centro_actual()[1].get("codigo")
     if not codigo:
         return 200, {"codigo": None}
@@ -719,18 +727,8 @@ def equipos_actuales():
     try:
         cargos = role_names(PHASE20)
         teams, roles = site_arrays(path) if guardados else ([], [])
-        if guardados:
-            root = os.path.join(deis.HERE, "..")
-            with open(path, encoding="utf-8") as fh:
-                text = fh.read()
-            try:
-                roster = roster_paths(text, root, os.path.relpath(path, root), codigo)[0]
-            except RosterPathError:
-                roster = None
-            if roster and os.path.exists(roster):
-                universe = registry_groups(PHASE20) | {g for g, _ in teams} | {g for g, _, _ in roles}
-                with open(roster, encoding="utf-8") as fh:
-                    cargada = not roster_parse(fh.read(), {}, universe)[1]
+        if guardados:   # «Siguiente» only where «Revisar» accepts it (zero writes, zero execs)
+            cargada = _api_generar({"codigo": codigo, "modo": "revision"})[0] == 200
     except OSError as e:
         return 500, {"error": f"no se pudo leer un archivo del centro ({why(e)})"}
     except ValueError as e:
@@ -965,6 +963,16 @@ def roster_parse(text, reserved, universe):
     return rows, errors
 
 
+def roster_refusal(errors, teams, shared, roles):
+    """The planilla's 400, the same at the upload and at «Revisar»: every line error, plus the valid
+    groups when one is unknown (R38) — the list, not a guess."""
+    body = {"ok": False, "errores": [{"linea": n, "error": m} for n, m in errors]}
+    if any(UNKNOWN_GROUP in m for _n, m in errors):
+        body["grupos_validos"] = ([g for g, _ in teams] + sorted(g for g in shared if g.startswith("role-"))
+                                  + [g for g, _, _ in roles])
+    return 400, body
+
+
 def sealed_map(path):
     """The sealed sheet as a uid -> (password, display, primer) map — the read half of
     seal_credentials, factored out because the executor reads the same sheet to feed the roster
@@ -1061,11 +1069,7 @@ def api_usuarios(payload):
 
     rows, errors = roster_parse(csv_text.lstrip("\ufeff"), reserved, universe)
     if errors:
-        body = {"ok": False, "errores": [{"linea": n, "error": m} for n, m in errors]}
-        if any(UNKNOWN_GROUP in m for _n, m in errors):   # R38: the list, not a guess
-            body["grupos_validos"] = ([g for g, _ in teams] + sorted(g for g in shared if g.startswith("role-"))
-                                      + [g for g, _, _ in roles])
-        return 400, body
+        return roster_refusal(errors, teams, shared, roles)
 
     # — where the roster lives: the SITE_ROSTER line names it (empty = the default this sets).
     # The write surface is sites/<codigo>/ by construction (the /api/sitio discipline): a
@@ -1113,8 +1117,8 @@ def api_usuarios(payload):
         with SITE_LOCK:   # «Reemplazar» rewrites the same file
             with open(site, encoding="utf-8") as fh:
                 actual = fh.read()
-            with open(site, "w", encoding="utf-8") as fh:
-                fh.write(re.sub(r"(?m)^SITE_ROSTER=.*$", f"SITE_ROSTER={default_rel}", actual, count=1))
+            write_site_text(site, re.sub(r"(?m)^SITE_ROSTER=.*$", f"SITE_ROSTER={default_rel}",
+                                         actual, count=1))
     primer_uid = next((uid for uid, _n, _a, _c, _g, p in rows if p), None)
     if primer_uid is None:
         # roster_parse enforces exactly-one; this is the belt-and-braces arm — a future edit that
@@ -1197,8 +1201,7 @@ def _api_generar(payload):
         return 400, {"error": "el modo debe ser «revision» o «ejecutar»"}
     site = site_path(codigo)
     if not os.path.exists(site):
-        return 404, {"error": f"no existe sites/{codigo}/site.sh — primero genere el sitio con "
-                              "el paso de sectores y programas"}
+        return 404, {"error": "primero guarde los equipos (sectores y programas) de este centro"}
     root = os.path.join(deis.HERE, "..")
     rel = os.path.relpath(site, root)
     with open(site, encoding="utf-8") as fh:
@@ -1224,7 +1227,7 @@ def _api_generar(payload):
         rows, errors = roster_parse(fh.read(), reserved, universe)
     if errors:
         # a hand edit of the canonical roster answers the upload screen's own line errors
-        return 400, {"ok": False, "errores": [{"linea": n, "error": m} for n, m in errors]}
+        return roster_refusal(errors, teams, shared, roles)
     try:
         sealed = sealed_map(CRED_PATH)
     except ValueError:
@@ -2089,7 +2092,7 @@ def screen_equipos():
         (r.quitados.length ? "Quitados: " + r.quitados.map(escapear).join(", ") + ". " : "") +
         'Sin cambios hasta elegir.<div class="fila"><button type="button" id="e-reemp">Reemplazar</button>' +
         '<button type="button" class="enlace-btn" id="e-cons">Conservar</button></div></div>';
-      zona("e-reemp").onclick = () => guardar(true);
+      zona("e-reemp").onclick = () => { zona("e-reemp").disabled = true; guardar(true); };
       zona("e-cons").onclick = () => { llenar(); zona("e-conf").innerHTML = guardadosTexto(); };
       return;
     }
@@ -2354,10 +2357,16 @@ class Handler(BaseHTTPRequestHandler):
             self.close_connection = True  # same framing rule: 413 never drained its body
             self.send_json(e.status, {"error": str(e)})
             return
-        if path == "/api/generar" and DONE.is_set():
+        cambia = (path in ("/api/generar", "/api/centro", "/api/sitio", "/api/usuarios")
+                  and payload.get("vista") is not True)
+        if cambia and DONE.is_set():
             # SEC-2: the installer is done and closing — a reload and a second click inside the grace
-            # must not start a run the shutdown would cut
+            # must neither start a run the shutdown would cut nor change what the run just verified
             self.send_json(409, {"error": "la instalación ya terminó: el instalador se está cerrando"})
+            return
+        if cambia and path != "/api/generar" and EXEC_LOCK.locked():
+            # the centre, the teams and the planilla are the run's input: never changed under it
+            self.send_json(409, {"error": "hay una ejecución en curso: espere a que termine"})
             return
         if path == "/api/centro":
             status, body = api_centro(payload)
@@ -2867,7 +2876,10 @@ def selftest():
             check("unknown routes answer 404", st == 404)
             st, _ = call("GET", "/api/centros", token=None)
             st2, _ = call("GET", "/api/centro", token=None)
-            check("centro: the centre's GETs need the token too", st == 401 and st2 == 401)
+            st3, _ = call("GET", "/api/equipos", token=None)
+            st4, _ = call("GET", "/api/plantilla", token=None)
+            check("centro: the centre's and step 8's GETs need the token too — the template included",
+                  st == 401 and st2 == 401 and st3 == 401 and st4 == 401)
             st, d = call("GET", "/api/centros")
             fila = {c[0]: c for c in d.get("centros", [])}
             ramon = fila.get("121567", [None] * 7)
@@ -2992,13 +3004,34 @@ def selftest():
                   and despues.count("SITE_ACL=(") == 1)
             check("teams: a planilla naming a team «Reemplazar» removed is caught at «Revisar», with its line (R35)",
                   st_pl == 200 and st5 == 400
-                  and "sector-sur" in " ".join(e["error"] for e in viejo.get("errores", [])))
+                  and "sector-sur" in " ".join(e["error"] for e in viejo.get("errores", []))
+                  and "sector-norte" in viejo.get("grupos_validos", []))
             check("teams: «reemplazar» over a grant added by hand is refused, the file untouched — never a silent loss",
                   st6 == 409 and "a mano" in mano["error"] and tras_mano == con_mano)
             check("equipos: the saved teams, every cargo the planilla accepts with phase 20's names; a planilla naming a team that went no longer counts as loaded (R38, R35)",
                   st4 == 200 and eqs["guardados"] is True and ["sector-oriente", "Sector Oriente"] in eqs["equipos"]
                   and ["role-medico", "Médico General / de Familia"] in eqs["cargos"]
                   and len(eqs["cargos"]) == 22 and eqs["planilla_cargada"] is False)
+            st, barra = call("POST", "/api/sitio", {"codigo": "113314", "sectors": ["Norte|x"],
+                                                    "programs": [], "vista": True})
+            check("teams: a name with «|» is refused before it can break the site file",
+                  st == 400 and "«|»" in barra["error"])
+            EXEC_LOCK.acquire()
+            try:
+                st_e, en_curso = call("POST", "/api/sitio", {"codigo": "113314", "sectors": ["Otro"],
+                                                             "programs": [], "reemplazar": True})
+                st_v, _ = call("POST", "/api/sitio", {"codigo": "113314", "sectors": ["Otro"],
+                                                      "programs": [], "vista": True})
+            finally:
+                EXEC_LOCK.release()
+            DONE.set()
+            try:
+                st_d, hecho = call("POST", "/api/usuarios", {"codigo": "113314", "csv": "x"})
+            finally:
+                DONE.clear()
+            check("the run's input never changes under an execution nor after the install finished — «vista» still answers (SEC-2)",
+                  st_e == 409 and "en curso" in en_curso.get("error", "") and st_v == 200
+                  and st_d == 409 and "ya terminó" in hecho.get("error", ""))
             st, body = call("POST", "/api/sitio", {"codigo": "121567", "sectors": [], "programs": []})
             st2, body2 = call("POST", "/api/centro", {"codigo": "121567"})
             st3, body3 = call("GET", "/api/centro")
@@ -3214,15 +3247,18 @@ def selftest():
             os.environ["PATH"] = os.path.join(tmp, "empty")   # no bash: the cargos cannot be derived
             try:
                 st, body = call("POST", "/api/usuarios", {"codigo": "113314", "csv": planilla(maria)})
+                st_g, body_g = api_generar({"codigo": "113314", "modo": "revision"})
             finally:
                 os.environ["PATH"] = saved_path
-            check("roster: the cargos' derivation failing is a Spanish 500, never a dropped connection",
-                  st == 500 and "no se pudieron derivar los cargos" in body.get("error", ""))
+            check("roster: the cargos' derivation failing is a Spanish 500 at the upload and at «Revisar», never a dropped connection",
+                  st == 500 and "no se pudieron derivar los cargos" in body.get("error", "")
+                  and st_g == 500 and "no se pudieron derivar los cargos" in body_g.get("error", ""))
             # the template round-trips (a15): on a fresh tree with its own sealed sheet
             real_here, real_cred = deis.HERE, CRED_PATH
             with tempfile.TemporaryDirectory() as pl:
                 deis.HERE = os.path.join(pl, "scripts")
                 os.makedirs(deis.HERE)
+                os.symlink(os.path.join(ROOT_DIR, "provisioning"), os.path.join(pl, "provisioning"))
                 CRED_PATH = os.path.join(pl, "credenciales.txt")
                 try:
                     previo_centro = CENTRO
@@ -3237,6 +3273,10 @@ def selftest():
                                              r.headers.get("Content-Disposition", ""))
                     st2, subida = call("POST", "/api/usuarios", {"codigo": "113314",
                                                                  "csv": crudo.decode("utf-8")})
+                    st3, eq3 = call("GET", "/api/equipos")
+                    st4, _ = call("POST", "/api/sitio", {"codigo": "113314", "sectors": ["Norte", "Sur"],
+                                                         "programs": ["Cardiovascular"], "reemplazar": True})
+                    st5, eq5 = call("GET", "/api/equipos")
                 finally:
                     deis.HERE, CRED_PATH, CENTRO = real_here, real_cred, previo_centro
             check("template: before the teams it says why; then this centre's ids, «sí», a BOM — and it uploads back clean (R38, a15)",
@@ -3246,6 +3286,9 @@ def selftest():
                   and "sector-norte prog-cardiovascular role-enfermeria;sí" in crudo.decode("utf-8")
                   and st2 == 200 and subida["primer_admin"] == "ana.rojas"
                   and [f[0] for f in subida["filas"]] == ["ana.rojas", "pedro.munoz"])
+            check("equipos: «planilla cargada» means «Revisar» accepts it — true after the upload, false once a new sector's cargo is unsealed (review Q2)",
+                  st3 == 200 and eq3.get("planilla_cargada") is True
+                  and st4 == 200 and st5 == 200 and eq5.get("planilla_cargada") is False)
 
             st, body = call("POST", "/api/usuarios", {"codigo": "110485",
                                                       "csv": planilla(maria)})
@@ -3568,7 +3611,8 @@ def selftest():
 
             st, body = api_generar({"codigo": "121567", "modo": "revision"})
             check("generar: a site never written answers 404 with the next step",
-                  st == 404 and "primero genere el sitio" in body.get("error", ""))
+                  st == 404 and "primero guarde los equipos" in body.get("error", "")
+                  and "site.sh" not in body["error"])
             # a site without a roster needs a tree without 113314's — one install, one establishment
             real_here, sin_planilla = deis.HERE, tempfile.mkdtemp()
             os.makedirs(os.path.join(sin_planilla, "scripts"))
