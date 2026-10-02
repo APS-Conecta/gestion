@@ -13,6 +13,10 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Added
 
+- **`provisionador.py --paso usuarios|generar`** — the installer's planilla and generate steps from a
+  terminal, with no server: Spanish ✓/✗ lines and an exit code (0 done · 1 refused · 2 usage). The
+  weekly `aps-conecta provision --reponer` now runs `--paso generar` in its own process — no second
+  server, no token — and the journal shows the step's own ✓/✗ lines.
 - **`aps-conecta asistente-aio --dominio D`** — configures and starts the suite through the AIO
   wizard's own API, with no browser: the one-time passphrase captured into a 0600 file (reused on a
   re-run), login, domain (`--sin-validar-dominio` for a disposable instance), America/Santiago,
