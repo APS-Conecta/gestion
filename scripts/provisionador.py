@@ -14,9 +14,10 @@ the executor — /api/generar (the FRD's review/dry-run AND the run: .env conver
 roster driver, the divergence gate); slice 17 the eight es-CL screens over these routes.
 
 Python stdlib only, like deis.py — the install host is assumed to carry python3, bash, git and
-docker, nothing else (#77). Plain HTTP on the LAN is the accepted v1.0 ceiling (D9): the CSPRNG
-bearer token below is the only auth, so this never faces the public internet — preflight (S7)
-reports the port and the clinic's own firewall keeps the edge.
+docker, nothing else (#77) — plus openssl, which ca-certificates brings, to sign the installer's own
+certificate. HTTPS on the LAN with that certificate (L3 S1, owner 2026-10-02; a13: no code and no
+cookie crosses the LAN in clear): the CSPRNG token below is the only auth, so this never faces the
+public internet — preflight (S7) reports the port and the clinic's own firewall keeps the edge.
 
 deis.py is IMPORTED, never shelled out to: load/matches/write_site are the pure functions the
 endpoints ride, and its ask() — input()-driven, terminal-shaped — is replaced by the UI here, with
@@ -28,14 +29,17 @@ fatally with the hint intact, before any socket opens.
 
 The server is STATELESS: no session, no hidden server-side state — every request carries what it
 needs (the browser flow keeps the chosen DEIS codigo), so a restart mid-flow costs the operator one
-re-entry, and every endpoint is one curl. One deliberate consequence: the token never rides a URL.
-log_message() prints request paths, and a token in a query string lands in scrollback, screenshots
-and the server log — the Authorization header (and, from slice 17, the login cookie) is the only
-carrier.
+re-entry, and every endpoint is one curl. The token never rides a request: the console's one link
+carries it in the URL fragment (#acceso=…), which browsers never send; the sign-in page trades it
+for the cookie and wipes it from the address bar. On the wire the Authorization header (and the
+login cookie) is the only carrier, and the request log is silent (R42).
 """
 import csv
 import errno
+import hashlib
 import hmac
+import html
+import http.client
 import io
 import json
 import os
@@ -43,6 +47,7 @@ import re
 import secrets
 import shlex
 import socket
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -96,6 +101,14 @@ PHASE20 = os.path.join(HERE, "..", "provisioning", "phases", "20-groups.sh")
 # /opt/aps-conecta into backups). The self-test redirects it; this default is the only literal.
 CRED_PATH = "/opt/aps-conecta/credentials.txt"
 ESTADO_PATH = "/opt/aps-conecta/estado.txt"   # the last execution's verdict (a10): 0644, «aps-conecta estado»
+
+# The installer's own certificate authority and the leaf it signs for the link's address (L3 S1,
+# owner 2026-10-02). The CA is kept: the suite's certificate (L4, R22) hangs from the same one and
+# staff import it once. The self-test redirects this; the default is the only literal.
+CERT_DIR = "/opt/aps-conecta/certificados"
+SERVICE = "Provisionador APS Conecta"   # the identity /api/salud answers (R33); the host probe keys on it
+# Set by a green «Revisar y ejecutar» over HTTP: the server then closes itself (SEC-2, a13).
+DONE = threading.Event()
 SEAL_BYTES = 12  # 24 hex chars — env-init's FIXTURE_USER_PASSWORD size, the human-typed precedent
 # The seal is a read-modify-write over one shared file, and the server is threaded: two
 # concurrent /api/usuarios posts (a double-submit is one double-click away) would share the
@@ -1190,13 +1203,12 @@ class ClientError(Exception):
 
 # ── The UI (slice 17, FRD S6) ───────────────────────────────────────────────────────────
 # Eight server-rendered screens over the JSON APIs: login + the seven steps. No frameworks, no
-# sessions — the login cookie CARRIES the token (HttpOnly, SameSite=Strict, no Secure flag: the
-# D9 LAN ceiling is plain HTTP and a Secure cookie would never be sent over it; documented, not
-# an oversight). The screens are SHELLS: server-rendered frames (the stepper, the step's static
-# data — register snapshot, phases, app inventory) whose interactive data arrives through the
-# same /api routes a CLI would use. The token never rides a URL (log_message prints paths —
-# slice 14's rule); the screens use relative links only, so no page names its own address
-# either (the FRD's Paso-1 rule generalized).
+# sessions — the login cookie CARRIES the token (HttpOnly, SameSite=Strict, Secure: the installer
+# serves HTTPS with its own certificate, L3 S1). The screens are SHELLS: server-rendered frames (the
+# stepper, the step's static data — register snapshot, phases, app inventory) whose interactive
+# data arrives through the same /api routes a CLI would use. The token never rides a request (the
+# link's fragment is never sent); the screens use relative links only, so no page names its own
+# address either (the FRD's Paso-1 rule generalized).
 #
 # THE FONT DECISION: the wizard reskin carries Fraunces/Nunito (patch 070's bytes, its own
 # gates); this host-side tool serves system stack — a LAN-internal operator screen does not
@@ -1267,6 +1279,14 @@ def page_js():
     execute fetch (minutes: the button locks, the host terminal shows the live progress —
     the provisionador's own stdout is the operator's real-time view)."""
     return """<script>
+// The link's code rides the URL fragment (#acceso=…), which no request carries; it leaves the
+// address bar before anything else runs — it is a credential (a13).
+const ACCESO = new URLSearchParams(location.hash.slice(1)).get("acceso");
+if (ACCESO !== null) history.replaceState(null, "", location.pathname + location.search);
+// a link pasted into an open page changes only the fragment — reload, so the line above reads it
+addEventListener("hashchange", () => {
+  if (new URLSearchParams(location.hash.slice(1)).get("acceso") !== null) location.reload();
+});
 async function api(ruta, cuerpo){
   const r = await fetch(ruta, {method: cuerpo ? "POST" : "GET",
     headers: {"Content-Type": "application/json"},
@@ -1299,41 +1319,42 @@ def shell(step, title, body, aviso=None):
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Paso {step} de 7 — {title} · Provisionador APS Conecta</title>
-{page_css()}</head><body>
+<link rel="icon" href="data:,">
+{page_css()}{page_js()}</head><body>
 <header><h1>Provisionador APS Conecta</h1>
 <p>Registro DEIS {SNAPSHOT} · {len(ROWS)} establecimientos</p></header>
 <main><ol class="pasos">{pasos}</ol>{aviso_html}{body}</main>
-{page_js()}</body></html>"""
+</body></html>"""
 
 
 def screen_login():
-    body = """<div class="tarjeta"><h2>Inicie sesión</h2>
-<p>Ingrese el token de acceso. Se imprimió en la consola donde ejecutó
-<code>aps-conecta provision</code>.</p>
-<form id="f"><label for="token">Token de acceso</label>
-<input type="password" id="token" autocomplete="off" required>
+    body = """<div class="tarjeta"><h2>Instalador web</h2>
+<p>Abra el enlace que muestra la consola del servidor: la sesión se inicia sola. Si el enlace
+llegó cortado, pegue aquí el código de acceso (lo que sigue a «#acceso=»).</p>
+<form id="f"><label for="codigo">Código de acceso</label>
+<input type="password" id="codigo" autocomplete="off" required>
 <button type="submit">Entrar</button></form>
 <div id="m"></div></div>
 <script>
-document.getElementById("f").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const b = zona("f").querySelector("button"); b.disabled = true;
-  const r = await api("/api/login", {token: zona("token").value});
-  if (r.estado === 200) { location.href = "/contenedores"; return; }
-  b.disabled = false;
-  zona("m").innerHTML = '<div class="error">Token incorrecto. Cópielo de nuevo desde la consola.</div>';
-});
+async function entrar(codigo) {
+  const r = await api("/api/login", {token: codigo});
+  if (r.estado === 200) { location.replace("/contenedores"); return; }
+  zona("m").innerHTML = '<div class="error">Código incorrecto o vencido. Use el enlace de la consola.</div>';
+}
+if (ACCESO) entrar(ACCESO);
+zona("f").addEventListener("submit", (e) => { e.preventDefault(); entrar(zona("codigo").value); });
 </script>"""
-    # login is the door: no stepper, no step number — the shell below renders no steps
+    # login is the door: no stepper, no step number
     return f"""<!DOCTYPE html>
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Inicie sesión · Provisionador APS Conecta</title>
-{page_css()}</head><body>
+<title>Instalador web · Provisionador APS Conecta</title>
+<link rel="icon" href="data:,">
+{page_css()}{page_js()}</head><body>
 <header><h1>Provisionador APS Conecta</h1>
 <p>Registro DEIS {SNAPSHOT} · {len(ROWS)} establecimientos</p></header>
 <main>{body}</main>
-{page_js()}</body></html>"""
+</body></html>"""
 
 
 def screen_contenedores():
@@ -1588,13 +1609,16 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?", 1)[0]
         if path == "/":
-            # Unauthenticated on purpose: the operator's browser must see the service before pasting
-            # anything, and preflight (S7) needs a liveness probe that owns no token. Nothing secret
-            # rides this — the register's date and size, no establishment data.
-            self.send_json(200, {"servicio": "Provisionador APS Conecta", "estado": "listo",
+            self.redirect("/login")   # R33: the address opens the sign-in page, never JSON
+            return
+        if path == "/api/salud":
+            # Unauthenticated on purpose: the host's probe (check_prov_ports) and a second installer's
+            # start need to tell this service from a stranger without a token. Nothing secret rides
+            # this — the register's date and size, no establishment data.
+            self.send_json(200, {"servicio": SERVICE, "estado": "listo",
                                  "registro": SNAPSHOT, "establecimientos": len(ROWS)})
             return
-        # ── the UI (slice 17): the login screen is public; the seven steps need the cookie ──
+        # ── the UI (slice 17): the login screen is public; the steps need the cookie ──
         if path == "/login":
             self.send_html(screen_login())
             return
@@ -1611,10 +1635,7 @@ class Handler(BaseHTTPRequestHandler):
             if not self.authorized():
                 # A human gets redirected to the door; an API gets JSON — the split is by route
                 # shape (screen routes are the UI, /api routes answer JSON), not by header sniff.
-                self.send_response(302)
-                self.send_header("Location", "/login")
-                self.send_header("Content-Length", "0")
-                self.end_headers()
+                self.redirect("/login")
                 return
             n, _t = screens[path]
             if path == "/componentes":
@@ -1636,10 +1657,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         path = self.path.split("?", 1)[0]
         if path == "/api/login":
-            # The ONE pre-auth POST: the login form's token. Same constant-time compare as
-            # authorized(); success sets the HttpOnly cookie (SameSite=Strict, no Secure — the
-            # D9 LAN ceiling is plain HTTP and a Secure cookie would never ride it) and the
-            # response never echoes the token.
+            # The ONE pre-auth POST: the login form's (or the link's) code. Same constant-time compare
+            # as authorized(); success sets the HttpOnly, SameSite=Strict, Secure cookie (HTTPS, L3 S1)
+            # and the response never echoes the token.
             try:
                 payload = self.read_json()
             except ClientError as e:
@@ -1651,7 +1671,8 @@ class Handler(BaseHTTPRequestHandler):
                     or not hmac.compare_digest(token.encode(), TOKEN.encode())):
                 self.send_json(401, {"error": "token incorrecto"})
                 return
-            cookie = (f"{TOKEN_COOKIE}={TOKEN}; Path=/; HttpOnly; SameSite=Strict; Max-Age=43200")
+            cookie = (f"{TOKEN_COOKIE}={TOKEN}; Path=/; HttpOnly; Secure; SameSite=Strict; "
+                      "Max-Age=43200")
             self.send_json(200, {"ok": True}, {"Set-Cookie": cookie})
             return
         if not self.authorized():
@@ -1712,30 +1733,40 @@ class Handler(BaseHTTPRequestHandler):
             raise ClientError(400, "el cuerpo debe ser un objeto JSON")
         return payload
 
-    def send_json(self, status, obj, headers=None):
-        body = (json.dumps(obj, ensure_ascii=False) + "\n").encode("utf-8")
+    def send_bytes(self, status, ctype, data, headers=None):
+        # Every response's single exit: the one place Content-Length is set — HTTP/1.1 framing stays
+        # honest by construction (keep-alive).
         self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
         for key, value in (headers or {}).items():
             self.send_header(key, value)
         self.end_headers()
-        self.wfile.write(body)
+        self.wfile.write(data)
 
-    def send_html(self, html):
-        # The screens' single exit: same framing discipline as send_json (one Content-Length
-        # site), and the charset is declared — the es-CL copy carries accents.
-        body = html.encode("utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+    def send_json(self, status, obj, headers=None):
+        self.send_bytes(status, "application/json; charset=utf-8",
+                        (json.dumps(obj, ensure_ascii=False) + "\n").encode("utf-8"), headers)
+
+    def send_html(self, page):
+        # the es-CL copy carries accents: the charset is declared
+        self.send_bytes(200, "text/html; charset=utf-8", page.encode("utf-8"))
+
+    def redirect(self, where):
+        self.send_bytes(302, "text/plain; charset=utf-8", b"", {"Location": where})
 
     def log_message(self, fmt, *args):
-        # Paths only, never headers: the token never rides a URL, so the request line is already
-        # safe. Prefix so a clinic operator can tell these lines from docker's in any captured log.
-        sys.stderr.write("[provisionador] %s\n" % (fmt % args))
+        # R42: the console is the operator's — no request lines, and no «Request timed out» trace
+        # (stdlib routes both through here). Errors that matter answer the browser in Spanish.
+        pass
+
+
+class Server(ThreadingHTTPServer):
+    """The installer's server. Quiet (R42): a failed TLS handshake or a dropped socket is not the
+    operator's business — every answer that matters reaches the browser in Spanish."""
+
+    def handle_error(self, request, client_address):
+        pass
 
 
 def bind_server(host, ports):
@@ -1746,7 +1777,7 @@ def bind_server(host, ports):
     err = None
     for port in (*ports, 0):
         try:
-            httpd = ThreadingHTTPServer((host, port), Handler)
+            httpd = Server((host, port), Handler)
             return httpd, httpd.server_address[1]
         except OSError as e:
             err = e
@@ -1755,14 +1786,102 @@ def bind_server(host, ports):
              f"Vea qué puertos están ocupados con:  ss -ltn")
 
 
-def banner(url, token):
-    print("✓ Provisionador APS Conecta")
-    print(f"  Registro DEIS: instantánea {SNAPSHOT} ({len(ROWS)} establecimientos)")
-    print(f"  Abra {url} — desde otro equipo de la red, reemplace 127.0.0.1 por la IP de este "
-          "servidor.")
-    print("  Token de acceso ( cópielo en la pantalla de inicio ):")
-    print(f"    {token}")
-    print("  Detenga el servicio con Ctrl+C.")
+def lan_ip():
+    """The address other machines on the LAN reach this host by: the source address of the default
+    route, asked of the kernel with a UDP connect (no packet leaves). Loopback when there is none."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        try:
+            s.connect(("192.0.2.1", 9))   # TEST-NET-1: a route lookup, never a destination
+            return s.getsockname()[0]
+        except OSError:
+            return "127.0.0.1"
+
+
+def openssl(*args):
+    """One openssl call; any failure stops the start before a socket opens, with the fix."""
+    try:
+        r = subprocess.run(["openssl", *args], capture_output=True, text=True, timeout=60)
+    except FileNotFoundError:
+        sys.exit("✗ falta openssl: el instalador web firma su propio certificado\n"
+                 "  → sudo apt-get install openssl")
+    if r.returncode != 0:
+        sys.exit(f"✗ openssl no pudo crear el certificado: {r.stderr.strip()[-300:]}")
+    return r.stdout
+
+
+def tls_context(ip):
+    """HTTPS with the installer's own certificate (a13: no code, no cookie crosses the LAN in clear).
+    The CA is made once and kept; the leaf is re-signed on every start for the address the link
+    names (and loopback): P-256, 825 days (Apple's ceiling for TLS server certificates). Returns the
+    server context and the leaf's SHA-256 fingerprint for the banner."""
+    ca_crt, ca_key, crt, key = (os.path.join(CERT_DIR, n) for n in
+                                ("ca.crt", "ca.key", "instalador.crt", "instalador.key"))
+    ec = ("-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256", "-nodes")
+    mayor = re.match(r"OpenSSL (\d+)\.", openssl("version"))   # `req -x509 -CA` is OpenSSL 3
+    if not mayor or int(mayor.group(1)) < 3:
+        sys.exit("✗ el instalador web necesita OpenSSL 3 o más reciente (Ubuntu 22.04+, Debian 12+)\n"
+                 "  → actualice el sistema operativo del servidor")
+    try:
+        os.makedirs(CERT_DIR, mode=0o700, exist_ok=True)
+        os.chmod(CERT_DIR, 0o700)       # an existing directory keeps the private keys' parent closed too
+        if not (os.path.exists(ca_crt) and os.path.exists(ca_key)):
+            openssl("req", "-x509", *ec, "-keyout", ca_key, "-out", ca_crt, "-days", "3650",
+                    "-subj", f"/O=APS Conecta/CN=APS Conecta {socket.gethostname()}",
+                    "-addext", "basicConstraints=critical,CA:TRUE",
+                    "-addext", "keyUsage=critical,keyCertSign,cRLSign")
+        san = ",".join(f"IP:{a}" for a in dict.fromkeys((ip, "127.0.0.1")))
+        openssl("req", "-x509", *ec, "-keyout", key, "-out", crt, "-days", "825",
+                "-subj", f"/CN={ip}", "-CA", ca_crt, "-CAkey", ca_key,
+                "-addext", f"subjectAltName={san}",
+                "-addext", "basicConstraints=critical,CA:FALSE",
+                "-addext", "extendedKeyUsage=serverAuth")
+        for k in (ca_key, key):
+            os.chmod(k, 0o600)
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(crt, key)
+    except OSError as e:
+        sys.exit(f"✗ no se pudo preparar el certificado en {CERT_DIR}: {e.strerror or e}\n"
+                 "  → ejecute con permisos de administrador: sudo aps-conecta abrir")
+    return ctx, huella(crt)
+
+
+def huella(crt):
+    """A certificate's SHA-256 fingerprint, AA:BB:… — what the browser's warning shows."""
+    with open(crt, encoding="ascii") as fh:
+        h = hashlib.sha256(ssl.PEM_cert_to_DER_cert(fh.read())).hexdigest().upper()
+    return ":".join(h[i:i + 2] for i in range(0, len(h), 2))
+
+
+def running_installer(ports=PORTS):
+    """The port of an installer already serving on this host, or None (R33): two would print two
+    links and two codes — the second refuses instead. Identity, not trust: the certificate is not
+    checked, the answer's servicio is."""
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    for p in ports:
+        try:
+            with urllib.request.urlopen(f"https://127.0.0.1:{p}/api/salud", context=ctx,
+                                        timeout=2) as r:
+                if json.loads(r.read().decode("utf-8")).get("servicio") == SERVICE:
+                    return p
+        except (OSError, ValueError, http.client.HTTPException):
+            continue
+    return None
+
+
+def banner(url, huella_hex):
+    """The console's one link (R32, a13): the code rides the fragment; the fingerprint is what the
+    browser's certificate warning shows."""
+    print("  Abrir en otro equipo de la red:")
+    print()
+    print(f"      {url}")
+    print()
+    print("  Sesión iniciada al abrir. Válido hasta terminar la instalación.")
+    print(f"  Certificado propio. Huella SHA-256: {huella_hex}")
+    print("  No cerrar esta ventana hasta «Listo».")
+    print()
+    print("Resultado esperando el navegador…")
 
 
 def run_step(argv):
@@ -1885,7 +2004,7 @@ def selftest():
     real sites/ is never touched. The HTTP checks are real round-trips against a real server on an
     OS-assigned port — urllib, no frameworks. Every check is named and counted; a failure prints the
     list and exits 1 (B-014: a gate that cannot go red is not a gate)."""
-    global TOKEN, SNAPSHOT, ROWS, CRED_PATH, PHASE20, ESTADO_PATH
+    global TOKEN, SNAPSHOT, ROWS, CRED_PATH, PHASE20, ESTADO_PATH, CERT_DIR
     n = 0
     bad = []
 
@@ -1913,6 +2032,7 @@ def selftest():
 
     old = deis.HERE
     old_cred, old_p20 = CRED_PATH, PHASE20
+    old_cert = CERT_DIR
     # The stub world must not inherit the caller's exported seed knobs (P37, measured under
     # make test on the probe: a prior section's `source env.sh` leaves OFFICE_* exported and
     # env.sh never unsets, so the compose arm's clean fixture .env could not make the OFFICE_PORT
@@ -1994,14 +2114,16 @@ def selftest():
             except SystemExit as e:
                 check("bind failure exits non-zero with the fix hint", "ss -ltn" in str(e))
 
-            # — the banner: the FRD's "print the actual URL + token"
+            # — the banner: one link with the code in its fragment (R32, a13)
             buf = io.StringIO()
             with redirect_stdout(buf):
-                banner("http://127.0.0.1:8081", "tok-selftest")
+                banner("https://192.0.2.10:8081/login#acceso=tok-selftest", "AB:" * 31 + "CD")
             text = buf.getvalue()
-            check("banner names the URL, the token and the register",
-                  "http://127.0.0.1:8081" in text and "tok-selftest" in text
-                  and "2099-99-99" in text)
+            check("banner: one link with the code in the fragment, the fingerprint, «Listo» as the end — no token line to copy",
+                  text.count("https://") == 1 and "https://192.0.2.10:8081/login#acceso=tok-selftest" in text
+                  and "Huella SHA-256: " + "AB:" * 31 + "CD" in text
+                  and "No cerrar esta ventana hasta «Listo»." in text
+                  and "Token" not in text and "127.0.0.1" not in text)
 
             # — one real server, one real port, real requests: the auth gate and both endpoints
             TOKEN = secrets.token_hex(32)
@@ -2021,9 +2143,10 @@ def selftest():
                 except urllib.error.HTTPError as e:
                     return e.code, json.loads(e.read().decode())
 
-            st, body = call("GET", "/")
-            check("GET / names the service, no token needed",
-                  st == 200 and body["registro"] == "2099-99-99" and body["establecimientos"] == 4)
+            st, body = call("GET", "/api/salud", token=None)
+            check("GET /api/salud names the service, no token needed (R33)",
+                  st == 200 and body["servicio"] == SERVICE and body["registro"] == "2099-99-99"
+                  and body["establecimientos"] == 4)
             st, _ = call("POST", "/api/deis", {"q": "loica"}, token=None)
             check("POST without a token is refused 401", st == 401)
             st, _ = call("POST", "/api/deis", {"q": "loica"}, token="0" * 64)
@@ -2395,7 +2518,6 @@ def selftest():
                 with redirect_stdout(buf):   # the executor's host-side tee — captured, not printed
                     return api_generar({"codigo": codigo, "modo": mode})
 
-            import hashlib
             snap = {p: hashlib.md5(open(p, "rb").read()).hexdigest()
                     for p in (site_path("113314"), CRED_PATH,
                               os.path.join(deis.HERE, "..", "sites", "113314", "planilla-mia.csv"))}
@@ -2758,7 +2880,6 @@ def selftest():
             # ── slice 17: the UI (FRD S6) — the eight screens, the cookie arm, the estado leg ──
             # A browser-shaped client: http.client (no auto-redirect, the Cookie header set by
             # hand) — the API's Bearer client above stays the API's.
-            import http.client
 
             class Browser:
                 def __init__(self, token):
@@ -2781,11 +2902,11 @@ def selftest():
             b = Browser(TOKEN)
             with redirect_stderr(errlog):
                 st, text, hdr, setc = b.req("GET", "/login")
-            check("login: the screen renders — es-CL, lang=es, the token field, no stepper active",
+            check("login: the sign-in page — es-CL, the code field, the link's fragment read and wiped first",
                   st == 200 and "text/html" in hdr.get("Content-Type", "")
-                  and 'lang="es"' in text and "Token de acceso" in text
-                  and "Inicie sesión" in text and 'type="password"' in text
-                  and "aps-conecta provision" in text
+                  and 'lang="es"' in text and "Código de acceso" in text and 'type="password"' in text
+                  and 'get("acceso")' in text and "history.replaceState" in text
+                  and text.index("const ACCESO") < text.index("</head>")
                   and TOKEN not in text)
 
             with redirect_stderr(errlog):
@@ -2796,10 +2917,10 @@ def selftest():
 
                 st, text, hdr, setc = b.req("POST", "/api/login",
                                             json.dumps({"token": TOKEN}))
-                check("login: the token exchanges for an HttpOnly SameSite=Strict cookie (no Secure)",
+                check("login: the code exchanges for an HttpOnly, Secure, SameSite=Strict cookie",
                       st == 200 and setc and TOKEN_COOKIE + "=" in setc
-                      and "HttpOnly" in setc and "SameSite=Strict" in setc
-                      and "Secure" not in setc and TOKEN not in text)
+                      and "HttpOnly" in setc and "Secure" in setc and "SameSite=Strict" in setc
+                      and TOKEN not in text)
 
                 st, text, hdr, setc = b.req("GET", "/contenedores")
                 check("screens: without a cookie the step routes redirect to the door",
@@ -2832,9 +2953,11 @@ def selftest():
                       and '"estado"' in text)
 
                 st, text, hdr, setc = b.req("GET", "/")
-                check("screens: GET / stays the identity JSON even with the cookie (the locked contract)",
-                      st == 200 and "application/json" in hdr.get("Content-Type", "")
-                      and "establecimientos" in text)
+                st2, text2, hdr2, _ = b.req("GET", "/api/salud")
+                check("screens: GET / opens the sign-in page even with the cookie; /api/salud stays the identity JSON (R33)",
+                      st == 302 and hdr.get("Location") == "/login"
+                      and st2 == 200 and "application/json" in hdr2.get("Content-Type", "")
+                      and SERVICE in text2)
 
                 st, compo, hdr, setc = b.req("GET", "/componentes")
                 check("componentes: the ALL-ON cards render from the live tree — phases and apps",
@@ -2866,11 +2989,10 @@ def selftest():
                       "location.href='/planilla?codigo=' + new URLSearchParams(location.search)"
                       ".get('codigo')" in compo2)
 
-                # the request log never saw the token in a path (the URL rule, measured)
                 errlog.seek(0)
                 logged = errlog.read()
-                check("screens: the token never rides a URL — the request log carries paths only",
-                      TOKEN not in logged and "/api/login" in logged)
+                check("screens: the request log is silent — no path, no token, no timeout trace (R42)",
+                      logged == "")
 
             # docker-absent arm: estado answers a fix hint, never a traceback
             saved_path = os.environ["PATH"]
@@ -2879,11 +3001,114 @@ def selftest():
             os.environ["PATH"] = saved_path
             check("estado: a missing docker answers a 500 fix hint, never a hang or traceback",
                   st_hint == 500 and "no se encontró el comando docker" in body_hint["error"])
+            # ── L3 S1: HTTPS with the installer's own certificate (a13), the second installer (R33) ──
+            CERT_DIR = os.path.join(tmp, "certificados")
+            ctx1, hu1 = tls_context("127.0.0.1")
+            with open(os.path.join(CERT_DIR, "ca.crt"), "rb") as fh:
+                ca_pem = fh.read()
+            ctx2, hu2 = tls_context("127.0.0.1")
+            with open(os.path.join(CERT_DIR, "ca.crt"), "rb") as fh:
+                ca_kept = fh.read() == ca_pem
+            check("tls: the CA is made once and kept; the leaf is re-signed on every start",
+                  ca_kept and hu1 != hu2)
+            check("tls: both private keys are 0600, the directory 0700; the fingerprint is 32 hex pairs",
+                  all(os.stat(os.path.join(CERT_DIR, k)).st_mode & 0o777 == 0o600
+                      for k in ("ca.key", "instalador.key"))
+                  and os.stat(CERT_DIR).st_mode & 0o777 == 0o700
+                  and re.fullmatch(r"(?:[0-9A-F]{2}:){31}[0-9A-F]{2}", hu2) is not None)
+            check("tls: the link's address is an IPv4 the kernel routes by",
+                  re.fullmatch(r"\d{1,3}(?:\.\d{1,3}){3}", lan_ip()) is not None)
+            ts, tport = bind_server("127.0.0.1", (0,))
+            ts.socket = ctx2.wrap_socket(ts.socket, server_side=True, do_handshake_on_connect=False)
+            threading.Thread(target=ts.serve_forever, daemon=True).start()
+            confia = ssl.create_default_context(cafile=os.path.join(CERT_DIR, "ca.crt"))
+            with urllib.request.urlopen(f"https://127.0.0.1:{tport}/api/salud", context=confia,
+                                        timeout=10) as r:
+                salud = json.loads(r.read().decode("utf-8"))
+            check("tls: the address verifies against the installer's CA — /api/salud over HTTPS",
+                  salud.get("servicio") == SERVICE)
+            plano = io.StringIO()
+            with redirect_stderr(plano):
+                try:
+                    c = http.client.HTTPConnection("127.0.0.1", tport, timeout=5)
+                    c.request("GET", "/api/salud")
+                    c.getresponse()
+                    en_claro = True
+                except (OSError, http.client.HTTPException):
+                    en_claro = False
+                with urllib.request.urlopen(f"https://127.0.0.1:{tport}/api/salud", context=confia,
+                                            timeout=10) as r:
+                    sigue = r.status == 200
+            check("tls: plain HTTP gets no answer, the console stays quiet, the server keeps serving",
+                  not en_claro and plano.getvalue() == "" and sigue)
+            check("second installer: a running one is found by its identity, a plain stranger is not",
+                  running_installer((tport,)) == tport and running_installer((port,)) is None)
+            with open(os.path.join(HERE, "..", "host", "aps-conecta"), encoding="utf-8") as fh:
+                prov = re.search(r'^PROV_PORTS="([0-9 ]+)"', fh.read(), re.MULTILINE)
+            check("ports: the host probe's chain is the server's own (PROV_PORTS = PORTS, one fact pinned)",
+                  prov is not None and tuple(map(int, prov.group(1).split())) == PORTS)
+            saved_path = os.environ["PATH"]
+            os.environ["PATH"] = os.path.join(tmp, "empty")   # exists, holds nothing
+            try:
+                tls_context("127.0.0.1")
+                sin_openssl = ""
+            except SystemExit as e:
+                sin_openssl = str(e)
+            finally:
+                os.environ["PATH"] = saved_path
+            check("tls: no openssl stops the start before any socket, naming the package",
+                  "falta openssl" in sin_openssl and "apt-get install openssl" in sin_openssl)
+
+            # the fragment login in a real browser (a13) — where Playwright is installed (this box,
+            # the L7 boxes); elsewhere the arm says so and is not counted
+            try:
+                from playwright.sync_api import sync_playwright
+            except ImportError:
+                sync_playwright = None
+                print("  skip: browser arms — playwright is not installed "
+                      "(pip install playwright; playwright install chromium)")
+            if sync_playwright:
+                with sync_playwright() as pw:
+                    nav = pw.chromium.launch()
+                    try:
+                        visto = nav.new_context(ignore_https_errors=True)
+                        pg = visto.new_page()
+                        errores = []
+                        pg.on("pageerror", lambda e: errores.append(str(e)))
+                        pg.on("console", lambda m: errores.append(m.text) if m.type == "error" else None)
+                        try:
+                            pg.goto(f"https://127.0.0.1:{tport}/login#acceso={TOKEN}")
+                            pg.wait_for_url("**/contenedores", timeout=10000)
+                            llego = True
+                        except Exception as e:   # a Playwright timeout: the arm reports it
+                            llego = False
+                            errores.append(str(e))
+                        galleta = next((c for c in visto.cookies() if c["name"] == TOKEN_COOKIE), {})
+                        check("browser: the link signs in — the fragment leaves the address bar, the cookie is Secure and HttpOnly",
+                              llego and "acceso" not in pg.url and galleta.get("secure") is True
+                              and galleta.get("httpOnly") is True and not errores)
+                        limpio = nav.new_context(ignore_https_errors=True).new_page()
+                        limpio.goto(f"https://127.0.0.1:{tport}/")
+                        en_login = limpio.url.endswith("/login") and "Código de acceso" in limpio.content()
+                        try:   # the full link pasted into that open page: only the fragment changes
+                            limpio.goto(f"https://127.0.0.1:{tport}/login#acceso={TOKEN}")
+                            limpio.wait_for_url(lambda u: "/login" not in u and "acceso" not in u,
+                                                timeout=10000)
+                            pegado = True
+                        except Exception:   # a Playwright timeout: the arm reports it
+                            pegado = False
+                        check("browser: the address without the fragment opens the sign-in page, never JSON; the full link pasted there signs in",
+                              en_login and pegado)
+                    finally:
+                        nav.close()
+            ts.shutdown()
+            ts.server_close()
             httpd.shutdown()
             httpd.server_close()
     finally:
         deis.HERE = old
         CRED_PATH, PHASE20 = old_cred, old_p20
+        CERT_DIR = old_cert
         os.environ.update(_scrubbed)
         # the stub world closes with the fixture: the PATH injection and the FAKE_DOCKER_* knobs
         # are self-test machinery and must not leak into the caller's environment
@@ -2913,9 +3138,18 @@ def main(argv):
     # read the moment it prints.
     sys.stdout.reconfigure(line_buffering=True)
     load_register()                        # fail fast: no register, no wizard, no socket
+    otro = running_installer()             # …a second installer refuses before it re-signs the first one's leaf
+    if otro:
+        sys.exit(f"✗ el instalador web ya está abierto en el puerto {otro}\n"
+                 "  → use el enlace de su consola, o ciérrelo con Ctrl+C y vuelva a ejecutar: "
+                 "sudo aps-conecta abrir")
+    ip = lan_ip()
+    ctx, fingerprint = tls_context(ip)     # …no certificate, no link
     TOKEN = secrets.token_hex(32)           # 64 hex chars — the env-init size, via the stdlib CSPRNG
-    httpd, port = bind_server("", PORTS)   # all interfaces: D9's LAN ceiling, the token is the edge
-    banner(f"http://127.0.0.1:{port}", TOKEN)
+    httpd, port = bind_server("", PORTS)   # all interfaces: the LAN reaches it, loopback probes too
+    # the handshake runs in the handler thread (its 30 s timeout), never in the accept loop
+    httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True, do_handshake_on_connect=False)
+    banner(f"https://{ip}:{port}/login#acceso={TOKEN}", fingerprint)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

@@ -374,23 +374,22 @@ check_arch() {  # x86-64 is the clinic posture; arm64 publishes exist, so it pas
   esac
 }
 
-check_prov_ports() {  # INFO + the routed liveness probe (slices 14/15): GET / answers the
-  # identity JSON with no auth and no secrets — the one honest way to tell a running
-  # provisionador from a stranger on the same port. Never a gate: the Provisionador owns
-  # its own fallback chain.
+check_prov_ports() {  # INFO + the identity probe (R33): /api/salud answers the web installer's
+  # identity JSON over HTTPS with no auth and no secrets — the one honest way to tell a running
+  # installer from a stranger on the same port. Never a gate: a second installer refuses itself
   local p busy=0 body
   for p in $PROV_PORTS; do
     if ! port_free "$p"; then
       busy=1
-      body="$(curl -s -m 5 "http://127.0.0.1:$p/" 2>/dev/null || true)"
+      body="$(curl -sk -m 5 "https://127.0.0.1:$p/api/salud" 2>/dev/null || true)"
       if printf '%s' "$body" | grep -q '"servicio"'; then
-        info "puerto $p: un provisionador ya corre ahí (la identidad GET / responde) — reutilícelo o deténgalo con Ctrl+C"
+        info "puerto $p: el instalador web ya está abierto — use su enlace o ciérrelo con Ctrl+C en su consola"
       else
-        info "puerto $p ocupado por otro servicio — el provisionador elegirá un puerto libre de la cadena 8081→8083"
+        info "puerto $p ocupado por otro servicio — el instalador web elegirá un puerto libre de la cadena 8081→8083"
       fi
     fi
   done
-  [ "$busy" -eq 0 ] && info "cadena del provisionador libre (8081→8083 — elige sola)"
+  [ "$busy" -eq 0 ] && info "cadena del instalador web libre (8081→8083 — elige sola)"
   return 0
 }
 
@@ -1656,24 +1655,27 @@ SHIM
     'case "$out" in *"✗ arquitectura riscv64 no soportada"*) ;; *) false;; esac'
   printf '#!/usr/bin/env bash\necho x86_64\n' > "$tshim/uname"; chmod +x "$tshim/uname"
 
-  # the provisionador chain: free chain, stranger-busy, and provisionador-busy (the routed
-  # GET / identity probe — no auth, no secrets, slices 14/15)
+  # the installer's chain: free chain, stranger-busy, installer-busy (the identity probe
+  # /api/salud over HTTPS — no auth, no secrets, R33)
   printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/ss"; chmod +x "$tshim/ss"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/curl"; chmod +x "$tshim/curl"
   out="$(check_prov_ports)"
-  check "prov-ports: the free chain prints its INFO" 'case "$out" in *"cadena del provisionador libre"*) ;; *) false;; esac'
+  check "prov-ports: the free chain prints its INFO" 'case "$out" in *"cadena del instalador web libre"*) ;; *) false;; esac'
   printf '#!/usr/bin/env bash\nif [ "$2" = "sport = :8081" ]; then echo "State"; echo "LISTEN 0 0 *:8081"; fi\nexit 0\n' > "$tshim/ss"; chmod +x "$tshim/ss"
   out="$(check_prov_ports)"
   check "prov-ports: a stranger on 8081 is named a stranger (the identity probe saw no servicio key)" \
     'case "$out" in *"ocupado por otro servicio"*) ;; *) false;; esac'
   cat > "$tshim/curl" <<'CSHIM'
 #!/usr/bin/env bash
-printf '{"servicio": "Provisionador APS Conecta", "estado": "listo", "registro": "2026-07-23", "establecimientos": 2655}'
+case "$*" in
+  *"-sk"*"https://127.0.0.1:8081/api/salud"*)
+    printf '{"servicio": "Provisionador APS Conecta", "estado": "listo", "registro": "2026-07-23", "establecimientos": 2655}' ;;
+esac
 CSHIM
   chmod +x "$tshim/curl"
   out="$(check_prov_ports)"
-  check "prov-ports: a running provisionador is recognized via GET / (the routed liveness probe)" \
-    'case "$out" in *"un provisionador ya corre ahí"*"GET / responde"*) ;; *) false;; esac'
+  check "prov-ports: a running installer is recognized by its HTTPS /api/salud and the operator is told to use its link" \
+    'case "$out" in *"el instalador web ya está abierto"*"use su enlace"*) ;; *) false;; esac'
 
   # the hairpin probes: green pair and the #8433 red with R4's recorded recipe
   printf '#!/usr/bin/env bash\nif [ "$1" = ps ]; then echo nextcloud-aio-apache; exit 0; fi\nexit 0\n' > "$tshim/docker"; chmod +x "$tshim/docker"
