@@ -1529,7 +1529,7 @@ def screen_listo():
 <p class="para grande">Suite instalada en {esc(installed_centre())}.</p>
 <p class="para">Instalador cerrado: enlace inválido, puerto {PORT} cerrado.</p>
 <ul class="lista-sigue para"><li>Credenciales: en la consola del servidor; una fila por persona.</li>
-<li>Re-provisión semanal: activada por la consola al cerrar.</li></ul>
+<li>Re-provisión semanal: la activa la consola al cerrar el instalador.</li></ul>
 <p class="lema">{MOTTO}</p>""")
 
 
@@ -1881,6 +1881,11 @@ class Handler(BaseHTTPRequestHandler):
             self.close_connection = True  # same framing rule: 413 never drained its body
             self.send_json(e.status, {"error": str(e)})
             return
+        if path == "/api/generar" and DONE.is_set():
+            # SEC-2: the installer is done and closing — a reload and a second click inside the grace
+            # must not start a run the shutdown would cut
+            self.send_json(409, {"error": "la instalación ya terminó: el instalador se está cerrando"})
+            return
         if path == "/api/deis":
             status, body = api_deis(payload)
         elif path == "/api/sitio":
@@ -2015,6 +2020,8 @@ def openssl(*args):
     except FileNotFoundError:
         sys.exit("✗ falta openssl: el instalador web firma su propio certificado\n"
                  "  → sudo apt-get install openssl")
+    except (OSError, subprocess.TimeoutExpired) as e:
+        sys.exit(f"✗ openssl no respondió: {e}")
     if r.returncode != 0:
         sys.exit(f"✗ openssl no pudo crear el certificado: {r.stderr.strip()[-300:]}")
     return r.stdout
@@ -2074,7 +2081,8 @@ def running_installer(ports=PORTS):
         try:
             with urllib.request.urlopen(f"https://127.0.0.1:{p}/api/salud", context=ctx,
                                         timeout=2) as r:
-                if json.loads(r.read().decode("utf-8")).get("servicio") == SERVICE:
+                answer = json.loads(r.read().decode("utf-8"))
+                if isinstance(answer, dict) and answer.get("servicio") == SERVICE:
                     return p
         except (OSError, ValueError, http.client.HTTPException):
             continue
@@ -2102,7 +2110,8 @@ def serve(httpd):
         httpd.serve_forever()
     except KeyboardInterrupt:
         print()   # ends the ^C line; the console says the rest
-        return 130
+        # Ctrl+C inside the grace after a green run (the browser already says «Listo»): still done
+        return 0 if DONE.is_set() else 130
     finally:
         httpd.server_close()
     return 0 if DONE.is_set() else 1
@@ -2218,7 +2227,7 @@ def run_step(argv):
         print("✓ divergencia vacía — la instalación coincide con lo declarado")
         return 0
     print(f"✗ divergencia NO vacía — la deriva se muestra {f'en el registro ({log})' if resumen else 'arriba'}; "
-          "«aps-conecta provision» abre el provisionador para corregir")
+          "«sudo aps-conecta abrir» abre el instalador web para corregir")
     return 1
 
 
@@ -2821,7 +2830,7 @@ def selftest():
             check("--paso generar: an empty divergence exits 0, a drift exits 1 naming the fix, a refused run exits 1 with its reason",
                   empty[0] == 0 and "✓ divergencia vacía" in empty[1]
                   and drift[0] == 1 and "✗ divergencia NO vacía" in drift[1]
-                  and "aps-conecta provision" in drift[1]
+                  and "sudo aps-conecta abrir" in drift[1]
                   and busy[0] == 1 and "✗ ya hay una ejecución en curso" in busy[1])
             check("--paso generar: line errors alone print no generic line; a bare refusal names its status",
                   lines[0] == 1 and "✗ línea 3: grupo desconocido" in lines[1]
@@ -3218,8 +3227,9 @@ def selftest():
                     igual = fh.read() == fuente
                 st, _t, _h, _s = b.req("GET", "/recursos/../provisionador.py")
                 st2, _t, _h, _s = b.req("GET", "/recursos/nada.woff2")
-                check("assets: the brand fonts serve locally without a session; any other name is a 404",
-                      r.status == 200 and tipo == "font/woff2" and igual and st == 404 and st2 == 404)
+                check("assets: the brand fonts serve locally without a session; any other name is a 404; every whitelisted file exists",
+                      r.status == 200 and tipo == "font/woff2" and igual and st == 404 and st2 == 404
+                      and all(os.path.isfile(os.path.join(ROOT_DIR, rel)) for rel, _t in ASSETS.values()))
                 b.cookie = f"{TOKEN_COOKIE}={TOKEN}"
 
 
@@ -3417,6 +3427,23 @@ def selftest():
                 cerrado = True
             check("finish: a green verdict closes the port within the grace and serve() answers 0",
                   st == 200 and not hilo.is_alive() and DONE.is_set() and cerrado and servido == [0])
+            st, body = call("POST", "/api/generar", {"codigo": "113314", "modo": "ejecutar"})
+            check("finish: once done, a second execution inside the grace is refused 409 — nothing runs twice",
+                  st == 409 and "ya terminó" in body.get("error", ""))
+
+            class Interrumpido:   # Ctrl+C arriving while serve_forever runs
+                def serve_forever(self):
+                    raise KeyboardInterrupt
+
+                def server_close(self):
+                    pass
+
+            with redirect_stdout(io.StringIO()):
+                tarde = serve(Interrumpido())
+                DONE.clear()
+                temprano = serve(Interrumpido())
+            check("finish: Ctrl+C inside the grace after a green run still answers 0; before it, 130",
+                  tarde == 0 and temprano == 130)
             DONE.clear()
             ts.shutdown()
             ts.server_close()
@@ -3458,8 +3485,8 @@ def main(argv):
     otro = running_installer()             # …a second installer refuses before it re-signs the first one's leaf
     if otro:
         sys.exit(f"✗ el instalador web ya está abierto en el puerto {otro}\n"
-                 "  → use el enlace de su consola, o ciérrelo con Ctrl+C y vuelva a ejecutar: "
-                 "sudo aps-conecta abrir")
+                 "  → use el enlace de su consola, o ciérrelo (Ctrl+C en su consola; sin consola: "
+                 "sudo pkill -f 'provisionador.py$') y vuelva a ejecutar: sudo aps-conecta abrir")
     LAN_IP, HOSTNAME = lan_ip(), socket.gethostname()
     ctx, fingerprint = tls_context(LAN_IP)  # …no certificate, no link
     TOKEN = secrets.token_hex(32)           # 64 hex chars — the env-init size, via the stdlib CSPRNG

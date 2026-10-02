@@ -699,7 +699,7 @@ step_abrir() {  # the web installer walks steps 6–9 as a CHILD of this console
   python3 "$(prov_path)"; rc=$?
   case "$rc" in
     0) ;;
-    130) bad "el instalador web se cerró antes de terminar" "vuelva a abrirlo: sudo aps-conecta abrir"; return 0 ;;
+    130|129|143) bad "el instalador web se cerró antes de terminar" "vuelva a abrirlo: sudo aps-conecta abrir"; return 0 ;;
     *) bad "el instalador web no abrió" "corrija lo indicado arriba y vuelva a ejecutar: sudo aps-conecta abrir"; return 0 ;;
   esac
   printf '%s\n' "──────────────────────────────────────────────────────────────"
@@ -1845,7 +1845,7 @@ import sys
 open("$tmp/prov.argv", "w").write(" ".join(sys.argv[1:]))
 print("fase 10: ok")
 code = int(open("$tmp/prov.rc").read())
-print("✓ divergencia vacía" if code == 0 else "✗ divergencia NO vacía — «aps-conecta provision» abre el provisionador para corregir")
+print("✓ divergencia vacía" if code == 0 else "✗ divergencia NO vacía — «sudo aps-conecta abrir» abre el instalador web para corregir")
 sys.exit(code)
 EOF
   echo 0 > "$tmp/prov.rc"
@@ -1855,7 +1855,7 @@ EOF
   echo 1 > "$tmp/prov.rc"
   out="$(reponer 2>&1)"; rc=$?
   check "reponer: a non-empty divergence exits 1 (the weekly drift red reaches systemd) and names the fix" \
-    '[ "$rc" -eq 1 ] && case "$out" in *"divergencia NO vacía"*"aps-conecta provision"*) ;; *) false;; esac'
+    '[ "$rc" -eq 1 ] && case "$out" in *"divergencia NO vacía"*"sudo aps-conecta abrir"*) ;; *) false;; esac'
   echo 2 > "$tmp/prov.rc"
   out="$(reponer 2>&1)"; rc=$?
   check "reponer: the step's own exit code reaches systemd unchanged" '[ "$rc" -eq 2 ]'
@@ -1875,6 +1875,14 @@ EOF
   abrir_out="$( FAIL=0; step_abrir 2>&1; echo "FAIL=$FAIL" )"
   check "abrir: an installer that does not start says so, with the re-run" \
     'case "$abrir_out" in *"el instalador web no abrió"*"sudo aps-conecta abrir"*"FAIL=1"*) ;; *) false;; esac'
+  echo 143 > "$tmp/prov.rc"
+  abrir_out="$( FAIL=0; step_abrir 2>&1; echo "FAIL=$FAIL" )"
+  check "abrir: an installer stopped by a signal (SIGTERM) is «closed before the end», not «did not open»" \
+    'case "$abrir_out" in *"se cerró antes de terminar"*"FAIL=1"*) ;; *) false;; esac'
+  echo 0 > "$tmp/prov.rc"
+  abrir_out="$( install_timers() { bad "temporizadores-stub-rojo" "arreglo-stub"; }; step_abrir 2>&1 )"; rc=$?
+  check "abrir: green but the timers fail — «Listo» names what is missing and the install exits 1" \
+    '[ "$rc" -eq 1 ] && case "$abrir_out" in *"temporizadores-stub-rojo"*"Listo"*"Falta lo marcado con ✗ arriba"*) ;; *) false;; esac'
   abrir_out="$( step_abrir() { ok "abrir-stub"; }; cmd_provision 2>&1 )"
   check "provision: the step «abrir» itself — the same header and body" \
     'case "$abrir_out" in *"Paso 5 de 9 · Abrir el instalador web"*"abrir-stub"*"Resultado Enlace entregado."*) ;; *) false;; esac'
