@@ -21,6 +21,7 @@ same fact, the one named here as its authority wins and the other should link in
 | Document | It is the authority for |
 |---|---|
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | The stack and its boundaries |
+| [`threat-model.md`](threat-model.md) | What an attacker wants, the entry points and their guards; the Breaker agent starts here |
 | [`THEMING-MODEL.md`](THEMING-MODEL.md) | How branding reaches a screen, including the ones drawn before the apps load |
 | [`LICENSING.md`](LICENSING.md) | Our own licence, every third-party licence the stack runs, and whether any obligation reaches our code |
 | [`adr/`](adr/) | Decisions, and the reasoning that was live when each was taken |
