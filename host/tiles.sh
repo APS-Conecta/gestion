@@ -213,12 +213,10 @@ cmd_install() {  # [--url URL] — idempotent; any failed stage re-runs the same
   ensure_container || FAIL=1
   # 3. the URL convergence (instant — lands even if the operator Ctrl-C's the extract)
   converge_url "$url" || FAIL=1
-  # 4. the timer wiring: PRINTED, never executed (the run-command generator's own
-  #    doctrine — the operator pastes; INSTALLER.md owns the full walkthrough)
+  # 4. the timer wiring belongs to «aps-conecta temporizadores» (it enables the monthly timer once
+  #    the map exists): named here, never executed
   echo
-  info "el refresco mensual vive del temporizador systemd — cablee así (INSTALADOR.md documenta cada pieza):"
-  printf '  sudo cp %s/aps-conecta-tiles.service %s/aps-conecta-tiles.timer /etc/systemd/system/\n' "$HOST_DIR" "$HOST_DIR"
-  printf '  sudo systemctl daemon-reload && sudo systemctl enable --now aps-conecta-tiles.timer\n'
+  info "el refresco mensual vive del temporizador systemd — lo instala y activa: sudo aps-conecta temporizadores"
   # 5. the archive — the long pole LAST, so everything above already landed. The extract
   #    is ~1 GB by HTTP ranges; a Ctrl-C leaves a consistent state (container + CLI + .env)
   #    and the re-run skips straight back here.
@@ -273,7 +271,7 @@ cmd_check() {  # the FRD S9 acceptance arm: tiles endpoint liveness, measured th
     if systemctl is-enabled aps-conecta-tiles.timer >/dev/null 2>&1; then
       info "el temporizador mensual está cableado"
     else
-      info "el temporizador mensual AÚN NO está cableado — los comandos están en la salida de «install»"
+      info "el temporizador mensual AÚN NO está activo — lo activa: sudo aps-conecta temporizadores"
     fi
   fi
   if grep -q '^TILES_PUBLIC_URL=' "$ENV_FILE" 2>/dev/null; then
