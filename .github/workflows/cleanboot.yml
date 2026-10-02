@@ -210,10 +210,13 @@ jobs:
       # runner for the gates below.
       - name: Install through the silent command a clinic runs
         run: |
+          set -o pipefail   # run: is `bash -e` without it — the install's own failure, not tee's
           sudo env "PATH=$PATH" APS_SKIP_MAP=1 MIN_DISK_GB=2 AIO_STATE=/tmp/aio-testbed \
             bash host/aps-conecta install --sitio "$RUNNER_TEMP/site.sh" --planilla "$RUNNER_TEMP/usuarios.csv" \
             < /dev/null | tee "$RUNNER_TEMP/install.out"
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+      - name: Hand the checkout back to the runner
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
       # a7's console contract on the real run — a5's two checks over what the operator saw: the
       # verdict, no internals, no English (every tool's own output went to the install's log)
       - name: The silent install printed only Spanish lines

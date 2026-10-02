@@ -425,9 +425,13 @@ def site_import(payload):
         return 409, {"error": f"{_site_rel(codigo)} ya existe y difiere del archivo entregado — "
                               "compárelos y deje uno (la instalación no pisa un sitio)"}
     os.makedirs(os.path.dirname(dest), exist_ok=True)
-    with open(dest + ".tmp", "w", encoding="utf-8", newline="") as fh:
-        fh.write(text)
-    os.replace(dest + ".tmp", dest)  # never half a site: a re-run would read it as «difiere»
+    try:
+        with open(dest + ".tmp", "w", encoding="utf-8", newline="") as fh:
+            fh.write(text)
+        os.replace(dest + ".tmp", dest)  # never half a site: a re-run would read it as «difiere»
+    finally:
+        if os.path.exists(dest + ".tmp"):
+            os.unlink(dest + ".tmp")
     return 200, {"ok": True, "site": _site_rel(codigo), "codigo": codigo}
 
 

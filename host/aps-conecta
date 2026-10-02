@@ -92,17 +92,19 @@ step_number() {  # ID — the step's number; non-zero for an id the registry doe
 
 step_header() {  # N — the step header, the approved console's shape
   printf '%s\n' "──────────────────────────────────────────────────────────────"
-  printf 'Paso %s de %s · %s  %s\n' "$1" "${#STEPS[@]}" "$(step_field "$1" 2)" "$(step_field "$1" 3)"
+  printf 'Paso %s de %s · %s  %s\n' "$1" "${#STEPS[@]}" "$(step_field "$1" 2)" "$(step_where "$1")"
   printf 'Objetivo  %s\n' "$(step_field "$1" 4)"
-  printf 'Comando   aps-conecta %s\n' "$(step_field "$1" 1)"
+  # a browser step has no command of its own; the silent install runs it here, inside «install»
+  [ "$(step_field "$1" 3)" != servidor ] || printf 'Comando   aps-conecta %s\n' "$(step_field "$1" 1)"
 }
 
+step_where() { if [ -n "$SILENT_SITE" ]; then echo servidor; else step_field "$1" 3; fi; }  # silent: all here
 step_footer() {  # N — the result (the step's own override, else the registry's) and the next step
   local m=$(( $1 + 1 ))
   printf 'Resultado %s\n' "${STEP_RESULT:-$(step_field "$1" 5)}"
   STEP_RESULT=""
   if [ "$m" -le "${#STEPS[@]}" ]; then
-    printf 'Siguiente Paso %s · %s (%s)\n' "$m" "$(step_field "$m" 2)" "$(step_field "$m" 3)"
+    printf 'Siguiente Paso %s · %s (%s)\n' "$m" "$(step_field "$m" 2)" "$(step_where "$m")"
   fi
   echo
 }
@@ -116,7 +118,8 @@ step_run() {  # N RERUN — header, the step's body, footer; non-zero with a ✗
   FAIL=0
   "$fn"; rc=$?
   if [ "$rc" -ne 0 ] || [ "$FAIL" -ne 0 ]; then
-    printf 'Resultado ✗ el paso %s no terminó — corrija lo marcado y vuelva a ejecutar «%s»\n\n' "$1" "$2"
+    printf 'Resultado ✗ el paso %s no terminó — corrija lo marcado y vuelva a ejecutar «%s»%s\n\n' \
+      "$1" "$2" "${SILENT_LOG:+ (registro: $SILENT_LOG)}"
     return 1
   fi
   step_footer "$1"
@@ -148,12 +151,14 @@ welcome() {  # the welcome — the approved console's opening, line for line
 # ── the silent install (a7): «install --sitio F --planilla F» walks the same nine steps, and these
 # stand in for the browser ones — each the Provisionador's own step run with --paso, or the suite.
 # The map comes last: it needs the site in .env and the suite's database (refresh-basemap.sh)
-silent_precheck() {  # the two files read before anything runs — a typo must not cost an install
-  grep -qE '^SITE_DEIS=[0-9]{4,6}$' "$SILENT_SITE" \
+silent_precheck() {  # the two files read before anything runs — a typo must not cost an install;
+  # CRLF tolerated, as the Provisionador reads them (a site edited on Windows)
+  local text; text="$(tr -d '\r' < "$SILENT_SITE")"
+  printf '%s\n' "$text" | grep -qE '^SITE_DEIS=[0-9]{4,6}$' \
     || die "el sitio no declara SITE_DEIS=<código DEIS> (sin comillas): $SILENT_SITE"
-  [ -n "$(domain_of "$SILENT_SITE")" ] \
-    || die "el sitio no declara SITE_DOMINIO=\"<dominio del servidor>\": $SILENT_SITE"
-  grep -q '^SITE_ROSTER=' "$SILENT_SITE" || die "el sitio no trae la línea SITE_ROSTER=: $SILENT_SITE"
+  [[ "$(printf '%s\n' "$text" | domain_of -)" =~ $DOMAIN_RE ]] \
+    || die "el sitio no declara SITE_DOMINIO=\"<dominio del servidor>\" válido: $SILENT_SITE"
+  printf '%s\n' "$text" | grep -q '^SITE_ROSTER=' || die "el sitio no trae la línea SITE_ROSTER=: $SILENT_SITE"
   head -1 "$SILENT_ROSTER" | sed 's/^\xef\xbb\xbf//' | tr -d '\r' \
     | grep -qx 'usuario;nombre;apellidos;correo;grupos;primer_admin' \
     || die "la planilla no empieza con la cabecera usuario;nombre;apellidos;correo;grupos;primer_admin: $SILENT_ROSTER"
@@ -340,6 +345,7 @@ site_domain() {  # SITE_DOMINIO from the site record (#75 hook) — empty when u
   domain_of "$f"
 }
 domain_of() { grep -m1 '^SITE_DOMINIO=' "$1" 2>/dev/null | sed 's/^SITE_DOMINIO=//; s/^"//; s/"$//' || true; }
+DOMAIN_RE='^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$'   # the wizard's rule, checked before anything runs too
 
 PREFLIGHT_DOMAIN=""   # «preflight --dominio D»: the domain to probe before the site record names one (R6)
 
@@ -902,7 +908,7 @@ cmd_aio_wizard() {  # --dominio D [--sin-validar-dominio] [--respaldo DIR]
       *) die "opción desconocida: $1 — uso: aps-conecta asistente-aio --dominio <dominio> [--sin-validar-dominio] [--respaldo <directorio>]" ;;
     esac
   done
-  [[ "$domain" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] \
+  [[ "$domain" =~ $DOMAIN_RE ]] \
     || die "falta un dominio válido: aps-conecta asistente-aio --dominio <dominio>"
   ( umask 077 && mkdir -p "$AIO_STATE" ) || die "no se pudo crear $AIO_STATE"
   FAIL=0
@@ -1217,6 +1223,12 @@ EOF
   pre1="$( (cmd_install --sitio "$tmp/mal1.sh" --planilla "$tmp/dado.csv") 2>&1)"
   pre2="$( (cmd_install --sitio "$tmp/mal2.sh" --planilla "$tmp/dado.csv") 2>&1)"
   pre3="$( (cmd_install --sitio "$tmp/dado.sh" --planilla "$tmp/mal.csv") 2>&1)"
+  printf 'SITE_DEIS=113314\r\nSITE_DOMINIO="clinica.example"\r\nSITE_ROSTER=\r\n' > "$tmp/crlf.sh"
+  printf 'SITE_DEIS=113314\nSITE_DOMINIO="a_b"\nSITE_ROSTER=\n' > "$tmp/mal3.sh"
+  crlf="$( (SILENT_SITE="$tmp/crlf.sh"; SILENT_ROSTER="$tmp/dado.csv"; silent_precheck && echo pasa) 2>&1)"
+  pre4="$( (cmd_install --sitio "$tmp/mal3.sh" --planilla "$tmp/dado.csv") 2>&1)"
+  check "install --sitio: a Windows-edited (CRLF) site passes the pre-check; a domain the wizard would refuse fails before step 1" \
+    '[ "$crlf" = pasa ] && case "$pre4" in *"SITE_DOMINIO"*) ;; *) false;; esac && case "$pre4" in *"Paso 1"*) false;; *) true;; esac'
   check "install --sitio: a quoted SITE_DEIS, an empty SITE_DOMINIO or a planilla without its header refuses before step 1" \
     'case "$pre1" in *"SITE_DEIS=<código DEIS> (sin comillas)"*) ;; *) false;; esac && case "$pre2" in *"SITE_DOMINIO="*) ;; *) false;; esac && case "$pre3" in *"cabecera usuario;nombre;apellidos;correo;grupos;primer_admin"*) ;; *) false;; esac && case "$pre1$pre2$pre3" in *"Paso 1"*) false;; *) true;; esac'
   install_out="$(
@@ -1231,7 +1243,7 @@ EOF
     cmd_install --sitio "$tmp/dado.sh" --planilla "$tmp/dado.csv" </dev/null 2>&1
   )"; rcs=$?
   check "install --sitio: the same nine steps in order — the browser ones from the files, the map last — then the verdict" \
-    '[ "$rcs" -eq 0 ] && case "$install_out" in *"sin preguntas ni navegador"*"Paso 1 de 9"*"Paso 4 de 9"*"Mapa: se construye al final, con la suite en marcha."*"Paso 5 de 9"*"Sin instalador web: modo silencioso."*"Paso 6 de 9"*"centro-stub"*"Paso 7 de 9"*"suite-stub"*"Paso 8 de 9"*"equipos-stub"*"Paso 9 de 9"*"ejecutar-stub"*"mapa-final-stub"*"INSTALACIÓN: ✓"*"sudo cat /opt/aps-conecta/credentials.txt"*"aps-conecta revalidate (registro: $APS_HOME/instalacion.log)"*) ;; *) false;; esac && case "$install_out" in *"Enter para comenzar"*) false;; *) true;; esac'
+    '[ "$rcs" -eq 0 ] && case "$install_out" in *"sin preguntas ni navegador"*"Paso 1 de 9"*"Paso 4 de 9"*"Mapa: se construye al final, con la suite en marcha."*"Paso 5 de 9"*"Sin instalador web: modo silencioso."*"Paso 6 de 9 · Elegir el centro  servidor"*"centro-stub"*"Paso 7 de 9"*"suite-stub"*"Paso 8 de 9"*"equipos-stub"*"Paso 9 de 9"*"ejecutar-stub"*"mapa-final-stub"*"INSTALACIÓN: ✓"*"sudo cat /opt/aps-conecta/credentials.txt"*"aps-conecta revalidate (registro: $APS_HOME/instalacion.log)"*) ;; *) false;; esac && case "$install_out" in *"Enter para comenzar"*|*"  navegador"*|*"(navegador)"*|*"Comando   aps-conecta centro"*) false;; *) true;; esac'
   check "install --sitio: a tool's own stderr goes to the log, never the console" \
     'case "$install_out" in *"Pulling from"*) false;; *) true;; esac && grep -q "Pulling from somewhere" "$APS_HOME/instalacion.log"'
   install_out="$(
@@ -1242,6 +1254,13 @@ EOF
   )"; rcs=$?
   check "install --sitio: a fatal refusal still reaches the console, not the log" \
     '[ "$rcs" -eq 1 ] && case "$install_out" in *"✗ descargar-muere"*) ;; *) false;; esac'
+  install_out="$(
+    step_revisar()   { ok "revisar-stub"; }
+    step_preparar()  { bad "preparar-falla" "x"; }
+    cmd_install --sitio "$tmp/dado.sh" --planilla "$tmp/dado.csv" </dev/null 2>&1
+  )"; rcs=$?
+  check "install --sitio: a failed step names the log beside the command to re-run" \
+    '[ "$rcs" -eq 1 ] && case "$install_out" in *"Resultado ✗ el paso 2 no terminó"*"--sitio"*"(registro: $APS_HOME/instalacion.log)"*) ;; *) false;; esac'
   step_out="$( (export ID_U=1000; cmd_install </dev/null) 2>&1)"; rcs=$?
   check "stepper: install without sudo refuses before the welcome, naming the command to run" \
     '[ "$rcs" -eq 1 ] && case "$step_out" in *"✗ la instalación necesita permisos de administrador: sudo bash aps-conecta install"*) ;; *) false;; esac && case "$step_out" in *"Paso 1 de 9"*) false;; *) true;; esac'
