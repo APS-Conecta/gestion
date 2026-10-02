@@ -80,6 +80,10 @@ image digests live there and are deliberately not copied here — one fact, one 
   planilla's, one row per position (`Cargo director`, …). `FIXTURE_USER_PASSWORD` is now only for
   `make install` without the Provisionador (the compose lab, CI). The GUIA no longer claims the
   system forces a password change at first login: it tells each person where to change it.
+  A cargo account created before this release keeps its password: before handing over its row,
+  set it with `occ user:resetpassword <uid>`.
+- **Planilla users reach the intranet on the first run** — the roster driver maps them into the
+  IntraVox groups the seed already mapped (until now, only at the next weekly re-provision).
 - **`credentials.txt` is kept after handover** (B-034) — the weekly re-provision reads it.
 
 - **Language reality is the IntraVox engine's** — phase 41 no longer converges

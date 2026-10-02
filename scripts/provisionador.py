@@ -2417,6 +2417,9 @@ def selftest():
                   "user elena.diaz added to group all-staff" in body["salida"]
                   and "user elena.diaz added to group cat-clinicos" in body["salida"]
                   and "user elena.diaz added to group role-matroneria" in body["salida"])
+            check("generar: the roster driver maps planilla users into the IntraVox groups the same run (B-030's class)",
+                  "group: elena.diaz added to group IntraVox Users" in body["salida"]
+                  and "group: maria.perez added to group IntraVox Users" in body["salida"])
             cats = role_categories(PHASE20, [("role-jefe-sar", "Jefe/a de SAR", "cat-jefaturas"),
                                              ("role-medico", "Médico", "cat-jefaturas")])
             fams = [c for r, c in cats.items() if r != "role-jefe-sar"]
