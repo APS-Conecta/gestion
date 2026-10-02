@@ -183,12 +183,29 @@ TIMEOUTS = {"seed": 1800, "roster": 1800, "gate": 300}
 # file's stem — a self-test arm pins one title per file in provisioning/phases.
 PHASE_TITLES = {
     "05-security": "Seguridad de sesión", "06-jobs": "Tareas programadas",
-    "07-certs": "Certificados intermedios", "10-locale": "Idioma y región (es-CL)",
-    "12-apps": "Aplicaciones de la suite", "14-office": "Oficina (Euro-Office)",
+    "07-certs": "Certificados del servidor", "10-locale": "Idioma y región (es-CL)",
+    "12-apps": "Aplicaciones de la suite", "14-office": "Oficina en línea",
     "15-branding": "Imagen de APS Conecta", "16-app-policy": "Aplicaciones por perfil",
     "20-groups": "Grupos: roles, categorías y equipos", "30-folders": "Carpetas compartidas",
-    "40-acl": "Permisos de las carpetas", "41-intravox": "Portada (IntraVox)",
+    "40-acl": "Permisos de las carpetas", "41-intravox": "Portada del establecimiento",
     "50-users": "Cuentas de cargo", "60-fixtures": "Contenido de ejemplo"}
+# What the clinic gets, as the review step lists it (R37): one row per component staff see — its
+# app, its name, what it gives. Plumbing is not listed; a self-test pins every app under
+# provisioning/apps to one side or the other (ponytail: a JSON file once the host TUI needs it too).
+COMPONENTES = (
+    ("intravox", "Inicio", "Portada del establecimiento: noticias, avisos y accesos del equipo."),
+    ("groupfolders", "Documentos", "Carpetas compartidas por sector y programa, con permisos por grupo."),
+    ("eurooffice", "Oficina", "Edición en línea de documentos, planillas y presentaciones."),
+    ("calendar", "Calendario", "Agendas personales y compartidas del equipo."),
+    ("contacts", "Contactos", "Directorio del personal y contactos externos."),
+    ("epidemiologia", "Epidemiología", "Alertas del MINSAL y del ISP, informes IRAG y tablero nacional."),
+    ("estadistica", "Estadística",
+     "Cifras REM frente al promedio nacional y de pares; avance de las Metas Sanitarias."),
+    ("farmacia", "Farmacia", "Arsenal farmacológico del establecimiento con información de seguridad clínica."),
+    ("territorio", "Territorio", "Mapa territorial: unidades vecinales y establecimientos."),
+    ("spreed", "Talk", "Chat y videollamadas internas."),
+)
+PLUMBING_APPS = ("desktop_workspace", "notify_push", "side_menu")
 
 
 STUB_DOCKER = r'''#!/usr/bin/env python3
@@ -1138,6 +1155,38 @@ def why(e):  # the OS's own text is English: the common cases in Spanish, else t
             errno.ENOSPC: "disco lleno"}.get(e.errno, errno.errorcode.get(e.errno, "error de archivo"))
 
 
+def veredicto(body):
+    """(head, items) of an execution — the verdict as «aps-conecta estado» states it: record_state
+    writes both, the browser shows the head (a16: the gate's notes carry operator vocabulary)."""
+    if body.get("divergencia_vacia"):
+        return "✓ la instancia coincide con lo declarado", []
+    if "divergencia_vacia" in body:
+        items = [ln[4:] for ln in body.get("divergencia", "").splitlines()
+                 if ln.startswith("    ") and not ln.startswith("     ")]
+        if items:
+            return "✗ deriva: la instancia tiene lo que no se declaró", items
+        # the gate stopped before its list (a FATAL): its own last lines are the cause
+        return ("✗ la revisión de divergencia no terminó",
+                [ln.strip() for ln in body.get("divergencia", "").splitlines() if ln.strip()][-3:])
+    return "✗ la ejecución no terminó", [body.get("error", "")]
+
+
+def plan_clinico(codigo, teams, rows, cargos):
+    """The review step's plan in clinic terms (R40): the centre by name, its sectors and programs,
+    every person the planilla declares (the first administrator marked), the cargo accounts it adds,
+    and what the clinic gets (R37) — no path, no file, no key."""
+    row = find_row(codigo)
+    return {"centro": {"codigo": codigo,
+                       "nombre": row["nombre"] if row else f"el establecimiento DEIS {codigo}",
+                       "comuna": row["comuna"] if row else ""},
+            "sectores": [d for g, d in teams if g.startswith("sector-")],
+            "programas": [d for g, d in teams if g.startswith("prog-")],
+            "personas": [[uid, f"{nombre} {apellidos}", list(gids), primer]
+                         for uid, nombre, apellidos, _c, gids, primer in rows],
+            "cuentas_de_cargo": len(cargos),
+            "componentes": [[nombre, que] for _app, nombre, que in COMPONENTES]}
+
+
 def record_state(body):
     """The last execution's verdict, for «aps-conecta estado» and the admins' notification (a10): a
     head line — the time in Santiago and the verdict — then each item with its fix (the gate's own
@@ -1145,17 +1194,7 @@ def record_state(body):
     rename): readable without sudo, never half a state."""
     from datetime import datetime
     from zoneinfo import ZoneInfo
-    if body.get("divergencia_vacia"):
-        head, items = "✓ la instancia coincide con lo declarado", []
-    elif "divergencia_vacia" in body:
-        head = "✗ deriva: la instancia tiene lo que no se declaró"
-        items = [ln[4:] for ln in body.get("divergencia", "").splitlines()
-                 if ln.startswith("    ") and not ln.startswith("     ")]
-        if not items:  # the gate stopped before its list (a FATAL): its own last lines are the cause
-            head = "✗ la revisión de divergencia no terminó"
-            items = [ln.strip() for ln in body.get("divergencia", "").splitlines() if ln.strip()][-3:]
-    else:
-        head, items = "✗ la ejecución no terminó", [body.get("error", "")]
+    head, items = veredicto(body)
     when = datetime.now(ZoneInfo("America/Santiago")).strftime("%Y-%m-%d %H:%M")
     text = f"{when} (hora de Santiago) · {head}\n" + "".join(f"  · {i}\n" for i in items if i)
     os.makedirs(os.path.dirname(ESTADO_PATH), exist_ok=True)
@@ -1270,7 +1309,8 @@ def _api_generar(payload):
                              else "se forzará a 1",
                              "FIXTURE_USER_PASSWORD": "presente" if est["fixture"]
                              else "se generará"},
-                     "divergencia": "se comprueba al final de la ejecución"}
+                     "divergencia": "se comprueba al final de la ejecución",
+                     **plan_clinico(codigo, teams, rows, cargos)}
 
     # ── ejecutar: one run at a time; the seed and the driver and the gate in order ──
     if not EXEC_LOCK.acquire(blocking=False):
@@ -3480,6 +3520,28 @@ def selftest():
             check("--paso generar --revision: the plan in one Spanish line, nothing executed, exit 0",
                   rc == 0 and execs[0] == 0
                   and "✓ Revisión: 14 fases, 2 usuarios (administrador inicial elena.diaz)" in out)
+            st, plan = api_generar({"codigo": "113314", "modo": "revision"})
+            visibles = json.dumps({k: plan.get(k) for k in ("centro", "sectores", "programas", "personas",
+                                                            "componentes")}, ensure_ascii=False)
+            check("revisión: the plan in clinic terms — the centre by name, its sectors and programs, every person with the first administrator marked, the components; no path, file or key (R40, R37, a16)",
+                  st == 200 and plan["centro"]["nombre"] == "Centro de Salud Familiar Cóndores de Chile"
+                  and plan["centro"]["comuna"] == "El Bosque" and plan["sectores"] == ["Sector Estrella"]
+                  and plan["programas"] == ["Programa Salud Mental"]
+                  and sorted(p[0] for p in plan["personas"]) == ["elena.diaz", "maria.perez"]
+                  and [p[0] for p in plan["personas"] if p[3]] == ["elena.diaz"]
+                  and plan["cuentas_de_cargo"] > 0 and len(plan["componentes"]) == len(COMPONENTES)
+                  and "/" not in visibles and ".sh" not in visibles and "SITE_" not in visibles)
+            apps = set(os.listdir(os.path.join(ROOT_DIR, "provisioning", "apps")))
+            check("componentes: every app the suite ships is a listed component or declared plumbing — a new app forces the choice (R37)",
+                  {a for a, _n, _q in COMPONENTES} | set(PLUMBING_APPS) == apps
+                  and not {a for a, _n, _q in COMPONENTES} & set(PLUMBING_APPS))
+            check("veredicto: one head for «aps-conecta estado» and the browser — green, drift, a gate that stopped, a run that stopped",
+                  veredicto({"divergencia_vacia": True})[0].startswith("✓")
+                  and veredicto({"divergencia_vacia": False, "divergencia": "    algo\n"}) ==
+                      ("✗ deriva: la instancia tiene lo que no se declaró", ["algo"])
+                  and veredicto({"divergencia_vacia": False, "divergencia": "FATAL: x\n"})[0].startswith(
+                      "✗ la revisión de divergencia no terminó")
+                  and veredicto({"error": "e"}) == ("✗ la ejecución no terminó", ["e"]))
             planilla = os.path.join(deis.HERE, "..", "sites", "113314", "planilla-mia.csv")
             rc, out = stepped(["--paso", "usuarios", "--codigo", "113314", "--planilla", planilla])
             check("--paso usuarios: the loaded planilla re-validates — sealed once, 0 new passwords",
