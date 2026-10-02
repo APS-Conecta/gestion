@@ -9,7 +9,7 @@
 # Usage (the operator's Spanish usage is `aps-conecta` with no argument — generated from PASOS):
 #   aps-conecta install              the interactive install: welcome, then the numbered server steps
 #   aps-conecta <step>               one step of the registry (revisar … ejecutar), header and footer
-#   aps-conecta preflight            host checks + the run command (the FRD's pre-install gate)
+#   aps-conecta preflight [--dominio D]   host checks + the run command (the FRD's pre-install gate)
 #   aps-conecta run-command          just the docker run string (one source, never re-typed)
 #   aps-conecta provision            start the Provisionador (interactive; Ctrl+C stops it)
 #   aps-conecta provision --reponer  headless weekly re-provision (the systemd timer's job)
@@ -19,8 +19,8 @@
 #   aps-conecta datos [CUT]        the comuna data packages, cut + checksum-verified + staged
 #   aps-conecta --self-test          the self-check (no docker needed — PATH shims)
 #
-# The install host is assumed to carry bash, git, python3, docker and curl — preflight checks
-# every one of them and fails closed with a fix hint (never a half-answer).
+# `install` installs what the server lacks — the tools, Docker, the bundle — and proves each piece;
+# `preflight` only checks, failing closed with a fix hint (never a half-answer).
 set -uo pipefail
 
 HOST_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
@@ -28,6 +28,15 @@ ROOT="$(cd "$HOST_DIR/.." && pwd)"
 # No PROV global: ROOT can be overridden (the self-test does exactly that), so every
 # caller resolves scripts/provisionador.py from the CURRENT root.
 prov_path() { printf '%s' "$ROOT/scripts/provisionador.py"; }
+# The suite release this file installs when it runs on its own — the two-line bootstrap, before any
+# clone exists. The release commit sets it beside CHANGELOG's dated entry and the self-test pins
+# the two, so the file downloaded from tag vX clones exactly vX (CONTRIBUTING.md › Releases).
+BUNDLE_TAG="v0.3.0"
+APS_REPO_URL="${APS_REPO_URL:-https://github.com/APS-Conecta/gestion.git}"
+APS_HOME="${APS_HOME:-/opt/aps-conecta}"   # the bundle lands in $APS_HOME/gestion
+BIN_DIR="${BIN_DIR:-/usr/local/bin}"       # where the `aps-conecta` command is linked
+en_checkout() { [ -f "$(prov_path)" ]; }    # false only for the downloaded file, on its own
+en_checkout || APS_SUITE_TAG="${APS_SUITE_TAG:-$BUNDLE_TAG}"
 
 # The docker API floor is not ours to invent: AIO's own tested requirement is v1.44
 # (php/src/Docker/DockerActionManager.php:19); the mastercontainer itself enforces it at start
@@ -133,6 +142,7 @@ cmd_install() {  # the interactive install: the welcome, then the server steps i
   # work done (the ports the suite already holds read as its own). The prompt waits only on a
   # terminal: a pipe or CI runs straight through.
   [ $# -eq 0 ] || die "«aps-conecta install» no recibe opciones: ejecútelo sin argumentos"
+  es_root || die "la instalación necesita permisos de administrador: sudo bash aps-conecta install"
   bienvenida
   if [ -t 0 ]; then printf '  Enter para comenzar.'; IFS= read -r _; echo; fi
   local n
@@ -156,7 +166,7 @@ uso() {  # Spanish, generated from the registry — never a slice of this file's
   done
   echo
   echo "Mantenimiento:"
-  echo "  aps-conecta preflight             revisión completa del servidor y comando de arranque de la suite"
+  echo "  aps-conecta preflight [--dominio D]   revisión completa del servidor (y del dominio D) y comando de arranque de la suite"
   echo "  aps-conecta run-command           solo el comando de arranque de la suite"
   echo "  aps-conecta provision             abre el instalador web (lo mismo que el paso abrir)"
   echo "  aps-conecta provision --reponer   re-provisión semanal (la ejecuta el temporizador)"
@@ -177,13 +187,20 @@ need_tool() {  # NAME — the prereq sweep; a missing tool is a red with its ins
   fi
 }
 
-check_docker() {  # API floor measured, not assumed — docker version is the only source
+check_docker() {  # API floor measured, not assumed — docker version is the only source. A missing
+  # docker is need_tool's red (preflight) or instalar_docker's (preparar), never a second one here
+  command -v docker >/dev/null 2>&1 || return 0
   local api
   api="$(docker version --format '{{.Server.APIVersion}}' 2>/dev/null)" || api=""
   case "$api" in
     [0-9]*.[0-9]*) ;;
-    *) bad "docker no responde (daemon caído o sin permisos)" \
-         "inicie el servicio docker y asegure que su usuario esté en el grupo docker"; return ;;
+    *) if ! systemctl is-active --quiet docker 2>/dev/null; then
+         bad "el servicio docker está detenido" "sudo systemctl start docker"
+       else
+         bad "el usuario ${SUDO_USER:-$(id -un)} no tiene permiso para usar docker" \
+           "sudo usermod -aG docker ${SUDO_USER:-$(id -un)}, y vuelva a iniciar sesión"
+       fi
+       return ;;
   esac
   local major minor num
   major="${api%%.*}"; minor="${api#*.}"
@@ -243,10 +260,13 @@ site_domain() {  # SITE_DOMINIO from the site record (#75 hook) — empty when u
   grep -m1 '^SITE_DOMINIO=' "$f" 2>/dev/null | sed 's/^SITE_DOMINIO=//; s/^"//; s/"$//' || true
 }
 
-check_dns() {  # resolves the SITE record's own domain — the wizard asks for the same one
-  local d; d="$(site_domain || true)"
+DOMINIO=""   # «preflight --dominio D»: the domain to probe before the site record names one (R6)
+
+check_dns() {  # resolves the domain — «--dominio» first, else the SITE record's own; the wizard asks
+  # for the same one
+  local d; d="${DOMINIO:-$(site_domain || true)}"
   if [ -z "$d" ]; then
-    info "el dominio aún no está definido — el asistente lo pide; esta prueba corre después de elegirlo"
+    info "el dominio aún no está definido — pruébelo antes con «aps-conecta preflight --dominio <dominio>», o el asistente lo pide"
     return
   fi
   if getent hosts "$d" >/dev/null 2>&1; then
@@ -287,10 +307,10 @@ check_prov_ports() {  # INFO + the routed liveness probe (slices 14/15): GET / a
 
 check_hairpin() {  # the D10 leg (upstream #8433): the HOST curls its own public domain — the exact
   # failing hop (hairpin NAT). Runs only when the stack is up; preflight on a fresh host says so.
-  local d; d="$(site_domain || true)"
+  local d; d="${DOMINIO:-$(site_domain || true)}"
   [ -z "$d" ] && return
   if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^nextcloud-aio-apache$'; then
-    info "la suite aún no está instalada — después del asistente, «aps-conecta preflight» prueba $d desde aquí"
+    info "la suite aún no está instalada — después del asistente, «aps-conecta preflight${DOMINIO:+ --dominio $d}» prueba $d desde aquí"
     return
   fi
   if curl -sk --max-time 10 "https://$d/status.php" >/dev/null 2>&1; then
@@ -314,6 +334,11 @@ check_hairpin() {  # the D10 leg (upstream #8433): the HOST curls its own public
 MIN_RAM_GIB=8                         # the approved Instalador UI's floors (stage V)
 MIN_DISCO_GB=40
 MEMINFO="${MEMINFO:-/proc/meminfo}"   # the self-test points it at a fixture
+ETC_DIR="${ETC_DIR:-/etc}"            # the self-test points it at a scratch tree: the arms that
+                                      # install never write the real /etc
+# apt with no debconf or needrestart prompt, waiting up to 5 min for the lock unattended-upgrades
+# or cloud-init hold right after a fresh server boots (instead of failing on it)
+APT=(env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get -qq -o DPkg::Lock::Timeout=300)
 
 check_ram() {
   local kb gib
@@ -361,40 +386,177 @@ check_red() {  # outbound HTTPS and the clock — the image pulls and every cert
   fi
 }
 
-check_grupo() {  # the operator who ran sudo must reach docker without it, after a new login
-  local u="${SUDO_USER:-$(id -un)}"
-  if [ "$u" = root ] || id -nG "$u" 2>/dev/null | tr ' ' '\n' | grep -qx docker; then
-    ok "Usuario $u en el grupo docker"
+es_root() { [ "$(id -u)" = 0 ]; }
+
+instalar_paquetes() {  # the tools the install itself runs; apt installs only what is missing
+  local t falta=()
+  for t in git python3 curl; do command -v "$t" >/dev/null 2>&1 || falta+=("$t"); done
+  if [ ${#falta[@]} -eq 0 ]; then ok "git, python3 y curl presentes"; return 0; fi
+  if ! command -v apt-get >/dev/null 2>&1; then
+    bad "faltan ${falta[*]} y este sistema no usa apt" "instale ${falta[*]} y vuelva a ejecutar el paso"
+    return 0
+  fi
+  info "instalando ${falta[*]}"
+  if "${APT[@]}" update >/dev/null && "${APT[@]}" install -y "${falta[@]}" >/dev/null; then
+    ok "Instalado: ${falta[*]}"
   else
-    bad "el usuario $u no está en el grupo docker" "sudo usermod -aG docker $u, y vuelva a iniciar sesión"
+    bad "no se pudo instalar ${falta[*]}" "revise la red y apt (sudo apt-get update) y vuelva a ejecutar el paso"
   fi
 }
 
-check_overcommit() {  # Redis, inside the suite, warns and can fail its saves without it — the
-  # run's acceptance a3 requires vm.overcommit_memory = 1, and L2 S2 sets it (R30)
-  if [ "$(sysctl -n vm.overcommit_memory 2>/dev/null)" = 1 ]; then
-    ok "Memoria del sistema ajustada (vm.overcommit_memory = 1)"
+instalar_docker() {  # Docker Engine + Compose v2 from Docker's own apt repository — the method its
+  # docs give for production (the convenience script is not). Ubuntu and Debian only; a docker
+  # already present is never replaced (check_docker then judges its API) — only started
+  if command -v docker >/dev/null 2>&1; then
+    systemctl is-active --quiet docker 2>/dev/null || systemctl start docker 2>/dev/null || true
+    return 0
+  fi
+  local os distro suite
+  os="$(. "$ETC_DIR/os-release" 2>/dev/null; printf '%s|%s' "${ID:-}" "${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}")"
+  distro="${os%%|*}"; suite="${os#*|}"
+  case "$distro" in
+    ubuntu|debian)
+      if [ -z "$suite" ]; then
+        bad "no se pudo leer la versión de $distro en $ETC_DIR/os-release" \
+          "instale Docker Engine según https://docs.docker.com/engine/install/ y vuelva a ejecutar el paso"
+        return 0
+      fi ;;
+    *) bad "Docker no está instalado y este sistema no es Ubuntu ni Debian" \
+         "instale Docker Engine según https://docs.docker.com/engine/install/ y vuelva a ejecutar el paso"
+       return 0 ;;
+  esac
+  info "instalando Docker desde su repositorio oficial (unos minutos)"
+  # umask 022: apt reads the key and the source as the unprivileged _apt user — a hardened root
+  # umask would leave them unreadable (NO_PUBKEY). ca-certificates first: a minimal image has no
+  # CA bundle, and the key comes over HTTPS
+  if "${APT[@]}" update >/dev/null && "${APT[@]}" install -y ca-certificates >/dev/null \
+     && ( umask 022 && mkdir -p "$ETC_DIR/apt/keyrings" "$ETC_DIR/apt/sources.list.d" \
+          && curl -fsSL "https://download.docker.com/linux/$distro/gpg" -o "$ETC_DIR/apt/keyrings/docker.asc" \
+          && chmod a+r "$ETC_DIR/apt/keyrings/docker.asc" \
+          && printf 'Types: deb\nURIs: https://download.docker.com/linux/%s\nSuites: %s\nComponents: stable\nArchitectures: %s\nSigned-By: /etc/apt/keyrings/docker.asc\n' \
+               "$distro" "$suite" "$(dpkg --print-architecture)" > "$ETC_DIR/apt/sources.list.d/docker.sources" ) \
+     && "${APT[@]}" update >/dev/null \
+     && "${APT[@]}" install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null; then
+    ok "Docker instalado desde su repositorio oficial"
   else
-    bad "vm.overcommit_memory no es 1 (Redis lo necesita)" \
-      "echo 'vm.overcommit_memory = 1' | sudo tee /etc/sysctl.d/90-aps-conecta.conf && sudo sysctl --system"
+    bad "no se pudo instalar Docker" \
+      "revise la red y vuelva a ejecutar el paso; guía: https://docs.docker.com/engine/install/"
+  fi
+}
+
+asegurar_grupo() {  # the operator who ran sudo reaches docker without it, after a new login
+  local u="${SUDO_USER:-}"
+  if [ -z "$u" ] || [ "$u" = root ]; then ok "Administrador root (no necesita el grupo docker)"; return 0; fi
+  if id -nG "$u" 2>/dev/null | tr ' ' '\n' | grep -qx docker; then ok "Usuario $u en el grupo docker"; return 0; fi
+  if usermod -aG docker "$u"; then
+    ok "Usuario $u agregado al grupo docker — cierre la sesión y vuelva a entrar para usar docker sin sudo"
+  else
+    bad "no se pudo agregar a $u al grupo docker" "sudo usermod -aG docker $u, y vuelva a iniciar sesión"
+  fi
+}
+
+asegurar_overcommit() {  # Redis, inside the suite, warns and can fail its saves without it — the
+  # run's acceptance a3 requires vm.overcommit_memory = 1 (R30); its own sysctl.d file keeps it
+  # across reboots, and `sysctl -p` applies that file alone (--system would reload every file)
+  local f="$ETC_DIR/sysctl.d/90-aps-conecta.conf" antes
+  antes="$(sysctl -n vm.overcommit_memory 2>/dev/null)"
+  if [ "$antes" = 1 ] && [ -f "$f" ]; then ok "Memoria del sistema ajustada (vm.overcommit_memory = 1)"; return 0; fi
+  if ! ( umask 022 && mkdir -p "$ETC_DIR/sysctl.d" && printf 'vm.overcommit_memory = 1\n' > "$f" ); then
+    bad "no se pudo escribir $f" "echo 'vm.overcommit_memory = 1' | sudo tee /etc/sysctl.d/90-aps-conecta.conf"
+    return 0
+  fi
+  if sysctl -p "$f" >/dev/null 2>&1 && [ "$(sysctl -n vm.overcommit_memory 2>/dev/null)" = 1 ]; then
+    ok "Memoria del sistema ajustada (vm.overcommit_memory ${antes:-?} → 1, en $f)"
+  else  # as root this fails only where /proc/sys/vm is read-only — an unprivileged container
+    info "vm.overcommit_memory queda en $f para el próximo arranque; ahora no se pudo aplicar (en un contenedor, ajústelo en el anfitrión: sysctl -w vm.overcommit_memory=1)"
   fi
 }
 
 paso_revisar() { check_ram; check_cpu; check_disco; check_ports; check_red; check_arch; }
 
-paso_preparar() {  # verifies today; L2 S2 installs what is missing and keeps these as its proof
-  need_tool git; need_tool python3; need_tool curl; need_tool docker
-  check_docker; check_compose; check_grupo; check_overcommit
+paso_preparar() {  # installs what is missing, then proves each piece with its own check: the tools,
+  # Docker (from Docker's own apt repository), the operator's docker group, the overcommit
+  if ! es_root; then
+    bad "este paso instala programas y necesita permisos de administrador" "ejecute: sudo aps-conecta preparar"
+    return 0
+  fi
+  instalar_paquetes; instalar_docker
+  check_docker; check_compose; asegurar_grupo; asegurar_overcommit
 }
 
-paso_descargar() {  # the checkout this file runs from: its version and every vendored app against
-  # the sha256 its VENDOR pins — the seed's own check (provisioning/lib.sh), before any stack exists
-  local v vendor dir tars want got n=0 malos=0
+confiar_bundle() {  # DIR — the bundle is root's; the admin reads it too (`git describe`, preflight).
+  # git ≥ 2.35.2 refuses a repository another user owns unless it is listed as safe, and only the
+  # system scope works on every git the targets ship (`-c safe.directory` is ignored before 2.38)
+  local f="$ETC_DIR/gitconfig"
+  git config --file "$f" --get-all safe.directory 2>/dev/null | grep -qxF "$1" && return 0
+  git config --file "$f" --add safe.directory "$1" \
+    || bad "no se pudo registrar $1 como repositorio seguro" "sudo git config --system --add safe.directory $1"
+}
+
+enlazar() {  # $BIN_DIR/aps-conecta → this bundle's CLI. A missing or dangling link is (re)made;
+  # one that points at another existing copy is left alone — the root systemd units run that path,
+  # so a run from some other checkout never repoints them silently
+  local destino="$ROOT/host/aps-conecta" actual
+  actual="$(readlink -f "$BIN_DIR/aps-conecta" 2>/dev/null)"
+  if [ "$actual" = "$(readlink -f "$destino")" ]; then
+    ok "Comando aps-conecta enlazado ($BIN_DIR/aps-conecta)"; return 0
+  fi
+  if [ -n "$actual" ] && [ -e "$actual" ]; then
+    info "$BIN_DIR/aps-conecta ya apunta a $actual — no se cambia; para usar esta copia: sudo ln -sf $destino $BIN_DIR/aps-conecta"
+    return 0
+  fi
+  if ! es_root; then
+    info "el comando aps-conecta se enlaza con permisos de administrador: sudo aps-conecta descargar"
+    return 0
+  fi
+  if ln -sf "$destino" "$BIN_DIR/aps-conecta" 2>/dev/null; then
+    ok "Comando aps-conecta enlazado ($BIN_DIR/aps-conecta → $destino)"
+  else
+    bad "no se pudo crear $BIN_DIR/aps-conecta" "sudo ln -sf $destino $BIN_DIR/aps-conecta"
+  fi
+}
+
+paso_descargar() {  # the bundle at its tag. On its own (the two-line bootstrap) this file clones the
+  # suite into $APS_HOME/gestion, root-owned, and the install goes on from that clone — the same
+  # tag, so the same code; in a checkout it verifies that checkout. Either way every vendored app
+  # is checked against the sha256 its VENDOR pins (the seed's own check, provisioning/lib.sh), and
+  # only a verified bundle is linked as the `aps-conecta` command
+  local v vendor dir tars want got n=0 malos=0 destino hay
   v="$(suite_tag)"
   if [ -z "$v" ]; then
     bad "no se pudo leer la versión de la suite en $ROOT" \
       "descargue la suite en una versión publicada (git clone --branch <versión>)"
     return 0
+  fi
+  if ! en_checkout; then
+    if ! es_root; then
+      bad "descargar la suite necesita permisos de administrador" "ejecute: sudo bash aps-conecta install"
+      return 0
+    fi
+    destino="$APS_HOME/gestion"
+    if [ -d "$destino/.git" ]; then
+      hay="$(git -C "$destino" describe --tags --exact-match 2>/dev/null)"
+      if [ "$hay" != "$v" ]; then
+        bad "ya existe una instalación en $destino (versión ${hay:-desconocida}), distinta de $v" \
+          "no se modifica: continúe desde esa copia con «sudo bash $destino/host/aps-conecta install»"
+        return 0
+      fi
+      ok "Suite $v ya descargada en $destino"
+    elif [ -e "$destino" ]; then
+      bad "$destino ya existe y no es una copia de la suite" \
+        "muévalo (sudo mv $destino $destino.anterior) y vuelva a ejecutar: sudo bash aps-conecta install"
+      return 0
+    else
+      info "descargando la suite $v en $destino"
+      mkdir -p "$APS_HOME"
+      if ! ( umask 022 && git -c advice.detachedHead=false clone -q --branch "$v" --depth 1 "$APS_REPO_URL" "$destino" ); then
+        bad "no se pudo descargar la suite $v desde $APS_REPO_URL" \
+          "revise la red y vuelva a ejecutar: sudo bash aps-conecta install"
+        return 0
+      fi
+    fi
+    confiar_bundle "$destino"
+    ROOT="$destino"; HOST_DIR="$destino/host"   # the remaining steps read every file from the bundle
   fi
   for vendor in "$ROOT"/provisioning/apps/*/VENDOR; do
     [ -f "$vendor" ] || continue
@@ -414,7 +576,10 @@ paso_descargar() {  # the checkout this file runs from: its version and every ve
     return 0
   fi
   ok "Suite $v ($(du -sh "$ROOT/provisioning/apps" 2>/dev/null | cut -f1))"
-  [ "$malos" -eq 0 ] && ok "Sumas de verificación correctas (aplicaciones: $n)"
+  if [ "$malos" -eq 0 ]; then
+    ok "Sumas de verificación correctas (aplicaciones: $n)"
+    enlazar
+  fi
   return 0
 }
 
@@ -687,6 +852,14 @@ cmd_datos() {  # [CUT] — S9's data-package leg: the national masters, sha256-v
 # ── preflight (the whole sweep) ────────────────────────────────────────────────────────────
 
 cmd_preflight() {
+  case "${1:-}" in
+    "") ;;
+    --dominio) [ -n "${2:-}" ] || die "falta el dominio: aps-conecta preflight --dominio <dominio>"
+               [[ "$2" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] \
+                 || die "dominio no válido: $2 (solo letras, números, puntos y guiones)"
+               DOMINIO="$2" ;;
+    *) die "opción desconocida: $1 — uso: aps-conecta preflight [--dominio <dominio>]" ;;
+  esac
   echo "Revisión previa del instalador APS Conecta"
   # bash checks itself (this script IS bash); the rest are real prerequisites
   need_tool git; need_tool python3; need_tool curl; need_tool docker
@@ -776,6 +949,8 @@ EOF
   check "welcome: the motto is phase 15's theming slogan (one string, two homes, pinned)" \
     'grep -F "\"$LEMA\"" "$ROOT_BAK/provisioning/phases/15-branding.sh" | grep -q "theming_set slogan"'
 
+  # install runs as root: the stepper arms answer `id -u` from a shim (ID_U=1000 plays the operator)
+  printf '#!/usr/bin/env bash\ncase "$1" in -u) echo "${ID_U:-0}" ;; -un) echo root ;; esac\n' > "$tshim/id"; chmod +x "$tshim/id"
   # the stepper end to end with every server step stubbed: the order, the approved header/footer,
   # the hand-over to the browser, and no prompt without a terminal
   salida="$(
@@ -801,6 +976,9 @@ EOF
   out_paso="$( (cmd_install --sitio x) 2>&1)"; rcs=$?
   check "stepper: install takes no options yet, and says so in Spanish" \
     '[ "$rcs" -eq 1 ] && case "$out_paso" in *"no recibe opciones"*) ;; *) false;; esac'
+  out_paso="$( (export ID_U=1000; cmd_install </dev/null) 2>&1)"; rcs=$?
+  check "stepper: install without sudo refuses before the welcome, naming the command to run" \
+    '[ "$rcs" -eq 1 ] && case "$out_paso" in *"✗ la instalación necesita permisos de administrador: sudo bash aps-conecta install"*) ;; *) false;; esac && case "$out_paso" in *"Paso 1 de 9"*) false;; *) true;; esac'
   out_paso="$(paso_navegador "$(paso_n centro)")"
   check "stepper: a browser step asked for at the console says where it runs" \
     'case "$out_paso" in *"el paso 6 («Elegir el centro») se hace en el navegador"*) ;; *) false;; esac'
@@ -828,19 +1006,101 @@ EOF
     'case "$out_paso" in *"✗ sin acceso a internet"*"FAIL=1") ;; *) false;; esac'
   rm -f "$tshim/curl" "$tshim/df" "$tshim/nproc"; MEMINFO=/proc/meminfo
 
-  mk_docker 1.56 ""
-  printf '#!/usr/bin/env bash\ncase "$1" in -un) echo operador ;; -nG) echo "operador docker" ;; esac\n' > "$tshim/id"; chmod +x "$tshim/id"
-  printf '#!/usr/bin/env bash\necho 1\n' > "$tshim/sysctl"; chmod +x "$tshim/sysctl"
-  out_paso="$(FAIL=0; SUDO_USER=operador paso_preparar; echo "FAIL=$FAIL")"
-  check "preparar: docker at the floor, compose, the group and the overcommit all green" \
-    'case "$out_paso" in *"✓ docker (API 1.56"*"✓ compose v2 presente"*"✓ Usuario operador en el grupo docker"*"✓ Memoria del sistema ajustada"*"FAIL=0") ;; *) false;; esac'
-  printf '#!/usr/bin/env bash\ncase "$1" in -un) echo operador ;; -nG) echo "operador sudo" ;; esac\n' > "$tshim/id"; chmod +x "$tshim/id"
-  printf '#!/usr/bin/env bash\necho 2\n' > "$tshim/sysctl"; chmod +x "$tshim/sysctl"
-  out_paso="$(FAIL=0; SUDO_USER=operador paso_preparar; echo "FAIL=$FAIL")"
-  check "preparar: a user outside the docker group and overcommit 2 red with their fixes" \
-    'case "$out_paso" in *"✗ el usuario operador no está en el grupo docker"*"usermod -aG docker operador"*"✗ vm.overcommit_memory no es 1"*"90-aps-conecta.conf"*"FAIL=1") ;; *) false;; esac'
-  rm -f "$tshim/id" "$tshim/sysctl"
+  # preparar installs: every tool that changes the host is a logging shim, /etc is a scratch tree
+  # (ETC_DIR), and the arms run only when each listed mutator answers from its shim — this
+  # self-test runs as root on production hosts. The guard proves the listed shims are what answers;
+  # the list itself must name every host-changing command preparar calls (review it with the code)
+  local ETC_DIR="$tmp/etc" c
+  solo_simulado() {  # CMD… — the installing arms run only when every CMD answers from a shim
+    for c in "$@"; do
+      if [ "$(command -v "$c")" != "$tshim/$c" ]; then
+        echo "  FAIL: «$c» would reach the real host — the installing arms do not run" >&2
+        FAILED=$((FAILED + 1)); return 1
+      fi
+    done
+  }
+  mkdir -p "$ETC_DIR" "$tmp/minbin"
+  printf 'ID=ubuntu\nVERSION_CODENAME=noble\nUBUNTU_CODENAME=noble\n' > "$ETC_DIR/os-release"
+  : > "$tmp/mut.log"; echo 2 > "$tmp/oc"; : > "$tmp/grupos"
+  mk_docker 1.56 ""; mv "$tshim/docker" "$tmp/docker-instalado"
+  for c in apt-get usermod systemctl dpkg; do
+    cat > "$tshim/$c" <<SHIM
+#!/usr/bin/env bash
+echo "$c \$*" >> "$tmp/mut.log"
+case "$c \$1" in
+  "dpkg --print-architecture") echo amd64 ;;
+  "usermod -aG") echo "\$3 docker" >> "$tmp/grupos" ;;
+  "apt-get "*) case " \$* " in *" install "*) for p in "\$@"; do case "\$p" in
+      -*|install|DPkg::*) ;;
+      docker-ce) cp "$tmp/docker-instalado" "$tshim/docker" ;;
+      *) printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/\$p"; chmod +x "$tshim/\$p" ;;
+    esac; done ;; esac ;;
+esac
+exit 0
+SHIM
+    chmod +x "$tshim/$c"
+  done
+  cat > "$tshim/sysctl" <<SHIM
+#!/usr/bin/env bash
+echo "sysctl \$*" >> "$tmp/mut.log"
+case "\$1" in
+  -n) cat "$tmp/oc" ;;
+  -p) [ -n "\${SYSCTL_FALLA:-}" ] && exit 1; sed -n 's/^vm.overcommit_memory = //p' "\$2" > "$tmp/oc" ;;
+esac
+SHIM
+  cat > "$tshim/curl" <<SHIM
+#!/usr/bin/env bash
+echo "curl \$*" >> "$tmp/mut.log"
+while [ \$# -gt 0 ]; do [ "\$1" = -o ] && echo CLAVE > "\$2"; shift; done
+exit 0
+SHIM
+  cat > "$tshim/id" <<SHIM
+#!/usr/bin/env bash
+case "\$1" in
+  -u) echo "\${ID_U:-0}" ;;
+  -un) echo root ;;
+  -nG) echo "\$2 sudo \$(grep "^\$2 " "$tmp/grupos" | cut -d' ' -f2 | tr '\n' ' ')" ;;
+esac
+SHIM
+  chmod +x "$tshim/sysctl" "$tshim/curl" "$tshim/id"
+  # a fresh server has no docker, git or python3: a PATH of shims plus the few real tools the
+  # shims themselves need — the host's own docker, git and python3 stay out of reach
+  for c in bash env mkdir chmod tr grep cat sed cp cut; do ln -sf "$(command -v "$c")" "$tmp/minbin/$c"; done
+  if solo_simulado apt-get usermod systemctl dpkg sysctl curl id; then
+    out_paso="$(PATH="$tshim:$tmp/minbin"; FAIL=0; SUDO_USER=operador paso_preparar; echo "FAIL=$FAIL")"
+    check "preparar: a fresh Ubuntu gets git and python3, Docker from Docker's repository, the operator's group and overcommit 1 — each proved" \
+      'case "$out_paso" in *"✓ Instalado: git python3"*"✓ Docker instalado desde su repositorio oficial"*"✓ docker (API 1.56"*"✓ compose v2 presente"*"✓ Usuario operador agregado al grupo docker"*"✓ Memoria del sistema ajustada (vm.overcommit_memory 2 → 1"*"FAIL=0") ;; *) false;; esac'
+    check "preparar: the host changes are apt (lock-patient) from Docker's noble suite, usermod and the sysctl.d file applied alone" \
+      'grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y git python3" "$tmp/mut.log" && grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y ca-certificates" "$tmp/mut.log" && grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin" "$tmp/mut.log" && grep -qx "usermod -aG docker operador" "$tmp/mut.log" && grep -qx "sysctl -p $ETC_DIR/sysctl.d/90-aps-conecta.conf" "$tmp/mut.log" && grep -qx "Suites: noble" "$ETC_DIR/apt/sources.list.d/docker.sources" && grep -qx "URIs: https://download.docker.com/linux/ubuntu" "$ETC_DIR/apt/sources.list.d/docker.sources" && grep -qx "vm.overcommit_memory = 1" "$ETC_DIR/sysctl.d/90-aps-conecta.conf"'
+    : > "$tmp/mut.log"
+    out_paso="$(PATH="$tshim:$tmp/minbin"; FAIL=0; SUDO_USER=operador paso_preparar; echo "FAIL=$FAIL")"
+    check "preparar: a re-run finds everything done and changes nothing" \
+      'case "$out_paso" in *"✓ git, python3 y curl presentes"*"✓ Usuario operador en el grupo docker"*"✓ Memoria del sistema ajustada (vm.overcommit_memory = 1)"*"FAIL=0") ;; *) false;; esac && ! grep -qE "^(apt-get|usermod|sysctl -p|curl|systemctl start)" "$tmp/mut.log"'
+    echo 2 > "$tmp/oc"; rm -f "$ETC_DIR/sysctl.d/90-aps-conecta.conf"
+    out_paso="$(export SYSCTL_FALLA=1; PATH="$tshim:$tmp/minbin"; FAIL=0; asegurar_overcommit; echo "FAIL=$FAIL")"
+    check "preparar: where the kernel setting cannot be applied now (a container) it stays in its file and says so — not a red" \
+      'case "$out_paso" in *"· vm.overcommit_memory queda en $ETC_DIR/sysctl.d/90-aps-conecta.conf para el próximo arranque"*"FAIL=0") ;; *) false;; esac && grep -qx "vm.overcommit_memory = 1" "$ETC_DIR/sysctl.d/90-aps-conecta.conf"'
+    : > "$tmp/mut.log"
+    out_paso="$(export ID_U=1000; PATH="$tshim:$tmp/minbin"; FAIL=0; paso_preparar; echo "FAIL=$FAIL")"
+    check "preparar: without sudo it says so and touches nothing" \
+      'case "$out_paso" in *"✗ este paso instala programas y necesita permisos de administrador"*"sudo aps-conecta preparar"*"FAIL=1") ;; *) false;; esac && [ ! -s "$tmp/mut.log" ]'
+    rm -f "$tshim/docker"; printf 'ID=fedora\nVERSION_ID=41\n' > "$ETC_DIR/os-release"
+    out_paso="$(PATH="$tshim:$tmp/minbin"; FAIL=0; paso_preparar; echo "FAIL=$FAIL")"
+    check "preparar: Docker on a system that is neither Ubuntu nor Debian is the operator's, with the official guide" \
+      'case "$out_paso" in *"✗ Docker no está instalado y este sistema no es Ubuntu ni Debian"*"docs.docker.com/engine/install"*"FAIL=1") ;; *) false;; esac && ! grep -q "docker-ce" "$tmp/mut.log"'
+    printf 'ID=debian\n' > "$ETC_DIR/os-release"; rm -f "$ETC_DIR/apt/sources.list.d/docker.sources"
+    out_paso="$(PATH="$tshim:$tmp/minbin"; FAIL=0; instalar_docker; echo "FAIL=$FAIL")"
+    check "preparar: a Debian whose os-release names no release writes no empty-suite source and says why" \
+      'case "$out_paso" in *"✗ no se pudo leer la versión de debian"*"FAIL=1") ;; *) false;; esac && [ ! -e "$ETC_DIR/apt/sources.list.d/docker.sources" ]'
+  fi
+  out_paso="$(solo_simulado sin-simulacion-x 2>&1; echo "rc=$?")"
+  check "self-test guard: a mutator without a shim refuses the installing arms" \
+    'case "$out_paso" in *"«sin-simulacion-x» would reach the real host"*"rc=1") ;; *) false;; esac'
+  rm -f "$tshim"/{apt-get,usermod,systemctl,dpkg,sysctl,curl,git,python3,ca-certificates,docker,docker-ce-cli,containerd.io,docker-buildx-plugin,docker-compose-plugin}
 
+  # descargar in a checkout: the checkout is the bundle; a verified one is linked as the command
+  local BIN_DIR="$tmp/usr-local-bin" APS_HOME="$tmp/opt"
+  mkdir -p "$BIN_DIR" "$ROOT/scripts" "$ROOT/host"; : > "$ROOT/scripts/provisionador.py"; : > "$ROOT/host/aps-conecta"
   mkdir -p "$ROOT/provisioning/apps/demo"
   printf 'contenido\n' > "$tmp/demo.txt"
   tar czf "$ROOT/provisioning/apps/demo/demo-1.0.0.tar.gz" -C "$tmp" demo.txt
@@ -849,6 +1109,11 @@ EOF
   out_paso="$(FAIL=0; paso_descargar; echo "FAIL=$FAIL")"
   check "descargar: the checkout's version and every vendored app's sha256 green" \
     'case "$out_paso" in *"✓ Suite v9.9.9"*"✓ Sumas de verificación correctas (aplicaciones: 1)"*"FAIL=0") ;; *) false;; esac'
+  check "descargar: a verified checkout is linked as the aps-conecta command" \
+    '[ "$(readlink -f "$BIN_DIR/aps-conecta")" = "$ROOT/host/aps-conecta" ]'
+  out_paso="$(export ID_U=1000; BIN_DIR="$tmp/bin-sin-sudo"; mkdir -p "$BIN_DIR"; FAIL=0; paso_descargar; echo "FAIL=$FAIL")"
+  check "descargar: without sudo a verified checkout says the link needs sudo — not a red, no link" \
+    'case "$out_paso" in *"· el comando aps-conecta se enlaza con permisos de administrador"*"FAIL=0") ;; *) false;; esac && [ ! -e "$tmp/bin-sin-sudo/aps-conecta" ]'
   printf 'version=1.0.0\nsha256=%064d\n' 0 > "$ROOT/provisioning/apps/demo/VENDOR"
   out_paso="$(FAIL=0; paso_descargar; echo "FAIL=$FAIL")"
   check "descargar: a tarball that does not match its VENDOR reds and is never called correct" \
@@ -858,6 +1123,53 @@ EOF
   check "descargar: no vendored app at all reds — never a vacuous «correctas (aplicaciones: 0)»" \
     'case "$out_paso" in *"✗ no se encontraron aplicaciones"*"FAIL=1") ;; *) false;; esac && case "$out_paso" in *"correctas"*) false;; *) true;; esac'
   rm -rf "$ROOT/provisioning"
+
+  # the two-line bootstrap: this file on its own clones the suite at its tag, links the command and
+  # the install goes on from the clone; a re-run finds it done; another version is refused, untouched
+  mkdir -p "$tmp/suelto" "$tmp/remoto/scripts" "$tmp/remoto/host" "$tmp/remoto/provisioning/apps/demo"
+  : > "$tmp/remoto/scripts/provisionador.py"; : > "$tmp/remoto/host/aps-conecta"
+  tar czf "$tmp/remoto/provisioning/apps/demo/demo-1.0.0.tar.gz" -C "$tmp" demo.txt
+  printf 'version=1.0.0\nsha256=%s\n' "$(sha256sum "$tmp/remoto/provisioning/apps/demo/demo-1.0.0.tar.gz" | cut -d' ' -f1)" \
+    > "$tmp/remoto/provisioning/apps/demo/VENDOR"
+  git -C "$tmp/remoto" init -q && git -C "$tmp/remoto" add -A \
+    && git -C "$tmp/remoto" -c user.email=self@t -c user.name=self commit -q -m uno && git -C "$tmp/remoto" tag v1.0.0 \
+    && git -C "$tmp/remoto" -c user.email=self@t -c user.name=self commit -q --allow-empty -m dos && git -C "$tmp/remoto" tag v1.1.0
+  bootstrap() {  # TAG — paso_descargar as the downloaded file runs it: no checkout around it
+    ROOT="$tmp/suelto"; HOST_DIR="$tmp/suelto"; APS_SUITE_TAG="$1"; APS_REPO_URL="file://$tmp/remoto"
+    FAIL=0; paso_descargar; echo "FAIL=$FAIL ROOT=$ROOT"
+  }
+  rm -f "$BIN_DIR/aps-conecta"   # a pristine server: no command linked yet
+  out_paso="$(bootstrap v1.0.0 2>&1)"
+  check "descargar (bootstrap): clones the tag into APS_HOME/gestion, verifies it, links it, and the install goes on from it" \
+    'case "$out_paso" in *"· descargando la suite v1.0.0 en $APS_HOME/gestion"*"✓ Suite v1.0.0"*"✓ Sumas de verificación correctas (aplicaciones: 1)"*"✓ Comando aps-conecta enlazado"*"FAIL=0 ROOT=$APS_HOME/gestion") ;; *) false;; esac && [ "$(git -C "$APS_HOME/gestion" describe --tags)" = v1.0.0 ] && [ "$(readlink -f "$BIN_DIR/aps-conecta")" = "$APS_HOME/gestion/host/aps-conecta" ]'
+  check "descargar (bootstrap): the clone prints no git advice (English, about detached HEADs) to the operator" \
+    'case "$out_paso" in *"git switch"*|*advice*|*"detached HEAD"*) false;; *) true;; esac'
+  check "descargar (bootstrap): the root-owned bundle is a safe git directory system-wide, so the admin reads its tag" \
+    '[ "$(git config --file "$ETC_DIR/gitconfig" --get-all safe.directory)" = "$APS_HOME/gestion" ]'
+  out_paso="$(bootstrap v1.0.0 2>&1)"
+  check "descargar (bootstrap): a re-run finds the bundle and the link done and clones nothing" \
+    'case "$out_paso" in *"✓ Suite v1.0.0 ya descargada en $APS_HOME/gestion"*"✓ Comando aps-conecta enlazado ($BIN_DIR/aps-conecta)"*"FAIL=0"*) ;; *) false;; esac && case "$out_paso" in *descargando*) false;; *) true;; esac && [ "$(git config --file "$ETC_DIR/gitconfig" --get-all safe.directory | wc -l)" -eq 1 ]'
+  out_paso="$(bootstrap v1.1.0 2>&1)"
+  check "descargar (bootstrap): an installation of another version is refused and left untouched" \
+    'case "$out_paso" in *"✗ ya existe una instalación en $APS_HOME/gestion (versión v1.0.0), distinta de v1.1.0"*"sudo bash $APS_HOME/gestion/host/aps-conecta install"*"FAIL=1"*) ;; *) false;; esac && [ "$(git -C "$APS_HOME/gestion" describe --tags)" = v1.0.0 ]'
+  out_paso="$(export ID_U=1000; APS_HOME="$tmp/opt-sin-sudo"; bootstrap v1.0.0 2>&1)"
+  check "descargar (bootstrap): without sudo it says so and clones nothing" \
+    'case "$out_paso" in *"✗ descargar la suite necesita permisos de administrador"*"FAIL=1"*) ;; *) false;; esac && [ ! -e "$tmp/opt-sin-sudo" ]'
+  mkdir -p "$tmp/opt-ocupado/gestion/restos"
+  out_paso="$(APS_HOME="$tmp/opt-ocupado"; bootstrap v1.0.0 2>&1)"
+  check "descargar (bootstrap): a directory that is not the suite is refused with the move command — never a network hint" \
+    'case "$out_paso" in *"✗ $tmp/opt-ocupado/gestion ya existe y no es una copia de la suite"*"sudo mv $tmp/opt-ocupado/gestion"*"FAIL=1"*) ;; *) false;; esac && case "$out_paso" in *"revise la red"*) false;; *) true;; esac'
+  mkdir -p "$tmp/otra-copia"; : > "$tmp/otra-copia/aps-conecta"; ln -sf "$tmp/otra-copia/aps-conecta" "$BIN_DIR/aps-conecta"
+  out_paso="$(FAIL=0; enlazar; echo "FAIL=$FAIL")"
+  check "descargar: a command already linked to another existing copy is left alone, with the command to switch" \
+    'case "$out_paso" in *"· $BIN_DIR/aps-conecta ya apunta a $tmp/otra-copia/aps-conecta — no se cambia"*"FAIL=0") ;; *) false;; esac && [ "$(readlink -f "$BIN_DIR/aps-conecta")" = "$tmp/otra-copia/aps-conecta" ]'
+  mkdir -p "$tmp/solo/host"; cp "$HOST_DIR/aps-conecta" "$tmp/solo/host/aps-conecta"
+  out_paso="$(env -u APS_SUITE_TAG bash "$tmp/solo/host/aps-conecta" run-command 2>&1)"
+  check "bootstrap: the file on its own installs its own release — BUNDLE_TAG — with no git around it" \
+    'case "$out_paso" in *"ghcr.io/aps-conecta/all-in-one:$BUNDLE_TAG") ;; *) false;; esac'
+  check "bootstrap: BUNDLE_TAG is CHANGELOG's newest release (the release commit sets both)" \
+    '[ "v$(grep -m1 -oE "^## \[[0-9][^]]*" "$ROOT_BAK/CHANGELOG.md" | cut -c5-)" = "$BUNDLE_TAG" ]'
+  rm -f "$tshim/id"
 
   # the dispatch as the operator calls it: help is the usage, an unknown word reds, and every
   # registry step answers by its id (browser steps say where they run; server steps have a body)
@@ -905,9 +1217,15 @@ EOF
   check "docker: API 1.43 reds with the upgrade hint" \
     'case "$out" in ✗*"menor que el mínimo 1.44"*"actualice docker"*) ;; *) false;; esac'
   mk_docker "" ""
+  printf '#!/usr/bin/env bash\nexit 3\n' > "$tshim/systemctl"; chmod +x "$tshim/systemctl"
   out="$(check_docker)"
-  check "docker: a dead daemon reds with the daemon fix hint, never half-answers" \
-    'case "$out" in ✗*"docker no responde"*) ;; *) false;; esac'
+  check "docker (R2): a stopped service reds with the start command, never the group advice" \
+    'case "$out" in ✗*"el servicio docker está detenido"*"sudo systemctl start docker"*) ;; *) false;; esac && case "$out" in *usermod*) false;; *) true;; esac'
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/systemctl"; chmod +x "$tshim/systemctl"
+  out="$(SUDO_USER=operador check_docker)"
+  check "docker (R2): a running service the user cannot reach reds with the group command and the re-login" \
+    'case "$out" in ✗*"el usuario operador no tiene permiso para usar docker"*"usermod -aG docker operador, y vuelva a iniciar sesión"*) ;; *) false;; esac'
+  rm -f "$tshim/systemctl"
 
   printf '#!/usr/bin/env bash\nexit 1\n' > "$tshim/docker"; chmod +x "$tshim/docker"
   out="$(check_compose)"
@@ -940,6 +1258,29 @@ EOF
   check "dns: a dead resolution reds with the registro-A hint" \
     'case "$out" in *"✗ DNS no responde"*"registro A"*) ;; *) false;; esac'
   printf '#!/usr/bin/env bash\necho 127.0.0.1\n' > "$tshim/getent"; chmod +x "$tshim/getent"
+
+  mk_docker 1.56 ""
+  # R6: the domain is probed before the site record names one — «preflight --dominio»
+  out="$(DOMINIO=antes.example; check_dns)"
+  check "dns (R6): --dominio wins over the site record's domain" \
+    'case "$out" in *"DNS responde para antes.example"*) ;; *) false;; esac'
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$tshim/getent"; chmod +x "$tshim/getent"
+  out="$( (cmd_preflight --dominio antes.example) 2>&1)"; rc=$?
+  check "preflight (R6): --dominio probes DNS before the wizard and reds with the registro-A fix" \
+    '[ "$rc" -eq 1 ] && case "$out" in *"✗ DNS no responde para antes.example"*"registro A"*"REVISIÓN: ✗"*) ;; *) false;; esac'
+  printf '#!/usr/bin/env bash\necho 127.0.0.1\n' > "$tshim/getent"; chmod +x "$tshim/getent"
+  out="$(ROOT="$tmp/sin-sitio"; check_dns)"
+  check "dns (R6): with no domain anywhere it names the --dominio probe" \
+    'case "$out" in *"aps-conecta preflight --dominio <dominio>"*) ;; *) false;; esac'
+  out="$( (cmd_preflight --dominio) 2>&1)"; rc=$?
+  check "preflight (R6): --dominio without a value refuses, naming the form" \
+    '[ "$rc" -eq 1 ] && [ "$out" = "✗ falta el dominio: aps-conecta preflight --dominio <dominio>" ]'
+  out="$( (cmd_preflight --dominio -x) 2>&1)"; rc=$?
+  check "preflight (R6): a value that is not a domain never reaches getent or curl" \
+    '[ "$rc" -eq 1 ] && [ "$out" = "✗ dominio no válido: -x (solo letras, números, puntos y guiones)" ]'
+  out="$( (cmd_preflight --nada) 2>&1)"; rc=$?
+  check "preflight: an unknown option refuses with the usage line" \
+    '[ "$rc" -eq 1 ] && case "$out" in *"opción desconocida: --nada"*"aps-conecta preflight [--dominio <dominio>]"*) ;; *) false;; esac'
 
   # arch: all three postures measured through the real function
   out="$(check_arch)"
