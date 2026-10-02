@@ -6,7 +6,7 @@
 # ONE docker run string, hands the operator to the Provisionador, re-provisions weekly, and
 # wires the backup scope. English here, es-CL for the operator (the house register rule).
 #
-# Usage (the operator's Spanish usage is `aps-conecta` with no argument — generated from PASOS):
+# Usage (the operator's Spanish usage is `aps-conecta` with no argument — generated from STEPS):
 #   aps-conecta install              the interactive install: welcome, then the numbered server steps
 #   aps-conecta <step>               one step of the registry (revisar … ejecutar), header and footer
 #   aps-conecta preflight [--dominio D]   host checks + the run command (the FRD's pre-install gate)
@@ -14,6 +14,7 @@
 #   aps-conecta provision            start the Provisionador (interactive; Ctrl+C stops it)
 #   aps-conecta provision --reponer  headless weekly re-provision (the systemd timer's job)
 #   aps-conecta respaldo             wire /opt/aps-conecta into AIO's backup scope (idempotent)
+#   aps-conecta asistente-aio --dominio D   drive the AIO wizard through its API (no browser)
 #   aps-conecta revalidate          post-update gate sweep: smoke + office-smoke + divergence
 #   aps-conecta tiles …            the basemap stack (install | refresh | check — host/tiles.sh)
 #   aps-conecta datos [CUT]        the comuna data packages, cut + checksum-verified + staged
@@ -35,8 +36,8 @@ BUNDLE_TAG="v0.3.0"
 APS_REPO_URL="${APS_REPO_URL:-https://github.com/APS-Conecta/gestion.git}"
 APS_HOME="${APS_HOME:-/opt/aps-conecta}"   # the bundle lands in $APS_HOME/gestion
 BIN_DIR="${BIN_DIR:-/usr/local/bin}"       # where the `aps-conecta` command is linked
-en_checkout() { [ -f "$(prov_path)" ]; }    # false only for the downloaded file, on its own
-en_checkout || APS_SUITE_TAG="${APS_SUITE_TAG:-$BUNDLE_TAG}"
+in_checkout() { [ -f "$(prov_path)" ]; }    # false only for the downloaded file, on its own
+in_checkout || APS_SUITE_TAG="${APS_SUITE_TAG:-$BUNDLE_TAG}"
 
 # The docker API floor is not ours to invent: AIO's own tested requirement is v1.44
 # (php/src/Docker/DockerActionManager.php:19); the mastercontainer itself enforces it at start
@@ -57,7 +58,7 @@ FAIL=0
 # lives in the web installer, and every front end walks this list. Fields: id|título|dónde|
 # propósito|resultado. The order IS the install order and the id IS the subcommand — the approved
 # Instalador UI (stage V, variant A) renders the same nine steps with the same words.
-PASOS=(
+STEPS=(
   "revisar|Revisar el servidor|servidor|Memoria, disco, puertos y red.|Servidor apto."
   "preparar|Preparar el servidor|servidor|Docker, permisos y memoria.|Docker en marcha."
   "descargar|Descargar APS Conecta|servidor|Descarga y verificación de la suite.|Suite verificada."
@@ -70,68 +71,68 @@ PASOS=(
 )
 # phase 15's theming:slogan — this file runs before the repo exists, so it carries the copy and
 # the self-test pins the pair
-LEMA="La salud primaria que compartimos es la que mejora"
-RESULTADO_PASO=""   # a step that ends in a state other than its registry result says so here
+MOTTO="La salud primaria que compartimos es la que mejora"
+STEP_RESULT=""   # a step that ends in a state other than its registry result says so here
 
-paso_campo() {  # N FIELD — field FIELD (1 id · 2 título · 3 dónde · 4 propósito · 5 resultado) of step N
+step_field() {  # N FIELD — field FIELD (1 id · 2 título · 3 dónde · 4 propósito · 5 resultado) of step N
   local IFS='|' f
-  read -r -a f <<< "${PASOS[$(( $1 - 1 ))]}"
+  read -r -a f <<< "${STEPS[$(( $1 - 1 ))]}"
   printf '%s' "${f[$(( $2 - 1 ))]}"
 }
 
-paso_n() {  # ID — the step's number; non-zero for an id the registry does not name
+step_number() {  # ID — the step's number; non-zero for an id the registry does not name
   local i
-  for i in "${!PASOS[@]}"; do
-    if [ "${PASOS[$i]%%|*}" = "$1" ]; then echo $(( i + 1 )); return 0; fi
+  for i in "${!STEPS[@]}"; do
+    if [ "${STEPS[$i]%%|*}" = "$1" ]; then echo $(( i + 1 )); return 0; fi
   done
   return 1
 }
 
-paso_cab() {  # N — the step header, the approved console's shape
+step_header() {  # N — the step header, the approved console's shape
   printf '%s\n' "──────────────────────────────────────────────────────────────"
-  printf 'Paso %s de %s · %s  %s\n' "$1" "${#PASOS[@]}" "$(paso_campo "$1" 2)" "$(paso_campo "$1" 3)"
-  printf 'Objetivo  %s\n' "$(paso_campo "$1" 4)"
-  printf 'Comando   aps-conecta %s\n' "$(paso_campo "$1" 1)"
+  printf 'Paso %s de %s · %s  %s\n' "$1" "${#STEPS[@]}" "$(step_field "$1" 2)" "$(step_field "$1" 3)"
+  printf 'Objetivo  %s\n' "$(step_field "$1" 4)"
+  printf 'Comando   aps-conecta %s\n' "$(step_field "$1" 1)"
 }
 
-paso_pie() {  # N — the result (the step's own override, else the registry's) and the next step
+step_footer() {  # N — the result (the step's own override, else the registry's) and the next step
   local m=$(( $1 + 1 ))
-  printf 'Resultado %s\n' "${RESULTADO_PASO:-$(paso_campo "$1" 5)}"
-  RESULTADO_PASO=""
-  if [ "$m" -le "${#PASOS[@]}" ]; then
-    printf 'Siguiente Paso %s · %s (%s)\n' "$m" "$(paso_campo "$m" 2)" "$(paso_campo "$m" 3)"
+  printf 'Resultado %s\n' "${STEP_RESULT:-$(step_field "$1" 5)}"
+  STEP_RESULT=""
+  if [ "$m" -le "${#STEPS[@]}" ]; then
+    printf 'Siguiente Paso %s · %s (%s)\n' "$m" "$(step_field "$m" 2)" "$(step_field "$m" 3)"
   fi
   echo
 }
 
-paso_correr() {  # N RERUN — header, the step's body, footer; non-zero with a ✗ result on failure
+step_run() {  # N RERUN — header, the step's body, footer; non-zero with a ✗ result on failure
   local id rc
-  id="$(paso_campo "$1" 1)"
-  paso_cab "$1"
+  id="$(step_field "$1" 1)"
+  step_header "$1"
   FAIL=0
-  "paso_$id"; rc=$?
+  "step_$id"; rc=$?
   if [ "$rc" -ne 0 ] || [ "$FAIL" -ne 0 ]; then
     printf 'Resultado ✗ el paso %s no terminó — corrija lo marcado y vuelva a ejecutar «%s»\n\n' "$1" "$2"
     return 1
   fi
-  paso_pie "$1"
+  step_footer "$1"
 }
 
-paso_navegador() {  # N — a browser step asked for from the console: where it runs, how to get there
-  info "el paso $1 («$(paso_campo "$1" 2)») se hace en el navegador, en el instalador web que abre «aps-conecta abrir»"
+step_browser() {  # N — a browser step asked for from the console: where it runs, how to get there
+  info "el paso $1 («$(step_field "$1" 2)») se hace en el navegador, en el instalador web que abre «aps-conecta abrir»"
 }
 
-bienvenida() {  # the welcome — the approved console's opening, line for line
-  local v nsrv=0 nnav=0 i
+welcome() {  # the welcome — the approved console's opening, line for line
+  local v n_server=0 n_browser=0 i
   v="$(suite_tag)"; [ -n "$v" ] || v="(versión sin etiqueta)"
-  for i in "${!PASOS[@]}"; do
-    case "${PASOS[$i]}" in *"|servidor|"*) nsrv=$((nsrv + 1)) ;; *) nnav=$((nnav + 1)) ;; esac
+  for i in "${!STEPS[@]}"; do
+    case "${STEPS[$i]}" in *"|servidor|"*) n_server=$((n_server + 1)) ;; *) n_browser=$((n_browser + 1)) ;; esac
   done
   echo
   printf '  APS Conecta Gestión   Instalador %s\n\n' "$v"
   printf '  Instala la suite del establecimiento en %s pasos: %s en este servidor, %s en el navegador.\n\n' \
-    "${#PASOS[@]}" "$nsrv" "$nnav"
-  printf '  «%s»\n\n' "$LEMA"
+    "${#STEPS[@]}" "$n_server" "$n_browser"
+  printf '  «%s»\n\n' "$MOTTO"
   printf '  AGPL-3.0-or-later · github.com/APS-Conecta/gestion\n'
   printf '  Desarrollado por Dani Espinoza Charrier · APS Conecta\n\n'
 }
@@ -142,17 +143,17 @@ cmd_install() {  # the interactive install: the welcome, then the server steps i
   # work done (the ports the suite already holds read as its own). The prompt waits only on a
   # terminal: a pipe or CI runs straight through.
   [ $# -eq 0 ] || die "«aps-conecta install» no recibe opciones: ejecútelo sin argumentos"
-  es_root || die "la instalación necesita permisos de administrador: sudo bash aps-conecta install"
-  bienvenida
+  is_root || die "la instalación necesita permisos de administrador: sudo bash aps-conecta install"
+  welcome
   if [ -t 0 ]; then printf '  Enter para comenzar.'; IFS= read -r _; echo; fi
   local n
-  for n in $(seq 1 "${#PASOS[@]}"); do
-    [ "$(paso_campo "$n" 3)" = servidor ] || break
-    paso_correr "$n" "sudo aps-conecta install" || exit 1
+  for n in $(seq 1 "${#STEPS[@]}"); do
+    [ "$(step_field "$n" 3)" = servidor ] || break
+    step_run "$n" "sudo aps-conecta install" || exit 1
   done
 }
 
-uso() {  # Spanish, generated from the registry — never a slice of this file's own header
+usage() {  # Spanish, generated from the registry — never a slice of this file's own header
   local n
   echo "APS Conecta Gestión — instalación y mantenimiento del servidor"
   echo
@@ -160,9 +161,9 @@ uso() {  # Spanish, generated from the registry — never a slice of this file's
   echo "  sudo aps-conecta install          instala la suite: bienvenida y pasos numerados"
   echo
   echo "Pasos sueltos, en el orden de la instalación:"
-  for n in $(seq 1 "${#PASOS[@]}"); do
+  for n in $(seq 1 "${#STEPS[@]}"); do
     printf '  aps-conecta %-21s %s · %s (%s)\n' \
-      "$(paso_campo "$n" 1)" "$n" "$(paso_campo "$n" 2)" "$(paso_campo "$n" 3)"
+      "$(step_field "$n" 1)" "$n" "$(step_field "$n" 2)" "$(step_field "$n" 3)"
   done
   echo
   echo "Mantenimiento:"
@@ -170,6 +171,7 @@ uso() {  # Spanish, generated from the registry — never a slice of this file's
   echo "  aps-conecta run-command           solo el comando de arranque de la suite"
   echo "  aps-conecta provision             abre el instalador web (lo mismo que el paso abrir)"
   echo "  aps-conecta provision --reponer   re-provisión semanal (la ejecuta el temporizador)"
+  echo "  aps-conecta asistente-aio --dominio D   configura e inicia la suite por la API del asistente, sin navegador"
   echo "  aps-conecta revalidate            revisa la instancia después de una actualización"
   echo "  aps-conecta respaldo              agrega /opt/aps-conecta a las copias de seguridad"
   echo "  aps-conecta tiles install|refresh|check   el mapa base y su servicio"
@@ -188,7 +190,7 @@ need_tool() {  # NAME — the prereq sweep; a missing tool is a red with its ins
 }
 
 check_docker() {  # API floor measured, not assumed — docker version is the only source. A missing
-  # docker is need_tool's red (preflight) or instalar_docker's (preparar), never a second one here
+  # docker is need_tool's red (preflight) or install_docker's (preparar), never a second one here
   command -v docker >/dev/null 2>&1 || return 0
   local api
   api="$(docker version --format '{{.Server.APIVersion}}' 2>/dev/null)" || api=""
@@ -229,12 +231,12 @@ port_free() {  # PORT — the rule-10 discipline (the slice-3 testbed's own idio
 
 check_ports() {  # the four wizard-facing ports; a busy one names its holder — unless a suite
   # container publishes it (a re-run of the install after the suite started reads its own as ✓)
-  local p holder publicados
-  publicados="$(docker ps --filter name=^nextcloud-aio- --format '{{.Ports}}' 2>/dev/null || true)"
+  local p holder published
+  published="$(docker ps --filter name=^nextcloud-aio- --format '{{.Ports}}' 2>/dev/null || true)"
   for p in $WIZARD_PORTS; do
     if port_free "$p"; then
       ok "puerto $p libre"
-    elif case "$publicados" in *":$p->"*) true ;; *) false ;; esac; then
+    elif case "$published" in *":$p->"*) true ;; *) false ;; esac; then
       ok "puerto $p en uso por la suite (ya instalada)"
     else
       holder="$(ss -ltnp "sport = :$p" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1)"
@@ -260,11 +262,11 @@ site_domain() {  # SITE_DOMINIO from the site record (#75 hook) — empty when u
   grep -m1 '^SITE_DOMINIO=' "$f" 2>/dev/null | sed 's/^SITE_DOMINIO=//; s/^"//; s/"$//' || true
 }
 
-DOMINIO=""   # «preflight --dominio D»: the domain to probe before the site record names one (R6)
+PREFLIGHT_DOMAIN=""   # «preflight --dominio D»: the domain to probe before the site record names one (R6)
 
 check_dns() {  # resolves the domain — «--dominio» first, else the SITE record's own; the wizard asks
   # for the same one
-  local d; d="${DOMINIO:-$(site_domain || true)}"
+  local d; d="${PREFLIGHT_DOMAIN:-$(site_domain || true)}"
   if [ -z "$d" ]; then
     info "el dominio aún no está definido — pruébelo antes con «aps-conecta preflight --dominio <dominio>», o el asistente lo pide"
     return
@@ -307,10 +309,10 @@ check_prov_ports() {  # INFO + the routed liveness probe (slices 14/15): GET / a
 
 check_hairpin() {  # the D10 leg (upstream #8433): the HOST curls its own public domain — the exact
   # failing hop (hairpin NAT). Runs only when the stack is up; preflight on a fresh host says so.
-  local d; d="${DOMINIO:-$(site_domain || true)}"
+  local d; d="${PREFLIGHT_DOMAIN:-$(site_domain || true)}"
   [ -z "$d" ] && return
   if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^nextcloud-aio-apache$'; then
-    info "la suite aún no está instalada — después del asistente, «aps-conecta preflight${DOMINIO:+ --dominio $d}» prueba $d desde aquí"
+    info "la suite aún no está instalada — después del asistente, «aps-conecta preflight${PREFLIGHT_DOMAIN:+ --dominio $d}» prueba $d desde aquí"
     return
   fi
   if curl -sk --max-time 10 "https://$d/status.php" >/dev/null 2>&1; then
@@ -328,11 +330,11 @@ check_hairpin() {  # the D10 leg (upstream #8433): the HOST curls its own public
 }
 
 # ── the server steps' bodies (the registry's first five) ────────────────────────────────────
-# Each body prints ✓/✗ lines through ok/bad and returns; paso_correr reads FAIL. Later laps
+# Each body prints ✓/✗ lines through ok/bad and returns; step_run reads FAIL. Later laps
 # replace bodies (L2 S2: «preparar» and «descargar» install instead of verify; L5: «mapa» before
 # the centre; L3: «abrir» hands over a one-time link), never the list.
 MIN_RAM_GIB=8                         # the approved Instalador UI's floors (stage V)
-MIN_DISCO_GB=40
+MIN_DISK_GB=40
 MEMINFO="${MEMINFO:-/proc/meminfo}"   # the self-test points it at a fixture
 ETC_DIR="${ETC_DIR:-/etc}"            # the self-test points it at a scratch tree: the arms that
                                       # install never write the real /etc
@@ -353,32 +355,32 @@ check_ram() {
 
 check_cpu() { ok "CPU $(nproc 2>/dev/null || echo '?') núcleos"; }
 
-check_disco() {  # where the images and the volumes land: docker's root, or / before docker exists
+check_disk() {  # where the images and the volumes land: docker's root, or / before docker exists
   local dir=/var/lib/docker gb
   [ -d "$dir" ] || dir=/
   gb="$(df -B 1000000000 --output=avail "$dir" 2>/dev/null | tail -1 | tr -dc '0-9')"
-  if [ "${gb:-0}" -ge "$MIN_DISCO_GB" ]; then
-    ok "Disco $gb GB libres (mín. $MIN_DISCO_GB)"
+  if [ "${gb:-0}" -ge "$MIN_DISK_GB" ]; then
+    ok "Disco $gb GB libres (mín. $MIN_DISK_GB)"
   else
-    bad "Disco ${gb:-0} GB libres — el mínimo es $MIN_DISCO_GB GB" "libere espacio en $dir o use un disco más grande"
+    bad "Disco ${gb:-0} GB libres — el mínimo es $MIN_DISK_GB GB" "libere espacio en $dir o use un disco más grande"
   fi
 }
 
-check_red() {  # outbound HTTPS and the clock — the image pulls and every certificate need both
-  local h fecha remota ahora dif
+check_network() {  # outbound HTTPS and the clock — the image pulls and every certificate need both
+  local h date_header remote_epoch now_epoch skew
   h="$(curl -sI -m 10 https://ghcr.io/v2/ 2>/dev/null | tr -d '\r')" || h=""
   if [ -z "$h" ]; then
     bad "sin acceso a internet (https://ghcr.io no responde)" "revise la red y el DNS de este servidor"
     return
   fi
-  fecha="$(printf '%s\n' "$h" | sed -n 's/^[Dd]ate: //p' | head -1)"
-  if [ -z "$fecha" ]; then
+  date_header="$(printf '%s\n' "$h" | sed -n 's/^[Dd]ate: //p' | head -1)"
+  if [ -z "$date_header" ]; then
     ok "Internet (la hora no se pudo comparar: la respuesta no trajo fecha)"
     return
   fi
-  remota="$(date -d "$fecha" +%s 2>/dev/null || echo 0)"; ahora="$(date +%s)"
-  dif=$(( ahora > remota ? ahora - remota : remota - ahora ))
-  if [ "$remota" -gt 0 ] && [ "$dif" -le 300 ]; then
+  remote_epoch="$(date -d "$date_header" +%s 2>/dev/null || echo 0)"; now_epoch="$(date +%s)"
+  skew=$(( now_epoch > remote_epoch ? now_epoch - remote_epoch : remote_epoch - now_epoch ))
+  if [ "$remote_epoch" -gt 0 ] && [ "$skew" -le 300 ]; then
     ok "Internet y hora"
   else
     bad "la hora de este servidor difiere más de 5 minutos de la de internet" \
@@ -386,25 +388,25 @@ check_red() {  # outbound HTTPS and the clock — the image pulls and every cert
   fi
 }
 
-es_root() { [ "$(id -u)" = 0 ]; }
+is_root() { [ "$(id -u)" = 0 ]; }
 
-instalar_paquetes() {  # the tools the install itself runs; apt installs only what is missing
-  local t falta=()
-  for t in git python3 curl; do command -v "$t" >/dev/null 2>&1 || falta+=("$t"); done
-  if [ ${#falta[@]} -eq 0 ]; then ok "git, python3 y curl presentes"; return 0; fi
+install_packages() {  # the tools the install itself runs; apt installs only what is missing
+  local t missing=()
+  for t in git python3 curl; do command -v "$t" >/dev/null 2>&1 || missing+=("$t"); done
+  if [ ${#missing[@]} -eq 0 ]; then ok "git, python3 y curl presentes"; return 0; fi
   if ! command -v apt-get >/dev/null 2>&1; then
-    bad "faltan ${falta[*]} y este sistema no usa apt" "instale ${falta[*]} y vuelva a ejecutar el paso"
+    bad "faltan ${missing[*]} y este sistema no usa apt" "instale ${missing[*]} y vuelva a ejecutar el paso"
     return 0
   fi
-  info "instalando ${falta[*]}"
-  if "${APT[@]}" update >/dev/null && "${APT[@]}" install -y "${falta[@]}" >/dev/null; then
-    ok "Instalado: ${falta[*]}"
+  info "instalando ${missing[*]}"
+  if "${APT[@]}" update >/dev/null && "${APT[@]}" install -y "${missing[@]}" >/dev/null; then
+    ok "Instalado: ${missing[*]}"
   else
-    bad "no se pudo instalar ${falta[*]}" "revise la red y apt (sudo apt-get update) y vuelva a ejecutar el paso"
+    bad "no se pudo instalar ${missing[*]}" "revise la red y apt (sudo apt-get update) y vuelva a ejecutar el paso"
   fi
 }
 
-instalar_docker() {  # Docker Engine + Compose v2 from Docker's own apt repository — the method its
+install_docker() {  # Docker Engine + Compose v2 from Docker's own apt repository — the method its
   # docs give for production (the convenience script is not). Ubuntu and Debian only; a docker
   # already present is never replaced (check_docker then judges its API) — only started
   if command -v docker >/dev/null 2>&1; then
@@ -444,7 +446,7 @@ instalar_docker() {  # Docker Engine + Compose v2 from Docker's own apt reposito
   fi
 }
 
-asegurar_grupo() {  # the operator who ran sudo reaches docker without it, after a new login
+ensure_docker_group() {  # the operator who ran sudo reaches docker without it, after a new login
   local u="${SUDO_USER:-}"
   if [ -z "$u" ] || [ "$u" = root ]; then ok "Administrador root (no necesita el grupo docker)"; return 0; fi
   if id -nG "$u" 2>/dev/null | tr ' ' '\n' | grep -qx docker; then ok "Usuario $u en el grupo docker"; return 0; fi
@@ -455,36 +457,36 @@ asegurar_grupo() {  # the operator who ran sudo reaches docker without it, after
   fi
 }
 
-asegurar_overcommit() {  # Redis, inside the suite, warns and can fail its saves without it — the
+ensure_overcommit() {  # Redis, inside the suite, warns and can fail its saves without it — the
   # run's acceptance a3 requires vm.overcommit_memory = 1 (R30); its own sysctl.d file keeps it
   # across reboots, and `sysctl -p` applies that file alone (--system would reload every file)
-  local f="$ETC_DIR/sysctl.d/90-aps-conecta.conf" antes
-  antes="$(sysctl -n vm.overcommit_memory 2>/dev/null)"
-  if [ "$antes" = 1 ] && [ -f "$f" ]; then ok "Memoria del sistema ajustada (vm.overcommit_memory = 1)"; return 0; fi
+  local f="$ETC_DIR/sysctl.d/90-aps-conecta.conf" before
+  before="$(sysctl -n vm.overcommit_memory 2>/dev/null)"
+  if [ "$before" = 1 ] && [ -f "$f" ]; then ok "Memoria del sistema ajustada (vm.overcommit_memory = 1)"; return 0; fi
   if ! ( umask 022 && mkdir -p "$ETC_DIR/sysctl.d" && printf 'vm.overcommit_memory = 1\n' > "$f" ); then
     bad "no se pudo escribir $f" "echo 'vm.overcommit_memory = 1' | sudo tee /etc/sysctl.d/90-aps-conecta.conf"
     return 0
   fi
   if sysctl -p "$f" >/dev/null 2>&1 && [ "$(sysctl -n vm.overcommit_memory 2>/dev/null)" = 1 ]; then
-    ok "Memoria del sistema ajustada (vm.overcommit_memory ${antes:-?} → 1, en $f)"
+    ok "Memoria del sistema ajustada (vm.overcommit_memory ${before:-?} → 1, en $f)"
   else  # as root this fails only where /proc/sys/vm is read-only — an unprivileged container
     info "vm.overcommit_memory queda en $f para el próximo arranque; ahora no se pudo aplicar (en un contenedor, ajústelo en el anfitrión: sysctl -w vm.overcommit_memory=1)"
   fi
 }
 
-paso_revisar() { check_ram; check_cpu; check_disco; check_ports; check_red; check_arch; }
+step_revisar() { check_ram; check_cpu; check_disk; check_ports; check_network; check_arch; }
 
-paso_preparar() {  # installs what is missing, then proves each piece with its own check: the tools,
+step_preparar() {  # installs what is missing, then proves each piece with its own check: the tools,
   # Docker (from Docker's own apt repository), the operator's docker group, the overcommit
-  if ! es_root; then
+  if ! is_root; then
     bad "este paso instala programas y necesita permisos de administrador" "ejecute: sudo aps-conecta preparar"
     return 0
   fi
-  instalar_paquetes; instalar_docker
-  check_docker; check_compose; asegurar_grupo; asegurar_overcommit
+  install_packages; install_docker
+  check_docker; check_compose; ensure_docker_group; ensure_overcommit
 }
 
-confiar_bundle() {  # DIR — the bundle is root's; the admin reads it too (`git describe`, preflight).
+trust_bundle() {  # DIR — the bundle is root's; the admin reads it too (`git describe`, preflight).
   # git ≥ 2.35.2 refuses a repository another user owns unless it is listed as safe, and only the
   # system scope works on every git the targets ship (`-c safe.directory` is ignored before 2.38)
   local f="$ETC_DIR/gitconfig"
@@ -493,70 +495,70 @@ confiar_bundle() {  # DIR — the bundle is root's; the admin reads it too (`git
     || bad "no se pudo registrar $1 como repositorio seguro" "sudo git config --system --add safe.directory $1"
 }
 
-enlazar() {  # $BIN_DIR/aps-conecta → this bundle's CLI. A missing or dangling link is (re)made;
+link_command() {  # $BIN_DIR/aps-conecta → this bundle's CLI. A missing or dangling link is (re)made;
   # one that points at another existing copy is left alone — the root systemd units run that path,
   # so a run from some other checkout never repoints them silently
-  local destino="$ROOT/host/aps-conecta" actual
-  actual="$(readlink -f "$BIN_DIR/aps-conecta" 2>/dev/null)"
-  if [ "$actual" = "$(readlink -f "$destino")" ]; then
+  local dest="$ROOT/host/aps-conecta" current
+  current="$(readlink -f "$BIN_DIR/aps-conecta" 2>/dev/null)"
+  if [ "$current" = "$(readlink -f "$dest")" ]; then
     ok "Comando aps-conecta enlazado ($BIN_DIR/aps-conecta)"; return 0
   fi
-  if [ -n "$actual" ] && [ -e "$actual" ]; then
-    info "$BIN_DIR/aps-conecta ya apunta a $actual — no se cambia; para usar esta copia: sudo ln -sf $destino $BIN_DIR/aps-conecta"
+  if [ -n "$current" ] && [ -e "$current" ]; then
+    info "$BIN_DIR/aps-conecta ya apunta a $current — no se cambia; para usar esta copia: sudo ln -sf $dest $BIN_DIR/aps-conecta"
     return 0
   fi
-  if ! es_root; then
+  if ! is_root; then
     info "el comando aps-conecta se enlaza con permisos de administrador: sudo aps-conecta descargar"
     return 0
   fi
-  if ln -sf "$destino" "$BIN_DIR/aps-conecta" 2>/dev/null; then
-    ok "Comando aps-conecta enlazado ($BIN_DIR/aps-conecta → $destino)"
+  if ln -sf "$dest" "$BIN_DIR/aps-conecta" 2>/dev/null; then
+    ok "Comando aps-conecta enlazado ($BIN_DIR/aps-conecta → $dest)"
   else
-    bad "no se pudo crear $BIN_DIR/aps-conecta" "sudo ln -sf $destino $BIN_DIR/aps-conecta"
+    bad "no se pudo crear $BIN_DIR/aps-conecta" "sudo ln -sf $dest $BIN_DIR/aps-conecta"
   fi
 }
 
-paso_descargar() {  # the bundle at its tag. On its own (the two-line bootstrap) this file clones the
+step_descargar() {  # the bundle at its tag. On its own (the two-line bootstrap) this file clones the
   # suite into $APS_HOME/gestion, root-owned, and the install goes on from that clone — the same
   # tag, so the same code; in a checkout it verifies that checkout. Either way every vendored app
   # is checked against the sha256 its VENDOR pins (the seed's own check, provisioning/lib.sh), and
   # only a verified bundle is linked as the `aps-conecta` command
-  local v vendor dir tars want got n=0 malos=0 destino hay
+  local v vendor dir tars want got n=0 broken=0 dest found
   v="$(suite_tag)"
   if [ -z "$v" ]; then
     bad "no se pudo leer la versión de la suite en $ROOT" \
       "descargue la suite en una versión publicada (git clone --branch <versión>)"
     return 0
   fi
-  if ! en_checkout; then
-    if ! es_root; then
+  if ! in_checkout; then
+    if ! is_root; then
       bad "descargar la suite necesita permisos de administrador" "ejecute: sudo bash aps-conecta install"
       return 0
     fi
-    destino="$APS_HOME/gestion"
-    if [ -d "$destino/.git" ]; then
-      hay="$(git -C "$destino" describe --tags --exact-match 2>/dev/null)"
-      if [ "$hay" != "$v" ]; then
-        bad "ya existe una instalación en $destino (versión ${hay:-desconocida}), distinta de $v" \
-          "no se modifica: continúe desde esa copia con «sudo bash $destino/host/aps-conecta install»"
+    dest="$APS_HOME/gestion"
+    if [ -d "$dest/.git" ]; then
+      found="$(git -C "$dest" describe --tags --exact-match 2>/dev/null)"
+      if [ "$found" != "$v" ]; then
+        bad "ya existe una instalación en $dest (versión ${found:-desconocida}), distinta de $v" \
+          "no se modifica: continúe desde esa copia con «sudo bash $dest/host/aps-conecta install»"
         return 0
       fi
-      ok "Suite $v ya descargada en $destino"
-    elif [ -e "$destino" ]; then
-      bad "$destino ya existe y no es una copia de la suite" \
-        "muévalo (sudo mv $destino $destino.anterior) y vuelva a ejecutar: sudo bash aps-conecta install"
+      ok "Suite $v ya descargada en $dest"
+    elif [ -e "$dest" ]; then
+      bad "$dest ya existe y no es una copia de la suite" \
+        "muévalo (sudo mv $dest $dest.anterior) y vuelva a ejecutar: sudo bash aps-conecta install"
       return 0
     else
-      info "descargando la suite $v en $destino"
+      info "descargando la suite $v en $dest"
       mkdir -p "$APS_HOME"
-      if ! ( umask 022 && git -c advice.detachedHead=false clone -q --branch "$v" --depth 1 "$APS_REPO_URL" "$destino" ); then
+      if ! ( umask 022 && git -c advice.detachedHead=false clone -q --branch "$v" --depth 1 "$APS_REPO_URL" "$dest" ); then
         bad "no se pudo descargar la suite $v desde $APS_REPO_URL" \
           "revise la red y vuelva a ejecutar: sudo bash aps-conecta install"
         return 0
       fi
     fi
-    confiar_bundle "$destino"
-    ROOT="$destino"; HOST_DIR="$destino/host"   # the remaining steps read every file from the bundle
+    trust_bundle "$dest"
+    ROOT="$dest"; HOST_DIR="$dest/host"   # the remaining steps read every file from the bundle
   fi
   for vendor in "$ROOT"/provisioning/apps/*/VENDOR; do
     [ -f "$vendor" ] || continue
@@ -568,7 +570,7 @@ paso_descargar() {  # the bundle at its tag. On its own (the two-line bootstrap)
     if [ -z "$got" ] || [ "$got" != "$want" ]; then
       bad "$(basename "$dir"): el archivo no coincide con su suma de verificación" \
         "vuelva a descargar la suite; un archivo dañado nunca se instala"
-      malos=$((malos + 1))
+      broken=$((broken + 1))
     fi
   done
   if [ "$n" -eq 0 ]; then
@@ -576,29 +578,29 @@ paso_descargar() {  # the bundle at its tag. On its own (the two-line bootstrap)
     return 0
   fi
   ok "Suite $v ($(du -sh "$ROOT/provisioning/apps" 2>/dev/null | cut -f1))"
-  if [ "$malos" -eq 0 ]; then
+  if [ "$broken" -eq 0 ]; then
     ok "Sumas de verificación correctas (aplicaciones: $n)"
-    enlazar
+    link_command
   fi
   return 0
 }
 
-paso_mapa() {  # the basemap needs the chosen centre today (L5 builds it before Centro): with no
+step_mapa() {  # the basemap needs the chosen centre today (L5 builds it before Centro): with no
   # site yet the step says so and the install goes on — «aps-conecta mapa» builds it later
   if [ -z "$(site_codigo || true)" ]; then
     info "el mapa se construye después de elegir el centro: ejecute «sudo aps-conecta mapa» al terminar el paso 6"
-    RESULTADO_PASO="Mapa pendiente: se construye después de elegir el centro."
+    STEP_RESULT="Mapa pendiente: se construye después de elegir el centro."
     return 0
   fi
   info "se construye el mapa de Chile (~1,1 GB por rangos HTTP; unos minutos — la instalación sigue al terminar)"
   bash "$HOST_DIR/tiles.sh" install
 }
 
-paso_abrir() {  # the web installer walks steps 6–9; this process becomes it (exec — Ctrl+C stops
+step_abrir() {  # the web installer walks steps 6–9; this process becomes it (exec — Ctrl+C stops
   # it, as «provision» always did), so the footer prints before the hand-over — and says what is
   # about to happen, never that the link was already delivered
-  RESULTADO_PASO="El instalador web se abre aquí abajo, con su enlace y su código de acceso."
-  paso_pie "$(paso_n abrir)"
+  STEP_RESULT="El instalador web se abre aquí abajo, con su enlace y su código de acceso."
+  step_footer "$(step_number abrir)"
   printf '  No cierre esta ventana hasta «Listo».\n\n'
   exec python3 "$(prov_path)"
 }
@@ -636,6 +638,191 @@ EOF
 # forced amendment, ledgered in its History row).
 
 # ── provision ─────────────────────────────────────────────────────────────────────────────
+
+# ── the AIO wizard, driven through its own API — no browser (silent mode, the CI testbed) ────
+# The request sequence upstream's initial-setup Playwright spec drives, minus the browser: capture
+# the one-time passphrase from the first GET /setup, log in, visit /containers, post the domain,
+# the timezone and the options, start, then wait bounded. ONE copy (a6): scripts/aio-testbed.sh
+# calls `aps-conecta asistente-aio`, and the silent install (L2 S4) calls these functions.
+AIO_URL="${AIO_URL:-https://127.0.0.1:8080}"   # the wizard (self-signed TLS); the testbed sets its port
+AIO_STATE="${AIO_STATE:-$APS_HOME/aio}"       # passphrase, session jar, admin password — 0600
+AIO_POLL="${AIO_POLL:-5}"                   # seconds between polls; the self-test sets 0
+AIO_SET="nextcloud-aio-apache nextcloud-aio-database nextcloud-aio-redis nextcloud-aio-notify-push nextcloud-aio-eurooffice"
+AIO_CSRF=()                                     # the session's CSRF pair, as curl arguments
+
+aio_curl() {  # ARGS… — the wizard with the session jar
+  curl -sk -b "$AIO_STATE/cookies" -c "$AIO_STATE/cookies" "$@"
+}
+
+aio_count() {  # how many of the six suite containers run
+  local c n=0 names
+  names="$(docker ps --format '{{.Names}}' 2>/dev/null)"
+  for c in "$NC" $AIO_SET; do printf '%s\n' "$names" | grep -qx "$c" && n=$((n + 1)); done
+  echo "$n"
+}
+
+aio_passphrase() {  # the passphrase GET /setup shows once (the page stops rendering it once the
+  # instance is configured): captured into a 0600 file the first time, reused on a re-run
+  local f="$AIO_STATE/master.pw" html="" pw i
+  if [ -s "$f" ]; then ok "Contraseña del asistente ya guardada ($f)"; return 0; fi
+  for i in $(seq 60); do
+    sleep "$AIO_POLL"   # first: the mastercontainer is still booting right after its docker run
+    html="$(curl -sk --max-time 5 "$AIO_URL/setup" 2>/dev/null || true)"
+    case "$html" in *'id="initial-password"'*) break ;; esac
+  done
+  pw="$(printf '%s' "$html" | sed -n 's/.*id="initial-password"[^>]*>\([^<]*\)<.*/\1/p' | head -1)"
+  if [ -z "$pw" ]; then
+    bad "el asistente no mostró su contraseña inicial en $AIO_URL/setup" \
+      "revise que la suite esté arrancando: docker logs nextcloud-aio-mastercontainer"
+    return 1
+  fi
+  ( umask 077 && printf '%s' "$pw" > "$f" )
+  ok "Contraseña del asistente guardada en $f (solo administrador)"
+}
+
+aio_login() {  # the CSRF pair comes from GET /login with the session jar and serves every POST
+  local html code
+  html="$(aio_curl --max-time 10 "$AIO_URL/login" 2>/dev/null)"
+  AIO_CSRF=(--data-urlencode "csrf_name=$(printf '%s' "$html" | sed -n 's/.*name="csrf_name" value="\([^"]*\)".*/\1/p' | head -1)"
+            --data-urlencode "csrf_value=$(printf '%s' "$html" | sed -n 's/.*name="csrf_value" value="\([^"]*\)".*/\1/p' | head -1)")
+  case "${AIO_CSRF[1]} ${AIO_CSRF[3]}" in
+    "csrf_name= "*|*" csrf_value=") bad "el asistente no entregó su formulario de ingreso ($AIO_URL/login)" \
+                                      "revise que la suite esté arrancando: docker logs nextcloud-aio-mastercontainer"
+                                    return 1 ;;
+  esac
+  # password@FILE: curl reads the passphrase from its 0600 file — it never sits in argv, where ps shows it
+  code="$(aio_curl -o /dev/null -w '%{http_code}' --max-time 20 --data-urlencode "password@$AIO_STATE/master.pw" \
+    "${AIO_CSRF[@]}" "$AIO_URL/api/auth/login" 2>/dev/null)"
+  if [ "$code" != 201 ]; then
+    bad "el asistente rechazó el ingreso (HTTP ${code:-sin respuesta})" \
+      "la contraseña guardada en $AIO_STATE/master.pw no es la de esta instancia"
+    return 1
+  fi
+  ok "Ingreso al asistente"
+}
+
+aio_containers_page() {  # GET /containers is load-bearing, not eye candy: serving it creates the
+  # nextcloud-aio network (ConnectMasterContainerToNetwork) — without it the first start dies
+  if ! aio_curl --max-time 15 -o /dev/null "$AIO_URL/containers" 2>/dev/null; then
+    bad "el asistente no abrió su página de contenedores ($AIO_URL/containers)" \
+      "sin ella no se crea la red de la suite: revise docker logs nextcloud-aio-mastercontainer"
+    return 1
+  fi
+}
+
+aio_post() {  # PATH --data-urlencode K=V… — the wizard's configuration API answers 201 or refuses
+  local endpoint="$1" code; shift
+  code="$(aio_curl -o /dev/null -w '%{http_code}' --max-time 15 "${AIO_CSRF[@]}" "$@" "$AIO_URL$endpoint" 2>/dev/null)"
+  if [ "$code" != 201 ]; then
+    bad "el asistente rechazó «${2%%=*}» (HTTP ${code:-sin respuesta})" \
+      "revise el valor; el asistente explica el motivo en su página ($AIO_URL)"
+    return 1
+  fi
+}
+
+aio_start() {  # POST /api/docker/start pulls, creates and starts the whole set INSIDE the request
+  # (up to 30 min on a slow link): it runs in the background while the console counts containers
+  local f="$AIO_STATE/inicio.code" pid n seen="" code
+  info "iniciando la suite (descarga de imágenes: varios minutos)"
+  # curl itself is the background job (not a subshell around it), so the trap's kill reaches it
+  curl -sk -b "$AIO_STATE/cookies" -c "$AIO_STATE/cookies" -o /dev/null -w '%{http_code}' --max-time 1800 \
+    "${AIO_CSRF[@]}" "$AIO_URL/api/docker/start" > "$f" 2>/dev/null &
+  pid=$!
+  trap 'kill "$pid" 2>/dev/null; exit 130' INT TERM
+  while kill -0 "$pid" 2>/dev/null; do
+    n="$(aio_count)"
+    [ "$n" = "$seen" ] || { info "contenedores en marcha: $n de 6"; seen="$n"; }
+    sleep "$AIO_POLL"
+  done
+  wait "$pid"
+  trap - INT TERM
+  code="$(cat "$f" 2>/dev/null)"
+  case "$code" in
+    200|201|302) ok "Suite iniciada" ;;
+    *) bad "el asistente no pudo iniciar la suite (HTTP ${code:-sin respuesta})" \
+         "revise la red y las imágenes: docker ps -a --filter name=nextcloud-aio-"
+       return 1 ;;
+  esac
+}
+
+aio_wait() {  # bounded: the six containers up (20 min), Nextcloud installed (10 min), its
+  # configuration no longer moving (2 min — probing a moving config is a race, #96)
+  local i st prev cur
+  for i in $(seq 240); do [ "$(aio_count)" = 6 ] && break; sleep "$AIO_POLL"; done
+  if [ "$(aio_count)" != 6 ]; then
+    bad "los contenedores no terminaron de arrancar en 20 minutos" "docker ps -a --filter name=nextcloud-aio-"
+    return 1
+  fi
+  for i in $(seq 120); do
+    st="$(docker exec --user www-data "$NC" php /var/www/html/occ status --output=json 2>/dev/null || true)"
+    case "$st" in *'"installed":true'*) break ;; esac
+    sleep "$AIO_POLL"
+  done
+  case "$st" in
+    *'"installed":true'*) ;;
+    *) bad "Nextcloud no terminó de instalarse en 10 minutos" "docker logs $NC"; return 1 ;;
+  esac
+  prev="$(docker exec --user www-data "$NC" php /var/www/html/occ config:list --output=json 2>/dev/null | sha256sum)"
+  for i in $(seq 24); do
+    sleep "$AIO_POLL"
+    cur="$(docker exec --user www-data "$NC" php /var/www/html/occ config:list --output=json 2>/dev/null | sha256sum)"
+    if [ "$cur" = "$prev" ]; then ok "Suite en marcha: 6 contenedores, Nextcloud instalado"; return 0; fi
+    prev="$cur"
+  done
+  bad "la configuración siguió cambiando 2 minutos después de instalar" "espere un momento y vuelva a ejecutar"
+  return 1
+}
+
+aio_admin() {  # /containers shows the generated Nextcloud admin password once the set is up
+  local pw
+  if [ -s "$AIO_STATE/nextcloud.pw" ]; then
+    ok "Contraseña del administrador de Nextcloud ya guardada ($AIO_STATE/nextcloud.pw)"; return 0
+  fi
+  pw="$(aio_curl --max-time 10 "$AIO_URL/containers" 2>/dev/null \
+    | sed -n 's/.*id="initial-nextcloud-password"[^>]*>\([^<]*\)<.*/\1/p' | head -1)"
+  if [ -n "$pw" ]; then
+    ( umask 077 && printf '%s\n' "$pw" > "$AIO_STATE/nextcloud.pw" )
+    ok "Contraseña del administrador de Nextcloud guardada en $AIO_STATE/nextcloud.pw"
+  else
+    info "el asistente no mostró la contraseña del administrador (la instalación crea sus propias cuentas)"
+  fi
+}
+
+cmd_aio_wizard() {  # --dominio D [--sin-validar-dominio] [--respaldo DIR]
+  local domain="" backup_dir="" options=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --dominio) domain="${2:-}"; shift 2 || shift ;;
+      --sin-validar-dominio) options+=(--data-urlencode skip_domain_validation=1); shift ;;
+      --respaldo) [ -n "${2:-}" ] \
+                    || die "falta el directorio del respaldo: aps-conecta asistente-aio --dominio <dominio> --respaldo <directorio>"
+                  backup_dir="$2"; shift 2 ;;
+      *) die "opción desconocida: $1 — uso: aps-conecta asistente-aio --dominio <dominio> [--sin-validar-dominio] [--respaldo <directorio>]" ;;
+    esac
+  done
+  [[ "$domain" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] \
+    || die "falta un dominio válido: aps-conecta asistente-aio --dominio <dominio>"
+  ( umask 077 && mkdir -p "$AIO_STATE" ) || die "no se pudo crear $AIO_STATE"
+  FAIL=0
+  local names
+  names="$(docker ps --format '{{.Names}}' 2>/dev/null)"   # captured first: under pipefail an early
+  if printf '%s\n' "$names" | grep -qx nextcloud-aio-apache; then   # grep -q exit would SIGPIPE docker
+    ok "La suite ya está en marcha — el asistente no se vuelve a configurar"
+  else
+    aio_passphrase && aio_login && aio_containers_page \
+      && aio_post /api/configuration --data-urlencode "domain=$domain" "${options[@]}" && ok "Dominio: $domain" \
+      && aio_post /api/configuration --data-urlencode "timezone=America/Santiago" && ok "Zona horaria: America/Santiago" \
+      && aio_post /api/configuration --data-urlencode "options-form=1" \
+      && ok "Opciones: oficina incluida; Talk, pizarra e imágenes apagados" \
+      && { [ -z "$backup_dir" ] || { aio_post /api/configuration --data-urlencode "borg_backup_host_location=$backup_dir" \
+             --data-urlencode "borg_remote_repo=" && aio_post /api/configuration --data-urlencode "daily_backup_time=04:00" \
+             && ok "Respaldo diario a las 04:00 en $backup_dir"; }; } \
+      && aio_start || exit 1
+  fi
+  aio_wait || exit 1
+  aio_admin
+  [ "$FAIL" -eq 0 ] || exit 1
+}
 
 cmd_provision() {  # [--reponer]
   if [ "${1:-}" = "--reponer" ]; then reponer; return; fi
@@ -857,7 +1044,7 @@ cmd_preflight() {
     --dominio) [ -n "${2:-}" ] || die "falta el dominio: aps-conecta preflight --dominio <dominio>"
                [[ "$2" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] \
                  || die "dominio no válido: $2 (solo letras, números, puntos y guiones)"
-               DOMINIO="$2" ;;
+               PREFLIGHT_DOMAIN="$2" ;;
     *) die "opción desconocida: $1 — uso: aps-conecta preflight [--dominio <dominio>]" ;;
   esac
   echo "Revisión previa del instalador APS Conecta"
@@ -933,55 +1120,55 @@ EOF
   unset APS_SUITE_TAG
 
   # ── the step registry, the welcome and the stepper (L2 S1, a4) ──
-  local dondes ids malformadas bienv salida rcs out_paso
-  dondes="$(for i in $(seq 1 "${#PASOS[@]}"); do printf '%s ' "$(paso_campo "$i" 3)"; done)"
-  ids="$(for i in $(seq 1 "${#PASOS[@]}"); do printf '%s ' "$(paso_campo "$i" 1)"; done)"
-  malformadas="$(printf '%s\n' "${PASOS[@]}" | awk -F'|' 'NF != 5 || $1 == "" || $2 == "" || $4 == "" || $5 == ""')"
+  local wheres ids malformed bienv install_out rcs step_out
+  wheres="$(for i in $(seq 1 "${#STEPS[@]}"); do printf '%s ' "$(step_field "$i" 3)"; done)"
+  ids="$(for i in $(seq 1 "${#STEPS[@]}"); do printf '%s ' "$(step_field "$i" 1)"; done)"
+  malformed="$(printf '%s\n' "${STEPS[@]}" | awk -F'|' 'NF != 5 || $1 == "" || $2 == "" || $4 == "" || $5 == ""')"
   check "registry: nine steps, the five server ones first, five non-empty fields each" \
-    '[ "${#PASOS[@]}" -eq 9 ] && [ "$dondes" = "servidor servidor servidor servidor servidor navegador navegador navegador navegador " ] && [ -z "$malformadas" ]'
+    '[ "${#STEPS[@]}" -eq 9 ] && [ "$wheres" = "servidor servidor servidor servidor servidor navegador navegador navegador navegador " ] && [ -z "$malformed" ]'
   check "registry: the ids are the approved console's subcommands, in order" \
     '[ "$ids" = "revisar preparar descargar mapa abrir centro suite equipos ejecutar " ]'
-  check "registry: paso_n maps an id to its number and refuses an unknown one" \
-    '[ "$(paso_n mapa)" = 4 ] && ! paso_n nada >/dev/null'
-  bienv="$(bienvenida)"
+  check "registry: step_number maps an id to its number and refuses an unknown one" \
+    '[ "$(step_number mapa)" = 4 ] && ! step_number nada >/dev/null'
+  welcome_out="$(welcome)"
   check "welcome: name, version, the nine-step promise, the motto, the licence with the source, the credit" \
-    'case "$bienv" in *"APS Conecta Gestión   Instalador v9.9.9"*"en 9 pasos: 5 en este servidor, 4 en el navegador"*"«La salud primaria que compartimos es la que mejora»"*"AGPL-3.0-or-later · github.com/APS-Conecta/gestion"*"Desarrollado por Dani Espinoza Charrier · APS Conecta"*) ;; *) false;; esac'
+    'case "$welcome_out" in *"APS Conecta Gestión   Instalador v9.9.9"*"en 9 pasos: 5 en este servidor, 4 en el navegador"*"«La salud primaria que compartimos es la que mejora»"*"AGPL-3.0-or-later · github.com/APS-Conecta/gestion"*"Desarrollado por Dani Espinoza Charrier · APS Conecta"*) ;; *) false;; esac'
   check "welcome: the motto is phase 15's theming slogan (one string, two homes, pinned)" \
-    'grep -F "\"$LEMA\"" "$ROOT_BAK/provisioning/phases/15-branding.sh" | grep -q "theming_set slogan"'
+    'grep -F "\"$MOTTO\"" "$ROOT_BAK/provisioning/phases/15-branding.sh" | grep -q "theming_set slogan"'
 
   # install runs as root: the stepper arms answer `id -u` from a shim (ID_U=1000 plays the operator)
   printf '#!/usr/bin/env bash\ncase "$1" in -u) echo "${ID_U:-0}" ;; -un) echo root ;; esac\n' > "$tshim/id"; chmod +x "$tshim/id"
   # the stepper end to end with every server step stubbed: the order, the approved header/footer,
   # the hand-over to the browser, and no prompt without a terminal
-  salida="$(
-    paso_revisar()   { ok "revisar-stub"; }
-    paso_preparar()  { ok "preparar-stub"; }
-    paso_descargar() { ok "descargar-stub"; }
-    paso_mapa()      { ok "mapa-stub"; }
-    paso_abrir()     { ok "abrir-stub"; }
+  install_out="$(
+    step_revisar()   { ok "revisar-stub"; }
+    step_preparar()  { ok "preparar-stub"; }
+    step_descargar() { ok "descargar-stub"; }
+    step_mapa()      { ok "mapa-stub"; }
+    step_abrir()     { ok "abrir-stub"; }
     cmd_install </dev/null 2>&1
   )"; rcs=$?
   check "stepper: the welcome, then steps 1-5 in order with header, purpose, command, result and next" \
-    '[ "$rcs" -eq 0 ] && case "$salida" in *"Instalador v9.9.9"*"Paso 1 de 9 · Revisar el servidor  servidor"*"Objetivo  Memoria, disco, puertos y red."*"Comando   aps-conecta revisar"*"revisar-stub"*"Resultado Servidor apto."*"Siguiente Paso 2 · Preparar el servidor (servidor)"*"Paso 5 de 9 · Abrir el instalador web  servidor"*"abrir-stub"*"Siguiente Paso 6 · Elegir el centro (navegador)"*) ;; *) false;; esac'
+    '[ "$rcs" -eq 0 ] && case "$install_out" in *"Instalador v9.9.9"*"Paso 1 de 9 · Revisar el servidor  servidor"*"Objetivo  Memoria, disco, puertos y red."*"Comando   aps-conecta revisar"*"revisar-stub"*"Resultado Servidor apto."*"Siguiente Paso 2 · Preparar el servidor (servidor)"*"Paso 5 de 9 · Abrir el instalador web  servidor"*"abrir-stub"*"Siguiente Paso 6 · Elegir el centro (navegador)"*) ;; *) false;; esac'
   check "stepper: the browser steps never run from the console, and no prompt without a terminal" \
-    'case "$salida" in *"Paso 6 de 9"*|*"Enter para comenzar"*) false;; *) true;; esac'
-  salida="$(
-    paso_revisar()   { ok "revisar-stub"; }
-    paso_preparar()  { bad "docker falta" "instálelo"; }
-    paso_descargar() { ok "descargar-stub"; }
+    'case "$install_out" in *"Paso 6 de 9"*|*"Enter para comenzar"*) false;; *) true;; esac'
+  install_out="$(
+    step_revisar()   { ok "revisar-stub"; }
+    step_preparar()  { bad "docker falta" "instálelo"; }
+    step_descargar() { ok "descargar-stub"; }
     cmd_install </dev/null 2>&1
   )"; rcs=$?
   check "stepper: a failing step stops the run, names itself and the re-run, and exits 1" \
-    '[ "$rcs" -eq 1 ] && case "$salida" in *"✗ docker falta"*"Resultado ✗ el paso 2 no terminó"*"sudo aps-conecta install"*) ;; *) false;; esac && case "$salida" in *"descargar-stub"*) false;; *) true;; esac'
-  out_paso="$( (cmd_install --sitio x) 2>&1)"; rcs=$?
+    '[ "$rcs" -eq 1 ] && case "$install_out" in *"✗ docker falta"*"Resultado ✗ el paso 2 no terminó"*"sudo aps-conecta install"*) ;; *) false;; esac && case "$install_out" in *"descargar-stub"*) false;; *) true;; esac'
+  step_out="$( (cmd_install --sitio x) 2>&1)"; rcs=$?
   check "stepper: install takes no options yet, and says so in Spanish" \
-    '[ "$rcs" -eq 1 ] && case "$out_paso" in *"no recibe opciones"*) ;; *) false;; esac'
-  out_paso="$( (export ID_U=1000; cmd_install </dev/null) 2>&1)"; rcs=$?
+    '[ "$rcs" -eq 1 ] && case "$step_out" in *"no recibe opciones"*) ;; *) false;; esac'
+  step_out="$( (export ID_U=1000; cmd_install </dev/null) 2>&1)"; rcs=$?
   check "stepper: install without sudo refuses before the welcome, naming the command to run" \
-    '[ "$rcs" -eq 1 ] && case "$out_paso" in *"✗ la instalación necesita permisos de administrador: sudo bash aps-conecta install"*) ;; *) false;; esac && case "$out_paso" in *"Paso 1 de 9"*) false;; *) true;; esac'
-  out_paso="$(paso_navegador "$(paso_n centro)")"
+    '[ "$rcs" -eq 1 ] && case "$step_out" in *"✗ la instalación necesita permisos de administrador: sudo bash aps-conecta install"*) ;; *) false;; esac && case "$step_out" in *"Paso 1 de 9"*) false;; *) true;; esac'
+  step_out="$(step_browser "$(step_number centro)")"
   check "stepper: a browser step asked for at the console says where it runs" \
-    'case "$out_paso" in *"el paso 6 («Elegir el centro») se hace en el navegador"*) ;; *) false;; esac'
+    'case "$step_out" in *"el paso 6 («Elegir el centro») se hace en el navegador"*) ;; *) false;; esac'
 
   # the step bodies against shimmed tools (MEMINFO is a fixture; ss/uname/df/nproc/curl/id/sysctl/
   # docker are shims planted here — never inherited from another arm)
@@ -991,19 +1178,19 @@ EOF
   printf '#!/usr/bin/env bash\necho Avail; echo 142\n' > "$tshim/df"; chmod +x "$tshim/df"
   printf '#!/usr/bin/env bash\necho 4\n' > "$tshim/nproc"; chmod +x "$tshim/nproc"
   printf '#!/usr/bin/env bash\nprintf "HTTP/2 401\\r\\ndate: %%s\\r\\n\\r\\n" "$(date -u "+%%a, %%d %%b %%Y %%H:%%M:%%S GMT")"\n' > "$tshim/curl"; chmod +x "$tshim/curl"
-  out_paso="$(FAIL=0; paso_revisar; echo "FAIL=$FAIL")"
+  step_out="$(FAIL=0; step_revisar; echo "FAIL=$FAIL")"
   check "revisar: 7.7 GiB rounds to the 8 GiB floor; CPU, 142 GB, the ports, internet and clock, x86-64 all green" \
-    'case "$out_paso" in *"✓ Memoria 8 GiB (mín. 8)"*"✓ CPU 4 núcleos"*"✓ Disco 142 GB libres (mín. 40)"*"✓ Internet y hora"*"✓ x86-64"*"FAIL=0") ;; *) false;; esac'
+    'case "$step_out" in *"✓ Memoria 8 GiB (mín. 8)"*"✓ CPU 4 núcleos"*"✓ Disco 142 GB libres (mín. 40)"*"✓ Internet y hora"*"✓ x86-64"*"FAIL=0") ;; *) false;; esac'
   printf 'MemTotal:        4000000 kB\n' > "$tmp/meminfo"
   printf '#!/usr/bin/env bash\necho Avail; echo 12\n' > "$tshim/df"; chmod +x "$tshim/df"
   printf '#!/usr/bin/env bash\nprintf "HTTP/2 401\\r\\ndate: %%s\\r\\n\\r\\n" "$(date -u -d "-1 hour" "+%%a, %%d %%b %%Y %%H:%%M:%%S GMT")"\n' > "$tshim/curl"; chmod +x "$tshim/curl"
-  out_paso="$(FAIL=0; paso_revisar; echo "FAIL=$FAIL")"
+  step_out="$(FAIL=0; step_revisar; echo "FAIL=$FAIL")"
   check "revisar: 4 GiB, 12 GB and an hour of clock skew red with their fixes" \
-    'case "$out_paso" in *"✗ Memoria 4 GiB — el mínimo es 8 GiB"*"✗ Disco 12 GB libres"*"✗ la hora de este servidor difiere"*"timedatectl set-ntp true"*"FAIL=1") ;; *) false;; esac'
+    'case "$step_out" in *"✗ Memoria 4 GiB — el mínimo es 8 GiB"*"✗ Disco 12 GB libres"*"✗ la hora de este servidor difiere"*"timedatectl set-ntp true"*"FAIL=1") ;; *) false;; esac'
   printf '#!/usr/bin/env bash\nexit 7\n' > "$tshim/curl"; chmod +x "$tshim/curl"
-  out_paso="$(FAIL=0; check_red; echo "FAIL=$FAIL")"
+  step_out="$(FAIL=0; check_network; echo "FAIL=$FAIL")"
   check "revisar: no answer from the internet reds with the network fix" \
-    'case "$out_paso" in *"✗ sin acceso a internet"*"FAIL=1") ;; *) false;; esac'
+    'case "$step_out" in *"✗ sin acceso a internet"*"FAIL=1") ;; *) false;; esac'
   rm -f "$tshim/curl" "$tshim/df" "$tshim/nproc"; MEMINFO=/proc/meminfo
 
   # preparar installs: every tool that changes the host is a logging shim, /etc is a scratch tree
@@ -1011,7 +1198,7 @@ EOF
   # self-test runs as root on production hosts. The guard proves the listed shims are what answers;
   # the list itself must name every host-changing command preparar calls (review it with the code)
   local ETC_DIR="$tmp/etc" c
-  solo_simulado() {  # CMD… — the installing arms run only when every CMD answers from a shim
+  only_shims() {  # CMD… — the installing arms run only when every CMD answers from a shim
     for c in "$@"; do
       if [ "$(command -v "$c")" != "$tshim/$c" ]; then
         echo "  FAIL: «$c» would reach the real host — the installing arms do not run" >&2
@@ -1021,18 +1208,18 @@ EOF
   }
   mkdir -p "$ETC_DIR" "$tmp/minbin"
   printf 'ID=ubuntu\nVERSION_CODENAME=noble\nUBUNTU_CODENAME=noble\n' > "$ETC_DIR/os-release"
-  : > "$tmp/mut.log"; echo 2 > "$tmp/oc"; : > "$tmp/grupos"
-  mk_docker 1.56 ""; mv "$tshim/docker" "$tmp/docker-instalado"
+  : > "$tmp/mut.log"; echo 2 > "$tmp/oc"; : > "$tmp/groups"
+  mk_docker 1.56 ""; mv "$tshim/docker" "$tmp/docker-installed"
   for c in apt-get usermod systemctl dpkg; do
     cat > "$tshim/$c" <<SHIM
 #!/usr/bin/env bash
 echo "$c \$*" >> "$tmp/mut.log"
 case "$c \$1" in
   "dpkg --print-architecture") echo amd64 ;;
-  "usermod -aG") echo "\$3 docker" >> "$tmp/grupos" ;;
+  "usermod -aG") echo "\$3 docker" >> "$tmp/groups" ;;
   "apt-get "*) case " \$* " in *" install "*) for p in "\$@"; do case "\$p" in
       -*|install|DPkg::*) ;;
-      docker-ce) cp "$tmp/docker-instalado" "$tshim/docker" ;;
+      docker-ce) cp "$tmp/docker-installed" "$tshim/docker" ;;
       *) printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/\$p"; chmod +x "$tshim/\$p" ;;
     esac; done ;; esac ;;
 esac
@@ -1045,7 +1232,7 @@ SHIM
 echo "sysctl \$*" >> "$tmp/mut.log"
 case "\$1" in
   -n) cat "$tmp/oc" ;;
-  -p) [ -n "\${SYSCTL_FALLA:-}" ] && exit 1; sed -n 's/^vm.overcommit_memory = //p' "\$2" > "$tmp/oc" ;;
+  -p) [ -n "\${SYSCTL_FAILS:-}" ] && exit 1; sed -n 's/^vm.overcommit_memory = //p' "\$2" > "$tmp/oc" ;;
 esac
 SHIM
   cat > "$tshim/curl" <<SHIM
@@ -1059,43 +1246,43 @@ SHIM
 case "\$1" in
   -u) echo "\${ID_U:-0}" ;;
   -un) echo root ;;
-  -nG) echo "\$2 sudo \$(grep "^\$2 " "$tmp/grupos" | cut -d' ' -f2 | tr '\n' ' ')" ;;
+  -nG) echo "\$2 sudo \$(grep "^\$2 " "$tmp/groups" | cut -d' ' -f2 | tr '\n' ' ')" ;;
 esac
 SHIM
   chmod +x "$tshim/sysctl" "$tshim/curl" "$tshim/id"
   # a fresh server has no docker, git or python3: a PATH of shims plus the few real tools the
   # shims themselves need — the host's own docker, git and python3 stay out of reach
   for c in bash env mkdir chmod tr grep cat sed cp cut; do ln -sf "$(command -v "$c")" "$tmp/minbin/$c"; done
-  if solo_simulado apt-get usermod systemctl dpkg sysctl curl id; then
-    out_paso="$(PATH="$tshim:$tmp/minbin"; FAIL=0; SUDO_USER=operador paso_preparar; echo "FAIL=$FAIL")"
+  if only_shims apt-get usermod systemctl dpkg sysctl curl id; then
+    step_out="$(PATH="$tshim:$tmp/minbin"; FAIL=0; SUDO_USER=operador step_preparar; echo "FAIL=$FAIL")"
     check "preparar: a fresh Ubuntu gets git and python3, Docker from Docker's repository, the operator's group and overcommit 1 — each proved" \
-      'case "$out_paso" in *"✓ Instalado: git python3"*"✓ Docker instalado desde su repositorio oficial"*"✓ docker (API 1.56"*"✓ compose v2 presente"*"✓ Usuario operador agregado al grupo docker"*"✓ Memoria del sistema ajustada (vm.overcommit_memory 2 → 1"*"FAIL=0") ;; *) false;; esac'
+      'case "$step_out" in *"✓ Instalado: git python3"*"✓ Docker instalado desde su repositorio oficial"*"✓ docker (API 1.56"*"✓ compose v2 presente"*"✓ Usuario operador agregado al grupo docker"*"✓ Memoria del sistema ajustada (vm.overcommit_memory 2 → 1"*"FAIL=0") ;; *) false;; esac'
     check "preparar: the host changes are apt (lock-patient) from Docker's noble suite, usermod and the sysctl.d file applied alone" \
       'grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y git python3" "$tmp/mut.log" && grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y ca-certificates" "$tmp/mut.log" && grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin" "$tmp/mut.log" && grep -qx "usermod -aG docker operador" "$tmp/mut.log" && grep -qx "sysctl -p $ETC_DIR/sysctl.d/90-aps-conecta.conf" "$tmp/mut.log" && grep -qx "Suites: noble" "$ETC_DIR/apt/sources.list.d/docker.sources" && grep -qx "URIs: https://download.docker.com/linux/ubuntu" "$ETC_DIR/apt/sources.list.d/docker.sources" && grep -qx "vm.overcommit_memory = 1" "$ETC_DIR/sysctl.d/90-aps-conecta.conf"'
     : > "$tmp/mut.log"
-    out_paso="$(PATH="$tshim:$tmp/minbin"; FAIL=0; SUDO_USER=operador paso_preparar; echo "FAIL=$FAIL")"
+    step_out="$(PATH="$tshim:$tmp/minbin"; FAIL=0; SUDO_USER=operador step_preparar; echo "FAIL=$FAIL")"
     check "preparar: a re-run finds everything done and changes nothing" \
-      'case "$out_paso" in *"✓ git, python3 y curl presentes"*"✓ Usuario operador en el grupo docker"*"✓ Memoria del sistema ajustada (vm.overcommit_memory = 1)"*"FAIL=0") ;; *) false;; esac && ! grep -qE "^(apt-get|usermod|sysctl -p|curl|systemctl start)" "$tmp/mut.log"'
+      'case "$step_out" in *"✓ git, python3 y curl presentes"*"✓ Usuario operador en el grupo docker"*"✓ Memoria del sistema ajustada (vm.overcommit_memory = 1)"*"FAIL=0") ;; *) false;; esac && ! grep -qE "^(apt-get|usermod|sysctl -p|curl|systemctl start)" "$tmp/mut.log"'
     echo 2 > "$tmp/oc"; rm -f "$ETC_DIR/sysctl.d/90-aps-conecta.conf"
-    out_paso="$(export SYSCTL_FALLA=1; PATH="$tshim:$tmp/minbin"; FAIL=0; asegurar_overcommit; echo "FAIL=$FAIL")"
+    step_out="$(export SYSCTL_FAILS=1; PATH="$tshim:$tmp/minbin"; FAIL=0; ensure_overcommit; echo "FAIL=$FAIL")"
     check "preparar: where the kernel setting cannot be applied now (a container) it stays in its file and says so — not a red" \
-      'case "$out_paso" in *"· vm.overcommit_memory queda en $ETC_DIR/sysctl.d/90-aps-conecta.conf para el próximo arranque"*"FAIL=0") ;; *) false;; esac && grep -qx "vm.overcommit_memory = 1" "$ETC_DIR/sysctl.d/90-aps-conecta.conf"'
+      'case "$step_out" in *"· vm.overcommit_memory queda en $ETC_DIR/sysctl.d/90-aps-conecta.conf para el próximo arranque"*"FAIL=0") ;; *) false;; esac && grep -qx "vm.overcommit_memory = 1" "$ETC_DIR/sysctl.d/90-aps-conecta.conf"'
     : > "$tmp/mut.log"
-    out_paso="$(export ID_U=1000; PATH="$tshim:$tmp/minbin"; FAIL=0; paso_preparar; echo "FAIL=$FAIL")"
+    step_out="$(export ID_U=1000; PATH="$tshim:$tmp/minbin"; FAIL=0; step_preparar; echo "FAIL=$FAIL")"
     check "preparar: without sudo it says so and touches nothing" \
-      'case "$out_paso" in *"✗ este paso instala programas y necesita permisos de administrador"*"sudo aps-conecta preparar"*"FAIL=1") ;; *) false;; esac && [ ! -s "$tmp/mut.log" ]'
+      'case "$step_out" in *"✗ este paso instala programas y necesita permisos de administrador"*"sudo aps-conecta preparar"*"FAIL=1") ;; *) false;; esac && [ ! -s "$tmp/mut.log" ]'
     rm -f "$tshim/docker"; printf 'ID=fedora\nVERSION_ID=41\n' > "$ETC_DIR/os-release"
-    out_paso="$(PATH="$tshim:$tmp/minbin"; FAIL=0; paso_preparar; echo "FAIL=$FAIL")"
+    step_out="$(PATH="$tshim:$tmp/minbin"; FAIL=0; step_preparar; echo "FAIL=$FAIL")"
     check "preparar: Docker on a system that is neither Ubuntu nor Debian is the operator's, with the official guide" \
-      'case "$out_paso" in *"✗ Docker no está instalado y este sistema no es Ubuntu ni Debian"*"docs.docker.com/engine/install"*"FAIL=1") ;; *) false;; esac && ! grep -q "docker-ce" "$tmp/mut.log"'
+      'case "$step_out" in *"✗ Docker no está instalado y este sistema no es Ubuntu ni Debian"*"docs.docker.com/engine/install"*"FAIL=1") ;; *) false;; esac && ! grep -q "docker-ce" "$tmp/mut.log"'
     printf 'ID=debian\n' > "$ETC_DIR/os-release"; rm -f "$ETC_DIR/apt/sources.list.d/docker.sources"
-    out_paso="$(PATH="$tshim:$tmp/minbin"; FAIL=0; instalar_docker; echo "FAIL=$FAIL")"
+    step_out="$(PATH="$tshim:$tmp/minbin"; FAIL=0; install_docker; echo "FAIL=$FAIL")"
     check "preparar: a Debian whose os-release names no release writes no empty-suite source and says why" \
-      'case "$out_paso" in *"✗ no se pudo leer la versión de debian"*"FAIL=1") ;; *) false;; esac && [ ! -e "$ETC_DIR/apt/sources.list.d/docker.sources" ]'
+      'case "$step_out" in *"✗ no se pudo leer la versión de debian"*"FAIL=1") ;; *) false;; esac && [ ! -e "$ETC_DIR/apt/sources.list.d/docker.sources" ]'
   fi
-  out_paso="$(solo_simulado sin-simulacion-x 2>&1; echo "rc=$?")"
+  step_out="$(only_shims sin-simulacion-x 2>&1; echo "rc=$?")"
   check "self-test guard: a mutator without a shim refuses the installing arms" \
-    'case "$out_paso" in *"«sin-simulacion-x» would reach the real host"*"rc=1") ;; *) false;; esac'
+    'case "$step_out" in *"«sin-simulacion-x» would reach the real host"*"rc=1") ;; *) false;; esac'
   rm -f "$tshim"/{apt-get,usermod,systemctl,dpkg,sysctl,curl,git,python3,ca-certificates,docker,docker-ce-cli,containerd.io,docker-buildx-plugin,docker-compose-plugin}
 
   # descargar in a checkout: the checkout is the bundle; a verified one is linked as the command
@@ -1106,106 +1293,106 @@ SHIM
   tar czf "$ROOT/provisioning/apps/demo/demo-1.0.0.tar.gz" -C "$tmp" demo.txt
   printf 'version=1.0.0\nsha256=%s\n' "$(sha256sum "$ROOT/provisioning/apps/demo/demo-1.0.0.tar.gz" | cut -d' ' -f1)" \
     > "$ROOT/provisioning/apps/demo/VENDOR"
-  out_paso="$(FAIL=0; paso_descargar; echo "FAIL=$FAIL")"
+  step_out="$(FAIL=0; step_descargar; echo "FAIL=$FAIL")"
   check "descargar: the checkout's version and every vendored app's sha256 green" \
-    'case "$out_paso" in *"✓ Suite v9.9.9"*"✓ Sumas de verificación correctas (aplicaciones: 1)"*"FAIL=0") ;; *) false;; esac'
+    'case "$step_out" in *"✓ Suite v9.9.9"*"✓ Sumas de verificación correctas (aplicaciones: 1)"*"FAIL=0") ;; *) false;; esac'
   check "descargar: a verified checkout is linked as the aps-conecta command" \
     '[ "$(readlink -f "$BIN_DIR/aps-conecta")" = "$ROOT/host/aps-conecta" ]'
-  out_paso="$(export ID_U=1000; BIN_DIR="$tmp/bin-sin-sudo"; mkdir -p "$BIN_DIR"; FAIL=0; paso_descargar; echo "FAIL=$FAIL")"
+  step_out="$(export ID_U=1000; BIN_DIR="$tmp/bin-no-sudo"; mkdir -p "$BIN_DIR"; FAIL=0; step_descargar; echo "FAIL=$FAIL")"
   check "descargar: without sudo a verified checkout says the link needs sudo — not a red, no link" \
-    'case "$out_paso" in *"· el comando aps-conecta se enlaza con permisos de administrador"*"FAIL=0") ;; *) false;; esac && [ ! -e "$tmp/bin-sin-sudo/aps-conecta" ]'
+    'case "$step_out" in *"· el comando aps-conecta se enlaza con permisos de administrador"*"FAIL=0") ;; *) false;; esac && [ ! -e "$tmp/bin-no-sudo/aps-conecta" ]'
   printf 'version=1.0.0\nsha256=%064d\n' 0 > "$ROOT/provisioning/apps/demo/VENDOR"
-  out_paso="$(FAIL=0; paso_descargar; echo "FAIL=$FAIL")"
+  step_out="$(FAIL=0; step_descargar; echo "FAIL=$FAIL")"
   check "descargar: a tarball that does not match its VENDOR reds and is never called correct" \
-    'case "$out_paso" in *"✗ demo: el archivo no coincide con su suma de verificación"*"FAIL=1") ;; *) false;; esac && case "$out_paso" in *"Sumas de verificación correctas"*) false;; *) true;; esac'
+    'case "$step_out" in *"✗ demo: el archivo no coincide con su suma de verificación"*"FAIL=1") ;; *) false;; esac && case "$step_out" in *"Sumas de verificación correctas"*) false;; *) true;; esac'
   rm -rf "$ROOT/provisioning/apps/demo"
-  out_paso="$(FAIL=0; paso_descargar; echo "FAIL=$FAIL")"
+  step_out="$(FAIL=0; step_descargar; echo "FAIL=$FAIL")"
   check "descargar: no vendored app at all reds — never a vacuous «correctas (aplicaciones: 0)»" \
-    'case "$out_paso" in *"✗ no se encontraron aplicaciones"*"FAIL=1") ;; *) false;; esac && case "$out_paso" in *"correctas"*) false;; *) true;; esac'
+    'case "$step_out" in *"✗ no se encontraron aplicaciones"*"FAIL=1") ;; *) false;; esac && case "$step_out" in *"correctas"*) false;; *) true;; esac'
   rm -rf "$ROOT/provisioning"
 
   # the two-line bootstrap: this file on its own clones the suite at its tag, links the command and
   # the install goes on from the clone; a re-run finds it done; another version is refused, untouched
-  mkdir -p "$tmp/suelto" "$tmp/remoto/scripts" "$tmp/remoto/host" "$tmp/remoto/provisioning/apps/demo"
-  : > "$tmp/remoto/scripts/provisionador.py"; : > "$tmp/remoto/host/aps-conecta"
-  tar czf "$tmp/remoto/provisioning/apps/demo/demo-1.0.0.tar.gz" -C "$tmp" demo.txt
-  printf 'version=1.0.0\nsha256=%s\n' "$(sha256sum "$tmp/remoto/provisioning/apps/demo/demo-1.0.0.tar.gz" | cut -d' ' -f1)" \
-    > "$tmp/remoto/provisioning/apps/demo/VENDOR"
-  git -C "$tmp/remoto" init -q && git -C "$tmp/remoto" add -A \
-    && git -C "$tmp/remoto" -c user.email=self@t -c user.name=self commit -q -m uno && git -C "$tmp/remoto" tag v1.0.0 \
-    && git -C "$tmp/remoto" -c user.email=self@t -c user.name=self commit -q --allow-empty -m dos && git -C "$tmp/remoto" tag v1.1.0
-  bootstrap() {  # TAG — paso_descargar as the downloaded file runs it: no checkout around it
-    ROOT="$tmp/suelto"; HOST_DIR="$tmp/suelto"; APS_SUITE_TAG="$1"; APS_REPO_URL="file://$tmp/remoto"
-    FAIL=0; paso_descargar; echo "FAIL=$FAIL ROOT=$ROOT"
+  mkdir -p "$tmp/standalone" "$tmp/remote/scripts" "$tmp/remote/host" "$tmp/remote/provisioning/apps/demo"
+  : > "$tmp/remote/scripts/provisionador.py"; : > "$tmp/remote/host/aps-conecta"
+  tar czf "$tmp/remote/provisioning/apps/demo/demo-1.0.0.tar.gz" -C "$tmp" demo.txt
+  printf 'version=1.0.0\nsha256=%s\n' "$(sha256sum "$tmp/remote/provisioning/apps/demo/demo-1.0.0.tar.gz" | cut -d' ' -f1)" \
+    > "$tmp/remote/provisioning/apps/demo/VENDOR"
+  git -C "$tmp/remote" init -q && git -C "$tmp/remote" add -A \
+    && git -C "$tmp/remote" -c user.email=self@t -c user.name=self commit -q -m uno && git -C "$tmp/remote" tag v1.0.0 \
+    && git -C "$tmp/remote" -c user.email=self@t -c user.name=self commit -q --allow-empty -m dos && git -C "$tmp/remote" tag v1.1.0
+  bootstrap() {  # TAG — step_descargar as the downloaded file runs it: no checkout around it
+    ROOT="$tmp/standalone"; HOST_DIR="$tmp/standalone"; APS_SUITE_TAG="$1"; APS_REPO_URL="file://$tmp/remote"
+    FAIL=0; step_descargar; echo "FAIL=$FAIL ROOT=$ROOT"
   }
   rm -f "$BIN_DIR/aps-conecta"   # a pristine server: no command linked yet
-  out_paso="$(bootstrap v1.0.0 2>&1)"
+  step_out="$(bootstrap v1.0.0 2>&1)"
   check "descargar (bootstrap): clones the tag into APS_HOME/gestion, verifies it, links it, and the install goes on from it" \
-    'case "$out_paso" in *"· descargando la suite v1.0.0 en $APS_HOME/gestion"*"✓ Suite v1.0.0"*"✓ Sumas de verificación correctas (aplicaciones: 1)"*"✓ Comando aps-conecta enlazado"*"FAIL=0 ROOT=$APS_HOME/gestion") ;; *) false;; esac && [ "$(git -C "$APS_HOME/gestion" describe --tags)" = v1.0.0 ] && [ "$(readlink -f "$BIN_DIR/aps-conecta")" = "$APS_HOME/gestion/host/aps-conecta" ]'
+    'case "$step_out" in *"· descargando la suite v1.0.0 en $APS_HOME/gestion"*"✓ Suite v1.0.0"*"✓ Sumas de verificación correctas (aplicaciones: 1)"*"✓ Comando aps-conecta enlazado"*"FAIL=0 ROOT=$APS_HOME/gestion") ;; *) false;; esac && [ "$(git -C "$APS_HOME/gestion" describe --tags)" = v1.0.0 ] && [ "$(readlink -f "$BIN_DIR/aps-conecta")" = "$APS_HOME/gestion/host/aps-conecta" ]'
   check "descargar (bootstrap): the clone prints no git advice (English, about detached HEADs) to the operator" \
-    'case "$out_paso" in *"git switch"*|*advice*|*"detached HEAD"*) false;; *) true;; esac'
+    'case "$step_out" in *"git switch"*|*advice*|*"detached HEAD"*) false;; *) true;; esac'
   check "descargar (bootstrap): the root-owned bundle is a safe git directory system-wide, so the admin reads its tag" \
     '[ "$(git config --file "$ETC_DIR/gitconfig" --get-all safe.directory)" = "$APS_HOME/gestion" ]'
-  out_paso="$(bootstrap v1.0.0 2>&1)"
+  step_out="$(bootstrap v1.0.0 2>&1)"
   check "descargar (bootstrap): a re-run finds the bundle and the link done and clones nothing" \
-    'case "$out_paso" in *"✓ Suite v1.0.0 ya descargada en $APS_HOME/gestion"*"✓ Comando aps-conecta enlazado ($BIN_DIR/aps-conecta)"*"FAIL=0"*) ;; *) false;; esac && case "$out_paso" in *descargando*) false;; *) true;; esac && [ "$(git config --file "$ETC_DIR/gitconfig" --get-all safe.directory | wc -l)" -eq 1 ]'
-  out_paso="$(bootstrap v1.1.0 2>&1)"
+    'case "$step_out" in *"✓ Suite v1.0.0 ya descargada en $APS_HOME/gestion"*"✓ Comando aps-conecta enlazado ($BIN_DIR/aps-conecta)"*"FAIL=0"*) ;; *) false;; esac && case "$step_out" in *descargando*) false;; *) true;; esac && [ "$(git config --file "$ETC_DIR/gitconfig" --get-all safe.directory | wc -l)" -eq 1 ]'
+  step_out="$(bootstrap v1.1.0 2>&1)"
   check "descargar (bootstrap): an installation of another version is refused and left untouched" \
-    'case "$out_paso" in *"✗ ya existe una instalación en $APS_HOME/gestion (versión v1.0.0), distinta de v1.1.0"*"sudo bash $APS_HOME/gestion/host/aps-conecta install"*"FAIL=1"*) ;; *) false;; esac && [ "$(git -C "$APS_HOME/gestion" describe --tags)" = v1.0.0 ]'
-  out_paso="$(export ID_U=1000; APS_HOME="$tmp/opt-sin-sudo"; bootstrap v1.0.0 2>&1)"
+    'case "$step_out" in *"✗ ya existe una instalación en $APS_HOME/gestion (versión v1.0.0), distinta de v1.1.0"*"sudo bash $APS_HOME/gestion/host/aps-conecta install"*"FAIL=1"*) ;; *) false;; esac && [ "$(git -C "$APS_HOME/gestion" describe --tags)" = v1.0.0 ]'
+  step_out="$(export ID_U=1000; APS_HOME="$tmp/opt-no-sudo"; bootstrap v1.0.0 2>&1)"
   check "descargar (bootstrap): without sudo it says so and clones nothing" \
-    'case "$out_paso" in *"✗ descargar la suite necesita permisos de administrador"*"FAIL=1"*) ;; *) false;; esac && [ ! -e "$tmp/opt-sin-sudo" ]'
-  mkdir -p "$tmp/opt-ocupado/gestion/restos"
-  out_paso="$(APS_HOME="$tmp/opt-ocupado"; bootstrap v1.0.0 2>&1)"
+    'case "$step_out" in *"✗ descargar la suite necesita permisos de administrador"*"FAIL=1"*) ;; *) false;; esac && [ ! -e "$tmp/opt-no-sudo" ]'
+  mkdir -p "$tmp/opt-taken/gestion/restos"
+  step_out="$(APS_HOME="$tmp/opt-taken"; bootstrap v1.0.0 2>&1)"
   check "descargar (bootstrap): a directory that is not the suite is refused with the move command — never a network hint" \
-    'case "$out_paso" in *"✗ $tmp/opt-ocupado/gestion ya existe y no es una copia de la suite"*"sudo mv $tmp/opt-ocupado/gestion"*"FAIL=1"*) ;; *) false;; esac && case "$out_paso" in *"revise la red"*) false;; *) true;; esac'
-  mkdir -p "$tmp/otra-copia"; : > "$tmp/otra-copia/aps-conecta"; ln -sf "$tmp/otra-copia/aps-conecta" "$BIN_DIR/aps-conecta"
-  out_paso="$(FAIL=0; enlazar; echo "FAIL=$FAIL")"
+    'case "$step_out" in *"✗ $tmp/opt-taken/gestion ya existe y no es una copia de la suite"*"sudo mv $tmp/opt-taken/gestion"*"FAIL=1"*) ;; *) false;; esac && case "$step_out" in *"revise la red"*) false;; *) true;; esac'
+  mkdir -p "$tmp/other-copy"; : > "$tmp/other-copy/aps-conecta"; ln -sf "$tmp/other-copy/aps-conecta" "$BIN_DIR/aps-conecta"
+  step_out="$(FAIL=0; link_command; echo "FAIL=$FAIL")"
   check "descargar: a command already linked to another existing copy is left alone, with the command to switch" \
-    'case "$out_paso" in *"· $BIN_DIR/aps-conecta ya apunta a $tmp/otra-copia/aps-conecta — no se cambia"*"FAIL=0") ;; *) false;; esac && [ "$(readlink -f "$BIN_DIR/aps-conecta")" = "$tmp/otra-copia/aps-conecta" ]'
+    'case "$step_out" in *"· $BIN_DIR/aps-conecta ya apunta a $tmp/other-copy/aps-conecta — no se cambia"*"FAIL=0") ;; *) false;; esac && [ "$(readlink -f "$BIN_DIR/aps-conecta")" = "$tmp/other-copy/aps-conecta" ]'
   mkdir -p "$tmp/solo/host"; cp "$HOST_DIR/aps-conecta" "$tmp/solo/host/aps-conecta"
-  out_paso="$(env -u APS_SUITE_TAG bash "$tmp/solo/host/aps-conecta" run-command 2>&1)"
+  step_out="$(env -u APS_SUITE_TAG bash "$tmp/solo/host/aps-conecta" run-command 2>&1)"
   check "bootstrap: the file on its own installs its own release — BUNDLE_TAG — with no git around it" \
-    'case "$out_paso" in *"ghcr.io/aps-conecta/all-in-one:$BUNDLE_TAG") ;; *) false;; esac'
+    'case "$step_out" in *"ghcr.io/aps-conecta/all-in-one:$BUNDLE_TAG") ;; *) false;; esac'
   check "bootstrap: BUNDLE_TAG is CHANGELOG's newest release (the release commit sets both)" \
     '[ "v$(grep -m1 -oE "^## \[[0-9][^]]*" "$ROOT_BAK/CHANGELOG.md" | cut -c5-)" = "$BUNDLE_TAG" ]'
   rm -f "$tshim/id"
 
   # the dispatch as the operator calls it: help is the usage, an unknown word reds, and every
   # registry step answers by its id (browser steps say where they run; server steps have a body)
-  out_paso="$(bash "$HOST_DIR/aps-conecta" --help 2>&1)"; rcs=$?
+  step_out="$(bash "$HOST_DIR/aps-conecta" --help 2>&1)"; rcs=$?
   check "dispatch: --help prints the usage and exits 0, with no ✗" \
-    '[ "$rcs" -eq 0 ] && case "$out_paso" in *"Pasos sueltos"*) ;; *) false;; esac && case "$out_paso" in *"✗"*) false;; *) true;; esac'
-  out_paso="$(bash "$HOST_DIR/aps-conecta" nada 2>&1)"; rcs=$?
+    '[ "$rcs" -eq 0 ] && case "$step_out" in *"Pasos sueltos"*) ;; *) false;; esac && case "$step_out" in *"✗"*) false;; *) true;; esac'
+  step_out="$(bash "$HOST_DIR/aps-conecta" nada 2>&1)"; rcs=$?
   check "dispatch: an unknown subcommand prints the usage, names itself and exits 2" \
-    '[ "$rcs" -eq 2 ] && case "$out_paso" in *"Pasos sueltos"*"✗ subcomando desconocido: nada"*) ;; *) false;; esac'
-  local sin_cuerpo=""
-  for i in $(seq 1 "${#PASOS[@]}"); do
-    if [ "$(paso_campo "$i" 3)" = servidor ]; then
-      declare -F "paso_$(paso_campo "$i" 1)" >/dev/null || sin_cuerpo+="$(paso_campo "$i" 1) "
+    '[ "$rcs" -eq 2 ] && case "$step_out" in *"Pasos sueltos"*"✗ subcomando desconocido: nada"*) ;; *) false;; esac'
+  local bodyless=""
+  for i in $(seq 1 "${#STEPS[@]}"); do
+    if [ "$(step_field "$i" 3)" = servidor ]; then
+      declare -F "step_$(step_field "$i" 1)" >/dev/null || bodyless+="$(step_field "$i" 1) "
     else
-      case "$(bash "$HOST_DIR/aps-conecta" "$(paso_campo "$i" 1)" 2>&1)" in
-        *"el paso $i ("*"se hace en el navegador"*) ;; *) sin_cuerpo+="$(paso_campo "$i" 1) " ;;
+      case "$(bash "$HOST_DIR/aps-conecta" "$(step_field "$i" 1)" 2>&1)" in
+        *"el paso $i ("*"se hace en el navegador"*) ;; *) bodyless+="$(step_field "$i" 1) " ;;
       esac
     fi
   done
-  check "dispatch: every registry step answers by its id — a server body, or the browser notice" '[ -z "$sin_cuerpo" ]'
+  check "dispatch: every registry step answers by its id — a server body, or the browser notice" '[ -z "$bodyless" ]'
 
   # a re-run after the suite started: a port the suite publishes reads as its own; a stranger on a
   # port the suite does not publish still reds (the mastercontainer publishes 8080 only)
   printf '#!/usr/bin/env bash\ncase "$2" in "sport = :8080"|"sport = :80") echo "State"; echo "LISTEN 0 0 *:${2##*:}";; esac\nexit 0\n' > "$tshim/ss"; chmod +x "$tshim/ss"
   printf '#!/usr/bin/env bash\ncase "$*" in *"{{.Names}}"*) echo nextcloud-aio-mastercontainer;; *"{{.Ports}}"*) echo "0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp";; esac\nexit 0\n' > "$tshim/docker"; chmod +x "$tshim/docker"
-  out_paso="$(FAIL=0; check_ports; echo "FAIL=$FAIL")"
+  step_out="$(FAIL=0; check_ports; echo "FAIL=$FAIL")"
   check "revisar: a port the running suite publishes reads as the suite's own, so a re-run of install goes on" \
-    'case "$out_paso" in *"✓ puerto 8080 en uso por la suite (ya instalada)"*) ;; *) false;; esac'
+    'case "$step_out" in *"✓ puerto 8080 en uso por la suite (ya instalada)"*) ;; *) false;; esac'
   check "revisar: a stranger on a port the suite does not publish reds while the suite runs" \
-    'case "$out_paso" in *"✗ puerto 80 ocupado"*"FAIL=1") ;; *) false;; esac'
+    'case "$step_out" in *"✗ puerto 80 ocupado"*"FAIL=1") ;; *) false;; esac'
   printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/ss"; chmod +x "$tshim/ss"
   rm -f "$tshim/docker"
 
-  out_paso="$(paso_correr "$(paso_n mapa)" "aps-conecta mapa" 2>&1)"; rcs=$?
+  step_out="$(step_run "$(step_number mapa)" "aps-conecta mapa" 2>&1)"; rcs=$?
   check "mapa: with no centre chosen yet the step says it is pending, and the install goes on" \
-    '[ "$rcs" -eq 0 ] && case "$out_paso" in *"Paso 4 de 9 · Construir el mapa"*"después de elegir el centro"*"Resultado Mapa pendiente: se construye después de elegir el centro."*"Siguiente Paso 5"*) ;; *) false;; esac'
+    '[ "$rcs" -eq 0 ] && case "$step_out" in *"Paso 4 de 9 · Construir el mapa"*"después de elegir el centro"*"Resultado Mapa pendiente: se construye después de elegir el centro."*"Siguiente Paso 5"*) ;; *) false;; esac'
 
   # ── the checks against planted tool worlds ──
   mk_docker 1.44 ""
@@ -1261,15 +1448,15 @@ SHIM
 
   mk_docker 1.56 ""
   # R6: the domain is probed before the site record names one — «preflight --dominio»
-  out="$(DOMINIO=antes.example; check_dns)"
+  out="$(PREFLIGHT_DOMAIN=early.example; check_dns)"
   check "dns (R6): --dominio wins over the site record's domain" \
-    'case "$out" in *"DNS responde para antes.example"*) ;; *) false;; esac'
+    'case "$out" in *"DNS responde para early.example"*) ;; *) false;; esac'
   printf '#!/usr/bin/env bash\nexit 1\n' > "$tshim/getent"; chmod +x "$tshim/getent"
-  out="$( (cmd_preflight --dominio antes.example) 2>&1)"; rc=$?
+  out="$( (cmd_preflight --dominio early.example) 2>&1)"; rc=$?
   check "preflight (R6): --dominio probes DNS before the wizard and reds with the registro-A fix" \
-    '[ "$rc" -eq 1 ] && case "$out" in *"✗ DNS no responde para antes.example"*"registro A"*"REVISIÓN: ✗"*) ;; *) false;; esac'
+    '[ "$rc" -eq 1 ] && case "$out" in *"✗ DNS no responde para early.example"*"registro A"*"REVISIÓN: ✗"*) ;; *) false;; esac'
   printf '#!/usr/bin/env bash\necho 127.0.0.1\n' > "$tshim/getent"; chmod +x "$tshim/getent"
-  out="$(ROOT="$tmp/sin-sitio"; check_dns)"
+  out="$(ROOT="$tmp/no-site"; check_dns)"
   check "dns (R6): with no domain anywhere it names the --dominio probe" \
     'case "$out" in *"aps-conecta preflight --dominio <dominio>"*) ;; *) false;; esac'
   out="$( (cmd_preflight --dominio) 2>&1)"; rc=$?
@@ -1324,10 +1511,90 @@ CSHIM
   check "hairpin: the red carries the ufw recipe and the local-DNS legs, and never SKIP_DOMAIN_VALIDATION as advice" \
     'case "$out" in *"172.18.0.0/16"*"dnsmasq"*"daemon.json"*"NO use SKIP_DOMAIN_VALIDATION"*"✗ el control de salud de la oficina NO responde"*) ;; *) false;; esac'
 
+  # ── asistente-aio: the AIO wizard driven through its API, against a stateful fake wizard ──
+  # curl answers the six endpoints the drive uses (honouring -o, printing -w's code) and logs every
+  # POST; docker answers ps from what the start "created" and occ from an installed instance
+  local AIO_URL="https://127.0.0.1:9999" AIO_STATE="$tmp/aio" AIO_POLL=0.05
+  : > "$tmp/aio.log"; : > "$tmp/aio.ps"; : > "$tmp/aio.argv"; rm -f "$tmp/aio.configured"
+  cat > "$tshim/curl" <<SHIM
+#!/usr/bin/env bash
+url=""; data=""; outfile=""; prev=""
+printf '%s\n' "\$*" >> "$tmp/aio.argv"
+for a in "\$@"; do
+  case "\$a" in https://*) url="\$a" ;; esac
+  if [ "\$prev" = --data-urlencode ]; then
+    case "\$a" in password@*) data="\$data password=\$(cat "\${a#password@}")" ;; *) data="\$data \$a" ;; esac
+  fi
+  [ "\$prev" = -o ] && outfile="\$a"
+  prev="\$a"
+done
+body=""; code=""
+case "\$url" in
+  */setup) [ -e "$tmp/aio.configured" ] || body='<p id="initial-password">frase uno dos</p>' ;;
+  */api/auth/login) echo "POST login\$data" >> "$tmp/aio.log"
+    case "\$data" in *"password=frase uno dos"*) code=201 ;; *) code=422 ;; esac ;;
+  */login) body='<input name="csrf_name" value="n1"><input name="csrf_value" value="v1">' ;;
+  */containers) echo "GET containers" >> "$tmp/aio.log"; body='<span id="initial-nextcloud-password">admin-secreta</span>' ;;
+  */api/configuration) echo "POST config\$data" >> "$tmp/aio.log"; touch "$tmp/aio.configured"
+    case "\$data" in *"domain=rechazado.example"*) code=422 ;; *) code=201 ;; esac ;;
+  */api/docker/start) echo "POST start\$data" >> "$tmp/aio.log"
+    if [ -e "$tmp/aio.start-fails" ]; then code=500; else
+    printf '%s\n' nextcloud-aio-nextcloud nextcloud-aio-database nextcloud-aio-redis > "$tmp/aio.ps"; sleep 0.4
+    printf '%s\n' nextcloud-aio-nextcloud $AIO_SET > "$tmp/aio.ps"; code=200; fi ;;
+esac
+if [ -n "\$outfile" ]; then printf '%s\n' "\$body" > "\$outfile"; else [ -z "\$body" ] || printf '%s\n' "\$body"; fi
+[ -z "\$code" ] || printf '%s' "\$code"
+SHIM
+  cat > "$tshim/docker" <<SHIM
+#!/usr/bin/env bash
+case "\$1" in
+  ps) cat "$tmp/aio.ps" ;;
+  exec) case "\$*" in *"occ status"*) echo '{"installed":true}' ;; *"config:list"*) echo '{"system":{}}' ;; esac ;;
+esac
+SHIM
+  chmod +x "$tshim/curl" "$tshim/docker"
+  if only_shims curl docker; then
+    out="$( (cmd_aio_wizard --dominio clinica.example --sin-validar-dominio) 2>&1)"; rc=$?
+    check "asistente-aio: passphrase, login, domain, timezone, options, start with progress, the waits, the admin password — in order" \
+      '[ "$rc" -eq 0 ] && case "$out" in *"✓ Contraseña del asistente guardada en $AIO_STATE/master.pw"*"✓ Ingreso al asistente"*"✓ Dominio: clinica.example"*"✓ Zona horaria: America/Santiago"*"✓ Opciones: oficina incluida"*"· contenedores en marcha: 3 de 6"*"✓ Suite iniciada"*"✓ Suite en marcha: 6 contenedores, Nextcloud instalado"*"✓ Contraseña del administrador de Nextcloud guardada en $AIO_STATE/nextcloud.pw"*) ;; *) false;; esac'
+    check "asistente-aio: the load-bearing GET /containers comes before the first configuration POST" \
+      '[ "$(grep -n "^GET containers" "$tmp/aio.log" | head -1 | cut -d: -f1)" -lt "$(grep -n "^POST config" "$tmp/aio.log" | head -1 | cut -d: -f1)" ]'
+    check "asistente-aio: every POST carries the session's CSRF pair; the skip flag rides the domain; office is never posted" \
+      '[ -z "$(grep "^POST config\|^POST start" "$tmp/aio.log" | grep -v "csrf_name=n1 csrf_value=v1")" ] && grep -q "domain=clinica.example skip_domain_validation=1$" "$tmp/aio.log" && grep -q "timezone=America/Santiago$" "$tmp/aio.log" && grep -q "options-form=1$" "$tmp/aio.log" && ! grep -q office "$tmp/aio.log"'
+    check "asistente-aio: the passphrase reaches curl as a file (password@…), never in its arguments" \
+      'grep -q "password=frase uno dos" "$tmp/aio.log" && grep -q "password@$AIO_STATE/master.pw" "$tmp/aio.argv" && ! grep -q "frase uno dos" "$tmp/aio.argv"'
+    check "asistente-aio: both secrets are 0600 files and never reach the console" \
+      '[ "$(stat -c %a "$AIO_STATE/master.pw")" = 600 ] && [ "$(cat "$AIO_STATE/master.pw")" = "frase uno dos" ] && [ "$(stat -c %a "$AIO_STATE/nextcloud.pw")" = 600 ] && [ "$(cat "$AIO_STATE/nextcloud.pw")" = admin-secreta ] && case "$out" in *"frase uno dos"*|*admin-secreta*) false;; *) true;; esac'
+    : > "$tmp/aio.log"
+    out="$( (cmd_aio_wizard --dominio clinica.example --sin-validar-dominio) 2>&1)"; rc=$?
+    check "asistente-aio: a re-run on a running suite configures nothing and posts nothing" \
+      '[ "$rc" -eq 0 ] && case "$out" in *"✓ La suite ya está en marcha — el asistente no se vuelve a configurar"*) ;; *) false;; esac && [ ! -s "$tmp/aio.log" ]'
+    : > "$tmp/aio.ps"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; : > "$tmp/aio.log"
+    out="$( (cmd_aio_wizard --dominio backup.example --respaldo /mnt/backup) 2>&1)"; rc=$?
+    check "asistente-aio: --respaldo posts the borg location and the daily time — a location alone schedules nothing" \
+      '[ "$rc" -eq 0 ] && grep -q "borg_backup_host_location=/mnt/backup borg_remote_repo=$" "$tmp/aio.log" && grep -q "daily_backup_time=04:00$" "$tmp/aio.log" && case "$out" in *"✓ Respaldo diario a las 04:00 en /mnt/backup"*) ;; *) false;; esac'
+    : > "$tmp/aio.ps"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; : > "$tmp/aio.log"
+    out="$( (cmd_aio_wizard --dominio rechazado.example) 2>&1)"; rc=$?
+    check "asistente-aio: a domain the wizard refuses stops before the start, naming the field" \
+      '[ "$rc" -eq 1 ] && case "$out" in *"✗ el asistente rechazó «domain» (HTTP 422)"*) ;; *) false;; esac && ! grep -q "^POST start" "$tmp/aio.log"'
+    : > "$tmp/aio.ps"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; touch "$tmp/aio.start-fails"
+    out="$( (cmd_aio_wizard --dominio clinica.example) 2>&1)"; rc=$?
+    check "asistente-aio: a start the wizard refuses reds with its HTTP code and stops before the waits" \
+      '[ "$rc" -eq 1 ] && case "$out" in *"✗ el asistente no pudo iniciar la suite (HTTP 500)"*) ;; *) false;; esac && case "$out" in *"Suite en marcha"*) false;; *) true;; esac'
+    rm -f "$tmp/aio.start-fails"
+    out="$( (cmd_aio_wizard --dominio clinica.example --respaldo) 2>&1)"; rc=$?
+    check "asistente-aio: --respaldo without a directory refuses — never a silently skipped backup" \
+      '[ "$rc" -eq 1 ] && [ "$out" = "✗ falta el directorio del respaldo: aps-conecta asistente-aio --dominio <dominio> --respaldo <directorio>" ]'
+    out="$( (cmd_aio_wizard --dominio -x) 2>&1)"; rc=$?
+    check "asistente-aio: a value that is not a domain is refused before any request" \
+      '[ "$rc" -eq 1 ] && [ "$out" = "✗ falta un dominio válido: aps-conecta asistente-aio --dominio <dominio>" ]'
+  fi
+  rm -f "$tshim/curl" "$tshim/docker"
+
   # ── a5: usage and preflight are Spanish, with no source header, shell internals or internal ids ──
   local a5_ids='^[[:space:]]*#|set -uo|readlink|HOST_DIR|\$\{|\bslice\b|\bFRD\b|\bB-[0-9]{3}\b|\bR[0-9]{1,2}\b|\bD[0-9]{1,2}\b|#[0-9]{2,}'
   local a5_en='the|failed|not found|warning|missing|usage'
-  out="$(uso 2>&1)"
+  out="$(usage 2>&1)"
   check "usage (a5): generated Spanish, every step listed, no source header, no internal id, no English word" \
     '[ -n "$out" ] && ! printf "%s\n" "$out" | grep -qE "$a5_ids" && ! printf "%s\n" "$out" | grep -qiwE "$a5_en" && case "$out" in *"aps-conecta revisar"*"aps-conecta ejecutar"*) ;; *) false;; esac'
   mk_docker 1.56 ""
@@ -1524,20 +1791,21 @@ case "${1:-}" in
   preflight)    shift; cmd_preflight "$@" ;;
   run-command)  run_command ;;
   provision)    shift; cmd_provision "${1:-}" ;;
+  asistente-aio) shift; cmd_aio_wizard "$@" ;;
   revalidate)   cmd_revalidate ;;
   respaldo)     cmd_respaldo ;;
   tiles)        shift; exec bash "$HOST_DIR/tiles.sh" "$@" ;;
   datos)        shift; cmd_datos "${1:-}" ;;
   --self-test)  selftest ;;
-  ""|-h|--help) uso ;;
+  ""|-h|--help) usage ;;
   *)            # a step answers by its registry id — the list is the only place a step is named
-                if paso="$(paso_n "$1")"; then
-                  if [ "$(paso_campo "$paso" 3)" = servidor ]; then
-                    paso_correr "$paso" "aps-conecta $1" || exit 1
+                if step="$(step_number "$1")"; then
+                  if [ "$(step_field "$step" 3)" = servidor ]; then
+                    step_run "$step" "aps-conecta $1" || exit 1
                   else
-                    paso_navegador "$paso"
+                    step_browser "$step"
                   fi
                 else
-                  uso; echo; echo "✗ subcomando desconocido: $1" >&2; exit 2
+                  usage; echo; echo "✗ subcomando desconocido: $1" >&2; exit 2
                 fi ;;
 esac

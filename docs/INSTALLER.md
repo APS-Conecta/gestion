@@ -157,9 +157,9 @@ sudo aps-conecta tiles install --url https://tiles.<dominio>/chile.pmtiles
 ## 10. Updates
 
 The suite updates **as one lockstep set** — never a component alone. When a new suite tag is
-published, and **before it is announced**: run the acceptance harness on a rehearsal VM —
-`scripts/final-validation.sh run` — its FINDINGS file is the acceptance record (the release
-ritual's owner; the harness IS this runbook, instrumented). When updating a clinic:
+published, and **before it is announced**: install it on a fresh rehearsal box exactly as a clinic
+does (§2), then `aps-conecta revalidate` — that rehearsal is the acceptance record. When updating a
+clinic:
 
 ```bash
 aps-conecta revalidate

@@ -13,6 +13,13 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Added
 
+- **`aps-conecta asistente-aio --dominio D`** — configures and starts the suite through the AIO
+  wizard's own API, with no browser: the one-time passphrase captured into a 0600 file (reused on a
+  re-run), login, domain (`--sin-validar-dominio` for a disposable instance), America/Santiago,
+  the options (office on; Talk, whiteboard and imaginary off), an optional `--respaldo` location,
+  the start with a running count of containers (it pulls ~6 GB inside one request), the bounded
+  waits, and the Nextcloud admin password into a 0600 file. A re-run on a running suite posts
+  nothing. The CI testbed (`scripts/aio-testbed.sh up`) now calls it — one copy of the drive.
 - **Two-line install on a fresh server** — `curl -fsSL …/<tag>/host/aps-conecta -o aps-conecta` and
   `sudo bash aps-conecta install` on Ubuntu or Debian: «preparar» installs git/python3, Docker Engine
   + Compose from Docker's own apt repository, adds the operator to the docker group and sets
@@ -80,6 +87,10 @@ image digests live there and are deliberately not copied here — one fact, one 
   ([docs/WELCOME-SCREEN.md](docs/WELCOME-SCREEN.md) § Declaring the tree). Needs an IntraVox
   engine with `occ intravox:import --skip-existing`.
 
+### Removed
+
+- **`scripts/final-validation.sh`** — the whole-installer harness kept a second copy of the wizard
+  drive; the release rehearsal installs a fresh box the way a clinic does (`docs/INSTALLER.md` §10).
 ## [0.3.0] — 2026-09-22
 
 ### Added
