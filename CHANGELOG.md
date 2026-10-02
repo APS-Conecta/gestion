@@ -13,6 +13,21 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Added
 
+- **The web installer opens with one HTTPS link** (L3 S1).
+  - `sudo aps-conecta abrir` prints `https://<LAN-IP>:<port>/login#acceso=<code>` and the
+    fingerprint of the installer's own certificate.
+  - The installer's CA lives in `/opt/aps-conecta/certificados`: made once and kept; the leaf is
+    re-signed for the link's address on every start.
+  - The code rides the URL fragment and the session cookie is `Secure`, so nothing crosses the
+    LAN in clear.
+  - `GET /` opens the sign-in page, and the identity probe is `/api/salud`.
+  - A second installer is refused, and the console no longer prints a request log.
+  - A green «Revisar y ejecutar» closes the installer (port closed, link dead), and the console
+    wires the timers and prints «Listo».
+  - The pages follow the approved Instalador UI: the backdrop rail of the nine steps, read from
+    the new `aps-conecta pasos` (the one list), the brand fonts served locally, a welcome and a
+    «Listo».
+  - `aps-conecta provision` is the same step as `abrir`.
 - **`aps-conecta estado`** — the last execution's verdict, each item with its fix, in Spanish, with
   no sudo (`/opt/aps-conecta/estado.txt`, 0644, written by every execution — the installer's, the
   silent install's and the weekly one). When the weekly re-provision finds drift or does not finish,
