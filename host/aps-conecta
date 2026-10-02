@@ -129,6 +129,15 @@ step_browser() {  # N — a browser step asked for from the console: where it ru
   info "el paso $1 («$(step_field "$1" 2)») se hace en el navegador, en el instalador web que abre «aps-conecta abrir»"
 }
 
+cmd_pasos() {  # the registry as TSV — id · título · dónde · subcomando · propósito · resultado — the
+  # web installer's only source for its rail and step numbers (a11: it keeps no list of its own)
+  local n
+  for n in $(seq 1 "${#STEPS[@]}"); do
+    printf '%s\t%s\t%s\taps-conecta %s\t%s\t%s\n' "$(step_field "$n" 1)" "$(step_field "$n" 2)" \
+      "$(step_field "$n" 3)" "$(step_field "$n" 1)" "$(step_field "$n" 4)" "$(step_field "$n" 5)"
+  done
+}
+
 welcome() {  # the welcome — the approved console's opening, line for line
   local v n_server=0 n_browser=0 i
   v="$(suite_tag)"; [ -n "$v" ] || v="(versión sin etiqueta)"
@@ -250,6 +259,7 @@ usage() {  # Spanish, generated from the registry — never a slice of this file
   done
   echo
   echo "Mantenimiento:"
+  echo "  aps-conecta pasos                 los pasos de la instalación, uno por fila (separados por tabulador)"
   echo "  aps-conecta preflight [--dominio D]   revisión completa del servidor (y del dominio D) y comando de arranque de la suite"
   echo "  aps-conecta run-command           solo el comando de arranque de la suite"
   echo "  aps-conecta provision             abre el instalador web (lo mismo que el paso abrir)"
@@ -374,23 +384,22 @@ check_arch() {  # x86-64 is the clinic posture; arm64 publishes exist, so it pas
   esac
 }
 
-check_prov_ports() {  # INFO + the routed liveness probe (slices 14/15): GET / answers the
-  # identity JSON with no auth and no secrets — the one honest way to tell a running
-  # provisionador from a stranger on the same port. Never a gate: the Provisionador owns
-  # its own fallback chain.
+check_prov_ports() {  # INFO + the identity probe (R33): /api/salud answers the web installer's
+  # identity JSON over HTTPS with no auth and no secrets — the one honest way to tell a running
+  # installer from a stranger on the same port. Never a gate: a second installer refuses itself
   local p busy=0 body
   for p in $PROV_PORTS; do
     if ! port_free "$p"; then
       busy=1
-      body="$(curl -s -m 5 "http://127.0.0.1:$p/" 2>/dev/null || true)"
+      body="$(curl -sk -m 5 "https://127.0.0.1:$p/api/salud" 2>/dev/null || true)"
       if printf '%s' "$body" | grep -q '"servicio"'; then
-        info "puerto $p: un provisionador ya corre ahí (la identidad GET / responde) — reutilícelo o deténgalo con Ctrl+C"
+        info "puerto $p: el instalador web ya está abierto — use su enlace o ciérrelo con Ctrl+C en su consola"
       else
-        info "puerto $p ocupado por otro servicio — el provisionador elegirá un puerto libre de la cadena 8081→8083"
+        info "puerto $p ocupado por otro servicio — el instalador web elegirá un puerto libre de la cadena 8081→8083"
       fi
     fi
   done
-  [ "$busy" -eq 0 ] && info "cadena del provisionador libre (8081→8083 — elige sola)"
+  [ "$busy" -eq 0 ] && info "cadena del instalador web libre (8081→8083 — elige sola)"
   return 0
 }
 
@@ -683,13 +692,29 @@ step_mapa() {  # the basemap needs the chosen centre today (L5 builds it before 
   bash "$HOST_DIR/tiles.sh" install
 }
 
-step_abrir() {  # the web installer walks steps 6–9; this process becomes it (exec — Ctrl+C stops
-  # it, as «provision» always did), so the footer prints before the hand-over — and says what is
-  # about to happen, never that the link was already delivered
-  STEP_RESULT="El instalador web se abre aquí abajo, con su enlace y su código de acceso."
-  step_footer "$(step_number abrir)"
-  printf '  No cierre esta ventana hasta «Listo».\n\n'
-  exec python3 "$(prov_path)"
+step_abrir() {  # the web installer walks steps 6–9 as a CHILD of this console (Ctrl+C still reaches
+  # it): it exits 0 only after a green «Revisar y ejecutar», and the console then wires the timers
+  # and closes the install with «Listo» — the silent install's own tail (a13, SEC-2)
+  local rc domain last="${#STEPS[@]}"
+  python3 "$(prov_path)"; rc=$?
+  case "$rc" in
+    0) ;;
+    130|129|143) bad "el instalador web se cerró antes de terminar" "vuelva a abrirlo: sudo aps-conecta abrir"; return 0 ;;
+    *) bad "el instalador web no abrió" "corrija lo indicado arriba y vuelva a ejecutar: sudo aps-conecta abrir"; return 0 ;;
+  esac
+  printf '%s\n' "──────────────────────────────────────────────────────────────"
+  ok "Paso $last de $last · $(step_field "$last" 2): verificado"
+  FAIL=0; install_timers
+  echo
+  domain="$(site_domain || true)"
+  if [ -n "$domain" ]; then printf '  Listo. Acceso del personal: https://%s\n' "$domain"; else printf '  Listo.\n'; fi
+  printf '  Instalador web cerrado; enlace inválido.\n'
+  printf '  Credenciales: entregue a cada persona su fila — sudo cat %s/credentials.txt\n\n' "$APS_HOME"
+  if [ "$FAIL" -ne 0 ]; then
+    printf '  Falta lo marcado con ✗ arriba: ejecute el comando que nombra.\n'
+    exit 1
+  fi
+  exit 0
 }
 
 # ── the run-command generator ─────────────────────────────────────────────────────────────
@@ -973,12 +998,9 @@ cmd_aio_wizard() {  # --dominio D [--sin-validar-dominio] [--respaldo DIR]
   [ "$FAIL" -eq 0 ] || exit 1
 }
 
-cmd_provision() {  # [--reponer]
+cmd_provision() {  # [--reponer] — without it, the step «abrir» itself (the same frame and body)
   if [ "${1:-}" = "--reponer" ]; then reponer; return; fi
-  # Interactive: the Provisionador's banner is the operator's only copy of URL + token, its
-  # stdout is line-buffered (slice 14) and the URL now lands on the login screen (slice 17).
-  # exec — one process, no wrapper to wedge between the operator and Ctrl+C.
-  exec python3 "$(prov_path)"
+  step_run "$(step_number abrir)" "sudo aps-conecta abrir" || exit 1
 }
 
 
@@ -1251,6 +1273,11 @@ EOF
     '[ "$ids" = "revisar preparar descargar mapa abrir centro suite equipos ejecutar " ]'
   check "registry: step_number maps an id to its number and refuses an unknown one" \
     '[ "$(step_number mapa)" = 4 ] && ! step_number nada >/dev/null'
+  local tsv tsv_ok
+  tsv="$(cmd_pasos)"
+  tsv_ok="$(printf '%s\n' "$tsv" | awk -F'\t' 'NF == 6 && $4 == "aps-conecta " $1 { n++ } END { print n + 0 }')"
+  check "pasos: one TSV row per step — id, título, dónde, its own subcommand, propósito, resultado (a11)" \
+    '[ "$tsv_ok" -eq "${#STEPS[@]}" ] && [ "$(printf "%s\n" "$tsv" | sed -n 6p | cut -f2)" = "Elegir el centro" ]'
   welcome_out="$(welcome)"
   check "welcome: name, version, the nine-step promise, the motto, the licence with the source, the credit" \
     'case "$welcome_out" in *"APS Conecta Gestión   Instalador v9.9.9"*"en 9 pasos: 5 en este servidor, 4 en el navegador"*"«La salud primaria que compartimos es la que mejora»"*"AGPL-3.0-or-later · github.com/APS-Conecta/gestion"*"Desarrollado por Dani Espinoza Charrier · APS Conecta"*) ;; *) false;; esac'
@@ -1656,24 +1683,27 @@ SHIM
     'case "$out" in *"✗ arquitectura riscv64 no soportada"*) ;; *) false;; esac'
   printf '#!/usr/bin/env bash\necho x86_64\n' > "$tshim/uname"; chmod +x "$tshim/uname"
 
-  # the provisionador chain: free chain, stranger-busy, and provisionador-busy (the routed
-  # GET / identity probe — no auth, no secrets, slices 14/15)
+  # the installer's chain: free chain, stranger-busy, installer-busy (the identity probe
+  # /api/salud over HTTPS — no auth, no secrets, R33)
   printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/ss"; chmod +x "$tshim/ss"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/curl"; chmod +x "$tshim/curl"
   out="$(check_prov_ports)"
-  check "prov-ports: the free chain prints its INFO" 'case "$out" in *"cadena del provisionador libre"*) ;; *) false;; esac'
+  check "prov-ports: the free chain prints its INFO" 'case "$out" in *"cadena del instalador web libre"*) ;; *) false;; esac'
   printf '#!/usr/bin/env bash\nif [ "$2" = "sport = :8081" ]; then echo "State"; echo "LISTEN 0 0 *:8081"; fi\nexit 0\n' > "$tshim/ss"; chmod +x "$tshim/ss"
   out="$(check_prov_ports)"
   check "prov-ports: a stranger on 8081 is named a stranger (the identity probe saw no servicio key)" \
     'case "$out" in *"ocupado por otro servicio"*) ;; *) false;; esac'
   cat > "$tshim/curl" <<'CSHIM'
 #!/usr/bin/env bash
-printf '{"servicio": "Provisionador APS Conecta", "estado": "listo", "registro": "2026-07-23", "establecimientos": 2655}'
+case "$*" in
+  *"-sk"*"https://127.0.0.1:8081/api/salud"*)
+    printf '{"servicio": "Provisionador APS Conecta", "estado": "listo", "registro": "2026-07-23", "establecimientos": 2655}' ;;
+esac
 CSHIM
   chmod +x "$tshim/curl"
   out="$(check_prov_ports)"
-  check "prov-ports: a running provisionador is recognized via GET / (the routed liveness probe)" \
-    'case "$out" in *"un provisionador ya corre ahí"*"GET / responde"*) ;; *) false;; esac'
+  check "prov-ports: a running installer is recognized by its HTTPS /api/salud and the operator is told to use its link" \
+    'case "$out" in *"el instalador web ya está abierto"*"use su enlace"*) ;; *) false;; esac'
 
   # the hairpin probes: green pair and the #8433 red with R4's recorded recipe
   printf '#!/usr/bin/env bash\nif [ "$1" = ps ]; then echo nextcloud-aio-apache; exit 0; fi\nexit 0\n' > "$tshim/docker"; chmod +x "$tshim/docker"
@@ -1815,7 +1845,7 @@ import sys
 open("$tmp/prov.argv", "w").write(" ".join(sys.argv[1:]))
 print("fase 10: ok")
 code = int(open("$tmp/prov.rc").read())
-print("✓ divergencia vacía" if code == 0 else "✗ divergencia NO vacía — «aps-conecta provision» abre el provisionador para corregir")
+print("✓ divergencia vacía" if code == 0 else "✗ divergencia NO vacía — «sudo aps-conecta abrir» abre el instalador web para corregir")
 sys.exit(code)
 EOF
   echo 0 > "$tmp/prov.rc"
@@ -1825,10 +1855,37 @@ EOF
   echo 1 > "$tmp/prov.rc"
   out="$(reponer 2>&1)"; rc=$?
   check "reponer: a non-empty divergence exits 1 (the weekly drift red reaches systemd) and names the fix" \
-    '[ "$rc" -eq 1 ] && case "$out" in *"divergencia NO vacía"*"aps-conecta provision"*) ;; *) false;; esac'
+    '[ "$rc" -eq 1 ] && case "$out" in *"divergencia NO vacía"*"sudo aps-conecta abrir"*) ;; *) false;; esac'
   echo 2 > "$tmp/prov.rc"
   out="$(reponer 2>&1)"; rc=$?
   check "reponer: the step's own exit code reaches systemd unchanged" '[ "$rc" -eq 2 ]'
+
+  # ── abrir (L3 S1): the web installer runs as a child; a green exit wires the timers and closes the
+  # install with «Listo»; Ctrl+C or a failed start says how to reopen (the fake provisionador above)
+  local abrir_out
+  echo 0 > "$tmp/prov.rc"
+  abrir_out="$( install_timers() { ok "temporizadores-stub"; }; step_abrir 2>&1 )"; rc=$?
+  check "abrir: a green installer exit wires the timers and prints «Listo» — the console closes the install" \
+    '[ "$rc" -eq 0 ] && [ -z "$(cat "$tmp/prov.argv")" ] && case "$abrir_out" in *"✓ Paso 9 de 9 · Revisar y ejecutar: verificado"*"temporizadores-stub"*"Listo"*"Instalador web cerrado; enlace inválido."*"credentials.txt"*) ;; *) false;; esac'
+  echo 130 > "$tmp/prov.rc"
+  abrir_out="$( install_timers() { ok "temporizadores-stub"; }; FAIL=0; step_abrir 2>&1; echo "FAIL=$FAIL" )"
+  check "abrir: Ctrl+C before the end names the way back and wires nothing" \
+    'case "$abrir_out" in *"se cerró antes de terminar"*"sudo aps-conecta abrir"*"FAIL=1"*) ;; *) false;; esac && case "$abrir_out" in *temporizadores-stub*|*"Instalador web cerrado"*) false;; *) true;; esac'
+  echo 1 > "$tmp/prov.rc"
+  abrir_out="$( FAIL=0; step_abrir 2>&1; echo "FAIL=$FAIL" )"
+  check "abrir: an installer that does not start says so, with the re-run" \
+    'case "$abrir_out" in *"el instalador web no abrió"*"sudo aps-conecta abrir"*"FAIL=1"*) ;; *) false;; esac'
+  echo 143 > "$tmp/prov.rc"
+  abrir_out="$( FAIL=0; step_abrir 2>&1; echo "FAIL=$FAIL" )"
+  check "abrir: an installer stopped by a signal (SIGTERM) is «closed before the end», not «did not open»" \
+    'case "$abrir_out" in *"se cerró antes de terminar"*"FAIL=1"*) ;; *) false;; esac'
+  echo 0 > "$tmp/prov.rc"
+  abrir_out="$( install_timers() { bad "temporizadores-stub-rojo" "arreglo-stub"; }; step_abrir 2>&1 )"; rc=$?
+  check "abrir: green but the timers fail — «Listo» names what is missing and the install exits 1" \
+    '[ "$rc" -eq 1 ] && case "$abrir_out" in *"temporizadores-stub-rojo"*"Listo"*"Falta lo marcado con ✗ arriba"*) ;; *) false;; esac'
+  abrir_out="$( step_abrir() { ok "abrir-stub"; }; cmd_provision 2>&1 )"
+  check "provision: the step «abrir» itself — the same header and body" \
+    'case "$abrir_out" in *"Paso 5 de 9 · Abrir el instalador web"*"abrir-stub"*"Resultado Enlace entregado."*) ;; *) false;; esac'
 
   # ── a10: a red weekly run notifies every admin once (replacing the last); estado shows it, no sudo ──
   cat > "$ROOT/scripts/env.sh" <<EOF
@@ -2028,6 +2085,7 @@ case "${1:-}" in
   asistente-aio) shift; cmd_aio_wizard "$@" ;;
   temporizadores) FAIL=0; install_timers; [ "$FAIL" -eq 0 ] || exit 1 ;;
   estado)       cmd_estado ;;
+  pasos)        cmd_pasos ;;
   revalidate)   cmd_revalidate ;;
   respaldo)     cmd_respaldo ;;
   tiles)        shift; exec bash "$HOST_DIR/tiles.sh" "$@" ;;

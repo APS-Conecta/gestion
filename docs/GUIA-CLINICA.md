@@ -22,12 +22,12 @@ El recorrido completo, paso a paso con los comandos, está en `INSTALLER.md` §2
    con su arreglo sugerido.
 2. El comando `docker run` que preflight imprime — se pega tal cual; nunca se re-escribe a mano.
 3. El asistente en `http://<ip-del-servidor>:8080`.
-4. `aps-conecta provision` — el Provisionador (§4).
+4. `sudo aps-conecta abrir` — el instalador web (§4): imprime un enlace.
 5. `sudo aps-conecta temporizadores` — activa la re-provisión semanal (domingo 03:00) y el
-   refresco mensual del mapa (día 4, 05:00), en hora de Santiago. La instalación silenciosa lo hace
-   sola; tras una actualización se vuelve a ejecutar. Si una ejecución encuentra deriva (algo en la
-   instancia que no se declaró), cada administrador recibe un aviso al entrar, y `aps-conecta
-   estado` — sin sudo — muestra cada elemento con su arreglo.
+   refresco mensual del mapa (día 4, 05:00), en hora de Santiago. La instalación los activa sola
+   al terminar («Listo»); tras construir el mapa o una actualización se vuelve a ejecutar. Si una
+   ejecución encuentra deriva (algo en la instancia que no se declaró), cada administrador recibe
+   un aviso al entrar, y `aps-conecta estado` — sin sudo — muestra cada elemento con su arreglo.
 
 ## 3. El asistente (:8080)
 
@@ -43,35 +43,39 @@ El asistente está en español. Lo importante:
 - La tarjeta de territorio dice «pendiente de empaquetado»: el mapa ya funciona (§8); esa
   tarjeta es la aplicación territorio, que llega más adelante.
 
-## 4. El Provisionador: el ingreso y el flujo
+## 4. El instalador web: el enlace y el flujo
 
 ```bash
-aps-conecta provision
+sudo aps-conecta abrir
 ```
 
-La consola imprime la **dirección** y el **token de acceso** — cópielos en ese momento; el
-token no vuelve a mostrarse (la pantalla de ingreso se lo pide). Ábralo en el navegador **desde
-otro equipo de la red** cuando pueda, y tome nota: esa NO es la dirección que usará el personal
-— el Provisionador es solo su herramienta; la suite misma vive en el dominio del establecimiento.
+La consola imprime **un enlace** — `https://<ip-del-servidor>:<puerto>/login#acceso=…` — y la huella
+del certificado propio del instalador. Ábralo **desde otro equipo de la red**:
+- **El aviso del certificado.** El navegador advierte una vez; compare la huella con la de la consola.
+- **El ingreso.** La sesión se inicia sola. Sin el enlace completo, la página pide el código de
+  acceso (lo que sigue a «#acceso=»).
 
-El flujo son ocho pantallas:
+Esa NO es la dirección que usará el personal: el instalador es solo su herramienta y se cierra al
+terminar.
 
-1. **Ingreso** — el token de la consola.
-2. **Contenedores** — confirma que la suite está en marcha (consulta el estado real de los
-   contenedores AIO; una lista vacía significa que algo no partió).
-3. **Cascada DEIS** — Región → Comuna → Centro de Salud. El registro DEIS completo viene
-   incluido; cualquier centro de atención primaria sirve (CESFAM, PSR, CECOSF, SAPU…).
-4. **Sectores y programas** — los del establecimiento, uno por línea (nadie los conoce fuera
-   del equipo local).
-5. **Componentes** — todo activado, sin opciones: la distribución es una sola (documentos,
-   oficina, epidemiología, farmacia…). Es la pantalla honesta: no hay nada que decidir.
-6. **Planilla** — la lista de usuarios (§5).
-7. **Revisión** — el plan completo antes de ejecutar: fases, usuarios, primer administrador.
-   Ejecutar es un botón; la consola donde corre `aps-conecta provision` muestra el avance línea
-   a línea (esa consola ES el progreso — no hay otra barra).
-8. **Divergencia** — el veredicto: **«divergencia vacía»** significa que la instancia coincide
-   con su declaración, usuarios incluidos. Cualquier otra cosa es un hallazgo con nombre,
-   nunca un error mudo.
+Después de la bienvenida, el navegador recorre los pasos 6 a 9 de la instalación:
+
+1. **Elegir el centro** — la búsqueda del establecimiento en el registro DEIS (tipo, comuna o
+   nombre). El registro completo viene incluido; cualquier centro de atención primaria sirve
+   (CESFAM, PSR, CECOSF, SAPU…).
+2. **Iniciar la suite** — confirma que los contenedores estén en marcha (consulta su estado real;
+   una lista vacía significa que algo no partió).
+3. **Cargar equipos y personas** — tres partes:
+   - los sectores y programas del establecimiento (nadie los conoce fuera del equipo local);
+   - los componentes, todos activados y sin opciones (la distribución es una sola);
+   - la planilla de usuarios (§5).
+4. **Revisar y ejecutar** — el plan completo antes de ejecutar: fases, usuarios, primer
+   administrador. Ejecutar es un botón, y la consola del servidor muestra el avance línea a línea.
+   - Con **«divergencia vacía»** (la instancia coincide con su declaración, usuarios incluidos)
+     aparece **«Listo»**: el instalador se cierra solo, el enlace deja de servir y la consola activa
+     los temporizadores.
+   - Cualquier otro resultado es un hallazgo con nombre, nunca un error mudo: corríjalo y vuelva a
+     ejecutar.
 
 ## 5. La planilla de usuarios
 

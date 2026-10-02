@@ -14,9 +14,10 @@ the executor — /api/generar (the FRD's review/dry-run AND the run: .env conver
 roster driver, the divergence gate); slice 17 the eight es-CL screens over these routes.
 
 Python stdlib only, like deis.py — the install host is assumed to carry python3, bash, git and
-docker, nothing else (#77). Plain HTTP on the LAN is the accepted v1.0 ceiling (D9): the CSPRNG
-bearer token below is the only auth, so this never faces the public internet — preflight (S7)
-reports the port and the clinic's own firewall keeps the edge.
+docker, nothing else (#77) — plus openssl, which ca-certificates brings, to sign the installer's own
+certificate. HTTPS on the LAN with that certificate (L3 S1, owner 2026-10-02; a13: no code and no
+cookie crosses the LAN in clear): the CSPRNG token below is the only auth, so this never faces the
+public internet — preflight (S7) reports the port and the clinic's own firewall keeps the edge.
 
 deis.py is IMPORTED, never shelled out to: load/matches/write_site are the pure functions the
 endpoints ride, and its ask() — input()-driven, terminal-shaped — is replaced by the UI here, with
@@ -28,14 +29,17 @@ fatally with the hint intact, before any socket opens.
 
 The server is STATELESS: no session, no hidden server-side state — every request carries what it
 needs (the browser flow keeps the chosen DEIS codigo), so a restart mid-flow costs the operator one
-re-entry, and every endpoint is one curl. One deliberate consequence: the token never rides a URL.
-log_message() prints request paths, and a token in a query string lands in scrollback, screenshots
-and the server log — the Authorization header (and, from slice 17, the login cookie) is the only
-carrier.
+re-entry, and every endpoint is one curl. The token never rides a request: the console's one link
+carries it in the URL fragment (#acceso=…), which browsers never send; the sign-in page trades it
+for the cookie and wipes it from the address bar. On the wire the Authorization header (and the
+login cookie) is the only carrier, and the request log is silent (R42).
 """
 import csv
 import errno
+import hashlib
 import hmac
+import html
+import http.client
 import io
 import json
 import os
@@ -43,6 +47,7 @@ import re
 import secrets
 import shlex
 import socket
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -96,6 +101,50 @@ PHASE20 = os.path.join(HERE, "..", "provisioning", "phases", "20-groups.sh")
 # /opt/aps-conecta into backups). The self-test redirects it; this default is the only literal.
 CRED_PATH = "/opt/aps-conecta/credentials.txt"
 ESTADO_PATH = "/opt/aps-conecta/estado.txt"   # the last execution's verdict (a10): 0644, «aps-conecta estado»
+
+# The installer's own certificate authority and the leaf it signs for the link's address (L3 S1,
+# owner 2026-10-02). The CA is kept: the suite's certificate (L4, R22) hangs from the same one and
+# staff import it once. The self-test redirects this; the default is the only literal.
+CERT_DIR = "/opt/aps-conecta/certificados"
+SERVICE = "Provisionador APS Conecta"   # the identity /api/salud answers (R33); the host probe keys on it
+# Set by a green «Revisar y ejecutar» over HTTP: the server then closes itself (SEC-2, a13).
+DONE = threading.Event()
+
+# The step registry lives in the host CLI (a11, «one home per step»): read once at start into this
+# list, never restated here. The rail, the step numbers and the titles all come from it.
+ROOT_DIR = os.path.join(HERE, "..")
+HOST_CLI = os.path.join(ROOT_DIR, "host", "aps-conecta")
+STEPS = []
+LAN_IP, HOSTNAME, PORT = "", "", 0   # the session's address, the server's name, the bound port — set in main
+# phase 15's theming:slogan, the host CLI's MOTTO — one string, three homes, each pinned by a self-test
+MOTTO = "La salud primaria que compartimos es la que mejora"
+REPO = "github.com/APS-Conecta/gestion"
+# /recursos/<name> → the theme's own files: local, zero egress (the fonts are OFL). A whitelist —
+# no path is ever joined from the request.
+ASSETS = {
+    "fraunces.woff2": ("themes/apsconecta/core/fonts/Fraunces.woff2", "font/woff2"),
+    "fraunces-italica.woff2": ("themes/apsconecta/core/fonts/Fraunces-Italic.woff2", "font/woff2"),
+    "nunito-sans.woff2": ("themes/apsconecta/core/fonts/NunitoSans.woff2", "font/woff2"),
+    "fondo.svg": ("themes/apsconecta/core/img/background.svg", "image/svg+xml"),
+    "favicon.svg": ("themes/apsconecta/core/img/favicon.svg", "image/svg+xml"),
+}
+
+
+def read_steps():
+    """The registry, as `aps-conecta pasos` prints it: id · título · dónde · subcomando · propósito
+    · resultado. A missing or unreadable list stops the start before any socket opens."""
+    try:
+        out = subprocess.run(["bash", HOST_CLI, "pasos"], capture_output=True, text=True,
+                             timeout=10)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        sys.exit(f"✗ no se pudo leer la lista de pasos ({HOST_CLI}): {e}")
+    keys = ("id", "titulo", "donde", "comando", "para", "resultado")
+    steps = [dict(zip(keys, line.split("\t"))) for line in out.stdout.splitlines()
+             if line.count("\t") == len(keys) - 1]
+    if out.returncode != 0 or len(steps) < 2:
+        sys.exit(f"✗ la lista de pasos ({HOST_CLI}) no se pudo leer\n"
+                 "  → descargue de nuevo la suite: sudo aps-conecta descargar")
+    return steps
 SEAL_BYTES = 12  # 24 hex chars — env-init's FIXTURE_USER_PASSWORD size, the human-typed precedent
 # The seal is a read-modify-write over one shared file, and the server is threaded: two
 # concurrent /api/usuarios posts (a double-submit is one double-click away) would share the
@@ -1188,85 +1237,172 @@ class ClientError(Exception):
         self.status = status
 
 
-# ── The UI (slice 17, FRD S6) ───────────────────────────────────────────────────────────
-# Eight server-rendered screens over the JSON APIs: login + the seven steps. No frameworks, no
-# sessions — the login cookie CARRIES the token (HttpOnly, SameSite=Strict, no Secure flag: the
-# D9 LAN ceiling is plain HTTP and a Secure cookie would never be sent over it; documented, not
-# an oversight). The screens are SHELLS: server-rendered frames (the stepper, the step's static
-# data — register snapshot, phases, app inventory) whose interactive data arrives through the
-# same /api routes a CLI would use. The token never rides a URL (log_message prints paths —
-# slice 14's rule); the screens use relative links only, so no page names its own address
-# either (the FRD's Paso-1 rule generalized).
+# ── The UI (slice 17, FRD S6; L3 S1: the approved Instalador UI, variant A «Capítulos») ──────────
+# Server-rendered screens over the JSON APIs. No frameworks, no sessions — the login cookie CARRIES
+# the token (HttpOnly, SameSite=Strict, Secure: the installer serves HTTPS with its own certificate).
+# The screens are SHELLS: the frame — the backdrop rail of the registry's steps, the chapter header
+# — is server-rendered; the interactive data arrives through the same /api routes a CLI would use.
+# The token never rides a request (the link's fragment is never sent); the screens use relative
+# links only, so no page names its own address either (the FRD's Paso-1 rule generalized).
 #
-# THE FONT DECISION: the wizard reskin carries Fraunces/Nunito (patch 070's bytes, its own
-# gates); this host-side tool serves system stack — a LAN-internal operator screen does not
-# re-ship 35 KB of OFL subsets, and the D1 tokens (color) are carried below.
+# THE FONT DECISION (reversed in L3 S1): the approved design is Fraunces + Nunito Sans; the theme's
+# own woff2 files are served from /recursos/ — local bytes, zero egress, never a font CDN.
 
 TOKEN_COOKIE = "aps_token"  # the name; the VALUE is the token itself (the credential, compared
                             # constant-time in authorized()'s cookie arm — same code path)
 
-SCREENS = [  # (path, step number, step title) — the stepper the shell renders
-    ("/contenedores", 1, "Contenedores"),
-    ("/cascada", 2, "Establecimiento"),
-    ("/sectores", 3, "Sectores y programas"),
-    ("/componentes", 4, "Componentes"),
-    ("/planilla", 5, "Planilla de usuarios"),
-    ("/revision", 6, "Revisión"),
-    ("/divergencia", 7, "Divergencia"),
-]
+esc = html.escape
 
+# The brand mark (patch 070's lockup) — inline SVG, so the rail and the backdrop make no request.
+LOCKUP = (
+    '<span class="lockup" translate="no"><svg class="marca-svg" viewBox="8 5 48 50" aria-hidden="true">'
+    '<path d="M32 12 L45 23 M32 12 L19 23 M45 23 L38 39 M19 23 L26 39 M38 39 L26 39 M38 39 L45 51 '
+    'M26 39 L19 51" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" opacity=".5"/>'
+    '<path d="M11 33 Q23 27 32 33 T53 30" fill="none" stroke="#f28f36" stroke-width="2" '
+    'stroke-linecap="round"/><g fill="#fff"><circle cx="45" cy="23" r="2.5"/><circle cx="19" cy="23" '
+    'r="2.5"/><circle cx="38" cy="39" r="2.3"/><circle cx="26" cy="39" r="2.3"/><circle cx="45" '
+    'cy="51" r="2.1"/><circle cx="19" cy="51" r="2.1"/></g><path d="M32 7.2 L33.25 10.75 L36.8 12 '
+    'L33.25 13.25 L32 16.8 L30.75 13.25 L27.2 12 L30.75 10.75 Z" fill="#f28f36"/></svg>'
+    '<span><b>APS Conecta Gestión</b><small>Instalador web</small></span></span>')
 
 
 def page_css():
-    """The D1 tokens (FRD: primary #7f21fe 5.57:1, background #5315a8, hover #6b01fa, error
-    #ea003e, gold #e06f00 large-only, ink #101828, muted #485363) + the minimal layout the
-    screens need. One function, inlined into the shell — no extra routes, no cache seams."""
+    """Variant A «Capítulos» (the approved Instalador UI, stage V): the D1 tokens (FRD: primary
+    #7f21fe 5.57:1, background #5315a8, hover #6b01fa, error #ea003e, gold #e06f00 large-only, ink
+    #101828, muted #485363) plus the design's own, the brand fonts from /recursos/, the backdrop
+    rail and chapter column, and the legacy screen classes (.tarjeta, .aviso, tables, forms)
+    restyled to the editorial look. Light-only (BRANDING §2). One function, inlined into <head>."""
     return """<style>
+@font-face{font-family:"Fraunces";src:url(/recursos/fraunces.woff2) format("woff2");font-weight:400 800;font-style:normal;font-display:swap}
+@font-face{font-family:"Fraunces";src:url(/recursos/fraunces-italica.woff2) format("woff2");font-weight:400 800;font-style:italic;font-display:swap}
+@font-face{font-family:"Nunito Sans";src:url(/recursos/nunito-sans.woff2) format("woff2");font-weight:400 800;font-style:normal;font-display:swap}
 :root{--primario:#7f21fe;--fondo:#5315a8;--encima:#6b01fa;--error:#ea003e;--oro:#e06f00;
---tinta:#101828;--apagado:#485363;--blanco:#fff;--papel:#faf7ff}
-*{box-sizing:border-box}
-body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--tinta);
-background:var(--papel);line-height:1.55}
-header{background:var(--fondo);color:var(--blanco);padding:1.1rem 1.5rem}
-header h1{margin:0;font-size:1.35rem;font-weight:600}
-header p{margin:.15rem 0 0;color:#e6d7ff;font-size:.9rem}
-main{max-width:46rem;margin:1.5rem auto;padding:0 1rem}
-.pasos{display:flex;flex-wrap:wrap;gap:.35rem;margin:0 0 1.2rem;padding:0;list-style:none}
-.pasos li{font-size:.78rem;color:var(--apagado);border:1px solid #d8ccf5;border-radius:2rem;
-padding:.15rem .6rem}
-.pasos li.activo{background:var(--primario);color:var(--blanco);border-color:var(--primario)}
-.tarjeta{background:var(--blanco);border:1px solid #e5ddf5;border-radius:.6rem;padding:1.1rem 1.3rem;
-margin-bottom:1rem}
-.tarjeta h2{margin:0 0 .6rem;font-size:1.05rem;color:var(--fondo)}
-label{display:block;margin:.7rem 0 .2rem;font-size:.9rem}
-input[type=text],input[type=password],input[type=search],input[type=file]{width:100%;
-padding:.55rem .65rem;border:1px solid #cbb8f0;border-radius:.35rem;font:inherit}
-button{background:var(--primario);color:var(--blanco);border:none;border-radius:.35rem;
-padding:.6rem 1.2rem;font:inherit;font-weight:600;cursor:pointer;margin-top:.9rem}
-button:hover{background:var(--encima)}
-button:disabled{background:var(--apagado);cursor:wait}
-.aviso{border-left:.3rem solid var(--oro);background:#fff8ef;padding:.7rem .9rem;margin:.8rem 0}
-.error{border-left:.3rem solid var(--error);background:#fff0f3;padding:.7rem .9rem;margin:.8rem 0}
-.ok{border-left:.3rem solid var(--primario);background:#f6efff;padding:.7rem .9rem;margin:.8rem 0}
-table{border-collapse:collapse;width:100%;font-size:.88rem}
-td,th{padding:.4rem .5rem;border-bottom:1px solid #eee;text-align:left;vertical-align:top}
-th{color:var(--apagado);font-weight:600}
-.resultado{cursor:pointer}
-.resultado:hover td{background:#f6efff}
-code{background:#f0eafd;padding:.06rem .35rem;border-radius:.25rem;font-size:.92em}
+--tinta:#101828;--apagado:#485363;--blanco:#fff;--papel:#faf7ff;--linea:#e1d7f4;--velo:#f1e9ff;
+--ok:#0b7a4b;--marca:#f28f36;--tenue-b:rgba(255,255,255,.88);
+--f-display:"Fraunces","Iowan Old Style",Georgia,serif;
+--f-cuerpo:"Nunito Sans","Segoe UI",system-ui,sans-serif;
+--f-mono:ui-monospace,"SFMono-Regular","Cascadia Mono",Menlo,Consolas,monospace;
+--t-xs:.8125rem;--t-s:.9375rem;--t-m:1.0625rem;--t-l:1.375rem;--t-titulo:clamp(2.1rem,3.6vw,3.25rem);
+--gutter:max(16px,4vw);
+--riel:radial-gradient(circle at 28% 26%,rgba(164,119,255,.45),transparent 65%),
+radial-gradient(circle at 82% 88%,rgba(38,9,79,.55),transparent 55%),linear-gradient(135deg,#893dff,#5315a8)}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--papel);color:var(--tinta);font:400 var(--t-m)/1.6 var(--f-cuerpo)}
+h1,h2,h3{font-family:var(--f-display);font-weight:650;line-height:1.12;margin:0;letter-spacing:-.01em;text-wrap:balance}
+p{margin:0;max-width:62ch}
 a{color:var(--primario)}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--primario);outline-offset:3px}
+.sobre-telon :focus-visible{outline-color:#fff}
+h1[tabindex]:focus{outline:none}
+.saltar{position:fixed;left:12px;top:-4rem;z-index:70;background:#fff;color:var(--fondo);padding:.7rem 1rem;font-weight:700;border-radius:3px}
+.saltar:focus{top:12px}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
+.ceja{font:700 var(--t-xs)/1.3 var(--f-cuerpo);letter-spacing:.09em;text-transform:uppercase;color:var(--apagado)}
+.para{color:var(--apagado);max-width:60ch}
+.sobre-telon .para{color:#fff}
+.pila{display:flex;flex-direction:column;gap:1.25rem;min-width:0}
+.fila{display:flex;flex-wrap:wrap;gap:.75rem 1rem;align-items:center}
+.btn,button{display:inline-flex;align-items:center;gap:.55rem;padding:.85rem 1.3rem;margin-top:.9rem;border:0;
+border-radius:3px;background:var(--primario);color:#fff;font:700 var(--t-s)/1 var(--f-cuerpo);cursor:pointer;
+text-decoration:none;transition:background-color .15s ease}
+.btn:hover,button:hover{background:var(--encima)}
+button:disabled{background:#cfc5e6;cursor:not-allowed}
+.btn-blanco,.telon button{background:#fff;color:var(--fondo)}
+.btn-blanco:hover,.telon button:hover{background:var(--velo)}
+.marca-svg{width:2.6rem;height:2.7rem;flex:none}
+.lockup{display:flex;align-items:center;gap:.75rem;color:#fff}
+.lockup b{display:block;font:650 1.2rem/1.1 var(--f-display)}
+.lockup small{display:block;font:600 .75rem/1.2 var(--f-cuerpo);letter-spacing:.08em;text-transform:uppercase;opacity:.78}
+.marco{display:grid;grid-template-columns:18rem minmax(0,1fr);min-height:100dvh}
+.riel{position:sticky;top:0;height:100dvh;overflow:auto;color:#fff;padding:2rem 1.4rem 1.5rem;background:var(--riel);
+display:flex;flex-direction:column;gap:2rem}
+.riel ol{list-style:none;margin:0;padding:0;display:grid;gap:.15rem}
+.riel li{display:grid;grid-template-columns:2.1rem minmax(0,1fr);gap:.65rem;align-items:start;padding:.55rem .5rem;border-radius:3px}
+.riel .n{width:2.1rem;height:2.1rem;border:1.5px solid rgba(255,255,255,.55);border-radius:50%;display:grid;
+place-items:center;font:700 .95rem/1 var(--f-display)}
+.riel .hecho .n{border-color:transparent;background:rgba(255,255,255,.16)}
+.riel .ahora{background:rgba(255,255,255,.13)}
+.riel .ahora .n{background:#fff;color:var(--fondo);border-color:#fff}
+.riel .t{display:block;font-weight:700;font-size:.95rem;line-height:1.3}
+.riel .d{display:block;font:700 .68rem/1.4 var(--f-cuerpo);letter-spacing:.09em;text-transform:uppercase;color:var(--tenue-b)}
+.riel .grupo{font:700 .7rem/1 var(--f-cuerpo);letter-spacing:.12em;text-transform:uppercase;color:var(--tenue-b);padding:1rem .5rem .35rem}
+.riel .pie{margin-top:auto;font-size:.8rem;color:var(--tenue-b);line-height:1.5}
+.riel-movil{display:none}
+.hoja{padding:clamp(2.25rem,5vw,4.5rem) var(--gutter) 7rem clamp(1.5rem,6vw,6.5rem);min-width:0}
+.apertura{display:grid;grid-template-columns:auto minmax(0,1fr);gap:.25rem 2rem;align-items:end;margin-bottom:2.25rem}
+.apertura .numeral{font:800 clamp(6rem,11vw,10.5rem)/.78 var(--f-display);color:var(--primario);letter-spacing:-.04em}
+.apertura h1{font-size:var(--t-titulo)}
+.apertura .para{grid-column:1/-1;margin-top:1.1rem}
+.cuerpo{max-width:50rem;display:flex;flex-direction:column;gap:2rem}
+.tarjeta{border-top:1px solid var(--linea);padding-top:1.25rem}
+.tarjeta h2{font-size:var(--t-l);margin-bottom:.6rem;color:var(--fondo)}
+.tarjeta p{margin:.4rem 0}
+label{display:block;margin:.9rem 0 .35rem;font:700 var(--t-xs)/1.3 var(--f-cuerpo);letter-spacing:.07em;
+text-transform:uppercase;color:var(--apagado)}
+input[type=text],input[type=password],input[type=search],input[type=file]{width:100%;padding:.7rem .8rem;
+min-height:2.75rem;background:#fff;color:var(--tinta);border:1.5px solid #cdbfe9;border-radius:3px;font-size:var(--t-s)}
+.aviso,.error,.ok{border-left:3px solid var(--oro);padding:.1rem 0 .1rem 1rem;margin:.8rem 0;max-width:62ch}
+.error{border-left-color:var(--error)}
+.ok{border-left-color:var(--ok)}
+table{border-collapse:collapse;width:100%;font-size:var(--t-s)}
+th{text-align:left;font:700 var(--t-xs)/1.3 var(--f-cuerpo);letter-spacing:.07em;text-transform:uppercase;
+color:var(--apagado);padding:.5rem .75rem .5rem 0;border-bottom:1.5px solid var(--linea)}
+td{padding:.55rem .75rem .55rem 0;border-bottom:1px solid var(--linea);vertical-align:top}
+.resultado{cursor:pointer}
+.resultado:hover td{background:var(--velo)}
+code{font:600 .85em var(--f-mono);background:var(--velo);color:var(--fondo);padding:0 .35rem;border-radius:2px}
+pre{font:400 .84rem/1.6 var(--f-mono);overflow-x:auto}
+.telon{min-height:100dvh;color:#fff;background:var(--fondo) url(/recursos/fondo.svg) 78% 50%/cover no-repeat;
+padding:clamp(2rem,6vw,5.5rem) var(--gutter) 7rem clamp(1.5rem,7vw,7rem)}
+.telon .pila{max-width:38rem;gap:1.6rem}
+.telon h1{font-size:clamp(2.6rem,5.2vw,4.6rem);font-weight:700}
+.telon .grande{font-size:var(--t-l)}
+.telon label{color:var(--tenue-b)}
+.telon .error,.telon .aviso{color:#fff}
+.lema{font:italic 500 clamp(1.25rem,2.2vw,1.7rem)/1.35 var(--f-display);color:#fff;max-width:30ch}
+.lema::before{content:"«";color:var(--marca)}
+.lema::after{content:"»";color:var(--marca)}
+.colofon{font-size:.85rem;color:var(--tenue-b);display:grid;gap:.2rem;border-top:1px solid rgba(255,255,255,.28);
+padding-top:1rem;max-width:34rem}
+.colofon a{color:#fff}
+.lista-sigue{margin:0;padding-left:1.1rem;display:grid;gap:.35rem}
+@media (max-width:860px){
+.marco{grid-template-columns:minmax(0,1fr)}
+.riel{display:none}
+.riel-movil{display:flex;position:sticky;top:0;z-index:6;justify-content:space-between;align-items:center;gap:1rem;
+color:#fff;background:var(--riel);padding:.7rem var(--gutter);font:700 .85rem/1.3 var(--f-cuerpo)}
+.riel-movil .ticks{display:flex;gap:4px}
+.riel-movil .ticks i{width:9px;height:9px;border-radius:50%;border:1.5px solid rgba(255,255,255,.6)}
+.riel-movil .ticks i.h{background:rgba(255,255,255,.55);border-color:transparent}
+.riel-movil .ticks i.a{background:#fff;border-color:#fff}
+.hoja{padding:1.75rem var(--gutter) 7rem}
+}
 </style>"""
 
 
 def page_js():
-    """The one script every screen rides: the API wrapper (the cookie flows automatically —
+    """The one script every page rides, loaded in <head> before any screen script (R34): the
+    fragment's code read and wiped first, the API wrapper (the cookie flows automatically —
     same-origin fetch sends it; the Bearer arm stays for CLI use), the planilla reader with the
-    DECODE-OR-WARN rule (a cp1252 hand-off mojibakes under readAsText; the file is read as
-    BYTES, decoded UTF-8, and on failure decoded windows-1252 WITH a visible warning — the
-    API contract is a UTF-8 string, so the decode is the UI's to own), and the long-run
-    execute fetch (minutes: the button locks, the host terminal shows the live progress —
-    the provisionador's own stdout is the operator's real-time view)."""
+    DECODE-OR-WARN rule (a cp1252 hand-off mojibakes under readAsText; the file is read as BYTES,
+    decoded UTF-8, and on failure decoded windows-1252 WITH a visible warning — the API contract is
+    a UTF-8 string, so the decode is the UI's to own), and focus on the chapter title for screen
+    readers."""
     return """<script>
+// The link's code rides the URL fragment (#acceso=…), which no request carries; it leaves the
+// address bar before anything else runs — it is a credential (a13).
+const ACCESO = new URLSearchParams(location.hash.slice(1)).get("acceso");
+if (ACCESO !== null) history.replaceState(null, "", location.pathname + location.search);
+// a link pasted into an open page changes only the fragment — reload, so the line above reads it
+addEventListener("hashchange", () => {
+  if (new URLSearchParams(location.hash.slice(1)).get("acceso") !== null) location.reload();
+});
+addEventListener("DOMContentLoaded", () => {
+  const h = document.querySelector("h1[tabindex]");
+  if (h) h.focus({preventScroll: true});
+});
 async function api(ruta, cuerpo){
   const r = await fetch(ruta, {method: cuerpo ? "POST" : "GET",
     headers: {"Content-Type": "application/json"},
@@ -1288,52 +1424,113 @@ function zona(id){ return document.getElementById(id); }
 </script>"""
 
 
-def shell(step, title, body, aviso=None):
-    """The common frame: header, the 8-step stepper (login is the door, the seven steps carry
-    numbers), the body, the inline CSS+JS. lang=es and every visible string es-CL formal."""
-    pasos = "".join(
-        f'<li class="{"activo" if n == step else ""}{" hecho" if n < step else ""}"'
-        f'>{n}. {t}</li>' for _p, n, t in SCREENS)
+def head(title):
+    """Every page's <head>: the CSS and the one script load here, before any screen script (R34)."""
+    return (f'<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
+            f'<title>{esc(title)} — Instalador APS Conecta</title>'
+            f'<link rel="icon" href="/recursos/favicon.svg" type="image/svg+xml">{page_css()}{page_js()}')
+
+
+def shell(step_id, body, aviso=None):
+    """A browser step's page, variant A «Capítulos»: the backdrop rail — the registry's steps, the
+    server ones done, the current one marked (aria-current) — beside the chapter: numeral, «Paso n
+    de N · en su navegador», the step's title and purpose, then the screen. A step may span screens
+    until its own lap folds them into one (L3 S2–S4)."""
+    n = next(i for i, x in enumerate(STEPS, 1) if x["id"] == step_id)
+    s, total = STEPS[n - 1], len(STEPS)
+
+    def paso(i, x):
+        clase = "hecho" if i < n else "ahora" if i == n else ""
+        actual = ' aria-current="step"' if i == n else ""
+        marca = "✓" if i < n else str(i)
+        return (f'<li class="{clase}"{actual}><span class="n" aria-hidden="true">{marca}</span>'
+                f'<span><span class="t">{esc(x["titulo"])}</span>'
+                f'<span class="d">{esc(x["donde"])}</span></span></li>')
+
+    servidor = "".join(paso(i, x) for i, x in enumerate(STEPS, 1) if x["donde"] == "servidor")
+    navegador = [(i, x) for i, x in enumerate(STEPS, 1) if x["donde"] != "servidor"]
+    rail_nav = "".join(paso(i, x) for i, x in navegador)
+    ticks = "".join(f'<i class="{"h" if i < n else "a" if i == n else ""}"></i>'
+                    for i in range(1, total + 1))
     aviso_html = f'<div class="aviso">{aviso}</div>' if aviso else ""
+    titulo = esc(s["titulo"])
+    page_title = f"Paso {n} de {total} · {s['titulo']}"
+    donde = esc(s["donde"])
     return f"""<!DOCTYPE html>
-<html lang="es"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Paso {step} de 7 — {title} · Provisionador APS Conecta</title>
-{page_css()}</head><body>
-<header><h1>Provisionador APS Conecta</h1>
-<p>Registro DEIS {SNAPSHOT} · {len(ROWS)} establecimientos</p></header>
-<main><ol class="pasos">{pasos}</ol>{aviso_html}{body}</main>
-{page_js()}</body></html>"""
+<html lang="es"><head>{head(page_title)}</head><body>
+<a class="saltar" href="#contenido">Saltar al contenido</a>
+<div class="marco"><nav class="riel sobre-telon" aria-label="Pasos de la instalación">{LOCKUP}
+<div><div class="grupo">En este servidor</div><ol>{servidor}</ol>
+<div class="grupo">En su navegador</div><ol start="{navegador[0][0]}">{rail_nav}</ol></div>
+<p class="pie">Sesión: {esc(HOSTNAME)} · {esc(LAN_IP)}</p></nav>
+<div class="riel-movil sobre-telon"><span>Paso {n} de {total} · {donde.capitalize()}</span>
+<span class="ticks" aria-hidden="true">{ticks}</span></div>
+<main class="hoja" id="contenido"><header class="apertura"><span class="numeral" aria-hidden="true">{n}</span>
+<div><p class="ceja">Paso {n} de {total} · en su {donde}</p><h1 tabindex="-1">{titulo}</h1></div>
+<p class="para">{esc(s["para"])}</p></header>
+<div class="cuerpo">{aviso_html}{body}</div></main></div>
+</body></html>"""
+
+
+def telon(title, contenido):
+    """The full backdrop — sign-in, welcome and «Listo»: the admin arrives and leaves through it,
+    the same backdrop staff later see on the suite's login (BRANDING §3: nothing painted over it)."""
+    return f"""<!DOCTYPE html>
+<html lang="es"><head>{head(title)}</head><body>
+<a class="saltar" href="#contenido">Saltar al contenido</a>
+<main class="telon sobre-telon" id="contenido"><div class="pila">{LOCKUP}{contenido}
+<div class="colofon"><span>AGPL-3.0-or-later · <a href="https://{REPO}" rel="noopener">{REPO}</a></span>
+<span>Desarrollado por Dani Espinoza Charrier · APS Conecta</span></div></div></main>
+</body></html>"""
 
 
 def screen_login():
-    body = """<div class="tarjeta"><h2>Inicie sesión</h2>
-<p>Ingrese el token de acceso. Se imprimió en la consola donde ejecutó
-<code>aps-conecta provision</code>.</p>
-<form id="f"><label for="token">Token de acceso</label>
-<input type="password" id="token" autocomplete="off" required>
+    return telon("Instalador web", """<h1 tabindex="-1">Instalador web</h1>
+<p class="para grande">Abra el enlace que muestra la consola del servidor: la sesión se inicia sola.</p>
+<form id="f"><label for="codigo">Código de acceso (lo que sigue a «#acceso=»)</label>
+<input type="password" id="codigo" autocomplete="off" required>
 <button type="submit">Entrar</button></form>
-<div id="m"></div></div>
+<div id="m"></div>
 <script>
-document.getElementById("f").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const b = zona("f").querySelector("button"); b.disabled = true;
-  const r = await api("/api/login", {token: zona("token").value});
-  if (r.estado === 200) { location.href = "/contenedores"; return; }
-  b.disabled = false;
-  zona("m").innerHTML = '<div class="error">Token incorrecto. Cópielo de nuevo desde la consola.</div>';
-});
-</script>"""
-    # login is the door: no stepper, no step number — the shell below renders no steps
-    return f"""<!DOCTYPE html>
-<html lang="es"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Inicie sesión · Provisionador APS Conecta</title>
-{page_css()}</head><body>
-<header><h1>Provisionador APS Conecta</h1>
-<p>Registro DEIS {SNAPSHOT} · {len(ROWS)} establecimientos</p></header>
-<main>{body}</main>
-{page_js()}</body></html>"""
+async function entrar(codigo) {
+  const r = await api("/api/login", {token: codigo});
+  if (r.estado === 200) { location.replace("/bienvenida"); return; }
+  zona("m").innerHTML = '<div class="error">Código incorrecto o vencido. Use el enlace de la consola.</div>';
+}
+if (ACCESO) entrar(ACCESO);
+zona("f").addEventListener("submit", (e) => { e.preventDefault(); entrar(zona("codigo").value); });
+</script>""")
+
+
+def screen_bienvenida():
+    n_srv = sum(1 for x in STEPS if x["donde"] == "servidor")
+    primero = STEPS[n_srv]
+    return telon("Bienvenida", f"""<h1 tabindex="-1">Bienvenida</h1>
+<p class="para grande">Sesión iniciada desde {esc(HOSTNAME)}. Pasos 1–{n_srv} completos; quedan
+{len(STEPS) - n_srv} en este navegador.</p>
+<p class="lema">{MOTTO}</p>
+<div class="fila"><a class="btn btn-blanco" href="/cascada">{esc(primero["titulo"])} →</a></div>""")
+
+
+def installed_centre():
+    """The one establishment this install serves (one install, one establishment — D13), by name;
+    a generic noun when the site is missing or unreadable."""
+    base = os.path.join(deis.HERE, "..", "sites")
+    try:
+        sites = [d for d in sorted(os.listdir(base)) if os.path.isfile(os.path.join(base, d, "site.sh"))]
+    except OSError:
+        sites = []
+    row = find_row(site_deis(os.path.join(base, sites[0], "site.sh")) or "") if len(sites) == 1 else None
+    return row["nombre"] if row else "el establecimiento"
+
+
+def screen_listo():
+    return telon("Listo", f"""<h1 tabindex="-1">Listo</h1>
+<p class="para grande">Suite instalada en {esc(installed_centre())}.</p>
+<p class="para">Instalador cerrado: enlace inválido, puerto {PORT} cerrado.</p>
+<ul class="lista-sigue para"><li>Credenciales: en la consola del servidor; una fila por persona.</li>
+<li>Re-provisión semanal: la activa la consola al cerrar el instalador.</li></ul>
+<p class="lema">{MOTTO}</p>""")
 
 
 def screen_contenedores():
@@ -1341,8 +1538,8 @@ def screen_contenedores():
 <p>El asistente crea la instancia; el Provisionador la configura. Confirme que la suite esté
 en marcha antes de continuar.</p><div id="m">Consultando el estado…</div></div>
 <div class="tarjeta"><h2>Continuar</h2>
-<p>Si la instancia está en marcha, continúe con la búsqueda del establecimiento.</p>
-<button onclick="location.href='/cascada'">Continuar al paso 2</button></div>
+<p>Con la suite en marcha, siga con los equipos del establecimiento.</p>
+<button onclick="location.href='/sectores' + location.search">Continuar</button></div>
 <script>
 (async () => {
   const r = await api("/api/estado");
@@ -1358,7 +1555,7 @@ en marcha antes de continuar.</p><div id="m">Consultando el estado…</div></div
       escapear(c.estado) + "</td></tr>").join("") + "</table>";
 })();
 </script>"""
-    return shell(1, "Contenedores", body)
+    return shell("suite", body)
 
 
 def screen_cascada():
@@ -1393,12 +1590,12 @@ document.getElementById("f").addEventListener("submit", async (e) => {
       zona("siguiente") || zona("m").insertAdjacentHTML("beforeend",
         '<p><button id="siguiente">Continuar con el código ' + codigo + "</button></p>");
       document.getElementById("siguiente").onclick = () =>
-        { location.href = "/sectores?codigo=" + codigo; };
+        { location.href = "/contenedores?codigo=" + codigo; };
     });
   }
 });
 </script>"""
-    return shell(2, "Establecimiento", body)
+    return shell("centro", body)
 
 
 def screen_sectores():
@@ -1416,7 +1613,7 @@ programas de salud. Escriba un nombre por campo, separados por comas — por eje
 <script>
 const codigo = new URLSearchParams(location.search).get("codigo");
 if (!codigo) { zona("m").innerHTML =
-  '<div class="error">Falta el código del establecimiento. Vuelva al paso 2.</div>'; }
+  '<div class="error">Falta el centro. Vuelva a «Elegir el centro».</div>'; }
 document.getElementById("f").addEventListener("submit", async (e) => {
   e.preventDefault();
   const corta = (s) => s.split(",").map(x => x.trim()).filter(x => x);
@@ -1426,13 +1623,17 @@ document.getElementById("f").addEventListener("submit", async (e) => {
   zona("m").innerHTML = '<div class="error">' + escapear(r.error) + "</div>";
 });
 </script>"""
-    return shell(3, "Sectores y programas", body)
+    return shell("equipos", body)
 
 
-def screen_componentes(fases, apps):
+def screen_componentes():
     """The ALL-ON cards: the suite is one distribution (D12/D4) — everything the executor will
     provision, rendered from the live tree, nothing to choose. The one screen where 'no
     choices' is the honest design: the FRD's 'component cards ALL-ON'."""
+    root = os.path.join(deis.HERE, "..")
+    fases = sorted(p for p in os.listdir(os.path.join(root, "provisioning", "phases"))
+                   if p[:1].isdigit() and p.endswith(".sh"))
+    apps = sorted(os.listdir(os.path.join(root, "provisioning", "apps")))
     filas = "".join(f"<tr><td>{f}</td><td>Se ejecuta</td></tr>" for f in fases)
     apps_html = "".join(f"<code>{a}</code> " for a in apps)
     body = f"""<div class="tarjeta"><h2>Componentes de la suite</h2>
@@ -1442,8 +1643,8 @@ Las fases se ejecutan en orden, cada una idempotente.</p>
 <div class="tarjeta"><h2>Aplicaciones incluidas</h2><p>{apps_html}</p></div>
 <div class="tarjeta"><h2>Continuar</h2>
 <p>El siguiente paso carga la planilla de usuarios del establecimiento.</p>
-<button onclick="location.href='/planilla?codigo=' + new URLSearchParams(location.search).get('codigo')">Continuar al paso 5</button></div>"""
-    return shell(4, "Componentes", body)
+<button onclick="location.href='/planilla?codigo=' + new URLSearchParams(location.search).get('codigo')">Continuar</button></div>"""
+    return shell("equipos", body)
 
 
 def screen_planilla():
@@ -1471,7 +1672,7 @@ document.getElementById("f").addEventListener("submit", async (e) => {
       '<div class="ok">Planilla validada: ' + r.usuarios + " usuario(s), primera " +
       "administración: <code>" + escapear(r.primer_admin) + "</code>. Contraseñas selladas en <code>" +
       escapear(r.credenciales) + "</code>.</div>" +
-      '<p><button id="paso6">Continuar al paso 6</button></p>';
+      '<p><button id="paso6">Continuar</button></p>';
     // The handler is ATTACHED, never inlined: a quoted onclick inside a built string is the
     // R2-caught syntax-error class — this is screen_cascada's own pattern.
     document.getElementById("paso6").onclick = () =>
@@ -1486,13 +1687,13 @@ document.getElementById("f").addEventListener("submit", async (e) => {
       escapear(x.error) + "</td></tr>").join("") + "</table>";
 });
 </script>"""
-    return shell(5, "Planilla de usuarios", body)
+    return shell("equipos", body)
 
 
 def screen_revision():
     body = """<div class="tarjeta"><h2>Revisión</h2>
 <p>Revise el plan antes de ejecutar. La ejecución configura la instancia completa
-(minutos); su avance se ve en la consola donde ejecutó <code>aps-conecta provision</code>.</p>
+(minutos); su avance se ve en la consola del servidor.</p>
 <div id="m">Preparando la revisión…</div>
 <button id="ejecutar" disabled>Ejecutar</button></div>
 <script>
@@ -1523,35 +1724,43 @@ def screen_revision():
   });
 })();
 </script>"""
-    return shell(6, "Revisión", body)
+    return shell("ejecutar", body)
 
 
 def screen_divergencia():
     body = """<div class="tarjeta"><h2>Divergencia</h2>
 <div id="m">Cargando el resultado…</div>
-<button onclick="location.href='/'">Volver al inicio</button></div>
+<button onclick="location.href='/bienvenida'">Volver a la bienvenida</button></div>
 <script>
 (async () => {
   const r = JSON.parse(sessionStorage.getItem("resultado") || "null");
   if (!r) { zona("m").innerHTML =
-    '<div class="aviso">No hay un resultado en esta sesión. Ejecute de nuevo desde el paso 6.</div>'; return; }
+    '<div class="aviso">No hay un resultado en esta sesión. Ejecute de nuevo desde la revisión.</div>'; return; }
   if (r.estado !== 200) {
     zona("m").innerHTML = '<div class="error">' + escapear(r.error) + "</div>" +
       "<pre>" + escapear((r.salida || "").split("\\n").slice(-12).join("\\n")) + "</pre>"; return;
   }
-  if (r.divergencia_vacia) {
-    zona("m").innerHTML = '<div class="ok"><strong>Divergencia vacía.</strong> La instancia ' +
-      "queda configurada; las contraseñas de primer ingreso están selladas en <code>" +
-      escapear(r.credenciales || "/opt/aps-conecta/credentials.txt") +
-      "</code> (permiso 600). Entregue a cada persona su fila y conserve el archivo.</div>";
-  } else {
-    zona("m").innerHTML = '<div class="error"><strong>Hay divergencia.</strong> Revise las ' +
-      "notas y corrija; luego vuelva a ejecutar el paso 6.</div>" +
-      "<pre>" + escapear(r.divergencia) + "</pre>";
-  }
+  if (r.divergencia_vacia) { location.replace("/listo"); return; }
+  zona("m").innerHTML = '<div class="error"><strong>Hay divergencia.</strong> Revise las ' +
+    "notas y corrija; luego vuelva a ejecutar desde la revisión.</div>" +
+    "<pre>" + escapear(r.divergencia) + "</pre>";
 })();
 </script>"""
-    return shell(7, "Divergencia", body)
+    return shell("ejecutar", body)
+
+
+# The screens a signed-in browser reaches — path → renderer. A plain route table: each screen names
+# its own registry step (shell(step_id, …)); the step list itself is STEPS, read from the host CLI.
+ROUTES = {
+    "/bienvenida": screen_bienvenida,
+    "/cascada": screen_cascada,
+    "/contenedores": screen_contenedores,
+    "/sectores": screen_sectores,
+    "/componentes": screen_componentes,
+    "/planilla": screen_planilla,
+    "/revision": screen_revision,
+    "/divergencia": screen_divergencia,
+}
 
 
 def estado_contenedores():
@@ -1588,15 +1797,35 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?", 1)[0]
         if path == "/":
-            # Unauthenticated on purpose: the operator's browser must see the service before pasting
-            # anything, and preflight (S7) needs a liveness probe that owns no token. Nothing secret
-            # rides this — the register's date and size, no establishment data.
-            self.send_json(200, {"servicio": "Provisionador APS Conecta", "estado": "listo",
+            self.redirect("/login")   # R33: the address opens the sign-in page, never JSON
+            return
+        if path == "/api/salud":
+            # Unauthenticated on purpose: the host's probe (check_prov_ports) and a second installer's
+            # start need to tell this service from a stranger without a token. Nothing secret rides
+            # this — the register's date and size, no establishment data.
+            self.send_json(200, {"servicio": SERVICE, "estado": "listo",
                                  "registro": SNAPSHOT, "establecimientos": len(ROWS)})
             return
-        # ── the UI (slice 17): the login screen is public; the seven steps need the cookie ──
+        if path.startswith("/recursos/"):
+            # Public on purpose: the sign-in page needs the fonts. Whitelisted names only.
+            asset = ASSETS.get(path[len("/recursos/"):])
+            data = None
+            if asset is not None:
+                try:
+                    with open(os.path.join(ROOT_DIR, asset[0]), "rb") as fh:
+                        data = fh.read()
+                except OSError:
+                    pass
+            if data is None:
+                self.send_json(404, {"error": "recurso desconocido"})
+                return
+            self.send_bytes(200, asset[1], data, {"Cache-Control": "max-age=86400"})
+            return
         if path == "/login":
-            self.send_html(screen_login())
+            if self.authorized():
+                self.redirect("/bienvenida")
+            else:
+                self.send_html(screen_login())
             return
         if path == "/api/estado":
             if not self.authorized():
@@ -1606,40 +1835,24 @@ class Handler(BaseHTTPRequestHandler):
             status, body = estado_contenedores()
             self.send_json(status, body)
             return
-        screens = {p: (n, t) for p, n, t in SCREENS}
-        if path in screens:
+        if path in ROUTES or path == "/listo":
             if not self.authorized():
                 # A human gets redirected to the door; an API gets JSON — the split is by route
                 # shape (screen routes are the UI, /api routes answer JSON), not by header sniff.
-                self.send_response(302)
-                self.send_header("Location", "/login")
-                self.send_header("Content-Length", "0")
-                self.end_headers()
-                return
-            n, _t = screens[path]
-            if path == "/componentes":
-                root = os.path.join(deis.HERE, "..")
-                fases = sorted(p for p in os.listdir(os.path.join(root, "provisioning", "phases"))
-                               if p[:1].isdigit() and p.endswith(".sh"))
-                apps = sorted(os.listdir(os.path.join(root, "provisioning", "apps")))
-                self.send_html(screen_componentes(fases, apps))
+                self.redirect("/login")
+            elif path == "/listo" and not DONE.is_set():
+                self.redirect("/bienvenida")   # «Listo» exists only after a green execution
             else:
-                self.send_html({"/contenedores": screen_contenedores,
-                                "/cascada": screen_cascada,
-                                "/sectores": screen_sectores,
-                                "/planilla": screen_planilla,
-                                "/revision": screen_revision,
-                                "/divergencia": screen_divergencia}[path]())
+                self.send_html(screen_listo() if path == "/listo" else ROUTES[path]())
             return
         self.send_json(404, {"error": "ruta desconocida"})
 
     def do_POST(self):
         path = self.path.split("?", 1)[0]
         if path == "/api/login":
-            # The ONE pre-auth POST: the login form's token. Same constant-time compare as
-            # authorized(); success sets the HttpOnly cookie (SameSite=Strict, no Secure — the
-            # D9 LAN ceiling is plain HTTP and a Secure cookie would never ride it) and the
-            # response never echoes the token.
+            # The ONE pre-auth POST: the login form's (or the link's) code. Same constant-time compare
+            # as authorized(); success sets the HttpOnly, SameSite=Strict, Secure cookie (HTTPS, L3 S1)
+            # and the response never echoes the token.
             try:
                 payload = self.read_json()
             except ClientError as e:
@@ -1651,7 +1864,8 @@ class Handler(BaseHTTPRequestHandler):
                     or not hmac.compare_digest(token.encode(), TOKEN.encode())):
                 self.send_json(401, {"error": "token incorrecto"})
                 return
-            cookie = (f"{TOKEN_COOKIE}={TOKEN}; Path=/; HttpOnly; SameSite=Strict; Max-Age=43200")
+            cookie = (f"{TOKEN_COOKIE}={TOKEN}; Path=/; HttpOnly; Secure; SameSite=Strict; "
+                      "Max-Age=43200")
             self.send_json(200, {"ok": True}, {"Set-Cookie": cookie})
             return
         if not self.authorized():
@@ -1667,6 +1881,11 @@ class Handler(BaseHTTPRequestHandler):
             self.close_connection = True  # same framing rule: 413 never drained its body
             self.send_json(e.status, {"error": str(e)})
             return
+        if path == "/api/generar" and DONE.is_set():
+            # SEC-2: the installer is done and closing — a reload and a second click inside the grace
+            # must not start a run the shutdown would cut
+            self.send_json(409, {"error": "la instalación ya terminó: el instalador se está cerrando"})
+            return
         if path == "/api/deis":
             status, body = api_deis(payload)
         elif path == "/api/sitio":
@@ -1677,6 +1896,15 @@ class Handler(BaseHTTPRequestHandler):
             status, body = api_generar(payload)
         else:
             status, body = 404, {"error": "ruta desconocida"}
+        finished = (path == "/api/generar" and status == 200 and body.get("modo") == "ejecutar"
+                    and body.get("divergencia_vacia") is True)
+        if finished:
+            # In the HTTP layer, never in api_generar: --paso generar (the silent install, the
+            # weekly timer) shares that function and must not close anything. Marked done BEFORE
+            # the answer leaves, so the browser's next request (/listo) already sees it; the
+            # shutdown waits out the grace.
+            self.close_connection = True   # the browser's next request opens a fresh socket
+            self.server.close_after_success()
         self.send_json(status, body)
 
     def authorized(self):
@@ -1712,30 +1940,49 @@ class Handler(BaseHTTPRequestHandler):
             raise ClientError(400, "el cuerpo debe ser un objeto JSON")
         return payload
 
-    def send_json(self, status, obj, headers=None):
-        body = (json.dumps(obj, ensure_ascii=False) + "\n").encode("utf-8")
+    def send_bytes(self, status, ctype, data, headers=None):
+        # Every response's single exit: the one place Content-Length is set — HTTP/1.1 framing stays
+        # honest by construction (keep-alive).
         self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
         for key, value in (headers or {}).items():
             self.send_header(key, value)
         self.end_headers()
-        self.wfile.write(body)
+        self.wfile.write(data)
 
-    def send_html(self, html):
-        # The screens' single exit: same framing discipline as send_json (one Content-Length
-        # site), and the charset is declared — the es-CL copy carries accents.
-        body = html.encode("utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+    def send_json(self, status, obj, headers=None):
+        self.send_bytes(status, "application/json; charset=utf-8",
+                        (json.dumps(obj, ensure_ascii=False) + "\n").encode("utf-8"), headers)
+
+    def send_html(self, page):
+        # the es-CL copy carries accents: the charset is declared
+        self.send_bytes(200, "text/html; charset=utf-8", page.encode("utf-8"))
+
+    def redirect(self, where):
+        self.send_bytes(302, "text/plain; charset=utf-8", b"", {"Location": where})
 
     def log_message(self, fmt, *args):
-        # Paths only, never headers: the token never rides a URL, so the request line is already
-        # safe. Prefix so a clinic operator can tell these lines from docker's in any captured log.
-        sys.stderr.write("[provisionador] %s\n" % (fmt % args))
+        # R42: the console is the operator's — no request lines, and no «Request timed out» trace
+        # (stdlib routes both through here). Errors that matter answer the browser in Spanish.
+        pass
+
+
+class Server(ThreadingHTTPServer):
+    """The installer's server. Quiet (R42): a failed TLS handshake or a dropped socket is not the
+    operator's business — every answer that matters reaches the browser in Spanish. Finished once
+    (SEC-2, a13): a green «Revisar y ejecutar» schedules the shutdown that closes the port and with
+    it the link; the grace lets the result page load first."""
+    grace = 30   # seconds; a13 wants the port closed within a minute of the success
+
+    def handle_error(self, request, client_address):
+        pass
+
+    def close_after_success(self):
+        DONE.set()
+        t = threading.Timer(self.grace, self.shutdown)
+        t.daemon = True
+        t.start()
 
 
 def bind_server(host, ports):
@@ -1746,7 +1993,7 @@ def bind_server(host, ports):
     err = None
     for port in (*ports, 0):
         try:
-            httpd = ThreadingHTTPServer((host, port), Handler)
+            httpd = Server((host, port), Handler)
             return httpd, httpd.server_address[1]
         except OSError as e:
             err = e
@@ -1755,14 +2002,119 @@ def bind_server(host, ports):
              f"Vea qué puertos están ocupados con:  ss -ltn")
 
 
-def banner(url, token):
-    print("✓ Provisionador APS Conecta")
-    print(f"  Registro DEIS: instantánea {SNAPSHOT} ({len(ROWS)} establecimientos)")
-    print(f"  Abra {url} — desde otro equipo de la red, reemplace 127.0.0.1 por la IP de este "
-          "servidor.")
-    print("  Token de acceso ( cópielo en la pantalla de inicio ):")
-    print(f"    {token}")
-    print("  Detenga el servicio con Ctrl+C.")
+def lan_ip():
+    """The address other machines on the LAN reach this host by: the source address of the default
+    route, asked of the kernel with a UDP connect (no packet leaves). Loopback when there is none."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        try:
+            s.connect(("192.0.2.1", 9))   # TEST-NET-1: a route lookup, never a destination
+            return s.getsockname()[0]
+        except OSError:
+            return "127.0.0.1"
+
+
+def openssl(*args):
+    """One openssl call; any failure stops the start before a socket opens, with the fix."""
+    try:
+        r = subprocess.run(["openssl", *args], capture_output=True, text=True, timeout=60)
+    except FileNotFoundError:
+        sys.exit("✗ falta openssl: el instalador web firma su propio certificado\n"
+                 "  → sudo apt-get install openssl")
+    except (OSError, subprocess.TimeoutExpired) as e:
+        sys.exit(f"✗ openssl no respondió: {e}")
+    if r.returncode != 0:
+        sys.exit(f"✗ openssl no pudo crear el certificado: {r.stderr.strip()[-300:]}")
+    return r.stdout
+
+
+def tls_context(ip):
+    """HTTPS with the installer's own certificate (a13: no code, no cookie crosses the LAN in clear).
+    The CA is made once and kept; the leaf is re-signed on every start for the address the link
+    names (and loopback): P-256, 825 days (Apple's ceiling for TLS server certificates). Returns the
+    server context and the leaf's SHA-256 fingerprint for the banner."""
+    ca_crt, ca_key, crt, key = (os.path.join(CERT_DIR, n) for n in
+                                ("ca.crt", "ca.key", "instalador.crt", "instalador.key"))
+    ec = ("-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256", "-nodes")
+    mayor = re.match(r"OpenSSL (\d+)\.", openssl("version"))   # `req -x509 -CA` is OpenSSL 3
+    if not mayor or int(mayor.group(1)) < 3:
+        sys.exit("✗ el instalador web necesita OpenSSL 3 o más reciente (Ubuntu 22.04+, Debian 12+)\n"
+                 "  → actualice el sistema operativo del servidor")
+    try:
+        os.makedirs(CERT_DIR, mode=0o700, exist_ok=True)
+        os.chmod(CERT_DIR, 0o700)       # an existing directory keeps the private keys' parent closed too
+        if not (os.path.exists(ca_crt) and os.path.exists(ca_key)):
+            openssl("req", "-x509", *ec, "-keyout", ca_key, "-out", ca_crt, "-days", "3650",
+                    "-subj", f"/O=APS Conecta/CN=APS Conecta {socket.gethostname()}",
+                    "-addext", "basicConstraints=critical,CA:TRUE",
+                    "-addext", "keyUsage=critical,keyCertSign,cRLSign")
+        san = ",".join(f"IP:{a}" for a in dict.fromkeys((ip, "127.0.0.1")))
+        openssl("req", "-x509", *ec, "-keyout", key, "-out", crt, "-days", "825",
+                "-subj", f"/CN={ip}", "-CA", ca_crt, "-CAkey", ca_key,
+                "-addext", f"subjectAltName={san}",
+                "-addext", "basicConstraints=critical,CA:FALSE",
+                "-addext", "extendedKeyUsage=serverAuth")
+        for k in (ca_key, key):
+            os.chmod(k, 0o600)
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(crt, key)
+    except OSError as e:
+        sys.exit(f"✗ no se pudo preparar el certificado en {CERT_DIR}: {e.strerror or e}\n"
+                 "  → ejecute con permisos de administrador: sudo aps-conecta abrir")
+    return ctx, huella(crt)
+
+
+def huella(crt):
+    """A certificate's SHA-256 fingerprint, AA:BB:… — what the browser's warning shows."""
+    with open(crt, encoding="ascii") as fh:
+        h = hashlib.sha256(ssl.PEM_cert_to_DER_cert(fh.read())).hexdigest().upper()
+    return ":".join(h[i:i + 2] for i in range(0, len(h), 2))
+
+
+def running_installer(ports=PORTS):
+    """The port of an installer already serving on this host, or None (R33): two would print two
+    links and two codes — the second refuses instead. Identity, not trust: the certificate is not
+    checked, the answer's servicio is."""
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    for p in ports:
+        try:
+            with urllib.request.urlopen(f"https://127.0.0.1:{p}/api/salud", context=ctx,
+                                        timeout=2) as r:
+                answer = json.loads(r.read().decode("utf-8"))
+                if isinstance(answer, dict) and answer.get("servicio") == SERVICE:
+                    return p
+        except (OSError, ValueError, http.client.HTTPException):
+            continue
+    return None
+
+
+def banner(url, huella_hex):
+    """The console's one link (R32, a13): the code rides the fragment; the fingerprint is what the
+    browser's certificate warning shows."""
+    print("  Abrir en otro equipo de la red:")
+    print()
+    print(f"      {url}")
+    print()
+    print("  Sesión iniciada al abrir. Válido hasta terminar la instalación.")
+    print(f"  Certificado propio. Huella SHA-256: {huella_hex}")
+    print("  No cerrar esta ventana hasta «Listo».")
+    print()
+    print("Resultado esperando el navegador…")
+
+
+def serve(httpd):
+    """Serve until the installer is done (0), Ctrl+C (130), or anything else (1) — the exit code
+    `aps-conecta abrir` reads to wire the timers and print «Listo»."""
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print()   # ends the ^C line; the console says the rest
+        # Ctrl+C inside the grace after a green run (the browser already says «Listo»): still done
+        return 0 if DONE.is_set() else 130
+    finally:
+        httpd.server_close()
+    return 0 if DONE.is_set() else 1
 
 
 def run_step(argv):
@@ -1875,7 +2227,7 @@ def run_step(argv):
         print("✓ divergencia vacía — la instalación coincide con lo declarado")
         return 0
     print(f"✗ divergencia NO vacía — la deriva se muestra {f'en el registro ({log})' if resumen else 'arriba'}; "
-          "«aps-conecta provision» abre el provisionador para corregir")
+          "«sudo aps-conecta abrir» abre el instalador web para corregir")
     return 1
 
 
@@ -1885,7 +2237,7 @@ def selftest():
     real sites/ is never touched. The HTTP checks are real round-trips against a real server on an
     OS-assigned port — urllib, no frameworks. Every check is named and counted; a failure prints the
     list and exits 1 (B-014: a gate that cannot go red is not a gate)."""
-    global TOKEN, SNAPSHOT, ROWS, CRED_PATH, PHASE20, ESTADO_PATH
+    global TOKEN, SNAPSHOT, ROWS, CRED_PATH, PHASE20, ESTADO_PATH, CERT_DIR, LAN_IP, HOSTNAME, PORT
     n = 0
     bad = []
 
@@ -1913,6 +2265,7 @@ def selftest():
 
     old = deis.HERE
     old_cred, old_p20 = CRED_PATH, PHASE20
+    old_cert = CERT_DIR
     # The stub world must not inherit the caller's exported seed knobs (P37, measured under
     # make test on the probe: a prior section's `source env.sh` leaves OFFICE_* exported and
     # env.sh never unsets, so the compose arm's clean fixture .env could not make the OFFICE_PORT
@@ -1994,14 +2347,16 @@ def selftest():
             except SystemExit as e:
                 check("bind failure exits non-zero with the fix hint", "ss -ltn" in str(e))
 
-            # — the banner: the FRD's "print the actual URL + token"
+            # — the banner: one link with the code in its fragment (R32, a13)
             buf = io.StringIO()
             with redirect_stdout(buf):
-                banner("http://127.0.0.1:8081", "tok-selftest")
+                banner("https://192.0.2.10:8081/login#acceso=tok-selftest", "AB:" * 31 + "CD")
             text = buf.getvalue()
-            check("banner names the URL, the token and the register",
-                  "http://127.0.0.1:8081" in text and "tok-selftest" in text
-                  and "2099-99-99" in text)
+            check("banner: one link with the code in the fragment, the fingerprint, «Listo» as the end — no token line to copy",
+                  text.count("https://") == 1 and "https://192.0.2.10:8081/login#acceso=tok-selftest" in text
+                  and "Huella SHA-256: " + "AB:" * 31 + "CD" in text
+                  and "No cerrar esta ventana hasta «Listo»." in text
+                  and "Token" not in text and "127.0.0.1" not in text)
 
             # — one real server, one real port, real requests: the auth gate and both endpoints
             TOKEN = secrets.token_hex(32)
@@ -2021,9 +2376,10 @@ def selftest():
                 except urllib.error.HTTPError as e:
                     return e.code, json.loads(e.read().decode())
 
-            st, body = call("GET", "/")
-            check("GET / names the service, no token needed",
-                  st == 200 and body["registro"] == "2099-99-99" and body["establecimientos"] == 4)
+            st, body = call("GET", "/api/salud", token=None)
+            check("GET /api/salud names the service, no token needed (R33)",
+                  st == 200 and body["servicio"] == SERVICE and body["registro"] == "2099-99-99"
+                  and body["establecimientos"] == 4)
             st, _ = call("POST", "/api/deis", {"q": "loica"}, token=None)
             check("POST without a token is refused 401", st == 401)
             st, _ = call("POST", "/api/deis", {"q": "loica"}, token="0" * 64)
@@ -2395,7 +2751,6 @@ def selftest():
                 with redirect_stdout(buf):   # the executor's host-side tee — captured, not printed
                     return api_generar({"codigo": codigo, "modo": mode})
 
-            import hashlib
             snap = {p: hashlib.md5(open(p, "rb").read()).hexdigest()
                     for p in (site_path("113314"), CRED_PATH,
                               os.path.join(deis.HERE, "..", "sites", "113314", "planilla-mia.csv"))}
@@ -2475,7 +2830,7 @@ def selftest():
             check("--paso generar: an empty divergence exits 0, a drift exits 1 naming the fix, a refused run exits 1 with its reason",
                   empty[0] == 0 and "✓ divergencia vacía" in empty[1]
                   and drift[0] == 1 and "✗ divergencia NO vacía" in drift[1]
-                  and "aps-conecta provision" in drift[1]
+                  and "sudo aps-conecta abrir" in drift[1]
                   and busy[0] == 1 and "✗ ya hay una ejecución en curso" in busy[1])
             check("--paso generar: line errors alone print no generic line; a bare refusal names its status",
                   lines[0] == 1 and "✗ línea 3: grupo desconocido" in lines[1]
@@ -2755,10 +3110,12 @@ def selftest():
             check("the bounds are explicit: TIMEOUTS seed/roster/gate = 1800/1800/300",
                   TIMEOUTS == {"seed": 1800, "roster": 1800, "gate": 300})
 
+            STEPS[:] = read_steps()
+            LAN_IP, HOSTNAME, PORT = "127.0.0.1", "servidor-prueba", port
+
             # ── slice 17: the UI (FRD S6) — the eight screens, the cookie arm, the estado leg ──
             # A browser-shaped client: http.client (no auto-redirect, the Cookie header set by
             # hand) — the API's Bearer client above stays the API's.
-            import http.client
 
             class Browser:
                 def __init__(self, token):
@@ -2781,11 +3138,11 @@ def selftest():
             b = Browser(TOKEN)
             with redirect_stderr(errlog):
                 st, text, hdr, setc = b.req("GET", "/login")
-            check("login: the screen renders — es-CL, lang=es, the token field, no stepper active",
+            check("login: the sign-in page — es-CL, the code field, the link's fragment read and wiped first",
                   st == 200 and "text/html" in hdr.get("Content-Type", "")
-                  and 'lang="es"' in text and "Token de acceso" in text
-                  and "Inicie sesión" in text and 'type="password"' in text
-                  and "aps-conecta provision" in text
+                  and 'lang="es"' in text and "Código de acceso" in text and 'type="password"' in text
+                  and 'get("acceso")' in text and "history.replaceState" in text
+                  and text.index("const ACCESO") < text.index("</head>")
                   and TOKEN not in text)
 
             with redirect_stderr(errlog):
@@ -2796,10 +3153,10 @@ def selftest():
 
                 st, text, hdr, setc = b.req("POST", "/api/login",
                                             json.dumps({"token": TOKEN}))
-                check("login: the token exchanges for an HttpOnly SameSite=Strict cookie (no Secure)",
+                check("login: the code exchanges for an HttpOnly, Secure, SameSite=Strict cookie",
                       st == 200 and setc and TOKEN_COOKIE + "=" in setc
-                      and "HttpOnly" in setc and "SameSite=Strict" in setc
-                      and "Secure" not in setc and TOKEN not in text)
+                      and "HttpOnly" in setc and "Secure" in setc and "SameSite=Strict" in setc
+                      and TOKEN not in text)
 
                 st, text, hdr, setc = b.req("GET", "/contenedores")
                 check("screens: without a cookie the step routes redirect to the door",
@@ -2811,7 +3168,8 @@ def selftest():
                       st == 302 and hdr.get("Location") == "/login")
 
                 b.cookie = f"{TOKEN_COOKIE}={TOKEN}"
-                for path, marca in (("/contenedores", "Contenedores del asistente"),
+                for path, marca in (("/bienvenida", "Sesión iniciada desde servidor-prueba"),
+                                    ("/contenedores", "Contenedores del asistente"),
                                     ("/cascada", "Busque su establecimiento"),
                                     ("/sectores", "Sectores y programas"),
                                     ("/componentes", "Componentes de la suite"),
@@ -2821,10 +3179,16 @@ def selftest():
                     st, text, hdr, setc = b.req("GET", path)
                     check(f"screens: {path} renders with the cookie arm",
                           st == 200 and marca in text and "text/html" in hdr.get("Content-Type", ""))
+                tsv = subprocess.run(["bash", HOST_CLI, "pasos"], capture_output=True, text=True,
+                                     timeout=10).stdout
+                titulos = [line.split("\t")[1] for line in tsv.splitlines()]
                 st, text, hdr, setc = b.req("GET", "/contenedores")
-                stepper = [f"{n}. {t}" for _p, n, t in SCREENS]
-                check("screens: the seven-step stepper rides every step page",
-                      all(s in text for s in stepper) and "Paso 1 de 7" in text)
+                pos = [text.find(f'<span class="t">{html.escape(t)}</span>') for t in titulos]
+                check("screens: the rail is «aps-conecta pasos» — every title in order, «Iniciar la suite» current as Paso 7 de 9 (a11)",
+                      len(titulos) == 9 and -1 not in pos and pos == sorted(pos)
+                      and "Paso 7 de 9 · en su navegador" in text
+                      and 'aria-current="step"><span class="n" aria-hidden="true">7</span>' in text
+                      and "SCREENS" not in globals())
 
                 st, text, hdr, setc = b.req("GET", "/api/estado")
                 check("estado: the cookie arm serves an API route — the stub's AIO containers answer",
@@ -2832,9 +3196,42 @@ def selftest():
                       and '"estado"' in text)
 
                 st, text, hdr, setc = b.req("GET", "/")
-                check("screens: GET / stays the identity JSON even with the cookie (the locked contract)",
-                      st == 200 and "application/json" in hdr.get("Content-Type", "")
-                      and "establecimientos" in text)
+                st2, text2, hdr2, _ = b.req("GET", "/api/salud")
+                check("screens: GET / opens the sign-in page even with the cookie; /api/salud stays the identity JSON (R33)",
+                      st == 302 and hdr.get("Location") == "/login"
+                      and st2 == 200 and "application/json" in hdr2.get("Content-Type", "")
+                      and SERVICE in text2)
+                st, text, hdr, setc = b.req("GET", "/login")
+                check("screens: a signed-in browser at the door goes to the welcome",
+                      st == 302 and hdr.get("Location") == "/bienvenida")
+                st, text, hdr, setc = b.req("GET", "/listo")
+                DONE.set()
+                st2, text2, hdr2, _ = b.req("GET", "/listo")
+                DONE.clear()
+                check("screens: «Listo» exists only after a green execution — the port it closes named, the motto on the backdrop",
+                      st == 302 and hdr.get("Location") == "/bienvenida"
+                      and st2 == 200 and "Instalador cerrado: enlace inválido, puerto" in text2
+                      and f"puerto {port} cerrado" in text2 and MOTTO in text2)
+                check("screens: the motto is phase 15's theming slogan (one string, three homes, pinned)",
+                      any(f'"{MOTTO}"' in line and "theming_set slogan" in line for line in
+                          open(os.path.join(ROOT_DIR, "provisioning", "phases", "15-branding.sh"),
+                               encoding="utf-8")))
+                b.cookie = None
+                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+                conn.request("GET", "/recursos/fraunces.woff2")
+                r = conn.getresponse()
+                fuente = r.read()
+                tipo = r.getheader("Content-Type")
+                conn.close()
+                with open(os.path.join(ROOT_DIR, ASSETS["fraunces.woff2"][0]), "rb") as fh:
+                    igual = fh.read() == fuente
+                st, _t, _h, _s = b.req("GET", "/recursos/../provisionador.py")
+                st2, _t, _h, _s = b.req("GET", "/recursos/nada.woff2")
+                check("assets: the brand fonts serve locally without a session; any other name is a 404; every whitelisted file exists",
+                      r.status == 200 and tipo == "font/woff2" and igual and st == 404 and st2 == 404
+                      and all(os.path.isfile(os.path.join(ROOT_DIR, rel)) for rel, _t in ASSETS.values()))
+                b.cookie = f"{TOKEN_COOKIE}={TOKEN}"
+
 
                 st, compo, hdr, setc = b.req("GET", "/componentes")
                 check("componentes: the ALL-ON cards render from the live tree — phases and apps",
@@ -2866,11 +3263,10 @@ def selftest():
                       "location.href='/planilla?codigo=' + new URLSearchParams(location.search)"
                       ".get('codigo')" in compo2)
 
-                # the request log never saw the token in a path (the URL rule, measured)
                 errlog.seek(0)
                 logged = errlog.read()
-                check("screens: the token never rides a URL — the request log carries paths only",
-                      TOKEN not in logged and "/api/login" in logged)
+                check("screens: the request log is silent — no path, no token, no timeout trace (R42)",
+                      logged == "")
 
             # docker-absent arm: estado answers a fix hint, never a traceback
             saved_path = os.environ["PATH"]
@@ -2879,11 +3275,184 @@ def selftest():
             os.environ["PATH"] = saved_path
             check("estado: a missing docker answers a 500 fix hint, never a hang or traceback",
                   st_hint == 500 and "no se encontró el comando docker" in body_hint["error"])
+            # ── L3 S1: HTTPS with the installer's own certificate (a13), the second installer (R33) ──
+            CERT_DIR = os.path.join(tmp, "certificados")
+            ctx1, hu1 = tls_context("127.0.0.1")
+            with open(os.path.join(CERT_DIR, "ca.crt"), "rb") as fh:
+                ca_pem = fh.read()
+            ctx2, hu2 = tls_context("127.0.0.1")
+            with open(os.path.join(CERT_DIR, "ca.crt"), "rb") as fh:
+                ca_kept = fh.read() == ca_pem
+            check("tls: the CA is made once and kept; the leaf is re-signed on every start",
+                  ca_kept and hu1 != hu2)
+            check("tls: both private keys are 0600, the directory 0700; the fingerprint is 32 hex pairs",
+                  all(os.stat(os.path.join(CERT_DIR, k)).st_mode & 0o777 == 0o600
+                      for k in ("ca.key", "instalador.key"))
+                  and os.stat(CERT_DIR).st_mode & 0o777 == 0o700
+                  and re.fullmatch(r"(?:[0-9A-F]{2}:){31}[0-9A-F]{2}", hu2) is not None)
+            check("tls: the link's address is an IPv4 the kernel routes by",
+                  re.fullmatch(r"\d{1,3}(?:\.\d{1,3}){3}", lan_ip()) is not None)
+            ts, tport = bind_server("127.0.0.1", (0,))
+            ts.socket = ctx2.wrap_socket(ts.socket, server_side=True, do_handshake_on_connect=False)
+            threading.Thread(target=ts.serve_forever, daemon=True).start()
+            confia = ssl.create_default_context(cafile=os.path.join(CERT_DIR, "ca.crt"))
+            with urllib.request.urlopen(f"https://127.0.0.1:{tport}/api/salud", context=confia,
+                                        timeout=10) as r:
+                salud = json.loads(r.read().decode("utf-8"))
+            check("tls: the address verifies against the installer's CA — /api/salud over HTTPS",
+                  salud.get("servicio") == SERVICE)
+            plano = io.StringIO()
+            with redirect_stderr(plano):
+                try:
+                    c = http.client.HTTPConnection("127.0.0.1", tport, timeout=5)
+                    c.request("GET", "/api/salud")
+                    c.getresponse()
+                    en_claro = True
+                except (OSError, http.client.HTTPException):
+                    en_claro = False
+                with urllib.request.urlopen(f"https://127.0.0.1:{tport}/api/salud", context=confia,
+                                            timeout=10) as r:
+                    sigue = r.status == 200
+            check("tls: plain HTTP gets no answer, the console stays quiet, the server keeps serving",
+                  not en_claro and plano.getvalue() == "" and sigue)
+            check("second installer: a running one is found by its identity, a plain stranger is not",
+                  running_installer((tport,)) == tport and running_installer((port,)) is None)
+            with open(os.path.join(HERE, "..", "host", "aps-conecta"), encoding="utf-8") as fh:
+                prov = re.search(r'^PROV_PORTS="([0-9 ]+)"', fh.read(), re.MULTILINE)
+            check("ports: the host probe's chain is the server's own (PROV_PORTS = PORTS, one fact pinned)",
+                  prov is not None and tuple(map(int, prov.group(1).split())) == PORTS)
+            saved_path = os.environ["PATH"]
+            os.environ["PATH"] = os.path.join(tmp, "empty")   # exists, holds nothing
+            try:
+                tls_context("127.0.0.1")
+                sin_openssl = ""
+            except SystemExit as e:
+                sin_openssl = str(e)
+            finally:
+                os.environ["PATH"] = saved_path
+            check("tls: no openssl stops the start before any socket, naming the package",
+                  "falta openssl" in sin_openssl and "apt-get install openssl" in sin_openssl)
+
+            # the fragment login in a real browser (a13) — where Playwright is installed (this box,
+            # the L7 boxes); elsewhere the arm says so and is not counted
+            try:
+                from playwright.sync_api import sync_playwright
+            except ImportError:
+                sync_playwright = None
+                print("  skip: browser arms — playwright is not installed "
+                      "(pip install playwright; playwright install chromium)")
+            if sync_playwright:
+                with sync_playwright() as pw:
+                    nav = pw.chromium.launch()
+                    try:
+                        visto = nav.new_context(ignore_https_errors=True)
+                        pg = visto.new_page()
+                        errores = []
+                        pg.on("pageerror", lambda e: errores.append(str(e)))
+                        pg.on("console", lambda m: errores.append(m.text) if m.type == "error" else None)
+                        try:
+                            pg.goto(f"https://127.0.0.1:{tport}/login#acceso={TOKEN}")
+                            pg.wait_for_url("**/bienvenida", timeout=10000)
+                            llego = True
+                        except Exception as e:   # a Playwright timeout: the arm reports it
+                            llego = False
+                            errores.append(str(e))
+                        galleta = next((c for c in visto.cookies() if c["name"] == TOKEN_COOKIE), {})
+                        check("browser: the link signs in — the fragment leaves the address bar, the cookie is Secure and HttpOnly",
+                              llego and "acceso" not in pg.url and galleta.get("secure") is True
+                              and galleta.get("httpOnly") is True and not errores)
+                        cargando = {"/contenedores": "Consultando el estado",
+                                    "/revision": "Preparando la revisión",   # no codigo: answers without a fetch
+                                    "/divergencia": "Cargando el resultado"}
+                        corrio = True
+                        for ruta, texto in cargando.items():
+                            try:
+                                pg.goto(f"https://127.0.0.1:{tport}{ruta}")
+                                pg.wait_for_function("t => !document.body.innerText.includes(t)",
+                                                     arg=texto, timeout=10000)
+                            except Exception as e:   # a Playwright timeout: the arm reports it
+                                corrio = False
+                                errores.append(f"{ruta}: {e}")
+                        for ruta in ("/bienvenida", "/cascada", "/sectores", "/componentes", "/planilla"):
+                            pg.goto(f"https://127.0.0.1:{tport}{ruta}")
+                        check("browser: every page runs its script on load — the loading texts are replaced, no script or console error (R34)",
+                              corrio and not errores)
+                        limpio = nav.new_context(ignore_https_errors=True).new_page()
+                        limpio.goto(f"https://127.0.0.1:{tport}/")
+                        en_login = limpio.url.endswith("/login") and "Código de acceso" in limpio.content()
+                        try:   # the full link pasted into that open page: only the fragment changes
+                            limpio.goto(f"https://127.0.0.1:{tport}/login#acceso={TOKEN}")
+                            limpio.wait_for_url(lambda u: "/login" not in u and "acceso" not in u,
+                                                timeout=10000)
+                            pegado = True
+                        except Exception:   # a Playwright timeout: the arm reports it
+                            pegado = False
+                        check("browser: the address without the fragment opens the sign-in page, never JSON; the full link pasted there signs in",
+                              en_login and pegado)
+                    finally:
+                        nav.close()
+            # ── L3 S1: a green «Revisar y ejecutar» closes the installer (SEC-2, a13) ──
+            fin, fport = bind_server("127.0.0.1", (0,))
+            fin.grace = 0.2
+            DONE.clear()
+            servido = []
+            hilo = threading.Thread(target=lambda: servido.append(serve(fin)), daemon=True)
+            hilo.start()
+            verdadero = globals()["api_generar"]
+
+            def ejecutar_http(vacia):
+                globals()["api_generar"] = lambda _p: (200, {"modo": "ejecutar",
+                                                              "divergencia_vacia": vacia})
+                try:
+                    req = urllib.request.Request(
+                        f"http://127.0.0.1:{fport}/api/generar", method="POST",
+                        data=json.dumps({"codigo": "113314", "modo": "ejecutar"}).encode(),
+                        headers={"Content-Type": "application/json",
+                                 "Authorization": f"Bearer {TOKEN}"})
+                    with urllib.request.urlopen(req, timeout=10) as r:
+                        return r.status
+                finally:
+                    globals()["api_generar"] = verdadero
+
+            st = ejecutar_http(False)
+            time.sleep(0.5)
+            check("finish: a red verdict keeps the installer open for the correction",
+                  st == 200 and hilo.is_alive() and not DONE.is_set())
+            st = ejecutar_http(True)
+            hilo.join(5)
+            try:
+                socket.create_connection(("127.0.0.1", fport), timeout=2).close()
+                cerrado = False
+            except OSError:
+                cerrado = True
+            check("finish: a green verdict closes the port within the grace and serve() answers 0",
+                  st == 200 and not hilo.is_alive() and DONE.is_set() and cerrado and servido == [0])
+            st, body = call("POST", "/api/generar", {"codigo": "113314", "modo": "ejecutar"})
+            check("finish: once done, a second execution inside the grace is refused 409 — nothing runs twice",
+                  st == 409 and "ya terminó" in body.get("error", ""))
+
+            class Interrumpido:   # Ctrl+C arriving while serve_forever runs
+                def serve_forever(self):
+                    raise KeyboardInterrupt
+
+                def server_close(self):
+                    pass
+
+            with redirect_stdout(io.StringIO()):
+                tarde = serve(Interrumpido())
+                DONE.clear()
+                temprano = serve(Interrumpido())
+            check("finish: Ctrl+C inside the grace after a green run still answers 0; before it, 130",
+                  tarde == 0 and temprano == 130)
+            DONE.clear()
+            ts.shutdown()
+            ts.server_close()
             httpd.shutdown()
             httpd.server_close()
     finally:
         deis.HERE = old
         CRED_PATH, PHASE20 = old_cred, old_p20
+        CERT_DIR = old_cert
         os.environ.update(_scrubbed)
         # the stub world closes with the fixture: the PATH injection and the FAKE_DOCKER_* knobs
         # are self-test machinery and must not leak into the caller's environment
@@ -2906,23 +3475,26 @@ def main(argv):
     if "--paso" in argv:
         sys.stdout.reconfigure(line_buffering=True)   # the phases stream live to a pipe (systemd)
         return run_step(argv)
-    global TOKEN
-    # The banner is the operator's only copy of the URL and the token, and `aps-conecta provision`
-    # (slice 19) and systemd both PIPE this stdout — block-buffered, a piped banner is invisible
-    # (measured: the smoke driver read nothing). Line-buffered is correct for a thing that must be
-    # read the moment it prints.
+    global TOKEN, LAN_IP, HOSTNAME, PORT
+    # The banner is the operator's only copy of the link, and `aps-conecta abrir` and systemd both
+    # PIPE this stdout — block-buffered, a piped banner is invisible (measured: the smoke driver read
+    # nothing). Line-buffered is correct for a thing that must be read the moment it prints.
     sys.stdout.reconfigure(line_buffering=True)
     load_register()                        # fail fast: no register, no wizard, no socket
+    STEPS[:] = read_steps()                # …no step list, no rail
+    otro = running_installer()             # …a second installer refuses before it re-signs the first one's leaf
+    if otro:
+        sys.exit(f"✗ el instalador web ya está abierto en el puerto {otro}\n"
+                 "  → use el enlace de su consola, o ciérrelo (Ctrl+C en su consola; sin consola: "
+                 "sudo pkill -f 'provisionador.py$') y vuelva a ejecutar: sudo aps-conecta abrir")
+    LAN_IP, HOSTNAME = lan_ip(), socket.gethostname()
+    ctx, fingerprint = tls_context(LAN_IP)  # …no certificate, no link
     TOKEN = secrets.token_hex(32)           # 64 hex chars — the env-init size, via the stdlib CSPRNG
-    httpd, port = bind_server("", PORTS)   # all interfaces: D9's LAN ceiling, the token is the edge
-    banner(f"http://127.0.0.1:{port}", TOKEN)
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        print("\n✓ Provisionador detenido.")
-    finally:
-        httpd.server_close()
-    return 0
+    httpd, PORT = bind_server("", PORTS)   # all interfaces: the LAN reaches it, loopback probes too
+    # the handshake runs in the handler thread (its 30 s timeout), never in the accept loop
+    httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True, do_handshake_on_connect=False)
+    banner(f"https://{LAN_IP}:{PORT}/login#acceso={TOKEN}", fingerprint)
+    return serve(httpd)
 
 
 if __name__ == "__main__":

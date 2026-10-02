@@ -74,14 +74,29 @@ image (D4), so boot-time installs would be noise. If preflight reds on the domai
 ## 5. Provision
 
 ```bash
-aps-conecta provision
+sudo aps-conecta abrir
 ```
 
-The banner prints the URL and the access token (the login screen's hint names where it came
-from — the console — but the token itself never appears in any page; copy it from the terminal
-where you ran this). The browser flow — DEIS cascade (región →
-comuna → centro), sectors/programs, the all-on components, the users CSV, review, execute — is
-walked step by step in [`GUIA-CLINICA.md`](GUIA-CLINICA.md) §4–6. The two outcomes that matter:
+`aps-conecta provision` is the same step. The console prints **one link** —
+`https://<LAN-IP>:<port>/login#acceso=<code>` — and the SHA-256 fingerprint of the installer's own
+certificate, which it signs with OpenSSL 3 (Ubuntu 22.04+, Debian 12+; an older OpenSSL stops
+`abrir` saying so). Open it from another machine on the LAN:
+- **The certificate warning.** The browser warns once; compare the fingerprint with the console's.
+- **Sign-in.** The session starts by itself. The code rides the URL fragment, which no request
+  carries, and leaves the address bar at once; without it the page asks for the code. The cookie
+  is `Secure`, so nothing crosses the LAN in clear.
+- **The CA.** It lives in `/opt/aps-conecta/certificados` (made once and kept; the suite's own
+  certificate, L4, hangs from it). The leaf is re-signed for the link's address on every start.
+- **One installer at a time.** A second `abrir` while one is open is refused, naming the port.
+
+The browser flow — the DEIS search, the suite's containers, sectors/programs, the all-on
+components, the users CSV, review, execute — is walked step by step in [`GUIA-CLINICA.md`](GUIA-CLINICA.md)
+§4–6. The pages follow the registry's steps 6–9 (`aps-conecta pasos`).
+
+When «Revisar y ejecutar» comes back green, the installer closes itself: the port closes and the
+link stops working. The console then wires the timers (§6) and prints «Listo». Ctrl+C before that
+leaves the instance as it is, and `sudo aps-conecta abrir` reopens with a new link. The two outcomes
+that matter:
 
 - **Divergencia vacía** — the handoff gate: the instance matches its declaration, users included.
 - **`/opt/aps-conecta/credentials.txt`** — the sealed sheet, mode 0600: one row per person and one per
@@ -90,8 +105,9 @@ walked step by step in [`GUIA-CLINICA.md`](GUIA-CLINICA.md) §4–6. The two out
 
 ## 6. Wire the timers
 
-The silent install (`install --sitio --planilla`) installs and enables them itself. After a browser
-install, after building the map (§9), and after every update (a changed unit lands this way):
+The silent install (`install --sitio --planilla`) and the browser install (at «Listo») install and
+enable them themselves. After building the map (§9), and after every update (a changed unit lands
+this way):
 
 ```bash
 sudo aps-conecta temporizadores
