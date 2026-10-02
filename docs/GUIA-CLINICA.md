@@ -67,10 +67,13 @@ Después de la bienvenida, el navegador recorre los pasos 6 a 9 de la instalaci�
    sirve a ese establecimiento y a ningún otro.
 2. **Iniciar la suite** — confirma que los contenedores estén en marcha (consulta su estado real;
    una lista vacía significa que algo no partió).
-3. **Cargar equipos y personas** — tres partes:
-   - los sectores y programas del establecimiento (nadie los conoce fuera del equipo local);
-   - los componentes, todos activados y sin opciones (la distribución es una sola);
-   - la planilla de usuarios (§5).
+3. **Cargar equipos y personas** — en una sola pantalla:
+   - los sectores y programas del establecimiento, uno por línea (nadie los conoce fuera del
+     equipo local); debajo de cada lista aparece el código de grupo de cada uno, el que usa la
+     planilla. «Guardar equipos» los fija; guardarlos de nuevo con cambios muestra lo nuevo y lo
+     quitado: «Reemplazar» o «Conservar»;
+   - la planilla de personas (§5), con su plantilla («Descargar plantilla») y la lista de
+     «Grupos válidos».
 4. **Revisar y ejecutar** — el plan completo antes de ejecutar: fases, usuarios, primer
    administrador. Ejecutar es un botón, y la consola del servidor muestra el avance línea a línea.
    - Con **«divergencia vacía»** (la instancia coincide con su declaración, usuarios incluidos)
@@ -91,12 +94,14 @@ usuario;nombre;apellidos;correo;grupos;primer_admin
   entregan selladas (§6). La planilla que usted prepara no lleva ningún secreto.
 - **`primer_admin`**: exactamente **un** `sí` en toda la planilla (la primera persona en entrar
   a arreglar algo); todas las demás filas llevan `no`.
-- **`grupos`**: los grupos del establecimiento (sectores, programas, roles), separados por
-  espacios. (Plan-local fix, Step 5: la API separa grupos por espacios.) Se espera a **todo el personal** — la planilla es el registro de personas, no una
-  lista de invitados.
-- **Los cargos no van en la planilla.** Jefaturas y roles técnicos (jefe de sector, cat-jefaturas,
-  role-*) **se siembran solos, con sus propias cuentas permanentes** — la planilla nombra **personas**;
-  los cargos son la estructura, y confundirlos duplica cuentas.
+- **`grupos`**: los códigos de sector, programa y cargo de este centro, separados por espacios —
+  la pantalla los muestra en «Grupos válidos», y la plantilla («Descargar plantilla») trae dos
+  filas de ejemplo con los suyos. «Todo el personal» y la categoría de cada cargo se agregan
+  solos: no los escriba. Se espera a **todo el personal** — la planilla es el registro de
+  personas, no una lista de invitados.
+- **Los cargos no van en la planilla.** La dirección y las jefaturas (jefe de sector, jefe de
+  SOME…) **se crean solas, con sus propias cuentas permanentes** — la planilla nombra
+  **personas**; los cargos son la estructura, y confundirlos duplica cuentas.
 - **El formato**: UTF-8, punto y coma. **Si viene de Excel**: «Guardar como» → CSV UTF-8. Un CSV
    de Excel en Windows sale por defecto en windows-1252 y los acentos llegan rotos — la
    pantalla de carga lo avisa si lo detecta y el arreglo es volver a guardar como «CSV UTF-8».
@@ -105,7 +110,9 @@ usuario;nombre;apellidos;correo;grupos;primer_admin
 
 Al cargar la planilla, el sistema sella `/opt/aps-conecta/credentials.txt` (permiso 0600 — solo
 root): una fila por persona y una por cada cuenta de cargo (`Cargo director`, `Cargo jefe.norte`, …),
-cada una con su propia contraseña de primer ingreso. **El ritual de entrega:**
+cada una con su propia contraseña de primer ingreso. Se entregan al final, cuando la consola muestra
+«Listo» — la pantalla de la planilla lo dice. Si la instalación no llega a ejecutarse, el archivo
+nombra cuentas que todavía no existen. **El ritual de entrega:**
 
 1. Abra el archivo **como root** (`sudo cat /opt/aps-conecta/credentials.txt`).
 2. Entregue a cada persona **su fila** — no el archivo completo. La fila de un cargo se entrega a
