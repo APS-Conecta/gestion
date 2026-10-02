@@ -129,6 +129,15 @@ step_browser() {  # N — a browser step asked for from the console: where it ru
   info "el paso $1 («$(step_field "$1" 2)») se hace en el navegador, en el instalador web que abre «aps-conecta abrir»"
 }
 
+cmd_pasos() {  # the registry as TSV — id · título · dónde · subcomando · propósito · resultado — the
+  # web installer's only source for its rail and step numbers (a11: it keeps no list of its own)
+  local n
+  for n in $(seq 1 "${#STEPS[@]}"); do
+    printf '%s\t%s\t%s\taps-conecta %s\t%s\t%s\n' "$(step_field "$n" 1)" "$(step_field "$n" 2)" \
+      "$(step_field "$n" 3)" "$(step_field "$n" 1)" "$(step_field "$n" 4)" "$(step_field "$n" 5)"
+  done
+}
+
 welcome() {  # the welcome — the approved console's opening, line for line
   local v n_server=0 n_browser=0 i
   v="$(suite_tag)"; [ -n "$v" ] || v="(versión sin etiqueta)"
@@ -250,6 +259,7 @@ usage() {  # Spanish, generated from the registry — never a slice of this file
   done
   echo
   echo "Mantenimiento:"
+  echo "  aps-conecta pasos                 los pasos de la instalación, uno por fila (separados por tabulador)"
   echo "  aps-conecta preflight [--dominio D]   revisión completa del servidor (y del dominio D) y comando de arranque de la suite"
   echo "  aps-conecta run-command           solo el comando de arranque de la suite"
   echo "  aps-conecta provision             abre el instalador web (lo mismo que el paso abrir)"
@@ -1263,6 +1273,11 @@ EOF
     '[ "$ids" = "revisar preparar descargar mapa abrir centro suite equipos ejecutar " ]'
   check "registry: step_number maps an id to its number and refuses an unknown one" \
     '[ "$(step_number mapa)" = 4 ] && ! step_number nada >/dev/null'
+  local tsv tsv_ok
+  tsv="$(cmd_pasos)"
+  tsv_ok="$(printf '%s\n' "$tsv" | awk -F'\t' 'NF == 6 && $4 == "aps-conecta " $1 { n++ } END { print n + 0 }')"
+  check "pasos: one TSV row per step — id, título, dónde, its own subcommand, propósito, resultado (a11)" \
+    '[ "$tsv_ok" -eq "${#STEPS[@]}" ] && [ "$(printf "%s\n" "$tsv" | sed -n 6p | cut -f2)" = "Elegir el centro" ]'
   welcome_out="$(welcome)"
   check "welcome: name, version, the nine-step promise, the motto, the licence with the source, the credit" \
     'case "$welcome_out" in *"APS Conecta Gestión   Instalador v9.9.9"*"en 9 pasos: 5 en este servidor, 4 en el navegador"*"«La salud primaria que compartimos es la que mejora»"*"AGPL-3.0-or-later · github.com/APS-Conecta/gestion"*"Desarrollado por Dani Espinoza Charrier · APS Conecta"*) ;; *) false;; esac'
@@ -2062,6 +2077,7 @@ case "${1:-}" in
   asistente-aio) shift; cmd_aio_wizard "$@" ;;
   temporizadores) FAIL=0; install_timers; [ "$FAIL" -eq 0 ] || exit 1 ;;
   estado)       cmd_estado ;;
+  pasos)        cmd_pasos ;;
   revalidate)   cmd_revalidate ;;
   respaldo)     cmd_respaldo ;;
   tiles)        shift; exec bash "$HOST_DIR/tiles.sh" "$@" ;;
