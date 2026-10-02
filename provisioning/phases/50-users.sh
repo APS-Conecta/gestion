@@ -3,12 +3,14 @@
 # groups phase 20 already created (this phase never creates structure — AD-2). The ordering that
 # guarantees is the runner's own: 20-groups -> 30-folders -> 40-acl -> here.
 #
-# GATED BY SEED_FIXTURES, one shared password. These are POSITIONS, not people: #86 settled the
-# roster format and closed 2026-08-01, and the reader waits on password delivery (#106). Every jefe
+# GATED BY SEED_FIXTURES. These are POSITIONS, not people, each with its own first password: the
+# Provisionador seals one per account with the planilla's (standings.sh standing_password); only
+# `make install` without it — the compose lab, CI — gives them all FIXTURE_USER_PASSWORD. Every jefe
 # de sector holds a role, a sector team and a category at once — the role-union this phase shows.
 phase_begin "50-users" "The clinic's standing leadership accounts"
 
 : "${FIXTURE_USER_PASSWORD:?set FIXTURE_USER_PASSWORD in .env}"
+[ -n "${STANDING_PASSWORDS:-}" ] || log "no Provisionador: cargo accounts made on this run take FIXTURE_USER_PASSWORD"
 
 # One jefe PER SECTOR, derived from the site file rather than named here: an establishment with four
 # sectors gets four, one with two gets two, and this file does not change. A single jefe holding
@@ -71,7 +73,8 @@ fi
 
 for entry in "${users[@]}"; do
   uid="${entry%%|*}"; rest="${entry#*|}"; display="${rest%%|*}"; groups="${rest#*|}"
-  ensure_user "$uid" "$display" "$FIXTURE_USER_PASSWORD"
+  pass="$(standing_password "$uid")" || exit 1
+  ensure_user "$uid" "$display" "$pass"
   # Add to each group ONLY if it exists (phase 20 owns them). A missing group is logged, not fatal:
   # a clinic may legitimately not carry a position, and the account is still worth having.
   for g in $groups; do
