@@ -27,9 +27,10 @@ deis.py's FATAL paths sys.exit(); on the serving paths the calls catch SystemExi
 instead of dying — a half-served wizard page is worse than an honest 4xx — while startup re-exits
 fatally with the hint intact, before any socket opens.
 
-The server is STATELESS: no session, no hidden server-side state — every request carries what it
-needs (the browser flow keeps the chosen DEIS codigo), so a restart mid-flow costs the operator one
-re-entry, and every endpoint is one curl. The token never rides a request: the console's one link
+The server keeps no session: the token is the credential and the state. The one thing it holds is
+the centre chosen at step 6, until step 8 writes the site file that answers from then on — no code
+rides a URL (L3 S2), a restart before step 8 costs one re-pick, and every endpoint is one curl. The
+token never rides a request: the console's one link
 carries it in the URL fragment (#acceso=…), which browsers never send; the sign-in page trades it
 for the cookie and wipes it from the address bar. On the wire the Authorization header (and the
 login cookie) is the only carrier, and the request log is silent (R42).
@@ -75,6 +76,21 @@ ROWS = []
 # key, one establishment per install (D13) — so this regex is also the path-traversal guard:
 # whatever passes it cannot name anything but sites/<digits>/site.sh.
 CODIGO = re.compile(r"[0-9]{4,6}")
+
+# The chosen centre (L3 S2): the browser's «Confirmar centro» lands here and holds until step 8
+# writes the site file, which answers from then on — one install, one establishment (D13).
+# Process-local on purpose: a restart before step 8 costs one re-pick, nothing else.
+CENTRO = None
+# The Centro screen's orders (the approved design's): regions north to south — the register's
+# codes are not — and the types with the long name the card shows. R36: every type is offered,
+# none excluded by default.
+REGION_ORDER = ("15", "01", "02", "03", "04", "05", "13", "06", "07", "16", "08", "09", "14", "10",
+                "11", "12")
+TIPOS = (("CESFAM", "Centro de Salud Familiar"), ("CECOSF", "Centro Comunitario de Salud Familiar"),
+         ("PSR", "Posta de Salud Rural"), ("SAPU", "Servicio de Atención Primaria de Urgencia"),
+         ("SUR", "Servicio de Urgencia Rural"), ("SAR", "Servicio de Alta Resolutividad"),
+         ("COSAM", "Centro Comunitario de Salud Mental"), ("CGU", "Consultorio General Urbano"),
+         ("CGR", "Consultorio General Rural"))
 
 # Dynamic bind (FRD S5): try these in order, then port 0 (OS-assigned). A busy port is a
 # fall-through, never an error — the banner prints whatever actually bound.
@@ -414,6 +430,92 @@ def api_deis(payload):
     return 200, {"snapshot": SNAPSHOT, "total": len(found), "matches": found}
 
 
+def written_sites():
+    """The centres with a written site file, by directory (sites/<codigo>/site.sh): one install,
+    one establishment (D13), so any entry is the install's centre, fixed."""
+    base = os.path.join(deis.HERE, "..", "sites")
+    try:
+        return sorted(d for d in os.listdir(base) if os.path.isfile(os.path.join(base, d, "site.sh")))
+    except OSError:
+        return []
+
+
+def one_establishment(codigo):
+    """None when `codigo` may be this install's centre; else the 409 naming the one it serves — the
+    one refusal the silent install (site_import), «Confirmar centro» and step 8 share. No path in it
+    (a16): the operator reads a centre, not a file."""
+    others = [d for d in written_sites() if d != codigo]
+    if not others:
+        return None
+    row = find_row(others[0])
+    quien = f"{row['nombre']} (DEIS {others[0]})" if row else f"otro establecimiento (DEIS {others[0]})"
+    return 409, {"error": f"este servidor ya sirve a {quien}: una instalación sirve a un solo "
+                          "establecimiento"}
+
+
+def api_centros():
+    """GET /api/centros — the whole register in one compact payload for the Centro screen's
+    client-side cascade and search (R36: every centre, every type): each name once, and each centre
+    as [codigo, tipo, nombre, dirección, comuna, servicio, dependencia] with indexes into them.
+    ~250 KB once per visit on the LAN (ponytail: no gzip, no paging — compress if a box feels it)."""
+    def orden(lista, codigos):
+        return lambda x: (lista.index(x) if x in lista else len(lista), codigos(x))
+    region = {r["region_codigo"]: r["region"] for r in ROWS}
+    comuna = {r["comuna_codigo"]: (r["comuna"], r["region_codigo"]) for r in ROWS}
+    siglas = [s for s, _ in TIPOS]
+    regiones = sorted(region, key=orden(list(REGION_ORDER), str))
+    tipos = sorted({r["tipo"] for r in ROWS}, key=orden(siglas, str))
+    servicios = sorted({r["servicio_salud"] for r in ROWS}, key=deis.fold)
+    dependencias = sorted({r["dependencia"] for r in ROWS}, key=deis.fold)
+    ri = {c: i for i, c in enumerate(regiones)}
+    comunas = sorted(comuna, key=lambda c: (ri[comuna[c][1]], deis.fold(comuna[c][0])))
+    ti = {t: i for i, t in enumerate(tipos)}
+    ci = {c: i for i, c in enumerate(comunas)}
+    si = {s: i for i, s in enumerate(servicios)}
+    di = {d: i for i, d in enumerate(dependencias)}
+    centros = sorted(([r["codigo"], ti[r["tipo"]], r["nombre"], r["direccion"],
+                       ci[r["comuna_codigo"]], si[r["servicio_salud"]], di[r["dependencia"]]]
+                      for r in ROWS), key=lambda x: (x[1], deis.fold(x[2])))
+    largo = dict(TIPOS)
+    return 200, {"registro": SNAPSHOT, "regiones": [region[c] for c in regiones],
+                 "comunas": [[comuna[c][0], ri[comuna[c][1]]] for c in comunas],
+                 "tipos": [[t, largo.get(t, t)] for t in tipos],
+                 "servicios": servicios, "dependencias": dependencias, "centros": centros}
+
+
+def centro_actual():
+    """GET /api/centro — this install's centre: the written site's («fijo», by its SITE_DEIS line),
+    else the one confirmed on the Centro screen; none yet is {"codigo": null} — a state, not an error
+    (a 404 would land in the browser console as one). Every later screen reads it here, so no code
+    rides a URL (L3 S2); «Listo» names the centre from it too."""
+    sitios = written_sites()
+    codigo = (site_deis(site_path(sitios[0])) or sitios[0]) if sitios else CENTRO
+    row = find_row(codigo) if codigo else None
+    if row is None and sitios:
+        return 409, {"error": f"el sitio escrito nombra el DEIS {codigo}, que no está en el registro "
+                              f"{SNAPSHOT} — revíselo a mano"}
+    if row is None:
+        return 200, {"codigo": None}
+    return 200, {"codigo": codigo, "nombre": row["nombre"], "fijo": bool(sitios)}
+
+
+def api_centro(payload):
+    """POST /api/centro {"codigo"} — «Confirmar centro»: held until step 8 writes the site file. A
+    correction is free until then; afterwards only that centre answers 200 (D13)."""
+    global CENTRO
+    codigo = payload.get("codigo")
+    if not isinstance(codigo, str) or not CODIGO.fullmatch(codigo):
+        return 400, {"error": "el código DEIS debe ser de 4 a 6 dígitos"}
+    row = find_row(codigo)
+    if row is None:
+        return 404, {"error": f"ningún establecimiento con código DEIS {codigo} en el registro {SNAPSHOT}"}
+    refused = one_establishment(codigo)
+    if refused:
+        return refused
+    CENTRO = codigo
+    return 200, {"ok": True, "codigo": codigo, "nombre": row["nombre"]}
+
+
 def _site_exists_answer(codigo, path):
     """Converge, never overwrite — write_site's own contract, kept at the HTTP layer: the file is
     hand-edited from here on, so an existing file for the SAME codigo is a re-run and answers
@@ -461,13 +563,10 @@ def site_import(payload):
     if wrong:  # 20-groups refuses these too, but only at step 9, after the suite is up
         return 400, {"error": "el sitio nombra una categoría que no existe: " + ", ".join(wrong)
                               + " — use cat-jefaturas, cat-clinicos, cat-tecnicos o cat-administrativos"}
+    refused = one_establishment(codigo)
+    if refused:
+        return refused
     dest = site_path(codigo)
-    sites = os.path.dirname(os.path.dirname(dest))
-    others = sorted(d for d in (os.listdir(sites) if os.path.isdir(sites) else [])
-                    if d != codigo and os.path.isfile(os.path.join(sites, d, "site.sh")))
-    if others:
-        return 409, {"error": f"este servidor ya tiene el sitio sites/{others[0]}/site.sh — una "
-                              "instalación sirve a un solo establecimiento"}
     if os.path.exists(dest):
         with open(dest, encoding="utf-8") as fh:
             if fh.read() == text:
@@ -488,9 +587,8 @@ def site_import(payload):
 def api_sitio(payload):
     """POST /api/sitio {"codigo", "sectors", "programs"} — write sites/<codigo>/site.sh via deis.py
     write_site: the establishment's whole truth in one standalone file, byte-identical to what
-    `deis.py <codigo> --new <slug>` writes, with the slug being the codigo itself. D13's
-    one-establishment-per-install is settled at SITE= time (slice 16); this endpoint only ever
-    touches sites/<codigo>/, its own directory."""
+    `deis.py <codigo> --new <slug>` writes, with the slug being the codigo itself. One install, one
+    establishment (D13): another centre's site file refuses 409 here as in the silent install."""
     codigo = payload.get("codigo")
     if not isinstance(codigo, str) or not CODIGO.fullmatch(codigo):
         return 400, {"error": "el código DEIS debe ser de 4 a 6 dígitos"}
@@ -507,6 +605,11 @@ def api_sitio(payload):
         programs = team_lines("programa", "prog-", programs_in)
     except ValueError as e:
         return 400, {"error": f"sectores y programas: {e}"}
+    # ponytail: check-then-write is not atomic across threads — one operator, one link; a lock shared
+    # with api_centro if two ever drive one installer
+    refused = one_establishment(codigo)   # D13 at step 8 too, not only in the silent install
+    if refused:
+        return refused
 
     path = site_path(codigo)
     if not os.path.exists(path):
@@ -1514,14 +1617,8 @@ def screen_bienvenida():
 
 def installed_centre():
     """The one establishment this install serves (one install, one establishment — D13), by name;
-    a generic noun when the site is missing or unreadable."""
-    base = os.path.join(deis.HERE, "..", "sites")
-    try:
-        sites = [d for d in sorted(os.listdir(base)) if os.path.isfile(os.path.join(base, d, "site.sh"))]
-    except OSError:
-        sites = []
-    row = find_row(site_deis(os.path.join(base, sites[0], "site.sh")) or "") if len(sites) == 1 else None
-    return row["nombre"] if row else "el establecimiento"
+    a generic noun when there is none or it is unreadable — centro_actual's own answer."""
+    return centro_actual()[1].get("nombre") or "el establecimiento"
 
 
 def screen_listo():
@@ -1827,12 +1924,13 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.send_html(screen_login())
             return
-        if path == "/api/estado":
+        if path in ("/api/estado", "/api/centros", "/api/centro"):
             if not self.authorized():
                 self.send_json(401, {"error": "token ausente o inválido"},
                                {"WWW-Authenticate": "Bearer"})
                 return
-            status, body = estado_contenedores()
+            status, body = (estado_contenedores() if path == "/api/estado"
+                            else api_centros() if path == "/api/centros" else centro_actual())
             self.send_json(status, body)
             return
         if path in ROUTES or path == "/listo":
@@ -1888,6 +1986,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/deis":
             status, body = api_deis(payload)
+        elif path == "/api/centro":
+            status, body = api_centro(payload)
         elif path == "/api/sitio":
             status, body = api_sitio(payload)
         elif path == "/api/usuarios":
@@ -1911,8 +2011,8 @@ class Handler(BaseHTTPRequestHandler):
         # Constant-time: this is a bearer credential, and compare_digest is the stdlib's answer to
         # timing oracles. TWO arms (slice 17): the Bearer header serves API calls and the
         # self-test; the login cookie serves the screens. The cookie's VALUE is the token
-        # itself — the server is stateless by design (no session store to drift or crash), so
-        # the credential is the state.
+        # itself — the server keeps no session (no store to drift or crash), so the credential is
+        # the state.
         h = self.headers.get("Authorization", "")
         if h.startswith("Bearer ") and hmac.compare_digest(h[7:].encode(), TOKEN.encode()):
             return True
@@ -2394,6 +2494,35 @@ def selftest():
             check("cascade search refuses an empty query", st == 400)
             st, _ = call("POST", "/api/ruta-inexistente", {})
             check("unknown routes answer 404", st == 404)
+            st, _ = call("GET", "/api/centros", token=None)
+            st2, _ = call("GET", "/api/centro", token=None)
+            check("centro: the centre's GETs need the token too", st == 401 and st2 == 401)
+            st, d = call("GET", "/api/centros")
+            fila = {c[0]: c for c in d.get("centros", [])}
+            ramon = fila.get("121567", [None] * 7)
+            check("centros: every register row once, in one payload — regions north to south, every type, the card's fields by index (R36)",
+                  st == 200 and d["registro"] == "2099-99-99" and len(d["centros"]) == len(ROWS) == len(fila)
+                  and d["regiones"] == ["Metropolitana de Santiago", "La Araucanía",
+                                        "Magallanes y de la Antártica Chilena"]
+                  and d["tipos"] == [["CESFAM", "Centro de Salud Familiar"], ["PSR", "Posta de Salud Rural"],
+                                     ["SAPU", "Servicio de Atención Primaria de Urgencia"]]
+                  and ramon[1] == 1 and ramon[2] == "Posta de Salud Rural San Ramón"
+                  and ramon[3] == "Calle Caserío de San Ramón"
+                  and d["comunas"][ramon[4]] == ["Padre Las Casas", 1]
+                  and d["servicios"][ramon[5]] == "Servicio de Salud Araucanía Sur"
+                  and d["dependencias"][ramon[6]] == "Municipal")
+            st, body = call("GET", "/api/centro")
+            st1, _ = call("POST", "/api/centro", {"codigo": "121567"})
+            st2, body2 = call("POST", "/api/centro", {"codigo": "113314"})
+            st3, body3 = call("GET", "/api/centro")
+            check("centro: none chosen is a null code, not an error; before the site file a correction is free; the server holds the choice",
+                  st == 200 and body["codigo"] is None and st1 == 200 and st2 == 200
+                  and body2["nombre"] == "Centro de Salud Familiar Cóndores de Chile"
+                  and st3 == 200 and body3["codigo"] == "113314" and body3["fijo"] is False)
+            st, _ = call("POST", "/api/centro", {"codigo": "../etc"})
+            st2, _ = call("POST", "/api/centro", {"codigo": "999999"})
+            check("centro: a junk code answers 400, one absent from the register 404",
+                  st == 400 and st2 == 404)
 
             st, body = call("POST", "/api/sitio",
                             {"codigo": "113314",
@@ -2435,6 +2564,16 @@ def selftest():
             st, _ = call("POST", "/api/sitio", {"codigo": "110485",
                                                  "sectors": [13], "programs": []})
             check("non-string team names answer 400 (HTTP)", st == 400)
+            st, body = call("POST", "/api/sitio", {"codigo": "121567", "sectors": [], "programs": []})
+            st2, body2 = call("POST", "/api/centro", {"codigo": "121567"})
+            st3, body3 = call("GET", "/api/centro")
+            st4, _ = call("POST", "/api/centro", {"codigo": "113314"})
+            check("one install, one establishment: with a site file written, another centre is refused 409 at step 8 and at «Confirmar centro», naming the centre, no path; the written one answers, fixed (D13, a16)",
+                  st == 409 and "un solo establecimiento" in body["error"]
+                  and "Cóndores de Chile (DEIS 113314)" in body["error"] and "site.sh" not in body["error"]
+                  and st2 == 409 and body2 == body and not os.path.exists(site_path("121567"))
+                  and st3 == 200 and body3["codigo"] == "113314" and body3["fijo"] is True and st4 == 200
+                  and installed_centre() == "Centro de Salud Familiar Cóndores de Chile")
             # ── slice 15: the roster (FRD S5) — /api/usuarios + the credentials sealing ──
             # The credentials sheet redirects to the fixture (CRED_PATH); phase 20 stays the REAL
             # registry file (repo content, read-only — the shared 27 are not site data) and is
@@ -2913,13 +3052,21 @@ def selftest():
             st, body = api_generar({"codigo": "121567", "modo": "revision"})
             check("generar: a site never written answers 404 with the next step",
                   st == 404 and "primero genere el sitio" in body.get("error", ""))
-            st, body = api_sitio({"codigo": "121567", "sectors": [], "programs": []})
-            st, body = api_generar({"codigo": "121567", "modo": "revision"})
+            # a site without a roster needs a tree without 113314's — one install, one establishment
+            real_here, sin_planilla = deis.HERE, tempfile.mkdtemp()
+            os.makedirs(os.path.join(sin_planilla, "scripts"))
+            deis.HERE = os.path.join(sin_planilla, "scripts")
+            try:
+                st0, _ = api_sitio({"codigo": "121567", "sectors": [], "programs": []})
+                st, body = api_generar({"codigo": "121567", "modo": "revision"})
+                st2, _ = api_generar({"codigo": "121567", "modo": "ejecutar"})
+            finally:
+                deis.HERE = real_here
+                shutil.rmtree(sin_planilla)
             check("generar: a site without a roster answers 409 naming the planilla",
-                  st == 409 and "no hay planilla cargada" in body.get("error", ""))
-            st, body = api_generar({"codigo": "121567", "modo": "ejecutar"})
+                  st0 == 200 and st == 409 and "no hay planilla cargada" in body.get("error", ""))
             check("estado: a run refused before it starts is red too — the record carries its cause (a10)",
-                  st == 409 and "· ✗ la ejecución no terminó\n  · no hay planilla cargada"
+                  st2 == 409 and "· ✗ la ejecución no terminó\n  · no hay planilla cargada"
                   in open(ESTADO_PATH, encoding="utf-8").read())
 
             roster_mia = os.path.join(deis.HERE, "..", "sites", "113314", "planilla-mia.csv")
