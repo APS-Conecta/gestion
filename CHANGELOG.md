@@ -13,6 +13,14 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Added
 
+- **Two-line install on a fresh server** — `curl -fsSL …/<tag>/host/aps-conecta -o aps-conecta` and
+  `sudo bash aps-conecta install` on Ubuntu or Debian: «preparar» installs git/python3, Docker Engine
+  + Compose from Docker's own apt repository, adds the operator to the docker group and sets
+  `vm.overcommit_memory = 1` (its own `/etc/sysctl.d` file); «descargar» clones the suite at the
+  file's own release (`BUNDLE_TAG`) into `/opt/aps-conecta/gestion`, verifies every app's sha256 and
+  links `/usr/local/bin/aps-conecta` (`ln -sf`). A re-run finds each step done; another installed
+  version is refused, untouched. `preflight --dominio D` probes DNS before the wizard, and preflight
+  tells a stopped docker service from a missing docker group.
 - **`aps-conecta install`** — the install opens on a welcome screen and walks numbered steps,
   each with its purpose, command, result, next step and where it runs, in Spanish. One list of
   nine steps (five on the server, four in the browser) is also the CLI's subcommands

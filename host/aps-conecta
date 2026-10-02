@@ -9,7 +9,7 @@
 # Usage (the operator's Spanish usage is `aps-conecta` with no argument — generated from PASOS):
 #   aps-conecta install              the interactive install: welcome, then the numbered server steps
 #   aps-conecta <step>               one step of the registry (revisar … ejecutar), header and footer
-#   aps-conecta preflight            host checks + the run command (the FRD's pre-install gate)
+#   aps-conecta preflight [--dominio D]   host checks + the run command (the FRD's pre-install gate)
 #   aps-conecta run-command          just the docker run string (one source, never re-typed)
 #   aps-conecta provision            start the Provisionador (interactive; Ctrl+C stops it)
 #   aps-conecta provision --reponer  headless weekly re-provision (the systemd timer's job)
@@ -166,7 +166,7 @@ uso() {  # Spanish, generated from the registry — never a slice of this file's
   done
   echo
   echo "Mantenimiento:"
-  echo "  aps-conecta preflight             revisión completa del servidor y comando de arranque de la suite"
+  echo "  aps-conecta preflight [--dominio D]   revisión completa del servidor (y del dominio D) y comando de arranque de la suite"
   echo "  aps-conecta run-command           solo el comando de arranque de la suite"
   echo "  aps-conecta provision             abre el instalador web (lo mismo que el paso abrir)"
   echo "  aps-conecta provision --reponer   re-provisión semanal (la ejecuta el temporizador)"
@@ -260,10 +260,13 @@ site_domain() {  # SITE_DOMINIO from the site record (#75 hook) — empty when u
   grep -m1 '^SITE_DOMINIO=' "$f" 2>/dev/null | sed 's/^SITE_DOMINIO=//; s/^"//; s/"$//' || true
 }
 
-check_dns() {  # resolves the SITE record's own domain — the wizard asks for the same one
-  local d; d="$(site_domain || true)"
+DOMINIO=""   # «preflight --dominio D»: the domain to probe before the site record names one (R6)
+
+check_dns() {  # resolves the domain — «--dominio» first, else the SITE record's own; the wizard asks
+  # for the same one
+  local d; d="${DOMINIO:-$(site_domain || true)}"
   if [ -z "$d" ]; then
-    info "el dominio aún no está definido — el asistente lo pide; esta prueba corre después de elegirlo"
+    info "el dominio aún no está definido — pruébelo antes con «aps-conecta preflight --dominio <dominio>», o el asistente lo pide"
     return
   fi
   if getent hosts "$d" >/dev/null 2>&1; then
@@ -304,10 +307,10 @@ check_prov_ports() {  # INFO + the routed liveness probe (slices 14/15): GET / a
 
 check_hairpin() {  # the D10 leg (upstream #8433): the HOST curls its own public domain — the exact
   # failing hop (hairpin NAT). Runs only when the stack is up; preflight on a fresh host says so.
-  local d; d="$(site_domain || true)"
+  local d; d="${DOMINIO:-$(site_domain || true)}"
   [ -z "$d" ] && return
   if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^nextcloud-aio-apache$'; then
-    info "la suite aún no está instalada — después del asistente, «aps-conecta preflight» prueba $d desde aquí"
+    info "la suite aún no está instalada — después del asistente, «aps-conecta preflight${DOMINIO:+ --dominio $d}» prueba $d desde aquí"
     return
   fi
   if curl -sk --max-time 10 "https://$d/status.php" >/dev/null 2>&1; then
@@ -833,6 +836,14 @@ cmd_datos() {  # [CUT] — S9's data-package leg: the national masters, sha256-v
 # ── preflight (the whole sweep) ────────────────────────────────────────────────────────────
 
 cmd_preflight() {
+  case "${1:-}" in
+    "") ;;
+    --dominio) [ -n "${2:-}" ] || die "falta el dominio: aps-conecta preflight --dominio <dominio>"
+               [[ "$2" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] \
+                 || die "dominio no válido: $2 (solo letras, números, puntos y guiones)"
+               DOMINIO="$2" ;;
+    *) die "opción desconocida: $1 — uso: aps-conecta preflight [--dominio <dominio>]" ;;
+  esac
   echo "Revisión previa del instalador APS Conecta"
   # bash checks itself (this script IS bash); the rest are real prerequisites
   need_tool git; need_tool python3; need_tool curl; need_tool docker
@@ -1215,6 +1226,29 @@ SHIM
   check "dns: a dead resolution reds with the registro-A hint" \
     'case "$out" in *"✗ DNS no responde"*"registro A"*) ;; *) false;; esac'
   printf '#!/usr/bin/env bash\necho 127.0.0.1\n' > "$tshim/getent"; chmod +x "$tshim/getent"
+
+  mk_docker 1.56 ""
+  # R6: the domain is probed before the site record names one — «preflight --dominio»
+  out="$(DOMINIO=antes.example; check_dns)"
+  check "dns (R6): --dominio wins over the site record's domain" \
+    'case "$out" in *"DNS responde para antes.example"*) ;; *) false;; esac'
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$tshim/getent"; chmod +x "$tshim/getent"
+  out="$( (cmd_preflight --dominio antes.example) 2>&1)"; rc=$?
+  check "preflight (R6): --dominio probes DNS before the wizard and reds with the registro-A fix" \
+    '[ "$rc" -eq 1 ] && case "$out" in *"✗ DNS no responde para antes.example"*"registro A"*"REVISIÓN: ✗"*) ;; *) false;; esac'
+  printf '#!/usr/bin/env bash\necho 127.0.0.1\n' > "$tshim/getent"; chmod +x "$tshim/getent"
+  out="$(ROOT="$tmp/sin-sitio"; check_dns)"
+  check "dns (R6): with no domain anywhere it names the --dominio probe" \
+    'case "$out" in *"aps-conecta preflight --dominio <dominio>"*) ;; *) false;; esac'
+  out="$( (cmd_preflight --dominio) 2>&1)"; rc=$?
+  check "preflight (R6): --dominio without a value refuses, naming the form" \
+    '[ "$rc" -eq 1 ] && [ "$out" = "✗ falta el dominio: aps-conecta preflight --dominio <dominio>" ]'
+  out="$( (cmd_preflight --dominio -x) 2>&1)"; rc=$?
+  check "preflight (R6): a value that is not a domain never reaches getent or curl" \
+    '[ "$rc" -eq 1 ] && [ "$out" = "✗ dominio no válido: -x (solo letras, números, puntos y guiones)" ]'
+  out="$( (cmd_preflight --nada) 2>&1)"; rc=$?
+  check "preflight: an unknown option refuses with the usage line" \
+    '[ "$rc" -eq 1 ] && case "$out" in *"opción desconocida: --nada"*"aps-conecta preflight [--dominio <dominio>]"*) ;; *) false;; esac'
 
   # arch: all three postures measured through the real function
   out="$(check_arch)"
