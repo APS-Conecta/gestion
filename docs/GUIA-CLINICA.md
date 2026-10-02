@@ -93,22 +93,17 @@ usuario;nombre;apellidos;correo;grupos;primer_admin
 
 ## 6. Las credenciales
 
-Al ejecutar, el sistema sella `/opt/aps-conecta/credentials.txt` (permiso 0600 — solo root):
-una fila por persona con su contraseña de primer ingreso. **El ritual de entrega:**
+Al cargar la planilla, el sistema sella `/opt/aps-conecta/credentials.txt` (permiso 0600 — solo
+root): una fila por persona y una por cada cuenta de cargo (`Cargo director`, `Cargo jefe.norte`, …),
+cada una con su propia contraseña de primer ingreso. **El ritual de entrega:**
 
-1. Imprima o abra el archivo **como root** (`sudo cat /opt/aps-conecta/credentials.txt`).
-2. Entregue a cada persona **su fila** — no el archivo completo.
-3. Cada persona cambia su contraseña en el primer ingreso (el sistema se lo exige).
-4. **Borre el archivo cuando esté entregado.** Una hoja con contraseñas de primer ingreso no
-   se guarda: cumplió su función.
-
-Las cuentas de los cargos (las que se siembran solas) comparten una contraseña de
-`FIXTURE_USER_PASSWORD`, generada en la instalación. Se entrega una vez a jefatura o
-informática, igual que el resto:
-
-```bash
-grep '^FIXTURE_USER_PASSWORD=' /opt/aps-conecta/gestion/.env
-```
+1. Abra el archivo **como root** (`sudo cat /opt/aps-conecta/credentials.txt`).
+2. Entregue a cada persona **su fila** — no el archivo completo. La fila de un cargo se entrega a
+   quien lo ocupa.
+3. Pida a cada persona que cambie su contraseña al entrar por primera vez: **Configuración
+   personal → Seguridad**. El sistema no lo exige.
+4. **Conserve el archivo.** La re-provisión semanal lo lee para crear las cuentas que falten;
+   solo root puede abrirlo.
 
 No hay claves de oficina que configurar: bajo AIO el asistente es dueño de esa conexión y la
 repara solo en cada arranque — no busque claves que no existen (`.env` mínimo por diseño).

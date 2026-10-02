@@ -83,8 +83,9 @@ comuna → centro), sectors/programs, the all-on components, the users CSV, revi
 walked step by step in [`GUIA-CLINICA.md`](GUIA-CLINICA.md) §4–6. The two outcomes that matter:
 
 - **Divergencia vacía** — the handoff gate: the instance matches its declaration, users included.
-- **`/opt/aps-conecta/credentials.txt`** — the sealed sheet, mode 0600. Hand it out row by row and
-  delete it after distribution (the GUIA's ritual, §6).
+- **`/opt/aps-conecta/credentials.txt`** — the sealed sheet, mode 0600: one row per person and one per
+  cargo account. Hand it out row by row and keep it — the weekly re-provision reads it to create the
+  accounts still missing (the GUIA's ritual, §6; B-034).
 
 ## 6. Wire the timers
 

@@ -73,6 +73,15 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Changed
 
+- **Groups by role** — the 22 shared roles name their category (the Ley 19.378 families: 4
+  jefaturas, 10 clínicos, 3 técnicos, 5 administrativos), and every planilla user joins `all-staff`
+  and the category of each of their roles. A site's own roles already named theirs.
+- **Each cargo account has its own first password** — sealed into `credentials.txt` with the
+  planilla's, one row per position (`Cargo director`, …). `FIXTURE_USER_PASSWORD` is now only for
+  `make install` without the Provisionador (the compose lab, CI). The GUIA no longer claims the
+  system forces a password change at first login: it tells each person where to change it.
+- **`credentials.txt` is kept after handover** (B-034) — the weekly re-provision reads it.
+
 - **Language reality is the IntraVox engine's** — phase 41 no longer converges
   `intravox enabled_languages`; the engine's own defaults are the es-only deployment: `es`+`en`
   enabled and `es` as the primary language when unset. gestion writes no language config.

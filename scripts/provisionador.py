@@ -634,7 +634,7 @@ def seal_credentials(codigo, rows, path):
     so a regenerated row would be a sheet that lies), and a uid that leaves the roster and
     returns finds its original row intact. An existing file that does not read EXACTLY like
     this program's own output is refused (env-init's rule — a file we do not own is never
-    overwritten); the operator reviews or deletes it by hand. 0600 before content, written to a
+    overwritten); the operator corrects or moves it by hand. 0600 before content, written to a
     temp file, fsync'd, then renamed into place: the sheet is the only copy of anyone's first
     password, so there is never a window where it is empty or half-written. The whole
     read-modify-write runs under SEAL_LOCK at the call site — the threaded server would
@@ -656,8 +656,9 @@ def seal_credentials(codigo, rows, path):
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(f"# APS Conecta — contraseñas de primer ingreso. Establecimiento DEIS {codigo}.\n")
-        fh.write("# Guárdelas en un gestor de contraseñas y elimine este archivo cuando estén "
-                "entregadas.\n")
+        # B-034: kept, never deleted — the executor needs a sealed row for every account it creates
+        fh.write("# Entregue a cada persona su fila. Conserve este archivo: la re-provisión "
+                 "semanal lo lee.\n")
         fh.write("usuario;nombre;contraseña;primer_admin\n")
         w = csv.writer(fh, delimiter=";", lineterminator="\n")
         for uid, (pw, display, primer) in out.items():
@@ -726,7 +727,7 @@ def api_usuarios(payload):
             fresh, sealed = seal_credentials(codigo, rows + cargos, CRED_PATH)
     except ValueError:
         return 409, {"error": f"{CRED_PATH} existe pero no se puede leer como una hoja sellada "
-                              "por el Provisionador — revíselo o elimínelo a mano antes de "
+                              "por el Provisionador — corríjalo a mano, o muévalo si no es suyo, antes de "
                               "volver a cargar la planilla"}
     except OSError as e:
         return 500, {"error": f"no se pueden sellar las credenciales en {CRED_PATH}: {e}"}
@@ -805,7 +806,7 @@ def api_generar(payload):
         sealed = sealed_map(CRED_PATH)
     except ValueError:
         return 409, {"error": f"{CRED_PATH} existe pero no se puede leer como una hoja sellada "
-                              "por el Provisionador — revíselo o elimínelo a mano antes de "
+                              "por el Provisionador — corríjalo a mano, o muévalo si no es suyo, antes de "
                               "volver a cargar la planilla"}
     missing = [uid for uid, _n, _a, _c, _g, _p in rows if uid not in sealed]
     if missing:
@@ -1403,7 +1404,7 @@ def screen_divergencia():
     zona("m").innerHTML = '<div class="ok"><strong>Divergencia vacía.</strong> La instancia ' +
       "queda configurada; las contraseñas de primer ingreso están selladas en <code>" +
       escapear(r.credenciales || "/opt/aps-conecta/credentials.txt") +
-      "</code> (permiso 600). Entréguelas a cada persona y elimine el archivo.</div>";
+      "</code> (permiso 600). Entregue a cada persona su fila y conserve el archivo.</div>";
   } else {
     zona("m").innerHTML = '<div class="error"><strong>Hay divergencia.</strong> Revise las ' +
       "notas y corrija; luego vuelva a ejecutar el paso 6.</div>" +
