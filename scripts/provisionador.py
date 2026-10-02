@@ -1698,6 +1698,15 @@ class Handler(BaseHTTPRequestHandler):
             status, body = api_generar(payload)
         else:
             status, body = 404, {"error": "ruta desconocida"}
+        finished = (path == "/api/generar" and status == 200 and body.get("modo") == "ejecutar"
+                    and body.get("divergencia_vacia") is True)
+        if finished:
+            # In the HTTP layer, never in api_generar: --paso generar (the silent install, the
+            # weekly timer) shares that function and must not close anything. Marked done BEFORE
+            # the answer leaves, so the browser's next request (/listo) already sees it; the
+            # shutdown waits out the grace.
+            self.close_connection = True   # the browser's next request opens a fresh socket
+            self.server.close_after_success()
         self.send_json(status, body)
 
     def authorized(self):
@@ -1763,10 +1772,19 @@ class Handler(BaseHTTPRequestHandler):
 
 class Server(ThreadingHTTPServer):
     """The installer's server. Quiet (R42): a failed TLS handshake or a dropped socket is not the
-    operator's business — every answer that matters reaches the browser in Spanish."""
+    operator's business — every answer that matters reaches the browser in Spanish. Finished once
+    (SEC-2, a13): a green «Revisar y ejecutar» schedules the shutdown that closes the port and with
+    it the link; the grace lets the result page load first."""
+    grace = 30   # seconds; a13 wants the port closed within a minute of the success
 
     def handle_error(self, request, client_address):
         pass
+
+    def close_after_success(self):
+        DONE.set()
+        t = threading.Timer(self.grace, self.shutdown)
+        t.daemon = True
+        t.start()
 
 
 def bind_server(host, ports):
@@ -1882,6 +1900,19 @@ def banner(url, huella_hex):
     print("  No cerrar esta ventana hasta «Listo».")
     print()
     print("Resultado esperando el navegador…")
+
+
+def serve(httpd):
+    """Serve until the installer is done (0), Ctrl+C (130), or anything else (1) — the exit code
+    `aps-conecta abrir` reads to wire the timers and print «Listo»."""
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print()   # ends the ^C line; the console says the rest
+        return 130
+    finally:
+        httpd.server_close()
+    return 0 if DONE.is_set() else 1
 
 
 def run_step(argv):
@@ -3101,6 +3132,43 @@ def selftest():
                               en_login and pegado)
                     finally:
                         nav.close()
+            # ── L3 S1: a green «Revisar y ejecutar» closes the installer (SEC-2, a13) ──
+            fin, fport = bind_server("127.0.0.1", (0,))
+            fin.grace = 0.2
+            DONE.clear()
+            servido = []
+            hilo = threading.Thread(target=lambda: servido.append(serve(fin)), daemon=True)
+            hilo.start()
+            verdadero = globals()["api_generar"]
+
+            def ejecutar_http(vacia):
+                globals()["api_generar"] = lambda _p: (200, {"modo": "ejecutar",
+                                                              "divergencia_vacia": vacia})
+                try:
+                    req = urllib.request.Request(
+                        f"http://127.0.0.1:{fport}/api/generar", method="POST",
+                        data=json.dumps({"codigo": "113314", "modo": "ejecutar"}).encode(),
+                        headers={"Content-Type": "application/json",
+                                 "Authorization": f"Bearer {TOKEN}"})
+                    with urllib.request.urlopen(req, timeout=10) as r:
+                        return r.status
+                finally:
+                    globals()["api_generar"] = verdadero
+
+            st = ejecutar_http(False)
+            time.sleep(0.5)
+            check("finish: a red verdict keeps the installer open for the correction",
+                  st == 200 and hilo.is_alive() and not DONE.is_set())
+            st = ejecutar_http(True)
+            hilo.join(5)
+            try:
+                socket.create_connection(("127.0.0.1", fport), timeout=2).close()
+                cerrado = False
+            except OSError:
+                cerrado = True
+            check("finish: a green verdict closes the port within the grace and serve() answers 0",
+                  st == 200 and not hilo.is_alive() and DONE.is_set() and cerrado and servido == [0])
+            DONE.clear()
             ts.shutdown()
             ts.server_close()
             httpd.shutdown()
@@ -3150,13 +3218,7 @@ def main(argv):
     # the handshake runs in the handler thread (its 30 s timeout), never in the accept loop
     httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True, do_handshake_on_connect=False)
     banner(f"https://{ip}:{port}/login#acceso={TOKEN}", fingerprint)
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        print("\n✓ Provisionador detenido.")
-    finally:
-        httpd.server_close()
-    return 0
+    return serve(httpd)
 
 
 if __name__ == "__main__":

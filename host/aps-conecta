@@ -682,13 +682,29 @@ step_mapa() {  # the basemap needs the chosen centre today (L5 builds it before 
   bash "$HOST_DIR/tiles.sh" install
 }
 
-step_abrir() {  # the web installer walks steps 6–9; this process becomes it (exec — Ctrl+C stops
-  # it, as «provision» always did), so the footer prints before the hand-over — and says what is
-  # about to happen, never that the link was already delivered
-  STEP_RESULT="El instalador web se abre aquí abajo, con su enlace y su código de acceso."
-  step_footer "$(step_number abrir)"
-  printf '  No cierre esta ventana hasta «Listo».\n\n'
-  exec python3 "$(prov_path)"
+step_abrir() {  # the web installer walks steps 6–9 as a CHILD of this console (Ctrl+C still reaches
+  # it): it exits 0 only after a green «Revisar y ejecutar», and the console then wires the timers
+  # and closes the install with «Listo» — the silent install's own tail (a13, SEC-2)
+  local rc domain last="${#STEPS[@]}"
+  python3 "$(prov_path)"; rc=$?
+  case "$rc" in
+    0) ;;
+    130) bad "el instalador web se cerró antes de terminar" "vuelva a abrirlo: sudo aps-conecta abrir"; return 0 ;;
+    *) bad "el instalador web no abrió" "corrija lo indicado arriba y vuelva a ejecutar: sudo aps-conecta abrir"; return 0 ;;
+  esac
+  printf '%s\n' "──────────────────────────────────────────────────────────────"
+  ok "Paso $last de $last · $(step_field "$last" 2): verificado"
+  FAIL=0; install_timers
+  echo
+  domain="$(site_domain || true)"
+  if [ -n "$domain" ]; then printf '  Listo. Acceso del personal: https://%s\n' "$domain"; else printf '  Listo.\n'; fi
+  printf '  Instalador web cerrado; enlace inválido.\n'
+  printf '  Credenciales: entregue a cada persona su fila — sudo cat %s/credentials.txt\n\n' "$APS_HOME"
+  if [ "$FAIL" -ne 0 ]; then
+    printf '  Falta lo marcado con ✗ arriba: ejecute el comando que nombra.\n'
+    exit 1
+  fi
+  exit 0
 }
 
 # ── the run-command generator ─────────────────────────────────────────────────────────────
@@ -972,12 +988,9 @@ cmd_aio_wizard() {  # --dominio D [--sin-validar-dominio] [--respaldo DIR]
   [ "$FAIL" -eq 0 ] || exit 1
 }
 
-cmd_provision() {  # [--reponer]
+cmd_provision() {  # [--reponer] — without it, the step «abrir» itself (the same frame and body)
   if [ "${1:-}" = "--reponer" ]; then reponer; return; fi
-  # Interactive: the Provisionador's banner is the operator's only copy of URL + token, its
-  # stdout is line-buffered (slice 14) and the URL now lands on the login screen (slice 17).
-  # exec — one process, no wrapper to wedge between the operator and Ctrl+C.
-  exec python3 "$(prov_path)"
+  step_run "$(step_number abrir)" "sudo aps-conecta abrir" || exit 1
 }
 
 
@@ -1831,6 +1844,25 @@ EOF
   echo 2 > "$tmp/prov.rc"
   out="$(reponer 2>&1)"; rc=$?
   check "reponer: the step's own exit code reaches systemd unchanged" '[ "$rc" -eq 2 ]'
+
+  # ── abrir (L3 S1): the web installer runs as a child; a green exit wires the timers and closes the
+  # install with «Listo»; Ctrl+C or a failed start says how to reopen (the fake provisionador above)
+  local abrir_out
+  echo 0 > "$tmp/prov.rc"
+  abrir_out="$( install_timers() { ok "temporizadores-stub"; }; step_abrir 2>&1 )"; rc=$?
+  check "abrir: a green installer exit wires the timers and prints «Listo» — the console closes the install" \
+    '[ "$rc" -eq 0 ] && [ -z "$(cat "$tmp/prov.argv")" ] && case "$abrir_out" in *"✓ Paso 9 de 9 · Revisar y ejecutar: verificado"*"temporizadores-stub"*"Listo"*"Instalador web cerrado; enlace inválido."*"credentials.txt"*) ;; *) false;; esac'
+  echo 130 > "$tmp/prov.rc"
+  abrir_out="$( install_timers() { ok "temporizadores-stub"; }; FAIL=0; step_abrir 2>&1; echo "FAIL=$FAIL" )"
+  check "abrir: Ctrl+C before the end names the way back and wires nothing" \
+    'case "$abrir_out" in *"se cerró antes de terminar"*"sudo aps-conecta abrir"*"FAIL=1"*) ;; *) false;; esac && case "$abrir_out" in *temporizadores-stub*|*"Instalador web cerrado"*) false;; *) true;; esac'
+  echo 1 > "$tmp/prov.rc"
+  abrir_out="$( FAIL=0; step_abrir 2>&1; echo "FAIL=$FAIL" )"
+  check "abrir: an installer that does not start says so, with the re-run" \
+    'case "$abrir_out" in *"el instalador web no abrió"*"sudo aps-conecta abrir"*"FAIL=1"*) ;; *) false;; esac'
+  abrir_out="$( step_abrir() { ok "abrir-stub"; }; cmd_provision 2>&1 )"
+  check "provision: the step «abrir» itself — the same header and body" \
+    'case "$abrir_out" in *"Paso 5 de 9 · Abrir el instalador web"*"abrir-stub"*"Resultado Enlace entregado."*) ;; *) false;; esac'
 
   # ── a10: a red weekly run notifies every admin once (replacing the last); estado shows it, no sudo ──
   cat > "$ROOT/scripts/env.sh" <<EOF
