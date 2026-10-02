@@ -1590,6 +1590,93 @@ def banner(url, token):
     print("  Detenga el servicio con Ctrl+C.")
 
 
+def run_step(argv):
+    """`--paso usuarios --codigo C --planilla FILE` · `--paso generar --codigo C [--revision]` — the
+    installer's steps in this process, with no server: the same api_* functions the browser posts
+    to (one home per step, S1b). The weekly re-provision and the silent install call them. Prints
+    Spanish ✓/✗ lines; exit 0 done · 1 refused (the reason printed) · 2 usage."""
+    opts, i = {}, 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg in ("--paso", "--codigo", "--planilla"):
+            if i + 1 >= len(argv):
+                print(f"✗ falta el valor de {arg}")
+                return 2
+            opts[arg] = argv[i + 1]
+            i += 2
+        elif arg == "--revision":
+            opts[arg] = True
+            i += 1
+        else:
+            print(f"✗ opción desconocida: {arg} — uso: provisionador.py --paso usuarios|generar "
+                  "--codigo <código> [--planilla <archivo.csv>] [--revision]")
+            return 2
+    step, code = opts.get("--paso"), opts.get("--codigo")
+    takes = {"usuarios": {"--planilla"}, "generar": {"--revision"}}
+    if step not in takes:
+        print("✗ paso desconocido — use --paso usuarios o --paso generar")
+        return 2
+    if not code:
+        print("✗ falta el código: --codigo <código>")
+        return 2
+    extra = set(opts) - {"--paso", "--codigo"} - takes[step]
+    if extra:
+        print(f"✗ {' '.join(sorted(extra))} no aplica a --paso {step}")
+        return 2
+
+    def call(fn, payload):  # a file error is a Spanish ✗ line, not a traceback in the journal
+        try:
+            return fn(payload)
+        except OSError as e:
+            return 500, {"error": f"no se pudo acceder a {e.filename or 'un archivo'} ({e.strerror})"}
+        except UnicodeDecodeError:
+            return 500, {"error": "un archivo del establecimiento o el .env no está en UTF-8"}
+
+    def refused(status, body):
+        for err in body.get("errores", []):
+            print(f"✗ línea {err['linea']}: {err['error']}")
+        if "error" in body or not body.get("errores"):
+            print(f"✗ {body.get('error', f'el paso falló (código {status})')}")
+        return 1
+
+    if step == "usuarios":
+        path = opts.get("--planilla")
+        if not path:
+            print("✗ falta la planilla: --planilla <archivo.csv>")
+            return 2
+        try:
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+        except OSError as e:
+            print(f"✗ no se pudo leer la planilla {path}: {e.strerror}")
+            return 1
+        except UnicodeDecodeError:
+            print(f"✗ la planilla {path} no está en UTF-8")
+            return 1
+        status, body = call(api_usuarios, {"codigo": code, "csv": text})
+        if status != 200:
+            return refused(status, body)
+        print(f"✓ Planilla validada: {body['usuarios']} usuarios; administrador inicial "
+              f"{body['primer_admin']}")
+        print(f"✓ Contraseñas selladas en {body['credenciales']} ({body['contrasenas_nuevas']} "
+              "nuevas; solo administrador)")
+        return 0
+    mode = "revision" if opts.get("--revision") else "ejecutar"
+    status, body = call(api_generar, {"codigo": code, "modo": mode})
+    if status != 200:
+        return refused(status, body)
+    if mode == "revision":
+        print(f"✓ Revisión: {len(body['fases'])} fases, {body['usuarios']} usuarios "
+              f"(administrador inicial {body['primer_admin']}); no se ejecutó nada")
+        return 0
+    if body["divergencia_vacia"]:
+        print("✓ divergencia vacía — la instalación coincide con lo declarado")
+        return 0
+    print("✗ divergencia NO vacía — la deriva se muestra arriba; «aps-conecta provision» abre "
+          "el provisionador para corregir")
+    return 1
+
+
 def selftest():
     """The FRD's named self-tests for this slice's surfaces, run against a throwaway tree: the
     register fixture redirects deis.HERE (load() and write_site() both read it at call time), so the
@@ -2123,6 +2210,87 @@ def selftest():
                   and len(body["fases"]) == 14 and execs[0] == 0 and same
                   and body["env"]["FIXTURE_USER_PASSWORD"] == "se generará")
 
+            def stepped(argv):
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    rc = run_step(argv)
+                return rc, buf.getvalue()
+
+            execs[0] = 0
+            subprocess.Popen = _counting_popen
+            try:
+                rc, out = stepped(["--paso", "generar", "--codigo", "113314", "--revision"])
+            finally:
+                subprocess.Popen = real_popen
+            check("--paso generar --revision: the plan in one Spanish line, nothing executed, exit 0",
+                  rc == 0 and execs[0] == 0
+                  and "✓ Revisión: 14 fases, 2 usuarios (administrador inicial elena.diaz)" in out)
+            planilla = os.path.join(deis.HERE, "..", "sites", "113314", "planilla-mia.csv")
+            rc, out = stepped(["--paso", "usuarios", "--codigo", "113314", "--planilla", planilla])
+            check("--paso usuarios: the loaded planilla re-validates — sealed once, 0 new passwords",
+                  rc == 0 and "✓ Planilla validada: 2 usuarios; administrador inicial elena.diaz" in out
+                  and "(0 nuevas; solo administrador)" in out)
+            broken = os.path.join(tempfile.mkdtemp(), "rota.csv")
+            open(broken, "w", encoding="utf-8").write("usuario;nombre;apellidos\nroto;a;b\n")
+            rc, out = stepped(["--paso", "usuarios", "--codigo", "113314", "--planilla", broken])
+            check("--paso usuarios: a broken planilla reds with its line errors, exit 1",
+                  rc == 1 and "✗ línea 1:" in out)
+            rc, out = stepped(["--paso", "usuarios", "--codigo", "113314", "--planilla", broken + ".nada"])
+            check("--paso usuarios: an unreadable planilla names its path, exit 1",
+                  rc == 1 and "✗ no se pudo leer la planilla" in out)
+            rcs = [stepped(a)[0] for a in (["--paso"], ["--paso", "nada", "--codigo", "113314"],
+                                           ["--otra"], ["--paso", "usuarios", "--codigo", "113314"])]
+            check("--paso: a missing value, an unknown step, an unknown option, no planilla — exit 2",
+                  rcs == [2, 2, 2, 2])
+            latin = os.path.join(tempfile.mkdtemp(), "latin.csv")
+            open(latin, "wb").write("usuario;nombre\nñandú;a\n".encode("latin-1"))
+            rc, out = stepped(["--paso", "usuarios", "--codigo", "113314", "--planilla", latin])
+            check("--paso usuarios: a planilla not in UTF-8 is named, exit 1",
+                  rc == 1 and "✗ la planilla" in out and "no está en UTF-8" in out)
+            real_generar = globals()["api_generar"]
+
+            def stubbed(fn, argv):
+                globals()["api_generar"] = fn
+                try:
+                    return stepped(argv)
+                finally:
+                    globals()["api_generar"] = real_generar
+            ejecutar = ["--paso", "generar", "--codigo", "113314"]
+            empty, drift, busy, lines, bare = (stubbed(lambda _p, a=a: a, ejecutar) for a in (
+                (200, {"modo": "ejecutar", "divergencia_vacia": True}),
+                (200, {"modo": "ejecutar", "divergencia_vacia": False}),
+                (409, {"error": "ya hay una ejecución en curso"}),
+                (400, {"errores": [{"linea": 3, "error": "grupo desconocido"}]}),
+                (500, {})))
+            check("--paso generar: an empty divergence exits 0, a drift exits 1 naming the fix, a refused run exits 1 with its reason",
+                  empty[0] == 0 and "✓ divergencia vacía" in empty[1]
+                  and drift[0] == 1 and "✗ divergencia NO vacía" in drift[1]
+                  and "aps-conecta provision" in drift[1]
+                  and busy[0] == 1 and "✗ ya hay una ejecución en curso" in busy[1])
+            check("--paso generar: line errors alone print no generic line; a bare refusal names its status",
+                  lines[0] == 1 and "✗ línea 3: grupo desconocido" in lines[1]
+                  and "el paso falló" not in lines[1]
+                  and bare[0] == 1 and "✗ el paso falló (código 500)" in bare[1])
+
+            def denied(_payload):
+                raise PermissionError(13, "Permission denied", "/srv/x/.env")
+            rc, out = stubbed(denied, ejecutar)
+            check("--paso generar: an unreadable file is a Spanish ✗ line and exit 1, not a traceback",
+                  rc == 1 and "✗ no se pudo acceder a /srv/x/.env" in out)
+            ran = []
+            usage = [stubbed(lambda p: ran.append(p) or (200, {}), a) for a in (
+                ["--paso", "generar"], ejecutar + ["--planilla", planilla],
+                ["--paso", "usuarios", "--codigo", "113314", "--planilla", planilla, "--revision"])]
+            check("--paso: no código, or a flag the step does not take — exit 2 naming it, nothing run",
+                  [r for r, _ in usage] == [2, 2, 2] and not ran
+                  and "✗ falta el código" in usage[0][1]
+                  and "✗ --planilla no aplica a --paso generar" in usage[1][1]
+                  and "✗ --revision no aplica a --paso usuarios" in usage[2][1])
+            p = subprocess.run([sys.executable, os.path.abspath(__file__), "--paso", "generar"],
+                               capture_output=True, text=True, timeout=60)
+            check("--paso as a real process: the exit code and the Spanish line reach a pipe (systemd's view)",
+                  p.returncode == 2 and "✗ falta el código" in p.stdout)
+
             st, _ = generar("ejecutar-x")
             st2, _ = api_generar({"codigo": "../etc", "modo": "revision"})
             check("generar: a junk modo and a traversal codigo answer 400", st == 400 and st2 == 400)
@@ -2408,6 +2576,9 @@ def selftest():
 def main(argv):
     if "--self-test" in argv:
         return selftest()
+    if "--paso" in argv:
+        sys.stdout.reconfigure(line_buffering=True)   # the phases stream live to a pipe (systemd)
+        return run_step(argv)
     global TOKEN
     # The banner is the operator's only copy of the URL and the token, and `aps-conecta provision`
     # (slice 19) and systemd both PIPE this stdout — block-buffered, a piped banner is invisible
