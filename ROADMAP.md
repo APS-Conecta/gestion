@@ -40,15 +40,14 @@ formatting loss that implies** (issue #45).
 ## Next
 
 **The installer run** ([#199](https://github.com/APS-Conecta/gestion/issues/199)) — an install a clinic
-can run end to end without a developer. Lap L1 shipped (see *Done*); the rest, in order:
+can run end to end without a developer. Laps L1 and L2 shipped (see *Done*); the rest, in order:
 
-1. **L2 Silent core** — the step registry and terminal stepper, the root bootstrap, the AIO API drive
-   promoted into the CLI, `install --sitio --planilla`, and the `aps-conecta` timers.
-2. **L3 Web installer** — every screen of the approved *Instalador UI*, driven by the same registry.
-3. **L4 AIO fork** — one patch per finding (identity, pre-fill, refusals, Talk off by default).
-4. **L5 Map** — the basemap as a registry step, the Centro picker, same-origin `/tiles/`.
-5. **L6 Docs** — `docs/INSTALLER.md` ⇄ the clinic guide, mirrored step for step.
-6. **L7 Run acceptance** — a release candidate installed on three boxes by the rehearsal harness.
+1. **L3 Web installer** — every screen of the approved *Instalador UI*, driven by the same registry.
+2. **L4 AIO fork** — one patch per finding (identity, pre-fill, refusals, Talk off by default).
+3. **L5 Map** — the basemap as a registry step, the Centro picker, same-origin `/tiles/`.
+4. **L6 Docs** — `docs/INSTALLER.md` ⇄ the clinic guide, mirrored step for step.
+5. **L7 Run acceptance** — a release candidate installed on three boxes by the rehearsal harness,
+   including the two-line bootstrap on a pristine Ubuntu 24.04 box (carried from L2, #206).
 
 Also open: **Epic retrospectives** (optional).
 
@@ -79,6 +78,7 @@ Also open: **Epic retrospectives** (optional).
 | 2026-09-28 | Welcome tree declared per site and converged per section — IntraVox review Phase 3: `SITE_WELCOME`, one renderer, `occ intravox:import --skip-existing`, the ten static team pages retired; review Phases 4 (walls) and 5 (discoverability) are next | `docs/adr/0019-the-welcome-tree-is-declared-and-converged-per-section.md`, `provisioning/intravox/render.py`, `docs/WELCOME-SCREEN.md` |
 | 2026-09-29 | **Storage root named for staff** — IntraVox review Phase 5: `IV_MOUNT` → engine `groupfolder_name`, the seed refuses an unrenamed install, «Abrir en Archivos» on every page, the «dónde vive» note seeded | [`ADR-0020`](docs/adr/0020-the-storage-root-is-named-for-staff.md), [`docs/WELCOME-SCREEN.md`](docs/WELCOME-SCREEN.md) |
 | 2026-10-01 | **Installer L1 — the Nextcloud container resolved once** (#200, closes #197, PR #207) — `nc_container`/`is_aio` in `scripts/env.sh` replace a template default, 4 restated defaults and 7 detection copies; **Clean boot green end to end on AIO** for the first time since 2026-09-21, after the run exposed and fixed B-030 (IntraVox group map order), B-031 (smoke check 15 on Nextcloud 34, now developer-only), B-032 (`seed-idempotent`'s leftover fixture account) and B-033 (the harness's tiles surface) | `scripts/env.sh` § 3, [`BUGS.md`](BUGS.md) B-029–B-033 |
+| 2026-10-02 | **Installer L2 — the silent install core** (#201, PRs #209–#216) — one step registry behind `aps-conecta` (welcome + nine numbered steps, Spanish operator text); the two-line root bootstrap (`preparar`/`descargar`); the AIO wizard drive moved into the CLI (`asistente-aio`); `install --sitio --planilla` with zero prompts, one Spanish line per phase — **Clean boot now installs through it**; staff land in their category group by role and every cargo account gets a sealed first password; `temporizadores` on Santiago time; `aps-conecta estado` and the admins' login notice on drift, proven on real systemd in CI | [`host/aps-conecta`](host/aps-conecta), [`docs/INSTALLER.md`](docs/INSTALLER.md) §2–§6, [`BUGS.md`](BUGS.md) B-034 |
 
 The reasoning behind each of these lives with the thing it describes — the ADR, the phase file, or
 the stylesheet. It is not restated here; this table is an index, not a second copy.
