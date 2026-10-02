@@ -11,8 +11,9 @@ work; the 🗡️ Breaker agent starts here.*
   nginx configs.
 - **The repository holds no patient data.** Development uses synthetic fixtures only (`README.md`,
   `AGENTS.md` invariants).
-- **The installed platform will hold patient data.** Staff work in its Files, Talk, Mail and Office,
-  so every setting this repository applies or leaves at a default is a safeguard for that data.
+- **The platform is not meant to hold patient data** (`AGENTS.md`), but nothing stops staff from
+  uploading clinical files to its Files, Talk or Office. Treat every account, share and backup as if
+  they held patient data: every setting this repository applies or leaves at a default is a safeguard.
 
 ## What an attacker wants
 
@@ -30,9 +31,9 @@ work; the 🗡️ Breaker agent starts here.*
 
 | Entry point | Who can use it | What protects it today |
 |---|---|---|
-| Nextcloud web, WebDAV and mobile logins | anyone who can reach the domain | Nextcloud's built-in brute-force throttling (not configured here); `remember_login_cookie_lifetime 0` — no persistent "remember me" (`provisioning/phases/`) |
+| Nextcloud web, WebDAV and mobile logins | anyone who can reach the domain | Nextcloud's built-in brute-force throttling (not configured here); `remember_login_cookie_lifetime 0` — no persistent "remember me" (`provisioning/phases/05-security.sh:15`) |
 | App availability for staff (`provisioning/app-policy.sh`) | staff accounts | "admin keeps every app; every non-admin account gets the reduced set" (`app-policy.sh:8`); `weather_status` restricted to keep outbound traffic (egress) off staff accounts |
-| Public directory lookups | the server | `lookup_server ""` — no contact with Nextcloud's public lookup server (`provisioning/phases/`) |
+| Public directory lookups | the server | `lookup_server ""` — no contact with Nextcloud's public lookup server (`provisioning/phases/05-security.sh:20`) |
 | Backups | the AIO borg container | daily borg backup at 04:00 to the configured location (`host/aps-conecta`, `cmd_aio_wizard --respaldo`) |
 | Secrets | operators | `.env` is generated with mode 600 (`make setup`) and never committed (`AGENTS.md`); `.gitleaksignore` exists |
 | TLS and headers | the public internet | AIO's reverse proxy; nothing in this repository pins TLS versions or security headers |
