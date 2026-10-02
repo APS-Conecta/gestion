@@ -47,6 +47,15 @@ image digests live there and are deliberately not copied here — one fact, one 
     - `sí` as the admin flag.
   - The old sectores, componentes and planilla screens are gone. `--paso usuarios` prints a
     whole-file error with no line number, and lists the valid groups.
+- **«Revisar y ejecutar» in clinic terms, followed live** (L3 S4).
+  - The review shows the centre by name, its sectors and programs, every person with their
+    groups, the cargo accounts, what the clinic gets (one component catalogue) and the maintenance
+    schedule. It shows no paths, files or keys.
+  - «Ejecutar» starts the run on the server and answers at once. The page follows it every second
+    (`/api/ejecucion`) through the console's own step titles to the verdict, and a reload finds it
+    where it is.
+  - A red verdict shows its head line and points to `aps-conecta estado`. The divergence screen is
+    gone.
 - **`aps-conecta estado`** — the last execution's verdict, each item with its fix, in Spanish, with
   no sudo (`/opt/aps-conecta/estado.txt`, 0644, written by every execution — the installer's, the
   silent install's and the weekly one). When the weekly re-provision finds drift or does not finish,

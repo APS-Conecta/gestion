@@ -74,13 +74,18 @@ Después de la bienvenida, el navegador recorre los pasos 6 a 9 de la instalaci�
      quitado: «Reemplazar» o «Conservar»;
    - la planilla de personas (§5), con su plantilla («Descargar plantilla») y la lista de
      «Grupos válidos».
-4. **Revisar y ejecutar** — el plan completo antes de ejecutar: fases, usuarios, primer
-   administrador. Ejecutar es un botón, y la consola del servidor muestra el avance línea a línea.
+4. **Revisar y ejecutar** — el plan en palabras del establecimiento: el centro, sus sectores y
+   programas, cada persona de la planilla con sus grupos (la primera administración marcada), las
+   cuentas de cargo, los componentes y la mantención automática. «Ejecutar» crea los grupos, las
+   carpetas y las cuentas, y aplica la marca, en unos minutos; la pantalla muestra cada paso a
+   medida que termina (y la consola del servidor, línea a línea). Recargar la página no lo
+   interrumpe.
    - Con **«divergencia vacía»** (la instancia coincide con su declaración, usuarios incluidos)
      aparece **«Listo»**: el instalador se cierra solo, el enlace deja de servir y la consola activa
      los temporizadores.
-   - Cualquier otro resultado es un hallazgo con nombre, nunca un error mudo: corríjalo y vuelva a
-     ejecutar.
+   - Cualquier otro resultado es un hallazgo con nombre, nunca un error mudo: la pantalla muestra
+     su encabezado, y el detalle y el arreglo están en la consola del servidor
+     (`aps-conecta estado`). Corríjalo y vuelva a ejecutar.
 
 ## 5. La planilla de usuarios
 
