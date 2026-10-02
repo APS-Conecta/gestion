@@ -92,6 +92,9 @@ while IFS= read -r uid && [ -n "$uid" ]; do
   fi
   n=$((n + 1))
 done
+# B-030's class for the planilla: phases 41 and 50 mapped the registry groups into IntraVox's before
+# these accounts existed — mapped here too, or they reach the intranet only at the next seed
+intravox_group_map
 echo "== roster: $n usuario(s) =="
 }
 
@@ -108,6 +111,7 @@ usuarios_self_test() {
   ensure_user() { printf 'user %s created\n' "$1" >> "$log"; }
   group_exists() { return 0; }
   add_user_to_group() { printf 'user %s added to group %s\n' "$1" "$2" >> "$log"; }
+  intravox_group_map() { :; }
   local rc=0 frame
   # good frame: one user, two groups, primer si
   frame="$(printf 'fixture.roster\nFixture Roster\nnot-a-real-password-either\nall-staff cat-jefaturas\nsi\n\n')"

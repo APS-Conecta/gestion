@@ -21,37 +21,39 @@ ensure_group cat-clinicos        "Clínicos"
 ensure_group cat-tecnicos        "Técnicos"
 ensure_group cat-administrativos "Administrativos"
 
-# Roles (22) — id|display, verbatim from the Group Registry. Shared by EVERY clinic: this is the
-# vocabulary that keeps one clinic's ACL matrix readable beside another's. Clinic-local additions go
-# in the site file, below.
+# Roles (22) — id|display|category, the shape SITE_ROLES uses below. Shared by EVERY clinic: this is
+# the vocabulary that keeps one clinic's ACL matrix readable beside another's. Clinic-local additions
+# go in the site file, below. The category is the cat-* every holder of the role ALSO joins (groups
+# do not nest): the Ley 19.378 families, owner 2026-10-02 — the Químico Farmacéutico is clínico
+# here; the pharmacy's lead position (50-users' jefe.farmacia) is a jefatura on its own.
 roles=(
-  "role-director-cesfam|Director/a de CESFAM"
-  "role-subdirector-jefe-tecnico|Subdirector/a Médico o Jefe Técnico"
-  "role-jefe-sector-mais|Jefe/a de Sector (Gestión MAIS)"
-  "role-medico|Médico General / de Familia"
-  "role-dentista|Cirujano Dentista"
-  "role-quimico-farmaceutico|Químico Farmacéutico (Dir. Técnico Farmacia)"
-  "role-enfermeria|Enfermera/o"
-  "role-matroneria|Matrona/Matrón"
-  "role-kinesiologo|Kinesiólogo/a"
-  "role-psicologo|Psicólogo/a"
-  "role-trabajador-social|Trabajador/a Social"
-  "role-nutricionista|Nutricionista"
-  "role-terapeuta-fono|Terapeuta Ocupacional / Fonoaudiólogo/a"
-  "role-tens-procedimientos|TENS – Procedimientos / Vacunatorio"
-  "role-tens-farmacia|TENS – Farmacia / PNAC"
-  "role-tons|TONS (Técnico en Odontología)"
-  "role-administrativo-some|Administrativo SOME"
+  "role-director-cesfam|Director/a de CESFAM|cat-jefaturas"
+  "role-subdirector-jefe-tecnico|Subdirector/a Médico o Jefe Técnico|cat-jefaturas"
+  "role-jefe-sector-mais|Jefe/a de Sector (Gestión MAIS)|cat-jefaturas"
+  "role-medico|Médico General / de Familia|cat-clinicos"
+  "role-dentista|Cirujano Dentista|cat-clinicos"
+  "role-quimico-farmaceutico|Químico Farmacéutico (Dir. Técnico Farmacia)|cat-clinicos"
+  "role-enfermeria|Enfermera/o|cat-clinicos"
+  "role-matroneria|Matrona/Matrón|cat-clinicos"
+  "role-kinesiologo|Kinesiólogo/a|cat-clinicos"
+  "role-psicologo|Psicólogo/a|cat-clinicos"
+  "role-trabajador-social|Trabajador/a Social|cat-clinicos"
+  "role-nutricionista|Nutricionista|cat-clinicos"
+  "role-terapeuta-fono|Terapeuta Ocupacional / Fonoaudiólogo/a|cat-clinicos"
+  "role-tens-procedimientos|TENS – Procedimientos / Vacunatorio|cat-tecnicos"
+  "role-tens-farmacia|TENS – Farmacia / PNAC|cat-tecnicos"
+  "role-tons|TONS (Técnico en Odontología)|cat-tecnicos"
+  "role-administrativo-some|Administrativo SOME|cat-administrativos"
   # The SOME LEAD, distinct from the clerks above. Its own group rather than "an administrativo who
   # is also in cat-jefaturas", so it reads the same way Director and Jefe de Sector already do —
   # and so a grant can name the lead without naming the whole counter.
-  "role-jefe-some|Jefe/a de SOME"
-  "role-oirs|Encargado/a OIRS"
-  "role-estadistica-rem|Encargado/a de Estadística (REM)"
-  "role-conductor|Conductor (Ambulancia / Traslado)"
-  "role-auxiliar-servicio|Auxiliar de Servicio"
+  "role-jefe-some|Jefe/a de SOME|cat-jefaturas"
+  "role-oirs|Encargado/a OIRS|cat-administrativos"
+  "role-estadistica-rem|Encargado/a de Estadística (REM)|cat-administrativos"
+  "role-conductor|Conductor (Ambulancia / Traslado)|cat-administrativos"
+  "role-auxiliar-servicio|Auxiliar de Servicio|cat-administrativos"
 )
-for entry in "${roles[@]}"; do ensure_group "${entry%%|*}" "${entry#*|}"; done
+for entry in "${roles[@]}"; do rest="${entry#*|}"; ensure_group "${entry%%|*}" "${rest%%|*}"; done
 
 # --- Roles this clinic adds for itself (#103) — id|display|category, from sites/$SITE/site.sh ---
 # Same split as SITE_TEAMS below — shared vocabulary in code, local additions in data (#103).
@@ -59,7 +61,8 @@ for entry in "${roles[@]}"; do ensure_group "${entry%%|*}" "${entry#*|}"; done
 # THE CATEGORY IS LOAD-BEARING, not a label. Nextcloud groups do not nest, so a role grants nothing
 # by "belonging to" a category; what gives a person access is the set of groups they are IN. The
 # third field declares which cat-* an account holding this role must ALSO join — 50-users reads it
-# for the standing jefaturas it creates, and the roster reader (#106) will read it for everyone else.
+# for the standing jefaturas it creates, and the Provisionador's roster frame (role_categories)
+# for everyone else; the 22 shared roles above carry the same field.
 # It is declared per role rather than defaulted to cat-jefaturas because a local unit needs both:
 # a lead (cat-jefaturas) and its technicians (cat-tecnicos). Unit folders are granted BY ROLE, so
 # without a local role a SAR's folder would open to every TENS in the building.

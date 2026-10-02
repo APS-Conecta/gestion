@@ -427,6 +427,24 @@ def registry_groups(path):
     return ids
 
 
+
+def role_categories(path, site_roles):
+    """role id -> the cat-* every holder of the role also joins (a8): the third field of phase
+    20's 22 shared roles plus the site's own SITE_ROLES. Nextcloud groups do not nest, so the
+    roster frame adds the category itself. Only the four categories parse, so fewer than 22 means
+    the registry's shape moved or a category is misspelled — refused, registry_groups' floor
+    discipline. A site role never overrides a shared one (20-groups refuses a bad site category)."""
+    with open(path, encoding="utf-8") as fh:
+        cats = dict(re.findall(r'^ *"(role-[a-z0-9-]+)\|[^|"]*\|'
+                               r'(cat-(?:jefaturas|clinicos|tecnicos|administrativos))"', fh.read(), re.M))
+    if len(cats) < 22:
+        raise ValueError(f"solo {len(cats)} de los 22 roles compartidos declaran su categoría en "
+                         f"{path} — cambió de forma; corríjalo antes de ejecutar")
+    for gid, _display, category in site_roles:
+        cats.setdefault(gid, category)
+    return cats
+
+
 def site_arrays(site):
     """SITE_TEAMS and SITE_ROLES out of the site.sh /api/sitio wrote — line-based on the shape
     write_site emits: `NAME=(` alone on a line, then one `id|display[|category]` entry per line
@@ -616,7 +634,7 @@ def seal_credentials(codigo, rows, path):
     so a regenerated row would be a sheet that lies), and a uid that leaves the roster and
     returns finds its original row intact. An existing file that does not read EXACTLY like
     this program's own output is refused (env-init's rule — a file we do not own is never
-    overwritten); the operator reviews or deletes it by hand. 0600 before content, written to a
+    overwritten); the operator corrects or moves it by hand. 0600 before content, written to a
     temp file, fsync'd, then renamed into place: the sheet is the only copy of anyone's first
     password, so there is never a window where it is empty or half-written. The whole
     read-modify-write runs under SEAL_LOCK at the call site — the threaded server would
@@ -638,8 +656,9 @@ def seal_credentials(codigo, rows, path):
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(f"# APS Conecta — contraseñas de primer ingreso. Establecimiento DEIS {codigo}.\n")
-        fh.write("# Guárdelas en un gestor de contraseñas y elimine este archivo cuando estén "
-                "entregadas.\n")
+        # B-034: kept, never deleted — the executor needs a sealed row for every account it creates
+        fh.write("# Entregue a cada persona su fila. Conserve este archivo: la re-provisión "
+                 "semanal lo lee.\n")
         fh.write("usuario;nombre;contraseña;primer_admin\n")
         w = csv.writer(fh, delimiter=";", lineterminator="\n")
         for uid, (pw, display, primer) in out.items():
@@ -700,12 +719,15 @@ def api_usuarios(payload):
     # sheet is cumulative, so a uid whose row arrived early finds it again on the retry.)
     # SEAL_LOCK serializes the read-modify-write — a double-submitted POST must not interleave
     # two seals on the one tmp inode (R1's double-submit arm).
+    # a8: each cargo account (phase 50's positions) gets its own first password in the same sheet,
+    # sealed with the planilla's — the executor never generates one
+    cargos = [(uid, "Cargo", uid, "", (), False) for uid in reserved if uid != "admin"]
     try:
         with SEAL_LOCK:
-            fresh, sealed = seal_credentials(codigo, rows, CRED_PATH)
+            fresh, sealed = seal_credentials(codigo, rows + cargos, CRED_PATH)
     except ValueError:
         return 409, {"error": f"{CRED_PATH} existe pero no se puede leer como una hoja sellada "
-                              "por el Provisionador — revíselo o elimínelo a mano antes de "
+                              "por el Provisionador — corríjalo a mano, o muévalo si no es suyo, antes de "
                               "volver a cargar la planilla"}
     except OSError as e:
         return 500, {"error": f"no se pueden sellar las credenciales en {CRED_PATH}: {e}"}
@@ -764,6 +786,7 @@ def api_generar(payload):
     try:
         shared = registry_groups(PHASE20)
         teams, roles = site_arrays(site)
+        cats = role_categories(PHASE20, roles)
     except ValueError as e:
         return 400, {"error": str(e)}
     reserved = standing_uids(teams, roles)
@@ -783,7 +806,7 @@ def api_generar(payload):
         sealed = sealed_map(CRED_PATH)
     except ValueError:
         return 409, {"error": f"{CRED_PATH} existe pero no se puede leer como una hoja sellada "
-                              "por el Provisionador — revíselo o elimínelo a mano antes de "
+                              "por el Provisionador — corríjalo a mano, o muévalo si no es suyo, antes de "
                               "volver a cargar la planilla"}
     missing = [uid for uid, _n, _a, _c, _g, _p in rows if uid not in sealed]
     if missing:
@@ -791,6 +814,12 @@ def api_generar(payload):
         # reach ensure_user — a blank password on user:add is a locked-out account on day one
         return 409, {"error": "la planilla nombra usuarios sin contraseña sellada: "
                               + ", ".join(missing)
+                              + " — vuelva a cargar la planilla para sellarlos"}
+    cargos = [uid for uid in reserved if uid != "admin"]
+    unsealed = [uid for uid in cargos if uid not in sealed]
+    if unsealed:
+        # a sector or a local jefatura added to the site after the planilla was loaded
+        return 409, {"error": "el sitio declara cargos sin contraseña sellada: " + ", ".join(unsealed)
                               + " — vuelva a cargar la planilla para sellarlos"}
     primer_uid = next((uid for uid, _n, _a, _c, _g, p in rows if p), None)
     if primer_uid is None:  # the belt-and-braces arm — the 500 template, never a crash
@@ -827,19 +856,25 @@ def api_generar(payload):
         except ValueError as e:
             return 409, {"error": str(e)}
         rc, seed_out = run_tee(["bash", "provisioning/seed.sh"], cwd=root,
-                               timeout=TIMEOUTS["seed"])
+                               timeout=TIMEOUTS["seed"],
+                               env={**os.environ, "STANDING_PASSWORDS":
+                                    " ".join(f"{u}:{sealed[u][0]}" for u in cargos)})
         if rc is None:
             return 500, {"error": f"la preparación excedió el límite de {TIMEOUTS['seed']} s — "
                                   "revise la salida y el estado de la instancia",
                           "salida": seed_out}
         if rc != 0:
-            fatal = next((ln for ln in reversed(seed_out.splitlines())
-                          if ln.startswith("FATAL:")), "la preparación falló")
+            fatals = [ln for ln in seed_out.splitlines() if ln.startswith("FATAL:")]
+            # the cause the phase printed, not the runner's «phase X failed» line that follows it
+            fatal = next((f for f in fatals if not re.match(r"FATAL: phase \S+ failed$", f)),
+                         fatals[-1] if fatals else "la preparación falló")
             # the gate never runs after a failed phase (the locked research flow)
             return 500, {"error": fatal, "salida": seed_out}
         records = []
         for uid, nombre, apellidos, _correo, gids, primer in rows:
-            records += [uid, f"{nombre} {apellidos}", sealed[uid][0], " ".join(gids),
+            # a8: every planilla user is staff and joins the category of each of their roles
+            groups = sorted(set(gids) | {"all-staff"} | {cats[g] for g in gids if g in cats})
+            records += [uid, f"{nombre} {apellidos}", sealed[uid][0], " ".join(groups),
                         "si" if primer else "no"]
         records.append("")  # the driver's terminator
         rc, roster_out = run_tee(["bash", "provisioning/usuarios.sh"], cwd=root,
@@ -967,7 +1002,7 @@ def env_converge(root, codigo):
     return report
 
 
-def run_tee(argv, cwd, timeout, stdin_text=None):
+def run_tee(argv, cwd, timeout, stdin_text=None, env=None):
     """One executor subprocess, its stdout BOTH on the provisionador's own stdout (the FRD's
     host-side record: the operator watching the terminal where `aps-conecta provision` printed
     the banner sees the phases live — slice 14's line-buffered stdout makes that real) and
@@ -987,7 +1022,7 @@ def run_tee(argv, cwd, timeout, stdin_text=None):
     # phases mid-write). The timeout's p.kill() targets bash only — a wedged docker-CLI
     # grandchild is docker's own timeout's business (the ceiling the docstring names).
     p = subprocess.Popen(argv, cwd=cwd, stdin=subprocess.PIPE if stdin_text is not None else None,
-                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
     t = threading.Thread(target=pump, daemon=True)
     t.start()
     if stdin_text is not None:
@@ -1335,7 +1370,7 @@ def screen_revision():
     "<tr><th>Usuarios</th><td>" + r.usuarios + " (primera administración: <code>" +
       escapear(r.primer_admin) + "</code>)</td></tr>" +
     "<tr><th>Fases</th><td>" + r.fases.length + ": " + r.fases.join(", ") + "</td></tr>" +
-    "<tr><th>Contraseñas</th><td>" + r.contrasenas_selladas + " selladas</td></tr>" +
+    "<tr><th>Contraseñas</th><td>" + r.contrasenas_selladas + " selladas (personas y cargos)</td></tr>" +
     "<tr><th>.env</th><td>SITE " + escapear(r.env.SITE) + ", " + escapear(r.env.SEED_FIXTURES) +
       ", FIXTURE_USER_PASSWORD " + escapear(r.env.FIXTURE_USER_PASSWORD) + "</td></tr>" +
     "</table><p>La divergencia se comprueba al final de la ejecución.</p>";
@@ -1369,7 +1404,7 @@ def screen_divergencia():
     zona("m").innerHTML = '<div class="ok"><strong>Divergencia vacía.</strong> La instancia ' +
       "queda configurada; las contraseñas de primer ingreso están selladas en <code>" +
       escapear(r.credenciales || "/opt/aps-conecta/credentials.txt") +
-      "</code> (permiso 600). Entréguelas a cada persona y elimine el archivo.</div>";
+      "</code> (permiso 600). Entregue a cada persona su fila y conserve el archivo.</div>";
   } else {
     zona("m").innerHTML = '<div class="error"><strong>Hay divergencia.</strong> Revise las ' +
       "notas y corrija; luego vuelva a ejecutar el paso 6.</div>" +
@@ -1663,8 +1698,8 @@ def run_step(argv):
             return refused(status, body)
         print(f"✓ Planilla validada: {body['usuarios']} usuarios; administrador inicial "
               f"{body['primer_admin']}")
-        print(f"✓ Contraseñas selladas en {body['credenciales']} ({body['contrasenas_nuevas']} "
-              "nuevas; solo administrador)")
+        print(f"✓ Contraseñas selladas en {body['credenciales']}: {body['contrasenas_nuevas']} "
+              "nuevas (personas y cargos)")
         return 0
     mode = "revision" if opts.get("--revision") else "ejecutar"
     status, body = call(api_generar, {"codigo": code, "modo": mode})
@@ -1900,15 +1935,21 @@ def selftest():
             juan = ("juan.soto", "Juan", "Soto Ríos", "juan.soto@example.cl",
                     "all-staff role-medico", "si")
             elena = ("elena.diaz", "Elena", "Díaz Nueve", "",
-                     "all-staff role-matroneria", "si")
+                     "role-matroneria", "si")
             site_pre = open(site_path("113314"), encoding="utf-8").read()
+            cargos_113314 = [u for u in standing_uids(*site_arrays(site_path("113314"))) if u != "admin"]
 
             st, body = call("POST", "/api/usuarios", {"codigo": "113314",
                                                       "csv": "\ufeff" + planilla(maria, juan)})
             check("roster: a BOM semicolon CSV with accents validates (site team accepted)",
                   st == 200 and body["ok"] and body["usuarios"] == 2
                   and body["primer_admin"] == "juan.soto"
-                  and body["contrasenas_selladas"] == 2)
+                  and body["contrasenas_selladas"] == 2 + len(cargos_113314))
+            sheet = sealed_map(CRED_PATH)
+            check("credentials: each cargo account has its own sealed password, sealed with the planilla's (a8)",
+                  len(cargos_113314) >= 4
+                  and all(sheet.get(u, ("", ""))[1] == f"Cargo {u}" for u in cargos_113314)
+                  and len({pw for pw, _d, _p in sheet.values()}) == len(sheet))
 
             roster_file = os.path.join(tmp, "sites", "113314", "usuarios.csv")
             with open(roster_file, encoding="utf-8") as fh:
@@ -1942,9 +1983,9 @@ def selftest():
 
             cred_rows = sheet_rows()
             pws = {r[0]: r[2] for r in cred_rows}
-            check("credentials: sealed 0600, a row per uid, 24-hex, display carries the accents",
+            check("credentials: sealed 0600, a row per uid (the planilla's and the cargos'), 24-hex, display carries the accents",
                   oct(os.stat(CRED_PATH).st_mode & 0o777) == "0o600"
-                  and set(pws) == {"maria.perez", "juan.soto"}
+                  and set(pws) == {"maria.perez", "juan.soto"} | set(cargos_113314)
                   and all(re.fullmatch("[0-9a-f]{24}", p) for p in pws.values())
                   and any(r[1] == "María Pérez Soto" for r in cred_rows))
 
@@ -2234,7 +2275,7 @@ def selftest():
             rc, out = stepped(["--paso", "usuarios", "--codigo", "113314", "--planilla", planilla])
             check("--paso usuarios: the loaded planilla re-validates — sealed once, 0 new passwords",
                   rc == 0 and "✓ Planilla validada: 2 usuarios; administrador inicial elena.diaz" in out
-                  and "(0 nuevas; solo administrador)" in out)
+                  and ": 0 nuevas (personas y cargos)" in out)
             broken = os.path.join(tempfile.mkdtemp(), "rota.csv")
             open(broken, "w", encoding="utf-8").write("usuario;nombre;apellidos\nroto;a;b\n")
             rc, out = stepped(["--paso", "usuarios", "--codigo", "113314", "--planilla", broken])
@@ -2323,6 +2364,13 @@ def selftest():
                   st == 400 and body["errores"][0]["linea"] == 1
                   and "usuario;nombre;apellidos;correo;grupos;primer_admin" in body["errores"][0]["error"])
             open(roster_mia, "w", encoding="utf-8").write(good_roster)
+            sheet_text = open(CRED_PATH, encoding="utf-8").read()
+            open(CRED_PATH, "w", encoding="utf-8").write(
+                "".join(ln for ln in sheet_text.splitlines(True) if not ln.startswith("director;")))
+            st, body = generar("revision")
+            open(CRED_PATH, "w", encoding="utf-8").write(sheet_text)
+            check("generar: a cargo the site declares without a sealed password answers 409 naming the site, not the planilla",
+                  st == 409 and body.get("error", "").startswith("el sitio declara cargos sin contraseña sellada: director"))
 
             env_path = os.path.join(deis.HERE, "..", ".env")
             open(env_path, "w", encoding="utf-8").write("SITE=otro-lugar\n")
@@ -2360,6 +2408,32 @@ def selftest():
             # B-030: phase 50 creates the standing accounts AFTER phase 41 mapped the registry
             # groups into the engine's, so the FIRST seed must map them too — or the second seed
             # writes (Clean boot's seed-idempotent) and every fresh install converges one run late
+            fixture_pw = re.search(r"^FIXTURE_USER_PASSWORD=([0-9a-f]{24})$", env_text, re.M).group(1)
+            check("generar: each cargo account is created with its own sealed password — never the shared one (a8)",
+                  all(any(l.rstrip().endswith(f" {u}") and sealed_now[u][0] in l for l in oc)
+                      for u in cargos_113314)
+                  and not any(fixture_pw in l for l in oc))
+            check("generar: a planilla user joins all-staff and the category of each role — only the role written (a8)",
+                  "user elena.diaz added to group all-staff" in body["salida"]
+                  and "user elena.diaz added to group cat-clinicos" in body["salida"]
+                  and "user elena.diaz added to group role-matroneria" in body["salida"])
+            check("generar: the roster driver maps planilla users into the IntraVox groups the same run (B-030's class)",
+                  "group: elena.diaz added to group IntraVox Users" in body["salida"]
+                  and "group: maria.perez added to group IntraVox Users" in body["salida"])
+            cats = role_categories(PHASE20, [("role-jefe-sar", "Jefe/a de SAR", "cat-jefaturas"),
+                                             ("role-medico", "Médico", "cat-jefaturas")])
+            fams = [c for r, c in cats.items() if r != "role-jefe-sar"]
+            check("registry: the 22 shared roles name their category — 4 jefaturas, 10 clínicos, 3 técnicos, 5 administrativos; a site role adds its own, never overrides",
+                  len(fams) == 22 and [fams.count(f"cat-{k}") for k in
+                                       ("jefaturas", "clinicos", "tecnicos", "administrativos")] == [4, 10, 3, 5]
+                  and cats["role-quimico-farmaceutico"] == "cat-clinicos"
+                  and cats["role-jefe-sar"] == "cat-jefaturas" and cats["role-medico"] == "cat-clinicos")
+            try:
+                role_categories(junk20, [])
+                floor = False
+            except ValueError as e:
+                floor = "declaran su categoría" in str(e)
+            check("registry: a phase 20 whose roles lost their category is refused, not guessed", floor)
             check("generar: the first seed maps the standing accounts into the IntraVox groups (B-030)",
                   "group: director added to group IntraVox Users" in body["salida"]
                   and "group: director added to group IntraVox Editors" in body["salida"])
@@ -2378,6 +2452,14 @@ def selftest():
                   "group: director added to group IntraVox" not in seed2
                   and "group: jefe." not in seed2)
 
+            site_text = open(site_path("113314"), encoding="utf-8").read()
+            assert "SITE_ROLES=(\n" in site_text
+            open(site_path("113314"), "w", encoding="utf-8").write(
+                site_text.replace("SITE_ROLES=(\n", 'SITE_ROLES=(\n  "role-x|X|cat-foo"\n', 1))
+            st, body = generar("ejecutar")
+            open(site_path("113314"), "w", encoding="utf-8").write(site_text)
+            check("generar: a failing phase answers its own cause, not the runner's «phase failed» line",
+                  st == 500 and body["error"].startswith("FATAL: SITE_ROLES entry 'role-x' names category 'cat-foo'"))
             open(stubstate, "w").close()
             open(stublog, "w").close()
             open(stubctl, "w", encoding="utf-8").write("FAIL_ON=group:add\n")

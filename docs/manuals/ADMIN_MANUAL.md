@@ -631,6 +631,8 @@ It is governed by foundational design rules:
   - `jefe.some`: Jefe/a de SOME (`role-jefe-some`, `cat-jefaturas`, `all-staff`).
   - Derived Sector Chiefs: `jefe.<sector>` for each sector defined in `SITE_TEAMS`.
   - Derived Local Chiefs: `jefe.<unit>` for any custom role marked `cat-jefaturas` in `SITE_ROLES`.
+- **Passwords:** under the Provisionador each account has its own, sealed into `credentials.txt`
+  with the planilla's; `FIXTURE_USER_PASSWORD` applies only to `make install` without it.
 
 #### `60-fixtures.sh`: Deterministic Synthetic Fixtures
 - **Purpose:** Places non-clinical sample files in fixture accounts (`Bienvenida-APS-Conecta.md`).
@@ -651,6 +653,9 @@ When configuring permissions, administrators must adhere to the principle: **Gra
 ### The 22 Shared Standard CESFAM Roles
 To guarantee portability across establishments and ensure ACL rules are mutually intelligible across the municipal network, APS Conecta Gestión standardizes **22 operational CESFAM roles** in Phase 20:
 
+The Category column is each role's third field in `provisioning/phases/20-groups.sh` (the
+registry): every holder of a role also joins its category and `all-staff`.
+
 | Group ID | Display Name (Spanish) | Functional Description | Category |
 |---|---|---|---|
 | `role-director-cesfam` | Director/a de CESFAM | Executive director of the primary health center | `cat-jefaturas` |
@@ -658,7 +663,7 @@ To guarantee portability across establishments and ensure ACL rules are mutually
 | `role-jefe-sector-mais` | Jefe/a de Sector (Gestión MAIS) | Sector leader managing the comprehensive family health model | `cat-jefaturas` |
 | `role-medico` | Médico General / de Familia | General practitioner / family medicine physician | `cat-clinicos` |
 | `role-dentista` | Cirujano Dentista | Primary care dental surgeon | `cat-clinicos` |
-| `role-quimico-farmaceutico` | Químico Farmacéutico | Technical director of the pharmacy department | `cat-jefaturas` |
+| `role-quimico-farmaceutico` | Químico Farmacéutico | Pharmacist; the pharmacy's lead position is the standing `jefe.farmacia` account (`cat-jefaturas`) | `cat-clinicos` |
 | `role-enfermeria` | Enfermera/o | Registered professional nurse | `cat-clinicos` |
 | `role-matroneria` | Matrona/Matrón | Midwife / maternal & reproductive healthcare professional | `cat-clinicos` |
 | `role-kinesiologo` | Kinesiólogo/a | Physical therapist / respiratory rehabilitation specialist | `cat-clinicos` |
@@ -673,7 +678,7 @@ To guarantee portability across establishments and ensure ACL rules are mutually
 | `role-jefe-some` | Jefe/a de SOME | Operational head of admissions and statistic counters | `cat-jefaturas` |
 | `role-oirs` | Encargado/a OIRS | Citizen information and grievance office lead | `cat-administrativos` |
 | `role-estadistica-rem` | Encargado/a de Estadística (REM) | Monthly Statistical Report (REM) manager | `cat-administrativos` |
-| `role-conductor` | Conductor (Ambulancia / Traslado) | Emergency driver / medical transport technician | `cat-tecnicos` |
+| `role-conductor` | Conductor (Ambulancia / Traslado) | Emergency driver / medical transport | `cat-administrativos` |
 | `role-auxiliar-servicio` | Auxiliar de Servicio | Facilities maintenance, logistics, and cleaning staff | `cat-administrativos` |
 
 ### The Four Functional Categories (`cat-*`)
