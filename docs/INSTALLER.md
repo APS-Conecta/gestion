@@ -30,8 +30,9 @@ anchor the image bake records as the channel's provenance. The release manifest 
 page also names the tag and (as the tarball fallback) carries `host_bundle.sha256` — the tag
 archive's number; verify a tarball-form download against it before extracting.
 
-The bundle is `aps-conecta`: `preflight`, `run-command`, `provision`, `revalidate`,
-`respaldo`, `tiles`, `datos` — thin glue; every heavy thing lives where its own gate is.
+The bundle is `aps-conecta`: `install`, `preflight`, `run-command`, `provision`, `asistente-aio`,
+`temporizadores`, `revalidate`, `respaldo`, `tiles`, `datos` — thin glue; every heavy thing lives
+where its own gate is.
 
 ## 3. Preflight
 
@@ -89,17 +90,20 @@ walked step by step in [`GUIA-CLINICA.md`](GUIA-CLINICA.md) §4–6. The two out
 
 ## 6. Wire the timers
 
+The silent install (`install --sitio --planilla`) installs and enables them itself. After a browser
+install, after building the map (§9), and after every update (a changed unit lands this way):
+
 ```bash
-sudo cp host/aps-conecta.service host/aps-conecta.timer /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now aps-conecta.timer
-# with the map installed (§9), also — tiles.sh's own printed wiring, byte-identical:
-sudo cp host/aps-conecta-tiles.service host/aps-conecta-tiles.timer /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now aps-conecta-tiles.timer
+sudo aps-conecta temporizadores
 ```
 
-The weekly timer re-runs the provision headlessly (idempotent; a drifted host shows as a FAILED
-unit in `systemctl --failed`). The tiles timer re-extracts the basemap monthly (the 4th at 05:00,
-spread off borg's nightly window).
+It copies the four units from the bundle into `/etc/systemd/system`, reloads systemd and enables the
+weekly timer — and the monthly one once the map exists; a re-run finds them in place. It first
+checks that `/usr/local/bin/aps-conecta` is this bundle's: the units run it under a Condition, and a
+missing link would skip them without a word. Both fire on Santiago time (the zone rides
+`OnCalendar`, not the host's clock). The weekly timer re-runs the provision headlessly on Sundays at
+03:00 (idempotent; a drifted host shows as a FAILED unit in `systemctl --failed`). The tiles timer
+re-extracts the basemap monthly (the 4th at 05:00, spread off borg's nightly window).
 
 ## 7. DNS: the host must reach its own domain (D10)
 

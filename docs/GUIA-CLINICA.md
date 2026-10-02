@@ -23,7 +23,9 @@ El recorrido completo, paso a paso con los comandos, está en `INSTALLER.md` §2
 2. El comando `docker run` que preflight imprime — se pega tal cual; nunca se re-escribe a mano.
 3. El asistente en `http://<ip-del-servidor>:8080`.
 4. `aps-conecta provision` — el Provisionador (§4).
-5. Los temporizadores (§7).
+5. `sudo aps-conecta temporizadores` — activa la re-provisión semanal (domingo 03:00) y el
+   refresco mensual del mapa (día 4, 05:00), en hora de Santiago. La instalación silenciosa lo hace
+   sola; tras una actualización se vuelve a ejecutar.
 
 ## 3. El asistente (:8080)
 
@@ -124,7 +126,8 @@ archivo en caché que PHP fija y el fork no toca.
 ## 8. ¿Y el mapa?
 
 El fondo de mapa ya se sirve solo — no hay que hacer nada para tenerlo: se instaló con la
-suite, vive en el servidor y **se refresca solo cada mes** (el temporizador del día 4). Lo que
+suite, vive en el servidor y **se refresca solo cada mes** (el temporizador del día 4, que activa `sudo aps-conecta
+temporizadores`). Lo que
 ve en territorio hasta que esa aplicación se empaquete:
 
 - **La tarjeta «pendiente de empaquetado»** — la aplicación territorio completa (capas
