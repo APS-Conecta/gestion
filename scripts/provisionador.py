@@ -174,6 +174,11 @@ SEAL_LOCK = threading.Lock()
 # One execution at a time (the executor's own stampede guard — SEAL_LOCK's shape): two concurrent
 # /api/generar ejecutar posts would run two seeds against the one instance. The 409 names it.
 EXEC_LOCK = threading.Lock()
+# The browser's «Ejecutar» (a14): the run happens on a worker and the page polls this every second —
+# no request is held open for minutes. One run at a time (EXEC_LOCK inside api_generar; EJEC_GUARD
+# makes check-and-start one step); read without a lock — plain values, a snapshot.
+EJECUCION = {"estado": "sin_ejecutar", "hechos": [], "veredicto": None}
+EJEC_GUARD = threading.Lock()
 # Every executor subprocess is bounded (B-015: a phase that hangs must not hang a thread forever).
 # The seed's bound is the harness's pull budget (30 min); the roster driver rides the same number —
 # a big clinic's N×0.8 s execs fit with margin; the gate only reads. The self-test patches this
@@ -183,12 +188,32 @@ TIMEOUTS = {"seed": 1800, "roster": 1800, "gate": 300}
 # file's stem — a self-test arm pins one title per file in provisioning/phases.
 PHASE_TITLES = {
     "05-security": "Seguridad de sesión", "06-jobs": "Tareas programadas",
-    "07-certs": "Certificados intermedios", "10-locale": "Idioma y región (es-CL)",
-    "12-apps": "Aplicaciones de la suite", "14-office": "Oficina (Euro-Office)",
+    "07-certs": "Certificados del servidor", "10-locale": "Idioma y región (es-CL)",
+    "12-apps": "Aplicaciones de la suite", "14-office": "Oficina en línea",
     "15-branding": "Imagen de APS Conecta", "16-app-policy": "Aplicaciones por perfil",
     "20-groups": "Grupos: roles, categorías y equipos", "30-folders": "Carpetas compartidas",
-    "40-acl": "Permisos de las carpetas", "41-intravox": "Portada (IntraVox)",
+    "40-acl": "Permisos de las carpetas", "41-intravox": "Portada del establecimiento",
     "50-users": "Cuentas de cargo", "60-fixtures": "Contenido de ejemplo"}
+# What the clinic gets, as the review step lists it (R37): one row per component staff see — its
+# app, its name, what it gives. Plumbing is not listed; a self-test pins every app under
+# provisioning/apps to one side or the other (ponytail: a JSON file once the host TUI needs it too).
+COMPONENTES = (
+    ("intravox", "Inicio", "Portada del establecimiento: noticias, avisos y accesos del equipo."),
+    ("groupfolders", "Documentos", "Carpetas compartidas por sector y programa, con permisos por grupo."),
+    ("eurooffice", "Oficina", "Edición en línea de documentos, planillas y presentaciones."),
+    ("calendar", "Calendario", "Agendas personales y compartidas del equipo."),
+    ("contacts", "Contactos", "Directorio del personal y contactos externos."),
+    ("epidemiologia", "Epidemiología", "Alertas del MINSAL y del ISP, informes IRAG y tablero nacional."),
+    ("estadistica", "Estadística",
+     "Cifras REM frente al promedio nacional y de pares; avance de las Metas Sanitarias."),
+    ("farmacia", "Farmacia", "Arsenal farmacológico del establecimiento con información de seguridad clínica."),
+    ("territorio", "Territorio", "Mapa territorial: unidades vecinales y establecimientos."),
+    ("spreed", "Talk", "Chat y videollamadas internas."),
+)
+PLUMBING_APPS = ("desktop_workspace", "notify_push", "side_menu")
+# The browser's progress list (a14): the phases by their console titles, then the people, then the gate.
+PASO_PLANILLA, PASO_GATE = "Cuentas del personal", "Comprobación final"
+PASOS_EJECUCION = [PHASE_TITLES[k] for k in sorted(PHASE_TITLES)] + [PASO_PLANILLA, PASO_GATE]
 
 
 STUB_DOCKER = r'''#!/usr/bin/env python3
@@ -1138,6 +1163,38 @@ def why(e):  # the OS's own text is English: the common cases in Spanish, else t
             errno.ENOSPC: "disco lleno"}.get(e.errno, errno.errorcode.get(e.errno, "error de archivo"))
 
 
+def veredicto(body):
+    """(head, items) of an execution — the verdict as «aps-conecta estado» states it: record_state
+    writes both, the browser shows the head (a16: the gate's notes carry operator vocabulary)."""
+    if body.get("divergencia_vacia"):
+        return "✓ la instancia coincide con lo declarado", []
+    if "divergencia_vacia" in body:
+        items = [ln[4:] for ln in body.get("divergencia", "").splitlines()
+                 if ln.startswith("    ") and not ln.startswith("     ")]
+        if items:
+            return "✗ deriva: la instancia tiene lo que no se declaró", items
+        # the gate stopped before its list (a FATAL): its own last lines are the cause
+        return ("✗ la revisión de divergencia no terminó",
+                [ln.strip() for ln in body.get("divergencia", "").splitlines() if ln.strip()][-3:])
+    return "✗ la ejecución no terminó", [body.get("error", "")]
+
+
+def plan_clinico(codigo, teams, rows, cargos):
+    """The review step's plan in clinic terms (R40): the centre by name, its sectors and programs,
+    every person the planilla declares (the first administrator marked), the cargo accounts it adds,
+    and what the clinic gets (R37) — no path, no file, no key."""
+    row = find_row(codigo)
+    return {"centro": {"codigo": codigo,
+                       "nombre": row["nombre"] if row else f"el establecimiento DEIS {codigo}",
+                       "comuna": row["comuna"] if row else ""},
+            "sectores": [d for g, d in teams if g.startswith("sector-")],
+            "programas": [d for g, d in teams if g.startswith("prog-")],
+            "personas": [[uid, f"{nombre} {apellidos}", list(gids), primer]
+                         for uid, nombre, apellidos, _c, gids, primer in rows],
+            "cuentas_de_cargo": len(cargos),
+            "componentes": [[nombre, que] for _app, nombre, que in COMPONENTES]}
+
+
 def record_state(body):
     """The last execution's verdict, for «aps-conecta estado» and the admins' notification (a10): a
     head line — the time in Santiago and the verdict — then each item with its fix (the gate's own
@@ -1145,17 +1202,7 @@ def record_state(body):
     rename): readable without sudo, never half a state."""
     from datetime import datetime
     from zoneinfo import ZoneInfo
-    if body.get("divergencia_vacia"):
-        head, items = "✓ la instancia coincide con lo declarado", []
-    elif "divergencia_vacia" in body:
-        head = "✗ deriva: la instancia tiene lo que no se declaró"
-        items = [ln[4:] for ln in body.get("divergencia", "").splitlines()
-                 if ln.startswith("    ") and not ln.startswith("     ")]
-        if not items:  # the gate stopped before its list (a FATAL): its own last lines are the cause
-            head = "✗ la revisión de divergencia no terminó"
-            items = [ln.strip() for ln in body.get("divergencia", "").splitlines() if ln.strip()][-3:]
-    else:
-        head, items = "✗ la ejecución no terminó", [body.get("error", "")]
+    head, items = veredicto(body)
     when = datetime.now(ZoneInfo("America/Santiago")).strftime("%Y-%m-%d %H:%M")
     text = f"{when} (hora de Santiago) · {head}\n" + "".join(f"  · {i}\n" for i in items if i)
     os.makedirs(os.path.dirname(ESTADO_PATH), exist_ok=True)
@@ -1180,6 +1227,70 @@ def api_generar(payload):
             print(f"  ✗ no se pudo escribir {ESTADO_PATH} "
                   f"({why(e) if isinstance(e, OSError) else type(e).__name__})", file=sys.stderr)
     return status, body
+
+
+def avance(line):
+    """An executor line → the browser's progress (a14), in the console's own words: a finished phase
+    by its title, the planilla once its accounts are in. Only a run the browser started is followed:
+    the silent install and the weekly timer share this path and have no page to feed."""
+    if EJECUCION["estado"] != "en_curso":
+        return
+    m = re.match(r"✓ phase (\S+)$", line.rstrip("\n"))
+    if m:
+        EJECUCION["hechos"].append(PHASE_TITLES.get(m.group(1), m.group(1)))
+    elif re.match(r"== roster: \d+ usuario", line):
+        EJECUCION["hechos"].append(PASO_PLANILLA)
+
+
+def iniciar_ejecucion(payload, server):
+    """POST /api/generar {"modo": "ejecutar"} from the browser: the run starts on a worker and the
+    answer leaves at once (202) — no request is held open for minutes (a14); GET /api/ejecucion
+    follows it. A second start while one runs is refused, as api_generar itself refuses it."""
+    codigo = payload.get("codigo")
+    if not isinstance(codigo, str) or not CODIGO.fullmatch(codigo):
+        return 400, {"error": "el código DEIS debe ser de 4 a 6 dígitos"}
+    with EJEC_GUARD:
+        if EJECUCION["estado"] == "en_curso" or EXEC_LOCK.locked():
+            return 409, {"error": "ya hay una ejecución en curso — espere a que termine"}
+        EJECUCION.update(estado="en_curso", hechos=[], veredicto=None)
+        try:
+            threading.Thread(target=ejecutar_web, args=(codigo, server), daemon=True).start()
+        except RuntimeError as e:   # no thread to run it on: nothing started, nothing left frozen
+            EJECUCION.update(estado="sin_ejecutar")
+            return 500, {"error": f"no se pudo iniciar la ejecución ({e})"}
+    return 202, {"ok": True, "en_curso": True}
+
+
+def ejecutar_web(codigo, server):
+    """The worker: api_generar as the silent install runs it (resumen: the console gets the Spanish
+    summary, the log the rest; the state file its verdict, a10), the verdict kept for the poll, and
+    a green one closes the installer (SEC-2) — from here, never from api_generar, which --paso
+    generar and the weekly timer share."""
+    try:
+        status, body = api_generar({"codigo": codigo, "modo": "ejecutar", "resumen": True})
+    except Exception as e:   # never a silent dead worker: the console and the state file get the cause
+        status, body = 500, {"error": f"la ejecución se detuvo ({type(e).__name__}: {e})"}
+        print(f"  ✗ {body['error']}", file=sys.stderr)
+        try:
+            record_state(body)
+        except Exception:   # the console line above already carries it
+            pass
+    verde = status == 200 and body.get("divergencia_vacia") is True
+    try:
+        if "divergencia_vacia" in body:   # the gate ran: its row is done, whatever it found
+            EJECUCION["hechos"].append(PASO_GATE)
+        if verde:   # DONE before the poll can read green: /listo answers, a second start is refused (SEC-2)
+            server.close_after_success()
+    finally:   # whatever the close does, the run never stays «en curso»
+        EJECUCION.update(estado="terminada", veredicto={"verde": verde, "titulo": veredicto(body)[0]})
+
+
+def estado_ejecucion():
+    """GET /api/ejecucion — the page's poll, once a second: the run as a snapshot (a14). The field is
+    «ejecucion», not «estado»: the page's api() already carries the HTTP status under that name."""
+    e = dict(EJECUCION)
+    return 200, {"ejecucion": e["estado"], "hechos": list(e["hechos"]), "pasos": PASOS_EJECUCION,
+                 "veredicto": e["veredicto"]}
 
 
 def _api_generar(payload):
@@ -1270,7 +1381,8 @@ def _api_generar(payload):
                              else "se forzará a 1",
                              "FIXTURE_USER_PASSWORD": "presente" if est["fixture"]
                              else "se generará"},
-                     "divergencia": "se comprueba al final de la ejecución"}
+                     "divergencia": "se comprueba al final de la ejecución",
+                     **plan_clinico(codigo, teams, rows, cargos)}
 
     # ── ejecutar: one run at a time; the seed and the driver and the gate in order ──
     if not EXEC_LOCK.acquire(blocking=False):
@@ -1280,7 +1392,11 @@ def _api_generar(payload):
     try:
         if payload.get("resumen") is True:
             log = open(os.path.join(root, ".install.log"), "w", encoding="utf-8", buffering=1)
-        show = summary(log) if log else None
+        resumen = summary(log) if log else None
+
+        def show(line):   # the browser's progress (a14), then the console's own view
+            avance(line)
+            return resumen(line) if resumen else line
         try:
             env_report = env_converge(root, codigo)
         except ValueError as e:
@@ -1672,6 +1788,19 @@ details summary{cursor:pointer;font-weight:700;margin-top:.8rem}
 .enlace-btn:hover{background:none;color:var(--encima)}
 code{overflow-wrap:anywhere}
 [hidden]{display:none!important}
+.barra{height:6px;background:var(--linea);border-radius:3px;overflow:hidden;margin:.6rem 0 1rem}
+.barra>i{display:block;height:100%;width:100%;background:var(--primario);transform:scaleX(var(--p,0));
+transform-origin:left;transition:transform .2s linear}
+.lista-estado{list-style:none;margin:0;padding:0;display:grid;gap:.4rem;font-size:var(--t-s)}
+.lista-estado li{display:grid;grid-template-columns:1.4rem minmax(0,1fr);gap:.5rem;align-items:baseline}
+.lista-estado .ic{font-weight:800;color:var(--apagado)}
+.lista-estado .hecho .ic{color:var(--ok)}
+.lista-estado .ahora .ic{color:var(--oro)}
+.lista-estado .ahora{font-weight:700}
+.progreso-linea{font-weight:700;min-height:1.6em;margin-top:1rem}
+.dl dd.normal{font-weight:400}
+#x-plan h3.ceja{margin:1.6rem 0 .5rem}
+#x-plan .nota{margin-top:1.2rem}
 @media (max-width:860px){
 .marco{grid-template-columns:minmax(0,1fr)}
 .riel{display:none}
@@ -2151,58 +2280,101 @@ def screen_equipos():
 
 
 def screen_revision():
-    body = """<div class="tarjeta"><h2>Revisión</h2>
-<p>Revise el plan antes de ejecutar. La ejecución configura la instancia completa
-(minutos); su avance se ve en la consola del servidor.</p>
+    """Step 9, «Revisar y ejecutar» (L3 S4) — the approved design's: the plan in clinic terms (R40):
+    the centre, its sectors and programs, every person, the cargo accounts, the components (R37) and
+    the maintenance; then «Ejecutar», which starts the run on the server and follows it with one short
+    GET a second (a14): the steps in the console's own words, then the verdict. A reload finds the
+    run where it is; green is «Listo»; red shows its head line and where the detail is (a16: the
+    gate's notes stay in the console)."""
+    body = """<section class="tarjeta"><h2>Plan</h2>
 <div id="m">Preparando la revisión…</div>
-<button id="ejecutar" disabled>Ejecutar</button></div>
+<div id="x-plan"></div></section>
+<section class="tarjeta"><h2>Ejecutar</h2>
+<p>Crea los grupos, las carpetas y las cuentas, y aplica la marca: unos minutos. El avance se ve aquí
+y en la consola del servidor.</p>
+<div class="fila"><button type="button" id="x-ir" disabled>Ejecutar</button></div>
+<div id="x-error"></div>
+<div id="x-prog" hidden><p class="progreso-linea" id="x-linea" aria-live="polite"></p>
+<div class="barra" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="Avance de la ejecución"><i id="x-barra"></i></div>
+<ul class="lista-estado" id="x-lista"></ul><div id="x-fin"></div></div></section>
 <script>
 (async () => {
   const codigo = await centro();
   if (!codigo) return;
-  const r = await api("/api/generar", {codigo: codigo, modo: "revision"});
-  if (r.estado !== 200) {
-    zona("m").innerHTML = '<div class="error">' + escapear(r.error || r.errores) + "</div>"; return;
+  const lista = (xs) => xs.length ? xs.map(escapear).join(" · ") : "—";
+  const chip = (g) => '<span class="chip" translate="no">' + escapear(g) + "</span>";
+  let reloj = null, planOk = false, visto = "", fallos = 0;
+  function pintar(e) {   // the run as the server sees it, repainted only when it moved (one live line)
+    const clave = e.ejecucion + "|" + e.hechos.join("|");
+    if (clave === visto) return;
+    visto = clave;
+    const hechos = new Set(e.hechos), fin = e.ejecucion === "terminada";
+    const ahora = fin ? -1 : e.pasos.findIndex((p) => !hechos.has(p));
+    const parte = e.pasos.filter((p) => hechos.has(p)).length / e.pasos.length;
+    zona("x-prog").hidden = false;
+    zona("x-linea").textContent = fin ? e.veredicto.titulo : (e.pasos[ahora] || e.pasos[e.pasos.length - 1]) + "…";
+    zona("x-barra").style.setProperty("--p", parte);
+    zona("x-barra").parentNode.setAttribute("aria-valuenow", Math.round(100 * parte));
+    zona("x-lista").innerHTML = e.pasos.map((p, i) => {
+      const st = hechos.has(p) ? "hecho" : i === ahora ? "ahora" : "";
+      return '<li class="' + st + '"><span class="ic">' + (st === "hecho" ? "✓" : st === "ahora" ? "●" : "○") +
+        "</span><span>" + escapear(p) + "</span></li>";
+    }).join("");
+    zona("x-fin").innerHTML = fin && !e.veredicto.verde ? '<div class="error">El detalle y el arreglo, en la ' +
+      "consola del servidor: <code>aps-conecta estado</code>. Corrija y vuelva a ejecutar.</div>" : "";
   }
-  zona("m").innerHTML = "<table>" +
-    "<tr><th>Establecimiento</th><td>" + escapear(r.sitio) + "</td></tr>" +
-    "<tr><th>Usuarios</th><td>" + r.usuarios + " (primera administración: <code>" +
-      escapear(r.primer_admin) + "</code>)</td></tr>" +
-    "<tr><th>Fases</th><td>" + r.fases.length + ": " + r.fases.join(", ") + "</td></tr>" +
-    "<tr><th>Contraseñas</th><td>" + r.contrasenas_selladas + " selladas (personas y cargos)</td></tr>" +
-    "<tr><th>.env</th><td>SITE " + escapear(r.env.SITE) + ", " + escapear(r.env.SEED_FIXTURES) +
-      ", FIXTURE_USER_PASSWORD " + escapear(r.env.FIXTURE_USER_PASSWORD) + "</td></tr>" +
-    "</table><p>La divergencia se comprueba al final de la ejecución.</p>";
-  zona("ejecutar").disabled = false;
-  zona("ejecutar").addEventListener("click", async () => {
-    zona("ejecutar").disabled = true;
-    zona("ejecutar").textContent = "Ejecutando… vea la consola";
-    const r2 = await api("/api/generar", {codigo: codigo, modo: "ejecutar"});
-    sessionStorage.setItem("resultado", JSON.stringify(r2));
-    location.href = "/divergencia";
+  async function seguir() {   // one short GET a second (a14): no request held open
+    clearTimeout(reloj);
+    const e = await api("/api/ejecucion");
+    if (e.estado === 0 || e.estado >= 500) {   // a dropped answer is retried; a closed installer says so
+      if (++fallos >= 3) zona("x-error").innerHTML = '<div class="aviso">Sin respuesta del ' +
+        "instalador. Si la ejecución terminó bien, el instalador ya se cerró: el resultado está en la " +
+        "consola del servidor (<code>aps-conecta estado</code>).</div>";
+      reloj = setTimeout(seguir, 2000); return;
+    }
+    if (e.estado !== 200) { zona("x-error").innerHTML = '<div class="error">' + escapear(e.error) + "</div>"; return; }
+    if (fallos) { fallos = 0; zona("x-error").innerHTML = ""; }
+    if (e.ejecucion !== "sin_ejecutar") pintar(e);
+    if (e.ejecucion === "en_curso") { zona("x-ir").disabled = true; reloj = setTimeout(seguir, 1000); return; }
+    if (e.ejecucion === "terminada" && e.veredicto.verde) { location.replace("/listo"); return; }
+    zona("x-ir").disabled = !planOk;
+    if (e.ejecucion === "terminada") zona("x-ir").textContent = "Volver a ejecutar";
+  }
+  zona("x-ir").addEventListener("click", async () => {
+    zona("x-ir").disabled = true;
+    zona("x-error").innerHTML = "";
+    const r = await api("/api/generar", {codigo, modo: "ejecutar"});
+    if (r.estado === 202 || r.estado === 409) {   // started, or one already going: follow it
+      if (r.estado === 409) zona("x-error").innerHTML = '<div class="aviso">' + escapear(r.error) + "</div>";
+      seguir(); return;
+    }
+    zona("x-error").innerHTML = '<div class="error">' + escapear(r.error) + "</div>";
+    zona("x-ir").disabled = false;
   });
-})();
-</script>"""
-    return shell("ejecutar", body)
-
-
-def screen_divergencia():
-    body = """<div class="tarjeta"><h2>Divergencia</h2>
-<div id="m">Cargando el resultado…</div>
-<button onclick="location.href='/bienvenida'">Volver a la bienvenida</button></div>
-<script>
-(async () => {
-  const r = JSON.parse(sessionStorage.getItem("resultado") || "null");
-  if (!r) { zona("m").innerHTML =
-    '<div class="aviso">No hay un resultado en esta sesión. Ejecute de nuevo desde la revisión.</div>'; return; }
+  const r = await api("/api/generar", {codigo, modo: "revision"});
   if (r.estado !== 200) {
-    zona("m").innerHTML = '<div class="error">' + escapear(r.error) + "</div>" +
-      "<pre>" + escapear((r.salida || "").split("\\n").slice(-12).join("\\n")) + "</pre>"; return;
+    const errores = r.errores ? r.errores.map((x) => (x.linea ? "Línea " + x.linea + ": " : "") + x.error)
+      : [r.error];
+    zona("m").innerHTML = '<div class="error">' + errores.map(escapear).join("<br>") + "</div>" +
+      (r.errores ? '<p><a href="/equipos">Volver a «Cargar equipos y personas»</a></p>' : "");
+    seguir(); return;   // a run already going is still shown
   }
-  if (r.divergencia_vacia) { location.replace("/listo"); return; }
-  zona("m").innerHTML = '<div class="error"><strong>Hay divergencia.</strong> Revise las ' +
-    "notas y corrija; luego vuelva a ejecutar desde la revisión.</div>" +
-    "<pre>" + escapear(r.divergencia) + "</pre>";
+  zona("m").innerHTML = "";
+  zona("x-plan").innerHTML = '<dl class="dl"><dt>Centro</dt><dd>' + escapear(r.centro.nombre) + ", " +
+      escapear(r.centro.comuna) + " · DEIS " + escapear(r.centro.codigo) + "</dd>" +
+    "<dt>Sectores (" + r.sectores.length + ")</dt><dd>" + lista(r.sectores) + "</dd>" +
+    "<dt>Programas (" + r.programas.length + ")</dt><dd>" + lista(r.programas) + "</dd>" +
+    "<dt>Cuentas de cargo</dt><dd>" + r.cuentas_de_cargo + " (dirección y jefaturas; se crean solas)</dd></dl>" +
+    '<h3 class="ceja">Personas (' + r.personas.length + ")</h3><table><tr><th>Usuario</th><th>Nombre</th>" +
+    "<th>Grupos</th><th>Primera adm.</th></tr>" + r.personas.map(([u, n, g, p]) => "<tr><td>" +
+      escapear(u) + "</td><td>" + escapear(n) + "</td><td>" + g.map(chip).join(" ") + "</td><td>" +
+      (p ? "<b>sí</b>" : "no") + "</td></tr>").join("") + "</table>" +
+    '<h3 class="ceja">Componentes</h3><dl class="dl">' + r.componentes.map(([n, q]) => "<dt>" +
+      escapear(n) + '</dt><dd class="normal">' + escapear(q) + "</dd>").join("") + "</dl>" +
+    '<p class="nota">Mantención automática: domingo 03:00 (configuración) · día 4, 05:00 (mapa) · ' +
+    "hora de Santiago.</p>";
+  planOk = true;
+  seguir();
 })();
 </script>"""
     return shell("ejecutar", body)
@@ -2216,7 +2388,6 @@ ROUTES = {
     "/contenedores": screen_contenedores,
     "/equipos": screen_equipos,
     "/revision": screen_revision,
-    "/divergencia": screen_divergencia,
 }
 
 
@@ -2296,7 +2467,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_bytes(200, "text/csv; charset=utf-8", body["csv"].encode("utf-8"),
                             {"Content-Disposition": f'attachment; filename="{body["nombre"]}"'})
             return
-        if path in ("/api/estado", "/api/centros", "/api/centro", "/api/equipos"):
+        if path in ("/api/estado", "/api/centros", "/api/centro", "/api/equipos", "/api/ejecucion"):
             if not self.authorized():
                 self.send_json(401, {"error": "token ausente o inválido"},
                                {"WWW-Authenticate": "Bearer"})
@@ -2307,6 +2478,8 @@ class Handler(BaseHTTPRequestHandler):
                 status, body = api_centros()
             elif path == "/api/centro":
                 status, body = centro_actual()
+            elif path == "/api/ejecucion":
+                status, body = estado_ejecucion()
             else:
                 status, body = equipos_actuales()
             self.send_json(status, body)
@@ -2357,14 +2530,17 @@ class Handler(BaseHTTPRequestHandler):
             self.close_connection = True  # same framing rule: 413 never drained its body
             self.send_json(e.status, {"error": str(e)})
             return
+        # «vista» is /api/sitio's read-only preview: on any other path it changes nothing, so it
+        # exempts nothing from the freezes below
         cambia = (path in ("/api/generar", "/api/centro", "/api/sitio", "/api/usuarios")
-                  and payload.get("vista") is not True)
+                  and not (path == "/api/sitio" and payload.get("vista") is True))
         if cambia and DONE.is_set():
             # SEC-2: the installer is done and closing — a reload and a second click inside the grace
             # must neither start a run the shutdown would cut nor change what the run just verified
             self.send_json(409, {"error": "la instalación ya terminó: el instalador se está cerrando"})
             return
-        if cambia and path != "/api/generar" and EXEC_LOCK.locked():
+        if (cambia and path != "/api/generar"
+                and (EXEC_LOCK.locked() or EJECUCION["estado"] == "en_curso")):
             # the centre, the teams and the planilla are the run's input: never changed under it
             self.send_json(409, {"error": "hay una ejecución en curso: espere a que termine"})
             return
@@ -2374,19 +2550,12 @@ class Handler(BaseHTTPRequestHandler):
             status, body = api_sitio(payload)
         elif path == "/api/usuarios":
             status, body = api_usuarios(payload)
+        elif path == "/api/generar" and payload.get("modo") == "ejecutar":
+            status, body = iniciar_ejecucion(payload, self.server)
         elif path == "/api/generar":
             status, body = api_generar(payload)
         else:
             status, body = 404, {"error": "ruta desconocida"}
-        finished = (path == "/api/generar" and status == 200 and body.get("modo") == "ejecutar"
-                    and body.get("divergencia_vacia") is True)
-        if finished:
-            # In the HTTP layer, never in api_generar: --paso generar (the silent install, the
-            # weekly timer) shares that function and must not close anything. Marked done BEFORE
-            # the answer leaves, so the browser's next request (/listo) already sees it; the
-            # shutdown waits out the grace.
-            self.close_connection = True   # the browser's next request opens a fresh socket
-            self.server.close_after_success()
         self.send_json(status, body)
 
     def authorized(self):
@@ -3480,6 +3649,120 @@ def selftest():
             check("--paso generar --revision: the plan in one Spanish line, nothing executed, exit 0",
                   rc == 0 and execs[0] == 0
                   and "✓ Revisión: 14 fases, 2 usuarios (administrador inicial elena.diaz)" in out)
+            st, plan = api_generar({"codigo": "113314", "modo": "revision"})
+            visibles = json.dumps({k: plan.get(k) for k in ("centro", "sectores", "programas", "personas",
+                                                            "componentes")}, ensure_ascii=False)
+            check("revisión: the plan in clinic terms — the centre by name, its sectors and programs, every person with the first administrator marked, the components; no path, file or key (R40, R37, a16)",
+                  st == 200 and plan["centro"]["nombre"] == "Centro de Salud Familiar Cóndores de Chile"
+                  and plan["centro"]["comuna"] == "El Bosque" and plan["sectores"] == ["Sector Estrella"]
+                  and plan["programas"] == ["Programa Salud Mental"]
+                  and sorted(p[0] for p in plan["personas"]) == ["elena.diaz", "maria.perez"]
+                  and [p[0] for p in plan["personas"] if p[3]] == ["elena.diaz"]
+                  and plan["cuentas_de_cargo"] > 0 and len(plan["componentes"]) == len(COMPONENTES)
+                  and "/" not in visibles and ".sh" not in visibles and "SITE_" not in visibles)
+            apps = set(os.listdir(os.path.join(ROOT_DIR, "provisioning", "apps")))
+            check("componentes: every app the suite ships is a listed component or declared plumbing — a new app forces the choice (R37)",
+                  {a for a, _n, _q in COMPONENTES} | set(PLUMBING_APPS) == apps
+                  and not {a for a, _n, _q in COMPONENTES} & set(PLUMBING_APPS))
+            check("veredicto: one head for «aps-conecta estado» and the browser — green, drift, a gate that stopped, a run that stopped",
+                  veredicto({"divergencia_vacia": True})[0].startswith("✓")
+                  and veredicto({"divergencia_vacia": False, "divergencia": "    algo\n"}) ==
+                      ("✗ deriva: la instancia tiene lo que no se declaró", ["algo"])
+                  and veredicto({"divergencia_vacia": False, "divergencia": "FATAL: x\n"})[0].startswith(
+                      "✗ la revisión de divergencia no terminó")
+                  and veredicto({"error": "e"}) == ("✗ la ejecución no terminó", ["e"]))
+            EJECUCION.update(estado="sin_ejecutar", hechos=[], veredicto=None)
+            st, nada = call("GET", "/api/ejecucion")
+            avance("✓ phase 05-security\n")   # no run the browser started: nothing to follow
+            fuera = list(EJECUCION["hechos"])
+            EJECUCION.update(estado="en_curso")
+            for ln in ("▶ phase 05-security\n", "✓ phase 05-security\n", "otra línea\n",
+                       "✓ phase 14-office\n", "== roster: 3 usuario(s)\n"):
+                avance(ln)
+            check("ejecución: none yet answers «sin_ejecutar» with the 16 steps; a browser run's executor lines become the console's own titles, any other run's are not followed (a14)",
+                  st == 200 and nada["ejecucion"] == "sin_ejecutar" and nada["pasos"] == PASOS_EJECUCION
+                  and len(PASOS_EJECUCION) == 16 and fuera == []
+                  and EJECUCION["hechos"] == ["Seguridad de sesión", "Oficina en línea", "Cuentas del personal"])
+            EJECUCION.update(estado="sin_ejecutar", hechos=[])
+            verdadero, suelta = globals()["api_generar"], threading.Event()
+
+            def lento(_p):   # a run that reports one phase, then waits to be released
+                avance("✓ phase 05-security\n")
+                suelta.wait(5)
+                return 200, {"modo": "ejecutar", "divergencia_vacia": False, "divergencia": "    algo de más\n"}
+            globals()["api_generar"] = lento
+            try:
+                st1, _ = call("POST", "/api/generar", {"codigo": "113314", "modo": "ejecutar"})
+                st2, otra = call("POST", "/api/generar", {"codigo": "113314", "modo": "ejecutar"})
+                time.sleep(0.2)
+                st3, durante = call("GET", "/api/ejecucion")
+                st_sitio, frena = call("POST", "/api/sitio", {"codigo": "113314", "sectors": ["Sector Estrella"],
+                                                              "programs": ["Programa Salud Mental"]})
+                st_vista, _ = call("POST", "/api/centro", {"codigo": "113314", "vista": True})
+                suelta.set()
+                for _ in range(50):
+                    st4, final = call("GET", "/api/ejecucion")
+                    if final["ejecucion"] == "terminada":
+                        break
+                    time.sleep(0.1)
+            finally:
+                globals()["api_generar"] = verdadero
+            check("ejecución: «Ejecutar» answers at once (202) and runs on a worker; a second start is refused while it runs; the poll shows the progress, then a red verdict that keeps the installer open (a14, SEC-2)",
+                  st1 == 202 and st2 == 409 and "en curso" in otra["error"]
+                  and st3 == 200 and durante["ejecucion"] == "en_curso"
+                  and durante["hechos"] == ["Seguridad de sesión"]
+                  and final["ejecucion"] == "terminada" and final["veredicto"]["verde"] is False
+                  and final["veredicto"]["titulo"].startswith("✗ deriva") and not DONE.is_set()
+                  and final["hechos"] == ["Seguridad de sesión", "Comprobación final"])
+            check("ejecución: the run's input is frozen from the 202 on — before the executor's lock, «vista» or not",
+                  st_sitio == 409 and "en curso" in frena["error"] and st_vista == 409)
+            EJECUCION.update(estado="sin_ejecutar", hechos=[], veredicto=None)
+            st_mal, _ = call("POST", "/api/generar", {"codigo": "12", "modo": "ejecutar"})
+            EXEC_LOCK.acquire()   # a run this page did not start holds the executor
+            try:
+                st_ocup, ocup = call("POST", "/api/generar", {"codigo": "113314", "modo": "ejecutar"})
+            finally:
+                EXEC_LOCK.release()
+            check("ejecución: a bad code is refused 400; a run already holding the executor refuses the start 409; nothing starts",
+                  st_mal == 400 and st_ocup == 409 and "en curso" in ocup["error"]
+                  and EJECUCION["estado"] == "sin_ejecutar")
+
+            def roto(_p):
+                raise RuntimeError("prueba")
+            globals()["api_generar"] = roto
+            try:
+                with redirect_stderr(io.StringIO()) as consola:   # the worker's line, captured
+                    st1, _ = call("POST", "/api/generar", {"codigo": "113314", "modo": "ejecutar"})
+                    for _ in range(50):
+                        st4, final = call("GET", "/api/ejecucion")
+                        if final["ejecucion"] == "terminada":
+                            break
+                        time.sleep(0.1)
+            finally:
+                globals()["api_generar"] = verdadero
+            check("ejecución: a worker that crashes still ends red — the cause on the console and in the state file, the installer open",
+                  st1 == 202 and final["ejecucion"] == "terminada" and final["veredicto"]["verde"] is False
+                  and final["veredicto"]["titulo"] == "✗ la ejecución no terminó"
+                  and "RuntimeError: prueba" in consola.getvalue()
+                  and "RuntimeError: prueba" in open(ESTADO_PATH, encoding="utf-8").read()
+                  and not DONE.is_set())
+            EJECUCION.update(estado="sin_ejecutar", hechos=[], veredicto=None)
+
+            class SinHilos:   # a server whose close cannot start its timer
+                def close_after_success(self):
+                    raise RuntimeError("sin hilos")
+            globals()["api_generar"] = lambda _p: (200, {"modo": "ejecutar", "divergencia_vacia": True})
+            EJECUCION.update(estado="en_curso", hechos=[], veredicto=None)
+            try:
+                ejecutar_web("113314", SinHilos())
+                cayo = False
+            except RuntimeError:
+                cayo = True
+            finally:
+                globals()["api_generar"] = verdadero
+            check("ejecución: a close that fails still publishes the verdict — the run never stays «en curso»",
+                  cayo and EJECUCION["estado"] == "terminada" and EJECUCION["veredicto"]["verde"] is True)
+            EJECUCION.update(estado="sin_ejecutar", hechos=[], veredicto=None)
             planilla = os.path.join(deis.HERE, "..", "sites", "113314", "planilla-mia.csv")
             rc, out = stepped(["--paso", "usuarios", "--codigo", "113314", "--planilla", planilla])
             check("--paso usuarios: the loaded planilla re-validates — sealed once, 0 new passwords",
@@ -3880,8 +4163,7 @@ def selftest():
                                     ("/contenedores", "Contenedores del asistente"),
                                     ("/centro", "Confirmar centro"),
                                     ("/equipos", "Planilla de personas"),
-                                    ("/revision", "Revise el plan"),
-                                    ("/divergencia", "Divergencia")):
+                                    ("/revision", "Crea los grupos, las carpetas y las cuentas")):
                     st, text, hdr, setc = b.req("GET", path)
                     check(f"screens: {path} renders with the cookie arm",
                           st == 200 and marca in text and "text/html" in hdr.get("Content-Type", ""))
@@ -3967,6 +4249,15 @@ def selftest():
                 st, equipos_html, hdr, setc = b.req("GET", "/contenedores")
                 check("screens: step 8 is one screen — the three old routes are gone, the suite hands off to /equipos (a16)",
                       gone == [404, 404, 404] and "location.href='/equipos'" in equipos_html)
+                st, rev_html, hdr, setc = b.req("GET", "/revision")
+                with open(os.path.join(ROOT_DIR, "host", "aps-conecta.timer"), encoding="utf-8") as fh:
+                    semanal = re.search(r"^OnCalendar=(.*)$", fh.read(), re.M).group(1)
+                with open(os.path.join(ROOT_DIR, "host", "aps-conecta-tiles.timer"), encoding="utf-8") as fh:
+                    mensual = re.search(r"^OnCalendar=(.*)$", fh.read(), re.M).group(1)
+                check("screens: step 9 is one screen — /divergencia is gone; the maintenance it states is the timers' own (Sun 03:00, day 4 05:00)",
+                      b.req("GET", "/divergencia")[0] == 404
+                      and semanal.startswith("Sun *-*-* 03:00") and "domingo 03:00" in rev_html
+                      and mensual.startswith("*-*-04 05:00") and "día 4, 05:00" in rev_html)
 
                 st, plan, hdr, setc = b.req("GET", "/equipos")
                 check("planilla: the browser decode-or-warn rides the screen (bytes, utf-8 fatal, cp1252)",
@@ -4093,8 +4384,7 @@ def selftest():
                         cargando = {"/contenedores": "Consultando el estado",
                                     "/centro": "Cargando el registro",
                                     "/equipos": "Cargando los equipos",
-                                    "/revision": "Preparando la revisión",   # the centre from the server, then the plan
-                                    "/divergencia": "Cargando el resultado"}
+                                    "/revision": "Preparando la revisión"}   # the centre from the server, then the plan
                         corrio = True
                         for ruta, texto in cargando.items():
                             try:
@@ -4237,6 +4527,66 @@ def selftest():
                                                  for x in provocados) == ["400", "409"]
                         check("browser: step 8 — ids under each list, save, a different save is a conflict, «Reemplazar»; the centre's template uploads back clean; an unknown group opens «Grupos válidos» (R35, R38, a15)",
                               paso8 and not errores)
+                        # step 9 in a real browser: the plan in clinic terms; «Ejecutar» on a run
+                        # that reports one phase, then a red verdict — the progress, the head line, the
+                        # way to the detail; a reload finds the verdict where it was (a14, a16)
+                        # step 8 hands off to /revision under a fixture that is gone by now: a late
+                        # answer from that page is not this arm's, so it judges its own lines only
+                        pg.goto("about:blank")
+                        desde = len(errores)
+                        verdadero, suelta = globals()["api_generar"], threading.Event()
+
+                        def lento(p):   # the plan is real; the run reports a phase and waits
+                            if p.get("modo") != "ejecutar":
+                                return verdadero(p)
+                            avance("✓ phase 05-security\n")
+                            suelta.wait(30)
+                            return 200, {"modo": "ejecutar", "divergencia_vacia": False,
+                                         "divergencia": "    algo de más\n"}
+                        globals()["api_generar"] = lento
+                        EJECUCION.update(estado="sin_ejecutar", hechos=[], veredicto=None)
+                        try:
+                            pg.goto(f"https://127.0.0.1:{tport}/revision")
+                            pg.wait_for_selector("#x-plan dl", timeout=15000)
+                            plan_txt = pg.inner_text("#x-plan")
+                            pg.wait_for_selector("#x-ir:enabled", timeout=10000)
+                            pg.click("#x-ir")
+                            pg.wait_for_selector(".lista-estado .hecho", timeout=10000)
+                            avance_txt = pg.inner_text("#x-prog")
+                            pg.reload()   # mid-run: the page finds the run and follows it
+                            pg.wait_for_selector(".lista-estado .hecho", timeout=15000)
+                            sigue = pg.is_disabled("#x-ir") and not pg.query_selector("#x-error .error")
+                            suelta.set()
+                            pg.wait_for_selector("#x-prog .error", timeout=10000)
+                            veredicto_txt = pg.inner_text("#x-prog")
+                            principal = pg.inner_text("#contenido")
+                            pg.reload()
+                            pg.wait_for_selector("#x-prog .error", timeout=15000)
+                            recargado = pg.inner_text("#x-prog")
+                            # a16 over everything step 9 shows: no app id, no file, no key, no jargon
+                            ids = "|".join([a for a, _n, _q in COMPONENTES] + list(PLUMBING_APPS))
+                            jerga = re.findall(rf"\b(?:{ids})\b|idempotente|\.sh\b|\.env\b|/|"
+                                               r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b", principal)
+                            paso9 = ("Cóndores de Chile, El Bosque · DEIS 113314" in plan_txt
+                                     and "Sector Estrella" in plan_txt and "elena.diaz" in plan_txt
+                                     and "maria.perez" in plan_txt and "Chat y videollamadas internas" in plan_txt
+                                     and "domingo 03:00" in plan_txt and "unos minutos" in principal
+                                     and jerga == [] and sigue
+                                     and "Seguridad de sesión" in avance_txt and "Comprobación final" in avance_txt
+                                     and "✗ deriva" in veredicto_txt and "aps-conecta estado" in veredicto_txt
+                                     and "algo de más" not in veredicto_txt
+                                     and "✗ deriva" in recargado
+                                     and pg.locator(".lista-estado .hecho").count() == 2
+                                     and pg.inner_text("#x-ir") == "Volver a ejecutar")
+                        except Exception as e:   # a Playwright timeout: the arm reports it
+                            paso9 = False
+                            errores.append(str(e))
+                        finally:
+                            suelta.set()
+                            globals()["api_generar"] = verdadero
+                            EJECUCION.update(estado="sin_ejecutar", hechos=[], veredicto=None)
+                        check("browser: step 9 — the plan in clinic terms, «Ejecutar» followed by polling and through a reload mid-run, a red verdict's head and the way to its detail (no gate notes), nothing a16 forbids on the page (R40, a14, a16)",
+                              paso9 and not errores[desde:])
                         limpio = nav.new_context(ignore_https_errors=True).new_page()
                         limpio.goto(f"https://127.0.0.1:{tport}/")
                         en_login = limpio.url.endswith("/login") and "Código de acceso" in limpio.content()
@@ -4263,6 +4613,7 @@ def selftest():
             def ejecutar_http(vacia):
                 globals()["api_generar"] = lambda _p: (200, {"modo": "ejecutar",
                                                               "divergencia_vacia": vacia})
+                EJECUCION.update(estado="sin_ejecutar")
                 try:
                     req = urllib.request.Request(
                         f"http://127.0.0.1:{fport}/api/generar", method="POST",
@@ -4270,15 +4621,21 @@ def selftest():
                         headers={"Content-Type": "application/json",
                                  "Authorization": f"Bearer {TOKEN}"})
                     with urllib.request.urlopen(req, timeout=10) as r:
-                        return r.status
+                        st = r.status
+                    for _ in range(100):   # the worker's verdict, before the stub goes
+                        if EJECUCION["estado"] == "terminada":
+                            break
+                        time.sleep(0.05)
+                    return st, DONE.is_set()   # DONE as the poll first sees the verdict (SEC-2)
                 finally:
                     globals()["api_generar"] = verdadero
+                    EJECUCION.update(estado="sin_ejecutar", hechos=[], veredicto=None)
 
-            st = ejecutar_http(False)
+            st, al_terminar = ejecutar_http(False)
             time.sleep(0.5)
             check("finish: a red verdict keeps the installer open for the correction",
-                  st == 200 and hilo.is_alive() and not DONE.is_set())
-            st = ejecutar_http(True)
+                  st == 202 and not al_terminar and hilo.is_alive() and not DONE.is_set())
+            st, al_terminar = ejecutar_http(True)
             hilo.join(5)
             try:
                 socket.create_connection(("127.0.0.1", fport), timeout=2).close()
@@ -4286,10 +4643,13 @@ def selftest():
             except OSError:
                 cerrado = True
             check("finish: a green verdict closes the port within the grace and serve() answers 0",
-                  st == 200 and not hilo.is_alive() and DONE.is_set() and cerrado and servido == [0])
+                  st == 202 and al_terminar and not hilo.is_alive() and DONE.is_set() and cerrado and servido == [0])
             st, body = call("POST", "/api/generar", {"codigo": "113314", "modo": "ejecutar"})
-            check("finish: once done, a second execution inside the grace is refused 409 — nothing runs twice",
-                  st == 409 and "ya terminó" in body.get("error", ""))
+            st_v, body_v = call("POST", "/api/generar", {"codigo": "113314", "modo": "ejecutar", "vista": True})
+            st_u, _ = call("POST", "/api/usuarios", {"codigo": "113314", "csv": "x", "vista": True})
+            check("finish: once done, a second execution inside the grace is refused 409 — nothing runs twice, «vista» or not",
+                  st == 409 and "ya terminó" in body.get("error", "")
+                  and st_v == 409 and "ya terminó" in body_v.get("error", "") and st_u == 409)
 
             class Interrumpido:   # Ctrl+C arriving while serve_forever runs
                 def serve_forever(self):
