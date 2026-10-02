@@ -11,7 +11,8 @@ After=network-online.target docker.service
 Wants=network-online.target
 # The executable is the documented symlink (INSTALLER.md owns the wiring:
 #   sudo ln -s <repo>/host/aps-conecta /usr/local/bin/aps-conecta
-# ) — a missing symlink fails the unit loudly instead of the timer firing a silent no-op.
+# ) — a missing symlink SKIPS the unit (a Condition, not a failure), so «aps-conecta temporizadores»
+# checks the link before it enables the timer.
 ConditionFileIsExecutable=/usr/local/bin/aps-conecta
 
 [Service]
