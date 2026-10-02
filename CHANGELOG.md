@@ -28,6 +28,14 @@ image digests live there and are deliberately not copied here — one fact, one 
     the new `aps-conecta pasos` (the one list), the brand fonts served locally, a welcome and a
     «Listo».
   - `aps-conecta provision` is the same step as `abrir`.
+- **«Elegir el centro» in the browser** (L3 S2).
+  - Región › Comuna › Tipo de centro filters and an accent-blind search over the whole DEIS
+    register, every type included. The card shows the type, DEIS code, address, comuna, región,
+    Servicio de Salud and dependencia.
+  - The installer holds the choice (`/api/centros`, `/api/centro`), so no DEIS code rides a URL.
+    The choice can change until the site file is written.
+  - One install, one establishment holds at every door: the browser's site step now refuses a
+    second centre with 409, as the silent install already did. `/api/deis` is gone.
 - **`aps-conecta estado`** — the last execution's verdict, each item with its fix, in Spanish, with
   no sudo (`/opt/aps-conecta/estado.txt`, 0644, written by every execution — the installer's, the
   silent install's and the weekly one). When the weekly re-provision finds drift or does not finish,

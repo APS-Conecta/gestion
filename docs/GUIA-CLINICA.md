@@ -60,9 +60,11 @@ terminar.
 
 Después de la bienvenida, el navegador recorre los pasos 6 a 9 de la instalación:
 
-1. **Elegir el centro** — la búsqueda del establecimiento en el registro DEIS (tipo, comuna o
-   nombre). El registro completo viene incluido; cualquier centro de atención primaria sirve
-   (CESFAM, PSR, CECOSF, SAPU…).
+1. **Elegir el centro** — región, comuna y tipo de centro filtran el registro DEIS completo (todos
+   los centros de atención primaria: CESFAM, PSR, CECOSF, SAPU…); la búsqueda acepta nombre,
+   código DEIS, comuna o dirección, con o sin tildes. La ficha muestra lo que dirá el sitio, y
+   «Confirmar centro» lo fija. Se puede cambiar hasta cargar los equipos; desde ahí la instalación
+   sirve a ese establecimiento y a ningún otro.
 2. **Iniciar la suite** — confirma que los contenedores estén en marcha (consulta su estado real;
    una lista vacía significa que algo no partió).
 3. **Cargar equipos y personas** — tres partes:
