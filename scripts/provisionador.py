@@ -5,8 +5,8 @@ provisioned clinic (FRD S5 core + S6 screens).
   scripts/provisionador.py               serve the API + UI (bearer token printed at start)
   scripts/provisionador.py --self-test   the FRD's named self-tests; exit 0 green / 1 red
 
-The operator flow, one establishment per install (D13): Centro → sectores/programas →
-componentes → CSV usuarios → revisar/dry-run → divergencia vacía. This file is built across
+The operator flow, one establishment per install (D13): Centro → equipos y personas →
+revisar/dry-run → divergencia vacía. This file is built across
 installer-design slices 14-17: slice 14 ships the HTTP server, the bearer auth, /api/deis (the
 cascade's search leg) and /api/sitio (site.sh generation); slice 15 adds /api/usuarios (the roster:
 CSV validation against the site and the shared registry) plus the credentials sealing; slice 16 adds
@@ -1659,6 +1659,16 @@ color:var(--apagado);padding:.6rem .55rem .2rem}
 .dl dd{margin:0;font-weight:600}
 .nota{font-size:var(--t-xs)}
 @media (max-width:420px){.filtros{grid-template-columns:minmax(0,1fr)}}
+textarea.control{min-height:7.5rem;resize:vertical;line-height:1.55}
+.dos{display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:.9rem}
+.chips{display:flex;flex-wrap:wrap;gap:.3rem;min-height:1.6rem}
+.chip{font:600 .8rem/1.6 var(--f-mono);background:var(--velo);color:var(--fondo);padding:0 .45rem;border-radius:2px}
+details summary{cursor:pointer;font-weight:700;margin-top:.8rem}
+.lista-ids{list-style:none;margin:.3rem 0 0;padding:0;display:grid;gap:.35rem;font-size:var(--t-s)}
+.enlace-btn{background:none;border:0;padding:.7rem 0;margin:0;color:var(--primario);font:700 var(--t-s)/1.2 var(--f-cuerpo);cursor:pointer}
+.enlace-btn:hover{background:none;color:var(--encima)}
+code{overflow-wrap:anywhere}
+[hidden]{display:none!important}
 @media (max-width:860px){
 .marco{grid-template-columns:minmax(0,1fr)}
 .riel{display:none}
@@ -1835,7 +1845,7 @@ def screen_contenedores():
 en marcha antes de continuar.</p><div id="m">Consultando el estado…</div></div>
 <div class="tarjeta"><h2>Continuar</h2>
 <p>Con la suite en marcha, siga con los equipos del establecimiento.</p>
-<button onclick="location.href='/sectores'">Continuar</button></div>
+<button onclick="location.href='/equipos'">Continuar</button></div>
 <script>
 (async () => {
   const r = await api("/api/estado");
@@ -1990,95 +2000,149 @@ autocomplete="off" spellcheck="false">
     return shell("centro", body)
 
 
-def screen_sectores():
-    body = """<div class="tarjeta"><h2>Sectores y programas</h2>
-<p>El archivo del establecimiento se genera con sus equipos territoriales (sectores) y
-programas de salud. Escriba un nombre por campo, separados por comas — por ejemplo
-<code>Sector Estrella, Sector Cordillera</code>.</p>
-<form id="f">
-<label for="sectores">Sectores</label>
-<input type="text" id="sectores" placeholder="Sector Estrella, Sector Cordillera">
-<label for="programas">Programas</label>
-<input type="text" id="programas" placeholder="Programa Cardiovascular, Programa Salud Mental">
-<button type="submit">Generar el archivo del establecimiento</button></form>
-<div id="m"></div></div>
-<script>
-centro();   // a missing centre shows its way back before any typing
-document.getElementById("f").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const codigo = await centro();
-  if (!codigo) return;
-  const corta = (s) => s.split(",").map(x => x.trim()).filter(x => x);
-  const r = await api("/api/sitio", {codigo: codigo,
-    sectors: corta(zona("sectores").value), programs: corta(zona("programas").value)});
-  if (r.estado === 200) { location.href = "/componentes"; return; }
-  zona("m").innerHTML = '<div class="error">' + escapear(r.error) + "</div>";
-});
-</script>"""
-    return shell("equipos", body)
-
-
-def screen_componentes():
-    """The ALL-ON cards: the suite is one distribution (D12/D4) — everything the executor will
-    provision, rendered from the live tree, nothing to choose. The one screen where 'no
-    choices' is the honest design: the FRD's 'component cards ALL-ON'."""
-    root = os.path.join(deis.HERE, "..")
-    fases = sorted(p for p in os.listdir(os.path.join(root, "provisioning", "phases"))
-                   if p[:1].isdigit() and p.endswith(".sh"))
-    apps = sorted(os.listdir(os.path.join(root, "provisioning", "apps")))
-    filas = "".join(f"<tr><td>{f}</td><td>Se ejecuta</td></tr>" for f in fases)
-    apps_html = "".join(f"<code>{a}</code> " for a in apps)
-    body = f"""<div class="tarjeta"><h2>Componentes de la suite</h2>
-<p>La suite instala todo esto — es una sola distribución; no hay opciones que desactivar.
-Las fases se ejecutan en orden, cada una idempotente.</p>
-<table><tr><th>Fase</th><th>Estado</th></tr>{filas}</table></div>
-<div class="tarjeta"><h2>Aplicaciones incluidas</h2><p>{apps_html}</p></div>
-<div class="tarjeta"><h2>Continuar</h2>
-<p>El siguiente paso carga la planilla de usuarios del establecimiento.</p>
-<button onclick="location.href='/planilla'">Continuar</button></div>"""
-    return shell("equipos", body)
-
-
-def screen_planilla():
-    body = """<div class="tarjeta"><h2>Planilla de usuarios</h2>
-<p>Suba el archivo CSV con el personal. Las columnas, separadas por «;»:
-<code>usuario;nombre;apellidos;correo;grupos;primer_admin</code>.
-Marque exactamente una fila con <code>primer_admin=si</code>. Los cargos (dirección,
-jefaturas) se crean solos — no los incluya.</p>
+def screen_equipos():
+    """Step 8, «Cargar equipos y personas» (L3 S3) — the approved design's one screen. Sectores and
+    programas one per line, with the group code each derives under it (the server derives it:
+    «vista», the exact ids the site will carry), saved with a visible answer (R35: the same, a
+    conflict to resolve, or a replacement — never a silent 200). Then the planilla: the centre's own
+    template, the upload with every error at once, the valid groups by name when one is unknown
+    (R38), and the people it declares. A reload rebuilds the screen from GET /api/equipos."""
+    body = """<section class="tarjeta"><h2>Sectores y programas</h2>
+<p>Uno por línea. Debajo de cada lista, el código de grupo que usa la planilla.</p>
+<div class="dos">
+<div class="campo"><label for="e-sec">Sectores</label><textarea id="e-sec" class="control" rows="5" spellcheck="false"></textarea><div class="chips" id="e-sec-g"></div></div>
+<div class="campo"><label for="e-prog">Programas</label><textarea id="e-prog" class="control" rows="5" spellcheck="false"></textarea><div class="chips" id="e-prog-g"></div></div>
+</div>
+<div id="e-conf" aria-live="polite"></div>
+<div class="fila"><button type="button" id="e-guardar">Guardar equipos</button></div></section>
+<section class="tarjeta"><h2>Planilla de personas</h2>
+<p>CSV UTF-8 separado por «;», una fila por persona:
+<code>usuario;nombre;apellidos;correo;grupos;primer_admin</code>. Sin contraseñas;
+<b>primer_admin</b> = sí en una sola fila. Los cargos (dirección, jefaturas) se crean solos;
+«Todo el personal» y la categoría de cada cargo se agregan solos.</p>
+<p class="fila" id="e-plant-fila" hidden><a id="e-plant" href="/api/plantilla" download>Descargar plantilla</a>
+<span class="nota">Con los grupos de este centro.</span></p>
 <form id="f"><label for="archivo">Archivo CSV</label>
 <input type="file" id="archivo" accept=".csv,text/csv" required>
-<button type="submit" disabled>Cargar y validar la planilla</button></form>
-<div id="m"></div></div>
+<button type="submit" disabled>Cargar planilla</button></form>
+<div id="m" aria-live="polite">Cargando los equipos…</div>
+<details id="e-validos-box"><summary>Grupos válidos</summary><div id="e-validos" class="dos"></div></details>
+<div id="e-tabla"></div></section>
 <script>
-document.getElementById("archivo").addEventListener("change", (e) => {
-  zona("f").querySelector("button").disabled = !e.target.files.length;
-});
-document.getElementById("f").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const b = zona("f").querySelector("button"); b.disabled = true;
+(async () => {
   const codigo = await centro();
-  if (!codigo) { b.disabled = false; return; }
-  const {texto, aviso} = await leerPlanilla(zona("archivo").files[0]);
-  const r = await api("/api/usuarios", {codigo: codigo, csv: texto});
-  if (r.estado === 200) {
-    zona("m").innerHTML = (aviso ? '<div class="aviso">' + aviso + "</div>" : "") +
-      '<div class="ok">Planilla validada: ' + r.usuarios + " usuario(s), primera " +
-      "administración: <code>" + escapear(r.primer_admin) + "</code>. Contraseñas selladas en <code>" +
-      escapear(r.credenciales) + "</code>.</div>" +
-      '<p><button id="paso6">Continuar</button></p>';
-    // The handler is ATTACHED, never inlined: a quoted onclick inside a built string is the
-    // R2-caught syntax-error class.
-    document.getElementById("paso6").onclick = () =>
-      { location.href = "/revision"; };
-    return;
+  if (!codigo) return;
+  const lineas = (s) => s.split("\\n").map((x) => x.trim()).filter(Boolean);
+  const chip = (g) => '<span class="chip" translate="no">' + escapear(g) + "</span>";
+  const de = (lista, pre) => lista.filter(([g]) => g.startsWith(pre));
+  let estado = {}, reloj = null, serie = 0;
+  function pintarValidos() {
+    const eq = estado.equipos || [];
+    zona("e-validos").innerHTML = [["Sectores", de(eq, "sector-")], ["Programas", de(eq, "prog-")],
+      ["Cargos", estado.cargos || []]].map(([t, l]) => '<div><h3 class="ceja">' + t + '</h3><ul class="lista-ids">' +
+      (l.length ? l.map(([g, n]) => "<li>" + chip(g) + " " + escapear(n) + "</li>").join("") : "<li>—</li>") +
+      "</ul></div>").join("");
+    zona("e-plant-fila").hidden = !estado.guardados;
   }
-  b.disabled = false;
-  const errores = (r.errores || [{linea: "", error: r.error || "Error inesperado"}]);
-  zona("m").innerHTML = (aviso ? '<div class="aviso">' + aviso + "</div>" : "") +
-    '<div class="error">Corrija la planilla y vuelva a subirla:</div><table><tr><th>Línea</th><th>Error</th></tr>' +
-    errores.map(x => "<tr><td>" + escapear(x.linea) + "</td><td>" +
-      escapear(x.error) + "</td></tr>").join("") + "</table>";
-});
+  async function leer() {
+    estado = await api("/api/equipos");
+    if (estado.estado !== 200) {
+      zona("m").innerHTML = '<div class="error">' + escapear(estado.error) + "</div>"; return false;
+    }
+    pintarValidos(); return true;
+  }
+  function vista() {   // the ids the site will carry, derived by the server as it will write them
+    clearTimeout(reloj);
+    reloj = setTimeout(async () => {
+      const n = ++serie;
+      const r = await api("/api/sitio", {codigo, sectors: lineas(zona("e-sec").value),
+        programs: lineas(zona("e-prog").value), vista: true});
+      if (n !== serie) return;   // a later keystroke's answer wins
+      const eq = r.estado === 200 ? r.equipos : [];   // a refused list shows no ids
+      zona("e-sec-g").innerHTML = de(eq, "sector-").map(([g]) => chip(g)).join("");
+      zona("e-prog-g").innerHTML = de(eq, "prog-").map(([g]) => chip(g)).join("");
+    }, 250);
+  }
+  const guardadosTexto = () => '<div class="ok">Guardados: ' + de(estado.equipos || [], "sector-").length +
+    " sectores, " + de(estado.equipos || [], "prog-").length + " programas.</div>";
+  function llenar() {   // the lists say what the site holds
+    zona("e-sec").value = de(estado.equipos || [], "sector-").map(([, n]) => n).join("\\n");
+    zona("e-prog").value = de(estado.equipos || [], "prog-").map(([, n]) => n).join("\\n");
+    vista();
+  }
+  async function guardar(reemplazar) {
+    zona("e-guardar").disabled = true;
+    const r = await api("/api/sitio", {codigo, sectors: lineas(zona("e-sec").value),
+      programs: lineas(zona("e-prog").value), reemplazar: reemplazar === true});
+    zona("e-guardar").disabled = false;
+    if (r.estado === 200) {
+      if (!(await leer())) return;
+      zona("e-conf").innerHTML = guardadosTexto() + (r.reemplazados ? '<div class="aviso">Equipos ' +
+        "reemplazados." + (estado.planilla_cargada ? "" : " La planilla nombra equipos quitados: " +
+        "cárguela de nuevo.") + "</div>" : "");
+      if (r.reemplazados) pintarPlanilla();   // the old upload's table and «Siguiente» go
+      return;
+    }
+    if (r.estado === 409 && r.nuevos) {
+      zona("e-conf").innerHTML = '<div class="aviso"><strong>Distintos de los equipos guardados.</strong> ' +
+        (r.nuevos.length ? "Nuevos: " + r.nuevos.map(escapear).join(", ") + ". " : "") +
+        (r.quitados.length ? "Quitados: " + r.quitados.map(escapear).join(", ") + ". " : "") +
+        'Sin cambios hasta elegir.<div class="fila"><button type="button" id="e-reemp">Reemplazar</button>' +
+        '<button type="button" class="enlace-btn" id="e-cons">Conservar</button></div></div>';
+      zona("e-reemp").onclick = () => guardar(true);
+      zona("e-cons").onclick = () => { llenar(); zona("e-conf").innerHTML = guardadosTexto(); };
+      return;
+    }
+    zona("e-conf").innerHTML = '<div class="error">' + escapear(r.error) + "</div>";
+  }
+  function pintarPlanilla() {   // what the server says of the loaded planilla, after a load or a replace
+    zona("m").innerHTML = estado.planilla_cargada ?
+      '<div class="ok">Planilla cargada. Cárguela de nuevo para cambiarla.</div>' : "";
+    zona("e-tabla").innerHTML = "";
+    if (estado.planilla_cargada) siguiente();
+  }
+  function siguiente() {   // the handler is ATTACHED, never inlined (B-022)
+    zona("m").insertAdjacentHTML("beforeend",
+      '<p><button type="button" id="e-sig">Siguiente: revisar y ejecutar</button></p>');
+    zona("e-sig").onclick = () => { location.href = "/revision"; };
+  }
+  const editar = () => { zona("e-conf").innerHTML = ""; vista(); };   // an old answer no longer applies
+  zona("e-sec").addEventListener("input", editar);
+  zona("e-prog").addEventListener("input", editar);
+  zona("e-guardar").addEventListener("click", () => guardar(false));
+  zona("archivo").addEventListener("change", (e) => {
+    zona("f").querySelector("button").disabled = !e.target.files.length;
+  });
+  zona("f").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const b = zona("f").querySelector("button"); b.disabled = true;
+    const {texto, aviso} = await leerPlanilla(zona("archivo").files[0]);
+    const r = await api("/api/usuarios", {codigo, csv: texto});
+    b.disabled = false;
+    const av = aviso ? '<div class="aviso">' + aviso + "</div>" : "";
+    if (r.estado === 200) {
+      zona("m").innerHTML = av + '<div class="ok">Planilla válida: ' + r.usuarios +
+        " personas · administración: <code>" + escapear(r.primer_admin) + "</code>. Las contraseñas " +
+        "de primer ingreso quedan selladas y se entregan al final (paso 9).</div>";
+      zona("e-tabla").innerHTML = "<table><tr><th>Usuario</th><th>Nombre</th><th>Grupos</th><th>Primera adm.</th></tr>" +
+        r.filas.map(([u, n, g, p]) => "<tr><td>" + escapear(u) + "</td><td>" + escapear(n) + "</td><td>" +
+          g.map(chip).join(" ") + "</td><td>" + (p ? "sí" : "no") + "</td></tr>").join("") + "</table>";
+      zona("e-validos-box").open = false;   // the people, not the list, once it validates
+      siguiente();
+      return;
+    }
+    const errores = r.errores || [{linea: 0, error: r.error || "error inesperado"}];
+    zona("m").innerHTML = av + '<div class="error">Corrija la planilla y vuelva a cargarla:</div>' +
+      "<table><tr><th>Línea</th><th>Error</th></tr>" + errores.map((x) => "<tr><td>" + (x.linea || "—") +
+      "</td><td>" + escapear(x.error) + "</td></tr>").join("") + "</table>";
+    zona("e-tabla").innerHTML = "";
+    if (r.grupos_validos) zona("e-validos-box").open = true;
+  });
+  if (!(await leer())) return;
+  llenar();
+  pintarPlanilla();
+  if (estado.guardados) zona("e-conf").innerHTML = guardadosTexto();
+})();
 </script>"""
     return shell("equipos", body)
 
@@ -2147,9 +2211,7 @@ ROUTES = {
     "/bienvenida": screen_bienvenida,
     "/centro": screen_centro,
     "/contenedores": screen_contenedores,
-    "/sectores": screen_sectores,
-    "/componentes": screen_componentes,
-    "/planilla": screen_planilla,
+    "/equipos": screen_equipos,
     "/revision": screen_revision,
     "/divergencia": screen_divergencia,
 }
@@ -3773,9 +3835,7 @@ def selftest():
                 for path, marca in (("/bienvenida", "Sesión iniciada desde servidor-prueba"),
                                     ("/contenedores", "Contenedores del asistente"),
                                     ("/centro", "Confirmar centro"),
-                                    ("/sectores", "Sectores y programas"),
-                                    ("/componentes", "Componentes de la suite"),
-                                    ("/planilla", "columnas"),
+                                    ("/equipos", "Planilla de personas"),
                                     ("/revision", "Revise el plan"),
                                     ("/divergencia", "Divergencia")):
                     st, text, hdr, setc = b.req("GET", path)
@@ -3859,13 +3919,12 @@ def selftest():
                 b.cookie = f"{TOKEN_COOKIE}={TOKEN}"
 
 
-                st, compo, hdr, setc = b.req("GET", "/componentes")
-                check("componentes: the ALL-ON cards render from the live tree — phases and apps",
-                      st == 200 and "12-apps.sh" in compo and "20-groups.sh" in compo
-                      and "50-users.sh" in compo and "Se ejecuta" in compo
-                      and "eurooffice" in compo and "calendar" in compo)
+                gone = [b.req("GET", r)[0] for r in ("/sectores", "/componentes", "/planilla")]
+                st, equipos_html, hdr, setc = b.req("GET", "/contenedores")
+                check("screens: step 8 is one screen — the three old routes are gone, the suite hands off to /equipos (a16)",
+                      gone == [404, 404, 404] and "location.href='/equipos'" in equipos_html)
 
-                st, plan, hdr, setc = b.req("GET", "/planilla")
+                st, plan, hdr, setc = b.req("GET", "/equipos")
                 check("planilla: the browser decode-or-warn rides the screen (bytes, utf-8 fatal, cp1252)",
                       st == 200 and "arrayBuffer" in plan
                       and 'TextDecoder("utf-8", {fatal: true})' in plan
@@ -3882,7 +3941,7 @@ def selftest():
                 check("screens: no literal provisionador address or port — relative links only, no token",
                       "http://127.0.0.1" not in plan and ":8081" not in plan
                       and ":8082" not in plan and ":8083" not in plan and TOKEN not in plan
-                      and 'document.getElementById("paso6").onclick' in plan)
+                      and 'zona("e-sig").onclick' in plan)
 
                 lleva = [r for r in ROUTES if re.search(r"\?codigo=|URLSearchParams\(location\.search\)|'\s*\+\s*location\.search",
                                                         b.req("GET", r)[1])]
@@ -3989,6 +4048,7 @@ def selftest():
                               and galleta.get("httpOnly") is True and not errores)
                         cargando = {"/contenedores": "Consultando el estado",
                                     "/centro": "Cargando el registro",
+                                    "/equipos": "Cargando los equipos",
                                     "/revision": "Preparando la revisión",   # the centre from the server, then the plan
                                     "/divergencia": "Cargando el resultado"}
                         corrio = True
@@ -4000,7 +4060,7 @@ def selftest():
                             except Exception as e:   # a Playwright timeout: the arm reports it
                                 corrio = False
                                 errores.append(f"{ruta}: {e}")
-                        for ruta in ("/bienvenida", "/sectores", "/componentes", "/planilla"):
+                        for ruta in ("/bienvenida",):
                             pg.goto(f"https://127.0.0.1:{tport}{ruta}")
                         check("browser: every page runs its script on load — the loading texts are replaced, no script or console error (R34)",
                               corrio and not errores)
@@ -4062,6 +4122,77 @@ def selftest():
                             errores.append(str(e))
                         check("browser: a fixed centre locks the filters and the combobox; «Confirmar centro» just continues (D13)",
                               fijo and not errores)
+                        # step 8 in a real browser on a fresh tree (a15): the ids under each list, a
+                        # save, a different save is a conflict, «Reemplazar»; the centre's template
+                        # downloaded and uploaded back; an unknown group opens «Grupos válidos». The
+                        # 409 and 400 it provokes on purpose are the browser's own console lines.
+                        real_here, real_cred, previos = deis.HERE, CRED_PATH, len(errores)
+                        previo_centro = CENTRO
+                        with tempfile.TemporaryDirectory() as eqb:
+                            deis.HERE = os.path.join(eqb, "scripts")
+                            os.makedirs(deis.HERE)
+                            CRED_PATH = os.path.join(eqb, "credenciales.txt")
+                            CENTRO = "121567"
+                            try:
+                                pg.goto(f"https://127.0.0.1:{tport}/equipos")
+                                pg.wait_for_function("() => !document.body.innerText.includes('Cargando los equipos')",
+                                                     timeout=10000)
+                                oculto = pg.is_hidden("#e-plant")   # no template before the teams
+                                pg.fill("#e-sec", "Norte\nSector Sur")
+                                pg.fill("#e-prog", "Cardiovascular")
+                                pg.wait_for_selector("#e-sec-g .chip >> text=sector-sur", timeout=10000)
+                                chips = pg.inner_text("#e-sec-g") + " " + pg.inner_text("#e-prog-g")
+                                pg.click("#e-guardar")
+                                pg.wait_for_selector("#e-conf .ok", timeout=10000)
+                                pg.fill("#e-sec", "Norte\nOriente")
+                                pg.click("#e-guardar")
+                                pg.wait_for_selector("#e-reemp", timeout=10000)
+                                conflicto = pg.inner_text("#e-conf")
+                                pg.click("#e-reemp")
+                                pg.wait_for_selector("#e-conf .ok", timeout=10000)
+                                with pg.expect_download() as bajada:
+                                    pg.click("#e-plant")
+                                plantilla_csv = bajada.value.path()
+                                pg.set_input_files("#archivo", plantilla_csv)
+                                pg.click("#f button")
+                                pg.wait_for_selector("#e-sig", timeout=10000)
+                                tabla, sellado = pg.inner_text("#e-tabla"), pg.inner_text("#m")
+                                mala = os.path.join(eqb, "mala.csv")
+                                with open(mala, "w", encoding="utf-8") as fh:
+                                    fh.write("usuario;nombre;apellidos;correo;grupos;primer_admin\n"
+                                             "luz.1;Luz;Uno;;sector-inexistente;sí\n")
+                                pg.set_input_files("#archivo", mala)
+                                pg.click("#f button")
+                                pg.wait_for_selector("#m .error", timeout=10000)
+                                abiertos = pg.eval_on_selector("#e-validos-box", "d => d.open")
+                                validos = pg.inner_text("#e-validos")
+                                pg.set_input_files("#archivo", plantilla_csv)
+                                pg.click("#f button")
+                                pg.wait_for_selector("#e-sig", timeout=10000)
+                                pg.click("#e-sig")
+                                pg.wait_for_url("**/revision", timeout=10000)
+                                paso8 = (oculto and "sector-norte" in chips and "sector-sur" in chips
+                                         and "prog-cardiovascular" in chips
+                                         and "Nuevos: Sector Oriente" in conflicto
+                                         and "Quitados: Sector Sur" in conflicto
+                                         and "ana.rojas" in tabla and "pedro.munoz" in tabla
+                                         and "quedan selladas y se entregan al final" in sellado
+                                         and "/" not in sellado
+                                         and abiertos and "sector-oriente" in validos and "role-medico" in validos)
+                            except Exception as e:   # a Playwright timeout: the arm reports it
+                                paso8 = False
+                                errores.append(str(e))
+                            finally:
+                                deis.HERE, CRED_PATH, CENTRO = real_here, real_cred, previo_centro
+                        provocados = [x for x in errores[previos:] if re.search(r"status of (409|400)", x)]
+                        propios = [x for x in errores[previos:] if x not in provocados]
+                        del errores[previos:]
+                        errores.extend(propios)
+                        # exactly the two it provokes: the conflict (409) and the unknown group (400)
+                        paso8 = paso8 and sorted(re.search(r"status of (\d+)", x).group(1)
+                                                 for x in provocados) == ["400", "409"]
+                        check("browser: step 8 — ids under each list, save, a different save is a conflict, «Reemplazar»; the centre's template uploads back clean; an unknown group opens «Grupos válidos» (R35, R38, a15)",
+                              paso8 and not errores)
                         limpio = nav.new_context(ignore_https_errors=True).new_page()
                         limpio.goto(f"https://127.0.0.1:{tport}/")
                         en_login = limpio.url.endswith("/login") and "Código de acceso" in limpio.content()
