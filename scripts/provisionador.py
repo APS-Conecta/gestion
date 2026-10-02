@@ -34,6 +34,7 @@ and the server log — the Authorization header (and, from slice 17, the login c
 carrier.
 """
 import csv
+import errno
 import hmac
 import io
 import json
@@ -1599,7 +1600,7 @@ def run_step(argv):
     while i < len(argv):
         arg = argv[i]
         if arg in ("--paso", "--codigo", "--planilla"):
-            if i + 1 >= len(argv):
+            if i + 1 >= len(argv) or argv[i + 1].startswith("--"):
                 print(f"✗ falta el valor de {arg}")
                 return 2
             opts[arg] = argv[i + 1]
@@ -1624,11 +1625,15 @@ def run_step(argv):
         print(f"✗ {' '.join(sorted(extra))} no aplica a --paso {step}")
         return 2
 
+    def why(e):  # the OS's own text is English: the common cases in Spanish, else the errno name
+        return {errno.ENOENT: "no existe", errno.EACCES: "sin permiso", errno.EISDIR: "es un directorio",
+                errno.ENOSPC: "disco lleno"}.get(e.errno, errno.errorcode.get(e.errno, "error de archivo"))
+
     def call(fn, payload):  # a file error is a Spanish ✗ line, not a traceback in the journal
         try:
             return fn(payload)
         except OSError as e:
-            return 500, {"error": f"no se pudo acceder a {e.filename or 'un archivo'} ({e.strerror})"}
+            return 500, {"error": f"no se pudo acceder a {e.filename or 'un archivo'} ({why(e)})"}
         except UnicodeDecodeError:
             return 500, {"error": "un archivo del establecimiento o el .env no está en UTF-8"}
 
@@ -1648,7 +1653,7 @@ def run_step(argv):
             with open(path, encoding="utf-8") as fh:
                 text = fh.read()
         except OSError as e:
-            print(f"✗ no se pudo leer la planilla {path}: {e.strerror}")
+            print(f"✗ no se pudo leer la planilla {path}: {why(e)}")
             return 1
         except UnicodeDecodeError:
             print(f"✗ la planilla {path} no está en UTF-8")
@@ -2236,12 +2241,13 @@ def selftest():
             check("--paso usuarios: a broken planilla reds with its line errors, exit 1",
                   rc == 1 and "✗ línea 1:" in out)
             rc, out = stepped(["--paso", "usuarios", "--codigo", "113314", "--planilla", broken + ".nada"])
-            check("--paso usuarios: an unreadable planilla names its path, exit 1",
-                  rc == 1 and "✗ no se pudo leer la planilla" in out)
+            check("--paso usuarios: an unreadable planilla names its path and why, in Spanish, exit 1",
+                  rc == 1 and "✗ no se pudo leer la planilla" in out and out.rstrip().endswith(": no existe"))
             rcs = [stepped(a)[0] for a in (["--paso"], ["--paso", "nada", "--codigo", "113314"],
-                                           ["--otra"], ["--paso", "usuarios", "--codigo", "113314"])]
-            check("--paso: a missing value, an unknown step, an unknown option, no planilla — exit 2",
-                  rcs == [2, 2, 2, 2])
+                                           ["--otra"], ["--paso", "usuarios", "--codigo", "113314"],
+                                           ["--paso", "generar", "--codigo", "--revision"])]
+            check("--paso: a missing value, an unknown step, an unknown option, no planilla, a flag as a value — exit 2",
+                  rcs == [2, 2, 2, 2, 2])
             latin = os.path.join(tempfile.mkdtemp(), "latin.csv")
             open(latin, "wb").write("usuario;nombre\nñandú;a\n".encode("latin-1"))
             rc, out = stepped(["--paso", "usuarios", "--codigo", "113314", "--planilla", latin])
@@ -2276,7 +2282,7 @@ def selftest():
                 raise PermissionError(13, "Permission denied", "/srv/x/.env")
             rc, out = stubbed(denied, ejecutar)
             check("--paso generar: an unreadable file is a Spanish ✗ line and exit 1, not a traceback",
-                  rc == 1 and "✗ no se pudo acceder a /srv/x/.env" in out)
+                  rc == 1 and "✗ no se pudo acceder a /srv/x/.env (sin permiso)" in out)
             ran = []
             usage = [stubbed(lambda p: ran.append(p) or (200, {}), a) for a in (
                 ["--paso", "generar"], ejecutar + ["--planilla", planilla],
