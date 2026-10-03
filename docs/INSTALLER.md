@@ -1,4 +1,4 @@
-# INSTALLER — standing up a clinic (APS Conecta AIO)
+# INSTALLER — standing up a clinic (APS Conecta Gestión AIO)
 
 The runbook for the person standing a clinic up: from a bare Ubuntu/Debian host to a
 provisioned establishment with sealed credentials and a backup taken. The Spanish walkthrough
@@ -61,16 +61,18 @@ image (D4), so boot-time installs would be noise. If preflight reds on the domai
 
 ## 4. The wizard (:8080)
 
-1. Paste the run command. The wizard comes up branded, in Spanish (es-CL formal).
+1. Paste the run command. The wizard, «APS Conecta Gestión AIO», comes up in Spanish (es-CL formal).
 2. The web installer's step 7 fills it: `aps-conecta asistente-aio --preparar` starts the
    mastercontainer, captures the initial password (`GET /setup` shows it once; the installer keeps
    it in `/opt/aps-conecta/aio/master.pw`, 0600, and shows it on step 7), and posts the domain, the
-   timezone, the options (Euro-Office by default; Talk and its recording as the server's memory and
-   cores allow, port 3478 free) and the daily backup.
-3. Log in to the wizard with that password and press Start. Step 7 follows the containers until
-   Nextcloud is installed. The app store is hidden (store off, 020) and the Collabora/OnlyOffice
-   cards do not exist (050). The daily-backup screen's automatic-update box ships **unchecked**
-   (040) — leave it: the suite updates as one set.
+   timezone, the options (Euro-Office, the suite's only office; Talk and its recording as the
+   server's memory and cores allow, port 3478 free; Whiteboard and Imaginary off) and the daily
+   backup (§11).
+3. Log in to the wizard with that password and press Start, leaving the options as step 7 set them:
+   the installer's review lists Talk from step 7's choice. Step 7 follows the containers until
+   Nextcloud is installed. The wizard has no app store, no community containers and no other
+   office: a request to switch or disable the office is refused. The daily-backup screen's
+   automatic-update box ships **unchecked** — leave it: the suite updates as one set.
 
 ## 5. Provision
 
@@ -179,8 +181,9 @@ sudo aps-conecta tiles install --url https://tiles.<dominio>/chile.pmtiles
 - **Attribution**: the basemap is an Open Database License (ODbL) Produced Work built from
   OpenStreetMap data. The map must keep showing **© OpenStreetMap contributors** — territorio's
   own `tile_attribution` default does this; do not remove it.
-- Until territorio ships («pendiente de empaquetado»), `aps-conecta datos` answers the pending
-  posture and downloads nothing; the basemap is already serving and refreshing on its own.
+- **Territorio's data packages**: `aps-conecta datos` fetches the comuna's packages
+  (sha256-verified), stages them and prints the import commands. Before the first provisioning
+  installs territorio it downloads nothing.
 
 ## 10. Updates
 
@@ -203,13 +206,17 @@ not patched; the wait ends when the probe times out or the network returns).
 
 ## 11. Backups
 
-The wizard's own borg backup is the instance backup. Step 7 sets it daily at 04:00 in
-`/srv/aps-conecta/respaldos`, with `/opt/aps-conecta` (the credentials and the site record) in its
+The wizard's own borg backup is the instance backup. Step 7 sets it daily at 04:00 Santiago time
+in `/srv/aps-conecta/respaldos`, with `/opt/aps-conecta` (the credentials and the site record) in its
 scope — the same folder on the same disk, so copy it off the server (an external disk, another
 machine). `aps-conecta respaldo` adds `/opt/aps-conecta` to an existing backup — idempotent, and it
 prints the **honest cost every time**: additional directories back up but never restore with the
 instance. `/opt/aps-conecta`'s restore is a manual `borg extract` (the recipe: upstream's
 [backup docs](https://github.com/nextcloud/all-in-one#pro-tip-backup-archives-access)).
+
+The wizard runs in UTC, so step 7 posts the UTC hour — 07:00 in summer time, 08:00 in winter —
+and the wizard shows that hour. After the next DST change the backup runs at 03:00 or 05:00
+Santiago time. To move it, the wizard's backup section takes a new time, in UTC.
 
 ## 12. Troubleshooting
 
@@ -219,9 +226,29 @@ instance. `/opt/aps-conecta`'s restore is a manual `borg extract` (the recipe: u
 - **A remote user cannot open a document** while everything looks green: that is B-019's class
   — check `DocumentServerUrl` is the public form and open one from another machine yourself
   (the gate cannot do that leg for you).
+- **Reinstall from scratch** (a failed install, or a wizard password that was not seen). It deletes
+  the instance — every `nextcloud-aio-*` container and `nextcloud_aio_*` volume on the host — and
+  everything in it: users, files, settings. Stop the containers in the wizard, then:
+
+  ```bash
+  sudo docker stop nextcloud-aio-mastercontainer
+  sudo docker ps -a --format '{{.Names}}' | grep '^nextcloud-aio-' | xargs -r sudo docker rm -f
+  sudo docker network rm nextcloud-aio
+  sudo docker volume ls --format '{{.Name}}' | grep '^nextcloud_aio_' | xargs -r sudo docker volume rm
+  sudo rm -rf /opt/aps-conecta/aio
+  [ ! -d /srv/aps-conecta/respaldos ] || sudo mv /srv/aps-conecta/respaldos "/srv/aps-conecta/respaldos.$(date +%F)"
+  ```
+
+  The old backups stay in the renamed folder (step 7's; move a folder named by hand the same way): a
+  new wizard cannot reuse their repository. The rest
+  of `/opt/aps-conecta` (the site record, `credentials.txt`) stays. Then `sudo aps-conecta abrir`:
+  step 7 prepares a new wizard.
 
 ## 13. Migrating an existing (compose) clinic
 
 [`MIGRATION.md`](MIGRATION.md) §2½ — the tool for any clinic: `migrate-to-aio.sh prepare` /
 `verify`, the rehearsal window (run the whole flow against a throwaway first), and the
 rollback story. Do not skip the rehearsal.
+
+A backup made by a stock Nextcloud AIO is not restored into the suite: an existing clinic moves only
+through this tool.

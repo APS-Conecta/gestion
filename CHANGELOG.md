@@ -176,11 +176,32 @@ image digests live there and are deliberately not copied here — one fact, one 
   supersedes ADR-0015's import-once. Existing site files need the `SITE_WELCOME` block by hand
   ([docs/WELCOME-SCREEN.md](docs/WELCOME-SCREEN.md) § Declaring the tree). Needs an IntraVox
   engine with `occ intravox:import --skip-existing`.
+- **Talk follows the suite's option** — under AIO, phase 12 installs spreed only when the suite
+  runs Talk (`TALK_ENABLED`, the switch the AIO entrypoint reads), and «Revisar y ejecutar» lists
+  Talk only when step 7 gave it to the suite. The fork starts Talk off; with Talk off the entrypoint
+  removes spreed on every boot, which the seed used to re-install. Compose keeps Talk.
+- **The password breach check is off** — phase 16 sets `password_policy` `enforceHaveIBeenPwned`
+  to `0`: Nextcloud no longer sends each new password's SHA-1 prefix to api.pwnedpasswords.com.
+  Smoke asserts it with the other policy switches.
+- **The install docs describe the suite the wizard now is** — «APS Conecta Gestión AIO»; Euro-Office
+  the only office; no community containers; Talk, Whiteboard and Imaginary off until step 7; no
+  territorio card. `docs/INSTALLER.md` §12 has the reinstall-from-scratch recipe the wizard's reset
+  links open, and §13 says a stock Nextcloud AIO backup is not restored into the suite.
+  `aps-conecta datos` says territorio is not installed yet, not «pendiente de empaquetado».
+  `make test` checks that the six doc anchors the wizard links still resolve.
 
 ### Removed
 
 - **`scripts/final-validation.sh`** — the whole-installer harness kept a second copy of the wizard
   drive; the release rehearsal installs a fresh box the way a clinic does (`docs/INSTALLER.md` §10).
+
+### Fixed
+
+- **The daily backup runs at 04:00 Santiago time** (B-035) — the AIO mastercontainer runs in UTC,
+  so the «04:00» step 7 posted ran at 00:00 or 01:00. Step 7 now posts the UTC hour that is 04:00
+  in Santiago; on a host without tzdata it stops before any post and the installer's page names the
+  cause. `docs/INSTALLER.md` §11 states the hour drift across a DST change.
+
 ## [0.3.0] — 2026-09-22
 
 ### Added

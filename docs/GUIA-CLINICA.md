@@ -1,4 +1,4 @@
-# GUÍA CLÍNICA — Instalar y operar la suite APS Conecta AIO
+# GUÍA CLÍNICA — Instalar y operar la suite APS Conecta Gestión AIO
 
 Esta guía es para la persona de informática del establecimiento: instalar la suite, entregar
 las credenciales, actualizarla y cuidarla. El detalle técnico de cada comando está en
@@ -38,10 +38,15 @@ El asistente está en español. Lo importante:
 - El **dominio** debe apuntar al servidor y el servidor debe poder alcanzarse a sí mismo por
   ese dominio (la prueba «hairpin»; `INSTALLER.md` §7 trae los arreglos de DNS si preflight
   la marca en rojo).
-- **Euro-Office queda por defecto** — no lo cambie. La tienda de aplicaciones está oculta:
-  las apps de la suite vienen incorporadas y el conjunto se actualiza junto, nunca por partes.
-- La tarjeta de territorio dice «pendiente de empaquetado»: el mapa ya funciona (§8); esa
-  tarjeta es la aplicación territorio, que llega más adelante.
+- **La oficina es Euro-Office**, la única de la suite: el asistente no ofrece cambiarla ni
+  desactivarla. No hay tienda de aplicaciones ni contenedores comunitarios: las apps de la suite
+  vienen incorporadas y el conjunto se actualiza junto, nunca por partes.
+- Talk, Whiteboard e Imaginary parten apagados; el paso 7 activa Talk (y su grabación) si caben
+  en el servidor.
+- Tras «Iniciar», la tarjeta «Suite en marcha» remite a la pestaña del instalador web
+  (`sudo aps-conecta abrir` si se cerró).
+- **Reinstalar desde cero** (una instalación fallida, o una frase del asistente que no se vio):
+  `INSTALLER.md` §12. Borra la instancia y todo su contenido.
 
 ## 4. El instalador web: el enlace y el flujo
 
@@ -68,9 +73,11 @@ Después de la bienvenida, el navegador recorre los pasos 6 a 9 de la instalaci�
 2. **Iniciar la suite** — las cinco aplicaciones APS con su versión (se activan al ejecutar), y si
    Talk y su grabación caben en este servidor, con el motivo. «Preparar el asistente» deja el
    asistente listo con el dominio del servidor, la hora de Santiago, Euro-Office, Talk según quepa y
-   el respaldo diario a las 04:00. Marque «Omitir la validación del dominio» si el servidor no tiene
+   el respaldo diario a las 04:00 hora de Santiago (el asistente la muestra en UTC: 07:00 en horario
+   de verano, 08:00 en invierno; tras el cambio de hora corre a las 03:00 o a las 05:00). Marque «Omitir la validación del dominio» si el servidor no tiene
    acceso desde Internet. La pantalla muestra la frase de contraseña del asistente; ábralo con
-   «Abrir el asistente e iniciar», ingrese con esa frase y pulse «Iniciar». El avance de cada
+   «Abrir el asistente e iniciar», ingrese con esa frase y pulse «Iniciar» sin cambiar las opciones (la
+   revisión lista Talk según este paso). El avance de cada
    contenedor se ve aquí; con la suite instalada aparece «Siguiente».
 3. **Cargar equipos y personas** — en una sola pantalla:
    - los sectores y programas del establecimiento, uno por línea (nadie los conoce fuera del
@@ -152,13 +159,11 @@ archivo en caché que PHP fija y el fork no toca.
 
 El fondo de mapa ya se sirve solo — no hay que hacer nada para tenerlo: se instaló con la
 suite, vive en el servidor y **se refresca solo cada mes** (el temporizador del día 4, que activa `sudo aps-conecta
-temporizadores`). Lo que
-ve en territorio hasta que esa aplicación se empaquete:
+temporizadores`).
 
-- **La tarjeta «pendiente de empaquetado»** — la aplicación territorio completa (capas
-  comunales, paquetes de datos) llega en una versión posterior; `aps-conecta datos` responde
-  con esa misma postura y **no descarga nada** mientras tanto.
-- El fondo de mapa (Chile completo) ya funciona en las apps que lo usan.
+- **Territorio** se instala con la suite, en «Revisar y ejecutar».
+- **Sus capas comunales**: `aps-conecta datos` trae y verifica los paquetes de la comuna e imprime
+  cómo importarlos. Antes de la primera provisión no descarga nada.
 
 Si el mapa no carga desde otros equipos: la dirección pública del fondo debe ser **https**
 (la página del mapa es https y el navegador bloquea fondos http sin importar la
@@ -179,6 +184,8 @@ lado clínico:
   verificación automática puede hacer por usted: si un documento abre bien desde otra máquina,
   la oficina quedó bien migrada; si no, es el síntoma conocido (B-019) con su diagnóstico en el
   manual.
+- Un respaldo de un Nextcloud AIO estándar no se restaura en la suite: la única mudanza es la de
+  esta herramienta.
 
 ## 10. Las revisiones manuales (después de instalar y de cada actualización mayor)
 
@@ -191,7 +198,7 @@ Ocho verificaciones que no tienen automatización — cinco minutos, con ojo:
    en blanco.
 4. **Apps opcionales**: activar/desactivar una opcional desde el asistente y ver que el
    conjunto queda consistente.
-5. **Contenedores comunitarios**: la sección existe, se expande y no rompe la página.
+5. **Oficina**: la tarjeta «Oficina» muestra Euro-Office y no ofrece cambiarla ni desactivarla.
 6. **Variables de entorno**: cambiar una variable visible en el asistente y verla reflejada.
 7. **Zona horaria**: cambiar la zona horaria desde el asistente y verificar la hora de los
    respaldos.

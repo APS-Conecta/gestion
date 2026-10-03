@@ -593,7 +593,7 @@ It is governed by foundational design rules:
 - **Purpose:** Restricts interface clutter and enforces app access boundaries defined in `provisioning/app-policy.sh`.
 - **Policy Directives:**
   - **`POLICY_ADMIN_ONLY`:** Restricted to administrators: `support`, `updatenotification`, `serverinfo`, `recommendations`, `related_resources`, `weather_status`.
-  - **`POLICY_CONFIG`:** Disables onboarding tours: `firstrunwizard:wizard_enabled:false`, and terminates telemetry: `survey_client:never_again:true`.
+  - **`POLICY_CONFIG`:** Disables onboarding tours: `firstrunwizard:wizard_enabled:false`, terminates telemetry: `survey_client:never_again:true`, and turns off the password breach check: `password_policy:enforceHaveIBeenPwned:0` (no password hash prefix reaches api.pwnedpasswords.com).
   - **`POLICY_DISABLED`:** Disabled outright: `survey_client`, `nextcloud_announcements`.
   - **Geospatial Tile Binding:** Binds `territorio` to the local PMTiles basemap endpoint:
     ```bash

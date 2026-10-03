@@ -15,7 +15,7 @@ land.
 - **Is:** staff-facing internal operations (documents, coordination) on **Nextcloud 34 + PostgreSQL 18 +
   Redis 8**, with a self-hosted **Euro-Office** office suite and **Talk** for staff chat and calls.
   Two ways to run it: a developer's machine via Docker Compose (this README's Quickstart), or a
-  clinic via **APS Conecta AIO** — the all-in-one installer this repo's provisioning drives
+  clinic via **APS Conecta Gestión AIO** — the all-in-one installer this repo's provisioning drives
   ([`docs/INSTALLER.md`](docs/INSTALLER.md) is that runbook; the same provisioning phases serve both).
 - **Isn't:** a clinical/patient-records system. **No patient data** — dev uses **synthetic fixtures only**.
 
@@ -113,7 +113,7 @@ To stop: `make down` (keeps your data volumes). That's the whole loop.
 
 ## Running a clinic — the installer (AIO)
 
-A clinic does not run the dev stack. It runs **APS Conecta AIO**: one `docker run` from the
+A clinic does not run the dev stack. It runs **APS Conecta Gestión AIO**: one `docker run` from the
 published suite tag, the branded es-CL wizard, and this repo's `aps-conecta` host bundle driving
 the same provisioning phases over `docker exec`. The whole path — preflight, wizard,
 Provisionador, timers, backups, the map — is [`docs/INSTALLER.md`](docs/INSTALLER.md) (English

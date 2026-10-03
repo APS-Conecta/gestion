@@ -39,7 +39,11 @@ POLICY_ADMIN_ONLY="support updatenotification serverinfo recommendations related
 #     anywhere: TelemetryService::isEnabled() defaults ON and compares === 'true', so the literal
 #     'false' is the pin (exact string, repository constant — never a per-site lever).
 #     license_key needs no lever: absence IS the free tier, and it is never written.
-POLICY_CONFIG="firstrunwizard:wizard_enabled:false survey_client:never_again:true intravox:telemetry_enabled:false"
+#   password_policy:enforceHaveIBeenPwned:0 — the breach check is on by default and sends the first
+#     five hex digits of each new password's SHA-1 to api.pwnedpasswords.com (HIBPValidator). A
+#     clinic's passwords never leave the server, not even as a prefix. `0` is what a typed boolean
+#     stores, so a save from the admin page leaves the next seed with nothing to write.
+POLICY_CONFIG="firstrunwizard:wizard_enabled:false survey_client:never_again:true intravox:telemetry_enabled:false password_policy:enforceHaveIBeenPwned:0"
 
 # Disabled, because restriction cannot work for either.
 #   survey_client            — sends usage data TO Nextcloud. Restriction would be theatre:
