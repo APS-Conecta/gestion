@@ -117,7 +117,7 @@ pre code { background: transparent !important; color: inherit !important; border
 ### 1.3 Cross-Repository Authority Drift (`ORG-MAP.md`)
 - **False Premise: "gestion is the home of every org-wide fact"**: Disproved by ADR-0011 and ADR-0012. Generic contributing, security, and licensing files live in `.github`, documentation conventions live in `repo-docs`, and brand tokens live in `aps-conecta-web`.
 - **False Premise: "aps-conecta-web is the home of the brand shared by every product"**: Disproved by ADR-0006 (2026-08-05). There is no single shared brand package. Identity exists as per-product variants. `gestion` maintains its own server theme for Nextcloud chrome. However, `aps-conecta-web/CONTEXT.md` still asserts the superseded premise.
-- **`Databases` Repository Ageing Probe Failure**: The health gate for the `Databases` catalog (which tracks Chilean health sector APIs and laws) requires probes to be refreshed periodically. The last probe is older than the maximum threshold; the CI gate is permanently red as of 2026-09-10.
+- **`Databases` Repository Ageing Probe Failure** — RESOLVED 2026-10-03, the repository was deleted: The health gate for the `Databases` catalog (which tracks Chilean health sector APIs and laws) requires probes to be refreshed periodically. The last probe is older than the maximum threshold; the CI gate is permanently red as of 2026-09-10.
 
 ### 1.4 Retired Libraries Surviving in Machine Registries — RESOLVED 2026-09-25
 - **Retired `common` Library**: A shared PHP library named `common` was retired and deleted from the GitHub organization before acquiring a consumer.
