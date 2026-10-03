@@ -225,17 +225,19 @@ jobs:
           if systemctl is-enabled aps-conecta-tiles.timer >/dev/null 2>&1; then
             echo "FAIL: the monthly basemap timer is enabled with no map built" >&2; exit 1
           fi
-      # R26's thresholds: the suite's measured memory on the real run, a table and its total in the summary
+      # R26's thresholds: the suite's measured memory on the real run, a table and its total in the
+      # summary — one snapshot of the suite's own containers; a diagnostic, so it never reddens the run
       - name: Suite memory (the Talk thresholds, R26)
+        continue-on-error: true
         run: |
           set -o pipefail
+          docker ps --filter name=nextcloud-aio- --format '{{.Names}}' \
+            | xargs -r docker stats --no-stream --format '{{.Name}}|{{.MemUsage}}' | sort > "$RUNNER_TEMP/memoria.txt"
           { echo '| contenedor | memoria |'; echo '| --- | --- |'
-            docker stats --no-stream --format '{{.Name}}|{{.MemUsage}}' | sort \
-              | awk -F'|' '{ split($2, m, " / "); print "| " $1 " | " m[1] " |" }'
-            docker stats --no-stream --format '{{.MemUsage}}' | awk '
-              { v = $1; u = v; gsub(/[0-9.]/, "", u); sub(/[A-Za-z]+$/, "", v)
-                s += v * (u == "GiB" ? 1024 : u == "MiB" ? 1 : u == "KiB" ? 1 / 1024 : 1 / 1048576) }
-              END { printf "| **total** | %.0f MiB |\n", s }'
+            awk -F'|' '{ split($2, m, " / "); v = m[1]; u = v; gsub(/[0-9.]/, "", u); sub(/[A-Za-z]+$/, "", v)
+                         s += v * (u == "GiB" ? 1024 : u == "MiB" ? 1 : u == "KiB" ? 1 / 1024 : 1 / 1048576)
+                         print "| " $1 " | " m[1] " |" }
+                       END { printf "| **total** | %.0f MiB |\n", s }' "$RUNNER_TEMP/memoria.txt"
           } | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Hand the checkout back to the runner
         if: always()
