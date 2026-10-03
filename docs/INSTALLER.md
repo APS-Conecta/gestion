@@ -229,13 +229,16 @@ Santiago time. To move it, the wizard's backup section takes a new time, in UTC.
   — check `DocumentServerUrl` is the public form and open one from another machine yourself
   (the gate cannot do that leg for you).
 - **Reinstall from scratch** (a failed install, or a wizard password that was not seen). It deletes
-  the instance — every container the wizard created, under either generation's names (they carry
-  the label `com.docker.compose.project=nextcloud-aio`), and every `nextcloud_aio_*` volume on the
-  host — and everything in it: users, files, settings. Stop the containers in the wizard, then:
+  the instance — the wizard and every container it created, under either generation's names
+  (upstream's up to v0.3.0, `aps-conecta-…` since), all carrying the label
+  `com.docker.compose.project=nextcloud-aio`, and every `nextcloud_aio_*` volume on the host — and
+  everything in it: users, files, settings. The label and the name together keep any other project
+  on the host out. Stop the containers in the wizard, then:
 
   ```bash
   sudo docker stop nextcloud-aio-mastercontainer
-  sudo docker ps -aq --filter label=com.docker.compose.project=nextcloud-aio | xargs -r sudo docker rm -f
+  sudo docker ps -a --filter label=com.docker.compose.project=nextcloud-aio --format '{{.Names}}' \
+    | grep -E '^(nextcloud-aio|aps-conecta)-' | xargs -r sudo docker rm -f
   sudo docker network rm nextcloud-aio
   sudo docker volume ls --format '{{.Name}}' | grep '^nextcloud_aio_' | xargs -r sudo docker volume rm
   sudo rm -rf /opt/aps-conecta/aio

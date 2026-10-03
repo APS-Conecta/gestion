@@ -962,11 +962,11 @@ print("ok")'
 # The fork renames its 19 sibling containers; the mastercontainer, the nextcloud-aio network and
 # compose project and the nextcloud_aio_* volumes keep upstream's names. A sibling spelled the old way
 # anywhere gestion talks to the suite misses it without a word: a `docker ps` filter that matches
-# nothing reads as «not running», a prefix filter sees only the wizard. So no name and no prefix with
-# the old hyphen survives but the mastercontainer's. git grep exits 1 on no match and 128 on error, so
-# only a real search passes; [-] keeps this line from matching itself. CHANGELOG and BUGS are history;
-# the vendored tarballs are not text.
-check bash -c 'out="$(git grep -nE "nextcloud-aio[-]" -- . ":!CHANGELOG.md" ":!BUGS.md" ":!provisioning/apps")"; rc=$?; [ "$rc" -le 1 ] && ! printf "%s\n" "$out" | sed "s/nextcloud-aio-mastercontainer//g" | grep -E "nextcloud-aio[-]"'
+# nothing reads as «not running», a prefix filter sees only the wizard. So no name, no prefix with the
+# old hyphen and no glob of the old prefix survives but the mastercontainer's. git grep exits 1 on no
+# match and 128 on error, so only a real search passes; [-*] keeps this line from matching itself.
+# CHANGELOG and BUGS are history; the vendored tarballs are not text.
+check bash -c 'out="$(git grep -nE "nextcloud-aio[-*]" -- . ":!CHANGELOG.md" ":!BUGS.md" ":!provisioning/apps")"; rc=$?; [ "$rc" -le 1 ] && ! printf "%s\n" "$out" | sed "s/nextcloud-aio-mastercontainer//g" | grep -E "nextcloud-aio[-*]"'
 
 # --- gate: the release manifest's form — every pin present, every category counted -------------
 check bash scripts/release-manifest.sh --validate
