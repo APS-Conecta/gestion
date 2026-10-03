@@ -264,7 +264,7 @@ usage() {  # Spanish, generated from the registry — never a slice of this file
   echo "  aps-conecta run-command           solo el comando de arranque de la suite"
   echo "  aps-conecta provision             abre el instalador web (lo mismo que el paso abrir)"
   echo "  aps-conecta provision --reponer   re-provisión semanal (la ejecuta el temporizador)"
-  echo "  aps-conecta asistente-aio --dominio D   configura e inicia la suite por la API del asistente, sin navegador"
+  echo "  aps-conecta asistente-aio --dominio D [--talk] [--preparar]   configura la suite por la API del asistente (--preparar: sin iniciarla)"
   echo "  aps-conecta temporizadores        instala y activa la re-provisión semanal y el mapa mensual"
   echo "  aps-conecta estado                el último resultado de la re-provisión, con cada arreglo (sin sudo)"
   echo "  aps-conecta revalidate            revisa la instancia después de una actualización"
@@ -884,14 +884,38 @@ aio_containers_page() {  # GET /containers is load-bearing, not eye candy: servi
   fi
 }
 
+aio_motivo() {  # FILE — the wizard's refusal (upstream's English) as one Spanish reason, the known ones named
+  local m; m="$(head -c 400 "$1" 2>/dev/null)"
+  case "$m" in
+    *"not an IP-address"*) echo "use un nombre de dominio, no una dirección IP" ;;
+    *"internal or reserved"*) echo "el dominio apunta a una dirección interna: omita la validación del dominio" ;;
+    *"not reachable on Port 443"*|*"does not point to this server"*)
+      echo "el servidor no se alcanza a sí mismo por ese dominio: omita la validación del dominio si no tiene acceso desde Internet" ;;
+    *"DNS config is not set"*) echo "el dominio no tiene una dirección en el DNS" ;;
+    *"valid domain"*|*"at least one dot"*|*"must not contain"*) echo "no es un nombre de dominio válido" ;;
+    *"unallowed characters"*|*"must start with"*) echo "la carpeta del respaldo no es una ruta válida" ;;
+    *"must not be a children"*) echo "la carpeta del respaldo no puede estar dentro de los datos de la suite" ;;
+    *) echo "el asistente no aceptó el valor" ;;
+  esac
+}
+
 aio_post() {  # PATH --data-urlencode K=V… — the wizard's configuration API answers 201 or refuses
-  local endpoint="$1" code; shift
-  code="$(aio_curl -o /dev/null -w '%{http_code}' --max-time 15 "${AIO_CSRF[@]}" "$@" "$AIO_URL$endpoint" 2>/dev/null)"
-  if [ "$code" != 201 ]; then
-    bad "el asistente rechazó «${2%%=*}» (HTTP ${code:-sin respuesta})" \
-      "revise el valor; el asistente explica el motivo en su página ($AIO_URL)"
-    return 1
-  fi
+  # with its reason: the console gets the code and the reason, the web installer one line (no path)
+  local endpoint="$1" code campo motivo; shift
+  code="$(aio_curl -o "$AIO_STATE/respuesta" -w '%{http_code}' --max-time 15 "${AIO_CSRF[@]}" "$@" \
+    "$AIO_URL$endpoint" 2>/dev/null)"
+  [ "$code" = 201 ] && return 0
+  case "${2%%=*}" in
+    domain) campo="la dirección" ;;
+    timezone) campo="la zona horaria" ;;
+    options-form) campo="las opciones" ;;
+    *) campo="el respaldo" ;;
+  esac
+  motivo="$(aio_motivo "$AIO_STATE/respuesta")"
+  printf 'El asistente rechazó %s: %s.\n' "$campo" "$motivo" > "$AIO_STATE/motivo"
+  bad "el asistente rechazó «${2%%=*}» (HTTP ${code:-sin respuesta}): $motivo" \
+    "corrija el valor y vuelva a intentarlo; el detalle está en la página del asistente ($AIO_URL)"
+  return 1
 }
 
 aio_start() {  # POST /api/docker/start pulls, creates and starts the whole set INSIDE the request
@@ -962,8 +986,10 @@ aio_admin() {  # /containers shows the generated Nextcloud admin password once t
   fi
 }
 
-cmd_aio_wizard() {  # --dominio D [--sin-validar-dominio] [--respaldo DIR]
-  local domain="" backup_dir="" options=()
+cmd_aio_wizard() {  # --dominio D [--sin-validar-dominio] [--respaldo DIR] [--talk] [--grabacion] [--preparar]
+  # --preparar: the web installer's step 7 — the mastercontainer started and the wizard filled, but NO
+  # start: the operator presses «Iniciar» in the wizard (S1b: the wizard kept, pre-filled)
+  local domain="" backup_dir="" options=() talk=0 grabacion=0 preparar=0 opciones=(--data-urlencode options-form=1)
   while [ $# -gt 0 ]; do
     case "$1" in
       --dominio) domain="${2:-}"; shift 2 || shift ;;
@@ -971,27 +997,46 @@ cmd_aio_wizard() {  # --dominio D [--sin-validar-dominio] [--respaldo DIR]
       --respaldo) [ -n "${2:-}" ] \
                     || die "falta el directorio del respaldo: aps-conecta asistente-aio --dominio <dominio> --respaldo <directorio>"
                   backup_dir="$2"; shift 2 ;;
-      *) die "opción desconocida: $1 — uso: aps-conecta asistente-aio --dominio <dominio> [--sin-validar-dominio] [--respaldo <directorio>]" ;;
+      --talk) talk=1; shift ;;
+      --grabacion) talk=1; grabacion=1; shift ;;   # the recording runs inside Talk
+      --preparar) preparar=1; shift ;;
+      *) die "opción desconocida: $1 — uso: aps-conecta asistente-aio --dominio <dominio> [--sin-validar-dominio] [--respaldo <directorio>] [--talk] [--grabacion] [--preparar]" ;;
     esac
   done
   [[ "$domain" =~ $DOMAIN_RE ]] \
     || die "falta un dominio válido: aps-conecta asistente-aio --dominio <dominio>"
+  [ "$talk" = 0 ] || opciones+=(--data-urlencode talk=on)
+  [ "$grabacion" = 0 ] || opciones+=(--data-urlencode talk-recording=on)
   ( umask 077 && mkdir -p "$AIO_STATE" ) || die "no se pudo crear $AIO_STATE"
+  rm -f "$AIO_STATE/motivo"
   FAIL=0
+  if [ "$preparar" = 1 ] && ! start_suite; then
+    printf 'El asistente no arrancó: el detalle, en la consola del servidor.\n' > "$AIO_STATE/motivo"
+    exit 1
+  fi
   local names
   names="$(docker ps --format '{{.Names}}' 2>/dev/null)"   # captured first: under pipefail an early
   if printf '%s\n' "$names" | grep -qx nextcloud-aio-apache; then   # grep -q exit would SIGPIPE docker
     ok "La suite ya está en marcha — el asistente no se vuelve a configurar"
+    [ "$preparar" = 0 ] || exit 0
   else
+    # the web installer's record — the domain the wizard took and the Talk options it was given — is
+    # written only once every post succeeded: a refusal halfway leaves none, and the page asks again
+    rm -f "$AIO_STATE/dominio" "$AIO_STATE/opciones"
     aio_passphrase && aio_login && aio_containers_page \
       && aio_post /api/configuration --data-urlencode "domain=$domain" "${options[@]}" && ok "Dominio: $domain" \
       && aio_post /api/configuration --data-urlencode "timezone=America/Santiago" && ok "Zona horaria: America/Santiago" \
-      && aio_post /api/configuration --data-urlencode "options-form=1" \
-      && ok "Opciones: oficina incluida; Talk, pizarra e imágenes apagados" \
+      && aio_post /api/configuration "${opciones[@]}" \
+      && ok "Opciones: oficina incluida; Talk $([ "$talk" = 1 ] && echo activado || echo apagado); grabación $([ "$grabacion" = 1 ] && echo activada || echo apagada); pizarra e imágenes apagadas" \
       && { [ -z "$backup_dir" ] || { aio_post /api/configuration --data-urlencode "borg_backup_host_location=$backup_dir" \
              --data-urlencode "borg_remote_repo=" && aio_post /api/configuration --data-urlencode "daily_backup_time=04:00" \
-             && ok "Respaldo diario a las 04:00 en $backup_dir"; }; } \
-      && aio_start || exit 1
+             && aio_post /api/configuration --data-urlencode "additional_backup_directories=$APS_HOME" \
+             && ok "Respaldo diario a las 04:00 en $backup_dir, con $APS_HOME"; }; } \
+      && ( umask 077 && printf '%s\n' "$domain" > "$AIO_STATE/dominio" \
+           && printf 'talk=%s grabacion=%s\n' "$talk" "$grabacion" > "$AIO_STATE/opciones" ) \
+      || exit 1
+    if [ "$preparar" = 1 ]; then ok "Asistente listo: falta «Iniciar» en el asistente"; exit 0; fi
+    aio_start || exit 1
   fi
   aio_wait || exit 1
   aio_admin
@@ -1740,7 +1785,7 @@ case "\$url" in
   */login) body='<input name="csrf_name" value="n1"><input name="csrf_value" value="v1">' ;;
   */containers) echo "GET containers" >> "$tmp/aio.log"; body='<span id="initial-nextcloud-password">admin-secreta</span>' ;;
   */api/configuration) echo "POST config\$data" >> "$tmp/aio.log"; touch "$tmp/aio.configured"
-    case "\$data" in *"domain=rechazado.example"*) code=422 ;; *) code=201 ;; esac ;;
+    case "\$data" in *"domain=rechazado.example"*) code=422; body="Please enter a domain and not an IP-address!" ;; *"options-form=1"*) if [ -e "$tmp/aio.options-fails" ]; then code=422; body="algo inesperado"; else code=201; fi ;; *) code=201 ;; esac ;;
   */api/docker/start) echo "POST start\$data" >> "$tmp/aio.log"
     if [ -e "$tmp/aio.start-fails" ]; then code=500; else
     printf '%s\n' nextcloud-aio-nextcloud nextcloud-aio-database nextcloud-aio-redis > "$tmp/aio.ps"; sleep 0.4
@@ -1779,8 +1824,8 @@ SHIM
       '[ "$rc" -eq 0 ] && grep -q "borg_backup_host_location=/mnt/backup borg_remote_repo=$" "$tmp/aio.log" && grep -q "daily_backup_time=04:00$" "$tmp/aio.log" && case "$out" in *"✓ Respaldo diario a las 04:00 en /mnt/backup"*) ;; *) false;; esac'
     : > "$tmp/aio.ps"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; : > "$tmp/aio.log"
     out="$( (cmd_aio_wizard --dominio rechazado.example) 2>&1)"; rc=$?
-    check "asistente-aio: a domain the wizard refuses stops before the start, naming the field" \
-      '[ "$rc" -eq 1 ] && case "$out" in *"✗ el asistente rechazó «domain» (HTTP 422)"*) ;; *) false;; esac && ! grep -q "^POST start" "$tmp/aio.log"'
+    check "asistente-aio: a domain the wizard refuses stops before the start, naming the field and its reason in Spanish" \
+      '[ "$rc" -eq 1 ] && case "$out" in *"✗ el asistente rechazó «domain» (HTTP 422): use un nombre de dominio, no una dirección IP"*) ;; *) false;; esac && ! grep -q "^POST start" "$tmp/aio.log" && [ "$(cat "$AIO_STATE/motivo")" = "El asistente rechazó la dirección: use un nombre de dominio, no una dirección IP." ] && [ ! -e "$AIO_STATE/dominio" ]'
     : > "$tmp/aio.ps"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; touch "$tmp/aio.start-fails"
     out="$( (cmd_aio_wizard --dominio clinica.example) 2>&1)"; rc=$?
     check "asistente-aio: a start the wizard refuses reds with its HTTP code and stops before the waits" \
@@ -1792,6 +1837,46 @@ SHIM
     out="$( (cmd_aio_wizard --dominio -x) 2>&1)"; rc=$?
     check "asistente-aio: a value that is not a domain is refused before any request" \
       '[ "$rc" -eq 1 ] && [ "$out" = "✗ falta un dominio válido: aps-conecta asistente-aio --dominio <dominio>" ]'
+    : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"
+    printf '%s\n' "nextcloud-aio-mastercontainer running" > "$tmp/aio.ps"
+    out="$( (cmd_aio_wizard --preparar --dominio clinica.example --talk --respaldo /srv/aps-conecta/respaldos) 2>&1)"; rc=$?
+    check "asistente-aio --preparar: the mastercontainer, then the wizard filled — Talk on, the daily backup with the installer's files — and NO start; the domain and the options recorded for the web installer" \
+      '[ "$rc" -eq 0 ] && case "$out" in *"✓ La suite ya está iniciada"*"✓ Dominio: clinica.example"*"✓ Opciones: oficina incluida; Talk activado; grabación apagada"*"✓ Respaldo diario a las 04:00 en /srv/aps-conecta/respaldos, con "*"✓ Asistente listo: falta «Iniciar» en el asistente"*) ;; *) false;; esac && grep -q "options-form=1 talk=on$" "$tmp/aio.log" && grep -q "additional_backup_directories=$APS_HOME$" "$tmp/aio.log" && ! grep -q "^POST start" "$tmp/aio.log" && [ "$(cat "$AIO_STATE/dominio")" = clinica.example ] && [ "$(cat "$AIO_STATE/opciones")" = "talk=1 grabacion=0" ] && [ ! -e "$AIO_STATE/motivo" ]'
+    : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"
+    out="$( (cmd_aio_wizard --preparar --dominio clinica.example --grabacion) 2>&1)"; rc=$?
+    check "asistente-aio --grabacion: the recording rides Talk — both posted, both recorded" \
+      '[ "$rc" -eq 0 ] && grep -q "options-form=1 talk=on talk-recording=on$" "$tmp/aio.log" && case "$out" in *"Talk activado; grabación activada"*) ;; *) false;; esac && [ "$(cat "$AIO_STATE/opciones")" = "talk=1 grabacion=1" ]'
+    : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; touch "$tmp/aio.options-fails"
+    out="$( (cmd_aio_wizard --preparar --dominio clinica.example) 2>&1)"; rc=$?
+    check "asistente-aio --preparar: a refusal after the domain leaves no record — the web installer asks again" \
+      '[ "$rc" -eq 1 ] && [ "$(cat "$AIO_STATE/motivo")" = "El asistente rechazó las opciones: el asistente no aceptó el valor." ] && [ ! -e "$AIO_STATE/dominio" ] && [ ! -e "$AIO_STATE/opciones" ]'
+    rm -f "$tmp/aio.options-fails"
+    printf '%s\n' "nextcloud-aio-mastercontainer running" nextcloud-aio-apache > "$tmp/aio.ps"; : > "$tmp/aio.log"
+    out="$( (cmd_aio_wizard --preparar --dominio clinica.example) 2>&1)"; rc=$?
+    check "asistente-aio --preparar: a running suite is left as it is — nothing posted, no wait" \
+      '[ "$rc" -eq 0 ] && case "$out" in *"✓ La suite ya está en marcha"*) ;; *) false;; esac && [ ! -s "$tmp/aio.log" ] && case "$out" in *"Suite en marcha: 6"*) false;; *) true;; esac'
+    : > "$tmp/aio.ps"; rm -rf "$AIO_STATE"
+    out="$( (APS_SUITE_TAG=malo cmd_aio_wizard --preparar --dominio clinica.example) 2>&1)"; rc=$?
+    check "asistente-aio --preparar: a wizard that cannot start ends red, with one line for the web installer" \
+      '[ "$rc" -eq 1 ] && [ "$(cat "$AIO_STATE/motivo")" = "El asistente no arrancó: el detalle, en la consola del servidor." ]'
+    local motivo_ok=1 en es
+    while IFS='|' read -r en es; do
+      printf '%s' "$en" > "$tmp/motivo.txt"
+      [ "$(aio_motivo "$tmp/motivo.txt")" = "$es" ] || { motivo_ok=0; echo "aio_motivo: $en" >&2; }
+    done <<'PARES'
+Please enter a domain and not an IP-address!|use un nombre de dominio, no una dirección IP
+Domain is not a valid domain!|no es un nombre de dominio válido
+Domain must contain at least one dot!|no es un nombre de dominio válido
+DNS config is not set for this domain or the domain is not a valid domain! (It was found to be set to 'x')|el dominio no tiene una dirección en el DNS
+It seems like the ip-address of the domain is set to an internal or reserved ip-address. This is not supported.|el dominio apunta a una dirección interna: omita la validación del dominio
+The domain is not reachable on Port 443 from within this container.|el servidor no se alcanza a sí mismo por ese dominio: omita la validación del dominio si no tiene acceso desde Internet
+Domain does not point to this server or the reverse proxy is not configured correctly.|el servidor no se alcanza a sí mismo por ese dominio: omita la validación del dominio si no tiene acceso desde Internet
+You entered unallowed characters! Problematic is x|la carpeta del respaldo no es una ruta válida
+The path must not be a children of or equal to NEXTCLOUD_DATADIR, which is currently set to x|la carpeta del respaldo no puede estar dentro de los datos de la suite
+Something nobody wrote yet|el asistente no aceptó el valor
+PARES
+    check "asistente-aio: the wizard's refusals read in Spanish, each by name — an unknown one says so without pointing anywhere" \
+      "[ $motivo_ok = 1 ]"
   fi
   rm -f "$tshim/curl" "$tshim/docker"
 
