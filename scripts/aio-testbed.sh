@@ -36,7 +36,7 @@
 #
 # Usage:
 #   scripts/aio-testbed.sh up        preflight → run mastercontainer → aps-conecta asistente-aio (the CLI's wizard drive) → probe state (store off, skeleton cleared, theme seeded) → gate
-#   scripts/aio-testbed.sh down      remove every nextcloud-aio* container, volume and the state dir
+#   scripts/aio-testbed.sh down      remove the suite's containers, its volumes and the state dir
 #   scripts/aio-testbed.sh gate      assert no non-loopback port outside the wizard is claimed
 #   scripts/aio-testbed.sh status    what runs, what it publishes, where the passwords are
 #
@@ -47,7 +47,7 @@ set -uo pipefail
 
 STATE=/tmp/aio-testbed
 MC=nextcloud-aio-mastercontainer            # fixed by Containers/mastercontainer/start.sh:164-170
-NC=nextcloud-aio-nextcloud                   # fixed by php/containers.json:145
+NC=aps-conecta-nextcloud                   # fixed by php/containers.json:145
 IMAGE="${AIO_TEST_IMAGE:-ghcr.io/nextcloud-releases/all-in-one:latest}"
 WIZARD_PORT="${AIO_TEST_PORT:-8080}"
 APACHE_PORT="${AIO_TEST_APACHE_PORT:-11000}"
@@ -77,9 +77,9 @@ check_ram() {
 
 cmd_gate() {
   # gate.sh posture applied to the probe: non-zero exit = STOP. Scoped by name — only
-  # nextcloud-aio* containers are ours to judge, so a production host's own 80/443 listeners
+  # the suite's containers are ours to judge, so a production host's own 80/443 listeners
   # are not false alarms. MUST be able to go red (B-014): the negative test plants a labelled
-  # fake — docker run -d --name nextcloud-aio-gate-negative \
+  # fake — docker run -d --name aps-conecta-gate-negative \
   #   --label com.docker.compose.project=nextcloud-aio -p 80:80 nginx — and this command must
   # fail until it is removed.
   local fail=0 seen=0 c line bind pub_pat
@@ -96,8 +96,8 @@ cmd_gate() {
         *) echo "FAIL: $c publishes $bind — the probe must not claim non-loopback ports"; fail=1 ;;
       esac
     done < <(docker port "$c" 2>/dev/null)
-  done < <(docker ps --format '{{.Names}}' 2>/dev/null | grep -x 'nextcloud-aio-.*' || true)
-  [ "$seen" = 1 ] || { echo "gate: nothing nextcloud-aio* running — nothing to check"; return 0; }
+  done < <(docker ps --format '{{.Names}}' 2>/dev/null | grep -xE 'nextcloud-aio-mastercontainer|aps-conecta-.*' || true)
+  [ "$seen" = 1 ] || { echo "gate: no suite container running — nothing to check"; return 0; }
   if [ "$fail" = 0 ]; then echo "GATE: PASS — only :${WIZARD_PORT} and loopback claimed"; return 0; fi
   echo "GATE: *** FAIL ***"
   return 1
@@ -207,13 +207,13 @@ cmd_up() {
 
 cmd_status() {
   echo "── containers ──"
-  docker ps -a --filter name=nextcloud-aio- --format 'table {{.Names}}\t{{.Status}}' 2>/dev/null || say "docker unreachable"
+  docker ps -a --filter name=^aps-conecta- --filter name=^nextcloud-aio-mastercontainer$ --format 'table {{.Names}}\t{{.Status}}' 2>/dev/null || say "docker unreachable"
   echo "── published ports ──"
   local c
   while IFS= read -r c; do
     [ -n "$c" ] || continue
     docker port "$c" 2>/dev/null | sed "s/^/  $c: /"
-  done < <(docker ps --format '{{.Names}}' 2>/dev/null | grep -x 'nextcloud-aio-.*' || true)
+  done < <(docker ps --format '{{.Names}}' 2>/dev/null | grep -xE 'nextcloud-aio-mastercontainer|aps-conecta-.*' || true)
   echo "── secrets (paths only) ──"
   ls -l "$STATE"/*.pw 2>/dev/null || say "no secrets in $STATE"
   echo "── gate ──"
@@ -242,7 +242,7 @@ case "${1:-}" in
   *)
     echo "usage: $0 up|down|gate|status" >&2
     echo "  up      preflight (RAM/ports/ghcr) → run → aps-conecta asistente-aio (the wizard drive) → probe state → gate" >&2
-    echo "  down    remove every nextcloud-aio* container, volume and the state dir" >&2
+    echo "  down    remove the suite's containers, its volumes and the state dir" >&2
     echo "  gate    assert only the wizard port and loopback are claimed (can go red)" >&2
     echo "  status  containers, published ports, secret paths" >&2
     exit 1 ;;

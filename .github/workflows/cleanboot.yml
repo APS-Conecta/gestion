@@ -129,9 +129,9 @@ jobs:
       # store-off reboot below re-asserts it.
       - name: First boot — the notify-push sibling converged
         run: |
-          docker ps --filter name=nextcloud-aio-notify-push --filter status=running --format '{{.Names}}' \
-            | grep -qx nextcloud-aio-notify-push \
-            || { echo "FAIL: nextcloud-aio-notify-push is not running after first boot (the S3 first-boot acceptance) — diagnose: docker ps -a --filter name=nextcloud-aio-notify-push ; docker logs nextcloud-aio-notify-push" >&2; exit 1; }
+          docker ps --filter name=aps-conecta-notify-push --filter status=running --format '{{.Names}}' \
+            | grep -qx aps-conecta-notify-push \
+            || { echo "FAIL: aps-conecta-notify-push is not running after first boot (the S3 first-boot acceptance) — diagnose: docker ps -a --filter name=aps-conecta-notify-push ; docker logs aps-conecta-notify-push" >&2; exit 1; }
       # `make setup` rather than `cp`, so the generator itself is exercised: it is the only place
       # the four secrets are produced, and it cannot be tested on a dev box that already has an
       # env file. A clean runner is the one environment where the create path actually runs.
@@ -231,7 +231,7 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          docker ps --filter name=nextcloud-aio- --format '{{.Names}}' \
+          docker ps --filter name=^aps-conecta- --filter name=^nextcloud-aio-mastercontainer$ --format '{{.Names}}' \
             | xargs -r docker stats --no-stream --format '{{.Name}}|{{.MemUsage}}' | sort > "$RUNNER_TEMP/memoria.txt"
           { echo '| contenedor | memoria |'; echo '| --- | --- |'
             awk -F'|' '{ split($2, m, " / "); v = m[1]; u = v; gsub(/[0-9.]/, "", u); sub(/[A-Za-z]+$/, "", v)
@@ -277,7 +277,7 @@ jobs:
       # by people who arrive with the roster (#106), so it must NOT. The negative is the half
       # that would rot silently — an over-eager loop creating accounts for every local role
       # looks like success. One occ() definition, sourced (slice 2) — and the seam's default
-      # IS this job's container: the harness brought up nextcloud-aio-nextcloud, so the
+      # IS this job's container: the harness brought up aps-conecta-nextcloud, so the
       # NC_CONTAINER stopgap died here with the compose bring-up it existed to bridge.
       - name: Clinic-local roles landed, and only the jefatura got an account
         run: |
@@ -297,9 +297,9 @@ jobs:
       - name: Probe office wire — the internal URLs the loopback-only probe needs
         run: |
           source scripts/env.sh
-          occ config:app:set eurooffice DocumentServerInternalUrl --value http://nextcloud-aio-eurooffice/
-          occ config:app:set eurooffice StorageUrl --value "http://nextcloud-aio-apache:${AIO_TEST_APACHE_PORT}/"
-          occ config:system:set trusted_domains 2 --value=nextcloud-aio-apache
+          occ config:app:set eurooffice DocumentServerInternalUrl --value http://aps-conecta-eurooffice/
+          occ config:app:set eurooffice StorageUrl --value "http://aps-conecta-apache:${AIO_TEST_APACHE_PORT}/"
+          occ config:system:set trusted_domains 2 --value=aps-conecta-apache
       # The only place a first AND a second seed both exist. Idempotency is the pipeline's
       # defining property (AD-2) and nothing else asserts it: a warm dev box cannot tell
       # "already correct" from "silently did nothing", because on a warm box those are the
@@ -322,10 +322,10 @@ jobs:
       # own install-wait shape.
       - name: Reboot the instance with the store off — the update-day posture
         run: |
-          docker restart nextcloud-aio-nextcloud
+          docker restart aps-conecta-nextcloud
           boot_t0=$(date +%s)
           for i in $(seq 60); do
-            st="$(docker exec --user www-data nextcloud-aio-nextcloud php /var/www/html/occ status --output=json 2>/dev/null || true)"
+            st="$(docker exec --user www-data aps-conecta-nextcloud php /var/www/html/occ status --output=json 2>/dev/null || true)"
             case "$st" in *'"installed":true'*) echo "occ status ready (attempt $i)"; break ;; esac
             sleep 10
           done
@@ -333,12 +333,12 @@ jobs:
           # the app walk (support/spreed re-enabled globally) lands ~2 min later. Wait for fpm's
           # ready line before any seed touches the state the walk rewrites.
           for i in $(seq 60); do
-            if docker logs --since "$(( $(date +%s) - boot_t0 - 5 ))s" nextcloud-aio-nextcloud 2>&1 | grep -q "ready to handle connections"; then
+            if docker logs --since "$(( $(date +%s) - boot_t0 - 5 ))s" aps-conecta-nextcloud 2>&1 | grep -q "ready to handle connections"; then
               echo "entrypoint settled (attempt $i)"; exit 0
             fi
             sleep 10
           done
-          echo "FAIL: the instance never settled within 10 min of the store-off reboot — docker logs nextcloud-aio-nextcloud" >&2
+          echo "FAIL: the instance never settled within 10 min of the store-off reboot — docker logs aps-conecta-nextcloud" >&2
           exit 1
       # THE HARDENED SEED-TWICE: the third seed runs against a REBOOTED instance, not a warm
       # one — idempotency across a restart, the strongest form this job can run — and the
@@ -354,9 +354,9 @@ jobs:
           make seed
           make seed-idempotent
           bash scripts/divergence.sh --gate
-          docker ps --filter name=nextcloud-aio-notify-push --filter status=running --format '{{.Names}}' \
-            | grep -qx nextcloud-aio-notify-push \
-            || { echo "FAIL: nextcloud-aio-notify-push is not running after the store-off reboot" >&2; exit 1; }
+          docker ps --filter name=aps-conecta-notify-push --filter status=running --format '{{.Names}}' \
+            | grep -qx aps-conecta-notify-push \
+            || { echo "FAIL: aps-conecta-notify-push is not running after the store-off reboot" >&2; exit 1; }
       # The full local gate — smoke's 14 checks through the probe's loopback apache, the
       # office gate answering the AIO sibling since this slice (office-smoke's AIO legs:
       # public-path healthcheck + --check + the DS 9.3.x pin + the image namespaces), and the
@@ -400,8 +400,8 @@ jobs:
       - name: Logs on failure
         if: failure()
         run: |
-          docker ps -a --filter name=nextcloud-aio- --format 'table {{.Names}}\t{{.Status}}'
-          docker logs --tail=100 nextcloud-aio-nextcloud
+          docker ps -a --filter name=^aps-conecta- --filter name=^nextcloud-aio-mastercontainer$ --format 'table {{.Names}}\t{{.Status}}'
+          docker logs --tail=100 aps-conecta-nextcloud
           sudo tail -n 100 /opt/aps-conecta/instalacion.log || true
       # `make install` prints phase names and sends the detail to .install.log, so without this
       # the one job that exists to catch a broken install cannot show what broke — #96 was
@@ -416,7 +416,7 @@ jobs:
           path: .install.log
           include-hidden-files: true
           if-no-files-found: warn
-      # Scoped teardown, always — the harness removes only nextcloud-aio* containers and volumes
+      # Scoped teardown, always — the harness removes only the suite's containers and its nextcloud_aio_* volumes
       # (name/label-filtered) plus its own state dir, so `down` after a failed `up` is safe by
       # construction. On an ephemeral runner this is hygiene; it also keeps the job honest
       # about never leaving the wizard port published.

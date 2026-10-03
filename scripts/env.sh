@@ -35,7 +35,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.." || { echo "FAIL: cannot cd to the repo ro
 #    is_aio = "the AIO stack is running", the question install, uninstall, smoke, test.sh,
 #    refresh-basemap and phase 14 ask. `grep -x >/dev/null`, not `-qx`: grep reads to EOF, so
 #    docker never takes a SIGPIPE that a pipefail caller would read as "not running".
-AIO_NC=nextcloud-aio-nextcloud
+AIO_NC=aps-conecta-nextcloud
 is_aio() { docker ps --format '{{.Names}}' 2>/dev/null | grep -x "$AIO_NC" >/dev/null; }
 nc_container() {  # sets NC_CONTAINER once per shell; always returns 0
   [ -n "${NC_CONTAINER:-}" ] && return 0
@@ -207,12 +207,12 @@ STUB
       case "$line" in *=?*) ;; *) [ -z "$(bash -c 'printf %s "${NC_CONTAINER-}"')" ] ;; esac
     ) || { echo "self-test FAIL: container arm — want $want (is_aio=$aio) for '${line:-no .env value}' with [${*:-nothing}] running" >&2; rc=1; }
   }
-  nc_arm nextcloud-aio-nextcloud 1 '' nextcloud-aio-nextcloud
-  nc_arm nextcloud-aio-nextcloud 1 '' apsconecta-gestion-nextcloud-1 nextcloud-aio-nextcloud
+  nc_arm aps-conecta-nextcloud 1 '' aps-conecta-nextcloud
+  nc_arm aps-conecta-nextcloud 1 '' apsconecta-gestion-nextcloud-1 aps-conecta-nextcloud
   nc_arm apsconecta-gestion-nextcloud-1 0 '' apsconecta-gestion-nextcloud-1
-  nc_arm nextcloud-aio-nextcloud 0 ''
-  nc_arm nextcloud-aio-nextcloud 1 'NC_CONTAINER=' nextcloud-aio-nextcloud
-  nc_arm custom-nc 1 'NC_CONTAINER=custom-nc' nextcloud-aio-nextcloud
+  nc_arm aps-conecta-nextcloud 0 ''
+  nc_arm aps-conecta-nextcloud 1 'NC_CONTAINER=' aps-conecta-nextcloud
+  nc_arm custom-nc 1 'NC_CONTAINER=custom-nc' aps-conecta-nextcloud
   # ...and its failure names the cause (lib.sh's require_installed, the one place that dies on it):
   # a configured name that is not the running AIO container is called out — a .env from the
   # 2026-09-25 template still carries the compose name — and `make up` is advised only off AIO.
@@ -226,7 +226,7 @@ STUB
     case "$out" in *"$want"*) case "$out" in *"$not"*) false ;; esac ;; *) false ;; esac \
       || { echo "self-test FAIL: require_installed arm — want «$want», not «$not» for '${line:-no .env value}' with [${*:-nothing}] running" >&2; rc=1; }
   }
-  ri_arm 'overrides detection' 'make up' 'NC_CONTAINER=apsconecta-gestion-nextcloud-1' nextcloud-aio-nextcloud
+  ri_arm 'overrides detection' 'make up' 'NC_CONTAINER=apsconecta-gestion-nextcloud-1' aps-conecta-nextcloud
   ri_arm 'make up' 'overrides detection' ''
   # the multi-line refusal arm: a quoted value split across lines must fail the whole load
   printf 'BROKEN_MULTI="first half of a value\n' > "$fx"

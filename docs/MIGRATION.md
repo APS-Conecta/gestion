@@ -95,13 +95,13 @@ The wizard publishes on an alternate port (8080 is open-webui on this host; 8443
 After first boot, assert the two survivals:
 
 ```bash
-docker exec nextcloud-aio-nextcloud php occ app:list \
+docker exec aps-conecta-nextcloud php occ app:list \
   | awk '/^Enabled/{e=1} /^Disabled/{e=0} e && /eurooffice/'   # EMPTY OUTPUT = RED — the JWT
      # rewrite hazard (entrypoint.sh:885-908) silently disables apps that came from outside AIO
      # unless the bake ordered it; this assert is the check. app:list prints BOTH an Enabled and
      # a Disabled section, so a plain grep matches a disabled eurooffice too — the section-aware
      # read is what can go red on the exact hazard.
-docker exec nextcloud-aio-database psql -U oc_nextcloud -d nextcloud_database -Atc \
+docker exec aps-conecta-database psql -U oc_nextcloud -d nextcloud_database -Atc \
   "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'"   # 185-ish
 ```
 

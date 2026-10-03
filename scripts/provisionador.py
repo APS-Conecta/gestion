@@ -220,11 +220,11 @@ PASOS_EJECUCION = [PHASE_TITLES[k] for k in sorted(PHASE_TITLES)] + [PASO_PLANIL
 APPS_APS = ("intravox", "epidemiologia", "estadistica", "farmacia", "territorio")
 # The suite's containers, named for the people who run it: the host's AIO_SET plus Nextcloud's own (an
 # arm pins the set). Talk's two join when the wizard was given Talk — they never block «Siguiente».
-CONTENEDORES_SUITE = (("nextcloud-aio-apache", "Servidor web"), ("nextcloud-aio-nextcloud", "Núcleo de la suite"),
-                      ("nextcloud-aio-database", "Base de datos"), ("nextcloud-aio-redis", "Caché"),
-                      ("nextcloud-aio-notify-push", "Notificaciones al instante"),
-                      ("nextcloud-aio-eurooffice", "Oficina"))
-CONTENEDORES_TALK = (("nextcloud-aio-talk", "Talk"), ("nextcloud-aio-talk-recording", "Grabación de Talk"))
+CONTENEDORES_SUITE = (("aps-conecta-apache", "Servidor web"), ("aps-conecta-nextcloud", "Núcleo de la suite"),
+                      ("aps-conecta-database", "Base de datos"), ("aps-conecta-redis", "Caché"),
+                      ("aps-conecta-notify-push", "Notificaciones al instante"),
+                      ("aps-conecta-eurooffice", "Oficina"))
+CONTENEDORES_TALK = (("aps-conecta-talk", "Talk"), ("aps-conecta-talk-recording", "Grabación de Talk"))
 # Talk sized to the server (R26). ponytail: Talk ~1 GiB is AIO's own figure; the recording's 4 free cores
 # are the approved design's example, above AIO's ~2 vCPU — the conservative side until measured. Clean
 # boot prints the suite's memory; the L7 rehearsal box (12 GiB, 4 cores) confirms or moves them.
@@ -313,10 +313,10 @@ if args and args[0] == "ps":
             for item in control["PS_LISTA"].split(";"):
                 print(item.replace(":", "\t", 1))
         else:
-            print("nextcloud-aio-nextcloud\tUp 2 minutes")
-            print("nextcloud-aio-database\tUp 2 minutes (healthy)")
+            print("aps-conecta-nextcloud\tUp 2 minutes")
+            print("aps-conecta-database\tUp 2 minutes (healthy)")
     else:
-        print("nextcloud-aio-nextcloud")
+        print("aps-conecta-nextcloud")
     sys.exit(0)
 elif "printenv" in args and "TALK_ENABLED" in args:   # the suite's Talk switch, as AIO sets it: yes or empty
     print(control.get("TALK_ENABLED", ""))
@@ -2528,11 +2528,11 @@ ROUTES = {
 
 
 def contenedores():
-    """(status, {name: docker status}) — the one bounded `docker ps -a` over nextcloud-aio-*: 5 s,
+    """(status, {name: docker status}) — the one bounded `docker ps -a` over aps-conecta-*: 5 s,
     read-only. A missing docker binary or a dead daemon answers a fix-hint 500, never a hang."""
     try:
         out = subprocess.run(
-            ["docker", "ps", "-a", "--filter", "name=nextcloud-aio-",
+            ["docker", "ps", "-a", "--filter", "name=^aps-conecta-",
              "--format", "{{.Names}}\t{{.Status}}"],  # \t: docker's template escape — real tabs out
             capture_output=True, text=True, timeout=5)
     except FileNotFoundError:
@@ -2635,7 +2635,7 @@ def opciones_actuales():
 def suite_instalada():
     """Nextcloud answers installed — one bounded `occ status`, asked only once the suite's containers run."""
     try:
-        out = subprocess.run(["docker", "exec", "--user", "www-data", "nextcloud-aio-nextcloud", "php",
+        out = subprocess.run(["docker", "exec", "--user", "www-data", "aps-conecta-nextcloud", "php",
                               "/var/www/html/occ", "status", "--output=json"],
                              capture_output=True, text=True, timeout=10)
     except (OSError, subprocess.TimeoutExpired):
@@ -2648,7 +2648,7 @@ def talk_ahora(vistos):
     holds 3478 and a probe could race it."""
     memoria, nucleos = recursos()
     opciones = opciones_actuales()
-    libre = ("nextcloud-aio-talk" in vistos or (opciones is not None and opciones[0])
+    libre = ("aps-conecta-talk" in vistos or (opciones is not None and opciones[0])
              or puerto_libre(PUERTO_TALK))
     return veredicto_talk(memoria, nucleos, libre)
 
@@ -4181,7 +4181,7 @@ def selftest():
             os.makedirs(AIO_STATE, exist_ok=True)
             globals()["puerto_libre"] = lambda _p: False
             try:
-                corre, nada = talk_ahora({"nextcloud-aio-talk": "Up 1 minute"}), talk_ahora({})
+                corre, nada = talk_ahora({"aps-conecta-talk": "Up 1 minute"}), talk_ahora({})
             finally:
                 globals()["puerto_libre"] = lambda _p: True
             check("suite: a running Talk holds its own port — it still fits; any other holder does not (R26)",
@@ -4220,7 +4220,7 @@ def selftest():
                   sorted(e.split("=", 1)[0] for e in own.split()) == sorted(APPS_APS)
                   and [f[0] for f in filas] == ["Inicio", "Epidemiología", "Estadística", "Farmacia", "Territorio"]
                   and all(re.fullmatch(r"\d+\.\d+\.\d+", f[1]) for f in filas)
-                  and {c for c, _n in CONTENEDORES_SUITE} == set(aio_set) | {"nextcloud-aio-nextcloud"})
+                  and {c for c, _n in CONTENEDORES_SUITE} == set(aio_set) | {"aps-conecta-nextcloud"})
             fijo = centro_actual()[1].get("codigo")   # the site the preparation fills, then restored
             antes_fijo = open(site_path(fijo), encoding="utf-8").read() if fijo else None
             falso = os.path.join(tmp, "asistente-falso.sh")
@@ -4320,13 +4320,13 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
             arriba = ";".join(f"{c}:Up 3 minutes" for c, _n in CONTENEDORES_SUITE)
             try:
                 open(stubctl, "w", encoding="utf-8").write(
-                    "PS_LISTA=nextcloud-aio-apache:Up 1 minute;nextcloud-aio-nextcloud:Up 20 seconds (health: starting);"
-                    "nextcloud-aio-database:Up 1 minute (healthy);nextcloud-aio-redis:Created;"
-                    "nextcloud-aio-eurooffice:Up 1 minute;nextcloud-aio-talk:Exited (1) 5 seconds ago\n")
+                    "PS_LISTA=aps-conecta-apache:Up 1 minute;aps-conecta-nextcloud:Up 20 seconds (health: starting);"
+                    "aps-conecta-database:Up 1 minute (healthy);aps-conecta-redis:Created;"
+                    "aps-conecta-eurooffice:Up 1 minute;aps-conecta-talk:Exited (1) 5 seconds ago\n")
                 st, a_medias = call("GET", "/api/suite")
-                open(stubctl, "w", encoding="utf-8").write(f"PS_LISTA={arriba};nextcloud-aio-talk:Up 3 minutes\n")
+                open(stubctl, "w", encoding="utf-8").write(f"PS_LISTA={arriba};aps-conecta-talk:Up 3 minutes\n")
                 st2, completa = call("GET", "/api/suite")
-                open(stubctl, "w", encoding="utf-8").write(f"PS_LISTA={arriba};nextcloud-aio-talk:Exited (1) 1 minute ago\n")
+                open(stubctl, "w", encoding="utf-8").write(f"PS_LISTA={arriba};aps-conecta-talk:Exited (1) 1 minute ago\n")
                 st3, sin_talk = call("GET", "/api/suite")
             finally:
                 open(stubctl, "w").close()
@@ -5297,7 +5297,7 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                             quieto = pg.evaluate("window.__abrir.isConnected")
                             for nombre in os.listdir(AIO_STATE):
                                 os.remove(os.path.join(AIO_STATE, nombre))
-                            open(stubctl, "w", encoding="utf-8").write("PS_LISTA=nextcloud-aio-apache:Up 1 minute\n")
+                            open(stubctl, "w", encoding="utf-8").write("PS_LISTA=aps-conecta-apache:Up 1 minute\n")
                             pg.goto(f"https://127.0.0.1:{tport}/contenedores")
                             pg.wait_for_selector("#s-prog:not([hidden])", timeout=15000)
                             ya_corre = pg.is_hidden("#s-form") and pg.is_hidden("#s-datos")
