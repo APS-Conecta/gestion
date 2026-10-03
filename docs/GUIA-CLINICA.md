@@ -33,8 +33,8 @@ El recorrido completo, paso a paso con los comandos, está en `INSTALLER.md` §2
 
 El asistente está en español. Lo importante:
 
-- **La frase de contraseña inicial se muestra una sola vez**, en la primera carga de `/setup`:
-   cópiela en ese momento (una vez que apache corre, el ingreso queda bloqueado sin ella).
+- **La frase de contraseña del asistente** la muestra el paso 7 del instalador web, que también
+  deja el asistente configurado; en el asistente solo queda pulsar «Iniciar».
 - El **dominio** debe apuntar al servidor y el servidor debe poder alcanzarse a sí mismo por
   ese dominio (la prueba «hairpin»; `INSTALLER.md` §7 trae los arreglos de DNS si preflight
   la marca en rojo).
@@ -65,8 +65,13 @@ Después de la bienvenida, el navegador recorre los pasos 6 a 9 de la instalaci�
    código DEIS, comuna o dirección, con o sin tildes. La ficha muestra lo que dirá el sitio, y
    «Confirmar centro» lo fija. Se puede cambiar hasta cargar los equipos; desde ahí la instalación
    sirve a ese establecimiento y a ningún otro.
-2. **Iniciar la suite** — confirma que los contenedores estén en marcha (consulta su estado real;
-   una lista vacía significa que algo no partió).
+2. **Iniciar la suite** — las cinco aplicaciones APS con su versión (se activan al ejecutar), y si
+   Talk y su grabación caben en este servidor, con el motivo. «Preparar el asistente» deja el
+   asistente listo con el dominio del servidor, la hora de Santiago, Euro-Office, Talk según quepa y
+   el respaldo diario a las 04:00. Marque «Omitir la validación del dominio» si el servidor no tiene
+   acceso desde Internet. La pantalla muestra la frase de contraseña del asistente; ábralo con
+   «Abrir el asistente e iniciar», ingrese con esa frase y pulse «Iniciar». El avance de cada
+   contenedor se ve aquí; con la suite instalada aparece «Siguiente».
 3. **Cargar equipos y personas** — en una sola pantalla:
    - los sectores y programas del establecimiento, uno por línea (nadie los conoce fuera del
      equipo local); debajo de cada lista aparece el código de grupo de cada uno, el que usa la

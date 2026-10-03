@@ -56,6 +56,16 @@ image digests live there and are deliberately not copied here — one fact, one 
     where it is.
   - A red verdict shows its head line and points to `aps-conecta estado`. The divergence screen is
     gone.
+- **«Iniciar la suite» from the browser** (L3 S5).
+  - Step 7 lists the five APS apps with their versions and says whether Talk and its recording fit
+    the server (memory, cores, port 3478), and why.
+  - «Preparar el asistente» runs `aps-conecta asistente-aio --preparar`, which starts the
+    mastercontainer and fills the wizard: domain, timezone, Euro-Office, Talk as it fits, and the
+    daily backup at 04:00 with `/opt/aps-conecta` in scope. It stops before Start.
+  - The page shows the wizard's passphrase while it is needed and follows each container by name
+    to «Siguiente».
+  - The wizard's refusals read in Spanish, in the console and on the page.
+  - The domain the wizard took becomes the site file's `SITE_DOMINIO` and «Listo»'s access line.
 - **`aps-conecta estado`** — the last execution's verdict, each item with its fix, in Spanish, with
   no sudo (`/opt/aps-conecta/estado.txt`, 0644, written by every execution — the installer's, the
   silent install's and the weekly one). When the weekly re-provision finds drift or does not finish,

@@ -23,6 +23,7 @@ awk -F, gets those wrong. python3 is already assumed by provisioning/lib.sh; jq 
 import csv
 import glob
 import os
+import re
 import shlex
 import sys
 import unicodedata
@@ -153,12 +154,14 @@ def ask(question, word, gid_prefix):
         out.append((gid_prefix + "-".join(fold(bare).split()), f"{word.capitalize()} {bare}", bare))
 
 
-def write_site(row, snapshot, name, sectors, programs, path=None):
+def write_site(row, snapshot, name, sectors, programs, path=None, domain=""):
     """Write a COMPLETE, standalone site file. Nothing is inherited at seed time: after this, the
     file is the whole truth for that clinic and is edited by hand — adding a Unidad or a grant is
     adding a line. Adding a folder later also means adding its ACL rows; nothing generates them.
     `path` writes the same file elsewhere: the web installer's «Reemplazar» builds a fresh copy and
     takes its team blocks from it."""
+    if domain and not re.fullmatch(r"[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?", domain):
+        sys.exit(f"FATAL: {domain!r} is not a domain — SITE_DOMINIO is sourced by bash")
     path = path or os.path.join(HERE, "..", "sites", name, "site.sh")
     if os.path.exists(path):
         sys.exit(f"FATAL: {os.path.relpath(path)} already exists — edit it, or remove the directory")
@@ -201,8 +204,8 @@ def write_site(row, snapshot, name, sectors, programs, path=None):
 # NOT TRACKED: this file is yours, gitignored like .env, and survives a git pull untouched.
 
 {block(row, snapshot)}
-# Forward hook for the production posture (#75). Empty = local dev, reached over the host port.
-SITE_DOMINIO=""
+# The suite's address: the domain the wizard took at «Iniciar la suite». Empty = local dev.
+SITE_DOMINIO="{domain}"
 
 # Staff roster, kept OUTSIDE the repo. Path on the install host. Nothing reads it yet — the reader
 # waits on password delivery (#106).

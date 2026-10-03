@@ -62,14 +62,15 @@ image (D4), so boot-time installs would be noise. If preflight reds on the domai
 ## 4. The wizard (:8080)
 
 1. Paste the run command. The wizard comes up branded, in Spanish (es-CL formal).
-2. **Capture the initial password on first load** — `GET /setup` shows it once (`id="initial-password"`);
-   login is blocked once the apache sibling runs.
-3. Log in, set the **domain** (DNS must point here), the **timezone**, and the options —
-   **Euro-Office is the default office** (leave it); Talk/Whiteboard/Imaginary stay off unless
-   the clinic asked. The app store is hidden (store off, 020); the Collabora/OnlyOffice cards do
-   not exist (050). The territorio card reads «pendiente de empaquetado» until that app ships.
-4. Start the containers from the wizard and wait for the green set. The daily-backup screen's
-   automatic-update box ships **unchecked** (040) — leave it: the suite updates as one set.
+2. The web installer's step 7 fills it: `aps-conecta asistente-aio --preparar` starts the
+   mastercontainer, captures the initial password (`GET /setup` shows it once; the installer keeps
+   it in `/opt/aps-conecta/aio/master.pw`, 0600, and shows it on step 7), and posts the domain, the
+   timezone, the options (Euro-Office by default; Talk and its recording as the server's memory and
+   cores allow, port 3478 free) and the daily backup.
+3. Log in to the wizard with that password and press Start. Step 7 follows the containers until
+   Nextcloud is installed. The app store is hidden (store off, 020) and the Collabora/OnlyOffice
+   cards do not exist (050). The daily-backup screen's automatic-update box ships **unchecked**
+   (040) — leave it: the suite updates as one set.
 
 ## 5. Provision
 
@@ -202,10 +203,12 @@ not patched; the wait ends when the probe times out or the network returns).
 
 ## 11. Backups
 
-The wizard's own borg backup (daily, from the AIO interface) is the instance backup.
-`aps-conecta respaldo` wires `/opt/aps-conecta` into its scope — idempotent, and it prints the
-**honest cost every time**: additional directories back up but never restore with the instance.
-`/opt/aps-conecta`'s restore is a manual `borg extract` (the recipe: upstream's
+The wizard's own borg backup is the instance backup. Step 7 sets it daily at 04:00 in
+`/srv/aps-conecta/respaldos`, with `/opt/aps-conecta` (the credentials and the site record) in its
+scope — the same folder on the same disk, so copy it off the server (an external disk, another
+machine). `aps-conecta respaldo` adds `/opt/aps-conecta` to an existing backup — idempotent, and it
+prints the **honest cost every time**: additional directories back up but never restore with the
+instance. `/opt/aps-conecta`'s restore is a manual `borg extract` (the recipe: upstream's
 [backup docs](https://github.com/nextcloud/all-in-one#pro-tip-backup-archives-access)).
 
 ## 12. Troubleshooting
