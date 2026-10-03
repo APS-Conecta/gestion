@@ -1834,6 +1834,9 @@ transform-origin:left;transition:transform .2s linear}
 .dl dd.normal{font-weight:400}
 #x-plan h3.ceja{margin:1.6rem 0 .5rem}
 #x-plan .nota{margin-top:1.2rem}
+label.casilla{display:flex;gap:.55rem;align-items:center;font:400 var(--t-s)/1.4 var(--f-cuerpo);
+letter-spacing:0;text-transform:none;color:var(--tinta);margin:.7rem 0}
+.frase{font:600 var(--t-m)/1.4 var(--f-mono);overflow-wrap:anywhere}
 @media (max-width:860px){
 .marco{grid-template-columns:minmax(0,1fr)}
 .riel{display:none}
@@ -2007,29 +2010,109 @@ def screen_listo():
 
 
 def screen_contenedores():
-    body = """<div class="tarjeta"><h2>Contenedores del asistente de instalación</h2>
-<p>El asistente crea la instancia; el Provisionador la configura. Confirme que la suite esté
-en marcha antes de continuar.</p><div id="m">Consultando el estado…</div></div>
-<div class="tarjeta"><h2>Continuar</h2>
-<p>Con la suite en marcha, siga con los equipos del establecimiento.</p>
-<button onclick="location.href='/equipos'">Continuar</button></div>
+    """Step 7, «Iniciar la suite» (L3 S5) — the approved design's: the five APS apps with their
+    versions (a12) and Talk sized to this server (R26); then the wizard, filled by the host (domain,
+    timezone, office, Talk, the daily backup) and started by the operator there (S1b: kept,
+    pre-filled) with the passphrase shown here; then the containers by name, once a second (R48),
+    to «Siguiente». A reload finds the step where it is."""
+    body = """<section class="tarjeta"><h2>Aplicaciones</h2>
+<div id="m">Consultando el servidor…</div><div id="s-apps"></div>
+<p class="nota">Se activan al ejecutar, junto a Documentos, Oficina, Calendario y Contactos.</p></section>
+<section class="tarjeta"><h2>Talk</h2><div id="s-talk"></div></section>
+<section class="tarjeta"><h2>Asistente</h2>
+<form id="s-form" hidden><label for="s-dom">Dominio del servidor</label>
+<input id="s-dom" class="control" autocomplete="off" spellcheck="false" placeholder="gestion.su-establecimiento.cl">
+<label class="casilla"><input type="checkbox" id="s-sinval"> Omitir la validación del dominio (servidor sin acceso desde Internet)</label>
+<div class="fila"><button type="submit" id="s-ir">Preparar el asistente</button></div></form>
+<div id="s-error"></div>
+<ul class="lista-estado" id="s-prep" aria-live="polite"></ul>
+<p class="nota" id="s-nota" hidden>La primera vez, el asistente descarga su imagen: varios minutos.</p>
+<div id="s-datos" hidden></div>
+<div id="s-prog" hidden><p class="progreso-linea" id="s-linea" aria-live="polite"></p>
+<div class="barra" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="Avance del inicio"><i id="s-barra"></i></div>
+<ul class="lista-estado" id="s-lista"></ul></div>
+<div class="fila" id="s-sig-fila" hidden><button type="button" id="s-sig">Siguiente: equipos y personas</button></div>
+</section>
 <script>
 (async () => {
-  const r = await api("/api/suite");
-  if (r.estado !== 200) {
-    zona("m").innerHTML = '<div class="error">' + escapear(r.error) + "</div>"; return;
+  let reloj = null, visto = "";
+  const fila = (n, v) => '<li class="' + (v.cabe ? "hecho" : "") + '"><span class="ic">' + (v.cabe ? "✓" : "✗") +
+    "</span><span><b>" + n + ": " + (v.cabe ? "cabe" : "no cabe") + "</b> (" + escapear(v.texto) + ")" +
+    (v.cabe ? " — se activa." : " — queda desactivada.") + "</span></li>";
+  const coma = (x) => String(x).replace(".", ",");
+  function pintar(s) {
+    zona("m").innerHTML = "";
+    zona("s-apps").innerHTML = "<table><tr><th>Aplicación</th><th>Versión</th><th>Función</th></tr>" +
+      s.apps.map(([n, v, q]) => "<tr><td><b>" + escapear(n) + "</b></td><td>" + escapear(v) + "</td><td>" +
+        escapear(q) + "</td></tr>").join("") + "</table>";
+    zona("s-talk").innerHTML = "<p>Servidor: " + coma(s.servidor.gib) + " GiB, " + s.servidor.nucleos +
+      " núcleos. Suite: ~" + s.servidor.suite_gib + " GiB.</p>" + '<ul class="lista-estado">' +
+      fila("Talk", s.talk) + fila("Grabación", s.grabacion) + "</ul>";
+    const p = s.preparacion, hechos = new Set(p.hechos), preparada = s.preparada || s.en_marcha;
+    zona("s-form").hidden = preparada || p.estado === "en_curso";
+    zona("s-ir").disabled = false;
+    zona("s-error").innerHTML = p.estado === "error" ? '<div class="error">' + escapear(p.motivo) + "</div>" : "";
+    zona("s-prep").innerHTML = p.estado === "en_curso" ? p.pasos.map((t) => '<li class="' +
+      (hechos.has(t) ? "hecho" : "") + '"><span class="ic">' + (hechos.has(t) ? "✓" : "○") + "</span><span>" +
+      escapear(t) + "</span></li>").join("") : "";
+    zona("s-nota").hidden = p.estado !== "en_curso";
+    zona("s-datos").hidden = !preparada;
+    if (preparada) {
+      zona("s-datos").innerHTML = '<dl class="dl"><dt>Dominio</dt><dd>' + escapear(s.dominio || "—") +
+        "</dd><dt>Zona horaria</dt><dd>Santiago</dd><dt>Oficina</dt><dd>Euro-Office</dd><dt>Talk</dt><dd>" +
+        (s.opciones.talk ? "Activado" : "Desactivado") + "; grabación " +
+        (s.opciones.grabacion ? "activada" : "desactivada") +
+        "</dd><dt>Respaldo</dt><dd>Diario a las 04:00, en este servidor</dd></dl>" +
+        (s.frase ? '<div class="aviso"><strong>Frase de contraseña del asistente:</strong> <span ' +
+          'class="frase" translate="no">' + escapear(s.frase) + "</span><br>El asistente la pide para ingresar.</div>" +
+          '<div class="fila"><a class="btn" id="s-abrir" target="_blank" rel="noopener">Abrir el asistente ' +
+          'e iniciar</a><span class="nota">Nueva pestaña; el avance, aquí.</span></div>' : "");
+      const abrir = document.getElementById("s-abrir");
+      if (abrir) abrir.href = s.asistente;   // through the DOM: an attribute, never markup
+    }
+    const clave = JSON.stringify(s.contenedores) + s.instalada;
+    if (preparada && clave !== visto) {
+      visto = clave;
+      const n = s.contenedores.length, k = s.contenedores.filter(([, e]) => e === "en marcha").length;
+      zona("s-prog").hidden = false;
+      zona("s-linea").textContent = s.instalada ? (k === n ? "✓ Suite en marcha: " + n + " contenedores." :
+        "✓ Suite en marcha: " + k + " de " + n + " contenedores; el resto se revisa en el asistente.") :
+        s.en_marcha ? "Instalando la suite…" : s.contenedores.some(([, e]) => e !== "en espera") ?
+        "Contenedores en marcha: " + k + " de " + n : "Esperando «Iniciar» en el asistente: primero descarga " +
+        "las imágenes (varios minutos).";
+      zona("s-barra").style.setProperty("--p", k / n);
+      zona("s-barra").parentNode.setAttribute("aria-valuenow", Math.round(100 * k / n));
+      zona("s-lista").innerHTML = s.contenedores.map(([c, e]) => '<li class="' + (e === "en marcha" ? "hecho" :
+        e === "iniciando" ? "ahora" : "") + '"><span class="ic">' + (e === "en marcha" ? "✓" : e === "iniciando" ?
+        "●" : e === "detenido" ? "✗" : "○") + "</span><span>" + escapear(c) + " · " + escapear(e) + "</span></li>").join("");
+    }
+    zona("s-sig-fila").hidden = !s.instalada;
   }
-  if (!r.contenedores.length) {
-    zona("m").innerHTML = '<div class="error">No se encontró la instancia. ' +
-      'Complete primero el asistente de instalación en el puerto 8080.</div>'; return;
+  async function seguir() {   // one short GET a second while something moves (R48)
+    clearTimeout(reloj);
+    const s = await api("/api/suite");
+    if (s.estado !== 200) {
+      zona("m").innerHTML = '<div class="error">' + escapear(s.error) + "</div>";
+      reloj = setTimeout(seguir, 2000); return;
+    }
+    pintar(s);
+    if (s.preparacion.estado === "en_curso" || ((s.preparada || s.en_marcha) && !s.instalada)) reloj = setTimeout(seguir, 1000);
   }
-  zona("m").innerHTML = "<table><tr><th>Contenedor</th><th>Estado</th></tr>" +
-    r.contenedores.map(([n, e]) => "<tr><td>" + escapear(n) + "</td><td>" +
-      escapear(e) + "</td></tr>").join("") + "</table>";
+  zona("s-form").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    zona("s-ir").disabled = true;
+    const r = await api("/api/suite", {dominio: zona("s-dom").value.trim(), validar: !zona("s-sinval").checked});
+    if (r.estado !== 202 && r.estado !== 409) {
+      zona("s-error").innerHTML = '<div class="error">' + escapear(r.error) + "</div>";
+      zona("s-ir").disabled = false; return;
+    }
+    seguir();
+  });
+  zona("s-sig").addEventListener("click", () => { location.href = "/equipos"; });
+  seguir();
 })();
 </script>"""
     return shell("suite", body)
-
 
 def screen_centro():
     """Step 6, «Elegir el centro» (L3 S2) — the approved design's Centro without its map (L5):
@@ -4587,7 +4670,7 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
 
                 b.cookie = f"{TOKEN_COOKIE}={TOKEN}"
                 for path, marca in (("/bienvenida", "Sesión iniciada desde servidor-prueba"),
-                                    ("/contenedores", "Contenedores del asistente"),
+                                    ("/contenedores", "Preparar el asistente"),
                                     ("/centro", "Confirmar centro"),
                                     ("/equipos", "Planilla de personas"),
                                     ("/revision", "Crea los grupos, las carpetas y las cuentas")):
@@ -4675,7 +4758,7 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                 gone = [b.req("GET", r)[0] for r in ("/sectores", "/componentes", "/planilla")]
                 st, equipos_html, hdr, setc = b.req("GET", "/contenedores")
                 check("screens: step 8 is one screen — the three old routes are gone, the suite hands off to /equipos (a16)",
-                      gone == [404, 404, 404] and "location.href='/equipos'" in equipos_html)
+                      gone == [404, 404, 404] and 'location.href = "/equipos"' in equipos_html)
                 st, rev_html, hdr, setc = b.req("GET", "/revision")
                 with open(os.path.join(ROOT_DIR, "host", "aps-conecta.timer"), encoding="utf-8") as fh:
                     semanal = re.search(r"^OnCalendar=(.*)$", fh.read(), re.M).group(1)
@@ -4808,7 +4891,7 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                         check("browser: the link signs in — the fragment leaves the address bar, the cookie is Secure and HttpOnly",
                               llego and "acceso" not in pg.url and galleta.get("secure") is True
                               and galleta.get("httpOnly") is True and not errores)
-                        cargando = {"/contenedores": "Consultando el estado",
+                        cargando = {"/contenedores": "Consultando el servidor",
                                     "/centro": "Cargando el registro",
                                     "/equipos": "Cargando los equipos",
                                     "/revision": "Preparando la revisión"}   # the centre from the server, then the plan
@@ -5014,6 +5097,75 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                             EJECUCION.update(estado="sin_ejecutar", hechos=[], veredicto=None)
                         check("browser: step 9 — the plan in clinic terms, «Ejecutar» followed by polling and through a reload mid-run, a red verdict's head and the way to its detail (no gate notes), nothing a16 forbids on the page (R40, a14, a16)",
                               paso9 and not errores[desde:])
+                        # step 7 in a real browser (L3 S5): the apps and Talk's verdict; a refusal that gives
+                        # the form back; «Preparar el asistente» on the fake host command, with progress in
+                        # under 2 s; a reload; the passphrase and the link; the containers to «Siguiente»;
+                        # nothing a16 forbids in any state (R26, a12, R48, a16)
+                        pg.goto("about:blank")
+                        desde = len(errores)
+                        aio_antes = AIO_STATE
+                        AIO_STATE = os.path.join(tempfile.mkdtemp(), "aio")
+                        os.makedirs(AIO_STATE)
+                        fijo7 = centro_actual()[1].get("codigo")   # the site the preparation fills, then restored
+                        antes7 = open(site_path(fijo7), encoding="utf-8").read() if fijo7 else None
+                        globals()["SUITE_CMD"] = ["bash", falso]
+                        SUITE.update(estado="sin_preparar", hechos=[], motivo="")
+                        try:
+                            open(stubctl, "w", encoding="utf-8").write("PS_MODE=empty\n")
+                            pg.goto(f"https://127.0.0.1:{tport}/contenedores")
+                            pg.wait_for_selector("#s-apps table", timeout=15000)
+                            apps_txt, talk_txt = pg.inner_text("#s-apps"), pg.inner_text("#s-talk")
+                            antes_txt = pg.inner_text("#contenido")
+                            pg.fill("#s-dom", "rechazado.example")
+                            pg.click("#s-ir")
+                            pg.wait_for_selector("#s-error .error", timeout=15000)
+                            error_txt = pg.inner_text("#s-error")
+                            pg.wait_for_selector("#s-ir:enabled", timeout=10000)
+                            de_nuevo = pg.is_visible("#s-form")
+                            pg.fill("#s-dom", "gestion.clinica.example")
+                            pg.check("#s-sinval")
+                            pg.click("#s-ir")
+                            pg.wait_for_selector("#s-prep li", state="attached", timeout=2000)   # a12: within 2 s
+                            prep_txt = pg.inner_text("#s-prep") + pg.inner_text("#s-nota")
+                            pg.wait_for_selector("#s-abrir", timeout=15000)
+                            datos_txt = pg.inner_text("#s-datos")
+                            espera_txt = pg.inner_text("#s-linea")
+                            pg.reload()
+                            pg.wait_for_selector("#s-abrir", timeout=15000)
+                            recargado7 = pg.inner_text("#s-datos")
+                            open(stubctl, "w", encoding="utf-8").write("PS_LISTA=" + ";".join(
+                                f"{c}:Up 3 minutes" for c, _n in CONTENEDORES_SUITE + CONTENEDORES_TALK[:1]) + "\n")
+                            pg.wait_for_selector("#s-sig-fila:not([hidden])", timeout=15000)
+                            principal7 = pg.inner_text("#contenido")
+                            sin_abrir = pg.query_selector("#s-abrir") is None   # no wait: it is gone
+                            pg.click("#s-sig")
+                            pg.wait_for_url("**/equipos", timeout=10000)
+                            ids7 = "|".join([a for a, _n, _q in COMPONENTES] + list(PLUMBING_APPS))
+                            jerga7 = re.findall(rf"\b(?:{ids7})\b|idempotente|\.sh\b|\.env\b|/|"
+                                                r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b",
+                                                antes_txt + error_txt + prep_txt + datos_txt + espera_txt + principal7)
+                            paso7 = ("Inicio" in apps_txt and "3.1.7" in apps_txt and "Territorio" in apps_txt
+                                     and "Talk: cabe" in talk_txt and "Grabación: no cabe" in talk_txt
+                                     and "requiere 4 núcleos libres; hay 4 en total" in talk_txt
+                                     and "El asistente rechazó la dirección" in error_txt and de_nuevo
+                                     and "Asistente en marcha" in prep_txt
+                                     and "frase uno dos" in datos_txt and "gestion.clinica.example" in datos_txt
+                                     and "frase uno dos" in recargado7
+                                     and "Esperando «Iniciar» en el asistente" in espera_txt
+                                     and "✓ Suite en marcha: 7 contenedores." in principal7 and jerga7 == []
+                                     and sin_abrir)
+                        except Exception as e:   # a Playwright timeout: the arm reports it
+                            paso7 = False
+                            errores.append(str(e))
+                        finally:
+                            globals()["SUITE_CMD"] = verdadero_cmd
+                            open(stubctl, "w").close()
+                            AIO_STATE = aio_antes
+                            SUITE.update(estado="sin_preparar", hechos=[], motivo="")
+                            if fijo7:
+                                write_site_text(site_path(fijo7), antes7)
+                        check("browser: step 7 — the five apps with versions, Talk's verdict, a refusal that gives the form back, «Preparar el asistente» with progress in 2 s, a reload, the passphrase and the wizard's link, the containers to «Siguiente»; nothing a16 forbids (R26, a12, R48, a16)",
+                              paso7 and not errores[desde:])
                         limpio = nav.new_context(ignore_https_errors=True).new_page()
                         limpio.goto(f"https://127.0.0.1:{tport}/")
                         en_login = limpio.url.endswith("/login") and "Código de acceso" in limpio.content()
