@@ -180,6 +180,9 @@ image digests live there and are deliberately not copied here — one fact, one 
   runs Talk (`TALK_ENABLED`, the switch the AIO entrypoint reads), and «Revisar y ejecutar» lists
   Talk only when step 7 gave it to the suite. The fork starts Talk off; with Talk off the entrypoint
   removes spreed on every boot, which the seed used to re-install. Compose keeps Talk.
+- **The password breach check is off** — phase 16 sets `password_policy` `enforceHaveIBeenPwned`
+  to `0`: Nextcloud no longer sends each new password's SHA-1 prefix to api.pwnedpasswords.com.
+  Smoke asserts it with the other policy switches.
 
 ### Removed
 

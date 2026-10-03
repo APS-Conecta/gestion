@@ -4575,6 +4575,8 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                   "DocumentServerUrl" not in log and "sameTab" in log
                   and "trusted_domains" not in log
                   and "belong to the entrypoint" in body["salida"])
+            check("generar: the password policy's breach check is off — no password, nor its hash prefix, leaves the server (R28)",
+                  "config:app:set password_policy enforceHaveIBeenPwned --value=0" in log)
             check("generar: the AIO arm — Talk off in the suite: phase 12 asks the suite and installs no spreed (R29)",
                   "printenv TALK_ENABLED" in log and "spreed skipped" in body["salida"]
                   and "app spreed" not in body["salida"])
