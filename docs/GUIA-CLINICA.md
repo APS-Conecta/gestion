@@ -76,7 +76,8 @@ Después de la bienvenida, el navegador recorre los pasos 6 a 9 de la instalaci�
    el respaldo diario a las 04:00 hora de Santiago (el asistente la muestra en UTC: 07:00 en horario
    de verano, 08:00 en invierno; tras el cambio de hora corre a las 03:00 o a las 05:00). Marque «Omitir la validación del dominio» si el servidor no tiene
    acceso desde Internet. La pantalla muestra la frase de contraseña del asistente; ábralo con
-   «Abrir el asistente e iniciar», ingrese con esa frase y pulse «Iniciar». El avance de cada
+   «Abrir el asistente e iniciar», ingrese con esa frase y pulse «Iniciar» sin cambiar las opciones (la
+   revisión lista Talk según este paso). El avance de cada
    contenedor se ve aquí; con la suite instalada aparece «Siguiente».
 3. **Cargar equipos y personas** — en una sola pantalla:
    - los sectores y programas del establecimiento, uno por línea (nadie los conoce fuera del

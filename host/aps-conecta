@@ -1021,6 +1021,11 @@ cmd_aio_wizard() {  # --dominio D [--sin-validar-dominio] [--respaldo DIR] [--ta
   ( umask 077 && mkdir -p "$AIO_STATE" ) || die "no se pudo crear $AIO_STATE"
   rm -f "$AIO_STATE/motivo"
   FAIL=0
+  # the backup hour first: a host without tzdata stops here, before anything is started or posted
+  if [ -n "$backup_dir" ] && ! hora="$(backup_hour_utc today)"; then
+    printf 'Falta la zona America/Santiago en el servidor (paquete tzdata): no se fija la hora del respaldo.\n' > "$AIO_STATE/motivo"
+    exit 1
+  fi
   if [ "$preparar" = 1 ] && ! start_suite; then
     printf 'El asistente no arrancó: el detalle, en la consola del servidor.\n' > "$AIO_STATE/motivo"
     exit 1
@@ -1039,8 +1044,7 @@ cmd_aio_wizard() {  # --dominio D [--sin-validar-dominio] [--respaldo DIR] [--ta
       && aio_post /api/configuration --data-urlencode "timezone=America/Santiago" && ok "Zona horaria: America/Santiago" \
       && aio_post /api/configuration "${opciones[@]}" \
       && ok "Opciones: oficina incluida; Talk $([ "$talk" = 1 ] && echo activado || echo apagado); grabación $([ "$grabacion" = 1 ] && echo activada || echo apagada); pizarra e imágenes apagadas" \
-      && { [ -z "$backup_dir" ] || { hora="$(backup_hour_utc today)" \
-             && aio_post /api/configuration --data-urlencode "borg_backup_host_location=$backup_dir" \
+      && { [ -z "$backup_dir" ] || { aio_post /api/configuration --data-urlencode "borg_backup_host_location=$backup_dir" \
              --data-urlencode "borg_remote_repo=" && aio_post /api/configuration --data-urlencode "daily_backup_time=$hora" \
              && aio_post /api/configuration --data-urlencode "additional_backup_directories=$APS_HOME" \
              && ok "Respaldo diario a las 04:00 hora de Santiago ($hora UTC), en $backup_dir, con $APS_HOME"; }; } \
@@ -1837,6 +1841,10 @@ SHIM
     mkdir -p "$tmp/notz"
     check "backup hour: 04:00 in Santiago as the wizard's UTC hour — 07:00 in summer time, 08:00 in winter; a host without tzdata is refused, never 04:00 UTC (B-035)" \
       '[ "$(backup_hour_utc 2026-01-15)" = 07:00 ] && [ "$(backup_hour_utc 2026-07-01)" = 08:00 ] && ! TZDIR="$tmp/notz" backup_hour_utc 2026-07-01 2>/dev/null'
+    : > "$tmp/aio.ps"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; : > "$tmp/aio.log"
+    out="$( (TZDIR="$tmp/notz" cmd_aio_wizard --dominio backup.example --respaldo /mnt/backup) 2>&1)"; rc=$?
+    check "asistente-aio: a host without tzdata stops before any post, the cause in motivo for the web installer (B-035)" \
+      '[ "$rc" -eq 1 ] && [ ! -s "$tmp/aio.log" ] && [ "$(cat "$AIO_STATE/motivo")" = "Falta la zona America/Santiago en el servidor (paquete tzdata): no se fija la hora del respaldo." ]'
     : > "$tmp/aio.ps"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; : > "$tmp/aio.log"
     out="$( (cmd_aio_wizard --dominio rechazado.example) 2>&1)"; rc=$?
     check "asistente-aio: a domain the wizard refuses stops before the start, naming the field and its reason in Spanish" \

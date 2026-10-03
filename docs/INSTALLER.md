@@ -68,7 +68,8 @@ image (D4), so boot-time installs would be noise. If preflight reds on the domai
    timezone, the options (Euro-Office, the suite's only office; Talk and its recording as the
    server's memory and cores allow, port 3478 free; Whiteboard and Imaginary off) and the daily
    backup (§11).
-3. Log in to the wizard with that password and press Start. Step 7 follows the containers until
+3. Log in to the wizard with that password and press Start, leaving the options as step 7 set them:
+   the installer's review lists Talk from step 7's choice. Step 7 follows the containers until
    Nextcloud is installed. The wizard has no app store, no community containers and no other
    office: a request to switch or disable the office is refused. The daily-backup screen's
    automatic-update box ships **unchecked** — leave it: the suite updates as one set.
@@ -226,7 +227,8 @@ Santiago time. To move it, the wizard's backup section takes a new time, in UTC.
   — check `DocumentServerUrl` is the public form and open one from another machine yourself
   (the gate cannot do that leg for you).
 - **Reinstall from scratch** (a failed install, or a wizard password that was not seen). It deletes
-  the instance and everything in it: users, files, settings. Stop the containers in the wizard, then:
+  the instance — every `nextcloud-aio-*` container and `nextcloud_aio_*` volume on the host — and
+  everything in it: users, files, settings. Stop the containers in the wizard, then:
 
   ```bash
   sudo docker stop nextcloud-aio-mastercontainer

@@ -42,8 +42,8 @@ work; the 🗡️ Breaker agent starts here.*
 
 - **Two-factor authentication:** no 2FA provider is enabled, and 2FA is not enforced for staff or admins.
 - **Password policy:** only the breach check is set, and it is off (`provisioning/app-policy.sh`):
-  no password hash prefix reaches api.pwnedpasswords.com. Length, the common-password check and
-  expiry are the image's defaults.
+  no password hash prefix reaches api.pwnedpasswords.com, and a known-breached password is no longer
+  refused. Length, the common-password check and expiry are the image's defaults.
 - **Audit logging:** `admin_audit` is not enabled, so there is no record of file access or shares.
 - **Sharing defaults:** nothing sets public-link passwords, expiry, or share-by-mail limits
   (`shareapi_*`).

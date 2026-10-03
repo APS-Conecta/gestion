@@ -199,8 +199,8 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 - **The daily backup runs at 04:00 Santiago time** (B-035) — the AIO mastercontainer runs in UTC,
   so the «04:00» step 7 posted ran at 00:00 or 01:00. Step 7 now posts the UTC hour that is 04:00
-  in Santiago, and refuses a host without tzdata; `docs/INSTALLER.md` §11 states the hour drift
-  across a DST change.
+  in Santiago; on a host without tzdata it stops before any post and the installer's page names the
+  cause. `docs/INSTALLER.md` §11 states the hour drift across a DST change.
 
 ## [0.3.0] — 2026-09-22
 
