@@ -318,6 +318,8 @@ if args and args[0] == "ps":
     else:
         print("nextcloud-aio-nextcloud")
     sys.exit(0)
+elif "printenv" in args and "TALK_ENABLED" in args:   # the suite's Talk switch, as AIO sets it: yes or empty
+    print(control.get("TALK_ENABLED", ""))
 elif "status" in args and "--output=json" in args:
     print('{"installed":true,"version":"34.0.4","maintenance":false}')
 elif "user:info" in args:
@@ -1217,6 +1219,8 @@ def plan_clinico(codigo, teams, rows, cargos):
     every person the planilla declares (the first administrator marked), the cargo accounts it adds,
     and what the clinic gets (R37) — no path, no file, no key."""
     row = find_row(codigo)
+    opciones = opciones_actuales()
+    sin_talk = opciones is not None and not opciones[0]   # step 7 left Talk off: phase 12 installs no spreed
     return {"centro": {"codigo": codigo,
                        "nombre": row["nombre"] if row else f"el establecimiento DEIS {codigo}",
                        "comuna": row["comuna"] if row else ""},
@@ -1225,7 +1229,8 @@ def plan_clinico(codigo, teams, rows, cargos):
             "personas": [[uid, f"{nombre} {apellidos}", list(gids), primer]
                          for uid, nombre, apellidos, _c, gids, primer in rows],
             "cuentas_de_cargo": len(cargos),
-            "componentes": [[nombre, que] for _app, nombre, que in COMPONENTES]}
+            "componentes": [[nombre, que] for app, nombre, que in COMPONENTES
+                            if not (sin_talk and app == "spreed")]}
 
 
 def record_state(body):
@@ -4194,6 +4199,18 @@ def selftest():
                 os.remove(os.path.join(AIO_STATE, "opciones"))
             check("suite: once prepared, the port is probed only where Talk is off — Talk's own proxy is never raced, and a taken port still reads taken (R26)",
                   sin_talk_rec[0] == (False, "el puerto 3478 está ocupado") and con_talk_rec[0][0] is True)
+            try:
+                with open(os.path.join(AIO_STATE, "opciones"), "w", encoding="utf-8") as fh:
+                    fh.write("talk=0 grabacion=0\n")
+                sin_talk_plan = [n for n, _q in plan_clinico("113314", [], [], [])["componentes"]]
+                with open(os.path.join(AIO_STATE, "opciones"), "w", encoding="utf-8") as fh:
+                    fh.write("talk=1 grabacion=0\n")
+                con_talk_plan = [n for n, _q in plan_clinico("113314", [], [], [])["componentes"]]
+            finally:
+                os.remove(os.path.join(AIO_STATE, "opciones"))
+            check("revisión: Talk is a component only when step 7 gave the suite Talk — phase 12 installs nothing else (R29)",
+                  "Talk" not in sin_talk_plan and "Talk" in con_talk_plan
+                  and len(con_talk_plan) == len(COMPONENTES) == len(sin_talk_plan) + 1)
             with open(os.path.join(ROOT_DIR, "provisioning", "phases", "12-apps.sh"), encoding="utf-8") as fh:
                 own = re.search(r'^OWN_APPS="([^"]*)"', fh.read(), re.M).group(1)
             with open(HOST_CLI, encoding="utf-8") as fh:
@@ -4558,6 +4575,9 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                   "DocumentServerUrl" not in log and "sameTab" in log
                   and "trusted_domains" not in log
                   and "belong to the entrypoint" in body["salida"])
+            check("generar: the AIO arm — Talk off in the suite: phase 12 asks the suite and installs no spreed (R29)",
+                  "printenv TALK_ENABLED" in log and "spreed skipped" in body["salida"]
+                  and "app spreed" not in body["salida"])
             # B-030: phase 50 creates the standing accounts AFTER phase 41 mapped the registry
             # groups into the engine's, so the FIRST seed must map them too — or the second seed
             # writes (Clean boot's seed-idempotent) and every fresh install converges one run late
@@ -4592,6 +4612,7 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                   and "group: director added to group IntraVox Editors" in body["salida"])
 
             env_before = open(env_path, "rb").read()
+            open(stubctl, "w", encoding="utf-8").write("TALK_ENABLED=yes\n")
             buf = io.StringIO()
             with redirect_stdout(buf):
                 st, body = api_generar({"codigo": "113314", "modo": "ejecutar", "resumen": True})
@@ -4615,6 +4636,9 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
             check("generar: the re-run seed maps no standing account again (B-030)",
                   "group: director added to group IntraVox" not in seed2
                   and "group: jefe." not in seed2)
+            check("generar: Talk on in the suite — phase 12 installs spreed (R29)",
+                  "app spreed" in seed2 and "spreed skipped" not in seed2)
+            open(stubctl, "w").close()
 
             site_text = open(site_path("113314"), encoding="utf-8").read()
             assert "SITE_ROLES=(\n" in site_text
@@ -4633,6 +4657,12 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
             check("generar: a failing phase stops the run — 500 naming it, the gate never fires",
                   st == 500 and "FATAL: phase 20-groups.sh failed" == body["error"]
                   and "user:list" not in stub_log_text())
+            open(stubctl, "w").close()
+            open(stubctl, "w", encoding="utf-8").write("FAIL_ON=printenv\n")
+            st, body = generar("ejecutar")
+            check("generar: the suite's Talk switch unreadable stops phase 12 — never read as Talk off (R29)",
+                  st == 500 and body["error"].startswith("FATAL: could not read the suite's Talk switch")
+                  and "spreed skipped" not in body["salida"])
             open(stubctl, "w").close()
 
             open(stubctl, "w", encoding="utf-8").write("GATE_EXTRA=intruso.9\n")
@@ -4677,6 +4707,8 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
             check("the compose arm: with the office keys the URL writes return",
                   st == 200 and "DocumentServerUrl" in stub_log_text()
                   and "jwt_secret -> (value not printed)" in body["salida"])
+            check("the compose arm: Talk is the stack's own — spreed installs, the suite is never asked (R29)",
+                  st == 200 and "app spreed" in body["salida"] and "printenv" not in stub_log_text())
             open(stubctl, "w").close()
             open(env_path, "w", encoding="utf-8").write(
                 "\n".join(l for l in env_lines if not l.startswith("OFFICE_")) + "\n")
