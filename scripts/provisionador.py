@@ -119,6 +119,7 @@ PHASE20 = os.path.join(HERE, "..", "provisioning", "phases", "20-groups.sh")
 # /opt/aps-conecta into backups). The self-test redirects it; this default is the only literal.
 CRED_PATH = "/opt/aps-conecta/credentials.txt"
 ESTADO_PATH = "/opt/aps-conecta/estado.txt"   # the last execution's verdict (a10): 0644, «aps-conecta estado»
+AIO_STATE = "/opt/aps-conecta/aio"   # the host's wizard state (0700): passphrase, domain, Talk options — passed to it
 
 # The installer's own certificate authority and the leaf it signs for the link's address (L3 S1,
 # owner 2026-10-02). The CA is kept: the suite's certificate (L4, R22) hangs from the same one and
@@ -183,7 +184,7 @@ EJEC_GUARD = threading.Lock()
 # The seed's bound is the harness's pull budget (30 min); the roster driver rides the same number —
 # a big clinic's N×0.8 s execs fit with margin; the gate only reads. The self-test patches this
 # dict for its timeout arm instead of a test-only env knob.
-TIMEOUTS = {"seed": 1800, "roster": 1800, "gate": 300}
+TIMEOUTS = {"seed": 1800, "roster": 1800, "gate": 300, "suite": 900}
 # The silent install's console (R42): one Spanish line per finished phase, keyed by the phase
 # file's stem — a self-test arm pins one title per file in provisioning/phases.
 PHASE_TITLES = {
@@ -214,6 +215,33 @@ PLUMBING_APPS = ("desktop_workspace", "notify_push", "side_menu")
 # The browser's progress list (a14): the phases by their console titles, then the people, then the gate.
 PASO_PLANILLA, PASO_GATE = "Cuentas del personal", "Comprobación final"
 PASOS_EJECUCION = [PHASE_TITLES[k] for k in sorted(PHASE_TITLES)] + [PASO_PLANILLA, PASO_GATE]
+# Step 7, «Iniciar la suite» (L3 S5). The five APS apps phase 12 ships (OWN_APPS — an arm pins the set),
+# named as the catalogue names them; each version is read from its VENDOR file.
+APPS_APS = ("intravox", "epidemiologia", "estadistica", "farmacia", "territorio")
+# The suite's containers, named for the people who run it: the host's AIO_SET plus Nextcloud's own (an
+# arm pins the set). Talk's two join when the wizard was given Talk — they never block «Siguiente».
+CONTENEDORES_SUITE = (("nextcloud-aio-apache", "Servidor web"), ("nextcloud-aio-nextcloud", "Núcleo de la suite"),
+                      ("nextcloud-aio-database", "Base de datos"), ("nextcloud-aio-redis", "Caché"),
+                      ("nextcloud-aio-notify-push", "Notificaciones al instante"),
+                      ("nextcloud-aio-eurooffice", "Oficina"))
+CONTENEDORES_TALK = (("nextcloud-aio-talk", "Talk"), ("nextcloud-aio-talk-recording", "Grabación de Talk"))
+# Talk sized to the server (R26). ponytail: Talk ~1 GiB is AIO's own figure; the recording's 4 free cores
+# are the approved design's example, above AIO's ~2 vCPU — the conservative side until measured. Clean
+# boot prints the suite's memory; the L7 rehearsal box (12 GiB, 4 cores) confirms or moves them.
+SUITE_GIB, TALK_GIB, GRABACION_GIB, RESERVA_GIB = 6, 1, 1, 1
+SUITE_NUCLEOS, GRABACION_NUCLEOS = 2, 4
+PUERTO_TALK = 3478
+RESPALDO_DIR = "/srv/aps-conecta/respaldos"   # the daily backup's folder on this server (INSTALLER §11)
+DOMINIO = re.compile(r"[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?")   # the host's DOMAIN_RE
+# The wizard's preparation, followed by the page (a12): the host's ✓ lines, as the page names them
+PASOS_SUITE = ((("✓ Suite iniciada", "✓ Suite reanudada", "✓ La suite ya está iniciada"), "Asistente en marcha"),
+               (("✓ Contraseña del asistente",), "Contraseña del asistente"),
+               (("✓ Ingreso al asistente",), "Ingreso al asistente"),
+               (("✓ Dominio:",), "Dominio"), (("✓ Zona horaria:",), "Zona horaria"),
+               (("✓ Opciones:",), "Opciones"), (("✓ Respaldo diario",), "Respaldo diario"))
+SUITE = {"estado": "sin_preparar", "hechos": [], "motivo": ""}
+SUITE_GUARD = threading.Lock()
+SUITE_CMD = ["bash", HOST_CLI, "asistente-aio", "--preparar"]   # the host's own drive; the self-test fakes it
 
 
 STUB_DOCKER = r'''#!/usr/bin/env python3
@@ -225,7 +253,8 @@ red. Everything it does is logged to FAKE_DOCKER_LOG (one line per argv) — the
 and the AIO-arm arms grep THAT. Control knobs arrive via FAKE_DOCKER_CONTROL (python-assignable
 lines), so the log stays a pure record: FAIL_ON (a word that makes any matching call exit 1 —
 the fail-stop arm), GATE_EXTRA (a uid the user:list answer plants — the gate-red arm), PS_MODE
-('empty' — the compose-arm), SLOW (sleep before answering — the timeout arm).
+('empty' — the compose-arm), PS_LISTA (the containers docker ps -a lists — the step-7
+arms), SLOW (sleep before answering — the timeout arm).
 """
 import json
 import os
@@ -280,8 +309,12 @@ if args and args[0] == "ps":
     # two --format shapes ride the same verb: the detection idiom asks for bare names
     # (install.sh/smoke/14-office: grep -qx needs whole lines), the estado leg for name+status
     if any("{{.Status}}" in a for a in args):  # the tab template arrives as ONE argv
-        print("nextcloud-aio-nextcloud\tUp 2 minutes")
-        print("nextcloud-aio-database\tUp 2 minutes (healthy)")
+        if control.get("PS_LISTA"):   # the step-7 arms' containers, name:status;name:status
+            for item in control["PS_LISTA"].split(";"):
+                print(item.replace(":", "\t", 1))
+        else:
+            print("nextcloud-aio-nextcloud\tUp 2 minutes")
+            print("nextcloud-aio-database\tUp 2 minutes (healthy)")
     else:
         print("nextcloud-aio-nextcloud")
     sys.exit(0)
@@ -640,7 +673,7 @@ def api_sitio(payload):
         try:
             buf = io.StringIO()
             with redirect_stdout(buf):  # write_site's "wrote sites/…" line is the response, not noise
-                deis.write_site(row, SNAPSHOT, codigo, sectors, programs)
+                deis.write_site(row, SNAPSHOT, codigo, sectors, programs, domain=dominio_actual())
             return 200, {"ok": True, "already": False, "site": _site_rel(codigo),
                          "written": buf.getvalue().strip(), "equipos": equipos}
         except SystemExit:  # the refusal raced our look (threaded server) — settle it the same way
@@ -1963,8 +1996,10 @@ def installed_centre():
 
 
 def screen_listo():
+    dominio = dominio_actual()
+    acceso = f" Acceso del personal: <b>https://{esc(dominio)}</b>." if dominio else ""
     return telon("Listo", f"""<h1 tabindex="-1">Listo</h1>
-<p class="para grande">Suite instalada en {esc(installed_centre())}.</p>
+<p class="para grande">Suite instalada en {esc(installed_centre())}.{acceso}</p>
 <p class="para">Instalador cerrado: enlace inválido, puerto {PORT} cerrado.</p>
 <ul class="lista-sigue para"><li>Credenciales: en la consola del servidor; una fila por persona.</li>
 <li>Re-provisión semanal: la activa la consola al cerrar el instalador.</li></ul>
@@ -1980,7 +2015,7 @@ en marcha antes de continuar.</p><div id="m">Consultando el estado…</div></div
 <button onclick="location.href='/equipos'">Continuar</button></div>
 <script>
 (async () => {
-  const r = await api("/api/estado");
+  const r = await api("/api/suite");
   if (r.estado !== 200) {
     zona("m").innerHTML = '<div class="error">' + escapear(r.error) + "</div>"; return;
   }
@@ -1989,8 +2024,8 @@ en marcha antes de continuar.</p><div id="m">Consultando el estado…</div></div
       'Complete primero el asistente de instalación en el puerto 8080.</div>'; return;
   }
   zona("m").innerHTML = "<table><tr><th>Contenedor</th><th>Estado</th></tr>" +
-    r.contenedores.map(c => "<tr><td>" + escapear(c.nombre) + "</td><td>" +
-      escapear(c.estado) + "</td></tr>").join("") + "</table>";
+    r.contenedores.map(([n, e]) => "<tr><td>" + escapear(n) + "</td><td>" +
+      escapear(e) + "</td></tr>").join("") + "</table>";
 })();
 </script>"""
     return shell("suite", body)
@@ -2391,10 +2426,9 @@ ROUTES = {
 }
 
 
-def estado_contenedores():
-    """The one new subprocess site besides run_tee: a single bounded `docker ps` filtered to
-    nextcloud-aio-* — read-only, 5 s, the same argv shape smoke's check 1 and the AIO arm use.
-    A missing docker binary or a dead daemon answers a fix-hint 500, never a hang."""
+def contenedores():
+    """(status, {name: docker status}) — the one bounded `docker ps -a` over nextcloud-aio-*: 5 s,
+    read-only. A missing docker binary or a dead daemon answers a fix-hint 500, never a hang."""
     try:
         out = subprocess.run(
             ["docker", "ps", "-a", "--filter", "name=nextcloud-aio-",
@@ -2407,10 +2441,226 @@ def estado_contenedores():
     if out.returncode != 0:
         return 500, {"error": f"docker no pudo listar los contenedores: {out.stderr.strip()}"}
     tab = chr(9)  # docker's --format emits a real tab — split on it, never on the two-char escape
-    conts = [{"nombre": n, "estado": s} for n, s in
-             (l.split(tab, 1) for l in out.stdout.splitlines() if tab in l)]
-    return 200, {"contenedores": conts}
+    return 200, dict(ln.split(tab, 1) for ln in out.stdout.splitlines() if tab in ln)
 
+
+def estado_contenedor(status):
+    """docker's status → the page's word: absent, starting (created, restarting, health still
+    starting), up, or stopped."""
+    if status is None:
+        return "en espera"
+    if status.startswith("Up"):
+        return "iniciando" if "health: starting" in status else "en marcha"
+    return "iniciando" if status.startswith(("Created", "Restarting")) else "detenido"
+
+
+def recursos(meminfo="/proc/meminfo"):
+    """This server's memory (GiB, one decimal) and cores — what Talk's verdict reads (R26)."""
+    with open(meminfo, encoding="utf-8") as fh:
+        kib = next(int(ln.split()[1]) for ln in fh if ln.startswith("MemTotal:"))
+    return round(kib / 1048576, 1), os.cpu_count() or 1
+
+
+def puerto_libre(puerto):
+    """True when nothing holds the port Talk publishes — TCP and UDP, on every address."""
+    for tipo in (socket.SOCK_STREAM, socket.SOCK_DGRAM):
+        with socket.socket(socket.AF_INET, tipo) as s:
+            try:
+                s.bind(("0.0.0.0", puerto))
+            except OSError:
+                return False
+    return True
+
+
+def gib(x):
+    return f"{x:g}".replace(".", ",") + " GiB"   # es-CL: a decimal comma
+
+
+def veredicto_talk(memoria, nucleos, puerto_ok):
+    """R26 — whether Talk and its recording fit this server, and why: ((cabe, texto), (cabe, texto))."""
+    libre = memoria - SUITE_GIB - RESERVA_GIB
+    if not puerto_ok:
+        talk = (False, f"el puerto {PUERTO_TALK} está ocupado")
+    elif libre >= TALK_GIB:
+        talk = (True, f"~{TALK_GIB} GiB")
+    else:
+        talk = (False, f"requiere ~{TALK_GIB} GiB libres; quedan {gib(max(libre, 0))}")
+    if not talk[0]:
+        grabacion = (False, "requiere Talk")
+    elif nucleos - SUITE_NUCLEOS < GRABACION_NUCLEOS:
+        grabacion = (False, f"requiere {GRABACION_NUCLEOS} núcleos libres; hay {nucleos} en total")
+    elif libre < TALK_GIB + GRABACION_GIB:
+        grabacion = (False, f"requiere ~{TALK_GIB + GRABACION_GIB} GiB libres; quedan {gib(libre)}")
+    else:
+        grabacion = (True, f"~{GRABACION_GIB} GiB y {GRABACION_NUCLEOS} núcleos")
+    return talk, grabacion
+
+
+def apps_aps():
+    """The five APS apps with their versions (a12): the catalogue's name and use, each VENDOR's version."""
+    nombres = {app: (nombre, que) for app, nombre, que in COMPONENTES}
+    filas = []
+    for app in APPS_APS:
+        with open(os.path.join(ROOT_DIR, "provisioning", "apps", app, "VENDOR"), encoding="utf-8") as fh:
+            version = next((ln.split("=", 1)[1].strip() for ln in fh if ln.startswith("version=")), "")
+        filas.append([nombres[app][0], version, nombres[app][1]])
+    return filas
+
+
+def dominio_actual():
+    """The domain the wizard took (the host records it once every post succeeded): the site file's
+    SITE_DOMINIO and «Listo»'s access line; "" before step 7, or for a record that is not a domain."""
+    try:
+        with open(os.path.join(AIO_STATE, "dominio"), encoding="utf-8") as fh:
+            dominio = fh.read().strip()
+    except OSError:
+        return ""
+    return dominio if DOMINIO.fullmatch(dominio) else ""
+
+
+def opciones_actuales():
+    """The Talk options the wizard was given (the host records them with the domain): (talk, grabacion),
+    or None before step 7 — what the page shows and the containers it waits for."""
+    try:
+        with open(os.path.join(AIO_STATE, "opciones"), encoding="utf-8") as fh:
+            m = re.fullmatch(r"talk=([01]) grabacion=([01])\s*", fh.read())
+    except OSError:
+        return None
+    return (m.group(1) == "1", m.group(2) == "1") if m else None
+
+
+def suite_instalada():
+    """Nextcloud answers installed — one bounded `occ status`, asked only once the suite's containers run."""
+    try:
+        out = subprocess.run(["docker", "exec", "--user", "www-data", "nextcloud-aio-nextcloud", "php",
+                              "/var/www/html/occ", "status", "--output=json"],
+                             capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return '"installed":true' in out.stdout.replace(" ", "")
+
+
+def talk_ahora(vistos):
+    """Talk's verdict now (R26). The port is probed only before the wizard is prepared: once Talk is
+    configured, its own proxy holds 3478 and a probe could race it."""
+    memoria, nucleos = recursos()
+    libre = "nextcloud-aio-talk" in vistos or opciones_actuales() is not None or puerto_libre(PUERTO_TALK)
+    return veredicto_talk(memoria, nucleos, libre)
+
+
+def estado_suite():
+    """GET /api/suite — step 7 as the server sees it: the server's size and Talk's verdict (R26), the
+    five apps (a12), the wizard's preparation, then the suite's containers (R48). The passphrase is
+    served while it is needed: prepared, not yet installed."""
+    st, vistos = contenedores()
+    if st != 200:
+        return st, vistos
+    memoria, nucleos = recursos()
+    talk, grabacion = talk_ahora(vistos)
+    opciones = opciones_actuales()
+    con_talk, con_grabacion = opciones if opciones else (talk[0], grabacion[0])
+    base = [[nombre, estado_contenedor(vistos.get(c))] for c, nombre in CONTENEDORES_SUITE]
+    extra = [[nombre, estado_contenedor(vistos.get(c))]
+             for (c, nombre), si in zip(CONTENEDORES_TALK, (con_talk, con_grabacion)) if si]
+    en_marcha = all(e == "en marcha" for _n, e in base)
+    instalada = en_marcha and suite_instalada()
+    frase = ""
+    if opciones is not None and not instalada:
+        try:
+            with open(os.path.join(AIO_STATE, "master.pw"), encoding="utf-8") as fh:
+                frase = fh.read().strip()
+        except OSError:
+            pass
+    s = dict(SUITE)
+    return 200, {"servidor": {"gib": memoria, "nucleos": nucleos, "suite_gib": SUITE_GIB},
+                 "talk": {"cabe": talk[0], "texto": talk[1]},
+                 "grabacion": {"cabe": grabacion[0], "texto": grabacion[1]},
+                 "apps": apps_aps(), "dominio": dominio_actual(), "preparada": opciones is not None,
+                 "opciones": {"talk": con_talk, "grabacion": con_grabacion},
+                 "preparacion": {"estado": s["estado"], "hechos": list(s["hechos"]), "motivo": s["motivo"],
+                                 "pasos": [t for _p, t in PASOS_SUITE]},
+                 "frase": frase, "asistente": f"https://{LAN_IP}:8080",
+                 "contenedores": base + extra, "en_marcha": en_marcha, "instalada": instalada}
+
+
+def iniciar_suite(payload):
+    """POST /api/suite {"dominio", "validar"} — the host fills the wizard on a worker (a minute; more
+    when the wizard's image is new) and the page follows it: Talk and its recording as the server
+    allows (R26), the daily backup at 04:00 with the installer's own files in its scope (R24)."""
+    dominio = payload.get("dominio")
+    if not isinstance(dominio, str) or not DOMINIO.fullmatch(dominio) or "." not in dominio:
+        return 400, {"error": "escriba el dominio del servidor, por ejemplo gestion.su-establecimiento.cl"}
+    if re.fullmatch(r"[0-9.]+", dominio):
+        return 400, {"error": "use un nombre de dominio, no una dirección IP"}
+    st, vistos = contenedores()
+    if st != 200:
+        return st, vistos
+    talk, grabacion = talk_ahora(vistos)
+    argv = (SUITE_CMD + ["--dominio", dominio, "--respaldo", RESPALDO_DIR]
+            + (["--talk"] if talk[0] else []) + (["--grabacion"] if grabacion[0] else [])
+            + ([] if payload.get("validar") is not False else ["--sin-validar-dominio"]))
+    with SUITE_GUARD:
+        if SUITE["estado"] == "en_curso":
+            return 409, {"error": "el asistente ya se está preparando — espere a que termine"}
+        SUITE.update(estado="en_curso", hechos=[], motivo="")
+        try:   # a reason left by an earlier run is not this run's
+            os.remove(os.path.join(AIO_STATE, "motivo"))
+        except OSError:
+            pass
+        try:
+            threading.Thread(target=preparar_suite, args=(argv,), daemon=True).start()
+        except RuntimeError as e:   # no thread to run it on: nothing started
+            SUITE.update(estado="sin_preparar")
+            return 500, {"error": f"no se pudo preparar el asistente ({e})"}
+    return 202, {"ok": True}
+
+
+def preparar_suite(argv):
+    """The worker: the host's own wizard drive (its state where this server reads it), its ✓ lines
+    turned into the page's steps; a refusal's reason is the host's one-line record (no path)."""
+    def show(line):
+        for prefijos, titulo in PASOS_SUITE:
+            if line.startswith(prefijos) and titulo not in SUITE["hechos"]:
+                SUITE["hechos"].append(titulo)
+        return line
+    try:
+        rc, _salida = run_tee(argv, cwd=ROOT_DIR, timeout=TIMEOUTS["suite"],
+                              env={**os.environ, "AIO_STATE": AIO_STATE}, show=show)
+    except Exception as e:   # never a silent dead worker
+        print(f"  ✗ la preparación del asistente se detuvo: {type(e).__name__}: {e}", file=sys.stderr)
+        rc = 1
+    if rc == 0:
+        try:
+            fijar_dominio()
+        finally:
+            SUITE.update(estado="lista")
+        return
+    try:
+        with open(os.path.join(AIO_STATE, "motivo"), encoding="utf-8") as fh:
+            motivo = fh.readline().strip()
+    except OSError:
+        motivo = ""
+    if rc is None:
+        motivo = (f"La preparación tardó más de {TIMEOUTS['suite'] // 60} minutos: vuelva a intentarlo "
+                  "(el asistente puede seguir arrancando).")
+    SUITE.update(estado="error", motivo=motivo or "El asistente no quedó listo: el detalle, en la consola del servidor.")
+
+
+def fijar_dominio():
+    """A site written before step 7 (the operator came back to it) takes the domain the wizard took —
+    the host's record, never the browser's word: its empty SITE_DOMINIO line, and only that line."""
+    dominio, codigo = dominio_actual(), centro_actual()[1].get("codigo")
+    if not dominio or not codigo:
+        return
+    path = site_path(codigo)
+    with SITE_LOCK:
+        try:
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+        except OSError:
+            return
+        if text.count('\nSITE_DOMINIO=""\n') == 1:
+            write_site_text(path, text.replace('\nSITE_DOMINIO=""\n', f'\nSITE_DOMINIO="{dominio}"\n'))
 
 class Handler(BaseHTTPRequestHandler):
     # Keep-alive: the UI fetches per interaction; every response goes through send_json, the one
@@ -2467,13 +2717,13 @@ class Handler(BaseHTTPRequestHandler):
             self.send_bytes(200, "text/csv; charset=utf-8", body["csv"].encode("utf-8"),
                             {"Content-Disposition": f'attachment; filename="{body["nombre"]}"'})
             return
-        if path in ("/api/estado", "/api/centros", "/api/centro", "/api/equipos", "/api/ejecucion"):
+        if path in ("/api/suite", "/api/centros", "/api/centro", "/api/equipos", "/api/ejecucion"):
             if not self.authorized():
                 self.send_json(401, {"error": "token ausente o inválido"},
                                {"WWW-Authenticate": "Bearer"})
                 return
-            if path == "/api/estado":
-                status, body = estado_contenedores()
+            if path == "/api/suite":
+                status, body = estado_suite()
             elif path == "/api/centros":
                 status, body = api_centros()
             elif path == "/api/centro":
@@ -2482,7 +2732,7 @@ class Handler(BaseHTTPRequestHandler):
                 status, body = estado_ejecucion()
             else:
                 status, body = equipos_actuales()
-            self.send_json(status, body)
+            self.send_json(status, body, {"Cache-Control": "no-store"} if path == "/api/suite" else None)
             return
         if path in ROUTES or path == "/listo":
             if not self.authorized():
@@ -2532,7 +2782,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         # «vista» is /api/sitio's read-only preview: on any other path it changes nothing, so it
         # exempts nothing from the freezes below
-        cambia = (path in ("/api/generar", "/api/centro", "/api/sitio", "/api/usuarios")
+        cambia = (path in ("/api/generar", "/api/centro", "/api/sitio", "/api/usuarios", "/api/suite")
                   and not (path == "/api/sitio" and payload.get("vista") is True))
         if cambia and DONE.is_set():
             # SEC-2: the installer is done and closing — a reload and a second click inside the grace
@@ -2550,6 +2800,8 @@ class Handler(BaseHTTPRequestHandler):
             status, body = api_sitio(payload)
         elif path == "/api/usuarios":
             status, body = api_usuarios(payload)
+        elif path == "/api/suite":
+            status, body = iniciar_suite(payload)
         elif path == "/api/generar" and payload.get("modo") == "ejecutar":
             status, body = iniciar_ejecucion(payload, self.server)
         elif path == "/api/generar":
@@ -2891,7 +3143,7 @@ def selftest():
     real sites/ is never touched. The HTTP checks are real round-trips against a real server on an
     OS-assigned port — urllib, no frameworks. Every check is named and counted; a failure prints the
     list and exits 1 (B-014: a gate that cannot go red is not a gate)."""
-    global TOKEN, SNAPSHOT, ROWS, CRED_PATH, PHASE20, ESTADO_PATH, CERT_DIR, LAN_IP, HOSTNAME, PORT, CENTRO
+    global TOKEN, SNAPSHOT, ROWS, CRED_PATH, PHASE20, ESTADO_PATH, CERT_DIR, LAN_IP, HOSTNAME, PORT, CENTRO, AIO_STATE
     n = 0
     bad = []
 
@@ -2920,6 +3172,8 @@ def selftest():
     old = deis.HERE
     old_cred, old_p20 = CRED_PATH, PHASE20
     old_cert = CERT_DIR
+    old_aio = AIO_STATE
+    reales = (recursos, puerto_libre)
     # The stub world must not inherit the caller's exported seed knobs (P37, measured under
     # make test on the probe: a prior section's `source env.sh` leaves OFFICE_* exported and
     # env.sh never unsets, so the compose arm's clean fixture .env could not make the OFFICE_PORT
@@ -3243,6 +3497,8 @@ def selftest():
             # swapped to a mangled copy only inside its own negative arm, restored immediately.
             CRED_PATH = os.path.join(tmp, "credenciales.txt")
             ESTADO_PATH = os.path.join(tmp, "estado.txt")
+            AIO_STATE = os.path.join(tmp, "aio")
+            globals().update(recursos=lambda *_a: (12.0, 4), puerto_libre=lambda _p: True)
 
             def planilla(*rows):
                 out = [";".join(ROSTER_HEADER)] + [";".join(r) for r in rows]
@@ -3763,6 +4019,177 @@ def selftest():
             check("ejecución: a close that fails still publishes the verdict — the run never stays «en curso»",
                   cayo and EJECUCION["estado"] == "terminada" and EJECUCION["veredicto"]["verde"] is True)
             EJECUCION.update(estado="sin_ejecutar", hechos=[], veredicto=None)
+            # ── L3 S5: step 7 — Talk sized to the server, the five apps, the wizard filled on a worker,
+            # the containers followed (R26, a12, R48) ──
+            (t12, g12), (t16, g16), (t7, g7), (tp, _gp), (t8, _g8), (_t85, g85) = (
+                veredicto_talk(12, 4, True), veredicto_talk(16, 8, True), veredicto_talk(7.5, 2, True),
+                veredicto_talk(12, 4, False), veredicto_talk(8, 4, True), veredicto_talk(8.5, 8, True))
+            check("suite: Talk sized to the server (R26) — 12 GiB / 4 cores: Talk yes, recording no for want of cores; 16 / 8: both; 8 GiB: Talk just fits; too little memory, a taken port, or memory short for the recording: no, saying why",
+                  t12 == (True, "~1 GiB") and g12 == (False, "requiere 4 núcleos libres; hay 4 en total")
+                  and t16[0] and g16[0] and t8[0] and t7 == (False, "requiere ~1 GiB libres; quedan 0,5 GiB")
+                  and g7 == (False, "requiere Talk") and tp == (False, "el puerto 3478 está ocupado")
+                  and g85 == (False, "requiere ~2 GiB libres; quedan 1,5 GiB"))
+            meminfo = os.path.join(tmp, "meminfo")
+            with open(meminfo, "w", encoding="utf-8") as fh:
+                fh.write("MemTotal:       12582912 kB\nMemFree:            1024 kB\n")
+            ocupado = socket.socket()
+            ocupado.bind(("0.0.0.0", 0))
+            ocupado.listen()
+            with socket.socket() as suelto:
+                suelto.bind(("0.0.0.0", 0))
+                puerto_suelto = suelto.getsockname()[1]
+            try:
+                medido, tomado, libre = (reales[0](meminfo), reales[1](ocupado.getsockname()[1]),
+                                         reales[1](puerto_suelto))
+            finally:
+                ocupado.close()
+            check("suite: the server's memory read from meminfo and its cores counted; a held port is taken, a closed one free (R26)",
+                  medido == (12.0, os.cpu_count() or 1) and tomado is False and libre is True)
+            os.makedirs(AIO_STATE, exist_ok=True)
+            globals()["puerto_libre"] = lambda _p: False
+            try:
+                corre, nada = talk_ahora({"nextcloud-aio-talk": "Up 1 minute"}), talk_ahora({})
+            finally:
+                globals()["puerto_libre"] = lambda _p: True
+            check("suite: a running Talk holds its own port — it still fits; any other holder does not (R26)",
+                  corre[0][0] is True and nada[0] == (False, "el puerto 3478 está ocupado"))
+            with open(os.path.join(ROOT_DIR, "provisioning", "phases", "12-apps.sh"), encoding="utf-8") as fh:
+                own = re.search(r'^OWN_APPS="([^"]*)"', fh.read(), re.M).group(1)
+            with open(HOST_CLI, encoding="utf-8") as fh:
+                aio_set = re.search(r'^AIO_SET="([^"]*)"', fh.read(), re.M).group(1).split()
+            filas = apps_aps()
+            check("suite: the five APS apps are phase 12's own, by name with their VENDOR versions; the containers are the host's set plus Nextcloud (a12)",
+                  sorted(e.split("=", 1)[0] for e in own.split()) == sorted(APPS_APS)
+                  and [f[0] for f in filas] == ["Inicio", "Epidemiología", "Estadística", "Farmacia", "Territorio"]
+                  and all(re.fullmatch(r"\d+\.\d+\.\d+", f[1]) for f in filas)
+                  and {c for c, _n in CONTENEDORES_SUITE} == set(aio_set) | {"nextcloud-aio-nextcloud"})
+            fijo = centro_actual()[1].get("codigo")   # the site the preparation fills, then restored
+            antes_fijo = open(site_path(fijo), encoding="utf-8").read() if fijo else None
+            falso = os.path.join(tmp, "asistente-falso.sh")
+            with open(falso, "w", encoding="utf-8") as fh:
+                fh.write('''#!/usr/bin/env bash
+printf '%s\\n' "$*" > "$AIO_STATE/argv"
+d=""; t=0; g=0
+while [ $# -gt 0 ]; do case "$1" in --dominio) d="$2" ;; --talk) t=1 ;; --grabacion) t=1; g=1 ;; esac; shift; done
+sleep 0.3
+echo "✓ La suite ya está iniciada"
+case "$d" in
+  rechazado.example)
+    echo "✗ el asistente rechazó «domain» (HTTP 422): use un nombre de dominio, no una dirección IP"
+    printf 'El asistente rechazó la dirección: use un nombre de dominio, no una dirección IP.\\n' > "$AIO_STATE/motivo"
+    exit 1 ;;
+  mudo.example) exit 1 ;;
+esac
+printf 'frase uno dos' > "$AIO_STATE/master.pw"
+echo "✓ Contraseña del asistente guardada en $AIO_STATE/master.pw (solo administrador)"
+echo "✓ Ingreso al asistente"
+echo "✓ Dominio: $d"
+echo "✓ Zona horaria: America/Santiago"
+echo "✓ Opciones: oficina incluida; Talk activado; grabación apagada; pizarra e imágenes apagadas"
+echo "✓ Respaldo diario a las 04:00 en /srv/aps-conecta/respaldos, con /opt/aps-conecta"
+printf '%s\\n' "$d" > "$AIO_STATE/dominio"
+printf 'talk=%s grabacion=%s\\n' "$t" "$g" > "$AIO_STATE/opciones"
+echo "✓ Asistente listo: falta «Iniciar» en el asistente"
+''')
+            verdadero_cmd = SUITE_CMD
+            globals()["SUITE_CMD"] = ["bash", falso]
+
+            def preparar(cuerpo, otra_vez=False):
+                st, _ = call("POST", "/api/suite", cuerpo)
+                st2, otra = call("POST", "/api/suite", cuerpo) if otra_vez else (None, None)
+                for _ in range(60):
+                    _st3, s = call("GET", "/api/suite")
+                    if s["preparacion"]["estado"] != "en_curso":
+                        break
+                    time.sleep(0.1)
+                with open(os.path.join(AIO_STATE, "argv"), encoding="utf-8") as fh:
+                    return st, st2, otra, s, fh.read()
+
+            try:
+                with redirect_stdout(io.StringIO()):   # the host's lines reach the console, not the test
+                    malos = [call("POST", "/api/suite", {"dominio": d})[0] for d in ("sin_punto", "gestion", "10.0.0.5")]
+                    *_x, rechazo, argv_rechazo = preparar({"dominio": "rechazado.example"})
+                    *_x, mudo, _a = preparar({"dominio": "mudo.example"})
+                    globals()["recursos"] = lambda *_a: (7.5, 2)
+                    *_x, argv_chico = preparar({"dominio": "gestion.clinica.example"})
+                    globals()["recursos"] = lambda *_a: (16.0, 8)
+                    *_x, argv_grande = preparar({"dominio": "gestion.clinica.example"})
+                    globals()["recursos"] = lambda *_a: (12.0, 4)
+                    st1, st2, otra, lista, argv_txt = preparar({"dominio": "gestion.clinica.example",
+                                                                 "validar": False}, otra_vez=True)
+            finally:
+                globals().update(SUITE_CMD=verdadero_cmd, recursos=lambda *_a: (12.0, 4))
+                fijado = open(site_path(fijo), encoding="utf-8").read() if fijo else None
+                if fijo:
+                    write_site_text(site_path(fijo), antes_fijo)
+            check("suite: a domain is a name with a dot, never an IP — refused 400 before anything runs",
+                  malos == [400, 400, 400])
+            check("suite: «Preparar» answers 202 and fills the wizard on a worker — the domain unvalidated only when asked, Talk as the server allows (none on 7,5 GiB / 2 cores, both on 16 / 8), the daily backup; the steps in the page's words, the passphrase, the domain and the options recorded (R26, a12)",
+                  st1 == 202 and st2 == 409 and "preparando" in otra["error"]
+                  and lista["preparacion"]["estado"] == "lista"
+                  and lista["preparacion"]["hechos"] == [t for _p, t in PASOS_SUITE]
+                  and lista["frase"] == "frase uno dos" and lista["dominio"] == "gestion.clinica.example"
+                  and lista["preparada"] is True and lista["opciones"] == {"talk": True, "grabacion": False}
+                  and "--sin-validar-dominio" in argv_txt and "--respaldo /srv/aps-conecta/respaldos" in argv_txt
+                  and "--talk" in argv_txt and "--grabacion" not in argv_txt
+                  and "--sin-validar-dominio" not in argv_rechazo
+                  and "--talk" not in argv_chico and "--talk" in argv_grande and "--grabacion" in argv_grande)
+            check("suite: a refused domain ends the preparation with the host's one Spanish line; a silent failure with the generic one — no path either way",
+                  rechazo["preparacion"]["estado"] == "error" and rechazo["preparada"] is False
+                  and rechazo["preparacion"]["motivo"] == "El asistente rechazó la dirección: use un nombre de dominio, no una dirección IP."
+                  and mudo["preparacion"]["motivo"] == "El asistente no quedó listo: el detalle, en la consola del servidor.")
+            check("suite: a site written before step 7 takes the domain the wizard took — that line only",
+                  fijo is not None and 'SITE_DOMINIO=""' in antes_fijo
+                  and fijado == antes_fijo.replace('SITE_DOMINIO=""', 'SITE_DOMINIO="gestion.clinica.example"'))
+            arriba = ";".join(f"{c}:Up 3 minutes" for c, _n in CONTENEDORES_SUITE)
+            try:
+                open(stubctl, "w", encoding="utf-8").write(
+                    "PS_LISTA=nextcloud-aio-apache:Up 1 minute;nextcloud-aio-nextcloud:Up 20 seconds (health: starting);"
+                    "nextcloud-aio-database:Up 1 minute (healthy);nextcloud-aio-redis:Created;"
+                    "nextcloud-aio-eurooffice:Up 1 minute;nextcloud-aio-talk:Exited (1) 5 seconds ago\n")
+                st, a_medias = call("GET", "/api/suite")
+                open(stubctl, "w", encoding="utf-8").write(f"PS_LISTA={arriba};nextcloud-aio-talk:Up 3 minutes\n")
+                st2, completa = call("GET", "/api/suite")
+                open(stubctl, "w", encoding="utf-8").write(f"PS_LISTA={arriba};nextcloud-aio-talk:Exited (1) 1 minute ago\n")
+                st3, sin_talk = call("GET", "/api/suite")
+            finally:
+                open(stubctl, "w").close()
+            check("suite: the containers by name — up, starting, waiting, stopped — then the suite installed, with Talk or with Talk stopped, which never blocks «Siguiente»; the passphrase is no longer served once installed (R48)",
+                  st == 200 and a_medias["contenedores"] == [
+                      ["Servidor web", "en marcha"], ["Núcleo de la suite", "iniciando"], ["Base de datos", "en marcha"],
+                      ["Caché", "iniciando"], ["Notificaciones al instante", "en espera"], ["Oficina", "en marcha"],
+                      ["Talk", "detenido"]]
+                  and a_medias["en_marcha"] is False and a_medias["instalada"] is False
+                  and a_medias["frase"] == "frase uno dos"
+                  and st2 == 200 and completa["instalada"] is True and completa["frase"] == ""
+                  and st3 == 200 and sin_talk["instalada"] is True and ["Talk", "detenido"] in sin_talk["contenedores"])
+            with open(os.path.join(AIO_STATE, "dominio"), "w", encoding="utf-8") as fh:
+                fh.write('x"; id; "\n')
+            hostil = dominio_actual()
+            with open(os.path.join(AIO_STATE, "dominio"), "w", encoding="utf-8") as fh:
+                fh.write("gestion.clinica.example\n")
+            listo = screen_listo()
+            os.remove(os.path.join(AIO_STATE, "dominio"))
+            sin = screen_listo()
+            try:
+                deis.write_site(find_row("113314"), SNAPSHOT, "113314", [], [], path=os.path.join(tmp, "hostil.sh"),
+                                domain='x"; id; "')
+                rechaza_hostil = False
+            except SystemExit:
+                rechaza_hostil = True
+            check("suite: the recorded domain is only ever a domain — a hostile record reads as none and write_site refuses it; «Listo» names the staff's address when there is one",
+                  hostil == "" and rechaza_hostil and not os.path.exists(os.path.join(tmp, "hostil.sh"))
+                  and "Acceso del personal: <b>https://gestion.clinica.example</b>" in listo
+                  and "Acceso del personal" not in sin)
+            with tempfile.TemporaryDirectory() as sd:
+                deis.write_site(find_row("113314"), SNAPSHOT, "113314", team_lines("sector", "sector-", ["Norte"]), [],
+                                path=os.path.join(sd, "a.sh"), domain="gestion.clinica.example")
+                deis_site_text = open(os.path.join(sd, "a.sh"), encoding="utf-8").read()
+            check("suite: a new site file carries the domain the wizard took",
+                  '\nSITE_DOMINIO="gestion.clinica.example"\n' in deis_site_text)
+            SUITE.update(estado="sin_preparar", hechos=[], motivo="")
+            for f in os.listdir(AIO_STATE):   # the fake's files go: later arms see a step 7 not yet prepared
+                os.remove(os.path.join(AIO_STATE, f))
             planilla = os.path.join(deis.HERE, "..", "sites", "113314", "planilla-mia.csv")
             rc, out = stepped(["--paso", "usuarios", "--codigo", "113314", "--planilla", planilla])
             check("--paso usuarios: the loaded planilla re-validates — sealed once, 0 new passwords",
@@ -4098,8 +4525,8 @@ def selftest():
             rc = subprocess.run(["bash", "-n", os.path.join(deis.HERE, "..", "provisioning", "usuarios.sh")],
                                 capture_output=True).returncode
             check("the driver parses: bash -n provisioning/usuarios.sh is clean", rc == 0)
-            check("the bounds are explicit: TIMEOUTS seed/roster/gate = 1800/1800/300",
-                  TIMEOUTS == {"seed": 1800, "roster": 1800, "gate": 300})
+            check("the bounds are explicit: TIMEOUTS seed/roster/gate/suite = 1800/1800/300/900",
+                  TIMEOUTS == {"seed": 1800, "roster": 1800, "gate": 300, "suite": 900})
 
             STEPS[:] = read_steps()
             LAN_IP, HOSTNAME, PORT = "127.0.0.1", "servidor-prueba", port
@@ -4202,10 +4629,10 @@ def selftest():
                       and 'aria-current="step"><span class="n" aria-hidden="true">7</span>' in text
                       and "SCREENS" not in globals())
 
-                st, text, hdr, setc = b.req("GET", "/api/estado")
-                check("estado: the cookie arm serves an API route — the stub's AIO containers answer",
-                      st == 200 and '"nombre": "nextcloud-aio-nextcloud"' in text
-                      and '"estado"' in text)
+                st, text, hdr, setc = b.req("GET", "/api/suite")
+                check("suite: the cookie arm serves an API route — the stub's containers answer by name, never cached",
+                      st == 200 and ["Núcleo de la suite", "en marcha"] in json.loads(text)["contenedores"]
+                      and hdr.get("Cache-Control") == "no-store")
 
                 st, text, hdr, setc = b.req("GET", "/")
                 st2, text2, hdr2, _ = b.req("GET", "/api/salud")
@@ -4291,7 +4718,7 @@ def selftest():
             # docker-absent arm: estado answers a fix hint, never a traceback
             saved_path = os.environ["PATH"]
             os.environ["PATH"] = "/nonexistent-dir-for-test"
-            st_hint, body_hint = estado_contenedores()
+            st_hint, body_hint = contenedores()
             os.environ["PATH"] = saved_path
             check("estado: a missing docker answers a 500 fix hint, never a hang or traceback",
                   st_hint == 500 and "no se encontró el comando docker" in body_hint["error"])
@@ -4673,6 +5100,8 @@ def selftest():
         deis.HERE = old
         CRED_PATH, PHASE20 = old_cred, old_p20
         CERT_DIR = old_cert
+        AIO_STATE = old_aio
+        globals().update(recursos=reales[0], puerto_libre=reales[1])
         os.environ.update(_scrubbed)
         # the stub world closes with the fixture: the PATH injection and the FAKE_DOCKER_* knobs
         # are self-test machinery and must not leak into the caller's environment
