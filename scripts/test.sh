@@ -934,6 +934,30 @@ else: print("fabricated sentinel-less corpus passed"); sys.exit(1)
 print("ok")'
 check bash scripts/comuna-package.sh --self-test
 
+# --- gate: the anchors the AIO wizard links into these docs still resolve ---------------------
+# The fork's templates (APS-Conecta/AIO patches 140 and 170) link six sections of the install docs
+# by their GitHub anchors. A renamed or renumbered heading breaks those links in every published
+# suite image without a word, so the six are a contract: a heading keeps its slug, or an explicit
+# <a id="…"></a> carries it. GitHub's slug: lower-case, every character but letters, digits,
+# spaces, hyphens and underscores dropped, spaces to hyphens. Same validator on a fabricated doc.
+check python3 -c '
+import re, sys
+ANCLAS = {"docs/INSTALLER.md": ["3-preflight", "7-dns-the-host-must-reach-its-own-domain-d10", "11-backups", "12-troubleshooting"],
+          "docs/GUIA-CLINICA.md": ["3-el-asistente-8080", "7-tras-actualizar"]}
+def slugs(text):
+    text = re.sub(r"^[ \t]*```.*?^[ \t]*```[^\n]*", "", text, flags=re.M | re.S)   # a heading inside a code block is not one
+    out = {re.sub(r"[^\w\- ]", "", h.strip().lower()).replace(" ", "-") for h in re.findall(r"^#{1,6} (.+)$", text, re.M)}
+    return out | set(re.findall(r"<a (?:id|name)=\"([^\"]+)\"", text))
+def missing(text, want):
+    return [a for a in want if a not in slugs(text)]
+for doc, want in ANCLAS.items():
+    gone = missing(open(doc, encoding="utf-8").read(), want)
+    if gone: print(doc + ": the wizard links #" + ", #".join(gone) + " — no heading or <a id> carries it"); sys.exit(1)
+if missing("## 3. Preflight checks\n", ["3-preflight"]) != ["3-preflight"]: print("a renamed heading passed"); sys.exit(1)
+if missing("```bash\n# 3. Preflight\n```\n", ["3-preflight"]) != ["3-preflight"]: print("a heading inside a code block passed"); sys.exit(1)
+if missing("<a id=\"3-preflight\"></a>\n## 2. Preflight\n", ["3-preflight"]): print("an explicit anchor was not read"); sys.exit(1)
+print("ok")'
+
 # --- gate: the release manifest's form — every pin present, every category counted -------------
 check bash scripts/release-manifest.sh --validate
 check bash scripts/release-manifest.sh --self-test

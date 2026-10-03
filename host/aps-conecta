@@ -1199,13 +1199,13 @@ cmd_datos() {  # [CUT] — S9's data-package leg: the national masters, sha256-v
   # browser, ADR-0009) — an install-time auto-import would bypass every one of those
   # disciplines.
   local cut="${1:-}"
-  # Territorio is S12-gated: at v1.0 the app is not baked and the wizard's own card says
-  # «pendiente de empaquetado». Nothing can receive the data — the honest skip, never a
-  # silent fetch of ~93 MB of masters for an app that cannot import (the office-skip
-  # precedent: visible, exit 0, no work done).
+  # Territorio ships with the suite: phase 12 installs it (OWN_APPS), so it is absent only before the
+  # first provisioning. Then nothing can receive the data — the honest skip, never a silent fetch of
+  # ~93 MB of masters for an app that cannot import (the office-skip precedent: visible, exit 0, no
+  # work done).
   if ! docker exec "$NC" sh -c 'test -d /var/www/html/custom_apps/territorio' >/dev/null 2>&1; then
-    info "territorio: pendiente de empaquetado (la tarjeta del asistente lo dice) — este comando no descarga nada"
-    info "cuando territorio esté disponible, re-ejecute «aps-conecta datos»: traerá y verificará los paquetes de su comuna"
+    info "territorio no está instalado — este comando no descarga nada"
+    info "territorio se instala con «Revisar y ejecutar»; después, re-ejecute «aps-conecta datos»: traerá y verificará los paquetes de su comuna"
     return 0
   fi
   if [ -z "$cut" ]; then
@@ -2129,9 +2129,10 @@ EOF
   : > "$dlog"
   local dout drc
   dout="$(ROOT="$droot" DATOS_HOME="$tmp/datos" cmd_datos 2>&1)"; drc=$?
-  check "datos: territorio ausente → la postura pendiente, exit 0, y comuna-package JAMÁS corrió (nada se descarga)" \
+  check "datos: territorio ausente → dice que no está instalado y cuándo lo estará, exit 0, y comuna-package JAMÁS corrió (nada se descarga)" \
     '[ "$drc" -eq 0 ] && [ ! -s "$dlog" ] \
-     && case "$dout" in *"pendiente de empaquetado"*"no descarga nada"*) ;; *) false;; esac'
+     && case "$dout" in *"territorio no está instalado"*"no descarga nada"*"Revisar y ejecutar"*) ;; *) false;; esac \
+     && case "$dout" in *"pendiente de empaquetado"*|*tarjeta*) false;; *) true;; esac'
   # ── arm 2: territorio present → CUT resolution from the site record. The site rides
   # $droot — the ROOT cmd_datos actually runs under (a fixture split between two roots
   # was the de-risk's own catch: the CUT read $droot/sites and found nothing).

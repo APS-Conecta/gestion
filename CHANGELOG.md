@@ -183,6 +183,12 @@ image digests live there and are deliberately not copied here — one fact, one 
 - **The password breach check is off** — phase 16 sets `password_policy` `enforceHaveIBeenPwned`
   to `0`: Nextcloud no longer sends each new password's SHA-1 prefix to api.pwnedpasswords.com.
   Smoke asserts it with the other policy switches.
+- **The install docs describe the suite the wizard now is** — «APS Conecta Gestión AIO»; Euro-Office
+  the only office; no community containers; Talk, Whiteboard and Imaginary off until step 7; no
+  territorio card. `docs/INSTALLER.md` §12 has the reinstall-from-scratch recipe the wizard's reset
+  links open, and §13 says a stock Nextcloud AIO backup is not restored into the suite.
+  `aps-conecta datos` says territorio is not installed yet, not «pendiente de empaquetado».
+  `make test` checks that the six doc anchors the wizard links still resolve.
 
 ### Removed
 
