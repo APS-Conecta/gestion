@@ -188,6 +188,14 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 - **`scripts/final-validation.sh`** — the whole-installer harness kept a second copy of the wizard
   drive; the release rehearsal installs a fresh box the way a clinic does (`docs/INSTALLER.md` §10).
+
+### Fixed
+
+- **The daily backup runs at 04:00 Santiago time** (B-035) — the AIO mastercontainer runs in UTC,
+  so the «04:00» step 7 posted ran at 00:00 or 01:00. Step 7 now posts the UTC hour that is 04:00
+  in Santiago, and refuses a host without tzdata; `docs/INSTALLER.md` §11 states the hour drift
+  across a DST change.
+
 ## [0.3.0] — 2026-09-22
 
 ### Added

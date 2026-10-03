@@ -34,7 +34,7 @@ work; the 🗡️ Breaker agent starts here.*
 | Nextcloud web, WebDAV and mobile logins | anyone who can reach the domain | Nextcloud's built-in brute-force throttling (not configured here); `remember_login_cookie_lifetime 0` — no persistent "remember me" (`provisioning/phases/05-security.sh:15`) |
 | App availability for staff (`provisioning/app-policy.sh`) | staff accounts | "admin keeps every app; every non-admin account gets the reduced set" (`app-policy.sh:8`); `weather_status` restricted to keep outbound traffic (egress) off staff accounts |
 | Public directory lookups | the server | `lookup_server ""` — no contact with Nextcloud's public lookup server (`provisioning/phases/05-security.sh:20`) |
-| Backups | the AIO borg container | daily borg backup at 04:00 to the configured location (`host/aps-conecta`, `cmd_aio_wizard --respaldo`) |
+| Backups | the AIO borg container | daily borg backup at 04:00 Santiago time (posted as its UTC hour) to the configured location (`host/aps-conecta`, `cmd_aio_wizard --respaldo`) |
 | Secrets | operators | `.env` is generated with mode 600 (`make setup`) and never committed (`AGENTS.md`); `.gitleaksignore` exists |
 | TLS and headers | the public internet | AIO's reverse proxy; nothing in this repository pins TLS versions or security headers |
 

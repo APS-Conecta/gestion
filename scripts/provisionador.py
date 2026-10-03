@@ -2075,7 +2075,7 @@ def screen_contenedores():
         "</dd><dt>Zona horaria</dt><dd>Santiago</dd><dt>Oficina</dt><dd>Euro-Office</dd><dt>Talk</dt><dd>" +
         (s.opciones.talk ? "Activado" : "Desactivado") + "; grabación " +
         (s.opciones.grabacion ? "activada" : "desactivada") +
-        "</dd><dt>Respaldo</dt><dd>Diario a las 04:00, en este servidor</dd></dl>" +
+        "</dd><dt>Respaldo</dt><dd>Diario a las 04:00 hora de Santiago, en este servidor</dd></dl>" +
         (s.frase ? '<div class="aviso"><strong>Frase de contraseña del asistente:</strong> <span ' +
           'class="frase" translate="no">' + escapear(s.frase) + "</span><br>El asistente la pide para ingresar.</div>" +
           '<div class="fila"><a class="btn" id="s-abrir" target="_blank" rel="noopener">Abrir el asistente ' +
@@ -2691,7 +2691,7 @@ def estado_suite():
 def iniciar_suite(payload):
     """POST /api/suite {"dominio", "validar"} — the host fills the wizard on a worker (a minute; more
     when the wizard's image is new) and the page follows it: Talk and its recording as the server
-    allows (R26), the daily backup at 04:00 with the installer's own files in its scope (R24)."""
+    allows (R26), the daily backup at 04:00 Santiago time with the installer's own files in its scope (R24)."""
     dominio = payload.get("dominio")
     if not isinstance(dominio, str) or not DOMINIO.fullmatch(dominio) or "." not in dominio:
         return 400, {"error": "escriba el dominio del servidor, por ejemplo gestion.su-establecimiento.cl"}
@@ -4244,7 +4244,7 @@ echo "✓ Ingreso al asistente"
 echo "✓ Dominio: $d"
 echo "✓ Zona horaria: America/Santiago"
 echo "✓ Opciones: oficina incluida; Talk activado; grabación apagada; pizarra e imágenes apagadas"
-echo "✓ Respaldo diario a las 04:00 en /srv/aps-conecta/respaldos, con /opt/aps-conecta"
+echo "✓ Respaldo diario a las 04:00 hora de Santiago (07:00 UTC), en /srv/aps-conecta/respaldos, con /opt/aps-conecta"
 printf '%s\\n' "$d" > "$AIO_STATE/dominio"
 printf 'talk=%s grabacion=%s\\n' "$t" "$g" > "$AIO_STATE/opciones"
 echo "✓ Asistente listo: falta «Iniciar» en el asistente"

@@ -66,7 +66,7 @@ image (D4), so boot-time installs would be noise. If preflight reds on the domai
    mastercontainer, captures the initial password (`GET /setup` shows it once; the installer keeps
    it in `/opt/aps-conecta/aio/master.pw`, 0600, and shows it on step 7), and posts the domain, the
    timezone, the options (Euro-Office by default; Talk and its recording as the server's memory and
-   cores allow, port 3478 free) and the daily backup.
+   cores allow, port 3478 free) and the daily backup (§11).
 3. Log in to the wizard with that password and press Start. Step 7 follows the containers until
    Nextcloud is installed. The app store is hidden (store off, 020) and the Collabora/OnlyOffice
    cards do not exist (050). The daily-backup screen's automatic-update box ships **unchecked**
@@ -203,13 +203,17 @@ not patched; the wait ends when the probe times out or the network returns).
 
 ## 11. Backups
 
-The wizard's own borg backup is the instance backup. Step 7 sets it daily at 04:00 in
-`/srv/aps-conecta/respaldos`, with `/opt/aps-conecta` (the credentials and the site record) in its
+The wizard's own borg backup is the instance backup. Step 7 sets it daily at 04:00 Santiago time
+in `/srv/aps-conecta/respaldos`, with `/opt/aps-conecta` (the credentials and the site record) in its
 scope — the same folder on the same disk, so copy it off the server (an external disk, another
 machine). `aps-conecta respaldo` adds `/opt/aps-conecta` to an existing backup — idempotent, and it
 prints the **honest cost every time**: additional directories back up but never restore with the
 instance. `/opt/aps-conecta`'s restore is a manual `borg extract` (the recipe: upstream's
 [backup docs](https://github.com/nextcloud/all-in-one#pro-tip-backup-archives-access)).
+
+The wizard runs in UTC, so step 7 posts the UTC hour — 07:00 in summer time, 08:00 in winter —
+and the wizard shows that hour. After the next DST change the backup runs at 03:00 or 05:00
+Santiago time. To move it, the wizard's backup section takes a new time, in UTC.
 
 ## 12. Troubleshooting
 

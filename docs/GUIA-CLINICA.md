@@ -68,7 +68,8 @@ Después de la bienvenida, el navegador recorre los pasos 6 a 9 de la instalaci�
 2. **Iniciar la suite** — las cinco aplicaciones APS con su versión (se activan al ejecutar), y si
    Talk y su grabación caben en este servidor, con el motivo. «Preparar el asistente» deja el
    asistente listo con el dominio del servidor, la hora de Santiago, Euro-Office, Talk según quepa y
-   el respaldo diario a las 04:00. Marque «Omitir la validación del dominio» si el servidor no tiene
+   el respaldo diario a las 04:00 hora de Santiago (el asistente la muestra en UTC: 07:00 en horario
+   de verano, 08:00 en invierno; tras el cambio de hora corre a las 03:00 o a las 05:00). Marque «Omitir la validación del dominio» si el servidor no tiene
    acceso desde Internet. La pantalla muestra la frase de contraseña del asistente; ábralo con
    «Abrir el asistente e iniciar», ingrese con esa frase y pulse «Iniciar». El avance de cada
    contenedor se ve aquí; con la suite instalada aparece «Siguiente».
