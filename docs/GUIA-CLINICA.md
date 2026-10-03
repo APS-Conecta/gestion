@@ -155,6 +155,9 @@ una falle — el éxito es el conjunto. Si el panel de registros del asistente s
 después de una actualización, un refresco fuerte del navegador (Ctrl+Shift+R) lo arregla: es un
 archivo en caché que PHP fija y el fork no toca.
 
+Una instalación de la v0.3.0 o anterior no se actualiza a esta versión: los contenedores de la suite
+cambiaron de nombre (`aps-conecta-*`) y se reinstala (`INSTALLER.md` §12).
+
 ## 8. ¿Y el mapa?
 
 El fondo de mapa ya se sirve solo — no hay que hacer nada para tenerlo: se instaló con la

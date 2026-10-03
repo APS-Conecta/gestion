@@ -55,11 +55,11 @@ if [ -z "$REF_LON" ] || [ -z "$REF_LAT" ]; then
   # Posture-split probes (org L5-01): the compose read this script was born with is a permanent
   # red on every AIO clinic — no compose db exists there, so nothing ever pinned REF_LON/REF_LAT
   # and the monthly timer failed while MIGRATION.md listed it as a post-AIO gate. The AIO arm
-  # uses the names migrate-to-aio.sh:207 pins (DB=nextcloud-aio-database, user oc_nextcloud,
+  # uses the names migrate-to-aio.sh:207 pins (DB=aps-conecta-database, user oc_nextcloud,
   # database nextcloud_database); the detection is env.sh's is_aio.
   psql_q() {  # SQL -> stdout, quiet
     if is_aio; then
-      docker exec nextcloud-aio-database psql -U oc_nextcloud -d nextcloud_database -Atc "$1" 2>/dev/null
+      docker exec aps-conecta-database psql -U oc_nextcloud -d nextcloud_database -Atc "$1" 2>/dev/null
     else
       docker compose exec -T db psql -U apsconecta -d apsconecta -Atc "$1" 2>/dev/null
     fi

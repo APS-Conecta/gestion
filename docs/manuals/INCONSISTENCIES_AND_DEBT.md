@@ -195,7 +195,7 @@ pre code { background: transparent !important; color: inherit !important; border
 - **L8-01 — Duplicate Status Represented as Raw Strings:** Duplicate resolution statuses are defined as string literals (`"pending"`, `"resolved"`) instead of utilizing PHP 8.1 Backed Enums as used elsewhere in the entity layer.
 
 ### 3.3 AIO Installer Full-Suite Design (`2026-09-19_20-45-04`)
-- **Transport Coupling in Smoke Tests:** `scripts/smoke.sh` accesses `db`, `redis`, and `cron` by Docker Compose service name. Under AIO architecture, container names change to `nextcloud-aio-database`, `nextcloud-aio-redis`, and cron runs as an internal sub-process of `nextcloud-aio-nextcloud`.
+- **Transport Coupling in Smoke Tests:** `scripts/smoke.sh` accesses `db`, `redis`, and `cron` by Docker Compose service name. Under AIO architecture, container names change to `aps-conecta-database`, `aps-conecta-redis`, and cron runs as an internal sub-process of `aps-conecta-nextcloud`.
 - **Empty Host Glob under AIO:** `divergence.sh` checks for installed apps using the host path `apps/*/`. In an AIO deployment, `apps/` is empty on the host (baked inside container volumes), causing divergence checking to report false-green results.
 - **Phase 0 Prerequisite Drift:** Slices in the AIO installer design depend on `gestion v0.2.0` being tagged and merged, but `gestion` remains at `feat/self-hosted-basemap` (`923b426`), leaving AIO design execution blocked.
 

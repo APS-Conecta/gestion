@@ -172,14 +172,14 @@ rewrite_config() {  # FILE DOMAIN — the rewrite set; every key NO template own
   # never carries).
   local f="$1" domain="$2"
   sed -i \
-    -e "s|^  'dbhost'.*|  'dbhost' => 'nextcloud-aio-database',|" \
+    -e "s|^  'dbhost'.*|  'dbhost' => 'aps-conecta-database',|" \
     -e "s|^  'dbuser'.*|  'dbuser' => 'oc_nextcloud',|" \
     -e "s|^  'dbpassword'.*|  'dbpassword' => 'lo-reecribe-el-arranque-de-aio',|" \
     -e "s|^  'dbname'.*|  'dbname' => 'nextcloud_database',|" \
     -e "s|^  'datadirectory'.*|  'datadirectory' => '/mnt/ncdata',|" \
     -e "s|^  'overwriteprotocol'.*|  'overwriteprotocol' => 'https',|" \
     -e "s|^  'overwrite.cli.url'.*|  'overwrite.cli.url' => 'https://$domain',|" \
-    -e "s|^    'host'.*|    'host' => 'nextcloud-aio-redis',|" \
+    -e "s|^    'host'.*|    'host' => 'aps-conecta-redis',|" \
     "$f"
   # the redis password DIES: AIO's redis is passwordless and redis.config.php only overrides
   # the key when the env provides one — a carried password would AUTH-fail every cache hit.
@@ -204,7 +204,7 @@ PYBLOCK
 
 cmd_verify() {  # --domain D — runs AFTER the first boot settled; read-only, aggregate exit
   read_domain "$@"
-  local NC=nextcloud-aio-nextcloud DB=nextcloud-aio-database
+  local NC=aps-conecta-nextcloud DB=aps-conecta-database
 
   # the survivals (the runbook's own three, made mechanical)
   local v
@@ -217,7 +217,7 @@ cmd_verify() {  # --domain D — runs AFTER the first boot settled; read-only, a
   v="$(docker exec "$DB" psql -U oc_nextcloud -d nextcloud_database -Atc \
         "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'" 2>/dev/null || true)"
   case "$v" in
-    ''|*[!0-9]*) bad "no pude contar las tablas de nextcloud_database" "¿terminó el primer arranque? revise «docker logs nextcloud-aio-database»" ;;
+    ''|*[!0-9]*) bad "no pude contar las tablas de nextcloud_database" "¿terminó el primer arranque? revise «docker logs aps-conecta-database»" ;;
     0|1|2|3|4|5) bad "solo $v tablas — la restauración no disparó" "el volcado debía estar en el volumen ANTES del primer arranque de la base; revise «docker logs $DB» buscando «Restoring from database dump»" ;;
     *) ok "la base restaurada trae $v tablas" ;;
   esac
@@ -382,7 +382,7 @@ DSHIM
   check "prepare: config.php landed rewritten + version.php beside it (the codetree half)" \
     '[ -s "$cfg" ] && [ -s "$ver" ] && grep -q "OC_Version" "$ver"'
   check "rewrite: dbhost/dbuser/dbname → the AIO triple" \
-    'grep -q "^  .dbhost. => .nextcloud-aio-database.,$" "$cfg" \
+    'grep -q "^  .dbhost. => .aps-conecta-database.,$" "$cfg" \
      && grep -q "^  .dbuser. => .oc_nextcloud.,$" "$cfg" \
      && grep -q "^  .dbname. => .nextcloud_database.,$" "$cfg"'
   check "rewrite: the old dbpassword never rides (the placeholder; the boot rewrites the real one)" \
@@ -392,7 +392,7 @@ DSHIM
      && grep -q "^  .overwriteprotocol. => .https.,$" "$cfg" \
      && grep -q "^  .overwrite.cli.url. => .https://clinic.example.cl.,$" "$cfg"'
   check "rewrite: the redis host re-pointed and the redis password DELETED (AIO's redis is passwordless)" \
-    'grep -q "^    .host. => .nextcloud-aio-redis.,$" "$cfg" && ! grep -q secreto-viejo "$cfg"'
+    'grep -q "^    .host. => .aps-conecta-redis.,$" "$cfg" && ! grep -q secreto-viejo "$cfg"'
   check "rewrite: trusted_domains replaced whole — the stale gestion domain is GONE, the new one in" \
     'grep -q "^    0 => .clinic.example.cl.,$" "$cfg" && ! grep -q viejo.dominio.cl "$cfg"'
   check "rewrite: the instance secret RIDES (a data migration preserves identities)" \

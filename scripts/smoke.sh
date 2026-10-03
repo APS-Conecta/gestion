@@ -20,7 +20,7 @@ fail() { echo "FAIL: $*"; exit 1; }
 # and seed stay addressable through NC_CONTAINER (D5 interim), and this check answering "no AIO
 # stack" is the labeled failure, not a compose-context false answer.
 is_aio \
-  || fail "nextcloud-aio-nextcloud is not running — smoke answers an AIO instance (probe: scripts/aio-testbed.sh up; a clinic: the wizard's container start)"
+  || fail "aps-conecta-nextcloud is not running — smoke answers an AIO instance (probe: scripts/aio-testbed.sh up; a clinic: the wizard's container start)"
 nc_container   # once: the occ calls below run in pipes and $(…), whose cache dies with them
 
 # 2. Nextcloud installed + reachable via occ.
@@ -29,14 +29,14 @@ occ status --output=json 2>/dev/null | grep -q '"installed":true' \
 
 # 3. PostgreSQL accepting connections. Direct docker exec against the AIO sibling's fixed name —
 # these two cannot ride the seam (it targets the nextcloud container) and need no compose context.
-docker exec nextcloud-aio-database pg_isready -q 2>/dev/null \
-  || fail "PostgreSQL (nextcloud-aio-database) is not accepting connections"
+docker exec aps-conecta-database pg_isready -q 2>/dev/null \
+  || fail "PostgreSQL (aps-conecta-database) is not accepting connections"
 
 # 4. Redis responding to PING. AIO's redis runs with requirepass — the password is read
 # IN-CONTAINER from its own env (REDIS_HOST_PASSWORD), never on the host argv (the OC_PASS
 # discipline): a bare `redis-cli ping` answers NOAUTH on every real AIO instance (FINDINGS.md P3).
-[ "$(docker exec nextcloud-aio-redis sh -c 'redis-cli -a "$REDIS_HOST_PASSWORD" ping' 2>/dev/null | tr -d '\r')" = "PONG" ] \
-  || fail "Redis (nextcloud-aio-redis) is not responding to PING"
+[ "$(docker exec aps-conecta-redis sh -c 'redis-cli -a "$REDIS_HOST_PASSWORD" ping' 2>/dev/null | tr -d '\r')" = "PONG" ] \
+  || fail "Redis (aps-conecta-redis) is not responding to PING"
 
 # 5. HTTP surface: GET /status.php → 200, and the body carries OUR product name. The highest-value
 # branding regression there is: unauthenticated, and if `theming productName` is unset it says
@@ -58,7 +58,7 @@ fi
 # ajax), the loop without the mode means it runs while Nextcloud still self-serves jobs on page
 # loads.
 if ! nc_exec --user www-data -- pgrep -f cron.sh >/dev/null 2>&1; then
-  fail "the cron loop (cron.sh) is not running inside nextcloud-aio-nextcloud — background jobs would fall back to page-load scheduling"
+  fail "the cron loop (cron.sh) is not running inside aps-conecta-nextcloud — background jobs would fall back to page-load scheduling"
 fi
 jobs_mode=$(occ config:app:get core backgroundjobs_mode 2>/dev/null | tr -d '\r')
 [ "$jobs_mode" = "cron" ] \
@@ -97,7 +97,7 @@ print("; ".join(bad) if bad else "OK")
 # distributed cache, so on an instance whose cache was warm before the file existed this stays
 # core's until the cache is flushed — the symptom looks like the fix silently not working.
 printf '%s' "$login_html" | grep -q 'rel="manifest" href="[^"]*themes/apsconecta' \
-  || fail "login page still links Nextcloud's manifest, not ours — if the file exists, flush the cache (docker exec nextcloud-aio-redis sh -c 'redis-cli -a \"$REDIS_HOST_PASSWORD\" FLUSHALL')"
+  || fail "login page still links Nextcloud's manifest, not ours — if the file exists, flush the cache (docker exec aps-conecta-redis sh -c 'redis-cli -a \"$REDIS_HOST_PASSWORD\" FLUSHALL')"
 # The three icon links are the same static-file mechanism as the manifest and share its failure mode
 # (ADR-0004). They are here rather than beside it because they cost nothing extra — this HTML is
 # already fetched — and because imagePath() caches under a key holding NO cachebuster and NO theme,
@@ -105,7 +105,7 @@ printf '%s' "$login_html" | grep -q 'rel="manifest" href="[^"]*themes/apsconecta
 # silently Nextcloud's and the tab shows the vendor's mark on every screen.
 for rel in icon apple-touch-icon mask-icon; do
   printf '%s' "$login_html" | grep -q "rel=\"${rel}\"[^>]*href=\"[^\"]*themes/apsconecta" \
-    || fail "login page links Nextcloud's ${rel}, not ours — if themes/apsconecta/core/img/ has the file, flush the cache (docker exec nextcloud-aio-redis sh -c 'redis-cli -a \"$REDIS_HOST_PASSWORD\" FLUSHALL')"
+    || fail "login page links Nextcloud's ${rel}, not ours — if themes/apsconecta/core/img/ has the file, flush the cache (docker exec aps-conecta-redis sh -c 'redis-cli -a \"$REDIS_HOST_PASSWORD\" FLUSHALL')"
 done
 
 # 8. App policy holds: staff do not see Nextcloud's product surface (phase 16-app-policy).
@@ -261,7 +261,7 @@ printf '%s' "$home" | grep -qi 'nextcloud' \
 
 # 13. The app store is off (#163). The compose-era loop checked nextcloud AND cron — two
 # containers that had to agree. Under AIO there is ONE container to ask: cron.php runs inside
-# nextcloud-aio-nextcloud (check 6's loop), so the pair collapses into a single read and the loop
+# aps-conecta-nextcloud (check 6's loop), so the pair collapses into a single read and the loop
 # is deleted rather than kept degenerate. The lever moved with it — from compose.yaml's
 # NC_appstoreenabled to the suite's own posture: the probe harness sets the key at bring-up, and
 # the suite bakes NC_appstoreenabled="0" into the aio-nextcloud image (patch 020). This asserts

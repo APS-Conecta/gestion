@@ -327,7 +327,7 @@ port_free() {  # PORT — the rule-10 discipline (the slice-3 testbed's own idio
 check_ports() {  # the four wizard-facing ports; a busy one names its holder — unless a suite
   # container publishes it (a re-run of the install after the suite started reads its own as ✓)
   local p holder published
-  published="$(docker ps --filter name=^nextcloud-aio- --format '{{.Ports}}' 2>/dev/null || true)"
+  published="$(docker ps --filter name=^aps-conecta- --filter name=^nextcloud-aio-mastercontainer$ --format '{{.Ports}}' 2>/dev/null || true)"
   for p in $WIZARD_PORTS; do
     if port_free "$p"; then
       ok "puerto $p libre"
@@ -407,7 +407,7 @@ check_hairpin() {  # the D10 leg (upstream #8433): the HOST curls its own public
   # failing hop (hairpin NAT). Runs only when the stack is up; preflight on a fresh host says so.
   local d; d="${PREFLIGHT_DOMAIN:-$(site_domain || true)}"
   [ -z "$d" ] && return
-  if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^nextcloud-aio-apache$'; then
+  if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^aps-conecta-apache$'; then
     info "la suite aún no está instalada — después del asistente, «aps-conecta preflight${PREFLIGHT_DOMAIN:+ --dominio $d}» prueba $d desde aquí"
     return
   fi
@@ -821,7 +821,7 @@ start_suite() {  # the mastercontainer, once — the very command «preflight» 
 AIO_URL="${AIO_URL:-https://127.0.0.1:8080}"   # the wizard (self-signed TLS); the testbed sets its port
 AIO_STATE="${AIO_STATE:-$APS_HOME/aio}"       # passphrase, session jar, admin password — 0600
 AIO_POLL="${AIO_POLL:-5}"                   # seconds between polls; the self-test sets 0
-AIO_SET="nextcloud-aio-apache nextcloud-aio-database nextcloud-aio-redis nextcloud-aio-notify-push nextcloud-aio-eurooffice"
+AIO_SET="aps-conecta-apache aps-conecta-database aps-conecta-redis aps-conecta-notify-push aps-conecta-eurooffice"
 AIO_CSRF=()                                     # the session's CSRF pair, as curl arguments
 
 aio_curl() {  # ARGS… — the wizard with the session jar
@@ -938,7 +938,7 @@ aio_start() {  # POST /api/docker/start pulls, creates and starts the whole set 
   case "$code" in
     200|201|302) ok "Suite iniciada" ;;
     *) bad "el asistente no pudo iniciar la suite (HTTP ${code:-sin respuesta})" \
-         "revise la red y las imágenes: docker ps -a --filter name=nextcloud-aio-"
+         "revise la red y las imágenes: docker ps -a --filter name=^aps-conecta-"
        return 1 ;;
   esac
 }
@@ -948,7 +948,7 @@ aio_wait() {  # bounded: the six containers up (20 min), Nextcloud installed (10
   local i st prev cur
   for i in $(seq 240); do [ "$(aio_count)" = 6 ] && break; sleep "$AIO_POLL"; done
   if [ "$(aio_count)" != 6 ]; then
-    bad "los contenedores no terminaron de arrancar en 20 minutos" "docker ps -a --filter name=nextcloud-aio-"
+    bad "los contenedores no terminaron de arrancar en 20 minutos" "docker ps -a --filter name=^aps-conecta-"
     return 1
   fi
   for i in $(seq 120); do
@@ -1032,7 +1032,7 @@ cmd_aio_wizard() {  # --dominio D [--sin-validar-dominio] [--respaldo DIR] [--ta
   fi
   local names
   names="$(docker ps --format '{{.Names}}' 2>/dev/null)"   # captured first: under pipefail an early
-  if printf '%s\n' "$names" | grep -qx nextcloud-aio-apache; then   # grep -q exit would SIGPIPE docker
+  if printf '%s\n' "$names" | grep -qx aps-conecta-apache; then   # grep -q exit would SIGPIPE docker
     ok "La suite ya está en marcha — el asistente no se vuelve a configurar"
     [ "$preparar" = 0 ] || exit 0
   else
@@ -1183,7 +1183,7 @@ cmd_revalidate() {  # post-update: run every read-only gate against the running 
 }
 
 # ── tiles + datos (slice 21, FRD S9) ─────────────────────────────────────────────────────
-NC=nextcloud-aio-nextcloud           # the AIO posture: respaldo hardcodes the mastercontainer
+NC=aps-conecta-nextcloud           # the AIO posture: respaldo hardcodes the mastercontainer
                                       # the same way; NC_CONTAINER is the seed's knob, not ours
 DATOS_HOME="${DATOS_HOME:-/srv/aps-conecta/datos}"   # beside the tiles home — regenerable
                                       # generated data, outside borg's scope by the same argument
@@ -1767,7 +1767,7 @@ CSHIM
     'case "$out" in *"el instalador web ya está abierto"*"use su enlace"*) ;; *) false;; esac'
 
   # the hairpin probes: green pair and the #8433 red with R4's recorded recipe
-  printf '#!/usr/bin/env bash\nif [ "$1" = ps ]; then echo nextcloud-aio-apache; exit 0; fi\nexit 0\n' > "$tshim/docker"; chmod +x "$tshim/docker"
+  printf '#!/usr/bin/env bash\nif [ "$1" = ps ]; then echo aps-conecta-apache; exit 0; fi\nexit 0\n' > "$tshim/docker"; chmod +x "$tshim/docker"
   out="$(check_hairpin)"
   check "hairpin: status.php + healthcheck green from the host (the stack up, the domain set)" \
     'case "$out" in *"status.php responde desde el propio servidor"*"eurooffice/healthcheck responde desde el propio servidor"*) ;; *) false;; esac'
@@ -1804,8 +1804,8 @@ case "\$url" in
     case "\$data" in *"domain=rechazado.example"*) code=422; body="Please enter a domain and not an IP-address!" ;; *"options-form=1"*) if [ -e "$tmp/aio.options-fails" ]; then code=422; body="algo inesperado"; else code=201; fi ;; *) code=201 ;; esac ;;
   */api/docker/start) echo "POST start\$data" >> "$tmp/aio.log"
     if [ -e "$tmp/aio.start-fails" ]; then code=500; else
-    printf '%s\n' nextcloud-aio-nextcloud nextcloud-aio-database nextcloud-aio-redis > "$tmp/aio.ps"; sleep 0.4
-    printf '%s\n' nextcloud-aio-nextcloud $AIO_SET > "$tmp/aio.ps"; code=200; fi ;;
+    printf '%s\n' aps-conecta-nextcloud aps-conecta-database aps-conecta-redis > "$tmp/aio.ps"; sleep 0.4
+    printf '%s\n' aps-conecta-nextcloud $AIO_SET > "$tmp/aio.ps"; code=200; fi ;;
 esac
 if [ -n "\$outfile" ]; then printf '%s\n' "\$body" > "\$outfile"; else [ -z "\$body" ] || printf '%s\n' "\$body"; fi
 [ -z "\$code" ] || printf '%s' "\$code"
@@ -1874,7 +1874,7 @@ SHIM
     check "asistente-aio --preparar: a refusal after the domain leaves no record — the web installer asks again" \
       '[ "$rc" -eq 1 ] && [ "$(cat "$AIO_STATE/motivo")" = "El asistente rechazó las opciones: el asistente no aceptó el valor." ] && [ ! -e "$AIO_STATE/dominio" ] && [ ! -e "$AIO_STATE/opciones" ]'
     rm -f "$tmp/aio.options-fails"
-    printf '%s\n' "nextcloud-aio-mastercontainer running" nextcloud-aio-apache > "$tmp/aio.ps"; : > "$tmp/aio.log"
+    printf '%s\n' "nextcloud-aio-mastercontainer running" aps-conecta-apache > "$tmp/aio.ps"; : > "$tmp/aio.log"
     out="$( (cmd_aio_wizard --preparar --dominio clinica.example) 2>&1)"; rc=$?
     check "asistente-aio --preparar: a running suite is left as it is — nothing posted, no wait" \
       '[ "$rc" -eq 0 ] && case "$out" in *"✓ La suite ya está en marcha"*) ;; *) false;; esac && [ ! -s "$tmp/aio.log" ] && case "$out" in *"Suite en marcha: 6"*) false;; *) true;; esac'

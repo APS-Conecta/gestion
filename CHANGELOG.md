@@ -189,6 +189,12 @@ image digests live there and are deliberately not copied here — one fact, one 
   links open, and §13 says a stock Nextcloud AIO backup is not restored into the suite.
   `aps-conecta datos` says territorio is not installed yet, not «pendiente de empaquetado».
   `make test` checks that the six doc anchors the wizard links still resolve.
+- **The suite's containers are `aps-conecta-*`** (the AIO fork's patch 240). Every caller, the
+  testbed, Clean boot and the docs follow; the wizard stays `nextcloud-aio-mastercontainer`, the
+  network `nextcloud-aio` and the volumes `nextcloud_aio_*`. Clean boot runs the fork's suite
+  (`ghcr.io/aps-conecta/all-in-one:ci-20261003-1`), not upstream's. Fresh installs only: an instance from
+  v0.3.0 or earlier keeps its `nextcloud-aio-*` containers and is reinstalled (`docs/INSTALLER.md`
+  §12). `make test` refuses a sibling spelled the old way.
 
 ### Removed
 

@@ -419,7 +419,7 @@ if is_aio; then
   check nc_exec --user www-data -- sh -c \
     'grep -q -- "var(--image-logo" /var/www/html/core/css/guest.css && grep -q -- "var(--image-background" /var/www/html/core/css/guest.css'
 else
-  echo "  skipped: upstream vendor-block checks (need the AIO stack — nextcloud-aio-nextcloud)"
+  echo "  skipped: upstream vendor-block checks (need the AIO stack — aps-conecta-nextcloud)"
 fi
 
 # The AIA URI is read out of a REMOTE certificate over an unverified handshake, so it is
@@ -958,6 +958,16 @@ if missing("```bash\n# 3. Preflight\n```\n", ["3-preflight"]) != ["3-preflight"]
 if missing("<a id=\"3-preflight\"></a>\n## 2. Preflight\n", ["3-preflight"]): print("an explicit anchor was not read"); sys.exit(1)
 print("ok")'
 
+# --- gate: the suite's containers are aps-conecta-* (the AIO fork's patch 240) ----------------
+# The fork renames its 19 sibling containers; the mastercontainer, the nextcloud-aio network and
+# compose project and the nextcloud_aio_* volumes keep upstream's names. A sibling spelled the old way
+# anywhere gestion talks to the suite misses it without a word: a `docker ps` filter that matches
+# nothing reads as «not running», a prefix filter sees only the wizard. So no name, no prefix with the
+# old hyphen and no glob of the old prefix survives but the mastercontainer's. git grep exits 1 on no
+# match and 128 on error, so only a real search passes; [-*] keeps this line from matching itself.
+# CHANGELOG and BUGS are history; the vendored tarballs are not text.
+check bash -c 'out="$(git grep -nE "nextcloud-aio[-*]" -- . ":!CHANGELOG.md" ":!BUGS.md" ":!provisioning/apps")"; rc=$?; [ "$rc" -le 1 ] && ! printf "%s\n" "$out" | sed "s/nextcloud-aio-mastercontainer//g" | grep -E "nextcloud-aio[-*]"'
+
 # --- gate: the release manifest's form — every pin present, every category counted -------------
 check bash scripts/release-manifest.sh --validate
 check bash scripts/release-manifest.sh --self-test
@@ -1021,15 +1031,15 @@ fi
 # this deterministic when the stack IS up — without it the gate raced the 120s start_period.
 echo "== office smoke (only if the document server is running) =="
 # The gate and office-smoke's own inspect match the SAME name — the AIO sibling AIO's own
-# containers.json pins (nextcloud-aio-eurooffice), deterministic on every AIO host the way the
+# containers.json pins (aps-conecta-eurooffice), deterministic on every AIO host the way the
 # compose project name was on compose — so the two cannot drift. The AIO legs landed with S8
 # (slice 20): public-path healthcheck, the DS 9.3.x pin, the image namespaces. A compose dev
 # stack reads as skipped here BY DESIGN (the D5 interim: its install and seed stay green through
 # NC_CONTAINER; office answers the AIO stack) — the skip is visible, never silent.
-if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx nextcloud-aio-eurooffice; then
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx aps-conecta-eurooffice; then
   if bash scripts/office-smoke.sh; then echo "  ok:   office-smoke"; else echo "  FAIL: office-smoke"; fail=1; fi
 else
-  echo "  skipped: no AIO document server (nextcloud-aio-eurooffice)"
+  echo "  skipped: no AIO document server (aps-conecta-eurooffice)"
 fi
 
 if [ "$fail" -eq 0 ]; then

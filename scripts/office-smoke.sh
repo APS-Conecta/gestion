@@ -8,7 +8,7 @@
 # ran only when someone remembered `make office-formats`. Now the licence check runs on every smoke.
 #
 # THE AIO LEGS (S8, slice 20 — the completion the port deferred): the document server is the
-# wizard's sibling nextcloud-aio-eurooffice behind apache's /eurooffice, so every leg answers the
+# wizard's sibling aps-conecta-eurooffice behind apache's /eurooffice, so every leg answers the
 # stack an operator actually runs. The healthcheck goes through the PUBLIC path — the exact leg
 # that failed in upstream #8433 (the DS's own port can answer while the public route is broken).
 # The version assert pins the 9.3.x line: the connector's own floor is only "DS > 6.0"
@@ -77,7 +77,7 @@ esac
 # The DS image: the one this distribution's channel shipped. Resolved through `docker ps` by
 # NAME (the transport port's rule — no compose context exists on an AIO host), the same name
 # test.sh's office gate matches, so the two cannot drift.
-img="$(docker inspect "$(docker ps -q --filter name=nextcloud-aio-eurooffice | head -1)" --format '{{.Config.Image}}' 2>/dev/null || true)"
+img="$(docker inspect "$(docker ps -q --filter name=^aps-conecta-eurooffice$ | head -1)" --format '{{.Config.Image}}' 2>/dev/null || true)"
 # (P35, implement-time — measured on the probe) upstream's office image is named aio-eurooffice
 # (the aio- prefix, like aio-nextcloud); the fork's retag keeps the name and swaps the namespace.
 # The unprefixed eurooffice shapes the fence carried never exist.

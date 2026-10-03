@@ -30,7 +30,7 @@ printf '▸ stack\n'
 # live pre-AIO stack (the D5 interim until S10) keep `make up` exactly as before. Detection is
 # env.sh's is_aio.
 if is_aio; then
-  printf '  nextcloud-aio-nextcloud up — the wizard owns the stack; provisioning only\n'
+  printf '  aps-conecta-nextcloud up — the wizard owns the stack; provisioning only\n'
 else
   make --no-print-directory up || exit 1
 fi
