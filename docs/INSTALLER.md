@@ -197,7 +197,9 @@ aps-conecta revalidate
 ```
 
 right after the update lands — smoke, office-smoke and the divergence gate, aggregated; a red
-names its failed gate. Two honest notes:
+names its failed gate. An install from v0.3.0 or earlier runs the suite under upstream's container
+names; the suite now names them `aps-conecta-*` and does not migrate them: reinstall it (§12). Two
+honest notes:
 
 - On image-bump boots an **offline clinic sits at the app-store probe** (upstream behavior:
 an unbounded wait on `apps.nextcloud.com` while the store is off — documented upstream behavior,

@@ -6,7 +6,7 @@
 # documented defect class is the silent green: BUGS.md B-001…B-007 came from the first bring-up
 # that was complete on paper and never run; B-014 was a gate that could not go red; 11 of 19
 # handoff claims measured wrong at the 2026-09-13 stand-up (FINDINGS.md). So the couplings are
-# proven on a REAL AIO stack — stock upstream images, no S1 dependency — before anything is
+# proven on a REAL AIO stack — the AIO fork's published suite, no S1 dependency — before anything is
 # built on them. This script is also S8's CI harness in embryo: when the port lands, cleanboot's
 # compose bring-up retires and this is what replaces it (probe scaffolding converts into S8's
 # machinery).
@@ -22,7 +22,7 @@
 # upstream's initial-setup Playwright spec drives, minus the browser — one copy (a6), so Clean boot
 # exercises the drive a clinic's silent install uses. This harness owns only what makes the probe
 # a probe: the mastercontainer's docker run (SKIP_DOMAIN_VALIDATION, a loopback apache on a high
-# port, the stock upstream image), the probe state the seed expects, and the port gate. The
+# port, the fork's suite tag), the probe state the seed expects, and the port gate. The
 # RFC-2606 .invalid domain installs without DNS; the domain is immutable afterwards, which a
 # disposable instance does not care about.
 #
@@ -40,15 +40,17 @@
 #   scripts/aio-testbed.sh gate      assert no non-loopback port outside the wizard is claimed
 #   scripts/aio-testbed.sh status    what runs, what it publishes, where the passwords are
 #
-# Env: AIO_TEST_IMAGE (default upstream latest), AIO_TEST_PORT (8080), AIO_TEST_APACHE_PORT
+# Env: AIO_TEST_IMAGE (default the fork's suite tag below), AIO_TEST_PORT (8080), AIO_TEST_APACHE_PORT
 # (11000), AIO_TEST_DOMAIN (aio-test.invalid). State: /tmp/aio-testbed/ — secrets 0600, values
 # never printed, only their paths (env-init rule).
 set -uo pipefail
 
 STATE=/tmp/aio-testbed
 MC=nextcloud-aio-mastercontainer            # fixed by Containers/mastercontainer/start.sh:164-170
-NC=aps-conecta-nextcloud                   # fixed by php/containers.json:145
-IMAGE="${AIO_TEST_IMAGE:-ghcr.io/nextcloud-releases/all-in-one:latest}"
+NC=aps-conecta-nextcloud                   # fixed by the fork's php/containers.json (patch 240)
+# The fork's suite, never upstream's: the AIO fork renames the siblings (patch 240), so upstream's
+# container names would match none of gestion's. Moves with each published suite tag.
+IMAGE="${AIO_TEST_IMAGE:-ghcr.io/aps-conecta/all-in-one:ci-20261003-1}"
 WIZARD_PORT="${AIO_TEST_PORT:-8080}"
 APACHE_PORT="${AIO_TEST_APACHE_PORT:-11000}"
 DOMAIN="${AIO_TEST_DOMAIN:-aio-test.invalid}"
@@ -181,9 +183,10 @@ cmd_up() {
   docker exec --user www-data "$NC" php /var/www/html/occ files:scan admin >/dev/null 2>&1 || true
 
   # The theme the seed brands with. The suite's image bakes themes/apsconecta in (patch 030,
-  # S3); this probe runs the STOCK upstream image — no theme, no bind mount — so the repo's
-  # tree is copied in the way the bake will ship it. phase 15's theming_image_set and smoke's
-  # checks 7/11 read /var/www/html/themes/apsconecta in-container; without this the phase
+  # S3), from the gestion ref the suite tag was published with — which may lag this checkout — so
+  # the repo's tree is copied over it: the probe brands with the theme under test. phase 15's
+  # theming_image_set and smoke's checks 7/11 read /var/www/html/themes/apsconecta in-container;
+  # without this the phase
   # dies mid-seed on the probe. docker cp, not the seam: this is bring-up, and the harness is
   # deliberately seam-free. The source path resolves through $0 so the harness stays
   # cwd-independent; re-`up` after a theme edit re-copies fresh (up requires the clean slate
@@ -192,12 +195,12 @@ cmd_up() {
     || die "no themes/apsconecta/core in this checkout — the probe brands with the repo's theme"
   docker cp "$repo_root/themes/apsconecta" "$NC":/var/www/html/themes/ >/dev/null \
     || die "could not copy themes/apsconecta into $NC — phase 15 and smoke's checks 7/11 need it in-container"
-  say "theme seeded: themes/apsconecta -> $NC (the bake's stand-in on a stock image)"
+  say "theme seeded: themes/apsconecta -> $NC (over the image's bake: the checkout's theme is under test)"
 
   cmd_gate || die "GATE FAILED — the probe claimed a port it must not claim; inspect with '$0 status'"
 
   echo
-  echo "✓ probe instance up: stock upstream image, store off, container set green"
+  echo "✓ probe instance up: $IMAGE, store off, container set green"
   echo "    wizard:      $WIZ  (password: $STATE/master.pw)"
   echo "    nextcloud:   http://127.0.0.1:${APACHE_PORT}  (loopback; admin password: $STATE/nextcloud.pw)"
   echo "    occ:         docker exec --user www-data $NC php /var/www/html/occ <command>"
