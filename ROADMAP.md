@@ -43,7 +43,20 @@ formatting loss that implies** (issue #45).
 can run end to end without a developer. Laps L1–L4 shipped (see *Done*); the rest, in order:
 
 1. **L5 Map** — the basemap as a registry step, the Centro picker, same-origin `/tiles/`.
-2. **L6 Docs** — `docs/INSTALLER.md` ⇄ the clinic guide, mirrored step for step.
+2. **L6 Docs — frozen until the mirror lands (a23, #205).** `docs/INSTALLER.md` ⇄ the clinic
+   guide, mirrored step for step — and with them the deferred **suite-docs** rewrite: the
+   documentation wave stops at the frozen surfaces below and rides this same gate. Until it is
+   green, frozen whole: `docs/INSTALLER.md`, `docs/GUIA-CLINICA.md`, the AIO fork declaration
+   (`AIO/readme.md:1-107`), `AIO/BUGS.md`, `AIO/patches/*`; and frozen in place: the sections
+   the paused L5 S3 blueprint touches (ARCHITECTURE, ADMIN_MANUAL §2/§7, DEVELOPER_MANUAL,
+   MIGRATION, threat-model, AGENTS) and the INSTALLER/GUIA H2 anchors AIO patches 140/160/170
+   deep-link. Open items the freeze holds: L5 S3 resume (the basemap blueprint: Centro picker,
+   same-origin `/tiles/`, the mastercontainer bind guard — review item I1) · L5 S4 · the L5
+   SSOT-closure PR · the tiles NUL-check defect (→ B-036) · L6/a23 (#205) · L7/a24 (#206) ·
+   the AIO upstream doc-tail cleanup (its own patch-queue decision, behind L7) · the parked
+   app-set cleanup run (`gestion-app-set-cleanup` worktree) · the administration manual's hero
+   tag «Downstream Nextcloud 34 Fork», a false present (the server is not forked, D7) whose
+   reword rides this gate with the frozen hero markup.
 3. **L7 Run acceptance** — a release candidate installed on three boxes by the rehearsal harness.
    It carries:
    - the two-line bootstrap on a pristine Ubuntu 24.04 box (from L2);
@@ -56,13 +69,26 @@ can run end to end without a developer. Laps L1–L4 shipped (see *Done*); the r
 
 Also open: **Epic retrospectives** (optional).
 
+Also open, the compliance horizon:
+
+- **Ley 21.719** (binding 2026-12-01): workflows for staff-personal-data access, rectification
+  and erasure, and the *encargado de tratamiento* agreement template for hosts and contractors.
+- **Ficha clínica retention** (Ley 20.584 / DTO 41/2012): clinical documentation must survive
+  15 years with authorized, documented destruction — a legal-hold posture the default trash and
+  quota pruning do not provide.
+- **MINSAL EIS FHIR drafts**: the MPI, TEI and SNRE guides lack normative status and publish no
+  CapabilityStatement; integration stays planned until they firm up.
+- **AGPL §13 + trademark**: a prominent in-app way to the exact running Corresponding Source
+  (applied patches included), and the trademark attribution and disclaimer on the login and
+  dashboard views.
+
 ## Done
 
 | When | What | Where it lives now |
 |---|---|---|
 | 2026-07-24 | v1 accepted — browser acceptance run passed | this file, § *Where we are* |
 | 2026-07-24 | **ODF editing** (#45 / B-007) — lossy, via OOXML conversion | `provisioning/phases/14-office.sh` |
-| 2026-07-27 | **Epic 5 — white-label branding.** Server theme (`server.css`, woff2 fonts, brand images), the `15-branding` phase, `side_menu`, and gates for every referenced asset + every theme SVG parsing. No `defaults.php`, no per-app icon directory — both turned out unnecessary. | [`docs/THEMING-MODEL.md`](docs/THEMING-MODEL.md), [`ADR-0001`](docs/adr/0001-server-theme-for-branding.md) |
+| 2026-07-27 | **Epic 5 — white-label branding.** Server theme (`server.css`, woff2 fonts, brand images), the `15-branding` phase, `side_menu`, and gates for every referenced asset + every theme SVG parsing. | [`docs/THEMING-MODEL.md`](docs/THEMING-MODEL.md), [`ADR-0001`](docs/adr/0001-server-theme-for-branding.md) |
 | 2026-07-27 | **ADR-0000** — `AD-1` … `AD-10` defined, so every citation resolves | [`docs/adr/0000-inherited-decisions.md`](docs/adr/0000-inherited-decisions.md) |
 | 2026-07-29 | **ADR-0002** — app edits move from `sed` to committed `*.patch` files | [`docs/adr/0002-app-patches.md`](docs/adr/0002-app-patches.md) |
 | 2026-07-29 | **Nextcloud Tables dropped from the chain** (#24) — the REM app owns its own schema, so Tables had no dependent | this file, § *Future* |

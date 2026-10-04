@@ -6,12 +6,12 @@ decision, not a grep accident (review L0-06)._
 
 ## OCS APIs (the published RESTful surface — M2 doctrine)
 
-| App | Surface | Spec | Stability |
-|---|---|---|---|
-| territorio | `/ocs/v2.php/apps/territorio/api/v1/` (counts, features/{id}, subcategories/{c}/{s}/features) | territorio/openapi.json (generated) | stable (territorio#ADR-0020) |
-| farmacia | `/ocs/v2.php/apps/farmacia/api/v1/medicamentos` | farmacia/openapi.json | stable (typed payload; farmacia's ApiContractTest pins the schema) |
-| epidemiologia | `/ocs/v2.php/apps/epidemiologia/api/v1/sources` | epidemiologia/openapi.json | stable (epidemiologia#ADR-0006) |
-| estadistica | `/ocs/v2.php/apps/estadistica/api/v1/` (fuentes, fuentes/{id}, consultas, preguntas, preguntas/{id}, tableros, tableros/{id}, indicadores) | estadistica/openapi.json (generated) | shipped since v0.1.0 (vendored tarball); the consulta answer is only extended, never reshaped (estadistica#ADR-0006), and its ApiContractTest pins the served keys |
+| App | Spec | Stability |
+|---|---|---|
+| territorio | territorio/openapi.json (generated) | stable (territorio#ADR-0020) |
+| farmacia | farmacia/openapi.json | stable (typed payload; farmacia's ApiContractTest pins the schema) |
+| epidemiologia | epidemiologia/openapi.json | stable (epidemiologia#ADR-0006) |
+| estadistica | estadistica/openapi.json (generated) | shipped since v0.1.0 (vendored tarball); the consulta answer is only extended, never reshaped (estadistica#ADR-0006), and its ApiContractTest pins the served keys |
 
 ## Injection services (in-instance, transactional)
 
@@ -31,7 +31,7 @@ name order (gestion#ADR-0002).
 |---|---|---|
 | provisioning/data/packages.json | gestion | seeded data packages |
 | provisioning/data/aio-siblings.txt | gestion | AIO sibling refs |
-| aps-conecta-web/vendored.json | aps-conecta-web | the ECICEP engine dual-SHA (upstream-first) |
+| vendored.json | the org's website repo | the ECICEP engine dual-SHA (upstream-first) |
 
 ## ADR directories
 
@@ -41,7 +41,7 @@ name order (gestion#ADR-0002).
 | epidemiologia | docs/adr/ | 0002–0017 |
 | estadistica | docs/adr/ | 0001–0008 |
 | gestion | docs/adr/ | 0000–0020 |
-| aps-conecta-web | docs/adr/ | 0001–0023 |
+| the org's website repo | docs/adr/ | 0001–0023 |
 
 Cross-repo citations are `repo#ADR-NNNN` (org L0-08); in-repo citations
 stay bare. farmacia owns no ADR directory — its citations are always

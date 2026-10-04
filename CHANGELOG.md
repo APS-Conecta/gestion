@@ -156,6 +156,26 @@ image digests live there and are deliberately not copied here — one fact, one 
   `dev/lab-apps.sh` is empty again. After install the app's RemJob downloads the DEIS window
   itself, ≈ 4.9 GB of database for the default 2023–2026. `scripts/check-org-drift.sh` compares it
   with territorio and CI clones it; `docs/LICENSING.md` has its row (twelve apps).
+- **The organisation map registers the org's newest repositories** — an `IntraVox` row (the
+  default landing app; fork truth and the upstream deltas cited from that repository's ADR-0001)
+  and an `aps-common` row (the committed-subtree distribution, cited from its ADR-0001); the
+  map's verified date moves to 2026-10-04.
+- **ROADMAP §Next item 2 is now the L6 freeze contract** — what is frozen whole
+  (`docs/INSTALLER.md`, `docs/GUIA-CLINICA.md`, the AIO fork declaration, `AIO/BUGS.md`,
+  `AIO/patches/*`), what is frozen in place (the paused L5 S3 blueprint's touch sections, the
+  INSTALLER/GUIA H2 anchors the AIO patches deep-link), the unfreeze gate (a23, gestion#205) and
+  every open item the freeze holds — the deferral vehicle for the **suite-docs** rewrite and the
+  instalador laps behind it.
+- **Index rows for `docs/CONTRACTS.md`, `docs/MIGRATION.md` and `docs/WELCOME-SCREEN.md`** — the
+  cross-module surfaces and the two operating runbooks were governed documents without a row.
+- **The compliance horizon is on the roadmap** — four one-liners in [`ROADMAP.md`](ROADMAP.md)
+  § *Next*: **Ley 21.719** (binding 2026-12-01) — staff-data access, rectification and erasure
+  workflows plus the *encargado de tratamiento* template; **ficha clínica retention**
+  (Ley 20.584 / DTO 41/2012) — 15 years with authorized destruction, a legal-hold posture the
+  defaults do not provide; **MINSAL EIS FHIR drafts** — planned until the guides are normative;
+  **AGPL §13 + trademark** — in-app access to the running Corresponding Source and the trademark
+  attribution on the login and dashboard views. They arrive from the dissolved audit register
+  (see *Removed*), where dated obligations did not belong.
 
 ### Changed
 
@@ -227,11 +247,58 @@ image digests live there and are deliberately not copied here — one fact, one 
   - Clean boot gains a job that installs by the runner's own IP with the silent command alone and
     checks the CA end to end: trusted with it, refused without it, imported by Nextcloud; a planilla
     user logs in; push and office pass their own checks; the weekly run keeps the leaf and apache.
+- **The manuals' one-owner dedup sweep** (docs). Sections that restated another file's content now
+  point at its owner instead.
+  - `docs/manuals/ADMIN_MANUAL.md` §3 collapses to a pointer stub — the clinic install is
+    [`docs/INSTALLER.md`](docs/INSTALLER.md) and [`docs/GUIA-CLINICA.md`](docs/GUIA-CLINICA.md)'s,
+    the dev path the [README quickstart](README.md#quickstart)'s, the container lifecycle `make help`'s.
+  - `docs/manuals/USER_MANUAL.md` §9.2 keeps the platform story and defers the farmacia walkthrough
+    to farmacia's own manual; §2.6 names all five own apps; §6.1 and §7.1 point at the AIO readme's
+    patch table for the wizard's office/Talk pins.
+  - `docs/manuals/DEVELOPER_MANUAL.md` §1.3, §2.1, §5, §5.4 and §7.1 collapse to pointers at
+    [`CONTEXT.md`](CONTEXT.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) § *Runtime topology*,
+    [`docs/THEMING-MODEL.md`](docs/THEMING-MODEL.md) + [`docs/BRANDING.md`](docs/BRANDING.md),
+    ADR-0004, and ADR-0010 + [`docs/LICENSING.md`](docs/LICENSING.md).
+  - `docs/CONTRACTS.md` drops the OCS table's route column — the per-app `openapi.json` is the
+    published surface.
+  - The brand kit is named outside-git at its three pointer sites (`docs/BRANDING.md` §9,
+    `docs/THEMING-MODEL.md` layer D, `themes/apsconecta/MAPEO.md` §2); licence facts stay
+    [`docs/LICENSING.md`](docs/LICENSING.md)'s.
+- **The README `scripts/` row now lists every script** — the ten it missed each get their one phrase.
+- **The registers are current.** The organisation map no longer names the two out-of-project
+  repositories (their facts stay with their owners), the territorio reversal paragraph records
+  ADRs 0015/0016/0017 as implemented with their five code anchors, and the AIO row records the L4
+  wizard fork. The manuals tree reads **14-Phase** throughout and §4 names `41-intravox.sh`
+  (a pointer to `docs/WELCOME-SCREEN.md`); AD-6 carries the ADR-0004 forward note
+  ([ADR-0004](docs/adr/0004-branding-the-legacy-render-path.md)); the compose comments cite D7
+  and ADR-0003 where they cited the reversed AD-1; every documentation index table is the
+  four-column Document × Mode × Reader × Authority standard.
 
 ### Removed
 
 - **`scripts/final-validation.sh`** — the whole-installer harness kept a second copy of the wizard
   drive; the release rehearsal installs a fresh box the way a clinic does (`docs/INSTALLER.md` §10).
+- **Two repository rows and one correction bullet from the organisation map** — the map names
+  only what this project's documentation governs.
+- **The Epic-5 row's "both turned out unnecessary" clause** — `defaults.php` is tracked,
+  load-bearing and smoke-gated; the row's date and shipped facts stay.
+- **The manuals' inline boilerplate** — the four `<style>` blocks (USER, ADMIN, DEVELOPER, the
+  manuals README), the three Master Tables of Contents and the DEVELOPER manual's `Target File`
+  scaffold line are gone; `docs/manuals/style.css` owns the hero card verbatim (`.aps-hero`,
+  `.aps-hero h1`, `.aps-tag`, `.aps-meta` replace the dead `.aps-header-*` rules) and the USER
+  manual's `## 1.` heading no longer claims an index. ≈ −400 lines.
+- **Obsolete instalador patch — do not re-apply at resume**: L5 S3's P6 durable hunk
+  (`@@ -116,7 @@`, `docs/manuals/ADMIN_MANUAL.md` Master TOC rows) lost its target when the
+  Master TOC was deleted (previous entry) — drop that hunk when resuming S3.
+- **The audit register** — the fourth manual under `docs/manuals/`, an inventory of
+  inconsistencies, architectural debt and stubs across the suite, is gone. Each item moved to
+  its owner: the four hardening findings (Redis authentication, 2FA enrollment, audit logging,
+  `trusted_proxies`) to the org's private tracker — no hardening detail stays in a public repo;
+  seven app-debt findings to public issues in the owning repos (territorio, farmacia,
+  epidemiologia, gestion); the regulatory cliffs to `ROADMAP.md` § *Next* (the compliance
+  horizon, above); the bug ledger already lives in [`BUGS.md`](BUGS.md) and the findings ledger
+  in the org's tracker. The manual set is three again; [`docs/index.md`](docs/index.md) and the
+  manuals cover page say so.
 
 ### Fixed
 

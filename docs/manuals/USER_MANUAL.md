@@ -1,47 +1,4 @@
 <link rel="stylesheet" href="style.css">
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..800;1,9..144,400..800&family=Nunito+Sans:ital,opsz,wght@0,6..12,400..800;1,6..12,400..800&display=swap');
-:root {
-  --aps-primary: #7f21fe;
-  --aps-dark-violet: #5315a8;
-  --aps-ink: #101828;
-  --aps-muted: #485363;
-  --aps-border: #e4e7ec;
-  --aps-gold: #e06f00;
-  --aps-dark-gold: #9a4c00;
-  --aps-error: #ea003e;
-  --aps-error-bg: #FFE7E7;
-  --aps-card-bg: #ffffff;
-  --aps-canvas-bg: #fcfaff;
-  --aps-badge-bg: #f4ebff;
-  --aps-badge-text: #5315a8;
-}
-body, .markdown-body {
-  font-family: "Nunito Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
-  color: var(--aps-ink) !important;
-  background-color: var(--aps-canvas-bg);
-  line-height: 1.65;
-}
-h1, h2, h3, h4 { font-family: "Fraunces", Georgia, serif !important; letter-spacing: -0.015em; font-weight: 700; }
-h1 { color: var(--aps-dark-violet) !important; border-bottom: 3px solid var(--aps-primary); padding-bottom: 0.35em; }
-h2 { color: var(--aps-dark-violet) !important; border-bottom: 1px solid var(--aps-border); padding-bottom: 0.25em; margin-top: 1.6em; }
-h3 { color: var(--aps-primary) !important; }
-h4 { color: var(--aps-dark-gold) !important; }
-a { color: var(--aps-primary) !important; font-weight: 600; text-decoration: none; }
-a:hover { color: var(--aps-dark-violet) !important; text-decoration: underline; }
-table { border-collapse: collapse; width: 100%; border: 1px solid var(--aps-border); margin: 1.4em 0; border-radius: 8px; overflow: hidden; background: #ffffff; }
-th { background-color: var(--aps-dark-violet) !important; color: #ffffff !important; font-family: "Fraunces", serif !important; font-weight: 600; padding: 10px 14px; text-align: left; }
-td { padding: 9px 14px; border-bottom: 1px solid var(--aps-border); color: var(--aps-ink); }
-tr:nth-child(even) { background-color: #fbf9ff; }
-blockquote { border-left: 4px solid var(--aps-primary) !important; background-color: #f8f4ff !important; color: var(--aps-muted) !important; padding: 0.8em 1.4em; border-radius: 0 8px 8px 0; }
-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important; background-color: var(--aps-badge-bg); color: var(--aps-dark-violet); padding: 0.2em 0.45em; border-radius: 4px; border: 1px solid #d6bbfb; }
-pre { background-color: var(--aps-ink) !important; color: #f9fafb !important; border-radius: 8px; padding: 1.1em 1.3em; border: 1px solid #344054; }
-pre code { background: transparent !important; color: inherit !important; border: none !important; }
-.aps-hero { background: linear-gradient(135deg, #5315a8 0%, #7f21fe 100%); color: #ffffff; border-radius: 12px; padding: 26px 32px; margin-bottom: 24px; box-shadow: 0 4px 14px rgba(83,21,168,0.22); }
-.aps-hero h1 { color: #ffffff !important; border-bottom: 2px solid rgba(255,255,255,0.3); margin: 0 0 10px 0; padding: 0 0 8px 0; }
-.aps-tag { display: inline-block; background: #e06f00; color: #ffffff; font-size: 0.78em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; padding: 3px 10px; border-radius: 20px; margin-bottom: 12px; }
-.aps-meta { color: rgba(255,255,255,0.9); font-size: 0.95em; margin: 4px 0; }
-</style>
 
 <div class="aps-hero">
   <span class="aps-tag">Chilean Primary Healthcare (APS / CESFAM)</span>
@@ -55,7 +12,7 @@ pre code { background: transparent !important; color: inherit !important; border
 
 ---
 
-## 1. Document Title & Master Table of Contents (Index)
+## 1. Document Title & Metadata
 
 ### Document Metadata
 - **System**: APS Conecta Gestión
@@ -63,80 +20,6 @@ pre code { background: transparent !important; color: inherit !important; border
 - **Base Platform**: Nextcloud 34, the community image (`nextcloud:34-apache`, `../../compose.yaml`) — no enterprise artifacts anywhere
 - **Localization**: Spanish (Chile) / `es-CL` — Timezone: `America/Santiago`
 - **Document Scope**: Healthcare Staff Operational Manual (Non-Administrative Users)
-
----
-
-### Master Table of Contents
-
-- [1. Document Title & Master Table of Contents (Index)](#1-document-title--master-table-of-contents-index)
-- [2. Introduction to APS Conecta Gestión](#2-introduction-to-aps-conecta-gestión)
-  - [2.1 Mission and Operational Context](#21-mission-and-operational-context)
-  - [2.2 Single-Establishment Architecture](#22-single-establishment-architecture)
-  - [2.3 Non-Clinical Boundary: Operational Intranet vs. EHR](#23-non-clinical-boundary-operational-intranet-vs-ehr)
-  - [2.4 Chilean Primary Healthcare Localization (es-CL)](#24-chilean-primary-healthcare-localization-es-cl)
-  - [2.5 Role-Based Primary Healthcare Access Model](#25-role-based-primary-healthcare-access-model)
-  - [2.6 Downstream Nextcloud Fork & Open Source License Preservation](#26-downstream-nextcloud-fork--open-source-license-preservation)
-- [3. Accessing the Platform & Web Interface](#3-accessing-the-platform--web-interface)
-  - [3.1 Web Browser Requirements](#31-web-browser-requirements)
-  - [3.2 Logging In to the Platform](#32-logging-in-to-the-platform)
-  - [3.3 Visual Identity, Branding & Design System](#33-visual-identity-branding--design-system)
-  - [3.4 Side Menu Navigation (`side_menu`)](#34-side-menu-navigation-side_menu)
-  - [3.5 Top Navigation Bar and Unified Global Search](#35-top-navigation-bar-and-unified-global-search)
-  - [3.6 Desktop Workspace Mode (`desktop_workspace`)](#36-desktop-workspace-mode-desktop_workspace)
-- [4. Staff Dashboard](#4-staff-dashboard)
-  - [4.1 Dashboard Overview](#41-dashboard-overview)
-  - [4.2 Core Health Operations Widgets](#42-core-health-operations-widgets)
-  - [4.3 Activity Audit Feed and Notifications](#43-activity-audit-feed-and-notifications)
-  - [4.4 Privacy, Security, and External Egress Policy](#44-privacy-security-and-external-egress-policy)
-- [5. Files and Document Management](#5-files-and-document-management)
-  - [5.1 The 4-Area CESFAM Document Structure](#51-the-4-area-cesfam-document-structure)
-    - [Transversal](#transversal)
-    - [Programas](#programas)
-    - [Unidades](#unidades)
-    - [Sectores](#sectores)
-  - [5.2 The Operational Principle of "Una sola copia viva"](#52-the-operational-principle-of-una-sola-copia-viva)
-  - [5.3 Standardized File Naming Conventions](#53-standardized-file-naming-conventions)
-  - [5.4 Version History and Snapshot Restoration](#54-version-history-and-snapshot-restoration)
-  - [5.5 Deleted Files Management and Group Folder Trash Bins](#55-deleted-files-management-and-group-folder-trash-bins)
-  - [5.6 Favorites and System Tags](#56-favorites-and-system-tags)
-- [6. Real-Time Document Collaboration (Euro-Office)](#6-real-time-document-collaboration-euro-office)
-  - [6.1 Self-Hosted Euro-Office Architecture](#61-self-hosted-euro-office-architecture)
-  - [6.2 File Format Support: Native OOXML and Converted ODF](#62-file-format-support-native-ooxml-and-converted-odf)
-  - [6.3 Independent Window Editing (`sameTab=false`)](#63-independent-window-editing-sametabfalse)
-  - [6.4 Multi-User Co-Authoring, Comments, and Review Marks](#64-multi-user-co-authoring-comments-and-review-marks)
-- [7. Internal Communication: Talk (`spreed`)](#7-internal-communication-talk-spreed)
-  - [7.1 Instant Messaging and Healthcare Channels](#71-instant-messaging-and-healthcare-channels)
-  - [7.2 Markdown Formatting and the Smart Picker](#72-markdown-formatting-and-the-smart-picker)
-  - [7.3 Audio/Video Calls and Clinical Screen Sharing](#73-audiovideo-calls-and-clinical-screen-sharing)
-  - [7.4 Operational Boundaries and Clinical Coordination](#74-operational-boundaries-and-clinical-coordination)
-- [8. Schedule & Directory: Calendar & Contacts](#8-schedule--directory-calendar--contacts)
-  - [8.1 Using the Calendar Application](#81-using-the-calendar-application)
-  - [8.2 Coordinating Clinical Shifts, Programs, and Sector Huddles](#82-coordinating-clinical-shifts-programs-and-sector-huddles)
-  - [8.3 Health Center Staff Directory (Contacts App)](#83-health-center-staff-directory-contacts-app)
-- [9. APS Conecta Specialized Healthcare Apps](#9-aps-conecta-specialized-healthcare-apps)
-  - [9.1 Epidemiología (`epidemiologia`)](#91-epidemiología-epidemiologia)
-    - [Public Data Aggregation Policy](#public-data-aggregation-policy)
-    - [Default Landing View (Inicio)](#default-landing-view-inicio)
-    - [Alertas vigentes (MINSAL Alerts)](#alertas-vigentes-minsal-alerts)
-    - [Circulación de Virus Respiratorios (ISP Weekly Reports)](#circulación-de-virus-respiratorios-isp-weekly-reports)
-    - [Alertas del ISP (Sanitary and Pharmacovigilance Alerts)](#alertas-del-isp-sanitary-and-pharmacovigilance-alerts)
-    - [Tablero ETI e IRAG and EPIVIGILA Gateway](#tablero-eti-e-irag-and-epivigila-gateway)
-  - [9.2 Farmacia (`farmacia`)](#92-farmacia-farmacia)
-    - [CESFAM Pharmacological Arsenal (Vademécum)](#cesfam-pharmacological-arsenal-vademécum)
-    - [Clinical Lenses: Arsenal, Embarazo, and Ajuste ERC](#clinical-lenses-arsenal-embarazo-and-ajuste-erc)
-    - [Clinical Safety Badges (FDA, Renal Adjustment, Anticholinergic Risk, Trazador)](#clinical-safety-badges-fda-renal-adjustment-anticholinergic-risk-trazador)
-    - [Discontinuing and Restoring Medications (Retirar / Restaurar)](#discontinuing-and-restoring-medications-retirar--restaurar)
-    - [Pharmacological Management: CSV Import & Export](#pharmacological-management-csv-import--export)
-  - [9.3 Territorio (`territorio`)](#93-territorio-territorio)
-    - [Institutional GIS Knowledge Base](#institutional-gis-knowledge-base)
-    - [Territorial Hierarchy: Comuna, Unidades Vecinales, and Sectores](#territorial-hierarchy-comuna-unidades-vecinales-and-sectores)
-    - [Community Features (Elementos Territoriales: Lugares, Zonas, Rutas)](#community-features-elementos-territoriales-lugares-zonas-rutas)
-    - [Interactive Map and Self-Hosted Chile PMTiles Basemap](#interactive-map-and-self-hosted-chile-pmtiles-basemap)
-- [10. Personal Profile, Security & Preferences](#10-personal-profile-security--preferences)
-  - [10.1 Accessing Personal Settings](#101-accessing-personal-settings)
-  - [10.2 Chilean Localization and Timezone Verification](#102-chilean-localization-and-timezone-verification)
-  - [10.3 Password Management and Hygiene](#103-password-management-and-hygiene)
-  - [10.4 Two-Factor Authentication (TOTP) and Emergency Recovery](#104-two-factor-authentication-totp-and-emergency-recovery)
 
 ---
 
@@ -195,7 +78,7 @@ APS Conecta Gestión is an operational downstream distribution and tailored fork
 All software components in APS Conecta Gestión strictly preserve their respective open source licenses and upstream legal notices:
 - **Base Nextcloud Platform**: Distributed under the **GNU Affero General Public License version 3 or later (GNU AGPL-3.0-or-later)**.
 - **Euro-Office Collaboration Backend**: Euro-Office DocumentServer and its connector application are licensed under the **GNU AGPL version 3 only (GNU AGPL-3.0-only)**.
-- **Custom Primary Care Applications**: Custom applications authored by APS Conecta (`epidemiologia`, `farmacia`, `territorio`), the server theme (`themes/apsconecta`), and provisioning infrastructure are licensed under the **GNU AGPL version 3 or later (GNU AGPL-3.0-or-later)** pursuant to ADR-0010.
+- **Custom Primary Care Applications**: The suite's own applications — `epidemiologia`, `farmacia`, `territorio`, `estadistica`, and the IntraVox intranet app (our fork) — plus the server theme (`themes/apsconecta`) and provisioning infrastructure are licensed under the **GNU AGPL version 3 or later (GNU AGPL-3.0-or-later)** pursuant to ADR-0010; the per-repository licence inventory is owned by [LICENSING.md](../LICENSING.md).
 - **Network User Rights (GNU AGPLv3 Section 13)**: In compliance with Section 13 of the GNU AGPLv3, any user interacting with this platform remotely over a computer network has the legal entitlement to receive the Corresponding Source code of the software version running on the server. Clinic staff may request access to the complete source code repository from their establishment administrator.
 
 #### Trademarks & Attribution
@@ -441,6 +324,8 @@ Euro-Office is integrated as a self-hosted document server container within the 
 - **Data Sovereignty**: Document rendering, text processing, and co-authoring synchronization occur entirely on the local server. No file contents are transmitted to external commercial office services.
 - **Office Compatibility**: Full formatting and rendering fidelity for word processing documents, spreadsheets, and presentations.
 
+On sites provisioned through the AIO instalador wizard the office choice is pinned — the wizard refuses any office other than Euro-Office; the [AIO readme's patch table](https://github.com/APS-Conecta/AIO/blob/main/readme.md) owns that wizard behaviour.
+
 ---
 
 ### 6.2 File Format Support: Native OOXML and Converted ODF
@@ -477,6 +362,8 @@ The **Talk** application provides encrypted internal messaging, team channels, a
   - Click **+ Crear una conversación nueva** to create a direct one-on-one message or a group chat room (e.g., *Sector Sol Clínico*, *TENS Procedimientos*).
   - **Conversaciones abiertas**: Public establishment channels accessible to all personnel (e.g., *Comité Paritario*, *Comunicaciones Internas*).
 - **Nota personal**: A private notebook pinned at the top of your chat list for personal notes, drafts, and link bookmarks.
+
+On sites provisioned through the AIO instalador wizard Talk starts off by default — the wizard's patch set pins the suite's starting applications; the [AIO readme's patch table](https://github.com/APS-Conecta/AIO/blob/main/readme.md) owns that wizard behaviour.
 
 ---
 
@@ -593,43 +480,12 @@ Upon opening the application, staff are presented with the **Inicio** (Overview)
 
 ### 9.2 Farmacia (`farmacia`)
 
-#### CESFAM Pharmacological Arsenal (Vademécum)
-The **Farmacia** application provides a digital catalog (*Vademécum*) of all medications approved, prescribed, and dispensed within the health center.
+The **Farmacia** application provides the CESFAM's digital catalog (*vademécum*) of the medications approved, prescribed, and dispensed within the health center — a clinical decision-support reader over the institutional formulary. It is an institutional catalog, not an inventory system: it does not manage individual patient prescriptions, warehouse stock counts, or batch expiration dates.
 
-> [!IMPORTANT]
-> **Operational Scope**: Farmacia does NOT manage individual patient prescriptions, warehouse inventory counts, or batch expiration dates. It is an institutional pharmacological catalog and clinical decision-support tool.
+The application is developed and documented in its own repository, and its complete Spanish operational manual — every view, workflow, and on-screen label — is owned by that repository: [`farmacia/docs/manual.md`](https://github.com/APS-Conecta/farmacia/blob/main/docs/manual.md).
 
 ![Farmacia App](screenshots/06_app_farmacia.png)
 *Figure 9.2: Farmacia catalog interface showing clinical safety lenses, medication search, and spreadsheet import/export.*
-
-#### Clinical Lenses: Arsenal, Embarazo, and Ajuste ERC
-The application provides three immediate clinical perspectives ("Lentes") across the same underlying pharmacological dataset:
-1. **Arsenal Farmacológico**: Complete institutional catalog showing commercial brand, active principle (*principio activo*), pharmaceutical form, concentration, and supply channel (*abastece*).
-2. **Fármacos en embarazo**: Filters medications with documented FDA Pregnancy Risk categories.
-3. **Ajuste farmacológico ERC**: Filters medications requiring dosage modifications in patients with Chronic Kidney Disease (*Enfermedad Renal Crónica* — ERC) based on estimated Glomerular Filtration Rate (eGFR).
-
-#### Clinical Safety Badges (FDA, Renal Adjustment, Anticholinergic Risk, Trazador)
-Medication cards display clinical safety badges:
-- **FDA Pregnancy Category**: Marked with standard categories **A**, **B**, **C**, **D**, or **X**.
-- **Renal Adjustment in CKD (ERC)**: Indicates whether dose spacing or dosage reduction is required in renal impairment.
-- **Anticholinergic Risk in Older Adults (*Adulto Mayor*)**: Highlights medications with anticholinergic burden, cautioning against cognitive, sedative, or urinary complications in geriatric patients.
-- **GES / AUGE Indicators**: Displays the specific AUGE/GES health problem covered by the medication.
-- **Medicamento Trazador**: Essential medications designated as national tracer drugs under ministerial primary care evaluation frameworks display the distinctive **Trazador** badge.
-
-#### Discontinuing and Restoring Medications (Retirar / Restaurar)
-- **Discontinuation Workflow**: When a medication is removed from the local formulary, pharmacy staff click **Retirar** on the medication card. The item is marked as retired and hidden from standard clinical views, preserving historical prescription audit trails without cluttering current catalog searches.
-- **Inspecting Retired Drugs**: Check the **Mostrar retirados** (Show retired) filter to view discontinued items.
-- **Restoration**: If a discontinued drug is re-added to clinical stock, click **Restaurar** to reinstate it in active clinical searches.
-
-#### Pharmacological Management: CSV Import & Export
-- **For Pharmacy Directors (`role-quimico-farmaceutico`)**:
-  - The catalog can be bulk-updated by uploading the official clinic spreadsheet (*Planilla CSV*).
-  - Click **Importar planilla** to review and apply updates.
-  - The system tracks every upload as a reversible batch (*Lote*) with author and timestamp auditing.
-  - Click **Exportar planilla** to export the vademécum to CSV for municipal reporting.
-
-> [!NOTE]
-> **Operational Governance on Data Modifications**: While the CSV import workflow is designed for the Pharmacy Director (`role-quimico-farmaceutico`), in the current dev trunk build the import endpoint is governed by physical workstation and operational role assignment rather than strict API-level role gating (tracked in the technical debt registry).
 
 ---
 

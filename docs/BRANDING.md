@@ -211,7 +211,8 @@ The traps of the theming **mechanism** (`:root` inert, `background_color` decidi
 
 ## 9. Viewing the brandbook
 
-From the kit folder (`../APS Conecta Nextcloud/`, sibling of this repo):
+The brand kit is outside git — it is not part of this repository — so its folder is wherever your
+copy lives on the machine you design from. Serve that folder and open the brandbook:
 
 ```bash
 cd "../APS Conecta Nextcloud" && python3 -m http.server 8080

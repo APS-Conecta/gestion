@@ -23,7 +23,7 @@ decision record.
 | **A — Identity** | Name, slogan, URLs, colours, `productName`, brand images | Theming app config | `provisioning/phases/15-branding.sh` |
 | **B — CSS & fonts** | `@font-face`, display typography, header, focus, high contrast | `themes/apsconecta/core/css/server.css` | the file itself |
 | **C — Per-app icons** | Overrides for icons that clash | `themes/apsconecta/apps/<appid>/img/` | *currently empty — see §4* |
-| **D — Brand source** | Tokens, logo artwork, the living brandbook | `../APS Conecta Nextcloud/` (MIT, separate) | designers |
+| **D — Brand source** | Tokens, logo artwork, the living brandbook | the brand kit (outside git; licence facts owned by `LICENSING.md`) | designers |
 
 **Layer B is the only reason the theme directory exists.** Images are registered with
 `occ theming:config` from absolute paths and would work from anywhere on disk; identity and colour
