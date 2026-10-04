@@ -16,7 +16,7 @@
 #   aps-conecta respaldo             wire /opt/aps-conecta into AIO's backup scope (idempotent)
 #   aps-conecta asistente-aio --dominio D   drive the AIO wizard through its API (no browser)
 #   aps-conecta revalidate          post-update gate sweep: smoke + office-smoke + divergence
-#   aps-conecta tiles …            the basemap stack (install | refresh | check — host/tiles.sh)
+#   aps-conecta tiles …            the basemap (install | refresh | check — host/tiles.sh)
 #   aps-conecta datos [CUT]        the comuna data packages, cut + checksum-verified + staged
 #   aps-conecta --self-test          the self-check (no docker needed — PATH shims)
 #
@@ -40,6 +40,11 @@ APS_HOME="${APS_HOME:-/opt/aps-conecta}"   # the bundle lands in $APS_HOME/gesti
 # the provisionador's CERT_DIR/suite and CERT_DIR/ca, pinned by its self-test
 suite_tls_dir() { printf '%s' "$APS_HOME/certificados/suite"; }
 suite_ca_dir() { printf '%s' "$APS_HOME/certificados/ca"; }
+# The basemap (L5, R49): the suite's apache serves it at /tiles/ through a read-only bind the
+# mastercontainer makes from APS_TILES_DIR (the fork's patch 239) — tiles.sh's ARCHIVE, the same
+# TILES_HOME default (an arm pins it), so the build and the bind never name two places
+TILES_ARCHIVE="${TILES_HOME:-/srv/aps-conecta}/tiles/chile.pmtiles"
+suite_tiles_dir() { dirname "$TILES_ARCHIVE"; }
 reload_suite_leaf() {  # by IP (R22): apache reads its pair at start — a running apache started before the leaf
   # on disk was written is restarted, whoever signed it (a start, the weekly run) and however the last
   # attempt ended. No apache yet, or a stopped one: it reads the pair when it starts
@@ -138,7 +143,7 @@ step_footer() {  # N — the result (the step's own override, else the registry'
 step_run() {  # N RERUN — header, the step's body, footer; non-zero with a ✗ result on failure
   local id rc fn
   id="$(step_field "$1" 1)"; fn="step_$id"
-  # the silent install runs the browser steps, «abrir» and «mapa» its own way (silent_*, a7)
+  # the silent install runs the browser steps and «abrir» its own way (silent_*, a7)
   if [ -n "$SILENT_SITE" ] && declare -F "silent_$id" >/dev/null; then fn="silent_$id"; fi
   step_header "$1"
   FAIL=0
@@ -185,7 +190,6 @@ welcome() {  # the welcome — the approved console's opening, line for line
 
 # ── the silent install (a7): «install --sitio F --planilla F» walks the same nine steps, and these
 # stand in for the browser ones — each the Provisionador's own step run with --paso, or the suite.
-# The map comes last: it needs the site in .env and the suite's database (refresh-basemap.sh)
 silent_precheck() {  # the two files read before anything runs — a typo must not cost an install;
   # CRLF tolerated, as the Provisionador reads them (a site edited on Windows)
   local text; text="$(tr -d '\r' < "$SILENT_SITE")"
@@ -199,7 +203,6 @@ silent_precheck() {  # the two files read before anything runs — a typo must n
     || die "la planilla no empieza con la cabecera usuario;nombre;apellidos;correo;grupos;primer_admin: $SILENT_ROSTER"
 }
 silent_abrir() { STEP_RESULT="Sin instalador web: modo silencioso."; }
-silent_mapa() { STEP_RESULT="Mapa: se construye al final, con la suite en marcha."; }
 silent_centro() { python3 "$(prov_path)" --paso sitio --archivo "$SILENT_SITE"; }
 silent_suite() {
   local domain; domain="$(site_domain || true)"
@@ -212,18 +215,6 @@ silent_suite() {
 }
 silent_equipos() { python3 "$(prov_path)" --paso usuarios --codigo "$(site_codigo)" --planilla "$SILENT_ROSTER"; }
 silent_ejecutar() { python3 "$(prov_path)" --paso generar --codigo "$(site_codigo)" --resumen; }
-silent_map_last() {  # the basemap, once the suite runs; its own output goes to the log
-  if [ "${APS_SKIP_MAP:-0}" = 1 ]; then
-    info "mapa omitido en esta instalación: «sudo aps-conecta mapa» lo construye"; return 0
-  fi
-  info "construyendo el mapa de Chile (~1,1 GB; unos minutos)"
-  if bash "$HOST_DIR/tiles.sh" install >&2; then
-    ok "Mapa listo"
-  else
-    bad "el mapa no se construyó" "ejecute «sudo aps-conecta mapa» — el detalle está en el registro"
-  fi
-}
-
 cmd_install() {  # the install: the welcome, then the steps in registry order. Interactive, the
   # server steps run here and the last opens the web installer for 6–9; silent (--sitio/--planilla),
   # all nine run here, the browser ones from the two files (silent_*), every tool's own output in the
@@ -261,7 +252,7 @@ cmd_install() {  # the install: the welcome, then the steps in registry order. I
     step_run "$n" "$again" || exit 1
   done
   [ -n "$SILENT_SITE" ] || return 0
-  FAIL=0; silent_map_last; install_timers
+  FAIL=0; install_timers
   if [ "$FAIL" -ne 0 ]; then
     echo "INSTALACIÓN: la suite quedó instalada; falta lo marcado con ✗ arriba — ejecute el comando que nombra (registro: $SILENT_LOG)"
     exit 1
@@ -296,7 +287,7 @@ usage() {  # Spanish, generated from the registry — never a slice of this file
   echo "  aps-conecta estado                el último resultado de la re-provisión, con cada arreglo (sin sudo)"
   echo "  aps-conecta revalidate            revisa la instancia después de una actualización"
   echo "  aps-conecta respaldo              agrega /opt/aps-conecta a las copias de seguridad"
-  echo "  aps-conecta tiles install|refresh|check   el mapa base y su servicio"
+  echo "  aps-conecta tiles install|refresh|check   el mapa: construirlo, refrescarlo y revisar que la suite lo sirve"
   echo "  aps-conecta datos [CUT]           los paquetes de datos de la comuna"
   echo "  aps-conecta --self-test           autoprueba de este programa (sin docker)"
 }
@@ -730,15 +721,18 @@ step_descargar() {  # the bundle at its tag. On its own (the two-line bootstrap)
   return 0
 }
 
-step_mapa() {  # the basemap needs the chosen centre today (L5 builds it before Centro): with no
-  # site yet the step says so and the install goes on — «aps-conecta mapa» builds it later
-  if [ -z "$(site_codigo || true)" ]; then
-    info "el mapa se construye después de elegir el centro: ejecute «sudo aps-conecta mapa» al terminar el paso 6"
-    STEP_RESULT="Mapa pendiente: se construye después de elegir el centro."
-    return 0
+step_mapa() {  # the basemap, built before the browser opens (a22): a fixed extract of all Chile that
+  # needs no centre, no .env and no suite (R47) — Centro shows it and the suite serves it at /tiles/.
+  # The tools' own output (curl, pmtiles — in English) goes to a log; a failed build stops here like
+  # any step, and the re-run finds the CLI in place and builds again
+  local log="${SILENT_LOG:-$APS_HOME/mapa.log}"
+  if [ "${APS_SKIP_MAP:-0}" = 1 ]; then   # CI only: the 1,1 GB stays off the runner
+    STEP_RESULT="Mapa omitido: lo construye «sudo aps-conecta mapa»."; return 0
   fi
-  info "se construye el mapa de Chile (~1,1 GB por rangos HTTP; unos minutos — la instalación sigue al terminar)"
-  bash "$HOST_DIR/tiles.sh" install
+  info "se construye el mapa de Chile (~1,1 GB por rangos HTTP; unos minutos)"
+  if ! { mkdir -p "$(dirname "$log")" && bash "$HOST_DIR/tiles.sh" install >>"$log" 2>&1; }; then
+    bad "el mapa no se construyó (registro: $log)" "revise la conexión a github.com y a build.protomaps.com"
+  fi
 }
 
 step_abrir() {  # the web installer walks steps 6–9 as a CHILD of this console (Ctrl+C still reaches
@@ -778,9 +772,9 @@ suite_tag() {
   echo ""
 }
 
-run_command() {  # [ADDRESS] — prints the operator's docker run string (never executes it). An IPv4
-  # is the install by IP (R22): two lines more — the suite's own certificate for apache, its CA for
-  # Nextcloud and Talk. A domain's string is unchanged
+run_command() {  # [ADDRESS] — prints the operator's docker run string (never executes it). The map's
+  # directory rides it in both modes (L5: apache serves /tiles/ from it). An IPv4 is the install by
+  # IP (R22): two lines more — the suite's own certificate for apache, its CA for Nextcloud and Talk
   local tag tls=""; tag="$(suite_tag)"
   [ -n "$tag" ] || die "no pude leer la etiqueta de versión (¿git tags?) — o exporte APS_SUITE_TAG"
   if is_ipv4 "${1:-}"; then
@@ -793,6 +787,7 @@ docker run --init --sig-proxy=false --name nextcloud-aio-mastercontainer \\
   --restart always \\
   --publish 8080:8080 \\
   --env APACHE_PORT=443 \\
+  --env APS_TILES_DIR=$(suite_tiles_dir) \\
 ${tls}  --env NEXTCLOUD_STARTUP_APPS="" \\
   --volume nextcloud_aio_mastercontainer:/mnt/docker-aio-config \\
   --volume /var/run/docker.sock:/var/run/docker.sock:ro \\
@@ -806,7 +801,6 @@ EOF
 # validator (start.sh:291-298). Both facts are the slice-5 amendment's own finding (the ratified
 # forced amendment, ledgered in its History row).
 
-TILES_ARCHIVE="${TILES_HOME:-/srv/aps-conecta}/tiles/chile.pmtiles"   # tiles.sh's ARCHIVE (an arm pins it)
 install_timers() {  # the weekly re-provision and the monthly basemap (a9): the four units copied
   # from this bundle into systemd, reloaded and enabled — a re-run finds them in place, and an update
   # that changed a unit lands it. A fresh Persistent timer does not fire on enable: its first elapse
@@ -847,8 +841,12 @@ install_timers() {  # the weekly re-provision and the monthly basemap (a9): the 
 
 start_suite() {  # [ADDRESS] — the mastercontainer, once — the very command «preflight» prints, run
   # detached. An IPv4 is the install by IP (R22): this server's own address, the suite's certificate
-  # signed for it first, and a mastercontainer that already exists must carry it (read at its start)
+  # signed for it first. A mastercontainer that already exists must carry what it reads at its start:
+  # the map's directory always, the certificate by IP
   local domain="${1:-}" state tag cmd env_now
+  if ! [[ "$(suite_tiles_dir)" =~ ^/[A-Za-z0-9._/-]+$ ]]; then   # it rides the eval below
+    bad "la carpeta del mapa no es válida («$(suite_tiles_dir)»)" "use en TILES_HOME una ruta absoluta con letras, números, «.», «_», «-» y «/»"; return 1
+  fi
   if is_ipv4 "$domain"; then
     if ! [[ "$(suite_tls_dir)$(suite_ca_dir)" =~ ^[A-Za-z0-9._/-]+$ ]]; then   # both ride the eval below
       bad "la carpeta de la instalación no es válida («$APS_HOME»)" "use una ruta con letras, números, «.», «_», «-» y «/»"; return 1
@@ -872,6 +870,12 @@ start_suite() {  # [ADDRESS] — the mastercontainer, once — the very command 
     elif [ -n "$domain" ] && grep -q '^APS_TLS_DIR=' <<<"$env_now"; then
       bad "la suite ya se inició por dirección IP, con el certificado propio" \
         "para instalarla con el dominio $domain, reinstálela: docs/INSTALLER.md §12"
+      return 1
+    fi
+    # without the bind, /tiles/ is a 404 that nothing else reports (AIO review I1)
+    if ! grep -qxF "APS_TILES_DIR=$(suite_tiles_dir)" <<<"$env_now"; then
+      bad "la suite ya se inició sin la carpeta del mapa ($(suite_tiles_dir))" \
+        "vuelva a crear el contenedor maestro con ella: docs/INSTALLER.md §9"
       return 1
     fi
   fi
@@ -1402,12 +1406,16 @@ EOF
   # ── the generator: ONE string, the FRD's own shape ──
   ROOT="$tmp/repo"; mkdir -p "$ROOT"
   git -C "$ROOT" init -q && git -C "$ROOT" -c user.email=self@t -c user.name=self commit -q --allow-empty -m x && git -C "$ROOT" tag v9.9.9
+  # the map's folder now rides every string run_command prints and every guard start_suite reads:
+  # pin it for the whole run, so a host TILES_HOME cannot leak into the goldens below (dd8a1db)
+  TILES_ARCHIVE=/srv/aps-conecta/tiles/chile.pmtiles
   RC="$(run_command)"
   check "generator: the full operator run string at the release tag" \
     '[ "$RC" = "docker run --init --sig-proxy=false --name nextcloud-aio-mastercontainer \\
   --restart always \\
   --publish 8080:8080 \\
   --env APACHE_PORT=443 \\
+  --env APS_TILES_DIR=/srv/aps-conecta/tiles \\
   --env NEXTCLOUD_STARTUP_APPS=\"\" \\
   --volume nextcloud_aio_mastercontainer:/mnt/docker-aio-config \\
   --volume /var/run/docker.sock:/var/run/docker.sock:ro \\
@@ -1415,11 +1423,12 @@ EOF
   check "generator: the deliberate empty startup-apps posture rides the string" \
     'case "$RC" in *"--env NEXTCLOUD_STARTUP_APPS=\"\""*) ;; *) false;; esac'
   RC_IP="$(APS_HOME=/opt/aps-conecta; run_command 10.0.0.5)"
-  check "generator (R22): an address adds the suite's certificate and its CA, two lines; nothing else moves" \
+  check "generator (R22): an address adds the suite's certificate and its CA, two lines on top of the map's folder; nothing else moves" \
     '[ "$RC_IP" = "docker run --init --sig-proxy=false --name nextcloud-aio-mastercontainer \\
   --restart always \\
   --publish 8080:8080 \\
   --env APACHE_PORT=443 \\
+  --env APS_TILES_DIR=/srv/aps-conecta/tiles \\
   --env APS_TLS_DIR=/opt/aps-conecta/certificados/suite \\
   --env NEXTCLOUD_TRUSTED_CACERTS_DIR=/opt/aps-conecta/certificados/ca \\
   --env NEXTCLOUD_STARTUP_APPS=\"\" \\
@@ -1506,16 +1515,16 @@ EOF
     step_revisar()   { ok "revisar-stub"; echo "Pulling from somewhere" >&2; }
     step_preparar()  { ok "preparar-stub"; }
     step_descargar() { ok "descargar-stub"; }
+    step_mapa()      { ok "mapa-stub"; }
     silent_centro()  { ok "centro-stub"; }
     silent_suite()   { ok "suite-stub"; }
     silent_equipos() { ok "equipos-stub"; }
     silent_ejecutar() { ok "ejecutar-stub"; }
-    silent_map_last() { ok "mapa-final-stub"; }
     install_timers() { ok "temporizadores-stub"; }
     cmd_install --sitio "$tmp/dado.sh" --planilla "$tmp/dado.csv" </dev/null 2>&1
   )"; rcs=$?
-  check "install --sitio: the same nine steps in order — the browser ones from the files, the map last — then the verdict" \
-    '[ "$rcs" -eq 0 ] && case "$install_out" in *"sin preguntas ni navegador"*"Paso 1 de 9"*"Paso 4 de 9"*"Mapa: se construye al final, con la suite en marcha."*"Paso 5 de 9"*"Sin instalador web: modo silencioso."*"Paso 6 de 9 · Elegir el centro  servidor"*"centro-stub"*"Paso 7 de 9"*"suite-stub"*"Paso 8 de 9"*"equipos-stub"*"Paso 9 de 9"*"ejecutar-stub"*"mapa-final-stub"*"temporizadores-stub"*"INSTALACIÓN: ✓"*"sudo cat /opt/aps-conecta/credentials.txt"*"aps-conecta revalidate (registro: $APS_HOME/instalacion.log)"*) ;; *) false;; esac && case "$install_out" in *"Enter para comenzar"*|*"  navegador"*|*"(navegador)"*|*"Comando   aps-conecta centro"*) false;; *) true;; esac'
+  check "install --sitio: the same nine steps in order — the browser ones from the files, the map at its own step 4 — then the verdict" \
+    '[ "$rcs" -eq 0 ] && case "$install_out" in *"sin preguntas ni navegador"*"Paso 1 de 9"*"Paso 4 de 9"*"mapa-stub"*"Paso 5 de 9"*"Sin instalador web: modo silencioso."*"Paso 6 de 9 · Elegir el centro  servidor"*"centro-stub"*"Paso 7 de 9"*"suite-stub"*"Paso 8 de 9"*"equipos-stub"*"Paso 9 de 9"*"ejecutar-stub"*"temporizadores-stub"*"INSTALACIÓN: ✓"*"sudo cat /opt/aps-conecta/credentials.txt"*"aps-conecta revalidate (registro: $APS_HOME/instalacion.log)"*) ;; *) false;; esac && case "$install_out" in *"Enter para comenzar"*|*"  navegador"*|*"(navegador)"*|*"Comando   aps-conecta centro"*) false;; *) true;; esac'
   check "install --sitio: a tool's own stderr goes to the log, never the console" \
     'case "$install_out" in *"Pulling from"*) false;; *) true;; esac && grep -q "Pulling from somewhere" "$APS_HOME/instalacion.log"'
   install_out="$(
@@ -1760,9 +1769,21 @@ SHIM
   printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/ss"; chmod +x "$tshim/ss"
   rm -f "$tshim/docker"
 
-  step_out="$(step_run "$(step_number mapa)" "aps-conecta mapa" 2>&1)"; rcs=$?
-  check "mapa: with no centre chosen yet the step says it is pending, and the install goes on" \
-    '[ "$rcs" -eq 0 ] && case "$step_out" in *"Paso 4 de 9 · Construir el mapa"*"después de elegir el centro"*"Resultado Mapa pendiente: se construye después de elegir el centro."*"Siguiente Paso 5"*) ;; *) false;; esac'
+  # step 4 IS the build now (R47): a stub tiles.sh answers for the real one — the tools' own
+  # English goes to the log, the console stays Spanish, and a failure gates the step like any other
+  mkdir -p "$tmp/hd"
+  printf '#!/usr/bin/env bash\necho "refresh-basemap: using x"\necho "Pulling from y" >&2\nexit "$(cat %s)"\n' "$tmp/tiles.rc" > "$tmp/hd/tiles.sh"
+  echo 0 > "$tmp/tiles.rc"
+  step_out="$(HOST_DIR="$tmp/hd"; SILENT_LOG="$tmp/map.log"; step_run "$(step_number mapa)" "aps-conecta mapa" 2>&1)"; rcs=$?
+  check "mapa: step 4 builds the map itself — the tools' English output in the log, the console Spanish only" \
+    '[ "$rcs" -eq 0 ] && case "$step_out" in *"Paso 4 de 9 · Construir el mapa"*"se construye el mapa de Chile"*"Resultado Mapa listo."*"Siguiente Paso 5"*) ;; *) false;; esac && case "$step_out" in *"refresh-basemap"*|*"Pulling"*) false;; *) true;; esac && grep -q "refresh-basemap: using x" "$tmp/map.log"'
+  echo 1 > "$tmp/tiles.rc"
+  step_out="$(HOST_DIR="$tmp/hd"; SILENT_LOG="$tmp/map.log"; step_run "$(step_number mapa)" "aps-conecta mapa" 2>&1)"; rcs=$?
+  check "mapa: a failed build stops the install like any step — ✗ with the log, and the step's re-run named" \
+    '[ "$rcs" -ne 0 ] && case "$step_out" in *"✗ el mapa no se construyó"*"registro: $tmp/map.log"*"Resultado ✗ el paso 4 no terminó"*"aps-conecta mapa"*) ;; *) false;; esac'
+  step_out="$(HOST_DIR="$tmp/hd"; APS_SKIP_MAP=1; SILENT_LOG="$tmp/map.log"; step_run "$(step_number mapa)" "aps-conecta mapa" 2>&1)"; rcs=$?
+  check "mapa: APS_SKIP_MAP=1 leaves the build for later (CI) — the step says so, and the install goes on" \
+    '[ "$rcs" -eq 0 ] && case "$step_out" in *"Resultado Mapa omitido: lo construye «sudo aps-conecta mapa»."*"Siguiente Paso 5"*) ;; *) false;; esac && case "$step_out" in *"se construye el mapa de Chile"*) false;; *) true;; esac'
 
   # ── the checks against planted tool worlds ──
   mk_docker 1.44 ""
@@ -1930,6 +1951,7 @@ SHIM
 #!/usr/bin/env bash
 case "\$1" in
   ps) cat "$tmp/aio.ps" ;;
+  inspect) printf 'APS_TILES_DIR=%s\n' "$(suite_tiles_dir)" ;;
   exec) case "\$*" in *"occ status"*) echo '{"installed":true}' ;; *"config:list"*) echo '{"system":{}}' ;; esac ;;
 esac
 SHIM
@@ -2216,17 +2238,6 @@ EOF
   out="$(step_run "$(step_number abrir)" x 2>&1)"; rc=$?
   check "install --sitio: «abrir» opens no web installer in silent mode — its step says so, nothing runs" \
     '[ "$rc" -eq 0 ] && case "$out" in *"Paso 5 de 9"*"Resultado Sin instalador web: modo silencioso."*) ;; *) false;; esac'
-  mkdir -p "$tmp/hd"
-  printf '#!/usr/bin/env bash\necho "refresh-basemap: using x"\necho "Pulling from y" >&2\nexit "$(cat %s)"\n' "$tmp/tiles.rc" > "$tmp/hd/tiles.sh"
-  echo 0 > "$tmp/tiles.rc"
-  out="$(HOST_DIR="$tmp/hd"; FAIL=0; silent_map_last 2>"$tmp/map.err"; echo "FAIL=$FAIL")"
-  check "install --sitio: the map is built last, its own English output in the log and «Mapa listo» on the console" \
-    'case "$out" in *"✓ Mapa listo"*"FAIL=0"*) ;; *) false;; esac && case "$out" in *"refresh-basemap"*|*"Pulling"*) false;; *) true;; esac && grep -q "refresh-basemap: using x" "$tmp/map.err"'
-  echo 1 > "$tmp/tiles.rc"
-  out="$(HOST_DIR="$tmp/hd"; FAIL=0; silent_map_last 2>/dev/null; echo "FAIL=$FAIL")"
-  out2="$(APS_SKIP_MAP=1; HOST_DIR="$tmp/hd"; FAIL=0; silent_map_last 2>/dev/null; echo "FAIL=$FAIL")"
-  check "install --sitio: a failed map names the command that builds it; APS_SKIP_MAP=1 leaves it for later" \
-    'case "$out" in *"✗ el mapa no se construyó"*"sudo aps-conecta mapa"*"FAIL=1"*) ;; *) false;; esac && case "$out2" in *"mapa omitido"*"FAIL=0"*) ;; *) false;; esac'
   out="$(site_domain() { :; }; FAIL=0; silent_suite 2>&1; echo "FAIL=$FAIL")"
   out2="$(site_domain() { echo c.example; }; start_suite() { bad "suite-muere" "x"; return 1; }; FAIL=0; silent_suite 2>&1; echo "FAIL=$FAIL")"
   out3="$(site_domain() { echo c.example; }; start_suite() { ok s; }; cmd_aio_wizard() { exit 1; }; FAIL=0; silent_suite >/dev/null 2>&1; echo "rc=$?")"
@@ -2245,10 +2256,18 @@ SHIM
     out="$(APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 2>&1; echo "FAIL=$FAIL")"
     check "install --sitio: an absent suite starts detached — the command preflight prints, at the file's own tag" \
       'grep -q "^run -d --init --sig-proxy=false --name nextcloud-aio-mastercontainer .*--env APACHE_PORT=443 .*ghcr.io/aps-conecta/all-in-one:v9.9.9\$" "$tmp/mc.argv" && case "$out" in *"✓ Suite iniciada: ghcr.io/aps-conecta/all-in-one:v9.9.9"*"FAIL=0"*) ;; *) false;; esac'
-    printf '%s\n' "nextcloud-aio-mastercontainer running" > "$tmp/mc.ps"; : > "$tmp/mc.argv"
+    printf '%s\n' "nextcloud-aio-mastercontainer running" > "$tmp/mc.ps"; : > "$tmp/mc.argv"; : > "$tmp/mc.env"
+    out="$(APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 2>&1; echo "FAIL=$FAIL")"
+    check "install --sitio: a running suite without the map's folder is refused — «la suite ya se inició sin la carpeta del mapa», the silent /tiles/ 404 never goes unnoticed (AIO review I1)" \
+      '! grep -q "^run" "$tmp/mc.argv" && case "$out" in *"✗ la suite ya se inició sin la carpeta del mapa"*"vuelva a crear el contenedor maestro"*"docs/INSTALLER.md §9"*"FAIL=1"*) ;; *) false;; esac'
+    printf 'APS_TILES_DIR=%s\n' "$(suite_tiles_dir)" > "$tmp/mc.env"
     out="$(APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 2>&1; echo "FAIL=$FAIL")"
     check "install --sitio: a running suite is not started again" \
       '! grep -q "^run" "$tmp/mc.argv" && case "$out" in *"✓ La suite ya está iniciada"*"FAIL=0"*) ;; *) false;; esac'
+    printf 'APS_TILES_DIR=/otra/carpeta\n' > "$tmp/mc.env"
+    out="$(APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite clinica.example 2>&1; echo "FAIL=$FAIL")"
+    check "install --sitio: a running suite bound to another map folder is refused the same — «la suite ya se inició sin la carpeta del mapa»; the folder is read once, at the wizard's first start" \
+      '! grep -q "^run" "$tmp/mc.argv" && case "$out" in *"✗ la suite ya se inició sin la carpeta del mapa"*"FAIL=1"*) ;; *) false;; esac'
     : > "$tmp/mc.ps"; : > "$tmp/mc.argv"; printf '#!/usr/bin/env bash\nprintf "2: eth0    inet 10.0.0.5/24 scope global eth0\\n"\n' > "$tshim/ip"; chmod +x "$tshim/ip"
     echo 0 > "$tmp/prov.rc"
     out="$(APS_SUITE_TAG=ci-20261003-2; FAIL=0; start_suite 10.0.0.5 2>&1; echo "FAIL=$FAIL")"
@@ -2266,8 +2285,10 @@ SHIM
     out="$(APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 10.0.0.5 2>&1; echo "FAIL=$FAIL")"
     printf 'NEXTCLOUD_TRUSTED_CACERTS_DIR=%s\n' "$APS_HOME/certificados/ca" >> "$tmp/mc.env"
     out2="$(APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 10.0.0.5 2>&1; echo "FAIL=$FAIL")"
-    check "install by IP (R22): a started suite must carry both env lines — one alone is refused; both, and it is taken as it runs" \
-      '! grep -q "^run" "$tmp/mc.argv" && case "$out" in *"✗ la suite ya se inició sin el certificado propio"*"FAIL=1"*) ;; *) false;; esac && case "$out2" in *"✓ La suite ya está iniciada"*"FAIL=0"*) ;; *) false;; esac'
+    printf 'APS_TILES_DIR=%s\n' "$(suite_tiles_dir)" >> "$tmp/mc.env"
+    out3="$(APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 10.0.0.5 2>&1; echo "FAIL=$FAIL")"
+    check "install by IP (R22): a started suite must carry the certificate pair AND the map's folder — one missing is refused («la suite ya se inició sin la carpeta del mapa»); all three, and it runs as it is" \
+      '! grep -q "^run" "$tmp/mc.argv" && case "$out" in *"✗ la suite ya se inició sin el certificado propio"*"FAIL=1"*) ;; *) false;; esac && case "$out2" in *"✗ la suite ya se inició sin la carpeta del mapa"*"FAIL=1"*) ;; *) false;; esac && case "$out3" in *"✓ La suite ya está iniciada"*"FAIL=0"*) ;; *) false;; esac'
     mkdir -p "$APS_HOME/certificados/suite"; touch "$APS_HOME/certificados/suite/tls.crt"
     printf 'true 2000-01-01T00:00:00Z\n' > "$tmp/mc.apache"; : > "$tmp/mc.argv"
     out="$(APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 10.0.0.5 2>&1; echo "FAIL=$FAIL")"
@@ -2286,6 +2307,10 @@ SHIM
     out="$(APS_SUITE_TAG="v1;touch $tmp/pwned"; FAIL=0; start_suite 2>&1; echo "FAIL=$FAIL")"
     check "install --sitio: an unreadable version is refused before docker run — nothing it carries is evaluated" \
       '! grep -q "^run" "$tmp/mc.argv" && [ ! -e "$tmp/pwned" ] && case "$out" in *"FAIL=1"*) ;; *) false;; esac'
+    : > "$tmp/mc.argv"
+    out="$(TILES_ARCHIVE="/x;touch $tmp/pwned3"; APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 2>&1; echo "FAIL=$FAIL")"
+    check "install --sitio: a map folder the eval would misread is refused before anything runs — no certificate, no docker" \
+      '[ ! -e "$tmp/pwned3" ] && [ ! -s "$tmp/prov.argv" ] && ! grep -q "^run" "$tmp/mc.argv" && case "$out" in *"✗ la carpeta del mapa no es válida"*"FAIL=1"*) ;; *) false;; esac'
   fi
   cp "$tmp/docker.prev" "$tshim/docker"
 
