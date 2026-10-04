@@ -3457,19 +3457,19 @@ def selftest():
     # The fixture reuses the register's real hostile shapes, measured from the shipped register
     # (2026-07-23): 201079's name holds double quotes, 113314's address holds a backtick, 121567
     # carries accents — the exact rows scripts/test.sh's quoting gate exists for. Plain 110485 is
-    # the happy-path row.
+    # the happy-path row. Each ends with its official point, as the register carries it.
     fixture_rows = [
         '110485,PSR,Posta de Salud Rural Loica,Calle Aldea Loica,13505,San Pedro,13,'
-        'Metropolitana de Santiago,Servicio de Salud Metropolitano Occidente,Municipal',
+        'Metropolitana de Santiago,Servicio de Salud Metropolitano Occidente,Municipal,-33.976637,-71.468749',
         '201079,SAPU,"SAPU ""Dr. Juan Lozic Perez""",Calle Javiera Carrera,12401,Natales,12,'
-        'Magallanes y de la Antártica Chilena,Servicio de Salud Magallanes,Municipal',
+        'Magallanes y de la Antártica Chilena,Servicio de Salud Magallanes,Municipal,-51.728207,-72.482647',
         '113314,CESFAM,Centro de Salud Familiar Cóndores de Chile,Calle Agusto D`Almar 555,13105,'
-        'El Bosque,13,Metropolitana de Santiago,Servicio de Salud Metropolitano Sur,Municipal',
+        'El Bosque,13,Metropolitana de Santiago,Servicio de Salud Metropolitano Sur,Municipal,-33.56136,-70.67469',
         '121567,PSR,Posta de Salud Rural San Ramón,Calle Caserío de San Ramón,09112,'
-        'Padre Las Casas,09,La Araucanía,Servicio de Salud Araucanía Sur,Municipal',
+        'Padre Las Casas,09,La Araucanía,Servicio de Salud Araucanía Sur,Municipal,-38.86996,-72.39666',
     ]
     fixture_header = ("codigo,tipo,nombre,direccion,comuna_codigo,comuna,region_codigo,region,"
-                      "servicio_salud,dependencia")
+                      "servicio_salud,dependencia,latitud,longitud")
     try:
         with tempfile.TemporaryDirectory() as tmp:
             # — fail fast: no register, no wizard, no socket

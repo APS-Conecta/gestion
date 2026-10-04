@@ -184,6 +184,9 @@ def block(row, snapshot):
     # SITE_COMUNA_CUT rides unquoted beside them for the same reason: comuna codes are five
     # zero-padded digits, and territorio's Comuna::of() accepts exactly that shape — it is
     # the value the import door (refuseAnotherComuna) compares a file's comuna claim against.
+    # SITE_LON/SITE_LAT go through q() like the names: shlex.quote leaves plain degrees bare
+    # (SITE_LON=-70.57798, the shape scripts/test.sh holds every register row to) and quotes
+    # anything else, so a hand-edited register cannot put shell syntax in a sourced file.
     q = shlex.quote
     return f"""# --- Identity — DEIS {row['codigo']}, snapshot {snapshot} (scripts/deis.py {row['codigo']}) ---
 SITE_DEIS={row['codigo']}
@@ -193,6 +196,8 @@ SITE_NOMBRE_CORTO={q(short)}
 SITE_DIRECCION={q(row['direccion'])}
 SITE_COMUNA={q(row['comuna'])}
 SITE_COMUNA_CUT={row['comuna_codigo']}
+SITE_LON={q(row['longitud'])}
+SITE_LAT={q(row['latitud'])}
 SITE_SERVICIO_SALUD={q(row['servicio_salud'])}
 """
 

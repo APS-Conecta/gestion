@@ -559,7 +559,7 @@ if len(rows) < 100:
 
 FIELDS = {"SITE_NOMBRE": "nombre", "SITE_DIRECCION": "direccion",
           "SITE_COMUNA": "comuna", "SITE_SERVICIO_SALUD": "servicio_salud",
-          "SITE_COMUNA_CUT": "comuna_codigo"}
+          "SITE_COMUNA_CUT": "comuna_codigo", "SITE_LON": "longitud", "SITE_LAT": "latitud"}
 
 script = ["set -u"]
 for row in rows:

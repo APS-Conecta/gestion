@@ -66,6 +66,17 @@ image digests live there and are deliberately not copied here — one fact, one 
     to «Siguiente».
   - The wizard's refusals read in Spanish, in the console and on the page.
   - The domain the wizard took becomes the site file's `SITE_DOMINIO` and «Listo»'s access line.
+- **The DEIS register carries each establishment's official point** (L5 S1).
+  - `sites/establecimientos-deis-2026-07-23.csv` gains `latitud,longitud` for all 2,655 rows,
+    from MINSAL's Geoportal de Chile dataset of June 2026. The provenance, and the dataset's
+    unstated licence, are in `docs/LICENSING.md` §3.4.
+  - `scripts/deis.py --coordenadas <geojson>` adds them after a `--snapshot`. A source that misses
+    an establishment, or carries a value that is not plain degrees, is refused and the register
+    stays as it was.
+  - New site files carry `SITE_LON` and `SITE_LAT`.
+  - The search matches the register's own columns only, so a number in the terms never matches a
+    coordinate.
+  - `make test` holds every row to a point inside the box the basemap covers.
 - **`aps-conecta estado`** — the last execution's verdict, each item with its fix, in Spanish, with
   no sudo (`/opt/aps-conecta/estado.txt`, 0644, written by every execution — the installer's, the
   silent install's and the weekly one). When the weekly re-provision finds drift or does not finish,
