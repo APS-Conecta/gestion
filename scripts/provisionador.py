@@ -43,6 +43,7 @@ import hmac
 import html
 import http.client
 import io
+import ipaddress
 import json
 import os
 import re
@@ -2027,8 +2028,9 @@ def screen_contenedores():
 <p class="nota">Se activan al ejecutar, junto a Documentos, Oficina, Calendario y Contactos.</p></section>
 <section class="tarjeta"><h2>Talk</h2><div id="s-talk"></div></section>
 <section class="tarjeta"><h2>Asistente</h2>
-<form id="s-form" hidden><label for="s-dom">Dominio del servidor</label>
+<form id="s-form" hidden><label for="s-dom">Dominio o dirección IP del servidor</label>
 <input id="s-dom" class="control" autocomplete="off" spellcheck="false" placeholder="gestion.su-establecimiento.cl">
+<p class="nota" id="s-ipnota"></p>
 <label class="casilla"><input type="checkbox" id="s-sinval"> Omitir la validación del dominio (servidor sin acceso desde Internet)</label>
 <div class="fila"><button type="submit" id="s-ir">Preparar el asistente</button></div></form>
 <div id="s-error"></div>
@@ -2061,6 +2063,8 @@ def screen_contenedores():
     const p = s.preparacion, hechos = new Set(p.hechos),
       sigue = s.preparada || s.en_marcha || s.contenedores.some(([, e]) => e !== "en espera");
     zona("s-form").hidden = sigue || p.estado === "en_curso";
+    zona("s-ipnota").textContent = "Sin dominio: escriba la dirección IP de este servidor" + (s.ip ? " (" + s.ip + ")" : "") +
+      "; la suite usará el certificado propio del instalador.";
     zona("s-ir").disabled = false;
     zona("s-error").innerHTML = (p.estado === "error" ? '<div class="error">' + escapear(p.motivo) + "</div>" : "") + aviso;
     zona("s-prep").innerHTML = p.estado === "en_curso" ? p.pasos.map((t) => '<li class="' +
@@ -2071,7 +2075,8 @@ def screen_contenedores():
     const datos = s.preparada ? JSON.stringify([s.dominio, s.opciones, s.frase, s.asistente]) : "";
     if (datos && datos !== vistoDatos) {   // rebuilt only when it changes: a selection or a click survives the poll
       vistoDatos = datos;
-      zona("s-datos").innerHTML = '<dl class="dl"><dt>Dominio</dt><dd>' + escapear(s.dominio || "—") +
+      zona("s-datos").innerHTML = '<dl class="dl"><dt>' + (/^[0-9.]+$/.test(s.dominio || "") ? "Dirección IP" : "Dominio") +
+        "</dt><dd>" + escapear(s.dominio || "—") +
         "</dd><dt>Zona horaria</dt><dd>Santiago</dd><dt>Oficina</dt><dd>Euro-Office</dd><dt>Talk</dt><dd>" +
         (s.opciones.talk ? "Activado" : "Desactivado") + "; grabación " +
         (s.opciones.grabacion ? "activada" : "desactivada") +
@@ -2112,6 +2117,9 @@ def screen_contenedores():
     const sigue = pintar(s);
     if (s.preparacion.estado === "en_curso" || (sigue && !s.instalada)) reloj = setTimeout(seguir, 1000);
   }
+  zona("s-dom").addEventListener("input", () => {   // an address skips the domain check on its own (R22)
+    zona("s-sinval").parentNode.hidden = /^[0-9.]+$/.test(zona("s-dom").value.trim());
+  });
   zona("s-form").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     zona("s-ir").disabled = true;
@@ -2684,7 +2692,7 @@ def estado_suite():
                  "opciones": {"talk": con_talk, "grabacion": con_grabacion},
                  "preparacion": {"estado": s["estado"], "hechos": list(s["hechos"]), "motivo": s["motivo"],
                                  "pasos": [t for _p, t in PASOS_SUITE]},
-                 "frase": frase, "asistente": f"https://{LAN_IP}:8080",
+                 "frase": frase, "asistente": f"https://{LAN_IP}:8080", "ip": LAN_IP,
                  "contenedores": base + extra, "en_marcha": en_marcha, "instalada": instalada}
 
 
@@ -2695,8 +2703,11 @@ def iniciar_suite(payload):
     dominio = payload.get("dominio")
     if not isinstance(dominio, str) or not DOMINIO.fullmatch(dominio) or "." not in dominio:
         return 400, {"error": "escriba el dominio del servidor, por ejemplo gestion.su-establecimiento.cl"}
-    if re.fullmatch(r"[0-9.]+", dominio):
-        return 400, {"error": "use un nombre de dominio, no una dirección IP"}
+    if re.fullmatch(r"[0-9.]+", dominio):   # an IPv4 is the install by IP (R22): the host checks it is its own
+        try:
+            ipaddress.IPv4Address(dominio)
+        except ValueError:
+            return 400, {"error": "la dirección IP no es válida: cuatro números de 0 a 255 separados por puntos"}
     st, vistos = contenedores()
     if st != 200:
         return st, vistos
@@ -4265,7 +4276,7 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
 
             try:
                 with redirect_stdout(io.StringIO()):   # the host's lines reach the console, not the test
-                    malos = [call("POST", "/api/suite", {"dominio": d})[0] for d in ("sin_punto", "gestion", "10.0.0.5")]
+                    malos = [call("POST", "/api/suite", {"dominio": d}) for d in ("sin_punto", "gestion", "10.0.0.256")]
                     *_x, rechazo, argv_rechazo = preparar({"dominio": "rechazado.example"})
                     *_x, mudo, _a = preparar({"dominio": "mudo.example"})
                     globals()["recursos"] = lambda *_a: (7.5, 2)
@@ -4275,13 +4286,20 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                     globals()["recursos"] = lambda *_a: (12.0, 4)
                     st1, st2, otra, lista, argv_txt = preparar({"dominio": "gestion.clinica.example",
                                                                  "validar": False}, otra_vez=True)
+                    *_x, por_ip, argv_ip = preparar({"dominio": "10.0.0.5"})   # last: it leaves its own record
             finally:
                 globals().update(SUITE_CMD=verdadero_cmd, recursos=lambda *_a: (12.0, 4))
                 fijado = open(site_path(fijo), encoding="utf-8").read() if fijo else None
                 if fijo:
                     write_site_text(site_path(fijo), antes_fijo)
-            check("suite: a domain is a name with a dot, never an IP — refused 400 before anything runs",
-                  malos == [400, 400, 400])
+            check("suite: a domain is a name with a dot, or a valid IPv4 — anything else refused 400 before anything runs",
+                  [m[0] for m in malos] == [400, 400, 400] and "no es válida" in malos[2][1]["error"])
+            check("suite: an IPv4 is the install by IP (R22) — prepared like a domain, the address recorded (the host checks it is its own)",
+                  por_ip["preparacion"]["estado"] == "lista" and por_ip["dominio"] == "10.0.0.5"
+                  and "--dominio 10.0.0.5 " in argv_ip and por_ip["ip"] == LAN_IP
+                  and all(s in __import__("inspect").getsource(screen_contenedores)   # the template (STEPS is a fake here)
+                          for s in ("Dominio o dirección IP del servidor", 'id="s-ipnota"', "Dirección IP",
+                                    "s-sinval\").parentNode.hidden")))
             check("suite: «Preparar» answers 202 and fills the wizard on a worker — the domain unvalidated only when asked, Talk as the server allows (none on 7,5 GiB / 2 cores, both on 16 / 8), the daily backup; the steps in the page's words, the passphrase, the domain and the options recorded (R26, a12)",
                   st1 == 202 and st2 == 409 and "preparando" in otra["error"]
                   and lista["preparacion"]["estado"] == "lista"
