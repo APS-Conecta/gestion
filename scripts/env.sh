@@ -156,7 +156,7 @@ NEXTCLOUD_TRUSTED_DOMAINS=localhost
 OFFICE_JWT_SECRET=fixture-not-a-real-secret
 HTTP_PORT=8180
 OFFICE_PORT=9980
-TILES_PORT=8084
+TILES_HOME=/srv/aps-conecta
 # a whole-line comment
 UNQUOTED_WITH_COMMENT=some-value # and a trailing one
 DOUBLE_QUOTED_HASH="value # stays"

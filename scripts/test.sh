@@ -1068,28 +1068,18 @@ check bash -c '
   printf "" | sites_register_only && { echo "sites gate: an empty listing went green" >&2; exit 1; }
   printf "sites/establecimientos-deis-2026-07-23.csv\n" | sites_register_only'
 
+# --- a21 (L5): the map is the suite's own route — the separate tiles server is gone -------------
+# The grep is a21's own clause, with the pattern assembled without its literals
+# ("nginx:alp""ine|TILES_""PORT|:80""84"): a21 covers scripts/ too, and a gate that spelled its
+# own banned tokens would be its own hit. tiles.nginx.conf gone, no nginx pin, port or knob left
+# anywhere the map used to need one, and phase 16 pointing at /tiles/.
+check bash -c '
+  test ! -e tiles.nginx.conf \
+    && ! git grep -qE "nginx:alp""ine|TILES_""PORT|:80""84" -- .env.example compose.yaml host scripts provisioning \
+    && grep -q "/tiles/" provisioning/phases/16-app-policy.sh'
+
 # --- the dump + uninstall detectors red-test themselves (docker daemon, no stack) -------------
 if docker info >/dev/null 2>&1; then
-  # org L5-10: tiles.nginx.conf's Range/CORS contract, asserted against the PINNED nginx
-  # itself — the weekly timer chain's serving half, nowhere in CI before. A fixture
-  # archive (any bytes; nginx ranges don't parse PMTiles) + the committed conf; a ranged
-  # GET must answer 206 with the CORS headers the map page needs cross-origin.
-  check bash -c '
-    tmp=$(mktemp -d); trap "docker rm -f tiles-contract >/dev/null 2>&1; rm -rf $tmp" EXIT
-    mkdir -p "$tmp/tiles"
-    head -c 8192 /dev/urandom > "$tmp/tiles/chile.pmtiles"
-    ref=$(grep -oE "nginx:alpine@sha256:[0-9a-f]{64}" compose.yaml | head -1)
-    [ -n "$ref" ] || { echo "no pinned nginx ref in compose.yaml"; exit 1; }
-    docker run --rm -d --name tiles-contract --publish 127.0.0.1:18084:80 \
-      --volume "$tmp/tiles:/srv/tiles:ro" --volume "$PWD/tiles.nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
-      "$ref" >/dev/null
-    for i in 1 2 3 4 5; do curl -sf -o /dev/null http://127.0.0.1:18084/healthz && break; sleep 1; done
-    hdrs=$(curl -s -D - -o /dev/null -H "Range: bytes=0-1023" -H "Origin: https://map.test" http://127.0.0.1:18084/chile.pmtiles)
-    echo "$hdrs" | grep -q "^HTTP/1.1 206" || { echo "no 206:"; echo "$hdrs"; exit 1; }
-    echo "$hdrs" | grep -qi "^access-control-allow-origin:" || { echo "no ACAO:"; echo "$hdrs"; exit 1; }
-    echo "$hdrs" | grep -qi "^content-range:" || { echo "no Content-Range:"; echo "$hdrs"; exit 1; }
-    sz=$(curl -s -H "Range: bytes=0-1023" -o /dev/null -w "%{size_download}" http://127.0.0.1:18084/chile.pmtiles)
-    [ "$sz" = "1024" ] || { echo "ranged GET delivered $sz bytes, expected 1024"; exit 1; }'
   check bash scripts/db-dump.sh --self-test
   check bash scripts/uninstall.sh --self-test
 else

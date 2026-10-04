@@ -169,7 +169,7 @@ report cs_no_volume apsconecta-gestion_postgres_data
 report cs_no_volume apsconecta-gestion_nextcloud_data
 report cs_no_network apsconecta-gestion_default
 report cs_can_probe_listeners
-for p in "${HTTP_PORT:-8180}" "${OFFICE_PORT:-9980}" "${TILES_PORT:-8084}"; do report cs_no_listener "$p"; done
+for p in "${HTTP_PORT:-8180}" "${OFFICE_PORT:-9980}"; do report cs_no_listener "$p"; done
 report cs_sites_clean
 report cs_no_file themes/apsconecta/core/css/site.css
 report cs_no_file .install.log
