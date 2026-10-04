@@ -1255,6 +1255,26 @@ hb_out="$(bash host/aps-conecta --self-test 2>&1)" \
 tl_out="$(bash host/tiles.sh --self-test 2>&1)" \
   && echo "  ok:   tiles --self-test ($(printf '%s\n' "$tl_out" | tail -1))" \
   || { echo "  FAIL: tiles --self-test"; printf '%s\n' "$tl_out" | tail -25; fail=1; }
+# The basemap builds with nothing of the install around it — no .env, no site, no suite (R47): step 4
+# runs before anyone chooses a centre. A stub pmtiles writes a sparse 600 MB archive and reports its
+# header, a stub curl finds today's build; every check of the script runs for real, under the
+# strictest umask root may have — the archive must still be world-readable, since apache reads it as
+# uid 33. A header whose bounds miss Isla de Pascua is refused, and the served archive stays as it was.
+check bash -c '
+  repo=$PWD; tmp=$(mktemp -d); trap "rm -rf $tmp" EXIT; mkdir -p "$tmp/bin" "$tmp/srv"
+  cat > "$tmp/bin/pmtiles" <<"STUB"
+#!/usr/bin/env bash
+case "$1" in
+  extract) printf PMTiles > "$3"; truncate -s 600000000 "$3" ;;
+  show) printf "max zoom: 15\nbounds: (long: %s, lat: -56.000000) (long: -66.400000, lat: -17.500000)\n" "${WEST:--110.000000}" ;;
+  tile) head -c 2000 /dev/zero ;;
+esac
+STUB
+  printf "#!/usr/bin/env bash\nexit 0\n" > "$tmp/bin/curl"; chmod +x "$tmp/bin/pmtiles" "$tmp/bin/curl"
+  build() { (umask 077; cd "$tmp" && env -i PATH="$tmp/bin:/usr/bin:/bin" DEST="$tmp/srv/chile.pmtiles" "$@" bash "$repo/scripts/refresh-basemap.sh"); }
+  build >/dev/null 2>&1 && [ "$(stat -c %a "$tmp/srv/chile.pmtiles")" = 644 ] || exit 1
+  echo served > "$tmp/srv/chile.pmtiles"
+  ! build WEST=-80.000000 >/dev/null 2>&1 && [ "$(cat "$tmp/srv/chile.pmtiles")" = served ]'
 mg_out="$(bash scripts/migrate-to-aio.sh --self-test 2>&1)" \
   && echo "  ok:   migrate-to-aio --self-test ($(printf '%s\n' "$mg_out" | tail -1))" \
   || { echo "  FAIL: migrate-to-aio --self-test"; printf '%s\n' "$mg_out" | tail -25; fail=1; }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Refresh the Protomaps basemap archive the `tiles` service serves.
+# Refresh the Protomaps basemap archive the suite serves at /tiles/.
 #
 # Territorio's ADR-0019 has the why. The two things that make this a script rather than a cron
 # one-liner:
@@ -14,18 +14,10 @@
 #
 # Writes to a temporary file and moves it into place only once it has passed, so a failed run leaves
 # the serving archive untouched. A stale basemap is a missing street; a broken one is a blank map.
+#
+# It reads nothing of the install it serves — no .env, no site, no running suite — because it runs
+# before any of them exist: the install's step 4 builds the map before anyone chooses a centre (R47).
 set -eu
-
-# env.sh first — its own rule: anything that reads .env or runs `docker compose` sources it. This
-# script now does both: the REF anchor below queries the running stack (`docker compose exec`) and
-# needs SITE, and SITE_DEIS comes from the generated site file, sourced in the parent shell the
-# same way seed.sh sources it (seed.sh:24). The shebang moved /bin/sh → bash for this; the systemd
-# unit invokes the script by path, so the shebang governs and nothing else changes for the timer.
-# shellcheck source=env.sh
-. "$(dirname -- "$0")/env.sh"
-require_site || exit 1
-# shellcheck disable=SC1090  # the path is SITE, resolved at run time
-. "sites/$SITE/site.sh"
 
 DEST="${DEST:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/tiles/chile.pmtiles}"
 # All of Chile, including Isla de Pascua (lon -109.4) and Juan Fernandez (-78.8). A bbox stopping at
@@ -36,59 +28,17 @@ THREADS="${THREADS:-8}"
 # How far back to look for a published build before giving up.
 DAYS="${DAYS:-10}"
 
-# One point and one tile inside the territory, used to prove COVERAGE rather than shape. The anchor
-# IS the establishment this stack serves — its DEIS point, read from territorio's own import
-# (external_id 'deis:<SITE_DEIS>': the cut artifact's uid contract, apps/territorio
-# datasets/_registry/sources.json). Not a hand-picked constant: the comuna-center pair this replaces was
-# already one tile row off the comuna center it claimed to be, and the map exists so THIS
-# establishment's territory is navigable.
-#
-# REF_LON/REF_LAT still override — CI, or a coordinate-less establishment (a comuna's cut drops
-# them; the pilot's own cut has three). A missing point with no override is a LOUD failure, not a
-# fallback: a REF that silently defaulted elsewhere would "verify" a bbox that may not contain
-# the clinic this stack serves at all. The failure lands before any download, so the serving
-# archive is never touched by it.
+# Coverage, proven at fixed points of the country rather than at the clinic's: the archive exists
+# before any centre is chosen, so no anchor may depend on one (85ed2f0 read the establishment's
+# point from territorio's database, which made the build wait for a seeded suite — R47). ANCHORS are
+# the corners of what BBOX promises — Santiago, Hanga Roa on Isla de Pascua, Punta Arenas — and the
+# header bounds must contain every one. The tile read stays on the mainland, Santiago at z12: an
+# island tile may hold too few bytes to prove anything. REF_LON/REF_LAT move that read; the chosen
+# centre's own point is checked where it is chosen, at Centro.
+ANCHORS="-70.6506,-33.4378 -109.4333,-27.1500 -70.9171,-53.1638"
 REF_Z="${REF_Z:-12}"
-REF_LON="${REF_LON:-}"
-REF_LAT="${REF_LAT:-}"
-if [ -z "$REF_LON" ] || [ -z "$REF_LAT" ]; then
-  # Posture-split probes (org L5-01): the compose read this script was born with is a permanent
-  # red on every AIO clinic — no compose db exists there, so nothing ever pinned REF_LON/REF_LAT
-  # and the monthly timer failed while MIGRATION.md listed it as a post-AIO gate. The AIO arm
-  # uses the names migrate-to-aio.sh:207 pins (DB=aps-conecta-database, user oc_nextcloud,
-  # database nextcloud_database); the detection is env.sh's is_aio.
-  psql_q() {  # SQL -> stdout, quiet
-    if is_aio; then
-      docker exec aps-conecta-database psql -U oc_nextcloud -d nextcloud_database -Atc "$1" 2>/dev/null
-    else
-      docker compose exec -T db psql -U apsconecta -d apsconecta -Atc "$1" 2>/dev/null
-    fi
-  }
-  # Probe with psql itself, not `exec db true`: a psql probe that answers distinguishes "stack
-  # unreachable" from everything else, so the feature read below can only fail for data reasons
-  # (no table, no row) — and both of those share one remedy, "import the comuna package first".
-  if ! psql_q "SELECT 1" >/dev/null; then
-    echo "refresh-basemap: cannot query the stack for the DEIS point — is it running?" >&2
-    exit 1
-  fi
-  coords="$(psql_q \
-    "SELECT geometry::json->'coordinates' FROM oc_territorio_feature WHERE external_id = 'deis:$SITE_DEIS' LIMIT 1" \
-    || true)"
-  # Matched on external_id, not a dataset slug: --dataset is operator input (the pilot's own live
-  # import landed under a different slug than the registry's convention — measured on the live
-  # stack), while the 'deis:' uid namespace is the cut artifact's contract. The same code in two
-  # datasets is the same point either way.
-  coords="${coords#[}"; coords="${coords%]}"
-  case "$coords" in
-    ''|*,*,*|*[!0-9.,-]*)
-      echo "refresh-basemap: territorio has no Point for deis:$SITE_DEIS (got: '${coords:-nothing}')." >&2
-      echo "  Import the comuna package first (scripts/comuna-package.sh), or pin the anchor:" >&2
-      echo "    REF_LON=<lon> REF_LAT=<lat> $0" >&2
-      exit 1 ;;
-  esac
-  REF_LON="${coords%%,*}"
-  REF_LAT="${coords##*,}"
-fi
+REF_LON="${REF_LON:--70.6506}"
+REF_LAT="${REF_LAT:--33.4378}"
 
 # X/Y from the anchor, not from the environment: the verify contract below checks CONTAINMENT for
 # the point and BYTES for the tile, so the tile must agree with the point — deriving it removes a
@@ -142,9 +92,11 @@ echo "$header" | /usr/bin/grep -q "max zoom: 15" || { echo "refresh-basemap: une
 # region passes every check above: right magic, right zoom range, right size.
 bounds=$(echo "$header" | sed -n 's/^bounds: (long: \([-0-9.]*\), lat: \([-0-9.]*\)) (long: \([-0-9.]*\), lat: \([-0-9.]*\)).*/\1 \2 \3 \4/p')
 [ -n "$bounds" ] || { echo "refresh-basemap: could not read bounds from the header" >&2; exit 1; }
-echo "$bounds" | awk -v lon="$REF_LON" -v lat="$REF_LAT" \
-  '{ exit !($1 <= lon && lon <= $3 && $2 <= lat && lat <= $4) }' \
-  || { echo "refresh-basemap: bounds ($bounds) do not contain $REF_LON,$REF_LAT" >&2; exit 1; }
+for point in $ANCHORS "$REF_LON,$REF_LAT"; do
+  echo "$bounds" | awk -v lon="${point%,*}" -v lat="${point#*,}" \
+    '{ exit !($1 <= lon && lon <= $3 && $2 <= lat && lat <= $4) }' \
+    || { echo "refresh-basemap: bounds ($bounds) do not contain $point" >&2; exit 1; }
+done
 
 # And it has to actually answer, with BYTES, for a tile a browser will ask for. An archive can have
 # a valid header, the right bounds and an empty body.
@@ -166,22 +118,3 @@ trap - EXIT INT TERM
 chmod 644 "$DEST"
 echo "refresh-basemap: $DEST is now $size bytes"
 
-# --- the serving arm (org L5-01): the archive is only the deliverable because something serves it.
-# If the tiles container is running, prove the path a browser takes — a ranged GET must answer 206
-# with bytes from the archive just installed (the same Range contract tiles.nginx.conf declares and
-# test.sh's nginx arm asserts). If nothing serves on this host, say so loudly but do not fail: a
-# dev box refreshing an archive it serves through a container it has not brought up yet is the
-# supported case, and the unit's own contract is freshness.
-TILES_PORT="${TILES_PORT:-8084}"
-if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx aps-conecta-tiles; then
-  code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Range: bytes=0-1023' \
-    "http://localhost:${TILES_PORT}/chile.pmtiles" 2>/dev/null || echo 000)
-  [ "$code" = "206" ] || {
-    echo "refresh-basemap: the tiles container is running but a ranged GET answered HTTP ${code} (expected 206)" >&2
-    echo "  the archive was installed; the serving path is broken — check docker logs aps-conecta-tiles" >&2
-    exit 1
-  }
-  echo "refresh-basemap: serving arm green — ranged GET answered 206 from the new archive"
-else
-  echo "refresh-basemap: no tiles container running — archive refreshed, serving arm not exercised"
-fi
