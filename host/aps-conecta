@@ -844,12 +844,12 @@ start_suite() {  # [ADDRESS] — the mastercontainer, once — the very command 
   # signed for it first. A mastercontainer that already exists must carry what it reads at its start:
   # the map's directory always, the certificate by IP
   local domain="${1:-}" state tag cmd env_now
-  if ! [[ "$(suite_tiles_dir)" =~ ^/[A-Za-z0-9._/-]+$ ]]; then   # it rides the eval below
-    bad "la carpeta del mapa no es válida («$(suite_tiles_dir)»)" "use en TILES_HOME una ruta absoluta con letras, números, «.», «_», «-» y «/»"; return 1
+  if ! [[ "$(suite_tiles_dir)" =~ ^/[A-Za-z0-9._/-]+$ ]] || [[ "$(suite_tiles_dir)" == *..* ]]; then   # it rides the eval below
+    bad "la carpeta del mapa no es válida («$(suite_tiles_dir)»)" "use en TILES_HOME una ruta absoluta con letras, números, «.», «_», «-» y «/», sin segmentos «..»"; return 1
   fi
   if is_ipv4 "$domain"; then
-    if ! [[ "$(suite_tls_dir)$(suite_ca_dir)" =~ ^[A-Za-z0-9._/-]+$ ]]; then   # both ride the eval below
-      bad "la carpeta de la instalación no es válida («$APS_HOME»)" "use una ruta con letras, números, «.», «_», «-» y «/»"; return 1
+    if ! [[ "$(suite_tls_dir)$(suite_ca_dir)" =~ ^[A-Za-z0-9._/-]+$ ]] || [[ "$(suite_tls_dir)$(suite_ca_dir)" == *..* ]]; then   # both ride the eval below
+      bad "la carpeta de la instalación no es válida («$APS_HOME»)" "use una ruta con letras, números, «.», «_», «-» y «/», sin segmentos «..»"; return 1
     fi
     own_ipv4 "$domain" || return 1
     python3 "$(prov_path)" --paso certificado-suite --ip "$domain" --certificados "$APS_HOME/certificados" \
@@ -2311,6 +2311,13 @@ SHIM
     out="$(TILES_ARCHIVE="/x;touch $tmp/pwned3"; APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 2>&1; echo "FAIL=$FAIL")"
     check "install --sitio: a map folder the eval would misread is refused before anything runs — no certificate, no docker" \
       '[ ! -e "$tmp/pwned3" ] && [ ! -s "$tmp/prov.argv" ] && ! grep -q "^run" "$tmp/mc.argv" && case "$out" in *"✗ la carpeta del mapa no es válida"*"FAIL=1"*) ;; *) false;; esac'
+    : > "$tmp/mc.argv"; : > "$tmp/mc.ps"
+    out="$(TILES_ARCHIVE="/srv/../x/tiles/chile.pmtiles"; APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 2>&1; echo "FAIL=$FAIL")"
+    check "start_suite: a map folder with a «..» segment is refused before anything runs (Q7) — the charset allows dots, the path must not traverse" \
+      '! grep -q "^run" "$tmp/mc.argv" && case "$out" in *"✗ la carpeta del mapa no es válida"*"sin segmentos «..»"*) ;; *) false;; esac'
+    out="$(APS_HOME="/srv/../aps"; APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 10.0.0.5 2>&1; echo "FAIL=$FAIL")"
+    check "start_suite (R22): an install folder with a «..» segment is refused the same — the tls/ca guard mirrors the tiles guard" \
+      '! grep -q "^run" "$tmp/mc.argv" && case "$out" in *"✗ la carpeta de la instalación no es válida"*"«..»"*) ;; *) false;; esac'
   fi
   cp "$tmp/docker.prev" "$tshim/docker"
 

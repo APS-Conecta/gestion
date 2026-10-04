@@ -32,6 +32,11 @@ ARCHIVE="$TILES_HOME/tiles/chile.pmtiles"
 # The route, read from inside the suite's network: the nextcloud container's curl to apache's
 # internal listener — the leg phase 14 and the push server (patch 238) already use. It needs no DNS
 # and no CA, so one probe answers for an install by IP and by domain alike.
+# PIN (the NGINX_REF discipline, org L5-02): this string is the AIO fork's, not gestion's — the
+# listener is Caddy's internal :23973 site block (Containers/apache/Caddyfile), the route is the
+# fork's patch 239, the container name the fork's rename patch 240, and the fork's own
+# scripts/brand-gate.sh:888-918 pins the family. A fork-side change to the name or the port breaks
+# this probe FIRST — read the fork's brand-gate before "fixing" it here.
 SUITE_TILES_URL="http://aps-conecta-apache.nextcloud-aio:23973/tiles/chile.pmtiles"
 # The pmtiles CLI channel: version + the sha256 the release page PUBLISHES (measured at
 # design time — v1.31.2's underscore-form asset; the hyphen form 404s, FINDINGS row).
@@ -96,30 +101,99 @@ install_cli() {
   ok "pmtiles $PMTILES_VERSION instalado en $PMTILES_BIN (sha256 verificado contra el número que publica el release)"
 }
 
-# ── the arms ──────────────────────────────────────────────────────────────────────────────
+# ── the suite's own route, read in ONE exec ────────────────────────────────────────────────
+suite_read() {  # sets SR_CODE/SR_SIZE/SR_MAGIC — one docker exec, two curls inside one sh -c
+  # (Q4): the ranged read's verdict (code + the exact bytes asked) and the 7-byte magic, one
+  # round trip instead of two. Sizes and the fixed ASCII magic, never the archive's bytes
+  # themselves, cross the shell (B-036: a real header carries NULs a command substitution drops).
+  SR_CODE=""; SR_SIZE=""; SR_MAGIC=""
+  read -r SR_CODE SR_SIZE SR_MAGIC < <(docker exec aps-conecta-nextcloud sh -c \
+    "curl -sS -m 30 -r 0-1023 -o /dev/null -w '%{http_code} %{size_download} ' '$SUITE_TILES_URL'; \
+     curl -sS -m 30 -r 0-6 '$SUITE_TILES_URL'" 2>/dev/null || true)
+  return 0  # `read` returns 1 at EOF (no trailing newline from the producers) — the rc is not a verdict
+}
 
-cmd_refresh() {  # the monthly arm (the systemd unit's whole job); works standalone too
-  # DEST pointed at the installer's home; the bound wraps from outside (B-015 — the inner
-  # curls are v0.2.0's file, consumed never edited). A failed run leaves the serving
-  # archive untouched (the script's own atomic swap — its header says so). The directory is
-  # world-readable whatever root's umask: apache reads it as uid 33 through the bind.
+build_archive() {  # the extract, bounded (B-015) and pointed at the installer's home; the inner
+  # curls are v0.2.0's file, consumed never edited. The directory is world-readable whatever
+  # root's umask: apache reads it as uid 33 through the bind.
   install -d -m 0755 "$(dirname "$ARCHIVE")" || die "no pude crear $(dirname "$ARCHIVE")"
   DEST="$ARCHIVE" timeout "$REFRESH_TIMEOUT" bash "$ROOT/scripts/refresh-basemap.sh"
 }
 
+serving_read() {  # the deleted serving arm's shape (org L5-01), re-pointed at the suite's own
+  # route: the monthly timer is the one SCHEDULED witness of the serving path (review I3) — an
+  # archive a browser cannot read is a fresh map nobody serves. Apache not running is the
+  # dev-box posture, said and never fatal: the build must not depend on the suite (R47), and the
+  # unit's own contract is freshness. A running apache that answers anything but 206-with-magic
+  # IS fatal — the serving path is broken while the clinic believes it is fresh.
+  if ! docker ps --format '{{.Names}}' >/dev/null 2>&1; then
+    info "docker no responde — el mapa quedó instalado; la ruta /tiles/ se revisa con docker en marcha"
+    return 0
+  fi
+  if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx aps-conecta-apache; then
+    info "la suite no está en marcha — el mapa quedó instalado; la ruta /tiles/ se revisa con la suite iniciada"
+    return 0
+  fi
+  suite_read
+  if [ "${SR_CODE:-}" = 206 ] && [ "${SR_SIZE:-}" = 1024 ] && [ "$SR_MAGIC" = PMTiles ]; then
+    ok "la suite sirve el mapa recién refrescado por rangos (HTTP 206, 1024 bytes exactos)"
+    return 0
+  fi
+  bad "la suite no sirve el mapa recién refrescado (código ${SR_CODE:-sin respuesta} en /tiles/chile.pmtiles)" \
+      "el mapa quedó instalado; revise la montura de la carpeta: sudo bash host/tiles.sh check"
+  return 1
+}
+
+# ── the arms ──────────────────────────────────────────────────────────────────────────────
+
+cmd_refresh() {  # the monthly arm (the systemd unit's whole job); works standalone too. The
+  # build, then the read-back: one SCHEDULED witness of the serving path (review I3). A failed
+  # build leaves the serving archive untouched (the script's own atomic swap — its header says so).
+  [ $# -eq 0 ] || die "argumento desconocido: $* — uso: tiles.sh refresh (sin argumentos; lo ejecuta el temporizador mensual)"
+  build_archive || return 1
+  serving_read
+}
+
 cmd_install() {  # idempotent; any failed stage re-runs the same command
+  [ $# -eq 0 ] || die "argumento desconocido: $* — uso: tiles.sh install (sin argumentos; la URL del mapa la deriva la fase 16 del aprovisionamiento)"
+  # the pre-L5 world ran its own nginx on 8084 (aps-conecta-tiles); L5 S3 deleted the creator, so
+  # an upgraded clinic keeps a container nothing names anymore — serving the old archive beside
+  # the new one, invisible to every tool (review I4). Removed here, idempotently.
+  if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx aps-conecta-tiles; then
+    if docker rm -f aps-conecta-tiles >/dev/null 2>&1; then
+      ok "contenedor obsoleto aps-conecta-tiles eliminado — la suite sirve /tiles/ ahora"
+    else
+      bad "no pude eliminar el contenedor obsoleto aps-conecta-tiles" "sudo docker rm -f aps-conecta-tiles"
+      return 1
+    fi
+  fi
   install_cli || return 1
   if [ -f "$ARCHIVE" ]; then
     ok "el mapa ya está ($(du -h "$ARCHIVE" 2>/dev/null | cut -f1)) — el temporizador mensual lo refresca"
     return 0
   fi
   info "el mapa de Chile (~1 GB por rangos HTTP) no está — construyéndolo; tomará unos minutos"
-  if ! cmd_refresh; then
+  if ! build_archive; then
     bad "la construcción del mapa falló (el detalle está arriba; un fallo no toca el mapa servido)" \
       "vuelva a ejecutar «sudo aps-conecta mapa»"
     return 1
   fi
-  ok "mapa listo en $ARCHIVE — la suite lo sirve en /tiles/chile.pmtiles"
+  # the claim is earned, not asserted (review I3): at step 4 the suite does not exist yet, and the
+  # honest line says what WILL happen; on a live clinic the line is proven through the suite's
+  # own route before it prints. Docker down is the builder's own posture, never a red here.
+  if ! docker ps --format '{{.Names}}' >/dev/null 2>&1 \
+     || ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx aps-conecta-apache; then
+    ok "mapa listo en $ARCHIVE — la suite lo servirá en /tiles/chile.pmtiles al iniciarse"
+  else
+    suite_read
+    if [ "${SR_CODE:-}" = 206 ] && [ "${SR_SIZE:-}" = 1024 ] && [ "$SR_MAGIC" = PMTiles ]; then
+      ok "mapa listo en $ARCHIVE — verificado: la suite lo sirve en /tiles/chile.pmtiles"
+    else
+      bad "el mapa está en $ARCHIVE pero la suite aún no lo sirve (código ${SR_CODE:-sin respuesta} en /tiles/chile.pmtiles)" \
+          "la suite debe montar la carpeta del mapa (APS_TILES_DIR); revise: sudo bash host/tiles.sh check"
+      return 1
+    fi
+  fi
   info "el refresco mensual lo activa: sudo aps-conecta temporizadores"
 }
 
@@ -128,13 +202,16 @@ cmd_check() {  # the FRD S9 acceptance arm, measured the way a browser reads PMT
   # local FAIL: this function's verdict is its OWN — a stale global FAIL (the install arms'
   # reds, or a self-test arm that deliberately planted one) must not make a green check
   # print ✗ (the de-risk's catch: the aggregate inherited an earlier arm's red).
-  local FAIL=0 served="" mounts code size magic
+  [ $# -eq 0 ] || die "argumento desconocido: $* — uso: tiles.sh check (sin argumentos)"
+  local FAIL=0 served="" mounts
   if [ -f "$ARCHIVE" ]; then
     ok "el mapa está en $ARCHIVE ($(du -h "$ARCHIVE" 2>/dev/null | cut -f1))"
   else
     bad "el mapa aún no está ($ARCHIVE)" "lo construye: sudo aps-conecta mapa"
   fi
-  if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx aps-conecta-apache; then
+  if ! docker ps --format '{{.Names}}' >/dev/null 2>&1; then
+    bad "docker no responde" "sudo systemctl start docker — luego re-ejecute la revisión"
+  elif ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx aps-conecta-apache; then
     info "la suite no está en marcha: la ruta /tiles/ se revisa con la suite iniciada"
   else
     # the bind (AIO review I1): a mastercontainer started without APS_TILES_DIR gives apache no
@@ -145,21 +222,18 @@ cmd_check() {  # the FRD S9 acceptance arm, measured the way a browser reads PMT
       *) bad "la suite no monta la carpeta del mapa ($(dirname "$ARCHIVE"))" \
            "se inició sin APS_TILES_DIR: docs/INSTALLER.md §9 indica cómo volver a crear el contenedor maestro" ;;
     esac
-    # A REAL Range read: HTTP 206 + EXACTLY the 1024 bytes asked + the archive's magic. A server
-    # that ignores Range answers 200 with the whole file — and PMTiles reads would quietly
-    # download a gigabyte per screenful; 206-with-exact-bytes is the shape the reader needs. Sizes,
-    # never the bytes themselves, cross the shell: a real header carries NUL bytes, which a command
-    # substitution drops.
-    read -r code size < <(docker exec aps-conecta-nextcloud curl -sS -m 30 -r 0-1023 -o /dev/null \
-      -w '%{http_code} %{size_download}' "$SUITE_TILES_URL" 2>/dev/null || true)
-    magic="$(docker exec aps-conecta-nextcloud curl -sS -m 30 -r 0-6 "$SUITE_TILES_URL" 2>/dev/null || true)"
-    if [ "${code:-}" = 206 ] && [ "${size:-}" = 1024 ] && [ "$magic" = PMTiles ]; then
+    # A REAL Range read (HTTP 206 + EXACTLY the 1024 bytes asked + the archive's magic), fused
+    # into one exec (Q4). A server that ignores Range answers 200 with the whole file — and
+    # PMTiles reads would quietly download a gigabyte per screenful; 206-with-exact-bytes is
+    # the shape the reader needs, so that is the gate.
+    suite_read
+    if [ "${SR_CODE:-}" = 206 ] && [ "${SR_SIZE:-}" = 1024 ] && [ "$SR_MAGIC" = PMTiles ]; then
       ok "la suite sirve el mapa por rangos (HTTP 206, 1024 bytes exactos — la lectura del navegador)"
       served=" y la suite lo sirve"
-    elif [ "${code:-}" = 404 ]; then
+    elif [ "${SR_CODE:-}" = 404 ]; then
       bad "la suite responde 404 en /tiles/chile.pmtiles" "el mapa no está en la carpeta que monta la suite: sudo aps-conecta mapa"
     else
-      bad "la suite no sirve el mapa por rangos (código ${code:-sin respuesta})" "revise: docker logs aps-conecta-apache"
+      bad "la suite no sirve el mapa por rangos (código ${SR_CODE:-sin respuesta})" "revise: docker logs aps-conecta-apache"
     fi
   fi
   # INFO arm, never a gate: the timer's wiring state.
@@ -209,24 +283,31 @@ selftest() {
   mkdir -p "$ROOT/scripts" "$(dirname "$PMTILES_BIN")"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/systemctl"; chmod +x "$tshim/systemctl"
 
-  mk_docker() {  # SCENARIO — the suite as the check sees it: green, nobind (started without
+  mk_docker() {  # SCENARIO — the suite as the arms see it: green, nobind (started without
     # APS_TILES_DIR), elsewhere (another directory bound), missing (the bind, no archive: 404), down
-    # (no apache). Every call is logged, so an arm can assert that nothing but reads ran.
-    local names="aps-conecta-apache" mounts=" /x:/usr/local/apache2/htdocs $TILES_HOME/tiles:/aps-tiles " code="206 1024" magic="PMTiles"
+    # (no apache), orphan (the pre-L5 nginx container beside the suite), orphanrm (the rm refused),
+    # daemon (docker itself dead). Every call is logged, so an arm can assert that nothing but
+    # reads ran — and that the teardown's rm ran only in the orphan scenarios.
+    local names="aps-conecta-apache" orph="" dead="" rmfail="" \
+          mounts=" /x:/usr/local/apache2/htdocs $TILES_HOME/tiles:/aps-tiles " code="206 1024" magic="PMTiles"
     case "$1" in
       nobind)  mounts=" /x:/usr/local/apache2/htdocs "; code="404 0"; magic="" ;;
       elsewhere) mounts=" /srv/otro/tiles:/aps-tiles " ;;
       missing) code="404 0"; magic="" ;;
       down)    names="" ;;
+      orphan)  orph="aps-conecta-tiles" ;;
+      orphanrm) orph="aps-conecta-tiles"; rmfail="exit 1; " ;;
+      daemon)  dead="exit 7; "; names="" ;;
     esac
     cat > "$tshim/docker" <<EOF
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "$tmp/docker.log"
 case "\$*" in
-  "ps --format"*) printf '%s\n' "$names" ;;
+  "ps --format"*) ${dead}printf '%s\n' "$names" ;;
+  "ps -a --format"*) ${dead}printf '%s\n' "$orph" ;;
   inspect*) printf '%s\n' "$mounts" ;;
-  *"-r 0-1023"*) printf '%s' "$code" ;;
-  *"-r 0-6"*) printf '%s' "$magic" ;;
+  "rm -f aps-conecta-tiles") ${rmfail}: ;;
+  *"exec aps-conecta-nextcloud sh -c"*) printf '%s' "$code $magic" ;;
 esac
 exit 0
 EOF
@@ -282,13 +363,27 @@ exit "\$(cat "$tmp/refresh.rc" 2>/dev/null || echo 0)"
 EOF
   chmod +x "$ROOT/scripts/refresh-basemap.sh"
   REFRESH_TIMEOUT=7
-  : > "$tmp/refresh.log"
+  mk_docker down
+  : > "$tmp/refresh.log"; : > "$tmp/docker.log"
   ( umask 077; cmd_refresh >/dev/null 2>&1 )
   check "refresh: the call carries DEST at the installer home, and the directory is 0755 under root's strictest umask" \
     'grep -q "DEST=$TILES_HOME/tiles/chile.pmtiles" "$tmp/refresh.log" && [ "$(stat -c %a "$TILES_HOME/tiles")" = 755 ]'
+  out="$(cmd_refresh 2>&1)"; rc=$?
+  check "refresh: with no suite running the serving tail is said and never fatal, and the route is never probed" \
+    '[ "$rc" -eq 0 ] && case "$out" in *"· la suite no está en marcha"*"el mapa quedó instalado"*) ;; *) false;; esac && ! grep -q "^exec " "$tmp/docker.log"'
+  echo 0 > "$tmp/refresh.rc"
+  mk_docker green
+  out="$(cmd_refresh 2>&1)"; rc=$?
+  check "refresh: after a green build the serving tail proves the suite's route — 206, 1024 bytes, in ONE exec" \
+    '[ "$rc" -eq 0 ] && case "$out" in *"✓ la suite sirve el mapa recién refrescado por rangos (HTTP 206, 1024 bytes exactos)"*) ;; *) false;; esac && [ "$(grep -c "^exec aps-conecta-nextcloud sh -c" "$tmp/docker.log")" -eq 1 ]'
+  mk_docker missing
+  out="$(cmd_refresh 2>&1)"; rc=$?
+  check "refresh: a running suite that answers 404 reds the tail — the scheduled witness of the serving path" \
+    '[ "$rc" -ne 0 ] && case "$out" in *"✗ la suite no sirve el mapa recién refrescado"*"sudo bash host/tiles.sh check"*) ;; *) false;; esac'
+  rm -f "$tmp/refresh.rc"
 
   # ── the install arm: absent archive → the refresh fires; present → skipped; a failed build names its fix ──
-  printf '%s' "fake" > "$ARCHIVE"; : > "$tmp/refresh.log"
+  printf '%s' "fake" > "$ARCHIVE"; : > "$tmp/refresh.log"; mk_docker down
   out="$(cmd_install 2>&1)"; rc=$?
   check "install: a present archive skips the extract (the refresh log stays empty)" \
     '[ "$rc" -eq 0 ] && [ ! -s "$tmp/refresh.log" ] && case "$out" in *"el mapa ya está"*) ;; *) false;; esac'
@@ -296,11 +391,36 @@ EOF
   out="$(cmd_install 2>&1)"; rc=$?
   check "install: an absent archive triggers the bounded refresh, and the archive is where the suite looks" \
     '[ "$rc" -eq 0 ] && [ -s "$tmp/refresh.log" ] && case "$out" in *"construyéndolo"*"/tiles/chile.pmtiles"*) ;; *) false;; esac'
+  check "install: with no suite running the claim says what WILL happen — never a serving it cannot prove" \
+    'case "$out" in *"mapa listo"*"— la suite lo servirá en /tiles/chile.pmtiles al iniciarse"*) ;; *) false;; esac && case "$out" in *"verificado"*) false;; *) true;; esac'
   echo 1 > "$tmp/refresh.rc"
   out="$(cmd_install 2>&1)"; rc=$?
   check "install: a failed build reds, naming the command that retries it" \
     '[ "$rc" -ne 0 ] && case "$out" in *"✗ la construcción del mapa falló"*"sudo aps-conecta mapa"*) ;; *) false;; esac'
   rm -f "$tmp/refresh.rc"
+  mk_docker green; rm -f "$ARCHIVE"; : > "$tmp/refresh.log"
+  out="$(cmd_install 2>&1)"; rc=$?
+  check "install: on a running suite the claim is EARNED — the ranged read proven before the line prints" \
+    '[ "$rc" -eq 0 ] && case "$out" in *"mapa listo"*"— verificado: la suite lo sirve en /tiles/chile.pmtiles"*) ;; *) false;; esac'
+  mk_docker missing; rm -f "$ARCHIVE"
+  out="$(cmd_install 2>&1)"; rc=$?
+  check "install: a running suite that cannot serve the fresh map reds the claim — never a green lie" \
+    '[ "$rc" -ne 0 ] && case "$out" in *"✗ el mapa está en"*"pero la suite aún no lo sirve"*"tiles.sh check"*) ;; *) false;; esac'
+  mk_docker orphan; printf '%s' "fake" > "$ARCHIVE"; : > "$tmp/docker.log"
+  out="$(cmd_install 2>&1)"; rc=$?
+  check "install: the pre-L5 aps-conecta-tiles container is removed on sight, with its ok line" \
+    '[ "$rc" -eq 0 ] && grep -qx "rm -f aps-conecta-tiles" "$tmp/docker.log" && case "$out" in *"✓ contenedor obsoleto aps-conecta-tiles eliminado — la suite sirve /tiles/ ahora"*) ;; *) false;; esac'
+  mk_docker orphanrm; : > "$tmp/docker.log"
+  out="$(cmd_install 2>&1)"; rc=$?
+  check "install: a teardown that cannot remove the orphan reds and stops — the bundle's rc-only gate must see it" \
+    '[ "$rc" -ne 0 ] && case "$out" in *"✗ no pude eliminar el contenedor obsoleto aps-conecta-tiles"*"sudo docker rm -f aps-conecta-tiles"*) ;; *) false;; esac'
+  mk_docker down; : > "$tmp/docker.log"
+  out="$(cmd_install 2>&1)"; rc=$?
+  check "install: with no orphan present nothing is removed — the log carries only reads" \
+    '[ "$rc" -eq 0 ] && ! grep -qE "^(rm|run|start|restart|stop) " "$tmp/docker.log"'
+  out="$(cmd_install --url https://tiles.example/chile.pmtiles 2>&1)"; rc=$?
+  check "install: the old --url invocation is refused, naming the new world — never eaten silently" \
+    '[ "$rc" -ne 0 ] && case "$out" in *"FATAL: argumento desconocido: --url"*"sin argumentos"*) ;; *) false;; esac'
 
   # ── the check arm: the archive, the bind, the ranged read — and nothing but reads ──
   printf '%s' "fake" > "$ARCHIVE"
@@ -308,8 +428,8 @@ EOF
   out="$(cmd_check 2>&1)"; rc=$?
   check "check: archive + bind + a 206 of exactly 1024 bytes with the magic → the PASS line, exit 0" \
     '[ "$rc" -eq 0 ] && case "$out" in *"monta $TILES_HOME/tiles"*"206, 1024 bytes exactos"*"MAPA: ✓ — el mapa está y la suite lo sirve"*) ;; *) false;; esac'
-  check "check: the read goes through the suite (apache's internal listener) and nothing but reads run" \
-    'grep -q "exec aps-conecta-nextcloud curl .*http://aps-conecta-apache.nextcloud-aio:23973/tiles/chile.pmtiles" "$tmp/docker.log" && ! grep -qE "^(run|start|restart|rm|stop) " "$tmp/docker.log"'
+  check "check: the read goes through the suite in ONE exec — both ranges, one round trip, and nothing but reads run" \
+    'grep -q "^exec aps-conecta-nextcloud sh -c .*0-1023.*0-6.*aps-conecta-apache.nextcloud-aio:23973/tiles/chile.pmtiles" "$tmp/docker.log" && [ "$(grep -c "^exec " "$tmp/docker.log")" -eq 1 ] && ! grep -qE "^(run|start|restart|rm|stop) " "$tmp/docker.log"'
   mk_docker nobind
   out="$(cmd_check 2>&1)"; rc=$?
   mk_docker elsewhere
@@ -328,6 +448,10 @@ EOF
   out="$(cmd_check 2>&1)"; rc=$?
   check "check: an archive with the suite down passes without claiming the suite serves it" \
     '[ "$rc" -eq 0 ] && case "$out" in *"MAPA: ✓ — el mapa está"*"lo sirve"*) false;; *"MAPA: ✓ — el mapa está"*) ;; *) false;; esac'
+  mk_docker daemon
+  out="$(cmd_check 2>&1)"; rc=$?
+  check "check: a dead docker daemon reds by name, distinct from a stopped suite (Q5)" \
+    '[ "$rc" -ne 0 ] && case "$out" in *"✗ docker no responde"*"sudo systemctl start docker"*) ;; *) false;; esac && ! grep -q "^exec " "$tmp/docker.log"'
 
   ROOT="$ROOT_BAK"; TILES_HOME="$HOME_BAK"; ARCHIVE="$TILES_HOME/tiles/chile.pmtiles"
   PMTILES_BIN="$BIN_BAK"; PMTILES_SHA256="$SHA_BAK"; PMTILES_URL="$URL_BAK"
@@ -341,9 +465,9 @@ EOF
 # ── dispatch ──────────────────────────────────────────────────────────────────────────────
 
 case "${1:-}" in
-  install)     cmd_install ;;
-  refresh)     cmd_refresh ;;
-  check)       cmd_check ;;
+  install)     shift; cmd_install "$@" ;;
+  refresh)     shift; cmd_refresh "$@" ;;
+  check)       shift; cmd_check "$@" ;;
   --self-test) selftest ;;
   *) sed -n '2,20p' "$0"; echo; echo "uso: tiles.sh {install|refresh|check|--self-test}" ;;
 esac

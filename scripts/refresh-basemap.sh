@@ -19,7 +19,12 @@
 # before any of them exist: the install's step 4 builds the map before anyone chooses a centre (R47).
 set -eu
 
-DEST="${DEST:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/tiles/chile.pmtiles}"
+# Where the archive lands when nobody points DEST: the SERVING directory the suite binds — where
+# «aps-conecta mapa» and the monthly timer put it. The repo-local tiles/ default served the
+# deleted nginx compose world; nothing reads it now, and a bare manual run would quietly write a
+# gigabyte no consumer sees (review I9). Explicit DEST still wins (the timer always passes it);
+# the literal rides the five-site gate in scripts/test.sh (I7).
+DEST="${DEST:-/srv/aps-conecta/tiles/chile.pmtiles}"
 # All of Chile, including Isla de Pascua (lon -109.4) and Juan Fernandez (-78.8). A bbox stopping at
 # the mainland silently excludes two comunas that have health facilities, and including them costs
 # about 5 MB because empty Pacific deduplicates away. Comuna-blind by design.
