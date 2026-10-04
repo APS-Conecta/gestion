@@ -146,6 +146,7 @@ cmd_up() {
     --env SKIP_DOMAIN_VALIDATION=true \
     --env NEXTCLOUD_STARTUP_APPS= \
     --env "APACHE_PORT=${APACHE_PORT}" \
+    --env "APS_TILES_DIR=$(dirname "${TILES_HOME:-/srv/aps-conecta}/tiles/chile.pmtiles")" \
     --env APACHE_IP_BINDING=127.0.0.1 \
     --volume nextcloud_aio_mastercontainer:/mnt/docker-aio-config \
     --volume /var/run/docker.sock:/var/run/docker.sock:ro \
