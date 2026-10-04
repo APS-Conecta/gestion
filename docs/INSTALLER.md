@@ -154,32 +154,35 @@ the compose-era keys do not exist under AIO. The keys that matter to the gates:
 
 - `HTTP_PORT=443` — the public apache port; `smoke` and `revalidate` curl it
   (`http://localhost:${HTTP_PORT}/…`). Set it once; the gates read it every run.
-- `TILES_PORT` (default 8084) and `TILES_PUBLIC_URL` — §9.
 - **The office keys are absent on purpose**: under AIO the wizard's entrypoint owns the public
   document-server URL and the JWT secret on every boot; by IP, `14-office.sh` adds the two internal
-  URLs (§14). There is nothing office-shaped to configure on a clinic.
+  URLs (§14). There is nothing office-shaped to configure on a clinic — and nothing map-shaped
+  either: the basemap needs no key at all (§9).
 
 ## 9. The map (tiles)
 
-Territorio's basemap is served from the host, outside AIO:
+Territorio's basemap is the suite's own same-origin route: apache serves the archive at
+`https://<your-host>/tiles/chile.pmtiles`. There is no separate container, no port to publish and
+no proxy to configure — provisioning phase 16 writes territorio's `tile_url` from the address the
+instance is already reached by (`overwrite.cli.url`), so the map works by domain and by IP the
+moment the archive exists.
 
-```bash
-sudo aps-conecta tiles install --url https://tiles.<dominio>/chile.pmtiles
-```
-
-- **Loopback publish, always**: the nginx container binds `127.0.0.1:$TILES_PORT` only. The
-  public answer is an **HTTPS terminator** you already have or choose — the map page is HTTPS
-  and a plain-HTTP tiles URL is **mixed content the browser blocks regardless of CSP**. That is
-  why `TILES_PUBLIC_URL` must name an https address:
-  - the clinic's reverse proxy: a `location /chile.pmtiles` proxying to `127.0.0.1:8084`;
-  - **caddy**: `tiles.<dominio> { reverse_proxy 127.0.0.1:8084 }`;
-  - **tailscale serve**: `tailscale serve --bg https://127.0.0.1:8084`.
 - **Where the archive lives**: `/srv/aps-conecta/tiles/chile.pmtiles` — outside borg's backup
   scope **on purpose**: it is a 1.04 GB **regenerable** artifact (the monthly timer rebuilds it
   from Protomaps' published build), and a regenerable gigabyte must not ride every backup.
   `/opt/aps-conecta` — the credentials and the site record — is what `respaldo` wires in.
-- **Stale container after an image bump**: the nginx container is digest-pinned; if the digest
-  is retired upstream, `tiles install` re-creates the container (idempotent) — re-run it.
+- **The bind is read once, at the wizard's first start**: the mastercontainer is created with
+  `APS_TILES_DIR=/srv/aps-conecta/tiles`, and apache mounts that directory read-only at
+  `/aps-tiles`. The setting is sticky in the suite's `configuration.json` once seen. A
+  mastercontainer created **without** it serves `/tiles/` as a 404 while everything else works —
+  `sudo bash host/tiles.sh check` says exactly that. The remedy is to re-create it (a minute,
+  nothing is lost): stop the containers in the wizard, `sudo docker rm -f
+  nextcloud-aio-mastercontainer` (its volume keeps the configuration), re-create it with
+  `sudo aps-conecta asistente-aio --preparar --dominio <dominio>` (by IP: the address of §14),
+  and start the containers in the wizard again.
+- **Until the first build, `/tiles/` is a 404** — the suite never depends on the archive. Step 4
+  of the install builds it; `sudo aps-conecta mapa` re-runs it, and the monthly timer refreshes
+  it (`sudo aps-conecta temporizadores` re-checks both timers).
 - **Attribution**: the basemap is an Open Database License (ODbL) Produced Work built from
   OpenStreetMap data. The map must keep showing **© OpenStreetMap contributors** — territorio's
   own `tile_attribution` default does this; do not remove it.

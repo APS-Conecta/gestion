@@ -184,7 +184,7 @@ scripts/comuna-package.sh 13110     # prints the exact territorio:import command
 - `scripts/office-smoke.sh` green — timings noisy on this VPS (ollama); the fresh-VM pass is the
   clean timing run
 - `make divergence` adds no note — INCLUDING the territorio comuna keys
-- `scripts/refresh-basemap.sh` green with the derived anchor (the establishment's own DEIS point)
+- `scripts/refresh-basemap.sh` green with the fixed in-Chile anchors (the chosen establishment's point is proven at Centro, not at build time)
 - `occ app:list` shows eurooffice under **Enabled** (the §2 section-aware assert — under "Disabled:" is the JWT rewrite having won: red); the DS reports 9.3.4 (office-smoke asserts it)
 - the daily-backup flag line says `automaticUpdatesAreNotEnabled`
 - B-019's remote-user leg: `migrate-to-aio.sh verify` asserts the config shape

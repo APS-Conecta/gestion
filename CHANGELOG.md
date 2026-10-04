@@ -79,6 +79,25 @@ image digests live there and are deliberately not copied here — one fact, one 
   - `make test` holds every row to a point inside the box the basemap covers.
   - A `--snapshot` whose points never came no longer breaks the installer with a traceback. Reading
     it stops with the way out: add the points, or remove it to fall back to the previous register.
+- **The map is the suite's own `/tiles/` route** (L5 S3).
+  - The nginx tiles container, `tiles.nginx.conf`, `TILES_PORT` and `TILES_PUBLIC_URL` are gone.
+    The suite's apache serves `/srv/aps-conecta/tiles/chile.pmtiles` same-origin at `/tiles/`,
+    read-only, with Range, an ETag and no compression.
+  - The mastercontainer is created with `APS_TILES_DIR` in both modes, domain and IP. A suite
+    already running without it is refused with its own remedy (`docs/INSTALLER.md` §9), and a
+    map folder the start would misread is refused before anything runs.
+  - Step 4 «Construir el mapa» builds the basemap before the browser opens — no site, no typed
+    coordinates; the extract is bounded by three fixed anchors (Santiago, Hanga Roa, Punta
+    Arenas), a failure stops the install like any step, and `APS_SKIP_MAP=1` stays for CI.
+  - `scripts/refresh-basemap.sh` needs no `.env`, no site and no database.
+  - Phase 16 derives `tile_url` from `overwrite.cli.url` (the phase 14 pattern); under dev compose
+    it writes blank and territorio falls back to the OpenStreetMap raster.
+  - `aps-conecta tiles check` proves the archive, apache's `/aps-tiles` bind and a ranged read
+    through the suite's internal network — and no longer moves PMTiles bytes through the shell
+    (B-036).
+  - Smoke check 16 asserts the derived URL, the bind and a 206 with the `PMTiles` magic; Clean
+    boot proves the route on the real apache, by domain and by IP, against a deterministic
+    fixture.
 - **`aps-conecta estado`** — the last execution's verdict, each item with its fix, in Spanish, with
   no sudo (`/opt/aps-conecta/estado.txt`, 0644, written by every execution — the installer's, the
   silent install's and the weekly one). When the weekly re-provision finds drift or does not finish,

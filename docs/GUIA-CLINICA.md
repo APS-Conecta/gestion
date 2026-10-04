@@ -160,18 +160,18 @@ cambiaron de nombre (`aps-conecta-*`) y se reinstala (`INSTALLER.md` §12).
 
 ## 8. ¿Y el mapa?
 
-El fondo de mapa ya se sirve solo — no hay que hacer nada para tenerlo: se instaló con la
-suite, vive en el servidor y **se refresca solo cada mes** (el temporizador del día 4, que activa `sudo aps-conecta
-temporizadores`).
+El fondo de mapa ya se sirve solo — no hay que hacer nada para tenerlo: **la propia suite lo
+sirve**, en su misma dirección (`https://<su-dominio-o-ip>/tiles/chile.pmtiles`), sin contenedores,
+puertos ni proxys adicionales. Vive en el servidor y **se refresca solo cada mes** (el temporizador
+del día 4, que activa `sudo aps-conecta temporizadores`).
 
 - **Territorio** se instala con la suite, en «Revisar y ejecutar».
 - **Sus capas comunales**: `aps-conecta datos` trae y verifica los paquetes de la comuna e imprime
   cómo importarlos. Antes de la primera provisión no descarga nada.
 
-Si el mapa no carga desde otros equipos: la dirección pública del fondo debe ser **https**
-(la página del mapa es https y el navegador bloquea fondos http sin importar la
-configuración). El arreglo — el «terminador https» — está en `INSTALLER.md` §9, con las tres
-recetas (proxy, caddy, tailscale).
+Si el mapa no carga desde otros equipos: `sudo bash host/tiles.sh check` en el servidor dice qué
+cosa falta; si la suite se inició sin la carpeta del mapa, el contenedor maestro se re-crea con
+ella en un minuto — la receta, en `INSTALLER.md` §9.
 
 ## 9. La mudanza (desde la suite anterior)
 
