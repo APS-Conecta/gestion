@@ -99,11 +99,12 @@ jobs:
       # (https://$NC_DOMAIN/eurooffice) so phase 14's query-before-set converges on it instead of
       # clobbering it — and so smoke's check 14 reads a non-loopback editor URL, which the
       # compose default (localhost:$OFFICE_PORT) would redden the moment the domain landed in
-      # trusted_domains. The connector's own wire under AIO is the entrypoint's end to end: it
-      # rewrites DocumentServerUrl/InternalUrl/StorageUrl and jwt_secret on every boot, phase
-      # 14's AIO arm (slice 16) leaves those alone, and office-smoke's legs (slice 20) assert
-      # against exactly those values — --check answers the internal URL, the healthcheck the
-      # public path, so the probe exercises the office wire without any DNS for the domain.
+      # trusted_domains. Under AIO the entrypoint rewrites the connector's public
+      # DocumentServerUrl and jwt_secret on every boot and leaves the internal URLs unset (phase
+      # 14 writes them for an install by IP only); this probe sets them itself (the «Probe office
+      # wire» step), and office-smoke's legs (slice 20) assert against the values the instance
+      # carries — --check answers the internal URL, the healthcheck the public path, so the probe
+      # exercises the office wire without any DNS for the domain.
       AIO_TEST_DOMAIN: aio-ci.invalid
       # The probe's apache binds 127.0.0.1:${AIO_TEST_APACHE_PORT} and runs auto_https OFF
       # (APACHE_PORT != 443): plain HTTP — which is what lets smoke's curls answer

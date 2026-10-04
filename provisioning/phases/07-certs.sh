@@ -1,6 +1,6 @@
 # Phase 07 — TLS intermediates the hosts we read refuse to serve.  OWNER: #28.
 # Before 12-apps, because epidemiologia is installed there and loses the ISP's alert feeds without this.
-phase_begin "07-certs" "intermediate CAs for hosts that serve only their leaf"
+phase_begin "07-certs" "intermediate CAs for hosts that serve only their leaf; the installer's CA by IP"
 
 # The host below serves ONLY its leaf certificate. A browser hides that by chasing the leaf's
 # authorityInfoAccess pointer; a server-side client does not, so Nextcloud's IClientService fails
@@ -28,5 +28,8 @@ phase_begin "07-certs" "intermediate CAs for hosts that serve only their leaf"
 for host in www.ispch.gob.cl; do
   ensure_aia_intermediate "$host"
 done
+
+# And the installer's own CA, on an install by IP (R22) — lib.sh's ensure_installer_ca says why.
+ensure_installer_ca
 
 phase_end

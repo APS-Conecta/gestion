@@ -5171,6 +5171,10 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
             check("suite certificate (R22): the host's two directories are the provisionador's own (one fact, two homes)",
                   f'"$APS_HOME/certificados/{SUITE_TLS}"' in host_txt and f'"$APS_HOME/certificados/{SUITE_CA}"' in host_txt
                   and CERT_DIR_DEFAULT == "/opt/aps-conecta/certificados" and 'APS_HOME="${APS_HOME:-/opt/aps-conecta}"' in host_txt)
+            with open(os.path.join(ROOT_DIR, "provisioning", "lib.sh"), encoding="utf-8") as fh:
+                lib_txt = fh.read()
+            check("suite certificate (R22): Nextcloud imports the CA by the file name this step writes (phase 07, mounted at the OS store)",
+                  f"\nINSTALLER_CA=/usr/local/share/ca-certificates/{CA_PUBLICA}\n" in lib_txt)
 
             # the fragment login in a real browser (a13) — where Playwright is installed (this box,
             # the L7 boxes); elsewhere the arm says so and is not counted

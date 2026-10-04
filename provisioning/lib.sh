@@ -822,45 +822,12 @@ ensure_aia_intermediate() {  # HOST
 
   name="$(basename "$aia" .crt).pem"
 
-  # "Not imported" and "could not ask" are DIFFERENT ANSWERS (#143). This used to pipe occ straight
-  # into grep with stderr discarded, so a container that was briefly too busy to answer looked
-  # exactly like an empty bundle — and re-importing a certificate that is already there is a WRITE
-  # on a provisioned instance, which reddens seed-idempotent and, through cleanboot, CI. Capture
-  # first and let the exit status decide whether the output means anything.
-  local listed rc
-  if ! listed="$(occ security:certificates --output=json 2>/dev/null)"; then
-    log "certs: could not read the certificate list — skipped, leaving $name as it is"
-    return 0
-  fi
-
-  # --output=json, not the rendered table: that table pads every column to its widest row, so
-  # `grep -F " $name "` was really asking "which other certificates are installed?". Parsed the way
-  # divergence.sh parses occ's JSON. 0 = present, 1 = absent, 2 = could not be read, which is the
-  # same non-answer as a failed occ and takes the same exit.
-  # `|| rc=$?`, never a bare pipeline followed by `rc=$?`: phases run under `set -e` (seed.sh), and
-  # "certificate absent" is a legitimate non-zero that would kill the phase before the assignment
-  # ran. An OR list is exempt from errexit; an `if` condition is too, which is why the old shape
-  # never hit this. Caught by cleanboot, not locally — a machine that already holds both
-  # certificates never takes the absent branch.
-  rc=0
-  # The search is inside the `try` with the parse, not after it: valid JSON of the wrong
-  # shape — an object, a string, a list of anything but objects — raises on `.get` rather
-  # than on `load`, and an uncaught raise exits 1, which this reads as "absent" and
-  # answers with the re-import #143 exists to prevent. Unreadable is unreadable however
-  # it fails to be read.
-  printf '%s' "$listed" | python3 -c '
-import json, sys
-try:
-    found = any(r.get("name") == sys.argv[1] for r in json.load(sys.stdin))
-except Exception: sys.exit(2)
-sys.exit(0 if found else 1)' "$name" || rc=$?
+  local rc=0
+  cert_listed "$name" || rc=$?
   case "$rc" in
     0) log "certs: $name already imported"; return 0 ;;
     1) ;;  # absent: the one answer that means carry on and import
-    # Everything else is a non-answer, not an absence, and must take the same exit as a
-    # failed occ. Listing only 2 left every other status meaning "absent" — a python3 the
-    # kernel kills returns 137 — and answering a non-answer with an import is the #143
-    # WRITE this whole block exists to prevent.
+    2) log "certs: could not read the certificate list — skipped, leaving $name as it is"; return 0 ;;
     *) log "certs: certificate list was unreadable — skipped, leaving $name as it is"; return 0 ;;
   esac
 
@@ -921,4 +888,74 @@ sys.exit(0 if found else 1)' "$name" || rc=$?
   # and re-running, which imported ispch and then aborted before the second host.
   nc_exec -- rm -f "/tmp/$name" >/dev/null 2>&1 || true
   return 0
+}
+
+# Whether Nextcloud's bundle already holds NAME (one row per imported file; the file name is the
+# key): 0 = it does, 1 = it does not, 2 = the list could not be read, 3 = it was read and is not
+# a list of rows.
+#
+# "Not imported" and "could not ask" are DIFFERENT ANSWERS (#143). This used to pipe occ straight
+# into grep with stderr discarded, so a container that was briefly too busy to answer looked
+# exactly like an empty bundle — and re-importing a certificate that is already there is a WRITE
+# on a provisioned instance, which reddens seed-idempotent and, through cleanboot, CI. Capture
+# first and let the exit status decide whether the output means anything.
+#
+# --output=json, not the rendered table: that table pads every column to its widest row, so
+# `grep -F " $name "` was really asking "which other certificates are installed?". Parsed the way
+# divergence.sh parses occ's JSON.
+# `|| rc=$?`, never a bare pipeline followed by `rc=$?`: phases run under `set -e` (seed.sh), and
+# "certificate absent" is a legitimate non-zero that would kill the phase before the assignment
+# ran. An OR list is exempt from errexit; an `if` condition is too, which is why the old shape
+# never hit this. Caught by cleanboot, not locally — a machine that already holds both
+# certificates never takes the absent branch.
+# The search is inside the `try` with the parse, not after it: valid JSON of the wrong
+# shape — an object, a string, a list of anything but objects — raises on `.get` rather
+# than on `load`, and an uncaught raise exits 1, which would read as "absent" and
+# answer with the re-import #143 exists to prevent. Unreadable is unreadable however
+# it fails to be read — and every status that is not 0 or 1 is a non-answer too: listing only 2
+# left every other status meaning "absent", and a python3 the kernel kills returns 137.
+cert_listed() {  # NAME
+  local listed rc=0
+  listed="$(occ security:certificates --output=json 2>/dev/null)" || return 2
+  printf '%s' "$listed" | python3 -c '
+import json, sys
+try:
+    found = any(r.get("name") == sys.argv[1] for r in json.load(sys.stdin))
+except Exception: sys.exit(2)
+sys.exit(0 if found else 1)' "$1" || rc=$?
+  case "$rc" in 0|1) return "$rc" ;; *) return 3 ;; esac
+}
+
+# The installer's own CA, on an install by IP (R22). The suite then answers at https://<ip>/ with a
+# leaf that CA signed (patch 235), and Nextcloud calls itself there — Talk's signaling backend, the
+# setup checks. The mastercontainer's NEXTCLOUD_TRUSTED_CACERTS_DIR mounts the CA at the path below
+# and the container's start adds it to the OS store, but Nextcloud's own HTTP client reads its
+# bundle, not that store — the reason this file imports it, exactly as the intermediates above.
+# A domain install mounts no such file: nothing to do. Unlike those, this one is not optional — an
+# install by IP that does not trust itself is broken — so a failed import fails the phase; a container
+# or a list that cannot be asked is still skipped (#143: a non-answer is never an absence), and the
+# next run imports it. The probe answers in words, not by exit status: `docker exec` itself exits 1
+# on a stopped container, exactly as `test -f` does for an absent file.
+INSTALLER_CA=/usr/local/share/ca-certificates/aps-conecta-ca.crt
+ensure_installer_ca() {
+  local name rc=0 mounted
+  name="$(basename "$INSTALLER_CA")"
+  mounted="$(nc_exec -- sh -c 'if [ -f "$1" ]; then echo yes; else echo no; fi' _ "$INSTALLER_CA" 2>/dev/null)" || true
+  case "$mounted" in
+    no) return 0 ;;
+    yes) ;;
+    *) log "certs: could not ask the container for $name — skipped, leaving it as it is"; return 0 ;;
+  esac
+  cert_listed "$name" || rc=$?
+  case "$rc" in
+    0) log "certs: $name already imported"; return 0 ;;
+    1) ;;
+    *) log "certs: could not read the certificate list — skipped, leaving $name as it is"; return 0 ;;
+  esac
+  if occ security:certificates:import "$INSTALLER_CA" >/dev/null 2>&1; then
+    log "certs: imported $name for this server's own address"
+  else
+    log "certs: import of $name FAILED — this server will not trust its own address"
+    return 1
+  fi
 }

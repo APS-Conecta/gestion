@@ -6,12 +6,13 @@
 phase_begin "14-office" "Euro-Office connector configuration (AD-5)"
 
 # ── The AIO posture arm (installer-design slice 16) ──────────────────────────────────────
-# Under AIO the wizard's stack owns the document server's identity. Its entrypoint rewrites
-# DocumentServerUrl, DocumentServerInternalUrl and StorageUrl on every boot (entrypoint
-# :911-916) and jwt_secret to match its own document server (:906-907), and its network has no
-# `eurooffice`/`nextcloud` service names for the internal URLs below to resolve — writing any
-# of them here would fight the entrypoint and break the connector until the next boot.
-# trusted_domains is equally the entrypoint's ($NC_DOMAIN, entrypoint :684). Detection is env.sh's
+# Under AIO the wizard's stack owns the document server's identity. Its entrypoint rewrites the
+# public DocumentServerUrl (https://$NC_DOMAIN/eurooffice) and jwt_secret, to match its own
+# document server, on every boot — and nothing else: the internal URLs are left unset, so a
+# domain install's server-to-server legs ride the public URL as well. Its network has no
+# `eurooffice`/`nextcloud` service names for the compose URLs below to resolve, so the compose
+# writes stay out of it; under AIO the URLs are written only for an install by IP, below.
+# trusted_domains is equally the entrypoint's ($NC_DOMAIN, entrypoint :692). Detection is env.sh's
 # is_aio (seed.sh sources env.sh before every phase), so compose dev and the pre-AIO live stack
 # keep every write below exactly as before (D5).
 # The gestion-only keys — sameTab, customizationTheme, editFormats, defFormats — are the
@@ -22,6 +23,27 @@ if is_aio; then
 else
   aio=0
 fi
+
+# --- by IP (R22): the server-to-server legs inside the wizard's network ---
+# An install by IP publishes https://<ip>/ under the installer's own CA, which the document server
+# does not trust, at a private address it refuses to fetch from. So both server-to-server legs go
+# inside the wizard's network, by the names AIO's own Collabora wire uses (containers.json's
+# aliasgroup1, richdocuments:activate-config): the document server by its container, Nextcloud by
+# apache's plain internal listener. The browser's leg, DocumentServerUrl, stays the entrypoint's
+# https://<ip>/eurooffice. A domain install keeps its public legs (B-019). The address is the one
+# the entrypoint writes into overwrite.cli.url on every boot; a value that cannot be read is said,
+# never taken for a domain (B-014).
+if [ "$aio" = 1 ]; then
+  conf_load
+  pub="$(conf_get system overwrite.cli.url || true)"; pub="${pub#https://}"; pub="${pub%/}"
+  if [ -z "$pub" ]; then
+    log "AIO: overwrite.cli.url could not be read — the office's internal URLs left as they are"
+  elif [[ "$pub" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+    app_config_set eurooffice DocumentServerInternalUrl "http://aps-conecta-eurooffice/"
+    app_config_set eurooffice StorageUrl                "http://aps-conecta-apache.nextcloud-aio:23973/"
+  fi
+fi
+# --- end by IP ---
 
 if [ "$aio" = 0 ]; then
   # No default. This used to fall back to 9980 while the two office scripts fell back to 80, so
