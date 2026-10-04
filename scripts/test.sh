@@ -675,6 +675,66 @@ bad = [r["codigo"] for r in rows
 if bad:
     print(str(len(bad)) + " register rows without a plain-degree point inside the basemap box "
           + m.group(1) + ": " + ", ".join(bad[:5])); sys.exit(1)'
+# A --snapshot whose points never came is the newest file, so every reader would take it and
+# block() would die on a KeyError inside the installer. load() stops instead, naming both ways
+# out, and a refused --coordenadas on it says how to step back to the register before it. On a
+# scratch tree: an older register with points, then a fresh ten-column snapshot of the same rows.
+check python3 -c '
+import csv, glob, os, shutil, sys, tempfile
+sys.path.insert(0, "scripts")
+import deis
+register = sorted(glob.glob("sites/establecimientos-deis-*.csv"))[-1]
+rows = list(csv.DictReader(open(register, encoding="utf-8")))[:3]
+if len(rows) != 3 or not all(r.get("latitud") for r in rows):
+    print("no register rows with points to build the scratch tree -- this check measured nothing"); sys.exit(1)
+def stop(fn, *a):
+    try:
+        fn(*a); return None
+    except SystemExit as e:
+        return str(e)
+tmp = tempfile.mkdtemp()
+try:
+    deis.HERE = os.path.join(tmp, "scripts"); os.makedirs(deis.HERE); os.makedirs(os.path.join(tmp, "sites"))
+    for name, cols in (("2099-01-01", deis.COLUMNS + deis.COORDS), ("2099-02-01", deis.COLUMNS)):
+        with open(os.path.join(tmp, "sites", "establecimientos-deis-" + name + ".csv"), "w", encoding="utf-8", newline="") as fh:
+            w = csv.writer(fh); w.writerow(cols); w.writerows([r[k] for k in cols] for r in rows)
+    loaded = stop(deis.load)
+    gj = os.path.join(tmp, "empty.geojson")
+    open(gj, "w", encoding="utf-8").write("{\"type\":\"FeatureCollection\",\"features\":[]}")
+    refused = stop(deis.coordinates_from, gj)
+    os.remove(os.path.join(tmp, "sites", "establecimientos-deis-2099-02-01.csv"))
+    back = deis.load()
+    os.remove(os.path.join(tmp, "sites", "establecimientos-deis-2099-01-01.csv"))
+    with open(os.path.join(tmp, "sites", "establecimientos-deis-2099-03-01.csv"), "w", encoding="utf-8", newline="") as fh:
+        w = csv.writer(fh); w.writerow(deis.COLUMNS); w.writerows([r[k] for k in deis.COLUMNS] for r in rows)
+    alone = stop(deis.load)
+finally:
+    shutil.rmtree(tmp)
+fails = []
+if not loaded or "--coordenadas" not in loaded or "fall back to establecimientos-deis-2099-01-01.csv" not in loaded:
+    fails.append("load() on a snapshot without points did not stop with both ways out: " + repr(loaded))
+if not refused or "remove establecimientos-deis-2099-02-01.csv to fall back" not in refused:
+    fails.append("a refused --coordenadas on a fresh snapshot did not say how to step back: " + repr(refused))
+if back[0] != "2099-01-01" or len(back[1]) != 3:
+    fails.append("removing the snapshot did not hand the register back: " + repr(back[0]))
+if not alone or "fall back" in alone:
+    fails.append("with no register before it, the fix hint must not offer a fallback: " + repr(alone))
+if fails:
+    print("\n".join(fails)); sys.exit(1)'
+# The provisionador self-test's fixture rows end with their official points, copied by hand from
+# the source (B-035). Tied to the register here, so a transposed digit — or a register refresh
+# that moves one of the four — reds instead of leaving the fixture quietly elsewhere.
+check python3 -c '
+import ast, csv, glob, io, re, sys
+register = sorted(glob.glob("sites/establecimientos-deis-*.csv"))[-1]
+point = {r["codigo"]: (r["latitud"], r["longitud"]) for r in csv.DictReader(open(register, encoding="utf-8"))}
+m = re.search(r"\n    fixture_rows = (\[.*?\n    \])\n", open("scripts/provisionador.py", encoding="utf-8").read(), re.S)
+fixture = [next(csv.reader(io.StringIO(s))) for s in ast.literal_eval(m.group(1))] if m else []
+if len(fixture) < 4:
+    print("no fixture_rows found in scripts/provisionador.py -- this check measured nothing"); sys.exit(1)
+bad = [f[0] + " " + repr(tuple(f[-2:])) + " vs " + repr(point.get(f[0])) for f in fixture if tuple(f[-2:]) != point.get(f[0])]
+if bad:
+    print("fixture points that are not the register s: " + "; ".join(bad)); sys.exit(1)'
 # The welcome declaration has a WRITER (deis.py) and a READER (seed.sh's guard + phase 41). This
 # proves the writer's output is what the reader expects: written to a scratch tree (write_site
 # refuses an existing sites/<name>/), sourced by a real bash, the rows read back — and `equipos`

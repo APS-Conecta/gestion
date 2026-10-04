@@ -77,6 +77,8 @@ image digests live there and are deliberately not copied here — one fact, one 
   - The search matches the register's own columns only, so a number in the terms never matches a
     coordinate.
   - `make test` holds every row to a point inside the box the basemap covers.
+  - A `--snapshot` whose points never came no longer breaks the installer with a traceback. Reading
+    it stops with the way out: add the points, or remove it to fall back to the previous register.
 - **`aps-conecta estado`** — the last execution's verdict, each item with its fix, in Spanish, with
   no sudo (`/opt/aps-conecta/estado.txt`, 0644, written by every execution — the installer's, the
   silent install's and the weekly one). When the weekly re-provision finds drift or does not finish,

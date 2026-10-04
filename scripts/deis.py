@@ -56,18 +56,35 @@ def fold(s):  # accent- and case-blind, so "julio cesar" finds "Julio César"
     return "".join(c for c in unicodedata.normalize("NFD", s.lower()) if not unicodedata.combining(c))
 
 
+def register_files():
+    return sorted(glob.glob(os.path.join(HERE, "..", "sites", "establecimientos-deis-*.csv")))
+
+
 def register_path():
-    files = sorted(glob.glob(os.path.join(HERE, "..", "sites", "establecimientos-deis-*.csv")))
+    files = register_files()
     if not files:
         sys.exit("FATAL: no sites/establecimientos-deis-*.csv found")
     return files[-1]
+
+
+def fallback(path):
+    """The way back from a --snapshot whose points never came: it is the newest file, so every
+    reader takes it until --coordenadas succeeds — removing it hands the register back to the one
+    before. Empty when there is none to fall back to."""
+    older = [f for f in register_files() if f < path]
+    return f"remove {os.path.basename(path)} to fall back to {os.path.basename(older[-1])}" if older else ""
 
 
 def load():
     path = register_path()
     snapshot = os.path.basename(path)[len("establecimientos-deis-"):-len(".csv")]
     with open(path, encoding="utf-8") as fh:
-        return snapshot, list(csv.DictReader(fh))
+        reader = csv.DictReader(fh)
+        if not set(COORDS) <= set(reader.fieldnames or ()):
+            back = fallback(path)
+            sys.exit(f"FATAL: {os.path.basename(path)} has no latitud/longitud — add them with "
+                     "scripts/deis.py --coordenadas <geojson>" + (f", or {back}" if back else ""))
+        return snapshot, list(reader)
 
 
 def snapshot_from(root):
@@ -146,16 +163,19 @@ def coordinates_from(geojson):
             continue
     path = register_path()
     with open(path, encoding="utf-8", newline="") as fh:
-        rows = list(csv.DictReader(fh))
+        reader = csv.DictReader(fh)
+        rows = list(reader)
+    # A refused run on a fresh --snapshot leaves it newest and pointless: say how to step back.
+    back = "" if set(COORDS) <= set(reader.fieldnames or ()) else fallback(path)
+    unchanged = " — the register is unchanged" + (f"; until it has its points, {back}" if back else "")
     missing = [r["codigo"] for r in rows if r["codigo"] not in points]
     if missing:
         sys.exit(f"FATAL: {len(missing)} register codes have no point in {geojson}: "
-                 f"{', '.join(missing[:5])} — the register is unchanged")
+                 f"{', '.join(missing[:5])}{unchanged}")
     bad = [f"{r['codigo']} {points[r['codigo']]}" for r in rows
            if not all(DEGREES.fullmatch(v) for v in points[r["codigo"]])]
     if bad:
-        sys.exit(f"FATAL: values in {geojson} that are not plain degrees: {'; '.join(bad[:5])}"
-                 " — the register is unchanged")
+        sys.exit(f"FATAL: values in {geojson} that are not plain degrees: {'; '.join(bad[:5])}{unchanged}")
     for r in rows:
         r["latitud"], r["longitud"] = points[r["codigo"]]
     tmp = path + ".tmp"
