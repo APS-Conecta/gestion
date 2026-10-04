@@ -111,5 +111,10 @@ resurface when there is a machine instead of being rediscovered on that page.
 substrate for the REM app; that premise was wrong — a custom app owns its own schema through
 Nextcloud's mapper layer and never references Tables.
 
+**The installer CA's own lifecycle.** The CA made at the first install signs the suite's leaf by IP
+and lasts 3650 days; nothing renews it, and a missing one stops the run rather than being made again
+(staff devices trust it). Its renewal, a planned rotation with the devices re-importing, is future
+work, years out.
+
 Estadística builds REM, and this repo owns only the platform it installs onto
 ([`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) § *Extension boundary*).

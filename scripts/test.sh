@@ -220,6 +220,84 @@ check bash -c '
   # The positive control, last: an empty list really does mean absent, and if the guards
   # above have swallowed that too they have swallowed the answer along with the non-answers.
   ensure_aia_intermediate example.test 2>&1 | grep -q "imported ca.pem" || exit 1'
+# R22: the installer's own CA, on an install by IP. Phase 07 imports it into Nextcloud's own bundle
+# once; a domain install mounts no such file and gets no call at all; a container or a list that
+# cannot be asked is a non-answer (#143), never an absence; and a failed import fails the phase — an install by IP that
+# does not trust its own address is broken. Behavioural, through the real seam, under errexit.
+installer_ca_cases() (
+  grep -qx "ensure_installer_ca" provisioning/phases/07-certs.sh || { echo "installer CA: phase 07 does not call it" >&2; exit 1; }
+  log="$(mktemp)"; trap 'rm -f "$log"' EXIT
+  ca=/usr/local/share/ca-certificates/aps-conecta-ca.crt
+  ca_run() {  # HAS LIST IMP — a fresh bash, so errexit holds (check's `if` suppresses it in here)
+    : > "$log"
+    out="$(HAS="$1" LIST="$2" IMP="$3" LOG="$log" CA="$ca" bash -e -o pipefail -c '
+      . scripts/env.sh; . provisioning/lib.sh
+      nc_exec() {   # the probe: words on stdout; "err" is docker exec failing as for a stopped container
+        [ "$1 $2 $3 $5 $6" = "-- sh -c _ $CA" ] || return 2
+        case "$HAS" in 1) echo yes ;; 0) echo no ;; *) return 1 ;; esac
+      }
+      occ() {
+        printf "%s\n" "$*" >> "$LOG"
+        case "$1" in
+          security:certificates) [ "$LIST" != fail ] && printf "%s" "$LIST" ;;
+          security:certificates:import) return "$IMP" ;;
+        esac
+      }
+      ensure_installer_ca' 2>&1)"; rc=$?
+  }
+  imports() { grep -cx "security:certificates:import $ca" "$log"; }
+  ca_run 0 '[]' 0
+  [ "$rc" = 0 ] && [ -z "$out" ] && [ ! -s "$log" ] || { echo "installer CA: a domain install was touched: $out" >&2; exit 1; }
+  ca_run err '[]' 0
+  [ "$rc" = 0 ] && [[ "$out" == *"could not ask the container for aps-conecta-ca.crt"* ]] && [ ! -s "$log" ] \
+    || { echo "installer CA: a container that could not be asked was read as a domain install: $out" >&2; exit 1; }
+  ca_run 1 '[{"name":"aps-conecta-ca.crt"}]' 0
+  [ "$rc" = 0 ] && [[ "$out" == *"aps-conecta-ca.crt already imported"* ]] && [ "$(imports)" = 0 ] \
+    || { echo "installer CA: imported again: $out" >&2; exit 1; }
+  for list in fail '{"a":1}' '[1,2]'; do
+    ca_run 1 "$list" 0
+    [ "$rc" = 0 ] && [[ "$out" == *"could not read the certificate list"* ]] && [ "$(imports)" = 0 ] \
+      || { echo "installer CA: a non-answer ($list) was read as absent: $out" >&2; exit 1; }
+  done
+  ca_run 1 '[]' 1
+  [ "$rc" != 0 ] && [[ "$out" == *"import of aps-conecta-ca.crt FAILED"* ]] || { echo "installer CA: a failed import passed: $out" >&2; exit 1; }
+  ca_run 1 '[]' 0   # the positive control, last
+  [ "$rc" = 0 ] && [[ "$out" == *"certs: imported aps-conecta-ca.crt for this server's own address"* ]] && [ "$(imports)" = 1 ] \
+    || { echo "installer CA: an absent CA was not imported: $out" >&2; exit 1; }
+)
+check installer_ca_cases
+# R22: phase 14's install-by-IP block, extracted from the phase and run under its errexit. An
+# address in overwrite.cli.url (the entrypoint's, every boot) sends both server-to-server legs
+# inside the wizard's network; a domain or the compose stack writes nothing — a domain install keeps
+# its public legs (B-019) — and a value that cannot be read is said, never taken for a domain (B-014).
+office_by_ip_cases() {
+  local block out aio pub want
+  block="$(sed -n '/^# --- by IP (R22)/,/^# --- end by IP ---$/p' provisioning/phases/14-office.sh)"
+  [ -n "$block" ] || { echo "office by IP: block not found in 14-office.sh" >&2; return 1; }
+  while IFS='|' read -r aio pub want; do
+    out="$(AIO="$aio" PUB="$pub" bash -e -o pipefail -c '
+      aio=$AIO
+      conf_load() { :; }
+      conf_get() { [ "$PUB" != fail ] && printf "%s\n" "$PUB"; }
+      app_config_set() { printf "SET %s %s %s\n" "$@"; }
+      log() { printf "LOG %s\n" "$*"; }
+      eval "$1"' _ "$block" 2>&1)" || { echo "office by IP: the block failed for $aio|$pub: $out" >&2; return 1; }
+    case "$want" in
+      internal) [ "$out" = "SET eurooffice DocumentServerInternalUrl http://aps-conecta-eurooffice/
+SET eurooffice StorageUrl http://aps-conecta-apache.nextcloud-aio:23973/" ] ;;
+      none) [ -z "$out" ] ;;
+      said) [ "$out" = "LOG AIO: overwrite.cli.url could not be read — the office's internal URLs left as they are" ] ;;
+    esac || { echo "office by IP: $aio|$pub expected $want, got: $out" >&2; return 1; }
+  done <<'CASES'
+1|https://10.0.0.5/|internal
+1|https://192.168.1.50/|internal
+1|https://clinica.example/|none
+1|https://10.0.0.5.example/|none
+1|fail|said
+0|https://10.0.0.5/|none
+CASES
+}
+check office_by_ip_cases
 # The other half of the WRITES meta-gate, and the half it cannot express: an alternative must match
 # the WRITE line of a helper and NOT its noop line. `certs:` is the pair that proves it — the write
 # says "certs: imported X for Y", the noop says "certs: X already imported", and an unanchored
@@ -956,6 +1034,31 @@ for doc, want in ANCLAS.items():
 if missing("## 3. Preflight checks\n", ["3-preflight"]) != ["3-preflight"]: print("a renamed heading passed"); sys.exit(1)
 if missing("```bash\n# 3. Preflight\n```\n", ["3-preflight"]) != ["3-preflight"]: print("a heading inside a code block passed"); sys.exit(1)
 if missing("<a id=\"3-preflight\"></a>\n## 2. Preflight\n", ["3-preflight"]): print("an explicit anchor was not read"); sys.exit(1)
+print("ok")'
+
+# --- gate: the install by IP's CA guide (R22) — one walkthrough, pointed at where it is -------------
+# The console's last lines and step 7 send staff to GUIA §11; the English twin is INSTALLER §14. The
+# pointers name the headings that hold the guide, and the two sections carry the same commands, byte
+# for byte, and as many bullets — the one walkthrough in two languages. Same validator on drifted pairs.
+check python3 -c '
+import re, sys
+def section(text, head):
+    if head not in text: return None
+    s = text[text.index(head):]
+    end = s.find("\n## ", 1)
+    return s if end < 0 else s[:end]
+def blocks(text):
+    return re.findall(r"^ *```[a-z]*\n(.*?)^ *```", text, re.M | re.S)
+def twins(en, es):
+    return (en is not None and es is not None and blocks(en) and blocks(en) == blocks(es)
+            and len(re.findall(r"^- \*\*", en, re.M)) == len(re.findall(r"^- \*\*", es, re.M)))
+en = section(open("docs/INSTALLER.md", encoding="utf-8").read(), "\n## 14. Without a domain: this server\x27s IP\n")
+es = section(open("docs/GUIA-CLINICA.md", encoding="utf-8").read(), "\n## 11. Sin dominio: la dirección IP del servidor\n")
+if not twins(en, es): print("INSTALLER §14 and GUIA §11 are missing or carry different commands"); sys.exit(1)
+if "docs/GUIA-CLINICA.md §11" not in open("host/aps-conecta", encoding="utf-8").read(): print("the console does not point at GUIA §11"); sys.exit(1)
+if "(guía, §11)" not in open("scripts/provisionador.py", encoding="utf-8").read(): print("step 7 does not point at GUIA §11"); sys.exit(1)
+if twins("## 14. x\n```\na\n```\n", "## 11. y\n```\nb\n```\n"): print("a drifted pair passed"); sys.exit(1)
+if twins("## 14. x\n- **A**\n```\na\n```\n", "## 11. y\n```\na\n```\n"): print("a pair missing a bullet passed"); sys.exit(1)
 print("ok")'
 
 # --- gate: the suite's containers are aps-conecta-* (the AIO fork's patch 240) ----------------

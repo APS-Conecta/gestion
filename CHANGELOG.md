@@ -192,9 +192,28 @@ image digests live there and are deliberately not copied here — one fact, one 
 - **The suite's containers are `aps-conecta-*`** (the AIO fork's patch 240). Every caller, the
   testbed, Clean boot and the docs follow; the wizard stays `nextcloud-aio-mastercontainer`, the
   network `nextcloud-aio` and the volumes `nextcloud_aio_*`. Clean boot runs the fork's suite
-  (`ghcr.io/aps-conecta/all-in-one:ci-20261003-1`), not upstream's. Fresh installs only: an instance from
+  (the CI suite tag `scripts/aio-testbed.sh` pins), not upstream's. Fresh installs only: an instance from
   v0.3.0 or earlier keeps its `nextcloud-aio-*` containers and is reinstalled (`docs/INSTALLER.md`
   §12). `make test` refuses a sibling spelled the old way.
+
+- **Install by IP over HTTPS** (L4 S6b, R22) — a clinic without a domain writes one of the server's
+  IPv4 addresses where the domain goes (step 7 or `SITE_DOMINIO`); another server's address is
+  refused and the wizard's domain check is skipped.
+  - `provisionador.py --paso certificado-suite --ip A` signs the suite's leaf from the installer's CA
+    into `/opt/aps-conecta/certificados/suite` (apache's, 0400) and copies the CA's certificate alone
+    to `…/ca/aps-conecta-ca.crt`. The weekly run signs it again 30 days before it expires and
+    restarts apache whenever it started before the leaf on disk. The CA is never made again under an
+    install by IP: a missing one stops the run (restore from the backup).
+  - The run command gains `APS_TLS_DIR` and `NEXTCLOUD_TRUSTED_CACERTS_DIR` by IP only; a suite
+    started for a domain is refused for an address (reinstall, `docs/INSTALLER.md` §12).
+  - Phase 07 imports the CA into Nextcloud's own bundle; phase 14 points Euro-Office's
+    server-to-server URLs inside the suite's network.
+  - Step 7 offers the CA («Descargar el certificado», `/api/ca`) with its fingerprint, and the
+    install's last lines print both. `docs/INSTALLER.md` §14 and `docs/GUIA-CLINICA.md` §11: the CA
+    on Windows, macOS, Ubuntu and Android.
+  - Clean boot gains a job that installs by the runner's own IP with the silent command alone and
+    checks the CA end to end: trusted with it, refused without it, imported by Nextcloud; a planilla
+    user logs in; push and office pass their own checks; the weekly run keeps the leaf and apache.
 
 ### Removed
 
