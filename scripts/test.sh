@@ -654,6 +654,27 @@ if len(old) != len(new) or not all(n.startswith(o + b",") for o, n in zip(old, n
 if not again: fails.append("a second run did not rewrite the same bytes")
 if fails:
     print("\n".join(fails)); sys.exit(1)'
+# Every establishment the installer offers carries its official point, inside the box the basemap
+# covers (a21): the point is where the Centro map starts and what SITE_LON/SITE_LAT copy. The box is
+# read from scripts/refresh-basemap.sh, the file that decides what the basemap holds, so a point the
+# map could not show reds here and not at a clinic. A --snapshot that skipped --coordenadas is the
+# realistic way to get here — snapshot_from writes the ten columns only.
+check python3 -c '
+import csv, glob, re, sys
+sys.path.insert(0, "scripts")
+import deis
+register = sorted(glob.glob("sites/establecimientos-deis-*.csv"))[-1]
+rows = list(csv.DictReader(open(register, encoding="utf-8")))
+m = re.search(r"^BBOX=\"\$\{BBOX:-([-0-9.,]+)\}\"$", open("scripts/refresh-basemap.sh", encoding="utf-8").read(), re.M)
+if len(rows) < 100 or not m:
+    print("register truncated, or no BBOX default in scripts/refresh-basemap.sh -- this check measured nothing"); sys.exit(1)
+w, s, e, n = map(float, m.group(1).split(","))
+bad = [r["codigo"] for r in rows
+       if not all(deis.DEGREES.fullmatch(r.get(k) or "") for k in deis.COORDS)
+       or not (w <= float(r["longitud"]) <= e and s <= float(r["latitud"]) <= n)]
+if bad:
+    print(str(len(bad)) + " register rows without a plain-degree point inside the basemap box "
+          + m.group(1) + ": " + ", ".join(bad[:5])); sys.exit(1)'
 # The welcome declaration has a WRITER (deis.py) and a READER (seed.sh's guard + phase 41). This
 # proves the writer's output is what the reader expects: written to a scratch tree (write_site
 # refuses an existing sites/<name>/), sourced by a real bash, the rows read back — and `equipos`

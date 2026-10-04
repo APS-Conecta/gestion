@@ -120,6 +120,31 @@ violates ONLYOFFICE's asserted AGPL §7 additional terms (e.g. logo-retention); 
 that a logo-retention obligation is not a valid §7 term. This does **not** change the SPDX identifier,
 but it is worth awareness. **[needs legal sign-off if Euro-Office is adopted for production.]**
 
+### 3.4 Data: the DEIS register and its coordinates
+
+`sites/establecimientos-deis-<date>.csv` is public data, shipped so an install can pick its
+establishment with no network. Two MINSAL sources make it; neither is redistributed whole.
+
+- **The register** — the DEIS catalogue of establishments in operation, trimmed by
+  `scripts/deis.py --snapshot` to the primary-care network and the ten columns an install needs.
+  The date in the filename is MINSAL's publication date.
+- **The coordinates** — `latitud` and `longitud`, appended by `scripts/deis.py --coordenadas` from
+  the Geoportal de Chile dataset «Establecimientos de salud de Chile Junio 2026»:
+  - catalog 41966,
+    <https://geoportal.cl/geoportal/catalog/41966/Establecimientos%20de%20salud%20de%20Chile%20Junio%202026>;
+  - publisher Ministerio de Salud — DEIS (data), with the primary-care georeferencing by DIVAP;
+    contact ideminsal@minsal.cl; published 2026-06-12; CRS84;
+  - source file the catalog's GeoJSON download,
+    <https://geoportal.cl/minsal/catalog/download/c4492d2c-8863-39da-b0f3-b137b759984a>, sha256
+    `9403ba2cc8fa45bd7b11428d37b12c4fb9cd034d3d135e642b53298101856bf5`, 5,295 points;
+  - joined on `cod_vig` (the DEIS code); all 2,655 register rows match. Only the two coordinate
+    properties are taken, as published.
+
+**Licence: not stated.** The dataset's metadata leaves every use and access constraint empty. It is
+official data MINSAL publishes for reuse on a government portal, and wherever the points are shown
+the credit is «Puntos: MINSAL/DEIS, Geoportal de Chile». **[needs legal sign-off: ask
+ideminsal@minsal.cl for the terms before relying on them beyond the clinics' own use.]**
+
 ## 4. Do the copyleft components reach our own code? (Aggregation analysis)
 
 Most of the stack is copyleft (AGPL-3.0). The question is whether that copyleft reaches **our own code**
@@ -158,4 +183,4 @@ and forces us to open it. Our reasoning — **[needs legal sign-off]**:
   public upstream). Since ADR-0010 our own code carries the same duty, discharged the same way.
 - **Open items:** entity/commissioning question (holder revisited if a legal entity forms or the work is
   deemed commissioned); Euro-Office §7 dispute if it's chosen for production; re-run §4 if we ever modify or
-  fork a component.
+  fork a component; the geoportal coordinates' terms (§3.4).

@@ -13,10 +13,12 @@ No establishment ships with this repository; running this is how an install gets
 writes is gitignored because its content depends on which establishment you chose.
 
 The register is the newest sites/establecimientos-deis-*.csv: public primary-care establishments in
-operation, trimmed to the ten columns an install needs. It carries the whole APS network — CESFAM,
-PSR, CECOSF, CGR, CGU, COSAM, SAPU, SAR, SUR — and the filter is a plain term match, so `cesfam`
-above is a search word and not a required type: `deis.py sapu <comuna>` works the same way. The date
-in the filename IS the provenance — never edit the file by hand, regenerate it with --snapshot.
+operation, trimmed to the ten columns an install needs, then each establishment's official point
+(latitud, longitud) from MINSAL's Geoportal de Chile dataset (docs/LICENSING.md §3.4). It carries
+the whole APS network — CESFAM, PSR, CECOSF, CGR, CGU, COSAM, SAPU, SAR, SUR — and the filter is a
+plain term match, so `cesfam` above is a search word and not a required type: `deis.py sapu
+<comuna>` works the same way. The date in the filename IS the register's provenance — never edit
+the file by hand: regenerate it with --snapshot, then add the points with --coordenadas.
 
 Python, not bash: the CSV quotes fields that contain commas ("Calle Diego Portales, La Junta"), and
 awk -F, gets those wrong. python3 is already assumed by provisioning/lib.sh; jq is not.
