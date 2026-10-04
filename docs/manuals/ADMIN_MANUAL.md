@@ -347,7 +347,7 @@ Store this value in the municipal health authority's password vault.
 ### Step 2: Establishment Configuration (`scripts/deis.py`)
 No health establishment configuration ships pre-activated in the repository. Each health center represents a distinct organizational entity with its own DEIS code, official name, administrative dependency, health sectors, and local programs.
 
-The interactive utility `scripts/deis.py` searches the official MINSAL Department of Health Statistics and Information (DEIS) register (`sites/establecimientos-deis-*.csv`):
+The interactive utility `scripts/deis.py` searches the official MINSAL Department of Health Statistics and Information (DEIS) register (`sites/establecimientos-deis-*.csv`). Each row also carries the establishment's official point (`latitud`, `longitud`, from MINSAL's Geoportal de Chile dataset — provenance in `docs/LICENSING.md` §3.4), and a generated site file records it as `SITE_LON`/`SITE_LAT`:
 
 ```bash
 # 1. Search the DEIS register by keyword or comuna (accent-blind)

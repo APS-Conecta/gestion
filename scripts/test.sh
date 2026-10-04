@@ -559,7 +559,7 @@ if len(rows) < 100:
 
 FIELDS = {"SITE_NOMBRE": "nombre", "SITE_DIRECCION": "direccion",
           "SITE_COMUNA": "comuna", "SITE_SERVICIO_SALUD": "servicio_salud",
-          "SITE_COMUNA_CUT": "comuna_codigo"}
+          "SITE_COMUNA_CUT": "comuna_codigo", "SITE_LON": "longitud", "SITE_LAT": "latitud"}
 
 script = ["set -u"]
 for row in rows:
@@ -592,6 +592,149 @@ if bad_cut:
     print("comuna_codigo values Comuna::of() would refuse (not 5 digits) — a phase 16 write"
           " of any of these silently disarms the import door: " + ", ".join(bad_cut[:5]))
     sys.exit(1)'
+# The register's coordinates have a WRITER (deis.py --coordenadas) that runs by hand once per
+# MINSAL release, so this is where it is proven. On a scratch register of three real rows —
+# 201079's quotes and 113314's backtick among them — it must refuse a source that misses an
+# establishment and one whose latitude or longitude is not plain degrees, leaving the file untouched;
+# then append the two columns as published (text, never re-rounded) with every original line kept
+# byte for byte; then rewrite the same bytes when run again.
+check python3 -c '
+import csv, glob, os, shutil, sys, tempfile
+sys.path.insert(0, "scripts")
+import deis
+register = sorted(glob.glob("sites/establecimientos-deis-*.csv"))[-1]
+point = {"110485": ("-33.976637", "-71.468749"), "201079": ("-51.728207", "-72.482647"),
+         "113314": ("-33.56136", "-70.67469")}
+rows = [r for r in csv.DictReader(open(register, encoding="utf-8")) if r["codigo"] in point]
+if len(rows) != 3:
+    print("the three probe rows are not in the register -- this check measured nothing"); sys.exit(1)
+def source(path, codes, bad=None):
+    feats = []
+    for c in codes:
+        lat, lon = point[c]
+        if c == "113314" and bad:
+            lat, lon = bad
+        feats.append("{\"type\":\"Feature\",\"geometry\":null,\"properties\":{\"cod_vig\":" + c
+                     + ".0,\"latitud\":" + lat + ",\"longitud\":" + lon + "}}")
+    open(path, "w", encoding="utf-8").write("{\"type\":\"FeatureCollection\",\"features\":[" + ",".join(feats) + "]}")
+def run(path):
+    try:
+        deis.coordinates_from(path)
+        return None
+    except SystemExit as e:
+        return str(e)
+tmp = tempfile.mkdtemp()
+try:
+    deis.HERE = os.path.join(tmp, "scripts"); os.makedirs(deis.HERE); os.makedirs(os.path.join(tmp, "sites"))
+    reg = os.path.join(tmp, "sites", "establecimientos-deis-2099-01-01.csv")
+    with open(reg, "w", encoding="utf-8", newline="") as fh:
+        w = csv.writer(fh); w.writerow(deis.COLUMNS); w.writerows([r[k] for k in deis.COLUMNS] for r in rows)
+    before = open(reg, "rb").read()
+    gj = os.path.join(tmp, "src.geojson")
+    source(gj, ["110485", "201079"]); short = run(gj)
+    source(gj, list(point), bad=("\"-33.5; id\"", "-70.67469")); hostile = run(gj)
+    source(gj, list(point), bad=("-33.56136", "-70.6e1")); hostile_lon = run(gj)
+    untouched = open(reg, "rb").read() == before
+    source(gj, list(point)); full = run(gj)
+    after = open(reg, "rb").read()
+    again = run(gj) is None and open(reg, "rb").read() == after
+    out = list(csv.DictReader(open(reg, encoding="utf-8")))
+finally:
+    shutil.rmtree(tmp)
+old, new = before.split(b"\r\n"), after.split(b"\r\n")
+fails = []
+if not short or "113314" not in short: fails.append("a source missing 113314 was not refused: " + repr(short))
+if not hostile or "113314" not in hostile: fails.append("a latitude that is not plain degrees was not refused: " + repr(hostile))
+if not hostile_lon or "113314" not in hostile_lon: fails.append("a longitude that is not plain degrees was not refused: " + repr(hostile_lon))
+if not untouched: fails.append("a refused run changed the register")
+if full is not None: fails.append("the full source was refused: " + full)
+if not out or tuple(out[0]) != deis.COLUMNS + deis.COORDS: fails.append("the header is not the ten columns, then latitud,longitud")
+if any((r["latitud"], r["longitud"]) != point[r["codigo"]] for r in out): fails.append("coordinates not written as published")
+if len(old) != len(new) or not all(n.startswith(o + b",") for o, n in zip(old, new) if o): fails.append("an original line changed")
+if not again: fails.append("a second run did not rewrite the same bytes")
+if fails:
+    print("\n".join(fails)); sys.exit(1)'
+# Every establishment the installer offers carries its official point, inside the box the basemap
+# covers (a21): the point is where the Centro map starts and what SITE_LON/SITE_LAT copy. The box is
+# read from scripts/refresh-basemap.sh, the file that decides what the basemap holds, so a point the
+# map could not show reds here and not at a clinic. A --snapshot that skipped --coordenadas is the
+# realistic way to get here — snapshot_from writes the ten columns only.
+check python3 -c '
+import csv, glob, re, sys
+sys.path.insert(0, "scripts")
+import deis
+register = sorted(glob.glob("sites/establecimientos-deis-*.csv"))[-1]
+rows = list(csv.DictReader(open(register, encoding="utf-8")))
+m = re.search(r"^BBOX=\"\$\{BBOX:-([-0-9.,]+)\}\"$", open("scripts/refresh-basemap.sh", encoding="utf-8").read(), re.M)
+if len(rows) < 100 or not m:
+    print("register truncated, or no BBOX default in scripts/refresh-basemap.sh -- this check measured nothing"); sys.exit(1)
+w, s, e, n = map(float, m.group(1).split(","))
+bad = [r["codigo"] for r in rows
+       if not all(deis.DEGREES.fullmatch(r.get(k) or "") for k in deis.COORDS)
+       or not (w <= float(r["longitud"]) <= e and s <= float(r["latitud"]) <= n)]
+if bad:
+    print(str(len(bad)) + " register rows without a plain-degree point inside the basemap box "
+          + m.group(1) + ": " + ", ".join(bad[:5])); sys.exit(1)'
+# A --snapshot whose points never came is the newest file, so every reader would take it and
+# block() would die on a KeyError inside the installer. load() stops instead, naming both ways
+# out, and a refused --coordenadas on it says how to step back to the register before it. On a
+# scratch tree: an older register with points, then a fresh ten-column snapshot of the same rows.
+check python3 -c '
+import csv, glob, os, shutil, sys, tempfile
+sys.path.insert(0, "scripts")
+import deis
+register = sorted(glob.glob("sites/establecimientos-deis-*.csv"))[-1]
+rows = list(csv.DictReader(open(register, encoding="utf-8")))[:3]
+if len(rows) != 3 or not all(r.get("latitud") for r in rows):
+    print("no register rows with points to build the scratch tree -- this check measured nothing"); sys.exit(1)
+def stop(fn, *a):
+    try:
+        fn(*a); return None
+    except SystemExit as e:
+        return str(e)
+tmp = tempfile.mkdtemp()
+try:
+    deis.HERE = os.path.join(tmp, "scripts"); os.makedirs(deis.HERE); os.makedirs(os.path.join(tmp, "sites"))
+    for name, cols in (("2099-01-01", deis.COLUMNS + deis.COORDS), ("2099-02-01", deis.COLUMNS)):
+        with open(os.path.join(tmp, "sites", "establecimientos-deis-" + name + ".csv"), "w", encoding="utf-8", newline="") as fh:
+            w = csv.writer(fh); w.writerow(cols); w.writerows([r[k] for k in cols] for r in rows)
+    loaded = stop(deis.load)
+    gj = os.path.join(tmp, "empty.geojson")
+    open(gj, "w", encoding="utf-8").write("{\"type\":\"FeatureCollection\",\"features\":[]}")
+    refused = stop(deis.coordinates_from, gj)
+    os.remove(os.path.join(tmp, "sites", "establecimientos-deis-2099-02-01.csv"))
+    back = deis.load()
+    os.remove(os.path.join(tmp, "sites", "establecimientos-deis-2099-01-01.csv"))
+    with open(os.path.join(tmp, "sites", "establecimientos-deis-2099-03-01.csv"), "w", encoding="utf-8", newline="") as fh:
+        w = csv.writer(fh); w.writerow(deis.COLUMNS); w.writerows([r[k] for k in deis.COLUMNS] for r in rows)
+    alone = stop(deis.load)
+finally:
+    shutil.rmtree(tmp)
+fails = []
+if not loaded or "--coordenadas" not in loaded or "fall back to establecimientos-deis-2099-01-01.csv" not in loaded:
+    fails.append("load() on a snapshot without points did not stop with both ways out: " + repr(loaded))
+if not refused or "remove establecimientos-deis-2099-02-01.csv to fall back" not in refused:
+    fails.append("a refused --coordenadas on a fresh snapshot did not say how to step back: " + repr(refused))
+if back[0] != "2099-01-01" or len(back[1]) != 3:
+    fails.append("removing the snapshot did not hand the register back: " + repr(back[0]))
+if not alone or "fall back" in alone:
+    fails.append("with no register before it, the fix hint must not offer a fallback: " + repr(alone))
+if fails:
+    print("\n".join(fails)); sys.exit(1)'
+# The provisionador self-test's fixture rows end with their official points, copied by hand from
+# the source (B-035). Tied to the register here, so a transposed digit — or a register refresh
+# that moves one of the four — reds instead of leaving the fixture quietly elsewhere.
+check python3 -c '
+import ast, csv, glob, io, re, sys
+register = sorted(glob.glob("sites/establecimientos-deis-*.csv"))[-1]
+point = {r["codigo"]: (r["latitud"], r["longitud"]) for r in csv.DictReader(open(register, encoding="utf-8"))}
+m = re.search(r"\n    fixture_rows = (\[.*?\n    \])\n", open("scripts/provisionador.py", encoding="utf-8").read(), re.S)
+fixture = [next(csv.reader(io.StringIO(s))) for s in ast.literal_eval(m.group(1))] if m else []
+if len(fixture) < 4:
+    print("no fixture_rows found in scripts/provisionador.py -- this check measured nothing"); sys.exit(1)
+bad = [f[0] + " " + repr(tuple(f[-2:])) + " vs " + repr(point.get(f[0])) for f in fixture if tuple(f[-2:]) != point.get(f[0])]
+if bad:
+    print("fixture points that are not the register s: " + "; ".join(bad)); sys.exit(1)'
 # The welcome declaration has a WRITER (deis.py) and a READER (seed.sh's guard + phase 41). This
 # proves the writer's output is what the reader expects: written to a scratch tree (write_site
 # refuses an existing sites/<name>/), sourced by a real bash, the rows read back — and `equipos`
