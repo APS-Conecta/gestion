@@ -3446,6 +3446,9 @@ def selftest():
     old_cred, old_p20 = CRED_PATH, PHASE20
     old_cert = CERT_DIR
     old_aio = AIO_STATE
+    # Bound here, with the other saves, because the finally restores it: bound later, any failure
+    # before the stub world exists raised UnboundLocalError there and hid the real error.
+    old_path = os.environ["PATH"]
     reales = (recursos, puerto_libre)
     # The stub world must not inherit the caller's exported seed knobs (P37, measured under
     # make test on the probe: a prior section's `source env.sh` leaves OFFICE_* exported and
@@ -4124,7 +4127,6 @@ def selftest():
             stublog = os.path.join(tmp, "stub.log")
             stubstate = os.path.join(tmp, "stub.state")
             stubctl = os.path.join(tmp, "stub.ctl")
-            old_path = os.environ["PATH"]
             os.environ["PATH"] = stubdir + ":" + old_path
             os.environ["FAKE_DOCKER_LOG"] = stublog
             os.environ["FAKE_DOCKER_STATE"] = stubstate
