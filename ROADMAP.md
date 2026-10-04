@@ -40,18 +40,19 @@ formatting loss that implies** (issue #45).
 ## Next
 
 **The installer run** ([#199](https://github.com/APS-Conecta/gestion/issues/199)) — an install a clinic
-can run end to end without a developer. Laps L1–L3 shipped (see *Done*); the rest, in order:
+can run end to end without a developer. Laps L1–L4 shipped (see *Done*); the rest, in order:
 
-1. **L4 AIO fork** — one patch per finding: identity, the IP path and its certificate (R22), the
-   wizard's own page in Spanish (R25, R27, R48), refusals, Talk off by default.
-2. **L5 Map** — the basemap as a registry step, the Centro picker, same-origin `/tiles/`.
-3. **L6 Docs** — `docs/INSTALLER.md` ⇄ the clinic guide, mirrored step for step.
-4. **L7 Run acceptance** — a release candidate installed on three boxes by the rehearsal harness.
+1. **L5 Map** — the basemap as a registry step, the Centro picker, same-origin `/tiles/`.
+2. **L6 Docs** — `docs/INSTALLER.md` ⇄ the clinic guide, mirrored step for step.
+3. **L7 Run acceptance** — a release candidate installed on three boxes by the rehearsal harness.
    It carries:
    - the two-line bootstrap on a pristine Ubuntu 24.04 box (from L2);
    - the printed link opened from another LAN machine, and a real browser run ending with an empty
      divergence report (from L3);
-   - Talk and its recording measured under load (#206).
+   - Talk and its recording measured under load (#206);
+   - the install by IP on a box with no domain: the CA imported on Windows, macOS, Ubuntu and Android
+     per `docs/INSTALLER.md` §14, a login at `https://<ip>/` with no warning, and a Talk call between
+     two LAN PCs with camera and microphone (from L4).
 
 Also open: **Epic retrospectives** (optional).
 
@@ -84,6 +85,7 @@ Also open: **Epic retrospectives** (optional).
 | 2026-10-01 | **Installer L1 — the Nextcloud container resolved once** (#200, closes #197, PR #207) — `nc_container`/`is_aio` in `scripts/env.sh` replace a template default, 4 restated defaults and 7 detection copies; **Clean boot green end to end on AIO** for the first time since 2026-09-21, after the run exposed and fixed B-030 (IntraVox group map order), B-031 (smoke check 15 on Nextcloud 34, now developer-only), B-032 (`seed-idempotent`'s leftover fixture account) and B-033 (the harness's tiles surface) | `scripts/env.sh` § 3, [`BUGS.md`](BUGS.md) B-029–B-033 |
 | 2026-10-02 | **Installer L2 — the silent install core** (#201, PRs #209–#216) — one step registry behind `aps-conecta` (welcome + nine numbered steps, Spanish operator text); the two-line root bootstrap (`preparar`/`descargar`); the AIO wizard drive moved into the CLI (`asistente-aio`); `install --sitio --planilla` with zero prompts, one Spanish line per phase — **Clean boot now installs through it**; staff land in their category group by role and every cargo account gets a sealed first password; `temporizadores` on Santiago time; `aps-conecta estado` and the admins' login notice on drift, proven on real systemd in CI | [`host/aps-conecta`](host/aps-conecta), [`docs/INSTALLER.md`](docs/INSTALLER.md) §2–§6, [`BUGS.md`](BUGS.md) B-034 |
 | 2026-10-03 | **Installer L3 — the web installer** (#202, PRs #220–#224) — one HTTPS LAN link with the token in its fragment, the installer exiting after a green run; the same numbered steps in the browser: «Elegir el centro» over the whole DEIS register, «Iniciar la suite» (the five apps, Talk sized to the server, the AIO wizard pre-filled with the daily backup, the containers followed by name), «Cargar equipos y personas» (a re-submit conflict, the centre's CSV template, the valid groups), «Revisar y ejecutar» in clinic terms followed by polling; Playwright walks every screen; Clean boot measures the idle suite (~1.1 GiB) | [`scripts/provisionador.py`](scripts/provisionador.py), [`docs/GUIA-CLINICA.md`](docs/GUIA-CLINICA.md) §3–§4, [`docs/INSTALLER.md`](docs/INSTALLER.md) §4 |
+| 2026-10-04 | **Installer L4 — the AIO fork** (#203; APS-Conecta/AIO #1–#7, PRs #226, #227, #229) — the wizard is «APS Conecta Gestión AIO»: brand fonts and banner, its own page in Spanish with the APS defaults and help links to the suite's docs, community containers and any office but Euro-Office refused, Talk, Whiteboard and Imaginary off; the suite's containers are `aps-conecta-*` and Clean boot runs the fork's suite tag; **install by IP over HTTPS** — the suite served with a leaf the installer's own CA signs per machine, renewed weekly, trusted by Nextcloud (phase 07) and the office (phase 14), the CA handed to staff with a Spanish guide; **Clean boot installs by the runner's own IP** and proves it end to end | [APS-Conecta/AIO](https://github.com/APS-Conecta/AIO) `patches/`, [`docs/INSTALLER.md`](docs/INSTALLER.md) §14, [`docs/GUIA-CLINICA.md`](docs/GUIA-CLINICA.md) §11 |
 
 The reasoning behind each of these lives with the thing it describes — the ADR, the phase file, or
 the stylesheet. It is not restated here; this table is an index, not a second copy.
