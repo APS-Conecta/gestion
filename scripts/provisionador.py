@@ -5230,7 +5230,9 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
             check("suite certificate (R22): Nextcloud imports the CA by the file name this step writes (phase 07, mounted at the OS store)",
                   f"\nINSTALLER_CA=/usr/local/share/ca-certificates/{CA_PUBLICA}\n" in lib_txt)
             guias = [open(os.path.join(ROOT_DIR, "docs", n), encoding="utf-8").read() for n in ("INSTALLER.md", "GUIA-CLINICA.md")]
-            check("suite certificate (R22): the console's last lines and both guides name this step's files (one fact, four homes)",
+            with open(os.path.join(ROOT_DIR, ".github", "workflows", "cleanboot.yml"), encoding="utf-8") as fh:
+                guias.append(fh.read())
+            check("suite certificate (R22): the console's last lines, both guides and Clean boot by IP name this step's files (one fact, five homes)",
                   f'"$(suite_ca_dir)/{CA_PUBLICA}"' in host_txt
                   and all(os.path.join(CERT_DIR_DEFAULT, SUITE_CA, CA_PUBLICA) in g
                           and os.path.join(CERT_DIR_DEFAULT, SUITE_TLS) in g for g in guias))

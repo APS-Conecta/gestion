@@ -192,7 +192,7 @@ image digests live there and are deliberately not copied here — one fact, one 
 - **The suite's containers are `aps-conecta-*`** (the AIO fork's patch 240). Every caller, the
   testbed, Clean boot and the docs follow; the wizard stays `nextcloud-aio-mastercontainer`, the
   network `nextcloud-aio` and the volumes `nextcloud_aio_*`. Clean boot runs the fork's suite
-  (`ghcr.io/aps-conecta/all-in-one:ci-20261003-1`), not upstream's. Fresh installs only: an instance from
+  (the CI suite tag `scripts/aio-testbed.sh` pins), not upstream's. Fresh installs only: an instance from
   v0.3.0 or earlier keeps its `nextcloud-aio-*` containers and is reinstalled (`docs/INSTALLER.md`
   §12). `make test` refuses a sibling spelled the old way.
 
@@ -210,6 +210,9 @@ image digests live there and are deliberately not copied here — one fact, one 
   - Step 7 offers the CA («Descargar el certificado», `/api/ca`) with its fingerprint, and the
     install's last lines print both. `docs/INSTALLER.md` §14 and `docs/GUIA-CLINICA.md` §11: the CA
     on Windows, macOS, Ubuntu and Android.
+  - Clean boot gains a job that installs by the runner's own IP with the silent command alone and
+    checks the CA end to end: trusted with it, refused without it, imported by Nextcloud; a planilla
+    user logs in; push and office pass their own checks; the weekly run keeps the leaf and apache.
 
 ### Removed
 
