@@ -7,6 +7,7 @@
   scripts/deis.py <codigo> --new <slug>  write sites/<slug>/site.sh, asking what the register cannot
                                       know: which sectors and programs it has
   scripts/deis.py --snapshot <dir>    regenerate the register from a clone of the DEIS pipeline
+  scripts/deis.py --coordenadas <geojson>  add each establishment's official point to the register
 
 No establishment ships with this repository; running this is how an install gets one, and the file it
 writes is gitignored because its content depends on which establishment you chose.
@@ -22,6 +23,7 @@ awk -F, gets those wrong. python3 is already assumed by provisioning/lib.sh; jq 
 """
 import csv
 import glob
+import json
 import os
 import re
 import shlex
@@ -37,18 +39,32 @@ SIGLA = {
     "CGR": "Consultorio General Rural",
     "CGU": "Consultorio General Urbano",
 }
+# The register's own ten columns, in file order: the header --snapshot writes, and the only fields
+# the search folds — the coordinates after them are numbers, and `cesfam 33` is not a latitude.
+COLUMNS = ("codigo", "tipo", "nombre", "direccion", "comuna_codigo", "comuna",
+           "region_codigo", "region", "servicio_salud", "dependencia")
+# Appended by --coordenadas: the establishment's official point, CRS84 decimal degrees as MINSAL
+# publishes them (docs/LICENSING.md §3.4). Sourced unquoted by bash once in a site file, so a value
+# is a sign, digits and a dot or it is refused.
+COORDS = ("latitud", "longitud")
+DEGREES = re.compile(r"-?[0-9]{1,3}(\.[0-9]+)?")
 
 
 def fold(s):  # accent- and case-blind, so "julio cesar" finds "Julio César"
     return "".join(c for c in unicodedata.normalize("NFD", s.lower()) if not unicodedata.combining(c))
 
 
-def load():
+def register_path():
     files = sorted(glob.glob(os.path.join(HERE, "..", "sites", "establecimientos-deis-*.csv")))
     if not files:
         sys.exit("FATAL: no sites/establecimientos-deis-*.csv found")
-    snapshot = os.path.basename(files[-1])[len("establecimientos-deis-"):-len(".csv")]
-    with open(files[-1], encoding="utf-8") as fh:
+    return files[-1]
+
+
+def load():
+    path = register_path()
+    snapshot = os.path.basename(path)[len("establecimientos-deis-"):-len(".csv")]
+    with open(path, encoding="utf-8") as fh:
         return snapshot, list(csv.DictReader(fh))
 
 
@@ -75,8 +91,7 @@ def snapshot_from(root):
     n = 0
     with open(src, encoding="utf-8") as fh, open(out, "w", newline="", encoding="utf-8") as dst:
         w = csv.writer(dst)
-        w.writerow(["codigo", "tipo", "nombre", "direccion", "comuna_codigo", "comuna",
-                    "region_codigo", "region", "servicio_salud", "dependencia"])
+        w.writerow(COLUMNS)
         for r in csv.DictReader(fh):
             tipo = r["tipo_estab_norma_codigo"] or r["tipo_estab_inferido_codigo"]
             glosa = r["tipo_estab_norma_glosa"] or r["tipo_estab_inferido_glosa"]
@@ -103,6 +118,56 @@ def snapshot_from(root):
             n += 1
     print(f"wrote {os.path.relpath(out, os.path.join(HERE, '..'))} — {n} establishments")
     print("delete the older establecimientos-deis-*.csv once the new one is verified")
+    print("then add the coordinates: scripts/deis.py --coordenadas <geojson> (docs/LICENSING.md §3.4)")
+
+
+def coordinates_from(geojson):
+    """Add each establishment's official point to the newest register, in place.
+
+    The source is MINSAL's «Establecimientos de salud de Chile» on the Geoportal de Chile
+    (docs/LICENSING.md §3.4): one Point per establishment in operation, keyed by its DEIS code in
+    `cod_vig`. The values are the feature's `latitud`/`longitud` properties as published, read as
+    text — the geometry repeats them with float noise past the ninth decimal on some rows. Every
+    register row must find a plain-degree point, or the run fails and the file stays as it was.
+    Re-running with the same source rewrites the same bytes."""
+    try:
+        with open(geojson, encoding="utf-8") as fh:
+            features = json.load(fh, parse_float=str)["features"]
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        sys.exit(f"FATAL: {geojson} is not the geoportal GeoJSON ({e})")
+    points = {}
+    for f in features:
+        try:
+            p = f.get("properties") or {}
+            points[str(int(float(p["cod_vig"])))] = (str(p.get("latitud")), str(p.get("longitud")))
+        except (AttributeError, KeyError, TypeError, ValueError):
+            continue
+    path = register_path()
+    with open(path, encoding="utf-8", newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    missing = [r["codigo"] for r in rows if r["codigo"] not in points]
+    if missing:
+        sys.exit(f"FATAL: {len(missing)} register codes have no point in {geojson}: "
+                 f"{', '.join(missing[:5])} — the register is unchanged")
+    bad = [f"{r['codigo']} {points[r['codigo']]}" for r in rows
+           if not all(DEGREES.fullmatch(v) for v in points[r["codigo"]])]
+    if bad:
+        sys.exit(f"FATAL: values in {geojson} that are not plain degrees: {'; '.join(bad[:5])}"
+                 " — the register is unchanged")
+    for r in rows:
+        r["latitud"], r["longitud"] = points[r["codigo"]]
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=COLUMNS + COORDS)
+            w.writeheader()
+            w.writerows(rows)
+        os.chmod(tmp, os.stat(path).st_mode & 0o7777)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+    print(f"wrote {os.path.relpath(path, os.path.join(HERE, '..'))} — {len(rows)} establishments, each with its point")
 
 
 def block(row, snapshot):
@@ -131,7 +196,7 @@ SITE_SERVICIO_SALUD={q(row['servicio_salud'])}
 
 
 def matches(rows, terms):
-    return [r for r in rows if all(t in fold(",".join(r.values())) for t in terms)]
+    return [r for r in rows if all(t in fold(",".join(r[k] for k in COLUMNS)) for t in terms)]
 
 
 def ask(question, word, gid_prefix):
@@ -262,6 +327,10 @@ def main(argv):
         if len(argv) != 2:
             sys.exit(__doc__)
         return snapshot_from(argv[1])
+    if argv and argv[0] == "--coordenadas":
+        if len(argv) != 2:
+            sys.exit(__doc__)
+        return coordinates_from(argv[1])
 
     snapshot, rows = load()
 

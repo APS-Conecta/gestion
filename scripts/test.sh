@@ -592,6 +592,68 @@ if bad_cut:
     print("comuna_codigo values Comuna::of() would refuse (not 5 digits) — a phase 16 write"
           " of any of these silently disarms the import door: " + ", ".join(bad_cut[:5]))
     sys.exit(1)'
+# The register's coordinates have a WRITER (deis.py --coordenadas) that runs by hand once per
+# MINSAL release, so this is where it is proven. On a scratch register of three real rows —
+# 201079's quotes and 113314's backtick among them — it must refuse a source that misses an
+# establishment and one whose latitude or longitude is not plain degrees, leaving the file untouched;
+# then append the two columns as published (text, never re-rounded) with every original line kept
+# byte for byte; then rewrite the same bytes when run again.
+check python3 -c '
+import csv, glob, os, shutil, sys, tempfile
+sys.path.insert(0, "scripts")
+import deis
+register = sorted(glob.glob("sites/establecimientos-deis-*.csv"))[-1]
+point = {"110485": ("-33.976637", "-71.468749"), "201079": ("-51.728207", "-72.482647"),
+         "113314": ("-33.56136", "-70.67469")}
+rows = [r for r in csv.DictReader(open(register, encoding="utf-8")) if r["codigo"] in point]
+if len(rows) != 3:
+    print("the three probe rows are not in the register -- this check measured nothing"); sys.exit(1)
+def source(path, codes, bad=None):
+    feats = []
+    for c in codes:
+        lat, lon = point[c]
+        if c == "113314" and bad:
+            lat, lon = bad
+        feats.append("{\"type\":\"Feature\",\"geometry\":null,\"properties\":{\"cod_vig\":" + c
+                     + ".0,\"latitud\":" + lat + ",\"longitud\":" + lon + "}}")
+    open(path, "w", encoding="utf-8").write("{\"type\":\"FeatureCollection\",\"features\":[" + ",".join(feats) + "]}")
+def run(path):
+    try:
+        deis.coordinates_from(path)
+        return None
+    except SystemExit as e:
+        return str(e)
+tmp = tempfile.mkdtemp()
+try:
+    deis.HERE = os.path.join(tmp, "scripts"); os.makedirs(deis.HERE); os.makedirs(os.path.join(tmp, "sites"))
+    reg = os.path.join(tmp, "sites", "establecimientos-deis-2099-01-01.csv")
+    with open(reg, "w", encoding="utf-8", newline="") as fh:
+        w = csv.writer(fh); w.writerow(deis.COLUMNS); w.writerows([r[k] for k in deis.COLUMNS] for r in rows)
+    before = open(reg, "rb").read()
+    gj = os.path.join(tmp, "src.geojson")
+    source(gj, ["110485", "201079"]); short = run(gj)
+    source(gj, list(point), bad=("\"-33.5; id\"", "-70.67469")); hostile = run(gj)
+    source(gj, list(point), bad=("-33.56136", "-70.6e1")); hostile_lon = run(gj)
+    untouched = open(reg, "rb").read() == before
+    source(gj, list(point)); full = run(gj)
+    after = open(reg, "rb").read()
+    again = run(gj) is None and open(reg, "rb").read() == after
+    out = list(csv.DictReader(open(reg, encoding="utf-8")))
+finally:
+    shutil.rmtree(tmp)
+old, new = before.split(b"\r\n"), after.split(b"\r\n")
+fails = []
+if not short or "113314" not in short: fails.append("a source missing 113314 was not refused: " + repr(short))
+if not hostile or "113314" not in hostile: fails.append("a latitude that is not plain degrees was not refused: " + repr(hostile))
+if not hostile_lon or "113314" not in hostile_lon: fails.append("a longitude that is not plain degrees was not refused: " + repr(hostile_lon))
+if not untouched: fails.append("a refused run changed the register")
+if full is not None: fails.append("the full source was refused: " + full)
+if not out or tuple(out[0]) != deis.COLUMNS + deis.COORDS: fails.append("the header is not the ten columns, then latitud,longitud")
+if any((r["latitud"], r["longitud"]) != point[r["codigo"]] for r in out): fails.append("coordinates not written as published")
+if len(old) != len(new) or not all(n.startswith(o + b",") for o, n in zip(old, new) if o): fails.append("an original line changed")
+if not again: fails.append("a second run did not rewrite the same bytes")
+if fails:
+    print("\n".join(fails)); sys.exit(1)'
 # The welcome declaration has a WRITER (deis.py) and a READER (seed.sh's guard + phase 41). This
 # proves the writer's output is what the reader expects: written to a scratch tree (write_site
 # refuses an existing sites/<name>/), sourced by a real bash, the rows read back — and `equipos`
