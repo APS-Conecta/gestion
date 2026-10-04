@@ -202,7 +202,8 @@ image digests live there and are deliberately not copied here — one fact, one 
   - `provisionador.py --paso certificado-suite --ip A` signs the suite's leaf from the installer's CA
     into `/opt/aps-conecta/certificados/suite` (apache's, 0400) and copies the CA's certificate alone
     to `…/ca/aps-conecta-ca.crt`. The weekly run signs it again 30 days before it expires and
-    restarts apache.
+    restarts apache whenever it started before the leaf on disk. The CA is never made again under an
+    install by IP: a missing one stops the run (restore from the backup).
   - The run command gains `APS_TLS_DIR` and `NEXTCLOUD_TRUSTED_CACERTS_DIR` by IP only; a suite
     started for a domain is refused for an address (reinstall, `docs/INSTALLER.md` §12).
   - Phase 07 imports the CA into Nextcloud's own bundle; phase 14 points Euro-Office's

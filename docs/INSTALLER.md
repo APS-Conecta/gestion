@@ -271,7 +271,8 @@ goes: step 7, or `SITE_DOMINIO` in the site file of the silent install. The suit
   domain check is skipped: there is no DNS to check.
 - **The certificate** is signed for the address before the wizard starts, into
   `/opt/aps-conecta/certificados/suite` (apache's, read-only). The weekly run signs it again 30 days
-  before it expires and restarts apache.
+  before it expires and restarts apache. The CA that signs it is never made again: if it goes missing,
+  the run stops until `/opt/aps-conecta/certificados` is restored from the daily backup (§11).
 - **The run command** carries two more lines, `--env APS_TLS_DIR=/opt/aps-conecta/certificados/suite`
   and `--env NEXTCLOUD_TRUSTED_CACERTS_DIR=/opt/aps-conecta/certificados/ca`; step 7 and the silent
   install sign the certificate before they run it. A suite started for a domain does not switch to an

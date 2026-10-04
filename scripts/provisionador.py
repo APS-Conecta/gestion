@@ -38,6 +38,7 @@ login cookie) is the only carrier, and the request log is silent (R42).
 """
 import csv
 import errno
+import fcntl
 import hashlib
 import hmac
 import html
@@ -2786,8 +2787,9 @@ def preparar_suite(argv):
 
 
 def fijar_dominio():
-    """A site written before step 7 (the operator came back to it) takes the domain the wizard took —
-    the host's record, never the browser's word: its empty SITE_DOMINIO line, and only that line."""
+    """A site written before step 7 (the operator came back to it, or a record kept across a reinstall,
+    INSTALLER §12) takes the domain the wizard took — the host's record, never the browser's word: its
+    one SITE_DOMINIO line, empty or another, and only that line. The weekly renewal reads it (R22)."""
     dominio, codigo = dominio_actual(), centro_actual()[1].get("codigo")
     if not dominio or not codigo:
         return
@@ -2798,8 +2800,9 @@ def fijar_dominio():
                 text = fh.read()
         except OSError:
             return
-        if text.count('\nSITE_DOMINIO=""\n') == 1:
-            write_site_text(path, text.replace('\nSITE_DOMINIO=""\n', f'\nSITE_DOMINIO="{dominio}"\n'))
+        lineas = re.findall(r"(?m)^SITE_DOMINIO=.*$", text)
+        if len(lineas) == 1 and lineas[0] != f'SITE_DOMINIO="{dominio}"':
+            write_site_text(path, re.sub(r"(?m)^SITE_DOMINIO=.*$", f'SITE_DOMINIO="{dominio}"', text, count=1))
 
 class Handler(BaseHTTPRequestHandler):
     # Keep-alive: the UI fetches per interaction; every response goes through send_json, the one
@@ -3083,6 +3086,20 @@ def openssl(*args):
     return r.stdout
 
 
+def par_coincide(crt, key):
+    """The certificate carries this key's public half — False when either cannot be read (signed again)."""
+    mitades = []
+    for args in (("x509", "-in", crt, "-noout", "-pubkey"), ("pkey", "-in", key, "-pubout")):
+        try:
+            r = subprocess.run(["openssl", *args], capture_output=True, text=True, timeout=60)
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        if r.returncode != 0:
+            return False
+        mitades.append(r.stdout)
+    return mitades[0] == mitades[1]
+
+
 def openssl_ok(*args):
     """One openssl check (verify, -checkend): True when it holds — never stops the run."""
     try:
@@ -3093,8 +3110,15 @@ def openssl_ok(*args):
 
 def asegurar_ca():
     """The installer's CA in CERT_DIR (0700, the key 0600): made once and kept — the installer's leaf
-    and the suite's (R22) hang from it, and staff import it once. Returns (ca.crt, ca.key)."""
+    and the suite's (R22) hang from it, and staff import it once. Under an install by IP (the suite's
+    leaf exists) it is never made again silently: staff devices, Nextcloud's bundle and Talk trust this
+    one, so a pair that is incomplete or gone stops the run with its cure. Returns (ca.crt, ca.key)."""
     ca_crt, ca_key = os.path.join(CERT_DIR, "ca.crt"), os.path.join(CERT_DIR, "ca.key")
+    if (not (os.path.exists(ca_crt) and os.path.exists(ca_key))
+            and os.path.exists(os.path.join(CERT_DIR, SUITE_TLS, "tls.crt"))):
+        sys.exit(f"✗ falta la autoridad propia del instalador en {CERT_DIR} (ca.crt y ca.key), y la suite por IP "
+                 "depende de ella\n  → restaure la carpeta desde el respaldo diario, o reinstale "
+                 "(docs/INSTALLER.md §12)")
     mayor = re.match(r"OpenSSL (\d+)\.", openssl("version"))   # `req -x509 -CA` is OpenSSL 3
     if not mayor or int(mayor.group(1)) < 3:
         sys.exit("✗ el instalador web necesita OpenSSL 3 o más reciente (Ubuntu 22.04+, Debian 12+)\n"
@@ -3108,6 +3132,15 @@ def asegurar_ca():
                 "-addext", "keyUsage=critical,keyCertSign,cRLSign")
     os.chmod(ca_key, 0o600)
     return ca_crt, ca_key
+
+
+def candado_certificados():
+    """One writer at a time in CERT_DIR — the weekly run, a start and the web installer may meet. The
+    caller holds the returned file in a `with`; closing it releases the lock."""
+    os.makedirs(CERT_DIR, mode=0o700, exist_ok=True)
+    fh = open(os.path.join(CERT_DIR, ".candado"), "w", encoding="ascii")
+    fcntl.flock(fh, fcntl.LOCK_EX)
+    return fh
 
 
 def firmar_hoja(ips, crt, key):
@@ -3156,7 +3189,8 @@ def certificado_suite(ip):
                and openssl_ok("verify", "-CAfile", ca_crt, crt)
                and openssl_ok("x509", "-in", crt, "-noout", "-checkend", str(RENOVAR_DIAS * 86400))
                and re.findall(r"IP Address:([0-9.]+)",
-                              openssl("x509", "-in", crt, "-noout", "-ext", "subjectAltName")) == [ip])
+                              openssl("x509", "-in", crt, "-noout", "-ext", "subjectAltName")) == [ip]
+               and par_coincide(crt, key))
     if not vigente:
         os.makedirs(hoja, exist_ok=True)
         os.chmod(hoja, 0o700)         # the owner writes again (root needs no bit; the self-test does)
@@ -3165,8 +3199,11 @@ def certificado_suite(ip):
             if os.path.exists(f):
                 os.remove(f)          # a sign that died before its rename
         firmar_hoja((ip,), nuevo_crt, nueva_key)
-        os.replace(nueva_key, key)    # renamed over the pair apache reads only once both exist; the 0400
-        os.replace(nuevo_crt, crt)    # files are replaced, never written through
+        # renamed over the pair apache reads only once both exist, the key first: a run that dies between
+        # the two leaves the old certificate, which is not current, so the next run signs again; the
+        # 0400 files are replaced, never written through
+        os.replace(nueva_key, key)
+        os.replace(nuevo_crt, crt)
     for f in (crt, key):
         os.chown(f, APACHE_UID, APACHE_UID)
         os.chmod(f, 0o400)
@@ -3177,9 +3214,10 @@ def certificado_suite(ip):
     destino = os.path.join(publica, CA_PUBLICA)
     with open(ca_crt, "rb") as fh:
         pem = fh.read()
-    with open(destino, "wb") as fh:
+    with open(destino + ".nuevo", "wb") as fh:
         fh.write(pem)
-    os.chmod(destino, 0o644)
+    os.chmod(destino + ".nuevo", 0o644)
+    os.replace(destino + ".nuevo", destino)   # a download or a start never reads half a certificate
     hasta = openssl("x509", "-in", crt, "-noout", "-enddate").split("=", 1)[1].strip()
     return 200, {"estado": "vigente" if vigente else "emitido",
                  "hasta": time.strftime("%Y-%m-%d", time.gmtime(ssl.cert_time_to_seconds(hasta))),
@@ -3303,7 +3341,8 @@ def run_step(argv):
             print("✗ falta la dirección: --ip <dirección IPv4>")
             return 2
         CERT_DIR = opts.get("--certificados", CERT_DIR)
-        status, body = call(certificado_suite, ip)
+        with candado_certificados():
+            status, body = call(certificado_suite, ip)
         if status != 200:
             return refused(status, body)
         print(f"✓ Certificado de la suite para {ip}: {body['estado']}, válido hasta {body['hasta']}")
@@ -4404,14 +4443,18 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                     globals()["recursos"] = lambda *_a: (12.0, 4)
                     st1, st2, otra, lista, argv_txt = preparar({"dominio": "gestion.clinica.example",
                                                                  "validar": False}, otra_vez=True)
+                    fijado = open(site_path(fijo), encoding="utf-8").read() if fijo else None
                     *_x, por_ip, argv_ip = preparar({"dominio": "10.0.0.5"})   # last: it leaves its own record
             finally:
                 globals().update(SUITE_CMD=verdadero_cmd, recursos=lambda *_a: (12.0, 4))
-                fijado = open(site_path(fijo), encoding="utf-8").read() if fijo else None
+                fijado_ip = open(site_path(fijo), encoding="utf-8").read() if fijo else None
                 if fijo:
                     write_site_text(site_path(fijo), antes_fijo)
             check("suite: a domain is a name with a dot, or a valid IPv4 — anything else refused 400 before anything runs",
                   [m[0] for m in malos] == [400, 400, 400] and "no es válida" in malos[2][1]["error"])
+            check("suite: the site record follows the address the wizard took, over another one it held (a record kept across "
+                  "a reinstall) — the weekly renewal reads it (R22)",
+                  fijo is not None and fijado_ip == antes_fijo.replace('SITE_DOMINIO=""', 'SITE_DOMINIO="10.0.0.5"'))
             check("suite: an IPv4 is the install by IP (R22) — prepared like a domain, the address recorded (the host checks it is its own)",
                   por_ip["preparacion"]["estado"] == "lista" and por_ip["dominio"] == "10.0.0.5"
                   and "--dominio 10.0.0.5 " in argv_ip and por_ip["ip"] == LAN_IP
@@ -5167,12 +5210,41 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                     c7 = stepped(renov)
                 finally:
                     globals()["RENOVAR_DIAS"] = 30
-                for k in ("ca.crt", "ca.key"):
-                    os.remove(os.path.join(renov_dir, k))
+                # a leaf another CA signed, then a key that is not its certificate's: each signed again
+                otra = os.path.join(tmp, "certs-otra")
+                stepped(["--paso", "certificado-suite", "--certificados", otra, "--ip", "127.0.0.1"])
+                hoja_r, hoja_o = os.path.join(renov_dir, SUITE_TLS), os.path.join(otra, SUITE_TLS)
+
+                def poner(nombre):   # otra's file over renov's, the way a stray copy would land
+                    os.chmod(hoja_r, 0o700)
+                    with open(os.path.join(hoja_o, nombre), "rb") as fh, \
+                            open(os.path.join(hoja_r, nombre + ".x"), "wb") as fh2:
+                        fh2.write(fh.read())
+                    os.replace(os.path.join(hoja_r, nombre + ".x"), os.path.join(hoja_r, nombre))
+                poner("tls.crt")
+                poner("tls.key")
                 c8 = stepped(renov)
+                poner("tls.key")
+                c8b = stepped(renov)
                 with open(os.path.join(renov_dir, "ca.crt"), "rb") as fh, \
                         open(os.path.join(renov_dir, SUITE_CA, CA_PUBLICA), "rb") as fh2:
                     renov_misma_ca = fh.read() == fh2.read()
+                # one writer at a time: a second holder waits
+                CERT_DIR = renov_dir
+                with candado_certificados():
+                    with open(os.path.join(renov_dir, ".candado"), "w", encoding="ascii") as otro:
+                        try:
+                            fcntl.flock(otro, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                            espera = False
+                        except BlockingIOError:
+                            espera = True
+                # an install by IP whose CA is gone stops with its cure — never a new CA under trusted leaves
+                os.remove(os.path.join(renov_dir, "ca.key"))
+                try:
+                    stepped(renov)
+                    ca_perdida = ""
+                except SystemExit as e:
+                    ca_perdida = str(e)
                 # the CA the staff's devices import: served to the signed-in operator, by IP only
                 CERT_DIR = certs
                 with open(os.path.join(AIO_STATE, "dominio"), "w", encoding="utf-8") as fh:
@@ -5196,10 +5268,16 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                   and c2[0] == 0 and "127.0.0.1: vigente, válido hasta" in c2[1]
                   and c3[0] == 0 and "127.0.0.2: emitido" in c3[1] and c6[0] == 0 and "127.0.0.1: emitido" in c6[1]
                   and f"Certificado para los equipos del personal: {os.path.join(publica, CA_PUBLICA)} (huella " in c1[1])
-            check("suite certificate (R22): signed again when its end falls inside RENOVAR_DIAS, and when the CA it chains to was "
-                  "replaced (the CA's copy follows) — the weekly renewal's other two triggers",
+            check("suite certificate (R22): signed again when its end falls inside RENOVAR_DIAS, when another CA signed it, and "
+                  "when its key is not its certificate's — the CA's copy unchanged",
                   c7a[0] == 0 and "127.0.0.1: emitido," in c7a[1] and c7[0] == 0 and "127.0.0.1: emitido," in c7[1]
-                  and c8[0] == 0 and "127.0.0.1: emitido," in c8[1] and renov_misma_ca)
+                  and c8[0] == 0 and "127.0.0.1: emitido," in c8[1] and c8b[0] == 0 and "127.0.0.1: emitido," in c8b[1]
+                  and renov_misma_ca)
+            check("suite certificate (R22): an install by IP whose CA is gone stops with its cure, never a new CA; signing "
+                  "holds one lock in the directory (the weekly run, a start and the web installer may meet)",
+                  "falta la autoridad propia del instalador" in ca_perdida and "respaldo diario" in ca_perdida
+                  and not os.path.exists(os.path.join(renov_dir, "ca.key")) and espera
+                  and "with candado_certificados():" in __import__("inspect").getsource(run_step))
             check("suite certificate (R22): a malformed address is refused (1), a missing one is usage (2)",
                   c4[0] == 1 and "no es una dirección IPv4" in c4[1] and c5[0] == 2 and "--ip" in c5[1])
             check("suite certificate (R22): the leaf is apache's (0400, the directory 0500) and never sits beside the CA's key; the CA's certificate alone is 0644, the same bytes",
@@ -5713,7 +5791,8 @@ def main(argv):
                  "  → use el enlace de su consola, o ciérrelo (Ctrl+C en su consola; sin consola: "
                  "sudo pkill -f 'provisionador.py$') y vuelva a ejecutar: sudo aps-conecta abrir")
     LAN_IP, HOSTNAME = lan_ip(), socket.gethostname()
-    ctx, fingerprint = tls_context(LAN_IP)  # …no certificate, no link
+    with candado_certificados():
+        ctx, fingerprint = tls_context(LAN_IP)  # …no certificate, no link
     TOKEN = secrets.token_hex(32)           # 64 hex chars — the env-init size, via the stdlib CSPRNG
     httpd, PORT = bind_server("", PORTS)   # all interfaces: the LAN reaches it, loopback probes too
     # the handshake runs in the handler thread (its 30 s timeout), never in the accept loop

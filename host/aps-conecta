@@ -40,6 +40,19 @@ APS_HOME="${APS_HOME:-/opt/aps-conecta}"   # the bundle lands in $APS_HOME/gesti
 # the provisionador's CERT_DIR/suite and CERT_DIR/ca, pinned by its self-test
 suite_tls_dir() { printf '%s' "$APS_HOME/certificados/suite"; }
 suite_ca_dir() { printf '%s' "$APS_HOME/certificados/ca"; }
+reload_suite_leaf() {  # by IP (R22): apache reads its pair at start — a running apache started before the leaf
+  # on disk was written is restarted, whoever signed it (a start, the weekly run) and however the last
+  # attempt ended. No apache yet, or a stopped one: it reads the pair when it starts
+  local st started leaf; leaf="$(suite_tls_dir)/tls.crt"
+  st="$(docker inspect -f '{{.State.Running}} {{.State.StartedAt}}' aps-conecta-apache 2>/dev/null)" || return 0
+  [ "${st%% *}" = true ] && [ -f "$leaf" ] || return 0
+  if ! started="$(date -d "${st#* }" +%s 2>/dev/null)"; then
+    bad "no se pudo leer el arranque de apache («${st#* }»)" "sudo docker restart aps-conecta-apache"; return 1
+  fi
+  [ "$(stat -c %Y "$leaf")" -gt "$started" ] || return 0
+  if docker restart aps-conecta-apache >/dev/null; then ok "Certificado de la suite renovado: apache reiniciado"
+  else bad "apache sigue con el certificado anterior" "sudo docker restart aps-conecta-apache"; return 1; fi
+}
 staff_ca() {  # by IP (R22), the install's last lines: the CA each staff device imports, and its fingerprint
   local ca fp
   ca="$(suite_ca_dir)/aps-conecta-ca.crt"
@@ -178,8 +191,8 @@ silent_precheck() {  # the two files read before anything runs — a typo must n
   local text; text="$(tr -d '\r' < "$SILENT_SITE")"
   printf '%s\n' "$text" | grep -qE '^SITE_DEIS=[0-9]{4,6}$' \
     || die "el sitio no declara SITE_DEIS=<código DEIS> (sin comillas): $SILENT_SITE"
-  [[ "$(printf '%s\n' "$text" | domain_of -)" =~ $DOMAIN_RE ]] \
-    || die "el sitio no declara SITE_DOMINIO=\"<dominio del servidor>\" válido: $SILENT_SITE"
+  valid_address "$(printf '%s\n' "$text" | domain_of -)" \
+    || die "el sitio no declara SITE_DOMINIO=\"<dominio o dirección IP del servidor>\" válido: $SILENT_SITE"
   printf '%s\n' "$text" | grep -q '^SITE_ROSTER=' || die "el sitio no trae la línea SITE_ROSTER=: $SILENT_SITE"
   head -1 "$SILENT_ROSTER" | sed 's/^\xef\xbb\xbf//' | tr -d '\r' \
     | grep -qx 'usuario;nombre;apellidos;correo;grupos;primer_admin' \
@@ -376,6 +389,10 @@ DOMAIN_RE='^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$'   # the wizard's rule, che
 # the installer's own certificate, signed for that address, which must be one of this server's own
 IPV4_RE='^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])[.]){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$'
 is_ipv4() { [[ "${1:-}" =~ $IPV4_RE ]]; }
+valid_address() {  # the step-7 rule, on every path: a name (DOMAIN_RE), or — digits and dots only — a valid
+  # IPv4; 010.0.0.1, 1.2.3 or 10.0.0.256 are neither (getent would «resolve» them the inet_aton way)
+  [[ "${1:-}" =~ $DOMAIN_RE ]] && { ! [[ "$1" =~ ^[0-9.]+$ ]] || is_ipv4 "$1"; }
+}
 host_ipv4s() {  # this server's own addresses — Docker's bridges are not reachable from the LAN
   ip -4 -o addr show scope global 2>/dev/null | awk '$2 !~ /^(docker|br-|veth)/ {sub(/\/.*/, "", $4); print $4}'
 }
@@ -839,6 +856,7 @@ start_suite() {  # [ADDRESS] — the mastercontainer, once — the very command 
     own_ipv4 "$domain" || return 1
     python3 "$(prov_path)" --paso certificado-suite --ip "$domain" --certificados "$APS_HOME/certificados" \
       || { bad "no se pudo preparar el certificado de la suite" "corrija lo indicado arriba y vuelva a ejecutar"; return 1; }
+    reload_suite_leaf || return 1   # a running suite loads a leaf this start signed again
   fi
   state="$(docker ps -a --format '{{.Names}} {{.State}}' 2>/dev/null)"   # captured: pipefail-safe
   state="$(printf '%s\n' "$state" | sed -n 's/^nextcloud-aio-mastercontainer //p')"
@@ -1081,14 +1099,17 @@ cmd_aio_wizard() {  # --dominio D [--sin-validar-dominio] [--respaldo DIR] [--ta
       *) die "opción desconocida: $1 — uso: aps-conecta asistente-aio --dominio <dominio> [--sin-validar-dominio] [--respaldo <directorio>] [--talk] [--grabacion] [--preparar]" ;;
     esac
   done
-  [[ "$domain" =~ $DOMAIN_RE ]] \
+  valid_address "$domain" \
     || die "falta un dominio válido: aps-conecta asistente-aio --dominio <dominio>"
   # an address cannot pass the wizard's DNS validation: by IP it is skipped, always (patch 233 accepts it then)
-  ! is_ipv4 "$domain" || options=(--data-urlencode skip_domain_validation=1)
+  ! is_ipv4 "$domain" || options=(--data-urlencode skip_domain_validation=1)   # the one --sin-validar-dominio sets
   [ "$talk" = 0 ] || opciones+=(--data-urlencode talk=on)
   [ "$grabacion" = 0 ] || opciones+=(--data-urlencode talk-recording=on)
   ( umask 077 && mkdir -p "$AIO_STATE" ) || die "no se pudo crear $AIO_STATE"
   rm -f "$AIO_STATE/motivo"
+  if is_ipv4 "$domain" && ! own_ipv4 "$domain"; then   # before any post, on every path (R22)
+    printf '%s\n' "$MOTIVO" > "$AIO_STATE/motivo"; exit 1
+  fi
   FAIL=0
   # the backup hour first: a host without tzdata stops here, before anything is started or posted
   if [ -n "$backup_dir" ] && ! hora="$(backup_hour_utc today)"; then
@@ -1152,14 +1173,10 @@ reponer() {  # the weekly headless re-provision (the timer's whole job): the Pro
     die "no hay un único sitio en sites/ (una instalación sirve a un solo establecimiento) — elija el centro en el instalador web primero"
   fi
   info "re-provisión semanal del establecimiento $code"
-  local domain antes cert_rc=0; domain="$(site_domain || true)"
-  if is_ipv4 "$domain"; then   # by IP (R22): the suite's leaf signed again before its end; apache reads it at start
-    antes="$(sha256sum "$(suite_tls_dir)/tls.crt" 2>/dev/null)"
+  local domain cert_rc=0; domain="$(site_domain || true)"
+  if is_ipv4 "$domain"; then   # by IP (R22): the suite's leaf signed again before its end, and loaded
     python3 "$(prov_path)" --paso certificado-suite --ip "$domain" --certificados "$APS_HOME/certificados" || cert_rc=1
-    if [ "$cert_rc" = 0 ] && [ "$(sha256sum "$(suite_tls_dir)/tls.crt" 2>/dev/null)" != "$antes" ]; then
-      if docker restart aps-conecta-apache >/dev/null; then ok "Certificado de la suite renovado: apache reiniciado"
-      else bad "apache sigue con el certificado anterior" "sudo docker restart aps-conecta-apache"; cert_rc=1; fi
-    fi
+    [ "$cert_rc" != 0 ] || reload_suite_leaf || cert_rc=1
   fi
   python3 "$(prov_path)" --paso generar --codigo "$code"
   local rc=$?
@@ -1815,6 +1832,8 @@ SHIM
     'case "$out" in *"✓ Dirección IP 10.0.0.5: es de este servidor"*) ;; *) false;; esac && case "$out2" in *"✗ la dirección 10.0.0.9 no es de este servidor"*"use una de las suyas: 10.0.0.5"*) ;; *) false;; esac && case "$out3" in *"✗ la dirección 172.17.0.1 no es de este servidor"*) ;; *) false;; esac && case "$out2" in *"use una de las suyas: 10.0.0.5") ;; *) false;; esac && case "$out3" in *"use una de las suyas: 10.0.0.5") ;; *) false;; esac'
   check "ipv4 (R22): four octets 0–255 are an address; a name, a fifth octet or 256 are not" \
     'is_ipv4 10.0.0.5 && is_ipv4 192.168.1.250 && ! is_ipv4 10.0.0.256 && ! is_ipv4 10.0.0 && ! is_ipv4 1.2.3.4.5 && ! is_ipv4 gestion.example && ! is_ipv4 ""'
+  check "address (R22): one rule on every path — a name, or digits and dots only as a valid IPv4 (010.0.0.1, 1.2.3, 10.0.0.256 are neither)" \
+    'valid_address gestion.example && valid_address 10.0.0.5 && valid_address 2cesfam.example && ! valid_address 010.0.0.1 && ! valid_address 1.2.3 && ! valid_address 10.0.0.256 && ! valid_address -x && ! valid_address ""'
   out="$(ROOT="$tmp/no-site"; check_dns)"
   check "dns (R6): with no domain anywhere it names the --dominio probe" \
     'case "$out" in *"aps-conecta preflight --dominio <dominio>"*) ;; *) false;; esac'
@@ -1983,6 +2002,13 @@ SHIM
     out="$( (cmd_aio_wizard --preparar --dominio 10.0.0.9) 2>&1)"; rc=$?
     check "asistente-aio --preparar (R22): another server's address ends red with its own line for the web installer, naming this server's" \
       '[ "$rc" -eq 1 ] && [ "$(cat "$AIO_STATE/motivo")" = "La dirección 10.0.0.9 no es de este servidor: use una de las suyas (10.0.0.5)." ]'
+    rm -rf "$AIO_STATE"; : > "$tmp/aio.log"
+    out="$( (cmd_aio_wizard --dominio 10.0.0.9) 2>&1)"; rc=$?
+    check "asistente-aio (R22): another server's address is refused before any post even without --preparar — one check on every path" \
+      '[ "$rc" -eq 1 ] && [ ! -s "$tmp/aio.log" ] && case "$out" in *"✗ la dirección 10.0.0.9 no es de este servidor"*) ;; *) false;; esac && [ "$(cat "$AIO_STATE/motivo")" = "La dirección 10.0.0.9 no es de este servidor: use una de las suyas (10.0.0.5)." ]'
+    out="$( (cmd_aio_wizard --dominio 010.0.0.1) 2>&1)"; rc=$?
+    check "asistente-aio: digits and dots that are not an IPv4 are not a domain either — refused before any post" \
+      '[ "$rc" -eq 1 ] && [ ! -s "$tmp/aio.log" ] && case "$out" in *"falta un dominio válido"*) ;; *) false;; esac'
     rm -rf "$AIO_STATE"
     out="$( (APS_SUITE_TAG=malo cmd_aio_wizard --preparar --dominio clinica.example) 2>&1)"; rc=$?
     check "asistente-aio --preparar: a wizard that cannot start ends red, with one line for the web installer" \
@@ -2072,7 +2098,8 @@ EOF
   echo 2 > "$tmp/prov.rc"
   out="$(reponer 2>&1)"; rc=$?
   check "reponer: the step's own exit code reaches systemd unchanged" '[ "$rc" -eq 2 ]'
-  # R22: by IP the weekly run checks the suite's leaf first and restarts apache only when it was signed again
+  # R22: by IP the weekly run checks the suite's leaf first, then loads it — a running apache started before the
+  # leaf on disk was written is restarted, whoever signed it and after a restart that failed; a stopped one is not
   cp "$ROOT/scripts/provisionador.py" "$tmp/prov.stub"; cp "$tshim/docker" "$tmp/docker.rp"
   cat > "$ROOT/scripts/provisionador.py" <<EOF
 import os, sys
@@ -2080,33 +2107,40 @@ open("$tmp/prov.log", "a").write(" ".join(sys.argv[1:]) + "\n")
 if "certificado-suite" in sys.argv and os.path.exists("$tmp/firma-falla"):
     sys.exit(1)
 if "certificado-suite" in sys.argv and os.path.exists("$tmp/renueva"):
-    os.makedirs("$tmp/aps-rp/certificados/suite", exist_ok=True)
     open("$tmp/aps-rp/certificados/suite/tls.crt", "a").write("x")
 EOF
   cat > "$tshim/docker" <<SHIM
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "$tmp/rp.docker"
-[ "\$1" != restart ] || [ ! -e "$tmp/restart-falla" ] || exit 1
+case "\$1" in
+  inspect) cat "$tmp/apache.st" ;;
+  restart) [ ! -e "$tmp/restart-falla" ] || exit 1 ;;
+esac
 SHIM
   chmod +x "$tshim/docker"
   if only_shims docker; then
     sed -i 's/^SITE_DOMINIO=.*/SITE_DOMINIO="10.0.0.5"/' "$ROOT/sites/113314/site.sh"
-    : > "$tmp/prov.log"; : > "$tmp/rp.docker"; rm -f "$tmp/renueva"
-    out="$(APS_HOME="$tmp/aps-rp"; reponer 2>&1)"; rc=$?
-    touch "$tmp/renueva"
-    out2="$(APS_HOME="$tmp/aps-rp"; reponer 2>&1)"; rc2=$?
-    check "reponer (R22): by IP the suite's certificate is checked before every run; apache restarts only when it was signed again" \
-      '[ "$rc" -eq 0 ] && [ "$rc2" -eq 0 ] && [ "$(grep -c "^--paso certificado-suite --ip 10.0.0.5 --certificados $tmp/aps-rp/certificados$" "$tmp/prov.log")" = 2 ] && [ "$(grep -c "^restart aps-conecta-apache$" "$tmp/rp.docker")" = 1 ] && case "$out2" in *"✓ Certificado de la suite renovado: apache reiniciado"*) ;; *) false;; esac && case "$out" in *renovado*) false;; *) true;; esac'
-    touch "$tmp/firma-falla"; : > "$tmp/rp.docker"
-    out3="$(APS_HOME="$tmp/aps-rp"; notify_admins() { echo NOTIFICADO; }; reponer 2>&1)"; rc3=$?
-    rm -f "$tmp/firma-falla"; touch "$tmp/restart-falla"
-    out4="$(APS_HOME="$tmp/aps-rp"; notify_admins() { echo NOTIFICADO; }; reponer 2>&1)"; rc4=$?
-    rm -f "$tmp/restart-falla"
-    check "reponer (R22): a leaf that could not be signed, or an apache that did not restart, reds the weekly unit on its own — the admins hear only the provision's verdict" \
-      '[ "$rc3" -ne 0 ] && [ "$rc4" -ne 0 ] && [ "$(grep -c "^restart aps-conecta-apache$" "$tmp/rp.docker")" = 1 ] && case "$out4" in *"✗ apache sigue con el certificado anterior"*) ;; *) false;; esac && case "$out3$out4" in *NOTIFICADO*) false;; *) true;; esac && [ "$(grep -c "^--paso generar" "$tmp/prov.log")" = 4 ]'
+    mkdir -p "$tmp/aps-rp/certificados/suite"; printf 'hoja' > "$tmp/aps-rp/certificados/suite/tls.crt"
+    rp_case() {  # APACHE_STATE — one weekly run; sets rc_rp, n_rp (apache restarts), out_rp
+      : > "$tmp/rp.docker"; printf '%s\n' "$1" > "$tmp/apache.st"
+      out_rp="$(APS_HOME="$tmp/aps-rp"; notify_admins() { echo NOTIFICADO; }; reponer 2>&1)"; rc_rp=$?
+      n_rp="$(grep -c '^restart aps-conecta-apache$' "$tmp/rp.docker")"
+    }
+    : > "$tmp/prov.log"; rm -f "$tmp/renueva"
+    rp_case "true 2099-01-01T00:00:00Z"; k="$rc_rp/$n_rp"; k_out="$out_rp"
+    touch "$tmp/renueva"; rp_case "true 2000-01-01T00:00:00Z"; r="$rc_rp/$n_rp"; r_out="$out_rp"; rm -f "$tmp/renueva"
+    rp_case "false 2000-01-01T00:00:00Z"; s="$rc_rp/$n_rp"
+    check "reponer (R22): by IP the leaf is checked before every run; a running apache started before the leaf on disk is restarted — not one started after it, nor a stopped one" \
+      '[ "$k" = 0/0 ] && [ "$r" = 0/1 ] && [ "$s" = 0/0 ] && [ "$(grep -c "^--paso certificado-suite --ip 10.0.0.5 --certificados $tmp/aps-rp/certificados$" "$tmp/prov.log")" = 3 ] && case "$r_out" in *"✓ Certificado de la suite renovado: apache reiniciado"*) ;; *) false;; esac && case "$k_out" in *renovado*) false;; *) true;; esac'
+    touch "$tmp/firma-falla"; rp_case "true 2000-01-01T00:00:00Z"; f="$rc_rp/$n_rp"; f_out="$out_rp"; rm -f "$tmp/firma-falla"
+    touch "$tmp/restart-falla"; rp_case "true 2000-01-01T00:00:00Z"; x="$rc_rp/$n_rp"; x_out="$out_rp"; rm -f "$tmp/restart-falla"
+    rp_case "true 2000-01-01T00:00:00Z"; y="$rc_rp/$n_rp"; y_out="$out_rp"
+    rp_case "true ayer"; z="$rc_rp/$n_rp"; z_out="$out_rp"
+    check "reponer (R22): a leaf that could not be signed, an apache that did not restart (tried again the next week), or a start it cannot read red the weekly unit on its own — the admins hear only the provision's verdict" \
+      '[ "$f" = 1/0 ] && [ "$x" = 1/1 ] && [ "$y" = 0/1 ] && [ "${z%/*}" = 1 ] && case "$x_out" in *"✗ apache sigue con el certificado anterior"*) ;; *) false;; esac && case "$y_out" in *"✓ Certificado de la suite renovado"*) ;; *) false;; esac && case "$z_out" in *"✗ no se pudo leer el arranque de apache"*) ;; *) false;; esac && case "$f_out$x_out$y_out$z_out" in *NOTIFICADO*) false;; *) true;; esac && [ "$(grep -c "^--paso generar" "$tmp/prov.log")" = 7 ]'
     sed -i 's/^SITE_DOMINIO=.*/SITE_DOMINIO="clinic.example"/' "$ROOT/sites/113314/site.sh"
   fi
-  cp "$tmp/prov.stub" "$ROOT/scripts/provisionador.py"; cp "$tmp/docker.rp" "$tshim/docker"; rm -f "$tmp/renueva" "$tmp/firma-falla" "$tmp/restart-falla"
+  cp "$tmp/prov.stub" "$ROOT/scripts/provisionador.py"; cp "$tmp/docker.rp" "$tshim/docker"; rm -f "$tmp/renueva" "$tmp/firma-falla" "$tmp/restart-falla" "$tmp/apache.st"
   # R22: by IP the install's last lines hand the staff's devices the CA, with the fingerprint openssl
   # reads off the very file; a domain's install, or an address with no CA yet, prints nothing
   mkdir -p "$tmp/aps-sc/certificados/ca"
@@ -2203,7 +2237,7 @@ EOF
   cat > "$tshim/docker" <<SHIM
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "$tmp/mc.argv"
-case "\$1" in ps) cat "$tmp/mc.ps" 2>/dev/null ;; inspect) cat "$tmp/mc.env" 2>/dev/null ;; esac
+case "\$1 \$3" in ps*) cat "$tmp/mc.ps" 2>/dev/null ;; *State.Running*) cat "$tmp/mc.apache" 2>/dev/null ;; inspect*) cat "$tmp/mc.env" 2>/dev/null ;; esac
 exit 0
 SHIM
   chmod +x "$tshim/docker"; : > "$tmp/mc.argv"; : > "$tmp/mc.ps"
@@ -2234,6 +2268,12 @@ SHIM
     out2="$(APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 10.0.0.5 2>&1; echo "FAIL=$FAIL")"
     check "install by IP (R22): a started suite must carry both env lines — one alone is refused; both, and it is taken as it runs" \
       '! grep -q "^run" "$tmp/mc.argv" && case "$out" in *"✗ la suite ya se inició sin el certificado propio"*"FAIL=1"*) ;; *) false;; esac && case "$out2" in *"✓ La suite ya está iniciada"*"FAIL=0"*) ;; *) false;; esac'
+    mkdir -p "$APS_HOME/certificados/suite"; touch "$APS_HOME/certificados/suite/tls.crt"
+    printf 'true 2000-01-01T00:00:00Z\n' > "$tmp/mc.apache"; : > "$tmp/mc.argv"
+    out="$(APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 10.0.0.5 2>&1; echo "FAIL=$FAIL")"
+    rm -f "$tmp/mc.apache" "$APS_HOME/certificados/suite/tls.crt"
+    check "install by IP (R22): a start on a running suite loads the leaf it signed again — apache, started before it, is restarted" \
+      '[ "$(grep -c "^restart aps-conecta-apache$" "$tmp/mc.argv")" = 1 ] && case "$out" in *"✓ Certificado de la suite renovado: apache reiniciado"*"✓ La suite ya está iniciada"*"FAIL=0"*) ;; *) false;; esac'
     : > "$tmp/mc.argv"
     out="$(APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite clinica.example 2>&1; echo "FAIL=$FAIL")"
     check "install by IP (R22): a suite started by IP is not taken for a domain — it names the reinstall" \
