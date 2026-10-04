@@ -372,22 +372,36 @@ do
 done
 rm -f "$smoke_jar" "$smoke_body"
 fi
-# 16. Territorio's tile_url is not the B-019 shape (org review L5-07 — the mirror of check 14
-# for the basemap): phase 16 defaults it to the loopback tiles service, which works for a
-# browser on this box and for nobody else — a public-domain install passes every other gate
-# green while every off-host browser shows «No se pudo cargar el fondo de mapa». The same
-# contradiction test as eurooffice's: a loopback tile_url together with a non-loopback
-# trusted domain cannot both be right. From THIS box the tiles URL is reachable either way,
-# so reachability is not the gate — the CONTRADICTION is (B-019's own lesson).
-_tiles_url=$(occ config:app:get territorio tile_url 2>/dev/null | tr -d '\r')
-if [ -n "$_tiles_url" ]; then
-  _remote_domain=$(occ config:system:get trusted_domains 2>/dev/null \
-    | tr -d '\r' | grep -vxE 'localhost|127\.0\.0\.1|\[::1\]|nextcloud|' | head -1)
-  case "$_tiles_url" in
-    *localhost*|*127.0.0.1*|*'[::1]'*)
-      [ -z "$_remote_domain" ] \
-        || fail "territorio tile_url is '$_tiles_url' but this instance is also reached at '$_remote_domain' — off-host browsers get no basemap. Set TILES_PUBLIC_URL in .env and re-seed (phase 16-app-policy) — the B-019 shape, mirrored (org L5-07)" ;;
-  esac
-fi
+# 16. The basemap, same-origin at /tiles/ (L5). Phase 16 derives territorio's tile_url from how
+# this instance is reached (overwrite.cli.url), and apache binds the host's map folder read-only
+# at /aps-tiles — the AIO fork's own route, ahead of Nextcloud. Three facts, one check: the URL
+# is the derived one; the bind exists (without it /tiles/ is a 404 nothing else ever reports —
+# the suite runs fine before the first map exists); and a ranged read answers 206 with the PMTiles
+# magic and no Content-Encoding (Caddy's encode leaves the archive's octet-stream alone — the
+# bytes are already compressed, and a re-compressed range breaks the format). A 404 WITH the
+# bind is the one non-failure: the suite is up, the route is right, and the map is simply not
+# built on this box yet — step 4 builds it.
+_occu="$(occ config:system:get overwrite.cli.url 2>/dev/null | tr -d '\r')"
+_tiles_url="$(occ config:app:get territorio tile_url 2>/dev/null | tr -d '\r')"
+[ "$_tiles_url" = "${_occu%/}/tiles/chile.pmtiles" ] \
+  || fail "territorio tile_url is '$_tiles_url' but this instance is reached at '$_occu' — expected ${_occu%/}/tiles/chile.pmtiles. Re-seed: phase 16-app-policy derives it from overwrite.cli.url"
+case "$(docker inspect -f '{{range .Mounts}} {{.Destination}} {{end}}' aps-conecta-apache 2>/dev/null)" in
+  *" /aps-tiles "*) ;;
+  *) fail "aps-conecta-apache has no /aps-tiles mount — the suite cannot serve /tiles/. The mastercontainer must be created with APS_TILES_DIR=/srv/aps-conecta/tiles (the folder aps-conecta mapa builds into): re-create it as docs/INSTALLER.md §9 says" ;;
+esac
+_tiles_hdr="$(mktemp)"
+_tiles_out="$(curl -s -D "$_tiles_hdr" -r 0-6 -H 'Accept-Encoding: gzip, zstd' -w '\n%{http_code}' \
+  "http://localhost:${HTTP_PORT}/tiles/chile.pmtiles" 2>/dev/null || echo $'\n000')"
+_tiles_code="${_tiles_out##*$'\n'}"
+_tiles_body="${_tiles_out%$'\n'*}"
+case "$_tiles_code" in
+  206) [ "$_tiles_body" = "PMTiles" ] \
+        || fail "GET /tiles/chile.pmtiles answered 206 but its first bytes are not the PMTiles magic — the archive is corrupt or something else serves the route. Run: sudo bash host/tiles.sh check"
+       grep -qi '^content-encoding:' "$_tiles_hdr" \
+        && fail "GET /tiles/chile.pmtiles comes Content-Encoding-compressed — the archive is served byte-exact by Range; a recompressed range breaks the pmtiles format. Run: sudo bash host/tiles.sh check" ;;
+  404) echo "NOTE: /tiles/chile.pmtiles is 404 — the bind exists and the route is right, but the basemap is not built on this box. sudo aps-conecta mapa builds it" ;;
+  *) fail "GET /tiles/chile.pmtiles answered HTTP ${_tiles_code} with the bind present (expected 206 with the PMTiles magic). Run: sudo bash host/tiles.sh check" ;;
+esac
+rm -f "$_tiles_hdr"
 
-echo "PASS: core stack healthy — installed, PostgreSQL ready, Redis PONG, /status.php 200, no branding leak, cron scheduling, app policy, no remember-me, no stale app signature, legacy screens branded, clean admin home, app store off, office URL matches how this instance is reached"
+echo "PASS: core stack healthy — installed, PostgreSQL ready, Redis PONG, /status.php 200, no branding leak, cron scheduling, app policy, no remember-me, no stale app signature, legacy screens branded, clean admin home, app store off, office URL matches how this instance is reached, the basemap same-origin at /tiles/"
