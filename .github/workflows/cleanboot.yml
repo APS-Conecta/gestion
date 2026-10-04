@@ -172,6 +172,19 @@ jobs:
           if systemctl is-enabled aps-conecta-tiles.timer >/dev/null 2>&1; then
             echo "FAIL: the monthly basemap timer is enabled with no map built" >&2; exit 1
           fi
+      # Q18 (org review L5-S3): the 404 posture is a contract, not an accident. Before the
+      # fixture lands, the operator's own smoke must be GREEN on the unbuilt-map posture —
+      # bind present, monthly timer off, 404 said as a NOTE — and must SAY so: the NOTE is the
+      # honest state, and a silent green cannot tell "map not built yet" from "route broken".
+      # This step proves both halves on a real install; the fixture step below then flips the
+      # posture to 206, and make test's smoke later asserts that one instead.
+      - name: Smoke green on the 404 posture, the NOTE naming the unbuilt map
+        run: |
+          out="$RUNNER_TEMP/smoke-404.out"
+          make smoke > "$out" 2>&1 || { cat "$out" >&2; echo "FAIL: smoke must be green with the map unbuilt (bind present, timer off)" >&2; exit 1; }
+          grep -q 'NOTE: /tiles/chile.pmtiles is 404' "$out" \
+            || { cat "$out" >&2; echo "FAIL: the unbuilt-map posture must print its NOTE — silent green cannot tell unbuilt from unbound" >&2; exit 1; }
+          cat "$out"
       # L5: prove the suite's own /tiles/ route on the real apache — a deterministic fixture (the
       # PMTiles magic + compressible lines, exactly 150000 bytes) stands in for the 1,1 GB archive
       # the runner never builds. Dropped AFTER the install and the timer assert: the install saw

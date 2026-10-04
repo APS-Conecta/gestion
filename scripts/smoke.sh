@@ -375,20 +375,35 @@ fi
 # 16. The basemap, same-origin at /tiles/ (L5). Phase 16 derives territorio's tile_url from how
 # this instance is reached (overwrite.cli.url), and apache binds the host's map folder read-only
 # at /aps-tiles — the AIO fork's own route, ahead of Nextcloud. Three facts, one check: the URL
-# is the derived one; the bind exists (without it /tiles/ is a 404 nothing else ever reports —
-# the suite runs fine before the first map exists); and a ranged read answers 206 with the PMTiles
-# magic and no Content-Encoding (Caddy's encode leaves the archive's octet-stream alone — the
-# bytes are already compressed, and a re-compressed range breaks the format). A 404 WITH the
-# bind is the one non-failure: the suite is up, the route is right, and the map is simply not
-# built on this box yet — step 4 builds it.
+# is the derived one (an unreadable overwrite.cli.url is its own failure — the wizard's first
+# start writes it, and a re-seed cannot fix what no wizard ever set); the bind exists AND ITS
+# SOURCE IS THE DIRECTORY THE MASTERCONTAINER'S ENV LINE NAMES (org review I1: the three stores
+# of the bind — the mastercontainer's env, the fork's sticky aps_tiles_dir, apache's realized
+# mount — can diverge silently, because a changed env line rewrites the sticky but never
+# recreates apache; a destination-only grep passes on every divergent shape while /tiles/ serves
+# a stale map, so the realized mount is compared against the env line, facts not reachability —
+# the check-14 discipline); and a ranged read answers 206 with the PMTiles magic and no
+# Content-Encoding (Caddy's encode leaves the archive's octet-stream alone — the bytes are
+# already compressed, and a re-compressed range breaks the format). A 404 WITH the bind is the
+# one non-failure — the suite is up, the route is right, and the map is simply not built on this
+# box yet — UNLESS the monthly timer is enabled: the install only enables it once an archive
+# exists, so a 404 with the timer on means the claimed map is not being served (org review I3).
 _occu="$(occ config:system:get overwrite.cli.url 2>/dev/null | tr -d '\r')"
 _tiles_url="$(occ config:app:get territorio tile_url 2>/dev/null | tr -d '\r')"
+[ -n "$_occu" ] \
+  || fail "cannot read overwrite.cli.url — territorio's tile_url cannot be derived or checked, and a re-seed cannot fix it: the wizard's first start writes it (the AIO entrypoint, from the domain it was given). Diagnose: sudo docker logs nextcloud-aio-mastercontainer"
 [ "$_tiles_url" = "${_occu%/}/tiles/chile.pmtiles" ] \
   || fail "territorio tile_url is '$_tiles_url' but this instance is reached at '$_occu' — expected ${_occu%/}/tiles/chile.pmtiles. Re-seed: phase 16-app-policy derives it from overwrite.cli.url"
-case "$(docker inspect -f '{{range .Mounts}} {{.Destination}} {{end}}' aps-conecta-apache 2>/dev/null)" in
-  *" /aps-tiles "*) ;;
-  *) fail "aps-conecta-apache has no /aps-tiles mount — the suite cannot serve /tiles/. The mastercontainer must be created with APS_TILES_DIR=/srv/aps-conecta/tiles (the folder aps-conecta mapa builds into): re-create it as docs/INSTALLER.md §9 says" ;;
-esac
+# The bind's source (I1): apache's realized /aps-tiles mount vs the mastercontainer's own
+# APS_TILES_DIR env line — the same line start_suite guards (host/aps-conecta:876).
+_aps_bind="$(docker inspect -f '{{range .Mounts}}{{.Destination}} {{.Source}}{{println}}{{end}}' aps-conecta-apache 2>/dev/null | awk '$1 == "/aps-tiles" { print $2 }')"
+_tiles_env="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' nextcloud-aio-mastercontainer 2>/dev/null | sed -n 's/^APS_TILES_DIR=//p')"
+[ -n "$_aps_bind" ] \
+  || fail "aps-conecta-apache has no /aps-tiles mount — the suite cannot serve /tiles/. The mastercontainer must be created with APS_TILES_DIR=/srv/aps-conecta/tiles (the folder aps-conecta mapa builds into): re-create it as docs/INSTALLER.md §9 says"
+[ -n "$_tiles_env" ] \
+  || fail "aps-conecta-apache binds $_aps_bind at /aps-tiles but the mastercontainer carries no APS_TILES_DIR line to compare it against — the bind cannot be verified. Re-create the mastercontainer as docs/INSTALLER.md §9 says"
+[ "$_aps_bind" = "$_tiles_env" ] \
+  || fail "aps-conecta-apache binds $_aps_bind at /aps-tiles but the mastercontainer was created with APS_TILES_DIR=$_tiles_env — apache was never recreated after the change, and /tiles/ serves a folder nobody names anymore. Re-create it as docs/INSTALLER.md §9 says (the remedy includes docker rm -f aps-conecta-apache)"
 _tiles_hdr="$(mktemp)"
 _tiles_out="$(curl -s -D "$_tiles_hdr" -r 0-6 -H 'Accept-Encoding: gzip, zstd' -w '\n%{http_code}' \
   "http://localhost:${HTTP_PORT}/tiles/chile.pmtiles" 2>/dev/null || echo $'\n000')"
@@ -399,7 +414,10 @@ case "$_tiles_code" in
         || fail "GET /tiles/chile.pmtiles answered 206 but its first bytes are not the PMTiles magic — the archive is corrupt or something else serves the route. Run: sudo bash host/tiles.sh check"
        grep -qi '^content-encoding:' "$_tiles_hdr" \
         && fail "GET /tiles/chile.pmtiles comes Content-Encoding-compressed — the archive is served byte-exact by Range; a recompressed range breaks the pmtiles format. Run: sudo bash host/tiles.sh check" ;;
-  404) echo "NOTE: /tiles/chile.pmtiles is 404 — the bind exists and the route is right, but the basemap is not built on this box. sudo aps-conecta mapa builds it" ;;
+  404) if systemctl is-enabled aps-conecta-tiles.timer >/dev/null 2>&1; then
+          fail "GET /tiles/chile.pmtiles is 404 but the monthly basemap timer (aps-conecta-tiles.timer) is enabled — the install claimed a map and the suite serves none: the archive is missing from the folder the suite binds. Run: sudo bash host/tiles.sh check"
+        fi
+        echo "NOTE: /tiles/chile.pmtiles is 404 — the bind exists and the route is right, but the basemap is not built on this box. sudo aps-conecta mapa builds it" ;;
   *) fail "GET /tiles/chile.pmtiles answered HTTP ${_tiles_code} with the bind present (expected 206 with the PMTiles magic). Run: sudo bash host/tiles.sh check" ;;
 esac
 rm -f "$_tiles_hdr"
