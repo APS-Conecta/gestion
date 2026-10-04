@@ -1036,6 +1036,31 @@ if missing("```bash\n# 3. Preflight\n```\n", ["3-preflight"]) != ["3-preflight"]
 if missing("<a id=\"3-preflight\"></a>\n## 2. Preflight\n", ["3-preflight"]): print("an explicit anchor was not read"); sys.exit(1)
 print("ok")'
 
+# --- gate: the install by IP's CA guide (R22) — one walkthrough, pointed at where it is -------------
+# The console's last lines and step 7 send staff to GUIA §11; the English twin is INSTALLER §14. The
+# pointers name the headings that hold the guide, and the two sections carry the same commands, byte
+# for byte, and as many bullets — the one walkthrough in two languages. Same validator on drifted pairs.
+check python3 -c '
+import re, sys
+def section(text, head):
+    if head not in text: return None
+    s = text[text.index(head):]
+    end = s.find("\n## ", 1)
+    return s if end < 0 else s[:end]
+def blocks(text):
+    return re.findall(r"^ *```[a-z]*\n(.*?)^ *```", text, re.M | re.S)
+def twins(en, es):
+    return (en is not None and es is not None and blocks(en) and blocks(en) == blocks(es)
+            and len(re.findall(r"^- \*\*", en, re.M)) == len(re.findall(r"^- \*\*", es, re.M)))
+en = section(open("docs/INSTALLER.md", encoding="utf-8").read(), "\n## 14. Without a domain: this server\x27s IP\n")
+es = section(open("docs/GUIA-CLINICA.md", encoding="utf-8").read(), "\n## 11. Sin dominio: la dirección IP del servidor\n")
+if not twins(en, es): print("INSTALLER §14 and GUIA §11 are missing or carry different commands"); sys.exit(1)
+if "docs/GUIA-CLINICA.md §11" not in open("host/aps-conecta", encoding="utf-8").read(): print("the console does not point at GUIA §11"); sys.exit(1)
+if "(guía, §11)" not in open("scripts/provisionador.py", encoding="utf-8").read(): print("step 7 does not point at GUIA §11"); sys.exit(1)
+if twins("## 14. x\n```\na\n```\n", "## 11. y\n```\nb\n```\n"): print("a drifted pair passed"); sys.exit(1)
+if twins("## 14. x\n- **A**\n```\na\n```\n", "## 11. y\n```\na\n```\n"): print("a pair missing a bullet passed"); sys.exit(1)
+print("ok")'
+
 # --- gate: the suite's containers are aps-conecta-* (the AIO fork's patch 240) ----------------
 # The fork renames its 19 sibling containers; the mastercontainer, the nextcloud-aio network and
 # compose project and the nextcloud_aio_* volumes keep upstream's names. A sibling spelled the old way

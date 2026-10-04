@@ -196,6 +196,21 @@ image digests live there and are deliberately not copied here — one fact, one 
   v0.3.0 or earlier keeps its `nextcloud-aio-*` containers and is reinstalled (`docs/INSTALLER.md`
   §12). `make test` refuses a sibling spelled the old way.
 
+- **Install by IP over HTTPS** (L4 S6b, R22) — a clinic without a domain writes one of the server's
+  IPv4 addresses where the domain goes (step 7 or `SITE_DOMINIO`); another server's address is
+  refused and the wizard's domain check is skipped.
+  - `provisionador.py --paso certificado-suite --ip A` signs the suite's leaf from the installer's CA
+    into `/opt/aps-conecta/certificados/suite` (apache's, 0400) and copies the CA's certificate alone
+    to `…/ca/aps-conecta-ca.crt`. The weekly run signs it again 30 days before it expires and
+    restarts apache.
+  - The run command gains `APS_TLS_DIR` and `NEXTCLOUD_TRUSTED_CACERTS_DIR` by IP only; a suite
+    started for a domain is refused for an address (reinstall, `docs/INSTALLER.md` §12).
+  - Phase 07 imports the CA into Nextcloud's own bundle; phase 14 points Euro-Office's
+    server-to-server URLs inside the suite's network.
+  - Step 7 offers the CA («Descargar el certificado», `/api/ca`) with its fingerprint, and the
+    install's last lines print both. `docs/INSTALLER.md` §14 and `docs/GUIA-CLINICA.md` §11: the CA
+    on Windows, macOS, Ubuntu and Android.
+
 ### Removed
 
 - **`scripts/final-validation.sh`** — the whole-installer harness kept a second copy of the wizard

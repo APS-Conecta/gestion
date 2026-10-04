@@ -40,6 +40,14 @@ APS_HOME="${APS_HOME:-/opt/aps-conecta}"   # the bundle lands in $APS_HOME/gesti
 # the provisionador's CERT_DIR/suite and CERT_DIR/ca, pinned by its self-test
 suite_tls_dir() { printf '%s' "$APS_HOME/certificados/suite"; }
 suite_ca_dir() { printf '%s' "$APS_HOME/certificados/ca"; }
+staff_ca() {  # by IP (R22), the install's last lines: the CA each staff device imports, and its fingerprint
+  local ca fp
+  ca="$(suite_ca_dir)/aps-conecta-ca.crt"
+  is_ipv4 "$(site_domain || true)" && [ -f "$ca" ] || return 0
+  fp="$(openssl x509 -in "$ca" -noout -fingerprint -sha256 2>/dev/null)"; fp="${fp#*=}"
+  printf '  Certificado para los equipos del personal: %s (huella SHA-256 %s)\n' "$ca" "$fp"
+  printf '  Cada equipo lo importa una vez: docs/GUIA-CLINICA.md §11\n'
+}
 BIN_DIR="${BIN_DIR:-/usr/local/bin}"       # where the `aps-conecta` command is linked
 in_checkout() { [ -f "$(prov_path)" ]; }    # false only for the downloaded file, on its own
 in_checkout || APS_SUITE_TAG="${APS_SUITE_TAG:-$BUNDLE_TAG}"
@@ -247,6 +255,7 @@ cmd_install() {  # the install: the welcome, then the steps in registry order. I
   fi
   echo "INSTALACIÓN: ✓ — entregue a cada persona su fila: sudo cat /opt/aps-conecta/credentials.txt"
   echo "  y verifique la instancia: aps-conecta revalidate (registro: $SILENT_LOG)"
+  staff_ca
 }
 
 usage() {  # Spanish, generated from the registry — never a slice of this file's own header
@@ -732,7 +741,8 @@ step_abrir() {  # the web installer walks steps 6–9 as a CHILD of this console
   domain="$(site_domain || true)"
   if [ -n "$domain" ]; then printf '  Listo. Acceso del personal: https://%s\n' "$domain"; else printf '  Listo.\n'; fi
   printf '  Instalador web cerrado; enlace inválido.\n'
-  printf '  Credenciales: entregue a cada persona su fila — sudo cat %s/credentials.txt\n\n' "$APS_HOME"
+  printf '  Credenciales: entregue a cada persona su fila — sudo cat %s/credentials.txt\n' "$APS_HOME"
+  staff_ca; echo
   if [ "$FAIL" -ne 0 ]; then
     printf '  Falta lo marcado con ✗ arriba: ejecute el comando que nombra.\n'
     exit 1
@@ -2097,6 +2107,19 @@ SHIM
     sed -i 's/^SITE_DOMINIO=.*/SITE_DOMINIO="clinic.example"/' "$ROOT/sites/113314/site.sh"
   fi
   cp "$tmp/prov.stub" "$ROOT/scripts/provisionador.py"; cp "$tmp/docker.rp" "$tshim/docker"; rm -f "$tmp/renueva" "$tmp/firma-falla" "$tmp/restart-falla"
+  # R22: by IP the install's last lines hand the staff's devices the CA, with the fingerprint openssl
+  # reads off the very file; a domain's install, or an address with no CA yet, prints nothing
+  mkdir -p "$tmp/aps-sc/certificados/ca"
+  openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -subj /CN=prueba -days 1 \
+    -keyout "$tmp/sc.key" -out "$tmp/aps-sc/certificados/ca/aps-conecta-ca.crt" >/dev/null 2>&1
+  sc_fp="$(openssl x509 -in "$tmp/aps-sc/certificados/ca/aps-conecta-ca.crt" -noout -fingerprint -sha256 | cut -d= -f2)"
+  sed -i 's/^SITE_DOMINIO=.*/SITE_DOMINIO="10.0.0.5"/' "$ROOT/sites/113314/site.sh"
+  sc_ip="$(APS_HOME="$tmp/aps-sc"; staff_ca)"; sc_sin="$(APS_HOME="$tmp/aps-ninguno"; staff_ca)"
+  sed -i 's/^SITE_DOMINIO=.*/SITE_DOMINIO="clinic.example"/' "$ROOT/sites/113314/site.sh"
+  sc_dom="$(APS_HOME="$tmp/aps-sc"; staff_ca)"
+  check "staff CA (R22): by IP the install ends naming the CA's file and its fingerprint, and the guide's section; else nothing — both tails print it" \
+    '[ "$sc_ip" = "  Certificado para los equipos del personal: $tmp/aps-sc/certificados/ca/aps-conecta-ca.crt (huella SHA-256 $sc_fp)
+  Cada equipo lo importa una vez: docs/GUIA-CLINICA.md §11" ] && [[ "$sc_fp" =~ ^([0-9A-F]{2}:){31}[0-9A-F]{2}$ ]] && [ -z "$sc_sin" ] && [ -z "$sc_dom" ] && declare -f step_abrir | grep -qE "^ +staff_ca;?$" && declare -f cmd_install | grep -qE "^ +staff_ca;?$"'
 
   # ── abrir (L3 S1): the web installer runs as a child; a green exit wires the timers and closes the
   # install with «Listo»; Ctrl+C or a failed start says how to reopen (the fake provisionador above)

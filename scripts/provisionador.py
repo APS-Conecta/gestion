@@ -2079,7 +2079,7 @@ def screen_contenedores():
       escapear(t) + "</span></li>").join("") : "";
     zona("s-nota").hidden = p.estado !== "en_curso";
     zona("s-datos").hidden = !s.preparada;   // only what the wizard was given, never a guess
-    const datos = s.preparada ? JSON.stringify([s.dominio, s.opciones, s.frase, s.asistente]) : "";
+    const datos = s.preparada ? JSON.stringify([s.dominio, s.opciones, s.frase, s.asistente, s.ca]) : "";
     if (datos && datos !== vistoDatos) {   // rebuilt only when it changes: a selection or a click survives the poll
       vistoDatos = datos;
       zona("s-datos").innerHTML = '<dl class="dl"><dt>' + (/^[0-9.]+$/.test(s.dominio || "") ? "Dirección IP" : "Dominio") +
@@ -2087,7 +2087,10 @@ def screen_contenedores():
         "</dd><dt>Zona horaria</dt><dd>Santiago</dd><dt>Oficina</dt><dd>Euro-Office</dd><dt>Talk</dt><dd>" +
         (s.opciones.talk ? "Activado" : "Desactivado") + "; grabación " +
         (s.opciones.grabacion ? "activada" : "desactivada") +
-        "</dd><dt>Respaldo</dt><dd>Diario a las 04:00 hora de Santiago, en este servidor</dd></dl>" +
+        "</dd><dt>Respaldo</dt><dd>Diario a las 04:00 hora de Santiago, en este servidor</dd>" +
+        (s.ca ? '<dt>Certificado</dt><dd>Propio del instalador. <a href="/api/ca" download>Descargar el ' +
+          'certificado</a>: cada equipo del personal lo importa una vez (guía, §11). Huella SHA-256: ' +
+          '<span class="frase" translate="no">' + escapear(s.ca) + "</span></dd>" : "") + "</dl>" +
         (s.frase ? '<div class="aviso"><strong>Frase de contraseña del asistente:</strong> <span ' +
           'class="frase" translate="no">' + escapear(s.frase) + "</span><br>El asistente la pide para ingresar.</div>" +
           '<div class="fila"><a class="btn" id="s-abrir" target="_blank" rel="noopener">Abrir el asistente ' +
@@ -2636,6 +2639,17 @@ def dominio_actual():
     return dominio if DOMINIO.fullmatch(dominio) else ""
 
 
+def ca_personal():
+    """The CA's certificate the staff's devices import (R22): an install by IP's, once its step signed
+    the suite's leaf (CERT_DIR/ca); None for a domain's."""
+    try:
+        ipaddress.IPv4Address(dominio_actual())
+    except ValueError:
+        return None
+    ca = os.path.join(CERT_DIR, SUITE_CA, CA_PUBLICA)
+    return ca if os.path.isfile(ca) else None
+
+
 def opciones_actuales():
     """The Talk options the wizard was given (the host records them with the domain): (talk, grabacion),
     or None before step 7 — what the page shows and the containers it waits for."""
@@ -2671,7 +2685,7 @@ def talk_ahora(vistos):
 def estado_suite():
     """GET /api/suite — step 7 as the server sees it: the server's size and Talk's verdict (R26), the
     five apps (a12), the wizard's preparation, then the suite's containers (R48). The passphrase is
-    served while it is needed: prepared, not yet installed."""
+    served while it is needed: prepared, not yet installed. By IP, the staff's CA's fingerprint (R22)."""
     st, vistos = contenedores()
     if st != 200:
         return st, vistos
@@ -2692,6 +2706,7 @@ def estado_suite():
         except OSError:
             pass
     s = dict(SUITE)
+    ca = ca_personal()
     return 200, {"servidor": {"gib": memoria, "nucleos": nucleos, "suite_gib": SUITE_GIB},
                  "talk": {"cabe": talk[0], "texto": talk[1]},
                  "grabacion": {"cabe": grabacion[0], "texto": grabacion[1]},
@@ -2700,6 +2715,7 @@ def estado_suite():
                  "preparacion": {"estado": s["estado"], "hechos": list(s["hechos"]), "motivo": s["motivo"],
                                  "pasos": [t for _p, t in PASOS_SUITE]},
                  "frase": frase, "asistente": f"https://{LAN_IP}:8080", "ip": LAN_IP,
+                 "ca": huella(ca) if ca else "",
                  "contenedores": base + extra, "en_marcha": en_marcha, "instalada": instalada}
 
 
@@ -2839,6 +2855,20 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self.send_bytes(200, "text/csv; charset=utf-8", body["csv"].encode("utf-8"),
                             {"Content-Disposition": f'attachment; filename="{body["nombre"]}"'})
+            return
+        if path == "/api/ca":   # the CA the staff's devices import — by IP only (R22); a file, not JSON
+            if not self.authorized():
+                self.send_json(401, {"error": "token ausente o inválido"},
+                               {"WWW-Authenticate": "Bearer"})
+                return
+            ca = ca_personal()
+            if ca is None:
+                self.send_json(404, {"error": "sin certificado propio: la suite se instala con un dominio"})
+                return
+            with open(ca, "rb") as fh:
+                data = fh.read()
+            self.send_bytes(200, "application/x-x509-ca-cert", data,
+                            {"Content-Disposition": f'attachment; filename="{CA_PUBLICA}"'})
             return
         if path in ("/api/suite", "/api/centros", "/api/centro", "/api/equipos", "/api/ejecucion"):
             if not self.authorized():
@@ -5143,6 +5173,21 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                 with open(os.path.join(renov_dir, "ca.crt"), "rb") as fh, \
                         open(os.path.join(renov_dir, SUITE_CA, CA_PUBLICA), "rb") as fh2:
                     renov_misma_ca = fh.read() == fh2.read()
+                # the CA the staff's devices import: served to the signed-in operator, by IP only
+                CERT_DIR = certs
+                with open(os.path.join(AIO_STATE, "dominio"), "w", encoding="utf-8") as fh:
+                    fh.write("127.0.0.1\n")
+                ca_st0, _ = call("GET", "/api/ca", token=None)
+                with urllib.request.urlopen(urllib.request.Request(
+                        base + "/api/ca", headers={"Authorization": f"Bearer {TOKEN}"}), timeout=10) as r:
+                    ca_bajada, ca_tipo, ca_disp = (r.read(), r.headers.get("Content-Type", ""),
+                                                   r.headers.get("Content-Disposition", ""))
+                ca_st1, ca_suite_ip = call("GET", "/api/suite")
+                with open(os.path.join(AIO_STATE, "dominio"), "w", encoding="utf-8") as fh:
+                    fh.write("gestion.clinica.example\n")
+                ca_st2, _ = call("GET", "/api/ca")
+                ca_st3, ca_suite_dom = call("GET", "/api/suite")
+                os.remove(os.path.join(AIO_STATE, "dominio"))
             finally:
                 CERT_DIR = cert_prev
                 globals()["APACHE_UID"] = uid_prev
@@ -5166,6 +5211,15 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                   suite_salud == 200)
             check("suite certificate (R22): a sign that dies halfway leaves apache's pair as it was; the next sign clears what it left",
                   par_intacto and c6[0] == 0 and par_limpio)
+            with open(os.path.join(publica, CA_PUBLICA), "rb") as fh:
+                ca_bytes = fh.read()
+            check("suite certificate (R22): by IP the installer hands the signed-in operator the CA's file, and step 7 shows its "
+                  "fingerprint beside the download; a domain's install has neither",
+                  ca_st0 == 401 and ca_bajada == ca_bytes and ca_tipo == "application/x-x509-ca-cert"
+                  and f'filename="{CA_PUBLICA}"' in ca_disp
+                  and ca_st1 == 200 and ca_suite_ip["ca"] == huella(os.path.join(publica, CA_PUBLICA))
+                  and ca_st2 == 404 and ca_st3 == 200 and ca_suite_dom["ca"] == ""
+                  and 'href="/api/ca" download' in screen_contenedores())
             with open(HOST_CLI, encoding="utf-8") as fh:
                 host_txt = fh.read()
             check("suite certificate (R22): the host's two directories are the provisionador's own (one fact, two homes)",
@@ -5175,6 +5229,11 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                 lib_txt = fh.read()
             check("suite certificate (R22): Nextcloud imports the CA by the file name this step writes (phase 07, mounted at the OS store)",
                   f"\nINSTALLER_CA=/usr/local/share/ca-certificates/{CA_PUBLICA}\n" in lib_txt)
+            guias = [open(os.path.join(ROOT_DIR, "docs", n), encoding="utf-8").read() for n in ("INSTALLER.md", "GUIA-CLINICA.md")]
+            check("suite certificate (R22): the console's last lines and both guides name this step's files (one fact, four homes)",
+                  f'"$(suite_ca_dir)/{CA_PUBLICA}"' in host_txt
+                  and all(os.path.join(CERT_DIR_DEFAULT, SUITE_CA, CA_PUBLICA) in g
+                          and os.path.join(CERT_DIR_DEFAULT, SUITE_TLS) in g for g in guias))
 
             # the fragment login in a real browser (a13) — where Playwright is installed (this box,
             # the L7 boxes); elsewhere the arm says so and is not counted

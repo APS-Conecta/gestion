@@ -12,7 +12,8 @@ the suite's version is this repo's release tag (D12).
   other containers as a lockstep set of 20 images under `ghcr.io/aps-conecta/*`.
 - **The Provisionador** — this repo's checkout on the host, driving the provisioning phases
   (`provisioning/` 05→60) over `docker exec` against the running instance.
-- **One domain** — the host must be reachable at it from the LAN (and the host itself; §7).
+- **One address** — a domain the host is reachable at from the LAN and from itself (§7), or, without
+  one, this server's IP (§14).
 
 ## 2. Get the host bundle
 
@@ -56,7 +57,7 @@ docker run --init --sig-proxy=false --name nextcloud-aio-mastercontainer \
 ```
 
 `NEXTCLOUD_STARTUP_APPS` is deliberately **empty**: the apps and the theme are baked into the
-image (D4), so boot-time installs would be noise. If preflight reds on the domain probe, do
+image (D4), so boot-time installs would be noise. By IP (§14) the command carries two more lines. If preflight reds on the domain probe, do
 §7 before continuing — the wizard will not pass the check either.
 
 ## 4. The wizard (:8080)
@@ -64,8 +65,8 @@ image (D4), so boot-time installs would be noise. If preflight reds on the domai
 1. Paste the run command. The wizard, «APS Conecta Gestión AIO», comes up in Spanish (es-CL formal).
 2. The web installer's step 7 fills it: `aps-conecta asistente-aio --preparar` starts the
    mastercontainer, captures the initial password (`GET /setup` shows it once; the installer keeps
-   it in `/opt/aps-conecta/aio/master.pw`, 0600, and shows it on step 7), and posts the domain, the
-   timezone, the options (Euro-Office, the suite's only office; Talk and its recording as the
+   it in `/opt/aps-conecta/aio/master.pw`, 0600, and shows it on step 7), and posts the domain (or this
+   server's IP, §14), the timezone, the options (Euro-Office, the suite's only office; Talk and its recording as the
    server's memory and cores allow, port 3478 free; Whiteboard and Imaginary off) and the daily
    backup (§11).
 3. Log in to the wizard with that password and press Start, leaving the options as step 7 set them:
@@ -88,8 +89,8 @@ certificate, which it signs with OpenSSL 3 (Ubuntu 22.04+, Debian 12+; an older 
 - **Sign-in.** The session starts by itself. The code rides the URL fragment, which no request
   carries, and leaves the address bar at once; without it the page asks for the code. The cookie
   is `Secure`, so nothing crosses the LAN in clear.
-- **The CA.** It lives in `/opt/aps-conecta/certificados` (made once and kept; the suite's own
-  certificate, L4, hangs from it). The leaf is re-signed for the link's address on every start.
+- **The CA.** It lives in `/opt/aps-conecta/certificados` (made once and kept; by IP, the suite's own
+  certificate hangs from it, §14). The leaf is re-signed for the link's address on every start.
 - **One installer at a time.** A second `abrir` while one is open is refused, naming the port.
 
 The browser flow — the centre (Región › Comuna › Tipo, or a search), the suite's containers, the
@@ -143,7 +144,8 @@ If preflight reds there, one of these fixes it (pick one):
   `sudo systemctl restart docker`.
 
 Never `SKIP_DOMAIN_VALIDATION` — it silences the wizard's check without fixing the leg the
-browsers and the gates actually use.
+browsers and the gates actually use. An install by IP skips the check by design (§14): there is no
+domain to check.
 
 ## 8. The .env the gates ride
 
@@ -153,9 +155,9 @@ the compose-era keys do not exist under AIO. The keys that matter to the gates:
 - `HTTP_PORT=443` — the public apache port; `smoke` and `revalidate` curl it
   (`http://localhost:${HTTP_PORT}/…`). Set it once; the gates read it every run.
 - `TILES_PORT` (default 8084) and `TILES_PUBLIC_URL` — §9.
-- **The office keys are absent on purpose**: under AIO the wizard's entrypoint owns the
-  document-server URLs and the JWT secret on every boot (the reason `14-office.sh`'s AIO arm
-  skips them). There is nothing office-shaped to configure on a clinic.
+- **The office keys are absent on purpose**: under AIO the wizard's entrypoint owns the public
+  document-server URL and the JWT secret on every boot; by IP, `14-office.sh` adds the two internal
+  URLs (§14). There is nothing office-shaped to configure on a clinic.
 
 ## 9. The map (tiles)
 
@@ -258,3 +260,69 @@ rollback story. Do not skip the rehearsal.
 
 A backup made by a stock Nextcloud AIO is not restored into the suite: an existing clinic moves only
 through this tool.
+
+## 14. Without a domain: this server's IP
+
+A clinic without a domain installs by one of this server's IPv4 addresses, written where the domain
+goes: step 7, or `SITE_DOMINIO` in the site file of the silent install. The suite then answers at
+`https://<ip>/` with a certificate signed by the installer's own CA, the one that signs its link (§5).
+
+- **The address** is one of this server's own (`ip -4 addr`); any other is refused. The wizard's
+  domain check is skipped: there is no DNS to check.
+- **The certificate** is signed for the address before the wizard starts, into
+  `/opt/aps-conecta/certificados/suite` (apache's, read-only). The weekly run signs it again 30 days
+  before it expires and restarts apache.
+- **The run command** carries two more lines, `--env APS_TLS_DIR=/opt/aps-conecta/certificados/suite`
+  and `--env NEXTCLOUD_TRUSTED_CACERTS_DIR=/opt/aps-conecta/certificados/ca`; step 7 and the silent
+  install sign the certificate before they run it. A suite started for a domain does not switch to an
+  address, nor the reverse: it is reinstalled (§12).
+- **Nextcloud** trusts the CA (phase 07); **the office** reaches Nextcloud inside the suite's network
+  (phase 14 writes the two internal URLs). Nothing to configure.
+
+Every device that opens the suite imports the CA once. Step 7 offers it («Descargar el
+certificado») with its SHA-256 fingerprint, and the console prints both at the end of the install;
+on the server, the operator's own copy:
+
+```bash
+sudo install -m 0644 -o "$USER" /opt/aps-conecta/certificados/ca/aps-conecta-ca.crt .
+```
+
+The fingerprint is compared before importing — on Linux and macOS:
+
+```bash
+openssl x509 -in aps-conecta-ca.crt -noout -fingerprint -sha256
+```
+
+On Windows, the same hex digits without colons:
+
+```
+certutil -decode aps-conecta-ca.crt aps-conecta-ca.der
+certutil -hashfile aps-conecta-ca.der SHA256
+```
+
+- **Windows** (Edge, Chrome, Firefox 120+), in a prompt run as administrator:
+
+  ```
+  certutil -addstore -f Root aps-conecta-ca.crt
+  ```
+
+- **macOS** (Safari, Chrome, Firefox 120+):
+
+  ```bash
+  sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain aps-conecta-ca.crt
+  ```
+
+- **Ubuntu**: the system store, then Chrome's own (Chrome reads `$HOME/.pki/nssdb` when it exists):
+
+  ```bash
+  sudo cp aps-conecta-ca.crt /usr/local/share/ca-certificates/ && sudo update-ca-certificates
+  sudo apt-get install -y libnss3-tools
+  mkdir -p $HOME/.pki/nssdb
+  [ -f $HOME/.pki/nssdb/cert9.db ] || certutil -d sql:$HOME/.pki/nssdb -N --empty-password
+  certutil -d sql:$HOME/.pki/nssdb -A -t "C,," -n aps-conecta -i aps-conecta-ca.crt
+  ```
+
+  Firefox: Settings → Privacy & Security → Certificates → View Certificates → Authorities → Import,
+  with «Trust this CA to identify websites».
+- **Android**: Settings → Security → Encryption & credentials → Install a certificate → CA
+  certificate (the names vary by maker; a screen lock is required). The Nextcloud app trusts it.
