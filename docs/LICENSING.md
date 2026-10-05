@@ -80,6 +80,8 @@ below were read from each app's `appinfo/info.xml` inside the shipped tarball, n
 | Notify Push | NC app `notify_push` 1.4.1 (vendored for the AIO bake — this stack installs it from no inventory) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `notify_push` `info.xml` |
 | Fraunces | `themes/apsconecta/core/fonts/*.woff2` (served by the theme) | SIL Open Font License 1.1 | `OFL-1.1` | Fraunces `OFL.txt` |
 | Nunito Sans | `themes/apsconecta/core/fonts/*.woff2` (served by the theme) | SIL Open Font License 1.1 | `OFL-1.1` | Nunito Sans `OFL.txt` |
+| Leaflet | `themes/apsconecta/core/mapa/leaflet.{js,css}` 1.9.4 (vendored, served by the installer at `/recursos/`) | BSD 2-Clause | `BSD-2-Clause` | Leaflet `dist/` license header; bytes pinned by `scripts/test.sh` |
+| protomaps-leaflet | `themes/apsconecta/core/mapa/protomaps-leaflet.js` 5.1.0 (vendored, served by the installer at `/recursos/`; bundles pmtiles 3.x, BSD-3) | BSD 3-Clause | `BSD-3-Clause` | protomaps-leaflet `LICENSE`; bytes pinned by `scripts/test.sh` |
 
 > **`agpl` is not a typo.** Nextcloud's schema has always accepted the bare string, and the app
 > store renders it as AGPL v3 or later; `calendar`, `side_menu` and `spreed` still declare it that way while

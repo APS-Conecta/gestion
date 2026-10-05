@@ -71,6 +71,43 @@ check bash -c '
     echo "$sha  $t" | sha256sum --check --status || { echo "$id: bytes do not match sha256= in VENDOR" >&2; rc=1; }
   done
   exit $rc'
+# --- gate (L5 S4): the vendored map libraries are the pinned bytes ---------------------------------
+# The Centro pane's engine is three files copied byte-identical from territorio's node_modules
+# (docs/LICENSING.md §3). Vendored bytes are the one diff a reviewer reads as "just assets":
+# territorio upgrades, a re-vendor misses a file, an editor "fixes" a minified line — and the
+# installer's map changes with no gate the eye can catch. The image-digests pair-pin discipline,
+# applied to vendored files: each must exist and hash to its pin. The negative half mutates one
+# byte of a copy — a gate that cannot go red is not a gate (A-010).
+check python3 -c '
+import hashlib, os, sys, tempfile
+PINS = {
+    "themes/apsconecta/core/mapa/leaflet.js":
+        "db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a",
+    "themes/apsconecta/core/mapa/leaflet.css":
+        "a7837102824184820dfa198d1ebcd109ff6d0ff9a2672a074b9a1b4d147d04c6",
+    "themes/apsconecta/core/mapa/protomaps-leaflet.js":
+        "26af014f7b1af308ec120b791cff76657bb9c3383633b52033e6edf9e5e4cdb5",
+}
+def distinta(corpus):   # the first path whose bytes are not its pin, or None
+    for ruta, pin in corpus.items():
+        with open(ruta, "rb") as fh:
+            if hashlib.sha256(fh.read()).hexdigest() != pin:
+                return ruta
+    return None
+real = distinta(PINS)
+with tempfile.TemporaryDirectory() as tmp:
+    mutada = os.path.join(tmp, "leaflet.css")
+    with open("themes/apsconecta/core/mapa/leaflet.css", "rb") as src:
+        datos = bytearray(src.read())
+    datos[100] ^= 1
+    with open(mutada, "wb") as dst:
+        dst.write(datos)
+    drill = distinta({**PINS, mutada: PINS["themes/apsconecta/core/mapa/leaflet.css"]})
+if real is not None:
+    print("the vendored map libraries are not the pinned bytes: " + real)
+if drill != mutada:
+    print("the mutation drill passed — the gate could not see a changed byte")
+sys.exit(0 if real is None and drill == mutada else 1)'
 # docs/LICENSING.md claims a licence per app and says it was read "from each app'"'"'s appinfo/info.xml
 # inside the shipped tarball". Nothing checked that it still was. `eurooffice` is AGPL-3.0-ONLY and
 # the table said -or-later -- materially different grants -- through two documentation audits (#87,

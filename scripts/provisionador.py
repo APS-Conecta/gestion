@@ -155,6 +155,13 @@ ASSETS = {
     "nunito-sans.woff2": ("themes/apsconecta/core/fonts/NunitoSans.woff2", "font/woff2"),
     "fondo.svg": ("themes/apsconecta/core/img/background.svg", "image/svg+xml"),
     "favicon.svg": ("themes/apsconecta/core/img/favicon.svg", "image/svg+xml"),
+    # The Centro map pane's engine (L5 S4): vendored beside the brand fonts, byte-identical to
+    # territorio's node_modules pins (docs/LICENSING.md §3) and guarded by scripts/test.sh's
+    # sha256 gate — protomaps-leaflet's IIFE carries the pmtiles reader inside, so these three
+    # files are the whole map stack. Public like the fonts: open-source bytes, nothing secret.
+    "leaflet.js": ("themes/apsconecta/core/mapa/leaflet.js", "text/javascript"),
+    "leaflet.css": ("themes/apsconecta/core/mapa/leaflet.css", "text/css"),
+    "protomaps-leaflet.js": ("themes/apsconecta/core/mapa/protomaps-leaflet.js", "text/javascript"),
 }
 
 
