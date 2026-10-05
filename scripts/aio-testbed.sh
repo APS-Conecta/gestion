@@ -50,7 +50,7 @@ MC=nextcloud-aio-mastercontainer            # fixed by Containers/mastercontaine
 NC=aps-conecta-nextcloud                   # fixed by the fork's php/containers.json (patch 240)
 # The fork's suite, never upstream's: the AIO fork renames the siblings (patch 240), so upstream's
 # container names would match none of gestion's. Moves with each published suite tag.
-IMAGE="${AIO_TEST_IMAGE:-ghcr.io/aps-conecta/all-in-one:ci-20261004-1}"
+IMAGE="${AIO_TEST_IMAGE:-ghcr.io/aps-conecta/all-in-one:ci-20261004-2}"
 WIZARD_PORT="${AIO_TEST_PORT:-8080}"
 APACHE_PORT="${AIO_TEST_APACHE_PORT:-11000}"
 DOMAIN="${AIO_TEST_DOMAIN:-aio-test.invalid}"
@@ -146,6 +146,7 @@ cmd_up() {
     --env SKIP_DOMAIN_VALIDATION=true \
     --env NEXTCLOUD_STARTUP_APPS= \
     --env "APACHE_PORT=${APACHE_PORT}" \
+    --env "APS_TILES_DIR=$(dirname "${TILES_HOME:-/srv/aps-conecta}/tiles/chile.pmtiles")" \
     --env APACHE_IP_BINDING=127.0.0.1 \
     --volume nextcloud_aio_mastercontainer:/mnt/docker-aio-config \
     --volume /var/run/docker.sock:/var/run/docker.sock:ro \

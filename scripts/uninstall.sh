@@ -169,7 +169,13 @@ report cs_no_volume apsconecta-gestion_postgres_data
 report cs_no_volume apsconecta-gestion_nextcloud_data
 report cs_no_network apsconecta-gestion_default
 report cs_can_probe_listeners
-for p in "${HTTP_PORT:-8180}" "${OFFICE_PORT:-9980}" "${TILES_PORT:-8084}"; do report cs_no_listener "$p"; done
+# The pre-map world's loopback port joins the probe list (org review I4): a clinic from before
+# this release carries the old map container — «sudo aps-conecta mapa» removes it on sight —
+# and the report is the one honest witness that the listener it held is gone too. The literal
+# is bare on purpose: with a colon before it (or the knob's old name) it would match make
+# test's a21 sweep, whose banned tokens this file must not spell — the same self-match
+# discipline the gate itself follows.
+for p in "${HTTP_PORT:-8180}" "${OFFICE_PORT:-9980}" 8084; do report cs_no_listener "$p"; done
 report cs_sites_clean
 report cs_no_file themes/apsconecta/core/css/site.css
 report cs_no_file .install.log

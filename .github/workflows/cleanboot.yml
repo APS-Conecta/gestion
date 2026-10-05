@@ -26,12 +26,10 @@ on:
       - 'Makefile'
       - 'scripts/**'
       - 'sites/**'
-      # org review L5-10: host/** and the nginx conf were outside every CI trigger — the
-      # weekly timer chain ran against a real instance nowhere. The Range/CORS contract
-      # they define is asserted in scripts/test.sh's docker-gated arm, which the step below
-      # runs on this same bring-up.
+      # org review L5-10: host/** was outside every CI trigger — the weekly timer chain ran
+      # against a real instance nowhere. The /tiles/ route the chain serves is asserted by this
+      # job's own basemap step below, on the real apache.
       - 'host/**'
-      - 'tiles.nginx.conf'
       - 'dev/**'
       - '.env.example'
       - '.github/workflows/cleanboot.yml'
@@ -144,21 +142,19 @@ jobs:
       # The probe's own surfaces, appended AFTER `make setup` so they win (env.sh takes the last
       # assignment it reads); the install's env_converge adds SITE and leaves these alone:
       #   HTTP_PORT → the loopback apache, where every one of smoke's curls lands;
-      #   OFFICE_PUBLIC_URL → the entrypoint's own DocumentServerUrl value (see the env note);
-      #   TILES_PUBLIC_URL → the basemap on the probe's own domain, the same-origin /tiles/ shape
-      #   L5 serves — smoke check 16 refuses a loopback tile_url on a domain-reached instance, and
-      #   like the office URL it judges the contradiction, not reachability (B-033).
-      - name: Point the seed at the probe's HTTP, office and tiles surfaces
+      #   OFFICE_PUBLIC_URL → the entrypoint's own DocumentServerUrl value (see the env note).
+      # (TILES_PUBLIC_URL lived here until L5: phase 16 now derives tile_url from
+      # overwrite.cli.url, and there is nothing left to hand-set.)
+      - name: Point the seed at the probe's HTTP and office surfaces
         run: |
           echo "HTTP_PORT=${AIO_TEST_APACHE_PORT}" >> .env
           echo "OFFICE_PUBLIC_URL=https://${AIO_TEST_DOMAIN}/eurooffice" >> .env
-          echo "TILES_PUBLIC_URL=https://${AIO_TEST_DOMAIN}/tiles/chile.pmtiles" >> .env
       # THE SILENT INSTALL (a6, a7): the command a clinic runs, as root, with no terminal — all nine
       # steps, the seed with its gate included. The probe's suite is already up (the testbed above),
       # so «suite» finds it running and drives nothing; AIO_STATE is the testbed's wizard state.
-      # Probe knobs only: the 1,1 GB basemap stays out (the gates read the TILES_PUBLIC_URL string,
-      # B-033), and the disk floor fits the runner. Root's writes in the checkout go back to the
-      # runner for the gates below.
+      # Probe knobs only: the 1,1 GB basemap stays out (its /tiles/ route is proven below against a
+      # deterministic fixture), and the disk floor fits the runner. Root's writes in the checkout go
+      # back to the runner for the gates below.
       - name: Install through the silent command a clinic runs
         run: |
           set -o pipefail   # run: is `bash -e` without it — the install's own failure, not tee's
@@ -176,6 +172,43 @@ jobs:
           if systemctl is-enabled aps-conecta-tiles.timer >/dev/null 2>&1; then
             echo "FAIL: the monthly basemap timer is enabled with no map built" >&2; exit 1
           fi
+      # Q18 (org review L5-S3): the 404 posture is a contract, not an accident. Before the
+      # fixture lands, the operator's own smoke must be GREEN on the unbuilt-map posture —
+      # bind present, monthly timer off, 404 said as a NOTE — and must SAY so: the NOTE is the
+      # honest state, and a silent green cannot tell "map not built yet" from "route broken".
+      # This step proves both halves on a real install; the fixture step below then flips the
+      # posture to 206, and make test's smoke later asserts that one instead.
+      - name: Smoke green on the 404 posture, the NOTE naming the unbuilt map
+        run: |
+          out="$RUNNER_TEMP/smoke-404.out"
+          make smoke > "$out" 2>&1 || { cat "$out" >&2; echo "FAIL: smoke must be green with the map unbuilt (bind present, timer off)" >&2; exit 1; }
+          grep -q 'NOTE: /tiles/chile.pmtiles is 404' "$out" \
+            || { cat "$out" >&2; echo "FAIL: the unbuilt-map posture must print its NOTE — silent green cannot tell unbuilt from unbound" >&2; exit 1; }
+          cat "$out"
+      # L5: prove the suite's own /tiles/ route on the real apache — a deterministic fixture (the
+      # PMTiles magic + compressible lines, exactly 150000 bytes) stands in for the 1,1 GB archive
+      # the runner never builds. Dropped AFTER the install and the timer assert: the install saw
+      # no map (APS_SKIP_MAP, the monthly timer stays off), and a later file changes that nothing.
+      # 0644 and a 0755 directory: apache (uid 33) reads both through the read-only bind; the ranged
+      # read must answer 206 with the exact bytes and no Content-Encoding (encode leaves the
+      # archive's octet-stream alone — a recompressed range would break the format).
+      - name: The suite serves the basemap same-origin at /tiles/
+        run: |
+          sudo install -d -m 0755 /srv/aps-conecta/tiles
+          python3 - <<'PY'
+          data = b"PMTiles\x03" + b"".join(
+              b"fixture line %06d: same-origin /tiles/ proof\n" % i for i in range(4100))
+          open("/tmp/chile.pmtiles", "wb").write(data[:150000].ljust(150000, b"x"))
+          PY
+          sudo install -m 0644 /tmp/chile.pmtiles /srv/aps-conecta/tiles/chile.pmtiles
+          hdr="$(mktemp)"
+          code="$(curl -sS -D "$hdr" -r 0-1023 -H 'Accept-Encoding: gzip, zstd' -o "$RUNNER_TEMP/tiles.rng" \
+            -w '%{http_code}' "http://localhost:${AIO_TEST_APACHE_PORT}/tiles/chile.pmtiles")"
+          [ "$code" = "206" ] || { echo "FAIL: /tiles/ answered $code, not 206" >&2; cat "$hdr" >&2; exit 1; }
+          grep -qi '^content-range: bytes 0-1023/150000' "$hdr" || { cat "$hdr" >&2; exit 1; }
+          ! grep -qi '^content-encoding:' "$hdr" || { echo "FAIL: the range came compressed" >&2; cat "$hdr" >&2; exit 1; }
+          head -c 1024 /srv/aps-conecta/tiles/chile.pmtiles > "$RUNNER_TEMP/tiles.esp"
+          cmp "$RUNNER_TEMP/tiles.rng" "$RUNNER_TEMP/tiles.esp"
       # R26's thresholds: the suite's measured memory on the real run, a table and its total in the
       # summary — one snapshot of the suite's own containers; a diagnostic, so it never reddens the run
       - name: Suite memory (the Talk thresholds, R26)
@@ -439,6 +472,31 @@ jobs:
             | python3 -c 'import json, sys; sys.exit(not any(r.get("name") == "aps-conecta-ca.crt" for r in json.load(sys.stdin)))'
           occ notify_push:self-test
           occ eurooffice:documentserver --check
+      # L5 by IP: the same deterministic fixture, then the /tiles/ route over the installer's own
+      # certificate — tile_url derived from this runner's own address (phase 16), and the
+      # operator's own check (host/tiles.sh check: the archive, the bind, a ranged read through
+      # the suite's internal network) green on a real install.
+      - name: The basemap is served same-origin at /tiles/, by IP
+        run: |
+          sudo install -d -m 0755 /srv/aps-conecta/tiles
+          python3 - <<'PY'
+          data = b"PMTiles\x03" + b"".join(
+              b"fixture line %06d: same-origin /tiles/ proof\n" % i for i in range(4100))
+          open("/tmp/chile.pmtiles", "wb").write(data[:150000].ljust(150000, b"x"))
+          PY
+          sudo install -m 0644 /tmp/chile.pmtiles /srv/aps-conecta/tiles/chile.pmtiles
+          hdr="$RUNNER_TEMP/tiles.hdr"
+          code="$(curl -fsS --cacert "$RUNNER_TEMP/ca.crt" -D "$hdr" -r 0-1023 -H 'Accept-Encoding: gzip, zstd' \
+            -o "$RUNNER_TEMP/tiles.rng" -w '%{http_code}' "https://$SUITE_IP/tiles/chile.pmtiles")"
+          [ "$code" = "206" ] || { echo "FAIL: /tiles/ answered $code, not 206" >&2; cat "$hdr" >&2; exit 1; }
+          grep -qi '^content-range: bytes 0-1023/150000' "$hdr" || { cat "$hdr" >&2; exit 1; }
+          ! grep -qi '^content-encoding:' "$hdr" || { echo "FAIL: the range came compressed" >&2; cat "$hdr" >&2; exit 1; }
+          head -c 1024 /srv/aps-conecta/tiles/chile.pmtiles > "$RUNNER_TEMP/tiles.esp"
+          cmp "$RUNNER_TEMP/tiles.rng" "$RUNNER_TEMP/tiles.esp"
+          source scripts/env.sh
+          [ "$(occ config:app:get territorio tile_url)" = "https://$SUITE_IP/tiles/chile.pmtiles" ] \
+            || { echo "FAIL: tile_url is not the runner's own same-origin URL" >&2; occ config:app:get territorio tile_url >&2; exit 1; }
+          sudo bash host/tiles.sh check
       # The weekly run, by IP, on the instance just installed: the leaf is kept (same fingerprint) and
       # apache is not restarted; the seed converges again, idempotent by IP too.
       - name: The weekly run keeps the leaf and apache as they are

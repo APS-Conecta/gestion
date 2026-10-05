@@ -108,7 +108,6 @@ The development environment runs as a self-contained Docker Compose stack consis
 graph LR
     Dev[Developer Browser] -->|HTTP :8180| NC[nextcloud:34-apache]
     Dev -->|HTTP :9980| EO[eurooffice]
-    Dev -->|HTTP :8084| TI[tiles PMTiles]
     NC -->|SQL :5432| DB[(postgres:18-alpine)]
     NC -->|RESP :6379| RD[(redis:8-alpine)]
     CR[cron scheduler] --> DB
@@ -918,7 +917,7 @@ sequenceDiagram
   }
   ```
 - **Basemap Delivery via PMTiles:**
-  Uses a dedicated, lightweight Nginx static container serving a single `chile.pmtiles` archive (~1 GB). The browser reads tile ranges via HTTP `Range` headers using `protomaps-leaflet`, consuming only 0.5–1 MB per screenful with zero external API dependencies.
+  In production the suite's own apache serves a single `chile.pmtiles` archive (~1 GB) same-origin at `/tiles/`, from a read-only bind of `/srv/aps-conecta/tiles`. The browser reads tile ranges via HTTP `Range` headers using `protomaps-leaflet`, consuming only 0.5–1 MB per screenful with zero external API dependencies. The dev compose stack ships no tiles service: `tile_url` stays empty and territorio falls back to the OpenStreetMap raster.
 
 ---
 

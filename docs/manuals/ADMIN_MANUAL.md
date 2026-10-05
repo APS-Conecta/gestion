@@ -92,7 +92,6 @@ APS Conecta Gestión operates as an orchestrated multi-container topology define
 graph TD
   UserBrowser[Healthcare Workstation Browser] -->|127.0.0.1:HTTP_PORT| ReverseProxy[Reverse Proxy / Caddy / Tailscale]
   ReverseProxy -->|Port 80| NC[nextcloud:34-apache]
-  UserBrowser -->|127.0.0.1:TILES_PORT| Tiles[tiles: nginx PMTiles Basemap]
   UserBrowser -.->|127.0.0.1:OFFICE_PORT| EuroOffice[eurooffice: Document Server]
   
   subgraph Docker Compose Internal Bridge Network
@@ -109,18 +108,17 @@ graph TD
     PG --- VPG[(postgres_data named volume)]
     NC -.- MountApps[./apps -> /var/www/html/custom_apps]
     NC -.- MountThemes[./themes -> /var/www/html/themes]
-    Tiles -.- MountTiles[./tiles -> /srv/tiles:ro]
-    Tiles -.- MountNginx[./tiles.nginx.conf -> /etc/nginx/conf.d/default.conf:ro]
   end
 ```
 
-The six services in `compose.yaml` fulfill dedicated roles:
+The five services in `compose.yaml` fulfill dedicated roles:
 1. **`nextcloud`:** Nextcloud 34 Apache/PHP application server. Mounts the core `nextcloud_data` named volume, alongside `./apps` (custom and vendored applications) and `./themes` (the `apsconecta` server theme).
 2. **`db`:** PostgreSQL 18 Alpine database server storing users, group definitions, ACL tables, file indices, and application state.
 3. **`redis`:** Redis 8 Alpine in-memory key-value cache used for distributed caching and transactional file locking.
 4. **`cron`:** Background job runner executing `/cron.sh` (`busybox crond -f`). It utilizes the identical image and volumes as `nextcloud` via an anchor definition (`x-nextcloud-base`) to execute `php -f /var/www/html/cron.php` every 5 minutes.
 5. **`eurooffice`:** Standalone documentserver container (`ghcr.io/euro-office/documentserver`) providing in-browser collaborative editing for OOXML (`.docx`, `.xlsx`, `.pptx`) and ODF (`.odt`, `.ods`, `.odp`) documents.
-6. **`tiles`:** High-performance static Nginx container serving the national Chilean basemap (`chile.pmtiles`) via HTTP Range Requests and CORS headers.
+
+> The basemap has no service of its own in this stack: a production suite serves `/srv/aps-conecta/tiles/chile.pmtiles` same-origin at `/tiles/` through its own apache, and this dev compose writes `tile_url` empty — territorio falls back to the OpenStreetMap raster (see §7's basemap section).
 
 ### Services Inventory & Digest Pinning
 In production, relying on floating tags (such as `:latest`, `:34-apache`, or `:18-alpine`) creates silent deployment drift: two nodes installed days apart could run different patch levels. 
@@ -134,7 +132,6 @@ APS Conecta Gestión enforces **Index Digest Pinning (#109)** across every servi
 | `redis` | `redis:8-alpine` | `sha256:becdda6c7f4b3fb42e42fd7f120bbf5c54c4caaaf16f26da24e4563d2c1f0576` | Multi-arch Index |
 | `cron` | *Inherits Nextcloud* | *(Identical digest to nextcloud service)* | Multi-arch Index |
 | `eurooffice` | `ghcr.io/euro-office/documentserver:latest` | `sha256:889e681923d2dcc8bdfb92fe128d10e185fcff880d302b6a0c0c7bf339499290` | Pinned multi-arch build |
-| `tiles` | `nginx:alpine` | `sha256:c8497b180665e631ec92a5091125bec5b214f0e2b99409e30653a125b37557da` | Multi-arch Index |
 
 > [!NOTE]
 > Digest pins are refreshed systematically using `make images`, which verifies upstream tags and updates both `compose.yaml` and `Dockerfile.dev` synchronously. The weekly GitHub Actions workflow `image-digests.yml` monitors upstream drift using `make images-check`.
@@ -147,7 +144,7 @@ Networking follows strict architectural boundaries:
   - `nextcloud` communicates with Euro-Office internally at `http://eurooffice/`.
   - `eurooffice` fetches documents from Nextcloud via `StorageUrl` set to `http://nextcloud/`.
 - **Host Gateway Routing (`extra_hosts`):** The `nextcloud` container configures `host.docker.internal:host-gateway`. On Linux hosts, this maps `host.docker.internal` to the host's bridge IP address, permitting container-to-host communications when required.
-- **Client-to-Service Communication:** Client browsers running on clinical workstations communicate with Nextcloud, Euro-Office, and the Tiles service using the host's published endpoints (or through an external reverse proxy).
+- **Client-to-Service Communication:** Client browsers running on clinical workstations communicate with Nextcloud and Euro-Office using the host's published endpoints (or through an external reverse proxy). The map needs no endpoint of its own: the suite serves it same-origin at `/tiles/`.
 
 ### Loopback Binding & Network Isolation
 By design, all container port publications in `compose.yaml` bind strictly to the loopback interface (`127.0.0.1`):
@@ -381,9 +378,10 @@ It is governed by foundational design rules:
   - **`POLICY_ADMIN_ONLY`:** Restricted to administrators: `support`, `updatenotification`, `serverinfo`, `recommendations`, `related_resources`, `weather_status`.
   - **`POLICY_CONFIG`:** Disables onboarding tours: `firstrunwizard:wizard_enabled:false`, terminates telemetry: `survey_client:never_again:true`, and turns off the password breach check: `password_policy:enforceHaveIBeenPwned:0` (no password hash prefix reaches api.pwnedpasswords.com).
   - **`POLICY_DISABLED`:** Disabled outright: `survey_client`, `nextcloud_announcements`.
-  - **Geospatial Tile Binding:** Binds `territorio` to the local PMTiles basemap endpoint:
+  - **Geospatial Tile Binding:** Binds `territorio` to the suite's own same-origin route — phase 16
+    derives it from the instance's public address (`overwrite.cli.url`, the phase 14 pattern):
     ```bash
-    app_config_set territorio tile_url "${TILES_PUBLIC_URL:-http://localhost:${TILES_PORT:-8084}/chile.pmtiles}"
+    app_config_set territorio tile_url "${ocu%/}/tiles/chile.pmtiles"
     ```
 
 #### `20-groups.sh`: Role Vocabulary, Category Taxonomy & Group Registry
@@ -702,8 +700,8 @@ Unlike traditional tile servers (which run complex Python/Node rendering stacks 
 
 ```mermaid
 graph LR
-  Browser[Workstation Browser Map View] -->|HTTP GET Range: bytes=1024-2048| Nginx[tiles service: nginx container]
-  Nginx -->|Reads byte range| Archive[(tiles/chile.pmtiles · 1.04 GB)]
+  Browser[Workstation Browser Map View] -->|HTTP GET Range: bytes=1024-2048| AP[the suite's apache · /tiles/ · same origin]
+  AP -->|Reads byte range from the read-only bind| Archive[(/srv/aps-conecta/tiles/chile.pmtiles · 1.04 GB)]
 ```
 
 ### Archive Specifications & Chilean Geographic Bounds
@@ -713,24 +711,37 @@ The basemap archive is generated using the Protomaps build system:
 - **Territorial Scope:** Covers the entire continental territory of Chile from Arica to Magallanes, **plus insular territories** (Isla de Pascua / Rapa Nui at -109.4° and Juan Fernández at -78.8°).
 - **Zoom Levels:** Level 0 through 15 (providing high-resolution street and building block fidelity across urban and rural health jurisdictions).
 
-### Nginx Range-Request & CORS Compliance
-The `tiles` container runs an optimized Nginx instance configured in `tiles.nginx.conf`:
-- **Range Request Handling:** Evaluates `Range: bytes=X-Y` headers natively, returning HTTP 206 Partial Content.
-- **CORS Headers:** Emits `Access-Control-Allow-Origin: *` and `Access-Control-Allow-Headers: Range`, permitting client-side MapLibre GL instances inside Nextcloud to fetch tile blocks directly.
-- **Cache Controls:** Caches immutable vector blocks in client browser storage (`max-age=86400`).
+### Same-Origin Serving via the Suite's Apache
+The archive is served by the suite's own apache (Caddy) at `/tiles/`, same origin with the map page —
+no separate container, port or CORS configuration:
+- **Range Request Handling:** `file_server` evaluates `Range: bytes=X-Y` natively, returning HTTP 206
+  Partial Content with a strong `ETag` (revalidation is one cheap round trip; the route sends
+  `Cache-Control: no-cache`, so a 404 cached before the first build never outlives it).
+- **The read-only bind:** the mastercontainer is created with `APS_TILES_DIR=/srv/aps-conecta/tiles`,
+  which apache mounts read-only at `/aps-tiles`. The setting is sticky in the suite's
+  `configuration.json`; a mastercontainer created without it serves `/tiles/` as a 404 —
+  `sudo bash host/tiles.sh check` reports it, and `docs/INSTALLER.md` §9 has the one-minute remedy.
+- **Nothing depends on the archive**: before the first build `/tiles/` is a 404 and the suite is
+  fully healthy; step 4 of the install (or `sudo aps-conecta mapa`) builds it.
+- **Verify on a clinic**: `sudo bash host/tiles.sh check` — the archive, the bind, and a ranged read
+  through the suite's internal network, by domain and by IP.
 
 ### Basemap Verification & Maintenance (`scripts/refresh-basemap.sh`)
-Because road networks and urban boundaries evolve, the basemap should be updated periodically (e.g., quarterly or semi-annually).
+Because road networks and urban boundaries evolve, the basemap is refreshed monthly by the
+`aps-conecta-tiles.timer` (the 4th at 05:00 Santiago time), which runs exactly this verb:
 
-Execute the automated refresh script:
 ```bash
-bash scripts/refresh-basemap.sh
+sudo aps-conecta tiles refresh
 ```
+
+`sudo aps-conecta mapa` is the installer's verb, not the refresher's: it builds the archive only
+when it is missing and short-circuits on an existing one. A refresh ends with a serving check
+through the suite's own route whenever the suite is running.
 
 The script:
 1. Discovers the latest published planetary vector build from `build.protomaps.com`.
 2. Uses the `pmtiles` CLI utility to extract the Chilean bounding box with multi-threaded downloads.
-3. **Performs Semantic Verification:** Opens the newly downloaded archive, validates that metadata headers identify it as PMTiles v3, checks zoom levels (0–15), and tests range query extraction for a known reference tile (e.g., La Florida, Santiago: $Z=12, X=1244, Y=2452$).
+3. **Performs Semantic Verification:** Opens the newly downloaded archive, validates that metadata headers identify it as PMTiles v3, checks zoom levels (0–15), verifies the header bounds contain the three fixed in-Chile anchors (Santiago, Hanga Roa, Punta Arenas), and reads the Santiago reference tile at z12.
 4. Atomically replaces `tiles/chile.pmtiles` using `mv`. If the download or validation fails, the active basemap remains completely untouched.
 
 ---
