@@ -1,5 +1,5 @@
 # APS Conecta Gestión — core local dev stack (Story 0.1).
-# Vanilla Nextcloud 34 + PostgreSQL 18 + Redis, official images only (no fork — AD-1).
+# Vanilla Nextcloud 34 + PostgreSQL 18 + Redis, official images only (no server fork — D7; the suite's own apps ship as apps, not server patches — ADR-0003).
 # `make up` starts these services ONLY. Provisioning (branding/groups/folders/fixtures)
 # is the separate `make seed` pipeline from Story 0.5 onward (AD-2). The office suite
 # (Euro-Office — AD-5) is Story 0.2.
@@ -36,7 +36,7 @@ x-nextcloud-base: &nextcloud-base
     - nextcloud_data:/var/www/html
     # Custom code lives in the repo, live-mounted for edit-without-rebuild (Story 0.8, AD-9).
     # These overlay the named volume at the two custom paths the image actually reads
-    # (custom_apps = writable apps path; themes = server-side custom themes). No fork (AD-1).
+    # (custom_apps = writable apps path; themes = server-side custom themes). No server fork (D7); custom code ships as apps (ADR-0003).
     - ./apps:/var/www/html/custom_apps
     - ./themes:/var/www/html/themes
 
