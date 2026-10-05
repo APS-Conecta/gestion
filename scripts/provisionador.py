@@ -3888,6 +3888,16 @@ def selftest():
                       "servicio_salud,dependencia,latitud,longitud")
     try:
         with tempfile.TemporaryDirectory() as tmp:
+            # The hermetic base for the whole run — the browser section's own pin, hoisted (dd8a1db,
+            # the hard way): the CI clean-boot runner CARRIES the deterministic /tiles/ proof
+            # fixture at the default path, and it parses — a valid v3 header whose bounds are
+            # ASCII text read as int32s, an empty box that refuses every confirm through the
+            # L5-S4 bounds check; a box with the real 1.1 GB archive masks it. Every arm that
+            # points no archive of its own runs with none — no check, never a blocked screen
+            # (ADR-0019's addendum); the painted-pixels arm alone probes old_tiles, the box's
+            # own default, and the finally restores it.
+            sin_mapa = os.path.join(tmp, "sin-mapa.pmtiles")
+            TILES_ARCHIVE = sin_mapa
             # — fail fast: no register, no wizard, no socket
             deis.HERE = os.path.join(tmp, "empty")
             os.makedirs(deis.HERE)
@@ -4039,7 +4049,6 @@ def selftest():
                     int(round(-77.5 * 1e7)), int(round(-56.5 * 1e7)),
                     int(round(-66.5 * 1e7)), int(round(-35.0 * 1e7)),   # Loica's point stays north of it
                     6, int(round(-70.5 * 1e7)), int(round(-33.5 * 1e7))))
-            old_tiles = TILES_ARCHIVE
             TILES_ARCHIVE = arch_pto
             st_l, _ = call("POST", "/api/centro", {"codigo": "121567", "latitud": -38.8681})
             st_t, _ = call("POST", "/api/centro", {"codigo": "121567", "latitud": "sur", "longitud": 0})
@@ -4062,7 +4071,7 @@ def selftest():
             st_of, oficial_fuera = call("POST", "/api/centro", {"codigo": "110485"})
             TILES_ARCHIVE = os.path.join(tmp, "no-esta.pmtiles")
             st_sin, _ = call("POST", "/api/centro", {"codigo": "110485"})
-            TILES_ARCHIVE = old_tiles
+            TILES_ARCHIVE = sin_mapa
             st_c, _ = call("POST", "/api/centro", {"codigo": "113314"})
             check("punto: the register's own point outside the bounds is refused naming the rebuild; no readable archive is no check — the confirm passes and the screen stays completable (ADR-0019)",
                   st_of == 400 and "aps-conecta mapa" in oficial_fuera["error"]
@@ -5674,7 +5683,7 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                       st == 404 and "aps-conecta mapa" in json.loads(cuerpo)["error"]
                       and st2 == 200 and m2["disponible"] is False
                       and "aps-conecta mapa" in m2["motivo"])
-                TILES_ARCHIVE = old_tiles
+                TILES_ARCHIVE = sin_mapa
                 b.cookie = f"{TOKEN_COOKIE}={TOKEN}"
 
 
@@ -6070,7 +6079,7 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                         # read disponible), so no arm depends on this box having the 1.1 GB
                         # file; the painted-pixels arm alone runs against the real one.
                         desde = len(errores)
-                        old_tiles_pw = old_tiles_browser   # the section pin holds the fallback; the painted arm needs the real default
+                        old_tiles_pw = old_tiles   # the painted arm alone probes the box's own default — the true archive, if this box has one
                         TILES_ARCHIVE = os.path.join(tmp, "no-esta.pmtiles")   # the fallback state
                         real_here, sin_sitio = deis.HERE, tempfile.mkdtemp()
                         os.makedirs(os.path.join(sin_sitio, "scripts"))
