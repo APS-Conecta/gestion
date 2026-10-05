@@ -98,6 +98,13 @@ image digests live there and are deliberately not copied here — one fact, one 
   - Smoke check 16 asserts the derived URL, the bind and a 206 with the `PMTiles` magic; Clean
     boot proves the route on the real apache, by domain and by IP, against a deterministic
     fixture.
+  - **Upgrading a clinic installed before this release**: step 7 reds on a mastercontainer
+    created without `APS_TILES_DIR` — the guard is new and the remedy is
+    `docs/INSTALLER.md` §9 (re-create the mastercontainer **and** `aps-conecta-apache`; a
+    changed value never re-creates apache on its own, so the old bind would survive a
+    mastercontainer-only re-create). The next `sudo aps-conecta mapa` also removes the old map
+    container (`aps-conecta-tiles`, the nginx on loopback 8084): the suite serves `/tiles/`
+    itself now.
 - **`aps-conecta estado`** — the last execution's verdict, each item with its fix, in Spanish, with
   no sudo (`/opt/aps-conecta/estado.txt`, 0644, written by every execution — the installer's, the
   silent install's and the weekly one). When the weekly re-provision finds drift or does not finish,

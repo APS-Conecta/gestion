@@ -938,12 +938,16 @@ no separate container, port or CORS configuration:
   through the suite's internal network, by domain and by IP.
 
 ### Basemap Verification & Maintenance (`scripts/refresh-basemap.sh`)
-Because road networks and urban boundaries evolve, the basemap should be updated periodically (e.g., quarterly or semi-annually).
+Because road networks and urban boundaries evolve, the basemap is refreshed monthly by the
+`aps-conecta-tiles.timer` (the 4th at 05:00 Santiago time), which runs exactly this verb:
 
-Execute the automated refresh (what the monthly timer runs — `sudo aps-conecta mapa`):
 ```bash
-sudo aps-conecta mapa
+sudo aps-conecta tiles refresh
 ```
+
+`sudo aps-conecta mapa` is the installer's verb, not the refresher's: it builds the archive only
+when it is missing and short-circuits on an existing one. A refresh ends with a serving check
+through the suite's own route whenever the suite is running.
 
 The script:
 1. Discovers the latest published planetary vector build from `build.protomaps.com`.

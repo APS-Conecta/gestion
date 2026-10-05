@@ -175,11 +175,16 @@ moment the archive exists.
   `APS_TILES_DIR=/srv/aps-conecta/tiles`, and apache mounts that directory read-only at
   `/aps-tiles`. The setting is sticky in the suite's `configuration.json` once seen. A
   mastercontainer created **without** it serves `/tiles/` as a 404 while everything else works —
-  `sudo bash host/tiles.sh check` says exactly that. The remedy is to re-create it (a minute,
-  nothing is lost): stop the containers in the wizard, `sudo docker rm -f
-  nextcloud-aio-mastercontainer` (its volume keeps the configuration), re-create it with
-  `sudo aps-conecta asistente-aio --preparar --dominio <dominio>` (by IP: the address of §14),
-  and start the containers in the wizard again.
+  and one created with a **different** directory keeps serving that older folder while the
+  mastercontainer's own line says the new one: the suite never re-creates a container that
+  still exists, so the bind apache was created with is the bind it keeps.
+  `sudo bash host/tiles.sh check` names the first shape and `aps-conecta revalidate` reds the
+  second. The remedy for both is the same re-create (a minute, nothing is lost): stop the
+  containers in the wizard, `sudo docker rm -f nextcloud-aio-mastercontainer aps-conecta-apache`
+  (the mastercontainer's volume keeps the configuration; apache is stateless — it is rebuilt
+  from the configuration at each start, and removing it is what finally moves the bind),
+  re-create the mastercontainer with `sudo aps-conecta asistente-aio --preparar --dominio
+  <dominio>` (by IP: the address of §14), and start the containers in the wizard again.
 - **Until the first build, `/tiles/` is a 404** — the suite never depends on the archive. Step 4
   of the install builds it; `sudo aps-conecta mapa` re-runs it, and the monthly timer refreshes
   it (`sudo aps-conecta temporizadores` re-checks both timers).
@@ -203,13 +208,20 @@ aps-conecta revalidate
 
 right after the update lands — smoke, office-smoke and the divergence gate, aggregated; a red
 names its failed gate. An install from v0.3.0 or earlier runs the suite under upstream's container
-names; the suite now names them `aps-conecta-*` and does not migrate them: reinstall it (§12). Two
+names; the suite now names them `aps-conecta-*` and does not migrate them: reinstall it (§12). Three
 honest notes:
 
 - On image-bump boots an **offline clinic sits at the app-store probe** (upstream behavior:
 an unbounded wait on `apps.nextcloud.com` while the store is off — documented upstream behavior,
 not patched; the wait ends when the probe times out or the network returns).
 - The wizard's update notifications are suppressed (040); the suite's releases are the source.
+- **A clinic installed before this release meets two expected changes.** Step 7 reds on a
+  mastercontainer created without `APS_TILES_DIR` — that is the new guard doing its job, and
+  §9's remedy (re-create the mastercontainer **and** `aps-conecta-apache`) is the fix;
+  `aps-conecta revalidate` will also name a bind that diverged silently before this release.
+  And the next `sudo aps-conecta mapa` removes the old map container (`aps-conecta-tiles`, the
+  nginx that served `/tiles/` from loopback 8084): the suite serves the map itself now, and the
+  removal is logged as it happens.
 
 ## 11. Backups
 

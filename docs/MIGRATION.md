@@ -171,8 +171,11 @@ The host Caddy stays the reverse proxy on 80/443 (jomy.cl and apsconecta.cl rout
 tailscale serve re-points 10001/10008/10009 at the new stack's published ports.
 
 Provisioning converges the suite (the AIO-baked equivalents of phases 05→60), then the comuna
-package — BEFORE the first monthly basemap run (`*-*-04`): the REF anchor queries the `deis:`
-row, and without the import the timer fails loudly (by design — the serving archive survives):
+package. No ordering contract with the monthly basemap run survives this release: the refresh
+reads nothing of the install it serves (no `.env`, no site, no database) and verifies against
+three fixed in-Chile anchors (Santiago, Hanga Roa, Punta Arenas), so a timer run before the
+import is a green build like any other (the 4th, 05:00 Santiago — `sudo aps-conecta
+temporizadores` wires it once the map exists). Import when the clinic starts using territorio:
 
 ```bash
 scripts/comuna-package.sh 13110     # prints the exact territorio:import commands; run them
