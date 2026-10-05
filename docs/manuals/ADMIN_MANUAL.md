@@ -216,7 +216,7 @@ It is governed by foundational design rules:
 ### Phase-by-Phase Reference
 
 #### `05-security.sh`: Session Hardening & Security Defaults
-- **Purpose:** Enforces workstation privacy and eliminates outbound directory lookup telemetry.
+- **Purpose:** Enforces workstation privacy, explicit brute-force protection, and eliminates outbound directory lookup telemetry.
 - **Configuration Keys Applied:**
   ```bash
   # Terminates browser session cookie when browser window closes
@@ -224,6 +224,9 @@ It is governed by foundational design rules:
   
   # Disables global lookup server connectivity
   config_system_set lookup_server ""
+
+  # Explicitly enables Nextcloud brute-force protection
+  config_system_set auth.bruteforce.protection.enabled true boolean
   ```
 - **Operational Rationale:** Standard Nextcloud instances ship with a 15-day "Recordarme" (Remember Login) cookie checkbox pre-checked. On clinical computers shared among physicians, nurses, and TENS across shift changes, this poses a severe security hazard. Setting `remember_login_cookie_lifetime` to `0` stops rendering the checkbox on the login screen, forces `DO_NOT_REMEMBER` in session token creation, and issues session-scoped cookies that expire upon closing the browser tab.
 

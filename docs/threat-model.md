@@ -31,7 +31,7 @@ work; the 🗡️ Breaker agent starts here.*
 
 | Entry point | Who can use it | What protects it today |
 |---|---|---|
-| Nextcloud web, WebDAV and mobile logins | anyone who can reach the domain | Nextcloud's built-in brute-force throttling (not configured here); `remember_login_cookie_lifetime 0` — no persistent "remember me" (`provisioning/phases/05-security.sh:15`) |
+| Nextcloud web, WebDAV and mobile logins | anyone who can reach the domain | Nextcloud's built-in brute-force throttling (`auth.bruteforce.protection.enabled true` in `provisioning/phases/05-security.sh:25`); `remember_login_cookie_lifetime 0` — no persistent "remember me" (`provisioning/phases/05-security.sh:15`) |
 | App availability for staff (`provisioning/app-policy.sh`) | staff accounts | "admin keeps every app; every non-admin account gets the reduced set" (`app-policy.sh:8`); `weather_status` restricted to keep outbound traffic (egress) off staff accounts |
 | Public directory lookups | the server | `lookup_server ""` — no contact with Nextcloud's public lookup server (`provisioning/phases/05-security.sh:20`) |
 | Backups | the AIO borg container | daily borg backup at 04:00 Santiago time (posted as its UTC hour) to the configured location (`host/aps-conecta`, `cmd_aio_wizard --respaldo`) |
@@ -49,7 +49,7 @@ work; the 🗡️ Breaker agent starts here.*
   (`shareapi_*`).
 - **Encryption at rest:** server-side encryption is not enabled. Check whether the backup target is
   encrypted.
-- **Brute-force settings:** nothing beyond Nextcloud's defaults.
+- **Brute-force settings:** explicitly enabled (`auth.bruteforce.protection.enabled true` in `05-security.sh`).
 
 Each item above is a Breaker target. The fix is a provisioning phase that sets it, plus an assertion in
 `make test` / `scripts/smoke.sh`, matching how `app-policy.sh` is both applied and asserted.

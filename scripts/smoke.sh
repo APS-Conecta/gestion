@@ -179,6 +179,11 @@ case "$remember" in
   *)     fail "session posture: could not read loginCanRememberme from /login (got '${remember}') — upstream may have renamed the initial state key" ;;
 esac
 
+# Brute-force protection: explicitly enabled in system config (phase 05-security).
+bruteforce=$(occ config:system:get auth.bruteforce.protection.enabled 2>/dev/null | tr -d '\r')
+[ "$bruteforce" = "true" ] || [ "$bruteforce" = "1" ] \
+  || fail "brute-force protection is not explicitly enabled in system config — run 'make seed' (phase 05-security)"
+
 # 10. No patched app still carries its vendor signature (#71, phase 12-apps). What it costs when one
 # does, and why an `occ app:update` from the UI puts it back: docs/adr/0002-app-patches.md § Code
 # integrity. PATCHED means "has a .patch file", NOT "has a directory under provisioning/apps/" —

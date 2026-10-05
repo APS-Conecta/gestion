@@ -1016,6 +1016,9 @@ check estadistica_identity_cases
 # observable at all, and a check that cannot fail there is worse than one that admits what it is.
 check grep -q "local LC_ALL=C" provisioning/lib.sh
 
+# Phase 05-security explicitly sets brute-force protection in system configuration.
+check grep -q "config_system_set auth.bruteforce.protection.enabled true boolean" provisioning/phases/05-security.sh
+
 # --- gate: the tree stays establishment-agnostic (ADR-0013, generalized from the one-code grep) ---
 # Shape-based, not literal: the pilot's residue was a hardcoded `deis.py` call in CI's fixture and steering
 # examples in docs. A literal grep on one clinic's code is the pilot's number all over again — the next

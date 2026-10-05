@@ -19,4 +19,8 @@ config_system_set remember_login_cookie_lifetime 0 integer
 # the opt-out a stated decision rather than an accident of nobody ever flipping that key.
 config_system_set lookup_server ""
 
+# Enforce Nextcloud's built-in brute-force protection explicitly so the security posture is declared
+# as code and protected against accidental UI or configuration drift.
+config_system_set auth.bruteforce.protection.enabled true boolean
+
 phase_end
