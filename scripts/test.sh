@@ -1190,7 +1190,7 @@ def broken(got, errs):
 real = {s: open(s, encoding="utf-8").read() for s, _ in SITES}
 got, errs = defaults(real)
 if broken(got, errs):
-    print("the map-folder default is not one value across the five sites that spell it:")
+    print("the map-folder default is not one value across the six sites that spell it:")
     for e in errs: print("  " + e)
     for s, v in sorted(got.items()): print("  " + s + " = " + v)
     sys.exit(1)
