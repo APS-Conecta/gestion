@@ -1150,13 +1150,14 @@ check bash -c '
     && ! git grep -qE "nginx:alp""ine|TILES_""PORT|:80""84" -- .env.example compose.yaml host scripts provisioning \
     && grep -q "/tiles/" provisioning/phases/16-app-policy.sh'
 
-# --- gate (org review L5-S3, I7): the map-folder default — five literals that must agree ---------
-# /srv/aps-conecta is spelled in five places because each site legitimately owns its own fallback
-# SHAPE: the installer's TILES_ARCHIVE, tiles.sh's standalone TILES_HOME, the testbed's
+# --- gate (org review L5-S3, I7): the map-folder default — six literals that must agree ---------
+# /srv/aps-conecta is spelled in six places because each site legitimately owns its own fallback
+# SHAPE: the host CLI's TILES_ARCHIVE, the provisionador's own TILES_ARCHIVE (L5 S4 — /mapa/ and
+# /api/mapa read it), tiles.sh's standalone TILES_HOME, the testbed's
 # APS_TILES_DIR env, env.sh's dotenv fixture, and refresh-basemap's DEST (the serving directory
 # S3 gave it — a literal this pack itself introduced is exactly the drift site the gate exists to
 # pin). Single-sourcing was weighed and rejected (tiles.sh's standalone fallback survives it), so
-# the discipline is image-digests' pair-pin generalized to five: each site's default read out of
+# the discipline is image-digests' pair-pin generalized to six: each site's default read out of
 # the file, and they must all say the same path. Shape-anchored, not line-numbered — the dd8a1db
 # hermeticity pin (host/aps-conecta's self-test literals at :1411 and the grep -qF cross-check at
 # :2342) are pins ON PURPOSE and do not match; the emitters they pin do. EXACTLY ONE match per
@@ -1173,6 +1174,7 @@ SITES = [
     ("scripts/aio-testbed.sh",     r"--env \"APS_TILES_DIR=\$\(dirname \"\$\{TILES_HOME:-([^\"}\n]+)\}/tiles/chile\.pmtiles\"\)\""),
     ("scripts/env.sh",             r"^TILES_HOME=(/[^\"=\s]+)$"),
     ("scripts/refresh-basemap.sh", r"^DEST=\"\$\{DEST:-([^\"}\n]+)/tiles/chile\.pmtiles\}\"$"),
+    ("scripts/provisionador.py",   r"^TILES_ARCHIVE = \"([^\"}\n]+)/tiles/chile\.pmtiles\"$"),
 ]
 def defaults(corpus):
     got, errs = {}, []
@@ -1198,6 +1200,7 @@ fab = {
     "scripts/aio-testbed.sh":     "    --env \"APS_TILES_DIR=$(dirname \"${TILES_HOME:-/srv/prueba}/tiles/chile.pmtiles\")\" \\\n",
     "scripts/env.sh":             "TILES_HOME=/srv/prueba\n",
     "scripts/refresh-basemap.sh": "DEST=\"${DEST:-/srv/prueba/tiles/chile.pmtiles}\"\n",
+    "scripts/provisionador.py":   "TILES_ARCHIVE = \"/srv/prueba/tiles/chile.pmtiles\"\n",
 }
 if broken(*defaults(fab)):
     print("the fabricated agreeing corpus failed"); sys.exit(1)

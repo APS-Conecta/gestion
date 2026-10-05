@@ -52,6 +52,7 @@ import secrets
 import shlex
 import socket
 import ssl
+import struct
 import subprocess
 import sys
 import tempfile
@@ -122,6 +123,17 @@ PHASE20 = os.path.join(HERE, "..", "provisioning", "phases", "20-groups.sh")
 CRED_PATH = "/opt/aps-conecta/credentials.txt"
 ESTADO_PATH = "/opt/aps-conecta/estado.txt"   # the last execution's verdict (a10): 0644, «aps-conecta estado»
 AIO_STATE = "/opt/aps-conecta/aio"   # the host's wizard state (0700): passphrase, domain, Talk options — passed to it
+# The Centro pane's basemap archive (L5 S4): what `aps-conecta mapa` (step 4) builds — /mapa/
+# serves it one byte range at a time, /api/mapa reads its coverage, and the confirm-time
+# bounds check will read its bounds. A module constant like CRED_PATH — repointed by the
+# self-test, never an env read (the self-test scrubs TILES_* prefixes; the dd8a1db lesson) —
+# and the I7 gate's sixth literal in scripts/test.sh.
+TILES_ARCHIVE = "/srv/aps-conecta/tiles/chile.pmtiles"
+# The pmtiles v3 header, little-endian: magic "PMTiles" and spec version at byte 7, then the
+# fields territorio's pmtiles reader (bytesToHeader) unpacks. Indices past the magic and the
+# 11 offsets: 19 minZoom · 20 maxZoom · 21-24 minLon/minLat/maxLon/maxLat (int32 ×1e7) ·
+# 25 centerZoom · 26-27 centerLon/centerLat.
+PMTILES_HEADER = struct.Struct("<2sH3sB11Q6B4iB2i")
 
 # The installer's own certificate authority and the leaf it signs for the link's address (L3 S1,
 # owner 2026-10-02). The CA is kept: the suite's certificate (L4, R22) hangs from the same one and
@@ -581,6 +593,31 @@ def api_centro(payload):
         return refused
     CENTRO = codigo
     return 200, {"ok": True, "codigo": codigo, "nombre": row["nombre"]}
+
+
+def api_mapa():
+    """GET /api/mapa — the basemap's coverage state (L5 S4): the archive's own bounds, max zoom
+    and centre out of its 127-byte pmtiles v3 header, for the Centro pane and the confirm-time
+    bounds check. A missing archive or an unreadable header is a state with a reason, never an
+    error (the {"codigo": null} rule): the pane shows its note and stays completable — never
+    trade a warning for an outage (ADR-0019's addendum)."""
+    try:
+        with open(TILES_ARCHIVE, "rb") as fh:
+            cab = fh.read(PMTILES_HEADER.size)
+    except OSError:
+        return 200, {"disponible": False,
+                     "motivo": "el mapa del paso 4 no está construido — sudo aps-conecta mapa "
+                               "lo construye; el punto se confirma igual"}
+    if len(cab) < PMTILES_HEADER.size or cab[:7] != b"PMTiles" or cab[7] > 3:
+        return 200, {"disponible": False,
+                     "motivo": "el archivo del mapa no se puede leer — reconstrúyalo con "
+                               "sudo aps-conecta mapa; el punto se confirma igual"}
+    c = PMTILES_HEADER.unpack_from(cab)   # the indices: PMTILES_HEADER's comment above
+    return 200, {"disponible": True,
+                 "limites": {"longitud_min": c[21] / 1e7, "latitud_min": c[22] / 1e7,
+                             "longitud_max": c[23] / 1e7, "latitud_max": c[24] / 1e7},
+                 "zoom_max": c[20],
+                 "centro": {"longitud": c[26] / 1e7, "latitud": c[27] / 1e7, "zoom": c[25]}}
 
 
 def _site_exists_answer(codigo, path):
@@ -2880,7 +2917,46 @@ class Handler(BaseHTTPRequestHandler):
             self.send_bytes(200, "application/x-x509-ca-cert", data,
                             {"Content-Disposition": f'attachment; filename="{CA_PUBLICA}"'})
             return
-        if path in ("/api/suite", "/api/centros", "/api/centro", "/api/equipos", "/api/ejecucion"):
+        if path == "/mapa/chile.pmtiles":
+            # The Centro pane's basemap (L5 S4): the archive step 4 built, one bounded byte range
+            # at a time — the pmtiles client only ever sends single explicit ranges (its
+            # FetchSource), so a missing, compound or open-ended Range is a mis-integration this
+            # answers 400 naming the contract, never a gigabyte in one 200.
+            if not self.authorized():
+                self.send_json(401, {"error": "token ausente o inválido"},
+                               {"WWW-Authenticate": "Bearer"})
+                return
+            try:
+                fh = open(TILES_ARCHIVE, "rb")   # per request: the monthly refresh's atomic mv is a new inode
+            except OSError:
+                self.send_json(404, {"error": "el mapa del paso 4 no está construido — sudo "
+                                              "aps-conecta mapa lo construye; el punto se confirma igual"})
+                return
+            try:
+                info = os.fstat(fh.fileno())   # the size, the ETag and the served bytes read one inode
+                total = info.st_size
+                etag = '"%x-%x"' % (info.st_mtime_ns, total)   # strong: a W/ prefix the client reads as absent
+                rango = re.fullmatch(r"bytes=([0-9]+)-([0-9]+)", self.headers.get("Range", ""))
+                if rango is None:
+                    self.send_json(400, {"error": "el mapa se pide por un solo rango: "
+                                                  "Range: bytes=<inicio>-<fin>"})
+                    return
+                desde, hasta = int(rango.group(1)), int(rango.group(2))
+                if desde > hasta or desde >= total:
+                    self.send_json(416, {"error": "el rango pedido queda fuera del mapa"},
+                                   {"Content-Range": f"bytes */{total}", "Accept-Ranges": "bytes",
+                                    "ETag": etag})
+                    return
+                hasta = min(hasta, total - 1)   # a range that runs past the end serves the last byte
+                self.send_file_slice(206, fh, desde, hasta - desde + 1,
+                                     {"Content-Range": f"bytes {desde}-{hasta}/{total}",
+                                      "Accept-Ranges": "bytes", "ETag": etag,
+                                      "Cache-Control": "no-cache"})
+            finally:
+                fh.close()
+            return
+        if path in ("/api/suite", "/api/centros", "/api/centro", "/api/equipos", "/api/ejecucion",
+                    "/api/mapa"):
             if not self.authorized():
                 self.send_json(401, {"error": "token ausente o inválido"},
                                {"WWW-Authenticate": "Bearer"})
@@ -2891,11 +2967,14 @@ class Handler(BaseHTTPRequestHandler):
                 status, body = api_centros()
             elif path == "/api/centro":
                 status, body = centro_actual()
+            elif path == "/api/mapa":
+                status, body = api_mapa()
             elif path == "/api/ejecucion":
                 status, body = estado_ejecucion()
             else:
                 status, body = equipos_actuales()
-            self.send_json(status, body, {"Cache-Control": "no-store"} if path == "/api/suite" else None)
+            self.send_json(status, body,
+                           {"Cache-Control": "no-store"} if path in ("/api/suite", "/api/mapa") else None)
             return
         if path in ROUTES or path == "/listo":
             if not self.authorized():
@@ -3016,6 +3095,28 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header(key, value)
         self.end_headers()
         self.wfile.write(data)
+
+    def send_file_slice(self, status, fh, start, length, headers=None):
+        # send_bytes' sibling for the one file too big to hold in a response's memory (L5 S4's
+        # /mapa/): Content-Length is set once and the bytes are seeked to and written in bounded
+        # chunks — the same one-exit framing rule, without reading the archive whole. A file that
+        # ends short of the promise (replaced mid-answer) closes the connection: keep-alive
+        # framing stays honest even then.
+        self.send_response(status)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Length", str(length))
+        for key, value in (headers or {}).items():
+            self.send_header(key, value)
+        self.end_headers()
+        fh.seek(start)
+        quedan = length
+        while quedan > 0:
+            trozo = fh.read(min(65536, quedan))
+            if not trozo:
+                self.close_connection = True
+                break
+            self.wfile.write(trozo)
+            quedan -= len(trozo)
 
     def send_json(self, status, obj, headers=None):
         self.send_bytes(status, "application/json; charset=utf-8",
@@ -3423,7 +3524,7 @@ def selftest():
     real sites/ is never touched. The HTTP checks are real round-trips against a real server on an
     OS-assigned port — urllib, no frameworks. Every check is named and counted; a failure prints the
     list and exits 1 (B-014: a gate that cannot go red is not a gate)."""
-    global TOKEN, SNAPSHOT, ROWS, CRED_PATH, PHASE20, ESTADO_PATH, CERT_DIR, LAN_IP, HOSTNAME, PORT, CENTRO, AIO_STATE
+    global TOKEN, SNAPSHOT, ROWS, CRED_PATH, PHASE20, ESTADO_PATH, CERT_DIR, LAN_IP, HOSTNAME, PORT, CENTRO, AIO_STATE, TILES_ARCHIVE
     n = 0
     bad = []
 
@@ -3453,6 +3554,7 @@ def selftest():
     old_cred, old_p20 = CRED_PATH, PHASE20
     old_cert = CERT_DIR
     old_aio = AIO_STATE
+    old_tiles = TILES_ARCHIVE
     # Bound here, with the other saves, because the finally restores it: bound later, any failure
     # before the stub world exists raised UnboundLocalError there and hid the real error.
     old_path = os.environ["PATH"]
@@ -5050,6 +5152,89 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                 check("assets: the brand fonts serve locally without a session; any other name is a 404; every whitelisted file exists",
                       r.status == 200 and tipo == "font/woff2" and igual and st == 404 and st2 == 404
                       and all(os.path.isfile(os.path.join(ROOT_DIR, rel)) for rel, _t in ASSETS.values()))
+                # ── L5 S4: /mapa/ — the archive one byte range at a time, and the coverage state ──
+                # A synthetic archive: the 127-byte v3 header (the parser's real input) over an
+                # exactly-representable box, plus a payload every range answer must return byte
+                # for byte.
+                def cabecera_pmtiles(min_z, max_z, lon_min, lat_min, lon_max, lat_max, c_lon, c_lat, c_z):
+                    e7 = lambda g: int(round(g * 1e7))   # the header stores lon/lat as int32 ×1e7
+                    cuerpo = struct.Struct("<B11Q6B4iB2i").pack(   # bytes 7-126: version, then the fields
+                        3, *([0] * 11), 0, 0, 0, 0, min_z, max_z,
+                        e7(lon_min), e7(lat_min), e7(lon_max), e7(lat_max), c_z, e7(c_lon), e7(c_lat))
+                    return b"PMTiles" + cuerpo
+                archivo_mapa = cabecera_pmtiles(0, 14, -77.5, -56.5, -66.5, -17.5, -70.5, -33.5, 6)
+                archivo_mapa += bytes(range(256)) * 4 + b"termino"
+                total_mapa = len(archivo_mapa)
+                mapa_fixture = os.path.join(tmp, "chile-fixture.pmtiles")
+                with open(mapa_fixture, "wb") as fh:
+                    fh.write(archivo_mapa)
+
+                def pedir_mapa(ruta, cabeceras, token=True):
+                    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+                    conn.request("GET", ruta, headers={
+                        **({"Authorization": f"Bearer {TOKEN}"} if token else {}), **cabeceras})
+                    r = conn.getresponse()
+                    cuerpo, cab = r.read(), {k.lower(): v for k, v in r.getheaders()}
+                    conn.close()
+                    return r.status, cab, cuerpo
+
+                def rango_206(st, cab, cuerpo, desde, hasta, pedazo):
+                    return (st == 206 and cuerpo == pedazo
+                            and cab.get("content-range") == f"bytes {desde}-{hasta}/{total_mapa}"
+                            and cab.get("accept-ranges") == "bytes"
+                            and cab.get("content-length") == str(len(pedazo))
+                            and cab.get("etag", "").startswith('"')
+                            and not cab.get("etag", "").startswith("W/")
+                            and "content-encoding" not in cab
+                            and cab.get("cache-control") == "no-cache")
+                # A-010 first: a stub that answers 206 but ignores Range (no Content-Range, the
+                # whole file) must fail the very checks the green run rides — a gate that cannot
+                # go red is not a gate.
+                check("mapa: the range checks redden on a Range-ignoring stub (A-010)",
+                      not rango_206(206, {"content-length": str(total_mapa),
+                                          "etag": f'"{total_mapa}"'}, archivo_mapa, 0, 6,
+                                    archivo_mapa[:7]))
+                TILES_ARCHIVE = mapa_fixture
+                st, cab, cuerpo = pedir_mapa("/mapa/chile.pmtiles", {"Range": "bytes=0-6"})
+                st_m, cab_m, cuerpo_m = pedir_mapa("/mapa/chile.pmtiles", {"Range": "bytes=100-1023"})
+                st_c, cab_c, cuerpo_c = pedir_mapa("/mapa/chile.pmtiles",
+                                                   {"Range": f"bytes={total_mapa - 10}-{total_mapa + 50}"})
+                check("mapa: one single range → 206 with Content-Range, Accept-Ranges, a strong ETag and no Content-Encoding — the magic, a middle slice and a past-the-end clamp all byte for byte (L5 S4)",
+                      cuerpo == b"PMTiles" and rango_206(st, cab, cuerpo, 0, 6, archivo_mapa[:7])
+                      and rango_206(st_m, cab_m, cuerpo_m, 100, 1023, archivo_mapa[100:1024])
+                      and rango_206(st_c, cab_c, cuerpo_c, total_mapa - 10, total_mapa - 1,
+                                   archivo_mapa[-10:]))
+                st, cab, cuerpo = pedir_mapa("/mapa/chile.pmtiles", {"Range": f"bytes={total_mapa}-9"})
+                check("mapa: a start past the end answers 416 with Content-Range: bytes */N — the header the client refetches from",
+                      st == 416 and cab.get("content-range") == f"bytes */{total_mapa}"
+                      and json.loads(cuerpo).get("error"))
+                st, _c, cuerpo = pedir_mapa("/mapa/chile.pmtiles", {})
+                st2, _c2, cuerpo2 = pedir_mapa("/mapa/chile.pmtiles", {"Range": "bytes=0-1,3-4"})
+                st3, _c3, cuerpo3 = pedir_mapa("/mapa/chile.pmtiles", {"Range": "bytes=-5"})
+                st4, _c4, cuerpo4 = pedir_mapa("/mapa/chile.pmtiles", {"Range": "bytes=5-"})
+                check("mapa: no Range, a compound, a suffix and an open-ended range each answer 400 naming the contract — the client only ever sends one explicit range",
+                      [st, st2, st3, st4] == [400] * 4
+                      and "Range: bytes=<inicio>-<fin>" in json.loads(cuerpo)["error"]
+                      and json.loads(cuerpo2).get("error") and json.loads(cuerpo3).get("error")
+                      and json.loads(cuerpo4).get("error"))
+                st, _c, _cu = pedir_mapa("/mapa/chile.pmtiles", {"Range": "bytes=0-6"}, token=False)
+                st2, _m2 = call("GET", "/api/mapa", token=None)
+                check("mapa: both doors need the token — the file route and the coverage state",
+                      st == 401 and st2 == 401)
+                st, m = call("GET", "/api/mapa")
+                check("mapa: the coverage state — disponible, the archive's own bounds, max zoom and centre out of the 127-byte header (L5 S4)",
+                      st == 200 and m["disponible"] is True and m["zoom_max"] == 14
+                      and m["limites"] == {"longitud_min": -77.5, "latitud_min": -56.5,
+                                           "longitud_max": -66.5, "latitud_max": -17.5}
+                      and m["centro"] == {"longitud": -70.5, "latitud": -33.5, "zoom": 6})
+                TILES_ARCHIVE = os.path.join(tmp, "no-esta.pmtiles")
+                st, _c, cuerpo = pedir_mapa("/mapa/chile.pmtiles", {"Range": "bytes=0-6"})
+                st2, m2 = call("GET", "/api/mapa")
+                check("mapa: no archive → the route answers 404 naming the remedy and the state answers disponible: false with it — a completable screen, never an error (ADR-0019)",
+                      st == 404 and "aps-conecta mapa" in json.loads(cuerpo)["error"]
+                      and st2 == 200 and m2["disponible"] is False
+                      and "aps-conecta mapa" in m2["motivo"])
+                TILES_ARCHIVE = old_tiles
                 b.cookie = f"{TOKEN_COOKIE}={TOKEN}"
 
 
@@ -5764,6 +5949,7 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
         CRED_PATH, PHASE20 = old_cred, old_p20
         CERT_DIR = old_cert
         AIO_STATE = old_aio
+        TILES_ARCHIVE = old_tiles
         globals().update(recursos=reales[0], puerto_libre=reales[1])
         os.environ.update(_scrubbed)
         # the stub world closes with the fixture: the PATH injection and the FAKE_DOCKER_* knobs
