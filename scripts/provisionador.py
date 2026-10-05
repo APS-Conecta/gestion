@@ -2086,6 +2086,28 @@ color:#fff;background:var(--riel);padding:.7rem var(--gutter);font:700 .85rem/1.
 .riel-movil .ticks i.a{background:#fff;border-color:#fff}
 .hoja{padding:1.75rem var(--gutter) 7rem}
 }
+/* ── the Centro map pane (L5 S4): the frozen UI design's own, over vendored Leaflet ── */
+.marca-ok{color:var(--ok);font-weight:800}
+.cuerpo.centro-hoja{max-width:none}
+.centro-grid{display:grid;grid-template-columns:minmax(0,27rem) minmax(0,1fr);gap:0 clamp(1.5rem,3vw,3rem);align-items:start}
+.centro-grid .mapa{position:sticky;top:0;height:100dvh;margin-right:calc(-1 * var(--gutter))}
+.mapa{position:relative;background:#efe9f7;min-height:22rem;overflow:hidden}
+.mapa .leaflet-container{height:100%;width:100%;background:#efe9f7;font:inherit;cursor:grab;outline:none}
+.mapa .leaflet-container:active{cursor:grabbing}
+.mapa .leaflet-control-scale{margin:0 0 .6rem .75rem}
+.mapa .leaflet-control-scale-line{border:2px solid var(--tinta);border-top:0;background:rgba(255,255,255,.7);color:var(--tinta);font:700 .7rem/1 var(--f-cuerpo);padding:3px 2px 0;text-align:center;box-shadow:none}
+.pin-mapa{filter:drop-shadow(0 3px 3px rgba(16,24,40,.35))}
+.mapa-ctrl{position:absolute;right:.75rem;top:.75rem;display:flex;flex-direction:column;gap:2px;z-index:500}
+.mapa-ctrl button{display:inline-flex;align-items:center;justify-content:center;margin:0;padding:0;width:2.75rem;height:2.75rem;border:0;border-radius:3px;background:#fff;color:var(--fondo);font:800 1.2rem/1 var(--f-cuerpo);cursor:pointer;box-shadow:0 1px 3px rgba(16,24,40,.35)}
+.mapa-ctrl button:hover{background:var(--velo)}
+.mapa-nota{position:absolute;left:.75rem;top:.75rem;max-width:min(22rem,calc(100% - 4.5rem));background:rgba(255,255,255,.94);padding:.5rem .7rem;font-size:var(--t-xs);line-height:1.45;color:var(--tinta);border-left:3px solid var(--oro);z-index:500}
+.mapa-atrib{position:absolute;right:0;bottom:0;background:rgba(255,255,255,.88);font-size:.7rem;padding:.15rem .45rem;color:var(--apagado);max-width:100%;z-index:500}
+.lectura{font-size:var(--t-s);display:grid;gap:.25rem}
+.lectura .num{font-family:var(--f-mono);font-size:.85rem}
+@media (max-width:860px){
+.centro-grid{grid-template-columns:minmax(0,1fr)}
+.centro-grid .mapa{position:relative;height:24rem;margin:1.5rem calc(-1 * var(--gutter)) 0}
+}
 </style>"""
 
 
@@ -2149,7 +2171,7 @@ def head(title):
             f'<link rel="icon" href="/recursos/favicon.svg" type="image/svg+xml">{page_css()}{page_js()}')
 
 
-def shell(step_id, body, aviso=None):
+def shell(step_id, body, aviso=None, clase=None):
     """A browser step's page, variant A «Capítulos»: the backdrop rail — the registry's steps, the
     server ones done, the current one marked (aria-current) — beside the chapter: numeral, «Paso n
     de N · en su navegador», the step's title and purpose, then the screen. A step may span screens
@@ -2172,6 +2194,7 @@ def shell(step_id, body, aviso=None):
                     for i in range(1, total + 1))
     aviso_html = f'<div class="aviso">{aviso}</div>' if aviso else ""
     titulo = esc(s["titulo"])
+    cuerpo = "cuerpo" + ((" " + clase) if clase else "")
     page_title = f"Paso {n} de {total} · {s['titulo']}"
     donde = esc(s["donde"])
     return f"""<!DOCTYPE html>
@@ -2186,7 +2209,7 @@ def shell(step_id, body, aviso=None):
 <main class="hoja" id="contenido"><header class="apertura"><span class="numeral" aria-hidden="true">{n}</span>
 <div><p class="ceja">Paso {n} de {total} · en su {donde}</p><h1 tabindex="-1">{titulo}</h1></div>
 <p class="para">{esc(s["para"])}</p></header>
-<div class="cuerpo">{aviso_html}{body}</div></main></div>
+<div class="{cuerpo}">{aviso_html}{body}</div></main></div>
 </body></html>"""
 
 
@@ -2374,12 +2397,22 @@ def screen_contenedores():
     return shell("suite", body)
 
 def screen_centro():
-    """Step 6, «Elegir el centro» (L3 S2) — the approved design's Centro without its map (L5):
-    Región › Comuna › Tipo filters and an accent-blind, every-term search over the whole register,
-    one payload filtered in the browser; the card says what the site file will say. «Confirmar
-    centro» hands the code to the server — no code rides a URL. A filter that excludes the chosen
-    centre clears it: never a centre the operator did not pick."""
-    body = """<div class="pila">
+    """Step 6, «Elegir el centro» (L3 S2; L5 S4 adds the map pane) — the approved design's Centro:
+    the Región › Comuna › Tipo filters and an accent-blind, every-term search over the whole
+    register, one payload filtered in the browser, beside the frozen UI's sticky map. The pane
+    opens on the establishment's official register point (a22) and the admin confirms it or
+    moves it — click or tap, drag, arrow keys at 5 m (Shift 25 m) — the chosen point riding
+    «Confirmar centro» beside the code, held server-side until step 8 writes the site file (a
+    reload restores the pin). The basemap is the suite's own archive through /mapa/ (vendored
+    Leaflet + protomaps-leaflet from /recursos/, the bytes territorio runs); a missing archive
+    or a dead route is a note naming the remedy and a completable screen — the ring and the
+    pin on the plain background (ADR-0019's addendum). A fixed site shows its point read-only.
+    No code rides a URL; a filter that excludes the chosen centre clears it: never a centre the
+    operator did not pick."""
+    body = """<link rel="stylesheet" href="/recursos/leaflet.css">
+<script src="/recursos/leaflet.js"></script>
+<script src="/recursos/protomaps-leaflet.js"></script>
+<div class="centro-grid"><div class="pila">
 <div class="filtros">
 <div class="campo"><label for="f-reg">Región</label><select id="f-reg" class="control"></select></div>
 <div class="campo"><label for="f-com">Comuna</label><select id="f-com" class="control"></select></div>
@@ -2395,13 +2428,24 @@ autocomplete="off" spellcheck="false">
 <ul class="combo-lista" id="c-lista" role="listbox" aria-labelledby="l-centro"></ul>
 <div class="combo-pie" id="c-pie" aria-live="polite"></div></div></div>
 <dl class="dl" id="c-ficha"></dl>
+<div class="lectura" id="c-lectura" aria-live="polite"></div>
 <div id="m"></div>
-<div class="fila"><button type="button" id="c-ok" disabled>Confirmar centro</button></div>
+<div class="fila"><button type="button" id="c-ok" disabled>Confirmar centro</button>
+<button type="button" class="enlace-btn" id="c-reset">Punto oficial</button></div>
 <p class="para nota" id="c-nota"></p></div>
+<div class="mapa" id="c-mapa">
+<div class="mapa-ctrl"><button type="button" data-z="1" aria-label="Acercar">+</button>
+<button type="button" data-z="-1" aria-label="Alejar">−</button>
+<button type="button" data-z="0" aria-label="Volver a centrar el mapa">◎</button></div>
+<div class="mapa-nota" id="c-nota-mapa" hidden></div>
+<div class="mapa-atrib">© OpenStreetMap contributors · Puntos: MINSAL/DEIS, Geoportal de Chile</div>
+</div></div>
 <script>
 (async () => {
   const $ = (s) => document.querySelector(s);
-  const [d, actual] = await Promise.all([api("/api/centros"), api("/api/centro")]);
+  const [d, actual, cobR] = await Promise.all([api("/api/centros"), api("/api/centro"), api("/api/mapa")]);
+  const cob = cobR.estado === 200 && typeof cobR.disponible === "boolean" ? cobR
+    : {disponible: false, motivo: "el mapa no se pudo consultar — el punto se confirma igual"};
   if (d.estado !== 200) {
     $("#c-btn").innerHTML = "<span><b>Registro no disponible</b></span>";
     zona("m").innerHTML = '<div class="error">' + escapear(d.error) + "</div>"; return;
@@ -2409,7 +2453,8 @@ autocomplete="off" spellcheck="false">
   // deis.fold's twin — NFD, combining marks stripped, lower case: «ramon» finds «Ramón»
   const fold = (s) => s.normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").toLowerCase();
   const miles = (n) => n.toLocaleString("es-CL");
-  const CEN = d.centros.map(([c, t, n, dir, co, ss, dep]) => ({c, t, n, d: dir, co, ss, dep,
+  const CEN = d.centros.map(([c, t, n, dir, co, ss, dep, la, lo]) => ({c, t, n, d: dir, co, ss, dep,
+    pto: la && lo ? {lat: +la, lng: +lo} : null,   // the register's own point (L5 S4), trailing and optional
     reg: d.comunas[co][1], k: fold(n + " " + c + " " + d.tipos[t][0] + " " + d.comunas[co][0] + " " + dir)}));
   const POR = new Map(CEN.map((x) => [x.c, x]));
   const F = {reg: -1, com: -1, tipo: -1};   // R36: every type until the operator narrows it
@@ -2456,13 +2501,84 @@ autocomplete="off" spellcheck="false">
       ["Comuna", d.comunas[x.co][0]], ["Región", d.regiones[x.reg]], ["Servicio de Salud", d.servicios[x.ss]],
       ["Dependencia", d.dependencias[x.dep]]].map(([a, b]) => `<dt>${a}</dt><dd>${escapear(b)}</dd>`).join("");
   }
+  // ── the map pane (L5 S4): the frozen design's sticky map over the suite's own basemap ──
+  const cont = zona("c-mapa"), notaMapa = zona("c-nota-mapa");
+  cont.tabIndex = 0;   // keyboard:false below: the arrows move the pin, never the view
+  cont.setAttribute("aria-label", "Mapa del centro. Haga clic o toque donde queda la entrada para mover el marcador, o use las flechas para moverlo de a 5 metros; + y − acercan o alejan.");
+  const mp = L.map(cont, {zoomControl: false, attributionControl: false, keyboard: false,
+                          maxZoom: 19, minZoom: 3});   // territorio's discipline: no stock controls
+  L.control.scale({imperial: false, position: "bottomleft"}).addTo(mp);
+  if (cob.disponible) {
+    protomapsL.leafletLayer({url: "/mapa/chile.pmtiles", lang: "es", flavor: "light",
+                             maxZoom: 19, maxDataZoom: 15}).addTo(mp);   // basemap.js's own options
+  } else {   // the state and its remedy, named — a completable screen, never an outage (ADR-0019)
+    notaMapa.hidden = false;
+    notaMapa.textContent = cob.motivo;
+  }
+  const anillo = L.circleMarker([0, 0], {radius: 13, weight: 2, color: "#5315a8", dashArray: "4 3",
+                                         fill: false, interactive: false}).addTo(mp);
+  const chincheta = L.divIcon({className: "pin-mapa", iconSize: [26, 40], iconAnchor: [13, 40],
+    html: '<svg viewBox="0 0 26 40" width="26" height="40" aria-hidden="true">' +
+      '<path d="M13 40C9 31 0 26.5 0 14A13 13 0 1 1 26 14C26 26.5 17 31 13 40Z" fill="#7f21fe"/>' +
+      '<circle cx="13" cy="14" r="5" fill="#fff"/></svg>'});   // divIcon: leaflet.css's images are never fetched
+  const marcador = L.marker([0, 0], {icon: chincheta, draggable: true, autoPan: true,
+                                     keyboard: false}).addTo(mp);
+  // the frozen design's own helpers, ported: metres, the es-CL coordinate, the bearing
+  const metros = (a, b) => { const R = 6371000, r = Math.PI / 180, dLa = (b.lat - a.lat) * r,
+    dLo = (b.lng - a.lng) * r, h = Math.sin(dLa / 2) ** 2 +
+    Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLo / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h)); };
+  const coord = (v) => (+v).toFixed(5).replace("-", "−").replace(".", ",");
+  const rumbo = (a, b) => { const ang = Math.atan2(b.lat - a.lat, (b.lng - a.lng) * Math.cos(a.lat * Math.PI / 180)) * 180 / Math.PI;
+    return ["este", "noreste", "norte", "noroeste", "oeste", "suroeste", "sur", "sureste"][Math.round(((ang + 360) % 360) / 45) % 8]; };
+  let pin = null;   // null: the official point; an object once moved (what «Confirmar centro» sends)
+  function lectura() {
+    const x = elegido && POR.get(elegido);
+    if (!x || !x.pto) { zona("c-lectura").innerHTML = ""; return; }
+    const p = pin || x.pto, dis = metros(x.pto, p);
+    zona("c-lectura").innerHTML = '<span>Oficial: <span class="num">' + coord(x.pto.lat) + ", " +
+      coord(x.pto.lng) + "</span></span>" + (dis < 3 ?
+      '<span><span class="marca-ok">✓</span> En el punto oficial. Para corregir: clic o toque en el mapa, o arrastrar el marcador.</span>' :
+      '<span>Elegido: <span class="num">' + coord(p.lat) + ", " + coord(p.lng) + '</span> · ' +
+      miles(Math.round(dis)) + " m al " + rumbo(x.pto, p) + "</span>");
+  }
+  const movible = () => !actual.fijo;   // a fixed site shows its point, read-only
+  function mover(p) { pin = {lat: p.lat, lng: p.lng}; marcador.setLatLng(p); lectura(); }
+  function pintar(p, z) {   // the pane opens or re-opens on a point: the ring, the pin, the view
+    anillo.setLatLng(p);
+    marcador.setLatLng(p);
+    mp.setView([p.lat, p.lng], z ?? (cob.disponible ? 16 : 15));
+  }
+  mp.on("click", (e) => { if (movible()) mover(e.latlng); });   // a click or a tap moves the pin
+  marcador.on("drag", (e) => { if (movible()) mover(e.target.getLatLng()); });
+  cont.addEventListener("keydown", (e) => {   // the arrows nudge the pin 5 m, Shift 25 m
+    const paso = {ArrowUp: [1, 0], ArrowDown: [-1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1]}[e.key];
+    const base = pin || (POR.get(elegido) || {}).pto;
+    if (paso && base && movible()) {
+      e.preventDefault();
+      const d = (e.shiftKey ? 25 : 5) / 111320;
+      mover({lat: base.lat + paso[0] * d, lng: base.lng + paso[1] * d / Math.cos(base.lat * Math.PI / 180)});
+    }
+    if (e.key === "+" || e.key === "-") { e.preventDefault(); mp.setZoom(mp.getZoom() + (e.key === "+" ? 1 : -1)); }
+  });
+  zona("c-mapa").querySelector(".mapa-ctrl").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    const z = +b.dataset.z;
+    if (z) mp.setZoom(mp.getZoom() + z);
+    else mp.setView(marcador.getLatLng(), mp.getZoom());   // ◎: back onto the pin
+  });
+  $("#c-reset").addEventListener("click", () => {   // the reset case: no pair rides the confirm
+    const x = POR.get(elegido); if (!x || !x.pto) return;
+    pin = null; marcador.setLatLng(x.pto); mp.setView([x.pto.lat, x.pto.lng], mp.getZoom()); lectura();
+  });
+  function elegir(c) {
+    const x = POR.get(c); elegido = c; pin = null;
+    F.reg = x.reg; F.com = x.co; if (F.tipo >= 0 && F.tipo !== x.t) F.tipo = -1;
+    selects(); ficha(); lectura(); cerrar();
+    if (x.pto) pintar(x.pto);   // the pane opens on the official point (a22)
+  }
   const abrir = () => { $("#c-panel").hidden = false; $("#c-btn").setAttribute("aria-expanded", "true"); lista(); $("#c-q").focus(); };
   const cerrar = () => { if ($("#c-panel").hidden) return; $("#c-panel").hidden = true; $("#c-btn").setAttribute("aria-expanded", "false"); };
-  function elegir(c) {
-    const x = POR.get(c); elegido = c;
-    F.reg = x.reg; F.com = x.co; if (F.tipo >= 0 && F.tipo !== x.t) F.tipo = -1;
-    selects(); ficha(); cerrar();
-  }
   $("#c-btn").addEventListener("click", () => ($("#c-panel").hidden ? abrir() : cerrar()));
   $("#c-btn").addEventListener("keydown", (e) => { if (e.key === "ArrowDown" && $("#c-panel").hidden) { e.preventDefault(); abrir(); } });
   $("#c-q").addEventListener("input", lista);
@@ -2480,25 +2596,32 @@ autocomplete="off" spellcheck="false">
   document.addEventListener("pointerdown", (e) => { if (!e.target.closest(".combo")) cerrar(); });
   for (const [id, k] of [["#f-reg", "reg"], ["#f-com", "com"], ["#f-tipo", "tipo"]]) $(id).addEventListener("change", (e) => {
     F[k] = +e.target.value; if (k === "reg") F.com = -1;
-    if (elegido && !pasa(POR.get(elegido))) { elegido = null; ficha(); }   // never a centre nobody picked
+    if (elegido && !pasa(POR.get(elegido))) { elegido = null; pin = null; ficha(); lectura(); }   // never a centre nobody picked
     selects(); if (!$("#c-panel").hidden) lista();
   });
   $("#c-ok").addEventListener("click", async () => {
     if (actual.fijo) { location.href = "/contenedores"; return; }   // fixed: nothing to hand over
     $("#c-ok").disabled = true;
-    const r = await api("/api/centro", {codigo: elegido});
+    const r = await api("/api/centro", {codigo: elegido,
+      ...(pin ? {latitud: pin.lat, longitud: pin.lng} : {})});   // the point rides the same confirm
     if (r.estado === 200) { location.href = "/contenedores"; return; }
     $("#c-ok").disabled = false;
     zona("m").innerHTML = '<div class="error">' + escapear(r.error) + "</div>";
   });
-  $("#c-nota").textContent = `Registro DEIS ${d.registro}: ${miles(CEN.length)} establecimientos de atención primaria.`;
-  selects(); ficha();
+  $("#c-nota").textContent = `Registro DEIS ${d.registro}: ${miles(CEN.length)} establecimientos de atención primaria. Coordenadas: MINSAL/DEIS, Geoportal de Chile.`;
+  selects(); ficha(); lectura();
+  const base = cob.disponible ? {lat: cob.centro.latitud, lng: cob.centro.longitud} : {lat: -33.5, lng: -70.7};
+  mp.setView([base.lat, base.lng], cob.disponible ? cob.centro.zoom : 5);   // before any centre: the archive's own view
   if (actual.estado !== 200) {
     zona("m").innerHTML = '<div class="error">' + escapear(actual.error) + "</div>";
   } else if (actual.codigo) {
     if (POR.has(actual.codigo)) elegir(actual.codigo);
-    if (actual.fijo) {   // fixed by the site file: nothing to clear, nothing to pick
+    if (actual.punto && actual.punto.oficial === false && POR.has(actual.codigo))
+      mover({lat: +actual.punto.latitud, lng: +actual.punto.longitud});   // a reload restores the chosen pin
+    if (actual.fijo) {   // fixed by the site file: nothing to clear, nothing to pick, the point read-only
       for (const s of ["#f-reg", "#f-com", "#f-tipo", "#c-btn"]) $(s).disabled = true;
+      $("#c-reset").hidden = true;
+      if (marcador.dragging) marcador.dragging.disable();
       $("#c-ok").disabled = false;
       zona("m").innerHTML = '<div class="aviso">Esta instalación ya sirve a ' +
         escapear(actual.nombre) + ": una instalación, un solo establecimiento.</div>";
@@ -2506,7 +2629,8 @@ autocomplete="off" spellcheck="false">
   }
 })();
 </script>"""
-    return shell("centro", body)
+    return shell("centro", body, clase="centro-hoja")
+
 
 
 def screen_equipos():
@@ -2741,6 +2865,8 @@ y en la consola del servidor.</p>
       escapear(r.centro.comuna) + " · DEIS " + escapear(r.centro.codigo) + "</dd>" +
     "<dt>Sectores (" + r.sectores.length + ")</dt><dd>" + lista(r.sectores) + "</dd>" +
     "<dt>Programas (" + r.programas.length + ")</dt><dd>" + lista(r.programas) + "</dd>" +
+    "<dt>Ubicación</dt><dd>" + (r.ubicacion ? (r.ubicacion.oficial ? "punto oficial" :
+      "corregida, a " + r.ubicacion.metros.toLocaleString("es-CL") + " m del oficial") : "—") + "</dd>" +
     "<dt>Cuentas de cargo</dt><dd>" + r.cuentas_de_cargo + " (dirección y jefaturas; se crean solas)</dd></dl>" +
     '<h3 class="ceja">Personas (' + r.personas.length + ")</h3><table><tr><th>Usuario</th><th>Nombre</th>" +
     "<th>Grupos</th><th>Primera adm.</th></tr>" + r.personas.map(([u, n, g, p]) => "<tr><td>" +
@@ -5368,11 +5494,21 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                     check(f"screens: {path} renders with the cookie arm",
                           st == 200 and marca in text and "text/html" in hdr.get("Content-Type", ""))
                 nodo = shutil.which("node")
+                # A-010 (L5 S4): the arm now allows exactly <script src="/recursos/…"></script>
+                # beside the bare inline blocks — the drill proves a foreign src still counts as
+                # suelto, or the relaxation would gate nothing.
+                falsa = '<script src="http://malo.example/x.js"></script>'
+                drill = (falsa.count("<script")
+                         - len(re.findall(r"<script>(.*?)</script>", falsa, re.S))
+                         - len(re.findall(r'<script src="/recursos/[^"]*"></script>', falsa)))
+                check("screens: the script-tag arm reddens on a foreign src — only /recursos/ may ride (A-010, L5 S4)",
+                      drill == 1)
                 bloques, sueltos = set(), 0
                 for ruta in ROUTES:
                     pagina = b.req("GET", ruta)[1]
                     hallados = re.findall(r"<script>(.*?)</script>", pagina, re.S)
-                    sueltos += pagina.count("<script") - len(hallados)   # a block this reader would skip
+                    permitidos = re.findall(r'<script src="/recursos/[^"]*"></script>', pagina)
+                    sueltos += pagina.count("<script") - len(hallados) - len(permitidos)
                     bloques.update(hallados)
                 if nodo:
                     malos = []
@@ -5391,6 +5527,20 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                       's.normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").toLowerCase()' in centro_html
                       and "qs.every((t) => x.k.includes(t))" in centro_html
                       and "const F = {reg: -1, com: -1, tipo: -1};" in centro_html)
+                otros = sum('<script src="/recursos/' in b.req("GET", r)[1] for r in ROUTES if r != "/centro")
+                check("centro: the map stack rides the /recursos/ whitelist on Centro only — the vendored bytes territorio runs (L5 S4)",
+                      centro_html.count('<script src="/recursos/') == 2 and otros == 0
+                      and '<link rel="stylesheet" href="/recursos/leaflet.css">' in centro_html
+                      and 'class="cuerpo centro-hoja"' in centro_html)
+                check("centro: the pane's frozen contract — the custom controls, the lectura's two states, the note, the attribution, the provenance, the es-CL coordinate (L5 S4)",
+                      all(t in centro_html for t in ('data-z="1" aria-label="Acercar"',
+                          'data-z="-1" aria-label="Alejar"', 'data-z="0" aria-label="Volver a centrar el mapa"',
+                          "© OpenStreetMap contributors · Puntos: MINSAL/DEIS, Geoportal de Chile",
+                          "Haga clic o toque donde queda la entrada para mover el marcador",
+                          "En el punto oficial. Para corregir: clic o toque en el mapa, o arrastrar el marcador.",
+                          ">Punto oficial</button>", 'protomapsL.leafletLayer({url: "/mapa/chile.pmtiles"',
+                          '" m al " + rumbo', '.replace(".", ",")',
+                          "Coordenadas: MINSAL/DEIS, Geoportal de Chile")))
                 tsv = subprocess.run(["bash", HOST_CLI, "pasos"], capture_output=True, text=True,
                                      timeout=10).stdout
                 titulos = [line.split("\t")[1] for line in tsv.splitlines()]
@@ -5541,6 +5691,9 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                       b.req("GET", "/divergencia")[0] == 404
                       and semanal.startswith("Sun *-*-* 03:00") and "domingo 03:00" in rev_html
                       and mensual.startswith("*-*-04 05:00") and "día 4, 05:00" in rev_html)
+                check("revisión: the plan carries the Ubicación row — punto oficial, or corregida with the metres (the frozen line, L5 S4)",
+                      "<dt>Ubicación</dt>" in rev_html and "corregida, a " in rev_html
+                      and "m del oficial" in rev_html)
 
                 st, plan, hdr, setc = b.req("GET", "/equipos")
                 check("planilla: the browser decode-or-warn rides the screen (bytes, utf-8 fatal, cp1252)",
@@ -5807,6 +5960,14 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                 sync_playwright = None
                 print("  skip: browser arms — playwright is not installed "
                       "(pip install playwright; playwright install chromium)")
+            # The browser arms' world (L5 S4): the fallback state — no archive — so the pane's
+            # basemap never fires tile fetches inside arms that navigate away mid-load (the R34
+            # lesson, measured on a box that owns the real 1.1 GB archive: the aborted fetches
+            # drown every arm's console accounting). Hermeticity, the dd8a1db way: one pin here
+            # instead of per-arm pins; the map pane's own arms (Phase 5) repoint per-arm, the
+            # painted-pixels one alone against the real archive this box may own.
+            old_tiles_browser = TILES_ARCHIVE
+            TILES_ARCHIVE = os.path.join(tmp, "no-esta.pmtiles")
             if sync_playwright:
                 with sync_playwright() as pw:
                     nav = pw.chromium.launch()
@@ -6163,6 +6324,7 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                               en_login and pegado)
                     finally:
                         nav.close()
+            TILES_ARCHIVE = old_tiles_browser
             # ── L3 S1: a green «Revisar y ejecutar» closes the installer (SEC-2, a13) ──
             fin, fport = bind_server("127.0.0.1", (0,))
             fin.grace = 0.2
