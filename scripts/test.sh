@@ -71,6 +71,43 @@ check bash -c '
     echo "$sha  $t" | sha256sum --check --status || { echo "$id: bytes do not match sha256= in VENDOR" >&2; rc=1; }
   done
   exit $rc'
+# --- gate (L5 S4): the vendored map libraries are the pinned bytes ---------------------------------
+# The Centro pane's engine is three files copied byte-identical from territorio's node_modules
+# (docs/LICENSING.md §3). Vendored bytes are the one diff a reviewer reads as "just assets":
+# territorio upgrades, a re-vendor misses a file, an editor "fixes" a minified line — and the
+# installer's map changes with no gate the eye can catch. The image-digests pair-pin discipline,
+# applied to vendored files: each must exist and hash to its pin. The negative half mutates one
+# byte of a copy — a gate that cannot go red is not a gate (A-010).
+check python3 -c '
+import hashlib, os, sys, tempfile
+PINS = {
+    "themes/apsconecta/core/mapa/leaflet.js":
+        "db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a",
+    "themes/apsconecta/core/mapa/leaflet.css":
+        "a7837102824184820dfa198d1ebcd109ff6d0ff9a2672a074b9a1b4d147d04c6",
+    "themes/apsconecta/core/mapa/protomaps-leaflet.js":
+        "26af014f7b1af308ec120b791cff76657bb9c3383633b52033e6edf9e5e4cdb5",
+}
+def distinta(corpus):   # the first path whose bytes are not its pin, or None
+    for ruta, pin in corpus.items():
+        with open(ruta, "rb") as fh:
+            if hashlib.sha256(fh.read()).hexdigest() != pin:
+                return ruta
+    return None
+real = distinta(PINS)
+with tempfile.TemporaryDirectory() as tmp:
+    mutada = os.path.join(tmp, "leaflet.css")
+    with open("themes/apsconecta/core/mapa/leaflet.css", "rb") as src:
+        datos = bytearray(src.read())
+    datos[100] ^= 1
+    with open(mutada, "wb") as dst:
+        dst.write(datos)
+    drill = distinta({**PINS, mutada: PINS["themes/apsconecta/core/mapa/leaflet.css"]})
+if real is not None:
+    print("the vendored map libraries are not the pinned bytes: " + real)
+if drill != mutada:
+    print("the mutation drill passed — the gate could not see a changed byte")
+sys.exit(0 if real is None and drill == mutada else 1)'
 # docs/LICENSING.md claims a licence per app and says it was read "from each app'"'"'s appinfo/info.xml
 # inside the shipped tarball". Nothing checked that it still was. `eurooffice` is AGPL-3.0-ONLY and
 # the table said -or-later -- materially different grants -- through two documentation audits (#87,
@@ -1113,13 +1150,14 @@ check bash -c '
     && ! git grep -qE "nginx:alp""ine|TILES_""PORT|:80""84" -- .env.example compose.yaml host scripts provisioning \
     && grep -q "/tiles/" provisioning/phases/16-app-policy.sh'
 
-# --- gate (org review L5-S3, I7): the map-folder default — five literals that must agree ---------
-# /srv/aps-conecta is spelled in five places because each site legitimately owns its own fallback
-# SHAPE: the installer's TILES_ARCHIVE, tiles.sh's standalone TILES_HOME, the testbed's
+# --- gate (org review L5-S3, I7): the map-folder default — six literals that must agree ---------
+# /srv/aps-conecta is spelled in six places because each site legitimately owns its own fallback
+# SHAPE: the host CLI's TILES_ARCHIVE, the provisionador's own TILES_ARCHIVE (L5 S4 — /mapa/ and
+# /api/mapa read it), tiles.sh's standalone TILES_HOME, the testbed's
 # APS_TILES_DIR env, env.sh's dotenv fixture, and refresh-basemap's DEST (the serving directory
 # S3 gave it — a literal this pack itself introduced is exactly the drift site the gate exists to
 # pin). Single-sourcing was weighed and rejected (tiles.sh's standalone fallback survives it), so
-# the discipline is image-digests' pair-pin generalized to five: each site's default read out of
+# the discipline is image-digests' pair-pin generalized to six: each site's default read out of
 # the file, and they must all say the same path. Shape-anchored, not line-numbered — the dd8a1db
 # hermeticity pin (host/aps-conecta's self-test literals at :1411 and the grep -qF cross-check at
 # :2342) are pins ON PURPOSE and do not match; the emitters they pin do. EXACTLY ONE match per
@@ -1136,6 +1174,7 @@ SITES = [
     ("scripts/aio-testbed.sh",     r"--env \"APS_TILES_DIR=\$\(dirname \"\$\{TILES_HOME:-([^\"}\n]+)\}/tiles/chile\.pmtiles\"\)\""),
     ("scripts/env.sh",             r"^TILES_HOME=(/[^\"=\s]+)$"),
     ("scripts/refresh-basemap.sh", r"^DEST=\"\$\{DEST:-([^\"}\n]+)/tiles/chile\.pmtiles\}\"$"),
+    ("scripts/provisionador.py",   r"^TILES_ARCHIVE = \"([^\"}\n]+)/tiles/chile\.pmtiles\"$"),
 ]
 def defaults(corpus):
     got, errs = {}, []
@@ -1151,7 +1190,7 @@ def broken(got, errs):
 real = {s: open(s, encoding="utf-8").read() for s, _ in SITES}
 got, errs = defaults(real)
 if broken(got, errs):
-    print("the map-folder default is not one value across the five sites that spell it:")
+    print("the map-folder default is not one value across the six sites that spell it:")
     for e in errs: print("  " + e)
     for s, v in sorted(got.items()): print("  " + s + " = " + v)
     sys.exit(1)
@@ -1161,6 +1200,7 @@ fab = {
     "scripts/aio-testbed.sh":     "    --env \"APS_TILES_DIR=$(dirname \"${TILES_HOME:-/srv/prueba}/tiles/chile.pmtiles\")\" \\\n",
     "scripts/env.sh":             "TILES_HOME=/srv/prueba\n",
     "scripts/refresh-basemap.sh": "DEST=\"${DEST:-/srv/prueba/tiles/chile.pmtiles}\"\n",
+    "scripts/provisionador.py":   "TILES_ARCHIVE = \"/srv/prueba/tiles/chile.pmtiles\"\n",
 }
 if broken(*defaults(fab)):
     print("the fabricated agreeing corpus failed"); sys.exit(1)

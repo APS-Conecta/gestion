@@ -46,12 +46,14 @@ import http.client
 import io
 import ipaddress
 import json
+import math
 import os
 import re
 import secrets
 import shlex
 import socket
 import ssl
+import struct
 import subprocess
 import sys
 import tempfile
@@ -84,6 +86,11 @@ CODIGO = re.compile(r"[0-9]{4,6}")
 # writes the site file, which answers from then on — one install, one establishment (D13).
 # Process-local on purpose: a restart before step 8 costs one re-pick, nothing else.
 CENTRO = None
+# The confirmed point (L5 S4): the centre's moved coordinates, held BESIDE CENTRO until step 8
+# writes them into the site file's SITE_LON/SITE_LAT — None is the official point (the reset
+# case), and every confirm resets it (a code change clears it). Same process-local rule: a
+# restart costs one re-pick, point included.
+PUNTO = None
 # The Centro screen's orders (the approved design's): regions north to south — the register's
 # codes are not — and the types with the long name the card shows. R36: every type is offered,
 # none excluded by default.
@@ -122,6 +129,17 @@ PHASE20 = os.path.join(HERE, "..", "provisioning", "phases", "20-groups.sh")
 CRED_PATH = "/opt/aps-conecta/credentials.txt"
 ESTADO_PATH = "/opt/aps-conecta/estado.txt"   # the last execution's verdict (a10): 0644, «aps-conecta estado»
 AIO_STATE = "/opt/aps-conecta/aio"   # the host's wizard state (0700): passphrase, domain, Talk options — passed to it
+# The Centro pane's basemap archive (L5 S4): what `aps-conecta mapa` (step 4) builds — /mapa/
+# serves it one byte range at a time, /api/mapa reads its coverage, and the confirm-time
+# bounds check will read its bounds. A module constant like CRED_PATH — repointed by the
+# self-test, never an env read (the self-test scrubs TILES_* prefixes; the dd8a1db lesson) —
+# and the I7 gate's sixth literal in scripts/test.sh.
+TILES_ARCHIVE = "/srv/aps-conecta/tiles/chile.pmtiles"
+# The pmtiles v3 header, little-endian: magic "PMTiles" and spec version at byte 7, then the
+# fields territorio's pmtiles reader (bytesToHeader) unpacks. Indices past the magic and the
+# 11 offsets: 19 minZoom · 20 maxZoom · 21-24 minLon/minLat/maxLon/maxLat (int32 ×1e7) ·
+# 25 centerZoom · 26-27 centerLon/centerLat.
+PMTILES_HEADER = struct.Struct("<2sH3sB11Q6B4iB2i")
 
 # The installer's own certificate authority and the leaf it signs for the link's address (L3 S1,
 # owner 2026-10-02). The CA is kept: the suite's certificate (L4, R22) hangs from the same one and
@@ -155,6 +173,13 @@ ASSETS = {
     "nunito-sans.woff2": ("themes/apsconecta/core/fonts/NunitoSans.woff2", "font/woff2"),
     "fondo.svg": ("themes/apsconecta/core/img/background.svg", "image/svg+xml"),
     "favicon.svg": ("themes/apsconecta/core/img/favicon.svg", "image/svg+xml"),
+    # The Centro map pane's engine (L5 S4): vendored beside the brand fonts, byte-identical to
+    # territorio's node_modules pins (docs/LICENSING.md §3) and guarded by scripts/test.sh's
+    # sha256 gate — protomaps-leaflet's IIFE carries the pmtiles reader inside, so these three
+    # files are the whole map stack. Public like the fonts: open-source bytes, nothing secret.
+    "leaflet.js": ("themes/apsconecta/core/mapa/leaflet.js", "text/javascript"),
+    "leaflet.css": ("themes/apsconecta/core/mapa/leaflet.css", "text/css"),
+    "protomaps-leaflet.js": ("themes/apsconecta/core/mapa/protomaps-leaflet.js", "text/javascript"),
 }
 
 
@@ -513,11 +538,47 @@ def one_establishment(codigo):
                           "establecimiento"}
 
 
+def _grados(crudo):
+    """One SITE_LON/SITE_LAT line value as a plain-degree string, or None — a matching quote
+    pair (a hand edit may quote; deis.block() writes plain degrees bare) is stripped before
+    deis.DEGREES checks the shape: a value this cannot read exactly is refused, never guessed
+    (fail closed, site_arrays' rule)."""
+    v = crudo.strip()
+    if len(v) > 1 and v[0] == v[-1] and v[0] in "'\"":
+        v = v[1:-1]
+    return v if deis.DEGREES.fullmatch(v) else None
+
+
+def site_punto(path):
+    """The site file's own SITE_LON/SITE_LAT pair as {latitud, longitud} strings, or None when
+    either line is absent or not plain degrees — a pre-S1 site or a hand-built silent site simply
+    lacks the pair: a state, not an error (the de26066 review lesson), and never a blocked run.
+    fijar_dominio's anchored-one-line shape; the ranges checked because a sourced file's degrees
+    are a location on Earth, not just a shape."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError:
+        return None
+    par = {}
+    for nombre, campo in (("SITE_LON", "longitud"), ("SITE_LAT", "latitud")):
+        m = re.search(rf"(?m)^{nombre}=(.*)$", text)
+        v = _grados(m.group(1)) if m else None
+        if v is None:
+            return None
+        par[campo] = v
+    if abs(float(par["latitud"])) > 90 or abs(float(par["longitud"])) > 180:
+        return None
+    return par
+
+
 def api_centros():
     """GET /api/centros — the whole register in one compact payload for the Centro screen's
     client-side cascade and search (R36: every centre, every type): each name once, and each centre
-    as [codigo, tipo, nombre, dirección, comuna, servicio, dependencia] with indexes into them.
-    ~250 KB once per visit on the LAN (ponytail: no gzip, no paging — compress if a box feels it)."""
+    as [codigo, tipo, nombre, dirección, comuna, servicio, dependencia] with indexes into them,
+    plus the register's own point as two trailing fields, latitud and longitud (L5 S4) — trailing
+    so the screen's positional destructure of the first seven extends, never re-indexes.
+    ~310 KB once per visit on the LAN (ponytail: no gzip, no paging — compress if a box feels it)."""
     def orden(lista, codigos):
         return lambda x: (lista.index(x) if x in lista else len(lista), codigos(x))
     region = {r["region_codigo"]: r["region"] for r in ROWS}
@@ -534,7 +595,8 @@ def api_centros():
     si = {s: i for i, s in enumerate(servicios)}
     di = {d: i for i, d in enumerate(dependencias)}
     centros = sorted(([r["codigo"], ti[r["tipo"]], r["nombre"], r["direccion"],
-                       ci[r["comuna_codigo"]], si[r["servicio_salud"]], di[r["dependencia"]]]
+                       ci[r["comuna_codigo"]], si[r["servicio_salud"]], di[r["dependencia"]],
+                       r.get("latitud", ""), r.get("longitud", "")]
                       for r in ROWS), key=lambda x: (x[1], deis.fold(x[2])))
     largo = dict(TIPOS)
     return 200, {"registro": SNAPSHOT, "regiones": [region[c] for c in regiones],
@@ -549,20 +611,44 @@ def centro_actual():
     Centro screen; none yet is {"codigo": null} — a state, not an error (a 404 would land in the
     browser console as one). A written code the register lacks (a silent install's own site.sh) is
     still this install's centre, named plainly. Every later screen reads it here, so no code rides a
-    URL (L3 S2); «Listo» names the centre from it too."""
+    URL (L3 S2); «Listo» names the centre from it too.
+    L5 S4: `punto` is the centre's effective point — the site file's own SITE_LON/SITE_LAT once
+    written (a fixed site shows its point), else the pair «Confirmar centro» held, else the
+    register's official; `oficial` says whether it IS the register's point (None when the register
+    carries none to compare against). A site file without the pair falls back to the register's
+    point for display and blocks nothing; null when nothing is known."""
     sitios = written_sites()
     codigo = sitios[0] if sitios else CENTRO
     if codigo is None:
         return 200, {"codigo": None}
     row = find_row(codigo)
     nombre = row["nombre"] if row else f"el establecimiento DEIS {codigo}"
-    return 200, {"codigo": codigo, "nombre": nombre, "fijo": bool(sitios)}
+    oficial = _punto_oficial(row)
+    punto, es_oficial = None, None
+    if sitios:
+        punto = site_punto(site_path(codigo))
+        if punto is None and oficial is not None:   # no pair of its own: the register's, for display
+            punto, es_oficial = dict(oficial), True
+        elif punto is not None and oficial is not None:
+            es_oficial = _mismo_punto(punto, oficial)
+    elif PUNTO is not None:
+        punto = dict(PUNTO)
+        es_oficial = _mismo_punto(PUNTO, oficial) if oficial is not None else False
+    elif oficial is not None:
+        punto, es_oficial = dict(oficial), True
+    return 200, {"codigo": codigo, "nombre": nombre, "fijo": bool(sitios),
+                 "punto": None if punto is None else {**punto, "oficial": es_oficial}}
 
 
 def api_centro(payload):
-    """POST /api/centro {"codigo"} — «Confirmar centro»: held until step 8 writes the site file. A
-    correction is free until then; afterwards only that centre answers 200 (D13)."""
-    global CENTRO
+    """POST /api/centro {"codigo", "latitud"?, "longitud"?} — «Confirmar centro»: held until step
+    8 writes the site file. A correction is free until then; afterwards only that centre answers
+    200 (D13). L5 S4: the point rides the same confirm — both coordinates or none; none is the
+    official point (the reset case), and a held pair lands in the site file at step 8. When the
+    archive of step 4 is readable, the effective point — the given pair, or the register's own —
+    must fall inside its bounds: R47's build-time refusal, moved to where the human is; without a
+    readable archive there is no check, never a blocked screen (ADR-0019's addendum)."""
+    global CENTRO, PUNTO
     codigo = payload.get("codigo")
     if not isinstance(codigo, str) or not CODIGO.fullmatch(codigo):
         return 400, {"error": "el código DEIS debe ser de 4 a 6 dígitos"}
@@ -572,8 +658,112 @@ def api_centro(payload):
     refused = one_establishment(codigo)
     if refused:
         return refused
-    CENTRO = codigo
+    lat, lon = payload.get("latitud"), payload.get("longitud")
+    if (lat is None) != (lon is None):
+        return 400, {"error": "envíe la latitud y la longitud juntas — sin ninguna vuelve al punto oficial"}
+    punto = None
+    if lat is not None:
+        if written_sites():   # the file is the truth from step 8 on — a fixed site shows its point
+            return 409, {"error": f"este servidor ya sirve a {row['nombre']}: su punto ya quedó "
+                                  "escrito con su sitio y se corrige a mano en él"}
+        punto = _punto_valido(lat, lon)
+        if punto is None:
+            return 400, {"error": "la latitud debe ser un número de -90 a 90 y la longitud de "
+                                  "-180 a 180, en grados decimales"}
+    efectivo = punto or _punto_oficial(row)
+    if efectivo is not None and _punto_dentro(efectivo) is False:
+        return 400, {"error": "el punto queda fuera del mapa construido en el paso 4 — "
+                              + ("muévalo dentro del territorio que cubre, o confirme el punto "
+                                 "oficial" if punto else
+                                 "reconstruya el mapa con sudo aps-conecta mapa")}
+    CENTRO, PUNTO = codigo, punto
     return 200, {"ok": True, "codigo": codigo, "nombre": row["nombre"]}
+
+
+def api_mapa():
+    """GET /api/mapa — the basemap's coverage state (L5 S4): the archive's own bounds, max zoom
+    and centre out of its 127-byte pmtiles v3 header, for the Centro pane and the confirm-time
+    bounds check. A missing archive or an unreadable header is a state with a reason, never an
+    error (the {"codigo": null} rule): the pane shows its note and stays completable — never
+    trade a warning for an outage (ADR-0019's addendum)."""
+    try:
+        with open(TILES_ARCHIVE, "rb") as fh:
+            cab = fh.read(PMTILES_HEADER.size)
+    except OSError:
+        return 200, {"disponible": False,
+                     "motivo": "el mapa del paso 4 no está construido — sudo aps-conecta mapa "
+                               "lo construye; el punto se confirma igual"}
+    if len(cab) < PMTILES_HEADER.size or cab[:7] != b"PMTiles" or cab[7] > 3:
+        return 200, {"disponible": False,
+                     "motivo": "el archivo del mapa no se puede leer — reconstrúyalo con "
+                               "sudo aps-conecta mapa; el punto se confirma igual"}
+    c = PMTILES_HEADER.unpack_from(cab)   # the indices: PMTILES_HEADER's comment above
+    return 200, {"disponible": True,
+                 "limites": {"longitud_min": c[21] / 1e7, "latitud_min": c[22] / 1e7,
+                             "longitud_max": c[23] / 1e7, "latitud_max": c[24] / 1e7},
+                 "zoom_max": c[20],
+                 "centro": {"longitud": c[26] / 1e7, "latitud": c[27] / 1e7, "zoom": c[25]}}
+
+
+def _punto_oficial(row):
+    """The register's own point for a row, as the register spells it — or None when the row
+    carries none (defensive: the a21 gate proves every real register row's point inside the
+    basemap bbox; the silent install's own code has no row at all)."""
+    if row and row.get("latitud") and row.get("longitud"):
+        return {"latitud": row["latitud"], "longitud": row["longitud"]}
+    return None
+
+
+def _punto_valido(lat, lon):
+    """A coordinate pair off the wire — number or numeric string, the browser sends floats — as
+    canonical degree strings (seven decimals ≈ a centimetre, trailing zeros cut), or None when
+    either side is not a plain degree: the register's own vocabulary (deis.DEGREES), so a held
+    pair lands in site.sh exactly the way the register's does. bool is a number to isinstance and
+    is refused anyway — a JSON true is a client bug, not 1° north."""
+    def grado(v):
+        if isinstance(v, bool) or not isinstance(v, (int, float, str)):
+            return None
+        try:
+            return float(v)
+        except ValueError:
+            return None
+    la, lo = grado(lat), grado(lon)
+    if la is None or lo is None or not -90 <= la <= 90 or not -180 <= lo <= 180:
+        return None
+
+    def texto(f):
+        s = f"{f:.7f}".rstrip("0").rstrip(".")
+        return "0" if s in ("", "-", "-0") else s
+    return {"latitud": texto(la), "longitud": texto(lo)}
+
+
+def _punto_dentro(punto):
+    """The archive-bounds verdict (R47's replacement): True inside the basemap step 4 built,
+    False outside, None when there is no readable archive to check against — no check then, never
+    a blocked screen (ADR-0019's addendum); the pane's note names the state. api_mapa's own
+    127-byte header read, reused: bounds are the archive's facts, not the centre's."""
+    status, mapa = api_mapa()
+    if status != 200 or not mapa.get("disponible"):
+        return None
+    lim = mapa["limites"]
+    return (lim["longitud_min"] <= float(punto["longitud"]) <= lim["longitud_max"]
+            and lim["latitud_min"] <= float(punto["latitud"]) <= lim["latitud_max"])
+
+
+def _mismo_punto(a, b):
+    """Two pairs naming one point — a centimetre of tolerance (1e-7 degrees), so «Punto oficial»
+    after a correction that never moved lands on oficial, not on a float's last bit."""
+    return (abs(float(a["latitud"]) - float(b["latitud"])) <= 1e-7
+            and abs(float(a["longitud"]) - float(b["longitud"])) <= 1e-7)
+
+
+def _distancia_metros(a, b):
+    """Haversine metres between two points — Revisión's «a N m del oficial» (the pane's lectura
+    does the same maths in the browser); Earth's mean radius, whole metres."""
+    la1, lo1, la2, lo2 = map(math.radians, (float(a["latitud"]), float(a["longitud"]),
+                                            float(b["latitud"]), float(b["longitud"])))
+    h = math.sin((la2 - la1) / 2) ** 2 + math.cos(la1) * math.cos(la2) * math.sin((lo2 - lo1) / 2) ** 2
+    return round(2 * 6371000 * math.asin(math.sqrt(h)))
 
 
 def _site_exists_answer(codigo, path):
@@ -609,6 +799,20 @@ def site_import(payload):
     if not re.search(r'(?m)^SITE_DOMINIO="?[^"\s]+"?$', text):
         return 400, {"error": 'el sitio no declara SITE_DOMINIO="<dominio del servidor>" — la suite se '
                               "configura con él"}
+    # L5 S4 (S1b: optional, validated when present): SITE_LON/SITE_LAT — both or none, and each a
+    # plain degree a site file can source. Absent is a state, not an error (a hand-built site
+    # simply lacks the pair); the bytes are placed verbatim either way.
+    lon_m, lat_m = (re.search(rf"(?m)^{nombre}=(.*)$", text) for nombre in ("SITE_LON", "SITE_LAT"))
+    if (lon_m is None) != (lat_m is None):
+        return 400, {"error": "el sitio declara solo una de SITE_LON y SITE_LAT — envíe ambas en "
+                              "grados decimales, o ninguna"}
+    if lon_m is not None:
+        valores = {"latitud": _grados(lat_m.group(1)), "longitud": _grados(lon_m.group(1))}
+        if (valores["latitud"] is None or valores["longitud"] is None
+                or abs(float(valores["latitud"])) > 90
+                or abs(float(valores["longitud"])) > 180):
+            return 400, {"error": "las líneas SITE_LON y SITE_LAT deben traer grados decimales — "
+                                  "latitud de -90 a 90 y longitud de -180 a 180"}
     with tempfile.TemporaryDirectory() as tmp:
         probe = os.path.join(tmp, "site.sh")
         with open(probe, "w", encoding="utf-8") as fh:
@@ -678,6 +882,13 @@ def api_sitio(payload):
     refused = one_establishment(codigo)   # D13 at step 8 too, not only in the silent install
     if refused:
         return refused
+
+    # L5 S4: a point held at Centro rides the first write — block() reads the row's longitud and
+    # latitud, so the held pair (bounds-checked at the confirm, or unchecked for want of a
+    # readable archive) replaces the register's. The FIRST write only: once written, the file is
+    # the point's home — «Reemplazar» regenerates the team blocks and never the identity lines.
+    if PUNTO is not None and CENTRO == codigo:
+        row = dict(row, longitud=PUNTO["longitud"], latitud=PUNTO["latitud"])
 
     path = site_path(codigo)
     if not os.path.exists(path):
@@ -1226,13 +1437,24 @@ def veredicto(body):
 def plan_clinico(codigo, teams, rows, cargos):
     """The review step's plan in clinic terms (R40): the centre by name, its sectors and programs,
     every person the planilla declares (the first administrator marked), the cargo accounts it adds,
-    and what the clinic gets (R37) — no path, no file, no key."""
+    and what the clinic gets (R37) — no path, no file, no key. L5 S4: `ubicacion` — the
+    site's own point against the register's official: {"oficial": true}, or the metres between
+    them (Revisión's «corregida, a N m del oficial»); null when either point is unknown (a
+    hand-built site without the pair, a code the register lacks) — a state, never a blocked run."""
     row = find_row(codigo)
     opciones = opciones_actuales()
     sin_talk = opciones is not None and not opciones[0]   # step 7 left Talk off: phase 12 installs no spreed
+    punto, oficial = site_punto(site_path(codigo)), _punto_oficial(row)
+    if punto is None or oficial is None:
+        ubicacion = None
+    elif _mismo_punto(punto, oficial):
+        ubicacion = {"oficial": True}
+    else:
+        ubicacion = {"oficial": False, "metros": _distancia_metros(punto, oficial)}
     return {"centro": {"codigo": codigo,
                        "nombre": row["nombre"] if row else f"el establecimiento DEIS {codigo}",
                        "comuna": row["comuna"] if row else ""},
+            "ubicacion": ubicacion,
             "sectores": [d for g, d in teams if g.startswith("sector-")],
             "programas": [d for g, d in teams if g.startswith("prog-")],
             "personas": [[uid, f"{nombre} {apellidos}", list(gids), primer]
@@ -1864,6 +2086,28 @@ color:#fff;background:var(--riel);padding:.7rem var(--gutter);font:700 .85rem/1.
 .riel-movil .ticks i.a{background:#fff;border-color:#fff}
 .hoja{padding:1.75rem var(--gutter) 7rem}
 }
+/* ── the Centro map pane (L5 S4): the frozen UI design's own, over vendored Leaflet ── */
+.marca-ok{color:var(--ok);font-weight:800}
+.cuerpo.centro-hoja{max-width:none}
+.centro-grid{display:grid;grid-template-columns:minmax(0,27rem) minmax(0,1fr);gap:0 clamp(1.5rem,3vw,3rem);align-items:start}
+.centro-grid .mapa{position:sticky;top:0;height:100dvh;margin-right:calc(-1 * var(--gutter))}
+.mapa{position:relative;background:#efe9f7;min-height:22rem;overflow:hidden}
+.mapa .leaflet-container{height:100%;width:100%;background:#efe9f7;font:inherit;cursor:grab;outline:none}
+.mapa .leaflet-container:active{cursor:grabbing}
+.mapa .leaflet-control-scale{margin:0 0 .6rem .75rem}
+.mapa .leaflet-control-scale-line{border:2px solid var(--tinta);border-top:0;background:rgba(255,255,255,.7);color:var(--tinta);font:700 .7rem/1 var(--f-cuerpo);padding:3px 2px 0;text-align:center;box-shadow:none}
+.pin-mapa{filter:drop-shadow(0 3px 3px rgba(16,24,40,.35))}
+.mapa-ctrl{position:absolute;right:.75rem;top:.75rem;display:flex;flex-direction:column;gap:2px;z-index:500}
+.mapa-ctrl button{display:inline-flex;align-items:center;justify-content:center;margin:0;padding:0;width:2.75rem;height:2.75rem;border:0;border-radius:3px;background:#fff;color:var(--fondo);font:800 1.2rem/1 var(--f-cuerpo);cursor:pointer;box-shadow:0 1px 3px rgba(16,24,40,.35)}
+.mapa-ctrl button:hover{background:var(--velo)}
+.mapa-nota{position:absolute;left:.75rem;top:.75rem;max-width:min(22rem,calc(100% - 4.5rem));background:rgba(255,255,255,.94);padding:.5rem .7rem;font-size:var(--t-xs);line-height:1.45;color:var(--tinta);border-left:3px solid var(--oro);z-index:500}
+.mapa-atrib{position:absolute;right:0;bottom:0;background:rgba(255,255,255,.88);font-size:.7rem;padding:.15rem .45rem;color:var(--apagado);max-width:100%;z-index:500}
+.lectura{font-size:var(--t-s);display:grid;gap:.25rem}
+.lectura .num{font-family:var(--f-mono);font-size:.85rem}
+@media (max-width:860px){
+.centro-grid{grid-template-columns:minmax(0,1fr)}
+.centro-grid .mapa{position:relative;height:24rem;margin:1.5rem calc(-1 * var(--gutter)) 0}
+}
 </style>"""
 
 
@@ -1927,7 +2171,7 @@ def head(title):
             f'<link rel="icon" href="/recursos/favicon.svg" type="image/svg+xml">{page_css()}{page_js()}')
 
 
-def shell(step_id, body, aviso=None):
+def shell(step_id, body, aviso=None, clase=None):
     """A browser step's page, variant A «Capítulos»: the backdrop rail — the registry's steps, the
     server ones done, the current one marked (aria-current) — beside the chapter: numeral, «Paso n
     de N · en su navegador», the step's title and purpose, then the screen. A step may span screens
@@ -1950,6 +2194,7 @@ def shell(step_id, body, aviso=None):
                     for i in range(1, total + 1))
     aviso_html = f'<div class="aviso">{aviso}</div>' if aviso else ""
     titulo = esc(s["titulo"])
+    cuerpo = "cuerpo" + ((" " + clase) if clase else "")
     page_title = f"Paso {n} de {total} · {s['titulo']}"
     donde = esc(s["donde"])
     return f"""<!DOCTYPE html>
@@ -1964,7 +2209,7 @@ def shell(step_id, body, aviso=None):
 <main class="hoja" id="contenido"><header class="apertura"><span class="numeral" aria-hidden="true">{n}</span>
 <div><p class="ceja">Paso {n} de {total} · en su {donde}</p><h1 tabindex="-1">{titulo}</h1></div>
 <p class="para">{esc(s["para"])}</p></header>
-<div class="cuerpo">{aviso_html}{body}</div></main></div>
+<div class="{cuerpo}">{aviso_html}{body}</div></main></div>
 </body></html>"""
 
 
@@ -2152,12 +2397,22 @@ def screen_contenedores():
     return shell("suite", body)
 
 def screen_centro():
-    """Step 6, «Elegir el centro» (L3 S2) — the approved design's Centro without its map (L5):
-    Región › Comuna › Tipo filters and an accent-blind, every-term search over the whole register,
-    one payload filtered in the browser; the card says what the site file will say. «Confirmar
-    centro» hands the code to the server — no code rides a URL. A filter that excludes the chosen
-    centre clears it: never a centre the operator did not pick."""
-    body = """<div class="pila">
+    """Step 6, «Elegir el centro» (L3 S2; L5 S4 adds the map pane) — the approved design's Centro:
+    the Región › Comuna › Tipo filters and an accent-blind, every-term search over the whole
+    register, one payload filtered in the browser, beside the frozen UI's sticky map. The pane
+    opens on the establishment's official register point (a22) and the admin confirms it or
+    moves it — click or tap, drag, arrow keys at 5 m (Shift 25 m) — the chosen point riding
+    «Confirmar centro» beside the code, held server-side until step 8 writes the site file (a
+    reload restores the pin). The basemap is the suite's own archive through /mapa/ (vendored
+    Leaflet + protomaps-leaflet from /recursos/, the bytes territorio runs); a missing archive
+    or a dead route is a note naming the remedy and a completable screen — the ring and the
+    pin on the plain background (ADR-0019's addendum). A fixed site shows its point read-only.
+    No code rides a URL; a filter that excludes the chosen centre clears it: never a centre the
+    operator did not pick."""
+    body = """<link rel="stylesheet" href="/recursos/leaflet.css">
+<script src="/recursos/leaflet.js"></script>
+<script src="/recursos/protomaps-leaflet.js"></script>
+<div class="centro-grid"><div class="pila">
 <div class="filtros">
 <div class="campo"><label for="f-reg">Región</label><select id="f-reg" class="control"></select></div>
 <div class="campo"><label for="f-com">Comuna</label><select id="f-com" class="control"></select></div>
@@ -2173,13 +2428,24 @@ autocomplete="off" spellcheck="false">
 <ul class="combo-lista" id="c-lista" role="listbox" aria-labelledby="l-centro"></ul>
 <div class="combo-pie" id="c-pie" aria-live="polite"></div></div></div>
 <dl class="dl" id="c-ficha"></dl>
+<div class="lectura" id="c-lectura" aria-live="polite"></div>
 <div id="m"></div>
-<div class="fila"><button type="button" id="c-ok" disabled>Confirmar centro</button></div>
+<div class="fila"><button type="button" id="c-ok" disabled>Confirmar centro</button>
+<button type="button" class="enlace-btn" id="c-reset">Punto oficial</button></div>
 <p class="para nota" id="c-nota"></p></div>
+<div class="mapa" id="c-mapa">
+<div class="mapa-ctrl"><button type="button" data-z="1" aria-label="Acercar">+</button>
+<button type="button" data-z="-1" aria-label="Alejar">−</button>
+<button type="button" data-z="0" aria-label="Volver a centrar el mapa">◎</button></div>
+<div class="mapa-nota" id="c-nota-mapa" hidden></div>
+<div class="mapa-atrib">© OpenStreetMap contributors · Puntos: MINSAL/DEIS, Geoportal de Chile</div>
+</div></div>
 <script>
 (async () => {
   const $ = (s) => document.querySelector(s);
-  const [d, actual] = await Promise.all([api("/api/centros"), api("/api/centro")]);
+  const [d, actual, cobR] = await Promise.all([api("/api/centros"), api("/api/centro"), api("/api/mapa")]);
+  const cob = cobR.estado === 200 && typeof cobR.disponible === "boolean" ? cobR
+    : {disponible: false, motivo: "el mapa no se pudo consultar — el punto se confirma igual"};
   if (d.estado !== 200) {
     $("#c-btn").innerHTML = "<span><b>Registro no disponible</b></span>";
     zona("m").innerHTML = '<div class="error">' + escapear(d.error) + "</div>"; return;
@@ -2187,7 +2453,8 @@ autocomplete="off" spellcheck="false">
   // deis.fold's twin — NFD, combining marks stripped, lower case: «ramon» finds «Ramón»
   const fold = (s) => s.normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").toLowerCase();
   const miles = (n) => n.toLocaleString("es-CL");
-  const CEN = d.centros.map(([c, t, n, dir, co, ss, dep]) => ({c, t, n, d: dir, co, ss, dep,
+  const CEN = d.centros.map(([c, t, n, dir, co, ss, dep, la, lo]) => ({c, t, n, d: dir, co, ss, dep,
+    pto: la && lo ? {lat: +la, lng: +lo} : null,   // the register's own point (L5 S4), trailing and optional
     reg: d.comunas[co][1], k: fold(n + " " + c + " " + d.tipos[t][0] + " " + d.comunas[co][0] + " " + dir)}));
   const POR = new Map(CEN.map((x) => [x.c, x]));
   const F = {reg: -1, com: -1, tipo: -1};   // R36: every type until the operator narrows it
@@ -2234,13 +2501,84 @@ autocomplete="off" spellcheck="false">
       ["Comuna", d.comunas[x.co][0]], ["Región", d.regiones[x.reg]], ["Servicio de Salud", d.servicios[x.ss]],
       ["Dependencia", d.dependencias[x.dep]]].map(([a, b]) => `<dt>${a}</dt><dd>${escapear(b)}</dd>`).join("");
   }
+  // ── the map pane (L5 S4): the frozen design's sticky map over the suite's own basemap ──
+  const cont = zona("c-mapa"), notaMapa = zona("c-nota-mapa");
+  cont.tabIndex = 0;   // keyboard:false below: the arrows move the pin, never the view
+  cont.setAttribute("aria-label", "Mapa del centro. Haga clic o toque donde queda la entrada para mover el marcador, o use las flechas para moverlo de a 5 metros; + y − acercan o alejan.");
+  const mp = L.map(cont, {zoomControl: false, attributionControl: false, keyboard: false,
+                          maxZoom: 19, minZoom: 3});   // territorio's discipline: no stock controls
+  L.control.scale({imperial: false, position: "bottomleft"}).addTo(mp);
+  if (cob.disponible) {
+    protomapsL.leafletLayer({url: "/mapa/chile.pmtiles", lang: "es", flavor: "light",
+                             maxZoom: 19, maxDataZoom: 15}).addTo(mp);   // basemap.js's own options
+  } else {   // the state and its remedy, named — a completable screen, never an outage (ADR-0019)
+    notaMapa.hidden = false;
+    notaMapa.textContent = cob.motivo;
+  }
+  const anillo = L.circleMarker([0, 0], {radius: 13, weight: 2, color: "#5315a8", dashArray: "4 3",
+                                         fill: false, interactive: false}).addTo(mp);
+  const chincheta = L.divIcon({className: "pin-mapa", iconSize: [26, 40], iconAnchor: [13, 40],
+    html: '<svg viewBox="0 0 26 40" width="26" height="40" aria-hidden="true">' +
+      '<path d="M13 40C9 31 0 26.5 0 14A13 13 0 1 1 26 14C26 26.5 17 31 13 40Z" fill="#7f21fe"/>' +
+      '<circle cx="13" cy="14" r="5" fill="#fff"/></svg>'});   // divIcon: leaflet.css's images are never fetched
+  const marcador = L.marker([0, 0], {icon: chincheta, draggable: true, autoPan: true,
+                                     keyboard: false}).addTo(mp);
+  // the frozen design's own helpers, ported: metres, the es-CL coordinate, the bearing
+  const metros = (a, b) => { const R = 6371000, r = Math.PI / 180, dLa = (b.lat - a.lat) * r,
+    dLo = (b.lng - a.lng) * r, h = Math.sin(dLa / 2) ** 2 +
+    Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLo / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h)); };
+  const coord = (v) => (+v).toFixed(5).replace("-", "−").replace(".", ",");
+  const rumbo = (a, b) => { const ang = Math.atan2(b.lat - a.lat, (b.lng - a.lng) * Math.cos(a.lat * Math.PI / 180)) * 180 / Math.PI;
+    return ["este", "noreste", "norte", "noroeste", "oeste", "suroeste", "sur", "sureste"][Math.round(((ang + 360) % 360) / 45) % 8]; };
+  let pin = null;   // null: the official point; an object once moved (what «Confirmar centro» sends)
+  function lectura() {
+    const x = elegido && POR.get(elegido);
+    if (!x || !x.pto) { zona("c-lectura").innerHTML = ""; return; }
+    const p = pin || x.pto, dis = metros(x.pto, p);
+    zona("c-lectura").innerHTML = '<span>Oficial: <span class="num">' + coord(x.pto.lat) + ", " +
+      coord(x.pto.lng) + "</span></span>" + (dis < 3 ?
+      '<span><span class="marca-ok">✓</span> En el punto oficial. Para corregir: clic o toque en el mapa, o arrastrar el marcador.</span>' :
+      '<span>Elegido: <span class="num">' + coord(p.lat) + ", " + coord(p.lng) + '</span> · ' +
+      miles(Math.round(dis)) + " m al " + rumbo(x.pto, p) + "</span>");
+  }
+  const movible = () => !actual.fijo;   // a fixed site shows its point, read-only
+  function mover(p) { pin = {lat: p.lat, lng: p.lng}; marcador.setLatLng(p); lectura(); }
+  function pintar(p, z) {   // the pane opens or re-opens on a point: the ring, the pin, the view
+    anillo.setLatLng(p);
+    marcador.setLatLng(p);
+    mp.setView([p.lat, p.lng], z ?? (cob.disponible ? 16 : 15));
+  }
+  mp.on("click", (e) => { if (movible()) mover(e.latlng); });   // a click or a tap moves the pin
+  marcador.on("drag", (e) => { if (movible()) mover(e.target.getLatLng()); });
+  cont.addEventListener("keydown", (e) => {   // the arrows nudge the pin 5 m, Shift 25 m
+    const paso = {ArrowUp: [1, 0], ArrowDown: [-1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1]}[e.key];
+    const base = pin || (POR.get(elegido) || {}).pto;
+    if (paso && base && movible()) {
+      e.preventDefault();
+      const d = (e.shiftKey ? 25 : 5) / 111320;
+      mover({lat: base.lat + paso[0] * d, lng: base.lng + paso[1] * d / Math.cos(base.lat * Math.PI / 180)});
+    }
+    if (e.key === "+" || e.key === "-") { e.preventDefault(); mp.setZoom(mp.getZoom() + (e.key === "+" ? 1 : -1)); }
+  });
+  zona("c-mapa").querySelector(".mapa-ctrl").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    const z = +b.dataset.z;
+    if (z) mp.setZoom(mp.getZoom() + z);
+    else mp.setView(marcador.getLatLng(), mp.getZoom());   // ◎: back onto the pin
+  });
+  $("#c-reset").addEventListener("click", () => {   // the reset case: no pair rides the confirm
+    const x = POR.get(elegido); if (!x || !x.pto) return;
+    pin = null; marcador.setLatLng(x.pto); mp.setView([x.pto.lat, x.pto.lng], mp.getZoom()); lectura();
+  });
+  function elegir(c) {
+    const x = POR.get(c); elegido = c; pin = null;
+    F.reg = x.reg; F.com = x.co; if (F.tipo >= 0 && F.tipo !== x.t) F.tipo = -1;
+    selects(); ficha(); lectura(); cerrar();
+    if (x.pto) pintar(x.pto);   // the pane opens on the official point (a22)
+  }
   const abrir = () => { $("#c-panel").hidden = false; $("#c-btn").setAttribute("aria-expanded", "true"); lista(); $("#c-q").focus(); };
   const cerrar = () => { if ($("#c-panel").hidden) return; $("#c-panel").hidden = true; $("#c-btn").setAttribute("aria-expanded", "false"); };
-  function elegir(c) {
-    const x = POR.get(c); elegido = c;
-    F.reg = x.reg; F.com = x.co; if (F.tipo >= 0 && F.tipo !== x.t) F.tipo = -1;
-    selects(); ficha(); cerrar();
-  }
   $("#c-btn").addEventListener("click", () => ($("#c-panel").hidden ? abrir() : cerrar()));
   $("#c-btn").addEventListener("keydown", (e) => { if (e.key === "ArrowDown" && $("#c-panel").hidden) { e.preventDefault(); abrir(); } });
   $("#c-q").addEventListener("input", lista);
@@ -2258,25 +2596,32 @@ autocomplete="off" spellcheck="false">
   document.addEventListener("pointerdown", (e) => { if (!e.target.closest(".combo")) cerrar(); });
   for (const [id, k] of [["#f-reg", "reg"], ["#f-com", "com"], ["#f-tipo", "tipo"]]) $(id).addEventListener("change", (e) => {
     F[k] = +e.target.value; if (k === "reg") F.com = -1;
-    if (elegido && !pasa(POR.get(elegido))) { elegido = null; ficha(); }   // never a centre nobody picked
+    if (elegido && !pasa(POR.get(elegido))) { elegido = null; pin = null; ficha(); lectura(); }   // never a centre nobody picked
     selects(); if (!$("#c-panel").hidden) lista();
   });
   $("#c-ok").addEventListener("click", async () => {
     if (actual.fijo) { location.href = "/contenedores"; return; }   // fixed: nothing to hand over
     $("#c-ok").disabled = true;
-    const r = await api("/api/centro", {codigo: elegido});
+    const r = await api("/api/centro", {codigo: elegido,
+      ...(pin ? {latitud: pin.lat, longitud: pin.lng} : {})});   // the point rides the same confirm
     if (r.estado === 200) { location.href = "/contenedores"; return; }
     $("#c-ok").disabled = false;
     zona("m").innerHTML = '<div class="error">' + escapear(r.error) + "</div>";
   });
-  $("#c-nota").textContent = `Registro DEIS ${d.registro}: ${miles(CEN.length)} establecimientos de atención primaria.`;
-  selects(); ficha();
+  $("#c-nota").textContent = `Registro DEIS ${d.registro}: ${miles(CEN.length)} establecimientos de atención primaria. Coordenadas: MINSAL/DEIS, Geoportal de Chile.`;
+  selects(); ficha(); lectura();
+  const base = cob.disponible ? {lat: cob.centro.latitud, lng: cob.centro.longitud} : {lat: -33.5, lng: -70.7};
+  mp.setView([base.lat, base.lng], cob.disponible ? cob.centro.zoom : 5);   // before any centre: the archive's own view
   if (actual.estado !== 200) {
     zona("m").innerHTML = '<div class="error">' + escapear(actual.error) + "</div>";
   } else if (actual.codigo) {
     if (POR.has(actual.codigo)) elegir(actual.codigo);
-    if (actual.fijo) {   // fixed by the site file: nothing to clear, nothing to pick
+    if (actual.punto && actual.punto.oficial === false && POR.has(actual.codigo))
+      mover({lat: +actual.punto.latitud, lng: +actual.punto.longitud});   // a reload restores the chosen pin
+    if (actual.fijo) {   // fixed by the site file: nothing to clear, nothing to pick, the point read-only
       for (const s of ["#f-reg", "#f-com", "#f-tipo", "#c-btn"]) $(s).disabled = true;
+      $("#c-reset").hidden = true;
+      if (marcador.dragging) marcador.dragging.disable();
       $("#c-ok").disabled = false;
       zona("m").innerHTML = '<div class="aviso">Esta instalación ya sirve a ' +
         escapear(actual.nombre) + ": una instalación, un solo establecimiento.</div>";
@@ -2284,7 +2629,8 @@ autocomplete="off" spellcheck="false">
   }
 })();
 </script>"""
-    return shell("centro", body)
+    return shell("centro", body, clase="centro-hoja")
+
 
 
 def screen_equipos():
@@ -2519,6 +2865,8 @@ y en la consola del servidor.</p>
       escapear(r.centro.comuna) + " · DEIS " + escapear(r.centro.codigo) + "</dd>" +
     "<dt>Sectores (" + r.sectores.length + ")</dt><dd>" + lista(r.sectores) + "</dd>" +
     "<dt>Programas (" + r.programas.length + ")</dt><dd>" + lista(r.programas) + "</dd>" +
+    "<dt>Ubicación</dt><dd>" + (r.ubicacion ? (r.ubicacion.oficial ? "punto oficial" :
+      "corregida, a " + r.ubicacion.metros.toLocaleString("es-CL") + " m del oficial") : "—") + "</dd>" +
     "<dt>Cuentas de cargo</dt><dd>" + r.cuentas_de_cargo + " (dirección y jefaturas; se crean solas)</dd></dl>" +
     '<h3 class="ceja">Personas (' + r.personas.length + ")</h3><table><tr><th>Usuario</th><th>Nombre</th>" +
     "<th>Grupos</th><th>Primera adm.</th></tr>" + r.personas.map(([u, n, g, p]) => "<tr><td>" +
@@ -2873,7 +3221,46 @@ class Handler(BaseHTTPRequestHandler):
             self.send_bytes(200, "application/x-x509-ca-cert", data,
                             {"Content-Disposition": f'attachment; filename="{CA_PUBLICA}"'})
             return
-        if path in ("/api/suite", "/api/centros", "/api/centro", "/api/equipos", "/api/ejecucion"):
+        if path == "/mapa/chile.pmtiles":
+            # The Centro pane's basemap (L5 S4): the archive step 4 built, one bounded byte range
+            # at a time — the pmtiles client only ever sends single explicit ranges (its
+            # FetchSource), so a missing, compound or open-ended Range is a mis-integration this
+            # answers 400 naming the contract, never a gigabyte in one 200.
+            if not self.authorized():
+                self.send_json(401, {"error": "token ausente o inválido"},
+                               {"WWW-Authenticate": "Bearer"})
+                return
+            try:
+                fh = open(TILES_ARCHIVE, "rb")   # per request: the monthly refresh's atomic mv is a new inode
+            except OSError:
+                self.send_json(404, {"error": "el mapa del paso 4 no está construido — sudo "
+                                              "aps-conecta mapa lo construye; el punto se confirma igual"})
+                return
+            try:
+                info = os.fstat(fh.fileno())   # the size, the ETag and the served bytes read one inode
+                total = info.st_size
+                etag = '"%x-%x"' % (info.st_mtime_ns, total)   # strong: a W/ prefix the client reads as absent
+                rango = re.fullmatch(r"bytes=([0-9]+)-([0-9]+)", self.headers.get("Range", ""))
+                if rango is None:
+                    self.send_json(400, {"error": "el mapa se pide por un solo rango: "
+                                                  "Range: bytes=<inicio>-<fin>"})
+                    return
+                desde, hasta = int(rango.group(1)), int(rango.group(2))
+                if desde > hasta or desde >= total:
+                    self.send_json(416, {"error": "el rango pedido queda fuera del mapa"},
+                                   {"Content-Range": f"bytes */{total}", "Accept-Ranges": "bytes",
+                                    "ETag": etag})
+                    return
+                hasta = min(hasta, total - 1)   # a range that runs past the end serves the last byte
+                self.send_file_slice(206, fh, desde, hasta - desde + 1,
+                                     {"Content-Range": f"bytes {desde}-{hasta}/{total}",
+                                      "Accept-Ranges": "bytes", "ETag": etag,
+                                      "Cache-Control": "no-cache"})
+            finally:
+                fh.close()
+            return
+        if path in ("/api/suite", "/api/centros", "/api/centro", "/api/equipos", "/api/ejecucion",
+                    "/api/mapa"):
             if not self.authorized():
                 self.send_json(401, {"error": "token ausente o inválido"},
                                {"WWW-Authenticate": "Bearer"})
@@ -2884,11 +3271,14 @@ class Handler(BaseHTTPRequestHandler):
                 status, body = api_centros()
             elif path == "/api/centro":
                 status, body = centro_actual()
+            elif path == "/api/mapa":
+                status, body = api_mapa()
             elif path == "/api/ejecucion":
                 status, body = estado_ejecucion()
             else:
                 status, body = equipos_actuales()
-            self.send_json(status, body, {"Cache-Control": "no-store"} if path == "/api/suite" else None)
+            self.send_json(status, body,
+                           {"Cache-Control": "no-store"} if path in ("/api/suite", "/api/mapa") else None)
             return
         if path in ROUTES or path == "/listo":
             if not self.authorized():
@@ -3009,6 +3399,28 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header(key, value)
         self.end_headers()
         self.wfile.write(data)
+
+    def send_file_slice(self, status, fh, start, length, headers=None):
+        # send_bytes' sibling for the one file too big to hold in a response's memory (L5 S4's
+        # /mapa/): Content-Length is set once and the bytes are seeked to and written in bounded
+        # chunks — the same one-exit framing rule, without reading the archive whole. A file that
+        # ends short of the promise (replaced mid-answer) closes the connection: keep-alive
+        # framing stays honest even then.
+        self.send_response(status)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Length", str(length))
+        for key, value in (headers or {}).items():
+            self.send_header(key, value)
+        self.end_headers()
+        fh.seek(start)
+        quedan = length
+        while quedan > 0:
+            trozo = fh.read(min(65536, quedan))
+            if not trozo:
+                self.close_connection = True
+                break
+            self.wfile.write(trozo)
+            quedan -= len(trozo)
 
     def send_json(self, status, obj, headers=None):
         self.send_bytes(status, "application/json; charset=utf-8",
@@ -3416,7 +3828,7 @@ def selftest():
     real sites/ is never touched. The HTTP checks are real round-trips against a real server on an
     OS-assigned port — urllib, no frameworks. Every check is named and counted; a failure prints the
     list and exits 1 (B-014: a gate that cannot go red is not a gate)."""
-    global TOKEN, SNAPSHOT, ROWS, CRED_PATH, PHASE20, ESTADO_PATH, CERT_DIR, LAN_IP, HOSTNAME, PORT, CENTRO, AIO_STATE
+    global TOKEN, SNAPSHOT, ROWS, CRED_PATH, PHASE20, ESTADO_PATH, CERT_DIR, LAN_IP, HOSTNAME, PORT, CENTRO, AIO_STATE, TILES_ARCHIVE, PUNTO
     n = 0
     bad = []
 
@@ -3446,6 +3858,7 @@ def selftest():
     old_cred, old_p20 = CRED_PATH, PHASE20
     old_cert = CERT_DIR
     old_aio = AIO_STATE
+    old_tiles = TILES_ARCHIVE
     # Bound here, with the other saves, because the finally restores it: bound later, any failure
     # before the stub world exists raised UnboundLocalError there and hid the real error.
     old_path = os.environ["PATH"]
@@ -3475,6 +3888,16 @@ def selftest():
                       "servicio_salud,dependencia,latitud,longitud")
     try:
         with tempfile.TemporaryDirectory() as tmp:
+            # The hermetic base for the whole run — the browser section's own pin, hoisted (dd8a1db,
+            # the hard way): the CI clean-boot runner CARRIES the deterministic /tiles/ proof
+            # fixture at the default path, and it parses — a valid v3 header whose bounds are
+            # ASCII text read as int32s, an empty box that refuses every confirm through the
+            # L5-S4 bounds check; a box with the real 1.1 GB archive masks it. Every arm that
+            # points no archive of its own runs with none — no check, never a blocked screen
+            # (ADR-0019's addendum); the painted-pixels arm alone probes old_tiles, the box's
+            # own default, and the finally restores it.
+            sin_mapa = os.path.join(tmp, "sin-mapa.pmtiles")
+            TILES_ARCHIVE = sin_mapa
             # — fail fast: no register, no wizard, no socket
             deis.HERE = os.path.join(tmp, "empty")
             os.makedirs(deis.HERE)
@@ -3593,6 +4016,8 @@ def selftest():
                   and d["comunas"][ramon[4]] == ["Padre Las Casas", 1]
                   and d["servicios"][ramon[5]] == "Servicio de Salud Araucanía Sur"
                   and d["dependencias"][ramon[6]] == "Municipal")
+            check("centros: every row carries the register's official point as two trailing fields — the pane opens on it (a22, L5 S4)",
+                  all(len(c) == 9 for c in d["centros"]) and fila["121567"][7:] == ["-38.86996", "-72.39666"])
             st, body = call("GET", "/api/centro")
             st1, _ = call("POST", "/api/centro", {"codigo": "121567"})
             st2, body2 = call("POST", "/api/centro", {"codigo": "113314"})
@@ -3605,6 +4030,67 @@ def selftest():
             st2, _ = call("POST", "/api/centro", {"codigo": "999999"})
             check("centro: a junk code answers 400, one absent from the register 404",
                   st == 400 and st2 == 404)
+
+            # ── L5 S4: the point beside the code — POST /api/centro's coordinates, held to step 8 ──
+            # A synthetic archive around the fixture's points, so the bounds refusal (R47's
+            # replacement, moved to the confirm) is proven here without the real 1.1 GB file —
+            # the mapa arm below builds its own; the bounds are what this arm reads.
+            arch_pto = os.path.join(tmp, "chile-punto.pmtiles")
+            with open(arch_pto, "wb") as fh:
+                fh.write(b"PMTiles" + struct.Struct("<B11Q6B4iB2i").pack(
+                    3, *([0] * 11), 0, 0, 0, 0, 0, 14,
+                    int(round(-77.5 * 1e7)), int(round(-56.5 * 1e7)),
+                    int(round(-66.5 * 1e7)), int(round(-17.5 * 1e7)),
+                    6, int(round(-70.5 * 1e7)), int(round(-33.5 * 1e7))))
+            arch_chico = os.path.join(tmp, "chile-chico.pmtiles")
+            with open(arch_chico, "wb") as fh:
+                fh.write(b"PMTiles" + struct.Struct("<B11Q6B4iB2i").pack(
+                    3, *([0] * 11), 0, 0, 0, 0, 0, 14,
+                    int(round(-77.5 * 1e7)), int(round(-56.5 * 1e7)),
+                    int(round(-66.5 * 1e7)), int(round(-35.0 * 1e7)),   # Loica's point stays north of it
+                    6, int(round(-70.5 * 1e7)), int(round(-33.5 * 1e7))))
+            TILES_ARCHIVE = arch_pto
+            st_l, _ = call("POST", "/api/centro", {"codigo": "121567", "latitud": -38.8681})
+            st_t, _ = call("POST", "/api/centro", {"codigo": "121567", "latitud": "sur", "longitud": 0})
+            st_r, _ = call("POST", "/api/centro", {"codigo": "121567", "latitud": 95, "longitud": -72.4})
+            st_f, fuera = call("POST", "/api/centro", {"codigo": "121567", "latitud": 10.0, "longitud": -72.39})
+            check("punto: a lone coordinate, a non-numeric one and an out-of-range one answer 400; a point outside the archive's bounds is refused naming the map (L5 S4, R47's refusal moved to the confirm)",
+                  st_l == 400 and st_t == 400 and st_r == 400 and st_f == 400
+                  and "fuera del mapa" in fuera["error"] and "punto oficial" in fuera["error"])
+            st_m, _ = call("POST", "/api/centro",
+                           {"codigo": "121567", "latitud": -38.8681, "longitud": "-72.3951"})
+            st_g, held = call("GET", "/api/centro")
+            st_o, _ = call("POST", "/api/centro", {"codigo": "121567"})
+            st_g2, oficial = call("GET", "/api/centro")
+            check("punto: a moved confirm holds the pair beside the code — register-spelled strings, oficial false; none given is the official point itself, oficial true (the reset)",
+                  st_m == 200 and st_g == 200
+                  and held["punto"] == {"latitud": "-38.8681", "longitud": "-72.3951", "oficial": False}
+                  and st_o == 200 and st_g2 == 200
+                  and oficial["punto"] == {"latitud": "-38.86996", "longitud": "-72.39666", "oficial": True})
+            TILES_ARCHIVE = arch_chico
+            st_of, oficial_fuera = call("POST", "/api/centro", {"codigo": "110485"})
+            TILES_ARCHIVE = os.path.join(tmp, "no-esta.pmtiles")
+            st_sin, _ = call("POST", "/api/centro", {"codigo": "110485"})
+            TILES_ARCHIVE = sin_mapa
+            st_c, _ = call("POST", "/api/centro", {"codigo": "113314"})
+            check("punto: the register's own point outside the bounds is refused naming the rebuild; no readable archive is no check — the confirm passes and the screen stays completable (ADR-0019)",
+                  st_of == 400 and "aps-conecta mapa" in oficial_fuera["error"]
+                  and st_sin == 200 and st_c == 200 and call("GET", "/api/centro")[1]["codigo"] == "113314")
+            real_here = deis.HERE
+            with tempfile.TemporaryDirectory() as pt:
+                deis.HERE = os.path.join(pt, "scripts")
+                os.makedirs(deis.HERE)
+                call("POST", "/api/centro", {"codigo": "121567", "latitud": -38.8681, "longitud": "-72.3951"})
+                st_w, _ = call("POST", "/api/sitio", {"codigo": "121567", "sectors": [], "programs": []})
+                con_punto = open(site_path("121567"), encoding="utf-8").read()
+                st_r2, _ = call("POST", "/api/sitio", {"codigo": "121567", "sectors": ["Norte"],
+                                                       "programs": [], "reemplazar": True})
+                tras = open(site_path("121567"), encoding="utf-8").read()
+            deis.HERE = real_here
+            call("POST", "/api/centro", {"codigo": "113314"})   # the world the arms below expect
+            check("punto: the held pair lands in SITE_LON/SITE_LAT at step 8 and survives «Reemplazar» — the identity block is never regenerated (L5 S4)",
+                  st_w == 200 and "SITE_LON=-72.3951\n" in con_punto and "SITE_LAT=-38.8681\n" in con_punto
+                  and st_r2 == 200 and "SITE_LON=-72.3951\n" in tras and "sector-norte|" in tras)
 
             st, body = call("POST", "/api/sitio",
                             {"codigo": "113314",
@@ -3741,6 +4227,13 @@ def selftest():
                   and st2 == 409 and body2 == body and not os.path.exists(site_path("121567"))
                   and st3 == 200 and body3["codigo"] == "113314" and body3["fijo"] is True and st4 == 200
                   and installed_centre() == "Centro de Salud Familiar Cóndores de Chile")
+            st_fp, fijo_p = call("GET", "/api/centro")
+            st_fm, movido_fijo = call("POST", "/api/centro", {"codigo": "113314", "latitud": -33.5,
+                                                               "longitud": -70.6})
+            check("punto: a fixed site serves its file's own point — oficial true while it is the register's — and refuses a moved confirm: the file is the truth from step 8 on (L5 S4)",
+                  st_fp == 200 and fijo_p["punto"] == {"latitud": "-33.56136", "longitud": "-70.67469",
+                                                       "oficial": True}
+                  and st_fm == 409 and "ya sirve" in movido_fijo["error"])
             # the directory IS the code (host/aps-conecta site_codigo): a hand-edited SITE_DEIS does
             # not move the centre, and a code the register lacks is still this install's, named plainly
             real_here = deis.HERE
@@ -3764,7 +4257,7 @@ def selftest():
             check("centro: the site directory is the code — a hand-edited SITE_DEIS does not move it; a code the register lacks is still this install's centre, named plainly (review I1, I2)",
                   st == 200 and editado.get("codigo") == "113314" and editado.get("fijo") is True
                   and st2 == 200 and ajeno == {"codigo": "999999", "nombre": "el establecimiento DEIS 999999",
-                                               "fijo": True}
+                                               "fijo": True, "punto": None}
                   and st3 == 409 and "otro establecimiento (DEIS 999999)" in otro["error"]
                   and listo == "el establecimiento DEIS 999999")
             # ── slice 15: the roster (FRD S5) — /api/usuarios + the credentials sealing ──
@@ -4191,6 +4684,17 @@ def selftest():
                   and [p[0] for p in plan["personas"] if p[3]] == ["elena.diaz"]
                   and plan["cuentas_de_cargo"] > 0 and len(plan["componentes"]) == len(COMPONENTES)
                   and "/" not in visibles and ".sh" not in visibles and "SITE_" not in visibles)
+            st_ub, plan_ub = api_generar({"codigo": "113314", "modo": "revision"})
+            texto_sitio = open(site_path("113314"), encoding="utf-8").read()
+            with open(site_path("113314"), "w", encoding="utf-8") as fh:   # ~30 m east of the official
+                fh.write(texto_sitio.replace("SITE_LON=-70.67469", "SITE_LON=-70.675"))
+            st_ub2, plan_corr = api_generar({"codigo": "113314", "modo": "revision"})
+            with open(site_path("113314"), "w", encoding="utf-8") as fh:
+                fh.write(texto_sitio)
+            check("revisión: «ubicación» — punto oficial when the site carries the register's own; corregida with the metres between when it does not (R40's Ubicación row, L5 S4)",
+                  st_ub == 200 and plan_ub["ubicacion"] == {"oficial": True}
+                  and st_ub2 == 200 and plan_corr["ubicacion"]["oficial"] is False
+                  and 20 <= plan_corr["ubicacion"]["metros"] <= 40)
             apps = set(os.listdir(os.path.join(ROOT_DIR, "provisioning", "apps")))
             check("componentes: every app the suite ships is a listed component or declared plumbing — a new app forces the choice (R37)",
                   {a for a, _n, _q in COMPONENTES} | set(PLUMBING_APPS) == apps
@@ -4624,6 +5128,36 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
             check("titles: every phase file has its Spanish console title (R42)",
                   {f[:-3] for f in os.listdir(os.path.dirname(PHASE20))
                    if f[:1].isdigit() and f.endswith(".sh")} == set(PHASE_TITLES))
+            # L5 S4 (S1b): the silent site's point — optional, validated when present
+            dado = open(site_path("113314"), encoding="utf-8").read().replace(
+                'SITE_DOMINIO=""', 'SITE_DOMINIO="clinica.example"')
+            real_here, silencio = deis.HERE, tempfile.mkdtemp()
+            os.makedirs(os.path.join(silencio, "scripts"))
+            deis.HERE = os.path.join(silencio, "scripts")
+            try:
+                src_s = os.path.join(silencio, "site-dado.sh")
+
+                def paso_sitio(texto):
+                    with open(src_s, "w", encoding="utf-8") as fh:
+                        fh.write(texto)
+                    return stepped(["--paso", "sitio", "--archivo", src_s])
+                sin_par = paso_sitio(re.sub(r"(?m)^SITE_(LON|LAT)=.*\n", "", dado))
+                os.remove(os.path.join(silencio, "sites", "113314", "site.sh"))   # the next valid variant places
+                solo_lon = paso_sitio(re.sub(r"(?m)^SITE_LAT=.*\n", "", dado))
+                mal = paso_sitio(dado.replace("SITE_LON=-70.67469", "SITE_LON=oeste"))
+                rango = paso_sitio(dado.replace("SITE_LAT=-33.56136", "SITE_LAT=95"))
+                comillas = paso_sitio(dado.replace("SITE_LON=-70.67469", "SITE_LON='-70.5'"))
+                colocado = open(os.path.join(silencio, "sites", "113314", "site.sh"),
+                                encoding="utf-8").read()
+            finally:
+                deis.HERE = real_here
+                shutil.rmtree(silencio)
+            check("--paso sitio: the point is optional — absent passes (a state, not an error) and quotes are honoured verbatim; a lone line, a non-degree value or an out-of-range one is refused naming the pair (L5 S4, S1b)",
+                  sin_par[0] == 0 and "✓ Sitio cargado" in sin_par[1]
+                  and solo_lon[0] == 1 and "SITE_LON y SITE_LAT" in solo_lon[1]
+                  and mal[0] == 1 and "grados decimales" in mal[1]
+                  and rango[0] == 1 and "grados decimales" in rango[1]
+                  and comillas[0] == 0 and "SITE_LON='-70.5'\n" in colocado)
             given = open(site_path("113314"), encoding="utf-8").read()
             assert given.count('SITE_DOMINIO=""') == 1
             given = given.replace('SITE_DOMINIO=""', 'SITE_DOMINIO="clinica.example"')
@@ -4969,11 +5503,21 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                     check(f"screens: {path} renders with the cookie arm",
                           st == 200 and marca in text and "text/html" in hdr.get("Content-Type", ""))
                 nodo = shutil.which("node")
+                # A-010 (L5 S4): the arm now allows exactly <script src="/recursos/…"></script>
+                # beside the bare inline blocks — the drill proves a foreign src still counts as
+                # suelto, or the relaxation would gate nothing.
+                falsa = '<script src="http://malo.example/x.js"></script>'
+                drill = (falsa.count("<script")
+                         - len(re.findall(r"<script>(.*?)</script>", falsa, re.S))
+                         - len(re.findall(r'<script src="/recursos/[^"]*"></script>', falsa)))
+                check("screens: the script-tag arm reddens on a foreign src — only /recursos/ may ride (A-010, L5 S4)",
+                      drill == 1)
                 bloques, sueltos = set(), 0
                 for ruta in ROUTES:
                     pagina = b.req("GET", ruta)[1]
                     hallados = re.findall(r"<script>(.*?)</script>", pagina, re.S)
-                    sueltos += pagina.count("<script") - len(hallados)   # a block this reader would skip
+                    permitidos = re.findall(r'<script src="/recursos/[^"]*"></script>', pagina)
+                    sueltos += pagina.count("<script") - len(hallados) - len(permitidos)
                     bloques.update(hallados)
                 if nodo:
                     malos = []
@@ -4992,6 +5536,20 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                       's.normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").toLowerCase()' in centro_html
                       and "qs.every((t) => x.k.includes(t))" in centro_html
                       and "const F = {reg: -1, com: -1, tipo: -1};" in centro_html)
+                otros = sum('<script src="/recursos/' in b.req("GET", r)[1] for r in ROUTES if r != "/centro")
+                check("centro: the map stack rides the /recursos/ whitelist on Centro only — the vendored bytes territorio runs (L5 S4)",
+                      centro_html.count('<script src="/recursos/') == 2 and otros == 0
+                      and '<link rel="stylesheet" href="/recursos/leaflet.css">' in centro_html
+                      and 'class="cuerpo centro-hoja"' in centro_html)
+                check("centro: the pane's frozen contract — the custom controls, the lectura's two states, the note, the attribution, the provenance, the es-CL coordinate (L5 S4)",
+                      all(t in centro_html for t in ('data-z="1" aria-label="Acercar"',
+                          'data-z="-1" aria-label="Alejar"', 'data-z="0" aria-label="Volver a centrar el mapa"',
+                          "© OpenStreetMap contributors · Puntos: MINSAL/DEIS, Geoportal de Chile",
+                          "Haga clic o toque donde queda la entrada para mover el marcador",
+                          "En el punto oficial. Para corregir: clic o toque en el mapa, o arrastrar el marcador.",
+                          ">Punto oficial</button>", 'protomapsL.leafletLayer({url: "/mapa/chile.pmtiles"',
+                          '" m al " + rumbo', '.replace(".", ",")',
+                          "Coordenadas: MINSAL/DEIS, Geoportal de Chile")))
                 tsv = subprocess.run(["bash", HOST_CLI, "pasos"], capture_output=True, text=True,
                                      timeout=10).stdout
                 titulos = [line.split("\t")[1] for line in tsv.splitlines()]
@@ -5043,6 +5601,89 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                 check("assets: the brand fonts serve locally without a session; any other name is a 404; every whitelisted file exists",
                       r.status == 200 and tipo == "font/woff2" and igual and st == 404 and st2 == 404
                       and all(os.path.isfile(os.path.join(ROOT_DIR, rel)) for rel, _t in ASSETS.values()))
+                # ── L5 S4: /mapa/ — the archive one byte range at a time, and the coverage state ──
+                # A synthetic archive: the 127-byte v3 header (the parser's real input) over an
+                # exactly-representable box, plus a payload every range answer must return byte
+                # for byte.
+                def cabecera_pmtiles(min_z, max_z, lon_min, lat_min, lon_max, lat_max, c_lon, c_lat, c_z):
+                    e7 = lambda g: int(round(g * 1e7))   # the header stores lon/lat as int32 ×1e7
+                    cuerpo = struct.Struct("<B11Q6B4iB2i").pack(   # bytes 7-126: version, then the fields
+                        3, *([0] * 11), 0, 0, 0, 0, min_z, max_z,
+                        e7(lon_min), e7(lat_min), e7(lon_max), e7(lat_max), c_z, e7(c_lon), e7(c_lat))
+                    return b"PMTiles" + cuerpo
+                archivo_mapa = cabecera_pmtiles(0, 14, -77.5, -56.5, -66.5, -17.5, -70.5, -33.5, 6)
+                archivo_mapa += bytes(range(256)) * 4 + b"termino"
+                total_mapa = len(archivo_mapa)
+                mapa_fixture = os.path.join(tmp, "chile-fixture.pmtiles")
+                with open(mapa_fixture, "wb") as fh:
+                    fh.write(archivo_mapa)
+
+                def pedir_mapa(ruta, cabeceras, token=True):
+                    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+                    conn.request("GET", ruta, headers={
+                        **({"Authorization": f"Bearer {TOKEN}"} if token else {}), **cabeceras})
+                    r = conn.getresponse()
+                    cuerpo, cab = r.read(), {k.lower(): v for k, v in r.getheaders()}
+                    conn.close()
+                    return r.status, cab, cuerpo
+
+                def rango_206(st, cab, cuerpo, desde, hasta, pedazo):
+                    return (st == 206 and cuerpo == pedazo
+                            and cab.get("content-range") == f"bytes {desde}-{hasta}/{total_mapa}"
+                            and cab.get("accept-ranges") == "bytes"
+                            and cab.get("content-length") == str(len(pedazo))
+                            and cab.get("etag", "").startswith('"')
+                            and not cab.get("etag", "").startswith("W/")
+                            and "content-encoding" not in cab
+                            and cab.get("cache-control") == "no-cache")
+                # A-010 first: a stub that answers 206 but ignores Range (no Content-Range, the
+                # whole file) must fail the very checks the green run rides — a gate that cannot
+                # go red is not a gate.
+                check("mapa: the range checks redden on a Range-ignoring stub (A-010)",
+                      not rango_206(206, {"content-length": str(total_mapa),
+                                          "etag": f'"{total_mapa}"'}, archivo_mapa, 0, 6,
+                                    archivo_mapa[:7]))
+                TILES_ARCHIVE = mapa_fixture
+                st, cab, cuerpo = pedir_mapa("/mapa/chile.pmtiles", {"Range": "bytes=0-6"})
+                st_m, cab_m, cuerpo_m = pedir_mapa("/mapa/chile.pmtiles", {"Range": "bytes=100-1023"})
+                st_c, cab_c, cuerpo_c = pedir_mapa("/mapa/chile.pmtiles",
+                                                   {"Range": f"bytes={total_mapa - 10}-{total_mapa + 50}"})
+                check("mapa: one single range → 206 with Content-Range, Accept-Ranges, a strong ETag and no Content-Encoding — the magic, a middle slice and a past-the-end clamp all byte for byte (L5 S4)",
+                      cuerpo == b"PMTiles" and rango_206(st, cab, cuerpo, 0, 6, archivo_mapa[:7])
+                      and rango_206(st_m, cab_m, cuerpo_m, 100, 1023, archivo_mapa[100:1024])
+                      and rango_206(st_c, cab_c, cuerpo_c, total_mapa - 10, total_mapa - 1,
+                                   archivo_mapa[-10:]))
+                st, cab, cuerpo = pedir_mapa("/mapa/chile.pmtiles", {"Range": f"bytes={total_mapa}-9"})
+                check("mapa: a start past the end answers 416 with Content-Range: bytes */N — the header the client refetches from",
+                      st == 416 and cab.get("content-range") == f"bytes */{total_mapa}"
+                      and json.loads(cuerpo).get("error"))
+                st, _c, cuerpo = pedir_mapa("/mapa/chile.pmtiles", {})
+                st2, _c2, cuerpo2 = pedir_mapa("/mapa/chile.pmtiles", {"Range": "bytes=0-1,3-4"})
+                st3, _c3, cuerpo3 = pedir_mapa("/mapa/chile.pmtiles", {"Range": "bytes=-5"})
+                st4, _c4, cuerpo4 = pedir_mapa("/mapa/chile.pmtiles", {"Range": "bytes=5-"})
+                check("mapa: no Range, a compound, a suffix and an open-ended range each answer 400 naming the contract — the client only ever sends one explicit range",
+                      [st, st2, st3, st4] == [400] * 4
+                      and "Range: bytes=<inicio>-<fin>" in json.loads(cuerpo)["error"]
+                      and json.loads(cuerpo2).get("error") and json.loads(cuerpo3).get("error")
+                      and json.loads(cuerpo4).get("error"))
+                st, _c, _cu = pedir_mapa("/mapa/chile.pmtiles", {"Range": "bytes=0-6"}, token=False)
+                st2, _m2 = call("GET", "/api/mapa", token=None)
+                check("mapa: both doors need the token — the file route and the coverage state",
+                      st == 401 and st2 == 401)
+                st, m = call("GET", "/api/mapa")
+                check("mapa: the coverage state — disponible, the archive's own bounds, max zoom and centre out of the 127-byte header (L5 S4)",
+                      st == 200 and m["disponible"] is True and m["zoom_max"] == 14
+                      and m["limites"] == {"longitud_min": -77.5, "latitud_min": -56.5,
+                                           "longitud_max": -66.5, "latitud_max": -17.5}
+                      and m["centro"] == {"longitud": -70.5, "latitud": -33.5, "zoom": 6})
+                TILES_ARCHIVE = os.path.join(tmp, "no-esta.pmtiles")
+                st, _c, cuerpo = pedir_mapa("/mapa/chile.pmtiles", {"Range": "bytes=0-6"})
+                st2, m2 = call("GET", "/api/mapa")
+                check("mapa: no archive → the route answers 404 naming the remedy and the state answers disponible: false with it — a completable screen, never an error (ADR-0019)",
+                      st == 404 and "aps-conecta mapa" in json.loads(cuerpo)["error"]
+                      and st2 == 200 and m2["disponible"] is False
+                      and "aps-conecta mapa" in m2["motivo"])
+                TILES_ARCHIVE = sin_mapa
                 b.cookie = f"{TOKEN_COOKIE}={TOKEN}"
 
 
@@ -5059,6 +5700,9 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                       b.req("GET", "/divergencia")[0] == 404
                       and semanal.startswith("Sun *-*-* 03:00") and "domingo 03:00" in rev_html
                       and mensual.startswith("*-*-04 05:00") and "día 4, 05:00" in rev_html)
+                check("revisión: the plan carries the Ubicación row — punto oficial, or corregida with the metres (the frozen line, L5 S4)",
+                      "<dt>Ubicación</dt>" in rev_html and "corregida, a " in rev_html
+                      and "m del oficial" in rev_html)
 
                 st, plan, hdr, setc = b.req("GET", "/equipos")
                 check("planilla: the browser decode-or-warn rides the screen (bytes, utf-8 fatal, cp1252)",
@@ -5325,6 +5969,14 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                 sync_playwright = None
                 print("  skip: browser arms — playwright is not installed "
                       "(pip install playwright; playwright install chromium)")
+            # The browser arms' world (L5 S4): the fallback state — no archive — so the pane's
+            # basemap never fires tile fetches inside arms that navigate away mid-load (the R34
+            # lesson, measured on a box that owns the real 1.1 GB archive: the aborted fetches
+            # drown every arm's console accounting). Hermeticity, the dd8a1db way: one pin here
+            # instead of per-arm pins; the map pane's own arms (Phase 5) repoint per-arm, the
+            # painted-pixels one alone against the real archive this box may own.
+            old_tiles_browser = TILES_ARCHIVE
+            TILES_ARCHIVE = os.path.join(tmp, "no-esta.pmtiles")
             if sync_playwright:
                 with sync_playwright() as pw:
                     nav = pw.chromium.launch()
@@ -5420,6 +6072,180 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                             errores.append(str(e))
                         check("browser: a fixed centre locks the filters and the combobox; «Confirmar centro» just continues (D13)",
                               fijo and not errores)
+                        # ── L5 S4: the map pane in a real browser — the lectura, the pin, the
+                        # fallback, the dead route, the fixed site; painted pixels only where a
+                        # real archive exists ── The archive is repointed per arm (the missing
+                        # path for the fallback states, a synthetic header when coverage must
+                        # read disponible), so no arm depends on this box having the 1.1 GB
+                        # file; the painted-pixels arm alone runs against the real one.
+                        desde = len(errores)
+                        old_tiles_pw = old_tiles   # the painted arm alone probes the box's own default — the true archive, if this box has one
+                        TILES_ARCHIVE = os.path.join(tmp, "no-esta.pmtiles")   # the fallback state
+                        real_here, sin_sitio = deis.HERE, tempfile.mkdtemp()
+                        os.makedirs(os.path.join(sin_sitio, "scripts"))
+                        deis.HERE = os.path.join(sin_sitio, "scripts")
+                        CENTRO, PUNTO = None, None
+                        try:
+                            pg.goto(f"https://127.0.0.1:{tport}/centro")
+                            pg.wait_for_function("() => document.querySelector('#c-btn').innerText.includes('Elija un centro')",
+                                                 timeout=10000)
+                            pg.click("#c-btn")
+                            pg.fill("#c-q", "ramon")
+                            pg.click("#c-lista [data-c='121567']")
+                            pg.wait_for_function("() => document.querySelector('#c-lectura').innerText.includes('Oficial:')",
+                                                 timeout=10000)
+                            lectura0 = pg.inner_text("#c-lectura")
+                            nota_mapa = pg.inner_text("#c-nota-mapa")
+                            chincheta = pg.locator("#c-mapa .pin-mapa").count()
+                            anillo = pg.locator("#c-mapa .leaflet-overlay-pane svg path").count()
+                            pg.focus("#c-mapa")
+                            pg.keyboard.press("ArrowUp")          # the arrows nudge the pin 5 m
+                            tras_flecha = pg.inner_text("#c-lectura")
+                            pg.keyboard.press("Shift+ArrowUp")    # Shift: 25 m, off the moved pin
+                            tras_mayus = pg.inner_text("#c-lectura")
+                            pg.click("#c-reset")                  # «Punto oficial» returns it
+                            tras_reinicio = pg.inner_text("#c-lectura")
+                            pg.press("#c-mapa", "ArrowUp")   # the reset click left focus on the button — press the map itself
+                            pg.click("#c-ok")
+                            pg.wait_for_url("**/contenedores", timeout=10000)
+                            confirmado = CENTRO == "121567" and PUNTO == {"latitud": "-38.8699151",
+                                                                           "longitud": "-72.39666"}
+                            pg.goto(f"https://127.0.0.1:{tport}/centro")   # a reload restores the pin
+                            pg.wait_for_function("() => document.querySelector('#c-lectura').innerText.includes('Elegido:')",
+                                                 timeout=10000)
+                            recargado = "5 m al norte" in pg.inner_text("#c-lectura")
+                            call("POST", "/api/centro", {"codigo": "121567"})   # the reset: no pair held
+                        except Exception as e:   # a Playwright timeout: the arm reports it
+                            lectura0 = nota_mapa = ""
+                            chincheta = anillo = 0
+                            tras_flecha = tras_mayus = tras_reinicio = ""
+                            confirmado = recargado = False
+                            errores.append(str(e))
+                        finally:
+                            deis.HERE = real_here
+                            shutil.rmtree(sin_sitio)
+                            CENTRO, PUNTO = None, None
+                        check("browser: the Centro pane in its fallback state (L5 S4) — the note names the remedy, the ring and the pin render on the plain background, the lectura's official state; the arrows move 5 m and 25 m; «Punto oficial» returns it; the moved point rides «Confirmar centro» exactly and a reload restores it (ADR-0019: a completable screen, never an outage)",
+                              "Oficial: −38,86996, −72,39666" in lectura0
+                              and "En el punto oficial" in lectura0
+                              and "aps-conecta mapa" in nota_mapa
+                              and chincheta == 1 and anillo >= 1
+                              and "5 m al norte" in tras_flecha and "30 m al norte" in tras_mayus
+                              and "En el punto oficial" in tras_reinicio
+                              and confirmado and recargado and not errores[desde:])
+                        # the route dies mid-pane (the archive replaced under a running screen,
+                        # the port blocked): coverage said disponible, every basemap fetch
+                        # fails — the pane still completes, and the dead fetches are the
+                        # provoked console lines, whitelisted exactly the way the step-8 arm
+                        # whitelists its 409/400 — never by weakening another arm's rule.
+                        pg.goto("about:blank")
+                        desde = len(errores)
+                        arch_muerto = os.path.join(tmp, "chile-muerto.pmtiles")
+                        with open(arch_muerto, "wb") as fh:   # a readable header: disponible, true
+                            fh.write(b"PMTiles" + struct.Struct("<B11Q6B4iB2i").pack(
+                                3, *([0] * 11), 0, 0, 0, 0, 0, 14,
+                                int(round(-77.5 * 1e7)), int(round(-56.5 * 1e7)),
+                                int(round(-66.5 * 1e7)), int(round(-17.5 * 1e7)),
+                                6, int(round(-70.5 * 1e7)), int(round(-33.5 * 1e7))))
+                        TILES_ARCHIVE = arch_muerto
+                        pg.route("**/mapa/chile.pmtiles", lambda ruta: ruta.abort())
+                        real_here, sin_ruta = deis.HERE, tempfile.mkdtemp()
+                        os.makedirs(os.path.join(sin_ruta, "scripts"))
+                        deis.HERE = os.path.join(sin_ruta, "scripts")
+                        CENTRO, PUNTO = None, None
+                        try:
+                            pg.goto(f"https://127.0.0.1:{tport}/centro")
+                            pg.wait_for_function("() => document.querySelector('#c-btn').innerText.includes('Elija un centro')",
+                                                 timeout=10000)
+                            pg.click("#c-btn")
+                            pg.fill("#c-q", "ramon")
+                            pg.click("#c-lista [data-c='121567']")
+                            pg.wait_for_function("() => document.querySelector('#c-lectura').innerText.includes('Oficial:')",
+                                                 timeout=10000)
+                            sin_nota = pg.is_hidden("#c-nota-mapa")   # coverage read the header
+                            pg.focus("#c-mapa")
+                            pg.keyboard.press("ArrowUp")
+                            mvio = "5 m al norte" in pg.inner_text("#c-lectura")
+                            pg.click("#c-ok")
+                            pg.wait_for_url("**/contenedores", timeout=10000)
+                            confirmado_ruta = CENTRO == "121567" and PUNTO is not None
+                        except Exception as e:   # a Playwright timeout: the arm reports it
+                            sin_nota = mvio = confirmado_ruta = False
+                            errores.append(str(e))
+                        finally:
+                            pg.unroute("**/mapa/chile.pmtiles")
+                            pg.goto("about:blank")   # no late dead-fetch line reaches a later arm
+                            deis.HERE = real_here
+                            shutil.rmtree(sin_ruta)
+                            CENTRO, PUNTO = None, None
+                        muertos = [x for x in errores[desde:] if re.search(r"(?i)failed to (fetch|load)", x)]
+                        propios = [x for x in errores[desde:] if x not in muertos]
+                        del errores[desde:]
+                        errores.extend(propios)
+                        check("browser: the route dies mid-pane (L5 S4) — the pane completes anyway (the pin moves, «Confirmar centro» answers), the dead /mapa/ fetches happened and are its only console lines, whitelisted (1c1f710: the untested branch is the production branch)",
+                              sin_nota and mvio and confirmado_ruta and muertos and not propios)
+                        # a fixed site: its own point, read-only — the map pans, the pin does not
+                        pg.goto("about:blank")
+                        desde = len(errores)
+                        TILES_ARCHIVE = os.path.join(tmp, "no-esta.pmtiles")   # the note, deterministic
+                        try:
+                            pg.goto(f"https://127.0.0.1:{tport}/centro")
+                            pg.wait_for_selector("#m .aviso", timeout=10000)
+                            lectura_fija = pg.inner_text("#c-lectura")
+                            oculto = pg.is_hidden("#c-reset")
+                            ancla = pg.locator("#c-mapa .pin-mapa").count() == 1
+                            pg.click("#c-mapa", position={"x": 250, "y": 350})   # a click moves nothing
+                            pg.wait_for_timeout(300)
+                            quieto = "En el punto oficial" in pg.inner_text("#c-lectura")
+                        except Exception as e:   # a Playwright timeout: the arm reports it
+                            lectura_fija = ""
+                            oculto = ancla = quieto = False
+                            errores.append(str(e))
+                        check("browser: a fixed site shows its point read-only (L5 S4) — the lectura official, «Punto oficial» hidden, a click on the map moves nothing",
+                              "Oficial: −33,56136, −70,67469" in lectura_fija
+                              and "En el punto oficial" in lectura_fija
+                              and oculto and ancla and quieto and not errores[desde:])
+                        PINTURA = """() => {   // the pane's canvases sampled on a 7×7 grid
+                          const colores = new Set();
+                          for (const c of document.querySelectorAll('#c-mapa canvas')) {
+                            const x = c.getContext('2d'); if (!x) continue;
+                            for (let i = 1; i <= 7; i++) for (let j = 1; j <= 7; j++) {
+                              const d = x.getImageData(Math.floor(c.width * i / 8),
+                                                       Math.floor(c.height * j / 8), 1, 1).data;
+                              colores.add(d[0] + ',' + d[1] + ',' + d[2]);
+                            }
+                          }
+                          return colores.size;
+                        }"""
+                        # painted pixels, not element presence (c8837c7): the one arm that runs
+                        # against a real archive — where there is none it is skip-named, never
+                        # silently green (the ImportError precedent above); CI keeps node --check
+                        # and the http.client Range proofs as its proxies.
+                        TILES_ARCHIVE = old_tiles_pw
+                        st_mapa, mapa_real = call("GET", "/api/mapa")
+                        if st_mapa == 200 and mapa_real.get("disponible"):
+                            desde = len(errores)
+                            try:
+                                pg.goto(f"https://127.0.0.1:{tport}/centro")
+                                pg.wait_for_selector("#m .aviso", timeout=10000)
+                                sin_nota_real = pg.is_hidden("#c-nota-mapa")
+                                pintado = 0
+                                for _ in range(40):   # the tiles paint at their own pace
+                                    pintado = pg.evaluate(PINTURA)
+                                    if pintado and pintado > 1:
+                                        break
+                                    pg.wait_for_timeout(500)
+                            except Exception as e:   # a Playwright timeout: the arm reports it
+                                sin_nota_real = False
+                                pintado = 0
+                                errores.append(str(e))
+                            check("browser: the pane paints the real archive — sampled pixels, not element presence (c8837c7); flat colour is a failure",
+                                  sin_nota_real and pintado and pintado > 1)
+                            del errores[desde:]   # the painted verdict is this arm's contract; a real archive's stray tile line is not a later arm's
+                        else:
+                            print("  skip: the map pane paints — no real archive on this box "
+                                  "(the L7 rehearsal runs it)")
+                        TILES_ARCHIVE = os.path.join(tmp, "no-esta.pmtiles")   # back to the section's fallback: no arm below fetches tiles
                         # step 8 in a real browser on a fresh tree (a15): the ids under each list, a
                         # save, a different save is a conflict, «Reemplazar»; the centre's template
                         # downloaded and uploaded back; an unknown group opens «Grupos válidos». The
@@ -5681,6 +6507,7 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                               en_login and pegado)
                     finally:
                         nav.close()
+            TILES_ARCHIVE = old_tiles_browser
             # ── L3 S1: a green «Revisar y ejecutar» closes the installer (SEC-2, a13) ──
             fin, fport = bind_server("127.0.0.1", (0,))
             fin.grace = 0.2
@@ -5757,6 +6584,7 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
         CRED_PATH, PHASE20 = old_cred, old_p20
         CERT_DIR = old_cert
         AIO_STATE = old_aio
+        TILES_ARCHIVE = old_tiles
         globals().update(recursos=reales[0], puerto_libre=reales[1])
         os.environ.update(_scrubbed)
         # the stub world closes with the fixture: the PATH injection and the FAKE_DOCKER_* knobs
