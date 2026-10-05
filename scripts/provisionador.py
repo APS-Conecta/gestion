@@ -46,6 +46,7 @@ import http.client
 import io
 import ipaddress
 import json
+import math
 import os
 import re
 import secrets
@@ -85,6 +86,11 @@ CODIGO = re.compile(r"[0-9]{4,6}")
 # writes the site file, which answers from then on — one install, one establishment (D13).
 # Process-local on purpose: a restart before step 8 costs one re-pick, nothing else.
 CENTRO = None
+# The confirmed point (L5 S4): the centre's moved coordinates, held BESIDE CENTRO until step 8
+# writes them into the site file's SITE_LON/SITE_LAT — None is the official point (the reset
+# case), and every confirm resets it (a code change clears it). Same process-local rule: a
+# restart costs one re-pick, point included.
+PUNTO = None
 # The Centro screen's orders (the approved design's): regions north to south — the register's
 # codes are not — and the types with the long name the card shows. R36: every type is offered,
 # none excluded by default.
@@ -532,11 +538,47 @@ def one_establishment(codigo):
                           "establecimiento"}
 
 
+def _grados(crudo):
+    """One SITE_LON/SITE_LAT line value as a plain-degree string, or None — a matching quote
+    pair (a hand edit may quote; deis.block() writes plain degrees bare) is stripped before
+    deis.DEGREES checks the shape: a value this cannot read exactly is refused, never guessed
+    (fail closed, site_arrays' rule)."""
+    v = crudo.strip()
+    if len(v) > 1 and v[0] == v[-1] and v[0] in "'\"":
+        v = v[1:-1]
+    return v if deis.DEGREES.fullmatch(v) else None
+
+
+def site_punto(path):
+    """The site file's own SITE_LON/SITE_LAT pair as {latitud, longitud} strings, or None when
+    either line is absent or not plain degrees — a pre-S1 site or a hand-built silent site simply
+    lacks the pair: a state, not an error (the de26066 review lesson), and never a blocked run.
+    fijar_dominio's anchored-one-line shape; the ranges checked because a sourced file's degrees
+    are a location on Earth, not just a shape."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError:
+        return None
+    par = {}
+    for nombre, campo in (("SITE_LON", "longitud"), ("SITE_LAT", "latitud")):
+        m = re.search(rf"(?m)^{nombre}=(.*)$", text)
+        v = _grados(m.group(1)) if m else None
+        if v is None:
+            return None
+        par[campo] = v
+    if abs(float(par["latitud"])) > 90 or abs(float(par["longitud"])) > 180:
+        return None
+    return par
+
+
 def api_centros():
     """GET /api/centros — the whole register in one compact payload for the Centro screen's
     client-side cascade and search (R36: every centre, every type): each name once, and each centre
-    as [codigo, tipo, nombre, dirección, comuna, servicio, dependencia] with indexes into them.
-    ~250 KB once per visit on the LAN (ponytail: no gzip, no paging — compress if a box feels it)."""
+    as [codigo, tipo, nombre, dirección, comuna, servicio, dependencia] with indexes into them,
+    plus the register's own point as two trailing fields, latitud and longitud (L5 S4) — trailing
+    so the screen's positional destructure of the first seven extends, never re-indexes.
+    ~310 KB once per visit on the LAN (ponytail: no gzip, no paging — compress if a box feels it)."""
     def orden(lista, codigos):
         return lambda x: (lista.index(x) if x in lista else len(lista), codigos(x))
     region = {r["region_codigo"]: r["region"] for r in ROWS}
@@ -553,7 +595,8 @@ def api_centros():
     si = {s: i for i, s in enumerate(servicios)}
     di = {d: i for i, d in enumerate(dependencias)}
     centros = sorted(([r["codigo"], ti[r["tipo"]], r["nombre"], r["direccion"],
-                       ci[r["comuna_codigo"]], si[r["servicio_salud"]], di[r["dependencia"]]]
+                       ci[r["comuna_codigo"]], si[r["servicio_salud"]], di[r["dependencia"]],
+                       r.get("latitud", ""), r.get("longitud", "")]
                       for r in ROWS), key=lambda x: (x[1], deis.fold(x[2])))
     largo = dict(TIPOS)
     return 200, {"registro": SNAPSHOT, "regiones": [region[c] for c in regiones],
@@ -568,20 +611,44 @@ def centro_actual():
     Centro screen; none yet is {"codigo": null} — a state, not an error (a 404 would land in the
     browser console as one). A written code the register lacks (a silent install's own site.sh) is
     still this install's centre, named plainly. Every later screen reads it here, so no code rides a
-    URL (L3 S2); «Listo» names the centre from it too."""
+    URL (L3 S2); «Listo» names the centre from it too.
+    L5 S4: `punto` is the centre's effective point — the site file's own SITE_LON/SITE_LAT once
+    written (a fixed site shows its point), else the pair «Confirmar centro» held, else the
+    register's official; `oficial` says whether it IS the register's point (None when the register
+    carries none to compare against). A site file without the pair falls back to the register's
+    point for display and blocks nothing; null when nothing is known."""
     sitios = written_sites()
     codigo = sitios[0] if sitios else CENTRO
     if codigo is None:
         return 200, {"codigo": None}
     row = find_row(codigo)
     nombre = row["nombre"] if row else f"el establecimiento DEIS {codigo}"
-    return 200, {"codigo": codigo, "nombre": nombre, "fijo": bool(sitios)}
+    oficial = _punto_oficial(row)
+    punto, es_oficial = None, None
+    if sitios:
+        punto = site_punto(site_path(codigo))
+        if punto is None and oficial is not None:   # no pair of its own: the register's, for display
+            punto, es_oficial = dict(oficial), True
+        elif punto is not None and oficial is not None:
+            es_oficial = _mismo_punto(punto, oficial)
+    elif PUNTO is not None:
+        punto = dict(PUNTO)
+        es_oficial = _mismo_punto(PUNTO, oficial) if oficial is not None else False
+    elif oficial is not None:
+        punto, es_oficial = dict(oficial), True
+    return 200, {"codigo": codigo, "nombre": nombre, "fijo": bool(sitios),
+                 "punto": None if punto is None else {**punto, "oficial": es_oficial}}
 
 
 def api_centro(payload):
-    """POST /api/centro {"codigo"} — «Confirmar centro»: held until step 8 writes the site file. A
-    correction is free until then; afterwards only that centre answers 200 (D13)."""
-    global CENTRO
+    """POST /api/centro {"codigo", "latitud"?, "longitud"?} — «Confirmar centro»: held until step
+    8 writes the site file. A correction is free until then; afterwards only that centre answers
+    200 (D13). L5 S4: the point rides the same confirm — both coordinates or none; none is the
+    official point (the reset case), and a held pair lands in the site file at step 8. When the
+    archive of step 4 is readable, the effective point — the given pair, or the register's own —
+    must fall inside its bounds: R47's build-time refusal, moved to where the human is; without a
+    readable archive there is no check, never a blocked screen (ADR-0019's addendum)."""
+    global CENTRO, PUNTO
     codigo = payload.get("codigo")
     if not isinstance(codigo, str) or not CODIGO.fullmatch(codigo):
         return 400, {"error": "el código DEIS debe ser de 4 a 6 dígitos"}
@@ -591,7 +658,25 @@ def api_centro(payload):
     refused = one_establishment(codigo)
     if refused:
         return refused
-    CENTRO = codigo
+    lat, lon = payload.get("latitud"), payload.get("longitud")
+    if (lat is None) != (lon is None):
+        return 400, {"error": "envíe la latitud y la longitud juntas — sin ninguna vuelve al punto oficial"}
+    punto = None
+    if lat is not None:
+        if written_sites():   # the file is the truth from step 8 on — a fixed site shows its point
+            return 409, {"error": f"este servidor ya sirve a {row['nombre']}: su punto ya quedó "
+                                  "escrito con su sitio y se corrige a mano en él"}
+        punto = _punto_valido(lat, lon)
+        if punto is None:
+            return 400, {"error": "la latitud debe ser un número de -90 a 90 y la longitud de "
+                                  "-180 a 180, en grados decimales"}
+    efectivo = punto or _punto_oficial(row)
+    if efectivo is not None and _punto_dentro(efectivo) is False:
+        return 400, {"error": "el punto queda fuera del mapa construido en el paso 4 — "
+                              + ("muévalo dentro del territorio que cubre, o confirme el punto "
+                                 "oficial" if punto else
+                                 "reconstruya el mapa con sudo aps-conecta mapa")}
+    CENTRO, PUNTO = codigo, punto
     return 200, {"ok": True, "codigo": codigo, "nombre": row["nombre"]}
 
 
@@ -618,6 +703,67 @@ def api_mapa():
                              "longitud_max": c[23] / 1e7, "latitud_max": c[24] / 1e7},
                  "zoom_max": c[20],
                  "centro": {"longitud": c[26] / 1e7, "latitud": c[27] / 1e7, "zoom": c[25]}}
+
+
+def _punto_oficial(row):
+    """The register's own point for a row, as the register spells it — or None when the row
+    carries none (defensive: the a21 gate proves every real register row's point inside the
+    basemap bbox; the silent install's own code has no row at all)."""
+    if row and row.get("latitud") and row.get("longitud"):
+        return {"latitud": row["latitud"], "longitud": row["longitud"]}
+    return None
+
+
+def _punto_valido(lat, lon):
+    """A coordinate pair off the wire — number or numeric string, the browser sends floats — as
+    canonical degree strings (seven decimals ≈ a centimetre, trailing zeros cut), or None when
+    either side is not a plain degree: the register's own vocabulary (deis.DEGREES), so a held
+    pair lands in site.sh exactly the way the register's does. bool is a number to isinstance and
+    is refused anyway — a JSON true is a client bug, not 1° north."""
+    def grado(v):
+        if isinstance(v, bool) or not isinstance(v, (int, float, str)):
+            return None
+        try:
+            return float(v)
+        except ValueError:
+            return None
+    la, lo = grado(lat), grado(lon)
+    if la is None or lo is None or not -90 <= la <= 90 or not -180 <= lo <= 180:
+        return None
+
+    def texto(f):
+        s = f"{f:.7f}".rstrip("0").rstrip(".")
+        return "0" if s in ("", "-", "-0") else s
+    return {"latitud": texto(la), "longitud": texto(lo)}
+
+
+def _punto_dentro(punto):
+    """The archive-bounds verdict (R47's replacement): True inside the basemap step 4 built,
+    False outside, None when there is no readable archive to check against — no check then, never
+    a blocked screen (ADR-0019's addendum); the pane's note names the state. api_mapa's own
+    127-byte header read, reused: bounds are the archive's facts, not the centre's."""
+    status, mapa = api_mapa()
+    if status != 200 or not mapa.get("disponible"):
+        return None
+    lim = mapa["limites"]
+    return (lim["longitud_min"] <= float(punto["longitud"]) <= lim["longitud_max"]
+            and lim["latitud_min"] <= float(punto["latitud"]) <= lim["latitud_max"])
+
+
+def _mismo_punto(a, b):
+    """Two pairs naming one point — a centimetre of tolerance (1e-7 degrees), so «Punto oficial»
+    after a correction that never moved lands on oficial, not on a float's last bit."""
+    return (abs(float(a["latitud"]) - float(b["latitud"])) <= 1e-7
+            and abs(float(a["longitud"]) - float(b["longitud"])) <= 1e-7)
+
+
+def _distancia_metros(a, b):
+    """Haversine metres between two points — Revisión's «a N m del oficial» (the pane's lectura
+    does the same maths in the browser); Earth's mean radius, whole metres."""
+    la1, lo1, la2, lo2 = map(math.radians, (float(a["latitud"]), float(a["longitud"]),
+                                            float(b["latitud"]), float(b["longitud"])))
+    h = math.sin((la2 - la1) / 2) ** 2 + math.cos(la1) * math.cos(la2) * math.sin((lo2 - lo1) / 2) ** 2
+    return round(2 * 6371000 * math.asin(math.sqrt(h)))
 
 
 def _site_exists_answer(codigo, path):
@@ -653,6 +799,20 @@ def site_import(payload):
     if not re.search(r'(?m)^SITE_DOMINIO="?[^"\s]+"?$', text):
         return 400, {"error": 'el sitio no declara SITE_DOMINIO="<dominio del servidor>" — la suite se '
                               "configura con él"}
+    # L5 S4 (S1b: optional, validated when present): SITE_LON/SITE_LAT — both or none, and each a
+    # plain degree a site file can source. Absent is a state, not an error (a hand-built site
+    # simply lacks the pair); the bytes are placed verbatim either way.
+    lon_m, lat_m = (re.search(rf"(?m)^{nombre}=(.*)$", text) for nombre in ("SITE_LON", "SITE_LAT"))
+    if (lon_m is None) != (lat_m is None):
+        return 400, {"error": "el sitio declara solo una de SITE_LON y SITE_LAT — envíe ambas en "
+                              "grados decimales, o ninguna"}
+    if lon_m is not None:
+        valores = {"latitud": _grados(lat_m.group(1)), "longitud": _grados(lon_m.group(1))}
+        if (valores["latitud"] is None or valores["longitud"] is None
+                or abs(float(valores["latitud"])) > 90
+                or abs(float(valores["longitud"])) > 180):
+            return 400, {"error": "las líneas SITE_LON y SITE_LAT deben traer grados decimales — "
+                                  "latitud de -90 a 90 y longitud de -180 a 180"}
     with tempfile.TemporaryDirectory() as tmp:
         probe = os.path.join(tmp, "site.sh")
         with open(probe, "w", encoding="utf-8") as fh:
@@ -722,6 +882,13 @@ def api_sitio(payload):
     refused = one_establishment(codigo)   # D13 at step 8 too, not only in the silent install
     if refused:
         return refused
+
+    # L5 S4: a point held at Centro rides the first write — block() reads the row's longitud and
+    # latitud, so the held pair (bounds-checked at the confirm, or unchecked for want of a
+    # readable archive) replaces the register's. The FIRST write only: once written, the file is
+    # the point's home — «Reemplazar» regenerates the team blocks and never the identity lines.
+    if PUNTO is not None and CENTRO == codigo:
+        row = dict(row, longitud=PUNTO["longitud"], latitud=PUNTO["latitud"])
 
     path = site_path(codigo)
     if not os.path.exists(path):
@@ -1270,13 +1437,24 @@ def veredicto(body):
 def plan_clinico(codigo, teams, rows, cargos):
     """The review step's plan in clinic terms (R40): the centre by name, its sectors and programs,
     every person the planilla declares (the first administrator marked), the cargo accounts it adds,
-    and what the clinic gets (R37) — no path, no file, no key."""
+    and what the clinic gets (R37) — no path, no file, no key. L5 S4: `ubicacion` — the
+    site's own point against the register's official: {"oficial": true}, or the metres between
+    them (Revisión's «corregida, a N m del oficial»); null when either point is unknown (a
+    hand-built site without the pair, a code the register lacks) — a state, never a blocked run."""
     row = find_row(codigo)
     opciones = opciones_actuales()
     sin_talk = opciones is not None and not opciones[0]   # step 7 left Talk off: phase 12 installs no spreed
+    punto, oficial = site_punto(site_path(codigo)), _punto_oficial(row)
+    if punto is None or oficial is None:
+        ubicacion = None
+    elif _mismo_punto(punto, oficial):
+        ubicacion = {"oficial": True}
+    else:
+        ubicacion = {"oficial": False, "metros": _distancia_metros(punto, oficial)}
     return {"centro": {"codigo": codigo,
                        "nombre": row["nombre"] if row else f"el establecimiento DEIS {codigo}",
                        "comuna": row["comuna"] if row else ""},
+            "ubicacion": ubicacion,
             "sectores": [d for g, d in teams if g.startswith("sector-")],
             "programas": [d for g, d in teams if g.startswith("prog-")],
             "personas": [[uid, f"{nombre} {apellidos}", list(gids), primer]
@@ -3702,6 +3880,8 @@ def selftest():
                   and d["comunas"][ramon[4]] == ["Padre Las Casas", 1]
                   and d["servicios"][ramon[5]] == "Servicio de Salud Araucanía Sur"
                   and d["dependencias"][ramon[6]] == "Municipal")
+            check("centros: every row carries the register's official point as two trailing fields — the pane opens on it (a22, L5 S4)",
+                  all(len(c) == 9 for c in d["centros"]) and fila["121567"][7:] == ["-38.86996", "-72.39666"])
             st, body = call("GET", "/api/centro")
             st1, _ = call("POST", "/api/centro", {"codigo": "121567"})
             st2, body2 = call("POST", "/api/centro", {"codigo": "113314"})
@@ -3714,6 +3894,68 @@ def selftest():
             st2, _ = call("POST", "/api/centro", {"codigo": "999999"})
             check("centro: a junk code answers 400, one absent from the register 404",
                   st == 400 and st2 == 404)
+
+            # ── L5 S4: the point beside the code — POST /api/centro's coordinates, held to step 8 ──
+            # A synthetic archive around the fixture's points, so the bounds refusal (R47's
+            # replacement, moved to the confirm) is proven here without the real 1.1 GB file —
+            # the mapa arm below builds its own; the bounds are what this arm reads.
+            arch_pto = os.path.join(tmp, "chile-punto.pmtiles")
+            with open(arch_pto, "wb") as fh:
+                fh.write(b"PMTiles" + struct.Struct("<B11Q6B4iB2i").pack(
+                    3, *([0] * 11), 0, 0, 0, 0, 0, 14,
+                    int(round(-77.5 * 1e7)), int(round(-56.5 * 1e7)),
+                    int(round(-66.5 * 1e7)), int(round(-17.5 * 1e7)),
+                    6, int(round(-70.5 * 1e7)), int(round(-33.5 * 1e7))))
+            arch_chico = os.path.join(tmp, "chile-chico.pmtiles")
+            with open(arch_chico, "wb") as fh:
+                fh.write(b"PMTiles" + struct.Struct("<B11Q6B4iB2i").pack(
+                    3, *([0] * 11), 0, 0, 0, 0, 0, 14,
+                    int(round(-77.5 * 1e7)), int(round(-56.5 * 1e7)),
+                    int(round(-66.5 * 1e7)), int(round(-35.0 * 1e7)),   # Loica's point stays north of it
+                    6, int(round(-70.5 * 1e7)), int(round(-33.5 * 1e7))))
+            old_tiles = TILES_ARCHIVE
+            TILES_ARCHIVE = arch_pto
+            st_l, _ = call("POST", "/api/centro", {"codigo": "121567", "latitud": -38.8681})
+            st_t, _ = call("POST", "/api/centro", {"codigo": "121567", "latitud": "sur", "longitud": 0})
+            st_r, _ = call("POST", "/api/centro", {"codigo": "121567", "latitud": 95, "longitud": -72.4})
+            st_f, fuera = call("POST", "/api/centro", {"codigo": "121567", "latitud": 10.0, "longitud": -72.39})
+            check("punto: a lone coordinate, a non-numeric one and an out-of-range one answer 400; a point outside the archive's bounds is refused naming the map (L5 S4, R47's refusal moved to the confirm)",
+                  st_l == 400 and st_t == 400 and st_r == 400 and st_f == 400
+                  and "fuera del mapa" in fuera["error"] and "punto oficial" in fuera["error"])
+            st_m, _ = call("POST", "/api/centro",
+                           {"codigo": "121567", "latitud": -38.8681, "longitud": "-72.3951"})
+            st_g, held = call("GET", "/api/centro")
+            st_o, _ = call("POST", "/api/centro", {"codigo": "121567"})
+            st_g2, oficial = call("GET", "/api/centro")
+            check("punto: a moved confirm holds the pair beside the code — register-spelled strings, oficial false; none given is the official point itself, oficial true (the reset)",
+                  st_m == 200 and st_g == 200
+                  and held["punto"] == {"latitud": "-38.8681", "longitud": "-72.3951", "oficial": False}
+                  and st_o == 200 and st_g2 == 200
+                  and oficial["punto"] == {"latitud": "-38.86996", "longitud": "-72.39666", "oficial": True})
+            TILES_ARCHIVE = arch_chico
+            st_of, oficial_fuera = call("POST", "/api/centro", {"codigo": "110485"})
+            TILES_ARCHIVE = os.path.join(tmp, "no-esta.pmtiles")
+            st_sin, _ = call("POST", "/api/centro", {"codigo": "110485"})
+            TILES_ARCHIVE = old_tiles
+            st_c, _ = call("POST", "/api/centro", {"codigo": "113314"})
+            check("punto: the register's own point outside the bounds is refused naming the rebuild; no readable archive is no check — the confirm passes and the screen stays completable (ADR-0019)",
+                  st_of == 400 and "aps-conecta mapa" in oficial_fuera["error"]
+                  and st_sin == 200 and st_c == 200 and call("GET", "/api/centro")[1]["codigo"] == "113314")
+            real_here = deis.HERE
+            with tempfile.TemporaryDirectory() as pt:
+                deis.HERE = os.path.join(pt, "scripts")
+                os.makedirs(deis.HERE)
+                call("POST", "/api/centro", {"codigo": "121567", "latitud": -38.8681, "longitud": "-72.3951"})
+                st_w, _ = call("POST", "/api/sitio", {"codigo": "121567", "sectors": [], "programs": []})
+                con_punto = open(site_path("121567"), encoding="utf-8").read()
+                st_r2, _ = call("POST", "/api/sitio", {"codigo": "121567", "sectors": ["Norte"],
+                                                       "programs": [], "reemplazar": True})
+                tras = open(site_path("121567"), encoding="utf-8").read()
+            deis.HERE = real_here
+            call("POST", "/api/centro", {"codigo": "113314"})   # the world the arms below expect
+            check("punto: the held pair lands in SITE_LON/SITE_LAT at step 8 and survives «Reemplazar» — the identity block is never regenerated (L5 S4)",
+                  st_w == 200 and "SITE_LON=-72.3951\n" in con_punto and "SITE_LAT=-38.8681\n" in con_punto
+                  and st_r2 == 200 and "SITE_LON=-72.3951\n" in tras and "sector-norte|" in tras)
 
             st, body = call("POST", "/api/sitio",
                             {"codigo": "113314",
@@ -3850,6 +4092,13 @@ def selftest():
                   and st2 == 409 and body2 == body and not os.path.exists(site_path("121567"))
                   and st3 == 200 and body3["codigo"] == "113314" and body3["fijo"] is True and st4 == 200
                   and installed_centre() == "Centro de Salud Familiar Cóndores de Chile")
+            st_fp, fijo_p = call("GET", "/api/centro")
+            st_fm, movido_fijo = call("POST", "/api/centro", {"codigo": "113314", "latitud": -33.5,
+                                                               "longitud": -70.6})
+            check("punto: a fixed site serves its file's own point — oficial true while it is the register's — and refuses a moved confirm: the file is the truth from step 8 on (L5 S4)",
+                  st_fp == 200 and fijo_p["punto"] == {"latitud": "-33.56136", "longitud": "-70.67469",
+                                                       "oficial": True}
+                  and st_fm == 409 and "ya sirve" in movido_fijo["error"])
             # the directory IS the code (host/aps-conecta site_codigo): a hand-edited SITE_DEIS does
             # not move the centre, and a code the register lacks is still this install's, named plainly
             real_here = deis.HERE
@@ -3873,7 +4122,7 @@ def selftest():
             check("centro: the site directory is the code — a hand-edited SITE_DEIS does not move it; a code the register lacks is still this install's centre, named plainly (review I1, I2)",
                   st == 200 and editado.get("codigo") == "113314" and editado.get("fijo") is True
                   and st2 == 200 and ajeno == {"codigo": "999999", "nombre": "el establecimiento DEIS 999999",
-                                               "fijo": True}
+                                               "fijo": True, "punto": None}
                   and st3 == 409 and "otro establecimiento (DEIS 999999)" in otro["error"]
                   and listo == "el establecimiento DEIS 999999")
             # ── slice 15: the roster (FRD S5) — /api/usuarios + the credentials sealing ──
@@ -4300,6 +4549,17 @@ def selftest():
                   and [p[0] for p in plan["personas"] if p[3]] == ["elena.diaz"]
                   and plan["cuentas_de_cargo"] > 0 and len(plan["componentes"]) == len(COMPONENTES)
                   and "/" not in visibles and ".sh" not in visibles and "SITE_" not in visibles)
+            st_ub, plan_ub = api_generar({"codigo": "113314", "modo": "revision"})
+            texto_sitio = open(site_path("113314"), encoding="utf-8").read()
+            with open(site_path("113314"), "w", encoding="utf-8") as fh:   # ~30 m east of the official
+                fh.write(texto_sitio.replace("SITE_LON=-70.67469", "SITE_LON=-70.675"))
+            st_ub2, plan_corr = api_generar({"codigo": "113314", "modo": "revision"})
+            with open(site_path("113314"), "w", encoding="utf-8") as fh:
+                fh.write(texto_sitio)
+            check("revisión: «ubicación» — punto oficial when the site carries the register's own; corregida with the metres between when it does not (R40's Ubicación row, L5 S4)",
+                  st_ub == 200 and plan_ub["ubicacion"] == {"oficial": True}
+                  and st_ub2 == 200 and plan_corr["ubicacion"]["oficial"] is False
+                  and 20 <= plan_corr["ubicacion"]["metros"] <= 40)
             apps = set(os.listdir(os.path.join(ROOT_DIR, "provisioning", "apps")))
             check("componentes: every app the suite ships is a listed component or declared plumbing — a new app forces the choice (R37)",
                   {a for a, _n, _q in COMPONENTES} | set(PLUMBING_APPS) == apps
@@ -4733,6 +4993,36 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
             check("titles: every phase file has its Spanish console title (R42)",
                   {f[:-3] for f in os.listdir(os.path.dirname(PHASE20))
                    if f[:1].isdigit() and f.endswith(".sh")} == set(PHASE_TITLES))
+            # L5 S4 (S1b): the silent site's point — optional, validated when present
+            dado = open(site_path("113314"), encoding="utf-8").read().replace(
+                'SITE_DOMINIO=""', 'SITE_DOMINIO="clinica.example"')
+            real_here, silencio = deis.HERE, tempfile.mkdtemp()
+            os.makedirs(os.path.join(silencio, "scripts"))
+            deis.HERE = os.path.join(silencio, "scripts")
+            try:
+                src_s = os.path.join(silencio, "site-dado.sh")
+
+                def paso_sitio(texto):
+                    with open(src_s, "w", encoding="utf-8") as fh:
+                        fh.write(texto)
+                    return stepped(["--paso", "sitio", "--archivo", src_s])
+                sin_par = paso_sitio(re.sub(r"(?m)^SITE_(LON|LAT)=.*\n", "", dado))
+                os.remove(os.path.join(silencio, "sites", "113314", "site.sh"))   # the next valid variant places
+                solo_lon = paso_sitio(re.sub(r"(?m)^SITE_LAT=.*\n", "", dado))
+                mal = paso_sitio(dado.replace("SITE_LON=-70.67469", "SITE_LON=oeste"))
+                rango = paso_sitio(dado.replace("SITE_LAT=-33.56136", "SITE_LAT=95"))
+                comillas = paso_sitio(dado.replace("SITE_LON=-70.67469", "SITE_LON='-70.5'"))
+                colocado = open(os.path.join(silencio, "sites", "113314", "site.sh"),
+                                encoding="utf-8").read()
+            finally:
+                deis.HERE = real_here
+                shutil.rmtree(silencio)
+            check("--paso sitio: the point is optional — absent passes (a state, not an error) and quotes are honoured verbatim; a lone line, a non-degree value or an out-of-range one is refused naming the pair (L5 S4, S1b)",
+                  sin_par[0] == 0 and "✓ Sitio cargado" in sin_par[1]
+                  and solo_lon[0] == 1 and "SITE_LON y SITE_LAT" in solo_lon[1]
+                  and mal[0] == 1 and "grados decimales" in mal[1]
+                  and rango[0] == 1 and "grados decimales" in rango[1]
+                  and comillas[0] == 0 and "SITE_LON='-70.5'\n" in colocado)
             given = open(site_path("113314"), encoding="utf-8").read()
             assert given.count('SITE_DOMINIO=""') == 1
             given = given.replace('SITE_DOMINIO=""', 'SITE_DOMINIO="clinica.example"')
