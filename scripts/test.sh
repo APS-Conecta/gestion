@@ -1009,6 +1009,41 @@ CASES
 }
 check estadistica_identity_cases
 
+# Territorio's tile_url — the third extracted-block test over this phase (office by IP at
+# 14-office, estadistica's establishment above, now this — Q17, org review L5-S3). Phase 16's
+# three branches carried ONE string grep of coverage (a21's `/tiles/` clause below): the
+# unreadable-ocu arm — leave-as-is, and Q9 makes it SAY the stale value it leaves — and the
+# non-AIO arm (the blank write that falls territorio back to the OSM raster) were exercised by
+# nothing anywhere. Same shape as office_by_ip: the block between the phase's own markers, run
+# under errexit with the five helpers stubbed. The exact-string arms make the LOG line's wording
+# a contract: the stale value is in the message («…»), never implied.
+territorio_tile_url_cases() {
+  local block out
+  block="$(sed -n "/^# --- territorio's tile_url (L5-S3)/,/^# --- end territorio's tile_url ---$/p" provisioning/phases/16-app-policy.sh)"
+  [ -n "$block" ] || { echo "tile_url: block not found in 16-app-policy.sh" >&2; return 1; }
+  while IFS='|' read -r aio ocu stale want; do
+    out="$(AIO="$aio" OCU="$ocu" STALE="$stale" bash -e -o pipefail -c '
+      is_aio() { [ "$AIO" = 1 ]; }
+      conf_load() { :; }
+      conf_get() { case "$1" in system) printf "%s\n" "$OCU" ;; app) printf "%s\n" "$STALE" ;; esac; }
+      app_config_set() { printf "SET %s %s %s\n" "$@"; }
+      log() { printf "LOG %s\n" "$*"; }
+      eval "$1"' _ "$block" 2>&1)" || { echo "tile_url: the block failed under errexit for aio=$aio ocu='$ocu': $out" >&2; return 1; }
+    case "$want" in
+      derived)     [ "$out" = "SET territorio tile_url https://10.0.0.5/tiles/chile.pmtiles" ] ;;
+      left)        [ "$out" = "LOG AIO: overwrite.cli.url could not be read — territorio's tile_url left as it is («https://vieja.example/tiles/chile.pmtiles»)" ] ;;
+      left-empty)  [ "$out" = "LOG AIO: overwrite.cli.url could not be read — territorio's tile_url left as it is («sin valor»)" ] ;;
+      blank)       [ "$out" = "SET territorio tile_url " ] ;;  # trailing space: the empty VALUE — the write itself is the assertion
+    esac || { echo "tile_url: aio=$aio ocu='$ocu' stale='$stale' expected $want, got: $out" >&2; return 1; }
+  done <<'CASES'
+1|https://10.0.0.5/|https://vieja.example/tiles/chile.pmtiles|derived
+1||https://vieja.example/tiles/chile.pmtiles|left
+1|||left-empty
+0|||blank
+CASES
+}
+check territorio_tile_url_cases
+
 # The café case above is behavioural, and load-bearing only under a COLLATING locale — which a
 # Chilean dev has and GitHub's runners do not, defaulting to C.UTF-8 where that range refuses `é`
 # anyway. So CI stays green on a revert, and CI is the only mechanical gate (AGENTS.md). This is
@@ -1077,6 +1112,65 @@ check bash -c '
   test ! -e tiles.nginx.conf \
     && ! git grep -qE "nginx:alp""ine|TILES_""PORT|:80""84" -- .env.example compose.yaml host scripts provisioning \
     && grep -q "/tiles/" provisioning/phases/16-app-policy.sh'
+
+# --- gate (org review L5-S3, I7): the map-folder default — five literals that must agree ---------
+# /srv/aps-conecta is spelled in five places because each site legitimately owns its own fallback
+# SHAPE: the installer's TILES_ARCHIVE, tiles.sh's standalone TILES_HOME, the testbed's
+# APS_TILES_DIR env, env.sh's dotenv fixture, and refresh-basemap's DEST (the serving directory
+# S3 gave it — a literal this pack itself introduced is exactly the drift site the gate exists to
+# pin). Single-sourcing was weighed and rejected (tiles.sh's standalone fallback survives it), so
+# the discipline is image-digests' pair-pin generalized to five: each site's default read out of
+# the file, and they must all say the same path. Shape-anchored, not line-numbered — the dd8a1db
+# hermeticity pin (host/aps-conecta's self-test literals at :1411 and the grep -qF cross-check at
+# :2342) are pins ON PURPOSE and do not match; the emitters they pin do. EXACTLY ONE match per
+# site is required: a renamed variable or a deleted fixture is the empty-glob-goes-green class,
+# red here by name. The negative half runs the same validator over fabricated corpora — one
+# drifted site, one missing site — because a gate that cannot go red is not a gate. (On a tree
+# where Slice 1's DEST has not landed, this reds by name on refresh-basemap — by design; this
+# slice commits after that one.)
+check python3 -c '
+import re, sys
+SITES = [
+    ("host/tiles.sh",              r"^TILES_HOME=\"\$\{TILES_HOME:-([^\"}\n]+)\}\"$"),
+    ("host/aps-conecta",           r"^TILES_ARCHIVE=\"\$\{TILES_HOME:-([^\"}\n]+)\}/tiles/chile\.pmtiles\"$"),
+    ("scripts/aio-testbed.sh",     r"--env \"APS_TILES_DIR=\$\(dirname \"\$\{TILES_HOME:-([^\"}\n]+)\}/tiles/chile\.pmtiles\"\)\""),
+    ("scripts/env.sh",             r"^TILES_HOME=(/[^\"=\s]+)$"),
+    ("scripts/refresh-basemap.sh", r"^DEST=\"\$\{DEST:-([^\"}\n]+)/tiles/chile\.pmtiles\}\"$"),
+]
+def defaults(corpus):
+    got, errs = {}, []
+    for site, pat in SITES:
+        hits = re.findall(pat, corpus.get(site, ""), re.M)
+        if len(hits) != 1:
+            errs.append(site + ": " + str(len(hits)) + " matches for its map-folder default (need exactly 1)")
+        else:
+            got[site] = hits[0]
+    return got, errs
+def broken(got, errs):
+    return bool(errs) or len(set(got.values())) != 1
+real = {s: open(s, encoding="utf-8").read() for s, _ in SITES}
+got, errs = defaults(real)
+if broken(got, errs):
+    print("the map-folder default is not one value across the five sites that spell it:")
+    for e in errs: print("  " + e)
+    for s, v in sorted(got.items()): print("  " + s + " = " + v)
+    sys.exit(1)
+fab = {
+    "host/tiles.sh":              "TILES_HOME=\"${TILES_HOME:-/srv/prueba}\"\n",
+    "host/aps-conecta":           "TILES_ARCHIVE=\"${TILES_HOME:-/srv/prueba}/tiles/chile.pmtiles\"\n",
+    "scripts/aio-testbed.sh":     "    --env \"APS_TILES_DIR=$(dirname \"${TILES_HOME:-/srv/prueba}/tiles/chile.pmtiles\")\" \\\n",
+    "scripts/env.sh":             "TILES_HOME=/srv/prueba\n",
+    "scripts/refresh-basemap.sh": "DEST=\"${DEST:-/srv/prueba/tiles/chile.pmtiles}\"\n",
+}
+if broken(*defaults(fab)):
+    print("the fabricated agreeing corpus failed"); sys.exit(1)
+fab["scripts/env.sh"] = "TILES_HOME=/srv/otro\n"
+if not broken(*defaults(fab)):
+    print("a drifted literal passed — the disagreement the gate exists for went unseen"); sys.exit(1)
+del fab["scripts/aio-testbed.sh"]
+if not broken(*defaults(fab)):
+    print("a missing site passed — the empty-glob-goes-green class is back"); sys.exit(1)
+print("ok")'
 
 # --- the dump + uninstall detectors red-test themselves (docker daemon, no stack) -------------
 if docker info >/dev/null 2>&1; then

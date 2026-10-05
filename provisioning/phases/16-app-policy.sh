@@ -38,6 +38,8 @@ done
 # (B-014, 14-office's own rule). Not under AIO (the dev stack) no suite serves it: blank falls
 # territorio back to the OSM raster (Basemap::resolve), which still draws a map. Detection is
 # env.sh's is_aio, computed here as 14-office computes it (seed.sh sources env.sh first).
+# --- territorio's tile_url (L5-S3): stable markers for test.sh's extracted-block branch tests
+# (the 14-office `# --- by IP (R22)` precedent — comments delimit, nothing behavioral moves) ---
 if is_aio; then aio=1; else aio=0; fi
 if [ "$aio" = 1 ]; then
   conf_load
@@ -45,11 +47,17 @@ if [ "$aio" = 1 ]; then
   if [ -n "$ocu" ]; then
     app_config_set territorio tile_url "${ocu%/}/tiles/chile.pmtiles"
   else
-    log "AIO: overwrite.cli.url could not be read — territorio's tile_url left as it is"
+    # Q9 (org review L5-S3): say the VALUE being left, not only the reason for leaving it — an
+    # operator reading this log must tell "stale but the suite's own route" from "something
+    # older pointing elsewhere" without opening occ. conf_get already reads the app config
+    # (app_config_set reads through the same cache), so the stale value costs one lookup.
+    stale="$(conf_get app territorio tile_url || true)"
+    log "AIO: overwrite.cli.url could not be read — territorio's tile_url left as it is («${stale:-sin valor}»)"
   fi
 else
   app_config_set territorio tile_url ""
 fi
+# --- end territorio's tile_url ---
 
 # Territorio's comuna — the register's own five-digit CUT and the comuna's name, the second
 # per-consumer seam ADR-0013 named: the import door refuses another comuna's file against this
