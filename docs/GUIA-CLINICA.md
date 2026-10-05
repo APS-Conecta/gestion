@@ -67,9 +67,15 @@ Después de la bienvenida, el navegador recorre los pasos 6 a 9 de la instalaci�
 
 1. **Elegir el centro** — región, comuna y tipo de centro filtran el registro DEIS completo (todos
    los centros de atención primaria: CESFAM, PSR, CECOSF, SAPU…); la búsqueda acepta nombre,
-   código DEIS, comuna o dirección, con o sin tildes. La ficha muestra lo que dirá el sitio, y
-   «Confirmar centro» lo fija. Se puede cambiar hasta cargar los equipos; desde ahí la instalación
-   sirve a ese establecimiento y a ningún otro.
+   código DEIS, comuna o dirección, con o sin tildes. La ficha muestra lo que dirá el sitio. Al
+   lado, el mapa abre en el punto oficial del establecimiento: confírmelo tal cual o muévalo —
+   clic o toque en el mapa, arrastre del marcador o las flechas del teclado (5 m; con Mayús,
+   25 m); «Punto oficial» lo devuelve y la lectura dice cuántos metros lo movió y hacia dónde.
+   «Confirmar centro» fija el centro y su punto (el punto queda escrito en el sitio al ejecutar;
+   Revisión lo muestra como punto oficial o corregido). Si el mapa del paso 4 no está construido,
+   la pantalla lo dice con su arreglo (`sudo aps-conecta mapa`) y el punto se confirma igual. Se
+   puede cambiar hasta cargar los equipos; desde ahí la instalación sirve a ese establecimiento y
+   a ningún otro.
 2. **Iniciar la suite** — las cinco aplicaciones APS con su versión (se activan al ejecutar), y si
    Talk y su grabación caben en este servidor, con el motivo. «Preparar el asistente» deja el
    asistente listo con el dominio del servidor (o su dirección IP, §11), la hora de Santiago, Euro-Office, Talk según quepa y

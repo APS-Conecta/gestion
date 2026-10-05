@@ -3828,7 +3828,7 @@ def selftest():
     real sites/ is never touched. The HTTP checks are real round-trips against a real server on an
     OS-assigned port — urllib, no frameworks. Every check is named and counted; a failure prints the
     list and exits 1 (B-014: a gate that cannot go red is not a gate)."""
-    global TOKEN, SNAPSHOT, ROWS, CRED_PATH, PHASE20, ESTADO_PATH, CERT_DIR, LAN_IP, HOSTNAME, PORT, CENTRO, AIO_STATE, TILES_ARCHIVE
+    global TOKEN, SNAPSHOT, ROWS, CRED_PATH, PHASE20, ESTADO_PATH, CERT_DIR, LAN_IP, HOSTNAME, PORT, CENTRO, AIO_STATE, TILES_ARCHIVE, PUNTO
     n = 0
     bad = []
 
@@ -6063,6 +6063,180 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                             errores.append(str(e))
                         check("browser: a fixed centre locks the filters and the combobox; «Confirmar centro» just continues (D13)",
                               fijo and not errores)
+                        # ── L5 S4: the map pane in a real browser — the lectura, the pin, the
+                        # fallback, the dead route, the fixed site; painted pixels only where a
+                        # real archive exists ── The archive is repointed per arm (the missing
+                        # path for the fallback states, a synthetic header when coverage must
+                        # read disponible), so no arm depends on this box having the 1.1 GB
+                        # file; the painted-pixels arm alone runs against the real one.
+                        desde = len(errores)
+                        old_tiles_pw = old_tiles_browser   # the section pin holds the fallback; the painted arm needs the real default
+                        TILES_ARCHIVE = os.path.join(tmp, "no-esta.pmtiles")   # the fallback state
+                        real_here, sin_sitio = deis.HERE, tempfile.mkdtemp()
+                        os.makedirs(os.path.join(sin_sitio, "scripts"))
+                        deis.HERE = os.path.join(sin_sitio, "scripts")
+                        CENTRO, PUNTO = None, None
+                        try:
+                            pg.goto(f"https://127.0.0.1:{tport}/centro")
+                            pg.wait_for_function("() => document.querySelector('#c-btn').innerText.includes('Elija un centro')",
+                                                 timeout=10000)
+                            pg.click("#c-btn")
+                            pg.fill("#c-q", "ramon")
+                            pg.click("#c-lista [data-c='121567']")
+                            pg.wait_for_function("() => document.querySelector('#c-lectura').innerText.includes('Oficial:')",
+                                                 timeout=10000)
+                            lectura0 = pg.inner_text("#c-lectura")
+                            nota_mapa = pg.inner_text("#c-nota-mapa")
+                            chincheta = pg.locator("#c-mapa .pin-mapa").count()
+                            anillo = pg.locator("#c-mapa .leaflet-overlay-pane svg path").count()
+                            pg.focus("#c-mapa")
+                            pg.keyboard.press("ArrowUp")          # the arrows nudge the pin 5 m
+                            tras_flecha = pg.inner_text("#c-lectura")
+                            pg.keyboard.press("Shift+ArrowUp")    # Shift: 25 m, off the moved pin
+                            tras_mayus = pg.inner_text("#c-lectura")
+                            pg.click("#c-reset")                  # «Punto oficial» returns it
+                            tras_reinicio = pg.inner_text("#c-lectura")
+                            pg.press("#c-mapa", "ArrowUp")   # the reset click left focus on the button — press the map itself
+                            pg.click("#c-ok")
+                            pg.wait_for_url("**/contenedores", timeout=10000)
+                            confirmado = CENTRO == "121567" and PUNTO == {"latitud": "-38.8699151",
+                                                                           "longitud": "-72.39666"}
+                            pg.goto(f"https://127.0.0.1:{tport}/centro")   # a reload restores the pin
+                            pg.wait_for_function("() => document.querySelector('#c-lectura').innerText.includes('Elegido:')",
+                                                 timeout=10000)
+                            recargado = "5 m al norte" in pg.inner_text("#c-lectura")
+                            call("POST", "/api/centro", {"codigo": "121567"})   # the reset: no pair held
+                        except Exception as e:   # a Playwright timeout: the arm reports it
+                            lectura0 = nota_mapa = ""
+                            chincheta = anillo = 0
+                            tras_flecha = tras_mayus = tras_reinicio = ""
+                            confirmado = recargado = False
+                            errores.append(str(e))
+                        finally:
+                            deis.HERE = real_here
+                            shutil.rmtree(sin_sitio)
+                            CENTRO, PUNTO = None, None
+                        check("browser: the Centro pane in its fallback state (L5 S4) — the note names the remedy, the ring and the pin render on the plain background, the lectura's official state; the arrows move 5 m and 25 m; «Punto oficial» returns it; the moved point rides «Confirmar centro» exactly and a reload restores it (ADR-0019: a completable screen, never an outage)",
+                              "Oficial: −38,86996, −72,39666" in lectura0
+                              and "En el punto oficial" in lectura0
+                              and "aps-conecta mapa" in nota_mapa
+                              and chincheta == 1 and anillo >= 1
+                              and "5 m al norte" in tras_flecha and "30 m al norte" in tras_mayus
+                              and "En el punto oficial" in tras_reinicio
+                              and confirmado and recargado and not errores[desde:])
+                        # the route dies mid-pane (the archive replaced under a running screen,
+                        # the port blocked): coverage said disponible, every basemap fetch
+                        # fails — the pane still completes, and the dead fetches are the
+                        # provoked console lines, whitelisted exactly the way the step-8 arm
+                        # whitelists its 409/400 — never by weakening another arm's rule.
+                        pg.goto("about:blank")
+                        desde = len(errores)
+                        arch_muerto = os.path.join(tmp, "chile-muerto.pmtiles")
+                        with open(arch_muerto, "wb") as fh:   # a readable header: disponible, true
+                            fh.write(b"PMTiles" + struct.Struct("<B11Q6B4iB2i").pack(
+                                3, *([0] * 11), 0, 0, 0, 0, 0, 14,
+                                int(round(-77.5 * 1e7)), int(round(-56.5 * 1e7)),
+                                int(round(-66.5 * 1e7)), int(round(-17.5 * 1e7)),
+                                6, int(round(-70.5 * 1e7)), int(round(-33.5 * 1e7))))
+                        TILES_ARCHIVE = arch_muerto
+                        pg.route("**/mapa/chile.pmtiles", lambda ruta: ruta.abort())
+                        real_here, sin_ruta = deis.HERE, tempfile.mkdtemp()
+                        os.makedirs(os.path.join(sin_ruta, "scripts"))
+                        deis.HERE = os.path.join(sin_ruta, "scripts")
+                        CENTRO, PUNTO = None, None
+                        try:
+                            pg.goto(f"https://127.0.0.1:{tport}/centro")
+                            pg.wait_for_function("() => document.querySelector('#c-btn').innerText.includes('Elija un centro')",
+                                                 timeout=10000)
+                            pg.click("#c-btn")
+                            pg.fill("#c-q", "ramon")
+                            pg.click("#c-lista [data-c='121567']")
+                            pg.wait_for_function("() => document.querySelector('#c-lectura').innerText.includes('Oficial:')",
+                                                 timeout=10000)
+                            sin_nota = pg.is_hidden("#c-nota-mapa")   # coverage read the header
+                            pg.focus("#c-mapa")
+                            pg.keyboard.press("ArrowUp")
+                            mvio = "5 m al norte" in pg.inner_text("#c-lectura")
+                            pg.click("#c-ok")
+                            pg.wait_for_url("**/contenedores", timeout=10000)
+                            confirmado_ruta = CENTRO == "121567" and PUNTO is not None
+                        except Exception as e:   # a Playwright timeout: the arm reports it
+                            sin_nota = mvio = confirmado_ruta = False
+                            errores.append(str(e))
+                        finally:
+                            pg.unroute("**/mapa/chile.pmtiles")
+                            pg.goto("about:blank")   # no late dead-fetch line reaches a later arm
+                            deis.HERE = real_here
+                            shutil.rmtree(sin_ruta)
+                            CENTRO, PUNTO = None, None
+                        muertos = [x for x in errores[desde:] if re.search(r"(?i)failed to (fetch|load)", x)]
+                        propios = [x for x in errores[desde:] if x not in muertos]
+                        del errores[desde:]
+                        errores.extend(propios)
+                        check("browser: the route dies mid-pane (L5 S4) — the pane completes anyway (the pin moves, «Confirmar centro» answers), the dead /mapa/ fetches happened and are its only console lines, whitelisted (1c1f710: the untested branch is the production branch)",
+                              sin_nota and mvio and confirmado_ruta and muertos and not propios)
+                        # a fixed site: its own point, read-only — the map pans, the pin does not
+                        pg.goto("about:blank")
+                        desde = len(errores)
+                        TILES_ARCHIVE = os.path.join(tmp, "no-esta.pmtiles")   # the note, deterministic
+                        try:
+                            pg.goto(f"https://127.0.0.1:{tport}/centro")
+                            pg.wait_for_selector("#m .aviso", timeout=10000)
+                            lectura_fija = pg.inner_text("#c-lectura")
+                            oculto = pg.is_hidden("#c-reset")
+                            ancla = pg.locator("#c-mapa .pin-mapa").count() == 1
+                            pg.click("#c-mapa", position={"x": 250, "y": 350})   # a click moves nothing
+                            pg.wait_for_timeout(300)
+                            quieto = "En el punto oficial" in pg.inner_text("#c-lectura")
+                        except Exception as e:   # a Playwright timeout: the arm reports it
+                            lectura_fija = ""
+                            oculto = ancla = quieto = False
+                            errores.append(str(e))
+                        check("browser: a fixed site shows its point read-only (L5 S4) — the lectura official, «Punto oficial» hidden, a click on the map moves nothing",
+                              "Oficial: −33,56136, −70,67469" in lectura_fija
+                              and "En el punto oficial" in lectura_fija
+                              and oculto and ancla and quieto and not errores[desde:])
+                        PINTURA = """() => {   // the pane's canvases sampled on a 7×7 grid
+                          const colores = new Set();
+                          for (const c of document.querySelectorAll('#c-mapa canvas')) {
+                            const x = c.getContext('2d'); if (!x) continue;
+                            for (let i = 1; i <= 7; i++) for (let j = 1; j <= 7; j++) {
+                              const d = x.getImageData(Math.floor(c.width * i / 8),
+                                                       Math.floor(c.height * j / 8), 1, 1).data;
+                              colores.add(d[0] + ',' + d[1] + ',' + d[2]);
+                            }
+                          }
+                          return colores.size;
+                        }"""
+                        # painted pixels, not element presence (c8837c7): the one arm that runs
+                        # against a real archive — where there is none it is skip-named, never
+                        # silently green (the ImportError precedent above); CI keeps node --check
+                        # and the http.client Range proofs as its proxies.
+                        TILES_ARCHIVE = old_tiles_pw
+                        st_mapa, mapa_real = call("GET", "/api/mapa")
+                        if st_mapa == 200 and mapa_real.get("disponible"):
+                            desde = len(errores)
+                            try:
+                                pg.goto(f"https://127.0.0.1:{tport}/centro")
+                                pg.wait_for_selector("#m .aviso", timeout=10000)
+                                sin_nota_real = pg.is_hidden("#c-nota-mapa")
+                                pintado = 0
+                                for _ in range(40):   # the tiles paint at their own pace
+                                    pintado = pg.evaluate(PINTURA)
+                                    if pintado and pintado > 1:
+                                        break
+                                    pg.wait_for_timeout(500)
+                            except Exception as e:   # a Playwright timeout: the arm reports it
+                                sin_nota_real = False
+                                pintado = 0
+                                errores.append(str(e))
+                            check("browser: the pane paints the real archive — sampled pixels, not element presence (c8837c7); flat colour is a failure",
+                                  sin_nota_real and pintado and pintado > 1)
+                            del errores[desde:]   # the painted verdict is this arm's contract; a real archive's stray tile line is not a later arm's
+                        else:
+                            print("  skip: the map pane paints — no real archive on this box "
+                                  "(the L7 rehearsal runs it)")
+                        TILES_ARCHIVE = os.path.join(tmp, "no-esta.pmtiles")   # back to the section's fallback: no arm below fetches tiles
                         # step 8 in a real browser on a fresh tree (a15): the ids under each list, a
                         # save, a different save is a conflict, «Reemplazar»; the centre's template
                         # downloaded and uploaded back; an unknown group opens «Grupos válidos». The

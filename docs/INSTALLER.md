@@ -93,10 +93,12 @@ certificate, which it signs with OpenSSL 3 (Ubuntu 22.04+, Debian 12+; an older 
   certificate hangs from it, §14). The leaf is re-signed for the link's address on every start.
 - **One installer at a time.** A second `abrir` while one is open is refused, naming the port.
 
-The browser flow — the centre (Región › Comuna › Tipo, or a search), the suite's containers, the
-teams and the users CSV (one screen, with the centre's own template), review, execute — is walked
-step by step in [`GUIA-CLINICA.md`](GUIA-CLINICA.md) §4–6. The pages follow the registry's steps
-6–9 (`aps-conecta pasos`).
+The browser flow — the centre (Región › Comuna › Tipo, or a search, and the map that opens on the
+establishment's official register point: confirm it or move it — a click, a drag or the arrow
+keys — and the chosen point rides «Confirmar centro» into the site file's `SITE_LON`/`SITE_LAT`),
+the suite's containers, the teams and the users CSV (one screen, with the centre's own template),
+review, execute — is walked step by step in [`GUIA-CLINICA.md`](GUIA-CLINICA.md) §4–6. The pages
+follow the registry's steps 6–9 (`aps-conecta pasos`).
 
 When «Revisar y ejecutar» comes back green, the installer closes itself: the port closes and the
 link stops working. The console then wires the timers (§6) and prints «Listo». Ctrl+C before that
@@ -188,6 +190,11 @@ moment the archive exists.
 - **Until the first build, `/tiles/` is a 404** — the suite never depends on the archive. Step 4
   of the install builds it; `sudo aps-conecta mapa` re-runs it, and the monthly timer refreshes
   it (`sudo aps-conecta temporizadores` re-checks both timers).
+- **The installer's Centro pane reads the same archive** — through the installer's own port, at
+  `/mapa/chile.pmtiles` (auth-gated like every installer route, one byte range at a time), so
+  step 6's map is the same basemap the suite serves. A missing archive is a note naming
+  `sudo aps-conecta mapa` while the step stays completable: the point confirms without a map, and
+  a point outside the archive's coverage is refused at «Confirmar centro» naming the map.
 - **Attribution**: the basemap is an Open Database License (ODbL) Produced Work built from
   OpenStreetMap data. The map must keep showing **© OpenStreetMap contributors** — territorio's
   own `tile_attribution` default does this; do not remove it.

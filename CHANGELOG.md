@@ -105,6 +105,24 @@ image digests live there and are deliberately not copied here — one fact, one 
     mastercontainer-only re-create). The next `sudo aps-conecta mapa` also removes the old map
     container (`aps-conecta-tiles`, the nginx on loopback 8084): the suite serves `/tiles/`
     itself now.
+- **«Elegir el centro» opens on the map** (L5 S4).
+  - The screen opens on the establishment's official register point (MINSAL/DEIS, Geoportal de
+    Chile): the admin confirms it or moves it — a click or tap on the map, dragging the marker,
+    or the arrow keys at 5 m (Shift, 25 m) — with «Punto oficial» to reset and a live readout
+    («Oficial: …», «Elegido: … · N m al <rumbo>», a 3 m threshold).
+  - The chosen point rides «Confirmar centro» beside the code, held server-side, checked against
+    the archive's own bounds when it is readable (a point outside is refused naming the map), and
+    written into the site file's `SITE_LON`/`SITE_LAT` at step 8 — where it survives «Reemplazar».
+    A fixed site shows its point read-only, and the silent install's optional
+    `SITE_LON`/`SITE_LAT` are validated when present. Revisión carries the «Ubicación» row
+    (punto oficial, or corregida with the metres from the official).
+  - The basemap is the suite's own archive, drawn by vendored Leaflet 1.9.4 and
+    protomaps-leaflet 5.1.0 (byte-identical to territorio's, sha256-pinned by `make test`, served
+    from `/recursos/` — `docs/LICENSING.md` §3) through the installer's auth-gated
+    `/mapa/chile.pmtiles` route: single ranges, a strong ETag, 416 with `Content-Range:
+    bytes */N`, bounded reads only. `GET /api/mapa` answers the coverage state.
+  - A missing archive or a dead route is a note naming `sudo aps-conecta mapa` and a completable
+    screen — the official ring and the pin on the plain background, «Confirmar centro» enabled.
 - **`aps-conecta estado`** — the last execution's verdict, each item with its fix, in Spanish, with
   no sudo (`/opt/aps-conecta/estado.txt`, 0644, written by every execution — the installer's, the
   silent install's and the weekly one). When the weekly re-provision finds drift or does not finish,
