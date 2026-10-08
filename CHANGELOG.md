@@ -317,6 +317,10 @@ image digests live there and are deliberately not copied here — one fact, one 
   ([ADR-0004](docs/adr/0004-branding-the-legacy-render-path.md)); the compose comments cite D7
   and ADR-0003 where they cited the reversed AD-1; every documentation index table is the
   four-column Document × Mode × Reader × Authority standard.
+- **`docs/ORG-MAP.md` retires the four deleted forks** (docs) — *Retired* records `server`, `formvox`,
+  `Welcome` and `Gestion-Mobile` (deleted 2026-10-03) and `server` leaves the ownership table; the `Databases`
+  paragraph now says what that repository ships since its 2026-10-04 re-creation (docs CI; a
+  freshness gate red by design, per its ADR-0002) instead of "no CI" and "no REM README".
 
 ### Removed
 
