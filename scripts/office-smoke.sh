@@ -56,9 +56,9 @@ curl -sf "http://localhost:${HTTP_PORT}/eurooffice/healthcheck" >/dev/null \
 
 # --check proves the whole wire at once: healthcheck + JWT + the version floor + a real docx
 # conversion round-trip via StorageUrl (DocumentService.php:383-425). Under AIO the wizard's
-# entrypoint owns the connector's URLs and jwt_secret (rewrites both on every boot), and phase
-# 14's AIO arm (slice 16) leaves them alone — so this leg asserts the ENTRYPOINT's values,
-# never phase 14's, which is the only posture that can be true on a running instance.
+# entrypoint owns the connector's public URL and jwt_secret (rewrites both on every boot), and
+# phase 14 writes only the internal URLs, for an install by IP (R22) — so this leg asserts the
+# values the running instance actually carries, whoever wrote them.
 out="$(occ eurooffice:documentserver --check 2>&1)" \
   || { echo "FAIL: 'occ eurooffice:documentserver --check' reported the server unreachable"; printf '%s\n' "$out"; exit 1; }
 

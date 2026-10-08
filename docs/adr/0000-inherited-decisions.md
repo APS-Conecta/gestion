@@ -109,6 +109,10 @@ reset. Deferred until "a brand guide lands".
 typography needs `@font-face` with paths only a theme serves. **AD-6 was right about
 `defaults.php`** — it was carried for one job a config key does, and it was deleted on 2026-07-27.
 
+*Amended by [ADR-0004](0004-branding-the-legacy-render-path.md): `defaults.php` is back —
+legacy-rendered screens bypass the theming service. The file is tracked and smoke-gated; the
+deletion recorded above is history, not the present.*
+
 ### AD-7 — Locale defaults are seeded, not forced
 
 `10-locale.sh` sets `default_language=es`, `default_locale=es_CL` for Chilean date and number

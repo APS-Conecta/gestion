@@ -50,7 +50,7 @@
     }
   ],
   "basemap": {
-    "contract": "the verify contract only — bbox, the REF derivation (the establishment's own DEIS point, scripts/refresh-basemap.sh), min size 500 MB; the source URL is un-pinnable by design (dated builds, old ones 404)",
+    "contract": "the verify contract only — bbox, header bounds containing three fixed points of the country and a Santiago z12 tile (scripts/refresh-basemap.sh), min size 500 MB; the source URL is un-pinnable by design (dated builds, old ones 404)",
     "sha256": null
   }
 }

@@ -26,12 +26,10 @@ on:
       - 'Makefile'
       - 'scripts/**'
       - 'sites/**'
-      # org review L5-10: host/** and the nginx conf were outside every CI trigger — the
-      # weekly timer chain ran against a real instance nowhere. The Range/CORS contract
-      # they define is asserted in scripts/test.sh's docker-gated arm, which the step below
-      # runs on this same bring-up.
+      # org review L5-10: host/** was outside every CI trigger — the weekly timer chain ran
+      # against a real instance nowhere. The /tiles/ route the chain serves is asserted by this
+      # job's own basemap step below, on the real apache.
       - 'host/**'
-      - 'tiles.nginx.conf'
       - 'dev/**'
       - '.env.example'
       - '.github/workflows/cleanboot.yml'
@@ -99,11 +97,12 @@ jobs:
       # (https://$NC_DOMAIN/eurooffice) so phase 14's query-before-set converges on it instead of
       # clobbering it — and so smoke's check 14 reads a non-loopback editor URL, which the
       # compose default (localhost:$OFFICE_PORT) would redden the moment the domain landed in
-      # trusted_domains. The connector's own wire under AIO is the entrypoint's end to end: it
-      # rewrites DocumentServerUrl/InternalUrl/StorageUrl and jwt_secret on every boot, phase
-      # 14's AIO arm (slice 16) leaves those alone, and office-smoke's legs (slice 20) assert
-      # against exactly those values — --check answers the internal URL, the healthcheck the
-      # public path, so the probe exercises the office wire without any DNS for the domain.
+      # trusted_domains. Under AIO the entrypoint rewrites the connector's public
+      # DocumentServerUrl and jwt_secret on every boot and leaves the internal URLs unset (phase
+      # 14 writes them for an install by IP only); this probe sets them itself (the «Probe office
+      # wire» step), and office-smoke's legs (slice 20) assert against the values the instance
+      # carries — --check answers the internal URL, the healthcheck the public path, so the probe
+      # exercises the office wire without any DNS for the domain.
       AIO_TEST_DOMAIN: aio-ci.invalid
       # The probe's apache binds 127.0.0.1:${AIO_TEST_APACHE_PORT} and runs auto_https OFF
       # (APACHE_PORT != 443): plain HTTP — which is what lets smoke's curls answer
@@ -136,78 +135,26 @@ jobs:
       # the four secrets are produced, and it cannot be tested on a dev box that already has an
       # env file. A clean runner is the one environment where the create path actually runs.
       - run: make setup
-      # No establishment ships: the site and the planilla a clinic brings are generated here, at run
-      # time, and handed to the silent install the way an operator hands them over. Piped answers
-      # stand in for the operator's; deis.py writes into sites/, so its file is moved out — the
-      # install's own «centro» step places it back (a7).
+      # No establishment ships: the site and the planilla a clinic brings, generated at run time
+      # (scripts/cleanboot-site.sh — one copy for both jobs) for the probe's domain.
       - name: The site and the planilla a clinic brings
-        run: |
-          # A deterministic pick over the register, not a fixed code (FINDINGS P2): every clinic in
-          # the register is a valid install, and CI booting the same one every time is a fixture
-          # that steers — and names a real clinic in a public log. sha256 over the sorted codes
-          # makes the pick stable per register content, and satisfies the establishment-agnostic
-          # gate (ADR-0013): no tracked file may hand deis.py a DEIS code (AGNOSTIC_SHAPE).
-          pick=$(python3 - <<'PY'
-          import csv, glob, hashlib, sys
-          files = sorted(glob.glob("sites/establecimientos-deis-*.csv"))
-          if not files:
-              sys.exit("FATAL: no sites/establecimientos-deis-*.csv — nothing to boot against")
-          with open(files[-1], encoding="utf-8") as fh:
-              rows = list(csv.DictReader(fh))
-          if not rows:
-              sys.exit("FATAL: the register is empty — refusing to boot a silent green (B-001)")
-          codes = sorted(r["codigo"] for r in rows)
-          pick = codes[int(hashlib.sha256("\n".join(codes).encode()).hexdigest(), 16) % len(codes)]
-          row = next(r for r in rows if r["codigo"] == pick)
-          print(pick + "\t" + row["nombre"] + " (" + row["comuna"] + ")")
-          PY
-          ) || exit 1
-          code=${pick%%$'\t'*}
-          [ -n "$code" ] || { echo "FATAL: empty register pick" >&2; exit 1; }
-          echo "cleanboot: register pick — DEIS $code: ${pick#*$'\t'}"
-          # The piped answers are generic by construction — ask() always asks sectors then
-          # programs, for every tipo — so they survive the moving pick unchanged.
-          printf 'Sector 1\nSector 2\n\nSalud Mental\nInfantil\n\n' | scripts/deis.py "$code" --new "$code"
-          mv "sites/$code/site.sh" "$RUNNER_TEMP/site.sh" && rmdir "sites/$code"
-          # The probe's domain, and the establishment-local roles (#103). deis.py writes both empty
-          # by design, so the create path would never run anywhere if CI did not add them. One of
-          # each kind on purpose: a jefatura, which must ALSO produce a standing account, and a
-          # technical role, which must not. Written in the array shape the Provisionador reads.
-          python3 - "$RUNNER_TEMP/site.sh" "$AIO_TEST_DOMAIN" <<'PY'
-          import sys
-          path, domain = sys.argv[1:3]
-          text = open(path, encoding="utf-8").read()
-          assert text.count('SITE_DOMINIO=""') == 1 and text.count("SITE_ROLES=()") == 1, path
-          text = text.replace('SITE_DOMINIO=""', f'SITE_DOMINIO="{domain}"').replace(
-              "SITE_ROLES=()", 'SITE_ROLES=(\n  "role-jefe-sar|Jefe/a de SAR|cat-jefaturas"\n'
-              '  "role-tens-sar|TENS – SAR|cat-tecnicos"\n)')
-          open(path, "w", encoding="utf-8").write(text)
-          PY
-          # Two people, one per kind of role — a shared one and the site's own technical one — and
-          # one of them the first administrator. Generic names: nothing identifies the clinic.
-          cat > "$RUNNER_TEMP/usuarios.csv" <<'PLANILLA'
-          usuario;nombre;apellidos;correo;grupos;primer_admin
-          ana.prueba;Ana;Prueba Uno;;role-medico;si
-          beto.prueba;Beto;Prueba Dos;;role-tens-sar;no
-          PLANILLA
+        run: bash scripts/cleanboot-site.sh "$AIO_TEST_DOMAIN" "$RUNNER_TEMP"
       # The probe's own surfaces, appended AFTER `make setup` so they win (env.sh takes the last
       # assignment it reads); the install's env_converge adds SITE and leaves these alone:
       #   HTTP_PORT → the loopback apache, where every one of smoke's curls lands;
-      #   OFFICE_PUBLIC_URL → the entrypoint's own DocumentServerUrl value (see the env note);
-      #   TILES_PUBLIC_URL → the basemap on the probe's own domain, the same-origin /tiles/ shape
-      #   L5 serves — smoke check 16 refuses a loopback tile_url on a domain-reached instance, and
-      #   like the office URL it judges the contradiction, not reachability (B-033).
-      - name: Point the seed at the probe's HTTP, office and tiles surfaces
+      #   OFFICE_PUBLIC_URL → the entrypoint's own DocumentServerUrl value (see the env note).
+      # (TILES_PUBLIC_URL lived here until L5: phase 16 now derives tile_url from
+      # overwrite.cli.url, and there is nothing left to hand-set.)
+      - name: Point the seed at the probe's HTTP and office surfaces
         run: |
           echo "HTTP_PORT=${AIO_TEST_APACHE_PORT}" >> .env
           echo "OFFICE_PUBLIC_URL=https://${AIO_TEST_DOMAIN}/eurooffice" >> .env
-          echo "TILES_PUBLIC_URL=https://${AIO_TEST_DOMAIN}/tiles/chile.pmtiles" >> .env
       # THE SILENT INSTALL (a6, a7): the command a clinic runs, as root, with no terminal — all nine
       # steps, the seed with its gate included. The probe's suite is already up (the testbed above),
       # so «suite» finds it running and drives nothing; AIO_STATE is the testbed's wizard state.
-      # Probe knobs only: the 1,1 GB basemap stays out (the gates read the TILES_PUBLIC_URL string,
-      # B-033), and the disk floor fits the runner. Root's writes in the checkout go back to the
-      # runner for the gates below.
+      # Probe knobs only: the 1,1 GB basemap stays out (its /tiles/ route is proven below against a
+      # deterministic fixture), and the disk floor fits the runner. Root's writes in the checkout go
+      # back to the runner for the gates below.
       - name: Install through the silent command a clinic runs
         run: |
           set -o pipefail   # run: is `bash -e` without it — the install's own failure, not tee's
@@ -225,6 +172,43 @@ jobs:
           if systemctl is-enabled aps-conecta-tiles.timer >/dev/null 2>&1; then
             echo "FAIL: the monthly basemap timer is enabled with no map built" >&2; exit 1
           fi
+      # Q18 (org review L5-S3): the 404 posture is a contract, not an accident. Before the
+      # fixture lands, the operator's own smoke must be GREEN on the unbuilt-map posture —
+      # bind present, monthly timer off, 404 said as a NOTE — and must SAY so: the NOTE is the
+      # honest state, and a silent green cannot tell "map not built yet" from "route broken".
+      # This step proves both halves on a real install; the fixture step below then flips the
+      # posture to 206, and make test's smoke later asserts that one instead.
+      - name: Smoke green on the 404 posture, the NOTE naming the unbuilt map
+        run: |
+          out="$RUNNER_TEMP/smoke-404.out"
+          make smoke > "$out" 2>&1 || { cat "$out" >&2; echo "FAIL: smoke must be green with the map unbuilt (bind present, timer off)" >&2; exit 1; }
+          grep -q 'NOTE: /tiles/chile.pmtiles is 404' "$out" \
+            || { cat "$out" >&2; echo "FAIL: the unbuilt-map posture must print its NOTE — silent green cannot tell unbuilt from unbound" >&2; exit 1; }
+          cat "$out"
+      # L5: prove the suite's own /tiles/ route on the real apache — a deterministic fixture (the
+      # PMTiles magic + compressible lines, exactly 150000 bytes) stands in for the 1,1 GB archive
+      # the runner never builds. Dropped AFTER the install and the timer assert: the install saw
+      # no map (APS_SKIP_MAP, the monthly timer stays off), and a later file changes that nothing.
+      # 0644 and a 0755 directory: apache (uid 33) reads both through the read-only bind; the ranged
+      # read must answer 206 with the exact bytes and no Content-Encoding (encode leaves the
+      # archive's octet-stream alone — a recompressed range would break the format).
+      - name: The suite serves the basemap same-origin at /tiles/
+        run: |
+          sudo install -d -m 0755 /srv/aps-conecta/tiles
+          python3 - <<'PY'
+          data = b"PMTiles\x03" + b"".join(
+              b"fixture line %06d: same-origin /tiles/ proof\n" % i for i in range(4100))
+          open("/tmp/chile.pmtiles", "wb").write(data[:150000].ljust(150000, b"x"))
+          PY
+          sudo install -m 0644 /tmp/chile.pmtiles /srv/aps-conecta/tiles/chile.pmtiles
+          hdr="$(mktemp)"
+          code="$(curl -sS -D "$hdr" -r 0-1023 -H 'Accept-Encoding: gzip, zstd' -o "$RUNNER_TEMP/tiles.rng" \
+            -w '%{http_code}' "http://localhost:${AIO_TEST_APACHE_PORT}/tiles/chile.pmtiles")"
+          [ "$code" = "206" ] || { echo "FAIL: /tiles/ answered $code, not 206" >&2; cat "$hdr" >&2; exit 1; }
+          grep -qi '^content-range: bytes 0-1023/150000' "$hdr" || { cat "$hdr" >&2; exit 1; }
+          ! grep -qi '^content-encoding:' "$hdr" || { echo "FAIL: the range came compressed" >&2; cat "$hdr" >&2; exit 1; }
+          head -c 1024 /srv/aps-conecta/tiles/chile.pmtiles > "$RUNNER_TEMP/tiles.esp"
+          cmp "$RUNNER_TEMP/tiles.rng" "$RUNNER_TEMP/tiles.esp"
       # R26's thresholds: the suite's measured memory on the real run, a table and its total in the
       # summary — one snapshot of the suite's own containers; a diagnostic, so it never reddens the run
       - name: Suite memory (the Talk thresholds, R26)
@@ -421,5 +405,117 @@ jobs:
       # construction. On an ephemeral runner this is hygiene; it also keeps the job honest
       # about never leaving the wizard port published.
       - name: Probe teardown
+        if: always()
+        run: bash scripts/aio-testbed.sh down
+
+  cleanboot-ip:
+    name: Clean boot by IP
+    # a19's automatable arm: a clinic without a domain, installed the way any machine installs it — the
+    # silent command alone, no testbed. The install starts the suite itself, by this runner's own
+    # address (detected, never written down), served on 443 with the installer's own certificate. The
+    # disposable runner owns 443 and 8080; nothing else runs on it. Talk stays off (the silent
+    # install's default), so the pulls are the domain job's.
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the tags: the install reads its own version from them (suite_tag)
+      # The address the kernel routes by — the installer's own link probes the same.
+      - name: The site and the planilla a clinic brings, by this runner's address
+        run: |
+          ip="$(ip -4 route get 1.1.1.1 | sed -n 's/.* src \([0-9.]*\).*/\1/p')"
+          [ -n "$ip" ] || { echo "FATAL: no routed IPv4 address on this runner" >&2; exit 1; }
+          echo "SUITE_IP=$ip" >> "$GITHUB_ENV"
+          bash scripts/cleanboot-site.sh "$ip" "$RUNNER_TEMP"
+      # The silent install, as root, with no terminal. The suite tag is the testbed's one pin, so both
+      # jobs run the same published suite.
+      - name: Install by IP through the silent command a clinic runs
+        run: |
+          set -o pipefail   # run: is `bash -e` without it — the install's own failure, not tee's
+          tag="$(sed -n 's/^IMAGE="${AIO_TEST_IMAGE:-ghcr.io\/aps-conecta\/all-in-one:\(ci-[0-9]\{8\}-[0-9]\{1,\}\)}"$/\1/p' scripts/aio-testbed.sh)"
+          [[ "$tag" =~ ^ci-[0-9]{8}-[0-9]+$ ]] || { echo "FATAL: no single suite tag pinned in scripts/aio-testbed.sh" >&2; exit 1; }
+          sudo env "PATH=$PATH" APS_SKIP_MAP=1 MIN_DISK_GB=2 APS_SUITE_TAG="$tag" \
+            bash host/aps-conecta install --sitio "$RUNNER_TEMP/site.sh" --planilla "$RUNNER_TEMP/usuarios.csv" \
+            < /dev/null | tee "$RUNNER_TEMP/install.out"
+      - name: Hand the checkout back to the runner
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+      # a19: https://<ip>/ answers with the installer's certificate — trusted through its CA, refused
+      # without it (curl 60: the peer's certificate is not trusted) — the install ends naming the CA,
+      # and a planilla user logs in. The CA is copied out as the operator would (its directory is
+      # root's, 0700); the password is read from the sealed sheet as root and reaches curl on stdin.
+      - name: The suite answers at https://<ip>/, trusted through the installer's CA only; a user logs in
+        run: |
+          ca=/opt/aps-conecta/certificados/ca/aps-conecta-ca.crt
+          sudo install -m 0644 -o "$(id -u)" "$ca" "$RUNNER_TEMP/ca.crt"
+          curl -fsS --cacert "$RUNNER_TEMP/ca.crt" "https://$SUITE_IP/status.php" | grep -q '"installed":true'
+          rc=0; curl -sS -o /dev/null "https://$SUITE_IP/status.php" || rc=$?
+          [ "$rc" = 60 ] || { echo "FAIL: without the CA curl exited $rc, not 60" >&2; exit 1; }
+          grep -q '^INSTALACIÓN: ✓' "$RUNNER_TEMP/install.out"
+          grep -qF "Certificado para los equipos del personal: $ca (huella SHA-256 " "$RUNNER_TEMP/install.out"
+          pw="$(sudo python3 - <<'PY'
+          import csv
+          with open("/opt/aps-conecta/credentials.txt", encoding="utf-8") as fh:
+              print(next(r[2] for r in csv.reader(fh, delimiter=";") if r and r[0] == "ana.prueba"))
+          PY
+          )"
+          printf 'user = "ana.prueba:%s"\n' "$pw" \
+            | curl -fsS -K - --cacert "$RUNNER_TEMP/ca.crt" -H 'OCS-APIRequest: true' \
+                "https://$SUITE_IP/ocs/v2.php/cloud/user?format=json" | grep -q '"id":"ana.prueba"'
+      # Nextcloud's own side of the address: its bundle trusts the CA (phase 07), the push server reaches
+      # it inside the suite's network (the fork's patch 238), and the office both ways (phase 14).
+      - name: Nextcloud trusts the CA; push and office work by IP
+        run: |
+          source scripts/env.sh
+          occ security:certificates --output=json \
+            | python3 -c 'import json, sys; sys.exit(not any(r.get("name") == "aps-conecta-ca.crt" for r in json.load(sys.stdin)))'
+          occ notify_push:self-test
+          occ eurooffice:documentserver --check
+      # L5 by IP: the same deterministic fixture, then the /tiles/ route over the installer's own
+      # certificate — tile_url derived from this runner's own address (phase 16), and the
+      # operator's own check (host/tiles.sh check: the archive, the bind, a ranged read through
+      # the suite's internal network) green on a real install.
+      - name: The basemap is served same-origin at /tiles/, by IP
+        run: |
+          sudo install -d -m 0755 /srv/aps-conecta/tiles
+          python3 - <<'PY'
+          data = b"PMTiles\x03" + b"".join(
+              b"fixture line %06d: same-origin /tiles/ proof\n" % i for i in range(4100))
+          open("/tmp/chile.pmtiles", "wb").write(data[:150000].ljust(150000, b"x"))
+          PY
+          sudo install -m 0644 /tmp/chile.pmtiles /srv/aps-conecta/tiles/chile.pmtiles
+          hdr="$RUNNER_TEMP/tiles.hdr"
+          code="$(curl -fsS --cacert "$RUNNER_TEMP/ca.crt" -D "$hdr" -r 0-1023 -H 'Accept-Encoding: gzip, zstd' \
+            -o "$RUNNER_TEMP/tiles.rng" -w '%{http_code}' "https://$SUITE_IP/tiles/chile.pmtiles")"
+          [ "$code" = "206" ] || { echo "FAIL: /tiles/ answered $code, not 206" >&2; cat "$hdr" >&2; exit 1; }
+          grep -qi '^content-range: bytes 0-1023/150000' "$hdr" || { cat "$hdr" >&2; exit 1; }
+          ! grep -qi '^content-encoding:' "$hdr" || { echo "FAIL: the range came compressed" >&2; cat "$hdr" >&2; exit 1; }
+          head -c 1024 /srv/aps-conecta/tiles/chile.pmtiles > "$RUNNER_TEMP/tiles.esp"
+          cmp "$RUNNER_TEMP/tiles.rng" "$RUNNER_TEMP/tiles.esp"
+          source scripts/env.sh
+          [ "$(occ config:app:get territorio tile_url)" = "https://$SUITE_IP/tiles/chile.pmtiles" ] \
+            || { echo "FAIL: tile_url is not the runner's own same-origin URL" >&2; occ config:app:get territorio tile_url >&2; exit 1; }
+          sudo bash host/tiles.sh check
+      # The weekly run, by IP, on the instance just installed: the leaf is kept (same fingerprint) and
+      # apache is not restarted; the seed converges again, idempotent by IP too.
+      - name: The weekly run keeps the leaf and apache as they are
+        run: |
+          leaf=/opt/aps-conecta/certificados/suite/tls.crt
+          antes="$(sudo sha256sum "$leaf")"; arranque="$(docker inspect -f '{{.State.StartedAt}}' aps-conecta-apache)"
+          sudo env "PATH=$PATH" bash host/aps-conecta provision --reponer
+          [ "$(sudo sha256sum "$leaf")" = "$antes" ] || { echo "FAIL: the weekly run signed a leaf that was valid" >&2; exit 1; }
+          [ "$(docker inspect -f '{{.State.StartedAt}}' aps-conecta-apache)" = "$arranque" ] \
+            || { echo "FAIL: the weekly run restarted apache with nothing renewed" >&2; exit 1; }
+          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+      - name: Logs on failure
+        if: failure()
+        run: |
+          docker ps -a --filter name=^aps-conecta- --filter name=^nextcloud-aio-mastercontainer$ --format 'table {{.Names}}\t{{.Status}}'
+          docker logs --tail=100 aps-conecta-apache || true
+          docker logs --tail=100 aps-conecta-nextcloud || true
+          sudo tail -n 100 /opt/aps-conecta/instalacion.log || true
+      # The same scoped teardown as the domain job: the suite's containers, its volumes, the wizard.
+      - name: Teardown
         if: always()
         run: bash scripts/aio-testbed.sh down

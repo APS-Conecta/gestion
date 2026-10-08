@@ -49,7 +49,7 @@ GitHub surface carrying the name is the rendered `README.md`.
 - Rewriting the DEIS register or its selection rules.
 - Purging the name from git history. It stays in past commits and that is correct — history records
   what was true. This change governs what a checkout of `main`, or of a tag, contains.
-- Auditing `www.apsconecta.cl`. It is a separate repo (`aps-conecta-web`), it returned zero code-search
+- Auditing `www.apsconecta.cl`. It is a separate repo (the Site's), it returned zero code-search
   hits, and its rendered pages are outside this change.
 
 ## Decisions

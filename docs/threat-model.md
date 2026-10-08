@@ -7,8 +7,7 @@ work; the 🗡️ Breaker agent starts here.*
 
 - **The repository holds configuration, not data.** It is the configuration-as-code that stands up and
   converges a CESFAM's Nextcloud 34 suite on Nextcloud AIO: `provisioning/` (phases, app policy, seed
-  data), `host/` (the `aps-conecta` operator CLI and systemd units), `sites/`, the compose files and
-  nginx configs.
+  data), `host/` (the `aps-conecta` operator CLI and systemd units), `sites/` and the compose files.
 - **The repository holds no patient data.** Development uses synthetic fixtures only (`README.md`,
   `AGENTS.md` invariants).
 - **The platform is not meant to hold patient data** (`AGENTS.md`), but nothing stops staff from

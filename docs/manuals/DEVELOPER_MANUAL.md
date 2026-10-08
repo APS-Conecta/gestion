@@ -1,47 +1,4 @@
 <link rel="stylesheet" href="style.css">
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..800;1,9..144,400..800&family=Nunito+Sans:ital,opsz,wght@0,6..12,400..800;1,6..12,400..800&display=swap');
-:root {
-  --aps-primary: #7f21fe;
-  --aps-dark-violet: #5315a8;
-  --aps-ink: #101828;
-  --aps-muted: #485363;
-  --aps-border: #e4e7ec;
-  --aps-gold: #e06f00;
-  --aps-dark-gold: #9a4c00;
-  --aps-error: #ea003e;
-  --aps-error-bg: #FFE7E7;
-  --aps-card-bg: #ffffff;
-  --aps-canvas-bg: #fcfaff;
-  --aps-badge-bg: #f4ebff;
-  --aps-badge-text: #5315a8;
-}
-body, .markdown-body {
-  font-family: "Nunito Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
-  color: var(--aps-ink) !important;
-  background-color: var(--aps-canvas-bg);
-  line-height: 1.65;
-}
-h1, h2, h3, h4 { font-family: "Fraunces", Georgia, serif !important; letter-spacing: -0.015em; font-weight: 700; }
-h1 { color: var(--aps-dark-violet) !important; border-bottom: 3px solid var(--aps-primary); padding-bottom: 0.35em; }
-h2 { color: var(--aps-dark-violet) !important; border-bottom: 1px solid var(--aps-border); padding-bottom: 0.25em; margin-top: 1.6em; }
-h3 { color: var(--aps-primary) !important; }
-h4 { color: var(--aps-dark-gold) !important; }
-a { color: var(--aps-primary) !important; font-weight: 600; text-decoration: none; }
-a:hover { color: var(--aps-dark-violet) !important; text-decoration: underline; }
-table { border-collapse: collapse; width: 100%; border: 1px solid var(--aps-border); margin: 1.4em 0; border-radius: 8px; overflow: hidden; background: #ffffff; }
-th { background-color: var(--aps-dark-violet) !important; color: #ffffff !important; font-family: "Fraunces", serif !important; font-weight: 600; padding: 10px 14px; text-align: left; }
-td { padding: 9px 14px; border-bottom: 1px solid var(--aps-border); color: var(--aps-ink); }
-tr:nth-child(even) { background-color: #fbf9ff; }
-blockquote { border-left: 4px solid var(--aps-primary) !important; background-color: #f8f4ff !important; color: var(--aps-muted) !important; padding: 0.8em 1.4em; border-radius: 0 8px 8px 0; }
-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important; background-color: var(--aps-badge-bg); color: var(--aps-dark-violet); padding: 0.2em 0.45em; border-radius: 4px; border: 1px solid #d6bbfb; }
-pre { background-color: var(--aps-ink) !important; color: #f9fafb !important; border-radius: 8px; padding: 1.1em 1.3em; border: 1px solid #344054; }
-pre code { background: transparent !important; color: inherit !important; border: none !important; }
-.aps-hero { background: linear-gradient(135deg, #5315a8 0%, #7f21fe 100%); color: #ffffff; border-radius: 12px; padding: 26px 32px; margin-bottom: 24px; box-shadow: 0 4px 14px rgba(83,21,168,0.22); }
-.aps-hero h1 { color: #ffffff !important; border-bottom: 2px solid rgba(255,255,255,0.3); margin: 0 0 10px 0; padding: 0 0 8px 0; }
-.aps-tag { display: inline-block; background: #e06f00; color: #ffffff; font-size: 0.78em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; padding: 3px 10px; border-radius: 20px; margin-bottom: 12px; }
-.aps-meta { color: rgba(255,255,255,0.9); font-size: 0.95em; margin: 4px 0; }
-</style>
 
 <div class="aps-hero">
   <span class="aps-tag">Engineering Architecture & Development</span>
@@ -55,59 +12,8 @@ pre code { background: transparent !important; color: inherit !important; border
 > **Document Classification:** Engineering Reference & Developer Guide  
 > **Platform Version:** Nextcloud 34.0.x / PHP 8.5 / PostgreSQL 18 / Redis 8  
 > **Primary Audience:** Software Engineers, System Architects, App Developers, and Maintainers  
-> **Target File:** `docs/manuals/DEVELOPER_MANUAL.md`  
 > **Licensing:** AGPL-3.0-or-later ([ADR-0010](../adr/0010-agpl-across-the-org.md))  
 > **Single Source of Truth (SSOT):** The repository (`docs/ARCHITECTURE.md`, `compose.yaml`, `provisioning/`) is authoritative for behavior.
-
----
-
-## Master Table of Contents
-
-- [1. Architecture Philosophy & Design Invariants](#1-architecture-philosophy--design-invariants)
-  - [1.1 Vanilla Platform, Declarative Configuration-as-Code, No Core Fork (AD-1)](#11-vanilla-platform-declarative-configuration-as-code-no-core-fork-ad-1)
-  - [1.2 Custom App Seam & API Boundary (AD-9)](#12-custom-app-seam--api-boundary-ad-9)
-  - [1.3 App Taxonomy: Vendored, Own, and Lab Apps](#13-app-taxonomy-vendored-own-and-lab-apps)
-  - [1.4 Data Ownership, Topology & Zero Patient Data Invariant](#14-data-ownership-topology--zero-patient-data-invariant)
-- [2. Development Environment & Tooling](#2-development-environment--tooling)
-  - [2.1 Docker Compose Architecture & Service Topology](#21-docker-compose-architecture--service-topology)
-  - [2.2 Derived Dev Layer & Step-Debugging with Xdebug 3](#22-derived-dev-layer--step-debugging-with-xdebug-3)
-  - [2.3 Host Permissions & UID Mapping (UID 33 vs Host GID)](#23-host-permissions--uid-mapping-uid-33-vs-host-gid)
-  - [2.4 Developer Lifecycle: The Makefile Interface](#24-developer-lifecycle-the-makefile-interface)
-- [3. Custom App Development in APS Conecta](#3-custom-app-development-in-aps-conecta)
-  - [3.1 Nextcloud App Directory Layout & Manifest (`appinfo/info.xml`)](#31-nextcloud-app-directory-layout--manifest-appinfoinfoxml)
-  - [3.2 Application Bootstrap & Registration (`Application.php`)](#32-application-bootstrap--registration-applicationphp)
-  - [3.3 Routing Specification (`appinfo/routes.php`)](#33-routing-specification-appinforoutesphp)
-  - [3.4 Controllers & Dependency Injection](#34-controllers--dependency-injection)
-  - [3.5 Database Layer: Doctrine DBAL Migrations, Entities & Mappers](#35-database-layer-doctrine-dbal-migrations-entities--mappers)
-  - [3.6 App Lifecycle & Repair Steps: The `EnsureSeedData` Rule](#36-app-lifecycle--repair-steps-the-ensureseeddata-rule)
-  - [3.7 Unified Search Integration (`OCP\Search\IProvider`)](#37-unified-search-integration-ocpsearchiprovider)
-  - [3.8 Background Jobs & Cron Scheduling (`OCP\BackgroundJob\TimedJob`)](#38-background-jobs--cron-scheduling-ocpbackgroundjobtimedjob)
-  - [3.9 Headless CLI Integration via `occ` (`Symfony\Component\Console\Command\Command`)](#39-headless-cli-integration-via-occ-symfonycomponentconsolecommandcommand)
-  - [3.10 Modern Frontend Stack: Vue 3, Vite, Webpack & `@nextcloud/vue`](#310-modern-frontend-stack-vue-3-vite-webpack--nextcloudvue)
-- [4. Case Studies: The APS Conecta Custom Apps](#4-case-studies-the-aps-conecta-custom-apps)
-  - [4.1 Case Study 1: `epidemiologia` (Public Alert Aggregator & Search Provider)](#41-case-study-1-epidemiologia-public-alert-aggregator--search-provider)
-  - [4.2 Case Study 2: `farmacia` (Vademécum & Clinical Risk Evaluation)](#42-case-study-2-farmacia-vademécum--clinical-risk-evaluation)
-  - [4.3 Case Study 3: `territorio` (Geospatial Mapping, Boundaries & PMTiles)](#43-case-study-3-territorio-geospatial-mapping-boundaries--pmtiles)
-- [5. Server Theme & White-Label Customization](#5-server-theme--white-label-customization)
-  - [5.1 Nextcloud Theming Engine Constraints & Specificity Hierarchy](#51-nextcloud-theming-engine-constraints--specificity-hierarchy)
-  - [5.2 Color Tokens & Contrast Ledger](#52-color-tokens--contrast-ledger)
-  - [5.3 The Dual Render Path: Framework-Rendered vs Legacy-Rendered](#53-the-dual-render-path-framework-rendered-vs-legacy-rendered)
-  - [5.4 Legacy Render Path Branding: `OC_Theme` in `defaults.php` (ADR-0004)](#54-legacy-render-path-branding-oc_theme-in-defaultsphp-adr-0004)
-  - [5.5 Webfont Pipeline & SVG Font Embedding (Fraunces & Nunito Sans)](#55-webfont-pipeline--svg-font-embedding-fraunces--nunito-sans)
-  - [5.6 Header Bar Geometry & Public Link Scoping](#56-header-bar-geometry--public-link-scoping)
-  - [5.7 Dynamic Establishment Token: `server.css` & `site.css`](#57-dynamic-establishment-token-servercss--sitecss)
-  - [5.8 Single Page Application (SPA) Mount Stub Contract](#58-single-page-application-spa-mount-stub-contract)
-- [6. Quality Assurance, Testing & Gate Enforcement](#6-quality-assurance-testing--gate-enforcement)
-  - [6.1 Quality Gate Architecture](#61-quality-gate-hierarchy)
-  - [6.2 Static Analysis Gate (`scripts/test.sh`)](#62-static-analysis-gate-scriptstestsh)
-  - [6.3 Running Core Stack Smoke Gate (`scripts/smoke.sh`)](#63-running-core-stack-smoke-gate-scriptssmokesh)
-  - [6.4 Office Backend Smoke Gate (`scripts/office-smoke.sh`)](#64-office-backend-smoke-gate-scriptsoffice-smokesh)
-  - [6.5 End-to-End Acceptance Testing via Playwright & Vitest](#65-end-to-end-acceptance-testing-via-playwright--vitest)
-- [7. Contribution & Coding Conventions](#7-contribution--coding-conventions)
-  - [7.1 Downstream Fork Governance, Legal Licensing & AGPL-3.0 Compliance (ADR-0010)](#71-downstream-fork-governance-legal-licensing--agpl-30-compliance-adr-0010)
-  - [7.2 The Bilingual Rule](#72-the-bilingual-rule)
-  - [7.3 Architectural Principles: DRY, KISS, YAGNI, and SSOT](#73-architectural-principles-dry-kiss-yagni-and-ssot)
-  - [7.4 Git Flow, Conventional Commits & Pull Request Gates](#74-git-flow-conventional-commits--pull-request-gates)
 
 ---
 
@@ -161,38 +67,7 @@ This boundary guarantees that Nextcloud major version upgrades (such as from NC3
 
 ### 1.3 App Taxonomy: Vendored, Own, and Lab Apps
 
-Every application loaded into `/var/www/html/custom_apps` falls into one of three strictly defined categories defined in `apps/README.md`, [ADR-0003](../adr/0003-this-stack-ships-a-custom-app.md), and [ADR-0005](../adr/0005-gestion-is-the-development-trunk.md):
-
-```
-apps/ (live-mounted to /var/www/html/custom_apps)
- ├── Vendored Apps     --> groupfolders, side_menu, eurooffice, calendar, contacts, spreed, desktop_workspace
- ├── Own Apps          --> epidemiologia, farmacia, territorio
- └── Lab Apps          --> intravox (ADR-0005; territorio was the last one out)
-```
-
-#### 1. Vendored Apps (Upstream Third-Party Apps)
-- **Inventory:** `groupfolders`, `side_menu`, `eurooffice`, `calendar`, `contacts`, `spreed`, `desktop_workspace`.
-- **Packaging:** Upstream tarballs are committed directly to the repository under `provisioning/apps/<id>/<id>-<version>.tar.gz`.
-- **Provenance:** Every vendored app directory must contain a `VENDOR` file declaring exact provenance:
-  ```ini
-  name=groupfolders
-  version=18.0.7
-  url=https://github.com/nextcloud-releases/groupfolders/releases/download/v18.0.7/groupfolders-v18.0.7.tar.gz
-  sha256=11d5f30fc0766324e930bfdcbf1e2e1e9bf434b92c4bbfb1a3297a7638ce8e93
-  ```
-- **Patch Engine:** Sequential patch files (`*.patch`) located inside `provisioning/apps/<id>/` are applied in alphabetical order by `provisioning/phases/12-apps.sh` immediately after unpacking.
-- **App Store Policy:** **The App Store is completely disabled** in both `nextcloud` and `cron` containers (`appstoreenabled = 0`). A clean install never touches `apps.nextcloud.com` (#98, #163).
-- **Integrity Assertion:** Upstream `appinfo/signature.json` files are automatically stripped from patched vendored apps by `12-apps.sh` so Nextcloud's integrity checker does not throw admin overview warnings (#71).
-
-#### 2. Own Apps (Shipped Production Apps)
-- **Inventory:** `epidemiologia`, `farmacia`, `territorio` — all three declared in `OWN_APPS` (`provisioning/phases/12-apps.sh`) and shipped as pre-built tarballs under `provisioning/apps/<id>/`, created from git release tags. Production clinic installations require no network access and no git tooling.
-- **Lifecycle:** Developed in dedicated repositories under the `APS-Conecta` organization.
-- **Development Mode:** On developer workstations, `apps/<id>/` is a live git clone. The helper function `ensure_own_app` inspects `apps/<id>/.git`; if present, it leaves the working directory untouched, preserving branch state and active edits.
-
-#### 3. Lab Apps (Active R&D, Never in Releases)
-- **Inventory:** `intravox` (ADR-0005; territorio was the last app to graduate out of this category).
-- **Declaration:** Declared in `dev/lab-apps.sh`.
-- **Constraint:** **Lab apps are strictly prohibited from release tags.** They exist exclusively as live working trees during research and development. The provisioning system executes them only if `apps/<id>/.git` is present on disk, ensuring clinic deployments bypass them completely.
+The taxonomy — **vendored**, **own**, and **lab** apps — is defined once in [`CONTEXT.md`](../../CONTEXT.md), which owns the vocabulary. The authoritative inventories are equally single-owner: [`provisioning/phases/12-apps.sh`](../../provisioning/phases/12-apps.sh) declares the `APPS` (vendored) and `OWN_APPS` (own) lists and applies the patch engine, [`LICENSING.md`](../LICENSING.md) §3 owns the per-component licence inventory, [ADR-0003](../adr/0003-this-stack-ships-a-custom-app.md) records why this stack ships its own applications at all, and [ADR-0005](../adr/0005-gestion-is-the-development-trunk.md) why lab applications never ride a release tag.
 
 ### 1.4 Data Ownership, Topology & Zero Patient Data Invariant
 
@@ -233,7 +108,6 @@ The development environment runs as a self-contained Docker Compose stack consis
 graph LR
     Dev[Developer Browser] -->|HTTP :8180| NC[nextcloud:34-apache]
     Dev -->|HTTP :9980| EO[eurooffice]
-    Dev -->|HTTP :8084| TI[tiles PMTiles]
     NC -->|SQL :5432| DB[(postgres:18-alpine)]
     NC -->|RESP :6379| RD[(redis:8-alpine)]
     CR[cron scheduler] --> DB
@@ -242,11 +116,7 @@ graph LR
     IDE[VS Code Debugger] <--|Xdebug :9003| NC
 ```
 
-The core `compose.yaml` maintains absolute host portability:
-- All paths are relative (`./apps`, `./themes`, `./tiles`).
-- No VPS-specific networks, hostnames, or absolute `/srv/` paths exist.
-- Service-to-service communication uses Docker internal DNS names (`http://nextcloud`, `http://eurooffice`, `db`, `redis`).
-- Host-to-container debugging uses `host.docker.internal` via `extra_hosts: host.docker.internal:host-gateway`.
+The portability rules the core `compose.yaml` follows — relative paths, Docker-internal DNS names, no host-specific networks or absolute paths — are owned once by [`ARCHITECTURE.md`](../ARCHITECTURE.md) § *Runtime topology*, alongside the production topology this dev stack mirrors.
 
 ### 2.2 Derived Dev Layer & Step-Debugging with Xdebug 3
 
@@ -320,7 +190,7 @@ make install          # Stand establishment up, or converge after site.sh edit /
 make up               # Start production stack with Euro-Office (--wait healthchecks)
 make up-dev           # Build and launch dev stack with Xdebug enabled on port 9003
 make fix-mount-perms  # Synchronize host/container read-write permissions
-make seed             # Execute the 13-phase idempotent provisioning script
+make seed             # Execute the 14-phase idempotent provisioning script
 make seed-idempotent  # Validate that a second seed produces zero database writes
 make test             # Run local quality gate (static analysis + health checks)
 make smoke            # Execute core health assertions against running stack
@@ -1047,32 +917,13 @@ sequenceDiagram
   }
   ```
 - **Basemap Delivery via PMTiles:**
-  Uses a dedicated, lightweight Nginx static container serving a single `chile.pmtiles` archive (~1 GB). The browser reads tile ranges via HTTP `Range` headers using `protomaps-leaflet`, consuming only 0.5–1 MB per screenful with zero external API dependencies.
+  In production the suite's own apache serves a single `chile.pmtiles` archive (~1 GB) same-origin at `/tiles/`, from a read-only bind of `/srv/aps-conecta/tiles`. The browser reads tile ranges via HTTP `Range` headers using `protomaps-leaflet`, consuming only 0.5–1 MB per screenful with zero external API dependencies. The dev compose stack ships no tiles service: `tile_url` stays empty and territorio falls back to the OpenStreetMap raster.
 
 ---
 
 ## 5. Server Theme & White-Label Customization
 
-Nextcloud's visual identity in APS Conecta is completely customized to provide a clean, dignified primary healthcare interface.
-
-```
-themes/apsconecta/
- ├── defaults.php            # OC_Theme legacy render path override
- ├── core/
- │    ├── css/
- │    │    ├── server.css    # Core theme stylesheet (fonts, headers, buttons)
- │    │    ├── guest.css     # Unauthenticated & legacy fallback styles
- │    │    └── site.css      # Generated per-install establishment variables
- │    ├── fonts/
- │    │    ├── Fraunces.woff2
- │    │    ├── Fraunces-Italic.woff2
- │    │    ├── NunitoSans.woff2
- │    │    └── NunitoSans-Italic.woff2
- │    └── img/
- │         ├── favicon.svg
- │         ├── background.svg
- │         └── logo/
-```
+Nextcloud's visual identity in APS Conecta is completely customized to provide a clean, dignified primary healthcare interface. The theme's file tree and what each asset is for are owned by [`THEMING-MODEL.md`](../THEMING-MODEL.md) (the model, layer by layer) and [`BRANDING.md`](../BRANDING.md) (the install guide); §5.1–§5.5 below keep only the developer-facing constraints that live nowhere else.
 
 ### 5.1 Nextcloud Theming Engine Constraints & Specificity Hierarchy
 
@@ -1147,47 +998,7 @@ graph TD
 
 ### 5.4 Legacy Render Path Branding: `OC_Theme` in `defaults.php` (ADR-0004)
 
-On legacy screens, `ThemingDefaults` is bypassed and Nextcloud falls back to hardcoded strings in `OC_Defaults`. To prevent "Nextcloud" branding leaks during outages or upgrades, [ADR-0004](../adr/0004-branding-the-legacy-render-path.md) provides `themes/apsconecta/defaults.php`:
-
-```php
-<?php
-
-declare(strict_types=1);
-
-class OC_Theme {
-    public function getName(): string {
-        return 'APS Conecta Gestión';
-    }
-
-    public function getTitle(): string {
-        return 'APS Conecta Gestión';
-    }
-
-    public function getEntity(): string {
-        return 'APS Conecta Gestión';
-    }
-
-    public function getProductName(): string {
-        return 'APS Conecta Gestión';
-    }
-
-    public function getSlogan(?string $lang = null): string {
-        return 'La salud primaria que compartimos es la que mejora';
-    }
-
-    public function getBaseUrl(): string {
-        return 'https://apsconecta.cl';
-    }
-
-    public function getColorPrimary(): string {
-        return '#7f21fe';
-    }
-
-    public function getColorBackground(): string {
-        return '#5315a8';
-    }
-}
-```
+On legacy screens, `ThemingDefaults` is bypassed and Nextcloud falls back to hardcoded strings in `OC_Defaults`. To prevent "Nextcloud" branding leaks during outages or upgrades, [ADR-0004](../adr/0004-branding-the-legacy-render-path.md) provides `themes/apsconecta/defaults.php`, whose `OC_Theme` class pins the suite's name, slogan, URL and brand colours.
 
 *Operational Note:* `defaults.php` is cached by PHP Zend OPcache. Edits require restarting the `nextcloud` container (`docker compose restart nextcloud`).
 
@@ -1217,7 +1028,7 @@ APS Conecta mandates zero external font egress. All fonts are self-hosted `.woff
 ```
 
 #### SVG Font Embedding Pipeline (`tools/embed-fonts.py`)
-SVGs loaded via `<img>` tags execute in an isolated XML document context that cannot access external `@font-face` rules declared in `server.css` (Issue B-011). To prevent browser fallback to Georgia or Times, `themes/apsconecta/tools/embed-fonts.py` extracts a glyph subset of Fraunces and Nunito Sans, encodes it into base64 WOFF2 data URIs, and embeds the `<style>` block directly into `logo.svg` and `logo-header.svg`.
+SVGs loaded via `<img>` tags execute in an isolated XML document context that cannot access external `@font-face` rules declared in `server.css` (Issue B-011). To prevent browser fallback to Georgia or Times, `themes/apsconecta/tools/embed-fonts.py` extracts a glyph subset of Fraunces and Nunito Sans, encodes it into base64 WOFF2 data URIs, and embeds the style block directly into `logo.svg` and `logo-header.svg`.
 
 ### 5.6 Header Bar Geometry & Public Link Scoping
 
@@ -1336,43 +1147,7 @@ Validates the Euro-Office document server:
 
 ### 7.1 Downstream Fork Governance, Legal Licensing & AGPL-3.0 Compliance (ADR-0010)
 
-#### Downstream Fork and Distribution Architecture
-APS Conecta Gestión constitutes an engineered downstream distribution and sovereign deployment of the **Nextcloud** collaboration ecosystem. While the project strictly avoids direct in-place modifications to core upstream source code (AD-1) by routing custom logic through public APIs (`OCP\...`), the resulting combination of Nextcloud core, patched vendored applications (ADR-0002), custom clinical applications, server theming, and declarative orchestration constitutes a downstream derivative distribution governed under free software licensing frameworks.
-
-#### Upstream License Preservation Matrix
-Developers and contributors must preserve all original upstream copyright notices, attribution comments, and license headers. The deployment stack incorporates components under distinct open-source licenses:
-
-| Component | Upstream Authority | License | SPDX Identifier | Compliance Obligation |
-|---|---|---|---|---|
-| **Nextcloud Server** | Nextcloud GmbH & Contributors | GNU AGPL v3 or later | `AGPL-3.0-or-later` | Preserve copyright headers; provide source under §13. |
-| **Euro-Office DocumentServer** | Euro-Office / Ascensio System SIA | GNU AGPL v3 only | `AGPL-3.0-only` | Verbatim AGPLv3 terms; no license forward-porting. |
-| **Vendored App (`eurooffice`)** | Euro-Office / Ascensio System SIA | GNU AGPL v3 only | `AGPL-3.0-only` | Connector app licensed strictly under AGPLv3-only terms. |
-| **PostgreSQL Database** | PostgreSQL Global Development Group | PostgreSQL License | `PostgreSQL` | Permissive license; retain copyright notice. |
-| **Redis In-Memory Cache** | Redis Ltd. | Tri-License (AGPLv3 / RSALv2 / SSPLv1) | `AGPL-3.0-or-later` | **APS Conecta elects AGPLv3** (OSI-compliant option). |
-| **Vendored Apps** (`groupfolders`, `calendar`, `contacts`, `spreed`, `side_menu`, `desktop_workspace`) | Respective Upstream Maintainers | GNU AGPL v3 or later | `AGPL-3.0-or-later` | Retain provenance metadata (`VENDOR`) and patch files. |
-| **Brand Fonts** (`Fraunces`, `Nunito Sans`) | Google Fonts / Respective Designers | SIL Open Font License 1.1 | `OFL-1.1` | No standalone sale; retain OFL notice; format conversion permitted. |
-
-#### Own-Code Licensing Policy (ADR-0010)
-Pursuant to [ADR-0010](../adr/0010-agpl-across-the-org.md), all original software authored within the APS Conecta organization is licensed under the **GNU Affero General Public License v3.0 or later (GNU AGPL-3.0-or-later)**:
-- `gestion` (Multi-container orchestration, provisioning engine, server theme)
-- `epidemiologia` (Epidemiological surveillance application)
-- `farmacia` (Pharmacological vademécum and risk assessment application)
-- `territorio` (Geospatial jurisdiction application)
-- `aps-conecta-web` (Public informational web presence)
-
-*Copyright Holder:* Copyright © Daniel Espinoza Charrier / APS Conecta.
-
-#### Remote Network Interaction Copyleft (GNU AGPLv3 Section 13)
-> [!CAUTION]
-> **Legal Compliance under AGPLv3 §13:**
-> The GNU AGPLv3 contains an explicit requirement for software interacting with users across computer networks:
-> *"Notwithstanding any other provision of this License, if you modify the Program, your modified version must prominently offer all users interacting with it remotely through a computer network [...] a facility to receive the Corresponding Source of your version by providing access to the Corresponding Source from a network server at no charge."*
->
-> In accordance with this requirement, developers must ensure that any build, release container, or deployed instance preserves accessible, public URLs pointing to the exact Corresponding Source code of all running components, including applied patches (`provisioning/apps/<app>/*.patch`). Stripping or disabling source disclosure mechanisms carries severe legal penalties for copyright infringement.
-
-#### Trademark Protection and AGPL Section 7(e) Carve-Out
-- **Nextcloud Trademark Disclaimer:** "Nextcloud" is a registered trademark of Nextcloud GmbH. APS Conecta Gestión is an independent downstream software distribution and is not endorsed by, sponsored by, or affiliated with Nextcloud GmbH. All Nextcloud trademarks, brand names, and logos are acknowledged as the property of their respective owners.
-- **APS Conecta Trademark Carve-Out:** Software code is freely redistributable and forkable under AGPL-3.0-or-later. However, the visual identity, brand name, institutional logos, and graphic marks in `themes/apsconecta/assets/logo/` are expressly reserved under **AGPL Section 7(e)**. Third parties forking or redeploying this codebase must substitute their own branding and marks.
+APS Conecta Gestión is an engineered downstream distribution of the **Nextcloud** collaboration ecosystem: Nextcloud core, patched vendored applications (ADR-0002), the suite's own clinical applications, server theming, and declarative orchestration, combined into one distribution under free-software licensing. Developers' legal duties are enumerated by their owners: [ADR-0010](../adr/0010-agpl-across-the-org.md) owns the org-wide policy — our code is **AGPL-3.0-or-later**, upstream copyright notices, attribution comments and licence headers are preserved verbatim, provenance metadata (`VENDOR`) and patch files ride every vendored app, and remote-network users keep their GNU AGPLv3 §13 entitlement to the Corresponding Source — while [`LICENSING.md`](../LICENSING.md) owns the per-component licence inventory, the copyleft aggregation analysis, and the trademark disclaimers with the AGPL §7(e) brand carve-out.
 
 ### 7.2 The Bilingual Rule
 

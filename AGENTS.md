@@ -61,8 +61,8 @@ The product holds no patient data (above), but nothing stops staff from uploadin
 Files or Talk, so every account, share and backup is secured as if it did. gestion gets the red team
 only. The agent's prompt lives in the private `APS-Conecta/agents` repo; Claude reviews every PR.
 
-- **Scope:** platform security configuration — `provisioning/`, `sites/`, `host/`, compose files,
-  nginx configs. Read `docs/threat-model.md` first.
+- **Scope:** platform security configuration — `provisioning/`, `sites/`, `host/`, compose files.
+  Read `docs/threat-model.md` first.
 - **Gate:** `make test` — static checks, then smoke only when a stack is up. A step that did not run is
   named in the PR, never reported as passed. A hardening change ships with a test or configuration
   assertion that `make test` runs.

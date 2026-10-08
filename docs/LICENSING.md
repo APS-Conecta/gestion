@@ -27,8 +27,8 @@ and reasons about whether running them triggers any obligation on our own code.
    social") for "APS Conecta" exists yet, so copyright vests in the individual. If a legal entity is
    later formed, or if this work is deemed commissioned by / funded for a third party (e.g. the
    health center), the holder must be revisited — **[needs legal sign-off]**.
-4. **The brand is carved out.** The logo, mono logo, lockup and favicon in
-   `aps-conecta-web/themes/apsconecta/assets/logo/` are all rights reserved and the marks are
+4. **The brand is carved out.** The logo, mono logo, lockup and favicon in the Site's repository
+   (`themes/apsconecta/assets/logo/`) are all rights reserved and the marks are
    reserved under AGPL §7(e). Colour tokens ship under the AGPL with the code.
 
 ## 2. "OSS-first" now extends to our own work
@@ -80,6 +80,8 @@ below were read from each app's `appinfo/info.xml` inside the shipped tarball, n
 | Notify Push | NC app `notify_push` 1.4.1 (vendored for the AIO bake — this stack installs it from no inventory) | GNU AGPL v3 or later | `AGPL-3.0-or-later` | `notify_push` `info.xml` |
 | Fraunces | `themes/apsconecta/core/fonts/*.woff2` (served by the theme) | SIL Open Font License 1.1 | `OFL-1.1` | Fraunces `OFL.txt` |
 | Nunito Sans | `themes/apsconecta/core/fonts/*.woff2` (served by the theme) | SIL Open Font License 1.1 | `OFL-1.1` | Nunito Sans `OFL.txt` |
+| Leaflet | `themes/apsconecta/core/mapa/leaflet.{js,css}` 1.9.4 (vendored, served by the installer at `/recursos/`) | BSD 2-Clause | `BSD-2-Clause` | Leaflet `dist/` license header; bytes pinned by `scripts/test.sh` |
+| protomaps-leaflet | `themes/apsconecta/core/mapa/protomaps-leaflet.js` 5.1.0 (vendored, served by the installer at `/recursos/`; bundles pmtiles 3.x, BSD-3) | BSD 3-Clause | `BSD-3-Clause` | protomaps-leaflet `LICENSE`; bytes pinned by `scripts/test.sh` |
 
 > **`agpl` is not a typo.** Nextcloud's schema has always accepted the bare string, and the app
 > store renders it as AGPL v3 or later; `calendar`, `side_menu` and `spreed` still declare it that way while
@@ -120,6 +122,31 @@ violates ONLYOFFICE's asserted AGPL §7 additional terms (e.g. logo-retention); 
 that a logo-retention obligation is not a valid §7 term. This does **not** change the SPDX identifier,
 but it is worth awareness. **[needs legal sign-off if Euro-Office is adopted for production.]**
 
+### 3.4 Data: the DEIS register and its coordinates
+
+`sites/establecimientos-deis-<date>.csv` is public data, shipped so an install can pick its
+establishment with no network. Two MINSAL sources make it; neither is redistributed whole.
+
+- **The register** — the DEIS catalogue of establishments in operation, trimmed by
+  `scripts/deis.py --snapshot` to the primary-care network and the ten columns an install needs.
+  The date in the filename is MINSAL's publication date.
+- **The coordinates** — `latitud` and `longitud`, appended by `scripts/deis.py --coordenadas` from
+  the Geoportal de Chile dataset «Establecimientos de salud de Chile Junio 2026»:
+  - catalog 41966,
+    <https://geoportal.cl/geoportal/catalog/41966/Establecimientos%20de%20salud%20de%20Chile%20Junio%202026>;
+  - publisher Ministerio de Salud — DEIS (data), with the primary-care georeferencing by DIVAP;
+    contact ideminsal@minsal.cl; published 2026-06-12; CRS84;
+  - source file the catalog's GeoJSON download,
+    <https://geoportal.cl/minsal/catalog/download/c4492d2c-8863-39da-b0f3-b137b759984a>, sha256
+    `9403ba2cc8fa45bd7b11428d37b12c4fb9cd034d3d135e642b53298101856bf5`, 5,295 points;
+  - joined on `cod_vig` (the DEIS code); all 2,655 register rows match. Only the two coordinate
+    properties are taken, as published.
+
+**Licence: not stated.** The dataset's metadata leaves every use and access constraint empty. It is
+official data MINSAL publishes for reuse on a government portal, and wherever the points are shown
+the credit is «Puntos: MINSAL/DEIS, Geoportal de Chile». **[needs legal sign-off: ask
+ideminsal@minsal.cl for the terms before relying on them beyond the clinics' own use.]**
+
 ## 4. Do the copyleft components reach our own code? (Aggregation analysis)
 
 Most of the stack is copyleft (AGPL-3.0). The question is whether that copyleft reaches **our own code**
@@ -158,4 +185,4 @@ and forces us to open it. Our reasoning — **[needs legal sign-off]**:
   public upstream). Since ADR-0010 our own code carries the same duty, discharged the same way.
 - **Open items:** entity/commissioning question (holder revisited if a legal entity forms or the work is
   deemed commissioned); Euro-Office §7 dispute if it's chosen for production; re-run §4 if we ever modify or
-  fork a component.
+  fork a component; the geoportal coordinates' terms (§3.4).

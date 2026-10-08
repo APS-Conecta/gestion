@@ -1,52 +1,9 @@
 <link rel="stylesheet" href="style.css">
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..800;1,9..144,400..800&family=Nunito+Sans:ital,opsz,wght@0,6..12,400..800;1,6..12,400..800&display=swap');
-:root {
-  --aps-primary: #7f21fe;
-  --aps-dark-violet: #5315a8;
-  --aps-ink: #101828;
-  --aps-muted: #485363;
-  --aps-border: #e4e7ec;
-  --aps-gold: #e06f00;
-  --aps-dark-gold: #9a4c00;
-  --aps-error: #ea003e;
-  --aps-error-bg: #FFE7E7;
-  --aps-card-bg: #ffffff;
-  --aps-canvas-bg: #fcfaff;
-  --aps-badge-bg: #f4ebff;
-  --aps-badge-text: #5315a8;
-}
-body, .markdown-body {
-  font-family: "Nunito Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
-  color: var(--aps-ink) !important;
-  background-color: var(--aps-canvas-bg);
-  line-height: 1.65;
-}
-h1, h2, h3, h4 { font-family: "Fraunces", Georgia, serif !important; letter-spacing: -0.015em; font-weight: 700; }
-h1 { color: var(--aps-dark-violet) !important; border-bottom: 3px solid var(--aps-primary); padding-bottom: 0.35em; }
-h2 { color: var(--aps-dark-violet) !important; border-bottom: 1px solid var(--aps-border); padding-bottom: 0.25em; margin-top: 1.6em; }
-h3 { color: var(--aps-primary) !important; }
-h4 { color: var(--aps-dark-gold) !important; }
-a { color: var(--aps-primary) !important; font-weight: 600; text-decoration: none; }
-a:hover { color: var(--aps-dark-violet) !important; text-decoration: underline; }
-table { border-collapse: collapse; width: 100%; border: 1px solid var(--aps-border); margin: 1.4em 0; border-radius: 8px; overflow: hidden; background: #ffffff; }
-th { background-color: var(--aps-dark-violet) !important; color: #ffffff !important; font-family: "Fraunces", serif !important; font-weight: 600; padding: 10px 14px; text-align: left; }
-td { padding: 9px 14px; border-bottom: 1px solid var(--aps-border); color: var(--aps-ink); }
-tr:nth-child(even) { background-color: #fbf9ff; }
-blockquote { border-left: 4px solid var(--aps-primary) !important; background-color: #f8f4ff !important; color: var(--aps-muted) !important; padding: 0.8em 1.4em; border-radius: 0 8px 8px 0; }
-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important; background-color: var(--aps-badge-bg); color: var(--aps-dark-violet); padding: 0.2em 0.45em; border-radius: 4px; border: 1px solid #d6bbfb; }
-pre { background-color: var(--aps-ink) !important; color: #f9fafb !important; border-radius: 8px; padding: 1.1em 1.3em; border: 1px solid #344054; }
-pre code { background: transparent !important; color: inherit !important; border: none !important; }
-.aps-hero { background: linear-gradient(135deg, #5315a8 0%, #7f21fe 100%); color: #ffffff; border-radius: 12px; padding: 26px 32px; margin-bottom: 24px; box-shadow: 0 4px 14px rgba(83,21,168,0.22); }
-.aps-hero h1 { color: #ffffff !important; border-bottom: 2px solid rgba(255,255,255,0.3); margin: 0 0 10px 0; padding: 0 0 8px 0; }
-.aps-tag { display: inline-block; background: #e06f00; color: #ffffff; font-size: 0.78em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; padding: 3px 10px; border-radius: 20px; margin-bottom: 12px; }
-.aps-meta { color: rgba(255,255,255,0.9); font-size: 0.95em; margin: 4px 0; }
-</style>
 
 <div class="aps-hero">
   <span class="aps-tag">Municipal Infrastructure & Healthcare Operations</span>
   <h1>APS Conecta Gestión — Server Administration Manual</h1>
-  <p class="aps-meta"><strong>Multi-Container Docker Architecture, 13-Phase Provisioning & Governance</strong></p>
+  <p class="aps-meta"><strong>Multi-Container Docker Architecture, 14-Phase Provisioning & Governance</strong></p>
   <p class="aps-meta">Downstream Nextcloud 34 Fork | AGPLv3 Municipal Node Operations</p>
 </div>
 
@@ -60,82 +17,6 @@ APS Conecta Gestión is architected as an immutable, declarative configuration-a
 
 ![Server Administration Overview](screenshots/10_admin_overview.png)
 *Figure 1: Server Administration Overview in APS Conecta Gestión (`Administration settings -> Overview`), showing full security validation, system status, and active platform parameters.*
-
----
-
-## Master Table of Contents
-
-1. [Introduction & Operational Principles](#1-introduction--operational-principles)
-   - [Target Audience & System Scope](#target-audience--system-scope)
-   - [Downstream Nextcloud Suite Fork & Open Source Licensing Governance](#downstream-nextcloud-suite-fork--open-source-licensing-governance)
-   - [Foundational Invariants](#foundational-invariants)
-   - [Administrative Interface & Visual References](#administrative-interface--visual-references)
-2. [System Architecture & Topology](#2-system-architecture--topology)
-   - [Multi-Container Architecture (`compose.yaml`)](#multi-container-architecture-composeyaml)
-   - [Services Inventory & Digest Pinning](#services-inventory--digest-pinning)
-   - [Container Networking & Communication](#container-networking--communication)
-   - [Loopback Binding & Network Isolation](#loopback-binding--network-isolation)
-   - [Hardware Sizing & Prerequisites](#hardware-sizing--prerequisites)
-3. [Installation & Initial Setup](#3-installation--initial-setup)
-   - [Step 1: Environment Generation (`make setup`)](#step-1-environment-generation-make-setup)
-   - [Step 2: Establishment Configuration (`scripts/deis.py`)](#step-2-establishment-configuration-scriptsdeispy)
-   - [Step 3: Installation & Convergence (`make install`)](#step-3-installation--convergence-make-install)
-   - [Container Lifecycle Management](#container-lifecycle-management)
-4. [The 13-Phase Idempotent Provisioning Engine](#4-the-13-phase-idempotent-provisioning-engine)
-   - [Provisioning Philosophy & Idempotency Guards](#provisioning-philosophy--idempotency-guards)
-   - [Phase-by-Phase Reference](#phase-by-phase-reference)
-     - [`05-security.sh`: Session Hardening & Security Defaults](#05-securitysh-session-hardening--security-defaults)
-     - [`06-jobs.sh`: Background Job Scheduling Mode](#06-jobssh-background-job-scheduling-mode)
-     - [`07-certs.sh`: TLS Certificate Authority Intermediates](#07-certssh-tls-certificate-authority-intermediates)
-     - [`10-locale.sh`: Chilean Spanish Locale & Language Enforcement](#10-localesh-chilean-spanish-locale--language-enforcement)
-     - [`12-apps.sh`: Application Deployment, Vendoring & Patching](#12-appssh-application-deployment-vendoring--patching)
-     - [`14-office.sh`: Euro-Office Connector & Storage Configuration](#14-officesh-euro-office-connector--storage-configuration)
-     - [`15-branding.sh`: White-Label Server Theming & Identity](#15-brandingsh-white-label-server-theming--identity)
-     - [`16-app-policy.sh`: Application Visibility & Egress Policy](#16-app-policysh-application-visibility--egress-policy)
-     - [`20-groups.sh`: Role Vocabulary, Category Taxonomy & Group Registry](#20-groupssh-role-vocabulary-category-taxonomy--group-registry)
-     - [`30-folders.sh`: Document Hierarchy & Group Folders Tree](#30-folderssh-document-hierarchy--group-folders-tree)
-     - [`40-acl.sh`: Access Control Matrix (ACL) Application](#40-aclsh-access-control-matrix-acl-application)
-     - [`50-users.sh`: Standing Leadership Accounts Provisioning](#50-userssh-standing-leadership-accounts-provisioning)
-     - [`60-fixtures.sh`: Deterministic Synthetic Fixtures](#60-fixturessh-deterministic-synthetic-fixtures)
-5. [User, Role & Access Control Management (RBAC)](#5-user-role--access-control-management-rbac)
-   - [The Group as the Sole Authorization Key](#the-group-as-the-sole-authorization-key)
-   - [The 22 Shared Standard CESFAM Roles](#the-22-shared-standard-cesfam-roles)
-   - [The Four Functional Categories (`cat-*`)](#the-four-functional-categories-cat-)
-   - [Custom Establishment Roles (`SITE_ROLES`)](#custom-establishment-roles-site_roles)
-   - [Group Folders Architecture & Mount Semantics](#group-folders-architecture--mount-semantics)
-   - [ACL Allow-Refinement Model (Elimination of DENY Rules)](#acl-allow-refinement-model-elimination-of-deny-rules)
-   - [User Lifecycle & Password Administration](#user-lifecycle--password-administration)
-   - [Standard `occ` User & Group Commands](#standard-occ-user--group-commands)
-6. [Office Suite Server Administration (Euro-Office)](#6-office-suite-server-administration-euro-office)
-   - [Document Server Architecture](#document-server-architecture)
-   - [JWT Secret Configuration & Token Validation](#jwt-secret-configuration--token-validation)
-   - [Internal Storage Callback Routing](#internal-storage-callback-routing)
-   - [Format Compatibility & ODF Lossy Conversion](#format-compatibility--odf-lossy-conversion)
-   - [Resource Management & On-Demand Standby (`make office-down`)](#resource-management--on-demand-standby-make-office-down)
-   - [Office Backend Verification (`make office-smoke`)](#office-backend-verification-make-office-smoke)
-7. [Basemap & GIS Services (PMTiles)](#7-basemap--gis-services-pmtiles)
-   - [Self-Hosted PMTiles Architecture](#self-hosted-pmtiles-architecture)
-   - [Archive Specifications & Chilean Geographic Bounds](#archive-specifications--chilean-geographic-bounds)
-   - [Nginx Range-Request & CORS Compliance](#nginx-range-request--cors-compliance)
-   - [Basemap Verification & Maintenance (`scripts/refresh-basemap.sh`)](#basemap-verification--maintenance-scriptsrefresh-basemapsh)
-8. [Security & Hardening](#8-security--hardening)
-   - [Network Isolation & Reverse Proxy Strategy](#network-isolation--reverse-proxy-strategy)
-   - [Trusted Domains & Request Host Validation](#trusted-domains--request-host-validation)
-   - [Brute Force Protection & Session Lifetimes](#brute-force-protection--session-lifetimes)
-   - [Signature Suppression for Patched Vendored Apps](#signature-suppression-for-patched-vendored-apps)
-   - [App Store Lockdown & Egress Isolation](#app-store-lockdown--egress-isolation)
-9. [Operations, Maintenance & Troubleshooting](#9-operations-maintenance--troubleshooting)
-   - [Health Checks & Stack Smoke Gating (`make smoke`)](#health-checks--stack-smoke-gating-make-smoke)
-   - [Configuration Drift & Divergence Auditing (`make divergence`)](#configuration-drift--divergence-auditing-make-divergence)
-   - [Upstream Container Image Digest Tracking (`make images-check`)](#upstream-container-image-digest-tracking-make-images-check)
-   - [Vendored Application Lifecycle (`make apps-check`)](#vendored-application-lifecycle-make-apps-check)
-   - [Logging Architecture, Volume Storage & Log Rotation](#logging-architecture-volume-storage--log-rotation)
-   - [Troubleshooting Runbooks](#troubleshooting-runbooks)
-     - [PostgreSQL Database Connectivity Failures](#postgresql-database-connectivity-failures)
-     - [Redis Locking & Memory Cache Stalls](#redis-locking--memory-cache-stalls)
-     - [Euro-Office Document Opening & Token Verification Errors](#euro-office-document-opening--token-verification-errors)
-     - [Background Cron Job Inactivity](#background-cron-job-inactivity)
-     - [Bind Mount Permissions Synchronization](#bind-mount-permissions-synchronization)
 
 ---
 
@@ -211,7 +92,6 @@ APS Conecta Gestión operates as an orchestrated multi-container topology define
 graph TD
   UserBrowser[Healthcare Workstation Browser] -->|127.0.0.1:HTTP_PORT| ReverseProxy[Reverse Proxy / Caddy / Tailscale]
   ReverseProxy -->|Port 80| NC[nextcloud:34-apache]
-  UserBrowser -->|127.0.0.1:TILES_PORT| Tiles[tiles: nginx PMTiles Basemap]
   UserBrowser -.->|127.0.0.1:OFFICE_PORT| EuroOffice[eurooffice: Document Server]
   
   subgraph Docker Compose Internal Bridge Network
@@ -228,18 +108,17 @@ graph TD
     PG --- VPG[(postgres_data named volume)]
     NC -.- MountApps[./apps -> /var/www/html/custom_apps]
     NC -.- MountThemes[./themes -> /var/www/html/themes]
-    Tiles -.- MountTiles[./tiles -> /srv/tiles:ro]
-    Tiles -.- MountNginx[./tiles.nginx.conf -> /etc/nginx/conf.d/default.conf:ro]
   end
 ```
 
-The six services in `compose.yaml` fulfill dedicated roles:
+The five services in `compose.yaml` fulfill dedicated roles:
 1. **`nextcloud`:** Nextcloud 34 Apache/PHP application server. Mounts the core `nextcloud_data` named volume, alongside `./apps` (custom and vendored applications) and `./themes` (the `apsconecta` server theme).
 2. **`db`:** PostgreSQL 18 Alpine database server storing users, group definitions, ACL tables, file indices, and application state.
 3. **`redis`:** Redis 8 Alpine in-memory key-value cache used for distributed caching and transactional file locking.
 4. **`cron`:** Background job runner executing `/cron.sh` (`busybox crond -f`). It utilizes the identical image and volumes as `nextcloud` via an anchor definition (`x-nextcloud-base`) to execute `php -f /var/www/html/cron.php` every 5 minutes.
 5. **`eurooffice`:** Standalone documentserver container (`ghcr.io/euro-office/documentserver`) providing in-browser collaborative editing for OOXML (`.docx`, `.xlsx`, `.pptx`) and ODF (`.odt`, `.ods`, `.odp`) documents.
-6. **`tiles`:** High-performance static Nginx container serving the national Chilean basemap (`chile.pmtiles`) via HTTP Range Requests and CORS headers.
+
+> The basemap has no service of its own in this stack: a production suite serves `/srv/aps-conecta/tiles/chile.pmtiles` same-origin at `/tiles/` through its own apache, and this dev compose writes `tile_url` empty — territorio falls back to the OpenStreetMap raster (see §7's basemap section).
 
 ### Services Inventory & Digest Pinning
 In production, relying on floating tags (such as `:latest`, `:34-apache`, or `:18-alpine`) creates silent deployment drift: two nodes installed days apart could run different patch levels. 
@@ -253,7 +132,6 @@ APS Conecta Gestión enforces **Index Digest Pinning (#109)** across every servi
 | `redis` | `redis:8-alpine` | `sha256:becdda6c7f4b3fb42e42fd7f120bbf5c54c4caaaf16f26da24e4563d2c1f0576` | Multi-arch Index |
 | `cron` | *Inherits Nextcloud* | *(Identical digest to nextcloud service)* | Multi-arch Index |
 | `eurooffice` | `ghcr.io/euro-office/documentserver:latest` | `sha256:889e681923d2dcc8bdfb92fe128d10e185fcff880d302b6a0c0c7bf339499290` | Pinned multi-arch build |
-| `tiles` | `nginx:alpine` | `sha256:c8497b180665e631ec92a5091125bec5b214f0e2b99409e30653a125b37557da` | Multi-arch Index |
 
 > [!NOTE]
 > Digest pins are refreshed systematically using `make images`, which verifies upstream tags and updates both `compose.yaml` and `Dockerfile.dev` synchronously. The weekly GitHub Actions workflow `image-digests.yml` monitors upstream drift using `make images-check`.
@@ -266,7 +144,7 @@ Networking follows strict architectural boundaries:
   - `nextcloud` communicates with Euro-Office internally at `http://eurooffice/`.
   - `eurooffice` fetches documents from Nextcloud via `StorageUrl` set to `http://nextcloud/`.
 - **Host Gateway Routing (`extra_hosts`):** The `nextcloud` container configures `host.docker.internal:host-gateway`. On Linux hosts, this maps `host.docker.internal` to the host's bridge IP address, permitting container-to-host communications when required.
-- **Client-to-Service Communication:** Client browsers running on clinical workstations communicate with Nextcloud, Euro-Office, and the Tiles service using the host's published endpoints (or through an external reverse proxy).
+- **Client-to-Service Communication:** Client browsers running on clinical workstations communicate with Nextcloud and Euro-Office using the host's published endpoints (or through an external reverse proxy). The map needs no endpoint of its own: the suite serves it same-origin at `/tiles/`.
 
 ### Loopback Binding & Network Isolation
 By design, all container port publications in `compose.yaml` bind strictly to the loopback interface (`127.0.0.1`):
@@ -301,118 +179,23 @@ External ingress is mediated by an authenticating, TLS-terminating reverse proxy
 
 ## 3. Installation & Initial Setup
 
-Setting up an APS Conecta Gestión node requires three linear, reproducible steps.
+Installing a node is situation-dependent, and each situation already owns its walkthrough:
 
-```
-┌────────────────────────────────────────────────────────┐
-│ Step 1: Environment Generation (make setup)            │
-│ Creates .env (mode 600) with four CSPRNG hex secrets   │
-└──────────────────────────┬─────────────────────────────┘
-                           │
-┌──────────────────────────▼─────────────────────────────┐
-│ Step 2: Establishment Profile (scripts/deis.py)        │
-│ Queries DEIS catalog -> creates sites/<slug>/site.sh   │
-└──────────────────────────┬─────────────────────────────┘
-                           │
-┌──────────────────────────▼─────────────────────────────┐
-│ Step 3: Installation & Convergence (make install)       │
-│ Starts stack -> runs 13-phase provisioning -> smokes   │
-└────────────────────────────────────────────────────────┘
-```
-
-### Step 1: Environment Generation (`make setup`)
-The deployment environment requires generated passwords for database storage, platform administration, JWT token encryption, and fixture accounts. 
-
-Executing `make setup` triggers `scripts/env-init.sh`:
-```bash
-make setup
-```
-
-This script:
-1. Verifies that no existing `.env` file exists. It **refuses to overwrite an active `.env` file**, preventing silent password divergence against an already initialized database.
-2. Copies `.env.example` to `.env`.
-3. Immediately sets filesystem permissions to `chmod 600 .env` before writing any secrets, shielding credentials from other unprivileged users on the host.
-4. Generates four cryptographic secrets sampled from `/dev/urandom` encoded as **hexadecimal strings** (avoiding `$` or `/` characters that break Docker Compose interpolation):
-   - `NEXTCLOUD_ADMIN_PASSWORD`: 16 bytes (32 hex characters).
-   - `POSTGRES_PASSWORD`: 16 bytes (32 hex characters).
-   - `OFFICE_JWT_SECRET`: 32 bytes (64 hex characters, satisfying Euro-Office JWT length requirements).
-   - `FIXTURE_USER_PASSWORD`: 12 bytes (24 hex characters).
-
-To view the generated administrative password:
-```bash
-grep '^NEXTCLOUD_ADMIN_PASSWORD=' .env
-```
-Store this value in the municipal health authority's password vault.
-
-### Step 2: Establishment Configuration (`scripts/deis.py`)
-No health establishment configuration ships pre-activated in the repository. Each health center represents a distinct organizational entity with its own DEIS code, official name, administrative dependency, health sectors, and local programs.
-
-The interactive utility `scripts/deis.py` searches the official MINSAL Department of Health Statistics and Information (DEIS) register (`sites/establecimientos-deis-*.csv`):
-
-```bash
-# 1. Search the DEIS register by keyword or comuna (accent-blind)
-python3 scripts/deis.py cesfam la florida
-
-# 2. View details for a specific DEIS code
-python3 scripts/deis.py <codigo-deis>
-
-# 3. Generate a new establishment configuration file
-python3 scripts/deis.py <codigo-deis> --new los-castanos
-```
-
-The tool writes the standalone configuration file to `sites/<slug>/site.sh` (e.g., `sites/los-castanos/site.sh`) and prompts for the establishment's territorial sectors and clinical programs.
-
-Configure the selected establishment identifier in `.env`:
-```bash
-sed -i 's/^SITE=.*/SITE=los-castanos/' .env
-```
-
-### Step 3: Installation & Convergence (`make install`)
-With `.env` populated and `SITE` declared, execute the master installation target:
-
-```bash
-make install
-```
-
-`make install` performs the full deployment lifecycle:
-1. **Container Bootstrap:** Executes `docker compose up -d --wait --wait-timeout 420` to launch all six containers (`db`, `redis`, `nextcloud`, `cron`, `eurooffice`, `tiles`).
-2. **Mount Permission Alignment:** Runs `make fix-mount-perms` inside the container to ensure `custom_apps/` and `themes/` are writable by both PHP (`uid 33 / www-data`) and the host user group (`HOST_GID`).
-3. **Wait for Platform Initialization:** Executes `scripts/wait-ready.sh`, polling Nextcloud's `status.php` until the core installation completes.
-4. **Provisioning Engine Execution:** Executes `provisioning/seed.sh`, running phases `05-security` through `60-fixtures` sequentially, streaming output to `.install.log`.
-5. **Quality Health Check:** Automatically executes `scripts/smoke.sh` to validate all 14 architectural invariants.
-6. **Divergence Check:** Runs `scripts/divergence.sh --quiet` to audit whether any legacy live resources exist outside the declaration.
-
-### Container Lifecycle Management
-Common operational lifecycle commands managed via the `Makefile`:
-
-```bash
-# Start all services and wait for healthchecks to pass
-make up
-
-# Start the stack with Xdebug enabled on port 9003 for app development
-make up-dev
-
-# Stop all containers (persistent volumes remain intact)
-make down
-
-# Temporarily stop only the Euro-Office container to free ~2.5 GB RAM during non-office tasks
-make office-down
-
-# Re-run mount permission reconciliation
-make fix-mount-perms
-```
+- **Bringing a clinic up** — the operational install is owned by [`INSTALLER.md`](../INSTALLER.md), with the Spanish clinic-IT companion [`GUIA-CLINICA.md`](../GUIA-CLINICA.md).
+- **Bringing up a development environment** — follow the [quickstart](../../README.md#quickstart) in the repository [`README.md`](../../README.md), which owns the dev lifecycle.
+- **Day-to-day container lifecycle** (start, stop, office standby, mount fixes) — `make help` is the authoritative target list.
 
 ---
 
-## 4. The 13-Phase Idempotent Provisioning Engine
+## 4. The 14-Phase Idempotent Provisioning Engine
 
 ### Provisioning Philosophy & Idempotency Guards
 The APS Conecta Gestión provisioning engine (`provisioning/seed.sh`) is the **single writer of desired state** for the entire installation (AD-2). 
 
 It is governed by foundational design rules:
-- **Idempotent by Guard (Query-Before-Set):** Every phase script checks existing state using `lib.sh` helper functions before performing mutations. If an entity exists or a parameter matches the target, the step logs a skip and exits cleanly. Running `make install` or `make seed` multiple times produces identical state with zero duplicate records.
+- **Idempotent by Guard (Query-Before-Set):** Every phase script checks existing state using `lib.sh` helper functions before performing mutations. If an entity exists or a parameter matches the target, the step logs a skip and exits cleanly. Running the installation or the seed target multiple times produces identical state with zero duplicate records.
 - **Fixed Order (05 → 60):** Phases execute in fixed two-digit numerical order based on shell glob sort. Structure (security, jobs, locale, apps, office, branding, groups, folders, ACLs) is always established before fixtures (accounts and synthetic files).
-- **Structure vs. Fixtures Boundary:** Phases `05` through `40` configure production structure. Phases `50` and `60` seed fixture accounts and synthetic test data. In hardened production environments, running `SEED_FIXTURES=0 make seed` suppresses fixture creation.
+- **Structure vs. Fixtures Boundary:** Phases `05` through `41` configure production structure. Phases `50` and `60` seed fixture accounts and synthetic test data. In hardened production environments, running `SEED_FIXTURES=0 make seed` suppresses fixture creation.
 - **Add-Only Convergence (#85):** Provisioning converges reversible configuration (app configurations, group definitions, folder mounts, and ACL grants). It **never automatically deletes user files, group folders, or user accounts**.
 
 ```
@@ -422,7 +205,7 @@ It is governed by foundational design rules:
    12-apps   ──▶  14-office  ──▶  15-branding  ──▶  16-app-policy
       │
       ▼
-  20-groups  ──▶  30-folders  ──▶  40-acl  ──▶  50-users  ──▶  60-fixtures
+  20-groups  ──▶  30-folders  ──▶  40-acl  ──▶  41-intravox  ──▶  50-users  ──▶  60-fixtures
 ```
 
 ---
@@ -595,9 +378,10 @@ It is governed by foundational design rules:
   - **`POLICY_ADMIN_ONLY`:** Restricted to administrators: `support`, `updatenotification`, `serverinfo`, `recommendations`, `related_resources`, `weather_status`.
   - **`POLICY_CONFIG`:** Disables onboarding tours: `firstrunwizard:wizard_enabled:false`, terminates telemetry: `survey_client:never_again:true`, and turns off the password breach check: `password_policy:enforceHaveIBeenPwned:0` (no password hash prefix reaches api.pwnedpasswords.com).
   - **`POLICY_DISABLED`:** Disabled outright: `survey_client`, `nextcloud_announcements`.
-  - **Geospatial Tile Binding:** Binds `territorio` to the local PMTiles basemap endpoint:
+  - **Geospatial Tile Binding:** Binds `territorio` to the suite's own same-origin route — phase 16
+    derives it from the instance's public address (`overwrite.cli.url`, the phase 14 pattern):
     ```bash
-    app_config_set territorio tile_url "${TILES_PUBLIC_URL:-http://localhost:${TILES_PORT:-8084}/chile.pmtiles}"
+    app_config_set territorio tile_url "${ocu%/}/tiles/chile.pmtiles"
     ```
 
 #### `20-groups.sh`: Role Vocabulary, Category Taxonomy & Group Registry
@@ -622,6 +406,9 @@ It is governed by foundational design rules:
   - Grants access on mount points using the allow-refinement bitmask helper `gf_grant <mount> <group> [read|write|delete|share]`.
   - Executes `gf_prune` to audit active database permissions and revoke any live grants that have been removed from `SITE_ACL`.
 
+#### `41-intravox.sh`: Welcome Screen Engine Setup
+- **Purpose:** Sets up the IntraVox engine and seeds the welcome tree; what phase 41 seeds, when, and how to edit it is [`../WELCOME-SCREEN.md`](../WELCOME-SCREEN.md)'s to tell.
+
 #### `50-users.sh`: Standing Leadership Accounts Provisioning
 - **Purpose:** Creates fixture leadership accounts representing clinical positions.
 - **Accounts Initialized:**
@@ -632,7 +419,7 @@ It is governed by foundational design rules:
   - Derived Sector Chiefs: `jefe.<sector>` for each sector defined in `SITE_TEAMS`.
   - Derived Local Chiefs: `jefe.<unit>` for any custom role marked `cat-jefaturas` in `SITE_ROLES`.
 - **Passwords:** under the Provisionador each account has its own, sealed into `credentials.txt`
-  with the planilla's; `FIXTURE_USER_PASSWORD` applies only to `make install` without it.
+  with the planilla's; `FIXTURE_USER_PASSWORD` applies only to a full installation run without it.
 
 #### `60-fixtures.sh`: Deterministic Synthetic Fixtures
 - **Purpose:** Places non-clinical sample files in fixture accounts (`Bienvenida-APS-Conecta.md`).
@@ -845,7 +632,7 @@ sequenceDiagram
 
 ### JWT Secret Configuration & Token Validation
 Security between Nextcloud and Euro-Office is governed by JSON Web Tokens (JWT).
-- The secret key is generated during `make setup` and recorded as `OFFICE_JWT_SECRET` in `.env`.
+- The secret key is generated during initial environment generation and recorded as `OFFICE_JWT_SECRET` in `.env`.
 - In `compose.yaml`, the environment variables `JWT_ENABLED=true` and `JWT_SECRET=${OFFICE_JWT_SECRET}` are passed to the `eurooffice` service.
 - In Nextcloud, Phase 14 configures the matching secret:
   ```bash
@@ -913,8 +700,8 @@ Unlike traditional tile servers (which run complex Python/Node rendering stacks 
 
 ```mermaid
 graph LR
-  Browser[Workstation Browser Map View] -->|HTTP GET Range: bytes=1024-2048| Nginx[tiles service: nginx container]
-  Nginx -->|Reads byte range| Archive[(tiles/chile.pmtiles · 1.04 GB)]
+  Browser[Workstation Browser Map View] -->|HTTP GET Range: bytes=1024-2048| AP[the suite's apache · /tiles/ · same origin]
+  AP -->|Reads byte range from the read-only bind| Archive[(/srv/aps-conecta/tiles/chile.pmtiles · 1.04 GB)]
 ```
 
 ### Archive Specifications & Chilean Geographic Bounds
@@ -924,24 +711,37 @@ The basemap archive is generated using the Protomaps build system:
 - **Territorial Scope:** Covers the entire continental territory of Chile from Arica to Magallanes, **plus insular territories** (Isla de Pascua / Rapa Nui at -109.4° and Juan Fernández at -78.8°).
 - **Zoom Levels:** Level 0 through 15 (providing high-resolution street and building block fidelity across urban and rural health jurisdictions).
 
-### Nginx Range-Request & CORS Compliance
-The `tiles` container runs an optimized Nginx instance configured in `tiles.nginx.conf`:
-- **Range Request Handling:** Evaluates `Range: bytes=X-Y` headers natively, returning HTTP 206 Partial Content.
-- **CORS Headers:** Emits `Access-Control-Allow-Origin: *` and `Access-Control-Allow-Headers: Range`, permitting client-side MapLibre GL instances inside Nextcloud to fetch tile blocks directly.
-- **Cache Controls:** Caches immutable vector blocks in client browser storage (`max-age=86400`).
+### Same-Origin Serving via the Suite's Apache
+The archive is served by the suite's own apache (Caddy) at `/tiles/`, same origin with the map page —
+no separate container, port or CORS configuration:
+- **Range Request Handling:** `file_server` evaluates `Range: bytes=X-Y` natively, returning HTTP 206
+  Partial Content with a strong `ETag` (revalidation is one cheap round trip; the route sends
+  `Cache-Control: no-cache`, so a 404 cached before the first build never outlives it).
+- **The read-only bind:** the mastercontainer is created with `APS_TILES_DIR=/srv/aps-conecta/tiles`,
+  which apache mounts read-only at `/aps-tiles`. The setting is sticky in the suite's
+  `configuration.json`; a mastercontainer created without it serves `/tiles/` as a 404 —
+  `sudo bash host/tiles.sh check` reports it, and `docs/INSTALLER.md` §9 has the one-minute remedy.
+- **Nothing depends on the archive**: before the first build `/tiles/` is a 404 and the suite is
+  fully healthy; step 4 of the install (or `sudo aps-conecta mapa`) builds it.
+- **Verify on a clinic**: `sudo bash host/tiles.sh check` — the archive, the bind, and a ranged read
+  through the suite's internal network, by domain and by IP.
 
 ### Basemap Verification & Maintenance (`scripts/refresh-basemap.sh`)
-Because road networks and urban boundaries evolve, the basemap should be updated periodically (e.g., quarterly or semi-annually).
+Because road networks and urban boundaries evolve, the basemap is refreshed monthly by the
+`aps-conecta-tiles.timer` (the 4th at 05:00 Santiago time), which runs exactly this verb:
 
-Execute the automated refresh script:
 ```bash
-bash scripts/refresh-basemap.sh
+sudo aps-conecta tiles refresh
 ```
+
+`sudo aps-conecta mapa` is the installer's verb, not the refresher's: it builds the archive only
+when it is missing and short-circuits on an existing one. A refresh ends with a serving check
+through the suite's own route whenever the suite is running.
 
 The script:
 1. Discovers the latest published planetary vector build from `build.protomaps.com`.
 2. Uses the `pmtiles` CLI utility to extract the Chilean bounding box with multi-threaded downloads.
-3. **Performs Semantic Verification:** Opens the newly downloaded archive, validates that metadata headers identify it as PMTiles v3, checks zoom levels (0–15), and tests range query extraction for a known reference tile (e.g., La Florida, Santiago: $Z=12, X=1244, Y=2452$).
+3. **Performs Semantic Verification:** Opens the newly downloaded archive, validates that metadata headers identify it as PMTiles v3, checks zoom levels (0–15), verifies the header bounds contain the three fixed in-Chile anchors (Santiago, Hanga Roa, Punta Arenas), and reads the Santiago reference tile at z12.
 4. Atomically replaces `tiles/chile.pmtiles` using `mv`. If the download or validation fails, the active basemap remains completely untouched.
 
 ---

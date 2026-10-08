@@ -37,7 +37,7 @@ El asistente está en español. Lo importante:
   deja el asistente configurado; en el asistente solo queda pulsar «Iniciar».
 - El **dominio** debe apuntar al servidor y el servidor debe poder alcanzarse a sí mismo por
   ese dominio (la prueba «hairpin»; `INSTALLER.md` §7 trae los arreglos de DNS si preflight
-  la marca en rojo).
+  la marca en rojo). Sin dominio, la dirección IP del servidor (§11).
 - **La oficina es Euro-Office**, la única de la suite: el asistente no ofrece cambiarla ni
   desactivarla. No hay tienda de aplicaciones ni contenedores comunitarios: las apps de la suite
   vienen incorporadas y el conjunto se actualiza junto, nunca por partes.
@@ -67,12 +67,18 @@ Después de la bienvenida, el navegador recorre los pasos 6 a 9 de la instalaci�
 
 1. **Elegir el centro** — región, comuna y tipo de centro filtran el registro DEIS completo (todos
    los centros de atención primaria: CESFAM, PSR, CECOSF, SAPU…); la búsqueda acepta nombre,
-   código DEIS, comuna o dirección, con o sin tildes. La ficha muestra lo que dirá el sitio, y
-   «Confirmar centro» lo fija. Se puede cambiar hasta cargar los equipos; desde ahí la instalación
-   sirve a ese establecimiento y a ningún otro.
+   código DEIS, comuna o dirección, con o sin tildes. La ficha muestra lo que dirá el sitio. Al
+   lado, el mapa abre en el punto oficial del establecimiento: confírmelo tal cual o muévalo —
+   clic o toque en el mapa, arrastre del marcador o las flechas del teclado (5 m; con Mayús,
+   25 m); «Punto oficial» lo devuelve y la lectura dice cuántos metros lo movió y hacia dónde.
+   «Confirmar centro» fija el centro y su punto (el punto queda escrito en el sitio al ejecutar;
+   Revisión lo muestra como punto oficial o corregido). Si el mapa del paso 4 no está construido,
+   la pantalla lo dice con su arreglo (`sudo aps-conecta mapa`) y el punto se confirma igual. Se
+   puede cambiar hasta cargar los equipos; desde ahí la instalación sirve a ese establecimiento y
+   a ningún otro.
 2. **Iniciar la suite** — las cinco aplicaciones APS con su versión (se activan al ejecutar), y si
    Talk y su grabación caben en este servidor, con el motivo. «Preparar el asistente» deja el
-   asistente listo con el dominio del servidor, la hora de Santiago, Euro-Office, Talk según quepa y
+   asistente listo con el dominio del servidor (o su dirección IP, §11), la hora de Santiago, Euro-Office, Talk según quepa y
    el respaldo diario a las 04:00 hora de Santiago (el asistente la muestra en UTC: 07:00 en horario
    de verano, 08:00 en invierno; tras el cambio de hora corre a las 03:00 o a las 05:00). Marque «Omitir la validación del dominio» si el servidor no tiene
    acceso desde Internet. La pantalla muestra la frase de contraseña del asistente; ábralo con
@@ -160,18 +166,18 @@ cambiaron de nombre (`aps-conecta-*`) y se reinstala (`INSTALLER.md` §12).
 
 ## 8. ¿Y el mapa?
 
-El fondo de mapa ya se sirve solo — no hay que hacer nada para tenerlo: se instaló con la
-suite, vive en el servidor y **se refresca solo cada mes** (el temporizador del día 4, que activa `sudo aps-conecta
-temporizadores`).
+El fondo de mapa ya se sirve solo — no hay que hacer nada para tenerlo: **la propia suite lo
+sirve**, en su misma dirección (`https://<su-dominio-o-ip>/tiles/chile.pmtiles`), sin contenedores,
+puertos ni proxys adicionales. Vive en el servidor y **se refresca solo cada mes** (el temporizador
+del día 4, que activa `sudo aps-conecta temporizadores`).
 
 - **Territorio** se instala con la suite, en «Revisar y ejecutar».
 - **Sus capas comunales**: `aps-conecta datos` trae y verifica los paquetes de la comuna e imprime
   cómo importarlos. Antes de la primera provisión no descarga nada.
 
-Si el mapa no carga desde otros equipos: la dirección pública del fondo debe ser **https**
-(la página del mapa es https y el navegador bloquea fondos http sin importar la
-configuración). El arreglo — el «terminador https» — está en `INSTALLER.md` §9, con las tres
-recetas (proxy, caddy, tailscale).
+Si el mapa no carga desde otros equipos: `sudo bash host/tiles.sh check` en el servidor dice qué
+cosa falta; si la suite se inició sin la carpeta del mapa, el contenedor maestro se re-crea con
+ella en un minuto — la receta, en `INSTALLER.md` §9.
 
 ## 9. La mudanza (desde la suite anterior)
 
@@ -210,3 +216,73 @@ Ocho verificaciones que no tienen automatización — cinco minutos, con ojo:
 
 Cualquier cosa rara: anótela antes de tocar nada — el registro de bugs del repositorio
 (`BUGS.md`) es donde termina viviendo.
+
+## 11. Sin dominio: la dirección IP del servidor
+
+Un establecimiento sin dominio instala por una de las direcciones IPv4 de este servidor, escrita donde
+va el dominio: el paso 7, o `SITE_DOMINIO` en el archivo del sitio de la instalación silenciosa. La
+suite responde entonces en `https://<ip>/` con un certificado firmado por la autoridad propia del
+instalador, la misma que firma su enlace (§4).
+
+- **La dirección** es una de las de este servidor (`ip -4 addr`); cualquier otra se rechaza. La
+  validación del dominio del asistente se omite: no hay DNS que validar.
+- **El certificado** se firma para la dirección antes de iniciar el asistente, en
+  `/opt/aps-conecta/certificados/suite` (de apache, solo lectura). La ejecución semanal lo vuelve a
+  firmar 30 días antes de que venza y reinicia apache. La autoridad que lo firma no se vuelve a crear:
+  si falta, la ejecución se detiene hasta restaurar `/opt/aps-conecta/certificados` desde el respaldo
+  diario (`INSTALLER.md` §11).
+- **El comando de arranque** lleva dos líneas más, `--env APS_TLS_DIR=/opt/aps-conecta/certificados/suite`
+  y `--env NEXTCLOUD_TRUSTED_CACERTS_DIR=/opt/aps-conecta/certificados/ca`; el paso 7 y la instalación
+  silenciosa firman el certificado antes de ejecutarlo. Una suite iniciada con un dominio no cambia a
+  una dirección, ni al revés: se reinstala (`INSTALLER.md` §12).
+- **Nextcloud** confía en la autoridad (fase 07); **la oficina** llega a Nextcloud dentro de la red de
+  la suite (la fase 14 escribe las dos direcciones internas). Nada que configurar.
+
+Cada equipo que abre la suite importa la autoridad una vez. El paso 7 la ofrece («Descargar el
+certificado») con su huella SHA-256, y la consola imprime ambas al terminar la instalación; en el
+servidor, la copia del propio operador:
+
+```bash
+sudo install -m 0644 -o "$USER" /opt/aps-conecta/certificados/ca/aps-conecta-ca.crt .
+```
+
+La huella se compara antes de importar — en Linux y macOS:
+
+```bash
+openssl x509 -in aps-conecta-ca.crt -noout -fingerprint -sha256
+```
+
+En Windows, los mismos dígitos hexadecimales sin los dos puntos:
+
+```
+certutil -decode aps-conecta-ca.crt aps-conecta-ca.der
+certutil -hashfile aps-conecta-ca.der SHA256
+```
+
+- **Windows** (Edge, Chrome, Firefox 120+), en una consola ejecutada como administrador:
+
+  ```
+  certutil -addstore -f Root aps-conecta-ca.crt
+  ```
+
+- **macOS** (Safari, Chrome, Firefox 120+):
+
+  ```bash
+  sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain aps-conecta-ca.crt
+  ```
+
+- **Ubuntu**: el almacén del sistema y luego el de Chrome (Chrome lee `$HOME/.pki/nssdb` cuando existe):
+
+  ```bash
+  sudo cp aps-conecta-ca.crt /usr/local/share/ca-certificates/ && sudo update-ca-certificates
+  sudo apt-get install -y libnss3-tools
+  mkdir -p $HOME/.pki/nssdb
+  [ -f $HOME/.pki/nssdb/cert9.db ] || certutil -d sql:$HOME/.pki/nssdb -N --empty-password
+  certutil -d sql:$HOME/.pki/nssdb -A -t "C,," -n aps-conecta -i aps-conecta-ca.crt
+  ```
+
+  Firefox: Ajustes → Privacidad y seguridad → Certificados → Ver certificados → Autoridades → Importar,
+  con «Confiar en esta CA para identificar sitios web».
+- **Android**: Ajustes → Seguridad → Encriptación y credenciales → Instalar un certificado → Certificado
+  de CA (los nombres varían según el fabricante; exige un bloqueo de pantalla). La app de Nextcloud
+  confía en él.

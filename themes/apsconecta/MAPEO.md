@@ -35,7 +35,8 @@ because Nextcloud derives the text colour over the backdrop and the header icon 
   `!important`. **Fraunces goes through element selectors**, because no documented variable exists
   for a display font.
 - `@font-face` with **absolute paths** `/themes/apsconecta/core/fonts/`. Outside Nextcloud they 404;
-  `sistema-diseno.html` redeclares them with relative paths.
+  `sistema-diseno.html` —el brandbook del kit de marca, que vive fuera de git— redeclares them with
+  relative paths.
 - **`.woff2` only**, no `.ttf` fallback (ADR-0001).
 - The served `.woff2` files are **not subset**; the SVG lockups **do** embed a subset. Both are
   compatible with SIL OFL-1.1 — the detail is in

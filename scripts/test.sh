@@ -71,6 +71,43 @@ check bash -c '
     echo "$sha  $t" | sha256sum --check --status || { echo "$id: bytes do not match sha256= in VENDOR" >&2; rc=1; }
   done
   exit $rc'
+# --- gate (L5 S4): the vendored map libraries are the pinned bytes ---------------------------------
+# The Centro pane's engine is three files copied byte-identical from territorio's node_modules
+# (docs/LICENSING.md §3). Vendored bytes are the one diff a reviewer reads as "just assets":
+# territorio upgrades, a re-vendor misses a file, an editor "fixes" a minified line — and the
+# installer's map changes with no gate the eye can catch. The image-digests pair-pin discipline,
+# applied to vendored files: each must exist and hash to its pin. The negative half mutates one
+# byte of a copy — a gate that cannot go red is not a gate (A-010).
+check python3 -c '
+import hashlib, os, sys, tempfile
+PINS = {
+    "themes/apsconecta/core/mapa/leaflet.js":
+        "db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a",
+    "themes/apsconecta/core/mapa/leaflet.css":
+        "a7837102824184820dfa198d1ebcd109ff6d0ff9a2672a074b9a1b4d147d04c6",
+    "themes/apsconecta/core/mapa/protomaps-leaflet.js":
+        "26af014f7b1af308ec120b791cff76657bb9c3383633b52033e6edf9e5e4cdb5",
+}
+def distinta(corpus):   # the first path whose bytes are not its pin, or None
+    for ruta, pin in corpus.items():
+        with open(ruta, "rb") as fh:
+            if hashlib.sha256(fh.read()).hexdigest() != pin:
+                return ruta
+    return None
+real = distinta(PINS)
+with tempfile.TemporaryDirectory() as tmp:
+    mutada = os.path.join(tmp, "leaflet.css")
+    with open("themes/apsconecta/core/mapa/leaflet.css", "rb") as src:
+        datos = bytearray(src.read())
+    datos[100] ^= 1
+    with open(mutada, "wb") as dst:
+        dst.write(datos)
+    drill = distinta({**PINS, mutada: PINS["themes/apsconecta/core/mapa/leaflet.css"]})
+if real is not None:
+    print("the vendored map libraries are not the pinned bytes: " + real)
+if drill != mutada:
+    print("the mutation drill passed — the gate could not see a changed byte")
+sys.exit(0 if real is None and drill == mutada else 1)'
 # docs/LICENSING.md claims a licence per app and says it was read "from each app'"'"'s appinfo/info.xml
 # inside the shipped tarball". Nothing checked that it still was. `eurooffice` is AGPL-3.0-ONLY and
 # the table said -or-later -- materially different grants -- through two documentation audits (#87,
@@ -220,6 +257,84 @@ check bash -c '
   # The positive control, last: an empty list really does mean absent, and if the guards
   # above have swallowed that too they have swallowed the answer along with the non-answers.
   ensure_aia_intermediate example.test 2>&1 | grep -q "imported ca.pem" || exit 1'
+# R22: the installer's own CA, on an install by IP. Phase 07 imports it into Nextcloud's own bundle
+# once; a domain install mounts no such file and gets no call at all; a container or a list that
+# cannot be asked is a non-answer (#143), never an absence; and a failed import fails the phase — an install by IP that
+# does not trust its own address is broken. Behavioural, through the real seam, under errexit.
+installer_ca_cases() (
+  grep -qx "ensure_installer_ca" provisioning/phases/07-certs.sh || { echo "installer CA: phase 07 does not call it" >&2; exit 1; }
+  log="$(mktemp)"; trap 'rm -f "$log"' EXIT
+  ca=/usr/local/share/ca-certificates/aps-conecta-ca.crt
+  ca_run() {  # HAS LIST IMP — a fresh bash, so errexit holds (check's `if` suppresses it in here)
+    : > "$log"
+    out="$(HAS="$1" LIST="$2" IMP="$3" LOG="$log" CA="$ca" bash -e -o pipefail -c '
+      . scripts/env.sh; . provisioning/lib.sh
+      nc_exec() {   # the probe: words on stdout; "err" is docker exec failing as for a stopped container
+        [ "$1 $2 $3 $5 $6" = "-- sh -c _ $CA" ] || return 2
+        case "$HAS" in 1) echo yes ;; 0) echo no ;; *) return 1 ;; esac
+      }
+      occ() {
+        printf "%s\n" "$*" >> "$LOG"
+        case "$1" in
+          security:certificates) [ "$LIST" != fail ] && printf "%s" "$LIST" ;;
+          security:certificates:import) return "$IMP" ;;
+        esac
+      }
+      ensure_installer_ca' 2>&1)"; rc=$?
+  }
+  imports() { grep -cx "security:certificates:import $ca" "$log"; }
+  ca_run 0 '[]' 0
+  [ "$rc" = 0 ] && [ -z "$out" ] && [ ! -s "$log" ] || { echo "installer CA: a domain install was touched: $out" >&2; exit 1; }
+  ca_run err '[]' 0
+  [ "$rc" = 0 ] && [[ "$out" == *"could not ask the container for aps-conecta-ca.crt"* ]] && [ ! -s "$log" ] \
+    || { echo "installer CA: a container that could not be asked was read as a domain install: $out" >&2; exit 1; }
+  ca_run 1 '[{"name":"aps-conecta-ca.crt"}]' 0
+  [ "$rc" = 0 ] && [[ "$out" == *"aps-conecta-ca.crt already imported"* ]] && [ "$(imports)" = 0 ] \
+    || { echo "installer CA: imported again: $out" >&2; exit 1; }
+  for list in fail '{"a":1}' '[1,2]'; do
+    ca_run 1 "$list" 0
+    [ "$rc" = 0 ] && [[ "$out" == *"could not read the certificate list"* ]] && [ "$(imports)" = 0 ] \
+      || { echo "installer CA: a non-answer ($list) was read as absent: $out" >&2; exit 1; }
+  done
+  ca_run 1 '[]' 1
+  [ "$rc" != 0 ] && [[ "$out" == *"import of aps-conecta-ca.crt FAILED"* ]] || { echo "installer CA: a failed import passed: $out" >&2; exit 1; }
+  ca_run 1 '[]' 0   # the positive control, last
+  [ "$rc" = 0 ] && [[ "$out" == *"certs: imported aps-conecta-ca.crt for this server's own address"* ]] && [ "$(imports)" = 1 ] \
+    || { echo "installer CA: an absent CA was not imported: $out" >&2; exit 1; }
+)
+check installer_ca_cases
+# R22: phase 14's install-by-IP block, extracted from the phase and run under its errexit. An
+# address in overwrite.cli.url (the entrypoint's, every boot) sends both server-to-server legs
+# inside the wizard's network; a domain or the compose stack writes nothing — a domain install keeps
+# its public legs (B-019) — and a value that cannot be read is said, never taken for a domain (B-014).
+office_by_ip_cases() {
+  local block out aio pub want
+  block="$(sed -n '/^# --- by IP (R22)/,/^# --- end by IP ---$/p' provisioning/phases/14-office.sh)"
+  [ -n "$block" ] || { echo "office by IP: block not found in 14-office.sh" >&2; return 1; }
+  while IFS='|' read -r aio pub want; do
+    out="$(AIO="$aio" PUB="$pub" bash -e -o pipefail -c '
+      aio=$AIO
+      conf_load() { :; }
+      conf_get() { [ "$PUB" != fail ] && printf "%s\n" "$PUB"; }
+      app_config_set() { printf "SET %s %s %s\n" "$@"; }
+      log() { printf "LOG %s\n" "$*"; }
+      eval "$1"' _ "$block" 2>&1)" || { echo "office by IP: the block failed for $aio|$pub: $out" >&2; return 1; }
+    case "$want" in
+      internal) [ "$out" = "SET eurooffice DocumentServerInternalUrl http://aps-conecta-eurooffice/
+SET eurooffice StorageUrl http://aps-conecta-apache.nextcloud-aio:23973/" ] ;;
+      none) [ -z "$out" ] ;;
+      said) [ "$out" = "LOG AIO: overwrite.cli.url could not be read — the office's internal URLs left as they are" ] ;;
+    esac || { echo "office by IP: $aio|$pub expected $want, got: $out" >&2; return 1; }
+  done <<'CASES'
+1|https://10.0.0.5/|internal
+1|https://192.168.1.50/|internal
+1|https://clinica.example/|none
+1|https://10.0.0.5.example/|none
+1|fail|said
+0|https://10.0.0.5/|none
+CASES
+}
+check office_by_ip_cases
 # The other half of the WRITES meta-gate, and the half it cannot express: an alternative must match
 # the WRITE line of a helper and NOT its noop line. `certs:` is the pair that proves it — the write
 # says "certs: imported X for Y", the noop says "certs: X already imported", and an unanchored
@@ -481,7 +596,7 @@ if len(rows) < 100:
 
 FIELDS = {"SITE_NOMBRE": "nombre", "SITE_DIRECCION": "direccion",
           "SITE_COMUNA": "comuna", "SITE_SERVICIO_SALUD": "servicio_salud",
-          "SITE_COMUNA_CUT": "comuna_codigo"}
+          "SITE_COMUNA_CUT": "comuna_codigo", "SITE_LON": "longitud", "SITE_LAT": "latitud"}
 
 script = ["set -u"]
 for row in rows:
@@ -514,6 +629,149 @@ if bad_cut:
     print("comuna_codigo values Comuna::of() would refuse (not 5 digits) — a phase 16 write"
           " of any of these silently disarms the import door: " + ", ".join(bad_cut[:5]))
     sys.exit(1)'
+# The register's coordinates have a WRITER (deis.py --coordenadas) that runs by hand once per
+# MINSAL release, so this is where it is proven. On a scratch register of three real rows —
+# 201079's quotes and 113314's backtick among them — it must refuse a source that misses an
+# establishment and one whose latitude or longitude is not plain degrees, leaving the file untouched;
+# then append the two columns as published (text, never re-rounded) with every original line kept
+# byte for byte; then rewrite the same bytes when run again.
+check python3 -c '
+import csv, glob, os, shutil, sys, tempfile
+sys.path.insert(0, "scripts")
+import deis
+register = sorted(glob.glob("sites/establecimientos-deis-*.csv"))[-1]
+point = {"110485": ("-33.976637", "-71.468749"), "201079": ("-51.728207", "-72.482647"),
+         "113314": ("-33.56136", "-70.67469")}
+rows = [r for r in csv.DictReader(open(register, encoding="utf-8")) if r["codigo"] in point]
+if len(rows) != 3:
+    print("the three probe rows are not in the register -- this check measured nothing"); sys.exit(1)
+def source(path, codes, bad=None):
+    feats = []
+    for c in codes:
+        lat, lon = point[c]
+        if c == "113314" and bad:
+            lat, lon = bad
+        feats.append("{\"type\":\"Feature\",\"geometry\":null,\"properties\":{\"cod_vig\":" + c
+                     + ".0,\"latitud\":" + lat + ",\"longitud\":" + lon + "}}")
+    open(path, "w", encoding="utf-8").write("{\"type\":\"FeatureCollection\",\"features\":[" + ",".join(feats) + "]}")
+def run(path):
+    try:
+        deis.coordinates_from(path)
+        return None
+    except SystemExit as e:
+        return str(e)
+tmp = tempfile.mkdtemp()
+try:
+    deis.HERE = os.path.join(tmp, "scripts"); os.makedirs(deis.HERE); os.makedirs(os.path.join(tmp, "sites"))
+    reg = os.path.join(tmp, "sites", "establecimientos-deis-2099-01-01.csv")
+    with open(reg, "w", encoding="utf-8", newline="") as fh:
+        w = csv.writer(fh); w.writerow(deis.COLUMNS); w.writerows([r[k] for k in deis.COLUMNS] for r in rows)
+    before = open(reg, "rb").read()
+    gj = os.path.join(tmp, "src.geojson")
+    source(gj, ["110485", "201079"]); short = run(gj)
+    source(gj, list(point), bad=("\"-33.5; id\"", "-70.67469")); hostile = run(gj)
+    source(gj, list(point), bad=("-33.56136", "-70.6e1")); hostile_lon = run(gj)
+    untouched = open(reg, "rb").read() == before
+    source(gj, list(point)); full = run(gj)
+    after = open(reg, "rb").read()
+    again = run(gj) is None and open(reg, "rb").read() == after
+    out = list(csv.DictReader(open(reg, encoding="utf-8")))
+finally:
+    shutil.rmtree(tmp)
+old, new = before.split(b"\r\n"), after.split(b"\r\n")
+fails = []
+if not short or "113314" not in short: fails.append("a source missing 113314 was not refused: " + repr(short))
+if not hostile or "113314" not in hostile: fails.append("a latitude that is not plain degrees was not refused: " + repr(hostile))
+if not hostile_lon or "113314" not in hostile_lon: fails.append("a longitude that is not plain degrees was not refused: " + repr(hostile_lon))
+if not untouched: fails.append("a refused run changed the register")
+if full is not None: fails.append("the full source was refused: " + full)
+if not out or tuple(out[0]) != deis.COLUMNS + deis.COORDS: fails.append("the header is not the ten columns, then latitud,longitud")
+if any((r["latitud"], r["longitud"]) != point[r["codigo"]] for r in out): fails.append("coordinates not written as published")
+if len(old) != len(new) or not all(n.startswith(o + b",") for o, n in zip(old, new) if o): fails.append("an original line changed")
+if not again: fails.append("a second run did not rewrite the same bytes")
+if fails:
+    print("\n".join(fails)); sys.exit(1)'
+# Every establishment the installer offers carries its official point, inside the box the basemap
+# covers (a21): the point is where the Centro map starts and what SITE_LON/SITE_LAT copy. The box is
+# read from scripts/refresh-basemap.sh, the file that decides what the basemap holds, so a point the
+# map could not show reds here and not at a clinic. A --snapshot that skipped --coordenadas is the
+# realistic way to get here — snapshot_from writes the ten columns only.
+check python3 -c '
+import csv, glob, re, sys
+sys.path.insert(0, "scripts")
+import deis
+register = sorted(glob.glob("sites/establecimientos-deis-*.csv"))[-1]
+rows = list(csv.DictReader(open(register, encoding="utf-8")))
+m = re.search(r"^BBOX=\"\$\{BBOX:-([-0-9.,]+)\}\"$", open("scripts/refresh-basemap.sh", encoding="utf-8").read(), re.M)
+if len(rows) < 100 or not m:
+    print("register truncated, or no BBOX default in scripts/refresh-basemap.sh -- this check measured nothing"); sys.exit(1)
+w, s, e, n = map(float, m.group(1).split(","))
+bad = [r["codigo"] for r in rows
+       if not all(deis.DEGREES.fullmatch(r.get(k) or "") for k in deis.COORDS)
+       or not (w <= float(r["longitud"]) <= e and s <= float(r["latitud"]) <= n)]
+if bad:
+    print(str(len(bad)) + " register rows without a plain-degree point inside the basemap box "
+          + m.group(1) + ": " + ", ".join(bad[:5])); sys.exit(1)'
+# A --snapshot whose points never came is the newest file, so every reader would take it and
+# block() would die on a KeyError inside the installer. load() stops instead, naming both ways
+# out, and a refused --coordenadas on it says how to step back to the register before it. On a
+# scratch tree: an older register with points, then a fresh ten-column snapshot of the same rows.
+check python3 -c '
+import csv, glob, os, shutil, sys, tempfile
+sys.path.insert(0, "scripts")
+import deis
+register = sorted(glob.glob("sites/establecimientos-deis-*.csv"))[-1]
+rows = list(csv.DictReader(open(register, encoding="utf-8")))[:3]
+if len(rows) != 3 or not all(r.get("latitud") for r in rows):
+    print("no register rows with points to build the scratch tree -- this check measured nothing"); sys.exit(1)
+def stop(fn, *a):
+    try:
+        fn(*a); return None
+    except SystemExit as e:
+        return str(e)
+tmp = tempfile.mkdtemp()
+try:
+    deis.HERE = os.path.join(tmp, "scripts"); os.makedirs(deis.HERE); os.makedirs(os.path.join(tmp, "sites"))
+    for name, cols in (("2099-01-01", deis.COLUMNS + deis.COORDS), ("2099-02-01", deis.COLUMNS)):
+        with open(os.path.join(tmp, "sites", "establecimientos-deis-" + name + ".csv"), "w", encoding="utf-8", newline="") as fh:
+            w = csv.writer(fh); w.writerow(cols); w.writerows([r[k] for k in cols] for r in rows)
+    loaded = stop(deis.load)
+    gj = os.path.join(tmp, "empty.geojson")
+    open(gj, "w", encoding="utf-8").write("{\"type\":\"FeatureCollection\",\"features\":[]}")
+    refused = stop(deis.coordinates_from, gj)
+    os.remove(os.path.join(tmp, "sites", "establecimientos-deis-2099-02-01.csv"))
+    back = deis.load()
+    os.remove(os.path.join(tmp, "sites", "establecimientos-deis-2099-01-01.csv"))
+    with open(os.path.join(tmp, "sites", "establecimientos-deis-2099-03-01.csv"), "w", encoding="utf-8", newline="") as fh:
+        w = csv.writer(fh); w.writerow(deis.COLUMNS); w.writerows([r[k] for k in deis.COLUMNS] for r in rows)
+    alone = stop(deis.load)
+finally:
+    shutil.rmtree(tmp)
+fails = []
+if not loaded or "--coordenadas" not in loaded or "fall back to establecimientos-deis-2099-01-01.csv" not in loaded:
+    fails.append("load() on a snapshot without points did not stop with both ways out: " + repr(loaded))
+if not refused or "remove establecimientos-deis-2099-02-01.csv to fall back" not in refused:
+    fails.append("a refused --coordenadas on a fresh snapshot did not say how to step back: " + repr(refused))
+if back[0] != "2099-01-01" or len(back[1]) != 3:
+    fails.append("removing the snapshot did not hand the register back: " + repr(back[0]))
+if not alone or "fall back" in alone:
+    fails.append("with no register before it, the fix hint must not offer a fallback: " + repr(alone))
+if fails:
+    print("\n".join(fails)); sys.exit(1)'
+# The provisionador self-test's fixture rows end with their official points, copied by hand from
+# the source (B-035). Tied to the register here, so a transposed digit — or a register refresh
+# that moves one of the four — reds instead of leaving the fixture quietly elsewhere.
+check python3 -c '
+import ast, csv, glob, io, re, sys
+register = sorted(glob.glob("sites/establecimientos-deis-*.csv"))[-1]
+point = {r["codigo"]: (r["latitud"], r["longitud"]) for r in csv.DictReader(open(register, encoding="utf-8"))}
+m = re.search(r"\n    fixture_rows = (\[.*?\n    \])\n", open("scripts/provisionador.py", encoding="utf-8").read(), re.S)
+fixture = [next(csv.reader(io.StringIO(s))) for s in ast.literal_eval(m.group(1))] if m else []
+if len(fixture) < 4:
+    print("no fixture_rows found in scripts/provisionador.py -- this check measured nothing"); sys.exit(1)
+bad = [f[0] + " " + repr(tuple(f[-2:])) + " vs " + repr(point.get(f[0])) for f in fixture if tuple(f[-2:]) != point.get(f[0])]
+if bad:
+    print("fixture points that are not the register s: " + "; ".join(bad)); sys.exit(1)'
 # The welcome declaration has a WRITER (deis.py) and a READER (seed.sh's guard + phase 41). This
 # proves the writer's output is what the reader expects: written to a scratch tree (write_site
 # refuses an existing sites/<name>/), sourced by a real bash, the rows read back — and `equipos`
@@ -788,6 +1046,41 @@ CASES
 }
 check estadistica_identity_cases
 
+# Territorio's tile_url — the third extracted-block test over this phase (office by IP at
+# 14-office, estadistica's establishment above, now this — Q17, org review L5-S3). Phase 16's
+# three branches carried ONE string grep of coverage (a21's `/tiles/` clause below): the
+# unreadable-ocu arm — leave-as-is, and Q9 makes it SAY the stale value it leaves — and the
+# non-AIO arm (the blank write that falls territorio back to the OSM raster) were exercised by
+# nothing anywhere. Same shape as office_by_ip: the block between the phase's own markers, run
+# under errexit with the five helpers stubbed. The exact-string arms make the LOG line's wording
+# a contract: the stale value is in the message («…»), never implied.
+territorio_tile_url_cases() {
+  local block out
+  block="$(sed -n "/^# --- territorio's tile_url (L5-S3)/,/^# --- end territorio's tile_url ---$/p" provisioning/phases/16-app-policy.sh)"
+  [ -n "$block" ] || { echo "tile_url: block not found in 16-app-policy.sh" >&2; return 1; }
+  while IFS='|' read -r aio ocu stale want; do
+    out="$(AIO="$aio" OCU="$ocu" STALE="$stale" bash -e -o pipefail -c '
+      is_aio() { [ "$AIO" = 1 ]; }
+      conf_load() { :; }
+      conf_get() { case "$1" in system) printf "%s\n" "$OCU" ;; app) printf "%s\n" "$STALE" ;; esac; }
+      app_config_set() { printf "SET %s %s %s\n" "$@"; }
+      log() { printf "LOG %s\n" "$*"; }
+      eval "$1"' _ "$block" 2>&1)" || { echo "tile_url: the block failed under errexit for aio=$aio ocu='$ocu': $out" >&2; return 1; }
+    case "$want" in
+      derived)     [ "$out" = "SET territorio tile_url https://10.0.0.5/tiles/chile.pmtiles" ] ;;
+      left)        [ "$out" = "LOG AIO: overwrite.cli.url could not be read — territorio's tile_url left as it is («https://vieja.example/tiles/chile.pmtiles»)" ] ;;
+      left-empty)  [ "$out" = "LOG AIO: overwrite.cli.url could not be read — territorio's tile_url left as it is («sin valor»)" ] ;;
+      blank)       [ "$out" = "SET territorio tile_url " ] ;;  # trailing space: the empty VALUE — the write itself is the assertion
+    esac || { echo "tile_url: aio=$aio ocu='$ocu' stale='$stale' expected $want, got: $out" >&2; return 1; }
+  done <<'CASES'
+1|https://10.0.0.5/|https://vieja.example/tiles/chile.pmtiles|derived
+1||https://vieja.example/tiles/chile.pmtiles|left
+1|||left-empty
+0|||blank
+CASES
+}
+check territorio_tile_url_cases
+
 # The café case above is behavioural, and load-bearing only under a COLLATING locale — which a
 # Chilean dev has and GitHub's runners do not, defaulting to C.UTF-8 where that range refuses `é`
 # anyway. So CI stays green on a revert, and CI is the only mechanical gate (AGENTS.md). This is
@@ -847,28 +1140,80 @@ check bash -c '
   printf "" | sites_register_only && { echo "sites gate: an empty listing went green" >&2; exit 1; }
   printf "sites/establecimientos-deis-2026-07-23.csv\n" | sites_register_only'
 
+# --- a21 (L5): the map is the suite's own route — the separate tiles server is gone -------------
+# The grep is a21's own clause, with the pattern assembled without its literals
+# ("nginx:alp""ine|TILES_""PORT|:80""84"): a21 covers scripts/ too, and a gate that spelled its
+# own banned tokens would be its own hit. tiles.nginx.conf gone, no nginx pin, port or knob left
+# anywhere the map used to need one, and phase 16 pointing at /tiles/.
+check bash -c '
+  test ! -e tiles.nginx.conf \
+    && ! git grep -qE "nginx:alp""ine|TILES_""PORT|:80""84" -- .env.example compose.yaml host scripts provisioning \
+    && grep -q "/tiles/" provisioning/phases/16-app-policy.sh'
+
+# --- gate (org review L5-S3, I7): the map-folder default — six literals that must agree ---------
+# /srv/aps-conecta is spelled in six places because each site legitimately owns its own fallback
+# SHAPE: the host CLI's TILES_ARCHIVE, the provisionador's own TILES_ARCHIVE (L5 S4 — /mapa/ and
+# /api/mapa read it), tiles.sh's standalone TILES_HOME, the testbed's
+# APS_TILES_DIR env, env.sh's dotenv fixture, and refresh-basemap's DEST (the serving directory
+# S3 gave it — a literal this pack itself introduced is exactly the drift site the gate exists to
+# pin). Single-sourcing was weighed and rejected (tiles.sh's standalone fallback survives it), so
+# the discipline is image-digests' pair-pin generalized to six: each site's default read out of
+# the file, and they must all say the same path. Shape-anchored, not line-numbered — the dd8a1db
+# hermeticity pin (host/aps-conecta's self-test literals at :1411 and the grep -qF cross-check at
+# :2342) are pins ON PURPOSE and do not match; the emitters they pin do. EXACTLY ONE match per
+# site is required: a renamed variable or a deleted fixture is the empty-glob-goes-green class,
+# red here by name. The negative half runs the same validator over fabricated corpora — one
+# drifted site, one missing site — because a gate that cannot go red is not a gate. (On a tree
+# where Slice 1's DEST has not landed, this reds by name on refresh-basemap — by design; this
+# slice commits after that one.)
+check python3 -c '
+import re, sys
+SITES = [
+    ("host/tiles.sh",              r"^TILES_HOME=\"\$\{TILES_HOME:-([^\"}\n]+)\}\"$"),
+    ("host/aps-conecta",           r"^TILES_ARCHIVE=\"\$\{TILES_HOME:-([^\"}\n]+)\}/tiles/chile\.pmtiles\"$"),
+    ("scripts/aio-testbed.sh",     r"--env \"APS_TILES_DIR=\$\(dirname \"\$\{TILES_HOME:-([^\"}\n]+)\}/tiles/chile\.pmtiles\"\)\""),
+    ("scripts/env.sh",             r"^TILES_HOME=(/[^\"=\s]+)$"),
+    ("scripts/refresh-basemap.sh", r"^DEST=\"\$\{DEST:-([^\"}\n]+)/tiles/chile\.pmtiles\}\"$"),
+    ("scripts/provisionador.py",   r"^TILES_ARCHIVE = \"([^\"}\n]+)/tiles/chile\.pmtiles\"$"),
+]
+def defaults(corpus):
+    got, errs = {}, []
+    for site, pat in SITES:
+        hits = re.findall(pat, corpus.get(site, ""), re.M)
+        if len(hits) != 1:
+            errs.append(site + ": " + str(len(hits)) + " matches for its map-folder default (need exactly 1)")
+        else:
+            got[site] = hits[0]
+    return got, errs
+def broken(got, errs):
+    return bool(errs) or len(set(got.values())) != 1
+real = {s: open(s, encoding="utf-8").read() for s, _ in SITES}
+got, errs = defaults(real)
+if broken(got, errs):
+    print("the map-folder default is not one value across the six sites that spell it:")
+    for e in errs: print("  " + e)
+    for s, v in sorted(got.items()): print("  " + s + " = " + v)
+    sys.exit(1)
+fab = {
+    "host/tiles.sh":              "TILES_HOME=\"${TILES_HOME:-/srv/prueba}\"\n",
+    "host/aps-conecta":           "TILES_ARCHIVE=\"${TILES_HOME:-/srv/prueba}/tiles/chile.pmtiles\"\n",
+    "scripts/aio-testbed.sh":     "    --env \"APS_TILES_DIR=$(dirname \"${TILES_HOME:-/srv/prueba}/tiles/chile.pmtiles\")\" \\\n",
+    "scripts/env.sh":             "TILES_HOME=/srv/prueba\n",
+    "scripts/refresh-basemap.sh": "DEST=\"${DEST:-/srv/prueba/tiles/chile.pmtiles}\"\n",
+    "scripts/provisionador.py":   "TILES_ARCHIVE = \"/srv/prueba/tiles/chile.pmtiles\"\n",
+}
+if broken(*defaults(fab)):
+    print("the fabricated agreeing corpus failed"); sys.exit(1)
+fab["scripts/env.sh"] = "TILES_HOME=/srv/otro\n"
+if not broken(*defaults(fab)):
+    print("a drifted literal passed — the disagreement the gate exists for went unseen"); sys.exit(1)
+del fab["scripts/aio-testbed.sh"]
+if not broken(*defaults(fab)):
+    print("a missing site passed — the empty-glob-goes-green class is back"); sys.exit(1)
+print("ok")'
+
 # --- the dump + uninstall detectors red-test themselves (docker daemon, no stack) -------------
 if docker info >/dev/null 2>&1; then
-  # org L5-10: tiles.nginx.conf's Range/CORS contract, asserted against the PINNED nginx
-  # itself — the weekly timer chain's serving half, nowhere in CI before. A fixture
-  # archive (any bytes; nginx ranges don't parse PMTiles) + the committed conf; a ranged
-  # GET must answer 206 with the CORS headers the map page needs cross-origin.
-  check bash -c '
-    tmp=$(mktemp -d); trap "docker rm -f tiles-contract >/dev/null 2>&1; rm -rf $tmp" EXIT
-    mkdir -p "$tmp/tiles"
-    head -c 8192 /dev/urandom > "$tmp/tiles/chile.pmtiles"
-    ref=$(grep -oE "nginx:alpine@sha256:[0-9a-f]{64}" compose.yaml | head -1)
-    [ -n "$ref" ] || { echo "no pinned nginx ref in compose.yaml"; exit 1; }
-    docker run --rm -d --name tiles-contract --publish 127.0.0.1:18084:80 \
-      --volume "$tmp/tiles:/srv/tiles:ro" --volume "$PWD/tiles.nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
-      "$ref" >/dev/null
-    for i in 1 2 3 4 5; do curl -sf -o /dev/null http://127.0.0.1:18084/healthz && break; sleep 1; done
-    hdrs=$(curl -s -D - -o /dev/null -H "Range: bytes=0-1023" -H "Origin: https://map.test" http://127.0.0.1:18084/chile.pmtiles)
-    echo "$hdrs" | grep -q "^HTTP/1.1 206" || { echo "no 206:"; echo "$hdrs"; exit 1; }
-    echo "$hdrs" | grep -qi "^access-control-allow-origin:" || { echo "no ACAO:"; echo "$hdrs"; exit 1; }
-    echo "$hdrs" | grep -qi "^content-range:" || { echo "no Content-Range:"; echo "$hdrs"; exit 1; }
-    sz=$(curl -s -H "Range: bytes=0-1023" -o /dev/null -w "%{size_download}" http://127.0.0.1:18084/chile.pmtiles)
-    [ "$sz" = "1024" ] || { echo "ranged GET delivered $sz bytes, expected 1024"; exit 1; }'
   check bash scripts/db-dump.sh --self-test
   check bash scripts/uninstall.sh --self-test
 else
@@ -958,6 +1303,31 @@ if missing("```bash\n# 3. Preflight\n```\n", ["3-preflight"]) != ["3-preflight"]
 if missing("<a id=\"3-preflight\"></a>\n## 2. Preflight\n", ["3-preflight"]): print("an explicit anchor was not read"); sys.exit(1)
 print("ok")'
 
+# --- gate: the install by IP's CA guide (R22) — one walkthrough, pointed at where it is -------------
+# The console's last lines and step 7 send staff to GUIA §11; the English twin is INSTALLER §14. The
+# pointers name the headings that hold the guide, and the two sections carry the same commands, byte
+# for byte, and as many bullets — the one walkthrough in two languages. Same validator on drifted pairs.
+check python3 -c '
+import re, sys
+def section(text, head):
+    if head not in text: return None
+    s = text[text.index(head):]
+    end = s.find("\n## ", 1)
+    return s if end < 0 else s[:end]
+def blocks(text):
+    return re.findall(r"^ *```[a-z]*\n(.*?)^ *```", text, re.M | re.S)
+def twins(en, es):
+    return (en is not None and es is not None and blocks(en) and blocks(en) == blocks(es)
+            and len(re.findall(r"^- \*\*", en, re.M)) == len(re.findall(r"^- \*\*", es, re.M)))
+en = section(open("docs/INSTALLER.md", encoding="utf-8").read(), "\n## 14. Without a domain: this server\x27s IP\n")
+es = section(open("docs/GUIA-CLINICA.md", encoding="utf-8").read(), "\n## 11. Sin dominio: la dirección IP del servidor\n")
+if not twins(en, es): print("INSTALLER §14 and GUIA §11 are missing or carry different commands"); sys.exit(1)
+if "docs/GUIA-CLINICA.md §11" not in open("host/aps-conecta", encoding="utf-8").read(): print("the console does not point at GUIA §11"); sys.exit(1)
+if "(guía, §11)" not in open("scripts/provisionador.py", encoding="utf-8").read(): print("step 7 does not point at GUIA §11"); sys.exit(1)
+if twins("## 14. x\n```\na\n```\n", "## 11. y\n```\nb\n```\n"): print("a drifted pair passed"); sys.exit(1)
+if twins("## 14. x\n- **A**\n```\na\n```\n", "## 11. y\n```\na\n```\n"): print("a pair missing a bullet passed"); sys.exit(1)
+print("ok")'
+
 # --- gate: the suite's containers are aps-conecta-* (the AIO fork's patch 240) ----------------
 # The fork renames its 19 sibling containers; the mastercontainer, the nextcloud-aio network and
 # compose project and the nextcloud_aio_* volumes keep upstream's names. A sibling spelled the old way
@@ -1009,6 +1379,26 @@ hb_out="$(bash host/aps-conecta --self-test 2>&1)" \
 tl_out="$(bash host/tiles.sh --self-test 2>&1)" \
   && echo "  ok:   tiles --self-test ($(printf '%s\n' "$tl_out" | tail -1))" \
   || { echo "  FAIL: tiles --self-test"; printf '%s\n' "$tl_out" | tail -25; fail=1; }
+# The basemap builds with nothing of the install around it — no .env, no site, no suite (R47): step 4
+# runs before anyone chooses a centre. A stub pmtiles writes a sparse 600 MB archive and reports its
+# header, a stub curl finds today's build; every check of the script runs for real, under the
+# strictest umask root may have — the archive must still be world-readable, since apache reads it as
+# uid 33. A header whose bounds miss Isla de Pascua is refused, and the served archive stays as it was.
+check bash -c '
+  repo=$PWD; tmp=$(mktemp -d); trap "rm -rf $tmp" EXIT; mkdir -p "$tmp/bin" "$tmp/srv"
+  cat > "$tmp/bin/pmtiles" <<"STUB"
+#!/usr/bin/env bash
+case "$1" in
+  extract) printf PMTiles > "$3"; truncate -s 600000000 "$3" ;;
+  show) printf "max zoom: 15\nbounds: (long: %s, lat: -56.000000) (long: -66.400000, lat: -17.500000)\n" "${WEST:--110.000000}" ;;
+  tile) head -c 2000 /dev/zero ;;
+esac
+STUB
+  printf "#!/usr/bin/env bash\nexit 0\n" > "$tmp/bin/curl"; chmod +x "$tmp/bin/pmtiles" "$tmp/bin/curl"
+  build() { (umask 077; cd "$tmp" && env -i PATH="$tmp/bin:/usr/bin:/bin" DEST="$tmp/srv/chile.pmtiles" "$@" bash "$repo/scripts/refresh-basemap.sh"); }
+  build >/dev/null 2>&1 && [ "$(stat -c %a "$tmp/srv/chile.pmtiles")" = 644 ] || exit 1
+  echo served > "$tmp/srv/chile.pmtiles"
+  ! build WEST=-80.000000 >/dev/null 2>&1 && [ "$(cat "$tmp/srv/chile.pmtiles")" = served ]'
 mg_out="$(bash scripts/migrate-to-aio.sh --self-test 2>&1)" \
   && echo "  ok:   migrate-to-aio --self-test ($(printf '%s\n' "$mg_out" | tail -1))" \
   || { echo "  FAIL: migrate-to-aio --self-test"; printf '%s\n' "$mg_out" | tail -25; fail=1; }

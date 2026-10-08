@@ -1,47 +1,4 @@
 <link rel="stylesheet" href="style.css">
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..800;1,9..144,400..800&family=Nunito+Sans:ital,opsz,wght@0,6..12,400..800;1,6..12,400..800&display=swap');
-:root {
-  --aps-primary: #7f21fe;
-  --aps-dark-violet: #5315a8;
-  --aps-ink: #101828;
-  --aps-muted: #485363;
-  --aps-border: #e4e7ec;
-  --aps-gold: #e06f00;
-  --aps-dark-gold: #9a4c00;
-  --aps-error: #ea003e;
-  --aps-error-bg: #FFE7E7;
-  --aps-card-bg: #ffffff;
-  --aps-canvas-bg: #fcfaff;
-  --aps-badge-bg: #f4ebff;
-  --aps-badge-text: #5315a8;
-}
-body, .markdown-body {
-  font-family: "Nunito Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
-  color: var(--aps-ink) !important;
-  background-color: var(--aps-canvas-bg);
-  line-height: 1.65;
-}
-h1, h2, h3, h4 { font-family: "Fraunces", Georgia, serif !important; letter-spacing: -0.015em; font-weight: 700; }
-h1 { color: var(--aps-dark-violet) !important; border-bottom: 3px solid var(--aps-primary); padding-bottom: 0.35em; }
-h2 { color: var(--aps-dark-violet) !important; border-bottom: 1px solid var(--aps-border); padding-bottom: 0.25em; margin-top: 1.6em; }
-h3 { color: var(--aps-primary) !important; }
-h4 { color: var(--aps-dark-gold) !important; }
-a { color: var(--aps-primary) !important; font-weight: 600; text-decoration: none; }
-a:hover { color: var(--aps-dark-violet) !important; text-decoration: underline; }
-table { border-collapse: collapse; width: 100%; border: 1px solid var(--aps-border); margin: 1.4em 0; border-radius: 8px; overflow: hidden; background: #ffffff; }
-th { background-color: var(--aps-dark-violet) !important; color: #ffffff !important; font-family: "Fraunces", serif !important; font-weight: 600; padding: 10px 14px; text-align: left; }
-td { padding: 9px 14px; border-bottom: 1px solid var(--aps-border); color: var(--aps-ink); }
-tr:nth-child(even) { background-color: #fbf9ff; }
-blockquote { border-left: 4px solid var(--aps-primary) !important; background-color: #f8f4ff !important; color: var(--aps-muted) !important; padding: 0.8em 1.4em; border-radius: 0 8px 8px 0; }
-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important; background-color: var(--aps-badge-bg); color: var(--aps-dark-violet); padding: 0.2em 0.45em; border-radius: 4px; border: 1px solid #d6bbfb; }
-pre { background-color: var(--aps-ink) !important; color: #f9fafb !important; border-radius: 8px; padding: 1.1em 1.3em; border: 1px solid #344054; }
-pre code { background: transparent !important; color: inherit !important; border: none !important; }
-.aps-hero { background: linear-gradient(135deg, #5315a8 0%, #7f21fe 100%); color: #ffffff; border-radius: 12px; padding: 26px 32px; margin-bottom: 24px; box-shadow: 0 4px 14px rgba(83,21,168,0.22); }
-.aps-hero h1 { color: #ffffff !important; border-bottom: 2px solid rgba(255,255,255,0.3); margin: 0 0 10px 0; padding: 0 0 8px 0; }
-.aps-tag { display: inline-block; background: #e06f00; color: #ffffff; font-size: 0.78em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; padding: 3px 10px; border-radius: 20px; margin-bottom: 12px; }
-.aps-meta { color: rgba(255,255,255,0.9); font-size: 0.95em; margin: 4px 0; }
-</style>
 
 <div class="aps-hero">
   <span class="aps-tag">Master Documentation Suite</span>
@@ -95,23 +52,12 @@ The documentation is organized into three comprehensive, self-contained manuals 
 - System architecture and multi-container topology (`compose.yaml`).
 - Sizing prerequisites: The 8 GB RAM floor (Euro-Office multi-user memory baseline).
 - Three-step installation lifecycle (`make setup`, Chilean DEIS registry lookup via `scripts/deis.py`, `make install`).
-- The **13-Phase Idempotent Provisioning Engine** (`05-security` through `60-fixtures`).
+- The **14-Phase Idempotent Provisioning Engine** (`05-security` through `60-fixtures`).
 - One-directional convergence: Add-only policy, divergence auditing (`make divergence`).
 - Role-Based Access Control (RBAC): 22 shared CESFAM roles, category groupings (`cat-*`), and `SITE_ROLES`.
 - Group Folders administration and allow-refinement ACL design (strictly no DENY rules).
 - Office Server (`eurooffice`) and Basemap (`tiles` PMTiles) administration.
 - Hardening, reverse proxy routing (Caddy / Tailscale), log management, and diagnostic runbooks.
-
-### 4. [🔍 Register of Inconsistencies, Architectural Debt & Stubs](INCONSISTENCIES_AND_DEBT.md)
-**Audience:** Architects, technical leads, security auditors, and product maintainers.  
-**Key Topics:**
-- Documentation & decision contradictions (reversed ADRs, permanent number gaps, authority drift).
-- Runtime configuration discrepancies (unauthenticated Redis, decorative 2FA, log suppression).
-- Design artifact flaws & code fence duplications (`.rpiv/artifacts/`).
-- Custom app debt & open write permissions (`territorio`, `farmacia`, `side_menu`).
-- Upstream network outages and third-party forge unavailability.
-- Comprehensive Bug Ledgers: B-001 through B-019 and FINDINGS #1–#10.
-- Regulatory cliffs: Chilean Ley 21.719, 15-year retention rules, and MINSAL EIS FHIR draft integration gaps.
 
 ---
 

@@ -66,6 +66,63 @@ image digests live there and are deliberately not copied here — one fact, one 
     to «Siguiente».
   - The wizard's refusals read in Spanish, in the console and on the page.
   - The domain the wizard took becomes the site file's `SITE_DOMINIO` and «Listo»'s access line.
+- **The DEIS register carries each establishment's official point** (L5 S1).
+  - `sites/establecimientos-deis-2026-07-23.csv` gains `latitud,longitud` for all 2,655 rows,
+    from MINSAL's Geoportal de Chile dataset of June 2026. The provenance, and the dataset's
+    unstated licence, are in `docs/LICENSING.md` §3.4.
+  - `scripts/deis.py --coordenadas <geojson>` adds them after a `--snapshot`. A source that misses
+    an establishment, or carries a value that is not plain degrees, is refused and the register
+    stays as it was.
+  - New site files carry `SITE_LON` and `SITE_LAT`.
+  - The search matches the register's own columns only, so a number in the terms never matches a
+    coordinate.
+  - `make test` holds every row to a point inside the box the basemap covers.
+  - A `--snapshot` whose points never came no longer breaks the installer with a traceback. Reading
+    it stops with the way out: add the points, or remove it to fall back to the previous register.
+- **The map is the suite's own `/tiles/` route** (L5 S3).
+  - The nginx tiles container, `tiles.nginx.conf`, `TILES_PORT` and `TILES_PUBLIC_URL` are gone.
+    The suite's apache serves `/srv/aps-conecta/tiles/chile.pmtiles` same-origin at `/tiles/`,
+    read-only, with Range, an ETag and no compression.
+  - The mastercontainer is created with `APS_TILES_DIR` in both modes, domain and IP. A suite
+    already running without it is refused with its own remedy (`docs/INSTALLER.md` §9), and a
+    map folder the start would misread is refused before anything runs.
+  - Step 4 «Construir el mapa» builds the basemap before the browser opens — no site, no typed
+    coordinates; the extract is bounded by three fixed anchors (Santiago, Hanga Roa, Punta
+    Arenas), a failure stops the install like any step, and `APS_SKIP_MAP=1` stays for CI.
+  - `scripts/refresh-basemap.sh` needs no `.env`, no site and no database.
+  - Phase 16 derives `tile_url` from `overwrite.cli.url` (the phase 14 pattern); under dev compose
+    it writes blank and territorio falls back to the OpenStreetMap raster.
+  - `aps-conecta tiles check` proves the archive, apache's `/aps-tiles` bind and a ranged read
+    through the suite's internal network — and no longer moves PMTiles bytes through the shell
+    (B-036).
+  - Smoke check 16 asserts the derived URL, the bind and a 206 with the `PMTiles` magic; Clean
+    boot proves the route on the real apache, by domain and by IP, against a deterministic
+    fixture.
+  - **Upgrading a clinic installed before this release**: step 7 reds on a mastercontainer
+    created without `APS_TILES_DIR` — the guard is new and the remedy is
+    `docs/INSTALLER.md` §9 (re-create the mastercontainer **and** `aps-conecta-apache`; a
+    changed value never re-creates apache on its own, so the old bind would survive a
+    mastercontainer-only re-create). The next `sudo aps-conecta mapa` also removes the old map
+    container (`aps-conecta-tiles`, the nginx on loopback 8084): the suite serves `/tiles/`
+    itself now.
+- **«Elegir el centro» opens on the map** (L5 S4).
+  - The screen opens on the establishment's official register point (MINSAL/DEIS, Geoportal de
+    Chile): the admin confirms it or moves it — a click or tap on the map, dragging the marker,
+    or the arrow keys at 5 m (Shift, 25 m) — with «Punto oficial» to reset and a live readout
+    («Oficial: …», «Elegido: … · N m al <rumbo>», a 3 m threshold).
+  - The chosen point rides «Confirmar centro» beside the code, held server-side, checked against
+    the archive's own bounds when it is readable (a point outside is refused naming the map), and
+    written into the site file's `SITE_LON`/`SITE_LAT` at step 8 — where it survives «Reemplazar».
+    A fixed site shows its point read-only, and the silent install's optional
+    `SITE_LON`/`SITE_LAT` are validated when present. Revisión carries the «Ubicación» row
+    (punto oficial, or corregida with the metres from the official).
+  - The basemap is the suite's own archive, drawn by vendored Leaflet 1.9.4 and
+    protomaps-leaflet 5.1.0 (byte-identical to territorio's, sha256-pinned by `make test`, served
+    from `/recursos/` — `docs/LICENSING.md` §3) through the installer's auth-gated
+    `/mapa/chile.pmtiles` route: single ranges, a strong ETag, 416 with `Content-Range:
+    bytes */N`, bounded reads only. `GET /api/mapa` answers the coverage state.
+  - A missing archive or a dead route is a note naming `sudo aps-conecta mapa` and a completable
+    screen — the official ring and the pin on the plain background, «Confirmar centro» enabled.
 - **`aps-conecta estado`** — the last execution's verdict, each item with its fix, in Spanish, with
   no sudo (`/opt/aps-conecta/estado.txt`, 0644, written by every execution — the installer's, the
   silent install's and the weekly one). When the weekly re-provision finds drift or does not finish,
@@ -143,6 +200,26 @@ image digests live there and are deliberately not copied here — one fact, one 
   `dev/lab-apps.sh` is empty again. After install the app's RemJob downloads the DEIS window
   itself, ≈ 4.9 GB of database for the default 2023–2026. `scripts/check-org-drift.sh` compares it
   with territorio and CI clones it; `docs/LICENSING.md` has its row (twelve apps).
+- **The organisation map registers the org's newest repositories** — an `IntraVox` row (the
+  default landing app; fork truth and the upstream deltas cited from that repository's ADR-0001)
+  and an `aps-common` row (the committed-subtree distribution, cited from its ADR-0001); the
+  map's verified date moves to 2026-10-04.
+- **ROADMAP §Next item 2 is now the L6 freeze contract** — what is frozen whole
+  (`docs/INSTALLER.md`, `docs/GUIA-CLINICA.md`, the AIO fork declaration, `AIO/BUGS.md`,
+  `AIO/patches/*`), what is frozen in place (the paused L5 S3 blueprint's touch sections, the
+  INSTALLER/GUIA H2 anchors the AIO patches deep-link), the unfreeze gate (a23, gestion#205) and
+  every open item the freeze holds — the deferral vehicle for the **suite-docs** rewrite and the
+  instalador laps behind it.
+- **Index rows for `docs/CONTRACTS.md`, `docs/MIGRATION.md` and `docs/WELCOME-SCREEN.md`** — the
+  cross-module surfaces and the two operating runbooks were governed documents without a row.
+- **The compliance horizon is on the roadmap** — four one-liners in [`ROADMAP.md`](ROADMAP.md)
+  § *Next*: **Ley 21.719** (binding 2026-12-01) — staff-data access, rectification and erasure
+  workflows plus the *encargado de tratamiento* template; **ficha clínica retention**
+  (Ley 20.584 / DTO 41/2012) — 15 years with authorized destruction, a legal-hold posture the
+  defaults do not provide; **MINSAL EIS FHIR drafts** — planned until the guides are normative;
+  **AGPL §13 + trademark** — in-app access to the running Corresponding Source and the trademark
+  attribution on the login and dashboard views. They arrive from the dissolved audit register
+  (see *Removed*), where dated obligations did not belong.
 
 ### Changed
 
@@ -192,14 +269,80 @@ image digests live there and are deliberately not copied here — one fact, one 
 - **The suite's containers are `aps-conecta-*`** (the AIO fork's patch 240). Every caller, the
   testbed, Clean boot and the docs follow; the wizard stays `nextcloud-aio-mastercontainer`, the
   network `nextcloud-aio` and the volumes `nextcloud_aio_*`. Clean boot runs the fork's suite
-  (`ghcr.io/aps-conecta/all-in-one:ci-20261003-1`), not upstream's. Fresh installs only: an instance from
+  (the CI suite tag `scripts/aio-testbed.sh` pins), not upstream's. Fresh installs only: an instance from
   v0.3.0 or earlier keeps its `nextcloud-aio-*` containers and is reinstalled (`docs/INSTALLER.md`
   §12). `make test` refuses a sibling spelled the old way.
+
+- **Install by IP over HTTPS** (L4 S6b, R22) — a clinic without a domain writes one of the server's
+  IPv4 addresses where the domain goes (step 7 or `SITE_DOMINIO`); another server's address is
+  refused and the wizard's domain check is skipped.
+  - `provisionador.py --paso certificado-suite --ip A` signs the suite's leaf from the installer's CA
+    into `/opt/aps-conecta/certificados/suite` (apache's, 0400) and copies the CA's certificate alone
+    to `…/ca/aps-conecta-ca.crt`. The weekly run signs it again 30 days before it expires and
+    restarts apache whenever it started before the leaf on disk. The CA is never made again under an
+    install by IP: a missing one stops the run (restore from the backup).
+  - The run command gains `APS_TLS_DIR` and `NEXTCLOUD_TRUSTED_CACERTS_DIR` by IP only; a suite
+    started for a domain is refused for an address (reinstall, `docs/INSTALLER.md` §12).
+  - Phase 07 imports the CA into Nextcloud's own bundle; phase 14 points Euro-Office's
+    server-to-server URLs inside the suite's network.
+  - Step 7 offers the CA («Descargar el certificado», `/api/ca`) with its fingerprint, and the
+    install's last lines print both. `docs/INSTALLER.md` §14 and `docs/GUIA-CLINICA.md` §11: the CA
+    on Windows, macOS, Ubuntu and Android.
+  - Clean boot gains a job that installs by the runner's own IP with the silent command alone and
+    checks the CA end to end: trusted with it, refused without it, imported by Nextcloud; a planilla
+    user logs in; push and office pass their own checks; the weekly run keeps the leaf and apache.
+- **The manuals' one-owner dedup sweep** (docs). Sections that restated another file's content now
+  point at its owner instead.
+  - `docs/manuals/ADMIN_MANUAL.md` §3 collapses to a pointer stub — the clinic install is
+    [`docs/INSTALLER.md`](docs/INSTALLER.md) and [`docs/GUIA-CLINICA.md`](docs/GUIA-CLINICA.md)'s,
+    the dev path the [README quickstart](README.md#quickstart)'s, the container lifecycle `make help`'s.
+  - `docs/manuals/USER_MANUAL.md` §9.2 keeps the platform story and defers the farmacia walkthrough
+    to farmacia's own manual; §2.6 names all five own apps; §6.1 and §7.1 point at the AIO readme's
+    patch table for the wizard's office/Talk pins.
+  - `docs/manuals/DEVELOPER_MANUAL.md` §1.3, §2.1, §5, §5.4 and §7.1 collapse to pointers at
+    [`CONTEXT.md`](CONTEXT.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) § *Runtime topology*,
+    [`docs/THEMING-MODEL.md`](docs/THEMING-MODEL.md) + [`docs/BRANDING.md`](docs/BRANDING.md),
+    ADR-0004, and ADR-0010 + [`docs/LICENSING.md`](docs/LICENSING.md).
+  - `docs/CONTRACTS.md` drops the OCS table's route column — the per-app `openapi.json` is the
+    published surface.
+  - The brand kit is named outside-git at its three pointer sites (`docs/BRANDING.md` §9,
+    `docs/THEMING-MODEL.md` layer D, `themes/apsconecta/MAPEO.md` §2); licence facts stay
+    [`docs/LICENSING.md`](docs/LICENSING.md)'s.
+- **The README `scripts/` row now lists every script** — the ten it missed each get their one phrase.
+- **The registers are current.** The organisation map no longer names the two out-of-project
+  repositories (their facts stay with their owners), the territorio reversal paragraph records
+  ADRs 0015/0016/0017 as implemented with their five code anchors, and the AIO row records the L4
+  wizard fork. The manuals tree reads **14-Phase** throughout and §4 names `41-intravox.sh`
+  (a pointer to `docs/WELCOME-SCREEN.md`); AD-6 carries the ADR-0004 forward note
+  ([ADR-0004](docs/adr/0004-branding-the-legacy-render-path.md)); the compose comments cite D7
+  and ADR-0003 where they cited the reversed AD-1; every documentation index table is the
+  four-column Document × Mode × Reader × Authority standard.
 
 ### Removed
 
 - **`scripts/final-validation.sh`** — the whole-installer harness kept a second copy of the wizard
   drive; the release rehearsal installs a fresh box the way a clinic does (`docs/INSTALLER.md` §10).
+- **Two repository rows and one correction bullet from the organisation map** — the map names
+  only what this project's documentation governs.
+- **The Epic-5 row's "both turned out unnecessary" clause** — `defaults.php` is tracked,
+  load-bearing and smoke-gated; the row's date and shipped facts stay.
+- **The manuals' inline boilerplate** — the four `<style>` blocks (USER, ADMIN, DEVELOPER, the
+  manuals README), the three Master Tables of Contents and the DEVELOPER manual's `Target File`
+  scaffold line are gone; `docs/manuals/style.css` owns the hero card verbatim (`.aps-hero`,
+  `.aps-hero h1`, `.aps-tag`, `.aps-meta` replace the dead `.aps-header-*` rules) and the USER
+  manual's `## 1.` heading no longer claims an index. ≈ −400 lines.
+- **Obsolete instalador patch — do not re-apply at resume**: L5 S3's P6 durable hunk
+  (`@@ -116,7 @@`, `docs/manuals/ADMIN_MANUAL.md` Master TOC rows) lost its target when the
+  Master TOC was deleted (previous entry) — drop that hunk when resuming S3.
+- **The audit register** — the fourth manual under `docs/manuals/`, an inventory of
+  inconsistencies, architectural debt and stubs across the suite, is gone. Each item moved to
+  its owner: the four hardening findings (Redis authentication, 2FA enrollment, audit logging,
+  `trusted_proxies`) to the org's private tracker — no hardening detail stays in a public repo;
+  seven app-debt findings to public issues in the owning repos (territorio, farmacia,
+  epidemiologia, gestion); the regulatory cliffs to `ROADMAP.md` § *Next* (the compliance
+  horizon, above); the bug ledger already lives in [`BUGS.md`](BUGS.md) and the findings ledger
+  in the org's tracker. The manual set is three again; [`docs/index.md`](docs/index.md) and the
+  manuals cover page say so.
 
 ### Fixed
 

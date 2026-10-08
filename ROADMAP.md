@@ -40,20 +40,47 @@ formatting loss that implies** (issue #45).
 ## Next
 
 **The installer run** ([#199](https://github.com/APS-Conecta/gestion/issues/199)) — an install a clinic
-can run end to end without a developer. Laps L1–L3 shipped (see *Done*); the rest, in order:
+can run end to end without a developer. Laps L1–L4 shipped (see *Done*); the rest, in order:
 
-1. **L4 AIO fork** — one patch per finding: identity, the IP path and its certificate (R22), the
-   wizard's own page in Spanish (R25, R27, R48), refusals, Talk off by default.
-2. **L5 Map** — the basemap as a registry step, the Centro picker, same-origin `/tiles/`.
-3. **L6 Docs** — `docs/INSTALLER.md` ⇄ the clinic guide, mirrored step for step.
-4. **L7 Run acceptance** — a release candidate installed on three boxes by the rehearsal harness.
+1. **L5 Map** — the basemap as a registry step, the Centro picker, same-origin `/tiles/`.
+2. **L6 Docs — frozen until the mirror lands (a23, #205).** `docs/INSTALLER.md` ⇄ the clinic
+   guide, mirrored step for step — and with them the deferred **suite-docs** rewrite: the
+   documentation wave stops at the frozen surfaces below and rides this same gate. Until it is
+   green, frozen whole: `docs/INSTALLER.md`, `docs/GUIA-CLINICA.md`, the AIO fork declaration
+   (`AIO/readme.md:1-107`), `AIO/BUGS.md`, `AIO/patches/*`; and frozen in place: the sections
+   the paused L5 S3 blueprint touches (ARCHITECTURE, ADMIN_MANUAL §2/§7, DEVELOPER_MANUAL,
+   MIGRATION, threat-model, AGENTS) and the INSTALLER/GUIA H2 anchors AIO patches 140/160/170
+   deep-link. Open items the freeze holds: L5 S3 resume (the basemap blueprint: Centro picker,
+   same-origin `/tiles/`, the mastercontainer bind guard — review item I1) · L5 S4 · the L5
+   SSOT-closure PR · the tiles NUL-check defect (→ B-036) · L6/a23 (#205) · L7/a24 (#206) ·
+   the AIO upstream doc-tail cleanup (its own patch-queue decision, behind L7) · the parked
+   app-set cleanup run (`gestion-app-set-cleanup` worktree) · the administration manual's hero
+   tag «Downstream Nextcloud 34 Fork», a false present (the server is not forked, D7) whose
+   reword rides this gate with the frozen hero markup.
+3. **L7 Run acceptance** — a release candidate installed on three boxes by the rehearsal harness.
    It carries:
    - the two-line bootstrap on a pristine Ubuntu 24.04 box (from L2);
    - the printed link opened from another LAN machine, and a real browser run ending with an empty
      divergence report (from L3);
-   - Talk and its recording measured under load (#206).
+   - Talk and its recording measured under load (#206);
+   - the install by IP on a box with no domain: the CA imported on Windows, macOS, Ubuntu and Android
+     per `docs/INSTALLER.md` §14, a login at `https://<ip>/` with no warning, and a Talk call between
+     two LAN PCs with camera and microphone (from L4).
 
 Also open: **Epic retrospectives** (optional).
+
+Also open, the compliance horizon:
+
+- **Ley 21.719** (binding 2026-12-01): workflows for staff-personal-data access, rectification
+  and erasure, and the *encargado de tratamiento* agreement template for hosts and contractors.
+- **Ficha clínica retention** (Ley 20.584 / DTO 41/2012): clinical documentation must survive
+  15 years with authorized, documented destruction — a legal-hold posture the default trash and
+  quota pruning do not provide.
+- **MINSAL EIS FHIR drafts**: the MPI, TEI and SNRE guides lack normative status and publish no
+  CapabilityStatement; integration stays planned until they firm up.
+- **AGPL §13 + trademark**: a prominent in-app way to the exact running Corresponding Source
+  (applied patches included), and the trademark attribution and disclaimer on the login and
+  dashboard views.
 
 ## Done
 
@@ -61,7 +88,7 @@ Also open: **Epic retrospectives** (optional).
 |---|---|---|
 | 2026-07-24 | v1 accepted — browser acceptance run passed | this file, § *Where we are* |
 | 2026-07-24 | **ODF editing** (#45 / B-007) — lossy, via OOXML conversion | `provisioning/phases/14-office.sh` |
-| 2026-07-27 | **Epic 5 — white-label branding.** Server theme (`server.css`, woff2 fonts, brand images), the `15-branding` phase, `side_menu`, and gates for every referenced asset + every theme SVG parsing. No `defaults.php`, no per-app icon directory — both turned out unnecessary. | [`docs/THEMING-MODEL.md`](docs/THEMING-MODEL.md), [`ADR-0001`](docs/adr/0001-server-theme-for-branding.md) |
+| 2026-07-27 | **Epic 5 — white-label branding.** Server theme (`server.css`, woff2 fonts, brand images), the `15-branding` phase, `side_menu`, and gates for every referenced asset + every theme SVG parsing. | [`docs/THEMING-MODEL.md`](docs/THEMING-MODEL.md), [`ADR-0001`](docs/adr/0001-server-theme-for-branding.md) |
 | 2026-07-27 | **ADR-0000** — `AD-1` … `AD-10` defined, so every citation resolves | [`docs/adr/0000-inherited-decisions.md`](docs/adr/0000-inherited-decisions.md) |
 | 2026-07-29 | **ADR-0002** — app edits move from `sed` to committed `*.patch` files | [`docs/adr/0002-app-patches.md`](docs/adr/0002-app-patches.md) |
 | 2026-07-29 | **Nextcloud Tables dropped from the chain** (#24) — the REM app owns its own schema, so Tables had no dependent | this file, § *Future* |
@@ -84,6 +111,7 @@ Also open: **Epic retrospectives** (optional).
 | 2026-10-01 | **Installer L1 — the Nextcloud container resolved once** (#200, closes #197, PR #207) — `nc_container`/`is_aio` in `scripts/env.sh` replace a template default, 4 restated defaults and 7 detection copies; **Clean boot green end to end on AIO** for the first time since 2026-09-21, after the run exposed and fixed B-030 (IntraVox group map order), B-031 (smoke check 15 on Nextcloud 34, now developer-only), B-032 (`seed-idempotent`'s leftover fixture account) and B-033 (the harness's tiles surface) | `scripts/env.sh` § 3, [`BUGS.md`](BUGS.md) B-029–B-033 |
 | 2026-10-02 | **Installer L2 — the silent install core** (#201, PRs #209–#216) — one step registry behind `aps-conecta` (welcome + nine numbered steps, Spanish operator text); the two-line root bootstrap (`preparar`/`descargar`); the AIO wizard drive moved into the CLI (`asistente-aio`); `install --sitio --planilla` with zero prompts, one Spanish line per phase — **Clean boot now installs through it**; staff land in their category group by role and every cargo account gets a sealed first password; `temporizadores` on Santiago time; `aps-conecta estado` and the admins' login notice on drift, proven on real systemd in CI | [`host/aps-conecta`](host/aps-conecta), [`docs/INSTALLER.md`](docs/INSTALLER.md) §2–§6, [`BUGS.md`](BUGS.md) B-034 |
 | 2026-10-03 | **Installer L3 — the web installer** (#202, PRs #220–#224) — one HTTPS LAN link with the token in its fragment, the installer exiting after a green run; the same numbered steps in the browser: «Elegir el centro» over the whole DEIS register, «Iniciar la suite» (the five apps, Talk sized to the server, the AIO wizard pre-filled with the daily backup, the containers followed by name), «Cargar equipos y personas» (a re-submit conflict, the centre's CSV template, the valid groups), «Revisar y ejecutar» in clinic terms followed by polling; Playwright walks every screen; Clean boot measures the idle suite (~1.1 GiB) | [`scripts/provisionador.py`](scripts/provisionador.py), [`docs/GUIA-CLINICA.md`](docs/GUIA-CLINICA.md) §3–§4, [`docs/INSTALLER.md`](docs/INSTALLER.md) §4 |
+| 2026-10-04 | **Installer L4 — the AIO fork** (#203; APS-Conecta/AIO #1–#7, PRs #226, #227, #229) — the wizard is «APS Conecta Gestión AIO»: brand fonts and banner, its own page in Spanish with the APS defaults and help links to the suite's docs, community containers and any office but Euro-Office refused, Talk, Whiteboard and Imaginary off; the suite's containers are `aps-conecta-*` and Clean boot runs the fork's suite tag; **install by IP over HTTPS** — the suite served with a leaf the installer's own CA signs per machine, renewed weekly, trusted by Nextcloud (phase 07) and the office (phase 14), the CA handed to staff with a Spanish guide; **Clean boot installs by the runner's own IP** and proves it end to end | [APS-Conecta/AIO](https://github.com/APS-Conecta/AIO) `patches/`, [`docs/INSTALLER.md`](docs/INSTALLER.md) §14, [`docs/GUIA-CLINICA.md`](docs/GUIA-CLINICA.md) §11 |
 
 The reasoning behind each of these lives with the thing it describes — the ADR, the phase file, or
 the stylesheet. It is not restated here; this table is an index, not a second copy.
@@ -110,6 +138,11 @@ resurface when there is a machine instead of being rediscovered on that page.
 **Nextcloud Tables is no longer in the chain** (#24, closed 2026-07-29). It was queued as the
 substrate for the REM app; that premise was wrong — a custom app owns its own schema through
 Nextcloud's mapper layer and never references Tables.
+
+**The installer CA's own lifecycle.** The CA made at the first install signs the suite's leaf by IP
+and lasts 3650 days; nothing renews it, and a missing one stops the run rather than being made again
+(staff devices trust it). Its renewal, a planned rotation with the devices re-importing, is future
+work, years out.
 
 Estadística builds REM, and this repo owns only the platform it installs onto
 ([`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) § *Extension boundary*).
