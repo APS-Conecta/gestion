@@ -321,6 +321,11 @@ image digests live there and are deliberately not copied here — one fact, one 
   `Welcome` and `Gestion-Mobile` (deleted 2026-10-03) and `server` leaves the ownership table; the `Databases`
   paragraph now says what that repository ships since its 2026-10-04 re-creation (docs CI; a
   freshness gate red by design, per its ADR-0002) instead of "no CI" and "no REM README".
+- **One place decides the Nextcloud container** (#197) — `scripts/env.sh`'s `nc_container`
+  resolves it: `NC_CONTAINER` from the environment or `.env` wins, otherwise the running AIO
+  container, else the compose one. `.env.example` no longer sets `NC_CONTAINER`; a checkout that
+  serves the compose lab beside a running AIO testbed sets it. `scripts/uninstall.sh` refuses an
+  AIO host after its self-test, so `make test` on an AIO host runs it.
 
 ### Removed
 
