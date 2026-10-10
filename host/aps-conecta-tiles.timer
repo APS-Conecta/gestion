@@ -8,11 +8,12 @@ Documentation=file:///opt/aps-conecta/gestion/docs/INSTALLER.md
 
 [Timer]
 # NOT OnCalendar=monthly: the special string normalizes to *-*-01 00:00:00 (measured with
-# systemd-analyze calendar) — the 1st at midnight, i.e. INSIDE the nightly borg window
-# (AIO's backup container), and every clinic would cluster there. The 4th at 05:00: clear
-# of the 1st's patch-day clustering, clear of the nightly window, and RandomizedDelaySec
-# spreads clinics anyway (the aps-conecta.timer's own politeness rationale, applied to a
-# heavier job).
+# systemd-analyze calendar) — the 1st at midnight, where every clinic would cluster. The 4th
+# at 05:00: clear of the 1st's patch-day clustering, and RandomizedDelaySec spreads clinics
+# anyway (the aps-conecta.timer's own politeness rationale, applied to a heavier job). It can
+# meet AIO's nightly borg backup (04:00 Santiago, 03:00 or 05:00 after a DST change —
+# INSTALLER §11), and that is harmless: the build does not need the suite, and tiles.sh's
+# read-back reports a suite the backup stopped instead of failing on it.
 OnCalendar=*-*-04 05:00:00 America/Santiago
 Persistent=true
 Unit=aps-conecta-tiles.service

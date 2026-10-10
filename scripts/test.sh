@@ -1412,9 +1412,9 @@ else
 fi
 
 # Euro-Office joined the standard gate in #81, because it joined the stack: office-smoke was
-# separate only because it needed a service that might not be running. Its rename assertions are
-# load-bearing (ADR-0002 amendment) — an `occ app:update` from the admin UI reverts our patches with
-# nothing running `make seed` — so folding them in widens their coverage rather than duplicating it.
+# separate only because it needed a service that might not be running. Its rename assertions moved
+# to build time (office-smoke.sh's header): under the suite the store is off and a published tag's
+# digests never move, so the AIO fork's scripts/bake.sh asserts the rename once per image build.
 #
 # Still guarded on the service, not assumed: this script runs in the static CI gate with no stack at
 # all, and `make office-down` is a documented way to reclaim the RAM. `make up --wait` is what makes

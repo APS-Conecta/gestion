@@ -126,7 +126,8 @@ checks that `/usr/local/bin/aps-conecta` is this bundle's: the units run it unde
 missing link would skip them without a word. Both fire on Santiago time (the zone rides
 `OnCalendar`, not the host's clock). The weekly timer re-runs the provision headlessly on Sundays at
 03:00 (idempotent; a drifted host shows as a FAILED unit in `systemctl --failed`). The tiles timer
-re-extracts the basemap monthly (the 4th at 05:00, spread off borg's nightly window).
+re-extracts the basemap monthly (the 4th at 05:00, spread over two hours; when the nightly borg
+backup has the suite stopped, the build still runs and the `/tiles/` read-back is skipped).
 
 When an execution finds drift, or does not finish, every member of the `admin` group gets a
 notification at their next login (one, replaced each week), and `aps-conecta estado` — no sudo —

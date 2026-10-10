@@ -87,6 +87,7 @@ skeleton was rejected on agnosticism grounds: it must imitate each app's layout.
 <noscript><p class="aps-mount-noscript">Esta aplicación necesita JavaScript activado.</p></noscript>
 ```
 
-Carriers today: territorio (`templates/index.php`, `templates/admin.php`), farmacia
-(`templates/index.php`), epidemiologia (`templates/index.php`). A new app opts in by pasting the
+Carriers today: territorio (`templates/index.php`, `templates/admin.php`), epidemiologia
+(`templates/index.php`) and estadistica (`templates/admin.php`). farmacia's `templates/index.php`
+keeps its own fallback line instead. A new app opts in by pasting the
 fragment into its own mount — no other wiring, no packaging, no runtime coupling.
