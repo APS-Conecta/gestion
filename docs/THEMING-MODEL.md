@@ -25,9 +25,10 @@ decision record.
 | **C — Per-app icons** | Overrides for icons that clash | `themes/apsconecta/apps/<appid>/img/` | *currently empty — see §4* |
 | **D — Brand source** | Tokens, logo artwork, the living brandbook | the brand kit (outside git; licence facts owned by `LICENSING.md`) | designers |
 
-**Layer B is the only reason the theme directory exists.** Images are registered with
-`occ theming:config` from absolute paths and would work from anywhere on disk; identity and colour
-are pure config. Only `@font-face` needs a path Nextcloud serves.
+**Two things need the theme directory.** Layer B's `@font-face` needs a path Nextcloud serves, and
+the legacy render path (below) reads the theme's `defaults.php` and `core/l10n/es.json`, which no app
+can reach. Images are registered with `occ theming:config` from absolute paths and would work from
+anywhere on disk; identity and colour are pure config.
 
 **Split rule for any new asset:** *runs on the server → `gestion/`; feeds a designer or the website
 → the brand kit.*
@@ -226,7 +227,7 @@ And from the shell:
 ```sh
 make test                              # SVGs parse, every url() in server.css resolves
 make smoke                             # /status.php 200 and free of "Nextcloud"
-make office-smoke                      # backend wired AND the Euro-Office rename still applied
+make office-smoke                      # backend wired (the rename is asserted at build time: AIO's scripts/bake.sh)
 curl -s localhost:8180/login | grep -c apple-itunes-app   # expect 0
 ```
 

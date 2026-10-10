@@ -41,7 +41,8 @@ each.
 
 The identity is protected by **trademark**, not by copyright in the code. The logo, mono
 logo, lockup and favicon are carved out under
-[`aps-conecta-web/themes/apsconecta/assets/logo/LICENSE`](https://github.com/APS-Conecta/aps-conecta-web/blob/main/themes/apsconecta/assets/logo/LICENSE):
+[`aps-conecta-web/mu-plugins/assets/brand/LICENSE`](https://github.com/APS-Conecta/aps-conecta-web/blob/main/mu-plugins/assets/brand/LICENSE)
+(path amended 2026-10-10: aps-conecta-web `7535808` moved the marks there):
 all rights reserved, marks reserved as contemplated by AGPL section 7(e), with express
 permission to use the software with the marks in place and to name the project. Colour
 tokens stay under the AGPL — colour values are functional data and copyright barely
@@ -81,7 +82,7 @@ shipping no licence file, and an ADR asserting the opposite.
 - Anything reused from these repositories in a proprietary project later requires a
   relicence — the mirror of the constraint ADR 0007 recorded.
 - The brand carve-out has to be maintained by hand. A fifth SVG added to
-  `aps-conecta-web/themes/apsconecta/assets/logo/` is covered by the AGPL until someone lists it.
+  `aps-conecta-web/mu-plugins/assets/brand/` is covered by the AGPL until someone lists it.
 - `repo-docs` enforces the posture: `licence-declaration` fails any repository whose
   `LICENSE`, `appinfo/info.xml`, `composer.json` and `package.json` disagree, and
   `licence-inventory` fails a dependency absent from the notices.

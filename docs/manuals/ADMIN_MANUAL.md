@@ -231,7 +231,7 @@ It is governed by foundational design rules:
   app_config_set core backgroundjobs_mode cron
   config_system_set maintenance_window_start 5 integer
   ```
-- **Operational Rationale:** Nextcloud defaults to `ajax` mode, which executes tasks only when a user navigates to a web page. If no user browses the server overnight, token sweeps, file scans, and database maintenance stop. Phase 06 couples with the `cron` container service, ensuring `cron.php` runs every 5 minutes. The parameter `maintenance_window_start = 5` (UTC) designates a 4-hour maintenance window opening at 01:00 CLT (Chilean Standard Time), guaranteeing heavy file scans and cache optimizations finish before staff arrive.
+- **Operational Rationale:** Nextcloud defaults to `ajax` mode, which executes tasks only when a user navigates to a web page. If no user browses the server overnight, token sweeps, file scans, and database maintenance stop. Phase 06 couples with the `cron` container service, ensuring `cron.php` runs every 5 minutes. The parameter `maintenance_window_start = 5` (UTC) designates a 4-hour maintenance window opening at 05:00 UTC (01:00 in Chilean winter time, 02:00 in summer time), meant to keep heavy file scans and cache optimizations out of clinic hours. **On AIO it does not hold yet:** the AIO Nextcloud container's entrypoint writes `maintenance_window_start = 100` (no window) on every start, and the daily backup restarts the containers, so phase 06's value lasts only from the Sunday re-provision to the next backup ([#237](https://github.com/APS-Conecta/gestion/issues/237)).
 
 #### `07-certs.sh`: TLS Certificate Authority Intermediates
 - **Purpose:** Imports missing intermediate Certificate Authority (CA) certificates for official Chilean government endpoints.

@@ -28,7 +28,7 @@ and reasons about whether running them triggers any obligation on our own code.
    later formed, or if this work is deemed commissioned by / funded for a third party (e.g. the
    health center), the holder must be revisited — **[needs legal sign-off]**.
 4. **The brand is carved out.** The logo, mono logo, lockup and favicon in the Site's repository
-   (`themes/apsconecta/assets/logo/`) are all rights reserved and the marks are
+   (`mu-plugins/assets/brand/`) are all rights reserved and the marks are
    reserved under AGPL §7(e). Colour tokens ship under the AGPL with the code.
 
 ## 2. "OSS-first" now extends to our own work
