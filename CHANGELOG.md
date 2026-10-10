@@ -321,6 +321,15 @@ image digests live there and are deliberately not copied here — one fact, one 
   `Welcome` and `Gestion-Mobile` (deleted 2026-10-03) and `server` leaves the ownership table; the `Databases`
   paragraph now says what that repository ships since its 2026-10-04 re-creation (docs CI; a
   freshness gate red by design, per its ADR-0002) instead of "no CI" and "no REM README".
+- **One place decides the Nextcloud container** (#197) — `scripts/env.sh`'s `nc_container`
+  resolves it: `NC_CONTAINER` from the environment or `.env` wins, otherwise the running AIO
+  container, else the compose one. `.env.example` no longer sets `NC_CONTAINER`; a checkout that
+  serves the compose lab beside a running AIO testbed sets it; an AIO host whose `.env` still
+  carries the compose name deletes that line. `scripts/uninstall.sh` refuses an AIO host after its
+  self-test, so `make test` on an AIO host runs it.
+- **Smoke check 15 is developer-only** (B-031) — the admin-settings probe runs in `make test`
+  (`SMOKE_ADMIN_PROBE=1`); the install health line and `aps-conecta revalidate` skip it, so they
+  never sign in as a clinic's admin.
 
 ### Removed
 
@@ -350,6 +359,11 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Fixed
 
+- **A fresh install's second seed writes nothing** (B-030) — the IntraVox group map is one
+  function, `lib.sh` `intravox_group_map`, run by phase 41 and again by phase 50 after it creates
+  the standing accounts.
+- **`seed-idempotent` leaves no `fixture.roster` account behind** (B-032) — the gate deletes it on
+  every exit and refuses a leftover from an earlier run.
 - **The daily backup runs at 04:00 Santiago time** (B-035) — the AIO mastercontainer runs in UTC,
   so the «04:00» step 7 posted ran at 00:00 or 01:00. Step 7 now posts the UTC hour that is 04:00
   in Santiago; on a host without tzdata it stops before any post and the installer's page names the
