@@ -1,0 +1,156 @@
+# The release chain (D4: instalador's tag is the only release identity — one tag, one Release,
+# one signed composite package). Tag push runs the whole proven chain in order:
+#
+#   gates   → the replay chain (workflow_call, added by Slice 3's replay.yml seam): sync, parity,
+#             replay (REPLAY_PUSH=1 regenerates aps/main — exactly what the Images pipeline
+#             builds from), validators, gates, drift report. No publish inside the call: the
+#             publish job there is dispatch-only, so this workflow calls the Images pipeline
+#             itself, behind the gates, with the tag pinned.
+#   images  → the 20-image lockstep (workflow_call): 17 retags + 3 builds + matrix + boot-smoke +
+#             manifest. Sign sits behind the WHOLE call: a reusable-workflow job is green only
+#             when every job in it is green, and the callee's manifest job already needs matrix
+#             and boot-smoke — so nothing is signed before a complete, booted, one-snapshot set
+#             exists (the boot-smoke-pins-the-sign-moment rule).
+#   package → scripts/package-release.sh: the composite assembly (instalador's tag tree +
+#             gestion's release-frozen provisioning/apps + sites register + provisioning/data +
+#             themes/apsconecta), the publish record (retag.sh manifest — same tool and digest
+#             format the Images manifest job emits, so the two are diffable), SHA256SUMS, the
+#             signify signature over it, the verify-PROOF with the committed installer.pub, and
+#             the constants-filled install asset; then gh release create with all five assets.
+#
+# SECRETS: APS_BOT_PAT (forwarded, explicitly and only, to the gates call — the callee's
+# sync/replay pushes); MINISIGN_SECRET_KEY + MINISIGN_KEY_PASSWORD (package-release.sh's sign:
+# the key lands in a 0600 trap-removed temp file, the passphrase rides stdin — the P45 rule:
+# neither ever reaches argv or a URL); plus the always-present GITHUB_TOKEN.
+#
+# ACTIONS SHA-PINNED (upstream's own convention; the mirror's lint-yaml runs zizmor over
+# .github/workflows on PRs and catches unpinned uses). Untrusted context (the tag name) reaches
+# bash only via env:, never inline in run:.
+#
+# ORDERING (the release ritual, D4/D12): gestion main is release-frozen between the merge and
+# this tag push (the bake and the composite both read it at that content). The image set
+# publishes BEFORE the package is cut, and a PUBLISHED Release's assets never move: the dispatch
+# arm below (suite-tag + force-images) exists only to repair a chain that failed BEFORE
+# `gh release create` — repairs rebuild from aps/main's CURRENT content, so the freeze window
+# governs a repair exactly like a release.
+#
+# REHEARSAL: tags v0.0.0-ci.N (VERSION set to match on a rehearsal branch) run this same chain
+# end-to-end — channel-valid, never mistaken for a release, deletable.
+#
+# Liveness rides along (by design): the gates call runs replay.yml's liveness job, which reds
+# while the Replay schedule has not been enabled and green at least once (the Slice-2 seeding
+# chore) — a red liveness on the first release is the canary working, not a release defect.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      suite-tag:
+        description: "Repair arm: the tag whose chain failed before the Release was created. Re-runs gates + images + package at that tag."
+        required: true
+        type: string
+      force-images:
+        description: "Images passthrough: re-publish over a fully-present set (a chain that died mid-publish). Never a published, announced release."
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write   # the package job creates the Release; headroom for the gates call's pushes
+
+concurrency:
+  group: release-${{ inputs.suite-tag || github.ref_name }}
+  cancel-in-progress: false   # a release walk is never cancelled mid-flight; walks for one tag serialize
+
+jobs:
+  gates:
+    name: Replay gates (regenerate and prove aps/main)
+    uses: ./.github/workflows/replay.yml
+    secrets:   # explicit, least privilege: only what the callee's replay job pushes with
+      APS_BOT_PAT: ${{ secrets.APS_BOT_PAT }}
+    permissions:
+      contents: write   # headroom parity: the callee's replay job pushes main and force-pushes aps/main (the writes ride the PAT; this only caps what the callee's GITHUB_TOKEN may do)
+      actions: read     # the callee's liveness job queries the Actions API — called jobs can only DOWNGRADE these grants, so the cap must carry every scope the callee reads
+
+  images:
+    name: Publish the 20-image lockstep set
+    needs: gates   # a red replay or a red gate can never move images
+    uses: ./.github/workflows/images.yml
+    with:
+      suite-tag: ${{ inputs.suite-tag || github.ref_name }}
+      build-ref: aps/main   # the replayed tree the gates job just regenerated
+      force: ${{ inputs.force-images || false }}
+    permissions:
+      contents: read
+      packages: write   # headroom for the Images pipeline's four pushing jobs
+
+  package:
+    name: Package, sign, prove, release
+    needs: [gates, images]   # sign only after a complete, booted, one-snapshot image set exists
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write   # gh release create
+      packages: read    # the publish record resolves every digest from the registry
+    env:
+      RELEASE_TAG: ${{ inputs.suite-tag || github.ref_name }}   # job-level: every step reads the same tag (a step env never crosses the step boundary — the gestion-era lesson)
+      MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+      MINISIGN_KEY_PASSWORD: ${{ secrets.MINISIGN_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (upstream's own pin)
+        with:
+          ref: ${{ inputs.suite-tag || github.ref_name }}   # the tag tree: install.sh, installer.pub, VERSION, scripts/
+      - name: Install the signer (the same apt package the clinic verifies with)
+        run: sudo apt-get update -qq && sudo apt-get install -y signify-openbsd
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Emit the publish record (the manifest asset)
+        env:
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
+        run: |
+          set -euo pipefail
+          # The registry is the truth and digests are immutable, so the digest half of this
+          # re-emit equals the Images manifest job's own record (same tool, same format —
+          # diffable). built_from is best-effort provenance: aps/main as resolved NOW — the
+          # gates call serialized behind the replay group, but a scheduled walk could still land
+          # between gates and this step; if it did, built_from.sha differs from the manifest
+          # job's record while every image digest stands. The digests are the record.
+          aps_sha="$(git ls-remote "$REPO_URL" refs/heads/aps/main | cut -f1)"
+          [ -n "$aps_sha" ] || { echo "FAIL: aps/main did not resolve — the gates job must have pushed it" >&2; exit 1; }
+          RETAG_BUILT_REF=aps/main RETAG_BUILT_SHA="$aps_sha" \
+            bash scripts/retag.sh manifest "$RELEASE_TAG" > "suite-$RELEASE_TAG-manifest.json"
+          cat "suite-$RELEASE_TAG-manifest.json"
+      - name: Assemble, sign, prove, fill
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          bash scripts/package-release.sh --out dist --manifest "suite-$RELEASE_TAG-manifest.json"
+      - name: Create the Release (a published Release's assets never move)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          files=("dist/apsconecta-$RELEASE_TAG.tar.gz" "dist/SHA256SUMS" "dist/SHA256SUMS.minisig" \
+                 "dist/apsconecta-$RELEASE_TAG-install.sh" "suite-$RELEASE_TAG-manifest.json")
+          if gh release create "$RELEASE_TAG" --verify-tag --generate-notes "${files[@]}"; then
+            echo "Release $RELEASE_TAG created with ${#files[@]} assets"
+            exit 0
+          fi
+          # A re-run after a partially-uploaded Release: complete the MISSING assets only —
+          # never clobber a published one (the retag immutability rule extends to the signed
+          # set). Exact-line match: SHA256SUMS is a substring of SHA256SUMS.minisig.
+          echo "release $RELEASE_TAG already exists — completing missing assets only (published assets never move)"
+          have="$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')"
+          for f in "${files[@]}"; do
+            name="$(basename "$f")"
+            if printf '%s\n' "$have" | grep -qxF "$name"; then
+              echo "  present: $name"
+            else
+              gh release upload "$RELEASE_TAG" "$f"
+            fi
+          done

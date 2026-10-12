@@ -56,6 +56,21 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
+    # The release chain's gates arm (release.yml): a plain replay run — sync, parity, replay
+    # (REPLAY_PUSH=1 regenerates aps/main, exactly what the Images pipeline builds from),
+    # validators, gates, drift report. NO inputs and NO publish: the publish job below stays
+    # dispatch-only by its event guard, so no caller can ever move images by accident — a
+    # release calls the Images pipeline itself, behind this job, with the tag pinned. The call
+    # joins this workflow's own `replay` concurrency group: a release queues behind an
+    # in-flight scheduled walk (serialize, never cancel — by design).
+    secrets:
+      # The caller's forwarded APS_BOT_PAT (release.yml's gates job): a called workflow must
+      # DECLARE every secret a caller forwards to it — undeclared, the callee's env reads
+      # empty and the replay push dies at authentication on every tag push. Declared here so
+      # the sync/replay pushes authenticate under the call exactly as they do on the schedule.
+      APS_BOT_PAT:
+        required: true
   workflow_dispatch:
     inputs:
       suite-tag:
