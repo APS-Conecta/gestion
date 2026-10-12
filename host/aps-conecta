@@ -483,8 +483,10 @@ check_hairpin() {  # the D10 leg (upstream #8433): the HOST curls its own public
 # Each body prints ✓/✗ lines through ok/bad and returns; step_run reads FAIL. Later laps
 # replace bodies (L2 S2: «preparar» and «descargar» install instead of verify; L5: «mapa» before
 # the centre; L3: «abrir» hands over a one-time link), never the list.
-MIN_RAM_GIB="${MIN_RAM_GIB:-8}"       # the approved Instalador UI's floors (stage V); only a
-MIN_DISK_GB="${MIN_DISK_GB:-40}"      # probe lowers them (Clean boot's runner has ~14 GB free)
+MIN_RAM_GIB="${MIN_RAM_GIB:-6}"                    # the red line (D8): below this, revisar reds
+RAM_GIB_RECOMENDADA="${RAM_GIB_RECOMENDADA:-8}"    # advice, never a red (the doc's posture)
+MIN_DISK_GB="${MIN_DISK_GB:-20}"                   # the images (~12 GiB) + volumes + headroom
+DISCO_GB_RECOMENDADO="${DISCO_GB_RECOMENDADO:-40}" # advice: respaldos y crecimiento
 MEMINFO="${MEMINFO:-/proc/meminfo}"   # the self-test points it at a fixture
 ETC_DIR="${ETC_DIR:-/etc}"            # the self-test points it at a scratch tree: the arms that
                                       # install never write the real /etc
@@ -496,10 +498,14 @@ check_ram() {
   local kb gib
   kb="$(awk '/^MemTotal:/ {print $2}' "$MEMINFO" 2>/dev/null)"
   gib=$(( (${kb:-0} + 524288) / 1048576 ))   # rounded: an «8 GB» server reports ~7,7 GiB
-  if [ "$gib" -ge "$MIN_RAM_GIB" ]; then
-    ok "Memoria $gib GiB (mín. $MIN_RAM_GIB)"
+  if [ "$gib" -ge "$RAM_GIB_RECOMENDADA" ]; then
+    ok "Memoria $gib GiB (mínimo $MIN_RAM_GIB, recomendado $RAM_GIB_RECOMENDADA)"
+  elif [ "$gib" -ge "$MIN_RAM_GIB" ]; then
+    ok "Memoria $gib GiB (mínimo $MIN_RAM_GIB)"
+    info "se recomiendan $RAM_GIB_RECOMENDADA GiB de memoria: la suite queda con poco margen para la oficina y las videollamadas"
   else
-    bad "Memoria $gib GiB — el mínimo es $MIN_RAM_GIB GiB" "use un servidor con al menos $MIN_RAM_GIB GiB de memoria"
+    bad "Memoria $gib GiB — el mínimo es $MIN_RAM_GIB GiB" \
+      "use un servidor con al menos $MIN_RAM_GIB GiB de memoria (se recomiendan $RAM_GIB_RECOMENDADA)"
   fi
 }
 
@@ -509,10 +515,14 @@ check_disk() {  # where the images and the volumes land: docker's root, or / bef
   local dir=/var/lib/docker gb
   [ -d "$dir" ] || dir=/
   gb="$(df -B 1000000000 --output=avail "$dir" 2>/dev/null | tail -1 | tr -dc '0-9')"
-  if [ "${gb:-0}" -ge "$MIN_DISK_GB" ]; then
-    ok "Disco $gb GB libres (mín. $MIN_DISK_GB)"
+  if [ "${gb:-0}" -ge "$DISCO_GB_RECOMENDADO" ]; then
+    ok "Disco $gb GB libres (mínimo $MIN_DISK_GB, recomendado $DISCO_GB_RECOMENDADO)"
+  elif [ "${gb:-0}" -ge "$MIN_DISK_GB" ]; then
+    ok "Disco $gb GB libres (mínimo $MIN_DISK_GB)"
+    info "se recomiendan $DISCO_GB_RECOMENDADO GB libres: las imágenes, los volúmenes y los respaldos crecen rápido"
   else
-    bad "Disco ${gb:-0} GB libres — el mínimo es $MIN_DISK_GB GB" "libere espacio en $dir o use un disco más grande"
+    bad "Disco ${gb:-0} GB libres — el mínimo es $MIN_DISK_GB GB" \
+      "libere espacio en $dir o use un disco más grande (se recomiendan $DISCO_GB_RECOMENDADO GB libres)"
   fi
 }
 
@@ -1682,7 +1692,12 @@ cmd_datos() {  # [CUT] [--importar] — S9's data-package leg: the national mast
   info "antes del primer import tome su respaldo habitual — cada import queda revertible desde el navegador del administrador (ADR-0009 de territorio)"
 }
 
-datos_auto() {  # the silent install's tail (D9, FR5): the comuna's data, cut and imported by the
+datos_auto() {  # (the locked Slice-6 shape; the guard is inserted as the function's first lines)
+  if [ "${APS_SKIP_DATOS:-0}" = 1 ]; then   # CI only: the masters stay off the runner (APS_SKIP_MAP's rule)
+    info "datos de la comuna omitidos (APS_SKIP_DATOS): los carga «sudo aps-conecta datos --importar»"
+    return 0
+  fi
+  # the silent install's tail (D9, FR5): the comuna's data, cut and imported by the
   # install itself — AFTER «ejecutar», so territorio (phase 12) exists to receive it. A red here
   # never uninstalls the suite: the subshell keeps a die inside datos, and the aggregate names
   # the one command that finishes the job (install_timers' own degrade shape)
@@ -1976,14 +1991,24 @@ EOF
   printf '#!/usr/bin/env bash\necho 4\n' > "$tshim/nproc"; chmod +x "$tshim/nproc"
   printf '#!/usr/bin/env bash\nprintf "HTTP/2 401\\r\\ndate: %%s\\r\\n\\r\\n" "$(date -u "+%%a, %%d %%b %%Y %%H:%%M:%%S GMT")"\n' > "$tshim/curl"; chmod +x "$tshim/curl"
   step_out="$(FAIL=0; step_revisar; echo "FAIL=$FAIL")"
-  check "revisar: 7.7 GiB rounds to the 8 GiB floor; CPU, 142 GB, the ports, internet and clock, x86-64 all green" \
-    'case "$step_out" in *"✓ Memoria 8 GiB (mín. 8)"*"✓ CPU 4 núcleos"*"✓ Disco 142 GB libres (mín. 40)"*"✓ Internet y hora"*"✓ x86-64"*"FAIL=0") ;; *) false;; esac'
+  check "revisar: 7,7 GiB rounds to 8 — green naming both tiers (D8); CPU, 142 GB, the ports, internet and clock, x86-64" \
+    'case "$step_out" in *"✓ Memoria 8 GiB (mínimo 6, recomendado 8)"*"✓ CPU 4 núcleos"*"✓ Disco 142 GB libres (mínimo 20, recomendado 40)"*"✓ Internet y hora"*"✓ x86-64"*"FAIL=0") ;; *) false;; esac && case "$step_out" in *"se recomiendan"*) false;; *) true;; esac'
   printf 'MemTotal:        4000000 kB\n' > "$tmp/meminfo"
   printf '#!/usr/bin/env bash\necho Avail; echo 12\n' > "$tshim/df"; chmod +x "$tshim/df"
   printf '#!/usr/bin/env bash\nprintf "HTTP/2 401\\r\\ndate: %%s\\r\\n\\r\\n" "$(date -u -d "-1 hour" "+%%a, %%d %%b %%Y %%H:%%M:%%S GMT")"\n' > "$tshim/curl"; chmod +x "$tshim/curl"
   step_out="$(FAIL=0; step_revisar; echo "FAIL=$FAIL")"
-  check "revisar: 4 GiB, 12 GB and an hour of clock skew red with their fixes" \
-    'case "$step_out" in *"✗ Memoria 4 GiB — el mínimo es 8 GiB"*"✗ Disco 12 GB libres"*"✗ la hora de este servidor difiere"*"timedatectl set-ntp true"*"FAIL=1") ;; *) false;; esac'
+  check "revisar: 4 GiB and 12 GB red at the derived minimums, the recommended tier riding the remedy (D8)" \
+    'case "$step_out" in *"✗ Memoria 4 GiB — el mínimo es 6 GiB"*"use un servidor con al menos 6 GiB de memoria (se recomiendan 8)"*"✗ Disco 12 GB libres — el mínimo es 20 GB"*"se recomiendan 40 GB libres"*"✗ la hora de este servidor difiere"*"timedatectl set-ntp true"*"FAIL=1") ;; *) false;; esac'
+
+  printf 'MemTotal:        7340032 kB\n' > "$tmp/meminfo"
+  printf '#!/usr/bin/env bash\necho Avail; echo 30\n' > "$tshim/df"; chmod +x "$tshim/df"
+  printf '#!/usr/bin/env bash\nprintf "HTTP/2 401\\r\\ndate: %%s\\r\\n\\r\\n" "$(date -u "+%%a, %%d %%b %%Y %%H:%%M:%%S GMT")"\n' > "$tshim/curl"; chmod +x "$tshim/curl"
+  step_out="$(FAIL=0; step_revisar; echo "FAIL=$FAIL")"
+  check "revisar: inside the band — green at the minimum, the recommended tier as advice, never a red (D8)" \
+    'case "$step_out" in *"✓ Memoria 7 GiB (mínimo 6)"*"· se recomiendan 8 GiB de memoria"*"✓ Disco 30 GB libres (mínimo 20)"*"· se recomiendan 40 GB libres"*"FAIL=0") ;; *) false;; esac && case "$step_out" in *"Memoria 7 GiB (mínimo 6, recomendado"*|*"Disco 30 GB libres (mínimo 20, recomendado"*) false;; *) true;; esac'
+  step_out="$(MIN_RAM_GIB=4 RAM_GIB_RECOMENDADA=6 MIN_DISK_GB=10 DISCO_GB_RECOMENDADO=12; FAIL=0; step_revisar; echo "FAIL=$FAIL")"
+  check "revisar: all four floors answer their env overrides — the probe's own posture (D8; cleanboot's MIN_DISK_GB=2 rides the same seam)" \
+    'case "$step_out" in *"✓ Memoria 7 GiB (mínimo 4, recomendado 6)"*"✓ Disco 30 GB libres (mínimo 10, recomendado 12)"*"FAIL=0") ;; *) false;; esac'
   printf '#!/usr/bin/env bash\nexit 7\n' > "$tshim/curl"; chmod +x "$tshim/curl"
   step_out="$(FAIL=0; check_network; echo "FAIL=$FAIL")"
   check "revisar: no answer from the internet reds with the network fix" \
@@ -2963,6 +2988,23 @@ SHIM
     )"; rcs=$?
     check "install --sitio: a red datos tail stays in its subshell and never uninstalls the suite — the aggregate names the one command that finishes it" \
       '[ "$rcs" -eq 1 ] && case "$cola_out" in *"✗ datos-muere"*"✗ los datos de la comuna no quedaron cargados"*"sudo aps-conecta datos --importar"*"INSTALACIÓN: la suite quedó instalada; falta lo marcado con ✗"*) ;; *) false;; esac'
+    cola_out="$(
+      step_revisar()   { ok "revisar-stub"; }
+      step_preparar()  { ok "preparar-stub"; }
+      step_descargar() { ok "descargar-stub"; }
+      step_mapa()      { ok "mapa-stub"; }
+      silent_centro()  { ok "centro-stub"; }
+      silent_suite()   { ok "suite-stub"; }
+      silent_equipos() { ok "equipos-stub"; }
+      silent_ejecutar() { ok "ejecutar-stub"; }
+      install_timers() { ok "temporizadores-stub"; }
+      cmd_datos() { echo "datos-stub:$*"; }
+      export APS_SKIP_DATOS=1
+      cmd_install --sitio "$tmp/dado.sh" --planilla "$tmp/dado.csv" </dev/null 2>&1
+    )"; rcs=$?
+    check "install --sitio: APS_SKIP_DATOS=1 leaves the comuna data off the tail — the stub never runs, the skip names the one command, the verdict still ends ✓" \
+      '[ "$rcs" -eq 0 ] && case "$cola_out" in *"datos-stub"*) false;; *) true;; esac \
+       && case "$cola_out" in *"· datos de la comuna omitidos (APS_SKIP_DATOS)"*"sudo aps-conecta datos --importar»"*"INSTALACIÓN: ✓"*) ;; *) false;; esac'
   fi
 
   # ── red (D3): the consent-gated hairpin fixer — every host-changing command answers from a

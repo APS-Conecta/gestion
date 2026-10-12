@@ -265,6 +265,25 @@ CONTENEDORES_TALK = (("aps-conecta-talk", "Talk"), ("aps-conecta-talk-recording"
 # boot prints the suite's memory; the L7 rehearsal box (12 GiB, 4 cores) confirms or moves them.
 SUITE_GIB, TALK_GIB, GRABACION_GIB, RESERVA_GIB = 6, 1, 1, 1
 SUITE_NUCLEOS, GRABACION_NUCLEOS = 2, 4
+
+# The floors the host CLI enforces at «revisar» (D8; Slice 8), read from its own constants:
+# the wizard shows them (advice); the gate stays the CLI's step. All four or nothing — a
+# partial parse is a broken parse, and {} simply shows nothing (advice, never load-bearing).
+PISOS_NOMBRES = {"MIN_RAM_GIB": "ram_min", "RAM_GIB_RECOMENDADA": "ram_recomendada",
+                 "MIN_DISK_GB": "disco_min", "DISCO_GB_RECOMENDADO": "disco_recomendado"}
+PISOS_RE = re.compile(r'^(MIN_RAM_GIB|RAM_GIB_RECOMENDADA|MIN_DISK_GB|DISCO_GB_RECOMENDADO)'
+                      r'="\$\{\1:-(\d+)\}"', re.M)
+
+
+def pisos_servidor():
+    """The two-tier floors out of the host CLI's own four constants (one source, all-or-nothing)."""
+    try:
+        with open(HOST_CLI, encoding="utf-8") as fh:
+            leido = dict(PISOS_RE.findall(fh.read()))
+    except OSError:
+        return {}
+    return {PISOS_NOMBRES[k]: int(v) for k, v in leido.items()} if len(leido) == 4 else {}
+
 PUERTO_TALK = 3478
 RESPALDO_DIR = "/srv/aps-conecta/respaldos"   # the daily backup's folder on this server (INSTALLER §11)
 DOMINIO = re.compile(r"[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?")   # the host's DOMAIN_RE
@@ -2342,8 +2361,13 @@ contenedores se reinicia una vez durante la corrección.</p>
     zona("s-apps").innerHTML = "<table><tr><th>Aplicación</th><th>Versión</th><th>Función</th></tr>" +
       s.apps.map(([n, v, q]) => "<tr><td><b>" + escapear(n) + "</b></td><td>" + escapear(v) + "</td><td>" +
         escapear(q) + "</td></tr>").join("") + "</table>";
+    const pisos = s.servidor.pisos || {};
     zona("s-talk").innerHTML = "<p>Servidor: " + coma(s.servidor.gib) + " GiB, " + s.servidor.nucleos +
-      " núcleos. Suite: ~" + s.servidor.suite_gib + " GiB.</p>" + '<ul class="lista-estado">' +
+      " núcleos. Suite: ~" + s.servidor.suite_gib + " GiB.</p>" +
+      (pisos.ram_min ? '<p class="nota">Pisos del instalador: memoria ' + pisos.ram_min +
+        " GiB (recomendado " + pisos.ram_recomendada + " GiB); disco " + pisos.disco_min +
+        " GB (recomendado " + pisos.disco_recomendado + " GB).</p>" : "") +
+      '<ul class="lista-estado">' +
       fila("Talk", s.talk, s.preparada ? s.opciones.talk : undefined) +
       fila("Grabación", s.grabacion, s.preparada ? s.opciones.grabacion : undefined) + "</ul>";
     // a suite that exists — prepared here, or already started — is followed, never prepared again
@@ -3141,7 +3165,8 @@ def estado_suite():
             pass
     s = dict(SUITE)
     ca = ca_personal()
-    return 200, {"servidor": {"gib": memoria, "nucleos": nucleos, "suite_gib": SUITE_GIB},
+    return 200, {"servidor": {"gib": memoria, "nucleos": nucleos, "suite_gib": SUITE_GIB,
+                              "pisos": pisos_servidor()},
                  "talk": {"cabe": talk[0], "texto": talk[1]},
                  "grabacion": {"cabe": grabacion[0], "texto": grabacion[1]},
                  "apps": apps_aps(), "dominio": dominio_actual(), "preparada": opciones is not None,
@@ -5567,6 +5592,11 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
             st, body = generar("ejecutar")
             if st != 200:  # B-028: abort with the seed's own output — never a bare .index() ValueError
                 return seed_died(body, "generar: ejecutar runs the whole world green — the seed died (output above)")
+            check("suite: the floors the page shows are the CLI's own four constants (D8) — one source parsed, complete or absent, and /api/suite carries the pair",
+                  pisos_servidor() == {"ram_min": 6, "ram_recomendada": 8, "disco_min": 20, "disco_recomendado": 40}
+                  and lista["servidor"]["pisos"] == pisos_servidor()
+                  and all(t in __import__("inspect").getsource(screen_contenedores)
+                          for t in ("pisos.ram_min", "Pisos del instalador")))
             check("generar: ejecutar runs the whole world green — 14 phases, 2 roster users, gate clean",
                   st == 200 and body["ok"] and body["divergencia_vacia"]
                   and "14 phase(s) run" in body["salida"] and "== roster: 2 usuario(s) ==" in body["salida"]
