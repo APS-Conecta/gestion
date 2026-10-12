@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="Marcador: equipo de terreno">
+  <!-- Placeholder tile (no people — consent-safe by construction). Replaced by real photos with documented consent. -->
+  <rect width="400" height="300" fill="var(--color-primary-element, #7f21fe)" fill-opacity="0.14"/>
+  <path d="M200 78 a48 48 0 0 1 48 48 c0 36 -48 96 -48 96 s-48 -60 -48 -96 a48 48 0 0 1 48 -48 z"
+        fill="var(--color-primary-element, #7f21fe)" fill-opacity="0.25"/>
+  <circle cx="200" cy="126" r="20" fill="var(--color-primary-element, #7f21fe)" fill-opacity="0.9"/>
+  <text x="200" y="248" text-anchor="middle" font-family="sans-serif" font-size="16" fill="var(--color-primary-element, #7f21fe)">Equipo de terreno</text>
+</svg>

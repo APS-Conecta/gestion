@@ -1,0 +1,25 @@
+{
+  "uniqueId": "page-aps-00000005-0000-4000-8000-000000000005",
+  "title": "Aviso de ejemplo",
+  "language": "es",
+  "layout": {
+    "columns": 1,
+    "rows": [
+      {
+        "columns": 1,
+        "widgets": [
+          { "type": "heading", "column": 1, "order": 1, "content": "Aviso", "level": 3 },
+          { "type": "heading", "column": 1, "order": 2, "content": "Aviso de ejemplo — cómo funciona esta área", "level": 1 },
+          { "type": "text",    "column": 1, "order": 3, "content": "Este aviso existe para demostrar la lista de avisos de la pantalla de bienvenida." }
+        ]
+      },
+      {
+        "columns": 1,
+        "widgets": [
+          { "type": "text", "column": 1, "order": 1, "content": "Los avisos avisan lo que tiene fecha: campañas, plazos, cambios de horario, actividades. Aparecen arriba en Inicio, dentro de Avisos, y en las páginas de equipo donde correspondan.\n\n**El vencimiento es manual**: cuando este aviso deje de estar vigente, un Editor lo pasa de vuelta a borrador. Ese deber es de quien publica — revísalo cada semana.\n\nPuedes borrar este aviso cuando el equipo ya no lo necesite: es contenido de ejemplo, no un documento del centro." }
+        ]
+      }
+    ],
+    "sideColumns": []
+  }
+}
