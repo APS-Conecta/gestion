@@ -3,7 +3,6 @@
 #
 #   scripts/release-manifest.sh --validate  offline form check — runs from test.sh on every PR
 #   scripts/release-manifest.sh --check      live drift report — weekly, reports, never bumps
-#   scripts/release-manifest.sh --emit       the union, as JSON, at tag time
 #   scripts/release-manifest.sh --self-test  red-test the detector shapes — runs from test.sh too
 #
 # The GitHub Release asset is the home; the tree keeps only the tag. WHY A FILE AT ALL: the
@@ -13,8 +12,12 @@
 # without archaeology.
 #
 # The same doctrine as image-digests, said once more: --validate must be true of every commit;
-# --check must NOT gate a PR (a tag moving upstream has nothing to do with the branch); --emit is
-# the tag's own act. And every category is COUNTED before it is checked — an empty glob is the
+# --check must NOT gate a PR (a tag moving upstream has nothing to do with the branch); and the
+# tag-time emit is RETIRED with gestion's release workflow (D4: instalador's tag is the only
+# release identity) — the publish record instalador attaches to its Release (scripts/retag.sh
+# manifest, same digest doctrine and format) is where suite_tag consumers read the channel from
+# now. gestion keeps exactly what this script still owns: the offline form checker and the live
+# drift report. And every category is COUNTED before it is checked — an empty glob is the
 # silent-green class, not a pass.
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -37,8 +40,8 @@ fi
 
 mode="${1:-}"
 case "$mode" in
-  --validate|--check|--emit) ;;
-  *) echo "usage: $0 --validate|--check|--emit" >&2; exit 2 ;;
+  --validate|--check) ;;
+  *) echo "usage: $0 --validate|--check" >&2; exit 2 ;;
 esac
 
 # --- the union sources, each counted before checked ---------------------------------------
@@ -93,62 +96,3 @@ if [ "$mode" = "--check" ]; then
   echo "masters: pinned as recorded — an upstream master that moved is the re-record edit, not this check"
   exit 0
 fi
-
-# --- --emit: the union, JSON, on stdout ------------------------------------------------------
-# The 19 sibling images + the mastercontainer under the suite tag: the sibling list is a tracked
-# copy of the AIO repo's php/containers.json image names (19 entries, measured; NOTE the database
-# container's image is aio-postgresql, not aio-database — container and image names differ there),
-# edited per release when AIO adds a sibling; the count guard catches a stale list. Digest
-# resolution follows image-digests.sh's own doctrine — THE INDEX DIGEST, not a per-platform
-# manifest (AIO publishes amd64+arm64; `docker manifest inspect`'s ["config"]["digest"] is the
-# config blob AND a KeyError on manifest lists) — so it is `docker buildx imagetools inspect
-# --format {{.Manifest.Digest}}`, the same tool and format the pins themselves use. Timeout on
-# every call (B-015); unreachable is a distinct FATAL from moved (the tag must exist at emit time).
-tag="${RELEASE_TAG:?set RELEASE_TAG to the suite tag being released}"
-python3 - "$tag" <<'PY'
-import glob, os, csv, json, subprocess, sys
-
-tag = sys.argv[1]
-siblings = [l.strip() for l in open("provisioning/data/aio-siblings.txt", encoding="utf-8") if l.strip()]
-assert len(siblings) == 19, f"{len(siblings)} siblings listed — expected 19 (re-copy php/containers.json)"
-
-def digest(name):
-    ref = f"ghcr.io/aps-conecta/{name}:{tag}"
-    out = subprocess.run(["docker", "buildx", "imagetools", "inspect", "--format", "{{.Manifest.Digest}}", ref],
-                        capture_output=True, text=True, timeout=60)
-    if out.returncode == 0 and out.stdout.strip():
-        return out.stdout.strip()
-    raise SystemExit(f"FATAL: {ref} unreachable (not 'moved' — the tag must exist at emit time; the\nFRD's retag job publishes the suite tags first): {out.stderr.strip()}")
-
-manifest = {
-    "release": tag,
-    "generated_by": "scripts/release-manifest.sh",
-    "apps": {},
-}
-for v in sorted(glob.glob("provisioning/apps/*/VENDOR")):
-    app = v.split("/")[-2]
-    fields = {}
-    for l in open(v, encoding="utf-8"):
-        l = l.rstrip("\n")
-        if l.startswith("#") or "=" not in l:
-            continue
-        k, val = l.split("=", 1)
-        fields[k.strip()] = val.strip()
-    manifest["apps"][app] = {k: fields[k] for k in ("version", "sha256", "url") if k in fields}
-register = sorted(glob.glob("sites/establecimientos-deis-*.csv"))[-1]
-manifest["register"] = {
-    "file": os.path.basename(register),
-    "rows": sum(1 for _ in csv.DictReader(open(register, encoding="utf-8"))),
-}
-manifest["images"] = {
-    "suite_tag": tag,
-    "mastercontainer": digest("all-in-one"),
-    "siblings": {s: digest(s) for s in siblings},
-}
-data = json.load(open("provisioning/data/packages.json", encoding="utf-8"))
-manifest["data_masters"] = {m["id"]: m["sha256"] for m in data["masters"]}
-manifest["host_bundle"] = {"sha256": None, "note": "uploaded as an anonymous Release asset; the sha256 is recorded on the Release page by the bundle builder (FRD scope)"}
-manifest["aio_own_apps"] = {"territorio": None, "note": "until the FRD's S12 wires the AIO-side own-app channel"}
-json.dump(manifest, sys.stdout, indent=2, sort_keys=True)
-print()
-PY
