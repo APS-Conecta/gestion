@@ -1,0 +1,398 @@
+#!/usr/bin/env python3
+"""Find an establishment in the DEIS register and write its site file (sites/<slug>/site.sh).
+
+  scripts/deis.py                     interactive: search, then pick a number from the list
+  scripts/deis.py cesfam <comuna>     filter: every term must appear in the row (accent-blind)
+  scripts/deis.py <codigo>            exact code: print that establishment's identity block
+  scripts/deis.py <codigo> --new <slug>  write sites/<slug>/site.sh, asking what the register cannot
+                                      know: which sectors and programs it has
+  scripts/deis.py --snapshot <dir>    regenerate the register from a clone of the DEIS pipeline
+  scripts/deis.py --coordenadas <geojson>  add each establishment's official point to the register
+
+No establishment ships with this repository; running this is how an install gets one, and the file it
+writes is gitignored because its content depends on which establishment you chose.
+
+The register is the newest sites/establecimientos-deis-*.csv: public primary-care establishments in
+operation, trimmed to the ten columns an install needs, then each establishment's official point
+(latitud, longitud) from MINSAL's Geoportal de Chile dataset (docs/LICENSING.md §3.4). It carries
+the whole APS network — CESFAM, PSR, CECOSF, CGR, CGU, COSAM, SAPU, SAR, SUR — and the filter is a
+plain term match, so `cesfam` above is a search word and not a required type: `deis.py sapu
+<comuna>` works the same way. The date in the filename IS the register's provenance — never edit
+the file by hand: regenerate it with --snapshot, then add the points with --coordenadas.
+
+Python, not bash: the CSV quotes fields that contain commas ("Calle Diego Portales, La Junta"), and
+awk -F, gets those wrong. python3 is already assumed by provisioning/lib.sh; jq is not.
+"""
+import csv
+import glob
+import json
+import os
+import re
+import shlex
+import sys
+import unicodedata
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+# The type sigla plus the long DEIS phrase it stands for — used to suggest a short display name.
+SIGLA = {
+    "CESFAM": "Centro de Salud Familiar",
+    "CECOSF": "Centro Comunitario de Salud Familiar",
+    "PSR": "Posta de Salud Rural",
+    "CGR": "Consultorio General Rural",
+    "CGU": "Consultorio General Urbano",
+}
+# The register's own ten columns, in file order: the header --snapshot writes, and the only fields
+# the search folds — the coordinates after them are numbers, and `cesfam 33` is not a latitude.
+COLUMNS = ("codigo", "tipo", "nombre", "direccion", "comuna_codigo", "comuna",
+           "region_codigo", "region", "servicio_salud", "dependencia")
+# Appended by --coordenadas: the establishment's official point, CRS84 decimal degrees as MINSAL
+# publishes them (docs/LICENSING.md §3.4). Sourced unquoted by bash once in a site file, so a value
+# is a sign, digits and a dot or it is refused.
+COORDS = ("latitud", "longitud")
+DEGREES = re.compile(r"-?[0-9]{1,3}(\.[0-9]+)?")
+
+
+def fold(s):  # accent- and case-blind, so "julio cesar" finds "Julio César"
+    return "".join(c for c in unicodedata.normalize("NFD", s.lower()) if not unicodedata.combining(c))
+
+
+def register_files():
+    return sorted(glob.glob(os.path.join(HERE, "..", "sites", "establecimientos-deis-*.csv")))
+
+
+def register_path():
+    files = register_files()
+    if not files:
+        sys.exit("FATAL: no sites/establecimientos-deis-*.csv found")
+    return files[-1]
+
+
+def fallback(path):
+    """The way back from a --snapshot whose points never came: it is the newest file, so every
+    reader takes it until --coordenadas succeeds — removing it hands the register back to the one
+    before. Empty when there is none to fall back to."""
+    older = [f for f in register_files() if f < path]
+    return f"remove {os.path.basename(path)} to fall back to {os.path.basename(older[-1])}" if older else ""
+
+
+def load():
+    path = register_path()
+    snapshot = os.path.basename(path)[len("establecimientos-deis-"):-len(".csv")]
+    with open(path, encoding="utf-8") as fh:
+        reader = csv.DictReader(fh)
+        if not set(COORDS) <= set(reader.fieldnames or ()):
+            back = fallback(path)
+            sys.exit(f"FATAL: {os.path.basename(path)} has no latitud/longitud — add them with "
+                     "scripts/deis.py --coordenadas <geojson>" + (f", or {back}" if back else ""))
+        return snapshot, list(reader)
+
+
+def snapshot_from(root):
+    """Trim the DEIS pipeline's export down to the register this repo ships.
+
+    KEPT: establishments in operation whose type comes from the primary-care codebook (CESFAM, PSR,
+    CECOSF, CGR, CGU), plus COSAM, plus the primary-care urgency network (SAPU, SAR, SUR) — those
+    are APS devices, usually dependent on a CESFAM. Dropped: the private sector, and hospitals with
+    them, so hospital urgency (UEH) never appears — it is an attribute of the hospital, not a row of
+    its own. Also dropped: the single SAMU row, a regional dispatch centre, not an establishment.
+
+    The date comes from the pipeline's own data/raw/<date>/ capture, not from today's clock: the
+    filename must name when MINSAL published, not when we happened to run this."""
+    src = os.path.join(root, "exports", "salud_establecimiento.csv")
+    if not os.path.isfile(src):
+        sys.exit(f"FATAL: {src} not found — pass the root of an establecimientos-salud clone")
+    captures = sorted(glob.glob(os.path.join(root, "data", "raw", "20*")))
+    if not captures:
+        sys.exit(f"FATAL: no data/raw/<date>/ under {root} — run `make fetch` there first")
+    date = os.path.basename(captures[-1])
+
+    out = os.path.join(HERE, "..", "sites", f"establecimientos-deis-{date}.csv")
+    n = 0
+    with open(src, encoding="utf-8") as fh, open(out, "w", newline="", encoding="utf-8") as dst:
+        w = csv.writer(dst)
+        w.writerow(COLUMNS)
+        for r in csv.DictReader(fh):
+            tipo = r["tipo_estab_norma_codigo"] or r["tipo_estab_inferido_codigo"]
+            glosa = r["tipo_estab_norma_glosa"] or r["tipo_estab_inferido_glosa"]
+            origen = r["tipo_establecimiento_glosa_origen"]
+            if r["esta_vigente"] != "true":
+                continue
+            urgencia = glosa == "Establecimientos Públicos de la Red de Urgencia"
+            if r["tipo_estab_norma_campo"] != "TipoEstabPubAtenPrimCodigo" \
+                    and "COSAM" not in glosa and not urgencia:
+                continue
+            if urgencia:
+                # The norm gives the whole urgency network one code, and that code (3) collides with
+                # "Centros de Salud Privados" in the private codebook. The sigla the DEIS writes in
+                # its own glosa — "… de Urgencia (SAPU)" — is the only thing that tells them apart.
+                sigla = origen[origen.rfind("(") + 1:origen.rfind(")")] if "(" in origen else ""
+                if sigla == "SAMU":
+                    continue
+                tipo = sigla
+            calle = " ".join(x for x in (r["tipo_via_glosa"], r["nombre_via"], r["numero"]) if x)
+            w.writerow([r["establecimiento_codigo"], tipo, r["establecimiento_glosa"], calle.strip(),
+                        r["comuna_codigo"], r["comuna_glosa_origen"], r["region_codigo"],
+                        r["region_glosa_origen"], r["entidad_admin_glosa_origen"],
+                        r["dependencia_administrativa"]])
+            n += 1
+    print(f"wrote {os.path.relpath(out, os.path.join(HERE, '..'))} — {n} establishments")
+    print("delete the older establecimientos-deis-*.csv once the new one is verified")
+    print("then add the coordinates: scripts/deis.py --coordenadas <geojson> (docs/LICENSING.md §3.4)")
+
+
+def coordinates_from(geojson):
+    """Add each establishment's official point to the newest register, in place.
+
+    The source is MINSAL's «Establecimientos de salud de Chile» on the Geoportal de Chile
+    (docs/LICENSING.md §3.4): one Point per establishment in operation, keyed by its DEIS code in
+    `cod_vig`. The values are the feature's `latitud`/`longitud` properties as published, read as
+    text — the geometry repeats them with float noise past the ninth decimal on some rows. Every
+    register row must find a plain-degree point, or the run fails and the file stays as it was.
+    Re-running with the same source rewrites the same bytes."""
+    try:
+        with open(geojson, encoding="utf-8") as fh:
+            features = json.load(fh, parse_float=str)["features"]
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        sys.exit(f"FATAL: {geojson} is not the geoportal GeoJSON ({e})")
+    points = {}
+    for f in features:
+        try:
+            p = f.get("properties") or {}
+            points[str(int(float(p["cod_vig"])))] = (str(p.get("latitud")), str(p.get("longitud")))
+        except (AttributeError, KeyError, TypeError, ValueError):
+            continue
+    path = register_path()
+    with open(path, encoding="utf-8", newline="") as fh:
+        reader = csv.DictReader(fh)
+        rows = list(reader)
+    # A refused run on a fresh --snapshot leaves it newest and pointless: say how to step back.
+    back = "" if set(COORDS) <= set(reader.fieldnames or ()) else fallback(path)
+    unchanged = " — the register is unchanged" + (f"; until it has its points, {back}" if back else "")
+    missing = [r["codigo"] for r in rows if r["codigo"] not in points]
+    if missing:
+        sys.exit(f"FATAL: {len(missing)} register codes have no point in {geojson}: "
+                 f"{', '.join(missing[:5])}{unchanged}")
+    bad = [f"{r['codigo']} {points[r['codigo']]}" for r in rows
+           if not all(DEGREES.fullmatch(v) for v in points[r["codigo"]])]
+    if bad:
+        sys.exit(f"FATAL: values in {geojson} that are not plain degrees: {'; '.join(bad[:5])}{unchanged}")
+    for r in rows:
+        r["latitud"], r["longitud"] = points[r["codigo"]]
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=COLUMNS + COORDS)
+            w.writeheader()
+            w.writerows(rows)
+        os.chmod(tmp, os.stat(path).st_mode & 0o7777)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+    print(f"wrote {os.path.relpath(path, os.path.join(HERE, '..'))} — {len(rows)} establishments, each with its point")
+
+
+def block(row, snapshot):
+    short = row["nombre"]
+    long_form = SIGLA.get(row["tipo"])
+    if long_form and fold(short).startswith(fold(long_form)):
+        short = f'{row["tipo"]} {short[len(long_form):].strip()}'
+    # Quoted because seed.sh SOURCES this: a `"` or a backtick in a register value is
+    # shell syntax, not data. Six values in the register are: DEIS 113314's backtick is a
+    # syntax error, DEIS 201079's quotes parse clean and leave SITE_NOMBRE EMPTY.
+    # Not codigo/tipo — digits and a nine-word enum, so quoting them is a zero-delta edit.
+    # SITE_COMUNA_CUT rides unquoted beside them for the same reason: comuna codes are five
+    # zero-padded digits, and territorio's Comuna::of() accepts exactly that shape — it is
+    # the value the import door (refuseAnotherComuna) compares a file's comuna claim against.
+    # SITE_LON/SITE_LAT go through q() like the names: shlex.quote leaves plain degrees bare
+    # (SITE_LON=-70.57798, the shape scripts/test.sh holds every register row to) and quotes
+    # anything else, so a hand-edited register cannot put shell syntax in a sourced file.
+    q = shlex.quote
+    return f"""# --- Identity — DEIS {row['codigo']}, snapshot {snapshot} (scripts/deis.py {row['codigo']}) ---
+SITE_DEIS={row['codigo']}
+SITE_TIPO={row['tipo']}
+SITE_NOMBRE={q(row['nombre'])}
+SITE_NOMBRE_CORTO={q(short)}
+SITE_DIRECCION={q(row['direccion'])}
+SITE_COMUNA={q(row['comuna'])}
+SITE_COMUNA_CUT={row['comuna_codigo']}
+SITE_LON={q(row['longitud'])}
+SITE_LAT={q(row['latitud'])}
+SITE_SERVICIO_SALUD={q(row['servicio_salud'])}
+"""
+
+
+def matches(rows, terms):
+    return [r for r in rows if all(t in fold(",".join(r[k] for k in COLUMNS)) for t in terms)]
+
+
+def ask(question, word, gid_prefix):
+    """What neither the register nor the type can tell us: how many sectors and programs there are
+    and what they are called. Sectors are numbered here, coloured there, named after a neighbourhood
+    somewhere else — so ask. Returns (gid, display, bare) per line, empty line to finish.
+
+    "Norte", "Sector Norte" and "SECTOR norte" all land on the same three strings, so it
+    does not matter whether the operator repeats the word."""
+    print(f"\n{question} (one per line, blank line to finish)")
+    out = []
+    while True:
+        try:
+            name = input(f"  {len(out) + 1}: ").strip()
+        except EOFError:  # answers piped in and exhausted — a traceback would bury the real cause
+            sys.exit(f"\nFATAL: input ended while asking: {question}")
+        if not name:
+            return out
+        bare = name[len(word):].strip() if fold(name).startswith(word) else name
+        out.append((gid_prefix + "-".join(fold(bare).split()), f"{word.capitalize()} {bare}", bare))
+
+
+def write_site(row, snapshot, name, sectors, programs, path=None, domain=""):
+    """Write a COMPLETE, standalone site file. Nothing is inherited at seed time: after this, the
+    file is the whole truth for that clinic and is edited by hand — adding a Unidad or a grant is
+    adding a line. Adding a folder later also means adding its ACL rows; nothing generates them.
+    `path` writes the same file elsewhere: the web installer's «Reemplazar» builds a fresh copy and
+    takes its team blocks from it."""
+    if domain and not re.fullmatch(r"[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?", domain):
+        sys.exit(f"FATAL: {domain!r} is not a domain — SITE_DOMINIO is sourced by bash")
+    path = path or os.path.join(HERE, "..", "sites", name, "site.sh")
+    if os.path.exists(path):
+        sys.exit(f"FATAL: {os.path.relpath(path)} already exists — edit it, or remove the directory")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+
+    # The units are the one part taken on faith: most primary-care establishments have these, so
+    # they are not worth a prompt. Which ones the tree really carries, and which role manages each,
+    # is settled with the clinic — by editing the file this writes.
+    q = shlex.quote
+    units = [("SOME", "role-administrativo-some"), ("Farmacia", "role-quimico-farmaceutico role-tens-farmacia"),
+                ("Dental", "role-dentista role-tons"), ("OIRS", "role-oirs"),
+                ("Estadística-REM", "role-estadistica-rem"), ("Dirección", "")]
+    teams = [q(f"{gid}|{display}") for gid, display, _ in programs + sectors]
+    folders = ["Transversal"] + [f"Programas/{bare}" for _, _, bare in programs]
+    folders += [f"Unidades/{u}" for u, _ in units] + [f"Sectores/{d}" for _, d, _ in sectors]
+
+    # Two levels, and the empty string is the point: phase 40 passes the third field UNQUOTED to
+    # gf_grant, so "" reaches it as no permission words at all — a bare grant, which is READ (#116).
+    # Every clinic written before 2026-08-01 got P on every row; that was the temporary widening for
+    # the tree reorganisation and it is over.
+    P, R = "read write delete", ""
+    acl = [f"Transversal|all-staff|{R}",          # staff read the shared area...
+           f"Transversal|cat-jefaturas|{P}"]      # ...Jefaturas curate it
+    for gid, _, bare in programs:
+        acl += [f"Programas/{bare}|{gid}|{P}", f"Programas/{bare}|cat-jefaturas|{P}"]
+    for unit, roles in units:
+        # A Jefatura READS a unit that has an owning role and MANAGES one that does not. Keyed on
+        # `roles` rather than on the name "Dirección", so a clinic that adds an unowned unit gets the
+        # right answer without editing this, and one that gives Dirección an owner does too.
+        acl += [f"Unidades/{unit}|{r}|{P}" for r in roles.split()]
+        acl += [f"Unidades/{unit}|cat-jefaturas|{R if roles.split() else P}"]
+    for gid, display, _ in sectors:
+        acl += [f"Sectores/{display}|{gid}|{P}", f"Sectores/{display}|cat-jefaturas|{P}"]
+
+    nl = "\n  "
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(f"""# {row['nombre']} — everything about this establishment that the provisioning phases read.
+# Written by scripts/deis.py; edited by hand from here on. Sourced once by seed.sh, before the
+# phase loop, so every phase sees it and none of it can leak back out.
+# NOT TRACKED: this file is yours, gitignored like .env, and survives a git pull untouched.
+
+{block(row, snapshot)}
+# The suite's address: the domain the wizard took at «Iniciar la suite». Empty = local dev.
+SITE_DOMINIO="{domain}"
+
+# Staff roster, kept OUTSIDE the repo. Path on the install host. Nothing reads it yet — the reader
+# waits on password delivery (#106).
+SITE_ROSTER=""
+
+# --- Teams: programs and territorial sectors (id|display) ---
+SITE_TEAMS=(
+  {nl.join(teams)}
+)
+
+# --- Welcome screen: the page tree phase 41 seeds and converges, one row per section (section|flag) ---
+# A section is a folder of the library under provisioning/intravox/es/sections/. The flag is the
+# protection attribute (review L0-04): `wall` = fixed structure staff cannot delete or move; empty =
+# editable. The seed stamps a wall section's structure `protected` and the engine refuses to delete
+# or move it (docs/WELCOME-SCREEN.md «Walls»). `equipos` is deliberately absent — declare it
+# ('equipos|wall') and phase 41 renders the hub plus one page per SITE_TEAMS entry. Adding a row
+# later and re-seeding ADDS that section and touches nothing else (ADR-0019).
+SITE_WELCOME=(
+  'noticias|wall'
+  'vida-cesfam|'
+  'documentos|wall'
+)
+
+# --- Roles this establishment adds beyond the 22 in the shared registry (id|display|category) (#103) ---
+# Empty is the right default: those 22 are a CESFAM's standard positions and cover an establishment
+# with no local unit of its own. Add one here if this one runs a SAR, SAPU or SUR, e.g.
+#   "role-jefe-sar|Jefe/a de SAR|cat-jefaturas"    <- gets a standing account, like the other jefaturas
+#   "role-tens-sar|TENS – SAR|cat-tecnicos"        <- a job title; the people arrive with the roster
+# The category is which cat-* an account holding the role must also join, and it is what carries the
+# access. Only the four shared categories are accepted; phase 20 fails loudly on anything else.
+SITE_ROLES=()
+
+# --- Group folders. They cannot nest; the slashes only give the tree look. ---
+SITE_FOLDERS=(
+  {nl.join(q(f) for f in folders)}
+)
+
+SITE_SUBFOLDERS=( "Protocolos" "Flujogramas" "Documentación" "Registro de redes" "Actas de reuniones" )
+
+# --- Access matrix: mount|group|perms. Three fields ALWAYS; an empty third = read-only. ---
+# Staff READ Transversal and the Jefaturas curate it; a Jefatura READS a Unidad that has an owning
+# role and manages one that does not. Anything granted on these folders and not listed here is
+# revoked (gf_prune).
+SITE_ACL=(
+  {nl.join(q(a) for a in acl)}
+)
+""")
+    print(f"wrote {os.path.relpath(path, os.path.join(HERE, '..'))} — "
+          f"{len(folders)} folders, {len(teams)} teams, {len(acl)} grants")
+
+
+def main(argv):
+    if argv and argv[0] == "--snapshot":
+        if len(argv) != 2:
+            sys.exit(__doc__)
+        return snapshot_from(argv[1])
+    if argv and argv[0] == "--coordenadas":
+        if len(argv) != 2:
+            sys.exit(__doc__)
+        return coordinates_from(argv[1])
+
+    snapshot, rows = load()
+
+    if argv and argv[0].isdigit():
+        hit = [r for r in rows if r["codigo"] == argv[0]]
+        if not hit:
+            sys.exit(f"FATAL: no establishment with DEIS code {argv[0]} in the {snapshot} snapshot")
+        if len(argv) == 3 and argv[1] == "--new":
+            write_site(hit[0], snapshot, argv[2],
+                       ask("Territorial sectors?", "sector", "sector-"),
+                       ask("Programs?", "programa", "prog-"))
+        elif len(argv) == 1:
+            print(block(hit[0], snapshot))
+        else:
+            sys.exit(__doc__)
+        return
+
+    terms = [fold(t) for t in argv]
+    if not terms:
+        terms = [fold(t) for t in input("Search (type, comuna, name — space separated): ").split()]
+    found = matches(rows, terms)
+    if not found:
+        sys.exit("No matches. Try fewer terms.")
+    for i, r in enumerate(found[:40], 1):
+        print(f'{i:3}. {r["codigo"]}  {r["tipo"]:<7} {r["nombre"][:48]:<48} {r["comuna"]}, {r["region"]}')
+    if len(found) > 40:
+        print(f"... and {len(found) - 40} more — narrow the search.")
+        return
+    if argv:  # non-interactive: the list is the answer
+        return
+    pick = input("\nNumber (Enter to quit): ").strip()
+    if pick.isdigit() and 1 <= int(pick) <= len(found):
+        print()
+        print(block(found[int(pick) - 1], snapshot))
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
