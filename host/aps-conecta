@@ -546,7 +546,10 @@ install_packages() {  # the tools the install itself runs; apt installs only wha
     command -v "$t" >/dev/null 2>&1 || { missing+=("$t"); pkgs+=("$t"); }
   done
   command -v ogr2ogr >/dev/null 2>&1 || { missing+=(ogr2ogr); pkgs+=(gdal-bin); }
-  if [ ${#missing[@]} -eq 0 ]; then ok "git, python3, curl y ogr2ogr presentes"; return 0; fi
+  # the signed channel's verifier (D5): check_paquete proves the kept package's signature
+  # with it — a fresh host got the sha anchor from the installer itself
+  command -v signify >/dev/null 2>&1 || { missing+=(signify); pkgs+=(signify-openbsd); }
+  if [ ${#missing[@]} -eq 0 ]; then ok "git, python3, curl, ogr2ogr y signify presentes"; return 0; fi
   if ! command -v apt-get >/dev/null 2>&1; then
     bad "faltan ${missing[*]} y este sistema no usa apt" "instale ${pkgs[*]} y vuelva a ejecutar el paso"
     return 0
@@ -892,6 +895,7 @@ step_descargar() {  # the bundle at its tag. On its own (the two-line bootstrap)
     ok "Sumas de verificación correctas (aplicaciones: $n)"
     link_command
   fi
+  check_paquete "$v"   # the kept package: the signed channel re-verified offline (D5/D7)
   return 0
 }
 
@@ -1689,6 +1693,67 @@ datos_auto() {  # the silent install's tail (D9, FR5): the comuna's data, cut an
     "cárguelos después: sudo aps-conecta datos --importar (el detalle quedó arriba y en el registro)"
 }
 
+check_paquete() {  # [TAG] — the kept package at $APS_HOME/paquete (D11: install.sh leaves it
+  # there), re-verified offline: the signify signature over SHA256SUMS against the committed
+  # installer.pub, the real sha256sum -c over the tarball, the tag the SUMS line names, and
+  # the suite's own VERSION. Measure-only — preflight's family (nothing installs here).
+  # The honest skips: no readable tag, no kept package (the rehearsal git channel, or the
+  # disk was freed), or no signify yet (the installer's own embedded sha already anchored
+  # the bytes at download; «preparar» installs signify-openbsd and the signature verifies
+  # from the next run). A package that IS there and does not verify is a loud red, never a
+  # silent pass
+  local tag="${1:-}" paquete="$APS_HOME/paquete" pkg sums found
+  [ -n "$tag" ] || tag="$(suite_tag)"
+  if [ -z "$tag" ]; then
+    info "la versión de la suite aún no se lee en esta copia — nada que verificar del canal firmado"
+    return 0
+  fi
+  pkg="$paquete/apsconecta-$tag.tar.gz"
+  if [ ! -f "$pkg" ]; then
+    info "no hay paquete guardado de la versión $tag (canal git de ensayo o disco liberado) — nada que verificar"
+    return 0
+  fi
+  if ! command -v signify >/dev/null 2>&1; then
+    info "signify no está instalado: la suma del instalador ya probó los bytes al descargar; «sudo aps-conecta preparar» instala signify-openbsd y la firma se verifica desde la próxima corrida"
+    return 0
+  fi
+  sums="$paquete/SHA256SUMS"
+  if [ ! -f "$sums" ] || [ ! -f "$paquete/SHA256SUMS.minisig" ]; then
+    bad "el paquete guardado no trae su suma y su firma ($paquete)" \
+      "re-descargue el instalador de la versión: curl -fsSL $INSTALADOR_REPO_URL/releases/download/$tag/apsconecta-$tag-install.sh | sudo bash"
+    return 0
+  fi
+  if [ ! -f "$ROOT/installer.pub" ]; then
+    bad "falta la clave pública del canal firmado ($ROOT/installer.pub)" \
+      "vuelva a descargar la suite: sudo aps-conecta descargar"
+    return 0
+  fi
+  # the tag binds through the signed bytes (D7's amendment): the SUMS line must name THIS
+  # tag's package, or the signature proves a different release
+  if ! grep -qx "[0-9a-f]\{64\}  apsconecta-$tag.tar.gz" "$sums"; then
+    bad "SHA256SUMS no nombra el paquete de la versión $tag (apsconecta-$tag.tar.gz)" \
+      "la suma y el paquete no son de la misma versión; re-descargue el instalador de la versión"
+    return 0
+  fi
+  if ! ( cd "$paquete" && signify -V -p "$ROOT/installer.pub" -m SHA256SUMS -x SHA256SUMS.minisig ) >/dev/null 2>&1; then
+    bad "la firma del paquete no verifica contra la clave pública de la suite" \
+      "el paquete o la clave no son de esta versión; re-descargue el instalador: curl -fsSL $INSTALADOR_REPO_URL/releases/download/$tag/apsconecta-$tag-install.sh | sudo bash"
+    return 0
+  fi
+  if ! ( cd "$paquete" && sha256sum -c SHA256SUMS ) >/dev/null 2>&1; then
+    bad "el paquete guardado no coincide con su suma verificada" \
+      "el archivo cambió desde la descarga; re-descargue el instalador de la versión y vuelva a ejecutarlo"
+    return 0
+  fi
+  found="$(head -1 "$ROOT/VERSION" 2>/dev/null || true)"
+  if [ -n "$found" ] && [ "$found" != "$tag" ]; then
+    bad "el paquete guardado es de la versión $tag y la suite instalada es $found" \
+      "una actualización es deliberada: descargue el instalador de la nueva versión (la guía del instalador, §10)"
+    return 0
+  fi
+  ok "Paquete $tag verificado: la suma y la firma (signify) contra la clave pública de la suite"
+}
+
 # ── preflight (the whole sweep) ────────────────────────────────────────────────────────────
 
 cmd_preflight() {
@@ -1705,6 +1770,7 @@ cmd_preflight() {
   need_tool git; need_tool python3; need_tool curl; need_tool docker
   check_docker; check_compose; check_ports; check_dns; check_arch; check_prov_ports
   check_hairpin
+  check_paquete   # the kept signed package, when there is one (D5)
   echo
   if [ "$FAIL" -gt 0 ]; then
     echo "REVISIÓN: ✗ — corrija lo marcado arriba antes de instalar"
@@ -1952,6 +2018,7 @@ case "$c \$1" in
       -*|install|DPkg::*) ;;
       docker-ce) cp "$tmp/docker-installed" "$tshim/docker" ;;
       gdal-bin) printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/ogr2ogr"; chmod +x "$tshim/ogr2ogr" ;;
+      signify-openbsd) printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/signify"; chmod +x "$tshim/signify" ;;
       *) printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/\$p"; chmod +x "$tshim/\$p" ;;
     esac; done ;; esac ;;
 esac
@@ -1988,13 +2055,13 @@ SHIM
   if only_shims apt-get usermod systemctl dpkg sysctl curl id; then
     step_out="$(PATH="$tshim:$tmp/minbin"; FAIL=0; SUDO_USER=operador step_preparar; echo "FAIL=$FAIL")"
     check "preparar: a fresh Ubuntu gets git and python3, Docker from Docker's repository, the operator's group and overcommit 1 — each proved" \
-      'case "$step_out" in *"✓ Instalado: git python3 ogr2ogr"*"✓ Docker instalado desde su repositorio oficial"*"✓ docker (API 1.56"*"✓ compose v2 presente"*"✓ Usuario operador agregado al grupo docker"*"✓ Memoria del sistema ajustada (vm.overcommit_memory 2 → 1"*"FAIL=0") ;; *) false;; esac'
+      'case "$step_out" in *"✓ Instalado: git python3 ogr2ogr signify"*"✓ Docker instalado desde su repositorio oficial"*"✓ docker (API 1.56"*"✓ compose v2 presente"*"✓ Usuario operador agregado al grupo docker"*"✓ Memoria del sistema ajustada (vm.overcommit_memory 2 → 1"*"FAIL=0") ;; *) false;; esac'
     check "preparar: the host changes are apt (lock-patient) from Docker's noble suite, usermod and the sysctl.d file applied alone" \
-      'grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y git python3 gdal-bin" "$tmp/mut.log" && grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y ca-certificates" "$tmp/mut.log" && grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin" "$tmp/mut.log" && grep -qx "usermod -aG docker operador" "$tmp/mut.log" && grep -qx "sysctl -p $ETC_DIR/sysctl.d/90-aps-conecta.conf" "$tmp/mut.log" && grep -qx "Suites: noble" "$ETC_DIR/apt/sources.list.d/docker.sources" && grep -qx "URIs: https://download.docker.com/linux/ubuntu" "$ETC_DIR/apt/sources.list.d/docker.sources" && grep -qx "vm.overcommit_memory = 1" "$ETC_DIR/sysctl.d/90-aps-conecta.conf"'
+      'grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y git python3 gdal-bin signify-openbsd" "$tmp/mut.log" && grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y ca-certificates" "$tmp/mut.log" && grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin" "$tmp/mut.log" && grep -qx "usermod -aG docker operador" "$tmp/mut.log" && grep -qx "sysctl -p $ETC_DIR/sysctl.d/90-aps-conecta.conf" "$tmp/mut.log" && grep -qx "Suites: noble" "$ETC_DIR/apt/sources.list.d/docker.sources" && grep -qx "URIs: https://download.docker.com/linux/ubuntu" "$ETC_DIR/apt/sources.list.d/docker.sources" && grep -qx "vm.overcommit_memory = 1" "$ETC_DIR/sysctl.d/90-aps-conecta.conf"'
     : > "$tmp/mut.log"
     step_out="$(PATH="$tshim:$tmp/minbin"; FAIL=0; SUDO_USER=operador step_preparar; echo "FAIL=$FAIL")"
     check "preparar: a re-run finds everything done and changes nothing" \
-      'case "$step_out" in *"✓ git, python3, curl y ogr2ogr presentes"*"✓ Usuario operador en el grupo docker"*"✓ Memoria del sistema ajustada (vm.overcommit_memory = 1)"*"FAIL=0") ;; *) false;; esac && ! grep -qE "^(apt-get|usermod|sysctl -p|curl|systemctl start)" "$tmp/mut.log"'
+      'case "$step_out" in *"✓ git, python3, curl, ogr2ogr y signify presentes"*"✓ Usuario operador en el grupo docker"*"✓ Memoria del sistema ajustada (vm.overcommit_memory = 1)"*"FAIL=0") ;; *) false;; esac && ! grep -qE "^(apt-get|usermod|sysctl -p|curl|systemctl start)" "$tmp/mut.log"'
     echo 2 > "$tmp/oc"; rm -f "$ETC_DIR/sysctl.d/90-aps-conecta.conf"
     step_out="$(export SYSCTL_FAILS=1; PATH="$tshim:$tmp/minbin"; FAIL=0; ensure_overcommit; echo "FAIL=$FAIL")"
     check "preparar: where the kernel setting cannot be applied now (a container) it stays in its file and says so — not a red" \
@@ -2015,7 +2082,7 @@ SHIM
   step_out="$(only_shims sin-simulacion-x 2>&1; echo "rc=$?")"
   check "self-test guard: a mutator without a shim refuses the installing arms" \
     'case "$step_out" in *"«sin-simulacion-x» would reach the real host"*"rc=1") ;; *) false;; esac'
-  rm -f "$tshim"/{apt-get,usermod,systemctl,dpkg,sysctl,curl,git,python3,ca-certificates,docker,docker-ce-cli,containerd.io,docker-buildx-plugin,docker-compose-plugin}
+  rm -f "$tshim"/{apt-get,usermod,systemctl,dpkg,sysctl,curl,git,python3,ca-certificates,docker,docker-ce-cli,containerd.io,docker-buildx-plugin,docker-compose-plugin,signify,ogr2ogr}
 
   # descargar in a checkout: the checkout is the bundle; a verified one is linked as the command
   local BIN_DIR="$tmp/usr-local-bin" APS_HOME="$tmp/opt"
@@ -3082,6 +3149,93 @@ SHIM
       'case "$out" in *"aps-conecta red --dominio D [--arreglar]"*) ;; *) false;; esac'
   fi
   rm -f "$tshim"/{systemctl,apt-get,resolvectl,ufw,getent,ip,docker,curl,id,dnsmasq}
+
+  # ── the signed channel (D5/D7): the kept package re-verified offline. signify answers from
+  # a shim (the real crypto — a real throwaway keypair signing and proving — is package-
+  # release.sh's own locked self-test; here the arms prove the CLI's contract: the exact
+  # argv, the cwd at the package, the remedies, the honest skips). sha256sum -c runs REAL
+  # over the fixture bytes. The restricted PATH keeps a real signify (if the host has one)
+  # out of the arms' way ──
+  local ph="$tmp/paq-home" plog="$tmp/paq.log" minpaq="$tmp/min-paq"
+  local out_paq rc_paq
+  mkdir -p "$ph/paquete" "$minpaq" "$tmp/notag"
+  for c in bash grep head cat cut sed sha256sum dirname basename du; do ln -sf "$(command -v "$c")" "$minpaq/$c"; done
+  cat > "$tshim/signify" <<SHIM
+#!/usr/bin/env bash
+printf 'cwd=%s %s\n' "\$(pwd)" "\$*" >> "$plog"
+[ "\$2" = -p ] && printf 'pub2=%s\n' "\$(sed -n 2p "\$3")" >> "$plog"
+exit "\$(cat "$tmp/paq-sig.rc" 2>/dev/null || echo 0)"
+SHIM
+  chmod +x "$tshim/signify"   # planted once: answerable for the whole block (the locked lifecycle)
+  # the fixture world: a kept package for v9.9.9 with a REAL sha in its SUMS, the signature
+  # answered by the shim, and a bundle (ROOT) carrying VERSION + installer.pub
+  mkdir -p "$tmp/paq-fx/dir"; printf 'contenido\n' > "$tmp/paq-fx/dir/archivo"
+  tar -czf "$ph/paquete/apsconecta-v9.9.9.tar.gz" -C "$tmp/paq-fx" dir
+  printf '%s  apsconecta-v9.9.9.tar.gz\n' "$(sha256sum "$ph/paquete/apsconecta-v9.9.9.tar.gz" | cut -d' ' -f1)" > "$ph/paquete/SHA256SUMS"
+  printf 'firma-fixture\n' > "$ph/paquete/SHA256SUMS.minisig"
+  printf 'v9.9.9\n' > "$ROOT/VERSION"
+  printf 'untrusted comment: fixture\nRWQf6LgoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n' > "$ROOT/installer.pub"
+  mv "$tshim/signify" "$tmp/sig-guard"   # ABSENT: the honest-skip arms
+  out_paq="$(ROOT="$tmp/notag" check_paquete)"; rc_paq=$?
+  check "paquete: no readable tag — the honest skip, never a red" \
+    '[ "$rc_paq" -eq 0 ] && case "$out_paq" in *"· la versión de la suite aún no se lee en esta copia"*) ;; *) false;; esac'
+  out_paq="$(PATH="$tshim:$minpaq" APS_HOME="$ph" check_paquete v9.8.7)"
+  check "paquete: no kept package for the tag (rehearsal channel / freed disk) — the honest skip" \
+    'case "$out_paq" in *"· no hay paquete guardado de la versión v9.8.7 (canal git de ensayo o disco liberado)"*) ;; *) false;; esac'
+  out_paq="$(PATH="$tshim:$minpaq" APS_HOME="$ph" check_paquete)"
+  check "paquete: signify not installed yet — the honest skip naming preparar and signify-openbsd (the installer's sha already anchored the bytes)" \
+    'case "$out_paq" in *"· signify no está instalado"*"sudo aps-conecta preparar» instala signify-openbsd"*) ;; *) false;; esac'
+  mv "$tmp/sig-guard" "$tshim/signify"   # PRESENT again: the reds, the green, the sweeps
+  echo 0 > "$tmp/paq-sig.rc"; : > "$plog"
+  mv "$ph/paquete/SHA256SUMS" "$tmp/sums.bak"
+  out_paq="$( (PATH="$tshim:$minpaq"; APS_HOME="$ph"; FAIL=0; check_paquete; echo "FAIL=$FAIL") )"
+  check "paquete: a package without its SUMS+signature reds naming the re-download command" \
+    'case "$out_paq" in *"✗ el paquete guardado no trae su suma y su firma ($ph/paquete)"*"curl -fsSL https://github.com/APS-Conecta/instalador/releases/download/v9.9.9/apsconecta-v9.9.9-install.sh | sudo bash"*"FAIL=1"*) ;; *) false;; esac'
+  mv "$tmp/sums.bak" "$ph/paquete/SHA256SUMS"
+  mv "$ROOT/installer.pub" "$tmp/pub.bak"
+  out_paq="$( (PATH="$tshim:$minpaq"; APS_HOME="$ph"; FAIL=0; check_paquete; echo "FAIL=$FAIL") )"
+  check "paquete: a bundle without installer.pub reds naming the missing key" \
+    'case "$out_paq" in *"✗ falta la clave pública del canal firmado ($ROOT/installer.pub)"*"sudo aps-conecta descargar"*"FAIL=1"*) ;; *) false;; esac'
+  mv "$tmp/pub.bak" "$ROOT/installer.pub"
+  printf '%s  apsconecta-v8.8.8.tar.gz\n' "$(sha256sum "$ph/paquete/apsconecta-v9.9.9.tar.gz" | cut -d' ' -f1)" > "$ph/paquete/SHA256SUMS"
+  out_paq="$( (PATH="$tshim:$minpaq"; APS_HOME="$ph"; FAIL=0; check_paquete; echo "FAIL=$FAIL") )"
+  check "paquete: a SUMS naming another tag reds — the tag binds through the signed bytes" \
+    'case "$out_paq" in *"✗ SHA256SUMS no nombra el paquete de la versión v9.9.9 (apsconecta-v9.9.9.tar.gz)"*"FAIL=1"*) ;; *) false;; esac && ! grep -q "^cwd=" "$plog"'
+  printf '%s  apsconecta-v9.9.9.tar.gz\n' "$(sha256sum "$ph/paquete/apsconecta-v9.9.9.tar.gz" | cut -d' ' -f1)" > "$ph/paquete/SHA256SUMS"
+  echo 1 > "$tmp/paq-sig.rc"
+  out_paq="$( (PATH="$tshim:$minpaq"; APS_HOME="$ph"; FAIL=0; check_paquete; echo "FAIL=$FAIL") )"
+  check "paquete: a signature that does not verify reds with the re-download remedy" \
+    'case "$out_paq" in *"✗ la firma del paquete no verifica contra la clave pública de la suite"*"re-descargue el instalador"*"FAIL=1"*) ;; *) false;; esac'
+  echo 0 > "$tmp/paq-sig.rc"
+  printf 'x' >> "$ph/paquete/apsconecta-v9.9.9.tar.gz"
+  out_paq="$( (PATH="$tshim:$minpaq"; APS_HOME="$ph"; FAIL=0; check_paquete; echo "FAIL=$FAIL") )"
+  check "paquete: bytes that drifted after the download red at the real sha256sum -c" \
+    'case "$out_paq" in *"✗ el paquete guardado no coincide con su suma verificada"*"FAIL=1"*) ;; *) false;; esac'
+  truncate -s -1 "$ph/paquete/apsconecta-v9.9.9.tar.gz"
+  printf 'v8.8.8\n' > "$ROOT/VERSION"
+  out_paq="$( (PATH="$tshim:$minpaq"; APS_HOME="$ph"; FAIL=0; check_paquete v9.9.9; echo "FAIL=$FAIL") )"
+  check "paquete: a kept package of another tag than the installed suite reds naming the deliberate update" \
+    'case "$out_paq" in *"✗ el paquete guardado es de la versión v9.9.9 y la suite instalada es v8.8.8"*"una actualización es deliberada"*"FAIL=1"*) ;; *) false;; esac'
+  printf 'v9.9.9\n' > "$ROOT/VERSION"
+  : > "$plog"
+  out_paq="$( (PATH="$tshim:$minpaq"; APS_HOME="$ph"; FAIL=0; check_paquete; echo "FAIL=$FAIL") )"
+  check "paquete: the green — the signature (exact argv, cwd at the package, the committed pubkey's own line) then the real sha, and the ok line says both" \
+    '[ "$out_paq" = "✓ Paquete v9.9.9 verificado: la suma y la firma (signify) contra la clave pública de la suite
+FAIL=0" ] \
+     && grep -q "^cwd=$ph/paquete -V -p $ROOT/installer.pub -m SHA256SUMS -x SHA256SUMS.minisig$" "$plog" \
+     && grep -q "^pub2=RWQf6LgoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA$" "$plog"'
+  out_paq="$( (PATH="$tshim:$minpaq" APS_HOME="$ph" cmd_preflight) 2>&1)"; rc_paq=$?
+  check "preflight: the kept package's verification rides the sweep — green line present, reds elsewhere change nothing about it" \
+    '[ "$rc_paq" -ne 0 ] && case "$out_paq" in *"✓ Paquete v9.9.9 verificado: la suma y la firma (signify) contra la clave pública de la suite"*) ;; *) false;; esac'
+  mkdir -p "$ROOT/provisioning/apps/demo"
+  tar czf "$ROOT/provisioning/apps/demo/demo-1.0.0.tar.gz" -C "$tmp/paq-fx" dir
+  printf 'version=1.0.0\nsha256=%s\n' "$(sha256sum "$ROOT/provisioning/apps/demo/demo-1.0.0.tar.gz" | cut -d' ' -f1)" > "$ROOT/provisioning/apps/demo/VENDOR"
+  out_paq="$( ( PATH="$tshim:$minpaq" APS_HOME="$ph" BIN_DIR="$tmp/paq-bin" \
+                 FAIL=0 step_descargar; echo "FAIL=$FAIL" ) 2>&1 )"
+  check "descargar: the kept package's verification rides the step's tail — after the apps' sums, the channel's sum and signature" \
+    'case "$out_paq" in *"✓ Suite v9.9.9"*"✓ Sumas de verificación correctas (aplicaciones: 1)"*"✓ Paquete v9.9.9 verificado: la suma y la firma (signify) contra la clave pública de la suite"*"FAIL=0"*) ;; *) false;; esac'
+  rm -rf "$ROOT/provisioning"
+  rm -f "$tshim/signify"   # the block-end cleanup (the locked lifecycle: answerable until here)
 
   # ── the units parse (systemd-analyze verify, offline) ──
   if command -v systemd-analyze >/dev/null 2>&1; then

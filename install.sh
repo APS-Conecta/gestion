@@ -6,10 +6,12 @@
 #
 # TRUST (the cargo-dist/Astral model, astral.sh/uv/install.sh): the one-liner's anchor is the
 # TAG-PINNED RELEASE URL + TLS, and this script embeds the package's expected sha256 — set by
-# the release job (scripts/package-release.sh) when it cuts the asset. The signature itself is
-# verified later, by `aps-conecta preflight`, once `signify-openbsd` is installed by `preparar`
-# (Ubuntu universe / Debian main): a fresh host needs no crypto tool to be safe — it needs the
-# bytes to match the number this tag-anchored script carries. The pubkey is embedded below,
+# the release job (scripts/package-release.sh) when it cuts the asset. The signature is
+# verified NOW when the host already carries `signify` (before anything unpacks — the minted
+# key is the constant below), and later by `aps-conecta preflight` on fresh hosts, once
+# `preparar` installs signify-openbsd (Ubuntu universe / Debian main): a fresh host needs no
+# crypto tool to be safe — it needs the bytes to match the number this tag-anchored script
+# carries. The pubkey is embedded below,
 # committed at installer.pub, and printed by the wizard; aps/RELEASING.md owns the key story.
 #
 # `main(){}` wraps everything (Docker's get.docker.com guard): a truncated download is a syntax
@@ -51,7 +53,7 @@ main() {
   [ -n "$TARBALL_SHA256" ] \
     || die "este archivo es la copia del repositorio (sin la suma del paquete): descargue el instalador de la versión $BUNDLE_TAG — $REPO_URL/releases"
 
-  local tag pkg base found tmp
+  local tag pkg base found tmp mint
   tag="$BUNDLE_TAG"
   base="$REPO_URL/releases/download/$tag"
   pkg="$PAQUETE/apsconecta-$tag.tar.gz"
@@ -88,6 +90,26 @@ main() {
   curl -fsSL -o "$PAQUETE/SHA256SUMS.minisig" "$base/SHA256SUMS.minisig" \
     || die "no pude descargar la firma — revise la red: $base"
 
+  # A host that already carries signify verifies the signature BEFORE anything unpacks —
+  # the minted pubkey file is the constant above (the same key installer.pub commits and the
+  # release job proves in CI; two readers, one key). A fresh host skips it honestly: the
+  # sha256 above already anchored the bytes to this tag-anchored script, and the suite's
+  # «preparar» installs signify-openbsd so preflight verifies the kept package from the next
+  # run on. A bad signature installs nothing — stronger than the sha, not weaker.
+  if command -v signify >/dev/null 2>&1; then
+    mint="$PAQUETE/.installer.pub"
+    printf 'untrusted comment: APS Conecta instalador release key\n%s\n' "$SIGNIFY_PUBKEY" > "$mint"
+    if ( cd "$PAQUETE" && signify -V -p "$mint" -m SHA256SUMS -x SHA256SUMS.minisig ) >/dev/null 2>&1; then
+      ok "firma verificada (signify, clave pública del proyecto)"
+    else
+      rm -f "$mint"
+      die "la firma del paquete no verifica contra la clave de este instalador — no se instala nada; descargue el instalador de nuevo: $REPO_URL/releases"
+    fi
+    rm -f "$mint"
+  else
+    info "signify no está instalado: la suma de verificación ya probó estos bytes; el paso «preparar» instala signify-openbsd y la firma del paquete guardado se verifica desde la próxima corrida"
+  fi
+
   # the package root carries instalador/ (package-release.sh's assembly contract); the unpack
   # is atomic (tiles.sh's rule): a failed run never clobbers, and nothing half-unpacked becomes
   # the bundle — VERSION is asserted == the tag before the mv promotes the tree
@@ -118,6 +140,14 @@ selftest() {
   check() { n=$((n + 1)); if eval "$2"; then :; else echo "  FAIL: $1" >&2; FAILED=$((FAILED + 1)); fi; }
   FAILED=0
   export PATH="$tshim:/usr/sbin:/usr/bin:/bin"
+  # the restricted bin: main() now probes for signify opportunistically, and a host that
+  # carries the real one must never leak into an arm (package-release's own self-test asks
+  # for it installed; run_main routes every main() call through this PATH, and the arms
+  # control signify solely by the shim's presence on $tshim)
+  imin="$tmp/imin"; mkdir -p "$imin"
+  for c in bash env cp mkdir rm mv mktemp tar gzip sha256sum head cut cat sed grep; do
+    ln -sf "$(command -v "$c")" "$imin/$c"
+  done
 
   # id answers root by default (install needs it); an arm plays non-root with ID_U
   printf '#!/usr/bin/env bash\ncase "$1" in -u) echo "${ID_U:-0}" ;; esac\n' > "$tshim/id"; chmod +x "$tshim/id"
@@ -150,7 +180,8 @@ EOF
     # per-arm APS_HOME reaches them only as the same call-time bindings main sees)
     rc=0; out="$( APS_HOME="$1" DEST="$1/instalador" PAQUETE="$1/paquete" \
                   REPO_URL="https://fixture.invalid" KEEP_PACKAGE=1 \
-                  CURL_LOG="$tmp/curl.log" FIXDIR="$tmp/fx" \
+                  PATH="$tshim:$imin" CURL_LOG="$tmp/curl.log" FIXDIR="$tmp/fx" \
+                  SIG_LOG="$tmp/sig.log" SIG_RC="$tmp/sig.rc" \
                   BUNDLE_TAG="$2" TARBALL_SHA256="$3" main 2>&1 )" || rc=$?
   }
 
@@ -172,6 +203,33 @@ EOF
   check "re-run: same tag already installed — continues, opens no channel" \
     '[ "$rc" -eq 0 ] && [ ! -s "$tmp/curl.log" ] && case "$out" in *"ya está en $tmp/h1/instalador"*) ;; *) false;; esac'
 
+  cat > "$tshim/signify" <<'EOF'
+#!/usr/bin/env bash
+printf 'cwd=%s %s
+' "$(pwd)" "$*" >> "$SIG_LOG"
+[ "$2" = -p ] && printf 'pub2=%s
+' "$(sed -n 2p "$3")" >> "$SIG_LOG"
+exit "$(cat "$SIG_RC" 2>/dev/null || echo 0)"
+EOF
+  chmod +x "$tshim/signify"
+  : > "$tmp/sig.log"; echo 0 > "$tmp/sig.rc"
+  run_main "$tmp/h6" v9.8.7 "$pkgsha"
+  check "signature: a host with signify verifies before unpacking — the minted two-line key (the script's own constant), cwd at the package, and the ok line" \
+    '[ "$rc" -eq 0 ] && [ -f "$tmp/h6/instalador/host/aps-conecta" ] \
+     && grep -q "^cwd=$tmp/h6/paquete -V -p $tmp/h6/paquete/.installer.pub -m SHA256SUMS -x SHA256SUMS.minisig$" "$tmp/sig.log" \
+     && grep -q "^pub2=$(sed -n "s/^SIGNIFY_PUBKEY=\"\([^\"]*\)\".*/\1/p" "$0" | head -1)$" "$tmp/sig.log" \
+     && case "$out" in *"✓ firma verificada (signify, clave pública del proyecto)"*) ;; *) false;; esac \
+     && [ ! -e "$tmp/h6/paquete/.installer.pub" ]'
+  echo 1 > "$tmp/sig.rc"
+  run_main "$tmp/h7" v9.8.7 "$pkgsha"
+  check "signature: a signature that does not verify installs NOTHING — the refusal names the release page" \
+    '[ "$rc" -ne 0 ] && [ ! -e "$tmp/h7/instalador" ] \
+     && case "$out" in *"✗ la firma del paquete no verifica contra la clave de este instalador"*"https://fixture.invalid/releases"*) ;; *) false;; esac'
+  rm -f "$tshim/signify"
+  run_main "$tmp/h8" v9.8.7 "$pkgsha"
+  check "signature: a host without signify takes the honest info — the sha already anchored the bytes, the install goes on" \
+    '[ "$rc" -eq 0 ] && [ -f "$tmp/h8/instalador/host/aps-conecta" ] \
+     && case "$out" in *"· signify no está instalado"*"signify-openbsd"*) ;; *) false;; esac'
   run_main "$tmp/h1" v9.9.9 "$pkgsha"
   check "other version: refused and left untouched (VERSION is the version now, no git)" \
     '[ "$rc" -ne 0 ] && [ "$(head -1 "$tmp/h1/instalador/VERSION")" = v9.8.7 ] \
