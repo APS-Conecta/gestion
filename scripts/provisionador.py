@@ -2290,6 +2290,7 @@ def screen_listo():
 <p class="para grande">Suite instalada en {esc(installed_centre())}.{acceso}</p>
 <p class="para">Instalador cerrado: enlace inválido, puerto {PORT} cerrado.</p>
 <ul class="lista-sigue para"><li>Credenciales: en la consola del servidor; una fila por persona.</li>
+<li>Datos de la comuna: en la consola del servidor — «sudo aps-conecta datos --importar» los deja cargados.</li>
 <li>Re-provisión semanal: la activa la consola al cerrar el instalador.</li></ul>
 <p class="lema">{MOTTO}</p>""")
 
@@ -5253,6 +5254,9 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                   hostil == "" and rechaza_hostil and not os.path.exists(os.path.join(tmp, "hostil.sh"))
                   and "Acceso del personal: <b>https://gestion.clinica.example</b>" in listo
                   and "Acceso del personal" not in sin)
+            check("listo: the comuna data's ready line (D9) — the console's one command, a line never a button",
+                  "«sudo aps-conecta datos --importar» los deja cargados" in listo
+                  and "«sudo aps-conecta datos --importar» los deja cargados" in sin)
             with tempfile.TemporaryDirectory() as sd:
                 deis.write_site(find_row("113314"), SNAPSHOT, "113314", team_lines("sector", "sector-", ["Norte"]), [],
                                 path=os.path.join(sd, "a.sh"), domain="gestion.clinica.example")

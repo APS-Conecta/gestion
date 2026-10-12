@@ -17,7 +17,7 @@
 #   aps-conecta asistente-aio --dominio D   drive the AIO wizard through its API (no browser)
 #   aps-conecta revalidate          post-update gate sweep: smoke + office-smoke + divergence
 #   aps-conecta tiles …            the basemap (install | refresh | check — host/tiles.sh)
-#   aps-conecta datos [CUT]        the comuna data packages, cut + checksum-verified + staged
+#   aps-conecta datos [CUT] [--importar]  the comuna data packages: cut + checksum-verified + staged (--importar: also loads them)
 #   aps-conecta red --dominio D [--arreglar]  the domain's reflection: report, or fix it with consent (dnsmasq split-DNS)
 #   aps-conecta --self-test          the self-check (no docker needed — PATH shims)
 #
@@ -265,6 +265,7 @@ cmd_install() {  # the install: the welcome, then the steps in registry order. I
   done
   [ -n "$SILENT_SITE" ] || return 0
   FAIL=0; install_timers
+  datos_auto   # D9: the comuna data — the install's last leg, after «ejecutar»
   if [ "$FAIL" -ne 0 ]; then
     echo "INSTALACIÓN: la suite quedó instalada; falta lo marcado con ✗ arriba — ejecute el comando que nombra (registro: $SILENT_LOG)"
     exit 1
@@ -301,7 +302,7 @@ usage() {  # Spanish, generated from the registry — never a slice of this file
   echo "  aps-conecta red --dominio D [--arreglar]   el reflejo del dominio: revisarlo y, con --arreglar, corregirlo (DNS local)"
   echo "  aps-conecta respaldo              agrega /opt/aps-conecta a las copias de seguridad"
   echo "  aps-conecta tiles install|refresh|check   el mapa: construirlo, refrescarlo y revisar que la suite lo sirve"
-  echo "  aps-conecta datos [CUT]           los paquetes de datos de la comuna"
+  echo "  aps-conecta datos [CUT] [--importar]  los paquetes de datos de la comuna (con --importar: además los carga)"
   echo "  aps-conecta --self-test           autoprueba de este programa (sin docker)"
 }
 
@@ -540,15 +541,18 @@ check_network() {  # outbound HTTPS and the clock — the image pulls and every 
 is_root() { [ "$(id -u)" = 0 ]; }
 
 install_packages() {  # the tools the install itself runs; apt installs only what is missing
-  local t missing=()
-  for t in git python3 curl; do command -v "$t" >/dev/null 2>&1 || missing+=("$t"); done
-  if [ ${#missing[@]} -eq 0 ]; then ok "git, python3 y curl presentes"; return 0; fi
+  local t missing=() pkgs=()
+  for t in git python3 curl; do
+    command -v "$t" >/dev/null 2>&1 || { missing+=("$t"); pkgs+=("$t"); }
+  done
+  command -v ogr2ogr >/dev/null 2>&1 || { missing+=(ogr2ogr); pkgs+=(gdal-bin); }
+  if [ ${#missing[@]} -eq 0 ]; then ok "git, python3, curl y ogr2ogr presentes"; return 0; fi
   if ! command -v apt-get >/dev/null 2>&1; then
-    bad "faltan ${missing[*]} y este sistema no usa apt" "instale ${missing[*]} y vuelva a ejecutar el paso"
+    bad "faltan ${missing[*]} y este sistema no usa apt" "instale ${pkgs[*]} y vuelva a ejecutar el paso"
     return 0
   fi
   info "instalando ${missing[*]}"
-  if "${APT[@]}" update >/dev/null && "${APT[@]}" install -y "${missing[@]}" >/dev/null; then
+  if "${APT[@]}" update >/dev/null && "${APT[@]}" install -y "${pkgs[@]}" >/dev/null; then
     ok "Instalado: ${missing[*]}"
   else
     bad "no se pudo instalar ${missing[*]}" "revise la red y apt (sudo apt-get update) y vuelva a ejecutar el paso"
@@ -918,6 +922,7 @@ step_abrir() {  # the web installer walks steps 6–9 as a CHILD of this console
   printf '%s\n' "──────────────────────────────────────────────────────────────"
   ok "Paso $last de $last · $(step_field "$last" 2): verificado"
   FAIL=0; install_timers
+  datos_auto   # D9: the comuna data — the install's last leg, after «ejecutar»
   echo
   domain="$(site_domain || true)"
   if [ -n "$domain" ]; then printf '  Listo. Acceso del personal: https://%s\n' "$domain"; else printf '  Listo.\n'; fi
@@ -1541,19 +1546,93 @@ site_comuna_cut() {  # the site record's own CUT (v0.2.0's seam — deis.py emit
   grep -m1 '^SITE_COMUNA_CUT=' "$f" 2>/dev/null | sed 's/^SITE_COMUNA_CUT=//' || true
 }
 
-cmd_datos() {  # [CUT] — S9's data-package leg: the national masters, sha256-verified, cut to
-  # THIS install's comuna, staged durably, with the AIO import translation printed. Thin on
-  # purpose: scripts/comuna-package.sh (v0.2.0's slice-11 artifact) owns the fetch-verify
-  # and the cut — this arm resolves the CUT, stages the output, and translates the import
-  # form. It never imports: the import is a deliberate operator paste with the backup step
-  # visible beside it (IMPORT_DESIGN's own rule: pg_dump beforehand, revert from the
-  # browser, ADR-0009) — an install-time auto-import would bypass every one of those
-  # disciplines.
-  local cut="${1:-}"
-  # Territorio ships with the suite: phase 12 installs it (OWN_APPS), so it is absent only before the
-  # first provisioning. Then nothing can receive the data — the honest skip, never a silent fetch of
-  # ~93 MB of masters for an app that cannot import (the office-skip precedent: visible, exit 0, no
-  # work done).
+datos_importar() {  # STAGE CUT — the staged triplets, EXECUTED (D9): docker cp → occ
+  # territorio:import --actor instalador → rm, one triplet per package in the staging's own
+  # order (find|sort). The two packages are the recipe's own outputs, by their exact names —
+  # the national intermediate (uv-national.geojson) and anything an older run left never
+  # enter the import; a stage without both is a red naming what it holds (counted before
+  # checked). The arguments are comuna-package.sh's own recipe, keyed by the file's name (its
+  # closing two occ lines are the other reader of the same fact). Idempotence is territorio's
+  # own contract read off its own summary line («N creados» — 0 on a re-import, externalId);
+  # an import whose summary cannot be read is unverified, and unverified is a red. The app's
+  # comuna door (phase 16 arms comuna_cut from the same site record the CUT came from)
+  # refuses another comuna's file — that case arrives as the app's own refusal, shown as-is
+  local stage="$1" cut="$2" f base resumen creados rc_import importadas=0 fallidas=0
+  local -a args paquetes
+  mapfile -t paquetes < <(find "$stage" -type f \( -name "uv-$cut.geojson" \
+    -o -name "deis-establecimientos-$cut.geojson" \) | sort)
+  if [ "${#paquetes[@]}" -ne 2 ]; then
+    bad "se esperaban los dos paquetes de la comuna (uv-$cut.geojson y deis-establecimientos-$cut.geojson) y hay ${#paquetes[@]} bajo $stage" \
+      "re-ejecute: sudo aps-conecta datos --importar (el detalle quedó arriba)"
+    return 1
+  fi
+  for f in "${paquetes[@]}"; do
+    base="$(basename "$f")"
+    case "$base" in
+      uv-*) args=(--dataset=unidades-vecinales "--label=Unidades Vecinales") ;;
+      *)    args=(--dataset=deis-establecimientos) ;;
+    esac
+    if ! docker cp "$f" "$NC:/tmp/" >/dev/null 2>&1; then
+      bad "no se pudo copiar $base al contenedor de Nextcloud" \
+        "revise que la suite esté en marcha y re-ejecute: sudo aps-conecta datos --importar"
+      fallidas=$((fallidas + 1)); continue
+    fi
+    rc_import=0
+    resumen="$(docker exec -u www-data "$NC" php /var/www/html/occ territorio:import "/tmp/$base" \
+                 "${args[@]}" --actor instalador 2>&1)" || rc_import=$?
+    docker exec "$NC" rm -f "/tmp/$base" >/dev/null 2>&1 || true   # the triplet's third leg, always
+    if [ "$rc_import" -ne 0 ]; then
+      bad "$base no se importó: $(printf '%s\n' "$resumen" | grep . | tail -1)" \
+        "el motivo quedó arriba; re-ejecute: sudo aps-conecta datos --importar"
+      fallidas=$((fallidas + 1)); continue
+    fi
+    creados="$(printf '%s\n' "$resumen" | sed -n 's/^Importado a "[^"]*": \([0-9][0-9]*\) creados,.*/\1/p' | head -1)"
+    if [ -z "$creados" ]; then
+      bad "$base se importó pero territorio no informó su resumen — no quedó verificado" \
+        "re-ejecute: sudo aps-conecta datos --importar"
+      fallidas=$((fallidas + 1)); continue
+    fi
+    importadas=$((importadas + 1))
+    ok "$(printf '%s\n' "$resumen" | head -1)"
+    [ "$creados" = 0 ] \
+      || info "«$base»: primera carga ($creados filas nuevas) — una re-importación debe imprimir «0 creados»"
+  done
+  if [ "$importadas" -eq 0 ]; then
+    bad "ningún archivo quedó importado desde $stage" \
+      "re-ejecute: sudo aps-conecta datos --importar (el detalle quedó arriba)"
+    return 1
+  fi
+  if [ "$fallidas" -gt 0 ]; then
+    bad "$fallidas archivo(s) no quedaron importados" \
+      "re-ejecute: sudo aps-conecta datos --importar (el detalle quedó arriba)"
+    return 1
+  fi
+  ok "Datos de la comuna cargados: $importadas archivo(s) — re-ejecutar imprime «0 creados» por archivo (idempotente)"
+  info "si una re-importación vuelve a crear filas, el esquema uid quebró (territorio IMPORT_DESIGN, regla 6): deténgase y corríjalo"
+  return 0
+}
+
+cmd_datos() {  # [CUT] [--importar] — S9's data-package leg: the national masters, sha256-verified,
+  # cut to THIS install's comuna, staged durably. Without --importar it stays the deliberate
+  # operator paste (IMPORT_DESIGN's own rule: the backup step visible beside it); with
+  # --importar (D9) the staged triplets are EXECUTED — the silent install's tail and the
+  # operator's own one command — under territorio's own contract: externalId idempotence («0
+  # creados» on a re-import) and the comuna door phase 16 arms from the same site record the
+  # CUT came from. Thin on purpose: scripts/comuna-package.sh (v0.2.0's slice-11 artifact) owns
+  # the fetch-verify and the cut — this arm resolves the CUT, stages the output, and translates
+  # or executes the import form.
+  local cut="" importar=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --importar) importar=1; shift ;;
+      -*) die "opción desconocida: $1 — uso: aps-conecta datos [CUT] [--importar]" ;;
+      *) [ -z "$cut" ] || die "solo un CUT: aps-conecta datos [CUT] [--importar]"
+         cut="$1"; shift ;;
+    esac
+  done
+  # Territorio ships with the suite: phase 12 installs it (OWN_APPS), so it is absent only before
+  # the first provisioning. Then nothing can receive the data — the honest skip, never a silent
+  # fetch of ~93 MB of masters for an app that cannot import (the office-skip precedent).
   if ! docker exec "$NC" sh -c 'test -d /var/www/html/custom_apps/territorio' >/dev/null 2>&1; then
     info "territorio no está instalado — este comando no descarga nada"
     info "territorio se instala con «Revisar y ejecutar»; después, re-ejecute «aps-conecta datos»: traerá y verificará los paquetes de su comuna"
@@ -1565,13 +1644,24 @@ cmd_datos() {  # [CUT] — S9's data-package leg: the national masters, sha256-v
   fi
   local stage="$DATOS_HOME/$cut"
   mkdir -p "$stage" || die "no pude crear $stage"
+  rm -rf "$stage"/comuna-package.* 2>/dev/null || true   # one run's cuts under the stage — an
+  # older run's dir never mixes into the import (the stage is regenerable data)
   info "cortando los paquetes de la comuna $cut (maestros nacionales, sha256 verificado por comuna-package.sh — la primera vez descarga ~93 MB)"
   # WORK_DIR: the routed v0.2.0 amendment — without it comuna-package.sh's EXIT-trap kills
-  # the cuts with the child, and its own closing line ("import them, then remove") promises
-  # a persistence the trap denies (the design-time find, its own criteria row). Staged here,
-  # the cuts survive for the docker cp the AIO form needs.
-  if ! WORK_DIR="$stage" bash "$ROOT/scripts/comuna-package.sh" "$cut"; then
-    die "comuna-package falló — arriba queda el canal que quebró (un maestro que se movió se re-registra por edición, nunca se corta a ciegas)"
+  # the cuts with the child. In the silent install the tool's own English goes to the log
+  # (step_mapa's rule); only the Spanish lines reach the console.
+  if [ -n "${SILENT_LOG:-}" ]; then
+    WORK_DIR="$stage" bash "$ROOT/scripts/comuna-package.sh" "$cut" >>"$SILENT_LOG" 2>&1 \
+      || die "comuna-package falló — arriba queda el canal que quebró (un maestro que se movió se re-registra por edición, nunca se corta a ciegas); el registro: $SILENT_LOG"
+  else
+    WORK_DIR="$stage" bash "$ROOT/scripts/comuna-package.sh" "$cut" \
+      || die "comuna-package falló — arriba queda el canal que quebró (un maestro que se movió se re-registra por edición, nunca se corta a ciegas)"
+  fi
+  if [ "$importar" = 1 ]; then
+    echo
+    info "importando los paquetes de la comuna $cut (occ territorio:import --actor instalador)"
+    datos_importar "$stage" "$cut"
+    return $?
   fi
   echo
   echo "los paquetes quedaron bajo $stage (impórtelos y luego elimínelos). Bajo AIO, cada comando «occ territorio:import …» que comuna-package.sh imprimió arriba se ejecuta así:"
@@ -1581,10 +1671,22 @@ cmd_datos() {  # [CUT] — S9's data-package leg: the national masters, sha256-v
     echo "  1. docker cp '$f' $NC:/tmp/"
     echo "  2. docker exec -u www-data $NC php /var/www/html/occ territorio:import '/tmp/$base' …(los argumentos que comuna-package.sh imprimió)"
     echo "  3. docker exec $NC rm -f '/tmp/$base'"
-  done < <(find "$stage" -type f -name '*.geojson' | sort)
+  done < <(find "$stage" -type f \( -name "uv-$cut.geojson" -o -name "deis-establecimientos-$cut.geojson" \) | sort)
   echo
-  info "re-importar el MISMO archivo imprime «created: 0» — si crea filas, el esquema uid quebró (territorio IMPORT_DESIGN, regla 6): deténgase y corríjalo"
+  info "o de una vez, sin copiar a mano: sudo aps-conecta datos --importar"
+  info "re-importar el MISMO archivo imprime «0 creados» — si crea filas, el esquema uid quebró (territorio IMPORT_DESIGN, regla 6): deténgase y corríjalo"
   info "antes del primer import tome su respaldo habitual — cada import queda revertible desde el navegador del administrador (ADR-0009 de territorio)"
+}
+
+datos_auto() {  # the silent install's tail (D9, FR5): the comuna's data, cut and imported by the
+  # install itself — AFTER «ejecutar», so territorio (phase 12) exists to receive it. A red here
+  # never uninstalls the suite: the subshell keeps a die inside datos, and the aggregate names
+  # the one command that finishes the job (install_timers' own degrade shape)
+  local rc=0
+  ( cmd_datos --importar ) || rc=$?
+  [ "$rc" -eq 0 ] && return 0
+  bad "los datos de la comuna no quedaron cargados" \
+    "cárguelos después: sudo aps-conecta datos --importar (el detalle quedó arriba y en el registro)"
 }
 
 # ── preflight (the whole sweep) ────────────────────────────────────────────────────────────
@@ -1849,6 +1951,7 @@ case "$c \$1" in
   "apt-get "*) case " \$* " in *" install "*) for p in "\$@"; do case "\$p" in
       -*|install|DPkg::*) ;;
       docker-ce) cp "$tmp/docker-installed" "$tshim/docker" ;;
+      gdal-bin) printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/ogr2ogr"; chmod +x "$tshim/ogr2ogr" ;;
       *) printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/\$p"; chmod +x "$tshim/\$p" ;;
     esac; done ;; esac ;;
 esac
@@ -1885,13 +1988,13 @@ SHIM
   if only_shims apt-get usermod systemctl dpkg sysctl curl id; then
     step_out="$(PATH="$tshim:$tmp/minbin"; FAIL=0; SUDO_USER=operador step_preparar; echo "FAIL=$FAIL")"
     check "preparar: a fresh Ubuntu gets git and python3, Docker from Docker's repository, the operator's group and overcommit 1 — each proved" \
-      'case "$step_out" in *"✓ Instalado: git python3"*"✓ Docker instalado desde su repositorio oficial"*"✓ docker (API 1.56"*"✓ compose v2 presente"*"✓ Usuario operador agregado al grupo docker"*"✓ Memoria del sistema ajustada (vm.overcommit_memory 2 → 1"*"FAIL=0") ;; *) false;; esac'
+      'case "$step_out" in *"✓ Instalado: git python3 ogr2ogr"*"✓ Docker instalado desde su repositorio oficial"*"✓ docker (API 1.56"*"✓ compose v2 presente"*"✓ Usuario operador agregado al grupo docker"*"✓ Memoria del sistema ajustada (vm.overcommit_memory 2 → 1"*"FAIL=0") ;; *) false;; esac'
     check "preparar: the host changes are apt (lock-patient) from Docker's noble suite, usermod and the sysctl.d file applied alone" \
-      'grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y git python3" "$tmp/mut.log" && grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y ca-certificates" "$tmp/mut.log" && grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin" "$tmp/mut.log" && grep -qx "usermod -aG docker operador" "$tmp/mut.log" && grep -qx "sysctl -p $ETC_DIR/sysctl.d/90-aps-conecta.conf" "$tmp/mut.log" && grep -qx "Suites: noble" "$ETC_DIR/apt/sources.list.d/docker.sources" && grep -qx "URIs: https://download.docker.com/linux/ubuntu" "$ETC_DIR/apt/sources.list.d/docker.sources" && grep -qx "vm.overcommit_memory = 1" "$ETC_DIR/sysctl.d/90-aps-conecta.conf"'
+      'grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y git python3 gdal-bin" "$tmp/mut.log" && grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y ca-certificates" "$tmp/mut.log" && grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin" "$tmp/mut.log" && grep -qx "usermod -aG docker operador" "$tmp/mut.log" && grep -qx "sysctl -p $ETC_DIR/sysctl.d/90-aps-conecta.conf" "$tmp/mut.log" && grep -qx "Suites: noble" "$ETC_DIR/apt/sources.list.d/docker.sources" && grep -qx "URIs: https://download.docker.com/linux/ubuntu" "$ETC_DIR/apt/sources.list.d/docker.sources" && grep -qx "vm.overcommit_memory = 1" "$ETC_DIR/sysctl.d/90-aps-conecta.conf"'
     : > "$tmp/mut.log"
     step_out="$(PATH="$tshim:$tmp/minbin"; FAIL=0; SUDO_USER=operador step_preparar; echo "FAIL=$FAIL")"
     check "preparar: a re-run finds everything done and changes nothing" \
-      'case "$step_out" in *"✓ git, python3 y curl presentes"*"✓ Usuario operador en el grupo docker"*"✓ Memoria del sistema ajustada (vm.overcommit_memory = 1)"*"FAIL=0") ;; *) false;; esac && ! grep -qE "^(apt-get|usermod|sysctl -p|curl|systemctl start)" "$tmp/mut.log"'
+      'case "$step_out" in *"✓ git, python3, curl y ogr2ogr presentes"*"✓ Usuario operador en el grupo docker"*"✓ Memoria del sistema ajustada (vm.overcommit_memory = 1)"*"FAIL=0") ;; *) false;; esac && ! grep -qE "^(apt-get|usermod|sysctl -p|curl|systemctl start)" "$tmp/mut.log"'
     echo 2 > "$tmp/oc"; rm -f "$ETC_DIR/sysctl.d/90-aps-conecta.conf"
     step_out="$(export SYSCTL_FAILS=1; PATH="$tshim:$tmp/minbin"; FAIL=0; ensure_overcommit; echo "FAIL=$FAIL")"
     check "preparar: where the kernel setting cannot be applied now (a container) it stays in its file and says so — not a red" \
@@ -2643,10 +2746,13 @@ SHIM
 #!/usr/bin/env bash
 printf 'argv=%s WORK_DIR=%s\n' "\$*" "\$WORK_DIR" >> "$dlog"
 mkdir -p "\$WORK_DIR"/tmp.x
-printf '{"type": "FeatureCollection"}\n' > "\$WORK_DIR"/tmp.x/unidades-vecinales-13110.geojson
+[ -e "$droot/vacio" ] && exit 0
+if [ -e "$droot/solo-deis" ]; then
+  printf '{"type": "FeatureCollection"}\n' > "\$WORK_DIR"/tmp.x/deis-establecimientos-13110.geojson
+  exit 0
+fi
+printf '{"type": "FeatureCollection"}\n' > "\$WORK_DIR"/tmp.x/uv-13110.geojson
 printf '{"type": "FeatureCollection"}\n' > "\$WORK_DIR"/tmp.x/deis-establecimientos-13110.geojson
-echo "comuna-package stub: 37 unidades vecinales, 44 establecimientos — los comandos occ siguen"
-exit 0
 EOF
   chmod +x "$droot/scripts/comuna-package.sh"
   # ── arm 1: territorio absent (v1.0's own posture) → the pending skip, ZERO channel work
@@ -2670,17 +2776,127 @@ EOF
   dout="$(ROOT="$droot" DATOS_HOME="$tmp/datos" cmd_datos 2>&1)"; drc=$?
   check "datos: el flujo completo corre por el stub — WORK_DIR apunta al staging, el CUT pasa" \
     '[ "$drc" -eq 0 ] && grep -q "argv=13110 WORK_DIR=$tmp/datos/13110" "$dlog" \
-     && [ -f "$tmp/datos/13110/tmp.x/unidades-vecinales-13110.geojson" ]'
+     && [ -f "$tmp/datos/13110/tmp.x/uv-13110.geojson" ]'
   check "datos: la traducción AIO se imprime por cada .geojson — cp, exec occ, rm — con las notas de idempotencia y respaldo" \
-    'printf "%s" "$dout" | grep -qF "docker cp '"'"'$tmp/datos/13110/tmp.x/unidades-vecinales-13110.geojson'"'"' $NC:/tmp/" \
-     && printf "%s" "$dout" | grep -qF "php /var/www/html/occ territorio:import '"'"'/tmp/unidades-vecinales-13110.geojson'"'"'" \
-     && printf "%s" "$dout" | grep -q "created: 0" \
+    'printf "%s" "$dout" | grep -qF "docker cp '"'"'$tmp/datos/13110/tmp.x/uv-13110.geojson'"'"' $NC:/tmp/" \
+     && printf "%s" "$dout" | grep -qF "php /var/www/html/occ territorio:import '"'"'/tmp/uv-13110.geojson'"'"'" \
+     && printf "%s" "$dout" | grep -q "0 creados" \
      && printf "%s" "$dout" | grep -q "revertible"'
   # ── arm 3: no site record → the refuse with its fix hint (never a silent default CUT)
   rm -rf "$droot/sites/113314"
   dout="$(ROOT="$droot" DATOS_HOME="$tmp/datos" cmd_datos 2>&1)"; drc=$?
   check "datos: sin registro de sitio se rehúsa con la corrección nombrada" \
     '[ "$drc" -ne 0 ] && case "$dout" in *"SITE_COMUNA_CUT"*"provisionador"*) ;; *) false;; esac'
+
+  # ── arms 4-8 (D9): datos --importar — the staged triplets EXECUTED, territorio's own summary
+  # read back; the docker shim answers the gate, cp, the import and the rm from fixture knobs ──
+  mkdir -p "$droot/sites/113314"
+  printf 'SITE_DEIS=113314\nSITE_COMUNA_CUT=13110\n' > "$droot/sites/113314/site.sh"
+  echo 0 > "$droot/gate.rc"; rm -f "$droot/cp.rc"; : > "$dlog"
+  cat > "$tshim/docker" <<SHIM
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$dlog"
+base=""
+for a in "\$@"; do case "\$a" in /tmp/*.geojson) base="\${a#/tmp/}" ;; esac; done
+case "\$1" in
+  cp) exit "\$(cat "$droot/cp.rc" 2>/dev/null || echo 0)" ;;
+  exec) case "\$*" in
+      *"sh -c test -d"*) exit "\$(cat "$droot/gate.rc" 2>/dev/null || echo 0)" ;;
+      *"occ territorio:import"*) cat "$droot/import.\$base.out" 2>/dev/null
+        exit "\$(cat "$droot/import.\$base.rc" 2>/dev/null || echo 0)" ;;
+      *" rm -f "*) exit 0 ;;
+    esac ;;
+esac
+exit 0
+SHIM
+  chmod +x "$tshim/docker"
+  imp_out() { printf 'Importado a "%s": %s creados, 0 actualizados, 0 sin cambios, 0 omitidos por edición local, 0 duplicados en el archivo, 0 con geometría no soportada\nLote #7 — revisiones 1…%s\n' "$1" "$2" "$2"; }
+  imp_out unidades-vecinales 37    > "$droot/import.uv-13110.geojson.out"; echo 0 > "$droot/import.uv-13110.geojson.rc"
+  imp_out deis-establecimientos 44 > "$droot/import.deis-establecimientos-13110.geojson.out"; echo 0 > "$droot/import.deis-establecimientos-13110.geojson.rc"
+  if only_shims docker; then
+    # the real stage's shape: the national intermediate and an older run's dir sit beside the
+    # cuts — neither may enter the import
+    printf 'nacional\n' > "$tmp/datos/13110/tmp.x/uv-national.geojson"
+    mkdir -p "$tmp/datos/13110/comuna-package.OLD"
+    printf 'viejo\n' > "$tmp/datos/13110/comuna-package.OLD/uv-13110.geojson"
+    dout="$(ROOT="$droot" DATOS_HOME="$tmp/datos" cmd_datos --importar 2>&1)"; drc=$?
+    check "datos --importar: both triplets executed in the staging's order (deis before uv — find|sort) — cp, occ territorio:import with the recipe's arguments and --actor instalador, rm — and the app's own summary on the console" \
+      '[ "$drc" -eq 0 ] \
+       && [ "$(grep -n "territorio:import /tmp/deis" "$dlog" | head -1 | cut -d: -f1)" -lt "$(grep -n "territorio:import /tmp/uv" "$dlog" | head -1 | cut -d: -f1)" ] \
+       && grep -q "^exec -u www-data aps-conecta-nextcloud php /var/www/html/occ territorio:import /tmp/deis-establecimientos-13110.geojson --dataset=deis-establecimientos --actor instalador$" "$dlog" \
+       && grep -q "^exec -u www-data aps-conecta-nextcloud php /var/www/html/occ territorio:import /tmp/uv-13110.geojson --dataset=unidades-vecinales --label=Unidades Vecinales --actor instalador$" "$dlog" \
+       && grep -q "^cp $tmp/datos/13110/tmp.x/uv-13110.geojson aps-conecta-nextcloud:/tmp/$" "$dlog" \
+       && grep -q "^exec aps-conecta-nextcloud rm -f /tmp/uv-13110.geojson$" "$dlog" \
+       && case "$dout" in *"✓ Importado a \"deis-establecimientos\": 44 creados"*"primera carga (44 filas nuevas)"*"✓ Importado a \"unidades-vecinales\": 37 creados"*"primera carga (37 filas nuevas)"*"✓ Datos de la comuna cargados: 2 archivo(s) — re-ejecutar imprime «0 creados»"*) ;; *) false;; esac'
+    check "datos --importar: the national intermediate never enters the import, and the older run's dir is swept before the cut — exactly one uv import" \
+      '! grep -q "uv-national" "$dlog" && [ "$(grep -c "territorio:import /tmp/uv-13110.geojson" "$dlog")" = 1 ] \
+       && [ ! -e "$tmp/datos/13110/comuna-package.OLD" ]'
+    imp_out unidades-vecinales 0 > "$droot/import.uv-13110.geojson.out"
+    imp_out deis-establecimientos 0 > "$droot/import.deis-establecimientos-13110.geojson.out"
+    dout="$(ROOT="$droot" DATOS_HOME="$tmp/datos" cmd_datos --importar 2>&1)"; drc=$?
+    check "datos --importar: the idempotent re-run — «0 creados» per file, green, no first-load note" \
+      '[ "$drc" -eq 0 ] && case "$dout" in *"✓ Importado a \"unidades-vecinales\": 0 creados"*"✓ Datos de la comuna cargados: 2 archivo(s)"*) ;; *) false;; esac && case "$dout" in *primera\ carga*) false;; *) true;; esac'
+    printf 'El archivo es de la comuna 13101 y esta instalación es la 13110 (La Florida). Corte el archivo para su comuna antes de importarlo.\n' > "$droot/import.deis-establecimientos-13110.geojson.out"
+    echo 1 > "$droot/import.deis-establecimientos-13110.geojson.rc"
+    dout="$(ROOT="$droot" DATOS_HOME="$tmp/datos" cmd_datos --importar 2>&1)"; drc=$?
+    check "datos --importar: a refused import shows the app's own Spanish refusal and still cleans /tmp — the other file goes on, the run reds" \
+      '[ "$drc" -eq 1 ] && case "$dout" in *"✗ deis-establecimientos-13110.geojson no se importó: El archivo es de la comuna 13101"*"✓ Importado a \"unidades-vecinales\": 0 creados"*"✗ 1 archivo(s) no quedaron importados"*) ;; *) false;; esac \
+       && grep -q "^exec aps-conecta-nextcloud rm -f /tmp/deis-establecimientos-13110.geojson$" "$dlog"'
+    printf 'algo inesperado\n' > "$droot/import.uv-13110.geojson.out"
+    echo 0 > "$droot/import.uv-13110.geojson.rc"
+    imp_out deis-establecimientos 44 > "$droot/import.deis-establecimientos-13110.geojson.out"
+    echo 0 > "$droot/import.deis-establecimientos-13110.geojson.rc"
+    dout="$(ROOT="$droot" DATOS_HOME="$tmp/datos" cmd_datos --importar 2>&1)"; drc=$?
+    check "datos --importar: a summary the executor cannot read is unverified — a red, never a silent green" \
+      '[ "$drc" -eq 1 ] && case "$dout" in *"✗ uv-13110.geojson se importó pero territorio no informó su resumen — no quedó verificado"*) ;; *) false;; esac'
+    touch "$droot/solo-deis"; : > "$dlog"
+    dout="$(ROOT="$droot" DATOS_HOME="$tmp/datos-solo" cmd_datos --importar 2>&1)"; drc=$?
+    check "datos --importar: a stage without both recipe outputs reds naming what it holds — nothing imported (counted before checked)" \
+      '[ "$drc" -eq 1 ] && case "$dout" in *"✗ se esperaban los dos paquetes de la comuna (uv-13110.geojson y deis-establecimientos-13110.geojson) y hay 1 bajo $tmp/datos-solo/13110"*) ;; *) false;; esac \
+       && ! grep -q "occ territorio:import /tmp" "$dlog"'
+    rm -f "$droot/solo-deis"; touch "$droot/vacio"
+    dout="$(ROOT="$droot" DATOS_HOME="$tmp/datos-vacio" cmd_datos --importar 2>&1)"; drc=$?
+    check "datos --importar: an empty stage is a failure, never a vacuous green" \
+      '[ "$drc" -eq 1 ] && case "$dout" in *"y hay 0 bajo $tmp/datos-vacio/13110"*) ;; *) false;; esac'
+    rm -f "$droot/vacio"
+    : > "$dlog"; echo 1 > "$droot/cp.rc"
+    dout="$(ROOT="$droot" DATOS_HOME="$tmp/datos" cmd_datos --importar 2>&1)"; drc=$?
+    check "datos --importar: a docker cp that fails reds named and imports nothing" \
+      '[ "$drc" -eq 1 ] && case "$dout" in *"✗ no se pudo copiar"*"ningún archivo quedó importado"*) ;; *) false;; esac && ! grep -q "occ territorio:import" "$dlog"'
+    rm -f "$droot/cp.rc"
+    : > "$dlog"; rm -f "$tshim/docker"
+    local cola_out
+    cola_out="$(
+      step_revisar()   { ok "revisar-stub"; }
+      step_preparar()  { ok "preparar-stub"; }
+      step_descargar() { ok "descargar-stub"; }
+      step_mapa()      { ok "mapa-stub"; }
+      silent_centro()  { ok "centro-stub"; }
+      silent_suite()   { ok "suite-stub"; }
+      silent_equipos() { ok "equipos-stub"; }
+      silent_ejecutar() { ok "ejecutar-stub"; }
+      install_timers() { ok "temporizadores-stub"; }
+      cmd_datos() { echo "datos-stub:$*"; }
+      cmd_install --sitio "$tmp/dado.sh" --planilla "$tmp/dado.csv" </dev/null 2>&1
+    )"; rcs=$?
+    check "install --sitio: the comuna data rides the tail (D9) — datos --importar after the timers, before the verdict" \
+      '[ "$rcs" -eq 0 ] && case "$cola_out" in *"temporizadores-stub"*"datos-stub:--importar"*"INSTALACIÓN: ✓"*) ;; *) false;; esac'
+    cola_out="$(
+      step_revisar()   { ok "revisar-stub"; }
+      step_preparar()  { ok "preparar-stub"; }
+      step_descargar() { ok "descargar-stub"; }
+      step_mapa()      { ok "mapa-stub"; }
+      silent_centro()  { ok "centro-stub"; }
+      silent_suite()   { ok "suite-stub"; }
+      silent_equipos() { ok "equipos-stub"; }
+      silent_ejecutar() { ok "ejecutar-stub"; }
+      install_timers() { ok "temporizadores-stub"; }
+      cmd_datos() { die "datos-muere"; }
+      cmd_install --sitio "$tmp/dado.sh" --planilla "$tmp/dado.csv" </dev/null 2>&1
+    )"; rcs=$?
+    check "install --sitio: a red datos tail stays in its subshell and never uninstalls the suite — the aggregate names the one command that finishes it" \
+      '[ "$rcs" -eq 1 ] && case "$cola_out" in *"✗ datos-muere"*"✗ los datos de la comuna no quedaron cargados"*"sudo aps-conecta datos --importar"*"INSTALACIÓN: la suite quedó instalada; falta lo marcado con ✗"*) ;; *) false;; esac'
+  fi
 
   # ── red (D3): the consent-gated hairpin fixer — every host-changing command answers from a
   # shim behind only_shims, every /etc write lands in a scratch ETC_DIR, and getent answers
@@ -2901,7 +3117,7 @@ case "${1:-}" in
   red)          shift; cmd_red "$@" ;;
   respaldo)     cmd_respaldo ;;
   tiles)        shift; exec bash "$HOST_DIR/tiles.sh" "$@" ;;
-  datos)        shift; cmd_datos "${1:-}" ;;
+  datos)        shift; cmd_datos "$@" ;;
   --self-test)  selftest ;;
   ""|-h|--help) usage ;;
   *)            # a step answers by its registry id — the list is the only place a step is named
