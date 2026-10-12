@@ -18,6 +18,7 @@
 #   aps-conecta revalidate          post-update gate sweep: smoke + office-smoke + divergence
 #   aps-conecta tiles …            the basemap (install | refresh | check — host/tiles.sh)
 #   aps-conecta datos [CUT]        the comuna data packages, cut + checksum-verified + staged
+#   aps-conecta red --dominio D [--arreglar]  the domain's reflection: report, or fix it with consent (dnsmasq split-DNS)
 #   aps-conecta --self-test          the self-check (no docker needed — PATH shims)
 #
 # `install` installs what the server lacks — the tools, Docker, the bundle — and proves each piece;
@@ -297,6 +298,7 @@ usage() {  # Spanish, generated from the registry — never a slice of this file
   echo "  aps-conecta temporizadores        instala y activa la re-provisión semanal y el mapa mensual"
   echo "  aps-conecta estado                el último resultado de la re-provisión, con cada arreglo (sin sudo)"
   echo "  aps-conecta revalidate            revisa la instancia después de una actualización"
+  echo "  aps-conecta red --dominio D [--arreglar]   el reflejo del dominio: revisarlo y, con --arreglar, corregirlo (DNS local)"
   echo "  aps-conecta respaldo              agrega /opt/aps-conecta a las copias de seguridad"
   echo "  aps-conecta tiles install|refresh|check   el mapa: construirlo, refrescarlo y revisar que la suite lo sirve"
   echo "  aps-conecta datos [CUT]           los paquetes de datos de la comuna"
@@ -466,7 +468,7 @@ check_hairpin() {  # the D10 leg (upstream #8433): the HOST curls its own public
     ok "https://$d/status.php responde desde el propio servidor (se alcanza por su dominio)"
   else
     bad "https://$d/status.php NO responde desde el propio servidor (el NAT no refleja el tráfico hacia su dominio)" \
-      "permita el reflejo: «ufw route allow proto tcp from 172.18.0.0/16 to any port 443», o DNS local: dnsmasq con un registro A del dominio, o el dns del daemon.json de docker; NO use SKIP_DOMAIN_VALIDATION — no resuelve este tramo"
+      "corríjalo en un paso: «sudo aps-conecta red --dominio $d --arreglar» (DNS local: dnsmasq, el DNS del propio servidor y el dns del daemon.json de docker); si prefiere permitir el reflejo del NAT: «ufw route allow proto tcp from 172.18.0.0/16 to any port 443»; NO use SKIP_DOMAIN_VALIDATION — no resuelve este tramo"
   fi
   if curl -sk --max-time 10 "https://$d/eurooffice/healthcheck" >/dev/null 2>&1; then
     ok "https://$d/eurooffice/healthcheck responde desde el propio servidor"
@@ -623,6 +625,153 @@ ensure_overcommit() {  # Redis, inside the suite, warns and can fail its saves w
 }
 
 step_revisar() { check_ram; check_cpu; check_disk; check_ports; check_network; check_arch; }
+
+# ── the hairpin fix (D3): dnsmasq split-DNS — the mutator family's four pieces ───────────
+# The failing hop is the reflection: the server asks its own public address for its own
+# domain and the NAT does not answer (upstream #8433). The fix makes the answer local:
+# dnsmasq publishes the domain at this server's LAN address, the host's own resolution
+# routes only that domain to it (systemd-resolved), and the containers resolve through
+# the same server (daemon.json) — applied with consent («aps-conecta red --arreglar»),
+# in the window before start_suite, so containers are created with the daemon's DNS and
+# the wizard's re-post re-verifies the whole leg for free.
+
+lan_ipv4() { host_ipv4s | head -1; }   # this server's first LAN address — the one the
+# suite's domain is pinned to (several: the first, named in the line — re-run to re-pin)
+resolved_active() { systemctl is-active --quiet systemd-resolved 2>/dev/null; }
+
+install_dnsmasq() {  # the local resolver itself — apt installs it only when missing; the
+  # conf below already sits in its dnsmasq.d, so the package's first start binds only the
+  # addresses it names and never collides with systemd-resolved's stub listener
+  command -v dnsmasq >/dev/null 2>&1 && return 0
+  if ! command -v apt-get >/dev/null 2>&1; then
+    bad "dnsmasq no está instalado y este sistema no usa apt" \
+      "instale dnsmasq y vuelva a ejecutar: sudo aps-conecta red --dominio <dominio> --arreglar"
+    return 0
+  fi
+  info "instalando dnsmasq (el DNS local)"
+  if "${APT[@]}" update >/dev/null && "${APT[@]}" install -y dnsmasq >/dev/null; then
+    ok "dnsmasq instalado"
+  else
+    bad "no se pudo instalar dnsmasq" "revise la red y apt (sudo apt-get update) y vuelva a ejecutar el comando"
+  fi
+}
+
+ensure_dnsmasq_local() {  # D LAN — the local answer: dnsmasq answers the suite's domain
+  # with this server's LAN address, on loopback for the host's resolver and on the LAN
+  # address for the containers. Guard-first idempotence (identical conf, the binary, a
+  # live service = nothing to do); the conf lands BEFORE the package installs
+  local d="$1" lan="$2" f="$ETC_DIR/dnsmasq.d/aps-conecta.conf" changed=0
+  local -a conf=(
+    "# APS Conecta — DNS local para el dominio de la suite"
+    "# Escrito por «aps-conecta red --dominio $d --arreglar»; re-ejecútelo para cambiarlo."
+    "listen-address=127.0.0.1,$lan"
+    "bind-interfaces"
+  )
+  # with resolved, /etc/resolv.conf is its stub: dnsmasq's upstream list must come from
+  # resolved's own plain file (the loopback in the default one is ignored, a silent loop)
+  resolved_active && conf+=("resolv-file=/run/systemd/resolve/resolv.conf")
+  conf+=("address=/$d/$lan")
+  if [ "$(cat "$f" 2>/dev/null || true)" != "$(printf '%s\n' "${conf[@]}")" ]; then
+    ( umask 022 && mkdir -p "$ETC_DIR/dnsmasq.d" && printf '%s\n' "${conf[@]}" > "$f" ) \
+      || { bad "no se pudo escribir $f" "revise los permisos de $ETC_DIR y vuelva a ejecutar el comando"; return 0; }
+    changed=1
+  fi
+  command -v dnsmasq >/dev/null 2>&1 || install_dnsmasq
+  if [ "$changed" = 1 ] || ! systemctl is-active --quiet dnsmasq 2>/dev/null; then
+    systemctl enable --now dnsmasq >/dev/null 2>&1
+    systemctl restart dnsmasq >/dev/null 2>&1
+  fi
+  if [ "$(cat "$f" 2>/dev/null || true)" = "$(printf '%s\n' "${conf[@]}")" ] \
+     && systemctl is-active --quiet dnsmasq 2>/dev/null; then
+    if [ "$changed" = 1 ]; then
+      ok "DNS local listo: $d responde $lan desde este servidor (dnsmasq)"
+    else
+      ok "DNS local ya instalado: $d responde $lan (dnsmasq)"
+    fi
+  else
+    bad "dnsmasq no quedó en marcha con $f" "revise: systemctl status dnsmasq"
+  fi
+}
+
+ensure_resolved_route() {  # D LAN — the host's own leg: a routing drop-in sends ONLY the
+  # suite's domain to the local dnsmasq; everything else keeps the path it had. resolved
+  # refuses loopback DNS servers, so the drop-in names the LAN address dnsmasq also
+  # listens on (the same answer the containers get)
+  local d="$1" lan="$2" f="$ETC_DIR/systemd/resolved.conf.d/aps-conecta.conf"
+  local -a want=(
+    "# APS Conecta — el dominio de la suite resuelve en este servidor (dnsmasq local)"
+    "[Resolve]"
+    "DNS=$lan"
+    "Domains=~$d"
+  )
+  if [ "$(cat "$f" 2>/dev/null || true)" = "$(printf '%s\n' "${want[@]}")" ] \
+     && systemctl is-active --quiet systemd-resolved 2>/dev/null; then
+    ok "El DNS del propio servidor ya enruta $d al DNS local (systemd-resolved)"; return 0
+  fi
+  ( umask 022 && mkdir -p "$ETC_DIR/systemd/resolved.conf.d" && printf '%s\n' "${want[@]}" > "$f" ) \
+    || { bad "no se pudo escribir $f" "revise los permisos de $ETC_DIR y vuelva a ejecutar el comando"; return 0; }
+  if systemctl restart systemd-resolved >/dev/null 2>&1; then
+    ok "El DNS del propio servidor enrutó $d al DNS local (systemd-resolved)"
+  else
+    bad "no se pudo aplicar el enrutamiento del DNS del servidor" "revise: systemctl status systemd-resolved"
+  fi
+}
+
+merge_docker_dns() {  # LAN — the containers' leg: daemon.json's "dns" gains this server's
+  # LAN address FIRST, so the suite's domain never falls through to a public answer that
+  # hairpins. A real JSON parse reads, merges and writes (a sed on JSON is never allowed,
+  # D10): sibling keys and the operator's own resolvers survive, an unparseable file is
+  # refused untouched with the hand fix, and the daemon restarts only when the bytes
+  # changed — a consent re-run never bounces a running suite for nothing
+  local f="$ETC_DIR/docker/daemon.json" lan="$1" tmp rc=0
+  ( umask 022 && mkdir -p "$ETC_DIR/docker" ) \
+    || { bad "no se pudo preparar $ETC_DIR/docker" "revise los permisos de $ETC_DIR y vuelva a ejecutar el comando"; return 0; }
+  tmp="$(mktemp "$ETC_DIR/docker/.daemon.json.XXXXXX")" \
+    || { bad "no se pudo escribir en $ETC_DIR/docker" "revise los permisos de $ETC_DIR y vuelva a ejecutar el comando"; return 0; }
+  python3 - "$f" "$lan" > "$tmp" <<'PY' || rc=$?
+import json, sys
+path, lan = sys.argv[1], sys.argv[2]
+try:
+    with open(path) as fh:
+        cfg = json.load(fh)
+except FileNotFoundError:
+    cfg = {}
+except (ValueError, UnicodeDecodeError):
+    sys.exit(3)   # unparseable: refuse, never overwrite
+dns = cfg.get("dns")
+dns = list(dns) if isinstance(dns, list) else []
+cfg["dns"] = [lan] + [s for s in dns if s != lan]
+print(json.dumps(cfg, indent=2, ensure_ascii=False))
+PY
+  if [ "$rc" -ne 0 ]; then
+    rm -f "$tmp"
+    bad "$f no se pudo leer como JSON — no se tocó" \
+      "revíselo a mano (sudo python3 -m json.tool $f) y vuelva a ejecutar el comando"
+    return 0
+  fi
+  if [ "$(cat "$tmp")" = "$(cat "$f" 2>/dev/null || true)" ]; then
+    rm -f "$tmp"; ok "DNS de los contenedores ya usa este servidor ($lan primero)"; return 0
+  fi
+  chmod 0644 "$tmp"   # mktemp creates 0600; the file that lands is the umask-022 shape
+  if mv "$tmp" "$f" && systemctl restart docker >/dev/null 2>&1; then
+    ok "DNS de los contenedores: el daemon de docker usa este servidor como DNS ($lan primero)"
+  else
+    bad "no se pudo aplicar el DNS de los contenedores" "revise: sudo python3 -m json.tool $f; systemctl restart docker"
+  fi
+}
+
+allow_container_dns_ufw() {  # the containers reach dnsmasq on the host's LAN address: when
+  # ufw manages this server's firewall, that answer needs the door open for Docker's
+  # private nets (the bridge pools, not just today's networks)
+  command -v ufw >/dev/null 2>&1 || return 0
+  ufw status 2>/dev/null | grep -q 'Status: active' || return 0
+  ufw status 2>/dev/null | grep -q '172\.16\.0\.0/12' && return 0
+  if ufw allow from 172.16.0.0/12 to any port 53 >/dev/null 2>&1; then
+    ok "Cortafuegos: el DNS local abierto a los contenedores (ufw)"
+  else
+    bad "no se pudo abrir el DNS local en el cortafuegos" "sudo ufw allow from 172.16.0.0/12 to any port 53"
+  fi
+}
 
 step_preparar() {  # installs what is missing, then proves each piece with its own check: the tools,
   # Docker (from Docker's own apt repository), the operator's docker group, the overcommit
@@ -1308,6 +1457,78 @@ cmd_revalidate() {  # post-update: run every read-only gate against the running 
   return "$rc"
 }
 
+# ── red — the hairpin leg's one command (D3) ────────────────────────────────────────────
+
+red_informe() {  # D LAN — the diagnosis, nothing touched: where the domain resolves today,
+  # whether this server reaches itself back through it, and the one command that fixes it
+  local d="$1" lan="$2" pub
+  pub="$(getent hosts "$d" | awk '{print $1; exit}')"
+  if [ -z "$pub" ]; then
+    bad "DNS no responde para $d" "cree el registro A (o AAAA) del dominio apuntando a la IP pública de este servidor"
+  elif [ -n "$lan" ] && [ "$pub" = "$lan" ]; then
+    ok "$d ya resuelve a este servidor ($lan) — no hay reflejo que corregir"
+  else
+    info "$d resuelve a ${pub:-?}, una dirección pública — sin el reflejo del NAT, el propio servidor no se alcanza a través de ella"
+    info "con «sudo aps-conecta red --dominio $d --arreglar» este servidor responde por su dominio: el DNS local, el del propio servidor y el de los contenedores"
+  fi
+  PREFLIGHT_DOMAIN="$d" check_hairpin
+  [ "$FAIL" -eq 0 ] || return 1
+  return 0
+}
+
+cmd_red() {  # --dominio D [--arreglar] — the reflection of the domain, reported or fixed.
+  # The fix is consent-gated: --arreglar IS the consent (the wizard's «Sí, corregir» card
+  # and the operator's own hand), applied before start_suite so the containers are born
+  # with the daemon's DNS and the wizard's re-post re-verifies the whole leg for free
+  local d="" arreglar=0 lan
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --dominio) [ -n "${2:-}" ] || die "falta el dominio: aps-conecta red --dominio <dominio> [--arreglar]"
+                  d="$2"; shift 2 ;;
+      --arreglar) arreglar=1; shift ;;
+      *) die "opción desconocida: $1 — uso: aps-conecta red --dominio <dominio> [--arreglar]" ;;
+    esac
+  done
+  [ -n "$d" ] || die "falta el dominio: aps-conecta red --dominio <dominio> [--arreglar]"
+  valid_address "$d" || die "dominio no válido: $d (solo letras, números, puntos y guiones)"
+  ! is_ipv4 "$d" || die "una dirección IP no necesita esta corrección: el reflejo del NAT solo afecta a un dominio"
+  lan="$(lan_ipv4)"
+  echo "Red del servidor — el reflejo del dominio $d"
+  if [ "$arreglar" = 0 ]; then red_informe "$d" "${lan:-}"; return $?; fi
+  if ! is_root; then
+    bad "corregir la red necesita permisos de administrador" \
+      "ejecute: sudo aps-conecta red --dominio $d --arreglar"
+    exit 1
+  fi
+  if [ -z "$lan" ]; then
+    bad "no se encontró una dirección de red propia de este servidor" \
+      "revise la red del servidor (ip -4 addr) y vuelva a ejecutar el comando"
+    exit 1
+  fi
+  ensure_dnsmasq_local "$d" "$lan"
+  if resolved_active; then
+    ensure_resolved_route "$d" "$lan"
+  else
+    bad "este servidor no usa systemd-resolved: el DNS del propio servidor no se redirigió (los contenedores sí)" \
+      "apunte el DNS del propio servidor a esta máquina a mano (la guía del instalador, la sección del reflejo del dominio)"
+  fi
+  merge_docker_dns "$lan"
+  allow_container_dns_ufw
+  # the prove: this server must answer for its own domain — the old answer may sit cached,
+  # so the cache is flushed first (a green here is the resolution half of the leg; the
+  # https half needs the suite running, and the wizard's re-post proves it for free)
+  resolved_active && { resolvectl flush-caches >/dev/null 2>&1 || true; }
+  if [ "$(getent hosts "$d" | awk '{print $1; exit}')" = "$lan" ]; then
+    ok "$d resuelve a $lan desde este servidor — re-intente el paso en el instalador web"
+  else
+    bad "$d aún no resuelve a $lan desde este servidor" \
+      "revise: systemctl status dnsmasq; re-ejecute: sudo aps-conecta red --dominio $d --arreglar"
+  fi
+  PREFLIGHT_DOMAIN="$d" check_hairpin
+  [ "$FAIL" -eq 0 ] || exit 1
+  exit 0
+}
+
 # ── tiles + datos (slice 21, FRD S9) ─────────────────────────────────────────────────────
 NC=aps-conecta-nextcloud           # the AIO posture: respaldo hardcodes the mastercontainer
                                       # the same way; NC_CONTAINER is the seed's knob, not ours
@@ -1955,7 +2176,7 @@ CSHIM
   printf '#!/usr/bin/env bash\nexit 1\n' > "$tshim/curl"; chmod +x "$tshim/curl"
   out="$(check_hairpin)"
   check "hairpin: the red carries the ufw recipe and the local-DNS legs, and never SKIP_DOMAIN_VALIDATION as advice" \
-    'case "$out" in *"172.18.0.0/16"*"dnsmasq"*"daemon.json"*"NO use SKIP_DOMAIN_VALIDATION"*"✗ el control de salud de la oficina NO responde"*) ;; *) false;; esac'
+    'case "$out" in *"dnsmasq"*"daemon.json"*"172.18.0.0/16"*"NO use SKIP_DOMAIN_VALIDATION"*"✗ el control de salud de la oficina NO responde"*) ;; *) false;; esac'
 
   # ── asistente-aio: the AIO wizard driven through its API, against a stateful fake wizard ──
   # curl answers the six endpoints the drive uses (honouring -o, printing -w's code) and logs every
@@ -2461,6 +2682,191 @@ EOF
   check "datos: sin registro de sitio se rehúsa con la corrección nombrada" \
     '[ "$drc" -ne 0 ] && case "$dout" in *"SITE_COMUNA_CUT"*"provisionador"*) ;; *) false;; esac'
 
+  # ── red (D3): the consent-gated hairpin fixer — every host-changing command answers from a
+  # shim behind only_shims, every /etc write lands in a scratch ETC_DIR, and getent answers
+  # from the conf the fixer itself wrote (the prove is a real two-reader check, not a planted
+  # yes) ──
+  local ETC_RED="$tmp/red-etc" ETC_RED2="$tmp/red-etc2" rlog="$tmp/red.log" minred="$tmp/min-red"
+  local rc_red out_red
+  mkdir -p "$ETC_RED" "$ETC_RED2" "$minred"
+  # only the real tools the fixer and its shims lean on (python3 does the JSON; nothing else
+  # of the host is reachable from the arms' PATH)
+  for c in bash env mkdir chmod python3 mktemp awk sed grep head cat cut mv touch rm; do
+    ln -sf "$(command -v "$c")" "$minred/$c"
+  done
+  printf '10.0.0.5\n' > "$tmp/red-lan"; : > "$rlog"; : > "$tmp/red-ufw"; : > "$tmp/red-ps"
+  cat > "$tshim/systemctl" <<SHIM
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$rlog"
+case "\$1 \$3" in
+  "is-active dnsmasq") [ -e "$tmp/red-dnsmasq-up" ] || exit 3 ;;
+  "is-active systemd-resolved") [ "\${RED_RESOLVED:-1}" = 1 ] || exit 3 ;;
+esac
+case " \$* " in *" dnsmasq"*) touch "$tmp/red-dnsmasq-up" ;; esac
+exit 0
+SHIM
+  cat > "$tshim/apt-get" <<SHIM
+#!/usr/bin/env bash
+printf '%s\n' "apt-get \$*" >> "$rlog"
+case " \$* " in *" install -y dnsmasq"*)
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/dnsmasq"; chmod +x "$tshim/dnsmasq" ;; esac
+exit 0
+SHIM
+  cat > "$tshim/resolvectl" <<SHIM
+#!/usr/bin/env bash
+printf '%s\n' "resolvectl \$*" >> "$rlog"
+exit 0
+SHIM
+  cat > "$tshim/ufw" <<SHIM
+#!/usr/bin/env bash
+if [ "\$1" = status ]; then
+  [ "\${UFW_RED:-0}" = 1 ] && { echo "Status: active"; cat "$tmp/red-ufw" 2>/dev/null; } || echo "Status: inactive"
+  exit 0
+fi
+printf '%s\n' "ufw \$*" >> "$rlog"
+case "\$*" in "allow from 172.16.0.0/12 to any port 53") printf 'Anywhere 172.16.0.0/12 53\n' >> "$tmp/red-ufw" ;; esac
+exit 0
+SHIM
+  cat > "$tshim/getent" <<SHIM
+#!/usr/bin/env bash
+[ "\$1" = hosts ] || exit 2
+[ "\${RED_RESOLVED:-1}" = 0 ] && exit 2   # without resolved the host never asks the local dnsmasq
+a="\$(sed -n 's|^address=/[^/]*/||p' "\$ETC_DIR/dnsmasq.d/aps-conecta.conf" 2>/dev/null | head -1)"
+if [ -n "\$a" ]; then printf '%s %s\n' "\$a" "\$2"; exit 0; fi
+[ -n "\${RED_PUBLIC:-}" ] && { printf '%s %s\n' "\${RED_PUBLIC}" "\$2"; exit 0; }
+exit 2
+SHIM
+  cat > "$tshim/ip" <<SHIM
+#!/usr/bin/env bash
+[ "\$1 \$2" = "-4 -o" ] || exit 0
+[ -n "\${RED_LAN_FILE:-}" ] && [ -f "\${RED_LAN_FILE:-}" ] \
+  && awk '{ printf "%d: eth%d    inet %s/24 scope global eth%d\n", NR + 1, NR - 1, \$1, NR - 1 }' "\$RED_LAN_FILE"
+exit 0
+SHIM
+  cat > "$tshim/docker" <<SHIM
+#!/usr/bin/env bash
+[ "\$1 \$2" = "ps --format" ] && { cat "$tmp/red-ps" 2>/dev/null; exit 0; }
+exit 0
+SHIM
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/curl"; chmod +x "$tshim/curl"
+  printf '#!/usr/bin/env bash\ncase "$1" in -u) echo "${ID_U:-0}" ;; -un) echo root ;; esac\n' > "$tshim/id"
+  chmod +x "$tshim/systemctl" "$tshim/apt-get" "$tshim/resolvectl" "$tshim/ufw" "$tshim/getent" "$tshim/ip" "$tshim/docker" "$tshim/id"
+  red_run() {  # ETC [USER [RESOLVED [PUBLIC]]] ARGS… — cmd_red in the fixture world. The
+    # fixed knobs are the leading non-option words (USER, RESOLVED, PUBLIC, in that order);
+    # everything from the first -- is cmd_red's own argv. Every knob rides ONLY the command
+    # substitution's environment: a bare VAR=x prefix on a function call persists after the
+    # call (the control-knob lesson, aps-conecta:2396-2398), so no arm ever writes one — they
+    # all go through here and die with the substitution
+    local e="$1" u=0 r=1 pb="" slot=0 c
+    shift
+    for c in "$@"; do
+      [[ "$c" == --* ]] && break
+      slot=$((slot + 1))
+      case "$slot" in 1) u="$c" ;; 2) r="$c" ;; 3) pb="$c" ;; esac
+    done
+    while [ $# -gt 0 ] && [[ "$1" != --* ]]; do shift; done
+    rc_red=0
+    out_red="$( PATH="$tshim:$minred" ETC_DIR="$e" ID_U="$u" RED_RESOLVED="$r" \
+                RED_PUBLIC="$pb" RED_LAN_FILE="$tmp/red-lan" UFW_RED=1 FAIL=0 \
+                cmd_red "$@" 2>&1 )" || rc_red=$?
+    return 0
+  }
+  if only_shims systemctl apt-get resolvectl ufw docker curl getent ip id; then
+    red_run "$ETC_RED"
+    check "red: without --dominio it refuses, naming the form" \
+      '[ "$rc_red" -eq 1 ] && case "$out_red" in *"✗ falta el dominio: aps-conecta red --dominio <dominio> [--arreglar]"*) ;; *) false;; esac'
+    red_run "$ETC_RED" --dominio -x
+    check "red: a value that is not a domain refuses before anything runs" \
+      '[ "$rc_red" -eq 1 ] && case "$out_red" in *"✗ dominio no válido: -x (solo letras, números, puntos y guiones)"*) ;; *) false;; esac'
+    red_run "$ETC_RED" --dominio 10.0.0.5
+    check "red: an address never suffers the reflection — refused, naming the reason" \
+      '[ "$rc_red" -eq 1 ] && case "$out_red" in *"✗ una dirección IP no necesita esta corrección"*) ;; *) false;; esac'
+    red_run "$ETC_RED" --dominio clinica.example --otra
+    check "red: an unknown option refuses with the usage" \
+      '[ "$rc_red" -eq 1 ] && case "$out_red" in *"✗ opción desconocida: --otra — uso: aps-conecta red --dominio <dominio> [--arreglar]"*) ;; *) false;; esac'
+    check "red: the refusals touched nothing" '[ ! -s "$rlog" ] && [ -z "$(ls -A "$ETC_RED")" ]'
+    : > "$rlog"
+    red_run "$ETC_RED" 1000 --dominio clinica.example --arreglar
+    check "red --arreglar: without sudo it refuses before anything runs" \
+      '[ "$rc_red" -eq 1 ] && case "$out_red" in *"✗ corregir la red necesita permisos de administrador"*"sudo aps-conecta red --dominio clinica.example --arreglar"*) ;; *) false;; esac && [ ! -s "$rlog" ]'
+    printf 'aps-conecta-apache\n' > "$tmp/red-ps"   # the tail re-proves the wizard's own legs
+    : > "$rlog"
+    red_run "$ETC_RED" --dominio clinica.example --arreglar
+    check "red --arreglar: the consent run wires the four pieces and proves them — dnsmasq installed and running, the host's routing, the containers' DNS, the firewall door" \
+      '[ "$rc_red" -eq 0 ] && [ -x "$tshim/dnsmasq" ] \
+       && grep -q "^enable --now dnsmasq$" "$rlog" && grep -q "^restart dnsmasq$" "$rlog" \
+       && grep -q "^restart systemd-resolved$" "$rlog" && grep -q "^restart docker$" "$rlog" \
+       && grep -q -- "-qq .*install -y dnsmasq" "$rlog" \
+       && grep -q "^ufw allow from 172.16.0.0/12 to any port 53$" "$rlog" \
+       && case "$out_red" in *"✓ DNS local listo: clinica.example responde 10.0.0.5 desde este servidor (dnsmasq)"*"✓ El DNS del propio servidor enrutó clinica.example al DNS local (systemd-resolved)"*"✓ DNS de los contenedores: el daemon de docker usa este servidor como DNS (10.0.0.5 primero)"*"✓ Cortafuegos: el DNS local abierto a los contenedores (ufw)"*"✓ clinica.example resuelve a 10.0.0.5 desde este servidor — re-intente el paso en el instalador web"*) ;; *) false;; esac'
+    check "red --arreglar: dnsmasq first, the host's routing, docker last — the daemon restarts after the whole answer is local" \
+      '[ "$(grep -n "^enable --now dnsmasq$" "$rlog" | head -1 | cut -d: -f1)" -lt "$(grep -n "^restart systemd-resolved$" "$rlog" | head -1 | cut -d: -f1)" ] && [ "$(grep -n "^restart systemd-resolved$" "$rlog" | head -1 | cut -d: -f1)" -lt "$(grep -n "^restart docker$" "$rlog" | head -1 | cut -d: -f1)" ]'
+    check "red --arreglar: the dnsmasq conf — loopback plus the LAN address, the suite's domain pinned to it, and (with resolved) the upstream list from resolved's own plain file" \
+      'grep -qx "listen-address=127.0.0.1,10.0.0.5" "$ETC_RED/dnsmasq.d/aps-conecta.conf" \
+       && grep -qx "bind-interfaces" "$ETC_RED/dnsmasq.d/aps-conecta.conf" \
+       && grep -qx "resolv-file=/run/systemd/resolve/resolv.conf" "$ETC_RED/dnsmasq.d/aps-conecta.conf" \
+       && grep -qx "address=/clinica.example/10.0.0.5" "$ETC_RED/dnsmasq.d/aps-conecta.conf"'
+    check "red --arreglar: the resolved drop-in routes ONLY the suite's domain, to the LAN address dnsmasq also listens on" \
+      'grep -qx "DNS=10.0.0.5" "$ETC_RED/systemd/resolved.conf.d/aps-conecta.conf" && grep -qx "Domains=~clinica.example" "$ETC_RED/systemd/resolved.conf.d/aps-conecta.conf"'
+    check "red --arreglar: daemon.json carries this server first as the containers' DNS" \
+      '[ "$(python3 -c "import json; print(json.load(open(\"$ETC_RED/docker/daemon.json\"))[\"dns\"][0])")" = 10.0.0.5 ]'
+    check "red --arreglar: a running suite reads green at the tail — the wizard's own two legs re-proved" \
+      'case "$out_red" in *"status.php responde desde el propio servidor"*"eurooffice/healthcheck responde desde el propio servidor"*) ;; *) false;; esac'
+    check "red --arreglar: the host's cached public answer is flushed before the prove" \
+      'grep -q "^resolvectl flush-caches$" "$rlog"'
+    : > "$rlog"
+    red_run "$ETC_RED" --dominio clinica.example --arreglar
+    check "red --arreglar: a re-run finds everything in place — nothing installed, restarted or re-allowed, and the «ya» lines say so" \
+      '[ "$rc_red" -eq 0 ] && ! grep -qE "^(enable --now dnsmasq|restart dnsmasq|restart systemd-resolved|restart docker)$" "$rlog" \
+       && ! grep -q -- "install -y" "$rlog" && ! grep -q "^ufw allow" "$rlog" \
+       && case "$out_red" in *"✓ DNS local ya instalado"*"✓ El DNS del propio servidor ya enruta"*"✓ DNS de los contenedores ya usa este servidor (10.0.0.5 primero)"*) ;; *) false;; esac'
+    printf '{\n  "dns": ["10.0.0.1"],\n  "log-level": "debug"\n}\n' > "$ETC_RED/docker/daemon.json"
+    : > "$rlog"
+    red_run "$ETC_RED" --dominio clinica.example --arreglar
+    check "red --arreglar: an existing daemon.json is MERGED — this server first, the operator's resolver kept, sibling keys intact — and docker restarts for the change" \
+      '[ "$rc_red" -eq 0 ] && grep -q "^restart docker$" "$rlog" \
+       && [ "$(python3 -c "import json; d = json.load(open(\"$ETC_RED/docker/daemon.json\")); print(\" \".join(d[\"dns\"]), d[\"log-level\"])")" = "10.0.0.5 10.0.0.1 debug" ]'
+    printf 'esto no es json\n' > "$ETC_RED/docker/daemon.json"; cp "$ETC_RED/docker/daemon.json" "$tmp/red-antes"
+    : > "$rlog"
+    red_run "$ETC_RED" --dominio clinica.example --arreglar
+    check "red --arreglar: an unparseable daemon.json is refused untouched, with the hand fix — never overwritten" \
+      '[ "$rc_red" -eq 1 ] && cmp -s "$ETC_RED/docker/daemon.json" "$tmp/red-antes" \
+       && case "$out_red" in *"no se pudo leer como JSON — no se tocó"*"json.tool"*) ;; *) false;; esac && ! grep -q "^restart docker$" "$rlog"'
+    rm -rf "$ETC_RED2"; mkdir -p "$ETC_RED2"; printf '10.0.0.5\n10.0.0.6\n' > "$tmp/red-lan"
+    red_run "$ETC_RED2" --dominio clinica.example --arreglar
+    check "red --arreglar: several addresses of this server — the first is pinned and named, never a silent choice" \
+      '[ "$rc_red" -eq 0 ] && grep -qx "address=/clinica.example/10.0.0.5" "$ETC_RED2/dnsmasq.d/aps-conecta.conf" \
+       && ! grep -q "10.0.0.6" "$ETC_RED2/dnsmasq.d/aps-conecta.conf" && case "$out_red" in *"responde 10.0.0.5"*) ;; *) false;; esac'
+    printf '10.0.0.5\n' > "$tmp/red-lan"
+    rm -rf "$ETC_RED2"; mkdir -p "$ETC_RED2"
+    red_run "$ETC_RED2" "" 0 --dominio clinica.example --arreglar
+    check "red --arreglar: a host without systemd-resolved fixes the containers' legs, refuses the host's own honestly, and never writes the drop-in" \
+      '[ "$rc_red" -eq 1 ] && [ ! -e "$ETC_RED2/systemd/resolved.conf.d" ] && [ -f "$ETC_RED2/docker/daemon.json" ] \
+       && ! grep -q "resolv-file" "$ETC_RED2/dnsmasq.d/aps-conecta.conf" \
+       && case "$out_red" in *"✗ este servidor no usa systemd-resolved"*"✗ clinica.example aún no resuelve a 10.0.0.5"*) ;; *) false;; esac'
+    rm -rf "$ETC_RED2"; mkdir -p "$ETC_RED2"; : > "$tmp/red-ps"; : > "$rlog"
+    red_run "$ETC_RED2" "" 1 203.0.113.9 --dominio clinica.example
+    check "red (report): a public answer — the reflection named, the fix command named, nothing touched, no sudo needed" \
+      '[ "$rc_red" -eq 0 ] && case "$out_red" in *"clinica.example resuelve a 203.0.113.9"*"reflejo"*"--arreglar"*) ;; *) false;; esac \
+       && [ ! -s "$rlog" ] && [ -z "$(ls -A "$ETC_RED2")" ]'
+    red_run "$ETC_RED" 1000 --dominio clinica.example
+    check "red (report): the fixed world reads fixed — nothing to correct, nothing touched" \
+      '[ "$rc_red" -eq 0 ] && case "$out_red" in *"✓ clinica.example ya resuelve a este servidor (10.0.0.5) — no hay reflejo que corregir"*) ;; *) false;; esac'
+    printf 'aps-conecta-apache\n' > "$tmp/red-ps"
+    printf '#!/usr/bin/env bash\nexit 1\n' > "$tshim/curl"; chmod +x "$tshim/curl"
+    out="$(PREFLIGHT_DOMAIN=clinica.example check_hairpin)"
+    check "hairpin: the red now leads with the one command that fixes it — the alternatives and the SKIP warning kept" \
+      'case "$out" in *"sudo aps-conecta red --dominio clinica.example --arreglar"*"dnsmasq"*"daemon.json"*"172.18.0.0/16"*"NO use SKIP_DOMAIN_VALIDATION"*) ;; *) false;; esac'
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/curl"; chmod +x "$tshim/curl"
+    out="$(RED_PUBLIC=203.0.113.9 bash "$HOST_DIR/aps-conecta" red --dominio clinica.example 2>&1)"; rc=$?
+    check "dispatch: red answers as the operator calls it (report mode, no sudo)" \
+      '[ "$rc" -eq 0 ] && case "$out" in *"clinica.example resuelve a 203.0.113.9"*"reflejo"*) ;; *) false;; esac'
+    out="$(usage)"
+    check "usage: red is listed with its form" \
+      'case "$out" in *"aps-conecta red --dominio D [--arreglar]"*) ;; *) false;; esac'
+  fi
+  rm -f "$tshim"/{systemctl,apt-get,resolvectl,ufw,getent,ip,docker,curl,id,dnsmasq}
+
   # ── the units parse (systemd-analyze verify, offline) ──
   if command -v systemd-analyze >/dev/null 2>&1; then
     u="$(systemd-analyze verify "$HOST_DIR/aps-conecta.service" "$HOST_DIR/aps-conecta.timer" \
@@ -2492,6 +2898,7 @@ case "${1:-}" in
   estado)       cmd_estado ;;
   pasos)        cmd_pasos ;;
   revalidate)   cmd_revalidate ;;
+  red)          shift; cmd_red "$@" ;;
   respaldo)     cmd_respaldo ;;
   tiles)        shift; exec bash "$HOST_DIR/tiles.sh" "$@" ;;
   datos)        shift; cmd_datos "${1:-}" ;;
