@@ -585,8 +585,8 @@ help_links_ours() {  # 140: every help link the wizard renders goes to the suite
   # gone (R23). No URL of upstream's GitHub, Nextcloud's sites or the App API repo in any
   # template or public text file — links and twig comments alike; the container list no longer
   # renders containers.json's upstream documentation URLs; the platform examples the suite never
-  # runs on are gone; and each section of gestion's docs the links were mapped to is linked
-  # (the positive control).
+  # runs on are gone; and each section of the suite's docs (instalador/aps) the links were
+  # mapped to is linked (the positive control).
   local t="$TREE/php/templates" fail=0 a
   s3_files "$t/components/container-state.twig" "$t/includes/backup-dirs.twig" || return 1
   if grep -rnIE 'github\.com/(nextcloud|nextcloud-releases|cloud-py-api)/|([a-z0-9-]+\.)*nextcloud\.(com|org)|nextcloud\.github\.io' "$t" "$TREE/php/public"; then
@@ -600,13 +600,13 @@ help_links_ours() {  # 140: every help link the wizard renders goes to the suite
   fi
   for a in INSTALLER.md#3-preflight INSTALLER.md#7-dns-the-host-must-reach-its-own-domain-d10 \
            INSTALLER.md#11-backups INSTALLER.md#12-troubleshooting GUIA-CLINICA.md#3-el-asistente-8080; do
-    grep -rqF "https://github.com/APS-Conecta/gestion/blob/main/docs/$a" "$t" \
-      || { echo "  no link to gestion's docs/$a" >&2; fail=1; }
+    grep -rqF "https://github.com/APS-Conecta/instalador/blob/main/aps/$a" "$t" \
+      || { echo "  no link to the suite's docs (instalador/aps)/$a" >&2; fail=1; }
   done
   [ "$fail" -eq 0 ]
 }
 
-row 140 "every help link on the wizard goes to the suite's own docs or is gone — no upstream GitHub, Nextcloud site or App API URL, no per-container upstream documentation link, no Synology/macOS/Windows examples, each mapped gestion doc section linked (R23)" \
+row 140 "every help link on the wizard goes to the suite's own docs or is gone — no upstream GitHub, Nextcloud site or App API URL, no per-container upstream documentation link, no Synology/macOS/Windows examples, each mapped suite doc section (instalador/aps) linked (R23)" \
   help_links_ours
 
 aps_defaults() {  # 150: the wizard proposes the suite's own values (R24) — America/Santiago, the
@@ -676,7 +676,7 @@ post_start_page() {  # 170: after start the page says only true, APS things (R27
   while IFS= read -r want; do
     grep -qF "$want" "$c" || { echo "  containers.twig does not carry: $want" >&2; fail=1; }
   done <<'EOF'
-https://github.com/APS-Conecta/gestion/blob/main/docs/GUIA-CLINICA.md#7-tras-actualizar
+https://github.com/APS-Conecta/instalador/blob/main/aps/GUIA-CLINICA.md#7-tras-actualizar
 <h2>Suite en marcha</h2>
 <code>sudo aps-conecta abrir</code>
 <p>Contraseña inicial de APS Conecta Gestión: <strong id="initial-nextcloud-password">

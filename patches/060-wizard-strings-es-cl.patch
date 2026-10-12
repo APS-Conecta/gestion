@@ -191,7 +191,7 @@ index e684e7e7..a97fe4e5 100644
      </details>
    {% endif %}
 diff --git a/php/templates/containers.twig b/php/templates/containers.twig
-index 4936133f..14430059 100644
+index 5614e048..a86afa18 100644
 --- a/php/templates/containers.twig
 +++ b/php/templates/containers.twig
 @@ -11,7 +11,7 @@
@@ -671,7 +671,7 @@ index 4936133f..14430059 100644
                                          {% endif %}
                                      {% endif %}
                                  {% endif %}
-@@ -440,53 +440,53 @@
+@@ -440,57 +440,57 @@
                                  {% if is_backup_container_running == false and isApacheStarting == false %}
                                      {% if has_backup_run_once == true %}
                                          <details>
@@ -679,13 +679,18 @@ index 4936133f..14430059 100644
 +                                        <summary>Haga clic aquí para mostrar todas las opciones de copia de seguridad (incluida una opción de actualizaciones automáticas)</summary>
                                      {% endif %}
 -                                    <h3>Backup information</h3>
--                                    <p>This is your encryption password for backups: <strong id="borg-backup-password">{{ borgbackup_password }}</strong></p>
++                                    <h3>Información de la copia de seguridad</h3>
+                                     {% if has_backup_run_once == true %}
+-                                        <p><details class="inline-details"><summary>Reveal your encryption password for backups</summary><strong id="borg-backup-password">{{ borgbackup_password }}</strong></details></p>
++                                        <p><details class="inline-details"><summary>Mostrar su contraseña de cifrado para las copias de seguridad</summary><strong id="borg-backup-password">{{ borgbackup_password }}</strong></details></p>
+                                     {% else %}
+-                                        <p>This is your encryption password for backups: <strong id="borg-backup-password">{{ borgbackup_password }}</strong></p>
++                                        <p>Esta es su contraseña de cifrado para las copias de seguridad: <strong id="borg-backup-password">{{ borgbackup_password }}</strong></p>
+                                     {% endif %}
 -                                    <p>Please save this password in a safe place. You won't be able to restore from backup if you lose this password!</p>
 -                                    <p>All important data from your Nextcloud AIO instance such as the database, your files and the mastercontainer's configuration files, will be backed up.</p>
 -                                    <p>The backup uses a tool called <a target="_blank" href="https://github.com/borgbackup/borg#what-is-borgbackup"><strong>BorgBackup</strong></a>, a well-known server backup tool that efficiently backs up your files and encrypts them on the fly.</p>
 -                                    <p>By using this tool, backups are incremental, differential, compressed and encrypted – so only the first backup will take a while. Further backups should be fast as only changes are taken into account.</p>
-+                                    <h3>Información de la copia de seguridad</h3>
-+                                    <p>Esta es su contraseña de cifrado para las copias de seguridad: <strong id="borg-backup-password">{{ borgbackup_password }}</strong></p>
 +                                    <p>Guarde esta contraseña en un lugar seguro. ¡No podrá restaurar desde la copia de seguridad si la pierde.</p>
 +                                    <p>Se respaldarán todos los datos importantes de su instancia de Nextcloud AIO, como la base de datos, sus archivos y los archivos de configuración del mastercontainer.</p>
 +                                    <p>La copia de seguridad utiliza una herramienta llamada <a target="_blank" href="https://github.com/borgbackup/borg#what-is-borgbackup"><strong>BorgBackup</strong></a>, una conocida herramienta de copia de seguridad para servidores que respalda sus archivos de forma eficiente y los cifra al vuelo.</p>
@@ -749,7 +754,7 @@ index 4936133f..14430059 100644
                                              <form method="POST" action="api/docker/restore" target="overlay-log" id="restore_selection">
                                                  <input type="hidden" name="{{csrf.keys.name}}" value="{{csrf.name}}">
                                                  <input type="hidden" name="{{csrf.keys.value}}" value="{{csrf.value}}">
-@@ -495,73 +495,73 @@
+@@ -499,73 +499,73 @@
                                                          <option value="{{ restore_time }}">{{ restore_time }} UTC</option>
                                                      {% endfor %}
                                                  </select>
@@ -849,7 +854,7 @@ index 4936133f..14430059 100644
                                          </form>
                                      {% endif %}
                                      {% if has_backup_run_once == true %}
-@@ -574,29 +574,29 @@
+@@ -578,29 +578,29 @@
                          {% if is_backup_container_running == false %}
                              {% if isApacheStarting == false %}
                                  {% if isAnyRunning == true %}
@@ -890,7 +895,7 @@ index 4936133f..14430059 100644
                                  </details>
                              {% endif %}
                          {% endif %}
-@@ -605,30 +605,30 @@
+@@ -609,30 +609,30 @@
  
                          {{ include('includes/optional-containers.twig') }}
  
@@ -1247,10 +1252,10 @@ index 7a9c08ba..d756f506 100644
          </div>
          <pre>{{ logContent }}</pre>
 diff --git a/php/templates/login.twig b/php/templates/login.twig
-index 74c29bef..e9557ad3 100644
+index d5813e65..4be0d78a 100644
 --- a/php/templates/login.twig
 +++ b/php/templates/login.twig
-@@ -5,20 +5,20 @@
+@@ -5,23 +5,23 @@
          <svg class="nextcloud-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 142 100" width="142" height="100">
              <use href="img/nextcloud-logo.svg#logo"></use>
              <use href="img/nextcloud-logo.svg#Nextcloud"></use>
@@ -1260,6 +1265,9 @@ index 74c29bef..e9557ad3 100644
 -        <h1>Nextcloud AIO Login</h1>
 +        <h1>Inicio de sesión de Nextcloud AIO</h1>
          {% if is_login_allowed == true %}
+             {% if login_unblocked_notice %}
+                 <p>{{ login_unblocked_notice }}</p>
+             {% endif %}
 -            <p>Log in using your Nextcloud AIO passphrase:</p>
 +            <p>Inicie sesión con su frase de contraseña de Nextcloud AIO:</p>
              <form method="POST" action="api/auth/login" class="xhr">
@@ -1271,10 +1279,10 @@ index 74c29bef..e9557ad3 100644
 +                <input type="submit" class="button" value="Iniciar sesión" />
              </form>
          {% else %}
--            <p>The login is blocked since Nextcloud is running.<br>Please use the <a target="_blank" href="https://github.com/nextcloud/all-in-one#how-to-easily-log-in-to-the-aio-interface"><strong>automatic login</strong></a> from your Nextcloud.<br><br>
--            If that is not possible, you can unblock the login by running<br><strong>sudo docker stop nextcloud-aio-apache</strong></p>
-+            <p>El inicio de sesión está bloqueado porque Nextcloud está en ejecución.<br>Utilice el <a target="_blank" href="https://github.com/nextcloud/all-in-one#how-to-easily-log-in-to-the-aio-interface"><strong>inicio de sesión automático</strong></a> desde su Nextcloud.<br><br>
-+            Si eso no es posible, puede desbloquear el inicio de sesión ejecutando<br><strong>sudo docker stop nextcloud-aio-apache</strong></p>
+-            <p>The direct login is blocked since Nextcloud is running.<br>Please use the <a target="_blank" href="https://github.com/nextcloud/all-in-one#how-to-easily-log-in-to-the-aio-interface"><strong>login link from your Nextcloud</strong></a> to unblock it.<br><br>
+-            If that is not possible, you can unblock the direct login by running<br><strong>sudo docker stop nextcloud-aio-apache</strong></p>
++            <p>El inicio de sesión directo está bloqueado porque Nextcloud está en ejecución.<br>Utilice el <a target="_blank" href="https://github.com/nextcloud/all-in-one#how-to-easily-log-in-to-the-aio-interface"><strong>enlace de inicio de sesión de su Nextcloud</strong></a> para desbloquearlo.<br><br>
++            Si eso no es posible, puede desbloquear el inicio de sesión directo ejecutando<br><strong>sudo docker stop nextcloud-aio-apache</strong></p>
          {% endif %}
      </div>
      <script type="text/javascript" src="before-unload.js"></script>

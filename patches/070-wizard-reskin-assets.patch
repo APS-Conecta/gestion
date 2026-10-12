@@ -5106,7 +5106,7 @@ index e4d7bee0..cb6a41c7 100644
          <p>Si no vio una contraseña en esta página durante la primera instalación, debería reinstalar toda la instancia, ya que la contraseña podría haber sido robada.</p>
          <p>Consulte <a target="_blank" href="https://github.com/nextcloud/all-in-one#how-to-properly-reset-the-instance">esta documentación</a> al respecto.</p>
 diff --git a/php/templates/containers.twig b/php/templates/containers.twig
-index 14430059..a2cf3a9e 100644
+index 75a3980f..9fba8870 100644
 --- a/php/templates/containers.twig
 +++ b/php/templates/containers.twig
 @@ -6,7 +6,7 @@
@@ -5191,7 +5191,7 @@ index d756f506..a0844f33 100644
          <script src="log-load.js?v1"></script>
      </head>
 diff --git a/php/templates/login.twig b/php/templates/login.twig
-index e9557ad3..73b2e723 100644
+index 4be0d78a..ff12d8ba 100644
 --- a/php/templates/login.twig
 +++ b/php/templates/login.twig
 @@ -3,11 +3,11 @@
@@ -5208,8 +5208,8 @@ index e9557ad3..73b2e723 100644
 -        <h1>Inicio de sesión de Nextcloud AIO</h1>
 +        <h1>Inicio de sesión de APS Conecta AIO</h1>
          {% if is_login_allowed == true %}
-             <p>Inicie sesión con su frase de contraseña de Nextcloud AIO:</p>
-             <form method="POST" action="api/auth/login" class="xhr">
+             {% if login_unblocked_notice %}
+                 <p>{{ login_unblocked_notice }}</p>
 diff --git a/php/templates/setup.twig b/php/templates/setup.twig
 index ff8974a7..36d1536a 100644
 --- a/php/templates/setup.twig

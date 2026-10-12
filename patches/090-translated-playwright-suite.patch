@@ -56,7 +56,7 @@ index c7092921..5c993018 100644
          if: ${{ !cancelled() }}
          with:
 diff --git a/php/tests/compose.yaml b/php/tests/compose.yaml
-index 7003bc9c..5062bfa7 100644
+index 4de55e2a..8d108d9e 100644
 --- a/php/tests/compose.yaml
 +++ b/php/tests/compose.yaml
 @@ -20,7 +20,7 @@ services:
@@ -82,14 +82,14 @@ index 7003bc9c..5062bfa7 100644
        - local-code
  
 -  desec-mock:
--    image: docker.io/library/node:26@sha256:a723b54c35a76e947095a20a67d39585bb09c862e6b1adeb8a9f518f95e34fb0
+-    image: docker.io/library/node:26@sha256:9965105b7a4e201d7f07268402bb4971670592b46c9b9058cc643961199a1ab6
 -    volumes:
 -      - ..:/app/php
 -    working_dir: /app
 -    command: node php/tests/desec-mock.mjs 8090 2>&1
 -          
    npm-installer:
-     image: docker.io/library/node:26@sha256:a723b54c35a76e947095a20a67d39585bb09c862e6b1adeb8a9f518f95e34fb0
+     image: docker.io/library/node:26@sha256:9965105b7a4e201d7f07268402bb4971670592b46c9b9058cc643961199a1ab6
      volumes:
 @@ -83,15 +74,12 @@ services:
      profiles:
@@ -549,11 +549,11 @@ index 212ff569..233a0977 100644
    return containersPage;
  }
 diff --git a/php/tests/tests/initial-setup.spec.js b/php/tests/tests/initial-setup.spec.js
-index b766878c..b1d6f03f 100755
+index 5664d675..3be77c1f 100644
 --- a/php/tests/tests/initial-setup.spec.js
 +++ b/php/tests/tests/initial-setup.spec.js
-@@ -2,41 +2,47 @@ import { test, expect } from '@playwright/test';
- import { writeFileSync } from 'node:fs'
+@@ -2,40 +2,46 @@ import { test, expect } from '@playwright/test';
+ import { readFileSync, writeFileSync } from 'node:fs'
  import { logInToContainersPage } from './helpers.js';
  
 +// The es-CL suite (patch 090): every assertion the 060 sweep re-skinned now asserts the
@@ -562,7 +562,7 @@ index b766878c..b1d6f03f 100755
 +// zero-PHP rule keeps the 68 unreachable-PHP strings English. Those two lines are the
 +// suite's living proof that the sweep never bled into php/src.
 +
- test('Initial setup', async ({ page: setupPage }) => {
+ test('Initial setup', async ({ page: setupPage, browser }) => {
    test.setTimeout(10 * 60 * 1000)
  
    const containersPage = await logInToContainersPage(setupPage);
@@ -602,13 +602,11 @@ index b766878c..b1d6f03f 100755
      dialog.accept()
    });
 -  await containersPage.getByRole('button', { name: 'Submit timezone' }).click();
--  await expect(containersPage.locator('body')).toContainText('The entered timezone does not seem to be a valid timezone!')
 +  await containersPage.getByRole('button', { name: 'Enviar zona horaria' }).click();
-+  await expect(containersPage.locator('body')).toContainText('The entered timezone does not seem to be a valid timezone!');
+   await expect(containersPage.locator('body')).toContainText('The entered timezone does not seem to be a valid timezone!')
  
    // Accept valid time zone
-   await containersPage.locator('#timezone').click();
-@@ -44,35 +50,35 @@ test('Initial setup', async ({ page: setupPage }) => {
+@@ -44,67 +50,67 @@ test('Initial setup', async ({ page: setupPage, browser }) => {
    containersPage.once('dialog', dialog => {
      dialog.accept()
    });
@@ -625,10 +623,45 @@ index b766878c..b1d6f03f 100755
 +  await expect(containersPage.getByRole('link', { name: 'Abrir su Nextcloud ↗' })).toBeVisible({ timeout: 3 * 60 * 1000 });
 +  await expect(containersPage.getByRole('link', { name: 'Abrir su Nextcloud ↗' })).toHaveAttribute('href', 'https://example.com');
  
+   // While Nextcloud is running, the direct login is blocked...
+   const blockedPage = await (await browser.newContext()).newPage();
+   await blockedPage.goto('./login');
+-  await expect(blockedPage.locator('body')).toContainText('The direct login is blocked since Nextcloud is running.');
++  await expect(blockedPage.locator('body')).toContainText('El inicio de sesión directo está bloqueado porque la suite está en ejecución.');
+   await expect(blockedPage.locator('#master-password')).toHaveCount(0);
+ 
    // Extract initial nextcloud password
 -  await expect(containersPage.getByRole('main')).toContainText('Initial Nextcloud password:')
 +  await expect(containersPage.getByRole('main')).toContainText('Contraseña inicial de Nextcloud:')
    const initialNextcloudPassword = await containersPage.locator('#initial-nextcloud-password').innerText();
+ 
+   // Reject backup location with relative path segments
+   await containersPage.locator('#borg_backup_host_location').click();
+   await containersPage.locator('#borg_backup_host_location').fill('/tmp/test/../aio');
+-  await containersPage.getByRole('button', { name: 'Submit backup location' }).click();
++  await containersPage.getByRole('button', { name: 'Enviar ubicación de la copia de seguridad' }).click();
+   await expect(containersPage.locator('body')).toContainText("must not contain '//', '/./', '/../' or '/,/'");
+ 
+   // Reject backup location with '/,/'
+   await containersPage.locator('#borg_backup_host_location').click();
+   await containersPage.locator('#borg_backup_host_location').fill('/tmp/test/,/aio');
+-  await containersPage.getByRole('button', { name: 'Submit backup location' }).click();
++  await containersPage.getByRole('button', { name: 'Enviar ubicación de la copia de seguridad' }).click();
+   await expect(containersPage.locator('body')).toContainText("must not contain '//', '/./', '/../' or '/,/'");
+ 
+   // Reject backup location inside /var/lib/docker
+   await containersPage.locator('#borg_backup_host_location').click();
+   await containersPage.locator('#borg_backup_host_location').fill('/var/lib/docker/volumes/aio');
+-  await containersPage.getByRole('button', { name: 'Submit backup location' }).click();
++  await containersPage.getByRole('button', { name: 'Enviar ubicación de la copia de seguridad' }).click();
+   await expect(containersPage.locator('body')).toContainText("Please use the docker volume name 'nextcloud_aio_backupdir' instead.");
+ 
+   // Reject backup location inside a system directory
+   await containersPage.locator('#borg_backup_host_location').click();
+   await containersPage.locator('#borg_backup_host_location').fill('/etc/aio');
+-  await containersPage.getByRole('button', { name: 'Submit backup location' }).click();
++  await containersPage.getByRole('button', { name: 'Enviar ubicación de la copia de seguridad' }).click();
+   await expect(containersPage.locator('body')).toContainText("must not be a children of or equal to the system directory '/etc'");
  
    // Set backup location and create backup
    const borgBackupLocation = `/tmp/test/aio-${Math.floor(Math.random() * 2147483647)}`
@@ -636,6 +669,7 @@ index b766878c..b1d6f03f 100755
    await containersPage.locator('#borg_backup_host_location').fill(borgBackupLocation);
 -  await containersPage.getByRole('button', { name: 'Submit backup location' }).click();
 +  await containersPage.getByRole('button', { name: 'Enviar ubicación de la copia de seguridad' }).click();
+   await expect(containersPage.locator('#borg-backup-password')).toBeVisible();
    containersPage.once('dialog', dialog => {
      dialog.accept()
    });
@@ -643,10 +677,12 @@ index b766878c..b1d6f03f 100755
 -  await expect(containersPage.getByRole('main')).toContainText('Backup container is currently running:', { timeout: 3 * 60 * 1000 });
 -  await expect(containersPage.getByRole('main')).toContainText('Last backup successful on', { timeout: 3 * 60 * 1000 });
 -  await containersPage.getByText('Click here to reveal all backup options').click();
+-  await containersPage.getByText('Reveal your encryption password for backups').click();
 +  await containersPage.getByRole('button', { name: 'Crear copia de seguridad' }).click();
 +  await expect(containersPage.getByRole('main')).toContainText('El contenedor de copias de seguridad está actualmente en ejecución:', { timeout: 3 * 60 * 1000 });
 +  await expect(containersPage.getByRole('main')).toContainText('¡El último backup fue exitoso el', { timeout: 3 * 60 * 1000 });
 +  await containersPage.getByText('Haga clic aquí para mostrar todas las opciones de copia de seguridad').click();
++  await containersPage.getByText('Mostrar su contraseña de cifrado para las copias de seguridad').click();
    await expect(containersPage.locator('#borg-backup-password')).toBeVisible();
    const borgBackupPassword = await containersPage.locator('#borg-backup-password').innerText();
  
@@ -656,34 +692,45 @@ index b766878c..b1d6f03f 100755
  
    // Save passwords for restore backup test
    writeFileSync('test_data.json', JSON.stringify({
-@@ -80,4 +86,4 @@ test('Initial setup', async ({ page: setupPage }) => {
-     borgBackupLocation,
-     borgBackupPassword,
-   }))
--});
-+});
-\ No newline at end of file
+@@ -123,17 +129,17 @@ test('Log in via token-unblocked login form', async ({ page: containersPage, bro
+   // The previous test left the containers stopped, so the direct login is allowed
+   await containersPage.goto('./login');
+   await containersPage.locator('#master-password').fill(password);
+-  await containersPage.getByRole('button', { name: 'Log in' }).click();
++  await containersPage.getByRole('button', { name: 'Iniciar sesión' }).click();
+   await containersPage.waitForURL('./containers');
+ 
+   // Start containers so that the direct login gets blocked
+-  await containersPage.getByRole('button', { name: 'Start containers' }).click();
+-  await expect(containersPage.getByRole('link', { name: 'Open your Nextcloud ↗' })).toBeVisible({ timeout: 5 * 60 * 1000 });
++  await containersPage.getByRole('button', { name: 'Iniciar contenedores' }).click();
++  await expect(containersPage.getByRole('link', { name: 'Abrir su Nextcloud ↗' })).toBeVisible({ timeout: 5 * 60 * 1000 });
+ 
+   // After logging out, the login form is blocked
+-  await containersPage.getByRole('button', { name: 'Log out' }).click();
++  await containersPage.getByRole('button', { name: 'Cerrar sesión' }).click();
+   await containersPage.waitForURL('./login');
+-  await expect(containersPage.locator('body')).toContainText('The direct login is blocked since Nextcloud is running.');
++  await expect(containersPage.locator('body')).toContainText('El inicio de sesión directo está bloqueado porque la suite está en ejecución.');
+   await expect(containersPage.locator('#master-password')).toHaveCount(0);
+ 
+   // Starting the containers generates a new token, so read it only now
+@@ -144,7 +150,7 @@ test('Log in via token-unblocked login form', async ({ page: containersPage, bro
+   await expect(tokenPage.locator('body')).toContainText('This login form is now available to you for up to 5 minutes and max. 5 attempts.');
+   await expect(tokenPage.locator('#master-password')).toBeVisible();
+   await tokenPage.locator('#master-password').fill(password);
+-  await tokenPage.getByRole('button', { name: 'Log in' }).click();
++  await tokenPage.getByRole('button', { name: 'Iniciar sesión' }).click();
+   await tokenPage.waitForURL('./containers');
+-  await expect(tokenPage.getByRole('link', { name: 'Open your Nextcloud ↗' })).toBeVisible();
++  await expect(tokenPage.getByRole('link', { name: 'Abrir su Nextcloud ↗' })).toBeVisible();
+ });
 diff --git a/php/tests/tests/restore-instance.spec.js b/php/tests/tests/restore-instance.spec.js
-index 9f045a72..95b43f30 100755
+index 53363c5f..85c45325 100755
 --- a/php/tests/tests/restore-instance.spec.js
 +++ b/php/tests/tests/restore-instance.spec.js
-@@ -2,6 +2,10 @@ import { test, expect } from '@playwright/test';
- import { readFileSync } from 'node:fs';
- import { logInToContainersPage } from './helpers.js';
- 
-+// The es-CL suite (patch 090). The domain-rejection assertion stays English ON PURPOSE —
-+// it asserts a PHP exception body (ConfigurationManager.php:689), and the zero-PHP rule
-+// keeps php/src strings English. Every other assertion matches the wizard's rendered es-CL.
-+
- test('Restore instance', async ({ page: setupPage }) => {
-   test.setTimeout(10 * 60 * 1000)
- 
-@@ -14,10 +18,10 @@ test('Restore instance', async ({ page: setupPage }) => {
- 
-   const containersPage = await logInToContainersPage(setupPage);
- 
--  // Reject example.com (requires enabled domain validation)
-+  // Reject example.com (requires enabled domain validation; PHP-borne English: :689 — stays)
+@@ -17,7 +17,7 @@ test('Restore instance', async ({ page: setupPage }) => {
+   // Reject example.com (requires enabled domain validation)
    await containersPage.locator('#domain').click();
    await containersPage.locator('#domain').fill('example.com');
 -  await containersPage.getByRole('button', { name: 'Submit domain' }).click();
@@ -691,7 +738,7 @@ index 9f045a72..95b43f30 100755
    await expect(containersPage.locator('body')).toContainText('Domain does not point to this server or the reverse proxy is not configured correctly.', { timeout: 15 * 1000 });
  
    // Reject invalid backup location
-@@ -25,49 +29,49 @@ test('Restore instance', async ({ page: setupPage }) => {
+@@ -25,51 +25,51 @@ test('Restore instance', async ({ page: setupPage }) => {
    await containersPage.locator('#borg_restore_host_location').fill('/tmp/test/aio-incorrect-path');
    await containersPage.locator('#borg_restore_password').click();
    await containersPage.locator('#borg_restore_password').fill(borgBackupPassword);
@@ -740,8 +787,12 @@ index 9f045a72..95b43f30 100755
  
    // Verify a successful backup restore
 -  await expect(containersPage.getByRole('main')).toContainText('Last restore successful!', { timeout: 3 * 60 * 1000 });
+-  await containersPage.getByText('Click here to reveal all backup options').click();
+-  await expect(containersPage.getByText('Reveal your encryption password for backups')).toBeVisible();
 -  await expect(containersPage.getByRole('main')).toContainText('⚠️ Container updates are available. Click on Stop containers and Start and update containers to update them. You should consider creating a backup first.');
 +  await expect(containersPage.getByRole('main')).toContainText('¡El último restore fue exitoso!', { timeout: 3 * 60 * 1000 });
++  await containersPage.getByText('Haga clic aquí para mostrar todas las opciones de copia de seguridad').click();
++  await expect(containersPage.getByText('Mostrar su contraseña de cifrado para las copias de seguridad')).toBeVisible();
 +  await expect(containersPage.getByRole('main')).toContainText('⚠️ Hay actualizaciones disponibles para los contenedores.');
    containersPage.once('dialog', dialog => {
      console.log(`Dialog message: ${dialog.message()}`)
@@ -756,7 +807,8 @@ index 9f045a72..95b43f30 100755
    // Verify that containers are all stopped
 -  await containersPage.getByRole('button', { name: 'Stop containers' }).click();
 -  await expect(containersPage.getByRole('button', { name: 'Start containers' })).toBeVisible({ timeout: 60 * 1000 });
+-});
+\ No newline at end of file
 +  await containersPage.getByRole('button', { name: 'Detener contenedores' }).click();
 +  await expect(containersPage.getByRole('button', { name: 'Iniciar contenedores' })).toBeVisible({ timeout: 60 * 1000 });
- });
-\ No newline at end of file
++});

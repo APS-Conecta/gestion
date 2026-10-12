@@ -14,10 +14,13 @@
 #       excludes, so an upstream file landing on an allowlisted path reads as a modification
 #       and fails LOUDLY (a human renames our file or restructures; never a silent exclusion);
 #   (b) --diff-filter=A ⊆ allowlist: everything main adds beyond upstream is fork-infra.
-# The allowlist is exactly the D6 amendment recorded with images.yml: images.yml, replay.yml,
-# .codespellrc (slice 11's forced extension — see allowlisted()'s comment), scripts/,
-# patches/, BUGS.md (BUGS.md is slice 23's deliverable, pre-listed so it never breaks parity
-# when it lands) — and readme.md is the ONE declared modification (slice 23): the fork declaration rides main's landing page under the strip-and-compare exception in cmd_parity — see DECLARED_MOD's comment; the (b) half is untouched, so upstream ever deleting readme.md turns main's copy into a rogue addition a human reconciles.
+# The allowlist is the D6 amendment recorded with images.yml, extended when instalador
+# absorbed the fork (gestion's host bundle, wizard and release chain moved here): images.yml,
+# replay.yml, release.yml, ci.yml, cleanboot.yml (the last three pre-listed so their landings
+# never break parity — BUGS.md's own precedent), .codespellrc (slice 11's forced extension —
+# see allowlisted()'s comment), scripts/, patches/, BUGS.md, host/, provisioning/, aps/,
+# install.sh, VERSION, installer.pub — and readme.md is the ONE declared modification (slice
+# 23): the fork declaration rides main's landing page under the strip-and-compare exception in cmd_parity — see DECLARED_MOD's comment; the (b) half is untouched, so upstream ever deleting readme.md turns main's copy into a rogue addition a human reconciles.
 # Prefix entries are safe BECAUSE (a) still catches upstream adding anything
 # under them as a missing file.
 #
@@ -102,10 +105,11 @@ usage: scripts/replay.sh <command>
 EOF
 }
 
-# The fork-infra allowlist (the D6 amendment): paths upstream does not ship. Exact entries
-# where upstream has neighbors (.github/workflows/ carries 30 upstream files — only our two
-# names are allowed), prefix entries where upstream has nothing (scripts/, patches/ — safe
-# because parity's (a) half still catches upstream ever adding anything under them).
+# The fork-infra allowlist (the D6 amendment, extended with instalador's absorption): paths
+# upstream does not ship. Exact entries where upstream has neighbors (.github/workflows/
+# carries 30 upstream files — only our five names are allowed), prefix entries where upstream
+# has nothing (scripts/, patches/, host/, provisioning/, aps/ — safe because parity's (a) half
+# still catches upstream ever adding anything under them).
 # .codespellrc (slice 11's forced extension): patch 060's es-CL sweep puts correct Spanish
 # words (momento, comando, ...) into the shipped tree AND into patches/*.patch's bytes on
 # main — upstream's own codespell workflow fires on both surfaces and flags the same 16
@@ -130,8 +134,9 @@ strip_declaration() {  # FILE — the marker-delimited fork declaration, deleted
 # the askpass helper supplies x-access-token/PAT without the token ever reaching a URL or argv.
 allowlisted() {  # PATH
   case "$1" in
-    .github/workflows/images.yml|.github/workflows/replay.yml|.codespellrc|BUGS.md) return 0 ;;
-    scripts/*|patches/*) return 0 ;;
+    .github/workflows/images.yml|.github/workflows/replay.yml|.github/workflows/release.yml|.github/workflows/ci.yml|.github/workflows/cleanboot.yml|.codespellrc|BUGS.md) return 0 ;;
+    scripts/*|patches/*|host/*|provisioning/*|aps/*) return 0 ;;
+    install.sh|VERSION|installer.pub) return 0 ;;
     *) return 1 ;;
   esac
 }

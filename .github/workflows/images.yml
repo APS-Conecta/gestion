@@ -43,9 +43,11 @@
 #
 # FORK-INFRA PLACEMENT (a D6 amendment, ratified with this slice). This file lives on main, which
 # stays a byte-identical upstream mirror for everything upstream ships. Fork-only paths — this
-# workflow, scripts/retag.sh, and (with S4) replay.yml, scripts/{replay,brand-gate,acquisition-
-# gate}.sh, patches/, BUGS.md — are the mirror-parity allowlist: S4's parity assert diffs main
-# against upstream byte-for-byte EXCEPT these paths. It is the only topology under which GitHub can
+# Fork-only paths — this workflow, scripts/retag.sh, replay.yml,
+# scripts/{replay,brand-gate,acquisition-gate}.sh, patches/, BUGS.md, and instalador's
+# extension — host/, provisioning/, aps/, install.sh, VERSION, installer.pub,
+# .github/workflows/{release,ci,cleanboot}.yml — are the mirror-parity allowlist: S4's parity
+# assert diffs main against upstream byte-for-byte EXCEPT these paths. It is the only topology under which GitHub can
 # run the fork's own CI at all: dispatch, schedule and reusable workflows must exist on the default
 # branch, and aps/main is force-pushed CI output — unusable as the default. All patch-queue content
 # (changes to files upstream ships) still moves as numbered patches replayed into aps/main, exactly
@@ -53,17 +55,17 @@
 # diffable. Upstream's own validators (shellcheck on **.sh, lint-yaml/zizmor, json-validator) run on
 # our files too — green on them is a program requirement.
 #
-# The release ordering this workflow serves: suite tags publish BEFORE the gestion tag push at every
-# release (the gestion release workflow resolves the digests from the registry at tag time); the
-# manifest job's JSON is the publish-time record — same digest format as gestion's
-# release-manifest.sh --emit, so the two can be diffed against each other.
+# The release ordering this workflow serves: the suite tag IS the instalador release tag (D4 —
+# gestion's tag ritual retired); the release chain (release.yml) consumes this manifest as its
+# channel source, and the manifest job's JSON is the publish-time record — same digest format
+# gestion's release-manifest.sh emits, so the two can be diffed against each other.
 name: Images
 
 on:
   workflow_dispatch:
     inputs:
       suite-tag:
-        description: "The suite tag this lockstep set publishes — the gestion release tag it accompanies (v0.2.0). Channel-valid Docker tag; 'latest*' reserved."
+        description: "The suite tag this lockstep set publishes — the instalador release tag it accompanies (v0.4.0). Channel-valid Docker tag; 'latest*' reserved."
         required: true
         type: string
       build-ref:
@@ -178,13 +180,13 @@ jobs:
         # branch, a tag, or a pinned SHA for repair runs alike.
         run: |
           set -euo pipefail
-          git clone --depth 1 --filter=blob:none --sparse             "https://github.com/APS-Conecta/AIO.git" /tmp/aio-main/
-          git -C /tmp/aio-main sparse-checkout set scripts
-          git clone --depth 1 --filter=blob:none --sparse             "https://github.com/APS-Conecta/gestion.git" /tmp/gestion/
+          git clone --depth 1 --filter=blob:none --sparse             "https://github.com/APS-Conecta/instalador.git" /tmp/instalador-main/
+          git -C /tmp/instalador-main sparse-checkout set scripts
+          git clone --depth 1 --filter=blob:none --sparse             "https://github.com/APS-Conecta/gestion.git" /tmp/gestion/   # unchanged — gestion still owns the suite-definition content
           git -C /tmp/gestion sparse-checkout set provisioning/apps themes/apsconecta
           git -C /tmp/gestion fetch --depth 1 origin "$GESTION_REF"
           git -C /tmp/gestion checkout FETCH_HEAD
-          bash /tmp/aio-main/scripts/bake.sh /tmp/gestion aps-bake/
+          bash /tmp/instalador-main/scripts/bake.sh /tmp/gestion aps-bake/
         env:
           GESTION_REF: ${{ inputs.gestion-ref }}
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3

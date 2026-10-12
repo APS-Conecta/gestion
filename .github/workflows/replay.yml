@@ -17,9 +17,10 @@
 #                     — a broken patch reds the PR, not main. A PR that edits a mirrored file
 #                     instead of adding a patch parity-reds here too (the teaching moment).
 #   workflow_dispatch  the publish ritual: suite-tag set = replay + gates, then hand off to
-#                     the Images pipeline with build-ref aps/main. Suite tags publish BEFORE
-#                     the gestion tag push at every release (the locked ordering). An empty
-#                     suite-tag = a plain replay run (look, don't publish).
+#                     the Images pipeline with build-ref aps/main. Suite tags are instalador
+#                     release tags now (D4: one tag, one identity — release.yml signs what
+#                     the Images pipeline publishes; ci-* throwaways ride the same path). An
+#                     empty suite-tag = a plain replay run (look, don't publish).
 #
 # THE JOB'S STEP ORDER IS THE GATE STACK: sync → parity → replay → validators → gates →
 # drift report → (publish). The publish job needs this job green — a red replay or a red gate
@@ -33,8 +34,10 @@
 # injects a known regression and asserts the gates CAN red) and liveness (org L7-5 — the
 # schedule's own enablement check).
 #
-# FORK-INFRA (the D6 allowlist; parity asserts everything else stays byte-identical): this
-# workflow, images.yml, scripts/, patches/, BUGS.md.
+# FORK-INFRA (the D6 allowlist, extended when instalador absorbed the fork; parity asserts
+# everything else stays byte-identical): this workflow, images.yml, release.yml, ci.yml,
+# cleanboot.yml, .codespellrc, BUGS.md, scripts/, patches/, host/, provisioning/, aps/,
+# install.sh, VERSION, installer.pub.
 #
 # SECRETS: only the ephemeral GITHUB_TOKEN. The replay job needs contents: write (it syncs
 # main and force-pushes aps/main — main itself is merge-only by construction: sync uses git
@@ -56,7 +59,7 @@ on:
   workflow_dispatch:
     inputs:
       suite-tag:
-        description: "Publish path: the suite tag the Images pipeline publishes (the gestion release tag it accompanies). Empty = replay + gates only."
+        description: "Publish path: the suite tag the Images pipeline publishes (the instalador release tag it accompanies). Empty = replay + gates only."
         required: false
         type: string
       force:

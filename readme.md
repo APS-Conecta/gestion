@@ -28,7 +28,7 @@ fork-infra paths — into `aps/main`, the tree the images are built from:
 | 110 | the wizard's content security policy lets its own brand fonts load |
 | 120 | the banner lockup drawn as outlines (`scripts/lockup.py`), so it needs no font |
 | 130 | the product named «APS Conecta Gestión AIO» on every wizard surface |
-| 140 | the wizard's help links pointed at the suite's own docs (gestion's INSTALLER and GUIA-CLINICA), the rest removed |
+| 140 | the wizard's help links pointed at the suite's own docs (instalador's aps/INSTALLER.md and aps/GUIA-CLINICA.md), the rest removed |
 | 150 | the suite's values pre-filled — America/Santiago, `/srv/aps-conecta/respaldos`, a gestion domain pattern |
 | 160 | the page offers only what the suite ships — the baked Hub, the suite version, the office card, no ExApp proxies, no «mastercontainer» jargon |
 | 170 | the post-start page: the update path, «Suite en marcha», no Docker prune button (the route stays), the suite's names |
@@ -79,14 +79,14 @@ these as its own canary that the sweep never bled into PHP.
 software inside it «la suite» — «Nextcloud» remains only in the Hub-upgrade block the page never
 renders, the docker socket proxy and HaRP options (shown only where one is already on) and
 the PHP-borne messages listed above — and the
-wizard's help links point at the suite's own docs — gestion's `docs/INSTALLER.md` and
-`docs/GUIA-CLINICA.md`. The image labels are byte-identical upstream,
+wizard's help links point at the suite's own docs — instalador's `aps/INSTALLER.md` and
+`aps/GUIA-CLINICA.md`. The image labels are byte-identical upstream,
 deliberately, and both readings are recorded: `org.opencontainers.image.vendor` says
 "Nextcloud" — true and honest nominative use, the software inside the image IS Nextcloud,
 with this declaration carrying the fork's attribution — and `org.opencontainers.image.url`
 points at Nextcloud's own documentation, which is correct for the software but not for this
-suite's install story: the suite's documentation is this repository plus gestion's
-`docs/INSTALLER.md`, never the label's target. This repository is the source of the
+suite's install story: the suite's documentation is this repository plus instalador's
+`aps/INSTALLER.md`, never the label's target. This repository is the source of the
 modifications.
 
 **Schedules.** The only schedule this fork runs is the Replay workflow's daily run — enable
@@ -104,9 +104,9 @@ corresponding source of every suite image is this repository at the matching sui
 
 **Installing.** A clinic installs from the published suite tag, never from this branch — the
 runbook (preflight, the provisionador, backups, the map, updates) lives in
-[`APS-Conecta/gestion`'s `docs/INSTALLER.md`](https://github.com/APS-Conecta/gestion/blob/main/docs/INSTALLER.md),
+[`aps/INSTALLER.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md),
 and its Spanish walkthrough for clinic IT in
-[`docs/GUIA-CLINICA.md`](https://github.com/APS-Conecta/gestion/blob/main/docs/GUIA-CLINICA.md).
+[`aps/GUIA-CLINICA.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/GUIA-CLINICA.md).
 
 Bugs this fork's own tooling hit are ledgered in [BUGS.md](BUGS.md); upstream's own issues
 belong to [nextcloud/all-in-one](https://github.com/nextcloud/all-in-one/issues).

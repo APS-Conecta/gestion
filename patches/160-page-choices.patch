@@ -12,7 +12,7 @@ index 94f1d9e5..47f325e4 100644
        setTimeout(function(){
          window.location.reload(true);
 diff --git a/php/templates/containers.twig b/php/templates/containers.twig
-index 9ed438f8..de5d0184 100644
+index 2677bb64..a6c95cb4 100644
 --- a/php/templates/containers.twig
 +++ b/php/templates/containers.twig
 @@ -17,8 +17,7 @@
@@ -62,8 +62,8 @@ index 9ed438f8..de5d0184 100644
                  {% if is_backup_container_running == false and domain == "" %}
                      {% if isDomaincheckRunning == false %}
                          <h2>El contenedor domaincheck no está en ejecución</h2>
--                        <p>Esto no es lo esperado. Lo más probable es que haya ocurrido porque el puerto {{ apache_port }} ya está en uso en su servidor. Puede revisar los registros del mastercontainer y del contenedor domaincheck para obtener más pistas. Revise los puertos con la <strong><a target="_blank" href="https://github.com/APS-Conecta/gestion/blob/main/docs/INSTALLER.md#3-preflight">verificación previa del instalador</a></strong>.</p>
-+                        <p>Esto no es lo esperado. Lo más probable es que haya ocurrido porque el puerto {{ apache_port }} ya está en uso en su servidor. Puede revisar los registros del asistente y del contenedor domaincheck para obtener más pistas. Revise los puertos con la <strong><a target="_blank" href="https://github.com/APS-Conecta/gestion/blob/main/docs/INSTALLER.md#3-preflight">verificación previa del instalador</a></strong>.</p>
+-                        <p>Esto no es lo esperado. Lo más probable es que haya ocurrido porque el puerto {{ apache_port }} ya está en uso en su servidor. Puede revisar los registros del mastercontainer y del contenedor domaincheck para obtener más pistas. Revise los puertos con la <strong><a target="_blank" href="https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md#3-preflight">verificación previa del instalador</a></strong>.</p>
++                        <p>Esto no es lo esperado. Lo más probable es que haya ocurrido porque el puerto {{ apache_port }} ya está en uso en su servidor. Puede revisar los registros del asistente y del contenedor domaincheck para obtener más pistas. Revise los puertos con la <strong><a target="_blank" href="https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md#3-preflight">verificación previa del instalador</a></strong>.</p>
                      {% else %}
                          {% if not hasBackupLocation %}
                              <p>Instala y mantiene APS Conecta Gestión en este servidor: archivos, oficina y las aplicaciones APS, con respaldo diario y actualizaciones en conjunto.</p>
@@ -76,16 +76,16 @@ index 9ed438f8..de5d0184 100644
                                  {% if current_channel starts with 'latest' %}
                                      <p>Puede encontrar el registro de cambios <a target="_blank" href="https://github.com/APS-Conecta/AIO/releases/latest"><strong>aquí</strong></a></p>
                                  {% elseif current_channel starts with 'beta' %}
-@@ -445,7 +444,7 @@
-                                     <h3>Información de la copia de seguridad</h3>
-                                     <p>Esta es su contraseña de cifrado para las copias de seguridad: <strong id="borg-backup-password">{{ borgbackup_password }}</strong></p>
+@@ -449,7 +448,7 @@
+                                         <p>Esta es su contraseña de cifrado para las copias de seguridad: <strong id="borg-backup-password">{{ borgbackup_password }}</strong></p>
+                                     {% endif %}
                                      <p>Guarde esta contraseña en un lugar seguro. ¡No podrá restaurar desde la copia de seguridad si la pierde.</p>
 -                                    <p>Se respaldarán todos los datos importantes de su instancia de APS Conecta Gestión AIO, como la base de datos, sus archivos y los archivos de configuración del mastercontainer.</p>
 +                                    <p>Se respaldarán todos los datos importantes de su instancia de APS Conecta Gestión AIO, como la base de datos, sus archivos y los archivos de configuración del asistente.</p>
                                      <p>La copia de seguridad utiliza una herramienta llamada <a target="_blank" href="https://github.com/borgbackup/borg#what-is-borgbackup"><strong>BorgBackup</strong></a>, una conocida herramienta de copia de seguridad para servidores que respalda sus archivos de forma eficiente y los cifra al vuelo.</p>
                                      <p>Al usar esta herramienta, las copias de seguridad son incrementales, diferenciales, comprimidas y cifradas: solo la primera tomará un tiempo. Las siguientes deberían ser rápidas, ya que solo se tienen en cuenta los cambios.</p>
                                      {% if borg_remote_repo != '' %}
-@@ -514,13 +513,13 @@
+@@ -847,13 +846,13 @@
                                                      <input type="hidden" name="{{csrf.keys.name}}" value="{{csrf.name}}">
                                                      <input type="hidden" name="{{csrf.keys.value}}" value="{{csrf.value}}">
                                                      <input type="submit" value="Enviar hora y configuraciones de la copia de seguridad diaria" /><br>
@@ -101,7 +101,7 @@ index 9ed438f8..de5d0184 100644
                                                  {% endif %}
                                                  <p>Para cambiar su hora de copia de seguridad, desactive primero las copias de seguridad diarias, luego ingrese su nueva hora y vuelva a activarlas.</p>
                                                  <form method="POST" action="api/configuration" class="xhr">
-@@ -610,7 +609,7 @@
+@@ -943,7 +942,7 @@
                              <p><strong>Tenga en cuenta:</strong> puede cambiar la zona horaria cuando sus contenedores estén detenidos.</p>
                          {% else %}
                              {% if timezone == "" %}
@@ -111,7 +111,7 @@ index 9ed438f8..de5d0184 100644
                                  <form method="POST" action="api/configuration" class="xhr">
                                      <input type="text" id="timezone" name="timezone" value="America/Santiago" />
 diff --git a/php/templates/includes/optional-containers.twig b/php/templates/includes/optional-containers.twig
-index 9dc42ef6..c8810d20 100644
+index ef1e51d9..34750f67 100644
 --- a/php/templates/includes/optional-containers.twig
 +++ b/php/templates/includes/optional-containers.twig
 @@ -27,7 +27,7 @@
@@ -167,8 +167,8 @@ index 9dc42ef6..c8810d20 100644
      </p>
      <input class="options-form-submit" type="submit" value="Guardar cambios" />
  </form>
--<p><strong>Requisitos mínimos del sistema:</strong> cuando se activa cualquier contenedor opcional, se requieren al menos 2 GB de RAM, una CPU de doble núcleo y 40 GB de almacenamiento del sistema. Al activar ClamAV, el servidor de grabación de Nextcloud Talk o Fulltextsearch, se requieren al menos 3 GB de RAM. Para el servidor de grabación de Talk se requieren 2 vCPU adicionales. Al activar todo, se requieren al menos 5 GB de RAM y una CPU de cuatro núcleos. Se recomiendan al menos 1 GB más de RAM que el requisito mínimo. Para los requisitos de APS Conecta, vea la <strong><a target="_blank" href="https://github.com/APS-Conecta/gestion/blob/main/docs/INSTALLER.md#3-preflight">verificación previa del instalador</a></strong>.</p>
-+<p><strong>Requisitos mínimos del sistema:</strong> cuando se activa cualquier contenedor opcional, se requieren al menos 2 GB de RAM, una CPU de doble núcleo y 40 GB de almacenamiento del sistema. Al activar ClamAV, el servidor de grabación de Nextcloud Talk o la búsqueda de texto completo, se requieren al menos 3 GB de RAM. Para el servidor de grabación de Talk se requieren 2 vCPU adicionales. Al activar todo, se requieren al menos 5 GB de RAM y una CPU de cuatro núcleos. Se recomiendan al menos 1 GB más de RAM que el requisito mínimo. Para los requisitos de APS Conecta, vea la <strong><a target="_blank" href="https://github.com/APS-Conecta/gestion/blob/main/docs/INSTALLER.md#3-preflight">verificación previa del instalador</a></strong>.</p>
+-<p><strong>Requisitos mínimos del sistema:</strong> cuando se activa cualquier contenedor opcional, se requieren al menos 2 GB de RAM, una CPU de doble núcleo y 40 GB de almacenamiento del sistema. Al activar ClamAV, el servidor de grabación de Nextcloud Talk o Fulltextsearch, se requieren al menos 3 GB de RAM. Para el servidor de grabación de Talk se requieren 2 vCPU adicionales. Al activar todo, se requieren al menos 5 GB de RAM y una CPU de cuatro núcleos. Se recomiendan al menos 1 GB más de RAM que el requisito mínimo. Para los requisitos de APS Conecta, vea la <strong><a target="_blank" href="https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md#3-preflight">verificación previa del instalador</a></strong>.</p>
++<p><strong>Requisitos mínimos del sistema:</strong> cuando se activa cualquier contenedor opcional, se requieren al menos 2 GB de RAM, una CPU de doble núcleo y 40 GB de almacenamiento del sistema. Al activar ClamAV, el servidor de grabación de Nextcloud Talk o la búsqueda de texto completo, se requieren al menos 3 GB de RAM. Para el servidor de grabación de Talk se requieren 2 vCPU adicionales. Al activar todo, se requieren al menos 5 GB de RAM y una CPU de cuatro núcleos. Se recomiendan al menos 1 GB más de RAM que el requisito mínimo. Para los requisitos de APS Conecta, vea la <strong><a target="_blank" href="https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md#3-preflight">verificación previa del instalador</a></strong>.</p>
  {% if isAnyRunning == true %}
      <script type="text/javascript" src="disable-containers.js?v1"></script>
  {% endif %}

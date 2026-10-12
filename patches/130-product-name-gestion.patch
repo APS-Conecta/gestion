@@ -19,7 +19,7 @@ index cb6a41c7..d09c4af2 100644
      </div>
  {% endblock %}
 diff --git a/php/templates/containers.twig b/php/templates/containers.twig
-index a2cf3a9e..90622313 100644
+index 9fba8870..7877f2e8 100644
 --- a/php/templates/containers.twig
 +++ b/php/templates/containers.twig
 @@ -18,7 +18,7 @@
@@ -40,9 +40,9 @@ index a2cf3a9e..90622313 100644
                              <p>Puede crear una instancia nueva de AIO o restaurar una instancia anterior de AIO desde una copia de seguridad. Vea las dos secciones siguientes.</p>
                              {{ include('includes/aio-config.twig') }}
                              <h2>Instancia nueva de AIO</h2>
-@@ -455,7 +455,7 @@
-                                     <h3>Información de la copia de seguridad</h3>
-                                     <p>Esta es su contraseña de cifrado para las copias de seguridad: <strong id="borg-backup-password">{{ borgbackup_password }}</strong></p>
+@@ -459,7 +459,7 @@
+                                         <p>Esta es su contraseña de cifrado para las copias de seguridad: <strong id="borg-backup-password">{{ borgbackup_password }}</strong></p>
+                                     {% endif %}
                                      <p>Guarde esta contraseña en un lugar seguro. ¡No podrá restaurar desde la copia de seguridad si la pierde.</p>
 -                                    <p>Se respaldarán todos los datos importantes de su instancia de Nextcloud AIO, como la base de datos, sus archivos y los archivos de configuración del mastercontainer.</p>
 +                                    <p>Se respaldarán todos los datos importantes de su instancia de APS Conecta Gestión AIO, como la base de datos, sus archivos y los archivos de configuración del mastercontainer.</p>
@@ -75,10 +75,10 @@ index a0844f33..813395b0 100644
          <link rel="stylesheet" href="style.css?v15">
          <link rel="stylesheet" href="logs.css?v1">
 diff --git a/php/templates/login.twig b/php/templates/login.twig
-index 73b2e723..21050ca3 100644
+index ff12d8ba..7b0c4523 100644
 --- a/php/templates/login.twig
 +++ b/php/templates/login.twig
-@@ -5,11 +5,11 @@
+@@ -5,14 +5,14 @@
          <svg class="nextcloud-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 142 100" width="142" height="100">
              <use href="img/logo.svg#logo"></use>
              <use href="img/logo.svg#wordmark"></use>
@@ -88,6 +88,9 @@ index 73b2e723..21050ca3 100644
 -        <h1>Inicio de sesión de APS Conecta AIO</h1>
 +        <h1>Inicio de sesión de APS Conecta Gestión AIO</h1>
          {% if is_login_allowed == true %}
+             {% if login_unblocked_notice %}
+                 <p>{{ login_unblocked_notice }}</p>
+             {% endif %}
 -            <p>Inicie sesión con su frase de contraseña de Nextcloud AIO:</p>
 +            <p>Inicie sesión con su frase de contraseña de APS Conecta Gestión AIO:</p>
              <form method="POST" action="api/auth/login" class="xhr">

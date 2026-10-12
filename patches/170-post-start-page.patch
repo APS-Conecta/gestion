@@ -57,7 +57,7 @@ index 72f9b824..02370c81 100644
        "user": "65534",
        "init": true,
 diff --git a/php/templates/containers.twig b/php/templates/containers.twig
-index de5d0184..454f4f38 100644
+index a6c95cb4..6645622f 100644
 --- a/php/templates/containers.twig
 +++ b/php/templates/containers.twig
 @@ -66,7 +66,7 @@
@@ -96,7 +96,7 @@ index de5d0184..454f4f38 100644
 -                    {% else %}
 -                        <p>No se encontró ningún canal. Esto significa que AIO no podrá actualizarse a sí mismo ni a sus componentes, y tampoco podrá informar sobre actualizaciones. Las actualizaciones deben hacerse de forma externa.</p>
 -                    {% endif %}
-+                    <p>La suite se actualiza como un conjunto, con cada versión publicada: vea <a target="_blank" href="https://github.com/APS-Conecta/gestion/blob/main/docs/GUIA-CLINICA.md#7-tras-actualizar">Tras actualizar</a> en la guía clínica. (<a href="log?id=nextcloud-aio-mastercontainer" target="_blank">Registros</a>)</p>
++                    <p>La suite se actualiza como un conjunto, con cada versión publicada: vea <a target="_blank" href="https://github.com/APS-Conecta/instalador/blob/main/aps/GUIA-CLINICA.md#7-tras-actualizar">Tras actualizar</a> en la guía clínica. (<a href="log?id=nextcloud-aio-mastercontainer" target="_blank">Registros</a>)</p>
                  {% endif %}
  
                  {% if is_backup_container_running == true %}
@@ -120,8 +120,8 @@ index de5d0184..454f4f38 100644
 -                            <p><a href="https://{{ domain }}" class="button" target="_blank">Abrir su Nextcloud ↗</a></p>
 +                            <p><a href="https://{{ domain }}" class="button" target="_blank">Abrir APS Conecta Gestión ↗</a></p>
                              {% if not hasBackupLocation %}
--                                <p>Si su Nextcloud no se abre al hacer clic en el botón anterior, vea <strong><a target="_blank" href="https://github.com/APS-Conecta/gestion/blob/main/docs/INSTALLER.md#7-dns-the-host-must-reach-its-own-domain-d10">la sección DNS del instalador</a></strong></p>
-+                                <p>Si APS Conecta Gestión no se abre al hacer clic en el botón anterior, vea <strong><a target="_blank" href="https://github.com/APS-Conecta/gestion/blob/main/docs/INSTALLER.md#7-dns-the-host-must-reach-its-own-domain-d10">la sección DNS del instalador</a></strong></p>
+-                                <p>Si su Nextcloud no se abre al hacer clic en el botón anterior, vea <strong><a target="_blank" href="https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md#7-dns-the-host-must-reach-its-own-domain-d10">la sección DNS del instalador</a></strong></p>
++                                <p>Si APS Conecta Gestión no se abre al hacer clic en el botón anterior, vea <strong><a target="_blank" href="https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md#7-dns-the-host-must-reach-its-own-domain-d10">la sección DNS del instalador</a></strong></p>
                              {% endif %}
                              <div id="paso-1-card" class="paso-card">
 -                                <h2>Paso 1 completado: la instancia está lista</h2>
@@ -138,7 +138,7 @@ index de5d0184..454f4f38 100644
                              </div>
                          {% else %}
                              {% if isAnyRestarting == false %}
-@@ -458,8 +449,8 @@
+@@ -462,8 +453,8 @@
                                      {% else %}
                                          <p>Las copias de seguridad se crearán en el siguiente directorio del servidor: <strong>{{ borg_backup_host_location }}/borg</strong></p>
                                      {% endif %}
@@ -146,10 +146,10 @@ index de5d0184..454f4f38 100644
 -                                    <p>Las copias de seguridad diarias pueden activarse una vez finalizada la copia inicial. Activar esto también le permite activar una opción para actualizar automáticamente todos los contenedores, Nextcloud y sus aplicaciones.</p>
 +                                    <p>Tenga en cuenta que esta solución no respalda los archivos y carpetas montados en la suite mediante la aplicación de almacenamiento externo, pero puede añadir más volúmenes de Docker y rutas del servidor que desee respaldar una vez finalizada la copia de seguridad inicial.</p>
 +                                    <p>Las copias de seguridad diarias pueden activarse una vez finalizada la copia inicial. Activar esto también le permite activar una opción para actualizar automáticamente todos los contenedores y sus aplicaciones.</p>
-                                     <p>Ubicación, alcance y copia fuera del servidor: vea <strong><a target="_blank" href="https://github.com/APS-Conecta/gestion/blob/main/docs/INSTALLER.md#11-backups">Respaldos en el instalador</a></strong>.</p>
+                                     <p>Ubicación, alcance y copia fuera del servidor: vea <strong><a target="_blank" href="https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md#11-backups">Respaldos en el instalador</a></strong>.</p>
  
                                      {% if isApacheStarting != true %}
-@@ -513,13 +504,13 @@
+@@ -846,13 +837,13 @@
                                                      <input type="hidden" name="{{csrf.keys.name}}" value="{{csrf.name}}">
                                                      <input type="hidden" name="{{csrf.keys.value}}" value="{{csrf.value}}">
                                                      <input type="submit" value="Enviar hora y configuraciones de la copia de seguridad diaria" /><br>
@@ -165,7 +165,7 @@ index de5d0184..454f4f38 100644
                                                  {% endif %}
                                                  <p>Para cambiar su hora de copia de seguridad, desactive primero las copias de seguridad diarias, luego ingrese su nueva hora y vuelva a activarlas.</p>
                                                  <form method="POST" action="api/configuration" class="xhr">
-@@ -569,18 +560,6 @@
+@@ -902,18 +893,6 @@
  
                          {% if is_backup_container_running == false %}
                              {% if isApacheStarting == false %}
@@ -184,7 +184,7 @@ index de5d0184..454f4f38 100644
                                  <h2>Cambio de la frase de contraseña de AIO</h2>
                                  <details>
                                      <summary>Haga clic aquí para cambiar su frase de contraseña de AIO</summary>
-@@ -604,13 +583,13 @@
+@@ -937,13 +916,13 @@
                          <h2>Cambio de zona horaria</h2>
                          {% if isAnyRunning == true %}
                              {% if timezone != "" %}
@@ -201,7 +201,7 @@ index de5d0184..454f4f38 100644
                                  <form method="POST" action="api/configuration" class="xhr">
                                      <input type="text" id="timezone" name="timezone" value="America/Santiago" />
                                      <input type="hidden" name="{{csrf.keys.name}}" value="{{csrf.name}}">
-@@ -619,7 +598,7 @@
+@@ -952,7 +931,7 @@
                                  </form>
                                  <p>Debe asegurarse de que la zona horaria que ingrese sea válida. Para Chile continental es <strong>America/Santiago</strong>; en Magallanes, <strong>America/Punta_Arenas</strong>, y en Isla de Pascua, <strong>Pacific/Easter</strong>. Puede obtener valores válidos consultando la columna 'TZ identifier' de esta lista: <a target="_blank" href="https://en.wikipedia.org/wiki/List_of_tz_database_time_zones#List"><strong>haga clic aquí</strong></a>. Si se deja vacío, queda <strong>Etc/UTC</strong>.</p>
                              {% else %}
@@ -247,7 +247,7 @@ index 25283fcd..aa8702db 100644
      <p>
          {% if is_dri_device_enabled == true and is_nvidia_gpu_enabled == true %}
 diff --git a/php/templates/includes/optional-containers.twig b/php/templates/includes/optional-containers.twig
-index c8810d20..77401064 100644
+index 34750f67..73de1532 100644
 --- a/php/templates/includes/optional-containers.twig
 +++ b/php/templates/includes/optional-containers.twig
 @@ -80,7 +80,7 @@
@@ -290,29 +290,29 @@ index c8810d20..77401064 100644
      </p>
      <input class="options-form-submit" type="submit" value="Guardar cambios" />
  </form>
--<p><strong>Requisitos mínimos del sistema:</strong> cuando se activa cualquier contenedor opcional, se requieren al menos 2 GB de RAM, una CPU de doble núcleo y 40 GB de almacenamiento del sistema. Al activar ClamAV, el servidor de grabación de Nextcloud Talk o la búsqueda de texto completo, se requieren al menos 3 GB de RAM. Para el servidor de grabación de Talk se requieren 2 vCPU adicionales. Al activar todo, se requieren al menos 5 GB de RAM y una CPU de cuatro núcleos. Se recomiendan al menos 1 GB más de RAM que el requisito mínimo. Para los requisitos de APS Conecta, vea la <strong><a target="_blank" href="https://github.com/APS-Conecta/gestion/blob/main/docs/INSTALLER.md#3-preflight">verificación previa del instalador</a></strong>.</p>
-+<p><strong>Requisitos mínimos del sistema:</strong> cuando se activa cualquier contenedor opcional, se requieren al menos 2 GB de RAM, una CPU de doble núcleo y 40 GB de almacenamiento del sistema. Al activar ClamAV, el servidor de grabación de Talk o la búsqueda de texto completo, se requieren al menos 3 GB de RAM. Para el servidor de grabación de Talk se requieren 2 vCPU adicionales. Al activar todo, se requieren al menos 5 GB de RAM y una CPU de cuatro núcleos. Se recomiendan al menos 1 GB más de RAM que el requisito mínimo. Para los requisitos de APS Conecta, vea la <strong><a target="_blank" href="https://github.com/APS-Conecta/gestion/blob/main/docs/INSTALLER.md#3-preflight">verificación previa del instalador</a></strong>.</p>
+-<p><strong>Requisitos mínimos del sistema:</strong> cuando se activa cualquier contenedor opcional, se requieren al menos 2 GB de RAM, una CPU de doble núcleo y 40 GB de almacenamiento del sistema. Al activar ClamAV, el servidor de grabación de Nextcloud Talk o la búsqueda de texto completo, se requieren al menos 3 GB de RAM. Para el servidor de grabación de Talk se requieren 2 vCPU adicionales. Al activar todo, se requieren al menos 5 GB de RAM y una CPU de cuatro núcleos. Se recomiendan al menos 1 GB más de RAM que el requisito mínimo. Para los requisitos de APS Conecta, vea la <strong><a target="_blank" href="https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md#3-preflight">verificación previa del instalador</a></strong>.</p>
++<p><strong>Requisitos mínimos del sistema:</strong> cuando se activa cualquier contenedor opcional, se requieren al menos 2 GB de RAM, una CPU de doble núcleo y 40 GB de almacenamiento del sistema. Al activar ClamAV, el servidor de grabación de Talk o la búsqueda de texto completo, se requieren al menos 3 GB de RAM. Para el servidor de grabación de Talk se requieren 2 vCPU adicionales. Al activar todo, se requieren al menos 5 GB de RAM y una CPU de cuatro núcleos. Se recomiendan al menos 1 GB más de RAM que el requisito mínimo. Para los requisitos de APS Conecta, vea la <strong><a target="_blank" href="https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md#3-preflight">verificación previa del instalador</a></strong>.</p>
  {% if isAnyRunning == true %}
      <script type="text/javascript" src="disable-containers.js?v1"></script>
  {% endif %}
 diff --git a/php/templates/login.twig b/php/templates/login.twig
-index bfd3d363..0b0aa1d7 100644
+index a70f9980..098cca2d 100644
 --- a/php/templates/login.twig
 +++ b/php/templates/login.twig
-@@ -17,7 +17,7 @@
+@@ -20,7 +20,7 @@
                  <input type="submit" class="button" value="Iniciar sesión" />
              </form>
          {% else %}
--            <p>El inicio de sesión está bloqueado porque Nextcloud está en ejecución.<br>Utilice el <strong>inicio de sesión automático</strong> desde la administración de su Nextcloud.<br><br>
-+            <p>El inicio de sesión está bloqueado porque la suite está en ejecución.<br>Utilice el <strong>inicio de sesión automático</strong> desde la administración de APS Conecta Gestión.<br><br>
-             Si eso no es posible, puede desbloquear el inicio de sesión ejecutando<br><strong>sudo docker stop nextcloud-aio-apache</strong></p>
+-            <p>El inicio de sesión directo está bloqueado porque Nextcloud está en ejecución.<br>Utilice el <strong>enlace de inicio de sesión de su Nextcloud</strong> desde la administración de su Nextcloud para desbloquearlo.<br><br>
++            <p>El inicio de sesión directo está bloqueado porque la suite está en ejecución.<br>Utilice el <strong>enlace de inicio de sesión</strong> desde la administración de APS Conecta Gestión para desbloquearlo.<br><br>
+             Si eso no es posible, puede desbloquear el inicio de sesión directo ejecutando<br><strong>sudo docker stop nextcloud-aio-apache</strong></p>
          {% endif %}
      </div>
 diff --git a/php/tests/tests/initial-setup.spec.js b/php/tests/tests/initial-setup.spec.js
-index b1d6f03f..ea3ac2b4 100755
+index 3be77c1f..a6c0cb42 100644
 --- a/php/tests/tests/initial-setup.spec.js
 +++ b/php/tests/tests/initial-setup.spec.js
-@@ -55,11 +55,11 @@ test('Initial setup', async ({ page: setupPage }) => {
+@@ -55,8 +55,8 @@ test('Initial setup', async ({ page: setupPage, browser }) => {
    // Start containers and wait for starting message
    await containersPage.getByRole('button', { name: 'Descargar e iniciar contenedores' }).click();
    await expect(containersPage.getByRole('main')).toContainText('Los contenedores se están iniciando', { timeout: 5 * 60 * 1000 });
@@ -321,17 +321,22 @@ index b1d6f03f..ea3ac2b4 100755
 +  await expect(containersPage.getByRole('link', { name: 'Abrir APS Conecta Gestión ↗' })).toBeVisible({ timeout: 3 * 60 * 1000 });
 +  await expect(containersPage.getByRole('link', { name: 'Abrir APS Conecta Gestión ↗' })).toHaveAttribute('href', 'https://example.com');
  
+   // While Nextcloud is running, the direct login is blocked...
+   const blockedPage = await (await browser.newContext()).newPage();
+@@ -65,7 +65,7 @@ test('Initial setup', async ({ page: setupPage, browser }) => {
+   await expect(blockedPage.locator('#master-password')).toHaveCount(0);
+ 
    // Extract initial nextcloud password
 -  await expect(containersPage.getByRole('main')).toContainText('Contraseña inicial de Nextcloud:')
 +  await expect(containersPage.getByRole('main')).toContainText('Contraseña inicial de APS Conecta Gestión:')
    const initialNextcloudPassword = await containersPage.locator('#initial-nextcloud-password').innerText();
  
-   // Set backup location and create backup
+   // Reject backup location with relative path segments
 diff --git a/php/tests/tests/restore-instance.spec.js b/php/tests/tests/restore-instance.spec.js
-index 95b43f30..6c5e6681 100755
+index 85c45325..9f737c8d 100755
 --- a/php/tests/tests/restore-instance.spec.js
 +++ b/php/tests/tests/restore-instance.spec.js
-@@ -68,7 +68,7 @@ test('Restore instance', async ({ page: setupPage }) => {
+@@ -66,7 +66,7 @@ test('Restore instance', async ({ page: setupPage }) => {
      dialog.accept()
    });
    await containersPage.getByRole('button', { name: 'Iniciar y actualizar contenedores' }).click();

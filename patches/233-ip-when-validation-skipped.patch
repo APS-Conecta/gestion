@@ -1,5 +1,5 @@
 diff --git a/php/src/Data/ConfigurationManager.php b/php/src/Data/ConfigurationManager.php
-index c7879f65..bbeffda9 100644
+index 1052077d..1915abbb 100644
 --- a/php/src/Data/ConfigurationManager.php
 +++ b/php/src/Data/ConfigurationManager.php
 @@ -632,8 +632,9 @@ class ConfigurationManager
@@ -15,10 +15,10 @@ index c7879f65..bbeffda9 100644
          }
  
 diff --git a/php/tests/tests/initial-setup.spec.js b/php/tests/tests/initial-setup.spec.js
-index 4580d50b..077d525a 100755
+index 38d0ea22..7b01cb75 100644
 --- a/php/tests/tests/initial-setup.spec.js
 +++ b/php/tests/tests/initial-setup.spec.js
-@@ -3,22 +3,17 @@ import { writeFileSync } from 'node:fs'
+@@ -3,22 +3,17 @@ import { readFileSync, writeFileSync } from 'node:fs'
  import { logInToContainersPage } from './helpers.js';
  
  // The es-CL suite (patch 090): every assertion the 060 sweep re-skinned now asserts the
@@ -32,7 +32,7 @@ index 4580d50b..077d525a 100755
 +// that the sweep never bled into php/src. (The IP refusal, the other one, is asserted in
 +// restore-instance.spec.js: with domain validation skipped, as here, patch 233 accepts an IP.)
  
- test('Initial setup', async ({ page: setupPage }) => {
+ test('Initial setup', async ({ page: setupPage, browser }) => {
    test.setTimeout(10 * 60 * 1000)
  
    const containersPage = await logInToContainersPage(setupPage);
@@ -47,10 +47,10 @@ index 4580d50b..077d525a 100755
    await containersPage.locator('#domain').click();
    await containersPage.locator('#domain').fill('example.com');
 diff --git a/php/tests/tests/restore-instance.spec.js b/php/tests/tests/restore-instance.spec.js
-index 6c5e6681..fb79aebb 100755
+index 9f737c8d..ab168747 100755
 --- a/php/tests/tests/restore-instance.spec.js
 +++ b/php/tests/tests/restore-instance.spec.js
-@@ -18,6 +18,13 @@ test('Restore instance', async ({ page: setupPage }) => {
+@@ -14,6 +14,13 @@ test('Restore instance', async ({ page: setupPage }) => {
  
    const containersPage = await logInToContainersPage(setupPage);
  
@@ -61,6 +61,6 @@ index 6c5e6681..fb79aebb 100755
 +  await containersPage.getByRole('button', { name: 'Enviar dominio' }).click();
 +  await expect(containersPage.locator('body')).toContainText('Please enter a domain and not an IP-address!');
 +
-   // Reject example.com (requires enabled domain validation; PHP-borne English: :689 — stays)
+   // Reject example.com (requires enabled domain validation)
    await containersPage.locator('#domain').click();
    await containersPage.locator('#domain').fill('example.com');

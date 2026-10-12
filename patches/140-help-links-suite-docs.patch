@@ -1,5 +1,5 @@
 diff --git a/php/templates/already-installed.twig b/php/templates/already-installed.twig
-index d09c4af2..2dcd2885 100644
+index d09c4af2..d6273d33 100644
 --- a/php/templates/already-installed.twig
 +++ b/php/templates/already-installed.twig
 @@ -9,8 +9,7 @@
@@ -8,7 +8,7 @@ index d09c4af2..2dcd2885 100644
          <p>La contraseña se muestra solo una vez, en la primera visita a esta página.</p>
 -        <p>Si no vio una contraseña en esta página durante la primera instalación, debería reinstalar toda la instancia, ya que la contraseña podría haber sido robada.</p>
 -        <p>Consulte <a target="_blank" href="https://github.com/nextcloud/all-in-one#how-to-properly-reset-the-instance">esta documentación</a> al respecto.</p>
-+        <p>En APS Conecta esa primera visita la hace el paso 7 del instalador web, que muestra la frase de contraseña: vea la <a target="_blank" href="https://github.com/APS-Conecta/gestion/blob/main/docs/GUIA-CLINICA.md#3-el-asistente-8080">guía clínica</a>.</p>
++        <p>En APS Conecta esa primera visita la hace el paso 7 del instalador web, que muestra la frase de contraseña: vea la <a target="_blank" href="https://github.com/APS-Conecta/instalador/blob/main/aps/GUIA-CLINICA.md#3-el-asistente-8080">guía clínica</a>.</p>
          <a href="." class="button">Abrir APS Conecta Gestión AIO</a>
      </div>
  {% endblock %}
@@ -27,7 +27,7 @@ index a97fe4e5..2bc46649 100644
        ⚠️&nbsp;Actualización&nbsp;disponible
      {% endif %}
 diff --git a/php/templates/containers.twig b/php/templates/containers.twig
-index 90622313..75d1648e 100644
+index 7877f2e8..44263186 100644
 --- a/php/templates/containers.twig
 +++ b/php/templates/containers.twig
 @@ -36,7 +36,7 @@
@@ -44,7 +44,7 @@ index 90622313..75d1648e 100644
                      {% if isDomaincheckRunning == false %}
                          <h2>El contenedor domaincheck no está en ejecución</h2>
 -                        <p>Esto no es lo esperado. Lo más probable es que haya ocurrido porque el puerto {{ apache_port }} ya está en uso en su servidor. Puede revisar los registros del mastercontainer y del contenedor domaincheck para obtener más pistas. Debería poder resolverlo ajustando APACHE_PORT siguiendo la <strong><a target="_blank" href="https://github.com/nextcloud/all-in-one/blob/main/reverse-proxy.md">documentación del proxy inverso</a></strong>. Consejo: revise en detalle el comando docker run modificado para AIO.</p>
-+                        <p>Esto no es lo esperado. Lo más probable es que haya ocurrido porque el puerto {{ apache_port }} ya está en uso en su servidor. Puede revisar los registros del mastercontainer y del contenedor domaincheck para obtener más pistas. Revise los puertos con la <strong><a target="_blank" href="https://github.com/APS-Conecta/gestion/blob/main/docs/INSTALLER.md#3-preflight">verificación previa del instalador</a></strong>.</p>
++                        <p>Esto no es lo esperado. Lo más probable es que haya ocurrido porque el puerto {{ apache_port }} ya está en uso en su servidor. Puede revisar los registros del mastercontainer y del contenedor domaincheck para obtener más pistas. Revise los puertos con la <strong><a target="_blank" href="https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md#3-preflight">verificación previa del instalador</a></strong>.</p>
                      {% else %}
                          {% if not hasBackupLocation %}
                              <p>Instala y mantiene APS Conecta Gestión en este servidor: archivos, oficina y las aplicaciones APS, con respaldo diario y actualizaciones en conjunto.</p>
@@ -72,7 +72,7 @@ index 90622313..75d1648e 100644
 -                                    {% endif %}
 -                                    <p><strong>Sugerencia:</strong> si la validación del dominio falla pero usted está completamente seguro de haber configurado todo correctamente, puede omitir la validación del dominio siguiendo <a target="_blank" href="https://github.com/nextcloud/all-in-one#how-to-skip-the-domain-validation">esta documentación</a>.</p>
 -                                </details>
-+                                <p>Si el servidor no alcanza su propio dominio, vea <a target="_blank" href="https://github.com/APS-Conecta/gestion/blob/main/docs/INSTALLER.md#7-dns-the-host-must-reach-its-own-domain-d10">la sección DNS del instalador</a>.</p>
++                                <p>Si el servidor no alcanza su propio dominio, vea <a target="_blank" href="https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md#7-dns-the-host-must-reach-its-own-domain-d10">la sección DNS del instalador</a>.</p>
                              {% endif %}
  
                              <h2>Restaurar una instancia anterior de AIO desde una copia de seguridad</h2>
@@ -90,7 +90,7 @@ index 90622313..75d1648e 100644
                      {% endif %}
                      <h2>¿Cómo restablecer la instancia de AIO?</h2>
 -                    <p>Si algo sale mal, por ejemplo durante la instalación inicial, puede restablecer la instancia siguiendo <a target="_blank" href="https://github.com/nextcloud/all-in-one#how-to-properly-reset-the-instance">esta documentación</a>.</p>
-+                    <p>Si algo sale mal, por ejemplo durante la instalación inicial, vea la <a target="_blank" href="https://github.com/APS-Conecta/gestion/blob/main/docs/INSTALLER.md#12-troubleshooting">solución de problemas del instalador</a>.</p>
++                    <p>Si algo sale mal, por ejemplo durante la instalación inicial, vea la <a target="_blank" href="https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md#12-troubleshooting">solución de problemas del instalador</a>.</p>
                  {% endif %}
  
                  {% if was_start_button_clicked == true %}
@@ -113,22 +113,22 @@ index 90622313..75d1648e 100644
                              <p><a href="https://{{ domain }}" class="button" target="_blank">Abrir su Nextcloud ↗</a></p>
                              {% if not hasBackupLocation %}
 -                                <p>Si su Nextcloud no se abre al hacer clic en el botón anterior, consulte <strong><a target="_blank" href="https://github.com/nextcloud/all-in-one/discussions/2105">esta documentación</a></strong></p>
-+                                <p>Si su Nextcloud no se abre al hacer clic en el botón anterior, vea <strong><a target="_blank" href="https://github.com/APS-Conecta/gestion/blob/main/docs/INSTALLER.md#7-dns-the-host-must-reach-its-own-domain-d10">la sección DNS del instalador</a></strong></p>
++                                <p>Si su Nextcloud no se abre al hacer clic en el botón anterior, vea <strong><a target="_blank" href="https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md#7-dns-the-host-must-reach-its-own-domain-d10">la sección DNS del instalador</a></strong></p>
                              {% endif %}
                              <div id="paso-1-card" class="paso-card">
                                  <h2>Paso 1 completado: la instancia está lista</h2>
-@@ -470,9 +460,8 @@
+@@ -474,9 +464,8 @@
                                          <p>Las copias de seguridad se crearán en el siguiente directorio del servidor: <strong>{{ borg_backup_host_location }}/borg</strong></p>
                                      {% endif %}
                                      <p>Tenga en cuenta que esta solución no respalda los archivos y carpetas montados en Nextcloud mediante la aplicación de almacenamiento externo, pero puede añadir más volúmenes de Docker y rutas del servidor que desee respaldar una vez finalizada la copia de seguridad inicial.</p>
 -                                    <p>Para información sobre la retención de las copias de seguridad, vea <strong><a target="_blank" href="https://github.com/nextcloud/all-in-one#how-to-adjust-borgs-retention-policy">esto</a></strong>.</p>
                                      <p>Las copias de seguridad diarias pueden activarse una vez finalizada la copia inicial. Activar esto también le permite activar una opción para actualizar automáticamente todos los contenedores, Nextcloud y sus aplicaciones.</p>
 -                                    <p>Para más documentación y opciones sobre esta solución de copias de seguridad, consulte <strong><a target="_blank" href="https://github.com/nextcloud/all-in-one#backup">esta sección</a></strong> y lo que sigue.</p>
-+                                    <p>Ubicación, alcance y copia fuera del servidor: vea <strong><a target="_blank" href="https://github.com/APS-Conecta/gestion/blob/main/docs/INSTALLER.md#11-backups">Respaldos en el instalador</a></strong>.</p>
++                                    <p>Ubicación, alcance y copia fuera del servidor: vea <strong><a target="_blank" href="https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md#11-backups">Respaldos en el instalador</a></strong>.</p>
  
                                      {% if isApacheStarting != true %}
                                          <h3>Creación de la copia de seguridad</h3>
-@@ -484,8 +473,6 @@
+@@ -488,8 +477,6 @@
                                          </form>
  
                                          {% if has_backup_run_once == true %}
@@ -137,7 +137,7 @@ index 90622313..75d1648e 100644
  
                                              <h3>Comprobación de la copia de seguridad</h3>
                                              <p>Haga clic en el botón siguiente para realizar una comprobación de integridad de la copia de seguridad. Es una opción que verifica que su copia esté intacta. No debería ser necesaria en la mayoría de las situaciones.</p>
-@@ -553,7 +540,7 @@
+@@ -886,7 +873,7 @@
                                                  <input type="submit" value="Enviar ubicaciones de copia de seguridad adicionales" />
                                              </form>
                                              <p>Cada línea y entrada debe comenzar con una barra o una letra/dígito. Solo se permiten <strong>a-z</strong>, <strong>A-Z</strong>, <strong>.</strong>, <strong>0-9</strong>, <strong>_</strong>, <strong>-</strong> y <strong>/</strong>. Si la entrada comienza con una letra/dígito, no se admiten barras. Dos entradas válidas son <strong>/directory/on/the/host</strong> y <strong>my_custom_docker_volume</strong>. ¡Debe asegurarse de que todos los directorios indicados existan o el contenedor de copias de seguridad no podrá iniciarse.</p>
@@ -211,7 +211,7 @@ index c051f9dd..492ad1dc 100644
 -<p>En Windows podría ser <strong>/run/desktop/mnt/host/c/backup</strong>. (Esta ruta equivale a 'C:\backup' en su equipo Windows, por lo que debe traducir la ruta en consecuencia. Sugerencia: la ruta que ingrese debe comenzar con '/run/desktop/mnt/host/'. Añada a continuación la ubicación exacta en su equipo Windows; por ejemplo, 'c/backup', que equivale a 'C:\backup'.) ⚠️ <strong>Tenga en cuenta</strong>: esto no funciona con unidades externas como USB o de red, sino solo con unidades internas como SATA o NVME.</p>
 -<p>Otra opción es ingresar aquí un nombre de volumen específico: <strong>nextcloud_aio_backupdir</strong>. Este volumen debe crearse previamente de forma manual para poder utilizarlo. Vea <a target="_blank" href="https://github.com/nextcloud/all-in-one#how-to-create-the-backup-volume-on-windows">esta documentación</a> para un ejemplo.</p>
 diff --git a/php/templates/includes/optional-containers.twig b/php/templates/includes/optional-containers.twig
-index f444dbd0..9dc42ef6 100644
+index f444dbd0..ef1e51d9 100644
 --- a/php/templates/includes/optional-containers.twig
 +++ b/php/templates/includes/optional-containers.twig
 @@ -98,7 +98,7 @@
@@ -255,20 +255,20 @@ index f444dbd0..9dc42ef6 100644
      <input class="options-form-submit" type="submit" value="Guardar cambios" />
  </form>
 -<p><strong>Requisitos mínimos del sistema:</strong> cuando se activa cualquier contenedor opcional, se requieren al menos 2 GB de RAM, una CPU de doble núcleo y 40 GB de almacenamiento del sistema. Al activar ClamAV, el servidor de grabación de Nextcloud Talk o Fulltextsearch, se requieren al menos 3 GB de RAM. Para el servidor de grabación de Talk se requieren 2 vCPU adicionales. Al activar todo, se requieren al menos 5 GB de RAM y una CPU de cuatro núcleos. Se recomiendan al menos 1 GB más de RAM que el requisito mínimo. Para más consejos y recomendaciones, consulte <strong><a target="_blank" href="https://github.com/nextcloud/all-in-one/discussions/1335">esta documentación</a></strong></p>
-+<p><strong>Requisitos mínimos del sistema:</strong> cuando se activa cualquier contenedor opcional, se requieren al menos 2 GB de RAM, una CPU de doble núcleo y 40 GB de almacenamiento del sistema. Al activar ClamAV, el servidor de grabación de Nextcloud Talk o Fulltextsearch, se requieren al menos 3 GB de RAM. Para el servidor de grabación de Talk se requieren 2 vCPU adicionales. Al activar todo, se requieren al menos 5 GB de RAM y una CPU de cuatro núcleos. Se recomiendan al menos 1 GB más de RAM que el requisito mínimo. Para los requisitos de APS Conecta, vea la <strong><a target="_blank" href="https://github.com/APS-Conecta/gestion/blob/main/docs/INSTALLER.md#3-preflight">verificación previa del instalador</a></strong>.</p>
++<p><strong>Requisitos mínimos del sistema:</strong> cuando se activa cualquier contenedor opcional, se requieren al menos 2 GB de RAM, una CPU de doble núcleo y 40 GB de almacenamiento del sistema. Al activar ClamAV, el servidor de grabación de Nextcloud Talk o Fulltextsearch, se requieren al menos 3 GB de RAM. Para el servidor de grabación de Talk se requieren 2 vCPU adicionales. Al activar todo, se requieren al menos 5 GB de RAM y una CPU de cuatro núcleos. Se recomiendan al menos 1 GB más de RAM que el requisito mínimo. Para los requisitos de APS Conecta, vea la <strong><a target="_blank" href="https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md#3-preflight">verificación previa del instalador</a></strong>.</p>
  {% if isAnyRunning == true %}
      <script type="text/javascript" src="disable-containers.js?v1"></script>
  {% endif %}
 diff --git a/php/templates/login.twig b/php/templates/login.twig
-index 21050ca3..bfd3d363 100644
+index 7b0c4523..a70f9980 100644
 --- a/php/templates/login.twig
 +++ b/php/templates/login.twig
-@@ -17,7 +17,7 @@
+@@ -20,7 +20,7 @@
                  <input type="submit" class="button" value="Iniciar sesión" />
              </form>
          {% else %}
--            <p>El inicio de sesión está bloqueado porque Nextcloud está en ejecución.<br>Utilice el <a target="_blank" href="https://github.com/nextcloud/all-in-one#how-to-easily-log-in-to-the-aio-interface"><strong>inicio de sesión automático</strong></a> desde su Nextcloud.<br><br>
-+            <p>El inicio de sesión está bloqueado porque Nextcloud está en ejecución.<br>Utilice el <strong>inicio de sesión automático</strong> desde la administración de su Nextcloud.<br><br>
-             Si eso no es posible, puede desbloquear el inicio de sesión ejecutando<br><strong>sudo docker stop nextcloud-aio-apache</strong></p>
+-            <p>El inicio de sesión directo está bloqueado porque Nextcloud está en ejecución.<br>Utilice el <a target="_blank" href="https://github.com/nextcloud/all-in-one#how-to-easily-log-in-to-the-aio-interface"><strong>enlace de inicio de sesión de su Nextcloud</strong></a> para desbloquearlo.<br><br>
++            <p>El inicio de sesión directo está bloqueado porque Nextcloud está en ejecución.<br>Utilice el <strong>enlace de inicio de sesión de su Nextcloud</strong> desde la administración de su Nextcloud para desbloquearlo.<br><br>
+             Si eso no es posible, puede desbloquear el inicio de sesión directo ejecutando<br><strong>sudo docker stop nextcloud-aio-apache</strong></p>
          {% endif %}
      </div>
