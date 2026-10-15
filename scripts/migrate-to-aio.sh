@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # migrate-to-aio.sh — the S10 migration tool (FRD S10): the mechanized halves of a clinic's
 # move from the gestion compose stack to the AIO suite. The operator's choreography —
-# rehearsal-first, the window, the uninstall, the rollback — lives in docs/MIGRATION.md
+# rehearsal-first, the window, the uninstall, the rollback — lives in aps/MIGRATION.md
 # (v0.2.0's runbook, extended by this slice); this script only mechanizes:
 #
 #   prepare   dump + datadir + config.php + version.php into AIO's own volumes, BEFORE the
@@ -43,8 +43,12 @@ bad() { printf '✗ %s\n' "$1"; printf '  → %s\n' "$2"; FAIL=1; }
 info(){ printf '· %s\n' "$*"; }
 FAIL=0
 
-suite_tag() {  # D12's rule, host/aps-conecta's own shape — byte-coupled copies, bump both
+suite_tag() {  # D12's rule, byte-coupled copies — instalador's host/aps-conecta is the shape's
+  # home now (VERSION first, then git), and this one mirrors it: bump both when the shape
+  # moves. gestion's tree carries no VERSION file; the git fallback answers exactly as it
+  # always did, and a checkout that gains a VERSION (the package layout) answers it first.
   if [ -n "${APS_SUITE_TAG:-}" ]; then printf '%s' "$APS_SUITE_TAG"; return; fi
+  if [ -f "$ROOT/VERSION" ]; then head -1 "$ROOT/VERSION" 2>/dev/null; return; fi
   git -C "$ROOT" describe --tags --abbrev=0 2>/dev/null && return
   echo ""
 }
@@ -162,7 +166,7 @@ cmd_prepare() {  # --domain D — idempotent per stage; every stage refuses loud
   rm -rf "$tmp"
   echo
   echo "PREPARACIÓN: ✓ — los volúmenes de AIO traen el volcado, los datos, config.php y version.php."
-  info "siga docs/MIGRATION.md desde el asistente: el uninstall es §3 (irreversible), el wizard §4 — y DESMARQUE la casilla de actualización automática del respaldo diario"
+  info "siga aps/MIGRATION.md desde el asistente: el uninstall es §3 (irreversible), el wizard §4 — y DESMARQUE la casilla de actualización automática del respaldo diario"
 }
 
 rewrite_config() {  # FILE DOMAIN — the rewrite set; every key NO template owns (redis/APCu/
@@ -224,7 +228,7 @@ cmd_verify() {  # --domain D — runs AFTER the first boot settled; read-only, a
   if docker exec "$NC" sh -c 'test -f /mnt/ncdata/.ncdata || test -f /mnt/ncdata/.ocdata'; then
     ok "el directorio de datos montó con su marcador (.ncdata/.ocdata)"
   else
-    bad "el directorio de datos no montó" "reinstale desde el asistente con los volúmenes preparados (docs/MIGRATION.md §2)"
+    bad "el directorio de datos no montó" "reinstale desde el asistente con los volúmenes preparados (aps/MIGRATION.md §2)"
   fi
 
   # the B-019 leg: the config SHAPE a script can assert (B-019's own lesson — reachability

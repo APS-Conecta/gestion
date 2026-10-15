@@ -3,7 +3,9 @@
 # move together).
 #
 # The repo's first provisioning-driven own-app content import (ADR-0015). Territorio's import is
-# deliberately operator-paste (host/aps-conecta:380-424); this phase crosses that boundary with
+# deliberately operator-paste (instalador's host CLI: `aps-conecta datos` prints the commands,
+# `datos --importar` runs them since v0.4.0; the gestion-era :380-424 range pin went with the
+# move); this phase crosses that boundary with
 # the disciplines inherited: upsert-by-stable-id, write verbs visible to seed-idempotent.sh,
 # query-before-set, fail-closed guards on every optional value (L5-03 class).
 #

@@ -11,7 +11,7 @@
 # dump is imported into a throwaway postgres:18 (same major as the live container) and counted
 # before this script says done.
 #
-# THE STASH IS RUNBOOK, NOT SCRIPT (docs/MIGRATION.md): /srv/backups/apsconecta/ keeps only
+# THE STASH IS RUNBOOK, NOT SCRIPT (aps/MIGRATION.md): /srv/backups/apsconecta/ keeps only
 # top-level FILES across rotations — a directory there dies on the next sweep — and the dump must
 # also reach restic. This prints the reminder; it copies nothing anywhere by itself.
 set -eu
@@ -79,5 +79,5 @@ restored=$(docker exec "$scratch" psql -U apsconecta -d apsconecta -Atc \
 
 echo "db-dump: $DEST — $tables tables, restored clean into a scratch postgres:18"
 echo "  Runbook next: cp $DEST /srv/backups/apsconecta/apsconecta-$(date +%F)-database-dump.sql"
-echo "              restic backup /srv/backups/apsconecta/   (MIGRATION.md: the stash is top-level FILES,"
+echo "              restic backup /srv/backups/apsconecta/   (aps/MIGRATION.md: the stash is top-level FILES,"
 echo "              never a directory — the rotation deletes directories)"

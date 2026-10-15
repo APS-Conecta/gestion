@@ -395,7 +395,8 @@ _tiles_url="$(occ config:app:get territorio tile_url 2>/dev/null | tr -d '\r')"
 [ "$_tiles_url" = "${_occu%/}/tiles/chile.pmtiles" ] \
   || fail "territorio tile_url is '$_tiles_url' but this instance is reached at '$_occu' — expected ${_occu%/}/tiles/chile.pmtiles. Re-seed: phase 16-app-policy derives it from overwrite.cli.url"
 # The bind's source (I1): apache's realized /aps-tiles mount vs the mastercontainer's own
-# APS_TILES_DIR env line — the same line start_suite guards (host/aps-conecta:876).
+# APS_TILES_DIR env line — the same line start_suite guards (instalador's host/aps-conecta,
+# start_suite's APS_TILES_DIR guard; the gestion-era :876 line pin went with the move).
 _aps_bind="$(docker inspect -f '{{range .Mounts}}{{.Destination}} {{.Source}}{{println}}{{end}}' aps-conecta-apache 2>/dev/null | awk '$1 == "/aps-tiles" { print $2 }')"
 _tiles_env="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' nextcloud-aio-mastercontainer 2>/dev/null | sed -n 's/^APS_TILES_DIR=//p')"
 [ -n "$_aps_bind" ] \
