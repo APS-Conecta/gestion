@@ -5,7 +5,7 @@
 # host that was off/down at the scheduled instant runs the missed re-provision at boot —
 # drift found late is still found.
 Description=APS Conecta: temporizador semanal de re-provisión
-Documentation=file:///opt/aps-conecta/gestion/docs/INSTALLER.md
+Documentation=file:///opt/aps-conecta/instalador/aps/INSTALLER.md
 
 [Timer]
 # Sunday 03:00 in the clinic's own time (a9): the zone rides the calendar, never the host's clock

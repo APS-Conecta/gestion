@@ -6,7 +6,7 @@
 # Re-provision ONLY: backups and restores are AIO's own (the borgbackup container + the
 # wizard's backup section) — this unit never touches them (the research's S7 correction).
 Description=APS Conecta: re-provisión idempotente semanal
-Documentation=file:///opt/aps-conecta/gestion/docs/INSTALLER.md
+Documentation=file:///opt/aps-conecta/instalador/aps/INSTALLER.md
 After=network-online.target docker.service
 Wants=network-online.target
 # The executable is the documented symlink (INSTALLER.md owns the wiring:

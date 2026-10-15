@@ -220,7 +220,7 @@ cmd_check() {  # the FRD S9 acceptance arm, measured the way a browser reads PMT
     case "$mounts" in
       *" $(dirname "$ARCHIVE"):/aps-tiles "*) ok "la suite monta $(dirname "$ARCHIVE") en solo lectura" ;;
       *) bad "la suite no monta la carpeta del mapa ($(dirname "$ARCHIVE"))" \
-           "se inició sin APS_TILES_DIR: docs/INSTALLER.md §9 indica cómo volver a crear el contenedor maestro" ;;
+           "se inició sin APS_TILES_DIR: aps/INSTALLER.md §9 indica cómo volver a crear el contenedor maestro" ;;
     esac
     # A REAL Range read (HTTP 206 + EXACTLY the 1024 bytes asked + the archive's magic), fused
     # into one exec (Q4). A server that ignores Range answers 200 with the whole file — and

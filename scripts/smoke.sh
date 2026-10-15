@@ -399,11 +399,11 @@ _tiles_url="$(occ config:app:get territorio tile_url 2>/dev/null | tr -d '\r')"
 _aps_bind="$(docker inspect -f '{{range .Mounts}}{{.Destination}} {{.Source}}{{println}}{{end}}' aps-conecta-apache 2>/dev/null | awk '$1 == "/aps-tiles" { print $2 }')"
 _tiles_env="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' nextcloud-aio-mastercontainer 2>/dev/null | sed -n 's/^APS_TILES_DIR=//p')"
 [ -n "$_aps_bind" ] \
-  || fail "aps-conecta-apache has no /aps-tiles mount — the suite cannot serve /tiles/. The mastercontainer must be created with APS_TILES_DIR=/srv/aps-conecta/tiles (the folder aps-conecta mapa builds into): re-create it as docs/INSTALLER.md §9 says"
+  || fail "aps-conecta-apache has no /aps-tiles mount — the suite cannot serve /tiles/. The mastercontainer must be created with APS_TILES_DIR=/srv/aps-conecta/tiles (the folder aps-conecta mapa builds into): re-create it as aps/INSTALLER.md §9 says"
 [ -n "$_tiles_env" ] \
-  || fail "aps-conecta-apache binds $_aps_bind at /aps-tiles but the mastercontainer carries no APS_TILES_DIR line to compare it against — the bind cannot be verified. Re-create the mastercontainer as docs/INSTALLER.md §9 says"
+  || fail "aps-conecta-apache binds $_aps_bind at /aps-tiles but the mastercontainer carries no APS_TILES_DIR line to compare it against — the bind cannot be verified. Re-create the mastercontainer as aps/INSTALLER.md §9 says"
 [ "$_aps_bind" = "$_tiles_env" ] \
-  || fail "aps-conecta-apache binds $_aps_bind at /aps-tiles but the mastercontainer was created with APS_TILES_DIR=$_tiles_env — apache was never recreated after the change, and /tiles/ serves a folder nobody names anymore. Re-create it as docs/INSTALLER.md §9 says (the remedy includes docker rm -f aps-conecta-apache)"
+  || fail "aps-conecta-apache binds $_aps_bind at /aps-tiles but the mastercontainer was created with APS_TILES_DIR=$_tiles_env — apache was never recreated after the change, and /tiles/ serves a folder nobody names anymore. Re-create it as aps/INSTALLER.md §9 says (the remedy includes docker rm -f aps-conecta-apache)"
 _tiles_hdr="$(mktemp)"
 _tiles_out="$(curl -s -D "$_tiles_hdr" -r 0-6 -H 'Accept-Encoding: gzip, zstd' -w '\n%{http_code}' \
   "http://localhost:${HTTP_PORT}/tiles/chile.pmtiles" 2>/dev/null || echo $'\n000')"

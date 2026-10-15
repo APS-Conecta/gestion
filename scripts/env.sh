@@ -173,7 +173,12 @@ FIX
   # the compose-parity arm: needs only the docker CLI (config resolves; nothing starts).
   # POSTGRES_DB is observable in services.db.environment — the key the fixture shares with
   # the real compose file, so both readers are compared on the SAME variable.
+  # The parity arm compares against the SUITE's dev compose — gestion's file in the split era
+  # (D2): this tree carries upstream's own compose.yaml (the mirror), which resolves POSTGRES_DB
+  # as nothing. .env.example is the dev lifecycle's marker: where it is absent, no suite compose
+  # moved, and the arm self-skips.
   if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 \
+     && [ -f "$(dirname -- "${BASH_SOURCE[0]}")/../.env.example" ] \
      && [ -f "$(dirname -- "${BASH_SOURCE[0]}")/../compose.yaml" ]; then
     local got
     got="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && docker compose --env-file "$fx" -f compose.yaml config --format json 2>/dev/null \

@@ -3713,7 +3713,7 @@ def asegurar_ca():
             and os.path.exists(os.path.join(CERT_DIR, SUITE_TLS, "tls.crt"))):
         sys.exit(f"✗ falta la autoridad propia del instalador en {CERT_DIR} (ca.crt y ca.key), y la suite por IP "
                  "depende de ella\n  → restaure la carpeta desde el respaldo diario, o reinstale "
-                 "(docs/INSTALLER.md §12)")
+                 "(aps/INSTALLER.md §12)")
     mayor = re.match(r"OpenSSL (\d+)\.", openssl("version"))   # `req -x509 -CA` is OpenSSL 3
     if not mayor or int(mayor.group(1)) < 3:
         sys.exit("✗ el instalador web necesita OpenSSL 3 o más reciente (Ubuntu 22.04+, Debian 12+)\n"
@@ -4803,6 +4803,8 @@ def selftest():
                 return None
             apps_src = mitad(os.path.join("provisioning", "apps"))
             themes_src = mitad("themes")
+            if themes_src and not all(os.path.isfile(os.path.join(themes_src, "..", a[0])) for a in ASSETS.values()):
+                themes_src = None   # a partial tree (stray run residue) never stands in for the real half
             envex_src = mitad(".env.example")
             if not (apps_src and themes_src and envex_src):
                 synth = os.path.join(tmp, "mitad-fixture")
@@ -4821,9 +4823,10 @@ def selftest():
                     themes_src = os.path.join(synth, "themes")
                     raiz = os.path.join(themes_src, "apsconecta")
                     os.makedirs(os.path.join(raiz, "core", "css"))   # 15-branding writes site.css here
-                    for rel in [a[0] for a in ASSETS.values()]:   # the fonts, the images, the map engine
-                        os.makedirs(os.path.dirname(os.path.join(raiz, rel)), exist_ok=True)
-                        with open(os.path.join(raiz, rel), "wb") as fh:
+                    for rel in [a[0] for a in ASSETS.values()]:   # the fonts, the images, the map engine (repo-root-shaped paths)
+                        destino = os.path.join(raiz, rel[len("themes/apsconecta/"):])
+                        os.makedirs(os.path.dirname(destino), exist_ok=True)
+                        with open(destino, "wb") as fh:
                             fh.write(b"fixture-bytes\n")
                     with open(os.path.join(raiz, "defaults.php"), "w", encoding="utf-8") as fh:
                         fh.write("<?php\n// fixture theme — the real one lives in gestion (D2)\n")

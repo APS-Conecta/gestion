@@ -4,7 +4,7 @@
 # monthly cadence matches the masters' own "on new edition" posture (sources.json). The
 # re-provision timer (weekly) and this one never collide: different jobs, different loads.
 Description=APS Conecta: temporizador mensual del fondo de mapa
-Documentation=file:///opt/aps-conecta/gestion/docs/INSTALLER.md
+Documentation=file:///opt/aps-conecta/instalador/aps/INSTALLER.md
 
 [Timer]
 # NOT OnCalendar=monthly: the special string normalizes to *-*-01 00:00:00 (measured with

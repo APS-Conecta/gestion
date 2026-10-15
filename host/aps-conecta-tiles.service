@@ -5,7 +5,7 @@
 # leaves the serving archive untouched: the script verifies the artefact five ways and swaps
 # atomically, so this unit firing red never degrades the map — it just leaves it stale.
 Description=APS Conecta: refresco mensual del fondo de mapa
-Documentation=file:///opt/aps-conecta/gestion/docs/INSTALLER.md
+Documentation=file:///opt/aps-conecta/instalador/aps/INSTALLER.md
 After=network-online.target docker.service
 Wants=network-online.target
 # The executable is the documented symlink (INSTALLER.md owns the wiring — the same
