@@ -4,7 +4,7 @@
 # irreversible step (install.sh's #85 comment says it "never DELETES" — this is the command that
 # finally does, on purpose).
 #
-# SCRIPT vs RUNBOOK (docs/MIGRATION.md): this owns everything the REPO installed — the compose
+# SCRIPT vs RUNBOOK (aps/MIGRATION.md): this owns everything the REPO installed — the compose
 # project, its volumes, generated artifacts, the basemap timer. Host residue the repo never
 # touched (tailscale serve routes, /root/backups .baks, transcript JSONLs, where the preservation
 # copy goes) is the runbook's checklist, printed at the end.
@@ -95,14 +95,14 @@ fi
 # `docker compose down -v` below tears compose resources; on a migrated (AIO) host it would
 # no-op while every clean-slate detector reports green by absence — the report lying about a
 # live clinic whose data sits in nextcloud_aio_* volumes. Refuse instead: the AIO teardown
-# is a different runbook (docs/MIGRATION.md), never this script. Below the self-test on purpose:
+# is a different runbook (aps/MIGRATION.md), never this script. Below the self-test on purpose:
 # the self-test fabricates its own state under self-test-only names and touches no stack, and
 # scripts/test.sh runs it on every docker host — above it, `make test` on an AIO host (Clean
 # boot's last step) could only go red (#197).
 if is_aio; then
   echo "uninstall: the AIO stack is running — this tool tears down the COMPOSE world only." >&2
   echo "  compose down -v would touch nothing while the report read green; the clinic's data" >&2
-  echo "  lives in nextcloud_aio_* volumes. Follow docs/MIGRATION.md for the AIO teardown." >&2
+  echo "  lives in nextcloud_aio_* volumes. Follow aps/MIGRATION.md for the AIO teardown." >&2
   exit 1
 fi
 require_site || exit 1
@@ -116,7 +116,7 @@ echo "             data dir — are DELETED. \`make down\` keeps them; this does
 # --- preservation: site.sh IS the record deis.py cannot regenerate -----------------------------
 preserved="$SITE-preserved-$(date +%Y%m%d-%H%M%S)"
 cp -a "sites/$SITE" "$preserved"
-echo "preserved: $preserved/ (move it off this host — MIGRATION.md) — ${#SITE_TEAMS[@]} teams, ${#SITE_FOLDERS[@]} folders, ${#SITE_ACL[@]} ACL rows"
+echo "preserved: $preserved/ (move it off this host — aps/MIGRATION.md) — ${#SITE_TEAMS[@]} teams, ${#SITE_FOLDERS[@]} folders, ${#SITE_ACL[@]} ACL rows"
 
 # --- the verified dump, or an expensive explicit refusal --------------------------------------
 if ! bash "$HERE/db-dump.sh"; then
@@ -158,7 +158,7 @@ fi
 # --- .env: the only copy of the secrets — guidance, not deletion ------------------------------
 if [ -f .env ]; then
   echo "note: .env still holds this install's only secrets. Rotate anything that used"
-  echo "      them, then: rm .env  (MIGRATION.md walks the order.)"
+  echo "      them, then: rm .env  (aps/MIGRATION.md walks the order.)"
 fi
 
 # --- the clean-slate report ---------------------------------------------------------------------
@@ -186,7 +186,7 @@ else
   echo "CLEAN SLATE INCOMPLETE — the LEFT lines above remain."
 fi
 echo ""
-echo "Runbook residue this script cannot see (docs/MIGRATION.md):"
+echo "Runbook residue this script cannot see (aps/MIGRATION.md):"
 echo "  - tailscale serve unsets (ports 10001/10008/10009)"
 echo "  - /root/backups .bak rotation + deletion"
 echo "  - transcript JSONLs (the 2026-09-18 session files)"

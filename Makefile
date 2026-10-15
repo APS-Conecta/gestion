@@ -1,14 +1,17 @@
-# APS Conecta Gestión — dev lifecycle.
-# `make up` starts every service, Euro-Office included (AD-5, promoted by #81) — but seeds nothing
-# (AD-2). `make office-down` stops just the document server when 2.5 GB is not worth a CSS edit.
-# `make smoke` / `make test` = the local quality gate; `make seed` runs the provisioning pipeline.
+# APS Conecta Gestión — dev lifecycle for what stays: the suite-definition content, its
+# compose dev stack (theme live-edit mounts), and its drift tooling. `make up` starts every
+# service (Euro-Office included) and `make office-down` reclaims its RAM; `make test` is
+# gestion's pruned gate. The install half's lifecycle (`install`, `seed`, `seed-idempotent`,
+# `smoke`, `divergence`, `uninstall`, `office-smoke`) moved with the installer — instalador
+# owns it now; the scripts those targets referenced stay here frozen until the org retires
+# them (aps/MIGRATION.md's checklist).
 .DEFAULT_GOAL := help
-.PHONY: help setup install up up-dev down uninstall seed seed-idempotent smoke test divergence images images-check apps-check fix-mount-perms office-smoke office-down
+.PHONY: help setup up up-dev down fix-mount-perms test images images-check apps-check office-down
 
 # Your host group, so the container can hand the bind mounts back to you (fix-mount-perms).
 HOST_GID := $(shell id -g)
-# No .env reading here: every script sources scripts/env.sh itself, so `make smoke` and
-# `bash scripts/smoke.sh` behave identically. Nothing in a recipe below needs a value from .env.
+# No .env reading here: every script sources scripts/env.sh itself, so a recipe and its
+# bare `bash scripts/…` invocation behave identically. Nothing in a recipe below needs a value from .env.
 
 # One guard for every target that needs .env. One message, one place to change it. It names
 # `make setup` rather than the copy it replaced: hand-copying leaves four placeholder passwords in a
@@ -17,9 +20,6 @@ REQUIRE_ENV = test -f .env || { echo "No .env found — run: make setup"; exit 1
 
 setup: ## Create .env with four generated secrets, mode 600 (run once, before install)
 	@bash scripts/env-init.sh
-
-install: ## Stand this clinic up, or converge it after editing site.sh / git pull (the one command)
-	@bash scripts/install.sh
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -56,25 +56,8 @@ fix-mount-perms: ## Make the bind-mounted apps/ + themes/ writable by BOTH the c
 down: ## Stop the stack (keeps volumes)
 	docker compose down
 
-uninstall: ## Destroy the stack FOR REAL — verified dump + typed confirmation first (scripts/uninstall.sh)
-	@$(REQUIRE_ENV)
-	@bash scripts/uninstall.sh
-
-seed: ## Run the provisioning pipeline verbosely (make install wraps this)
-	@$(REQUIRE_ENV)
-	provisioning/seed.sh
-
-seed-idempotent: ## Assert a SECOND seed writes nothing (run right after `make seed`)
-	@bash scripts/seed-idempotent.sh
-
-smoke: ## Health-gate the running core stack (exit 0 healthy / non-0 broken)
-	@bash scripts/smoke.sh
-
 test: ## Local quality gate — static checks + smoke (same script CI runs)
 	@bash scripts/test.sh
-
-divergence: ## List what is live on the instance that the repo no longer declares (#85)
-	@bash scripts/divergence.sh
 
 images: ## Refresh the pinned image digests to what each tag points at today (#109)
 	@bash scripts/image-digests.sh
@@ -87,9 +70,6 @@ apps-check: ## Report whether any vendored app has a newer release (changes noth
 
 # `office-eurooffice` was DELETED here by #81 — a second entry point for what `make install` already
 # does, which is what ADR-0001 deleted occ-theming.sh for. `make office-smoke` checks the backend alone.
-
-office-smoke: ## Smoke-check the Euro-Office backend
-	@bash scripts/office-smoke.sh
 
 office-down: ## Stop the office backend (core stack keeps running)
 	docker compose stop eurooffice 2>/dev/null || true
