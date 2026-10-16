@@ -134,7 +134,7 @@ strip_declaration() {  # FILE — the marker-delimited fork declaration, deleted
 # the askpass helper supplies x-access-token/PAT without the token ever reaching a URL or argv.
 allowlisted() {  # PATH
   case "$1" in
-    .github/workflows/images.yml|.github/workflows/replay.yml|.github/workflows/release.yml|.github/workflows/ci.yml|.github/workflows/cleanboot.yml|.codespellrc|BUGS.md) return 0 ;;
+    .github/workflows/images.yml|.github/workflows/replay.yml|.github/workflows/release.yml|.github/workflows/ci.yml|.github/workflows/cleanboot.yml|.codespellrc|.gitleaksignore|BUGS.md) return 0 ;;
     scripts/*|patches/*|host/*|provisioning/*|aps/*) return 0 ;;
     install.sh|VERSION|installer.pub) return 0 ;;
     *) return 1 ;;

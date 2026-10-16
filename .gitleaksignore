@@ -1,0 +1,25 @@
+# gitleaks 8.18.2 (pinned by .github/workflows/ci.yml) — 13 false positives, two groups.
+# Group 1 (fork-infra): the Provisionador's es-CL STATUS DICTS that report whether the
+# env key FIXTURE_USER_PASSWORD is set (gestion's twins, gestion/.gitleaksignore): the
+# matched "values" are status words ("presente" / "se generará"), not secrets — the real
+# value is a CSPRNG 24-hex generated at runtime and written to the sealed .env. Fingerprints
+# pin commit+line: editing either line re-flags it, which is the desired alarm.
+# Group 2 (upstream history): bytes the mirror carries verbatim from nextcloud/all-in-one —
+# the full-history scan (ci.yml, fetch-depth: 0) sees upstream's own placeholders: docs
+# snippets in migration.md, the AIO interface JS, talk's server.conf.in template and the
+# borg test fixture. The parity fence keeps these files upstream's, so their fingerprints
+# stay stable until upstream itself moves them; a genuinely NEW upstream finding (a sync
+# brings it in) adds one line here — never a silent anchor.
+45c5dc4ce928248f9128b5af3f1a59153ca5142f:scripts/provisionador.py:hashicorp-tf-password:1677
+45c5dc4ce928248f9128b5af3f1a59153ca5142f:scripts/provisionador.py:hashicorp-tf-password:1831
+a747ab1c5e290f553f1d737d7fcc394d3ddf6868:migration.md:hashicorp-tf-password:131
+a747ab1c5e290f553f1d737d7fcc394d3ddf6868:migration.md:hashicorp-tf-password:145
+12e129f1f637b553420d9bb4e5bf4bab0af4c2ae:php/public/click-handlers.js:hashicorp-tf-password:14
+12e129f1f637b553420d9bb4e5bf4bab0af4c2ae:php/public/click-handlers.js:hashicorp-tf-password:17
+6272d8d223a9486839252d569b450966fcbe61f2:php/public/forms.js:hashicorp-tf-password:5
+6272d8d223a9486839252d569b450966fcbe61f2:php/public/forms.js:hashicorp-tf-password:8
+dd02dc82a5fe8a45b6598a6e4399ba99883534bb:php/public/forms.js:hashicorp-tf-password:44
+620c72de23dce326e110557d3d8f9d22e6e5965c:php/public/forms.js:hashicorp-tf-password:47
+e8ed7aa236e301f356c2523b9f5cc0b3afcd789a:php/public/forms.js:hashicorp-tf-password:47
+d637827c5989a00b6914a0d653b9a9f36c1e3de9:Containers/talk/server.conf.in:generic-api-key:210
+e28a2c4559ce5eeb9ddd9f0dfe1af9a12510a7a4:tests/QA/assets/backup-archive/borg/config:generic-api-key:9
