@@ -1,5 +1,5 @@
 diff --git a/.github/workflows/playwright-on-push.yml b/.github/workflows/playwright-on-push.yml
-index bf977f33..c6e12bd0 100644
+index feeb82ae..35fa3915 100644
 --- a/.github/workflows/playwright-on-push.yml
 +++ b/.github/workflows/playwright-on-push.yml
 @@ -41,15 +41,6 @@ jobs:
@@ -15,11 +15,11 @@ index bf977f33..c6e12bd0 100644
 -      - name: Run Playwright tests for desec with existing slug
 -        run: ./php/tests/run.sh ./php/tests/tests/desec-existing-slug.spec.js
 -
-       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
          if: ${{ !cancelled() }}
          with:
 diff --git a/.github/workflows/playwright-on-workflow-dispatch.yml b/.github/workflows/playwright-on-workflow-dispatch.yml
-index c7092921..5c993018 100644
+index cdb6ea6f..7683cfd5 100644
 --- a/.github/workflows/playwright-on-workflow-dispatch.yml
 +++ b/.github/workflows/playwright-on-workflow-dispatch.yml
 @@ -5,10 +5,6 @@ on:
@@ -52,11 +52,11 @@ index c7092921..5c993018 100644
 -          TEST_CODE_FROM_IMAGE: yes
 -        run: ./php/tests/run.sh ./php/tests/tests/desec-existing-slug.spec.js
 -
-       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
          if: ${{ !cancelled() }}
          with:
 diff --git a/php/tests/compose.yaml b/php/tests/compose.yaml
-index 4de55e2a..8d108d9e 100644
+index 96789511..c4d360dd 100644
 --- a/php/tests/compose.yaml
 +++ b/php/tests/compose.yaml
 @@ -20,7 +20,7 @@ services:
@@ -68,16 +68,16 @@ index 4de55e2a..8d108d9e 100644
      pull_policy: always # Always pull so we don't risk to run into the "Update for mastercontainer" page.
      init: true
      restart: always
-@@ -34,8 +34,6 @@ services:
-     environment:
+@@ -35,8 +35,6 @@ services:
        SKIP_DOMAIN_VALIDATION: ${SKIP_DOMAIN_VALIDATION-true}
        APACHE_PORT: 11000
+       WATCHTOWER_DOCKER_SOCKET_PATH: ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}
 -      TESTING___DESEC_API_BASE: http://desec-mock:8090/api/v1 
 -      TESTING___DESEC_UPDATE_URL: http://desec-mock:8090/update
      entrypoint: bash /start.sh
  
    app-code-from-image:
-@@ -58,13 +56,6 @@ services:
+@@ -59,13 +57,6 @@ services:
      profiles:
        - local-code
  
@@ -91,7 +91,7 @@ index 4de55e2a..8d108d9e 100644
    npm-installer:
      image: docker.io/library/node:26@sha256:9965105b7a4e201d7f07268402bb4971670592b46c9b9058cc643961199a1ab6
      volumes:
-@@ -83,15 +74,12 @@ services:
+@@ -85,15 +76,12 @@ services:
      profiles:
        - none
      depends_on:
@@ -282,10 +282,10 @@ index b33690b3..00000000
 -  console.log(`deSEC mock listening on http://0.0.0.0:${port}`)
 -})
 diff --git a/php/tests/run.sh b/php/tests/run.sh
-index 4abeefc1..4216c335 100755
+index 548ee159..53189dd2 100755
 --- a/php/tests/run.sh
 +++ b/php/tests/run.sh
-@@ -35,7 +35,7 @@ run_tests() {
+@@ -42,7 +42,7 @@ run_tests() {
      $DOCO --profile $profile run --remove-orphans test-runner-$profile
      exitcode=$?
      if test $exitcode -gt 0; then
@@ -294,7 +294,7 @@ index 4abeefc1..4216c335 100755
              if docker container list -a --format="{{ .Names }}" | grep -q "$container"; then
                  echo -e "\n 📣  Log output from container ${container}:\n"
                  docker logs "$container"
-@@ -70,10 +70,4 @@ else
+@@ -77,10 +77,4 @@ else
      sleep 1
      SKIP_DOMAIN_VALIDATION=false
      run_tests tests/restore-instance.spec.js
@@ -549,11 +549,13 @@ index 212ff569..233a0977 100644
    return containersPage;
  }
 diff --git a/php/tests/tests/initial-setup.spec.js b/php/tests/tests/initial-setup.spec.js
-index 5664d675..3be77c1f 100644
+old mode 100644
+new mode 100755
+index bb5f31f9..24a9b2c7
 --- a/php/tests/tests/initial-setup.spec.js
 +++ b/php/tests/tests/initial-setup.spec.js
-@@ -2,40 +2,46 @@ import { test, expect } from '@playwright/test';
- import { readFileSync, writeFileSync } from 'node:fs'
+@@ -4,40 +4,46 @@ import { createPrivateKey, sign } from 'node:crypto'
+ import { request } from 'node:http'
  import { logInToContainersPage } from './helpers.js';
  
 +// The es-CL suite (patch 090): every assertion the 060 sweep re-skinned now asserts the
@@ -606,7 +608,7 @@ index 5664d675..3be77c1f 100644
    await expect(containersPage.locator('body')).toContainText('The entered timezone does not seem to be a valid timezone!')
  
    // Accept valid time zone
-@@ -44,67 +50,67 @@ test('Initial setup', async ({ page: setupPage, browser }) => {
+@@ -46,67 +52,67 @@ test('Initial setup', async ({ page: setupPage, browser }) => {
    containersPage.once('dialog', dialog => {
      dialog.accept()
    });
@@ -692,7 +694,7 @@ index 5664d675..3be77c1f 100644
  
    // Save passwords for restore backup test
    writeFileSync('test_data.json', JSON.stringify({
-@@ -123,17 +129,17 @@ test('Log in via token-unblocked login form', async ({ page: containersPage, bro
+@@ -125,17 +131,17 @@ test('Log in via token-unblocked login form', async ({ page: containersPage, bro
    // The previous test left the containers stopped, so the direct login is allowed
    await containersPage.goto('./login');
    await containersPage.locator('#master-password').fill(password);
@@ -715,7 +717,7 @@ index 5664d675..3be77c1f 100644
    await expect(containersPage.locator('#master-password')).toHaveCount(0);
  
    // Starting the containers generates a new token, so read it only now
-@@ -144,7 +150,7 @@ test('Log in via token-unblocked login form', async ({ page: containersPage, bro
+@@ -146,15 +152,15 @@ test('Log in via token-unblocked login form', async ({ page: containersPage, bro
    await expect(tokenPage.locator('body')).toContainText('This login form is now available to you for up to 5 minutes and max. 5 attempts.');
    await expect(tokenPage.locator('#master-password')).toBeVisible();
    await tokenPage.locator('#master-password').fill(password);
@@ -723,8 +725,35 @@ index 5664d675..3be77c1f 100644
 +  await tokenPage.getByRole('button', { name: 'Iniciar sesión' }).click();
    await tokenPage.waitForURL('./containers');
 -  await expect(tokenPage.getByRole('link', { name: 'Open your Nextcloud ↗' })).toBeVisible();
-+  await expect(tokenPage.getByRole('link', { name: 'Abrir su Nextcloud ↗' })).toBeVisible();
++  await expect(tokenPage.getByRole('link', { name: 'Abrir APS Conecta Gestión ↗' })).toBeVisible();
+ 
+   // A signature made with the private key that was handed to the Nextcloud container unblocks the login form
+   const signaturePage = await (await browser.newContext()).newPage();
+   // Check that the login is blocked.
+   await signaturePage.goto('./login');
+-  await expect(signaturePage.locator('body')).toContainText('The direct login is blocked since Nextcloud is running.');
++  await expect(signaturePage.locator('body')).toContainText('El inicio de sesión directo está bloqueado porque la suite está en ejecución.');
+   await expect(signaturePage.locator('#master-password')).toHaveCount(0);
+   // Check that a request to the API with a valid signature redirects to the unblocked login.
+   await signaturePage.goto(`./api/auth/getlogin?signature=${signTimestamp(await getUnblockLoginPrivateKey())}`);
+@@ -163,14 +169,14 @@ test('Log in via token-unblocked login form', async ({ page: containersPage, bro
+   await expect(signaturePage.locator('#master-password')).toBeVisible();
+   // Check that the login actually works.
+   await signaturePage.locator('#master-password').fill(password);
+-  await signaturePage.getByRole('button', { name: 'Log in' }).click();
++  await signaturePage.getByRole('button', { name: 'Iniciar sesión' }).click();
+   await signaturePage.waitForURL('./containers');
+-  await expect(signaturePage.getByRole('link', { name: 'Open your Nextcloud ↗' })).toBeVisible();
++  await expect(signaturePage.getByRole('link', { name: 'Abrir APS Conecta Gestión ↗' })).toBeVisible();
+ 
+   // A signature is preferred over a token: an invalid signature fails even if the token is valid
+   const preferredPage = await (await browser.newContext()).newPage();
+   await preferredPage.goto(`./api/auth/getlogin?signature=invalid&token=${AIO_TOKEN}`);
+-  await expect(preferredPage.locator('body')).toContainText('The direct login is blocked since Nextcloud is running.');
++  await expect(preferredPage.locator('body')).toContainText('El inicio de sesión directo está bloqueado porque la suite está en ejecución.');
+   await expect(preferredPage.locator('#master-password')).toHaveCount(0);
  });
+ 
 diff --git a/php/tests/tests/restore-instance.spec.js b/php/tests/tests/restore-instance.spec.js
 index 53363c5f..85c45325 100755
 --- a/php/tests/tests/restore-instance.spec.js
