@@ -133,7 +133,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (upstream's own pin)
         # main (default): containers.json — the sibling list's source (parsed, never hardcoded)
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -190,7 +190,7 @@ jobs:
         env:
           GESTION_REF: ${{ inputs.gestion-ref }}
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -221,7 +221,7 @@ jobs:
       - id: head
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -252,7 +252,7 @@ jobs:
       - id: head
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -282,7 +282,7 @@ jobs:
         # the tree is patched or not. A fork-side rename of an image is out of the patch queue's
         # surface (010 is prefix-only by locked design); an upstream rename/addition flows through
         # the mirror sync into this same file.
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3   # freshly-pushed packages are private until the org flips them public
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v3   # freshly-pushed packages are private until the org flips them public
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -302,7 +302,7 @@ jobs:
       contents: read
       packages: read
     steps:
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3   # the pull below is the proof manifest-inspect cannot give
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v3   # the pull below is the proof manifest-inspect cannot give
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -361,7 +361,7 @@ jobs:
       packages: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (upstream's own pin)   # scripts/retag.sh
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
