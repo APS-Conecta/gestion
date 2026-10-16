@@ -72,6 +72,7 @@ jobs:
       APS_BOT_PAT: ${{ secrets.APS_BOT_PAT }}
     permissions:
       contents: write   # headroom parity: the callee's replay job pushes main and force-pushes aps/main (the writes ride the PAT; this only caps what the callee's GITHUB_TOKEN may do)
+      packages: write   # the callee's publish job declares it (its dispatch-only arm — never runs under this call, but GitHub validates every nested job's request at run-start): a called job may only DOWNGRADE the caller's grants, so the cap must carry every scope any nested job declares. Found by the v0.0.0-ci.1 rehearsal — the chain had never started before it.
 
   images:
     name: Publish the 20-image lockstep set
