@@ -40,11 +40,11 @@ declare -p SITE_ROLES >/dev/null 2>&1 || SITE_ROLES=()
 # shape the SITE_FOLDERS/SITE_TEAMS lines above still carry (pre-existing; out of this change's files).
 declare -p SITE_WELCOME >/dev/null 2>&1 || { echo "FATAL: sites/$SITE/site.sh must set SITE_WELCOME (empty is legal, unset is not) — a site file written before 2026-09-27 needs the block by hand; see docs/WELCOME-SCREEN.md" >&2; exit 1; }
 
-# WHICH gestion this is (ADR-0005). A release is a tag, so `git describe` is the answer and there is
-# no VERSION file to drift from it; `--always` degrades to a short sha on an untagged trunk and the
-# fallback covers a checkout with no .git at all. Header line, not `log`: seed-idempotent.sh reads
-# the log for write verbs, and a per-run string must never look like one.
-echo "== APS Conecta provisioning (make seed) — gestion $(git describe --tags --always --dirty 2>/dev/null || echo unknown) =="
+# Which instalador this is — suite_tag's discipline (host/aps-conecta:958): the package's VERSION
+# first (an unpacked package carries no git, and package-release.sh asserts VERSION == tag before
+# signing), `git describe` for a checkout, `unknown` last. Header line, not `log`: seed-idempotent.sh
+# reads the log for write verbs, and a per-run string must never look like one.
+echo "== APS Conecta provisioning — instalador $(if [ -f "$HERE/../VERSION" ]; then head -1 "$HERE/../VERSION"; else git describe --tags --always --dirty 2>/dev/null || echo unknown; fi) =="
 nc_container   # once, after the header: phases (subshells) inherit it; occ in pipes/$(…) cannot cache
 require_installed
 
