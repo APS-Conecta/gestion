@@ -37,9 +37,9 @@
 # REHEARSAL: tags v0.0.0-ci.N (VERSION set to match on a rehearsal branch) run this same chain
 # end-to-end — channel-valid, never mistaken for a release, deletable.
 #
-# Liveness rides along (by design): the gates call runs replay.yml's liveness job, which reds
-# while the Replay schedule has not been enabled and green at least once (the Slice-2 seeding
-# chore) — a red liveness on the first release is the canary working, not a release defect.
+# No liveness gate rides the chain (D-rev 2026-10-16): the daily schedule and its canary
+# are retired — the drift discipline is proven HERE, by every release's own gates run
+# (sync, parity, replay, validators), before anything builds or signs.
 name: Release
 
 on:
@@ -72,7 +72,6 @@ jobs:
       APS_BOT_PAT: ${{ secrets.APS_BOT_PAT }}
     permissions:
       contents: write   # headroom parity: the callee's replay job pushes main and force-pushes aps/main (the writes ride the PAT; this only caps what the callee's GITHUB_TOKEN may do)
-      actions: read     # the callee's liveness job queries the Actions API — called jobs can only DOWNGRADE these grants, so the cap must carry every scope the callee reads
 
   images:
     name: Publish the 20-image lockstep set
@@ -117,7 +116,7 @@ jobs:
           # The registry is the truth and digests are immutable, so the digest half of this
           # re-emit equals the Images manifest job's own record (same tool, same format —
           # diffable). built_from is best-effort provenance: aps/main as resolved NOW — the
-          # gates call serialized behind the replay group, but a scheduled walk could still land
+          # gates call serialized behind the replay group, but a concurrent replay walk could still land
           # between gates and this step; if it did, built_from.sha differs from the manifest
           # job's record while every image digest stands. The digests are the record.
           aps_sha="$(git ls-remote "$REPO_URL" refs/heads/aps/main | cut -f1)"

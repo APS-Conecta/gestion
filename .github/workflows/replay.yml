@@ -1,14 +1,10 @@
 # S4 — the replay chain: main mirrors upstream; the queue turns it into aps/main; the gates
-# prove what ships; the Images pipeline publishes. Four triggers:
-#
-#   schedule (daily)  the drift discipline: sync the mirror if upstream moved, replay, gate.
-#                     Upstream releases ~every 8 days median; a daily check keeps the queue
-#                     honest with enormous margin on the ≤6-weeks bar. A red run here IS the
-#                     signal — never a reason to force anything. (Forks disable schedules by
-#                     default: enable this workflow's schedule once in the Actions tab — the
-#                     one-time org chore, recorded with slice 7's order-state. The liveness
-#                     job below (org L7-5) reds on the next push/PR if that chore is missed —
-#                     the canary's own enablement is no longer unverifiable org state.)
+# prove what ships; the Images pipeline publishes. Three triggers — dispatch-driven
+# (D-rev 2026-10-16): the daily schedule and its liveness canary are gone by owner decision;
+# the drift discipline rides every push and every release instead — sync, replay, gate run
+# on each, so a drifted queue reds the PR/push that introduced it and every release chain
+# before anything ships. An operator dispatches for a look (empty suite-tag) or a publish
+# (suite-tag set) whenever they want a fresh walk between releases.
 #   push (main)       fork-infra landed (a patch, a gate row, a workflow edit): regenerate
 #                     aps/main and re-prove the gates. CI's own sync pushes never re-trigger
 #                     (GITHUB_TOKEN pushes fire no workflows) — only human pushes do.
@@ -30,9 +26,9 @@
 # docker-lint and json-validator ride scripts/replay.sh validate; twig-lint is its own step
 # (it needs PHP 8.5 + apcu, upstream's own setup). The drift report (org L7-2) is the
 # non-gating tail: swept-file content upstream added since the frozen baseline, annotated,
-# never fatal. Two companion jobs ride alongside: gate-red-proof (org L7-2 — the PR arm that
-# injects a known regression and asserts the gates CAN red) and liveness (org L7-5 — the
-# schedule's own enablement check).
+# never fatal. One companion job rides alongside: gate-red-proof (org L7-2 — the PR arm that
+# injects a known regression and asserts the gates CAN red). The liveness canary (org L7-5)
+# is retired with the schedule: nothing runs between pushes and releases for it to watch.
 #
 # FORK-INFRA (the D6 allowlist, extended when instalador absorbed the fork; parity asserts
 # everything else stays byte-identical): this workflow, images.yml, release.yml, ci.yml,
@@ -51,8 +47,6 @@
 name: Replay
 
 on:
-  schedule:
-    - cron: "0 22 * * *"
   push:
     branches: [main]
   pull_request:
@@ -63,12 +57,13 @@ on:
     # dispatch-only by its event guard, so no caller can ever move images by accident — a
     # release calls the Images pipeline itself, behind this job, with the tag pinned. The call
     # joins this workflow's own `replay` concurrency group: a release queues behind an
-    # in-flight scheduled walk (serialize, never cancel — by design).
+    # in-flight replay walk (serialize, never cancel — by design).
     secrets:
       # The caller's forwarded APS_BOT_PAT (release.yml's gates job): a called workflow must
       # DECLARE every secret a caller forwards to it — undeclared, the callee's env reads
       # empty and the replay push dies at authentication on every tag push. Declared here so
-      # the sync/replay pushes authenticate under the call exactly as they do on the schedule.
+      # the sync/replay pushes authenticate under the call exactly as they do on a push or a
+      # dispatch.
       APS_BOT_PAT:
         required: true
   workflow_dispatch:
@@ -213,49 +208,6 @@ jobs:
           echo "ARM B green: the re-injected registry ref reds the gate"
           # sed-revert for the same reason as Arm A — never git-checkout the patched bytes back
           sed -i 's#ghcr.io/nextcloud-releases/#ghcr.io/aps-conecta/#g' "$json"
-
-  liveness:
-    name: Schedule liveness (org L7-5)
-    # The canary's own enablement was unverifiable org state: forks disable schedules by
-    # default, and a missed one-time Actions-tab chore left the ≤6-weeks drift bar with no
-    # enforcement until the next human push. This job rides every trigger the workflow
-    # already has, so the next push or PR reds while the schedule has been silent — and it
-    # is trivially green while the daily run actually runs. 7 days: the schedule is daily,
-    # so a week of silence means the chore is undone or scheduled runs are failing — either
-    # way a human must look, with the ≤6-weeks drift bar still in margin.
-    # Not on the schedule itself: a scheduled run IS the liveness evidence, and the query below
-    # counts whole-run success. Riding the scheduled run made a 7-day gap permanent — liveness
-    # failed the run, so no scheduled run could succeed again (red 2026-10-04 at 9 days).
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      actions: read
-    steps:
-      - name: Red if the last successful scheduled Replay run is older than 7 days
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          auth=(-H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json")
-          wf_id="$(curl -sf "${auth[@]}" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows" \
-            | jq -r '.workflows[] | select(.path == ".github/workflows/replay.yml") | .id')"
-          [ -n "$wf_id" ] \
-            || { echo '::error::cannot resolve the Replay workflow id — the liveness query itself is broken (org L7-5)'; exit 1; }
-          last="$(curl -sf "${auth[@]}" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/${wf_id}/runs?event=schedule&status=success&per_page=1" \
-            | jq -r '.workflow_runs[0].created_at // empty')"
-          if [ -z "$last" ]; then
-            echo '::error::no successful scheduled Replay run has ever completed — the schedule is disabled: enable it once (Actions tab → Replay → ⋯ → Enable schedule), the one-time org chore (org L7-5)'
-            exit 1
-          fi
-          age=$(( ($(date +%s) - $(date -d "$last" +%s)) / 86400 ))
-          if [ "$age" -gt 7 ]; then
-            echo "::error::the last successful scheduled Replay run is ${age} days old — either the schedule got disabled again (re-enable: Actions tab → Replay → ⋯ → Enable schedule) or scheduled runs are failing (open the newest run; the drift bar is ≤6 weeks) (org L7-5)"
-            exit 1
-          fi
-          echo "liveness green: last successful scheduled Replay run was ${age} day(s) ago"
 
   publish:
     name: Hand off to the Images pipeline
