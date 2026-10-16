@@ -26,7 +26,7 @@ jobs:
     name: Secret scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0    # a secret lives wherever history put it, not only at HEAD
       - name: gitleaks 8.18.2 (pinned)
@@ -41,7 +41,7 @@ jobs:
     name: Static gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # No Makefile moved (gestion's dev lifecycle), no .env.example (the rehearsal scaffolding
       # the cleanboot job copies in), no desktop_workspace pin seat (tests/ stayed in gestion).
       # The gate is the script. The signer rides along: package-release's self-test is real
@@ -63,7 +63,7 @@ jobs:
       # repos); the step degrades to the loud anonymous failure below instead of a hang.
       APS_BOT_PAT: ${{ secrets.APS_BOT_PAT }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # The two apps the doctrine matured on, estadistica (compared since its promotion)
       # + the package; epidemiologia joins
       # per-check when its Phase-7 tree lands (the script's own exclusions name

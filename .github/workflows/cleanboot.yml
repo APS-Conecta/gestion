@@ -109,7 +109,7 @@ jobs:
       # docker-transport-only by design.
       AIO_TEST_APACHE_PORT: "11000"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 1   # VERSION answers suite_tag() now — no tag history to read
       # The composite's gestion half (D2): the suite-definition content the package folds in —
@@ -117,7 +117,7 @@ jobs:
       # because gestion is private: the job's own token cannot read a sibling repository.
       # .git/info/exclude (below) keeps it out of the throwaway commit — a local ignore,
       # never a tracked one; the archive that becomes the package must not swallow it.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: APS-Conecta/gestion
           path: gestion
@@ -530,11 +530,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 1   # VERSION answers suite_tag() now — no tag history to read
       # The composite's gestion half (D2) — same dual checkout as the domain job (Modify 2).
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: APS-Conecta/gestion
           path: gestion
