@@ -33,7 +33,7 @@ BUNDLE_TAG="v0.4.0"             # the release commit sets this beside aps/CHANGE
 TARBALL_SHA256=""               # ← the release job fills this; empty = the committed form, refuse
 # shellcheck disable=SC2034  # a cross-file constant: package-release.sh reads it back when filling
                               # the asset, and preflight/wizard print it — never dereferenced here
-SIGNIFY_PUBKEY="RWQf6LgoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"  # installer.pub's base64 line (placeholder until aps/RELEASING.md's keygen)
+SIGNIFY_PUBKEY="RWTLqv+WUjHCKc4S0crtk33Otcda2exszJdn6BBvGPmZEcTbVRrVn9kK"  # installer.pub's base64 line — both readers flip together (aps/RELEASING.md §1)
 APS_HOME="${APS_HOME:-/opt/aps-conecta}"
 REPO_URL="${REPO_URL:-https://github.com/APS-Conecta/instalador}"
 DEST="$APS_HOME/instalador"     # the bundle home (aps/MIGRATION.md: an old gestion clone is inert)
