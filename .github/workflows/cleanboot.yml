@@ -321,7 +321,7 @@ jobs:
           PY
       - name: The usage record, as an artifact (a missing record is a red, never a silent skip)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: uso-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/uso.json
@@ -506,7 +506,7 @@ jobs:
         run: sudo cp /opt/aps-conecta/instalador/.install.log "$RUNNER_TEMP/.install.log" 2>/dev/null || true
       - name: Provisioning log on failure (artifact)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: install-log
           path: ${{ runner.temp }}/.install.log
