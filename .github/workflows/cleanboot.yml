@@ -181,7 +181,7 @@ jobs:
       - name: Smoke green on the 404 posture, the NOTE naming the unbuilt map
         run: |
           out="$RUNNER_TEMP/smoke-404.out"
-          make smoke > "$out" 2>&1 || { cat "$out" >&2; echo "FAIL: smoke must be green with the map unbuilt (bind present, timer off)" >&2; exit 1; }
+          bash scripts/smoke.sh > "$out" 2>&1 || { cat "$out" >&2; echo "FAIL: smoke must be green with the map unbuilt (bind present, timer off)" >&2; exit 1; }
           grep -q 'NOTE: /tiles/chile.pmtiles is 404' "$out" \
             || { cat "$out" >&2; echo "FAIL: the unbuilt-map posture must print its NOTE — silent green cannot tell unbuilt from unbound" >&2; exit 1; }
           cat "$out"
@@ -288,7 +288,7 @@ jobs:
       # defining property (AD-2) and nothing else asserts it: a warm dev box cannot tell
       # "already correct" from "silently did nothing", because on a warm box those are the
       # same thing.
-      - run: make seed-idempotent
+      - run: bash scripts/seed-idempotent.sh
       # THE HANDOFF CONTRACT (S8's acceptance): divergence-empty on a clean install, users
       # included — the gate-only domain (slice 5). The gate reads the declared set (the SITE_
       # ROSTER roster the silent install loaded — the standings re-derived from the site it placed
@@ -335,8 +335,8 @@ jobs:
           # globally — the update-day doctrine is converge-then-prove: the convergence seed
           # re-asserts the declared set over whatever the entrypoint reset, and the idempotence
           # proof then holds on the converged state (measured green on the probe).
-          make seed
-          make seed-idempotent
+          bash provisioning/seed.sh
+          bash scripts/seed-idempotent.sh
           bash scripts/divergence.sh --gate
           docker ps --filter name=aps-conecta-notify-push --filter status=running --format '{{.Names}}' \
             | grep -qx aps-conecta-notify-push \
