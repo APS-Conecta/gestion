@@ -145,6 +145,11 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: PERMS-PROBE (temporary — remove after the rehearsal)
+        run: |
+          resp="$(curl -s -u "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}"             "https://ghcr.io/token?scope=repository:aps-conecta%2Faio-postgresql:pull,push&service=ghcr.io")"
+          scopes="$(printf '%s' "$resp" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("granted=", d.get("scope", "NONE"), "| keys=", sorted(d.keys()))')"
+          echo "::error title=PERMS-PROBE::$scopes"
       - name: Registry-side retag walk
         run: |
           set -euo pipefail
