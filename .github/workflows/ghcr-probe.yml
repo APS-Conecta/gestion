@@ -1,0 +1,20 @@
+name: GHCR-PROBE (temporary)
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: minimal push test
+        run: |
+          set -euo pipefail
+          echo "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+          docker pull alpine:3.19 >/dev/null
+          docker tag alpine:3.19 "ghcr.io/aps-conecta/ghcr-probe:probe"
+          docker push "ghcr.io/aps-conecta/ghcr-probe:probe" 2>&1 | tail -5
+        env:
+          ACTOR: ${{ github.actor }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
