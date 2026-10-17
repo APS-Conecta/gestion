@@ -347,6 +347,9 @@ jobs:
             sleep 2
           done
           echo "=== the wizard never answered; last mastercontainer logs ===" >&2
+          state="$(docker inspect -f '{{.State.Status}} exit={{.State.ExitCode}} err={{.State.Error}}' nextcloud-aio-mastercontainer 2>/dev/null || echo gone)"
+          logs="$(docker logs --tail=40 nextcloud-aio-mastercontainer 2>&1 | tail -40 | tr '\n' '|' || true)"
+          echo "::error title=BOOTSMOKE::state=${state} :: logs: ${logs:0:3000}"
           docker logs --tail=50 nextcloud-aio-mastercontainer >&2 || true
           echo "FAIL: ghcr.io/aps-conecta/all-in-one:${SUITE_TAG} never served the wizard on :8080 within 2 min" >&2
           exit 1
