@@ -1902,6 +1902,7 @@ EOF
 
   # install runs as root: the stepper arms answer `id -u` from a shim (ID_U=1000 plays the operator)
   printf '#!/usr/bin/env bash\ncase "$1" in -u) echo "${ID_U:-0}" ;; -un) echo root ;; esac\n' > "$tshim/id"; chmod +x "$tshim/id"
+  APS_HOME="$tmp/aps-stepper"   # …and the install's own home answers from the fixture: CI's runner is uid 1001 and /opt is not theirs
   # the stepper end to end with every server step stubbed: the order, the approved header/footer,
   # the hand-over to the browser, and no prompt without a terminal
   install_out="$(
@@ -1959,6 +1960,7 @@ EOF
     silent_equipos() { ok "equipos-stub"; }
     silent_ejecutar() { ok "ejecutar-stub"; }
     install_timers() { ok "temporizadores-stub"; }
+    id() { echo "${ID_U:-0}"; }   # hash-proof: bash's command hash can reroute a PATH shim to the real uid (CI = 1001) — a function cannot be rerouted
     cmd_install --sitio "$tmp/dado.sh" --planilla "$tmp/dado.csv" </dev/null 2>&1
   )"; rcs=$?
   check "install --sitio: the same nine steps in order — the browser ones from the files, the map at its own step 4 — then the verdict" \
@@ -1969,6 +1971,7 @@ EOF
     step_revisar()   { ok "revisar-stub"; }
     step_preparar()  { ok "preparar-stub"; }
     step_descargar() { die "descargar-muere"; }
+    id() { echo "${ID_U:-0}"; }   # the function rule above — hash-proof, ID_U-driven
     cmd_install --sitio "$tmp/dado.sh" --planilla "$tmp/dado.csv" </dev/null 2>&1
   )"; rcs=$?
   check "install --sitio: a fatal refusal still reaches the console, not the log" \
@@ -1976,6 +1979,7 @@ EOF
   install_out="$(
     step_revisar()   { ok "revisar-stub"; }
     step_preparar()  { bad "preparar-falla" "x"; }
+    id() { echo "${ID_U:-0}"; }   # the function rule above — hash-proof, ID_U-driven
     cmd_install --sitio "$tmp/dado.sh" --planilla "$tmp/dado.csv" </dev/null 2>&1
   )"; rcs=$?
   check "install --sitio: a failed step names the log beside the command to re-run" \
@@ -2974,6 +2978,7 @@ SHIM
       silent_ejecutar() { ok "ejecutar-stub"; }
       install_timers() { ok "temporizadores-stub"; }
       cmd_datos() { echo "datos-stub:$*"; }
+      id() { echo "${ID_U:-0}"; }   # CI's runner is uid 1001 — answer the root gate from the fixture (the :1903 rule), never the real id
       cmd_install --sitio "$tmp/dado.sh" --planilla "$tmp/dado.csv" </dev/null 2>&1
     )"; rcs=$?
     check "install --sitio: the comuna data rides the tail (D9) — datos --importar after the timers, before the verdict" \
@@ -2989,6 +2994,7 @@ SHIM
       silent_ejecutar() { ok "ejecutar-stub"; }
       install_timers() { ok "temporizadores-stub"; }
       cmd_datos() { die "datos-muere"; }
+      id() { echo "${ID_U:-0}"; }   # CI's runner is uid 1001 — the root gate answers ID_U, not the real uid
       cmd_install --sitio "$tmp/dado.sh" --planilla "$tmp/dado.csv" </dev/null 2>&1
     )"; rcs=$?
     check "install --sitio: a red datos tail stays in its subshell and never uninstalls the suite — the aggregate names the one command that finishes it" \
@@ -3005,6 +3011,7 @@ SHIM
       install_timers() { ok "temporizadores-stub"; }
       cmd_datos() { echo "datos-stub:$*"; }
       export APS_SKIP_DATOS=1
+      id() { echo "${ID_U:-0}"; }   # CI's runner is uid 1001 — the root gate answers ID_U, not the real uid
       cmd_install --sitio "$tmp/dado.sh" --planilla "$tmp/dado.csv" </dev/null 2>&1
     )"; rcs=$?
     check "install --sitio: APS_SKIP_DATOS=1 leaves the comuna data off the tail — the stub never runs, the skip names the one command, the verdict still ends ✓" \
