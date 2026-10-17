@@ -2,7 +2,7 @@ name: GHCR-PROBE-CALLEE (temporary)
 on:
   workflow_call:
 jobs:
-  push-inside-callee:
+  census:
     runs-on: ubuntu-latest
     permissions: { contents: read, packages: write }
     steps:
@@ -12,6 +12,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - run: |
-          set -euo pipefail
-          docker buildx imagetools create -t "ghcr.io/aps-conecta/aio-postgresql:probe-after-delete" "ghcr.io/nextcloud-releases/aio-postgresql:latest"
-          echo "post-delete push OK"
+          set -uo pipefail
+          fails=""
+          for n in aio-postgresql aio-notify-push aio-redis aio-collabora aio-talk aio-talk-recording aio-borgbackup aio-watchtower aio-domaincheck aio-clamav aio-onlyoffice aio-eurooffice aio-imaginary aio-fulltextsearch aio-docker-socket-proxy aio-harp aio-whiteboard ; do
+            if docker buildx imagetools create -t "ghcr.io/aps-conecta/$n:census" "ghcr.io/nextcloud-releases/$n:latest" 2>/tmp/e.txt; then
+              echo "OK   $n"
+            else
+              reason=$(grep -oE 'denied[^"]{0,60}|not found|unauthorized[^"]{0,40}|unexpected status[^"]{0,40}' /tmp/e.txt | head -1)
+              echo "FAIL $n — $reason"
+              fails="$fails $n($reason)"
+            fi
+          done
+          if [ -n "$fails" ]; then echo "::error title=CENSUS::failing:$fails"; exit 1; fi
+          echo "CENSUS: all green"
