@@ -566,6 +566,11 @@ install_packages() {  # the tools the install itself runs; apt installs only wha
   fi
   info "instalando ${missing[*]}"
   if "${APT[@]}" update >/dev/null && "${APT[@]}" install -y "${pkgs[@]}" >/dev/null; then
+    # Ubuntu/Debian ship the binary as signify-openbsd; the suite (y esta misma herramienta)
+    # llama al nombre canónico `signify` — se provee una vez, al instalar, para que la
+    # promesa «la firma se verifica desde la próxima corrida» sea cierta (el hueco del
+    # v0.0.0-ci.4: instalar el paquete no creaba el nombre que check_paquete busca).
+    command -v signify >/dev/null 2>&1 || ln -sf "$(command -v signify-openbsd)" /usr/local/bin/signify 2>/dev/null || true
     ok "Instalado: ${missing[*]}"
   else
     bad "no se pudo instalar ${missing[*]}" "revise la red y apt (sudo apt-get update) y vuelva a ejecutar el paso"

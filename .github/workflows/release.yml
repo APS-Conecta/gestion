@@ -103,7 +103,14 @@ jobs:
         with:
           ref: ${{ inputs.suite-tag || github.ref_name }}   # the tag tree: install.sh, installer.pub, VERSION, scripts/
       - name: Install the signer (the same apt package the clinic verifies with)
-        run: sudo apt-get update -qq && sudo apt-get install -y signify-openbsd
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y signify-openbsd
+          # Ubuntu ships the binary as signify-openbsd; package-release.sh (and the clinic's
+          # own verificar, whose preparar mirrors this) call the canonical `signify` name —
+          # provide it once, at install time (the ci.4 gap: the green install step never
+          # created the name the scripts resolve).
+          command -v signify >/dev/null 2>&1 || sudo ln -sf "$(command -v signify-openbsd)" /usr/local/bin/signify
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
