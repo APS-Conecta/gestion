@@ -80,6 +80,12 @@ on:
 
 permissions:
   contents: read
+  # packages: write at WORKFLOW level: in a CALLED workflow the workflow-level block caps
+  # every nested job (the callee's job-level grants cannot exceed it), and the publish job
+  # needs packages: write for its Images hand-off. Without this, a dispatch-publish would
+  # die at the registry exactly like images.yml's retag walk did (v0.0.0-ci.1 rehearsal,
+  # 2026-10-16). The caller's grant already carries it (release.yml's gates job).
+  packages: write
 
 concurrency:
   group: replay

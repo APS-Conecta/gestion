@@ -117,6 +117,13 @@ on:
 
 permissions:
   contents: read
+  # packages: write at WORKFLOW level — not decoration: in a CALLED workflow this block is the
+  # CEILING for every nested job (unlike a top-level workflow, where job-level may escalate),
+  # so the pushing jobs' own packages: write was silently capped to none and ghcr answered
+  # every push with "denied: permission_denied: write_package" (found by the v0.0.0-ci.1
+  # rehearsal's retag walk, 2026-10-16). The caller (release.yml's images job) grants
+  # contents: read + packages: write — the ceiling chain holds end to end.
+  packages: write
 
 concurrency:
   group: images-${{ inputs.suite-tag }}
