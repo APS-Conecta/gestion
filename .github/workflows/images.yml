@@ -336,15 +336,17 @@ jobs:
           }
           trap cleanup EXIT
           # The wizard serves the one-time initial password on the first GET /setup (slice 1's own
-          # verified capture point). Bounded: 2 minutes, no unbounded hang anywhere (B-015).
-          for _ in $(seq 60); do
+          # verified capture point). Bounded: 5 minutes (90 × ~3 s) — the first boot on a cold runner
+          # is pull + caddy/php bring-up, observed ready at ~2.5 min (ci.2's BOOTSMOKE annotation);
+          # no unbounded hang anywhere (B-015).
+          for _ in $(seq 90); do
             html="$(curl -sk --max-time 5 https://127.0.0.1:8080/setup || true)"
             case "$html" in
               *'id="initial-password"'*)
                 echo "wizard served the initial password within the bound — the published mastercontainer pulls and boots"
                 exit 0 ;;
             esac
-            sleep 2
+            sleep 3
           done
           echo "=== the wizard never answered; last mastercontainer logs ===" >&2
           state="$(docker inspect -f '{{.State.Status}} exit={{.State.ExitCode}} err={{.State.Error}}' nextcloud-aio-mastercontainer 2>/dev/null || echo gone)"
