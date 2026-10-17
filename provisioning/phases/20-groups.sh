@@ -52,6 +52,8 @@ roles=(
   "role-estadistica-rem|Encargado/a de Estadística (REM)|cat-administrativos"
   "role-conductor|Conductor (Ambulancia / Traslado)|cat-administrativos"
   "role-auxiliar-servicio|Auxiliar de Servicio|cat-administrativos"
+  # Emergency access / break-glass role (HIPAA § 164.312(a)(2)(ii)) for clinical emergency overrides
+  "role-emergencia-breakglass|Acceso de Emergencia (Break-Glass)|cat-clinicos"
 )
 for entry in "${roles[@]}"; do rest="${entry#*|}"; ensure_group "${entry%%|*}" "${rest%%|*}"; done
 

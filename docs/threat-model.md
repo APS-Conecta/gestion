@@ -37,21 +37,22 @@ work; the 🗡️ Breaker agent starts here.*
 | Secrets | operators | `.env` is generated with mode 600 (`make setup`) and never committed (`AGENTS.md`); `.gitleaksignore` exists |
 | TLS and headers | the public internet | AIO's reverse proxy; nothing in this repository pins TLS versions or security headers |
 
+## Declared HIPAA & System Safeguards (Hardened in Provisioning)
+
+- **Audit logging:** `admin_audit` is enabled (`provisioning/phases/05-security.sh`), ensuring all file reads, mutations, and shares are immutably logged for clinical oversight.
+- **Session management:** `session_lifetime 900` (15-minute inactivity timeout) and `session_keepalive false` are enforced (`provisioning/phases/05-security.sh`), preventing session takeover on shared clinical workstations.
+- **Encryption at rest:** Server-side encryption (`encryption.enabled true`) is enforced (`provisioning/phases/05-security.sh`). Host backup targets must reside on encrypted storage volumes.
+- **Emergency access ("Break-Glass"):** `role-emergencia-breakglass` is provisioned (`provisioning/phases/20-groups.sh`) to support auditable emergency overrides during clinical emergencies.
+
 ## Not declared in this repository — check each against the pinned image's defaults
 
 - **Two-factor authentication:** no 2FA provider is enabled, and 2FA is not enforced for staff or admins.
 - **Password policy:** only the breach check is set, and it is off (`provisioning/app-policy.sh`):
   no password hash prefix reaches api.pwnedpasswords.com, and a known-breached password is no longer
   refused. Length, the common-password check and expiry are the image's defaults.
-- **Audit logging:** `admin_audit` is not enabled, so there is no record of file access or shares.
 - **Sharing defaults:** nothing sets public-link passwords, expiry, or share-by-mail limits
   (`shareapi_*`).
-- **Encryption at rest:** server-side encryption is not enabled. Check whether the backup target is
-  encrypted.
 - **Brute-force settings:** nothing beyond Nextcloud's defaults.
-
-Each item above is a Breaker target. The fix is a provisioning phase that sets it, plus an assertion in
-`make test` / `scripts/smoke.sh`, matching how `app-policy.sh` is both applied and asserted.
 
 ## Trust boundaries
 

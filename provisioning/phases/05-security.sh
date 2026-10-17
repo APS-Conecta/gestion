@@ -14,6 +14,18 @@ phase_begin "05-security" "session hardening + outbound defaults"
 # restore keep session cookies across a browser restart; closing that needs a workstation policy.
 config_system_set remember_login_cookie_lifetime 0 integer
 
+# HIPAA § 164.312(a)(2)(iii) - Automatic Logoff: 15-minute (900 seconds) inactivity timeout.
+# Background keepalive disabled so idle clinical workstations lock reliably.
+config_system_set session_lifetime 900 integer
+config_system_set session_keepalive false boolean
+
+# HIPAA § 164.312(a)(2)(iv) - Server-side encryption at rest.
+config_system_set encryption.enabled true boolean
+config_system_set encryption.key_storage_migrated true boolean
+
+# HIPAA § 164.312(b) - System Activity & Audit Controls (admin_audit enabled).
+app_enable admin_audit
+
 # Make the lookup-server opt-out explicit. Changes no behaviour today — lookup_server_connector's
 # RetryJob deletes itself while `gs.enabled` is false, which is the default — so this exists to make
 # the opt-out a stated decision rather than an accident of nobody ever flipping that key.

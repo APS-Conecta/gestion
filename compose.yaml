@@ -88,6 +88,9 @@ services:
       # this one account. NC_* is Nextcloud's own system-config override, read before config.php —
       # the only lever that arrives in time. "" , not null (null = inherit the default).
       NC_skeletondirectory: ""
+      # HIPAA Technical Safeguards: 15-minute inactive session timeout & keepalive disabled
+      NC_session_lifetime: "900"
+      NC_session_keepalive: "false"
       # The app store is OFF (#163). Env and not a phase: the image's /entrypoint.sh runs
       # `occ upgrade` on any image bump, before a seed can run, and that upgrade re-downloads
       # every enabled app from the store (Updater.php:244) — which is what made the VENDOR pins
