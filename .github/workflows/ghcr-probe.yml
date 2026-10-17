@@ -8,13 +8,27 @@ jobs:
       contents: read
       packages: write
     steps:
-      - name: minimal push test
+      - name: docker-push leg (control)
         run: |
           set -euo pipefail
           echo "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
           docker pull alpine:3.19 >/dev/null
-          docker tag alpine:3.19 "ghcr.io/aps-conecta/ghcr-probe:probe"
-          docker push "ghcr.io/aps-conecta/ghcr-probe:probe" 2>&1 | tail -5
+          docker tag alpine:3.19 "ghcr.io/aps-conecta/ghcr-probe:probe2"
+          docker push "ghcr.io/aps-conecta/ghcr-probe:probe2" >/dev/null && echo "LEG1 docker-push: OK"
+      - name: imagetools leg (the walk's tool)
+        run: |
+          set +e
+          echo "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+          docker buildx imagetools create -t "ghcr.io/aps-conecta/ghcr-probe2:probe" "ghcr.io/aps-conecta/ghcr-probe:probe2" 2>err.txt
+          rc=$?
+          if [ $rc = 0 ]; then echo "LEG2 imagetools: OK"; else
+            echo "::error title=LEG2::imagetools failed rc=$rc: $(tail -3 err.txt | tr '\n' ' ')"
+            tail -5 err.txt
+            # leg 3: same but with the source from another org (like the real walk)
+            docker buildx imagetools create -t "ghcr.io/aps-conecta/ghcr-probe3:probe" "ghcr.io/nextcloud-releases/aio-postgresql:latest" 2>err3.txt
+            rc3=$?
+            if [ $rc3 = 0 ]; then echo "LEG3 cross-org imagetools: OK"; else echo "::error title=LEG3::cross-org imagetools failed rc=$rc3: $(tail -3 err3.txt | tr '\n' ' ')"; fi
+          fi
         env:
           ACTOR: ${{ github.actor }}
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
