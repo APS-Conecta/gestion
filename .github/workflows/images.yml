@@ -340,7 +340,12 @@ jobs:
           # is pull + caddy/php bring-up, observed ready at ~2.5 min (ci.2's BOOTSMOKE annotation);
           # no unbounded hang anywhere (B-015).
           for _ in $(seq 90); do
-            html="$(curl -sk --max-time 5 https://127.0.0.1:8080/setup || true)"
+            # Sec-Fetch-Site: none = a browser address-bar navigation. Upstream's cross-origin
+            # guard (index.php's Sec-Fetch middleware, #7696-era) 403s 'Forbidden' on any request
+            # without a Sec-Fetch-Site of same-origin|none — a bare curl is denied by design.
+            # Proven locally against the built image: with the header, /setup serves 200 + the
+            # initial-password sentinel (ci.3's diagnosis).
+            html="$(curl -sk -H 'Sec-Fetch-Site: none' --max-time 5 https://127.0.0.1:8080/setup || true)"
             case "$html" in
               *'id="initial-password"'*)
                 echo "wizard served the initial password within the bound — the published mastercontainer pulls and boots"
