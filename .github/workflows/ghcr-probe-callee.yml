@@ -6,9 +6,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions: { contents: read, packages: write }
     steps:
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0 — the exact pin images.yml carries
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - run: |
           set -euo pipefail
-          echo "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
-          docker buildx imagetools create -t "ghcr.io/aps-conecta/ghcr-probe:callee" "ghcr.io/nextcloud-releases/aio-postgresql:latest"
-          echo "CALLEE cross-org imagetools OK"
-        env: { ACTOR: "${{ github.actor }}", TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+          docker buildx imagetools create -t "ghcr.io/aps-conecta/ghcr-probe:job5" "ghcr.io/nextcloud-releases/aio-postgresql:latest"
+          echo "JOB5 login-action v4.6.0 + imagetools OK"
