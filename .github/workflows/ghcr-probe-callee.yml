@@ -1,0 +1,14 @@
+name: GHCR-PROBE-CALLEE (temporary)
+on:
+  workflow_call:
+jobs:
+  push-inside-callee:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, packages: write }
+    steps:
+      - run: |
+          set -euo pipefail
+          echo "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+          docker buildx imagetools create -t "ghcr.io/aps-conecta/ghcr-probe:callee" "ghcr.io/nextcloud-releases/aio-postgresql:latest"
+          echo "CALLEE cross-org imagetools OK"
+        env: { ACTOR: "${{ github.actor }}", TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
