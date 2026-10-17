@@ -519,13 +519,13 @@ index 5614e048..a86afa18 100644
 +                                <p>⚠️ Hay una actualización del mastercontainer disponible. Haga clic en el botón siguiente para detener sus contenedores y así poder actualizar el mastercontainer.</p>
                                  {% if current_channel starts with 'latest' %}
 -                                    <p>You can find the changelog <a target="_blank" href="https://github.com/nextcloud/all-in-one/releases/latest"><strong>here</strong></a></p>
-+                                    <p>Puede encontrar el registro de cambios <a target="_blank" href="https://github.com/APS-Conecta/AIO/releases/latest"><strong>aquí</strong></a></p>
++                                    <p>Puede encontrar el registro de cambios <a target="_blank" href="https://github.com/APS-Conecta/instalador/releases/latest"><strong>aquí</strong></a></p>
                                  {% elseif current_channel starts with 'beta' %}
 -                                    <p>You can find the changelog <a target="_blank" href="https://github.com/nextcloud/all-in-one/releases"><strong>here</strong></a></p>
-+                                    <p>Puede encontrar el registro de cambios <a target="_blank" href="https://github.com/APS-Conecta/AIO/releases"><strong>aquí</strong></a></p>
++                                    <p>Puede encontrar el registro de cambios <a target="_blank" href="https://github.com/APS-Conecta/instalador/releases"><strong>aquí</strong></a></p>
                                  {% elseif current_channel starts with 'develop' %}
 -                                    <p>You can find all changes <a target="_blank" href="https://github.com/nextcloud-releases/all-in-one/commits/main"><strong>here</strong></a></p>
-+                                    <p>Puede encontrar todos los cambios <a target="_blank" href="https://github.com/APS-Conecta/AIO/commits/aps/main"><strong>aquí</strong></a></p>
++                                    <p>Puede encontrar todos los cambios <a target="_blank" href="https://github.com/APS-Conecta/instalador/commits/aps/main"><strong>aquí</strong></a></p>
                                  {% endif %}
                              {% endif %}
                              <form method="POST" action="api/docker/stop" target="overlay-log">

@@ -201,7 +201,7 @@ upstream_changelog_urls_absent() {  # zero upstream changelog/releases URLs in t
 }
 
 fork_changelog_present() {  # the positive control: the changelog arms point at the fork's releases
-  grep -q 'https://github.com/APS-Conecta/AIO/releases' "$TREE/php/templates/containers.twig"     || { echo "  no APS-Conecta/AIO releases URL in containers.twig — the changelog arms point nowhere" >&2; return 1; }
+  grep -q 'https://github.com/APS-Conecta/instalador/releases' "$TREE/php/templates/containers.twig"     || { echo "  no APS-Conecta/instalador releases URL in containers.twig — the changelog arms point nowhere" >&2; return 1; }
 }
 
 escl_sweep() {  # MODE — walk swept_table's sentinel pairs. absent = the English sentinel must be
@@ -245,7 +245,7 @@ log_toggle_consistent() {  # the engine's own constraint: log.twig's static togg
 row 060 "the operator-visible changelog links point at the fork's releases — zero upstream github.com/nextcloud* changelog URLs in the templates" \
   upstream_changelog_urls_absent
 
-row 060 "the changelog arms land on APS-Conecta/AIO's releases page (the repoint's positive control)" \
+row 060 "the changelog arms land on APS-Conecta/instalador's releases page (the repoint's positive control; AIO was the pre-move home — 2026-10-17)" \
   fork_changelog_present
 
 row 060 "the es-CL sweep left no English on any wizard surface — per-file sentinels gone (15 files: containers, includes, components, small views, public JS)" \

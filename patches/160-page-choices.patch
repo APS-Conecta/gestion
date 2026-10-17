@@ -74,7 +74,7 @@ index 2677bb64..a6c95cb4 100644
 -                                <p>⚠️ Hay una actualización del mastercontainer disponible. Haga clic en el botón siguiente para detener sus contenedores y así poder actualizar el mastercontainer.</p>
 +                                <p>⚠️ Hay una actualización del asistente disponible. Haga clic en el botón siguiente para detener sus contenedores y así poder actualizar el asistente.</p>
                                  {% if current_channel starts with 'latest' %}
-                                     <p>Puede encontrar el registro de cambios <a target="_blank" href="https://github.com/APS-Conecta/AIO/releases/latest"><strong>aquí</strong></a></p>
+                                     <p>Puede encontrar el registro de cambios <a target="_blank" href="https://github.com/APS-Conecta/instalador/releases/latest"><strong>aquí</strong></a></p>
                                  {% elseif current_channel starts with 'beta' %}
 @@ -449,7 +448,7 @@
                                          <p>Esta es su contraseña de cifrado para las copias de seguridad: <strong id="borg-backup-password">{{ borgbackup_password }}</strong></p>

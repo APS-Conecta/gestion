@@ -21,7 +21,7 @@
 # The white-label rename grep RETIRED here (slice 13's routing): under the suite nothing can
 # revert the rename between builds — the store is off (patch 020) and a published tag's digests
 # never move (D12) — so the runtime grep's threat model is empty. The AIO fork's scripts/bake.sh
-# (APS-Conecta/AIO, not this repo) owns the pair as build-time asserts, and the brand-gate's 030 row
+# (this repo, since the AIO retirement of 2026-10-17) owns the pair as build-time asserts via the bake, and the brand-gate's 030 row
 # pins the mechanism to the fork's own script.
 
 # NOT covered here, because no gate can: in-browser rendering, live convergence, cursor presence,
