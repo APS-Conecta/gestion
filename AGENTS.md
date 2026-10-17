@@ -59,7 +59,7 @@ This repo is self-contained under its own clone.
 
 The product holds no patient data (above), but nothing stops staff from uploading clinical files to
 Files or Talk, so every account, share and backup is secured as if it did. gestion gets the red team
-only. The agent's prompt lives in the private `APS-Conecta/agents` repo; Claude reviews every PR.
+only. Claude reviews every PR.
 
 - **Scope:** platform security configuration — `provisioning/`, `sites/`, `host/`, compose files.
   Read `docs/threat-model.md` first.
