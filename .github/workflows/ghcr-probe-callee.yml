@@ -1,0 +1,17 @@
+name: GHCR-PROBE-CALLEE (temporary)
+on:
+  workflow_call:
+jobs:
+  push-inside-callee:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, packages: write }
+    steps:
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: |
+          set -euo pipefail
+          docker buildx imagetools create -t "ghcr.io/aps-conecta/aio-postgresql:probe-after-delete" "ghcr.io/nextcloud-releases/aio-postgresql:latest"
+          echo "post-delete push OK"

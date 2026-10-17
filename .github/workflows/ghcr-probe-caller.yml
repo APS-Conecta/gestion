@@ -1,0 +1,7 @@
+name: GHCR-PROBE-CALLER (temporary)
+on:
+  workflow_dispatch:
+jobs:
+  call:
+    permissions: { contents: read, packages: write }
+    uses: ./.github/workflows/ghcr-probe-callee.yml
