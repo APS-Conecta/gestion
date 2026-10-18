@@ -352,7 +352,7 @@ It is governed by foundational design rules:
   Phase 15 compiles the clinic's official short name (`SITE_NOMBRE_CORTO`) into `themes/apsconecta/core/css/site.css` on the host:
   ```css
   :root {
-    --aps-clinic: "CESFAM Los Castaños";
+    --aps-clinic: "CESFAM Ejemplo";
   }
   ```
   This is imported by `server.css` to dynamically paint the clinic name in the header bar above 601px.
@@ -766,7 +766,7 @@ Internet / LAN ──▶ [ Reverse Proxy: Caddy / Nginx / Tailscale ]
 A standard Caddy deployment configuration (`Caddyfile`):
 
 ```caddy
-gestion.cesfam-loscastanos.cl {
+gestion.cesfam.example {
     encode zstd gzip
 
     # Reverse proxy Nextcloud web traffic
@@ -785,7 +785,7 @@ gestion.cesfam-loscastanos.cl {
 When terminating TLS at a reverse proxy, register the following parameters in `config/config.php` via `occ`:
 ```bash
 docker compose exec -T --user www-data nextcloud php occ config:system:set overwriteprotocol --value=https
-docker compose exec -T --user www-data nextcloud php occ config:system:set overwritehost --value="gestion.cesfam-loscastanos.cl"
+docker compose exec -T --user www-data nextcloud php occ config:system:set overwritehost --value="gestion.cesfam.example"
 
 # Configure trusted proxies so Nextcloud respects client IPs in X-Forwarded-For:
 docker compose exec -T --user www-data nextcloud php occ config:system:set trusted_proxies 0 --value="127.0.0.1"
@@ -806,7 +806,7 @@ docker compose exec -T --user www-data nextcloud php occ config:system:get trust
 To add a new domain or IP address:
 ```bash
 # Append a new domain at index 3
-docker compose exec -T --user www-data nextcloud php occ config:system:set trusted_domains 3 --value="gestion.cesfam-loscastanos.cl"
+docker compose exec -T --user www-data nextcloud php occ config:system:set trusted_domains 3 --value="gestion.cesfam.example"
 ```
 
 ### Brute Force Protection & Session Lifetimes
