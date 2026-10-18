@@ -223,6 +223,7 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Changed
 
+- Documentation no longer points at the APS-Conecta/AIO repository, which is being deleted (instalador holds its full history): the two USER_MANUAL links to the wizard's patch table now go to instalador's readme, ORG-MAP's AIO row became an instalador row, and `scripts/office-smoke.sh`'s comment names instalador.
 - **Groups by role** — the 22 shared roles name their category (the Ley 19.378 families: 4
   jefaturas, 10 clínicos, 3 técnicos, 5 administrativos), and every planilla user joins `all-staff`
   and the category of each of their roles. A site's own roles already named theirs.
