@@ -1,0 +1,37 @@
+diff --git a/Containers/apache/start.sh b/Containers/apache/start.sh
+index 9677132..cc83583 100644
+--- a/Containers/apache/start.sh
++++ b/Containers/apache/start.sh
+@@ -94,7 +94,7 @@ else
+         echo "APS_TLS_DIR is mounted, but its tls.crt and tls.key are not both readable by uid $(id -u) or APACHE_PORT is not 443: the ACME issuer stays"
+     fi
+ fi
+-CADDYFILE="$(sed -e "s|# tls placeholder|$TLS_STANZA|" -e "s|# default_sni placeholder|$DEFAULT_SNI|" /tmp/Caddyfile)"
++CADDYFILE="$(sed -e "s|# tls placeholder|$TLS_STANZA|" -e "s|# default_sni placeholder|$DEFAULT_SNI|" -e 's|issuer acme {|protocols tls1.2 tls1.3\n\t\tissuer acme {|' /tmp/Caddyfile)"
+ echo "$CADDYFILE" > /tmp/Caddyfile
+ 
+ # Fix the Caddyfile format
+diff --git a/Containers/mastercontainer/acme.Caddyfile b/Containers/mastercontainer/acme.Caddyfile
+index f6be701..865652d 100644
+--- a/Containers/mastercontainer/acme.Caddyfile
++++ b/Containers/mastercontainer/acme.Caddyfile
+@@ -44,6 +44,7 @@ https://:8443 {
+ 	file_server
+ 
+ 	tls {
++		protocols tls1.2 tls1.3
+ 		on_demand
+ 		issuer acme {
+             profile shortlived
+diff --git a/Containers/mastercontainer/internal.Caddyfile b/Containers/mastercontainer/internal.Caddyfile
+index 01fe79e..1f80ef2 100644
+--- a/Containers/mastercontainer/internal.Caddyfile
++++ b/Containers/mastercontainer/internal.Caddyfile
+@@ -40,6 +40,7 @@ https://:8080 {
+ 	file_server
+ 
+ 	tls {
++		protocols tls1.2 tls1.3
+ 		on_demand
+ 		issuer internal
+ 	}

@@ -40,7 +40,6 @@ https://:8080 {
 	file_server
 
 	tls {
-		protocols tls1.2 tls1.3
 		on_demand
 		issuer internal
 	}
