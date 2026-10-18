@@ -104,10 +104,9 @@ on:
   workflow_call:
     inputs:
       suite-tag:
-        required: false
-        default: UNSET
+        required: true
         type: string
-        description: "See workflow_dispatch. (Optional with a sentinel default on purpose: a REQUIRED call input poisons the run-graph of any caller chain that cannot resolve it. replay.yml's dispatch-only publish job passes inputs.suite-tag, which is empty when release.yml's gates calls replay with no inputs — and the poisoned graph silently SKIPPED release.yml's own images job on every workflow_dispatch, while tag pushes kept working because the publish job's if is statically false there. Found by the v0.0.0-ci.6 rehearsal, 2026-10-18.)"
+        description: "See workflow_dispatch."
       build-ref:
         required: false
         default: aps/main
