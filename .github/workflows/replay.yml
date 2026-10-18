@@ -221,7 +221,13 @@ jobs:
     # event_name first, on purpose: `inputs.*` resolves null outside workflow_dispatch, and
     # null-vs-'' comparisons lean on GitHub's coercion rules — the explicit guard reads
     # unambiguous and can never publish from a push, a schedule, or a PR.
-    if: github.event_name == 'workflow_dispatch' && inputs.suite-tag != ''
+    # github.workflow is CALLEE-LOCAL: under a workflow_call it is the CALLER's workflow name,
+    # so this job survives graph-pruning only when Replay itself was dispatched. That pruning
+    # is load-bearing: alive in a called graph, images.yml gets referenced TWICE in one
+    # run-graph (release -> images AND release -> replay -> publish -> images) and GitHub
+    # silently SKIPS the caller's own images job — the repair arm's silent death since 10-16,
+    # found by the v0.0.0-ci.6 rehearsal, 2026-10-18.
+    if: github.event_name == 'workflow_dispatch' && github.workflow == 'Replay' && inputs.suite-tag != ''
     uses: ./.github/workflows/images.yml
     with:
       suite-tag: ${{ inputs.suite-tag || 'UNSET' }}   # resolvable under a workflow_call too (the gates call passes no inputs) — a required-but-empty input here poisons the caller's run-graph (the repair-arm skip, 2026-10-18)
