@@ -224,7 +224,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.suite-tag != ''
     uses: ./.github/workflows/images.yml
     with:
-      suite-tag: ${{ inputs.suite-tag }}
+      suite-tag: ${{ inputs.suite-tag || 'UNSET' }}   # resolvable under a workflow_call too (the gates call passes no inputs) — a required-but-empty input here poisons the caller's run-graph (the repair-arm skip, 2026-10-18)
       build-ref: aps/main   # the replayed tree — the point of the whole chain
       force: ${{ inputs.force }}
       retag-source: ours   # always the lockstep on this arm — a vendor bump dispatches Images directly (RELEASING §5); no passthrough input here: this arm has no repair role
