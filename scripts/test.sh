@@ -873,6 +873,12 @@ STUB
 mg_out="$(bash scripts/migrate-to-aio.sh --self-test 2>&1)" \
   && echo "  ok:   migrate-to-aio --self-test ($(printf '%s\n' "$mg_out" | tail -1))" \
   || { echo "  FAIL: migrate-to-aio --self-test"; printf '%s\n' "$mg_out" | tail -25; fail=1; }
+# The retag self-test rides the same capture-and-tail idiom: hermetic (a PATH-shim docker over
+# a fixture registry, local git repos as the discovery catalogue — no network, no daemon), so
+# it runs everywhere test.sh runs. A green arm prints its verdict line; a red one its tail.
+rt_out="$(bash scripts/retag.sh --self-test 2>&1)" \
+  && echo "  ok:   retag --self-test ($(printf '%s\n' "$rt_out" | tail -1))" \
+  || { echo "  FAIL: retag --self-test"; printf '%s\n' "$rt_out" | tail -25; fail=1; }
 
 echo "== smoke (only if a stack is running) =="
 . scripts/env.sh

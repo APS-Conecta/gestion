@@ -1,0 +1,6 @@
+# The lockstep's recorded bootstrap base — consulted only when tag discovery finds no complete
+# set (the first publish, or a wiped registry). Write-once by design: once a suite tag exists,
+# discovery always succeeds and this file is never read again. Fork-infra on the parity
+# allowlist (aps/*) — it never rides aps/main or a tag tree.
+# Format: exactly one spec line below the comments — ours:<tag> | upstream:<channel>.
+upstream:latest
