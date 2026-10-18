@@ -227,6 +227,7 @@ jobs:
       suite-tag: ${{ inputs.suite-tag }}
       build-ref: aps/main   # the replayed tree — the point of the whole chain
       force: ${{ inputs.force }}
+      retag-source: ours   # always the lockstep on this arm — a vendor bump dispatches Images directly (RELEASING §5); no passthrough input here: this arm has no repair role
     permissions:
       contents: read
       packages: write   # headroom for the Images pipeline's four pushing jobs

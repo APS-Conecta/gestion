@@ -70,6 +70,37 @@ assembly, SHA256SUMS, the signature, the verify-PROOF against the committed `ins
 the constants-filled install asset) → the Release with five assets. Watch it; a red anywhere
 names its gate.
 
+**The retag source (the self-referential lockstep)**. The 17 registry-side images are copied,
+not built: `retag-source: ours` — the chain's default on every tag push — copies each from
+**our previous suite tag** (the newest digest-complete set; git tags are the suite-tag list).
+The first publish after this lands has no previous set and bootstraps once through
+`aps/BASE.lock`, which records `upstream:latest`; from that tag on the chain never reads
+upstream again — nextcloud can vanish. The publish record's `retag_source` names what the walk
+actually copied from (`ours:vX.Y.Z` | `upstream:<channel>`), so a Release's lineage is auditable
+from its manifest asset alone.
+
+**The vendor bump** — picking up a fresh upstream release is never a default. Two dispatches
+around one tag push, in order (the release commit of §3 is already cut):
+
+1. **Images** (`Actions → Images → Run workflow`): `suite-tag` = the new tag,
+   `retag-source: upstream:latest`, `build-ref: aps/main`. Publishes the 20-image set copied
+   from upstream; the matrix proves one snapshot. No git tag is needed yet — and none must
+   exist: pushing the tag before this dispatch would let the auto-triggered chain publish the
+   set from `ours` instead. (The Replay publish arm always carries `ours` — it has no
+   vendor-bump role.)
+2. Push the tag. The auto-triggered Release run reds at the images job on the immutability
+   pre-check (the set is already fully present — step 1 announced it). That red is the ritual's
+   pivot, not a failure.
+3. **Release** (`Actions → Release → Run workflow`, the repair arm): `suite-tag` = the same
+   tag, `retag-source: upstream:latest`, `force-images` = true. The chain re-runs end-to-end —
+   the forced walk re-copies the same upstream digests (idempotent), the matrix re-proves the
+   one snapshot, and the Release is cut with the manifest recording
+   `"retag_source": "upstream:latest"`.
+
+A repair that only needs the image set re-copied (a mixed or partial set, no Release involved)
+dispatches Images directly with `retag-source: ours:vX.Y.Z` and `force` — the pinned previous
+set, re-copied faithfully.
+
 **Rehearse first**: a `v0.0.0-ci.N` tag (VERSION and BUNDLE_TAG set to match on a rehearsal
 branch) runs the identical chain end-to-end and is deletable. The repair arm
 (workflow_dispatch with `suite-tag`, plus `force-images` only for a chain that died mid-publish)

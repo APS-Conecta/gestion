@@ -6,8 +6,11 @@
 #             builds from), validators, gates, drift report. No publish inside the call: the
 #             publish job there is dispatch-only, so this workflow calls the Images pipeline
 #             itself, behind the gates, with the tag pinned.
-#   images  → the 20-image lockstep (workflow_call): 17 retags + 3 builds + matrix + boot-smoke +
-#             manifest. Sign sits behind the WHOLE call: a reusable-workflow job is green only
+#   images  → the 20-image lockstep (workflow_call): 17 retags copied from OUR previous suite
+#             tag (retag-source ours by default — Stage 2's self-referential lockstep; the
+#             dispatch arm can carry upstream:<channel> to complete a vendor bump, RELEASING §5)
+#             + 3 builds + matrix + boot-smoke + manifest. Sign sits behind the WHOLE call: a
+#             reusable-workflow job is green only
 #             when every job in it is green, and the callee's manifest job already needs matrix
 #             and boot-smoke — so nothing is signed before a complete, booted, one-snapshot set
 #             exists (the boot-smoke-pins-the-sign-moment rule).
@@ -48,14 +51,19 @@ on:
   workflow_dispatch:
     inputs:
       suite-tag:
-        description: "Repair arm: the tag whose chain failed before the Release was created. Re-runs gates + images + package at that tag."
+        description: "Repair arm: re-runs gates + images + package at that tag (a chain that failed before the Release was created, or the vendor bump's completion — RELEASING §5)."
         required: true
         type: string
       force-images:
-        description: "Images passthrough: re-publish over a fully-present set (a chain that died mid-publish). Never a published, announced release."
+        description: "Images passthrough: re-publish over a fully-present set (a chain that died mid-publish, or the vendor bump's forced re-walk). Never a published, announced release."
         required: false
         default: false
         type: boolean
+      retag-source:
+        description: "The retag source for the images call: ours (default — our previous suite tag, the lockstep; on a tag push this is always the value) | ours:<tag> (a pinned repair) | upstream:<channel> (the vendor bump's completion arm — pair with force-images, RELEASING §5). Reaches bash only via env: inside the Images pipeline, never inline in run:."
+        required: false
+        default: ours
+        type: string
 
 permissions:
   contents: write   # the package job creates the Release; headroom for the gates call's pushes
@@ -82,6 +90,7 @@ jobs:
       suite-tag: ${{ inputs.suite-tag || github.ref_name }}
       build-ref: aps/main   # the replayed tree the gates job just regenerated
       force: ${{ inputs.force-images || false }}
+      retag-source: ${{ inputs.retag-source || 'ours' }}   # ours on every tag push (inputs.* is null there — the || catches it); the repair arm's passthrough is the vendor bump's completion arm
     permissions:
       contents: read
       packages: write   # headroom for the Images pipeline's four pushing jobs
@@ -119,6 +128,14 @@ jobs:
       - name: Emit the publish record (the manifest asset)
         env:
           REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          # The RETAG job's ONE resolution (D-5), handed up through the images call's
+          # workflow_call output: the tag-tree's retag.sh records in retag_source the same
+          # spec the walk copied from — the package re-emit must never resolve a second time
+          # (a discovery here would race the walk). images is a DIRECT need of this job, so
+          # the output resolves; the guard below reds if a future refactor breaks that edge
+          # (the B-014 lesson: a transitive need resolves empty, and empty RETAG_SOURCE would
+          # silently fall into a bare-'ours' resolution of its own).
+          RETAG_SOURCE: ${{ needs.images.outputs.retag-source }}
         run: |
           set -euo pipefail
           # The registry is the truth and digests are immutable, so the digest half of this
@@ -129,6 +146,7 @@ jobs:
           # job's record while every image digest stands. The digests are the record.
           aps_sha="$(git ls-remote "$REPO_URL" refs/heads/aps/main | cut -f1)"
           [ -n "$aps_sha" ] || { echo "FAIL: aps/main did not resolve — the gates job must have pushed it" >&2; exit 1; }
+          [ -n "${RETAG_SOURCE:-}" ] || { echo "FAIL: the images job's resolved retag source did not thread — needs.images must stay a direct dependency of this job" >&2; exit 1; }
           RETAG_BUILT_REF=aps/main RETAG_BUILT_SHA="$aps_sha" \
             bash scripts/retag.sh manifest "$RELEASE_TAG" > "suite-$RELEASE_TAG-manifest.json"
           cat "suite-$RELEASE_TAG-manifest.json"
