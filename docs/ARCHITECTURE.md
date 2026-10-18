@@ -225,7 +225,7 @@ that makes it run: hosting/provider, a TLS reverse-proxy for the office server w
 (Euro-Office uses a shared JWT secret), backups and RTO/RPO, sizing/HA, and production observability — all
 owned by #75, which is why staff password delivery (#106) waits on it. **There is no backup story in this
 repo**, and that absence is load-bearing elsewhere: it is why convergence reports rather than deletes (#85).
-The operational surface is `occ status` plus the installer's `smoke` gate.
+The operational surface is `occ status` plus the health smoke, which moved with the installer to [instalador](https://github.com/APS-Conecta/instalador).
 
 Euro-Office is resource-bound (uncapped, OSS) and fairly heavy (~8 GB RAM recommended for multi-user). Since
 #81 dropped its compose profile it comes up with the stack, so that is now a **hard floor for every clinic

@@ -850,10 +850,10 @@ Setting `NC_appstoreenabled: "0"` in `compose.yaml` guarantees that:
 
 ## 9. Operations, Maintenance & Troubleshooting
 
-### Health Checks & Stack Smoke Gating (`scripts/smoke.sh`)
+### Health Checks & Stack Smoke Gating (`bash scripts/smoke.sh`)
 The primary operational verification gate for APS Conecta Gestión is `scripts/smoke.sh`, executed via:
 ```bash
-scripts/smoke.sh
+bash scripts/smoke.sh
 ```
 
 This automated test suite validates **14 foundational invariants**:
@@ -947,7 +947,7 @@ docker compose exec -T --user www-data nextcloud php occ config:system:set logle
 ### Troubleshooting Runbooks
 
 #### PostgreSQL Database Connectivity Failures
-- **Symptom:** Nextcloud displays an internal server error; `scripts/smoke.sh` fails at Check 3 (`PostgreSQL (db) is not accepting connections`).
+- **Symptom:** Nextcloud displays an internal server error; `bash scripts/smoke.sh` fails at Check 3 (`PostgreSQL (db) is not accepting connections`).
 - **Diagnosis:**
   ```bash
   # Check PostgreSQL container status

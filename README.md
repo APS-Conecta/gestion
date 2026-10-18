@@ -178,7 +178,7 @@ configuration into the running app; if it isn't scripted, it isn't real.
 2. `make install` — converge. Same command as the first time; it is idempotent by construction.
    (`make up-dev` first if you want Xdebug on `:9003`; `SEED_FIXTURES=0 make seed` applies structure
    only, skipping the fixture phases; `make seed` is the verbose inner pipeline.)
-3. `make test` — the local quality gate. Green before a PR — CI runs the same script. (The live health-gate, `smoke`, moved with the installer.)
+3. `make test` — the local quality gate. Green before a PR — CI runs the same script. (The health smoke moved with the installer to [instalador](https://github.com/APS-Conecta/instalador).)
 4. Open a PR — see [`CONTRIBUTING.md`](CONTRIBUTING.md) (GitHub Flow, Conventional Commits,
    `ai-assisted`, self-review); work is tracked on the
    [Projects board](https://github.com/orgs/APS-Conecta/projects/5).
