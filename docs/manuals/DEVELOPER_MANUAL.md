@@ -193,7 +193,7 @@ make fix-mount-perms  # Synchronize host/container read-write permissions
 make seed             # Execute the 14-phase idempotent provisioning script
 make seed-idempotent  # Validate that a second seed produces zero database writes
 make test             # Run local quality gate (static analysis + health checks)
-make smoke            # Execute core health assertions against running stack
+bash scripts/smoke.sh   # Execute core health assertions against running stack
 make office-smoke     # Validate Euro-Office document server connectivity & branding
 make divergence       # Detect resources live in Nextcloud not declared in repo
 make images-check     # Verify if upstream base images have drifted past pins
@@ -1087,7 +1087,7 @@ Local Dev Environment / CI Runner
  │      ├── Brand SVG XML parser check
  │      └── Legacy render path 7-callsite invariant check
  │
- └── 2. Core Health Smoke Gate (make smoke -> scripts/smoke.sh)
+ └── 2. Core Health Smoke Gate (bash scripts/smoke.sh)
         ├── Container runstates (nextcloud, cron, db, redis)
         ├── PostgreSQL & Redis ping responses
         ├── Unbranded /status.php verification

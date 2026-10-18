@@ -181,7 +181,7 @@ External ingress is mediated by an authenticating, TLS-terminating reverse proxy
 
 Installing a node is situation-dependent, and each situation already owns its walkthrough:
 
-- **Bringing a clinic up** — the operational install is owned by [`INSTALLER.md`](../INSTALLER.md), with the Spanish clinic-IT companion [`GUIA-CLINICA.md`](../GUIA-CLINICA.md).
+- **Bringing a clinic up** — the operational install is owned by [`INSTALLER.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md), with the Spanish clinic-IT companion [`GUIA-CLINICA.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/GUIA-CLINICA.md).
 - **Bringing up a development environment** — follow the [quickstart](../../README.md#quickstart) in the repository [`README.md`](../../README.md), which owns the dev lifecycle.
 - **Day-to-day container lifecycle** (start, stop, office standby, mount fixes) — `make help` is the authoritative target list.
 
@@ -850,10 +850,10 @@ Setting `NC_appstoreenabled: "0"` in `compose.yaml` guarantees that:
 
 ## 9. Operations, Maintenance & Troubleshooting
 
-### Health Checks & Stack Smoke Gating (`make smoke`)
+### Health Checks & Stack Smoke Gating (`bash scripts/smoke.sh`)
 The primary operational verification gate for APS Conecta Gestión is `scripts/smoke.sh`, executed via:
 ```bash
-make smoke
+bash scripts/smoke.sh
 ```
 
 This automated test suite validates **14 foundational invariants**:
@@ -947,7 +947,7 @@ docker compose exec -T --user www-data nextcloud php occ config:system:set logle
 ### Troubleshooting Runbooks
 
 #### PostgreSQL Database Connectivity Failures
-- **Symptom:** Nextcloud displays an internal server error; `make smoke` fails at Check 3 (`PostgreSQL (db) is not accepting connections`).
+- **Symptom:** Nextcloud displays an internal server error; `bash scripts/smoke.sh` fails at Check 3 (`PostgreSQL (db) is not accepting connections`).
 - **Diagnosis:**
   ```bash
   # Check PostgreSQL container status

@@ -9,8 +9,8 @@ the same fact, the one named here as its authority wins and the other should lin
 | Document | Mode | Reader | It is the authority for |
 |---|---|---|---|
 | [`README.md`](../README.md) | how-to + reference | developer | How to stand the **dev stack** up, and what a release pins; the clinic install lives in INSTALLER.md |
-| [`INSTALLER.md`](INSTALLER.md) | how-to | operator | **How to stand a clinic up** (the AIO installer: preflight, wizard, Provisionador, timers, backups, the map, updates) |
-| [`GUIA-CLINICA.md`](GUIA-CLINICA.md) | how-to (Spanish) | operator | The same clinic walkthrough in the operator's language — the eight manual-QA scenarios and the credentials ritual |
+| [`INSTALLER.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md) | how-to | operator | **How to stand a clinic up** (the AIO installer: preflight, wizard, Provisionador, timers, backups, the map, updates) |
+| [`GUIA-CLINICA.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/GUIA-CLINICA.md) | how-to (Spanish) | operator | The same clinic walkthrough in the operator's language — the eight manual-QA scenarios and the credentials ritual |
 | [`CONTEXT.md`](../CONTEXT.md) | reference | everyone | **The vocabulary.** Product identity, clinic identity, screens, releases, the four kinds of app |
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | how-to | contributor | **The documentation doctrine** every repository in the organisation inherits, and how work is run and reviewed |
 | [`AGENTS.md`](../AGENTS.md) | reference | agent, developer | The repo rules an AI agent must follow, and the invariants |
@@ -45,7 +45,7 @@ The three-manual set lives under [`manuals/`](manuals/) — moved under version 
 
 | Document | Mode | Reader | It is the authority for |
 |---|---|---|---|
-| [`MIGRATION.md`](MIGRATION.md) | how-to | operator | Migrating the pilot to the AIO stack, rehearsal-first |
+| [`MIGRATION.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/MIGRATION.md) | how-to | operator | Migrating the pilot to the AIO stack, rehearsal-first |
 | [`WELCOME-SCREEN.md`](WELCOME-SCREEN.md) | how-to + reference | operator, editor | The welcome tree — what phase 41 seeds, when, and how to edit it |
 
 ## Reference and how-to for one directory

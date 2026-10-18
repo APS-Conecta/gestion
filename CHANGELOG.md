@@ -224,6 +224,7 @@ image digests live there and are deliberately not copied here — one fact, one 
 ### Changed
 
 - Documentation no longer points at the APS-Conecta/AIO repository, which is being deleted (instalador holds its full history): the two USER_MANUAL links to the wizard's patch table now go to instalador's readme, ORG-MAP's AIO row became an instalador row, and `scripts/office-smoke.sh`'s comment names instalador.
+- Docs gate green again: the 20 `broken-links` to `INSTALLER.md`, `GUIA-CLINICA.md` and `MIGRATION.md` (which moved to instalador's `aps/`) now point at instalador, and every `make smoke` (a target that moved with the installer; the script stayed) reads `bash scripts/smoke.sh`. README step 3 now says `make test`.
 - **Groups by role** — the 22 shared roles name their category (the Ley 19.378 families: 4
   jefaturas, 10 clínicos, 3 técnicos, 5 administrativos), and every planilla user joins `all-staff`
   and the category of each of their roles. A site's own roles already named theirs.
@@ -295,7 +296,7 @@ image digests live there and are deliberately not copied here — one fact, one 
 - **The manuals' one-owner dedup sweep** (docs). Sections that restated another file's content now
   point at its owner instead.
   - `docs/manuals/ADMIN_MANUAL.md` §3 collapses to a pointer stub — the clinic install is
-    [`docs/INSTALLER.md`](docs/INSTALLER.md) and [`docs/GUIA-CLINICA.md`](docs/GUIA-CLINICA.md)'s,
+    [`docs/INSTALLER.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md) and [`docs/GUIA-CLINICA.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/GUIA-CLINICA.md)'s,
     the dev path the [README quickstart](README.md#quickstart)'s, the container lifecycle `make help`'s.
   - `docs/manuals/USER_MANUAL.md` §9.2 keeps the platform story and defers the farmacia walkthrough
     to farmacia's own manual; §2.6 names all five own apps; §6.1 and §7.1 point at the AIO readme's

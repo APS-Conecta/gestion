@@ -207,7 +207,7 @@ The traps of the theming **mechanism** (`:root` inert, `background_color` decidi
    2026-07-27: it could not see a running instance, which is exactly why it never noticed the whole
    map was inert.)
 5. **Automatic gates:** `make test` (SVGs parse, every `url()` in `server.css` exists) and
-   `make smoke` (`/status.php` returns 200 and does **not** contain "Nextcloud").
+   `bash scripts/smoke.sh` (`/status.php` returns 200 and does **not** contain "Nextcloud").
 
 ## 9. Viewing the brandbook
 
