@@ -16,7 +16,7 @@ land.
   Redis 8**, with a self-hosted **Euro-Office** office suite and **Talk** for staff chat and calls.
   Two ways to run it: a developer's machine via Docker Compose (this README's Quickstart), or a
   clinic via **APS Conecta Gestión AIO** — the all-in-one installer this repo's provisioning drives
-  ([`docs/INSTALLER.md`](docs/INSTALLER.md) is that runbook; the same provisioning phases serve both).
+  ([`docs/INSTALLER.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md) is that runbook; the same provisioning phases serve both).
 - **Isn't:** a clinical/patient-records system. **No patient data** — dev uses **synthetic fixtures only**.
 
 ## Quickstart
@@ -116,8 +116,8 @@ To stop: `make down` (keeps your data volumes). That's the whole loop.
 A clinic does not run the dev stack. It runs **APS Conecta Gestión AIO**: one `docker run` from the
 published suite tag, the branded es-CL wizard, and this repo's `aps-conecta` host bundle driving
 the same provisioning phases over `docker exec`. The whole path — preflight, wizard,
-Provisionador, timers, backups, the map — is [`docs/INSTALLER.md`](docs/INSTALLER.md) (English
-runbook) with the Spanish walkthrough in [`docs/GUIA-CLINICA.md`](docs/GUIA-CLINICA.md).
+Provisionador, timers, backups, the map — is [`docs/INSTALLER.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md) (English
+runbook) with the Spanish walkthrough in [`docs/GUIA-CLINICA.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/GUIA-CLINICA.md).
 One establishment per install (D13); the suite tag equals this repo's release tag (D12).
 
 ## Make targets
@@ -154,7 +154,7 @@ exists to prevent. Set by `provisioning/phases/14-office.sh`, never in the admin
 | `scripts/` | `env-init.sh` (`make setup`) + `install.sh` (the one command) + `wait-ready.sh`, `test.sh` + `smoke.sh` (the gate), `seed-idempotent.sh`, `office-smoke.sh`, `divergence.sh` (what is live but undeclared), `image-digests.sh` + `app-versions.sh` (is anything we pinned behind upstream), `deis.py`, and `env.sh` (shared preamble). Plus: `provisionador.py` (the host-side wizard that walks an operator from a fresh AIO install to a running clinic), `db-dump.sh` (a dump AIO can restore, verified before it is trusted), `refresh-basemap.sh` (refreshes the Protomaps basemap archive the `tiles` service serves), `release-manifest.sh` (the machine-readable union of everything a release pins), `migrate-to-aio.sh` (the mechanized halves of a clinic's move to the AIO suite — the choreography is `docs/MIGRATION.md`), `uninstall.sh` (tears the stack down for real: verified dump + typed confirmation first), `aio-testbed.sh` (the disposable AIO test bed the installer gates run on), `check-org-drift.sh` (the org boilerplate drift gate), `cleanboot-site.sh` (clean boot's generated clinic — site file + planilla handed to a silent install), and `comuna-package.sh` (cuts one comuna's data packages out of the national masters). |
 | `provisioning/` | The single idempotent provisioning writer: `seed.sh` runner, `lib.sh` guard helpers, `phases/05-60`, `apps/` (per app: the vendored tarball, its `VENDOR` file and its patches — [ADR-0002](docs/adr/0002-app-patches.md)), and [`provisioning/README.md`](provisioning/README.md). |
 | `sites/` | The DEIS register of primary-care establishments, tracked — it is what you pick from. Your `<slug>/site.sh` (teams, folders, ACL matrix, identity) lands here and is **gitignored**: it depends on which establishment you install, so it is install-local like `.env`. **No establishment ships**; write yours with `scripts/deis.py`. |
-| `host/` | The clinic-side host bundle: `aps-conecta` (preflight / run-command / provision / revalidate / respaldo / tiles / datos) + the weekly re-provision and monthly tiles-refresh systemd units. A clinic installs it from the release page — [`docs/INSTALLER.md`](docs/INSTALLER.md). |
+| `host/` | The clinic-side host bundle: `aps-conecta` (preflight / run-command / provision / revalidate / respaldo / tiles / datos) + the weekly re-provision and monthly tiles-refresh systemd units. A clinic installs it from the release page — [`docs/INSTALLER.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md). |
 | `apps/`, `themes/` | Live-mounted. `apps/` is gitignored and holds the apps unpacked from the tarballs committed in `provisioning/apps/`, patched at seed time ([ADR-0002](docs/adr/0002-app-patches.md)); `themes/apsconecta/` is the white-label server theme. |
 | `docs/ARCHITECTURE.md` | The architecture overview (design SSOT). |
 | `docs/INSTALLER.md` · `docs/GUIA-CLINICA.md` | The clinic runbook (English) · the Spanish clinic-IT guide — the installer era's operator docs. |
@@ -178,7 +178,7 @@ configuration into the running app; if it isn't scripted, it isn't real.
 2. `make install` — converge. Same command as the first time; it is idempotent by construction.
    (`make up-dev` first if you want Xdebug on `:9003`; `SEED_FIXTURES=0 make seed` applies structure
    only, skipping the fixture phases; `make seed` is the verbose inner pipeline.)
-3. `make smoke` / `make test` — health-gate + the local quality gate. Green before a PR — CI runs the same script.
+3. `make test` — the local quality gate. Green before a PR — CI runs the same script. (The health smoke moved with the installer to [instalador](https://github.com/APS-Conecta/instalador).)
 4. Open a PR — see [`CONTRIBUTING.md`](CONTRIBUTING.md) (GitHub Flow, Conventional Commits,
    `ai-assisted`, self-review); work is tracked on the
    [Projects board](https://github.com/orgs/APS-Conecta/projects/5).
@@ -210,7 +210,7 @@ server theme** — AD-6's config-only rule is superseded by
 [ADR-0001](docs/adr/0001-server-theme-for-branding.md). How the theming actually behaves (and why most of
 it is config rather than CSS) is [`docs/THEMING-MODEL.md`](docs/THEMING-MODEL.md); How to apply the brand to an instance, step by step, is [`docs/BRANDING.md`](docs/BRANDING.md).
 Neither is a hosting guide: the clinic hosting runbook is
-[`docs/INSTALLER.md`](docs/INSTALLER.md) (the AIO installer era); the dev stack stays this
+[`docs/INSTALLER.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md) (the AIO installer era); the dev stack stays this
 README's Quickstart. Locale stays in the `10-locale` phase.
 
 ### The office backend

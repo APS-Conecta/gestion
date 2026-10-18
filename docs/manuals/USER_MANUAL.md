@@ -324,7 +324,7 @@ Euro-Office is integrated as a self-hosted document server container within the 
 - **Data Sovereignty**: Document rendering, text processing, and co-authoring synchronization occur entirely on the local server. No file contents are transmitted to external commercial office services.
 - **Office Compatibility**: Full formatting and rendering fidelity for word processing documents, spreadsheets, and presentations.
 
-On sites provisioned through the AIO instalador wizard the office choice is pinned — the wizard refuses any office other than Euro-Office; the [AIO readme's patch table](https://github.com/APS-Conecta/AIO/blob/main/readme.md) owns that wizard behaviour.
+On sites provisioned through the AIO instalador wizard the office choice is pinned — the wizard refuses any office other than Euro-Office; the [instalador readme's patch table](https://github.com/APS-Conecta/instalador/blob/main/readme.md) owns that wizard behaviour.
 
 ---
 
@@ -363,7 +363,7 @@ The **Talk** application provides encrypted internal messaging, team channels, a
   - **Conversaciones abiertas**: Public establishment channels accessible to all personnel (e.g., *Comité Paritario*, *Comunicaciones Internas*).
 - **Nota personal**: A private notebook pinned at the top of your chat list for personal notes, drafts, and link bookmarks.
 
-On sites provisioned through the AIO instalador wizard Talk starts off by default — the wizard's patch set pins the suite's starting applications; the [AIO readme's patch table](https://github.com/APS-Conecta/AIO/blob/main/readme.md) owns that wizard behaviour.
+On sites provisioned through the AIO instalador wizard Talk starts off by default — the wizard's patch set pins the suite's starting applications; the [instalador readme's patch table](https://github.com/APS-Conecta/instalador/blob/main/readme.md) owns that wizard behaviour.
 
 ---
 

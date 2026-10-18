@@ -226,7 +226,7 @@ And from the shell:
 
 ```sh
 make test                              # SVGs parse, every url() in server.css resolves
-make smoke                             # /status.php 200 and free of "Nextcloud"
+bash scripts/smoke.sh                             # /status.php 200 and free of "Nextcloud"
 make office-smoke                      # backend wired (the rename is asserted at build time: AIO's scripts/bake.sh)
 curl -s localhost:8180/login | grep -c apple-itunes-app   # expect 0
 ```
