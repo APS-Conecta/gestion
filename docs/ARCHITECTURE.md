@@ -205,8 +205,8 @@ developer's machine — `make setup && make install` stands up a named establish
 checkout, and #77's whole effort was making that true of a machine nobody has seen. The
 **clinic**: APS Conecta Gestión AIO, the all-in-one installer — the wizard owns the container set as a
 lockstep image suite, and this repo's host bundle drives the **same provisioning phases**
-over `docker exec`; the runbook is [`INSTALLER.md`](INSTALLER.md), the Spanish walkthrough
-[`GUIA-CLINICA.md`](GUIA-CLINICA.md).
+over `docker exec`; the runbook is [`INSTALLER.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md), the Spanish walkthrough
+[`GUIA-CLINICA.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/GUIA-CLINICA.md).
 
 **`main` is the trunk; a release is a tag.** The dev stack installs from `main`; a clinic installs a
 tag, and that tag is the only answer to "which bytes does that instance have?"
@@ -225,7 +225,7 @@ that makes it run: hosting/provider, a TLS reverse-proxy for the office server w
 (Euro-Office uses a shared JWT secret), backups and RTO/RPO, sizing/HA, and production observability — all
 owned by #75, which is why staff password delivery (#106) waits on it. **There is no backup story in this
 repo**, and that absence is load-bearing elsewhere: it is why convergence reports rather than deletes (#85).
-The operational surface is `occ status` plus the `make smoke` gate.
+The operational surface is `occ status` plus the installer's `smoke` gate.
 
 Euro-Office is resource-bound (uncapped, OSS) and fairly heavy (~8 GB RAM recommended for multi-user). Since
 #81 dropped its compose profile it comes up with the stack, so that is now a **hard floor for every clinic

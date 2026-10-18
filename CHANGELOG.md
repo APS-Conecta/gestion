@@ -294,7 +294,7 @@ image digests live there and are deliberately not copied here — one fact, one 
 - **The manuals' one-owner dedup sweep** (docs). Sections that restated another file's content now
   point at its owner instead.
   - `docs/manuals/ADMIN_MANUAL.md` §3 collapses to a pointer stub — the clinic install is
-    [`docs/INSTALLER.md`](docs/INSTALLER.md) and [`docs/GUIA-CLINICA.md`](docs/GUIA-CLINICA.md)'s,
+    [`docs/INSTALLER.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md) and [`docs/GUIA-CLINICA.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/GUIA-CLINICA.md)'s,
     the dev path the [README quickstart](README.md#quickstart)'s, the container lifecycle `make help`'s.
   - `docs/manuals/USER_MANUAL.md` §9.2 keeps the platform story and defers the farmacia walkthrough
     to farmacia's own manual; §2.6 names all five own apps; §6.1 and §7.1 point at the AIO readme's
