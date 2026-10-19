@@ -39,6 +39,7 @@ login cookie) is the only carrier, and the request log is silent (R42).
 import csv
 import errno
 import fcntl
+import base64
 import hashlib
 import hmac
 import html
@@ -4011,7 +4012,7 @@ def selftest():
     real sites/ is never touched. The HTTP checks are real round-trips against a real server on an
     OS-assigned port — urllib, no frameworks. Every check is named and counted; a failure prints the
     list and exits 1 (B-014: a gate that cannot go red is not a gate)."""
-    global TOKEN, SNAPSHOT, ROWS, CRED_PATH, PHASE20, ESTADO_PATH, CERT_DIR, LAN_IP, HOSTNAME, PORT, CENTRO, AIO_STATE, TILES_ARCHIVE, PUNTO
+    global TOKEN, SNAPSHOT, ROWS, CRED_PATH, PHASE20, ESTADO_PATH, CERT_DIR, LAN_IP, HOSTNAME, PORT, CENTRO, AIO_STATE, PUNTO
     n = 0
     bad = []
 
@@ -4041,7 +4042,6 @@ def selftest():
     old_cred, old_p20 = CRED_PATH, PHASE20
     old_cert = CERT_DIR
     old_aio = AIO_STATE
-    old_tiles = TILES_ARCHIVE
     # Bound here, with the other saves, because the finally restores it: bound later, any failure
     # before the stub world exists raised UnboundLocalError there and hid the real error.
     old_path = os.environ["PATH"]
@@ -4071,16 +4071,6 @@ def selftest():
                       "servicio_salud,dependencia,latitud,longitud")
     try:
         with tempfile.TemporaryDirectory() as tmp:
-            # The hermetic base for the whole run — the browser section's own pin, hoisted (dd8a1db,
-            # the hard way): the CI clean-boot runner CARRIES the deterministic /tiles/ proof
-            # fixture at the default path, and it parses — a valid v3 header whose bounds are
-            # ASCII text read as int32s, an empty box that refuses every confirm through the
-            # L5-S4 bounds check; a box with the real 1.1 GB archive masks it. Every arm that
-            # points no archive of its own runs with none — no check, never a blocked screen
-            # (ADR-0019's addendum); the painted-pixels arm alone probes old_tiles, the box's
-            # own default, and the finally restores it.
-            sin_mapa = os.path.join(tmp, "sin-mapa.pmtiles")
-            TILES_ARCHIVE = sin_mapa
             # — fail fast: no register, no wizard, no socket
             deis.HERE = os.path.join(tmp, "empty")
             os.makedirs(deis.HERE)
@@ -4215,31 +4205,14 @@ def selftest():
                   st == 400 and st2 == 404)
 
             # ── L5 S4: the point beside the code — POST /api/centro's coordinates, held to step 8 ──
-            # A synthetic archive around the fixture's points, so the bounds refusal (R47's
-            # replacement, moved to the confirm) is proven here without the real 1.1 GB file —
-            # the mapa arm below builds its own; the bounds are what this arm reads.
-            arch_pto = os.path.join(tmp, "chile-punto.pmtiles")
-            with open(arch_pto, "wb") as fh:
-                fh.write(b"PMTiles" + struct.Struct("<B11Q6B4iB2i").pack(
-                    3, *([0] * 11), 0, 0, 0, 0, 0, 14,
-                    int(round(-77.5 * 1e7)), int(round(-56.5 * 1e7)),
-                    int(round(-66.5 * 1e7)), int(round(-17.5 * 1e7)),
-                    6, int(round(-70.5 * 1e7)), int(round(-33.5 * 1e7))))
-            arch_chico = os.path.join(tmp, "chile-chico.pmtiles")
-            with open(arch_chico, "wb") as fh:
-                fh.write(b"PMTiles" + struct.Struct("<B11Q6B4iB2i").pack(
-                    3, *([0] * 11), 0, 0, 0, 0, 0, 14,
-                    int(round(-77.5 * 1e7)), int(round(-56.5 * 1e7)),
-                    int(round(-66.5 * 1e7)), int(round(-35.0 * 1e7)),   # Loica's point stays north of it
-                    6, int(round(-70.5 * 1e7)), int(round(-33.5 * 1e7))))
-            TILES_ARCHIVE = arch_pto
+            # The wizard no longer checks the point against any extent (ADR-0021): the basemap is OSM's,
+            # the whole world, and a point is refused only when it is not a coordinate.
             st_l, _ = call("POST", "/api/centro", {"codigo": "121567", "latitud": -38.8681})
             st_t, _ = call("POST", "/api/centro", {"codigo": "121567", "latitud": "sur", "longitud": 0})
             st_r, _ = call("POST", "/api/centro", {"codigo": "121567", "latitud": 95, "longitud": -72.4})
-            st_f, fuera = call("POST", "/api/centro", {"codigo": "121567", "latitud": 10.0, "longitud": -72.39})
-            check("punto: a lone coordinate, a non-numeric one and an out-of-range one answer 400; a point outside the archive's bounds is refused naming the map (L5 S4, R47's refusal moved to the confirm)",
-                  st_l == 400 and st_t == 400 and st_r == 400 and st_f == 400
-                  and "fuera del mapa" in fuera["error"] and "punto oficial" in fuera["error"])
+            st_f, lejos = call("POST", "/api/centro", {"codigo": "121567", "latitud": 10.0, "longitud": -72.39})
+            check("punto: a lone coordinate, a non-numeric one and an out-of-range one answer 400; a valid point far from Chile is accepted — no extent to check it against (ADR-0021)",
+                  st_l == 400 and st_t == 400 and st_r == 400 and st_f == 200 and lejos.get("ok") is True)
             st_m, _ = call("POST", "/api/centro",
                            {"codigo": "121567", "latitud": -38.8681, "longitud": "-72.3951"})
             st_g, held = call("GET", "/api/centro")
@@ -4250,15 +4223,10 @@ def selftest():
                   and held["punto"] == {"latitud": "-38.8681", "longitud": "-72.3951", "oficial": False}
                   and st_o == 200 and st_g2 == 200
                   and oficial["punto"] == {"latitud": "-38.86996", "longitud": "-72.39666", "oficial": True})
-            TILES_ARCHIVE = arch_chico
-            st_of, oficial_fuera = call("POST", "/api/centro", {"codigo": "110485"})
-            TILES_ARCHIVE = os.path.join(tmp, "no-esta.pmtiles")
-            st_sin, _ = call("POST", "/api/centro", {"codigo": "110485"})
-            TILES_ARCHIVE = sin_mapa
+            st_of, _ = call("POST", "/api/centro", {"codigo": "110485"})
             st_c, _ = call("POST", "/api/centro", {"codigo": "113314"})
-            check("punto: the register's own point outside the bounds is refused naming the rebuild; no readable archive is no check — the confirm passes and the screen stays completable (ADR-0019)",
-                  st_of == 400 and "aps-conecta mapa" in oficial_fuera["error"]
-                  and st_sin == 200 and st_c == 200 and call("GET", "/api/centro")[1]["codigo"] == "113314")
+            check("punto: the register's own point is confirmed with no map check, whatever the box holds — the screen is never blocked (ADR-0021)",
+                  st_of == 200 and st_c == 200 and call("GET", "/api/centro")[1]["codigo"] == "113314")
             real_here = deis.HERE
             with tempfile.TemporaryDirectory() as pt:
                 deis.HERE = os.path.join(pt, "scripts")
@@ -5875,18 +5843,33 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                       and "const F = {reg: -1, com: -1, tipo: -1};" in centro_html)
                 otros = sum('<script src="/recursos/' in b.req("GET", r)[1] for r in ROUTES if r != "/centro")
                 check("centro: the map stack rides the /recursos/ whitelist on Centro only — the vendored bytes territorio runs (L5 S4)",
-                      centro_html.count('<script src="/recursos/') == 2 and otros == 0
+                      centro_html.count('<script src="/recursos/') == 1 and otros == 0
+                      and "protomaps" not in centro_html
                       and '<link rel="stylesheet" href="/recursos/leaflet.css">' in centro_html
                       and 'class="cuerpo centro-hoja"' in centro_html)
                 check("centro: the pane's frozen contract — the custom controls, the lectura's two states, the note, the attribution, the provenance, the es-CL coordinate (L5 S4)",
                       all(t in centro_html for t in ('data-z="1" aria-label="Acercar"',
                           'data-z="-1" aria-label="Alejar"', 'data-z="0" aria-label="Volver a centrar el mapa"',
-                          "© OpenStreetMap contributors · Puntos: MINSAL/DEIS, Geoportal de Chile",
                           "Haga clic o toque donde queda la entrada para mover el marcador",
                           "En el punto oficial. Para corregir: clic o toque en el mapa, o arrastrar el marcador.",
-                          ">Punto oficial</button>", 'protomapsL.leafletLayer({url: "/mapa/chile.pmtiles"',
-                          '" m al " + rumbo', '.replace(".", ",")',
+                          ">Punto oficial</button>", '" m al " + rumbo', '.replace(".", ",")',
                           "Coordenadas: MINSAL/DEIS, Geoportal de Chile")))
+                # ADR-0021: the pane's basemap is OSM's tile service under its Tile Usage Policy —
+                # the same terms territorio runs on. The option set is pinned as written; the
+                # browser arms below prove what it DOES (Referer, URL shape, zoom bounds, the link).
+                osm_url = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+                check("centro: ONE OSM raster layer under the Tile Usage Policy — the bare URL, origin Referer, no wrap, no loading while zooming, zoom 4-18, a linked attribution control; none of the options the policy forbids (ADR-0021)",
+                      centro_html.count(osm_url) == 1 and centro_html.count("L.tileLayer(") == 1
+                      and f'const OSM_TILES = "{osm_url}";' in centro_html
+                      and all(t in centro_html for t in ('referrerPolicy: "origin"', "noWrap: true",
+                              "updateWhenIdle: true", "updateWhenZooming: false",
+                              "minZoom: 4, maxZoom: 18",
+                              '<a href="https://www.openstreetmap.org/copyright"',
+                              "attributionControl.setPrefix(false)", 'tileerror'))
+                      and not any(t in centro_html for t in ("detectRetina", "crossOrigin", "errorTileUrl",
+                              "maxNativeZoom", "keepBuffer", "protomaps", "pmtiles", "/mapa/", "/api/mapa",
+                              'class="mapa-atrib"', "subdomains", "tileSize"))
+                      and "openstreetmap.org" not in "".join(b.req("GET", r)[1] for r in ROUTES if r != "/centro"))
                 tsv = subprocess.run(["bash", HOST_CLI, "pasos"], capture_output=True, text=True,
                                      timeout=10).stdout
                 titulos = [line.split("\t")[1] for line in tsv.splitlines()]
@@ -5938,89 +5921,20 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                 check("assets: the brand fonts serve locally without a session; any other name is a 404; every whitelisted file exists",
                       r.status == 200 and tipo == "font/woff2" and igual and st == 404 and st2 == 404
                       and all(os.path.isfile(os.path.join(ASSETS_ROOT, rel)) for rel, _t in ASSETS.values()))
-                # ── L5 S4: /mapa/ — the archive one byte range at a time, and the coverage state ──
-                # A synthetic archive: the 127-byte v3 header (the parser's real input) over an
-                # exactly-representable box, plus a payload every range answer must return byte
-                # for byte.
-                def cabecera_pmtiles(min_z, max_z, lon_min, lat_min, lon_max, lat_max, c_lon, c_lat, c_z):
-                    e7 = lambda g: int(round(g * 1e7))   # the header stores lon/lat as int32 ×1e7
-                    cuerpo = struct.Struct("<B11Q6B4iB2i").pack(   # bytes 7-126: version, then the fields
-                        3, *([0] * 11), 0, 0, 0, 0, min_z, max_z,
-                        e7(lon_min), e7(lat_min), e7(lon_max), e7(lat_max), c_z, e7(c_lon), e7(c_lat))
-                    return b"PMTiles" + cuerpo
-                archivo_mapa = cabecera_pmtiles(0, 14, -77.5, -56.5, -66.5, -17.5, -70.5, -33.5, 6)
-                archivo_mapa += bytes(range(256)) * 4 + b"termino"
-                total_mapa = len(archivo_mapa)
-                mapa_fixture = os.path.join(tmp, "chile-fixture.pmtiles")
-                with open(mapa_fixture, "wb") as fh:
-                    fh.write(archivo_mapa)
-
-                def pedir_mapa(ruta, cabeceras, token=True):
-                    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
-                    conn.request("GET", ruta, headers={
-                        **({"Authorization": f"Bearer {TOKEN}"} if token else {}), **cabeceras})
-                    r = conn.getresponse()
-                    cuerpo, cab = r.read(), {k.lower(): v for k, v in r.getheaders()}
-                    conn.close()
-                    return r.status, cab, cuerpo
-
-                def rango_206(st, cab, cuerpo, desde, hasta, pedazo):
-                    return (st == 206 and cuerpo == pedazo
-                            and cab.get("content-range") == f"bytes {desde}-{hasta}/{total_mapa}"
-                            and cab.get("accept-ranges") == "bytes"
-                            and cab.get("content-length") == str(len(pedazo))
-                            and cab.get("etag", "").startswith('"')
-                            and not cab.get("etag", "").startswith("W/")
-                            and "content-encoding" not in cab
-                            and cab.get("cache-control") == "no-cache")
-                # A-010 first: a stub that answers 206 but ignores Range (no Content-Range, the
-                # whole file) must fail the very checks the green run rides — a gate that cannot
-                # go red is not a gate.
-                check("mapa: the range checks redden on a Range-ignoring stub (A-010)",
-                      not rango_206(206, {"content-length": str(total_mapa),
-                                          "etag": f'"{total_mapa}"'}, archivo_mapa, 0, 6,
-                                    archivo_mapa[:7]))
-                TILES_ARCHIVE = mapa_fixture
-                st, cab, cuerpo = pedir_mapa("/mapa/chile.pmtiles", {"Range": "bytes=0-6"})
-                st_m, cab_m, cuerpo_m = pedir_mapa("/mapa/chile.pmtiles", {"Range": "bytes=100-1023"})
-                st_c, cab_c, cuerpo_c = pedir_mapa("/mapa/chile.pmtiles",
-                                                   {"Range": f"bytes={total_mapa - 10}-{total_mapa + 50}"})
-                check("mapa: one single range → 206 with Content-Range, Accept-Ranges, a strong ETag and no Content-Encoding — the magic, a middle slice and a past-the-end clamp all byte for byte (L5 S4)",
-                      cuerpo == b"PMTiles" and rango_206(st, cab, cuerpo, 0, 6, archivo_mapa[:7])
-                      and rango_206(st_m, cab_m, cuerpo_m, 100, 1023, archivo_mapa[100:1024])
-                      and rango_206(st_c, cab_c, cuerpo_c, total_mapa - 10, total_mapa - 1,
-                                   archivo_mapa[-10:]))
-                st, cab, cuerpo = pedir_mapa("/mapa/chile.pmtiles", {"Range": f"bytes={total_mapa}-9"})
-                check("mapa: a start past the end answers 416 with Content-Range: bytes */N — the header the client refetches from",
-                      st == 416 and cab.get("content-range") == f"bytes */{total_mapa}"
-                      and json.loads(cuerpo).get("error"))
-                st, _c, cuerpo = pedir_mapa("/mapa/chile.pmtiles", {})
-                st2, _c2, cuerpo2 = pedir_mapa("/mapa/chile.pmtiles", {"Range": "bytes=0-1,3-4"})
-                st3, _c3, cuerpo3 = pedir_mapa("/mapa/chile.pmtiles", {"Range": "bytes=-5"})
-                st4, _c4, cuerpo4 = pedir_mapa("/mapa/chile.pmtiles", {"Range": "bytes=5-"})
-                check("mapa: no Range, a compound, a suffix and an open-ended range each answer 400 naming the contract — the client only ever sends one explicit range",
-                      [st, st2, st3, st4] == [400] * 4
-                      and "Range: bytes=<inicio>-<fin>" in json.loads(cuerpo)["error"]
-                      and json.loads(cuerpo2).get("error") and json.loads(cuerpo3).get("error")
-                      and json.loads(cuerpo4).get("error"))
-                st, _c, _cu = pedir_mapa("/mapa/chile.pmtiles", {"Range": "bytes=0-6"}, token=False)
-                st2, _m2 = call("GET", "/api/mapa", token=None)
-                check("mapa: both doors need the token — the file route and the coverage state",
-                      st == 401 and st2 == 401)
-                st, m = call("GET", "/api/mapa")
-                check("mapa: the coverage state — disponible, the archive's own bounds, max zoom and centre out of the 127-byte header (L5 S4)",
-                      st == 200 and m["disponible"] is True and m["zoom_max"] == 14
-                      and m["limites"] == {"longitud_min": -77.5, "latitud_min": -56.5,
-                                           "longitud_max": -66.5, "latitud_max": -17.5}
-                      and m["centro"] == {"longitud": -70.5, "latitud": -33.5, "zoom": 6})
-                TILES_ARCHIVE = os.path.join(tmp, "no-esta.pmtiles")
-                st, _c, cuerpo = pedir_mapa("/mapa/chile.pmtiles", {"Range": "bytes=0-6"})
-                st2, m2 = call("GET", "/api/mapa")
-                check("mapa: no archive → the route answers 404 naming the remedy and the state answers disponible: false with it — a completable screen, never an error (ADR-0019)",
-                      st == 404 and "aps-conecta mapa" in json.loads(cuerpo)["error"]
-                      and st2 == 200 and m2["disponible"] is False
-                      and "aps-conecta mapa" in m2["motivo"])
-                TILES_ARCHIVE = sin_mapa
+                # ADR-0021: the wizard serves no archive any more — the byte-range route, the coverage
+                # state and the protomaps engine are gone, with the token in hand and without it.
+                gone_mapa = [b.req("GET", r) for r in ("/mapa/chile.pmtiles", "/api/mapa",
+                                                       "/recursos/protomaps-leaflet.js")]
+                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+                conn.request("GET", "/mapa/chile.pmtiles", headers={"Authorization": f"Bearer {TOKEN}",
+                                                                    "Range": "bytes=0-6"})
+                con_rango = conn.getresponse()
+                con_rango.read()
+                conn.close()
+                check("mapa: no archive routes — /mapa/chile.pmtiles, /api/mapa and the protomaps engine answer 404 (ADR-0021)",
+                      [g[0] for g in gone_mapa] == [404, 404, 404] and con_rango.status == 404
+                      and "protomaps-leaflet.js" not in ASSETS)
+                b.cookie = f"{TOKEN_COOKIE}={TOKEN}"
                 b.cookie = f"{TOKEN_COOKIE}={TOKEN}"
 
 
@@ -6306,27 +6220,51 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
             else:
                 print("  skipped: suite certificate five-homes arm — no runbook home on this tree yet (aps/ lands with Phase 9)")
 
-            # the fragment login in a real browser (a13) — where Playwright is installed (this box,
-            # the L7 boxes); elsewhere the arm says so and is not counted
+            # the fragment login in a real browser (a13) — and every browser arm after it. A SKIPPED
+            # arm is a FAILURE, never a pass (ADR-0021's I2): the pane's tile policy is proven only
+            # here, and a self-test that goes green by not running its browser says nothing. The one
+            # way out is a waiver the operator of the run types on purpose, APS_SELFTEST_SIN_NAVEGADOR=1
+            # (CI's static job, which carries no browser), and it is printed as what it is: skipped,
+            # waived, not counted as a pass.
             try:
                 from playwright.sync_api import sync_playwright
             except ImportError:
                 sync_playwright = None
-                print("  skip: browser arms — playwright is not installed "
-                      "(pip install playwright; playwright install chromium)")
-            # The browser arms' world (L5 S4): the fallback state — no archive — so the pane's
-            # basemap never fires tile fetches inside arms that navigate away mid-load (the R34
-            # lesson, measured on a box that owns the real 1.1 GB archive: the aborted fetches
-            # drown every arm's console accounting). Hermeticity, the dd8a1db way: one pin here
-            # instead of per-arm pins; the map pane's own arms (Phase 5) repoint per-arm, the
-            # painted-pixels one alone against the real archive this box may own.
-            old_tiles_browser = TILES_ARCHIVE
-            TILES_ARCHIVE = os.path.join(tmp, "no-esta.pmtiles")
+                if os.environ.get("APS_SELFTEST_SIN_NAVEGADOR") == "1":
+                    print("  SKIPPED (waived by APS_SELFTEST_SIN_NAVEGADOR=1, NOT a pass): browser arms — "
+                          "playwright is not installed")
+                else:
+                    check("browser: the browser arms RAN — playwright is installed, so the pane's tile policy "
+                          "(Referer, URL shape, zoom bounds, the attribution link, the first-failure note) was proven "
+                          "(pip install playwright; playwright install chromium; or APS_SELFTEST_SIN_NAVEGADOR=1 to waive, "
+                          "visibly)", False)
+            # The browser arms never reach the real OpenStreetMap (its Tile Usage Policy binds the
+            # tests too): the context routes every openstreetmap.org request to a mock — the tile
+            # URL to a one-pixel PNG or an abort, any other host on that domain to an abort that
+            # is recorded and asserted empty — and the browser itself cannot resolve the domain
+            # (a second layer, should a route ever be missed). route.continue_ toward OSM is never called.
+            TILE_PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")
+            osm = {"modo": "ok", "tiles": [], "otros": []}
+
+            def osm_otro(ruta):   # anything on openstreetmap.org that is not the tile URL: recorded, aborted
+                osm["otros"].append(ruta.request.url)
+                ruta.abort()
+
+            def osm_tile(ruta):   # the tile URL: the mock answers, and the Referer it came with is recorded
+                osm["tiles"].append((ruta.request.url, ruta.request.all_headers().get("referer")))
+                if osm["modo"] == "ok":
+                    ruta.fulfill(status=200, content_type="image/png", body=TILE_PNG)
+                else:
+                    ruta.abort()
             if sync_playwright:
                 with sync_playwright() as pw:
-                    nav = pw.chromium.launch()
+                    nav = pw.chromium.launch(args=["--host-resolver-rules=MAP openstreetmap.org ~NOTFOUND, "
+                                                   "MAP *.openstreetmap.org ~NOTFOUND"])
                     try:
                         visto = nav.new_context(ignore_https_errors=True)
+                        # the catch-all first, the tile URL second: Playwright runs the LAST route that matches
+                        visto.route(re.compile(r"^https?://([^/]*\.)?openstreetmap\.org(:\d+)?(/|$)"), osm_otro)
+                        visto.route("https://tile.openstreetmap.org/**", osm_tile)
                         pg = visto.new_page()
                         errores = []
                         pg.on("pageerror", lambda e: errores.append(str(e)))
@@ -6417,19 +6355,16 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                             errores.append(str(e))
                         check("browser: a fixed centre locks the filters and the combobox; «Confirmar centro» just continues (D13)",
                               fijo and not errores)
-                        # ── L5 S4: the map pane in a real browser — the lectura, the pin, the
-                        # fallback, the dead route, the fixed site; painted pixels only where a
-                        # real archive exists ── The archive is repointed per arm (the missing
-                        # path for the fallback states, a synthetic header when coverage must
-                        # read disponible), so no arm depends on this box having the 1.1 GB
-                        # file; the painted-pixels arm alone runs against the real one.
-                        desde = len(errores)
-                        old_tiles_pw = old_tiles   # the painted arm alone probes the box's own default — the true archive, if this box has one
-                        TILES_ARCHIVE = os.path.join(tmp, "no-esta.pmtiles")   # the fallback state
+                        # ── the map pane in a real browser — OSM under its Tile Usage Policy (ADR-0021), the
+                        # lectura, the pin, the first-failure note, the fixed site. Every tile request is a
+                        # mock's (see osm above): what the pane SENDS is what is asserted, never what OSM answers ──
+                        desde, t0 = len(errores), len(osm["tiles"])
+                        osm["modo"] = "ok"
                         real_here, sin_sitio = deis.HERE, tempfile.mkdtemp()
                         os.makedirs(os.path.join(sin_sitio, "scripts"))
                         deis.HERE = os.path.join(sin_sitio, "scripts")
                         CENTRO, PUNTO = None, None
+                        origen = f"https://127.0.0.1:{tport}/"
                         try:
                             pg.goto(f"https://127.0.0.1:{tport}/centro")
                             pg.wait_for_function("() => document.querySelector('#c-btn').innerText.includes('Elija un centro')",
@@ -6439,10 +6374,21 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                             pg.click("#c-lista [data-c='121567']")
                             pg.wait_for_function("() => document.querySelector('#c-lectura').innerText.includes('Oficial:')",
                                                  timeout=10000)
+                            pg.wait_for_function("() => document.querySelectorAll('#c-mapa .leaflet-tile-loaded').length > 0",
+                                                 timeout=10000)
                             lectura0 = pg.inner_text("#c-lectura")
-                            nota_mapa = pg.inner_text("#c-nota-mapa")
+                            sin_nota = pg.is_hidden("#c-nota-mapa")   # tiles arrive: no note
                             chincheta = pg.locator("#c-mapa .pin-mapa").count()
                             anillo = pg.locator("#c-mapa .leaflet-overlay-pane svg path").count()
+                            capas = pg.locator("#c-mapa .leaflet-tile-pane .leaflet-layer").count()   # ONE raster layer
+                            img = pg.evaluate("() => { const t = document.querySelector('#c-mapa img.leaflet-tile'); "
+                                              "return t ? [t.referrerPolicy, t.crossOrigin] : null; }")
+                            enlace = pg.locator("#c-mapa .leaflet-control-attribution a[href='https://www.openstreetmap.org/copyright']")
+                            atrib = pg.inner_text("#c-mapa .leaflet-control-attribution")
+                            atrib_visible = (enlace.count() == 1 and enlace.is_visible()
+                                             and pg.evaluate("() => { const a = document.querySelector('#c-mapa .leaflet-control-attribution a'); "
+                                                             "const r = a.getBoundingClientRect(); "
+                                                             "return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) === a; }"))
                             pg.focus("#c-mapa")
                             pg.keyboard.press("ArrowUp")          # the arrows nudge the pin 5 m
                             tras_flecha = pg.inner_text("#c-lectura")
@@ -6459,41 +6405,51 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                             pg.wait_for_function("() => document.querySelector('#c-lectura').innerText.includes('Elegido:')",
                                                  timeout=10000)
                             recargado = "5 m al norte" in pg.inner_text("#c-lectura")
+                            # the zoom bounds, on the map AND the layer: all the way out, then all the way in —
+                            # no tile request ever leaves 4..18 (the keys are the pane's own, one level each)
+                            pg.focus("#c-mapa")
+                            for tecla in ["-"] * 16 + ["+"] * 20:
+                                pg.keyboard.press(tecla)
+                                pg.wait_for_timeout(120)
+                            pg.wait_for_timeout(600)
                             call("POST", "/api/centro", {"codigo": "121567"})   # the reset: no pair held
                         except Exception as e:   # a Playwright timeout: the arm reports it
-                            lectura0 = nota_mapa = ""
-                            chincheta = anillo = 0
+                            lectura0 = atrib = ""
+                            sin_nota = atrib_visible = confirmado = recargado = False
+                            chincheta = anillo = capas = 0
+                            img = None
                             tras_flecha = tras_mayus = tras_reinicio = ""
-                            confirmado = recargado = False
                             errores.append(str(e))
                         finally:
                             deis.HERE = real_here
                             shutil.rmtree(sin_sitio)
                             CENTRO, PUNTO = None, None
-                        check("browser: the Centro pane in its fallback state (L5 S4) — the note names the remedy, the ring and the pin render on the plain background, the lectura's official state; the arrows move 5 m and 25 m; «Punto oficial» returns it; the moved point rides «Confirmar centro» exactly and a reload restores it (ADR-0019: a completable screen, never an outage)",
+                        pedidos = osm["tiles"][t0:]
+                        zs = [int(m.group(1)) for m in (re.fullmatch(r"https://tile\.openstreetmap\.org/(\d+)/\d+/\d+\.png", u)
+                                                         for u, _r in pedidos) if m]
+                        check("browser: the Centro pane's basemap is OSM under its Tile Usage Policy (ADR-0021) — every tile request is the bare https://tile.openstreetmap.org/z/x/y.png (no query string) with the page's origin as Referer, zooms stay inside 4..18, ONE raster layer, no request to any other openstreetmap.org URL, the attribution is a real linked control on screen and not covered",
+                              len(pedidos) > 0 and len(zs) == len(pedidos)
+                              and all(r == origen for _u, r in pedidos)
+                              and zs and min(zs) == 4 and max(zs) == 18
+                              and osm["otros"] == [] and capas == 1 and img == ["origin", None]
+                              and atrib_visible and "© OpenStreetMap contributors" in atrib
+                              and "Puntos: MINSAL/DEIS, Geoportal de Chile" in atrib and sin_nota
+                              and not errores[desde:])
+                        check("browser: the Centro pane — the lectura's official state, the ring and the pin, the arrows move 5 m and 25 m, «Punto oficial» returns it, the moved point rides «Confirmar centro» exactly and a reload restores it (L5 S4)",
                               "Oficial: −38,86996, −72,39666" in lectura0
                               and "En el punto oficial" in lectura0
-                              and "aps-conecta mapa" in nota_mapa
                               and chincheta == 1 and anillo >= 1
                               and "5 m al norte" in tras_flecha and "30 m al norte" in tras_mayus
                               and "En el punto oficial" in tras_reinicio
-                              and confirmado and recargado and not errores[desde:])
-                        # the route dies mid-pane (the archive replaced under a running screen,
-                        # the port blocked): coverage said disponible, every basemap fetch
-                        # fails — the pane still completes, and the dead fetches are the
-                        # provoked console lines, whitelisted exactly the way the step-8 arm
-                        # whitelists its 409/400 — never by weakening another arm's rule.
+                              and confirmado and recargado)
+                        # the first tile failure (the host unreachable, a clinic network that blocks OSM): the
+                        # existing «no map» note appears and the step stays completable — the official point and
+                        # the arrow-key nudge remain. The failed loads are the browser's own console lines,
+                        # whitelisted exactly the way the step-8 arm whitelists its 409/400 — never by
+                        # weakening another arm's rule.
                         pg.goto("about:blank")
                         desde = len(errores)
-                        arch_muerto = os.path.join(tmp, "chile-muerto.pmtiles")
-                        with open(arch_muerto, "wb") as fh:   # a readable header: disponible, true
-                            fh.write(b"PMTiles" + struct.Struct("<B11Q6B4iB2i").pack(
-                                3, *([0] * 11), 0, 0, 0, 0, 0, 14,
-                                int(round(-77.5 * 1e7)), int(round(-56.5 * 1e7)),
-                                int(round(-66.5 * 1e7)), int(round(-17.5 * 1e7)),
-                                6, int(round(-70.5 * 1e7)), int(round(-33.5 * 1e7))))
-                        TILES_ARCHIVE = arch_muerto
-                        pg.route("**/mapa/chile.pmtiles", lambda ruta: ruta.abort())
+                        osm["modo"] = "falla"
                         real_here, sin_ruta = deis.HERE, tempfile.mkdtemp()
                         os.makedirs(os.path.join(sin_ruta, "scripts"))
                         deis.HERE = os.path.join(sin_ruta, "scripts")
@@ -6507,7 +6463,8 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                             pg.click("#c-lista [data-c='121567']")
                             pg.wait_for_function("() => document.querySelector('#c-lectura').innerText.includes('Oficial:')",
                                                  timeout=10000)
-                            sin_nota = pg.is_hidden("#c-nota-mapa")   # coverage read the header
+                            pg.wait_for_selector("#c-nota-mapa:not([hidden])", timeout=10000)
+                            nota_mapa = pg.inner_text("#c-nota-mapa")
                             pg.focus("#c-mapa")
                             pg.keyboard.press("ArrowUp")
                             mvio = "5 m al norte" in pg.inner_text("#c-lectura")
@@ -6515,11 +6472,12 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                             pg.wait_for_url("**/contenedores", timeout=10000)
                             confirmado_ruta = CENTRO == "121567" and PUNTO is not None
                         except Exception as e:   # a Playwright timeout: the arm reports it
-                            sin_nota = mvio = confirmado_ruta = False
+                            nota_mapa = ""
+                            mvio = confirmado_ruta = False
                             errores.append(str(e))
                         finally:
-                            pg.unroute("**/mapa/chile.pmtiles")
-                            pg.goto("about:blank")   # no late dead-fetch line reaches a later arm
+                            osm["modo"] = "ok"
+                            pg.goto("about:blank")   # no late failed-load line reaches a later arm
                             deis.HERE = real_here
                             shutil.rmtree(sin_ruta)
                             CENTRO, PUNTO = None, None
@@ -6527,12 +6485,12 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                         propios = [x for x in errores[desde:] if x not in muertos]
                         del errores[desde:]
                         errores.extend(propios)
-                        check("browser: the route dies mid-pane (L5 S4) — the pane completes anyway (the pin moves, «Confirmar centro» answers), the dead /mapa/ fetches happened and are its only console lines, whitelisted (1c1f710: the untested branch is the production branch)",
-                              sin_nota and mvio and confirmado_ruta and muertos and not propios)
+                        check("browser: the first tile failure shows the «no map» note naming OpenStreetMap, and the pane completes anyway (the pin moves, «Confirmar centro» answers); the failed tile loads are its only console lines, whitelisted (1c1f710: the untested branch is the production branch)",
+                              "OpenStreetMap" in nota_mapa and "se confirma igual" in nota_mapa
+                              and mvio and confirmado_ruta and muertos and not propios and osm["otros"] == [])
                         # a fixed site: its own point, read-only — the map pans, the pin does not
                         pg.goto("about:blank")
                         desde = len(errores)
-                        TILES_ARCHIVE = os.path.join(tmp, "no-esta.pmtiles")   # the note, deterministic
                         try:
                             pg.goto(f"https://127.0.0.1:{tport}/centro")
                             pg.wait_for_selector("#m .aviso", timeout=10000)
@@ -6550,47 +6508,6 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                               "Oficial: −33,56136, −70,67469" in lectura_fija
                               and "En el punto oficial" in lectura_fija
                               and oculto and ancla and quieto and not errores[desde:])
-                        PINTURA = """() => {   // the pane's canvases sampled on a 7×7 grid
-                          const colores = new Set();
-                          for (const c of document.querySelectorAll('#c-mapa canvas')) {
-                            const x = c.getContext('2d'); if (!x) continue;
-                            for (let i = 1; i <= 7; i++) for (let j = 1; j <= 7; j++) {
-                              const d = x.getImageData(Math.floor(c.width * i / 8),
-                                                       Math.floor(c.height * j / 8), 1, 1).data;
-                              colores.add(d[0] + ',' + d[1] + ',' + d[2]);
-                            }
-                          }
-                          return colores.size;
-                        }"""
-                        # painted pixels, not element presence (c8837c7): the one arm that runs
-                        # against a real archive — where there is none it is skip-named, never
-                        # silently green (the ImportError precedent above); CI keeps node --check
-                        # and the http.client Range proofs as its proxies.
-                        TILES_ARCHIVE = old_tiles_pw
-                        st_mapa, mapa_real = call("GET", "/api/mapa")
-                        if st_mapa == 200 and mapa_real.get("disponible"):
-                            desde = len(errores)
-                            try:
-                                pg.goto(f"https://127.0.0.1:{tport}/centro")
-                                pg.wait_for_selector("#m .aviso", timeout=10000)
-                                sin_nota_real = pg.is_hidden("#c-nota-mapa")
-                                pintado = 0
-                                for _ in range(40):   # the tiles paint at their own pace
-                                    pintado = pg.evaluate(PINTURA)
-                                    if pintado and pintado > 1:
-                                        break
-                                    pg.wait_for_timeout(500)
-                            except Exception as e:   # a Playwright timeout: the arm reports it
-                                sin_nota_real = False
-                                pintado = 0
-                                errores.append(str(e))
-                            check("browser: the pane paints the real archive — sampled pixels, not element presence (c8837c7); flat colour is a failure",
-                                  sin_nota_real and pintado and pintado > 1)
-                            del errores[desde:]   # the painted verdict is this arm's contract; a real archive's stray tile line is not a later arm's
-                        else:
-                            print("  skip: the map pane paints — no real archive on this box "
-                                  "(the L7 rehearsal runs it)")
-                        TILES_ARCHIVE = os.path.join(tmp, "no-esta.pmtiles")   # back to the section's fallback: no arm below fetches tiles
                         # step 8 in a real browser on a fresh tree (a15): the ids under each list, a
                         # save, a different save is a conflict, «Reemplazar»; the centre's template
                         # downloaded and uploaded back; an unknown group opens «Grupos válidos». The
@@ -6852,7 +6769,6 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                               en_login and pegado)
                     finally:
                         nav.close()
-            TILES_ARCHIVE = old_tiles_browser
             # ── L3 S1: a green «Revisar y ejecutar» closes the installer (SEC-2, a13) ──
             fin, fport = bind_server("127.0.0.1", (0,))
             fin.grace = 0.2
@@ -6929,7 +6845,6 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
         CRED_PATH, PHASE20 = old_cred, old_p20
         CERT_DIR = old_cert
         AIO_STATE = old_aio
-        TILES_ARCHIVE = old_tiles
         globals().update(recursos=reales[0], puerto_libre=reales[1])
         os.environ.update(_scrubbed)
         # the stub world closes with the fixture: the PATH injection and the FAKE_DOCKER_* knobs
