@@ -696,10 +696,10 @@ graph LR
   Browser[Workstation Browser Map View] -->|HTTPS GET raster tiles| OSM[tile.openstreetmap.org]
 ```
 
-- **Network requirement:** workstations need outbound HTTPS to `tile.openstreetmap.org`. The tile coordinates (about 300 m at the closest zoom) and the instance's origin reach OSM, as with any OSM-based map.
+- **Network requirement:** workstations need outbound HTTPS to `tile.openstreetmap.org`. The tile coordinates (about 300 m at zoom 17) and the instance's origin reach OSM, as with any OSM-based map.
 - **Policy:** the map follows OSM's [Tile Usage Policy](https://operations.osmfoundation.org/policies/tiles/) (visible attribution, default browser caching, a bounded retry budget, no bulk downloads). Offline maps are not supported.
 - **If OSM blocks the map:** the tile layer shows a banner when tiles fail to load. A block that answers with a valid image can look like a working map, so confirm from a workstation before assuming the suite is at fault. Because there is no setting, the fix is a Territorio release that changes the one constant.
-- **Leftovers from the PMTiles era:** a host installed before that change may still hold `/srv/aps-conecta/tiles/chile.pmtiles` (~1 GB) and the `aps-conecta-tiles` timer. They are unused: run `sudo systemctl disable --now aps-conecta-tiles.timer` and remove the archive by hand to reclaim the disk (the installer never deletes it automatically).
+- **Leftovers from the PMTiles era:** a host installed before that change may still hold `/srv/aps-conecta/tiles/chile.pmtiles` (~1 GB) and the `aps-conecta-tiles` timer. They are unused: run `sudo aps-conecta temporizadores` (once the installer's tile retirement is installed it disables the timer) or `sudo systemctl disable --now aps-conecta-tiles.timer`, and remove the archive by hand to reclaim the disk (the installer never deletes it automatically).
 
 ---
 

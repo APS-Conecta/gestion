@@ -64,7 +64,8 @@ check bash -c '
   exit $rc'
 # --- gate (L5 S4): the vendored map libraries are the pinned bytes ---------------------------------
 # The Centro pane's engine is Leaflet, two files copied byte-identical from territorio's
-# node_modules (docs/LICENSING.md §3); its basemap is OpenStreetMap's tiles, loaded by the browser. Vendored bytes are the one diff a reviewer reads as "just assets":
+# node_modules (docs/LICENSING.md §3); its basemap is OpenStreetMap's tiles, loaded by the browser.
+# Vendored bytes are the one diff a reviewer reads as "just assets":
 # territorio upgrades, a re-vendor misses a file, an editor "fixes" a minified line — and the
 # installer's map changes with no gate the eye can catch. The image-digests pair-pin discipline,
 # applied to vendored files: each must exist and hash to its pin. The negative half mutates one
@@ -378,6 +379,20 @@ if len(old) != len(new) or not all(n.startswith(o + b",") for o, n in zip(old, n
 if not again: fails.append("a second run did not rewrite the same bytes")
 if fails:
     print("\n".join(fails)); sys.exit(1)'
+# Every establishment the installer offers carries its official point, in plain degrees: the point is
+# where the Centro map starts and what SITE_LON/SITE_LAT copy. A --snapshot that skipped --coordenadas
+# is the realistic way to get here — snapshot_from writes the ten columns only.
+check python3 -c '
+import csv, glob, sys
+sys.path.insert(0, "scripts")
+import deis
+register = sorted(glob.glob("sites/establecimientos-deis-*.csv"))[-1]
+rows = list(csv.DictReader(open(register, encoding="utf-8")))
+if len(rows) < 100:
+    print("register truncated -- this check measured nothing"); sys.exit(1)
+bad = [r["codigo"] for r in rows if not all(deis.DEGREES.fullmatch(r.get(k) or "") for k in deis.COORDS)]
+if bad:
+    print(str(len(bad)) + " register rows without a plain-degree point: " + ", ".join(bad[:5])); sys.exit(1)'
 # A --snapshot whose points never came is the newest file, so every reader would take it and
 # block() would die on a KeyError inside the installer. load() stops instead, naming both ways
 # out, and a refused --coordenadas on it says how to step back to the register before it. On a
