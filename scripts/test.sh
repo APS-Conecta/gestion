@@ -592,40 +592,37 @@ CASES
 }
 check estadistica_identity_cases
 
-# Territorio's tile_url — the third extracted-block test over this phase (office by IP at
-# 14-office, estadistica's establishment above, now this — Q17, org review L5-S3). Phase 16's
-# three branches carried ONE string grep of coverage (a21's `/tiles/` clause below): the
-# unreadable-ocu arm — leave-as-is, and Q9 makes it SAY the stale value it leaves — and the
-# non-AIO arm (the blank write that falls territorio back to the OSM raster) were exercised by
-# nothing anywhere. Same shape as office_by_ip: the block between the phase's own markers, run
-# under errexit with the five helpers stubbed. The exact-string arms make the LOG line's wording
-# a contract: the stale value is in the message («…»), never implied.
-territorio_tile_url_cases() {
-  local block out
-  block="$(sed -n "/^# --- territorio's tile_url (L5-S3)/,/^# --- end territorio's tile_url ---$/p" provisioning/phases/16-app-policy.sh)"
-  [ -n "$block" ] || { echo "tile_url: block not found in 16-app-policy.sh" >&2; return 1; }
-  while IFS='|' read -r aio ocu stale want; do
-    out="$(AIO="$aio" OCU="$ocu" STALE="$stale" bash -e -o pipefail -c '
-      is_aio() { [ "$AIO" = 1 ]; }
-      conf_load() { :; }
-      conf_get() { case "$1" in system) printf "%s\n" "$OCU" ;; app) printf "%s\n" "$STALE" ;; esac; }
+# Territorio's basemap is OpenStreetMap's own tile service (ADR-0021 in that repo), loaded by each
+# user's browser: nothing about it is provisioned. Phase 16 used to write a tile_url (the suite's
+# /tiles/ archive); it writes none now, and the two keys the app derives its map extent from —
+# the comuna's CUT and name — must still land. Behavioural, not a grep: the WHOLE phase runs under
+# errexit with its helpers stubbed, once as AIO and once not (the old block branched on that), and
+# the assertions are on what it writes. is_aio / conf_load / conf_get are stubbed to a marker so a
+# phase that went back to asking how the instance is reached is caught too.
+territorio_phase16_cases() {
+  local aio out
+  for aio in 1 0; do
+    out="$(AIO="$aio" SITE=lab SITE_DEIS=999001 SITE_TIPO=CESFAM SITE_COMUNA_CUT=09999 SITE_COMUNA="Comuna Prueba" \
+      SEED_CTX=1 bash -e -o pipefail -c '
+      phase_begin() { :; }; phase_end() { :; }
+      app_restrict_to_groups() { :; }; app_disable() { :; }
+      is_aio() { echo "ASKED is_aio"; [ "$AIO" = 1 ]; }
+      conf_load() { echo "ASKED conf_load"; }
+      conf_get() { echo "ASKED conf_get $*"; }
+      log() { :; }
       app_config_set() { printf "SET %s %s %s\n" "$@"; }
-      log() { printf "LOG %s\n" "$*"; }
-      eval "$1"' _ "$block" 2>&1)" || { echo "tile_url: the block failed under errexit for aio=$aio ocu='$ocu': $out" >&2; return 1; }
-    case "$want" in
-      derived)     [ "$out" = "SET territorio tile_url https://10.0.0.5/tiles/chile.pmtiles" ] ;;
-      left)        [ "$out" = "LOG AIO: overwrite.cli.url could not be read — territorio's tile_url left as it is («https://vieja.example/tiles/chile.pmtiles»)" ] ;;
-      left-empty)  [ "$out" = "LOG AIO: overwrite.cli.url could not be read — territorio's tile_url left as it is («sin valor»)" ] ;;
-      blank)       [ "$out" = "SET territorio tile_url " ] ;;  # trailing space: the empty VALUE — the write itself is the assertion
-    esac || { echo "tile_url: aio=$aio ocu='$ocu' stale='$stale' expected $want, got: $out" >&2; return 1; }
-  done <<'CASES'
-1|https://10.0.0.5/|https://vieja.example/tiles/chile.pmtiles|derived
-1||https://vieja.example/tiles/chile.pmtiles|left
-1|||left-empty
-0|||blank
-CASES
+      . provisioning/phases/16-app-policy.sh' 2>&1)" \
+      || { echo "phase 16: failed under errexit for aio=$aio: $out" >&2; return 1; }
+    printf '%s\n' "$out" | grep -qx "SET territorio comuna_cut 09999" \
+      && printf '%s\n' "$out" | grep -qx "SET territorio comuna_name Comuna Prueba" \
+      || { echo "phase 16: territorio's comuna_cut / comuna_name were not written for aio=$aio: $out" >&2; return 1; }
+    ! printf '%s\n' "$out" | grep -q "tile_url" \
+      || { echo "phase 16: a tile_url was written or mentioned for aio=$aio — nothing provisions the basemap any more: $out" >&2; return 1; }
+    ! printf '%s\n' "$out" | grep -q "^ASKED" \
+      || { echo "phase 16: asked how the instance is reached (aio=$aio) — only the tile_url needed that: $out" >&2; return 1; }
+  done
 }
-check territorio_tile_url_cases
+check territorio_phase16_cases
 
 # I0 — gestion 3b62c24, ported: the session posture of phase 05 and the helper it calls. Three
 # extracted-block cases in the shape above. Phase 05 is sourced with its three helpers stubbed to
@@ -742,13 +739,13 @@ check bash -c '
 # The grep is a21's own clause, with the pattern assembled without its literals
 # ("nginx:alp""ine|TILES_""PORT|:80""84"): a21 covers scripts/ too, and a gate that spelled its
 # own banned tokens would be its own hit. tiles.nginx.conf gone, no nginx pin, port or knob left
-# anywhere the map used to need one, and phase 16 pointing at /tiles/. The gestion-era scope also
+# anywhere the map used to need one. (Phase 16 no longer points territorio at /tiles/ — its own
+# case above asserts the absence.) The gestion-era scope also
 # named .env.example and compose.yaml — both stayed in gestion with the dev lifecycle, so the
 # scope here is the fork's own trees.
 check bash -c '
   test ! -e tiles.nginx.conf \
-    && ! git grep -qE "nginx:alp""ine|TILES_""PORT|:80""84" -- host scripts provisioning \
-    && grep -q "/tiles/" provisioning/phases/16-app-policy.sh'
+    && ! git grep -qE "nginx:alp""ine|TILES_""PORT|:80""84" -- host scripts provisioning'
 
 # --- gate (org review L5-S3, I7): the map-folder default — six literals that must agree ---------
 # /srv/aps-conecta is spelled in six places because each site legitimately owns its own fallback
