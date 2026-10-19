@@ -26,6 +26,13 @@ image digests live there and are deliberately not copied here — one fact, one 
   with no permissions of its own and no override mechanism. The shared registry is now 28 groups and
   23 roles, so the roster planilla accepts it as a cargo.
 
+### Changed
+- **Provisioning phase 16 no longer writes Territorio's `tile_url`.** Territorio's basemap is
+  OpenStreetMap's own tile service, loaded by each browser (ADR-0021 in territorio), so nothing is
+  provisioned for it; the comuna keys (`comuna_cut`, `comuna_name`), from which the app derives
+  where the map opens, are written as before. `scripts/smoke.sh` check 16 and Clean boot assert
+  the comuna instead of a URL.
+
 ## [0.4.0] — 2026-10-12
 ### Added
 - The signed package release channel: the `install.sh` bootstrap, the `VERSION` discipline, `installer.pub`.

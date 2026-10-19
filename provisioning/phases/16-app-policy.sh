@@ -24,45 +24,16 @@ for entry in ${POLICY_CONFIG:-}; do
   app_config_set "$_app" "${_rest%%:*}" "${_rest#*:}"
 done
 
-# Territorio's basemap (ADR-0019 in that repo). NOT in POLICY_CONFIG above, and the reason is
-# mechanical: that list is space-separated `app:key:value` triples, so it cannot carry a value that
-# needs a variable expanded into it. Same shape and same reason as 14-office's DocumentServerUrl.
+# Territorio's basemap is OpenStreetMap's own tile service, loaded by each user's browser
+# (ADR-0021 in that repo): this phase provisions nothing for it. The one thing the app takes from
+# here is the comuna below — it derives the map's opening extent from the CUT, so no extent is
+# pushed.
 #
-# The suite serves the archive same-origin at /tiles/ (L5: apache binds the host's map folder
-# read-only at /aps-tiles, the AIO fork's own route), so the URL is whatever address this
-# instance is already reached by — the value the wizard's entrypoint writes into
-# overwrite.cli.url, derived exactly the way 14-office derives the office's internal URLs. One
-# source of truth and no knob: TILES_PUBLIC_URL/B-033 was a hand-set copy of a fact the instance
-# already knew, and it drifted. Territorio rejects a relative URL, so the absolute form is
-# written. A value that cannot be read is said and the key left as it is, never guessed
-# (B-014, 14-office's own rule). Not under AIO (the dev stack) no suite serves it: blank falls
-# territorio back to the OSM raster (Basemap::resolve), which still draws a map. Detection is
-# env.sh's is_aio, computed here as 14-office computes it (seed.sh sources env.sh first).
-# --- territorio's tile_url (L5-S3): stable markers for test.sh's extracted-block branch tests
-# (the 14-office `# --- by IP (R22)` precedent — comments delimit, nothing behavioral moves) ---
-if is_aio; then aio=1; else aio=0; fi
-if [ "$aio" = 1 ]; then
-  conf_load
-  ocu="$(conf_get system overwrite.cli.url || true)"
-  if [ -n "$ocu" ]; then
-    app_config_set territorio tile_url "${ocu%/}/tiles/chile.pmtiles"
-  else
-    # Q9 (org review L5-S3): say the VALUE being left, not only the reason for leaving it — an
-    # operator reading this log must tell "stale but the suite's own route" from "something
-    # older pointing elsewhere" without opening occ. conf_get already reads the app config
-    # (app_config_set reads through the same cache), so the stale value costs one lookup.
-    stale="$(conf_get app territorio tile_url || true)"
-    log "AIO: overwrite.cli.url could not be read — territorio's tile_url left as it is («${stale:-sin valor}»)"
-  fi
-else
-  app_config_set territorio tile_url ""
-fi
-# --- end territorio's tile_url ---
-
 # Territorio's comuna — the register's own five-digit CUT and the comuna's name, the second
 # per-consumer seam ADR-0013 named: the import door refuses another comuna's file against this
-# value (apps/territorio ImportService::refuseAnotherComuna). Same shape and same mechanical reason as
-# tile_url above: not in POLICY_CONFIG, because the value is variable-expanded out of the
+# value (apps/territorio ImportService::refuseAnotherComuna). Not in POLICY_CONFIG,
+# for the mechanical reason 14-office's DocumentServerUrl is not either: that list is
+# space-separated `app:key:value` triples, so it cannot carry a value variable-expanded out of the
 # generated site file.
 #
 # Writing the pair is what ARMS the door. An empty comuna_cut is not neutral — ComunaConfig reads

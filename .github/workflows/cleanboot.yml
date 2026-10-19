@@ -618,9 +618,9 @@ jobs:
           occ notify_push:self-test
           occ eurooffice:documentserver --check
       # L5 by IP: the same deterministic fixture, then the /tiles/ route over the installer's own
-      # certificate — tile_url derived from this runner's own address (phase 16), and the
-      # operator's own check (host/tiles.sh check: the archive, the bind, a ranged read through
-      # the suite's internal network) green on a real install.
+      # certificate, and the operator's own check (host/tiles.sh check: the archive, the bind, a
+      # ranged read through the suite's internal network) green on a real install. The route is
+      # served until the tile machinery retires; Territorio no longer reads it.
       - name: The basemap is served same-origin at /tiles/, by IP
         run: |
           sudo install -d -m 0755 /srv/aps-conecta/tiles
@@ -639,9 +639,22 @@ jobs:
           head -c 1024 /srv/aps-conecta/tiles/chile.pmtiles > "$RUNNER_TEMP/tiles.esp"
           cmp "$RUNNER_TEMP/tiles.rng" "$RUNNER_TEMP/tiles.esp"
           cd /opt/aps-conecta/instalador && source scripts/env.sh
-          [ "$(occ config:app:get territorio tile_url)" = "https://$SUITE_IP/tiles/chile.pmtiles" ] \
-            || { echo "FAIL: tile_url is not the runner's own same-origin URL" >&2; occ config:app:get territorio tile_url >&2; exit 1; }
           sudo bash /opt/aps-conecta/instalador/host/tiles.sh check
+      # Territorio's map is OpenStreetMap's own tile service, loaded by the browser (ADR-0021 there):
+      # phase 16 provisions the comuna the app derives its opening extent from, and no tile_url.
+      - name: Territorio carries the site's comuna and no tile_url
+        run: |
+          cd /opt/aps-conecta/instalador && source scripts/env.sh
+          want_cut="$(. "$RUNNER_TEMP/site.sh" && printf '%s' "$SITE_COMUNA_CUT")"
+          want_name="$(. "$RUNNER_TEMP/site.sh" && printf '%s' "$SITE_COMUNA")"
+          [ -n "$want_cut" ] && [ -n "$want_name" ] || { echo "FAIL: the generated site file carries no comuna" >&2; exit 1; }
+          [ "$(occ config:app:get territorio comuna_cut)" = "$want_cut" ] \
+            || { echo "FAIL: territorio comuna_cut is not the site's $want_cut" >&2; occ config:app:get territorio comuna_cut >&2; exit 1; }
+          [ "$(occ config:app:get territorio comuna_name)" = "$want_name" ] \
+            || { echo "FAIL: territorio comuna_name is not the site's $want_name" >&2; occ config:app:get territorio comuna_name >&2; exit 1; }
+          if occ config:app:get territorio tile_url >/dev/null 2>&1; then
+            echo "FAIL: territorio tile_url is set, but nothing provisions it any more: $(occ config:app:get territorio tile_url)" >&2; exit 1
+          fi
       # The weekly run, by IP, on the instance just installed: the leaf is kept (same fingerprint) and
       # apache is not restarted; the seed converges again, idempotent by IP too.
       - name: The weekly run keeps the leaf and apache as they are
