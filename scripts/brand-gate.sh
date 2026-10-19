@@ -938,22 +938,49 @@ tiles_route() {  # 239: apache serves the suite's basemap same-origin at /tiles/
 row 239 "apache serves the suite's basemap same-origin at /tiles/ — APS_TILES_DIR bound read-only into apache alone, the route ahead of Nextcloud's catch-all in the shared snippet, a missing archive a 404 (R49, declared PHP: the setting and its bind)" \
   tiles_route
 
+apache_caddyfile() {  # PORT — the Caddyfile apache's start.sh writes when APACHE_PORT is PORT. Runs
+  # start.sh's own chain, from its reverse-proxy switch to `caddy fmt`, over a copy of the replayed
+  # Caddyfile in a scratch directory. The gate's host mounts no /aps-tls, so the chain takes the
+  # ACME stanza.
+  local dir out
+  dir="$(mktemp -d)" || return 1
+  cp "$TREE/Containers/apache/Caddyfile" "$dir/Caddyfile.in"
+  sed -n '/^# Change variables in case of reverse proxies$/,/^# Fix the Caddyfile format$/p' "$TREE/Containers/apache/start.sh" \
+    | sed -e 's| /tmp/Caddyfile| Caddyfile.out|g' -e 's| /Caddyfile)| Caddyfile.in)|' >"$dir/chain.sh"
+  out="$(cd "$dir" && APACHE_PORT="$1" NC_DOMAIN=suite.example IPv4_ADDRESS=172.18.0.0/16 bash chain.sh >/dev/null && cat Caddyfile.out)"
+  rm -rf "$dir"
+  [ -n "$out" ] && printf '%s\n' "$out"
+}
+
 modern_tls() {  # 250: modern TLS only — the mastercontainer's ACME and internal listeners pin
-  # protocols tls1.2 tls1.3 as their tls block's first directive, and apache's runtime stanza
-  # (235's # tls placeholder mechanism) carries the same pin in start.sh's ACME TLS_STANZA;
-  # nothing older negotiates on any ingress. The floor landed on main as ead3eb6e; the parity
-  # fence moved it into the queue — mirrored files carry no local edits (the one rule).
-  local fail=0 f
+  # protocols tls1.2 tls1.3 as their tls block's first directive, and apache's runtime ACME stanza
+  # (235's # tls placeholder mechanism) carries the same pin when APACHE_PORT is 443. Not behind a
+  # reverse proxy: there the site is plain http, and Caddy refuses TLS connection policies on an
+  # http server, so the pin kept apache from starting at all. Measured on the Caddyfile start.sh
+  # renders for each port, because a count of start.sh's bytes passed while every proxied install
+  # broke. The floor landed on main as ead3eb6e; the parity fence moved it into the queue —
+  # mirrored files carry no local edits (the one rule).
+  local s="$TREE/Containers/apache/start.sh" c="$TREE/Containers/apache/Caddyfile" fail=0 f direct proxied
+  s3_files "$s" "$c" || return 1
   for f in "$TREE/Containers/mastercontainer/acme.Caddyfile" "$TREE/Containers/mastercontainer/internal.Caddyfile"; do
     [ "$(grep -cE '^[[:space:]]*protocols tls1\.2 tls1\.3[[:space:]]*$' "$f" 2>/dev/null)" -eq 1 ] \
       || { echo "  $f does not pin 'protocols tls1.2 tls1.3' exactly once in its tls block" >&2; fail=1; }
   done
-  [ "$(grep -cF 'protocols tls1.2 tls1.3' "$TREE/Containers/apache/start.sh" 2>/dev/null)" -eq 1 ] \
-    || { echo "  apache's TLS_STANZA (start.sh) does not pin protocols tls1.2 tls1.3 exactly once" >&2; fail=1; }
+  direct="$(apache_caddyfile 443)" || { echo "  apache's start.sh rendered no Caddyfile for APACHE_PORT=443" >&2; fail=1; }
+  { [ "$(grep -cxE '[[:space:]]*protocols tls1\.2 tls1\.3' <<<"$direct")" -eq 1 ] \
+      && grep -A1 -xE '[[:space:]]*protocols tls1\.2 tls1\.3' <<<"$direct" | grep -qxE '[[:space:]]*issuer acme \{'; } \
+    || { echo "  on 443 apache's ACME stanza does not pin protocols tls1.2 tls1.3 once, right before its issuer" >&2; fail=1; }
+  proxied="$(apache_caddyfile 11000)" || { echo "  apache's start.sh rendered no Caddyfile for APACHE_PORT=11000" >&2; fail=1; }
+  grep -qxE '[[:space:]]*issuer acme \{' <<<"$proxied" \
+    || { echo "  behind a reverse proxy the rendered Caddyfile has no ACME stanza — the render measured nothing" >&2; fail=1; }
+  if grep -nE 'protocols tls' <<<"$proxied"; then
+    echo "  behind a reverse proxy the plain-http site still pins protocols — Caddy refuses it: server listening on [:11000] is HTTP, but attempts to configure TLS connection policies" >&2
+    fail=1
+  fi
   [ "$fail" -eq 0 ]
 }
 
-row 250 "modern TLS only on every ingress — the mastercontainer's ACME and internal listeners pin protocols tls1.2 tls1.3 in their tls blocks and apache's runtime ACME stanza (start.sh, 235's placeholder) carries the same pin; nothing older negotiates (ead3eb6e's security floor, queue-moved by the parity fence)" \
+row 250 "modern TLS only on every TLS ingress — the mastercontainer's ACME and internal listeners pin protocols tls1.2 tls1.3 in their tls blocks, and apache's rendered ACME stanza pins it on 443 and nowhere else: behind a reverse proxy its site is plain http, where Caddy refuses the pin (ead3eb6e's security floor, queue-moved by the parity fence)" \
   modern_tls
 
 if [ "$fails" -gt 0 ]; then
