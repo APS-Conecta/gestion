@@ -14,6 +14,16 @@ phase_begin "05-security" "session hardening + outbound defaults"
 # restore keep session cookies across a browser restart; closing that needs a workstation policy.
 config_system_set remember_login_cookie_lifetime 0 integer
 
+# Automatic logoff: a browser session ends after 900 seconds (15 minutes) of inactivity. The
+# background keepalive ping is switched off because it would renew the session while an idle
+# clinical workstation sits on an open tab, so the logoff would never arrive.
+config_system_set session_lifetime 900 integer
+config_system_set session_keepalive false boolean
+
+# Audit log of administrative actions: admin_audit is shipped with the server but not enabled by
+# default.
+app_enable admin_audit
+
 # Make the lookup-server opt-out explicit. Changes no behaviour today — lookup_server_connector's
 # RetryJob deletes itself while `gs.enabled` is false, which is the default — so this exists to make
 # the opt-out a stated decision rather than an accident of nobody ever flipping that key.

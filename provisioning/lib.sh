@@ -559,6 +559,21 @@ app_restrict_to_groups() {  # APP GROUP [GROUP...]
   fi
 }
 
+# Enable an app globally. Query-before-enable, like app_disable below: the cached `enabled` value
+# is "yes" for a globally enabled app, so a second seed reads it and writes nothing. (An app
+# restricted to groups stores a JSON list there instead and is re-enabled globally by this call;
+# use app_restrict_to_groups for those.)
+app_enable() {  # APPID
+  local app="$1" cur
+  conf_load; cur="$(conf_get app "$app" enabled)" || cur=""
+  if [ "$cur" = "yes" ]; then log "app $app already enabled"; return 0; fi
+  if occ app:enable "$app" >/dev/null 2>&1; then
+    log "app $app -> enabled"
+  else
+    log "FAILED to enable $app"; return 1
+  fi
+}
+
 # Disable an app outright. Reserved for apps that cannot be restricted or whose behaviour is
 # server-side and therefore unaffected by who can see them (see survey_client in 16-app-policy).
 app_disable() {  # APPID
