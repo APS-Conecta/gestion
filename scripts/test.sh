@@ -669,61 +669,27 @@ check bash -c '
   test ! -e tiles.nginx.conf \
     && ! git grep -qE "nginx:alp""ine|TILES_""PORT|:80""84" -- host scripts provisioning'
 
-# --- gate (org review L5-S3, I7): the map-folder default — five literals that must agree ---------
-# /srv/aps-conecta is spelled in five places because each site legitimately owns its own fallback
-# SHAPE: the host CLI's TILES_ARCHIVE, tiles.sh's standalone TILES_HOME, the testbed's
-# APS_TILES_DIR env, env.sh's dotenv fixture, and refresh-basemap's DEST (the serving directory
-# S3 gave it — a literal this pack itself introduced is exactly the drift site the gate exists to
-# pin). Single-sourcing was weighed and rejected (tiles.sh's standalone fallback survives it), so
-# the discipline is image-digests' pair-pin generalized to five: each site's default read out of
-# the file, and they must all say the same path. Shape-anchored, not line-numbered. EXACTLY ONE
-# match per site is required: a renamed variable or a deleted fixture is the
-# empty-glob-goes-green class, red here by name. The negative half runs the same validator over
-# fabricated corpora — one drifted site, one missing site — because a gate that cannot go red is
-# not a gate.
-check python3 -c '
-import re, sys
-SITES = [
-    ("host/tiles.sh",              r"^TILES_HOME=\"\$\{TILES_HOME:-([^\"}\n]+)\}\"$"),
-    ("host/aps-conecta",           r"^TILES_ARCHIVE=\"\$\{TILES_HOME:-([^\"}\n]+)\}/tiles/chile\.pmtiles\"$"),
-    ("scripts/aio-testbed.sh",     r"--env \"APS_TILES_DIR=\$\(dirname \"\$\{TILES_HOME:-([^\"}\n]+)\}/tiles/chile\.pmtiles\"\)\""),
-    ("scripts/env.sh",             r"^TILES_HOME=(/[^\"=\s]+)$"),
-    ("scripts/refresh-basemap.sh", r"^DEST=\"\$\{DEST:-([^\"}\n]+)/tiles/chile\.pmtiles\}\"$"),
-]
-def defaults(corpus):
-    got, errs = {}, []
-    for site, pat in SITES:
-        hits = re.findall(pat, corpus.get(site, ""), re.M)
-        if len(hits) != 1:
-            errs.append(site + ": " + str(len(hits)) + " matches for its map-folder default (need exactly 1)")
-        else:
-            got[site] = hits[0]
-    return got, errs
-def broken(got, errs):
-    return bool(errs) or len(set(got.values())) != 1
-real = {s: open(s, encoding="utf-8").read() for s, _ in SITES}
-got, errs = defaults(real)
-if broken(got, errs):
-    print("the map-folder default is not one value across the five sites that spell it:")
-    for e in errs: print("  " + e)
-    for s, v in sorted(got.items()): print("  " + s + " = " + v)
-    sys.exit(1)
-fab = {
-    "host/tiles.sh":              "TILES_HOME=\"${TILES_HOME:-/srv/prueba}\"\n",
-    "host/aps-conecta":           "TILES_ARCHIVE=\"${TILES_HOME:-/srv/prueba}/tiles/chile.pmtiles\"\n",
-    "scripts/aio-testbed.sh":     "    --env \"APS_TILES_DIR=$(dirname \"${TILES_HOME:-/srv/prueba}/tiles/chile.pmtiles\")\" \\\n",
-    "scripts/env.sh":             "TILES_HOME=/srv/prueba\n",
-    "scripts/refresh-basemap.sh": "DEST=\"${DEST:-/srv/prueba/tiles/chile.pmtiles}\"\n",
-}
-if broken(*defaults(fab)):
-    print("the fabricated agreeing corpus failed"); sys.exit(1)
-fab["scripts/env.sh"] = "TILES_HOME=/srv/otro\n"
-if not broken(*defaults(fab)):
-    print("a drifted literal passed — the disagreement the gate exists for went unseen"); sys.exit(1)
-del fab["scripts/aio-testbed.sh"]
-if not broken(*defaults(fab)):
-    print("a missing site passed — the empty-glob-goes-green class is back"); sys.exit(1)
-print("ok")'
+# --- gate: the tile machinery is retired (territorio draws OpenStreetMap's tile service, ADR-0021) -----
+# The map-folder default used to be spelled in six places that had to agree (org review L5-S3, I7);
+# with the folder gone there is nothing to agree on, and the proof is the absence: the build, the
+# refresh, the timer's two units and the host CLI's map step do not exist, and no knob that fed them
+# survives. The tokens are assembled without their literals so this file is not its own hit. The ONE
+# place the old folder is still named is the host CLI's retirement of a host that ran the earlier
+# bundle (retire_tile_remnants, TILES_REMNANT_DIR) — a different name on purpose, so this grep can stay
+# absolute. APS_TILES_""DIR itself survives in patch 239's brand-gate row (its own change) and in the
+# host self-test's legacy-environment arm, so it is checked only where it would still do work: the
+# run string and the testbed.
+check bash -c '
+  for f in host/tiles.sh scripts/refresh-""basemap.sh host/aps-conecta-tiles.service host/aps-conecta-tiles.timer; do
+    [ ! -e "$f" ] || { echo "$f is back — the tile machinery is retired" >&2; exit 1; }
+  done
+  hits="$(git grep -nE "APS_SKIP_""MAP|TILES_""HOME|TILES_""ARCHIVE|suite_tiles_""dir|refresh-""basemap" -- host scripts provisioning .github || true)"
+  [ -z "$hits" ] || { printf "tile-machinery knobs survive:\n%s\n" "$hits" >&2; exit 1; }
+  hits="$(git grep -nE "APS_TILES_""DIR" -- scripts/aio-testbed.sh scripts/env.sh .github || true)"
+  [ -z "$hits" ] || { printf "the map folder is still handed to the mastercontainer:\n%s\n" "$hits" >&2; exit 1; }
+  out="$(APS_SUITE_TAG=v0.0.0 bash host/aps-conecta run-command 2>&1)"
+  case "$out" in "docker run"*) ;; *) echo "run-command printed no docker run string: $out" >&2; exit 1 ;; esac
+  ! grep -q "APS_TILES_""DIR" <<<"$out"'
 
 # --- the dump + uninstall detectors red-test themselves (docker daemon, no stack) -------------
 if docker info >/dev/null 2>&1; then
@@ -819,7 +785,7 @@ check bash provisioning/usuarios.sh --self-test
 
 echo "== self-tests (hermetic — no docker, no stack) =="
 # The Provisionador's own --self-test (its stub oracle rides --self-test, so the runner needs no
-# docker), the host bundle's, tiles', and the migration tool's run everywhere test.sh runs — every
+# docker), the host bundle's, and the migration tool's run everywhere test.sh runs — every
 # PR, any box — because none needs a stack. The bootstrap's joins them (fixture packages and PATH
 # shims only), and so does the signer's — the one self-test that needs signify installed, because
 # it is real crypto over a throwaway keypair; CI apt-installs the same package the clinic verifies
@@ -831,9 +797,6 @@ st_out="$(python3 scripts/provisionador.py --self-test 2>&1)" \
 hb_out="$(bash host/aps-conecta --self-test 2>&1)" \
   && echo "  ok:   host bundle --self-test ($(printf '%s\n' "$hb_out" | tail -1))" \
   || { echo "  FAIL: host bundle --self-test"; printf '%s\n' "$hb_out" | tail -25; fail=1; }
-tl_out="$(bash host/tiles.sh --self-test 2>&1)" \
-  && echo "  ok:   tiles --self-test ($(printf '%s\n' "$tl_out" | tail -1))" \
-  || { echo "  FAIL: tiles --self-test"; printf '%s\n' "$tl_out" | tail -25; fail=1; }
 ib_out="$(bash install.sh --self-test 2>&1)" \
   && echo "  ok:   bootstrap --self-test ($(printf '%s\n' "$ib_out" | tail -1))" \
   || { echo "  FAIL: bootstrap --self-test"; printf '%s\n' "$ib_out" | tail -25; fail=1; }
@@ -844,26 +807,6 @@ if command -v signify >/dev/null 2>&1; then
 else
   echo "  skipped: package-release --self-test (no signify — sudo apt-get install signify-openbsd)"
 fi
-# The basemap builds with nothing of the install around it — no .env, no site, no suite (R47): step 4
-# runs before anyone chooses a centre. A stub pmtiles writes a sparse 600 MB archive and reports its
-# header, a stub curl finds today's build; every check of the script runs for real, under the
-# strictest umask root may have — the archive must still be world-readable, since apache reads it as
-# uid 33. A header whose bounds miss Isla de Pascua is refused, and the served archive stays as it was.
-check bash -c '
-  repo=$PWD; tmp=$(mktemp -d); trap "rm -rf $tmp" EXIT; mkdir -p "$tmp/bin" "$tmp/srv"
-  cat > "$tmp/bin/pmtiles" <<"STUB"
-#!/usr/bin/env bash
-case "$1" in
-  extract) printf PMTiles > "$3"; truncate -s 600000000 "$3" ;;
-  show) printf "max zoom: 15\nbounds: (long: %s, lat: -56.000000) (long: -66.400000, lat: -17.500000)\n" "${WEST:--110.000000}" ;;
-  tile) head -c 2000 /dev/zero ;;
-esac
-STUB
-  printf "#!/usr/bin/env bash\nexit 0\n" > "$tmp/bin/curl"; chmod +x "$tmp/bin/pmtiles" "$tmp/bin/curl"
-  build() { (umask 077; cd "$tmp" && env -i PATH="$tmp/bin:/usr/bin:/bin" DEST="$tmp/srv/chile.pmtiles" "$@" bash "$repo/scripts/refresh-basemap.sh"); }
-  build >/dev/null 2>&1 && [ "$(stat -c %a "$tmp/srv/chile.pmtiles")" = 644 ] || exit 1
-  echo served > "$tmp/srv/chile.pmtiles"
-  ! build WEST=-80.000000 >/dev/null 2>&1 && [ "$(cat "$tmp/srv/chile.pmtiles")" = served ]'
 mg_out="$(bash scripts/migrate-to-aio.sh --self-test 2>&1)" \
   && echo "  ok:   migrate-to-aio --self-test ($(printf '%s\n' "$mg_out" | tail -1))" \
   || { echo "  FAIL: migrate-to-aio --self-test"; printf '%s\n' "$mg_out" | tail -25; fail=1; }
