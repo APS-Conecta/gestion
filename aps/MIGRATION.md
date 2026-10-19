@@ -187,13 +187,16 @@ longer created with `APS_TILES_DIR`.
 at `/tiles/` would lose its map. Territorio's own release deletes the stored `tile_url` (it logs the
 old value first); this package only stops providing the route.
 
-On a host that ran the earlier bundle, `sudo aps-conecta temporizadores` (a finished install runs it
-too) retires the remnants, idempotently and quietly the second time. Run it right after the update
-lands: until then the old monthly timer would call the removed `aps-conecta tiles` subcommand and show
-as a FAILED unit in `systemctl --failed`. It does this:
+On a host that ran the earlier bundle, the remnants are retired, idempotently and quietly the second
+time, by `sudo aps-conecta temporizadores` (a finished install runs it too) **and by the weekly
+re-provision** (`aps-conecta provision --reponer`, as root). Run `temporizadores` right after the update
+lands if you can; if you do not, the next weekly run closes the gap — but until one of them runs, the
+old monthly timer would call the removed `aps-conecta tiles` subcommand and show as a FAILED unit in
+`systemctl --failed` (at most a week, not a month). It does this:
 
-- `aps-conecta-tiles.timer` is disabled and stopped, the two unit files
-  (`aps-conecta-tiles.service`, `aps-conecta-tiles.timer`) are removed from
+- `aps-conecta-tiles.timer` is disabled and stopped, a refresh that is **already running**
+  (`aps-conecta-tiles.service`) is stopped too — before anything is removed, so it cannot rewrite the
+  archive after the line below says it can be freed — the two unit files are removed from
   `/etc/systemd/system`, and systemd is reloaded once;
 - the old map container `aps-conecta-tiles`, if one is still around, is removed;
 - ONE line says the archive can be freed.
@@ -205,8 +208,10 @@ OpenStreetMap for a while:
     sudo rm -rf /srv/aps-conecta/tiles
 
 The mastercontainer itself is not re-created: one that already carries `APS_TILES_DIR` keeps its
-read-only `/aps-tiles` bind (the setting is sticky in the suite's `configuration.json`) and nothing
-reads it; a new one is created without it, and `/tiles/` answers 404 either way. **Rollback** is a
+read-only `/aps-tiles` bind (the setting is sticky in the suite's `configuration.json`), and while the
+archive is still on disk `https://<host>/tiles/chile.pmtiles` keeps answering 206 — nothing in the suite
+reads it, but it is served; it becomes a 404 once you free the archive. A mastercontainer created from
+this release on has no bind, and `/tiles/` is a 404 from the start. **Rollback** is a
 forward version: the earlier bundle's units and step come back only by installing that package
 again, and the archive, if you kept it, serves again.
 

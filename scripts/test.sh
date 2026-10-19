@@ -837,6 +837,41 @@ CASES
 }
 check testbed_theme_source_cases
 
+# Clean boot (by IP) asserts Territorio carries the site's comuna and NO tile_url. The step is a YAML block
+# no runner has run until CI does, so its script is extracted and run here over a stubbed occ: absent (occ
+# exits 1, as for a key that was never set) and stored-empty (exit 0, no value) both pass; a stored value, a
+# wrong comuna_cut and a missing comuna_name each fail.
+cleanboot_tile_url_cases() {
+  local script tmp rc
+  script="$(awk '/- name: Territorio carries the site.s comuna and no tile_url/ {f=1; next}
+                 f && /run: \|/ {r=1; next}
+                 r && /^          / {sub(/^          /, ""); print; next}
+                 r {exit}' .github/workflows/cleanboot.yml | grep -v 'source scripts/env.sh')"
+  [ -n "$script" ] || { echo "cleanboot: the comuna / tile_url step was not found" >&2; return 1; }
+  tmp="$(mktemp -d)"; printf 'SITE_COMUNA="Comuna Prueba"\nSITE_COMUNA_CUT=09999\n' > "$tmp/site.sh"
+  while IFS='|' read -r tile cut name want; do
+    ( cd "$tmp" && RUNNER_TEMP="$tmp" TILE="$tile" CUT="$cut" NAME="$name" bash -e -o pipefail -c '
+        occ() { [ "$1 $2" = "config:app:get territorio" ] || return 2
+          case "$3" in
+            comuna_cut) printf "%s\n" "$CUT" ;;
+            comuna_name) printf "%s\n" "$NAME" ;;
+            tile_url) case "$TILE" in absent) return 1 ;; empty) return 0 ;; *) printf "%s\n" "$TILE" ;; esac ;;
+          esac; }
+        eval "$1"' _ "$script" ) >/dev/null 2>&1
+    rc=$?
+    case "$want" in pass) [ "$rc" -eq 0 ] ;; fail) [ "$rc" -ne 0 ] ;; esac \
+      || { echo "cleanboot: tile_url=$tile cut=$cut name=$name expected $want, got rc=$rc" >&2; rm -rf "$tmp"; return 1; }
+  done <<'CASES'
+absent|09999|Comuna Prueba|pass
+empty|09999|Comuna Prueba|pass
+https://x/tiles/chile.pmtiles|09999|Comuna Prueba|fail
+absent|01234|Comuna Prueba|fail
+absent|09999||fail
+CASES
+  rm -rf "$tmp"
+}
+check cleanboot_tile_url_cases
+
 # --- the dump + uninstall detectors red-test themselves (docker daemon, no stack) -------------
 if docker info >/dev/null 2>&1; then
   check bash scripts/db-dump.sh --self-test
