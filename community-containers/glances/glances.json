@@ -1,7 +1,7 @@
 {
     "aio_services_v1": [
         {
-            "container_name": "nextcloud-aio-glances",
+            "container_name": "aps-conecta-glances",
             "display_name": "Glances",
             "documentation": "https://github.com/nextcloud/all-in-one/tree/main/community-containers/glances",
             "image": "nicolargo/glances",

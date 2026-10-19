@@ -15,7 +15,7 @@ $dockerActionManager = $container->get(\AIO\Docker\DockerActionManager::class);
 /** @var \AIO\ContainerDefinitionFetcher $containerDefinitionFetcher */
 $containerDefinitionFetcher = $container->get(\AIO\ContainerDefinitionFetcher::class);
 
-$id = 'nextcloud-aio-nextcloud';
+$id = 'aps-conecta-nextcloud';
 $nextcloudContainer = $containerDefinitionFetcher->GetContainerById($id);
 
 $isNextcloudImageOutdated = $dockerActionManager->isNextcloudImageOutdated();

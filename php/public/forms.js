@@ -24,7 +24,7 @@
       disableSpinner()
       showError(xhr.response);
     } else if (xhr.status === 500) {
-      showError("Server error. Please check the mastercontainer logs for details. This page will reload after 10s automatically. Then you can check the mastercontainer logs.");
+      showError("Error del servidor. Revise los registros del asistente para obtener más detalles. Esta página se recargará automáticamente después de 10 s. Entonces podrá revisar los registros del asistente.");
       // Reload after 10s since it is expected that the updated view is shown (e.g. after starting containers)
       setTimeout(function(){
         window.location.reload(true);
@@ -51,7 +51,7 @@
       }
       let xhr = new XMLHttpRequest();
       xhr.addEventListener('load', handleEvent);
-      xhr.addEventListener('error', () => showError("Failed to talk to server."));
+      xhr.addEventListener('error', () => showError("No se pudo comunicar con el servidor."));
       xhr.addEventListener('error', () => disableSpinner());
       xhr.open(form.method, form.getAttribute("action"));
       xhr.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');

@@ -1,7 +1,7 @@
 {
     "aio_services_v1": [
         {
-            "container_name": "nextcloud-aio-notifications",
+            "container_name": "aps-conecta-notifications",
             "display_name": "Notifications",
             "documentation": "https://github.com/nextcloud/all-in-one/tree/main/community-containers/notifications",
             "image": "ghcr.io/szaimen/aio-notifications",

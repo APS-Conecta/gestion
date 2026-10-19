@@ -1,7 +1,7 @@
 {
     "aio_services_v1": [
         {
-            "container_name": "nextcloud-aio-calcardbackup",
+            "container_name": "aps-conecta-calcardbackup",
             "display_name": "Calendar and contacts backup",
             "documentation": "https://github.com/nextcloud/all-in-one/tree/main/community-containers/calcardbackup",
             "image": "waja/calcardbackup",
@@ -13,7 +13,7 @@
                 "BACKUP_DIR=/backup",
                 "NC_DIR=/nextcloud",
                 "NC_HOST=%NC_DOMAIN%",
-                "DB_HOST=nextcloud-aio-database",
+                "DB_HOST=aps-conecta-database",
                 "DB_PORT=5432",
                 "CALCARD_OPTS=-ltm 5"
             ],

@@ -1,14 +1,14 @@
 {
     "aio_services_v1": [
         {
-            "container_name": "nextcloud-aio-joplin-server",
+            "container_name": "aps-conecta-joplin-server",
             "image_tag": "latest",
             "display_name": "Joplin Server",
             "documentation": "https://github.com/nextcloud/all-in-one/tree/main/community-containers/joplin-server",
             "image": "joplin/server",
             "restart": "unless-stopped",
             "depends_on": [
-                "nextcloud-aio-joplin-database"
+                "aps-conecta-joplin-database"
             ],
             "internal_port": "22300",
             "ports": [
@@ -25,14 +25,14 @@
                 "POSTGRES_DATABASE=joplin",
                 "POSTGRES_USER=joplin",
                 "POSTGRES_PORT=5432",
-                "POSTGRES_HOST=nextcloud-aio-joplin-database"
+                "POSTGRES_HOST=aps-conecta-joplin-database"
             ],
             "secrets": [
                 "JOPLIN_DB_PASSWORD"
             ]
         },
         {
-            "container_name": "nextcloud-aio-joplin-database",
+            "container_name": "aps-conecta-joplin-database",
             "image_tag": "18",
             "display_name": "Joplin Database (PostgreSQL)",
             "image": "postgres",

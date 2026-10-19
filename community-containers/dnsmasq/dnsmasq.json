@@ -1,7 +1,7 @@
 {
     "aio_services_v1": [
         {
-            "container_name": "nextcloud-aio-dnsmasq",
+            "container_name": "aps-conecta-dnsmasq",
             "display_name": "Dnsmasq (Local DNS)",
             "documentation": "https://github.com/nextcloud/all-in-one/tree/main/community-containers/dnsmasq",
             "image": "ghcr.io/szaimen/aio-dnsmasq",

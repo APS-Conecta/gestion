@@ -1,7 +1,7 @@
 {
     "aio_services_v1": [
         {
-            "container_name": "nextcloud-aio-scrutiny",
+            "container_name": "aps-conecta-scrutiny",
             "display_name": "Scrutiny",
             "documentation": "https://github.com/nextcloud/all-in-one/tree/main/community-containers/scrutiny",
             "image": "ghcr.io/szaimen/aio-scrutiny",

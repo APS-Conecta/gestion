@@ -24,7 +24,7 @@ export PGPASSWORD="$POSTGRES_PASSWORD"
 while [ -f "$DUMP_DIR/backup-is-running" ]; do
     echo "Waiting for backup container to finish..."
     echo "If this is incorrect because the backup container is not running anymore (because it was forcefully killed), you might delete the lock file:"
-    echo "sudo docker exec --user root nextcloud-aio-database rm /mnt/data/backup-is-running"
+    echo "sudo docker exec --user root aps-conecta-database rm /mnt/data/backup-is-running"
     sleep 10
 done
 

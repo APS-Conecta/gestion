@@ -1,23 +1,49 @@
+/* The suite's brand fonts (patch 070) — Fraunces display + Nunito Sans body, the same pairing
+   the apsconecta theme ships (MAPEO.md section 2), subset to the wizard's measured character
+   universe (Latin + es-CL accents + the punctuation the swept strings use) and instanced to
+   the weights the wizard actually sets: Fraunces as a static 600 for the h1-h3 display, Nunito
+   Sans keeping its weight axis for the 400-800 body range. Local files only — the wizard never
+   fetches a font from anywhere (the acquisition gate's install-time rule, applied to itself). */
+@font-face {
+    font-family: "Fraunces";
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url("fonts/Fraunces.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Nunito Sans";
+    font-style: normal;
+    font-weight: 400 800;
+    font-display: swap;
+    src: url("fonts/NunitoSans.woff2") format("woff2");
+}
+
+h1, h2, h3 {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 600;
+}
+
 :root {
-    --color-nextcloud-blue: #0082c9;
+    --color-nextcloud-blue: #7f21fe;
     --color-nextcloud-logo: var(--color-nextcloud-blue);
     --color-main-background: white;
     --color-input-background: white;
-    --color-main-text: black;
-    --color-main-border: black;
+    --color-main-text: #101828;
+    --color-main-border: #101828;
     --color-main-border-hover: var(--color-main-border);
-    --color-error: #db0606;
-    --color-error-hover: #df2525;
-    --color-error-text: #c20505;
+    --color-error: #ea003e;
+    --color-error-hover: #ff2d5e;
+    --color-error-text: #b4002e;
     --color-success: #46ba61;
-    --color-running: #ffd000;
-    --color-primary-element: #00679e;
-    --color-primary-element-hover: #005a8a;
+    --color-running: #e06f00;
+    --color-primary-element: #7f21fe;
+    --color-primary-element-hover: #6b01fa;
     --color-primary-element-text: #ffffff;
-    --color-primary-element-light: #e5eff5;
-    --color-primary-element-light-hover: #dbe4ea;
-    --color-primary-element-light-text: #00293f;
-    --color-border-maxcontrast: #7d7d7d;
+    --color-primary-element-light: #f0eaff;
+    --color-primary-element-light-hover: #e4dcf7;
+    --color-primary-element-light-text: #5315a8;
+    --color-border-maxcontrast: #485363;
     --color-loader: #f3f3f3;
     --color-disabled: #d3d3d3; /* light gray background for disabled checkboxes */
     --color-border-disabled: #a9a9a9; /* darker gray border for disabled checkboxes */
@@ -46,30 +72,10 @@ Note: Unfortunately, it's not possible to calculate this dynamically using CSS v
     }
 }
 
-[data-theme="dark"] {
-    --color-main-background: #171717;
-    --color-input-background: #ebebeb;
-    --color-main-text: #ebebeb;
-    --color-nextcloud-logo: var(--color-main-text);
-    --color-main-border: var(--color-border-maxcontrast);
-    --color-main-border-hover: var(--color-main-text);
-    --color-error: #ff3333;
-    --color-error-hover: #ff6666;
-    --color-error-text: #ff8080;
-    --color-primary-element:#0091f2;
-    --color-primary-element-hover:#079cff;
-    --color-primary-element-text:#000000;
-    --color-primary-element-light:#14232c;
-    --color-primary-element-light-hover:#1e2d35;
-    --color-primary-element-light-text:#99d3f9;
-    --color-loader: var(--color-border-maxcontrast);
-    --border-hover: var(--border);
-}
-
 html, body {
     padding: 0;
     margin: 0;
-    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Oxygen-Sans, Cantarell, Ubuntu, 'Helvetica Neue', 'Noto Sans', 'Liberation Sans', Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    font-family: 'Nunito Sans', system-ui, -apple-system, 'Segoe UI', Roboto, Oxygen-Sans, Cantarell, Ubuntu, 'Helvetica Neue', 'Noto Sans', 'Liberation Sans', Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
     background-color: var(--color-main-background);
     color: var(--color-main-text);
 }
@@ -255,16 +261,12 @@ svg:not(:has(use)) .fallback-text {
     min-width: 100vw;
     position: fixed;
     width: 100vw;
-    background-image: url("img/jo-myoung-hee-fluid.webp");
+    background-image: url("img/background.svg");
     background-position: center;
     background-repeat: no-repeat;
     background-size: cover;
     box-sizing: border-box;
     overflow: hidden;
-}
-
-html[data-theme="dark"] .wrapper {
-    background-image: url("img/jo-myoung-hee-fluid-dark.webp");
 }
 
 form {
@@ -359,20 +361,6 @@ select:focus {
 
 .password-toggle[aria-pressed="true"]::before {
     mask-image: url("img/eye-off.svg");
-}
-
-/* Scroll bar for dark mode */
-html[data-theme="dark"] ::-webkit-scrollbar {
-    width: 8px; /* Width of the scroll bar */
-}
-
-html[data-theme="dark"] ::-webkit-scrollbar-thumb {
-    background-color: #444; /* Dark mode scrollbar thumb color */
-    border-radius: 4px; /* Rounded corners for the thumb */
-}
-
-html[data-theme="dark"] ::-webkit-scrollbar-track {
-    background-color: #333; /* Dark mode scrollbar track color */
 }
 
 /* Scroll bar for light mode */
@@ -552,78 +540,6 @@ input[type="checkbox"]:disabled:not(:checked) + label {
     background-color: var(--color-main-background);
 }
 
-/* deSEC registration modal (containers page) */
-.modal {
-    position: fixed;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: rgba(0, 0, 0, 0.5);
-    z-index: 3;
-    padding: 1rem;
-}
-
-.modal[hidden] {
-    display: none;
-}
-
-.modal .modal-content {
-    position: relative;
-    width: min(640px, 100%);
-    max-height: calc(100vh - 4rem);
-    background-color: var(--color-main-background);
-    border-radius: var(--border-radius-large);
-    border: solid thin rgb(192, 192, 192);
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
-    overflow: hidden;
-}
-
-.modal .modal-content iframe {
-    display: block;
-    width: 100%;
-    height: min(640px, calc(100vh - 4rem));
-    border: 0;
-}
-
-.modal .modal-close {
-    position: absolute;
-    top: 0.25rem;
-    right: 0.5rem;
-    z-index: 1;
-    background: transparent;
-    border: none;
-    font-size: 1.8rem;
-    line-height: 1;
-    cursor: pointer;
-    color: inherit;
-}
-
-body.modal-open {
-    overflow: hidden;
-}
-
-/* deSEC modal view body (desec.twig) */
-.desec-modal-body,
-.desec-modal-done {
-    padding: 1.5rem;
-}
-
-/* Stack the deSEC form controls, each on its own line, instead of letting the
-   inline-block inputs flow side by side. */
-.desec-modal-body form.xhr {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-}
-
-.desec-modal-body form.xhr input[type="text"],
-.desec-modal-body form.xhr input[type="email"],
-.desec-modal-body form.xhr input[type="password"] {
-    width: 100%;
-    box-sizing: border-box;
-}
-
 .overlay-iframe {
     padding: 1rem;
     font-family: monospace, system-ui, -apple-system, 'Segoe UI', Roboto, Oxygen-Sans, Cantarell, Ubuntu, 'Helvetica Neue', 'Noto Sans', 'Liberation Sans', Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
@@ -651,60 +567,6 @@ body.modal-open {
     100% { transform: rotate(360deg); }
 }
 
-/* General theme button styling */
-#theme-toggle {
-    position: fixed; /* Keep the button in the same position */
-    right: 30px; /* Adjust the distance from the right */
-    bottom: 30px; /* Adjust the distance from the bottom */
-    background-color: transparent; /* Make the background transparent */
-    border: none; /* Remove border */
-    font-size: 36px; /* Adjust font size */
-    cursor: pointer; /* Change cursor to pointer */
-    outline: none;
-    z-index: 9999; /* Ensures the icon is on top of every layer */
-}
-
-/* Icon styling: default state */
-#theme-icon {
-    display: inline-block;
-    border-radius: 50%; /* Round shape */
-    position: relative; /* For the pseudo-element positioning */
-    transition: box-shadow 0.3s, background-color 0.3s; /* Smooth transition for hover effect */
-    opacity: 0.6; /* Slightly transparent by default */
-    filter: grayscale(100%); /* Make the icon black and white */
-}
-
-/* Create the inner glow effect with ::after */
-#theme-icon::after {
-    content: ''; /* Empty content for the pseudo-element */
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 0px; /* Invisible dot */
-    height: 0px; /* Invisible dot */
-    background-color: transparent; /* Invisible by default */
-    border-radius: 50%; /* Circle shape */
-    transform: translate(-50%, -50%); /* Center the dot */
-    transition: box-shadow 0.3s, background-color 0.3s; /* Smooth transition for hover */
-}
-
-/* Hover effect for both light and dark modes */
-#theme-toggle:hover #theme-icon {
-    position: relative; /* Ensures stacking order */
-    filter: grayscale(0%); /* Restore full color */
-    opacity: 1; /* Fully visible on hover */
-}
-
-/* Inner glow when hovered */
-#theme-toggle:hover #theme-icon::after {
-    box-shadow: 0 0 40px 40px rgba(128, 128, 128, 0.4); /* Blur effect from inside */
-    background-color: rgba(128, 128, 128, 0.2); /* Light glow inside */
-}
-
-/* Remove hover effects when not hovering */
-#theme-toggle:not(:hover) #theme-icon {
-    opacity: 0.6; /* Slightly transparent */
-}
 /* Office Suite Feature Cards */
 .office-suite-cards {
     display: grid;
@@ -737,21 +599,13 @@ body.modal-open {
 
 .office-card:hover {
     border-color: var(--color-primary-element);
-    box-shadow: 0 4px 12px rgba(0, 130, 201, 0.15);
+    box-shadow: 0 4px 12px rgba(127, 33, 254, 0.15);
     transform: translateY(-2px);
 }
 
-#office-collabora:checked + .office-card,
-#office-onlyoffice:checked + .office-card,
 #office-eurooffice:checked + .office-card {
     border-color: var(--color-nextcloud-blue);
-    background: linear-gradient(135deg, rgba(0, 130, 201, 0.08) 0%, rgba(0, 130, 201, 0.02) 100%);
-}
-
-[data-theme="dark"] #office-collabora:checked + .office-card,
-[data-theme="dark"] #office-onlyoffice:checked + .office-card,
-[data-theme="dark"] #office-eurooffice:checked + .office-card {
-    background: linear-gradient(135deg, rgba(0, 145, 242, 0.15) 0%, rgba(0, 145, 242, 0.03) 100%);
+    background: linear-gradient(135deg, rgba(127, 33, 254, 0.08) 0%, rgba(127, 33, 254, 0.02) 100%);
 }
 
 .office-card-header {
@@ -781,8 +635,6 @@ body.modal-open {
     display: none;
 }
 
-#office-collabora:checked + .office-card .office-checkmark,
-#office-onlyoffice:checked + .office-card .office-checkmark,
 #office-eurooffice:checked + .office-card .office-checkmark {
     display: block;
 }
@@ -839,35 +691,52 @@ body.modal-open {
     transform: translateX(3px);
 }
 
-.office-none-card {
-    text-align: center;
-    margin: 12px 0 20px 0;
+/* Handoff cards (patch 070): the wizard's job ends where the host bundle's begins. The Paso-1
+   card carries the provision command (never a URL or port — the Provisionador prints its own
+   address at bind time); the territorio card is the pending-state contract until S12 unblocks
+   and a later suite release replaces it. */
+.paso-card {
+    border: 2px solid var(--color-primary-element);
+    border-radius: var(--border-radius-large);
+    background: linear-gradient(135deg, rgba(127, 33, 254, 0.08) 0%, rgba(127, 33, 254, 0.02) 100%);
+    padding: 16px 20px;
+    margin: 25px 0;
 }
 
-.office-none-label {
-    display: inline-flex;
-    align-items: center;
-    font-size: 13px;
-    color: var(--color-primary-element);
-    cursor: pointer;
-    opacity: 0.7;
-    transition: opacity 0.2s ease;
-    padding: 8px 12px;
+.paso-card code {
+    font-family: monospace;
+    font-size: 15px;
+    background-color: var(--color-main-background);
+    border: 1px solid var(--color-border-maxcontrast);
     border-radius: var(--border-radius);
+    padding: 2px 10px;
+    display: inline-block;
 }
 
-.office-none-label:hover {
-    opacity: 1;
-    background-color: var(--color-primary-element-light);
-}
-
-#office-none:checked + .office-none-label {
-    opacity: 1;
-    font-weight: 600;
-}
-
-.inline-details {
-    display: inline;
+/* Phones: the setup/login card flows in the page instead of floating at a fixed 500px (a flow-root
+   wrapper so its margin does not collapse into a band), the header's padding stays on the screen,
+   and the containers page keeps its text column (the 50px gutters ate a third of a 360px screen). */
+@media only screen and (max-width: 640px) {
+    :root {
+        --main-padding: 16px;
+    }
+    header {
+        box-sizing: border-box;
+    }
+    .wrapper {
+        position: static;
+        overflow: visible;
+        width: auto;
+        min-width: 0;
+        display: flow-root;
+    }
+    .login {
+        position: static;
+        transform: none;
+        width: auto;
+        margin: 16px;
+        padding: 24px 16px;
+    }
 }
 
 /* Responsive adjustments for mobile */

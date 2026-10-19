@@ -150,7 +150,7 @@ readonly class DockerActionManager {
 
     public function deleteBorgBackupConfig(): void {
         // Delete the borgbackup container
-        $id = 'nextcloud-aio-borgbackup';
+        $id = 'aps-conecta-borgbackup';
         $borgbackupContainer = $this->containerDefinitionFetcher->GetContainerById($id);
         $this->DeleteContainer($borgbackupContainer);
 
@@ -251,7 +251,7 @@ readonly class DockerActionManager {
         $volumes = [];
         foreach ($container->volumes->GetVolumes() as $volume) {
             // // NEXTCLOUD_MOUNT gets added via bind-mount later on
-            // if ($container->identifier === 'nextcloud-aio-nextcloud') {
+            // if ($container->identifier === 'aps-conecta-nextcloud') {
             //     if ($volume->name === $this->configurationManager->nextcloudMount) {
             //         continue;
             //     }
@@ -279,7 +279,7 @@ readonly class DockerActionManager {
 
         $envs = $container->containerEnvironmentVariables->GetVariables();
         // Special thing for the nextcloud container
-        if ($container->identifier === 'nextcloud-aio-nextcloud') {
+        if ($container->identifier === 'aps-conecta-nextcloud') {
             $envs[] = $this->GetAllNextcloudExecCommands();
         }
         foreach ($envs as $key => $env) {
@@ -361,7 +361,7 @@ readonly class DockerActionManager {
             $devices[] = ["PathOnHost" => $device, "PathInContainer" => $device, "CgroupPermissions" => "rwm"];
             if ($device === '/dev/dri') {
                 // Add the render device's group as a supplemental group so that non-root
-                // containers (e.g. nextcloud-aio-talk-recording) can access the device.
+                // containers (e.g. aps-conecta-talk-recording) can access the device.
                 // The GID is detected during mastercontainer startup when /dev/dri is bind-mounted.
                 $gid = $this->configurationManager->driDeviceGid;
                 if ($gid !== '' && !in_array($gid, $groupAdd, true)) {
@@ -455,7 +455,7 @@ readonly class DockerActionManager {
         $mounts = [];
 
         // Special things for the backup container which should not be exposed in the containers.json
-        if (str_starts_with($container->identifier, 'nextcloud-aio-borgbackup')) {
+        if (str_starts_with($container->identifier, 'aps-conecta-borgbackup')) {
             // Additional backup directories
             foreach ($this->getAllBackupVolumes() as $additionalBackupVolumes) {
                 if ($additionalBackupVolumes !== '') {
@@ -464,7 +464,7 @@ readonly class DockerActionManager {
             }
 
             // Make volumes read only in case of borgbackup container. The viewer makes them writeable
-            $isReadOnly = $container->identifier === 'nextcloud-aio-borgbackup';
+            $isReadOnly = $container->identifier === 'aps-conecta-borgbackup';
 
             foreach ($this->configurationManager->getAdditionalBackupDirectoriesArray() as $additionalBackupDirectories) {
                 if ($additionalBackupDirectories !== '') {
@@ -477,11 +477,11 @@ readonly class DockerActionManager {
             }
 
         // Special things for the talk container which should not be exposed in the containers.json
-        } elseif ($container->identifier === 'nextcloud-aio-talk') {
+        } elseif ($container->identifier === 'aps-conecta-talk') {
             // This is needed due to a bug in libwebsockets used in Janus which cannot handle unlimited ulimits
             $requestBody['HostConfig']['Ulimits'] = [["Name" => "nofile", "Hard" => 200000, "Soft" => 200000]];
             // // Special things for the nextcloud container which should not be exposed in the containers.json
-            // } elseif ($container->identifier === 'nextcloud-aio-nextcloud') {
+            // } elseif ($container->identifier === 'aps-conecta-nextcloud') {
             //     foreach ($container->volumes->GetVolumes() as $volume) {
             //         if ($volume->name !== $this->configurationManager->nextcloudMount) {
             //             continue;
@@ -490,18 +490,18 @@ readonly class DockerActionManager {
             //     }
 
         // Special things for the jellyfin community container
-        } elseif ($container->identifier === 'nextcloud-aio-jellyfin') {
-            $lldapIp = NetworkHelper::resolveHostname('nextcloud-aio-lldap');
-            if ($lldapIp !== 'nextcloud-aio-lldap') {
-                $requestBody['HostConfig']['ExtraHosts'] = ['nextcloud-aio-lldap:' . $lldapIp];
+        } elseif ($container->identifier === 'aps-conecta-jellyfin') {
+            $lldapIp = NetworkHelper::resolveHostname('aps-conecta-lldap');
+            if ($lldapIp !== 'aps-conecta-lldap') {
+                $requestBody['HostConfig']['ExtraHosts'] = ['aps-conecta-lldap:' . $lldapIp];
             }
 
         // Special things for the caddy community container
-        } elseif ($container->identifier === 'nextcloud-aio-caddy') {
+        } elseif ($container->identifier === 'aps-conecta-caddy') {
             $requestBody['HostConfig']['ExtraHosts'] = ['host.docker.internal:host-gateway'];
 
         // Special things for the collabora container which should not be exposed in the containers.json
-        } elseif ($container->identifier === 'nextcloud-aio-collabora') {
+        } elseif ($container->identifier === 'aps-conecta-collabora') {
             if (!$this->configurationManager->collaboraSeccompDisabled) {
                 // Load reference seccomp profile for collabora
                 $seccompProfile = (string)file_get_contents(DataConst::GetCollaboraSeccompProfilePath());
@@ -519,7 +519,7 @@ readonly class DockerActionManager {
                 $requestBody['Cmd'] = preg_split($regEx, rtrim($this->configurationManager->collaboraAdditionalOptions));
             }
         // Special things for the scrutiny container which should not be exposed in the containers.json
-        } elseif ($container->identifier === 'nextcloud-aio-scrutiny') {
+        } elseif ($container->identifier === 'aps-conecta-scrutiny') {
             // Allow it to access block devices (e.g. /dev/sda for SATA drives) and
             // character devices (needed for NVMe drives: smartctl reads their SMART data
             // via admin passthrough ioctls on the NVMe controller character device
@@ -576,7 +576,7 @@ readonly class DockerActionManager {
 
     public function PullImage(Container $container, bool $pullImage = true, ?\Closure $addToStreamingResponseBody = null): void {
         // Skip database image pull if the last shutdown was not clean
-        if ($container->identifier === 'nextcloud-aio-database') {
+        if ($container->identifier === 'aps-conecta-database') {
             if ($this->GetDatabasecontainerExitCode() > 0) {
                 $pullImage = false;
                 error_log('Not pulling the latest database image because the container was not correctly shut down.');
@@ -683,7 +683,7 @@ readonly class DockerActionManager {
         if (!$this->configurationManager->wasStartButtonClicked) {
             return false;
         }
-        $id = 'nextcloud-aio-apache';
+        $id = 'aps-conecta-apache';
 
         if ($this->isContainerUpdateAvailable($id) !== "") {
             return true;
@@ -706,7 +706,7 @@ readonly class DockerActionManager {
     }
 
     private function getAllBackupVolumes(): array {
-        $id = 'nextcloud-aio-apache';
+        $id = 'aps-conecta-apache';
         $backupVolumesArray = explode(' ', $this->getBackupVolumes($id));
         return array_unique($backupVolumesArray);
     }
@@ -725,7 +725,7 @@ readonly class DockerActionManager {
     }
 
     private function GetAllNextcloudExecCommands(): string {
-        $id = 'nextcloud-aio-apache';
+        $id = 'aps-conecta-apache';
         return 'NEXTCLOUD_EXEC_COMMANDS=' . $this->GetNextcloudExecCommands($id);
     }
 
@@ -785,8 +785,8 @@ readonly class DockerActionManager {
             if (count($imageNameArray) === 2) {
                 $imageName = $imageNameArray[0];
             } else {
-                error_log("Unexpected image name was found when getting the current image name of the mastercontainer. You probably did not follow the documentation correctly. Changing the image name to the default 'ghcr.io/nextcloud-releases/all-in-one'.");
-                $imageName = 'ghcr.io/nextcloud-releases/all-in-one';
+                error_log("Unexpected image name was found when getting the current image name of the mastercontainer. You probably did not follow the documentation correctly. Changing the image name to the default 'ghcr.io/aps-conecta/all-in-one'.");
+                $imageName = 'ghcr.io/aps-conecta/all-in-one';
             }
             apcu_add($cacheKey, $imageName);
             return $imageName;
@@ -996,11 +996,11 @@ readonly class DockerActionManager {
         // Add a secondary alias for domaincheck container, to keep it as similar to actual apache controller as possible.
         // If a reverse-proxy is relying on container name as hostname this allows it to operate as usual and still validate the domain
         // The domaincheck container and apache container are never supposed to be active at the same time because they use the same APACHE_PORT anyway, so this doesn't add any new constraints.
-        $alias = ($container->identifier === 'nextcloud-aio-domaincheck') ? 'nextcloud-aio-apache' : '';
+        $alias = ($container->identifier === 'aps-conecta-domaincheck') ? 'aps-conecta-apache' : '';
 
         $this->ConnectContainerIdToNetwork($container->identifier, $container->internalPorts, alias: $alias);
 
-        if ($container->identifier === 'nextcloud-aio-apache' || $container->identifier === 'nextcloud-aio-domaincheck') {
+        if ($container->identifier === 'aps-conecta-apache' || $container->identifier === 'aps-conecta-domaincheck') {
             $apacheAdditionalNetwork = $this->configurationManager->getApacheAdditionalNetwork();
             if ($apacheAdditionalNetwork !== '') {
                 $this->ConnectContainerIdToNetwork($container->identifier, $container->internalPorts, $apacheAdditionalNetwork, false, $alias);
@@ -1025,7 +1025,7 @@ readonly class DockerActionManager {
     }
 
     public function GetBackupcontainerExitCode(): int {
-        $containerName = 'nextcloud-aio-borgbackup';
+        $containerName = 'aps-conecta-borgbackup';
         $url = $this->BuildApiUrl(sprintf('containers/%s/json', urlencode($containerName)));
         try {
             $response = $this->sendHttpRequest('GET', $url);
@@ -1047,7 +1047,7 @@ readonly class DockerActionManager {
     }
 
     public function GetDatabasecontainerExitCode(): int {
-        $containerName = 'nextcloud-aio-database';
+        $containerName = 'aps-conecta-database';
         $url = $this->BuildApiUrl(sprintf('containers/%s/json', urlencode($containerName)));
         try {
             $response = $this->sendHttpRequest('GET', $url);
@@ -1069,7 +1069,7 @@ readonly class DockerActionManager {
     }
 
     public function isLoginAllowed(): bool {
-        $id = 'nextcloud-aio-apache';
+        $id = 'aps-conecta-apache';
         $apacheContainer = $this->containerDefinitionFetcher->GetContainerById($id);
         if ($this->GetContainerStartingState($apacheContainer) === ContainerState::Running) {
             return false;
@@ -1078,7 +1078,7 @@ readonly class DockerActionManager {
     }
 
     public function isBackupContainerRunning(): bool {
-        $id = 'nextcloud-aio-borgbackup';
+        $id = 'aps-conecta-borgbackup';
         $backupContainer = $this->containerDefinitionFetcher->GetContainerById($id);
         if ($this->GetContainerRunningState($backupContainer) === ContainerState::Running) {
             return true;
@@ -1108,7 +1108,7 @@ readonly class DockerActionManager {
     }
 
     public function isNextcloudImageOutdated(): bool {
-        $createdTime = $this->GetCreatedTimeOfNextcloudImage('ghcr.io/nextcloud-releases/aio-nextcloud');
+        $createdTime = $this->GetCreatedTimeOfNextcloudImage('ghcr.io/aps-conecta/aio-nextcloud');
 
         if ($createdTime === null) {
             $createdTime = $this->GetCreatedTimeOfNextcloudImage('nextcloud/aio-nextcloud');
@@ -1136,7 +1136,7 @@ readonly class DockerActionManager {
     }
 
     public function RunNextcloudUpgradeToLatestMajor(\Closure $addToStreamingResponseBody): void {
-        $container = $this->containerDefinitionFetcher->GetContainerById('nextcloud-aio-nextcloud');
+        $container = $this->containerDefinitionFetcher->GetContainerById('aps-conecta-nextcloud');
         $this->execCommandInContainer($container, ['bash', '/upgrade-latest-major.sh'], $addToStreamingResponseBody);
     }
 

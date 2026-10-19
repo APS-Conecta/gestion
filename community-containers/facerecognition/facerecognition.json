@@ -1,7 +1,7 @@
 {
     "aio_services_v1": [
         {
-            "container_name": "nextcloud-aio-facerecognition",
+            "container_name": "aps-conecta-facerecognition",
             "display_name": "Computing container for facerecognition",
             "documentation": "https://github.com/nextcloud/all-in-one/tree/main/community-containers/facerecognition",
             "image": "matiasdelellis/facerecognition-external-model",
@@ -23,7 +23,7 @@
             "nextcloud_exec_commands": [
                 "php /var/www/html/occ app:install facerecognition",
                 "php /var/www/html/occ app:enable facerecognition", 
-                "php /var/www/html/occ config:system:set facerecognition.external_model_url --value nextcloud-aio-facerecognition:5000",
+                "php /var/www/html/occ config:system:set facerecognition.external_model_url --value aps-conecta-facerecognition:5000",
                 "php /var/www/html/occ config:system:set facerecognition.external_model_api_key --value %FACERECOGNITION_API_KEY%",
                 "php /var/www/html/occ face:setup -m 5",
                 "php /var/www/html/occ face:setup -M 1G",

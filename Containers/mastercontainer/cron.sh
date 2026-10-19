@@ -60,9 +60,9 @@ while true; do
     # Remove sessions older than 24h
     find "/mnt/docker-aio-config/session/" -mindepth 1 -mmin +1440 -delete
 
-    # Remove nextcloud-aio-domaincheck container
-    if su-exec www-data docker ps --format "{{.Names}}" --filter "status=exited" | grep -q "^nextcloud-aio-domaincheck$"; then
-        su-exec www-data docker container remove nextcloud-aio-domaincheck
+    # Remove aps-conecta-domaincheck container
+    if su-exec www-data docker ps --format "{{.Names}}" --filter "status=exited" | grep -q "^aps-conecta-domaincheck$"; then
+        su-exec www-data docker container remove aps-conecta-domaincheck
     fi
 
     # Remove dangling images (support both deprecated label-schema and OCI standard vendor label)

@@ -15,12 +15,12 @@ test('Initial setup persists default container selections', async ({ page: setup
   }, { timeout: 30_000 }).toMatchObject({
     officeSuite: 'eurooffice',
     isClamavEnabled: false,
-    isTalkEnabled: true,
+    isTalkEnabled: false,
     isTalkRecordingEnabled: false,
-    isImaginaryEnabled: true,
+    isImaginaryEnabled: false,
     isFulltextsearchEnabled: false,
     isDockerSocketProxyEnabled: false,
     isHarpEnabled: false,
-    isWhiteboardEnabled: true,
+    isWhiteboardEnabled: false,
   });
 });

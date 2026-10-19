@@ -1,7 +1,7 @@
 {
     "aio_services_v1": [
         {
-            "container_name": "nextcloud-aio-nextcloud-exporter",
+            "container_name": "aps-conecta-nextcloud-exporter",
             "display_name": "Prometheus Nextcloud Exporter",
             "documentation": "https://github.com/nextcloud/all-in-one/tree/main/community-containers/nextcloud-exporter",
             "image": "ghcr.io/xperimental/nextcloud-exporter",

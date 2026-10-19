@@ -1,14 +1,8 @@
 "use strict";
 
-// Apply the saved theme immediately to avoid a flash of the wrong theme.
-try { document.documentElement.setAttribute('data-theme', localStorage.getItem('theme') ?? ''); } catch (e) {}
-
-// React when the user toggles the theme on the parent page while this page is
-// open in an iframe.  localStorage.setItem() fires a 'storage' event on every
-// other window / frame that shares the same origin, so we can keep in sync
-// without the parent having to know about us.
-window.addEventListener('storage', (e) => {
-    if (e.key === 'theme') {
-        document.documentElement.setAttribute('data-theme', e.newValue ?? '');
-    }
-});
+// Reskin one-shot (patch 070): the dark theme is gone from the suite, but a `theme` key saved
+// by the pre-reskin wizard would keep re-applying `dark` on every later load. Clear it once and
+// apply nothing: the light theme is the only theme. This file is still loaded from every surface
+// that ever applied a theme — log.twig and the streaming heredoc in DockerController.php, which
+// references this same docroot file and stays byte-identical and inert (the zero-PHP rule).
+try { localStorage.removeItem('theme'); } catch (e) {}

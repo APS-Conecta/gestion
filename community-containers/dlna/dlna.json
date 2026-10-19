@@ -1,7 +1,7 @@
 {
     "aio_services_v1": [
         {
-            "container_name": "nextcloud-aio-dlna",
+            "container_name": "aps-conecta-dlna",
             "display_name": "DLNA",
             "documentation": "https://github.com/nextcloud/all-in-one/tree/main/community-containers/dlna",
             "image": "thanek/nextcloud-dlna",
@@ -9,7 +9,7 @@
             "internal_port": "host",
             "restart": "unless-stopped",
             "depends_on": [
-                "nextcloud-aio-database"
+                "aps-conecta-database"
             ],
             "environment": [
                 "NC_DOMAIN=%NC_DOMAIN%",

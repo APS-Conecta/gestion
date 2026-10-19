@@ -17,6 +17,20 @@ ENV AIO_TOKEN=123456
 ENV AIO_URL=localhost
 # AIO settings end # Do not remove or change this line!
 
+# APS Conecta: apps arrive baked into the image (VENDOR-pinned tarballs), so the app store
+# is disabled at the image level. NC_-prefixed env vars become config entries in the
+# shipped server (lib/private/Config.php ENV_PREFIX) and appstoreenabled is read via
+# getSystemValueBool, so "0" casts to false and the store legs fail fast. With the store
+# on, occ upgrade re-downloads every enabled app and no VENDOR pin can hold.
+ENV NC_appstoreenabled="0"
+
+# APS Conecta: the skeleton posture, baked the same way (the compose stack's own key,
+# compose.yaml's NC_skeletondirectory=""). The AIO entrypoint forwards no skeleton env and
+# the wizard's admin is created at install time, before any seed phase can write config —
+# the NC_ channel is read before config.php, so "" arrives in time and the stock vendor
+# files never copy into the first account. "" and not unset: unset inherits the image default.
+ENV NC_skeletondirectory=""
+
 COPY --chmod=775 Containers/nextcloud/*.sh /
 COPY --chmod=774 Containers/nextcloud/upgrade.exclude /upgrade.exclude
 COPY Containers/nextcloud/config/*.php /
@@ -281,6 +295,22 @@ RUN set -ex; \
     \
     mkdir -p /nc-updater; \
     chmod -R 777 /nc-updater
+
+# APS Conecta (patch 030): the baked app set + the apsconecta theme. The Images workflow's
+# bake step (scripts/bake.sh on the fork's main — fork-infra never rides aps/main) unpacks
+# gestion's VENDOR-gated tarballs into aps-bake/ before this build: sha256-gated, the
+# eurooffice white-label patches applied with the three-outcome rule, signature.json dropped
+# for patched apps, the white-label asserts the office smoke used to own. The context path is
+# workflow-materialized — a build without it fails HERE, loudly, never a silent unbaked green.
+COPY aps-bake/custom_apps/ /usr/src/nextcloud/custom_apps/
+COPY aps-bake/themes/apsconecta/ /usr/src/nextcloud/themes/apsconecta
+
+# APS Conecta: the NC_ env channel (020's store-off, 030's skeleton) is only real while the
+# shipped server harvests NC_-prefixed env vars (lib/private/Config.php's ENV_PREFIX). A
+# server bump that renames it would flip the store back on with every repo gate still green —
+# the build dies here instead, naming the anchor to re-adopt.
+RUN grep -q "ENV_PREFIX = 'NC_'" /usr/src/nextcloud/lib/private/Config.php \
+    || { echo "FATAL: the shipped server no longer harvests NC_ env vars — 020's store-off bake and 030's skeleton posture are fiction; re-anchor against the new server" >&2; exit 1; }
 
 # hadolint ignore=DL3002
 USER root:root

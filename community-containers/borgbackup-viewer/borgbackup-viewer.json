@@ -1,7 +1,7 @@
 {
     "aio_services_v1": [
         {
-            "container_name": "nextcloud-aio-borgbackup-viewer",
+            "container_name": "aps-conecta-borgbackup-viewer",
             "image_tag": "v1",
             "display_name": "Borg Backup Viewer",
             "documentation": "https://github.com/nextcloud/all-in-one/tree/main/community-containers/borgbackup-viewer",
@@ -15,7 +15,7 @@
                 }
             ],
             "environment": [
-                "BORG_HOST_ID=nextcloud-aio-borgbackup-viewer",
+                "BORG_HOST_ID=aps-conecta-borgbackup-viewer",
                 "WEB_AUTHENTICATION_USERNAME=nextcloud",
                 "WEB_AUTHENTICATION_PASSWORD=%BORGBACKUP_VIEWER_PASSWORD%",
                 "WEB_LISTENING_PORT=5801",

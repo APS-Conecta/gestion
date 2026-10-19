@@ -389,6 +389,14 @@ EOF
                 exit 1
             fi
 
+            # APS (R28): the suite announces nothing through nextcloud_announcements; disabled before its
+            # first cron run fetches pushfeed.nextcloud.com
+            php /var/www/html/occ app:disable nextcloud_announcements
+
+            # APS (R31): a fresh install has no legacy circles tables; marking circles' 22 migration done
+            # skips the probe of oc_circle_circles that the repair below would log as an error
+            php /var/www/html/occ config:app:set circles migration_22 --value=1
+
             # Try to force generation of appdata dir:
             php /var/www/html/occ maintenance:repair
 
@@ -739,7 +747,7 @@ fi
 
 # Get ipv4-address of Nextcloud
 if [ -z "$NEXTCLOUD_HOST" ]; then
-    export NEXTCLOUD_HOST="nextcloud-aio-nextcloud"
+    export NEXTCLOUD_HOST="aps-conecta-nextcloud"
 fi
 IPv4_ADDRESS="$(dig "$NEXTCLOUD_HOST" A +short +search | head -1)" 
 # Bring it in CIDR notation 
@@ -757,7 +765,7 @@ php /var/www/html/occ config:app:set notify_push base_endpoint --value="https://
 # Collabora
 if [ "$COLLABORA_ENABLED" = 'yes' ]; then
     set -x
-    if echo "$COLLABORA_HOST" | grep -q "nextcloud-.*-collabora"; then
+    if echo "$COLLABORA_HOST" | grep -q "aps-conecta-collabora"; then
         COLLABORA_HOST="$NC_DOMAIN"
     fi
     if [ "$AIO_LOG_LEVEL" != 'debug' ]; then
@@ -824,7 +832,7 @@ fi
 # OnlyOffice
 if [ "$ONLYOFFICE_ENABLED" = 'yes' ]; then
     # Determine OnlyOffice port based on host pattern
-    if echo "$ONLYOFFICE_HOST" | grep -q "nextcloud-.*-onlyoffice"; then
+    if echo "$ONLYOFFICE_HOST" | grep -q "aps-conecta-onlyoffice"; then
         ONLYOFFICE_PORT=80
     else
         ONLYOFFICE_PORT=443
@@ -856,7 +864,7 @@ if [ "$ONLYOFFICE_ENABLED" = 'yes' ]; then
         php /var/www/html/occ config:system:set onlyoffice jwt_header --value="AuthorizationJwt"
 
         # Adjust the OnlyOffice host if using internal pattern
-        if echo "$ONLYOFFICE_HOST" | grep -q "nextcloud-.*-onlyoffice"; then
+        if echo "$ONLYOFFICE_HOST" | grep -q "aps-conecta-onlyoffice"; then
             ONLYOFFICE_HOST="$NC_DOMAIN/onlyoffice"
             export ONLYOFFICE_HOST
         fi
@@ -875,8 +883,14 @@ fi
 
 # EuroOffice
 if [ "$EUROOFFICE_ENABLED" = 'yes' ]; then
+    # Nextcloud 34 ships a first-party `office` overview app enabled by default. It is not this
+    # suite's editor (that is `eurooffice`, which has no nav entry and engages when a document is
+    # opened from Files) and is not wired to it — no editor-url state is ever injected, so the
+    # "Office" tile is an overview that bounces to /f/{fileid}. One office surface per install:
+    # disabled whenever the suite's office app is EuroOffice.
+    php /var/www/html/occ app:disable office
     # Determine EuroOffice port based on host pattern
-    if echo "$EUROOFFICE_HOST" | grep -q "nextcloud-.*-eurooffice"; then
+    if echo "$EUROOFFICE_HOST" | grep -q "aps-conecta-eurooffice"; then
         EUROOFFICE_PORT=80
     else
         EUROOFFICE_PORT=443
@@ -908,7 +922,7 @@ if [ "$EUROOFFICE_ENABLED" = 'yes' ]; then
         php /var/www/html/occ config:system:set eurooffice jwt_header --value="AuthorizationJwt"
 
         # Adjust the EuroOffice host if using internal pattern
-        if echo "$EUROOFFICE_HOST" | grep -q "nextcloud-.*-eurooffice"; then
+        if echo "$EUROOFFICE_HOST" | grep -q "aps-conecta-eurooffice"; then
             EUROOFFICE_HOST="$NC_DOMAIN/eurooffice"
             export EUROOFFICE_HOST
         fi
@@ -934,7 +948,7 @@ fi
 # Talk
 if [ "$TALK_ENABLED" = 'yes' ]; then
     set -x
-    if [ -z "$TALK_HOST" ] || echo "$TALK_HOST" | grep -q "nextcloud-.*-talk"; then
+    if [ -z "$TALK_HOST" ] || echo "$TALK_HOST" | grep -q "aps-conecta-talk"; then
         TALK_HOST="$NC_DOMAIN"
         HPB_PATH="/standalone-signaling/"
     fi

@@ -244,7 +244,7 @@ $app->get('/setup', function (Request $request, Response $response, array $args)
 $app->get('/log', function (Request $request, Response $response, array $args) use ($container) {
     $params = $request->getQueryParams();
     $id = $params['id'] ?? '';
-    if (!str_starts_with($id, 'nextcloud-aio-')) {
+    if (!str_starts_with($id, 'aps-conecta-') && $id !== 'nextcloud-aio-mastercontainer') {
         throw new DI\NotFoundException();
     }
     $view = Twig::fromRequest($request);

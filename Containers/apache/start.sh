@@ -82,6 +82,21 @@ if [ -z "$ADDITIONAL_TRUSTED_DOMAIN" ]; then
 fi
 echo "$CADDYFILE" > /tmp/Caddyfile
 
+# APS (R22): the installer's own certificate when one is mounted (an install by IP), else upstream's
+# ACME issuer. Only on 443: behind a reverse proxy (APACHE_PORT != 443) the site is plain http.
+if [ "$APACHE_PORT" = '443' ] && [ -r /aps-tls/tls.crt ] && [ -r /aps-tls/tls.key ]; then
+    TLS_STANZA='tls /aps-tls/tls.crt /aps-tls/tls.key'
+    DEFAULT_SNI="default_sni $NC_DOMAIN"
+else
+    TLS_STANZA='tls {\n\t\tissuer acme {\n\t\t\tprofile shortlived\n\t\t\tdisable_http_challenge\n\t\t}\n\t}'
+    DEFAULT_SNI=''
+    if [ -d /aps-tls ]; then
+        echo "APS_TLS_DIR is mounted, but its tls.crt and tls.key are not both readable by uid $(id -u) or APACHE_PORT is not 443: the ACME issuer stays"
+    fi
+fi
+CADDYFILE="$(sed -e "s|# tls placeholder|$TLS_STANZA|" -e "s|# default_sni placeholder|$DEFAULT_SNI|" -e 's|issuer acme {|protocols tls1.2 tls1.3\n\t\tissuer acme {|' /tmp/Caddyfile)"
+echo "$CADDYFILE" > /tmp/Caddyfile
+
 # Fix the Caddyfile format
 caddy fmt --overwrite /tmp/Caddyfile
 

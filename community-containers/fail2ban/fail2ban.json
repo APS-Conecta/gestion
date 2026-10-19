@@ -1,7 +1,7 @@
 {
     "aio_services_v1": [
         {
-            "container_name": "nextcloud-aio-fail2ban",
+            "container_name": "aps-conecta-fail2ban",
             "display_name": "Fail2ban",
             "documentation": "https://github.com/nextcloud/all-in-one/tree/main/community-containers/fail2ban",
             "image": "ghcr.io/szaimen/aio-fail2ban",

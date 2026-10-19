@@ -1,7 +1,7 @@
 {
     "aio_services_v1": [
         {
-            "container_name": "nextcloud-aio-jellyseerr",
+            "container_name": "aps-conecta-jellyseerr",
             "display_name": "Seerr",
             "documentation": "https://github.com/nextcloud/all-in-one/tree/main/community-containers/jellyseerr",
             "image": "ghcr.io/seerr-team/seerr",

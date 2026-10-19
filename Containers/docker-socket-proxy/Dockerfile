@@ -3,7 +3,7 @@ FROM haproxy:3.4.6-alpine
 
 # hadolint ignore=DL3002
 USER root:root
-ENV NEXTCLOUD_HOST=nextcloud-aio-nextcloud
+ENV NEXTCLOUD_HOST=aps-conecta-nextcloud
 RUN set -ex; \
     apk upgrade --no-cache -a; \
     apk add --no-cache \
