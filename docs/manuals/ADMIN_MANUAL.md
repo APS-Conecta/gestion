@@ -13,13 +13,13 @@ This Server Administration Manual defines operational procedures, architecture s
 
 This manual provides authoritative, operational instructions for system administrators, DevOps engineers, and municipal IT teams deploying, hardening, configuring, and maintaining APS Conecta Gestión nodes.
 
+APS Conecta Gestión is architected as an immutable, declarative configuration-as-code layer projected over official upstream **Nextcloud 34** containers. It eliminates manual Web UI configuration drift, strictly avoids core platform source code forks, enforces a resilient Role-Based Access Control (RBAC) model tailored to Chilean primary healthcare centers, and integrates Euro-Office for in-browser collaborative document editing alongside an autonomous, self-hosted geospatial basemap service.
+
 > **Scope note — the install half moved.** The provisioning pipeline, the host bundle and the lifecycle
 > scripts this document names (`make install`, `make seed`, `make divergence`, `scripts/smoke.sh`, the numbered phases) live in [instalador](https://github.com/APS-Conecta/instalador), not
 > in this repository, and gestion's Makefile no longer has those targets (`make help` lists what it has).
 > Read those sections as the description of instalador's pipeline; its current commands are in
 > [`INSTALLER.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md).
-
-APS Conecta Gestión is architected as an immutable, declarative configuration-as-code layer projected over official upstream **Nextcloud 34** containers. It eliminates manual Web UI configuration drift, strictly avoids core platform source code forks, enforces a resilient Role-Based Access Control (RBAC) model tailored to Chilean primary healthcare centers, and integrates Euro-Office for in-browser collaborative document editing alongside an autonomous, self-hosted geospatial basemap service.
 
 ![Server Administration Overview](screenshots/10_admin_overview.png)
 *Figure 1: Server Administration Overview in APS Conecta Gestión (`Administration settings -> Overview`), showing full security validation, system status, and active platform parameters.*
