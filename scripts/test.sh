@@ -729,6 +729,45 @@ if not broken(*defaults(fab)):
     print("a missing site passed — the empty-glob-goes-green class is back"); sys.exit(1)
 print("ok")'
 
+# Clean boot (by IP) reads the suite tag out of scripts/aio-testbed.sh's one pin and refuses anything but a
+# published form: the rehearsal's ci-YYYYMMDD-N, a release vX.Y.Z, or the pipeline's rehearsal vX.Y.Z-ci.N.
+# The two lines are extracted from the workflow and run here over a fixture testbed: each accepted form
+# yields its tag, and no pin, two pins, a floating tag or a smuggled shell word each fail.
+cleanboot_suite_tag_cases() {
+  local lines tmp got kind val want
+  lines="$(grep -E '^ +(tag="\$\(sed -nE? .s/\^IMAGE=|\[\[ "\$tag" =~ )' .github/workflows/cleanboot.yml | sed 's/^ *//')"
+  [ "$(printf '%s\n' "$lines" | wc -l)" -eq 2 ] || { echo "cleanboot: the suite-tag pin check was not found exactly once" >&2; return 1; }
+  tmp="$(mktemp -d)"; mkdir "$tmp/scripts"
+  pin() { printf 'IMAGE="${AIO_TEST_IMAGE:-ghcr.io/aps-conecta/all-in-one:%s}"\n' "$1"; }
+  while IFS='|' read -r kind val want; do
+    case "$kind" in
+      one)  pin "$val" > "$tmp/scripts/aio-testbed.sh" ;;
+      two)  { pin "$val"; pin ci-20261004-2; } > "$tmp/scripts/aio-testbed.sh" ;;
+      none) printf 'IMAGE="${AIO_TEST_IMAGE:-nginx}"\n' > "$tmp/scripts/aio-testbed.sh" ;;
+    esac
+    got="$( cd "$tmp" && eval "$lines" 2>/dev/null && printf %s "$tag" )"
+    case "$want" in
+      fail) [ -z "$got" ] || { echo "cleanboot: $kind '$val' should be refused, got '$got'" >&2; rm -rf "$tmp"; return 1; } ;;
+      *)    [ "$got" = "$want" ] || { echo "cleanboot: $kind '$val' expected '$want', got '$got'" >&2; rm -rf "$tmp"; return 1; } ;;
+    esac
+  done <<'CASES'
+one|ci-20261004-2|ci-20261004-2
+one|v0.4.0|v0.4.0
+one|v10.20.30|v10.20.30
+one|v0.0.0-ci.6|v0.0.0-ci.6
+one|v0.5.0-ci.12|v0.5.0-ci.12
+two|v0.4.0|fail
+none|x|fail
+one|latest|fail
+one|v0.4|fail
+one|v0.4.0-|fail
+one|ci-2026-1|fail
+one|v0.4.0;touch x|fail
+CASES
+  rm -rf "$tmp"
+}
+check cleanboot_suite_tag_cases
+
 # --- the dump + uninstall detectors red-test themselves (docker daemon, no stack) -------------
 if docker info >/dev/null 2>&1; then
   check bash scripts/db-dump.sh --self-test

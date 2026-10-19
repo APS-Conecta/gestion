@@ -1084,7 +1084,7 @@ start_suite() {  # [ADDRESS] — the mastercontainer, once — the very command 
        bad "no se pudo reanudar la suite" "revise: docker logs nextcloud-aio-mastercontainer"; return 1 ;;
   esac
   tag="$(suite_tag)"   # checked before the eval: the tag and (by IP, above) the two directories are all it carries
-  if ! [[ "$tag" =~ ^(v[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?|ci-[0-9]{8}-[0-9]+)$ ]] \
+  if ! [[ "$tag" =~ ^(v[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+|-ci\.[0-9]+)?|ci-[0-9]{8}-[0-9]+)$ ]] \
      || ! cmd="$(run_command "$domain")" || [ -z "$cmd" ]; then
     bad "no se pudo leer la versión de la suite («$tag»)" "exporte APS_SUITE_TAG=vX.Y.Z y vuelva a ejecutar"
     return 1
@@ -2742,6 +2742,14 @@ SHIM
     out="$(APS_SUITE_TAG=ci-20261003-2; FAIL=0; start_suite 10.0.0.5 2>&1; echo "FAIL=$FAIL")"
     check "install by IP (R22): this server's own address — the suite's certificate first, then the run with both env lines; a CI tag starts too" \
       '[ "$(cat "$tmp/prov.argv")" = "--paso certificado-suite --ip 10.0.0.5 --certificados $APS_HOME/certificados" ] && grep -q "^run -d .*--env APS_TLS_DIR=$APS_HOME/certificados/suite --env NEXTCLOUD_TRUSTED_CACERTS_DIR=$APS_HOME/certificados/ca .*all-in-one:ci-20261003-2\$" "$tmp/mc.argv" && case "$out" in *"FAIL=0"*) ;; *) false;; esac'
+    : > "$tmp/mc.argv"; : > "$tmp/prov.argv"
+    out="$(APS_SUITE_TAG=v0.0.0-ci.6; FAIL=0; start_suite 10.0.0.5 2>&1; echo "FAIL=$FAIL")"
+    check "install by IP (R22): the image pipeline's rehearsal tag (vX.Y.Z-ci.N) starts too" \
+      'grep -q "^run -d .*all-in-one:v0.0.0-ci.6\$" "$tmp/mc.argv" && case "$out" in *"FAIL=0"*) ;; *) false;; esac'
+    : > "$tmp/mc.argv"; : > "$tmp/prov.argv"
+    out="$(APS_SUITE_TAG=v0.0.0-ci; FAIL=0; start_suite 10.0.0.5 2>&1; echo "FAIL=$FAIL")"
+    check "install by IP (R22): a half-written rehearsal tag is refused before any run" \
+      '! grep -q "^run" "$tmp/mc.argv" && case "$out" in *"FAIL=1"*) ;; *) false;; esac'
     : > "$tmp/mc.argv"; : > "$tmp/prov.argv"
     out="$(APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 10.0.0.9 2>&1; echo "FAIL=$FAIL")"
     check "install by IP (R22): another server's address is refused before any certificate or run" \
