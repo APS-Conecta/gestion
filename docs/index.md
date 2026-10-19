@@ -46,14 +46,14 @@ The three-manual set lives under [`manuals/`](manuals/) — moved under version 
 | Document | Mode | Reader | It is the authority for |
 |---|---|---|---|
 | [`MIGRATION.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/MIGRATION.md) | how-to | operator | Migrating the pilot to the AIO stack, rehearsal-first |
-| [`WELCOME-SCREEN.md`](WELCOME-SCREEN.md) | how-to + reference | operator, editor | The welcome tree — what phase 41 seeds, when, and how to edit it |
+| [`WELCOME-SCREEN.md`](WELCOME-SCREEN.md) | how-to + reference | operator, editor | The welcome tree — what instalador's phase 41 seeds, when, and how to edit it |
 
 ## Reference and how-to for one directory
 
 | Document | Mode | Reader | It is the authority for |
 |---|---|---|---|
 | [`../apps/README.md`](../apps/README.md) | reference | developer | What may live in `apps/`, and the difference between a vendored, own and lab app |
-| [`../provisioning/README.md`](../provisioning/README.md) | reference | operator, developer | The provisioning phases and their order |
+| [`../provisioning/README.md`](../provisioning/README.md) | reference | operator, developer | What `provisioning/` holds (the vendored apps and the data packages) and who reads it |
 | [`../themes/README.md`](../themes/README.md) | reference | developer | The server theme directory |
 | [`CONVENTIONS.md`](CONVENTIONS.md) | reference (Spanish) | staff | *Spanish, staff-facing.* The shared folder structure a clinic works in |
 | [`BRANDING.md`](BRANDING.md) | how-to | operator | The `occ` keys that apply the brand |

@@ -22,33 +22,31 @@ contract, not a grep accident: the index is the ADR-0011 home for those facts.
    repository public"*). So **CI green is the only mechanical gate there is.** Read your own diff as
    if someone else wrote it — that is the entire convention, and nothing enforces it but you.
 4. AI-assisted PRs must be **labeled** (`ai-assisted`) and disclose AI involvement in the description.
-5. The gate is `make test` (static checks + smoke) — run it before opening a PR. CI runs the same
-   script on every PR and on pushes to `main` (`.github/workflows/ci.yml`); the full clean boot runs
-   on PRs that touch the install path, and weekly (`.github/workflows/cleanboot.yml`).
+5. The gate is `make test` (static checks) — run it before opening a PR. CI runs the same script on
+   every PR and on pushes to `main` (`.github/workflows/ci.yml`). Nothing here boots a stack: the
+   full clean boot is instalador's, and it reads this repository's `main` as the suite's data.
 
 `CODEOWNERS` will auto-request reviewers the day a second account has access; with one owner GitHub
 requests nobody, because it never asks a pull request's own author. Prefer small, reviewable PRs.
 
-## Releases (ADR-0005)
+## Releases (ADR-0005, as the installer split changed it)
 
-`main` is the trunk and the **dev stack** installs from it. A **release** is a tag — that is the only
-thing a clinic installs, and the only answer to "which bytes does that instance have?".
+`main` is the trunk. A **release** is a tag, and it is cut on **instalador**, not here: gestion's tag
+ritual retired when the install half moved (D4), and instalador's one tag packages the content of
+this repository at that moment. The runbook is instalador's
+[`aps/RELEASING.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/RELEASING.md); what it
+asks of this repository:
 
-1. `main` stays installable: nothing merges without CI green and a review pass.
-2. After UAT sign-off, the release commit dates the version's CHANGELOG entry **and** sets
-   `BUNDLE_TAG` in `host/aps-conecta` to the same `vX.Y.Z` — the host self-test refuses one without
-   the other. Then tag `vX.Y.Z` on that commit and publish a **GitHub Release**.
-3. The Release notes carry the detail — what a version pins, and why.
-   [`CHANGELOG.md`](CHANGELOG.md) is the in-repo index: one entry per version linking to its release,
-   plus the `Unreleased` section, which a published release cannot hold. It links rather than
-   repeats, so the pinned versions and digests have exactly one home.
-4. Name in the notes which app versions that release pins (`provisioning/apps/*/VENDOR`).
-5. A clinic installs from the tag with two lines — `curl -fsSL
-   https://raw.githubusercontent.com/APS-Conecta/gestion/vX.Y.Z/host/aps-conecta -o aps-conecta` and
-   `sudo bash aps-conecta install`. The file clones its own `BUNDLE_TAG` into `/opt/aps-conecta/gestion`
-   (by hand: `git clone --branch vX.Y.Z --depth 1 <url>`); a release candidate is installed with
-   `sudo APS_SUITE_TAG=vX.Y.Z-rcN bash aps-conecta install`. The two lines hold only from a release tag:
-   a file taken from `main` carries the previous release's `BUNDLE_TAG`.
+1. `main` stays releasable: nothing merges without CI green and a review pass.
+2. Content (apps, themes, the register, data packages) lands before the release commit. `main` is then
+   **frozen** until the tag is pushed (RELEASING §4): the image bake and the package both read it at
+   that moment, so a hotfix waits or the tag waits.
+3. The release notes live on instalador's Release. [`CHANGELOG.md`](CHANGELOG.md) here is the history
+   of the versions gestion itself released, plus an `Unreleased` section; it links rather than repeats.
+4. Which app versions a release pins is `provisioning/apps/*/VENDOR`, validated here by
+   `scripts/release-manifest.sh --validate`. Name them in the release notes.
+5. A clinic installs the signed package ([`INSTALLER.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md) §2).
+   Old gestion tags and their Releases stay intact and keep verifying.
 
 **Our own apps are pinned at a milestone, not at every tag.** `epidemiologia` released six times in
 one week (#137–#141); gestion bumps when we decide a version is the one to ship. There is no branch
@@ -74,7 +72,7 @@ Portable, machine-agnostic Docker Compose (Nextcloud 34 + PostgreSQL 18 + Redis 
 config, and a `Makefile`; each dev runs it **locally**. The step-by-step quickstart and the full `make`
 reference live in **[`README.md`](README.md#quickstart)** — one owner per fact; don't duplicate them here.
 Two invariants when you touch the stack: nothing VPS-specific or absolute-pathed in the core compose
-(`host.docker.internal` must work cross-OS), and **all desired state goes through `make seed`** — never
+(`host.docker.internal` must work cross-OS), and **all desired state goes through instalador's provisioning** — never
 hand-click config into the running instance (AD-2).
 
 **Secrets:** all passwords live in your gitignored `.env`, created by `make setup` — that file is

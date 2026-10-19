@@ -43,7 +43,7 @@ The documentation is organized into three comprehensive, self-contained manuals 
 - Custom Nextcloud app lifecycle, schema migrations, and idempotent repair steps (`EnsureSeedData`).
 - Deep-dive into APS Conecta custom apps (`epidemiologia`, `farmacia`, `territorio`).
 - Server theming engine (`themes/apsconecta`) and the legacy render path (`defaults.php` / ADR-0004).
-- Static gates (`scripts/test.sh`), smoke assertions (`scripts/smoke.sh`), and Playwright acceptance testing.
+- Static gates (`scripts/test.sh`); smoke assertions and Playwright acceptance testing live in instalador.
 - Licensing (AGPL-3.0-or-later) and coding standards.
 
 ### 3. [⚙️ Server Administration Manual](ADMIN_MANUAL.md)
@@ -51,9 +51,9 @@ The documentation is organized into three comprehensive, self-contained manuals 
 **Key Topics:**
 - System architecture and multi-container topology (`compose.yaml`).
 - Sizing prerequisites: The 8 GB RAM floor (Euro-Office multi-user memory baseline).
-- Three-step installation lifecycle (`make setup`, Chilean DEIS registry lookup via `scripts/deis.py`, `make install`).
+- The dev-stack lifecycle (`make setup`, Chilean DEIS registry lookup via `scripts/deis.py`, `make up`); provisioning is instalador's.
 - The **14-Phase Idempotent Provisioning Engine** (`05-security` through `60-fixtures`).
-- One-directional convergence: Add-only policy, divergence auditing (`make divergence`).
+- One-directional convergence: Add-only policy, divergence auditing (instalador's divergence report).
 - Role-Based Access Control (RBAC): 22 shared CESFAM roles, category groupings (`cat-*`), and `SITE_ROLES`.
 - Group Folders administration and allow-refinement ACL design (strictly no DENY rules).
 - Office Server (`eurooffice`) and Basemap (`tiles` PMTiles) administration.

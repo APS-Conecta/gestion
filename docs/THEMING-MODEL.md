@@ -4,6 +4,10 @@ How Nextcloud theming actually works on this instance, the rules that hold, and 
 lives. Written from measurements taken on the live NC 34.0.1 instance on 2026-07-27, because the
 official manual documents none of it.
 
+> **Scope note — the install half moved.** The branding phase and the smoke scripts named below
+> (`15-branding.sh`, `scripts/smoke.sh`, `scripts/office-smoke.sh`, `make seed`) are
+> [instalador](https://github.com/APS-Conecta/instalador)'s now; the theme itself stays here.
+
 Companion documents: [`docs/BRANDING.md`](BRANDING.md) is the step-by-step deploy guide;
 [`themes/apsconecta/MAPEO.md`](../themes/apsconecta/MAPEO.md) records what `server.css` owns and
 why; [`docs/adr/0001-server-theme-for-branding.md`](adr/0001-server-theme-for-branding.md) is the
@@ -20,7 +24,7 @@ decision record.
 
 | Layer | What it owns | Where it lives | Who writes it |
 |---|---|---|---|
-| **A — Identity** | Name, slogan, URLs, colours, `productName`, brand images | Theming app config | `provisioning/phases/15-branding.sh` |
+| **A — Identity** | Name, slogan, URLs, colours, `productName`, brand images | Theming app config | instalador `provisioning/phases/15-branding.sh` |
 | **B — CSS & fonts** | `@font-face`, display typography, header, focus, high contrast | `themes/apsconecta/core/css/server.css` | the file itself |
 | **C — Per-app icons** | Overrides for icons that clash | `themes/apsconecta/apps/<appid>/img/` | *currently empty — see §4* |
 | **D — Brand source** | Tokens, logo artwork, the living brandbook | the brand kit (outside git; licence facts owned by `LICENSING.md`) | designers |

@@ -3,7 +3,7 @@
 Bind-mounted to **`/var/www/html/custom_apps`** by `compose.yaml`. Two things land here, and only
 this README is tracked (`.gitignore` un-ignores it explicitly):
 
-- **Vendored apps** unpacked here by `provisioning/phases/12-apps.sh` — `groupfolders`, `side_menu`,
+- **Vendored apps** unpacked here by instalador's `12-apps` phase — `groupfolders`, `side_menu`,
   `eurooffice`, `calendar`, `contacts`, `spreed`, `desktop_workspace`. Their upstream tarballs *are*
   committed, under `provisioning/apps/<id>/`, beside the `*.patch` files that edit them and a `VENDOR`
   file naming the version, URL and sha256. Nothing in a clean install contacts the app store (#98).

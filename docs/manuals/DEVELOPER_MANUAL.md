@@ -13,7 +13,14 @@
 > **Platform Version:** Nextcloud 34.0.x / PHP 8.5 / PostgreSQL 18 / Redis 8  
 > **Primary Audience:** Software Engineers, System Architects, App Developers, and Maintainers  
 > **Licensing:** AGPL-3.0-or-later ([ADR-0010](../adr/0010-agpl-across-the-org.md))  
-> **Single Source of Truth (SSOT):** The repository (`docs/ARCHITECTURE.md`, `compose.yaml`, `provisioning/`) is authoritative for behavior.
+> **Single Source of Truth (SSOT):** The repository (`docs/ARCHITECTURE.md`, `compose.yaml`, `provisioning/apps`) is authoritative for behavior; the provisioning pipeline is instalador's.
+
+> **Scope note — the install half moved.** The provisioning pipeline, the host bundle and the lifecycle
+> scripts this document names (`make install`, `make seed`, `make divergence`, `scripts/smoke.sh`, the numbered phases) live in [instalador](https://github.com/APS-Conecta/instalador), not
+> in this repository, and gestion's Makefile no longer has those targets (`make help` lists what it has).
+> Read its sections 4 and 6 as the description of instalador's pipeline; its current commands are in
+> [`INSTALLER.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md).
+
 
 ---
 
@@ -67,7 +74,7 @@ This boundary guarantees that Nextcloud major version upgrades (such as from NC3
 
 ### 1.3 App Taxonomy: Vendored, Own, and Lab Apps
 
-The taxonomy — **vendored**, **own**, and **lab** apps — is defined once in [`CONTEXT.md`](../../CONTEXT.md), which owns the vocabulary. The authoritative inventories are equally single-owner: [`provisioning/phases/12-apps.sh`](../../provisioning/phases/12-apps.sh) declares the `APPS` (vendored) and `OWN_APPS` (own) lists and applies the patch engine, [`LICENSING.md`](../LICENSING.md) §3 owns the per-component licence inventory, [ADR-0003](../adr/0003-this-stack-ships-a-custom-app.md) records why this stack ships its own applications at all, and [ADR-0005](../adr/0005-gestion-is-the-development-trunk.md) why lab applications never ride a release tag.
+The taxonomy — **vendored**, **own**, and **lab** apps — is defined once in [`CONTEXT.md`](../../CONTEXT.md), which owns the vocabulary. The authoritative inventories are equally single-owner: instalador's [`provisioning/phases/12-apps.sh`](https://github.com/APS-Conecta/instalador/blob/main/provisioning/phases/12-apps.sh) declares the `APPS` (vendored) and `OWN_APPS` (own) lists and applies the patch engine, [`LICENSING.md`](../LICENSING.md) §3 owns the per-component licence inventory, [ADR-0003](../adr/0003-this-stack-ships-a-custom-app.md) records why this stack ships its own applications at all, and [ADR-0005](../adr/0005-gestion-is-the-development-trunk.md) why lab applications never ride a release tag.
 
 ### 1.4 Data Ownership, Topology & Zero Patient Data Invariant
 
@@ -186,19 +193,19 @@ All development and test operations are driven via the root `Makefile`:
 
 ```bash
 make setup            # Generate .env with secure random credentials (mode 600)
-make install          # Stand establishment up, or converge after site.sh edit / git pull
-make up               # Start production stack with Euro-Office (--wait healthchecks)
+make up               # Start the stack with Euro-Office (--wait healthchecks)
 make up-dev           # Build and launch dev stack with Xdebug enabled on port 9003
 make fix-mount-perms  # Synchronize host/container read-write permissions
-make seed             # Execute the 14-phase idempotent provisioning script
-make seed-idempotent  # Validate that a second seed produces zero database writes
-make test             # Run local quality gate (static analysis + health checks)
-bash scripts/smoke.sh   # Execute core health assertions against running stack
-make office-smoke     # Validate Euro-Office document server connectivity & branding
-make divergence       # Detect resources live in Nextcloud not declared in repo
+make test             # Run local quality gate (static checks)
+make images           # Refresh the pinned image digests
 make images-check     # Verify if upstream base images have drifted past pins
+make apps-check       # Report whether any vendored app has a newer release
+make office-down      # Stop the Euro-Office backend, keep the core stack
 make down             # Stop containers while preserving database and data volumes
 ```
+
+Provisioning, seeding, the idempotency check, the smoke gates and the divergence report are instalador's
+(`aps-conecta provision`, its `scripts/`); see the scope note at the top.
 
 ---
 

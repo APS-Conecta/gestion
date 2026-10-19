@@ -1,104 +1,41 @@
-# Provisioning framework
+# provisioning/ — the suite's data
 
-The **single writer of desired state** for the APS Conecta instance (AD-2). `make up` starts
-services only; **`make seed`** applies all configuration/groups/folders/ACLs/fixtures by
-running `seed.sh`, which sources the numbered phase files in `phases/` in fixed order.
-
-**`make install` is the front door** ([#79](https://github.com/APS-Conecta/gestion/issues/79)): it
-brings the stack up, waits for Nextcloud's own installer, runs this pipeline with the phase log going
-to `.install.log`, and health-checks the result. `make seed` stays the verbose inner command — it is
-what `scripts/seed-idempotent.sh` runs and greps, so its output format is load-bearing.
+This directory holds what an install **reads**, not what applies it. The provisioning pipeline itself
+(the runner, the guard helpers, the numbered phases, the welcome-tree library) is
+[instalador](https://github.com/APS-Conecta/instalador)'s: it absorbed the install half of this
+repository, and its copy is the only live one (see its
+[`INSTALLER.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md) and
+[`MIGRATION.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/MIGRATION.md)). Nothing here
+runs, and nothing here mutates an instance.
 
 ```
 provisioning/
-  seed.sh            # the runner (make seed → this)
-  lib.sh             # shared idempotency-guard helpers (source, don't execute)
   apps/              # per app: the vendored tarball, its VENDOR file, and *.patch edits (#98)
-    eurooffice/
-    <appid>/         # one per app in 12-apps.sh's APPS
-  phases/
-    05-security.sh   # session hardening + outbound defaults
-    06-jobs.sh       # background jobs from cron, not ajax
-    07-certs.sh      # #28 — TLS intermediates for national hosts that serve only their leaf
-    10-locale.sh     # Epic 1 — es-CL locale defaults
-    12-apps.sh       # ADR-0002 — unpack the vendored apps, patch them; never the app store
-    14-office.sh     # AD-5 — Euro-Office: connector config + the trusted_domains repair (#81)
-    15-branding.sh   # Epic 5 — APS Conecta white-label
-    16-app-policy.sh # admin keeps everything; staff get the reduced set
-    20-groups.sh     # Epic 2 — role/category/team group registry
-    30-folders.sh    # Epic 3 — hybrid four-area Group Folders tree
-    40-acl.sh        # Epic 3 — first-cut access matrix (allow-refinement, no DENY)
-    50-users.sh      # Story 0.6 — the clinic's standing leadership accounts  (FIXTURE)
-    60-fixtures.sh   # Story 0.6 — synthetic sample content (FIXTURE)
+    <appid>/         # one directory per app of the suite, ours and third party
+  data/
+    packages.json    # the data-package manifest: masters (pinned origin + sha256) and recipes
+    comunas-deis.csv # the comuna coding authority (CUT -> glosa) the recipes validate against
+    aio-siblings.txt # the AIO sibling container refs (listed in docs/CONTRACTS.md)
 ```
 
-## The establishment's own data
+## Who reads it
 
-One stack serves one establishment, and everything specific to it is **data**: `sites/<slug>/site.sh`.
-`SITE` in `.env` names the directory; `seed.sh` sources the file once, in the parent shell, *before*
-the phase loop — each phase already runs in a subshell of that, so every phase sees the arrays and
-none can write back. An unset `SITE`, or a missing file, is fatal before any phase runs.
+- **instalador's package** copies `provisioning/apps`, `provisioning/data`, `sites` and
+  `themes/apsconecta` from this repository at the release tag. The image bake reads `apps/` and the
+  theme the same way, and re-runs the `VENDOR` sha256 check before a single byte enters an image.
+- **This repository's gate** (`make test`) checks the data in place: every app has exactly one
+  tarball, named `<id>-<version>.tar.gz`, whose bytes match the `sha256=` in its `VENDOR`; the
+  licence table in `docs/LICENSING.md` agrees with each tarball's `info.xml`; the manifest and the
+  comuna reference describe each other. `scripts/release-manifest.sh --validate` checks the form of
+  every pin a release carries.
 
-**No establishment ships.** The site file is one you write, it is gitignored like `.env` because its
-content depends on which establishment is installed, and `make seed` refuses to run until `SITE`
-names one that exists. Choosing the establishment is therefore the first step of every install, ours
-included. The clean-boot job walks that same path with `scripts/deis.py` on a clean runner, which is
-what keeps it proven.
+## An app's directory
 
-| In the site file | In the phases (identical everywhere) |
-|---|---|
-| Identity: name, type, address, comuna, DEIS code | `all-staff`, the four `cat-*`, the shared `role-*` registry |
-| `SITE_TEAMS` — the `prog-*` and `sector-*` teams | The `LÉEME — Convenciones.md` text, shipped verbatim from [`docs/CONVENTIONS.md`](../docs/CONVENTIONS.md) |
-| `SITE_FOLDERS`, `SITE_SUBFOLDERS` | Phases 05, 06, 10, 12, 14, 15, 16 — phase 16's app inventory is declared in [`app-policy.sh`](app-policy.sh), sourced by the phase and by `scripts/smoke.sh` |
-| `SITE_ACL` — the whole grant matrix, `mount\|group\|perms` | |
+`VENDOR` has three lines that move together on a bump — `version=`, `sha256=`, `url=` — and the
+comments above them say where the tarball came from. A `*.patch` beside the tarball is applied by the
+installer's apps phase after it unpacks; why the suite patches apps at all is
+[ADR-0002](../docs/adr/0002-app-patches.md). To take a new version: replace the tarball, update the
+three lines, and open a PR; `scripts/app-versions.sh` (`make apps-check`) reports which vendored app
+has a newer release and changes nothing.
 
-Write one with [`scripts/deis.py`](../scripts/deis.py): it finds the establishment in the shipped DEIS
-register — CESFAM, PSR, CECOSF, CGR, CGU, COSAM, SAPU, SAR or SUR — fills the identity from it, and
-**asks** for the sectors and programs, because a register knows neither how many sectors an
-establishment has nor whether they are numbered, coloured or named after a neighbourhood.
-
-```
-scripts/deis.py cesfam <comuna>       # find the code — any term matches, no type is required
-scripts/deis.py <codigo> --new mi-establecimiento
-```
-
-The file it writes is complete and standalone: **nothing is inherited at seed time**. Adding a unit
-later is one line in `SITE_FOLDERS` plus its rows in `SITE_ACL`.
-
-## Contract
-
-- **Fixed phase order 05 → 60.** Structure (05–40) before fixtures (50–60). The order comes from the
-  shell's glob sort, not a numeric sort, so every prefix must stay two digits — a `100-` phase would
-  run between `10-` and `12-`.
-- **One epic per file.** Each phase file is owned by exactly one epic/story (see the header of each). An
-  epic **only edits its own** phase file — so parallel epics never conflict. Add capability by adding
-  a phase file, never by editing another epic's file or a monolith.
-- **Idempotent by guard (query-before-create).** Every mutating step must inspect current state and
-  skip/patch — never blind-create. `make seed` is safe to run any number of times. Use the `lib.sh` helpers:
-  - `ensure_group GID DISPLAY` — via `occ group:list`
-  - `ensure_user UID DISPLAY PASSWORD`, `add_user_to_group UID GID`
-  - `ensure_groupfolder MOUNT` — via `occ groupfolders:list` (**`groupfolders:create` is NOT
-    idempotent by name** — always query first)
-  - `config_system_set KEY VALUE [TYPE]`, `app_config_set APP KEY VALUE`, `theming_set KEY VALUE` —
-    set only if different; `theming_image_set KEY ABSOLUTE_PATH` for the brand images (the one
-    helper that rewrites on every run — `seed-idempotent.sh` exempts it by name)
-  - `ensure_vendored_app APPID` — unpacks `provisioning/apps/<id>/*.tar.gz` after checking its
-    `VENDOR` sha256, then enables it; never the store (#98) — `apply_patch APPID PATCHFILE`,
-    `app_restrict_to_groups`, `app_disable`
-  - `gf_grant MOUNT GROUP [read|write|share|delete]`, then `gf_prune` once at the end of the ACL phase
-  - `ensure_gf_subfolder`, `ensure_gf_file`, `ensure_sample_file`
-  - `require_installed`, and `phase_begin`/`phase_end`/`log`
-
-  `occ` itself comes from [`scripts/env.sh`](../scripts/env.sh), which `seed.sh` sources before
-  `lib.sh`.
-- **Structure-vs-fixtures partition.** Phases 05–40 own *structure* (locale, groups, folders, ACLs).
-  Phases 50–60 own *only* fixtures (the clinic's standing leadership accounts into
-  **already-existing** groups, and sample content). Run structure-only with `SEED_FIXTURES=0 make seed`
-  (production would). One owner per artifact — fixtures never create structure.
-- **No real data, ever.** Fixtures are deterministic synthetic dev data only (NFR-2).
-
-## Adding a phase
-
-Keep the `phase_begin`/`phase_end` frame and use the guarded helpers for the body. Read
-[`phases/10-locale.sh`](phases/10-locale.sh) — it is short, live, and the model to copy. No snippet
-is copied here — a copy drifts from the file it describes.
+No real data, ever: everything here is public reference data or code (NFR-2).

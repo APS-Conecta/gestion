@@ -69,7 +69,7 @@ The Nextcloud a clinic runs, installed from a release. None exists yet.
 _Avoid_: PRD, prod, live, PROD environment
 
 **Dev stack**:
-The local Docker Compose stack a developer runs. Disposable: `make install` rebuilds it.
+The local Docker Compose stack a developer runs. Disposable: `make up` rebuilds it (provisioning it is instalador's).
 _Avoid_: dev environment, local, staging
 
 **Release**:

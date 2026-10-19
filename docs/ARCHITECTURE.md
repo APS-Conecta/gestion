@@ -2,7 +2,7 @@
 
 Technical architecture for **v1**: the developer-facing Foundation (Epic 0) + the initial Spine A document
 structure, built as a **white-label Nextcloud 34** deployment. This document is the design SSOT; the code
-(`provisioning/phases/`, `compose.yaml`) is authoritative for behavior, and the invariants builders must
+(`compose.yaml` here and the provisioning phases in instalador) is authoritative for behavior, and the invariants builders must
 not violate are in [`AGENTS.md`](../AGENTS.md).
 
 ## Design paradigm
@@ -17,11 +17,11 @@ running instance is a *projection* of the repository's recipe applied over the o
 disposable, and upgrade-safe.
 
 The single mechanism that mutates instance state is one **idempotent `occ`-based provisioning script**
-(`provisioning/`, run by `make seed`). It is **idempotent by guard** — it queries before it creates
+(instalador's `provisioning/`, which absorbed it from this repository). It is **idempotent by guard** — it queries before it creates
 (`occ group:list`, `groupfolders:list`, a recorded folder-id map) and skips or patches what already exists,
 because `groupfolders:create` is not idempotent by name. It runs its phase files in a fixed numeric
-order, structure (05–40) before fixtures (50–60); **[`provisioning/README.md`](../provisioning/README.md)
-is the one place that lists what each phase does** — do not restate it here.
+order, structure (05–40) before fixtures (50–60); **instalador's phase files are the one place that
+say what each phase does** — do not restate it here.
 Responsibilities are partitioned: **provisioning owns structure** (groups, folders, ACLs, locale);
 **fixtures own only sample content and sample users** placed into already-existing groups. Re-running converges
 to the same state; there is no second source of truth and no manual admin-UI step that isn't scripted.
@@ -31,8 +31,8 @@ group membership, ACL grants, app enablement, config keys — and `gf_prune` alr
 no longer declares, because revoking a grant loses nothing and the files stay. The three operations that
 *do* lose content — deleting a group folder, a user, or files — are never automatic and have no flag that
 makes them so. Deleting a group is in the same bucket for a different reason: it strands any group folder it
-was sole grantee of. What is live but no longer declared is **reported** at the end of `make install`, and on
-demand via `make divergence` — naming the object and the command that would remove it, exit 0 either way. The
+was sole grantee of. What is live but no longer declared is **reported** at the end of the install, and on
+demand by instalador's divergence report — naming the object and the command that would remove it, exit 0 either way. The
 usual justification for a guarded destructive mode is a backup to fall back on, and there is none in this
 repo yet (see *Environments* below, and #75).
 
@@ -80,7 +80,7 @@ graph TD
   CR --> R
   NC <-->|eurooffice connector · compose service name| C[office backend · Euro-Office]
   B -->|HTTP Range · same-origin /tiles/ · the BROWSER reads the archive| TI[basemap · chile.pmtiles, served by the suite's own apache]
-  PROV[provisioning: occ script + fixtures] -->|make seed| NC
+  PROV[instalador provisioning: occ script] -->|docker exec| NC
   A[apps/ → custom_apps · vendored apps, gitignored] -.bind mount.-> NC
   T[themes/apsconecta · server theme] -.bind mount.-> NC
 ```
@@ -127,7 +127,7 @@ Authorization is entirely **group-based — never per individual**, delivered th
 - Each CESFAM **role** is a flat Nextcloud group (`role-*`); Nextcloud groups do not nest. **22 are shared by
   every clinic** — the vocabulary that keeps one clinic's ACL matrix readable beside another's — with IDs,
   display names and the role→category mapping declared in
-  [`provisioning/phases/20-groups.sh`](../provisioning/phases/20-groups.sh), which **is** the registry —
+  [`provisioning/phases/20-groups.sh`](https://github.com/APS-Conecta/instalador/blob/main/provisioning/phases/20-groups.sh) in instalador, which **is** the registry —
   the phase that creates them is the authority, and this document deliberately does not restate the
   list. A clinic running a **SAR, SAPU
   or SUR** adds its own in `SITE_ROLES` (`id|display|category`), since it could already declare the unit, its
@@ -201,10 +201,10 @@ and read: [`provisioning/README.md`](../provisioning/README.md).
 ## Environments
 
 Two environments. The **dev stack**: a single Compose stack, brought up with one command, on a
-developer's machine — `make setup && make install` stands up a named establishment from a clean
-checkout, and #77's whole effort was making that true of a machine nobody has seen. The
+developer's machine — `make setup && make up` stands up the stack from a clean
+checkout (provisioning it is instalador's), and #77's whole effort was making that true of a machine nobody has seen. The
 **clinic**: APS Conecta Gestión AIO, the all-in-one installer — the wizard owns the container set as a
-lockstep image suite, and this repo's host bundle drives the **same provisioning phases**
+lockstep image suite, and instalador's host bundle drives the provisioning phases
 over `docker exec`; the runbook is [`INSTALLER.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md), the Spanish walkthrough
 [`GUIA-CLINICA.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/GUIA-CLINICA.md).
 

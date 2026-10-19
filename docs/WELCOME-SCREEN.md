@@ -1,10 +1,14 @@
 # The welcome screen — operator and editor guide
 
 The welcome screen is the intranet surface every staff member lands on: the IntraVox app
-rendering the pages seeded by `provisioning/phases/41-intravox.sh` from the payload under
-`provisioning/intravox/es/`. This document is for the two people who will touch it after the
+rendering the pages seeded by instalador's `provisioning/phases/41-intravox.sh` from the payload under
+instalador's `provisioning/intravox/es/` (the library moved there with the install half; edit it there). This document is for the two people who will touch it after the
 seed: the **operator** (who runs `make seed` and reads the gates) and the **editor** (who
 publishes news and avisos). Spanish strings are quoted as they appear on screen.
+
+> **Scope note — the install half moved.** `make seed` and `make divergence` below name instalador's
+> provisioning run and divergence report; gestion's Makefile no longer has those targets. Its current
+> commands are in [`INSTALLER.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md).
 
 ## What seeds, and when
 
@@ -41,7 +45,7 @@ SITE_WELCOME=(
 ```
 
 `scripts/deis.py` writes this default for a new site. Sections are folders of the library under
-`provisioning/intravox/es/sections/`; `equipos` is the one section that is generated instead of
+instalador's `provisioning/intravox/es/sections/`; `equipos` is the one section that is generated instead of
 copied — declare `'equipos|wall'` and the seed renders the «Guía de equipos» hub plus one page per
 `SITE_TEAMS` entry, each linking the team's own folder and readable by that team and the
 jefaturas. A role-restricted page (OIRS, Estadística REM) is a team row you add by hand, e.g.
@@ -170,7 +174,7 @@ There is no whole-tree recovery any more, and no reason for one: the seed conver
    there — the trash bin does not count, the marker is `es/<name>/<name>.json` itself.
 
 Template evolution follows one rule: **an existing section is never re-imported**. An edited
-library page, a new sub-page or a new image under `provisioning/intravox/es/sections/<name>/`
+library page, a new sub-page or a new image under instalador's `provisioning/intravox/es/sections/<name>/`
 reaches only instances that do not have that section yet, and a page or image staff deleted
 inside an existing section stays deleted. Changed templates ship as new sections — or, on one
 instance, through the recovery above, which discards that section's staff edits.

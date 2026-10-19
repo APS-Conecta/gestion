@@ -12,8 +12,8 @@ Internal ops only, **no patient data**.
 
 ## How we work
 
-- **Design SSOT:** architecture in `docs/ARCHITECTURE.md`; the code (`provisioning/phases/`,
-  `compose.yaml`) is authoritative for behavior. Repo-first SSOT (repo wins; any wiki mirrors).
+- **Design SSOT:** architecture in `docs/ARCHITECTURE.md`; the code (`compose.yaml` here and the provisioning phases in
+  instalador) is authoritative for behavior. Repo-first SSOT (repo wins; any wiki mirrors).
 - **Principles:** DRY · SOLID · KISS/YAGNI (ponytail — minimal, delete over add). Defined here; `CONTRIBUTING.md` is the operational contract (workflow, docs rules, secrets handling).
 - **Language split:** code/backend/docs in **English**; user-facing UI in **Spanish**. A doc is
   Spanish only when its reader is — `docs/CONVENTIONS.md` (clinic staff read it) — or when Spanish

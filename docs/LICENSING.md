@@ -49,7 +49,7 @@ receives the code or uses it over a network, which today means clinic staff.
 Every runtime component. The **services** are pinned as images in [`compose.yaml`](../compose.yaml);
 the **twelve Nextcloud apps** a release installs are installed via `occ`, not as compose services — the
 authority for which ones is `APPS` and `OWN_APPS` in
-[`provisioning/phases/12-apps.sh`](../provisioning/phases/12-apps.sh), and this table must list every
+instalador's [`provisioning/phases/12-apps.sh`](https://github.com/APS-Conecta/instalador/blob/main/provisioning/phases/12-apps.sh), and this table must list every
 entry in both. All are open-source, self-hosted, and free — **no paid license, no license key**
 anywhere in the stack.
 

@@ -3,6 +3,11 @@
 Step-by-step guide to dressing the instance in the **APS Conecta Gestión** identity
 (**light theme only**) on **Nextcloud 34**.
 
+> **Scope note — the install half moved.** The branding phase (`15-branding.sh`) and the lifecycle
+> commands below (`make seed`, `scripts/smoke.sh`) are [instalador](https://github.com/APS-Conecta/instalador)'s now;
+> gestion's Makefile no longer has `seed`. This guide keeps describing what the phase does; the theme
+> files it reads are `themes/apsconecta/` in this repository.
+>
 > How Nextcloud theming behaves internally, and the rules that cannot be broken, are in
 > [`THEMING-MODEL.md`](THEMING-MODEL.md). This guide is the *what to do*; that one is the *why*.
 > This file was called `INSTALACION-NEXTCLOUD.md` and lived in the brand kit; it moved into the repo
@@ -19,7 +24,7 @@ What **runs** is in this repo:
 gestion/
 ├── docs/BRANDING.md              ← this guide
 ├── docs/THEMING-MODEL.md         ← rules, settings structure, verification
-├── provisioning/phases/15-branding.sh   ← the ONLY place that writes the brand
+├── (instalador) provisioning/phases/15-branding.sh   ← the ONLY place that writes the brand
 └── themes/apsconecta/            ← a single copy; compose.yaml mounts it
     ├── MAPEO.md
     ├── defaults.php               ← identity on the legacy render path (ADR-0004)
@@ -54,7 +59,7 @@ was withdrawn on 2026-08-08 — see [`LICENSING.md`](LICENSING.md), which owns t
 ## 2. The reproducible path — `make seed` (the only one)
 
 There is no loose script to run. The identity layer is a **provisioning phase**,
-`gestion/provisioning/phases/15-branding.sh`, applied with the rest:
+instalador's `provisioning/phases/15-branding.sh`, applied with the rest:
 
 ```bash
 cd gestion
