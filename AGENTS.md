@@ -54,3 +54,19 @@ Internal ops only, **no patient data**.
 (`mailcow` was on this list until 2026-08-27; the stack was removed from the host, so there is
 nothing left to avoid. The remaining five are still live — keep the guard rail.)
 This repo is self-contained under its own clone.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `APS-Conecta/gestion`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical vocabulary, unmodified: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`,
+`wontfix`. All five exist on the repo. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: [`CONTEXT.md`](CONTEXT.md) for the vocabulary, [`docs/adr/`](docs/adr/) for the
+decisions. See `docs/agents/domain.md`.
