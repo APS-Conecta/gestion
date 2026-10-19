@@ -11,6 +11,21 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ## [Unreleased]
 
+### Fixed
+
+- Ported gestion `3b62c24` to the package, which had landed only in gestion's frozen copy of the
+  executor: phase 05 now sets `session_lifetime` to 900 (a 15-minute inactivity logoff) and
+  `session_keepalive` to false (so an idle workstation is not kept alive), and enables the
+  `admin_audit` app via the new idempotent `app_enable` helper. Encryption at rest
+  (`encryption.enabled`) was deliberately not ported: it needs `occ encryption:enable` and a
+  key-management decision, with backup, group-folder and Office consequences.
+
+### Added
+
+- `role-emergencia-breakglass` in the group registry (phase 20, `cat-clinicos`): a role/group only,
+  with no permissions of its own and no override mechanism. The shared registry is now 28 groups and
+  23 roles, so the roster planilla accepts it as a cargo.
+
 ## [0.4.0] — 2026-10-12
 ### Added
 - The signed package release channel: the `install.sh` bootstrap, the `VERSION` discipline, `installer.pub`.
