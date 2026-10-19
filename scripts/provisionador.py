@@ -55,7 +55,6 @@ import secrets
 import shlex
 import socket
 import ssl
-import struct
 import subprocess
 import sys
 import tempfile
@@ -131,18 +130,6 @@ PHASE20 = os.path.join(HERE, "..", "provisioning", "phases", "20-groups.sh")
 CRED_PATH = "/opt/aps-conecta/credentials.txt"
 ESTADO_PATH = "/opt/aps-conecta/estado.txt"   # the last execution's verdict (a10): 0644, «aps-conecta estado»
 AIO_STATE = "/opt/aps-conecta/aio"   # the host's wizard state (0700): passphrase, domain, Talk options — passed to it
-# The Centro pane's basemap archive (L5 S4): what `aps-conecta mapa` (step 4) builds — /mapa/
-# serves it one byte range at a time, /api/mapa reads its coverage, and the confirm-time
-# bounds check will read its bounds. A module constant like CRED_PATH — repointed by the
-# self-test, never an env read (the self-test scrubs TILES_* prefixes; the dd8a1db lesson) —
-# and the I7 gate's sixth literal in scripts/test.sh.
-TILES_ARCHIVE = "/srv/aps-conecta/tiles/chile.pmtiles"
-# The pmtiles v3 header, little-endian: magic "PMTiles" and spec version at byte 7, then the
-# fields territorio's pmtiles reader (bytesToHeader) unpacks. Indices past the magic and the
-# 11 offsets: 19 minZoom · 20 maxZoom · 21-24 minLon/minLat/maxLon/maxLat (int32 ×1e7) ·
-# 25 centerZoom · 26-27 centerLon/centerLat.
-PMTILES_HEADER = struct.Struct("<2sH3sB11Q6B4iB2i")
-
 # The installer's own certificate authority and the leaf it signs for the link's address (L3 S1,
 # owner 2026-10-02). The CA is kept: the suite's certificate (L4, R22) hangs from the same one and
 # staff import it once. The self-test redirects this; the default is the only literal.
@@ -175,13 +162,11 @@ ASSETS = {
     "nunito-sans.woff2": ("themes/apsconecta/core/fonts/NunitoSans.woff2", "font/woff2"),
     "fondo.svg": ("themes/apsconecta/core/img/background.svg", "image/svg+xml"),
     "favicon.svg": ("themes/apsconecta/core/img/favicon.svg", "image/svg+xml"),
-    # The Centro map pane's engine (L5 S4): vendored beside the brand fonts, byte-identical to
-    # territorio's node_modules pins (docs/LICENSING.md §3) and guarded by scripts/test.sh's
-    # sha256 gate — protomaps-leaflet's IIFE carries the pmtiles reader inside, so these three
-    # files are the whole map stack. Public like the fonts: open-source bytes, nothing secret.
+    # The Centro map pane's engine (L5 S4): Leaflet, vendored beside the brand fonts. The basemap
+    # itself is OpenStreetMap's tile service, loaded by the operator's browser (ADR-0021 in
+    # territorio) — nothing else rides here. Public like the fonts: open-source bytes, nothing secret.
     "leaflet.js": ("themes/apsconecta/core/mapa/leaflet.js", "text/javascript"),
     "leaflet.css": ("themes/apsconecta/core/mapa/leaflet.css", "text/css"),
-    "protomaps-leaflet.js": ("themes/apsconecta/core/mapa/protomaps-leaflet.js", "text/javascript"),
 }
 
 
@@ -688,10 +673,9 @@ def api_centro(payload):
     """POST /api/centro {"codigo", "latitud"?, "longitud"?} — «Confirmar centro»: held until step
     8 writes the site file. A correction is free until then; afterwards only that centre answers
     200 (D13). L5 S4: the point rides the same confirm — both coordinates or none; none is the
-    official point (the reset case), and a held pair lands in the site file at step 8. When the
-    archive of step 4 is readable, the effective point — the given pair, or the register's own —
-    must fall inside its bounds: R47's build-time refusal, moved to where the human is; without a
-    readable archive there is no check, never a blocked screen (ADR-0019's addendum)."""
+    official point (the reset case), and a held pair lands in the site file at step 8. The point is
+    checked only for being a coordinate: the basemap is OpenStreetMap's, the whole world, so there is
+    no extent to hold it against (ADR-0021)."""
     global CENTRO, PUNTO
     codigo = payload.get("codigo")
     if not isinstance(codigo, str) or not CODIGO.fullmatch(codigo):
@@ -714,45 +698,13 @@ def api_centro(payload):
         if punto is None:
             return 400, {"error": "la latitud debe ser un número de -90 a 90 y la longitud de "
                                   "-180 a 180, en grados decimales"}
-    efectivo = punto or _punto_oficial(row)
-    if efectivo is not None and _punto_dentro(efectivo) is False:
-        return 400, {"error": "el punto queda fuera del mapa construido en el paso 4 — "
-                              + ("muévalo dentro del territorio que cubre, o confirme el punto "
-                                 "oficial" if punto else
-                                 "reconstruya el mapa con sudo aps-conecta mapa")}
     CENTRO, PUNTO = codigo, punto
     return 200, {"ok": True, "codigo": codigo, "nombre": row["nombre"]}
 
 
-def api_mapa():
-    """GET /api/mapa — the basemap's coverage state (L5 S4): the archive's own bounds, max zoom
-    and centre out of its 127-byte pmtiles v3 header, for the Centro pane and the confirm-time
-    bounds check. A missing archive or an unreadable header is a state with a reason, never an
-    error (the {"codigo": null} rule): the pane shows its note and stays completable — never
-    trade a warning for an outage (ADR-0019's addendum)."""
-    try:
-        with open(TILES_ARCHIVE, "rb") as fh:
-            cab = fh.read(PMTILES_HEADER.size)
-    except OSError:
-        return 200, {"disponible": False,
-                     "motivo": "el mapa del paso 4 no está construido — sudo aps-conecta mapa "
-                               "lo construye; el punto se confirma igual"}
-    if len(cab) < PMTILES_HEADER.size or cab[:7] != b"PMTiles" or cab[7] > 3:
-        return 200, {"disponible": False,
-                     "motivo": "el archivo del mapa no se puede leer — reconstrúyalo con "
-                               "sudo aps-conecta mapa; el punto se confirma igual"}
-    c = PMTILES_HEADER.unpack_from(cab)   # the indices: PMTILES_HEADER's comment above
-    return 200, {"disponible": True,
-                 "limites": {"longitud_min": c[21] / 1e7, "latitud_min": c[22] / 1e7,
-                             "longitud_max": c[23] / 1e7, "latitud_max": c[24] / 1e7},
-                 "zoom_max": c[20],
-                 "centro": {"longitud": c[26] / 1e7, "latitud": c[27] / 1e7, "zoom": c[25]}}
-
-
 def _punto_oficial(row):
     """The register's own point for a row, as the register spells it — or None when the row
-    carries none (defensive: the a21 gate proves every real register row's point inside the
-    basemap bbox; the silent install's own code has no row at all)."""
+    carries none (defensive: the silent install's own code has no row at all)."""
     if row and row.get("latitud") and row.get("longitud"):
         return {"latitud": row["latitud"], "longitud": row["longitud"]}
     return None
@@ -779,19 +731,6 @@ def _punto_valido(lat, lon):
         s = f"{f:.7f}".rstrip("0").rstrip(".")
         return "0" if s in ("", "-", "-0") else s
     return {"latitud": texto(la), "longitud": texto(lo)}
-
-
-def _punto_dentro(punto):
-    """The archive-bounds verdict (R47's replacement): True inside the basemap step 4 built,
-    False outside, None when there is no readable archive to check against — no check then, never
-    a blocked screen (ADR-0019's addendum); the pane's note names the state. api_mapa's own
-    127-byte header read, reused: bounds are the archive's facts, not the centre's."""
-    status, mapa = api_mapa()
-    if status != 200 or not mapa.get("disponible"):
-        return None
-    lim = mapa["limites"]
-    return (lim["longitud_min"] <= float(punto["longitud"]) <= lim["longitud_max"]
-            and lim["latitud_min"] <= float(punto["latitud"]) <= lim["latitud_max"])
 
 
 def _mismo_punto(a, b):
@@ -2145,7 +2084,8 @@ color:#fff;background:var(--riel);padding:.7rem var(--gutter);font:700 .85rem/1.
 .mapa-ctrl button{display:inline-flex;align-items:center;justify-content:center;margin:0;padding:0;width:2.75rem;height:2.75rem;border:0;border-radius:3px;background:#fff;color:var(--fondo);font:800 1.2rem/1 var(--f-cuerpo);cursor:pointer;box-shadow:0 1px 3px rgba(16,24,40,.35)}
 .mapa-ctrl button:hover{background:var(--velo)}
 .mapa-nota{position:absolute;left:.75rem;top:.75rem;max-width:min(22rem,calc(100% - 4.5rem));background:rgba(255,255,255,.94);padding:.5rem .7rem;font-size:var(--t-xs);line-height:1.45;color:var(--tinta);border-left:3px solid var(--oro);z-index:500}
-.mapa-atrib{position:absolute;right:0;bottom:0;background:rgba(255,255,255,.88);font-size:.7rem;padding:.15rem .45rem;color:var(--apagado);max-width:100%;z-index:500}
+.mapa .leaflet-control-attribution{font:.75rem/1.4 var(--f-cuerpo);color:var(--tinta);background:rgba(255,255,255,.88);padding:.15rem .45rem}
+.mapa .leaflet-control-attribution a{color:var(--fondo);text-decoration:underline}
 .lectura{font-size:var(--t-s);display:grid;gap:.25rem}
 .lectura .num{font-family:var(--f-mono);font-size:.85rem}
 @media (max-width:860px){
@@ -2505,15 +2445,14 @@ def screen_centro():
     opens on the establishment's official register point (a22) and the admin confirms it or
     moves it — click or tap, drag, arrow keys at 5 m (Shift 25 m) — the chosen point riding
     «Confirmar centro» beside the code, held server-side until step 8 writes the site file (a
-    reload restores the pin). The basemap is the suite's own archive through /mapa/ (vendored
-    Leaflet + protomaps-leaflet from /recursos/, the bytes territorio runs); a missing archive
-    or a dead route is a note naming the remedy and a completable screen — the ring and the
-    pin on the plain background (ADR-0019's addendum). A fixed site shows its point read-only.
+    reload restores the pin). The basemap is OpenStreetMap's tile service, loaded by this browser
+    under its Tile Usage Policy (ADR-0021; vendored Leaflet from /recursos/): one raster layer, a
+    linked attribution control, and on the first tile failure a note and a completable screen —
+    the ring and the pin on the plain background. A fixed site shows its point read-only.
     No code rides a URL; a filter that excludes the chosen centre clears it: never a centre the
     operator did not pick."""
     body = """<link rel="stylesheet" href="/recursos/leaflet.css">
 <script src="/recursos/leaflet.js"></script>
-<script src="/recursos/protomaps-leaflet.js"></script>
 <div class="centro-grid"><div class="pila">
 <div class="filtros">
 <div class="campo"><label for="f-reg">Región</label><select id="f-reg" class="control"></select></div>
@@ -2540,14 +2479,11 @@ autocomplete="off" spellcheck="false">
 <button type="button" data-z="-1" aria-label="Alejar">−</button>
 <button type="button" data-z="0" aria-label="Volver a centrar el mapa">◎</button></div>
 <div class="mapa-nota" id="c-nota-mapa" hidden></div>
-<div class="mapa-atrib">© OpenStreetMap contributors · Puntos: MINSAL/DEIS, Geoportal de Chile</div>
 </div></div>
 <script>
 (async () => {
   const $ = (s) => document.querySelector(s);
-  const [d, actual, cobR] = await Promise.all([api("/api/centros"), api("/api/centro"), api("/api/mapa")]);
-  const cob = cobR.estado === 200 && typeof cobR.disponible === "boolean" ? cobR
-    : {disponible: false, motivo: "el mapa no se pudo consultar — el punto se confirma igual"};
+  const [d, actual] = await Promise.all([api("/api/centros"), api("/api/centro")]);
   if (d.estado !== 200) {
     $("#c-btn").innerHTML = "<span><b>Registro no disponible</b></span>";
     zona("m").innerHTML = '<div class="error">' + escapear(d.error) + "</div>"; return;
@@ -2603,20 +2539,33 @@ autocomplete="off" spellcheck="false">
       ["Comuna", d.comunas[x.co][0]], ["Región", d.regiones[x.reg]], ["Servicio de Salud", d.servicios[x.ss]],
       ["Dependencia", d.dependencias[x.dep]]].map(([a, b]) => `<dt>${a}</dt><dd>${escapear(b)}</dd>`).join("");
   }
-  // ── the map pane (L5 S4): the frozen design's sticky map over the suite's own basemap ──
+  // ── the map pane (L5 S4): the frozen design's sticky map over OpenStreetMap's tiles ──
   const cont = zona("c-mapa"), notaMapa = zona("c-nota-mapa");
   cont.tabIndex = 0;   // keyboard:false below: the arrows move the pin, never the view
   cont.setAttribute("aria-label", "Mapa del centro. Haga clic o toque donde queda la entrada para mover el marcador, o use las flechas para moverlo de a 5 metros; + y − acercan o alejan.");
-  const mp = L.map(cont, {zoomControl: false, attributionControl: false, keyboard: false,
-                          maxZoom: 19, minZoom: 3});   // territorio's discipline: no stock controls
+  const mp = L.map(cont, {zoomControl: false, keyboard: false,
+                          maxZoom: 18, minZoom: 4});   // territorio's discipline: no stock zoom control
+  mp.attributionControl.setPrefix(false);
+  mp.attributionControl.addAttribution("Puntos: MINSAL/DEIS, Geoportal de Chile");
   L.control.scale({imperial: false, position: "bottomleft"}).addTo(mp);
-  if (cob.disponible) {
-    protomapsL.leafletLayer({url: "/mapa/chile.pmtiles", lang: "es", flavor: "light",
-                             maxZoom: 19, maxDataZoom: 15}).addTo(mp);   // basemap.js's own options
-  } else {   // the state and its remedy, named — a completable screen, never an outage (ADR-0019)
+  // OpenStreetMap's tile service, loaded by this browser under its Tile Usage Policy
+  // (https://operations.osmfoundation.org/policies/tiles/) exactly as territorio loads it: the bare
+  // URL (no query string, one host), the page's origin as Referer, linked attribution, no
+  // wrapping, tiles only when the view settles and never while zooming, zoom 4-18 for this
+  // one-off admin page, no prefetch. Nothing else is set on the layer: no CORS mode, no retina
+  // doubling, no error-tile image, no native-zoom scaling, the default buffer. A compliant client
+  // can still be refused by the service.
+  const OSM_TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+  const fondo = L.tileLayer(OSM_TILES, {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
+    minZoom: 4, maxZoom: 18, noWrap: true, updateWhenIdle: true, updateWhenZooming: false,
+    referrerPolicy: "origin"}).addTo(mp);
+  // the first tile failure (no internet, the host blocked): the state and its remedy, named — the
+  // ring, the pin, the arrows and «Punto oficial» still work, a completable screen, never an outage
+  fondo.once("tileerror", () => {
     notaMapa.hidden = false;
-    notaMapa.textContent = cob.motivo;
-  }
+    notaMapa.textContent = "el mapa de fondo (OpenStreetMap) no se pudo cargar — revise la conexión a internet de este equipo; el punto se confirma igual";
+  });
   const anillo = L.circleMarker([0, 0], {radius: 13, weight: 2, color: "#5315a8", dashArray: "4 3",
                                          fill: false, interactive: false}).addTo(mp);
   const chincheta = L.divIcon({className: "pin-mapa", iconSize: [26, 40], iconAnchor: [13, 40],
@@ -2649,7 +2598,7 @@ autocomplete="off" spellcheck="false">
   function pintar(p, z) {   // the pane opens or re-opens on a point: the ring, the pin, the view
     anillo.setLatLng(p);
     marcador.setLatLng(p);
-    mp.setView([p.lat, p.lng], z ?? (cob.disponible ? 16 : 15));
+    mp.setView([p.lat, p.lng], z ?? 16);
   }
   mp.on("click", (e) => { if (movible()) mover(e.latlng); });   // a click or a tap moves the pin
   marcador.on("drag", (e) => { if (movible()) mover(e.target.getLatLng()); });
@@ -2712,8 +2661,7 @@ autocomplete="off" spellcheck="false">
   });
   $("#c-nota").textContent = `Registro DEIS ${d.registro}: ${miles(CEN.length)} establecimientos de atención primaria. Coordenadas: MINSAL/DEIS, Geoportal de Chile.`;
   selects(); ficha(); lectura();
-  const base = cob.disponible ? {lat: cob.centro.latitud, lng: cob.centro.longitud} : {lat: -33.5, lng: -70.7};
-  mp.setView([base.lat, base.lng], cob.disponible ? cob.centro.zoom : 5);   // before any centre: the archive's own view
+  mp.setView([-33.5, -70.7], 5);   // before any centre: Chile, whole
   if (actual.estado !== 200) {
     zona("m").innerHTML = '<div class="error">' + escapear(actual.error) + "</div>";
   } else if (actual.codigo) {
@@ -3401,46 +3349,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_bytes(200, "application/x-x509-ca-cert", data,
                             {"Content-Disposition": f'attachment; filename="{CA_PUBLICA}"'})
             return
-        if path == "/mapa/chile.pmtiles":
-            # The Centro pane's basemap (L5 S4): the archive step 4 built, one bounded byte range
-            # at a time — the pmtiles client only ever sends single explicit ranges (its
-            # FetchSource), so a missing, compound or open-ended Range is a mis-integration this
-            # answers 400 naming the contract, never a gigabyte in one 200.
-            if not self.authorized():
-                self.send_json(401, {"error": "token ausente o inválido"},
-                               {"WWW-Authenticate": "Bearer"})
-                return
-            try:
-                fh = open(TILES_ARCHIVE, "rb")   # per request: the monthly refresh's atomic mv is a new inode
-            except OSError:
-                self.send_json(404, {"error": "el mapa del paso 4 no está construido — sudo "
-                                              "aps-conecta mapa lo construye; el punto se confirma igual"})
-                return
-            try:
-                info = os.fstat(fh.fileno())   # the size, the ETag and the served bytes read one inode
-                total = info.st_size
-                etag = '"%x-%x"' % (info.st_mtime_ns, total)   # strong: a W/ prefix the client reads as absent
-                rango = re.fullmatch(r"bytes=([0-9]+)-([0-9]+)", self.headers.get("Range", ""))
-                if rango is None:
-                    self.send_json(400, {"error": "el mapa se pide por un solo rango: "
-                                                  "Range: bytes=<inicio>-<fin>"})
-                    return
-                desde, hasta = int(rango.group(1)), int(rango.group(2))
-                if desde > hasta or desde >= total:
-                    self.send_json(416, {"error": "el rango pedido queda fuera del mapa"},
-                                   {"Content-Range": f"bytes */{total}", "Accept-Ranges": "bytes",
-                                    "ETag": etag})
-                    return
-                hasta = min(hasta, total - 1)   # a range that runs past the end serves the last byte
-                self.send_file_slice(206, fh, desde, hasta - desde + 1,
-                                     {"Content-Range": f"bytes {desde}-{hasta}/{total}",
-                                      "Accept-Ranges": "bytes", "ETag": etag,
-                                      "Cache-Control": "no-cache"})
-            finally:
-                fh.close()
-            return
-        if path in ("/api/suite", "/api/red", "/api/centros", "/api/centro", "/api/equipos", "/api/ejecucion",
-                    "/api/mapa"):
+        if path in ("/api/suite", "/api/red", "/api/centros", "/api/centro", "/api/equipos", "/api/ejecucion"):
             if not self.authorized():
                 self.send_json(401, {"error": "token ausente o inválido"},
                                {"WWW-Authenticate": "Bearer"})
@@ -3453,14 +3362,12 @@ class Handler(BaseHTTPRequestHandler):
                 status, body = api_centros()
             elif path == "/api/centro":
                 status, body = centro_actual()
-            elif path == "/api/mapa":
-                status, body = api_mapa()
             elif path == "/api/ejecucion":
                 status, body = estado_ejecucion()
             else:
                 status, body = equipos_actuales()
             self.send_json(status, body,
-                           {"Cache-Control": "no-store"} if path in ("/api/suite", "/api/red", "/api/mapa") else None)
+                           {"Cache-Control": "no-store"} if path in ("/api/suite", "/api/red") else None)
             return
         if path in ROUTES or path == "/listo":
             if not self.authorized():
@@ -3583,28 +3490,6 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header(key, value)
         self.end_headers()
         self.wfile.write(data)
-
-    def send_file_slice(self, status, fh, start, length, headers=None):
-        # send_bytes' sibling for the one file too big to hold in a response's memory (L5 S4's
-        # /mapa/): Content-Length is set once and the bytes are seeked to and written in bounded
-        # chunks — the same one-exit framing rule, without reading the archive whole. A file that
-        # ends short of the promise (replaced mid-answer) closes the connection: keep-alive
-        # framing stays honest even then.
-        self.send_response(status)
-        self.send_header("Content-Type", "application/octet-stream")
-        self.send_header("Content-Length", str(length))
-        for key, value in (headers or {}).items():
-            self.send_header(key, value)
-        self.end_headers()
-        fh.seek(start)
-        quedan = length
-        while quedan > 0:
-            trozo = fh.read(min(65536, quedan))
-            if not trozo:
-                self.close_connection = True
-                break
-            self.wfile.write(trozo)
-            quedan -= len(trozo)
 
     def send_json(self, status, obj, headers=None):
         self.send_bytes(status, "application/json; charset=utf-8",
@@ -4050,6 +3935,7 @@ def selftest():
     # make test on the probe: a prior section's `source env.sh` leaves OFFICE_* exported and
     # env.sh never unsets, so the compose arm's clean fixture .env could not make the OFFICE_PORT
     # gate fire). Scrub the prefixes the phases read; restore in the finally.
+    sin_navegador = os.environ.get("APS_SELFTEST_SIN_NAVEGADOR") == "1"   # read BEFORE the scrub below takes every APS_ name
     _scrub = tuple(("OFFICE_", "SITE_", "SEED_", "FIXTURE_", "NC_", "APS_", "TILES_", "HTTP_",
                     "APACHE_", "NEXTCLOUD_", "COMPOSE_", "IV_"))
     _scrubbed = {k: os.environ.pop(k) for k in list(os.environ) if k.startswith(_scrub)}
@@ -6230,7 +6116,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                 from playwright.sync_api import sync_playwright
             except ImportError:
                 sync_playwright = None
-                if os.environ.get("APS_SELFTEST_SIN_NAVEGADOR") == "1":
+                if sin_navegador:
                     print("  SKIPPED (waived by APS_SELFTEST_SIN_NAVEGADOR=1, NOT a pass): browser arms — "
                           "playwright is not installed")
                 else:
@@ -6385,6 +6271,9 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                                               "return t ? [t.referrerPolicy, t.crossOrigin] : null; }")
                             enlace = pg.locator("#c-mapa .leaflet-control-attribution a[href='https://www.openstreetmap.org/copyright']")
                             atrib = pg.inner_text("#c-mapa .leaflet-control-attribution")
+                            # the map is sticky and 100dvh tall: its lower edge, with the control, sits below the
+                            # fold until the page is scrolled to it — the layout the static line always had
+                            enlace.scroll_into_view_if_needed()
                             atrib_visible = (enlace.count() == 1 and enlace.is_visible()
                                              and pg.evaluate("() => { const a = document.querySelector('#c-mapa .leaflet-control-attribution a'); "
                                                              "const r = a.getBoundingClientRect(); "
@@ -6408,10 +6297,13 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                             # the zoom bounds, on the map AND the layer: all the way out, then all the way in —
                             # no tile request ever leaves 4..18 (the keys are the pane's own, one level each)
                             pg.focus("#c-mapa")
-                            for tecla in ["-"] * 16 + ["+"] * 20:
+                            for tecla in ["-"] * 16 + [None] + ["+"] * 16:
+                                if tecla is None:   # settle at the floor: tiles load when the view is idle
+                                    pg.wait_for_timeout(800)
+                                    continue
                                 pg.keyboard.press(tecla)
-                                pg.wait_for_timeout(120)
-                            pg.wait_for_timeout(600)
+                                pg.wait_for_timeout(400)   # a key during a zoom animation is dropped: let each level land
+                            pg.wait_for_timeout(800)
                             call("POST", "/api/centro", {"codigo": "121567"})   # the reset: no pair held
                         except Exception as e:   # a Playwright timeout: the arm reports it
                             lectura0 = atrib = ""
@@ -6427,14 +6319,15 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                         pedidos = osm["tiles"][t0:]
                         zs = [int(m.group(1)) for m in (re.fullmatch(r"https://tile\.openstreetmap\.org/(\d+)/\d+/\d+\.png", u)
                                                          for u, _r in pedidos) if m]
-                        check("browser: the Centro pane's basemap is OSM under its Tile Usage Policy (ADR-0021) — every tile request is the bare https://tile.openstreetmap.org/z/x/y.png (no query string) with the page's origin as Referer, zooms stay inside 4..18, ONE raster layer, no request to any other openstreetmap.org URL, the attribution is a real linked control on screen and not covered",
+                        check("browser: the Centro pane's tile requests follow the Tile Usage Policy (ADR-0021) — each one the bare https://tile.openstreetmap.org/z/x/y.png (no query string) with the page's origin as Referer, zooms from 4 to 18 and no further",
                               len(pedidos) > 0 and len(zs) == len(pedidos)
                               and all(r == origen for _u, r in pedidos)
-                              and zs and min(zs) == 4 and max(zs) == 18
-                              and osm["otros"] == [] and capas == 1 and img == ["origin", None]
-                              and atrib_visible and "© OpenStreetMap contributors" in atrib
-                              and "Puntos: MINSAL/DEIS, Geoportal de Chile" in atrib and sin_nota
-                              and not errores[desde:])
+                              and zs and min(zs) == 4 and max(zs) == 18)
+                        check("browser: the Centro pane loads ONE raster layer whose tiles carry the origin referrer policy and no CORS mode; no request reaches any other openstreetmap.org URL; tiles arrive without the note",
+                              osm["otros"] == [] and capas == 1 and img == ["origin", None] and sin_nota)
+                        check("browser: the Centro pane's attribution is a real Leaflet control — «© OpenStreetMap contributors» linked to OSM's copyright page, beside the DEIS provenance, on screen and not covered",
+                              atrib_visible and "© OpenStreetMap contributors" in atrib
+                              and "Puntos: MINSAL/DEIS, Geoportal de Chile" in atrib and not errores[desde:])
                         check("browser: the Centro pane — the lectura's official state, the ring and the pin, the arrows move 5 m and 25 m, «Punto oficial» returns it, the moved point rides «Confirmar centro» exactly and a reload restores it (L5 S4)",
                               "Oficial: −38,86996, −72,39666" in lectura0
                               and "En el punto oficial" in lectura0
