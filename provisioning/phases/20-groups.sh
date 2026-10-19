@@ -1,9 +1,9 @@
 # Phase 20 — groups.  OWNER: Epic 2 (only Epic 2 edits this file).
-# THIS FILE IS THE GROUP REGISTRY. The 22 shared role-* ids and their display names are declared
+# THIS FILE IS THE GROUP REGISTRY. The 23 shared role-* ids and their display names are declared
 # below and nowhere else; docs/ARCHITECTURE.md explains the access model and links here rather than
 # restating them. It used to cite that section as the registry while that section cited "the spine's
 # Group Registry" — a document that does not exist — so the two pointed at each other.
-# Provisions: all-staff, the 4 cat-* categories, the 22 shared role-* groups, this clinic's own roles,
+# Provisions: all-staff, the 4 cat-* categories, the 23 shared role-* groups, this clinic's own roles,
 # and its prog-*/sector-* teams.
 # English IDs, Spanish display names. Idempotent (ensure_group = query-before-create). Grants target
 # IDs, never display names.
@@ -21,7 +21,7 @@ ensure_group cat-clinicos        "Clínicos"
 ensure_group cat-tecnicos        "Técnicos"
 ensure_group cat-administrativos "Administrativos"
 
-# Roles (22) — id|display|category, the shape SITE_ROLES uses below. Shared by EVERY clinic: this is
+# Roles (23) — id|display|category, the shape SITE_ROLES uses below. Shared by EVERY clinic: this is
 # the vocabulary that keeps one clinic's ACL matrix readable beside another's. Clinic-local additions
 # go in the site file, below. The category is the cat-* every holder of the role ALSO joins (groups
 # do not nest): the Ley 19.378 families, owner 2026-10-02 — the Químico Farmacéutico is clínico
@@ -52,6 +52,10 @@ roles=(
   "role-estadistica-rem|Encargado/a de Estadística (REM)|cat-administrativos"
   "role-conductor|Conductor (Ambulancia / Traslado)|cat-administrativos"
   "role-auxiliar-servicio|Auxiliar de Servicio|cat-administrativos"
+  # Emergency-access role. It is a role/group only: it carries no permissions of its own and no
+  # override mechanism. Its holders also join cat-clinicos (the category field), so it opens
+  # exactly what that category already opens, and grants may name it like any other role.
+  "role-emergencia-breakglass|Acceso de Emergencia (Break-Glass)|cat-clinicos"
 )
 for entry in "${roles[@]}"; do rest="${entry#*|}"; ensure_group "${entry%%|*}" "${rest%%|*}"; done
 
@@ -62,7 +66,7 @@ for entry in "${roles[@]}"; do rest="${entry#*|}"; ensure_group "${entry%%|*}" "
 # by "belonging to" a category; what gives a person access is the set of groups they are IN. The
 # third field declares which cat-* an account holding this role must ALSO join — 50-users reads it
 # for the standing jefaturas it creates, and the Provisionador's roster frame (role_categories)
-# for everyone else; the 22 shared roles above carry the same field.
+# for everyone else; the 23 shared roles above carry the same field.
 # It is declared per role rather than defaulted to cat-jefaturas because a local unit needs both:
 # a lead (cat-jefaturas) and its technicians (cat-tecnicos). Unit folders are granted BY ROLE, so
 # without a local role a SAR's folder would open to every TENS in the building.

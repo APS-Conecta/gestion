@@ -1100,7 +1100,7 @@ def registry_groups(path):
     ids = {m.group(1) for m in re.finditer(r'^ *"((?:role|cat)-[a-z0-9-]*)\|', text, re.M)}
     ids |= {m.group(1) for m in re.finditer(r"^ensure_group ([a-z0-9-]*)", text, re.M)}
     if len(ids) < 20:
-        raise ValueError(f"solo {len(ids)} de los 27 grupos compartidos se pudieron leer: el paquete "
+        raise ValueError(f"solo {len(ids)} de los 28 grupos compartidos se pudieron leer: el paquete "
                          "de instalación cambió de forma — reinstálelo antes de validar la planilla")
     return ids
 

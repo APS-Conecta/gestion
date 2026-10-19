@@ -147,7 +147,7 @@ declared_shared="$( { sed -n 's/^ *"\(\(role\|cat\)-[a-z0-9-]*\)|.*/\1/p' "$PHAS
                      sed -n 's/^ensure_group \([a-z0-9-]*\).*/\1/p' "$PHASE20"; } | sort -u )"
 shared_count="$(printf '%s\n' "$declared_shared" | grep -c . || true)"
 if [ "$shared_count" -lt 20 ]; then
-  note "no se pudieron revisar los grupos: solo $shared_count grupos declarados se leyeron de $PHASE20 (se esperan 27 o más) — cambió de forma; corrija las dos expresiones sed de $0 antes de confiar en este resultado"
+  note "no se pudieron revisar los grupos: solo $shared_count grupos declarados se leyeron de $PHASE20 (se esperan 28 o más) — cambió de forma; corrija las dos expresiones sed de $0 antes de confiar en este resultado"
 else
   # The three engine groups (D5) join the declared set the same way: created by intravox:setup,
   # membership mapped by phases 41 and 50 (lib.sh intravox_group_map) — not registry vocabulary,
