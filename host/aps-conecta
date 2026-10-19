@@ -986,13 +986,18 @@ retire_tile_remnants() {  # idempotent: the timer disabled, its two unit files r
   # archive is still there — ONE line saying it can be freed. The archive is NEVER deleted here: Protomaps'
   # builds expire, so it cannot be rebuilt, and freeing a gigabyte is the operator's call
   local dir="$ETC_DIR/systemd/system" u retired=0
-  systemctl disable --now aps-conecta-tiles.timer >/dev/null 2>&1 || true   # absent is fine
+  # the timer off, then a refresh ALREADY RUNNING stopped (disabling a timer leaves the service it fired
+  # alone, and it could rewrite the archive after the line below says it can be freed); absent is fine.
+  # Both before the unit files go: stopping needs the unit loaded
+  systemctl disable --now aps-conecta-tiles.timer >/dev/null 2>&1 || true
+  systemctl stop aps-conecta-tiles.service >/dev/null 2>&1 || true
   for u in aps-conecta-tiles.service aps-conecta-tiles.timer; do
     if [ -e "$dir/$u" ]; then rm -f "$dir/$u"; retired=1; fi
   done
   [ "$retired" = 0 ] || systemctl daemon-reload >/dev/null 2>&1 || true
-  if command -v docker >/dev/null 2>&1 \
-     && docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx aps-conecta-tiles; then
+  local names=""   # captured first, matched on a here-string: no pipe for a pipefail caller to read a SIGPIPE from
+  if command -v docker >/dev/null 2>&1; then names="$(docker ps -a --format '{{.Names}}' 2>/dev/null)" || names=""; fi
+  if grep -qx aps-conecta-tiles <<<"$names"; then
     docker rm -f aps-conecta-tiles >/dev/null 2>&1 || true
     retired=1
   fi
@@ -1259,7 +1264,7 @@ aio_admin() {  # /containers shows the generated Nextcloud admin password once t
 }
 
 backup_hour_utc() {  # DAY — 04:00 in Santiago as the UTC hour the wizard takes: the mastercontainer
-  # runs in UTC, so «04:00» posted as-is ran at 00:00 or 01:00 Santiago time (B-035). Fixed when step 7
+  # runs in UTC, so «04:00» posted as-is ran at 00:00 or 01:00 Santiago time (B-035). Fixed when step 6
   # runs; across a DST change the backup runs an hour off (INSTALLER §11). GNU date falls back to UTC
   # without a word when tzdata is missing, and Santiago is never UTC+0: an unchanged hour is that
   # fallback, refused
@@ -1270,7 +1275,7 @@ backup_hour_utc() {  # DAY — 04:00 in Santiago as the UTC hour the wizard take
 }
 
 cmd_aio_wizard() {  # --dominio D [--sin-validar-dominio] [--respaldo DIR] [--talk] [--grabacion] [--preparar]
-  # --preparar: the web installer's step 7 — the mastercontainer started and the wizard filled, but NO
+  # --preparar: the web installer's step 6 — the mastercontainer started and the wizard filled, but NO
   # start: the operator presses «Iniciar» in the wizard (S1b: the wizard kept, pre-filled)
   local domain="" backup_dir="" options=() talk=0 grabacion=0 preparar=0 opciones=(--data-urlencode options-form=1) hora
   MOTIVO=""   # a refusal that names its own cause for the web installer (own_ipv4)
@@ -1356,6 +1361,9 @@ reponer() {  # the weekly headless re-provision (the timer's whole job): the Pro
   # run in-process — `provisionador.py --paso generar`, no server, no banner, no token. The phases
   # stream live and the gate's verdict is the exit code: drift self-healing or a loud red, never a
   # silent no-op
+  # A host updated without «temporizadores» keeps the old monthly map timer, whose ExecStart is a subcommand
+  # that is gone: this weekly entry point (root, the unit's own) retires it, so the gap is at most a week
+  if is_root; then retire_tile_remnants; fi
   local code; code="$(site_codigo)" || true
   if [ -z "$code" ]; then
     die "no hay un único sitio en sites/ (una instalación sirve a un solo establecimiento) — elija el centro en el instalador web primero"
@@ -1824,6 +1832,8 @@ EOF
   printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/ss"; chmod +x "$tshim/ss"
   printf '#!/usr/bin/env bash\necho x86_64\n' > "$tshim/uname"; chmod +x "$tshim/uname"
   printf '#!/usr/bin/env bash\necho 127.0.0.1\n' > "$tshim/getent"; chmod +x "$tshim/getent"
+  # systemd is never the host's: an arm that reaches it (the weekly run retires the old map timer) meets a no-op
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/systemctl"; chmod +x "$tshim/systemctl"
 
   export PATH="$tshim:$PATH"
 
@@ -2776,8 +2786,8 @@ SHIM
     printf '[Unit]\n' > "$ETC_DIR/systemd/system/aps-conecta-tiles.service"; printf '[Timer]\n' > "$ETC_DIR/systemd/system/aps-conecta-tiles.timer"
     printf 'aps-conecta-tiles\naps-conecta-database\n' > "$tmp/rt.ps"; : > "$tmp/systemctl.argv"; : > "$tmp/rt.docker"
     out="$(BIN_DIR="$tmp/bin-t"; TILES_REMNANT_DIR="$tmp/old-tiles"; FAIL=0; install_timers 2>&1; echo "FAIL=$FAIL")"
-    check "temporizadores: the retired map's timer is disabled, both unit files removed, systemd reloaded once, the old map container removed, and ONE line says the archive can be freed" \
-      'grep -qx "disable --now aps-conecta-tiles.timer" "$tmp/systemctl.argv" && [ ! -e "$ETC_DIR/systemd/system/aps-conecta-tiles.service" ] && [ ! -e "$ETC_DIR/systemd/system/aps-conecta-tiles.timer" ] && [ "$(grep -cx "daemon-reload" "$tmp/systemctl.argv")" = 1 ] && grep -qx "rm -f aps-conecta-tiles" "$tmp/rt.docker" && ! grep -qx "aps-conecta-tiles" "$tmp/rt.ps" && grep -qx "aps-conecta-database" "$tmp/rt.ps" && [ "$(printf "%s\n" "$out" | grep -c "^·")" = 1 ] && case "$out" in *"sudo rm -rf $tmp/old-tiles"*"FAIL=0"*) ;; *) false;; esac'
+    check "temporizadores: the retired map's timer is disabled and a refresh ALREADY RUNNING is stopped (the service), in that order and before the unit files go and systemd reloads once; both unit files removed, the old map container removed, and ONE line says the archive can be freed" \
+      'grep -qx "disable --now aps-conecta-tiles.timer" "$tmp/systemctl.argv" && [ ! -e "$ETC_DIR/systemd/system/aps-conecta-tiles.service" ] && [ ! -e "$ETC_DIR/systemd/system/aps-conecta-tiles.timer" ] && [ "$(grep -cx "daemon-reload" "$tmp/systemctl.argv")" = 1 ] && awk "/^disable --now aps-conecta-tiles.timer\$/ {d=NR} /^stop aps-conecta-tiles.service\$/ {s=NR} /^daemon-reload\$/ {r=NR} END {exit !(d && s && r && d < s && s < r)}" "$tmp/systemctl.argv" && grep -qx "rm -f aps-conecta-tiles" "$tmp/rt.docker" && ! grep -qx "aps-conecta-tiles" "$tmp/rt.ps" && grep -qx "aps-conecta-database" "$tmp/rt.ps" && [ "$(printf "%s\n" "$out" | grep -c "^·")" = 1 ] && case "$out" in *"sudo rm -rf $tmp/old-tiles"*"FAIL=0"*) ;; *) false;; esac'
     check "temporizadores: the archive is never deleted — the operator frees it, the installer only says how" \
       '[ "$(cat "$tmp/old-tiles/chile.pmtiles")" = archive ]'
     : > "$tmp/systemctl.argv"; : > "$tmp/rt.docker"
@@ -2799,6 +2809,25 @@ SHIM
     out2="$(export ID_U=1000; FAIL=0; install_timers 2>&1; echo "FAIL=$FAIL")"
     check "temporizadores: a command linked to another copy, or no sudo, refuses before systemd is touched — naming the fix" \
       '[ ! -s "$tmp/systemctl.argv" ] && case "$out" in *"no apunta a esta copia"*"sudo aps-conecta descargar"*"FAIL=1"*) ;; *) false;; esac && case "$out2" in *"sudo aps-conecta temporizadores"*"FAIL=1"*) ;; *) false;; esac'
+    # a host updated without running «temporizadores» keeps the old timer, whose ExecStart is a subcommand
+    # that no longer exists: the weekly run (root, the unit's own entry point) retires it too
+    printf '[Unit]\n' > "$ETC_DIR/systemd/system/aps-conecta-tiles.service"; printf '[Timer]\n' > "$ETC_DIR/systemd/system/aps-conecta-tiles.timer"
+    printf 'aps-conecta-tiles\n' > "$tmp/rt.ps"; : > "$tmp/systemctl.argv"; : > "$tmp/rt.docker"
+    out="$(site_codigo() { echo 113314; }; site_domain() { :; }; python3() { return 0; }; notify_admins() { :; }
+           TILES_REMNANT_DIR="$tmp/old-tiles"; reponer 2>&1)"; rc=$?
+    check "reponer: the weekly run retires the old map timer too — disabled, its running refresh stopped, both unit files gone, the container removed, ONE line; the provision still runs and exits as it did" \
+      '[ ! -e "$ETC_DIR/systemd/system/aps-conecta-tiles.timer" ] && [ ! -e "$ETC_DIR/systemd/system/aps-conecta-tiles.service" ] && grep -qx "stop aps-conecta-tiles.service" "$tmp/systemctl.argv" && grep -qx "rm -f aps-conecta-tiles" "$tmp/rt.docker" && [ "$(printf "%s\n" "$out" | grep -c "^·.*sudo rm -rf $tmp/old-tiles")" = 1 ] && [ "$rc" -eq 0 ]'
+    : > "$tmp/systemctl.argv"
+    out="$(site_codigo() { echo 113314; }; site_domain() { :; }; python3() { return 0; }; notify_admins() { :; }
+           TILES_REMNANT_DIR="$tmp/old-tiles"; reponer 2>&1)"; rc=$?
+    check "reponer: the second weekly run says nothing of the map and reloads nothing" \
+      '! grep -q "daemon-reload" "$tmp/systemctl.argv" && case "$out" in *"rm -rf"*) false;; *) [ "$rc" -eq 0 ];; esac'
+    printf '[Timer]\n' > "$ETC_DIR/systemd/system/aps-conecta-tiles.timer"; : > "$tmp/systemctl.argv"
+    out="$(export ID_U=1000; site_codigo() { echo 113314; }; site_domain() { :; }; python3() { return 0; }; notify_admins() { :; }
+           TILES_REMNANT_DIR="$tmp/old-tiles"; reponer 2>&1)"; rc=$?
+    check "reponer: without root it touches neither systemd nor the unit files — retiring is the admin's, the provision is not blocked" \
+      '[ -e "$ETC_DIR/systemd/system/aps-conecta-tiles.timer" ] && [ ! -s "$tmp/systemctl.argv" ] && [ "$rc" -eq 0 ]'
+    rm -f "$ETC_DIR/systemd/system/aps-conecta-tiles.timer"
   fi
   check "temporizadores: the retired archive's folder is named once, where the operator reads it" \
     'grep -qF "TILES_REMNANT_DIR=\"\${TILES_REMNANT_DIR:-/srv/aps-conecta/tiles}\"" "$HOST_DIR/aps-conecta"'

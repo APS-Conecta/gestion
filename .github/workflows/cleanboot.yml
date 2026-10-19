@@ -611,9 +611,9 @@ jobs:
             || { echo "FAIL: territorio comuna_cut is not the site's $want_cut" >&2; occ config:app:get territorio comuna_cut >&2; exit 1; }
           [ "$(occ config:app:get territorio comuna_name)" = "$want_name" ] \
             || { echo "FAIL: territorio comuna_name is not the site's $want_name" >&2; occ config:app:get territorio comuna_name >&2; exit 1; }
-          if occ config:app:get territorio tile_url >/dev/null 2>&1; then
-            echo "FAIL: territorio tile_url is set, but nothing provisions it any more: $(occ config:app:get territorio tile_url)" >&2; exit 1
-          fi
+          # absent (occ exits 1) or stored empty (exit 0, no value) are both "unset"; only a value is a failure
+          tile_url="$(occ config:app:get territorio tile_url 2>/dev/null || true)"
+          [ -z "$tile_url" ] || { echo "FAIL: territorio tile_url is set, but nothing provisions it any more: $tile_url" >&2; exit 1; }
       # The weekly run, by IP, on the instance just installed: the leaf is kept (same fingerprint) and
       # apache is not restarted; the seed converges again, idempotent by IP too.
       - name: The weekly run keeps the leaf and apache as they are
