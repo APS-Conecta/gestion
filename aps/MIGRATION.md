@@ -66,7 +66,7 @@ scratch domain), tear it down, and only then run it for the window.
 
 `make uninstall` on the compose stack — it preserves the site record (move it off this
 host), runs the verified dump again, asks for the site slug, tears the volumes down, removes
-the generated artifacts, disables the basemap timer, and prints the clean-slate report.
+the generated artifacts, and prints the clean-slate report.
 `.env` is LEFT by design: rotate anything that used its secrets, then `rm .env`.
 
 ## 4. The AIO reinstall
@@ -152,10 +152,10 @@ suite the day instalador publishes.
 
    — or point `install --sitio` at the old copy once. The register
    (`sites/establecimientos-deis-*.csv`) ships inside the package.
-4. `sudo bash /opt/aps-conecta/instalador/host/aps-conecta install` — the same nine steps;
+4. `sudo bash /opt/aps-conecta/instalador/host/aps-conecta install` — the same eight steps;
    the running suite converges and `aps-conecta` re-links to the new home.
-5. `sudo aps-conecta temporizadores` — the weekly re-provision and the monthly map timer
-   re-point at the new home (their units name it).
+5. `sudo aps-conecta temporizadores` — the weekly re-provision re-points at the new home (its
+   unit names it), and the retired monthly map timer, if this host still has one, is removed (§12).
 6. Green (`aps-conecta revalidate`)? The old clone is inert now — nothing reads it — and
    removable: `sudo rm -rf /opt/aps-conecta/gestion`.
 
@@ -171,3 +171,46 @@ an install pinned at an old tag keeps verifying against them exactly as it alway
 Channel continuity, once more because it is the whole safety of the move: a published tag's
 digests never move. `ghcr.io/aps-conecta/*:<old gestion tag>` sets remain valid channels
 forever; instalador's tags are the new ones, never overwrites of the old.
+
+## 12. Upgrade from the PMTiles basemap
+
+Until this release the suite built a ~1 GB PMTiles archive (`aps-conecta mapa`, install step 4),
+refreshed it monthly (`aps-conecta-tiles.timer`) and served it at `/tiles/chile.pmtiles`; Territorio
+and the installer's Centro pane drew their basemap from it. That is retired: Territorio now draws
+OpenStreetMap's own tile service, loaded by each browser under its Tile Usage Policy (ADR-0021 in
+Territorio), and the installer's Centro pane does the same. There is no map step any more (the
+install is eight steps, Centro is step 5), no `tiles` subcommand, and the mastercontainer is no
+longer created with `APS_TILES_DIR`.
+
+**Order matters.** Territorio's release that stops reading the archive must be on the suite
+**before** the retirement reaches a clinic: a Territorio that still has a stored `tile_url` pointing
+at `/tiles/` would lose its map. Territorio's own release deletes the stored `tile_url` (it logs the
+old value first); this package only stops providing the route.
+
+On a host that ran the earlier bundle, `sudo aps-conecta temporizadores` (a finished install runs it
+too) retires the remnants, idempotently and quietly the second time. Run it right after the update
+lands: until then the old monthly timer would call the removed `aps-conecta tiles` subcommand and show
+as a FAILED unit in `systemctl --failed`. It does this:
+
+- `aps-conecta-tiles.timer` is disabled and stopped, the two unit files
+  (`aps-conecta-tiles.service`, `aps-conecta-tiles.timer`) are removed from
+  `/etc/systemd/system`, and systemd is reloaded once;
+- the old map container `aps-conecta-tiles`, if one is still around, is removed;
+- ONE line says the archive can be freed.
+
+**The archive is never deleted for you.** Protomaps' builds expire, so it cannot be rebuilt on
+demand, and an archive left in place costs only disk. To free it, once the clinic has run on
+OpenStreetMap for a while:
+
+    sudo rm -rf /srv/aps-conecta/tiles
+
+The mastercontainer itself is not re-created: one that already carries `APS_TILES_DIR` keeps its
+read-only `/aps-tiles` bind (the setting is sticky in the suite's `configuration.json`) and nothing
+reads it; a new one is created without it, and `/tiles/` answers 404 either way. **Rollback** is a
+forward version: the earlier bundle's units and step come back only by installing that package
+again, and the archive, if you kept it, serves again.
+
+What each person sees: the map needs internet on **their** device (OpenStreetMap's servers are
+reached directly), and a blocked or unreachable OpenStreetMap shows as a plain background — the
+installer's Centro pane says so and stays completable. OpenStreetMap answers a client it has blocked
+with an ordinary image, so a blocked map shows a «blocked» tile, not an error.
