@@ -56,7 +56,7 @@ The documentation is organized into three comprehensive, self-contained manuals 
 - One-directional convergence: Add-only policy, divergence auditing (`make divergence`).
 - Role-Based Access Control (RBAC): 22 shared CESFAM roles, category groupings (`cat-*`), and `SITE_ROLES`.
 - Group Folders administration and allow-refinement ACL design (strictly no DENY rules).
-- Office Server (`eurooffice`) and Basemap (`tiles` PMTiles) administration.
+- Office Server (`eurooffice`) and Basemap (OpenStreetMap tiles) administration.
 - Hardening, reverse proxy routing (Caddy / Tailscale), log management, and diagnostic runbooks.
 
 ---
@@ -126,7 +126,7 @@ Visual references from the live running instance are captured and indexed in [`s
 | **04** | [`04_transversal_folder.png`](screenshots/04_transversal_folder.png) | Shared institutional knowledge tree and clinic conventions |
 | **05** | [`05_app_epidemiologia.png`](screenshots/05_app_epidemiologia.png) | Real-time epidemiological alerts (MINSAL / ISP) and surveillance dashboards |
 | **06** | [`06_app_farmacia.png`](screenshots/06_app_farmacia.png) | Pharmacological arsenal vademécum with clinical risk evaluations |
-| **07** | [`07_app_territorio.png`](screenshots/07_app_territorio.png) | Geospatial jurisdiction map with Chilean PMTiles basemap |
+| **07** | [`07_app_territorio.png`](screenshots/07_app_territorio.png) | Geospatial jurisdiction map over the OpenStreetMap basemap |
 | **08** | [`08_app_talk.png`](screenshots/08_app_talk.png) | Secure staff chat, group discussions, and video conferencing |
 | **09** | [`09_app_calendar.png`](screenshots/09_app_calendar.png) | Primary care scheduling, clinic shifts, and program calendars |
 | **10** | [`10_admin_overview.png`](screenshots/10_admin_overview.png) | Server administration overview, security status, and system health |

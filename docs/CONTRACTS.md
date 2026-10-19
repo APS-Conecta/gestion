@@ -37,7 +37,7 @@ name order (gestion#ADR-0002).
 
 | Repo | Path | Range |
 |---|---|---|
-| territorio | docs/adr/ | 0001–0020 |
+| territorio | docs/adr/ | 0001–0021 |
 | epidemiologia | docs/adr/ | 0002–0017 |
 | estadistica | docs/adr/ | 0001–0008 |
 | gestion | docs/adr/ | 0000–0020 |

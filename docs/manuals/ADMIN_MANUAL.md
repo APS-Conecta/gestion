@@ -13,7 +13,7 @@ This Server Administration Manual defines operational procedures, architecture s
 
 This manual provides authoritative, operational instructions for system administrators, DevOps engineers, and municipal IT teams deploying, hardening, configuring, and maintaining APS Conecta Gestión nodes.
 
-APS Conecta Gestión is architected as an immutable, declarative configuration-as-code layer projected over official upstream **Nextcloud 34** containers. It eliminates manual Web UI configuration drift, strictly avoids core platform source code forks, enforces a resilient Role-Based Access Control (RBAC) model tailored to Chilean primary healthcare centers, and integrates Euro-Office for in-browser collaborative document editing alongside an autonomous, self-hosted geospatial basemap service.
+APS Conecta Gestión is architected as an immutable, declarative configuration-as-code layer projected over official upstream **Nextcloud 34** containers. It eliminates manual Web UI configuration drift, strictly avoids core platform source code forks, enforces a resilient Role-Based Access Control (RBAC) model tailored to Chilean primary healthcare centers, and integrates Euro-Office for in-browser collaborative document editing alongside a geospatial map whose basemap is OpenStreetMap's tile service.
 
 ![Server Administration Overview](screenshots/10_admin_overview.png)
 *Figure 1: Server Administration Overview in APS Conecta Gestión (`Administration settings -> Overview`), showing full security validation, system status, and active platform parameters.*
@@ -76,7 +76,7 @@ The following reference screenshots from the operational testbed highlight key s
 | **Transversal Area** | [`screenshots/04_transversal_folder.png`](screenshots/04_transversal_folder.png) | Institutional knowledge repository containing conventions (`LÉEME — Convenciones.md`), protocols, and workflows. |
 | **Epidemiología App** | [`screenshots/05_app_epidemiologia.png`](screenshots/05_app_epidemiologia.png) | Custom health intelligence module parsing real-time MINSAL and ISP alert feeds. |
 | **Farmacia App** | [`screenshots/06_app_farmacia.png`](screenshots/06_app_farmacia.png) | Pharmacological vademécum with integrated clinical risk warnings (renal, pregnancy, elderly). |
-| **Territorio App** | [`screenshots/07_app_territorio.png`](screenshots/07_app_territorio.png) | Geospatial sector mapping powered by the self-hosted PMTiles basemap engine. |
+| **Territorio App** | [`screenshots/07_app_territorio.png`](screenshots/07_app_territorio.png) | Geospatial sector mapping over the OpenStreetMap basemap, loaded by each browser. |
 | **Talk Internal Chat** | [`screenshots/08_app_talk.png`](screenshots/08_app_talk.png) | Secure on-premise team chat and clinical coordination rooms. |
 | **Institutional Calendar** | [`screenshots/09_app_calendar.png`](screenshots/09_app_calendar.png) | Shift scheduling, team meetings, and primary care campaign coordination. |
 | **Admin System Overview** | [`screenshots/10_admin_overview.png`](screenshots/10_admin_overview.png) | Server administration health check and system configuration summary. |
@@ -118,7 +118,7 @@ The five services in `compose.yaml` fulfill dedicated roles:
 4. **`cron`:** Background job runner executing `/cron.sh` (`busybox crond -f`). It utilizes the identical image and volumes as `nextcloud` via an anchor definition (`x-nextcloud-base`) to execute `php -f /var/www/html/cron.php` every 5 minutes.
 5. **`eurooffice`:** Standalone documentserver container (`ghcr.io/euro-office/documentserver`) providing in-browser collaborative editing for OOXML (`.docx`, `.xlsx`, `.pptx`) and ODF (`.odt`, `.ods`, `.odp`) documents.
 
-> The basemap has no service of its own in this stack: a production suite serves `/srv/aps-conecta/tiles/chile.pmtiles` same-origin at `/tiles/` through its own apache, and this dev compose writes `tile_url` empty — territorio falls back to the OpenStreetMap raster (see §7's basemap section).
+> The basemap has no service of its own in this stack: each browser loads OpenStreetMap's tiles directly (see §7's basemap section).
 
 ### Services Inventory & Digest Pinning
 In production, relying on floating tags (such as `:latest`, `:34-apache`, or `:18-alpine`) creates silent deployment drift: two nodes installed days apart could run different patch levels. 
@@ -144,7 +144,7 @@ Networking follows strict architectural boundaries:
   - `nextcloud` communicates with Euro-Office internally at `http://eurooffice/`.
   - `eurooffice` fetches documents from Nextcloud via `StorageUrl` set to `http://nextcloud/`.
 - **Host Gateway Routing (`extra_hosts`):** The `nextcloud` container configures `host.docker.internal:host-gateway`. On Linux hosts, this maps `host.docker.internal` to the host's bridge IP address, permitting container-to-host communications when required.
-- **Client-to-Service Communication:** Client browsers running on clinical workstations communicate with Nextcloud and Euro-Office using the host's published endpoints (or through an external reverse proxy). The map needs no endpoint of its own: the suite serves it same-origin at `/tiles/`.
+- **Client-to-Service Communication:** Client browsers running on clinical workstations communicate with Nextcloud and Euro-Office using the host's published endpoints (or through an external reverse proxy). The map needs no endpoint of its own: browsers load OpenStreetMap's tiles directly (§7).
 
 ### Loopback Binding & Network Isolation
 By design, all container port publications in `compose.yaml` bind strictly to the loopback interface (`127.0.0.1`):
@@ -378,11 +378,7 @@ It is governed by foundational design rules:
   - **`POLICY_ADMIN_ONLY`:** Restricted to administrators: `support`, `updatenotification`, `serverinfo`, `recommendations`, `related_resources`, `weather_status`.
   - **`POLICY_CONFIG`:** Disables onboarding tours: `firstrunwizard:wizard_enabled:false`, terminates telemetry: `survey_client:never_again:true`, and turns off the password breach check: `password_policy:enforceHaveIBeenPwned:0` (no password hash prefix reaches api.pwnedpasswords.com).
   - **`POLICY_DISABLED`:** Disabled outright: `survey_client`, `nextcloud_announcements`.
-  - **Geospatial Tile Binding:** Binds `territorio` to the suite's own same-origin route — phase 16
-    derives it from the instance's public address (`overwrite.cli.url`, the phase 14 pattern):
-    ```bash
-    app_config_set territorio tile_url "${ocu%/}/tiles/chile.pmtiles"
-    ```
+  - **No tile binding:** phase 16 writes no tile URL for `territorio`; its basemap is OpenStreetMap's tile service, loaded by each browser (§7).
 
 #### `20-groups.sh`: Role Vocabulary, Category Taxonomy & Group Registry
 - **Purpose:** Declares the universal group registry across the instance.
@@ -689,60 +685,21 @@ This script confirms:
 
 ---
 
-## 7. Basemap & GIS Services (PMTiles)
+## 7. Basemap & GIS Services (OpenStreetMap)
 
-### Self-Hosted PMTiles Architecture
 The custom `territorio` application provides health sectoring, community unit (*unidades vecinales*) visualization, and geographic boundary mapping for the CESFAM.
 
-Public map tile servers (such as OpenStreetMap tile servers) enforce strict Tile Usage Policies that prohibit production application scraping and frequently return HTTP 403 Forbidden. APS Conecta Gestión incorporates a fully autonomous, self-hosted basemap service using **PMTiles** (Protomaps format).
-
-Unlike traditional tile servers (which run complex Python/Node rendering stacks and tile databases), PMTiles consolidates the entire country's basemap into a **single static archive** (`tiles/chile.pmtiles`). The browser reads vector tile geometries directly using HTTP Range requests.
+Its basemap is OpenStreetMap's standard tile service (`https://tile.openstreetmap.org/{z}/{x}/{y}.png`), requested **directly by each workstation's browser** (territorio#ADR-0021). The suite hosts nothing for it: there is no archive to build or refresh, no `/tiles/` route, no `aps-conecta-tiles` timer and no `tile_url` setting. Territorio hardcodes the one URL and the attribution in a single place.
 
 ```mermaid
 graph LR
-  Browser[Workstation Browser Map View] -->|HTTP GET Range: bytes=1024-2048| AP[the suite's apache · /tiles/ · same origin]
-  AP -->|Reads byte range from the read-only bind| Archive[(/srv/aps-conecta/tiles/chile.pmtiles · 1.04 GB)]
+  Browser[Workstation Browser Map View] -->|HTTPS GET raster tiles| OSM[tile.openstreetmap.org]
 ```
 
-### Archive Specifications & Chilean Geographic Bounds
-The basemap archive is generated using the Protomaps build system:
-- **Archive Size:** ~1.04 GB.
-- **Bounding Box (`BBOX`):** `-110.0, -56.0, -66.4, -17.5`.
-- **Territorial Scope:** Covers the entire continental territory of Chile from Arica to Magallanes, **plus insular territories** (Isla de Pascua / Rapa Nui at -109.4° and Juan Fernández at -78.8°).
-- **Zoom Levels:** Level 0 through 15 (providing high-resolution street and building block fidelity across urban and rural health jurisdictions).
-
-### Same-Origin Serving via the Suite's Apache
-The archive is served by the suite's own apache (Caddy) at `/tiles/`, same origin with the map page —
-no separate container, port or CORS configuration:
-- **Range Request Handling:** `file_server` evaluates `Range: bytes=X-Y` natively, returning HTTP 206
-  Partial Content with a strong `ETag` (revalidation is one cheap round trip; the route sends
-  `Cache-Control: no-cache`, so a 404 cached before the first build never outlives it).
-- **The read-only bind:** the mastercontainer is created with `APS_TILES_DIR=/srv/aps-conecta/tiles`,
-  which apache mounts read-only at `/aps-tiles`. The setting is sticky in the suite's
-  `configuration.json`; a mastercontainer created without it serves `/tiles/` as a 404 —
-  `sudo bash host/tiles.sh check` reports it, and `docs/INSTALLER.md` §9 has the one-minute remedy.
-- **Nothing depends on the archive**: before the first build `/tiles/` is a 404 and the suite is
-  fully healthy; step 4 of the install (or `sudo aps-conecta mapa`) builds it.
-- **Verify on a clinic**: `sudo bash host/tiles.sh check` — the archive, the bind, and a ranged read
-  through the suite's internal network, by domain and by IP.
-
-### Basemap Verification & Maintenance (`scripts/refresh-basemap.sh`)
-Because road networks and urban boundaries evolve, the basemap is refreshed monthly by the
-`aps-conecta-tiles.timer` (the 4th at 05:00 Santiago time), which runs exactly this verb:
-
-```bash
-sudo aps-conecta tiles refresh
-```
-
-`sudo aps-conecta mapa` is the installer's verb, not the refresher's: it builds the archive only
-when it is missing and short-circuits on an existing one. A refresh ends with a serving check
-through the suite's own route whenever the suite is running.
-
-The script:
-1. Discovers the latest published planetary vector build from `build.protomaps.com`.
-2. Uses the `pmtiles` CLI utility to extract the Chilean bounding box with multi-threaded downloads.
-3. **Performs Semantic Verification:** Opens the newly downloaded archive, validates that metadata headers identify it as PMTiles v3, checks zoom levels (0–15), verifies the header bounds contain the three fixed in-Chile anchors (Santiago, Hanga Roa, Punta Arenas), and reads the Santiago reference tile at z12.
-4. Atomically replaces `tiles/chile.pmtiles` using `mv`. If the download or validation fails, the active basemap remains completely untouched.
+- **Network requirement:** workstations need outbound HTTPS to `tile.openstreetmap.org`. The tile coordinates (about 300 m at the closest zoom) and the instance's origin reach OSM, as with any OSM-based map.
+- **Policy:** the map follows OSM's [Tile Usage Policy](https://operations.osmfoundation.org/policies/tiles/) (visible attribution, default browser caching, a bounded retry budget, no bulk downloads). Offline maps are not supported.
+- **If OSM blocks the map:** the tile layer shows a banner when tiles fail to load. A block that answers with a valid image can look like a working map, so confirm from a workstation before assuming the suite is at fault. Because there is no setting, the fix is a Territorio release that changes the one constant.
+- **Leftovers from the PMTiles era:** a host installed before that change may still hold `/srv/aps-conecta/tiles/chile.pmtiles` (~1 GB) and the `aps-conecta-tiles` timer. They are unused: run `sudo systemctl disable --now aps-conecta-tiles.timer` and remove the archive by hand to reclaim the disk (the installer never deletes it automatically).
 
 ---
 

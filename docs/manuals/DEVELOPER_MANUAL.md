@@ -897,7 +897,7 @@ sequenceDiagram
   - Child tables: GES coverage tags, supply channels (*abastece*), and dispensing restrictions.
 - **Batch Processing:** Headless `occ farmacia:import <file.csv>` command and in-browser drag-and-drop review dialog share the exact same `ImportService` validation logic.
 
-### 4.3 Case Study 3: `territorio` (Geospatial Mapping, Boundaries & PMTiles)
+### 4.3 Case Study 3: `territorio` (Geospatial Mapping & Boundaries)
 
 - **App ID:** `territorio` (Lab App)
 - **Role:** GIS spatial jurisdiction and epidemiological mapping tool for primary care territories.
@@ -916,8 +916,8 @@ sequenceDiagram
       // 1e-9 degree on-the-line tolerance
   }
   ```
-- **Basemap Delivery via PMTiles:**
-  In production the suite's own apache serves a single `chile.pmtiles` archive (~1 GB) same-origin at `/tiles/`, from a read-only bind of `/srv/aps-conecta/tiles`. The browser reads tile ranges via HTTP `Range` headers using `protomaps-leaflet`, consuming only 0.5–1 MB per screenful with zero external API dependencies. The dev compose stack ships no tiles service: `tile_url` stays empty and territorio falls back to the OpenStreetMap raster.
+- **Basemap Delivery via OpenStreetMap:**
+  The basemap is OpenStreetMap's standard raster tile service, requested directly by each user's browser through one hardcoded URL (territorio#ADR-0021). There is no archive, no `tile_url` setting and no tiles service in the suite or in the dev compose stack: the dev map and a clinic's map load the same tiles.
 
 ---
 

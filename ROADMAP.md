@@ -42,7 +42,7 @@ formatting loss that implies** (issue #45).
 **The installer run** ([#199](https://github.com/APS-Conecta/gestion/issues/199)) — an install a clinic
 can run end to end without a developer. Laps L1–L4 shipped (see *Done*); the rest, in order:
 
-1. **L5 Map** — the basemap as a registry step, the Centro picker, same-origin `/tiles/`.
+1. **L5 Map** — the Centro picker. Its basemap blueprint (a registry step, same-origin `/tiles/`) was superseded: the basemap is OpenStreetMap's tile service, loaded by each browser (territorio#ADR-0021).
 2. **L6 Docs — frozen until the mirror lands (a23, #205).** `docs/INSTALLER.md` ⇄ the clinic
    guide, mirrored step for step — and with them the deferred **suite-docs** rewrite: the
    documentation wave stops at the frozen surfaces below and rides this same gate. Until it is
@@ -50,9 +50,9 @@ can run end to end without a developer. Laps L1–L4 shipped (see *Done*); the r
    (`AIO/readme.md:1-107`), `AIO/BUGS.md`, `AIO/patches/*`; and frozen in place: the sections
    the paused L5 S3 blueprint touches (ARCHITECTURE, ADMIN_MANUAL §2/§7, DEVELOPER_MANUAL,
    MIGRATION, threat-model, AGENTS) and the INSTALLER/GUIA H2 anchors AIO patches 140/160/170
-   deep-link. Open items the freeze holds: L5 S3 resume (the basemap blueprint: Centro picker,
-   same-origin `/tiles/`, the mastercontainer bind guard — review item I1) · L5 S4 · the L5
-   SSOT-closure PR · the tiles NUL-check defect (→ B-036) · L6/a23 (#205) · L7/a24 (#206) ·
+   deep-link. Open items the freeze holds: L5 S3 resume (the Centro picker; the same-origin
+   `/tiles/` blueprint and its mastercontainer bind guard went with the PMTiles basemap) · L5 S4 · the L5
+   SSOT-closure PR · L6/a23 (#205) · L7/a24 (#206) ·
    the AIO upstream doc-tail cleanup (its own patch-queue decision, behind L7) · the parked
    app-set cleanup run (`gestion-app-set-cleanup` worktree) · the administration manual's hero
    tag «Downstream Nextcloud 34 Fork», a false present (the server is not forked, D7) whose

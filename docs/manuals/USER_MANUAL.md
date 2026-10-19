@@ -514,8 +514,8 @@ The registry classifies community features into three geometric kinds:
 
 Features are classified under standard categories: *Educación*, *Salud*, *Deporte y recreación*, *Comercio y economía local*, *Medioambiente*, and *Organizaciones sociales*.
 
-#### Interactive Map and Self-Hosted Chile PMTiles Basemap
-- **Self-Hosted Basemap**: Territorio uses a self-hosted vector basemap of Chile (`chile.pmtiles`) served directly by the internal stack. No map requests are transmitted to third-party providers.
+#### Interactive Map and OpenStreetMap Basemap
+- **OpenStreetMap Basemap**: Territorio draws its background map from OpenStreetMap's public tile service, loaded by your browser. Your workstation therefore needs internet access to see the map, and the map positions you view are requested from OpenStreetMap; no patient data is involved.
 - **Clustered Markers**: Dense community markers automatically cluster at zoom levels for smooth navigation.
 - **Layer Panel (Capas)**: Toggle visibility of Sectores, Unidades Vecinales, and specific categories of interest.
 - **Duplicate Review Queue**: An integrated review queue (*Posibles duplicados*) flags potential duplicate records for administrative review.
