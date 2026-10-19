@@ -6,9 +6,9 @@
 # of Chile, read by staff browsers over HTTP Range requests. The suite serves it itself, same origin,
 # at /tiles/ — the AIO fork's patch 239: apache's Caddy reads the directory below through a
 # read-only bind the mastercontainer makes from APS_TILES_DIR, which «aps-conecta» passes on every
-# start. So nothing here runs a server or sets a URL (phase 16 derives territorio's tile_url from
-# the address the suite is reached at); this file builds the archive where that bind looks, and
-# checks the route the way a browser reads it.
+# start. So nothing here runs a server or sets a URL (territorio no longer reads the archive:
+# its basemap is OpenStreetMap's tile service, ADR-0021 there); this file builds the archive where
+# that bind looks, and checks the route the way a browser reads it.
 #
 # Usage (usually through the bundle: «aps-conecta mapa», step 4, or `aps-conecta tiles …`):
 #   tiles.sh install      the CLI and the archive (idempotent; extracts the archive if absent)

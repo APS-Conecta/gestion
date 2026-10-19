@@ -194,11 +194,12 @@ the compose-era keys do not exist under AIO. The keys that matter to the gates:
 
 ## 9. The map (tiles)
 
-Territorio's basemap is the suite's own same-origin route: apache serves the archive at
-`https://<your-host>/tiles/chile.pmtiles`. There is no separate container, no port to publish and
-no proxy to configure — provisioning phase 16 writes territorio's `tile_url` from the address the
-instance is already reached by (`overwrite.cli.url`), so the map works by domain and by IP the
-moment the archive exists.
+Apache still serves the archive at `https://<your-host>/tiles/chile.pmtiles`, same origin, with no
+separate container, no port to publish and no proxy to configure. **Territorio no longer reads it**:
+its basemap is OpenStreetMap's own tile service, loaded by each browser (ADR-0021 in territorio), so
+provisioning phase 16 writes no `tile_url` any more — it writes the comuna (`comuna_cut`,
+`comuna_name`), from which the app derives where the map opens. The archive and its monthly timer
+are retired in a following change.
 
 - **Where the archive lives**: `/srv/aps-conecta/tiles/chile.pmtiles` — outside borg's backup
   scope **on purpose**: it is a 1.04 GB **regenerable** artifact (the monthly timer rebuilds it

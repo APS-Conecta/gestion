@@ -279,8 +279,8 @@ fi
 # App-config keys are not a folder/group/app inventory; these two are checked alone because
 # they are identity-bearing: an empty or wrong comuna_cut silently disarms the
 # refuseAnotherComuna import door (apps/territorio ImportService::refuseAnotherComuna) while imports
-# keep working. tile_url is deliberately absent — it is derived from how this instance is
-# reached (overwrite.cli.url) and phase 16 converges it on every seed. The territorio admin UI
+# keep working. There is no tile_url to check: the basemap is OpenStreetMap's own tile
+# service, loaded by the browser (ADR-0021 in territorio), and nothing provisions it. The territorio admin UI
 # is a second writer of these rows (ComunaConfig::set), so a deliberate re-choice appears here
 # exactly like a hand-edited site file does.
 if [ -z "${SITE_COMUNA_CUT:-}" ]; then
