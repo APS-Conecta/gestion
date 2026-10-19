@@ -372,11 +372,15 @@ do
 done
 rm -f "$smoke_jar" "$smoke_body"
 fi
-# 16. The basemap, same-origin at /tiles/ (L5). Phase 16 derives territorio's tile_url from how
-# this instance is reached (overwrite.cli.url), and apache binds the host's map folder read-only
-# at /aps-tiles — the AIO fork's own route, ahead of Nextcloud. Three facts, one check: the URL
-# is the derived one (an unreadable overwrite.cli.url is its own failure — the wizard's first
-# start writes it, and a re-seed cannot fix what no wizard ever set); the bind exists AND ITS
+# 16. Territorio's comuna, then the basemap route still served at /tiles/ (L5). The map itself is
+# OpenStreetMap's tile service, loaded by each user's browser (ADR-0021 in territorio): nothing is
+# provisioned for it, so no tile_url is asserted — a stale one on an upgraded install is the app's
+# own repair step to delete, not this suite's to police. What phase 16 still writes, and the app
+# derives the map's opening extent from, is the comuna's CUT and name: an empty comuna_cut is also
+# the silent disarm of the import door (ComunaConfig reads it as "not chosen"), so both must be set.
+# The rest of this check is the /tiles/ route the archive is still served by until the tile
+# machinery retires (the aps-conecta-tiles stack): apache binds the host's map folder read-only at
+# /aps-tiles — the AIO fork's own route, ahead of Nextcloud. The bind exists AND ITS
 # SOURCE IS THE DIRECTORY THE MASTERCONTAINER'S ENV LINE NAMES (org review I1: the three stores
 # of the bind — the mastercontainer's env, the fork's sticky aps_tiles_dir, apache's realized
 # mount — can diverge silently, because a changed env line rewrites the sticky but never
@@ -388,12 +392,12 @@ fi
 # one non-failure — the suite is up, the route is right, and the map is simply not built on this
 # box yet — UNLESS the monthly timer is enabled: the install only enables it once an archive
 # exists, so a 404 with the timer on means the claimed map is not being served (org review I3).
-_occu="$(occ config:system:get overwrite.cli.url 2>/dev/null | tr -d '\r')"
-_tiles_url="$(occ config:app:get territorio tile_url 2>/dev/null | tr -d '\r')"
-[ -n "$_occu" ] \
-  || fail "cannot read overwrite.cli.url — territorio's tile_url cannot be derived or checked, and a re-seed cannot fix it: the wizard's first start writes it (the AIO entrypoint, from the domain it was given). Diagnose: sudo docker logs nextcloud-aio-mastercontainer"
-[ "$_tiles_url" = "${_occu%/}/tiles/chile.pmtiles" ] \
-  || fail "territorio tile_url is '$_tiles_url' but this instance is reached at '$_occu' — expected ${_occu%/}/tiles/chile.pmtiles. Re-seed: phase 16-app-policy derives it from overwrite.cli.url"
+_comuna_cut="$(occ config:app:get territorio comuna_cut 2>/dev/null | tr -d '\r')"
+_comuna_name="$(occ config:app:get territorio comuna_name 2>/dev/null | tr -d '\r')"
+[ -n "$_comuna_cut" ] \
+  || fail "territorio comuna_cut is not set — the map has no extent to open on and the import door is disarmed (ComunaConfig reads empty as 'not chosen'). Re-seed: phase 16-app-policy writes it from sites/<slug>/site.sh's SITE_COMUNA_CUT"
+[ -n "$_comuna_name" ] \
+  || fail "territorio comuna_name is not set — the admin section and the import refusal have no name to show. Re-seed: phase 16-app-policy writes it from sites/<slug>/site.sh's SITE_COMUNA"
 # The bind's source (I1): apache's realized /aps-tiles mount vs the mastercontainer's own
 # APS_TILES_DIR env line — the same line start_suite guards (instalador's host/aps-conecta,
 # start_suite's APS_TILES_DIR guard; the gestion-era :876 line pin went with the move).
@@ -423,4 +427,4 @@ case "$_tiles_code" in
 esac
 rm -f "$_tiles_hdr"
 
-echo "PASS: core stack healthy — installed, PostgreSQL ready, Redis PONG, /status.php 200, no branding leak, cron scheduling, app policy, no remember-me, no stale app signature, legacy screens branded, clean admin home, app store off, office URL matches how this instance is reached, the basemap same-origin at /tiles/"
+echo "PASS: core stack healthy — installed, PostgreSQL ready, Redis PONG, /status.php 200, no branding leak, cron scheduling, app policy, no remember-me, no stale app signature, legacy screens branded, clean admin home, app store off, office URL matches how this instance is reached, territorio's comuna set, the archive route at /tiles/"
