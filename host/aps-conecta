@@ -1109,9 +1109,13 @@ AIO_STATE="${AIO_STATE:-$APS_HOME/aio}"       # passphrase, session jar, admin p
 AIO_POLL="${AIO_POLL:-5}"                   # seconds between polls; the self-test sets 0
 AIO_SET="aps-conecta-apache aps-conecta-database aps-conecta-redis aps-conecta-notify-push aps-conecta-eurooffice"
 AIO_CSRF=()                                     # the session's CSRF pair, as curl arguments
+# The wizard refuses (403) any request that does not declare Sec-Fetch-Site same-origin or none
+# (php/public/index.php, "Check Sec-Fetch headers"); a browser sends it, curl does not. "none" is
+# what a user typing the address sends — and an older wizard ignores the header.
+AIO_SEC=(-H "Sec-Fetch-Site: none")
 
 aio_curl() {  # ARGS… — the wizard with the session jar
-  curl -sk -b "$AIO_STATE/cookies" -c "$AIO_STATE/cookies" "$@"
+  curl -sk "${AIO_SEC[@]}" -b "$AIO_STATE/cookies" -c "$AIO_STATE/cookies" "$@"
 }
 
 aio_count() {  # how many of the six suite containers run
@@ -1127,7 +1131,7 @@ aio_passphrase() {  # the passphrase GET /setup shows once (the page stops rende
   if [ -s "$f" ]; then ok "Contraseña del asistente ya guardada ($f)"; return 0; fi
   for i in $(seq 60); do
     sleep "$AIO_POLL"   # first: the mastercontainer is still booting right after its docker run
-    html="$(curl -sk --max-time 5 "$AIO_URL/setup" 2>/dev/null || true)"
+    html="$(curl -sk "${AIO_SEC[@]}" --max-time 5 "$AIO_URL/setup" 2>/dev/null || true)"
     case "$html" in *'id="initial-password"'*) break ;; esac
   done
   pw="$(printf '%s' "$html" | sed -n 's/.*id="initial-password"[^>]*>\([^<]*\)<.*/\1/p' | head -1)"
@@ -1209,7 +1213,7 @@ aio_start() {  # POST /api/docker/start pulls, creates and starts the whole set 
   local f="$AIO_STATE/inicio.code" pid n seen="" code
   info "iniciando la suite (descarga de imágenes: varios minutos)"
   # curl itself is the background job (not a subshell around it), so the trap's kill reaches it
-  curl -sk -b "$AIO_STATE/cookies" -c "$AIO_STATE/cookies" -o /dev/null -w '%{http_code}' --max-time 1800 \
+  curl -sk "${AIO_SEC[@]}" -b "$AIO_STATE/cookies" -c "$AIO_STATE/cookies" -o /dev/null -w '%{http_code}' --max-time 1800 \
     "${AIO_CSRF[@]}" "$AIO_URL/api/docker/start" > "$f" 2>/dev/null &
   pid=$!
   trap 'kill "$pid" 2>/dev/null; exit 130' INT TERM
@@ -2389,10 +2393,10 @@ CSHIM
   : > "$tmp/aio.log"; : > "$tmp/aio.ps"; : > "$tmp/aio.argv"; rm -f "$tmp/aio.configured"
   cat > "$tshim/curl" <<SHIM
 #!/usr/bin/env bash
-url=""; data=""; outfile=""; prev=""
+url=""; data=""; outfile=""; prev=""; sec=0
 printf '%s\n' "\$*" >> "$tmp/aio.argv"
 for a in "\$@"; do
-  case "\$a" in https://*) url="\$a" ;; esac
+  case "\$a" in https://*) url="\$a" ;; "Sec-Fetch-Site: none") sec=1 ;; esac
   if [ "\$prev" = --data-urlencode ]; then
     case "\$a" in password@*) data="\$data password=\$(cat "\${a#password@}")" ;; *) data="\$data \$a" ;; esac
   fi
@@ -2400,7 +2404,11 @@ for a in "\$@"; do
   prev="\$a"
 done
 body=""; code=""
+# the vendored wizard (php/public/index.php, "Check Sec-Fetch headers") refuses a request that does not
+# declare itself same-origin or user-initiated (none) — curl sends no Sec-Fetch-Site at all
+[ "\$sec" = 1 ] || url=refused
 case "\$url" in
+  refused) body=Forbidden; code=403 ;;
   */setup) [ -e "$tmp/aio.configured" ] || body='<p id="initial-password">frase uno dos</p>' ;;
   */api/auth/login) echo "POST login\$data" >> "$tmp/aio.log"
     case "\$data" in *"password=frase uno dos"*) code=201 ;; *) code=422 ;; esac ;;
@@ -2437,6 +2445,8 @@ SHIM
       'grep -q "password=frase uno dos" "$tmp/aio.log" && grep -q "password@$AIO_STATE/master.pw" "$tmp/aio.argv" && ! grep -q "frase uno dos" "$tmp/aio.argv"'
     check "asistente-aio: both secrets are 0600 files and never reach the console" \
       '[ "$(stat -c %a "$AIO_STATE/master.pw")" = 600 ] && [ "$(cat "$AIO_STATE/master.pw")" = "frase uno dos" ] && [ "$(stat -c %a "$AIO_STATE/nextcloud.pw")" = 600 ] && [ "$(cat "$AIO_STATE/nextcloud.pw")" = admin-secreta ] && case "$out" in *"frase uno dos"*|*admin-secreta*) false;; *) true;; esac'
+    check "asistente-aio: every request declares itself user-initiated (Sec-Fetch-Site: none) — the wizard answers curl's bare requests 403" \
+      '[ -s "$tmp/aio.argv" ] && ! grep -v -- "-H Sec-Fetch-Site: none" "$tmp/aio.argv" | grep -q .'
     : > "$tmp/aio.log"
     out="$( (cmd_aio_wizard --dominio clinica.example --sin-validar-dominio) 2>&1)"; rc=$?
     check "asistente-aio: a re-run on a running suite configures nothing and posts nothing" \
