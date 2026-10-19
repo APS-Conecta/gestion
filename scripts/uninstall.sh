@@ -68,9 +68,15 @@ if [ "$SELF_TEST" = 1 ]; then
   # generated site.css genuinely exists, and a `touch` + `rm -f` on the real path deletes a live
   # artifact — the next seed regenerates it, writes a WRITES line, and reddens seed-idempotent
   # (caught on the live tree). Same doctrine as the volume/network fabrications above.
-  touch themes/apsconecta/core/css/selftest-site.css 2>/dev/null || { mkdir -p themes/apsconecta/core/css && touch themes/apsconecta/core/css/selftest-site.css; }
+  # Whatever directories this had to create for it go with it (the topmost one that did not exist):
+  # an empty themes/ left in a tree that had none passes for a theme half to whoever looks next.
+  made=""; for d in themes themes/apsconecta themes/apsconecta/core themes/apsconecta/core/css; do
+    [ -d "$d" ] || { made="$d"; break; }
+  done
+  mkdir -p themes/apsconecta/core/css && touch themes/apsconecta/core/css/selftest-site.css
   cs_no_file themes/apsconecta/core/css/selftest-site.css && { echo "self-test: file detector green on an existing file" >&2; exit 1; }
   rm -f themes/apsconecta/core/css/selftest-site.css
+  [ -z "$made" ] || rm -rf "$made"
   mkdir -p sites/selftest
   cs_sites_clean && { echo "self-test: sites detector green on a stray tree" >&2; exit 1; }
   rmdir sites/selftest
