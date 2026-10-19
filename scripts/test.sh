@@ -729,6 +729,20 @@ print("ok")'
 if docker info >/dev/null 2>&1; then
   check bash scripts/db-dump.sh --self-test
   check bash scripts/uninstall.sh --self-test
+  # ... and it leaves nothing of its own behind. It fabricates a file under themes/apsconecta/core/css/
+  # and used to leave the EMPTY directories it made for that: the provisionador's self-test then took
+  # the repo-root themes/ for a package half, found it incomplete and never tried GESTION_TREE (every
+  # browser arm failed 'L is not defined' under test.sh and passed run alone). Run from a scratch
+  # tree: no residue where there was none, and a themes/ that was there is left as it was.
+  check bash -c '
+    repo=$PWD; tmp=$(mktemp -d); trap "rm -rf $tmp" EXIT
+    mkdir "$tmp/a" "$tmp/b"; mkdir "$tmp/a/sites" "$tmp/b/sites"
+    mkdir -p "$tmp/b/themes/apsconecta/core/css"; echo css > "$tmp/b/themes/apsconecta/core/css/site.css"
+    ( cd "$tmp/a" && bash "$repo/scripts/uninstall.sh" --self-test ) >/dev/null 2>&1 || exit 1
+    ( cd "$tmp/b" && bash "$repo/scripts/uninstall.sh" --self-test ) >/dev/null 2>&1 || exit 1
+    [ ! -e "$tmp/a/themes" ] \
+      && [ "$(cat "$tmp/b/themes/apsconecta/core/css/site.css")" = css ] \
+      && [ ! -e "$tmp/b/themes/apsconecta/core/css/selftest-site.css" ]'
 else
   echo "  skipped: dump/uninstall self-tests (no docker daemon)"
 fi
@@ -825,8 +839,20 @@ echo "== self-tests (hermetic — no docker, no stack) =="
 # it is real crypto over a throwaway keypair; CI apt-installs the same package the clinic verifies
 # with, and a box without it gets the honest skip. Output is captured, not drowned: a green arm
 # prints its own last line, a red one its tail — the #96 lesson, a red log must carry its diagnosis.
+# A waived run must SAY so in this log: the self-test prints "SKIPPED (waived …, NOT a pass)" once, but only its
+# last line used to reach this output — so CI's log read "237 checks OK" and nothing of the browser arms that
+# did not run. This echoes the waiver (with the count of arms) and nothing else of the self-test's output.
+selftest_waivers() { printf '%s\n' "$1" | { grep -a "SKIPPED (waived" || true; } | sed 's/^ *//; s/^/  /'; }
+selftest_waivers_cases() {
+  local w
+  w="$(selftest_waivers "$(printf '  ok:   1. x\n  SKIPPED (waived by X=1, NOT a pass): 16 browser arms did NOT run — y\nself-test: 237 checks OK\n')")"
+  [ "$w" = "  SKIPPED (waived by X=1, NOT a pass): 16 browser arms did NOT run — y" ] || return 1
+  [ -z "$(selftest_waivers "$(printf '  ok:   1. x\nself-test: 254 checks OK\n')")" ] || return 1
+  selftest_waivers "$(printf 'self-test: 254 checks OK\n')" >/dev/null   # no waiver is not a failure: the caller chains on this status
+}
+check selftest_waivers_cases
 st_out="$(python3 scripts/provisionador.py --self-test 2>&1)" \
-  && echo "  ok:   provisionador --self-test ($(printf '%s\n' "$st_out" | tail -1))" \
+  && { echo "  ok:   provisionador --self-test ($(printf '%s\n' "$st_out" | tail -1))"; selftest_waivers "$st_out"; } \
   || { echo "  FAIL: provisionador --self-test"; printf '%s\n' "$st_out" | tail -25; fail=1; }
 hb_out="$(bash host/aps-conecta --self-test 2>&1)" \
   && echo "  ok:   host bundle --self-test ($(printf '%s\n' "$hb_out" | tail -1))" \
