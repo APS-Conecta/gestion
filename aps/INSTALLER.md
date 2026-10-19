@@ -222,11 +222,14 @@ are retired in a following change.
 - **Until the first build, `/tiles/` is a 404** — the suite never depends on the archive. Step 4
   of the install builds it; `sudo aps-conecta mapa` re-runs it, and the monthly timer refreshes
   it (`sudo aps-conecta temporizadores` re-checks both timers).
-- **The installer's Centro pane reads the same archive** — through the installer's own port, at
-  `/mapa/chile.pmtiles` (auth-gated like every installer route, one byte range at a time), so
-  step 6's map is the same basemap the suite serves. A missing archive is a note naming
-  `sudo aps-conecta mapa` while the step stays completable: the point confirms without a map, and
-  a point outside the archive's coverage is refused at «Confirmar centro» naming the map.
+- **The installer's Centro pane draws OpenStreetMap's own tile service, not the archive** — the
+  operator's browser loads `https://tile.openstreetmap.org/{z}/{x}/{y}.png` directly, under the
+  [Tile Usage Policy](https://operations.osmfoundation.org/policies/tiles/) (the bare URL, the
+  wizard's origin as `Referer`, a linked **© OpenStreetMap contributors**, zoom 4 to 18, no
+  prefetch), so the machine running the wizard needs internet. If the first tile fails the pane
+  says so and the step stays completable: the official point, the arrow-key nudge and
+  «Confirmar centro» all work on a plain background. The wizard no longer checks the point
+  against any coverage.
 - **Attribution**: the basemap is an Open Database License (ODbL) Produced Work built from
   OpenStreetMap data. The map must keep showing **© OpenStreetMap contributors** — territorio's
   own `tile_attribution` default does this; do not remove it.

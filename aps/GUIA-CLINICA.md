@@ -78,8 +78,9 @@ Después de la bienvenida, el navegador recorre los pasos 6 a 9 de la instalaci�
    clic o toque en el mapa, arrastre del marcador o las flechas del teclado (5 m; con Mayús,
    25 m); «Punto oficial» lo devuelve y la lectura dice cuántos metros lo movió y hacia dónde.
    «Confirmar centro» fija el centro y su punto (el punto queda escrito en el sitio al ejecutar;
-   Revisión lo muestra como punto oficial o corregido). Si el mapa del paso 4 no está construido,
-   la pantalla lo dice con su arreglo (`sudo aps-conecta mapa`) y el punto se confirma igual. Se
+   Revisión lo muestra como punto oficial o corregido). El mapa de fondo es el de
+   OpenStreetMap y lo carga el navegador de quien instala, así que ese equipo necesita internet;
+   si no carga, la pantalla lo dice y el punto se confirma igual. Se
    puede cambiar hasta cargar los equipos; desde ahí la instalación sirve a ese establecimiento y
    a ningún otro.
 2. **Iniciar la suite** — las cinco aplicaciones APS con su versión (se activan al ejecutar), y si

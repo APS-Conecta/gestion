@@ -12,6 +12,14 @@ image digests live there and are deliberately not copied here — one fact, one 
 ## [Unreleased]
 
 ### Changed
+- **The installer's Centro map pane draws OpenStreetMap's tile service** (one raster layer, under its
+  Tile Usage Policy: the bare tile URL, the wizard's origin as `Referer`, a linked «© OpenStreetMap
+  contributors», zoom 4 to 18) instead of the local PMTiles archive. On the first tile failure the pane
+  says so and the step stays completable. The wizard no longer serves `/mapa/chile.pmtiles` or
+  `/api/mapa`, no longer vendors `protomaps-leaflet.js`, and no longer refuses a point outside the
+  archive's coverage. The self-test's browser arms mock every tile request and abort any other
+  `openstreetmap.org` request; a skipped browser arm is now a failure of the self-test
+  (`APS_SELFTEST_SIN_NAVEGADOR=1` waives it, visibly).
 - **Provisioning phase 16 no longer writes Territorio's `tile_url`.** Territorio's basemap is
   OpenStreetMap's own tile service, loaded by each browser (ADR-0021 in territorio), so nothing is
   provisioned for it; the comuna keys (`comuna_cut`, `comuna_name`), from which the app derives

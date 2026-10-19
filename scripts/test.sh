@@ -669,14 +669,13 @@ check bash -c '
   test ! -e tiles.nginx.conf \
     && ! git grep -qE "nginx:alp""ine|TILES_""PORT|:80""84" -- host scripts provisioning'
 
-# --- gate (org review L5-S3, I7): the map-folder default — six literals that must agree ---------
-# /srv/aps-conecta is spelled in six places because each site legitimately owns its own fallback
-# SHAPE: the host CLI's TILES_ARCHIVE, the provisionador's own TILES_ARCHIVE (L5 S4 — /mapa/ and
-# /api/mapa read it), tiles.sh's standalone TILES_HOME, the testbed's
+# --- gate (org review L5-S3, I7): the map-folder default — five literals that must agree ---------
+# /srv/aps-conecta is spelled in five places because each site legitimately owns its own fallback
+# SHAPE: the host CLI's TILES_ARCHIVE, tiles.sh's standalone TILES_HOME, the testbed's
 # APS_TILES_DIR env, env.sh's dotenv fixture, and refresh-basemap's DEST (the serving directory
 # S3 gave it — a literal this pack itself introduced is exactly the drift site the gate exists to
 # pin). Single-sourcing was weighed and rejected (tiles.sh's standalone fallback survives it), so
-# the discipline is image-digests' pair-pin generalized to six: each site's default read out of
+# the discipline is image-digests' pair-pin generalized to five: each site's default read out of
 # the file, and they must all say the same path. Shape-anchored, not line-numbered. EXACTLY ONE
 # match per site is required: a renamed variable or a deleted fixture is the
 # empty-glob-goes-green class, red here by name. The negative half runs the same validator over
@@ -690,7 +689,6 @@ SITES = [
     ("scripts/aio-testbed.sh",     r"--env \"APS_TILES_DIR=\$\(dirname \"\$\{TILES_HOME:-([^\"}\n]+)\}/tiles/chile\.pmtiles\"\)\""),
     ("scripts/env.sh",             r"^TILES_HOME=(/[^\"=\s]+)$"),
     ("scripts/refresh-basemap.sh", r"^DEST=\"\$\{DEST:-([^\"}\n]+)/tiles/chile\.pmtiles\}\"$"),
-    ("scripts/provisionador.py",   r"^TILES_ARCHIVE = \"([^\"}\n]+)/tiles/chile\.pmtiles\"$"),
 ]
 def defaults(corpus):
     got, errs = {}, []
@@ -706,7 +704,7 @@ def broken(got, errs):
 real = {s: open(s, encoding="utf-8").read() for s, _ in SITES}
 got, errs = defaults(real)
 if broken(got, errs):
-    print("the map-folder default is not one value across the six sites that spell it:")
+    print("the map-folder default is not one value across the five sites that spell it:")
     for e in errs: print("  " + e)
     for s, v in sorted(got.items()): print("  " + s + " = " + v)
     sys.exit(1)
@@ -716,7 +714,6 @@ fab = {
     "scripts/aio-testbed.sh":     "    --env \"APS_TILES_DIR=$(dirname \"${TILES_HOME:-/srv/prueba}/tiles/chile.pmtiles\")\" \\\n",
     "scripts/env.sh":             "TILES_HOME=/srv/prueba\n",
     "scripts/refresh-basemap.sh": "DEST=\"${DEST:-/srv/prueba/tiles/chile.pmtiles}\"\n",
-    "scripts/provisionador.py":   "TILES_ARCHIVE = \"/srv/prueba/tiles/chile.pmtiles\"\n",
 }
 if broken(*defaults(fab)):
     print("the fabricated agreeing corpus failed"); sys.exit(1)
