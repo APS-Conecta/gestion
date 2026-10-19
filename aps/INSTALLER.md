@@ -33,7 +33,7 @@ from the next run on. Continue with:
 
 which links `aps-conecta` into `/usr/local/bin` and walks the steps below. The bundle is
 `aps-conecta`: `install`, `preflight`, `run-command`, `provision`, `asistente-aio`,
-`temporizadores`, `revalidate`, `respaldo`, `tiles`, `datos`, `red` — thin glue; every heavy
+`temporizadores`, `revalidate`, `respaldo`, `datos`, `red` — thin glue; every heavy
 thing lives where its own gate is.
 
 - **Verifying by hand** — an auditor, or anyone who wants to see it themselves — needs only the
@@ -84,14 +84,14 @@ image (D4), so boot-time installs would be noise. By IP (§14) the command carri
 ## 4. The wizard (:8080)
 
 1. Paste the run command. The wizard, «APS Conecta Gestión AIO», comes up in Spanish (es-CL formal).
-2. The web installer's step 7 fills it: `aps-conecta asistente-aio --preparar` starts the
+2. The web installer's step 6 fills it: `aps-conecta asistente-aio --preparar` starts the
    mastercontainer, captures the initial password (`GET /setup` shows it once; the installer keeps
-   it in `/opt/aps-conecta/aio/master.pw`, 0600, and shows it on step 7), and posts the domain (or this
+   it in `/opt/aps-conecta/aio/master.pw`, 0600, and shows it on step 6), and posts the domain (or this
    server's IP, §14), the timezone, the options (Euro-Office, the suite's only office; Talk and its recording as the
    server's memory and cores allow, port 3478 free; Whiteboard and Imaginary off) and the daily
    backup (§11).
-3. Log in to the wizard with that password and press Start, leaving the options as step 7 set them:
-   the installer's review lists Talk from step 7's choice. Step 7 follows the containers until
+3. Log in to the wizard with that password and press Start, leaving the options as step 6 set them:
+   the installer's review lists Talk from step 6's choice. Step 6 follows the containers until
    Nextcloud is installed. The wizard has no app store, no community containers and no other
    office: a request to switch or disable the office is refused. The daily-backup screen's
    automatic-update box ships **unchecked** — leave it: the suite updates as one set.
@@ -119,7 +119,7 @@ establishment's official register point: confirm it or move it — a click, a dr
 keys — and the chosen point rides «Confirmar centro» into the site file's `SITE_LON`/`SITE_LAT`),
 the suite's containers, the teams and the users CSV (one screen, with the centre's own template),
 review, execute — is walked step by step in [`GUIA-CLINICA.md`](GUIA-CLINICA.md) §4–6. The pages
-follow the registry's steps 6–9 (`aps-conecta pasos`).
+follow the registry's steps 5–8 (`aps-conecta pasos`).
 
 When «Revisar y ejecutar» comes back green, the installer closes itself: the port closes and the
 link stops working. The console then wires the timers (§6) and prints «Listo». Ctrl+C before that
@@ -141,14 +141,13 @@ this way):
 sudo aps-conecta temporizadores
 ```
 
-It copies the four units from the bundle into `/etc/systemd/system`, reloads systemd and enables the
-weekly timer — and the monthly one once the map exists; a re-run finds them in place. It first
+It copies the two units from the bundle into `/etc/systemd/system`, reloads systemd and enables the
+weekly timer; a re-run finds them in place. On a host that ran an earlier bundle it also retires
+the old monthly map timer and its units (`aps/MIGRATION.md` §12). It first
 checks that `/usr/local/bin/aps-conecta` is this bundle's: the units run it under a Condition, and a
-missing link would skip them without a word. Both fire on Santiago time (the zone rides
-`OnCalendar`, not the host's clock). The weekly timer re-runs the provision headlessly on Sundays at
-03:00 (idempotent; a drifted host shows as a FAILED unit in `systemctl --failed`). The tiles timer
-re-extracts the basemap monthly (the 4th at 05:00, spread over two hours; when the nightly borg
-backup has the suite stopped, the build still runs and the `/tiles/` read-back is skipped).
+missing link would skip them without a word. It fires on Santiago time (the zone rides
+`OnCalendar`, not the host's clock): the weekly timer re-runs the provision headlessly on Sundays at
+03:00 (idempotent; a drifted host shows as a FAILED unit in `systemctl --failed`).
 
 When an execution finds drift, or does not finish, every member of the `admin` group gets a
 notification at their next login (one, replaced each week), and `aps-conecta estado` — no sudo —
@@ -159,7 +158,7 @@ written by every execution: the installer's and the weekly one).
 
 The wizard and the gates curl the public domain **from the host itself** — the hairpin leg.
 If preflight reds there, the installer can fix it itself — with your consent. The wizard's
-step 7 offers the fix as a card («Sí, corregir la red») when the refused leg is this one; by
+step 6 offers the fix as a card («Sí, corregir la red») when the refused leg is this one; by
 hand it is one command:
 
     sudo aps-conecta red --dominio <su-dominio> --arreglar
@@ -192,47 +191,31 @@ the compose-era keys do not exist under AIO. The keys that matter to the gates:
   URLs (§14). There is nothing office-shaped to configure on a clinic — and nothing map-shaped
   either: the basemap needs no key at all (§9).
 
-## 9. The map (tiles)
+## 9. The map (OpenStreetMap)
 
-Apache still serves the archive at `https://<your-host>/tiles/chile.pmtiles`, same origin, with no
-separate container, no port to publish and no proxy to configure. **Territorio no longer reads it**:
-its basemap is OpenStreetMap's own tile service, loaded by each browser (ADR-0021 in territorio), so
-provisioning phase 16 writes no `tile_url` any more — it writes the comuna (`comuna_cut`,
-`comuna_name`), from which the app derives where the map opens. The archive and its monthly timer
-are retired in a following change.
+The map is OpenStreetMap's own tile service, loaded directly by each person's browser under the
+[Tile Usage Policy](https://operations.osmfoundation.org/policies/tiles/) — Territorio's basemap
+and the installer's Centro pane alike (ADR-0021 in territorio). The suite builds, stores and serves
+**no** map: there is no map step in the install, no archive, no map timer, no `tiles` subcommand, and
+the mastercontainer is created without a map folder. Provisioning phase 16 writes the comuna
+(`comuna_cut`, `comuna_name`) from which Territorio derives where the map opens, and no `tile_url`.
 
-- **Where the archive lives**: `/srv/aps-conecta/tiles/chile.pmtiles` — outside borg's backup
-  scope **on purpose**: it is a 1.04 GB **regenerable** artifact (the monthly timer rebuilds it
-  from Protomaps' published build), and a regenerable gigabyte must not ride every backup.
-  `/opt/aps-conecta` — the credentials and the site record — is what `respaldo` wires in.
-- **The bind is read once, at the wizard's first start**: the mastercontainer is created with
-  `APS_TILES_DIR=/srv/aps-conecta/tiles`, and apache mounts that directory read-only at
-  `/aps-tiles`. The setting is sticky in the suite's `configuration.json` once seen. A
-  mastercontainer created **without** it serves `/tiles/` as a 404 while everything else works —
-  and one created with a **different** directory keeps serving that older folder while the
-  mastercontainer's own line says the new one: the suite never re-creates a container that
-  still exists, so the bind apache was created with is the bind it keeps.
-  `sudo bash host/tiles.sh check` names the first shape and `aps-conecta revalidate` reds the
-  second. The remedy for both is the same re-create (a minute, nothing is lost): stop the
-  containers in the wizard, `sudo docker rm -f nextcloud-aio-mastercontainer aps-conecta-apache`
-  (the mastercontainer's volume keeps the configuration; apache is stateless — it is rebuilt
-  from the configuration at each start, and removing it is what finally moves the bind),
-  re-create the mastercontainer with `sudo aps-conecta asistente-aio --preparar --dominio
-  <dominio>` (by IP: the address of §14), and start the containers in the wizard again.
-- **Until the first build, `/tiles/` is a 404** — the suite never depends on the archive. Step 4
-  of the install builds it; `sudo aps-conecta mapa` re-runs it, and the monthly timer refreshes
-  it (`sudo aps-conecta temporizadores` re-checks both timers).
-- **The installer's Centro pane draws OpenStreetMap's own tile service, not the archive** — the
-  operator's browser loads `https://tile.openstreetmap.org/{z}/{x}/{y}.png` directly, under the
-  [Tile Usage Policy](https://operations.osmfoundation.org/policies/tiles/) (the bare URL, the
-  wizard's origin as `Referer`, a linked **© OpenStreetMap contributors**, zoom 4 to 18, no
-  prefetch), so the machine running the wizard needs internet. If the first tile fails the pane
-  says so and the step stays completable: the official point, the arrow-key nudge and
-  «Confirmar centro» all work on a plain background. The wizard no longer checks the point
-  against any coverage.
-- **Attribution**: the basemap is an Open Database License (ODbL) Produced Work built from
-  OpenStreetMap data. The map must keep showing **© OpenStreetMap contributors** — territorio's
-  own `tile_attribution` default does this; do not remove it.
+- **Every device that shows the map needs internet** (OpenStreetMap's servers, `tile.openstreetmap.org`),
+  and so does the machine whose browser walks the web installer: its Centro pane loads the same
+  tiles. If the first tile fails the pane says so and the step stays completable — the official
+  point, the arrow-key nudge and «Confirmar centro» work on a plain background. The wizard does not
+  check the point against any coverage.
+- **What the installer's pane sends**: the bare tile URL, the wizard's origin as `Referer` (the
+  policy asks for one; a LAN address like `https://192.168.1.10:8443/` is a valid origin), zoom 4
+  to 18, tiles only once the view settles, and a linked **© OpenStreetMap contributors**. The wizard
+  token rides the URL fragment, which no `Referer` carries.
+- **A blocked client looks like a map**: OpenStreetMap answers a client it has blocked with an
+  ordinary image, so no error is raised — the basemap shows a «blocked» tile. A block is lifted by a
+  code release, not a setting; the repository's issue tracker is the contact the policy asks for.
+- **Upgrading from the PMTiles basemap** (an install that built the archive): `aps/MIGRATION.md`
+  §12. The archive is never deleted for you.
+- **Attribution**: the map must keep showing **© OpenStreetMap contributors**, linked to its copyright
+  page — Territorio's map and the installer's pane both do; do not remove it.
 - **Territorio's data packages**: `aps-conecta datos` fetches the comuna's packages
   (sha256-verified), stages them and prints the import commands; `aps-conecta datos --importar`
   loads them (the silent install already did — a re-run prints «0 creados» per file). Before
@@ -258,17 +241,13 @@ honest notes:
 an unbounded wait on `apps.nextcloud.com` while the store is off — documented upstream behavior,
 not patched; the wait ends when the probe times out or the network returns).
 - The wizard's update notifications are suppressed (040); the suite's releases are the source.
-- **A clinic installed before this release meets two expected changes.** Step 7 reds on a
-  mastercontainer created without `APS_TILES_DIR` — that is the new guard doing its job, and
-  §9's remedy (re-create the mastercontainer **and** `aps-conecta-apache`) is the fix;
-  `aps-conecta revalidate` will also name a bind that diverged silently before this release.
-  And the next `sudo aps-conecta mapa` removes the old map container (`aps-conecta-tiles`, the
-  nginx that served `/tiles/` from loopback 8084): the suite serves the map itself now, and the
-  removal is logged as it happens.
+- **A clinic that built the PMTiles basemap** meets one expected change: the map is OpenStreetMap's
+  now, and the next `sudo aps-conecta temporizadores` retires the old map timer, its units and the old
+  map container — leaving the ~1 GB archive for the operator to free (`aps/MIGRATION.md` §12).
 
 ## 11. Backups
 
-The wizard's own borg backup is the instance backup. Step 7 sets it daily at 04:00 Santiago time
+The wizard's own borg backup is the instance backup. Step 6 sets it daily at 04:00 Santiago time
 in `/srv/aps-conecta/respaldos`, with `/opt/aps-conecta` (the credentials and the site record) in its
 scope — the same folder on the same disk, so copy it off the server (an external disk, another
 machine). `aps-conecta respaldo` adds `/opt/aps-conecta` to an existing backup — idempotent, and it
@@ -276,7 +255,7 @@ prints the **honest cost every time**: additional directories back up but never 
 instance. `/opt/aps-conecta`'s restore is a manual `borg extract` (the recipe: upstream's
 [backup docs](https://github.com/nextcloud/all-in-one#pro-tip-backup-archives-access)).
 
-The wizard runs in UTC, so step 7 posts the UTC hour — 07:00 in summer time, 08:00 in winter —
+The wizard runs in UTC, so step 6 posts the UTC hour — 07:00 in summer time, 08:00 in winter —
 and the wizard shows that hour. After the next DST change the backup runs at 03:00 or 05:00
 Santiago time. To move it, the wizard's backup section takes a new time, in UTC.
 
@@ -305,10 +284,10 @@ Santiago time. To move it, the wizard's backup section takes a new time, in UTC.
   [ ! -d /srv/aps-conecta/respaldos ] || sudo mv /srv/aps-conecta/respaldos "/srv/aps-conecta/respaldos.$(date +%F)"
   ```
 
-  The old backups stay in the renamed folder (step 7's; move a folder named by hand the same way): a
+  The old backups stay in the renamed folder (step 6's; move a folder named by hand the same way): a
   new wizard cannot reuse their repository. The rest
   of `/opt/aps-conecta` (the site record, `credentials.txt`) stays. Then `sudo aps-conecta abrir`:
-  step 7 prepares a new wizard.
+  step 6 prepares a new wizard.
 
 ## 13. Migrating an existing (compose) clinic
 
@@ -322,7 +301,7 @@ through this tool.
 ## 14. Without a domain: this server's IP
 
 A clinic without a domain installs by one of this server's IPv4 addresses, written where the domain
-goes: step 7, or `SITE_DOMINIO` in the site file of the silent install. The suite then answers at
+goes: step 6, or `SITE_DOMINIO` in the site file of the silent install. The suite then answers at
 `https://<ip>/` with a certificate signed by the installer's own CA, the one that signs its link (§5).
 
 - **The address** is one of this server's own (`ip -4 addr`); any other is refused. The wizard's
@@ -332,13 +311,13 @@ goes: step 7, or `SITE_DOMINIO` in the site file of the silent install. The suit
   before it expires and restarts apache. The CA that signs it is never made again: if it goes missing,
   the run stops until `/opt/aps-conecta/certificados` is restored from the daily backup (§11).
 - **The run command** carries two more lines, `--env APS_TLS_DIR=/opt/aps-conecta/certificados/suite`
-  and `--env NEXTCLOUD_TRUSTED_CACERTS_DIR=/opt/aps-conecta/certificados/ca`; step 7 and the silent
+  and `--env NEXTCLOUD_TRUSTED_CACERTS_DIR=/opt/aps-conecta/certificados/ca`; step 6 and the silent
   install sign the certificate before they run it. A suite started for a domain does not switch to an
   address, nor the reverse: it is reinstalled (§12).
 - **Nextcloud** trusts the CA (phase 07); **the office** reaches Nextcloud inside the suite's network
   (phase 14 writes the two internal URLs). Nothing to configure.
 
-Every device that opens the suite imports the CA once. Step 7 offers it («Descargar el
+Every device that opens the suite imports the CA once. Step 6 offers it («Descargar el
 certificado») with its SHA-256 fingerprint, and the console prints both at the end of the install;
 on the server, the operator's own copy:
 

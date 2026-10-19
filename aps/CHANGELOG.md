@@ -11,6 +11,22 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ## [Unreleased]
 
+### Removed
+- **The PMTiles basemap machinery.** The install's step 4 «Construir el mapa» (`aps-conecta mapa`),
+  `host/tiles.sh`, `scripts/refresh-basemap.sh`, the monthly `aps-conecta-tiles` timer and service,
+  the `tiles` subcommand, `APS_SKIP_MAP`, the `TILES_HOME` knob, the `APS_TILES_DIR` environment line of
+  the mastercontainer's run string (and the guard that refused a running suite without it), the map-folder
+  literal gate, the tiles self-tests and Clean boot's `/tiles/` steps. Territorio and the installer's
+  Centro pane draw OpenStreetMap's own tile service instead (ADR-0021 in territorio). The install is
+  **eight** steps now (Centro is step 5); every «Paso N de 9» is «Paso N de 8».
+
+### Added
+- **`retire_tile_remnants`**, run by `aps-conecta temporizadores` (and so by a finished install): on a host
+  that ran an earlier bundle it disables the old map timer, removes its two unit files (reloading systemd
+  only then), removes the old `aps-conecta-tiles` container if present, and says once that the archive can
+  be freed with `sudo rm -rf /srv/aps-conecta/tiles`. Idempotent, silent the second time, and it never
+  deletes the archive. Upgrade notes: `aps/MIGRATION.md` §12.
+
 ### Changed
 - **The installer's Centro map pane draws OpenStreetMap's tile service** (one raster layer, under its
   Tile Usage Policy: the bare tile URL, the wizard's origin as `Referer`, a linked «© OpenStreetMap
