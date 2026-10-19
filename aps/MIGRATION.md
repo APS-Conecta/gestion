@@ -229,13 +229,21 @@ OpenStreetMap for a while:
 
     sudo rm -rf /srv/aps-conecta/tiles
 
-The mastercontainer itself is not re-created: one that already carries `APS_TILES_DIR` keeps its
-read-only `/aps-tiles` bind (the setting is sticky in the suite's `configuration.json`), and while the
-archive is still on disk `https://<host>/tiles/chile.pmtiles` keeps answering 206 — nothing in the suite
-reads it, but it is served; it becomes a 404 once you free the archive. A mastercontainer created from
-this release on has no bind, and `/tiles/` is a 404 from the start. **Rollback** is a
-forward version: the earlier bundle's units and step come back only by installing that package
-again, and the archive, if you kept it, serves again.
+The mastercontainer itself is not re-created, and the route does not disappear on the day you update
+the host bundle: patch 239, the apache `/tiles/` route and the `APS_TILES_DIR` bind behind it, is
+dropped from the patch queue, and a queue change reaches a clinic only with the **next image release**
+(it changes `aps/main`, the tree the images are built from). Until that release is pulled, a
+mastercontainer that already carries `APS_TILES_DIR` keeps its read-only `/aps-tiles` bind (the
+setting is sticky in the suite's `configuration.json`), and while the archive is still on disk
+`https://<host>/tiles/chile.pmtiles` keeps answering 206 — nothing in the suite reads it, but it is
+served; it becomes a 404 once you free the archive. A mastercontainer created by this release's
+bundle has no bind (its run string no longer carries `APS_TILES_DIR`), and `/tiles/` is a 404 from the
+start. From the next image release on, the
+route, the setting and the bind do not exist in the images: the archive is not served at all,
+whether or not it is still on disk, and a leftover `APS_TILES_DIR` in an old mastercontainer's
+environment is ignored. **Rollback** is a forward version: the earlier bundle's units and step come
+back only by installing that package again, and the archive, if you kept it, serves again from an
+image that still carries the route.
 
 What each person sees: the map needs internet on **their** device (OpenStreetMap's servers are
 reached directly), and a blocked or unreachable OpenStreetMap shows as a plain background — the

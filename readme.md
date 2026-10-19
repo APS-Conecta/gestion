@@ -42,7 +42,6 @@ fork-infra paths — into `aps/main`, the tree the images are built from:
 | 235 | the installer's own certificate served when one is mounted (`APS_TLS_DIR`, an install by IP); otherwise ACME, as upstream (PHP, declared) |
 | 237 | the test harness's reset removes the Euro-Office container too |
 | 238 | the push server reaches Nextcloud over the internal plain-http listener, not the public URL |
-| 239 | the suite's basemap served same-origin at `/tiles/` from a read-only host directory (`APS_TILES_DIR`); a 404 until it exists (PHP, declared) |
 | 240 | the suite's containers are named `aps-conecta-*` (generated; the wizard stays `nextcloud-aio-mastercontainer`; fresh installs only) |
 
 **PHP logic changes only where declared.** Every other modification is a string, an asset, a
@@ -50,9 +49,8 @@ template, or Dockerfile plumbing, carried as a patch the CI replays and the gate
 declared PHP changes: patch 080's three registry references (strings), patch 200's office guard
 (any office other than Euro-Office is refused), patch 210's defaults (Talk, Whiteboard and
 Imaginary start off), patch 233's IP guard (an IP is accepted as the domain while domain validation
-is skipped), patch 235's certificate directory (a setting and its read-only bind into the web front),
-patch 239's basemap directory (the same shape: a setting and its read-only bind), and patch 240's
-container names (strings, and the log route's name guard).
+is skipped), patch 235's certificate directory (a setting and its read-only bind into the web front), and
+patch 240's container names (strings, and the log route's name guard).
 
 **What the operator sees.** The wizard presents itself as «APS Conecta Gestión AIO — Instalador»;
 an already-installed instance greets with «APS Conecta Gestión AIO ya está instalado»; once the

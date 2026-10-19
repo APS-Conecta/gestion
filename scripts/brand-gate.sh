@@ -896,48 +896,6 @@ push_internal_url() {  # 238: the push server reaches Nextcloud over apache's in
 row 238 "the push server reaches Nextcloud over apache's internal plain-http listener — no certificate to verify by IP, no hairpin by domain (R22)" \
   push_internal_url
 
-# shellcheck disable=SC2016  # the shell, PHP and Caddyfile lines are matched as bytes
-tiles_route() {  # 239: apache serves the suite's basemap same-origin at /tiles/ (R49). APS_TILES_DIR binds
-  # read-only at /aps-tiles into apache alone (empty: no bind, and /tiles/ is a 404; the mastercontainer
-  # refuses a relative path). The route sits in the snippet both site blocks import, ahead of the
-  # Nextcloud catch-all: behind it, /tiles/ would be proxied to Nextcloud and the archive never served.
-  # The block is pinned whole — strip the prefix, root at the mount, no-cache, file_server (Range, ETag):
-  # a try_files or a proxy inside it would hand a missing archive to Nextcloud.
-  local j="$TREE/php/containers.json" f="$TREE/php/src/ContainerDefinitionFetcher.php" \
-        m="$TREE/php/src/Data/ConfigurationManager.php" mc="$TREE/Containers/mastercontainer/start.sh" \
-        c="$TREE/Containers/apache/Caddyfile" fail=0 nr nt nn ne want
-  s3_files "$j" "$f" "$m" "$mc" "$c" || return 1
-  case "$(sed -n '/"container_name": "aps-conecta-apache"/,/"container_name": /p' "$j" | tr -d ' \n')" in
-    *'"source":"%APS_TILES_DIR%","destination":"/aps-tiles","writeable":false'*) ;;
-    *) echo "  containers.json does not bind APS_TILES_DIR read-only at /aps-tiles into apache" >&2; fail=1 ;;
-  esac
-  [ "$(grep -cF '"%APS_TILES_DIR%"' "$j")" -eq 1 ] || { echo "  APS_TILES_DIR is bound into another container too" >&2; fail=1; }
-  grep -A1 -F "} elseif (\$value['source'] === '%APS_TILES_DIR%') {" "$f" | grep -qF '$this->configurationManager->apsTilesDir;' \
-    || { echo "  ContainerDefinitionFetcher does not resolve %APS_TILES_DIR%" >&2; fail=1; }
-  grep -qF "get => \$this->getEnvironmentalVariableOrConfig('APS_TILES_DIR', 'aps_tiles_dir', '');" "$m" \
-    || { echo "  ConfigurationManager does not read APS_TILES_DIR" >&2; fail=1; }
-  grep -qF 'if [ -n "$APS_TILES_DIR" ]; then' "$mc" || { echo "  the mastercontainer does not check APS_TILES_DIR" >&2; fail=1; }
-  nr="$(grep -nxF '(aps_routes) {' "$c" | cut -d: -f1)"
-  nt="$(grep -nxF '    route /tiles/* {' "$c" | cut -d: -f1)"
-  nn="$(grep -nxF '    route {' "$c" | cut -d: -f1)"
-  ne="$(awk -v r="$nr" 'NR > r && $0 == "}" { print NR; exit }' "$c")"
-  { [ "$(grep -cxF '    route /tiles/* {' "$c")" -eq 1 ] && [ "$(grep -cxF '    route {' "$c")" -eq 1 ] \
-      && [ -n "$nr" ] && [ -n "$nt" ] && [ -n "$nn" ] && [ -n "$ne" ] && [ "$nr" -lt "$nt" ] && [ "$nt" -lt "$nn" ] && [ "$nn" -lt "$ne" ]; } \
-    || { echo "  the /tiles/ route is missing, doubled, outside the snippet, or behind the Nextcloud catch-all" >&2; fail=1; }
-  want='    route /tiles/* {
-        uri strip_prefix /tiles
-        root * /aps-tiles
-        header Cache-Control "no-cache"
-        file_server
-    }'
-  { [ -n "$nt" ] && [ "$(sed -n "${nt},$((nt + 5))p" "$c")" = "$want" ]; } \
-    || { echo "  the /tiles/ block is not exactly: strip the prefix, root at /aps-tiles, no-cache, file_server" >&2; fail=1; }
-  [ "$fail" -eq 0 ]
-}
-
-row 239 "apache serves the suite's basemap same-origin at /tiles/ — APS_TILES_DIR bound read-only into apache alone, the route ahead of Nextcloud's catch-all in the shared snippet, a missing archive a 404 (R49, declared PHP: the setting and its bind)" \
-  tiles_route
-
 modern_tls() {  # 250: modern TLS only — the mastercontainer's ACME and internal listeners pin
   # protocols tls1.2 tls1.3 as their tls block's first directive, and apache's runtime stanza
   # (235's # tls placeholder mechanism) carries the same pin in start.sh's ACME TLS_STANZA;

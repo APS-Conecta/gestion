@@ -19,6 +19,12 @@ image digests live there and are deliberately not copied here — one fact, one 
   literal gate, the tiles self-tests and Clean boot's `/tiles/` steps. Territorio and the installer's
   Centro pane draw OpenStreetMap's own tile service instead (ADR-0021 in territorio). The install is
   **eight** steps now (Centro is step 5); every «Paso N de 9» is «Paso N de 8».
+- **Patch 239, apache's `/tiles/` route.** The patch (`patches/239-tiles-route.patch`) that served the
+  archive same-origin, with its `APS_TILES_DIR` setting and read-only `/aps-tiles` bind, its brand-gate
+  row and its readme row, is dropped from the queue. It changes `aps/main`, so it takes effect with the
+  **next image release**, not with the host bundle: until then a mastercontainer that still carries the
+  bind keeps serving the old archive at `/tiles/` (206) while the file is on disk, and a new one has no
+  bind (404). Upgrade notes: `aps/MIGRATION.md` §12.
 
 ### Added
 - **`retire_tile_remnants`**, run by `aps-conecta temporizadores` (and so by a finished install) and by the
