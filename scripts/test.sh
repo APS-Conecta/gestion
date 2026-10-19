@@ -676,9 +676,9 @@ check bash -c '
 # survives. The tokens are assembled without their literals so this file is not its own hit. The ONE
 # place the old folder is still named is the host CLI's retirement of a host that ran the earlier
 # bundle (retire_tile_remnants, TILES_REMNANT_DIR) — a different name on purpose, so this grep can stay
-# absolute. APS_TILES_""DIR itself survives in patch 239's brand-gate row (its own change) and in the
-# host self-test's legacy-environment arm, so it is checked only where it would still do work: the
-# run string and the testbed.
+# absolute. APS_TILES_""DIR itself survives only in the host self-test's legacy-environment arm (a suite
+# created by an earlier release still carries the line), so it is checked only where it would still do
+# work: the run string and the testbed. Patch 239, which read it, is dropped (the next gate).
 check bash -c '
   for f in host/tiles.sh scripts/refresh-""basemap.sh host/aps-conecta-tiles.service host/aps-conecta-tiles.timer; do
     [ ! -e "$f" ] || { echo "$f is back — the tile machinery is retired" >&2; exit 1; }
@@ -690,6 +690,26 @@ check bash -c '
   out="$(APS_SUITE_TAG=v0.0.0 bash host/aps-conecta run-command 2>&1)"
   case "$out" in "docker run"*) ;; *) echo "run-command printed no docker run string: $out" >&2; exit 1 ;; esac
   ! grep -q "APS_TILES_""DIR" <<<"$out"'
+
+# --- gate: patch 239 (the /tiles/ route) is dropped from the queue (I4) --------------------------------
+# The route served the archive that is no longer built; with it gone nothing reads the apache bind, the
+# mastercontainer's setting or the Caddyfile block that patch carried. The proof is the absence, in every
+# place that used to name it: the patch file, its brand-gate row, its readme row and its «declared PHP»
+# clause, and every token it introduced (the tokens are assembled so this file is not its own hit). The
+# coverage rule replay.sh enforces before it moves anything is mirrored here, offline: every queued patch
+# is named by a gate row, so dropping a patch without its row is a red here and not only at the next
+# replay. The change reaches clinics with the NEXT image release (it edits aps/main); aps/MIGRATION.md
+# section 12 says what an older mastercontainer still does until then.
+check bash -c '
+  ls patches/239-* >/dev/null 2>&1 && { echo "patches/239-* is back — the /tiles/ route is dropped" >&2; exit 1; }
+  grep -q "^row 239 " scripts/brand-gate.sh scripts/acquisition-gate.sh && { echo "a gate row for the dropped patch 239 survives" >&2; exit 1; }
+  grep -qE "^\| 239 \|" readme.md && { echo "readme.md still lists patch 239" >&2; exit 1; }
+  hits="$(git grep -nE "tiles_""route|APS_TILES_""DIR|aps_tiles_""dir|apsTiles""Dir|/aps-""tiles|patch 239" -- patches scripts/brand-gate.sh scripts/acquisition-gate.sh scripts/replay.sh readme.md Containers php || true)"
+  [ -z "$hits" ] || { printf "the dropped /tiles/ route is still named:\n%s\n" "$hits" >&2; exit 1; }
+  for p in patches/*; do
+    id="$(basename "$p")"; id="${id%%-*}"
+    grep -q "^row $id " scripts/brand-gate.sh scripts/acquisition-gate.sh || { echo "patch $(basename "$p") has no gate row (replay.sh would refuse the queue)" >&2; exit 1; }
+  done'
 
 # Clean boot (by IP) asserts Territorio carries the site's comuna and NO tile_url. The step is a YAML block
 # no runner has run until CI does, so its script is extracted and run here over a stubbed occ: absent (occ
