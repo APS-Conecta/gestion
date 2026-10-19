@@ -2,9 +2,8 @@
 # compose dev stack (theme live-edit mounts), and its drift tooling. `make up` starts every
 # service (Euro-Office included) and `make office-down` reclaims its RAM; `make test` is
 # gestion's pruned gate. The install half's lifecycle (`install`, `seed`, `seed-idempotent`,
-# `smoke`, `divergence`, `uninstall`, `office-smoke`) moved with the installer — instalador
-# owns it now; the scripts those targets referenced stay here frozen until the org retires
-# them (aps/MIGRATION.md's checklist).
+# `smoke`, `divergence`, `uninstall`, `office-smoke`) and the scripts behind it live in
+# instalador; this repository keeps the suite's data, the dev compose stack and the drift tooling.
 .DEFAULT_GOAL := help
 .PHONY: help setup up up-dev down fix-mount-perms test images images-check apps-check office-down
 
@@ -67,9 +66,6 @@ images-check: ## Report whether any tag has moved past its pin (changes nothing)
 
 apps-check: ## Report whether any vendored app has a newer release (changes nothing)
 	@bash scripts/app-versions.sh
-
-# `office-eurooffice` was DELETED here by #81 — a second entry point for what `make install` already
-# does, which is what ADR-0001 deleted occ-theming.sh for. `make office-smoke` checks the backend alone.
 
 office-down: ## Stop the office backend (core stack keeps running)
 	docker compose stop eurooffice 2>/dev/null || true

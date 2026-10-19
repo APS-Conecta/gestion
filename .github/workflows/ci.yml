@@ -1,6 +1,6 @@
-# The cheap gate: static checks, seconds, on every PR. The full bring-up is a separate workflow
-# (cleanboot.yml) because GitHub filters paths per WORKFLOW, not per job — keeping both here meant
-# either running the 3-minute install on docs PRs or leaving it unfiltered and manual (#97).
+# The cheap gate: static checks, seconds, on every PR. The full bring-up (a clean install of a
+# clinic) is instalador's clean-boot workflow, which reads this repository's main as the suite's
+# data; nothing here boots a stack.
 name: CI
 
 # `push` is limited to main so a PR is not checked twice: a branch push and its pull_request event
@@ -42,8 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # `make setup`, not `cp`, for the reason cleanboot.yml gives — the generator is exercised
-      # nowhere else — and for one this job owns: the gate now refuses to provision with the
+      # `make setup`, not `cp`, so the generator is exercised — and for a reason this job owns: the gate now refuses to provision with the
       # secrets this repository publishes, and a CI env file that IS that hand-copy would have to
       # be exempted from the check to keep passing. An exemption is how the check stops meaning
       # anything. Nothing here starts a container; the values only have to be real.

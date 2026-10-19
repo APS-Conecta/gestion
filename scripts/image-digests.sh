@@ -37,8 +37,6 @@ esac
 # today's bytes have not been booted, and quietly adopting them is the opposite of the point.
 # Deliberately not $-anchored: `FROM x:tag AS build` and `image: x:tag  # note` used to slip past it.
 # An internal multi-stage `FROM base AS x` gets flagged too, which is loud rather than silent.
-# (host/tiles.sh carried the third pin, NGINX_REF, until L5: the suite's own /tiles/ route
-# replaced the nginx container, and tiles.sh pins no image any more.)
 if unpinned=$( grep -nE '^\s*(image:|FROM) ' "${FILES[@]}" | grep -v '@sha256:' ); then
   echo "FATAL: image reference with no digest (#109 requires every image pinned):" >&2
   echo "$unpinned" >&2

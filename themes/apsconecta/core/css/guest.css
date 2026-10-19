@@ -32,7 +32,7 @@
 
    Product values, never the clinic's — these screens stay byte-identical on
    every install. The same two colours are written into the theming app by
-   provisioning/phases/15-branding.sh; that file is where they change.
+   the branding phase of instalador (15-branding.sh); that file is where they change.
    DO NOT WRITE A THEMED PATH IN PROSE HERE — scripts/test.sh greps this file
    for them and resolves each one on disk. Same trap as server.css.
    ===================================================================== */

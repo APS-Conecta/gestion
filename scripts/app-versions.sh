@@ -5,8 +5,8 @@
 # leaves an instance half-built. Reading a version number in CI risks nothing.
 #
 # REPORTS ONLY. Bumping is an edit — new tarball, new VENDOR lines — and deliberately not automated:
-# a tarball swap changes what every clinic runs, and it goes through a PR where `cleanboot` boots it.
-# See provisioning/lib.sh (`ensure_vendored_app`) for what an install then does with it.
+# a tarball swap changes what every clinic runs, and it goes through a PR. What an install then does
+# with a vendored app is instalador's (its provisioning lib, `ensure_vendored_app`).
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -17,10 +17,15 @@ INDEX="https://apps.nextcloud.com/api/v1/platform/34.0.0/apps.json"
 # OUR OWN APPS ARE NOT IN THE STORE AND NEVER WILL BE (ADR-0003). They are vendored the same way
 # and so they have a VENDOR file, but asking the store about `epidemiologia` gets "not in the NC34
 # store index at all" and this script exits 1 — which it did, on every run, from the moment the app
-# was vendored. The list is READ OUT OF PHASE 12 rather than restated here, the same way
-# scripts/divergence.sh reads both inventories, so declaring a second app of ours needs no edit
-# to this file.
-own="$(sed -n 's/^OWN_APPS="\(.*\)"/\1/p' provisioning/phases/12-apps.sh | tr ' ' '\n' | sed 's/=.*//' | grep -v '^$' || true)"
+# was vendored. Ours is read out of the VENDOR files themselves: an app of ours is BUILT from a tag
+# of an APS-Conecta repository (its `url=` names the tag, not a download), a store app is not. That
+# used to be read out of the OWN_APPS line of the installer's phase 12, which no longer lives in this
+# repository; deriving it from the data we own means declaring a second app of ours needs no edit
+# to this file and no second inventory to keep in step.
+own="$(grep -lE '^url=https://github\.com/APS-Conecta/' provisioning/apps/*/VENDOR 2>/dev/null \
+  | while read -r v; do basename "$(dirname "$v")"; done || true)"
+# --own-apps: print that list and stop, so a gate can check the classification without the network.
+[ "${1:-}" = "--own-apps" ] && { printf '%s\n' "$own"; exit 0; }
 
 # A FROZEN APP IS STILL REPORTED, IT JUST DOES NOT FAIL (#169). `side_menu`'s only source has been
 # unreachable since 2026-08-13, so its line could never go green again — and this workflow's own
@@ -101,8 +106,8 @@ an install only ever unpacks what is committed here.
   To take a new version:
     1. download the release from the url= line in provisioning/apps/<id>/VENDOR
     2. replace the tarball, update version= and sha256=
-    3. make seed        — the patches either still apply or the phase says which one moved
-    4. open a PR; cleanboot boots it before it can merge""", file=sys.stderr)
+    3. run instalador's provisioning against it — the patches either still apply or the phase says which one moved
+    4. open a PR; instalador's clean boot is the gate for the new bytes""", file=sys.stderr)
     raise SystemExit(1)
 print("every vendored app is the newest the NC34 store offers"
       + (f" ({len(frozen)} frozen, listed above)" if frozen else ""))

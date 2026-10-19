@@ -5,11 +5,12 @@
 # quietly turns into never updating at all.
 #
 # IT REPORTS, IT DOES NOT BUMP. A red run here is not an incident: no installed clinic is affected,
-# because nothing pulls a new image on its own — there is no `docker compose pull` in `make up` or
-# `make install`, and `up -d` only pulls when an image is absent. Nor does an install ever fetch an
+# because nothing pulls a new image on its own — there is no `docker compose pull` in `make up`,
+# and `up -d` only pulls when an image is absent. Nor does an install ever fetch an
 # app: it unpacks the tarball committed in provisioning/apps/. A red run means "new bytes exist,
-# somebody decide". A human runs `make images` (or swaps a tarball), commits, and opens a PR, where
-# `cleanboot` does a full clean bring-up against the NEW bytes before it can merge.
+# somebody decide". A human runs `make images` (or swaps a tarball), commits, and opens a PR. No clean
+# bring-up runs on that PR any more: instalador's clean boot reads this repository's main, so it boots
+# the new bytes after the merge, on its weekly run or by dispatch.
 #
 # THIS RUN IS THE TRIGGER, and the cadence is the answer to #117: when it goes red, someone looks
 # within the week. That is the whole ownership story — deliberately a person reading a weekly report
@@ -17,14 +18,14 @@
 #
 # WHY NOT OPEN THE PR ITSELF. Two reasons, and the second is fatal. A bot that merged its own image
 # bump would put a Nextcloud nobody had booted into a clinic. And GitHub does not run workflows on
-# PRs opened with GITHUB_TOKEN, so cleanboot would not run on that PR at all — the bump would arrive
+# PRs opened with GITHUB_TOKEN, so no workflow would run on that PR at all — the bump would arrive
 # looking green and be untested. Automating the detection is the part that has value; automating the
 # merge removes the only gate.
 name: Image digests
 
 on:
   schedule:
-    - cron: "0 5 * * 1"          # Mondays 05:00 UTC, an hour before the clean boot
+    - cron: "0 5 * * 1"          # Mondays 05:00 UTC
   workflow_dispatch:
   # Also on PRs that touch a pin, so a hand-edited or malformed digest fails before it lands. The
   # script rejects an unpinned image outright, which is the guard that keeps a newly added service

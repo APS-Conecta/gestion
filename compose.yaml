@@ -1,7 +1,7 @@
 # APS Conecta Gestión — core local dev stack (Story 0.1).
 # Vanilla Nextcloud 34 + PostgreSQL 18 + Redis, official images only (no server fork — D7; the suite's own apps ship as apps, not server patches — ADR-0003).
 # `make up` starts these services ONLY. Provisioning (branding/groups/folders/fixtures)
-# is the separate `make seed` pipeline from Story 0.5 onward (AD-2). The office suite
+# is the installer's, a separate pipeline in instalador (AD-2). The office suite
 # (Euro-Office — AD-5) is Story 0.2.
 #
 # Required vars come from .env (created by `make setup`). The ${VAR:?...} guards fail

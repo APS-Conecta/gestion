@@ -46,8 +46,8 @@ declare(strict_types=1);
  * needs a container restart. Static and committed, so that is an install-time cost, never a
  * runtime one — but it is why the identity below must stay the PRODUCT's. A clinic name here would
  * make the theme per-install and reintroduce a restart on every seed. Values are duplicated from
- * provisioning/phases/15-branding.sh, which stays the source of truth; scripts/test.sh asserts the
- * two agree.
+ * the branding phase of instalador (15-branding.sh), which stays the source of truth; no gate in
+ * this repository asserts the two agree.
  *
  * Record: docs/adr/0004-branding-the-legacy-render-path.md
  */

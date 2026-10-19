@@ -21,7 +21,7 @@ fi
 # is the only other file that can change what compose resolves.
 check docker compose -f compose.yaml -f compose.dev.yaml config -q
 linted=0
-for s in scripts/*.sh provisioning/*.sh provisioning/phases/*.sh sites/*/site.sh dev/*.sh host/*.sh tests/*/*.sh; do
+for s in scripts/*.sh sites/*/site.sh dev/*.sh tests/*/*.sh; do
   [ -e "$s" ] || continue
   linted=$((linted + 1)); check bash -n "$s"
 done
@@ -34,17 +34,17 @@ done
 # `git ls-files` instead — the one list that grows when a script is added anywhere. Adding a script
 # to an existing directory still costs nothing; adding a directory now fails loudly, which is the
 # whole point.
-# SUBSET, not equality. The sweep legitimately lints files git has never heard of: cleanboot.yml
-# installs a clinic from nothing, its site placed at sites/<DEIS>/site.sh, and linting it is correct — it is
-# real shell that a real install sources. Demanding the two lists MATCH failed there and only there,
-# which is the worst shape a gate can have: green on every developer's machine, red only in CI.
+# SUBSET, not equality. The sweep legitimately lints files git has never heard of: a developer's
+# generated sites/<slug>/site.sh is real shell that a real install sources, and linting it is correct.
+# Demanding the two lists MATCH failed on exactly that, which is the worst shape a gate can have:
+# green in CI, red only on a machine that has generated a site.
 # What actually matters is that nothing TRACKED escapes the sweep, so subtract and require empty.
 check bash -c '
   [ -z "$(comm -23 <(git ls-files "*.sh" | sort) \
-                   <(ls scripts/*.sh provisioning/*.sh provisioning/phases/*.sh sites/*/site.sh dev/*.sh host/*.sh tests/*/*.sh 2>/dev/null | sort))" ]'
+                   <(ls scripts/*.sh sites/*/site.sh dev/*.sh tests/*/*.sh 2>/dev/null | sort))" ]'
 check test -f dev/xdebug.ini
-# Same three assertions `ensure_vendored_app` already makes (lib.sh:211-222), moved from seed time to
-# PR time. At seed time they run on a CLINIC, during `make install` — the worst place to learn that a
+# Same three assertions instalador's `ensure_vendored_app` makes, moved from seed time to
+# PR time. At seed time they run on a CLINIC, during the install — the worst place to learn that a
 # tarball and its manifest stopped describing each other, because the operator is mid-install and the
 # failure reads as the install being broken. Here it needs no stack, no .env, no clock and no network,
 # so it runs in any pull request, including a hotfix opened from a clinic.
@@ -259,7 +259,7 @@ for f in sorted(glob.glob("themes/apsconecta/core/img/**/*.svg", recursive=True)
             bad.append(f"{f}: font-family=\"{fam}\" keeps an OS fallback; the embedded face must be the only option")
 if bad: print("\n".join(bad)); sys.exit(1)'
 
-# scripts/deis.py writes sites/<slug>/site.sh and provisioning/seed.sh SOURCES it, so every value
+# scripts/deis.py writes sites/<slug>/site.sh and instalador's seed SOURCES it, so every value
 # it emits is shell syntax unless it is quoted. It was not: five register fields went into the file
 # inside double quotes, raw. Six values in the shipped register carry a `"` or a backtick, and the
 # two failure modes are different sizes of bad — DEIS 113314's address holds a backtick, which is a
@@ -380,27 +380,6 @@ if len(old) != len(new) or not all(n.startswith(o + b",") for o, n in zip(old, n
 if not again: fails.append("a second run did not rewrite the same bytes")
 if fails:
     print("\n".join(fails)); sys.exit(1)'
-# Every establishment the installer offers carries its official point, inside the box the basemap
-# covers (a21): the point is where the Centro map starts and what SITE_LON/SITE_LAT copy. The box is
-# read from scripts/refresh-basemap.sh, the file that decides what the basemap holds, so a point the
-# map could not show reds here and not at a clinic. A --snapshot that skipped --coordenadas is the
-# realistic way to get here — snapshot_from writes the ten columns only.
-check python3 -c '
-import csv, glob, re, sys
-sys.path.insert(0, "scripts")
-import deis
-register = sorted(glob.glob("sites/establecimientos-deis-*.csv"))[-1]
-rows = list(csv.DictReader(open(register, encoding="utf-8")))
-m = re.search(r"^BBOX=\"\$\{BBOX:-([-0-9.,]+)\}\"$", open("scripts/refresh-basemap.sh", encoding="utf-8").read(), re.M)
-if len(rows) < 100 or not m:
-    print("register truncated, or no BBOX default in scripts/refresh-basemap.sh -- this check measured nothing"); sys.exit(1)
-w, s, e, n = map(float, m.group(1).split(","))
-bad = [r["codigo"] for r in rows
-       if not all(deis.DEGREES.fullmatch(r.get(k) or "") for k in deis.COORDS)
-       or not (w <= float(r["longitud"]) <= e and s <= float(r["latitud"]) <= n)]
-if bad:
-    print(str(len(bad)) + " register rows without a plain-degree point inside the basemap box "
-          + m.group(1) + ": " + ", ".join(bad[:5])); sys.exit(1)'
 # A --snapshot whose points never came is the newest file, so every reader would take it and
 # block() would die on a KeyError inside the installer. load() stops instead, naming both ways
 # out, and a refused --coordenadas on it says how to step back to the register before it. On a
@@ -522,16 +501,6 @@ check bash -c '
   printf "" | sites_register_only && { echo "sites gate: an empty listing went green" >&2; exit 1; }
   printf "sites/establecimientos-deis-2026-07-23.csv\n" | sites_register_only'
 
-# --- a21 (L5): the map is the suite's own route — the separate tiles server is gone -------------
-# The grep is a21's own clause, with the pattern assembled without its literals
-# ("nginx:alp""ine|TILES_""PORT|:80""84"): a21 covers scripts/ too, and a gate that spelled its
-# own banned tokens would be its own hit. tiles.nginx.conf gone, no nginx pin, port or knob left
-# anywhere the map used to need one, and phase 16 pointing at /tiles/.
-check bash -c '
-  test ! -e tiles.nginx.conf \
-    && ! git grep -qE "nginx:alp""ine|TILES_""PORT|:80""84" -- .env.example compose.yaml host scripts provisioning \
-    && grep -q "/tiles/" provisioning/phases/16-app-policy.sh'
-
 # --- gate: the data manifest and the comuna reference describe each other ---------------------
 # packages.json pins the masters; comunas-deis.csv is the coding authority the recipes validate
 # against. One python block holds the validator ONCE and runs it on the real corpus AND on three
@@ -590,6 +559,15 @@ check bash -c 'out="$(git grep -nE "nextcloud-aio[-*]" -- . ":!CHANGELOG.md" ":!
 # --- gate: the release manifest's form — every pin present, every category counted -------------
 check bash scripts/release-manifest.sh --validate
 check bash scripts/release-manifest.sh --self-test
+# Which vendored apps are OURS (not the store's) is read from their VENDOR files, because app-versions.sh
+# asks the store about everything else and exits 1 on an app the store has never heard of. The old
+# source, the OWN_APPS line of the installer's phase 12, no longer lives here. Shape check only, no
+# network: ours is named, a store app is not, and the list is not empty.
+check bash -c '
+  own=$(bash scripts/app-versions.sh --own-apps) || exit 1
+  printf "%s\n" "$own" | grep -qx territorio || { echo "own apps: territorio is not classified as ours" >&2; exit 1; }
+  printf "%s\n" "$own" | grep -qx calendar && { echo "own apps: a store app (calendar) is classified as ours" >&2; exit 1; }
+  exit 0'
 
 # --- the movers' hermetic self-tests retired with them (D2): standings, env.sh, usuarios and
 # comuna-package answer from instalador's gate now; gestion's own arms follow (release-manifest).
@@ -604,7 +582,8 @@ check bash -c '! grep -q "^NC_CONTAINER=" .env.example && { git grep -qE "NC_CON
 # workflow) is instalador's. What stays is the suite's DATA, its dev compose stack and its drift
 # tooling. This gate keeps the split honest in both directions: no executor path comes back, and no
 # tracked non-prose file (workflows, scripts, Makefile, compose) names one, which would be a call
-# into a file that is not there. Prose is out of scope here: repo-docs checks its links, and dated
+# into a file that is not there. `.gitleaksignore` is exempt: its fingerprints name commits in
+# history, where the files still are. Prose is out of scope here: repo-docs checks its links, and dated
 # history (CHANGELOG, BUGS, ROADMAP, the ADRs) legitimately names what used to exist. The pattern lives
 # in one variable so the negative half below runs the same bytes.
 EXECUTOR_GONE='(provisioning/(phases/|lib\.sh|seed\.sh|standings\.sh|usuarios\.sh|app-policy\.sh|intravox/)|host/(aps-conecta|tiles\.sh)|scripts/(aio-testbed|cleanboot-site|comuna-package|db-dump|divergence|install|migrate-to-aio|office-smoke|provisionador|refresh-basemap|seed-idempotent|smoke|uninstall)\.(sh|py)|workflows/cleanboot\.yml)'
@@ -612,7 +591,7 @@ export EXECUTOR_GONE
 check bash -c '
   back=$(git ls-files | grep -E "(^|/)$EXECUTOR_GONE" || true)
   [ -z "$back" ] || { printf "executor files are back in gestion (they live in instalador):\n%s\n" "$back" >&2; exit 1; }
-  hits=$(git grep -nE "$EXECUTOR_GONE" -- . ":(exclude)*.md" ":(exclude)scripts/test.sh" ":(exclude)provisioning/apps" ":(exclude)openspec" 2>/dev/null || true)
+  hits=$(git grep -nE "$EXECUTOR_GONE" -- . ":(exclude)*.md" ":(exclude)scripts/test.sh" ":(exclude).gitleaksignore" ":(exclude)provisioning/apps" ":(exclude)openspec" 2>/dev/null || true)
   [ -z "$hits" ] || { printf "tracked files naming an executor path that is not here:\n%s\n" "$hits" >&2; exit 1; }'
 # The negative half: the detector must detect a real path and stay quiet on this repo's own data paths.
 check bash -c '

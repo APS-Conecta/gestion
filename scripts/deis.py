@@ -21,7 +21,7 @@ plain term match, so `cesfam` above is a search word and not a required type: `d
 the file by hand: regenerate it with --snapshot, then add the points with --coordenadas.
 
 Python, not bash: the CSV quotes fields that contain commas ("Calle Diego Portales, La Junta"), and
-awk -F, gets those wrong. python3 is already assumed by provisioning/lib.sh; jq is not.
+awk -F, gets those wrong. python3 is already assumed by the installer's provisioning; jq is not.
 """
 import csv
 import glob
@@ -309,7 +309,7 @@ SITE_TEAMS=(
 )
 
 # --- Welcome screen: the page tree phase 41 seeds and converges, one row per section (section|flag) ---
-# A section is a folder of the library under provisioning/intravox/es/sections/. The flag is the
+# A section is a folder of the welcome library in instalador (intravox/es/sections/). The flag is the
 # protection attribute (review L0-04): `wall` = fixed structure staff cannot delete or move; empty =
 # editable. The seed stamps a wall section's structure `protected` and the engine refuses to delete
 # or move it (docs/WELCOME-SCREEN.md «Walls»). `equipos` is deliberately absent — declare it

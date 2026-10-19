@@ -75,14 +75,8 @@ echo "  Your admin password is in that file and nowhere else:"
 echo "      grep '^NEXTCLOUD_ADMIN_PASSWORD=' $ENV_FILE"
 echo "  Copy it into your password manager now — nothing else here keeps a copy."
 echo
-# SITE is the one value no generator can invent, and leaving it unset is what `make install`
-# already refuses on. Naming the next step here beats letting the install stop and explain it.
-if grep -qE '^SITE=.+' "$ENV_FILE"; then
-  echo "  SITE is already set. Next:  make install"
-else
-  echo "  Still needed — which establishment this serves. None ships; pick yours:"
-  echo "      scripts/deis.py                           # search the DEIS register, pick a number"
-  echo "      scripts/deis.py <codigo> --new <slug>     # write sites/<slug>/site.sh"
-  echo "      echo 'SITE=<slug>' >> $ENV_FILE"
-  echo "  Then:  make install"
-fi
+echo "  Next:  make up"
+echo "  This stack is not provisioned: groups, folders and branding are applied by the installer"
+echo "  (instalador, aps/INSTALLER.md). To pick an establishment for it, search the DEIS register:"
+echo "      scripts/deis.py                           # search, then pick a number"
+echo "      scripts/deis.py <codigo> --new <slug>     # write sites/<slug>/site.sh"
