@@ -44,6 +44,7 @@ fork-infra paths — into `aps/main`, the tree the images are built from:
 | 238 | the push server reaches Nextcloud over the internal plain-http listener, not the public URL |
 | 239 | the suite's basemap served same-origin at `/tiles/` from a read-only host directory (`APS_TILES_DIR`); a 404 until it exists (PHP, declared) |
 | 240 | the suite's containers are named `aps-conecta-*` (generated; the wizard stays `nextcloud-aio-mastercontainer`; fresh installs only) |
+| 250 | modern TLS only — the HTTPS listeners pin TLS 1.2 and 1.3; behind a reverse proxy apache's site is plain http and carries no pin |
 
 **PHP logic changes only where declared.** Every other modification is a string, an asset, a
 template, or Dockerfile plumbing, carried as a patch the CI replays and the gates verify. The

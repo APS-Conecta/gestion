@@ -11,6 +11,14 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ## [Unreleased]
 
+### Fixed
+- **Apache starts again behind a reverse proxy** (`APACHE_PORT` other than 443). Patch 250 pinned
+  `protocols tls1.2 tls1.3` into apache's ACME stanza on every port, and on a plain-http site Caddy
+  refuses the whole config («server listening on [:11000] is HTTP, but attempts to configure TLS
+  connection policies»), so apache never became healthy. The pin now applies on 443 only, and the
+  brand gate's row 250 checks the Caddyfile that `start.sh` writes for each port instead of counting
+  bytes. It changes `aps/main`, so it takes effect with the **next image release**.
+
 ## [0.4.0] — 2026-10-12
 ### Added
 - The signed package release channel: the `install.sh` bootstrap, the `VERSION` discipline, `installer.pub`.
