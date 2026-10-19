@@ -599,6 +599,29 @@ check bash scripts/release-manifest.sh --self-test
 # The [R] keeps the pattern from matching this line itself.
 check bash -c '! grep -q "^NC_CONTAINER=" .env.example && { git grep -qE "NC_CONTAINE[R]:?[?-]" -- . ":!scripts/env.sh"; [ $? -eq 1 ]; }'
 
+# --- gate: the executor lives in instalador, and nothing here points back at it -------------------
+# The install half (host bundle, provisioning phases, the lifecycle scripts, their clean-boot
+# workflow) is instalador's. What stays is the suite's DATA, its dev compose stack and its drift
+# tooling. This gate keeps the split honest in both directions: no executor path comes back, and no
+# tracked non-prose file (workflows, scripts, Makefile, compose) names one, which would be a call
+# into a file that is not there. Prose is out of scope here: repo-docs checks its links, and dated
+# history (CHANGELOG, BUGS, ROADMAP, the ADRs) legitimately names what used to exist. The pattern lives
+# in one variable so the negative half below runs the same bytes.
+EXECUTOR_GONE='(provisioning/(phases/|lib\.sh|seed\.sh|standings\.sh|usuarios\.sh|app-policy\.sh|intravox/)|host/(aps-conecta|tiles\.sh)|scripts/(aio-testbed|cleanboot-site|comuna-package|db-dump|divergence|install|migrate-to-aio|office-smoke|provisionador|refresh-basemap|seed-idempotent|smoke|uninstall)\.(sh|py)|workflows/cleanboot\.yml)'
+export EXECUTOR_GONE
+check bash -c '
+  back=$(git ls-files | grep -E "(^|/)$EXECUTOR_GONE" || true)
+  [ -z "$back" ] || { printf "executor files are back in gestion (they live in instalador):\n%s\n" "$back" >&2; exit 1; }
+  hits=$(git grep -nE "$EXECUTOR_GONE" -- . ":(exclude)*.md" ":(exclude)scripts/test.sh" ":(exclude)provisioning/apps" ":(exclude)openspec" 2>/dev/null || true)
+  [ -z "$hits" ] || { printf "tracked files naming an executor path that is not here:\n%s\n" "$hits" >&2; exit 1; }'
+# The negative half: the detector must detect a real path and stay quiet on this repo's own data paths.
+check bash -c '
+  printf "bash scripts/smoke.sh\n" | grep -qE "$EXECUTOR_GONE" || { echo "executor gate: scripts/smoke.sh went undetected" >&2; exit 1; }
+  printf "provisioning/phases/16-app-policy.sh\n" | grep -qE "$EXECUTOR_GONE" || { echo "executor gate: a phase went undetected" >&2; exit 1; }
+  printf "provisioning/apps/territorio\nprovisioning/data/packages.json\nscripts/env.sh\nscripts/deis.py\n" | grep -qE "$EXECUTOR_GONE" \
+    && { echo "executor gate: fired on a path that stays" >&2; exit 1; }
+  exit 0'
+
 echo "== desktop_workspace pin seat (hermetic — unpacks the vendored tarball + applies its patches) =="
 # D2 (org plan Phase 8): the vendored app's pins live in gestion, not in upstream's
 # absent CI. Needs node always; the PHP arm rides php when present (CI installs it).
