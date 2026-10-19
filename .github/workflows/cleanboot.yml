@@ -7,7 +7,7 @@
 # It lives in its own file because GitHub filters paths per WORKFLOW, not per job — the only way to
 # run this on the PRs that can break it while the static gate still runs on all of them.
 #
-# WHY IT RUNS ON PULL REQUESTS (#97). Dispatch only, it never ran on its own; the first
+# WHY IT RUNS ON PULL REQUESTS (#97). Schedule/dispatch only, it never ran on its own; the first
 # dispatch, on 2026-08-01, failed on #96 — a bug already merged to main that this gate would have
 # caught on its PR. It cannot be a REQUIRED check (branch protection needs GitHub Pro or a public
 # repo), so the red X is advisory — exactly why the trigger matters: visibility is the mechanism.
@@ -23,7 +23,8 @@ on:
     paths:
       # Everything a clean install reads, in THIS repository now: the host bundle, the scripts
       # tree, the executor phases, the bootstrap's own three files. gestion's half (sites/**,
-      # the vendored apps, the themes) is read at its main ref.
+      # the vendored apps, the themes) is read at its main ref — the schedule and dispatch
+      # arms stay its drift backstop, exactly as they already were for runner-image drift.
       - 'host/**'
       - 'scripts/**'
       - 'provisioning/**'
@@ -31,9 +32,18 @@ on:
       - 'VERSION'
       - 'installer.pub'
       - '.github/workflows/cleanboot.yml'
+  # Kept as the backstop for drift no PR causes. Our own bytes stopped being a source of it — images
+  # pinned by digest (#109), apps vendored as committed tarballs (#98) — so what still moves untouched
+  # is the runner image and the actions. `image-digests` reports the other half an hour earlier.
+  schedule:
+    - cron: "0 6 * * 1"          # Mondays 06:00 UTC
   workflow_dispatch:
 
-# The event is part of the group, so a push can only ever cancel another push.
+# The event is part of the group, so a push can only ever cancel another push. Without it, the
+# weekly clean boot and ordinary pushes to main shared one group: merge a PR while Monday's
+# bring-up is running and it is cancelled — and a cancelled run is not a failure, so there is no
+# notification and no red check. The one job that proves the stack comes up from empty would simply
+# have stopped happening, quietly.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
@@ -55,10 +65,12 @@ concurrency:
 # It lives in its own file because GitHub filters paths per WORKFLOW, not per job — the only way
 # to run this on the PRs that can break it while the static gate still runs on all of them.
 #
-# WHY IT RUNS ON PULL REQUESTS (#97). Dispatch only, it never ran on its own; the first
+# WHY IT RUNS ON PULL REQUESTS (#97). Schedule/dispatch only, it never ran on its own; the first
 # dispatch, on 2026-08-01, failed on #96 — a bug already merged to main that this gate would have
 # caught on its PR. It cannot be a REQUIRED check (branch protection needs GitHub Pro or a public
 # repo), so the red X is advisory — exactly why the trigger matters: visibility is the mechanism.
+
+# on:, schedule:, workflow_dispatch: and concurrency: are UNCHANGED (on disk).
 
 jobs:
   cleanboot:
@@ -101,13 +113,15 @@ jobs:
         with:
           fetch-depth: 1   # VERSION answers suite_tag() now — no tag history to read
       # The composite's gestion half (D2): the suite-definition content the package folds in —
-      # checked out beside, exactly what the bake and package-release read.
+      # checked out beside, exactly what the bake and package-release read. APS_BOT_PAT
+      # because gestion is private: the job's own token cannot read a sibling repository.
       # .git/info/exclude (below) keeps it out of the throwaway commit — a local ignore,
       # never a tracked one; the archive that becomes the package must not swallow it.
       - uses: actions/checkout@v7
         with:
           repository: APS-Conecta/gestion
           path: gestion
+          token: ${{ secrets.APS_BOT_PAT }}
           fetch-depth: 1
       # The probe bed FIRST, so a harness preflight failure (RAM, ports, ghcr reachability) is
       # the first thing a red log shows. Every wait inside is bounded, and `up` ends in its own
@@ -204,42 +218,35 @@ jobs:
             grep -qF "el mínimo es 20 GB" <<<"$out" && grep -qF "se recomiendan 40" <<<"$out" \
               || { echo "FAIL: the disk red must name the minimum and the recommended tier" >&2; exit 1; }
           fi
-      # THE SILENT INSTALL (a6, a7): the command a clinic runs, as root, with no terminal — all nine
+      # THE SILENT INSTALL (a6, a7): the command a clinic runs, as root, with no terminal — all eight
       # steps, the seed with its gate included. The probe's suite is already up (the testbed above),
       # so «suite» finds it running and drives nothing; AIO_STATE is the testbed's wizard state.
-      # Probe knobs only: the 1,1 GB basemap stays out (its /tiles/ route is proven below against a
-      # deterministic fixture), and the disk floor fits the runner. Root's writes in the checkout go
-      # back to the runner for the gates below.
+      # Probe knobs only: the comuna data stays off the runner and the disk floor fits it. Root's writes
+      # in the checkout go back to the runner for the gates below.
       - name: Install through the silent command a clinic runs
         run: |
           set -o pipefail   # run: is `bash -e` without it — the install's own failure, not tee's
-          sudo env "PATH=$PATH" APS_SKIP_MAP=1 APS_SKIP_DATOS=1 MIN_DISK_GB=2 AIO_STATE=/tmp/aio-testbed \
+          sudo env "PATH=$PATH" APS_SKIP_DATOS=1 MIN_DISK_GB=2 AIO_STATE=/tmp/aio-testbed \
             bash /opt/aps-conecta/instalador/host/aps-conecta install \
               --sitio "$RUNNER_TEMP/site.sh" --planilla "$RUNNER_TEMP/usuarios.csv" \
             < /dev/null | tee "$RUNNER_TEMP/install.out"
-      # a9 on real systemd: the silent install installed both units and enabled the weekly timer,
-      # on Santiago time; the monthly one stays off — the map was skipped (APS_SKIP_MAP)
+      # a9 on real systemd: the silent install installed its unit and enabled the weekly timer, on
+      # Santiago time; the retired monthly map timer is not there, enabled or not (a fresh install
+      # never had one — an upgraded host is retire_tile_remnants' case, self-tested in the host bundle)
       - name: The timers are installed, in Santiago time
         run: |
           systemctl is-enabled aps-conecta.timer
           systemctl is-active aps-conecta.timer
           systemctl show aps-conecta.timer -p TimersCalendar | grep -qF 'Sun *-*-* 03:00:00 America/Santiago'
-          systemctl show aps-conecta-tiles.timer -p TimersCalendar | grep -qF '*-*-04 05:00:00 America/Santiago'
-          if systemctl is-enabled aps-conecta-tiles.timer >/dev/null 2>&1; then
-            echo "FAIL: the monthly basemap timer is enabled with no map built" >&2; exit 1
+          if systemctl cat aps-conecta-tiles.timer >/dev/null 2>&1; then
+            echo "FAIL: the retired monthly map timer exists on a fresh install" >&2; exit 1
           fi
-      # Q18 (org review L5-S3): the 404 posture is a contract, not an accident. Before the
-      # fixture lands, the operator's own smoke must be GREEN on the unbuilt-map posture —
-      # bind present, monthly timer off, 404 said as a NOTE — and must SAY so: the NOTE is the
-      # honest state, and a silent green cannot tell "map not built yet" from "route broken".
-      # This step proves both halves on a real install; the fixture step below then flips the
-      # posture to 206, and make test's smoke later asserts that one instead.
-      - name: Smoke green on the 404 posture, the NOTE naming the unbuilt map
+      # The operator's own smoke is green on the fresh install, Territorio's comuna keys included
+      # (check 16): the map is OpenStreetMap's tile service, so there is no archive route to prove.
+      - name: Smoke is green on the fresh install
         run: |
-          out="$RUNNER_TEMP/smoke-404.out"
-          bash /opt/aps-conecta/instalador/scripts/smoke.sh > "$out" 2>&1 || { cat "$out" >&2; echo "FAIL: smoke must be green with the map unbuilt (bind present, timer off)" >&2; exit 1; }
-          grep -q 'NOTE: /tiles/chile.pmtiles is 404' "$out" \
-            || { cat "$out" >&2; echo "FAIL: the unbuilt-map posture must print its NOTE — silent green cannot tell unbuilt from unbound" >&2; exit 1; }
+          out="$RUNNER_TEMP/smoke.out"
+          bash /opt/aps-conecta/instalador/scripts/smoke.sh > "$out" 2>&1 || { cat "$out" >&2; echo "FAIL: smoke must be green on a fresh install" >&2; exit 1; }
           cat "$out"
       # The smoke step's `cat` reaches only the login-walled log, so the red's own words
       # (which check, what value) were invisible from the job list — #96's lesson, one layer
@@ -252,30 +259,6 @@ jobs:
           name: smoke-out
           path: ${{ runner.temp }}/smoke*.out
           if-no-files-found: warn
-      # L5: prove the suite's own /tiles/ route on the real apache — a deterministic fixture (the
-      # PMTiles magic + compressible lines, exactly 150000 bytes) stands in for the 1,1 GB archive
-      # the runner never builds. Dropped AFTER the install and the timer assert: the install saw
-      # no map (APS_SKIP_MAP, the monthly timer stays off), and a later file changes that nothing.
-      # 0644 and a 0755 directory: apache (uid 33) reads both through the read-only bind; the ranged
-      # read must answer 206 with the exact bytes and no Content-Encoding (encode leaves the
-      # archive's octet-stream alone — a recompressed range would break the format).
-      - name: The suite serves the basemap same-origin at /tiles/
-        run: |
-          sudo install -d -m 0755 /srv/aps-conecta/tiles
-          python3 - <<'PY'
-          data = b"PMTiles\x03" + b"".join(
-              b"fixture line %06d: same-origin /tiles/ proof\n" % i for i in range(4100))
-          open("/tmp/chile.pmtiles", "wb").write(data[:150000].ljust(150000, b"x"))
-          PY
-          sudo install -m 0644 /tmp/chile.pmtiles /srv/aps-conecta/tiles/chile.pmtiles
-          hdr="$(mktemp)"
-          code="$(curl -sS -D "$hdr" -r 0-1023 -H 'Accept-Encoding: gzip, zstd' -o "$RUNNER_TEMP/tiles.rng" \
-            -w '%{http_code}' "http://localhost:${AIO_TEST_APACHE_PORT}/tiles/chile.pmtiles")"
-          [ "$code" = "206" ] || { echo "FAIL: /tiles/ answered $code, not 206" >&2; cat "$hdr" >&2; exit 1; }
-          grep -qi '^content-range: bytes 0-1023/150000' "$hdr" || { cat "$hdr" >&2; exit 1; }
-          ! grep -qi '^content-encoding:' "$hdr" || { echo "FAIL: the range came compressed" >&2; cat "$hdr" >&2; exit 1; }
-          head -c 1024 /srv/aps-conecta/tiles/chile.pmtiles > "$RUNNER_TEMP/tiles.esp"
-          cmp "$RUNNER_TEMP/tiles.rng" "$RUNNER_TEMP/tiles.esp"
       # R26's thresholds: the suite's measured memory on the real run, a table and its total in the
       # summary — one snapshot of the suite's own containers; a diagnostic, so it never reddens the run
       - name: The measured usage — the table and the machine-readable record (R26, D8)
@@ -535,6 +518,7 @@ jobs:
         with:
           repository: APS-Conecta/gestion
           path: gestion
+          token: ${{ secrets.APS_BOT_PAT }}
           fetch-depth: 1
       - name: Build the rehearsal package, then install through the real bootstrap
         run: |
@@ -583,14 +567,12 @@ jobs:
       - name: Install by IP through the silent command a clinic runs
         run: |
           set -o pipefail   # run: is `bash -e` without it — the install's own failure, not tee's
-          # The pin takes any tag; the regex is the one judge: ci-YYYYMMDD-N (the old rehearsal
-          # tags), vX.Y.Z (a release) or vX.Y.Z-ci.N (the image pipeline's rehearsal).
-          tag="$(sed -nE 's/^IMAGE="\$\{AIO_TEST_IMAGE:-ghcr\.io\/aps-conecta\/all-in-one:([^}]+)\}"$/\1/p' scripts/aio-testbed.sh)"
-          [[ "$tag" =~ ^(ci-[0-9]{8}-[0-9]+|v[0-9]+\.[0-9]+\.[0-9]+(-ci\.[0-9]+)?)$ ]] || { echo "FATAL: no single suite tag pinned in scripts/aio-testbed.sh" >&2; exit 1; }
+          tag="$(sed -n 's/^IMAGE="${AIO_TEST_IMAGE:-ghcr.io\/aps-conecta\/all-in-one:\(ci-[0-9]\{8\}-[0-9]\{1,\}\)}"$/\1/p' scripts/aio-testbed.sh)"
+          [[ "$tag" =~ ^ci-[0-9]{8}-[0-9]+$ ]] || { echo "FATAL: no single suite tag pinned in scripts/aio-testbed.sh" >&2; exit 1; }
           # APS_SUITE_TAG: the package's VERSION is the throwaway rehearsal tag, but the
-          # mastercontainer this job CREATES must run a published image — the pinned suite tag
+          # mastercontainer this job CREATES must run a published image — the pinned ci tag
           # (suite_tag() answers the override first; the rehearsal-window seam it exists for)
-          sudo env "PATH=$PATH" APS_SKIP_MAP=1 APS_SKIP_DATOS=1 MIN_DISK_GB=2 APS_SUITE_TAG="$tag" \
+          sudo env "PATH=$PATH" APS_SKIP_DATOS=1 MIN_DISK_GB=2 APS_SUITE_TAG="$tag" \
             bash /opt/aps-conecta/instalador/host/aps-conecta install \
               --sitio "$RUNNER_TEMP/site.sh" --planilla "$RUNNER_TEMP/usuarios.csv" \
             < /dev/null | tee "$RUNNER_TEMP/install.out"
@@ -628,29 +610,6 @@ jobs:
             | python3 -c 'import json, sys; sys.exit(not any(r.get("name") == "aps-conecta-ca.crt" for r in json.load(sys.stdin)))'
           occ notify_push:self-test
           occ eurooffice:documentserver --check
-      # L5 by IP: the same deterministic fixture, then the /tiles/ route over the installer's own
-      # certificate, and the operator's own check (host/tiles.sh check: the archive, the bind, a
-      # ranged read through the suite's internal network) green on a real install. The route is
-      # served until the tile machinery retires; Territorio no longer reads it.
-      - name: The basemap is served same-origin at /tiles/, by IP
-        run: |
-          sudo install -d -m 0755 /srv/aps-conecta/tiles
-          python3 - <<'PY'
-          data = b"PMTiles\x03" + b"".join(
-              b"fixture line %06d: same-origin /tiles/ proof\n" % i for i in range(4100))
-          open("/tmp/chile.pmtiles", "wb").write(data[:150000].ljust(150000, b"x"))
-          PY
-          sudo install -m 0644 /tmp/chile.pmtiles /srv/aps-conecta/tiles/chile.pmtiles
-          hdr="$RUNNER_TEMP/tiles.hdr"
-          code="$(curl -fsS --cacert "$RUNNER_TEMP/ca.crt" -D "$hdr" -r 0-1023 -H 'Accept-Encoding: gzip, zstd' \
-            -o "$RUNNER_TEMP/tiles.rng" -w '%{http_code}' "https://$SUITE_IP/tiles/chile.pmtiles")"
-          [ "$code" = "206" ] || { echo "FAIL: /tiles/ answered $code, not 206" >&2; cat "$hdr" >&2; exit 1; }
-          grep -qi '^content-range: bytes 0-1023/150000' "$hdr" || { cat "$hdr" >&2; exit 1; }
-          ! grep -qi '^content-encoding:' "$hdr" || { echo "FAIL: the range came compressed" >&2; cat "$hdr" >&2; exit 1; }
-          head -c 1024 /srv/aps-conecta/tiles/chile.pmtiles > "$RUNNER_TEMP/tiles.esp"
-          cmp "$RUNNER_TEMP/tiles.rng" "$RUNNER_TEMP/tiles.esp"
-          cd /opt/aps-conecta/instalador && source scripts/env.sh
-          sudo bash /opt/aps-conecta/instalador/host/tiles.sh check
       # Territorio's map is OpenStreetMap's own tile service, loaded by the browser (ADR-0021 there):
       # phase 16 provisions the comuna the app derives its opening extent from, and no tile_url.
       - name: Territorio carries the site's comuna and no tile_url

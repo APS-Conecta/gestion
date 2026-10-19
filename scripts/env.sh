@@ -33,7 +33,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.." || { echo "FAIL: cannot cd to the repo ro
 #    The cache is this shell's: occ inside a pipe or $(…) is a subshell, so scripts that make
 #    dozens of occ calls (seed, divergence, smoke) call nc_container once after their first output.
 #    is_aio = "the AIO stack is running", the question install, uninstall, smoke, test.sh,
-#    refresh-basemap and phase 14 ask. `grep -x >/dev/null`, not `-qx`: grep reads to EOF, so
+#    and phase 14 ask. `grep -x >/dev/null`, not `-qx`: grep reads to EOF, so
 #    docker never takes a SIGPIPE that a pipefail caller would read as "not running".
 AIO_NC=aps-conecta-nextcloud
 is_aio() { docker ps --format '{{.Names}}' 2>/dev/null | grep -x "$AIO_NC" >/dev/null; }
@@ -156,7 +156,6 @@ NEXTCLOUD_TRUSTED_DOMAINS=localhost
 OFFICE_JWT_SECRET=fixture-not-a-real-secret
 HTTP_PORT=8180
 OFFICE_PORT=9980
-TILES_HOME=/srv/aps-conecta
 # a whole-line comment
 UNQUOTED_WITH_COMMENT=some-value # and a trailing one
 DOUBLE_QUOTED_HASH="value # stays"

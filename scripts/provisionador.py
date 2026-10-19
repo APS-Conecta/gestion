@@ -29,8 +29,8 @@ instead of dying — a half-served wizard page is worse than an honest 4xx — w
 fatally with the hint intact, before any socket opens.
 
 The server keeps no session: the token is the credential and the state. The one thing it holds is
-the centre chosen at step 6, until step 8 writes the site file that answers from then on — no code
-rides a URL (L3 S2), a restart before step 8 costs one re-pick, and every endpoint is one curl. The
+the centre chosen at step 5, until step 7 writes the site file that answers from then on — no code
+rides a URL (L3 S2), a restart before step 7 costs one re-pick, and every endpoint is one curl. The
 token never rides a request: the console's one link
 carries it in the URL fragment (#acceso=…), which browsers never send; the sign-in page trades it
 for the cookie and wipes it from the address bar. On the wire the Authorization header (and the
@@ -83,11 +83,11 @@ ROWS = []
 # whatever passes it cannot name anything but sites/<digits>/site.sh.
 CODIGO = re.compile(r"[0-9]{4,6}")
 
-# The chosen centre (L3 S2): the browser's «Confirmar centro» lands here and holds until step 8
+# The chosen centre (L3 S2): the browser's «Confirmar centro» lands here and holds until step 7
 # writes the site file, which answers from then on — one install, one establishment (D13).
-# Process-local on purpose: a restart before step 8 costs one re-pick, nothing else.
+# Process-local on purpose: a restart before step 7 costs one re-pick, nothing else.
 CENTRO = None
-# The confirmed point (L5 S4): the centre's moved coordinates, held BESIDE CENTRO until step 8
+# The confirmed point (L5 S4): the centre's moved coordinates, held BESIDE CENTRO until step 7
 # writes them into the site file's SITE_LON/SITE_LAT — None is the official point (the reset
 # case), and every confirm resets it (a code change clears it). Same process-local rule: a
 # restart costs one re-pick, point included.
@@ -248,7 +248,7 @@ PLUMBING_APPS = ("desktop_workspace", "notify_push", "side_menu")
 # The browser's progress list (a14): the phases by their console titles, then the people, then the gate.
 PASO_PLANILLA, PASO_GATE = "Cuentas del personal", "Comprobación final"
 PASOS_EJECUCION = [PHASE_TITLES[k] for k in sorted(PHASE_TITLES)] + [PASO_PLANILLA, PASO_GATE]
-# Step 7, «Iniciar la suite» (L3 S5). The five APS apps phase 12 ships (OWN_APPS — an arm pins the set),
+# Step 6, «Iniciar la suite» (L3 S5). The five APS apps phase 12 ships (OWN_APPS — an arm pins the set),
 # named as the catalogue names them; each version is read from its VENDOR file.
 APPS_APS = ("intravox", "epidemiologia", "estadistica", "farmacia", "territorio")
 # The suite's containers, named for the people who run it: the host's AIO_SET plus Nextcloud's own (an
@@ -295,12 +295,12 @@ SUITE = {"estado": "sin_preparar", "hechos": [], "motivo": ""}
 SUITE_GUARD = threading.Lock()
 SUITE_CMD = ["bash", HOST_CLI, "asistente-aio", "--preparar"]   # the host's own drive; the self-test fakes it
 
-# Step 7's consent card (D3): when the wizard's domain post is refused on the hairpin leg — this
+# Step 6's consent card (D3): when the wizard's domain post is refused on the hairpin leg — this
 # server cannot reach itself through its own public address — one consented command fixes the whole
 # leg: the CLI's `red --dominio D --arreglar` (dnsmasq split-DNS; applied in the refusal's window,
 # before the retry's start: containers are born with the daemon's DNS, and the wizard's re-post
 # re-verifies the leg for free). The card rides THIS step's page — an existing screen, so the rail
-# keeps the registry's own nine (no new step); the refusal it answers is the host's controlled
+# keeps the registry's own eight (no new step); the refusal it answers is the host's controlled
 # Spanish line (aio_motivo's), keyed on its reflection phrase — a missing DNS record is the
 # operator's to fix, never ours.
 RED_REFLEJO = "no se alcanza a sí mismo por ese dominio"
@@ -568,7 +568,7 @@ def written_sites():
 
 def one_establishment(codigo):
     """None when `codigo` may be this install's centre; else the 409 naming the one it serves — the
-    one refusal the silent install (site_import), «Confirmar centro» and step 8 share. No path in it
+    one refusal the silent install (site_import), «Confirmar centro» and step 7 share. No path in it
     (a16): the operator reads a centre, not a file."""
     others = [d for d in written_sites() if d != codigo]
     if not others:
@@ -685,7 +685,7 @@ def api_centro(payload):
     """POST /api/centro {"codigo", "latitud"?, "longitud"?} — «Confirmar centro»: held until step
     8 writes the site file. A correction is free until then; afterwards only that centre answers
     200 (D13). L5 S4: the point rides the same confirm — both coordinates or none; none is the
-    official point (the reset case), and a held pair lands in the site file at step 8. The point is
+    official point (the reset case), and a held pair lands in the site file at step 7. The point is
     checked only for being a coordinate: the basemap is OpenStreetMap's, the whole world, so there is
     no extent to hold it against (ADR-0021)."""
     global CENTRO, PUNTO
@@ -703,7 +703,7 @@ def api_centro(payload):
         return 400, {"error": "envíe la latitud y la longitud juntas — sin ninguna vuelve al punto oficial"}
     punto = None
     if lat is not None:
-        if written_sites():   # the file is the truth from step 8 on — a fixed site shows its point
+        if written_sites():   # the file is the truth from step 7 on — a fixed site shows its point
             return 409, {"error": f"este servidor ya sirve a {row['nombre']}: su punto ya quedó "
                                   "escrito con su sitio y se corrige a mano en él"}
         punto = _punto_valido(lat, lon)
@@ -819,7 +819,7 @@ def site_import(payload):
             return 400, {"error": str(e).replace(rel, "el sitio")}
     wrong = [f"{gid} → {cat}" for gid, _display, cat in roles
              if cat not in ("cat-jefaturas", "cat-clinicos", "cat-tecnicos", "cat-administrativos")]
-    if wrong:  # 20-groups refuses these too, but only at step 9, after the suite is up
+    if wrong:  # 20-groups refuses these too, but only at step 8, after the suite is up
         return 400, {"error": "el sitio nombra una categoría que no existe: " + ", ".join(wrong)
                               + " — use cat-jefaturas, cat-clinicos, cat-tecnicos o cat-administrativos"}
     refused = one_establishment(codigo)
@@ -844,7 +844,7 @@ def site_import(payload):
 
 
 def api_sitio(payload):
-    """POST /api/sitio {"codigo", "sectors", "programs", "vista"?, "reemplazar"?} — step 8's teams,
+    """POST /api/sitio {"codigo", "sectors", "programs", "vista"?, "reemplazar"?} — step 7's teams,
     into sites/<codigo>/site.sh via deis.py write_site: the establishment's whole truth in one
     standalone file, byte-identical to what `deis.py <codigo> --new <slug>` writes, with the slug
     being the codigo itself. One install, one establishment (D13): another centre's site file
@@ -874,7 +874,7 @@ def api_sitio(payload):
 
     # ponytail: the first write is check-then-write across threads — write_site refuses an existing
     # file and the SystemExit arm below settles the race; the rewrites take SITE_LOCK
-    refused = one_establishment(codigo)   # D13 at step 8 too, not only in the silent install
+    refused = one_establishment(codigo)   # D13 at step 7 too, not only in the silent install
     if refused:
         return refused
 
@@ -989,7 +989,7 @@ def role_names(path):
 
 
 def equipos_actuales():
-    """GET /api/equipos — step 8's state, for the screen and after a reload: the saved teams (none
+    """GET /api/equipos — step 7's state, for the screen and after a reload: the saved teams (none
     before the first save), every cargo the planilla's role-* column accepts (phase 20's and the
     site's own), and whether «Revisar» would accept the loaded planilla (a replacement can make it
     stale: a team it names gone, a new sector's cargo unsealed)."""
@@ -1438,7 +1438,7 @@ def plan_clinico(codigo, teams, rows, cargos):
     hand-built site without the pair, a code the register lacks) — a state, never a blocked run."""
     row = find_row(codigo)
     opciones = opciones_actuales()
-    sin_talk = opciones is not None and not opciones[0]   # step 7 left Talk off: phase 12 installs no spreed
+    sin_talk = opciones is not None and not opciones[0]   # step 6 left Talk off: phase 12 installs no spreed
     punto, oficial = site_punto(site_path(codigo)), _punto_oficial(row)
     if punto is None or oficial is None:
         ubicacion = None
@@ -2268,7 +2268,7 @@ def screen_listo():
 
 
 def screen_contenedores():
-    """Step 7, «Iniciar la suite» (L3 S5) — the approved design's: the five APS apps with their
+    """Step 6, «Iniciar la suite» (L3 S5) — the approved design's: the five APS apps with their
     versions (a12) and Talk sized to this server (R26); then the wizard, filled by the host (domain,
     timezone, office, Talk, the daily backup) and started by the operator there (S1b: kept,
     pre-filled) with the passphrase shown here; then the containers by name, once a second (R48),
@@ -2451,12 +2451,12 @@ contenedores se reinicia una vez durante la corrección.</p>
     return shell("suite", body)
 
 def screen_centro():
-    """Step 6, «Elegir el centro» (L3 S2; L5 S4 adds the map pane) — the approved design's Centro:
+    """Step 5, «Elegir el centro» (L3 S2; L5 S4 adds the map pane) — the approved design's Centro:
     the Región › Comuna › Tipo filters and an accent-blind, every-term search over the whole
     register, one payload filtered in the browser, beside the frozen UI's sticky map. The pane
     opens on the establishment's official register point (a22) and the admin confirms it or
     moves it — click or tap, drag, arrow keys at 5 m (Shift 25 m) — the chosen point riding
-    «Confirmar centro» beside the code, held server-side until step 8 writes the site file (a
+    «Confirmar centro» beside the code, held server-side until step 7 writes the site file (a
     reload restores the pin). The basemap is OpenStreetMap's tile service, loaded by this browser
     under its Tile Usage Policy (ADR-0021; vendored Leaflet from /recursos/): one raster layer, a
     linked attribution control, and on the first tile failure a note and a completable screen —
@@ -2696,7 +2696,7 @@ autocomplete="off" spellcheck="false">
 
 
 def screen_equipos():
-    """Step 8, «Cargar equipos y personas» (L3 S3) — the approved design's one screen. Sectores and
+    """Step 7, «Cargar equipos y personas» (L3 S3) — the approved design's one screen. Sectores and
     programas one per line, with the group code each derives under it (the server derives it:
     «vista», the exact ids the site will carry), saved with a visible answer (R35: the same, a
     conflict to resolve, or a replacement — never a silent 200). Then the planilla: the centre's own
@@ -2818,7 +2818,7 @@ def screen_equipos():
     if (r.estado === 200) {
       zona("m").innerHTML = av + '<div class="ok">Planilla válida: ' + r.usuarios +
         " personas · administración: <code>" + escapear(r.primer_admin) + "</code>. Las contraseñas " +
-        "de primer ingreso quedan selladas y se entregan al final (paso 9).</div>";
+        "de primer ingreso quedan selladas y se entregan al final (paso 8).</div>";
       zona("e-tabla").innerHTML = "<table><tr><th>Usuario</th><th>Nombre</th><th>Grupos</th><th>Primera adm.</th></tr>" +
         r.filas.map(([u, n, g, p]) => "<tr><td>" + escapear(u) + "</td><td>" + escapear(n) + "</td><td>" +
           g.map(chip).join(" ") + "</td><td>" + (p ? "sí" : "no") + "</td></tr>").join("") + "</table>";
@@ -2843,7 +2843,7 @@ def screen_equipos():
 
 
 def screen_revision():
-    """Step 9, «Revisar y ejecutar» (L3 S4) — the approved design's: the plan in clinic terms (R40):
+    """Step 8, «Revisar y ejecutar» (L3 S4) — the approved design's: the plan in clinic terms (R40):
     the centre, its sectors and programs, every person, the cargo accounts, the components (R37) and
     the maintenance; then «Ejecutar», which starts the run on the server and follows it with one short
     GET a second (a14): the steps in the console's own words, then the verdict. A reload finds the
@@ -2936,7 +2936,7 @@ y en la consola del servidor.</p>
       (p ? "<b>sí</b>" : "no") + "</td></tr>").join("") + "</table>" +
     '<h3 class="ceja">Componentes</h3><dl class="dl">' + r.componentes.map(([n, q]) => "<dt>" +
       escapear(n) + '</dt><dd class="normal">' + escapear(q) + "</dd>").join("") + "</dl>" +
-    '<p class="nota">Mantención automática: domingo 03:00 (configuración) · día 4, 05:00 (mapa) · ' +
+    '<p class="nota">Mantención automática: domingo 03:00 (configuración) · ' +
     "hora de Santiago.</p>";
   planOk = true;
   seguir();
@@ -3049,7 +3049,7 @@ def apps_aps():
 
 def dominio_actual():
     """The domain the wizard took (the host records it once every post succeeded): the site file's
-    SITE_DOMINIO and «Listo»'s access line; "" before step 7, or for a record that is not a domain."""
+    SITE_DOMINIO and «Listo»'s access line; "" before step 6, or for a record that is not a domain."""
     try:
         with open(os.path.join(AIO_STATE, "dominio"), encoding="utf-8") as fh:
             dominio = fh.read().strip()
@@ -3071,7 +3071,7 @@ def ca_personal():
 
 def opciones_actuales():
     """The Talk options the wizard was given (the host records them with the domain): (talk, grabacion),
-    or None before step 7 — what the page shows and the containers it waits for."""
+    or None before step 6 — what the page shows and the containers it waits for."""
     try:
         with open(os.path.join(AIO_STATE, "opciones"), encoding="utf-8") as fh:
             m = re.fullmatch(r"talk=([01]) grabacion=([01])\s*", fh.read())
@@ -3102,7 +3102,7 @@ def talk_ahora(vistos):
 
 
 def estado_suite():
-    """GET /api/suite — step 7 as the server sees it: the server's size and Talk's verdict (R26), the
+    """GET /api/suite — step 6 as the server sees it: the server's size and Talk's verdict (R26), the
     five apps (a12), the wizard's preparation, then the suite's containers (R48). The passphrase is
     served while it is needed: prepared, not yet installed. By IP, the staff's CA's fingerprint (R22)."""
     st, vistos = contenedores()
@@ -3206,7 +3206,7 @@ def preparar_suite(argv):
 
 
 def fijar_dominio():
-    """A site written before step 7 (the operator came back to it, or a record kept across a reinstall,
+    """A site written before step 6 (the operator came back to it, or a record kept across a reinstall,
     INSTALLER §12) takes the domain the wizard took — the host's record, never the browser's word: its
     one SITE_DOMINIO line, empty or another, and only that line. The weekly renewal reads it (R22)."""
     dominio, codigo = dominio_actual(), centro_actual()[1].get("codigo")
@@ -4071,7 +4071,7 @@ def selftest():
             st2, _ = call("GET", "/api/centro", token=None)
             st3, _ = call("GET", "/api/equipos", token=None)
             st4, _ = call("GET", "/api/plantilla", token=None)
-            check("centro: the centre's and step 8's GETs need the token too — the template included",
+            check("centro: the centre's and step 7's GETs need the token too — the template included",
                   st == 401 and st2 == 401 and st3 == 401 and st4 == 401)
             st, d = call("GET", "/api/centros")
             fila = {c[0]: c for c in d.get("centros", [])}
@@ -4102,7 +4102,7 @@ def selftest():
             check("centro: a junk code answers 400, one absent from the register 404",
                   st == 400 and st2 == 404)
 
-            # ── L5 S4: the point beside the code — POST /api/centro's coordinates, held to step 8 ──
+            # ── L5 S4: the point beside the code — POST /api/centro's coordinates, held to step 7 ──
             # The wizard no longer checks the point against any extent (ADR-0021): the basemap is OSM's,
             # the whole world, and a point is refused only when it is not a coordinate.
             st_l, _ = call("POST", "/api/centro", {"codigo": "121567", "latitud": -38.8681})
@@ -4137,7 +4137,7 @@ def selftest():
                 tras = open(site_path("121567"), encoding="utf-8").read()
             deis.HERE = real_here
             call("POST", "/api/centro", {"codigo": "113314"})   # the world the arms below expect
-            check("punto: the held pair lands in SITE_LON/SITE_LAT at step 8 and survives «Reemplazar» — the identity block is never regenerated (L5 S4)",
+            check("punto: the held pair lands in SITE_LON/SITE_LAT at step 7 and survives «Reemplazar» — the identity block is never regenerated (L5 S4)",
                   st_w == 200 and "SITE_LON=-72.3951\n" in con_punto and "SITE_LAT=-38.8681\n" in con_punto
                   and st_r2 == 200 and "SITE_LON=-72.3951\n" in tras and "sector-norte|" in tras)
 
@@ -4270,7 +4270,7 @@ def selftest():
             st2, body2 = call("POST", "/api/centro", {"codigo": "121567"})
             st3, body3 = call("GET", "/api/centro")
             st4, _ = call("POST", "/api/centro", {"codigo": "113314"})
-            check("one install, one establishment: with a site file written, another centre is refused 409 at step 8 and at «Confirmar centro», naming the centre, no path; the written one answers, fixed (D13, a16)",
+            check("one install, one establishment: with a site file written, another centre is refused 409 at step 7 and at «Confirmar centro», naming the centre, no path; the written one answers, fixed (D13, a16)",
                   st == 409 and "un solo establecimiento" in body["error"]
                   and "Cóndores de Chile (DEIS 113314)" in body["error"] and "site.sh" not in body["error"]
                   and st2 == 409 and body2 == body and not os.path.exists(site_path("121567"))
@@ -4279,7 +4279,7 @@ def selftest():
             st_fp, fijo_p = call("GET", "/api/centro")
             st_fm, movido_fijo = call("POST", "/api/centro", {"codigo": "113314", "latitud": -33.5,
                                                                "longitud": -70.6})
-            check("punto: a fixed site serves its file's own point — oficial true while it is the register's — and refuses a moved confirm: the file is the truth from step 8 on (L5 S4)",
+            check("punto: a fixed site serves its file's own point — oficial true while it is the register's — and refuses a moved confirm: the file is the truth from step 7 on (L5 S4)",
                   st_fp == 200 and fijo_p["punto"] == {"latitud": "-33.56136", "longitud": "-70.67469",
                                                        "oficial": True}
                   and st_fm == 409 and "ya sirve" in movido_fijo["error"])
@@ -4934,7 +4934,7 @@ def selftest():
             check("ejecución: a close that fails still publishes the verdict — the run never stays «en curso»",
                   cayo and EJECUCION["estado"] == "terminada" and EJECUCION["veredicto"]["verde"] is True)
             EJECUCION.update(estado="sin_ejecutar", hechos=[], veredicto=None)
-            # ── L3 S5: step 7 — Talk sized to the server, the five apps, the wizard filled on a worker,
+            # ── L3 S5: step 6 — Talk sized to the server, the five apps, the wizard filled on a worker,
             # the containers followed (R26, a12, R48) ──
             (t12, g12), (t16, g16), (t7, g7), (tp, _gp), (t8, _g8), (_t85, g85) = (
                 veredicto_talk(12, 4, True), veredicto_talk(16, 8, True), veredicto_talk(7.5, 2, True),
@@ -5001,7 +5001,7 @@ def selftest():
                 con_talk_plan = [n for n, _q in plan_clinico("113314", [], [], [])["componentes"]]
             finally:
                 os.remove(os.path.join(AIO_STATE, "opciones"))
-            check("revisión: Talk is a component only when step 7 gave the suite Talk — phase 12 installs nothing else (R29)",
+            check("revisión: Talk is a component only when step 6 gave the suite Talk — phase 12 installs nothing else (R29)",
                   "Talk" not in sin_talk_plan and "Talk" in con_talk_plan
                   and len(con_talk_plan) == len(COMPONENTES) == len(sin_talk_plan) + 1)
             with open(os.path.join(ROOT_DIR, "provisioning", "phases", "12-apps.sh"), encoding="utf-8") as fh:
@@ -5118,7 +5118,7 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                   and roto_s["preparacion"]["estado"] == "error"
                   and roto_s["preparacion"]["motivo"] == "El asistente no quedó listo: el detalle, en la consola del servidor."
                   and "se detuvo" in consola_s.getvalue())
-            check("suite: a site written before step 7 takes the domain the wizard took — that line only",
+            check("suite: a site written before step 6 takes the domain the wizard took — that line only",
                   fijo is not None and 'SITE_DOMINIO=""' in antes_fijo
                   and fijado == antes_fijo.replace('SITE_DOMINIO=""', 'SITE_DOMINIO="gestion.clinica.example"'))
             arriba = ";".join(f"{c}:Up 3 minutes" for c, _n in CONTENEDORES_SUITE)
@@ -5171,7 +5171,7 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
             check("suite: a new site file carries the domain the wizard took",
                   '\nSITE_DOMINIO="gestion.clinica.example"\n' in deis_site_text)
 
-            # ── D3: step 7's consent card — the hairpin refusal answered in one click ──
+            # ── D3: step 6's consent card — the hairpin refusal answered in one click ──
             rechazo_reflejo = ("El asistente rechazó la dirección: el servidor no se alcanza a sí "
                                "mismo por ese dominio: omita la validación del dominio si no tiene "
                                "acceso desde Internet.")
@@ -5255,12 +5255,12 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                 globals()["RED_CMD"] = verdadero_red
                 RED.update(estado="sin_corregir", hechos=[], motivo="", dominio="")
             plantilla_red = __import__("inspect").getsource(screen_contenedores)
-            check("red: the card rides step 7's own page — the fourth tarjeta, the consent's words, its own poll and the auto-retry of the refused post (D3; no registry entry: the rail's own arm is unchanged)",
+            check("red: the card rides step 6's own page — the fourth tarjeta, the consent's words, its own poll and the auto-retry of the refused post (D3; no registry entry: the rail's own arm is unchanged)",
                   all(t in plantilla_red for t in ('id="s-red-tarjeta"', "Sí, corregir la red",
                       'api("/api/red"', "mirarRed", "reintentado", 'api("/api/suite", pedido)')))
 
             SUITE.update(estado="sin_preparar", hechos=[], motivo="")
-            for f in os.listdir(AIO_STATE):   # the fake's files go: later arms see a step 7 not yet prepared
+            for f in os.listdir(AIO_STATE):   # the fake's files go: later arms see a step 6 not yet prepared
                 os.remove(os.path.join(AIO_STATE, f))
             planilla = os.path.join(deis.HERE, "..", "sites", "113314", "planilla-mia.csv")
             rc, out = stepped(["--paso", "usuarios", "--codigo", "113314", "--planilla", planilla])
@@ -5397,7 +5397,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   first[0] == 0 and "✓ Sitio cargado: sites/113314/site.sh (DEIS 113314)" in first[1]
                   and placed == given and again[0] == 0 and "✓ Sitio ya cargado" in again[1]
                   and bom[0] == 0 and "✓ Sitio ya cargado" in bom[1])
-            check("--paso sitio: no SITE_DOMINIO, or a site role in a category that does not exist, is refused at step 6",
+            check("--paso sitio: no SITE_DOMINIO, or a site role in a category that does not exist, is refused at step 5",
                   sin_dominio[0] == 1 and "SITE_DOMINIO" in sin_dominio[1]
                   and mala_cat[0] == 1 and "role-x → cat-foo" in mala_cat[1])
             check("--paso sitio: a different file for the same centre, or a second centre, is refused — never overwritten",
@@ -5786,10 +5786,10 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                 titulos = [line.split("\t")[1] for line in tsv.splitlines()]
                 st, text, hdr, setc = b.req("GET", "/contenedores")
                 pos = [text.find(f'<span class="t">{html.escape(t)}</span>') for t in titulos]
-                check("screens: the rail is «aps-conecta pasos» — every title in order, «Iniciar la suite» current as Paso 7 de 9 (a11)",
-                      len(titulos) == 9 and -1 not in pos and pos == sorted(pos)
-                      and "Paso 7 de 9 · en su navegador" in text
-                      and 'aria-current="step"><span class="n" aria-hidden="true">7</span>' in text
+                check("screens: the rail is «aps-conecta pasos» — every title in order, «Iniciar la suite» current as Paso 6 de 8 (a11)",
+                      len(titulos) == 8 and -1 not in pos and pos == sorted(pos)
+                      and "Paso 6 de 8 · en su navegador" in text
+                      and 'aria-current="step"><span class="n" aria-hidden="true">6</span>' in text
                       and "SCREENS" not in globals())
 
                 st, text, hdr, setc = b.req("GET", "/api/suite")
@@ -5851,17 +5851,16 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
 
                 gone = [b.req("GET", r)[0] for r in ("/sectores", "/componentes", "/planilla")]
                 st, equipos_html, hdr, setc = b.req("GET", "/contenedores")
-                check("screens: step 8 is one screen — the three old routes are gone, the suite hands off to /equipos (a16)",
+                check("screens: step 7 is one screen — the three old routes are gone, the suite hands off to /equipos (a16)",
                       gone == [404, 404, 404] and 'location.href = "/equipos"' in equipos_html)
                 st, rev_html, hdr, setc = b.req("GET", "/revision")
                 with open(os.path.join(ROOT_DIR, "host", "aps-conecta.timer"), encoding="utf-8") as fh:
                     semanal = re.search(r"^OnCalendar=(.*)$", fh.read(), re.M).group(1)
-                with open(os.path.join(ROOT_DIR, "host", "aps-conecta-tiles.timer"), encoding="utf-8") as fh:
-                    mensual = re.search(r"^OnCalendar=(.*)$", fh.read(), re.M).group(1)
-                check("screens: step 9 is one screen — /divergencia is gone; the maintenance it states is the timers' own (Sun 03:00, day 4 05:00)",
+                check("screens: step 8 is one screen — /divergencia is gone; the maintenance it states is the timer's own (Sun 03:00), and no monthly map timer is promised (ADR-0021)",
                       b.req("GET", "/divergencia")[0] == 404
                       and semanal.startswith("Sun *-*-* 03:00") and "domingo 03:00" in rev_html
-                      and mensual.startswith("*-*-04 05:00") and "día 4, 05:00" in rev_html)
+                      and "día 4" not in rev_html and "(mapa)" not in rev_html
+                      and not os.path.exists(os.path.join(ROOT_DIR, "host", "aps-conecta-tiles.timer")))
                 check("revisión: the plan carries the Ubicación row — punto oficial, or corregida with the metres (the frozen line, L5 S4)",
                       "<dt>Ubicación</dt>" in rev_html and "corregida, a " in rev_html
                       and "m del oficial" in rev_html)
@@ -6099,7 +6098,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   par_intacto and c6[0] == 0 and par_limpio)
             with open(os.path.join(publica, CA_PUBLICA), "rb") as fh:
                 ca_bytes = fh.read()
-            check("suite certificate (R22): by IP the installer hands the signed-in operator the CA's file, and step 7 shows its "
+            check("suite certificate (R22): by IP the installer hands the signed-in operator the CA's file, and step 6 shows its "
                   "fingerprint beside the download; a domain's install has neither",
                   ca_st0 == 401 and ca_bajada == ca_bytes and ca_tipo == "application/x-x509-ca-cert"
                   and f'filename="{CA_PUBLICA}"' in ca_disp
@@ -6428,7 +6427,8 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                               "Oficial: −33,56136, −70,67469" in lectura_fija
                               and "En el punto oficial" in lectura_fija
                               and oculto and ancla and quieto and not errores[desde:])
-                        # step 8 in a real browser on a fresh tree (a15): the ids under each list, a
+                        pg.goto("about:blank")   # leave the pane: no late tile line reaches the arms below
+                        # step 7 in a real browser on a fresh tree (a15): the ids under each list, a
                         # save, a different save is a conflict, «Reemplazar»; the centre's template
                         # downloaded and uploaded back; an unknown group opens «Grupos válidos». The
                         # 409 and 400 it provokes on purpose are the browser's own console lines.
@@ -6477,7 +6477,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                                 pg.wait_for_selector("#e-sig", timeout=10000)
                                 pg.click("#e-sig")
                                 pg.wait_for_url("**/revision", timeout=10000)
-                                paso8 = (oculto and "sector-norte" in chips and "sector-sur" in chips
+                                paso_equipos = (oculto and "sector-norte" in chips and "sector-sur" in chips
                                          and "prog-cardiovascular" in chips
                                          and "Nuevos: Sector Oriente" in conflicto
                                          and "Quitados: Sector Sur" in conflicto
@@ -6486,7 +6486,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                                          and "/" not in sellado
                                          and abiertos and "sector-oriente" in validos and "role-medico" in validos)
                             except Exception as e:   # a Playwright timeout: the arm reports it
-                                paso8 = False
+                                paso_equipos = False
                                 errores.append(str(e))
                             finally:
                                 deis.HERE, CRED_PATH, CENTRO = real_here, real_cred, previo_centro
@@ -6495,14 +6495,14 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                         del errores[previos:]
                         errores.extend(propios)
                         # exactly the two it provokes: the conflict (409) and the unknown group (400)
-                        paso8 = paso8 and sorted(re.search(r"status of (\d+)", x).group(1)
+                        paso_equipos = paso_equipos and sorted(re.search(r"status of (\d+)", x).group(1)
                                                  for x in provocados) == ["400", "409"]
-                        check("browser: step 8 — ids under each list, save, a different save is a conflict, «Reemplazar»; the centre's template uploads back clean; an unknown group opens «Grupos válidos» (R35, R38, a15)",
-                              paso8 and not errores)
-                        # step 9 in a real browser: the plan in clinic terms; «Ejecutar» on a run
+                        check("browser: step 7 — ids under each list, save, a different save is a conflict, «Reemplazar»; the centre's template uploads back clean; an unknown group opens «Grupos válidos» (R35, R38, a15)",
+                              paso_equipos and not errores)
+                        # step 8 in a real browser: the plan in clinic terms; «Ejecutar» on a run
                         # that reports one phase, then a red verdict — the progress, the head line, the
                         # way to the detail; a reload finds the verdict where it was (a14, a16)
-                        # step 8 hands off to /revision under a fixture that is gone by now: a late
+                        # step 7 hands off to /revision under a fixture that is gone by now: a late
                         # answer from that page is not this arm's, so it judges its own lines only
                         pg.goto("about:blank")
                         desde = len(errores)
@@ -6535,11 +6535,11 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                             pg.reload()
                             pg.wait_for_selector("#x-prog .error", timeout=15000)
                             recargado = pg.inner_text("#x-prog")
-                            # a16 over everything step 9 shows: no app id, no file, no key, no jargon
+                            # a16 over everything step 8 shows: no app id, no file, no key, no jargon
                             ids = "|".join([a for a, _n, _q in COMPONENTES] + list(PLUMBING_APPS))
                             jerga = re.findall(rf"\b(?:{ids})\b|idempotente|\.sh\b|\.env\b|/|"
                                                r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b", principal)
-                            paso9 = ("Cóndores de Chile, El Bosque · DEIS 113314" in plan_txt
+                            paso_revision = ("Cóndores de Chile, El Bosque · DEIS 113314" in plan_txt
                                      and "Sector Estrella" in plan_txt and "elena.diaz" in plan_txt
                                      and "maria.perez" in plan_txt and "Chat y videollamadas internas" in plan_txt
                                      and "domingo 03:00" in plan_txt and "unos minutos" in principal
@@ -6551,15 +6551,15 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                                      and pg.locator(".lista-estado .hecho").count() == 2
                                      and pg.inner_text("#x-ir") == "Volver a ejecutar")
                         except Exception as e:   # a Playwright timeout: the arm reports it
-                            paso9 = False
+                            paso_revision = False
                             errores.append(str(e))
                         finally:
                             suelta.set()
                             globals()["api_generar"] = verdadero
                             EJECUCION.update(estado="sin_ejecutar", hechos=[], veredicto=None)
-                        check("browser: step 9 — the plan in clinic terms, «Ejecutar» followed by polling and through a reload mid-run, a red verdict's head and the way to its detail (no gate notes), nothing a16 forbids on the page (R40, a14, a16)",
-                              paso9 and not errores[desde:])
-                        # step 7 in a real browser (L3 S5): the apps and Talk's verdict; a refusal that gives
+                        check("browser: step 8 — the plan in clinic terms, «Ejecutar» followed by polling and through a reload mid-run, a red verdict's head and the way to its detail (no gate notes), nothing a16 forbids on the page (R40, a14, a16)",
+                              paso_revision and not errores[desde:])
+                        # step 6 in a real browser (L3 S5): the apps and Talk's verdict; a refusal that gives
                         # the form back; «Preparar el asistente» on the fake host command, with progress in
                         # under 2 s; a reload; the passphrase and the link; the containers to «Siguiente»;
                         # nothing a16 forbids in any state (R26, a12, R48, a16)
@@ -6606,7 +6606,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                             jerga7 = re.findall(rf"\b(?:{ids7})\b|idempotente|\.sh\b|\.env\b|/|"
                                                 r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b",
                                                 antes_txt + error_txt + prep_txt + datos_txt + espera_txt + principal7)
-                            paso7 = ("Inicio" in apps_txt and "3.1.7" in apps_txt and "Territorio" in apps_txt
+                            paso_suite = ("Inicio" in apps_txt and "3.1.7" in apps_txt and "Territorio" in apps_txt
                                      and "Talk: cabe" in talk_txt and "Grabación: no cabe" in talk_txt
                                      and "requiere 4 núcleos libres; hay 4 en total" in talk_txt
                                      and "El asistente rechazó la dirección" in error_txt and de_nuevo
@@ -6617,7 +6617,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                                      and "✓ Suite en marcha: 7 contenedores." in principal7 and jerga7 == []
                                      and sin_abrir)
                         except Exception as e:   # a Playwright timeout: the arm reports it
-                            paso7 = False
+                            paso_suite = False
                             errores.append(str(e))
                         finally:
                             globals()["SUITE_CMD"] = verdadero_cmd
@@ -6626,9 +6626,9 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                             SUITE.update(estado="sin_preparar", hechos=[], motivo="")
                             if fijo7:
                                 write_site_text(site_path(fijo7), antes7)
-                        check("browser: step 7 — the five apps with versions, Talk's verdict, a refusal that gives the form back, «Preparar el asistente» with progress in 2 s, a reload, the passphrase and the wizard's link, the containers to «Siguiente»; nothing a16 forbids (R26, a12, R48, a16)",
-                              paso7 and not errores[desde:])
-                        # step 7's edges in a real browser: the data block stays put while the page polls (the
+                        check("browser: step 6 — the five apps with versions, Talk's verdict, a refusal that gives the form back, «Preparar el asistente» with progress in 2 s, a reload, the passphrase and the wizard's link, the containers to «Siguiente»; nothing a16 forbids (R26, a12, R48, a16)",
+                              paso_suite and not errores[desde:])
+                        # step 6's edges in a real browser: the data block stays put while the page polls (the
                         # passphrase can be selected, the link clicked); a suite already running shows its
                         # progress and no form; the freeze's refusal is said, never swallowed
                         pg.goto("about:blank")
@@ -6672,7 +6672,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                         propios = [x for x in errores[desde:] if x not in provocados]
                         del errores[desde:]
                         errores.extend(propios)
-                        check("browser: step 7's edges — the passphrase and the link stay the same nodes while the page polls; a suite already running shows its progress, no form and no claimed configuration; the freeze's refusal is said (its one 409 the only console line)",
+                        check("browser: step 6's edges — the passphrase and the link stay the same nodes while the page polls; a suite already running shows its progress, no form and no claimed configuration; the freeze's refusal is said (its one 409 the only console line)",
                               quieto is True and ya_corre and "ya terminó" in congelado and len(provocados) == 1
                               and not errores[desde:])
                         limpio = nav.new_context(ignore_https_errors=True).new_page()
