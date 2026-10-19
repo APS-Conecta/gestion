@@ -138,12 +138,12 @@ services:
   # Comes up with the stack. It sat behind `profiles: ["eurooffice"]` until #81: measuring showed
   # most of "mandatory" was already true — 12-apps installs the connector and 14-office configures
   # it on EVERY seed — and only this ~2.5 GB container stood between an install and a working
-  # editor. `make install` is supposed to yield a clinic that can open a document.
+  # editor. An install is supposed to yield a clinic that can open a document.
   #
   # ACCEPTED COSTS, named rather than discovered: every `make up` now runs this, including when the
   # work is a CSS edit (`make office-down` is the escape hatch), and the ~8 GB multi-user floor in
-  # docs/ARCHITECTURE.md becomes a hard requirement for every clinic host. CI pays it too — the
-  # clean boot downloads 2.56 GB it used to skip.
+  # docs/ARCHITECTURE.md becomes a hard requirement for every clinic host. instalador's CI
+  # clean boot paid it too, downloading 2.56 GB it used to skip.
   #
   # Self-contained image (bundles its own PG/Redis/RabbitMQ) — do NOT wire it to the core db/redis.
   eurooffice:

@@ -16,7 +16,8 @@
 # by a fleet. The digest is the only name for "the version I tested".
 #
 # NOT AUTOMATIC ALL THE WAY: the weekly workflow runs --check, a human runs the rewrite, and the PR
-# is where cleanboot boots the new bytes. Why no bot opens it: .github/workflows/image-digests.yml.
+# is where a human reviews the new bytes; instalador's clean boot boots them once merged (aps/INSTALLER.md).
+# Why no bot opens it: .github/workflows/image-digests.yml.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -109,10 +110,10 @@ A tag has moved past its pin. Nothing was changed.
 This is not urgent: no installed clinic is affected, because nothing pulls a new image on its own.
 
   To take the new bytes:  make images   then commit the diff and open a PR.
-  cleanboot runs a full clean bring-up on that PR — do not merge it red.
+  No clean bring-up runs on that PR: instalador's clean boot boots the new bytes after the merge.
 MSG
   exit 1
 fi
 
 echo
-echo "Digests rewritten. Commit the diff and open a PR so cleanboot boots the new bytes."
+echo "Digests rewritten. Commit the diff and open a PR; instalador's clean boot boots the new bytes after the merge."

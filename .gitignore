@@ -11,7 +11,7 @@
 # track it. The product names no establishment (README, AGENTS.md § What this project is), and the
 # only way that claim survives daily use is if provisioning writes nothing tracked. Both of these are
 # written on the install host — the site file by scripts/deis.py, the CSS by phase 15 — and both come
-# back on the next `make install`. The DEIS register is NOT per-install: it is the public catalogue
+# back on the next install run (instalador). The DEIS register is NOT per-install: it is the public catalogue
 # you pick FROM, so `sites/*/` deliberately matches directories only and leaves the CSV tracked.
 /sites/*/
 /themes/apsconecta/core/css/site.css
@@ -47,7 +47,7 @@ __pycache__/
 *.code-workspace
 .DS_Store
 
-# `make install` writes the full provisioning log here.
+# The installer's provisioning log, when run from this checkout.
 .install.log
 
 # implement-time evidence transcripts — local only, never tracked (the sites-register and lint-sweep gates own these paths)

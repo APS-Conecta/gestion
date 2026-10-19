@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Wait until Nextcloud has finished installing ITSELF. `docker compose up -d` returns when the
 # containers start; the official image then runs its own installer, which takes ~90 s on first boot
-# and is why `make seed` used to fail with "not installed/reachable" if you were quick.
+# and is why provisioning used to fail with "not installed/reachable" if you were quick.
 #
 # It lives here and `make up` runs it, so there is one copy: CI carried its own nine-line loop, and a
-# human running `make smoke` by hand simply raced. Silent and instant on an already-installed stack.
+# human running a smoke check by hand simply raced. Silent and instant on an already-installed stack.
 set -uo pipefail
 
 # shellcheck source=env.sh

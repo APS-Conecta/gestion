@@ -380,6 +380,20 @@ if len(old) != len(new) or not all(n.startswith(o + b",") for o, n in zip(old, n
 if not again: fails.append("a second run did not rewrite the same bytes")
 if fails:
     print("\n".join(fails)); sys.exit(1)'
+# Every establishment the installer offers carries its official point, in plain degrees: the point is
+# where the Centro map starts and what SITE_LON/SITE_LAT copy. A --snapshot that skipped --coordenadas
+# is the realistic way to get here — snapshot_from writes the ten columns only.
+check python3 -c '
+import csv, glob, sys
+sys.path.insert(0, "scripts")
+import deis
+register = sorted(glob.glob("sites/establecimientos-deis-*.csv"))[-1]
+rows = list(csv.DictReader(open(register, encoding="utf-8")))
+if len(rows) < 100:
+    print("register truncated -- this check measured nothing"); sys.exit(1)
+bad = [r["codigo"] for r in rows if not all(deis.DEGREES.fullmatch(r.get(k) or "") for k in deis.COORDS)]
+if bad:
+    print(str(len(bad)) + " register rows without a plain-degree point: " + ", ".join(bad[:5])); sys.exit(1)'
 # A --snapshot whose points never came is the newest file, so every reader would take it and
 # block() would die on a KeyError inside the installer. load() stops instead, naming both ways
 # out, and a refused --coordenadas on it says how to step back to the register before it. On a

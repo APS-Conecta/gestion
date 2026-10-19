@@ -111,7 +111,7 @@ Each datum has exactly one owner:
 Editing flow: a user opens a document in the browser → Nextcloud hands off to the standalone Euro-Office
 server over the `eurooffice` connector/**JWT** — a separate container reachable at its own server URL → the
 server renders and co-edits in-browser, writing back through the callback. The server comes up with the stack
-and `make install` wires the connector (#81). Documents open in a **new window** (`sameTab=false`), so an
+and instalador's provisioning wires the connector (#81). Documents open in a **new window** (`sameTab=false`), so an
 editor never replaces the folder it was opened from; multiple documents are independent sessions.
 
 ## Access model (RBAC)

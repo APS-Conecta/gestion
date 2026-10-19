@@ -16,11 +16,11 @@ this README is tracked (`.gitignore` un-ignores it explicitly):
   `ensure_own_app` sees the `.git` and leaves the working tree alone.
 - **Lab apps** — ours, under development, **never in a release**. None today;
   `territorio` was the first and moved to own at v0.74.0, `estadistica` at v0.1.0. They are clones
-  here and declared in [`dev/lab-apps.sh`](../dev/lab-apps.sh), which is tracked but inert — `12-apps.sh` acts on an
+  here and declared in [`dev/lab-apps.sh`](../dev/lab-apps.sh), which is tracked but inert — instalador's `12-apps` phase acts on an
   entry only where `apps/<id>/.git` exists, so a clinic falls through. See
   [ADR-0005](../docs/adr/0005-gestion-is-the-development-trunk.md). To add one: clone it
   here under its **app id** (not the repository name), add a line to `dev/lab-apps.sh`, then run
-  `make fix-mount-perms && make seed`.
+  `make fix-mount-perms`; enabling it on a stack is instalador's provisioning ([`INSTALLER.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md)).
 
 **Boundary (AD-9):** a custom app may depend on Nextcloud only through `OCP\…` public APIs — never
 patch core, never rely on private internals, and core never depends on a custom app.
