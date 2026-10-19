@@ -11,7 +11,7 @@ Una suite completa para un establecimiento: documentos, coordinación, oficina y
 personal, sobre **un solo servidor** del recinto. La instalación tiene tres piezas: el
 **asistente** (una página web que crea y cuida los contenedores), el **Provisionador** (la
 herramienta que configura el establecimiento: carpetas, grupos, usuarios) y los
-**temporizadores** (el mantenimiento semanal y mensual, automáticos). Un establecimiento por
+**temporizadores** (el mantenimiento semanal, automático). Un establecimiento por
 instalación; la versión de la suite es la etiqueta del repositorio
 instalador.
 
@@ -27,9 +27,9 @@ El recorrido completo, paso a paso con los comandos, está en `INSTALLER.md` §2
 3. El comando `docker run` que preflight imprime — se pega tal cual; nunca se re-escribe a mano.
 4. El asistente en `http://<ip-del-servidor>:8080`.
 5. `sudo aps-conecta abrir` — el instalador web (§4): imprime un enlace.
-6. `sudo aps-conecta temporizadores` — activa la re-provisión semanal (domingo 03:00) y el
-   refresco mensual del mapa (día 4, 05:00), en hora de Santiago. La instalación los activa sola
-   al terminar («Listo»); tras construir el mapa o una actualización se vuelve a ejecutar. Si una
+6. `sudo aps-conecta temporizadores` — activa la re-provisión semanal (domingo 03:00), en hora de
+   Santiago. La instalación lo activa sola al terminar («Listo»); tras una actualización se vuelve
+   a ejecutar (y retira el refresco mensual del mapa de una versión anterior). Si una
    ejecución encuentra deriva (algo en la instancia que no se declaró), cada administrador recibe
    un aviso al entrar, y `aps-conecta estado` — sin sudo — muestra cada elemento con su arreglo.
 
@@ -37,17 +37,17 @@ El recorrido completo, paso a paso con los comandos, está en `INSTALLER.md` §2
 
 El asistente está en español. Lo importante:
 
-- **La frase de contraseña del asistente** la muestra el paso 7 del instalador web, que también
+- **La frase de contraseña del asistente** la muestra el paso 6 del instalador web, que también
   deja el asistente configurado; en el asistente solo queda pulsar «Iniciar».
 - El **dominio** debe apuntar al servidor y el servidor debe poder alcanzarse a sí mismo por
-  ese dominio (la prueba «hairpin»). Si falla, el paso 7 del instalador web ofrece corregirla
+  ese dominio (la prueba «hairpin»). Si falla, el paso 6 del instalador web ofrece corregirla
   con un clic («Sí, corregir la red»: un DNS local responde por el dominio desde el servidor);
   a mano, `sudo aps-conecta red --dominio <dominio> --arreglar` hace lo mismo
   (`INSTALLER.md` §7 trae el detalle). Sin dominio, la dirección IP del servidor (§11).
 - **La oficina es Euro-Office**, la única de la suite: el asistente no ofrece cambiarla ni
   desactivarla. No hay tienda de aplicaciones ni contenedores comunitarios: las apps de la suite
   vienen incorporadas y el conjunto se actualiza junto, nunca por partes.
-- Talk, Whiteboard e Imaginary parten apagados; el paso 7 activa Talk (y su grabación) si caben
+- Talk, Whiteboard e Imaginary parten apagados; el paso 6 activa Talk (y su grabación) si caben
   en el servidor.
 - Tras «Iniciar», la tarjeta «Suite en marcha» remite a la pestaña del instalador web
   (`sudo aps-conecta abrir` si se cerró).
@@ -69,7 +69,7 @@ del certificado propio del instalador. Ábralo **desde otro equipo de la red**:
 Esa NO es la dirección que usará el personal: el instalador es solo su herramienta y se cierra al
 terminar.
 
-Después de la bienvenida, el navegador recorre los pasos 6 a 9 de la instalación:
+Después de la bienvenida, el navegador recorre los pasos 5 a 8 de la instalación:
 
 1. **Elegir el centro** — región, comuna y tipo de centro filtran el registro DEIS completo (todos
    los centros de atención primaria: CESFAM, PSR, CECOSF, SAPU…); la búsqueda acepta nombre,
@@ -173,19 +173,21 @@ cambiaron de nombre (`aps-conecta-*`) y se reinstala (`INSTALLER.md` §12).
 
 ## 8. ¿Y el mapa?
 
-El fondo de mapa ya se sirve solo — no hay que hacer nada para tenerlo: **la propia suite lo
-sirve**, en su misma dirección (`https://<su-dominio-o-ip>/tiles/chile.pmtiles`), sin contenedores,
-puertos ni proxys adicionales. Vive en el servidor y **se refresca solo cada mes** (el temporizador
-del día 4, que activa `sudo aps-conecta temporizadores`).
+El fondo de mapa es el de **OpenStreetMap**: lo carga el navegador de cada persona directamente
+desde sus servidores, así que **cada equipo que muestra el mapa necesita internet** — también el que
+recorre el instalador web. La suite ya no construye, guarda ni sirve ningún mapa: no hay paso para
+construirlo ni temporizador que lo refresque. Si el fondo no carga, los registros, el dibujo y todas
+las capas siguen funcionando sobre un fondo liso, y el instalador lo dice y deja confirmar el centro igual.
 
 - **Territorio** se instala con la suite, en «Revisar y ejecutar».
 - **Sus capas comunales**: `aps-conecta datos` trae y verifica los paquetes de la comuna;
   `aps-conecta datos --importar` los deja cargados (la instalación silenciosa ya lo hace
   sola). Antes de la primera provisión no descarga nada.
 
-Si el mapa no carga desde otros equipos: `sudo bash host/tiles.sh check` en el servidor dice qué
-cosa falta; si la suite se inició sin la carpeta del mapa, el contenedor maestro se re-crea con
-ella en un minuto — la receta, en `INSTALLER.md` §9.
+Si la suite tenía el mapa local de una versión anterior, `sudo aps-conecta temporizadores` retira
+su temporizador y el archivo (~1 GB) queda en `/srv/aps-conecta/tiles` hasta que usted decida
+liberarlo (`INSTALLER.md` §9; `MIGRATION.md` §12). OpenStreetMap responde a un cliente que bloqueó
+con una imagen corriente, no con un error: un fondo que muestra un cuadro de «bloqueado» es como se ve.
 
 ## 9. La mudanza (desde la suite anterior)
 
@@ -228,7 +230,7 @@ Cualquier cosa rara: anótela antes de tocar nada — el registro de bugs del re
 ## 11. Sin dominio: la dirección IP del servidor
 
 Un establecimiento sin dominio instala por una de las direcciones IPv4 de este servidor, escrita donde
-va el dominio: el paso 7, o `SITE_DOMINIO` en el archivo del sitio de la instalación silenciosa. La
+va el dominio: el paso 6, o `SITE_DOMINIO` en el archivo del sitio de la instalación silenciosa. La
 suite responde entonces en `https://<ip>/` con un certificado firmado por la autoridad propia del
 instalador, la misma que firma su enlace (§4).
 
@@ -240,13 +242,13 @@ instalador, la misma que firma su enlace (§4).
   si falta, la ejecución se detiene hasta restaurar `/opt/aps-conecta/certificados` desde el respaldo
   diario (`INSTALLER.md` §11).
 - **El comando de arranque** lleva dos líneas más, `--env APS_TLS_DIR=/opt/aps-conecta/certificados/suite`
-  y `--env NEXTCLOUD_TRUSTED_CACERTS_DIR=/opt/aps-conecta/certificados/ca`; el paso 7 y la instalación
+  y `--env NEXTCLOUD_TRUSTED_CACERTS_DIR=/opt/aps-conecta/certificados/ca`; el paso 6 y la instalación
   silenciosa firman el certificado antes de ejecutarlo. Una suite iniciada con un dominio no cambia a
   una dirección, ni al revés: se reinstala (`INSTALLER.md` §12).
 - **Nextcloud** confía en la autoridad (fase 07); **la oficina** llega a Nextcloud dentro de la red de
   la suite (la fase 14 escribe las dos direcciones internas). Nada que configurar.
 
-Cada equipo que abre la suite importa la autoridad una vez. El paso 7 la ofrece («Descargar el
+Cada equipo que abre la suite importa la autoridad una vez. El paso 6 la ofrece («Descargar el
 certificado») con su huella SHA-256, y la consola imprime ambas al terminar la instalación; en el
 servidor, la copia del propio operador:
 
