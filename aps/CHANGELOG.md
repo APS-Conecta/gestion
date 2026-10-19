@@ -36,9 +36,9 @@ image digests live there and are deliberately not copied here — one fact, one 
   **eight** steps now (Centro is step 5); every «Paso N de 9» is «Paso N de 8».
 
 ### Added
-- **`retire_tile_remnants`**, run by `aps-conecta temporizadores` (and so by a finished install): on a host
-  that ran an earlier bundle it disables the old map timer, removes its two unit files (reloading systemd
-  only then), removes the old `aps-conecta-tiles` container if present, and says once that the archive can
+- **`retire_tile_remnants`**, run by `aps-conecta temporizadores` (and so by a finished install) and by the
+  weekly re-provision: on a host that ran an earlier bundle it disables the old map timer, stops a refresh
+  that is already running, removes its two unit files (reloading systemd only then), removes the old `aps-conecta-tiles` container if present, and says once that the archive can
   be freed with `sudo rm -rf /srv/aps-conecta/tiles`. Idempotent, silent the second time, and it never
   deletes the archive. Upgrade notes: `aps/MIGRATION.md` §12.
 
