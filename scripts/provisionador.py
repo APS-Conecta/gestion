@@ -170,6 +170,18 @@ ASSETS = {
 }
 
 
+def mitad_de(bases, relpath, completa=None):
+    """The first base that carries `relpath` — and, when `completa` is given, carries it COMPLETE. The
+    self-test's fixture takes the suite-definition halves (themes/, provisioning/apps, .env.example)
+    from the repo root (the package) or from a gestion checkout; a half that is there but incomplete
+    (an empty themes/ some earlier run left behind) must not shadow the real one in the next base."""
+    for base in bases:
+        found = os.path.join(base, relpath) if base else ""
+        if found and os.path.exists(found) and (completa is None or completa(found)):
+            return found
+    return None
+
+
 def read_steps():
     """The registry, as `aps-conecta pasos` prints it: id · título · dónde · subcomando · propósito
     · resultado. A missing or unreadable list stops the start before any socket opens."""
@@ -4650,15 +4662,28 @@ def selftest():
                 if os.path.isdir(os.path.join(_cand, "themes")):
                     gestion_tree = _cand
 
-            def mitad(relpath):   # the real half when one is around (repo root first: the package), else None
-                for base in (os.path.join(HERE, ".."), gestion_tree):
-                    if base and os.path.exists(os.path.join(base, relpath)):
-                        return os.path.join(base, relpath)
-                return None
+            def mitad(relpath, completa=None):   # the real half when one is around (repo root first: the package), else None
+                return mitad_de((os.path.join(HERE, ".."), gestion_tree), relpath, completa)
+
+            def tema_completo(d):   # a themes/ that carries every whitelisted asset
+                return all(os.path.isfile(os.path.join(d, "..", a[0])) for a in ASSETS.values())
+            # the fall-through, proven on fabricated bases: an EMPTY themes/ in the first (the residue a
+            # sibling self-test used to leave) does not shadow the complete one in the second
+            with tempfile.TemporaryDirectory() as mb:
+                local, real = os.path.join(mb, "local"), os.path.join(mb, "real")
+                os.makedirs(os.path.join(local, "themes", "apsconecta", "core", "css"))
+                for rel, _t in ASSETS.values():
+                    os.makedirs(os.path.dirname(os.path.join(real, rel)), exist_ok=True)
+                    with open(os.path.join(real, rel), "wb") as fh:
+                        fh.write(b"x")
+                check("fixture halves: an incomplete themes/ in the repo root falls through to the next base (GESTION_TREE) instead of shadowing it; a complete one still wins in its own place; none complete is none",
+                      mitad_de([local, real], "themes", tema_completo) == os.path.join(real, "themes")
+                      and mitad_de([real, local], "themes", tema_completo) == os.path.join(real, "themes")
+                      and mitad_de([local], "themes", tema_completo) is None
+                      and mitad_de([local, ""], "themes", tema_completo) is None
+                      and mitad_de([local, real], "themes") == os.path.join(local, "themes"))
             apps_src = mitad(os.path.join("provisioning", "apps"))
-            themes_src = mitad("themes")
-            if themes_src and not all(os.path.isfile(os.path.join(themes_src, "..", a[0])) for a in ASSETS.values()):
-                themes_src = None   # a partial tree (stray run residue) never stands in for the real half
+            themes_src = mitad("themes", tema_completo)
             envex_src = mitad(".env.example")
             if not (apps_src and themes_src and envex_src):
                 synth = os.path.join(tmp, "mitad-fixture")
@@ -6117,7 +6142,9 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
             except ImportError:
                 sync_playwright = None
                 if sin_navegador:
-                    print("  SKIPPED (waived by APS_SELFTEST_SIN_NAVEGADOR=1, NOT a pass): browser arms — "
+                    with open(os.path.abspath(__file__), encoding="utf-8") as fh:
+                        n_navegador = fh.read().count('check("browser:')   # the arms inside the playwright block, by their prefix
+                    print(f"  SKIPPED (waived by APS_SELFTEST_SIN_NAVEGADOR=1, NOT a pass): {n_navegador} browser arms did NOT run — "
                           "playwright is not installed")
                 else:
                     check("browser: the browser arms RAN — playwright is installed, so the pane's tile policy "
