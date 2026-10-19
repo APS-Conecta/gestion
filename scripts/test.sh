@@ -63,8 +63,8 @@ check bash -c '
   done
   exit $rc'
 # --- gate (L5 S4): the vendored map libraries are the pinned bytes ---------------------------------
-# The Centro pane's engine is three files copied byte-identical from territorio's node_modules
-# (docs/LICENSING.md §3). Vendored bytes are the one diff a reviewer reads as "just assets":
+# The Centro pane's engine is Leaflet, two files copied byte-identical from territorio's
+# node_modules (docs/LICENSING.md §3); its basemap is OpenStreetMap's tiles, loaded by the browser. Vendored bytes are the one diff a reviewer reads as "just assets":
 # territorio upgrades, a re-vendor misses a file, an editor "fixes" a minified line — and the
 # installer's map changes with no gate the eye can catch. The image-digests pair-pin discipline,
 # applied to vendored files: each must exist and hash to its pin. The negative half mutates one
@@ -76,8 +76,6 @@ PINS = {
         "db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a",
     "themes/apsconecta/core/mapa/leaflet.css":
         "a7837102824184820dfa198d1ebcd109ff6d0ff9a2672a074b9a1b4d147d04c6",
-    "themes/apsconecta/core/mapa/protomaps-leaflet.js":
-        "26af014f7b1af308ec120b791cff76657bb9c3383633b52033e6edf9e5e4cdb5",
 }
 def distinta(corpus):   # the first path whose bytes are not its pin, or None
     for ruta, pin in corpus.items():
@@ -380,27 +378,6 @@ if len(old) != len(new) or not all(n.startswith(o + b",") for o, n in zip(old, n
 if not again: fails.append("a second run did not rewrite the same bytes")
 if fails:
     print("\n".join(fails)); sys.exit(1)'
-# Every establishment the installer offers carries its official point, inside the box the basemap
-# covers (a21): the point is where the Centro map starts and what SITE_LON/SITE_LAT copy. The box is
-# read from scripts/refresh-basemap.sh, the file that decides what the basemap holds, so a point the
-# map could not show reds here and not at a clinic. A --snapshot that skipped --coordenadas is the
-# realistic way to get here — snapshot_from writes the ten columns only.
-check python3 -c '
-import csv, glob, re, sys
-sys.path.insert(0, "scripts")
-import deis
-register = sorted(glob.glob("sites/establecimientos-deis-*.csv"))[-1]
-rows = list(csv.DictReader(open(register, encoding="utf-8")))
-m = re.search(r"^BBOX=\"\$\{BBOX:-([-0-9.,]+)\}\"$", open("scripts/refresh-basemap.sh", encoding="utf-8").read(), re.M)
-if len(rows) < 100 or not m:
-    print("register truncated, or no BBOX default in scripts/refresh-basemap.sh -- this check measured nothing"); sys.exit(1)
-w, s, e, n = map(float, m.group(1).split(","))
-bad = [r["codigo"] for r in rows
-       if not all(deis.DEGREES.fullmatch(r.get(k) or "") for k in deis.COORDS)
-       or not (w <= float(r["longitud"]) <= e and s <= float(r["latitud"]) <= n)]
-if bad:
-    print(str(len(bad)) + " register rows without a plain-degree point inside the basemap box "
-          + m.group(1) + ": " + ", ".join(bad[:5])); sys.exit(1)'
 # A --snapshot whose points never came is the newest file, so every reader would take it and
 # block() would die on a KeyError inside the installer. load() stops instead, naming both ways
 # out, and a refused --coordenadas on it says how to step back to the register before it. On a
@@ -522,15 +499,14 @@ check bash -c '
   printf "" | sites_register_only && { echo "sites gate: an empty listing went green" >&2; exit 1; }
   printf "sites/establecimientos-deis-2026-07-23.csv\n" | sites_register_only'
 
-# --- a21 (L5): the map is the suite's own route — the separate tiles server is gone -------------
+# --- a21 (L5): the separate tiles server stays gone --------------------------------------------
 # The grep is a21's own clause, with the pattern assembled without its literals
 # ("nginx:alp""ine|TILES_""PORT|:80""84"): a21 covers scripts/ too, and a gate that spelled its
 # own banned tokens would be its own hit. tiles.nginx.conf gone, no nginx pin, port or knob left
-# anywhere the map used to need one, and phase 16 pointing at /tiles/.
+# anywhere the map used to need one.
 check bash -c '
   test ! -e tiles.nginx.conf \
-    && ! git grep -qE "nginx:alp""ine|TILES_""PORT|:80""84" -- .env.example compose.yaml host scripts provisioning \
-    && grep -q "/tiles/" provisioning/phases/16-app-policy.sh'
+    && ! git grep -qE "nginx:alp""ine|TILES_""PORT|:80""84" -- .env.example compose.yaml host scripts provisioning'
 
 # --- gate: the data manifest and the comuna reference describe each other ---------------------
 # packages.json pins the masters; comunas-deis.csv is the coding authority the recipes validate

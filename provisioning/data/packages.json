@@ -48,9 +48,5 @@
       "output": "deis-establecimientos-<CUT>.geojson",
       "import": "occ territorio:import deis-establecimientos-<CUT>.geojson --dataset=deis-establecimientos"
     }
-  ],
-  "basemap": {
-    "contract": "the verify contract only — bbox, header bounds containing three fixed points of the country and a Santiago z12 tile (scripts/refresh-basemap.sh), min size 500 MB; the source URL is un-pinnable by design (dated builds, old ones 404)",
-    "sha256": null
-  }
+  ]
 }
