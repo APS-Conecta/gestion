@@ -296,8 +296,8 @@ RUN set -ex; \
     mkdir -p /nc-updater; \
     chmod -R 777 /nc-updater
 
-# APS Conecta (patch 030): the baked app set + the apsconecta theme. The Images workflow's
-# bake step (scripts/bake.sh on the fork's main — fork-infra never rides aps/main) unpacks
+# APS Conecta (the bake, originally patch 030): the baked app set + the apsconecta theme.
+# The Images workflow's bake step (scripts/bake.sh, riding this same tree) unpacks
 # gestion's VENDOR-gated tarballs into aps-bake/ before this build: sha256-gated, the
 # eurooffice white-label patches applied with the three-outcome rule, signature.json dropped
 # for patched apps, the white-label asserts the office smoke used to own. The context path is
