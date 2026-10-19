@@ -572,10 +572,12 @@ jobs:
       - name: Install by IP through the silent command a clinic runs
         run: |
           set -o pipefail   # run: is `bash -e` without it — the install's own failure, not tee's
-          tag="$(sed -n 's/^IMAGE="${AIO_TEST_IMAGE:-ghcr.io\/aps-conecta\/all-in-one:\(ci-[0-9]\{8\}-[0-9]\{1,\}\)}"$/\1/p' scripts/aio-testbed.sh)"
-          [[ "$tag" =~ ^ci-[0-9]{8}-[0-9]+$ ]] || { echo "FATAL: no single suite tag pinned in scripts/aio-testbed.sh" >&2; exit 1; }
+          # The pin takes any tag; the regex is the one judge: ci-YYYYMMDD-N (the old rehearsal
+          # tags), vX.Y.Z (a release) or vX.Y.Z-ci.N (the image pipeline's rehearsal).
+          tag="$(sed -nE 's/^IMAGE="\$\{AIO_TEST_IMAGE:-ghcr\.io\/aps-conecta\/all-in-one:([^}]+)\}"$/\1/p' scripts/aio-testbed.sh)"
+          [[ "$tag" =~ ^(ci-[0-9]{8}-[0-9]+|v[0-9]+\.[0-9]+\.[0-9]+(-ci\.[0-9]+)?)$ ]] || { echo "FATAL: no single suite tag pinned in scripts/aio-testbed.sh" >&2; exit 1; }
           # APS_SUITE_TAG: the package's VERSION is the throwaway rehearsal tag, but the
-          # mastercontainer this job CREATES must run a published image — the pinned ci tag
+          # mastercontainer this job CREATES must run a published image — the pinned suite tag
           # (suite_tag() answers the override first; the rehearsal-window seam it exists for)
           sudo env "PATH=$PATH" APS_SKIP_MAP=1 APS_SKIP_DATOS=1 MIN_DISK_GB=2 APS_SUITE_TAG="$tag" \
             bash /opt/aps-conecta/instalador/host/aps-conecta install \
