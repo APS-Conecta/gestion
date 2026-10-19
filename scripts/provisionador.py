@@ -4379,7 +4379,7 @@ def selftest():
             check("equipos: the saved teams, every cargo the planilla accepts with phase 20's names; a planilla naming a team that went no longer counts as loaded (R38, R35)",
                   st4 == 200 and eqs["guardados"] is True and ["sector-oriente", "Sector Oriente"] in eqs["equipos"]
                   and ["role-medico", "Médico General / de Familia"] in eqs["cargos"]
-                  and len(eqs["cargos"]) == 22 and eqs["planilla_cargada"] is False)
+                  and len(eqs["cargos"]) == 23 and eqs["planilla_cargada"] is False)
             st, barra = call("POST", "/api/sitio", {"codigo": "113314", "sectors": ["Norte|x"],
                                                     "programs": [], "vista": True})
             check("teams: a name with «|» is refused before it can break the site file",
@@ -4688,8 +4688,8 @@ def selftest():
             check("roster: a shape-changed phase 20 refuses validation instead of crying wolf",
                   st == 400 and "cambió de forma" in body.get("error", "")
                   and "all-staff" not in body["error"] and ".sh" not in body["error"])
-            check("roster: the real shared registry parses 27 groups (positive control)",
-                  len(registry_groups(old_p20)) == 27)
+            check("roster: the real shared registry parses 28 groups (positive control)",
+                  len(registry_groups(old_p20)) == 28)
 
             def set_roster_line(val):
                 with open(site_path("113314"), encoding="utf-8") as fh:
@@ -5650,9 +5650,9 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
             cats = role_categories(PHASE20, [("role-jefe-sar", "Jefe/a de SAR", "cat-jefaturas"),
                                              ("role-medico", "Médico", "cat-jefaturas")])
             fams = [c for r, c in cats.items() if r != "role-jefe-sar"]
-            check("registry: the 22 shared roles name their category — 4 jefaturas, 10 clínicos, 3 técnicos, 5 administrativos; a site role adds its own, never overrides",
-                  len(fams) == 22 and [fams.count(f"cat-{k}") for k in
-                                       ("jefaturas", "clinicos", "tecnicos", "administrativos")] == [4, 10, 3, 5]
+            check("registry: the 23 shared roles name their category — 4 jefaturas, 11 clínicos, 3 técnicos, 5 administrativos; a site role adds its own, never overrides",
+                  len(fams) == 23 and [fams.count(f"cat-{k}") for k in
+                                       ("jefaturas", "clinicos", "tecnicos", "administrativos")] == [4, 11, 3, 5]
                   and cats["role-quimico-farmaceutico"] == "cat-clinicos"
                   and cats["role-jefe-sar"] == "cat-jefaturas" and cats["role-medico"] == "cat-clinicos")
             try:

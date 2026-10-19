@@ -627,6 +627,86 @@ CASES
 }
 check territorio_tile_url_cases
 
+# I0 — gestion 3b62c24, ported: the session posture of phase 05 and the helper it calls. Three
+# extracted-block cases in the shape above. Phase 05 is sourced with its three helpers stubbed to
+# print what they were asked, so the assertion is the call itself (key, value, type), not a grep
+# for a spelling. The last line is a NEGATIVE pin: `encryption.enabled` /
+# `encryption.key_storage_migrated` were deliberately NOT ported (not verified as config.php keys;
+# server-side encryption is `occ encryption:enable` plus a key-management decision with backup,
+# group-folder and Office consequences) — a later edit that adds them must be a decision, not drift.
+session_hardening_cases() {
+  local out
+  out="$(bash -e -o pipefail -c '
+    phase_begin() { :; }
+    phase_end() { :; }
+    config_system_set() { printf "SET %s %s %s\n" "$@"; }
+    app_enable() { printf "ENABLE %s\n" "$@"; }
+    . provisioning/phases/05-security.sh' 2>&1)" \
+    || { echo "session hardening: phase 05 failed under errexit: $out" >&2; return 1; }
+  printf '%s\n' "$out" | grep -qxF "SET session_lifetime 900 integer" \
+    || { echo "session hardening: session_lifetime 900 (integer) not set: $out" >&2; return 1; }
+  printf '%s\n' "$out" | grep -qxF "SET session_keepalive false boolean" \
+    || { echo "session hardening: session_keepalive false (boolean) not set: $out" >&2; return 1; }
+  printf '%s\n' "$out" | grep -qxF "ENABLE admin_audit" \
+    || { echo "session hardening: admin_audit not enabled: $out" >&2; return 1; }
+  printf '%s\n' "$out" | grep -q "encryption" \
+    && { echo "session hardening: phase 05 touches encryption.* — deliberately not ported: $out" >&2; return 1; }
+  return 0
+}
+check session_hardening_cases
+# The break-glass role is a role/group only — no permissions, no override mechanism. What is pinned
+# is its presence in the registry both readers parse (registry_groups, role_categories) and its
+# category, which 50-users and the roster frame read to decide the cat-* its holder also joins.
+check python3 -c '
+import sys
+sys.path.insert(0, "scripts")
+import provisionador as p
+f = "provisioning/phases/20-groups.sh"
+rid = "role-emergencia-breakglass"
+assert rid in p.registry_groups(f), "registry_groups does not know " + rid
+assert p.role_categories(f, [])[rid] == "cat-clinicos", "wrong category for " + rid
+assert [rid, "Acceso de Emergencia (Break-Glass)"] in p.role_names(f), "role_names lacks " + rid'
+# app_enable: query-before-enable, like app_disable beside it. Already enabled -> no occ call at all
+# (a second seed must write nothing, or seed-idempotent reddens), twice in a row; absent -> one
+# `app:enable`; a failing enable is reported and returned, never swallowed.
+app_enable_cases() {
+  local out
+  # The helper sends occ's own output to /dev/null, so the stub records its calls in a file.
+  out="$(CALLS="$(mktemp)" bash -c '
+    . scripts/env.sh; . provisioning/lib.sh
+    conf_load() { :; }
+    conf_get() { printf "yes\n"; }
+    occ() { printf "OCC %s\n" "$*" >> "$CALLS"; }
+    log() { printf "LOG %s\n" "$*"; }
+    app_enable admin_audit && app_enable admin_audit; cat "$CALLS"; rm -f "$CALLS"' 2>&1)" \
+    || { echo "app_enable: an already-enabled app failed: $out" >&2; return 1; }
+  [ "$out" = "LOG app admin_audit already enabled
+LOG app admin_audit already enabled" ] \
+    || { echo "app_enable: not idempotent when already enabled: $out" >&2; return 1; }
+  out="$(CALLS="$(mktemp)" bash -c '
+    . scripts/env.sh; . provisioning/lib.sh
+    conf_load() { :; }
+    conf_get() { return 1; }
+    occ() { printf "OCC %s\n" "$*" >> "$CALLS"; }
+    log() { printf "LOG %s\n" "$*"; }
+    app_enable admin_audit; cat "$CALLS"; rm -f "$CALLS"' 2>&1)" \
+    || { echo "app_enable: enabling an absent app failed: $out" >&2; return 1; }
+  [ "$out" = "LOG app admin_audit -> enabled
+OCC app:enable admin_audit" ] \
+    || { echo "app_enable: an absent app was not enabled once: $out" >&2; return 1; }
+  out="$(bash -c '
+    . scripts/env.sh; . provisioning/lib.sh
+    conf_load() { :; }
+    conf_get() { printf "no\n"; }
+    occ() { return 1; }
+    log() { printf "LOG %s\n" "$*"; }
+    app_enable admin_audit' 2>&1)" \
+    && { echo "app_enable: a failing enable returned 0: $out" >&2; return 1; }
+  [ "$out" = "LOG FAILED to enable admin_audit" ] \
+    || { echo "app_enable: a failing enable was not said: $out" >&2; return 1; }
+}
+check app_enable_cases
+
 # The café case above is behavioural, and load-bearing only under a COLLATING locale — which a
 # Chilean dev has and GitHub's runners do not, defaulting to C.UTF-8 where that range refuses `é`
 # anyway. So CI stays green on a revert, and CI is the only mechanical gate (AGENTS.md). This is
