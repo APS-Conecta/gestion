@@ -114,3 +114,19 @@ This repository covers the Nextcloud all-in-one and all its included containers 
 - [How to Apply a License](https://github.com/nextcloud/server/blob/master/contribute/HowToApplyALicense.md)
 - [Developer Manual](https://github.com/nextcloud/all-in-one/blob/main/develop.md)
 - [Security Vulnerability Reporting (HackerOne)](https://hackerone.com/nextcloud)
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `APS-Conecta/instalador`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical vocabulary, unmodified: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`,
+`wontfix`. All five exist on the repo. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` for the vocabulary and `docs/adr/` for the decisions, both created lazily as
+terms and decisions get resolved. See `docs/agents/domain.md`.
