@@ -5,7 +5,7 @@
 # finally does, on purpose).
 #
 # SCRIPT vs RUNBOOK (aps/MIGRATION.md): this owns everything the REPO installed — the compose
-# project, its volumes, generated artifacts, the basemap timer. Host residue the repo never
+# project, its volumes, generated artifacts. Host residue the repo never
 # touched (tailscale serve routes, /root/backups .baks, transcript JSONLs, where the preservation
 # copy goes) is the runbook's checklist, printed at the end.
 #
@@ -148,19 +148,6 @@ fi
 rm -rf "sites/$SITE"
 rm -f themes/apsconecta/core/css/site.css .install.log
 
-# --- the basemap timer, only if it points into THIS tree ---------------------------------------
-if command -v systemctl >/dev/null 2>&1 && systemctl cat territorio-basemap.service >/dev/null 2>&1 \
-   && systemctl cat territorio-basemap.service | grep -q "$PWD"; then
-  if systemctl disable --now territorio-basemap.timer 2>/dev/null; then
-    echo "uninstall: territorio-basemap.timer disabled (its ExecStart pointed into this tree)"
-  else
-    echo "uninstall: territorio-basemap.timer points into this tree but could not be disabled — run as root:"
-    echo "  systemctl disable --now territorio-basemap.timer"
-  fi
-else
-  echo "uninstall: no territorio-basemap timer pointing here — nothing to disable"
-fi
-
 # --- .env: the only copy of the secrets — guidance, not deletion ------------------------------
 if [ -f .env ]; then
   echo "note: .env still holds this install's only secrets. Rotate anything that used"
@@ -176,7 +163,7 @@ report cs_no_volume apsconecta-gestion_nextcloud_data
 report cs_no_network apsconecta-gestion_default
 report cs_can_probe_listeners
 # The pre-map world's loopback port joins the probe list (org review I4): a clinic from before
-# this release carries the old map container — «sudo aps-conecta mapa» removes it on sight —
+# this release carries the old map container — «sudo aps-conecta temporizadores» removes it —
 # and the report is the one honest witness that the listener it held is gone too. The literal
 # is bare on purpose: with a colon before it (or the knob's old name) it would match make
 # test's a21 sweep, whose banned tokens this file must not spell — the same self-match

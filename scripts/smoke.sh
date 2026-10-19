@@ -372,59 +372,17 @@ do
 done
 rm -f "$smoke_jar" "$smoke_body"
 fi
-# 16. Territorio's comuna, then the basemap route still served at /tiles/ (L5). The map itself is
-# OpenStreetMap's tile service, loaded by each user's browser (ADR-0021 in territorio): nothing is
-# provisioned for it, so no tile_url is asserted — a stale one on an upgraded install is the app's
-# own repair step to delete, not this suite's to police. What phase 16 still writes, and the app
-# derives the map's opening extent from, is the comuna's CUT and name: an empty comuna_cut is also
-# the silent disarm of the import door (ComunaConfig reads it as "not chosen"), so both must be set.
-# The rest of this check is the /tiles/ route the archive is still served by until the tile
-# machinery retires (the aps-conecta-tiles stack): apache binds the host's map folder read-only at
-# /aps-tiles — the AIO fork's own route, ahead of Nextcloud. The bind exists AND ITS
-# SOURCE IS THE DIRECTORY THE MASTERCONTAINER'S ENV LINE NAMES (org review I1: the three stores
-# of the bind — the mastercontainer's env, the fork's sticky aps_tiles_dir, apache's realized
-# mount — can diverge silently, because a changed env line rewrites the sticky but never
-# recreates apache; a destination-only grep passes on every divergent shape while /tiles/ serves
-# a stale map, so the realized mount is compared against the env line, facts not reachability —
-# the check-14 discipline); and a ranged read answers 206 with the PMTiles magic and no
-# Content-Encoding (Caddy's encode leaves the archive's octet-stream alone — the bytes are
-# already compressed, and a re-compressed range breaks the format). A 404 WITH the bind is the
-# one non-failure — the suite is up, the route is right, and the map is simply not built on this
-# box yet — UNLESS the monthly timer is enabled: the install only enables it once an archive
-# exists, so a 404 with the timer on means the claimed map is not being served (org review I3).
+# 16. Territorio's comuna. The map itself is OpenStreetMap's tile service, loaded by each user's browser
+# (ADR-0021 in territorio): nothing is provisioned for it, so no tile_url is asserted — a stale one on an
+# upgraded install is the app's own repair step to delete, not this suite's to police. What phase 16
+# still writes, and the app derives the map's opening extent from, is the comuna's CUT and name: an
+# empty comuna_cut is also the silent disarm of the import door (ComunaConfig reads it as "not chosen"),
+# so both must be set.
 _comuna_cut="$(occ config:app:get territorio comuna_cut 2>/dev/null | tr -d '\r')"
 _comuna_name="$(occ config:app:get territorio comuna_name 2>/dev/null | tr -d '\r')"
 [ -n "$_comuna_cut" ] \
   || fail "territorio comuna_cut is not set — the map has no extent to open on and the import door is disarmed (ComunaConfig reads empty as 'not chosen'). Re-seed: phase 16-app-policy writes it from sites/<slug>/site.sh's SITE_COMUNA_CUT"
 [ -n "$_comuna_name" ] \
   || fail "territorio comuna_name is not set — the admin section and the import refusal have no name to show. Re-seed: phase 16-app-policy writes it from sites/<slug>/site.sh's SITE_COMUNA"
-# The bind's source (I1): apache's realized /aps-tiles mount vs the mastercontainer's own
-# APS_TILES_DIR env line — the same line start_suite guards (instalador's host/aps-conecta,
-# start_suite's APS_TILES_DIR guard; the gestion-era :876 line pin went with the move).
-_aps_bind="$(docker inspect -f '{{range .Mounts}}{{.Destination}} {{.Source}}{{println}}{{end}}' aps-conecta-apache 2>/dev/null | awk '$1 == "/aps-tiles" { print $2 }')"
-_tiles_env="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' nextcloud-aio-mastercontainer 2>/dev/null | sed -n 's/^APS_TILES_DIR=//p')"
-[ -n "$_aps_bind" ] \
-  || fail "aps-conecta-apache has no /aps-tiles mount — the suite cannot serve /tiles/. The mastercontainer must be created with APS_TILES_DIR=/srv/aps-conecta/tiles (the folder aps-conecta mapa builds into): re-create it as aps/INSTALLER.md §9 says"
-[ -n "$_tiles_env" ] \
-  || fail "aps-conecta-apache binds $_aps_bind at /aps-tiles but the mastercontainer carries no APS_TILES_DIR line to compare it against — the bind cannot be verified. Re-create the mastercontainer as aps/INSTALLER.md §9 says"
-[ "$_aps_bind" = "$_tiles_env" ] \
-  || fail "aps-conecta-apache binds $_aps_bind at /aps-tiles but the mastercontainer was created with APS_TILES_DIR=$_tiles_env — apache was never recreated after the change, and /tiles/ serves a folder nobody names anymore. Re-create it as aps/INSTALLER.md §9 says (the remedy includes docker rm -f aps-conecta-apache)"
-_tiles_hdr="$(mktemp)"
-_tiles_out="$(curl -s -D "$_tiles_hdr" -r 0-6 -H 'Accept-Encoding: gzip, zstd' -w '\n%{http_code}' \
-  "http://localhost:${HTTP_PORT}/tiles/chile.pmtiles" 2>/dev/null || echo $'\n000')"
-_tiles_code="${_tiles_out##*$'\n'}"
-_tiles_body="${_tiles_out%$'\n'*}"
-case "$_tiles_code" in
-  206) [ "$_tiles_body" = "PMTiles" ] \
-        || fail "GET /tiles/chile.pmtiles answered 206 but its first bytes are not the PMTiles magic — the archive is corrupt or something else serves the route. Run: sudo bash host/tiles.sh check"
-       grep -qi '^content-encoding:' "$_tiles_hdr" \
-        && fail "GET /tiles/chile.pmtiles comes Content-Encoding-compressed — the archive is served byte-exact by Range; a recompressed range breaks the pmtiles format. Run: sudo bash host/tiles.sh check" ;;
-  404) if systemctl is-enabled aps-conecta-tiles.timer >/dev/null 2>&1; then
-          fail "GET /tiles/chile.pmtiles is 404 but the monthly basemap timer (aps-conecta-tiles.timer) is enabled — the install claimed a map and the suite serves none: the archive is missing from the folder the suite binds. Run: sudo bash host/tiles.sh check"
-        fi
-        echo "NOTE: /tiles/chile.pmtiles is 404 — the bind exists and the route is right, but the basemap is not built on this box. sudo aps-conecta mapa builds it" ;;
-  *) fail "GET /tiles/chile.pmtiles answered HTTP ${_tiles_code} with the bind present (expected 206 with the PMTiles magic). Run: sudo bash host/tiles.sh check" ;;
-esac
-rm -f "$_tiles_hdr"
 
-echo "PASS: core stack healthy — installed, PostgreSQL ready, Redis PONG, /status.php 200, no branding leak, cron scheduling, app policy, no remember-me, no stale app signature, legacy screens branded, clean admin home, app store off, office URL matches how this instance is reached, territorio's comuna set, the archive route at /tiles/"
+echo "PASS: core stack healthy — installed, PostgreSQL ready, Redis PONG, /status.php 200, no branding leak, cron scheduling, app policy, no remember-me, no stale app signature, legacy screens branded, clean admin home, app store off, office URL matches how this instance is reached, territorio's comuna set"

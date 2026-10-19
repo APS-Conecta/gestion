@@ -111,7 +111,7 @@ main() {
   fi
 
   # the package root carries instalador/ (package-release.sh's assembly contract); the unpack
-  # is atomic (tiles.sh's rule): a failed run never clobbers, and nothing half-unpacked becomes
+  # is atomic: a failed run never clobbers, and nothing half-unpacked becomes
   # the bundle — VERSION is asserted == the tag before the mv promotes the tree
   tmp="$(mktemp -d "$APS_HOME/.instalador.XXXXXX")" || die "no pude crear el directorio de trabajo"
   if ! tar -xzf "$pkg" -C "$tmp"; then

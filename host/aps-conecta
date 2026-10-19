@@ -16,7 +16,6 @@
 #   aps-conecta respaldo             wire /opt/aps-conecta into AIO's backup scope (idempotent)
 #   aps-conecta asistente-aio --dominio D   drive the AIO wizard through its API (no browser)
 #   aps-conecta revalidate          post-update gate sweep: smoke + office-smoke + divergence
-#   aps-conecta tiles …            the basemap (install | refresh | check — host/tiles.sh)
 #   aps-conecta datos [CUT] [--importar]  the comuna data packages: cut + checksum-verified + staged (--importar: also loads them)
 #   aps-conecta red --dominio D [--arreglar]  the domain's reflection: report, or fix it with consent (dnsmasq split-DNS)
 #   aps-conecta --self-test          the self-check (no docker needed — PATH shims)
@@ -51,11 +50,6 @@ APS_REPO_URL="${APS_REPO_URL:-}"
 # the provisionador's CERT_DIR/suite and CERT_DIR/ca, pinned by its self-test
 suite_tls_dir() { printf '%s' "$APS_HOME/certificados/suite"; }
 suite_ca_dir() { printf '%s' "$APS_HOME/certificados/ca"; }
-# The basemap (L5, R49): the suite's apache serves it at /tiles/ through a read-only bind the
-# mastercontainer makes from APS_TILES_DIR (the fork's patch 239) — tiles.sh's ARCHIVE, the same
-# TILES_HOME default (an arm pins it), so the build and the bind never name two places
-TILES_ARCHIVE="${TILES_HOME:-/srv/aps-conecta}/tiles/chile.pmtiles"
-suite_tiles_dir() { dirname "$TILES_ARCHIVE"; }
 reload_suite_leaf() {  # by IP (R22): apache reads its pair at start — a running apache started before the leaf
   # on disk was written is restarted, whoever signed it (a start, the weekly run) and however the last
   # attempt ended. No apache yet, or a stopped one: it reads the pair when it starts
@@ -100,12 +94,11 @@ FAIL=0
 # One home per step (run plan, S1b): a server step is a subcommand of this file, a browser step
 # lives in the web installer, and every front end walks this list. Fields: id|título|dónde|
 # propósito|resultado. The order IS the install order and the id IS the subcommand — the approved
-# Instalador UI (stage V, variant A) renders the same nine steps with the same words.
+# Instalador UI (stage V, variant A) renders the same eight steps with the same words.
 STEPS=(
   "revisar|Revisar el servidor|servidor|Memoria, disco, puertos y red.|Servidor apto."
   "preparar|Preparar el servidor|servidor|Docker, permisos y memoria.|Docker en marcha."
   "descargar|Descargar APS Conecta|servidor|Descarga y verificación de la suite.|Suite verificada."
-  "mapa|Construir el mapa|servidor|Mapa de Chile local para Centro y Territorio (1,1 GB).|Mapa listo."
   "abrir|Abrir el instalador web|servidor|Enlace único para continuar en el navegador.|Enlace entregado."
   "centro|Elegir el centro|navegador|Establecimiento (2.655 de atención primaria) y ubicación.|Centro guardado."
   "suite|Iniciar la suite|navegador|Contenedores y aplicaciones, con el asistente prellenado.|Suite en marcha."
@@ -199,7 +192,7 @@ welcome() {  # the welcome — the approved console's opening, line for line
   printf '  Desarrollado por Dani Espinoza Charrier · APS Conecta\n\n'
 }
 
-# ── the silent install (a7): «install --sitio F --planilla F» walks the same nine steps, and these
+# ── the silent install (a7): «install --sitio F --planilla F» walks the same eight steps, and these
 # stand in for the browser ones — each the Provisionador's own step run with --paso, or the suite.
 silent_precheck() {  # the two files read before anything runs — a typo must not cost an install;
   # CRLF tolerated, as the Provisionador reads them (a site edited on Windows)
@@ -227,8 +220,8 @@ silent_suite() {
 silent_equipos() { python3 "$(prov_path)" --paso usuarios --codigo "$(site_codigo)" --planilla "$SILENT_ROSTER"; }
 silent_ejecutar() { python3 "$(prov_path)" --paso generar --codigo "$(site_codigo)" --resumen; }
 cmd_install() {  # the install: the welcome, then the steps in registry order. Interactive, the
-  # server steps run here and the last opens the web installer for 6–9; silent (--sitio/--planilla),
-  # all nine run here, the browser ones from the two files (silent_*), every tool's own output in the
+  # server steps run here and the last opens the web installer for 5–8; silent (--sitio/--planilla),
+  # all eight run here, the browser ones from the two files (silent_*), every tool's own output in the
   # log and only Spanish lines on the console. A failed step stops the run on its own ✗ lines; a
   # re-run walks the steps again and each finds its own work done. The prompt waits only on an
   # interactive install's terminal.
@@ -296,12 +289,11 @@ usage() {  # Spanish, generated from the registry — never a slice of this file
   echo "  aps-conecta provision             abre el instalador web (lo mismo que el paso abrir)"
   echo "  aps-conecta provision --reponer   re-provisión semanal (la ejecuta el temporizador)"
   echo "  aps-conecta asistente-aio --dominio D [--talk] [--preparar]   configura la suite por la API del asistente (--preparar: sin iniciarla)"
-  echo "  aps-conecta temporizadores        instala y activa la re-provisión semanal y el mapa mensual"
+  echo "  aps-conecta temporizadores        instala y activa la re-provisión semanal"
   echo "  aps-conecta estado                el último resultado de la re-provisión, con cada arreglo (sin sudo)"
   echo "  aps-conecta revalidate            revisa la instancia después de una actualización"
   echo "  aps-conecta red --dominio D [--arreglar]   el reflejo del dominio: revisarlo y, con --arreglar, corregirlo (DNS local)"
   echo "  aps-conecta respaldo              agrega /opt/aps-conecta a las copias de seguridad"
-  echo "  aps-conecta tiles install|refresh|check   el mapa: construirlo, refrescarlo y revisar que la suite lo sirve"
   echo "  aps-conecta datos [CUT] [--importar]  los paquetes de datos de la comuna (con --importar: además los carga)"
   echo "  aps-conecta --self-test           autoprueba de este programa (sin docker)"
 }
@@ -479,10 +471,10 @@ check_hairpin() {  # the D10 leg (upstream #8433): the HOST curls its own public
   fi
 }
 
-# ── the server steps' bodies (the registry's first five) ────────────────────────────────────
+# ── the server steps' bodies (the registry's first four) ────────────────────────────────────
 # Each body prints ✓/✗ lines through ok/bad and returns; step_run reads FAIL. Later laps
-# replace bodies (L2 S2: «preparar» and «descargar» install instead of verify; L5: «mapa» before
-# the centre; L3: «abrir» hands over a one-time link), never the list.
+# replace bodies (L2 S2: «preparar» and «descargar» install instead of verify; L3: «abrir» hands over
+# a one-time link), never the list.
 MIN_RAM_GIB="${MIN_RAM_GIB:-6}"                    # the red line (D8): below this, revisar reds
 RAM_GIB_RECOMENDADA="${RAM_GIB_RECOMENDADA:-8}"    # advice, never a red (the doc's posture)
 MIN_DISK_GB="${MIN_DISK_GB:-20}"                   # the images (~12 GiB) + volumes + headroom
@@ -914,21 +906,7 @@ step_descargar() {  # the bundle at its tag. On its own (the two-line bootstrap)
   return 0
 }
 
-step_mapa() {  # the basemap, built before the browser opens (a22): a fixed extract of all Chile that
-  # needs no centre, no .env and no suite (R47) — Centro shows it and the suite serves it at /tiles/.
-  # The tools' own output (curl, pmtiles — in English) goes to a log; a failed build stops here like
-  # any step, and the re-run finds the CLI in place and builds again
-  local log="${SILENT_LOG:-$APS_HOME/mapa.log}"
-  if [ "${APS_SKIP_MAP:-0}" = 1 ]; then   # CI only: the 1,1 GB stays off the runner
-    STEP_RESULT="Mapa omitido: lo construye «sudo aps-conecta mapa»."; return 0
-  fi
-  info "se construye el mapa de Chile (~1,1 GB por rangos HTTP; unos minutos)"
-  if ! { mkdir -p "$(dirname "$log")" && bash "$HOST_DIR/tiles.sh" install >>"$log" 2>&1; }; then
-    bad "el mapa no se construyó (registro: $log)" "revise la conexión a github.com y a build.protomaps.com"
-  fi
-}
-
-step_abrir() {  # the web installer walks steps 6–9 as a CHILD of this console (Ctrl+C still reaches
+step_abrir() {  # the web installer walks steps 5–8 as a CHILD of this console (Ctrl+C still reaches
   # it): it exits 0 only after a green «Revisar y ejecutar», and the console then wires the timers
   # and closes the install with «Listo» — the silent install's own tail (a13, SEC-2)
   local rc domain last="${#STEPS[@]}"
@@ -970,9 +948,9 @@ suite_tag() {
   echo ""
 }
 
-run_command() {  # [ADDRESS] — prints the operator's docker run string (never executes it). The map's
-  # directory rides it in both modes (L5: apache serves /tiles/ from it). An IPv4 is the install by
-  # IP (R22): two lines more — the suite's own certificate for apache, its CA for Nextcloud and Talk
+run_command() {  # [ADDRESS] — prints the operator's docker run string (never executes it). An IPv4 is
+  # the install by IP (R22): two lines more — the suite's own certificate for apache, its CA for
+  # Nextcloud and Talk
   local tag tls=""; tag="$(suite_tag)"
   [ -n "$tag" ] || die "no pude leer la etiqueta de versión (¿git tags?) — o exporte APS_SUITE_TAG"
   if is_ipv4 "${1:-}"; then
@@ -985,7 +963,6 @@ docker run --init --sig-proxy=false --name nextcloud-aio-mastercontainer \\
   --restart always \\
   --publish 8080:8080 \\
   --env APACHE_PORT=443 \\
-  --env APS_TILES_DIR=$(suite_tiles_dir) \\
 ${tls}  --env NEXTCLOUD_STARTUP_APPS="" \\
   --volume nextcloud_aio_mastercontainer:/mnt/docker-aio-config \\
   --volume /var/run/docker.sock:/var/run/docker.sock:ro \\
@@ -999,11 +976,36 @@ EOF
 # validator (start.sh:291-298). Both facts are the slice-5 amendment's own finding (the ratified
 # forced amendment, ledgered in its History row).
 
-install_timers() {  # the weekly re-provision and the monthly basemap (a9): the four units copied
-  # from this bundle into systemd, reloaded and enabled — a re-run finds them in place, and an update
-  # that changed a unit lands it. A fresh Persistent timer does not fire on enable: its first elapse
-  # is computed from now (no stamp yet), so the install never starts a re-provision of its own
-  local dir="$ETC_DIR/systemd/system" u changed=0 timers=aps-conecta.timer
+# The PMTiles basemap is retired (territorio draws OpenStreetMap's own tile service, ADR-0021 there). A host
+# that ran an earlier bundle still carries its monthly timer, the service it ran and perhaps the old map
+# container, and the archive (~1 GB) the timer kept fresh. Where the archive lived — named once, here.
+TILES_REMNANT_DIR="${TILES_REMNANT_DIR:-/srv/aps-conecta/tiles}"
+
+retire_tile_remnants() {  # idempotent: the timer disabled, its two unit files removed (systemd reloaded
+  # only if one was), the old map container removed, and — only when something was retired and the
+  # archive is still there — ONE line saying it can be freed. The archive is NEVER deleted here: Protomaps'
+  # builds expire, so it cannot be rebuilt, and freeing a gigabyte is the operator's call
+  local dir="$ETC_DIR/systemd/system" u retired=0
+  systemctl disable --now aps-conecta-tiles.timer >/dev/null 2>&1 || true   # absent is fine
+  for u in aps-conecta-tiles.service aps-conecta-tiles.timer; do
+    if [ -e "$dir/$u" ]; then rm -f "$dir/$u"; retired=1; fi
+  done
+  [ "$retired" = 0 ] || systemctl daemon-reload >/dev/null 2>&1 || true
+  if command -v docker >/dev/null 2>&1 \
+     && docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx aps-conecta-tiles; then
+    docker rm -f aps-conecta-tiles >/dev/null 2>&1 || true
+    retired=1
+  fi
+  if [ "$retired" = 1 ] && [ -e "$TILES_REMNANT_DIR" ]; then
+    info "el mapa local ya no se usa (el fondo del mapa es el de OpenStreetMap); puede liberar su espacio cuando quiera: sudo rm -rf $TILES_REMNANT_DIR"
+  fi
+}
+
+install_timers() {  # the weekly re-provision (a9): the two units copied from this bundle into systemd,
+  # reloaded and enabled — a re-run finds them in place, and an update that changed a unit lands it. A
+  # fresh Persistent timer does not fire on enable: its first elapse is computed from now (no stamp yet),
+  # so the install never starts a re-provision of its own. The retired monthly basemap's remnants go too
+  local dir="$ETC_DIR/systemd/system" u changed=0
   if ! is_root; then
     bad "los temporizadores necesitan permisos de administrador" "ejecute: sudo aps-conecta temporizadores"
     return 0
@@ -1015,7 +1017,8 @@ install_timers() {  # the weekly re-provision and the monthly basemap (a9): the 
     return 0
   fi
   mkdir -p "$dir" || { bad "no se pudo crear $dir" "revise los permisos de $ETC_DIR"; return 0; }
-  for u in aps-conecta.service aps-conecta.timer aps-conecta-tiles.service aps-conecta-tiles.timer; do
+  retire_tile_remnants
+  for u in aps-conecta.service aps-conecta.timer; do
     cmp -s "$HOST_DIR/$u" "$dir/$u" && continue
     install -m 0644 "$HOST_DIR/$u" "$dir/$u" || { bad "no se pudo instalar $u" "revise los permisos de $dir"; return 0; }
     changed=1
@@ -1023,28 +1026,17 @@ install_timers() {  # the weekly re-provision and the monthly basemap (a9): the 
   if [ "$changed" = 1 ] && ! systemctl daemon-reload >/dev/null; then
     bad "systemd no recargó las unidades" "revise: sudo systemctl daemon-reload"; return 0
   fi
-  # the monthly refresh only refreshes: before a map exists it would fetch the 1,1 GB nobody built
-  [ ! -f "$TILES_ARCHIVE" ] || timers="$timers aps-conecta-tiles.timer"
-  # shellcheck disable=SC2086  # two fixed unit names, split on purpose
-  if ! systemctl enable --now $timers >/dev/null; then
-    bad "no se pudieron activar los temporizadores" "revise: systemctl status aps-conecta.timer"; return 0
+  if ! systemctl enable --now aps-conecta.timer >/dev/null; then
+    bad "no se pudo activar el temporizador" "revise: systemctl status aps-conecta.timer"; return 0
   fi
-  if [ -f "$TILES_ARCHIVE" ]; then
-    ok "Temporizadores activos, en hora de Santiago: re-provisión semanal y mapa mensual"
-  else
-    ok "Temporizador activo, en hora de Santiago: re-provisión semanal"
-    info "el mapa mensual se activa al construir el mapa: sudo aps-conecta mapa, luego sudo aps-conecta temporizadores"
-  fi
+  ok "Temporizador activo, en hora de Santiago: re-provisión semanal"
 }
 
 start_suite() {  # [ADDRESS] — the mastercontainer, once — the very command «preflight» prints, run
   # detached. An IPv4 is the install by IP (R22): this server's own address, the suite's certificate
   # signed for it first. A mastercontainer that already exists must carry what it reads at its start:
-  # the map's directory always, the certificate by IP
+  # the certificate, by IP
   local domain="${1:-}" state tag cmd env_now
-  if ! [[ "$(suite_tiles_dir)" =~ ^/[A-Za-z0-9._/-]+$ ]] || [[ "$(suite_tiles_dir)" == *..* ]]; then   # it rides the eval below
-    bad "la carpeta del mapa no es válida («$(suite_tiles_dir)»)" "use en TILES_HOME una ruta absoluta con letras, números, «.», «_», «-» y «/», sin segmentos «..»"; return 1
-  fi
   if is_ipv4 "$domain"; then
     if ! [[ "$(suite_tls_dir)$(suite_ca_dir)" =~ ^[A-Za-z0-9._/-]+$ ]] || [[ "$(suite_tls_dir)$(suite_ca_dir)" == *..* ]]; then   # both ride the eval below
       bad "la carpeta de la instalación no es válida («$APS_HOME»)" "use una ruta con letras, números, «.», «_», «-» y «/», sin segmentos «..»"; return 1
@@ -1068,12 +1060,6 @@ start_suite() {  # [ADDRESS] — the mastercontainer, once — the very command 
     elif [ -n "$domain" ] && grep -q '^APS_TLS_DIR=' <<<"$env_now"; then
       bad "la suite ya se inició por dirección IP, con el certificado propio" \
         "para instalarla con el dominio $domain, reinstálela: aps/INSTALLER.md §12"
-      return 1
-    fi
-    # without the bind, /tiles/ is a 404 that nothing else reports (AIO review I1)
-    if ! grep -qxF "APS_TILES_DIR=$(suite_tiles_dir)" <<<"$env_now"; then
-      bad "la suite ya se inició sin la carpeta del mapa ($(suite_tiles_dir))" \
-        "vuelva a crear el contenedor maestro con ella: aps/INSTALLER.md §9"
       return 1
     fi
   fi
@@ -1557,11 +1543,11 @@ cmd_red() {  # --dominio D [--arreglar] — the reflection of the domain, report
   exit 0
 }
 
-# ── tiles + datos (slice 21, FRD S9) ─────────────────────────────────────────────────────
+# ── datos (slice 21, FRD S9) ─────────────────────────────────────────────────────
 NC=aps-conecta-nextcloud           # the AIO posture: respaldo hardcodes the mastercontainer
                                       # the same way; NC_CONTAINER is the seed's knob, not ours
-DATOS_HOME="${DATOS_HOME:-/srv/aps-conecta/datos}"   # beside the tiles home — regenerable
-                                      # generated data, outside borg's scope by the same argument
+DATOS_HOME="${DATOS_HOME:-/srv/aps-conecta/datos}"   # regenerable generated data, outside
+                                      # borg's scope: a regenerable gigabyte must not ride every backup
 
 site_comuna_cut() {  # the site record's own CUT (v0.2.0's seam — deis.py emits it post-v0.2.0)
   local f; f="$(site_file)"
@@ -1672,7 +1658,7 @@ cmd_datos() {  # [CUT] [--importar] — S9's data-package leg: the national mast
   info "cortando los paquetes de la comuna $cut (maestros nacionales, sha256 verificado por comuna-package.sh — la primera vez descarga ~93 MB)"
   # WORK_DIR: the routed v0.2.0 amendment — without it comuna-package.sh's EXIT-trap kills
   # the cuts with the child. In the silent install the tool's own English goes to the log
-  # (step_mapa's rule); only the Spanish lines reach the console.
+  # (the silent install's rule); only the Spanish lines reach the console.
   if [ -n "${SILENT_LOG:-}" ]; then
     WORK_DIR="$stage" bash "$ROOT/scripts/comuna-package.sh" "$cut" >>"$SILENT_LOG" 2>&1 \
       || die "comuna-package falló — arriba queda el canal que quebró (un maestro que se movió se re-registra por edición, nunca se corta a ciegas); el registro: $SILENT_LOG"
@@ -1702,7 +1688,7 @@ cmd_datos() {  # [CUT] [--importar] — S9's data-package leg: the national mast
 }
 
 datos_auto() {  # (the locked Slice-6 shape; the guard is inserted as the function's first lines)
-  if [ "${APS_SKIP_DATOS:-0}" = 1 ]; then   # CI only: the masters stay off the runner (APS_SKIP_MAP's rule)
+  if [ "${APS_SKIP_DATOS:-0}" = 1 ]; then   # CI only: the masters stay off the runner
     info "datos de la comuna omitidos (APS_SKIP_DATOS): los carga «sudo aps-conecta datos --importar»"
     return 0
   fi
@@ -1848,16 +1834,12 @@ EOF
   # ── the generator: ONE string, the FRD's own shape ──
   ROOT="$tmp/repo"; mkdir -p "$ROOT"
   git -C "$ROOT" init -q && git -C "$ROOT" -c user.email=self@t -c user.name=self commit -q --allow-empty -m x && git -C "$ROOT" tag v9.9.9
-  # the map's folder now rides every string run_command prints and every guard start_suite reads:
-  # pin it for the whole run, so a host TILES_HOME cannot leak into the goldens below (dd8a1db)
-  TILES_ARCHIVE=/srv/aps-conecta/tiles/chile.pmtiles
   RC="$(run_command)"
-  check "generator: the full operator run string at the release tag" \
+  check "generator: the full operator run string at the release tag — no map folder rides it (the basemap is OpenStreetMap's, nothing is bound for it)" \
     '[ "$RC" = "docker run --init --sig-proxy=false --name nextcloud-aio-mastercontainer \\
   --restart always \\
   --publish 8080:8080 \\
   --env APACHE_PORT=443 \\
-  --env APS_TILES_DIR=/srv/aps-conecta/tiles \\
   --env NEXTCLOUD_STARTUP_APPS=\"\" \\
   --volume nextcloud_aio_mastercontainer:/mnt/docker-aio-config \\
   --volume /var/run/docker.sock:/var/run/docker.sock:ro \\
@@ -1865,12 +1847,11 @@ EOF
   check "generator: the deliberate empty startup-apps posture rides the string" \
     'case "$RC" in *"--env NEXTCLOUD_STARTUP_APPS=\"\""*) ;; *) false;; esac'
   RC_IP="$(APS_HOME=/opt/aps-conecta; run_command 10.0.0.5)"
-  check "generator (R22): an address adds the suite's certificate and its CA, two lines on top of the map's folder; nothing else moves" \
+  check "generator (R22): an address adds the suite's certificate and its CA, two lines; nothing else moves" \
     '[ "$RC_IP" = "docker run --init --sig-proxy=false --name nextcloud-aio-mastercontainer \\
   --restart always \\
   --publish 8080:8080 \\
   --env APACHE_PORT=443 \\
-  --env APS_TILES_DIR=/srv/aps-conecta/tiles \\
   --env APS_TLS_DIR=/opt/aps-conecta/certificados/suite \\
   --env NEXTCLOUD_TRUSTED_CACERTS_DIR=/opt/aps-conecta/certificados/ca \\
   --env NEXTCLOUD_STARTUP_APPS=\"\" \\
@@ -1887,20 +1868,22 @@ EOF
   wheres="$(for i in $(seq 1 "${#STEPS[@]}"); do printf '%s ' "$(step_field "$i" 3)"; done)"
   ids="$(for i in $(seq 1 "${#STEPS[@]}"); do printf '%s ' "$(step_field "$i" 1)"; done)"
   malformed="$(printf '%s\n' "${STEPS[@]}" | awk -F'|' 'NF != 5 || $1 == "" || $2 == "" || $4 == "" || $5 == ""')"
-  check "registry: nine steps, the five server ones first, five non-empty fields each" \
-    '[ "${#STEPS[@]}" -eq 9 ] && [ "$wheres" = "servidor servidor servidor servidor servidor navegador navegador navegador navegador " ] && [ -z "$malformed" ]'
+  check "registry: eight steps, the four server ones first, five non-empty fields each" \
+    '[ "${#STEPS[@]}" -eq 8 ] && [ "$wheres" = "servidor servidor servidor servidor navegador navegador navegador navegador " ] && [ -z "$malformed" ]'
   check "registry: the ids are the approved console's subcommands, in order" \
-    '[ "$ids" = "revisar preparar descargar mapa abrir centro suite equipos ejecutar " ]'
-  check "registry: step_number maps an id to its number and refuses an unknown one" \
-    '[ "$(step_number mapa)" = 4 ] && ! step_number nada >/dev/null'
+    '[ "$ids" = "revisar preparar descargar abrir centro suite equipos ejecutar " ]'
+  check "registry: step_number maps an id to its number and refuses an unknown one — «mapa» is no longer a step, and the step after «descargar» is «abrir»" \
+    '[ "$(step_number abrir)" = 4 ] && [ "$(step_number centro)" = 5 ] && [ "$(step_number ejecutar)" = 8 ] && ! step_number mapa >/dev/null && ! step_number nada >/dev/null'
+  check "registry: no map step, no map steps' body, no «tiles» subcommand — the tile machinery is retired (the basemap is OpenStreetMap's)" \
+    '! declare -F step_mapa >/dev/null && ! declare -F suite_tiles_""dir >/dev/null && [ -z "$(declare -p TILES_""ARCHIVE 2>/dev/null)" ] && [ ! -e "$HOST_DIR/tiles.sh" ] && [ ! -e "$HOST_DIR/aps-conecta-tiles.timer" ] && [ ! -e "$HOST_DIR/aps-conecta-tiles.service" ] && case "$(usage)" in *tiles*|*"mapa mensual"*|*"aps-conecta mapa"*) false;; *) true;; esac && case "$(cmd_pasos)" in *"Construir el mapa"*) false;; *) true;; esac'
   local tsv tsv_ok
   tsv="$(cmd_pasos)"
   tsv_ok="$(printf '%s\n' "$tsv" | awk -F'\t' 'NF == 6 && $4 == "aps-conecta " $1 { n++ } END { print n + 0 }')"
   check "pasos: one TSV row per step — id, título, dónde, its own subcommand, propósito, resultado (a11)" \
-    '[ "$tsv_ok" -eq "${#STEPS[@]}" ] && [ "$(printf "%s\n" "$tsv" | sed -n 6p | cut -f2)" = "Elegir el centro" ]'
+    '[ "$tsv_ok" -eq "${#STEPS[@]}" ] && [ "$(printf "%s\n" "$tsv" | sed -n 5p | cut -f2)" = "Elegir el centro" ]'
   welcome_out="$(welcome)"
-  check "welcome: name, version, the nine-step promise, the motto, the licence with the source, the credit" \
-    'case "$welcome_out" in *"APS Conecta Gestión   Instalador v9.9.9"*"en 9 pasos: 5 en este servidor, 4 en el navegador"*"«La salud primaria que compartimos es la que mejora»"*"AGPL-3.0-or-later · github.com/APS-Conecta/instalador"*"Desarrollado por Dani Espinoza Charrier · APS Conecta"*) ;; *) false;; esac'
+  check "welcome: name, version, the eight-step promise, the motto, the licence with the source, the credit" \
+    'case "$welcome_out" in *"APS Conecta Gestión   Instalador v9.9.9"*"en 8 pasos: 4 en este servidor, 4 en el navegador"*"«La salud primaria que compartimos es la que mejora»"*"AGPL-3.0-or-later · github.com/APS-Conecta/instalador"*"Desarrollado por Dani Espinoza Charrier · APS Conecta"*) ;; *) false;; esac'
   check "welcome: the motto is phase 15's theming slogan (one string, two homes, pinned)" \
     'grep -F "\"$MOTTO\"" "$ROOT_BAK/provisioning/phases/15-branding.sh" | grep -q "theming_set slogan"'
 
@@ -1913,14 +1896,13 @@ EOF
     step_revisar()   { ok "revisar-stub"; }
     step_preparar()  { ok "preparar-stub"; }
     step_descargar() { ok "descargar-stub"; }
-    step_mapa()      { ok "mapa-stub"; }
     step_abrir()     { ok "abrir-stub"; }
     cmd_install </dev/null 2>&1
   )"; rcs=$?
-  check "stepper: the welcome, then steps 1-5 in order with header, purpose, command, result and next" \
-    '[ "$rcs" -eq 0 ] && case "$install_out" in *"Instalador v9.9.9"*"Paso 1 de 9 · Revisar el servidor  servidor"*"Objetivo  Memoria, disco, puertos y red."*"Comando   aps-conecta revisar"*"revisar-stub"*"Resultado Servidor apto."*"Siguiente Paso 2 · Preparar el servidor (servidor)"*"Paso 5 de 9 · Abrir el instalador web  servidor"*"abrir-stub"*"Siguiente Paso 6 · Elegir el centro (navegador)"*) ;; *) false;; esac'
+  check "stepper: the welcome, then steps 1-4 in order with header, purpose, command, result and next" \
+    '[ "$rcs" -eq 0 ] && case "$install_out" in *"Instalador v9.9.9"*"Paso 1 de 8 · Revisar el servidor  servidor"*"Objetivo  Memoria, disco, puertos y red."*"Comando   aps-conecta revisar"*"revisar-stub"*"Resultado Servidor apto."*"Siguiente Paso 2 · Preparar el servidor (servidor)"*"Paso 4 de 8 · Abrir el instalador web  servidor"*"abrir-stub"*"Siguiente Paso 5 · Elegir el centro (navegador)"*) ;; *) false;; esac'
   check "stepper: the browser steps never run from the console, and no prompt without a terminal" \
-    'case "$install_out" in *"Paso 6 de 9"*|*"Enter para comenzar"*) false;; *) true;; esac'
+    'case "$install_out" in *"Paso 5 de 8"*|*"Enter para comenzar"*) false;; *) true;; esac'
   install_out="$(
     step_revisar()   { ok "revisar-stub"; }
     step_preparar()  { bad "docker falta" "instálelo"; }
@@ -1958,7 +1940,6 @@ EOF
     step_revisar()   { ok "revisar-stub"; echo "Pulling from somewhere" >&2; }
     step_preparar()  { ok "preparar-stub"; }
     step_descargar() { ok "descargar-stub"; }
-    step_mapa()      { ok "mapa-stub"; }
     silent_centro()  { ok "centro-stub"; }
     silent_suite()   { ok "suite-stub"; }
     silent_equipos() { ok "equipos-stub"; }
@@ -1967,8 +1948,8 @@ EOF
     id() { echo "${ID_U:-0}"; }   # hash-proof: bash's command hash can reroute a PATH shim to the real uid (CI = 1001) — a function cannot be rerouted
     cmd_install --sitio "$tmp/dado.sh" --planilla "$tmp/dado.csv" </dev/null 2>&1
   )"; rcs=$?
-  check "install --sitio: the same nine steps in order — the browser ones from the files, the map at its own step 4 — then the verdict" \
-    '[ "$rcs" -eq 0 ] && case "$install_out" in *"sin preguntas ni navegador"*"Paso 1 de 9"*"Paso 4 de 9"*"mapa-stub"*"Paso 5 de 9"*"Sin instalador web: modo silencioso."*"Paso 6 de 9 · Elegir el centro  servidor"*"centro-stub"*"Paso 7 de 9"*"suite-stub"*"Paso 8 de 9"*"equipos-stub"*"Paso 9 de 9"*"ejecutar-stub"*"temporizadores-stub"*"INSTALACIÓN: ✓"*"sudo cat /opt/aps-conecta/credentials.txt"*"aps-conecta revalidate (registro: $APS_HOME/instalacion.log)"*) ;; *) false;; esac && case "$install_out" in *"Enter para comenzar"*|*"  navegador"*|*"(navegador)"*|*"Comando   aps-conecta centro"*) false;; *) true;; esac'
+  check "install --sitio: the same eight steps in order — the browser ones from the files — then the verdict" \
+    '[ "$rcs" -eq 0 ] && case "$install_out" in *"sin preguntas ni navegador"*"Paso 1 de 8"*"Paso 4 de 8"*"Sin instalador web: modo silencioso."*"Paso 5 de 8 · Elegir el centro  servidor"*"centro-stub"*"Paso 6 de 8"*"suite-stub"*"Paso 7 de 8"*"equipos-stub"*"Paso 8 de 8"*"ejecutar-stub"*"temporizadores-stub"*"INSTALACIÓN: ✓"*"sudo cat /opt/aps-conecta/credentials.txt"*"aps-conecta revalidate (registro: $APS_HOME/instalacion.log)"*) ;; *) false;; esac && case "$install_out" in *"Enter para comenzar"*|*"  navegador"*|*"(navegador)"*|*"Comando   aps-conecta centro"*) false;; *) true;; esac'
   check "install --sitio: a tool's own stderr goes to the log, never the console" \
     'case "$install_out" in *"Pulling from"*) false;; *) true;; esac && grep -q "Pulling from somewhere" "$APS_HOME/instalacion.log"'
   install_out="$(
@@ -1990,10 +1971,10 @@ EOF
     '[ "$rcs" -eq 1 ] && case "$install_out" in *"Resultado ✗ el paso 2 no terminó"*"--sitio"*"(registro: $APS_HOME/instalacion.log)"*) ;; *) false;; esac'
   step_out="$( (export ID_U=1000; cmd_install </dev/null) 2>&1)"; rcs=$?
   check "stepper: install without sudo refuses before the welcome, naming the command to run" \
-    '[ "$rcs" -eq 1 ] && case "$step_out" in *"✗ la instalación necesita permisos de administrador: sudo bash aps-conecta install"*) ;; *) false;; esac && case "$step_out" in *"Paso 1 de 9"*) false;; *) true;; esac'
+    '[ "$rcs" -eq 1 ] && case "$step_out" in *"✗ la instalación necesita permisos de administrador: sudo bash aps-conecta install"*) ;; *) false;; esac && case "$step_out" in *"Paso 1 de 8"*) false;; *) true;; esac'
   step_out="$(step_browser "$(step_number centro)")"
   check "stepper: a browser step asked for at the console says where it runs" \
-    'case "$step_out" in *"el paso 6 («Elegir el centro») se hace en el navegador"*) ;; *) false;; esac'
+    'case "$step_out" in *"el paso 5 («Elegir el centro») se hace en el navegador"*) ;; *) false;; esac'
 
   # the step bodies against shimmed tools (MEMINFO is a fixture; ss/uname/df/nproc/curl/id/sysctl/
   # docker are shims planted here — never inherited from another arm)
@@ -2242,22 +2223,6 @@ SHIM
   printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/ss"; chmod +x "$tshim/ss"
   rm -f "$tshim/docker"
 
-  # step 4 IS the build now (R47): a stub tiles.sh answers for the real one — the tools' own
-  # English goes to the log, the console stays Spanish, and a failure gates the step like any other
-  mkdir -p "$tmp/hd"
-  printf '#!/usr/bin/env bash\necho "refresh-basemap: using x"\necho "Pulling from y" >&2\nexit "$(cat %s)"\n' "$tmp/tiles.rc" > "$tmp/hd/tiles.sh"
-  echo 0 > "$tmp/tiles.rc"
-  step_out="$(HOST_DIR="$tmp/hd"; SILENT_LOG="$tmp/map.log"; step_run "$(step_number mapa)" "aps-conecta mapa" 2>&1)"; rcs=$?
-  check "mapa: step 4 builds the map itself — the tools' English output in the log, the console Spanish only" \
-    '[ "$rcs" -eq 0 ] && case "$step_out" in *"Paso 4 de 9 · Construir el mapa"*"se construye el mapa de Chile"*"Resultado Mapa listo."*"Siguiente Paso 5"*) ;; *) false;; esac && case "$step_out" in *"refresh-basemap"*|*"Pulling"*) false;; *) true;; esac && grep -q "refresh-basemap: using x" "$tmp/map.log"'
-  echo 1 > "$tmp/tiles.rc"
-  step_out="$(HOST_DIR="$tmp/hd"; SILENT_LOG="$tmp/map.log"; step_run "$(step_number mapa)" "aps-conecta mapa" 2>&1)"; rcs=$?
-  check "mapa: a failed build stops the install like any step — ✗ with the log, and the step's re-run named" \
-    '[ "$rcs" -ne 0 ] && case "$step_out" in *"✗ el mapa no se construyó"*"registro: $tmp/map.log"*"Resultado ✗ el paso 4 no terminó"*"aps-conecta mapa"*) ;; *) false;; esac'
-  step_out="$(HOST_DIR="$tmp/hd"; APS_SKIP_MAP=1; SILENT_LOG="$tmp/map.log"; step_run "$(step_number mapa)" "aps-conecta mapa" 2>&1)"; rcs=$?
-  check "mapa: APS_SKIP_MAP=1 leaves the build for later (CI) — the step says so, and the install goes on" \
-    '[ "$rcs" -eq 0 ] && case "$step_out" in *"Resultado Mapa omitido: lo construye «sudo aps-conecta mapa»."*"Siguiente Paso 5"*) ;; *) false;; esac && case "$step_out" in *"se construye el mapa de Chile"*) false;; *) true;; esac'
-
   # ── the checks against planted tool worlds ──
   mk_docker 1.44 ""
   FAIL=0; out="$(check_docker)"
@@ -2428,7 +2393,6 @@ SHIM
 #!/usr/bin/env bash
 case "\$1" in
   ps) cat "$tmp/aio.ps" ;;
-  inspect) printf 'APS_TILES_DIR=%s\n' "$(suite_tiles_dir)" ;;
   exec) case "\$*" in *"occ status"*) echo '{"installed":true}' ;; *"config:list"*) echo '{"system":{}}' ;; esac ;;
 esac
 SHIM
@@ -2662,7 +2626,7 @@ SHIM
   echo 0 > "$tmp/prov.rc"
   abrir_out="$( install_timers() { ok "temporizadores-stub"; }; step_abrir 2>&1 )"; rc=$?
   check "abrir: a green installer exit wires the timers and prints «Listo» — the console closes the install" \
-    '[ "$rc" -eq 0 ] && [ -z "$(cat "$tmp/prov.argv")" ] && case "$abrir_out" in *"✓ Paso 9 de 9 · Revisar y ejecutar: verificado"*"temporizadores-stub"*"Listo"*"Instalador web cerrado; enlace inválido."*"credentials.txt"*) ;; *) false;; esac'
+    '[ "$rc" -eq 0 ] && [ -z "$(cat "$tmp/prov.argv")" ] && case "$abrir_out" in *"✓ Paso 8 de 8 · Revisar y ejecutar: verificado"*"temporizadores-stub"*"Listo"*"Instalador web cerrado; enlace inválido."*"credentials.txt"*) ;; *) false;; esac'
   echo 130 > "$tmp/prov.rc"
   abrir_out="$( install_timers() { ok "temporizadores-stub"; }; FAIL=0; step_abrir 2>&1; echo "FAIL=$FAIL" )"
   check "abrir: Ctrl+C before the end names the way back and wires nothing" \
@@ -2681,7 +2645,7 @@ SHIM
     '[ "$rc" -eq 1 ] && case "$abrir_out" in *"temporizadores-stub-rojo"*"Listo"*"Falta lo marcado con ✗ arriba"*) ;; *) false;; esac'
   abrir_out="$( step_abrir() { ok "abrir-stub"; }; cmd_provision 2>&1 )"
   check "provision: the step «abrir» itself — the same header and body" \
-    'case "$abrir_out" in *"Paso 5 de 9 · Abrir el instalador web"*"abrir-stub"*"Resultado Enlace entregado."*) ;; *) false;; esac'
+    'case "$abrir_out" in *"Paso 4 de 8 · Abrir el instalador web"*"abrir-stub"*"Resultado Enlace entregado."*) ;; *) false;; esac'
 
   # ── a10: a red weekly run notifies every admin once (replacing the last); estado shows it, no sudo ──
   cat > "$ROOT/scripts/env.sh" <<EOF
@@ -2716,7 +2680,7 @@ EOF
     '[ "$argv_c" = "--paso sitio --archivo $tmp/dado/site.sh" ] && [ "$argv_e" = "--paso usuarios --codigo 113314 --planilla $tmp/dado/usuarios.csv" ] && [ "$argv_x" = "--paso generar --codigo 113314 --resumen" ] && [ "$rc" -eq 1 ]'
   out="$(step_run "$(step_number abrir)" x 2>&1)"; rc=$?
   check "install --sitio: «abrir» opens no web installer in silent mode — its step says so, nothing runs" \
-    '[ "$rc" -eq 0 ] && case "$out" in *"Paso 5 de 9"*"Resultado Sin instalador web: modo silencioso."*) ;; *) false;; esac'
+    '[ "$rc" -eq 0 ] && case "$out" in *"Paso 4 de 8"*"Resultado Sin instalador web: modo silencioso."*) ;; *) false;; esac'
   out="$(site_domain() { :; }; FAIL=0; silent_suite 2>&1; echo "FAIL=$FAIL")"
   out2="$(site_domain() { echo c.example; }; start_suite() { bad "suite-muere" "x"; return 1; }; FAIL=0; silent_suite 2>&1; echo "FAIL=$FAIL")"
   out3="$(site_domain() { echo c.example; }; start_suite() { ok s; }; cmd_aio_wizard() { exit 1; }; FAIL=0; silent_suite >/dev/null 2>&1; echo "rc=$?")"
@@ -2737,16 +2701,13 @@ SHIM
       'grep -q "^run -d --init --sig-proxy=false --name nextcloud-aio-mastercontainer .*--env APACHE_PORT=443 .*ghcr.io/aps-conecta/all-in-one:v9.9.9\$" "$tmp/mc.argv" && case "$out" in *"✓ Suite iniciada: ghcr.io/aps-conecta/all-in-one:v9.9.9"*"FAIL=0"*) ;; *) false;; esac'
     printf '%s\n' "nextcloud-aio-mastercontainer running" > "$tmp/mc.ps"; : > "$tmp/mc.argv"; : > "$tmp/mc.env"
     out="$(APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 2>&1; echo "FAIL=$FAIL")"
-    check "install --sitio: a running suite without the map's folder is refused — «la suite ya se inició sin la carpeta del mapa», the silent /tiles/ 404 never goes unnoticed (AIO review I1)" \
-      '! grep -q "^run" "$tmp/mc.argv" && case "$out" in *"✗ la suite ya se inició sin la carpeta del mapa"*"vuelva a crear el contenedor maestro"*"aps/INSTALLER.md §9"*"FAIL=1"*) ;; *) false;; esac'
-    printf 'APS_TILES_DIR=%s\n' "$(suite_tiles_dir)" > "$tmp/mc.env"
-    out="$(APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 2>&1; echo "FAIL=$FAIL")"
     check "install --sitio: a running suite is not started again" \
       '! grep -q "^run" "$tmp/mc.argv" && case "$out" in *"✓ La suite ya está iniciada"*"FAIL=0"*) ;; *) false;; esac'
-    printf 'APS_TILES_DIR=/otra/carpeta\n' > "$tmp/mc.env"
-    out="$(APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite clinica.example 2>&1; echo "FAIL=$FAIL")"
-    check "install --sitio: a running suite bound to another map folder is refused the same — «la suite ya se inició sin la carpeta del mapa»; the folder is read once, at the wizard's first start" \
-      '! grep -q "^run" "$tmp/mc.argv" && case "$out" in *"✗ la suite ya se inició sin la carpeta del mapa"*"FAIL=1"*) ;; *) false;; esac'
+    printf 'APS_TILES_DIR=%s\n' "/srv/aps-conecta/tiles" > "$tmp/mc.env"
+    out="$(APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 2>&1; echo "FAIL=$FAIL")"
+    check "install --sitio: a suite created by an earlier release, WITH the map's folder env, is no stranger — nothing reads that line any more, and it is neither refused nor started again" \
+      '! grep -q "^run" "$tmp/mc.argv" && case "$out" in *"✓ La suite ya está iniciada"*"FAIL=0"*) ;; *) false;; esac'
+    : > "$tmp/mc.env"
     : > "$tmp/mc.ps"; : > "$tmp/mc.argv"; printf '#!/usr/bin/env bash\nprintf "2: eth0    inet 10.0.0.5/24 scope global eth0\\n"\n' > "$tshim/ip"; chmod +x "$tshim/ip"
     echo 0 > "$tmp/prov.rc"
     out="$(APS_SUITE_TAG=ci-20261003-2; FAIL=0; start_suite 10.0.0.5 2>&1; echo "FAIL=$FAIL")"
@@ -2772,10 +2733,8 @@ SHIM
     out="$(APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 10.0.0.5 2>&1; echo "FAIL=$FAIL")"
     printf 'NEXTCLOUD_TRUSTED_CACERTS_DIR=%s\n' "$APS_HOME/certificados/ca" >> "$tmp/mc.env"
     out2="$(APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 10.0.0.5 2>&1; echo "FAIL=$FAIL")"
-    printf 'APS_TILES_DIR=%s\n' "$(suite_tiles_dir)" >> "$tmp/mc.env"
-    out3="$(APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 10.0.0.5 2>&1; echo "FAIL=$FAIL")"
-    check "install by IP (R22): a started suite must carry the certificate pair AND the map's folder — one missing is refused («la suite ya se inició sin la carpeta del mapa»); all three, and it runs as it is" \
-      '! grep -q "^run" "$tmp/mc.argv" && case "$out" in *"✗ la suite ya se inició sin el certificado propio"*"FAIL=1"*) ;; *) false;; esac && case "$out2" in *"✗ la suite ya se inició sin la carpeta del mapa"*"FAIL=1"*) ;; *) false;; esac && case "$out3" in *"✓ La suite ya está iniciada"*"FAIL=0"*) ;; *) false;; esac'
+    check "install by IP (R22): a started suite must carry the certificate pair — one line missing is refused; both, and it runs as it is" \
+      '! grep -q "^run" "$tmp/mc.argv" && case "$out" in *"✗ la suite ya se inició sin el certificado propio"*"FAIL=1"*) ;; *) false;; esac && case "$out2" in *"✓ La suite ya está iniciada"*"FAIL=0"*) ;; *) false;; esac'
     mkdir -p "$APS_HOME/certificados/suite"; touch "$APS_HOME/certificados/suite/tls.crt"
     printf 'true 2000-01-01T00:00:00Z\n' > "$tmp/mc.apache"; : > "$tmp/mc.argv"
     out="$(APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 10.0.0.5 2>&1; echo "FAIL=$FAIL")"
@@ -2794,46 +2753,74 @@ SHIM
     out="$(APS_SUITE_TAG="v1;touch $tmp/pwned"; FAIL=0; start_suite 2>&1; echo "FAIL=$FAIL")"
     check "install --sitio: an unreadable version is refused before docker run — nothing it carries is evaluated" \
       '! grep -q "^run" "$tmp/mc.argv" && [ ! -e "$tmp/pwned" ] && case "$out" in *"FAIL=1"*) ;; *) false;; esac'
-    : > "$tmp/mc.argv"
-    out="$(TILES_ARCHIVE="/x;touch $tmp/pwned3"; APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 2>&1; echo "FAIL=$FAIL")"
-    check "install --sitio: a map folder the eval would misread is refused before anything runs — no certificate, no docker" \
-      '[ ! -e "$tmp/pwned3" ] && [ ! -s "$tmp/prov.argv" ] && ! grep -q "^run" "$tmp/mc.argv" && case "$out" in *"✗ la carpeta del mapa no es válida"*"FAIL=1"*) ;; *) false;; esac'
-    : > "$tmp/mc.argv"; : > "$tmp/mc.ps"
-    out="$(TILES_ARCHIVE="/srv/../x/tiles/chile.pmtiles"; APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 2>&1; echo "FAIL=$FAIL")"
-    check "start_suite: a map folder with a «..» segment is refused before anything runs (Q7) — the charset allows dots, the path must not traverse" \
-      '! grep -q "^run" "$tmp/mc.argv" && case "$out" in *"✗ la carpeta del mapa no es válida"*"sin segmentos «..»"*) ;; *) false;; esac'
     out="$(APS_HOME="/srv/../aps"; APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 10.0.0.5 2>&1; echo "FAIL=$FAIL")"
-    check "start_suite (R22): an install folder with a «..» segment is refused the same — the tls/ca guard mirrors the tiles guard" \
+    check "start_suite (R22): an install folder with a «..» segment is refused before anything runs — the charset allows dots, the path must not traverse" \
       '! grep -q "^run" "$tmp/mc.argv" && case "$out" in *"✗ la carpeta de la instalación no es válida"*"«..»"*) ;; *) false;; esac'
   fi
   cp "$tmp/docker.prev" "$tshim/docker"
 
-  # ── temporizadores (a9): the four units into a scratch systemd dir, reloaded, enabled — shim systemctl
+  # ── temporizadores (a9): the two units into a scratch systemd dir, reloaded, the weekly timer enabled — shim
+  # systemctl; and the retired PMTiles basemap's remnants (a host that ran the earlier bundle), shim docker ──
   [ ! -e "$tshim/systemctl" ] || cp "$tshim/systemctl" "$tmp/systemctl.prev"
   cat > "$tshim/systemctl" <<SHIM
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "$tmp/systemctl.argv"
 exit 0
 SHIM
-  chmod +x "$tshim/systemctl"; : > "$tmp/systemctl.argv"
+  cat > "$tshim/docker" <<SHIM
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$tmp/rt.docker"
+case "\$1" in
+  ps) cat "$tmp/rt.ps" 2>/dev/null ;;
+  rm) shift; for a in "\$@"; do [ "\$a" = -f ] || { grep -vx "\$a" "$tmp/rt.ps" > "$tmp/rt.ps.new"; mv "$tmp/rt.ps.new" "$tmp/rt.ps"; }; done ;;
+esac
+exit 0
+SHIM
+  chmod +x "$tshim/systemctl" "$tshim/docker"; : > "$tmp/systemctl.argv"; : > "$tmp/rt.docker"; printf 'aps-conecta-database\n' > "$tmp/rt.ps"
   printf '#!/usr/bin/env bash\ncase "$1" in -u) echo "${ID_U:-0}" ;; -un) echo root ;; esac\n' > "$tshim/id"; chmod +x "$tshim/id"
   mkdir -p "$tmp/bin-t"; ln -sf "$HOST_DIR/aps-conecta" "$tmp/bin-t/aps-conecta"
-  if only_shims systemctl id; then
-    out="$(BIN_DIR="$tmp/bin-t"; TILES_ARCHIVE="$tmp/chile.pmtiles"; touch "$TILES_ARCHIVE"; FAIL=0; install_timers 2>&1; echo "FAIL=$FAIL")"
-    check "temporizadores: the four units installed, systemd reloaded, both timers enabled once a map exists — in Santiago time" \
-      'for u in aps-conecta.service aps-conecta.timer aps-conecta-tiles.service aps-conecta-tiles.timer; do cmp -s "$HOST_DIR/$u" "$ETC_DIR/systemd/system/$u" || exit 1; done; grep -qx "daemon-reload" "$tmp/systemctl.argv" && grep -qx "enable --now aps-conecta.timer aps-conecta-tiles.timer" "$tmp/systemctl.argv" && case "$out" in *"✓ Temporizadores activos, en hora de Santiago"*"FAIL=0"*) ;; *) false;; esac'
-    : > "$tmp/systemctl.argv"; rm -f "$tmp/chile.pmtiles"
-    out="$(BIN_DIR="$tmp/bin-t"; TILES_ARCHIVE="$tmp/chile.pmtiles"; FAIL=0; install_timers 2>&1; echo "FAIL=$FAIL")"
-    check "temporizadores: a re-run reloads nothing; with no map yet only the weekly timer is enabled, and the map's way in is named" \
-      '! grep -q "daemon-reload" "$tmp/systemctl.argv" && grep -qx "enable --now aps-conecta.timer" "$tmp/systemctl.argv" && case "$out" in *"✓ Temporizador activo, en hora de Santiago: re-provisión semanal"*"sudo aps-conecta mapa, luego sudo aps-conecta temporizadores"*"FAIL=0"*) ;; *) false;; esac'
+  mkdir -p "$tmp/old-tiles"; echo archive > "$tmp/old-tiles/chile.pmtiles"
+  if only_shims systemctl id docker; then
+    out="$(BIN_DIR="$tmp/bin-t"; TILES_REMNANT_DIR="$tmp/old-tiles"; FAIL=0; install_timers 2>&1; echo "FAIL=$FAIL")"
+    check "temporizadores: the two units installed, systemd reloaded, the weekly timer enabled — in Santiago time; a fresh host has no tile remnant to retire, so no word of it" \
+      'for u in aps-conecta.service aps-conecta.timer; do cmp -s "$HOST_DIR/$u" "$ETC_DIR/systemd/system/$u" || exit 1; done; [ ! -e "$ETC_DIR/systemd/system/aps-conecta-tiles.timer" ] && grep -qx "daemon-reload" "$tmp/systemctl.argv" && grep -qx "enable --now aps-conecta.timer" "$tmp/systemctl.argv" && ! grep -q "aps-conecta-tiles.timer\$" <(grep -v "^disable " "$tmp/systemctl.argv") && ! grep -q "^rm" "$tmp/rt.docker" && case "$out" in *"✓ Temporizador activo, en hora de Santiago: re-provisión semanal"*"FAIL=0"*) ;; *) false;; esac && case "$out" in *rm\ -rf*|*"mapa"*) false;; *) true;; esac'
+    : > "$tmp/systemctl.argv"
+    out="$(BIN_DIR="$tmp/bin-t"; TILES_REMNANT_DIR="$tmp/old-tiles"; FAIL=0; install_timers 2>&1; echo "FAIL=$FAIL")"
+    check "temporizadores: a re-run reloads nothing and enables only the weekly timer" \
+      '! grep -q "daemon-reload" "$tmp/systemctl.argv" && grep -qx "enable --now aps-conecta.timer" "$tmp/systemctl.argv" && case "$out" in *"✓ Temporizador activo, en hora de Santiago: re-provisión semanal"*"FAIL=0"*) ;; *) false;; esac'
+    # a host that ran the earlier bundle: both tile units on disk, the old map container, the archive.
+    # retire_tile_remnants disables the timer, removes the unit files, reloads systemd ONCE, removes
+    # the container, and says ONE thing: the archive can be freed — it never frees it itself
+    printf '[Unit]\n' > "$ETC_DIR/systemd/system/aps-conecta-tiles.service"; printf '[Timer]\n' > "$ETC_DIR/systemd/system/aps-conecta-tiles.timer"
+    printf 'aps-conecta-tiles\naps-conecta-database\n' > "$tmp/rt.ps"; : > "$tmp/systemctl.argv"; : > "$tmp/rt.docker"
+    out="$(BIN_DIR="$tmp/bin-t"; TILES_REMNANT_DIR="$tmp/old-tiles"; FAIL=0; install_timers 2>&1; echo "FAIL=$FAIL")"
+    check "temporizadores: the retired map's timer is disabled, both unit files removed, systemd reloaded once, the old map container removed, and ONE line says the archive can be freed" \
+      'grep -qx "disable --now aps-conecta-tiles.timer" "$tmp/systemctl.argv" && [ ! -e "$ETC_DIR/systemd/system/aps-conecta-tiles.service" ] && [ ! -e "$ETC_DIR/systemd/system/aps-conecta-tiles.timer" ] && [ "$(grep -cx "daemon-reload" "$tmp/systemctl.argv")" = 1 ] && grep -qx "rm -f aps-conecta-tiles" "$tmp/rt.docker" && ! grep -qx "aps-conecta-tiles" "$tmp/rt.ps" && grep -qx "aps-conecta-database" "$tmp/rt.ps" && [ "$(printf "%s\n" "$out" | grep -c "^·")" = 1 ] && case "$out" in *"sudo rm -rf $tmp/old-tiles"*"FAIL=0"*) ;; *) false;; esac'
+    check "temporizadores: the archive is never deleted — the operator frees it, the installer only says how" \
+      '[ "$(cat "$tmp/old-tiles/chile.pmtiles")" = archive ]'
+    : > "$tmp/systemctl.argv"; : > "$tmp/rt.docker"
+    out="$(BIN_DIR="$tmp/bin-t"; TILES_REMNANT_DIR="$tmp/old-tiles"; FAIL=0; install_timers 2>&1; echo "FAIL=$FAIL")"
+    check "temporizadores: the retirement is idempotent — the second run is silent (no line about the map), reloads nothing, removes no container, and still leaves the archive" \
+      '! grep -q "daemon-reload" "$tmp/systemctl.argv" && ! grep -q "^rm " "$tmp/rt.docker" && [ "$(printf "%s\n" "$out" | grep -c "^·")" = 0 ] && case "$out" in *"rm -rf"*) false;; *"✓ Temporizador activo, en hora de Santiago: re-provisión semanal"*"FAIL=0"*) ;; *) false;; esac && [ "$(cat "$tmp/old-tiles/chile.pmtiles")" = archive ]'
+    # only the timer left behind (the unit files gone by hand): still disabled, still said once
+    printf '[Timer]\n' > "$ETC_DIR/systemd/system/aps-conecta-tiles.timer"; : > "$tmp/systemctl.argv"
+    out="$(BIN_DIR="$tmp/bin-t"; TILES_REMNANT_DIR="$tmp/old-tiles"; FAIL=0; install_timers 2>&1; echo "FAIL=$FAIL")"
+    check "temporizadores: a lone leftover timer unit is retired the same way — disabled, removed, one reload, one line" \
+      'grep -qx "disable --now aps-conecta-tiles.timer" "$tmp/systemctl.argv" && [ ! -e "$ETC_DIR/systemd/system/aps-conecta-tiles.timer" ] && [ "$(grep -cx "daemon-reload" "$tmp/systemctl.argv")" = 1 ] && [ "$(printf "%s\n" "$out" | grep -c "^·")" = 1 ]'
+    # nothing to say when there is no archive to free
+    printf '[Timer]\n' > "$ETC_DIR/systemd/system/aps-conecta-tiles.timer"; : > "$tmp/systemctl.argv"
+    out="$(BIN_DIR="$tmp/bin-t"; TILES_REMNANT_DIR="$tmp/no-hay-mapa"; FAIL=0; install_timers 2>&1; echo "FAIL=$FAIL")"
+    check "temporizadores: with no archive left there is nothing to free, so the retirement stays silent" \
+      '[ ! -e "$ETC_DIR/systemd/system/aps-conecta-tiles.timer" ] && [ "$(printf "%s\n" "$out" | grep -c "^·")" = 0 ]'
     : > "$tmp/systemctl.argv"; ln -sf /bin/true "$tmp/bin-t/aps-conecta"
     out="$(BIN_DIR="$tmp/bin-t"; FAIL=0; install_timers 2>&1; echo "FAIL=$FAIL")"
     out2="$(export ID_U=1000; FAIL=0; install_timers 2>&1; echo "FAIL=$FAIL")"
     check "temporizadores: a command linked to another copy, or no sudo, refuses before systemd is touched — naming the fix" \
       '[ ! -s "$tmp/systemctl.argv" ] && case "$out" in *"no apunta a esta copia"*"sudo aps-conecta descargar"*"FAIL=1"*) ;; *) false;; esac && case "$out2" in *"sudo aps-conecta temporizadores"*"FAIL=1"*) ;; *) false;; esac'
   fi
-  check "temporizadores: the map path is tiles.sh's own default" \
-    'grep -qF "TILES_HOME=\"\${TILES_HOME:-/srv/aps-conecta}\"" "$HOST_DIR/tiles.sh" && grep -qF "ARCHIVE=\"\$TILES_HOME/tiles/chile.pmtiles\"" "$HOST_DIR/tiles.sh"'
+  check "temporizadores: the retired archive's folder is named once, where the operator reads it" \
+    'grep -qF "TILES_REMNANT_DIR=\"\${TILES_REMNANT_DIR:-/srv/aps-conecta/tiles}\"" "$HOST_DIR/aps-conecta"'
+  cp "$tmp/docker.prev" "$tshim/docker"
   rm -f "$tshim/id" "$tshim/systemctl"
   [ ! -e "$tmp/systemctl.prev" ] || cp "$tmp/systemctl.prev" "$tshim/systemctl"
 
@@ -2989,7 +2976,6 @@ SHIM
       step_revisar()   { ok "revisar-stub"; }
       step_preparar()  { ok "preparar-stub"; }
       step_descargar() { ok "descargar-stub"; }
-      step_mapa()      { ok "mapa-stub"; }
       silent_centro()  { ok "centro-stub"; }
       silent_suite()   { ok "suite-stub"; }
       silent_equipos() { ok "equipos-stub"; }
@@ -3005,7 +2991,6 @@ SHIM
       step_revisar()   { ok "revisar-stub"; }
       step_preparar()  { ok "preparar-stub"; }
       step_descargar() { ok "descargar-stub"; }
-      step_mapa()      { ok "mapa-stub"; }
       silent_centro()  { ok "centro-stub"; }
       silent_suite()   { ok "suite-stub"; }
       silent_equipos() { ok "equipos-stub"; }
@@ -3021,7 +3006,6 @@ SHIM
       step_revisar()   { ok "revisar-stub"; }
       step_preparar()  { ok "preparar-stub"; }
       step_descargar() { ok "descargar-stub"; }
-      step_mapa()      { ok "mapa-stub"; }
       silent_centro()  { ok "centro-stub"; }
       silent_suite()   { ok "suite-stub"; }
       silent_equipos() { ok "equipos-stub"; }
@@ -3311,8 +3295,7 @@ FAIL=0" ] \
 
   # ── the units parse (systemd-analyze verify, offline) ──
   if command -v systemd-analyze >/dev/null 2>&1; then
-    u="$(systemd-analyze verify "$HOST_DIR/aps-conecta.service" "$HOST_DIR/aps-conecta.timer" \
-      "$HOST_DIR/aps-conecta-tiles.service" "$HOST_DIR/aps-conecta-tiles.timer" 2>&1 || true)"
+    u="$(systemd-analyze verify "$HOST_DIR/aps-conecta.service" "$HOST_DIR/aps-conecta.timer" 2>&1 || true)"
     # the executable-path complaint is this box's expected state (no symlink on a dev
     # box — INSTALLER.md owns the wiring); any OTHER output is a unit defect
     leftovers="$(printf '%s' "$u" | grep -v 'aps-conecta' || true)"
@@ -3342,7 +3325,6 @@ case "${1:-}" in
   revalidate)   cmd_revalidate ;;
   red)          shift; cmd_red "$@" ;;
   respaldo)     cmd_respaldo ;;
-  tiles)        shift; exec bash "$HOST_DIR/tiles.sh" "$@" ;;
   datos)        shift; cmd_datos "$@" ;;
   --self-test)  selftest ;;
   ""|-h|--help) usage ;;
