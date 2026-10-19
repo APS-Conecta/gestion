@@ -768,6 +768,35 @@ CASES
 }
 check cleanboot_suite_tag_cases
 
+# The testbed brands the probe with the suite's theme, which lives in gestion — cleanboot.yml checks it
+# out at ./gestion — and, in an older layout, at themes/ in this tree. theme_source picks the first
+# that has a core/ directory (gestion's first) and fails when neither does; the function is extracted
+# from the script (which runs its command on load) and run over fixture trees.
+testbed_theme_source_cases() {
+  local fn tmp got
+  fn="$(awk '/^theme_source\(\) \{/ {f=1} f {print} f && /^}/ {exit}' scripts/aio-testbed.sh)"
+  [ -n "$fn" ] || { echo "testbed: theme_source() was not found in scripts/aio-testbed.sh" >&2; return 1; }
+  tmp="$(mktemp -d)"
+  while IFS='|' read -r dirs want; do
+    rm -rf "${tmp:?}/root"; mkdir -p "$tmp/root"
+    for d in ${dirs//,/ }; do mkdir -p "$tmp/root/$d"; done
+    got="$( eval "$fn"; theme_source "$tmp/root" )" || got=""
+    [ "$got" = "${want:+$tmp/root/}$want" ] \
+      || { echo "testbed: tree [$dirs] expected '${want:-none}', got '$got'" >&2; rm -rf "$tmp"; return 1; }
+  done <<'CASES'
+gestion/themes/apsconecta/core|gestion/themes/apsconecta
+themes/apsconecta/core|themes/apsconecta
+gestion/themes/apsconecta/core,themes/apsconecta/core|gestion/themes/apsconecta
+gestion/themes/apsconecta,themes/apsconecta/core|themes/apsconecta
+gestion/themes/apsconecta|
+x|
+CASES
+  rm -rf "$tmp"
+  grep -q 'no gestion/themes/apsconecta/core nor themes/apsconecta/core' scripts/aio-testbed.sh \
+    || { echo "testbed: the FATAL message must name both locations" >&2; return 1; }
+}
+check testbed_theme_source_cases
+
 # --- the dump + uninstall detectors red-test themselves (docker daemon, no stack) -------------
 if docker info >/dev/null 2>&1; then
   check bash scripts/db-dump.sh --self-test

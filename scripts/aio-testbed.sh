@@ -77,6 +77,15 @@ check_ram() {
   [ "$la" -lt "$cores" ] || say "NOTE: load ${la} ≥ ${cores} cores — bring-up will be slow, not unsafe"
 }
 
+theme_source() {  # REPO_ROOT — prints the theme directory to seed: the suite-definition checkout beside
+  # (cleanboot.yml checks gestion out at ./gestion) first, this tree's own themes/ as the older layout
+  local d
+  for d in "$1/gestion/themes/apsconecta" "$1/themes/apsconecta"; do
+    [ -d "$d/core" ] && { printf '%s' "$d"; return 0; }
+  done
+  return 1
+}
+
 cmd_gate() {
   # gate.sh posture applied to the probe: non-zero exit = STOP. Scoped by name — only
   # the suite's containers are ours to judge, so a production host's own 80/443 listeners
@@ -168,7 +177,7 @@ cmd_up() {
   say "probe state: app store off (the suite bakes this as ENV via patch 020)"
   docker exec --user www-data "$NC" php /var/www/html/occ config:system:set appstoreenabled --value 0 --type integer >/dev/null 2>&1 \
     || die "occ config:system:set appstoreenabled failed"
-  local got
+  local got theme
   got="$(docker exec --user www-data "$NC" php /var/www/html/occ config:system:get appstoreenabled 2>/dev/null)"
   [ "$got" = "0" ] || die "appstoreenabled reads '$got' after setting 0 — the probe baseline cannot be trusted"
 
@@ -192,11 +201,11 @@ cmd_up() {
   # deliberately seam-free. The source path resolves through $0 so the harness stays
   # cwd-independent; re-`up` after a theme edit re-copies fresh (up requires the clean slate
   # `down` gives).
-  [ -d "$repo_root/themes/apsconecta/core" ] \
-    || die "no themes/apsconecta/core in this checkout — the probe brands with the repo's theme"
-  docker cp "$repo_root/themes/apsconecta" "$NC":/var/www/html/themes/ >/dev/null \
-    || die "could not copy themes/apsconecta into $NC — phase 15 and smoke's checks 7/11 need it in-container"
-  say "theme seeded: themes/apsconecta -> $NC (over the image's bake: the checkout's theme is under test)"
+  theme="$(theme_source "$repo_root")" \
+    || die "no gestion/themes/apsconecta/core nor themes/apsconecta/core under $repo_root — the probe brands with the suite's theme"
+  docker cp "$theme" "$NC":/var/www/html/themes/ >/dev/null \
+    || die "could not copy $theme into $NC — phase 15 and smoke's checks 7/11 need it in-container"
+  say "theme seeded: ${theme#"$repo_root"/} -> $NC (over the image's bake: the checkout's theme is under test)"
 
   cmd_gate || die "GATE FAILED — the probe claimed a port it must not claim; inspect with '$0 status'"
 
