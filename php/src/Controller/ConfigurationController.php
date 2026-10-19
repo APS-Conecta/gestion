@@ -80,6 +80,10 @@ readonly class ConfigurationController {
                 if (isset($request->getParsedBody()['office_suite_choice'])) {
                     $inputValue = strval($request->getParsedBody()['office_suite_choice'] ?? '');
                     $officeSuite = OfficeSuite::tryFrom($inputValue) ?? OfficeSuite::None;
+                    // APS (D12 b): the suite's office is Euro-Office; switching or disabling it is refused.
+                    if ($officeSuite !== OfficeSuite::Eurooffice) {
+                        throw new InvalidSettingConfigurationException('La oficina de la suite es Euro-Office: no se puede cambiar ni desactivar.');
+                    }
                     $this->configurationManager->officeSuite = $officeSuite;
                 }
                 $this->configurationManager->isClamavEnabled = isset($request->getParsedBody()['clamav']);

@@ -1,7 +1,7 @@
 {
     "aio_services_v1": [
         {
-            "container_name": "nextcloud-aio-smbserver",
+            "container_name": "aps-conecta-smbserver",
             "display_name": "SMB-server",
             "documentation": "https://github.com/nextcloud/all-in-one/tree/main/community-containers/smbserver",
             "image": "ghcr.io/szaimen/aio-smbserver",

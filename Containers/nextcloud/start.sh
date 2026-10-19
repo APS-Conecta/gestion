@@ -157,16 +157,16 @@ if ! su-exec www-data bash /entrypoint.sh; then
     exit 1
 fi
 
-while [ "$THIS_IS_AIO" = "true" ] && [ -z "$(dig nextcloud-aio-apache A +short +search)" ]; do
-    echo "Waiting for nextcloud-aio-apache to start..."
+while [ "$THIS_IS_AIO" = "true" ] && [ -z "$(dig aps-conecta-apache A +short +search)" ]; do
+    echo "Waiting for aps-conecta-apache to start..."
     sleep 5
 done
 
 set -x
 # shellcheck disable=SC2235
 if [ "$THIS_IS_AIO" = "true" ] && [ "$APACHE_PORT" = 443 ]; then
-    IPv4_ADDRESS_APACHE="$(dig nextcloud-aio-apache A +short +search | grep '^[0-9.]\+$' | sort | head -n1)"
-    IPv6_ADDRESS_APACHE="$(dig nextcloud-aio-apache AAAA +short +search | grep '^[0-9a-f:]\+$' | sort | head -n1)"
+    IPv4_ADDRESS_APACHE="$(dig aps-conecta-apache A +short +search | grep '^[0-9.]\+$' | sort | head -n1)"
+    IPv6_ADDRESS_APACHE="$(dig aps-conecta-apache AAAA +short +search | grep '^[0-9a-f:]\+$' | sort | head -n1)"
     IPv4_ADDRESS_MASTERCONTAINER="$(dig nextcloud-aio-mastercontainer A +short +search | grep '^[0-9.]\+$' | sort | head -n1)"
     IPv6_ADDRESS_MASTERCONTAINER="$(dig nextcloud-aio-mastercontainer AAAA +short +search | grep '^[0-9a-f:]\+$' | sort | head -n1)"
 

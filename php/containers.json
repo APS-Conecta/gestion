@@ -1,21 +1,21 @@
 {
   "aio_services_v1": [
     {
-      "container_name": "nextcloud-aio-apache",
+      "container_name": "aps-conecta-apache",
       "image_tag": "%AIO_CHANNEL%",
       "documentation": "https://github.com/nextcloud/all-in-one/discussions/2105",
       "depends_on": [
-        "nextcloud-aio-onlyoffice",
-        "nextcloud-aio-eurooffice",
-        "nextcloud-aio-collabora",
-        "nextcloud-aio-talk",
-        "nextcloud-aio-notify-push",
-        "nextcloud-aio-whiteboard",
-        "nextcloud-aio-harp",
-        "nextcloud-aio-nextcloud"
+        "aps-conecta-onlyoffice",
+        "aps-conecta-eurooffice",
+        "aps-conecta-collabora",
+        "aps-conecta-talk",
+        "aps-conecta-notify-push",
+        "aps-conecta-whiteboard",
+        "aps-conecta-harp",
+        "aps-conecta-nextcloud"
       ],
       "display_name": "Apache & Caddy",
-      "image": "ghcr.io/nextcloud-releases/aio-apache",
+      "image": "ghcr.io/aps-conecta/aio-apache",
       "user": "33",
       "init": true,
       "healthcheck": {
@@ -41,20 +41,20 @@
       "internal_port": "%APACHE_PORT%",
       "environment": [
         "NC_DOMAIN=%NC_DOMAIN%",
-        "NEXTCLOUD_HOST=nextcloud-aio-nextcloud",
-        "APACHE_HOST=nextcloud-aio-apache",
-        "COLLABORA_HOST=nextcloud-aio-collabora",
-        "TALK_HOST=nextcloud-aio-talk",
+        "NEXTCLOUD_HOST=aps-conecta-nextcloud",
+        "APACHE_HOST=aps-conecta-apache",
+        "COLLABORA_HOST=aps-conecta-collabora",
+        "TALK_HOST=aps-conecta-talk",
         "APACHE_PORT=%APACHE_PORT%",
         "AIO_LOG_LEVEL=%AIO_LOG_LEVEL%",
-        "ONLYOFFICE_HOST=nextcloud-aio-onlyoffice",
-        "EUROOFFICE_HOST=nextcloud-aio-eurooffice",
+        "ONLYOFFICE_HOST=aps-conecta-onlyoffice",
+        "EUROOFFICE_HOST=aps-conecta-eurooffice",
         "TZ=%TIMEZONE%",
         "APACHE_MAX_SIZE=%APACHE_MAX_SIZE%",
         "APACHE_MAX_TIME=%NEXTCLOUD_MAX_TIME%",
-        "NOTIFY_PUSH_HOST=nextcloud-aio-notify-push",
-        "WHITEBOARD_HOST=nextcloud-aio-whiteboard",
-        "HARP_HOST=nextcloud-aio-harp"
+        "NOTIFY_PUSH_HOST=aps-conecta-notify-push",
+        "WHITEBOARD_HOST=aps-conecta-whiteboard",
+        "HARP_HOST=aps-conecta-harp"
       ],
       "volumes": [
         {
@@ -66,6 +66,16 @@
           "source": "nextcloud_aio_apache",
           "destination": "/mnt/data",
           "writeable": true
+        },
+        {
+          "source": "%APS_TLS_DIR%",
+          "destination": "/aps-tls",
+          "writeable": false
+        },
+        {
+          "source": "%APS_TILES_DIR%",
+          "destination": "/aps-tiles",
+          "writeable": false
         }
       ],
       "restart": "unless-stopped",
@@ -85,10 +95,10 @@
       ]
     },
     {
-      "container_name": "nextcloud-aio-database",
+      "container_name": "aps-conecta-database",
       "image_tag": "%AIO_CHANNEL%",
       "display_name": "PostgreSQL",
-      "image": "ghcr.io/nextcloud-releases/aio-postgresql",
+      "image": "ghcr.io/aps-conecta/aio-postgresql",
       "user": "999",
       "init": true,
       "healthcheck": {
@@ -143,19 +153,19 @@
       ]
     },
     {
-      "container_name": "nextcloud-aio-nextcloud",
+      "container_name": "aps-conecta-nextcloud",
       "image_tag": "%AIO_CHANNEL%",
       "depends_on": [
-        "nextcloud-aio-database",
-        "nextcloud-aio-redis",
-        "nextcloud-aio-clamav",
-        "nextcloud-aio-fulltextsearch",
-        "nextcloud-aio-talk-recording",
-        "nextcloud-aio-imaginary",
-        "nextcloud-aio-docker-socket-proxy"
+        "aps-conecta-database",
+        "aps-conecta-redis",
+        "aps-conecta-clamav",
+        "aps-conecta-fulltextsearch",
+        "aps-conecta-talk-recording",
+        "aps-conecta-imaginary",
+        "aps-conecta-docker-socket-proxy"
       ],
-      "display_name": "Nextcloud",
-      "image": "ghcr.io/nextcloud-releases/aio-nextcloud",
+      "display_name": "Servidor de aplicaciones",
+      "image": "ghcr.io/aps-conecta/aio-nextcloud",
       "init": true,
       "healthcheck": {
         "start_period": "0s",
@@ -204,16 +214,16 @@
         }
       ],
       "environment": [
-        "NEXTCLOUD_HOST=nextcloud-aio-nextcloud",
-        "POSTGRES_HOST=nextcloud-aio-database",
+        "NEXTCLOUD_HOST=aps-conecta-nextcloud",
+        "POSTGRES_HOST=aps-conecta-database",
         "POSTGRES_PORT=5432",
         "POSTGRES_PASSWORD=%DATABASE_PASSWORD%",
         "POSTGRES_DB=nextcloud_database",
         "POSTGRES_USER=nextcloud",
-        "REDIS_HOST=nextcloud-aio-redis",
+        "REDIS_HOST=aps-conecta-redis",
         "REDIS_PORT=6379",
         "REDIS_HOST_PASSWORD=%REDIS_PASSWORD%",
-        "APACHE_HOST=nextcloud-aio-apache",
+        "APACHE_HOST=aps-conecta-apache",
         "APACHE_PORT=%APACHE_PORT%",
         "AIO_TOKEN=%AIO_TOKEN%",
         "AIO_UNBLOCK_LOGIN_PRIVATE_KEY=%AIO_UNBLOCK_LOGIN_PRIVATE_KEY%",
@@ -232,24 +242,24 @@
         "NC_AIO_VERSION=v%AIO_VERSION%",
         "NEXTCLOUD_MOUNT=%NEXTCLOUD_MOUNT%",
         "CLAMAV_ENABLED=%CLAMAV_ENABLED%",
-        "CLAMAV_HOST=nextcloud-aio-clamav",
+        "CLAMAV_HOST=aps-conecta-clamav",
         "ONLYOFFICE_ENABLED=%ONLYOFFICE_ENABLED%",
         "EUROOFFICE_ENABLED=%EUROOFFICE_ENABLED%",
         "COLLABORA_ENABLED=%COLLABORA_ENABLED%",
-        "COLLABORA_HOST=nextcloud-aio-collabora",
+        "COLLABORA_HOST=aps-conecta-collabora",
         "TALK_ENABLED=%TALK_ENABLED%",
-        "ONLYOFFICE_HOST=nextcloud-aio-onlyoffice",
-        "EUROOFFICE_HOST=nextcloud-aio-eurooffice",
+        "ONLYOFFICE_HOST=aps-conecta-onlyoffice",
+        "EUROOFFICE_HOST=aps-conecta-eurooffice",
         "UPDATE_NEXTCLOUD_APPS=%UPDATE_NEXTCLOUD_APPS%",
         "TZ=%TIMEZONE%",
         "TALK_PORT=%TALK_PORT%",
         "TURN_DOMAIN=%TURN_DOMAIN%",
         "IMAGINARY_ENABLED=%IMAGINARY_ENABLED%",
-        "IMAGINARY_HOST=nextcloud-aio-imaginary",
+        "IMAGINARY_HOST=aps-conecta-imaginary",
         "PHP_UPLOAD_LIMIT=%NEXTCLOUD_UPLOAD_LIMIT%",
         "PHP_MEMORY_LIMIT=%NEXTCLOUD_MEMORY_LIMIT%",
         "FULLTEXTSEARCH_ENABLED=%FULLTEXTSEARCH_ENABLED%",
-        "FULLTEXTSEARCH_HOST=nextcloud-aio-fulltextsearch",
+        "FULLTEXTSEARCH_HOST=aps-conecta-fulltextsearch",
         "FULLTEXTSEARCH_PROTOCOL=http",
         "FULLTEXTSEARCH_PORT=9200",
         "FULLTEXTSEARCH_USER=elastic",
@@ -262,7 +272,7 @@
         "INSTALL_LATEST_MAJOR=%INSTALL_LATEST_MAJOR%",
         "TALK_RECORDING_ENABLED=%TALK_RECORDING_ENABLED%",
         "RECORDING_SECRET=%RECORDING_SECRET%",
-        "TALK_RECORDING_HOST=nextcloud-aio-talk-recording",
+        "TALK_RECORDING_HOST=aps-conecta-talk-recording",
         "FULLTEXTSEARCH_PASSWORD=%FULLTEXTSEARCH_PASSWORD%",
         "DOCKER_SOCKET_PROXY_ENABLED=%DOCKER_SOCKET_PROXY_ENABLED%",
         "REMOVE_DISABLED_APPS=%REMOVE_DISABLED_APPS%",
@@ -289,10 +299,10 @@
       ]
     },
     {
-      "container_name": "nextcloud-aio-notify-push",
+      "container_name": "aps-conecta-notify-push",
       "image_tag": "%AIO_CHANNEL%",
       "display_name": "Client Push",
-      "image": "ghcr.io/nextcloud-releases/aio-notify-push",
+      "image": "ghcr.io/aps-conecta/aio-notify-push",
       "user": "33",
       "init": true,
       "healthcheck": {
@@ -319,7 +329,8 @@
         }
       ],
       "environment": [
-        "NEXTCLOUD_HOST=nextcloud-aio-nextcloud",
+        "NEXTCLOUD_HOST=aps-conecta-nextcloud",
+        "NEXTCLOUD_URL=http://aps-conecta-apache.nextcloud-aio:23973",
         "AIO_LOG_LEVEL=%AIO_LOG_LEVEL%",
         "TZ=%TIMEZONE%"
       ],
@@ -330,10 +341,10 @@
       ]
     },
     {
-      "container_name": "nextcloud-aio-redis",
+      "container_name": "aps-conecta-redis",
       "image_tag": "%AIO_CHANNEL%",
       "display_name": "Redis",
-      "image": "ghcr.io/nextcloud-releases/aio-redis",
+      "image": "ghcr.io/aps-conecta/aio-redis",
       "user": "999",
       "init": true,
       "healthcheck": {
@@ -373,11 +384,11 @@
       ]
     },
     {
-      "container_name": "nextcloud-aio-collabora",
+      "container_name": "aps-conecta-collabora",
       "image_tag": "%AIO_CHANNEL%",
       "documentation": "https://github.com/nextcloud/all-in-one/discussions/1358",
-      "display_name": "Nextcloud Office",
-      "image": "ghcr.io/nextcloud-releases/aio-collabora",
+      "display_name": "Collabora",
+      "image": "ghcr.io/aps-conecta/aio-collabora",
       "init": true,
       "healthcheck": {
         "start_period": "60s",
@@ -392,7 +403,7 @@
       ],
       "internal_port": "9980",
       "environment": [
-        "aliasgroup1=https://%NC_DOMAIN%:443,http://nextcloud-aio-apache.nextcloud-aio:23973",
+        "aliasgroup1=https://%NC_DOMAIN%:443,http://aps-conecta-apache.nextcloud-aio:23973",
         "extra_params=--o:ssl.enable=false --o:ssl.termination=true --o:logging.disable_server_audit=true --o:welcome.enable=false --o:fetch_update_check=0 --o:allow_update_popup=false %COLLABORA_SECCOMP_POLICY% --o:logging.level=%COLLABORA_LOG_LEVEL% --o:logging.level_startup=%COLLABORA_LOG_LEVEL% --o:remote_font_config.url=https://%NC_DOMAIN%/apps/richdocuments/settings/fonts.json --o:net.post_allow.host[0]=.+",
         "dictionaries=%COLLABORA_DICTIONARIES%",
         "AIO_LOG_LEVEL=%AIO_LOG_LEVEL%",
@@ -403,7 +414,7 @@
       "restart": "unless-stopped",
       "nextcloud_exec_commands": [
         "echo 'Activating Collabora config...'",
-        "php /var/www/html/occ richdocuments:activate-config --wopi-url='http://nextcloud-aio-apache.nextcloud-aio:23973' --callback-url='http://nextcloud-aio-apache.nextcloud-aio:23973'"
+        "php /var/www/html/occ richdocuments:activate-config --wopi-url='http://aps-conecta-apache.nextcloud-aio:23973' --callback-url='http://aps-conecta-apache.nextcloud-aio:23973'"
       ],
       "profiles": [
         "collabora"
@@ -423,11 +434,11 @@
       ]
     },
     {
-      "container_name": "nextcloud-aio-talk",
+      "container_name": "aps-conecta-talk",
       "image_tag": "%AIO_CHANNEL%",
       "documentation": "https://github.com/nextcloud/all-in-one/discussions/1358",
-      "display_name": "Nextcloud Talk",
-      "image": "ghcr.io/nextcloud-releases/aio-talk",
+      "display_name": "Talk",
+      "image": "ghcr.io/aps-conecta/aio-talk",
       "user": "1000",
       "init": true,
       "healthcheck": {
@@ -463,7 +474,7 @@
       ],
       "environment": [
         "NC_DOMAIN=%NC_DOMAIN%",
-        "TALK_HOST=nextcloud-aio-talk",
+        "TALK_HOST=aps-conecta-talk",
         "TURN_SECRET=%TURN_SECRET%",
         "SIGNALING_SECRET=%SIGNALING_SECRET%",
         "AIO_LOG_LEVEL=%AIO_LOG_LEVEL%",
@@ -493,10 +504,10 @@
       ]
     },
     {
-      "container_name": "nextcloud-aio-talk-recording",
+      "container_name": "aps-conecta-talk-recording",
       "image_tag": "%AIO_CHANNEL%",
-      "display_name": "Nextcloud Talk Recording",
-      "image": "ghcr.io/nextcloud-releases/aio-talk-recording",
+      "display_name": "Grabador de Talk",
+      "image": "ghcr.io/aps-conecta/aio-talk-recording",
       "user": "122",
       "init": true,
       "healthcheck": {
@@ -547,11 +558,11 @@
       ]
     },
     {
-      "container_name": "nextcloud-aio-borgbackup",
+      "container_name": "aps-conecta-borgbackup",
       "display_name": "Borgbackup",
       "hide_from_list": true,
       "image_tag": "%AIO_CHANNEL%",
-      "image": "ghcr.io/nextcloud-releases/aio-borgbackup",
+      "image": "ghcr.io/aps-conecta/aio-borgbackup",
       "init": true,
       "environment": [
         "BORG_REMOTE_REPO=%BORGBACKUP_REMOTE_REPO%",
@@ -563,7 +574,7 @@
         "BACKUP_RESTORE_PASSWORD=%BACKUP_RESTORE_PASSWORD%",
         "ADDITIONAL_DIRECTORIES_BACKUP=%ADDITIONAL_DIRECTORIES_BACKUP%",
         "BORGBACKUP_HOST_LOCATION=%BORGBACKUP_HOST_LOCATION%",
-        "BORG_HOST_ID=nextcloud-aio-borgbackup",
+        "BORG_HOST_ID=aps-conecta-borgbackup",
         "BORG_RETENTION_POLICY=%BORG_RETENTION_POLICY%"
       ],
       "volumes": [
@@ -618,11 +629,11 @@
       ]
     },
     {
-      "container_name": "nextcloud-aio-watchtower",
+      "container_name": "aps-conecta-watchtower",
       "display_name": "Watchtower",
       "hide_from_list": true,
       "image_tag": "%AIO_CHANNEL%",
-      "image": "ghcr.io/nextcloud-releases/aio-watchtower",
+      "image": "ghcr.io/aps-conecta/aio-watchtower",
       "init": true,
       "environment": [
         "CONTAINER_TO_UPDATE=nextcloud-aio-mastercontainer",
@@ -641,11 +652,11 @@
       ]
     },
     {
-      "container_name": "nextcloud-aio-domaincheck",
+      "container_name": "aps-conecta-domaincheck",
       "display_name": "Domaincheck",
       "hide_from_list": true,
       "image_tag": "%AIO_CHANNEL%",
-      "image": "ghcr.io/nextcloud-releases/aio-domaincheck",
+      "image": "ghcr.io/aps-conecta/aio-domaincheck",
       "init": true,
       "ports": [
         {
@@ -674,10 +685,10 @@
       ]
     },
     {
-      "container_name": "nextcloud-aio-clamav",
+      "container_name": "aps-conecta-clamav",
       "image_tag": "%AIO_CHANNEL%",
       "display_name": "ClamAV",
-      "image": "ghcr.io/nextcloud-releases/aio-clamav",
+      "image": "ghcr.io/aps-conecta/aio-clamav",
       "user": "100",
       "init": true,
       "healthcheck": {
@@ -719,10 +730,10 @@
       ]
     },
     {
-      "container_name": "nextcloud-aio-onlyoffice",
+      "container_name": "aps-conecta-onlyoffice",
       "image_tag": "%AIO_CHANNEL%",
       "display_name": "OnlyOffice (deprecated)",
-      "image": "ghcr.io/nextcloud-releases/aio-onlyoffice",
+      "image": "ghcr.io/aps-conecta/aio-onlyoffice",
       "init": true,
       "healthcheck": {
         "start_period": "60s",
@@ -763,10 +774,10 @@
       ]
     },
     {
-      "container_name": "nextcloud-aio-eurooffice",
+      "container_name": "aps-conecta-eurooffice",
       "image_tag": "%AIO_CHANNEL%",
-      "display_name": "EuroOffice",
-      "image": "ghcr.io/nextcloud-releases/aio-eurooffice",
+      "display_name": "Euro-Office",
+      "image": "ghcr.io/aps-conecta/aio-eurooffice",
       "init": true,
       "healthcheck": {
         "start_period": "60s",
@@ -812,10 +823,10 @@
       ]
     },
     {
-      "container_name": "nextcloud-aio-imaginary",
+      "container_name": "aps-conecta-imaginary",
       "image_tag": "%AIO_CHANNEL%",
       "display_name": "Imaginary",
-      "image": "ghcr.io/nextcloud-releases/aio-imaginary",
+      "image": "ghcr.io/aps-conecta/aio-imaginary",
       "user": "65534",
       "init": true,
       "healthcheck": {
@@ -854,11 +865,11 @@
       ]
     },
     {
-      "container_name": "nextcloud-aio-fulltextsearch",
+      "container_name": "aps-conecta-fulltextsearch",
       "image_tag": "%AIO_CHANNEL%",
       "documentation": "https://github.com/nextcloud/all-in-one/discussions/1709",
       "display_name": "Fulltextsearch",
-      "image": "ghcr.io/nextcloud-releases/aio-fulltextsearch",
+      "image": "ghcr.io/aps-conecta/aio-fulltextsearch",
       "init": false,
       "healthcheck": {
         "start_period": "60s",
@@ -908,10 +919,10 @@
       ]
     },
     {
-      "container_name": "nextcloud-aio-docker-socket-proxy",
+      "container_name": "aps-conecta-docker-socket-proxy",
       "image_tag": "%AIO_CHANNEL%",
       "display_name": "Docker Socket Proxy (deprecated)",
-      "image": "ghcr.io/nextcloud-releases/aio-docker-socket-proxy",
+      "image": "ghcr.io/aps-conecta/aio-docker-socket-proxy",
       "init": true,
       "internal_port": "2375",
       "environment": [
@@ -935,10 +946,10 @@
       ]
     },
     {
-      "container_name": "nextcloud-aio-harp",
+      "container_name": "aps-conecta-harp",
       "image_tag": "%AIO_CHANNEL%",
       "display_name": "HaRP",
-      "image": "ghcr.io/nextcloud-releases/aio-harp",
+      "image": "ghcr.io/aps-conecta/aio-harp",
       "init": true,
       "internal_port": "8780",
       "expose": [
@@ -987,10 +998,10 @@
       ]
     },
     {
-      "container_name": "nextcloud-aio-whiteboard",
+      "container_name": "aps-conecta-whiteboard",
       "image_tag": "%AIO_CHANNEL%",
-      "display_name": "Nextcloud Whiteboard",
-      "image": "ghcr.io/nextcloud-releases/aio-whiteboard",
+      "display_name": "Whiteboard",
+      "image": "ghcr.io/aps-conecta/aio-whiteboard",
       "user": "65534",
       "init": true,
       "healthcheck": {
@@ -1014,7 +1025,7 @@
         "NEXTCLOUD_URL=https://%NC_DOMAIN%",
         "JWT_SECRET_KEY=%WHITEBOARD_SECRET%",
         "STORAGE_STRATEGY=redis",
-        "REDIS_HOST=nextcloud-aio-redis",
+        "REDIS_HOST=aps-conecta-redis",
         "REDIS_PORT=6379",
         "REDIS_HOST_PASSWORD=%REDIS_PASSWORD%",
         "BACKUP_DIR=/tmp"

@@ -1,7 +1,7 @@
 {
     "aio_services_v1": [
         {
-            "container_name": "nextcloud-aio-vaultwarden",
+            "container_name": "aps-conecta-vaultwarden",
             "display_name": "Vaultwarden",
             "documentation": "https://github.com/nextcloud/all-in-one/tree/main/community-containers/vaultwarden",
             "image": "ghcr.io/dani-garcia/vaultwarden",

@@ -19,14 +19,6 @@ document.addEventListener("DOMContentLoaded", function(event) {
     let talk = document.getElementById("talk");
     talk.disabled = true;
 
-    // Collabora
-    const collabora = document.getElementById("office-collabora");
-    collabora.disabled = true;
-
-    // OnlyOffice
-    const onlyoffice = document.getElementById("office-onlyoffice");
-    onlyoffice.disabled = true;
-
     // EuroOffice
     const eurooffice = document.getElementById("office-eurooffice");
     if (eurooffice) {

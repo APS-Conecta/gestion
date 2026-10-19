@@ -13,6 +13,9 @@ RUN set -ex; \
     fi
 USER nobody:nobody
 
+# APS (R28): npm must not check the registry for its own update on every start
+ENV NPM_CONFIG_UPDATE_NOTIFIER=false
+
 COPY --chmod=775 start.sh /start.sh
 COPY --chmod=775 healthcheck.sh /healthcheck.sh
 

@@ -288,6 +288,24 @@ It is set to '$NEXTCLOUD_TRUSTED_CACERTS_DIR '."
         exit 1
     fi
 fi
+# APS (R22): the suite's own certificate directory, bound read-only into the apache container
+if [ -n "$APS_TLS_DIR" ]; then
+    if ! echo "$APS_TLS_DIR" | grep -q "^/" || echo "$APS_TLS_DIR" | grep -q "/$"; then
+        print_red "You've set APS_TLS_DIR but not to an allowed value.
+It should be an absolute path to a directory that starts with '/' but not end with '/'.
+It is set to '$APS_TLS_DIR'."
+        exit 1
+    fi
+fi
+# APS (R49): the suite's basemap directory, bound read-only into the apache container at /aps-tiles
+if [ -n "$APS_TILES_DIR" ]; then
+    if ! echo "$APS_TILES_DIR" | grep -q "^/" || echo "$APS_TILES_DIR" | grep -q "/$"; then
+        print_red "You've set APS_TILES_DIR but not to an allowed value.
+It should be an absolute path to a directory that starts with '/' but not end with '/'.
+It is set to '$APS_TILES_DIR'."
+        exit 1
+    fi
+fi
 if [ -n "$NEXTCLOUD_STARTUP_APPS" ]; then
     if ! echo "$NEXTCLOUD_STARTUP_APPS" | grep -q "^[a-z0-9 _-]\+$"; then
         print_red "You've set NEXTCLOUD_STARTUP_APPS but not to an allowed value.

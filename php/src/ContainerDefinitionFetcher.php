@@ -71,47 +71,47 @@ readonly class ContainerDefinitionFetcher {
 
         $containers = [];
         foreach ($data['aio_services_v1'] as $entry) {
-            if ($entry['container_name'] === 'nextcloud-aio-clamav') {
+            if ($entry['container_name'] === 'aps-conecta-clamav') {
                 if (!$this->configurationManager->isClamavEnabled) {
                     continue;
                 }
-            } elseif ($entry['container_name'] === 'nextcloud-aio-onlyoffice') {
+            } elseif ($entry['container_name'] === 'aps-conecta-onlyoffice') {
                 if ($this->configurationManager->officeSuite !== OfficeSuite::Onlyoffice) {
                     continue;
                 }
-            } elseif ($entry['container_name'] === 'nextcloud-aio-eurooffice') {
+            } elseif ($entry['container_name'] === 'aps-conecta-eurooffice') {
                 if ($this->configurationManager->officeSuite !== OfficeSuite::Eurooffice) {
                     continue;
                 }
-            } elseif ($entry['container_name'] === 'nextcloud-aio-collabora') {
+            } elseif ($entry['container_name'] === 'aps-conecta-collabora') {
                 if ($this->configurationManager->officeSuite !== OfficeSuite::Collabora) {
                     continue;
                 }
-            } elseif ($entry['container_name'] === 'nextcloud-aio-talk') {
+            } elseif ($entry['container_name'] === 'aps-conecta-talk') {
                 if (!$this->configurationManager->isTalkEnabled) {
                     continue;
                 }
-            } elseif ($entry['container_name'] === 'nextcloud-aio-talk-recording') {
+            } elseif ($entry['container_name'] === 'aps-conecta-talk-recording') {
                 if (!$this->configurationManager->isTalkRecordingEnabled) {
                     continue;
                 }
-            } elseif ($entry['container_name'] === 'nextcloud-aio-imaginary') {
+            } elseif ($entry['container_name'] === 'aps-conecta-imaginary') {
                 if (!$this->configurationManager->isImaginaryEnabled) {
                     continue;
                 }
-            } elseif ($entry['container_name'] === 'nextcloud-aio-fulltextsearch') {
+            } elseif ($entry['container_name'] === 'aps-conecta-fulltextsearch') {
                 if (!$this->configurationManager->isFulltextsearchEnabled) {
                     continue;
                 }
-            } elseif ($entry['container_name'] === 'nextcloud-aio-docker-socket-proxy') {
+            } elseif ($entry['container_name'] === 'aps-conecta-docker-socket-proxy') {
                 if (!$this->configurationManager->isDockerSocketProxyEnabled) {
                     continue;
                 }
-            } elseif ($entry['container_name'] === 'nextcloud-aio-harp') {
+            } elseif ($entry['container_name'] === 'aps-conecta-harp') {
                 if (!$this->configurationManager->isHarpEnabled) {
                     continue;
                 }
-            } elseif ($entry['container_name'] === 'nextcloud-aio-whiteboard') {
+            } elseif ($entry['container_name'] === 'aps-conecta-whiteboard') {
                 if (!$this->configurationManager->isWhiteboardEnabled) {
                     continue;
                 }
@@ -159,6 +159,16 @@ readonly class ContainerDefinitionFetcher {
                         if($value['source'] === '') {
                             continue;
                         }
+                    } elseif ($value['source'] === '%APS_TLS_DIR%') {
+                        $value['source'] = $this->configurationManager->apsTlsDir;
+                        if($value['source'] === '') {
+                            continue;
+                        }
+                    } elseif ($value['source'] === '%APS_TILES_DIR%') {
+                        $value['source'] = $this->configurationManager->apsTilesDir;
+                        if($value['source'] === '') {
+                            continue;
+                        }
                     }
                     if ($value['destination'] === '%NEXTCLOUD_MOUNT%') {
                         $value['destination'] = $this->configurationManager->nextcloudMount;
@@ -179,7 +189,7 @@ readonly class ContainerDefinitionFetcher {
             $dependsOn = [];
             if (isset($entry['depends_on'])) {
                 $valueDependsOn = $entry['depends_on'];
-                if ($entry['container_name'] === 'nextcloud-aio-apache') {
+                if ($entry['container_name'] === 'aps-conecta-apache') {
                     // Add community containers first and default ones last so that aio_variables works correctly
                     $valueDependsOnTemp = [];
                     foreach ($additionalTopLevelContainerNames as $containerName) {
@@ -188,47 +198,47 @@ readonly class ContainerDefinitionFetcher {
                     $valueDependsOn = array_merge_recursive($valueDependsOnTemp, $valueDependsOn);
                 }
                 foreach ($valueDependsOn as $value) {
-                    if ($value === 'nextcloud-aio-clamav') {
+                    if ($value === 'aps-conecta-clamav') {
                         if (!$this->configurationManager->isClamavEnabled) {
                             continue;
                         }
-                    } elseif ($value === 'nextcloud-aio-onlyoffice') {
+                    } elseif ($value === 'aps-conecta-onlyoffice') {
                         if ($this->configurationManager->officeSuite !== OfficeSuite::Onlyoffice) {
                             continue;
                         }
-                    } elseif ($value === 'nextcloud-aio-eurooffice') {
+                    } elseif ($value === 'aps-conecta-eurooffice') {
                         if ($this->configurationManager->officeSuite !== OfficeSuite::Eurooffice) {
                             continue;
                         }
-                    } elseif ($value === 'nextcloud-aio-collabora') {
+                    } elseif ($value === 'aps-conecta-collabora') {
                         if ($this->configurationManager->officeSuite !== OfficeSuite::Collabora) {
                             continue;
                         }
-                    } elseif ($value === 'nextcloud-aio-talk') {
+                    } elseif ($value === 'aps-conecta-talk') {
                         if (!$this->configurationManager->isTalkEnabled) {
                             continue;
                         }
-                    } elseif ($value === 'nextcloud-aio-talk-recording') {
+                    } elseif ($value === 'aps-conecta-talk-recording') {
                         if (!$this->configurationManager->isTalkRecordingEnabled) {
                             continue;
                         }
-                    } elseif ($value === 'nextcloud-aio-imaginary') {
+                    } elseif ($value === 'aps-conecta-imaginary') {
                         if (!$this->configurationManager->isImaginaryEnabled) {
                             continue;
                         }
-                    } elseif ($value === 'nextcloud-aio-fulltextsearch') {
+                    } elseif ($value === 'aps-conecta-fulltextsearch') {
                         if (!$this->configurationManager->isFulltextsearchEnabled) {
                             continue;
                         }
-                    } elseif ($value === 'nextcloud-aio-docker-socket-proxy') {
+                    } elseif ($value === 'aps-conecta-docker-socket-proxy') {
                         if (!$this->configurationManager->isDockerSocketProxyEnabled) {
                             continue;
                         }
-                    } elseif ($value === 'nextcloud-aio-harp') {
+                    } elseif ($value === 'aps-conecta-harp') {
                         if (!$this->configurationManager->isHarpEnabled) {
                             continue;
                         }
-                    } elseif ($value === 'nextcloud-aio-whiteboard') {
+                    } elseif ($value === 'aps-conecta-whiteboard') {
                         if (!$this->configurationManager->isWhiteboardEnabled) {
                             continue;
                         }

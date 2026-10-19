@@ -1,7 +1,7 @@
 {
     "aio_services_v1": [
         {
-            "container_name": "nextcloud-aio-container-management",
+            "container_name": "aps-conecta-container-management",
             "display_name": "Container Management",
             "documentation": "https://github.com/nextcloud/all-in-one/tree/main/community-containers/container-management",
             "image": "ghcr.io/szaimen/aio-container-management",

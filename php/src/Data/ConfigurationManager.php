@@ -55,7 +55,7 @@ class ConfigurationManager
 
     public bool $isWhiteboardEnabled {
         // Type-cast because old configs could have 1/0 for this key.
-        get => (bool) $this->get('isWhiteboardEnabled', true);
+        get => (bool) $this->get('isWhiteboardEnabled', false);
         set { $this->set('isWhiteboardEnabled', $value); }
     }
 
@@ -111,7 +111,7 @@ class ConfigurationManager
 
     public bool $isTalkEnabled {
         // Type-cast because old configs could have 1/0 for this key.
-        get => (bool) $this->get('isTalkEnabled', true);
+        get => (bool) $this->get('isTalkEnabled', false);
         set { $this->set('isTalkEnabled', $value); }
     }
 
@@ -123,7 +123,7 @@ class ConfigurationManager
 
     public bool $isImaginaryEnabled {
         // Type-cast because old configs could have 1/0 for this key.
-        get => (bool) $this->get('isImaginaryEnabled', true);
+        get => (bool) $this->get('isImaginaryEnabled', false);
         set { $this->set('isImaginaryEnabled', $value); }
     }
 
@@ -344,6 +344,20 @@ class ConfigurationManager
     public string $trustedCacertsDir {
         get => $this->getEnvironmentalVariableOrConfig('NEXTCLOUD_TRUSTED_CACERTS_DIR', 'trusted_cacerts_dir', '');
         set { $this->set('trusted_cacerts_dir', $value); }
+    }
+
+    // APS (R22): the host directory holding the suite's own certificate (tls.crt, tls.key), signed by
+    // the installer's CA for an install by IP; empty for an install by domain (ACME, as upstream)
+    public string $apsTlsDir {
+        get => $this->getEnvironmentalVariableOrConfig('APS_TLS_DIR', 'aps_tls_dir', '');
+        set { $this->set('aps_tls_dir', $value); }
+    }
+
+    // APS (R49): the host directory holding the suite's basemap (chile.pmtiles), served same-origin
+    // at /tiles/ by apache; empty: no bind, and /tiles/ answers 404
+    public string $apsTilesDir {
+        get => $this->getEnvironmentalVariableOrConfig('APS_TILES_DIR', 'aps_tiles_dir', '');
+        set { $this->set('aps_tiles_dir', $value); }
     }
 
     public string $nextcloudAdditionalApks {
@@ -641,8 +655,9 @@ class ConfigurationManager
             throw new InvalidSettingConfigurationException("Domain is not a valid domain!");
         }
 
-        // Validate that it is not an IP-address
-        if(filter_var($domain, FILTER_VALIDATE_IP)) {
+        // Validate that it is not an IP-address — APS (R22): unless domain validation is skipped,
+        // the installer's install by IP over HTTPS with its own certificate (IPv4: a colon is refused above)
+        if(filter_var($domain, FILTER_VALIDATE_IP) && !$this->shouldDomainValidationBeSkipped($skipDomainValidation)) {
             throw new InvalidSettingConfigurationException("Please enter a domain and not an IP-address!");
         }
 
@@ -1295,9 +1310,9 @@ class ConfigurationManager
             'INSTALL_LATEST_MAJOR' => ($this->installLatestMajor !== '' && $this->installLatestMajor !== 'no') ? 'yes' : '',
             'REMOVE_DISABLED_APPS' => $this->nextcloudKeepDisabledApps ? '' : 'yes',
             // Allow to get local ip-address of database container which allows to talk to it even in host mode (the container that requires this needs to be started first then)
-            'AIO_DATABASE_HOST' => NetworkHelper::resolveHostname('nextcloud-aio-database'),
+            'AIO_DATABASE_HOST' => NetworkHelper::resolveHostname('aps-conecta-database'),
             // Allow to get local ip-address of caddy container and add it to trusted proxies automatically
-            'CADDY_IP_ADDRESS' => in_array('caddy', $this->aioCommunityContainers, true) ? NetworkHelper::resolveHostname('nextcloud-aio-caddy') : '',
+            'CADDY_IP_ADDRESS' => in_array('caddy', $this->aioCommunityContainers, true) ? NetworkHelper::resolveHostname('aps-conecta-caddy') : '',
             'WHITEBOARD_ENABLED' => $this->isWhiteboardEnabled ? 'yes' : '',
             'AIO_VERSION' => $this->getAioVersion(),
             'DESEC_TOKEN' => $this->desecToken,

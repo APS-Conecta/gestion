@@ -1,7 +1,7 @@
 {
     "aio_services_v1": [
         {
-            "container_name": "nextcloud-aio-plex",
+            "container_name": "aps-conecta-plex",
             "display_name": "Plex",
             "documentation": "https://github.com/nextcloud/all-in-one/tree/main/community-containers/plex",
             "image": "plexinc/pms-docker",

@@ -18,7 +18,8 @@ ENV HOME=/var/www
 COPY --from=caddy /usr/bin/caddy /usr/bin/caddy
 COPY --from=docker /usr/local/bin/docker /usr/local/bin/docker
 
-COPY community-containers /var/www/docker-aio/community-containers
+# APS: no community containers — the directory exists (DataConst realpaths it) and stays empty
+RUN mkdir -p /var/www/docker-aio/community-containers
 COPY php /var/www/docker-aio/php
 COPY --chmod=775 Containers/mastercontainer/*.sh /
 COPY --chmod=664 Containers/mastercontainer/*.Caddyfile /

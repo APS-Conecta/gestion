@@ -16,7 +16,7 @@ use AIO\Data\OfficeSuite;
 use Slim\Psr7\NonBufferedBody;
 
 readonly class DockerController {
-    private const string TOP_CONTAINER = 'nextcloud-aio-apache';
+    private const string TOP_CONTAINER = 'aps-conecta-apache';
     private const string LATEST_MAJOR_VERSION = '35';
 
     public function __construct(
@@ -75,7 +75,7 @@ readonly class DockerController {
         if (isset($requestParams['id']) && is_string($requestParams['id'])) {
             $id = $requestParams['id'];
         }
-        if (str_starts_with($id, 'nextcloud-aio-')) {
+        if (str_starts_with($id, 'aps-conecta-') || $id === 'nextcloud-aio-mastercontainer') {
             $since = $this->getTimestampForDockerLogsApiSince($requestParams['since'] ?? '');
             $logs = $this->dockerActionManager->GetLogs($id, $since);
         } else {
@@ -110,7 +110,7 @@ readonly class DockerController {
         $id = self::TOP_CONTAINER;
         $this->PerformRecursiveContainerStop($id, $forceStopNextcloud, $addToStreamingResponseBody);
 
-        $id = 'nextcloud-aio-borgbackup';
+        $id = 'aps-conecta-borgbackup';
         $this->PerformRecursiveContainerStart($id, true, $addToStreamingResponseBody);
     }
 
@@ -141,14 +141,14 @@ readonly class DockerController {
     public function checkBackup(?\Closure $addToStreamingResponseBody = null) : void {
         $this->configurationManager->backupMode = 'check';
 
-        $id = 'nextcloud-aio-borgbackup';
+        $id = 'aps-conecta-borgbackup';
         $this->PerformRecursiveContainerStart($id, true, $addToStreamingResponseBody);
     }
 
     private function listBackup(?\Closure $addToStreamingResponseBody = null) : void {
         $this->configurationManager->backupMode = 'list';
 
-        $id = 'nextcloud-aio-borgbackup';
+        $id = 'aps-conecta-borgbackup';
         $this->PerformRecursiveContainerStart($id, true, $addToStreamingResponseBody);
     }
 
@@ -167,7 +167,7 @@ readonly class DockerController {
         $forceStopNextcloud = true;
         $this->PerformRecursiveContainerStop($id, $forceStopNextcloud, $addToStreamingResponseBody);
 
-        $id = 'nextcloud-aio-borgbackup';
+        $id = 'aps-conecta-borgbackup';
         $this->PerformRecursiveContainerStart($id, true, $addToStreamingResponseBody);
 
         // End streaming response
@@ -182,7 +182,7 @@ readonly class DockerController {
         $nonbufResp = $this->startStreamingResponse($response);
         $addToStreamingResponseBody = $this->getAddToStreamingResponseBody($nonbufResp);
 
-        $id = 'nextcloud-aio-borgbackup';
+        $id = 'aps-conecta-borgbackup';
         $this->PerformRecursiveContainerStart($id, true, $addToStreamingResponseBody);
 
         // Restore to backup check which is needed to make the UI logic work correctly
@@ -206,7 +206,7 @@ readonly class DockerController {
         $id = self::TOP_CONTAINER;
         $this->PerformRecursiveContainerStop($id, true, $addToStreamingResponseBody);
 
-        $id = 'nextcloud-aio-borgbackup';
+        $id = 'aps-conecta-borgbackup';
         $this->PerformRecursiveContainerStart($id, true, $addToStreamingResponseBody);
 
         // End streaming response
@@ -290,7 +290,7 @@ readonly class DockerController {
     }
 
     public function startWatchtower(?\Closure $addToStreamingResponseBody = null) : void {
-        $id = 'nextcloud-aio-watchtower';
+        $id = 'aps-conecta-watchtower';
 
         $this->PerformRecursiveContainerStart($id, true, $addToStreamingResponseBody);
     }
@@ -303,7 +303,7 @@ readonly class DockerController {
         // Stop Collabora first to make sure it force-saves
         // See https://github.com/nextcloud/richdocuments/issues/3799
         if ($id === self::TOP_CONTAINER && $this->configurationManager->officeSuite === OfficeSuite::Collabora) {
-            $this->PerformRecursiveContainerStop('nextcloud-aio-collabora', false, $addToStreamingResponseBody);
+            $this->PerformRecursiveContainerStop('aps-conecta-collabora', false, $addToStreamingResponseBody);
         }
 
         if ($addToStreamingResponseBody !== null) {
@@ -311,7 +311,7 @@ readonly class DockerController {
         }
 
         // Stop itself first and then all the dependencies
-        if ($id !== 'nextcloud-aio-nextcloud') {
+        if ($id !== 'aps-conecta-nextcloud') {
             $this->dockerActionManager->StopContainer($container);
         } else {
             // We want to stop the Nextcloud container after 10s and not wait for the configured stop_grace_period
@@ -386,7 +386,7 @@ readonly class DockerController {
             return;
         }
 
-        $id = 'nextcloud-aio-domaincheck';
+        $id = 'aps-conecta-domaincheck';
 
         $cacheKey = 'domaincheckWasStarted';
 
@@ -417,7 +417,7 @@ readonly class DockerController {
 
     private function StopDomaincheckContainer() : void
     {
-        $id = 'nextcloud-aio-domaincheck';
+        $id = 'aps-conecta-domaincheck';
         $this->PerformRecursiveContainerStop($id);
     }
 

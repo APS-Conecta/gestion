@@ -1,7 +1,7 @@
 {
     "aio_services_v1": [
         {
-            "container_name": "nextcloud-aio-makekv",
+            "container_name": "aps-conecta-makekv",
             "display_name": "MakeMKV",
             "documentation": "https://github.com/nextcloud/all-in-one/tree/main/community-containers/makemkv",
             "image": "jlesage/makemkv",

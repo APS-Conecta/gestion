@@ -1,7 +1,7 @@
 {
     "aio_services_v1": [
         {
-            "container_name": "nextcloud-aio-home-assistant",
+            "container_name": "aps-conecta-home-assistant",
             "display_name": "Home Assistant",
             "documentation": "https://github.com/nextcloud/all-in-one/tree/main/community-containers/home-assistant",
             "image": "ghcr.io/home-assistant/home-assistant",

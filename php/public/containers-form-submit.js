@@ -12,7 +12,7 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 
     const communityFormSubmit = document.getElementById("community-form-submit");
-    communityFormSubmit.style.display = 'none';
+    if (communityFormSubmit) communityFormSubmit.style.display = 'none';  // the page has no community section
 
     // Store initial states for all checkboxes
     const initialStateOptionsContainers = {};
@@ -65,7 +65,7 @@ document.addEventListener("DOMContentLoaded", function () {
         });
 
         // Show or hide submit button based on changes
-        communityFormSubmit.style.display = hasChanges ? 'block' : 'none';
+        if (communityFormSubmit) communityFormSubmit.style.display = hasChanges ? 'block' : 'none';
     }
 
     // Event listener to trigger visibility check on each change
@@ -91,21 +91,14 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function handleDockerSocketProxyWarning() {
         if (document.getElementById("docker-socket-proxy").checked) {
-            alert('⚠️ The docker socket proxy container is deprecated. Please use the HaRP (High-availability Reverse Proxy for Nextcloud ExApps) instead!');
+            alert('⚠️ El contenedor docker socket proxy está obsoleto. ¡Utilice HaRP (proxy inverso de alta disponibilidad para ExApps de Nextcloud) en su lugar.');
             document.getElementById("docker-socket-proxy").checked = false
-        }
-    }
-
-    function handleOnlyofficeWarning() {
-        if (document.getElementById("office-onlyoffice").checked) {
-            alert('⚠️ The ONLYOFFICE container is deprecated. Please use Nextcloud Office powered by Euro-Office instead!');
-            document.getElementById("office-onlyoffice").checked = false
         }
     }
 
     function handleHarpWarning() {
         if (document.getElementById("harp").checked) {
-            alert('⚠️ Warning! Enabling this container comes with possible Security problems since you are exposing the docker socket and all its privileges to the HaRP container. Enable this only if you are sure what you are doing!');
+            alert('⚠️ ¡Advertencia! Activar este contenedor conlleva posibles problemas de seguridad, ya que expone el socket de Docker y todos sus privilegios al contenedor HaRP. ¡Actívelo solo si está seguro de lo que hace.');
             document.getElementById("docker-socket-proxy").checked = false
         }
     }
@@ -116,15 +109,19 @@ document.addEventListener("DOMContentLoaded", function () {
     if (document.getElementById("harp")) {
         document.getElementById("harp").addEventListener('change', handleHarpWarning);
     }
-    if (document.getElementById("office-onlyoffice")) {
-        document.getElementById("office-onlyoffice").addEventListener('change', handleOnlyofficeWarning);
-    }
 
     // Initialize talk-recording visibility on page load
     handleTalkVisibility();  // Ensure talk-recording is correctly initialized
 
-    // Add event listeners for office suite radio buttons
-    officeSuiteChoiceList?.forEach((elem) => elem.addEventListener('change', checkForOptionContainerChanges));
+    // Add event listeners for office suite radio buttons. form.elements[name] is a RadioNodeList
+    // only when two or more same-named radios render; with exactly one (the running view renders
+    // only eurooffice since the vendor cards are gone) it is the input itself, which has no
+    // forEach — guard so the handlers below still attach instead of throwing.
+    if (typeof officeSuiteChoiceList?.forEach === 'function') {
+        officeSuiteChoiceList.forEach((elem) => elem.addEventListener('change', checkForOptionContainerChanges));
+    } else if (officeSuiteChoiceList) {
+        officeSuiteChoiceList.addEventListener('change', checkForOptionContainerChanges);
+    }
 
     // Initial call to check for changes
     checkForOptionContainerChanges();

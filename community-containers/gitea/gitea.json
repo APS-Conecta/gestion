@@ -1,7 +1,7 @@
 {
     "aio_services_v1": [
         {
-            "container_name": "nextcloud-aio-gitea",
+            "container_name": "aps-conecta-gitea",
             "display_name": "Gitea",
             "documentation": "https://github.com/nextcloud/all-in-one/tree/main/community-containers/gitea",
             "image": "ghcr.io/go-gitea/gitea",
@@ -9,7 +9,7 @@
             "internal_port": "3000",
             "restart": "unless-stopped",
             "depends_on": [
-                "nextcloud-aio-gitea-database"
+                "aps-conecta-gitea-database"
             ],
             "ports": [
                 {
@@ -32,7 +32,7 @@
                 "GITEA__server__SSH_PORT=2222",
                 "GITEA__server__SSH_LISTEN_PORT=2222",
                 "GITEA__database__DB_TYPE=postgres",
-                "GITEA__database__HOST=nextcloud-aio-gitea-database:5432",
+                "GITEA__database__HOST=aps-conecta-gitea-database:5432",
                 "GITEA__database__NAME=gitea",
                 "GITEA__database__USER=gitea",
                 "GITEA__database__PASSWD=%GITEA_DB_PASSWORD%",
@@ -64,7 +64,7 @@
             ]
         },
         {
-            "container_name": "nextcloud-aio-gitea-database",
+            "container_name": "aps-conecta-gitea-database",
             "display_name": "Gitea Database (PostgreSQL)",
             "documentation": "https://github.com/nextcloud/all-in-one/tree/main/community-containers/gitea",
             "image": "postgres",

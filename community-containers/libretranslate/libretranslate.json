@@ -1,7 +1,7 @@
 {
     "aio_services_v1": [
         {
-            "container_name": "nextcloud-aio-libretranslate",
+            "container_name": "aps-conecta-libretranslate",
             "display_name": "LibreTranslate (deprecated)",
             "documentation": "https://github.com/nextcloud/all-in-one/tree/main/community-containers/libretranslate",
             "image": "ghcr.io/szaimen/aio-libretranslate",
@@ -26,7 +26,7 @@
             "nextcloud_exec_commands": [
                 "php /var/www/html/occ app:install integration_libretranslate",
                 "php /var/www/html/occ app:enable integration_libretranslate",
-                "php /var/www/html/occ config:app:set integration_libretranslate host --value='http://nextcloud-aio-libretranslate'",
+                "php /var/www/html/occ config:app:set integration_libretranslate host --value='http://aps-conecta-libretranslate'",
                 "php /var/www/html/occ config:app:set integration_libretranslate port --value='5000'"
             ]
         }

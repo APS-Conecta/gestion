@@ -1,7 +1,7 @@
 {
     "aio_services_v1": [
         {
-            "container_name": "nextcloud-aio-stalwart",
+            "container_name": "aps-conecta-stalwart",
             "display_name": "Stalwart",
             "documentation": "https://github.com/nextcloud/all-in-one/tree/main/community-containers/stalwart",
             "image": "ghcr.io/winterrific/aio-stalwart",

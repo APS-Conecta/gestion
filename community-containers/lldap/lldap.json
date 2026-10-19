@@ -1,7 +1,7 @@
 {
   "aio_services_v1": [
     {
-      "container_name": "nextcloud-aio-lldap",
+      "container_name": "aps-conecta-lldap",
       "display_name": "Light LDAP implementation",
       "documentation": "https://github.com/nextcloud/all-in-one/tree/main/community-containers/lldap",
       "image": "ghcr.io/lldap/lldap",

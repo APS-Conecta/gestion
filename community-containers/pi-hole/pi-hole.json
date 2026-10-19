@@ -1,7 +1,7 @@
 {
     "aio_services_v1": [
         {
-            "container_name": "nextcloud-aio-pihole",
+            "container_name": "aps-conecta-pihole",
             "display_name": "Pi-hole",
             "documentation": "https://github.com/nextcloud/all-in-one/tree/main/community-containers/pi-hole",
             "image": "pihole/pihole",

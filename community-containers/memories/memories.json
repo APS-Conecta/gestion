@@ -1,7 +1,7 @@
 {
     "aio_services_v1": [
         {
-            "container_name": "nextcloud-aio-memories",
+            "container_name": "aps-conecta-memories",
             "display_name": "Memories Transcoder",
             "documentation": "https://github.com/nextcloud/all-in-one/tree/main/community-containers/memories",
             "image": "radialapps/go-vod",
@@ -32,7 +32,7 @@
                 "php /var/www/html/occ app:install memories",
                 "php /var/www/html/occ app:enable memories",
                 "php /var/www/html/occ config:system:set memories.vod.external --value true --type bool",
-                "php /var/www/html/occ config:system:set memories.vod.connect --value nextcloud-aio-memories:47788"
+                "php /var/www/html/occ config:system:set memories.vod.connect --value aps-conecta-memories:47788"
             ]
         }
     ]

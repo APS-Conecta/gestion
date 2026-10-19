@@ -1,7 +1,7 @@
 {
     "aio_services_v1": [
         {
-            "container_name": "nextcloud-aio-languagetool",
+            "container_name": "aps-conecta-languagetool",
             "display_name": "LanguageTool for Collabora",
             "documentation": "https://github.com/nextcloud/all-in-one/tree/main/community-containers/languagetool",
             "image": "erikvl87/languagetool",

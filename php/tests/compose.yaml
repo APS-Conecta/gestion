@@ -20,7 +20,7 @@ services:
       '
 
   app-base:
-    image: ghcr.io/nextcloud-releases/all-in-one:develop${ARM64_SUFFIX-}
+    image: ghcr.io/aps-conecta/all-in-one:develop${ARM64_SUFFIX-}
     pull_policy: always # Always pull so we don't risk to run into the "Update for mastercontainer" page.
     init: true
     restart: always
@@ -35,8 +35,6 @@ services:
       SKIP_DOMAIN_VALIDATION: ${SKIP_DOMAIN_VALIDATION-true}
       APACHE_PORT: 11000
       WATCHTOWER_DOCKER_SOCKET_PATH: ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}
-      TESTING___DESEC_API_BASE: http://desec-mock:8090/api/v1 
-      TESTING___DESEC_UPDATE_URL: http://desec-mock:8090/update
     entrypoint: bash /start.sh
 
   app-code-from-image:
@@ -59,13 +57,6 @@ services:
     profiles:
       - local-code
 
-  desec-mock:
-    image: docker.io/library/node:26@sha256:9965105b7a4e201d7f07268402bb4971670592b46c9b9058cc643961199a1ab6
-    volumes:
-      - ..:/app/php
-    working_dir: /app
-    command: node php/tests/desec-mock.mjs 8090 2>&1
-          
   npm-installer:
     image: docker.io/library/node:26@sha256:9965105b7a4e201d7f07268402bb4971670592b46c9b9058cc643961199a1ab6
     volumes:
@@ -85,15 +76,12 @@ services:
     profiles:
       - none
     depends_on:
-      desec-mock:
-        condition: service_started
       npm-installer:
         condition: service_completed_successfully
     environment:
       BASE_URL: "https://nextcloud-aio-mastercontainer:8080"
       DEBUG: "pw:api"
       CI: "true"
-      DESEC_MOCK_URL: "http://desec-mock:8090"
     command: npx playwright test "${TESTS_FILE-}"
 
   test-runner-code-from-image:

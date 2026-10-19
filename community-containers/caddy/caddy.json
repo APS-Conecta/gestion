@@ -1,7 +1,7 @@
 {
     "aio_services_v1": [
         {
-            "container_name": "nextcloud-aio-caddy",
+            "container_name": "aps-conecta-caddy",
             "display_name": "Caddy with geoblocking",
             "documentation": "https://github.com/nextcloud/all-in-one/tree/main/community-containers/caddy",
             "image": "ghcr.io/szaimen/aio-caddy",
@@ -47,10 +47,10 @@
                 "talk_port=443"
             ],
             "nextcloud_exec_commands": [
-                "mkdir '/mnt/ncdata/admin/files/nextcloud-aio-caddy'",
-                "touch '/mnt/ncdata/admin/files/nextcloud-aio-caddy/allowed-countries.txt'",
-                "echo 'Scanning nextcloud-aio-caddy folder for admin user...'",
-                "php /var/www/html/occ files:scan --path='/admin/files/nextcloud-aio-caddy'"
+                "mkdir '/mnt/ncdata/admin/files/aps-conecta-caddy'",
+                "touch '/mnt/ncdata/admin/files/aps-conecta-caddy/allowed-countries.txt'",
+                "echo 'Scanning aps-conecta-caddy folder for admin user...'",
+                "php /var/www/html/occ files:scan --path='/admin/files/aps-conecta-caddy'"
             ]
         }
     ]
