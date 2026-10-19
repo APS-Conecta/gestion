@@ -50,7 +50,13 @@ jobs:
       # with (D7).
       - name: Install the signer (the same apt package the clinic verifies with; symlinked to the short name it ships under)
         run: sudo apt-get update -qq && sudo apt-get install -y signify-openbsd && sudo ln -sf /usr/bin/signify-openbsd /usr/local/bin/signify
+      # The provisionador's browser arms (the Centro pane's tile policy) need Playwright with Chromium and
+      # gestion's vendored Leaflet, which this job does not carry. A skipped browser arm is a FAILURE of
+      # the self-test, so this job WAIVES it by name — printed in the log as SKIPPED, never counted as a
+      # pass. Whoever changes the pane runs the arms locally (a box with playwright and GESTION_TREE).
       - run: bash scripts/test.sh
+        env:
+          APS_SELFTEST_SIN_NAVEGADOR: "1"
 
   # The gates, re-homed with the hard fork (D-rev 2026-10-19, Stage 3): the replay chain that
   # ran them against .aps-replay-tree retired — post-fork main IS the shipped tree, so the
