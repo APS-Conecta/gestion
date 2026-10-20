@@ -91,7 +91,7 @@ jobs:
           ref: ${{ inputs.suite-tag || github.ref_name }}   # the tag tree — the bytes this chain ships and the builds build
       - name: Upstream validators I — codespell, docker-lint, json-validator
         run: bash scripts/validate.sh .
-      - uses: shivammathur/setup-php@7bf05c6b704e0b9bfee22f00130a31b5ea68d593 # v2 (upstream's own pin)
+      - uses: shivammathur/setup-php@7bf05c6b704e0b9bfee22300130a31b5ea68d593 # v2 (upstream's own pin)
         with:
           php-version: 8.5
           extensions: apcu
