@@ -1,15 +1,9 @@
 [codespell]
-# The wizard's operator language is es-CL (patch 060) — these are correct Spanish words that
-# codespell's English typo dictionary flags (momento→memento, comando→commando, ...). Listed
-# here so the codespell validator stays green over the translated tree AND over patches/
-# on the fork's main (where the patch bytes carry the same words). Skip this file itself:
-# it necessarily contains the flagged words as list entries.
-#
-# Binary-hunked patch files are ALSO skipped, by their basename glob (patch 070 is the
-# queue's first — fonts and the deleted webp/png art ride base85 gibberish that trips the
-# typo dictionary with noise no human should ever adjudicate; the same content is checked
-# where it lands — the replayed tree, which this same config keeps green). The glob is
-# per-file on purpose: text-only patches (060's Spanish bytes) stay checked on the main
-# surface BY DESIGN, and a future binary patch extends this list, never broadens it.
-skip = .codespellrc,070-*.patch
+# The wizard's operator language is es-CL (patch 060's bytes, committed since the hard fork) —
+# these are correct Spanish words that codespell's English typo dictionary flags
+# (momento→memento, comando→commando, ...). Listed here so the codespell validator stays
+# green over the tree: upstream's own codespell workflow on push and PR, and
+# scripts/validate.sh on the release chain's tag arm. Skip this file itself: it necessarily
+# contains the flagged words as list entries.
+skip = .codespellrc
 ignore-words-list = accesible,administrativo,argumentos,auxiliar,avance,calle,caracteres,comando,comandos,componentes,copie,direccion,doble,dout,falso,fase,fases,funcional,hace,imposible,ine,inicial,instale,momento,noe,oficial,oriente,pares,posible,previos,proxys,requiere,responde,ser,serie,termine,unparseable,utiliza,valide,varios,visibles

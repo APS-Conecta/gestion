@@ -14,26 +14,24 @@ check() { if "$@" >/dev/null 2>&1; then echo "  ok:   $*"; else echo "  FAIL: $*
 
 echo "== static checks (no running stack needed) =="
 linted=0
-for s in scripts/*.sh provisioning/*.sh provisioning/phases/*.sh host/*.sh patches/*.sh install.sh; do
+for s in scripts/*.sh provisioning/*.sh provisioning/phases/*.sh host/*.sh install.sh; do
   [ -e "$s" ] || continue
   linted=$((linted + 1)); check bash -n "$s"
 done
 # A glob that matches nothing stays literal, `[ -e ]` skips it, and the gate reports only the checks
 # it did run — so a renamed directory would silently lint nothing and still print all-ok.
 #
-# SUBSET, not equality — and NAMESPACE-SCOPED, the one change the move forced: instalador's tree
-# also carries UPSTREAM's shell (the mirror: Containers/*/start.sh and friends), and that shell is
-# parity-fenced (never fork-edited; upstream's own CI owns it), so it is deliberately out of the
-# sweep's scope — the git side is filtered to the fork-infra namespaces. Inside them the doctrine
-# is unchanged: the sweep legitimately lints files git has never heard of (a developer's scratch
-# script under scripts/, a site.sh copied in by hand while rehearsing a silent install — real
-# shell someone is about to source), so demanding the two lists MATCH would be green on every
-# machine and red only in CI. What matters is that nothing TRACKED escapes the sweep, so subtract
-# and require empty. patches/*.sh joins both sides: the queue's two .sh entries are tracked fork
-# shell that runs in the replay pipeline.
+# SUBSET, not equality — and NAMESPACE-SCOPED (unchanged by the hard fork, its rationale re-homed):
+# instalador's tree carries UPSTREAM's shell (Containers/*/start.sh and friends), and that shell is
+# upstream's own to keep — their shellcheck.yml owns it on every push and PR, so this sweep stays
+# out of it. Inside the fork's namespaces the doctrine is unchanged: the sweep legitimately lints
+# files git has never heard of (a developer's scratch script under scripts/, a site.sh copied in by
+# hand while rehearsing a silent install — real shell someone is about to source), so demanding the
+# two lists MATCH would be green on every machine and red only in CI. What matters is that nothing
+# TRACKED escapes the sweep, so subtract and require empty.
 check bash -c '
-  [ -z "$(comm -23 <(git ls-files "*.sh" | grep -E "^scripts/|^provisioning/|^host/|^patches/|^install\.sh$" | sort) \
-                   <(ls scripts/*.sh provisioning/*.sh provisioning/phases/*.sh host/*.sh patches/*.sh install.sh 2>/dev/null | sort))" ]'
+  [ -z "$(comm -23 <(git ls-files "*.sh" | grep -E "^scripts/|^provisioning/|^host/|^install\.sh$" | sort) \
+                   <(ls scripts/*.sh provisioning/*.sh provisioning/phases/*.sh host/*.sh install.sh 2>/dev/null | sort))" ]'
 # Same three assertions `ensure_vendored_app` already makes (lib.sh:211-222), moved from seed time to
 # PR time. At seed time they run on a CLINIC, during the install — the worst place to learn that a
 # tarball and its manifest stopped describing each other, because the operator is mid-install and
@@ -284,8 +282,8 @@ if not src:
 # third thing to forget, and a sweep that matches nothing passes — which is the very hole the
 # lint sweep above was rewritten to close. Python rather than grep because the subshell and the
 # `||` that tests it are not always on one line. The file set is namespace-scoped like the lint
-# sweep's: the mirror's upstream shell is parity-fenced out — we never edit those bytes, so their
-# shapes are upstream's to keep.
+# sweep's: upstream's shell stays out of it — their shellcheck.yml owns those bytes on every push
+# and PR.
 check python3 -c '
 import re, subprocess, sys
 
@@ -295,7 +293,7 @@ FROM_THE_RIGHT = re.compile(r"\(\s*" + ERREXIT + r"[^()]*\)[ \t]*(\|\||&&)")
 
 tracked = subprocess.run(["git", "ls-files", "-z", "*.sh"],
                          capture_output=True, text=True, check=True).stdout.split("\0")
-files = [f for f in tracked if re.match(r"^(scripts|provisioning|host|patches)/", f) or f == "install.sh"]
+files = [f for f in tracked if re.match(r"^(scripts|provisioning|host)/", f) or f == "install.sh"]
 bad = []
 for name in filter(None, files):
     with open(name, encoding="utf-8") as handle:
@@ -760,7 +758,7 @@ ds_pairing_detect() {
 check ds_pairing_detect
 
 # --- gate: the anchors the wizard links into these docs still resolve ---------------------
-# The queue's patches (patches/140 and patches/170, moved with instalador) link six sections of
+# The wizard (patch 140's and 170's bytes, committed since the hard fork) links six sections of
 # the runbooks by their GitHub anchors. A renamed or renumbered heading breaks those links in
 # every published suite image without a word, so the six are a contract: a heading keeps its
 # slug, or an explicit <a id=\"…\"></a> carries it. GitHub's slug: lower-case, every character but

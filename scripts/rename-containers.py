@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Patch 240's generator: the suite's containers renamed nextcloud-aio-<x> -> aps-conecta-<x> (D9).
+"""The container-name re-swap: nextcloud-aio-<x> -> aps-conecta-<x> across the suite (D9).
 
-Queue contract (patches/240-container-names.sh): cwd is the replay worktree and the patch runs after every
-other one, so it renames what the queue left. Fresh installs only: an existing instance keeps its
-nextcloud-aio-* containers and is reinstalled, never migrated.
+Born as patch 240's generator; kept past the hard fork on retag.sh's cmd_sed precedent — the
+rename is committed bytes now, and an upstream merge that re-introduces a nextcloud-aio-* name
+in the swept files re-swaps it here (run from the repo root). Fresh installs only: an existing
+instance keeps its nextcloud-aio-* containers and is reinstalled, never migrated.
 
 The names come from the data: every container_name in php/containers.json (19, the floor) and in the
 community JSONs, never from a list typed here. Kept by design, so never in the data swept: the
@@ -11,7 +12,7 @@ mastercontainer (gestion's docker run and the self-update name it), the nextclou
 project, the nextcloud_aio_* volumes, the nextcloud-aio app id, the -nextcloud-aio borg archive suffix.
 
 Its verify is the outcome: an old name left in the swept files, or a pattern rewrite that did not land
-exactly as counted, exits 1 and the replay goes red. Idempotent: a second run renames nothing and verifies.
+exactly as counted, exits 1. Idempotent: a run over the committed tree renames nothing and verifies.
 """
 
 import json

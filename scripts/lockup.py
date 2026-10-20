@@ -12,7 +12,7 @@ fontTools draws the shaped glyphs from the variable font pinned at the same axes
 wizard ships only subsets:
 
     pip install fonttools brotli uharfbuzz
-    python3 scripts/lockup.py .aps-replay-tree/php/public/img/logo.svg \\
+    python3 scripts/lockup.py php/public/img/logo.svg \\
         --fonts /opt/aps-conecta-org/gestion/themes/apsconecta/core/fonts
 """
 
