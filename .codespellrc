@@ -12,4 +12,4 @@
 # per-file on purpose: text-only patches (060's Spanish bytes) stay checked on the main
 # surface BY DESIGN, and a future binary patch extends this list, never broadens it.
 skip = .codespellrc,070-*.patch
-ignore-words-list = accesible,caracteres,comando,comandos,componentes,doble,funcional,hace,inicial,momento,oficial,posible,requiere,ser,termine,utiliza
+ignore-words-list = accesible,administrativo,argumentos,auxiliar,avance,calle,caracteres,comando,comandos,componentes,copie,direccion,doble,dout,falso,fase,fases,funcional,hace,imposible,ine,inicial,instale,momento,noe,oficial,oriente,pares,posible,previos,proxys,requiere,responde,ser,serie,termine,unparseable,utiliza,valide,varios,visibles
