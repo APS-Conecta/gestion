@@ -57,16 +57,16 @@ on:
   workflow_dispatch:
     inputs:
       suite-tag:
-        description: "Repair arm: re-runs gates + images + package at that tag (a chain that failed before the Release was created, or the vendor bump's completion — RELEASING §5)."
+        description: "Repair arm: re-runs gates + images + package at that tag (a chain that failed before the Release was created)."
         required: true
         type: string
       force-images:
-        description: "Images passthrough: re-publish over a fully-present set (a chain that died mid-publish, or the vendor bump's forced re-walk). Never a published, announced release."
+        description: "Images passthrough: re-publish over a fully-present set (a chain that died mid-publish). Never a published, announced release."
         required: false
         default: false
         type: boolean
       retag-source:
-        description: "The retag source for the images call: ours (default — our previous suite tag, the lockstep; on a tag push this is always the value) | ours:<tag> (a pinned repair) | upstream:<channel> (the vendor bump's completion arm — pair with force-images, RELEASING §5). Reaches bash only via env: inside the Images pipeline, never inline in run:."
+        description: "The retag source for the images call: ours (default — our previous suite tag, the lockstep; on a tag push this is always the value) | ours:<tag> (a pinned repair). Reaches bash only via env: inside the Images pipeline, never inline in run:."
         required: false
         default: ours
         type: string
@@ -114,7 +114,7 @@ jobs:
       suite-tag: ${{ inputs.suite-tag || github.ref_name }}
       build-ref: ${{ inputs.suite-tag || github.ref_name }}   # THE TAG (D-3.4): immutable provenance — the exact bytes the gates just proved; no mid-run ref race
       force: ${{ inputs.force-images || false }}
-      retag-source: ${{ inputs.retag-source || 'ours' }}   # ours on every tag push (inputs.* is null there — the || catches it); the repair arm's passthrough is the vendor bump's completion arm
+      retag-source: ${{ inputs.retag-source || 'ours' }}   # ours on every tag push (inputs.* is null there — the || catches it); the repair arm's pinned passthrough
     permissions:
       contents: read
       packages: write   # headroom for the Images pipeline's four pushing jobs

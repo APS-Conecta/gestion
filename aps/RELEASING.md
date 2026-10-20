@@ -72,29 +72,16 @@ names its gate.
 **The retag source (the self-referential lockstep)**. The 17 registry-side images are copied,
 not built: `retag-source: ours` — the chain's default on every tag push — copies each from
 **our previous suite tag** (the newest digest-complete set; git tags are the suite-tag list).
-The first publish after this lands has no previous set and bootstraps once through
-`aps/BASE.lock`, which records `upstream:latest`; from that tag on the chain never reads
-upstream again — nextcloud can vanish. The publish record's `retag_source` names what the walk
-actually copied from (`ours:vX.Y.Z` | `upstream:<channel>`), so a Release's lineage is auditable
-from its manifest asset alone.
+A wiped registry bootstraps once through `aps/BASE.lock`, which records `ours:v0.4.0` — our
+own last digest-complete set, never a vendor image (the vendor arm retired with the hard
+fork). The publish record's `retag_source` names what the walk actually copied from
+(`ours:vX.Y.Z`), so a Release's lineage is auditable from its manifest asset alone.
 
-**The vendor bump** — picking up a fresh upstream release is never a default. Two dispatches
-around one tag push, in order (the release commit of §3 is already cut):
-
-1. **Images** (`Actions → Images → Run workflow`): `suite-tag` = the new tag,
-   `retag-source: upstream:latest`, `build-ref: aps/main`. Publishes the 20-image set copied
-   from upstream; the matrix proves one snapshot. No git tag is needed yet — and none must
-   exist: pushing the tag before this dispatch would let the auto-triggered chain publish the
-   set from `ours` instead. (The Replay publish arm always carries `ours` — it has no
-   vendor-bump role.)
-2. Push the tag. The auto-triggered Release run reds at the images job on the immutability
-   pre-check (the set is already fully present — step 1 announced it). That red is the ritual's
-   pivot, not a failure.
-3. **Release** (`Actions → Release → Run workflow`, the repair arm): `suite-tag` = the same
-   tag, `retag-source: upstream:latest`, `force-images` = true. The chain re-runs end-to-end —
-   the forced walk re-copies the same upstream digests (idempotent), the matrix re-proves the
-   one snapshot, and the Release is cut with the manifest recording
-   `"retag_source": "upstream:latest"`.
+**The vendor bump is retired** (the hard fork, D-3.5). Picking up a fresh upstream release was
+never a default and is now not a path either: the 17 retagged siblings always copy from our own
+previous set. An upstream release arrives the way every upstream change arrives now — a
+deliberate merge into main, then an ordinary release; the 3 real builds pick it up from the
+tree, and the retags keep the lockstep.
 
 A repair that only needs the image set re-copied (a mixed or partial set, no Release involved)
 dispatches Images directly with `retag-source: ours:vX.Y.Z` and `force` — the pinned previous

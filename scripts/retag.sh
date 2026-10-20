@@ -15,21 +15,23 @@
 # copies the manifest list at the registry itself (seconds, zero runner disk, the multi-arch entries
 # carried along byte-for-byte); aio-nextcloud (the apps+theme bake, patch 030), aio-apache (the
 # installer's own certificate, patch 235) and all-in-one (the reskin, patch 070) are real builds the
-# workflow's build jobs own. At S1's landing the builds ran from
-# the mirror as-is — the patched content arrives when the replay chain (S4) passes build-ref aps/main.
+# workflow's build jobs own — from build-ref: THE TAG on every release arm, main on manual
+# dispatches (Stage 3, D-3.4).
 #
-# THE SOURCE IS OURS (Stage 2 — the self-referential lockstep). The 17 registry-side retags copy
-# from OUR previous suite tag, not from upstream :latest: `retag TAG` resolves it (the newest git
-# tag carrying a digest-complete set — git tags ARE the suite-tag list, D4 — falling back to the
-# recorded aps/BASE.lock bootstrap, else FATAL naming the remedy), `--from-tag` pins it for
-# repairs, and `--channel` remains only as the deliberate vendor bump — an explicit dispatch,
-# never a default. From the first surviving tag on, the chain no longer needs nextcloud to exist.
+# THE SOURCE IS OURS (Stage 2 — the self-referential lockstep; the copy-from-upstream arm retired
+# with the hard fork, D-rev 2026-10-19, D-3.5). The 17 registry-side retags copy from OUR previous
+# suite tag, only ever: `retag TAG` resolves it (the newest git tag carrying a digest-complete
+# set — git tags ARE the suite-tag list, D4 — falling back to the recorded aps/BASE.lock
+# bootstrap, else FATAL naming the remedy), `--from-tag` pins it for repairs. From the first
+# surviving tag on, the chain never needed nextcloud's registry — and now it cannot even read it.
 # Resolution happens ONCE per run and is echoed as RETAG_SOURCE_RESOLVED=<spec>: the workflow
 # threads that one resolution into the matrix, the manifest, and the release's package re-emit.
 #
-# THE SEAM 010 SHARES. Patch 010 (containers.json's org swap) is GENERATED, never hand-edited: the
-# same org constants below, the same prefix rule, so upstream's next container auto-includes here
-# (the sibling list is PARSED from php/containers.json, not hardcoded) and in 010's sed alike.
+# THE SEAM 010 SHARES (merge-time now). containers.json's org swap is GENERATED, never
+# hand-edited: the same org constants below, the same prefix rule, so an upstream merge that
+# re-introduces upstream refs in containers.json re-swaps them with `retag.sh sed` — upstream's
+# next container auto-includes (the sibling list is PARSED from php/containers.json, not
+# hardcoded).
 #
 # Registry-call discipline is gestion's image-digests.sh doctrine, verbatim: THE INDEX DIGEST
 # (`imagetools inspect --format {{.Manifest.Digest}}` — pinning one platform's manifest would make
@@ -37,29 +39,28 @@
 # not a gate), one retry before failing, and the registry's own stderr kept and quoted on the way
 # out (B-003: a rate limit and a deleted tag must never print the same sentence).
 #
-# This file is fork-infra on main (the mirror-parity allowlist — see images.yml's header): upstream
-# ships no scripts/ dir, so the path itself cannot collide, and S4's parity assert excludes exactly
-# these allowlisted fork-only paths while diffing everything else against upstream byte-for-byte.
+# This file is fork-infra — first-class bytes on main since the hard fork (one tree, no mirror,
+# no allowlist; see images.yml's PLACEMENT note).
 #
 # Usage:
 #   scripts/retag.sh list                         the sibling image names, one per line (parsed, in order)
 #   scripts/retag.sh sed FILE                     apply the org swap in place + verify (patch 010's generator)
-#   scripts/retag.sh retag TAG [--from-tag T | --channel CH] [--force]
-#                                    the 17-image registry-side walk — source OURS by default
-#   scripts/retag.sh matrix TAG [--from-tag T | --channel CH]
+#   scripts/retag.sh retag TAG [--from-tag T] [--force]
+#                                    the 17-image registry-side walk — source OURS, always
+#   scripts/retag.sh matrix TAG [--from-tag T]
 #                                    the gate: all present + the copy keyed to the RESOLVED source
 #   scripts/retag.sh manifest TAG                 the publish record, JSON on stdout (retag_source)
 #   scripts/retag.sh --self-test                  the hermetic self-test (a stub registry — no network)
 #
 # Env: RETAG_CONTAINERS (default this repo's php/containers.json), RETAG_SOURCE (the source knob:
-# ours | ours:<tag> | upstream:<channel> — the workflow's input; the matrix and manifest jobs
+# ours | ours:<tag> — the workflow's input; the matrix and manifest jobs
 # receive the RETAG job's ONE resolution through it, D-5), RETAG_BUILT_REF + RETAG_BUILT_SHA (the
 # manifest's provenance, set by the workflow), RETAG_REMOTE (discovery's ls-remote target, default
 # origin), RETAG_RESOLVE_DEPTH (how many newest tags to probe, default 3), RETAG_BASE_LOCK
 # (default aps/BASE.lock — the self-test lever).
 set -uo pipefail
 
-ORG_UPSTREAM="nextcloud-releases"  # the upstream namespace the retag copies FROM
+ORG_UPSTREAM="nextcloud-releases"  # the upstream namespace — cmd_sed's swap source only (never a copy source post-fork)
 ORG_FORK="aps-conecta"            # ours — 010's sed and this whole walk swap to exactly this
 GHCR="ghcr.io"
 BUILD_IMAGES=(aio-nextcloud aio-apache)  # the siblings that are BUILT, not retagged (patches 030 and 235)
@@ -76,14 +77,13 @@ usage() {
 usage: scripts/retag.sh <command> [args]
   list                                  the sibling image names parsed from php/containers.json
   sed FILE                              apply the org swap in place + verify (patch 010's generator)
-  retag TAG [--from-tag T | --channel CH] [--force]
-                                        the registry-side walk — source OURS by default (the
-                                        previous suite tag, resolved); --from-tag pins it;
-                                        --channel is the explicit vendor-bump arm only
-  matrix TAG [--from-tag T | --channel CH]
+  retag TAG [--from-tag T] [--force]
+                                        the registry-side walk — source OURS, always (the
+                                        previous suite tag, resolved); --from-tag pins it
+  matrix TAG [--from-tag T]
                                         the gate — all images present + the copy keyed to the
-                                        resolved source (ours: the immutable previous set, an
-                                        integrity proof; upstream: one snapshot, unchanged)
+                                        resolved source (the immutable previous set, an
+                                        integrity proof)
   manifest TAG                          the publish record, JSON on stdout (retag_source names
                                         the resolved spec)
   --self-test                            the hermetic self-test (a stub registry — no network)
@@ -142,22 +142,12 @@ tag_valid() { # TAG — a channel-valid Docker tag. ':' and '@' are excluded BY 
   return 0
 }
 
-channel_valid() { # CH — a Docker tag naming an UPSTREAM channel. Same charset as a suite tag,
-  #                 but 'latest*' is LEGAL here: upstream's moving channels are exactly what the
-  #                 vendor-bump arm exists to follow (our own moving names stay refused — D12).
-  local c="$1"
-
-  [[ "$c" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] || return 1
-  return 0
-}
-
-spec_valid() { # SPEC — the canonical resolved source: 'ours:<tag>' (a previous set of ours) or
-  #               'upstream:<channel>'. Bare 'ours' is the resolution INPUT, never the record —
-  #               everything downstream (walk, matrix, manifest) carries the resolved form.
+spec_valid() { # SPEC — the canonical resolved source: 'ours:<tag>' (a previous set of ours).
+  #               Bare 'ours' is the resolution INPUT, never the record — everything downstream
+  #               (walk, matrix, manifest) carries the resolved form.
   local s="$1"
   case "$s" in
     ours:*)     tag_valid "${s#ours:}" || return 1 ;;
-    upstream:*) channel_valid "${s#upstream:}" || return 1 ;;
     *)          return 1 ;;
   esac
   return 0
@@ -200,7 +190,7 @@ base_lock_spec() { # aps/BASE.lock — grep-parsed, never sourced (untrusted-fil
     || die "$BASE_LOCK carries ${n} spec lines — exactly one; a stale first line would win silently"
   spec="$(grep -vE '^[[:space:]]*(#|$)' "$f")"
   spec_valid "$spec" \
-    || die "$BASE_LOCK names '$spec' — not a valid source spec (ours:<tag> | upstream:<channel>)"
+    || die "$BASE_LOCK names '$spec' — not a valid source spec (ours:<tag>)"
   BASE_LOCK_SPEC="$spec"
   return 0
 }
@@ -226,7 +216,7 @@ resolve_ours() { # TAG — print the canonical spec for bare 'ours' on STDOUT (n
   #                 suite-tag list (D4), so ls-remote is the catalogue — no registry API, no
   #                 token; the digest probe proves the set survived. A failed fetch is NOT an
   #                 empty catalogue — it dies, because a network blip must never become a silent
-  #                 vendor bump. Newest-first, depth-capped (B-015); aps/BASE.lock is the
+  #                 source change. Newest-first, depth-capped (B-015); aps/BASE.lock is the
   #                 recorded fallback (the bootstrap); neither is a FATAL naming the remedy.
   local tag="$1" url tags cand
   local -a cands=()
@@ -249,20 +239,17 @@ resolve_ours() { # TAG — print the canonical spec for bare 'ours' on STDOUT (n
     printf '%s\n' "$BASE_LOCK_SPEC"
     return 0
   fi
-  die "cannot resolve a previous suite tag: no complete set among the newest tags, and $BASE_LOCK does not name one — for a first publish record the base in $BASE_LOCK (it ships upstream:latest), or dispatch explicitly with upstream:<channel>"
+  die "cannot resolve a previous suite tag: no complete set among the newest tags, and $BASE_LOCK does not name one — for a wiped registry record the base in $BASE_LOCK (it ships ours:v0.4.0)"
 }
 
-resolve_spec() { # TAG FROM_TAG CHANNEL — the ONE source parser, two entry points (CLI flags,
+resolve_spec() { # TAG FROM_TAG — the ONE source parser, two entry points (the CLI flag,
   #                 RETAG_SOURCE env — the workflow's knob). Sets RESOLVED_SPEC and returns 0
   #                 (the siblings_load idiom: side effect + status — a die inside a captured
   #                 stdout is neutered under set -uo pipefail, so this is NEVER captured).
-  #                 Mutual exclusion, conflict-with-env, charset and self-source guards all die
-  #                 BEFORE any registry call.
-  local tag="$1" from_tag="$2" channel="$3" spec
-  if [ -n "$from_tag" ] && [ -n "$channel" ]; then
-    die "--from-tag and --channel are mutually exclusive — ours-previous or vendor bump, never both"
-  fi
-  if { [ -n "$from_tag" ] || [ -n "$channel" ]; } && [ -n "${RETAG_SOURCE:-}" ]; then
+  #                 Conflict-with-env, charset and self-source guards all die BEFORE any
+  #                 registry call.
+  local tag="$1" from_tag="$2" spec
+  if [ -n "$from_tag" ] && [ -n "${RETAG_SOURCE:-}" ]; then
     die "CLI source flags and RETAG_SOURCE are both set — one source, one knob"
   fi
   if [ -n "$from_tag" ]; then
@@ -270,9 +257,6 @@ resolve_spec() { # TAG FROM_TAG CHANNEL — the ONE source parser, two entry poi
       || die "from-tag '$from_tag' is not a channel-valid tag — the D12 rules apply to a source tag of ours too ('latest*' refused; ':' and '@' excluded by construction)"
     [ "$from_tag" != "$tag" ] || die "from-tag '$from_tag' is the tag being published — a set cannot be its own source"
     RESOLVED_SPEC="ours:$from_tag"
-  elif [ -n "$channel" ]; then
-    channel_valid "$channel" || die "channel '$channel' is not a channel-valid tag (charset [A-Za-z0-9._-])"
-    RESOLVED_SPEC="upstream:$channel"
   else
     case "${RETAG_SOURCE:-}" in
       ""|ours)
@@ -281,7 +265,7 @@ resolve_spec() { # TAG FROM_TAG CHANNEL — the ONE source parser, two entry poi
         ;;
       *)
         spec_valid "$RETAG_SOURCE" \
-          || die "RETAG_SOURCE '$RETAG_SOURCE' is not a valid source spec (ours | ours:<tag> | upstream:<channel>)"
+          || die "RETAG_SOURCE '$RETAG_SOURCE' is not a valid source spec (ours | ours:<tag>)"
         case "$RETAG_SOURCE" in
           ours:*) [ "${RETAG_SOURCE#ours:}" != "$tag" ] \
                     || die "RETAG_SOURCE '$RETAG_SOURCE' names the tag being published — a set cannot be its own source" ;;
@@ -316,16 +300,14 @@ cmd_sed() { # FILE — apply the org swap in place and verify. THE GENERATOR pat
   say "sed applied and verified: ${n} image refs now $GHCR/$ORG_FORK/; upstream refs: 0; %AIO_CHANNEL% untouched"
 }
 
-cmd_retag() { # TAG [--from-tag T | --channel CH] [--force] — the lockstep walk. The source is
-  #              OURS by default (Stage 2): bare resolution finds the previous suite tag,
-  #              --from-tag pins it, --channel follows upstream deliberately (the vendor bump).
+cmd_retag() { # TAG [--from-tag T] [--force] — the lockstep walk. The source is OURS, always
+  #              (Stage 2): bare resolution finds the previous suite tag, --from-tag pins it.
   [ $# -ge 1 ] || { usage; die "retag needs TAG"; }
   local tag="$1"; shift
-  local from_tag="" channel="" force=0
+  local from_tag="" force=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --from-tag) [ $# -ge 2 ] || die "--from-tag needs a value"; from_tag="$2"; shift 2 ;;
-      --channel)  [ $# -ge 2 ] || die "--channel needs a value"; channel="$2"; shift 2 ;;
       --force)    force=1; shift ;;
       *)          die "unknown argument to retag: $1" ;;
     esac
@@ -333,11 +315,11 @@ cmd_retag() { # TAG [--from-tag T | --channel CH] [--force] — the lockstep wal
   tag_valid "$tag" \
     || die "suite tag '$tag' is not a channel-valid tag — charset [A-Za-z0-9._-] (':' and '@' excluded BY construction: the wizard resolves the channel by exploding the running image on ':', and a digest-style ref parses as a bogus channel); 'latest*' names are reserved because the suite tag IS the gestion release tag (D12)"
   siblings_load
-  resolve_spec "$tag" "$from_tag" "$channel" || exit 1   # side effect: RESOLVED_SPEC (a die prints its own FATAL)
+  resolve_spec "$tag" "$from_tag" || exit 1   # side effect: RESOLVED_SPEC (a die prints its own FATAL)
   local spec="$RESOLVED_SPEC"
   say "resolved retag source: $spec"
   echo "RETAG_SOURCE_RESOLVED=$spec"   # machine-readable — the workflow threads this one resolution (D-5)
-  local src_ours="${spec#ours:}" src_upstream="${spec#upstream:}"
+  local src_ours="${spec#ours:}"
   local total=$(( ${#SIBS[@]} + 1 ))
   # Immutability pre-check, the published-tag rule made mechanical: a FULLY present set means a prior
   # run announced this tag, and a published tag's digests never move. A PARTIAL set is a failed or
@@ -358,49 +340,36 @@ cmd_retag() { # TAG [--from-tag T | --channel CH] [--force] — the lockstep wal
       say "  skip $img — built by the workflow's build jobs, never retagged"
       continue
     fi
-    case "$spec" in
-      ours:*)     retag_one "$GHCR/$ORG_FORK/$img:$tag" "$GHCR/$ORG_FORK/$img:$src_ours" \
-                    || die "retag failed: $GHCR/$ORG_FORK/$img:$src_ours -> $GHCR/$ORG_FORK/$img:$tag" ;;
-      upstream:*) retag_one "$GHCR/$ORG_FORK/$img:$tag" "$GHCR/$ORG_UPSTREAM/$img:$src_upstream" \
-                    || die "retag failed: $GHCR/$ORG_UPSTREAM/$img:$src_upstream -> $GHCR/$ORG_FORK/$img:$tag" ;;
-    esac
+    retag_one "$GHCR/$ORG_FORK/$img:$tag" "$GHCR/$ORG_FORK/$img:$src_ours" \
+      || die "retag failed: $GHCR/$ORG_FORK/$img:$src_ours -> $GHCR/$ORG_FORK/$img:$tag"
     say "  retagged $img"
     n=$((n+1))
   done
-  case "$spec" in
-    ours:*)     say "retag walk done: ${n} images now carry :${tag} (copied from our :${src_ours}; built separately: ${BUILD_IMAGES[*]}, $MASTER_IMAGE)" ;;
-    upstream:*) say "retag walk done: ${n} images now carry :${tag} (copied from upstream :${src_upstream}; built separately: ${BUILD_IMAGES[*]}, $MASTER_IMAGE)" ;;
-  esac
+  say "retag walk done: ${n} images now carry :${tag} (copied from our :${src_ours}; built separately: ${BUILD_IMAGES[*]}, $MASTER_IMAGE)"
 }
 
-cmd_matrix() { # TAG [--from-tag T | --channel CH] — THE GATE. Existence is only half of it; the
-  #              other half keys to the RESOLVED SOURCE (D-4): under ours:<tag> the previous set
-  #              is IMMUTABLE, so every retagged image must equal our :<tag> NOW — a mismatch
-  #              means the walk did not copy faithfully, and "mixed" turns from a snapshot race
-  #              into an integrity proof; under upstream:<channel> the one-snapshot semantics are
-  #              unchanged (a mid-walk upstream release reds the matrix and forces one clean
-  #              re-run of the whole pipeline). Built images and the mastercontainer are exempt
-  #              in both arms — they are rebuilt per run, never copied.
+cmd_matrix() { # TAG [--from-tag T] — THE GATE. Existence is only half of it; the other half
+  #              keys to the RESOLVED SOURCE (D-4): under ours:<tag> the previous set is
+  #              IMMUTABLE, so every retagged image must equal our :<tag> NOW — a mismatch
+  #              means the walk did not copy faithfully, and "mixed" turns from a snapshot
+  #              race into an integrity proof. Built images and the mastercontainer are
+  #              exempt — they are rebuilt per run, never copied.
   [ $# -ge 1 ] || { usage; die "matrix needs TAG"; }
   local tag="$1"; shift
-  local from_tag="" channel=""
+  local from_tag=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --from-tag) [ $# -ge 2 ] || die "--from-tag needs a value"; from_tag="$2"; shift 2 ;;
-      --channel)  [ $# -ge 2 ] || die "--channel needs a value"; channel="$2"; shift 2 ;;
       *)          die "unknown argument to matrix: $1" ;;
     esac
   done
   tag_valid "$tag" || die "suite tag '$tag' is not a channel-valid tag (see retag's message)"
   siblings_load
-  resolve_spec "$tag" "$from_tag" "$channel" || exit 1   # the workflow passes the RETAG job's one resolution via RETAG_SOURCE (D-5); a bare 'ours' resolves here
+  resolve_spec "$tag" "$from_tag" || exit 1   # the workflow passes the RETAG job's one resolution via RETAG_SOURCE (D-5); a bare 'ours' resolves here
   local spec="$RESOLVED_SPEC" src_org src_tag
   say "matrix keyed to source: $spec"
   echo "RETAG_SOURCE_RESOLVED=$spec"
-  case "$spec" in
-    ours:*)     src_org="$GHCR/$ORG_FORK";     src_tag="${spec#ours:}" ;;
-    upstream:*) src_org="$GHCR/$ORG_UPSTREAM"; src_tag="${spec#upstream:}" ;;
-  esac
+  src_org="$GHCR/$ORG_FORK"; src_tag="${spec#ours:}"
   local total=$(( ${#SIBS[@]} + 1 ))
   local missing=0 mixed=0 unprovable=0 present=0 img d u
   echo "== matrix: ${total} images must resolve under $GHCR/$ORG_FORK/:${tag} =="
@@ -419,10 +388,7 @@ cmd_matrix() { # TAG [--from-tag T | --channel CH] — THE GATE. Existence is on
       continue
     fi
     if [ "$d" != "$u" ]; then
-      case "$spec" in
-        ours:*)     printf '  %-26s MIXED: %s != our :%s (%s) — the copy is not faithful\n' "$img" "$d" "$src_tag" "$u" ;;
-        upstream:*) printf '  %-26s MIXED: %s != upstream :%s (%s)\n' "$img" "$d" "$src_tag" "$u" ;;
-      esac
+      printf '  %-26s MIXED: %s != our :%s (%s) — the copy is not faithful\n' "$img" "$d" "$src_tag" "$u"
       mixed=$((mixed+1))
     fi
   done
@@ -430,23 +396,12 @@ cmd_matrix() { # TAG [--from-tag T | --channel CH] — THE GATE. Existence is on
   if [ "$missing" -gt 0 ] || [ "$mixed" -gt 0 ] || [ "$unprovable" -gt 0 ]; then
     echo "MATRIX: *** FAIL *** — of ${total}: ${missing} missing, ${mixed} mixed, ${unprovable} unprovable" >&2
     echo "  missing     = the wizard's start would fail on this tag (registry-reachability checks)" >&2
-    case "$spec" in
-      ours:*)
-        echo "  mixed       = the tag does not faithfully mirror our :${src_tag} — the source set is immutable, so the walk itself erred; re-run the walk with --force to re-copy it" >&2
-        echo "  unprovable  = our :${src_tag} could not be read; a matrix that cannot look is not a matrix" >&2
-        ;;
-      upstream:*)
-        echo "  mixed       = the suite tag spans more than one upstream :${src_tag} snapshot — re-run the whole pipeline (--force)" >&2
-        echo "  unprovable  = upstream could not be read; a matrix that cannot look is not a matrix" >&2
-        ;;
-    esac
+    echo "  mixed       = the tag does not faithfully mirror our :${src_tag} — the source set is immutable, so the walk itself erred; re-run the walk with --force to re-copy it" >&2
+    echo "  unprovable  = our :${src_tag} could not be read; a matrix that cannot look is not a matrix" >&2
     exit 1
   fi
   local retagged=$(( ${#SIBS[@]} - ${#BUILD_IMAGES[@]} ))
-  case "$spec" in
-    ours:*)     echo "MATRIX: PASS — ${present}/${total} images present; the ${retagged} retagged faithfully mirror our :${src_tag} (the immutable previous set); built: ${BUILD_IMAGES[*]} + $MASTER_IMAGE from build-ref" ;;
-    upstream:*) echo "MATRIX: PASS — ${present}/${total} images present; the ${retagged} retagged match upstream :${src_tag} (one snapshot); built: ${BUILD_IMAGES[*]} + $MASTER_IMAGE from build-ref" ;;
-  esac
+  echo "MATRIX: PASS — ${present}/${total} images present; the ${retagged} retagged faithfully mirror our :${src_tag} (the immutable previous set); built: ${BUILD_IMAGES[*]} + $MASTER_IMAGE from build-ref"
   exit 0
 }
 
@@ -454,7 +409,7 @@ cmd_manifest() { # TAG — the publish record: every image's index digest, JSON 
   #                is the hand-off (gestion's release-manifest.sh --emit resolves its own copy at tag
   #                time, v0.2.0); this record is the LEDGER of what the walk produced — and its
   #                retag_source field names what the walk actually copied FROM: the RESOLVED spec
-  #                (ours:<tag> | upstream:<channel>, D-3), threaded from the retag job's one
+  #                (ours:<tag>, D-3), threaded from the retag job's one
   #                resolution (D-5). The old upstream_channel name is retired with this change:
   #                under ours:<tag> there is no honest value for a field named upstream_channel —
   #                the lineage's original channel is untraceable once the chain is self-referential.
@@ -462,7 +417,7 @@ cmd_manifest() { # TAG — the publish record: every image's index digest, JSON 
   local tag="$1"
   tag_valid "$tag" || die "suite tag '$tag' is not a channel-valid tag (see retag's message)"
   siblings_load
-  resolve_spec "$tag" "" "" || exit 1   # env-only entry point: the workflow passes the resolved spec; a local bare 'ours' resolves here
+  resolve_spec "$tag" "" || exit 1   # env-only entry point: the workflow passes the resolved spec; a local bare 'ours' resolves here
   RETAG_MANIFEST_TAG="$tag" \
   RETAG_MANIFEST_SOURCE="$RESOLVED_SPEC" \
   RETAG_MANIFEST_PREFIX="$GHCR/$ORG_FORK" \
@@ -520,7 +475,7 @@ selftest() { # the hermetic self-test — migrate-to-aio.sh's template verbatim:
   check() { local name="$1" cond="$2"; n=$((n + 1))
     if eval "$cond"; then :; else echo "  FAIL: $name" >&2; FAILED=$((FAILED + 1)); fi; }
 
-  local FORK="$GHCR/$ORG_FORK" UP="$GHCR/$ORG_UPSTREAM"
+  local FORK="$GHCR/$ORG_FORK"
 
   # the fixture world: 17 retaggable siblings + the 2 built ones = MIN_SIBLINGS (the master
   # container is not in containers.json, as in the real one); the registry is a fixture tree
@@ -538,7 +493,6 @@ PY
   }
   local i
   for i in $(seq -w 1 17); do
-    seed "$UP/nextcloud-aio-sib$i:latest"
     seed "$FORK/nextcloud-aio-sib$i:v0.4.0"
     seed "$FORK/nextcloud-aio-sib$i:v0.5.0"   # DISTINCT digests: presence is all the
   done                                          # immutability arm needs; the forced walk re-copies
@@ -605,7 +559,7 @@ DSHIM
   mkrepo "$FIX/repoEmpty"                     # no tags at all: discovery's empty catalogue
   mkrepo "$FIX/repoSelf" v0.5.0 v0.4.0        # the publishing tag itself sits newest
 
-  printf '# the fixture bootstrap record\nupstream:latest\n' > "$FIX/BASE.lock"
+  printf '# the fixture bootstrap record\nours:v0.4.0\n' > "$FIX/BASE.lock"
 
   export RETAG_CONTAINERS="$FIX/containers.json"
   export RETAG_ST_REG="$REG" RETAG_ST_CALLS="$CALLS"
@@ -613,16 +567,16 @@ DSHIM
   export PATH="$tshim:$OPATH"
 
   # ── the validation arms — every die lands before any registry call, so no sleeps ──
-  out="$(bash "$SELF" retag v0.9.0 --from-tag v0.3.9 --channel latest 2>&1)"; rc=$?
-  check "retag: --from-tag and --channel are mutually exclusive" \
-    '[ "$rc" -ne 0 ] && case "$out" in *"mutually exclusive"*) ;; *) false ;; esac'
+  out="$(bash "$SELF" retag v0.9.0 --channel latest 2>&1)"; rc=$?
+  check "retag: the retired --channel flag is refused" \
+    '[ "$rc" -ne 0 ] && case "$out" in *"unknown argument to retag: --channel"*) ;; *) false ;; esac'
   out="$(bash "$SELF" retag v0.9.0 --from-tag v0.9.0 2>&1)"; rc=$?
   check "retag: a from-tag equal to the published tag is refused" \
     '[ "$rc" -ne 0 ] && case "$out" in *"its own source"*) ;; *) false ;; esac'
   out="$(bash "$SELF" retag v0.9.0 --from-tag latest 2>&1)"; rc=$?
   check "retag: a latest from-tag is refused — D12 reaches source tags too" \
     '[ "$rc" -ne 0 ] && case "$out" in *"channel-valid tag"*) ;; *) false ;; esac'
-  out="$(RETAG_SOURCE=ours:v0.4.0 bash "$SELF" retag v0.9.0 --channel latest 2>&1)"; rc=$?
+  out="$(RETAG_SOURCE=ours:v0.4.0 bash "$SELF" retag v0.9.0 --from-tag v0.3.9 2>&1)"; rc=$?
   check "retag: CLI source flags and RETAG_SOURCE together are refused" \
     '[ "$rc" -ne 0 ] && case "$out" in *"one knob"*) ;; *) false ;; esac'
   out="$(RETAG_SOURCE=bogus:x bash "$SELF" retag v0.9.0 2>&1)"; rc=$?
@@ -638,7 +592,7 @@ DSHIM
   check "retag: a latest suite tag is refused" '[ "$rc" -ne 0 ]'
 
   # ── the lock ladder: discovery → BASE.lock → FATAL. An empty catalogue costs no probes. ──
-  printf 'upstream:latest\nours:v0.1.0\n' > "$FIX/bad.lock"
+  printf 'ours:v0.1.0\nours:v0.2.0\n' > "$FIX/bad.lock"
   out="$(RETAG_REMOTE="$FIX/repoEmpty" RETAG_BASE_LOCK="$FIX/bad.lock" bash "$SELF" retag v0.5.0 2>&1)"; rc=$?
   check "lock: a multi-spec lock dies — a stale first line must not win silently" \
     '[ "$rc" -ne 0 ] && case "$out" in *"exactly one"*) ;; *) false ;; esac'
@@ -648,7 +602,7 @@ DSHIM
     '[ "$rc" -ne 0 ] && case "$out" in *"not a valid source spec"*) ;; *) false ;; esac'
   out="$(RETAG_REMOTE="$FIX/repoEmpty" RETAG_BASE_LOCK="$FIX/absent.lock" bash "$SELF" retag v0.5.0 2>&1)"; rc=$?
   check "resolution: no complete set and no lock — FATAL names the remedy" \
-    '[ "$rc" -ne 0 ] && case "$out" in *"record the base"*"upstream:<channel>"*) ;; *) false ;; esac'
+    '[ "$rc" -ne 0 ] && case "$out" in *"record the base"*) ;; *) false ;; esac'
   out="$(RETAG_REMOTE="$FIX/no-such-repo" bash "$SELF" retag v0.5.0 2>&1)"; rc=$?
   check "resolution: a failed fetch is not an empty catalogue" \
     '[ "$rc" -ne 0 ] && case "$out" in *"not an empty catalogue"*) ;; *) false ;; esac'
@@ -657,14 +611,14 @@ DSHIM
   out="$(RETAG_REMOTE="$FIX/repoEmpty" bash "$SELF" retag v0.5.0 2>&1)"; rc=$?
   printf '%s\n' "$out" > "$tmp/boot.txt"
   check "lock: the fallback is said and the bootstrap spec recorded" \
-    'grep -q "falling back to" "$tmp/boot.txt" && grep -qx "RETAG_SOURCE_RESOLVED=upstream:latest" "$tmp/boot.txt"'
+    'grep -q "falling back to" "$tmp/boot.txt" && grep -qx "RETAG_SOURCE_RESOLVED=ours:v0.4.0" "$tmp/boot.txt"'
   check "retag: a fully-present set without --force dies at the immutability pre-check" \
     '[ "$rc" -ne 0 ] && case "$out" in *"already fully published"*) ;; *) false ;; esac'
 
   # ── the depth cap and the self-exclusion ──
   out="$(RETAG_RESOLVE_DEPTH=1 bash "$SELF" retag v0.5.0 2>&1)"; rc=$?
   check "resolution: the depth cap is honoured — the one newest candidate, then the lock" \
-    '[ "$rc" -ne 0 ] && case "$out" in *"no complete set among the newest tags"*"RETAG_SOURCE_RESOLVED=upstream:latest"*) ;; *) false ;; esac'
+    '[ "$rc" -ne 0 ] && case "$out" in *"no complete set among the newest tags"*"RETAG_SOURCE_RESOLVED=ours:v0.4.0"*) ;; *) false ;; esac'
   out="$(RETAG_REMOTE="$FIX/repoSelf" bash "$SELF" retag v0.5.0 2>&1)"; rc=$?
   check "resolution: the publishing tag is skipped — a set cannot bootstrap itself" \
     'case "$out" in *"RETAG_SOURCE_RESOLVED=ours:v0.4.0"*) ;; *) false ;; esac'
@@ -710,7 +664,7 @@ DSHIM
   mv "$FIX/kept" "$REG/$FORK/nextcloud-aio-sib02:v0.4.0"
 
   # ── the ledger ──
-  out="$(RETAG_SOURCE=ours:v0.4.0 RETAG_BUILT_REF=aps/main RETAG_BUILT_SHA=deadbeefcafe bash "$SELF" manifest v0.5.0 2>&1)"; rc=$?
+  out="$(RETAG_SOURCE=ours:v0.4.0 RETAG_BUILT_REF=v0.5.0 RETAG_BUILT_SHA=deadbeefcafe bash "$SELF" manifest v0.5.0 2>&1)"; rc=$?
   printf '%s\n' "$out" > "$tmp/manifest.json"
   check "manifest: green, naming the resolved spec" \
     '[ "$rc" -eq 0 ] && grep -q "\"retag_source\": \"ours:v0.4.0\"" "$tmp/manifest.json"'
@@ -718,15 +672,6 @@ DSHIM
     '[ "$(grep -c "\"sha256:" "$tmp/manifest.json")" -eq 20 ] && grep -q "\"built_from\"" "$tmp/manifest.json"'
   check "manifest: the retired upstream_channel name is gone" \
     '! grep -q upstream_channel "$tmp/manifest.json"'
-
-  # ── the vendor arm ──
-  : > "$CALLS"
-  out="$(RETAG_SOURCE=upstream:latest bash "$SELF" retag v0.5.0 --force 2>&1)"; rc=$?
-  check "walk: the vendor arm copies from upstream :latest" \
-    '[ "$rc" -eq 0 ] && [ "$(grep -c " <- $UP/nextcloud-aio-sib..:latest$" "$CALLS")" -eq 17 ]'
-  out="$(RETAG_SOURCE=upstream:latest bash "$SELF" matrix v0.5.0 2>&1)"; rc=$?
-  check "matrix: the upstream arm passes on one snapshot" \
-    '[ "$rc" -eq 0 ] && case "$out" in *"match upstream :latest"*) ;; *) false ;; esac'
 
   rm -rf "$tmp"
   echo "self-test: $n checks OK"
