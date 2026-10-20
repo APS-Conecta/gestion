@@ -28,9 +28,7 @@
 #
 # SECRETS: MINISIGN_SECRET_KEY + MINISIGN_KEY_PASSWORD (package-release.sh's sign: the key
 # lands in a 0600 trap-removed temp file, the passphrase rides stdin — the P45 rule: neither
-# ever reaches argv or a URL); plus the always-present GITHUB_TOKEN. The bot PAT that carried
-# the sync/replay pushes retired from this chain with the fork — nothing here pushes git refs
-# anymore (org-drift and cleanboot keep their own use of the secret).
+# ever reaches argv or a URL); plus the always-present GITHUB_TOKEN.
 #
 # ACTIONS SHA-PINNED (upstream's own convention; lint-yaml's zizmor runs over
 # .github/workflows on PRs and catches unpinned uses). Untrusted context (the tag name) reaches
@@ -46,9 +44,8 @@
 # REHEARSAL: tags v0.0.0-ci.N (VERSION set to match on a rehearsal branch) run this same chain
 # end-to-end — channel-valid, never mistaken for a release, deletable.
 #
-# No liveness gate rides the chain (D-rev 2026-10-16): the daily schedule and its canary
-# are retired — the discipline is proven HERE, by every release's own gates run (validators,
-# twig-lint, both gates), before anything builds or signs.
+# The discipline is proven HERE, by every release's own gates run (validators, twig-lint,
+# both gates), before anything builds or signs.
 name: Release
 
 on:

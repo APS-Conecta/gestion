@@ -259,9 +259,9 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 - Documentation consistency pass across the organisation. Org-wide decisions now live in this
   repository and are referenced by absolute URL rather than by a path that depended on where someone
-  cloned things ([ADR-0011](docs/adr/0011-org-wide-facts-live-in-gestion.md)); the organisation
+  cloned things (ADR-0011); the organisation
   publishes only the generic half of its shared documents
-  ([ADR-0012](docs/adr/0012-only-the-generic-half-is-published-as-an-org-default.md)); and the
+  (ADR-0012); and the
   consequences ADR-0010 recorded when it moved the organisation to AGPL-3.0-or-later are now carried
   through every document that had gone on describing the code as proprietary.
 
@@ -307,7 +307,7 @@ Same pinned apps and image digests as 0.1.0 — no functional change for a clini
 - The first installable release. Before it `git tag` returned nothing: every app was pinned by
   version and sha256 while gestion itself carried no version at all, so a clinic installed whatever
   `main` happened to be that day and a bug report could not name the bytes that produced it
-  ([ADR-0005](docs/adr/0005-gestion-is-the-development-trunk.md)).
+  (ADR-0005).
 - Pins six apps — five vendored upstream, plus `epidemiologia` built from a tag of its own
   repository. Nothing contacts the Nextcloud app store at any point: every app ships as a committed
   tarball verified by sha256 ([#98](https://github.com/APS-Conecta/gestion/issues/98)). Images are

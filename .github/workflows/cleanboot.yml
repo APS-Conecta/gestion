@@ -7,7 +7,7 @@
 # It lives in its own file because GitHub filters paths per WORKFLOW, not per job — the only way to
 # run this on the PRs that can break it while the static gate still runs on all of them.
 #
-# WHY IT RUNS ON PULL REQUESTS (#97). Schedule/dispatch only, it never ran on its own; the first
+# WHY IT RUNS ON PULL REQUESTS (#97). Dispatch only, it never ran on its own; the first
 # dispatch, on 2026-08-01, failed on #96 — a bug already merged to main that this gate would have
 # caught on its PR. It cannot be a REQUIRED check (branch protection needs GitHub Pro or a public
 # repo), so the red X is advisory — exactly why the trigger matters: visibility is the mechanism.
@@ -23,8 +23,7 @@ on:
     paths:
       # Everything a clean install reads, in THIS repository now: the host bundle, the scripts
       # tree, the executor phases, the bootstrap's own three files. gestion's half (sites/**,
-      # the vendored apps, the themes) is read at its main ref — the schedule and dispatch
-      # arms stay its drift backstop, exactly as they already were for runner-image drift.
+      # the vendored apps, the themes) is read at its main ref.
       - 'host/**'
       - 'scripts/**'
       - 'provisioning/**'
@@ -32,18 +31,9 @@ on:
       - 'VERSION'
       - 'installer.pub'
       - '.github/workflows/cleanboot.yml'
-  # Kept as the backstop for drift no PR causes. Our own bytes stopped being a source of it — images
-  # pinned by digest (#109), apps vendored as committed tarballs (#98) — so what still moves untouched
-  # is the runner image and the actions. `image-digests` reports the other half an hour earlier.
-  schedule:
-    - cron: "0 6 * * 1"          # Mondays 06:00 UTC
   workflow_dispatch:
 
-# The event is part of the group, so a push can only ever cancel another push. Without it, the
-# weekly clean boot and ordinary pushes to main shared one group: merge a PR while Monday's
-# bring-up is running and it is cancelled — and a cancelled run is not a failure, so there is no
-# notification and no red check. The one job that proves the stack comes up from empty would simply
-# have stopped happening, quietly.
+# The event is part of the group, so a push can only ever cancel another push.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
@@ -65,12 +55,10 @@ concurrency:
 # It lives in its own file because GitHub filters paths per WORKFLOW, not per job — the only way
 # to run this on the PRs that can break it while the static gate still runs on all of them.
 #
-# WHY IT RUNS ON PULL REQUESTS (#97). Schedule/dispatch only, it never ran on its own; the first
+# WHY IT RUNS ON PULL REQUESTS (#97). Dispatch only, it never ran on its own; the first
 # dispatch, on 2026-08-01, failed on #96 — a bug already merged to main that this gate would have
 # caught on its PR. It cannot be a REQUIRED check (branch protection needs GitHub Pro or a public
 # repo), so the red X is advisory — exactly why the trigger matters: visibility is the mechanism.
-
-# on:, schedule:, workflow_dispatch: and concurrency: are UNCHANGED (on disk).
 
 jobs:
   cleanboot:
@@ -113,15 +101,13 @@ jobs:
         with:
           fetch-depth: 1   # VERSION answers suite_tag() now — no tag history to read
       # The composite's gestion half (D2): the suite-definition content the package folds in —
-      # checked out beside, exactly what the bake and package-release read. APS_BOT_PAT
-      # because gestion is private: the job's own token cannot read a sibling repository.
+      # checked out beside, exactly what the bake and package-release read.
       # .git/info/exclude (below) keeps it out of the throwaway commit — a local ignore,
       # never a tracked one; the archive that becomes the package must not swallow it.
       - uses: actions/checkout@v7
         with:
           repository: APS-Conecta/gestion
           path: gestion
-          token: ${{ secrets.APS_BOT_PAT }}
           fetch-depth: 1
       # The probe bed FIRST, so a harness preflight failure (RAM, ports, ghcr reachability) is
       # the first thing a red log shows. Every wait inside is bounded, and `up` ends in its own
@@ -538,7 +524,6 @@ jobs:
         with:
           repository: APS-Conecta/gestion
           path: gestion
-          token: ${{ secrets.APS_BOT_PAT }}
           fetch-depth: 1
       - name: Build the rehearsal package, then install through the real bootstrap
         run: |

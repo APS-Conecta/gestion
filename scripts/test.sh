@@ -890,7 +890,7 @@ fi
 # Euro-Office joined the standard gate in #81, because it joined the stack: office-smoke was
 # separate only because it needed a service that might not be running. Its rename assertions moved
 # to build time (office-smoke.sh's header): under the suite the store is off and a published tag's
-# digests never move, so the AIO fork's scripts/bake.sh asserts the rename once per image build.
+# digests never move, so scripts/bake.sh asserts the rename once per image build.
 #
 # Still guarded on the service, not assumed: this script runs in the static CI gate with no stack
 # at all, and stopping the office backend is a documented way to reclaim the RAM. `--wait` is what

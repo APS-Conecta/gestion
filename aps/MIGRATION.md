@@ -1,10 +1,9 @@
-# MIGRATION — moving a clinic, and retiring the old homes
+# MIGRATION — moving a clinic
 
 The compose-era manual moved here from gestion (§0–§9; its tool,
 `scripts/migrate-to-aio.sh`, moved with the installer — this file is its choreography).
 §10 is the move an operator meets next: an existing clinic, installed from a gestion clone,
-into the instalador package era. §11 is the maintainer's: freezing and archiving AIO once
-instalador carries the fork.
+into the instalador package era.
 
 The doctrine is REHEARSAL-FIRST: every step that can be proven before the irreversible one
 is proven before it, and the live stack is the rollback until the moment of the teardown.
@@ -168,28 +167,6 @@ nothing ever depended on it: `/opt/aps-conecta` is the clinic.
 **What does NOT change**: the containers, the volumes, the credentials, the certificates,
 the domain, the timers' schedules. Old gestion tags and Releases stay intact and auditable;
 an install pinned at an old tag keeps verifying against them exactly as it always did.
-
-## 11. The AIO retirement checklist (the maintainer's)
-
-instalador absorbed the fork; AIO freezes, then archives. In order — each line records a
-hand-off that has no workflow of its own:
-
-- [x] instalador's Replay schedule enabled, and one SCHEDULED run green — done in the queue
-      era; the schedule, its liveness canary and the Replay workflow itself then retired
-      with the hard fork (Stage 3, 2026-10: this fork runs no schedules).
-- [ ] AIO's Replay schedule DISABLED, the same day instalador's goes live — no
-      double-publish window. Record the date beside this line.
-- [ ] instalador's first Release cut end-to-end: gates → the 20 images at the tag → the
-      signed composite package, all five assets on the Release.
-- [ ] N green instalador releases since the absorption (the org picks N; three is the
-      floor) — each through the full chain, none repaired by hand.
-- [ ] One real gestion-clone clinic walked §10 green (the recorded rehearsal).
-- [ ] AIO archived (read-only) — the upstream mirror, the patch queue and the fork
-      declaration stay readable forever; the readme gains the archived badge pointing at
-      instalador.
-- [ ] gestion's frozen install half deleted — or left frozen forever, the org's call: the
-      movers under `host/`, `provisioning/`'s executor, and the 16 scripts. When they go,
-      gestion's gate and Makefile shed their last install-half references with them.
 
 Channel continuity, once more because it is the whole safety of the move: a published tag's
 digests never move. `ghcr.io/aps-conecta/*:<old gestion tag>` sets remain valid channels

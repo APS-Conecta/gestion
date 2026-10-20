@@ -6,7 +6,7 @@
 # documented defect class is the silent green: BUGS.md B-001…B-007 came from the first bring-up
 # that was complete on paper and never run; B-014 was a gate that could not go red; 11 of 19
 # handoff claims measured wrong at the 2026-09-13 stand-up (FINDINGS.md). So the couplings are
-# proven on a REAL AIO stack — the AIO fork's published suite, no S1 dependency — before anything is
+# proven on a REAL AIO stack — the published suite, no S1 dependency — before anything is
 # built on them. This script is also S8's CI harness in embryo: when the port lands, cleanboot's
 # compose bring-up retires and this is what replaces it (probe scaffolding converts into S8's
 # machinery).
@@ -48,7 +48,7 @@ set -uo pipefail
 STATE=/tmp/aio-testbed
 MC=nextcloud-aio-mastercontainer            # fixed by Containers/mastercontainer/start.sh:164-170
 NC=aps-conecta-nextcloud                   # fixed by the fork's php/containers.json (patch 240)
-# The fork's suite, never upstream's: the AIO fork renames the siblings (patch 240), so upstream's
+# The fork's suite, never upstream's: the suite renames the siblings (patch 240), so upstream's
 # container names would match none of gestion's. Moves with each published suite tag.
 IMAGE="${AIO_TEST_IMAGE:-ghcr.io/aps-conecta/all-in-one:ci-20261004-2}"
 WIZARD_PORT="${AIO_TEST_PORT:-8080}"
