@@ -15,7 +15,7 @@
 # `redis:8-alpine` had BOTH moved since this repo's own box pulled them. That is #96 made permanent
 # by a fleet. The digest is the only name for "the version I tested".
 #
-# NOT AUTOMATIC ALL THE WAY: the weekly workflow runs --check, a human runs the rewrite, and the PR
+# NOT AUTOMATIC ALL THE WAY: the workflow runs --check, a human runs the rewrite, and the PR
 # is where cleanboot boots the new bytes. Why no bot opens it: .github/workflows/image-digests.yml.
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -71,7 +71,7 @@ for ref in $refs; do
   # were indistinguishable, and the message asserted "could not resolve" without having checked why.
   # Same defect as B-003. Observed 2026-08-05: a run reported postgres:18-alpine unresolvable while
   # the tag was fine and resolved by hand seconds later, which is the anonymous-pull rate limit —
-  # a weekly unattended job hits it precisely because it inspects several images back to back.
+  # a CI job hits it precisely because it inspects several images back to back.
   # ONE call per attempt — stderr to a file rather than a second invocation, because inspecting
   # twice to read the error would double the registry traffic that causes the failure.
   new=$(docker buildx imagetools inspect "$name" --format '{{.Manifest.Digest}}' 2>"$errf")

@@ -38,7 +38,7 @@ done)"
 [ -n "$vendored" ] || { echo "FATAL: no provisioning/apps/*/VENDOR files found" >&2; exit 1; }
 
 # ~5.4 MB and slow (~60 s here) because the store publishes NO per-app endpoint — /api/v1/apps/<id>
-# returns 500. Weekly in CI, so the cost is paid once a week by a robot.
+# returns 500.
 json="$(curl -sS --max-time 300 "$INDEX")" \
   || { echo "FATAL: could not fetch the app store index" >&2; exit 1; }
 

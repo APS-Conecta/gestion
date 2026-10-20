@@ -16,9 +16,8 @@ echo "== static checks (no running stack needed) =="
 if [ ! -f .env ]; then
   echo "  note: .env absent — compose interpolation will fail; run 'make setup' first"
 fi
-# One parse, not two: the `--profile eurooffice` run went with the profile in #81 — Euro-Office is
-# an ordinary service now, so this parse already covers it. The dev overlay is included because it
-# is the only other file that can change what compose resolves.
+# One parse: Euro-Office is an ordinary service, so it covers every service. The dev overlay is
+# included because it is the only other file that can change what compose resolves.
 check docker compose -f compose.yaml -f compose.dev.yaml config -q
 linted=0
 for s in scripts/*.sh provisioning/*.sh provisioning/phases/*.sh sites/*/site.sh dev/*.sh host/*.sh tests/*/*.sh; do
@@ -600,7 +599,7 @@ check bash scripts/release-manifest.sh --self-test
 check bash -c '! grep -q "^NC_CONTAINER=" .env.example && { git grep -qE "NC_CONTAINE[R]:?[?-]" -- . ":!scripts/env.sh"; [ $? -eq 1 ]; }'
 
 echo "== desktop_workspace pin seat (hermetic — unpacks the vendored tarball + applies its patches) =="
-# D2 (org plan Phase 8): the vendored app's pins live in gestion, not in upstream's
+# The vendored app's pins live in gestion, not in upstream's
 # absent CI. Needs node always; the PHP arm rides php when present (CI installs it).
 if command -v node >/dev/null 2>&1; then
   if bash tests/desktop_workspace/run.sh; then echo "  ok:   desktop_workspace pins"; else echo "  FAIL: desktop_workspace pins"; fail=1; fi

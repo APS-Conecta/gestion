@@ -32,10 +32,7 @@
 /apps/*
 !/apps/README.md
 
-# Local agent tooling (regenerable, never committed). The OpenSpec CLI writes these from openspec/,
-# so they are output, not source — and they are one vendor's file layout, while AGENTS.md is the
-# canonical rules file every agent reads. What IS tracked is openspec/ itself: a spec is a shared
-# decision, and ADR-0005 already ruled that those do not live in a working tree.
+# Local agent tooling (regenerable, never committed). AGENTS.md is the canonical rules file every agent reads.
 /.claude/
 /.agents/
 
@@ -43,8 +40,7 @@
 __pycache__/
 *.pyc
 
-# IDE / OS
-*.code-workspace
+# OS
 .DS_Store
 
 # `make install` writes the full provisioning log here.

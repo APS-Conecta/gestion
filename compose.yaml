@@ -135,10 +135,9 @@ services:
       start_period: 20s
 
   # ── Office backend: Euro-Office documentserver — Story 0.2, AD-5, promoted by #81 ──
-  # Comes up with the stack. It sat behind `profiles: ["eurooffice"]` until #81: measuring showed
-  # most of "mandatory" was already true — 12-apps installs the connector and 14-office configures
-  # it on EVERY seed — and only this ~2.5 GB container stood between an install and a working
-  # editor. `make install` is supposed to yield a clinic that can open a document.
+  # Comes up with the stack: 12-apps installs the connector and 14-office configures it on EVERY
+  # seed, and this ~2.5 GB container is what stands between an install and a working editor.
+  # `make install` is supposed to yield a clinic that can open a document.
   #
   # ACCEPTED COSTS, named rather than discovered: every `make up` now runs this, including when the
   # work is a CSS edit (`make office-down` is the escape hatch), and the ~8 GB multi-user floor in

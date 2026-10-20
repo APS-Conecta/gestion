@@ -122,11 +122,9 @@ One establishment per install (D13); the suite tag equals this repo's release ta
 
 ## Make targets
 
-Run **`make help`** — it reads the Makefile, so it cannot drift. (A hand-copied table used to live
-here and had already lost four targets.)
+Run **`make help`** — it reads the Makefile, so it cannot drift.
 
-**Step-debugging:** `make up-dev`, then in VS Code run the committed **"Listen for Xdebug"** config
-(`.vscode/launch.json`, port 9003) and send a request carrying the Xdebug trigger.
+**Step-debugging:** `make up-dev`, point your debugger at port 9003 and send a request carrying the Xdebug trigger.
 
 **Office suite:** Euro-Office comes up with the stack and `make install` wires the connector — nothing extra
 to run (#81). `make office-smoke` checks the pipe end to end and audits the image (OSS, no paid licence);
@@ -147,11 +145,11 @@ exists to prevent. Set by `provisioning/phases/14-office.sh`, never in the admin
 
 | Path | What |
 |---|---|
-| `compose.yaml` | Every service — nextcloud/db/redis/cron + `eurooffice` (no longer a profile, #81). All four images pinned by digest (#109). |
+| `compose.yaml` | Every service — nextcloud/db/redis/cron + `eurooffice`. All four images pinned by digest (#109). |
 | `compose.dev.yaml`, `Dockerfile.dev`, `dev/xdebug.ini` | The derived Xdebug dev image (AD-10). |
 | `.env.example` | Template for your gitignored `.env`. **Never commit `.env`.** |
 | `Makefile` | The dev lifecycle (`make help`). |
-| `scripts/` | `env-init.sh` (`make setup`) + `install.sh` (the one command) + `wait-ready.sh`, `test.sh` + `smoke.sh` (the gate), `seed-idempotent.sh`, `office-smoke.sh`, `divergence.sh` (what is live but undeclared), `image-digests.sh` + `app-versions.sh` (is anything we pinned behind upstream), `deis.py`, and `env.sh` (shared preamble). Plus: `provisionador.py` (the host-side wizard that walks an operator from a fresh AIO install to a running clinic), `db-dump.sh` (a dump AIO can restore, verified before it is trusted), `refresh-basemap.sh` (refreshes the Protomaps basemap archive the `tiles` service serves), `release-manifest.sh` (the machine-readable union of everything a release pins), `migrate-to-aio.sh` (the mechanized halves of a clinic's move to the AIO suite — the choreography is `docs/MIGRATION.md`), `uninstall.sh` (tears the stack down for real: verified dump + typed confirmation first), `aio-testbed.sh` (the disposable AIO test bed the installer gates run on), `check-org-drift.sh` (the org boilerplate drift gate), `cleanboot-site.sh` (clean boot's generated clinic — site file + planilla handed to a silent install), and `comuna-package.sh` (cuts one comuna's data packages out of the national masters). |
+| `scripts/` | `env-init.sh` (`make setup`) + `install.sh` (the one command) + `wait-ready.sh`, `test.sh` + `smoke.sh` (the gate), `seed-idempotent.sh`, `office-smoke.sh`, `divergence.sh` (what is live but undeclared), `image-digests.sh` + `app-versions.sh` (is anything we pinned behind upstream), `deis.py`, and `env.sh` (shared preamble). Plus: `provisionador.py` (the host-side wizard that walks an operator from a fresh AIO install to a running clinic), `db-dump.sh` (a dump AIO can restore, verified before it is trusted), `refresh-basemap.sh` (refreshes the Protomaps basemap archive the `tiles` service serves), `release-manifest.sh` (the machine-readable union of everything a release pins), `migrate-to-aio.sh` (the mechanized halves of a clinic's move to the AIO suite — the choreography is `docs/MIGRATION.md`), `uninstall.sh` (tears the stack down for real: verified dump + typed confirmation first), `aio-testbed.sh` (the disposable AIO test bed the installer gates run on), `cleanboot-site.sh` (clean boot's generated clinic — site file + planilla handed to a silent install), and `comuna-package.sh` (cuts one comuna's data packages out of the national masters). |
 | `provisioning/` | The single idempotent provisioning writer: `seed.sh` runner, `lib.sh` guard helpers, `phases/05-60`, `apps/` (per app: the vendored tarball, its `VENDOR` file and its patches — [ADR-0002](docs/adr/0002-app-patches.md)), and [`provisioning/README.md`](provisioning/README.md). |
 | `sites/` | The DEIS register of primary-care establishments, tracked — it is what you pick from. Your `<slug>/site.sh` (teams, folders, ACL matrix, identity) lands here and is **gitignored**: it depends on which establishment you install, so it is install-local like `.env`. **No establishment ships**; write yours with `scripts/deis.py`. |
 | `host/` | The clinic-side host bundle: `aps-conecta` (preflight / run-command / provision / revalidate / respaldo / tiles / datos) + the weekly re-provision and monthly tiles-refresh systemd units. A clinic installs it from the release page — [`docs/INSTALLER.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md). |
@@ -215,9 +213,9 @@ README's Quickstart. Locale stays in the `10-locale` phase.
 
 ### The office backend
 
-Euro-Office (AD-5) is part of the stack, not an add-on: #81 dropped its compose profile, so `make install`
-yields a clinic that can open a document. `make office-smoke` runs the editing smoke and audits the image
-provenance (OSS, no paid licence); it is also part of `make test` now that the service is always up.
+Euro-Office (AD-5) is part of the stack, not an add-on, so `make install` yields a clinic that can open a
+document. `make office-smoke` runs the editing smoke and audits the image provenance (OSS, no paid
+licence); it is also part of `make test`, since the service is always up.
 
 ### Guardrails you must not break
 

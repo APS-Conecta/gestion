@@ -42,7 +42,7 @@ repo yet (see *Environments* below, and #75).
 
 **Every image is pinned by digest** (#109). The tags below are what you read; the digest beside each
 in `compose.yaml` is what resolves. Refresh with `make images`; `make images-check` reports when a
-tag has moved past its pin, and the weekly `image-digests` workflow runs that check for you.
+tag has moved past its pin, and the `image-digests` workflow runs that check on dispatch.
 
 | Component | Image / package | Role |
 | --- | --- | --- |
@@ -227,9 +227,9 @@ owned by #75, which is why staff password delivery (#106) waits on it. **There i
 repo**, and that absence is load-bearing elsewhere: it is why convergence reports rather than deletes (#85).
 The operational surface is `occ status` plus the health smoke, which moved with the installer to [instalador](https://github.com/APS-Conecta/instalador).
 
-Euro-Office is resource-bound (uncapped, OSS) and fairly heavy (~8 GB RAM recommended for multi-user). Since
-#81 dropped its compose profile it comes up with the stack, so that is now a **hard floor for every clinic
-host and every dev box**, not a number that only applies when someone opts in. `make office-down` stops just
+Euro-Office is resource-bound (uncapped, OSS) and fairly heavy (~8 GB RAM recommended for multi-user). It
+comes up with the stack, so that is a **hard floor for every clinic host and every dev box**, not a
+number that only applies when someone opts in. `make office-down` stops just
 the document server when the work does not need it.
 
 ### Logs — three facts nobody had written down
@@ -252,6 +252,6 @@ fault:
 ## Extension boundary (beyond v1)
 
 The roadmap (Estadística, the REM figures and the Metas Sanitarias → full-text search → Paperless-ngx → a
-local-model AI layer — Tables was dropped, see ROADMAP.md § Future) attaches at a fixed seam: custom apps live in `apps/` → `custom_apps` and may depend on
+local-model AI layer) attaches at a fixed seam: custom apps live in `apps/` → `custom_apps` and may depend on
 Nextcloud **only through OCP public APIs** — never patching core, never relying on private internals, and core
 never depends on a custom app. This keeps the platform upgrade-safe as capabilities are added one at a time.
