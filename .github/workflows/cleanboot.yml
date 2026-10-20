@@ -241,6 +241,17 @@ jobs:
           grep -q 'NOTE: /tiles/chile.pmtiles is 404' "$out" \
             || { cat "$out" >&2; echo "FAIL: the unbuilt-map posture must print its NOTE — silent green cannot tell unbuilt from unbound" >&2; exit 1; }
           cat "$out"
+      # The smoke step's `cat` reaches only the login-walled log, so the red's own words
+      # (which check, what value) were invisible from the job list — #96's lesson, one layer
+      # up: the failing output rides the failure artifacts (smoke*.out matches the step's
+      # rename in the tiles retirement too).
+      - name: Smoke output on failure (artifact)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-out
+          path: ${{ runner.temp }}/smoke*.out
+          if-no-files-found: warn
       # L5: prove the suite's own /tiles/ route on the real apache — a deterministic fixture (the
       # PMTiles magic + compressible lines, exactly 150000 bytes) stands in for the 1,1 GB archive
       # the runner never builds. Dropped AFTER the install and the timer assert: the install saw
