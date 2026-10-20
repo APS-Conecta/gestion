@@ -20,5 +20,10 @@ jobs:
       uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # v2.0.0
       with:
         check_together: 'yes'
+        # severity: error — the fork's own shell (provisioning/, host/, scripts/) is
+        # info/style-heavy BY DESIGN: SC2016 matches bytes in single quotes (the gates'
+        # arms), SC2317 renders stub functions test arms define, SC1091 sources phase
+        # files shellcheck cannot follow. Zero error-level findings exist; errors red.
+        severity: error
       env:
         SHELLCHECK_OPTS: --shell bash
