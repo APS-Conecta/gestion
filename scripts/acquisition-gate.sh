@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S4's acquisition gate — the installer never reaches a non-APS-Conecta source at install time
+# The acquisition gate — the installer never reaches a non-APS-Conecta source at install time
 # (the steer's channel-completeness principle). Two check classes:
 #
 # UNCONDITIONAL — true of upstream's own tree; our patches must never break them, and an
@@ -14,7 +14,8 @@
 #     today): the migration channel (slice 22) sets it, and with the store off it is
 #     load-bearing for migrated clinics.
 #
-# ROWS — the same contract as brand-gate.sh: a row fires only when its patch is queued.
+# ROWS — the same contract as brand-gate.sh: every row fires unconditionally; the patch ID is
+#   attribution, never a condition.
 #   020 — the store-off bake: NC_appstoreenabled="0" ENV in the nextcloud Dockerfile. With the
 #         store on, occ upgrade re-downloads every enabled app and no VENDOR pin can hold
 #         (gestion #163); the bake + this ENV make the entrypoint's store legs fail-fast.
@@ -34,9 +35,9 @@
 #         NC_skeletondirectory="" ENV beside 020's store-off (the compose stack's own key,
 #         compose.yaml: the wizard's admin is created before any phase can write config, and
 #         the NC_ channel is read before config.php). (3) The bake's runtime half is wired —
-#         the aps-bake COPY lines and the ENV_PREFIX wiring grep present in the replayed
-#         Dockerfile; without this row a regenerated 030 that loses them replays green on
-#         every other row and ships an unbaked image (the one silently-unbaked-green path
+#         the aps-bake COPY lines and the ENV_PREFIX wiring grep present in the Dockerfile;
+#         without this row a regeneration that loses them passes every other row green
+#         and ships an unbaked image (the one silently-unbaked-green path
 #         nothing else closes). The plan's fourth row — curl in the runtime apk set — was
 #         dropped live per FINDINGS P6: /usr/bin/curl 8.22.0 measured PRESENT in the AIO
 #         runtime (transitive apk dep; phase 07's AIA fetch already imported the GlobalSign
@@ -49,21 +50,15 @@
 # checksums are slice 21. Every channel the AIO tree CAN see is checked here or in
 # brand-gate.sh.
 #
-# Usage: scripts/acquisition-gate.sh TREE     (TREE = the replayed tree, e.g. .aps-replay-tree)
+# Usage: scripts/acquisition-gate.sh TREE     (TREE = the tree to assert, e.g. . — the checkout)
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 die() { echo "FATAL: $*" >&2; exit 1; }
 
-queued() { compgen -G "$REPO_ROOT/patches/$1-*" >/dev/null; }
-
 fails=0
-row() {  # ID DESCRIPTION CMD... — fires iff patch ID is queued; skips print visibly
+row() {  # ID DESCRIPTION CMD... — fires unconditionally; the ID names the change that owes this
   local id="$1" desc="$2"; shift 2
-  if ! queued "$id"; then
-    printf '  skipped: %s not in queue — %s (nothing claims it yet)\n' "$id" "$desc"
-    return 0
-  fi
   if "$@"; then
     printf '  ok: %s — %s\n' "$id" "$desc"
   else
@@ -79,8 +74,8 @@ clone_free() {  # zero git clone in the runtime *.sh surfaces (hits print as evi
 }
 
 
-TREE="${1:?usage: scripts/acquisition-gate.sh TREE (the replayed tree, e.g. .aps-replay-tree)}"
-[ -d "$TREE/php" ] || die "'$TREE' does not look like the replayed tree (no php/ in it)"
+TREE="${1:?usage: scripts/acquisition-gate.sh TREE (the tree to assert, e.g. .)}"
+[ -d "$TREE/php" ] || die "'$TREE' does not look like the instalador tree (no php/ in it)"
 
 
 if clone_free; then
@@ -100,7 +95,7 @@ fi
 row 020 "the app store is baked off — NC_appstoreenabled=\"0\" ENV in Containers/nextcloud/Dockerfile" \
   grep -q 'NC_appstoreenabled="0"' "$TREE/Containers/nextcloud/Dockerfile"
 
-row 015 "the eurooffice documentserver base pins the suite's certified pairing (DS 9.3.4 ↔ connector 11.0.5 — R3's set-certified pin; re-cut from the v0.2.0 choreography's main commit so main stays the byte-identical mirror)" \
+row 015 "the eurooffice documentserver base pins the suite's certified pairing (DS 9.3.4 ↔ connector 11.0.5 — R3's set-certified pin; re-cut from the v0.2.0 choreography's main commit)" \
   grep -q 'documentserver:v9.3.4' "$TREE/Containers/eurooffice/Dockerfile"
 
 selfupdate_optin() {  # the suite's update channel is opt-in: checkbox defaults off, no watchtower POST remains
@@ -157,11 +152,10 @@ bake_checksum_gate() {  # the bake channel re-runs gestion's VENDOR gate before 
     || { echo "  bake.sh no longer carries the three-outcome abort — a drifted patch would fuzz or fail soft" >&2; return 1; }
 }
 
-bake_runtime_wired() {  # the patch's runtime half exists in the replayed tree — the COPY lines that
+bake_runtime_wired() {  # the bake's runtime half exists in the tree — the COPY lines that
   # pull the bake's output into the image and the ENV_PREFIX grep that proves the NC_ channel
-  # is real in the shipped server. Without this row a regenerated 030 that loses these lines
-  # replays green (the three-outcome rule compares the patch to the tree it was cut from) and
-  # every other row stays green while the Images build ships an unbaked image.
+  # is real in the shipped server. Without this row a regeneration that loses these lines
+  # passes every other row green while the Images build ships an unbaked image.
   local f="$TREE/Containers/nextcloud/Dockerfile"
   [ -f "$f" ] || { echo "  no Dockerfile at '$f'" >&2; return 1; }
   grep -q '^COPY aps-bake/custom_apps/ /usr/src/nextcloud/custom_apps/' "$f" \
@@ -178,7 +172,7 @@ row 030 "the bake channel is checksum-gated at build time — scripts/bake.sh re
 row 030 "the suite's skeleton posture is baked — NC_skeletondirectory="" ENV beside 020's store-off (the wizard's admin is created at install time, before any phase can write config; the NC_ channel is read before config.php)" \
   grep -q 'NC_skeletondirectory=""' "$TREE/Containers/nextcloud/Dockerfile"
 
-row 030 "the bake's runtime half is wired — both aps-bake COPY lines and the ENV_PREFIX wiring grep present in the Dockerfile (a regeneration that drops them would otherwise replay green on every other row and ship an unbaked image — the one silently-unbaked-green path nothing else closes)" \
+row 030 "the bake's runtime half is wired — both aps-bake COPY lines and the ENV_PREFIX wiring grep present in the Dockerfile (a regeneration that drops them would otherwise pass every other row green and ship an unbaked image — the one silently-unbaked-green path nothing else closes)" \
   bake_runtime_wired
 
 # ── L4 S4a: behaviour (R25 community + office, R29 defaults, R28 first-boot calls, R31) ──────
@@ -314,4 +308,4 @@ if [ "$fails" -gt 0 ]; then
   echo "ACQUISITION GATE: *** FAIL *** — $fails check(s) failed" >&2
   exit 1
 fi
-echo "ACQUISITION GATE: PASS — install-time channels stay APS-Conecta-only; skipped rows listed above (visible, never silent)"
+echo "ACQUISITION GATE: PASS — install-time channels stay APS-Conecta-only; every row measured, zero skipped"

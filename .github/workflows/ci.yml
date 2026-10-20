@@ -1,4 +1,5 @@
-# The cheap gate: static checks, seconds, on every PR. The full bring-up is a separate workflow
+# The cheap gate: static checks + the brand/acquisition gates, seconds, on every PR and push.
+# The full bring-up is a separate workflow
 # (cleanboot.yml) because GitHub filters paths per WORKFLOW, not per job — keeping both here meant
 # either running the 3-minute install on docs PRs or leaving it unfiltered and manual (#97).
 name: CI
@@ -87,3 +88,69 @@ jobs:
           git clone --depth 1 https://github.com/APS-Conecta/aps-common.git ../aps-common
       - name: Drift gate — phpunit exact, core targets, eslint teeth, aps-sync parity
         run: bash gestion/scripts/check-org-drift.sh apps
+
+  # The gates, re-homed with the hard fork (D-rev 2026-10-19, Stage 3): the replay chain that
+  # ran them against .aps-replay-tree retired — post-fork main IS the shipped tree, so the
+  # brand and acquisition gates assert the checkout directly on every push and PR. The rows
+  # are unconditional now (no queue, no skips): a red row is a real regression in the promoted
+  # bytes. Upstream's own validators (codespell, docker-lint, json-validator, shellcheck,
+  # twig-lint) fire on the same events for free; the release chain carries its own inline
+  # gates arm for tag pushes, which these triggers never reach.
+  gates:
+    name: Brand + acquisition gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - run: bash scripts/brand-gate.sh .
+      - run: bash scripts/acquisition-gate.sh .
+
+  # Prove the gates can red (org L7-2), re-homed from the replay chain (D-rev 2026-10-19):
+  # the PR arm injects a known regression and asserts the gate EXITS 1 on it — brand-gate had
+  # four ledgered instances of arms that could not red (BUGS.md A-005, A-006, A-010, A-011),
+  # each fixed ad-hoc because nothing stood beneath the fix. The substrate is the PR merge
+  # checkout itself — no replay, no worktree (post-fork the checkout is the shipped tree):
+  # Baseline (green), Arm A (revert a 060 sentinel from the gate's own live table), Arm B
+  # (re-inject an upstream registry ref into containers.json) — each must red, then sed-revert
+  # in place; the job never commits its mutation. PR-only: pushes are already gated by the
+  # gates job above.
+  gate-red-proof:
+    name: Prove the gates can red (org L7-2)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: Baseline — the gate is green before any injection
+        run: bash scripts/brand-gate.sh .
+      - name: Arm A — revert a 060 sentinel, expect the gate to red
+        run: |
+          # the target comes from the gate's own live table (--sentinel-pair), so a reworded
+          # table re-points the arm instead of the sed silently matching nothing
+          IFS='|' read -r f en es < <(bash scripts/brand-gate.sh --sentinel-pair 2)
+          grep -qF "$es" "$f" \
+            || { echo "ARM A target drifted — sentinel row 2 no longer matches the tree; re-point the arm" >&2; exit 1; }
+          sed -i "s#${es}#${en}#" "$f"
+          if bash scripts/brand-gate.sh .; then
+            echo "ARM A FAILED: the reverted sentinel ($en in $f) did NOT red the brand gate — a vacuous arm, org L7-2's rot class" >&2
+            exit 1
+          fi
+          echo "ARM A green: the reverted sentinel reds the gate"
+          # restore by reverting the sed: the job proves red-ability, it never ships the mutation
+          sed -i "s#${en}#${es}#" "$f"
+      - name: Arm B — re-inject an upstream registry ref, expect the gate to red
+        run: |
+          json=php/containers.json
+          grep -q 'ghcr.io/aps-conecta/' "$json" \
+            || { echo "ARM B target drifted — no aps-conecta refs in containers.json" >&2; exit 1; }
+          sed -i 's#ghcr.io/aps-conecta/#ghcr.io/nextcloud-releases/#g' "$json"
+          if bash scripts/brand-gate.sh .; then
+            echo "ARM B FAILED: upstream registry refs in containers.json did NOT red the brand gate" >&2
+            exit 1
+          fi
+          echo "ARM B green: the re-injected registry ref reds the gate"
+          sed -i 's#ghcr.io/nextcloud-releases/#ghcr.io/aps-conecta/#g' "$json"

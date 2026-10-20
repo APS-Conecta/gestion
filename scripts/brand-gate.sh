@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
-# S4's brand gate — the replayed tree must carry OUR identity on every surface the patch queue
-# claims to have rebranded. Runs from THIS checkout (main, where the queue lives) against the
-# REPLAYED TREE (the worktree replay.sh leaves at .aps-replay-tree — what the Images pipeline
-# builds and the clinic runs).
+# The brand gate — the shipped tree must carry OUR identity on every surface the fork has
+# rebranded. Since the hard fork (Stage 3) the repo checkout IS the shipped tree — what the
+# Images pipeline builds and the clinic runs — and the gate asserts the tree its argument
+# names (ci.yml and the release chain both run it against the checkout).
 #
-# THE ROW CONTRACT — how the gate grows with the queue (and stays green while it fills, design
-# slices 8-13): a row fires only when its patch is in patches/. An empty queue is an honest
-# green — nothing claims to be rebranded — and every skipped row prints visibly, never silent.
-# The reverse direction is replay.sh's coverage rule: a queued patch with no row anywhere
-# aborts the replay before aps/main moves.
+# THE ROW CONTRACT (inverted with the hard fork): every row fires on every run. The patch
+# content is committed bytes now, so each row is an unconditional assert against the promoted
+# tree; the patch ID a row names is attribution — which change owes the guarantee — never a
+# condition. "Is the change measured?" has exactly one answer: every row always runs. A row
+# that cannot find its subject reds (the rows' own no-such-file arms make a moved target a
+# loud failure, never a silent pass).
 #
-# WHAT LANDS NOW: the registry-ref rows — the FRD's brand contract verbatim, zero
+# THE ROW LEDGER (all landed — the queue is gone; the IDs name the changes that owe each
+# row): the registry-ref rows — the FRD's brand contract verbatim, zero
 # ghcr.io/nextcloud-releases refs including php/src. 010 owns containers.json (plus the
 # fork-ref floor: the generated sed's auto-include property means the count only grows — a
 # shrunken parse is the B-014 class); 080 owns php/src (the 3 string refs:
@@ -30,7 +32,7 @@
 # see them, so the row pins the mechanism to the fork's own script. And slice 23 extends
 # this gate with the README/twig string-equality drift gate.
 #
-# SCOPE (measured against the mirror; grep -rl nextcloud-releases outside containers.json and
+# SCOPE (measured against the tree; grep -rl nextcloud-releases outside containers.json and
 # php/src/DockerActionManager.php = 29 files): root docs (readme.md, reverse-proxy.md,
 # manual-upgrade.md, develop.md, multiple-instances.md, php/README.md), the helm chart (15
 # templates + update-helm.sh), manual-install/latest.yml, root compose.yaml, update-helm.yml,
@@ -49,21 +51,15 @@
 # are the maintainer's build, not the clinic's install. This gate owns what the clinic's
 # install actually resolves: containers.json and php/src.
 #
-# Usage: scripts/brand-gate.sh TREE     (TREE = the replayed tree, e.g. .aps-replay-tree)
+# Usage: scripts/brand-gate.sh TREE     (TREE = the tree to assert, e.g. . — the checkout)
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 die() { echo "FATAL: $*" >&2; exit 1; }
 
-queued() { compgen -G "$REPO_ROOT/patches/$1-*" >/dev/null; }
-
 fails=0
-row() {  # ID DESCRIPTION CMD... — fires iff patch ID is queued; skips print visibly
+row() {  # ID DESCRIPTION CMD... — fires unconditionally; the ID names the change that owes this
   local id="$1" desc="$2"; shift 2
-  if ! queued "$id"; then
-    printf '  skipped: %s not in queue — %s (nothing claims it yet)\n' "$id" "$desc"
-    return 0
-  fi
   if "$@"; then
     printf '  ok: %s — %s\n' "$id" "$desc"
   else
@@ -125,8 +121,8 @@ case "${1:-}" in  # the self-test hooks org L7-2's CI arms drive — print-and-e
     ;;
 esac
 
-TREE="${1:?usage: scripts/brand-gate.sh TREE (the replayed tree, e.g. .aps-replay-tree)}"
-[ -d "$TREE/php" ] || die "'$TREE' does not look like the replayed tree (no php/ in it)"
+TREE="${1:?usage: scripts/brand-gate.sh TREE (the tree to assert, e.g. .)}"
+[ -d "$TREE/php" ] || die "'$TREE' does not look like the instalador tree (no php/ in it)"
 
 
 row 010 "containers.json carries zero upstream registry refs (the generated sed's post-state)" \
@@ -205,16 +201,16 @@ fork_changelog_present() {  # the positive control: the changelog arms point at 
 }
 
 escl_sweep() {  # MODE — walk swept_table's sentinel pairs. absent = the English sentinel must be
-  # gone (an unreplayed 060 leaves upstream English in place and reds loudly); present = the
+  # gone (a lost sweep leaves upstream English in place and reds loudly); present = the
   # es-CL sentinel must be there (a half-applied or mis-regenerated sweep loses a whole FILE —
   # exactly what this canary exists to catch, the 050 ids/floor precedent at row granularity).
   # One sentinel pair per swept file; the sweep's full proof is the patch's own edit points.
   # The table lives in swept_table() above — one writer, three readers (org L7-2).
   # AMENDED WITH SLICE 12 (070's forced extension): the setup and login present-arms pointed at
   # the h1 lines the reskin renames ("Configuración de All-in-One", "Inicio de sesión de
-  # Nextcloud AIO") — a sentinel that dies under a later queued patch is a row that reds
-  # forever. Both arms now point at BODY strings 060 wrote that 070 never touches, so the
-  # table passes with 070 queued and without it; the absent-arms (upstream English) are
+  # Nextcloud AIO") — a sentinel that dies under a later change is a row that reds
+  # forever. Both arms point at BODY strings 060 wrote that 070's reskin never touches, so
+  # the table holds across the renames; the absent-arms (upstream English) are
   # unaffected by the rename.
   local mode="$1" f en es fail=0
   while IFS='|' read -r f en es; do
@@ -402,7 +398,7 @@ row 030 "the white-label rename is enforced at build time — scripts/bake.sh as
   whitelabel_buildtime
 
 suite_escl_present() {  # TREE — the translated suite's positive control: one es-CL sentinel per
-  # spec file + helpers (an unreplayed 090 leaves the upstream English assertions in place and
+  # spec file + helpers (a lost 090 leaves the upstream English assertions in place and
   # reds loudly). The sentinels are measured bytes from the post-060 templates, never typed.
   local t="$1" f s fail=0
   while IFS='|' read -r f s; do
@@ -475,7 +471,7 @@ row 090 "the harness pulls the fork's image — compose.yaml repointed at ghcr.i
 
 readme_twig_equal() {  # the fork declaration (main's readme.md) quotes the wizard's shipped
   # bytes — docs assert what exists. Each pair is QUOTE|TREE-FILE: the string must byte-exist
-  # in the declaration AND in the named file of the replayed tree. A drift on either side —
+  # in the declaration AND in the named file of the tree. A drift on either side —
   # a 070 regeneration that rewords the wizard, or a hand-edit that rewords the declaration —
   # reds naming the string. The two ConfigurationManager examples are the 68-list's own
   # quotes: they assert the stay-English canaries from the README side (the 090 suite row
@@ -498,7 +494,7 @@ EOF
   [ "$fail" -eq 0 ]
 }
 
-row 070 "the fork declaration quotes the wizard's shipped bytes — every declared string byte-exists in the replayed tree and in main's readme (the S11 drift gate: docs assert what exists)" \
+row 070 "the fork declaration quotes the wizard's shipped bytes — every declared string byte-exists in the tree and in readme.md (the S11 drift gate: docs assert what exists)" \
   readme_twig_equal
 
 # ── L4 S2: the identity (R21 fonts, R20 lockup, R19 product name) ─────────────────────────────
@@ -941,8 +937,8 @@ row 239 "apache serves the suite's basemap same-origin at /tiles/ — APS_TILES_
 modern_tls() {  # 250: modern TLS only — the mastercontainer's ACME and internal listeners pin
   # protocols tls1.2 tls1.3 as their tls block's first directive, and apache's runtime stanza
   # (235's # tls placeholder mechanism) carries the same pin in start.sh's ACME TLS_STANZA;
-  # nothing older negotiates on any ingress. The floor landed on main as ead3eb6e; the parity
-  # fence moved it into the queue — mirrored files carry no local edits (the one rule).
+  # nothing older negotiates on any ingress. The floor landed on main as ead3eb6e and rode
+  # the queue into the tree — committed bytes now, measured like every row's subject.
   local fail=0 f
   for f in "$TREE/Containers/mastercontainer/acme.Caddyfile" "$TREE/Containers/mastercontainer/internal.Caddyfile"; do
     [ "$(grep -cE '^[[:space:]]*protocols tls1\.2 tls1\.3[[:space:]]*$' "$f" 2>/dev/null)" -eq 1 ] \
@@ -960,4 +956,4 @@ if [ "$fails" -gt 0 ]; then
   echo "BRAND GATE: *** FAIL *** — $fails row(s) failed" >&2
   exit 1
 fi
-echo "BRAND GATE: PASS — every queued patch's brand guarantee measured; skipped rows listed above (visible, never silent)"
+echo "BRAND GATE: PASS — every row measured against the promoted tree, zero skipped"
