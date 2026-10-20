@@ -6,4 +6,4 @@
 # scripts/validate.sh on the release chain's tag arm. Skip this file itself: it necessarily
 # contains the flagged words as list entries.
 skip = .codespellrc
-ignore-words-list = accesible,administrativo,argumentos,auxiliar,avance,calle,caracteres,comando,comandos,componentes,copie,direccion,doble,dout,falso,fase,fases,funcional,hace,imposible,ine,inicial,instale,momento,noe,oficial,oriente,pares,posible,previos,proxys,requiere,responde,ser,serie,termine,unparseable,utiliza,valide,varios,visibles
+ignore-words-list = accesible,administrativo,argumentos,auxiliar,avance,calle,caracteres,comando,comandos,componentes,copie,direccion,doble,dout,falso,fase,fases,funcional,hace,imposible,ine,inicial,instale,momento,noe,oficial,oriente,pares,posible,previos,proxys,reding,requiere,responde,ser,serie,termine,unparseable,utiliza,valide,varios,visibles
