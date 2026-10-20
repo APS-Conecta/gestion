@@ -1,116 +1,80 @@
 <!--
-  - SPDX-FileCopyrightText: 2026 Nextcloud GmbH and Nextcloud contributors
+  - SPDX-FileCopyrightText: 2026 APS Conecta
   - SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
-# Agent Guidelines for Nextcloud All-in-one
+# Agent Guidelines for APS Conecta Gestión AIO — Instalador
 
-This file provides instructions for AI coding agents (Claude Code, GitHub Copilot, Cursor, Windsurf, and others) operating on this repository. Read it before generating any code, commits, or pull requests.
+Instructions for AI coding agents operating on this repository. Read them before generating
+any code, commits, or pull requests.
 
----
+This is APS Conecta's hard fork of [Nextcloud
+All-in-One](https://github.com/nextcloud/all-in-one), maintained for Chilean
+primary-healthcare clinics. It is **not** produced by, affiliated with, or endorsed by
+Nextcloud GmbH (the full attribution lives in `readme.md`'s declaration block). The upstream
+contribution policy this file used to carry — nextcloud's AI policy, all-in-one's
+CONTRIBUTING, HackerOne reporting — left with the hard fork (Stage 3): one tree, the fork's
+own rules.
 
-## Nextcloud Contribution Policy
+## The one-tree doctrine
 
-All contributions generated or assisted by this agent must fully comply with:
+`main` is ONE tree: upstream's history plus the fork's changes as committed bytes. There is
+no patch queue, no mirror-parity fence, no replay machinery, no `upstream` remote, no
+`aps/main` branch. An upstream release arrives the way every upstream change arrives: a
+deliberate merge into `main`, then an ordinary release (`aps/RELEASING.md` owns the ritual).
+A merge that re-introduces upstream identifiers is followed by the merge-time re-swap tools:
+`scripts/retag.sh sed` and `scripts/rename-containers.py`.
 
-- **[AI Contribution Policy](https://github.com/nextcloud/.github/blob/master/AI_POLICY.md)** - the primary reference for AI-specific rules, covering disclosure, author accountability, communication, security, licensing, code quality, and autonomous agent behavior.
-- **[Contribution Guidelines](https://github.com/nextcloud/all-in-one/blob/main/CONTRIBUTING.md)** - covering testing requirements, the Developer Certificate of Origin (DCO), license headers, conventional commits, and translations. These apply in full to all contributions regardless of how they were produced.
+- NEVER force-push `main` — it is append-only; rollback is a revert.
+- NEVER edit the wizard's operator-visible strings without reading `readme.md`'s
+  `aps-fork-declaration` block: the brand gate asserts every declared string byte-exists in
+  the tree, so a drifted wording reds CI naming the string.
+- The gates' rows keyed by IDs (010…250) are attribution — which change owes which guarantee
+  — never a condition; every row runs on every push, PR and release.
 
-### What this agent must always do
+## The gates
 
-- Add an `Assisted-by: AGENT_NAME:MODEL_VERSION` git trailer to every commit containing AI-assisted content.
-- Ensure every pull request includes a disclosure of AI tool use in the PR description.
-- Produce focused, scoped pull requests that address exactly one concern. Do not touch unrelated files or introduce incidental refactors.
-- Verify all dependencies against actual package registries before suggesting them. Do not use hallucinated or unverified package names.
-- Explicitly inform the contributor when any action they are about to take, or have taken, would violate the AI Contribution Policy or the Contribution Guidelines. Do not silently proceed. State which rule is at risk and what the contributor should do instead.
-- Warn the contributor if a pull request is growing too large. A PR approaching several thousand lines of changed code is a signal that it should be split into smaller, focused PRs. Suggest a logical split before the PR is opened, not after.
-- Recommend opening a ticket for discussion before starting implementation whenever a feature or change is sufficiently complex - for example when it touches multiple subsystems, requires architectural decisions, or the right approach is not yet clear. A ticket allows maintainers and the contributor to align on direction before code is written, avoiding wasted effort on a PR that may be rejected or require fundamental rework.
+- `scripts/brand-gate.sh` and `scripts/acquisition-gate.sh` assert the tree's identity and
+  its acquisition channels — ci.yml runs them on every push and PR, and the release chain's
+  gates arm on every tag.
+- `scripts/test.sh` is the static suite (secrets, shellcheck sweep, the comm and errexit
+  arms). CI is the only mechanical gate; where a behavior is not observable in CI, the check
+  beside it says so instead of pretending.
+- `scripts/validate.sh` runs upstream's own three validators (codespell, docker-lint,
+  json-spec) against any tree.
+- `scripts/retag.sh --self-test` is hermetic: stub registry, local fixture repos, no network.
 
-### What this agent must never do
+A red gate is information. Fix the bytes, or change the contract deliberately in a commit
+that says so — never weaken a row to get a green run.
 
-- Open issues, submit pull requests, post review comments, or send security reports autonomously. Every contribution must be reviewed and submitted by a human.
-- Add `Signed-off-by` tags to commits. Only the human contributor can certify the Developer Certificate of Origin.
-- Generate or submit security reports without independent human verification. Report verified vulnerabilities via [HackerOne](https://hackerone.com/nextcloud), not as GitHub issues.
-- Write PR descriptions, review comments, or issue reports on behalf of the contributor. These must be in the contributor's own words.
-- Submit code that has not been reviewed and cleaned up by the contributor. Dead code, redundant logic, excessive comments, and unrelated changes must be removed before submission.
+## Commits
 
----
+Conventional Commits; the fork's own changes carry the `instalador` scope:
 
-## Repository-Specific Requirements
+    fix(instalador): the gates' rows fire unconditionally — the queue-era contract inverted
 
-### Commit format
+Every commit with AI-assisted content carries an `Assisted-by: AGENT_NAME:MODEL_VERSION`
+trailer. Do not add `Signed-off-by` tags.
 
-Use [Conventional Commits](https://www.conventionalcommits.org) for all commit messages:
+## Code rules inherited with the tree
 
-```
-<type>(<scope>): <short description>
+- The wizard's frontend (`php/public/`, `php/templates/`) uses only web features that are
+  Baseline "widely available" — no polyfills, nothing merely "newly available".
+- The upstream [LICENSE](LICENSE) (AGPL-3.0) is carried unchanged; new files carry an SPDX
+  header (`SPDX-License-Identifier: AGPL-3.0-or-later`).
+- Operator-visible Spanish is es-CL, formal usted — the codespell ignore list in
+  `.codespellrc` exists for it; do not "fix" correct Spanish words.
 
-[optional body]
+## Where things live
 
-Assisted-by: AGENT_NAME:MODEL_VERSION
-```
+- `aps/RELEASING.md` — the release ritual (the frozen window, the tag push, the audit).
+- `BUGS.md` — the bug ledger; rows are frozen at their era's bytes. Add rows, never rewrite.
+- `aps/INSTALLER.md`, `aps/GUIA-CLINICA.md`, `aps/MIGRATION.md` — the operator runbooks.
+- `readme.md`'s `aps-fork-declaration` block — the fork's own record; markers stay, content
+  stays true to the tree.
 
-Common types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `perf`, `build`, `ci`.  
-The scope should match the affected component (e.g. `AIO-interface`, `Fulltextsearch`, `Database`, `Apache`, `Mastercontainer`, `App`, `community-containers` or else).
+## Security
 
-Example:
-```
-feat(AIO-interface): allow to prune the docker system via a button
-
-Assisted-by: ClaudeCode:claude-sonnet-4-6
-```
-
-### Tests
-
-- Every changed or added code segment must be covered by unit tests. Pull requests without tests for new or modified logic will not be accepted.
-- In areas where unit testing is currently difficult, refactoring to enable testability is encouraged alongside the bug fix.
-- New features must be manually tested on a live Nextcloud instance by the human contributor before submission. Providing test steps for an agent to execute is not a substitute.
-
-### Developer Certificate of Origin (DCO)
-
-The project uses the DCO as an additional safeguard. Only the human contributor may add the `Signed-off-by` trailer - agents must not add it:
-
-```
-Signed-off-by: Random J Developer <random@developer.example.org>
-```
-
-Contributors can sign automatically with `git commit -s` after configuring `user.name` and `user.email`.
-
-### License headers
-
-Every new file must include the correct SPDX license header. For AGPL-3.0-or-later (the default for this repository):
-
-```php
-/**
- * SPDX-FileCopyrightText: <year> <name>
- * SPDX-License-Identifier: AGPL-3.0-or-later
- */
-```
-
-See [HowToApplyALicense.md](https://github.com/nextcloud/server/blob/master/contribute/HowToApplyALicense.md) for details on per-language formats. AI-generated code must not include material from sources incompatible with AGPL-3.0-or-later.
-
-### Browser compatibility
-
-JavaScript, CSS and HTML in the AIO interface (`php/public/`, `php/templates/`) must only use web features that are [Baseline "widely available"](https://web.dev/baseline). Do not add polyfills or transpilation for older browsers, and do not use features that are only "newly available" or not yet Baseline. Check a feature's Baseline status on [MDN](https://developer.mozilla.org/) or [caniuse.com](https://caniuse.com/) before using it.
-
-### Security
-
-- Do not open GitHub issues for potential vulnerabilities. Report them via [HackerOne](https://hackerone.com/nextcloud) following the [security policy](https://nextcloud.com/security/).
-- AI-generated security reports must be independently verified by the human contributor before submission.
-- Manually verify all access control logic, authentication patterns, and dependency names - AI tools are known to hallucinate package names and reproduce vulnerable patterns.
-
-### Scope of this repository
-
-This repository covers the Nextcloud all-in-one and all its included containers and features. Issues and changes for other components belong in their respective repositories under the [Nextcloud GitHub organization](https://github.com/nextcloud/).
-
----
-
-## Further Reading
-
-- [Local CONTRIBUTING.md](CONTRIBUTING.md)
-- [Nextcloud Contribution Guidelines](https://github.com/nextcloud/all-in-one/blob/main/CONTRIBUTING.md)
-- [AI Contribution Policy](https://github.com/nextcloud/.github/blob/master/AI_POLICY.md)
-- [Developer Certificate of Origin](https://github.com/nextcloud/server/blob/master/contribute/developer-certificate-of-origin)
-- [How to Apply a License](https://github.com/nextcloud/server/blob/master/contribute/HowToApplyALicense.md)
-- [Developer Manual](https://github.com/nextcloud/all-in-one/blob/main/develop.md)
-- [Security Vulnerability Reporting (HackerOne)](https://hackerone.com/nextcloud)
+Report suspected vulnerabilities to the APS Conecta maintainers privately — never as public
+GitHub issues, never autonomously. Nextcloud's HackerOne program covers nextcloud's software
+as they ship it; it is not this fork's channel.

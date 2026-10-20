@@ -174,8 +174,9 @@ an install pinned at an old tag keeps verifying against them exactly as it alway
 instalador absorbed the fork; AIO freezes, then archives. In order — each line records a
 hand-off that has no workflow of its own:
 
-- [ ] instalador's Replay schedule enabled, and one SCHEDULED run green (until then,
-      liveness reds every push/dispatch run by design — the canary, not a failure).
+- [x] instalador's Replay schedule enabled, and one SCHEDULED run green — done in the queue
+      era; the schedule, its liveness canary and the Replay workflow itself then retired
+      with the hard fork (Stage 3, 2026-10: this fork runs no schedules).
 - [ ] AIO's Replay schedule DISABLED, the same day instalador's goes live — no
       double-publish window. Record the date beside this line.
 - [ ] instalador's first Release cut end-to-end: gates → the 20 images at the tag → the

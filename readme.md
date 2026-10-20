@@ -7,9 +7,11 @@
 > endorsed by Nextcloud GmbH. "Nextcloud" and the Nextcloud logo are trademarks of
 > Nextcloud GmbH.
 
-**What this fork changes.** Everything ships as numbered patches under [`patches/`](patches/),
-replayed by CI over the `main` branch — which mirrors upstream byte-for-byte outside the
-fork-infra paths — into `aps/main`, the tree the images are built from:
+**What this fork changes.** The fork's changes are committed bytes on `main` — one tree,
+first-class files, what the images are built from. They were born as numbered patches the CI
+replayed over upstream's tree; the hard fork (Stage 3) merged the replayed tree into `main`
+and retired the queue. The IDs are attribution — which change owes which guarantee, the same
+ID the gates' rows name:
 
 | Patch | What it does |
 |---|---|
@@ -44,9 +46,10 @@ fork-infra paths — into `aps/main`, the tree the images are built from:
 | 238 | the push server reaches Nextcloud over the internal plain-http listener, not the public URL |
 | 239 | the suite's basemap served same-origin at `/tiles/` from a read-only host directory (`APS_TILES_DIR`); a 404 until it exists (PHP, declared) |
 | 240 | the suite's containers are named `aps-conecta-*` (generated; the wizard stays `nextcloud-aio-mastercontainer`; fresh installs only) |
+| 250 | modern TLS only on every ingress — the ACME and internal listeners pin TLS 1.2/1.3, and apache's runtime ACME stanza carries the same pin; nothing older negotiates |
 
 **PHP logic changes only where declared.** Every other modification is a string, an asset, a
-template, or Dockerfile plumbing, carried as a patch the CI replays and the gates verify. The
+template, or Dockerfile plumbing — committed bytes the gates verify. The
 declared PHP changes: patch 080's three registry references (strings), patch 200's office guard
 (any office other than Euro-Office is refused), patch 210's defaults (Talk, Whiteboard and
 Imaginary start off), patch 233's IP guard (an IP is accepted as the domain while domain validation
@@ -57,7 +60,7 @@ container names (strings, and the log route's name guard).
 **What the operator sees.** The wizard presents itself as «APS Conecta Gestión AIO — Instalador»;
 an already-installed instance greets with «APS Conecta Gestión AIO ya está instalado»; once the
 containers run, the page hands back to the web installer with «Suite en marcha». These are the shipped bytes
-— the brand gate proves them equal to this declaration on every replay.
+— the brand gate proves them equal to this declaration on every run.
 
 **Why some messages remain in English.** The wizard renders 68 operator-visible messages from
 PHP code the fork does not translate (its declared PHP changes are behaviour, not strings). They stay English by scope decision, and
@@ -89,18 +92,21 @@ suite's install story: the suite's documentation is this repository plus instala
 `aps/INSTALLER.md`, never the label's target. This repository is the source of the
 modifications.
 
-**Schedules.** The only schedule this fork runs is the Replay workflow's daily run — enable
-it once in the Actions tab (the workflow's liveness job reds on the next push or PR if it
-stays off). Upstream's own scheduled workflows (`collabora`, `dependency-updates`,
+**Schedules.** This fork runs none. The Replay workflow's daily run and its liveness canary
+are gone (retired with the queue era, then the workflow itself with the hard fork, Stage 3):
+upstream changes arrive by a deliberate merge into `main`, and the discipline is proven by
+every release's own gates run, before anything builds or signs. Upstream's own scheduled
+workflows (`collabora`, `dependency-updates`,
 `desec-api-version-watch`, `imaginary-update`, `lock-threads`, `nextcloud-update`,
 `psalm-update-baseline`, `sync-workflow-templates`, `talk`, `update-helm`,
 `update-test-container-image-references`, `update-yaml`, `watchtower-update`,
-`wg-easy-update`) are expected disabled here: the fork takes every upstream change through
-the mirror sync, and none of upstream's scheduled automation should act on this repository.
+`wg-easy-update`) are expected disabled here: none of upstream's scheduled automation should
+act on this repository.
 
 **License.** The upstream [LICENSE](LICENSE) (AGPL-3.0) is carried unchanged. The complete
 corresponding source of every suite image is this repository at the matching suite tag: the
-`main` branch's upstream history plus the patch queue is the whole of it.
+tag's tree — upstream's history and the fork's changes as committed bytes — is the whole of
+it.
 
 **Installing.** A clinic installs from the published suite tag, never from this branch — the
 runbook (preflight, the provisionador, backups, the map, updates) lives in

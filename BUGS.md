@@ -1,8 +1,10 @@
 # Bugs — APS Conecta AIO (the fork's own tooling)
 
-Fix log for this fork's infrastructure: what went wrong while building the patch queue, the
-gates and the replay engine, and why each fix is right. **What is open right now lives in the
-issue tracker** — this file is the durable record of the ones that are fixed and gated.
+Fix log for this fork's infrastructure, and why each fix is right. The rows are frozen at
+their era's bytes: the patch queue, the parity fence and the replay engine some of them name
+retired with the hard fork (Stage 3, 2026-10) — those mentions are the dated record of why
+the surviving machinery is shaped as it is, and they stay. **What is open right now lives in
+the issue tracker** — this file is the durable record of the ones that are fixed and gated.
 
 Each row names the cause and where the fix lives. The reasoning that made a fix non-obvious is
 a comment beside the code it protects, not here — a second copy desyncs the day it is written.
@@ -24,10 +26,13 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 | A-013 | every replay failed from 2026-09-25 (the push run; the first scheduled failure 2026-09-26) and nobody saw it for 8 days; the published images stopped following upstream | a direct push to main (`44ccb198`) added `/.aps-replay-tree/` to `.gitignore` — a modification of a mirrored file, which parity forbids outside the readme declaration; the liveness job reds only after 7 days without a green scheduled run, and only on the next push or PR — nobody was watching the failing runs | `.gitignore` back to upstream's bytes; the replay worktree is excluded locally (`.git/info/exclude`, shared by every linked worktree). Main-side edits go through a PR, whose replay job proves parity |
 | A-014 | under the A-013 red, 5 of 12 patches (030, 051, 060, 070, 090) stopped applying on upstream `3e8624cf` | upstream moved the files they patch (the passphrase reveal button, deSEC, the php bump); `git apply --3way` cannot help — the patches' preimages are uncommitted intermediate states | re-base by rebasing a per-patch commit chain built on the last green base (`b6faacba`) onto `upstream/main`, resolving the real conflicts, and regenerating each drifted patch as `git diff --binary` between consecutive chain commits; upstream's new strings (the reveal button's labels) go into 060 with a sentinel row; upstream's new `desec-ip-updater` dinit service stays, a no-op without a deSEC domain (`DesecManager.php` returns at once; 051 removed the UI that sets one) |
 | A-015 | with the parity fence retired (Stage 3), a dependabot PR would have merged into main unopposed: `dependabot-approve-merge.yml` auto-approves `dependabot[bot]` (ALLOW_MINOR: true, `contents: write`) and parity reding on those PRs was the only brake | dependabot's three ecosystems (github-actions, composer, docker ×20 dirs) bump mirrored files daily, and the fork's post-fork doctrine is "an upstream change arrives by a deliberate merge" — nothing may auto-merge into first-class bytes | the pair deleted (`dependabot.yml` + the auto-approver) in the same atomic push as the fence — plus two operator steps no commit can do, recorded here: disable Dependabot version updates in repo Settings (the file's deletion stops the config; the Settings toggle is the master switch), and close the 12 stale `dependabot/*` branches on origin |
+| A-016 | deleting `patches/` alone would have left both gates vacuously green: every row's `queued()` compgen finds nothing, ~45 rows print as skips, exit 0 against ANY tree | the row contract fired a row iff its patch was queued — the green-while-filling design read as a skip contract the moment the queue died | rows inverted to fire unconditionally (the patch ID is attribution, never a condition) and the gates re-homed to ci.yml on push+PR plus the release chain's inline arm (Stage 3, design slice 2) |
+| A-017 | with `patches/` gone but the replay machinery alive, `cmd_replay`'s nullglob loop walks zero patches and force-pushes the BARE upstream tip to `aps/main` green — builds would ship unpatched with zero reds | the replay loop treated an empty queue as a legitimate walk, and any partial retirement reached that state | one atomic push lands the merge and the machinery's retirement together — origin never sees an intermediate state, and the window never opens (Stage 3, the landing doctrine) |
+| A-018 | the operator-facing changelog link shipped in the promoted tree pointed at `instalador/commits/aps/main` — the branch the fork deletes at teardown; the link would 404 | patch 060's changelog was cut when the queue era made `aps/main` the promoted tree; nothing re-pointed it at the merge | re-pointed at `instalador/commits/main` in the hard-fork corrections commit (Stage 3, design slice 1) |
 
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and
-the gate that stops it recurring in `scripts/brand-gate.sh`, `scripts/acquisition-gate.sh` or
-`scripts/replay.sh`.
+the gate that stops it recurring in `scripts/brand-gate.sh`, `scripts/acquisition-gate.sh`,
+`scripts/test.sh` or the relevant script's own self-test.
 
