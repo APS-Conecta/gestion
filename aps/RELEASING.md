@@ -36,9 +36,8 @@ On instalador's repository Settings → Secrets and variables → Actions:
 
 - `MINISIGN_SECRET_KEY` — the CONTENTS of `installer.sec` (both lines, untrusted comment
   included). The release job writes them to a 0600 trap-removed file; the key never reaches
-  argv, a URL, or a log line (the P45 rule the replay chain already keeps).
+  argv, a URL, or a log line (the P45 rule).
 - `MINISIGN_KEY_PASSWORD` — the passphrase, or empty for a `-n` key.
-- `APS_BOT_PAT` — already carried by the replay/images chain (the sync and replay pushes).
 
 A wrong pair reds the package job loudly ("signing failed — the passphrase
 (MINISIGN_KEY_PASSWORD) or the key (MINISIGN_SECRET_KEY) is wrong"); nothing is released
@@ -64,8 +63,8 @@ or the tag waits.
 
     git tag vX.Y.Z && git push origin vX.Y.Z
 
-release.yml runs the whole chain: replay gates (parity, replay, validators, brand gate,
-acquisition gate, drift) → the 20-image lockstep publish at the tag → package-release (composite
+release.yml runs the whole chain: gates (upstream's own validators + twig-lint + brand gate +
+acquisition gate, inline against the tag tree) → the 20-image lockstep publish FROM THE TAG → package-release (composite
 assembly, SHA256SUMS, the signature, the verify-PROOF against the committed `installer.pub`,
 the constants-filled install asset) → the Release with five assets. Watch it; a red anywhere
 names its gate.

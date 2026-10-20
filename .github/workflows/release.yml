@@ -1,19 +1,24 @@
 # The release chain (D4: instalador's tag is the only release identity — one tag, one Release,
 # one signed composite package). Tag push runs the whole proven chain in order:
 #
-#   gates   → the replay chain (workflow_call, added by Slice 3's replay.yml seam): sync, parity,
-#             replay (REPLAY_PUSH=1 regenerates aps/main — exactly what the Images pipeline
-#             builds from), validators, gates, drift report. No publish inside the call: the
-#             publish job there is dispatch-only, so this workflow calls the Images pipeline
-#             itself, behind the gates, with the tag pinned.
+#   gates   → INLINE since the hard fork (D-rev 2026-10-19, Stage 3): scripts/validate.sh
+#             (upstream's own three — codespell, docker-lint, json-validator) + twig-lint
+#             (PHP 8.5 + apcu, upstream's own setup) + the brand and acquisition gates, all
+#             against THE TAG TREE (this job's own checkout). contents: read, zero secrets —
+#             nothing in the chain pushes git refs anymore. The gates used to ride a
+#             workflow_call into the replay chain; the called-workflow graph class that
+#             produced b960d8d0/c33884f7/d4a54d87 retires with the call. Upstream's own
+#             validator workflows fire on push+PR (ci.yml's gates job rides alongside) but
+#             never on tag pushes — this arm is where the tag's bytes are proven.
 #   images  → the 20-image lockstep (workflow_call): 17 retags copied from OUR previous suite
-#             tag (retag-source ours by default — Stage 2's self-referential lockstep; the
-#             dispatch arm can carry upstream:<channel> to complete a vendor bump, RELEASING §5)
-#             + 3 builds + matrix + boot-smoke + manifest. Sign sits behind the WHOLE call: a
-#             reusable-workflow job is green only
-#             when every job in it is green, and the callee's manifest job already needs matrix
-#             and boot-smoke — so nothing is signed before a complete, booted, one-snapshot set
-#             exists (the boot-smoke-pins-the-sign-moment rule).
+#             tag (retag-source ours by default — Stage 2's self-referential lockstep)
+#             + 3 builds FROM THE TAG (build-ref = the tag: immutable provenance — the exact
+#             bytes the gates just proved; the manifest lockstep assert stays as belt-and-
+#             braces) + matrix + boot-smoke + manifest. Sign sits behind the WHOLE call: a
+#             reusable-workflow job is green only when every job in it is green, and the
+#             callee's manifest job already needs matrix and boot-smoke — so nothing is signed
+#             before a complete, booted, one-snapshot set exists (the boot-smoke-pins-the-
+#             sign-moment rule).
 #   package → scripts/package-release.sh: the composite assembly (instalador's tag tree +
 #             gestion's release-frozen provisioning/apps + sites register + provisioning/data +
 #             themes/apsconecta), the publish record (retag.sh manifest — same tool and digest
@@ -21,12 +26,13 @@
 #             signify signature over it, the verify-PROOF with the committed installer.pub, and
 #             the constants-filled install asset; then gh release create with all five assets.
 #
-# SECRETS: APS_BOT_PAT (forwarded, explicitly and only, to the gates call — the callee's
-# sync/replay pushes); MINISIGN_SECRET_KEY + MINISIGN_KEY_PASSWORD (package-release.sh's sign:
-# the key lands in a 0600 trap-removed temp file, the passphrase rides stdin — the P45 rule:
-# neither ever reaches argv or a URL); plus the always-present GITHUB_TOKEN.
+# SECRETS: MINISIGN_SECRET_KEY + MINISIGN_KEY_PASSWORD (package-release.sh's sign: the key
+# lands in a 0600 trap-removed temp file, the passphrase rides stdin — the P45 rule: neither
+# ever reaches argv or a URL); plus the always-present GITHUB_TOKEN. The bot PAT that carried
+# the sync/replay pushes retired from this chain with the fork — nothing here pushes git refs
+# anymore (org-drift and cleanboot keep their own use of the secret).
 #
-# ACTIONS SHA-PINNED (upstream's own convention; the mirror's lint-yaml runs zizmor over
+# ACTIONS SHA-PINNED (upstream's own convention; lint-yaml's zizmor runs over
 # .github/workflows on PRs and catches unpinned uses). Untrusted context (the tag name) reaches
 # bash only via env:, never inline in run:.
 #
@@ -34,15 +40,15 @@
 # this tag push (the bake and the composite both read it at that content). The image set
 # publishes BEFORE the package is cut, and a PUBLISHED Release's assets never move: the dispatch
 # arm below (suite-tag + force-images) exists only to repair a chain that failed BEFORE
-# `gh release create` — repairs rebuild from aps/main's CURRENT content, so the freeze window
-# governs a repair exactly like a release.
+# `gh release create` — repairs rebuild from the tag's own content (build-ref = the tag on
+# every arm), so the freeze window governs a repair exactly like a release.
 #
 # REHEARSAL: tags v0.0.0-ci.N (VERSION set to match on a rehearsal branch) run this same chain
 # end-to-end — channel-valid, never mistaken for a release, deletable.
 #
 # No liveness gate rides the chain (D-rev 2026-10-16): the daily schedule and its canary
-# are retired — the drift discipline is proven HERE, by every release's own gates run
-# (sync, parity, replay, validators), before anything builds or signs.
+# are retired — the discipline is proven HERE, by every release's own gates run (validators,
+# twig-lint, both gates), before anything builds or signs.
 name: Release
 
 on:
@@ -66,7 +72,7 @@ on:
         type: string
 
 permissions:
-  contents: write   # the package job creates the Release; headroom for the gates call's pushes
+  contents: write   # the package job creates the Release (gates/images declare tighter job-level grants)
 
 concurrency:
   group: release-${{ inputs.suite-tag || github.ref_name }}
@@ -74,21 +80,39 @@ concurrency:
 
 jobs:
   gates:
-    name: Replay gates (regenerate and prove aps/main)
-    uses: ./.github/workflows/replay.yml
-    secrets:   # explicit, least privilege: only what the callee's replay job pushes with
-      APS_BOT_PAT: ${{ secrets.APS_BOT_PAT }}
+    name: Gates (validators + brand + acquisition, against the tag tree)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
-      contents: write   # headroom parity: the callee's replay job pushes main and force-pushes aps/main (the writes ride the PAT; this only caps what the callee's GITHUB_TOKEN may do)
-      packages: write   # the callee's publish job declares it (its dispatch-only arm — never runs under this call, but GitHub validates every nested job's request at run-start): a called job may only DOWNGRADE the caller's grants, so the cap must carry every scope any nested job declares. Found by the v0.0.0-ci.1 rehearsal — the chain had never started before it.
+      contents: read   # the gates arm proves; it moves nothing (the call's write headroom died with the replay call)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (upstream's own pin)
+        with:
+          ref: ${{ inputs.suite-tag || github.ref_name }}   # the tag tree — the bytes this chain ships and the builds build
+      - name: Upstream validators I — codespell, docker-lint, json-validator
+        run: bash scripts/validate.sh .
+      - uses: shivammathur/setup-php@7bf05c6b704e0b9bfee22f00130a31b5ea68d593 # v2 (upstream's own pin)
+        with:
+          php-version: 8.5
+          extensions: apcu
+          coverage: none
+      - name: twig lint (upstream's own command, against the tag tree)
+        run: |
+          cd php
+          composer install
+          composer run lint:twig
+      - name: Brand gate
+        run: bash scripts/brand-gate.sh .
+      - name: Acquisition gate
+        run: bash scripts/acquisition-gate.sh .
 
   images:
     name: Publish the 20-image lockstep set
-    needs: gates   # a red replay or a red gate can never move images
+    needs: gates   # a red validator, twig-lint or gate can never move images
     uses: ./.github/workflows/images.yml
     with:
       suite-tag: ${{ inputs.suite-tag || github.ref_name }}
-      build-ref: aps/main   # the replayed tree the gates job just regenerated
+      build-ref: ${{ inputs.suite-tag || github.ref_name }}   # THE TAG (D-3.4): immutable provenance — the exact bytes the gates just proved; no mid-run ref race
       force: ${{ inputs.force-images || false }}
       retag-source: ${{ inputs.retag-source || 'ours' }}   # ours on every tag push (inputs.* is null there — the || catches it); the repair arm's passthrough is the vendor bump's completion arm
     permissions:
@@ -127,7 +151,6 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Emit the publish record (the manifest asset)
         env:
-          REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
           # The RETAG job's ONE resolution (D-5), handed up through the images call's
           # workflow_call output: the tag-tree's retag.sh records in retag_source the same
           # spec the walk copied from — the package re-emit must never resolve a second time
@@ -140,14 +163,11 @@ jobs:
           set -euo pipefail
           # The registry is the truth and digests are immutable, so the digest half of this
           # re-emit equals the Images manifest job's own record (same tool, same format —
-          # diffable). built_from is best-effort provenance: aps/main as resolved NOW — the
-          # gates call serialized behind the replay group, but a concurrent replay walk could still land
-          # between gates and this step; if it did, built_from.sha differs from the manifest
-          # job's record while every image digest stands. The digests are the record.
-          aps_sha="$(git ls-remote "$REPO_URL" refs/heads/aps/main | cut -f1)"
-          [ -n "$aps_sha" ] || { echo "FAIL: aps/main did not resolve — the gates job must have pushed it" >&2; exit 1; }
+          # diffable). built_from is EXACT provenance since the hard fork: this job's checkout
+          # IS the tag tree, and the images pipeline built from the same tag (build-ref = the
+          # tag, D-3.4) — no remote resolution, no race, nothing left to resolve.
           [ -n "${RETAG_SOURCE:-}" ] || { echo "FAIL: the images job's resolved retag source did not thread — needs.images must stay a direct dependency of this job" >&2; exit 1; }
-          RETAG_BUILT_REF=aps/main RETAG_BUILT_SHA="$aps_sha" \
+          RETAG_BUILT_REF="$RELEASE_TAG" RETAG_BUILT_SHA="$(git rev-parse HEAD)" \
             bash scripts/retag.sh manifest "$RELEASE_TAG" > "suite-$RELEASE_TAG-manifest.json"
           cat "suite-$RELEASE_TAG-manifest.json"
       - name: Assemble, sign, prove, fill

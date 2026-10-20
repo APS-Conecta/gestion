@@ -1,6 +1,6 @@
 # S1 — the lockstep image pipeline. 20 images under ghcr.io/aps-conecta/* per suite tag: 17
-# registry-side retags of OUR PREVIOUS SUITE TAG (Stage 2, the self-referential lockstep — upstream
-# only on a deliberate vendor bump; docker buildx imagetools create — seconds, zero runner disk, the
+# registry-side retags of OUR PREVIOUS SUITE TAG (Stage 2, the self-referential lockstep;
+# docker buildx imagetools create — seconds, zero runner disk, the
 # multi-arch manifest list carried byte-for-byte) + 3 real builds (aio-nextcloud, the apps+theme
 # bake that patch 030 slots in; aio-apache, the web front serving the installer's own certificate
 # that patch 235 slots in; all-in-one, the mastercontainer reskin that patch 070 slots in). The
@@ -12,32 +12,27 @@
 # not "one feature down" — the wizard's registry-reachability checks fail the whole start. Existence
 # alone is not enough either: the matrix also proves the 17 retagged images faithfully copy their
 # RESOLVED source — under ours:<tag> the previous set is immutable, so any mismatch means the walk
-# itself erred (the "mixed" concept turns into an integrity proof); under upstream:<channel> it
-# proves ONE snapshot (a walk that straddled an upstream release would mix two releases inside one
-# suite tag), and the boot smoke proves the pushed mastercontainer actually PULLS and BOOTS —
+# itself erred (the "mixed" concept turns into an integrity proof), and the boot smoke proves
+# the pushed mastercontainer actually PULLS and BOOTS —
 # manifest-inspect never reads a layer byte, so a broken push is invisible to it.
 #
 # THE SOURCE IS OURS, RESOLVED ONCE (Stage 2). The 17 retags copy from ghcr.io/aps-conecta/*:<the
-# previous suite tag>, not from upstream :latest: the retag job's retag.sh resolves the source
+# previous suite tag>: the retag job's retag.sh resolves the source
 # itself (the newest digest-complete set — git tags ARE the suite-tag list — falling back to the
-# recorded aps/BASE.lock bootstrap, else FATAL), and a vendor bump is an explicit dispatch with
-# upstream:<channel>, never a default. Resolution happens exactly ONCE per run: the walk announces
+# recorded aps/BASE.lock bootstrap, else FATAL). Resolution happens exactly ONCE per run: the walk announces
 # RETAG_SOURCE_RESOLVED=<spec>, this job's output carries it, the matrix and the manifest jobs
 # consume needs.retag.outputs.retag-source, and the workflow_call output hands the same spec to
 # the release's package re-emit — no job re-resolves (a second resolution could race a concurrent
 # publish of the same tag).
 #
-# THE BUILD-REF SEAM. aps/main is the DEFAULT since the replay chain landed (S4, slice 7): both
-# dispatch and workflow_call default there, so every human dispatch and every caller builds the
-# PATCHED tree — publishing unpatched now takes a deliberate build-ref=main (repair/testing only;
-# the replay chain's hand-off passes aps/main explicitly anyway; with 030 queued that mode
-# builds the UNBAKED upstream nextcloud image — the bake's Dockerfile lines are themselves a
-# patch, so the two trees disagree by construction, and a suite tag is never published from
-# it). Only the three BUILD jobs read build-ref (the Dockerfiles — upstream files, present on
-# every ref; the bake's COPY sources are workflow-materialized, on every ref alike);
-# scripts/retag.sh runs from main's checkout everywhere, so no job depends on the generated
-# branch carrying fork-infra. The three build jobs refuse to mix trees: the manifest job asserts
-# all three resolved the same commit of build-ref.
+# THE BUILD-REF SEAM. THE TAG is what the release chain passes (D-rev 2026-10-19, Stage 3:
+# build-ref = the tag — immutable provenance, the exact bytes the gates proved, no mid-run ref
+# race; the manifest lockstep assert stays as belt-and-braces). main is the DEFAULT for manual
+# dispatches — post-fork main IS the shipped tree (first-class bytes, bake and all), so a
+# manual dispatch builds the shipped tree without ceremony; "the unpatched mirror" mode ceased
+# to exist with the fork. Only the three BUILD jobs read build-ref; the retag job checks out
+# the default branch everywhere. The three build jobs refuse to mix trees: the manifest job
+# asserts all three resolved the same commit of build-ref.
 #
 # IMMUTABILITY. A published tag's digests never move (D12: one distribution, one version). The retag
 # job refuses a fully-present set without force, and the builds run needs: retag so the refusal also
@@ -54,19 +49,12 @@
 # unpinned uses are exactly what it exists to catch. Bump = resolve the new tag's SHA, change the
 # pin, keep the # comment naming the version.
 #
-# FORK-INFRA PLACEMENT (a D6 amendment, ratified with this slice). This file lives on main, which
-# stays a byte-identical upstream mirror for everything upstream ships. Fork-only paths — this
-# Fork-only paths — this workflow, scripts/retag.sh, replay.yml,
-# scripts/{replay,brand-gate,acquisition-gate}.sh, patches/, BUGS.md, and instalador's
-# extension — host/, provisioning/, aps/, install.sh, VERSION, installer.pub,
-# .github/workflows/{release,ci,cleanboot}.yml — are the mirror-parity allowlist: S4's parity
-# assert diffs main against upstream byte-for-byte EXCEPT these paths. It is the only topology under which GitHub can
-# run the fork's own CI at all: dispatch, schedule and reusable workflows must exist on the default
-# branch, and aps/main is force-pushed CI output — unusable as the default. All patch-queue content
-# (changes to files upstream ships) still moves as numbered patches replayed into aps/main, exactly
-# as D6 requires; the allowlist covers only files upstream does not have, so the mirror stays
-# diffable. Upstream's own validators (shellcheck on **.sh, lint-yaml/zizmor, json-validator) run on
-# our files too — green on them is a program requirement.
+# PLACEMENT (post-fork, D-rev 2026-10-19). This workflow lives on main, the default branch —
+# dispatch and reusable workflows must exist there for GitHub to run them at all (that is why
+# the fork's CI lives on main and not on a tag tree). main is the shipped tree since the hard
+# fork — one tree, no mirror, no queue. Upstream's own validators (shellcheck on **.sh,
+# lint-yaml/zizmor, json-validator) run on our files too — green on them is a program
+# requirement.
 #
 # The release ordering this workflow serves: the suite tag IS the instalador release tag (D4 —
 # gestion's tag ritual retired); the release chain (release.yml) consumes this manifest as its
@@ -82,9 +70,9 @@ on:
         required: true
         type: string
       build-ref:
-        description: "The ref the 3 real builds check out. aps/main = the replayed (patched) tree — the default since S4. main = the byte-identical mirror, unpatched — deliberate repair/testing only (with the bake queued, that means the UNBAKED upstream nextcloud image)."
+        description: "The ref the 3 real builds check out. The release chain passes THE TAG (immutable provenance — the bytes the gates proved). main = the default for manual dispatches (repair/testing; post-fork main IS the shipped tree, bake and all)."
         required: false
-        default: aps/main
+        default: main
         type: string
       gestion-ref:
         description: "The gestion ref the bake reads (provisioning/apps + themes/apsconecta at the release content — VENDOR-gated before any byte enters the image). main = release-frozen between the merge and the tag push (the suite-tags-first contract); a pinned SHA for repair runs. Reaches bash only via env:, never inline in run:."
@@ -92,7 +80,7 @@ on:
         default: main
         type: string
       retag-source:
-        description: "Where the 17 registry-side retags copy from. ours = our previous suite tag (the lockstep default — resolved by retag.sh: the newest digest-complete set, else the recorded aps/BASE.lock bootstrap). ours:<tag> = an explicit pin for repair runs. upstream:<channel> = the deliberate vendor bump (ghcr.io/nextcloud-releases/<image>:<channel>) — explicit dispatch only, never a default. Reaches bash only via env: (RETAG_SOURCE), never inline in run:."
+        description: "Where the 17 registry-side retags copy from. ours = our previous suite tag (the lockstep default — resolved by retag.sh: the newest digest-complete set, else the recorded aps/BASE.lock bootstrap). ours:<tag> = an explicit pin for repair runs. Reaches bash only via env: (RETAG_SOURCE), never inline in run:."
         required: false
         default: ours
         type: string
@@ -109,7 +97,7 @@ on:
         description: "See workflow_dispatch."
       build-ref:
         required: false
-        default: aps/main
+        default: main
         type: string
         description: "See workflow_dispatch."
       gestion-ref:
@@ -129,7 +117,7 @@ on:
         description: "See workflow_dispatch."
     outputs:
       retag-source:
-        description: "The RESOLVED retag source (ours:<tag> | upstream:<channel>) — the one resolution this run made. The caller's package re-emit threads it into RETAG_SOURCE so the tag-tree's retag.sh records the same spec the walk copied from (no second resolution)."
+        description: "The RESOLVED retag source (ours:<tag>) — the one resolution this run made. The caller's package re-emit threads it into RETAG_SOURCE so the tag-tree's retag.sh records the same spec the walk copied from (no second resolution)."
         value: ${{ jobs.retag.outputs.retag-source }}
 
 permissions:
@@ -162,8 +150,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (upstream's own pin)
         # main (default): containers.json — the sibling list's source (parsed, never hardcoded) —
         # and aps/BASE.lock, the bootstrap fallback the source resolution below reads when tag
-        # discovery finds no complete set (fork-infra never rides aps/main or a tag tree; the
-        # default-branch checkout IS where it lives).
+        # discovery finds no complete set (the sibling names are identical on every ref —
+        # 010's auto-include property — and aps/BASE.lock rides the default branch).
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
@@ -213,22 +201,20 @@ jobs:
         # apply), signature.json dropped for patched apps, the white-label asserts run, the
         # apsconecta theme copied whole (scripts/bake.sh carries every gate; a missing or
         # ungated source fails the build LOUDLY before any push — never a silently unbaked
-        # image with a green pipeline). bake.sh lives on the fork's main — fork-infra never
-        # rides aps/main (the retag.sh precedent) — so it is sparse-cloned OUTSIDE the
-        # workspace: only its OUTPUT (aps-bake/) ever enters the docker context. The bake
-        # sources: gestion at the release content (public since ADR-0010; its main is
-        # release-frozen between the merge and the tag push — the suite-tags-first
+        # image with a green pipeline). Since the hard fork (D-3.7) the bake runs from THIS
+        # JOB'S OWN CHECKOUT — build-ref (the tag or main) carries scripts/bake.sh itself:
+        # fork-infra is first-class bytes on every ref now; the instalador sparse clone is
+        # gone. The bake source: gestion at the release content (public since ADR-0010; its
+        # main is release-frozen between the merge and the tag push — the suite-tags-first
         # contract). fetch+FETCH_HEAD instead of clone --branch so GESTION_REF can be a
         # branch, a tag, or a pinned SHA for repair runs alike.
         run: |
           set -euo pipefail
-          git clone --depth 1 --filter=blob:none --sparse             "https://github.com/APS-Conecta/instalador.git" /tmp/instalador-main/
-          git -C /tmp/instalador-main sparse-checkout set scripts
-          git clone --depth 1 --filter=blob:none --sparse             "https://github.com/APS-Conecta/gestion.git" /tmp/gestion/   # unchanged — gestion still owns the suite-definition content
+          git clone --depth 1 --filter=blob:none --sparse             "https://github.com/APS-Conecta/gestion.git" /tmp/gestion/   # gestion still owns the suite-definition content
           git -C /tmp/gestion sparse-checkout set provisioning/apps themes/apsconecta
           git -C /tmp/gestion fetch --depth 1 origin "$GESTION_REF"
           git -C /tmp/gestion checkout FETCH_HEAD
-          bash /tmp/instalador-main/scripts/bake.sh /tmp/gestion aps-bake/
+          bash scripts/bake.sh /tmp/gestion aps-bake/
         env:
           GESTION_REF: ${{ inputs.gestion-ref }}
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -320,10 +306,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (upstream's own pin)
         # main (default), NOT build-ref: the sibling NAMES are identical on every ref — 010's
         # generated sed swaps the org prefix and never the names (the auto-include property), and
-        # retag.sh parses the basename, so the mirror's containers.json is the one list wherever
-        # the tree is patched or not. A fork-side rename of an image is out of the patch queue's
-        # surface (010 is prefix-only by locked design); an upstream rename/addition flows through
-        # the mirror sync into this same file.
+        # retag.sh parses the basename, so main's containers.json is the one list wherever
+        # the build comes from. A fork-side rename of an image is out of scope by locked
+        # design (010 is prefix-only); an upstream rename/addition arrives the way every
+        # upstream change arrives now: a deliberate merge into main.
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v3   # freshly-pushed packages are private until the org flips them public
         with:
           registry: ghcr.io
@@ -332,7 +318,7 @@ jobs:
       - name: Matrix — all images present + the copy keyed to the RESOLVED source
         # RETAG_SOURCE carries the RETAG job's one resolution (D-5): the comparator proofs the
         # copy against what the walk actually copied FROM — ours:<tag>: the immutable previous
-        # set, a faithful-copy integrity proof; upstream:<channel>: one snapshot, unchanged.
+        # set, a faithful-copy integrity proof.
         run: bash scripts/retag.sh matrix "$SUITE_TAG"
         env:
           SUITE_TAG: ${{ inputs.suite-tag }}
