@@ -1,7 +1,7 @@
 # ADR-0002 — Store apps stay unforked; their edits live as patches in provisioning
 
 - **Status:** accepted, 2026-07-29
-- **Clarifies:** AD-5 (what "opt-in" covers)
+- **Clarifies:** AD-5 (`eurooffice` is installed on every seed)
 - **Affects:** `provisioning/phases/12-apps.sh`, `provisioning/apps/`, `provisioning/lib.sh`,
   `Makefile`, `scripts/office-smoke.sh`, `scripts/smoke.sh`
 
@@ -71,14 +71,10 @@ store updates stop arriving.
   after patching. That file asserts the app's files are exactly as the vendor shipped them; our
   patches make the assertion false. See *Code integrity* below.
 
-### AD-5's "opt-in" means the container, not the app *(and since #81, neither)*
+### `eurooffice` is installed on every seed
 
 `eurooffice` is installed by `make seed`, and having it installed on every instance is what lets its
-patches be re-applied on every seed — which is the part of this that still matters.
-
-*Superseded on the opt-in half (2026-08-01,
-[#81](https://github.com/APS-Conecta/gestion/issues/81)):* the profile is gone, and with it the last
-optional piece. [ADR-0000](0000-inherited-decisions.md) §AD-5 owns what that changed and what it cost.
+patches be re-applied on every seed.
 
 ## Code integrity
 
@@ -132,7 +128,7 @@ next to its JWT secret, where a `make seed` could not restore it.
   either still apply or the phase stops and says which one moved.
 - The repo carries ~61 MB of tarballs (7.3 MB → ~72 MB) and **git keeps every version forever**, so
   each bump adds another full copy to every clone. Recorded rather than discovered later. *Owner named
-  2026-08-02 by [#117](https://github.com/APS-Conecta/gestion/issues/117): the weekly `image-digests`
+  2026-08-02 by [#117](https://github.com/APS-Conecta/gestion/issues/117): the `image-digests`
   workflow runs `make apps-check`, and a red run is the trigger for a human to bump.*
   > **Restated 2026-08-03.** It was ~12 MB for three apps when this was written, and the blockquote
   > above records that figure as it was measured then. `calendar`, `contacts`, `maps` and `news` had

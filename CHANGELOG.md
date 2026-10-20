@@ -198,16 +198,16 @@ image digests live there and are deliberately not copied here — one fact, one 
 - **Estadística ships** — promoted from lab to own at v0.1.0: `provisioning/apps/estadistica/`
   holds the tarball built from the tag and its `VENDOR`, `OWN_APPS` carries it and
   `dev/lab-apps.sh` is empty again. After install the app's RemJob downloads the DEIS window
-  itself, ≈ 4.9 GB of database for the default 2023–2026. `scripts/check-org-drift.sh` compares it
-  with territorio and CI clones it; `docs/LICENSING.md` has its row (twelve apps).
+  itself, ≈ 4.9 GB of database for the default 2023–2026. `docs/LICENSING.md` has its row
+  (twelve apps).
 - **The organisation map registers the org's newest repositories** — an `IntraVox` row (the
   default landing app; fork truth and the upstream deltas cited from that repository's ADR-0001)
   and an `aps-common` row (the committed-subtree distribution, cited from its ADR-0001); the
   map's verified date moves to 2026-10-04.
 - **ROADMAP §Next item 2 is now the L6 freeze contract** — what is frozen whole
-  (`docs/INSTALLER.md`, `docs/GUIA-CLINICA.md`, the AIO fork declaration, `AIO/BUGS.md`,
-  `AIO/patches/*`), what is frozen in place (the paused L5 S3 blueprint's touch sections, the
-  INSTALLER/GUIA H2 anchors the AIO patches deep-link), the unfreeze gate (a23, gestion#205) and
+  (`docs/INSTALLER.md`, `docs/GUIA-CLINICA.md`),
+  what is frozen in place (the paused L5 S3 blueprint's touch sections, the
+  INSTALLER/GUIA H2 anchors the wizard deep-links), the unfreeze gate (a23, gestion#205) and
   every open item the freeze holds — the deferral vehicle for the **suite-docs** rewrite and the
   instalador laps behind it.
 - **Index rows for `docs/CONTRACTS.md`, `docs/MIGRATION.md` and `docs/WELCOME-SCREEN.md`** — the
@@ -223,7 +223,6 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Changed
 
-- Documentation no longer points at the APS-Conecta/AIO repository, which is being deleted (instalador holds its full history): the two USER_MANUAL links to the wizard's patch table now go to instalador's readme, ORG-MAP's AIO row became an instalador row, and `scripts/office-smoke.sh`'s comment names instalador.
 - Docs gate green again: the 20 `broken-links` to `INSTALLER.md`, `GUIA-CLINICA.md` and `MIGRATION.md` (which moved to instalador's `aps/`) now point at instalador, and every `make smoke` (a target that moved with the installer; the script stayed) reads `bash scripts/smoke.sh`. README step 3 now says `make test`.
 - **Groups by role** — the 22 shared roles name their category (the Ley 19.378 families: 4
   jefaturas, 10 clínicos, 3 técnicos, 5 administrativos), and every planilla user joins `all-staff`
@@ -268,7 +267,7 @@ image digests live there and are deliberately not copied here — one fact, one 
   links open, and §13 says a stock Nextcloud AIO backup is not restored into the suite.
   `aps-conecta datos` says territorio is not installed yet, not «pendiente de empaquetado».
   `make test` checks that the six doc anchors the wizard links still resolve.
-- **The suite's containers are `aps-conecta-*`** (the AIO fork's patch 240). Every caller, the
+- **The suite's containers are `aps-conecta-*`** (patch 240). Every caller, the
   testbed, Clean boot and the docs follow; the wizard stays `nextcloud-aio-mastercontainer`, the
   network `nextcloud-aio` and the volumes `nextcloud_aio_*`. Clean boot runs the fork's suite
   (the CI suite tag `scripts/aio-testbed.sh` pins), not upstream's. Fresh installs only: an instance from
@@ -299,7 +298,7 @@ image digests live there and are deliberately not copied here — one fact, one 
     [`docs/INSTALLER.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md) and [`docs/GUIA-CLINICA.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/GUIA-CLINICA.md)'s,
     the dev path the [README quickstart](README.md#quickstart)'s, the container lifecycle `make help`'s.
   - `docs/manuals/USER_MANUAL.md` §9.2 keeps the platform story and defers the farmacia walkthrough
-    to farmacia's own manual; §2.6 names all five own apps; §6.1 and §7.1 point at the AIO readme's
+    to farmacia's own manual; §2.6 names all five own apps; §6.1 and §7.1 point at the instalador readme's
     patch table for the wizard's office/Talk pins.
   - `docs/manuals/DEVELOPER_MANUAL.md` §1.3, §2.1, §5, §5.4 and §7.1 collapse to pointers at
     [`CONTEXT.md`](CONTEXT.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) § *Runtime topology*,
@@ -313,15 +312,13 @@ image digests live there and are deliberately not copied here — one fact, one 
 - **The README `scripts/` row now lists every script** — the ten it missed each get their one phrase.
 - **The registers are current.** The organisation map no longer names the two out-of-project
   repositories (their facts stay with their owners), the territorio reversal paragraph records
-  ADRs 0015/0016/0017 as implemented with their five code anchors, and the AIO row records the L4
+  ADRs 0015/0016/0017 as implemented with their five code anchors, and the instalador row records the L4
   wizard fork. The manuals tree reads **14-Phase** throughout and §4 names `41-intravox.sh`
   (a pointer to `docs/WELCOME-SCREEN.md`); AD-6 carries the ADR-0004 forward note
   ([ADR-0004](docs/adr/0004-branding-the-legacy-render-path.md)); the compose comments cite D7
   and ADR-0003 where they cited the reversed AD-1; every documentation index table is the
   four-column Document × Mode × Reader × Authority standard.
-- **`docs/ORG-MAP.md` retires the four deleted forks** (docs) — *Retired* records `server`, `formvox`,
-  `Welcome` and `Gestion-Mobile` (deleted 2026-10-03) and `server` leaves the ownership table; the `Databases`
-  paragraph now says what that repository ships since its 2026-10-04 re-creation (docs CI; a
+- **`docs/ORG-MAP.md` Databases paragraph** (docs) — now says what that repository ships since its 2026-10-04 re-creation (docs CI; a
   freshness gate red by design, per its ADR-0002) instead of "no CI" and "no REM README".
 - **One place decides the Nextcloud container** (#197) — `scripts/env.sh`'s `nc_container`
   resolves it: `NC_CONTAINER` from the environment or `.env` wins, otherwise the running AIO
@@ -494,7 +491,7 @@ image digests live there and are deliberately not copied here — one fact, one 
   new archive without a restart because the replacement is an `mv` on the same filesystem.
 
 - **Every custom app's mount shows a branded loading state instead of a blank frame.** One
-  app-agnostic component (territorio arch-review L0-04, generalized on the developer's directive):
+  app-agnostic component:
   a spinner + `<noscript>` fragment pasted inside each bare mount — `#territorio`,
   `#territorio-admin`, `#farmacia`, `#epidemiologia` — and the CSS served once to every page by
   the theme (`server.css`; canonical fragment in `MAPEO.md` §5).
@@ -569,7 +566,7 @@ image digests live there and are deliberately not copied here — one fact, one 
   committed, sha-pinned and installs. The file records the outage, that 6.0.1 is pinned
   deliberately, and the three ways out — and a `frozen=` line beside the pin now tells
   `make apps-check` to **report this app without failing on it**, because a red line nobody can act
-  on is one everyone learns to ignore, which is what the weekly workflow's own header warns against.
+  on is one everyone learns to ignore, which is what the workflow's own header warns against.
   The app is still listed on every run with the version it cannot take, so the freeze stays
   reviewable; a stale pin on any other app still fails the gate.
 

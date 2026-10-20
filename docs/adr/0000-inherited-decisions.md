@@ -50,26 +50,7 @@ Two consequences seen in practice: the brand kit's standalone `occ-theming.sh` w
 being a second entry point (ADR-0001), and brand images are *registered* from theme files rather
 than uploaded through the admin UI, which also keeps admin credentials out of the seed runner.
 
-**Exception retired (2026-08-01, #81). AD-2 now holds without an asterisk: `seed.sh` is the only
-writer.**
-
-The history is worth keeping, because it shows what the exception actually rested on. From
-2026-07-28 this decision carried a correction: `make office-eurooffice` was a second writer. It was
-narrowed twice — the app install moved to phase `12-apps`, the connector's config to phase
-`14-office` — until all that remained outside the pipeline was one `trusted_domains` repair, kept
-out on the grounds that it was an install-time value indexed into an array, which the config guards
-do not model.
-
-That was never the real reason. The real reason was that the office backend sat behind
-`profiles: ["eurooffice"]`: a phase could not depend on a service the pipeline might never start, so
-it would have had to skip silently on a clean bring-up or force the profile on everyone.
-[#81](https://github.com/APS-Conecta/gestion/issues/81) dropped the profile, and with it the premise.
-The repair moved into `14-office` — query-before-set done directly rather than through
-`config_system_set`, since the key to write is the next free array index — and
-`make office-eurooffice` was deleted as a redundant second entry point.
-
-The narrowed wording the correction proposed (*"applied by a make target that is idempotent and
-re-runnable"*) is no longer needed. AD-2 as originally written is now literally true.
+AD-2 holds without exception: `seed.sh` is the only writer.
 
 ### AD-3 — Secrets live in `.env`, never in git and never in a log
 
@@ -91,13 +72,9 @@ allows, never by subtracting.
 Collaborative editing runs on the Euro-Office document server, on an OSS image with no paid licence.
 `scripts/office-smoke.sh` proves the pipe end to end and asserts the image provenance.
 
-**Nothing about it is opt-in any more (2026-08-01, [#81](https://github.com/APS-Conecta/gestion/issues/81)).**
-The `--profile eurooffice` container was the last optional piece: `12-apps` installed the connector
-and `14-office` configured it on *every* seed regardless, so only the container stood between an
-install and a working editor. The profile is gone, `make office-eurooffice` with it, and
-`office-smoke` joined `make test`. What the exception rested on is in AD-2 above; the accepted costs
-are named where they are paid — [`ARCHITECTURE.md`](../ARCHITECTURE.md) § *Environments* (the ~8 GB
-floor) and `.github/workflows/cleanboot.yml` (the CI pull).
+`12-apps` installs the connector and `14-office` configures it on *every* seed, and `office-smoke` is part
+of `make test`. The accepted costs are named where they are paid — [`ARCHITECTURE.md`](../ARCHITECTURE.md)
+§ *Environments* (the ~8 GB floor) and `.github/workflows/cleanboot.yml` (the CI pull).
 
 ### AD-6 — White-labeling is config, not theme files *(superseded)*
 

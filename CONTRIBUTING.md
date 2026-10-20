@@ -24,7 +24,7 @@ contract, not a grep accident: the index is the ADR-0011 home for those facts.
 4. AI-assisted PRs must be **labeled** (`ai-assisted`) and disclose AI involvement in the description.
 5. The gate is `make test` (static checks + smoke) — run it before opening a PR. CI runs the same
    script on every PR and on pushes to `main` (`.github/workflows/ci.yml`); the full clean boot runs
-   on PRs that touch the install path, and weekly (`.github/workflows/cleanboot.yml`).
+   on PRs that touch the install path (`.github/workflows/cleanboot.yml`).
 
 `CODEOWNERS` will auto-request reviewers the day a second account has access; with one owner GitHub
 requests nobody, because it never asks a pull request's own author. Prefer small, reviewable PRs.
@@ -70,8 +70,8 @@ The design is committed under `docs/` (architecture in `docs/ARCHITECTURE.md`); 
 
 ## Local dev environment
 
-Portable, machine-agnostic Docker Compose (Nextcloud 34 + PostgreSQL 18 + Redis 8) with Xdebug, VS Code
-config, and a `Makefile`; each dev runs it **locally**. The step-by-step quickstart and the full `make`
+Portable, machine-agnostic Docker Compose (Nextcloud 34 + PostgreSQL 18 + Redis 8) with Xdebug
+and a `Makefile`; each dev runs it **locally**. The step-by-step quickstart and the full `make`
 reference live in **[`README.md`](README.md#quickstart)** — one owner per fact; don't duplicate them here.
 Two invariants when you touch the stack: nothing VPS-specific or absolute-pathed in the core compose
 (`host.docker.internal` must work cross-OS), and **all desired state goes through `make seed`** — never
@@ -105,11 +105,8 @@ Docs must let someone **rebuild** the system, not just read about it. When you w
 6. **Prefer generated over hand-written** (e.g. `make help` is the target list; don't copy it).
 7. **Don't copy a gate's count into prose** — say what the gate *proves*; let it print the number.
 
-And the guard that keeps it honest: **if a doc mentions something retired, it must acknowledge somewhere that
-it is** (dated history is exempt; its date is the label). Dated history means **ADRs, `CHANGELOG.md`,
-`BUGS.md` and `ROADMAP.md`** — the same four `repo-docs` exempts mechanically, named here so the two
-cannot drift. They did: this line said "ADRs, changelogs" while the tool also exempted bug logs, and
-`BUGS.md` relied on that exemption to name a retired `make` target.
+And the guard that keeps it honest: **when something is retired, remove every mention of it** — no tombstone,
+no "formerly", no deprecation note.
 
 ### What the docs gate does not govern
 
@@ -118,9 +115,7 @@ comments inside shell and PHP are outside that corpus**, deliberately: the corpu
 is pointed at, and widening it to every comment in the tree would make the gate a linter for prose
 nobody navigates by.
 
-The cost is real and has been paid once. `provisioning/apps/calendar/VENDOR` described its own size
-*"after maps"* for the whole time `maps` did not exist (#172) — the retirement rule above applies to
-it, and nothing could enforce it. **So the rule for these files is the rule for code comments: a
+The cost is real. **So the rule for these files is the rule for code comments: a
 comment that names something retired is a defect, caught in review, not by a gate.** Prefer to
 write one that cannot rot — measure a file against itself, not against a sibling that may be
 dropped.

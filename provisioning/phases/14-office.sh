@@ -1,8 +1,7 @@
 # Phase 14 — Euro-Office connector configuration.  OWNER: AD-5 + the installer suite (slice 16's AIO arm).
 # Runs after 12-apps (which installs the `eurooffice` connector) and before 15-branding.
 #
-# This phase owns EVERYTHING the connector needs, including the trusted_domains repair that used
-# to live in a make target (#81) — see the note on it below.
+# This phase owns EVERYTHING the connector needs, including the trusted_domains repair.
 phase_begin "14-office" "Euro-Office connector configuration (AD-5)"
 
 # ── The AIO posture arm (installer-design slice 16) ──────────────────────────────────────
@@ -64,10 +63,6 @@ if [ "$aio" = 0 ]; then
   # The other half of StorageUrl, and the one piece of this that is not appconfig. The document
   # server fetches documents FROM Nextcloud at the service name `nextcloud`, which Nextcloud
   # rejects with HTTP 400 unless it is a trusted domain.
-  #
-  # It lived in `make office-eurooffice` and was AD-2's one documented exception until #81 dropped
-  # the eurooffice profile and retired it — docs/adr/0000-inherited-decisions.md §AD-2 owns that
-  # history.
   #
   # Not through config_system_set: that helper compares a scalar, and this is an ARRAY where the
   # key to write is the next free INDEX. Query-before-set is done directly instead — `occ` prints

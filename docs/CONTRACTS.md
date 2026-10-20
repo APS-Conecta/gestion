@@ -30,7 +30,6 @@ name order (gestion#ADR-0002).
 | Manifest | Owner | What it pins |
 |---|---|---|
 | provisioning/data/packages.json | gestion | seeded data packages |
-| provisioning/data/aio-siblings.txt | gestion | AIO sibling refs |
 | vendored.json | the org's website repo | the ECICEP engine dual-SHA (upstream-first) |
 
 ## ADR directories

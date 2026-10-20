@@ -134,7 +134,7 @@ APS Conecta Gestión enforces **Index Digest Pinning (#109)** across every servi
 | `eurooffice` | `ghcr.io/euro-office/documentserver:latest` | `sha256:889e681923d2dcc8bdfb92fe128d10e185fcff880d302b6a0c0c7bf339499290` | Pinned multi-arch build |
 
 > [!NOTE]
-> Digest pins are refreshed systematically using `make images`, which verifies upstream tags and updates both `compose.yaml` and `Dockerfile.dev` synchronously. The weekly GitHub Actions workflow `image-digests.yml` monitors upstream drift using `make images-check`.
+> Digest pins are refreshed systematically using `make images`, which verifies upstream tags and updates both `compose.yaml` and `Dockerfile.dev` synchronously. The GitHub Actions workflow `image-digests.yml` checks upstream drift with `make images-check` when dispatched.
 
 ### Container Networking & Communication
 Networking follows strict architectural boundaries:

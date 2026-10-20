@@ -113,7 +113,7 @@ graph LR
     CR[cron scheduler] --> DB
     CR --> RD
     NC <-->|JWT| EO
-    IDE[VS Code Debugger] <--|Xdebug :9003| NC
+    IDE[Debugger] <--|Xdebug :9003| NC
 ```
 
 The portability rules the core `compose.yaml` follows — relative paths, Docker-internal DNS names, no host-specific networks or absolute paths — are owned once by [`ARCHITECTURE.md`](../ARCHITECTURE.md) § *Runtime topology*, alongside the production topology this dev stack mirrors.
@@ -142,24 +142,6 @@ xdebug.start_with_request = trigger
 xdebug.client_host = host.docker.internal
 ```
 
-#### VS Code Configuration: `.vscode/launch.json`
-To step-debug custom apps in VS Code, add the standard path mapping linking `/var/www/html/custom_apps` to `${workspaceFolder}/apps`:
-```json
-{
-  "version": "0.2.0",
-  "configurations": [
-    {
-      "name": "Listen for Xdebug (APS Conecta)",
-      "type": "php",
-      "request": "launch",
-      "port": 9003,
-      "pathMappings": {
-        "/var/www/html/custom_apps": "${workspaceFolder}/apps"
-      }
-    }
-  ]
-}
-```
 *Tip:* To trigger a debug session, pass `XDEBUG_TRIGGER=1` in your query parameters, set an `XDEBUG_SESSION` cookie via browser extensions, or run CLI commands with `XDEBUG_TRIGGER=1 php occ ...`.
 
 ### 2.3 Host Permissions & UID Mapping (UID 33 vs Host GID)

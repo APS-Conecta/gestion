@@ -17,9 +17,7 @@ Internal ops only, **no patient data**.
 - **Principles:** DRY · SOLID · KISS/YAGNI (ponytail — minimal, delete over add). Defined here; `CONTRIBUTING.md` is the operational contract (workflow, docs rules, secrets handling).
 - **Language split:** code/backend/docs in **English**; user-facing UI in **Spanish**. A doc is
   Spanish only when its reader is — `docs/CONVENTIONS.md` (clinic staff read it) — or when Spanish
-  is its subject, which is what a glossary *of* Spanish domain terms is. `docs/BRANDING.md`
-  and `themes/apsconecta/MAPEO.md` were exempt as "authored with the brand kit" and were translated
-  on 2026-08-09: both are read by whoever deploys or edits the theme, which is a developer.
+  is its subject, which is what a glossary *of* Spanish domain terms is.
 - **Coordination:** GitHub Flow, PR + **self-review**, private repo. Conventional Commits. One
   maintainer works here, so CI green is the only mechanical gate — GitHub forbids approving your own
   PR and the free plan gives a private repo no protected branches. `CONTRIBUTING.md` § *Workflow*
@@ -51,6 +49,4 @@ Internal ops only, **no patient data**.
 ## Do not touch (sibling projects on the same host)
 
 `/srv/syncthing/CESFAMS` and co-located tenants (Jomy, glitchtip, coolify, homepage, syncthing).
-(`mailcow` was on this list until 2026-08-27; the stack was removed from the host, so there is
-nothing left to avoid. The remaining five are still live — keep the guard rail.)
 This repo is self-contained under its own clone.

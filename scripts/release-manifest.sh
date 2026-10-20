@@ -2,7 +2,7 @@
 # The machine-readable union of everything a gestion release pins (D12).
 #
 #   scripts/release-manifest.sh --validate  offline form check — runs from test.sh on every PR
-#   scripts/release-manifest.sh --check      live drift report — weekly, reports, never bumps
+#   scripts/release-manifest.sh --check      live drift report — reports, never bumps
 #   scripts/release-manifest.sh --self-test  red-test the detector shapes — runs from test.sh too
 #
 # The GitHub Release asset is the home; the tree keeps only the tag. WHY A FILE AT ALL: the
@@ -84,7 +84,7 @@ bash scripts/image-digests.sh --validate >/dev/null \
 
 # --- --check: live drift, moved vs unreachable distinguished, never a bump --------------------
 # Standalone, --check delegates to image-digests --check and app-versions (the whole drift report
-# in one place). From the weekly workflow it runs with --no-delegate, because that workflow ALREADY
+# in one place). From the image-digests workflow it runs with --no-delegate, because that workflow ALREADY
 # runs those two as its own steps — re-running them here would double the registry inspects (the
 # documented rate-limit failure) and re-fetch the ~5.4 MB store index. The masters note is the
 # half only this script adds: upstream refresh is the re-record edit, not any check's job.
