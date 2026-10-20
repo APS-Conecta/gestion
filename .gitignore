@@ -1,6 +1,4 @@
 .DS_Store
-.idea/
-*.iml
 
 /php/data/*
 /php/session/*

@@ -92,16 +92,9 @@ suite's install story: the suite's documentation is this repository plus instala
 `aps/INSTALLER.md`, never the label's target. This repository is the source of the
 modifications.
 
-**Schedules.** This fork runs none. The Replay workflow's daily run and its liveness canary
-are gone (retired with the queue era, then the workflow itself with the hard fork, Stage 3):
-upstream changes arrive by a deliberate merge into `main`, and the discipline is proven by
-every release's own gates run, before anything builds or signs. Upstream's own scheduled
-workflows (`collabora`, `dependency-updates`,
-`desec-api-version-watch`, `imaginary-update`, `lock-threads`, `nextcloud-update`,
-`psalm-update-baseline`, `sync-workflow-templates`, `talk`, `update-helm`,
-`update-test-container-image-references`, `update-yaml`, `watchtower-update`,
-`wg-easy-update`) are expected disabled here: none of upstream's scheduled automation should
-act on this repository.
+**Schedules.** This fork runs none: upstream changes arrive by a deliberate merge into
+`main`, and the discipline is proven by every release's own gates run, before anything builds
+or signs.
 
 **License.** The upstream [LICENSE](LICENSE) (AGPL-3.0) is carried unchanged. The complete
 corresponding source of every suite image is this repository at the matching suite tag: the

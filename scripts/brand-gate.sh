@@ -33,17 +33,17 @@
 # this gate with the README/twig string-equality drift gate.
 #
 # SCOPE (measured against the tree; grep -rl nextcloud-releases outside containers.json and
-# php/src/DockerActionManager.php = 29 files): root docs (readme.md, reverse-proxy.md,
+# php/src/DockerActionManager.php = 30 files): root docs (readme.md, reverse-proxy.md,
 # manual-upgrade.md, develop.md, multiple-instances.md, php/README.md), the helm chart (15
-# templates + update-helm.sh), manual-install/latest.yml, root compose.yaml, update-helm.yml,
+# templates + update-helm.sh), manual-install/latest.yml, root compose.yaml,
 # the QA harness (php/tests/compose.yaml), containers.twig's changelog link, and the two
 # build-time fetches upstream keeps (whiteboard's FROM line; the GPG-verified server tarball
 # in the nextcloud Dockerfile, D7) — plus, since slice 13, the fork's OWN build-time fetch:
 # the Images workflow's gestion clone, the bake channel (an APS-Conecta source, VENDOR-
 # sha256-gated by scripts/bake.sh, and maintainer-side like the other two — it feeds the
-# builder, never the clinic's install). The count uses the BARE pattern — three of the 29 carry
-# the name without the contiguous ghcr.io/ prefix (two github.com/nextcloud-releases URLs and
-# update-helm.yml's registry-API paths), so the gate's own literal grep stays narrower than
+# builder, never the clinic's install). The count uses the BARE pattern — two of the 30 carry
+# the name without the contiguous ghcr.io/ prefix (two github.com/nextcloud-releases URLs), so
+# the gate's own literal grep stays narrower than
 # this ledger on purpose. None is install-time shipped surface: docs are slice 23's
 # fork-declaration territory, the harness image is slice 18's, containers.twig's changelog
 # link was 060's operator-visible territory (repointed to the fork's releases — the row landed
