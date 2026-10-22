@@ -15,7 +15,7 @@ TAG="${1:-}"
 DB=aps-conecta-database
 fail=0
 
-die() { echo "FAIL: $*" >&2; exit 1; }
+die() { echo "FATAL: $*" >&2; exit 1; }
 sql() { docker exec "$DB" psql -X -q -tA -v ON_ERROR_STOP=1 -U nextcloud -d nextcloud_database -c "$1"; }
 check() { # NAME WANT GOT
   if [ "$2" = "$3" ]; then echo "  ok: $1"; else echo "  FAIL: $1 — expected «$2», got «$3»" >&2; fail=1; fi; }

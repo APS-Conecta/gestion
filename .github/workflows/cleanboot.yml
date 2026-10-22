@@ -43,7 +43,7 @@ on:
   workflow_dispatch:
     inputs:
       suite-tag:
-        description: "The suite tag whose images both jobs install (a rehearsal: v0.0.0-ci.N). Empty: the release scripts/aio-testbed.sh pins."
+        description: "The suite tag whose images both jobs install (a rehearsal: v0.0.0-ci.N). Empty: the tag scripts/aio-testbed.sh pins."
         required: false
         default: ""
         type: string
@@ -616,7 +616,7 @@ jobs:
       - name: Install by IP through the silent command a clinic runs
         run: |
           set -o pipefail   # run: is `bash -e` without it — the install's own failure, not tee's
-          # APS_SUITE_TAG: the package's VERSION is the throwaway rehearsal tag, but the
+          # APS_SUITE_TAG: the package's VERSION is this run's throwaway ci-cleanboot-<sha>, but the
           # mastercontainer this job CREATES must run a published image — the resolved suite tag
           # (suite_tag() answers the override first; the rehearsal-window seam it exists for)
           sudo env "PATH=$PATH" APS_SKIP_DATOS=1 MIN_DISK_GB=2 APS_SUITE_TAG="$SUITE_TAG" \
@@ -626,7 +626,7 @@ jobs:
       - name: Hand the checkout back to the runner
         if: always()
         run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-      # #44 on the suite this job started itself — the domain job's own step, same script
+      # #44 on the suite this job started itself
       - name: The database is ready for buscador, on the suite tag's own image
         run: bash /opt/aps-conecta/instalador/scripts/cleanboot-db.sh "$SUITE_TAG"
       # a19: https://<ip>/ answers with the installer's certificate — trusted through its CA, refused
