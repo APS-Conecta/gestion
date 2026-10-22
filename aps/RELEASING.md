@@ -88,10 +88,11 @@ dispatches Images directly with `retag-source: ours:vX.Y.Z` and `force` — the 
 set, re-copied faithfully.
 
 **Rehearse first**: a `v0.0.0-ci.N` tag (VERSION and BUNDLE_TAG set to match on a rehearsal
-branch) runs the identical chain end-to-end and is deletable. The repair arm
-(workflow_dispatch with `suite-tag`, plus `force-images` only for a chain that died mid-publish)
-exists for a chain that failed BEFORE `gh release create` — a published Release's assets never
-move (D12).
+branch) runs the identical chain end-to-end and is deletable; Clean boot installs its images when
+dispatched with it (`gh workflow run cleanboot.yml --ref <branch> -f suite-tag=v0.0.0-ci.N`). The
+repair arm (workflow_dispatch with `suite-tag`, plus `force-images` only for a chain that died
+mid-publish) exists for a chain that failed BEFORE `gh release create` — a published Release's
+assets never move (D12).
 
 ## 6. Auditing a release offline
 
