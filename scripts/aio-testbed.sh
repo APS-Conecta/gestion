@@ -26,9 +26,8 @@
 # RFC-2606 .invalid domain installs without DNS; the domain is immutable afterwards, which a
 # disposable instance does not care about.
 #
-# DELIBERATELY STANDALONE: no scripts/env.sh, no gestion occ() — the docker-exec port (slice 2)
-# is what will bind gestion to this instance, and the harness must work before that lands. Every
-# occ below is the upstream canonical console form: `--user www-data` (readme.md:822) — root
+# DELIBERATELY STANDALONE: no scripts/env.sh. Every occ below is the upstream canonical console
+# form: `--user www-data` (readme.md:822) — root
 # occ trips Nextcloud's console config-owner check and dies mid-flow.
 #
 # Findings from every run belong in /opt/aps-conecta-org/FINDINGS.md as they happen — recorded,
@@ -49,7 +48,7 @@ STATE=/tmp/aio-testbed
 MC=nextcloud-aio-mastercontainer            # fixed by Containers/mastercontainer/start.sh:164-170
 NC=aps-conecta-nextcloud                   # fixed by the fork's php/containers.json (patch 240)
 # The fork's suite, never upstream's: the suite renames the siblings (patch 240), so upstream's
-# container names would match none of gestion's. Moves with each published suite tag.
+# container names would match none of the suite's. Moves with each published suite tag.
 IMAGE="${AIO_TEST_IMAGE:-ghcr.io/aps-conecta/all-in-one:v0.4.0}"
 WIZARD_PORT="${AIO_TEST_PORT:-8080}"
 APACHE_PORT="${AIO_TEST_APACHE_PORT:-11000}"
@@ -75,15 +74,6 @@ check_ram() {
   local la cores
   la="$(awk '{print int($1)}' /proc/loadavg)"; cores="$(nproc 2>/dev/null || echo 1)"
   [ "$la" -lt "$cores" ] || say "NOTE: load ${la} ≥ ${cores} cores — bring-up will be slow, not unsafe"
-}
-
-theme_source() {  # REPO_ROOT — prints the theme directory to seed: the suite-definition checkout beside
-  # (cleanboot.yml checks gestion out at ./gestion) first, this tree's own themes/ as the older layout
-  local d
-  for d in "$1/gestion/themes/apsconecta" "$1/themes/apsconecta"; do
-    [ -d "$d/core" ] && { printf '%s' "$d"; return 0; }
-  done
-  return 1
 }
 
 cmd_gate() {
@@ -192,16 +182,15 @@ cmd_up() {
   docker exec --user www-data "$NC" php /var/www/html/occ files:scan admin >/dev/null 2>&1 || true
 
   # The theme the seed brands with. The suite's image bakes themes/apsconecta in (patch 030,
-  # S3), from the gestion ref the suite tag was published with — which may lag this checkout — so
-  # the repo's tree is copied over it: the probe brands with the theme under test. phase 15's
+  # S3), from the suite tag it was published with — which may lag this checkout — so the repo's
+  # tree is copied over it: the probe brands with the theme under test. phase 15's
   # theming_image_set and smoke's checks 7/11 read /var/www/html/themes/apsconecta in-container;
-  # without this the phase
-  # dies mid-seed on the probe. docker cp, not the seam: this is bring-up, and the harness is
-  # deliberately seam-free. The source path resolves through $0 so the harness stays
-  # cwd-independent; re-`up` after a theme edit re-copies fresh (up requires the clean slate
+  # without this the phase dies mid-seed on the probe. docker cp, not the seam: this is bring-up,
+  # and the harness is deliberately seam-free. The source path resolves through $0 so the harness
+  # stays cwd-independent; re-`up` after a theme edit re-copies fresh (up requires the clean slate
   # `down` gives).
-  theme="$(theme_source "$repo_root")" \
-    || die "no gestion/themes/apsconecta/core nor themes/apsconecta/core under $repo_root — the probe brands with the suite's theme"
+  theme="$repo_root/themes/apsconecta"
+  [ -d "$theme/core" ] || die "no themes/apsconecta/core under $repo_root — the probe brands with the suite's theme"
   docker cp "$theme" "$NC":/var/www/html/themes/ >/dev/null \
     || die "could not copy $theme into $NC — phase 15 and smoke's checks 7/11 need it in-container"
   say "theme seeded: ${theme#"$repo_root"/} -> $NC (over the image's bake: the checkout's theme is under test)"

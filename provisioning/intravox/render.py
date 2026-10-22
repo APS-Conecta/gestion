@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render the welcome tree a site DECLARED into a staging directory (phase 41, ADR-0019).
+"""Render the welcome tree a site DECLARED into a staging directory (phase 41, ADR-0015).
 
     render.py <library> <stage>
 
@@ -11,7 +11,7 @@ Environment (the phase exports them; arrays newline-joined, one entry per line):
                   links its own folder, which SITE_FOLDERS must declare (team_dir below)
   SITE_FOLDERS    group folders — the only Files roots a rendered link may point at (L0-06)
   SITE_SUBFOLDERS Transversal's subfolders — the Documentos page links exactly these (L0-06)
-  IV_MOUNT        the storage root's name (scripts/env.sh, ADR-0020) — __IV_MOUNT__ in the pages
+  IV_MOUNT        the storage root's name (scripts/env.sh, ADR-0016) — __IV_MOUNT__ in the pages
                   that tell staff where content lives
 
 Library layout (<library> = provisioning/intravox/es):
@@ -109,7 +109,7 @@ def main(library, stage):
     # an install that keeps (or rolls back to) another name must not be told «Intranet».
     mount = os.environ.get("IV_MOUNT", "")
     if not mount.strip() or "/" in mount:
-        fatal(f"IV_MOUNT '{mount}' is not one folder name — the seeded pages name the storage folder (ADR-0020)")
+        fatal(f"IV_MOUNT '{mount}' is not one folder name — the seeded pages name the storage folder (ADR-0016)")
     identity["__IV_MOUNT__"] = esc(mount)
 
     welcome = rows("SITE_WELCOME")
@@ -160,7 +160,7 @@ def main(library, stage):
         # seeded page that has sub-pages (noticias/avisos — the home's Avisos list reads it),
         # and for equipos every page (every_page: its pages ARE the declared SITE_TEAMS). The
         # seeded example posts stay ordinary, deletable pages like every post staff create
-        # later (owner decision 2026-09-28). Per page, never a folder rule (ADR-0019).
+        # later (owner decision 2026-09-28). Per page, never a folder rule (ADR-0015).
         for rel in written:
             page_dir = os.path.dirname(os.path.join(stage, rel))
             if not rel.startswith(section + "/") or rel != os.path.relpath(page_dir, stage) + "/" + os.path.basename(page_dir) + ".json":

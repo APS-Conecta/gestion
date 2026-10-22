@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
-# The instalador quality gate, run locally and by .github/workflows/ci.yml. Ported from gestion's
-# scripts/test.sh when the host bundle moved: the checks whose subjects moved with it ride along
-# verbatim; the checks whose subjects stayed in gestion (the vendored apps, the theme, the DEIS
-# register, the compose files, release-manifest, the comuna reference) stay in gestion's own gate.
+# The suite's quality gate, run locally and by .github/workflows/ci.yml.
 # Static checks that need no running stack, then the hermetic self-tests of every mover that
 # carries one — including the bootstrap's and the package signer's — then the smoke checks when a
 # stack is up. Exits non-zero if anything fails.
@@ -55,8 +52,8 @@ check bash -c '
 #   - the signing key has exactly two committed readers, and they agree (the env.sh lesson):
 #     installer.pub's key line and install.sh's embedded SIGNIFY_PUBKEY — package-release.sh reds
 #     on a disagreement at tag time; this is the PR-time half, before a tag is ever cut;
-#   - no runbook pointer survives with the old docs/ prefix: the runbooks moved to aps/ (D13;
-#     gestion's docs/ copies are deleted at the retirement slice), so such a remedy would be a
+#   - no runbook pointer survives with the old docs/ prefix: the runbooks live in aps/ (D13),
+#     so such a remedy would be a
 #     dead pointer in the package an operator actually holds. aps/CHANGELOG.md is dated history
 #     and keeps what it said when it said it.
 check bash -c '
@@ -274,7 +271,7 @@ if not src:
 #   - something TESTS it from the left: `if (`, `while (`, `&& (`. Matched on what PRECEDES
 #     the `(` rather than by listing keywords — nothing but whitespace may.
 #   - something tests it from the right: `( set -e … ) || exit 1`. This reads exactly like a
-#     guard and is not one, and two assertions in gestion's file were written that way and
+#     guard and is not one, and two assertions in this gate were once written that way and
 #     asserted nothing across three audit rounds. Which is why the sweep reads the whole tree:
 #     the original guard looked only at seed.sh, and the defect moved.
 # Comments are stripped first, since seed.sh documents the wrong shape on purpose.
@@ -365,7 +362,7 @@ if out.returncode != 0 or out.stdout.strip() != "":
 # The renderer is the seam's whole "declare, don't hard-code" (review M3) in one file, so it is
 # gated the way the identity round-trip is: real values in, the produced tree inspected, and the
 # refusals SEEDED — a renderer that cannot go red is not a gate. The register holds names with
-# quotes and backslashes (the deis round trip in gestion's gate), so one identity value carries both.
+# quotes and backslashes (the deis round trip in the register gate), so one identity value carries both.
 check python3 -c '
 import json, os, shlex, subprocess, sys, tempfile
 R = "provisioning/intravox/render.py"; L = "provisioning/intravox/es"
@@ -398,7 +395,7 @@ p, stage = run({**base, "IV_MOUNT": "Sitio Web"})
 for rel in ["noticias/bienvenida/bienvenida.json", "noticias/como-publicar/como-publicar.json"]:
     page = open(stage + "/" + rel, encoding="utf-8").read()
     if "__IV_MOUNT__" in page or "Sitio Web" not in page or "Intranet" in page:
-        print(rel + " does not name the storage folder IV_MOUNT names (ADR-0020)"); sys.exit(1)
+        print(rel + " does not name the storage folder IV_MOUNT names (ADR-0016)"); sys.exit(1)
 p, stage = run({**base, "SITE_WELCOME": base["SITE_WELCOME"] + "\nequipos|wall"})
 if p.returncode != 0: print("equipos render failed: " + p.stderr.strip()); sys.exit(1)
 hub = json.load(open(stage + "/equipos/equipos.json"))
@@ -457,7 +454,7 @@ if p.returncode != 0: print("render failed: " + p.stderr.strip()); sys.exit(1)
 if walled(stage, "noticias/noticias.json") or not walled(stage, "vida-cesfam/vida-cesfam.json"):
     print("the wall follows the library, not the declaration"); sys.exit(1)'
 # The mount name has ONE seam-side home (env.sh) and ONE engine-side reader (appconfig
-# groupfolder_name, ADR-0020). Both readers here take it from env.sh; the sandbox stub derives the
+# groupfolder_name, ADR-0016). Both readers here take it from env.sh; the sandbox stub derives the
 # folder row from the appconfig row — so a rename is one line, and a literal left behind is a mount
 # the seed cannot find. Seeded: the stub arm is exercised with no row, one row, and a re-set (the
 # config:app:set arm appends, so the LAST write must win, as it does in Nextcloud).
@@ -484,7 +481,7 @@ for rows, want in (([cfg("Intranet")], "Intranet"), ([], "IntraVox"), ([cfg("Int
     if [r[1] for r in ns["rows"] if r[0] == "folder"] != [want]:
         print("provisionador setup arm: expected one folder row named " + want + ", got " + repr(ns["rows"])); sys.exit(1)'
 # Phase 41's refusal is the only thing between an install whose folder carries another name and
-# a second, empty mount (ADR-0020). Extracted from the phase's own bytes (a named function: the
+# a second, empty mount (ADR-0016). Extracted from the phase's own bytes (a named function: the
 # stub needs quotes the bash -c wrapper cannot nest) and run against a stubbed occ, both ways:
 # a fresh install, the runbook's end state and an explicit override pass; the lab's unrenamed
 # folder, a half-done runbook, a later IV_MOUNT change, a dict-shaped listing and a name the
@@ -592,6 +589,34 @@ CASES
 }
 check estadistica_identity_cases
 
+# Phase 30 installs the organization conventions verbatim as «LÉEME — Convenciones.md». The whole
+# phase runs under errexit (seed.sh's own shape) with its helpers stubbed, from a scratch root: with
+# provisioning/data/convenciones.md present the file's bytes are what it writes; without it the
+# phase stops before writing (a failing $(cat …) inside an argument would not trip errexit).
+conventions_phase_cases() {
+  local tmp out rc
+  tmp="$(mktemp -d)"
+  mkdir -p "$tmp/provisioning/data"
+  printf 'regla uno\n«dos»\n' > "$tmp/provisioning/data/convenciones.md"
+  run30() {
+    ( cd "$tmp" && SITE_FOLDERS=() SITE_SUBFOLDERS=() bash -c '
+        set -e
+        phase_begin() { :; }; phase_end() { :; }
+        ensure_groupfolder() { :; }; ensure_gf_subfolder() { :; }
+        ensure_gf_file() { printf "WRITE %s|%s|%s\n" "$1" "$2" "$3"; }
+        . "$1"' _ "$OLDPWD/provisioning/phases/30-folders.sh" 2>&1 )
+  }
+  out="$(run30)"; rc=$?
+  [ "$rc" = 0 ] && [ "$out" = "$(printf 'WRITE Transversal|LÉEME — Convenciones.md|regla uno\n«dos»')" ] \
+    || { echo "phase 30: expected the conventions file's bytes written, got rc=$rc: $out" >&2; rm -rf "$tmp"; return 1; }
+  rm "$tmp/provisioning/data/convenciones.md"
+  out="$(run30)"; rc=$?
+  [ "$rc" != 0 ] && printf '%s\n' "$out" | grep -q '^FATAL: ' && ! printf '%s\n' "$out" | grep -q '^WRITE ' \
+    || { echo "phase 30: a missing conventions file must stop the phase before any write, got rc=$rc: $out" >&2; rm -rf "$tmp"; return 1; }
+  rm -rf "$tmp"
+}
+check conventions_phase_cases
+
 # Territorio's basemap is OpenStreetMap's own tile service (ADR-0021 in that repo), loaded by each
 # user's browser: nothing about it is provisioned. Phase 16 used to write a tile_url (the suite's
 # /tiles/ archive); it writes none now, and the two keys the app derives its map extent from —
@@ -624,7 +649,7 @@ territorio_phase16_cases() {
 }
 check territorio_phase16_cases
 
-# I0 — gestion 3b62c24, ported: the session posture of phase 05 and the helper it calls. Three
+# I0: the session posture of phase 05 and the helper it calls. Three
 # extracted-block cases in the shape above. Phase 05 is sourced with its three helpers stubbed to
 # print what they were asked, so the assertion is the call itself (key, value, type), not a grep
 # for a spelling. The last line is a NEGATIVE pin: `encryption.enabled` /
@@ -711,7 +736,7 @@ check app_enable_cases
 # observable at all, and a check that cannot fail there is worse than one that admits what it is.
 check grep -q "local LC_ALL=C" provisioning/lib.sh
 
-# --- gate: the tree stays establishment-agnostic (ADR-0013, generalized from the one-code grep) ---
+# --- gate: the tree stays establishment-agnostic (ADR-0009, generalized from the one-code grep) ---
 # Shape-based, not literal: the pilot's residue was a hardcoded `deis.py` call in CI's fixture and steering
 # examples in docs. A literal grep on one clinic's code is the pilot's number all over again — the
 # next clinic's code passes it. The SHAPE is the contract: no tracked file may hand deis.py a DEIS
@@ -735,19 +760,387 @@ check bash -c '
   printf "nothing here at all\n" | grep -nE "$AGNOSTIC_SHAPE" >/dev/null && { echo "agnostic detector: false positive on a clean line" >&2; exit 1; }
   exit 0'
 
+# === the theme, the sites register and the data masters ===========================================
+# Their gates live beside them: the vendored map bytes, the env template's placeholders, the
+# theme's assets and lockups, the DEIS register's round trip through deis.py, and the data manifest.
+# --- gate (L5 S4): the vendored map libraries are the pinned bytes ---------------------------------
+# The Centro pane's engine is two files copied byte-identical from territorio's node_modules
+# (https://aps-conecta.github.io/documentation/desarrollo/licencias.html). Vendored bytes are the one diff a reviewer reads as "just assets":
+# territorio upgrades, a re-vendor misses a file, an editor "fixes" a minified line — and the
+# installer's map changes with no gate the eye can catch. The pair-pin discipline,
+# applied to vendored files: each must exist and hash to its pin. The negative half mutates one
+# byte of a copy — a gate that cannot go red is not a gate.
+check python3 -c '
+import hashlib, os, sys, tempfile
+PINS = {
+    "themes/apsconecta/core/mapa/leaflet.js":
+        "db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a",
+    "themes/apsconecta/core/mapa/leaflet.css":
+        "a7837102824184820dfa198d1ebcd109ff6d0ff9a2672a074b9a1b4d147d04c6",
+}
+def distinta(corpus):   # the first path whose bytes are not its pin, or None
+    for ruta, pin in corpus.items():
+        with open(ruta, "rb") as fh:
+            if hashlib.sha256(fh.read()).hexdigest() != pin:
+                return ruta
+    return None
+real = distinta(PINS)
+with tempfile.TemporaryDirectory() as tmp:
+    mutada = os.path.join(tmp, "leaflet.css")
+    with open("themes/apsconecta/core/mapa/leaflet.css", "rb") as src:
+        datos = bytearray(src.read())
+    datos[100] ^= 1
+    with open(mutada, "wb") as dst:
+        dst.write(datos)
+    drill = distinta({**PINS, mutada: PINS["themes/apsconecta/core/mapa/leaflet.css"]})
+if real is not None:
+    print("the vendored map libraries are not the pinned bytes: " + real)
+if drill != mutada:
+    print("the mutation drill passed — the gate could not see a changed byte")
+sys.exit(0 if real is None and drill == mutada else 1)'
+# A clinic must never be installed with the secrets this repository publishes. env-init.sh generates
+# all four, so a placeholder survives only a hand-copy of the template — which is what somebody does
+# when scripts/env-init.sh refuses because .env is already there. Behavioural, and driven from
+# .env.example: the template is what defines a placeholder, so this cannot rot when one is reworded.
+check bash -c '
+  . scripts/env.sh
+  require_real_secrets || exit 1
+  shipped() { grep "^$1=" .env.example | cut -d= -f2-; }
+  for key in NEXTCLOUD_ADMIN_PASSWORD POSTGRES_PASSWORD OFFICE_JWT_SECRET FIXTURE_USER_PASSWORD; do
+    ( export "$key=$(shipped "$key")"; require_real_secrets 2>/dev/null ) && exit 1
+  done
+  # And a value that CARRIES the marker without EQUALING the template byte for byte. That is
+  # what a quoted placeholder becomes once the loader in env.sh strips its quotes, and what a
+  # `$$` one becomes once it undoes the escape — both conventions .env.example already uses.
+  # The equality test this replaced let exactly this through: the
+  # gate failed OPEN, silently, and a clinic would install with a published secret.
+  ( export NEXTCLOUD_ADMIN_PASSWORD="\"$(shipped NEXTCLOUD_ADMIN_PASSWORD)\""; require_real_secrets 2>/dev/null ) && exit 1
+  exit 0'
+# Regression guard (ADR-0003): every STATIC asset server.css references must exist on disk. It shipped
+# for months declaring four .woff2 files that were never generated, and the TTF fallback swallowed the
+# 404s. The COUNT is asserted before the existence loop, and that is the point: `grep | while read`
+# runs zero times when grep matches nothing and exits 0, so the guard passed on a file with no themed
+# reference at all. Requiring every reference to be a themed absolute path also catches one of four
+# drifting, which "at least one" would not.
+#
+# ONE path is excluded, by exact name and never by pattern: site.css is @import-ed by server.css but
+# is GENERATED per install by phase 15 and is not tracked, so a checkout that has never been
+# provisioned legitimately does not have it — and server.css declares the fallback that renders the
+# product's own name until it does. A `*.css` or directory-wide exclusion here would silently stop
+# checking assets added later, which is the exact shape of the bug this guard exists for.
+check bash -c '
+  css=themes/apsconecta/core/css/server.css
+  total=$(grep -oE "url\(\"" "$css" | wc -l)   # the quote matters: server.css says "url()" in prose
+  themed=$(grep -oE "url\(\"/themes/apsconecta[^\"]+\"" "$css" | wc -l)
+  [ "$total" -ge 1 ] && [ "$total" -eq "$themed" ] || exit 1
+  grep -oE "/themes/apsconecta[^\")]+" "$css" | sed "s|^/||" \
+    | grep -vFx "themes/apsconecta/core/css/site.css" \
+    | while read -r f; do [ -f "$f" ] || exit 1; done'
+# Regression guard: every brand SVG must PARSE, not merely exist. Nextcloud serves a malformed SVG
+# with a 200 and the browser renders nothing — silent, and the existence check above cannot see it.
+# A double hyphen inside an XML comment once made logo-header.svg unparseable and the header logo
+# vanished while every gate stayed green.
+check python3 -c 'import glob,sys,xml.etree.ElementTree as ET
+bad=[]
+for f in sorted(glob.glob("themes/apsconecta/core/img/**/*.svg", recursive=True)):
+    try: ET.parse(f)
+    except Exception as e: bad.append(f"{f}: {e}")
+if bad: print("\n".join(bad)); sys.exit(1)'
+# Regression guard: a lockup that draws text must carry the font that text is set in. An SVG
+# served as an image is an isolated document and cannot see server.css's @font-face, so the wordmark
+# still renders — just in the OS fallback, which nobody reports as a bug.
+# themes/apsconecta/tools/embed-fonts.py puts the subset in; this asserts it was run.
+check python3 -c 'import glob,sys,re
+bad=[]
+for f in sorted(glob.glob("themes/apsconecta/core/img/**/*.svg", recursive=True)):
+    s = open(f, encoding="utf-8").read()
+    if not re.search(r"<text[ >]", s): continue
+    if "@font-face" not in s or "data:font/woff2;base64," not in s:
+        bad.append(f"{f}: draws <text> with no embedded @font-face — run themes/apsconecta/tools/embed-fonts.py")
+    for fam in set(re.findall(r"font-family=\"([^\"]+)\"", s)):
+        if "," in fam:
+            bad.append(f"{f}: font-family=\"{fam}\" keeps an OS fallback; the embedded face must be the only option")
+if bad: print("\n".join(bad)); sys.exit(1)'
+# scripts/deis.py writes sites/<slug>/site.sh and provisioning/seed.sh SOURCES it, so every value
+# it emits is shell syntax unless it is quoted. It was not: five register fields went into the file
+# inside double quotes, raw. Six values in the shipped register carry a `"` or a backtick, and the
+# two failure modes are different sizes of bad — DEIS 113314's address holds a backtick, which is a
+# syntax error that kills the phase loop, while DEIS 201079's name holds quotes, which parses CLEAN,
+# runs `Juan` as a command and leaves SITE_NOMBRE EMPTY. A clinic provisioned with no name, silently.
+#
+# Behavioural, and over the WHOLE register rather than the six known-bad rows: the register is
+# regenerated from DEIS by `--snapshot`, so tomorrow's hostile value is one nobody has seen. Every
+# row is emitted, sourced by a real bash, and compared byte-for-byte with what the CSV holds — one
+# bash process for all of them, because 2655 forks is a gate nobody would keep.
+#
+# `bash -n` alone would not catch it: the DEIS 201079 shape passes a syntax check and still loses
+# the value. The round trip is the assertion.
+check python3 -c '
+import csv, glob, re, subprocess, sys, os
+sys.path.insert(0, "scripts")
+import deis
+
+register = sorted(glob.glob("sites/establecimientos-deis-*.csv"))[-1]
+rows = list(csv.DictReader(open(register, encoding="utf-8")))
+if len(rows) < 100:
+    print("register looks truncated: " + str(len(rows)) + " rows"); sys.exit(1)
+
+FIELDS = {"SITE_NOMBRE": "nombre", "SITE_DIRECCION": "direccion",
+          "SITE_COMUNA": "comuna", "SITE_SERVICIO_SALUD": "servicio_salud",
+          "SITE_COMUNA_CUT": "comuna_codigo", "SITE_LON": "longitud", "SITE_LAT": "latitud"}
+
+script = ["set -u"]
+for row in rows:
+    script.append(deis.block(row, "gate"))
+    for var in FIELDS:
+        script.append("printf \"%s\\n\" \"$" + var + "\"")
+# On stdin, not argv: 2655 blocks is past ARG_MAX and bash never starts.
+out = subprocess.run(["bash"], input="\n".join(script), capture_output=True, text=True)
+if out.returncode != 0:
+    print("sourcing the generated identity blocks failed: " + out.stderr.strip()[:300]); sys.exit(1)
+
+got = out.stdout.split("\n")
+bad = []
+for i, row in enumerate(rows):
+    for j, (var, field) in enumerate(FIELDS.items()):
+        want, have = row[field], got[i * len(FIELDS) + j]
+        if want != have:
+            bad.append("DEIS " + row["codigo"] + " " + var + ": wrote " + repr(want) + ", bash read " + repr(have))
+if bad:
+    print("values the generated site.sh does not round-trip (" + str(len(bad)) + "):")
+    for line in bad[:5]:
+        print("  " + line)
+    sys.exit(1)
+# The CUT parity half: territorio'"'"'s Comuna::of() accepts exactly five digits, and a register
+# value that missed that shape would disarm the import door silently on every install — the
+# phase writes whatever the register says. Wrong-shaped CUTs are a register defect, and this
+# is where it goes red instead.
+bad_cut = [r["codigo"] for r in rows if not re.fullmatch(r"[0-9]{5}", r["comuna_codigo"])]
+if bad_cut:
+    print("comuna_codigo values Comuna::of() would refuse (not 5 digits) — a phase 16 write"
+          " of any of these silently disarms the import door: " + ", ".join(bad_cut[:5]))
+    sys.exit(1)'
+# The register's coordinates have a WRITER (deis.py --coordenadas) that runs by hand once per
+# MINSAL release, so this is where it is proven. On a scratch register of three real rows —
+# 201079's quotes and 113314's backtick among them — it must refuse a source that misses an
+# establishment and one whose latitude or longitude is not plain degrees, leaving the file untouched;
+# then append the two columns as published (text, never re-rounded) with every original line kept
+# byte for byte; then rewrite the same bytes when run again.
+check python3 -c '
+import csv, glob, os, shutil, sys, tempfile
+sys.path.insert(0, "scripts")
+import deis
+register = sorted(glob.glob("sites/establecimientos-deis-*.csv"))[-1]
+point = {"110485": ("-33.976637", "-71.468749"), "201079": ("-51.728207", "-72.482647"),
+         "113314": ("-33.56136", "-70.67469")}
+rows = [r for r in csv.DictReader(open(register, encoding="utf-8")) if r["codigo"] in point]
+if len(rows) != 3:
+    print("the three probe rows are not in the register -- this check measured nothing"); sys.exit(1)
+def source(path, codes, bad=None):
+    feats = []
+    for c in codes:
+        lat, lon = point[c]
+        if c == "113314" and bad:
+            lat, lon = bad
+        feats.append("{\"type\":\"Feature\",\"geometry\":null,\"properties\":{\"cod_vig\":" + c
+                     + ".0,\"latitud\":" + lat + ",\"longitud\":" + lon + "}}")
+    open(path, "w", encoding="utf-8").write("{\"type\":\"FeatureCollection\",\"features\":[" + ",".join(feats) + "]}")
+def run(path):
+    try:
+        deis.coordinates_from(path)
+        return None
+    except SystemExit as e:
+        return str(e)
+tmp = tempfile.mkdtemp()
+try:
+    deis.HERE = os.path.join(tmp, "scripts"); os.makedirs(deis.HERE); os.makedirs(os.path.join(tmp, "sites"))
+    reg = os.path.join(tmp, "sites", "establecimientos-deis-2099-01-01.csv")
+    with open(reg, "w", encoding="utf-8", newline="") as fh:
+        w = csv.writer(fh); w.writerow(deis.COLUMNS); w.writerows([r[k] for k in deis.COLUMNS] for r in rows)
+    before = open(reg, "rb").read()
+    gj = os.path.join(tmp, "src.geojson")
+    source(gj, ["110485", "201079"]); short = run(gj)
+    source(gj, list(point), bad=("\"-33.5; id\"", "-70.67469")); hostile = run(gj)
+    source(gj, list(point), bad=("-33.56136", "-70.6e1")); hostile_lon = run(gj)
+    untouched = open(reg, "rb").read() == before
+    source(gj, list(point)); full = run(gj)
+    after = open(reg, "rb").read()
+    again = run(gj) is None and open(reg, "rb").read() == after
+    out = list(csv.DictReader(open(reg, encoding="utf-8")))
+finally:
+    shutil.rmtree(tmp)
+old, new = before.split(b"\r\n"), after.split(b"\r\n")
+fails = []
+if not short or "113314" not in short: fails.append("a source missing 113314 was not refused: " + repr(short))
+if not hostile or "113314" not in hostile: fails.append("a latitude that is not plain degrees was not refused: " + repr(hostile))
+if not hostile_lon or "113314" not in hostile_lon: fails.append("a longitude that is not plain degrees was not refused: " + repr(hostile_lon))
+if not untouched: fails.append("a refused run changed the register")
+if full is not None: fails.append("the full source was refused: " + full)
+if not out or tuple(out[0]) != deis.COLUMNS + deis.COORDS: fails.append("the header is not the ten columns, then latitud,longitud")
+if any((r["latitud"], r["longitud"]) != point[r["codigo"]] for r in out): fails.append("coordinates not written as published")
+if len(old) != len(new) or not all(n.startswith(o + b",") for o, n in zip(old, new) if o): fails.append("an original line changed")
+if not again: fails.append("a second run did not rewrite the same bytes")
+if fails:
+    print("\n".join(fails)); sys.exit(1)'
+# Every establishment the installer offers carries its official point: the point is where the
+# Centro map starts and what SITE_LON/SITE_LAT copy. A --snapshot that skipped --coordenadas is the
+# realistic way to get here — snapshot_from writes the ten columns only.
+check python3 -c '
+import csv, glob, sys
+sys.path.insert(0, "scripts")
+import deis
+register = sorted(glob.glob("sites/establecimientos-deis-*.csv"))[-1]
+rows = list(csv.DictReader(open(register, encoding="utf-8")))
+if len(rows) < 100:
+    print("register truncated: " + str(len(rows)) + " rows -- this check measured nothing"); sys.exit(1)
+bad = [r["codigo"] for r in rows if not all(deis.DEGREES.fullmatch(r.get(k) or "") for k in deis.COORDS)]
+if bad:
+    print(str(len(bad)) + " register rows without a plain-degree point: " + ", ".join(bad[:5])); sys.exit(1)'
+# A --snapshot whose points never came is the newest file, so every reader would take it and
+# block() would die on a KeyError inside the installer. load() stops instead, naming both ways
+# out, and a refused --coordenadas on it says how to step back to the register before it. On a
+# scratch tree: an older register with points, then a fresh ten-column snapshot of the same rows.
+check python3 -c '
+import csv, glob, os, shutil, sys, tempfile
+sys.path.insert(0, "scripts")
+import deis
+register = sorted(glob.glob("sites/establecimientos-deis-*.csv"))[-1]
+rows = list(csv.DictReader(open(register, encoding="utf-8")))[:3]
+if len(rows) != 3 or not all(r.get("latitud") for r in rows):
+    print("no register rows with points to build the scratch tree -- this check measured nothing"); sys.exit(1)
+def stop(fn, *a):
+    try:
+        fn(*a); return None
+    except SystemExit as e:
+        return str(e)
+tmp = tempfile.mkdtemp()
+try:
+    deis.HERE = os.path.join(tmp, "scripts"); os.makedirs(deis.HERE); os.makedirs(os.path.join(tmp, "sites"))
+    for name, cols in (("2099-01-01", deis.COLUMNS + deis.COORDS), ("2099-02-01", deis.COLUMNS)):
+        with open(os.path.join(tmp, "sites", "establecimientos-deis-" + name + ".csv"), "w", encoding="utf-8", newline="") as fh:
+            w = csv.writer(fh); w.writerow(cols); w.writerows([r[k] for k in cols] for r in rows)
+    loaded = stop(deis.load)
+    gj = os.path.join(tmp, "empty.geojson")
+    open(gj, "w", encoding="utf-8").write("{\"type\":\"FeatureCollection\",\"features\":[]}")
+    refused = stop(deis.coordinates_from, gj)
+    os.remove(os.path.join(tmp, "sites", "establecimientos-deis-2099-02-01.csv"))
+    back = deis.load()
+    os.remove(os.path.join(tmp, "sites", "establecimientos-deis-2099-01-01.csv"))
+    with open(os.path.join(tmp, "sites", "establecimientos-deis-2099-03-01.csv"), "w", encoding="utf-8", newline="") as fh:
+        w = csv.writer(fh); w.writerow(deis.COLUMNS); w.writerows([r[k] for k in deis.COLUMNS] for r in rows)
+    alone = stop(deis.load)
+finally:
+    shutil.rmtree(tmp)
+fails = []
+if not loaded or "--coordenadas" not in loaded or "fall back to establecimientos-deis-2099-01-01.csv" not in loaded:
+    fails.append("load() on a snapshot without points did not stop with both ways out: " + repr(loaded))
+if not refused or "remove establecimientos-deis-2099-02-01.csv to fall back" not in refused:
+    fails.append("a refused --coordenadas on a fresh snapshot did not say how to step back: " + repr(refused))
+if back[0] != "2099-01-01" or len(back[1]) != 3:
+    fails.append("removing the snapshot did not hand the register back: " + repr(back[0]))
+if not alone or "fall back" in alone:
+    fails.append("with no register before it, the fix hint must not offer a fallback: " + repr(alone))
+if fails:
+    print("\n".join(fails)); sys.exit(1)'
+# The welcome declaration has a WRITER (deis.py) and a READER (seed.sh's guard + phase 41). This
+# proves the writer's output is what the reader expects: written to a scratch tree (write_site
+# refuses an existing sites/<name>/), sourced by a real bash, the rows read back — and `equipos`
+# absent, because that is the product decision the default carries.
+check python3 -c '
+import csv, glob, os, shutil, subprocess, sys, tempfile
+sys.path.insert(0, "scripts")
+import deis
+register = sorted(glob.glob("sites/establecimientos-deis-*.csv"))[-1]
+row = next(csv.DictReader(open(register, encoding="utf-8")))
+tmp = tempfile.mkdtemp()
+try:
+    deis.HERE = os.path.join(tmp, "scripts"); os.makedirs(deis.HERE)
+    deis.write_site(row, "gate", "probe", sectors=[], programs=[])
+    out = subprocess.run(["bash", "-c", "set -u; . sites/probe/site.sh; printf \"%s\\n\" \"${SITE_WELCOME[@]}\""],
+                         cwd=tmp, capture_output=True, text=True)
+finally:
+    shutil.rmtree(tmp)
+if out.returncode != 0:
+    print("sourcing the written site file failed: " + out.stderr.strip()[:300]); sys.exit(1)
+rows = out.stdout.split()
+if rows != ["noticias|wall", "vida-cesfam|", "documentos|wall"]:
+    print("SITE_WELCOME default is not the three declared rows: " + repr(rows)); sys.exit(1)'
+# --- gate: sites/ ships the register and NOTHING else ------------------------------------
+# The register CSVs are tracked under sites/ beside generated site trees that .gitignore keeps
+# out by DIRECTORY — which stops nothing from `git add -f sites/x/site.sh` landing a real site
+# record (identity, teams, folders, ACL — a clinic's whole shape) in the public repo. The list
+# comes from git ls-files (sites/-PREFIXED paths), piped; the filter is a function so the
+# self-test exercises the same bytes. The register is a FLOOR, not an option: an empty listing
+# (register deleted, glob renamed) is the empty-glob-goes-green class — red, not green.
+sites_register_only() {  # sites/-prefixed file list on stdin; exit 0 = only register CSVs, >=1
+  local list n bad
+  # Captured ONCE: two greps over one stdin would race — the first consumes the stream and the
+  # second reads an exhausted pipe, outputs nothing, and the intruder check goes green vacuously
+  # (caught by sanity-running the fence against the real repo, not by review).
+  list=$(cat)
+  n=$(printf "%s\n" "$list" | grep -cE "^sites/establecimientos-deis-[0-9]{4}-[0-9]{2}-[0-9]{2}\.csv$" || true)
+  [ "$n" -ge 1 ] || { printf "no register CSV tracked under sites/ — the register is the floor\n" >&2; return 1; }
+  bad=$(printf "%s\n" "$list" | grep -vE "^sites/establecimientos-deis-[0-9]{4}-[0-9]{2}-[0-9]{2}\.csv$" || true)
+  [ -z "$bad" ] || { printf "unexpected tracked files under sites/:\n%s\n" "$bad" >&2; return 1; }
+}
+export -f sites_register_only
+check bash -c 'git ls-files sites/ | sites_register_only'
+# Negative half, fabricated lists through the same function: a site.sh must be flagged, an
+# empty listing must be flagged, the register alone must pass.
+check bash -c '
+  printf "sites/establecimientos-deis-2026-07-23.csv\nsites/x/site.sh\n" | sites_register_only \
+    && { echo "sites gate: a tracked site.sh was not flagged" >&2; exit 1; }
+  printf "" | sites_register_only && { echo "sites gate: an empty listing went green" >&2; exit 1; }
+  printf "sites/establecimientos-deis-2026-07-23.csv\n" | sites_register_only'
+# --- gate: the data manifest and the comuna reference describe each other ---------------------
+# packages.json pins the masters; comunas-deis.csv is the coding authority the recipes validate
+# against. One python block holds the validator ONCE and runs it on the real corpus AND on three
+# fabricated defect corpora (single-sourced: the self-test exercises the same bytes the real check
+# runs — slice 4's locked lesson). The row-count expectation is READ FROM THE MANIFEST, not
+# restated: a future ODS refresh (a 347th comuna) is one manifest edit + one CSV regen, and this
+# gate follows — never three uncoordinated literals.
+check python3 -c '
+import json, re, sys
+def validate(rows, why, expect):
+    if len(rows) != expect: print(why + ": " + str(len(rows)) + " rows, expected " + str(expect)); sys.exit(1)
+    for cut, glosa in rows:
+        if not re.fullmatch(r"[0-9]{5}", cut): print(why + ": CUT " + repr(cut) + " is not 5 digits"); sys.exit(1)
+        if "\xa0" in glosa: print(why + ": glosa of " + cut + " carries a non-breaking space"); sys.exit(1)
+    if not any(c == "99999" for c, _ in rows): print(why + ": the 99999/Ignorada sentinel row is gone"); sys.exit(1)
+m = json.load(open("provisioning/data/packages.json"))
+assert m["masters"], "no masters in the data manifest"
+for x in m["masters"]:
+    for k in ("id", "origin", "sha256", "records"):
+        if not x.get(k): print("master " + x.get("id", "?") + ": missing " + k); sys.exit(1)
+expect = m["comuna_reference"]["records"]
+real = [l.rstrip("\n").split(",", 1) for l in open("provisioning/data/comunas-deis.csv", encoding="utf-8")][1:]
+validate(real, "comunas-deis.csv", expect)
+# The negative half — three corpora, one defect each, through the SAME validator:
+try:
+    validate([("1234", "Cuatro"), ("99999", "Ignorada"), ("12345", "Santiago")], "4-digit CUT", expect)
+except SystemExit: pass
+else: print("fabricated 4-digit corpus passed"); sys.exit(1)
+try:
+    validate([("99999", "Ignorada"), ("12345", "NBSP\xa0glosa")], "NBSP glosa", 2)
+except SystemExit: pass
+else: print("fabricated NBSP corpus passed"); sys.exit(1)
+try:
+    validate([("12345", "Santiago"), ("13101", "Providencia")], "missing sentinel", 2)
+except SystemExit: pass
+else: print("fabricated sentinel-less corpus passed"); sys.exit(1)
+print("ok")'
+
 # --- gate: a21 (L5): the map is the suite's own route — the separate tiles server is gone -------------
 # The grep is a21's own clause, with the pattern assembled without its literals
 # ("nginx:alp""ine|TILES_""PORT|:80""84"): a21 covers scripts/ too, and a gate that spelled its
 # own banned tokens would be its own hit. tiles.nginx.conf gone, no nginx pin, port or knob left
 # anywhere the map used to need one. (Phase 16 no longer points territorio at /tiles/ — its own
-# case above asserts the absence.) The gestion-era scope also
-# named .env.example and compose.yaml — both stayed in gestion with the dev lifecycle, so the
-# scope here is the fork's own trees.
+# case above asserts the absence.)
 check bash -c '
   test ! -e tiles.nginx.conf \
-    && ! git grep -qE "nginx:alp""ine|TILES_""PORT|:80""84" -- host scripts provisioning'
+    && ! git grep -qE "nginx:alp""ine|TILES_""PORT|:80""84" -- .env.example host scripts provisioning'
 
-# --- gate: the tile machinery is retired (territorio draws OpenStreetMap's tile service, ADR-0021) -----
+# --- gate: the tile machinery is retired (territorio draws OpenStreetMap's tile service, territorio ADR-0021) -----
 # The map-folder default used to be spelled in six places that had to agree (org review L5-S3, I7);
 # with the folder gone there is nothing to agree on, and the proof is the absence: the build, the
 # refresh, the timer's two units and the host CLI's map step do not exist, and no knob that fed them
@@ -808,35 +1201,6 @@ CASES
 }
 check cleanboot_suite_tag_cases
 
-# The testbed brands the probe with the suite's theme, which lives in gestion — cleanboot.yml checks it
-# out at ./gestion — and, in an older layout, at themes/ in this tree. theme_source picks the first
-# that has a core/ directory (gestion's first) and fails when neither does; the function is extracted
-# from the script (which runs its command on load) and run over fixture trees.
-testbed_theme_source_cases() {
-  local fn tmp got
-  fn="$(awk '/^theme_source\(\) \{/ {f=1} f {print} f && /^}/ {exit}' scripts/aio-testbed.sh)"
-  [ -n "$fn" ] || { echo "testbed: theme_source() was not found in scripts/aio-testbed.sh" >&2; return 1; }
-  tmp="$(mktemp -d)"
-  while IFS='|' read -r dirs want; do
-    rm -rf "${tmp:?}/root"; mkdir -p "$tmp/root"
-    for d in ${dirs//,/ }; do mkdir -p "$tmp/root/$d"; done
-    got="$( eval "$fn"; theme_source "$tmp/root" )" || got=""
-    [ "$got" = "${want:+$tmp/root/}$want" ] \
-      || { echo "testbed: tree [$dirs] expected '${want:-none}', got '$got'" >&2; rm -rf "$tmp"; return 1; }
-  done <<'CASES'
-gestion/themes/apsconecta/core|gestion/themes/apsconecta
-themes/apsconecta/core|themes/apsconecta
-gestion/themes/apsconecta/core,themes/apsconecta/core|gestion/themes/apsconecta
-gestion/themes/apsconecta,themes/apsconecta/core|themes/apsconecta
-gestion/themes/apsconecta|
-x|
-CASES
-  rm -rf "$tmp"
-  grep -q 'no gestion/themes/apsconecta/core nor themes/apsconecta/core' scripts/aio-testbed.sh \
-    || { echo "testbed: the FATAL message must name both locations" >&2; return 1; }
-}
-check testbed_theme_source_cases
-
 # Clean boot (by IP) asserts Territorio carries the site's comuna and NO tile_url. The step is a YAML block
 # no runner has run until CI does, so its script is extracted and run here over a stubbed occ: absent (occ
 # exits 1, as for a key that was never set) and stored-empty (exit 0, no value) both pass; a stored value, a
@@ -877,10 +1241,8 @@ if docker info >/dev/null 2>&1; then
   check bash scripts/db-dump.sh --self-test
   check bash scripts/uninstall.sh --self-test
   # ... and it leaves nothing of its own behind. It fabricates a file under themes/apsconecta/core/css/
-  # and used to leave the EMPTY directories it made for that: the provisionador's self-test then took
-  # the repo-root themes/ for a package half, found it incomplete and never tried GESTION_TREE (every
-  # browser arm failed 'L is not defined' under test.sh and passed run alone). Run from a scratch
-  # tree: no residue where there was none, and a themes/ that was there is left as it was.
+  # and must not leave the EMPTY directories it made for that. Run from a scratch tree: no residue
+  # where there was none, and a themes/ that was there is left as it was.
   check bash -c '
     repo=$PWD; tmp=$(mktemp -d); trap "rm -rf $tmp" EXIT
     mkdir "$tmp/a" "$tmp/b"; mkdir "$tmp/a/sites" "$tmp/b/sites"
@@ -972,12 +1334,10 @@ print("ok")'
 check bash provisioning/standings.sh --self-test
 check python3 scripts/apps.py --self-test
 check bash scripts/env.sh --self-test
-# #197: no caller restates the container default or guards it (`:-` `-` `:?` `?`) — env.sh
-# section 3 is the one place it is decided. The .env.example half of the gestion-era gate stayed
-# with the template (gestion's own gate — the template did not move); this half guards
-# instalador's tree. git grep exits 1 on no match and 128 on error, so only a real "none found"
-# passes (a tree without git is red, not green).
-check bash -c '{ git grep -qE "NC_CONTAINE[R]:?[?-]" -- . ":!scripts/env.sh"; [ $? -eq 1 ]; }'
+# #197: the template ships no Nextcloud container and no caller restates its default or guards it
+# (`:-` `-` `:?` `?`) — env.sh section 3 is the one place it is decided. git grep exits 1 on no
+# match and 128 on error, so only a real "none found" passes (a tree without git is red, not green).
+check bash -c '! grep -q "^NC_CONTAINER=" .env.example && { git grep -qE "NC_CONTAINE[R]:?[?-]" -- . ":!scripts/env.sh"; [ $? -eq 1 ]; }'
 check bash provisioning/usuarios.sh --self-test
 
 echo "== self-tests (hermetic — no docker, no stack) =="

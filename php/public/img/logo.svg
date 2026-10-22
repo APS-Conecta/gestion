@@ -6,7 +6,7 @@
        .nextcloud-logo rule colors it violet over the white login card, the .logo header rule
        colors it white over the violet background, and the Ofiuco wave and star keep the
        brand orange, which reads on both surfaces. The wordmark is outlines (scripts/lockup.py,
-       from gestion's brand fonts): a <use> clone cannot carry fonts embedded in this file, so live
+       from the theme's brand fonts): a <use> clone cannot carry fonts embedded in this file, so live
        text fell back to whatever the page loaded (R20). Outlines need no font at all.
        Drawn from Fraunces.woff2 sha256 986e3cd4c7f67a2b, NunitoSans.woff2 sha256 e3f27f32836dde8e. -->
   <g id="logo" transform="translate(39 2) scale(1.15)">

@@ -1,4 +1,4 @@
-# Phase 12 — the apps this instance runs, and the edits we make inside them.  OWNER: ADR-0002.
+# Phase 12 — the apps this instance runs, and the edits we make inside them.
 # Runs before 15-branding and 30-folders, which use side_menu and groupfolders.
 #
 # apps.json (the suite manifest) is the inventory; provisioning/apps/<appid>/ holds the vendored
@@ -37,7 +37,7 @@ while IFS=$'\t' read -r -u 3 app _source repo; do
     continue
   fi
   # Own and fork apps (a repo of ours) may be a live clone on a development machine, which
-  # ensure_own_app leaves alone (ADR-0003); everything else is the vendored tarball.
+  # ensure_own_app leaves alone; everything else is the vendored tarball.
   if [ -n "$repo" ]; then
     ensure_own_app "$app" "https://github.com/$repo.git"
   else
@@ -60,22 +60,5 @@ while IFS=$'\t' read -r -u 3 app _source repo; do
     occ_sh "rm -f $sig" && log "signature dropped for $app (patched, so it no longer describes the files)"
   fi
 done 3<<< "$manifest"
-
-# Lab apps: ours, under development, NEVER shipped (ADR-0005). Inventory in dev/lab-apps.sh, which
-# is tracked but inert — a clinic reads it and falls through here.
-#
-# THE .git TEST IS THE WHOLE MECHANISM, not a nicety. ensure_own_app hands a directory with no .git
-# to ensure_vendored_app, and a lab app has no tarball to unpack: dropping this line was run on
-# 2026-08-08 and phase 12 died with "FAILED territorio — no vendored tarball", i.e. every clinic
-# install. Guard here rather than inside ensure_own_app, which is right to keep that fallthrough for
-# the apps we DO ship.
-if [ -f dev/lab-apps.sh ]; then
-  . dev/lab-apps.sh
-  for entry in ${LAB_APPS:-}; do
-    app="${entry%%=*}"
-    [ -d "apps/$app/.git" ] || continue
-    ensure_own_app "$app" "${entry#*=}"
-  done
-fi
 
 phase_end

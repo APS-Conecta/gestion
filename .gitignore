@@ -11,3 +11,12 @@
 /manual-install/docker-compose.yml
 /manual-install/compose.yaml
 /manual-install/.env
+
+# Per-install artifacts: the env file and its secrets, the generated site trees beside the DEIS
+# register, and the site CSS phase 15 writes.
+.env
+.env.*
+!.env.example
+/sites/*/
+/sites/*.txt
+/themes/apsconecta/core/css/site.css

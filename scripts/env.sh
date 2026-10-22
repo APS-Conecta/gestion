@@ -124,7 +124,7 @@ require_real_secrets() {
     echo "FATAL: .env still holds the placeholder .env.example ships for: ${still[*]}" >&2
     echo "       Those values are published in this repository, so anyone who can read it can" >&2
     echo "       read them. A clinic must not be installed with them." >&2
-    echo "         rm .env && make setup     # generates every secret from /dev/urandom" >&2
+    echo "         rm .env && bash scripts/env-init.sh     # generates every secret from /dev/urandom" >&2
     echo "       Only do that on a stack that has not been installed yet — .env is the one copy" >&2
     echo "       of the secrets a running instance was installed with." >&2
     return 1
@@ -169,23 +169,6 @@ FIX
       && [ "${DOUBLE_QUOTED_HASH:-}" = 'value # stays' ] && [ "${SINGLE_QUOTED_HASH:-}" = 'other # stays' ] \
       && [ "${DOLLAR_DOUBLED:-}" = 'abc$def' ]
   ) || { echo "self-test FAIL: loader arm — the loader misparsed the fixture" >&2; rc=1; }
-  # the compose-parity arm: needs only the docker CLI (config resolves; nothing starts).
-  # POSTGRES_DB is observable in services.db.environment — the key the fixture shares with
-  # the real compose file, so both readers are compared on the SAME variable.
-  # The parity arm compares against the SUITE's dev compose — gestion's file in the split era
-  # (D2): this tree carries upstream's own compose.yaml (the mirror), which resolves POSTGRES_DB
-  # as nothing. .env.example is the dev lifecycle's marker: where it is absent, no suite compose
-  # moved, and the arm self-skips.
-  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 \
-     && [ -f "$(dirname -- "${BASH_SOURCE[0]}")/../.env.example" ] \
-     && [ -f "$(dirname -- "${BASH_SOURCE[0]}")/../compose.yaml" ]; then
-    local got
-    got="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && docker compose --env-file "$fx" -f compose.yaml config --format json 2>/dev/null \
-      | python3 -c 'import json,sys; print(json.load(sys.stdin)["services"]["db"]["environment"].get("POSTGRES_DB",""))' 2>/dev/null || true)"
-    [ "$got" = "apsconecta" ] || { echo "self-test FAIL: compose-parity arm — compose resolved POSTGRES_DB as '$got'" >&2; rc=1; }
-  else
-    echo "self-test note: docker/compose absent — parity arm skipped on this box"
-  fi
   # the container arms (#197): which container occ talks to is decided in this file alone. A stub
   # docker logs every call and answers `ps` with $STUB_NAMES, so each posture is fabricated without
   # a daemon — AIO up (alone, or beside a compose one), compose only, nothing up, an empty .env key,
@@ -284,7 +267,7 @@ if [ -f .env ]; then
   unset _line _key _val
 fi
 
-# 6. The engine's storage root, as staff will see it in Files (ADR-0020, IntraVox review L0-02).
+# 6. The engine's storage root, as staff will see it in Files (ADR-0016, IntraVox review L0-02).
 #    Phase 41 tells the engine the name (`occ config:app:set intravox groupfolder_name`) BEFORE
 #    `intravox:setup` creates the mount, then looks the mount up by it; divergence.sh declares it.
 #    After the loader, so .env (or the environment) can override it for a clinic that renamed by

@@ -12,7 +12,7 @@ dir="${2:?usage: scripts/cleanboot-site.sh ADDRESS DIR}"
 # the register is a valid install, and CI booting the same one every time is a fixture
 # that steers — and names a real clinic in a public log. sha256 over the sorted codes
 # makes the pick stable per register content, and satisfies the establishment-agnostic
-# gate (ADR-0013): no tracked file may hand deis.py a DEIS code (AGNOSTIC_SHAPE).
+# gate (ADR-0009): no tracked file may hand deis.py a DEIS code (AGNOSTIC_SHAPE).
 pick=$(python3 - <<'PY'
 import csv, glob, hashlib, sys
 files = sorted(glob.glob("sites/establecimientos-deis-*.csv"))

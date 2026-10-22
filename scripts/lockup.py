@@ -8,12 +8,12 @@ load (FINDINGS R20). Outlines need no font at all.
 Authoring tool, run by hand when the lockup's words or the brand fonts change. OSS: HarfBuzz shapes
 each line the way a browser would (kerning, and Fraunces' WONK substitutions such as n → n.alt);
 fontTools draws the shaped glyphs from the variable font pinned at the same axes. It runs on the
-070 logo or on its own earlier output. The fonts are gestion's full variable brand fonts — the
+070 logo or on its own earlier output. The fonts are the theme's full variable brand fonts — the
 wizard ships only subsets:
 
     pip install fonttools brotli uharfbuzz
     python3 scripts/lockup.py php/public/img/logo.svg \\
-        --fonts /opt/aps-conecta-org/gestion/themes/apsconecta/core/fonts
+        --fonts themes/apsconecta/core/fonts
 """
 
 import argparse
@@ -122,7 +122,7 @@ def main():
         for ff in sorted({line[1] for line in LINES})
     )
     note = (
-        "The wordmark is outlines (scripts/lockup.py,\n       from gestion's brand fonts): a <use> clone"
+        "The wordmark is outlines (scripts/lockup.py,\n       from the theme's brand fonts): a <use> clone"
         " cannot carry fonts embedded in this file, so live\n       text fell back to whatever the page"
         f" loaded (R20). Outlines need no font at all.\n       Drawn from {sums}."
     )

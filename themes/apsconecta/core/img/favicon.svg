@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="256" height="256" role="img" aria-label="APS Conecta">
+  <defs>
+    <linearGradient id="apsTileFav" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#893dff"></stop>
+      <stop offset="1" stop-color="#5315a8"></stop>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#apsTileFav)"></rect>
+  <path d="M32 14 L47 28 M32 14 L17 28" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" opacity="0.5"></path>
+  <path d="M12 40 Q32 30 52 38" fill="none" stroke="#e06f00" stroke-width="3" stroke-linecap="round"></path>
+  <circle cx="47" cy="28" r="3.6" fill="#ffffff"></circle>
+  <circle cx="17" cy="28" r="3.6" fill="#ffffff"></circle>
+  <path d="M32 7 L33.82 12.18 L39 14 L33.82 15.82 L32 21 L30.18 15.82 L25 14 L30.18 12.18 Z" fill="#f28f36"></path>
+</svg>

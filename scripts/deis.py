@@ -14,7 +14,7 @@ writes is gitignored because its content depends on which establishment you chos
 
 The register is the newest sites/establecimientos-deis-*.csv: public primary-care establishments in
 operation, trimmed to the ten columns an install needs, then each establishment's official point
-(latitud, longitud) from MINSAL's Geoportal de Chile dataset (docs/LICENSING.md §3.4). It carries
+(latitud, longitud) from MINSAL's Geoportal de Chile dataset (https://aps-conecta.github.io/documentation/desarrollo/licencias.html). It carries
 the whole APS network — CESFAM, PSR, CECOSF, CGR, CGU, COSAM, SAPU, SAR, SUR — and the filter is a
 plain term match, so `cesfam` above is a search word and not a required type: `deis.py sapu
 <comuna>` works the same way. The date in the filename IS the register's provenance — never edit
@@ -46,7 +46,7 @@ SIGLA = {
 COLUMNS = ("codigo", "tipo", "nombre", "direccion", "comuna_codigo", "comuna",
            "region_codigo", "region", "servicio_salud", "dependencia")
 # Appended by --coordenadas: the establishment's official point, CRS84 decimal degrees as MINSAL
-# publishes them (docs/LICENSING.md §3.4). Sourced unquoted by bash once in a site file, so a value
+# publishes them (https://aps-conecta.github.io/documentation/desarrollo/licencias.html). Sourced unquoted by bash once in a site file, so a value
 # is a sign, digits and a dot or it is refused.
 COORDS = ("latitud", "longitud")
 DEGREES = re.compile(r"-?[0-9]{1,3}(\.[0-9]+)?")
@@ -137,14 +137,14 @@ def snapshot_from(root):
             n += 1
     print(f"wrote {os.path.relpath(out, os.path.join(HERE, '..'))} — {n} establishments")
     print("delete the older establecimientos-deis-*.csv once the new one is verified")
-    print("then add the coordinates: scripts/deis.py --coordenadas <geojson> (docs/LICENSING.md §3.4)")
+    print("then add the coordinates: scripts/deis.py --coordenadas <geojson> (https://aps-conecta.github.io/documentation/desarrollo/licencias.html)")
 
 
 def coordinates_from(geojson):
     """Add each establishment's official point to the newest register, in place.
 
     The source is MINSAL's «Establecimientos de salud de Chile» on the Geoportal de Chile
-    (docs/LICENSING.md §3.4): one Point per establishment in operation, keyed by its DEIS code in
+    (https://aps-conecta.github.io/documentation/desarrollo/licencias.html): one Point per establishment in operation, keyed by its DEIS code in
     `cod_vig`. The values are the feature's `latitud`/`longitud` properties as published, read as
     text — the geometry repeats them with float noise past the ninth decimal on some rows. Every
     register row must find a plain-degree point, or the run fails and the file stays as it was.
@@ -312,9 +312,9 @@ SITE_TEAMS=(
 # A section is a folder of the library under provisioning/intravox/es/sections/. The flag is the
 # protection attribute (review L0-04): `wall` = fixed structure staff cannot delete or move; empty =
 # editable. The seed stamps a wall section's structure `protected` and the engine refuses to delete
-# or move it (docs/WELCOME-SCREEN.md «Walls»). `equipos` is deliberately absent — declare it
+# or move it (https://aps-conecta.github.io/documentation/desarrollo/intravox.html, «Muro»). `equipos` is deliberately absent — declare it
 # ('equipos|wall') and phase 41 renders the hub plus one page per SITE_TEAMS entry. Adding a row
-# later and re-seeding ADDS that section and touches nothing else (ADR-0019).
+# later and re-seeding ADDS that section and touches nothing else (ADR-0015).
 SITE_WELCOME=(
   'noticias|wall'
   'vida-cesfam|'

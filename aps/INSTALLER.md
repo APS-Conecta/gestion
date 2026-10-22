@@ -181,7 +181,7 @@ domain to check.
 
 ## 8. The .env the gates ride
 
-The clinic `.env` (in the gestion checkout) is minimal by design — the wizard owns the stack, so
+The clinic `.env` (in the package root) is minimal by design — the wizard owns the stack, so
 the compose-era keys do not exist under AIO. The keys that matter to the gates:
 
 - `HTTP_PORT=443` — the public apache port; `smoke` and `revalidate` curl it

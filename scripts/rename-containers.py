@@ -8,7 +8,7 @@ instance keeps its nextcloud-aio-* containers and is reinstalled, never migrated
 
 The names come from the data: every container_name in php/containers.json (19, the floor) and in the
 community JSONs, never from a list typed here. Kept by design, so never in the data swept: the
-mastercontainer (gestion's docker run and the self-update name it), the nextcloud-aio network and compose
+mastercontainer (the host CLI's docker run and the self-update name it), the nextcloud-aio network and compose
 project, the nextcloud_aio_* volumes, the nextcloud-aio app id, the -nextcloud-aio borg archive suffix.
 
 Its verify is the outcome: an old name left in the swept files, or a pattern rewrite that did not land
@@ -34,7 +34,7 @@ SWEEP = (
 )
 # nextcloud-aio-<...> tokens that stay: anything else left in the sweep is a miss
 KEPT = {
-    "nextcloud-aio-mastercontainer",  # the wizard itself (gestion's docker run, self-update)
+    "nextcloud-aio-mastercontainer",  # the wizard itself (the host CLI's docker run, self-update)
     "nextcloud-aio-mastercontainer-tests",  # php/tests/package.json's npm name
     "nextcloud-aio-test",  # php/tests/compose.yaml's project name
     "nextcloud-aio-rundeps",  # the mastercontainer Dockerfile's apk virtual package

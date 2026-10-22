@@ -15,8 +15,8 @@ phase_begin "14-office" "Euro-Office connector configuration (AD-5)"
 # trusted_domains is equally the entrypoint's ($NC_DOMAIN, entrypoint :692). Detection is env.sh's
 # is_aio (seed.sh sources env.sh before every phase), so compose dev and the pre-AIO live stack
 # keep every write below exactly as before (D5).
-# The gestion-only keys — sameTab, customizationTheme, editFormats, defFormats — are the
-# migration notes' recorded split and are written in BOTH postures, unconditionally below.
+# The suite's own keys, which the entrypoint does not write — sameTab, customizationTheme,
+# editFormats, defFormats — are written in BOTH postures, unconditionally below.
 if is_aio; then
   aio=1
   log "AIO: document server URLs, jwt_secret and trusted_domains belong to the entrypoint"
@@ -64,10 +64,6 @@ if [ "$aio" = 0 ]; then
   # The other half of StorageUrl, and the one piece of this that is not appconfig. The document
   # server fetches documents FROM Nextcloud at the service name `nextcloud`, which Nextcloud
   # rejects with HTTP 400 unless it is a trusted domain.
-  #
-  # It lived in `make office-eurooffice` and was AD-2's one documented exception until #81 dropped
-  # the eurooffice profile and retired it — docs/adr/0000-inherited-decisions.md §AD-2 owns that
-  # history.
   #
   # Not through config_system_set: that helper compares a scalar, and this is an ARRAY where the
   # key to write is the next free INDEX. Query-before-set is done directly instead — `occ` prints

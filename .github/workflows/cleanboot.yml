@@ -14,28 +14,27 @@
 name: Clean boot
 
 on:
-  # Everything a clean install reads. Docs, themes and apps/ are deliberately absent — they cannot
-  # change what `make install` builds. sites/** drives the groups, folders and ACL matrix, and
-  # .env.example is copied verbatim by the first step below and has broken that step before.
-  # dev/** is here because 12-apps SOURCES dev/lab-apps.sh (ADR-0005): the file is inert on a clinic,
-  # but a syntax error in it still kills the phase, so it is part of the install path now.
+  # Everything a clean install reads: the host bundle, the scripts tree, the executor phases and
+  # the data masters, the suite manifest, the bootstrap's own three files, the theme the seed
+  # brands with, the sites register (it drives the groups, folders and ACL matrix) and .env.example
+  # (the rehearsal's .env is built from it). Docs are deliberately absent. Only the vendored apps
+  # are read elsewhere — the old gestion's provisioning/apps at its main ref, until #42 — and the
+  # schedule and dispatch arms stay their drift backstop, as they are for runner-image drift.
   pull_request:
     paths:
-      # Everything a clean install reads, in THIS repository now: the host bundle, the scripts
-      # tree, the executor phases, the suite manifest, the bootstrap's own three files. gestion's
-      # half (sites/**, the vendored apps, the themes) is read at its main ref — the schedule and dispatch
-      # arms stay its drift backstop, exactly as they already were for runner-image drift.
       - 'host/**'
       - 'scripts/**'
       - 'provisioning/**'
+      - 'themes/**'
+      - 'sites/**'
+      - '.env.example'
       - 'apps.json'
       - 'install.sh'
       - 'VERSION'
       - 'installer.pub'
       - '.github/workflows/cleanboot.yml'
-  # Kept as the backstop for drift no PR causes. Our own bytes stopped being a source of it — images
-  # pinned by digest (#109), apps vendored as committed tarballs (#98) — so what still moves untouched
-  # is the runner image and the actions. `image-digests` reports the other half an hour earlier.
+  # Kept as the backstop for drift no PR causes: the runner image, the actions, and the old
+  # gestion's vendored apps read at its main ref.
   schedule:
     - cron: "0 6 * * 1"          # Mondays 06:00 UTC
   workflow_dispatch:
@@ -113,17 +112,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 1   # VERSION answers suite_tag() now — no tag history to read
-      # The composite's gestion half (D2): the suite-definition content the package folds in —
-      # checked out beside, exactly what the bake and package-release read. APS_BOT_PAT
-      # because gestion is private: the job's own token cannot read a sibling repository.
-      # .git/info/exclude (below) keeps it out of the throwaway commit — a local ignore,
-      # never a tracked one; the archive that becomes the package must not swallow it.
-      - uses: actions/checkout@v7
-        with:
-          repository: APS-Conecta/gestion
-          path: gestion
-          token: ${{ secrets.APS_BOT_PAT }}
-          fetch-depth: 1
       # The probe bed FIRST, so a harness preflight failure (RAM, ports, ghcr reachability) is
       # the first thing a red log shows. Every wait inside is bounded, and `up` ends in its own
       # port gate — the runner never claims 80/443, and :8080 is the only publish.
@@ -151,7 +139,6 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y signify-openbsd
           sudo ln -sf /usr/bin/signify-openbsd /usr/local/bin/signify   # the apt package ships the binary under its full name
           tag="ci-cleanboot-${GITHUB_SHA:0:12}"
-          echo "gestion/" >> .git/info/exclude
           # the throwaway key replaces the placeholder exactly the way aps/RELEASING.md's real
           # keygen will (one commit: installer.pub + install.sh's constant), and the throwaway
           # tag carries VERSION — the release job's own assert, proven on every PR
@@ -162,7 +149,7 @@ jobs:
           printf '%s\n' "$tag" > VERSION
           git config user.email cleanboot@invalid && git config user.name cleanboot
           git add -A && git commit -qm "rehearsal: the package at $tag" && git tag "$tag"
-          RELEASE_TAG="$tag" GESTION_TREE="$PWD/gestion" \
+          RELEASE_TAG="$tag" \
             MINISIGN_SECRET_KEY="$(cat "$ensayo/installer.sec")" MINISIGN_KEY_PASSWORD="" \
             bash scripts/package-release.sh --out "$ensayo/dist"
           cp "$ensayo/dist/apsconecta-$tag.tar.gz" "$ensayo/dist/SHA256SUMS" \
@@ -179,10 +166,6 @@ jobs:
       - name: The rehearsal's .env, in the package the install will run from
         run: |
           pkg=/opt/aps-conecta/instalador
-          # the template beside the .env it spawns: env.sh's require_real_secrets checks for
-          # .env.example in the cwd its own cd pins — the seed the package runs needs it there,
-          # and a clinic's package never carries it (probe scaffolding, like the .env itself)
-          cp gestion/.env.example "$pkg/.env.example"
           hex() { od -An -tx1 -N32 /dev/urandom | LC_ALL=C tr -d ' \n'; }
           # the four secrets env-init itself generates (hex, its own rule) — seed.sh's
           # require_real_secrets refuses any change-me left standing
@@ -190,7 +173,7 @@ jobs:
               -e "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(hex)/" \
               -e "s/^OFFICE_JWT_SECRET=.*/OFFICE_JWT_SECRET=$(hex)/" \
               -e "s/^FIXTURE_USER_PASSWORD=.*/FIXTURE_USER_PASSWORD=$(hex)/" \
-              gestion/.env.example > "$pkg/.env"
+              "$pkg/.env.example" > "$pkg/.env"
           chmod 600 "$pkg/.env"
           {
             echo "HTTP_PORT=${AIO_TEST_APACHE_PORT}"
@@ -514,20 +497,12 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 1   # VERSION answers suite_tag() now — no tag history to read
-      # The composite's gestion half (D2) — same dual checkout as the domain job (Modify 2).
-      - uses: actions/checkout@v7
-        with:
-          repository: APS-Conecta/gestion
-          path: gestion
-          token: ${{ secrets.APS_BOT_PAT }}
-          fetch-depth: 1
       - name: Build the rehearsal package, then install through the real bootstrap
         run: |
           set -euo pipefail
           sudo apt-get update -qq && sudo apt-get install -y signify-openbsd
           sudo ln -sf /usr/bin/signify-openbsd /usr/local/bin/signify   # the apt package ships the binary under its full name
           tag="ci-cleanboot-${GITHUB_SHA:0:12}"
-          echo "gestion/" >> .git/info/exclude
           ensayo="$RUNNER_TEMP/ensayo"; mkdir -p "$ensayo/srv/releases/download/$tag" "$ensayo/dist"
           ( umask 077 && signify -G -n -p "$ensayo/installer.pub" -s "$ensayo/installer.sec" -c "cleanboot rehearsal key" )
           sed -i "s|^SIGNIFY_PUBKEY=\"[^\"]*\"|SIGNIFY_PUBKEY=\"$(sed -n 2p "$ensayo/installer.pub")\"|" install.sh
@@ -535,7 +510,7 @@ jobs:
           printf '%s\n' "$tag" > VERSION
           git config user.email cleanboot@invalid && git config user.name cleanboot
           git add -A && git commit -qm "rehearsal: the package at $tag" && git tag "$tag"
-          RELEASE_TAG="$tag" GESTION_TREE="$PWD/gestion" \
+          RELEASE_TAG="$tag" \
             MINISIGN_SECRET_KEY="$(cat "$ensayo/installer.sec")" MINISIGN_KEY_PASSWORD="" \
             bash scripts/package-release.sh --out "$ensayo/dist"
           cp "$ensayo/dist/apsconecta-$tag.tar.gz" "$ensayo/dist/SHA256SUMS" \
@@ -548,13 +523,12 @@ jobs:
           sudo chown -R "$(id -u):$(id -g)" /opt/aps-conecta/instalador
           # the rehearsal's .env, in the package (the domain job's own step, same shape)
           pkg=/opt/aps-conecta/instalador
-          cp gestion/.env.example "$pkg/.env.example"
           hex() { od -An -tx1 -N32 /dev/urandom | LC_ALL=C tr -d ' \n'; }
           sed -e "s/^NEXTCLOUD_ADMIN_PASSWORD=.*/NEXTCLOUD_ADMIN_PASSWORD=$(hex)/" \
               -e "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(hex)/" \
               -e "s/^OFFICE_JWT_SECRET=.*/OFFICE_JWT_SECRET=$(hex)/" \
               -e "s/^FIXTURE_USER_PASSWORD=.*/FIXTURE_USER_PASSWORD=$(hex)/" \
-              gestion/.env.example > "$pkg/.env"
+              "$pkg/.env.example" > "$pkg/.env"
           chmod 600 "$pkg/.env"
       # The address the kernel routes by — the installer's own link probes the same.
       - name: The site and the planilla a clinic brings, by this runner's address

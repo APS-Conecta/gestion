@@ -7,9 +7,8 @@
 #   - zero `git clone` across the runtime surfaces (every *.sh under Containers/ and php/ —
 #     the scripts the shipped containers execute). Measured: upstream ships none. The one git
 #     clone upstream does ship is talk-recording's Dockerfile — BUILD-time, in a sibling we
-#     retag and never build; the *.sh scoping excludes it by construction. gestion's
-#     ensure_own_app clone channel is dev-only and superseded by the bake (research-verified)
-#     — that half lives in gestion, not in this repo.
+#     retag and never build; the *.sh scoping excludes it by construction. ensure_own_app's
+#     clone channel is dev-only and superseded by the bake (research-verified).
 #   - the entrypoint still honors the skip.update marker (honored at :185, deleted at :1154
 #     today): the migration channel (slice 22) sets it, and with the store off it is
 #     load-bearing for migrated clinics.
@@ -17,8 +16,8 @@
 # ROWS — the same contract as brand-gate.sh: every row fires unconditionally; the patch ID is
 #   attribution, never a condition.
 #   020 — the store-off bake: NC_appstoreenabled="0" ENV in the nextcloud Dockerfile. With the
-#         store on, occ upgrade re-downloads every enabled app and no VENDOR pin can hold
-#         (gestion #163); the bake + this ENV make the entrypoint's store legs fail-fast.
+#         store on, occ upgrade re-downloads every enabled app and no VENDOR pin can hold;
+#         the bake + this ENV make the entrypoint's store legs fail-fast.
 #   040 — self-update opt-in (slice 9): the automatic_updates checkbox defaults OFF and the
 #         wizard carries zero watchtower POST forms. The update channel stays deliberate —
 #         D12's one-distribution rule makes even an opted-in nightly watchtower run a no-op
@@ -45,9 +44,9 @@
 #         falsified and the explicit apk entry would pin a dependency that already ships.
 #
 # ROUTED (this repo cannot see these channels — recorded so the ledger stays complete, the
-# slice-4 curl→030 precedent): VENDOR sha256s are gestion-side (test.sh:63-70 already gates
-# them); the host-bundle sha256 is the gestion Release page (slice 19); data-package
-# checksums are slice 21. Every channel the AIO tree CAN see is checked here or in
+# slice-4 curl→030 precedent): VENDOR sha256s live with the vendored tarballs, read from the old
+# gestion until #42; the host-bundle sha256 is the suite Release's SHA256SUMS (slice 19);
+# data-package checksums are slice 21. Every channel the AIO tree CAN see is checked here or in
 # brand-gate.sh.
 #
 # Usage: scripts/acquisition-gate.sh TREE     (TREE = the tree to assert, e.g. . — the checkout)
@@ -236,7 +235,7 @@ office_is_euro_office() {  # 200: the suite's office is Euro-Office, and only Eu
   # line after the test, both before the setter — with a 422 and a Spanish message, and the page
   # no longer offers «Desactivar suite de oficina». Setup's first-boot copy of the default
   # (Setup.php:28) never passes through the controller, so the guard cannot refuse the suite's own
-  # default; gestion's drive never posts an office choice.
+  # default; the suite's drive never posts an office choice.
   local k="$TREE/php/src/Controller/ConfigurationController.php" \
         o="$TREE/php/templates/includes/optional-containers.twig" s="$TREE/php/tests/tests/initial-setup.spec.js" fail=0 g w
   s4_files "$k" "$o" "$s" "$TREE/php/public/style.css" || return 1
@@ -261,7 +260,7 @@ row 200 "the suite's office is Euro-Office only — any other office choice is r
   office_is_euro_office
 
 options_start_off() {  # 210: Talk, Whiteboard and Imaginary start off (R29, R27.5/7; D12 a) — the
-  # three PHP default literals Setup.php copies into a fresh config. Gestion's step 7 turns Talk on
+  # three PHP default literals Setup.php copies into a fresh config. The Provisionador's step 7 turns Talk on
   # where the server's memory and cores allow; the translated suite's persisted-defaults spec
   # expects the same three falses.
   local m="$TREE/php/src/Data/ConfigurationManager.php" s="$TREE/php/tests/tests/persist-default-config.spec.js" fail=0 k
@@ -281,7 +280,7 @@ first_boot_quiet() {  # 220: a fresh install calls nothing it does not need (R28
   # whiteboard's npm never asks the registry about its own update (when Whiteboard is enabled —
   # 210 starts it off), and nextcloud_announcements is disabled in the fresh-install block, before
   # its first cron run fetches pushfeed.nextcloud.com. The rest of R28 (the connectivity check, the
-  # resolver noise, HIBP, the tiles image) is gestion's or the published allowlist's.
+  # resolver noise, HIBP, the tiles image) is the provisioning phases' or the published allowlist's.
   local w="$TREE/Containers/whiteboard/Dockerfile" fail=0
   s4_files "$w" "$TREE/Containers/nextcloud/entrypoint.sh" || return 1
   grep -qF 'ENV NPM_CONFIG_UPDATE_NOTIFIER=false' "$w" || { echo "  whiteboard's npm still checks for its own update" >&2; fail=1; }
@@ -295,7 +294,7 @@ row 220 "a fresh install calls nothing it does not need — whiteboard's npm upd
 circles_probe_skipped() {  # 230: the fresh install logs no «relation "oc_circle_circles" does not
   # exist» (R31): circles' migration_22 is marked done between the install and the first repair,
   # so the repair never probes the legacy table a fresh install does not have. The theming
-  # background job's one-shot error needs no patch: gestion's phase 15 stores the brand images,
+  # background job's one-shot error needs no patch: phase 15 stores the brand images,
   # which creates appdata theming/global.
   s4_files "$TREE/Containers/nextcloud/entrypoint.sh" || return 1
   s4_install_block 'php /var/www/html/occ config:app:set circles migration_22 --value=1'

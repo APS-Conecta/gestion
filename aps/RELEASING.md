@@ -1,8 +1,7 @@
 # RELEASING — cutting a signed suite release
 
 The runbook for the maintainer who cuts a release. One tag on instalador is the whole ritual —
-the 20-image channel, the composite package, the manifest's release identity (gestion's tag
-ritual retired, D4). This file owns the parts only a person can do: the keypair, the secrets,
+the 20-image channel, the composite package, the manifest's release identity (D4). This file owns the parts only a person can do: the keypair, the secrets,
 the release commit, the frozen window, and what to do when a key must change. The machine's
 half — gates → images → package → sign → prove → Release — is
 [.github/workflows/release.yml](../.github/workflows/release.yml), and every guard it runs is
@@ -54,10 +53,10 @@ asserts it):
 
 ## 4. The frozen window
 
-gestion's `main` is release-frozen between the last content merge and the tag push: the image
-bake and the composite package both read gestion at the tag's moment (the sparse clone at the
-release-frozen ref). Nothing may land on gestion's main inside that window — a hotfix waits,
-or the tag waits.
+The old gestion's `main` is release-frozen between the last content merge and the tag push: the
+image bake and the composite package both read its vendored apps (`provisioning/apps`) at the tag's
+moment (the sparse clone at the release-frozen ref), until #42. Nothing may land on the old
+gestion's main inside that window — a hotfix waits, or the tag waits.
 
 ## 5. The tag push
 

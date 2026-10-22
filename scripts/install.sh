@@ -4,7 +4,7 @@
 # sites/<slug>/site.sh, and after `git pull`.
 #
 # What it deliberately does NOT do: pull a newer Nextcloud image (the digests are pinned — #109,
-# bumped by `make images`) or run `occ app:update` (ADR-0002 refuses it — it reverts our patches and
+# bumped by `make images`) or run `occ app:update` (it reverts our patches and
 # restores signature.json). Moving the platform under a live clinic needs a window and a rollback
 # story, so it stays a deliberate separate act.
 #

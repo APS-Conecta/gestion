@@ -1,13 +1,14 @@
 # Phase 15 — APS Conecta white-label branding.  OWNER: Epic 5 (only Epic 5 edits this file).
 # Applies the identity layer config-as-code (AD-2) and activates the server theme. Idempotent.
-# Rationale and accepted costs: docs/adr/0001-server-theme-for-branding.md. What the theme's CSS can
-# and cannot reach: docs/THEMING-MODEL.md — most of the brand arrives through the keys set here.
+# Rationale and accepted costs: docs/adr/0003-server-theme-for-branding.md. What the theme's CSS can
+# and cannot reach: https://aps-conecta.github.io/documentation/desarrollo/tema.html — most of the
+# brand arrives through the keys set here.
 #
 # Deliberately absent: per-app icon overrides (every enabled app was scanned: zero multi-tint icons,
 # so themes/apsconecta/apps/ does not exist).
 #
-# themes/apsconecta/defaults.php CAME BACK in ADR-0004, so the opcache restart this phase used to
-# note is real again — but it is not this phase's job. That file is static and committed, identical
+# themes/apsconecta/defaults.php is cached by opcache, so editing it needs a container restart —
+# but it is not this phase's job. That file is static and committed, identical
 # on every install, and nothing here writes it: it changes on a git pull, not on a seed. Restart the
 # container after one of those, never after this.
 phase_begin "15-branding"
@@ -63,7 +64,7 @@ theming_image_set logo       "$IMG/logo/logo.svg"
 theming_image_set logoheader "$IMG/logo/logo-header.svg"
 theming_image_set favicon    "$IMG/favicon.svg"
 # The whole-UI background, not just the login screen — CommonThemeTrait feeds it into
-# --image-background. Under review for 8-hour legibility (ADR-0001 § Decision, brand-images bullet).
+# --image-background. Under review for 8-hour legibility (ADR-0003 § Decision, brand-images bullet).
 theming_image_set background "$IMG/background.svg"
 
 # --- Navigation chrome ---
@@ -79,7 +80,7 @@ app_config_set side_menu background-color-to "#5315a8"
 # ?redirect_url -> core/defaultpage -> per-user defaultapp -> system defaultapp -> hardcoded
 # 'dashboard,files'.
 #
-# intravox, ADR-0014: the welcome screen IS the intranet surface — a login lands on it. The
+# intravox, ADR-0010: the welcome screen IS the intranet surface — a login lands on it. The
 # value is deliberately bare (no ,files tail): while the app is absent or disabled, resolution
 # falls through to the hardcoded 'dashboard,files', so rollback needs no counter-edit — disable
 # the app and the pre-flip landing is back. Browser-open proof preceded this flip (farmacia

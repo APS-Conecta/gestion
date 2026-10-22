@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The roster reader's bash half — closes gestion #106 from the Provisionador side (FRD S5).
+# The roster reader's bash half, on the Provisionador side (FRD S5).
 # OWNER: installer-design slice 16; the python half lives in scripts/provisionador.py.
 #
 # The canonical roster (sites/<codigo>/usuarios.csv) and the sealed credentials sheet are BOTH

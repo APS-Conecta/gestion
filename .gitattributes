@@ -1,1 +1,6 @@
 * text=auto
+# Byte-pinned or CRLF-native: the Leaflet files are hash-pinned (scripts/test.sh), and the CSVs are
+# written by Python's csv module with CRLF row endings.
+themes/apsconecta/core/mapa/* -text
+sites/*.csv -text
+provisioning/data/*.csv -text

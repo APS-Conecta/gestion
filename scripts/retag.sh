@@ -33,7 +33,7 @@
 # next container auto-includes (the sibling list is PARSED from php/containers.json, not
 # hardcoded).
 #
-# Registry-call discipline is gestion's image-digests.sh doctrine, verbatim: THE INDEX DIGEST
+# Registry-call discipline: THE INDEX DIGEST
 # (`imagetools inspect --format {{.Manifest.Digest}}` — pinning one platform's manifest would make
 # the stack unresolvable on any other), every call bounded (B-015 — a registry call that hangs is
 # not a gate), one retry before failing, and the registry's own stderr kept and quoted on the way
@@ -131,7 +131,7 @@ siblings_load() { # fill SIBS once per run, floor-guarded — a shrunken parse m
 }
 
 tag_valid() { # TAG — a channel-valid Docker tag. ':' and '@' are excluded BY the charset itself; the
-  #              moving channel names are refused on purpose: the suite tag IS the gestion release tag
+  #              moving channel names are refused on purpose: the suite tag IS the release tag
   #              (D12), and a fork-side 'latest' would let the update nag chase our own :latest and
   #              silently diverge from the release the clinic pinned.
   local t="$1"
@@ -313,7 +313,7 @@ cmd_retag() { # TAG [--from-tag T] [--force] — the lockstep walk. The source i
     esac
   done
   tag_valid "$tag" \
-    || die "suite tag '$tag' is not a channel-valid tag — charset [A-Za-z0-9._-] (':' and '@' excluded BY construction: the wizard resolves the channel by exploding the running image on ':', and a digest-style ref parses as a bogus channel); 'latest*' names are reserved because the suite tag IS the gestion release tag (D12)"
+    || die "suite tag '$tag' is not a channel-valid tag — charset [A-Za-z0-9._-] (':' and '@' excluded BY construction: the wizard resolves the channel by exploding the running image on ':', and a digest-style ref parses as a bogus channel); 'latest*' names are reserved because the suite tag IS the release tag (D12)"
   siblings_load
   resolve_spec "$tag" "$from_tag" || exit 1   # side effect: RESOLVED_SPEC (a die prints its own FATAL)
   local spec="$RESOLVED_SPEC"
@@ -406,8 +406,7 @@ cmd_matrix() { # TAG [--from-tag T] — THE GATE. Existence is only half of it; 
 }
 
 cmd_manifest() { # TAG — the publish record: every image's index digest, JSON on stdout. The registry
-  #                is the hand-off (gestion's release-manifest.sh --emit resolves its own copy at tag
-  #                time, v0.2.0); this record is the LEDGER of what the walk produced — and its
+  #                is the hand-off; this record is the LEDGER of what the walk produced — and its
   #                retag_source field names what the walk actually copied FROM: the RESOLVED spec
   #                (ours:<tag>, D-3), threaded from the retag job's one
   #                resolution (D-5). The old upstream_channel name is retired with this change:
@@ -428,8 +427,7 @@ cmd_manifest() { # TAG — the publish record: every image's index digest, JSON 
 import json, os, subprocess, sys
 
 def digest(ref):
-    # THE INDEX DIGEST — the exact tool and format gestion's release-manifest.sh --emit resolves
-    # with at tag time (v0.2.0). Bounded (B-015); unreachable is FATAL, never silently omitted:
+    # THE INDEX DIGEST — `imagetools inspect --format {{.Manifest.Digest}}`. Bounded (B-015); unreachable is FATAL, never silently omitted:
     # a record that cannot name a digest is a record of nothing.
     out = subprocess.run(["docker", "buildx", "imagetools", "inspect", "--format",
                            "{{.Manifest.Digest}}", ref], capture_output=True, text=True, timeout=120)
