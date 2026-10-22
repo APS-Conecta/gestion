@@ -318,9 +318,7 @@ ensure_vendored_app() {  # APPID
         || { log "FAILED to clear $app before re-imposing $want"; return 1; }
     fi
     # Streamed into the container and unpacked as www-data, rather than on the host: files must be
-    # writable by uid 33 or the patches below cannot apply. Ownership ends up www-data:www-data and
-    # `make fix-mount-perms` restores the host group on the next `make up`, which is why
-    # nothing does it here.
+    # writable by uid 33 or the patches below cannot apply. Ownership ends up www-data:www-data.
     # -i: docker exec closes stdin without it, and the tarball arrives on stdin.
     if nc_exec -i --user www-data -- \
          tar xzf - -C /var/www/html/custom_apps < "$tgz"; then
@@ -388,7 +386,7 @@ ensure_own_app() {  # APPID CLONE_URL
   fi
 
   # A checkout with no info.xml is a half-clone, not a dev machine. Say the command: apps/ is
-  # gitignored, so a clean checkout has an empty apps/ and this is what a new operator hits.
+  # not tracked, so a clean checkout has no apps/ and this is what a new operator hits.
   if [ ! -f "$info" ]; then
     log "FAILED $app — apps/$app has a .git but no $info. Finish the clone:"
     log "        git clone $url apps/$app"
@@ -433,7 +431,7 @@ ensure_own_app() {  # APPID CLONE_URL
   fi
 }
 
-# Re-apply a file edit inside an app's code. apps/ is gitignored, so these edits cannot
+# Re-apply a file edit inside an app's code. apps/ is not tracked, so these edits cannot
 # be committed and an app update wipes them; running on every seed is what restores them.
 #
 # THREE outcomes, not two. `patch --dry-run` forward says it applies; in reverse it says it is

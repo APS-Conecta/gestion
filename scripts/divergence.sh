@@ -187,10 +187,9 @@ fi
 if ! suite_apps="$(python3 scripts/apps.py ids)"; then
   note "no se pudieron revisar las aplicaciones: no se pudo leer la lista de aplicaciones de la suite (apps.json)"
 else
-  apps_list="$(printf '%s\n' "$suite_apps" | tr ' ' '\n' | sed 's/=.*//')"
   while IFS= read -r a; do
     [ -n "${a:-}" ] || continue
-    printf '%s\n' "$apps_list" | grep -qxF -- "$a" && continue
+    printf '%s\n' "$suite_apps" | grep -qxF -- "$a" && continue
     note "la aplicación '$a' está en custom_apps pero la lista de aplicaciones de la suite (apps.json) no la declara — una instalación limpia no la reproduce"
   done <<< "$(nc_exec --user www-data -- sh -c 'cd /var/www/html/custom_apps 2>/dev/null && for d in */; do printf "%s\n" "${d%/}"; done' 2>/dev/null || true)"
 fi

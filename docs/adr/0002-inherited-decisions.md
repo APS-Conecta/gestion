@@ -25,7 +25,7 @@ they cannot be made resolvable here.
 Nothing else may mutate the running instance: no admin-panel clicking, no standalone scripts, no manual
 `occ` runs as part of a procedure. Desired state lives in `provisioning/phases/*.sh`, each idempotent,
 applied by `provisioning/seed.sh`. A clean bring-up reproduces the instance exactly, and every change is
-in git. So the brand kit's standalone `occ-theming.sh` is gone, being a second entry point
+in git. So there is no standalone theming script, which would be a second entry point
 ([ADR-0003](0003-server-theme-for-branding.md)), and brand images are registered from theme files
 rather than uploaded through the admin UI, which also keeps admin credentials out of the seed runner.
 AD-2 holds without exception: `seed.sh` is the only writer.

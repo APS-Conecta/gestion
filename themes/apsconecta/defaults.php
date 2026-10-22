@@ -34,8 +34,9 @@ declare(strict_types=1);
  *
  * DELIBERATELY NOT OVERRIDDEN: getDocBaseUrl and the sync-client URLs. They point at real
  * destinations — documentation that exists and clients that can actually be installed — and
- * renaming them would ship a lie. That is the vendor-reference exemption, not an oversight. The iTunes banner is already gone by another route: 15-branding.sh writes
- * customclient_ios_appid "" and OC_Defaults reads that system key.
+ * renaming them would ship a lie. That is the vendor-reference exemption, not an oversight. The
+ * iTunes banner is already gone by another route: 15-branding.sh writes customclient_ios_appid ""
+ * and OC_Defaults reads that system key.
  *
  * getBaseUrl IS overridden, and the distinction is the whole of the exemption rule. A doc link
  * reading "documentación" and pointing at docs.nextcloud.com NAMES a real external system, which is
@@ -44,8 +45,9 @@ declare(strict_types=1);
  * vendor's homepage. That is not a vendor reference, it is a mislabelled outbound vendor link, and
  * it failed the third predicate of "branded". Observed on the untrusted-domain screen.
  *
- * COST: PHP caches it in opcache, so editing it needs a container restart. Static and committed, so that is an install-time cost, never a
- * runtime one — but it is why the identity below must stay the PRODUCT's. A clinic name here would
+ * COST: PHP caches it in opcache, so editing it needs a container restart. Static and committed,
+ * so that is an install-time cost, never a runtime one — but it is why the identity below must stay
+ * the PRODUCT's. A clinic name here would
  * make the theme per-install and reintroduce a restart on every seed. Values are duplicated from
  * provisioning/phases/15-branding.sh, which stays the source of truth.
  *

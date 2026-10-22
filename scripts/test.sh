@@ -271,9 +271,8 @@ if not src:
 #   - something TESTS it from the left: `if (`, `while (`, `&& (`. Matched on what PRECEDES
 #     the `(` rather than by listing keywords — nothing but whitespace may.
 #   - something tests it from the right: `( set -e … ) || exit 1`. This reads exactly like a
-#     guard and is not one, and two assertions in this gate were once written that way and
-#     asserted nothing across three audit rounds. Which is why the sweep reads the whole tree:
-#     the original guard looked only at seed.sh, and the defect moved.
+#     guard and is not one: it asserts nothing. The sweep reads the whole tree, not only seed.sh,
+#     because the shape turns up wherever a guard is written.
 # Comments are stripped first, since seed.sh documents the wrong shape on purpose.
 # Over `git ls-files`, not a hand-written list of directories: a third copy of that list is a
 # third thing to forget, and a sweep that matches nothing passes — which is the very hole the
@@ -599,8 +598,9 @@ conventions_phase_cases() {
   mkdir -p "$tmp/provisioning/data"
   printf 'regla uno\n«dos»\n' > "$tmp/provisioning/data/convenciones.md"
   run30() {
-    ( cd "$tmp" && SITE_FOLDERS=() SITE_SUBFOLDERS=() bash -c '
+    ( cd "$tmp" && bash -c '
         set -e
+        SITE_FOLDERS=(); SITE_SUBFOLDERS=()
         phase_begin() { :; }; phase_end() { :; }
         ensure_groupfolder() { :; }; ensure_gf_subfolder() { :; }
         ensure_gf_file() { printf "WRITE %s|%s|%s\n" "$1" "$2" "$3"; }

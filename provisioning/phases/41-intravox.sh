@@ -34,7 +34,7 @@ done
 # suite manifest → the loud skip; declared but not enabled → a broken checkout, FATAL.
 _ids="$(python3 "$HERE/../scripts/apps.py" ids)" \
   || { echo "FATAL: could not read the suite manifest (apps.json) — scripts/apps.py says why above" >&2; exit 1; }
-_declared="$(printf '%s\n' "$_ids" | tr ' ' '\n' | sed 's/=.*//' | grep -x intravox || true)"
+_declared="$(printf '%s\n' "$_ids" | grep -x intravox || true)"
 if [ -z "$_declared" ]; then
   log "  intravox not shipped to this install — nothing to seed (defaultapp stays dashboard,files)"
   phase_end
@@ -91,10 +91,10 @@ if [ -n "$(occ config:app:get intravox demo_data_imported 2>/dev/null || true)" 
   exit 1
 fi
 
-# L2-01 (ADR-0014): the enabled_languages convergence is RETIRED — the engine's
+# L2-01 (ADR-0014): enabled_languages is not converged here — the engine's
 # own unset-key default is the deployment reality (['es','en']: LanguageService's
 # DEFAULT_ENABLED_LANGUAGES + the Version001600 seed). The deprecated key keeps
-# its legacy readers working; the suite no longer writes it.
+# its legacy readers working; the suite does not write it.
 
 # --- 3. GROUP MAP (D5): the engine's groups follow the registry's — lib.sh intravox_group_map --------
 # (phase 50 runs it again once the standing accounts exist — B-030)
