@@ -68,6 +68,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)  # deis.py sits beside this file; the host bundle keeps the repo layout
 import deis  # noqa: E402  — the path insert above is the import mechanism
+import apps as suite_apps  # noqa: E402  — the suite manifest (apps.json), beside deis
 
 # The bearer token, env-init's discipline in Python: 32 bytes from the stdlib CSPRNG, HEX, never
 # base64 (B-004 — no character any layer treats as syntax). Printed ONCE, in the startup banner,
@@ -229,28 +230,16 @@ PHASE_TITLES = {
     "40-acl": "Permisos de las carpetas", "41-intravox": "Portada del establecimiento",
     "50-users": "Cuentas de cargo", "60-fixtures": "Contenido de ejemplo"}
 # What the clinic gets, as the review step lists it (R37): one row per component staff see — its
-# app, its name, what it gives. Plumbing is not listed; a self-test pins every app under
-# provisioning/apps to one side or the other (ponytail: a JSON file once the host TUI needs it too).
-COMPONENTES = (
-    ("intravox", "Inicio", "Portada del establecimiento: noticias, avisos y accesos del equipo."),
-    ("groupfolders", "Documentos", "Carpetas compartidas por sector y programa, con permisos por grupo."),
-    ("eurooffice", "Oficina", "Edición en línea de documentos, planillas y presentaciones."),
-    ("calendar", "Calendario", "Agendas personales y compartidas del equipo."),
-    ("contacts", "Contactos", "Directorio del personal y contactos externos."),
-    ("epidemiologia", "Epidemiología", "Alertas del MINSAL y del ISP, informes IRAG y tablero nacional."),
-    ("estadistica", "Estadística",
-     "Cifras REM frente al promedio nacional y de pares; avance de las Metas Sanitarias."),
-    ("farmacia", "Farmacia", "Arsenal farmacológico del establecimiento con información de seguridad clínica."),
-    ("territorio", "Territorio", "Mapa territorial: unidades vecinales y establecimientos."),
-    ("spreed", "Talk", "Chat y videollamadas internas."),
-)
-PLUMBING_APPS = ("desktop_workspace", "notify_push", "side_menu")
+# app, its name, what it gives — in the suite manifest's order. Plumbing (no name) is not listed.
+SUITE_APPS = suite_apps.load()
+COMPONENTES = tuple((a["id"], a["name"], a["summary"]) for a in SUITE_APPS if "name" in a)
+PLUMBING_APPS = tuple(a["id"] for a in SUITE_APPS if "name" not in a)
 # The browser's progress list (a14): the phases by their console titles, then the people, then the gate.
 PASO_PLANILLA, PASO_GATE = "Cuentas del personal", "Comprobación final"
 PASOS_EJECUCION = [PHASE_TITLES[k] for k in sorted(PHASE_TITLES)] + [PASO_PLANILLA, PASO_GATE]
-# Step 6, «Iniciar la suite» (L3 S5). The five APS apps phase 12 ships (OWN_APPS — an arm pins the set),
+# Step 6, «Iniciar la suite» (L3 S5). The APS apps — own and fork, from our repos (an arm pins the set),
 # named as the catalogue names them; each version is read from its VENDOR file.
-APPS_APS = ("intravox", "epidemiologia", "estadistica", "farmacia", "territorio")
+APPS_APS = tuple(a["id"] for a in SUITE_APPS if a["source"] in ("own", "fork"))
 # The suite's containers, named for the people who run it: the host's AIO_SET plus Nextcloud's own (an
 # arm pins the set). Talk's two join when the wizard was given Talk — they never block «Siguiente».
 CONTENEDORES_SUITE = (("aps-conecta-apache", "Servidor web"), ("aps-conecta-nextcloud", "Núcleo de la suite"),
@@ -333,6 +322,7 @@ arms), SLOW (sleep before answering — the timeout arm).
 """
 import json
 import os
+import select
 import sys
 import time
 
@@ -358,6 +348,23 @@ if control.get("SLOW"):
     time.sleep(30)
 if control.get("FAIL_ON") and control.get("FAIL_ON") in args:
     sys.exit(1)
+
+
+def exec_interactive(argv):
+    """`docker exec -i …`: the -i among the options before the container name."""
+    i = 1
+    while i < len(argv) and argv[i].startswith("-"):
+        if argv[i] == "-i":
+            return True
+        i += 2 if argv[i] in ("--user", "-u", "--env", "-e", "--workdir", "-w") else 1
+    return False
+
+
+# The real client forwards its stdin into the container, so `docker exec -i` consumes whatever the
+# caller's stdin already holds — a loop that reads its own stdin loses the rest of it.
+if args[:1] == ["exec"] and exec_interactive(args):
+    while select.select([sys.stdin], [], [], 0)[0] and os.read(sys.stdin.fileno(), 65536):
+        pass
 
 
 def state():
@@ -4689,7 +4696,7 @@ def selftest():
                 synth = os.path.join(tmp, "mitad-fixture")
                 if not apps_src:
                     apps_src = os.path.join(synth, "provisioning", "apps")
-                    for app in sorted({a for a, _n, _q in COMPONENTES} | set(PLUMBING_APPS)):
+                    for app in sorted(a["id"] for a in SUITE_APPS):
                         d = os.path.join(apps_src, app)
                         os.makedirs(d)
                         blob = f"fixture-{app}\n".encode()
@@ -4698,6 +4705,10 @@ def selftest():
                         with open(os.path.join(d, "VENDOR"), "w", encoding="utf-8") as fh:
                             fh.write(f"version=1.0.0\nsha256={hashlib.sha256(blob).hexdigest()}\n"
                                      f"url=https://fixture.invalid/{app}-1.0.0.tar.gz\n")
+                    # one patched app ahead of spreed, as in the real set: phase 12's patch path
+                    # (occ_sh, `docker exec -i`) runs mid-manifest, and the spreed arms see it
+                    with open(os.path.join(apps_src, "eurooffice", "10-fixture.patch"), "w", encoding="utf-8") as fh:
+                        fh.write("--- a/appinfo/info.xml\n+++ b/appinfo/info.xml\n")
                 if not themes_src:
                     themes_src = os.path.join(synth, "themes")
                     raiz = os.path.join(themes_src, "apsconecta")
@@ -4729,6 +4740,8 @@ def selftest():
             shutil.copy(os.path.join(HERE, "..", "scripts", "env.sh"), os.path.join(tmp, "scripts", "env.sh"))
             shutil.copy(os.path.join(HERE, "..", "scripts", "divergence.sh"),
                        os.path.join(tmp, "scripts", "divergence.sh"))
+            shutil.copy(os.path.join(HERE, "apps.py"), os.path.join(tmp, "scripts", "apps.py"))
+            shutil.copy(suite_apps.MANIFEST, os.path.join(tmp, "apps.json"))
             stubdir = os.path.join(tmp, "bin")
             os.makedirs(stubdir)
             for name, src, mode in (("docker", STUB_DOCKER, 0o755), ("curl", "#!/usr/bin/env bash\nexit 1\n", 0o755)):
@@ -4815,9 +4828,8 @@ def selftest():
                   and st_ub2 == 200 and plan_corr["ubicacion"]["oficial"] is False
                   and 20 <= plan_corr["ubicacion"]["metros"] <= 40)
             apps = set(os.listdir(apps_src))   # the half the fixture read: the package's, gestion's, or the synthesized one
-            check("componentes: every app the suite ships is a listed component or declared plumbing — a new app forces the choice (R37)",
-                  {a for a, _n, _q in COMPONENTES} | set(PLUMBING_APPS) == apps
-                  and not {a for a, _n, _q in COMPONENTES} & set(PLUMBING_APPS))
+            check("componentes: the suite manifest names exactly the apps the package ships — a new app is a manifest row (R37)",
+                  {a["id"] for a in SUITE_APPS} == apps)
             check("veredicto: one head for «aps-conecta estado» and the browser — green, drift, a gate that stopped, a run that stopped",
                   veredicto({"divergencia_vacia": True})[0].startswith("✓")
                   and veredicto({"divergencia_vacia": False, "divergencia": "    algo\n"}) ==
@@ -5004,14 +5016,11 @@ def selftest():
             check("revisión: Talk is a component only when step 6 gave the suite Talk — phase 12 installs nothing else (R29)",
                   "Talk" not in sin_talk_plan and "Talk" in con_talk_plan
                   and len(con_talk_plan) == len(COMPONENTES) == len(sin_talk_plan) + 1)
-            with open(os.path.join(ROOT_DIR, "provisioning", "phases", "12-apps.sh"), encoding="utf-8") as fh:
-                own = re.search(r'^OWN_APPS="([^"]*)"', fh.read(), re.M).group(1)
             with open(HOST_CLI, encoding="utf-8") as fh:
                 aio_set = re.search(r'^AIO_SET="([^"]*)"', fh.read(), re.M).group(1).split()
             filas = apps_aps()
-            check("suite: the five APS apps are phase 12's own, by name with their VENDOR versions; the containers are the host's set plus Nextcloud (a12)",
-                  sorted(e.split("=", 1)[0] for e in own.split()) == sorted(APPS_APS)
-                  and [f[0] for f in filas] == ["Inicio", "Epidemiología", "Estadística", "Farmacia", "Territorio"]
+            check("suite: the five APS apps (own and fork in the manifest), by name with their VENDOR versions; the containers are the host's set plus Nextcloud (a12)",
+                  [f[0] for f in filas] == ["Inicio", "Epidemiología", "Estadística", "Farmacia", "Territorio"]
                   and all(re.fullmatch(r"\d+\.\d+\.\d+", f[1]) for f in filas)
                   and {c for c, _n in CONTENEDORES_SUITE} == set(aio_set) | {"aps-conecta-nextcloud"})
             fijo = centro_actual()[1].get("codigo")   # the site the preparation fills, then restored

@@ -181,12 +181,14 @@ esac
 
 # 10. No patched app still carries its vendor signature (#71, phase 12-apps). What it costs when one
 # does, and why an `occ app:update` from the UI puts it back: docs/adr/0002-app-patches.md § Code
-# integrity. PATCHED means "has a .patch file", NOT "has a directory under provisioning/apps/" —
-# since #98 every app has a directory, and reading it as "patched" fails the two whose untouched
-# upstream signature is correct. The list comes from provisioning/apps/, so a new patched app is
-# covered automatically.
-patched=$(find provisioning/apps -mindepth 2 -maxdepth 2 -name '*.patch' -printf '%h\n' 2>/dev/null \
-          | sort -u | xargs -r -n1 basename | tr '\n' ' ')
+# integrity. PATCHED means "a suite app with a .patch file beside its tarball", NOT "a suite app":
+# an untouched app's upstream signature is correct.
+ids=$(python3 scripts/apps.py ids) \
+  || fail "could not read the suite manifest (apps.json) — scripts/apps.py says why above"
+patched=
+for a in $ids; do
+  compgen -G "provisioning/apps/$a/*.patch" >/dev/null && patched="$patched$a "
+done
 if [ -n "$patched" ]; then
   signed=$(nc_exec --user www-data -- sh -c \
     "for a in $patched; do [ -e \"/var/www/html/custom_apps/\$a/appinfo/signature.json\" ] && echo \"\$a\"; done; :" \

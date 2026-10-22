@@ -22,12 +22,13 @@ on:
   pull_request:
     paths:
       # Everything a clean install reads, in THIS repository now: the host bundle, the scripts
-      # tree, the executor phases, the bootstrap's own three files. gestion's half (sites/**,
-      # the vendored apps, the themes) is read at its main ref — the schedule and dispatch
+      # tree, the executor phases, the suite manifest, the bootstrap's own three files. gestion's
+      # half (sites/**, the vendored apps, the themes) is read at its main ref — the schedule and dispatch
       # arms stay its drift backstop, exactly as they already were for runner-image drift.
       - 'host/**'
       - 'scripts/**'
       - 'provisioning/**'
+      - 'apps.json'
       - 'install.sh'
       - 'VERSION'
       - 'installer.pub'

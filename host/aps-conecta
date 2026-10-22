@@ -832,10 +832,10 @@ link_command() {  # $BIN_DIR/aps-conecta → this bundle's CLI. A missing or dan
 step_descargar() {  # the bundle at its tag. On its own (the two-line bootstrap) this file brings
   # the suite into $APS_HOME/instalador — the rehearsal's git channel when APS_REPO_URL is set, the
   # operator's install.sh otherwise — root-owned, and the install goes on from that copy — the same
-  # tag, so the same code; in a checkout it verifies that checkout. Either way every vendored app
-  # is checked against the sha256 its VENDOR pins (the seed's own check, provisioning/lib.sh), and
+  # tag, so the same code; in a checkout it verifies that checkout. Either way every app of the suite
+  # manifest is checked against the sha256 its VENDOR pins (the seed's own check, provisioning/lib.sh), and
   # only a verified bundle is linked as the `aps-conecta` command
-  local v vendor dir tars want got n=0 broken=0 dest found
+  local v apps app dir tars want got n=0 broken=0 dest found
   v="$(suite_tag)"
   if [ -z "$v" ]; then
     bad "no se pudo leer la versión de la suite en $ROOT" \
@@ -880,23 +880,23 @@ step_descargar() {  # the bundle at its tag. On its own (the two-line bootstrap)
     trust_bundle "$dest"
     ROOT="$dest"; HOST_DIR="$dest/host"   # every remaining path: the bundle is the root now
   fi
-  for vendor in "$ROOT"/provisioning/apps/*/VENDOR; do
-    [ -f "$vendor" ] || continue
-    dir="$(dirname "$vendor")"; n=$((n + 1))
+  if ! apps="$(python3 "$ROOT/scripts/apps.py" ids 2>/dev/null)"; then
+    bad "no se pudo leer la lista de aplicaciones de la suite ($ROOT/apps.json)" "vuelva a descargar la suite completa"
+    return 0
+  fi
+  for app in $apps; do
+    dir="$ROOT/provisioning/apps/$app"; n=$((n + 1))
+    [ -f "$dir/VENDOR" ] || { bad "$app: falta en $ROOT/provisioning/apps" "vuelva a descargar la suite completa"; broken=$((broken + 1)); continue; }
     tars=("$dir"/*.tar.gz)
-    want="$(sed -n 's/^sha256=//p' "$vendor")"
+    want="$(sed -n 's/^sha256=//p' "$dir/VENDOR")"
     got=""
     [ -f "${tars[0]}" ] && got="$(sha256sum "${tars[0]}" | cut -d' ' -f1)"
     if [ -z "$got" ] || [ "$got" != "$want" ]; then
-      bad "$(basename "$dir"): el archivo no coincide con su suma de verificación" \
+      bad "$app: el archivo no coincide con su suma de verificación" \
         "vuelva a descargar la suite; un archivo dañado nunca se instala"
       broken=$((broken + 1))
     fi
   done
-  if [ "$n" -eq 0 ]; then
-    bad "no se encontraron aplicaciones en $ROOT/provisioning/apps" "vuelva a descargar la suite completa"
-    return 0
-  fi
   ok "Suite $v ($(du -sh "$ROOT/provisioning/apps" 2>/dev/null | cut -f1))"
   if [ "$broken" -eq 0 ]; then
     ok "Sumas de verificación correctas (aplicaciones: $n)"
@@ -1647,7 +1647,7 @@ cmd_datos() {  # [CUT] [--importar] — S9's data-package leg: the national mast
          cut="$1"; shift ;;
     esac
   done
-  # Territorio ships with the suite: phase 12 installs it (OWN_APPS), so it is absent only before
+  # Territorio ships with the suite: phase 12 installs it (apps.json), so it is absent only before
   # the first provisioning. Then nothing can receive the data — the honest skip, never a silent
   # fetch of ~93 MB of masters for an app that cannot import (the office-skip precedent).
   if ! docker exec "$NC" sh -c 'test -d /var/www/html/custom_apps/territorio' >/dev/null 2>&1; then
@@ -2116,6 +2116,8 @@ SHIM
   # descargar in a checkout: the checkout is the bundle; a verified one is linked as the command
   local BIN_DIR="$tmp/usr-local-bin" APS_HOME="$tmp/opt"
   mkdir -p "$BIN_DIR" "$ROOT/scripts" "$ROOT/host"; : > "$ROOT/scripts/provisionador.py"; : > "$ROOT/host/aps-conecta"
+  cp "$ROOT_BAK/scripts/apps.py" "$ROOT/scripts/apps.py"
+  printf '[{"id": "demo", "source": "store", "optional": false, "containers": []}]\n' > "$ROOT/apps.json"
   mkdir -p "$ROOT/provisioning/apps/demo"
   printf 'contenido\n' > "$tmp/demo.txt"
   tar czf "$ROOT/provisioning/apps/demo/demo-1.0.0.tar.gz" -C "$tmp" demo.txt
@@ -2135,14 +2137,20 @@ SHIM
     'case "$step_out" in *"✗ demo: el archivo no coincide con su suma de verificación"*"FAIL=1") ;; *) false;; esac && case "$step_out" in *"Sumas de verificación correctas"*) false;; *) true;; esac'
   rm -rf "$ROOT/provisioning/apps/demo"
   step_out="$(FAIL=0; step_descargar; echo "FAIL=$FAIL")"
-  check "descargar: no vendored app at all reds — never a vacuous «correctas (aplicaciones: 0)»" \
-    'case "$step_out" in *"✗ no se encontraron aplicaciones"*"FAIL=1") ;; *) false;; esac && case "$step_out" in *"correctas"*) false;; *) true;; esac'
+  check "descargar: an app the suite manifest lists with nothing vendored reds as missing and is never called correct" \
+    'case "$step_out" in *"✗ demo: falta en $ROOT/provisioning/apps"*"FAIL=1") ;; *) false;; esac && case "$step_out" in *"correctas"*) false;; *) true;; esac'
+  mv "$ROOT/apps.json" "$tmp/apps.json"
+  step_out="$(FAIL=0; step_descargar; echo "FAIL=$FAIL")"
+  check "descargar: an unreadable suite manifest reds — never a vacuous «correctas (aplicaciones: 0)»" \
+    'case "$step_out" in *"✗ no se pudo leer la lista de aplicaciones de la suite"*"FAIL=1") ;; *) false;; esac && case "$step_out" in *"correctas"*) false;; *) true;; esac'
+  mv "$tmp/apps.json" "$ROOT/apps.json"
   rm -rf "$ROOT/provisioning"
 
   # the two-line bootstrap: this file on its own clones the suite at its tag, links the command and
   # the install goes on from the clone; a re-run finds it done; another version is refused, untouched
   mkdir -p "$tmp/standalone" "$tmp/remote/scripts" "$tmp/remote/host" "$tmp/remote/provisioning/apps/demo"
   : > "$tmp/remote/scripts/provisionador.py"; : > "$tmp/remote/host/aps-conecta"
+  cp "$ROOT/scripts/apps.py" "$tmp/remote/scripts/apps.py"; cp "$ROOT/apps.json" "$tmp/remote/apps.json"
   tar czf "$tmp/remote/provisioning/apps/demo/demo-1.0.0.tar.gz" -C "$tmp" demo.txt
   printf 'version=1.0.0\nsha256=%s\n' "$(sha256sum "$tmp/remote/provisioning/apps/demo/demo-1.0.0.tar.gz" | cut -d' ' -f1)" \
     > "$tmp/remote/provisioning/apps/demo/VENDOR"
@@ -3244,7 +3252,7 @@ SHIM
   local ph="$tmp/paq-home" plog="$tmp/paq.log" minpaq="$tmp/min-paq"
   local out_paq rc_paq
   mkdir -p "$ph/paquete" "$minpaq" "$tmp/notag"
-  for c in bash grep head cat cut sed sha256sum dirname basename du; do ln -sf "$(command -v "$c")" "$minpaq/$c"; done
+  for c in bash grep head cat cut sed sha256sum dirname basename du python3; do ln -sf "$(command -v "$c")" "$minpaq/$c"; done
   cat > "$tshim/signify" <<SHIM
 #!/usr/bin/env bash
 printf 'cwd=%s %s\n' "\$(pwd)" "\$*" >> "$plog"
