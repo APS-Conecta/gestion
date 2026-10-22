@@ -835,7 +835,7 @@ step_descargar() {  # the bundle at its tag. On its own (the two-line bootstrap)
   # tag, so the same code; in a checkout it verifies that checkout. Either way every app of the suite
   # manifest is checked against the sha256 its VENDOR pins (the seed's own check, provisioning/lib.sh), and
   # only a verified bundle is linked as the `aps-conecta` command
-  local v apps app dir tars want got n=0 broken=0 dest found
+  local v apps rc app dir tars want got n=0 broken=0 dest found
   v="$(suite_tag)"
   if [ -z "$v" ]; then
     bad "no se pudo leer la versión de la suite en $ROOT" \
@@ -880,8 +880,10 @@ step_descargar() {  # the bundle at its tag. On its own (the two-line bootstrap)
     trust_bundle "$dest"
     ROOT="$dest"; HOST_DIR="$dest/host"   # every remaining path: the bundle is the root now
   fi
-  if ! apps="$(python3 "$ROOT/scripts/apps.py" ids 2>/dev/null)"; then
-    bad "no se pudo leer la lista de aplicaciones de la suite ($ROOT/apps.json)" "vuelva a descargar la suite completa"
+  apps="$(python3 "$ROOT/scripts/apps.py" ids 2>&1)"; rc=$?
+  if [ "$rc" -ne 0 ]; then   # status 1 is apps.py's own Spanish line; any other is python itself
+    [ "$rc" -eq 1 ] || apps="no se pudo ejecutar $ROOT/scripts/apps.py"
+    bad "$apps" "vuelva a descargar la suite completa"
     return 0
   fi
   for app in $apps; do
@@ -2141,9 +2143,14 @@ SHIM
     'case "$step_out" in *"✗ demo: falta en $ROOT/provisioning/apps"*"FAIL=1") ;; *) false;; esac && case "$step_out" in *"correctas"*) false;; *) true;; esac'
   mv "$ROOT/apps.json" "$tmp/apps.json"
   step_out="$(FAIL=0; step_descargar; echo "FAIL=$FAIL")"
-  check "descargar: an unreadable suite manifest reds — never a vacuous «correctas (aplicaciones: 0)»" \
-    'case "$step_out" in *"✗ no se pudo leer la lista de aplicaciones de la suite"*"FAIL=1") ;; *) false;; esac && case "$step_out" in *"correctas"*) false;; *) true;; esac'
+  check "descargar: an unreadable suite manifest reds in one Spanish line with the cause — never a vacuous «correctas (aplicaciones: 0)»" \
+    'case "$step_out" in *"✗ no se pudo leer la lista de aplicaciones de la suite ($ROOT/apps.json): no existe"*"FAIL=1") ;; *) false;; esac && case "$step_out" in *"correctas"*) false;; *) true;; esac'
   mv "$tmp/apps.json" "$ROOT/apps.json"
+  mv "$ROOT/scripts/apps.py" "$tmp/apps.py"
+  step_out="$(FAIL=0; step_descargar; echo "FAIL=$FAIL")"
+  check "descargar: a suite without its manifest reader reds in Spanish — python's own English never reaches the operator" \
+    'case "$step_out" in *"✗ no se pudo ejecutar $ROOT/scripts/apps.py"*"FAIL=1") ;; *) false;; esac && case "$step_out" in *python3*|*Errno*) false;; *) true;; esac'
+  mv "$tmp/apps.py" "$ROOT/scripts/apps.py"
   rm -rf "$ROOT/provisioning"
 
   # the two-line bootstrap: this file on its own clones the suite at its tag, links the command and

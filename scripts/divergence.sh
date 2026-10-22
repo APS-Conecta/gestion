@@ -184,8 +184,8 @@ fi
 # old ones transposed — directories only, trailing slash stripped. The blindness check above already
 # refused to report against an instance that cannot answer.
 # Declared = the suite manifest (apps.json; notify_push too, which the entrypoint installs).
-if ! suite_apps="$(python3 scripts/apps.py ids)"; then
-  note "no se pudieron revisar las aplicaciones: no se pudo leer la lista de aplicaciones de la suite (apps.json)"
+if ! suite_apps="$(python3 scripts/apps.py ids 2>&1)"; then   # an unreadable manifest: the output is apps.py's one Spanish line
+  note "no se pudieron revisar las aplicaciones: $suite_apps"
 else
   while IFS= read -r a; do
     [ -n "${a:-}" ] || continue
