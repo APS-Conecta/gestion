@@ -14,6 +14,7 @@ A row: id; source (own | fork | store); repo (own and fork apps only); optional 
 "off"); containers (names from php/containers.json); pin (an exact tag, optional); name and summary
 (Spanish, shown in the wizard; plumbing apps carry neither).
 """
+import errno
 import json
 import os
 import re
@@ -30,36 +31,55 @@ REPO = re.compile(r"APS-Conecta/[A-Za-z0-9._-]+")
 
 
 def load(path=MANIFEST):
-    """The manifest's rows, validated; ValueError names the first bad one."""
+    """The manifest's rows, validated; ValueError is the one Spanish line an operator reads."""
+    try:
+        return _read(path)
+    except (OSError, ValueError) as e:
+        raise ValueError(f"no se pudo leer la lista de aplicaciones de la suite "
+                         f"({os.path.normpath(path)}): {_cause(e)}") from None
+
+
+def _cause(e):  # the OS's and json's own texts are English: the common causes in Spanish
+    if isinstance(e, json.JSONDecodeError):
+        return f"no es JSON válido (línea {e.lineno}, columna {e.colno})"
+    if isinstance(e, UnicodeDecodeError):
+        return "no está en UTF-8"
+    if isinstance(e, OSError):
+        known = {errno.ENOENT: "no existe", errno.EACCES: "sin permiso", errno.EISDIR: "es un directorio"}
+        return known.get(e.errno) or f"error de archivo ({errno.errorcode.get(e.errno, '?')})"
+    return str(e)
+
+
+def _read(path):
     with open(path, encoding="utf-8") as fh:
         rows = json.load(fh)
     if not isinstance(rows, list) or not rows:
-        raise ValueError(f"{path} is not a non-empty list of apps")
+        raise ValueError("no es una lista con al menos una aplicación")
     seen = set()
     for row in rows:
         app = row.get("id") if isinstance(row, dict) else None
         if not isinstance(app, str) or not APP_ID.fullmatch(app):
-            raise ValueError(f"a row without a valid app id: {row!r}")
+            raise ValueError(f"una fila sin id de aplicación válido: {row!r}")
         if app in seen:
-            raise ValueError(f"{app} is listed twice")
+            raise ValueError(f"{app} aparece dos veces")
         seen.add(app)
         if set(row) - FIELDS:
-            raise ValueError(f"{app}: unknown fields {sorted(set(row) - FIELDS)}")
+            raise ValueError(f"{app}: campos desconocidos {sorted(set(row) - FIELDS)}")
         if row.get("source") not in ("own", "fork", "store"):
-            raise ValueError(f"{app}: source is own, fork or store")
+            raise ValueError(f"{app}: source debe ser own, fork o store")
         if (row["source"] == "store") != ("repo" not in row) or "repo" in row and not (
                 isinstance(row["repo"], str) and REPO.fullmatch(row["repo"])):
-            raise ValueError(f"{app}: own and fork apps name an APS-Conecta repo, store apps none")
+            raise ValueError(f"{app}: las aplicaciones own y fork nombran un repositorio de APS-Conecta; las store, ninguno")
         if not (row.get("optional") is False or row.get("optional") in ("on", "off")):
-            raise ValueError(f"{app}: optional is false, \"on\" or \"off\"")
+            raise ValueError(f"{app}: optional debe ser false, \"on\" u \"off\"")
         if not isinstance(row.get("containers"), list) or not all(
                 isinstance(c, str) and c for c in row["containers"]):
-            raise ValueError(f"{app}: containers is a list of container names")
+            raise ValueError(f"{app}: containers debe ser una lista de nombres de contenedor")
         if "pin" in row and not (isinstance(row["pin"], str) and row["pin"].startswith("v")):
-            raise ValueError(f"{app}: pin is a tag such as v1.2.3")
+            raise ValueError(f"{app}: pin debe ser una etiqueta como v1.2.3")
         if ("name" in row) != ("summary" in row) or not all(
                 isinstance(row[k], str) and row[k] for k in ("name", "summary") if k in row):
-            raise ValueError(f"{app}: name and summary come together, both non-empty")
+            raise ValueError(f"{app}: name y summary van juntos y no pueden estar vacíos")
     return rows
 
 
@@ -126,22 +146,40 @@ def selftest():
                        ("an empty summary", [{**good, "summary": ""}])):
         check(f"{label} is refused", refused(bad))
 
-    def cli(*args, rows=None):
-        """(status, stdout) of this script run on a fixture manifest — the bash readers' view."""
+    def cli(*args, rows=None, prepare=None):
+        """(status, stdout, stderr) of this script run beside a fixture apps.json — the bash readers'
+        view; `prepare(path)` leaves the file as the case needs, else `rows` are written as JSON."""
         with tempfile.TemporaryDirectory() as tmp:
             manifest = os.path.join(tmp, "apps.json")
-            with open(manifest, "w", encoding="utf-8") as fh:
-                fh.write(json.dumps(rows) if rows is not None else "{not json")
-            run = subprocess.run([sys.executable, os.path.abspath(__file__), "--manifest", manifest, *args],
-                                 capture_output=True, text=True, check=False)
-            return run.returncode, run.stdout
+            if prepare:
+                prepare(manifest)
+            else:
+                with open(manifest, "w", encoding="utf-8") as fh:
+                    json.dump(rows, fh)
+            run = subprocess.run([sys.executable, os.path.abspath(__file__), "--manifest", "apps.json", *args],
+                                 capture_output=True, text=True, check=False, cwd=tmp)
+            return run.returncode, run.stdout, run.stderr
 
     store = {"id": "calendar", "source": "store", "optional": False, "containers": []}
-    check("ids: one id per line, in manifest order", cli("ids", rows=[good, store]) == (0, "demo\ncalendar\n"))
+    check("ids: one id per line, in manifest order", cli("ids", rows=[good, store]) == (0, "demo\ncalendar\n", ""))
     check("lines: id, source and repo tab-separated; a store app's repo is empty",
-          cli("lines", rows=[good, store]) == (0, "demo\town\tAPS-Conecta/demo\ncalendar\tstore\t\n"))
-    check("an unreadable manifest exits non-zero and prints no id", cli("ids") == (1, ""))
-    check("an invalid manifest exits non-zero and prints no id", cli("ids", rows=[good, good]) == (1, ""))
+          cli("lines", rows=[good, store]) == (0, "demo\town\tAPS-Conecta/demo\ncalendar\tstore\t\n", ""))
+
+    def contents(data):
+        def prepare(path):
+            with open(path, "wb") as fh:
+                fh.write(data)
+        return prepare
+
+    for label, prepare, cause in (
+            ("a missing file", lambda path: None, "no existe"),
+            ("a directory", os.mkdir, "es un directorio"),
+            ("a file that is not UTF-8", contents(b"\xff\xfe[]"), "no está en UTF-8"),
+            ("JSON cut off mid-row", contents(b'[{"id": "demo"'), "no es JSON válido (línea 1, columna 15)"),
+            ("a duplicate id", contents(json.dumps([good, good]).encode()), "demo aparece dos veces")):
+        check(f"{label}: exit 1, no id, the one Spanish line naming the manifest and why",
+              cli("ids", prepare=prepare)
+              == (1, "", f"no se pudo leer la lista de aplicaciones de la suite (apps.json): {cause}\n"))
     check("an unknown command exits non-zero", cli("todo", rows=[good])[0] != 0)
 
     print(f"self-test: {n} checks OK" if not failed else f"self-test: {failed} of {n} checks FAILED")
@@ -159,8 +197,8 @@ def main(argv):
         return 2
     try:
         rows = load(path)
-    except (OSError, ValueError) as e:
-        print(f"FATAL: the suite manifest is unreadable: {e}", file=sys.stderr)
+    except ValueError as e:
+        print(e, file=sys.stderr)
         return 1
     for r in rows:
         print(r["id"] if argv == ["ids"] else f"{r['id']}\t{r['source']}\t{r.get('repo', '')}")
