@@ -952,6 +952,33 @@ modern_tls() {  # 250: modern TLS only — the mastercontainer's ACME and intern
 row 250 "modern TLS only on every ingress — the mastercontainer's ACME and internal listeners pin protocols tls1.2 tls1.3 in their tls blocks and apache's runtime ACME stanza (start.sh, 235's placeholder) carries the same pin; nothing older negotiates (ead3eb6e's security floor, queue-moved by the parity fence)" \
   modern_tls
 
+buscador_db() {  # 260: the database image ships pgvector (pinned by hash) and aps-roles.sh; start.sh
+  # runs aps-roles.sh before a dump replay and at every start; the image is built, not retagged, and
+  # the build tests it before the push. scripts/db-image-test.sh proves the behaviour on the built
+  # image; this row keeps the bytes from leaving the tree unnoticed between releases.
+  local d="$TREE/Containers/postgresql/Dockerfile" s="$TREE/Containers/postgresql/start.sh" fail=0 roles replay bg waits
+  grep -qF 'COPY --chmod=775 aps-roles.sh /aps-roles.sh' "$d" 2>/dev/null \
+    || { echo "  the database Dockerfile does not copy aps-roles.sh" >&2; fail=1; }
+  grep -qE '^ENV PGVECTOR_SHA256=[0-9a-f]{64}$' "$d" 2>/dev/null && grep -qF 'sha256sum -c' "$d" \
+    || { echo "  the database Dockerfile does not check pgvector against a pinned sha256" >&2; fail=1; }
+  roles="$(grep -nE '^[[:space:]]*/aps-roles\.sh$' "$s" 2>/dev/null | head -1 | cut -d: -f1)"
+  replay="$(grep -nF 'psql "$POSTGRES_DB" -U "$POSTGRES_USER" < "$DUMP_FILE"' "$s" 2>/dev/null | cut -d: -f1)"
+  [ -n "$roles" ] && [ -n "$replay" ] && [ "$roles" -lt "$replay" ] \
+    || { echo "  start.sh does not run /aps-roles.sh before the dump replay" >&2; fail=1; }
+  bg="$(grep -nx 'apply_aps_roles &' "$s" 2>/dev/null | cut -d: -f1)"
+  waits="$(grep -nxF 'wait "$PG_PID"' "$s" 2>/dev/null | cut -d: -f1)"
+  [ -n "$bg" ] && [ -n "$waits" ] && [ "$bg" -lt "$waits" ] \
+    || { echo "  start.sh does not start apply_aps_roles before it waits on postgres" >&2; fail=1; }
+  grep -qE '^BUILD_IMAGES=\(.*\baio-postgresql\b' "$TREE/scripts/retag.sh" 2>/dev/null \
+    || { echo "  retag.sh's BUILD_IMAGES lacks aio-postgresql — it would be retagged without pgvector" >&2; fail=1; }
+  grep -qF 'bash scripts/db-image-test.sh' "$TREE/.github/workflows/images.yml" 2>/dev/null \
+    || { echo "  images.yml no longer tests aio-postgresql before the push" >&2; fail=1; }
+  [ "$fail" -eq 0 ]
+}
+
+row 260 "the database is ready for Buscador Documental — pgvector pinned by hash and aps-roles.sh in the image, run by start.sh before a dump replay and at every start; aio-postgresql built, and tested before its push" \
+  buscador_db
+
 if [ "$fails" -gt 0 ]; then
   echo "BRAND GATE: *** FAIL *** — $fails row(s) failed" >&2
   exit 1
