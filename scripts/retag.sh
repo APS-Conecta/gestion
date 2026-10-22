@@ -11,15 +11,15 @@
 # That is why the matrix gates the announce, and why a tag is NEVER a raw digest: `image@sha256:...`
 # explodes into a bogus channel and every sibling resolves a tag that cannot exist.
 #
-# WHAT MOVES AND WHAT BUILDS. 17 of the 20 are registry-side retags — `buildx imagetools create`
+# WHAT MOVES AND WHAT BUILDS. 16 of the 20 are registry-side retags — `buildx imagetools create`
 # copies the manifest list at the registry itself (seconds, zero runner disk, the multi-arch entries
 # carried along byte-for-byte); aio-nextcloud (the apps+theme bake, patch 030), aio-apache (the
-# installer's own certificate, patch 235) and all-in-one (the reskin, patch 070) are real builds the
-# workflow's build jobs own — from build-ref: THE TAG on every release arm, main on manual
-# dispatches (Stage 3, D-3.4).
+# installer's own certificate, patch 235), aio-postgresql (pgvector and buscador's roles, patch
+# 260) and all-in-one (the reskin, patch 070) are real builds the workflow's build jobs own —
+# from build-ref: THE TAG on every release arm, main on manual dispatches (Stage 3, D-3.4).
 #
 # THE SOURCE IS OURS (Stage 2 — the self-referential lockstep; the copy-from-upstream arm retired
-# with the hard fork, D-rev 2026-10-19, D-3.5). The 17 registry-side retags copy from OUR previous
+# with the hard fork, D-rev 2026-10-19, D-3.5). The 16 registry-side retags copy from OUR previous
 # suite tag, only ever: `retag TAG` resolves it (the newest git tag carrying a digest-complete
 # set — git tags ARE the suite-tag list, D4 — falling back to the recorded aps/BASE.lock
 # bootstrap, else FATAL naming the remedy), `--from-tag` pins it for repairs. From the first
@@ -46,7 +46,7 @@
 #   scripts/retag.sh list                         the sibling image names, one per line (parsed, in order)
 #   scripts/retag.sh sed FILE                     apply the org swap in place + verify (patch 010's generator)
 #   scripts/retag.sh retag TAG [--from-tag T] [--force]
-#                                    the 17-image registry-side walk — source OURS, always
+#                                    the 16-image registry-side walk — source OURS, always
 #   scripts/retag.sh matrix TAG [--from-tag T]
 #                                    the gate: all present + the copy keyed to the RESOLVED source
 #   scripts/retag.sh manifest TAG                 the publish record, JSON on stdout (retag_source)
@@ -63,7 +63,7 @@ set -uo pipefail
 ORG_UPSTREAM="nextcloud-releases"  # the upstream namespace — cmd_sed's swap source only (never a copy source post-fork)
 ORG_FORK="aps-conecta"            # ours — 010's sed and this whole walk swap to exactly this
 GHCR="ghcr.io"
-BUILD_IMAGES=(aio-nextcloud aio-apache)  # the siblings that are BUILT, not retagged (patches 030 and 235)
+BUILD_IMAGES=(aio-nextcloud aio-apache aio-postgresql)  # the siblings that are BUILT, not retagged (patches 030, 235 and 260)
 MASTER_IMAGE="all-in-one"         # the mastercontainer — not in containers.json; the operator's docker run names it
 MIN_SIBLINGS="19"                 # shape-rot alarm (divergence's "expected 27+" precedent): a parse that
                                    # silently shrank would green a walk over fewer images than the suite has
@@ -477,13 +477,14 @@ selftest() { # the hermetic self-test — migrate-to-aio.sh's template verbatim:
 
   local FORK="$GHCR/$ORG_FORK"
 
-  # the fixture world: 17 retaggable siblings + the 2 built ones = MIN_SIBLINGS (the master
+  # the fixture world: 16 retaggable siblings + the 3 built ones = MIN_SIBLINGS (the master
   # container is not in containers.json, as in the real one); the registry is a fixture tree
   # where $REG/<full-ref> holds the digest line; auto-digests are distinct per seeding.
   python3 - "$FIX/containers.json" <<'PY'
 import json, sys
-sibs = [f"ghcr.io/nextcloud-releases/nextcloud-aio-sib{i:02d}" for i in range(1, 18)]
-sibs += ["ghcr.io/nextcloud-releases/aio-nextcloud", "ghcr.io/nextcloud-releases/aio-apache"]
+sibs = [f"ghcr.io/nextcloud-releases/nextcloud-aio-sib{i:02d}" for i in range(1, 17)]
+sibs += ["ghcr.io/nextcloud-releases/aio-nextcloud", "ghcr.io/nextcloud-releases/aio-apache",
+         "ghcr.io/nextcloud-releases/aio-postgresql"]
 json.dump({"aio_services_v1": [{"image": s} for s in sibs]}, open(sys.argv[1], "w"), indent=1)
 PY
   seed() { # REF [DIGEST] — plant the fixture registry (auto: distinct per seeding)
@@ -492,13 +493,14 @@ PY
     else dg=$((dg+1)); printf 'sha256:%064d\n' "$dg" > "$REG/$1"; fi
   }
   local i
-  for i in $(seq -w 1 17); do
+  for i in $(seq -w 1 16); do
     seed "$FORK/nextcloud-aio-sib$i:v0.4.0"
     seed "$FORK/nextcloud-aio-sib$i:v0.5.0"   # DISTINCT digests: presence is all the
   done                                          # immutability arm needs; the forced walk re-copies
   seed "$FORK/all-in-one:v0.4.0";      seed "$FORK/all-in-one:v0.5.0"
   seed "$FORK/aio-nextcloud:v0.4.0";   seed "$FORK/aio-nextcloud:v0.5.0"
   seed "$FORK/aio-apache:v0.4.0";      seed "$FORK/aio-apache:v0.5.0"
+  seed "$FORK/aio-postgresql:v0.4.0";  seed "$FORK/aio-postgresql:v0.5.0"
 
   # the docker shim — the #143 behavioral pattern: argv-shape keyed. inspect answers from the
   # fixture registry in BOTH argument orders the family uses (retag.sh's `inspect REF --format
@@ -632,13 +634,14 @@ DSHIM
     'grep -qx "RETAG_SOURCE_RESOLVED=ours:v0.4.0" "$tmp/walk.txt"'
   check "resolution: incomplete candidates are said and skipped" \
     'grep -q "v0.9.9.*carries no complete set" "$tmp/walk.txt" && grep -q "v0.8.8.*carries no complete set" "$tmp/walk.txt"'
-  check "walk: 17 copies, every source OUR previous set — upstream is never read" \
-    '[ "$(grep -c "^create " "$CALLS")" -eq 17 ] \
-     && [ "$(grep -c " <- $FORK/nextcloud-aio-sib..:v0.4.0$" "$CALLS")" -eq 17 ] \
+  check "walk: 16 copies, every source OUR previous set — upstream is never read" \
+    '[ "$(grep -c "^create " "$CALLS")" -eq 16 ] \
+     && [ "$(grep -c " <- $FORK/nextcloud-aio-sib..:v0.4.0$" "$CALLS")" -eq 16 ] \
      && ! grep -q "nextcloud-releases" "$CALLS"'
   check "walk: the built images and the mastercontainer are never copied, their skip said" \
-    '! grep -qE " <- .*(aio-nextcloud|aio-apache|all-in-one):" "$CALLS" \
-     && grep -q "skip aio-nextcloud" "$tmp/walk.txt" && grep -q "skip aio-apache" "$tmp/walk.txt"'
+    '! grep -qE " <- .*(aio-nextcloud|aio-apache|aio-postgresql|all-in-one):" "$CALLS" \
+     && grep -q "skip aio-nextcloud" "$tmp/walk.txt" && grep -q "skip aio-apache" "$tmp/walk.txt" \
+     && grep -q "skip aio-postgresql" "$tmp/walk.txt"'
 
   # ── the matrix: both arms, and every red class ──
   out="$(bash "$SELF" matrix v0.5.0 2>&1)"; rc=$?

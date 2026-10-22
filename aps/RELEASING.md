@@ -69,7 +69,7 @@ assembly, SHA256SUMS, the signature, the verify-PROOF against the committed `ins
 the constants-filled install asset) → the Release with five assets. Watch it; a red anywhere
 names its gate.
 
-**The retag source (the self-referential lockstep)**. The 17 registry-side images are copied,
+**The retag source (the self-referential lockstep)**. The 16 registry-side images are copied,
 not built: `retag-source: ours` — the chain's default on every tag push — copies each from
 **our previous suite tag** (the newest digest-complete set; git tags are the suite-tag list).
 A wiped registry bootstraps once through `aps/BASE.lock`, which records `ours:v0.4.0` — our
@@ -78,9 +78,9 @@ fork). The publish record's `retag_source` names what the walk actually copied f
 (`ours:vX.Y.Z`), so a Release's lineage is auditable from its manifest asset alone.
 
 **The vendor bump is retired** (the hard fork, D-3.5). Picking up a fresh upstream release was
-never a default and is now not a path either: the 17 retagged siblings always copy from our own
+never a default and is now not a path either: the 16 retagged siblings always copy from our own
 previous set. An upstream release arrives the way every upstream change arrives now — a
-deliberate merge into main, then an ordinary release; the 3 real builds pick it up from the
+deliberate merge into main, then an ordinary release; the 4 real builds pick it up from the
 tree, and the retags keep the lockstep.
 
 A repair that only needs the image set re-copied (a mixed or partial set, no Release involved)
