@@ -187,7 +187,7 @@ fi
 # LAB_APPS, ours and under development (ADR-0005) — sourced, never parsed as text.
 # shellcheck source=../dev/lab-apps.sh
 [ -f dev/lab-apps.sh ] && . dev/lab-apps.sh
-if ! suite_apps="$(python3 scripts/apps.py ids 2>&1)"; then   # on failure the output is apps.py's one Spanish line
+if ! suite_apps="$(python3 scripts/apps.py ids 2>&1)"; then   # an unreadable manifest: the output is apps.py's one Spanish line
   note "no se pudieron revisar las aplicaciones: $suite_apps"
 else
   apps_list="$(printf '%s\n' "$suite_apps" "${LAB_APPS:-}" | tr ' ' '\n' | sed 's/=.*//')"
