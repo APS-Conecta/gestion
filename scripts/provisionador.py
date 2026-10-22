@@ -231,7 +231,10 @@ PHASE_TITLES = {
     "50-users": "Cuentas de cargo", "60-fixtures": "Contenido de ejemplo"}
 # What the clinic gets, as the review step lists it (R37): one row per component staff see — its
 # app, its name, what it gives — in the suite manifest's order. Plumbing (no name) is not listed.
-SUITE_APPS = suite_apps.load()
+try:
+    SUITE_APPS = suite_apps.load()
+except ValueError as e:   # the one Spanish line, before any socket — the register's and the step list's fail-fast
+    sys.exit(f"✗ {e}")
 COMPONENTES = tuple((a["id"], a["name"], a["summary"]) for a in SUITE_APPS if "name" in a)
 PLUMBING_APPS = tuple(a["id"] for a in SUITE_APPS if "name" not in a)
 # The browser's progress list (a14): the phases by their console titles, then the people, then the gate.
@@ -5359,6 +5362,18 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                                capture_output=True, text=True, timeout=60)
             check("--paso as a real process: the exit code and the Spanish line reach a pipe (systemd's view)",
                   p.returncode == 2 and "✗ falta el código" in p.stdout)
+            with tempfile.TemporaryDirectory() as raiz:   # the start beside a suite manifest that is not JSON
+                os.makedirs(os.path.join(raiz, "scripts"))
+                for fuente in ("provisionador.py", "deis.py", "apps.py"):
+                    shutil.copy(os.path.join(HERE, fuente), os.path.join(raiz, "scripts", fuente))
+                with open(os.path.join(raiz, "apps.json"), "w", encoding="utf-8") as fh:
+                    fh.write("{no es JSON")
+                p = subprocess.run([sys.executable, "-I", os.path.join(raiz, "scripts", "provisionador.py"),
+                                    "--paso", "generar"], capture_output=True, text=True, timeout=60)
+            check("an unreadable suite manifest stops the start with one Spanish line on stderr — exit 1, no traceback",
+                  p.returncode == 1 and p.stdout == ""
+                  and p.stderr == f"✗ no se pudo leer la lista de aplicaciones de la suite ({raiz}/apps.json): "
+                                  "no es JSON válido (línea 1, columna 2)\n")
             check("titles: every phase file has its Spanish console title (R42)",
                   {f[:-3] for f in os.listdir(os.path.dirname(PHASE20))
                    if f[:1].isdigit() and f.endswith(".sh")} == set(PHASE_TITLES))

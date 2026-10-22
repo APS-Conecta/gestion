@@ -592,6 +592,25 @@ CASES
 }
 check estadistica_identity_cases
 
+# The suite manifest unreadable: the gate's apps section says so in ONE Spanish note carrying the
+# cause — apps.py's own stderr no longer reaches the operator beside it, and the red branch never
+# execs into the instance. Extracted, run in a temp tree whose apps.json is not JSON.
+manifest_unreadable_divergence_case() {
+  local section tmp out
+  section="$(sed -n '/^# --- apps unpacked into custom_apps/,/^fi$/p' scripts/divergence.sh)"
+  [ -n "$section" ] || { echo "manifest divergence: apps section not found in divergence.sh" >&2; return 1; }
+  tmp="$(mktemp -d)"; mkdir "$tmp/scripts"
+  cp scripts/apps.py "$tmp/scripts/apps.py"; printf '{no es JSON' > "$tmp/apps.json"
+  out="$(cd "$tmp" && bash -c '
+    note() { printf "NOTE %s\n" "$*"; }
+    nc_exec() { echo "nc_exec reached"; }
+    eval "$1"' _ "$section" 2>&1)"
+  rm -rf "$tmp"
+  [ "$out" = "NOTE no se pudieron revisar las aplicaciones: no se pudo leer la lista de aplicaciones de la suite ($tmp/apps.json): no es JSON válido (línea 1, columna 2)" ] \
+    || { echo "manifest divergence: expected the one Spanish note, got: $out" >&2; return 1; }
+}
+check manifest_unreadable_divergence_case
+
 # Territorio's basemap is OpenStreetMap's own tile service (ADR-0021 in that repo), loaded by each
 # user's browser: nothing about it is provisioned. Phase 16 used to write a tile_url (the suite's
 # /tiles/ archive); it writes none now, and the two keys the app derives its map extent from —
