@@ -237,9 +237,6 @@ PLUMBING_APPS = tuple(a["id"] for a in SUITE_APPS if "name" not in a)
 # The browser's progress list (a14): the phases by their console titles, then the people, then the gate.
 PASO_PLANILLA, PASO_GATE = "Cuentas del personal", "Comprobación final"
 PASOS_EJECUCION = [PHASE_TITLES[k] for k in sorted(PHASE_TITLES)] + [PASO_PLANILLA, PASO_GATE]
-# Step 6, «Iniciar la suite» (L3 S5). The APS apps — own and fork, from our repos (an arm pins the set),
-# named as the catalogue names them; each version is read from its VENDOR file.
-APPS_APS = tuple(a["id"] for a in SUITE_APPS if a["source"] in ("own", "fork"))
 # The suite's containers, named for the people who run it: the host's AIO_SET plus Nextcloud's own (an
 # arm pins the set). Talk's two join when the wizard was given Talk — they never block «Siguiente».
 CONTENEDORES_SUITE = (("aps-conecta-apache", "Servidor web"), ("aps-conecta-nextcloud", "Núcleo de la suite"),
@@ -3043,14 +3040,16 @@ APPS_DIR = os.path.join(ROOT_DIR, "provisioning", "apps")
 ASSETS_ROOT = ROOT_DIR
 
 
-def apps_aps():
-    """The five APS apps with their versions (a12): the catalogue's name and use, each VENDOR's version."""
-    nombres = {app: (nombre, que) for app, nombre, que in COMPONENTES}
+def apps_aps(rows=SUITE_APPS):
+    """Step 6's APS apps with their versions (a12): the manifest's own and fork apps that carry a name, in its
+    order — the manifest's name and summary, each VENDOR's version. An unnamed fork app is plumbing (#64)."""
     filas = []
-    for app in APPS_APS:
-        with open(os.path.join(APPS_DIR, app, "VENDOR"), encoding="utf-8") as fh:
+    for a in rows:
+        if a["source"] not in ("own", "fork") or "name" not in a:
+            continue
+        with open(os.path.join(APPS_DIR, a["id"], "VENDOR"), encoding="utf-8") as fh:
             version = next((ln.split("=", 1)[1].strip() for ln in fh if ln.startswith("version=")), "")
-        filas.append([nombres[app][0], version, nombres[app][1]])
+        filas.append([a["name"], version, a["summary"]])
     return filas
 
 
@@ -5023,6 +5022,21 @@ def selftest():
                   [f[0] for f in filas] == ["Inicio", "Epidemiología", "Estadística", "Farmacia", "Territorio"]
                   and all(re.fullmatch(r"\d+\.\d+\.\d+", f[1]) for f in filas)
                   and {c for c, _n in CONTENEDORES_SUITE} == set(aio_set) | {"aps-conecta-nextcloud"})
+            # an unnamed fork app (desktop_workspace as #37 makes it) — and intravox
+            # stripped of its name, so the rows read are the fixture's, filtered by name, not by VENDOR
+            sin_nombre = [{"id": a["id"], "source": "fork", "repo": f"APS-Conecta/{a['id']}", "optional": False,
+                           "containers": []} if a["id"] == "desktop_workspace"
+                          else {k: v for k, v in a.items() if k not in ("name", "summary")} if a["id"] == "intravox"
+                          else a for a in SUITE_APPS]
+            with open(os.path.join(tmp, "apps-sin-nombre.json"), "w", encoding="utf-8") as fh:
+                json.dump(sin_nombre, fh)
+            try:
+                filas = apps_aps(suite_apps.load(os.path.join(tmp, "apps-sin-nombre.json")))
+            except Exception as e:   # the crash IS the failure this check reports
+                filas = [[f"{type(e).__name__}: {e}", "", ""]]
+            check("suite: step 6 lists only the own and fork apps that carry a name, in manifest order — an unnamed fork app is left out, no error (a12, #64)",
+                  [f[0] for f in filas] == ["Epidemiología", "Estadística", "Farmacia", "Territorio"]
+                  and all(re.fullmatch(r"\d+\.\d+\.\d+", f[1]) for f in filas))
             fijo = centro_actual()[1].get("codigo")   # the site the preparation fills, then restored
             antes_fijo = open(site_path(fijo), encoding="utf-8").read() if fijo else None
             falso = os.path.join(tmp, "asistente-falso.sh")
