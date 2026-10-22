@@ -967,8 +967,10 @@ print("ok")'
 # --- org L5-11/L5-05/L5-12: the provisioning self-tests (hermetic) ----------------------------
 # standings.sh: the one uid derivation's fixture parity; env.sh: the loader/compose
 # round-trip (its compose-parity arm self-skips — no compose.yaml moved — and the container arms
-# run on a stub docker); usuarios.sh: the frame guards.
+# run on a stub docker); usuarios.sh: the frame guards; apps.py: the suite manifest's shape and
+# that every container it names is defined.
 check bash provisioning/standings.sh --self-test
+check python3 scripts/apps.py --self-test
 check bash scripts/env.sh --self-test
 # #197: no caller restates the container default or guards it (`:-` `-` `:?` `?`) — env.sh
 # section 3 is the one place it is decided. The .env.example half of the gestion-era gate stayed

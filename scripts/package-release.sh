@@ -29,9 +29,9 @@
 # gzip -n — any clone of the tag rebuilds the same bytes (the self-test asserts two passes, one
 # sha256).
 #
-# COUNTED BEFORE CHECKED, everywhere (the silent-green rule): >=1 register CSV, >=MIN_VENDOR
-# VENDOR files, VERSION == tag, host/aps-conecta present, installer.pub's key line ==
-# install.sh's SIGNIFY_PUBKEY (two readers of one key must agree), and the placeholder reds.
+# COUNTED BEFORE CHECKED, everywhere (the silent-green rule): >=1 register CSV, one VENDOR per
+# apps.json row and no other app dir, VERSION == tag, host/aps-conecta present, installer.pub's key
+# line == install.sh's SIGNIFY_PUBKEY (two readers of one key must agree), and the placeholder reds.
 #
 # Usage: scripts/package-release.sh [--out DIR] [--manifest FILE]
 # Env:  RELEASE_TAG            the tag being packaged (asserted == the tree's VERSION, D6)
@@ -47,9 +47,6 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-MIN_VENDOR=10   # release-manifest.sh's floor, mirrored — its own script cannot run from the
-                # sparse clone (its image-digests leg lives outside the sparse set), so the VENDOR
-                # form check is mirrored here; the composite never ships a broken VENDOR
 GESTION_URL_DEFAULT="https://github.com/APS-Conecta/gestion.git"
 
 die() { echo "FATAL: $*" >&2; exit 1; }
@@ -83,6 +80,7 @@ if [ "${1:-}" = "--self-test" ]; then
         echo '[ "${1:-}" = "--self-test" ] && exit 0'
         echo 'exit 0'; } > install.sh
       cp "$2" installer.pub
+      python3 -c 'import json; print(json.dumps([{"id": f"app{i}", "source": "store", "optional": False, "containers": []} for i in range(1, 11)]))' > apps.json
       git add -A && git commit -qm fixture && git tag -f v9.8.7 )
   }
   # mk_gestion DIR N REGISTER(0|1) — the release-frozen half
@@ -153,7 +151,10 @@ if [ "${1:-}" = "--self-test" ]; then
 
   mk_gestion "$tmp/gestion" 9 1
   run_pkg "$tmp/o6" "$tmp/repo" "$tmp/installer.sec" ""
-  check "VENDOR floor reds (9 < MIN_VENDOR) — counted before checked" '[ "$rc" -ne 0 ]'
+  check "a manifest app without its VENDOR reds — the package ships every app apps.json lists" '[ "$rc" -ne 0 ]'
+  mk_gestion "$tmp/gestion" 11 1
+  run_pkg "$tmp/o6b" "$tmp/repo" "$tmp/installer.sec" ""
+  check "a VENDOR dir outside the manifest reds — the package ships no app apps.json does not list" '[ "$rc" -ne 0 ]'
   mk_gestion "$tmp/gestion" 10 0
   run_pkg "$tmp/o7" "$tmp/repo" "$tmp/installer.sec" ""
   check "missing register reds — an empty glob is a failure, never a green" '[ "$rc" -ne 0 ]'
@@ -237,19 +238,26 @@ else
 fi
 gestion_sha="$(git -C "$gestion" rev-parse HEAD 2>/dev/null || echo non-git-tree)"
 
-# 5 — the counted floors on the gestion half (release-manifest.sh's shapes, mirrored)
-n_vendor=0; bad_vendor=0
-for v in "$gestion"/provisioning/apps/*/VENDOR; do
-  [ -f "$v" ] || continue
-  n_vendor=$((n_vendor + 1))
+# 5 — the gestion half against the tag's suite manifest: one VENDOR per apps.json row, no other
+#     app dir (release-manifest.sh's VENDOR shapes, mirrored)
+apps="$(python3 "$REPO_ROOT/scripts/apps.py" --manifest "$staging/apps.json" ids)" \
+  || die "the tag tree's suite manifest (apps.json) is unreadable — scripts/apps.py says why above"
+bad_vendor=0
+for d in "$gestion"/provisioning/apps/*/; do
+  [ -d "$d" ] || continue
+  printf '%s\n' "$apps" | grep -qxF -- "$(basename "$d")" \
+    || { echo "provisioning/apps/$(basename "$d"): not in apps.json — the bake would ship an app the suite does not list" >&2; bad_vendor=1; }
+done
+for app in $apps; do
+  v="$gestion/provisioning/apps/$app/VENDOR"
+  [ -f "$v" ] || { echo "$app: listed in apps.json but provisioning/apps/$app/VENDOR is missing" >&2; bad_vendor=1; continue; }
   for k in version sha256 url; do
     grep -q "^$k=." "$v" || { echo "$v: no $k=" >&2; bad_vendor=1; }
   done
   grep -qE '^sha256=[0-9a-f]{64}$' "$v" || { echo "$v: sha256= is not a 64-hex digest" >&2; bad_vendor=1; }
   grep -qE '^sha256=<(measured|resolved)' "$v" && { echo "$v: a placeholder sha256 — UNPINNED is a bug, not a state" >&2; bad_vendor=1; }
 done
-[ "$n_vendor" -ge "$MIN_VENDOR" ] || die "$n_vendor VENDOR files under provisioning/apps/ — expected at least $MIN_VENDOR; a dir went missing"
-[ "$bad_vendor" -eq 0 ] || die "VENDOR form check failed (release-manifest.sh's shape, mirrored)"
+[ "$bad_vendor" -eq 0 ] || die "the vendored apps do not match apps.json, or a VENDOR is malformed (release-manifest.sh's shape, mirrored)"
 register=0
 for _csv in "$gestion"/sites/establecimientos-deis-*.csv; do
   [ -e "$_csv" ] && register=$((register + 1))

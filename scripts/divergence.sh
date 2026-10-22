@@ -46,7 +46,6 @@ require_site || exit 1
 nc_container   # once: the occ calls below run in pipes and $(…), whose cache dies with them
 
 PHASE20=provisioning/phases/20-groups.sh
-PHASE12=provisioning/phases/12-apps.sh
 
 
 # --quiet says nothing at all when there is nothing to say. `make install` uses it so a clean
@@ -184,34 +183,18 @@ fi
 # exists to kill). One exec; the glob runs in the container's own shell so the semantics are the
 # old ones transposed — directories only, trailing slash stripped. The blindness check above already
 # refused to report against an instance that cannot answer.
-# TWO DECLARED SURFACES, because two things reproduce an app on a clean install:
-#   - the inventories name what the SEED installs: APPS is vendored, OWN_APPS is ours and shipped
-#     (ADR-0003), LAB_APPS is ours and under development (ADR-0005) — the last two carry a clone
-#     URL after an `=`, stripped to the app id here. LAB_APPS is SOURCED, not sed'd:
-#     dev/lab-apps.sh is a shell file, and a parser that reads it as text would silently report
-#     every lab app the day its formatting changes.
-#   - provisioning/apps/ names what the repo SHIPS BYTES FOR: every directory there is a tarball
-#     the AIO bake (patch 030) unpacks into the image — notify_push included, which phase 12
-#     deliberately does not name (v0.2.0: "gestion's stack itself does not install notify_push —
-#     the tarball is vendored FOR the bake"; the suite's notify-push container runs it out of
-#     custom_apps, and the stock entrypoint installs it on every start). Without this line the
-#     gate would flag notify_push on every AIO clinic, baked by design — a permanently red gate
-#     is the B-014 class wearing the opposite hat. On compose the line is inert: a tarballed app
-#     the seed does not install never lands in custom_apps either.
+# Declared = the suite manifest (apps.json; notify_push too, which the entrypoint installs) plus
+# LAB_APPS, ours and under development (ADR-0005) — sourced, never parsed as text.
 # shellcheck source=../dev/lab-apps.sh
 [ -f dev/lab-apps.sh ] && . dev/lab-apps.sh
-apps_list="$( { sed -n 's/^APPS="\(.*\)"/\1/p' "$PHASE12"
-                sed -n 's/^OWN_APPS="\(.*\)"/\1/p' "$PHASE12"
-                printf '%s\n' "${LAB_APPS:-}"; } | tr ' ' '\n' | sed 's/=.*//')"
-tarballed="$(cd provisioning/apps 2>/dev/null && for d in */; do printf '%s\n' "${d%/}"; done)"
-declared_apps="$(printf '%s\n' "$apps_list" | grep -c . || true)"
-if [ "$declared_apps" -eq 0 ]; then
-  note "no se pudieron revisar las aplicaciones: $PHASE12 no trae la línea APPS="
+if ! suite_apps="$(python3 scripts/apps.py ids)"; then
+  note "no se pudieron revisar las aplicaciones: no se pudo leer la lista de aplicaciones de la suite (apps.json)"
 else
+  apps_list="$(printf '%s\n' "$suite_apps" "${LAB_APPS:-}" | tr ' ' '\n' | sed 's/=.*//')"
   while IFS= read -r a; do
     [ -n "${a:-}" ] || continue
-    printf '%s\n' "$apps_list" "$tarballed" | grep -qxF -- "$a" && continue
-    note "la aplicación '$a' está en custom_apps pero nada la declara — ni APPS, ni OWN_APPS, ni LAB_APPS, ni provisioning/apps/ — una instalación limpia no la reproduce"
+    printf '%s\n' "$apps_list" | grep -qxF -- "$a" && continue
+    note "la aplicación '$a' está en custom_apps pero nada la declara — ni la lista de aplicaciones de la suite (apps.json) ni LAB_APPS — una instalación limpia no la reproduce"
   done <<< "$(nc_exec --user www-data -- sh -c 'cd /var/www/html/custom_apps 2>/dev/null && for d in */; do printf "%s\n" "${d%/}"; done' 2>/dev/null || true)"
 fi
 

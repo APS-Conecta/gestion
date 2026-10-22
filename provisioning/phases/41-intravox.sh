@@ -20,7 +20,7 @@
 # asking for its menu entry, not a merge. Template evolution still ships as NEW sections/pages.
 #
 # Runs after 40-acl.sh by numbering: needs phase-20 groups (step 3), the enabled app (phase 12 —
-# lab clone during the lab period, vendored after promotion), and groupfolders (APPS). Ungated
+# lab clone during the lab period, vendored after promotion), and groupfolders (phase 12). Ungated
 # (< 50) by design: every clinic seeds its welcome screen (FR-5) — welcome structure is not a
 # fixture. Zero new identity variables: the identity block (site.sh:9-14) carries every value
 # substituted here (D3); the tree's shape is SITE_WELCOME (ADR-0019).
@@ -31,14 +31,14 @@ for _v in SITE_NOMBRE SITE_NOMBRE_CORTO SITE_DIRECCION SITE_COMUNA SITE_SERVICIO
   [ -n "${!_v:-}" ] || { echo "FATAL: sites/$SITE/site.sh carries no $_v — the welcome payload substitutes it (D3). Regenerate the site file (scripts/deis.py <codigo> --new <slug>) or add the line by hand." >&2; exit 1; }
 done
 
-# App-state guard, declare-driven (the declaration, not a probe, is the truth — 12-apps.sh:55-59
-# class): undeclared on this install → the loud clinic skip (lab period); declared but not
-# enabled → a broken checkout, FATAL. LAB_APPS is sourced HERE, guarded — 12-apps.sh loads it
-# inside its own subshell, which is dead by the time this phase runs (divergence.sh:158 sources
-# it the same explicit way); without this line the lab would always take the clinic skip.
+# App-state guard, declare-driven (the declaration, not a probe, is the truth): absent from the
+# suite manifest and from LAB_APPS → the loud skip; declared but not enabled → a broken checkout,
+# FATAL. LAB_APPS is sourced HERE, guarded — 12-apps.sh loads it inside its own subshell, which is
+# dead by the time this phase runs; without this line the lab would always take the skip.
 [ -f dev/lab-apps.sh ] && . dev/lab-apps.sh
-_declared="$( { sed -n 's/^OWN_APPS="\(.*\)"/\1/p' provisioning/phases/12-apps.sh
-                printf '%s\n' "${LAB_APPS:-}"; } | tr ' ' '\n' | sed 's/=.*//' | grep -x intravox || true)"
+_ids="$(python3 "$HERE/../scripts/apps.py" ids)" \
+  || { echo "FATAL: could not read the suite manifest (apps.json) — scripts/apps.py says why above" >&2; exit 1; }
+_declared="$(printf '%s\n' "$_ids" "${LAB_APPS:-}" | tr ' ' '\n' | sed 's/=.*//' | grep -x intravox || true)"
 if [ -z "$_declared" ]; then
   log "  intravox not shipped to this install — nothing to seed (lab period on clinics; defaultapp stays dashboard,files)"
   phase_end
