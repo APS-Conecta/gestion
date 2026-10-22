@@ -38,7 +38,15 @@ on:
   # is the runner image and the actions. `image-digests` reports the other half an hour earlier.
   schedule:
     - cron: "0 6 * * 1"          # Mondays 06:00 UTC
+  # An image-changing PR reaches clean boot through a rehearsal tag (#27): the dispatch names it, and
+  # both jobs install that tag's images instead of the pinned release.
   workflow_dispatch:
+    inputs:
+      suite-tag:
+        description: "The suite tag whose images both jobs install (a rehearsal: v0.0.0-ci.N). Empty: the tag scripts/aio-testbed.sh pins."
+        required: false
+        default: ""
+        type: string
 
 # The event is part of the group, so a push can only ever cancel another push. Without it, the
 # weekly clean boot and ordinary pushes to main shared one group: merge a PR while Monday's
@@ -71,11 +79,41 @@ concurrency:
 # caught on its PR. It cannot be a REQUIRED check (branch protection needs GitHub Pro or a public
 # repo), so the red X is advisory — exactly why the trigger matters: visibility is the mechanism.
 
-# on:, schedule:, workflow_dispatch: and concurrency: are UNCHANGED (on disk).
-
 jobs:
+  # The suite tag, resolved once for both jobs, and before either: a tag ghcr.io does not have stops
+  # the run here, in seconds, instead of fifteen minutes into a bring-up.
+  suite-tag:
+    name: Suite tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: The suite tag both jobs install — the dispatch's, else the pinned release
+        id: tag
+        env:
+          DISPATCH_TAG: ${{ inputs.suite-tag }}
+        run: |
+          # The pin takes any tag; the regex is the one judge, before docker sees the tag:
+          # ci-YYYYMMDD-N (the old rehearsal tags), vX.Y.Z (a release) or vX.Y.Z-ci.N (the image
+          # pipeline's rehearsal).
+          tag="$(sed -nE 's/^IMAGE="\$\{AIO_TEST_IMAGE:-ghcr\.io\/aps-conecta\/all-in-one:([^}]+)\}"$/\1/p' scripts/aio-testbed.sh)"
+          [ -z "$DISPATCH_TAG" ] || tag="$DISPATCH_TAG"
+          [[ "$tag" =~ ^(ci-[0-9]{8}-[0-9]+|v[0-9]+\.[0-9]+\.[0-9]+(-ci\.[0-9]+)?)$ ]] \
+            || { echo "FATAL: «$tag» is not one suite tag — the dispatch's suite-tag, else the pin in scripts/aio-testbed.sh" >&2; exit 1; }
+          # the mastercontainer's tag names all twenty images (%AIO_CHANNEL%): its manifest is the tag's
+          docker manifest inspect "ghcr.io/aps-conecta/all-in-one:$tag" >/dev/null \
+            || { echo "FATAL: suite tag $tag not found or unreachable: ghcr.io/aps-conecta/all-in-one:$tag" >&2; exit 1; }
+          echo "suite tag: $tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
   cleanboot:
     name: Clean boot
+    needs: suite-tag
     # THE RUNNER DECISION (S8, this slice — the commitment the artifact's Decisions and
     # Performance rows deferred here "with evidence from the probe"): GitHub-hosted ubuntu-latest
     # ADOPTED. The margins, from the probe's own measured numbers: the harness's RAM floor is
@@ -109,6 +147,9 @@ jobs:
       # http://localhost:${HTTP_PORT} with zero HTTP-surface changes. The port is
       # docker-transport-only by design.
       AIO_TEST_APACHE_PORT: "11000"
+      # The testbed's mastercontainer, at the suite tag resolved above; its siblings follow its tag.
+      AIO_TEST_IMAGE: ghcr.io/aps-conecta/all-in-one:${{ needs.suite-tag.outputs.tag }}
+      SUITE_TAG: ${{ needs.suite-tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -231,6 +272,10 @@ jobs:
             bash /opt/aps-conecta/instalador/host/aps-conecta install \
               --sitio "$RUNNER_TEMP/site.sh" --planilla "$RUNNER_TEMP/usuarios.csv" \
             < /dev/null | tee "$RUNNER_TEMP/install.out"
+      # #44 on a whole install, before the smoke below (#57): the database runs the suite tag's own image,
+      # and on a tag that carries buscador's database it is ready for buscador
+      - name: The database is ready for buscador, on the suite tag's own image
+        run: bash /opt/aps-conecta/instalador/scripts/cleanboot-db.sh "$SUITE_TAG"
       # a9 on real systemd: the silent install installed its unit and enabled the weekly timer, on
       # Santiago time; the retired monthly map timer is not there, enabled or not (a fresh install
       # never had one — an upgraded host is retire_tile_remnants' case, self-tested in the host bundle)
@@ -503,6 +548,7 @@ jobs:
 
   cleanboot-ip:
     name: Clean boot by IP
+    needs: suite-tag
     # a19's automatable arm: a clinic without a domain, installed the way any machine installs it — the
     # silent command alone, no testbed. The install starts the suite itself, by this runner's own
     # address (detected, never written down), served on 443 with the installer's own certificate. The
@@ -510,6 +556,8 @@ jobs:
     # install's default), so the pulls are the domain job's.
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      SUITE_TAG: ${{ needs.suite-tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -563,25 +611,24 @@ jobs:
           [ -n "$ip" ] || { echo "FATAL: no routed IPv4 address on this runner" >&2; exit 1; }
           echo "SUITE_IP=$ip" >> "$GITHUB_ENV"
           bash /opt/aps-conecta/instalador/scripts/cleanboot-site.sh "$ip" "$RUNNER_TEMP"
-      # The silent install, as root, with no terminal. The suite tag is the testbed's one pin, so both
-      # jobs run the same published suite.
+      # The silent install, as root, with no terminal. The suite tag is the one the «suite-tag» job
+      # resolved, so both jobs run the same published suite.
       - name: Install by IP through the silent command a clinic runs
         run: |
           set -o pipefail   # run: is `bash -e` without it — the install's own failure, not tee's
-          # The pin takes any tag; the regex is the one judge: ci-YYYYMMDD-N (the old rehearsal
-          # tags), vX.Y.Z (a release) or vX.Y.Z-ci.N (the image pipeline's rehearsal).
-          tag="$(sed -nE 's/^IMAGE="\$\{AIO_TEST_IMAGE:-ghcr\.io\/aps-conecta\/all-in-one:([^}]+)\}"$/\1/p' scripts/aio-testbed.sh)"
-          [[ "$tag" =~ ^(ci-[0-9]{8}-[0-9]+|v[0-9]+\.[0-9]+\.[0-9]+(-ci\.[0-9]+)?)$ ]] || { echo "FATAL: no single suite tag pinned in scripts/aio-testbed.sh" >&2; exit 1; }
-          # APS_SUITE_TAG: the package's VERSION is the throwaway rehearsal tag, but the
-          # mastercontainer this job CREATES must run a published image — the pinned ci tag
+          # APS_SUITE_TAG: the package's VERSION is this run's throwaway ci-cleanboot-<sha>, but the
+          # mastercontainer this job CREATES must run a published image — the resolved suite tag
           # (suite_tag() answers the override first; the rehearsal-window seam it exists for)
-          sudo env "PATH=$PATH" APS_SKIP_DATOS=1 MIN_DISK_GB=2 APS_SUITE_TAG="$tag" \
+          sudo env "PATH=$PATH" APS_SKIP_DATOS=1 MIN_DISK_GB=2 APS_SUITE_TAG="$SUITE_TAG" \
             bash /opt/aps-conecta/instalador/host/aps-conecta install \
               --sitio "$RUNNER_TEMP/site.sh" --planilla "$RUNNER_TEMP/usuarios.csv" \
             < /dev/null | tee "$RUNNER_TEMP/install.out"
       - name: Hand the checkout back to the runner
         if: always()
         run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+      # #44 on the suite this job started itself
+      - name: The database is ready for buscador, on the suite tag's own image
+        run: bash /opt/aps-conecta/instalador/scripts/cleanboot-db.sh "$SUITE_TAG"
       # a19: https://<ip>/ answers with the installer's certificate — trusted through its CA, refused
       # without it (curl 60: the peer's certificate is not trusted) — the install ends naming the CA,
       # and a planilla user logs in. The CA is copied out as the operator would (its directory is

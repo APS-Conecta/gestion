@@ -769,26 +769,40 @@ check bash -c '
   case "$out" in "docker run"*) ;; *) echo "run-command printed no docker run string: $out" >&2; exit 1 ;; esac
   ! grep -q "APS_TILES_""DIR" <<<"$out"'
 
-# Clean boot (by IP) reads the suite tag out of scripts/aio-testbed.sh's one pin and refuses anything but a
-# published form: the rehearsal's ci-YYYYMMDD-N, a release vX.Y.Z, or the pipeline's rehearsal vX.Y.Z-ci.N.
-# The two lines are extracted from the workflow and run here over a fixture testbed: each accepted form
-# yields its tag, and no pin, two pins, a floating tag or a smuggled shell word each fail.
+# Clean boot resolves its suite tag once, in the «suite-tag» job: the dispatch's suite-tag input, else
+# scripts/aio-testbed.sh's one pin, judged by one regex before docker sees it — the rehearsal's ci-YYYYMMDD-N,
+# a release vX.Y.Z, or the pipeline's rehearsal vX.Y.Z-ci.N — then looked up on ghcr.io. The step is extracted
+# from the workflow and run here over a fixture testbed and a stubbed docker: each accepted form reaches
+# GITHUB_OUTPUT after one manifest lookup of its own tag; no pin, two pins, a floating tag or a smuggled shell
+# word are refused with no docker call; a tag ghcr.io does not have fails, and the FATAL names it.
 cleanboot_suite_tag_cases() {
-  local lines tmp got kind val want
-  lines="$(grep -E '^ +(tag="\$\(sed -nE? .s/\^IMAGE=|\[\[ "\$tag" =~ )' .github/workflows/cleanboot.yml | sed 's/^ *//')"
-  [ "$(printf '%s\n' "$lines" | wc -l)" -eq 2 ] || { echo "cleanboot: the suite-tag pin check was not found exactly once" >&2; return 1; }
+  local script tmp got calls kind val want input
+  script="$(awk '/- name: The suite tag both jobs install/ {f=1; next}
+                 f && /run: \|/ {r=1; next}
+                 r && /^          / {sub(/^          /, ""); print; next}
+                 r {exit}' .github/workflows/cleanboot.yml)"
+  [ -n "$script" ] || { echo "cleanboot: the suite-tag step was not found" >&2; return 1; }
   tmp="$(mktemp -d)"; mkdir "$tmp/scripts"
   pin() { printf 'IMAGE="${AIO_TEST_IMAGE:-ghcr.io/aps-conecta/all-in-one:%s}"\n' "$1"; }
-  while IFS='|' read -r kind val want; do
+  while IFS='|' read -r kind val want input; do
     case "$kind" in
       one)  pin "$val" > "$tmp/scripts/aio-testbed.sh" ;;
       two)  { pin "$val"; pin ci-20261004-2; } > "$tmp/scripts/aio-testbed.sh" ;;
       none) printf 'IMAGE="${AIO_TEST_IMAGE:-nginx}"\n' > "$tmp/scripts/aio-testbed.sh" ;;
     esac
-    got="$( cd "$tmp" && eval "$lines" 2>/dev/null && printf %s "$tag" )"
+    : > "$tmp/out"; : > "$tmp/calls"
+    ( cd "$tmp" && GITHUB_OUTPUT="$tmp/out" DISPATCH_TAG="$input" bash -e -c '
+        docker() { printf "%s\n" "$*" >> calls
+          case "$*" in *:v0.0.0-ci.99) echo "manifest unknown" >&2; return 1 ;; esac; }
+        eval "$1"' _ "$script" ) >/dev/null 2>"$tmp/err"
+    got="$(sed -n 's/^tag=//p' "$tmp/out")"; calls="$(cat "$tmp/calls")"
     case "$want" in
-      fail) [ -z "$got" ] || { echo "cleanboot: $kind '$val' should be refused, got '$got'" >&2; rm -rf "$tmp"; return 1; } ;;
-      *)    [ "$got" = "$want" ] || { echo "cleanboot: $kind '$val' expected '$want', got '$got'" >&2; rm -rf "$tmp"; return 1; } ;;
+      fail)   [ -z "$got" ] && [ -z "$calls" ] \
+                || { echo "cleanboot: $kind '$val' input '$input' should be refused before docker, got '$got', docker: $calls" >&2; rm -rf "$tmp"; return 1; } ;;
+      absent) [ -z "$got" ] && grep -q "FATAL.*$input" "$tmp/err" \
+                || { echo "cleanboot: input '$input' is not on ghcr.io — expected a FATAL naming it, got '$got'" >&2; rm -rf "$tmp"; return 1; } ;;
+      *)      [ "$got" = "$want" ] && [ "$calls" = "manifest inspect ghcr.io/aps-conecta/all-in-one:$want" ] \
+                || { echo "cleanboot: $kind '$val' input '$input' expected '$want', got '$got', docker: $calls" >&2; rm -rf "$tmp"; return 1; } ;;
     esac
   done <<'CASES'
 one|ci-20261004-2|ci-20261004-2
@@ -803,6 +817,11 @@ one|v0.4|fail
 one|v0.4.0-|fail
 one|ci-2026-1|fail
 one|v0.4.0;touch x|fail
+one|v0.4.0|v0.0.0-ci.8|v0.0.0-ci.8
+none|x|v0.0.0-ci.8|v0.0.0-ci.8
+one|v0.4.0|fail|latest
+one|v0.4.0|fail|v0.4.0;touch x
+one|v0.4.0|absent|v0.0.0-ci.99
 CASES
   rm -rf "$tmp"
 }
@@ -871,6 +890,53 @@ CASES
   rm -rf "$tmp"
 }
 check cleanboot_tile_url_cases
+
+# Both clean-boot jobs read the installed suite's database with scripts/cleanboot-db.sh (#44 on a whole install).
+# Run here over a stubbed docker: a ready database passes; no tag, the wrong image, vector missing, a buscador
+# role missing or able to log in when it must not, a worker privilege, or no relation read at all each fail;
+# a database image without /aps-roles.sh (a tag older than #44) passes with a notice naming the tag, but only
+# once psql has answered.
+cleanboot_db_cases() {
+  local tag img ext roles priv roles_sh down want out rc
+  local ok_img=ghcr.io/aps-conecta/aio-postgresql:v0.0.0-ci.8
+  while IFS='|' read -r tag img ext roles priv roles_sh down want; do
+    [ "$img" != ok ] || img="$ok_img"
+    out="$(IMG="$img" EXT="$ext" ROLES="$roles" PRIV="$priv" ROLES_SH="$roles_sh" DOWN="$down" bash -c '
+        docker() {
+          case "$1" in
+            inspect) [ -n "$IMG" ] && printf "%s\n" "$IMG" ;;
+            exec) case "$*" in
+                *"test -e /aps-roles.sh"*) [ "$ROLES_SH" = yes ] ;;
+                *pg_extension*) [ "$DOWN" != yes ] && printf "%s\n" "$EXT" ;;
+                *pg_roles*) [ "$DOWN" != yes ] && printf "%s\n" "$ROLES" ;;
+                *has_table_privilege*) [ "$DOWN" != yes ] && printf "%s\n" "$PRIV" ;;
+                *) return 3 ;;
+              esac ;;
+            *) return 3 ;;
+          esac; }
+        export -f docker
+        bash scripts/cleanboot-db.sh "$1"' _ "$tag" 2>&1)"; rc=$?
+    case "$want" in
+      pass)   [ "$rc" -eq 0 ] && ! grep -q '::notice::' <<<"$out" ;;
+      notice) [ "$rc" -eq 0 ] && grep -q "::notice::.*$tag" <<<"$out" ;;
+      fail)   [ "$rc" -ne 0 ] ;;
+    esac || { printf 'cleanboot-db: tag=%s img=%s ext=%s roles=%s priv=%s aps-roles=%s down=%s expected %s, got rc=%s:\n%s\n' \
+                "$tag" "$img" "$ext" "$roles" "$priv" "$roles_sh" "$down" "$want" "$rc" "$out" >&2; return 1; }
+  done <<'CASES'
+v0.0.0-ci.8|ok|plpgsql unaccent vector|bd_owner:false bd_worker:true|0 152|yes|no|pass
+|ok|plpgsql unaccent vector|bd_owner:false bd_worker:true|0 152|yes|no|fail
+v0.0.0-ci.8|ghcr.io/aps-conecta/aio-postgresql:v0.4.0|plpgsql unaccent vector|bd_owner:false bd_worker:true|0 152|yes|no|fail
+v0.0.0-ci.8||plpgsql unaccent vector|bd_owner:false bd_worker:true|0 152|yes|no|fail
+v0.0.0-ci.8|ok|plpgsql unaccent|bd_owner:false bd_worker:true|0 152|yes|no|fail
+v0.0.0-ci.8|ok|plpgsql unaccent vector|bd_owner:false|0 152|yes|no|fail
+v0.0.0-ci.8|ok|plpgsql unaccent vector|bd_owner:true bd_worker:true|0 152|yes|no|fail
+v0.0.0-ci.8|ok|plpgsql unaccent vector|bd_owner:false bd_worker:true|1 152|yes|no|fail
+v0.0.0-ci.8|ok|plpgsql unaccent vector|bd_owner:false bd_worker:true|0 0|yes|no|fail
+v0.0.0-ci.8|ok|plpgsql|||no|no|notice
+v0.0.0-ci.8|ok|plpgsql|||no|yes|fail
+CASES
+}
+check cleanboot_db_cases
 
 # --- the dump + uninstall detectors red-test themselves (docker daemon, no stack) -------------
 if docker info >/dev/null 2>&1; then
