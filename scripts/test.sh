@@ -723,6 +723,30 @@ OCC app:enable admin_audit" ] \
 }
 check app_enable_cases
 
+# A boolean system key converges: config:list stores session_keepalive as JSON false and conf_get
+# renders it "" (occ's own rendering), so a setter that compares that against the word "false"
+# writes on every seed and seed-idempotent reddens. Stored false -> no write; absent or true -> one.
+config_system_bool_cases() {
+  local cache want out
+  while IFS='|' read -r cache want; do
+    out="$(CALLS="$(mktemp)" CACHE="$cache" bash -c '
+      . scripts/env.sh; . provisioning/lib.sh
+      CONF_CACHE="$CACHE"
+      occ() { printf "OCC %s\n" "$*" >> "$CALLS"; }
+      log() { :; }
+      config_system_set session_keepalive false boolean; cat "$CALLS"; rm -f "$CALLS"' 2>&1)"
+    case "$want" in
+      none) [ -z "$out" ] ;;
+      write) [ "$out" = "OCC config:system:set session_keepalive --type=boolean --value=false" ] ;;
+    esac || { echo "config_system_set: cache $cache expected $want, got: $out" >&2; return 1; }
+  done <<'CASES'
+{"system": {"session_keepalive": false}}|none
+{"system": {}}|write
+{"system": {"session_keepalive": true}}|write
+CASES
+}
+check config_system_bool_cases
+
 # The café case above is behavioural, and load-bearing only under a COLLATING locale — which a
 # Chilean dev has and GitHub's runners do not, defaulting to C.UTF-8 where that range refuses `é`
 # anyway. So CI stays green on a revert, and CI is the only mechanical gate (AGENTS.md). This is
