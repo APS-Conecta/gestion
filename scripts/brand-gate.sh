@@ -936,7 +936,7 @@ row 239 "apache serves the suite's basemap same-origin at /tiles/ — APS_TILES_
 
 modern_tls() {  # 250: modern TLS only — the mastercontainer's ACME and internal listeners pin
   # protocols tls1.2 tls1.3 as their tls block's first directive, and apache's start.sh adds the
-  # same pin after the stanza, on 443 only (an http listener takes no TLS policy);
+  # same pin into the stanza in a second pass, on 443 only (an http listener takes no TLS policy);
   # nothing older negotiates on any ingress. The floor landed on main as ead3eb6e and rode
   # the queue into the tree — committed bytes now, measured like every row's subject.
   local fail=0 f

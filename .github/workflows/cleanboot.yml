@@ -330,6 +330,7 @@ jobs:
           stats = [json.loads(ln) for ln in
                    run("docker", "stats", "--no-stream", "--format", "{{json .}}", *names).splitlines()
                    if ln.strip()] if names else []
+          # df's header is 8 words for 7 columns ("Mounted on"): the names are ours, never read back from it.
           campos = ("source", "fstype", "size", "used", "avail", "pcent", "target")
           lineas = run("df", "-B1", "--output=" + ",".join(campos), "/", "/var/lib/docker").splitlines()
           disco, vistos = [], set()
