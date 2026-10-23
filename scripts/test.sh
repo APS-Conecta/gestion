@@ -309,6 +309,134 @@ if bad:
     for line in bad:
         print("  " + line)
     sys.exit(1)'
+# --- gate: a new file in the fork's namespaces carries an SPDX header (#63) ---------------------
+# AGENTS.md's inherited rule ("new fork-owned scripts carry an SPDX header") met 46 of them
+# without one, so every PR asked its reviewer to weigh the rule against precedent (#30's retro).
+# The owner's call on #63: enforce for files added from now on, fork namespaces only — the same
+# namespaces the lint and errexit sweeps own, upstream's shell staying upstream's, and, because
+# the rule names scripts, over .sh and .py both; other files (.json, .conf, docs) stay out.
+# SPDX_BASELINE freezes the headerless scripts that predate the decision, so main is green by
+# construction and the row reds only on a file it has never seen: a tracked one without the
+# header line and not on the list. When a baseline file gains its header, drop its line here;
+# an exception is a baseline extension in a commit that says why — never a silent row-weakening.
+SPDX_BASELINE='
+install.sh
+provisioning/app-policy.sh
+provisioning/intravox/render.py
+provisioning/lib.sh
+provisioning/phases/05-security.sh
+provisioning/phases/06-jobs.sh
+provisioning/phases/07-certs.sh
+provisioning/phases/10-locale.sh
+provisioning/phases/12-apps.sh
+provisioning/phases/14-office.sh
+provisioning/phases/15-branding.sh
+provisioning/phases/16-app-policy.sh
+provisioning/phases/20-groups.sh
+provisioning/phases/30-folders.sh
+provisioning/phases/40-acl.sh
+provisioning/phases/41-intravox.sh
+provisioning/phases/50-users.sh
+provisioning/phases/60-fixtures.sh
+provisioning/seed.sh
+provisioning/standings.sh
+provisioning/usuarios.sh
+scripts/acquisition-gate.sh
+scripts/aio-testbed.sh
+scripts/bake.sh
+scripts/brand-gate.sh
+scripts/cleanboot-site.sh
+scripts/comuna-package.sh
+scripts/db-dump.sh
+scripts/deis.py
+scripts/divergence.sh
+scripts/env-init.sh
+scripts/env.sh
+scripts/install.sh
+scripts/lockup.py
+scripts/migrate-to-aio.sh
+scripts/office-smoke.sh
+scripts/package-release.sh
+scripts/provisionador.py
+scripts/rename-containers.py
+scripts/retag.sh
+scripts/seed-idempotent.sh
+scripts/smoke.sh
+scripts/test.sh
+scripts/uninstall.sh
+scripts/validate.sh
+scripts/wait-ready.sh
+'
+spdx_offenders() {
+  # every argument that neither carries the header line nor sits on the frozen baseline
+  local f
+  for f in "$@"; do
+    grep -qxF "$f" <<<"$SPDX_BASELINE" && continue
+    grep -qx "# SPDX-License-Identifier: AGPL-3.0-or-later" "$f" || printf "%s\n" "$f"
+  done
+}
+spdx_header_row() {
+  local off
+  off="$(spdx_offenders $(git ls-files "*.sh" "*.py" | grep -E '^scripts/|^provisioning/|^host/|^install\.sh$'))"
+  [ -z "$off" ] || { printf "tracked scripts lacking an SPDX header and not on the #63 baseline:\n%s\n" "$off" >&2; return 1; }
+}
+check spdx_header_row
+# The baseline's own gate (the seed-idempotent lesson: an allowlist that can rot must not rot
+# silently). spdx_header_row pins one direction — every tracked script is headered or on the
+# baseline; this pins the other — every baseline line still names a tracked, headerless script.
+# Together they make baseline ≡ the headerless set, so green on main cannot erode: a line left
+# behind by a rename or a deletion, or by a file that gained its header, reds here instead of
+# rotting, and a line appended that names nothing real reds on the spot.
+spdx_baseline_row() {
+  local line
+  local -a dead=()
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    if ! git ls-files -- "$line" | grep -qx "$line"; then
+      dead+=("$line (no longer a tracked file)")
+    elif grep -qx "# SPDX-License-Identifier: AGPL-3.0-or-later" "$line"; then
+      dead+=("$line (has the header — drop its baseline line)")
+    fi
+  done <<<"$SPDX_BASELINE"
+  [ ${#dead[@]} -eq 0 ] || { printf 'SPDX_BASELINE lines that no longer name a headerless tracked script:\n' >&2; printf '%s\n' "${dead[@]}" >&2; return 1; }
+}
+check spdx_baseline_row
+# The detector's own gate (the AGNOSTIC_SHAPE lesson: a row whose detector cannot go red is not a
+# row). The same spdx_offenders bytes the row runs, over a fabricated corpus: a new unheadered
+# script is the one offender; a baseline member without the header and a newcomer WITH it are not.
+spdx_offenders_cases() {
+  local tmp off
+  tmp="$(mktemp -d)"
+  printf "#!/usr/bin/env bash\necho hi\n" > "$tmp/new.sh"
+  printf "#!/usr/bin/env bash\n" > "$tmp/old.sh"
+  printf "#!/usr/bin/env bash\n# SPDX-FileCopyrightText: 2026 APS Conecta\n# SPDX-License-Identifier: AGPL-3.0-or-later\necho hi\n" > "$tmp/headered.sh"
+  off="$(SPDX_BASELINE="$tmp/old.sh" spdx_offenders "$tmp/new.sh" "$tmp/old.sh" "$tmp/headered.sh")"
+  rm -rf "$tmp"
+  [ "$off" = "$tmp/new.sh" ] \
+    || { echo "spdx detector: expected exactly the new unheadered script, got: $off" >&2; return 1; }
+}
+check spdx_offenders_cases
+# And the baseline row's red test, in a scratch git tree so "tracked" is real: a frozen line
+# naming a tracked headerless script passes; a line for a file that gained its header, and one
+# for a file that is gone, both red — each named with its cause.
+spdx_baseline_cases() {
+  local tmp out
+  tmp="$(mktemp -d)"
+  printf "#!/usr/bin/env bash\n" > "$tmp/old.sh"
+  printf "#!/usr/bin/env bash\n# SPDX-License-Identifier: AGPL-3.0-or-later\n" > "$tmp/gained.sh"
+  if ! ( cd "$tmp" && git init -q . && git add old.sh gained.sh \
+         && SPDX_BASELINE="old.sh" spdx_baseline_row ); then
+    rm -rf "$tmp"; echo "spdx baseline: a frozen line naming a tracked headerless script red" >&2; return 1
+  fi
+  out="$( cd "$tmp" && SPDX_BASELINE="old.sh
+gained.sh
+gone.sh" spdx_baseline_row 2>&1 )"
+  rm -rf "$tmp"
+  printf '%s\n' "$out" | grep -q "gained.sh (has the header — drop its baseline line)" \
+    && printf '%s\n' "$out" | grep -q "gone.sh (no longer a tracked file)" \
+    || { echo "spdx baseline: a gained header or a vanished file did not red with its cause: $out" >&2; return 1; }
+}
+check spdx_baseline_cases
 # The AIA URI is read out of a REMOTE certificate over an unverified handshake, so it is
 # attacker-chosen input that used to be interpolated into a `sh -c` string. The strip that
 # looked like a mitigation (`tr -d '[:space:]'`) is not one: a payload needs no whitespace.
