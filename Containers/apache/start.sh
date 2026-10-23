@@ -94,8 +94,14 @@ else
         echo "APS_TLS_DIR is mounted, but its tls.crt and tls.key are not both readable by uid $(id -u) or APACHE_PORT is not 443: the ACME issuer stays"
     fi
 fi
-CADDYFILE="$(sed -e "s|# tls placeholder|$TLS_STANZA|" -e "s|# default_sni placeholder|$DEFAULT_SNI|" -e 's|issuer acme {|protocols tls1.2 tls1.3\n\t\tissuer acme {|' /tmp/Caddyfile)"
+CADDYFILE="$(sed -e "s|# tls placeholder|$TLS_STANZA|" -e "s|# default_sni placeholder|$DEFAULT_SNI|" /tmp/Caddyfile)"
 echo "$CADDYFILE" > /tmp/Caddyfile
+
+# An http listener takes no TLS policy: the floor goes only where the site is https.
+if [ "$APACHE_PORT" = '443' ]; then
+    CADDYFILE="$(sed 's|issuer acme {|protocols tls1.2 tls1.3\n\t\tissuer acme {|' /tmp/Caddyfile)"
+    echo "$CADDYFILE" > /tmp/Caddyfile
+fi
 
 # Fix the Caddyfile format
 caddy fmt --overwrite /tmp/Caddyfile

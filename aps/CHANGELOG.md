@@ -19,6 +19,9 @@ image digests live there and are deliberately not copied here — one fact, one 
   `admin_audit` app via the new idempotent `app_enable` helper. Encryption at rest
   (`encryption.enabled`) was deliberately not ported: it needs `occ encryption:enable` and a
   key-management decision, with backup, group-folder and Office consequences.
+- Apache starts again behind a reverse proxy (`APACHE_PORT` other than 443). v0.4.0 pinned TLS 1.2/1.3 on
+  every listener, and Caddy refuses a TLS policy on a plain-http one («server listening on [:11000] is
+  HTTP»); the pin now applies on 443 only.
 
 ### Added
 
