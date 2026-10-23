@@ -935,8 +935,8 @@ row 239 "apache serves the suite's basemap same-origin at /tiles/ — APS_TILES_
   tiles_route
 
 modern_tls() {  # 250: modern TLS only — the mastercontainer's ACME and internal listeners pin
-  # protocols tls1.2 tls1.3 as their tls block's first directive, and apache's runtime stanza
-  # (235's # tls placeholder mechanism) carries the same pin in start.sh's ACME TLS_STANZA;
+  # protocols tls1.2 tls1.3 as their tls block's first directive, and apache's start.sh adds the
+  # same pin into the stanza in a second pass, on 443 only (an http listener takes no TLS policy);
   # nothing older negotiates on any ingress. The floor landed on main as ead3eb6e and rode
   # the queue into the tree — committed bytes now, measured like every row's subject.
   local fail=0 f
@@ -945,11 +945,12 @@ modern_tls() {  # 250: modern TLS only — the mastercontainer's ACME and intern
       || { echo "  $f does not pin 'protocols tls1.2 tls1.3' exactly once in its tls block" >&2; fail=1; }
   done
   [ "$(grep -cF 'protocols tls1.2 tls1.3' "$TREE/Containers/apache/start.sh" 2>/dev/null)" -eq 1 ] \
-    || { echo "  apache's TLS_STANZA (start.sh) does not pin protocols tls1.2 tls1.3 exactly once" >&2; fail=1; }
+    && grep -A1 -xF "if [ \"\$APACHE_PORT\" = '443' ]; then" "$TREE/Containers/apache/start.sh" | grep -qF 'protocols tls1.2 tls1.3' \
+    || { echo "  apache's start.sh does not pin protocols tls1.2 tls1.3 exactly once, inside the APACHE_PORT = 443 guard — an http listener takes no TLS policy and Caddy refuses the config" >&2; fail=1; }
   [ "$fail" -eq 0 ]
 }
 
-row 250 "modern TLS only on every ingress — the mastercontainer's ACME and internal listeners pin protocols tls1.2 tls1.3 in their tls blocks and apache's runtime ACME stanza (start.sh, 235's placeholder) carries the same pin; nothing older negotiates (ead3eb6e's security floor, queue-moved by the parity fence)" \
+row 250 "modern TLS only on every ingress — the mastercontainer's ACME and internal listeners pin protocols tls1.2 tls1.3 in their tls blocks and apache's runtime ACME stanza (start.sh, 235's placeholder) carries the same pin on 443; nothing older negotiates (ead3eb6e's security floor, queue-moved by the parity fence)" \
   modern_tls
 
 buscador_db() {  # 260: the database image ships pgvector (pinned by hash) and aps-roles.sh; start.sh

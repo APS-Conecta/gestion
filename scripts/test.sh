@@ -723,6 +723,30 @@ OCC app:enable admin_audit" ] \
 }
 check app_enable_cases
 
+# A boolean system key converges: config:list stores session_keepalive as JSON false and conf_get
+# renders it "" (occ's own rendering), so a setter that compares that against the word "false"
+# writes on every seed and seed-idempotent reddens. Stored false -> no write; absent or true -> one.
+config_system_bool_cases() {
+  local cache want out
+  while IFS='|' read -r cache want; do
+    out="$(CALLS="$(mktemp)" CACHE="$cache" bash -c '
+      . scripts/env.sh; . provisioning/lib.sh
+      CONF_CACHE="$CACHE"
+      occ() { printf "OCC %s\n" "$*" >> "$CALLS"; }
+      log() { :; }
+      config_system_set session_keepalive false boolean; cat "$CALLS"; rm -f "$CALLS"' 2>&1)"
+    case "$want" in
+      none) [ -z "$out" ] ;;
+      write) [ "$out" = "OCC config:system:set session_keepalive --type=boolean --value=false" ] ;;
+    esac || { echo "config_system_set: cache $cache expected $want, got: $out" >&2; return 1; }
+  done <<'CASES'
+{"system": {"session_keepalive": false}}|none
+{"system": {}}|write
+{"system": {"session_keepalive": true}}|write
+CASES
+}
+check config_system_bool_cases
+
 # The café case above is behavioural, and load-bearing only under a COLLATING locale — which a
 # Chilean dev has and GitHub's runners do not, defaulting to C.UTF-8 where that range refuses `é`
 # anyway. So CI stays green on a revert, and CI is the only mechanical gate (AGENTS.md). This is
@@ -909,6 +933,31 @@ CASES
   rm -rf "$tmp"
 }
 check cleanboot_tile_url_cases
+
+# The usage record's python, out of cleanboot.yml and over a stub df that prints GNU's real header
+# (8 words for 7 columns), a source seen twice and a mount point with a space: the record is
+# written, one row per source, each named by the columns asked for.
+cleanboot_usage_cases() {
+  local py tmp rc
+  py="$(awk '/- name: The measured usage/ {f=1; next}
+             f && /<<.PY.$/ {r=1; next}
+             r && /^ *PY$/ {exit}
+             r {sub(/^          /, ""); print}' .github/workflows/cleanboot.yml)"
+  [ -n "$py" ] || { echo "cleanboot: the usage record's python was not found" >&2; return 1; }
+  tmp="$(mktemp -d)"; mkdir "$tmp/bin"
+  printf '#!/bin/sh\nexit 0\n' > "$tmp/bin/docker"
+  printf '#!/bin/sh\nprintf "%%s\\n" "Filesystem Type 1B-blocks Used Avail Use%% Mounted on" "/dev/sda1 ext4 100 40 60 40%% /" "/dev/sda1 ext4 100 40 60 40%% /var/lib/docker" "/dev/sdb1 ext4 100 10 90 10%% /mnt/with space"\n' > "$tmp/bin/df"
+  chmod +x "$tmp/bin/docker" "$tmp/bin/df"
+  PATH="$tmp/bin:$PATH" python3 - "$tmp/uso.json" <<<"$py" >/dev/null 2>&1; rc=$?
+  python3 -c '
+import json, sys
+disco = json.load(open(sys.argv[1], encoding="utf-8"))["disco"]
+assert len(disco) == 2 and all("source" in d and "target" in d for d in disco), disco
+assert disco[1]["target"] == "/mnt/with space", disco' "$tmp/uso.json" >/dev/null 2>&1 && [ "$rc" -eq 0 ] \
+    || { echo "cleanboot: the usage record was not written as one row per source (rc=$rc)" >&2; rm -rf "$tmp"; return 1; }
+  rm -rf "$tmp"
+}
+check cleanboot_usage_cases
 
 # Both clean-boot jobs read the installed suite's database with scripts/cleanboot-db.sh (#44 on a whole install).
 # Run here over a stubbed docker: a ready database passes; no tag, the wrong image, vector missing, a buscador

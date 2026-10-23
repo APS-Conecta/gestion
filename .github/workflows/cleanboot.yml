@@ -330,11 +330,12 @@ jobs:
           stats = [json.loads(ln) for ln in
                    run("docker", "stats", "--no-stream", "--format", "{{json .}}", *names).splitlines()
                    if ln.strip()] if names else []
-          lineas = run("df", "-B1", "--output=source,fstype,size,used,avail,pcent,target",
-                       "/", "/var/lib/docker").splitlines()
-          cabe, disco, vistos = lineas[0].split(), [], set()
+          # df's header is 8 words for 7 columns ("Mounted on"): the names are ours, never read back from it.
+          campos = ("source", "fstype", "size", "used", "avail", "pcent", "target")
+          lineas = run("df", "-B1", "--output=" + ",".join(campos), "/", "/var/lib/docker").splitlines()
+          disco, vistos = [], set()
           for ln in lineas[1:]:
-              fila = dict(zip(cabe, ln.split(None, len(cabe) - 1)))
+              fila = dict(zip(campos, ln.split(None, len(campos) - 1)))
               if fila["source"] not in vistos:
                   vistos.add(fila["source"]); disco.append(fila)
           try:
@@ -520,7 +521,8 @@ jobs:
         if: failure()
         run: |
           docker ps -a --filter name=^aps-conecta- --filter name=^nextcloud-aio-mastercontainer$ --format 'table {{.Names}}\t{{.Status}}'
-          docker logs --tail=100 aps-conecta-nextcloud
+          docker logs --tail=100 aps-conecta-apache || true
+          docker logs --tail=100 aps-conecta-nextcloud || true
           sudo tail -n 100 /opt/aps-conecta/instalacion.log || true
       # `make install` prints phase names and sends the detail to .install.log, so without this
       # the one job that exists to catch a broken install cannot show what broke — #96 was
