@@ -520,7 +520,8 @@ jobs:
         if: failure()
         run: |
           docker ps -a --filter name=^aps-conecta- --filter name=^nextcloud-aio-mastercontainer$ --format 'table {{.Names}}\t{{.Status}}'
-          docker logs --tail=100 aps-conecta-nextcloud
+          docker logs --tail=100 aps-conecta-apache || true
+          docker logs --tail=100 aps-conecta-nextcloud || true
           sudo tail -n 100 /opt/aps-conecta/instalacion.log || true
       # `make install` prints phase names and sends the detail to .install.log, so without this
       # the one job that exists to catch a broken install cannot show what broke — #96 was
