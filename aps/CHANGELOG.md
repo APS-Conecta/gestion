@@ -11,6 +11,8 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-10-23
+
 ### Fixed
 
 - Ported gestion `3b62c24` to the package, which had landed only in gestion's frozen copy of the
