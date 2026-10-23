@@ -45,12 +45,13 @@ half-signed.
 
 ## 3. The release commit
 
-Three files, one commit, all saying the same tag (the CLI's self-test pins it; the release job
+Four places, one commit, all saying the same tag (the CLI's self-test pins it; the release job
 asserts it):
 
 1. `VERSION` — the tag, one line.
 2. `install.sh`'s `BUNDLE_TAG` — the same tag.
-3. `aps/CHANGELOG.md` — the dated `## [X.Y.Z]` entry.
+3. `host/aps-conecta`'s `BUNDLE_TAG` — the same tag (the file on its own installs it).
+4. `aps/CHANGELOG.md` — the dated `## [X.Y.Z]` entry.
 
 ## 4. The frozen window
 
