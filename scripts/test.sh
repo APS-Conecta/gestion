@@ -13,8 +13,13 @@ fail=0
 check() { if "$@" >/dev/null 2>&1; then echo "  ok:   $*"; else echo "  FAIL: $*"; fail=1; fi; }
 
 echo "== static checks (no running stack needed) =="
+# The fork's shell namespace, spelled once for every row that walks it (the sweep below, the
+# dirname gate at #60's row). Unquoted on purpose: the words re-glob where they are used. The
+# comm tripwire a few lines down keeps its own literal copy deliberately — it is the alarm
+# that reds when this list and the tree drift apart.
+SHELL_NAMESPACE='scripts/*.sh provisioning/*.sh provisioning/phases/*.sh host/*.sh install.sh'
 linted=0
-for s in scripts/*.sh provisioning/*.sh provisioning/phases/*.sh host/*.sh install.sh; do
+for s in $SHELL_NAMESPACE; do
   [ -e "$s" ] || continue
   linted=$((linted + 1)); check bash -n "$s"
 done
@@ -46,6 +51,57 @@ check bash -c '
   bad=$(grep -rnE "(^|[;&[:space:]])(\$fns)([[:space:]][^|]*)?>[[:space:]]*/dev/null" \
           provisioning/phases/*.sh provisioning/seed.sh 2>/dev/null || true)
   [ -z "$bad" ] || { printf "%s\n" "$bad" >&2; exit 1; }'
+# --- gate (#60): dirname-of-self only where the caller's cwd still governs ----------------------
+# env.sh's first job is `cd "$(dirname "${BASH_SOURCE[0]}")/.."` — the repo root (env.sh §1).
+# A dirname of $0 evaluated on any LATER line resolves against the NEW cwd whenever the
+# script was started by a relative path, so it names a directory that is not the script's.
+# #30's first draft shipped exactly that twice (the smoke test and the divergence gate) and a
+# reviewer caught both; this row is the retro's ask — the gate reds on the class, not the
+# spelling. Position is the contract, and it is exact in both directions:
+#   - the sourcing line itself expands BEFORE env.sh runs;
+#   - lines before the first source still see the caller's cwd — the pre-computed HERE idiom
+#     (uninstall.sh:17, seed.sh:8) is absolute by the time env.sh moves, and usuarios.sh:36's
+#     own cd is pre-source by construction;
+#   - everything after the first source line must not self-locate by dirname. $BASH_SOURCE
+#     rides the same rule: launched relatively, it is exactly as relative as $0.
+# Subjects are discovered by the source line itself, over the lint sweep's namespace, so a
+# script that starts sourcing env.sh is covered the day it lands. The fixtures live as real
+# bytes under tests/gate-fixtures/ (never executed) — not as heredocs here, whose bytes would
+# be this file's own post-source lines and red the gate on itself. And per org L7-2 the row
+# proves it can red: the #30 shape must be flagged, while every legal idiom above — and a
+# script that never sources env.sh — must stay green.
+ENV_SH_SOURCE_RE='^[[:space:]]*(\.|source)[[:space:]][^#]*env\.sh'
+ENV_SH_SELFLOC_RE='dirname[[:space:]]+(-[[:alnum:]-]+[[:space:]]+)?("\$0"|\$0|"\$\{BASH_SOURCE\}"|"\$BASH_SOURCE"|"\$\{BASH_SOURCE\[0\]\}"|\$\{BASH_SOURCE\[0\]\})'
+env_sh_selfpath_rows() {  # FILE... — every dirname-of-self evaluated after env.sh moved the cwd
+  local f first
+  for f in "$@"; do
+    [ -f "$f" ] || continue          # a glob that matched nothing stays literal (the sweep's rule)
+    first="$(grep -nE "$ENV_SH_SOURCE_RE" "$f" | head -1 | cut -d: -f1)"
+    [ -n "${first:-}" ] || continue   # never sources env.sh: not this gate's subject
+    grep -nE "$ENV_SH_SELFLOC_RE" "$f" | awk -F: -v first="$first" -v f="$f" '
+      ($1 + 0) > first { print f ":" $0 }'
+  done
+}
+env_sh_selfpath_gate() {
+  local rows n rc=0
+  # green on main is the baseline: the shipped tree carries none
+  rows="$(env_sh_selfpath_rows $SHELL_NAMESPACE)"
+  [ -z "$rows" ] || { printf 'a script sources env.sh and then self-locates by dirname — the cwd is the repo root by then:\n%s\n' "$rows" >&2; return 1; }
+  # red on the injected violation (org L7-2): both spellings, and only those two rows
+  rows="$(env_sh_selfpath_rows tests/gate-fixtures/violador.sh)"
+  n="$(printf '%s\n' "$rows" | grep -c .)"
+  [ "$n" = 2 ] || { printf 'the gate flagged %s rows on the #30 fixture, want exactly 2:\n%s\n' "${n:-0}" "$rows" >&2; rc=1; }
+  printf '%s\n' "$rows" | grep -q '\.\./VERSION' || { echo 'the gate missed the #30 shape (a dirname of $0 after the source)' >&2; rc=1; }
+  printf '%s\n' "$rows" | grep -q 'BASH_SOURCE' || { echo 'the gate missed the BASH_SOURCE spelling' >&2; rc=1; }
+  # and green on every legal idiom, and on a script that never sources env.sh
+  rows="$(env_sh_selfpath_rows tests/gate-fixtures/legal.sh)"
+  [ -z "$rows" ] || { printf 'the gate reds a legal idiom:\n%s\n' "$rows" >&2; rc=1; }
+  rows="$(env_sh_selfpath_rows tests/gate-fixtures/ajeno.sh)"
+  [ -z "$rows" ] || { printf 'the gate took a non-sourcer as a subject:\n%s\n' "$rows" >&2; rc=1; }
+  return "$rc"
+}
+check env_sh_selfpath_gate
+
 
 # --- gate: the channel's identity — instalador is the only home the operator is sent to ---------
 # The move re-keyed every operator pointer (D13): the bootstrap, the CLI's remedies, the wizard's
