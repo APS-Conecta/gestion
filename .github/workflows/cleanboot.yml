@@ -300,7 +300,7 @@ jobs:
       # rename in the tiles retirement too).
       - name: Smoke output on failure (artifact)
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: smoke-out
           path: ${{ runner.temp }}/smoke*.out
@@ -348,7 +348,7 @@ jobs:
           PY
       - name: The usage record, as an artifact (a missing record is a red, never a silent skip)
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: uso-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/uso.json
@@ -534,7 +534,7 @@ jobs:
         run: sudo cp /opt/aps-conecta/instalador/.install.log "$RUNNER_TEMP/.install.log" 2>/dev/null || true
       - name: Provisioning log on failure (artifact)
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: install-log
           path: ${{ runner.temp }}/.install.log
