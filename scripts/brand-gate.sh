@@ -966,10 +966,10 @@ buscador_db() {  # 260: the database image ships pgvector (pinned by hash) and a
   replay="$(grep -nF 'psql "$POSTGRES_DB" -U "$POSTGRES_USER" < "$DUMP_FILE"' "$s" 2>/dev/null | cut -d: -f1)"
   [ -n "$roles" ] && [ -n "$replay" ] && [ "$roles" -lt "$replay" ] \
     || { echo "  start.sh does not run /aps-roles.sh before the dump replay" >&2; fail=1; }
-  bg="$(grep -nx 'apply_aps_roles &' "$s" 2>/dev/null | cut -d: -f1)"
+  bg="$(grep -nx 'aps_roles &' "$s" 2>/dev/null | cut -d: -f1)"
   waits="$(grep -nxF 'wait "$PG_PID"' "$s" 2>/dev/null | cut -d: -f1)"
   [ -n "$bg" ] && [ -n "$waits" ] && [ "$bg" -lt "$waits" ] \
-    || { echo "  start.sh does not start apply_aps_roles before it waits on postgres" >&2; fail=1; }
+    || { echo "  start.sh does not start aps_roles before it waits on postgres" >&2; fail=1; }
   grep -qE '^BUILD_IMAGES=\(.*\baio-postgresql\b' "$TREE/scripts/retag.sh" 2>/dev/null \
     || { echo "  retag.sh's BUILD_IMAGES lacks aio-postgresql — it would be retagged without pgvector" >&2; fail=1; }
   grep -qF 'bash scripts/db-image-test.sh' "$TREE/.github/workflows/images.yml" 2>/dev/null \
