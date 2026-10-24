@@ -9,7 +9,7 @@
     {"id": "farmacia", "source": "own", "repo": "APS-Conecta/farmacia", "optional": false, "containers": [], "name": "Farmacia", "summary": "Arsenal farmacológico del establecimiento con información de seguridad clínica."},
     {"id": "territorio", "source": "own", "repo": "APS-Conecta/territorio", "optional": false, "containers": [], "release": true, "name": "Territorio", "summary": "Mapa territorial: unidades vecinales y establecimientos."},
     {"id": "spreed", "source": "store", "optional": false, "containers": ["aps-conecta-talk"], "name": "Talk", "summary": "Chat y videollamadas internas."},
-    {"id": "desktop_workspace", "source": "store", "optional": false, "containers": []},
+    {"id": "desktop_workspace", "source": "fork", "repo": "APS-Conecta/desktop_workspace", "optional": false, "containers": [], "release": true},
     {"id": "notify_push", "source": "store", "optional": false, "containers": ["aps-conecta-notify-push"]},
     {"id": "side_menu", "source": "fork", "repo": "APS-Conecta/side_menu", "optional": false, "containers": [], "release": true}
 ]

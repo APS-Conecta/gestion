@@ -432,6 +432,28 @@ jobs:
           css="$(curl -fsS "http://localhost:${HTTP_PORT}/apps/side_menu/css/stylesheet")"
           grep -q -- "--side-menu-background-color: #5315a8" <<<"$css" \
             || { echo "FAIL: side_menu's stylesheet does not paint the suite's violet — the config keys are set but the menu derives another colour" >&2; exit 1; }
+      # #37: desktop_workspace — the second fork app — follows territorio through the shared
+      # assertion (ADR-0017, #117): never the bake's 0.18.2, the locked bytes, no signature.json.
+      - name: Desktop workspace installed from its release, at its locked tag
+        uses: ./.github/actions/assert-release-app
+        with:
+          app: desktop_workspace
+          bake-version: 0.18.2
+      # #37, the app's own half: «the desktop opens». The app is enabled, and its page route
+      # answers its own auth check — HTTP 401 to an anonymous visitor (measured on the first
+      # run; the controller refuses instead of redirecting to login), never a 5xx or a 404.
+      # Smoke's authenticated probe (check 15) stays the developer-only deep check.
+      - name: The desktop opens
+        run: |
+          set -euo pipefail
+          cd /opt/aps-conecta/instalador && source scripts/env.sh
+          [ "$(occ config:app:get desktop_workspace enabled)" = "yes" ] \
+            || { echo "FAIL: desktop_workspace is not enabled" >&2; exit 1; }
+          code="$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${HTTP_PORT}/index.php/apps/desktop_workspace/" 2>/dev/null)"
+          case "$code" in
+            200|302|303|401) echo "desktop: /apps/desktop_workspace/ answered HTTP $code (route alive)" ;;
+            *) echo "FAIL: the desktop does not open — /apps/desktop_workspace/ answered HTTP $code" >&2; exit 1 ;;
+          esac
       # Paired with the SITE_ROLES appended above (#103), because "the seed did not crash" is
       # not the same as "the roles landed". Asserts both halves of the rule: a cat-jefaturas
       # role is a POSITION and gets a standing account; a cat-tecnicos one is a job title held
@@ -782,6 +804,24 @@ jobs:
           css="$(curl -fsS --cacert "$RUNNER_TEMP/ca.crt" "https://$SUITE_IP/apps/side_menu/css/stylesheet")"
           grep -q -- "--side-menu-background-color: #5315a8" <<<"$css" \
             || { echo "FAIL: side_menu's stylesheet does not paint the suite's violet — the config keys are set but the menu derives another colour" >&2; exit 1; }
+      # #37, by IP: the same acceptance the domain job asserts — the shared block plus the
+      # desktop's own «it opens» half, speaking https to $SUITE_IP with the runner's CA.
+      - name: Desktop workspace installed from its release, at its locked tag
+        uses: ./.github/actions/assert-release-app
+        with:
+          app: desktop_workspace
+          bake-version: 0.18.2
+      - name: The desktop opens
+        run: |
+          set -euo pipefail
+          cd /opt/aps-conecta/instalador && source scripts/env.sh
+          [ "$(occ config:app:get desktop_workspace enabled)" = "yes" ] \
+            || { echo "FAIL: desktop_workspace is not enabled" >&2; exit 1; }
+          code="$(curl -s -o /dev/null -w '%{http_code}' --cacert "$RUNNER_TEMP/ca.crt" "https://$SUITE_IP/index.php/apps/desktop_workspace/" 2>/dev/null)"
+          case "$code" in
+            200|302|303|401) echo "desktop: /apps/desktop_workspace/ answered HTTP $code (route alive)" ;;
+            *) echo "FAIL: the desktop does not open — /apps/desktop_workspace/ answered HTTP $code" >&2; exit 1 ;;
+          esac
       # The weekly run, by IP, on the instance just installed: the leaf is kept (same fingerprint) and
       # apache is not restarted; the seed converges again, idempotent by IP too. #33 adds its half:
       # the same run downloads nothing and leaves the lock unchanged.
