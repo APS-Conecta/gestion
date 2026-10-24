@@ -432,31 +432,21 @@ jobs:
           css="$(curl -fsS "http://localhost:${HTTP_PORT}/apps/side_menu/css/stylesheet")"
           grep -q -- "--side-menu-background-color: #5315a8" <<<"$css" \
             || { echo "FAIL: side_menu's stylesheet does not paint the suite's violet — the config keys are set but the menu derives another colour" >&2; exit 1; }
-      # #37: desktop_workspace, the second fork app on the release path (ADR-0017) — the row
-      # became fork+release, so the wizard's fetch leg resolves APS-Conecta/desktop_workspace's
-      # newest signed release instead of the bake's 0.18.2 patches. The lock/store/signature
-      # block is territorio's; the desktop's own half is «it opens»: the app is enabled and
-      # its route answers its own auth check, not a 5xx or a 404. The desktop's controller
-      # refuses anonymous visitors with HTTP 401 itself (measured on the first run) instead
-      # of redirecting to login, so 401 is one of the healthy answers — smoke's
-      # authenticated probe (check 15) stays the developer-only deep check.
-      - name: Desktop workspace installed from its release, at its locked tag, and it opens
+      # #37: desktop_workspace — the second fork app — follows territorio through the shared
+      # assertion (ADR-0017, #117): never the bake's 0.18.2, the locked bytes, no signature.json.
+      - name: Desktop workspace installed from its release, at its locked tag
+        uses: ./.github/actions/assert-release-app
+        with:
+          app: desktop_workspace
+          bake-version: 0.18.2
+      # #37, the app's own half: «the desktop opens». The app is enabled, and its page route
+      # answers its own auth check — HTTP 401 to an anonymous visitor (measured on the first
+      # run; the controller refuses instead of redirecting to login), never a 5xx or a 404.
+      # Smoke's authenticated probe (check 15) stays the developer-only deep check.
+      - name: The desktop opens
         run: |
           set -euo pipefail
           cd /opt/aps-conecta/instalador && source scripts/env.sh
-          sudo test -f /opt/aps-conecta/apps.lock.json || { echo "FAIL: no apps lock after the install" >&2; exit 1; }
-          read -r tag version sha <<< "$(sudo python3 -c 'import json; a = json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["desktop_workspace"]; print(a["tag"], a["version"], a["sha256"])')"
-          echo "lock: desktop_workspace $tag ($version)"
-          [ "${tag#v}" = "$version" ] || { echo "FAIL: the lock's tag and version disagree" >&2; exit 1; }
-          [ "$version" != "0.18.2" ] || { echo "FAIL: desktop_workspace is the bake's 0.18.2, not a fork release" >&2; exit 1; }
-          got="$(occ config:app:get desktop_workspace installed_version)"
-          [ "$got" = "$version" ] || { echo "FAIL: the instance runs desktop_workspace $got, the lock names $version" >&2; exit 1; }
-          sudo test -f "/opt/aps-conecta/apps/desktop_workspace/$tag.tar.gz" || { echo "FAIL: the locked tarball is not in the store" >&2; exit 1; }
-          echo "$sha  /opt/aps-conecta/apps/desktop_workspace/$tag.tar.gz" | sudo sha256sum --check - \
-            || { echo "FAIL: the stored tarball is not the locked bytes" >&2; exit 1; }
-          if docker exec --user www-data aps-conecta-nextcloud test -e /var/www/html/custom_apps/desktop_workspace/appinfo/signature.json; then
-            echo "FAIL: desktop_workspace carries appinfo/signature.json — a release never does" >&2; exit 1
-          fi
           [ "$(occ config:app:get desktop_workspace enabled)" = "yes" ] \
             || { echo "FAIL: desktop_workspace is not enabled" >&2; exit 1; }
           code="$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${HTTP_PORT}/index.php/apps/desktop_workspace/" 2>/dev/null)"
@@ -814,27 +804,17 @@ jobs:
           css="$(curl -fsS --cacert "$RUNNER_TEMP/ca.crt" "https://$SUITE_IP/apps/side_menu/css/stylesheet")"
           grep -q -- "--side-menu-background-color: #5315a8" <<<"$css" \
             || { echo "FAIL: side_menu's stylesheet does not paint the suite's violet — the config keys are set but the menu derives another colour" >&2; exit 1; }
-      # #37, by IP: desktop_workspace from its own fork release at its locked tag — the same
-      # acceptance the domain job asserts (lock, store bytes, no signature.json, enabled, the
-      # route alive), on an install that reached the suite by address. The probe speaks
-      # https to $SUITE_IP with the runner's CA, like side_menu's beside it.
-      - name: Desktop workspace installed from its release, at its locked tag, and it opens
+      # #37, by IP: the same acceptance the domain job asserts — the shared block plus the
+      # desktop's own «it opens» half, speaking https to $SUITE_IP with the runner's CA.
+      - name: Desktop workspace installed from its release, at its locked tag
+        uses: ./.github/actions/assert-release-app
+        with:
+          app: desktop_workspace
+          bake-version: 0.18.2
+      - name: The desktop opens
         run: |
           set -euo pipefail
           cd /opt/aps-conecta/instalador && source scripts/env.sh
-          sudo test -f /opt/aps-conecta/apps.lock.json || { echo "FAIL: no apps lock after the install" >&2; exit 1; }
-          read -r tag version sha <<< "$(sudo python3 -c 'import json; a = json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["desktop_workspace"]; print(a["tag"], a["version"], a["sha256"])')"
-          echo "lock: desktop_workspace $tag ($version)"
-          [ "${tag#v}" = "$version" ] || { echo "FAIL: the lock's tag and version disagree" >&2; exit 1; }
-          [ "$version" != "0.18.2" ] || { echo "FAIL: desktop_workspace is the bake's 0.18.2, not a fork release" >&2; exit 1; }
-          got="$(occ config:app:get desktop_workspace installed_version)"
-          [ "$got" = "$version" ] || { echo "FAIL: the instance runs desktop_workspace $got, the lock names $version" >&2; exit 1; }
-          sudo test -f "/opt/aps-conecta/apps/desktop_workspace/$tag.tar.gz" || { echo "FAIL: the locked tarball is not in the store" >&2; exit 1; }
-          echo "$sha  /opt/aps-conecta/apps/desktop_workspace/$tag.tar.gz" | sudo sha256sum --check - \
-            || { echo "FAIL: the stored tarball is not the locked bytes" >&2; exit 1; }
-          if docker exec --user www-data aps-conecta-nextcloud test -e /var/www/html/custom_apps/desktop_workspace/appinfo/signature.json; then
-            echo "FAIL: desktop_workspace carries appinfo/signature.json — a release never does" >&2; exit 1
-          fi
           [ "$(occ config:app:get desktop_workspace enabled)" = "yes" ] \
             || { echo "FAIL: desktop_workspace is not enabled" >&2; exit 1; }
           code="$(curl -s -o /dev/null -w '%{http_code}' --cacert "$RUNNER_TEMP/ca.crt" "https://$SUITE_IP/index.php/apps/desktop_workspace/" 2>/dev/null)"
