@@ -5088,10 +5088,11 @@ def selftest():
             with open(HOST_CLI, encoding="utf-8") as fh:
                 aio_set = re.search(r'^AIO_SET="([^"]*)"', fh.read(), re.M).group(1).split()
             filas = apps_aps()
-            check("suite: the five APS apps (own and fork in the manifest), by name — the four baked ones with their VENDOR versions, the release one with what the lock records or its promise (#33); the containers are the host's set plus Nextcloud (a12)",
-                  [f[0] for f in filas] == ["Inicio", "Epidemiología", "Estadística", "Farmacia", "Territorio"]
-                  and all(re.fullmatch(r"\d+\.\d+\.\d+", f[1]) for f in filas[:4])
-                  and filas[4][1] == "según su release"
+            check("suite: the six APS apps (own and fork in the manifest), by name — the three baked ones with their VENDOR versions, the two release ones (Oficina since #36) with what the lock records or their promise (#33); the containers are the host's set plus Nextcloud (a12)",
+                  [f[0] for f in filas] == ["Inicio", "Oficina", "Epidemiología", "Estadística", "Farmacia", "Territorio"]
+                  and all(re.fullmatch(r"\d+\.\d+\.\d+", f[1]) for f in (filas[0], *filas[2:5]))
+                  and filas[1][1] == "según su release"
+                  and filas[5][1] == "según su release"
                   and {c for c, _n in CONTENEDORES_SUITE} == set(aio_set) | {"aps-conecta-nextcloud"})
             # an unnamed fork app (desktop_workspace as #37 makes it) — and intravox
             # stripped of its name, so the rows read are the fixture's, filtered by name, not by VENDOR
@@ -5106,19 +5107,25 @@ def selftest():
             except Exception as e:   # the crash IS the failure this check reports
                 filas = [[f"{type(e).__name__}: {e}", "", ""]]
             check("suite: step 6 lists only the own and fork apps that carry a name, in manifest order — an unnamed fork app is left out, no error (a12, #64)",
-                  [f[0] for f in filas] == ["Epidemiología", "Estadística", "Farmacia", "Territorio"]
-                  and all(re.fullmatch(r"\d+\.\d+\.\d+", f[1]) for f in filas[:3])
-                  and filas[3][1] == "según su release")
+                  [f[0] for f in filas] == ["Oficina", "Epidemiología", "Estadística", "Farmacia", "Territorio"]
+                  and filas[0][1] == "según su release"
+                  and all(re.fullmatch(r"\d+\.\d+\.\d+", f[1]) for f in filas[1:4])
+                  and filas[4][1] == "según su release")
             with open(os.environ["APS_APPS_LOCK"], "w", encoding="utf-8") as fh:
-                json.dump({"nextcloud": "34.0.4", "apps": {"territorio": {
-                    "source": "own", "repo": "APS-Conecta/territorio", "tag": "v0.80.0",
-                    "version": "0.80.0", "sha256": "0" * 64}}}, fh)
+                json.dump({"nextcloud": "34.0.4", "apps": {
+                    "territorio": {
+                        "source": "own", "repo": "APS-Conecta/territorio", "tag": "v0.80.0",
+                        "version": "0.80.0", "sha256": "0" * 64},
+                    "eurooffice": {
+                        "source": "fork", "repo": "APS-Conecta/eurooffice", "tag": "v11.0.7",
+                        "version": "11.0.7", "sha256": "0" * 64}}}, fh)
             try:
                 filas = apps_aps()
             finally:   # gone before any ejecutar: phase 12 probes this same lock
                 os.remove(os.environ["APS_APPS_LOCK"])
-            check("suite: a release row the lock already recorded shows its locked version (#33)",
-                  {n: v for n, v, _q in filas}["Territorio"] == "0.80.0")
+            check("suite: a release row the lock already recorded shows its locked version (#33, #36)",
+                  {n: v for n, v, _q in filas}["Territorio"] == "0.80.0"
+                  and {n: v for n, v, _q in filas}["Oficina"] == "11.0.7")
             fijo = centro_actual()[1].get("codigo")   # the site the preparation fills, then restored
             antes_fijo = open(site_path(fijo), encoding="utf-8").read() if fijo else None
             falso = os.path.join(tmp, "asistente-falso.sh")
