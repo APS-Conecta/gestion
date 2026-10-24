@@ -4653,9 +4653,11 @@ def selftest():
             # driver's noops — a stateless stub would fake the idempotent arms red) answers the
             # whole seed/phases/driver/gate world. The fixture assembles a REAL repo tree around
             # the register fixture (provisioning/ copied sans the 89 MB apps/, which is
-            # symlinked; themes/ and .env.example copied; env.sh copied into tmp/scripts/) —
-            # deis.HERE redirects every path, so the real tree is never touched; the PATH
-            # injection and the FAKE_DOCKER_* knobs are restored in the outer finally.
+            # symlinked; themes/ copied; scripts/ copied WHOLE, no per-file list — #59:
+            # whatever a phase or gate reads next is already there; beside the trees, the root
+            # files the phases read, .env.example and apps.json) — deis.HERE redirects every
+            # path, so the real tree is never touched; the PATH injection and the FAKE_DOCKER_*
+            # knobs are restored in the outer finally.
             import shutil
             # The vendored apps this fixture reads (provisioning/apps' VENDOR tarballs) are the old
             # gestion's until #42: the composite package carries them at identical paths, an old
@@ -4694,12 +4696,30 @@ def selftest():
                             ignore=shutil.ignore_patterns("apps"))
             os.symlink(apps_src, os.path.join(tmp, "provisioning", "apps"))
             shutil.copytree(themes_src, os.path.join(tmp, "themes"))
+            # scripts/ WHOLE (#59), not a hand-picked list: whatever a phase or gate reads next
+            # is already here. __pycache__ alone is left out — build dirt, not source — and the
+            # arm below pins the file set against the real tree, so a list that drops a file
+            # reds. dirs_exist_ok: the register fixture made tmp/scripts at the start.
+            shutil.copytree(HERE, os.path.join(tmp, "scripts"),
+                            ignore=shutil.ignore_patterns("__pycache__"), dirs_exist_ok=True)
+            # the root files the phases read, whole: env.sh's placeholder table, apps.py's manifest
             shutil.copy(envex_src, os.path.join(tmp, ".env.example"))
-            shutil.copy(os.path.join(HERE, "..", "scripts", "env.sh"), os.path.join(tmp, "scripts", "env.sh"))
-            shutil.copy(os.path.join(HERE, "..", "scripts", "divergence.sh"),
-                       os.path.join(tmp, "scripts", "divergence.sh"))
-            shutil.copy(os.path.join(HERE, "apps.py"), os.path.join(tmp, "scripts", "apps.py"))
             shutil.copy(suite_apps.MANIFEST, os.path.join(tmp, "apps.json"))
+
+            # — the fixture itself (#59): the scripts tree is taken WHOLE, so a script a phase
+            # or gate gains is already in the fixture with no edit — #30 had to add apps.json
+            # and its reader by hand, and the self-test red far from the cause. The pin: the
+            # fixture's scripts/ carries exactly the real tree's files (__pycache__ aside: build
+            # dirt, not source) and the root files the phases read (env.sh's .env.example,
+            # apps.py's apps.json) byte for byte — a hand-picked list that drops a file reds
+            # HERE, next to its cause, not far from it.
+            def _files(root):
+                return {os.path.relpath(os.path.join(d, f), root)
+                        for d, _, fs in os.walk(root) for f in fs if "__pycache__" not in d}
+            check("fixture: scripts/ whole and the phases' root files — a new reader from a phase needs no fixture edit (#59)",
+                  _files(os.path.join(tmp, "scripts")) == _files(HERE)
+                  and open(os.path.join(tmp, ".env.example"), "rb").read() == open(envex_src, "rb").read()
+                  and open(os.path.join(tmp, "apps.json"), "rb").read() == open(suite_apps.MANIFEST, "rb").read())
             stubdir = os.path.join(tmp, "bin")
             os.makedirs(stubdir)
             for name, src, mode in (("docker", STUB_DOCKER, 0o755), ("curl", "#!/usr/bin/env bash\nexit 1\n", 0o755)):
