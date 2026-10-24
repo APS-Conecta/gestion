@@ -11,8 +11,10 @@
 Standard library only, on Python 3.10 (Ubuntu 22.04's); the Provisionador imports it like deis.
 
 A row: id; source (own | fork | store); repo (own and fork apps only); optional (false | "on" |
-"off"); containers (names from php/containers.json); pin (an exact vX.Y.Z tag, optional); name and summary
-(Spanish, shown in the wizard; plumbing apps carry neither).
+"off"); containers (names from php/containers.json); pin (an exact vX.Y.Z tag, optional); release
+(true: the app installs from its own GitHub Release at run time — ADR-0017, own and fork apps
+only, and only once its repo publishes releases); name and summary (Spanish, shown in the
+wizard; plumbing apps carry neither).
 """
 import errno
 import json
@@ -25,7 +27,7 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 MANIFEST = os.path.join(HERE, "..", "apps.json")
 CONTAINERS = os.path.join(HERE, "..", "php", "containers.json")
-FIELDS = {"id", "source", "repo", "optional", "containers", "pin", "name", "summary"}
+FIELDS = {"id", "source", "repo", "optional", "containers", "pin", "release", "name", "summary"}
 APP_ID = re.compile(r"[a-z][a-z0-9_]*")
 REPO = re.compile(r"APS-Conecta/[A-Za-z0-9._-]+")
 PIN = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+")
@@ -81,6 +83,7 @@ def _check_row(row, seen):
         raise ValueError(f'{app}: optional debe ser false, "on" u "off"')
     _check_containers(app, row)
     _check_pin(app, row)
+    _check_release(app, row)
     _check_name(app, row)
 
 
@@ -108,6 +111,17 @@ def _check_pin(app, row):
     pin = row["pin"]
     if not (isinstance(pin, str) and PIN.fullmatch(pin)):
         raise ValueError(f"{app}: pin debe ser una etiqueta de release exacta, como v1.2.3")
+
+
+def _check_release(app, row):
+    """release is the bake-or-release switch (ADR-0017): true installs the app from its own
+    GitHub Release at run time — a store app can never set it, and it never applies without a
+    repo of ours. False or absent: the vendored bake still carries the app (#42 removes it)."""
+    release = row.get("release", False)
+    if not isinstance(release, bool):
+        raise ValueError(f"{app}: release debe ser true o false")
+    if release and row["source"] == "store":
+        raise ValueError(f"{app}: una aplicación store no se instala desde releases propias")
 
 
 def _check_name(app, row):
@@ -162,6 +176,7 @@ def selftest():
           "containers": ["aps-conecta-demo"], "name": "Demo", "summary": "Una aplicación de prueba."}
     check("a well-formed row loads", not refused([good]))
     check("a pin that is an exact release tag loads", not refused([{**good, "pin": "v1.2.3"}]))
+    check("release: true loads for an own app", not refused([{**good, "release": True}]))
     check("a listed container missing from the definitions is refused",
           refused([good], containers=("aps-conecta-otro",)))
 
@@ -183,6 +198,9 @@ def selftest():
                        ("a bare v", [{**good, "pin": "v"}]),
                        ("an incomplete pin", [{**good, "pin": "v1.2"}]),
                        ("a pre-release pin", [{**good, "pin": "v1.2.3-rc1"}]),
+                       ("release as a string", [{**good, "release": "si"}]),
+                       ("release on a store app", [{**{k: v for k, v in good.items() if k != "repo"},
+                                                     "source": "store", "release": True}]),
                        ("a name without a summary", [without("summary")]),
                        ("an empty summary", [{**good, "summary": ""}])):
         check(f"{label} is refused", refused(bad))

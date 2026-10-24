@@ -1651,6 +1651,15 @@ print("ok")'
 # that every container it names is defined.
 check bash provisioning/standings.sh --self-test
 check python3 scripts/apps.py --self-test
+# releases.py (#33): the app-release resolver — resolve/fetch/lock over a local fixture hub with
+# a throwaway key, real redirects and real signify crypto. The signer rides along in the CI job
+# already (package-release's self-test needs it); locally its absence is an honest skip, the
+# same shape as package-release's arm below.
+if command -v signify >/dev/null 2>&1; then
+  check python3 scripts/releases.py --self-test
+else
+  echo "  skipped: releases --self-test (no signify — sudo apt-get install signify-openbsd)"
+fi
 # #66: the manifest-read failure is said in ONE place — apps.py's own stderr line, which every
 # reader already shows beside it (a command substitution captures stdout only). No reader may
 # carry its own copy of the old narration again, and no reader gets a field it discards: `lines`

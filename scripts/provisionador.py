@@ -216,7 +216,7 @@ EJEC_GUARD = threading.Lock()
 # The seed's bound is the harness's pull budget (30 min); the roster driver rides the same number —
 # a big clinic's N×0.8 s execs fit with margin; the gate only reads. The self-test patches this
 # dict for its timeout arm instead of a test-only env knob.
-TIMEOUTS = {"seed": 1800, "roster": 1800, "gate": 300, "suite": 900}
+TIMEOUTS = {"seed": 1800, "roster": 1800, "gate": 300, "suite": 900, "apps": 600}
 # The silent install's console (R42): one Spanish line per finished phase, keyed by the phase
 # file's stem — a self-test arm pins one title per file in provisioning/phases.
 PHASE_TITLES = {
@@ -281,6 +281,12 @@ PASOS_SUITE = ((("✓ Suite iniciada", "✓ Suite reanudada", "✓ La suite ya e
 SUITE = {"estado": "sin_preparar", "hechos": [], "motivo": ""}
 SUITE_GUARD = threading.Lock()
 SUITE_CMD = ["bash", HOST_CLI, "asistente-aio", "--preparar"]   # the host's own drive; the self-test fakes it
+# The wizard's download step (#33): the manifest's release rows (ADR-0017) resolve and fetch
+# HERE, execute mode only — review mode stays free of side effects. The command is a seam the
+# self-test fakes (SUITE_CMD's shape); the real one is scripts/releases.py, bounded by
+# TIMEOUTS["apps"], whose one Spanish FATAL line is the run's own error when it reds.
+RELEASES = os.path.join(HERE, "releases.py")
+APPS_CMD = ["python3", RELEASES, "fetch"]   # + ["--nextcloud", <la versión que corre>]
 
 # Step 6's consent card (D3): when the wizard's domain post is refused on the hairpin leg — this
 # server cannot reach itself through its own public address — one consented command fixes the whole
@@ -342,7 +348,9 @@ try:
 except OSError:
     pass
 
-if control.get("SLOW"):
+if control.get("SLOW") and "status" not in args:
+    # `status` stays fast under SLOW: the wizard's version read (nc_version, #33) rides it, and
+    # the hung-SEED arm wants the seed hung, not the fetch leg — SLOW models a phase that hangs
     time.sleep(30)
 if control.get("FAIL_ON") and control.get("FAIL_ON") in args:
     sys.exit(1)
@@ -1668,6 +1676,33 @@ def _api_generar(payload):
         def show(line):   # the browser's progress (a14), then the console's own view
             avance(line)
             return resumen(line) if resumen else line
+        # ── the apps' download step (#33): resolve and fetch the manifest's release apps BEFORE
+        # the seed runs — the seed installs only what this leg verified and locked (ADR-0017).
+        # A failure stops the install here: the app's own Spanish line (releases.py's FATAL) is
+        # the answer, the seed never starts, and nothing was written yet. The version comes
+        # from the instance itself: compatibility is a fact about the Nextcloud that runs.
+        version = nc_version()
+        if not version:
+            return 500, {"error": "no se pudo leer la versión de Nextcloud para elegir las "
+                                  "aplicaciones de la suite — compruebe que los contenedores "
+                                  "estén en marcha y vuelva a ejecutar"}
+        rc, apps_out = run_tee([*APPS_CMD, "--nextcloud", version], cwd=root,
+                               timeout=TIMEOUTS["apps"], show=show)
+        if rc is None:
+            # the fetch prints «aplicaciones: <app> <tag> — descargando…» BEFORE each download,
+            # so the last one in the partial output names what was in flight — the timeout's
+            # one line names it too (#33: the app and the retry command, always)
+            en_curso = next((ln.split("aplicaciones: ", 1)[1] for ln in reversed(apps_out.splitlines())
+                             if ln.startswith("aplicaciones: ") and " — descargando" in ln), "")
+            return 500, {"error": f"la descarga de aplicaciones excedió el límite de "
+                                  f"{TIMEOUTS['apps']} s — revise la conexión de este servidor "
+                                  "y vuelva a ejecutar"
+                                  + (f" (iba en: {en_curso})" if en_curso else ""),
+                          "salida": apps_out}
+        if rc != 0:
+            fatal = next((ln for ln in apps_out.splitlines() if ln.startswith("FATAL:")),
+                         "la descarga de aplicaciones falló")
+            return 500, {"error": fatal, "salida": apps_out}
         try:
             env_report = env_converge(root, codigo)
         except ValueError as e:
@@ -1679,14 +1714,14 @@ def _api_generar(payload):
         if rc is None:
             return 500, {"error": f"la preparación excedió el límite de {TIMEOUTS['seed']} s — "
                                   "revise la salida y el estado de la instancia",
-                          "salida": seed_out}
+                          "salida": apps_out + seed_out}
         if rc != 0:
             fatals = [ln for ln in seed_out.splitlines() if ln.startswith("FATAL:")]
             # the cause the phase printed, not the runner's «phase X failed» line that follows it
             fatal = next((f for f in fatals if not re.match(r"FATAL: phase \S+ failed$", f)),
                          fatals[-1] if fatals else "la preparación falló")
             # the gate never runs after a failed phase (the locked research flow)
-            return 500, {"error": fatal, "salida": seed_out}
+            return 500, {"error": fatal, "salida": apps_out + seed_out}
         records = []
         for uid, nombre, apellidos, _correo, gids, primer in rows:
             # a8: every planilla user is staff and joins the category of each of their roles
@@ -1700,21 +1735,21 @@ def _api_generar(payload):
         if rc is None:
             return 500, {"error": f"la planilla excedió el límite de {TIMEOUTS['roster']} s — "
                                   "revise la salida y el estado de la instancia",
-                          "salida": seed_out + roster_out}
+                          "salida": apps_out + seed_out + roster_out}
         if rc != 0:
             fatal = next((ln for ln in reversed(roster_out.splitlines())
                           if ln.startswith("FATAL:")), "la planilla falló")
-            return 500, {"error": fatal, "salida": seed_out + roster_out}
+            return 500, {"error": fatal, "salida": apps_out + seed_out + roster_out}
         rc, gate_out = run_tee(["bash", "scripts/divergence.sh", "--gate"], cwd=root,
                                timeout=TIMEOUTS["gate"], show=show)
         if rc is None:
             return 500, {"error": f"la divergencia excedió el límite de {TIMEOUTS['gate']} s",
-                          "salida": seed_out + roster_out + gate_out}
+                          "salida": apps_out + seed_out + roster_out + gate_out}
         # the gate's exit code is the verdict, carried as data — a red gate is a finding the
         # operator must see, never an execution error
         return 200, {"ok": True, "modo": "ejecutar", "sitio": rel, "fases": phases,
                      "usuarios": len(rows), "env": env_report,
-                     "salida": seed_out + roster_out,
+                     "salida": apps_out + seed_out + roster_out,
                      "divergencia_vacia": rc == 0, "divergencia": gate_out}
     finally:
         if log:
@@ -1832,7 +1867,10 @@ def summary(log):
         if m:
             return f"  ✓ {PHASE_TITLES.get(m.group(1), m.group(1))}\n"
         m = re.match(r"== roster: (\d+) usuario", line)
-        return f"  ✓ Planilla: {m.group(1)} personas\n" if m else None
+        if m:
+            return f"  ✓ Planilla: {m.group(1)} personas\n"
+        m = re.match(r"✓ apps: (.+)$", line.rstrip("\n"))
+        return f"  ✓ Aplicaciones: {m.group(1)}\n" if m else None
     return show
 
 
@@ -3042,14 +3080,25 @@ ASSETS_ROOT = ROOT_DIR
 
 
 def apps_aps(rows=SUITE_APPS):
-    """Step 6's APS apps with their versions (a12): the manifest's own and fork apps that carry a name, in its
-    order — the manifest's name and summary, each VENDOR's version. An unnamed fork app is plumbing (#64)."""
+    """Step 6's APS apps with their versions (a12): the manifest's own and fork apps that carry
+    a name, in its order — the manifest's name and summary, each VENDOR's version. A release
+    row (#33, ADR-0017) shows what the LOCK records once an install ran; before that its
+    version is decided at «Revisar y ejecutar», and the cell says so instead of naming the
+    stale bake. An unnamed fork app is plumbing (#64)."""
+    import releases   # beside this file; lazy — the step that never lists apps never loads it
+    try:
+        locked = releases.read_lock()["apps"]
+    except releases.Refusal:   # a lock that cannot be read is the fetch leg's red, not step 6's
+        locked = {}
     filas = []
     for a in rows:
         if a["source"] not in ("own", "fork") or "name" not in a:
             continue
-        with open(os.path.join(APPS_DIR, a["id"], "VENDOR"), encoding="utf-8") as fh:
-            version = next((ln.split("=", 1)[1].strip() for ln in fh if ln.startswith("version=")), "")
+        if a.get("release"):
+            version = locked.get(a["id"], {}).get("version") or "según su release"
+        else:
+            with open(os.path.join(APPS_DIR, a["id"], "VENDOR"), encoding="utf-8") as fh:
+                version = next((ln.split("=", 1)[1].strip() for ln in fh if ln.startswith("version=")), "")
         filas.append([a["name"], version, a["summary"]])
     return filas
 
@@ -3087,15 +3136,31 @@ def opciones_actuales():
     return (m.group(1) == "1", m.group(2) == "1") if m else None
 
 
-def suite_instalada():
-    """Nextcloud answers installed — one bounded `occ status`, asked only once the suite's containers run."""
+def _occ_status():
+    """One bounded `occ status --output=json`, the raw stdout — the seam suite_instalada and
+    nc_version share (asked only once the suite's containers run, #33)."""
     try:
         out = subprocess.run(["docker", "exec", "--user", "www-data", "aps-conecta-nextcloud", "php",
                               "/var/www/html/occ", "status", "--output=json"],
                              capture_output=True, text=True, timeout=10)
     except (OSError, subprocess.TimeoutExpired):
-        return False
-    return '"installed":true' in out.stdout.replace(" ", "")
+        return None
+    return out.stdout
+
+
+def suite_instalada():
+    """Nextcloud answers installed — one bounded `occ status`, asked only once the suite's containers run."""
+    out = _occ_status()
+    return out is not None and '"installed":true' in out.replace(" ", "")
+
+
+def nc_version():
+    """The running Nextcloud's own version — the resolver's compatibility question (#33), over
+    the same one bounded `occ status` suite_instalada rides. None when the instance does not
+    answer: the fetch leg refuses on that with its own line, never on a guessed major."""
+    out = _occ_status()
+    m = re.search(r'"version"\s*:\s*"([0-9]+(?:\.[0-9]+)+)"', out or "")
+    return m.group(1) if m else None
 
 
 def talk_ahora(vistos):
@@ -3271,7 +3336,8 @@ def preparar_red(dominio):
     into the card's steps — the prove line begins with the domain itself, so it is matched by its
     tail («— re-intente el paso»), the one stable part. A refusal's reason is the CLI's own last ✗
     line (the same Spanish the console reads, never a path); the fix rides the preparation's own
-    bound — apt plus one docker restart, and TIMEOUTS stays the pinned four."""
+    bound — apt plus one docker restart, on the suite's own bound (TIMEOUTS' one rule: every
+    subprocess bounded, B-015)."""
     def show(line):
         for prefijos, titulo in PASOS_RED:
             if line.startswith(prefijos) and titulo not in RED["hechos"]:
@@ -4734,6 +4800,29 @@ def selftest():
             os.environ["FAKE_DOCKER_LOG"] = stublog
             os.environ["FAKE_DOCKER_STATE"] = stubstate
             os.environ["FAKE_DOCKER_CONTROL"] = stubctl
+            # The fixture's lock (#33): absent, so phase 12's release rows ride the vendored
+            # bridge exactly as a server whose wizard step has not run — and the seed's
+            # lock_row probes never read a real /opt on the machine running the self-test.
+            os.environ["APS_APPS_LOCK"] = os.path.join(tmp, "apps-lock.json")
+            # The download step's stub: SUITE_CMD's shape — argv recorded, the console line the
+            # real releases.py prints, and a failing variant for the stop-the-install arm.
+            apps_argv = os.path.join(tmp, "apps-stub.argv")
+
+            def apps_stub(que="ok"):
+                path = os.path.join(tmp, "apps-stub.sh")
+                with open(path, "w", encoding="utf-8") as fh:
+                    cuerpo = {"ok": 'echo "✓ apps: territorio v0.80.0 descargada y verificada '
+                                     '(compatible con Nextcloud 34.0.4)"\n',
+                              "mala": 'echo "FATAL: territorio: la firma de SHA256SUMS no verifica '
+                                     'contra apps.pub" >&2\nexit 1\n',
+                              "lenta": 'echo "aplicaciones: territorio v0.80.0 — descargando y verificando"\n'
+                                     'sleep 4\n'}[que]
+                    fh.write("#!/usr/bin/env bash\n"
+                             f'printf \'%s\\n\' "$*" >> "{apps_argv}"\n' + cuerpo)
+                os.chmod(path, 0o755)
+                return path
+            verdadero_apps_cmd = APPS_CMD
+            globals()["APPS_CMD"] = ["bash", apps_stub()]
             open(stubstate, "w").close()
 
             def stub_log_text():
@@ -4767,6 +4856,8 @@ def selftest():
                   and body["primer_admin"] == "elena.diaz" and body["contrasenas_selladas"] >= 2
                   and len(body["fases"]) == 14 and execs[0] == 0 and same
                   and body["env"]["FIXTURE_USER_PASSWORD"] == "se generará")
+            check("generar: review mode downloads nothing — the release apps' fetch leg never ran (#33)",
+                  not os.path.exists(apps_argv))
 
             def stepped(argv):
                 buf = io.StringIO()
@@ -4997,9 +5088,10 @@ def selftest():
             with open(HOST_CLI, encoding="utf-8") as fh:
                 aio_set = re.search(r'^AIO_SET="([^"]*)"', fh.read(), re.M).group(1).split()
             filas = apps_aps()
-            check("suite: the five APS apps (own and fork in the manifest), by name with their VENDOR versions; the containers are the host's set plus Nextcloud (a12)",
+            check("suite: the five APS apps (own and fork in the manifest), by name — the four baked ones with their VENDOR versions, the release one with what the lock records or its promise (#33); the containers are the host's set plus Nextcloud (a12)",
                   [f[0] for f in filas] == ["Inicio", "Epidemiología", "Estadística", "Farmacia", "Territorio"]
-                  and all(re.fullmatch(r"\d+\.\d+\.\d+", f[1]) for f in filas)
+                  and all(re.fullmatch(r"\d+\.\d+\.\d+", f[1]) for f in filas[:4])
+                  and filas[4][1] == "según su release"
                   and {c for c, _n in CONTENEDORES_SUITE} == set(aio_set) | {"aps-conecta-nextcloud"})
             # an unnamed fork app (desktop_workspace as #37 makes it) — and intravox
             # stripped of its name, so the rows read are the fixture's, filtered by name, not by VENDOR
@@ -5015,7 +5107,18 @@ def selftest():
                 filas = [[f"{type(e).__name__}: {e}", "", ""]]
             check("suite: step 6 lists only the own and fork apps that carry a name, in manifest order — an unnamed fork app is left out, no error (a12, #64)",
                   [f[0] for f in filas] == ["Epidemiología", "Estadística", "Farmacia", "Territorio"]
-                  and all(re.fullmatch(r"\d+\.\d+\.\d+", f[1]) for f in filas))
+                  and all(re.fullmatch(r"\d+\.\d+\.\d+", f[1]) for f in filas[:3])
+                  and filas[3][1] == "según su release")
+            with open(os.environ["APS_APPS_LOCK"], "w", encoding="utf-8") as fh:
+                json.dump({"nextcloud": "34.0.4", "apps": {"territorio": {
+                    "source": "own", "repo": "APS-Conecta/territorio", "tag": "v0.80.0",
+                    "version": "0.80.0", "sha256": "0" * 64}}}, fh)
+            try:
+                filas = apps_aps()
+            finally:   # gone before any ejecutar: phase 12 probes this same lock
+                os.remove(os.environ["APS_APPS_LOCK"])
+            check("suite: a release row the lock already recorded shows its locked version (#33)",
+                  {n: v for n, v, _q in filas}["Territorio"] == "0.80.0")
             fijo = centro_actual()[1].get("codigo")   # the site the preparation fills, then restored
             antes_fijo = open(site_path(fijo), encoding="utf-8").read() if fijo else None
             falso = os.path.join(tmp, "asistente-falso.sh")
@@ -5498,10 +5601,33 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   and "14 phase(s) run" in body["salida"] and "== roster: 2 usuario(s) ==" in body["salida"]
                   and "user elena.diaz added to group admin" in body["salida"]
                   and "nada en la instancia que el repositorio no declare" in body["divergencia"])
+            check("generar: ejecutar resolves and fetches the release apps first, with the version the instance answers (#33)",
+                  os.path.isfile(apps_argv)
+                  and open(apps_argv, encoding="utf-8").read() == "--nextcloud 34.0.4\n"
+                  and "✓ apps: territorio v0.80.0 descargada y verificada" in body["salida"])
             estado = open(ESTADO_PATH, encoding="utf-8").read()
             check("estado: a green execution leaves its verdict, readable without sudo (0644), in Santiago time (a10)",
                   re.match(r"\d{4}-\d\d-\d\d \d\d:\d\d \(hora de Santiago\) · ✓ la instancia coincide con lo declarado\n$", estado)
                   and oct(os.stat(ESTADO_PATH).st_mode & 0o777) == "0o644")
+            globals()["APPS_CMD"] = ["bash", apps_stub("mala")]
+            st2, body2 = generar("ejecutar")
+            globals()["APPS_CMD"] = ["bash", apps_stub()]
+            check("generar: a failed download or verification stops the install — the app's own FATAL line, and the seed never started (#33)",
+                  st2 == 500
+                  and body2["error"] == "FATAL: territorio: la firma de SHA256SUMS no verifica contra apps.pub"
+                  and "== APS Conecta provisioning" not in body2["salida"]
+                  and "14 phase(s) run" not in body2["salida"])
+            globals()["APPS_CMD"] = ["bash", apps_stub("lenta")]
+            viejo = TIMEOUTS["apps"]
+            TIMEOUTS["apps"] = 1
+            st2, body2 = generar("ejecutar")
+            TIMEOUTS["apps"] = viejo
+            globals()["APPS_CMD"] = ["bash", apps_stub()]
+            check("generar: a hung download is killed by its bound, and the one line names the app that was in flight (#33)",
+                  st2 == 500 and "excedió el límite de 1 s" in body2["error"]
+                  and "(iba en: territorio v0.80.0 — descargando y verificando)" in body2["error"]
+                  and "== APS Conecta provisioning" not in body2["salida"])
+            estado = open(ESTADO_PATH, encoding="utf-8").read()
             env_text = open(env_path, encoding="utf-8").read()
             check("generar: ejecutar converges .env — SITE written, fixtures forced, fixture password generated, 0600",
                   "SITE=113314" in env_text and "SEED_FIXTURES=1" in env_text
@@ -5572,10 +5698,11 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   and "user elena.diaz exists" in drv and body["divergencia_vacia"])
             console = buf.getvalue()
             log_text = open(os.path.join(deis.HERE, "..", ".install.log"), encoding="utf-8").read()
-            check("generar --resumen: one Spanish line per phase and the roster's count on the console, the whole log in .install.log (R42)",
+            check("generar --resumen: one Spanish line per phase, the apps' download and the roster's count on the console, the whole log in .install.log (R42, #33)",
                   "  ✓ Grupos: roles, categorías y equipos\n" in console
                   and "  ✓ Planilla: 2 personas\n" in console
-                  and console.count("  ✓ ") == len(PHASE_TITLES) + 1
+                  and "  ✓ Aplicaciones: territorio v0.80.0 descargada y verificada" in console
+                  and console.count("  ✓ ") == len(PHASE_TITLES) + 2
                   and all(ln.startswith("  ✓ ") for ln in console.splitlines() if ln.strip())
                   and "▶ phase" not in console and "user " not in console
                   and "▶ phase 20-groups" in log_text and "== roster: 2 usuario(s) ==" in log_text)
@@ -5656,6 +5783,28 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   and "jwt_secret -> (value not printed)" in body["salida"])
             check("the compose arm: Talk is the stack's own — spreed installs, the suite is never asked (R29)",
                   st == 200 and "app spreed" in body["salida"] and "printenv" not in stub_log_text())
+            # #33: a release row the lock names installs from the stored, verified tarball —
+            # phase 12's own path, through the real seed (the stub's awk probe answers nothing,
+            # so the run takes the unpack branch and names the release)
+            os.makedirs(os.path.join(tmp, "store", "territorio"), exist_ok=True)
+            blob = b"fixture-release-territorio\n"
+            pkg = os.path.join(tmp, "store", "territorio", "v1.2.3.tar.gz")
+            with open(pkg, "wb") as fh:
+                fh.write(blob)
+            with open(os.environ["APS_APPS_LOCK"], "w", encoding="utf-8") as fh:
+                json.dump({"nextcloud": "34.0.4", "apps": {"territorio": {
+                    "source": "own", "repo": "APS-Conecta/territorio", "tag": "v1.2.3",
+                    "version": "1.2.3", "sha256": hashlib.sha256(blob).hexdigest()}}}, fh)
+            try:
+                os.environ["APS_APPS_STORE"] = os.path.join(tmp, "store")
+                st, body = generar("ejecutar")
+            finally:
+                os.environ.pop("APS_APPS_STORE", None)
+                os.remove(os.environ["APS_APPS_LOCK"])
+            check("generar: a locked release row installs from the store — the lock is the pin, the bake stays untouched (#33)",
+                  st == 200 and "app territorio -> 1.2.3 unpacked from release v1.2.3" in body["salida"]
+                  and "vendored" not in next(ln for ln in body["salida"].splitlines()
+                                              if "app territorio" in ln))
             open(stubctl, "w").close()
             open(env_path, "w", encoding="utf-8").write(
                 "\n".join(l for l in env_lines if not l.startswith("OFFICE_")) + "\n")
@@ -5663,8 +5812,8 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
             rc = subprocess.run(["bash", "-n", os.path.join(deis.HERE, "..", "provisioning", "usuarios.sh")],
                                 capture_output=True).returncode
             check("the driver parses: bash -n provisioning/usuarios.sh is clean", rc == 0)
-            check("the bounds are explicit: TIMEOUTS seed/roster/gate/suite = 1800/1800/300/900",
-                  TIMEOUTS == {"seed": 1800, "roster": 1800, "gate": 300, "suite": 900})
+            check("the bounds are explicit: TIMEOUTS seed/roster/gate/suite/apps = 1800/1800/300/900/600",
+                  TIMEOUTS == {"seed": 1800, "roster": 1800, "gate": 300, "suite": 900, "apps": 600})
 
             STEPS[:] = read_steps()
             LAN_IP, HOSTNAME, PORT = "127.0.0.1", "servidor-prueba", port
@@ -6777,11 +6926,12 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
         # the stub world closes with the fixture: the PATH injection and the FAKE_DOCKER_* knobs
         # are self-test machinery and must not leak into the caller's environment
         os.environ["PATH"] = old_path
-        for key in ("FAKE_DOCKER_LOG", "FAKE_DOCKER_STATE", "FAKE_DOCKER_CONTROL"):
+        for key in ("FAKE_DOCKER_LOG", "FAKE_DOCKER_STATE", "FAKE_DOCKER_CONTROL", "APS_APPS_LOCK"):
             os.environ.pop(key, None)
         try:
             APPS_DIR = apps_dir_real   # the fixture's apps source goes; the module's own returns
             ASSETS_ROOT = assets_root_real
+            globals()["APPS_CMD"] = verdadero_apps_cmd   # the real download command returns
         except NameError:
             pass
 

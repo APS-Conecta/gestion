@@ -368,6 +368,29 @@ jobs:
           assert len({r[2] for r in rows}) == len(rows), "two accounts share a password"
           print(f"credentials: {len(rows)} rows, {len(cargos)} cargos, every password distinct")
           PY
+      # #33: territorio arrives from its own signed release (ADR-0017) at the tag the lock
+      # recorded — never the bake's 0.74.0 — and it carries no signature.json (the release
+      # workflow packs none; the fetch refuses one that does). The lock and its store live
+      # inside the backup scope (/opt/aps-conecta, the wizard's own wiring).
+      - name: Territorio installed from its release, at its locked tag, with no signature.json
+        run: |
+          set -euo pipefail
+          cd /opt/aps-conecta/instalador && source scripts/env.sh
+          sudo test -f /opt/aps-conecta/apps.lock.json || { echo "FAIL: no apps lock after the install" >&2; exit 1; }
+          # word-split (read -r), never mapfile: python prints ONE line, and an indexed mapfile
+          # would leave campos[1] unbound under set -u — the bug this step's first run met
+          read -r tag version sha <<< "$(sudo python3 -c 'import json; a = json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["territorio"]; print(a["tag"], a["version"], a["sha256"])')"
+          echo "lock: territorio $tag ($version)"
+          [ "${tag#v}" = "$version" ] || { echo "FAIL: the lock's tag and version disagree" >&2; exit 1; }
+          [ "$version" != "0.74.0" ] || { echo "FAIL: territorio is the bake's 0.74.0, not a release" >&2; exit 1; }
+          got="$(occ config:app:get territorio installed_version)"
+          [ "$got" = "$version" ] || { echo "FAIL: the instance runs territorio $got, the lock names $version" >&2; exit 1; }
+          sudo test -f "/opt/aps-conecta/apps/territorio/$tag.tar.gz" || { echo "FAIL: the locked tarball is not in the store" >&2; exit 1; }
+          echo "$sha  /opt/aps-conecta/apps/territorio/$tag.tar.gz" | sudo sha256sum --check - \
+            || { echo "FAIL: the stored tarball is not the locked bytes" >&2; exit 1; }
+          if docker exec --user www-data aps-conecta-nextcloud test -e /var/www/html/custom_apps/territorio/appinfo/signature.json; then
+            echo "FAIL: territorio carries appinfo/signature.json — a release never does" >&2; exit 1
+          fi
       # Paired with the SITE_ROLES appended above (#103), because "the seed did not crash" is
       # not the same as "the roles landed". Asserts both halves of the rule: a cat-jefaturas
       # role is a POSITION and gets a standing account; a cat-tecnicos one is a job title held
@@ -454,6 +477,24 @@ jobs:
           docker ps --filter name=aps-conecta-notify-push --filter status=running --format '{{.Names}}' \
             | grep -qx aps-conecta-notify-push \
             || { echo "FAIL: aps-conecta-notify-push is not running after the store-off reboot" >&2; exit 1; }
+      # #33: a repeated provisioning downloads nothing and leaves the lock unchanged — the
+      # weekly path (`provision --reponer`, the same ejecutar leg the wizard runs) reads the
+      # lock, finds the verified tarball beside it, and moves neither. The tarball's mtime is
+      # the honest witness that no re-download happened; the log line is the leg's own words.
+      - name: A repeated provisioning downloads nothing and leaves the lock unchanged
+        run: |
+          set -euo pipefail
+          lock=/opt/aps-conecta/apps.lock.json
+          antes="$(sudo sha256sum "$lock" | cut -d' ' -f1)"
+          paquetes="$(sudo find /opt/aps-conecta/apps -name '*.tar.gz' -printf '%p %T@\n' | sort)"
+          sudo bash /opt/aps-conecta/instalador/host/aps-conecta provision --reponer 2>&1 | tee "$RUNNER_TEMP/reponer.out"
+          [ "$(sudo sha256sum "$lock" | cut -d' ' -f1)" = "$antes" ] \
+            || { echo "FAIL: the weekly run rewrote the lock" >&2; exit 1; }
+          [ "$(sudo find /opt/aps-conecta/apps -name '*.tar.gz' -printf '%p %T@\n' | sort)" = "$paquetes" ] \
+            || { echo "FAIL: the weekly run touched the stored releases" >&2; exit 1; }
+          grep -qF 'ya está en este servidor — no se descarga nada' "$RUNNER_TEMP/reponer.out" \
+            || { echo "FAIL: the fetch leg did not say it downloads nothing" >&2; cat "$RUNNER_TEMP/reponer.out"; exit 1; }
+          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
       # The full local gate — smoke's 14 checks through the probe's loopback apache, the
       # office gate answering the AIO sibling since this slice (office-smoke's AIO legs:
       # public-path healthcheck + --check + the DS 9.3.x pin + the image namespaces), and the
@@ -651,14 +692,46 @@ jobs:
           # absent (occ exits 1) or stored empty (exit 0, no value) are both "unset"; only a value is a failure
           tile_url="$(occ config:app:get territorio tile_url 2>/dev/null || true)"
           [ -z "$tile_url" ] || { echo "FAIL: territorio tile_url is set, but nothing provisions it any more: $tile_url" >&2; exit 1; }
-      # The weekly run, by IP, on the instance just installed: the leaf is kept (same fingerprint) and
-      # apache is not restarted; the seed converges again, idempotent by IP too.
-      - name: The weekly run keeps the leaf and apache as they are
+      # #33, by IP: territorio from its own release at its locked tag, no signature.json — the
+      # same acceptance the domain job asserts, on an install that reached the suite by address
+      - name: Territorio installed from its release, at its locked tag, with no signature.json
         run: |
+          set -euo pipefail
+          cd /opt/aps-conecta/instalador && source scripts/env.sh
+          sudo test -f /opt/aps-conecta/apps.lock.json || { echo "FAIL: no apps lock after the install" >&2; exit 1; }
+          # word-split (read -r), never mapfile: python prints ONE line, and an indexed mapfile
+          # would leave campos[1] unbound under set -u — the bug this step's first run met
+          read -r tag version sha <<< "$(sudo python3 -c 'import json; a = json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["territorio"]; print(a["tag"], a["version"], a["sha256"])')"
+          echo "lock: territorio $tag ($version)"
+          [ "${tag#v}" = "$version" ] || { echo "FAIL: the lock's tag and version disagree" >&2; exit 1; }
+          [ "$version" != "0.74.0" ] || { echo "FAIL: territorio is the bake's 0.74.0, not a release" >&2; exit 1; }
+          got="$(occ config:app:get territorio installed_version)"
+          [ "$got" = "$version" ] || { echo "FAIL: the instance runs territorio $got, the lock names $version" >&2; exit 1; }
+          sudo test -f "/opt/aps-conecta/apps/territorio/$tag.tar.gz" || { echo "FAIL: the locked tarball is not in the store" >&2; exit 1; }
+          echo "$sha  /opt/aps-conecta/apps/territorio/$tag.tar.gz" | sudo sha256sum --check - \
+            || { echo "FAIL: the stored tarball is not the locked bytes" >&2; exit 1; }
+          if docker exec --user www-data aps-conecta-nextcloud test -e /var/www/html/custom_apps/territorio/appinfo/signature.json; then
+            echo "FAIL: territorio carries appinfo/signature.json — a release never does" >&2; exit 1
+          fi
+      # The weekly run, by IP, on the instance just installed: the leaf is kept (same fingerprint) and
+      # apache is not restarted; the seed converges again, idempotent by IP too. #33 adds its half:
+      # the same run downloads nothing and leaves the lock unchanged.
+      - name: The weekly run keeps the leaf and apache as they are, downloads nothing and keeps the lock
+        run: |
+          set -o pipefail
           leaf=/opt/aps-conecta/certificados/suite/tls.crt
-          antes="$(sudo sha256sum "$leaf")"; arranque="$(docker inspect -f '{{.State.StartedAt}}' aps-conecta-apache)"
-          sudo env "PATH=$PATH" bash /opt/aps-conecta/instalador/host/aps-conecta provision --reponer
+          lock=/opt/aps-conecta/apps.lock.json
+          antes="$(sudo sha256sum "$leaf")"; lock_antes="$(sudo sha256sum "$lock" | cut -d' ' -f1)"
+          paquetes="$(sudo find /opt/aps-conecta/apps -name '*.tar.gz' -printf '%p %T@\n' | sort)"
+          arranque="$(docker inspect -f '{{.State.StartedAt}}' aps-conecta-apache)"
+          sudo env "PATH=$PATH" bash /opt/aps-conecta/instalador/host/aps-conecta provision --reponer 2>&1 | tee "$RUNNER_TEMP/reponer-ip.out"
           [ "$(sudo sha256sum "$leaf")" = "$antes" ] || { echo "FAIL: the weekly run signed a leaf that was valid" >&2; exit 1; }
+          [ "$(sudo sha256sum "$lock" | cut -d' ' -f1)" = "$lock_antes" ] \
+            || { echo "FAIL: the weekly run rewrote the lock" >&2; exit 1; }
+          [ "$(sudo find /opt/aps-conecta/apps -name '*.tar.gz' -printf '%p %T@\n' | sort)" = "$paquetes" ] \
+            || { echo "FAIL: the weekly run touched the stored releases" >&2; exit 1; }
+          grep -qF 'ya está en este servidor — no se descarga nada' "$RUNNER_TEMP/reponer-ip.out" \
+            || { echo "FAIL: the fetch leg did not say it downloads nothing" >&2; cat "$RUNNER_TEMP/reponer-ip.out"; exit 1; }
           [ "$(docker inspect -f '{{.State.StartedAt}}' aps-conecta-apache)" = "$arranque" ] \
             || { echo "FAIL: the weekly run restarted apache with nothing renewed" >&2; exit 1; }
           sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
