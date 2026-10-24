@@ -53,6 +53,9 @@ Conventional Commits; the fork's own changes carry the `instalador` scope:
 
     fix(instalador): the gates' rows fire unconditionally — the queue-era contract inverted
 
+PR titles follow the same rule and language: Conventional Commits, English (ci.yml gates
+the shape; the org doctrine keeps issue and UI titles the Spanish ones).
+
 Every commit with AI-assisted content carries an `Assisted-by: AGENT_NAME:MODEL_VERSION`
 trailer. Do not add `Signed-off-by` tags.
 

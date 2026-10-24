@@ -1,0 +1,53 @@
+# The per-app release acceptance of ADR-0017 (#33 territorio, #34 epidemiologia, #35
+# intravox), stated ONCE: the lock row names a release tag — never the bake's version —
+# the instance runs the locked version, the stored tarball is the locked bytes, no
+# appinfo/signature.json rides the app, and (landing: true, intravox alone, ADR-0010)
+# the app is the system's landing app. The welcome content is asserted elsewhere: phase
+# 41 seeds it (a failed phase reds the run) and the divergence gate proves every
+# SITE_WELCOME section landed.
+#
+# A composite action, not a template: each app's call site is four lines that cannot
+# conflict with a sibling app's flip at the same anchor (#117 — the copies collided
+# twice before this existed), and an assertion added here reaches every app at once.
+name: Assert an app installed from its release
+inputs:
+  app:
+    description: The app id, as in apps.json, the lock and custom_apps/.
+    required: true
+  bake-version:
+    description: The version the bake pins — the release must never be this one.
+    required: true
+  landing:
+    description: true when the app must also be the system's landing app (ADR-0010).
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: ${{ inputs.app }} installed from its release, at its locked tag, with no signature.json
+      shell: bash
+      env:
+        APP: ${{ inputs.app }}
+        BAKE: ${{ inputs.bake-version }}
+        LANDING: ${{ inputs.landing }}
+      run: |
+        set -euo pipefail
+        cd /opt/aps-conecta/instalador && source scripts/env.sh
+        sudo test -f /opt/aps-conecta/apps.lock.json || { echo "FAIL: no apps lock after the install" >&2; exit 1; }
+        # word-split (read -r), never mapfile: python prints ONE line, and an indexed mapfile
+        # would leave campos[1] unbound under set -u — the bug this step's first run met (#33)
+        read -r tag version sha <<< "$(sudo python3 -c 'import json; a = json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["'"$APP"'"]; print(a["tag"], a["version"], a["sha256"])')"
+        echo "lock: $APP $tag ($version)"
+        [ "${tag#v}" = "$version" ] || { echo "FAIL: the lock's tag and version disagree" >&2; exit 1; }
+        [ "$version" != "$BAKE" ] || { echo "FAIL: $APP is the bake's $BAKE, not a release" >&2; exit 1; }
+        got="$(occ config:app:get "$APP" installed_version)"
+        [ "$got" = "$version" ] || { echo "FAIL: the instance runs $APP $got, the lock names $version" >&2; exit 1; }
+        sudo test -f "/opt/aps-conecta/apps/$APP/$tag.tar.gz" || { echo "FAIL: the locked tarball is not in the store" >&2; exit 1; }
+        echo "$sha  /opt/aps-conecta/apps/$APP/$tag.tar.gz" | sudo sha256sum --check - \
+          || { echo "FAIL: the stored tarball is not the locked bytes" >&2; exit 1; }
+        if docker exec --user www-data aps-conecta-nextcloud test -e "/var/www/html/custom_apps/$APP/appinfo/signature.json"; then
+          echo "FAIL: $APP carries appinfo/signature.json — a release never does" >&2; exit 1
+        fi
+        if [ "$LANDING" = "true" ]; then
+          [ "$(occ config:system:get defaultapp)" = "$APP" ] \
+            || { echo "FAIL: the landing app is '$(occ config:system:get defaultapp)', not $APP (ADR-0010)" >&2; exit 1; }
+        fi
