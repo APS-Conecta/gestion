@@ -11,6 +11,18 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ## [Unreleased]
 
+### Added
+
+- **Territorio installs from its own release (#33, ADR-0017).** At install time the Provisionador
+  resolves the app's newest GitHub Release compatible with the running Nextcloud (the latest-release
+  redirect — no API call, no token), downloads it, verifies it against `apps.pub` (signify: the
+  SHA256SUMS signature, the tarball and `info.xml` hashes, the top directory, no
+  `appinfo/signature.json`), installs it, and records its tag in the per-server lock file
+  (`/opt/aps-conecta/apps.lock.json`, inside the backup scope). A repeated provisioning installs
+  from the lock and downloads nothing; a failed download or verification stops the install naming
+  the app and the retry command; review mode downloads nothing. The other apps still come from the
+  bake until their own releases land (#34–#38) and the bake is removed (#42).
+
 ### Removed
 
 - Upstream's default startup-app set (deck, twofactor_totp, tasks, calendar, contacts, notes — comma-spelled

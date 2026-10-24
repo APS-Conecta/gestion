@@ -433,6 +433,78 @@ ensure_own_app() {  # APPID CLONE_URL
   fi
 }
 
+# ── apps from their own releases (ADR-0017, #33) ──
+#
+# The release path installs what the LOCK names — the fetch leg (the wizard's ejecutar, the
+# silent install, the weekly reponer — all `provisionador.py --paso generar`) resolved it,
+# downloaded it, verified it against apps.pub and recorded tag/version/sha. THIS side never
+# downloads: the seed's whole contract is convergence over what is already on the server, so a
+# missing or drifted package is a named FAILED that re-running the install repairs, never a
+# silent network fetch mid-seed (the store stayed out of the seed for exactly this reason, #98).
+lock_row() {  # APPID — the lock's row (tag<TAB>version<TAB>sha256<TAB>tarball), or nothing when
+               # the lock names no such app. A lock that exists but cannot be read is FATAL here:
+               # falling to the vendored bake would silently re-impose an older app over a live
+               # server — the lock is the server's own record, and it outranks the bake.
+  local out rc=0
+  out="$(python3 "$HERE/../scripts/releases.py" locked "$1")" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    log "FAILED $1 — the lock refused to answer (its FATAL line is above)"
+    return 1
+  fi
+  printf '%s\n' "$out"
+}
+
+ensure_release_app() {  # APPID ROW — install the release the lock names, from the stored tarball
+  local app="$1" tag want sha tgz cur
+  IFS=$'\t' read -r tag want sha tgz <<< "$2"
+  [ -n "$tag" ] && [ -n "$want" ] && [ -n "$sha" ] && [ -n "$tgz" ] \
+    || { log "FAILED $app — the lock's row is incomplete"; return 1; }
+  # The counted floors, in the order the trust chain proved them: the package is there, and it
+  # is still the bytes the lock pinned (the store lives inside the backup scope, but a restore
+  # or a hand copy is exactly the kind of event that must re-prove, never assume).
+  [ -f "$tgz" ] || { log "FAILED $app — the release package $tgz is missing; re-run the install (its download step fetches it again)"; return 1; }
+  echo "$sha  $tgz" | sha256sum --check --status \
+    || { log "FAILED $app — $tgz does not match the sha256 recorded in the lock; re-run the install"; return 1; }
+
+  cur="$(app_installed_version "$app")"
+
+  if [ "$cur" = "$want" ]; then
+    log "app $app $want already unpacked (release $tag)"
+  else
+    # The same re-impose discipline as ensure_vendored_app, for the same reasons (cleared first
+    # so the result IS the release; schema reconciled through the app's own migrations).
+    if [ -n "$cur" ]; then
+      occ_sh "rm -rf custom_apps/$app" \
+        || { log "FAILED to clear $app before re-imposing $want"; return 1; }
+    fi
+    if nc_exec -i --user www-data -- \
+         tar xzf - -C /var/www/html/custom_apps < "$tgz"; then
+      log "app $app ${cur:+$cur }-> $want unpacked from release $tag"
+    else
+      log "FAILED to unpack $app from release $tag"; return 1
+    fi
+    if [ -n "$cur" ]; then
+      if occ upgrade --no-interaction >/dev/null 2>&1; then
+        log "app $app schema reconciled to $want (occ upgrade)"
+      else
+        log "FAILED to reconcile $app to $want — 'occ upgrade' errored; instance may be mid-upgrade"
+        return 1
+      fi
+      CONF_CACHE=""   # installed_version moved under it
+    fi
+  fi
+
+  conf_load
+  [ "$(conf_get app "$app" enabled 2>/dev/null || true)" = "yes" ] && { log "app $app enabled"; return 0; }
+  local err
+  if err="$(occ app:enable "$app" 2>&1)"; then
+    log "app $app -> enabled"
+  else
+    log "FAILED to enable app $app — occ said: $(printf '%s' "$err" | tr '\n' ' ' | tail -c 300)"
+    return 1
+  fi
+}
+
 # Re-apply a file edit inside an app's code. apps/ is not tracked, so these edits cannot
 # be committed and an app update wipes them; running on every seed is what restores them.
 #

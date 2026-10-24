@@ -41,7 +41,8 @@ A GitHub Release of an own or fork app with four assets: `<id>.tar.gz`, `info.xm
 The only list of the suite's apps. Every installer step and gate reads it; `scripts/apps.py` validates it.
 
 **Lock file**:
-The per-server record of the installed app tags.
+The per-server record of the installed app tags (`/opt/aps-conecta/apps.lock.json`, written by the
+app-release resolver; see ADR-0017).
 
 **Provisionador**:
 The web wizard that runs the install.
