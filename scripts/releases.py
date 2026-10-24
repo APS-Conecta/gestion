@@ -45,6 +45,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import traceback
 import threading
 import urllib.error
 import urllib.parse
@@ -477,7 +478,10 @@ def main(argv):
         if "--pub" in opts:
             os.environ["APS_APPS_PUB"] = opts["--pub"]
         try:
-            rows = [r for r in apps.load(opts.get("--manifest")) if r.get("release")]
+            # `or apps.MANIFEST`: no --manifest means the suite's own apps.json — load()'s default
+            # is a def-time arg, and passing None through was the crash the first clean boot met
+            rows = [r for r in apps.load(opts.get("--manifest") or apps.MANIFEST)
+                    if r.get("release")]
         except ValueError as e:
             print(f"FATAL: {e}", file=sys.stderr)   # apps.py says the manifest's failure once
             return 1
@@ -489,6 +493,13 @@ def main(argv):
                 print(line)
         except Refusal as e:
             print(f"FATAL: {e} — {RETRY}", file=sys.stderr)
+            return 1
+        except Exception as e:   # never a bare traceback as the operator's only line: the
+            # Spanish FATAL below is what the wizard surfaces; the traceback rides stderr into
+            # the install log beside it, where the diagnosis actually lives
+            traceback.print_exc()
+            print(f"FATAL: la descarga de aplicaciones falló por un error interno "
+                  f"({type(e).__name__}) — {RETRY}; revise el registro", file=sys.stderr)
             return 1
         return 0
     print(__doc__.split("\n\n")[1], file=sys.stderr)
@@ -780,6 +791,22 @@ def selftest():
               run.returncode == 0 and "✓ apps: territorio v0.80.0" in run.stdout
               and read_lock()["apps"]["territorio"]["tag"] == "v0.80.0"
               and os.path.isfile(store_file("territorio", "v0.80.0")))
+        # THE PRODUCTION ARGV, exactly as APPS_CMD spells it: `fetch --nextcloud V`, no --manifest.
+        # This is the call the first clean boot crashed on (apps.load(None) → TypeError — every
+        # other arm passed --manifest, and the wizard's stub hid the argv entirely), so it runs
+        # here for real: the manifest it reads is the SHIPPED apps.json, and every release row
+        # there must have its fixture on the hub — a new release row without its hub repo reds
+        # HERE, at the cause, not four minutes into a clean boot.
+        os.environ["APS_APPS_LOCK"] = os.path.join(tmp, "prod-lock.json")
+        os.environ["APS_APPS_STORE"] = os.path.join(tmp, "prod-store")
+        run = subprocess.run([sys.executable, os.path.abspath(__file__), "fetch",
+                              "--nextcloud", "34.0.4"],
+                             capture_output=True, text=True, timeout=120)
+        check("cli fetch without --manifest: the shipped manifest's release rows all resolve and fetch over the hub (#33)",
+              run.returncode == 0 and "✓ apps: territorio" in run.stdout
+              and read_lock()["apps"]["territorio"]["tag"] == "v0.80.0")
+        os.environ["APS_APPS_LOCK"] = os.path.join(tmp, "cli-lock.json")
+        os.environ["APS_APPS_STORE"] = os.path.join(tmp, "cli-store")
         antes = dict(server.hits)   # the `locked` call below must add nothing to this
         run = subprocess.run([sys.executable, os.path.abspath(__file__), "locked", "territorio"],
                              capture_output=True, text=True, timeout=30)
