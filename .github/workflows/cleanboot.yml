@@ -436,8 +436,10 @@ jobs:
       # became fork+release, so the wizard's fetch leg resolves APS-Conecta/desktop_workspace's
       # newest signed release instead of the bake's 0.18.2 patches. The lock/store/signature
       # block is territorio's; the desktop's own half is «it opens»: the app is enabled and
-      # its route answers anything but a 5xx unauthenticated (a 302 to login is the healthy
-      # answer — smoke's authenticated probe (check 15) stays the developer-only deep check).
+      # its route answers its own auth check, not a 5xx or a 404. The desktop's controller
+      # refuses anonymous visitors with HTTP 401 itself (measured on the first run) instead
+      # of redirecting to login, so 401 is one of the healthy answers — smoke's
+      # authenticated probe (check 15) stays the developer-only deep check.
       - name: Desktop workspace installed from its release, at its locked tag, and it opens
         run: |
           set -euo pipefail
@@ -459,7 +461,7 @@ jobs:
             || { echo "FAIL: desktop_workspace is not enabled" >&2; exit 1; }
           code="$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${HTTP_PORT}/index.php/apps/desktop_workspace/" 2>/dev/null)"
           case "$code" in
-            200|302|303) echo "desktop: /apps/desktop_workspace/ answered HTTP $code (route alive)" ;;
+            200|302|303|401) echo "desktop: /apps/desktop_workspace/ answered HTTP $code (route alive)" ;;
             *) echo "FAIL: the desktop does not open — /apps/desktop_workspace/ answered HTTP $code" >&2; exit 1 ;;
           esac
       # Paired with the SITE_ROLES appended above (#103), because "the seed did not crash" is
@@ -837,7 +839,7 @@ jobs:
             || { echo "FAIL: desktop_workspace is not enabled" >&2; exit 1; }
           code="$(curl -s -o /dev/null -w '%{http_code}' --cacert "$RUNNER_TEMP/ca.crt" "https://$SUITE_IP/index.php/apps/desktop_workspace/" 2>/dev/null)"
           case "$code" in
-            200|302|303) echo "desktop: /apps/desktop_workspace/ answered HTTP $code (route alive)" ;;
+            200|302|303|401) echo "desktop: /apps/desktop_workspace/ answered HTTP $code (route alive)" ;;
             *) echo "FAIL: the desktop does not open — /apps/desktop_workspace/ answered HTTP $code" >&2; exit 1 ;;
           esac
       # The weekly run, by IP, on the instance just installed: the leaf is kept (same fingerprint) and
