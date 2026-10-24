@@ -660,6 +660,7 @@ def selftest():
 
         # the repos the arms walk — the hub keeps each one newest-first
         mk_release("APS-Conecta/territorio", "v0.80.0", "0.80.0", nc="34", nc_max="34")
+        mk_release("APS-Conecta/epidemiologia", "v0.12.0", "0.12.0", nc="34", nc_max="34")
         mk_release("APS-Conecta/vieja", "v2.0.0", "2.0.0", nc="35", nc_max="35")
         mk_release("APS-Conecta/vieja", "v1.9.0", "1.9.0", nc="34", nc_max="34")
         mk_release("APS-Conecta/mala-firma", "v1.0.0", "1.0.0", firma="ajena")
@@ -802,9 +803,11 @@ def selftest():
         run = subprocess.run([sys.executable, os.path.abspath(__file__), "fetch",
                               "--nextcloud", "34.0.4"],
                              capture_output=True, text=True, timeout=120)
-        check("cli fetch without --manifest: the shipped manifest's release rows all resolve and fetch over the hub (#33)",
-              run.returncode == 0 and "✓ apps: territorio" in run.stdout
-              and read_lock()["apps"]["territorio"]["tag"] == "v0.80.0")
+        check("cli fetch without --manifest: the shipped manifest's release rows all resolve and fetch over the hub (#33, #34)",
+              run.returncode == 0 and "✓ apps: territorio v0.80.0" in run.stdout
+              and "✓ apps: epidemiologia v0.12.0" in run.stdout
+              and read_lock()["apps"]["territorio"]["tag"] == "v0.80.0"
+              and read_lock()["apps"]["epidemiologia"]["tag"] == "v0.12.0")
         os.environ["APS_APPS_LOCK"] = os.path.join(tmp, "cli-lock.json")
         os.environ["APS_APPS_STORE"] = os.path.join(tmp, "cli-store")
         antes = dict(server.hits)   # the `locked` call below must add nothing to this
