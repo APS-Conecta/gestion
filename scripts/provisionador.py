@@ -5088,9 +5088,10 @@ def selftest():
             with open(HOST_CLI, encoding="utf-8") as fh:
                 aio_set = re.search(r'^AIO_SET="([^"]*)"', fh.read(), re.M).group(1).split()
             filas = apps_aps()
-            check("suite: the five APS apps (own and fork in the manifest), by name — the three baked ones with their VENDOR versions, the release ones with what the lock records or their promise (#33, #34); the containers are the host's set plus Nextcloud (a12)",
+            check("suite: the five APS apps (own and fork in the manifest), by name — the two baked ones with their VENDOR versions, the three release ones with what the lock records or their promise (#33, #34, #35); the containers are the host's set plus Nextcloud (a12)",
                   [f[0] for f in filas] == ["Inicio", "Epidemiología", "Estadística", "Farmacia", "Territorio"]
-                  and all(re.fullmatch(r"\d+\.\d+\.\d+", f[1]) for f in (filas[0], filas[2], filas[3]))
+                  and all(re.fullmatch(r"\d+\.\d+\.\d+", f[1]) for f in filas[2:4])
+                  and filas[0][1] == "según su release"
                   and filas[1][1] == "según su release"
                   and filas[4][1] == "según su release"
                   and {c for c, _n in CONTENEDORES_SUITE} == set(aio_set) | {"aps-conecta-nextcloud"})
@@ -5110,7 +5111,7 @@ def selftest():
                   [f[0] for f in filas] == ["Epidemiología", "Estadística", "Farmacia", "Territorio"]
                   and all(re.fullmatch(r"\d+\.\d+\.\d+", f[1]) for f in filas[1:3])
                   and filas[0][1] == "según su release"
-                  and filas[3][1] == "según su release")
+                  and filas[3][1] == "según su release")  # intravox left with its name (#35)
             with open(os.environ["APS_APPS_LOCK"], "w", encoding="utf-8") as fh:
                 json.dump({"nextcloud": "34.0.4", "apps": {
                     "territorio": {
@@ -5118,14 +5119,18 @@ def selftest():
                         "version": "0.80.0", "sha256": "0" * 64},
                     "epidemiologia": {
                         "source": "own", "repo": "APS-Conecta/epidemiologia", "tag": "v0.12.0",
-                        "version": "0.12.0", "sha256": "0" * 64}}}, fh)
+                        "version": "0.12.0", "sha256": "0" * 64},
+                    "intravox": {
+                        "source": "fork", "repo": "APS-Conecta/IntraVox", "tag": "v3.2.0",
+                        "version": "3.2.0", "sha256": "0" * 64}}}, fh)
             try:
                 filas = apps_aps()
             finally:   # gone before any ejecutar: phase 12 probes this same lock
                 os.remove(os.environ["APS_APPS_LOCK"])
-            check("suite: a release row the lock already recorded shows its locked version (#33, #34)",
+            check("suite: a release row the lock already recorded shows its locked version (#33, #34, #35)",
                   {n: v for n, v, _q in filas}["Territorio"] == "0.80.0"
-                  and {n: v for n, v, _q in filas}["Epidemiología"] == "0.12.0")
+                  and {n: v for n, v, _q in filas}["Epidemiología"] == "0.12.0"
+                  and {n: v for n, v, _q in filas}["Inicio"] == "3.2.0")
             fijo = centro_actual()[1].get("codigo")   # the site the preparation fills, then restored
             antes_fijo = open(site_path(fijo), encoding="utf-8").read() if fijo else None
             falso = os.path.join(tmp, "asistente-falso.sh")
@@ -6769,7 +6774,8 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                             jerga7 = re.findall(rf"\b(?:{ids7})\b|idempotente|\.sh\b|\.env\b|/|"
                                                 r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b",
                                                 antes_txt + error_txt + prep_txt + datos_txt + espera_txt + principal7)
-                            paso_suite = ("Inicio" in apps_txt and "3.1.7" in apps_txt and "Territorio" in apps_txt
+                            paso_suite = ("Inicio" in apps_txt and "según su release" in apps_txt
+                                     and "Territorio" in apps_txt
                                      and "Talk: cabe" in talk_txt and "Grabación: no cabe" in talk_txt
                                      and "requiere 4 núcleos libres; hay 4 en total" in talk_txt
                                      and "El asistente rechazó la dirección" in error_txt and de_nuevo
