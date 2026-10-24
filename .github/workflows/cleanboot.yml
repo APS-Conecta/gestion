@@ -496,6 +496,35 @@ jobs:
             || { echo "FAIL: an app update with the store closed disabled eurooffice" >&2; exit 1; }
           docker exec --user www-data aps-conecta-nextcloud grep -qF '<name>Euro-Office</name>' /var/www/html/custom_apps/eurooffice/appinfo/info.xml \
             || { echo "FAIL: the update leg replaced the fork's name" >&2; exit 1; }
+      # #39: farmacia is the optional tracer, and this job chose NOTHING — the testbed's wizard
+      # drive recorded talk=0 grabacion=0 farmacia=0, so the fetch leg resolved nothing for it
+      # and phase 12 skipped the row before any of its three arrival paths. "Not installed"
+      # therefore means absent as an APP: no lock row, no release tarball in the store, no
+      # installed version, never enabled — the seed's gate is what keeps the bake out, because
+      # the IMAGE still bakes the app's bytes into custom_apps (the #42 interim, Dockerfile:305),
+      # so the directory's presence is not the choice's observable: its INSTALL is. The record
+      # itself is asserted first: it is the choice that all three halves read, and the one the
+      # repeated-provisioning arms rely on surviving.
+      - name: Farmacia is absent — the optional app nobody chose installs nothing (#39)
+        run: |
+          set -euo pipefail
+          cd /opt/aps-conecta/instalador && source scripts/env.sh
+          grep -q "farmacia=0" /tmp/aio-testbed/opciones \
+            || { echo "FAIL: the testbed's wizard drive did not record farmacia=0 — the choice record is the gate every leg reads" >&2; cat /tmp/aio-testbed/opciones >&2; exit 1; }
+          if sudo python3 -c 'import json, sys; sys.exit(0 if "farmacia" in json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"] else 1)'; then
+            echo "FAIL: the lock names farmacia, but nobody chose it — the fetch leg must resolve nothing for an unchosen optional row" >&2; exit 1
+          fi
+          if [ -e /opt/aps-conecta/apps/farmacia ]; then
+            echo "FAIL: the release store holds farmacia, but nobody chose it" >&2; exit 1
+          fi
+          got="$(occ config:app:get farmacia installed_version 2>/dev/null || true)"
+          [ -z "$got" ] || { echo "FAIL: the instance knows farmacia $got, but nobody chose it" >&2; exit 1; }
+          habilitada="$(occ config:app:get farmacia enabled 2>/dev/null || true)"
+          [ "$habilitada" != "yes" ] \
+            || { echo "FAIL: farmacia is enabled, but nobody chose it — the bake's bytes sit in the image (#42's interim), the seed's gate must keep them an uninstalled app" >&2; exit 1; }
+          echo "farmacia: nunca instalada — la elección es la puerta, y nadie la eligió"
+
+
       # Paired with the SITE_ROLES appended above (#103), because "the seed did not crash" is
       # not the same as "the roles landed". Asserts both halves of the rule: a cat-jefaturas
       # role is a POSITION and gets a standing account; a cat-tecnicos one is a job title held
@@ -734,8 +763,10 @@ jobs:
           echo "SUITE_IP=$ip" >> "$GITHUB_ENV"
           bash /opt/aps-conecta/instalador/scripts/cleanboot-site.sh "$ip" "$RUNNER_TEMP"
       # The silent install, as root, with no terminal. The suite tag is the one the «suite-tag» job
-      # resolved, so both jobs run the same published suite.
-      - name: Install by IP through the silent command a clinic runs
+      # resolved, so both jobs run the same published suite. #39: this job CHOOSES farmacia — the
+      # optional tracer — the same way an operator without a browser does: one --app flag per
+      # checkbox, carried by the silent install into the wizard drive and its options record.
+      - name: Install by IP through the silent command a clinic runs, choosing farmacia (#39)
         run: |
           set -o pipefail   # run: is `bash -e` without it — the install's own failure, not tee's
           # APS_SUITE_TAG: the package's VERSION is this run's throwaway ci-cleanboot-<sha>, but the
@@ -743,7 +774,7 @@ jobs:
           # (suite_tag() answers the override first; the rehearsal-window seam it exists for)
           sudo env "PATH=$PATH" APS_SKIP_DATOS=1 MIN_DISK_GB=2 APS_SUITE_TAG="$SUITE_TAG" \
             bash /opt/aps-conecta/instalador/host/aps-conecta install \
-              --sitio "$RUNNER_TEMP/site.sh" --planilla "$RUNNER_TEMP/usuarios.csv" \
+              --sitio "$RUNNER_TEMP/site.sh" --planilla "$RUNNER_TEMP/usuarios.csv" --app farmacia \
             < /dev/null | tee "$RUNNER_TEMP/install.out"
       - name: Hand the checkout back to the runner
         if: always()
@@ -819,6 +850,21 @@ jobs:
           app: intravox
           bake-version: 3.1.7
           landing: true
+      # #39, by IP: farmacia — the optional tracer — installed from its release at its locked
+      # tag BECAUSE this job chose it. The choice rode the silent install's --app flag into the
+      # wizard's options record, the fetch leg resolved it beside the default rows, and the
+      # bake's 0.11.1 (the vendored tarball this suite still carries, #42) never applied. The
+      # record is asserted beside the lock: it is the choice every later run re-reads.
+      - name: Farmacia installed from its release because it was chosen (#39)
+        run: |
+          set -euo pipefail
+          grep -q "farmacia=1" /opt/aps-conecta/aio/opciones \
+            || { echo "FAIL: the wizard's options record does not name farmacia=1 — the choice the install was given" >&2; cat /opt/aps-conecta/aio/opciones >&2; exit 1; }
+      - name: Farmacia installed from its release, at its locked tag, with no signature.json
+        uses: ./.github/actions/assert-release-app
+        with:
+          app: farmacia
+          bake-version: 0.11.1
       # #38, by IP: side_menu from its own release at its locked tag, its colour still violet —
       # the same acceptance the domain job asserts, on an install that reached the suite by
       # address. Same reasoning as there: same version as the bake, so the store + lock prove
@@ -925,6 +971,18 @@ jobs:
             || { echo "FAIL: the weekly run touched the stored releases" >&2; exit 1; }
           grep -qF 'ya está en este servidor — no se descarga nada' "$RUNNER_TEMP/reponer-ip.out" \
             || { echo "FAIL: the fetch leg did not say it downloads nothing" >&2; cat "$RUNNER_TEMP/reponer-ip.out"; exit 1; }
+          # #39: the choice survives the repeated provisioning — the record still says farmacia=1,
+          # so the weekly run resolved it from the lock (no download), the lock still names it, and
+          # the instance still runs the locked tag. An un-choosing would read here the other way:
+          # skipped, never uninstalled.
+          grep -q "farmacia=1" /opt/aps-conecta/aio/opciones \
+            || { echo "FAIL: the weekly run lost the farmacia choice" >&2; exit 1; }
+          read -r ftag fver _fsha <<< "$(sudo python3 -c 'import json; a = json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["farmacia"]; print(a["tag"], a["version"], a["sha256"])')"
+          [ -n "$fver" ] || { echo "FAIL: the lock no longer names farmacia" >&2; exit 1; }
+          cd /opt/aps-conecta/instalador && source scripts/env.sh
+          [ "$(occ config:app:get farmacia installed_version)" = "$fver" ] \
+            || { echo "FAIL: the weekly run moved farmacia off its locked $fver" >&2; exit 1; }
+          echo "farmacia: the choice survived — lock $ftag, nothing downloaded"
           [ "$(docker inspect -f '{{.State.StartedAt}}' aps-conecta-apache)" = "$arranque" ] \
             || { echo "FAIL: the weekly run restarted apache with nothing renewed" >&2; exit 1; }
           sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"

@@ -235,6 +235,14 @@ except ValueError as e:   # the one Spanish line, before any socket — the regi
     sys.exit(f"✗ {e}")
 COMPONENTES = tuple((a["id"], a["name"], a["summary"]) for a in SUITE_APPS if "name" in a)
 PLUMBING_APPS = tuple(a["id"] for a in SUITE_APPS if "name" not in a)
+# The optional apps (#39): the manifest rows the wizard offers — Spanish name and summary, the
+# checkbox's default (optional "on" checks it; every optional app today is off by default).
+# The choice rides the install options (the host's opciones record), and an unchosen optional
+# app installs never: not from its release, not from the bake. A plumbing optional row (no
+# name) is a choice the CLI still records, never a card the wizard offers — same rule as a12's.
+OPCIONALES = tuple((a["id"], a["name"], a["summary"], a["optional"] == "on")
+                   for a in SUITE_APPS if a.get("optional") is not False and "name" in a)
+OPCIONAL_IDS = frozenset(i for i, _n, _s, _d in OPCIONALES)
 # The browser's progress list (a14): the phases by their console titles, then the people, then the gate.
 PASO_PLANILLA, PASO_GATE = "Cuentas del personal", "Comprobación final"
 PASOS_EJECUCION = [PHASE_TITLES[k] for k in sorted(PHASE_TITLES)] + [PASO_PLANILLA, PASO_GATE]
@@ -1451,7 +1459,10 @@ def plan_clinico(codigo, teams, rows, cargos):
     hand-built site without the pair, a code the register lacks) — a state, never a blocked run."""
     row = find_row(codigo)
     opciones = opciones_actuales()
-    sin_talk = opciones is not None and not opciones[0]   # step 6 left Talk off: phase 12 installs no spreed
+    sin_talk = opciones is not None and not opciones["talk"]   # step 6 left Talk off: phase 12 installs no spreed
+    # same for the optional apps (#39): a component only when step 6 chose it — an unchosen
+    # optional app is absent from the plan, as it is from the instance
+    elegidas = opciones["apps"] if opciones else {i: d for i, _n, _s, d in OPCIONALES}
     punto, oficial = site_punto(site_path(codigo)), _punto_oficial(row)
     if punto is None or oficial is None:
         ubicacion = None
@@ -1469,7 +1480,8 @@ def plan_clinico(codigo, teams, rows, cargos):
                          for uid, nombre, apellidos, _c, gids, primer in rows],
             "cuentas_de_cargo": len(cargos),
             "componentes": [[nombre, que] for app, nombre, que in COMPONENTES
-                            if not (sin_talk and app == "spreed")]}
+                            if not (sin_talk and app == "spreed")
+                            and (app not in OPCIONAL_IDS or elegidas[app])]}
 
 
 def record_state(body):
@@ -2311,14 +2323,18 @@ def screen_listo():
 
 
 def screen_contenedores():
-    """Step 6, «Iniciar la suite» (L3 S5) — the approved design's: the five APS apps with their
-    versions (a12) and Talk sized to this server (R26); then the wizard, filled by the host (domain,
-    timezone, office, Talk, the daily backup) and started by the operator there (S1b: kept,
-    pre-filled) with the passphrase shown here; then the containers by name, once a second (R48),
+    """Step 6, «Iniciar la suite» (L3 S5) — the approved design's: the APS apps with their
+    versions (a12), the optional apps as checkboxes (#39, all off by default) and Talk sized to
+    this server (R26); then the wizard, filled by the host (domain, timezone, office, Talk, the
+    optional apps, the daily backup) and started by the operator there (S1b: kept, pre-filled)
+    with the passphrase shown here; then the containers by name, once a second (R48),
     to «Siguiente». A reload finds the step where it is."""
     body = """<section class="tarjeta"><h2>Aplicaciones</h2>
 <div id="m">Consultando el servidor…</div><div id="s-apps"></div>
 <p class="nota">Se activan al ejecutar, junto a Documentos, Oficina, Calendario y Contactos.</p></section>
+<section class="tarjeta" id="s-opc-tarjeta" hidden><h2>Aplicaciones opcionales</h2>
+<div id="s-opc"></div>
+<p class="nota">Todas vienen desactivadas: actívela solo si su establecimiento la usa. La elección se guarda con las opciones de instalación.</p></section>
 <section class="tarjeta"><h2>Talk</h2><div id="s-talk"></div></section>
 <section class="tarjeta"><h2>Asistente</h2>
 <form id="s-form" hidden><label for="s-dom">Dominio o dirección IP del servidor</label>
@@ -2346,7 +2362,7 @@ contenedores se reinicia una vez durante la corrección.</p>
 </section>
 <script>
 (async () => {
-  let reloj = null, visto = "", vistoDatos = "", aviso = "", relojRed = null, pedido = null, reintentado = false, redVista = "";
+  let reloj = null, visto = "", vistoDatos = "", vistoOpc = "", aviso = "", relojRed = null, pedido = null, reintentado = false, redVista = "";
   const fila = (n, v, activo) => '<li class="' + (v.cabe ? "hecho" : "") + '"><span class="ic">' + (v.cabe ? "✓" : "✗") +
     "</span><span><b>" + n + ": " + (v.cabe ? "cabe" : "no cabe") + "</b> (" + escapear(v.texto) + ")" +
     (activo === undefined ? (v.cabe ? " — se activa." : " — queda desactivada.") :   // once prepared: what it was given
@@ -2357,6 +2373,27 @@ contenedores se reinicia una vez durante la corrección.</p>
     zona("s-apps").innerHTML = "<table><tr><th>Aplicación</th><th>Versión</th><th>Función</th></tr>" +
       s.apps.map(([n, v, q]) => "<tr><td><b>" + escapear(n) + "</b></td><td>" + escapear(v) + "</td><td>" +
         escapear(q) + "</td></tr>").join("") + "</table>";
+    // «Aplicaciones opcionales» (#39): one checkbox per optional row — its Spanish name, its
+    // summary, all off unless the manifest checks one by default. Rebuilt ONLY when the list
+    // itself changes (the manifest is read once at start), so a poll never wipes the operator's
+    // checks; once the wizard is given its options, the same rows state what was chosen — the
+    // record answers, never the browser's word.
+    const sigueOpc = s.preparada || s.en_marcha || s.contenedores.some(([, e]) => e !== "en espera");
+    const claveOpc = JSON.stringify([s.opcionales, sigueOpc]);
+    if (claveOpc !== vistoOpc) {
+      vistoOpc = claveOpc;
+      zona("s-opc-tarjeta").hidden = !s.opcionales.length;
+      zona("s-opc").innerHTML = s.opcionales.length
+        ? (sigueOpc
+            ? '<ul class="lista-estado">' + s.opcionales.map(([i, n, q, d, elegida]) =>
+              '<li class="' + (elegida ? "hecho" : "") + '"><span class="ic">' + (elegida ? "✓" : "✗") +
+              "</span><span><b>" + escapear(n) + "</b> — " + escapear(q) + (elegida ? " — se instala." : " — no se instala.") +
+              "</span></li>").join("") + "</ul>"
+            : s.opcionales.map(([i, n, q, d]) =>
+              '<label class="casilla"><input type="checkbox" data-app="' + escapear(i) + '"' + (d ? " checked" : "") +
+              "> <b>" + escapear(n) + "</b> — " + escapear(q) + "</label>").join(""))
+        : "";
+    }
     const pisos = s.servidor.pisos || {};
     zona("s-talk").innerHTML = "<p>Servidor: " + coma(s.servidor.gib) + " GiB, " + s.servidor.nucleos +
       " núcleos. Suite: ~" + s.servidor.suite_gib + " GiB.</p>" +
@@ -2379,14 +2416,19 @@ contenedores se reinicia una vez durante la corrección.</p>
       escapear(t) + "</span></li>").join("") : "";
     zona("s-nota").hidden = p.estado !== "en_curso";
     zona("s-datos").hidden = !s.preparada;   // only what the wizard was given, never a guess
-    const datos = s.preparada ? JSON.stringify([s.dominio, s.opciones, s.frase, s.asistente, s.ca]) : "";
+    const datos = s.preparada ? JSON.stringify([s.dominio, s.opciones, s.opcionales, s.frase, s.asistente, s.ca]) : "";
     if (datos && datos !== vistoDatos) {   // rebuilt only when it changes: a selection or a click survives the poll
       vistoDatos = datos;
+      const appsDd = s.opcionales.length
+        ? "</dd><dt>Aplicaciones opcionales</dt><dd>" + (s.opcionales.some((o) => o[4])
+            ? s.opcionales.filter((o) => o[4]).map((o) => escapear(o[1])).join(", ")
+            : "ninguna")
+        : "";
       zona("s-datos").innerHTML = '<dl class="dl"><dt>' + (/^[0-9.]+$/.test(s.dominio || "") ? "Dirección IP" : "Dominio") +
         "</dt><dd>" + escapear(s.dominio || "—") +
         "</dd><dt>Zona horaria</dt><dd>Santiago</dd><dt>Oficina</dt><dd>Euro-Office</dd><dt>Talk</dt><dd>" +
         (s.opciones.talk ? "Activado" : "Desactivado") + "; grabación " +
-        (s.opciones.grabacion ? "activada" : "desactivada") +
+        (s.opciones.grabacion ? "activada" : "desactivada") + appsDd +
         "</dd><dt>Respaldo</dt><dd>Diario a las 04:00 hora de Santiago, en este servidor</dd>" +
         (s.ca ? '<dt>Certificado</dt><dd>Propio del instalador. <a href="/api/ca" download>Descargar el ' +
           'certificado</a>: cada equipo del personal lo importa una vez (guía, §11). Huella SHA-256: ' +
@@ -2464,7 +2506,11 @@ contenedores se reinicia una vez durante la corrección.</p>
     ev.preventDefault();
     zona("s-ir").disabled = true;
     aviso = "";
-    pedido = {dominio: zona("s-dom").value.trim(), validar: !zona("s-sinval").checked};   // the card's retry re-posts it whole
+    // the operator's whole choice, checkboxes included (#39): what the host records with the
+    // domain, and what the record then answers on every reload — the card's retry re-posts it whole
+    const elegidas = {};
+    document.querySelectorAll('#s-opc input[data-app]').forEach((c) => { elegidas[c.dataset.app] = c.checked; });
+    pedido = {dominio: zona("s-dom").value.trim(), validar: !zona("s-sinval").checked, apps: elegidas};
     const r = await api("/api/suite", pedido);
     if (r.estado !== 202) {   // said, never swallowed: a bad domain, the freeze, one already going
       aviso = '<div class="' + (r.estado === 409 ? "aviso" : "error") + '">' + escapear(r.error) + "</div>";
@@ -3084,7 +3130,8 @@ def apps_aps(rows=SUITE_APPS):
     a name, in its order — the manifest's name and summary, each VENDOR's version. A release
     row (#33, ADR-0017) shows what the LOCK records once an install ran; before that its
     version is decided at «Revisar y ejecutar», and the cell says so instead of naming the
-    stale bake. An unnamed fork app is plumbing (#64)."""
+    stale bake. An unnamed fork app is plumbing (#64); an optional row (#39) is not listed
+    here — its name and summary are the checkbox the «Aplicaciones opcionales» card offers."""
     import releases   # beside this file; lazy — the step that never lists apps never loads it
     try:
         locked = releases.read_lock()["apps"]
@@ -3092,7 +3139,7 @@ def apps_aps(rows=SUITE_APPS):
         locked = {}
     filas = []
     for a in rows:
-        if a["source"] not in ("own", "fork") or "name" not in a:
+        if a["source"] not in ("own", "fork") or "name" not in a or a.get("optional") is not False:
             continue
         if a.get("release"):
             version = locked.get(a["id"], {}).get("version") or "según su release"
@@ -3126,14 +3173,26 @@ def ca_personal():
 
 
 def opciones_actuales():
-    """The Talk options the wizard was given (the host records them with the domain): (talk, grabacion),
-    or None before step 6 — what the page shows and the containers it waits for."""
+    """The install options the wizard was given (the host records them with the domain): None
+    before step 6 — or when the record cannot be read as one, so the page asks again — else
+    {"talk", "grabacion", "apps": {optional id: chosen}}. The optional apps ride the same record
+    (#39): the CLI writes every optional row the manifest names, chosen or not, and a key it does
+    not name (a later suite's app, on an older record) reads as not chosen."""
     try:
         with open(os.path.join(AIO_STATE, "opciones"), encoding="utf-8") as fh:
-            m = re.fullmatch(r"talk=([01]) grabacion=([01])\s*", fh.read())
+            texto = fh.read()
     except OSError:
         return None
-    return (m.group(1) == "1", m.group(2) == "1") if m else None
+    pares = {}
+    for par in texto.split():
+        clave, sep, valor = par.partition("=")
+        if not sep or valor not in ("0", "1"):   # one shape, or nothing: a hand edit is not a preparation
+            return None
+        pares[clave] = valor == "1"
+    if "talk" not in pares or "grabacion" not in pares:
+        return None
+    return {"talk": pares["talk"], "grabacion": pares["grabacion"],
+            "apps": {i: pares.get(i, False) for i in OPCIONAL_IDS}}
 
 
 def _occ_status():
@@ -3168,7 +3227,7 @@ def talk_ahora(vistos):
     holds 3478 and a probe could race it."""
     memoria, nucleos = recursos()
     opciones = opciones_actuales()
-    libre = ("aps-conecta-talk" in vistos or (opciones is not None and opciones[0])
+    libre = ("aps-conecta-talk" in vistos or (opciones is not None and opciones["talk"])
              or puerto_libre(PUERTO_TALK))
     return veredicto_talk(memoria, nucleos, libre)
 
@@ -3183,7 +3242,11 @@ def estado_suite():
     memoria, nucleos = recursos()
     talk, grabacion = talk_ahora(vistos)
     opciones = opciones_actuales()
-    con_talk, con_grabacion = opciones if opciones else (talk[0], grabacion[0])
+    if opciones:
+        con_talk, con_grabacion, apps_elegidas = opciones["talk"], opciones["grabacion"], opciones["apps"]
+    else:   # before step 6: Talk as the server allows, the apps at their checkbox's default
+        con_talk, con_grabacion = talk[0], grabacion[0]
+        apps_elegidas = {i: d for i, _n, _s, d in OPCIONALES}
     base = [[nombre, estado_contenedor(vistos.get(c))] for c, nombre in CONTENEDORES_SUITE]
     extra = [[nombre, estado_contenedor(vistos.get(c))]
              for (c, nombre), si in zip(CONTENEDORES_TALK, (con_talk, con_grabacion)) if si]
@@ -3203,7 +3266,8 @@ def estado_suite():
                  "talk": {"cabe": talk[0], "texto": talk[1]},
                  "grabacion": {"cabe": grabacion[0], "texto": grabacion[1]},
                  "apps": apps_aps(), "dominio": dominio_actual(), "preparada": opciones is not None,
-                 "opciones": {"talk": con_talk, "grabacion": con_grabacion},
+                 "opcionales": [[i, n, s, d, apps_elegidas[i]] for i, n, s, d in OPCIONALES],
+                 "opciones": {"talk": con_talk, "grabacion": con_grabacion, "apps": apps_elegidas},
                  "preparacion": {"estado": s["estado"], "hechos": list(s["hechos"]), "motivo": s["motivo"],
                                  "pasos": [t for _p, t in PASOS_SUITE]},
                  "frase": frase, "asistente": f"https://{LAN_IP}:8080", "ip": LAN_IP,
@@ -3212,9 +3276,11 @@ def estado_suite():
 
 
 def iniciar_suite(payload):
-    """POST /api/suite {"dominio", "validar"} — the host fills the wizard on a worker (a minute; more
-    when the wizard's image is new) and the page follows it: Talk and its recording as the server
-    allows (R26), the daily backup at 04:00 Santiago time with the installer's own files in its scope (R24)."""
+    """POST /api/suite {"dominio", "validar", "apps": {id: bool}} — the host fills the wizard on a
+    worker (a minute; more when the wizard's image is new) and the page follows it: Talk and its
+    recording as the server allows (R26), the daily backup at 04:00 Santiago time with the
+    installer's own files in its scope (R24), and the optional apps the operator checked (#39)
+    — all off by default, the whole choice riding the host's record so it survives re-runs."""
     dominio = payload.get("dominio")
     if not isinstance(dominio, str) or not DOMINIO.fullmatch(dominio) or "." not in dominio:
         return 400, {"error": "escriba el dominio del servidor, por ejemplo gestion.su-establecimiento.cl"}
@@ -3223,11 +3289,19 @@ def iniciar_suite(payload):
             ipaddress.IPv4Address(dominio)
         except ValueError:
             return 400, {"error": "la dirección IP no es válida: cuatro números de 0 a 255 separados por puntos"}
+    apps = payload.get("apps", {})
+    if (not isinstance(apps, dict) or set(apps) - OPCIONAL_IDS
+            or not all(isinstance(v, bool) for v in apps.values())):
+        desconocidas = sorted(set(apps) - OPCIONAL_IDS) if isinstance(apps, dict) else []
+        return 400, {"error": "las aplicaciones opcionales son las que el paso ofrece"
+                     + (f" — no figur{'an' if len(desconocidas) > 1 else 'a'}: {', '.join(desconocidas)}"
+                        if desconocidas else "")}
     st, vistos = contenedores()
     if st != 200:
         return st, vistos
     talk, grabacion = talk_ahora(vistos)
     argv = (SUITE_CMD + ["--dominio", dominio, "--respaldo", RESPALDO_DIR]
+            + [p for i, _n, _s, _d in OPCIONALES for p in (("--app", i) if apps.get(i) else ())]
             + (["--talk"] if talk[0] else []) + (["--grabacion"] if grabacion[0] else [])
             + ([] if payload.get("validar") is not False else ["--sin-validar-dominio"]))
     with SUITE_GUARD:
@@ -4883,7 +4957,7 @@ def selftest():
                   and plan["programas"] == ["Programa Salud Mental"]
                   and sorted(p[0] for p in plan["personas"]) == ["elena.diaz", "maria.perez"]
                   and [p[0] for p in plan["personas"] if p[3]] == ["elena.diaz"]
-                  and plan["cuentas_de_cargo"] > 0 and len(plan["componentes"]) == len(COMPONENTES)
+                  and plan["cuentas_de_cargo"] > 0 and len(plan["componentes"]) == len(COMPONENTES) - len(OPCIONALES)
                   and "/" not in visibles and ".sh" not in visibles and "SITE_" not in visibles)
             st_ub, plan_ub = api_generar({"codigo": "113314", "modo": "revision"})
             texto_sitio = open(site_path("113314"), encoding="utf-8").read()
@@ -5080,21 +5154,30 @@ def selftest():
                 with open(os.path.join(AIO_STATE, "opciones"), "w", encoding="utf-8") as fh:
                     fh.write("talk=1 grabacion=0\n")
                 con_talk_plan = [n for n, _q in plan_clinico("113314", [], [], [])["componentes"]]
+                with open(os.path.join(AIO_STATE, "opciones"), "w", encoding="utf-8") as fh:
+                    fh.write("talk=1 grabacion=0 farmacia=1\n")
+                con_apps_plan = [n for n, _q in plan_clinico("113314", [], [], [])["componentes"]]
             finally:
                 os.remove(os.path.join(AIO_STATE, "opciones"))
-            check("revisión: Talk is a component only when step 6 gave the suite Talk — phase 12 installs nothing else (R29)",
+            check("revisión: Talk is a component only when step 6 gave the suite Talk, and an optional app only when it was chosen (#39) — phase 12 installs nothing else (R29)",
                   "Talk" not in sin_talk_plan and "Talk" in con_talk_plan
-                  and len(con_talk_plan) == len(COMPONENTES) == len(sin_talk_plan) + 1)
+                  and "Farmacia" not in sin_talk_plan and "Farmacia" not in con_talk_plan
+                  and "Farmacia" in con_apps_plan
+                  and len(con_talk_plan) == len(COMPONENTES) - len(OPCIONALES) == len(sin_talk_plan) + 1
+                  and len(con_apps_plan) == len(COMPONENTES) - len(OPCIONALES) + 1)
             with open(HOST_CLI, encoding="utf-8") as fh:
                 aio_set = re.search(r'^AIO_SET="([^"]*)"', fh.read(), re.M).group(1).split()
             filas = apps_aps()
-            check("suite: the six APS apps (own and fork in the manifest), by name — the two baked ones with their VENDOR versions, the four release ones (Oficina since #36) with what the lock records or their promise (#33–#36); the containers are the host's set plus Nextcloud (a12)",
-                  [f[0] for f in filas] == ["Inicio", "Oficina", "Epidemiología", "Estadística", "Farmacia", "Territorio"]
-                  and all(re.fullmatch(r"\d+\.\d+\.\d+", f[1]) for f in filas[3:5])
+            fila_farmacia = next(a for a in SUITE_APPS if a["id"] == "farmacia")
+            check("suite: the APS apps table lists the manifest's named own and fork apps that are NOT optional, by name — the baked one with its VENDOR version, the release ones (Oficina since #36) with what the lock records or their promise (#33–#36); the optional row is the checkbox, not a table row (#39); the containers are the host's set plus Nextcloud (a12)",
+                  [f[0] for f in filas] == ["Inicio", "Oficina", "Epidemiología", "Estadística", "Territorio"]
+                  and all(re.fullmatch(r"\d+\.\d+\.\d+", f[1]) for f in filas[3:4])
                   and filas[0][1] == "según su release"
                   and filas[1][1] == "según su release"
                   and filas[2][1] == "según su release"
-                  and filas[5][1] == "según su release"
+                  and filas[4][1] == "según su release"
+                  and OPCIONALES == (("farmacia", "Farmacia", fila_farmacia["summary"], False),)
+
                   and {c for c, _n in CONTENEDORES_SUITE} == set(aio_set) | {"aps-conecta-nextcloud"})
             # an unnamed fork app (desktop_workspace as #37 makes it) — and intravox
             # stripped of its name, so the rows read are the fixture's, filtered by name, not by VENDOR
@@ -5108,12 +5191,13 @@ def selftest():
                 filas = apps_aps(suite_apps.load(os.path.join(tmp, "apps-sin-nombre.json")))
             except Exception as e:   # the crash IS the failure this check reports
                 filas = [[f"{type(e).__name__}: {e}", "", ""]]
-            check("suite: step 6 lists only the own and fork apps that carry a name, in manifest order — an unnamed fork app is left out, no error (a12, #64)",
-                  [f[0] for f in filas] == ["Oficina", "Epidemiología", "Estadística", "Farmacia", "Territorio"]
-                  and all(re.fullmatch(r"\d+\.\d+\.\d+", f[1]) for f in filas[2:4])
+            check("suite: step 6 lists only the own and fork apps that carry a name and are not optional, in manifest order — an unnamed fork app is left out, no error (a12, #64)",
+                  [f[0] for f in filas] == ["Oficina", "Epidemiología", "Estadística", "Territorio"]
+                  and all(re.fullmatch(r"\d+\.\d+\.\d+", f[1]) for f in filas[2:3])
                   and filas[0][1] == "según su release"
                   and filas[1][1] == "según su release"
-                  and filas[4][1] == "según su release")  # intravox left with its name (#35)
+                  and filas[3][1] == "según su release")  # intravox left with its name (#35)
+
             with open(os.environ["APS_APPS_LOCK"], "w", encoding="utf-8") as fh:
                 json.dump({"nextcloud": "34.0.4", "apps": {
                     "territorio": {
@@ -5143,8 +5227,8 @@ def selftest():
             with open(falso, "w", encoding="utf-8") as fh:
                 fh.write('''#!/usr/bin/env bash
 printf '%s\\n' "$*" > "$AIO_STATE/argv"
-d=""; t=0; g=0
-while [ $# -gt 0 ]; do case "$1" in --dominio) d="$2" ;; --talk) t=1 ;; --grabacion) t=1; g=1 ;; esac; shift; done
+d=""; t=0; g=0; f=0
+while [ $# -gt 0 ]; do case "$1" in --dominio) d="$2" ;; --talk) t=1 ;; --grabacion) t=1; g=1 ;; --app) [ "$2" = farmacia ] && f=1; shift ;; esac; shift; done
 sleep 0.3
 echo "✓ La suite ya está iniciada"
 case "$d" in
@@ -5159,10 +5243,10 @@ echo "✓ Contraseña del asistente guardada en $AIO_STATE/master.pw (solo admin
 echo "✓ Ingreso al asistente"
 echo "✓ Dominio: $d"
 echo "✓ Zona horaria: America/Santiago"
-echo "✓ Opciones: oficina incluida; Talk activado; grabación apagada; pizarra e imágenes apagadas"
+echo "✓ Opciones: oficina incluida; Talk activado; grabación apagada; pizarra e imágenes apagadas; sin aplicaciones opcionales"
 echo "✓ Respaldo diario a las 04:00 hora de Santiago (07:00 UTC), en /srv/aps-conecta/respaldos, con /opt/aps-conecta"
 printf '%s\\n' "$d" > "$AIO_STATE/dominio"
-printf 'talk=%s grabacion=%s\\n' "$t" "$g" > "$AIO_STATE/opciones"
+printf 'talk=%s grabacion=%s farmacia=%s\\n' "$t" "$g" "$f" > "$AIO_STATE/opciones"
 echo "✓ Asistente listo: falta «Iniciar» en el asistente"
 ''')
             verdadero_cmd = SUITE_CMD
@@ -5192,6 +5276,12 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                     st1, st2, otra, lista, argv_txt = preparar({"dominio": "gestion.clinica.example",
                                                                  "validar": False}, otra_vez=True)
                     fijado = open(site_path(fijo), encoding="utf-8").read() if fijo else None
+                    *_x, sin_apps, argv_sin_apps = preparar({"dominio": "con-opcion.example",
+                                                              "apps": {"farmacia": False}})
+                    *_x, con_apps, argv_apps = preparar({"dominio": "con-opcion.example",
+                                                          "apps": {"farmacia": True}})
+                    mal_apps = [call("POST", "/api/suite", {"dominio": "gestion.clinica.example", "apps": a})
+                                for a in ("farmacia", {"totem": True}, {"farmacia": "si"})]
                     *_x, por_ip, argv_ip = preparar({"dominio": "10.0.0.5"})   # last: it leaves its own record
             finally:
                 globals().update(SUITE_CMD=verdadero_cmd, recursos=lambda *_a: (12.0, 4))
@@ -5209,16 +5299,28 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                   and all(s in __import__("inspect").getsource(screen_contenedores)   # the template (STEPS is a fake here)
                           for s in ("Dominio o dirección IP del servidor", 'id="s-ipnota"', "Dirección IP",
                                     "s-sinval\").parentNode.hidden")))
-            check("suite: «Preparar» answers 202 and fills the wizard on a worker — the domain unvalidated only when asked, Talk as the server allows (none on 7,5 GiB / 2 cores, both on 16 / 8), the daily backup; the steps in the page's words, the passphrase, the domain and the options recorded (R26, a12)",
+            check("suite: «Preparar» answers 202 and fills the wizard on a worker — the domain unvalidated only when asked, Talk as the server allows (none on 7,5 GiB / 2 cores, both on 16 / 8), the daily backup; the steps in the page's words, the passphrase, the domain and the options recorded, optional apps off unless the operator checked them (R26, a12, #39)",
                   st1 == 202 and st2 == 409 and "preparando" in otra["error"]
                   and lista["preparacion"]["estado"] == "lista"
                   and lista["preparacion"]["hechos"] == [t for _p, t in PASOS_SUITE]
                   and lista["frase"] == "frase uno dos" and lista["dominio"] == "gestion.clinica.example"
-                  and lista["preparada"] is True and lista["opciones"] == {"talk": True, "grabacion": False}
+                  and lista["preparada"] is True
+                  and lista["opciones"] == {"talk": True, "grabacion": False, "apps": {"farmacia": False}}
+                  and lista["opcionales"] == [["farmacia", "Farmacia", OPCIONALES[0][2], False, False]]
                   and "--sin-validar-dominio" in argv_txt and "--respaldo /srv/aps-conecta/respaldos" in argv_txt
-                  and "--talk" in argv_txt and "--grabacion" not in argv_txt
+                  and "--talk" in argv_txt and "--grabacion" not in argv_txt and "--app" not in argv_txt
                   and "--sin-validar-dominio" not in argv_rechazo
                   and "--talk" not in argv_chico and "--talk" in argv_grande and "--grabacion" in argv_grande)
+            check("suite: the optional apps ride the same post (#39) — an unchecked box sends no flag, a checked one sends --app and the record answers it; anything but the offered apps, or not a boolean, is refused 400 naming it",
+                  sin_apps["preparacion"]["estado"] == "lista"
+                  and sin_apps["opciones"]["apps"] == {"farmacia": False} and "--app" not in argv_sin_apps
+                  and con_apps["opciones"]["apps"] == {"farmacia": True}
+                  and "--app farmacia" in argv_apps and con_apps["opcionales"][0][4] is True
+                  and [m[0] for m in mal_apps] == [400, 400, 400]
+                  and "no figura: totem" in mal_apps[1][1]["error"]
+                  and all(s in __import__("inspect").getsource(screen_contenedores)   # the card itself
+                         for s in ("Aplicaciones opcionales", "data-app=", "no se instala.",
+                                   "Todas vienen desactivadas")))
             check("suite: a refused domain ends the preparation with the host's one Spanish line; a silent failure with the generic one — no path either way",
                   rechazo["preparacion"]["estado"] == "error" and rechazo["preparada"] is False
                   and rechazo["preparacion"]["motivo"] == "El asistente rechazó la dirección: use un nombre de dominio, no una dirección IP."

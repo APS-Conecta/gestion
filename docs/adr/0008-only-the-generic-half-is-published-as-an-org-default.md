@@ -39,8 +39,10 @@ because those are different tests and a document has to pass both.
   `SECURITY.md`, because it describes what is switched on rather than how to reach a maintainer.
 - Any document naming a host path, a volume, an internal address, or a contributor.
 
-**Keep per-repo because GitHub cannot inherit them** — `CODEOWNERS`,
-`.github/workflows/docs.yml`, `.githooks/pre-commit`. Their `canon-drift` findings are per-repo work
+**Keep per-repo because GitHub cannot inherit them** — `CODEOWNERS`, `.githooks/pre-commit`.
+(`.github/workflows/docs.yml` once sat beside them, as the vendored docs checker's runner; it left every
+repo with the checker itself — the docs-SSOT S2a wave — and no workflow is inheritable either way.)
+Their `canon-drift` findings are per-repo work
 and will never be closed by an org default. This is a mechanical fact, not a preference.
 
 ## Consequences
@@ -48,8 +50,10 @@ and will never be closed by an org default. This is a mechanical fact, not a pre
 - Each published document is written as if a stranger will read it, because one will.
 - A repository that must differ keeps a local copy, and the local copy wins the lookup. That is the rule's
   escape hatch and it stays.
-- This repository keeps its own issue forms, so it inherits **nothing** from `ISSUE_TEMPLATE`: GitHub's
-  all-or-nothing rule for that folder, not a decision made here.
+- This repository kept its own issue forms, so it inherited **nothing** from `ISSUE_TEMPLATE` — until the
+  docs-SSOT S2a wave removed the per-repo forms and the pull-request template entirely: the org defaults in
+  `APS-Conecta/.github` serve them now, and the folder inherits everything. GitHub's all-or-nothing rule for
+  that folder is what made the removal all-or-nothing; the files were the decision, not the rule.
 - Two `SECURITY.md` documents have different jobs: the public one routes a report, the local one states
   posture. Neither may drift into the other's territory, and the split is the reason the public one can exist
   at all.

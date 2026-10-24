@@ -6,12 +6,15 @@ and reaches the server's lock file. Standard library only, on Python 3.10 (Ubunt
 apps.py beside it — the manifest is IMPORTED, never re-parsed.
 
   scripts/releases.py fetch [--manifest PATH] [--lock PATH] [--store PATH] [--pub PATH] \\
-                            --nextcloud 34.0.4
+                            [--opciones PATH] --nextcloud 34.0.4
       For every manifest row with release: resolve its newest release compatible with the
       running Nextcloud, download it WITHOUT a token, verify it against apps.pub, and record
-      the tag in the lock. A row already in the lock downloads nothing. One Spanish FATAL line
-      per refusal, naming the app and the retry command (the wizard and the silent install both
-      surface it verbatim).
+      the tag in the lock. A row already in the lock downloads nothing. An OPTIONAL row the
+      operator did not choose (#39) resolves nothing: the wizard's options record answers
+      (default /opt/aps-conecta/aio/opciones), and an unchosen optional app stays absent — a
+      leftover lock row never overrides the choice. One Spanish FATAL line per refusal, naming
+      the app and the retry command (the wizard and the silent install both surface it
+      verbatim).
   scripts/releases.py locked APPID
       The lock's row for one app — `tag<TAB>version<TAB>sha256<TAB>tarball` — or nothing
       (exit 0) when the lock names no such app. Phase 12 installs from this line.
@@ -64,6 +67,7 @@ UA = "aps-conecta-instalador"   # GitHub answers 403 to a bare urllib UA on some
 TIMEOUT = 30                    # one HTTP request's bound — a wedged fetch never hangs an install
 LOCK_DEFAULT = "/opt/aps-conecta/apps.lock.json"   # inside the backup scope (S7 wires /opt/aps-conecta)
 STORE_DEFAULT = "/opt/aps-conecta/apps"            # the fetched tarballs, beside the lock
+OPCIONES_DEFAULT = "/opt/aps-conecta/aio"          # the wizard's state dir: the install-options record
 PUBKEY_DEFAULT = os.path.join(HERE, "..", "apps.pub")
 # The retry the operator reads in every per-app refusal: both entrances re-run this leg —
 # the wizard's «Revisar y ejecutar» and the silent install (which also re-runs green).
@@ -90,6 +94,28 @@ def lock_path(explicit=None):
 
 def store_path(explicit=None):
     return explicit or os.environ.get("APS_APPS_STORE", STORE_DEFAULT)
+
+
+def opciones_path(explicit=None):
+    """The wizard's install-options record — where the host CLI writes the domain, Talk and the
+    optional apps' choices (#39). APS_APPS_OPCIONES overrides (the self-test's knob); AIO_STATE,
+    the host's own override of the same directory, is honoured beside it."""
+    return explicit or os.environ.get("APS_APPS_OPCIONES") \
+        or os.path.join(os.environ.get("AIO_STATE", OPCIONES_DEFAULT), "opciones")
+
+
+def elegidas(path=None):
+    """The optional apps this server chose, from the wizard's options record (#39): {id: chosen}.
+    A missing record — no step 6 yet, or one written before the app existed — reads as all
+    unchosen: an optional app installs only by an explicit choice, never by default, and never
+    below this gate (the lock's leftover row included — the record is the operator's current
+    word, and the seed's side of the same rule never uninstalls what a warm instance runs)."""
+    try:
+        with open(opciones_path(path), encoding="utf-8") as fh:
+            pares = dict(par.split("=", 1) for par in fh.read().split() if "=" in par)
+    except OSError:
+        return {}
+    return {i: v == "1" for i, v in pares.items()}
 
 
 def pubkey_path():
@@ -402,16 +428,23 @@ def fetch_release(row, tag, entry=None, store=None):
     return entry
 
 
-def fetch_all(rows, nextcloud, path=None, store=None):
+def fetch_all(rows, nextcloud, path=None, store=None, eleccion=None):
     """The fetch leg the Provisionador runs (execute mode only, #33): every release row either
-    resolves, downloads and enters the lock, or is already recorded and downloads NOTHING. The
-    returned lines are console Spanish; the lock is written once, atomically, at the end. A
+    resolves, downloads and enters the lock, or is already recorded and downloads NOTHING — and
+    an optional row the operator did not choose resolves nothing at all (#39): the wizard's
+    options record answers, the lock never overrides the choice, and the app stays absent.
+    The returned lines are console Spanish; the lock is written once, atomically, at the end. A
     per-app Refusal carries the app's name — the operator's one line names what failed."""
     lines, nuevas = [], {}
     lock = read_lock(path)
     major = int(nextcloud.split(".")[0])
+    if eleccion is None:
+        eleccion = elegidas()
     for row in rows:
         app = row["id"]
+        if row.get("optional") is not False and not eleccion.get(app):
+            lines.append(f"✓ apps: {app} no elegida — no se instala (la elección del asistente)")
+            continue
         try:
             registrado = lock["apps"].get(app)
             if registrado:
@@ -463,7 +496,7 @@ def main(argv):
         return 0
     if argv and argv[0] == "fetch":
         opts, nextcloud, args = {}, None, argv[1:]
-        while args and args[0] in ("--lock", "--store", "--pub", "--manifest", "--nextcloud"):
+        while args and args[0] in ("--lock", "--store", "--pub", "--manifest", "--nextcloud", "--opciones"):
             if len(args) < 2:
                 args = None
                 break
@@ -489,7 +522,8 @@ def main(argv):
             print("✓ apps: ninguna app de la suite se instala aún desde releases — nada que descargar")
             return 0
         try:
-            for line in fetch_all(rows, nextcloud, opts.get("--lock"), opts.get("--store")):
+            for line in fetch_all(rows, nextcloud, opts.get("--lock"), opts.get("--store"),
+                                  elegidas(opts.get("--opciones"))):
                 print(line)
         except Refusal as e:
             print(f"FATAL: {e} — {RETRY}", file=sys.stderr)
@@ -669,6 +703,7 @@ def selftest():
         mk_release("APS-Conecta/territorio", "v0.80.0", "0.80.0", nc="34", nc_max="34")
         mk_release("APS-Conecta/epidemiologia", "v0.12.0", "0.12.0", nc="34", nc_max="34")
         mk_release("APS-Conecta/IntraVox", "v3.2.0", "3.2.0", nc="32", nc_max="35")
+        mk_release("APS-Conecta/farmacia", "v0.12.0", "0.12.0", nc="34", nc_max="34")
         mk_release("APS-Conecta/side_menu", "v6.0.1", "6.0.1", nc="34", nc_max="34")
         # #37: the shipped manifest's first FORK release row beside the mirror tarball one — the
         # fixture mirrors the real app's declared range (33–35) so the arm proves a fork row
@@ -811,25 +846,44 @@ def selftest():
         # other arm passed --manifest, and the wizard's stub hid the argv entirely), so it runs
         # here for real: the manifest it reads is the SHIPPED apps.json, and every release row
         # there must have its fixture on the hub — a new release row without its hub repo reds
-        # HERE, at the cause, not four minutes into a clean boot.
+        # HERE, at the cause, not four minutes into a clean boot. farmacia (#39) is the optional
+        # tracer: with no opciones record it resolves NOTHING (the skip line says so), and with
+        # the record choosing it — the second run, --opciones pointing at a fixture — it resolves
+        # and locks like any release row: the choice is the gate, the record is the choice.
         os.environ["APS_APPS_LOCK"] = os.path.join(tmp, "prod-lock.json")
         os.environ["APS_APPS_STORE"] = os.path.join(tmp, "prod-store")
+        with open(os.path.join(tmp, "prod-opciones"), "w", encoding="utf-8") as fh:
+            fh.write("talk=1 grabacion=0 farmacia=1\n")
         run = subprocess.run([sys.executable, os.path.abspath(__file__), "fetch",
-                              "--nextcloud", "34.0.4"],
+                              "--nextcloud", "34.0.4",
+                              "--opciones", os.path.join(tmp, "prod-sin-eleccion")],
                              capture_output=True, text=True, timeout=120)
-        check("cli fetch without --manifest: the shipped manifest's release rows all resolve and fetch over the hub — a row that reds here lacks its fixture: add mk_release(<repo>, tag, version, nc=…, nc_max=…) to the list above (#33–#38, #119)",
+        check("cli fetch without --manifest: the shipped manifest's release rows all resolve and fetch over the hub — a row that reds here lacks its fixture: add mk_release(<repo>, tag, version, nc=…, nc_max=…) to the list above (#33–#38, #119); the optional farmacia resolves NOTHING unchosen (#39)",
               run.returncode == 0 and "✓ apps: territorio v0.80.0" in run.stdout
               and "✓ apps: epidemiologia v0.12.0" in run.stdout
               and "✓ apps: intravox v3.2.0" in run.stdout
               and "✓ apps: side_menu v6.0.1" in run.stdout
               and "✓ apps: desktop_workspace v0.19.0" in run.stdout
               and "✓ apps: eurooffice v11.0.7" in run.stdout
+              and "✓ apps: farmacia no elegida — no se instala" in run.stdout
+              and "farmacia" not in read_lock()["apps"]
               and read_lock()["apps"]["territorio"]["tag"] == "v0.80.0"
               and read_lock()["apps"]["epidemiologia"]["tag"] == "v0.12.0"
               and read_lock()["apps"]["intravox"]["tag"] == "v3.2.0"
               and read_lock()["apps"]["side_menu"]["tag"] == "v6.0.1"
               and read_lock()["apps"]["desktop_workspace"]["tag"] == "v0.19.0"
               and read_lock()["apps"]["eurooffice"]["tag"] == "v11.0.7")
+        run = subprocess.run([sys.executable, os.path.abspath(__file__), "fetch",
+                              "--nextcloud", "34.0.4",
+                              "--opciones", os.path.join(tmp, "prod-opciones")],
+                             capture_output=True, text=True, timeout=120)
+        check("cli fetch with the wizard's record choosing farmacia (#39): it resolves, verifies and locks at its tag — the lock row arrives only with the choice",
+              run.returncode == 0 and "✓ apps: farmacia v0.12.0" in run.stdout
+              and "no elegida" not in run.stdout
+              and read_lock()["apps"]["farmacia"] == {
+                  "source": "own", "repo": "APS-Conecta/farmacia", "tag": "v0.12.0",
+                  "version": "0.12.0",
+                  "sha256": sha256_file(store_file("farmacia", "v0.12.0"))})
         os.environ["APS_APPS_LOCK"] = os.path.join(tmp, "cli-lock.json")
         os.environ["APS_APPS_STORE"] = os.path.join(tmp, "cli-store")
         antes = dict(server.hits)   # the `locked` call below must add nothing to this
