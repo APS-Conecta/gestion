@@ -468,7 +468,12 @@ ensure_release_app() {  # APPID ROW — install the release the lock names, from
 
   cur="$(app_installed_version "$app")"
 
-  if [ "$cur" = "$want" ]; then
+  # A release never carries appinfo/signature.json (the fetch refuses one that does), so the
+  # file's presence on a same-version tree is PROOF the installed copy is not the release's
+  # bytes. side_menu (#38) hits exactly this while the bake lives on (#42): the image bakes
+  # upstream's 6.0.1 — same version the release ships, with the signature the release drops —
+  # and a version comparison alone cannot tell the two apart. Converge on the release.
+  if [ "$cur" = "$want" ] && ! occ_sh "test -e custom_apps/$app/appinfo/signature.json"; then
     log "app $app $want already unpacked (release $tag)"
   else
     # The same re-impose discipline as ensure_vendored_app, for the same reasons (cleared first
@@ -479,7 +484,11 @@ ensure_release_app() {  # APPID ROW — install the release the lock names, from
     fi
     if nc_exec -i --user www-data -- \
          tar xzf - -C /var/www/html/custom_apps < "$tgz"; then
-      log "app $app ${cur:+$cur }-> $want unpacked from release $tag"
+      if [ "$cur" = "$want" ]; then
+        log "app $app $want re-imposed from release $tag (the installed tree carried appinfo/signature.json — not the release's bytes)"
+      else
+        log "app $app ${cur:+$cur }-> $want unpacked from release $tag"
+      fi
     else
       log "FAILED to unpack $app from release $tag"; return 1
     fi

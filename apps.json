@@ -11,5 +11,5 @@
     {"id": "spreed", "source": "store", "optional": false, "containers": ["aps-conecta-talk"], "name": "Talk", "summary": "Chat y videollamadas internas."},
     {"id": "desktop_workspace", "source": "store", "optional": false, "containers": []},
     {"id": "notify_push", "source": "store", "optional": false, "containers": ["aps-conecta-notify-push"]},
-    {"id": "side_menu", "source": "store", "optional": false, "containers": []}
+    {"id": "side_menu", "source": "fork", "repo": "APS-Conecta/side_menu", "optional": false, "containers": [], "release": true}
 ]
