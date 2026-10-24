@@ -129,14 +129,15 @@ cmd_up() {
   [ "$code" != "000" ] || die "https://ghcr.io/v2/ unreachable (bounded 10s) — fix the VM's network before pulling"
 
   say "run $MC from $IMAGE"
-  # NEXTCLOUD_STARTUP_APPS= (empty, on purpose — slice 5's ratified forced amendment): AIO's default
-  # startup set 'deck twofactor_totp tasks calendar contacts notes' (ConfigurationManager) would
-  # app:install the four undeclared ones from the store while the store is still on at first boot;
-  # empty skips the entrypoint's whole startup loop (its `[ -n "$STARTUP_APPS" ]` gate), so the
-  # probe's custom_apps holds only what the seed and the entrypoint's notify_push/eurooffice legs
-  # put there — the divergence gate's probe-green criterion depends on it, and zero store legs is
-  # the acquisition-gate posture anyway. The mastercontainer's charset validator on this env is
-  # `[ -n ]`-gated (start.sh:291-298): empty BYPASSES it, never trips it.
+  # NEXTCLOUD_STARTUP_APPS= (empty, explicit — slice 5's ratified forced amendment, and still the
+  # probe's own statement now that #67 emptied the default too: the manifest is the only app
+  # list, and the env makes the probe's posture independent of the fallback it no longer
+  # relies on): empty skips the entrypoint's whole startup loop (its `[ -n "$STARTUP_APPS" ]`
+  # gate), so the probe's custom_apps holds only what the seed and the entrypoint's
+  # notify_push/eurooffice legs put there — the divergence gate's probe-green criterion
+  # depends on it, and zero store legs is the acquisition-gate posture anyway. The
+  # mastercontainer's charset validator on this env is `[ -n ]`-gated (start.sh:291-298):
+  # empty BYPASSES it, never trips it.
   docker run -d \
     --init --sig-proxy=false \
     --name "$MC" \

@@ -11,6 +11,13 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ## [Unreleased]
 
+### Removed
+
+- Upstream's default startup-app set (deck, twofactor_totp, tasks, calendar, contacts, notes — comma-spelled
+  here so the gate's literal scan stays honest). The fork's fallback for `NEXTCLOUD_STARTUP_APPS` is now the
+  empty string, so the suite manifest (`apps.json`) is the only app list in the suite repo. A clean boot
+  installs the same apps as before: the host CLI already passed the empty value regardless (#67).
+
 ## [0.5.0] — 2026-10-23
 
 ### Fixed

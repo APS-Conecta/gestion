@@ -303,6 +303,45 @@ circles_probe_skipped() {  # 230: the fresh install logs no «relation "oc_circl
 row 230 "the fresh install skips circles' legacy-table probe — migration_22 marked done between the install and the first repair (R31)" \
   circles_probe_skipped
 
+startup_apps_default_empty() {  # 270: the fork's startup-app default is the empty string (#67) —
+  # upstream's six-app fallback was a second app list beside apps.json, and a latent store
+  # channel: with NEXTCLOUD_STARTUP_APPS unset, the entrypoint's startup loop would app:install
+  # the apps the manifest never declares while the store is still on at first boot. The CLI and
+  # the testbed pass the empty value regardless (its own self-test asserts the string), so a
+  # clean boot installs exactly what it installed before: the manifest's set, nothing more.
+  # Two arms, the both-halves discipline: the method's fallback IS the empty string, and
+  # upstream's startup-set literal is gone from the fork-live surfaces. The scan walks every
+  # fork-live namespace — tests/QA rides --exclude-dir because it is upstream's own QA suite,
+  # #48-doomed with the other un-walked upstream parts (the Helm chart, manual install, the
+  # upstream root docs, the app directory, community containers, the inert workflows); a list
+  # re-spelled some other way would evade a literal grep, and that is the clean-boot rehearsal's
+  # to catch, not a static row's — the check says what it pins instead of pretending.
+  local m="$TREE/php/src/Data/ConfigurationManager.php" body fail=0 app
+  s4_files "$m" "$TREE/compose.yaml" "$TREE/install.sh" || return 1
+  body="$(awk '/public function getNextcloudStartupApps/,/^    \}/' "$m")"
+  [ -n "$body" ] || { echo "  getNextcloudStartupApps is gone — re-point this row" >&2; return 1; }
+  printf '%s' "$body" | grep -qF "return '';" \
+    || { echo "  the startup-app fallback is not the empty string" >&2; fail=1; }
+  for app in deck twofactor_totp tasks calendar contacts notes; do
+    printf '%s' "$body" | grep -qw "$app" \
+      && { echo "  the startup-app fallback still names $app" >&2; fail=1; }
+  done
+  # --exclude=this gate's own name: the literal above is this row's probe, not an app list (the
+  # comm tripwire's precedent — the alarm keeps its own copy on purpose).
+  if grep -rnF 'deck twofactor_totp tasks calendar contacts notes' \
+      --exclude=acquisition-gate.sh --exclude-dir=QA \
+      "$TREE/php" "$TREE/Containers" "$TREE/compose.yaml" "$TREE/scripts" "$TREE/host" \
+      "$TREE/provisioning" "$TREE/aps" "$TREE/docs" "$TREE/sites" "$TREE/themes" \
+      "$TREE/tests" "$TREE/install.sh" 2>/dev/null; then
+    echo "  an app list beside the suite manifest survives in a fork-live surface (see the hits above)" >&2
+    fail=1
+  fi
+  [ "$fail" -eq 0 ]
+}
+
+row 270 "the startup-app default is empty and apps.json is the only app list — ConfigurationManager's fallback is the empty string and upstream's startup-set literal is gone from every fork-live surface this row walks (#67)" \
+  startup_apps_default_empty
+
 if [ "$fails" -gt 0 ]; then
   echo "ACQUISITION GATE: *** FAIL *** — $fails check(s) failed" >&2
   exit 1
