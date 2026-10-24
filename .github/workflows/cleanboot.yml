@@ -405,7 +405,7 @@ jobs:
           cd /opt/aps-conecta/instalador && source scripts/env.sh
           sudo test -f /opt/aps-conecta/apps.lock.json || { echo "FAIL: no apps lock after the install" >&2; exit 1; }
           # word-split (read -r), never mapfile: python prints ONE line, and an indexed mapfile
-          # would leave campos[1] unbound under set -u — the bug this step's first run met
+          # would leave campos[1] unbound under set -u — the bug territorio's first run met
           read -r tag version sha <<< "$(sudo python3 -c 'import json; a = json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["side_menu"]; print(a["tag"], a["version"], a["sha256"])')"
           echo "lock: side_menu $tag ($version)"
           [ "${tag#v}" = "$version" ] || { echo "FAIL: the lock's tag and version disagree" >&2; exit 1; }
@@ -417,11 +417,16 @@ jobs:
           if docker exec --user www-data aps-conecta-nextcloud test -e /var/www/html/custom_apps/side_menu/appinfo/signature.json; then
             echo "FAIL: side_menu carries appinfo/signature.json — a release never does" >&2; exit 1
           fi
-          # the violet background: the two keys 15-branding writes, which the menu derives from
+          # the violet background, both halves: the two keys 15-branding writes, then the
+          # stylesheet the app DERIVES from them — a public page (no login), so what the browser
+          # actually paints is asserted, not only the config it paints from
           for clave in background-color background-color-to; do
             got="$(occ config:app:get side_menu "$clave")"
             [ "$got" = "#5315a8" ] || { echo "FAIL: side_menu $clave is '$got', not the suite's violet #5315a8 — the branding phase did not apply" >&2; exit 1; }
           done
+          css="$(curl -fsS "http://localhost:${HTTP_PORT}/apps/side_menu/css/stylesheet")"
+          grep -q -- "--side-menu-background-color: #5315a8" <<<"$css" \
+            || { echo "FAIL: side_menu's stylesheet does not paint the suite's violet — the config keys are set but the menu derives another colour" >&2; exit 1; }
       # Paired with the SITE_ROLES appended above (#103), because "the seed did not crash" is
       # not the same as "the roles landed". Asserts both halves of the rule: a cat-jefaturas
       # role is a POSITION and gets a standing account; a cat-tecnicos one is a job title held
@@ -767,6 +772,9 @@ jobs:
             got="$(occ config:app:get side_menu "$clave")"
             [ "$got" = "#5315a8" ] || { echo "FAIL: side_menu $clave is '$got', not the suite's violet #5315a8 — the branding phase did not apply" >&2; exit 1; }
           done
+          css="$(curl -fsS "http://localhost:${HTTP_PORT}/apps/side_menu/css/stylesheet")"
+          grep -q -- "--side-menu-background-color: #5315a8" <<<"$css" \
+            || { echo "FAIL: side_menu's stylesheet does not paint the suite's violet — the config keys are set but the menu derives another colour" >&2; exit 1; }
       # The weekly run, by IP, on the instance just installed: the leaf is kept (same fingerprint) and
       # apache is not restarted; the seed converges again, idempotent by IP too. #33 adds its half:
       # the same run downloads nothing and leaves the lock unchanged.

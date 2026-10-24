@@ -807,7 +807,7 @@ def selftest():
         run = subprocess.run([sys.executable, os.path.abspath(__file__), "fetch",
                               "--nextcloud", "34.0.4"],
                              capture_output=True, text=True, timeout=120)
-        check("cli fetch without --manifest: the shipped manifest's release rows all resolve and fetch over the hub (#33)",
+        check("cli fetch without --manifest: the shipped manifest's release rows all resolve and fetch over the hub (#33, #38)",
               run.returncode == 0 and "✓ apps: territorio" in run.stdout
               and "✓ apps: side_menu" in run.stdout
               and read_lock()["apps"]["territorio"]["tag"] == "v0.80.0"
