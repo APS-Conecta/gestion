@@ -1233,6 +1233,27 @@ print("ok")'
 # that every container it names is defined.
 check bash provisioning/standings.sh --self-test
 check python3 scripts/apps.py --self-test
+# #66: the manifest-read failure is said in ONE place — apps.py's own stderr line, which every
+# reader already shows beside it (a command substitution captures stdout only). No reader may
+# carry its own copy of the old narration again, and no reader gets a field it discards: `lines`
+# (id, source, repo — its only reader dropped the source column) is retired for `repos`, whose
+# output the self-test pins. This sweep skips its own needles (scripts/test.sh).
+check python3 -c '
+import pathlib, sys
+NEEDLES = (
+    ("apps.py lines", "still calls the retired subcommand (its only reader discarded the source column)"),
+    ("could not read the suite manifest", "carries a copy of the manifest-failure narration"),
+    ("(apps.json) is unreadable", "carries a copy of the manifest-failure narration"),
+)
+for path in sorted(p for p in pathlib.Path(".").rglob("*")
+                   if p.is_file() and ".git" not in p.parts and "__pycache__" not in p.parts
+                   and p != pathlib.Path("scripts/test.sh")                 # this sweep itself
+                   and p.stat().st_size < 500_000):                           # skip large binaries
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    for needle, why in NEEDLES:
+        if needle in text:
+            print(f"{path}: {why} — apps.py says the failure once, on stderr, beside every reader"); sys.exit(1)
+print("ok")'
 check bash scripts/env.sh --self-test
 # #197: no caller restates the container default or guards it (`:-` `-` `:?` `?`) — env.sh
 # section 3 is the one place it is decided. The .env.example half of the gestion-era gate stayed

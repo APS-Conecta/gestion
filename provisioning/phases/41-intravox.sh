@@ -36,8 +36,7 @@ done
 # FATAL. LAB_APPS is sourced HERE, guarded — 12-apps.sh loads it inside its own subshell, which is
 # dead by the time this phase runs; without this line the lab would always take the skip.
 [ -f dev/lab-apps.sh ] && . dev/lab-apps.sh
-_ids="$(python3 "$HERE/../scripts/apps.py" ids)" \
-  || { echo "FATAL: could not read the suite manifest (apps.json) — scripts/apps.py says why above" >&2; exit 1; }
+_ids="$(python3 "$HERE/../scripts/apps.py" ids)"   # unreadable: apps.py's one Spanish line is already on stderr
 _declared="$(printf '%s\n' "$_ids" "${LAB_APPS:-}" | tr ' ' '\n' | sed 's/=.*//' | grep -x intravox || true)"
 if [ -z "$_declared" ]; then
   log "  intravox not shipped to this install — nothing to seed (lab period on clinics; defaultapp stays dashboard,files)"

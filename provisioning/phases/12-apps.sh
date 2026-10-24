@@ -15,8 +15,10 @@
 # here deletes — so a live instance also needs `occ app:remove <id>` once, by hand.
 phase_begin "12-apps" "apps this instance runs, plus the edits inside them"
 
-manifest="$(python3 "$HERE/../scripts/apps.py" lines)" \
-  || { echo "FATAL: could not read the suite manifest (apps.json) — scripts/apps.py says why above" >&2; exit 1; }
+# An unreadable manifest is reported by apps.py itself — its one Spanish line is already on
+# stderr — and the seed's errexit stops the phase here. `repos` carries the only two fields this
+# phase reads (the retired `lines` also carried source, which every reader dropped).
+manifest="$(python3 "$HERE/../scripts/apps.py" repos)"
 
 # Talk is the suite's option under AIO: off unless the wizard turns it on (the fork's patch 210), and
 # with it off the entrypoint removes spreed on every boot (REMOVE_DISABLED_APPS) — installed here, it
@@ -29,7 +31,7 @@ if is_aio; then
 fi
 
 # fd 3, not stdin: occ_sh runs `docker exec -i`, which would swallow the rest of the manifest.
-while IFS=$'\t' read -r -u 3 app _source repo; do
+while IFS=$'\t' read -r -u 3 app repo; do
   # notify_push is vendored for the bake only: the AIO entrypoint installs it on every start.
   [ "$app" = notify_push ] && continue
   if [ "$app" = spreed ] && [ "$talk" != yes ]; then

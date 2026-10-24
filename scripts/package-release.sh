@@ -240,8 +240,9 @@ gestion_sha="$(git -C "$gestion" rev-parse HEAD 2>/dev/null || echo non-git-tree
 
 # 5 — the gestion half against the tag's suite manifest: one VENDOR per apps.json row, no other
 #     app dir (release-manifest.sh's VENDOR shapes, mirrored)
-apps="$(python3 "$REPO_ROOT/scripts/apps.py" --manifest "$staging/apps.json" ids)" \
-  || die "the tag tree's suite manifest (apps.json) is unreadable — scripts/apps.py says why above"
+# An unreadable tag manifest: apps.py's one Spanish line is already on stderr, and errexit
+# stops the pack here — no second copy of the message.
+apps="$(python3 "$REPO_ROOT/scripts/apps.py" --manifest "$staging/apps.json" ids)"
 bad_vendor=0
 for d in "$gestion"/provisioning/apps/*/; do
   [ -d "$d" ] || continue
