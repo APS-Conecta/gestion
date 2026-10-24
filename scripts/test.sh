@@ -10,8 +10,13 @@ fail=0
 check() { if "$@" >/dev/null 2>&1; then echo "  ok:   $*"; else echo "  FAIL: $*"; fail=1; fi; }
 
 echo "== static checks (no running stack needed) =="
+# The fork's shell namespace, spelled once for every row that walks it (the sweep below, the
+# dirname gate at #60's row). Unquoted on purpose: the words re-glob where they are used. The
+# comm tripwire a few lines down keeps its own literal copy deliberately — it is the alarm
+# that reds when this list and the tree drift apart.
+SHELL_NAMESPACE='scripts/*.sh provisioning/*.sh provisioning/phases/*.sh host/*.sh install.sh'
 linted=0
-for s in scripts/*.sh provisioning/*.sh provisioning/phases/*.sh host/*.sh install.sh; do
+for s in $SHELL_NAMESPACE; do
   [ -e "$s" ] || continue
   linted=$((linted + 1)); check bash -n "$s"
 done
@@ -43,6 +48,57 @@ check bash -c '
   bad=$(grep -rnE "(^|[;&[:space:]])(\$fns)([[:space:]][^|]*)?>[[:space:]]*/dev/null" \
           provisioning/phases/*.sh provisioning/seed.sh 2>/dev/null || true)
   [ -z "$bad" ] || { printf "%s\n" "$bad" >&2; exit 1; }'
+# --- gate (#60): dirname-of-self only where the caller's cwd still governs ----------------------
+# env.sh's first job is `cd "$(dirname "${BASH_SOURCE[0]}")/.."` — the repo root (env.sh §1).
+# A dirname of $0 evaluated on any LATER line resolves against the NEW cwd whenever the
+# script was started by a relative path, so it names a directory that is not the script's.
+# #30's first draft shipped exactly that twice (the smoke test and the divergence gate) and a
+# reviewer caught both; this row is the retro's ask — the gate reds on the class, not the
+# spelling. Position is the contract, and it is exact in both directions:
+#   - the sourcing line itself expands BEFORE env.sh runs;
+#   - lines before the first source still see the caller's cwd — the pre-computed HERE idiom
+#     (uninstall.sh:17, seed.sh:8) is absolute by the time env.sh moves, and usuarios.sh:36's
+#     own cd is pre-source by construction;
+#   - everything after the first source line must not self-locate by dirname. $BASH_SOURCE
+#     rides the same rule: launched relatively, it is exactly as relative as $0.
+# Subjects are discovered by the source line itself, over the lint sweep's namespace, so a
+# script that starts sourcing env.sh is covered the day it lands. The fixtures live as real
+# bytes under tests/gate-fixtures/ (never executed) — not as heredocs here, whose bytes would
+# be this file's own post-source lines and red the gate on itself. And per org L7-2 the row
+# proves it can red: the #30 shape must be flagged, while every legal idiom above — and a
+# script that never sources env.sh — must stay green.
+ENV_SH_SOURCE_RE='^[[:space:]]*(\.|source)[[:space:]][^#]*env\.sh'
+ENV_SH_SELFLOC_RE='dirname[[:space:]]+(-[[:alnum:]-]+[[:space:]]+)?("\$0"|\$0|"\$\{BASH_SOURCE\}"|"\$BASH_SOURCE"|"\$\{BASH_SOURCE\[0\]\}"|\$\{BASH_SOURCE\[0\]\})'
+env_sh_selfpath_rows() {  # FILE... — every dirname-of-self evaluated after env.sh moved the cwd
+  local f first
+  for f in "$@"; do
+    [ -f "$f" ] || continue          # a glob that matched nothing stays literal (the sweep's rule)
+    first="$(grep -nE "$ENV_SH_SOURCE_RE" "$f" | head -1 | cut -d: -f1)"
+    [ -n "${first:-}" ] || continue   # never sources env.sh: not this gate's subject
+    grep -nE "$ENV_SH_SELFLOC_RE" "$f" | awk -F: -v first="$first" -v f="$f" '
+      ($1 + 0) > first { print f ":" $0 }'
+  done
+}
+env_sh_selfpath_gate() {
+  local rows n rc=0
+  # green on main is the baseline: the shipped tree carries none
+  rows="$(env_sh_selfpath_rows $SHELL_NAMESPACE)"
+  [ -z "$rows" ] || { printf 'a script sources env.sh and then self-locates by dirname — the cwd is the repo root by then:\n%s\n' "$rows" >&2; return 1; }
+  # red on the injected violation (org L7-2): both spellings, and only those two rows
+  rows="$(env_sh_selfpath_rows tests/gate-fixtures/violador.sh)"
+  n="$(printf '%s\n' "$rows" | grep -c .)"
+  [ "$n" = 2 ] || { printf 'the gate flagged %s rows on the #30 fixture, want exactly 2:\n%s\n' "${n:-0}" "$rows" >&2; rc=1; }
+  printf '%s\n' "$rows" | grep -q '\.\./VERSION' || { echo 'the gate missed the #30 shape (a dirname of $0 after the source)' >&2; rc=1; }
+  printf '%s\n' "$rows" | grep -q 'BASH_SOURCE' || { echo 'the gate missed the BASH_SOURCE spelling' >&2; rc=1; }
+  # and green on every legal idiom, and on a script that never sources env.sh
+  rows="$(env_sh_selfpath_rows tests/gate-fixtures/legal.sh)"
+  [ -z "$rows" ] || { printf 'the gate reds a legal idiom:\n%s\n' "$rows" >&2; rc=1; }
+  rows="$(env_sh_selfpath_rows tests/gate-fixtures/ajeno.sh)"
+  [ -z "$rows" ] || { printf 'the gate took a non-sourcer as a subject:\n%s\n' "$rows" >&2; rc=1; }
+  return "$rc"
+}
+check env_sh_selfpath_gate
+
 
 # --- gate: the channel's identity — instalador is the only home the operator is sent to ---------
 # The move re-keyed every operator pointer (D13): the bootstrap, the CLI's remedies, the wizard's
@@ -305,6 +361,134 @@ if bad:
     for line in bad:
         print("  " + line)
     sys.exit(1)'
+# --- gate: a new file in the fork's namespaces carries an SPDX header (#63) ---------------------
+# AGENTS.md's inherited rule ("new fork-owned scripts carry an SPDX header") met 46 of them
+# without one, so every PR asked its reviewer to weigh the rule against precedent (#30's retro).
+# The owner's call on #63: enforce for files added from now on, fork namespaces only — the same
+# namespaces the lint and errexit sweeps own, upstream's shell staying upstream's, and, because
+# the rule names scripts, over .sh and .py both; other files (.json, .conf, docs) stay out.
+# SPDX_BASELINE freezes the headerless scripts that predate the decision, so main is green by
+# construction and the row reds only on a file it has never seen: a tracked one without the
+# header line and not on the list. When a baseline file gains its header, drop its line here;
+# an exception is a baseline extension in a commit that says why — never a silent row-weakening.
+SPDX_BASELINE='
+install.sh
+provisioning/app-policy.sh
+provisioning/intravox/render.py
+provisioning/lib.sh
+provisioning/phases/05-security.sh
+provisioning/phases/06-jobs.sh
+provisioning/phases/07-certs.sh
+provisioning/phases/10-locale.sh
+provisioning/phases/12-apps.sh
+provisioning/phases/14-office.sh
+provisioning/phases/15-branding.sh
+provisioning/phases/16-app-policy.sh
+provisioning/phases/20-groups.sh
+provisioning/phases/30-folders.sh
+provisioning/phases/40-acl.sh
+provisioning/phases/41-intravox.sh
+provisioning/phases/50-users.sh
+provisioning/phases/60-fixtures.sh
+provisioning/seed.sh
+provisioning/standings.sh
+provisioning/usuarios.sh
+scripts/acquisition-gate.sh
+scripts/aio-testbed.sh
+scripts/bake.sh
+scripts/brand-gate.sh
+scripts/cleanboot-site.sh
+scripts/comuna-package.sh
+scripts/db-dump.sh
+scripts/deis.py
+scripts/divergence.sh
+scripts/env-init.sh
+scripts/env.sh
+scripts/install.sh
+scripts/lockup.py
+scripts/migrate-to-aio.sh
+scripts/office-smoke.sh
+scripts/package-release.sh
+scripts/provisionador.py
+scripts/rename-containers.py
+scripts/retag.sh
+scripts/seed-idempotent.sh
+scripts/smoke.sh
+scripts/test.sh
+scripts/uninstall.sh
+scripts/validate.sh
+scripts/wait-ready.sh
+'
+spdx_offenders() {
+  # every argument that neither carries the header line nor sits on the frozen baseline
+  local f
+  for f in "$@"; do
+    grep -qxF "$f" <<<"$SPDX_BASELINE" && continue
+    grep -qx "# SPDX-License-Identifier: AGPL-3.0-or-later" "$f" || printf "%s\n" "$f"
+  done
+}
+spdx_header_row() {
+  local off
+  off="$(spdx_offenders $(git ls-files "*.sh" "*.py" | grep -E '^scripts/|^provisioning/|^host/|^install\.sh$'))"
+  [ -z "$off" ] || { printf "tracked scripts lacking an SPDX header and not on the #63 baseline:\n%s\n" "$off" >&2; return 1; }
+}
+check spdx_header_row
+# The baseline's own gate (the seed-idempotent lesson: an allowlist that can rot must not rot
+# silently). spdx_header_row pins one direction — every tracked script is headered or on the
+# baseline; this pins the other — every baseline line still names a tracked, headerless script.
+# Together they make baseline ≡ the headerless set, so green on main cannot erode: a line left
+# behind by a rename or a deletion, or by a file that gained its header, reds here instead of
+# rotting, and a line appended that names nothing real reds on the spot.
+spdx_baseline_row() {
+  local line
+  local -a dead=()
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    if ! git ls-files -- "$line" | grep -qx "$line"; then
+      dead+=("$line (no longer a tracked file)")
+    elif grep -qx "# SPDX-License-Identifier: AGPL-3.0-or-later" "$line"; then
+      dead+=("$line (has the header — drop its baseline line)")
+    fi
+  done <<<"$SPDX_BASELINE"
+  [ ${#dead[@]} -eq 0 ] || { printf 'SPDX_BASELINE lines that no longer name a headerless tracked script:\n' >&2; printf '%s\n' "${dead[@]}" >&2; return 1; }
+}
+check spdx_baseline_row
+# The detector's own gate (the AGNOSTIC_SHAPE lesson: a row whose detector cannot go red is not a
+# row). The same spdx_offenders bytes the row runs, over a fabricated corpus: a new unheadered
+# script is the one offender; a baseline member without the header and a newcomer WITH it are not.
+spdx_offenders_cases() {
+  local tmp off
+  tmp="$(mktemp -d)"
+  printf "#!/usr/bin/env bash\necho hi\n" > "$tmp/new.sh"
+  printf "#!/usr/bin/env bash\n" > "$tmp/old.sh"
+  printf "#!/usr/bin/env bash\n# SPDX-FileCopyrightText: 2026 APS Conecta\n# SPDX-License-Identifier: AGPL-3.0-or-later\necho hi\n" > "$tmp/headered.sh"
+  off="$(SPDX_BASELINE="$tmp/old.sh" spdx_offenders "$tmp/new.sh" "$tmp/old.sh" "$tmp/headered.sh")"
+  rm -rf "$tmp"
+  [ "$off" = "$tmp/new.sh" ] \
+    || { echo "spdx detector: expected exactly the new unheadered script, got: $off" >&2; return 1; }
+}
+check spdx_offenders_cases
+# And the baseline row's red test, in a scratch git tree so "tracked" is real: a frozen line
+# naming a tracked headerless script passes; a line for a file that gained its header, and one
+# for a file that is gone, both red — each named with its cause.
+spdx_baseline_cases() {
+  local tmp out
+  tmp="$(mktemp -d)"
+  printf "#!/usr/bin/env bash\n" > "$tmp/old.sh"
+  printf "#!/usr/bin/env bash\n# SPDX-License-Identifier: AGPL-3.0-or-later\n" > "$tmp/gained.sh"
+  if ! ( cd "$tmp" && git init -q . && git add old.sh gained.sh \
+         && SPDX_BASELINE="old.sh" spdx_baseline_row ); then
+    rm -rf "$tmp"; echo "spdx baseline: a frozen line naming a tracked headerless script red" >&2; return 1
+  fi
+  out="$( cd "$tmp" && SPDX_BASELINE="old.sh
+gained.sh
+gone.sh" spdx_baseline_row 2>&1 )"
+  rm -rf "$tmp"
+  printf '%s\n' "$out" | grep -q "gained.sh (has the header — drop its baseline line)" \
+    && printf '%s\n' "$out" | grep -q "gone.sh (no longer a tracked file)" \
+    || { echo "spdx baseline: a gained header or a vanished file did not red with its cause: $out" >&2; return 1; }
+}
+check spdx_baseline_cases
 # The AIA URI is read out of a REMOTE certificate over an unverified handshake, so it is
 # attacker-chosen input that used to be interpolated into a `sh -c` string. The strip that
 # looked like a mitigation (`tr -d '[:space:]'`) is not one: a payload needs no whitespace.
@@ -747,6 +931,30 @@ OCC app:enable admin_audit" ] \
     || { echo "app_enable: a failing enable was not said: $out" >&2; return 1; }
 }
 check app_enable_cases
+
+# A boolean system key converges: config:list stores session_keepalive as JSON false and conf_get
+# renders it "" (occ's own rendering), so a setter that compares that against the word "false"
+# writes on every seed and seed-idempotent reddens. Stored false -> no write; absent or true -> one.
+config_system_bool_cases() {
+  local cache want out
+  while IFS='|' read -r cache want; do
+    out="$(CALLS="$(mktemp)" CACHE="$cache" bash -c '
+      . scripts/env.sh; . provisioning/lib.sh
+      CONF_CACHE="$CACHE"
+      occ() { printf "OCC %s\n" "$*" >> "$CALLS"; }
+      log() { :; }
+      config_system_set session_keepalive false boolean; cat "$CALLS"; rm -f "$CALLS"' 2>&1)"
+    case "$want" in
+      none) [ -z "$out" ] ;;
+      write) [ "$out" = "OCC config:system:set session_keepalive --type=boolean --value=false" ] ;;
+    esac || { echo "config_system_set: cache $cache expected $want, got: $out" >&2; return 1; }
+  done <<'CASES'
+{"system": {"session_keepalive": false}}|none
+{"system": {}}|write
+{"system": {"session_keepalive": true}}|write
+CASES
+}
+check config_system_bool_cases
 
 # The café case above is behavioural, and load-bearing only under a COLLATING locale — which a
 # Chilean dev has and GitHub's runners do not, defaulting to C.UTF-8 where that range refuses `é`
@@ -1274,6 +1482,31 @@ CASES
 }
 check cleanboot_tile_url_cases
 
+# The usage record's python, out of cleanboot.yml and over a stub df that prints GNU's real header
+# (8 words for 7 columns), a source seen twice and a mount point with a space: the record is
+# written, one row per source, each named by the columns asked for.
+cleanboot_usage_cases() {
+  local py tmp rc
+  py="$(awk '/- name: The measured usage/ {f=1; next}
+             f && /<<.PY.$/ {r=1; next}
+             r && /^ *PY$/ {exit}
+             r {sub(/^          /, ""); print}' .github/workflows/cleanboot.yml)"
+  [ -n "$py" ] || { echo "cleanboot: the usage record's python was not found" >&2; return 1; }
+  tmp="$(mktemp -d)"; mkdir "$tmp/bin"
+  printf '#!/bin/sh\nexit 0\n' > "$tmp/bin/docker"
+  printf '#!/bin/sh\nprintf "%%s\\n" "Filesystem Type 1B-blocks Used Avail Use%% Mounted on" "/dev/sda1 ext4 100 40 60 40%% /" "/dev/sda1 ext4 100 40 60 40%% /var/lib/docker" "/dev/sdb1 ext4 100 10 90 10%% /mnt/with space"\n' > "$tmp/bin/df"
+  chmod +x "$tmp/bin/docker" "$tmp/bin/df"
+  PATH="$tmp/bin:$PATH" python3 - "$tmp/uso.json" <<<"$py" >/dev/null 2>&1; rc=$?
+  python3 -c '
+import json, sys
+disco = json.load(open(sys.argv[1], encoding="utf-8"))["disco"]
+assert len(disco) == 2 and all("source" in d and "target" in d for d in disco), disco
+assert disco[1]["target"] == "/mnt/with space", disco' "$tmp/uso.json" >/dev/null 2>&1 && [ "$rc" -eq 0 ] \
+    || { echo "cleanboot: the usage record was not written as one row per source (rc=$rc)" >&2; rm -rf "$tmp"; return 1; }
+  rm -rf "$tmp"
+}
+check cleanboot_usage_cases
+
 # Both clean-boot jobs read the installed suite's database with scripts/cleanboot-db.sh (#44 on a whole install).
 # Run here over a stubbed docker: a ready database passes; no tag, the wrong image, vector missing, a buscador
 # role missing or able to log in when it must not, a worker privilege, or no relation read at all each fail;
@@ -1418,6 +1651,27 @@ print("ok")'
 # that every container it names is defined.
 check bash provisioning/standings.sh --self-test
 check python3 scripts/apps.py --self-test
+# #66: the manifest-read failure is said in ONE place — apps.py's own stderr line, which every
+# reader already shows beside it (a command substitution captures stdout only). No reader may
+# carry its own copy of the old narration again, and no reader gets a field it discards: `lines`
+# (id, source, repo — its only reader dropped the source column) is retired for `repos`, whose
+# output the self-test pins. This sweep skips its own needles (scripts/test.sh).
+check python3 -c '
+import pathlib, sys
+NEEDLES = (
+    ("apps.py lines", "still calls the retired subcommand (its only reader discarded the source column)"),
+    ("could not read the suite manifest", "carries a copy of the manifest-failure narration"),
+    ("(apps.json) is unreadable", "carries a copy of the manifest-failure narration"),
+)
+for path in sorted(p for p in pathlib.Path(".").rglob("*")
+                   if p.is_file() and ".git" not in p.parts and "__pycache__" not in p.parts
+                   and p != pathlib.Path("scripts/test.sh")                 # this sweep itself
+                   and p.stat().st_size < 500_000):                           # skip large binaries
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    for needle, why in NEEDLES:
+        if needle in text:
+            print(f"{path}: {why} — apps.py says the failure once, on stderr, beside every reader"); sys.exit(1)
+print("ok")'
 check bash scripts/env.sh --self-test
 # #197: the template ships no Nextcloud container and no caller restates its default or guards it
 # (`:-` `-` `:?` `?`) — env.sh section 3 is the one place it is decided. git grep exits 1 on no

@@ -44,12 +44,19 @@ half-signed.
 
 ## 3. The release commit
 
-Three files, one commit, all saying the same tag (the CLI's self-test pins it; the release job
+X.Y.Z is chosen from the changes, not from the last number plus one: read the commits since
+the previous tag — `git log --oneline $(git describe --tags --abbrev=0)..HEAD` — and apply the
+changelog's Semantic Versioning: a feature anywhere in the range is a minor bump, fixes alone
+a patch, a breaking change a major. (The 0.5.0 range was first proposed as v0.4.1, five
+features deep; the log is the count.)
+
+Four places, one commit, all saying the same tag (the CLI's self-test pins it; the release job
 asserts it):
 
 1. `VERSION` — the tag, one line.
 2. `install.sh`'s `BUNDLE_TAG` — the same tag.
-3. `aps/CHANGELOG.md` — the dated `## [X.Y.Z]` entry.
+3. `host/aps-conecta`'s `BUNDLE_TAG` — the same tag (the file on its own installs it).
+4. `aps/CHANGELOG.md` — the dated `## [X.Y.Z]` entry.
 
 ## 4. The frozen window
 
@@ -86,9 +93,28 @@ A repair that only needs the image set re-copied (a mixed or partial set, no Rel
 dispatches Images directly with `retag-source: ours:vX.Y.Z` and `force` — the pinned previous
 set, re-copied faithfully.
 
-**Rehearse first**: a `v0.0.0-ci.N` tag (VERSION and BUNDLE_TAG set to match on a rehearsal
-branch) runs the identical chain end-to-end and is deletable; Clean boot installs its images when
-dispatched with it (`gh workflow run cleanboot.yml --ref <branch> -f suite-tag=v0.0.0-ci.N`).
+**Rehearse first, by dispatch**. Two `gh` commands, no git tag, no Release:
+
+    gh workflow run images.yml    --ref <branch> -f suite-tag=v0.0.0-ci.N -f build-ref=<branch> -f force=true
+    gh workflow run cleanboot.yml --ref <branch> -f suite-tag=v0.0.0-ci.N
+
+`force` because a rehearsal suite tag is throwaway and its set is usually already on the
+registry — every `v0.0.0-ci.N` ever dispatched stays there (immutability, D12; ci.1–ci.8
+exist), and the retag pre-check refuses a fully-present set without `force`, whose own
+contract names refreshing a throwaway CI tag. That refusal is also why a tag push cannot
+substitute: the tag-push chain runs Images without `force`, so re-pushing an existing
+`v0.0.0-ci.N` dies at the pre-check — and pushing a never-used one mints a Release that must
+then be deleted. A never-published `v0.0.0-ci.N` (VERSION and BUNDLE_TAG set to match on the
+branch) is still the way to rehearse the chain itself end-to-end, Release included, deletable;
+the dispatch pair is how you iterate on images and install code.
+
+**When a fresh Images dispatch is needed**: only when the image inputs changed — the tree the
+four real builds read at `build-ref` (php/, app/, Containers/) or the gestion bake at
+`gestion-ref` (main by default — the frozen window's ref, §4; a pinned SHA only for repairs); the 16 retagged siblings only ever copy the previous set. When only the install
+path moved (the host bundle, provisioning/, scripts/ on the branch), a Clean boot re-dispatch
+alone is enough: it checks out the branch and installs the suite tag's already-published
+images.
+
 release.yml's repair arm (workflow_dispatch with `suite-tag`, plus `force-images` only for a
 chain that died mid-publish) exists for a chain that failed BEFORE `gh release create` — a
 published Release's assets never move (D12).

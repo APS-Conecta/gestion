@@ -294,7 +294,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=aio-apache
 
   build-aio-postgresql:
-    name: Build aio-postgresql (patch 260's slot), tested before it ships
+    name: Build aio-postgresql (pgvector and buscador's roles), tested before it ships
     needs: retag   # same gate as the other builds
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -366,7 +366,7 @@ jobs:
         # the build comes from. A fork-side rename of an image is out of scope by locked
         # design (010 is prefix-only); an upstream rename/addition arrives the way every
         # upstream change arrives now: a deliberate merge into main.
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v3   # freshly-pushed packages are private until the org flips them public
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0   # freshly-pushed packages are private until the org flips them public
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -389,7 +389,7 @@ jobs:
       contents: read
       packages: read
     steps:
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v3   # the pull below is the proof manifest-inspect cannot give
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0   # the pull below is the proof manifest-inspect cannot give
         with:
           registry: ghcr.io
           username: ${{ github.actor }}

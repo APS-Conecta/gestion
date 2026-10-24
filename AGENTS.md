@@ -37,9 +37,9 @@ A merge that re-introduces upstream identifiers is followed by the merge-time re
 - `scripts/brand-gate.sh` and `scripts/acquisition-gate.sh` assert the tree's identity and
   its acquisition channels — ci.yml runs them on every push and PR, and the release chain's
   gates arm on every tag.
-- `scripts/test.sh` is the static suite (secrets, shellcheck sweep, the comm and errexit
-  arms). CI is the only mechanical gate; where a behavior is not observable in CI, the check
-  beside it says so instead of pretending.
+- `scripts/test.sh` is the static suite (secrets, shellcheck sweep, the comm, errexit and
+  SPDX-header arms). CI is the only mechanical gate; where a behavior is not observable in
+  CI, the check beside it says so instead of pretending.
 - `scripts/validate.sh` runs upstream's own three validators (codespell, docker-lint,
   json-spec) against any tree.
 - `scripts/retag.sh --self-test` is hermetic: stub registry, local fixture repos, no network.
@@ -60,8 +60,10 @@ trailer. Do not add `Signed-off-by` tags.
 
 - The wizard's frontend (`php/public/`, `php/templates/`) uses only web features that are
   Baseline "widely available" — no polyfills, nothing merely "newly available".
-- The upstream [LICENSE](LICENSE) (AGPL-3.0) is carried unchanged; new files carry an SPDX
-  header (`SPDX-License-Identifier: AGPL-3.0-or-later`).
+- The upstream [LICENSE](LICENSE) (AGPL-3.0) is carried unchanged; new fork-owned scripts
+  (`.sh`/`.py` under `scripts/`, `provisioning/`, `host/`, and `install.sh`) carry an SPDX
+  header (`SPDX-License-Identifier: AGPL-3.0-or-later`) — the static gate's SPDX arm enforces
+  it over a frozen baseline of the scripts that predate the rule (#63).
 - Operator-visible Spanish is es-CL, formal usted — the codespell ignore list in
   `.codespellrc` exists for it; do not "fix" correct Spanish words.
 

@@ -182,8 +182,9 @@ esac
 # 10. No patched app still carries its vendor signature (#71, phase 12-apps). PATCHED means "a suite
 # app with a .patch file beside its tarball", NOT "a suite app": an untouched app's upstream
 # signature is correct.
-ids=$(python3 scripts/apps.py ids) \
-  || fail "could not read the suite manifest (apps.json) — scripts/apps.py says why above"
+# An unreadable manifest is apps.py's to report — its one Spanish line is already on stderr.
+# smoke runs without errexit, so exit by hand, with nothing added beside that one line.
+ids=$(python3 scripts/apps.py ids) || exit $?
 patched=
 for a in $ids; do
   compgen -G "provisioning/apps/$a/*.patch" >/dev/null && patched="$patched$a "

@@ -91,9 +91,11 @@ print(("1" if v else "") if isinstance(v, bool) else v if isinstance(v, str) els
 # for behaviour — but a numeric key then sits in config.php quoted, which misreports its own type
 # to the next reader. Pass it where the documented type is not a string.
 config_system_set() {  # KEY VALUE [TYPE]
-  local key="$1" val="$2" type="${3:-}" cur
+  local key="$1" val="$2" type="${3:-}" cur want="$2"
+  # a boolean reads back the way conf_get renders it ("1" / ""), never as the word it was set with
+  if [ "$type" = boolean ]; then case "$val" in true|1) want=1 ;; *) want="" ;; esac; fi
   conf_load
-  if cur="$(conf_get system "$key")" && [ "$cur" = "$val" ]; then
+  if cur="$(conf_get system "$key")" && [ "$cur" = "$want" ]; then
     log "system:$key already = $val"
   elif [ -n "$type" ]; then
     occ config:system:set "$key" --type="$type" --value="$val" >/dev/null && log "system:$key -> $val ($type)"

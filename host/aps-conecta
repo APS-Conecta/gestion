@@ -37,7 +37,7 @@ prov_path() { printf '%s' "$ROOT/scripts/provisionador.py"; }
 # The suite release this file installs when it runs on its own — the two-line bootstrap, before any
 # clone exists. The release commit sets it beside aps/CHANGELOG's dated entry and the tree's VERSION,
 # and the self-test pins the three, so the package downloaded from tag X installs exactly X.
-BUNDLE_TAG="v0.4.0"
+BUNDLE_TAG="v0.5.0"
 # The package era (FRD S1): the signed tarball unpacks instalador/ here (install.sh); the
 # gestion-clone era ($APS_HOME/gestion) is aps/MIGRATION.md's inert case, detected and named.
 APS_HOME="${APS_HOME:-/opt/aps-conecta}"

@@ -150,7 +150,7 @@ jobs:
       AIO_TEST_IMAGE: ghcr.io/aps-conecta/all-in-one:${{ needs.suite-tag.outputs.tag }}
       SUITE_TAG: ${{ needs.suite-tag.outputs.tag }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1   # VERSION answers suite_tag() now — no tag history to read
       # The probe bed FIRST, so a harness preflight failure (RAM, ports, ghcr reachability) is
@@ -283,7 +283,7 @@ jobs:
       # rename in the tiles retirement too).
       - name: Smoke output on failure (artifact)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: smoke-out
           path: ${{ runner.temp }}/smoke*.out
@@ -313,11 +313,12 @@ jobs:
           stats = [json.loads(ln) for ln in
                    run("docker", "stats", "--no-stream", "--format", "{{json .}}", *names).splitlines()
                    if ln.strip()] if names else []
-          lineas = run("df", "-B1", "--output=source,fstype,size,used,avail,pcent,target",
-                       "/", "/var/lib/docker").splitlines()
-          cabe, disco, vistos = lineas[0].split(), [], set()
+          # df's header is 8 words for 7 columns ("Mounted on"): the names are ours, never read back from it.
+          campos = ("source", "fstype", "size", "used", "avail", "pcent", "target")
+          lineas = run("df", "-B1", "--output=" + ",".join(campos), "/", "/var/lib/docker").splitlines()
+          disco, vistos = [], set()
           for ln in lineas[1:]:
-              fila = dict(zip(cabe, ln.split(None, len(cabe) - 1)))
+              fila = dict(zip(campos, ln.split(None, len(campos) - 1)))
               if fila["source"] not in vistos:
                   vistos.add(fila["source"]); disco.append(fila)
           try:
@@ -330,7 +331,7 @@ jobs:
           PY
       - name: The usage record, as an artifact (a missing record is a red, never a silent skip)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: uso-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/uso.json
@@ -503,7 +504,8 @@ jobs:
         if: failure()
         run: |
           docker ps -a --filter name=^aps-conecta- --filter name=^nextcloud-aio-mastercontainer$ --format 'table {{.Names}}\t{{.Status}}'
-          docker logs --tail=100 aps-conecta-nextcloud
+          docker logs --tail=100 aps-conecta-apache || true
+          docker logs --tail=100 aps-conecta-nextcloud || true
           sudo tail -n 100 /opt/aps-conecta/instalacion.log || true
       # `make install` prints phase names and sends the detail to .install.log, so without this
       # the one job that exists to catch a broken install cannot show what broke — #96 was
@@ -515,7 +517,7 @@ jobs:
         run: sudo cp /opt/aps-conecta/instalador/.install.log "$RUNNER_TEMP/.install.log" 2>/dev/null || true
       - name: Provisioning log on failure (artifact)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: install-log
           path: ${{ runner.temp }}/.install.log
@@ -542,7 +544,7 @@ jobs:
     env:
       SUITE_TAG: ${{ needs.suite-tag.outputs.tag }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1   # VERSION answers suite_tag() now — no tag history to read
       - name: Build the rehearsal package, then install through the real bootstrap

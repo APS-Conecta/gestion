@@ -4,14 +4,14 @@
 """The suite manifest (apps.json): the one list of the apps the suite installs.
 
   scripts/apps.py ids          one app id per line, in manifest order
-  scripts/apps.py lines        id<TAB>source<TAB>repo per line (repo empty for store apps)
+  scripts/apps.py repos        id<TAB>repo per line (repo empty for store apps)
   scripts/apps.py --self-test  the manifest validates and names only defined containers
   --manifest PATH              read another manifest (the packager reads the tag tree's)
 
 Standard library only, on Python 3.10 (Ubuntu 22.04's); the Provisionador imports it like deis.
 
 A row: id; source (own | fork | store); repo (own and fork apps only); optional (false | "on" |
-"off"); containers (names from php/containers.json); pin (an exact tag, optional); name and summary
+"off"); containers (names from php/containers.json); pin (an exact vX.Y.Z tag, optional); name and summary
 (Spanish, shown in the wizard; plumbing apps carry neither).
 """
 import errno
@@ -28,6 +28,7 @@ CONTAINERS = os.path.join(HERE, "..", "php", "containers.json")
 FIELDS = {"id", "source", "repo", "optional", "containers", "pin", "name", "summary"}
 APP_ID = re.compile(r"[a-z][a-z0-9_]*")
 REPO = re.compile(r"APS-Conecta/[A-Za-z0-9._-]+")
+PIN = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+")
 
 
 def load(path=MANIFEST):
@@ -57,30 +58,66 @@ def _read(path):
         raise ValueError("no es una lista con al menos una aplicación")
     seen = set()
     for row in rows:
-        app = row.get("id") if isinstance(row, dict) else None
-        if not isinstance(app, str) or not APP_ID.fullmatch(app):
-            raise ValueError(f"una fila sin id de aplicación válido: {row!r}")
-        if app in seen:
-            raise ValueError(f"{app} aparece dos veces")
-        seen.add(app)
-        if set(row) - FIELDS:
-            raise ValueError(f"{app}: campos desconocidos {sorted(set(row) - FIELDS)}")
-        if row.get("source") not in ("own", "fork", "store"):
-            raise ValueError(f"{app}: source debe ser own, fork o store")
-        if (row["source"] == "store") != ("repo" not in row) or "repo" in row and not (
-                isinstance(row["repo"], str) and REPO.fullmatch(row["repo"])):
-            raise ValueError(f"{app}: las aplicaciones own y fork nombran un repositorio de APS-Conecta; las store, ninguno")
-        if not (row.get("optional") is False or row.get("optional") in ("on", "off")):
-            raise ValueError(f"{app}: optional debe ser false, \"on\" u \"off\"")
-        if not isinstance(row.get("containers"), list) or not all(
-                isinstance(c, str) and c for c in row["containers"]):
-            raise ValueError(f"{app}: containers debe ser una lista de nombres de contenedor")
-        if "pin" in row and not (isinstance(row["pin"], str) and row["pin"].startswith("v")):
-            raise ValueError(f"{app}: pin debe ser una etiqueta como v1.2.3")
-        if ("name" in row) != ("summary" in row) or not all(
-                isinstance(row[k], str) and row[k] for k in ("name", "summary") if k in row):
-            raise ValueError(f"{app}: name y summary van juntos y no pueden estar vacíos")
+        _check_row(row, seen)
     return rows
+
+
+def _check_row(row, seen):
+    """One plain check per field, in the order the docstring describes a row."""
+    app = row.get("id") if isinstance(row, dict) else None
+    if not isinstance(app, str) or not APP_ID.fullmatch(app):
+        raise ValueError(f"una fila sin id de aplicación válido: {row!r}")
+    if app in seen:
+        raise ValueError(f"{app} aparece dos veces")
+    seen.add(app)
+    unknown = set(row) - FIELDS
+    if unknown:
+        raise ValueError(f"{app}: campos desconocidos {sorted(unknown)}")
+    if row.get("source") not in ("own", "fork", "store"):
+        raise ValueError(f"{app}: source debe ser own, fork o store")
+    _check_repo(app, row)
+    optional = row.get("optional")
+    if optional is not False and optional not in ("on", "off"):  # `is not False`: 0 == False
+        raise ValueError(f'{app}: optional debe ser false, "on" u "off"')
+    _check_containers(app, row)
+    _check_pin(app, row)
+    _check_name(app, row)
+
+
+def _check_repo(app, row):
+    """Store apps name no repo; own and fork apps name one of ours (the one rule, said once)."""
+    if row["source"] == "store":
+        ok = "repo" not in row
+    else:
+        ok = isinstance(row.get("repo"), str) and bool(REPO.fullmatch(row["repo"]))
+    if not ok:
+        raise ValueError(f"{app}: las aplicaciones own y fork nombran un repositorio de APS-Conecta; las store, ninguno")
+
+
+def _check_containers(app, row):
+    """containers names this app's php/containers.json containers — ids, never descriptions."""
+    declared = row.get("containers")
+    if not isinstance(declared, list) or not all(isinstance(c, str) and c for c in declared):
+        raise ValueError(f"{app}: containers debe ser una lista de nombres de contenedor")
+
+
+def _check_pin(app, row):
+    """pin is an exact release tag — `v` alone, `main` or a sha names no release there is to pin."""
+    if "pin" not in row:
+        return
+    pin = row["pin"]
+    if not (isinstance(pin, str) and PIN.fullmatch(pin)):
+        raise ValueError(f"{app}: pin debe ser una etiqueta de release exacta, como v1.2.3")
+
+
+def _check_name(app, row):
+    """name and summary travel together — both or neither (plumbing apps carry neither)."""
+    if "name" not in row and "summary" not in row:
+        return
+    for key in ("name", "summary"):
+        text = row.get(key)
+        if not isinstance(text, str) or not text:
+            raise ValueError(f"{app}: name y summary van juntos y no pueden estar vacíos")
 
 
 def missing_containers(rows, path=CONTAINERS):
@@ -124,6 +161,7 @@ def selftest():
     good = {"id": "demo", "source": "own", "repo": "APS-Conecta/demo", "optional": False,
           "containers": ["aps-conecta-demo"], "name": "Demo", "summary": "Una aplicación de prueba."}
     check("a well-formed row loads", not refused([good]))
+    check("a pin that is an exact release tag loads", not refused([{**good, "pin": "v1.2.3"}]))
     check("a listed container missing from the definitions is refused",
           refused([good], containers=("aps-conecta-otro",)))
 
@@ -142,6 +180,9 @@ def selftest():
                        ("optional 0", [{**good, "optional": 0}]),
                        ("containers as a string", [{**good, "containers": "aps-conecta-demo"}]),
                        ("a pin that is not a tag", [{**good, "pin": "main"}]),
+                       ("a bare v", [{**good, "pin": "v"}]),
+                       ("an incomplete pin", [{**good, "pin": "v1.2"}]),
+                       ("a pre-release pin", [{**good, "pin": "v1.2.3-rc1"}]),
                        ("a name without a summary", [without("summary")]),
                        ("an empty summary", [{**good, "summary": ""}])):
         check(f"{label} is refused", refused(bad))
@@ -162,8 +203,9 @@ def selftest():
 
     store = {"id": "calendar", "source": "store", "optional": False, "containers": []}
     check("ids: one id per line, in manifest order", cli("ids", rows=[good, store]) == (0, "demo\ncalendar\n", ""))
-    check("lines: id, source and repo tab-separated; a store app's repo is empty",
-          cli("lines", rows=[good, store]) == (0, "demo\town\tAPS-Conecta/demo\ncalendar\tstore\t\n", ""))
+    check("repos: id and repo tab-separated; a store app's repo is empty",
+          cli("repos", rows=[good, store]) == (0, "demo\tAPS-Conecta/demo\ncalendar\t\n", ""))
+    check("lines is retired (its only reader discarded the source column)", cli("lines", rows=[good])[0] != 0)
 
     def contents(data):
         def prepare(path):
@@ -192,7 +234,7 @@ def main(argv):
     path = MANIFEST
     if argv[:1] == ["--manifest"] and len(argv) > 1:
         path, argv = argv[1], argv[2:]
-    if argv not in (["ids"], ["lines"]):
+    if argv not in (["ids"], ["repos"]):
         print(__doc__.split("\n\n")[1], file=sys.stderr)
         return 2
     try:
@@ -201,7 +243,7 @@ def main(argv):
         print(e, file=sys.stderr)
         return 1
     for r in rows:
-        print(r["id"] if argv == ["ids"] else f"{r['id']}\t{r['source']}\t{r.get('repo', '')}")
+        print(r["id"] if argv == ["ids"] else f"{r['id']}\t{r.get('repo', '')}")
     return 0
 
 

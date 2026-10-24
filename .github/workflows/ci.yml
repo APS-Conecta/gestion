@@ -27,7 +27,7 @@ jobs:
     name: Secret scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0    # a secret lives wherever history put it, not only at HEAD
       - name: gitleaks 8.18.2 (pinned)
@@ -42,7 +42,9 @@ jobs:
     name: Static gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # No Makefile moved (gestion's dev lifecycle), no desktop_workspace pin seat (tests/ stayed in
+      # gestion).
       # The gate is the script. The signer rides along: package-release's self-test is real
       # crypto over a throwaway keypair, and it is the same apt package the clinic verifies
       # with (D7).
@@ -70,7 +72,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: bash scripts/brand-gate.sh .
       - run: bash scripts/acquisition-gate.sh .
 
@@ -91,7 +93,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Baseline — the gate is green before any injection
         run: bash scripts/brand-gate.sh .
       - name: Arm A — revert a 060 sentinel, expect the gate to red

@@ -46,7 +46,7 @@ ID the gates' rows name:
 | 238 | the push server reaches Nextcloud over the internal plain-http listener, not the public URL |
 | 239 | the suite's basemap served same-origin at `/tiles/` from a read-only host directory (`APS_TILES_DIR`); a 404 until it exists (PHP, declared) |
 | 240 | the suite's containers are named `aps-conecta-*` (generated; the wizard stays `nextcloud-aio-mastercontainer`; fresh installs only) |
-| 250 | modern TLS only on every ingress — the ACME and internal listeners pin TLS 1.2/1.3, and apache's runtime ACME stanza carries the same pin; nothing older negotiates |
+| 250 | modern TLS only on every ingress — the ACME and internal listeners pin TLS 1.2/1.3, and apache's runtime ACME stanza carries the same pin on 443; nothing older negotiates |
 | 260 | the database image built with pgvector, and Buscador Documental's roles and extensions applied at every start and before a dump restore (`Containers/postgresql/aps-roles.sh`) |
 
 **PHP logic changes only where declared.** Every other modification is a string, an asset, a

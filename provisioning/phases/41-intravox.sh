@@ -32,8 +32,7 @@ done
 
 # App-state guard, declare-driven (the declaration, not a probe, is the truth): absent from the
 # suite manifest → the loud skip; declared but not enabled → a broken checkout, FATAL.
-_ids="$(python3 "$HERE/../scripts/apps.py" ids)" \
-  || { echo "FATAL: could not read the suite manifest (apps.json) — scripts/apps.py says why above" >&2; exit 1; }
+_ids="$(python3 "$HERE/../scripts/apps.py" ids)"   # unreadable: apps.py's one Spanish line is already on stderr
 _declared="$(printf '%s\n' "$_ids" | grep -x intravox || true)"
 if [ -z "$_declared" ]; then
   log "  intravox not shipped to this install — nothing to seed (defaultapp stays dashboard,files)"
