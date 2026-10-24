@@ -95,7 +95,7 @@ seed_fixture() {
 
 ready_for_buscador() { # LABEL — the state the ticket asks for, after any boot
   local ext roles via_owner priv schema
-  ext="$(docker exec "$NAME" psql -X -tA -U "$DB_SUPERUSER" -d "$DB" -c '\dx' | cut -d'|' -f1 | sort | xargs)"
+  ext="$(sql "$DB_SUPERUSER" '\dx' | cut -d'|' -f1 | sort | xargs)"
   roles="$(sql "$DB_SUPERUSER" "SELECT string_agg(rolname || ':' || rolcanlogin, ' ' ORDER BY rolname)
     FROM pg_roles WHERE rolname IN ('bd_owner', 'bd_worker')")"
   # CONNECT is asserted as bd_worker's own grant: PUBLIC's default CONNECT would answer for any role
@@ -166,9 +166,9 @@ ready_for_buscador "restart"
 check "restart: the catalog is back to the state before the drift" [ "$(snapshot)" = "$before" ]
 
 # ── backup and restore through the dump: an empty datadir and the dump volume make start.sh
-# import the dump (its PG-major-upgrade path); the roles must exist before the replay ──
+# restore the dump (its PG-major-upgrade path); the roles must exist before the replay ──
 restart_db "$VOL_RESTORED"
-check "restore: start.sh imported the dump" docker exec "$NAME" grep -q "Restoring the database from database dump" /mnt/data/database-import.log
+check "restore: start.sh restored the dump" docker exec "$NAME" grep -q "Restoring the database from database dump" /mnt/data/database-import.log
 docker exec "$NAME" grep -qE '^(psql:.*)?ERROR' /mnt/data/database-import.log; rc=$?
 check "restore: the replay raised no error" [ "$rc" -eq 1 ]   # 1 = read and clean; 0 = an error; 2 = unread
 ready_for_buscador "restore"

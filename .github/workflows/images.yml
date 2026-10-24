@@ -296,7 +296,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=aio-apache
 
   build-aio-postgresql:
-    name: Build aio-postgresql (patch 260's slot), tested before it ships
+    name: Build aio-postgresql (pgvector and buscador's roles), tested before it ships
     needs: retag   # same gate as the other builds
     runs-on: ubuntu-latest
     timeout-minutes: 45

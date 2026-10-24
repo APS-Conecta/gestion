@@ -4,8 +4,10 @@
 # Buscador Documental's database prerequisites, idempotent: a second run changes nothing.
 # - bd_owner (no login) owns buscador's schema; Nextcloud's user may SET ROLE to it, never inherit it.
 # - bd_worker (login) is the worker's role: it may connect, and is granted nothing on any table.
-#   Its bounds keep a compromised worker from holding the database or filling the disk.
-# - unaccent and vector live in public: buscador calls public.unaccent, and neither is a trusted extension.
+#   Of its bounds only the connection limit and the temp-file limit bind a compromised worker;
+#   the two timeouts are defaults it can lift itself.
+# - unaccent and vector live in public: buscador calls public.unaccent. unaccent is a trusted
+#   extension; only vector needs the superuser to be created.
 # start.sh runs it at every start and, on a restore, before the dump is replayed (the dump
 # carries no roles). It connects as the superuser over the local socket and honours PGPORT.
 
