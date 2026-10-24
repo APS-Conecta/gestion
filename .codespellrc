@@ -7,4 +7,4 @@
 # contains the flagged words as list entries. Also skipped: the vendored Leaflet bytes (pinned,
 # never edited) and the DEIS register (establishment names, not prose).
 skip = .git,__pycache__,.codespellrc,leaflet.*,establecimientos-deis-*.csv
-ignore-words-list = accesible,administrativo,cliente,argumentos,auxiliar,avance,calle,caracteres,comando,comandos,componentes,copie,direccion,doble,dout,falso,fase,fases,funcional,hace,historial,imposible,ine,inicial,instale,momento,noe,oficial,oriente,pares,posible,previos,proxys,reding,requiere,responde,ser,serie,termine,unparseable,utiliza,valide,varios,visibles
+ignore-words-list = accesible,administrativo,cliente,argumentos,auxiliar,avance,calle,caracteres,comando,comandos,componentes,copie,direccion,doble,dout,falso,fase,fases,funcional,hace,historial,imposible,ine,inicial,instale,manifiesto,momento,noe,oficial,oriente,pares,posible,previos,proxys,reding,requiere,responde,ser,serie,termine,unparseable,utiliza,valide,varios,visibles

@@ -26,6 +26,20 @@ image digests live there and are deliberately not copied here — one fact, one 
   and the names unchanged (by domain and by IP), and the office smoke after the store-off reboot
   answers the connector still enabled and wired — the entrypoint's own update leg included. The bake
   keeps shipping the vendored 11.0.5 as the interim fallback until #42 removes it.
+- **Optional apps in the wizard, farmacia as the tracer (#39, ADR-0017).** Step 6 offers an
+  «Aplicaciones opcionales» card read from the suite manifest (Spanish name and summary), all
+  off by default, and the choice rides the same install options as Talk:
+  `aps-conecta asistente-aio --app <id>` (and `install --app <id>`, the silent path) records every
+  optional row in the wizard's options record. Without the choice the app installs never: the
+  fetch leg resolves nothing, phase 12 skips the row before any of its three paths, and the seed
+  never imposes or enables the bake's copy (the image still carries its bytes until #42 — an
+  uninstalled directory, not an app). With it, farmacia arrives from its own signed release at
+  its locked tag — its manifest row flips to `optional: "off"` + `release: true`, and needs
+  APS-Conecta/farmacia's `v0.12.0` published first. A repeated provisioning keeps the choice:
+  the record is re-read, the lock does not move, nothing downloads. Un-choosing on a warm server
+  keeps what runs (nothing here uninstalls; `occ app:remove`, by hand) — the manifest flip-back's
+  doctrine.
+
 
 - **Territorio installs from its own release (#33, ADR-0017).** At install time the Provisionador
   resolves the app's newest GitHub Release compatible with the running Nextcloud (the latest-release
@@ -54,6 +68,13 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Removed
 
+- **The per-repo community files (docs-SSOT S2a, shaped like APS-Conecta/aps-common#10).**
+  `.github/ISSUE_TEMPLATE/` (Bug_report.md, Feature_request.md, config.yml — upstream AIO's own,
+  still pointing at nextcloud's forums) and `.github/pull_request_template.md` leave the tree:
+  the org defaults in `APS-Conecta/.github` serve the community files now (ADR-0008's consequence
+  updated to say so). No `guard.yml`: the repo is public after #29, so secret scanning and push
+  protection are GitHub's, not a workflow's. `docs/agents/triage-labels.md` carries no «Edit the…»
+  line to drop — instalador's copy never had one.
 - Upstream's default startup-app set (deck, twofactor_totp, tasks, calendar, contacts, notes — comma-spelled
   here so the gate's literal scan stays honest). The fork's fallback for `NEXTCLOUD_STARTUP_APPS` is now the
   empty string, so the suite manifest (`apps.json`) is the only app list in the suite repo. A clean boot

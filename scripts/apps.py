@@ -5,16 +5,21 @@
 
   scripts/apps.py ids          one app id per line, in manifest order
   scripts/apps.py repos        id<TAB>repo per line (repo empty for store apps)
+  scripts/apps.py opcionales   id<TAB>defecto<TAB>nombre per optional row, in manifest order
+                              (defecto on|off: the checkbox the Provisionador offers; nombre is
+                              the Spanish name the wizard shows — an unnamed row is not offered)
   scripts/apps.py --self-test  the manifest validates and names only defined containers
   --manifest PATH              read another manifest (the packager reads the tag tree's)
 
 Standard library only, on Python 3.10 (Ubuntu 22.04's); the Provisionador imports it like deis.
 
-A row: id; source (own | fork | store); repo (own and fork apps only); optional (false | "on" |
-"off"); containers (names from php/containers.json); pin (an exact vX.Y.Z tag, optional); release
-(true: the app installs from its own GitHub Release at run time — ADR-0017, own and fork apps
-only, and only once its repo publishes releases); name and summary (Spanish, shown in the
-wizard; plumbing apps carry neither).
+A row: id; source (own | fork | store); repo (own and fork apps only); optional (false: a default
+app, no question — "on"/"off": an optional app the Provisionador offers, checked/unchecked by
+default, and it installs ONLY when the operator chooses it); containers (names from
+php/containers.json); pin (an exact vX.Y.Z tag, optional); release (true: the app installs from
+its own GitHub Release at run time — ADR-0017, own and fork apps only, and only once its repo
+publishes releases); name and summary (Spanish, shown in the wizard; plumbing apps carry
+neither).
 """
 import errno
 import json
@@ -134,6 +139,14 @@ def _check_name(app, row):
             raise ValueError(f"{app}: name y summary van juntos y no pueden estar vacíos")
 
 
+def opcionales(rows):
+    """The optional rows as the wizard and the bash readers need them: (id, defecto, nombre) in
+    manifest order — defecto is the checkbox the Provisionador offers ("on": checked), nombre the
+    Spanish name step 6 shows. An optional row without a name is plumbing (#39): still a choice
+    the CLI records, never a card the wizard offers."""
+    return [(r["id"], r["optional"], r.get("name", "")) for r in rows if r.get("optional") is not False]
+
+
 def missing_containers(rows, path=CONTAINERS):
     """(app, container) for every listed container php/containers.json does not define."""
     with open(path, encoding="utf-8") as fh:
@@ -169,6 +182,10 @@ def selftest():
         check("the suite manifest validates", True)
         check("every container the manifest lists is defined in php/containers.json",
               not missing_containers(rows))
+        check("the suite manifest's optional rows are exactly the tracer #39 names: farmacia off "
+              "by default, from its release, with a Spanish name and summary",
+              opcionales(rows) == [("farmacia", "off", "Farmacia")]
+              and next(r for r in rows if r["id"] == "farmacia")["release"] is True)
     except (OSError, ValueError) as e:
         check(f"the suite manifest validates ({e})", False)
 
@@ -223,6 +240,12 @@ def selftest():
     check("ids: one id per line, in manifest order", cli("ids", rows=[good, store]) == (0, "demo\ncalendar\n", ""))
     check("repos: id and repo tab-separated; a store app's repo is empty",
           cli("repos", rows=[good, store]) == (0, "demo\tAPS-Conecta/demo\ncalendar\t\n", ""))
+    check("opcionales: only the optional rows, id TAB default TAB Spanish name — a default app "
+          "is not offered and an unnamed optional row keeps its empty name",
+          cli("opcionales", rows=[good, store]) == (0, "", "")
+          and cli("opcionales", rows=[{**good, "optional": "off"}, {**good, "id": "totem",
+                  "optional": "on"}, store])
+          == (0, "demo\toff\tDemo\ntotem\ton\tDemo\n", ""))
     check("lines is retired (its only reader discarded the source column)", cli("lines", rows=[good])[0] != 0)
 
     def contents(data):
@@ -252,7 +275,7 @@ def main(argv):
     path = MANIFEST
     if argv[:1] == ["--manifest"] and len(argv) > 1:
         path, argv = argv[1], argv[2:]
-    if argv not in (["ids"], ["repos"]):
+    if argv not in (["ids"], ["repos"], ["opcionales"]):
         print(__doc__.split("\n\n")[1], file=sys.stderr)
         return 2
     try:
@@ -261,7 +284,12 @@ def main(argv):
         print(e, file=sys.stderr)
         return 1
     for r in rows:
-        print(r["id"] if argv == ["ids"] else f"{r['id']}\t{r.get('repo', '')}")
+        if argv == ["ids"]:
+            print(r["id"])
+        elif argv == ["repos"]:
+            print(f"{r['id']}\t{r.get('repo', '')}")
+        elif r.get("optional") is not False:
+            print(f"{r['id']}\t{r['optional']}\t{r.get('name', '')}")
     return 0
 
 

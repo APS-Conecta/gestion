@@ -23,9 +23,14 @@
 phase_begin "12-apps" "apps this instance runs, plus the edits inside them"
 
 # An unreadable manifest is reported by apps.py itself — its one Spanish line is already on
-# stderr — and the seed's errexit stops the phase here. `repos` carries the only two fields this
-# phase reads (the retired `lines` also carried source, which every reader dropped).
+# stderr — and the seed's errexit stops the phase here. `repos` carries the fields this phase's
+# walk reads; `opcionales` names the rows the wizard offers (#39), so the choice gate below has
+# the manifest's own list — never a second one.
 manifest="$(python3 "$HERE/../scripts/apps.py" repos)"
+manifest_opcionales="$(python3 "$HERE/../scripts/apps.py" opcionales)"
+# the optional ids once, cut ahead of the walk — the per-row question is then one grep, not a
+# pipeline per row over the same list
+opcionales_ids="$(printf '%s\n' "$manifest_opcionales" | cut -f1)"
 
 # Talk is the suite's option under AIO: off unless the wizard turns it on (the fork's patch 210), and
 # with it off the entrypoint removes spreed on every boot (REMOVE_DISABLED_APPS) — installed here, it
@@ -41,6 +46,17 @@ fi
 while IFS=$'\t' read -r -u 3 app repo; do
   # notify_push is vendored for the bake only: the AIO entrypoint installs it on every start.
   [ "$app" = notify_push ] && continue
+  # An optional app (#39) installs only by the operator's choice — app_elegida reads the wizard's
+  # record, the one the host CLI writes at step 6 — and an unchosen optional row is never
+  # INSTALLED: no lock row honoured, no release fetched (the fetch leg asks the same record),
+  # and never the bake's re-impose or enable. The image still bakes the app's bytes into
+  # custom_apps (the #42 interim) — the seed's gate keeps them an uninstalled directory, not
+  # an app; un-choosing on a warm server keeps what runs — nothing here deletes; `occ
+  # app:remove <id>`, by hand.
+  if printf '%s\n' "$opcionales_ids" | grep -qx -- "$app" && ! app_elegida "$app"; then
+    log "$app skipped: la aplicación opcional no fue elegida (el registro del asistente)"
+    continue
+  fi
   if [ "$app" = spreed ] && [ "$talk" != yes ]; then
     log "spreed skipped: the suite runs without Talk (the wizard's option; AIO removes the app when it is off)"
     continue
