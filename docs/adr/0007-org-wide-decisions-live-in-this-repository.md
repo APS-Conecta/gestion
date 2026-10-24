@@ -24,7 +24,9 @@ Bare numbers fail the same way. An ADR number is unique inside a repository and 
    Never a relative path. A relative path may only address a file in its own repository.
 3. **An ADR cited outside its own repository is named with that repository**: "territorio ADR-0021", never a
    bare "ADR-0021".
-4. **Numbers are never reused and never renumbered.**
+4. **Numbers are never reused and never renumbered.** The gestion fold (#47) is the one
+   deliberate exception on record: gestion's ADRs arrived here renumbered from 0002 — this
+   repository's 0001 already existed — and every citation was updated in the same change.
 
 ## Consequences
 
