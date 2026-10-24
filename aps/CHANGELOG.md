@@ -21,7 +21,12 @@ image digests live there and are deliberately not copied here — one fact, one 
   (`/opt/aps-conecta/apps.lock.json`, inside the backup scope). A repeated provisioning installs
   from the lock and downloads nothing; a failed download or verification stops the install naming
   the app and the retry command; review mode downloads nothing. The other apps still come from the
-  bake until their own releases land (#34–#38) and the bake is removed (#42).
+  bake until their own releases land (#35–#38) and the bake is removed (#42).
+- **Epidemiología installs from its own release too (#34, ADR-0017).** Its manifest row flips to
+  `release: true`, so the resolver fetches, verifies and locks it exactly as it does territorio.
+  The clean-boot seam (by domain and by IP) asserts its lock row names a release newer than the
+  bake's 0.9.0, that the instance runs the locked version, and that no `signature.json` rides it.
+  Needs epidemiologia's `v0.12.0` release (APS-Conecta/epidemiologia#169) published first.
 
 ### Removed
 
