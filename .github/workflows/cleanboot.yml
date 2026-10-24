@@ -377,8 +377,9 @@ jobs:
           set -euo pipefail
           cd /opt/aps-conecta/instalador && source scripts/env.sh
           sudo test -f /opt/aps-conecta/apps.lock.json || { echo "FAIL: no apps lock after the install" >&2; exit 1; }
-          mapfile -t campos < <(sudo python3 -c 'import json; a = json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["territorio"]; print(a["tag"], a["version"], a["sha256"])')
-          tag="${campos[0]}" version="${campos[1]}" sha="${campos[2]}"
+          # word-split (read -r), never mapfile: python prints ONE line, and an indexed mapfile
+          # would leave campos[1] unbound under set -u — the bug this step's first run met
+          read -r tag version sha <<< "$(sudo python3 -c 'import json; a = json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["territorio"]; print(a["tag"], a["version"], a["sha256"])')"
           echo "lock: territorio $tag ($version)"
           [ "${tag#v}" = "$version" ] || { echo "FAIL: the lock's tag and version disagree" >&2; exit 1; }
           [ "$version" != "0.74.0" ] || { echo "FAIL: territorio is the bake's 0.74.0, not a release" >&2; exit 1; }
@@ -698,8 +699,9 @@ jobs:
           set -euo pipefail
           cd /opt/aps-conecta/instalador && source scripts/env.sh
           sudo test -f /opt/aps-conecta/apps.lock.json || { echo "FAIL: no apps lock after the install" >&2; exit 1; }
-          mapfile -t campos < <(sudo python3 -c 'import json; a = json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["territorio"]; print(a["tag"], a["version"], a["sha256"])')
-          tag="${campos[0]}" version="${campos[1]}" sha="${campos[2]}"
+          # word-split (read -r), never mapfile: python prints ONE line, and an indexed mapfile
+          # would leave campos[1] unbound under set -u — the bug this step's first run met
+          read -r tag version sha <<< "$(sudo python3 -c 'import json; a = json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["territorio"]; print(a["tag"], a["version"], a["sha256"])')"
           echo "lock: territorio $tag ($version)"
           [ "${tag#v}" = "$version" ] || { echo "FAIL: the lock's tag and version disagree" >&2; exit 1; }
           [ "$version" != "0.74.0" ] || { echo "FAIL: territorio is the bake's 0.74.0, not a release" >&2; exit 1; }
