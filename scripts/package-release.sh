@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# The composite package assembly + the signing chain (D2/D5/D7): ONE tarball per instalador tag,
-# everything the clinic's verified bytes need — instalador's tag tree (the bootstrap, the host
-# CLI, the provisionador, the executor tree) overlaid at identical paths (D11) with gestion's
-# release-frozen suite-definition content: provisioning/apps (VENDOR + tarballs), the sites
-# register, provisioning/data, themes/apsconecta — the layout step_descargar's VENDOR loop and
-# provisionador's ASSETS already read.
+# The composite package assembly + the signing chain (D2/D5/D7): ONE tarball per suite tag,
+# everything the clinic's verified bytes need — the suite's tag tree (the bootstrap, the host CLI,
+# the provisionador, the executor tree, the theme, the data masters, the sites register) overlaid at
+# identical paths (D11) with the old gestion's release-frozen provisioning/apps (VENDOR + tarballs)
+# until #42 — the layout step_descargar's VENDOR loop and provisionador's ASSETS already read.
 #
 # WHAT IT PRODUCES (all in --out):
 #   apsconecta-<tag>.tar.gz      the composite; package root instalador/ (install.sh's contract)
@@ -29,16 +28,16 @@
 # gzip -n — any clone of the tag rebuilds the same bytes (the self-test asserts two passes, one
 # sha256).
 #
-# COUNTED BEFORE CHECKED, everywhere (the silent-green rule): >=1 register CSV, one VENDOR per
+# COUNTED BEFORE CHECKED, everywhere (the silent-green rule): one register CSV, one VENDOR per
 # apps.json row and no other app dir, VERSION == tag, host/aps-conecta present, installer.pub's key
 # line == install.sh's SIGNIFY_PUBKEY (two readers of one key must agree), and the placeholder reds.
 #
 # Usage: scripts/package-release.sh [--out DIR] [--manifest FILE]
 # Env:  RELEASE_TAG            the tag being packaged (asserted == the tree's VERSION, D6)
-#       GESTION_REF            the release-frozen gestion ref folded in (default: main)
-#       GESTION_TREE           a gestion checkout to read instead of cloning (rehearsals, tests)
+#       GESTION_REF            the old gestion ref the vendored apps come from (default: main)
+#       GESTION_TREE           a gestion checkout to read the vendored apps from instead of cloning
 #       GESTION_URL            override the gestion clone URL (tests)
-#       REPO_TREE              the git tree to archive the instalador half from (default: this repo)
+#       REPO_TREE              the git tree to archive the suite half from (default: this repo)
 #       MINISIGN_SECRET_KEY    the .sec key file's contents
 #       MINISIGN_KEY_PASSWORD  the key's passphrase ("" for a passphrase-less key)
 #
@@ -65,14 +64,18 @@ if [ "${1:-}" = "--self-test" ]; then
   # a real throwaway keypair — the sign/prove arms are real crypto, not shape asserts
   ( umask 077 && signify -G -n -p "$tmp/installer.pub" -s "$tmp/installer.sec" -c "self-test key" )
 
-  # mk_repo DIR PUBFILE — a fixture instalador repo tagged v9.8.7 carrying the assembly contract;
-  # the constants carry the SAME trailing comments the real install.sh ships (the seds are
-  # quote-scoped, not end-anchored — the arms must test the real bytes)
+  # mk_repo DIR PUBFILE [REGISTER(0|1)] — a fixture suite repo tagged v9.8.7 carrying the assembly
+  # contract and the suite's own theme, data and register; the constants carry the SAME trailing
+  # comments the real install.sh ships (the seds are quote-scoped, not end-anchored — the arms must
+  # test the real bytes)
   mk_repo() {
-    mkdir -p "$1/host"
+    rm -rf "$1"; mkdir -p "$1/host" "$1/sites" "$1/provisioning/data" "$1/themes/apsconecta"
     ( cd "$1" && git init -q && git config user.email self@test.invalid && git config user.name selftest
       printf 'v9.8.7\n' > VERSION
       printf '#!/usr/bin/env bash\ntrue\n' > host/aps-conecta
+      printf '{"masters":[]}' > provisioning/data/packages.json
+      printf 'theme\n' > themes/apsconecta/STYLE
+      [ "${3:-1}" = 1 ] && printf 'r;establecimiento\n1;CESFAM Fixture\n' > sites/establecimientos-deis-2026.csv
       { echo '#!/usr/bin/env bash'
         echo 'BUNDLE_TAG="v0.0.0"             # fixture comment the real file carries'
         echo 'TARBALL_SHA256=""               # fixture comment the real file carries'
@@ -83,7 +86,8 @@ if [ "${1:-}" = "--self-test" ]; then
       python3 -c 'import json; print(json.dumps([{"id": f"app{i}", "source": "store", "optional": False, "containers": []} for i in range(1, 11)]))' > apps.json
       git add -A && git commit -qm fixture && git tag -f v9.8.7 )
   }
-  # mk_gestion DIR N REGISTER(0|1) — the release-frozen half
+  # mk_gestion DIR N — the old gestion's vendored apps, plus decoys where the suite's own theme,
+  # data and register live: the package must take those from the tag tree, never from here
   mk_gestion() {
     rm -rf "$1"; local i d
     mkdir -p "$1/sites" "$1/provisioning/data" "$1/themes/apsconecta"
@@ -93,9 +97,9 @@ if [ "${1:-}" = "--self-test" ]; then
         echo "url=https://fixture.invalid/app$i.tar.gz"; } > "$d/VENDOR"
       printf 'app%d\n' "$i" > "$d/app$i.tar.gz"
     done
-    printf '{"masters":[]}' > "$1/provisioning/data/packages.json"
-    printf 'theme\n' > "$1/themes/apsconecta/STYLE"
-    [ "$3" = 1 ] && printf 'r;establecimiento\n1;CESFAM Fixture\n' > "$1/sites/establecimientos-deis-2026.csv"
+    printf 'decoy\n' > "$1/provisioning/data/decoy.json"
+    printf 'decoy\n' > "$1/themes/apsconecta/STYLE"
+    printf 'r;establecimiento\n' > "$1/sites/establecimientos-deis-1999.csv"
     return 0
   }
   # run_pkg OUT REPO SECKEY PW — one packaging pass; rc carries its status (a red dies inside the
@@ -108,17 +112,21 @@ if [ "${1:-}" = "--self-test" ]; then
   }
 
   mk_repo "$tmp/repo" "$tmp/installer.pub"
-  mk_gestion "$tmp/gestion" 10 1
+  mk_gestion "$tmp/gestion" 10
   run_pkg "$tmp/o1" "$tmp/repo" "$tmp/installer.sec" ""
   sha1="$(sha256sum "$tmp/o1/apsconecta-v9.8.7.tar.gz" 2>/dev/null | cut -d' ' -f1)"
   check "round trip: rc 0 and the four assets exist" \
     '[ "$rc" -eq 0 ] && [ -n "$sha1" ] && [ -f "$tmp/o1/SHA256SUMS" ] && [ -f "$tmp/o1/SHA256SUMS.minisig" ] && [ -f "$tmp/o1/apsconecta-v9.8.7-install.sh" ]'
-  check "composite: both halves at the package root — install.sh's contract + the gestion overlay (D2/D11)" \
+  check "composite: the tag tree (install.sh's contract, theme, data, register) + the vendored apps at the package root" \
     'tar -tzf "$tmp/o1/apsconecta-v9.8.7.tar.gz" | grep -q "^instalador/host/aps-conecta$" \
       && tar -tzf "$tmp/o1/apsconecta-v9.8.7.tar.gz" | grep -q "^instalador/provisioning/apps/app1/VENDOR$" \
+      && tar -tzf "$tmp/o1/apsconecta-v9.8.7.tar.gz" | grep -q "^instalador/provisioning/data/packages.json$" \
       && tar -tzf "$tmp/o1/apsconecta-v9.8.7.tar.gz" | grep -q "^instalador/sites/establecimientos-deis-2026.csv$" \
       && tar -tzf "$tmp/o1/apsconecta-v9.8.7.tar.gz" | grep -q "^instalador/themes/apsconecta/STYLE$" \
       && tar -tzf "$tmp/o1/apsconecta-v9.8.7.tar.gz" | grep -q "^instalador/.paquete.json$"'
+  check "only the vendored apps come from the old gestion — its theme, data and register never reach the package" \
+    '[ "$(tar -xzOf "$tmp/o1/apsconecta-v9.8.7.tar.gz" instalador/themes/apsconecta/STYLE)" = theme ] \
+      && ! tar -tzf "$tmp/o1/apsconecta-v9.8.7.tar.gz" | grep -qE "decoy|establecimientos-deis-1999"'
   check "SUMS shape: exactly the two-space line install.sh greps -qx, naming the tag's file" \
     '[ "$(cat "$tmp/o1/SHA256SUMS")" = "$sha1  apsconecta-v9.8.7.tar.gz" ]'
   check "proof: the signature verifies with the fixture pubkey — the same call the clinic runs" \
@@ -149,16 +157,16 @@ if [ "${1:-}" = "--self-test" ]; then
   run_pkg "$tmp/o5" "$tmp/repo5" "$tmp/installer.sec" ""
   check "two readers disagree reds — installer.pub's key line == install.sh's SIGNIFY_PUBKEY" '[ "$rc" -ne 0 ]'
 
-  mk_gestion "$tmp/gestion" 9 1
+  mk_gestion "$tmp/gestion" 9
   run_pkg "$tmp/o6" "$tmp/repo" "$tmp/installer.sec" ""
   check "a manifest app without its VENDOR reds — the package ships every app apps.json lists" '[ "$rc" -ne 0 ]'
-  mk_gestion "$tmp/gestion" 11 1
+  mk_gestion "$tmp/gestion" 11
   run_pkg "$tmp/o6b" "$tmp/repo" "$tmp/installer.sec" ""
   check "a VENDOR dir outside the manifest reds — the package ships no app apps.json does not list" '[ "$rc" -ne 0 ]'
-  mk_gestion "$tmp/gestion" 10 0
-  run_pkg "$tmp/o7" "$tmp/repo" "$tmp/installer.sec" ""
-  check "missing register reds — an empty glob is a failure, never a green" '[ "$rc" -ne 0 ]'
-  mk_gestion "$tmp/gestion" 10 1
+  mk_gestion "$tmp/gestion" 10
+  mk_repo "$tmp/repo7" "$tmp/installer.pub" 0
+  run_pkg "$tmp/o7" "$tmp/repo7" "$tmp/installer.sec" ""
+  check "a tag tree without its register reds — an empty glob is a failure, never a green" '[ "$rc" -ne 0 ]'
 
   ( umask 077 && printf 'pw\n' | signify -G -p "$tmp/enc.pub" -s "$tmp/enc.sec" -c "self-test enc key" )
   mk_repo "$tmp/repo8" "$tmp/enc.pub"
@@ -225,21 +233,22 @@ emb_line="$(sed -n 's/^SIGNIFY_PUBKEY="\([^"]*\)".*/\1/p' "$staging/install.sh" 
 [ "$pub_line" = "$emb_line" ] \
   || die "installer.pub's key line and install.sh's SIGNIFY_PUBKEY disagree — two readers of one key must agree (the env.sh lesson)"
 
-# 4 — the gestion half: release-frozen content, sparse-cloned exactly like the bake
+# 4 — the vendored apps: the old gestion's provisioning/apps, sparse-cloned exactly like the bake
+#     (the one part of the package not in the tag tree; #42 removes it)
 if [ -n "${GESTION_TREE:-}" ]; then
   gestion="$GESTION_TREE"
 else
   gestion="$work/gestion"
   git clone --depth 1 --filter=blob:none --sparse "${GESTION_URL:-$GESTION_URL_DEFAULT}" "$gestion" \
     || die "gestion clone failed"
-  git -C "$gestion" sparse-checkout set provisioning/apps provisioning/data sites themes/apsconecta
+  git -C "$gestion" sparse-checkout set provisioning/apps
   git -C "$gestion" fetch --depth 1 origin "$gestion_ref"
   git -C "$gestion" checkout FETCH_HEAD
 fi
 gestion_sha="$(git -C "$gestion" rev-parse HEAD 2>/dev/null || echo non-git-tree)"
 
-# 5 — the gestion half against the tag's suite manifest: one VENDOR per apps.json row, no other
-#     app dir (release-manifest.sh's VENDOR shapes, mirrored)
+# 5 — the vendored apps against the tag's suite manifest: one VENDOR per apps.json row, no other
+#     app dir, every VENDOR well formed
 # An unreadable tag manifest: apps.py's one Spanish line is already on stderr, and errexit
 # stops the pack here — no second copy of the message.
 apps="$(python3 "$REPO_ROOT/scripts/apps.py" --manifest "$staging/apps.json" ids)"
@@ -258,19 +267,15 @@ for app in $apps; do
   grep -qE '^sha256=[0-9a-f]{64}$' "$v" || { echo "$v: sha256= is not a 64-hex digest" >&2; bad_vendor=1; }
   grep -qE '^sha256=<(measured|resolved)' "$v" && { echo "$v: a placeholder sha256 — UNPINNED is a bug, not a state" >&2; bad_vendor=1; }
 done
-[ "$bad_vendor" -eq 0 ] || die "the vendored apps do not match apps.json, or a VENDOR is malformed (release-manifest.sh's shape, mirrored)"
+[ "$bad_vendor" -eq 0 ] || die "the vendored apps do not match apps.json, or a VENDOR is malformed"
 register=0
-for _csv in "$gestion"/sites/establecimientos-deis-*.csv; do
+for _csv in "$staging"/sites/establecimientos-deis-*.csv; do
   [ -e "$_csv" ] && register=$((register + 1))
 done
-[ "$register" -eq 1 ] || die "expected exactly one sites/establecimientos-deis-*.csv, found $register"
+[ "$register" -eq 1 ] || die "expected exactly one sites/establecimientos-deis-*.csv in the tag tree, found $register"
 
 # 6 — the overlay (identical paths, D11)
-mkdir -p "$staging/provisioning" "$staging/themes"
 cp -a "$gestion/provisioning/apps" "$staging/provisioning/apps"
-cp -a "$gestion/provisioning/data" "$staging/provisioning/data"
-cp -a "$gestion/sites" "$staging/sites"
-cp -a "$gestion/themes/apsconecta" "$staging/themes/apsconecta"
 
 # 7 — provenance: .paquete.json inside the bundle root
 manifest_sha=""

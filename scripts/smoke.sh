@@ -179,10 +179,9 @@ case "$remember" in
   *)     fail "session posture: could not read loginCanRememberme from /login (got '${remember}') — upstream may have renamed the initial state key" ;;
 esac
 
-# 10. No patched app still carries its vendor signature (#71, phase 12-apps). What it costs when one
-# does, and why an `occ app:update` from the UI puts it back: docs/adr/0002-app-patches.md § Code
-# integrity. PATCHED means "a suite app with a .patch file beside its tarball", NOT "a suite app":
-# an untouched app's upstream signature is correct.
+# 10. No patched app still carries its vendor signature (#71, phase 12-apps). PATCHED means "a suite
+# app with a .patch file beside its tarball", NOT "a suite app": an untouched app's upstream
+# signature is correct.
 # An unreadable manifest is apps.py's to report — its one Spanish line is already on stderr.
 # smoke runs without errexit, so exit by hand, with nothing added beside that one line.
 ids=$(python3 scripts/apps.py ids) || exit $?

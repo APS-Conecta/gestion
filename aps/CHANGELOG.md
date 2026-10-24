@@ -11,6 +11,13 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ## [Unreleased]
 
+### Removed
+
+- Upstream's default startup-app set (deck, twofactor_totp, tasks, calendar, contacts, notes — comma-spelled
+  here so the gate's literal scan stays honest). The fork's fallback for `NEXTCLOUD_STARTUP_APPS` is now the
+  empty string, so the suite manifest (`apps.json`) is the only app list in the suite repo. A clean boot
+  installs the same apps as before: the host CLI already passed the empty value regardless (#67).
+
 ## [0.5.0] — 2026-10-23
 
 ### Fixed
@@ -121,7 +128,7 @@ image digests live there and are deliberately not copied here — one fact, one 
   the pilot (or any install) to the AIO stack, the data-dir markers, the autoupdate trap, the
   preservation-doc template.
 - **Territorio ships** — v0.74.0, from lab app to own app: the tarball, the LICENSING row, the
-  inventory move. ADR-0003's two own apps.
+  inventory move.
 - **The comuna data packages** — the national masters pinned in `provisioning/data/packages.json`,
   the DEIS comuna reference derived beside them, and `scripts/comuna-package.sh`: one fetch, one
   seconds-long cut, the exact import commands printed.
@@ -129,7 +136,7 @@ image digests live there and are deliberately not copied here — one fact, one 
   release gets a machine-readable union of what it pins, as a GitHub Release asset.
 - **notify_push, vendored for the AIO bake** — this stack installs it from no inventory; the bake
   needs the bytes with provenance.
-- **The establishment-agnostic gates** — the shape-based ADR-0013 check, the sites/ register-only
+- **The establishment-agnostic gates** — the shape-based ADR-0009 check, the sites/ register-only
   check, and the neutral cleanboot fixture (a deterministic register pick, not a fixed clinic).
 - **The suite serves its own basemap** — a new `tiles` service (`nginx:alpine`, digest-pinned)
   publishing one Protomaps PMTiles archive on loopback, reached from outside over `tailscale serve`.
@@ -208,9 +215,9 @@ image digests live there and are deliberately not copied here — one fact, one 
   regenerated, the DS digest re-pinned, and office-smoke now ASSERTS the running documentserver's
   version: the pairing is a gate, not a coincidence.
 - **07-certs serves national hosts only** — the regional statistics host is per-establishment
-  instance configuration (ADR-0013), and no app consumes it.
-- **The repo stops naming its pilot** — living docs AND dated history (ADR-0013 carries a dated
-  correction; the register CSV, the public MINSAL catalogue, is untouched).
+  instance configuration (ADR-0009), and no app consumes it.
+- **The repo stops naming its pilot** — living docs AND dated history (the register CSV, the public
+  MINSAL catalogue, is untouched).
 - **Provisioning phase 16 writes Territorio's `tile_url`** from `TILES_PUBLIC_URL`, the same shape
   and for the same reason as phase 14's `DocumentServerUrl`: which address staff browsers use is a
   per-install answer, never a repository fact. The default is the loopback one, which works for a
@@ -252,7 +259,7 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 - **`provisioning/apps/calendar/VENDOR` described its own size against an app that was deleted**
   (#172): *"the second largest thing in this repo after maps"*, pointing at maps' file. `maps` was
-  dropped in ADR-0005/#142. It is the largest thing in the repo now — 18.9 MB against the next at
+  dropped in #142. It is the largest thing in the repo now — 18.9 MB against the next at
   4.7 MB — and the comment says so without naming a sibling that can be dropped again.
   `CONTRIBUTING.md` gains **"What the docs gate does not govern"**, recording that `VENDOR` files,
   `Makefile` comments and code comments are outside `repo-docs`' corpus deliberately, so the
@@ -310,10 +317,10 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 - Documentation consistency pass across the organisation. Org-wide decisions now live in this
   repository and are referenced by absolute URL rather than by a path that depended on where someone
-  cloned things (ADR-0011); the organisation
+  cloned things (ADR-0007); the organisation
   publishes only the generic half of its shared documents
-  (ADR-0012); and the
-  consequences ADR-0010 recorded when it moved the organisation to AGPL-3.0-or-later are now carried
+  (ADR-0008); and the
+  consequences ADR-0006 recorded when it moved the organisation to AGPL-3.0-or-later are now carried
   through every document that had gone on describing the code as proprietary.
 
 ### Removed
@@ -331,7 +338,7 @@ image digests live there and are deliberately not copied here — one fact, one 
 ### Fixed
 
 - `docs/LICENSING.md` §4.3 concluded that our own code "may therefore remain proprietary", citing a
-  §1 that ADR-0010 had already reversed. The aggregation analysis survived the relicence; its
+  §1 that ADR-0006 had already reversed. The aggregation analysis survived the relicence; its
   conclusion did not.
 - `CONTRIBUTORS.md` listed two developers who had never committed and held no access, and
   `CONTRIBUTING.md` and `SECURITY.md` both built on that roster — including a promise to answer

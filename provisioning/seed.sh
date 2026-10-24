@@ -38,7 +38,7 @@ declare -p SITE_ROLES >/dev/null 2>&1 || SITE_ROLES=()
 : "${SITE_TEAMS:?sites/$SITE/site.sh must set SITE_TEAMS (empty is legal, unset is not)}"
 # Existence, not index 0: `${arr:?}` reads `${arr[0]}` and refuses a declared-but-EMPTY array — the
 # shape the SITE_FOLDERS/SITE_TEAMS lines above still carry (pre-existing; out of this change's files).
-declare -p SITE_WELCOME >/dev/null 2>&1 || { echo "FATAL: sites/$SITE/site.sh must set SITE_WELCOME (empty is legal, unset is not) — a site file written before 2026-09-27 needs the block by hand; see docs/WELCOME-SCREEN.md" >&2; exit 1; }
+declare -p SITE_WELCOME >/dev/null 2>&1 || { echo "FATAL: sites/$SITE/site.sh must set SITE_WELCOME (empty is legal, unset is not) — a site file written before 2026-09-27 needs the block by hand; see https://aps-conecta.github.io/documentation/desarrollo/intravox.html" >&2; exit 1; }
 
 # Which instalador this is — suite_tag's discipline (host/aps-conecta:958): the package's VERSION
 # first (an unpacked package carries no git, and package-release.sh asserts VERSION == tag before

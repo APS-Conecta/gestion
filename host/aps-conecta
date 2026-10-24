@@ -937,7 +937,7 @@ step_abrir() {  # the web installer walks steps 5–8 as a CHILD of this console
 
 # ── the run-command generator ─────────────────────────────────────────────────────────────
 # ONE source. preflight prints it, INSTALLER.md quotes it, the operator pastes it. The tag is
-# the gestion release this checkout ships as (D12: suite tag = gestion release tag); override
+# the suite release this checkout ships as (D12: suite tag = release tag); override
 # with APS_SUITE_TAG only for rehearsed installs (the migration window, slice 22's rehearsal).
 
 suite_tag() {
@@ -1808,8 +1808,8 @@ cmd_preflight() {
 
 selftest() {
   unset APS_SUITE_TAG   # line 81's standalone default (no checkout above) must not leak into the
-                        # goldens: every arm derives its tag explicitly, exactly as gestion's
-                        # in-a-checkout runs always did
+                        # goldens: every arm derives its tag explicitly, exactly as an
+                        # in-a-checkout run does
   local n=0 tshim tmp ROOT_BAK="$ROOT"
   tmp="$(mktemp -d)"
   tshim="$tmp/bin"; mkdir -p "$tshim"

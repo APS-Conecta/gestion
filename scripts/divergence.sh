@@ -96,7 +96,7 @@ for r in (d.values() if isinstance(d, dict) else d):
     fid = r.get("id")
     if m: print(str(fid) + "\t" + m)
 ')"
-declared_folders="$(printf '%s\n%s\n' "${SITE_FOLDERS[@]}" "$IV_MOUNT")"   # engine mount (design §5, ADR-0020): created by
+declared_folders="$(printf '%s\n%s\n' "${SITE_FOLDERS[@]}" "$IV_MOUNT")"   # engine mount (design §5, ADR-0016): created by
 # intravox:setup, not in any SITE_FOLDERS matrix; gf_prune already leaves it alone (prune only
 # touches matrix mounts)
 iv_told="$(occ config:app:get intravox groupfolder_name 2>/dev/null || true)"   # what the engine was last told
@@ -104,16 +104,16 @@ while IFS=$'\t' read -r fid mount; do
   [ -n "${mount:-}" ] || continue
   printf '%s\n' "$declared_folders" | grep -qxF -- "$mount" && continue
   # The storage root under a name other than IV_MOUNT — the engine's default (seeded before
-  # ADR-0020) or the name it was told before IV_MOUNT changed — holds every page: the generic
+  # ADR-0016) or the name it was told before IV_MOUNT changed — holds every page: the generic
   # advice below would say to delete it. Point at the rename instead.
   if [ "$mount" = IntraVox ] || { [ -n "$iv_told" ] && [ "$mount" = "$iv_told" ]; }; then
-    note "la carpeta compartida '$mount' guarda la portada con un nombre distinto del declarado '$IV_MOUNT' — contiene todas las páginas: cámbiele el nombre una vez (docs/WELCOME-SCREEN.md), nunca la borre; la preparación no corre hasta entonces"
+    note "la carpeta compartida '$mount' guarda la portada con un nombre distinto del declarado '$IV_MOUNT' — contiene todas las páginas: cámbiele el nombre una vez (https://aps-conecta.github.io/documentation/desarrollo/intravox.html), nunca la borre; la preparación no corre hasta entonces"
     continue
   fi
   note "la carpeta compartida '$mount' existe pero no está en SITE_FOLDERS — conserva sus archivos; elimínela a propósito con 'occ groupfolders:delete $fid' si es lo que quiere"
 done <<< "$live_folders"
 
-# --- welcome sections: SITE_WELCOME is the declared set (phase 41, ADR-0019) ---
+# --- welcome sections: SITE_WELCOME is the declared set (phase 41, ADR-0015) ---
 # Live = the top-level page folders under es/ in the IntraVox group folder — a page folder OWNS
 # its own <dir>/<dir>.json (the engine importer's recursion rule, ManagedTreeImporter), so images/,
 # _resources/ and _templates/ never count. An undeclared section holds staff content: phase 41 adds
@@ -183,18 +183,14 @@ fi
 # exists to kill). One exec; the glob runs in the container's own shell so the semantics are the
 # old ones transposed — directories only, trailing slash stripped. The blindness check above already
 # refused to report against an instance that cannot answer.
-# Declared = the suite manifest (apps.json; notify_push too, which the entrypoint installs) plus
-# LAB_APPS, ours and under development (ADR-0005) — sourced, never parsed as text.
-# shellcheck source=../dev/lab-apps.sh
-[ -f dev/lab-apps.sh ] && . dev/lab-apps.sh
+# Declared = the suite manifest (apps.json; notify_push too, which the entrypoint installs).
 if ! suite_apps="$(python3 scripts/apps.py ids 2>&1)"; then   # an unreadable manifest: the output is apps.py's one Spanish line
   note "no se pudieron revisar las aplicaciones: $suite_apps"
 else
-  apps_list="$(printf '%s\n' "$suite_apps" "${LAB_APPS:-}" | tr ' ' '\n' | sed 's/=.*//')"
   while IFS= read -r a; do
     [ -n "${a:-}" ] || continue
-    printf '%s\n' "$apps_list" | grep -qxF -- "$a" && continue
-    note "la aplicación '$a' está en custom_apps pero nada la declara — ni la lista de aplicaciones de la suite (apps.json) ni LAB_APPS — una instalación limpia no la reproduce"
+    printf '%s\n' "$suite_apps" | grep -qxF -- "$a" && continue
+    note "la aplicación '$a' está en custom_apps pero la lista de aplicaciones de la suite (apps.json) no la declara — una instalación limpia no la reproduce"
   done <<< "$(nc_exec --user www-data -- sh -c 'cd /var/www/html/custom_apps 2>/dev/null && for d in */; do printf "%s\n" "${d%/}"; done' 2>/dev/null || true)"
 fi
 

@@ -29,7 +29,7 @@ A merge that re-introduces upstream identifiers is followed by the merge-time re
 - NEVER edit the wizard's operator-visible strings without reading `readme.md`'s
   `aps-fork-declaration` block: the brand gate asserts every declared string byte-exists in
   the tree, so a drifted wording reds CI naming the string.
-- The gates' rows keyed by IDs (010…260) are attribution — which change owes which guarantee
+- The gates' rows keyed by IDs (010…270) are attribution — which change owes which guarantee
   — never a condition; every row runs on every push, PR and release.
 
 ## The gates

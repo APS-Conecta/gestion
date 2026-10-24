@@ -4,6 +4,7 @@
 # (momento→memento, comando→commando, ...). Listed here so the codespell validator stays
 # green over the tree: upstream's own codespell workflow on push and PR, and
 # scripts/validate.sh on the release chain's tag arm. Skip this file itself: it necessarily
-# contains the flagged words as list entries.
-skip = .git,__pycache__,.codespellrc
-ignore-words-list = accesible,administrativo,cliente,argumentos,auxiliar,avance,calle,caracteres,comando,comandos,componentes,copie,direccion,doble,dout,falso,fase,fases,funcional,hace,imposible,ine,inicial,instale,momento,noe,oficial,oriente,pares,posible,previos,proxys,reding,requiere,responde,ser,serie,termine,unparseable,utiliza,valide,varios,visibles
+# contains the flagged words as list entries. Also skipped: the vendored Leaflet bytes (pinned,
+# never edited) and the DEIS register (establishment names, not prose).
+skip = .git,__pycache__,.codespellrc,leaflet.*,establecimientos-deis-*.csv
+ignore-words-list = accesible,administrativo,cliente,argumentos,auxiliar,avance,calle,caracteres,comando,comandos,componentes,copie,direccion,doble,dout,falso,fase,fases,funcional,hace,historial,imposible,ine,inicial,instale,momento,noe,oficial,oriente,pares,posible,previos,proxys,reding,requiere,responde,ser,serie,termine,unparseable,utiliza,valide,varios,visibles

@@ -2,14 +2,13 @@
 # OWNER: welcome-screen program (this file + provisioning/intravox/ — render.py and the es/ library —
 # move together).
 #
-# The repo's first provisioning-driven own-app content import (ADR-0015). Territorio's import is
+# The repo's first provisioning-driven own-app content import (ADR-0011). Territorio's import is
 # deliberately operator-paste (instalador's host CLI: `aps-conecta datos` prints the commands,
-# `datos --importar` runs them since v0.4.0; the gestion-era :380-424 range pin went with the
-# move); this phase crosses that boundary with
+# `datos --importar` runs them since v0.4.0); this phase crosses that boundary with
 # the disciplines inherited: upsert-by-stable-id, write verbs visible to seed-idempotent.sh,
 # query-before-set, fail-closed guards on every optional value (L5-03 class).
 #
-# PER-SECTION CONVERGENCE (ADR-0019, supersedes D2's import-once): the tree is DECLARED per site
+# PER-SECTION CONVERGENCE (ADR-0015): the tree is DECLARED per site
 # (SITE_WELCOME, sites/<slug>/site.sh) and every seed converges reality toward it — a declared
 # section whose <section>/<section>.json is absent from the groupfolder is rendered and imported;
 # everything that exists is left exactly as found (occ intravox:import --skip-existing: the engine
@@ -19,11 +18,11 @@
 # seed only — they are staff-editable afterwards, so a section declared later gets a log line
 # asking for its menu entry, not a merge. Template evolution still ships as NEW sections/pages.
 #
-# Runs after 40-acl.sh by numbering: needs phase-20 groups (step 3), the enabled app (phase 12 —
-# lab clone during the lab period, vendored after promotion), and groupfolders (phase 12). Ungated
-# (< 50) by design: every clinic seeds its welcome screen (FR-5) — welcome structure is not a
-# fixture. Zero new identity variables: the identity block (site.sh:9-14) carries every value
-# substituted here (D3); the tree's shape is SITE_WELCOME (ADR-0019).
+# Runs after 40-acl.sh by numbering: needs phase-20 groups (step 3), the enabled app (phase 12),
+# and groupfolders (phase 12). Ungated (< 50) by design: every clinic seeds its welcome screen
+# (FR-5) — welcome structure is not a fixture. Zero new identity variables: the identity block
+# (site.sh:9-14) carries every value substituted here (D3); the tree's shape is SITE_WELCOME
+# (ADR-0015).
 phase_begin "41-intravox" "Welcome screen: engine setup, group map, es import, page ACL"
 
 # --- 1. GUARDS (16-app-policy.sh:54 shape — every value fails closed, never defaults) -----------
@@ -32,14 +31,11 @@ for _v in SITE_NOMBRE SITE_NOMBRE_CORTO SITE_DIRECCION SITE_COMUNA SITE_SERVICIO
 done
 
 # App-state guard, declare-driven (the declaration, not a probe, is the truth): absent from the
-# suite manifest and from LAB_APPS → the loud skip; declared but not enabled → a broken checkout,
-# FATAL. LAB_APPS is sourced HERE, guarded — 12-apps.sh loads it inside its own subshell, which is
-# dead by the time this phase runs; without this line the lab would always take the skip.
-[ -f dev/lab-apps.sh ] && . dev/lab-apps.sh
+# suite manifest → the loud skip; declared but not enabled → a broken checkout, FATAL.
 _ids="$(python3 "$HERE/../scripts/apps.py" ids)"   # unreadable: apps.py's one Spanish line is already on stderr
-_declared="$(printf '%s\n' "$_ids" "${LAB_APPS:-}" | tr ' ' '\n' | sed 's/=.*//' | grep -x intravox || true)"
+_declared="$(printf '%s\n' "$_ids" | grep -x intravox || true)"
 if [ -z "$_declared" ]; then
-  log "  intravox not shipped to this install — nothing to seed (lab period on clinics; defaultapp stays dashboard,files)"
+  log "  intravox not shipped to this install — nothing to seed (defaultapp stays dashboard,files)"
   phase_end
   return 0
 fi
@@ -51,7 +47,7 @@ fi
 # folder carries another name — the engine's default, or the name this install was told before
 # (its groupfolder_name) — setup would not find $IV_MOUNT and would create a second mount beside
 # the old one: two trees, one of them empty. Refuse loudly: a rename is a deliberate runbook
-# (docs/WELCOME-SCREEN.md → "Renaming the storage folder on an existing install"), never a seed
+# (https://aps-conecta.github.io/documentation/desarrollo/intravox.html), never a seed
 # side effect. A name the engine refuses (MountName: one non-empty segment, no '/') is refused
 # here first — written to the engine, it would fail every page.
 case "$IV_MOUNT" in
@@ -69,7 +65,7 @@ if ! printf '%s\n' "$_mounts" | grep -qxF -- "$IV_MOUNT"; then
   _told="$(occ config:app:get intravox groupfolder_name 2>/dev/null || true)"
   for _old in IntraVox "${_told:-IntraVox}"; do
     if [ "$_old" != "$IV_MOUNT" ] && printf '%s\n' "$_mounts" | grep -qxF -- "$_old"; then
-      echo "FATAL: the engine's group folder is still named '$_old' but IV_MOUNT is '$IV_MOUNT' — rename it first (docs/WELCOME-SCREEN.md → Renaming the storage folder on an existing install), or set IV_MOUNT=$_old in .env for this install. Seeding now would create a second, empty mount." >&2
+      echo "FATAL: the engine's group folder is still named '$_old' but IV_MOUNT is '$IV_MOUNT' — rename it first (https://aps-conecta.github.io/documentation/desarrollo/intravox.html), or set IV_MOUNT=$_old in .env for this install. Seeding now would create a second, empty mount." >&2
       exit 1
     fi
   done
@@ -94,16 +90,16 @@ if [ -n "$(occ config:app:get intravox demo_data_imported 2>/dev/null || true)" 
   exit 1
 fi
 
-# L2-01 (ADR-0018): the enabled_languages convergence is RETIRED — the engine's
+# L2-01 (ADR-0014): enabled_languages is not converged here — the engine's
 # own unset-key default is the deployment reality (['es','en']: LanguageService's
 # DEFAULT_ENABLED_LANGUAGES + the Version001600 seed). The deprecated key keeps
-# its legacy readers working; gestion no longer writes it.
+# its legacy readers working; the suite does not write it.
 
 # --- 3. GROUP MAP (D5): the engine's groups follow the registry's — lib.sh intravox_group_map --------
 # (phase 50 runs it again once the standing accounts exist — B-030)
 intravox_group_map
 
-# --- 4. RENDER + CONVERGE (ADR-0019): declaration → render.py → per-section import ------------
+# --- 4. RENDER + CONVERGE (ADR-0015): declaration → render.py → per-section import ------------
 # render.py owns the whole "declare, don't hard-code" (review M3): identity substitution, the
 # sections the site declared, one team page per SITE_TEAMS entry when 'equipos' is declared, the
 # Documentos links from SITE_SUBFOLDERS, home tiles / navigation / footer from the declaration
@@ -222,7 +218,7 @@ if [ "$_first_run" = 1 ] || [ "${#_new_sections[@]}" -gt 0 ] || [ "${#_new_teams
     for _s in "${_new_sections[@]}"; do log "  welcome: section $_s created"; done
   else
     for _s in "${_new_sections[@]}"; do
-      log "  welcome: section $_s created — add its menu entry and home tile by hand (navigation.json and home.json are staff data, ADR-0019)"
+      log "  welcome: section $_s created — add its menu entry and home tile by hand (navigation.json and home.json are staff data, ADR-0015)"
     done
   fi
   for _tg in "${_new_teams[@]}"; do log "  welcome: team page $_tg created"; done

@@ -57,10 +57,9 @@
 # lint-yaml/zizmor, json-validator) run on our files too — green on them is a program
 # requirement.
 #
-# The release ordering this workflow serves: the suite tag IS the instalador release tag (D4 —
-# gestion's tag ritual retired); the release chain (release.yml) consumes this manifest as its
-# channel source, and the manifest job's JSON is the publish-time record — same digest format
-# gestion's release-manifest.sh emits, so the two can be diffed against each other.
+# The release ordering this workflow serves: the suite tag IS the suite repo's release tag (D4);
+# the release chain (release.yml) consumes this manifest as its channel source, and the manifest
+# job's JSON is the publish-time record.
 name: Images
 
 on:
@@ -76,7 +75,7 @@ on:
         default: main
         type: string
       gestion-ref:
-        description: "The gestion ref the bake reads (provisioning/apps + themes/apsconecta at the release content — VENDOR-gated before any byte enters the image). main = release-frozen between the merge and the tag push (the suite-tags-first contract); a pinned SHA for repair runs. Reaches bash only via env:, never inline in run:."
+        description: "The old gestion ref the bake reads the vendored apps from (provisioning/apps at the release content — VENDOR-gated before any byte enters the image; #42 removes it). main = release-frozen between the merge and the tag push (the suite-tags-first contract); a pinned SHA for repair runs. Reaches bash only via env:, never inline in run:."
         required: false
         default: main
         type: string
@@ -196,23 +195,22 @@ jobs:
           ref: ${{ inputs.build-ref }}
       - id: head
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - name: Bake the gestion release into the build context (patch 030's build-time half)
+      - name: Bake the vendored apps and the theme into the build context (patch 030's build-time half)
         # THE BAKE: aps-bake/ is materialized HERE, before the build — VENDOR-sha256-gated app
         # tarballs unpacked, the eurooffice white-label patches applied (three-outcome, git
         # apply), signature.json dropped for patched apps, the white-label asserts run, the
-        # apsconecta theme copied whole (scripts/bake.sh carries every gate; a missing or
-        # ungated source fails the build LOUDLY before any push — never a silently unbaked
-        # image with a green pipeline). Since the hard fork (D-3.7) the bake runs from THIS
-        # JOB'S OWN CHECKOUT — build-ref (the tag or main) carries scripts/bake.sh itself:
-        # fork-infra is first-class bytes on every ref now; the instalador sparse clone is
-        # gone. The bake source: gestion at the release content (public since ADR-0010; its
-        # main is release-frozen between the merge and the tag push — the suite-tags-first
-        # contract). fetch+FETCH_HEAD instead of clone --branch so GESTION_REF can be a
-        # branch, a tag, or a pinned SHA for repair runs alike.
+        # apsconecta theme copied whole from this checkout (scripts/bake.sh carries every gate; a
+        # missing or ungated source fails the build LOUDLY before any push — never a silently
+        # unbaked image with a green pipeline). The bake runs from THIS JOB'S OWN CHECKOUT —
+        # build-ref (the tag or main) carries scripts/bake.sh and the theme. The vendored apps
+        # come from the old gestion's provisioning/apps at the release content (its main is
+        # release-frozen between the merge and the tag push — the suite-tags-first contract)
+        # until #42. fetch+FETCH_HEAD instead of clone --branch so GESTION_REF can be a branch,
+        # a tag, or a pinned SHA for repair runs alike.
         run: |
           set -euo pipefail
-          git clone --depth 1 --filter=blob:none --sparse             "https://github.com/APS-Conecta/gestion.git" /tmp/gestion/   # gestion still owns the suite-definition content
-          git -C /tmp/gestion sparse-checkout set provisioning/apps themes/apsconecta
+          git clone --depth 1 --filter=blob:none --sparse             "https://github.com/APS-Conecta/gestion.git" /tmp/gestion/   # the vendored apps, until #42
+          git -C /tmp/gestion sparse-checkout set provisioning/apps
           git -C /tmp/gestion fetch --depth 1 origin "$GESTION_REF"
           git -C /tmp/gestion checkout FETCH_HEAD
           bash scripts/bake.sh /tmp/gestion aps-bake/

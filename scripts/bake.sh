@@ -10,13 +10,13 @@
 # on every start when it is absent (entrypoint.sh:726-733), and store-off makes that leg fail —
 # the FRD's "store-off breaks first boot without it", asserted below as a hard gate, not a hope.
 #
-# THE CHANNEL (the acquisition gate's checksum story): gestion at the release content — public
-# since ADR-0010, cloned by the Images workflow between the merge and the tag push, and this
-# script re-runs gestion's own gates before a single byte enters the build context:
-#   - the VENDOR sha256 gate (gestion test.sh:63-70's shape — version, sha256, tarball count),
+# THE CHANNEL (the acquisition gate's checksum story): the old gestion's provisioning/apps at the
+# release content, cloned by the Images workflow between the merge and the tag push (until #42),
+# and this script re-runs the vendored-app gates before a single byte enters the build context:
+#   - the VENDOR sha256 gate (version, sha256, tarball count),
 #   - the tarball's own info.xml version must equal the VENDOR pin (the seed's probe parser),
-#   - the eurooffice white-label patches applied with the three-outcome rule (ADR-0002:
-#     forward-dry-run / reverse-dry-run / abort, via git apply — GNU patch fuzzes drifted
+#   - the eurooffice white-label patches applied with the three-outcome rule (forward-dry-run /
+#     reverse-dry-run / abort, via git apply — GNU patch fuzzes drifted
 #     context, measured; a drifted patch fails the BUILD, never a clinic), then
 #     signature.json dropped for patched apps (a patched app's vendor signature
 #     no longer describes its files; Checker.php only checks apps that carry one),
@@ -36,8 +36,9 @@
 # anyway (the fork's CI runs it over **.sh on main).
 #
 # Usage: scripts/bake.sh GESTION_TREE OUT_DIR
-#   GESTION_TREE — a checkout of gestion (provisioning/apps/ + themes/apsconecta read-only)
+#   GESTION_TREE — a checkout of the old gestion (provisioning/apps/ read-only)
 #   OUT_DIR      — the docker build-context dir this creates (aps-bake/); refused if non-empty
+# The theme is this checkout's own themes/apsconecta.
 set -euo pipefail
 
 die() { echo "FATAL: $*" >&2; exit 1; }
@@ -45,13 +46,14 @@ say() { printf '  %s\n' "$*"; }
 
 GESTION="${1:?usage: scripts/bake.sh GESTION_TREE OUT_DIR}"
 OUT="${2:?usage: scripts/bake.sh GESTION_TREE OUT_DIR}"
+THEME="$(cd "$(dirname "$0")/.." && pwd)/themes/apsconecta"
 
 command -v sha256sum >/dev/null 2>&1 || die "sha256sum missing on this runner"
 command -v git        >/dev/null 2>&1 || die "git missing on this runner (git apply carries the three-outcome rule: --check / --check --reverse — verified outside any repo, slice 4)"
 command -v awk        >/dev/null 2>&1 || die "awk missing on this runner"
 
 [ -d "$GESTION/provisioning/apps" ] || die "'$GESTION' does not look like gestion (no provisioning/apps/)"
-[ -d "$GESTION/themes/apsconecta" ] || die "'$GESTION'/themes/apsconecta missing — the bake brands with the repo's theme"
+[ -d "$THEME/core" ] || die "$THEME/core missing — the bake brands with this checkout's theme"
 if [ -e "$OUT" ]; then
   [ -d "$OUT" ] || die "'$OUT' exists and is not a directory"
   [ -z "$(ls -A "$OUT")" ] || die "'$OUT' is not empty — refusing to overwrite (bake into a clean dir)"
@@ -72,7 +74,7 @@ for dir in "$GESTION"/provisioning/apps/*/; do
   app="$(basename "$dir")"
   apps+=("$app")
 
-  # — gestion's own tarball guard (12-apps.sh's shape): exactly one tarball, VENDOR readable —
+  # — the tarball guard (12-apps.sh's shape): exactly one tarball, VENDOR readable —
   local_tgz=("$dir"*.tar.gz)
   [ -f "${local_tgz[0]}" ] || die "$app: no vendored tarball in provisioning/apps/$app/"
   [ "${#local_tgz[@]}" -eq 1 ] || die "$app: ${#local_tgz[@]} tarballs in provisioning/apps/$app/, expected exactly 1"
@@ -115,7 +117,7 @@ for dir in "$GESTION"/provisioning/apps/*/; do
     patched=1
   done
 
-  # — the signature drop (ADR-0002 / 12-apps.sh parity): a patched app's signature.json is a
+  # — the signature drop (12-apps.sh parity): a patched app's signature.json is a
   # vendor claim our edits make false; Checker.php verifies a non-shipped app only while it
   # carries one, so deleting it is the fix. Unpatched apps keep their check.
   if [ "$patched" = 1 ] && [ -e "$OUT/custom_apps/$app/appinfo/signature.json" ]; then
@@ -134,11 +136,9 @@ done
 # — the white-label asserts, moved here from office-smoke.sh:37 per FRD S3. Both halves, the
 # same file:string pairs the runtime grep owned, so a patch regeneration that silently stopped
 # renaming fails the build instead of shipping "Nextcloud Office" back into the admin UI.
-# (org L7-3) These asserts used to sit inside `if [ -d … eurooffice ]` — a gestion refactor
-# dropping the app would have shipped an office-less image with every gate green (the
-# notify_push floor above is the deliberate contrast this was missing). The floor is now
-# mandatory exactly like notify_push's, the asserts run unconditionally, and a renamed file
-# reds instead of skipping: each iteration proves the file exists before it proves the rename.
+# (org L7-3) The eurooffice floor is mandatory exactly like notify_push's: dropping the app would
+# ship an office-less image with every gate green. The asserts run unconditionally, and a renamed
+# file reds instead of skipping: each iteration proves the file exists before it proves the rename.
 [ -d "$OUT/custom_apps/eurooffice" ] \
   || die "custom_apps/eurooffice is absent from the bake — the suite's office ships baked (the store is off, 020) and the white-label asserts below run on its served files; an office-less bake with every gate green is exactly the regression this floor exists to catch (org L7-3)"
 while IFS= read -r f_want; do
@@ -156,11 +156,11 @@ say "white-label asserts green (eurooffice: AdminSection.php + info.xml)"
 # — the theme, whole-dir (probe parity: the slice-1 harness docker-cp'd exactly this tree and
 # smoke's checks 7/11 passed against it; tools/ and MAPEO.md ride — inert, and a future theme
 # file flows without this script learning about it)
-cp -a "$GESTION/themes/apsconecta" "$OUT/themes/apsconecta"
+cp -a "$THEME" "$OUT/themes/apsconecta"
 theme_digest="$(cd "$OUT/themes/apsconecta" && find . -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)"
 
 echo
-say "gestion: $(git -C "$GESTION" rev-parse HEAD 2>/dev/null) — the bake's source tree (the provenance record; a non-git tree cannot answer it)"
+say "gestion: $(git -C "$GESTION" rev-parse HEAD 2>/dev/null) — the vendored apps' source tree (the provenance record; a non-git tree cannot answer it)"
 say "theme: $theme_digest (deterministic find|sort|sha256sum over themes/apsconecta)"
 say "inventory: ${#apps[@]} app(s), $patched_total patched — ${apps[*]}"
 echo "BAKE: PASS — ${#apps[@]} app(s) + the theme -> $OUT"

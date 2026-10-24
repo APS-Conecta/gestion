@@ -634,7 +634,7 @@ page_choices() {  # 160: the page offers only what the suite ships (R25, its tem
   # with no comparison against the removed cards, the deprecated docker socket proxy and HaRP
   # hidden while off (an instance that has one on still sees it, so it can be unchecked — a
   # hidden checked box would re-save itself forever), and no «mastercontainer» jargon in any
-  # template's or script's prose (the asistente, as gestion's docs call it; ids and commands
+  # template's or script's prose (the asistente, as the docs call it; ids and commands
   # keep the container's real name). The server-side refusals are the acquisition gate's (190, 200).
   local c="$TREE/php/templates/containers.twig" o="$TREE/php/templates/includes/optional-containers.twig" fail=0 id v
   s3_files "$c" "$o" "$TREE/php/public/forms.js" || return 1

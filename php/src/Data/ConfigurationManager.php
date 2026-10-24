@@ -1121,7 +1121,9 @@ class ConfigurationManager
         if (is_string($apps)) {
             return trim($apps);
         }
-        return 'deck twofactor_totp tasks calendar contacts notes';
+        // APS (#67): the suite manifest is the only app list — the default is empty. The host CLI
+        // passes an empty value regardless, so a clean boot installs the same apps as before.
+        return '';
     }
 
     /**

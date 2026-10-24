@@ -19,10 +19,10 @@
 #             callee's manifest job already needs matrix and boot-smoke — so nothing is signed
 #             before a complete, booted, one-snapshot set exists (the boot-smoke-pins-the-
 #             sign-moment rule).
-#   package → scripts/package-release.sh: the composite assembly (instalador's tag tree +
-#             gestion's release-frozen provisioning/apps + sites register + provisioning/data +
-#             themes/apsconecta), the publish record (retag.sh manifest — same tool and digest
-#             format the Images manifest job emits, so the two are diffable), SHA256SUMS, the
+#   package → scripts/package-release.sh: the composite assembly (the suite's tag tree — theme,
+#             data and sites register included — + the old gestion's release-frozen
+#             provisioning/apps until #42), the publish record (retag.sh manifest — same tool
+#             and digest format the Images manifest job emits, so the two are diffable), SHA256SUMS, the
 #             signify signature over it, the verify-PROOF with the committed installer.pub, and
 #             the constants-filled install asset; then gh release create with all five assets.
 #
@@ -34,8 +34,9 @@
 # .github/workflows on PRs and catches unpinned uses). Untrusted context (the tag name) reaches
 # bash only via env:, never inline in run:.
 #
-# ORDERING (the release ritual, D4/D12): gestion main is release-frozen between the merge and
-# this tag push (the bake and the composite both read it at that content). The image set
+# ORDERING (the release ritual, D4/D12): the old gestion's main is release-frozen between the
+# merge and this tag push (the bake and the composite both read its vendored apps at that content,
+# until #42). The image set
 # publishes BEFORE the package is cut, and a PUBLISHED Release's assets never move: the dispatch
 # arm below (suite-tag + force-images) exists only to repair a chain that failed BEFORE
 # `gh release create` — repairs rebuild from the tag's own content (build-ref = the tag on
@@ -125,7 +126,7 @@ jobs:
       contents: write   # gh release create
       packages: read    # the publish record resolves every digest from the registry
     env:
-      RELEASE_TAG: ${{ inputs.suite-tag || github.ref_name }}   # job-level: every step reads the same tag (a step env never crosses the step boundary — the gestion-era lesson)
+      RELEASE_TAG: ${{ inputs.suite-tag || github.ref_name }}   # job-level: every step reads the same tag (a step env never crosses the step boundary)
       MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
       MINISIGN_KEY_PASSWORD: ${{ secrets.MINISIGN_KEY_PASSWORD }}
     steps:

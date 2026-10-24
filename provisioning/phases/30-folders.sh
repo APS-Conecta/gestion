@@ -14,12 +14,13 @@ for sub in "${SITE_SUBFOLDERS[@]}"; do
   ensure_gf_subfolder "Transversal" "$sub"
 done
 
-# Surface the organization conventions where staff will see them (FR-14). Shipped verbatim from
-# docs/CONVENTIONS.md, which is the reviewable source: staff cannot open a private repository, so a
-# summary pointing at that path was a dead end (#148). Keep that file staff-readable — no repo paths.
-# ponytail: idempotent by existence, so an edited CONVENTIONS.md does not reach an instance that
+# Surface the organization conventions where staff will see them (FR-14), shipped verbatim from
+# provisioning/data/convenciones.md. Keep that file staff-readable — no repo paths.
+# ponytail: idempotent by existence, so an edited convenciones.md does not reach an instance that
 # already has the file. Deliberate — staff may have annotated it, and overwriting is data loss.
 # If it must propagate, diff first and write only when the file is byte-identical to the last ship.
-ensure_gf_file "Transversal" "LÉEME — Convenciones.md" "$(cat docs/CONVENTIONS.md)"
+conventions="$(cat provisioning/data/convenciones.md)" \
+  || { echo "FATAL: provisioning/data/convenciones.md is missing — the package ships it" >&2; exit 1; }
+ensure_gf_file "Transversal" "LÉEME — Convenciones.md" "$conventions"
 
 phase_end

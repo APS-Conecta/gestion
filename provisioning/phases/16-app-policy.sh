@@ -30,7 +30,7 @@ done
 # pushed.
 #
 # Territorio's comuna — the register's own five-digit CUT and the comuna's name, the second
-# per-consumer seam ADR-0013 named: the import door refuses another comuna's file against this
+# per-consumer seam ADR-0009 named: the import door refuses another comuna's file against this
 # value (apps/territorio ImportService::refuseAnotherComuna). Not in POLICY_CONFIG,
 # for the mechanical reason 14-office's DocumentServerUrl is not either: that list is
 # space-separated `app:key:value` triples, so it cannot carry a value variable-expanded out of the
@@ -52,7 +52,7 @@ app_config_set territorio comuna_cut "$SITE_COMUNA_CUT"
 app_config_set territorio comuna_name "$SITE_COMUNA"
 
 # Estadística's establishment — the DEIS code, the register's tipo and the comuna's CUT: the
-# identity ADR-0013 says an app reads from config and never chooses. The app has no setter
+# identity ADR-0009 says an app reads from config and never chooses. The app has no setter
 # (apps/estadistica EstablishmentConfig), so this is the only writer, and divergence.sh reads the
 # three back. Written whether the app is installed or not, like the POLICY_CONFIG rows above: a
 # lab install has them the day the app is cloned.

@@ -171,14 +171,12 @@ ASSETS = {
 }
 
 
-def mitad_de(bases, relpath, completa=None):
-    """The first base that carries `relpath` — and, when `completa` is given, carries it COMPLETE. The
-    self-test's fixture takes the suite-definition halves (themes/, provisioning/apps, .env.example)
-    from the repo root (the package) or from a gestion checkout; a half that is there but incomplete
-    (an empty themes/ some earlier run left behind) must not shadow the real one in the next base."""
+def mitad_de(bases, relpath):
+    """The first base that carries `relpath`. The self-test's fixture takes the vendored apps
+    (provisioning/apps) from the repo root (the package) or from an old gestion checkout, until #42."""
     for base in bases:
         found = os.path.join(base, relpath) if base else ""
-        if found and os.path.exists(found) and (completa is None or completa(found)):
+        if found and os.path.exists(found):
             return found
     return None
 
@@ -456,7 +454,7 @@ elif "app:enable" in args:
 elif "intravox:setup" in args:
     # B-028: SetupService creates the groupfolder named by the `groupfolder_name` appconfig row
     # (IntraVox MountName, default IntraVox) — phase 41 sets that row right before and looks
-    # the mount up by the same name after (ADR-0020). The config:app:set arm appends, so the
+    # the mount up by the same name after (ADR-0016). The config:app:set arm appends, so the
     # LAST row is the live value, as in Nextcloud. The folder row and the three engine groups
     # are modelled — the group map (lib.sh intravox_group_map) reads their members back, so a
     # stub without them re-added every member on every seed; the mount grants stay invisible to
@@ -694,7 +692,7 @@ def api_centro(payload):
     200 (D13). L5 S4: the point rides the same confirm — both coordinates or none; none is the
     official point (the reset case), and a held pair lands in the site file at step 7. The point is
     checked only for being a coordinate: the basemap is OpenStreetMap's, the whole world, so there is
-    no extent to hold it against (ADR-0021)."""
+    no extent to hold it against (territorio ADR-0021)."""
     global CENTRO, PUNTO
     codigo = payload.get("codigo")
     if not isinstance(codigo, str) or not CODIGO.fullmatch(codigo):
@@ -2465,7 +2463,7 @@ def screen_centro():
     moves it — click or tap, drag, arrow keys at 5 m (Shift 25 m) — the chosen point riding
     «Confirmar centro» beside the code, held server-side until step 7 writes the site file (a
     reload restores the pin). The basemap is OpenStreetMap's tile service, loaded by this browser
-    under its Tile Usage Policy (ADR-0021; vendored Leaflet from /recursos/): one raster layer, a
+    under its Tile Usage Policy (territorio ADR-0021; vendored Leaflet from /recursos/): one raster layer, a
     linked attribution control, and on the first tile failure a note and a completable screen —
     the ring and the pin on the plain background. A fixed site shows its point read-only.
     No code rides a URL; a filter that excludes the chosen centre clears it: never a centre the
@@ -3036,10 +3034,10 @@ def veredicto_talk(memoria, nucleos, puerto_ok):
 
 
 # Where apps_aps() reads the VENDOR rows from — the fixture world points it at the
-# tree it assembled (a bare instalador checkout has no provisioning/apps: gestion owns it, D2)
+# tree it assembled (a bare checkout has no provisioning/apps: the package carries the old
+# gestion's, until #42)
 APPS_DIR = os.path.join(ROOT_DIR, "provisioning", "apps")
-# Where the /recursos/ assets resolve from — the fixture world points it at the tree it
-# assembled (a bare instalador checkout has no themes/: gestion owns them, D2)
+# Where the /recursos/ assets resolve from — the fixture world points it at the tree it assembled
 ASSETS_ROOT = ROOT_DIR
 
 
@@ -4112,13 +4110,13 @@ def selftest():
                   st == 400 and st2 == 404)
 
             # ── L5 S4: the point beside the code — POST /api/centro's coordinates, held to step 7 ──
-            # The wizard no longer checks the point against any extent (ADR-0021): the basemap is OSM's,
+            # The wizard no longer checks the point against any extent (territorio ADR-0021): the basemap is OSM's,
             # the whole world, and a point is refused only when it is not a coordinate.
             st_l, _ = call("POST", "/api/centro", {"codigo": "121567", "latitud": -38.8681})
             st_t, _ = call("POST", "/api/centro", {"codigo": "121567", "latitud": "sur", "longitud": 0})
             st_r, _ = call("POST", "/api/centro", {"codigo": "121567", "latitud": 95, "longitud": -72.4})
             st_f, lejos = call("POST", "/api/centro", {"codigo": "121567", "latitud": 10.0, "longitud": -72.39})
-            check("punto: a lone coordinate, a non-numeric one and an out-of-range one answer 400; a valid point far from Chile is accepted — no extent to check it against (ADR-0021)",
+            check("punto: a lone coordinate, a non-numeric one and an out-of-range one answer 400; a valid point far from Chile is accepted — no extent to check it against (territorio ADR-0021)",
                   st_l == 400 and st_t == 400 and st_r == 400 and st_f == 200 and lejos.get("ok") is True)
             st_m, _ = call("POST", "/api/centro",
                            {"codigo": "121567", "latitud": -38.8681, "longitud": "-72.3951"})
@@ -4132,7 +4130,7 @@ def selftest():
                   and oficial["punto"] == {"latitud": "-38.86996", "longitud": "-72.39666", "oficial": True})
             st_of, _ = call("POST", "/api/centro", {"codigo": "110485"})
             st_c, _ = call("POST", "/api/centro", {"codigo": "113314"})
-            check("punto: the register's own point is confirmed with no map check, whatever the box holds — the screen is never blocked (ADR-0021)",
+            check("punto: the register's own point is confirmed with no map check, whatever the box holds — the screen is never blocked (territorio ADR-0021)",
                   st_of == 200 and st_c == 200 and call("GET", "/api/centro")[1]["codigo"] == "113314")
             real_here = deis.HERE
             with tempfile.TemporaryDirectory() as pt:
@@ -4655,82 +4653,42 @@ def selftest():
             # driver's noops — a stateless stub would fake the idempotent arms red) answers the
             # whole seed/phases/driver/gate world. The fixture assembles a REAL repo tree around
             # the register fixture (provisioning/ copied sans the 89 MB apps/, which is
-            # symlinked; themes/ and .env.example copied; env.sh copied into tmp/scripts/) —
-            # deis.HERE redirects every path, so the real tree is never touched; the PATH
-            # injection and the FAKE_DOCKER_* knobs are restored in the outer finally.
+            # symlinked; themes/ copied; scripts/ copied WHOLE, no per-file list — #59:
+            # whatever a phase or gate reads next is already there; beside the trees, the root
+            # files the phases read, .env.example and apps.json) — deis.HERE redirects every
+            # path, so the real tree is never touched; the PATH injection and the FAKE_DOCKER_*
+            # knobs are restored in the outer finally.
             import shutil
-            # The suite-definition halves this fixture reads (provisioning/apps' VENDOR tarballs,
-            # themes/, .env.example) live in GESTION in the split era (D2): the composite package
-            # carries them at identical paths, and a gestion checkout beside instalador
-            # (GESTION_TREE, or ../gestion) supplies the real ones; a bare instalador checkout
-            # synthesizes minimal fixtures with the same shapes (package-release.sh's mk_gestion
-            # pattern) so the self-test stays hermetic everywhere it can run.
+            # The vendored apps this fixture reads (provisioning/apps' VENDOR tarballs) are the old
+            # gestion's until #42: the composite package carries them at identical paths, an old
+            # gestion checkout beside this one (GESTION_TREE, or ../gestion) supplies the real ones,
+            # and a bare checkout synthesizes minimal fixtures with the same shapes (package-release.sh's
+            # mk_gestion pattern) so the self-test stays hermetic everywhere it can run. The theme and
+            # .env.example are this tree's own.
             gestion_tree = os.environ.get("GESTION_TREE") or ""
             if not gestion_tree:
                 _cand = os.path.abspath(os.path.join(HERE, "..", "..", "gestion"))
-                if os.path.isdir(os.path.join(_cand, "themes")):
+                if os.path.isdir(os.path.join(_cand, "provisioning", "apps")):
                     gestion_tree = _cand
-
-            def mitad(relpath, completa=None):   # the real half when one is around (repo root first: the package), else None
-                return mitad_de((os.path.join(HERE, ".."), gestion_tree), relpath, completa)
-
-            def tema_completo(d):   # a themes/ that carries every whitelisted asset
-                return all(os.path.isfile(os.path.join(d, "..", a[0])) for a in ASSETS.values())
-            # the fall-through, proven on fabricated bases: an EMPTY themes/ in the first (the residue a
-            # sibling self-test used to leave) does not shadow the complete one in the second
-            with tempfile.TemporaryDirectory() as mb:
-                local, real = os.path.join(mb, "local"), os.path.join(mb, "real")
-                os.makedirs(os.path.join(local, "themes", "apsconecta", "core", "css"))
-                for rel, _t in ASSETS.values():
-                    os.makedirs(os.path.dirname(os.path.join(real, rel)), exist_ok=True)
-                    with open(os.path.join(real, rel), "wb") as fh:
-                        fh.write(b"x")
-                check("fixture halves: an incomplete themes/ in the repo root falls through to the next base (GESTION_TREE) instead of shadowing it; a complete one still wins in its own place; none complete is none",
-                      mitad_de([local, real], "themes", tema_completo) == os.path.join(real, "themes")
-                      and mitad_de([real, local], "themes", tema_completo) == os.path.join(real, "themes")
-                      and mitad_de([local], "themes", tema_completo) is None
-                      and mitad_de([local, ""], "themes", tema_completo) is None
-                      and mitad_de([local, real], "themes") == os.path.join(local, "themes"))
-            apps_src = mitad(os.path.join("provisioning", "apps"))
-            themes_src = mitad("themes", tema_completo)
-            envex_src = mitad(".env.example")
-            if not (apps_src and themes_src and envex_src):
+            apps_src = mitad_de((os.path.join(HERE, ".."), gestion_tree), os.path.join("provisioning", "apps"))
+            themes_src = os.path.join(ROOT_DIR, "themes")
+            envex_src = os.path.join(ROOT_DIR, ".env.example")
+            if not apps_src:
                 synth = os.path.join(tmp, "mitad-fixture")
-                if not apps_src:
-                    apps_src = os.path.join(synth, "provisioning", "apps")
-                    for app in sorted(a["id"] for a in SUITE_APPS):
-                        d = os.path.join(apps_src, app)
-                        os.makedirs(d)
-                        blob = f"fixture-{app}\n".encode()
-                        with open(os.path.join(d, f"{app}-1.0.0.tar.gz"), "wb") as fh:
-                            fh.write(blob)
-                        with open(os.path.join(d, "VENDOR"), "w", encoding="utf-8") as fh:
-                            fh.write(f"version=1.0.0\nsha256={hashlib.sha256(blob).hexdigest()}\n"
-                                     f"url=https://fixture.invalid/{app}-1.0.0.tar.gz\n")
-                    # one patched app ahead of spreed, as in the real set: phase 12's patch path
-                    # (occ_sh, `docker exec -i`) runs mid-manifest, and the spreed arms see it
-                    with open(os.path.join(apps_src, "eurooffice", "10-fixture.patch"), "w", encoding="utf-8") as fh:
-                        fh.write("--- a/appinfo/info.xml\n+++ b/appinfo/info.xml\n")
-                if not themes_src:
-                    themes_src = os.path.join(synth, "themes")
-                    raiz = os.path.join(themes_src, "apsconecta")
-                    os.makedirs(os.path.join(raiz, "core", "css"))   # 15-branding writes site.css here
-                    for rel in [a[0] for a in ASSETS.values()]:   # the fonts, the images, the map engine (repo-root-shaped paths)
-                        destino = os.path.join(raiz, rel[len("themes/apsconecta/"):])
-                        os.makedirs(os.path.dirname(destino), exist_ok=True)
-                        with open(destino, "wb") as fh:
-                            fh.write(b"fixture-bytes\n")
-                    with open(os.path.join(raiz, "defaults.php"), "w", encoding="utf-8") as fh:
-                        fh.write("<?php\n// fixture theme — the real one lives in gestion (D2)\n")
-                if not envex_src:
-                    envex_src = os.path.join(synth, ".env.example")
-                    with open(envex_src, "w", encoding="utf-8") as fh:
-                        fh.write("HTTP_PORT=8180\nNEXTCLOUD_ADMIN_USER=admin\n"
-                                 "NEXTCLOUD_ADMIN_PASSWORD=change-me-in-your-env\n"
-                                 "POSTGRES_DB=apsconecta\nPOSTGRES_USER=apsconecta\n"
-                                 "POSTGRES_PASSWORD=change-me-in-your-env\nOFFICE_PORT=9980\n"
-                                 "OFFICE_JWT_SECRET=change-me-to-a-32-plus-char-hex-secret\n"
-                                 "FIXTURE_USER_PASSWORD=change-me-fixture-pass\n")
+                apps_src = os.path.join(synth, "provisioning", "apps")
+                for app in sorted(a["id"] for a in SUITE_APPS):
+                    d = os.path.join(apps_src, app)
+                    os.makedirs(d)
+                    blob = f"fixture-{app}\n".encode()
+                    with open(os.path.join(d, f"{app}-1.0.0.tar.gz"), "wb") as fh:
+                        fh.write(blob)
+                    with open(os.path.join(d, "VENDOR"), "w", encoding="utf-8") as fh:
+                        fh.write(f"version=1.0.0\nsha256={hashlib.sha256(blob).hexdigest()}\n"
+                                 f"url=https://fixture.invalid/{app}-1.0.0.tar.gz\n")
+                # one patched app ahead of spreed, as in the real set: phase 12's patch path
+                # (occ_sh, `docker exec -i`) runs mid-manifest, and the spreed arms see it
+                with open(os.path.join(apps_src, "eurooffice", "10-fixture.patch"), "w", encoding="utf-8") as fh:
+                    fh.write("--- a/appinfo/info.xml\n+++ b/appinfo/info.xml\n")
             global APPS_DIR, ASSETS_ROOT
             apps_dir_real, APPS_DIR = APPS_DIR, apps_src
             assets_root_real, ASSETS_ROOT = ASSETS_ROOT, tmp
@@ -4738,12 +4696,30 @@ def selftest():
                             ignore=shutil.ignore_patterns("apps"))
             os.symlink(apps_src, os.path.join(tmp, "provisioning", "apps"))
             shutil.copytree(themes_src, os.path.join(tmp, "themes"))
+            # scripts/ WHOLE (#59), not a hand-picked list: whatever a phase or gate reads next
+            # is already here. __pycache__ alone is left out — build dirt, not source — and the
+            # arm below pins the file set against the real tree, so a list that drops a file
+            # reds. dirs_exist_ok: the register fixture made tmp/scripts at the start.
+            shutil.copytree(HERE, os.path.join(tmp, "scripts"),
+                            ignore=shutil.ignore_patterns("__pycache__"), dirs_exist_ok=True)
+            # the root files the phases read, whole: env.sh's placeholder table, apps.py's manifest
             shutil.copy(envex_src, os.path.join(tmp, ".env.example"))
-            shutil.copy(os.path.join(HERE, "..", "scripts", "env.sh"), os.path.join(tmp, "scripts", "env.sh"))
-            shutil.copy(os.path.join(HERE, "..", "scripts", "divergence.sh"),
-                       os.path.join(tmp, "scripts", "divergence.sh"))
-            shutil.copy(os.path.join(HERE, "apps.py"), os.path.join(tmp, "scripts", "apps.py"))
             shutil.copy(suite_apps.MANIFEST, os.path.join(tmp, "apps.json"))
+
+            # — the fixture itself (#59): the scripts tree is taken WHOLE, so a script a phase
+            # or gate gains is already in the fixture with no edit — #30 had to add apps.json
+            # and its reader by hand, and the self-test red far from the cause. The pin: the
+            # fixture's scripts/ carries exactly the real tree's files (__pycache__ aside: build
+            # dirt, not source) and the root files the phases read (env.sh's .env.example,
+            # apps.py's apps.json) byte for byte — a hand-picked list that drops a file reds
+            # HERE, next to its cause, not far from it.
+            def _files(root):
+                return {os.path.relpath(os.path.join(d, f), root)
+                        for d, _, fs in os.walk(root) for f in fs if "__pycache__" not in d}
+            check("fixture: scripts/ whole and the phases' root files — a new reader from a phase needs no fixture edit (#59)",
+                  _files(os.path.join(tmp, "scripts")) == _files(HERE)
+                  and open(os.path.join(tmp, ".env.example"), "rb").read() == open(envex_src, "rb").read()
+                  and open(os.path.join(tmp, "apps.json"), "rb").read() == open(suite_apps.MANIFEST, "rb").read())
             stubdir = os.path.join(tmp, "bin")
             os.makedirs(stubdir)
             for name, src, mode in (("docker", STUB_DOCKER, 0o755), ("curl", "#!/usr/bin/env bash\nexit 1\n", 0o755)):
@@ -5540,7 +5516,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   and "inspect" not in log
                   and all(any(sealed_now[u][0] in l for l in oc)
                           for u in ("maria.perez", "elena.diaz")))
-            check("generar: the AIO arm — no document-server URL writes, the gestion-only keys still set",
+            check("generar: the AIO arm — no document-server URL writes, the suite's own keys still set",
                   "DocumentServerUrl" not in log and "sameTab" in log
                   and "trusted_domains" not in log
                   and "belong to the entrypoint" in body["salida"])
@@ -5803,11 +5779,11 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                           "En el punto oficial. Para corregir: clic o toque en el mapa, o arrastrar el marcador.",
                           ">Punto oficial</button>", '" m al " + rumbo', '.replace(".", ",")',
                           "Coordenadas: MINSAL/DEIS, Geoportal de Chile")))
-                # ADR-0021: the pane's basemap is OSM's tile service under its Tile Usage Policy —
+                # territorio ADR-0021: the pane's basemap is OSM's tile service under its Tile Usage Policy —
                 # the same terms territorio runs on. The option set is pinned as written; the
                 # browser arms below prove what it DOES (Referer, URL shape, zoom bounds, the link).
                 osm_url = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-                check("centro: ONE OSM raster layer under the Tile Usage Policy — the bare URL, origin Referer, no wrap, no loading while zooming, zoom 4-18, a linked attribution control; none of the options the policy forbids (ADR-0021)",
+                check("centro: ONE OSM raster layer under the Tile Usage Policy — the bare URL, origin Referer, no wrap, no loading while zooming, zoom 4-18, a linked attribution control; none of the options the policy forbids (territorio ADR-0021)",
                       centro_html.count(osm_url) == 1 and centro_html.count("L.tileLayer(") == 1
                       and f'const OSM_TILES = "{osm_url}";' in centro_html
                       and all(t in centro_html for t in ('referrerPolicy: "origin"', "noWrap: true",
@@ -5870,7 +5846,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                 check("assets: the brand fonts serve locally without a session; any other name is a 404; every whitelisted file exists",
                       r.status == 200 and tipo == "font/woff2" and igual and st == 404 and st2 == 404
                       and all(os.path.isfile(os.path.join(ASSETS_ROOT, rel)) for rel, _t in ASSETS.values()))
-                # ADR-0021: the wizard serves no archive any more — the byte-range route, the coverage
+                # territorio ADR-0021: the wizard serves no archive any more — the byte-range route, the coverage
                 # state and the protomaps engine are gone, with the token in hand and without it.
                 gone_mapa = [b.req("GET", r) for r in ("/mapa/chile.pmtiles", "/api/mapa",
                                                        "/recursos/protomaps-leaflet.js")]
@@ -5880,7 +5856,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                 con_rango = conn.getresponse()
                 con_rango.read()
                 conn.close()
-                check("mapa: no archive routes — /mapa/chile.pmtiles, /api/mapa and the protomaps engine answer 404 (ADR-0021)",
+                check("mapa: no archive routes — /mapa/chile.pmtiles, /api/mapa and the protomaps engine answer 404 (territorio ADR-0021)",
                       [g[0] for g in gone_mapa] == [404, 404, 404] and con_rango.status == 404
                       and "protomaps-leaflet.js" not in ASSETS)
                 b.cookie = f"{TOKEN_COOKIE}={TOKEN}"
@@ -5894,7 +5870,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                 st, rev_html, hdr, setc = b.req("GET", "/revision")
                 with open(os.path.join(ROOT_DIR, "host", "aps-conecta.timer"), encoding="utf-8") as fh:
                     semanal = re.search(r"^OnCalendar=(.*)$", fh.read(), re.M).group(1)
-                check("screens: step 8 is one screen — /divergencia is gone; the maintenance it states is the timer's own (Sun 03:00), and no monthly map timer is promised (ADR-0021)",
+                check("screens: step 8 is one screen — /divergencia is gone; the maintenance it states is the timer's own (Sun 03:00), and no monthly map timer is promised (territorio ADR-0021)",
                       b.req("GET", "/divergencia")[0] == 404
                       and semanal.startswith("Sun *-*-* 03:00") and "domingo 03:00" in rev_html
                       and "día 4" not in rev_html and "(mapa)" not in rev_html
@@ -6152,24 +6128,17 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                 lib_txt = fh.read()
             check("suite certificate (R22): Nextcloud imports the CA by the file name this step writes (phase 07, mounted at the OS store)",
                   f"\nINSTALLER_CA=/usr/local/share/ca-certificates/{CA_PUBLICA}\n" in lib_txt)
-            # The runbooks' home moves with the split (D13): instalador's aps/ once Phase 9 lands
-            # them, gestion's docs/ before that, the fixture's synthesized halves never (a bare
-            # checkout with no sibling gestion SKIPS this arm visibly — the house rule: never silent).
-            guias_fuentes = [mitad(os.path.join("aps", n)) or mitad(os.path.join("docs", n))
-                             for n in ("INSTALLER.md", "GUIA-CLINICA.md")]
-            cleanboot_fuente = mitad(os.path.join(".github", "workflows", "cleanboot.yml"))
-            if all(guias_fuentes) and cleanboot_fuente:
-                guias = [open(g, encoding="utf-8").read() for g in guias_fuentes]
-                guias.append(open(cleanboot_fuente, encoding="utf-8").read())
-                check("suite certificate (R22): the console's last lines, both guides and Clean boot by IP name this step's files (one fact, five homes)",
-                      f'"$(suite_ca_dir)/{CA_PUBLICA}"' in host_txt
-                      and all(os.path.join(CERT_DIR_DEFAULT, SUITE_CA, CA_PUBLICA) in g
-                              and os.path.join(CERT_DIR_DEFAULT, SUITE_TLS) in g for g in guias))
-            else:
-                print("  skipped: suite certificate five-homes arm — no runbook home on this tree yet (aps/ lands with Phase 9)")
+            guias = []
+            for rel in (("aps", "INSTALLER.md"), ("aps", "GUIA-CLINICA.md"), (".github", "workflows", "cleanboot.yml")):
+                with open(os.path.join(ROOT_DIR, *rel), encoding="utf-8") as fh:
+                    guias.append(fh.read())
+            check("suite certificate (R22): the console's last lines, both guides and Clean boot by IP name this step's files (one fact, five homes)",
+                  f'"$(suite_ca_dir)/{CA_PUBLICA}"' in host_txt
+                  and all(os.path.join(CERT_DIR_DEFAULT, SUITE_CA, CA_PUBLICA) in g
+                          and os.path.join(CERT_DIR_DEFAULT, SUITE_TLS) in g for g in guias))
 
             # the fragment login in a real browser (a13) — and every browser arm after it. A SKIPPED
-            # arm is a FAILURE, never a pass (ADR-0021's I2): the pane's tile policy is proven only
+            # arm is a FAILURE, never a pass (territorio ADR-0021's I2): the pane's tile policy is proven only
             # here, and a self-test that goes green by not running its browser says nothing. The one
             # way out is a waiver the operator of the run types on purpose, APS_SELFTEST_SIN_NAVEGADOR=1
             # (CI's static job, which carries no browser), and it is printed as what it is: skipped,
@@ -6305,7 +6274,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                             errores.append(str(e))
                         check("browser: a fixed centre locks the filters and the combobox; «Confirmar centro» just continues (D13)",
                               fijo and not errores)
-                        # ── the map pane in a real browser — OSM under its Tile Usage Policy (ADR-0021), the
+                        # ── the map pane in a real browser — OSM under its Tile Usage Policy (territorio ADR-0021), the
                         # lectura, the pin, the first-failure note, the fixed site. Every tile request is a
                         # mock's (see osm above): what the pane SENDS is what is asserted, never what OSM answers ──
                         desde, t0 = len(errores), len(osm["tiles"])
@@ -6383,7 +6352,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                         pedidos = osm["tiles"][t0:]
                         zs = [int(m.group(1)) for m in (re.fullmatch(r"https://tile\.openstreetmap\.org/(\d+)/\d+/\d+\.png", u)
                                                          for u, _r in pedidos) if m]
-                        check("browser: the Centro pane's tile requests follow the Tile Usage Policy (ADR-0021) — each one the bare https://tile.openstreetmap.org/z/x/y.png (no query string) with the page's origin as Referer, zooms from 4 to 18 and no further",
+                        check("browser: the Centro pane's tile requests follow the Tile Usage Policy (territorio ADR-0021) — each one the bare https://tile.openstreetmap.org/z/x/y.png (no query string) with the page's origin as Referer, zooms from 4 to 18 and no further",
                               len(pedidos) > 0 and len(zs) == len(pedidos)
                               and all(r == origen for _u, r in pedidos)
                               and zs and min(zs) == 4 and max(zs) == 18)

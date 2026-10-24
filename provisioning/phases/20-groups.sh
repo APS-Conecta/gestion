@@ -1,15 +1,15 @@
 # Phase 20 — groups.  OWNER: Epic 2 (only Epic 2 edits this file).
 # THIS FILE IS THE GROUP REGISTRY. The 23 shared role-* ids and their display names are declared
-# below and nowhere else; docs/ARCHITECTURE.md explains the access model and links here rather than
-# restating them. It used to cite that section as the registry while that section cited "the spine's
-# Group Registry" — a document that does not exist — so the two pointed at each other.
+# below and nowhere else;
+# https://aps-conecta.github.io/documentation/administracion/usuarios-y-grupos/ explains the access
+# model and links here rather than restating them.
 # Provisions: all-staff, the 4 cat-* categories, the 23 shared role-* groups, this clinic's own roles,
 # and its prog-*/sector-* teams.
 # English IDs, Spanish display names. Idempotent (ensure_group = query-before-create). Grants target
 # IDs, never display names.
 #
 # THE GROUP IS THE ONLY ACCESS KEY, and the rule that follows — grant on the broadest group that is
-# still correct — is stated once, in docs/ARCHITECTURE.md § Access model, named above (#103).
+# still correct — is stated once, in https://aps-conecta.github.io/documentation/administracion/usuarios-y-grupos/, named above (#103).
 phase_begin "20-groups" "Role / category / team group registry (Epic 2)"
 
 # Every user belongs here.

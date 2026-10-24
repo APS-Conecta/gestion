@@ -11,7 +11,7 @@ phase_begin "07-certs" "intermediate CAs for hosts that serve only their leaf; t
 #                      National: every install reads the same host, so the list is product code.
 #
 # Regional hosts are deliberately absent. Which regional sources an establishment reads is
-# instance configuration (ADR-0013), and no suite app consumes one today; when one grows a
+# instance configuration (ADR-0009), and no suite app consumes one today; when one grows a
 # regional consumer, its hostname arrives through that app's own config seam — this list stays
 # national-only in every commit.
 #
