@@ -1,7 +1,7 @@
 [
     {"id": "intravox", "source": "fork", "repo": "APS-Conecta/IntraVox", "optional": false, "containers": [], "release": true, "name": "Inicio", "summary": "Portada del establecimiento: noticias, avisos y accesos del equipo."},
     {"id": "groupfolders", "source": "store", "optional": false, "containers": [], "name": "Documentos", "summary": "Carpetas compartidas por sector y programa, con permisos por grupo."},
-    {"id": "eurooffice", "source": "store", "optional": false, "containers": ["aps-conecta-eurooffice"], "name": "Oficina", "summary": "Edición en línea de documentos, planillas y presentaciones."},
+    {"id": "eurooffice", "source": "fork", "repo": "APS-Conecta/eurooffice", "optional": false, "containers": ["aps-conecta-eurooffice"], "release": true, "name": "Oficina", "summary": "Edición en línea de documentos, planillas y presentaciones."},
     {"id": "calendar", "source": "store", "optional": false, "containers": [], "name": "Calendario", "summary": "Agendas personales y compartidas del equipo."},
     {"id": "contacts", "source": "store", "optional": false, "containers": [], "name": "Contactos", "summary": "Directorio del personal y contactos externos."},
     {"id": "epidemiologia", "source": "own", "repo": "APS-Conecta/epidemiologia", "optional": false, "containers": [], "release": true, "name": "Epidemiología", "summary": "Alertas del MINSAL y del ISP, informes IRAG y tablero nacional."},
