@@ -22,6 +22,16 @@ image digests live there and are deliberately not copied here — one fact, one 
   from the lock and downloads nothing; a failed download or verification stops the install naming
   the app and the retry command; review mode downloads nothing. The other apps still come from the
   bake until their own releases land (#34–#38) and the bake is removed (#42).
+- **side_menu is a fork app of our own, installed from its release (#38, ADR-0017).** Upstream
+  (gitnet.fr, the app's only source) has been unreachable since 2026-08-13 (#169), so the
+  decision there — "mirror the tarball somewhere we control" — became APS-Conecta/side_menu:
+  a repo seeded from our AGPL 6.0.1 tarball, byte for byte, with no build manifest and its
+  bundle shipping as committed bytes (the shared release workflow's one `shipped-bundle`
+  caller). Its manifest row turns `fork` with `release: true`, so the resolver fetches,
+  verifies and locks it exactly as it does territorio — same 6.0.1 the bake pinned, so the
+  clean-boot seam proves the release path by what only the fetch leg writes (the lock row, the
+  stored tarball, no `signature.json`) and that the suite's violet still paints the menu
+  (`background-color` / `background-color-to`, 15-branding's keys).
 
 ### Removed
 

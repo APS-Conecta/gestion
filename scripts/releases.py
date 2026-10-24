@@ -658,8 +658,13 @@ def selftest():
             return {"id": repo.split("/")[-1].lower().replace("-", ""), "source": "own",
                     "repo": repo, "optional": False, "containers": [], "release": True, **extra}
 
-        # the repos the arms walk — the hub keeps each one newest-first
+        # the repos the arms walk — the hub keeps each one newest-first. The two real rows
+        # mirror the shipped apps.json's release rows exactly (territorio #33, side_menu #38):
+        # the production-argv arm below reads the SHIPPED manifest, so a release row without its
+        # hub repo reds there, at the cause — and side_menu's real tag is 6.0.1, same version the
+        # bake pinned, which is exactly why the lock/store pair is what tells them apart.
         mk_release("APS-Conecta/territorio", "v0.80.0", "0.80.0", nc="34", nc_max="34")
+        mk_release("APS-Conecta/side_menu", "v6.0.1", "6.0.1", nc="34", nc_max="34")
         mk_release("APS-Conecta/vieja", "v2.0.0", "2.0.0", nc="35", nc_max="35")
         mk_release("APS-Conecta/vieja", "v1.9.0", "1.9.0", nc="34", nc_max="34")
         mk_release("APS-Conecta/mala-firma", "v1.0.0", "1.0.0", firma="ajena")
@@ -804,7 +809,9 @@ def selftest():
                              capture_output=True, text=True, timeout=120)
         check("cli fetch without --manifest: the shipped manifest's release rows all resolve and fetch over the hub (#33)",
               run.returncode == 0 and "✓ apps: territorio" in run.stdout
-              and read_lock()["apps"]["territorio"]["tag"] == "v0.80.0")
+              and "✓ apps: side_menu" in run.stdout
+              and read_lock()["apps"]["territorio"]["tag"] == "v0.80.0"
+              and read_lock()["apps"]["side_menu"]["tag"] == "v6.0.1")
         os.environ["APS_APPS_LOCK"] = os.path.join(tmp, "cli-lock.json")
         os.environ["APS_APPS_STORE"] = os.path.join(tmp, "cli-store")
         antes = dict(server.hits)   # the `locked` call below must add nothing to this

@@ -391,6 +391,37 @@ jobs:
           if docker exec --user www-data aps-conecta-nextcloud test -e /var/www/html/custom_apps/territorio/appinfo/signature.json; then
             echo "FAIL: territorio carries appinfo/signature.json — a release never does" >&2; exit 1
           fi
+      # #38: side_menu follows territorio (ADR-0017) — the fork the suite mirrors itself, because
+      # upstream (gitnet.fr, the app's only source) is unreachable (#169), so APS-Conecta/side_menu
+      # is the app's source of truth from here on. Its release IS 6.0.1, the same version the bake
+      # pinned, so territorio's "never the bake's X" half cannot tell the two apart here; the
+      # release path is proven by what only the fetch leg writes: the lock's row, the verified
+      # tarball inside /opt/aps-conecta/apps (the bake's tarball never lands there), and no
+      # signature.json. And the branding must still apply: 15-branding paints the menu violet —
+      # the two colour keys side_menu's own CSS derives its background from.
+      - name: side_menu installed from its release, its colour still the suite's violet
+        run: |
+          set -euo pipefail
+          cd /opt/aps-conecta/instalador && source scripts/env.sh
+          sudo test -f /opt/aps-conecta/apps.lock.json || { echo "FAIL: no apps lock after the install" >&2; exit 1; }
+          # word-split (read -r), never mapfile: python prints ONE line, and an indexed mapfile
+          # would leave campos[1] unbound under set -u — the bug this step's first run met
+          read -r tag version sha <<< "$(sudo python3 -c 'import json; a = json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["side_menu"]; print(a["tag"], a["version"], a["sha256"])')"
+          echo "lock: side_menu $tag ($version)"
+          [ "${tag#v}" = "$version" ] || { echo "FAIL: the lock's tag and version disagree" >&2; exit 1; }
+          got="$(occ config:app:get side_menu installed_version)"
+          [ "$got" = "$version" ] || { echo "FAIL: the instance runs side_menu $got, the lock names $version" >&2; exit 1; }
+          sudo test -f "/opt/aps-conecta/apps/side_menu/$tag.tar.gz" || { echo "FAIL: the locked tarball is not in the store — the bake's tarball never lands there, only the fetch leg's does" >&2; exit 1; }
+          echo "$sha  /opt/aps-conecta/apps/side_menu/$tag.tar.gz" | sudo sha256sum --check - \
+            || { echo "FAIL: the stored tarball is not the locked bytes" >&2; exit 1; }
+          if docker exec --user www-data aps-conecta-nextcloud test -e /var/www/html/custom_apps/side_menu/appinfo/signature.json; then
+            echo "FAIL: side_menu carries appinfo/signature.json — a release never does" >&2; exit 1
+          fi
+          # the violet background: the two keys 15-branding writes, which the menu derives from
+          for clave in background-color background-color-to; do
+            got="$(occ config:app:get side_menu "$clave")"
+            [ "$got" = "#5315a8" ] || { echo "FAIL: side_menu $clave is '$got', not the suite's violet #5315a8 — the branding phase did not apply" >&2; exit 1; }
+          done
       # Paired with the SITE_ROLES appended above (#103), because "the seed did not crash" is
       # not the same as "the roles landed". Asserts both halves of the rule: a cat-jefaturas
       # role is a POSITION and gets a standing account; a cat-tecnicos one is a job title held
@@ -713,6 +744,29 @@ jobs:
           if docker exec --user www-data aps-conecta-nextcloud test -e /var/www/html/custom_apps/territorio/appinfo/signature.json; then
             echo "FAIL: territorio carries appinfo/signature.json — a release never does" >&2; exit 1
           fi
+      # #38, by IP: side_menu from its own release at its locked tag, its colour still violet —
+      # the same acceptance the domain job asserts, on an install that reached the suite by
+      # address. Same reasoning as there: same version as the bake, so the store + lock prove
+      # the release path, and the two colour keys prove the branding.
+      - name: side_menu installed from its release, its colour still the suite's violet
+        run: |
+          set -euo pipefail
+          cd /opt/aps-conecta/instalador && source scripts/env.sh
+          read -r tag version sha <<< "$(sudo python3 -c 'import json; a = json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["side_menu"]; print(a["tag"], a["version"], a["sha256"])')"
+          echo "lock: side_menu $tag ($version)"
+          [ "${tag#v}" = "$version" ] || { echo "FAIL: the lock's tag and version disagree" >&2; exit 1; }
+          got="$(occ config:app:get side_menu installed_version)"
+          [ "$got" = "$version" ] || { echo "FAIL: the instance runs side_menu $got, the lock names $version" >&2; exit 1; }
+          sudo test -f "/opt/aps-conecta/apps/side_menu/$tag.tar.gz" || { echo "FAIL: the locked tarball is not in the store — the bake's tarball never lands there, only the fetch leg's does" >&2; exit 1; }
+          echo "$sha  /opt/aps-conecta/apps/side_menu/$tag.tar.gz" | sudo sha256sum --check - \
+            || { echo "FAIL: the stored tarball is not the locked bytes" >&2; exit 1; }
+          if docker exec --user www-data aps-conecta-nextcloud test -e /var/www/html/custom_apps/side_menu/appinfo/signature.json; then
+            echo "FAIL: side_menu carries appinfo/signature.json — a release never does" >&2; exit 1
+          fi
+          for clave in background-color background-color-to; do
+            got="$(occ config:app:get side_menu "$clave")"
+            [ "$got" = "#5315a8" ] || { echo "FAIL: side_menu $clave is '$got', not the suite's violet #5315a8 — the branding phase did not apply" >&2; exit 1; }
+          done
       # The weekly run, by IP, on the instance just installed: the leaf is kept (same fingerprint) and
       # apache is not restarted; the seed converges again, idempotent by IP too. #33 adds its half:
       # the same run downloads nothing and leaves the lock unchanged.
