@@ -17,6 +17,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The PR-title gate S2a lost (aps-common#10): Conventional Commits with the instalador
+  # scope, in English — the org's language doctrine (#27) says commits AND PR titles are
+  # English while issue and UI titles stay Spanish. This session shipped two Spanish PR
+  # titles before the rule was written down anywhere (#118); the mechanical half is a
+  # regex, restored here, and the language half lives in AGENTS.md's Commits section.
+  pr-title:
+    name: PR title follows Conventional Commits
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: The title is feat|fix|docs|chore|test|build|ci|refactor|perf|revert|style, scope optional
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          printf '%s' "$TITLE" | grep -qE '^(feat|fix|docs|chore|test|build|ci|refactor|perf|revert|style)(\([a-z0-9-]+\))?!?: .+' \
+            || { echo "::error::title '$TITLE' is not a Conventional Commit (English; issue titles are the Spanish ones)"; exit 1; }
+
   # org review L5-09: secret scanning at the merge boundary. The pre-commit hook is opt-in
   # (hooksPath) and skips when gitleaks is absent — a contributor without either ships a
   # secret green. Version-pinned binary (the official action needs a license key on org

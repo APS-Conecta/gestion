@@ -810,7 +810,7 @@ def selftest():
         run = subprocess.run([sys.executable, os.path.abspath(__file__), "fetch",
                               "--nextcloud", "34.0.4"],
                              capture_output=True, text=True, timeout=120)
-        check("cli fetch without --manifest: the shipped manifest's release rows all resolve and fetch over the hub (#33–#35, #38)",
+        check("cli fetch without --manifest: the shipped manifest's release rows all resolve and fetch over the hub — a row that reds here lacks its fixture: add mk_release(<repo>, tag, version, nc=…, nc_max=…) to the list above (#33–#35, #38, #119)",
               run.returncode == 0 and "✓ apps: territorio v0.80.0" in run.stdout
               and "✓ apps: epidemiologia v0.12.0" in run.stdout
               and "✓ apps: intravox v3.2.0" in run.stdout
