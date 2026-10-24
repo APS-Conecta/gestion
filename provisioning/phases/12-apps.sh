@@ -53,7 +53,9 @@ while IFS=$'\t' read -r -u 3 app repo; do
   #     first ejecutar, and every install path runs it).
   #   VENDORED — a store-source tarball from the bake.
   # A dev clone still wins over the lock: someone is editing apps/<id>, and the seed leaves it
-  # alone exactly as before.
+  # alone exactly as before. And the LOCK OUTRANKS a row flipped back to the bake: the lock is
+  # the server's own record of what it runs, and the seed is not the door that repudiates it —
+  # a deliberate flip-back removes the row from the lock (or rides #42, which removes the bake).
   row=""
   [ -z "$repo" ] || [ -d "apps/$app/.git" ] || row="$(lock_row "$app")"
   if [ -n "$row" ]; then

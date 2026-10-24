@@ -1689,9 +1689,16 @@ def _api_generar(payload):
         rc, apps_out = run_tee([*APPS_CMD, "--nextcloud", version], cwd=root,
                                timeout=TIMEOUTS["apps"], show=show)
         if rc is None:
+            # the fetch prints «aplicaciones: <app> <tag> — descargando…» BEFORE each download,
+            # so the last one in the partial output names what was in flight — the timeout's
+            # one line names it too (#33: the app and the retry command, always)
+            en_curso = next((ln.split("aplicaciones: ", 1)[1] for ln in reversed(apps_out.splitlines())
+                             if ln.startswith("aplicaciones: ") and " — descargando" in ln), "")
             return 500, {"error": f"la descarga de aplicaciones excedió el límite de "
                                   f"{TIMEOUTS['apps']} s — revise la conexión de este servidor "
-                                  "y vuelva a ejecutar", "salida": apps_out}
+                                  "y vuelva a ejecutar"
+                                  + (f" (iba en: {en_curso})" if en_curso else ""),
+                          "salida": apps_out}
         if rc != 0:
             fatal = next((ln for ln in apps_out.splitlines() if ln.startswith("FATAL:")),
                          "la descarga de aplicaciones falló")
@@ -3129,28 +3136,30 @@ def opciones_actuales():
     return (m.group(1) == "1", m.group(2) == "1") if m else None
 
 
-def suite_instalada():
-    """Nextcloud answers installed — one bounded `occ status`, asked only once the suite's containers run."""
-    try:
-        out = subprocess.run(["docker", "exec", "--user", "www-data", "aps-conecta-nextcloud", "php",
-                              "/var/www/html/occ", "status", "--output=json"],
-                             capture_output=True, text=True, timeout=10)
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return '"installed":true' in out.stdout.replace(" ", "")
-
-
-def nc_version():
-    """The running Nextcloud's own version — the resolver's compatibility question (#33), asked
-    over the same one bounded `occ status` suite_instalada rides. None when the instance does
-    not answer: the fetch leg refuses on that with its own line, never on a guessed major."""
+def _occ_status():
+    """One bounded `occ status --output=json`, the raw stdout — the seam suite_instalada and
+    nc_version share (asked only once the suite's containers run, #33)."""
     try:
         out = subprocess.run(["docker", "exec", "--user", "www-data", "aps-conecta-nextcloud", "php",
                               "/var/www/html/occ", "status", "--output=json"],
                              capture_output=True, text=True, timeout=10)
     except (OSError, subprocess.TimeoutExpired):
         return None
-    m = re.search(r'"version"\s*:\s*"([0-9]+(?:\.[0-9]+)+)"', out.stdout)
+    return out.stdout
+
+
+def suite_instalada():
+    """Nextcloud answers installed — one bounded `occ status`, asked only once the suite's containers run."""
+    out = _occ_status()
+    return out is not None and '"installed":true' in out.replace(" ", "")
+
+
+def nc_version():
+    """The running Nextcloud's own version — the resolver's compatibility question (#33), over
+    the same one bounded `occ status` suite_instalada rides. None when the instance does not
+    answer: the fetch leg refuses on that with its own line, never on a guessed major."""
+    out = _occ_status()
+    m = re.search(r'"version"\s*:\s*"([0-9]+(?:\.[0-9]+)+)"', out or "")
     return m.group(1) if m else None
 
 
@@ -4802,12 +4811,14 @@ def selftest():
             def apps_stub(que="ok"):
                 path = os.path.join(tmp, "apps-stub.sh")
                 with open(path, "w", encoding="utf-8") as fh:
+                    cuerpo = {"ok": 'echo "✓ apps: territorio v0.80.0 descargada y verificada '
+                                     '(compatible con Nextcloud 34.0.4)"\n',
+                              "mala": 'echo "FATAL: territorio: la firma de SHA256SUMS no verifica '
+                                     'contra apps.pub" >&2\nexit 1\n',
+                              "lenta": 'echo "aplicaciones: territorio v0.80.0 — descargando y verificando"\n'
+                                     'sleep 4\n'}[que]
                     fh.write("#!/usr/bin/env bash\n"
-                             f'printf \'%s\\n\' "$*" >> "{apps_argv}"\n'
-                             + ("echo \"✓ apps: territorio v0.80.0 descargada y verificada "
-                                "(compatible con Nextcloud 34.0.4)\"\n" if que == "ok" else
-                                "echo \"FATAL: territorio: la firma de SHA256SUMS no verifica "
-                                "contra apps.pub\" >&2\nexit 1\n"))
+                             f'printf \'%s\\n\' "$*" >> "{apps_argv}"\n' + cuerpo)
                 os.chmod(path, 0o755)
                 return path
             verdadero_apps_cmd = APPS_CMD
@@ -5606,6 +5617,16 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   and body2["error"] == "FATAL: territorio: la firma de SHA256SUMS no verifica contra apps.pub"
                   and "== APS Conecta provisioning" not in body2["salida"]
                   and "14 phase(s) run" not in body2["salida"])
+            globals()["APPS_CMD"] = ["bash", apps_stub("lenta")]
+            viejo = TIMEOUTS["apps"]
+            TIMEOUTS["apps"] = 1
+            st2, body2 = generar("ejecutar")
+            TIMEOUTS["apps"] = viejo
+            globals()["APPS_CMD"] = ["bash", apps_stub()]
+            check("generar: a hung download is killed by its bound, and the one line names the app that was in flight (#33)",
+                  st2 == 500 and "excedió el límite de 1 s" in body2["error"]
+                  and "(iba en: territorio v0.80.0 — descargando y verificando)" in body2["error"]
+                  and "== APS Conecta provisioning" not in body2["salida"])
             estado = open(ESTADO_PATH, encoding="utf-8").read()
             env_text = open(env_path, encoding="utf-8").read()
             check("generar: ejecutar converges .env — SITE written, fixtures forced, fixture password generated, 0600",

@@ -419,11 +419,16 @@ def fetch_all(rows, nextcloud, path=None, store=None):
                     lines.append(f"✓ apps: {app} {registrado['tag']} ya está en este servidor — "
                                  "no se descarga nada")
                     continue
+                # the progress line lands BEFORE the download: a hung request leaves it as the
+                # last line, so the operator's one error names the app that was in flight
+                lines.append(f"aplicaciones: {app} {registrado['tag']} — descargando de nuevo y verificando")
                 fetch_release(row, registrado["tag"], registrado, store)   # the repair keeps the locked tag
                 lines.append(f"✓ apps: {app} {registrado['tag']} descargada de nuevo y verificada "
                              "(faltaba en el almacén; el candado no cambia)")
                 continue
             tag, entry = resolve(row, major, token=os.environ.get("GITHUB_TOKEN"))
+            # same reason as the repair's line above: what is in flight is named in the log
+            lines.append(f"aplicaciones: {app} {tag} — descargando y verificando")
             entry = fetch_release(row, tag, entry, store)
             nuevas[app] = entry
             lines.append(f"✓ apps: {app} {tag} descargada y verificada (compatible con "
@@ -775,13 +780,15 @@ def selftest():
               run.returncode == 0 and "✓ apps: territorio v0.80.0" in run.stdout
               and read_lock()["apps"]["territorio"]["tag"] == "v0.80.0"
               and os.path.isfile(store_file("territorio", "v0.80.0")))
+        antes = dict(server.hits)   # the `locked` call below must add nothing to this
         run = subprocess.run([sys.executable, os.path.abspath(__file__), "locked", "territorio"],
                              capture_output=True, text=True, timeout=30)
         campos = run.stdout.rstrip("\n").split("\t")
-        check("cli locked: phase 12's one line — tag, version, sha, tarball",
+        offline = dict(server.hits) == antes   # `locked` is the seed's ONLY resolver call: offline by construction
+        check("cli locked: phase 12's one line — tag, version, sha, tarball — and it answers offline (the seed's half of «a second seed downloads nothing", #33)",
               run.returncode == 0 and len(campos) == 4
               and campos[:3] == ["v0.80.0", "0.80.0", read_lock()["apps"]["territorio"]["sha256"]]
-              and campos[3] == store_file("territorio", "v0.80.0"))
+              and campos[3] == store_file("territorio", "v0.80.0") and offline)
         run = subprocess.run([sys.executable, os.path.abspath(__file__), "locked", "epidemiologia"],
                              capture_output=True, text=True, timeout=30)
         check("cli locked: an app the lock does not name answers nothing, exit 0",
