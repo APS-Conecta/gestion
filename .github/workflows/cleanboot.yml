@@ -752,7 +752,8 @@ jobs:
       # #38, by IP: side_menu from its own release at its locked tag, its colour still violet —
       # the same acceptance the domain job asserts, on an install that reached the suite by
       # address. Same reasoning as there: same version as the bake, so the store + lock prove
-      # the release path, and the two colour keys prove the branding.
+      # the release path, and the colour keys plus the stylesheet they derive prove the branding
+      # (reached as every step here reaches it: https://$SUITE_IP, the installer's CA).
       - name: side_menu installed from its release, its colour still the suite's violet
         run: |
           set -euo pipefail
@@ -772,7 +773,7 @@ jobs:
             got="$(occ config:app:get side_menu "$clave")"
             [ "$got" = "#5315a8" ] || { echo "FAIL: side_menu $clave is '$got', not the suite's violet #5315a8 — the branding phase did not apply" >&2; exit 1; }
           done
-          css="$(curl -fsS "http://localhost:${HTTP_PORT}/apps/side_menu/css/stylesheet")"
+          css="$(curl -fsS --cacert "$RUNNER_TEMP/ca.crt" "https://$SUITE_IP/apps/side_menu/css/stylesheet")"
           grep -q -- "--side-menu-background-color: #5315a8" <<<"$css" \
             || { echo "FAIL: side_menu's stylesheet does not paint the suite's violet — the config keys are set but the menu derives another colour" >&2; exit 1; }
       # The weekly run, by IP, on the instance just installed: the leaf is kept (same fingerprint) and
