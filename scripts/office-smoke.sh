@@ -13,7 +13,9 @@
 # that failed in upstream #8433 (the DS's own port can answer while the public route is broken).
 # The version assert pins the 9.3.x line: the connector's own floor is only "DS > 6.0"
 # (DocumentService.php:415), so a drifted documentserver generation would pass --check silently —
-# R3's verified pairing is connector 11.0.5 ↔ DS 9.3.x. The image assert accepts the two
+# R3's verified pairing was connector 11.0.5 ↔ DS 9.3.x. Since #36 the connector is the APS
+# fork (APS-Conecta/eurooffice, first release 11.0.7) and this gate's --check round-trip is
+# the pairing's per-install re-certification. The image assert accepts the two
 # namespaces this distribution's lifecycle runs — nextcloud-releases (the probe's stock bring-up,
 # slice 1's harness) and aps-conecta (the suite's channel; the retag preserves the manifest, D12) —
 # and anything else (a stranger's DS, Collabora, OnlyOffice) reds.
@@ -71,7 +73,7 @@ ver="$(printf '%s\n' "$out" | sed 's/\x1b\[[0-9;]*m//g' | sed -n 's/.* version \
 [ -n "$ver" ] || { echo "FAIL: could not read the document server version from --check's output:"; printf '%s\n' "$out"; exit 1; }
 case "$ver" in
   9.3.*) echo "  ✓ document server ${ver} (the pinned pairing line, R3)" ;;
-  *) echo "FAIL: document server version '${ver}' is outside the pinned 9.3.x line — the suite pairs connector 11.0.5 with DS 9.3.x (R3); check which image the wizard started"; exit 1 ;;
+  *) echo "FAIL: document server version '${ver}' is outside the pinned 9.3.x line — the suite pairs the eurooffice fork (APS-Conecta/eurooffice) with DS 9.3.x (R3's pairing, re-certified per install by this round-trip); check which image the wizard started"; exit 1 ;;
 esac
 
 # The DS image: the one this distribution's channel shipped. Resolved through `docker ps` by

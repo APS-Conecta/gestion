@@ -13,6 +13,20 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Added
 
+- **Euro-Office installs from its own release (#36, ADR-0017).** The connector is no longer
+  the store's `eurooffice` plus two bake-time white-label patches: it is the fork
+  `APS-Conecta/eurooffice` (upstream main plus our two renames — the admin section and the app
+  name — as two commits), it publishes signed releases through the org's shared workflow (first
+  release `v11.0.7`, monotonic: one patch above upstream's newest tag, so no app-store version is
+  ever "newer"), and its manifest row is `source: fork` with `release: true`. At install time the
+  resolver downloads the fork's newest compatible release, verifies it against `apps.pub`, and
+  the lock records it; the office smoke's round-trip re-certifies the DS 9.3.x pairing per
+  install. With the store closed, no update path replaces the fork with the store's namesake:
+  clean-boot runs `occ app:update eurooffice` directly and asserts the version, the enabled state
+  and the names unchanged (by domain and by IP), and the office smoke after the store-off reboot
+  answers the connector still enabled and wired — the entrypoint's own update leg included. The bake
+  keeps shipping the vendored 11.0.5 as the interim fallback until #42 removes it.
+
 - **Territorio installs from its own release (#33, ADR-0017).** At install time the Provisionador
   resolves the app's newest GitHub Release compatible with the running Nextcloud (the latest-release
   redirect — no API call, no token), downloads it, verifies it against `apps.pub` (signify: the

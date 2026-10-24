@@ -454,6 +454,48 @@ jobs:
             200|302|303|401) echo "desktop: /apps/desktop_workspace/ answered HTTP $code (route alive)" ;;
             *) echo "FAIL: the desktop does not open — /apps/desktop_workspace/ answered HTTP $code" >&2; exit 1 ;;
           esac
+      # #36: eurooffice follows the forks (ADR-0017) — the connector arrives from
+      # APS-Conecta/eurooffice's own release, never the bake's patched 11.0.5 and never the
+      # store's eurooffice (the manifest row is source: fork). The fork's own two proofs —
+      # our names in the installed files, and the store-closed update posture — ride in the
+      # step after this call.
+      - uses: ./.github/actions/assert-release-app
+        with:
+          app: eurooffice
+          bake-version: 11.0.5
+      # The fork's own two proofs (#36). Our two names, in the installed files — the fork
+      # carries the white-label renames as COMMITS (the bake's two patches became them), and
+      # the office smoke retired its runtime grep (slice 13: nothing can revert a rename under
+      # the suite), so this re-points the proof at the bytes the release installed. And the
+      # store posture's other half: `occ app:update eurooffice` with the store closed answers
+      # nothing and changes nothing — no update path replaces the fork with the store's
+      # namesake. The entrypoint's own eurooffice update leg gets the same posture in the
+      # store-off reboot below, and the office smoke that runs after it answers the connector
+      # still enabled and wired.
+      - name: The fork's two names are installed, and an app update with the store closed leaves the fork in place
+        run: |
+          set -euo pipefail
+          cd /opt/aps-conecta/instalador && source scripts/env.sh
+          # the lock's row says who installed it: fork, never store
+          fuente="$(sudo python3 -c 'import json; print(json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["eurooffice"]["source"])')"
+          [ "$fuente" = "fork" ] || { echo "FAIL: the lock's eurooffice row is source '$fuente', not fork — the store's eurooffice was installed" >&2; exit 1; }
+          version="$(occ config:app:get eurooffice installed_version)"
+          docker exec --user www-data aps-conecta-nextcloud grep -qF 'return "Euro-Office";' /var/www/html/custom_apps/eurooffice/lib/AdminSection.php \
+            || { echo "FAIL: the admin section is not Euro-Office — the store's namesake replaced the fork" >&2; exit 1; }
+          docker exec --user www-data aps-conecta-nextcloud grep -qF '<name>Euro-Office</name>' /var/www/html/custom_apps/eurooffice/appinfo/info.xml \
+            || { echo "FAIL: the app's name is not Euro-Office — the store's namesake replaced the fork" >&2; exit 1; }
+          tienda="$(occ config:system:get appstoreenabled 2>/dev/null || true)"
+          [ "$tienda" = "0" ] || { echo "FAIL: the store is not closed (appstoreenabled='$tienda')" >&2; exit 1; }
+          # occ's answer is captured and printed (evidence); the assertions are on the state,
+          # never on occ's wording.
+          respuesta="$(occ app:update eurooffice 2>&1 || true)"
+          echo "occ app:update eurooffice (store closed) answered: ${respuesta:-<nothing>}"
+          [ "$(occ config:app:get eurooffice installed_version)" = "$version" ] \
+            || { echo "FAIL: an app update with the store closed moved eurooffice off $version" >&2; exit 1; }
+          [ "$(occ config:app:get eurooffice enabled)" = "yes" ] \
+            || { echo "FAIL: an app update with the store closed disabled eurooffice" >&2; exit 1; }
+          docker exec --user www-data aps-conecta-nextcloud grep -qF '<name>Euro-Office</name>' /var/www/html/custom_apps/eurooffice/appinfo/info.xml \
+            || { echo "FAIL: the update leg replaced the fork's name" >&2; exit 1; }
       # Paired with the SITE_ROLES appended above (#103), because "the seed did not crash" is
       # not the same as "the roles landed". Asserts both halves of the rule: a cat-jefaturas
       # role is a POSITION and gets a standing account; a cat-tecnicos one is a job title held
@@ -822,6 +864,48 @@ jobs:
             200|302|303|401) echo "desktop: /apps/desktop_workspace/ answered HTTP $code (route alive)" ;;
             *) echo "FAIL: the desktop does not open — /apps/desktop_workspace/ answered HTTP $code" >&2; exit 1 ;;
           esac
+      # #36, by IP: the same acceptance the domain job asserts — the connector arrives from
+      # APS-Conecta/eurooffice's own release, never the bake's patched 11.0.5 and never the
+      # store's eurooffice (the manifest row is source: fork). The fork's own two proofs —
+      # our names in the installed files, and the store-closed update posture — ride in the
+      # step after this call.
+      - uses: ./.github/actions/assert-release-app
+        with:
+          app: eurooffice
+          bake-version: 11.0.5
+      # The fork's own two proofs (#36). Our two names, in the installed files — the fork
+      # carries the white-label renames as COMMITS (the bake's two patches became them), and
+      # the office smoke retired its runtime grep (slice 13: nothing can revert a rename under
+      # the suite), so this re-points the proof at the bytes the release installed. And the
+      # store posture's other half: `occ app:update eurooffice` with the store closed answers
+      # nothing and changes nothing — no update path replaces the fork with the store's
+      # namesake. The entrypoint's own eurooffice update leg gets the same posture in the
+      # store-off reboot below, and the office smoke that runs after it answers the connector
+      # still enabled and wired.
+      - name: The fork's two names are installed, and an app update with the store closed leaves the fork in place
+        run: |
+          set -euo pipefail
+          cd /opt/aps-conecta/instalador && source scripts/env.sh
+          # the lock's row says who installed it: fork, never store
+          fuente="$(sudo python3 -c 'import json; print(json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["eurooffice"]["source"])')"
+          [ "$fuente" = "fork" ] || { echo "FAIL: the lock's eurooffice row is source '$fuente', not fork — the store's eurooffice was installed" >&2; exit 1; }
+          version="$(occ config:app:get eurooffice installed_version)"
+          docker exec --user www-data aps-conecta-nextcloud grep -qF 'return "Euro-Office";' /var/www/html/custom_apps/eurooffice/lib/AdminSection.php \
+            || { echo "FAIL: the admin section is not Euro-Office — the store's namesake replaced the fork" >&2; exit 1; }
+          docker exec --user www-data aps-conecta-nextcloud grep -qF '<name>Euro-Office</name>' /var/www/html/custom_apps/eurooffice/appinfo/info.xml \
+            || { echo "FAIL: the app's name is not Euro-Office — the store's namesake replaced the fork" >&2; exit 1; }
+          tienda="$(occ config:system:get appstoreenabled 2>/dev/null || true)"
+          [ "$tienda" = "0" ] || { echo "FAIL: the store is not closed (appstoreenabled='$tienda')" >&2; exit 1; }
+          # occ's answer is captured and printed (evidence); the assertions are on the state,
+          # never on occ's wording.
+          respuesta="$(occ app:update eurooffice 2>&1 || true)"
+          echo "occ app:update eurooffice (store closed) answered: ${respuesta:-<nothing>}"
+          [ "$(occ config:app:get eurooffice installed_version)" = "$version" ] \
+            || { echo "FAIL: an app update with the store closed moved eurooffice off $version" >&2; exit 1; }
+          [ "$(occ config:app:get eurooffice enabled)" = "yes" ] \
+            || { echo "FAIL: an app update with the store closed disabled eurooffice" >&2; exit 1; }
+          docker exec --user www-data aps-conecta-nextcloud grep -qF '<name>Euro-Office</name>' /var/www/html/custom_apps/eurooffice/appinfo/info.xml \
+            || { echo "FAIL: the update leg replaced the fork's name" >&2; exit 1; }
       # The weekly run, by IP, on the instance just installed: the leaf is kept (same fingerprint) and
       # apache is not restarted; the seed converges again, idempotent by IP too. #33 adds its half:
       # the same run downloads nothing and leaves the lock unchanged.
