@@ -117,8 +117,8 @@ published Release's assets never move (D12).
 An auditor (or an operator who wants to see it themselves) needs only the Release page and
 `signify-openbsd`:
 
-    curl -fsSLO https://github.com/APS-Conecta/instalador/releases/download/vX.Y.Z/{apsconecta-vX.Y.Z.tar.gz,SHA256SUMS,SHA256SUMS.minisig}
-    curl -fsSLO https://github.com/APS-Conecta/instalador/raw/main/installer.pub
+    curl -fsSLO https://github.com/APS-Conecta/gestion/releases/download/vX.Y.Z/{apsconecta-vX.Y.Z.tar.gz,SHA256SUMS,SHA256SUMS.minisig}
+    curl -fsSLO https://github.com/APS-Conecta/gestion/raw/main/installer.pub
     signify -V -p installer.pub -m SHA256SUMS -x SHA256SUMS.minisig && sha256sum -c SHA256SUMS
 
 The signature covers `SHA256SUMS`, which names `apsconecta-vX.Y.Z.tar.gz`: a signature that

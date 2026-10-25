@@ -46,7 +46,7 @@ BUNDLE_TAG="v0.5.0"
 # gestion-clone era ($APS_HOME/gestion) is a named, inert case: no migration path exists (v0.5.0
 # is clean-install only, #48), so the directory is only detected, never followed.
 APS_HOME="${APS_HOME:-/opt/aps-conecta}"
-INSTALADOR_REPO_URL="${INSTALADOR_REPO_URL:-https://github.com/APS-Conecta/instalador}"
+INSTALADOR_REPO_URL="${INSTALADOR_REPO_URL:-https://github.com/APS-Conecta/gestion}"
 # The git channel is the REHEARSAL's only (cleanboot, ci- tags): empty by default, so the
 # operator's channel is the release installer's, never a clone.
 APS_REPO_URL="${APS_REPO_URL:-}"
@@ -193,7 +193,7 @@ welcome() {  # the welcome — the approved console's opening, line for line
       "${#STEPS[@]}" "$n_server" "$n_browser"
   fi
   printf '  «%s»\n\n' "$MOTTO"
-  printf '  AGPL-3.0-or-later · github.com/APS-Conecta/instalador\n'
+  printf '  AGPL-3.0-or-later · github.com/APS-Conecta/gestion\n'
   printf '  Desarrollado por Dani Espinoza Charrier · APS Conecta\n\n'
 }
 
@@ -2141,7 +2141,7 @@ EOF
     '[ "$tsv_ok" -eq "${#STEPS[@]}" ] && [ "$(printf "%s\n" "$tsv" | sed -n 5p | cut -f2)" = "Elegir el centro" ]'
   welcome_out="$(welcome)"
   check "welcome: name, version, the eight-step promise, the motto, the licence with the source, the credit" \
-    'case "$welcome_out" in *"APS Conecta Gestión   Instalador v9.9.9"*"en 8 pasos: 4 en este servidor, 4 en el navegador"*"«La salud primaria que compartimos es la que mejora»"*"AGPL-3.0-or-later · github.com/APS-Conecta/instalador"*"Desarrollado por Dani Espinoza Charrier · APS Conecta"*) ;; *) false;; esac'
+    'case "$welcome_out" in *"APS Conecta Gestión   Instalador v9.9.9"*"en 8 pasos: 4 en este servidor, 4 en el navegador"*"«La salud primaria que compartimos es la que mejora»"*"AGPL-3.0-or-later · github.com/APS-Conecta/gestion"*"Desarrollado por Dani Espinoza Charrier · APS Conecta"*) ;; *) false;; esac'
   check "welcome: the motto is phase 15's theming slogan (one string, two homes, pinned)" \
     'grep -F "\"$MOTTO\"" "$ROOT_BAK/provisioning/phases/15-branding.sh" | grep -q "theming_set slogan"'
 
@@ -2441,7 +2441,7 @@ SHIM
   rm -rf "$tmp/pkg"
   step_out="$( (unset APS_REPO_URL; ROOT="$tmp/standalone"; HOST_DIR="$tmp/standalone"; APS_SUITE_TAG=v1.2.0; APS_HOME="$tmp/vhome2"; FAIL=0; step_descargar; echo "FAIL=$FAIL") 2>&1)"
   check "descargar: without the rehearsal channel the package era points at the release installer" \
-    'case "$step_out" in *"✗ la suite v1.2.0 no está en este servidor"*"curl -fsSL https://github.com/APS-Conecta/instalador/releases/download/v1.2.0/apsconecta-v1.2.0-install.sh | sudo bash"*"FAIL=1"*) ;; *) false;; esac'
+    'case "$step_out" in *"✗ la suite v1.2.0 no está en este servidor"*"curl -fsSL https://github.com/APS-Conecta/gestion/releases/download/v1.2.0/apsconecta-v1.2.0-install.sh | sudo bash"*"FAIL=1"*) ;; *) false;; esac'
   mkdir -p "$tmp/vhome/instalador/host"; printf 'v1.0.0\n' > "$tmp/vhome/instalador/VERSION"
   step_out="$( (unset APS_REPO_URL; ROOT="$tmp/standalone"; HOST_DIR="$tmp/standalone"; APS_SUITE_TAG=v1.1.0; APS_HOME="$tmp/vhome"; FAIL=0; step_descargar; echo "FAIL=$FAIL") 2>&1)"
   check "descargar: an installed package of another version is refused by its VERSION alone — no git needed" \
@@ -3718,7 +3718,7 @@ SHIM
   mv "$ph/paquete/SHA256SUMS" "$tmp/sums.bak"
   out_paq="$( (PATH="$tshim:$minpaq"; APS_HOME="$ph"; FAIL=0; check_paquete; echo "FAIL=$FAIL") )"
   check "paquete: a package without its SUMS+signature reds naming the re-download command" \
-    'case "$out_paq" in *"✗ el paquete guardado no trae su suma y su firma ($ph/paquete)"*"curl -fsSL https://github.com/APS-Conecta/instalador/releases/download/v9.9.9/apsconecta-v9.9.9-install.sh | sudo bash"*"FAIL=1"*) ;; *) false;; esac'
+    'case "$out_paq" in *"✗ el paquete guardado no trae su suma y su firma ($ph/paquete)"*"curl -fsSL https://github.com/APS-Conecta/gestion/releases/download/v9.9.9/apsconecta-v9.9.9-install.sh | sudo bash"*"FAIL=1"*) ;; *) false;; esac'
   mv "$tmp/sums.bak" "$ph/paquete/SHA256SUMS"
   mv "$ROOT/installer.pub" "$tmp/pub.bak"
   out_paq="$( (PATH="$tshim:$minpaq"; APS_HOME="$ph"; FAIL=0; check_paquete; echo "FAIL=$FAIL") )"

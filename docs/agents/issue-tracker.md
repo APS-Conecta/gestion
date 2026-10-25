@@ -5,7 +5,7 @@
 
 # Issue tracker: GitHub
 
-Issues and specs for this repo live as GitHub issues on **`APS-Conecta/instalador`**
+Issues and specs for this repo live as GitHub issues on **`APS-Conecta/gestion`**
 (public). Use the `gh` CLI for all operations.
 
 ## Conventions

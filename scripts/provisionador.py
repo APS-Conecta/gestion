@@ -154,7 +154,7 @@ STEPS = []
 LAN_IP, HOSTNAME, PORT = "", "", 0   # the session's address, the server's name, the bound port — set in main
 # phase 15's theming:slogan, the host CLI's MOTTO — one string, three homes, each pinned by a self-test
 MOTTO = "La salud primaria que compartimos es la que mejora"
-REPO = "github.com/APS-Conecta/instalador"
+REPO = "github.com/APS-Conecta/gestion"
 # /recursos/<name> → the theme's own files: local, zero egress (the fonts are OFL). A whitelist —
 # no path is ever joined from the request.
 ASSETS = {

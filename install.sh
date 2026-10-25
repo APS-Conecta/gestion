@@ -35,7 +35,7 @@ TARBALL_SHA256=""               # ← the release job fills this; empty = the co
                               # the asset, and preflight/wizard print it — never dereferenced here
 SIGNIFY_PUBKEY="RWTLqv+WUjHCKc4S0crtk33Otcda2exszJdn6BBvGPmZEcTbVRrVn9kK"  # installer.pub's base64 line — both readers flip together (aps/RELEASING.md §1)
 APS_HOME="${APS_HOME:-/opt/aps-conecta}"
-REPO_URL="${REPO_URL:-https://github.com/APS-Conecta/instalador}"
+REPO_URL="${REPO_URL:-https://github.com/APS-Conecta/gestion}"
 DEST="$APS_HOME/instalador"     # the bundle home (an old gestion clone beside it is inert: no path reads it)
 PAQUETE="$APS_HOME/paquete"     # the kept package: preflight re-verifies sha+firma offline
 KEEP_PACKAGE="${KEEP_PACKAGE:-1}"  # 0 (rehearsal) frees the disk right after unpacking

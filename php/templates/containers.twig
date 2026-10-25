@@ -82,7 +82,7 @@
                 {% if is_backup_container_running == false and domain == "" %}
                     {% if isDomaincheckRunning == false %}
                         <h2>El contenedor domaincheck no está en ejecución</h2>
-                        <p>Esto no es lo esperado. Lo más probable es que haya ocurrido porque el puerto {{ apache_port }} ya está en uso en su servidor. Puede revisar los registros del asistente y del contenedor domaincheck para obtener más pistas. Revise los puertos con la <strong><a target="_blank" href="https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md#3-preflight">verificación previa del instalador</a></strong>.</p>
+                        <p>Esto no es lo esperado. Lo más probable es que haya ocurrido porque el puerto {{ apache_port }} ya está en uso en su servidor. Puede revisar los registros del asistente y del contenedor domaincheck para obtener más pistas. Revise los puertos con la <strong><a target="_blank" href="https://github.com/APS-Conecta/gestion/blob/main/aps/INSTALLER.md#3-preflight">verificación previa del instalador</a></strong>.</p>
                     {% else %}
                         {% if not hasBackupLocation %}
                             <p>Instala y mantiene APS Conecta Gestión en este servidor: archivos, oficina y las aplicaciones APS, con respaldo diario y actualizaciones en conjunto.</p>
@@ -110,7 +110,7 @@
 
                             {% if skip_domain_validation == false %}
                                 <p>Asegúrese de que este servidor sea accesible en el puerto 443 (el puerto 443/tcp esté abierto/reenviado en su firewall/router, y también el 443/udp si desea activar http3) y de que haya configurado correctamente el DNS del dominio que ingrese (establezca el registro A en su dirección IPv4 pública y, si necesita IPv6, el registro AAAA en su dirección IPv6 pública; por supuesto, un registro CNAME también es posible). Si su dominio no es aceptado, debería ver sugerencias sobre el problema en la esquina superior derecha.</p>
-                                <p>Si el servidor no alcanza su propio dominio, vea <a target="_blank" href="https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md#7-dns-the-host-must-reach-its-own-domain-d10">la sección DNS del instalador</a>.</p>
+                                <p>Si el servidor no alcanza su propio dominio, vea <a target="_blank" href="https://github.com/APS-Conecta/gestion/blob/main/aps/INSTALLER.md#7-dns-the-host-must-reach-its-own-domain-d10">la sección DNS del instalador</a>.</p>
                             {% endif %}
 
                             <h2>Restaurar una instancia anterior de AIO desde una copia de seguridad</h2>
@@ -201,11 +201,11 @@
                         {% endif %}
                     {% endif %}
                     <h2>¿Cómo restablecer la instancia de AIO?</h2>
-                    <p>Si algo sale mal, por ejemplo durante la instalación inicial, vea la <a target="_blank" href="https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md#12-troubleshooting">solución de problemas del instalador</a>.</p>
+                    <p>Si algo sale mal, por ejemplo durante la instalación inicial, vea la <a target="_blank" href="https://github.com/APS-Conecta/gestion/blob/main/aps/INSTALLER.md#12-troubleshooting">solución de problemas del instalador</a>.</p>
                 {% endif %}
 
                 {% if was_start_button_clicked == true %}
-                    <p>La suite se actualiza como un conjunto, con cada versión publicada: vea <a target="_blank" href="https://github.com/APS-Conecta/instalador/blob/main/aps/GUIA-CLINICA.md#7-tras-actualizar">Tras actualizar</a> en la guía clínica. (<a href="log?id=nextcloud-aio-mastercontainer" target="_blank">Registros</a>)</p>
+                    <p>La suite se actualiza como un conjunto, con cada versión publicada: vea <a target="_blank" href="https://github.com/APS-Conecta/gestion/blob/main/aps/GUIA-CLINICA.md#7-tras-actualizar">Tras actualizar</a> en la guía clínica. (<a href="log?id=nextcloud-aio-mastercontainer" target="_blank">Registros</a>)</p>
                 {% endif %}
 
                 {% if is_backup_container_running == true %}
@@ -229,7 +229,7 @@
                             {% endif %}
                             <p><a href="https://{{ domain }}" class="button" target="_blank">Abrir APS Conecta Gestión ↗</a></p>
                             {% if not hasBackupLocation %}
-                                <p>Si APS Conecta Gestión no se abre al hacer clic en el botón anterior, vea <strong><a target="_blank" href="https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md#7-dns-the-host-must-reach-its-own-domain-d10">la sección DNS del instalador</a></strong></p>
+                                <p>Si APS Conecta Gestión no se abre al hacer clic en el botón anterior, vea <strong><a target="_blank" href="https://github.com/APS-Conecta/gestion/blob/main/aps/INSTALLER.md#7-dns-the-host-must-reach-its-own-domain-d10">la sección DNS del instalador</a></strong></p>
                             {% endif %}
                             <div id="paso-1-card" class="paso-card">
                                 <h2>Suite en marcha</h2>
@@ -294,11 +294,11 @@
                             {% if is_mastercontainer_update_available == true %}
                                 <p>⚠️ Hay una actualización del asistente disponible. Haga clic en el botón siguiente para detener sus contenedores y así poder actualizar el asistente.</p>
                                 {% if current_channel starts with 'latest' %}
-                                    <p>Puede encontrar el registro de cambios <a target="_blank" href="https://github.com/APS-Conecta/instalador/releases/latest"><strong>aquí</strong></a></p>
+                                    <p>Puede encontrar el registro de cambios <a target="_blank" href="https://github.com/APS-Conecta/gestion/releases/latest"><strong>aquí</strong></a></p>
                                 {% elseif current_channel starts with 'beta' %}
-                                    <p>Puede encontrar el registro de cambios <a target="_blank" href="https://github.com/APS-Conecta/instalador/releases"><strong>aquí</strong></a></p>
+                                    <p>Puede encontrar el registro de cambios <a target="_blank" href="https://github.com/APS-Conecta/gestion/releases"><strong>aquí</strong></a></p>
                                 {% elseif current_channel starts with 'develop' %}
-                                    <p>Puede encontrar todos los cambios <a target="_blank" href="https://github.com/APS-Conecta/instalador/commits/main"><strong>aquí</strong></a></p>
+                                    <p>Puede encontrar todos los cambios <a target="_blank" href="https://github.com/APS-Conecta/gestion/commits/main"><strong>aquí</strong></a></p>
                                 {% endif %}
                             {% endif %}
                             <form method="POST" action="api/docker/stop" target="overlay-log">
@@ -451,7 +451,7 @@
                                     {% endif %}
                                     <p>Tenga en cuenta que esta solución no respalda los archivos y carpetas montados en la suite mediante la aplicación de almacenamiento externo, pero puede añadir más volúmenes de Docker y rutas del servidor que desee respaldar una vez finalizada la copia de seguridad inicial.</p>
                                     <p>Las copias de seguridad diarias pueden activarse una vez finalizada la copia inicial. Activar esto también le permite activar una opción para actualizar automáticamente todos los contenedores y sus aplicaciones.</p>
-                                    <p>Ubicación, alcance y copia fuera del servidor: vea <strong><a target="_blank" href="https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md#11-backups">Respaldos en el instalador</a></strong>.</p>
+                                    <p>Ubicación, alcance y copia fuera del servidor: vea <strong><a target="_blank" href="https://github.com/APS-Conecta/gestion/blob/main/aps/INSTALLER.md#11-backups">Respaldos en el instalador</a></strong>.</p>
 
                                     {% if isApacheStarting != true %}
                                         <h3>Creación de la copia de seguridad</h3>
