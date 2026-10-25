@@ -42,6 +42,11 @@
 #         runtime (transitive apk dep; phase 07's AIA fetch already imported the GlobalSign
 #         intermediate on the probe), so the premise "the AIO runtime shipped no curl" was
 #         falsified and the explicit apk entry would pin a dependency that already ships.
+#   260 — the pgvector hash pin (moved from brand-gate's row 260 by #73): the database image's
+#         one build-time download — pgvector's release tarball — is checksum-gated in its own
+#         Dockerfile (PGVECTOR_SHA256 + sha256sum -c), the bake's discipline applied to a
+#         channel this tree CAN see; what the database must DO (roles, grants, extensions,
+#         wiring) stayed with brand-gate's row 260.
 #
 # ROUTED (this repo cannot see these channels — recorded so the ledger stays complete, the
 # slice-4 curl→030 precedent): VENDOR sha256s live with the vendored tarballs, read from the old
@@ -167,6 +172,20 @@ bake_runtime_wired() {  # the bake's runtime half exists in the tree — the COP
 
 row 030 "the bake channel is checksum-gated at build time — scripts/bake.sh re-runs gestion's VENDOR sha256 gate (sha256sum --check against each tarball's VENDOR pin) before any byte enters the image; the tarball bytes themselves are gestion-side (test.sh:63-70), so this row pins the mechanism to the fork" \
   bake_checksum_gate
+
+pgvector_hash_pinned() {  # 260: the database image's one build-time download is checked against
+  # its pinned hash — the bake's checksum discipline, moved from brand-gate's row 260 by #73:
+  # a download channel's integrity is an acquisition concern; what the database must DO
+  # stayed with the brand gate's row.
+  local f="$TREE/Containers/postgresql/Dockerfile"
+  [ -f "$f" ] || { echo "  no such file: $f — re-point this row" >&2; return 1; }
+  grep -qE '^ENV PGVECTOR_SHA256=[0-9a-f]{64}$' "$f" \
+    && grep -qE 'echo "\$PGVECTOR_SHA256[^|]*\| *sha256sum -c' "$f" \
+    || { echo "  the database Dockerfile does not check the pgvector download against the pinned sha256" >&2; return 1; }
+}
+
+row 260 "the pgvector download is hash-pinned — Containers/postgresql/Dockerfile pins PGVECTOR_SHA256 and its build RUN pipes that pin over the downloaded tarball into sha256sum -c: the database image's one build-time fetch, checksum-gated like the bake's channel (the pin moved from brand-gate's row 260, #73)" \
+  pgvector_hash_pinned
 
 row 030 "the suite's skeleton posture is baked — NC_skeletondirectory="" ENV beside 020's store-off (the wizard's admin is created at install time, before any phase can write config; the NC_ channel is read before config.php)" \
   grep -q 'NC_skeletondirectory=""' "$TREE/Containers/nextcloud/Dockerfile"
