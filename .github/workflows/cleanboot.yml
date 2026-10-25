@@ -509,14 +509,14 @@ jobs:
         run: |
           set -euo pipefail
           cd /opt/aps-conecta/instalador && source scripts/env.sh
-          for elegida in farmacia estadistica; do
+          for elegida in farmacia estadistica totem; do
             grep -q "$elegida=0" /tmp/aio-testbed/opciones \
               || { echo "FAIL: the testbed's wizard drive did not record $elegida=0 — the choice record is the gate every leg reads" >&2; cat /tmp/aio-testbed/opciones >&2; exit 1; }
           done
-          sudo python3 -c 'import json, sys; sys.exit(0 if set(json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]) & {"farmacia", "estadistica"} else 1)' \
+          sudo python3 -c 'import json, sys; sys.exit(0 if set(json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]) & {"farmacia", "estadistica", "totem"} else 1)' \
             || { echo "FAIL: the lock names an app nobody chose — the fetch leg must resolve nothing for an unchosen optional row" >&2 \
-                 && sudo python3 -c 'import json; print("named:", sorted(set(json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]) & {"farmacia", "estadistica"}))' >&2; exit 1; }
-          for elegida in farmacia estadistica; do
+                 && sudo python3 -c 'import json; print("named:", sorted(set(json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]) & {"farmacia", "estadistica", "totem"}))' >&2; exit 1; }
+          for elegida in farmacia estadistica totem; do
             if [ -e "/opt/aps-conecta/apps/$elegida" ]; then
               echo "FAIL: the release store holds $elegida, but nobody chose it" >&2; exit 1
             fi
@@ -537,7 +537,12 @@ jobs:
             [ -z "$valor" ] \
               || { echo "FAIL: estadistica carries $clave='$valor', but nobody chose it — its DEIS job must never have run" >&2; exit 1; }
           done
-          echo "farmacia, estadistica: nunca instaladas — la elección es la puerta, y nadie las eligió (sin descarga del DEIS)"
+          # #41's own half: nothing bakes totem (no vendored tarball, no Dockerfile row), so its
+          # absence is the cleaner one — not "present but never installed": even its bytes are gone.
+          if docker exec --user www-data aps-conecta-nextcloud test -e /var/www/html/custom_apps/totem; then
+            echo "FAIL: custom_apps holds totem — nothing bakes it, so even its bytes must be absent" >&2; exit 1
+          fi
+          echo "farmacia, estadistica, totem: nunca instaladas — la elección es la puerta, y nadie las eligió (sin descarga del DEIS; totem ni siquiera existe en el servidor)"
 
 
       # Paired with the SITE_ROLES appended above (#103), because "the seed did not crash" is
@@ -778,10 +783,11 @@ jobs:
           echo "SUITE_IP=$ip" >> "$GITHUB_ENV"
           bash /opt/aps-conecta/instalador/scripts/cleanboot-site.sh "$ip" "$RUNNER_TEMP"
       # The silent install, as root, with no terminal. The suite tag is the one the «suite-tag» job
-      # resolved, so both jobs run the same published suite. #39/#40: this job CHOOSES both optional
-      # apps — farmacia and estadistica — the same way an operator without a browser does: one --app
-      # flag per checkbox, carried by the silent install into the wizard drive and its options record.
-      - name: Install by IP through the silent command a clinic runs, choosing farmacia and estadistica (#39, #40)
+      # resolved, so both jobs run the same published suite. #39 chose farmacia; #40 adds
+      # estadistica and #41 totem — the three optional apps ride the same --app flags into the
+      # wizard drive and its options record, the way an operator without a browser checks
+      # every box at once.
+      - name: Install by IP through the silent command a clinic runs, choosing farmacia, estadistica and totem (#39, #40, #41)
         run: |
           set -o pipefail   # run: is `bash -e` without it — the install's own failure, not tee's
           # APS_SUITE_TAG: the package's VERSION is this run's throwaway ci-cleanboot-<sha>, but the
@@ -789,7 +795,7 @@ jobs:
           # (suite_tag() answers the override first; the rehearsal-window seam it exists for)
           sudo env "PATH=$PATH" APS_SKIP_DATOS=1 MIN_DISK_GB=2 APS_SUITE_TAG="$SUITE_TAG" \
             bash /opt/aps-conecta/instalador/host/aps-conecta install \
-              --sitio "$RUNNER_TEMP/site.sh" --planilla "$RUNNER_TEMP/usuarios.csv" --app farmacia --app estadistica \
+              --sitio "$RUNNER_TEMP/site.sh" --planilla "$RUNNER_TEMP/usuarios.csv" --app farmacia --app estadistica --app totem \
             < /dev/null | tee "$RUNNER_TEMP/install.out"
       - name: Hand the checkout back to the runner
         if: always()
@@ -919,6 +925,52 @@ jobs:
           [ -n "$registro" ] \
             || { echo "FAIL: deis_checked_at is set ($chequeo) but deis_register is empty — the DEIS check ran without importing the Base de Establecimientos; the runner may not reach repositoriodeis.minsal.cl (see deis_check_errors: $(occ config:app:get estadistica deis_check_errors 2>/dev/null || true))" >&2; exit 1; }
           echo "estadística: la importación del DEIS corre — contacto registrado, Base de Establecimientos importada, la ventana REM queda en cola"
+      # #41, by IP: totem — the third optional app — installed from its release because this
+      # job chose it beside farmacia. Totem has NO bake (nothing ever vendored its tarball), so
+      # the shared action's "never the bake's version" half has nothing to refuse here; the
+      # release path is proven by what only the fetch leg writes — the lock's row naming v0.3.0,
+      # the verified tarball inside /opt/aps-conecta/apps, no signature.json — plus the app's own
+      # half: BOTH committed voices shipped inside the release (the two Piper models under
+      # js/tts/, docs/adr/0005 there), and the public display page loads, with the voice assets
+      # it loads answering real bytes over https — the CI-observable half of «the display speaks
+      # offline»; the audio itself is totem's own e2e (tts.spec.js), run in its repo.
+      - name: Totem installed from its release because it was chosen, its two voices aboard (#41)
+        run: |
+          set -euo pipefail
+          cd /opt/aps-conecta/instalador && source scripts/env.sh
+          grep -q "totem=1" /opt/aps-conecta/aio/opciones \
+            || { echo "FAIL: the wizard's options record does not name totem=1 — the choice the install was given" >&2; cat /opt/aps-conecta/aio/opciones >&2; exit 1; }
+          sudo test -f /opt/aps-conecta/apps.lock.json || { echo "FAIL: no apps lock after the install" >&2; exit 1; }
+          read -r tag version sha <<< "$(sudo python3 -c 'import json; a = json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["totem"]; print(a["tag"], a["version"], a["sha256"])')"
+          echo "lock: totem $tag ($version)"
+          [ "${tag#v}" = "$version" ] || { echo "FAIL: the lock's tag and version disagree" >&2; exit 1; }
+          [ "$version" = "0.3.0" ] || { echo "FAIL: totem locked at $version, not its first release 0.3.0" >&2; exit 1; }
+          got="$(occ config:app:get totem installed_version)"
+          [ "$got" = "$version" ] || { echo "FAIL: the instance runs totem $got, the lock names $version" >&2; exit 1; }
+          sudo test -f "/opt/aps-conecta/apps/totem/$tag.tar.gz" || { echo "FAIL: the locked tarball is not in the store" >&2; exit 1; }
+          echo "$sha  /opt/aps-conecta/apps/totem/$tag.tar.gz" | sudo sha256sum --check - \
+            || { echo "FAIL: the stored tarball is not the locked bytes" >&2; exit 1; }
+          if docker exec --user www-data aps-conecta-nextcloud test -e /var/www/html/custom_apps/totem/appinfo/signature.json; then
+            echo "FAIL: totem carries appinfo/signature.json — a release never does" >&2; exit 1
+          fi
+          # both voices shipped inside the release (js/tts/ stays committed, docs/adr/0005): the
+          # two models exist in the installed app, with real bytes
+          for voz in es_ES-davefx-medium es_MX-claude-high; do
+            docker exec --user www-data aps-conecta-nextcloud test -s "/var/www/html/custom_apps/totem/js/tts/models/$voz.onnx" \
+              || { echo "FAIL: the installed totem carries no $voz.onnx — the release left the voices behind" >&2; exit 1; }
+          done
+          # the display page loads (public route), and the voice it loads answers real bytes: the
+          # page's own bundle and both models over https, each heavier than any error page
+          code="$(curl -s -o /dev/null -w '%{http_code}' --cacert "$RUNNER_TEMP/ca.crt" "https://$SUITE_IP/apps/totem/display/prueba" 2>/dev/null)"
+          [ "$code" = "200" ] || { echo "FAIL: the display page answered HTTP $code, not 200" >&2; exit 1; }
+          curl -fsS --cacert "$RUNNER_TEMP/ca.crt" -o /dev/null "https://$SUITE_IP/apps/totem/js/totem-display.js" \
+            || { echo "FAIL: the display bundle is not served" >&2; exit 1; }
+          for voz in es_ES-davefx-medium es_MX-claude-high; do
+            bytes="$(curl -fsS --cacert "$RUNNER_TEMP/ca.crt" "https://$SUITE_IP/apps/totem/js/tts/models/$voz.onnx" | wc -c)"
+            [ "$bytes" -gt 1000000 ] \
+              || { echo "FAIL: the $voz voice answered $bytes bytes — the display cannot load its voice" >&2; exit 1; }
+          done
+          echo "totem: instalada desde su release, con sus dos voces servidas al display"
       # #38, by IP: side_menu from its own release at its locked tag, its colour still violet —
       # the same acceptance the domain job asserts, on an install that reached the suite by
       # address. Same reasoning as there: same version as the bake, so the store + lock prove
@@ -1025,14 +1077,16 @@ jobs:
             || { echo "FAIL: the weekly run touched the stored releases" >&2; exit 1; }
           grep -qF 'ya está en este servidor — no se descarga nada' "$RUNNER_TEMP/reponer-ip.out" \
             || { echo "FAIL: the fetch leg did not say it downloads nothing" >&2; cat "$RUNNER_TEMP/reponer-ip.out"; exit 1; }
-          # #39/#40: the choice survives the repeated provisioning — the record still says farmacia=1
-          # and estadistica=1, so the weekly run resolved each from the lock (no download), the lock
-          # still names them, and the instance still runs the locked tags. An un-choosing would read
-          # here the other way: skipped, never uninstalled.
+          # #39/#40/#41: the choices survive the repeated provisioning — the record still says
+          # farmacia=1, estadistica=1 and totem=1, so the weekly run resolved each from the lock
+          # (no download), the lock still names them, and the instance still runs the locked tags.
+          # An un-choosing would read here the other way: skipped, never uninstalled.
           grep -q "farmacia=1" /opt/aps-conecta/aio/opciones \
             || { echo "FAIL: the weekly run lost the farmacia choice" >&2; exit 1; }
           grep -q "estadistica=1" /opt/aps-conecta/aio/opciones \
             || { echo "FAIL: the weekly run lost the estadistica choice" >&2; exit 1; }
+          grep -q "totem=1" /opt/aps-conecta/aio/opciones \
+            || { echo "FAIL: the weekly run lost the totem choice" >&2; exit 1; }
           read -r ftag fver _fsha <<< "$(sudo python3 -c 'import json; a = json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["farmacia"]; print(a["tag"], a["version"], a["sha256"])')"
           [ -n "$fver" ] || { echo "FAIL: the lock no longer names farmacia" >&2; exit 1; }
           read -r etag ever _esha <<< "$(sudo python3 -c 'import json; a = json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["estadistica"]; print(a["tag"], a["version"], a["sha256"])')"
@@ -1042,7 +1096,11 @@ jobs:
             || { echo "FAIL: the weekly run moved farmacia off its locked $fver" >&2; exit 1; }
           [ "$(occ config:app:get estadistica installed_version)" = "$ever" ] \
             || { echo "FAIL: the weekly run moved estadistica off its locked $ever" >&2; exit 1; }
-          echo "farmacia, estadistica: the choices survived — locks $ftag, $etag, nothing downloaded"
+          read -r ttag tver _tsha <<< "$(sudo python3 -c 'import json; a = json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["totem"]; print(a["tag"], a["version"], a["sha256"])')"
+          [ -n "$tver" ] || { echo "FAIL: the lock no longer names totem" >&2; exit 1; }
+          [ "$(occ config:app:get totem installed_version)" = "$tver" ] \
+            || { echo "FAIL: the weekly run moved totem off its locked $tver" >&2; exit 1; }
+          echo "farmacia, estadistica, totem: the choices survived — locks $ftag, $etag, $ttag, nothing downloaded"
           [ "$(docker inspect -f '{{.State.StartedAt}}' aps-conecta-apache)" = "$arranque" ] \
             || { echo "FAIL: the weekly run restarted apache with nothing renewed" >&2; exit 1; }
           sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
