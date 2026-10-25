@@ -894,9 +894,19 @@ step_descargar() {  # the bundle at its tag. On its own (the two-line bootstrap)
     bad "$apps" "vuelva a descargar la suite completa"
     return 0
   fi
+  # An optional row never bakes (#39): phase 12 skips it before any arrival path, so the
+  # baked tarball's pin is not its channel — totem arrived optional from day one (#41) and
+  # the package carries no provisioning/apps/totem to ask for. A VENDOR that IS present rides
+  # the package (farmacia's, #42's interim) and keeps its verification; a default row without
+  # one is still a broken package.
+  sin_vendor="$({ opcionales_manifest 2>/dev/null || true; } | cut -f1)"
   for app in $apps; do
-    dir="$ROOT/provisioning/apps/$app"; n=$((n + 1))
-    [ -f "$dir/VENDOR" ] || { bad "$app: falta en $ROOT/provisioning/apps" "vuelva a descargar la suite completa"; broken=$((broken + 1)); continue; }
+    dir="$ROOT/provisioning/apps/$app"
+    if [ ! -f "$dir/VENDOR" ]; then
+      printf '%s\n' "$sin_vendor" | grep -qx -- "$app" && continue
+      bad "$app: falta en $ROOT/provisioning/apps" "vuelva a descargar la suite completa"; broken=$((broken + 1)); continue
+    fi
+    n=$((n + 1))
     tars=("$dir"/*.tar.gz)
     want="$(sed -n 's/^sha256=//p' "$dir/VENDOR")"
     got=""
@@ -2424,7 +2434,10 @@ CSHIM
   # The fixture manifest grows its optional row here (#39): the real apps.py reads it exactly as
   # the operator's suite reads its own — same code, same shape — and the farmacia VENDOR keeps any
   # later apps walk over this ROOT green (the count arms below say two now).
-  printf '[{"id": "demo", "source": "store", "optional": false, "containers": []}, {"id": "farmacia", "source": "own", "repo": "APS-Conecta/farmacia", "optional": "off", "containers": [], "release": true, "name": "Farmacia", "summary": "Arsenal farmacológico del establecimiento."}]\n' > "$ROOT/apps.json"
+  printf '[{"id": "demo", "source": "store", "optional": false, "containers": []}, {"id": "farmacia", "source": "own", "repo": "APS-Conecta/farmacia", "optional": "off", "containers": [], "release": true, "name": "Farmacia", "summary": "Arsenal farmacológico del establecimiento."}, {"id": "totem", "source": "own", "repo": "APS-Conecta/totem", "optional": "off", "containers": [], "release": true, "name": "Tótem", "summary": "Turnos de atención en sala de espera."}]\n' > "$ROOT/apps.json"
+  # totem carries NO provisioning dir — optional from day one, never baked (#41) — pinning the
+  # preflight's other half: a VENDOR is required only of default rows; one that rides the
+  # package (farmacia's, #42's interim) keeps its verification.
   mkdir -p "$ROOT/provisioning/apps/farmacia"
   printf 'contenido\n' > "$tmp/farmacia.txt"
   tar czf "$ROOT/provisioning/apps/farmacia/farmacia-0.11.1.tar.gz" -C "$tmp" farmacia.txt
@@ -2525,19 +2538,23 @@ SHIM
     printf '%s\n' "nextcloud-aio-mastercontainer running" > "$tmp/aio.ps"
     out="$( (cmd_aio_wizard --preparar --dominio clinica.example --talk --respaldo /srv/aps-conecta/respaldos) 2>&1)"; rc=$?
     check "asistente-aio --preparar: the mastercontainer, then the wizard filled — Talk on, the daily backup with the installer's files — and NO start; the domain and the options recorded for the web installer" \
-      '[ "$rc" -eq 0 ] && case "$out" in *"✓ La suite ya está iniciada"*"✓ Dominio: clinica.example"*"✓ Opciones: oficina incluida; Talk activado; grabación apagada"*"✓ Respaldo diario a las 04:00 hora de Santiago ("*" UTC), en /srv/aps-conecta/respaldos, con "*"✓ Asistente listo: falta «Iniciar» en el asistente"*) ;; *) false;; esac && grep -q "options-form=1 talk=on$" "$tmp/aio.log" && grep -q "additional_backup_directories=$APS_HOME$" "$tmp/aio.log" && ! grep -q "^POST start" "$tmp/aio.log" && [ "$(cat "$AIO_STATE/dominio")" = clinica.example ] && [ "$(cat "$AIO_STATE/opciones")" = "talk=1 grabacion=0 farmacia=0" ] && [ ! -e "$AIO_STATE/motivo" ]'
+      '[ "$rc" -eq 0 ] && case "$out" in *"✓ La suite ya está iniciada"*"✓ Dominio: clinica.example"*"✓ Opciones: oficina incluida; Talk activado; grabación apagada"*"✓ Respaldo diario a las 04:00 hora de Santiago ("*" UTC), en /srv/aps-conecta/respaldos, con "*"✓ Asistente listo: falta «Iniciar» en el asistente"*) ;; *) false;; esac && grep -q "options-form=1 talk=on$" "$tmp/aio.log" && grep -q "additional_backup_directories=$APS_HOME$" "$tmp/aio.log" && ! grep -q "^POST start" "$tmp/aio.log" && [ "$(cat "$AIO_STATE/dominio")" = clinica.example ] && [ "$(cat "$AIO_STATE/opciones")" = "talk=1 grabacion=0 farmacia=0 totem=0" ] && [ ! -e "$AIO_STATE/motivo" ]'
     : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"
     out="$( (cmd_aio_wizard --preparar --dominio clinica.example --grabacion) 2>&1)"; rc=$?
     check "asistente-aio --grabacion: the recording rides Talk — both posted, both recorded" \
-      '[ "$rc" -eq 0 ] && grep -q "options-form=1 talk=on talk-recording=on$" "$tmp/aio.log" && case "$out" in *"Talk activado; grabación activada"*) ;; *) false;; esac && [ "$(cat "$AIO_STATE/opciones")" = "talk=1 grabacion=1 farmacia=0" ]'
+      '[ "$rc" -eq 0 ] && grep -q "options-form=1 talk=on talk-recording=on$" "$tmp/aio.log" && case "$out" in *"Talk activado; grabación activada"*) ;; *) false;; esac && [ "$(cat "$AIO_STATE/opciones")" = "talk=1 grabacion=1 farmacia=0 totem=0" ]'
     : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"
     out="$( (cmd_aio_wizard --preparar --dominio clinica.example --app farmacia --app farmacia) 2>&1)"; rc=$?
     check "asistente-aio --app (#39): a checked box names the app in the options line, rides the record chosen — every optional row recorded, a repeated flag is one — and posts nothing extra to the wizard" \
-      '[ "$rc" -eq 0 ] && case "$out" in *"✓ Opciones: oficina incluida; Talk apagado; grabación apagada; pizarra e imágenes apagadas; Farmacia"*) ;; *) false;; esac && [ "$(cat "$AIO_STATE/opciones")" = "talk=0 grabacion=0 farmacia=1" ] && grep -q "options-form=1$" "$tmp/aio.log"'
+      '[ "$rc" -eq 0 ] && case "$out" in *"✓ Opciones: oficina incluida; Talk apagado; grabación apagada; pizarra e imágenes apagadas; Farmacia"*) ;; *) false;; esac && [ "$(cat "$AIO_STATE/opciones")" = "talk=0 grabacion=0 farmacia=1 totem=0" ] && grep -q "options-form=1$" "$tmp/aio.log"'
     : > "$tmp/aio.log"
-    out="$( (cmd_aio_wizard --preparar --dominio clinica.example --app totem) 2>&1)"; rc=$?
+    out="$( (cmd_aio_wizard --preparar --dominio clinica.example --app farmacia --app totem) 2>&1)"; rc=$?
+    check "asistente-aio --app (#39, #41): two checkboxes ride as two flags and both land in the record — the silent IP install's exact shape" \
+      '[ "$rc" -eq 0 ] && case "$out" in *"pizarra e imágenes apagadas; Farmacia, Tótem"*) ;; *) false;; esac && [ "$(cat "$AIO_STATE/opciones")" = "talk=0 grabacion=0 farmacia=1 totem=1" ] && grep -q "options-form=1$" "$tmp/aio.log"'
+    : > "$tmp/aio.log"
+    out="$( (cmd_aio_wizard --preparar --dominio clinica.example --app estadistica) 2>&1)"; rc=$?
     check "asistente-aio --app (#39): an app the manifest does not offer is refused before anything runs, naming what it offers" \
-      '[ "$rc" -eq 1 ] && [ ! -s "$tmp/aio.log" ] && case "$out" in *"✗ aplicación opcional desconocida: totem — las que el manifiesto ofrece son: Farmacia"*) ;; *) false;; esac'
+      '[ "$rc" -eq 1 ] && [ ! -s "$tmp/aio.log" ] && case "$out" in *"✗ aplicación opcional desconocida: estadistica — las que el manifiesto ofrece son: Farmacia,Tótem"*) ;; *) false;; esac'
     : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; touch "$tmp/aio.options-fails"
     out="$( (cmd_aio_wizard --preparar --dominio clinica.example) 2>&1)"; rc=$?
     check "asistente-aio --preparar: a refusal after the domain leaves no record — the web installer asks again" \
