@@ -921,14 +921,15 @@ jobs:
             docker exec --user www-data aps-conecta-nextcloud test -s "/var/www/html/custom_apps/totem/js/tts/models/$voz.onnx" \
               || { echo "FAIL: the installed totem carries no $voz.onnx — the release left the voices behind" >&2; exit 1; }
           done
-          # the display page loads (public route), and the voice it loads answers real bytes: the
-          # page's own bundle and both models over https, each heavier than any error page
+          # the display page loads (public route), and the voice it loads answers real bytes. The
+          # page's bundle and models are FILES, not routes: Nextcloud's custom_apps url mapping
+          # serves them under /custom_apps/totem/… — each heavier than any error page
           code="$(curl -s -o /dev/null -w '%{http_code}' --cacert "$RUNNER_TEMP/ca.crt" "https://$SUITE_IP/apps/totem/display/prueba" 2>/dev/null)"
           [ "$code" = "200" ] || { echo "FAIL: the display page answered HTTP $code, not 200" >&2; exit 1; }
-          curl -fsS --cacert "$RUNNER_TEMP/ca.crt" -o /dev/null "https://$SUITE_IP/apps/totem/js/totem-display.js" \
+          curl -fsS --cacert "$RUNNER_TEMP/ca.crt" -o /dev/null "https://$SUITE_IP/custom_apps/totem/js/totem-display.js" \
             || { echo "FAIL: the display bundle is not served" >&2; exit 1; }
           for voz in es_ES-davefx-medium es_MX-claude-high; do
-            bytes="$(curl -fsS --cacert "$RUNNER_TEMP/ca.crt" "https://$SUITE_IP/apps/totem/js/tts/models/$voz.onnx" | wc -c)"
+            bytes="$(curl -fsS --cacert "$RUNNER_TEMP/ca.crt" "https://$SUITE_IP/custom_apps/totem/js/tts/models/$voz.onnx" | wc -c)"
             [ "$bytes" -gt 1000000 ] \
               || { echo "FAIL: the $voz voice answered $bytes bytes — the display cannot load its voice" >&2; exit 1; }
           done
