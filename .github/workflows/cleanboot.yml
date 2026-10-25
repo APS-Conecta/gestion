@@ -513,9 +513,9 @@ jobs:
             grep -q "$elegida=0" /tmp/aio-testbed/opciones \
               || { echo "FAIL: the testbed's wizard drive did not record $elegida=0 — the choice record is the gate every leg reads" >&2; cat /tmp/aio-testbed/opciones >&2; exit 1; }
           done
-          if sudo python3 -c 'import json, sys; sys.exit(0 if "farmacia" in json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"] or "estadistica" in json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"] else 1)'; then
-            echo "FAIL: the lock names farmacia or estadistica, but nobody chose either — the fetch leg must resolve nothing for an unchosen optional row" >&2; exit 1
-          fi
+          sudo python3 -c 'import json, sys; sys.exit(0 if set(json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]) & {"farmacia", "estadistica"} else 1)' \
+            || { echo "FAIL: the lock names an app nobody chose — the fetch leg must resolve nothing for an unchosen optional row" >&2 \
+                 && sudo python3 -c 'import json; print("named:", sorted(set(json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]) & {"farmacia", "estadistica"}))' >&2; exit 1; }
           for elegida in farmacia estadistica; do
             if [ -e "/opt/aps-conecta/apps/$elegida" ]; then
               echo "FAIL: the release store holds $elegida, but nobody chose it" >&2; exit 1
@@ -528,16 +528,15 @@ jobs:
           done
           # #40's own half: Estadística's DEIS figures arrive only with the app — phase 16 still
           # writes its identity keys (deis_code, establishment_type, comuna_cut: config rows, not
-          # the app), but the app's own job state stays empty when nobody chose it. deis_checked_at
-          # is the app's first-contact record (RemJob's daily check writes it whether the check
-          # went well or badly); empty here is the observable of «no DEIS download» — no app, no
-          # job, no 4.9 GB window and no Base de Establecimientos.
-          chequeo="$(occ config:app:get estadistica deis_checked_at 2>/dev/null || true)"
-          [ -z "$chequeo" ] \
-            || { echo "FAIL: estadistica carries deis_checked_at='$chequeo', but nobody chose it — its DEIS job must never have run" >&2; exit 1; }
-          registro="$(occ config:app:get estadistica deis_register 2>/dev/null || true)"
-          [ -z "$registro" ] \
-            || { echo "FAIL: estadistica carries a DEIS register, but nobody chose it" >&2; exit 1; }
+          # the app), but the app's own job state stays empty when nobody chose it. The four keys
+          # are the job's whole record (RemJob's daily check writes them, well or badly): empty
+          # here is the observable of «no DEIS download» — no app, no job, no 4.9 GB window and no
+          # Base de Establecimientos.
+          for clave in deis_checked_at deis_register deis_etags deis_check_errors; do
+            valor="$(occ config:app:get estadistica "$clave" 2>/dev/null || true)"
+            [ -z "$valor" ] \
+              || { echo "FAIL: estadistica carries $clave='$valor', but nobody chose it — its DEIS job must never have run" >&2; exit 1; }
+          done
           echo "farmacia, estadistica: nunca instaladas — la elección es la puerta, y nadie las eligió (sin descarga del DEIS)"
 
 
