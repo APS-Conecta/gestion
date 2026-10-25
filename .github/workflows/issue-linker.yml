@@ -1,0 +1,93 @@
+# A merged commit that names an open issue (#NN) proves a reference, not completion — the
+# tracker still shows it open and "ready-for-agent" dispatches it again as new work (#59's
+# retro: the session existed because PR #79 carried no closing keyword). This sweep links
+# the two: for every open issue, the commits on main whose subject names it are posted as
+# ONE standing comment (edited in place, never duplicated), and a human or agent triages:
+# close it, or keep it open knowing the history. It never closes anything by itself.
+
+name: Issue linker
+
+on:
+  schedule:
+    - cron: "23 4 * * *"   # daily, off the top of the hour
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+concurrency:
+  group: issue-linker
+  cancel-in-progress: false
+
+jobs:
+  link:
+    name: link open issues to their merged commits
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Sweep
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json, re, subprocess, sys
+
+          REPO = "APS-Conecta/instalador"
+          MARK = "<!-- issue-linker -->"   # the standing comment's identity, first line
+
+          def gh(*args):
+              r = subprocess.run(["gh", *args], capture_output=True, text=True)
+              if r.returncode != 0:
+                  sys.exit(f"gh {args[:3]} failed: {r.stderr.strip()}")
+              return r.stdout
+
+          abiertos = [i["number"] for i in json.loads(
+              gh("issue", "list", "-R", REPO, "--state", "open", "--json", "number", "--limit", "1000"))]
+          if len(abiertos) >= 1000:
+              sys.exit("1000+ open issues — raise the --limit before trusting this sweep")
+          if not abiertos:
+              print("no open issues — nothing to sweep")
+              sys.exit(0)
+
+          # fork-owned commits only: everything at or after the fork's birth is this fork's
+          # own work regardless of scope; everything older is vendored upstream, whose (#NN)
+          # numbers collide with this fork's low issue numbers (#45/#83/#98 did). Merge
+          # subjects are still dropped: a merge's #NN is always a PR number, and the fork
+          # names issues in the BRANCH (feat/36-…), never as #NN in the subject
+          NACIMIENTO = "2026-10-12T18:05:26Z"   # e3048d1d, the fork's first commit
+          filas = gh("api", "--paginate",
+                     f"repos/{REPO}/commits?sha=main&since={NACIMIENTO}&per_page=100",
+                     "--jq", r'.[] | [.sha[0:8], (.commit.message | split("\n")[0])] | @tsv')
+          commits = [l.split("\t", 1) for l in filas.splitlines() if "\t" in l]
+          commits = [(sha, subj) for sha, subj in commits
+                     if not subj.startswith("Merge pull request")]
+
+          for n in sorted(abiertos):
+              pat = re.compile(rf"(?<![0-9#])#{n}(?![0-9])")   # #39, never #391 or ##39
+              tocados = [(sha, subj) for sha, subj in commits if pat.search(subj)]
+              if not tocados:
+                  continue
+              firmas = " ".join(sorted(sha for sha, _ in tocados))
+              cuerpo = (MARK + f"\n<!-- shas: {firmas} -->\n\n"
+                        "**Named by merged commits, still open — triage.**\n\n"
+                        + "\n".join(f"- `{sha}` {subj}" for sha, subj in tocados)
+                        + "\n\n_Every merged commit on `main` whose subject names this issue. The work may"
+                          " be complete — verify, then close; or keep it open knowing this history._")
+
+              previos = json.loads(gh("api", "--paginate",
+                                      f"repos/{REPO}/issues/{n}/comments?per_page=100"))
+              propia = next((c for c in previos if c["body"].lstrip().startswith(MARK)), None)
+              if propia and f"<!-- shas: {firmas} -->" in propia["body"]:
+                  print(f"#{n}: standing comment current ({len(tocados)} commits) — skipped")
+                  continue
+              if not propia:
+                  gh("api", "-X", "POST", f"repos/{REPO}/issues/{n}/comments",
+                     "-f", "body=" + cuerpo)
+                  print(f"#{n}: standing comment created ({len(tocados)} commits)")
+              else:
+                  gh("api", "-X", "PATCH", f"repos/{REPO}/issues/comments/{propia['id']}",
+                     "-f", "body=" + cuerpo)
+                  print(f"#{n}: standing comment edited ({len(tocados)} commits)")
+          print("sweep done")
+          PY
