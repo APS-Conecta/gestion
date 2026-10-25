@@ -31,9 +31,10 @@
 # race; the manifest lockstep assert stays as belt-and-braces). main is the DEFAULT for manual
 # dispatches — post-fork main IS the shipped tree (first-class bytes, theme and all), so a
 # manual dispatch builds the shipped tree without ceremony; "the unpatched mirror" mode ceased
-# to exist with the fork. Only the four BUILD jobs read build-ref; the retag job checks out
-# the default branch everywhere. The four build jobs refuse to mix trees: the manifest job
-# asserts all four resolved the same commit of build-ref.
+# to exist with the fork. Only the BUILD jobs read build-ref; the retag job checks out
+# the default branch everywhere. The build jobs refuse to mix trees: the manifest job asserts
+# every build resolved the same commit of build-ref — one list, its needs entries (#76), so a
+# build from a different commit still reds the announce, and a new build is one entry.
 #
 # IMMUTABILITY. A published tag's digests never move (D12: one distribution, one version). The retag
 # job refuses a fully-present set without force, and the builds run needs: retag so the refusal also
@@ -421,13 +422,15 @@ jobs:
   manifest:
     name: Digest manifest (the announce)
     # The builds are listed DIRECTLY, not left to transitivity: the needs context only exposes
-    # outputs of direct dependencies, so without these entries SHA_A/SHA_B/SHA_C/SHA_D/RETAG_BUILT_SHA
-    # below would resolve empty — the built-set lockstep assert would compare '' to '' and stay
-    # green for the wrong reason (B-014). retag joins them for the same reason: RETAG_SOURCE
-    # below reads needs.retag.outputs.retag-source, and without the direct edge it would resolve
-    # empty — cmd_manifest would then fall into a bare-'ours' resolution of its own (a second
-    # discovery racing the walk — exactly what D-5 forbids). No ordering change: the builds and
-    # retag are already ancestors via matrix.
+    # outputs of direct dependencies, so without these entries the lockstep assert below (which
+    # reads toJSON(needs)) and RETAG_BUILT_SHA would resolve empty — the assert would compare
+    # '' to '' and stay green for the wrong reason (B-014). That direct list IS the assert's
+    # one list (#76): scripts/lockstep.sh walks its build-* entries, so a new build is one
+    # entry here — not one more clause and variable in the check. retag joins them for the same
+    # reason: RETAG_SOURCE below reads needs.retag.outputs.retag-source, and without the direct
+    # edge it would resolve empty — cmd_manifest would then fall into a bare-'ours' resolution
+    # of its own (a second discovery racing the walk — exactly what D-5 forbids). No ordering
+    # change: the builds and retag are already ancestors via matrix.
     needs: [retag, matrix, boot-smoke, build-aio-nextcloud, build-all-in-one, build-aio-apache, build-aio-postgresql]
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -441,19 +444,15 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: The four builds must come from one tree (lockstep for the built set)
-        run: |
-          set -euo pipefail
-          echo "built from: ${SHA_A:-<empty>} ${SHA_B:-<empty>} ${SHA_C:-<empty>} ${SHA_D:-<empty>}"
-          if [ -z "$SHA_A" ] || [ "$SHA_A" != "$SHA_B" ] || [ "$SHA_A" != "$SHA_C" ] || [ "$SHA_A" != "$SHA_D" ]; then
-            echo "FAIL: the four builds checked out different commits of '$BUILD_REF' — the ref moved mid-run; re-run the pipeline" >&2
-            exit 1
-          fi
+      - name: The builds must come from one tree (lockstep for the built set)
+        # THE LIST IS needs (#76): toJSON(needs) carries every direct dependency's outputs, and
+        # scripts/lockstep.sh walks the build-* entries of the needs array above — one entry per
+        # build, no clause and no variable here (adding #45's buscador is the job plus one needs
+        # entry, nothing else). It prints each build's commit and reds with the one message when
+        # any resolved empty or different — B-014's lesson: never green for the wrong reason.
+        run: bash scripts/lockstep.sh
         env:
-          SHA_A: ${{ needs.build-aio-nextcloud.outputs.sha }}
-          SHA_B: ${{ needs.build-all-in-one.outputs.sha }}
-          SHA_C: ${{ needs.build-aio-apache.outputs.sha }}
-          SHA_D: ${{ needs.build-aio-postgresql.outputs.sha }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
           BUILD_REF: ${{ inputs.build-ref }}
       - name: Emit the publish record
         run: |

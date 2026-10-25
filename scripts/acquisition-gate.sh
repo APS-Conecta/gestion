@@ -44,6 +44,11 @@
 #         UPDATE_NEXTCLOUD_APPS nowhere — apps move only when the operator decides
 #         (`aps-conecta actualizar`). (3) Provisioning's store rows install through the same
 #         scoped open (occ_store in lib.sh), never a bare `occ app:install`.
+#   260 — the pgvector hash pin (moved from brand-gate's row 260 by #73): the database image's
+#         one build-time download — pgvector's release tarball — is checksum-gated in its own
+#         Dockerfile (PGVECTOR_SHA256 + sha256sum -c), the bake's discipline applied to a
+#         channel this tree CAN see; what the database must DO (roles, grants, extensions,
+#         wiring) stayed with brand-gate's row 260.
 #
 # ROUTED (this repo cannot see these channels — recorded so the ledger stays complete, the
 # slice-4 curl→030 precedent): own and fork apps' bytes live in their own repos' signed
@@ -160,6 +165,22 @@ theme_only_image() {  # the image's own posture, post-bake (#42): the theme ride
 }
 
 row 030 "the suite's skeleton posture is baked — NC_skeletondirectory="" ENV beside 020's store-off (the wizard's admin is created at install time, before any phase can write config; the NC_ channel beats config.php)" \
+
+pgvector_hash_pinned() {  # 260: the database image's one build-time download is checked against
+  # its pinned hash — the bake's checksum discipline, moved from brand-gate's row 260 by #73:
+  # a download channel's integrity is an acquisition concern; what the database must DO
+  # stayed with the brand gate's row.
+  local f="$TREE/Containers/postgresql/Dockerfile"
+  [ -f "$f" ] || { echo "  no such file: $f — re-point this row" >&2; return 1; }
+  grep -qE '^ENV PGVECTOR_SHA256=[0-9a-f]{64}$' "$f" \
+    && grep -qE 'echo "\$PGVECTOR_SHA256[^|]*\| *sha256sum -c' "$f" \
+    || { echo "  the database Dockerfile does not check the pgvector download against the pinned sha256" >&2; return 1; }
+}
+
+row 260 "the pgvector download is hash-pinned — Containers/postgresql/Dockerfile pins PGVECTOR_SHA256 and its build RUN pipes that pin over the downloaded tarball into sha256sum -c: the database image's one build-time fetch, checksum-gated like the bake's channel (the pin moved from brand-gate's row 260, #73)" \
+  pgvector_hash_pinned
+
+row 030 "the suite's skeleton posture is baked — NC_skeletondirectory="" ENV beside 020's store-off (the wizard's admin is created at install time, before any phase can write config; the NC_ channel is read before config.php)" \
   grep -q 'NC_skeletondirectory=""' "$TREE/Containers/nextcloud/Dockerfile"
 
 row 030 "the image carries only the theme — zero COPY lines into custom_apps, the theme from the tag tree's own themes/apsconecta, and the ENV_PREFIX wiring grep present (a regeneration that bakes an app back reds here; #42)" \
