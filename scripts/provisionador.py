@@ -5157,26 +5157,29 @@ def selftest():
                 with open(os.path.join(AIO_STATE, "opciones"), "w", encoding="utf-8") as fh:
                     fh.write("talk=1 grabacion=0 farmacia=1\n")
                 con_apps_plan = [n for n, _q in plan_clinico("113314", [], [], [])["componentes"]]
+                with open(os.path.join(AIO_STATE, "opciones"), "w", encoding="utf-8") as fh:
+                    fh.write("talk=1 grabacion=0 estadistica=1\n")
+                con_estadistica_plan = [n for n, _q in plan_clinico("113314", [], [], [])["componentes"]]
             finally:
                 os.remove(os.path.join(AIO_STATE, "opciones"))
-            check("revisión: Talk is a component only when step 6 gave the suite Talk, and an optional app only when it was chosen (#39) — phase 12 installs nothing else (R29)",
+            check("revisión: Talk is a component only when step 6 gave the suite Talk, and an optional app only when it was chosen (#39, #40) — phase 12 installs nothing else (R29)",
                   "Talk" not in sin_talk_plan and "Talk" in con_talk_plan
                   and "Farmacia" not in sin_talk_plan and "Farmacia" not in con_talk_plan
-                  and "Farmacia" in con_apps_plan
+                  and "Farmacia" in con_apps_plan and "Estadística" not in con_apps_plan
+                  and "Estadística" not in sin_talk_plan and "Estadística" in con_estadistica_plan
                   and len(con_talk_plan) == len(COMPONENTES) - len(OPCIONALES) == len(sin_talk_plan) + 1
-                  and len(con_apps_plan) == len(COMPONENTES) - len(OPCIONALES) + 1)
+                  and len(con_apps_plan) == len(COMPONENTES) - len(OPCIONALES) + 1
+                  and len(con_estadistica_plan) == len(COMPONENTES) - len(OPCIONALES) + 1)
             with open(HOST_CLI, encoding="utf-8") as fh:
                 aio_set = re.search(r'^AIO_SET="([^"]*)"', fh.read(), re.M).group(1).split()
             filas = apps_aps()
             fila_farmacia = next(a for a in SUITE_APPS if a["id"] == "farmacia")
-            check("suite: the APS apps table lists the manifest's named own and fork apps that are NOT optional, by name — the baked one with its VENDOR version, the release ones (Oficina since #36) with what the lock records or their promise (#33–#36); the optional row is the checkbox, not a table row (#39); the containers are the host's set plus Nextcloud (a12)",
-                  [f[0] for f in filas] == ["Inicio", "Oficina", "Epidemiología", "Estadística", "Territorio"]
-                  and all(re.fullmatch(r"\d+\.\d+\.\d+", f[1]) for f in filas[3:4])
-                  and filas[0][1] == "según su release"
-                  and filas[1][1] == "según su release"
-                  and filas[2][1] == "según su release"
-                  and filas[4][1] == "según su release"
-                  and OPCIONALES == (("farmacia", "Farmacia", fila_farmacia["summary"], False),)
+            fila_estadistica = next(a for a in SUITE_APPS if a["id"] == "estadistica")
+            check("suite: the APS apps table lists the manifest's named own and fork apps that are NOT optional, by name — since #40 every one of them is a release row, so each cell says what the lock records or its promise (#33–#36, #40); the optional rows are the checkboxes, not table rows (#39); the containers are the host's set plus Nextcloud (a12)",
+                  [f[0] for f in filas] == ["Inicio", "Oficina", "Epidemiología", "Territorio"]
+                  and all(v == "según su release" for _n, v, _s in filas)
+                  and OPCIONALES == (("estadistica", "Estadística", fila_estadistica["summary"], False),
+                                     ("farmacia", "Farmacia", fila_farmacia["summary"], False))
 
                   and {c for c, _n in CONTENEDORES_SUITE} == set(aio_set) | {"aps-conecta-nextcloud"})
             # an unnamed fork app (desktop_workspace as #37 makes it) — and intravox
@@ -5192,11 +5195,10 @@ def selftest():
             except Exception as e:   # the crash IS the failure this check reports
                 filas = [[f"{type(e).__name__}: {e}", "", ""]]
             check("suite: step 6 lists only the own and fork apps that carry a name and are not optional, in manifest order — an unnamed fork app is left out, no error (a12, #64)",
-                  [f[0] for f in filas] == ["Oficina", "Epidemiología", "Estadística", "Territorio"]
-                  and all(re.fullmatch(r"\d+\.\d+\.\d+", f[1]) for f in filas[2:3])
+                  [f[0] for f in filas] == ["Oficina", "Epidemiología", "Territorio"]
                   and filas[0][1] == "según su release"
                   and filas[1][1] == "según su release"
-                  and filas[3][1] == "según su release")  # intravox left with its name (#35)
+                  and filas[2][1] == "según su release")  # intravox left with its name (#35)
 
             with open(os.environ["APS_APPS_LOCK"], "w", encoding="utf-8") as fh:
                 json.dump({"nextcloud": "34.0.4", "apps": {
@@ -5227,8 +5229,8 @@ def selftest():
             with open(falso, "w", encoding="utf-8") as fh:
                 fh.write('''#!/usr/bin/env bash
 printf '%s\\n' "$*" > "$AIO_STATE/argv"
-d=""; t=0; g=0; f=0
-while [ $# -gt 0 ]; do case "$1" in --dominio) d="$2" ;; --talk) t=1 ;; --grabacion) t=1; g=1 ;; --app) [ "$2" = farmacia ] && f=1; shift ;; esac; shift; done
+d=""; t=0; g=0; f=0; e=0
+while [ $# -gt 0 ]; do case "$1" in --dominio) d="$2" ;; --talk) t=1 ;; --grabacion) t=1; g=1 ;; --app) case "$2" in farmacia) f=1 ;; estadistica) e=1 ;; esac; shift ;; esac; shift; done
 sleep 0.3
 echo "✓ La suite ya está iniciada"
 case "$d" in
@@ -5246,7 +5248,7 @@ echo "✓ Zona horaria: America/Santiago"
 echo "✓ Opciones: oficina incluida; Talk activado; grabación apagada; pizarra e imágenes apagadas; sin aplicaciones opcionales"
 echo "✓ Respaldo diario a las 04:00 hora de Santiago (07:00 UTC), en /srv/aps-conecta/respaldos, con /opt/aps-conecta"
 printf '%s\\n' "$d" > "$AIO_STATE/dominio"
-printf 'talk=%s grabacion=%s farmacia=%s\\n' "$t" "$g" "$f" > "$AIO_STATE/opciones"
+printf 'talk=%s grabacion=%s farmacia=%s estadistica=%s\\n' "$t" "$g" "$f" "$e" > "$AIO_STATE/opciones"
 echo "✓ Asistente listo: falta «Iniciar» en el asistente"
 ''')
             verdadero_cmd = SUITE_CMD
@@ -5280,6 +5282,8 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                                                               "apps": {"farmacia": False}})
                     *_x, con_apps, argv_apps = preparar({"dominio": "con-opcion.example",
                                                           "apps": {"farmacia": True}})
+                    *_x, con_estadistica, argv_estadistica = preparar({"dominio": "con-opcion.example",
+                                                                        "apps": {"estadistica": True}})
                     mal_apps = [call("POST", "/api/suite", {"dominio": "gestion.clinica.example", "apps": a})
                                 for a in ("farmacia", {"totem": True}, {"farmacia": "si"})]
                     *_x, por_ip, argv_ip = preparar({"dominio": "10.0.0.5"})   # last: it leaves its own record
@@ -5305,17 +5309,21 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                   and lista["preparacion"]["hechos"] == [t for _p, t in PASOS_SUITE]
                   and lista["frase"] == "frase uno dos" and lista["dominio"] == "gestion.clinica.example"
                   and lista["preparada"] is True
-                  and lista["opciones"] == {"talk": True, "grabacion": False, "apps": {"farmacia": False}}
-                  and lista["opcionales"] == [["farmacia", "Farmacia", OPCIONALES[0][2], False, False]]
+                  and lista["opciones"] == {"talk": True, "grabacion": False, "apps": {"farmacia": False, "estadistica": False}}
+                  and lista["opcionales"] == [["estadistica", "Estadística", OPCIONALES[0][2], False, False],
+                                               ["farmacia", "Farmacia", OPCIONALES[1][2], False, False]]
                   and "--sin-validar-dominio" in argv_txt and "--respaldo /srv/aps-conecta/respaldos" in argv_txt
                   and "--talk" in argv_txt and "--grabacion" not in argv_txt and "--app" not in argv_txt
                   and "--sin-validar-dominio" not in argv_rechazo
                   and "--talk" not in argv_chico and "--talk" in argv_grande and "--grabacion" in argv_grande)
-            check("suite: the optional apps ride the same post (#39) — an unchecked box sends no flag, a checked one sends --app and the record answers it; anything but the offered apps, or not a boolean, is refused 400 naming it",
+            check("suite: the optional apps ride the same post (#39, #40) — an unchecked box sends no flag, a checked one sends --app and the record answers it; anything but the offered apps, or not a boolean, is refused 400 naming it",
                   sin_apps["preparacion"]["estado"] == "lista"
-                  and sin_apps["opciones"]["apps"] == {"farmacia": False} and "--app" not in argv_sin_apps
-                  and con_apps["opciones"]["apps"] == {"farmacia": True}
-                  and "--app farmacia" in argv_apps and con_apps["opcionales"][0][4] is True
+                  and sin_apps["opciones"]["apps"] == {"farmacia": False, "estadistica": False} and "--app" not in argv_sin_apps
+                  and con_apps["opciones"]["apps"] == {"farmacia": True, "estadistica": False}
+                  and "--app farmacia" in argv_apps and "--app estadistica" not in argv_apps and con_apps["opcionales"][1][4] is True
+                  and con_estadistica["opciones"]["apps"] == {"farmacia": False, "estadistica": True}
+                  and "--app estadistica" in argv_estadistica and "--app farmacia" not in argv_estadistica
+                  and con_estadistica["opcionales"][0][4] is True
                   and [m[0] for m in mal_apps] == [400, 400, 400]
                   and "no figura: totem" in mal_apps[1][1]["error"]
                   and all(s in __import__("inspect").getsource(screen_contenedores)   # the card itself

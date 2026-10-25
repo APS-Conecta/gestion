@@ -182,9 +182,11 @@ def selftest():
         check("the suite manifest validates", True)
         check("every container the manifest lists is defined in php/containers.json",
               not missing_containers(rows))
-        check("the suite manifest's optional rows are exactly the tracer #39 names: farmacia off "
-              "by default, from its release, with a Spanish name and summary",
-              opcionales(rows) == [("farmacia", "off", "Farmacia")]
+        check("the suite manifest's optional rows are exactly estadistica (#40) and farmacia (#39), "
+              "in the manifest's own order: both off by default, from their releases, with Spanish "
+              "names and summaries",
+              opcionales(rows) == [("estadistica", "off", "Estadística"), ("farmacia", "off", "Farmacia")]
+              and next(r for r in rows if r["id"] == "estadistica")["release"] is True
               and next(r for r in rows if r["id"] == "farmacia")["release"] is True)
     except (OSError, ValueError) as e:
         check(f"the suite manifest validates ({e})", False)
