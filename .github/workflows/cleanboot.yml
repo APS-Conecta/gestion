@@ -768,6 +768,125 @@ jobs:
           cd /opt/aps-conecta/instalador
           bash scripts/smoke.sh
           bash scripts/office-smoke.sh
+      # #46: the update command, three arms. --revisar first: the plan names current and
+      # candidate per app and writes NOTHING (lock bytes, stored tarballs, and the backup
+      # archive list all unchanged — a review is not a side effect). Then the real update from
+      # an OLDER lock: the lock's territorio row planted one release behind, the run backs up
+      # (a new archive), fetches, applies from the new lock, moves the lock, revalidates green
+      # and leaves the store closed. And the bad signature: a local proxy serves one tampered
+      # SHA256SUMS.minisig for territorio's newest release and relays everything else to the
+      # real GitHub — the plan verifies candidates, so the run refuses before anything moves,
+      # naming the app and the restore command.
+      - name: actualizar --revisar prints the plan and writes nothing (#46)
+        run: |
+          set -euo pipefail
+          lock=/opt/aps-conecta/apps.lock.json
+          antes="$(sudo sha256sum "$lock" | cut -d' ' -f1)"
+          paquetes="$(sudo find /opt/aps-conecta/apps -name '*.tar.gz' -printf '%p %T@\n' | sort)"
+          arc="$(sudo docker exec nextcloud-aio-mastercontainer cat /mnt/docker-aio-config/data/backup_archives.list 2>/dev/null || true)"
+          rc=0; out="$(sudo bash /opt/aps-conecta/instalador/host/aps-conecta actualizar --revisar 2>&1)" || rc=$?
+          printf '%s\n' "$out"
+          [ "$rc" -eq 0 ] || { echo "FAIL: actualizar --revisar failed" >&2; exit 1; }
+          case "$out" in
+            *"Plan de actualización"*"modo --revisar: nada se escribe ni se cambia"*) ;;
+            *) echo "FAIL: no plan or no revisar line" >&2; exit 1 ;;
+          esac
+          printf '%s\n' "$out" | grep -Eq 'territorio +v[0-9.]+( → v[0-9.]+|  \(sin cambios\))' \
+            || { echo "FAIL: the plan does not name territorio's current and candidate" >&2; exit 1; }
+          [ "$(sudo sha256sum "$lock" | cut -d' ' -f1)" = "$antes" ] \
+            || { echo "FAIL: --revisar rewrote the lock" >&2; exit 1; }
+          [ "$(sudo find /opt/aps-conecta/apps -name '*.tar.gz' -printf '%p %T@\n' | sort)" = "$paquetes" ] \
+            || { echo "FAIL: --revisar touched the stored releases" >&2; exit 1; }
+          [ "$(sudo docker exec nextcloud-aio-mastercontainer cat /mnt/docker-aio-config/data/backup_archives.list 2>/dev/null || true)" = "$arc" ] \
+            || { echo "FAIL: --revisar took a backup" >&2; exit 1; }
+          echo "--revisar: the plan on the table, nothing moved"
+      - name: actualizar from an older lock — backup archive, lock moved, revalidate green, store closed (#46)
+        run: |
+          set -euo pipefail
+          cd /opt/aps-conecta/instalador && source scripts/env.sh
+          # the older lock: territorio one release behind the newest — a floor the run must climb
+          # off of. The planted tag needs no real release: the fetch resolves the newest from
+          # the app's own repo, and the lock's row is only the floor and the "current" column.
+          vieja="$(sudo python3 -c '
+          import json
+          p = "/opt/aps-conecta/apps.lock.json"
+          d = json.load(open(p))
+          a, b, c = (int(x) for x in d["apps"]["territorio"]["tag"][1:].split("."))
+          prev = f"v{a}.{b - 1}.0" if b > 0 else f"v{a - 1}.0.0"
+          d["apps"]["territorio"]["tag"] = prev
+          d["apps"]["territorio"]["version"] = prev[1:]
+          json.dump(d, open(p, "w"), indent=2, sort_keys=True)
+          print(prev)')"
+          echo "planted lock: territorio at $vieja"
+          arc="$(sudo docker exec nextcloud-aio-mastercontainer cat /mnt/docker-aio-config/data/backup_archives.list | head -1)"
+          rc=0; out="$(sudo bash /opt/aps-conecta/instalador/host/aps-conecta actualizar 2>&1)" || rc=$?
+          printf '%s\n' "$out" | tail -40
+          [ "$rc" -eq 0 ] || { echo "FAIL: actualizar failed on a normal update" >&2; exit 1; }
+          case "$out" in *"✓ Respaldo completo creado"*) ;; *) echo "FAIL: no backup was taken" >&2; exit 1 ;; esac
+          [ "$(sudo docker exec nextcloud-aio-mastercontainer cat /mnt/docker-aio-config/data/backup_archives.list | head -1)" != "$arc" ] \
+            || { echo "FAIL: no new backup archive" >&2; exit 1; }
+          nueva="$(sudo python3 -c 'import json; print(json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["territorio"]["tag"])')"
+          [ "$nueva" != "$vieja" ] || { echo "FAIL: the lock did not move off $vieja" >&2; exit 1; }
+          got="$(occ config:app:get territorio installed_version)"
+          [ "$got" = "${nueva#v}" ] \
+            || { echo "FAIL: the instance runs territorio $got, the lock names ${nueva#v}" >&2; exit 1; }
+          case "$out" in *"REVALIDACIÓN: PASS"*) ;; *) echo "FAIL: the run did not revalidate green" >&2; exit 1 ;; esac
+          [ "$(occ config:system:get appstoreenabled 2>/dev/null || true)" = "0" ] \
+            || { echo "FAIL: the store is open after the run" >&2; exit 1; }
+          [ ! -e /opt/aps-conecta/apps.lock.json.next ] \
+            || { echo "FAIL: the new lock was left beside the real one" >&2; exit 1; }
+          echo "actualizar: the lock moved to $nueva, the instance runs it, the store is closed"
+          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+      - name: A bad signature changes nothing — the failing app and the restore command named (#46)
+        run: |
+          set -euo pipefail
+          lock=/opt/aps-conecta/apps.lock.json
+          cat > "$RUNNER_TEMP/tamper-proxy.py" <<'PY'
+          # one tampered signature, everything else relayed: the plan verifies candidates, so a
+          # release that does not verify against apps.pub refuses the run before anything moves
+          import http.server
+          class P(http.server.BaseHTTPRequestHandler):
+              def _a(self, head):
+                  if "APS-Conecta/territorio/releases/download/" in self.path \
+                          and self.path.endswith("SHA256SUMS.minisig"):
+                      body = b"not a signature APS Conecta ever made (tamper fixture)\n"
+                      self.send_response(200)
+                      self.send_header("Content-Length", str(len(body)))
+                      self.end_headers()
+                      if not head:
+                          self.wfile.write(body)
+                      return
+                  self.send_response(302)
+                  self.send_header("Location", "https://github.com" + self.path)
+                  self.send_header("Content-Length", "0")
+                  self.end_headers()
+              def do_GET(self): self._a(False)
+              def do_HEAD(self): self._a(True)
+              def log_message(self, *a): pass
+          http.server.ThreadingHTTPServer(("127.0.0.1", 8642), P).serve_forever()
+          PY
+          python3 "$RUNNER_TEMP/tamper-proxy.py" & proxypid=$!
+          trap 'kill $proxypid 2>/dev/null || true' EXIT
+          sleep 1
+          antes="$(sudo sha256sum "$lock" | cut -d' ' -f1)"
+          arc="$(sudo docker exec nextcloud-aio-mastercontainer cat /mnt/docker-aio-config/data/backup_archives.list | head -1)"
+          rc=0; out="$(sudo APS_APPS_GH=http://127.0.0.1:8642 APS_APPS_API=http://127.0.0.1:8642 \
+            bash /opt/aps-conecta/instalador/host/aps-conecta actualizar 2>&1)" || rc=$?
+          printf '%s\n' "$out" | tail -10
+          [ "$rc" -ne 0 ] || { echo "FAIL: a tampered signature let the update through" >&2; exit 1; }
+          case "$out" in
+            *"FATAL: territorio"*"apps.pub"*"Restaurar la copia de seguridad seleccionada"*) ;;
+            *) echo "FAIL: the refusal does not name the app, apps.pub and the restore command" >&2; exit 1 ;;
+          esac
+          [ "$(sudo sha256sum "$lock" | cut -d' ' -f1)" = "$antes" ] \
+            || { echo "FAIL: the refused run moved the lock" >&2; exit 1; }
+          cd /opt/aps-conecta/instalador && source scripts/env.sh
+          [ "$(occ config:app:get territorio installed_version)" = "$(sudo python3 -c 'import json; print(json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["territorio"]["version"])')" ] \
+            || { echo "FAIL: the refused run applied territorio anyway" >&2; exit 1; }
+          [ "$(sudo docker exec nextcloud-aio-mastercontainer cat /mnt/docker-aio-config/data/backup_archives.list | head -1)" = "$arc" ] \
+            || { echo "FAIL: the refused run took a backup" >&2; exit 1; }
+          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+          echo "bad signature: refused at the plan, nothing applied, the lock untouched"
       # a10 on the real weekly path, last (it re-runs the seed as the timer would): a hand-added group
       # is drift — the unit fails, «aps-conecta estado» names the item and its fix without sudo, and the
       # admin's notifications carry it; the group is removed afterwards

@@ -13,6 +13,28 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Added
 
+- **`aps-conecta actualizar`, the applications update (#46, ADR-0017).** The one path that
+  moves the lock deliberately. It refuses to run unless the suite is up, the lock exists and
+  the backup is configured; prints the plan — current and candidate per application, `--revisar`
+  printing it and writing nothing (asserted in clean-boot on the lock bytes, the stored tarballs
+  and the backup archive list); takes a **full backup through the wizard's own API** and stops
+  unless it succeeds; restarts the suite with the wizard's own no-pull flag (`bypass_container_update`
+  — the update moves apps, never images); fetches and verifies the newest compatible releases into a
+  NEW lock beside the old one (the resolver gains `plan` and `actualizar`: the lock as a floor,
+  never below it, a pin never moving, an unchosen optional row carried over — never erased);
+  applies them through phase 12 itself reading the new lock, with store applications updated by
+  one scoped `occ app:update` each and the store asserted closed again after the run; moves the
+  lock only when everything succeeded; and revalidates. A failure names the application and the
+  restore command (the wizard's «Restaurar la copia de seguridad seleccionada») and changes
+  nothing. The major-bump guard rides the resolver's floor rule: when nothing at-or-above the
+  installed release is compatible with the running Nextcloud major, the one refusal #46 owes —
+  an app already at its newest compatible release resolves to itself («sin cambios», never a
+  refusal). Clean-boot proves all three arms against the real hub: a normal update from an older
+  lock (a new backup archive, the lock moved, the instance running what it names, revalidate
+  green, the store closed), and a bad signature through a local tamper proxy — one tampered
+  `SHA256SUMS.minisig`, everything else relayed to the real GitHub — refusing before anything
+  moves. Buscador stays pinned to the suite release and never moves here.
+
 - **Estadística as an optional app (#40, ADR-0017).** The second optional row: its manifest
   entry flips to `optional: "off"` + `release: true` and it arrives from its own signed
   release (APS-Conecta/estadistica `v0.2.0`, the app repo's first: shared workflow, untracked

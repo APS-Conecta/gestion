@@ -168,6 +168,12 @@ una falle — el éxito es el conjunto. Si el panel de registros del asistente s
 después de una actualización, un refresco fuerte del navegador (Ctrl+Shift+R) lo arregla: es un
 archivo en caché que PHP fija y el fork no toca.
 
+Las **aplicaciones** se actualizan aparte, cuando usted lo decide, con
+`sudo aps-conecta actualizar`: primero muestra el plan (con `--revisar` solo lo muestra y no
+cambia nada), respalda completo antes de tocar algo, aplica una aplicación a la vez y mueve el
+candado — el registro de versiones — solo si todo resultó. Si algo falla, nombra la aplicación
+que falló y el comando para restaurar. Véalo antes con `sudo aps-conecta actualizar --revisar`.
+
 Una instalación de la v0.3.0 o anterior no se actualiza a esta versión: los contenedores de la suite
 cambiaron de nombre (`aps-conecta-*`) y se reinstala (`INSTALLER.md` §12).
 
