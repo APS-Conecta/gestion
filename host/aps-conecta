@@ -3302,13 +3302,16 @@ case "\$1 \$2" in
 esac
 EOF
   chmod +x "$tshim/docker"
+  # CI's runner is uid 1001 and this box runs as root: both worlds must answer the arms, so
+  # every arm fakes the id the install arms' way — a function, hash-proof — instead of hoping
+  # the runner's own uid happens to be root.
   act46() {  # [--revisar] — cmd_actualizar with the arm's whole world; the caller's $( ) scopes it
     ROOT="$act/repo" APS_HOME="$act/home" APS_APPS_LOCK="${ACT_LOCK:-$act/home/apps.lock.json}" \
       AIO_STATE="$act/aio" AIO_URL="https://127.0.0.1:9999" AIO_POLL="0.05" ACT46="$act" \
       cmd_actualizar "$@"
   }
 
-  out="$( act46 --revisar 2>&1 )"; arc=$?
+  out="$( id() { echo 0; }; act46 --revisar 2>&1 )"; arc=$?
   check "actualizar --revisar: the plan — current and candidate per app, the move, the stay, the unchosen optional, the store row; nothing else" \
     '[ "$arc" -eq 0 ] && printf "%s" "$out" | grep -qF "Plan de actualización — Nextcloud 34.0.4" \
       && printf "%s" "$out" | grep -E -q "^  territorio +v0\.79\.0 → v0\.80\.0$" \
@@ -3322,7 +3325,7 @@ EOF
       && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes" && [ ! -e "$act/home/apps.lock.json.next" ]'
   : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"
   touch "$act/plan-mala"
-  out="$( act46 --revisar 2>&1 )"; arc=$?
+  out="$( id() { echo 0; }; act46 --revisar 2>&1 )"; arc=$?
   check "actualizar --revisar: a bad signature refuses the plan naming the app, apps.pub and the restore command — nothing moved" \
     '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "✗ FATAL: territorio: la firma de SHA256SUMS no verifica contra apps.pub" \
       && printf "%s" "$out" | grep -qF "Restaurar la copia de seguridad seleccionada" \
@@ -3334,14 +3337,14 @@ EOF
   check "actualizar: without root it refuses before anything else" \
     '[ "$arc" -eq 1 ] && case "$out" in *"✗ actualizar necesita permisos de administrador"*"sudo aps-conecta actualizar"*) ;; *) false;; esac \
       && [ ! -s "$act/resolver.log" ]'
-  out="$( ACT_LOCK="$act/home/ninguno.json" act46 --revisar 2>&1 )"; arc=$?
+  out="$( id() { echo 0; }; ACT_LOCK="$act/home/ninguno.json" act46 --revisar 2>&1 )"; arc=$?
   check "actualizar: no lock is a refusal naming the record and its writer" \
     '[ "$arc" -eq 1 ] && case "$out" in *"✗ no hay candado de aplicaciones"*"sudo aps-conecta provision"*) ;; *) false;; esac \
       && [ ! -s "$act/resolver.log" ]'
-  out="$( touch "$act/suite-caida"; act46 --revisar 2>&1 )"; arc=$?; rm -f "$act/suite-caida"
+  out="$( id() { echo 0; }; touch "$act/suite-caida"; act46 --revisar 2>&1 )"; arc=$?; rm -f "$act/suite-caida"
   check "actualizar: a suite not running refuses naming the six" \
     '[ "$arc" -eq 1 ] && case "$out" in *"✗ la suite no está en marcha (0 de 6 contenedores)"*"aps-conecta preflight"*) ;; *) false;; esac'
-  out="$( touch "$act/sin-respaldo"; act46 --revisar 2>&1 )"; arc=$?; rm -f "$act/sin-respaldo"
+  out="$( id() { echo 0; }; touch "$act/sin-respaldo"; act46 --revisar 2>&1 )"; arc=$?; rm -f "$act/sin-respaldo"
   check "actualizar: an unconfigured backup refuses — the run backs up first, so this is a precondition, never a surprise" \
     '[ "$arc" -eq 1 ] && case "$out" in *"✗ el respaldo de la instancia no está configurado"*"asistente-aio --respaldo"*) ;; *) false;; esac'
 
@@ -3349,7 +3352,7 @@ EOF
   # provisioning tree applying from the NEW lock, the scoped store update, the promote, the
   # revalidate sweep
   : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"
-  out="$( act46 2>&1 )"; arc=$?
+  out="$( id() { echo 0; }; act46 2>&1 )"; arc=$?
   check "actualizar: the whole run in order — plan, preconditions, backup, restart, fetch, apply from the new lock, scoped store update, store closed, promote, revalidate" \
     '[ "$arc" -eq 0 ] && printf "%s" "$out" | grep -qF "Plan de actualización — Nextcloud 34.0.4" \
       && printf "%s" "$out" | grep -qF "✓ Respaldo completo creado (nextcloud-aio-2026-10-25-18-00)" \
@@ -3377,7 +3380,7 @@ EOF
 
   # a failed backup applies nothing: no fetch, no lock move
   : > "$act/aio.log"; : > "$act/resolver.log"; cp "$act/lock.bytes" "$act/home/apps.lock.json"
-  out="$( BORG_EXIT=1 act46 2>&1 )"; arc=$?
+  out="$( id() { echo 0; }; BORG_EXIT=1 act46 2>&1 )"; arc=$?
   check "actualizar: a failed backup stops the run before anything is fetched or applied — the borg code named, the remedy docker logs" \
     '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "✗ el respaldo falló (contenedor de respaldo: código 1) — nada se aplicó, el candado no cambió" \
       && printf "%s" "$out" | grep -qF "docker logs aps-conecta-borgbackup" \
@@ -3386,7 +3389,7 @@ EOF
 
   # a failed apply: the app named, the lock unchanged, the new lock cleaned, the restore command
   : > "$act/aio.log"; : > "$act/resolver.log"
-  out="$( act_aplicar() { ACT_FALLA="territorio falló al aplicarse — nada más se aplicó, el candado no cambió"; return 1; }; act46 2>&1 )"; arc=$?
+  out="$( id() { echo 0; }; act_aplicar() { ACT_FALLA="territorio falló al aplicarse — nada más se aplicó, el candado no cambió"; return 1; }; act46 2>&1 )"; arc=$?
   check "actualizar: a failed apply names the app and the restore command, and moves neither lock" \
     '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "✗ territorio falló al aplicarse — nada más se aplicó, el candado no cambió" \
       && printf "%s" "$out" | grep -qF "→ para volver al estado anterior: el asistente de la suite (puerto 8080 de este servidor) → «Restaurar la copia de seguridad seleccionada»" \
