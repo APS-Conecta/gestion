@@ -57,7 +57,7 @@ check bash -c '
 # spelling. Position is the contract, and it is exact in both directions:
 #   - the sourcing line itself expands BEFORE env.sh runs;
 #   - lines before the first source still see the caller's cwd — the pre-computed HERE idiom
-#     (uninstall.sh:17, seed.sh:8) is absolute by the time env.sh moves, and usuarios.sh:36's
+#     (seed.sh:8) is absolute by the time env.sh moves, and usuarios.sh:36's
 #     own cd is pre-source by construction;
 #   - everything after the first source line must not self-locate by dirname. $BASH_SOURCE
 #     rides the same rule: launched relatively, it is exactly as relative as $0.
@@ -398,14 +398,12 @@ scripts/aio-testbed.sh
 scripts/brand-gate.sh
 scripts/cleanboot-site.sh
 scripts/comuna-package.sh
-scripts/db-dump.sh
 scripts/deis.py
 scripts/divergence.sh
 scripts/env-init.sh
 scripts/env.sh
 scripts/install.sh
 scripts/lockup.py
-scripts/migrate-to-aio.sh
 scripts/office-smoke.sh
 scripts/package-release.sh
 scripts/provisionador.py
@@ -414,7 +412,6 @@ scripts/retag.sh
 scripts/seed-idempotent.sh
 scripts/smoke.sh
 scripts/test.sh
-scripts/uninstall.sh
 scripts/validate.sh
 scripts/wait-ready.sh
 '
@@ -1553,25 +1550,6 @@ CASES
 }
 check cleanboot_db_cases
 
-# --- the dump + uninstall detectors red-test themselves (docker daemon, no stack) -------------
-if docker info >/dev/null 2>&1; then
-  check bash scripts/db-dump.sh --self-test
-  check bash scripts/uninstall.sh --self-test
-  # ... and it leaves nothing of its own behind. It fabricates a file under themes/apsconecta/core/css/
-  # and must not leave the EMPTY directories it made for that. Run from a scratch tree: no residue
-  # where there was none, and a themes/ that was there is left as it was.
-  check bash -c '
-    repo=$PWD; tmp=$(mktemp -d); trap "rm -rf $tmp" EXIT
-    mkdir "$tmp/a" "$tmp/b"; mkdir "$tmp/a/sites" "$tmp/b/sites"
-    mkdir -p "$tmp/b/themes/apsconecta/core/css"; echo css > "$tmp/b/themes/apsconecta/core/css/site.css"
-    ( cd "$tmp/a" && bash "$repo/scripts/uninstall.sh" --self-test ) >/dev/null 2>&1 || exit 1
-    ( cd "$tmp/b" && bash "$repo/scripts/uninstall.sh" --self-test ) >/dev/null 2>&1 || exit 1
-    [ ! -e "$tmp/a/themes" ] \
-      && [ "$(cat "$tmp/b/themes/apsconecta/core/css/site.css")" = css ] \
-      && [ ! -e "$tmp/b/themes/apsconecta/core/css/selftest-site.css" ]'
-else
-  echo "  skipped: dump/uninstall self-tests (no docker daemon)"
-fi
 
 # --- office-smoke's DS pairing pattern: extracted from its source, proven both directions -------
 # (the LC_ALL precedent — where a static gate cannot observe the behaviour, assert the fix's
@@ -1619,7 +1597,7 @@ if missing("<a id=\"3-preflight\"></a>\n## 2. Preflight\n", ["3-preflight"]): pr
 print("ok")'
 
 # --- gate: the install by IP's CA guide (R22) — one walkthrough, pointed at where it is -------------
-# The console's last lines and step 7 send staff to GUIA §11; the English twin is INSTALLER §14. The
+# The console's last lines and step 7 send staff to GUIA §10; the English twin is INSTALLER §13. The
 # pointers name the headings that hold the guide, and the two sections carry the same commands, byte
 # for byte, and as many bullets — the one walkthrough in two languages. Same validator on drifted pairs.
 check python3 -c '
@@ -1634,11 +1612,11 @@ def blocks(text):
 def twins(en, es):
     return (en is not None and es is not None and blocks(en) and blocks(en) == blocks(es)
             and len(re.findall(r"^- \*\*", en, re.M)) == len(re.findall(r"^- \*\*", es, re.M)))
-en = section(open("aps/INSTALLER.md", encoding="utf-8").read(), "\n## 14. Without a domain: this server\x27s IP\n")
-es = section(open("aps/GUIA-CLINICA.md", encoding="utf-8").read(), "\n## 11. Sin dominio: la dirección IP del servidor\n")
-if not twins(en, es): print("INSTALLER §14 and GUIA §11 are missing or carry different commands"); sys.exit(1)
-if "aps/GUIA-CLINICA.md §11" not in open("host/aps-conecta", encoding="utf-8").read(): print("the console does not point at GUIA §11"); sys.exit(1)
-if "(guía, §11)" not in open("scripts/provisionador.py", encoding="utf-8").read(): print("step 7 does not point at GUIA §11"); sys.exit(1)
+en = section(open("aps/INSTALLER.md", encoding="utf-8").read(), "\n## 13. Without a domain: this server\x27s IP\n")
+es = section(open("aps/GUIA-CLINICA.md", encoding="utf-8").read(), "\n## 10. Sin dominio: la dirección IP del servidor\n")
+if not twins(en, es): print("INSTALLER §13 and GUIA §10 are missing or carry different commands"); sys.exit(1)
+if "aps/GUIA-CLINICA.md §10" not in open("host/aps-conecta", encoding="utf-8").read(): print("the console does not point at GUIA §10"); sys.exit(1)
+if "(guía, §10)" not in open("scripts/provisionador.py", encoding="utf-8").read(): print("step 7 does not point at GUIA §10"); sys.exit(1)
 if twins("## 14. x\n```\na\n```\n", "## 11. y\n```\nb\n```\n"): print("a drifted pair passed"); sys.exit(1)
 if twins("## 14. x\n- **A**\n```\na\n```\n", "## 11. y\n```\na\n```\n"): print("a pair missing a bullet passed"); sys.exit(1)
 print("ok")'
@@ -1723,9 +1701,6 @@ if command -v signify >/dev/null 2>&1; then
 else
   echo "  skipped: package-release --self-test (no signify — sudo apt-get install signify-openbsd)"
 fi
-mg_out="$(bash scripts/migrate-to-aio.sh --self-test 2>&1)" \
-  && echo "  ok:   migrate-to-aio --self-test ($(printf '%s\n' "$mg_out" | tail -1))" \
-  || { echo "  FAIL: migrate-to-aio --self-test"; printf '%s\n' "$mg_out" | tail -25; fail=1; }
 # The retag self-test rides the same capture-and-tail idiom: hermetic (a PATH-shim docker over
 # a fixture registry, local git repos as the discovery catalogue — no network, no daemon), so
 # it runs everywhere test.sh runs. A green arm prints its verdict line; a red one its tail.

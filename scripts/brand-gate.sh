@@ -32,24 +32,17 @@
 # that owner, and the manifest's source:fork, to this tree. And slice 23 extends
 # this gate with the README/twig string-equality drift gate.
 #
-# SCOPE (measured against the tree; grep -rl nextcloud-releases outside containers.json and
-# php/src/DockerActionManager.php = 30 files): root docs (readme.md, reverse-proxy.md,
-# manual-upgrade.md, develop.md, multiple-instances.md, php/README.md), the helm chart (15
-# templates + update-helm.sh), manual-install/latest.yml, root compose.yaml,
-# the QA harness (php/tests/compose.yaml), containers.twig's changelog link, and the two
-# build-time fetches upstream keeps (whiteboard's FROM line; the GPG-verified server tarball
-# in the nextcloud Dockerfile, D7) — plus, since slice 13, the fork's OWN build-time fetch:
-# the Images workflow's gestion clone, the bake channel (an APS-Conecta source, VENDOR-
-# sha256-gated by scripts/bake.sh, and maintainer-side like the other two — it feeds the
-# builder, never the clinic's install). The count uses the BARE pattern — two of the 30 carry
-# the name without the contiguous ghcr.io/ prefix (two github.com/nextcloud-releases URLs), so
-# the gate's own literal grep stays narrower than
-# this ledger on purpose. None is install-time shipped surface: docs are slice 23's
-# fork-declaration territory, the harness image is slice 18's, containers.twig's changelog
-# link was 060's operator-visible territory (repointed to the fork's releases — the row landed
-# with slice 11 and measures it), and the build-time fetches
-# are the maintainer's build, not the clinic's install. This gate owns what the clinic's
-# install actually resolves: containers.json and php/src.
+# SCOPE (measured against the tree; #48 removed the upstream parts that carried the rest of the
+# set — the root docs, the helm chart, manual-install and the root compose.yaml — so the bare
+# name now lives only where the fork keeps it on purpose): the two build-time fetches upstream
+# keeps (whiteboard's FROM line; the GPG-verified server tarball in the nextcloud Dockerfile,
+# D7), php/README.md's dev example, and the fork's own tooling (office-smoke's DS probe,
+# retag's swap source, ci.yml's red-proof injection). The count uses the BARE pattern on purpose.
+# None is install-time shipped surface: the docs are slice 23's fork-declaration territory, the
+# harness image is slice 18's, containers.twig's changelog link was 060's operator-visible
+# territory (repointed to the fork's releases — the row landed with slice 11 and measures it),
+# and the build-time fetches are the maintainer's build, not the clinic's install. This gate
+# owns what the clinic's install actually resolves: containers.json and php/src.
 #
 # Usage: scripts/brand-gate.sh TREE     (TREE = the tree to assert, e.g. . — the checkout)
 set -uo pipefail
@@ -778,18 +771,18 @@ container_names() {  # 240: the suite's 19 containers are aps-conecta-*, and no 
   fi
   n="$(grep -cF '"container_name": "aps-conecta-' "$j")"
   [ "$n" -ge 19 ] || { echo "  only $n aps-conecta container names in containers.json (floor 19)" >&2; fail=1; }
-  for x in php/src php/public php/templates php/tests Containers community-containers; do
+  for x in php/src php/public php/templates php/tests Containers; do
     [ -d "$TREE/$x" ] || { echo "  no such directory: $TREE/$x — the sweep would pass over nothing" >&2; return 1; }
   done
   # [a-z0-9-]*: a bare prefix (a filter or a str_starts_with on «nextcloud-aio-») is a miss too
   left="$(cd "$TREE" && grep -rhoE --exclude='*.md' 'nextcloud-aio-[a-z0-9-]*' php/containers.json php/src php/public \
-            php/templates php/tests Containers community-containers \
-          | sort -u | grep -vxE 'nextcloud-aio-(mastercontainer|mastercontainer-tests|test|rundeps|makemkv)')"
+            php/templates php/tests Containers \
+          | sort -u | grep -vxE 'nextcloud-aio-(mastercontainer|mastercontainer-tests|test|rundeps)')"
   [ -z "$left" ] || { echo "  old names left in the swept files: $(echo "$left" | tr '\n' ' ')" >&2; fail=1; }
   [ "$fail" -eq 0 ]
 }
 
-row 240 'the suite containers are named aps-conecta-* — the 19 in containers.json and every reference in php/, Containers/ and the community JSONs; only the kept names stay nextcloud-aio-* (the mastercontainer, the test project, the apk virtual package, the npm name, the dead makemkv check)' \
+row 240 'the suite containers are named aps-conecta-* — the 19 in containers.json and every reference in php/ and Containers/; only the kept names stay nextcloud-aio-* (the mastercontainer, the test project, the apk virtual package, the npm name)' \
   container_names
 
 # shellcheck disable=SC2016  # the PHP and JS lines are matched as bytes; $id is their text, not ours
@@ -936,47 +929,27 @@ push_internal_url() {  # 238: the push server reaches Nextcloud over apache's in
 row 238 "the push server reaches Nextcloud over apache's internal plain-http listener — no certificate to verify by IP, no hairpin by domain (R22)" \
   push_internal_url
 
-# shellcheck disable=SC2016  # the shell, PHP and Caddyfile lines are matched as bytes
-tiles_route() {  # 239: apache serves the suite's basemap same-origin at /tiles/ (R49). APS_TILES_DIR binds
-  # read-only at /aps-tiles into apache alone (empty: no bind, and /tiles/ is a 404; the mastercontainer
-  # refuses a relative path). The route sits in the snippet both site blocks import, ahead of the
-  # Nextcloud catch-all: behind it, /tiles/ would be proxied to Nextcloud and the archive never served.
-  # The block is pinned whole — strip the prefix, root at the mount, no-cache, file_server (Range, ETag):
-  # a try_files or a proxy inside it would hand a missing archive to Nextcloud.
+# shellcheck disable=SC2016  # the shell and Caddyfile lines are matched as bytes
+tiles_route_dropped() {  # 239, dropped by #48 (the #23 redo): the suite stopped building the
+  # basemap in v0.5.0 and the read-only-bind mechanism had no reader left, so the route, the
+  # APS_TILES_DIR setting, the /aps-tiles bind and the mastercontainer's guard are removed
+  # whole — a request for /tiles/* falls through to Nextcloud's catch-all and answers its 404.
+  # The sweep mirrors the patch's own tokens (the #23 discipline): any survivor reds.
   local j="$TREE/php/containers.json" f="$TREE/php/src/ContainerDefinitionFetcher.php" \
         m="$TREE/php/src/Data/ConfigurationManager.php" mc="$TREE/Containers/mastercontainer/start.sh" \
-        c="$TREE/Containers/apache/Caddyfile" fail=0 nr nt nn ne want
+        c="$TREE/Containers/apache/Caddyfile" fail=0
   s3_files "$j" "$f" "$m" "$mc" "$c" || return 1
-  case "$(sed -n '/"container_name": "aps-conecta-apache"/,/"container_name": /p' "$j" | tr -d ' \n')" in
-    *'"source":"%APS_TILES_DIR%","destination":"/aps-tiles","writeable":false'*) ;;
-    *) echo "  containers.json does not bind APS_TILES_DIR read-only at /aps-tiles into apache" >&2; fail=1 ;;
-  esac
-  [ "$(grep -cF '"%APS_TILES_DIR%"' "$j")" -eq 1 ] || { echo "  APS_TILES_DIR is bound into another container too" >&2; fail=1; }
-  grep -A1 -F "} elseif (\$value['source'] === '%APS_TILES_DIR%') {" "$f" | grep -qF '$this->configurationManager->apsTilesDir;' \
-    || { echo "  ContainerDefinitionFetcher does not resolve %APS_TILES_DIR%" >&2; fail=1; }
-  grep -qF "get => \$this->getEnvironmentalVariableOrConfig('APS_TILES_DIR', 'aps_tiles_dir', '');" "$m" \
-    || { echo "  ConfigurationManager does not read APS_TILES_DIR" >&2; fail=1; }
-  grep -qF 'if [ -n "$APS_TILES_DIR" ]; then' "$mc" || { echo "  the mastercontainer does not check APS_TILES_DIR" >&2; fail=1; }
-  nr="$(grep -nxF '(aps_routes) {' "$c" | cut -d: -f1)"
-  nt="$(grep -nxF '    route /tiles/* {' "$c" | cut -d: -f1)"
-  nn="$(grep -nxF '    route {' "$c" | cut -d: -f1)"
-  ne="$(awk -v r="$nr" 'NR > r && $0 == "}" { print NR; exit }' "$c")"
-  { [ "$(grep -cxF '    route /tiles/* {' "$c")" -eq 1 ] && [ "$(grep -cxF '    route {' "$c")" -eq 1 ] \
-      && [ -n "$nr" ] && [ -n "$nt" ] && [ -n "$nn" ] && [ -n "$ne" ] && [ "$nr" -lt "$nt" ] && [ "$nt" -lt "$nn" ] && [ "$nn" -lt "$ne" ]; } \
-    || { echo "  the /tiles/ route is missing, doubled, outside the snippet, or behind the Nextcloud catch-all" >&2; fail=1; }
-  want='    route /tiles/* {
-        uri strip_prefix /tiles
-        root * /aps-tiles
-        header Cache-Control "no-cache"
-        file_server
-    }'
-  { [ -n "$nt" ] && [ "$(sed -n "${nt},$((nt + 5))p" "$c")" = "$want" ]; } \
-    || { echo "  the /tiles/ block is not exactly: strip the prefix, root at /aps-tiles, no-cache, file_server" >&2; fail=1; }
+  if grep -rn 'APS_TILES_DIR\|aps_tiles_dir\|apsTilesDir\|/aps-tiles' "$j" "$f" "$m" "$mc" "$c"; then
+    echo "  a basemap token survived a surface patch 239 introduced" >&2; fail=1
+  fi
+  if grep -n 'route /tiles' "$c"; then
+    echo "  the /tiles/ route survived in apache's Caddyfile" >&2; fail=1
+  fi
   [ "$fail" -eq 0 ]
 }
 
-row 239 "apache serves the suite's basemap same-origin at /tiles/ — APS_TILES_DIR bound read-only into apache alone, the route ahead of Nextcloud's catch-all in the shared snippet, a missing archive a 404 (R49, declared PHP: the setting and its bind)" \
-  tiles_route
+row 239 "the basemap route is dropped — no /tiles/ route in apache's snippet and no APS_TILES_DIR token in any surface the route introduced (the setting, the bind, the guard); /tiles/ answers Nextcloud's own 404 (R49's route removed by #48, the #23 redo)" \
+  tiles_route_dropped
 
 modern_tls() {  # 250: modern TLS only — the mastercontainer's ACME and internal listeners pin
   # protocols tls1.2 tls1.3 as their tls block's first directive, and apache's start.sh adds the

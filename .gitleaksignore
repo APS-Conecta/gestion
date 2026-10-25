@@ -4,12 +4,12 @@
 # matched "values" are status words ("presente" / "se generará"), not secrets — the real
 # value is a CSPRNG 24-hex generated at runtime and written to the sealed .env. Fingerprints
 # pin commit+line: editing either line re-flags it, which is the desired alarm.
-# Group 2 (upstream history): bytes the mirror carries verbatim from nextcloud/all-in-one —
-# the full-history scan (ci.yml, fetch-depth: 0) sees upstream's own placeholders: docs
-# snippets in migration.md, the AIO interface JS, talk's server.conf.in template and the
-# borg test fixture. The parity fence keeps these files upstream's, so their fingerprints
-# stay stable until upstream itself moves them; a genuinely NEW upstream finding (a sync
-# brings it in) adds one line here — never a silent anchor.
+# Group 2 (upstream history): bytes the tree carries — or, since #48, carried — verbatim from
+# nextcloud/all-in-one. The full-history scan (ci.yml, fetch-depth: 0) sees upstream's own
+# placeholders in every commit that still holds them: docs snippets in migration.md and the
+# borg test fixture under tests/QA (both removed from the tree by #48; their history keeps its
+# fingerprints), the AIO interface JS, and talk's server.conf.in template. A genuinely NEW
+# upstream finding (a sync brings it in) adds one line here — never a silent anchor.
 45c5dc4ce928248f9128b5af3f1a59153ca5142f:scripts/provisionador.py:hashicorp-tf-password:1677
 45c5dc4ce928248f9128b5af3f1a59153ca5142f:scripts/provisionador.py:hashicorp-tf-password:1831
 a747ab1c5e290f553f1d737d7fcc394d3ddf6868:migration.md:hashicorp-tf-password:131

@@ -11,14 +11,9 @@ document.addEventListener("DOMContentLoaded", function () {
         element.style.display = 'none';
     });
 
-    const communityFormSubmit = document.getElementById("community-form-submit");
-    if (communityFormSubmit) communityFormSubmit.style.display = 'none';  // the page has no community section
-
     // Store initial states for all checkboxes
     const initialStateOptionsContainers = {};
-    const initialStateCommunityContainers = {};
     const optionsContainersCheckboxes = document.querySelectorAll("#options-form input[type='checkbox']");
-    const communityContainersCheckboxes = document.querySelectorAll("#community-form input[type='checkbox']");
 
     // Office suite radio buttons
     const officeSuiteChoiceList = optionsForm.elements['office_suite_choice'];
@@ -26,10 +21,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
     optionsContainersCheckboxes.forEach(checkbox => {
         initialStateOptionsContainers[checkbox.id] = checkbox.checked;  // Use checked property to capture actual initial state
-    });
-
-    communityContainersCheckboxes.forEach(checkbox => {
-        initialStateCommunityContainers[checkbox.id] = checkbox.checked;  // Use checked property to capture actual initial state
     });
 
     // Function to compare current states to initial states
@@ -54,27 +45,9 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
-    // Function to compare current states to initial states
-    function checkForCommunityContainerChanges() {
-        let hasChanges = false;
-
-        communityContainersCheckboxes.forEach(checkbox => {
-            if (checkbox.checked !== initialStateCommunityContainers[checkbox.id]) {
-                hasChanges = true;
-            }
-        });
-
-        // Show or hide submit button based on changes
-        if (communityFormSubmit) communityFormSubmit.style.display = hasChanges ? 'block' : 'none';
-    }
-
     // Event listener to trigger visibility check on each change
     optionsContainersCheckboxes.forEach(checkbox => {
         checkbox.addEventListener("change", checkForOptionContainerChanges);
-    });
-
-    communityContainersCheckboxes.forEach(checkbox => {
-        checkbox.addEventListener("change", checkForCommunityContainerChanges);
     });
 
     // Custom behaviors for specific options
@@ -125,5 +98,4 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Initial call to check for changes
     checkForOptionContainerChanges();
-    checkForCommunityContainerChanges();
 });

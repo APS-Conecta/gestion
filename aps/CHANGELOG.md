@@ -11,6 +11,48 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ## [Unreleased]
 
+### Removed
+
+- **The unused upstream AIO parts, with their hidden readers (#48).** Community containers
+  (the directory, the mastercontainer's empty-dir creation, the wizard's PHP readers — the
+  directory constant, the config property, the listing method, the community-form handler, the
+  Caddy trusted-proxy variable `CADDY_IP_ADDRESS` and its `ADDITIONAL_TRUSTED_PROXY` env, the
+  dead jellyfin/caddy/scrutiny/makemkv special cases, the form script's community half), the
+  Helm chart, manual install (with the root `compose.yaml`, the compose-start file whose image
+  pin pointed at upstream's registry), the upstream QA plans under `tests/QA`, the upstream app
+  directory (with its five readers — the nextcloud Dockerfile's COPY into the server's apps, the
+  entrypoint's enable-after-upgrade and marked AIO-app block, the major-upgrade codetree copy,
+  and upgrade-latest-major's enable leg; no Nextcloud surface redirects into the wizard any
+  more), the upstream root docs (`readme.md`'s upstream body, `develop.md`, the `docker-*`
+  guides, `local-instance.md`, `manual-upgrade.md`, `migration.md`, `multiple-instances.md`,
+  `reverse-proxy.md`, and the Nextcloud policy files `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md`,
+  `AI_POLICY.md` — AGENTS.md already carries the fork's own rules), and the inert workflows
+  (`community-containers.yml`, `helm-release.yml` — which could never fire on this repository,
+  `lint-helm.yml`, `update-copyright.yml`). What stays at the root is the LICENSE and the short
+  fork declaration: `readme.md` is the declaration block alone now. The validators lost their
+  community-JSON loops (`validate.sh`, `json-validator.yml`), `rename-containers.py` its
+  community walk, and the gates' rows were re-cut to pin the removals (row 190 the closed
+  channel, row 239 the dropped route) instead of the half-states they pinned before.
+- **The migration path, whole (#48).** `scripts/migrate-to-aio.sh`, its choreography
+  `aps/MIGRATION.md`, and the migration's mechanized halves (`scripts/db-dump.sh`, the verified
+  plain-SQL dump of the old compose stack; `scripts/uninstall.sh`, that stack's teardown) are
+  gone, with the acquisition gate's skip.update arm — it existed to protect the migration
+  channel — and the dump/uninstall self-test arms. The runbooks' migration sections went with
+  them (INSTALLER §13, GUIA §9; the sections renumber) and `retire_tile_remnants`, the v0.4
+  basemap-remnant retirement in the host CLI, is removed with its self-tests: v0.5.0 is
+  clean-install only and no v0.x install is in production.
+- **The `/tiles/` route (#48, the #23 redo).** The read-only-bind mechanism the PMTiles
+  retirement left behind — the Caddyfile route, the `APS_TILES_DIR` setting and `%APS_TILES_DIR%`
+  bind in `containers.json`, and the mastercontainer's guard — is removed: a request for
+  `/tiles/*` falls through to Nextcloud's catch-all and answers its own 404. Brand-gate row 239
+  now pins the drop (no route, no token in any surface the route introduced). The TLS floor
+  stays as #80 landed it: pinned on 443 only, where the site is https.
+
+### Changed
+
+- **Stray bytecode is untracked.** `.gitignore` now covers `__pycache__/` and `*.py[co]` — the
+  bytecode a local gate or resolver run leaves beside the scripts can never land in a commit.
+
 ### Added
 
 - **`aps-conecta actualizar`, the applications update (#46, ADR-0017).** The one path that

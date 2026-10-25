@@ -44,7 +44,6 @@ if ! $PHP_CLI -r "version_compare(getenv('INSTALLED_MAJOR'), getenv('IMAGE_MAJOR
     fi
 fi
 $PHP_CLI /var/www/html/occ config:system:set updatechecker --type=bool --value=true
-$PHP_CLI /var/www/html/occ app:enable nextcloud-aio --force
 $PHP_CLI /var/www/html/occ db:add-missing-columns
 $PHP_CLI /var/www/html/occ db:add-missing-primary-keys
 yes | $PHP_CLI /var/www/html/occ db:convert-filecache-bigint

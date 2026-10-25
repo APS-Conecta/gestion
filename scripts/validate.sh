@@ -42,12 +42,4 @@ if ! "$venv/bin/json" validate --schema-file="$tree/php/containers-schema.json" 
   echo "VALIDATE: json FAIL — containers.json no longer validates against upstream's schema" >&2
   exit 1
 fi
-: > "$TMPD/json-validator.log"
-while IFS= read -r f; do
-  "$venv/bin/json" validate --schema-file="$tree/php/containers-schema.json" --document-file="$f" 2>&1 | tee -a "$TMPD/json-validator.log"
-done < <(find "$tree/community-containers" -name "*.json")
-if grep -q "document does not validate with schema.\|invalid JSONFile" "$TMPD/json-validator.log"; then
-  echo "VALIDATE: json FAIL — a community-containers file does not validate" >&2
-  exit 1
-fi
 echo "VALIDATE: PASS — codespell, docker-lint, json-validator green against $tree (twig-lint rides the workflow's PHP step)"

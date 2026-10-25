@@ -40,8 +40,6 @@ fi
 if ! [ -e "/var/run/docker.sock" ]; then
     print_red "Docker socket is not available. Cannot continue."
     echo "Please make sure to mount the docker socket into /var/run/docker.sock inside the container!"
-    echo "If you did this by purpose because you don't want the container to have access to the docker socket, see https://github.com/nextcloud/all-in-one/tree/main/manual-install."
-    echo "And https://github.com/nextcloud/all-in-one/blob/main/manual-install/latest.yml"
     exit 1
 elif ! mountpoint -q "/mnt/docker-aio-config"; then
     print_red "/mnt/docker-aio-config is not a mountpoint. Cannot proceed!"
@@ -52,8 +50,6 @@ elif mountpoint -q /var/www/docker-aio/php/containers.json; then
     print_red "/var/www/docker-aio/php/containers.json is a mountpoint. Cannot proceed!"
     echo "This is a not-supported customization of the mastercontainer!"
     echo "Please remove this bind-mount from the mastercontainer."
-    echo "If you need to customize things, feel free to use https://github.com/nextcloud/all-in-one/tree/main/manual-install"
-    echo "See https://github.com/nextcloud/all-in-one/blob/main/manual-install/latest.yml"
     exit 1
 elif ! su-exec www-data test -r /var/run/docker.sock; then
     echo "Trying to fix docker.sock permissions internally..."
@@ -297,15 +293,6 @@ It is set to '$APS_TLS_DIR'."
         exit 1
     fi
 fi
-# APS (R49): the suite's basemap directory, bound read-only into the apache container at /aps-tiles
-if [ -n "$APS_TILES_DIR" ]; then
-    if ! echo "$APS_TILES_DIR" | grep -q "^/" || echo "$APS_TILES_DIR" | grep -q "/$"; then
-        print_red "You've set APS_TILES_DIR but not to an allowed value.
-It should be an absolute path to a directory that starts with '/' but not end with '/'.
-It is set to '$APS_TILES_DIR'."
-        exit 1
-    fi
-fi
 if [ -n "$NEXTCLOUD_STARTUP_APPS" ]; then
     if ! echo "$NEXTCLOUD_STARTUP_APPS" | grep -q "^[a-z0-9 _-]\+$"; then
         print_red "You've set NEXTCLOUD_STARTUP_APPS but not to an allowed value.
@@ -329,10 +316,6 @@ It needs to be a string. Allowed are small letters a-z, digits 0-9, spaces, hyph
 It is set to '$NEXTCLOUD_ADDITIONAL_PHP_EXTENSIONS'."
         exit 1
     fi
-fi
-if [ -n "$AIO_COMMUNITY_CONTAINERS" ]; then
-    print_red "You've set AIO_COMMUNITY_CONTAINERS but the option was removed.
-The community containers get managed via the AIO interface now."
 fi
 if [ -n "$NEXTCLOUD_ENABLE_DRI_DEVICE" ]; then
     print_red "The environmental variable NEXTCLOUD_ENABLE_DRI_DEVICE is deprecated. Please mount the /dev/dri device into the mastercontainer instead and remove NEXTCLOUD_ENABLE_DRI_DEVICE. It will then be set automatically."
@@ -379,8 +362,6 @@ if ! curl --no-progress-meter https://ghcr.io/v2/ >/dev/null; then
     print_red "Could not reach https://ghcr.io."
     echo "Most likely is something blocking access to it."
     echo "You should be able to fix this by following https://dockerlabs.collabnix.com/intermediate/networking/Configuring_DNS.html"
-    echo "Another solution is using https://github.com/nextcloud/all-in-one/tree/main/manual-install"
-    echo "See https://github.com/nextcloud/all-in-one/blob/main/manual-install/latest.yml"
     exit 1
 fi
 
@@ -394,8 +375,6 @@ fi
 # Check that http proxy or no_proxy variable is not set which AIO does not support
 if [ -n "$HTTP_PROXY" ] || [ -n "$http_proxy" ] || [ -n "$HTTPS_PROXY" ] || [ -n "$https_proxy" ] || [ -n "$NO_PROXY" ] || [ -n "$no_proxy" ]; then
     print_red "The environmental variable HTTP_PROXY, http_proxy, HTTPS_PROXY, https_proxy, NO_PROXY or no_proxy has been set which is not supported by AIO."
-    echo "If you need this, then you should use https://github.com/nextcloud/all-in-one/tree/main/manual-install"
-    echo "See https://github.com/nextcloud/all-in-one/blob/main/manual-install/latest.yml"
     exit 1
 fi
 if mountpoint -q /etc/localtime; then

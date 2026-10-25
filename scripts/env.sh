@@ -32,7 +32,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.." || { echo "FAIL: cannot cd to the repo ro
 #    asks for itself (`export -n` also covers an empty NC_CONTAINER= line the loader exported).
 #    The cache is this shell's: occ inside a pipe or $(…) is a subshell, so scripts that make
 #    dozens of occ calls (seed, divergence, smoke) call nc_container once after their first output.
-#    is_aio = "the AIO stack is running", the question install, uninstall, smoke, test.sh,
+#    is_aio = "the AIO stack is running", the question install, smoke, test.sh,
 #    and phase 14 ask. `grep -x >/dev/null`, not `-qx`: grep reads to EOF, so
 #    docker never takes a SIGPIPE that a pipefail caller would read as "not running".
 AIO_NC=aps-conecta-nextcloud
@@ -131,7 +131,7 @@ require_real_secrets() {
   }
 }
 
-# org L5-05 round-trip gate, in the repo's --self-test idiom (db-dump/uninstall/comuna
+# org L5-05 round-trip gate, in the repo's --self-test idiom (comuna
 # precedents). Four arms, all hermetic: (1) a fixture .env whose tricky-but-legal values
 # load exactly as the loader intends (comment strip, quoted hashes, $$ undo); (2) compose
 # parity over the same fixture — `docker compose --env-file config` resolves values the way
@@ -224,9 +224,9 @@ STUB
   [ "$rc" = 0 ] && echo "self-test: env.sh loader arms OK"
   return "$rc"
 }
-# Only when EXECUTED directly: db-dump.sh (and any future caller) sources this file BEFORE
+# Only when EXECUTED directly: a caller that needs the seams sources this file BEFORE
 # its own --self-test dispatch, and a sourced case sees the caller's $1 — unguarded, env's
-# arms answered for db-dump and hollowed its detector arm to silent green (round-1 catch).
+# arms answered for a caller and hollowed its detector arm to silent green (round-1 catch).
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   case "${1:-}" in
     --self-test) env_self_test; exit $? ;;

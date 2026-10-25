@@ -13,7 +13,7 @@ the suite's version is a signed release package (D12).
 - **The Provisionador** — the unpacked package at `/opt/aps-conecta/instalador`, driving the
   provisioning phases (`provisioning/` 05→60) over `docker exec` against the running instance.
 - **One address** — a domain the host is reachable at from the LAN and from itself (§7), or, without
-  one, this server's IP (§14).
+  one, this server's IP (§13).
 
 ## 2. Install the suite
 
@@ -52,8 +52,9 @@ thing lives where its own gate is.
   empty on purpose — only the Release asset runs), bytes that do not match the embedded sha, a
   `SHA256SUMS` that disagrees with it, and an existing `/opt/aps-conecta/instalador` of a
   different version — an update is a deliberate act (§10).
-- **A clinic installed from the old gestion clones** keeps working untouched;
-  [`MIGRATION.md`](MIGRATION.md) is the move.
+- **A clinic installed from the old gestion clones** keeps working untouched; this installer
+  serves clean installs only — the migration path was removed with the v0.5.0 doctrine and none
+  exists.
 
 ## 3. Preflight
 
@@ -79,7 +80,7 @@ docker run --init --sig-proxy=false --name nextcloud-aio-mastercontainer \
 
 `NEXTCLOUD_STARTUP_APPS` is deliberately **empty**: no image carries an app (D4, ADR-0018) — the
 theme is the one suite thing aboard, the apps arrive from their own signed releases and the
-scoped store — so boot-time installs would be noise. By IP (§14) the command carries two more
+scoped store — so boot-time installs would be noise. By IP (§13) the command carries two more
 lines. If preflight reds on the domain probe, do
 §7 before continuing — the wizard will not pass the check either.
 
@@ -89,7 +90,7 @@ lines. If preflight reds on the domain probe, do
 2. The web installer's step 6 fills it: `aps-conecta asistente-aio --preparar` starts the
    mastercontainer, captures the initial password (`GET /setup` shows it once; the installer keeps
    it in `/opt/aps-conecta/aio/master.pw`, 0600, and shows it on step 6), and posts the domain (or this
-   server's IP, §14), the timezone, the options (Euro-Office, the suite's only office; Talk and its recording as the
+   server's IP, §13), the timezone, the options (Euro-Office, the suite's only office; Talk and its recording as the
    server's memory and cores allow, port 3478 free; Whiteboard and Imaginary off), the «Aplicaciones
    opcionales» the operator checked (all off by default; today Farmacia, Estadística and Tótem, each
    from its own signed release when chosen, absent otherwise — the choice rides the install options
@@ -118,7 +119,7 @@ certificate, which it signs with OpenSSL 3 (Ubuntu 22.04+, Debian 12+; an older 
   carries, and leaves the address bar at once; without it the page asks for the code. The cookie
   is `Secure`, so nothing crosses the LAN in clear.
 - **The CA.** It lives in `/opt/aps-conecta/certificados` (made once and kept; by IP, the suite's own
-  certificate hangs from it, §14). The leaf is re-signed for the link's address on every start.
+  certificate hangs from it, §13). The leaf is re-signed for the link's address on every start.
 - **One installer at a time.** A second `abrir` while one is open is refused, naming the port.
 
 The browser flow — the centre (Región › Comuna › Tipo, or a search, and the map that opens on the
@@ -149,8 +150,7 @@ sudo aps-conecta temporizadores
 ```
 
 It copies the two units from the bundle into `/etc/systemd/system`, reloads systemd and enables the
-weekly timer; a re-run finds them in place. On a host that ran an earlier bundle it also retires
-the old monthly map timer and its units (`aps/MIGRATION.md` §12). It first
+weekly timer; a re-run finds them in place. It first
 checks that `/usr/local/bin/aps-conecta` is this bundle's: the units run it under a Condition, and a
 missing link would skip them without a word. It fires on Santiago time (the zone rides
 `OnCalendar`, not the host's clock): the weekly timer re-runs the provision headlessly on Sundays at
@@ -183,7 +183,7 @@ rather not:
   `sudo systemctl restart docker`.
 
 Never `SKIP_DOMAIN_VALIDATION` — it silences the wizard's check without fixing the leg the
-browsers and the gates actually use. An install by IP skips the check by design (§14): there is no
+browsers and the gates actually use. An install by IP skips the check by design (§13): there is no
 domain to check.
 
 ## 8. The .env the gates ride
@@ -195,7 +195,7 @@ the compose-era keys do not exist under AIO. The keys that matter to the gates:
   (`http://localhost:${HTTP_PORT}/…`). Set it once; the gates read it every run.
 - **The office keys are absent on purpose**: under AIO the wizard's entrypoint owns the public
   document-server URL and the JWT secret on every boot; by IP, `14-office.sh` adds the two internal
-  URLs (§14). There is nothing office-shaped to configure on a clinic — and nothing map-shaped
+  URLs (§13). There is nothing office-shaped to configure on a clinic — and nothing map-shaped
   either: the basemap needs no key at all (§9).
 
 ## 9. The map (OpenStreetMap)
@@ -219,8 +219,6 @@ the mastercontainer is created without a map folder. Provisioning phase 16 write
 - **A blocked client looks like a map**: OpenStreetMap answers a client it has blocked with an
   ordinary image, so no error is raised — the basemap shows a «blocked» tile. A block is lifted by a
   code release, not a setting; the repository's issue tracker is the contact the policy asks for.
-- **Upgrading from the PMTiles basemap** (an install that built the archive): `aps/MIGRATION.md`
-  §12. The archive is never deleted for you.
 - **Attribution**: the map must keep showing **© OpenStreetMap contributors**, linked to its copyright
   page — Territorio's map and the installer's pane both do; do not remove it.
 - **Territorio's data packages**: `aps-conecta datos` fetches the comuna's packages
@@ -241,16 +239,13 @@ aps-conecta revalidate
 
 right after the update lands — smoke, office-smoke and the divergence gate, aggregated; a red
 names its failed gate. An install from v0.3.0 or earlier runs the suite under upstream's container
-names; the suite now names them `aps-conecta-*` and does not migrate them: reinstall it (§12). Three
+names; the suite now names them `aps-conecta-*` and does not migrate them: reinstall it. Three
 honest notes:
 
 - On image-bump boots an **offline clinic sits at the app-store probe** (upstream behavior:
 an unbounded wait on `apps.nextcloud.com` while the store is off — documented upstream behavior,
 not patched; the wait ends when the probe times out or the network returns).
 - The wizard's update notifications are suppressed (040); the suite's releases are the source.
-- **A clinic that built the PMTiles basemap** meets one expected change: the map is OpenStreetMap's
-  now, and the next `sudo aps-conecta temporizadores` retires the old map timer, its units and the old
-  map container — leaving the ~1 GB archive for the operator to free (`aps/MIGRATION.md` §12).
 
 ### The applications update: `aps-conecta actualizar` (#46)
 
@@ -312,16 +307,7 @@ Santiago time. To move it, the wizard's backup section takes a new time, in UTC.
   of `/opt/aps-conecta` (the site record, `credentials.txt`) stays. Then `sudo aps-conecta abrir`:
   step 6 prepares a new wizard.
 
-## 13. Migrating an existing (compose) clinic
-
-[`MIGRATION.md`](MIGRATION.md) §2½ — the tool for any clinic: `migrate-to-aio.sh prepare` /
-`verify`, the rehearsal window (run the whole flow against a throwaway first), and the
-rollback story. Do not skip the rehearsal.
-
-A backup made by a stock Nextcloud AIO is not restored into the suite: an existing clinic moves only
-through this tool.
-
-## 14. Without a domain: this server's IP
+## 13. Without a domain: this server's IP
 
 A clinic without a domain installs by one of this server's IPv4 addresses, written where the domain
 goes: step 6, or `SITE_DOMINIO` in the site file of the silent install. The suite then answers at

@@ -96,20 +96,6 @@ readonly class ConfigurationController {
                 $this->configurationManager->isWhiteboardEnabled = isset($request->getParsedBody()['whiteboard']);
             }
 
-            if (isset($request->getParsedBody()['community-form'])) {
-                $cc = $this->configurationManager->listAvailableCommunityContainers();
-                $enabledCC = [];
-                /**
-                 * @psalm-suppress PossiblyNullIterator
-                 */
-                foreach ($request->getParsedBody() as $item) {
-                    if (array_key_exists($item , $cc)) {
-                        $enabledCC[] = $item;
-                    }
-                }
-                $this->configurationManager->aioCommunityContainers = $enabledCC;
-            }
-
             if (isset($request->getParsedBody()['delete_collabora_dictionaries'])) {
                 $this->configurationManager->deleteCollaboraDictionaries();
             }

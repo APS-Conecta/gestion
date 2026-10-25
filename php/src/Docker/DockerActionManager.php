@@ -489,17 +489,6 @@ readonly class DockerActionManager {
             //         $mounts[] = ["Type" => "bind", "Source" => $volume->name, "Target" => $volume->mountPoint, "ReadOnly" => !$volume->isWritable, "BindOptions" => [ "Propagation" => "rshared"]];
             //     }
 
-        // Special things for the jellyfin community container
-        } elseif ($container->identifier === 'aps-conecta-jellyfin') {
-            $lldapIp = NetworkHelper::resolveHostname('aps-conecta-lldap');
-            if ($lldapIp !== 'aps-conecta-lldap') {
-                $requestBody['HostConfig']['ExtraHosts'] = ['aps-conecta-lldap:' . $lldapIp];
-            }
-
-        // Special things for the caddy community container
-        } elseif ($container->identifier === 'aps-conecta-caddy') {
-            $requestBody['HostConfig']['ExtraHosts'] = ['host.docker.internal:host-gateway'];
-
         // Special things for the collabora container which should not be exposed in the containers.json
         } elseif ($container->identifier === 'aps-conecta-collabora') {
             if (!$this->configurationManager->collaboraSeccompDisabled) {
@@ -518,17 +507,6 @@ readonly class DockerActionManager {
                 $regEx = '/\s+(?=--o:)/';
                 $requestBody['Cmd'] = preg_split($regEx, rtrim($this->configurationManager->collaboraAdditionalOptions));
             }
-        // Special things for the scrutiny container which should not be exposed in the containers.json
-        } elseif ($container->identifier === 'aps-conecta-scrutiny') {
-            // Allow it to access block devices (e.g. /dev/sda for SATA drives) and
-            // character devices (needed for NVMe drives: smartctl reads their SMART data
-            // via admin passthrough ioctls on the NVMe controller character device
-            // /dev/nvme0 and not via the block device /dev/nvme0n1)
-            $requestBody['HostConfig']['DeviceCgroupRules'] = ["b *:* rmw", "c *:* rmw"];
-        // Special things for the makemkv container which should not be exposed in the containers.json
-        } elseif ($container->identifier === 'nextcloud-aio-makemkv') {
-            // Allow it to access block devices
-            $requestBody['HostConfig']['DeviceCgroupRules'] = ["b 11:* rmw", "c 21:* rmw"];
         }
 
         if (count($mounts) > 0) {

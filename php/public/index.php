@@ -175,8 +175,6 @@ $app->get('/containers', function (Request $request, Response $response, array $
         'is_docker_socket_proxy_enabled' => $configurationManager->isDockerSocketProxyEnabled,
         'is_harp_enabled' => $configurationManager->isHarpEnabled,
         'is_whiteboard_enabled' => $configurationManager->isWhiteboardEnabled,
-        'community_containers' => $configurationManager->listAvailableCommunityContainers(),
-        'community_containers_enabled' => $configurationManager->aioCommunityContainers,
         'bypass_container_update' => $bypass_container_update,
         'desec_email' => $configurationManager->desecEmail,
         'desec_password' => $configurationManager->desecPassword,

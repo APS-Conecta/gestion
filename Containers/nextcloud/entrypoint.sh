@@ -20,7 +20,6 @@ run_upgrade_if_needed_due_to_app_update() {
     fi
     if php /var/www/html/occ status | grep needsDbUpgrade | grep -q true; then
         php /var/www/html/occ upgrade
-        php /var/www/html/occ app:enable nextcloud-aio --force
     fi
 }
 
@@ -217,8 +216,6 @@ if ! [ -f "$NEXTCLOUD_DATA_DIR/skip.update" ]; then
             mkdir -p /usr/src/tmp/nextcloud/custom_apps
             chmod +x /usr/src/tmp/nextcloud/occ
             cp -r "$SOURCE_LOCATION"/config/* /usr/src/tmp/nextcloud/config/
-            mkdir -p /usr/src/tmp/nextcloud/apps/nextcloud-aio
-            cp -r "$SOURCE_LOCATION"/apps/nextcloud-aio/* /usr/src/tmp/nextcloud/apps/nextcloud-aio/
             mv "$SOURCE_LOCATION" /usr/src/temp-nextcloud
             mv /usr/src/tmp/nextcloud "$SOURCE_LOCATION"
             rm -r /usr/src/tmp
@@ -715,15 +712,8 @@ fi
 
 # AIO app start # Do not remove or change this line!
 # AIO app
-if [ "$THIS_IS_AIO" = "true" ]; then
-    if [ "$(php /var/www/html/occ config:app:get nextcloud-aio enabled)" != "yes" ]; then
-        php /var/www/html/occ app:enable nextcloud-aio
-    fi
-else
-    if [ "$(php /var/www/html/occ config:app:get nextcloud-aio enabled)" != "no" ]; then
-        php /var/www/html/occ app:disable nextcloud-aio
-    fi
-fi
+# (removed with the upstream app directory, #48 — the wizard is reached at its own address,
+#  and no Nextcloud surface redirects into it any more)
 # AIO app end # Do not remove or change this line!
 
 # Notify push

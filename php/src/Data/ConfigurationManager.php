@@ -195,11 +195,6 @@ class ConfigurationManager
         }
     }
 
-    public array $aioCommunityContainers {
-        get => explode(' ', $this->get('aio_community_containers', ''));
-        set { $this->set('aio_community_containers', implode(' ', $value)); }
-    }
-
     public string $turnDomain {
         get => $this->get('turn_domain', '');
         set { $this->set('turn_domain', $value); }
@@ -351,13 +346,6 @@ class ConfigurationManager
     public string $apsTlsDir {
         get => $this->getEnvironmentalVariableOrConfig('APS_TLS_DIR', 'aps_tls_dir', '');
         set { $this->set('aps_tls_dir', $value); }
-    }
-
-    // APS (R49): the host directory holding the suite's basemap (chile.pmtiles), served same-origin
-    // at /tiles/ by apache; empty: no bind, and /tiles/ answers 404
-    public string $apsTilesDir {
-        get => $this->getEnvironmentalVariableOrConfig('APS_TILES_DIR', 'aps_tiles_dir', '');
-        set { $this->set('aps_tiles_dir', $value); }
     }
 
     public string $nextcloudAdditionalApks {
@@ -1166,41 +1154,6 @@ class ConfigurationManager
         $this->set('collabora_additional_options', '');
     }
 
-    public function listAvailableCommunityContainers() : array {
-        $cc = [];
-        $dir = scandir(DataConst::GetCommunityContainersDirectory());
-        if ($dir === false) {
-            return $cc;
-        }
-        // Get rid of dots from the scandir command
-        $dir = array_diff($dir, array('..', '.', 'readme.md'));
-        foreach ($dir as $id) {
-            $filePath = DataConst::GetCommunityContainersDirectory() . '/' . $id . '/' . $id . '.json';
-            $fileContents = apcu_fetch($filePath);
-            if (!is_string($fileContents)) {
-                $fileContents = file_get_contents($filePath);
-                if (is_string($fileContents)) {
-                    apcu_add($filePath, $fileContents);
-                }
-            } 
-            $json = is_string($fileContents) ? json_decode($fileContents, true, 512, JSON_THROW_ON_ERROR) : false;
-            if(is_array($json) && is_array($json['aio_services_v1'])) {
-                foreach ($json['aio_services_v1'] as $service) {
-                    $documentation = is_string($service['documentation']) ? $service['documentation'] : '';
-                    if (is_string($service['display_name'])) {
-                        $cc[$id] = [ 
-                            'id' => $id,
-                            'name' => $service['display_name'],
-                            'documentation' => $documentation
-                        ];
-                    }
-                    break;
-                }
-            }
-        }
-        return $cc;
-    }
-
     private function camelize(string $input, string $delimiter = '_') : string {
         if ($input === '') {
             throw new InvalidSettingConfigurationException('input cannot be empty!');
@@ -1316,8 +1269,6 @@ class ConfigurationManager
             'REMOVE_DISABLED_APPS' => $this->nextcloudKeepDisabledApps ? '' : 'yes',
             // Allow to get local ip-address of database container which allows to talk to it even in host mode (the container that requires this needs to be started first then)
             'AIO_DATABASE_HOST' => NetworkHelper::resolveHostname('aps-conecta-database'),
-            // Allow to get local ip-address of caddy container and add it to trusted proxies automatically
-            'CADDY_IP_ADDRESS' => in_array('caddy', $this->aioCommunityContainers, true) ? NetworkHelper::resolveHostname('aps-conecta-caddy') : '',
             'WHITEBOARD_ENABLED' => $this->isWhiteboardEnabled ? 'yes' : '',
             'AIO_VERSION' => $this->getAioVersion(),
             'DESEC_TOKEN' => $this->desecToken,

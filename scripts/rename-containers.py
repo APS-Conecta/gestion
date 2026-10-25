@@ -6,8 +6,8 @@ rename is committed bytes now, and an upstream merge that re-introduces a nextcl
 in the swept files re-swaps it here (run from the repo root). Fresh installs only: an existing
 instance keeps its nextcloud-aio-* containers and is reinstalled, never migrated.
 
-The names come from the data: every container_name in php/containers.json (19, the floor) and in the
-community JSONs, never from a list typed here. Kept by design, so never in the data swept: the
+The names come from the data: every container_name in php/containers.json (19, the floor),
+never from a list typed here. Kept by design, so never in the data swept: the
 mastercontainer (the host CLI's docker run and the self-update name it), the nextcloud-aio network and compose
 project, the nextcloud_aio_* volumes, the nextcloud-aio app id, the -nextcloud-aio borg archive suffix.
 
@@ -22,7 +22,7 @@ import sys
 
 OLD, NEW = "nextcloud-aio-", "aps-conecta-"
 MIN_SUITE = 19
-# the shipped and tested surfaces; markdown (upstream's docs), the helm chart and manual-install never ship
+# the shipped and tested surfaces (#48 removed the helm chart, manual-install and the upstream docs)
 SWEEP = (
     "php/containers.json",
     "php/src",
@@ -30,7 +30,6 @@ SWEEP = (
     "php/templates",
     "php/tests",
     "Containers",
-    "community-containers",
 )
 # nextcloud-aio-<...> tokens that stay: anything else left in the sweep is a miss
 KEPT = {
@@ -38,7 +37,6 @@ KEPT = {
     "nextcloud-aio-mastercontainer-tests",  # php/tests/package.json's npm name
     "nextcloud-aio-test",  # php/tests/compose.yaml's project name
     "nextcloud-aio-rundeps",  # the mastercontainer Dockerfile's apk virtual package
-    "nextcloud-aio-makemkv",  # upstream's dead check: its JSON names it makekv
 }
 # what matches containers by pattern, not by name: (file, before, after, occurrences)
 PATTERNS = (
@@ -146,12 +144,7 @@ def swept_files():
 
 def main():
     suite = container_names("php/containers.json")
-    community = [
-        n
-        for f in sorted(pathlib.Path("community-containers").glob("*/*.json"))
-        for n in container_names(f)
-    ]
-    names = {n[len(OLD) :] for n in suite + community if n.startswith(OLD)}
+    names = {n[len(OLD) :] for n in suite if n.startswith(OLD)}
     done = sum(n.startswith(NEW) for n in suite)
     if len(suite) < MIN_SUITE or len(names) + done < MIN_SUITE:
         die(

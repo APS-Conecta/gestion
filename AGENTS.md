@@ -74,7 +74,7 @@ trailer. Do not add `Signed-off-by` tags.
 
 - `aps/RELEASING.md` — the release ritual (the frozen window, the tag push, the audit).
 - `BUGS.md` — the bug ledger; rows are frozen at their era's bytes. Add rows, never rewrite.
-- `aps/INSTALLER.md`, `aps/GUIA-CLINICA.md`, `aps/MIGRATION.md` — the operator runbooks.
+- `aps/INSTALLER.md`, `aps/GUIA-CLINICA.md` — the operator runbooks.
 - `readme.md`'s `aps-fork-declaration` block — the fork's own record; markers stay, content
   stays true to the tree.
 
