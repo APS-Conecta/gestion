@@ -4,6 +4,8 @@
 # The suite database image (aio-postgresql) is ready for Buscador Documental — proven on the image
 # itself, run in the shape the wizard gives it (php/containers.json's aps-conecta-database:
 # read-only root, the two tmpfs, uid 999, init, the data and dump volumes, the same environment).
+# A data volume created by an older pgvector is booted on the image too (#74): the extension must
+# reach the image's version at that start, values intact, and a second run must change nothing.
 #
 # Usage: scripts/db-image-test.sh [IMAGE]   no IMAGE: builds Containers/postgresql first
 # Needs docker. Its container and volumes are removed on exit. Every wait is bounded; a timeout
@@ -16,6 +18,18 @@ NAME="aps-db-test-$$"
 VOL_DATA="aps_db_test_data_$$"
 VOL_RESTORED="aps_db_test_restored_$$"
 VOL_DUMP="aps_db_test_dump_$$"
+VOL_UPGRADE="aps_db_test_upgrade_$$"
+VOL_UPGRADE_DUMP="aps_db_test_upgrade_dump_$$"
+# An install created by an older suite release keeps the pgvector it was created with until
+# aps-roles.sh moves it (#74). The fixture is the shipped Dockerfile with only the pin swapped —
+# same postgres, same scripts (today's aps-roles.sh rides in it, a no-op there: the pin is that
+# image's own version) — so the volume it leaves behind is an older release's. 0.8.1 is the
+# oldest pgvector that builds on the image's postgres major (0.8.0 predates its vacuum_delay_point
+# change and fails to compile); a postgres-major bump can move that floor, and the pin passing
+# OLD_VECTOR reddens the guard — either way the pair (and its sha256) moves forward, and
+# pgvector's contiguous update scripts walk the rest of the way.
+OLD_VECTOR=0.8.1
+OLD_VECTOR_SHA256=a9094dfb85ccdde3cbb295f1086d4c71a20db1d26bf1d6c39f07a7d164033eb4
 DB=nextcloud_database
 DB_SUPERUSER=nextcloud # POSTGRES_USER: the cluster superuser
 NC_USER=oc_nextcloud   # the Nextcloud user init-user-db.sh creates
@@ -27,7 +41,8 @@ check() { local name="$1"; shift; n=$((n + 1)) # NAME CMD... — a red check is 
 
 cleanup() {
   docker rm -f "$NAME" >/dev/null 2>&1
-  docker volume rm "$VOL_DATA" "$VOL_RESTORED" "$VOL_DUMP" >/dev/null 2>&1
+  docker volume rm "$VOL_DATA" "$VOL_RESTORED" "$VOL_DUMP" "$VOL_UPGRADE" "$VOL_UPGRADE_DUMP" >/dev/null 2>&1
+  [ -z "${old_dir:-}" ] || rm -rf "$old_dir"
 }
 trap cleanup EXIT
 
@@ -36,14 +51,34 @@ if [ -z "$IMAGE" ]; then
   docker build -q -t "$IMAGE" "$REPO_ROOT/Containers/postgresql" >/dev/null || die "the image did not build"
 fi
 
-start_db() { # DATA_VOLUME — create and start the container the way the wizard does
+# The older release's image: the shipped Dockerfile with only the pgvector pin swapped, so the
+# fixture volume is born into pgvector $OLD_VECTOR. The swap is asserted back, not trusted (A-011).
+vector_pin() { sed -n "s/^ENV PGVECTOR_$1=//p" "$REPO_ROOT/Containers/postgresql/Dockerfile"; }
+cur="$(vector_pin VERSION)"; cur_sha="$(vector_pin SHA256)"
+[ -n "$cur" ] && [ -n "$cur_sha" ] || die "the Dockerfile's pgvector pin did not read"
+if [ "$cur" = "$OLD_VECTOR" ] \
+  || [ "$(printf '%s\n%s\n' "$OLD_VECTOR" "$cur" | sort -V | head -1)" != "$OLD_VECTOR" ]; then
+  die "OLD_VECTOR=$OLD_VECTOR is not older than the Dockerfile's $cur — move the fixture and its sha256 forward"
+fi
+old_dir="$(mktemp -d)"
+OLD_IMAGE="aps-conecta-db-test:older-pgvector"
+sed -e "s/^ENV PGVECTOR_VERSION=.*/ENV PGVECTOR_VERSION=$OLD_VECTOR/" \
+  -e "s/^ENV PGVECTOR_SHA256=.*/ENV PGVECTOR_SHA256=$OLD_VECTOR_SHA256/" \
+  "$REPO_ROOT/Containers/postgresql/Dockerfile" > "$old_dir/Dockerfile" \
+  && grep -qF "ENV PGVECTOR_VERSION=$OLD_VECTOR" "$old_dir/Dockerfile" \
+  && grep -qF "ENV PGVECTOR_SHA256=$OLD_VECTOR_SHA256" "$old_dir/Dockerfile" \
+  || die "the older release's Dockerfile did not come out of the swap"
+docker build -q -t "$OLD_IMAGE" -f "$old_dir/Dockerfile" "$REPO_ROOT/Containers/postgresql" >/dev/null \
+  || die "the older-pgvector image did not build"
+
+start_db() { # IMAGE DATA_VOLUME [DUMP_VOLUME] — create and start the container the way the wizard does
   docker run -d --name "$NAME" --init --user 999 --read-only \
     --tmpfs /var/lib/postgresql --tmpfs /var/run/postgresql \
     --shm-size 268435456 --cap-drop NET_RAW \
-    --volume "$1:/var/lib/postgresql/data" --volume "$VOL_DUMP:/mnt/data" \
+    --volume "$2:/var/lib/postgresql/data" --volume "${3:-$VOL_DUMP}:/mnt/data" \
     --env POSTGRES_PASSWORD=db-image-test --env POSTGRES_DB="$DB" --env POSTGRES_USER="$DB_SUPERUSER" \
     --env AIO_LOG_LEVEL=warn --env TZ=America/Santiago --env PGTZ=America/Santiago \
-    "$IMAGE" >/dev/null || die "docker run failed"
+    "$1" >/dev/null || die "docker run failed"
   local i
   for i in $(seq 120); do
     [ "$(docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null)" = true ] || die "the database container exited"
@@ -62,10 +97,10 @@ start_db() { # DATA_VOLUME — create and start the container the way the wizard
   die "start.sh printed no aps-roles line within 120 s"
 }
 
-restart_db() { # DATA_VOLUME — stop as the wizard does (start.sh's trap writes the dump), start again
+restart_db() { # IMAGE DATA_VOLUME [DUMP_VOLUME] — stop as the wizard does (start.sh's trap writes the dump), start again
   docker stop -t 1800 "$NAME" >/dev/null || die "docker stop failed"
   docker rm "$NAME" >/dev/null || die "docker rm failed"
-  start_db "$1"
+  start_db "$1" "$2" "${3:-$VOL_DUMP}"
 }
 
 sql() { # ROLE SQL — one statement batch over the socket, tuples only
@@ -93,9 +128,16 @@ seed_fixture() {
     GRANT USAGE ON SCHEMA aps_search TO bd_worker;" >/dev/null || die "the fixture did not load"
 }
 
+vector_state() { # answers t|0.8.1 -> 0.8.7 — is the installed vector at the image's default, and the pair;
+  # the check answers as a literal, so a failed (empty) read cannot pass it
+  sql "$DB_SUPERUSER" "SELECT e.extversion = a.default_version, e.extversion || ' -> ' || a.default_version
+    FROM pg_extension e JOIN pg_available_extensions a ON a.name = e.extname WHERE e.extname = 'vector'"
+}
+
 ready_for_buscador() { # LABEL — the state the ticket asks for, after any boot
-  local ext roles via_owner priv schema
+  local ext vec roles via_owner priv schema
   ext="$(sql "$DB_SUPERUSER" '\dx' | cut -d'|' -f1 | sort | xargs)"
+  vec="$(vector_state)"
   roles="$(sql "$DB_SUPERUSER" "SELECT string_agg(rolname || ':' || rolcanlogin, ' ' ORDER BY rolname)
     FROM pg_roles WHERE rolname IN ('bd_owner', 'bd_worker')")"
   # CONNECT is asserted as bd_worker's own grant: PUBLIC's default CONNECT would answer for any role
@@ -116,6 +158,7 @@ ready_for_buscador() { # LABEL — the state the ticket asks for, after any boot
       || ' ' || has_schema_privilege('bd_worker', 'aps_search', 'USAGE')
     FROM pg_namespace WHERE nspname = 'aps_search'")"
   check "$1: \\dx lists vector and unaccent" [ "$ext" = "plpgsql unaccent vector" ]
+  check "$1: vector sits at the image's version (${vec#*|})" [ "${vec%%|*}" = "t" ]
   check "$1: the roles bd_owner (no login) and bd_worker (login) exist" [ "$roles" = "bd_owner:false bd_worker:true" ]
   check "$1: Nextcloud's user can SET ROLE bd_owner, and bd_worker may connect" [ "$via_owner" = "bd_owner true" ]
   check "$1: bd_worker holds no privilege on any of the 2 tables" [ "$priv" = "0 2" ]
@@ -140,39 +183,63 @@ SELECT nspname, pg_get_userbyid(nspowner), nspacl::text FROM pg_namespace
 SQL
 }
 
+second_run_changes_nothing() { # LABEL — start.sh ran aps-roles.sh at the boot just measured; a
+  # second run must exit 0 and leave the catalog snapshot untouched
+  local rc before after
+  before="$(snapshot)" || die "the catalog snapshot failed"
+  docker exec "$NAME" /aps-roles.sh; rc=$?
+  after="$(snapshot)" || die "the catalog snapshot failed"
+  check "$1: a second run exits 0" [ "$rc" -eq 0 ]
+  check "$1: a second run changes nothing (roles, memberships, settings, extensions, ACLs)" [ "$before" = "$after" ]
+}
+
 echo "db-image-test: $IMAGE"
 
 # ── a clean boot ──
-start_db "$VOL_DATA"
+start_db "$IMAGE" "$VOL_DATA"
 seed_fixture
 ready_for_buscador "clean boot"
 
 # ── the script twice: start.sh ran it once; a second run changes nothing ──
-before="$(snapshot)" || die "the catalog snapshot failed"
-docker exec "$NAME" /aps-roles.sh; rc=$?
-after="$(snapshot)" || die "the catalog snapshot failed"
-check "a second run exits 0" [ "$rc" -eq 0 ]
-check "a second run changes nothing (roles, memberships, settings, extensions, ACLs)" [ "$before" = "$after" ]
+second_run_changes_nothing "the script twice"
 
 # ── every start: drift in everything the script owns is repaired by the next start. The datadir
 # is kept, which is also what a borg restore of the database volume gives back. ──
+before="$(snapshot)" || die "the catalog snapshot failed"
 sql "$DB_SUPERUSER" "REVOKE bd_owner FROM $NC_USER;
   REVOKE CONNECT ON DATABASE $DB FROM bd_worker;
   ALTER ROLE bd_worker NOLOGIN CONNECTION LIMIT -1;
   ALTER ROLE bd_worker RESET ALL;
   ALTER ROLE bd_owner LOGIN;" >/dev/null || die "the drift did not apply"
-restart_db "$VOL_DATA"
+restart_db "$IMAGE" "$VOL_DATA"
 ready_for_buscador "restart"
 check "restart: the catalog is back to the state before the drift" [ "$(snapshot)" = "$before" ]
 
 # ── backup and restore through the dump: an empty datadir and the dump volume make start.sh
 # restore the dump (its PG-major-upgrade path); the roles must exist before the replay ──
-restart_db "$VOL_RESTORED"
+restart_db "$IMAGE" "$VOL_RESTORED"
 check "restore: start.sh restored the dump" docker exec "$NAME" grep -q "Restoring the database from database dump" /mnt/data/database-import.log
 docker exec "$NAME" grep -qE '^(psql:.*)?ERROR' /mnt/data/database-import.log; rc=$?
 check "restore: the replay raised no error" [ "$rc" -eq 1 ]   # 1 = read and clean; 0 = an error; 2 = unread
 ready_for_buscador "restore"
 check "restore: the catalog matches the backed-up one" [ "$(snapshot)" = "$before" ]
+
+# ── the pgvector upgrade (#74): a data volume created by an older suite release reaches the
+# image's pgvector at its next start, values intact; a second run still changes nothing. The
+# phase keeps its own dump volume, so its stop-traps never touch the dump restored above. ──
+restart_db "$OLD_IMAGE" "$VOL_UPGRADE" "$VOL_UPGRADE_DUMP"
+seed_fixture
+ready_for_buscador "older pgvector"
+oldver="$(sql "$DB_SUPERUSER" "SELECT extversion FROM pg_extension WHERE extname = 'vector'")"
+check "the older release's volume carries pgvector $OLD_VECTOR" [ "$oldver" = "$OLD_VECTOR" ]
+restart_db "$IMAGE" "$VOL_UPGRADE" "$VOL_UPGRADE_DUMP"
+moved="$(vector_state)"
+imgver="$(sql "$DB_SUPERUSER" "SELECT default_version FROM pg_available_extensions WHERE name = 'vector'")"
+check "the image ships the Dockerfile's pgvector pin ($imgver)" [ "$imgver" = "$cur" ]
+check "the volume moved to the image's pgvector (${moved#*|})" [ "${moved%%|*}" = "t" ]
+ready_for_buscador "pgvector update"   # the schema check reads the row back: the values survived
+check "the updated volume's catalog is the clean boot's" [ "$(snapshot)" = "$before" ]
+second_run_changes_nothing "after the update"
 
 echo "db-image-test: $n checks, $FAILED failed"
 [ "$FAILED" -eq 0 ]
