@@ -36,6 +36,10 @@ image digests live there and are deliberately not copied here — one fact, one 
   waiting-room display speaks offline with no build step. The clean-boot arms assert both
   halves: unchosen → no lock row, no store, no app; chosen → installed at its locked tag, both
   voices served to the display page over https.
+- **The release package asks a VENDOR only of default rows (#41).** An optional row never
+  bakes — phase 12 skips it before any arrival path — so totem, optional from day one and
+  never vendored, needs no `provisioning/apps/totem/VENDOR`; the packager's manifest-vs-bake
+  gate now reads that as the expected shape (a default row without its VENDOR still reds).
 
 - **Euro-Office installs from its own release (#36, ADR-0017).** The connector is no longer
   the store's `eurooffice` plus two bake-time white-label patches: it is the fork

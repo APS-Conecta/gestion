@@ -83,7 +83,7 @@ if [ "${1:-}" = "--self-test" ]; then
         echo '[ "${1:-}" = "--self-test" ] && exit 0'
         echo 'exit 0'; } > install.sh
       cp "$2" installer.pub
-      python3 -c 'import json; print(json.dumps([{"id": f"app{i}", "source": "store", "optional": False, "containers": []} for i in range(1, 11)]))' > apps.json
+      python3 -c 'import json; print(json.dumps([{"id": f"app{i}", "source": "store", "optional": False, "containers": []} for i in range(1, 11)] + [{"id": "app11", "source": "own", "repo": "APS-Conecta/app11", "optional": "off", "containers": [], "release": True}]))' > apps.json
       git add -A && git commit -qm fixture && git tag -f v9.8.7 )
   }
   # mk_gestion DIR N — the old gestion's vendored apps, plus decoys where the suite's own theme,
@@ -159,25 +159,14 @@ if [ "${1:-}" = "--self-test" ]; then
 
   mk_gestion "$tmp/gestion" 9
   run_pkg "$tmp/o6" "$tmp/repo" "$tmp/installer.sec" ""
-  check "a manifest app without its VENDOR reds — the package ships every app apps.json lists" '[ "$rc" -ne 0 ]'
-  # #41's totem shape: an own row, release true, optional off — nothing bakes it (the 9-dir
-  # gestion carries no app10), the release is its only arrival path, so the ABSENT dir is
-  # legal and the package builds without it
-  mk_repo "$tmp/repo10" "$tmp/installer.pub"
-  ( cd "$tmp/repo10" && python3 -c 'import json
-rows = json.load(open("apps.json"))
-rows[9] = {"id": "app10", "source": "own", "repo": "APS-Conecta/app10", "optional": "off", "containers": [], "release": True}
-json.dump(rows, open("apps.json", "w"))' \
-      && git add -A && git commit -qm release-row && git tag -f v9.8.7 )
-  run_pkg "$tmp/o10" "$tmp/repo10" "$tmp/installer.sec" ""
-  check "a release row with no bake dir packs green — the release is its arrival path (#41's totem: nothing bakes it)" \
-    '[ "$rc" -eq 0 ] && [ -f "$tmp/o10/apsconecta-v9.8.7.tar.gz" ] \
-      && ! tar -tzf "$tmp/o10/apsconecta-v9.8.7.tar.gz" | grep -q "provisioning/apps/app10"'
-  mk_gestion "$tmp/gestion" 10
-  mk_gestion "$tmp/gestion" 11
+  check "a default row without its VENDOR reds — the package ships every app the bake serves; an optional row's is never asked (#39, #41)" '[ "$rc" -ne 0 ]'
+  mk_gestion "$tmp/gestion" 12
   run_pkg "$tmp/o6b" "$tmp/repo" "$tmp/installer.sec" ""
   check "a VENDOR dir outside the manifest reds — the package ships no app apps.json does not list" '[ "$rc" -ne 0 ]'
   mk_gestion "$tmp/gestion" 10
+  run_pkg "$tmp/o6c" "$tmp/repo" "$tmp/installer.sec" ""
+  check "an optional row with no VENDOR packs green — app11 is totem's shape (#41): optional from day one, never baked, so the bake's pin is not the package's to ask" \
+    '[ "$rc" -eq 0 ] && [ -f "$tmp/o6c/apsconecta-v9.8.7.tar.gz" ]'
   mk_repo "$tmp/repo7" "$tmp/installer.pub" 0
   run_pkg "$tmp/o7" "$tmp/repo7" "$tmp/installer.sec" ""
   check "a tag tree without its register reds — an empty glob is a failure, never a green" '[ "$rc" -ne 0 ]'
@@ -261,18 +250,15 @@ else
 fi
 gestion_sha="$(git -C "$gestion" rev-parse HEAD 2>/dev/null || echo non-git-tree)"
 
-# 5 — the vendored apps against the tag's suite manifest: one VENDOR per baked apps.json row,
-#     no other app dir, every VENDOR well formed
-# A release row (ADR-0017) installs from its own GitHub Release; the bake is only its interim
-# fallback until #42 — and one of them never had a fallback at all (#41's totem: nothing bakes
-# it, the release is its only arrival path). So the VENDOR requirement binds every row whose
-# dir exists in gestion, and a dir ABSENT is legal only for a release row — a store or baked
-# own app without its VENDOR has no arrival path at all. #42 removes the bake and this gate.
+# 5 — the vendored apps against the tag's suite manifest: one VENDOR per DEFAULT apps.json row,
+#     no other app dir, every VENDOR well formed. An OPTIONAL row never bakes — phase 12 skips
+#     it before any of its arrival paths (#39), the bake is not its channel on a clean boot or a
+#     warm one — so its VENDOR is not the package's to ask: totem arrived optional from day one
+#     (#41), never vendored, and the gate must read that as the expected shape, not a hole.
 # An unreadable tag manifest: apps.py's one Spanish line is already on stderr, and errexit
 # stops the pack here — no second copy of the message.
 apps="$(python3 "$REPO_ROOT/scripts/apps.py" --manifest "$staging/apps.json" ids)"
-release_apps="$(python3 -c 'import json, sys
-print("\n".join(a["id"] for a in json.load(open(sys.argv[1])) if a.get("release")))' "$staging/apps.json")"
+sin_vendor="$(python3 "$REPO_ROOT/scripts/apps.py" --manifest "$staging/apps.json" opcionales | cut -f1)"
 bad_vendor=0
 for d in "$gestion"/provisioning/apps/*/; do
   [ -d "$d" ] || continue
@@ -280,12 +266,9 @@ for d in "$gestion"/provisioning/apps/*/; do
     || { echo "provisioning/apps/$(basename "$d"): not in apps.json — the bake would ship an app the suite does not list" >&2; bad_vendor=1; }
 done
 for app in $apps; do
+  printf '%s\n' "$sin_vendor" | grep -qxF -- "$app" && continue
   v="$gestion/provisioning/apps/$app/VENDOR"
-  if [ ! -f "$v" ]; then
-    printf '%s\n' "$release_apps" | grep -qxF -- "$app" \
-      && continue   # a release row that never had a bake: the release is its arrival path
-    echo "$app: listed in apps.json but provisioning/apps/$app/VENDOR is missing" >&2; bad_vendor=1; continue
-  fi
+  [ -f "$v" ] || { echo "$app: listed in apps.json but provisioning/apps/$app/VENDOR is missing" >&2; bad_vendor=1; continue; }
   for k in version sha256 url; do
     grep -q "^$k=." "$v" || { echo "$v: no $k=" >&2; bad_vendor=1; }
   done

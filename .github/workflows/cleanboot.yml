@@ -961,11 +961,9 @@ jobs:
             docker exec --user www-data aps-conecta-nextcloud test -s "/var/www/html/custom_apps/totem/js/tts/models/$voz.onnx" \
               || { echo "FAIL: the installed totem carries no $voz.onnx — the release left the voices behind" >&2; exit 1; }
           done
-          # the display page loads (public route), and the voice it loads answers real bytes: the
-          # page's own bundle and both models over https, each heavier than any error page.
-          # NC 34 serves a custom_apps app's STATIC bytes under /custom_apps/ (the page's own
-          # <script src> names it); /apps/… is the ROUTE namespace only — the display page rides
-          # it, the assets never do (A-025, measured on totem's own dev instance)
+          # the display page loads (public route), and the voice it loads answers real bytes. The
+          # page's bundle and models are FILES, not routes: Nextcloud's custom_apps url mapping
+          # serves them under /custom_apps/totem/… — each heavier than any error page
           code="$(curl -s -o /dev/null -w '%{http_code}' --cacert "$RUNNER_TEMP/ca.crt" "https://$SUITE_IP/apps/totem/display/prueba" 2>/dev/null)"
           [ "$code" = "200" ] || { echo "FAIL: the display page answered HTTP $code, not 200" >&2; exit 1; }
           curl -fsS --cacert "$RUNNER_TEMP/ca.crt" -o /dev/null "https://$SUITE_IP/custom_apps/totem/js/totem-display.js" \
