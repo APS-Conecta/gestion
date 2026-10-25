@@ -894,9 +894,20 @@ step_descargar() {  # the bundle at its tag. On its own (the two-line bootstrap)
     bad "$apps" "vuelva a descargar la suite completa"
     return 0
   fi
+  release_apps="$(python3 -c 'import json, sys
+print("\n".join(a["id"] for a in json.load(open(sys.argv[1])) if a.get("release")))' "$ROOT/apps.json" 2>/dev/null || true)"
   for app in $apps; do
-    dir="$ROOT/provisioning/apps/$app"; n=$((n + 1))
-    [ -f "$dir/VENDOR" ] || { bad "$app: falta en $ROOT/provisioning/apps" "vuelva a descargar la suite completa"; broken=$((broken + 1)); continue; }
+    dir="$ROOT/provisioning/apps/$app"
+    if [ ! -f "$dir/VENDOR" ]; then
+      # A release row (ADR-0017) whose bytes the bake never carried — #41's totem, the first —
+      # has nothing here to verify: its own release, verified against apps.pub at fetch time,
+      # is its only arrival path. Any other row without its VENDOR is a broken download.
+      if printf '%s\n' "$release_apps" | grep -qxF -- "$app"; then
+        continue
+      fi
+      bad "$app: falta en $ROOT/provisioning/apps" "vuelva a descargar la suite completa"; broken=$((broken + 1)); continue
+    fi
+    n=$((n + 1))
     tars=("$dir"/*.tar.gz)
     want="$(sed -n 's/^sha256=//p' "$dir/VENDOR")"
     got=""
@@ -2183,6 +2194,15 @@ SHIM
   step_out="$(FAIL=0; step_descargar; echo "FAIL=$FAIL")"
   check "descargar: an app the suite manifest lists with nothing vendored reds as missing and is never called correct" \
     'case "$step_out" in *"✗ demo: falta en $ROOT/provisioning/apps"*"FAIL=1") ;; *) false;; esac && case "$step_out" in *"correctas"*) false;; *) true;; esac'
+  printf '[{"id": "demo", "source": "store", "optional": false, "containers": []}, {"id": "remota", "source": "own", "repo": "APS-Conecta/remota", "optional": "off", "containers": [], "release": true}]\n' > "$ROOT/apps.json"
+  mkdir -p "$ROOT/provisioning/apps/demo"
+  tar czf "$ROOT/provisioning/apps/demo/demo-1.0.0.tar.gz" -C "$tmp" demo.txt
+  printf 'version=1.0.0\nsha256=%s\n' "$(sha256sum "$ROOT/provisioning/apps/demo/demo-1.0.0.tar.gz" | cut -d' ' -f1)" \
+    > "$ROOT/provisioning/apps/demo/VENDOR"
+  step_out="$(FAIL=0; step_descargar; echo "FAIL=$FAIL")"
+  check "descargar: a release row the bake never carried verifies green — its release is its arrival path (#41's totem), the baked rows still counted" \
+    'case "$step_out" in *"✓ Suite v9.9.9"*"✓ Sumas de verificación correctas (aplicaciones: 1)"*"FAIL=0") ;; *) false;; esac && case "$step_out" in *"falta en"*) false;; *) true;; esac'
+  printf '[{"id": "demo", "source": "store", "optional": false, "containers": []}]\n' > "$ROOT/apps.json"
   mv "$ROOT/apps.json" "$tmp/apps.json"
   step_out="$(FAIL=0; step_descargar; echo "FAIL=$FAIL")"
   check "descargar: an unreadable suite manifest reds in one Spanish line with the cause — never a vacuous «correctas (aplicaciones: 0)»" \
