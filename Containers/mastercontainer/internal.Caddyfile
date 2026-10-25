@@ -33,7 +33,7 @@
 }
 
 https://:8080 {
-    import headers.Caddyfile
+	import headers.Caddyfile
 
 	root * /var/www/docker-aio/php/public
 	php_fastcgi unix//run/php.sock
