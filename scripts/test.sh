@@ -1637,6 +1637,16 @@ if command -v signify >/dev/null 2>&1; then
 else
   echo "  skipped: releases --self-test (no signify — sudo apt-get install signify-openbsd)"
 fi
+# brand-tokens.py (#49): the wizard's brand-token projection — pure stdlib, runs everywhere.
+check python3 scripts/brand-tokens.py --self-test
+# wizard-fonts.py (#49): the wizard's font subsets' coverage — needs fontTools, which ci.yml's
+# gate job installs for row 270; a box without it gets the honest skip (the gate row itself
+# fails loudly there, never passes vacuously — the same stance as the tool's import exit).
+if python3 -c "import fontTools, brotli" >/dev/null 2>&1; then
+  check python3 scripts/wizard-fonts.py --self-test
+else
+  echo "  skipped: wizard-fonts --self-test (no fontTools — pip install fonttools brotli)"
+fi
 # #66: the manifest-read failure is said in ONE place — apps.py's own stderr line, which every
 # reader already shows beside it (a command substitution captures stdout only). No reader may
 # carry its own copy of the old narration again, and no reader gets a field it discards: `lines`

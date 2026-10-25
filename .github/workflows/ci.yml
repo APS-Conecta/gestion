@@ -90,6 +90,9 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # row 270's font-coverage check reads woff2 cmaps — fontTools is a gate dependency, not
+      # a nicety: without it the row fails loudly (never passes vacuously), so CI installs it
+      - run: python3 -m pip install --quiet fonttools brotli
       - run: bash scripts/brand-gate.sh .
       - run: bash scripts/acquisition-gate.sh .
 
@@ -102,7 +105,9 @@ jobs:
   # (re-inject an upstream registry ref into containers.json), Arm C (drop the worker's
   # CONNECT grant from aps-roles.sh — row 260's script-content arm, #73: bytes exist,
   # behaviour gone, exactly the vacuous class this job exists to catch), Arm D (orphan one
-  # spec link name — row 190's subject, #131: one occurrence reverted, row 170 stays green) —
+  # spec link name — row 190's subject, #131: one occurrence reverted, row 170 stays green),
+  # Arm E (flip a token value in the wizard's generated block — row 270's subject, #49: the
+  # block drifts from the ONE token file while every per-surface grep stays green) —
   # each must red, then revert in place; the job never commits its mutation. PR-only: pushes
   # are already gated by the gates job above.
   gate-red-proof:
@@ -114,6 +119,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: python3 -m pip install --quiet fonttools brotli   # row 270's font check, same as the gates job
       - name: Baseline — the gate is green before any injection
         run: bash scripts/brand-gate.sh .
       - name: Arm A — revert a 060 sentinel, expect the gate to red
@@ -178,3 +184,19 @@ jobs:
           fi
           echo "ARM D green: the orphaned link name reds the gate"
           sed -i "0,/${old}/s//${new}/" "$f"
+      - name: Arm E — flip a token value in the wizard's generated block, expect the gate to red
+        run: |
+          # #49's sync row: the wizard's brand-token block is the byte projection of the ONE
+          # token file — the arm drifts exactly one value in the block (the file untouched),
+          # which is the duplicate-palette shape the row exists to catch: bytes present,
+          # projection gone, every per-surface grep still green on its own.
+          f=php/public/style.css
+          sed -i 's/--aps-violet: #7f21fe;/--aps-violet: #ff00ff;/' "$f"
+          grep -qF -- '--aps-violet: #ff00ff;' "$f" \
+            || { echo "ARM E target drifted — the generated block no longer carries the violet token; re-point the arm" >&2; exit 1; }
+          if bash scripts/brand-gate.sh .; then
+            echo "ARM E FAILED: a drifted wizard token value did NOT red the brand gate — row 270's projection check is vacuous" >&2
+            exit 1
+          fi
+          echo "ARM E green: the drifted token value reds the gate"
+          sed -i 's/--aps-violet: #ff00ff;/--aps-violet: #7f21fe;/' "$f"

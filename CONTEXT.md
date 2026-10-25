@@ -46,3 +46,8 @@ app-release resolver and moved only by `aps-conecta actualizar`; see ADR-0017).
 
 **Provisionador**:
 The web wizard that runs the install.
+
+**Brand token file** (ficha de tokens de marca):
+`themes/apsconecta/core/css/tokens.css` — the ONE committed source of the palette and the font
+pairing. The server theme, the wizard's generated block, the branding phase, the Provisionador's
+UI and the brand gate read it; no other file may carry a brand hex (row 270).

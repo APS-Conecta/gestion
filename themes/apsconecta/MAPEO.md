@@ -8,30 +8,46 @@
 What you need in order to work on `core/css/server.css`: the palette with its contrast ratios, the
 typographic decisions, and the header geometry.
 
+**The palette lives in ONE file**: [`core/css/tokens.css`](core/css/tokens.css) — the brand token
+file (palette and fonts) that the server theme, the wizard's generated block
+(`scripts/brand-tokens.py`), the branding phase, the Provisionador's UI and the brand gate all
+read. The table below is its LEDGER: names, ratios, permitted uses. A brand hex pasted into any
+consumer instead of a token reference reds the brand gate's row 270 — the exceptions that may
+repeat a value are this ledger, the SVG art (fills are art, like any image), `scripts/lockup.py`
+(the outline art's authoring parameters) and `cleanboot.yml` (the acceptance harness pinning the
+DEPLOYED `side_menu` value, which must move only with the token and never silently).
+
 **The mechanism is not here.** Why `:root` is inert, why `background_color` decides the text colour,
 what a theme stylesheet can and cannot reach — all of that lives once, in
 [tema.html](https://aps-conecta.github.io/documentation/desarrollo/tema.html). The decision to have a theme at all is in
 [`ADR-0003`](../../docs/adr/0003-server-theme-for-branding.md). This file links; it does not repeat.
 
-## 1. Contrast ledger
+## 1. Contrast ledger (the token file's table)
 
 The brand gold `#e06f00` measures **3.07:1** on white → **fails AA for small text**. Permitted use:
 fills, icons, badges and large text (≥24 px, or ≥19 px bold). For small text on white use the dark
 gold **`#9a4c00`** (≥4.5:1).
 
-| Colour | Hex | Ratio | Use |
+| Token | Hex | Ratio | Use |
 |---|---|---|---|
-| Primary violet | `#7f21fe` | 5.57:1 | AA text/UI ✓ (`primary_color`) |
-| Dark violet | `#5315a8` | ~8:1 | Headings, backdrop ✓ (`background_color`) |
-| Error pink | `#ea003e` | 4.33:1 | UI/border/large text — **not** body text |
-| Gold | `#e06f00` | 3.07:1 | Fills/icons/large text |
-| Dark gold | `#9a4c00` | ≥4.5:1 | Small text |
-| Ink | `#101828` | ~16:1 | Main text |
-| Muted | `#485363` | ~7:1 | Secondary text |
+| `--aps-violet` | `#7f21fe` | 5.57:1 | AA text/UI ✓ (`primary_color`) |
+| `--aps-violet-dark` | `#5315a8` | ~8:1 | Headings, backdrop ✓ (`background_color`) |
+| `--aps-violet-hover` | `#6b01fa` | — | The pressed/active violet |
+| `--aps-violet-bright` | `#893dff` | fails AA small | Gradient ends only — never text |
+| `--aps-violet-tint` | `#f0eaff` | — | Selected-state wash behind violet text |
+| `--aps-violet-tint-hover` | `#e4dcf7` | — | The wash's hover step |
+| `--aps-error` | `#ea003e` | 4.33:1 | UI/border/large text — **not** body text |
+| `--aps-error-hover` | `#ff2d5e` | — | The error state's pressed step |
+| `--aps-error-text` | `#b4002e` | ≥4.5:1 | Small-text-safe error red |
+| `--aps-success` | `#46ba61` | — | The success state |
+| `--aps-gold` | `#e06f00` | 3.07:1 | Fills/icons/large text |
+| `--aps-gold-dark` | `#9a4c00` | ≥4.5:1 | Small text |
+| `--aps-ink` | `#101828` | ~16:1 | Main text |
+| `--aps-muted` | `#485363` | ~7:1 | Secondary text |
 
-The two violets are **not interchangeable**: `background_color` must stay the dark one (`#5315a8`),
-because Nextcloud derives the text colour over the backdrop and the header icon inversion from it
-(tema.html, regla 5).
+The two violets are **not interchangeable**: `background_color` must stay the dark one
+(`--aps-violet-dark`), because Nextcloud derives the text colour over the backdrop and the header
+icon inversion from it (tema.html, regla 5).
 
 ## 2. Typography
 

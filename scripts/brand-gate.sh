@@ -313,22 +313,33 @@ reskin_assets_swapped() {  # the wizard's art is the fork's: logo lockup, favico
   [ "$n" -ge 7 ] || { echo "  only $n img/logo.svg# refs in the templates (floor 7 — a dropped view or a dropped ref reds)" >&2; return 1; }
 }
 
-reskin_tokens() {  # the :root value table carries the brand tokens (names preserved — the inline
-  # SVG and var refs ride them; values swapped per the MAPEO ledger, contrast measured) and the
-  # fonts ship as LOCAL subsets — the wizard never fetches a font from anywhere, which is the
-  # acquisition gate's install-time rule applied to the wizard's own bytes.
+reskin_tokens() {  # the token table carries the brand tokens — NAMES preserved (the inline
+  # SVG and var refs ride them) — and the fonts ship as LOCAL subsets. AMENDED WITH #49: the
+  # VALUES moved to themes/apsconecta/core/css/tokens.css, the ONE brand token file — this
+  # heredoc used to be the gate's own palette copy (the third one: theme, wizard, gate), which
+  # is exactly the duplicate #49 removes. What this row still owns: the wizard's stylesheet
+  # MAPS its Nextcloud-named tokens onto the --aps-* names (the names are this row's interface;
+  # the values live in the token file alone), and row 270's brand-tokens.py --check proves the
+  # generated block in style.css is the byte projection of that file — a value drift between
+  # the file and the wizard reds there, a lost mapping reds here.
   local css="$TREE/php/public/style.css" fail=0 want
-  while IFS= read -r want; do
-    grep -qF -e "$want" "$css" || { echo "  token missing from :root: $want" >&2; fail=1; }
+  while IFS='|' read -r want; do
+    grep -qF -e "$want" "$css" || { echo "  token mapping missing from :root: $want" >&2; fail=1; }
   done <<'EOF'
---color-nextcloud-blue: #7f21fe;
---color-main-text: #101828;
---color-border-maxcontrast: #485363;
---color-error: #ea003e;
---color-running: #e06f00;
---color-primary-element: #7f21fe;
---color-primary-element-hover: #6b01fa;
---color-primary-element-light-text: #5315a8;
+--color-nextcloud-blue: var(--aps-violet);
+--color-main-text: var(--aps-ink);
+--color-main-border: var(--aps-ink);
+--color-error: var(--aps-error);
+--color-error-hover: var(--aps-error-hover);
+--color-error-text: var(--aps-error-text);
+--color-success: var(--aps-success);
+--color-running: var(--aps-gold);
+--color-primary-element: var(--aps-violet);
+--color-primary-element-hover: var(--aps-violet-hover);
+--color-primary-element-light: var(--aps-violet-tint);
+--color-primary-element-light-hover: var(--aps-violet-tint-hover);
+--color-primary-element-light-text: var(--aps-violet-dark);
+--color-border-maxcontrast: var(--aps-muted);
 EOF
   grep -qF 'font-family: "Fraunces";' "$css" || { echo "  the Fraunces @font-face is missing" >&2; fail=1; }
   grep -qF 'font-family: "Nunito Sans";' "$css" || { echo "  the Nunito Sans @font-face is missing" >&2; fail=1; }
@@ -369,7 +380,7 @@ row 070 "the dark toggle is gone — button, script, CSS rules and every [data-t
 row 070 "the wizard's assets are the fork's — logo.svg (id=\"logo\" + id=\"wordmark\"), favicon.svg and background.svg present; nextcloud-logo.svg, favicon.png and both upstream webp backgrounds deleted" \
   reskin_assets_swapped
 
-row 070 "the token table carries the brand values — primary #7f21fe, ink #101828, muted #485363, error #ea003e, gold running dot; Fraunces and Nunito Sans ship as local subsets with zero remote font URLs" \
+row 070 "the token table maps the wizard's Nextcloud-named tokens onto the --aps-* names — the brand VALUES moved to the ONE token file with #49 (row 270 proves the projection); Fraunces and Nunito Sans ship as local subsets with zero remote font URLs" \
   reskin_tokens
 
 row 070 "the handoff card is present — and no literal provisioner port anywhere in containers.twig (170 owns its words)" \
@@ -1037,6 +1048,136 @@ buscador_db() {  # 260: the database image ships aps-roles.sh and the script sti
 
 row 260 "the database is ready for Buscador Documental — aps-roles.sh ships in the image and still creates both roles (bd_owner, bd_worker), grants bd_owner to Nextcloud's user and CONNECT to bd_worker, and creates the unaccent and vector extensions; start.sh runs it between the import server's start and the dump replay, and again at every start; aio-postgresql is built not retagged, its image test runs before the push, and the pushed-layers check proves the pushed image is the tested one (the pgvector hash pin is the acquisition gate's row since #73)" \
   buscador_db
+
+# ── #49: one brand token file, the font subsets, the release title, the masters ────────────
+
+token_file_read() {  # the ONE brand token file is read by every consumer that paints the brand:
+  # the server theme (@import + var()), the branding phase and the Provisionador (both read the
+  # file's bytes — the phase on the host, the Provisionador through ASSETS_ROOT so its fixture
+  # world works), and the wizard through the GENERATED block brand-tokens.py projects into
+  # style.css (the wizard's origin cannot fetch the theme's files, so the projection is
+  # committed and proven byte-equal by --check). The NAME floor below is this row's interface —
+  # names, never values; the values live in the token file alone (see no_duplicate_palette).
+  # --aps-gold-dark is the ledger's small-text gold and needs no consumer today: it is named so
+  # the ledger's contrast rule has a token to cite, not so a surface can drift onto it.
+  local t="$TREE" fail=0 want n
+  local tk="$t/themes/apsconecta/core/css/tokens.css"
+  [ -f "$tk" ] || { echo "  no such file: themes/apsconecta/core/css/tokens.css — the ONE token file" >&2; return 1; }
+  for want in --aps-violet: --aps-violet-dark: --aps-violet-hover: --aps-violet-bright: \
+              --aps-violet-tint: --aps-violet-tint-hover: --aps-error: --aps-error-hover: \
+              --aps-error-text: --aps-success: --aps-gold: --aps-gold-dark: --aps-ink: \
+              --aps-muted: --aps-font-display: --aps-font-body:; do
+    grep -qF -- "$want" "$tk" || { echo "  tokens.css lacks ${want%:}" >&2; fail=1; }
+  done
+  grep -qF '@import "/themes/apsconecta/core/css/tokens.css";' "$t/themes/apsconecta/core/css/server.css" \
+    || { echo "  server.css does not import the token file" >&2; fail=1; }
+  n="$(grep -c 'var(--aps-' "$t/themes/apsconecta/core/css/server.css")"
+  [ "$n" -ge 3 ] || { echo "  only $n var(--aps-*) refs in server.css (floor 3)" >&2; fail=1; }
+  n="$(grep -c 'var(--aps-' "$t/themes/apsconecta/core/css/guest.css")"
+  [ "$n" -ge 3 ] || { echo "  only $n var(--aps-*) refs in guest.css (floor 3) — the legacy screens stopped reading the palette" >&2; fail=1; }
+  grep -qF 'themes/apsconecta/core/css/tokens.css' "$t/provisioning/phases/15-branding.sh" \
+    || { echo "  15-branding.sh does not read the token file — the theming colours drift from it" >&2; fail=1; }
+  grep -qF 'themes/apsconecta/core/css/tokens.css' "$t/scripts/provisionador.py" \
+    || { echo "  provisionador.py does not read the token file — the Instalador UI drifts from it" >&2; fail=1; }
+  python3 "$REPO_ROOT/scripts/brand-tokens.py" --check "$t" \
+    || { echo "  the wizard's token block is not the projection of the token file — run scripts/brand-tokens.py --wizard" >&2; fail=1; }
+  [ "$fail" -eq 0 ]
+}
+
+no_duplicate_palette() {  # every hex the token file declares appears in the token file ALONE.
+  # The swept set is every surface that PAINTS or ASSERTS the palette in its own bytes: the
+  # theme's two sheets, the branding phase, the Provisionador, this gate, and the wizard's
+  # stylesheet outside its generated block. Deliberately OUTSIDE the sweep (not palette
+  # definitions): MAPEO.md — the token file's own ledger; the SVG art and manifest.json —
+  # fills, like any image; scripts/lockup.py — the outline art's authoring parameters;
+  # cleanboot.yml — the acceptance harness pinning the DEPLOYED side_menu value, the same
+  # way this gate pins deployed bytes (a palette change reds it on purpose: the clinic's
+  # paint must never move without the acceptance seeing it).
+  local t="$TREE" f hex fail=0
+  local tk="$t/themes/apsconecta/core/css/tokens.css"
+  [ -f "$tk" ] || { echo "  no such file: themes/apsconecta/core/css/tokens.css" >&2; return 1; }
+  # the sweep's own file-presence discipline (s3_files': a moved file is named, never a
+  # vacuously narrowed sweep — grep's exit 2 must not read as "no match")
+  for f in "$t/themes/apsconecta/core/css/server.css" "$t/themes/apsconecta/core/css/guest.css" \
+           "$t/provisioning/phases/15-branding.sh" "$t/scripts/brand-gate.sh" \
+           "$t/scripts/provisionador.py" "$t/php/public/style.css"; do
+    [ -f "$f" ] || { echo "  no such swept file: ${f#"$t"/} — re-point this row" >&2; return 1; }
+  done
+  while IFS= read -r hex; do
+    [ -n "$hex" ] || continue
+    for f in "$t/themes/apsconecta/core/css/server.css" "$t/themes/apsconecta/core/css/guest.css" \
+             "$t/provisioning/phases/15-branding.sh" "$t/scripts/brand-gate.sh" \
+             "$t/scripts/provisionador.py"; do
+      if grep -nF "$hex" "$f"; then
+        echo "  $hex survives in ${f#"$t"/} — the palette is defined twice" >&2; fail=1; fi
+    done
+    if sed '/aps-brand-tokens begin/,/aps-brand-tokens end/d' "$t/php/public/style.css" | grep -nF "$hex"; then
+      echo "  $hex survives in php/public/style.css outside the generated block" >&2; fail=1
+    fi
+  done < <(grep -oE '#[0-9a-fA-F]{6}' "$tk" | sort -u)
+  [ "$fail" -eq 0 ]
+}
+
+wizard_font_coverage() {  # the wizard's two subsets cover every character its own strings
+  # paint. The universe is measured from the tree (templates, public JS, containers.json's
+  # display names) plus the two random alphabets the wizard renders at run time (hex secrets,
+  # version/domain identifiers) — scripts/wizard-fonts.py owns the measurement and --check
+  # re-walks it against the committed subsets' cmaps. Container LOG bytes are runtime data,
+  # not wizard strings; they render in the mono face and are out of scope. fontTools is a CI
+  # dependency of this row (ci.yml installs it); without it the check fails loudly, never
+  # passes vacuously.
+  local t="$TREE"
+  [ -f "$t/php/public/fonts/Fraunces.woff2" ] && [ -f "$t/php/public/fonts/NunitoSans.woff2" ] \
+    || { echo "  the wizard's font subsets are missing" >&2; return 1; }
+  python3 "$REPO_ROOT/scripts/wizard-fonts.py" --check "$t"
+}
+
+release_title_carries_name() {  # the suite's Releases are titled with the product's name —
+  # «APS Conecta Gestión vX.Y.Z» — not the bare tag. The title is operator-visible on the
+  # releases page the wizard's changelog arms land on (060 repointed them there), so the name
+  # the operator sees everywhere else must be the name on the release they read.
+  local f="$TREE/.github/workflows/release.yml"
+  [ -f "$f" ] || { echo "  no such file: .github/workflows/release.yml" >&2; return 1; }
+  grep -qF -- '--title "APS Conecta Gestión $RELEASE_TAG"' "$f" \
+    || { echo "  gh release create does not title the release with the product name" >&2; return 1; }
+  # both paths: the first create AND the completing re-run must never diverge on the name
+  [ "$(grep -cF 'APS Conecta Gestión $RELEASE_TAG' "$f")" -eq 1 ] \
+    || { echo "  the release title appears more than once — one writer, one shape" >&2; return 1; }
+}
+
+logo_masters_absent() {  # no design-tool master ships in the tree. The served art is
+  # committed as the SVGs the clinic loads; the authoring sources stay outside git (the
+  # brand kit lives beside the repo, and the wizard's lockup is REGENERATED by
+  # scripts/lockup.py — an authoring tool, not a master). Formats and a logo directory that
+  # holds exactly what 15-branding registers: a stray master is a fork, not a copy.
+  local t="$TREE" f hits
+  hits="$(find "$t" -type f \( -name '*.afdesign' -o -name '*.fig' -o -name '*.sketch' \
+        -o -name '*.psd' -o -name '*.psb' -o -name '*.ai' -o -name '*.xcf' -o -name '*.procreate' \
+        -o -name '*.clip' -o -name '*.px' \) -not -path '*/node_modules/*' 2>/dev/null)"
+  [ -z "$hits" ] || { printf '  master art in the tree:\n%s\n' "$hits" >&2; return 1; }
+  for f in logo.svg logo-header.svg logo-mark.svg; do
+    [ -f "$t/themes/apsconecta/core/img/logo/$f" ] \
+      || { echo "  the served lockup $f is missing" >&2; return 1; }
+  done
+  [ "$(ls -1A "$t/themes/apsconecta/core/img/logo" | wc -l)" -eq 3 ] \
+    || { echo "  themes/apsconecta/core/img/logo holds more than the three served lockups:" \
+              "$(ls -1A "$t/themes/apsconecta/core/img/logo" | tr '\n' ' ')" >&2; return 1; }
+}
+
+row 270 "one brand token file — themes/apsconecta/core/css/tokens.css — is read by the server theme, the wizard, the Provisionador and the branding phase, and the wizard's generated block is its byte projection (the third palette copy removed; the wizard's divergent values named)" \
+  token_file_read
+
+row 270 "no duplicate palette — every hex the token file declares appears in the token file alone across the theme sheets, the branding phase, the Provisionador, this gate and the wizard's stylesheet outside its generated block (the ledger, the SVG art and the acceptance harness excepted by design)" \
+  no_duplicate_palette
+
+row 270 "the wizard's font subsets cover every wizard string — the measured universe plus the two random alphabets, re-cut by scripts/wizard-fonts.py, proven against the committed cmaps" \
+  wizard_font_coverage
+
+row 270 "the suite's Releases are titled «APS Conecta Gestión vX.Y.Z» — the product name on the releases page the wizard's changelog arms land on" \
+  release_title_carries_name
+
+row 270 "no logo master in the tree — no design-tool formats anywhere, and the logo directory holds exactly the three served lockups" \
+  logo_masters_absent
 
 if [ "$fails" -gt 0 ]; then
   echo "BRAND GATE: *** FAIL *** — $fails row(s) failed" >&2

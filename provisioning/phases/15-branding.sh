@@ -30,12 +30,23 @@ theming_set privacyUrl "https://apsconecta.cl/privacidad"
 app_config_set theming productName "APS Conecta Gestión"
 
 # --- Colours ---
-theming_set primary_color    "#7f21fe"
+# #49: the values live in the ONE brand token file — this phase READS it and owns no palette of
+# its own (a hex here would be a duplicate palette and reds the brand gate's row 270). The
+# sed is anchored to the declaration and fails loudly on a miss: an unset value must never
+# silently fall through to a stale literal.
+TOKENS=themes/apsconecta/core/css/tokens.css
+aps_token() {  # NAME — one declared colour from the token file
+  local v
+  v="$(sed -n "s/^[[:space:]]*$1:[[:space:]]*\(#[0-9a-fA-F]\{6\}\);.*/\1/p" "$TOKENS" | head -1)"
+  [ -n "$v" ] || { echo "FATAL: $TOKENS does not declare $1" >&2; exit 1; }
+  printf '%s' "$v"
+}
+theming_set primary_color    "$(aps_token --aps-violet)"
 # MUST match the dominant tone of the background image below, and is not decorative:
 # CommonThemeTrait.php:82-83 derives --color-background-plain-text and
 # --background-image-invert-if-bright from THIS value. White here told Nextcloud the backdrop was
 # bright, so it computed BLACK text and inverted the header icons on top of a violet image.
-theming_set background_color "#5315a8"
+theming_set background_color "$(aps_token --aps-violet-dark)"
 
 # Kills the "Nextcloud — Abrir" smart-app banner: OC_Defaults.php:44 reads this SYSTEM key and the
 # layout templates emit <meta name="apple-itunes-app"> only when the id is not ''. This replaced
@@ -71,9 +82,9 @@ theming_image_set background "$IMG/background.svg"
 # side_menu is installed by 12-apps; only its colour is set here. It paints itself from a DERIVED
 # colour — CssController.php:87 falls back to getDarkenPrimaryColor(), which came out #661bcc, a
 # third violet nobody chose. Pointing it at the brand backdrop collapses three near-identical
-# purples into two.
-app_config_set side_menu background-color "#5315a8"
-app_config_set side_menu background-color-to "#5315a8"
+# purples into two — the value read from the token file, same as the theming keys above.
+app_config_set side_menu background-color "$(aps_token --aps-violet-dark)"
+app_config_set side_menu background-color-to "$(aps_token --aps-violet-dark)"
 
 # Where the header's home icon lands. server.css turns `#nextcloud` (always the home link) into
 # a house; this is the other half — what "home" means. URLGenerator::linkToDefaultPageUrl() resolves

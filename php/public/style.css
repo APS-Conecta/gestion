@@ -20,30 +20,56 @@
 }
 
 h1, h2, h3 {
-    font-family: "Fraunces", Georgia, serif;
+    font-family: var(--aps-font-display);
     font-weight: 600;
 }
 
+/* aps-brand-tokens begin — GENERATED from themes/apsconecta/core/css/tokens.css
+   by scripts/brand-tokens.py; do not edit by hand (row 270 proves the projection). */
 :root {
-    --color-nextcloud-blue: #7f21fe;
+    --aps-violet: #7f21fe;
+    --aps-violet-dark: #5315a8;
+    --aps-violet-hover: #6b01fa;
+    --aps-violet-bright: #893dff;
+    --aps-violet-tint: #f0eaff;
+    --aps-violet-tint-hover: #e4dcf7;
+    --aps-error: #ea003e;
+    --aps-error-hover: #ff2d5e;
+    --aps-error-text: #b4002e;
+    --aps-success: #46ba61;
+    --aps-gold: #e06f00;
+    --aps-gold-dark: #9a4c00;
+    --aps-ink: #101828;
+    --aps-muted: #485363;
+    --aps-font-display: "Fraunces", Georgia, serif;
+    --aps-font-body: "Nunito Sans", system-ui, -apple-system, sans-serif;
+}
+/* aps-brand-tokens end */
+
+:root {
+    /* The brand VALUES arrive in the generated --aps-* block above (the projection of
+       themes/apsconecta/core/css/tokens.css — #49); this table only MAPS the wizard's own
+       Nextcloud-named tokens onto them, because the templates and the rest of this sheet
+       reference these names. A value pasted here instead of a mapping reds row 270. */
+    --color-nextcloud-blue: var(--aps-violet);
     --color-nextcloud-logo: var(--color-nextcloud-blue);
     --color-main-background: white;
     --color-input-background: white;
-    --color-main-text: #101828;
-    --color-main-border: #101828;
+    --color-main-text: var(--aps-ink);
+    --color-main-border: var(--aps-ink);
     --color-main-border-hover: var(--color-main-border);
-    --color-error: #ea003e;
-    --color-error-hover: #ff2d5e;
-    --color-error-text: #b4002e;
-    --color-success: #46ba61;
-    --color-running: #e06f00;
-    --color-primary-element: #7f21fe;
-    --color-primary-element-hover: #6b01fa;
+    --color-error: var(--aps-error);
+    --color-error-hover: var(--aps-error-hover);
+    --color-error-text: var(--aps-error-text);
+    --color-success: var(--aps-success);
+    --color-running: var(--aps-gold);
+    --color-primary-element: var(--aps-violet);
+    --color-primary-element-hover: var(--aps-violet-hover);
     --color-primary-element-text: #ffffff;
-    --color-primary-element-light: #f0eaff;
-    --color-primary-element-light-hover: #e4dcf7;
-    --color-primary-element-light-text: #5315a8;
-    --color-border-maxcontrast: #485363;
+    --color-primary-element-light: var(--aps-violet-tint);
+    --color-primary-element-light-hover: var(--aps-violet-tint-hover);
+    --color-primary-element-light-text: var(--aps-violet-dark);
+    --color-border-maxcontrast: var(--aps-muted);
     --color-loader: #f3f3f3;
     --color-disabled: #d3d3d3; /* light gray background for disabled checkboxes */
     --color-border-disabled: #a9a9a9; /* darker gray border for disabled checkboxes */
@@ -75,7 +101,7 @@ Note: Unfortunately, it's not possible to calculate this dynamically using CSS v
 html, body {
     padding: 0;
     margin: 0;
-    font-family: 'Nunito Sans', system-ui, -apple-system, 'Segoe UI', Roboto, Oxygen-Sans, Cantarell, Ubuntu, 'Helvetica Neue', 'Noto Sans', 'Liberation Sans', Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    font-family: var(--aps-font-body);
     background-color: var(--color-main-background);
     color: var(--color-main-text);
 }
