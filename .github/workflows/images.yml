@@ -325,7 +325,7 @@ jobs:
           tags: ghcr.io/aps-conecta/aio-postgresql:${{ inputs.suite-tag }}
           cache-from: type=gha,scope=aio-postgresql
           cache-to: type=gha,mode=max,scope=aio-postgresql
-      - name: The image is ready for buscador — clean boot, worker privileges, a second run, restart, dump restore
+      - name: The image is ready for buscador — clean boot, worker privileges, a second run, restart, dump restore, a pgvector upgrade
         run: bash scripts/db-image-test.sh "ghcr.io/aps-conecta/aio-postgresql:${SUITE_TAG}"
         env:
           SUITE_TAG: ${{ inputs.suite-tag }}

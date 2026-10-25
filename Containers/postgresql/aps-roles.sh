@@ -35,4 +35,10 @@ GRANT CONNECT ON DATABASE :"db" TO bd_worker;
 GRANT bd_owner TO :"nc_user" WITH INHERIT FALSE, SET TRUE;
 CREATE EXTENSION IF NOT EXISTS unaccent WITH SCHEMA public;
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
+-- A new suite release can ship a newer pgvector on the same postgres: an existing data volume
+-- keeps the version it was created with — CREATE IF NOT EXISTS touches nothing — until someone
+-- walks pgvector's update scripts (#74). UPDATE walks them and keeps the data; at the image's
+-- version it is a no-op, so the second-run contract holds. (A rollback onto an older image
+-- finds no update path and fails this script — start.sh logs it and keeps the database running.)
+ALTER EXTENSION vector UPDATE;
 EOSQL
