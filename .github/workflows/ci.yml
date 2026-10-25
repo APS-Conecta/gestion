@@ -101,9 +101,10 @@ jobs:
   # Baseline (green), Arm A (revert a 060 sentinel from the gate's own live table), Arm B
   # (re-inject an upstream registry ref into containers.json), Arm C (drop the worker's
   # CONNECT grant from aps-roles.sh — row 260's script-content arm, #73: bytes exist,
-  # behaviour gone, exactly the vacuous class this job exists to catch) — each must red, then
-  # revert in place; the job never commits its mutation. PR-only: pushes are already gated by
-  # the gates job above.
+  # behaviour gone, exactly the vacuous class this job exists to catch), Arm D (orphan one
+  # spec link name — row 190's subject, #131: one occurrence reverted, row 170 stays green) —
+  # each must red, then revert in place; the job never commits its mutation. PR-only: pushes
+  # are already gated by the gates job above.
   gate-red-proof:
     name: Prove the gates can red (org L7-2)
     if: github.event_name == 'pull_request'
@@ -158,3 +159,22 @@ jobs:
           fi
           echo "ARM C green: the dropped CONNECT grant reds the gate"
           sed -i "s#GRANT CONNECT ON DATABASE :\"db\" TO nobody;#${grant}#" "$f"
+      - name: Arm D — orphan one spec link name, expect the gate to red
+        run: |
+          # row 190's subject is #131's exact shape: the reskin renamed the containers-page
+          # link and ONE spec line stayed behind — row 170 stayed green (another occurrence
+          # carries the new name) while the locator matched nothing. The arm reverts exactly
+          # one occurrence, so the red it proves is row 190's alone; two occurrences are the
+          # drift-guard, fewer would red row 170 too and the proof would misattribute.
+          f=php/tests/tests/initial-setup.spec.js
+          new="name: 'Abrir APS Conecta Gestión ↗'"
+          old="name: 'Abrir su Nextcloud ↗'"
+          [ "$(grep -cF "$new" "$f")" -ge 2 ] \
+            || { echo "ARM D target drifted — fewer than two occurrences in $f; re-point the arm" >&2; exit 1; }
+          sed -i "0,/${new}/s//${old}/" "$f"
+          if bash scripts/brand-gate.sh .; then
+            echo "ARM D FAILED: the orphaned link name did NOT red the brand gate — row 190 is vacuous" >&2
+            exit 1
+          fi
+          echo "ARM D green: the orphaned link name reds the gate"
+          sed -i "0,/${old}/s//${new}/" "$f"

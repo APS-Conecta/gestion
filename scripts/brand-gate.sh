@@ -712,6 +712,40 @@ EOF
 row 170 "the post-start page says only true, APS things — the update path, «Suite en marcha», no territorio card, no docker prune button, the suite's names on the credentials, the open button, the container list and the prose, and the suite asserting the same bytes (R27)" \
   post_start_page
 
+link_names_rendered() {  # 190: every link name the Playwright suite waits on is bytes a wizard
+  # template renders (#131). The reskin renamed the containers-page link and one spec line
+  # stayed on the old name: the locator matched nothing while the link sat on the page the
+  # whole time, the arm burned its entire timeout — and the shape hid for eight days, because
+  # the suite was red at the chassis pull the whole while (A-028) and row 170 only proves
+  # the spec CARRIES the new name somewhere: one occurrence satisfies it while a second line
+  # stays orphaned. This row walks the other direction: every link locator in every spec and
+  # helper yields its exact `name: '…'` string, and that string must byte-exist in
+  # php/templates (an accessible name comes from text content or aria-label — both are
+  # template bytes; a JS-built or twig-composed link would red loudly and teach this row its
+  # surface). Locators the strict extractor cannot parse red by count: a regex or a shorthand name
+  # would otherwise bypass the tie silently — A-010's class, an arm that matches nothing.
+  local s="$TREE/php/tests/tests" t="$TREE/php/templates" specs name fail=0 total parsed
+  [ -d "$s" ] || { echo "  no such directory: $s — the sentinel would sweep nothing" >&2; return 1; }
+  [ -f "$s/helpers.js" ] || { echo "  no such file: $s/helpers.js — its locator would sweep nothing" >&2; return 1; }
+  shopt -s nullglob globstar
+  specs=("$s"/**/*.spec.js "$s"/helpers.js)  # the ** stays unquoted — a quoted globstar matches nothing
+  shopt -u nullglob globstar
+  [ "${#specs[@]}" -gt 0 ] || { echo "  no specs under $s — the sentinel would sweep nothing" >&2; return 1; }
+  total="$(grep -rhoE -- "getByRole\('link'" "${specs[@]}" | wc -l)"
+  [ "$total" -ge 1 ] || { echo "  the suite waits on no named link — the sentinel would pass over nothing" >&2; return 1; }
+  parsed=0
+  while IFS= read -r name; do
+    parsed=$((parsed + 1))
+    grep -rqF -- "$name" "$t" || { echo "  the suite waits on a link no template renders: $name" >&2; fail=1; }
+  done < <(grep -rhoE -- "getByRole\('link', [{] name: '[^']+' [}][)]" "${specs[@]}" | sed -E "s/.*name: '([^']+)'.*/\1/")
+  [ "$parsed" -eq "$total" ] \
+    || { echo "  $((total - parsed)) link locator(s) the strict extractor cannot parse — teach the row or keep the exact-name form" >&2; fail=1; }
+  [ "$fail" -eq 0 ]
+}
+
+row 190 "every link name the Playwright suite waits on is bytes a wizard template renders — a reskin that renames a string cannot orphan a locator without reddening here, and a locator the row cannot parse reds instead of bypassing it (#131)" \
+  link_names_rendered
+
 phone_layout() {  # 180: the wizard fits a 360px phone. layout.twig declares the viewport (only
   # containers.twig's <head> stub inside its body block and log.twig did), the setup/login card
   # flows under 640px instead of floating at a fixed 500px, and both stylesheet links carry the
