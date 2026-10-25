@@ -156,8 +156,11 @@ cmd_up() {
   # start with progress, the bounded waits, the Nextcloud admin password into $STATE
   local repo_root
   repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+  # --talk (#42): the probe runs Talk ON — the entrypoint's scoped first-boot install of
+  # spreed is half the nothing-baked acceptance, and only an instance with Talk on can prove
+  # it (the store-rules step asserts the app landed scoped; Talk-off is the IP job's world).
   AIO_URL="$WIZ" AIO_STATE="$STATE" bash "$repo_root/host/aps-conecta" asistente-aio \
-    --dominio "$DOMAIN" --sin-validar-dominio \
+    --dominio "$DOMAIN" --sin-validar-dominio --talk \
     || die "the CLI's wizard drive (host/aps-conecta asistente-aio) failed — its ✗ lines above name the step"
 
   # Probe state, set ONCE outside any seed (B-018's rule is about a PHASE re-writing the key
