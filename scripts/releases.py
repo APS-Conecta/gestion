@@ -694,17 +694,19 @@ def selftest():
 
         # the repos the arms walk — the hub keeps each one newest-first. The real rows
         # mirror the shipped apps.json's release rows (territorio #33, epidemiologia #34,
-        # IntraVox #35, side_menu #38, desktop_workspace #37, eurooffice #36, farmacia #39,
-        # totem #41): the production-argv arm below reads the SHIPPED manifest, so a release
-        # row without its hub repo reds there, at the cause. IntraVox declares the fork's
-        # real range (32–35); side_menu's real tag is 6.0.1, same version the bake pinned,
-        # which is exactly why the lock/store pair is what tells them apart; eurooffice
-        # rides at its real fork release, v11.0.7; totem's v0.3.0 is its first release —
-        # the one whose tarball carries the two committed voices (#41).
+        # IntraVox #35, side_menu #38, desktop_workspace #37, eurooffice #36, and the
+        # optional farmacia #39, estadistica #40 and totem #41): the production-argv arm
+        # below reads the SHIPPED manifest, so a release row without its hub repo reds
+        # there, at the cause. IntraVox declares the fork's real range (32–35); side_menu's
+        # real tag is 6.0.1, same version the bake pinned, which is exactly why the
+        # lock/store pair is what tells them apart; eurooffice rides at its real fork
+        # release, v11.0.7; totem's v0.3.0 is its first release — the one whose tarball
+        # carries the two committed voices (#41).
         mk_release("APS-Conecta/territorio", "v0.80.0", "0.80.0", nc="34", nc_max="34")
         mk_release("APS-Conecta/epidemiologia", "v0.12.0", "0.12.0", nc="34", nc_max="34")
         mk_release("APS-Conecta/IntraVox", "v3.2.0", "3.2.0", nc="32", nc_max="35")
         mk_release("APS-Conecta/farmacia", "v0.12.0", "0.12.0", nc="34", nc_max="34")
+        mk_release("APS-Conecta/estadistica", "v0.2.0", "0.2.0", nc="34", nc_max="34")
         mk_release("APS-Conecta/totem", "v0.3.0", "0.3.0", nc="34", nc_max="34")
         mk_release("APS-Conecta/side_menu", "v6.0.1", "6.0.1", nc="34", nc_max="34")
         # #37: the shipped manifest's first FORK release row beside the mirror tarball one — the
@@ -848,20 +850,20 @@ def selftest():
         # other arm passed --manifest, and the wizard's stub hid the argv entirely), so it runs
         # here for real: the manifest it reads is the SHIPPED apps.json, and every release row
         # there must have its fixture on the hub — a new release row without its hub repo reds
-        # HERE, at the cause, not four minutes into a clean boot. farmacia (#39) and totem
-        # (#41) are the optional rows: with no opciones record they resolve NOTHING (the
-        # skip line says so, one per app), and with the record choosing them — the second
-        # run, --opciones pointing at a fixture — they resolve and lock like any release
-        # row: the choice is the gate, the record is the choice.
+        # HERE, at the cause, not four minutes into a clean boot. farmacia (#39),
+        # estadistica (#40) and totem (#41) are the optional rows: with no opciones record
+        # they resolve NOTHING (the skip line says so, one per row), and with the record
+        # choosing them — the second run, --opciones pointing at a fixture — they resolve
+        # and lock like any release row: the choice is the gate, the record is the choice.
         os.environ["APS_APPS_LOCK"] = os.path.join(tmp, "prod-lock.json")
         os.environ["APS_APPS_STORE"] = os.path.join(tmp, "prod-store")
         with open(os.path.join(tmp, "prod-opciones"), "w", encoding="utf-8") as fh:
-            fh.write("talk=1 grabacion=0 farmacia=1 totem=1\n")
+            fh.write("talk=1 grabacion=0 farmacia=1 estadistica=1 totem=1\n")
         run = subprocess.run([sys.executable, os.path.abspath(__file__), "fetch",
                               "--nextcloud", "34.0.4",
                               "--opciones", os.path.join(tmp, "prod-sin-eleccion")],
                              capture_output=True, text=True, timeout=120)
-        check("cli fetch without --manifest: the shipped manifest's release rows all resolve and fetch over the hub — a row that reds here lacks its fixture: add mk_release(<repo>, tag, version, nc=…, nc_max=…) to the list above (#33–#38, #119); the optional farmacia and totem resolve NOTHING unchosen (#39, #41)",
+        check("cli fetch without --manifest: the shipped manifest's release rows all resolve and fetch over the hub — a row that reds here lacks its fixture: add mk_release(<repo>, tag, version, nc=…, nc_max=…) to the list above (#33–#41, #119); the optional rows resolve NOTHING unchosen (#39, #40, #41)",
               run.returncode == 0 and "✓ apps: territorio v0.80.0" in run.stdout
               and "✓ apps: epidemiologia v0.12.0" in run.stdout
               and "✓ apps: intravox v3.2.0" in run.stdout
@@ -869,8 +871,10 @@ def selftest():
               and "✓ apps: desktop_workspace v0.19.0" in run.stdout
               and "✓ apps: eurooffice v11.0.7" in run.stdout
               and "✓ apps: farmacia no elegida — no se instala" in run.stdout
+              and "✓ apps: estadistica no elegida — no se instala" in run.stdout
               and "✓ apps: totem no elegida — no se instala" in run.stdout
               and "farmacia" not in read_lock()["apps"]
+              and "estadistica" not in read_lock()["apps"]
               and "totem" not in read_lock()["apps"]
               and read_lock()["apps"]["territorio"]["tag"] == "v0.80.0"
               and read_lock()["apps"]["epidemiologia"]["tag"] == "v0.12.0"
@@ -882,14 +886,19 @@ def selftest():
                               "--nextcloud", "34.0.4",
                               "--opciones", os.path.join(tmp, "prod-opciones")],
                              capture_output=True, text=True, timeout=120)
-        check("cli fetch with the wizard's record choosing farmacia and totem (#39, #41): they resolve, verify and lock at their tags — the lock rows arrive only with the choice",
+        check("cli fetch with the wizard's record choosing farmacia, estadistica and totem (#39, #40, #41): they resolve, verify and lock at their tags — the lock rows arrive only with the choice",
               run.returncode == 0 and "✓ apps: farmacia v0.12.0" in run.stdout
+              and "✓ apps: estadistica v0.2.0" in run.stdout
               and "✓ apps: totem v0.3.0" in run.stdout
               and "no elegida" not in run.stdout
               and read_lock()["apps"]["farmacia"] == {
                   "source": "own", "repo": "APS-Conecta/farmacia", "tag": "v0.12.0",
                   "version": "0.12.0",
                   "sha256": sha256_file(store_file("farmacia", "v0.12.0"))}
+              and read_lock()["apps"]["estadistica"] == {
+                  "source": "own", "repo": "APS-Conecta/estadistica", "tag": "v0.2.0",
+                  "version": "0.2.0",
+                  "sha256": sha256_file(store_file("estadistica", "v0.2.0"))}
               and read_lock()["apps"]["totem"] == {
                   "source": "own", "repo": "APS-Conecta/totem", "tag": "v0.3.0",
                   "version": "0.3.0",

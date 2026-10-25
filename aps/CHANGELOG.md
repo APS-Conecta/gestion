@@ -13,8 +13,21 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Added
 
+- **Estadística as an optional app (#40, ADR-0017).** The second optional row: its manifest
+  entry flips to `optional: "off"` + `release: true` and it arrives from its own signed
+  release (APS-Conecta/estadistica `v0.2.0`, the app repo's first: shared workflow, untracked
+  bundles, `.nextcloudignore`, the vendored docs checker gone — Docs-SSOT S2a riding its PR).
+  Chosen (`--app estadistica`, the wizard's checkbox or the silent flag), it installs at its
+  locked tag like farmacia; unchosen it is absent with no lock row and the bake's 0.1.0 never
+  imposed. Its DEIS data is the app's own to fetch (ADR-0005 there): nothing moves during
+  provisioning, and the figures arrive after install through the app's hourly job — so «no
+  choice, no DEIS download» is the app's absence itself, asserted in clean-boot as the empty
+  `deis_checked_at`/`deis_register` (the identity keys phase 16 writes are config rows, not
+  the app), and «chosen» as the job's first tick: `deis_checked_at` set and the Base de
+  Establecimientos imported within minutes of the install, the REM window queued behind it.
+  A repeated provisioning keeps the choice beside farmacia's.
 - **Tótem installs from its own release, when chosen (#41, ADR-0017).** The suite manifest
-  gains its second optional row: `optional: "off"`, `release: true`, Spanish name and summary
+  gains its third optional row: `optional: "off"`, `release: true`, Spanish name and summary
   in the wizard's «Aplicaciones opcionales» card, installed only when the operator checks it
   (the same options record farmacia rides, #39), absent otherwise — nothing bakes totem, so
   unchosen means the server never even holds its bytes. Its first signed release is `v0.3.0`,

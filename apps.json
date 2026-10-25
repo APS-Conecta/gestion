@@ -5,7 +5,7 @@
     {"id": "calendar", "source": "store", "optional": false, "containers": [], "name": "Calendario", "summary": "Agendas personales y compartidas del equipo."},
     {"id": "contacts", "source": "store", "optional": false, "containers": [], "name": "Contactos", "summary": "Directorio del personal y contactos externos."},
     {"id": "epidemiologia", "source": "own", "repo": "APS-Conecta/epidemiologia", "optional": false, "containers": [], "release": true, "name": "Epidemiología", "summary": "Alertas del MINSAL y del ISP, informes IRAG y tablero nacional."},
-    {"id": "estadistica", "source": "own", "repo": "APS-Conecta/estadistica", "optional": false, "containers": [], "name": "Estadística", "summary": "Cifras REM frente al promedio nacional y de pares; avance de las Metas Sanitarias."},
+    {"id": "estadistica", "source": "own", "repo": "APS-Conecta/estadistica", "optional": "off", "containers": [], "release": true, "name": "Estadística", "summary": "Cifras REM frente al promedio nacional y de pares; avance de las Metas Sanitarias."},
     {"id": "farmacia", "source": "own", "repo": "APS-Conecta/farmacia", "optional": "off", "containers": [], "release": true, "name": "Farmacia", "summary": "Arsenal farmacológico del establecimiento con información de seguridad clínica."},
     {"id": "totem", "source": "own", "repo": "APS-Conecta/totem", "optional": "off", "containers": [], "release": true, "name": "Tótem", "summary": "Turnos de atención en sala de espera: el paciente toma su turno y la pantalla lo llama."},
     {"id": "territorio", "source": "own", "repo": "APS-Conecta/territorio", "optional": false, "containers": [], "release": true, "name": "Territorio", "summary": "Mapa territorial: unidades vecinales y establecimientos."},

@@ -89,9 +89,10 @@ image (D4), so boot-time installs would be noise. By IP (§14) the command carri
    it in `/opt/aps-conecta/aio/master.pw`, 0600, and shows it on step 6), and posts the domain (or this
    server's IP, §14), the timezone, the options (Euro-Office, the suite's only office; Talk and its recording as the
    server's memory and cores allow, port 3478 free; Whiteboard and Imaginary off), the «Aplicaciones
-   opcionales» the operator checked (all off by default; today Farmacia and Tótem, each from its
-   own signed release when chosen, absent otherwise — the choice rides the install options and
-   survives every re-provisioning; Tótem's release carries its two bundled voices, so a chosen
+   opcionales» the operator checked (all off by default; today Farmacia, Estadística and Tótem, each
+   from its own signed release when chosen, absent otherwise — the choice rides the install options
+   and survives every re-provisioning; Estadística's DEIS figures download after install, by the app
+   itself, and only when it was chosen; Tótem's release carries its two bundled voices, so a chosen
    install speaks offline) and the daily backup (§11).
 3. Log in to the wizard with that password and press Start, leaving the options as step 6 set them:
    the installer's review lists Talk from step 6's choice, and the optional apps only when they were
