@@ -491,15 +491,23 @@ jobs:
             [ "$(occ config:app:get "$app" enabled 2>/dev/null || true)" = "yes" ] \
               || { echo "FAIL: $app is installed but not enabled" >&2; exit 1; }
           done
-          # the entrypoint's own two, the first-boot half of the acceptance: notify_push and
-          # Talk arrived scoped at first boot (the sibling's convergence above proved the
-          # push binary; here the APP halves — installed and enabled)
-          for app in notify_push spreed; do
-            [ -n "$(occ config:app:get "$app" installed_version 2>/dev/null || true)" ] \
-              || { echo "FAIL: $app is not installed — the entrypoint's scoped first-boot install did not land it" >&2; exit 1; }
-            [ "$(occ config:app:get "$app" enabled 2>/dev/null || true)" = "yes" ] \
-              || { echo "FAIL: $app is installed but not enabled" >&2; exit 1; }
-          done
+          # the entrypoint's constant half: notify_push arrived scoped at first boot (the
+          # sibling's convergence above proved the push binary; here the APP half — installed
+          # and enabled). Talk follows the instance's own switch, as the entrypoint does: on,
+          # and it arrived scoped the same way; off, and even its bytes are gone
+          [ -n "$(occ config:app:get notify_push installed_version 2>/dev/null || true)" ] \
+            || { echo "FAIL: notify_push is not installed — the entrypoint's scoped first-boot install did not land it" >&2; exit 1; }
+          [ "$(occ config:app:get notify_push enabled 2>/dev/null || true)" = "yes" ] \
+            || { echo "FAIL: notify_push is installed but not enabled" >&2; exit 1; }
+          talk="$(docker exec aps-conecta-nextcloud printenv TALK_ENABLED 2>/dev/null || true)"
+          if [ "$talk" = "yes" ]; then
+            [ -n "$(occ config:app:get spreed installed_version 2>/dev/null || true)" ] \
+              || { echo "FAIL: spreed is not installed — the entrypoint's scoped first-boot install did not land it (TALK_ENABLED=yes)" >&2; exit 1; }
+            [ "$(occ config:app:get spreed enabled 2>/dev/null || true)" = "yes" ] \
+              || { echo "FAIL: spreed is installed but not enabled" >&2; exit 1; }
+          elif docker exec --user www-data aps-conecta-nextcloud test -e /var/www/html/custom_apps/spreed; then
+            echo "FAIL: custom_apps holds spreed with Talk off — AIO removes it, and no image carries apps (#42)" >&2; exit 1
+          fi
           # the scoped variable is the only key: a bare install fails, and installs nothing
           rc=0; out="$(occ app:install notes 2>&1)" || rc=$?
           [ "$rc" -ne 0 ] \
