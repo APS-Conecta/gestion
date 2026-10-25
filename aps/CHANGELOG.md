@@ -13,6 +13,17 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Added
 
+- **Tótem installs from its own release, when chosen (#41, ADR-0017).** The suite manifest
+  gains its second optional row: `optional: "off"`, `release: true`, Spanish name and summary
+  in the wizard's «Aplicaciones opcionales» card, installed only when the operator checks it
+  (the same options record farmacia rides, #39), absent otherwise — nothing bakes totem, so
+  unchosen means the server never even holds its bytes. Its first signed release is `v0.3.0`,
+  whose tarball carries the two committed Piper voices under `js/tts/` (~160 MB, the app's
+  ADR-0005): the release builds the app's bundles, but the voices ship as tracked bytes, so the
+  waiting-room display speaks offline with no build step. The clean-boot arms assert both
+  halves: unchosen → no lock row, no store, no app; chosen → installed at its locked tag, both
+  voices served to the display page over https.
+
 - **Euro-Office installs from its own release (#36, ADR-0017).** The connector is no longer
   the store's `eurooffice` plus two bake-time white-label patches: it is the fork
   `APS-Conecta/eurooffice` (upstream main plus our two renames — the admin section and the app
