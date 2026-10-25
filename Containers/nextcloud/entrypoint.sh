@@ -585,14 +585,10 @@ EOF
         fi
     fi
 
-    # Performing update of all apps if daily backups are enabled, running and successful and if it is saturday
-    if [ "$UPDATE_NEXTCLOUD_APPS" = 'yes' ] && [ "$(date +%u)" = 6 ]; then
-        UPDATED_APPS="$(php /var/www/html/occ app:update --all)"
-        run_upgrade_if_needed_due_to_app_update
-        if [ -n "$UPDATED_APPS" ]; then
-             bash /notify.sh "Your apps just got updated!" "$UPDATED_APPS"
-        fi
-    fi
+    # APS (#42): AIO's automatic app updates are off, config or not. Upstream ran
+    # app:update --all on Saturdays when its config asked for it; that leg is deleted, not
+    # gated — apps move only when the operator decides (`aps-conecta actualizar`), and the
+    # store stays closed on every update path besides.
 else
     SKIP_UPDATE=1
 fi
@@ -731,12 +727,16 @@ fi
 # AIO app end # Do not remove or change this line!
 
 # Notify push
+# APS (#42): no image carries apps, so a first boot meets an empty custom_apps — the one
+# moment the store opens. SCOPED: the per-process NC_appstoreenabled=1 beats both config.php
+# and the image's own NC_appstoreenabled="0" ENV for this command alone (Config.php's
+# envCache), so the store is open for exactly this install and closed again the moment it
+# ends. Updates never open it — every update path stays closed and apps move only when the
+# operator decides.
 if ! [ -d "/var/www/html/custom_apps/notify_push" ]; then
-    php /var/www/html/occ app:install notify_push
+    NC_appstoreenabled=1 php /var/www/html/occ app:install notify_push
 elif [ "$(php /var/www/html/occ config:app:get notify_push enabled)" != "yes" ]; then
     php /var/www/html/occ app:enable notify_push
-elif [ "$SKIP_UPDATE" != 1 ]; then
-    php /var/www/html/occ app:update notify_push
 fi
 chmod 775 -R /var/www/html/custom_apps/notify_push/bin/
 php /var/www/html/occ config:system:set trusted_proxies 0 --value="127.0.0.1"
@@ -958,12 +958,12 @@ if [ "$TALK_ENABLED" = 'yes' ]; then
     if [ "$AIO_LOG_LEVEL" != 'debug' ]; then
         set +x
     fi
+    # APS (#42): Talk installs scoped, like notify_push above — the store opens for this one
+    # command on a first boot only, and never on an update leg.
     if ! [ -d "/var/www/html/custom_apps/spreed" ]; then
-        php /var/www/html/occ app:install spreed
+        NC_appstoreenabled=1 php /var/www/html/occ app:install spreed
     elif [ "$(php /var/www/html/occ config:app:get spreed enabled)" != "yes" ]; then
         php /var/www/html/occ app:enable spreed
-    elif [ "$SKIP_UPDATE" != 1 ]; then
-        php /var/www/html/occ app:update spreed
     fi
     # We auto-renew the certs via caddy so the outdated cert warning should not be displayed
     php /var/www/html/occ config:app:set spreed certificate_expiration_days --type=integer --value="2"

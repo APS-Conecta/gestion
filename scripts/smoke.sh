@@ -261,17 +261,17 @@ home=$(nc_exec --user www-data -- ls -A "${datadir%/}/${NEXTCLOUD_ADMIN_USER:-ad
 printf '%s' "$home" | grep -qi 'nextcloud' \
   && fail "stock Nextcloud skeleton in admin's home — is NC_skeletondirectory still in compose.yaml? phase 15's skeletondirectory arrives after the image has already created and logged in admin"
 
-# 13. The app store is off (#163). The compose-era loop checked nextcloud AND cron — two
+# 13. The app store is off (#163, #42). The compose-era loop checked nextcloud AND cron — two
 # containers that had to agree. Under AIO there is ONE container to ask: cron.php runs inside
 # aps-conecta-nextcloud (check 6's loop), so the pair collapses into a single read and the loop
 # is deleted rather than kept degenerate. The lever moved with it — from compose.yaml's
-# NC_appstoreenabled to the suite's own posture: the probe harness sets the key at bring-up, and
-# the suite bakes NC_appstoreenabled="0" into the aio-nextcloud image (patch 020). This asserts
-# the LEVER, not the drift it prevents; an absent key reads "" and is not "0", so this cannot
-# fail open.
+# NC_appstoreenabled to the image's own ENV: NC_appstoreenabled="0" baked into aio-nextcloud
+# (patch 020), with the scoped per-command installs (#42) as the only openings, none of them on
+# a smoke's path. This asserts the LEVER, not the drift it prevents; an absent key reads "" and
+# is not "0", so this cannot fail open.
 got=$(occ config:system:get appstoreenabled 2>/dev/null | tr -d '\r')
 [ "$got" = "0" ] \
-  || fail "the app store is enabled (read '$got') — the probe sets appstoreenabled=0 at bring-up and the suite bakes NC_appstoreenabled=0 via patch 020; occ upgrade then re-downloads every enabled app and the VENDOR pins stop meaning anything (#163)"
+  || fail "the app store is enabled (read '$got') — the image bakes NC_appstoreenabled=0 (patch 020) and only #42's scoped installs open it, one command at a time; occ upgrade would re-download every enabled app (#163)"
 
 # 14. The browser-facing office URL agrees with how this instance is actually reached (B-019).
 #

@@ -2,7 +2,7 @@
 
 The runbook for the maintainer who cuts a release. One tag on instalador is the whole ritual —
 the 20-image channel, the composite package, the manifest's release identity (D4). This file owns the parts only a person can do: the keypair, the secrets,
-the release commit, the frozen window, and what to do when a key must change. The machine's
+the release commit, and what to do when a key must change. The machine's
 half — gates → images → package → sign → prove → Release — is
 [.github/workflows/release.yml](../.github/workflows/release.yml), and every guard it runs is
 self-tested in [scripts/package-release.sh](../scripts/package-release.sh).
@@ -27,7 +27,7 @@ is a bug, not a state, and `package-release.sh` reds on the word until this comm
 two readers are pinned equal by the gate (`scripts/test.sh`) and re-proven at every release.
 
 Keep `installer.sec` OUT of the repository. After registering the secrets (§2), store it where
-you store the farm's other keys, or delete it — rotation (§7) does not need the old secret key.
+you store the farm's other keys, or delete it — rotation (§6) does not need the old secret key.
 
 ## 2. The secrets (once)
 
@@ -58,14 +58,7 @@ asserts it):
 3. `host/aps-conecta`'s `BUNDLE_TAG` — the same tag (the file on its own installs it).
 4. `aps/CHANGELOG.md` — the dated `## [X.Y.Z]` entry.
 
-## 4. The frozen window
-
-The old gestion's `main` is release-frozen between the last content merge and the tag push: the
-image bake and the composite package both read its vendored apps (`provisioning/apps`) at the tag's
-moment (the sparse clone at the release-frozen ref), until #42. Nothing may land on the old
-gestion's main inside that window — a hotfix waits, or the tag waits.
-
-## 5. The tag push
+## 4. The tag push
 
     git tag vX.Y.Z && git push origin vX.Y.Z
 
@@ -109,8 +102,8 @@ branch) is still the way to rehearse the chain itself end-to-end, Release includ
 the dispatch pair is how you iterate on images and install code.
 
 **When a fresh Images dispatch is needed**: only when the image inputs changed — the tree the
-four real builds read at `build-ref` (php/, app/, Containers/) or the gestion bake at
-`gestion-ref` (main by default — the frozen window's ref, §4; a pinned SHA only for repairs); the 16 retagged siblings only ever copy the previous set. When only the install
+four real builds read at `build-ref` (php/, app/, Containers/, themes/ — the theme is the one
+suite thing an image carries, ADR-0018); the 16 retagged siblings only ever copy the previous set. When only the install
 path moved (the host bundle, provisioning/, scripts/ on the branch), a Clean boot re-dispatch
 alone is enough: it checks out the branch and installs the suite tag's already-published
 images.
@@ -119,7 +112,7 @@ release.yml's repair arm (workflow_dispatch with `suite-tag`, plus `force-images
 chain that died mid-publish) exists for a chain that failed BEFORE `gh release create` — a
 published Release's assets never move (D12).
 
-## 6. Auditing a release offline
+## 5. Auditing a release offline
 
 An auditor (or an operator who wants to see it themselves) needs only the Release page and
 `signify-openbsd`:
@@ -133,7 +126,7 @@ verifies is a signature for that tag's package — the tag binds through the sig
 public key is committed, printed by the wizard, and embedded in the install asset; matching the
 copy you audit against the one you already trust is the whole ceremony.
 
-## 7. Rotation and compromise
+## 6. Rotation and compromise
 
 Rotate cheaply and without ceremony — the design makes rotation non-eventual:
 

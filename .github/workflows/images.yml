@@ -1,8 +1,8 @@
 # S1 — the lockstep image pipeline. 20 images under ghcr.io/aps-conecta/* per suite tag: 16
 # registry-side retags of OUR PREVIOUS SUITE TAG (Stage 2, the self-referential lockstep;
 # docker buildx imagetools create — seconds, zero runner disk, the
-# multi-arch manifest list carried byte-for-byte) + 4 real builds (aio-nextcloud, the apps+theme
-# bake that patch 030 slots in; aio-apache, the web front serving the installer's own certificate
+# multi-arch manifest list carried byte-for-byte) + 4 real builds (aio-nextcloud, the suite
+# theme it carries and nothing more (#42 — no app rides an image); aio-apache, the web front serving the installer's own certificate
 # that patch 235 slots in; aio-postgresql, pgvector and buscador's roles that patch 260 slots
 # in, tested before its push; all-in-one, the mastercontainer reskin that patch 070 slots in).
 # The builds are x86-64 only: the suite's documented server requirement.
@@ -29,7 +29,7 @@
 # THE BUILD-REF SEAM. THE TAG is what the release chain passes (D-rev 2026-10-19, Stage 3:
 # build-ref = the tag — immutable provenance, the exact bytes the gates proved, no mid-run ref
 # race; the manifest lockstep assert stays as belt-and-braces). main is the DEFAULT for manual
-# dispatches — post-fork main IS the shipped tree (first-class bytes, bake and all), so a
+# dispatches — post-fork main IS the shipped tree (first-class bytes, theme and all), so a
 # manual dispatch builds the shipped tree without ceremony; "the unpatched mirror" mode ceased
 # to exist with the fork. Only the four BUILD jobs read build-ref; the retag job checks out
 # the default branch everywhere. The four build jobs refuse to mix trees: the manifest job
@@ -70,12 +70,7 @@ on:
         required: true
         type: string
       build-ref:
-        description: "The ref the 4 real builds check out. The release chain passes THE TAG (immutable provenance — the bytes the gates proved). main = the default for manual dispatches (repair/testing; post-fork main IS the shipped tree, bake and all)."
-        required: false
-        default: main
-        type: string
-      gestion-ref:
-        description: "The old gestion ref the bake reads the vendored apps from (provisioning/apps at the release content — VENDOR-gated before any byte enters the image; #42 removes it). main = release-frozen between the merge and the tag push (the suite-tags-first contract); a pinned SHA for repair runs. Reaches bash only via env:, never inline in run:."
+        description: "The ref the 4 real builds check out. The release chain passes THE TAG (immutable provenance — the bytes the gates proved). main = the default for manual dispatches (repair/testing; post-fork main IS the shipped tree, theme and all)."
         required: false
         default: main
         type: string
@@ -96,11 +91,6 @@ on:
         type: string
         description: "See workflow_dispatch."
       build-ref:
-        required: false
-        default: main
-        type: string
-        description: "See workflow_dispatch."
-      gestion-ref:
         required: false
         default: main
         type: string
@@ -180,7 +170,7 @@ jobs:
           FORCE: ${{ inputs.force }}
 
   build-aio-nextcloud:
-    name: Build aio-nextcloud (the bake's slot)
+    name: Build aio-nextcloud (the theme's slot)
     needs: retag   # the immutability pre-check gates the builds too: a refused re-dispatch moves zero bytes
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -195,27 +185,12 @@ jobs:
           ref: ${{ inputs.build-ref }}
       - id: head
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - name: Bake the vendored apps and the theme into the build context (patch 030's build-time half)
-        # THE BAKE: aps-bake/ is materialized HERE, before the build — VENDOR-sha256-gated app
-        # tarballs unpacked, the eurooffice white-label patches applied (three-outcome, git
-        # apply), signature.json dropped for patched apps, the white-label asserts run, the
-        # apsconecta theme copied whole from this checkout (scripts/bake.sh carries every gate; a
-        # missing or ungated source fails the build LOUDLY before any push — never a silently
-        # unbaked image with a green pipeline). The bake runs from THIS JOB'S OWN CHECKOUT —
-        # build-ref (the tag or main) carries scripts/bake.sh and the theme. The vendored apps
-        # come from the old gestion's provisioning/apps at the release content (its main is
-        # release-frozen between the merge and the tag push — the suite-tags-first contract)
-        # until #42. fetch+FETCH_HEAD instead of clone --branch so GESTION_REF can be a branch,
-        # a tag, or a pinned SHA for repair runs alike.
-        run: |
-          set -euo pipefail
-          git clone --depth 1 --filter=blob:none --sparse             "https://github.com/APS-Conecta/gestion.git" /tmp/gestion/   # the vendored apps, until #42
-          git -C /tmp/gestion sparse-checkout set provisioning/apps
-          git -C /tmp/gestion fetch --depth 1 origin "$GESTION_REF"
-          git -C /tmp/gestion checkout FETCH_HEAD
-          bash scripts/bake.sh /tmp/gestion aps-bake/
-        env:
-          GESTION_REF: ${{ inputs.gestion-ref }}
+      # #42: no bake step exists anymore. The build context is the checkout itself — the
+      # Dockerfile copies the tree's own themes/apsconecta and nothing else of the suite's; the
+      # acquisition gate's 030 row (run by the gates job against this same ref) already refuses
+      # a tree that tries to COPY app bytes into the image. The apps arrive at run time: own
+      # and fork from their signed releases (ADR-0017), store apps from the scoped install —
+      # never from an image.
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
@@ -224,7 +199,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
-          context: .   # the Dockerfile copies from repo root (php/, app/, Containers/, aps-bake/ — the bake's materialized output)
+          context: .   # the Dockerfile copies from repo root (php/, app/, Containers/, themes/ — the theme is the tree's own)
           file: Containers/nextcloud/Dockerfile
           push: true
           tags: ghcr.io/aps-conecta/aio-nextcloud:${{ inputs.suite-tag }}

@@ -395,7 +395,6 @@ provisioning/standings.sh
 provisioning/usuarios.sh
 scripts/acquisition-gate.sh
 scripts/aio-testbed.sh
-scripts/bake.sh
 scripts/brand-gate.sh
 scripts/cleanboot-site.sh
 scripts/comuna-package.sh
@@ -1744,9 +1743,9 @@ else
 fi
 
 # Euro-Office joined the standard gate in #81, because it joined the stack: office-smoke was
-# separate only because it needed a service that might not be running. Its rename assertions moved
-# to build time (office-smoke.sh's header): under the suite the store is off and a published tag's
-# digests never move, so scripts/bake.sh asserts the rename once per image build.
+# separate only because it needed a service that might not be running. Its rename assertions
+# retired with the bake (#42): the white-label renames are COMMITS in the fork's own repo now,
+# carried by its signed release, and the clean-boot greps the installed bytes on every run.
 #
 # Still guarded on the service, not assumed: this script runs in the static CI gate with no stack
 # at all, and stopping the office backend is a documented way to reclaim the RAM. `--wait` is what

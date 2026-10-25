@@ -2,7 +2,7 @@
 # AIO test-bed harness — a disposable All-in-One instance for the installer probe (design slice 1).
 #
 # WHY THIS EXISTS. Three couplings decide whether every later gate of the installer program can be
-# trusted — the docker-exec port, the bake-wins probe, divergence-as-gate — and this org's
+# trusted — the docker-exec port, the lock-wins probe, divergence-as-gate — and this org's
 # documented defect class is the silent green: BUGS.md B-001…B-007 came from the first bring-up
 # that was complete on paper and never run; B-014 was a gate that could not go red; 11 of 19
 # handoff claims measured wrong at the 2026-09-13 stand-up (FINDINGS.md). So the couplings are
@@ -182,7 +182,8 @@ cmd_up() {
   docker exec --user www-data "$NC" sh -c 'rm -rf /mnt/ncdata/admin/files/*' >/dev/null 2>&1 || true
   docker exec --user www-data "$NC" php /var/www/html/occ files:scan admin >/dev/null 2>&1 || true
 
-  # The theme the seed brands with. The suite's image bakes themes/apsconecta in (patch 030,
+  # The theme the seed brands with. The suite's image carries themes/apsconecta from the tag
+  # tree (the one thing it carries, #42; originally patch 030),
   # S3), from the suite tag it was published with — which may lag this checkout — so the repo's
   # tree is copied over it: the probe brands with the theme under test. phase 15's
   # theming_image_set and smoke's checks 7/11 read /var/www/html/themes/apsconecta in-container;
@@ -194,7 +195,7 @@ cmd_up() {
   [ -d "$theme/core" ] || die "no themes/apsconecta/core under $repo_root — the probe brands with the suite's theme"
   docker cp "$theme" "$NC":/var/www/html/themes/ >/dev/null \
     || die "could not copy $theme into $NC — phase 15 and smoke's checks 7/11 need it in-container"
-  say "theme seeded: ${theme#"$repo_root"/} -> $NC (over the image's bake: the checkout's theme is under test)"
+  say "theme seeded: ${theme#"$repo_root"/} -> $NC (over the image's own: the checkout's theme is under test)"
 
   cmd_gate || die "GATE FAILED — the probe claimed a port it must not claim; inspect with '$0 status'"
 

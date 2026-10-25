@@ -94,8 +94,32 @@ image digests live there and are deliberately not copied here — one fact, one 
   stored tarball, no `signature.json`) and that the suite's violet still paints the menu
   (`background-color` / `background-color-to`, and the stylesheet the app derives from them).
 
+### Changed
+
+- **No image carries an app — the store opens scoped, nothing else does (#42, ADR-0018).** The
+  Nextcloud image now carries the apsconecta theme from the tag tree and nothing else of the
+  suite's. Own and fork apps were already on their own signed releases (ADR-0017); the store
+  rows (calendar, contacts, groupfolders) now install during provisioning through `occ_store` —
+  a scoped command that carries its own `NC_appstoreenabled=1` (the env channel beats both
+  `config.php` and the image's own store-off ENV for that one process and dies with it) — and
+  the Nextcloud entrypoint installs notify_push and Talk the same way, only when they are
+  missing. A bare `occ app:install` fails against the image ENV, the store reads closed in the
+  admin UI, every update path keeps the store closed, and AIO's Saturday automatic
+  `app:update --all` is deleted outright (the env that armed it is passed no more). Store apps
+  install once and never move in place: apps change only when the operator decides
+  (`aps-conecta actualizar`, #46). The clean-boot rehearsal asserts all of it: nothing baked at
+  first boot, the store apps landed, the bare install refused, no `UPDATE_NEXTCLOUD_APPS` in
+  the container; the acquisition gate's 042 rows pin the same in the tree.
+
 ### Removed
 
+- **The bake and the last read of the old gestion (#42, ADR-0018).** `scripts/bake.sh`, the
+  gestion clone in the Images workflow and its `gestion-ref` input, `provisioning/apps` in the
+  composite package, `.paquete.json`'s gestion provenance fields, the vendored fallback of
+  phase 12 (a release row without a lock row is now a FATAL naming the repair, never an
+  improvised install), the patch machinery (`apply_patch`) that fed on vendored tarballs, and
+  the old gestion's release-freeze window in the release ritual — the suite tag is the whole
+  source of a release now.
 - **The per-repo community files (docs-SSOT S2a, shaped like APS-Conecta/aps-common#10).**
   `.github/ISSUE_TEMPLATE/` (Bug_report.md, Feature_request.md, config.yml — upstream AIO's own,
   still pointing at nextcloud's forums) and `.github/pull_request_template.md` leave the tree:

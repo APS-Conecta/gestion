@@ -26,10 +26,10 @@
 # and the changelog links point at the fork's own releases, never upstream's. 070's brand
 # rows landed with slice 12 (the <title>/h1 swap is the reskin's, not the sweep's — plus the
 # asset/token/font floors, the dark-toggle deletion, and the two handoff cards). 030's row
-# landed with slice 13: the white-label rename is enforced at BUILD time — scripts/bake.sh
-# carries the two served-file asserts the office smoke used to own (FRD S3's "smoke greps
-# move to build-time"), and the renamed bytes ship inside the image where no tree grep can
-# see them, so the row pins the mechanism to the fork's own script. And slice 23 extends
+# landed with slice 13 as a build-time assert in the bake, and #42 moved it once more: the
+# renames are commits in the fork's own repo now (#36), no image carries app bytes, and the
+# enforcement is the clean-boot rehearsal's greps over the INSTALLED bytes — the row pins
+# that owner, and the manifest's source:fork, to this tree. And slice 23 extends
 # this gate with the README/twig string-equality drift gate.
 #
 # SCOPE (measured against the tree; grep -rl nextcloud-releases outside containers.json and
@@ -382,20 +382,26 @@ row 070 "the token table carries the brand values — primary #7f21fe, ink #1018
 row 070 "the handoff card is present — and no literal provisioner port anywhere in containers.twig (170 owns its words)" \
   paso1_card
 
-whitelabel_buildtime() {  # bake.sh carries BOTH served-file asserts the office smoke owned — the
-  # rename is enforced where the bytes are made, because the renamed files ship inside the
-  # image where no tree grep can see them. Both halves (office-smoke.sh:37's exact pairs):
-  # each pair absent, or one renamed without the other, reds.
-  local f="$REPO_ROOT/scripts/bake.sh"
-  [ -f "$f" ] || { echo "  scripts/bake.sh is missing on the fork — the bake's build-time half is gone" >&2; return 1; }
-  grep -qF 'lib/AdminSection.php:Euro-Office' "$f" \
-    || { echo "  bake.sh no longer asserts the AdminSection.php rename" >&2; return 1; }
-  grep -qF 'appinfo/info.xml:<name>Euro-Office</name>' "$f" \
-    || { echo "  bake.sh no longer asserts the info.xml <name> rename" >&2; return 1; }
+whitelabel_installed() {  # the renames are COMMITS in the fork's own repo (#36) and no image
+  # carries app bytes (#42), so this tree cannot grep them at build time — the clean-boot
+  # rehearsal owns the enforcement, grepping the INSTALLED bytes on every run. This row pins
+  # that owner to the fork's tree: both served-file pairs (office-smoke.sh:37's exact pairs)
+  # must stay in the rehearsal, and the manifest must keep eurooffice source:fork so the
+  # store's namesake can never replace it through any channel this repo controls.
+  local f="$REPO_ROOT/.github/workflows/cleanboot.yml" m="$REPO_ROOT/apps.json" fail=0
+  [ -f "$f" ] || { echo "  the clean-boot workflow is missing — the white-label asserts' owner" >&2; return 1; }
+  [ -f "$m" ] || { echo "  no apps.json at the root" >&2; return 1; }
+  grep -qF 'grep -qF '"'"'return "Euro-Office";'"'"' /var/www/html/custom_apps/eurooffice/lib/AdminSection.php' "$f" \
+    || { echo "  the rehearsal no longer greps the installed AdminSection.php rename" >&2; fail=1; }
+  grep -qF "grep -qF '<name>Euro-Office</name>' /var/www/html/custom_apps/eurooffice/appinfo/info.xml" "$f" \
+    || { echo "  the rehearsal no longer greps the installed info.xml <name> rename" >&2; fail=1; }
+  grep -q '"id": "eurooffice", "source": "fork"' "$m" \
+    || { echo "  the manifest no longer declares eurooffice a fork of ours — the store's namesake could arrive through any channel we control" >&2; fail=1; }
+  [ "$fail" -eq 0 ]
 }
 
-row 030 "the white-label rename is enforced at build time — scripts/bake.sh asserts the served-file strings the office smoke used to own (FRD S3: the greps moved to the bake; the renamed bytes ship inside the image, so this row pins the mechanism to the fork's own script)" \
-  whitelabel_buildtime
+row 030 "the white-label rename is enforced at acceptance — the clean-boot rehearsal greps both served-file pairs in the installed bytes every run, and the manifest keeps eurooffice source:fork (the bake's build-time asserts died with the bake; the renames are commits in the fork's own repo, #36/#42)" \
+  whitelabel_installed
 
 suite_escl_present() {  # TREE — the translated suite's positive control: one es-CL sentinel per
   # spec file + helpers (a lost 090 leaves the upstream English assertions in place and

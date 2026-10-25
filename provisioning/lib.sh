@@ -268,95 +268,45 @@ app_installed_version() {  # APPID -> prints the installed version, or nothing w
     "/var/www/html/custom_apps/$app/appinfo/info.xml" 2>/dev/null || true
 }
 
-# --- apps (unpack the vendored tarball, then enable; idempotent) ---
+# --- apps from the store, scoped (#42) ---
 #
-# NOT `occ app:install` (#98): a failed store install leaves the app missing and its patches
-# unapplied — an instance that looks installed and is not — and it pins no version, while
-# `eurooffice/10-admin-section-name.patch` is anchored to a line number in 11.0.4.
-# The store is OFF instance-wide (compose.yaml, NC_appstoreenabled) — #163. #82 left that open and
-# named the admin Update button as a thing to be rid of, not a guard: it reverts our patches.
-# The tarballs are UNMODIFIED upstream and stay that way (#82): committing them pre-patched hides a
-# four-line change inside 409 files and makes upstream drift silent, where a patch that stops
-# applying aborts the phase and says so.
-ensure_vendored_app() {  # APPID
-  # Two statements, not one. Bash expands every word of a `local` BEFORE assigning any of them, so
-  # `local app="$1" dir=".../$app"` reads whatever `app` meant in the CALLER — which here is phase
-  # 12's loop variable of the same name, so it produced the right answer for the wrong reason and
-  # would have broken the moment anything called this from a different loop.
-  local app="$1"
-  local dir="$HERE/apps/$app" tgz want sha cur
-  local -a tarballs=("$dir"/*.tar.gz)
+# THE STORE OPENS ONE COMMAND AT A TIME. No image carries an app, and the store is off
+# instance-wide — NC_appstoreenabled="0" is baked into the aio-nextcloud image and Config.php's
+# envCache beats config.php, so every bare store leg fails fast. The one exception is
+# occ_store: the command carries its own NC_appstoreenabled=1, which beats both the file and
+# the image ENV for that process alone, and dies with it. A bare app:install anywhere under
+# provisioning/ is the acquisition gate's row to catch — never this file's habit.
+#
+# NO PIN, BY DESIGN — #98's reasoning, closed by #42. The vendored tarball pinned a version
+# because the bake served fixed bytes; the store row installs the newest release compatible
+# with the running Nextcloud, ONCE. Convergence is presence + enabled, never "whatever is
+# newest": nothing here updates, so a warm server is left alone (apps move only when the
+# operator decides, `aps-conecta actualizar`), and a repair re-run installs only what is
+# missing. The store's tarball is unmodified upstream, so its own signature.json stays true
+# and the integrity check stays green — nothing here patches it (#82's rule, unchanged).
+occ_store() {  # OCC_ARGS… — one occ call with the store open, for this command alone
+  nc_exec -e NC_appstoreenabled=1 --user www-data -- php /var/www/html/occ "$@"
+}
 
-  # GUARD EVERY READ ON THE FILE EXISTING, and use no pipelines: phases run under `set -e` + `pipefail`,
-  # so an unguarded read of a missing file kills the phase before its own `log` line can run.
-  [ -f "${tarballs[0]}" ] || { log "FAILED $app — no vendored tarball in provisioning/apps/$app/"; return 1; }
-  [ "${#tarballs[@]}" -eq 1 ] || { log "FAILED $app — ${#tarballs[@]} tarballs in provisioning/apps/$app/, expected 1"; return 1; }
-  tgz="${tarballs[0]}"
-  [ -f "$dir/VENDOR" ] || { log "FAILED $app — provisioning/apps/$app/VENDOR is missing"; return 1; }
-  want="$(sed -n 's/^version=//p' "$dir/VENDOR")" || want=""
-  sha="$(sed -n 's/^sha256=//p' "$dir/VENDOR")" || sha=""
-  [ -n "$want" ] && [ -n "$sha" ] || { log "FAILED $app — VENDOR is missing version= or sha256="; return 1; }
-
-  # The tarball is committed, so git already guarantees the bytes survived the clone. This catches
-  # the other thing: a bump where the file and the VENDOR line stopped describing each other.
-  echo "$sha  $tgz" | sha256sum --check --status \
-    || { log "FAILED $app — tarball does not match sha256 in VENDOR; re-download it from url="; return 1; }
-
+ensure_store_app() {  # APPID — install the store's newest compatible release, scoped, once
+  local app="$1" cur err
   cur="$(app_installed_version "$app")"
-
-  if [ "$cur" = "$want" ]; then
-    log "app $app $want vendored, already unpacked"
+  if [ -n "$cur" ]; then
+    log "app $app $cur already installed (the store's, untouched — nothing here updates)"
   else
-    # RE-IMPOSE, not report (#117, answering the question #98 left open). App code is not content —
-    # #85 classifies re-imposing it as reversible — and the vendored tarball plus the patches beside
-    # it reproduce the result exactly, so the instance converging on the repo is the whole point of
-    # `make install`. What is NEVER re-imposed is anything that holds files: folders, users, content.
-    if [ -n "$cur" ]; then
-      # Cleared first so the result IS the tarball. Untarring over a different version leaves
-      # whatever that version had and this one dropped — an app that is neither release, which is
-      # worse than either. Brief window where the app directory does not exist; the phase fails
-      # loudly if the unpack then fails, and re-running restores it from git.
-      occ_sh "rm -rf custom_apps/$app" \
-        || { log "FAILED to clear $app before re-imposing $want"; return 1; }
-    fi
-    # Streamed into the container and unpacked as www-data, rather than on the host: files must be
-    # writable by uid 33 or the patches below cannot apply. Ownership ends up www-data:www-data.
-    # -i: docker exec closes stdin without it, and the tarball arrives on stdin.
-    if nc_exec -i --user www-data -- \
-         tar xzf - -C /var/www/html/custom_apps < "$tgz"; then
-      log "app $app ${cur:+$cur }-> $want unpacked from $(basename "$tgz")"
+    # Keep occ's own error: it is the only thing that says WHY (a guessed cause once sent an
+    # operator hunting file permissions when the real failure was a store timeout, #41).
+    if err="$(occ_store app:install "$app" 2>&1)"; then
+      log "app $app -> installed from the store (NC_appstoreenabled=1, scoped to this command)"
     else
-      log "FAILED to unpack $app from $(basename "$tgz")"; return 1
-    fi
-
-    # NEW FILES ARE HALF THE JOB. Nextcloud records each app's version in appconfig, independently
-    # of what is on disk, and a mismatch sets needsDbUpgrade — after which occ answers only a
-    # handful of commands ("Nextcloud or one of the apps require upgrade") and every later phase
-    # fails. Measured 2026-08-01, which is the only reason this line exists.
-    #
-    # `occ upgrade` is the right tool and not a heavy-handed one: it runs the app's own migrations
-    # from the files on disk. It ALSO re-fetches every enabled app from the store (Updater.php:244),
-    # which is why the store is off in compose.yaml (#163). Setting installed_version by hand would
-    # be lighter and would SKIP those migrations, which is how an app ends up running new code
-    # against an old schema. Only on a version change, so a normal seed never pays for it.
-    if [ -n "$cur" ]; then
-      if occ upgrade --no-interaction >/dev/null 2>&1; then
-        log "app $app schema reconciled to $want (occ upgrade)"
-      else
-        log "FAILED to reconcile $app to $want — 'occ upgrade' errored; instance may be mid-upgrade"
-        return 1
-      fi
-      CONF_CACHE=""   # installed_version moved under it
+      log "FAILED to install $app from the store — occ said: $(printf '%s' "$err" | tr '\n' ' ' | tail -c 300)"
+      return 1
     fi
   fi
 
   conf_load
   [ "$(conf_get app "$app" enabled 2>/dev/null || true)" = "yes" ] && { log "app $app enabled"; return 0; }
-  # `app:enable` alone, never `app:install` — enable reads what is on disk and never contacts the
-  # store, which is the whole point. Keep occ's own error: it is the only thing that says WHY.
-  # Guessing a cause here once sent an operator hunting file permissions when the real failure was
-  # an app store timeout (#41).
-  local err
+  # `app:enable` reads what is on disk and never contacts the store — no scope needed.
   if err="$(occ app:enable "$app" 2>&1)"; then
     log "app $app -> enabled"
   else
@@ -365,26 +315,34 @@ ensure_vendored_app() {  # APPID
   fi
 }
 
-# An app WE write. It ships as a tarball like every other app here, built from a release
-# tag of its own repository — so an install needs no network, no git, and no GitHub.
+# An app WE write — a release row (ADR-0017) on a server, a checkout on a dev machine.
 #
-# The one thing that differs is a DEVELOPMENT MACHINE, where apps/<id> is not an unpacked tarball
-# but a live git clone that someone is editing. ensure_vendored_app clears the directory before
-# unpacking, which there would mean `rm -rf` over a working tree: uncommitted work, .git and all.
+# The server's channel is the app's own signed GitHub Release, resolved and verified by the
+# wizard's download step and installed from the server's lock by ensure_release_app — phase 12
+# dispatches there when a lock row names the app. What reaches THIS function without a lock row
+# is one of two things: a live git clone on a development machine, or a server whose download
+# step never ran.
 #
-# So this dispatches on a fact rather than a flag — `apps/<id>/.git` exists or it does not. A server
-# never has it and gets the pinned, re-imposed tarball, which is what reproducibility needs. A
-# developer always has it and gets left alone. Nobody has to remember to set anything, and the
-# wrong answer is not reachable by forgetting.
+# The dispatch is on a fact rather than a flag — `apps/<id>/.git` exists or it does not. A
+# developer always has it and gets left alone (the tarball paths cleared directories before
+# unpacking; over a working tree that is uncommitted work, .git and all). Nobody has to
+# remember to set anything, and the wrong answer is not reachable by forgetting.
+#
+# A server with no lock row is a FATAL, never a fallback: the vendored bake that once fed this
+# branch is gone (#42), the seed is not the door that improvises an app from a channel nobody
+# verified, and every install path runs the download step before the seed — so its absence is
+# a stopped install to re-run, named in the operator's own words.
 ensure_own_app() {  # APPID CLONE_URL
   local app="$1" url="$2"
   local info="apps/$app/appinfo/info.xml" disk installed
 
-  # Not a checkout: production. Hand it to the tested path, which pins the sha256, re-imposes the
-  # bytes and reconciles the schema exactly as it does for the third-party apps.
+  # Not a checkout, and the lock named nothing: the download step never ran. Name the two
+  # honest repairs — re-run the install, or make it a dev machine on purpose.
   if [ ! -d "apps/$app/.git" ]; then
-    ensure_vendored_app "$app"
-    return
+    log "FAILED $app — its release was never resolved on this server (no lock row, and no image carries apps, #42)."
+    log "        Re-run the install so its download step resolves the release, or clone the app for development:"
+    log "        git clone $url apps/$app"
+    return 1
   fi
 
   # A checkout with no info.xml is a half-clone, not a dev machine. Say the command: apps/ is
@@ -406,7 +364,7 @@ ensure_own_app() {  # APPID CLONE_URL
   conf_load
   installed="$(conf_get app "$app" installed_version 2>/dev/null || true)"
 
-  # Same trap ensure_vendored_app documents, reached by a different route: here the version moves
+  # Same trap the release path documents, reached by a different route: here the version moves
   # when someone runs `git pull`, and Nextcloud then answers almost nothing until `occ upgrade`
   # runs. Doing it inside the phase means a pull followed by `make seed` is enough, and nobody has
   # to remember the second command. Only on a change, so a normal seed never pays for it.
@@ -445,9 +403,9 @@ app_elegida() {  # APPID — exit 0 when the operator chose APPID, non-zero when
                  # wizard's options record answers — the same file the host CLI writes at step 6
                  # and the fetch leg reads; anything but an explicit `APPID=1` (no record, no key,
                  # a 0) reads NOT chosen. An optional app installs only by that choice: no lock
-                 # row, no release, and never the bake — the bake's interim (#42) is for default
-                 # apps alone. Un-choosing on a warm server keeps what runs (nothing here
-                 # uninstalls), exactly the manifest flip-back's doctrine: `occ app:remove`, by hand.
+                 # row, no release, no store install. Un-choosing on a warm server keeps what
+                 # runs (nothing here uninstalls), exactly the manifest flip-back's doctrine:
+                 # `occ app:remove`, by hand.
   local archivo="${APS_APPS_OPCIONES:-${AIO_STATE:-/opt/aps-conecta/aio}/opciones}"
   [ -f "$archivo" ] && tr ' ' '\n' < "$archivo" | grep -qx -- "$1=1"
 }
@@ -486,8 +444,8 @@ ensure_release_app() {  # APPID ROW — install the release the lock names, from
   if [ "$cur" = "$want" ] && ! occ_sh "test -e custom_apps/$app/appinfo/signature.json"; then
     log "app $app $want already unpacked (release $tag)"
   else
-    # The same re-impose discipline as ensure_vendored_app, for the same reasons (cleared first
-    # so the result IS the release; schema reconciled through the app's own migrations).
+    # The re-impose discipline (cleared first so the result IS the release; schema reconciled
+    # through the app's own migrations).
     if [ -n "$cur" ]; then
       occ_sh "rm -rf custom_apps/$app" \
         || { log "FAILED to clear $app before re-imposing $want"; return 1; }
@@ -524,90 +482,9 @@ ensure_release_app() {  # APPID ROW — install the release the lock names, from
   fi
 }
 
-# Re-apply a file edit inside an app's code. apps/ is not tracked, so these edits cannot
-# be committed and an app update wipes them; running on every seed is what restores them.
-#
-# THREE outcomes, not two. `patch --dry-run` forward says it applies; in reverse it says it is
-# ALREADY applied. Neither means upstream moved and the patch must be regenerated — that aborts
-# the phase. The usual `--forward --dry-run && patch` idiom collapses that third case into the
-# second, which is the silent no-op this repo has already paid for five times (see BUGS.md B-001
-# and the sed it replaces here).
-apply_patch() {  # APPID PATCHFILE
-  local app="$1" p="$2" name; name="$(basename "$p")"
-  local dir; dir="$(dirname "$p")"
-  # The patch tool must exist IN THE CONTAINER, and the two images disagree: compose's Debian
-  # image ships GNU patch; AIO's Alpine image ships NEITHER GNU patch nor the busybox patch
-  # applet (verified: alpine:3.24 busybox has no patch applet, and the image's apk list has
-  # grep/git/coreutils but no patch) — but it DOES ship git, and `git apply` carries the same
-  # three outcomes outside any repository (--check forward, --check --reverse, apply). Probe per
-  # call — two patch files exist today, one exec each. patch FIRST, so the compose transport
-  # keeps its exact current behavior: git apply is stricter (no fuzzy context), which makes it
-  # the right fallback and a stricter gate on the suite, not a silently different one.
-  local tool dry
-  if occ_sh "command -v patch >/dev/null"; then
-    tool="patch -p1 --silent"; dry="--dry-run"
-  elif occ_sh "command -v git >/dev/null"; then
-    tool="git apply -p1"; dry="--check"
-  else
-    log "FAILED patch $app/$name — the container has neither patch nor git; app edits cannot apply"
-    return 1
-  fi
-  local in="cd custom_apps/$app && $tool"
-  # CHAIN PROOF (B-027): a later patch that touches one of this patch's
-  # targets and is ITSELF applied proves the chain ran past this patch —
-  # believe that over a fuzzy forward match, which is how 06-test-pins'
-  # weak tail context stacked a second seam onto 07's split file.
-  _chain_proves_applied() {  # -> 0 with a log line when a later patch is applied
-    local tgt later
-    for tgt in $(sed -n 's|^--- a/\(.*\)$|\1|p' "$p" | sort -u); do
-      for later in "$dir"/*.patch; do
-        [[ "$later" > "$p" ]] || continue
-        grep -q "^--- a/$tgt\$" "$later" || continue
-        if occ_sh "$in $dry --reverse" < "$later" 2>/dev/null; then
-          log "patch $app/$name already applied ($(basename "$later") is applied and also edits $tgt — the chain ran past this patch, B-027)"
-          return 0
-        fi
-      done
-    done
-    return 1
-  }
-  # REVERSE FIRST. A seed is a convergence verb — re-runs are the norm, so the
-  # already-applied check must win over the forward branch: GNU patch fuzzy-
-  # matches weak-context hunks (06-test-pins' tail seam) onto an ALREADY
-  # patched file and re-applies them, stacking copies on every seed (B-027).
-  # On a pristine tree the reverse dry-run simply fails and forward runs.
-  if occ_sh "$in $dry --reverse" < "$p"; then
-    log "patch $app/$name already applied"
-  elif _chain_proves_applied; then
-    :
-  elif occ_sh "$in $dry" < "$p"; then
-    occ_sh "$in" < "$p" && log "patch $app/$name applied"
-  else
-    # B-026: neither branch fits the FINAL tree. One honest remaining case:
-    # a LATER patch in this chain also touches one of this patch's targets
-    # (desktop_workspace 01 edits the SettingsController that 09 deletes;
-    # 02 edits the desktop-shell.js that 07 reworks). Patches apply in name
-    # order, so a later patch's effect existing means this one ran before it
-    # — and a reverse check against the final tree cannot see through either
-    # a deletion or a context move. That is "already applied", not rot.
-    # No later patch touching the target → the tree genuinely diverged → FAILED stands.
-    local tgt later
-    for tgt in $(sed -n 's|^--- a/\(.*\)$|\1|p' "$p" | sort -u); do
-      for later in "$dir"/*.patch; do
-        [[ "$later" > "$p" ]] || continue
-        if grep -q "^--- a/$tgt\$" "$later"; then
-          log "patch $app/$name already applied ($(basename "$later") also edits $tgt later in the chain — the reverse check cannot see through it, B-026)"
-          return 0
-        fi
-      done
-    done
-    log "FAILED patch $app/$name — no longer applies; upstream moved, regenerate it"; return 1
-  fi
-}
-# Shell inside the nextcloud container, stdin forwarded (apply_patch pipes the .patch in) — hence
-# -i: docker exec closes stdin without it. The FOLD: every occ_sh payload is web-root-relative
-# (apply_patch's `cd custom_apps/$app && …` above, the signature test/rm in 12-apps.sh, the
-# re-impose clear in ensure_vendored_app), and the AIO image sets no WORKDIR, so docker exec
+# Shell inside the nextcloud container, stdin forwarded — hence -i: docker exec closes stdin
+# without it. The FOLD: every occ_sh payload is web-root-relative (the re-impose clears and the
+# signature probes), and the AIO image sets no WORKDIR, so docker exec
 # starts them in / — folding the absolute cd into the ONE shared function fixes every caller at
 # once. A failed cd is loud, which is the point: a payload that silently ran from / would be the
 # B-014 seam-misparse class wearing a new hat.

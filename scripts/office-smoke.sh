@@ -20,10 +20,11 @@
 # slice 1's harness) and aps-conecta (the suite's channel; the retag preserves the manifest, D12) —
 # and anything else (a stranger's DS, Collabora, OnlyOffice) reds.
 #
-# The white-label rename grep RETIRED here (slice 13's routing): under the suite nothing can
-# revert the rename between builds — the store is off (patch 020) and a published tag's digests
-# never move (D12) — so the runtime grep's threat model is empty. This repo's scripts/bake.sh owns the pair as build-time asserts via the bake, and the
-# brand-gate's 030 row pins the mechanism to its own script.
+# The white-label rename grep RETIRED here (slice 13's routing), twice over: the renames are
+# COMMITS in the fork's own repo (#36), so a signed release carries them and nothing under the
+# suite can revert them — the store is off (patch 020), a published tag's digests never move
+# (D12), and no image carries app bytes any more (#42). The clean-boot greps the installed
+# bytes on every run; nothing here has a threat model left.
 
 # NOT covered here, because no gate can: in-browser rendering, live convergence, cursor presence,
 # and open/save FIDELITY — plus per-format editing, since Euro-Office exposes no WOPI discovery to

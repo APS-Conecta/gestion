@@ -160,17 +160,33 @@ jobs:
         run: bash scripts/aio-testbed.sh up
       # FIRST BOOT, the one sibling whose absence kills a first boot: the notify-push
       # container's own start dies when the app binary is absent (Containers/notify-push/
-      # start.sh:31-41) — the FRD S3 first-boot acceptance, whose CI owner this step is (the
-      # interim images boot-smoke checks the wizard only). On this stock probe the entrypoint
-      # installed the app from the store at first boot (the store is still on until the
-      # harness's probe state lands); on a suite clinic the bake ships the binary and the store
-      # never answers — both postures converge to the same observable: the sibling runs. The
-      # store-off reboot below re-asserts it.
+      # start.sh:31-41). No image carries apps (#42), so the first boot installs notify_push
+      # itself — the entrypoint opens the store for that one command (a per-process
+      # NC_appstoreenabled=1 over the image's own off) and closes it again; Talk rides the
+      # same scoped install when the wizard enabled it. The observable: the sibling runs, and
+      # the nothing-baked step after this proves the store never opened for anything else.
       - name: First boot — the notify-push sibling converged
         run: |
           docker ps --filter name=aps-conecta-notify-push --filter status=running --format '{{.Names}}' \
             | grep -qx aps-conecta-notify-push \
             || { echo "FAIL: aps-conecta-notify-push is not running after first boot (the S3 first-boot acceptance) — diagnose: docker ps -a --filter name=aps-conecta-notify-push ; docker logs aps-conecta-notify-push" >&2; exit 1; }
+      # #42's own half, measured at the earliest moment it can be: the image booted, the
+      # entrypoint ran, and provisioning has NOT — the silent install comes later. So
+      # custom_apps can hold only what the entrypoint itself installed (notify_push; Talk
+      # when the wizard enabled it): every suite app the manifest names must be ABSENT, and
+      # the scoped install's constant half must be present — the nothing-baked acceptance,
+      # live, before any provisioning can blur it.
+      - name: Nothing is baked — custom_apps holds only what the entrypoint installs (#42)
+        run: |
+          set -euo pipefail
+          for app in intravox groupfolders eurooffice calendar contacts epidemiologia estadistica farmacia territorio desktop_workspace side_menu; do
+            if docker exec --user www-data aps-conecta-nextcloud test -e "/var/www/html/custom_apps/$app"; then
+              echo "FAIL: custom_apps holds $app at first boot — no image carries apps (#42); only the entrypoint's notify_push (and Talk, when on) may be there" >&2; exit 1
+            fi
+          done
+          docker exec --user www-data aps-conecta-nextcloud test -d /var/www/html/custom_apps/notify_push \
+            || { echo "FAIL: notify_push is absent at first boot — the entrypoint's scoped store install did not run" >&2; exit 1; }
+          echo "nothing baked: notify_push landed scoped at first boot; every suite app waits for its own channel"
       - name: Build the rehearsal package, then install through the real bootstrap
         run: |
           set -euo pipefail
@@ -369,41 +385,38 @@ jobs:
           print(f"credentials: {len(rows)} rows, {len(cargos)} cargos, every password distinct")
           PY
       # #33: territorio arrives from its own signed release (ADR-0017) at the tag the lock
-      # recorded — never the bake's 0.74.0 — and it carries no signature.json (the release
-      # workflow packs none; the fetch refuses one that does). The lock and its store live
-      # inside the backup scope (/opt/aps-conecta, the wizard's own wiring).
+      # recorded — nothing else carries its bytes (#42: no image, no package) — and it carries
+      # no signature.json (the release workflow packs none; the fetch refuses one that does).
+      # The lock and its store live inside the backup scope (/opt/aps-conecta, the wizard's
+      # own wiring).
       - name: Territorio installed from its release, at its locked tag, with no signature.json
         uses: ./.github/actions/assert-release-app
         with:
           app: territorio
-          bake-version: 0.74.0
-      # #34: epidemiologia follows territorio (ADR-0017): the lock row names a release tag
-      # — never the bake's 0.9.0 — the instance runs the locked version, and no signature.json
-      # rides it. Same read -r word-split as the step above (#33).
+      # #34: epidemiologia follows territorio (ADR-0017): the lock row names a release tag,
+      # the instance runs the locked version, and no signature.json rides it. Same read -r
+      # word-split as the step above (#33).
       - name: Epidemiologia installed from its release, at its locked tag, with no signature.json
         uses: ./.github/actions/assert-release-app
         with:
           app: epidemiologia
-          bake-version: 0.9.0
       # #35: IntraVox — the fork app — does the same, and stays the landing app. The welcome
       # content is asserted twice over already: phase 41 seeds it (a failed phase reds the run)
       # and the divergence gate below proves every SITE_WELCOME section landed. What this step
-      # adds is the app's own half: installed from its release at the locked tag — never the
-      # bake's 3.1.7 — and still the system's default landing app (ADR-0010).
+      # adds is the app's own half: installed from its release at the locked tag, and still
+      # the system's default landing app (ADR-0010).
       - name: IntraVox installed from its release, at its locked tag, and still the landing app
         uses: ./.github/actions/assert-release-app
         with:
           app: intravox
-          bake-version: 3.1.7
           landing: true
       # #38: side_menu follows territorio (ADR-0017) — the fork the suite mirrors itself, because
       # upstream (gitnet.fr, the app's only source) is unreachable (#169), so APS-Conecta/side_menu
-      # is the app's source of truth from here on. Its release IS 6.0.1, the same version the bake
-      # pinned, so territorio's "never the bake's X" half cannot tell the two apart here; the
-      # release path is proven by what only the fetch leg writes: the lock's row, the verified
-      # tarball inside /opt/aps-conecta/apps (the bake's tarball never lands there), and no
-      # signature.json. And the branding must still apply: 15-branding paints the menu violet —
-      # the two colour keys side_menu's own CSS derives its background from.
+      # is the app's source of truth from here on. No image carries its bytes (#42), so the
+      # release path is the only path — proven by what only the fetch leg writes: the lock's
+      # row, the verified tarball inside /opt/aps-conecta/apps (only the fetch leg's tarball
+      # lands there), and no signature.json. And the branding must still apply: 15-branding
+      # paints the menu violet — the two colour keys side_menu's own CSS derives from.
       - name: side_menu installed from its release, its colour still the suite's violet
         run: |
           set -euo pipefail
@@ -416,7 +429,7 @@ jobs:
           [ "${tag#v}" = "$version" ] || { echo "FAIL: the lock's tag and version disagree" >&2; exit 1; }
           got="$(occ config:app:get side_menu installed_version)"
           [ "$got" = "$version" ] || { echo "FAIL: the instance runs side_menu $got, the lock names $version" >&2; exit 1; }
-          sudo test -f "/opt/aps-conecta/apps/side_menu/$tag.tar.gz" || { echo "FAIL: the locked tarball is not in the store — the bake's tarball never lands there, only the fetch leg's does" >&2; exit 1; }
+          sudo test -f "/opt/aps-conecta/apps/side_menu/$tag.tar.gz" || { echo "FAIL: the locked tarball is not in the store — only the fetch leg's tarball lands there" >&2; exit 1; }
           echo "$sha  /opt/aps-conecta/apps/side_menu/$tag.tar.gz" | sudo sha256sum --check - \
             || { echo "FAIL: the stored tarball is not the locked bytes" >&2; exit 1; }
           if docker exec --user www-data aps-conecta-nextcloud test -e /var/www/html/custom_apps/side_menu/appinfo/signature.json; then
@@ -433,12 +446,11 @@ jobs:
           grep -q -- "--side-menu-background-color: #5315a8" <<<"$css" \
             || { echo "FAIL: side_menu's stylesheet does not paint the suite's violet — the config keys are set but the menu derives another colour" >&2; exit 1; }
       # #37: desktop_workspace — the second fork app — follows territorio through the shared
-      # assertion (ADR-0017, #117): never the bake's 0.18.2, the locked bytes, no signature.json.
+      # assertion (ADR-0017, #117): the locked bytes, no signature.json.
       - name: Desktop workspace installed from its release, at its locked tag
         uses: ./.github/actions/assert-release-app
         with:
           app: desktop_workspace
-          bake-version: 0.18.2
       # #37, the app's own half: «the desktop opens». The app is enabled, and its page route
       # answers its own auth check — HTTP 401 to an anonymous visitor (measured on the first
       # run; the controller refuses instead of redirecting to login), never a 5xx or a 404.
@@ -454,15 +466,43 @@ jobs:
             200|302|303|401) echo "desktop: /apps/desktop_workspace/ answered HTTP $code (route alive)" ;;
             *) echo "FAIL: the desktop does not open — /apps/desktop_workspace/ answered HTTP $code" >&2; exit 1 ;;
           esac
+      # #42's store rules, the three live observables: the store apps landed through the
+      # scoped seam (calendar, contacts, groupfolders — enabled, with a version, which only
+      # an install writes), a bare occ app:install FAILS against the image's store-off ENV
+      # and leaves nothing behind (the per-process prefix is the only key), and the env that
+      # armed AIO's Saturday app updates is not even passed to the container any more. The
+      # admin UI's half rides the appstoreenabled=0 reads around this one — the Apps page
+      # and occ read the same system value.
+      - name: The store opens scoped, lands its three, and stays closed otherwise (#42)
+        run: |
+          set -euo pipefail
+          cd /opt/aps-conecta/instalador && source scripts/env.sh
+          for app in calendar contacts groupfolders; do
+            got="$(occ config:app:get "$app" installed_version 2>/dev/null || true)"
+            [ -n "$got" ] || { echo "FAIL: $app is not installed — phase 12's scoped store install did not land it" >&2; exit 1; }
+            [ "$(occ config:app:get "$app" enabled 2>/dev/null || true)" = "yes" ] \
+              || { echo "FAIL: $app is installed but not enabled" >&2; exit 1; }
+          done
+          # the scoped variable is the only key: a bare install fails, and installs nothing
+          rc=0; out="$(occ app:install notes 2>&1)" || rc=$?
+          [ "$rc" -ne 0 ] \
+            || { echo "FAIL: a bare occ app:install succeeded — the store must be closed without the scoped variable" >&2; exit 1; }
+          echo "bare app:install refused: $(printf '%s' "$out" | tail -c 200)"
+          [ -z "$(occ config:app:get notes installed_version 2>/dev/null || true)" ] \
+            || { echo "FAIL: the refused install left notes behind" >&2; exit 1; }
+          # AIO's automatic app updates: the env that armed them is passed no more
+          if docker exec aps-conecta-nextcloud printenv UPDATE_NEXTCLOUD_APPS 2>/dev/null | grep -qx yes; then
+            echo "FAIL: the container still receives UPDATE_NEXTCLOUD_APPS=yes — AIO's automatic app updates are off (#42)" >&2; exit 1
+          fi
+          echo "store apps landed scoped; the store stays closed to everything without its key; no automatic app updates"
       # #36: eurooffice follows the forks (ADR-0017) — the connector arrives from
-      # APS-Conecta/eurooffice's own release, never the bake's patched 11.0.5 and never the
-      # store's eurooffice (the manifest row is source: fork). The fork's own two proofs —
+      # APS-Conecta/eurooffice's own release, never the store's eurooffice (the manifest row
+      # is source: fork, and no image carries its bytes). The fork's own two proofs —
       # our names in the installed files, and the store-closed update posture — ride in the
       # step after this call.
       - uses: ./.github/actions/assert-release-app
         with:
           app: eurooffice
-          bake-version: 11.0.5
       # The fork's own two proofs (#36). Our two names, in the installed files — the fork
       # carries the white-label renames as COMMITS (the bake's two patches became them), and
       # the office smoke retired its runtime grep (slice 13: nothing can revert a rename under
@@ -498,13 +538,11 @@ jobs:
             || { echo "FAIL: the update leg replaced the fork's name" >&2; exit 1; }
       # #39/#40: farmacia and estadistica are the optional apps, and this job chose NOTHING — the
       # testbed's wizard drive recorded talk=0 grabacion=0 farmacia=0 estadistica=0, so the fetch
-      # leg resolved nothing for either row and phase 12 skipped each before any of its three
-      # arrival paths. "Not installed" therefore means absent as an APP: no lock row, no release
-      # tarball in the store, no installed version, never enabled — the seed's gate is what keeps
-      # the bake out, because the IMAGE still bakes the apps' bytes into custom_apps (the #42
-      # interim, Dockerfile:305), so the directory's presence is not the choice's observable: its
-      # INSTALL is. The record itself is asserted first: it is the choice that all three halves
-      # read, and the one the repeated-provisioning arms rely on surviving.
+      # leg resolved nothing for either row and phase 12 skipped each before any arrival path.
+      # "Not installed" is therefore TOTAL absence (#42: no image carries the bytes either): no
+      # lock row, no release tarball in the store, no installed version, never enabled, and not
+      # even a directory under custom_apps. The record itself is asserted first: it is the choice
+      # that all three halves read, and the one the repeated-provisioning arms rely on surviving.
       - name: Farmacia and Estadística are absent — an optional app nobody chose installs nothing (#39, #40)
         run: |
           set -euo pipefail
@@ -526,7 +564,12 @@ jobs:
             [ -z "$got" ] || { echo "FAIL: the instance knows $elegida $got, but nobody chose it" >&2; exit 1; }
             habilitada="$(occ config:app:get "$elegida" enabled 2>/dev/null || true)"
             [ "$habilitada" != "yes" ] \
-              || { echo "FAIL: $elegida is enabled, but nobody chose it — the bake's bytes sit in the image (#42's interim), the seed's gate must keep them an uninstalled app" >&2; exit 1; }
+              || { echo "FAIL: $elegida is enabled, but nobody chose it" >&2; exit 1; }
+            # nothing baked (#42): the bytes never existed on this server, so even the
+            # directory is absent — presence would mean an image still carries an app
+            if docker exec --user www-data aps-conecta-nextcloud test -e "/var/www/html/custom_apps/$elegida"; then
+              echo "FAIL: custom_apps holds $elegida — no image carries apps (#42), so even its bytes must be absent" >&2; exit 1
+            fi
           done
           # #40's own half: Estadística's DEIS figures arrive only with the app — phase 16 still
           # writes its identity keys (deis_code, establishment_type, comuna_cut: config rows, not
@@ -539,11 +582,9 @@ jobs:
             [ -z "$valor" ] \
               || { echo "FAIL: estadistica carries $clave='$valor', but nobody chose it — its DEIS job must never have run" >&2; exit 1; }
           done
-          # #41's own half: nothing bakes totem (no vendored tarball, no Dockerfile row), so its
-          # absence is the cleaner one — not "present but never installed": even its bytes are gone.
-          if docker exec --user www-data aps-conecta-nextcloud test -e /var/www/html/custom_apps/totem; then
-            echo "FAIL: custom_apps holds totem — nothing bakes it, so even its bytes must be absent" >&2; exit 1
-          fi
+          # #41's own half rides the loop above now: totem's absence is the same total one
+          # (#42 made it the rule for every app — no image carries bytes any optional could
+          # have shipped), and the loop asserts it beside farmacia and estadistica.
           echo "farmacia, estadistica, totem: nunca instaladas — la elección es la puerta, y nadie las eligió (sin descarga del DEIS; totem ni siquiera existe en el servidor)"
 
 
@@ -857,27 +898,24 @@ jobs:
         uses: ./.github/actions/assert-release-app
         with:
           app: territorio
-          bake-version: 0.74.0
       # #34, by IP: epidemiologia from its own release at its locked tag, no signature.json — the
       # same acceptance the domain job asserts, on an install that reached the suite by address
       - name: Epidemiologia installed from its release, at its locked tag, with no signature.json
         uses: ./.github/actions/assert-release-app
         with:
           app: epidemiologia
-          bake-version: 0.9.0
       # #35, by IP: intravox from its own release at its locked tag, still the landing app — the
       # same acceptance the domain job asserts, on an install that reached the suite by address.
       - name: IntraVox installed from its release, at its locked tag, and still the landing app
         uses: ./.github/actions/assert-release-app
         with:
           app: intravox
-          bake-version: 3.1.7
           landing: true
       # #39, by IP: farmacia — the optional tracer — installed from its release at its locked
       # tag BECAUSE this job chose it. The choice rode the silent install's --app flag into the
-      # wizard's options record, the fetch leg resolved it beside the default rows, and the
-      # bake's 0.11.1 (the vendored tarball this suite still carries, #42) never applied. The
-      # record is asserted beside the lock: it is the choice every later run re-reads.
+      # wizard's options record and the fetch leg resolved it beside the default rows — its only
+      # channel, now that no image carries bytes (#42). The record is asserted beside the lock:
+      # it is the choice every later run re-reads.
       - name: Farmacia installed from its release because it was chosen (#39)
         run: |
           set -euo pipefail
@@ -887,15 +925,13 @@ jobs:
         uses: ./.github/actions/assert-release-app
         with:
           app: farmacia
-          bake-version: 0.11.1
       # #40, by IP: estadística — the second optional app — installed from its release because this
       # job chose it, and the DEIS data import RUNNING: the app's own hourly job is what downloads
       # the figures (ADR-0005 in that repo — the installer moves no data), so the assertion is the
       # job's own observable state, not a table: after cron's first tick (the suite's nextcloud runs
       # cron every 5 min) deis_checked_at records the first DEIS contact and deis_register the Base
       # de Establecimientos it imported — real DEIS bytes landed, and the window's members are
-      # queued for the ticks that follow. The bake's 0.1.0 (the vendored tarball the suite still
-      # carries, #42) never applied.
+      # queued for the ticks that follow.
       - name: Estadística installed from its release because it was chosen, and its DEIS import runs (#40)
         run: |
           set -euo pipefail
@@ -905,7 +941,6 @@ jobs:
         uses: ./.github/actions/assert-release-app
         with:
           app: estadistica
-          bake-version: 0.1.0
       - name: Estadística's DEIS data import runs — the job contacted DEIS and imported its register (#40)
         run: |
           set -euo pipefail
@@ -928,11 +963,12 @@ jobs:
             || { echo "FAIL: deis_checked_at is set ($chequeo) but deis_register is empty — the DEIS check ran without importing the Base de Establecimientos; the runner may not reach repositoriodeis.minsal.cl (see deis_check_errors: $(occ config:app:get estadistica deis_check_errors 2>/dev/null || true))" >&2; exit 1; }
           echo "estadística: la importación del DEIS corre — contacto registrado, Base de Establecimientos importada, la ventana REM queda en cola"
       # #41, by IP: totem — the third optional app — installed from its release because this
-      # job chose it beside farmacia. Totem has NO bake (nothing ever vendored its tarball), so
-      # the shared action's "never the bake's version" half has nothing to refuse here; the
-      # release path is proven by what only the fetch leg writes — the lock's row naming v0.3.0,
-      # the verified tarball inside /opt/aps-conecta/apps, no signature.json — plus the app's own
-      # half: BOTH committed voices shipped inside the release (the two Piper models under
+      # job chose it beside farmacia. Its release is the only channel that ever existed (the
+      # bake never vendored a totem tarball — #41 shipped it optional from day one), and #42
+      # made that the rule for every app; the release path is proven by what only the fetch leg
+      # writes — the lock's row naming v0.3.0, the verified tarball inside /opt/aps-conecta/apps,
+      # no signature.json — plus the app's own half: BOTH committed voices shipped inside the
+      # release (the two Piper models under
       # js/tts/, docs/adr/0005 there), and the public display page loads, with the voice assets
       # it loads answering real bytes over https — the CI-observable half of «the display speaks
       # offline»; the audio itself is totem's own e2e (tts.spec.js), run in its repo.
@@ -976,9 +1012,9 @@ jobs:
           echo "totem: instalada desde su release, con sus dos voces servidas al display"
       # #38, by IP: side_menu from its own release at its locked tag, its colour still violet —
       # the same acceptance the domain job asserts, on an install that reached the suite by
-      # address. Same reasoning as there: same version as the bake, so the store + lock prove
-      # the release path, and the colour keys plus the stylesheet they derive prove the branding
-      # (reached as every step here reaches it: https://$SUITE_IP, the installer's CA).
+      # address. Same reasoning as there: no image carries its bytes (#42), so the store + lock
+      # prove the release path, and the colour keys plus the stylesheet they derive prove the
+      # branding (reached as every step here reaches it: https://$SUITE_IP, the installer's CA).
       - name: side_menu installed from its release, its colour still the suite's violet
         run: |
           set -euo pipefail
@@ -988,7 +1024,7 @@ jobs:
           [ "${tag#v}" = "$version" ] || { echo "FAIL: the lock's tag and version disagree" >&2; exit 1; }
           got="$(occ config:app:get side_menu installed_version)"
           [ "$got" = "$version" ] || { echo "FAIL: the instance runs side_menu $got, the lock names $version" >&2; exit 1; }
-          sudo test -f "/opt/aps-conecta/apps/side_menu/$tag.tar.gz" || { echo "FAIL: the locked tarball is not in the store — the bake's tarball never lands there, only the fetch leg's does" >&2; exit 1; }
+          sudo test -f "/opt/aps-conecta/apps/side_menu/$tag.tar.gz" || { echo "FAIL: the locked tarball is not in the store — only the fetch leg's tarball lands there" >&2; exit 1; }
           echo "$sha  /opt/aps-conecta/apps/side_menu/$tag.tar.gz" | sudo sha256sum --check - \
             || { echo "FAIL: the stored tarball is not the locked bytes" >&2; exit 1; }
           if docker exec --user www-data aps-conecta-nextcloud test -e /var/www/html/custom_apps/side_menu/appinfo/signature.json; then
@@ -1007,7 +1043,6 @@ jobs:
         uses: ./.github/actions/assert-release-app
         with:
           app: desktop_workspace
-          bake-version: 0.18.2
       - name: The desktop opens
         run: |
           set -euo pipefail
@@ -1020,14 +1055,13 @@ jobs:
             *) echo "FAIL: the desktop does not open — /apps/desktop_workspace/ answered HTTP $code" >&2; exit 1 ;;
           esac
       # #36, by IP: the same acceptance the domain job asserts — the connector arrives from
-      # APS-Conecta/eurooffice's own release, never the bake's patched 11.0.5 and never the
-      # store's eurooffice (the manifest row is source: fork). The fork's own two proofs —
+      # APS-Conecta/eurooffice's own release, never the store's eurooffice (the manifest row
+      # is source: fork, and no image carries its bytes). The fork's own two proofs —
       # our names in the installed files, and the store-closed update posture — ride in the
       # step after this call.
       - uses: ./.github/actions/assert-release-app
         with:
           app: eurooffice
-          bake-version: 11.0.5
       # The fork's own two proofs (#36). Our two names, in the installed files — the fork
       # carries the white-label renames as COMMITS (the bake's two patches became them), and
       # the office smoke retired its runtime grep (slice 13: nothing can revert a rename under

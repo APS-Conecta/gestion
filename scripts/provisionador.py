@@ -171,15 +171,6 @@ ASSETS = {
 }
 
 
-def mitad_de(bases, relpath):
-    """The first base that carries `relpath`. The self-test's fixture takes the vendored apps
-    (provisioning/apps) from the repo root (the package) or from an old gestion checkout, until #42."""
-    for base in bases:
-        found = os.path.join(base, relpath) if base else ""
-        if found and os.path.exists(found):
-            return found
-    return None
-
 
 def read_steps():
     """The registry, as `aps-conecta pasos` prints it: id · título · dónde · subcomando · propósito
@@ -464,6 +455,15 @@ elif "app:enable" in args:
     # The old fall-through no-op'd without state, so the guard FATAL'd only in this sandbox
     # while the real stack stayed green. Upsert, not append: idempotent re-runs re-enable.
     app = find("app:enable")
+    if not any(r == ["appconfig", app, "enabled", "yes"] for r in rows):
+        rows.append(["appconfig", app, "enabled", "yes"])
+        save(rows)
+elif "app:install" in args:
+    # #42: a store row installs through the scoped seam (occ_store: docker exec -e
+    # NC_appstoreenabled=1 … app:install) — the stub models the install's effect exactly as
+    # app:enable's: the appconfig 'enabled' row real Nextcloud writes. Upsert, not append:
+    # the seed is a convergence verb, and re-runs install only what the probe says is absent.
+    app = find("app:install")
     if not any(r == ["appconfig", app, "enabled", "yes"] for r in rows):
         rows.append(["appconfig", app, "enabled", "yes"])
         save(rows)
@@ -3117,21 +3117,17 @@ def veredicto_talk(memoria, nucleos, puerto_ok):
     return talk, grabacion
 
 
-# Where apps_aps() reads the VENDOR rows from — the fixture world points it at the
-# tree it assembled (a bare checkout has no provisioning/apps: the package carries the old
-# gestion's, until #42)
-APPS_DIR = os.path.join(ROOT_DIR, "provisioning", "apps")
 # Where the /recursos/ assets resolve from — the fixture world points it at the tree it assembled
 ASSETS_ROOT = ROOT_DIR
 
 
 def apps_aps(rows=SUITE_APPS):
     """Step 6's APS apps with their versions (a12): the manifest's own and fork apps that carry
-    a name, in its order — the manifest's name and summary, each VENDOR's version. A release
-    row (#33, ADR-0017) shows what the LOCK records once an install ran; before that its
-    version is decided at «Revisar y ejecutar», and the cell says so instead of naming the
-    stale bake. An unnamed fork app is plumbing (#64); an optional row (#39) is not listed
-    here — its name and summary are the checkbox the «Aplicaciones opcionales» card offers."""
+    a name, in its order. Every own and fork row is a release row (#42; ADR-0017), so the
+    version shown is what the LOCK records once an install ran; before that it is decided at
+    «Revisar y ejecutar», and the cell says so instead of naming a number nobody pinned. An
+    unnamed fork app is plumbing (#64); an optional row (#39) is not listed here — its name
+    and summary are the checkbox the «Aplicaciones opcionales» card offers."""
     import releases   # beside this file; lazy — the step that never lists apps never loads it
     try:
         locked = releases.read_lock()["apps"]
@@ -3141,11 +3137,7 @@ def apps_aps(rows=SUITE_APPS):
     for a in rows:
         if a["source"] not in ("own", "fork") or "name" not in a or a.get("optional") is not False:
             continue
-        if a.get("release"):
-            version = locked.get(a["id"], {}).get("version") or "según su release"
-        else:
-            with open(os.path.join(APPS_DIR, a["id"], "VENDOR"), encoding="utf-8") as fh:
-                version = next((ln.split("=", 1)[1].strip() for ln in fh if ln.startswith("version=")), "")
+        version = locked.get(a["id"], {}).get("version") or "según su release"
         filas.append([a["name"], version, a["summary"]])
     return filas
 
@@ -4799,42 +4791,16 @@ def selftest():
             # path, so the real tree is never touched; the PATH injection and the FAKE_DOCKER_*
             # knobs are restored in the outer finally.
             import shutil
-            # The vendored apps this fixture reads (provisioning/apps' VENDOR tarballs) are the old
-            # gestion's until #42: the composite package carries them at identical paths, an old
-            # gestion checkout beside this one (GESTION_TREE, or ../gestion) supplies the real ones,
-            # and a bare checkout synthesizes minimal fixtures with the same shapes (package-release.sh's
-            # mk_gestion pattern) so the self-test stays hermetic everywhere it can run. The theme and
-            # .env.example are this tree's own.
-            gestion_tree = os.environ.get("GESTION_TREE") or ""
-            if not gestion_tree:
-                _cand = os.path.abspath(os.path.join(HERE, "..", "..", "gestion"))
-                if os.path.isdir(os.path.join(_cand, "provisioning", "apps")):
-                    gestion_tree = _cand
-            apps_src = mitad_de((os.path.join(HERE, ".."), gestion_tree), os.path.join("provisioning", "apps"))
+            # #42: nothing baked ships, so the fixture assembles no provisioning/apps at all —
+            # the release rows' bytes arrive with the lock-backed store below (a server whose
+            # download step ran), the store rows' through the scoped installs the stub docker
+            # answers, and the theme and .env.example are this tree's own.
             themes_src = os.path.join(ROOT_DIR, "themes")
             envex_src = os.path.join(ROOT_DIR, ".env.example")
-            if not apps_src:
-                synth = os.path.join(tmp, "mitad-fixture")
-                apps_src = os.path.join(synth, "provisioning", "apps")
-                for app in sorted(a["id"] for a in SUITE_APPS):
-                    d = os.path.join(apps_src, app)
-                    os.makedirs(d)
-                    blob = f"fixture-{app}\n".encode()
-                    with open(os.path.join(d, f"{app}-1.0.0.tar.gz"), "wb") as fh:
-                        fh.write(blob)
-                    with open(os.path.join(d, "VENDOR"), "w", encoding="utf-8") as fh:
-                        fh.write(f"version=1.0.0\nsha256={hashlib.sha256(blob).hexdigest()}\n"
-                                 f"url=https://fixture.invalid/{app}-1.0.0.tar.gz\n")
-                # one patched app ahead of spreed, as in the real set: phase 12's patch path
-                # (occ_sh, `docker exec -i`) runs mid-manifest, and the spreed arms see it
-                with open(os.path.join(apps_src, "eurooffice", "10-fixture.patch"), "w", encoding="utf-8") as fh:
-                    fh.write("--- a/appinfo/info.xml\n+++ b/appinfo/info.xml\n")
-            global APPS_DIR, ASSETS_ROOT
-            apps_dir_real, APPS_DIR = APPS_DIR, apps_src
+            global ASSETS_ROOT
             assets_root_real, ASSETS_ROOT = ASSETS_ROOT, tmp
             shutil.copytree(os.path.join(HERE, "..", "provisioning"), os.path.join(tmp, "provisioning"),
                             ignore=shutil.ignore_patterns("apps"))
-            os.symlink(apps_src, os.path.join(tmp, "provisioning", "apps"))
             shutil.copytree(themes_src, os.path.join(tmp, "themes"))
             # scripts/ WHOLE (#59), not a hand-picked list: whatever a phase or gate reads next
             # is already here. __pycache__ alone is left out — build dirt, not source — and the
@@ -4874,9 +4840,9 @@ def selftest():
             os.environ["FAKE_DOCKER_LOG"] = stublog
             os.environ["FAKE_DOCKER_STATE"] = stubstate
             os.environ["FAKE_DOCKER_CONTROL"] = stubctl
-            # The fixture's lock (#33): absent, so phase 12's release rows ride the vendored
-            # bridge exactly as a server whose wizard step has not run — and the seed's
-            # lock_row probes never read a real /opt on the machine running the self-test.
+            # The fixture's lock file (#33): pointed INSIDE tmp, so the seed's lock_row probes
+            # never read a real /opt on the machine running the self-test. Its rows arrive with
+            # the release world below, just before the first seed runs.
             os.environ["APS_APPS_LOCK"] = os.path.join(tmp, "apps-lock.json")
             # The download step's stub: SUITE_CMD's shape — argv recorded, the console line the
             # real releases.py prints, and a failing variant for the stop-the-install arm.
@@ -4970,9 +4936,8 @@ def selftest():
                   st_ub == 200 and plan_ub["ubicacion"] == {"oficial": True}
                   and st_ub2 == 200 and plan_corr["ubicacion"]["oficial"] is False
                   and 20 <= plan_corr["ubicacion"]["metros"] <= 40)
-            apps = set(os.listdir(apps_src))   # the half the fixture read: the package's, gestion's, or the synthesized one
-            check("componentes: the suite manifest names exactly the apps the package ships — a new app is a manifest row (R37)",
-                  {a["id"] for a in SUITE_APPS} == apps)
+            check("componentes: nothing baked ships — the fixture tree carries no provisioning/apps, and every manifest row names its own channel (R37, #42)",
+                  not os.path.exists(os.path.join(tmp, "provisioning", "apps")))
             check("veredicto: one head for «aps-conecta estado» and the browser — green, drift, a gate that stopped, a run that stopped",
                   veredicto({"divergencia_vacia": True})[0].startswith("✓")
                   and veredicto({"divergencia_vacia": False, "divergencia": "    algo\n"}) ==
@@ -5729,6 +5694,33 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   st == 409 and "otro-lugar" in body.get("error", "") and "migre" in body.get("error", ""))
             os.remove(env_path)
 
+            # The release world (#33 + #42): a lock that names every NON-OPTIONAL release row,
+            # with its verified tarball beside it in the store — exactly the state a server
+            # reaches once its download step ran (the apps stub below echoes that step's
+            # console line; releases.py's own self-test proves the real fetch that writes this
+            # lock). The optional rows are absent on purpose: this fixture's opciones record
+            # chose nothing, the fetch resolves nothing for an unchosen row, and the lock
+            # mirrors that — or phase 12 would install what nobody chose. The versions mirror
+            # the real hubs (releases.py's fixture), so the two self-tests tell one story.
+            fixture_store = os.path.join(tmp, "fixture-store")
+            fixture_versions = {"intravox": ("v3.2.0", "3.2.0"), "eurooffice": ("v11.0.7", "11.0.7"),
+                                "epidemiologia": ("v0.12.0", "0.12.0"), "territorio": ("v0.80.0", "0.80.0"),
+                                "desktop_workspace": ("v0.19.0", "0.19.0"), "side_menu": ("v6.0.1", "6.0.1")}
+            filas_lock = {}
+            for fila in SUITE_APPS:
+                if not fila.get("release") or fila.get("optional") is not False:
+                    continue
+                tag_f, ver_f = fixture_versions[fila["id"]]
+                os.makedirs(os.path.join(fixture_store, fila["id"]), exist_ok=True)
+                blob_f = f"fixture-release-{fila['id']}-{tag_f}\n".encode()
+                with open(os.path.join(fixture_store, fila["id"], f"{tag_f}.tar.gz"), "wb") as fh:
+                    fh.write(blob_f)
+                filas_lock[fila["id"]] = {"source": fila["source"], "repo": fila["repo"], "tag": tag_f,
+                                          "version": ver_f, "sha256": hashlib.sha256(blob_f).hexdigest()}
+            with open(os.environ["APS_APPS_LOCK"], "w", encoding="utf-8") as fh:
+                json.dump({"nextcloud": "34.0.4", "apps": filas_lock}, fh)
+            os.environ["APS_APPS_STORE"] = fixture_store
+
             st, body = generar("ejecutar")
             if st != 200:  # B-028: abort with the seed's own output — never a bare .index() ValueError
                 return seed_died(body, "generar: ejecutar runs the whole world green — the seed died (output above)")
@@ -5924,28 +5916,27 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   and "jwt_secret -> (value not printed)" in body["salida"])
             check("the compose arm: Talk is the stack's own — spreed installs, the suite is never asked (R29)",
                   st == 200 and "app spreed" in body["salida"] and "printenv" not in stub_log_text())
-            # #33: a release row the lock names installs from the stored, verified tarball —
-            # phase 12's own path, through the real seed (the stub's awk probe answers nothing,
-            # so the run takes the unpack branch and names the release)
-            os.makedirs(os.path.join(tmp, "store", "territorio"), exist_ok=True)
+            # #33, post-#42: a re-pinned lock row re-imposes — the lock names v1.2.3 with new
+            # bytes beside it, and the seed unpacks the changed release through phase 12's own
+            # path (the stub's awk probe answers nothing, so the run always takes the unpack
+            # branch and names the release). Every other row keeps its pin, and the lock is
+            # restored afterwards.
+            os.makedirs(os.path.join(fixture_store, "territorio"), exist_ok=True)
             blob = b"fixture-release-territorio\n"
-            pkg = os.path.join(tmp, "store", "territorio", "v1.2.3.tar.gz")
+            pkg = os.path.join(fixture_store, "territorio", "v1.2.3.tar.gz")
             with open(pkg, "wb") as fh:
                 fh.write(blob)
+            antes = json.load(open(os.environ["APS_APPS_LOCK"], encoding="utf-8"))
             with open(os.environ["APS_APPS_LOCK"], "w", encoding="utf-8") as fh:
-                json.dump({"nextcloud": "34.0.4", "apps": {"territorio": {
+                json.dump({**antes, "apps": {**antes["apps"], "territorio": {
                     "source": "own", "repo": "APS-Conecta/territorio", "tag": "v1.2.3",
                     "version": "1.2.3", "sha256": hashlib.sha256(blob).hexdigest()}}}, fh)
-            try:
-                os.environ["APS_APPS_STORE"] = os.path.join(tmp, "store")
-                st, body = generar("ejecutar")
-            finally:
-                os.environ.pop("APS_APPS_STORE", None)
-                os.remove(os.environ["APS_APPS_LOCK"])
-            check("generar: a locked release row installs from the store — the lock is the pin, the bake stays untouched (#33)",
+            st, body = generar("ejecutar")
+            with open(os.environ["APS_APPS_LOCK"], "w", encoding="utf-8") as fh:
+                json.dump(antes, fh)
+            check("generar: a re-pinned lock row re-imposes — the lock is the pin, and no other channel answers (#33, #42)",
                   st == 200 and "app territorio -> 1.2.3 unpacked from release v1.2.3" in body["salida"]
-                  and "vendored" not in next(ln for ln in body["salida"].splitlines()
-                                              if "app territorio" in ln))
+                  and "app territorio -> 0.80.0 unpacked from release v0.80.0" not in body["salida"])
             open(stubctl, "w").close()
             open(env_path, "w", encoding="utf-8").write(
                 "\n".join(l for l in env_lines if not l.startswith("OFFICE_")) + "\n")
@@ -6447,6 +6438,13 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                           "(Referer, URL shape, zoom bounds, the attribution link, the first-failure note) was proven "
                           "(pip install playwright; playwright install chromium; or APS_SELFTEST_SIN_NAVEGADOR=1 to waive, "
                           "visibly)", False)
+            # The browser arms model a server whose install has NOT run yet: no lock, no
+            # stored releases — step 6's cells say «según su release», the honest answer
+            # before «Revisar y ejecutar» resolves anything. The EJECUCION world above
+            # installed against a lock; that is not this world.
+            os.environ.pop("APS_APPS_STORE", None)
+            os.remove(os.environ["APS_APPS_LOCK"])
+
             # The browser arms never reach the real OpenStreetMap (its Tile Usage Policy binds the
             # tests too): the context routes every openstreetmap.org request to a mock — the tile
             # URL to a one-pixel PNG or an abort, any other host on that domain to an abort that
@@ -7071,7 +7069,6 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
         for key in ("FAKE_DOCKER_LOG", "FAKE_DOCKER_STATE", "FAKE_DOCKER_CONTROL", "APS_APPS_LOCK"):
             os.environ.pop(key, None)
         try:
-            APPS_DIR = apps_dir_real   # the fixture's apps source goes; the module's own returns
             ASSETS_ROOT = assets_root_real
             globals()["APPS_CMD"] = verdadero_apps_cmd   # the real download command returns
         except NameError:

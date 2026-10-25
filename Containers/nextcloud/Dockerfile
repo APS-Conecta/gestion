@@ -17,11 +17,17 @@ ENV AIO_TOKEN=123456
 ENV AIO_URL=localhost
 # AIO settings end # Do not remove or change this line!
 
-# APS Conecta: apps arrive baked into the image (VENDOR-pinned tarballs), so the app store
-# is disabled at the image level. NC_-prefixed env vars become config entries in the
-# shipped server (lib/private/Config.php ENV_PREFIX) and appstoreenabled is read via
-# getSystemValueBool, so "0" casts to false and the store legs fail fast. With the store
-# on, occ upgrade re-downloads every enabled app and no VENDOR pin can hold.
+# APS Conecta: the store is off at the image level (#42's posture, originally patch 020). The
+# suite's apps never ride an image — own and fork apps arrive from their own signed releases
+# (ADR-0017), store apps from scoped install commands — so nothing needs the store open.
+# NC_-prefixed env vars become config entries in the shipped server (lib/private/Config.php
+# ENV_PREFIX) and appstoreenabled is read via getSystemValueBool, so "0" casts to false and
+# every store leg fails fast. The one exception rides the same channel in the opposite
+# direction: a command that prefixes its own NC_appstoreenabled=1 (the envCache beats both
+# config.php and this ENV for that process alone) opens the store for exactly one occ call —
+# the entrypoint's notify_push/Talk installs when they are missing, provisioning's store
+# installs. With the store on, occ upgrade would re-download every enabled app and no pin
+# could hold; scoped opens never survive their own command.
 ENV NC_appstoreenabled="0"
 
 # APS Conecta: the skeleton posture, baked the same way (the compose stack's own key,
@@ -296,21 +302,20 @@ RUN set -ex; \
     mkdir -p /nc-updater; \
     chmod -R 777 /nc-updater
 
-# APS Conecta (the bake, originally patch 030): the baked app set + the apsconecta theme.
-# The Images workflow's bake step (scripts/bake.sh, riding this same tree) unpacks
-# gestion's VENDOR-gated tarballs into aps-bake/ before this build: sha256-gated, the
-# eurooffice white-label patches applied with the three-outcome rule, signature.json dropped
-# for patched apps, the white-label asserts the office smoke used to own. The context path is
-# workflow-materialized — a build without it fails HERE, loudly, never a silent unbaked green.
-COPY aps-bake/custom_apps/ /usr/src/nextcloud/custom_apps/
-COPY aps-bake/themes/apsconecta/ /usr/src/nextcloud/themes/apsconecta
+# APS Conecta (#42, the retired bake's one survivor): the image carries the apsconecta theme
+# and NOTHING else of the suite's own — no app bytes at all. Apps arrive by their own
+# channels at run time: own and fork apps from their signed GitHub Releases (ADR-0017, the
+# wizard's fetch leg), store apps from scoped install commands. The theme comes from this
+# tree's own themes/apsconecta, so the tag IS the provenance — no second source, no clone,
+# no vendored tarball between the tag and the image.
+COPY themes/apsconecta/ /usr/src/nextcloud/themes/apsconecta
 
-# APS Conecta: the NC_ env channel (020's store-off, 030's skeleton) is only real while the
+# APS Conecta: the NC_ env channel (020's store-off, the skeleton) is only real while the
 # shipped server harvests NC_-prefixed env vars (lib/private/Config.php's ENV_PREFIX). A
 # server bump that renames it would flip the store back on with every repo gate still green —
 # the build dies here instead, naming the anchor to re-adopt.
 RUN grep -q "ENV_PREFIX = 'NC_'" /usr/src/nextcloud/lib/private/Config.php \
-    || { echo "FATAL: the shipped server no longer harvests NC_ env vars — 020's store-off bake and 030's skeleton posture are fiction; re-anchor against the new server" >&2; exit 1; }
+    || { echo "FATAL: the shipped server no longer harvests NC_ env vars — 020's store-off and the skeleton posture are fiction; re-anchor against the new server" >&2; exit 1; }
 
 # hadolint ignore=DL3002
 USER root:root

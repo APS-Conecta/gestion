@@ -698,8 +698,8 @@ def selftest():
         # optional farmacia #39, estadistica #40 and totem #41): the production-argv arm
         # below reads the SHIPPED manifest, so a release row without its hub repo reds
         # there, at the cause. IntraVox declares the fork's real range (32–35); side_menu's
-        # real tag is 6.0.1, same version the bake pinned, which is exactly why the
-        # lock/store pair is what tells them apart; eurooffice rides at its real fork
+        # real tag is 6.0.1, the same number the old bake once pinned, which is exactly why
+        # the lock/store pair is what proves the channel; eurooffice rides at its real fork
         # release, v11.0.7; totem's v0.3.0 is its first release — the one whose tarball
         # carries the two committed voices (#41).
         mk_release("APS-Conecta/territorio", "v0.80.0", "0.80.0", nc="34", nc_max="34")
@@ -756,7 +756,7 @@ def selftest():
         causa = refused(fetch_release, fila("APS-Conecta/version-interna"), "v1.0.0")
         check("a tarball whose inner info.xml disagrees with the release refused",
               "0.9.0" in causa and "1.0.0" in causa)
-        check("a repo with no releases is a refusal, never a silent bake",
+        check("a repo with no releases is a refusal, never a silent stand-in",
               "no publica ninguna release" in refused(resolve, fila("APS-Conecta/sin-releases"), 34))
 
         tag, entry = resolve(fila("APS-Conecta/suelo"), 34,

@@ -1,10 +1,10 @@
 # The per-app release acceptance of ADR-0017 (#33 territorio, #34 epidemiologia, #35
-# intravox), stated ONCE: the lock row names a release tag — never the bake's version —
-# the instance runs the locked version, the stored tarball is the locked bytes, no
-# appinfo/signature.json rides the app, and (landing: true, intravox alone, ADR-0010)
-# the app is the system's landing app. The welcome content is asserted elsewhere: phase
-# 41 seeds it (a failed phase reds the run) and the divergence gate proves every
-# SITE_WELCOME section landed.
+# intravox), stated ONCE: the lock row names a release tag, the instance runs the locked
+# version, the stored tarball is the locked bytes, no appinfo/signature.json rides the app,
+# and (landing: true, intravox alone, ADR-0010) the app is the system's landing app. The
+# welcome content is asserted elsewhere: phase 41 seeds it (a failed phase reds the run)
+# and the divergence gate proves every SITE_WELCOME section landed. The "never the bake's
+# version" arm died with the bake (#42): no image carries a version to refuse.
 #
 # A composite action, not a template: each app's call site is four lines that cannot
 # conflict with a sibling app's flip at the same anchor (#117 — the copies collided
@@ -13,9 +13,6 @@ name: Assert an app installed from its release
 inputs:
   app:
     description: The app id, as in apps.json, the lock and custom_apps/.
-    required: true
-  bake-version:
-    description: The version the bake pins — the release must never be this one.
     required: true
   landing:
     description: true when the app must also be the system's landing app (ADR-0010).
@@ -27,7 +24,6 @@ runs:
       shell: bash
       env:
         APP: ${{ inputs.app }}
-        BAKE: ${{ inputs.bake-version }}
         LANDING: ${{ inputs.landing }}
       run: |
         set -euo pipefail
@@ -38,7 +34,6 @@ runs:
         read -r tag version sha <<< "$(sudo python3 -c 'import json; a = json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["'"$APP"'"]; print(a["tag"], a["version"], a["sha256"])')"
         echo "lock: $APP $tag ($version)"
         [ "${tag#v}" = "$version" ] || { echo "FAIL: the lock's tag and version disagree" >&2; exit 1; }
-        [ "$version" != "$BAKE" ] || { echo "FAIL: $APP is the bake's $BAKE, not a release" >&2; exit 1; }
         got="$(occ config:app:get "$APP" installed_version)"
         [ "$got" = "$version" ] || { echo "FAIL: the instance runs $APP $got, the lock names $version" >&2; exit 1; }
         sudo test -f "/opt/aps-conecta/apps/$APP/$tag.tar.gz" || { echo "FAIL: the locked tarball is not in the store" >&2; exit 1; }

@@ -19,9 +19,9 @@
 #             callee's manifest job already needs matrix and boot-smoke — so nothing is signed
 #             before a complete, booted, one-snapshot set exists (the boot-smoke-pins-the-
 #             sign-moment rule).
-#   package → scripts/package-release.sh: the composite assembly (the suite's tag tree — theme,
-#             data and sites register included — + the old gestion's release-frozen
-#             provisioning/apps until #42), the publish record (retag.sh manifest — same tool
+#   package → scripts/package-release.sh: the composite assembly (the suite's tag tree alone —
+#             theme, data, sites register and manifest included, and no app bytes in it, #42),
+#             the publish record (retag.sh manifest — same tool
 #             and digest format the Images manifest job emits, so the two are diffable), SHA256SUMS, the
 #             signify signature over it, the verify-PROOF with the committed installer.pub, and
 #             the constants-filled install asset; then gh release create with all five assets.
@@ -34,13 +34,13 @@
 # .github/workflows on PRs and catches unpinned uses). Untrusted context (the tag name) reaches
 # bash only via env:, never inline in run:.
 #
-# ORDERING (the release ritual, D4/D12): the old gestion's main is release-frozen between the
-# merge and this tag push (the bake and the composite both read its vendored apps at that content,
-# until #42). The image set
+# ORDERING (the release ritual, D4/D12): the tag tree is the whole source — the bake's old
+# gestion freeze window died with the bake (#42); nothing outside this repo's tag feeds a
+# release anymore. The image set
 # publishes BEFORE the package is cut, and a PUBLISHED Release's assets never move: the dispatch
 # arm below (suite-tag + force-images) exists only to repair a chain that failed BEFORE
 # `gh release create` — repairs rebuild from the tag's own content (build-ref = the tag on
-# every arm), so the freeze window governs a repair exactly like a release.
+# every arm), exactly like a release.
 #
 # REHEARSAL: tags v0.0.0-ci.N (VERSION set to match on a rehearsal branch) run this same chain
 # end-to-end — channel-valid, never mistaken for a release, deletable.

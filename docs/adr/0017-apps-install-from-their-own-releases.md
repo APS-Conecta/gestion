@@ -44,8 +44,9 @@ The rules that make it safe and boring:
   stored beside it (`/opt/aps-conecta/apps/<id>/<tag>.tar.gz`); acquisition is the fetch leg's job,
   and convergence stays the seed's.
 
-Until the bake is removed (#42), rows without the switch — and a release row on a server whose
-wizard step has not run yet — still install from the vendored bake.
+The bake's interim fallback is gone: #42 removed it
+([ADR-0018](0018-nothing-baked-the-store-opens-scoped.md)), so a release row on a server whose
+wizard step has not run is a FATAL naming the repair, never an improvised install.
 
 ## Consequences
 
