@@ -83,7 +83,7 @@ if [ "${1:-}" = "--self-test" ]; then
         echo '[ "${1:-}" = "--self-test" ] && exit 0'
         echo 'exit 0'; } > install.sh
       cp "$2" installer.pub
-      python3 -c 'import json; print(json.dumps([{"id": f"app{i}", "source": "store", "optional": False, "containers": []} for i in range(1, 11)]))' > apps.json
+      python3 -c 'import json; print(json.dumps([{"id": f"app{i}", "source": "store", "optional": False, "containers": []} for i in range(1, 11)] + [{"id": "app11", "source": "own", "repo": "APS-Conecta/app11", "optional": "off", "containers": [], "release": True}]))' > apps.json
       git add -A && git commit -qm fixture && git tag -f v9.8.7 )
   }
   # mk_gestion DIR N — the old gestion's vendored apps, plus decoys where the suite's own theme,
@@ -159,11 +159,14 @@ if [ "${1:-}" = "--self-test" ]; then
 
   mk_gestion "$tmp/gestion" 9
   run_pkg "$tmp/o6" "$tmp/repo" "$tmp/installer.sec" ""
-  check "a manifest app without its VENDOR reds — the package ships every app apps.json lists" '[ "$rc" -ne 0 ]'
-  mk_gestion "$tmp/gestion" 11
+  check "a default row without its VENDOR reds — the package ships every app the bake serves; an optional row's is never asked (#39, #41)" '[ "$rc" -ne 0 ]'
+  mk_gestion "$tmp/gestion" 12
   run_pkg "$tmp/o6b" "$tmp/repo" "$tmp/installer.sec" ""
   check "a VENDOR dir outside the manifest reds — the package ships no app apps.json does not list" '[ "$rc" -ne 0 ]'
   mk_gestion "$tmp/gestion" 10
+  run_pkg "$tmp/o6c" "$tmp/repo" "$tmp/installer.sec" ""
+  check "an optional row with no VENDOR packs green — app11 is totem's shape (#41): optional from day one, never baked, so the bake's pin is not the package's to ask" \
+    '[ "$rc" -eq 0 ] && [ -f "$tmp/o6c/apsconecta-v9.8.7.tar.gz" ]'
   mk_repo "$tmp/repo7" "$tmp/installer.pub" 0
   run_pkg "$tmp/o7" "$tmp/repo7" "$tmp/installer.sec" ""
   check "a tag tree without its register reds — an empty glob is a failure, never a green" '[ "$rc" -ne 0 ]'
@@ -247,11 +250,15 @@ else
 fi
 gestion_sha="$(git -C "$gestion" rev-parse HEAD 2>/dev/null || echo non-git-tree)"
 
-# 5 — the vendored apps against the tag's suite manifest: one VENDOR per apps.json row, no other
-#     app dir, every VENDOR well formed
+# 5 — the vendored apps against the tag's suite manifest: one VENDOR per DEFAULT apps.json row,
+#     no other app dir, every VENDOR well formed. An OPTIONAL row never bakes — phase 12 skips
+#     it before any of its arrival paths (#39), the bake is not its channel on a clean boot or a
+#     warm one — so its VENDOR is not the package's to ask: totem arrived optional from day one
+#     (#41), never vendored, and the gate must read that as the expected shape, not a hole.
 # An unreadable tag manifest: apps.py's one Spanish line is already on stderr, and errexit
 # stops the pack here — no second copy of the message.
 apps="$(python3 "$REPO_ROOT/scripts/apps.py" --manifest "$staging/apps.json" ids)"
+sin_vendor="$(python3 "$REPO_ROOT/scripts/apps.py" --manifest "$staging/apps.json" opcionales | cut -f1)"
 bad_vendor=0
 for d in "$gestion"/provisioning/apps/*/; do
   [ -d "$d" ] || continue
@@ -259,6 +266,7 @@ for d in "$gestion"/provisioning/apps/*/; do
     || { echo "provisioning/apps/$(basename "$d"): not in apps.json — the bake would ship an app the suite does not list" >&2; bad_vendor=1; }
 done
 for app in $apps; do
+  printf '%s\n' "$sin_vendor" | grep -qxF -- "$app" && continue
   v="$gestion/provisioning/apps/$app/VENDOR"
   [ -f "$v" ] || { echo "$app: listed in apps.json but provisioning/apps/$app/VENDOR is missing" >&2; bad_vendor=1; continue; }
   for k in version sha256 url; do
