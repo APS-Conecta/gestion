@@ -189,14 +189,23 @@ aio_auto_updates_off() {  # 042: AIO's Saturday app:update --all is gone and the
   # armed it is read nowhere — apps move only when the operator decides, whatever the config
   # says. The upgrade-path app:update --all calls stay by design: inert under 020 (the store
   # fetch answers empty), upstream-shaped, and never a scheduled anything.
-  local e="$TREE/Containers/nextcloud/entrypoint.sh" fail=0
+  local e="$TREE/Containers/nextcloud/entrypoint.sh" c="$TREE/php/containers.json" fail=0
   [ -f "$e" ] || { echo "  no entrypoint at '$e'" >&2; return 1; }
   if grep -n 'UPDATE_NEXTCLOUD_APPS' "$e"; then
     echo "  the entrypoint still reads UPDATE_NEXTCLOUD_APPS — AIO's automatic app updates are off, config or not" >&2
     fail=1
   fi
-  if grep -nF 'date +%u' "$e"; then
+  if grep -n 'date +%u' "$e"; then
     echo "  the entrypoint still selects a weekday — the Saturday automatic app-update leg is gone" >&2
+    fail=1
+  fi
+  # The placeholder's answering arm is gone with the entrypoint leg (#42): a leftover
+  # %UPDATE_NEXTCLOUD_APPS% in containers.json falls to getRegisteredSecret's default and
+  # kills the container creation mid-recursion — the first nothing-baked rehearsal found
+  # exactly that (aps-conecta-nextcloud never created, the 20-minute bring-up timeout).
+  [ -f "$c" ] || { echo "  no containers.json at '$c'" >&2; return 1; }
+  if grep -n 'UPDATE_NEXTCLOUD_APPS' "$c"; then
+    echo "  containers.json still passes UPDATE_NEXTCLOUD_APPS — the arm that answered the placeholder is gone, and an unregistered placeholder aborts the container start" >&2
     fail=1
   fi
   [ "$fail" -eq 0 ]

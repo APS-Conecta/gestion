@@ -132,6 +132,35 @@ image digests live there and are deliberately not copied here — one fact, one 
   empty string, so the suite manifest (`apps.json`) is the only app list in the suite repo. A clean boot
   installs the same apps as before: the host CLI already passed the empty value regardless (#67).
 
+### Fixed
+
+- **The preflight asks no app bytes of a bundle that carries none (#42, A-026).** Step 3's VENDOR
+  walk — every default row demanded `provisioning/apps/<app>` beside a sha256-pinned tarball —
+  survived the bake it checked and reddened the no-apps package eleven rows deep into «vuelva a
+  descargar la suite completa», killing both clean-boot jobs at Paso 3. The walk is gone with the
+  bake: the step verifies the bundle's own shape — a readable manifest, and no `provisioning/apps`
+  at all (a bundle that carries one is refused in the operator's words) — with self-test arms on
+  both shapes.
+- **The nextcloud container is created again (#42, A-027).** `php/containers.json` still passed
+  `%UPDATE_NEXTCLOUD_APPS%` after the arm that answered it died with the Saturday update leg, so
+  `getPlaceholderValue` fell to its unregistered-secret default and aborted the wizard's
+  container start mid-recursion — `aps-conecta-nextcloud` was never created and the nothing-baked
+  bring-up timed out at twenty minutes. The env line is gone from containers.json (the container
+  never receives the variable, exactly what the entrypoint-side deletion intended), and the
+  acquisition gate's 042 row greps containers.json beside the entrypoint so a placeholder without
+  its arm reds in the static gate, not in a bring-up.
+- **The Playwright suite pulls a chassis the registry has (A-028).** `php/tests/compose.yaml`
+  still named upstream's `all-in-one:develop`, a tag the fork never publishes — every run since
+  the suite-tag lockstep red at the pull with manifest unknown (main included). The chassis is
+  now the suite-tag pin in `scripts/aio-testbed.sh`, resolved by `php/tests/run.sh` into
+  `AIO_CHASSIS_IMAGE` (the same single source cleanboot installs, `AIO_TEST_IMAGE` overriding
+  exactly as the testbed's own default), the wizard's host publish rides `AIO_TEST_PORT`, and
+  the compose interpolation is required so a second literal cannot quietly return.
+- **The host bundle's self-test is hermetic again (A-029).** The eight-step silent-install arm
+  reddened on the missing `SITE_COMUNA_CUT` whenever a real `aps-conecta-nextcloud` answered on
+  the box — green on a clean runner, red beside a live suite. The arm now stubs `cmd_datos` like
+  its D9 siblings; the comuna tail keeps its own dedicated arms.
+
 ## [0.5.0] — 2026-10-23
 
 ### Fixed

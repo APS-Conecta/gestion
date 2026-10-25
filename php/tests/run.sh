@@ -12,9 +12,16 @@ cd "$(dirname "$0")/../.." || {
 
 DOCO="docker compose -f ./php/tests/compose.yaml"
 
-if [[ $(uname -m) = 'arm64' || $(uname -m) = 'aarch64' ]]; then
-    export ARM64_SUFFIX='-arm64'
+# The mastercontainer chassis rides the fork's pinned suite tag — the same single source
+# cleanboot resolves (scripts/aio-testbed.sh's one IMAGE line). The fork publishes no develop
+# image, so a literal in compose.yaml cannot stay green; AIO_TEST_IMAGE overrides exactly as
+# aio-testbed.sh's own default does (a rehearsal tag, a repair pin).
+AIO_CHASSIS_IMAGE="${AIO_TEST_IMAGE:-$(sed -nE 's/^IMAGE="\$\{AIO_TEST_IMAGE:-(ghcr\.io\/aps-conecta\/all-in-one:[^}]+)\}"$/\1/p' scripts/aio-testbed.sh)}"
+if [[ -z "$AIO_CHASSIS_IMAGE" ]]; then
+    echo 'Could not read the pinned suite image from scripts/aio-testbed.sh — the compose suite has no chassis to pull' >&2
+    exit 1
 fi
+export AIO_CHASSIS_IMAGE
 
 # Rootless docker's socket isn't at /var/run/docker.sock. Docker Desktop etc. map that path into containers
 # themselves, even though their client endpoint differs, so only take the endpoint for rootless.

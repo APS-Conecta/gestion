@@ -1,6 +1,10 @@
 # This setup expects that you run the services via profiles!
 # Usage: docker compose --profile local-code up
 #    or: docker compose --profile code-from-image up
+# The chassis image is not named here: ./php/tests/run.sh resolves the suite-tag pin from
+# scripts/aio-testbed.sh (the same single source cleanboot installs) and exports
+# AIO_CHASSIS_IMAGE — the fork publishes no develop image, so no literal here can stay green
+# across releases.
 
 name: nextcloud-aio-test
 services:
@@ -20,12 +24,17 @@ services:
       '
 
   app-base:
-    image: ghcr.io/aps-conecta/all-in-one:develop${ARM64_SUFFIX-}
+    # The chassis the tested code mounts over (local-code) or runs as (code-from-image):
+    # the fork's pinned suite tag, resolved by ./php/tests/run.sh — one source with cleanboot,
+    # never a second literal to drift (upstream's develop reference died with the suite-tag
+    # lockstep: the registry carries no develop, and the pull reds with manifest unknown).
+    # x86-64 only (the suite's documented server requirement): no -arm64 suffixed tags exist.
+    image: ${AIO_CHASSIS_IMAGE:?export it by running ./php/tests/run.sh, which reads the suite-tag pin from scripts/aio-testbed.sh}
     pull_policy: always # Always pull so we don't risk to run into the "Update for mastercontainer" page.
     init: true
     restart: always
     ports:
-      - "8080:8080"
+      - "${AIO_TEST_PORT:-8080}:8080"
     volumes:
       - nextcloud_aio_mastercontainer:/mnt/docker-aio-config
       - ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock:ro

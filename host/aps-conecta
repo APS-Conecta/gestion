@@ -1994,6 +1994,9 @@ EOF
     silent_equipos() { ok "equipos-stub"; }
     silent_ejecutar() { ok "ejecutar-stub"; }
     install_timers() { ok "temporizadores-stub"; }
+    cmd_datos()      { ok "datos-stub"; }   # the tail's one real leg, stubbed like the D9 arms:
+    #                                  without it the arm's verdict depends on whether a real
+    #                                  aps-conecta-nextcloud answers on THIS box — hermeticity
     id() { echo "${ID_U:-0}"; }   # hash-proof: bash's command hash can reroute a PATH shim to the real uid (CI = 1001) — a function cannot be rerouted
     cmd_install --sitio "$tmp/dado.sh" --planilla "$tmp/dado.csv" </dev/null 2>&1
   )"; rcs=$?

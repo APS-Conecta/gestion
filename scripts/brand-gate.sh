@@ -454,12 +454,16 @@ suite_phpborne_english() {  # TREE — the don't-translate control: the 3 PHP-bo
   return $fail
 }
 
-suite_fork_image() {  # TREE — the dispatch profile pulls the fork's published es-CL image:
-  # compose.yaml's app-base repointed at ghcr.io/aps-conecta/all-in-one (research D15: leaving
-  # the upstream ref makes code-from-image test upstream English — a silently wrong suite).
+suite_fork_image() {  # TREE — the harness pulls the fork's published image, never upstream's:
+  # compose.yaml's chassis is the resolved AIO_CHASSIS_IMAGE (no literal can stay green across
+  # releases — upstream's develop ref died with the suite-tag lockstep, A-028), and run.sh
+  # resolves it from the suite-tag pin in scripts/aio-testbed.sh (research D15: leaving an
+  # upstream ref makes code-from-image test upstream English — a silently wrong suite).
   local t="$1"
-  grep -q "image: ghcr.io/aps-conecta/all-in-one:develop" "$t/php/tests/compose.yaml" \
-    || { echo "  compose.yaml does not pull the fork image" >&2; return 1; }
+  grep -q 'image: \${AIO_CHASSIS_IMAGE:?' "$t/php/tests/compose.yaml" \
+    || { echo "  compose.yaml does not ride the resolved AIO_CHASSIS_IMAGE — a literal image ref cannot stay green (A-028)" >&2; return 1; }
+  grep -qF 'scripts/aio-testbed.sh' "$t/php/tests/run.sh" \
+    || { echo "  run.sh does not resolve the fork's suite-tag pin — the harness would run without a chassis" >&2; return 1; }
   upstream_refs "$t/php/tests" && return 0
   return 1
 }
@@ -470,7 +474,7 @@ row 090 "the deSEC flow is gone from the test harness — 3 dead specs + the moc
   suite_desec_absent "$TREE"
 row 090 "the PHP-borne English assertions stay English — the zero-PHP rule's living proof inside the suite (:619/:689/:1037)" \
   suite_phpborne_english "$TREE"
-row 090 "the harness pulls the fork's image — compose.yaml repointed at ghcr.io/aps-conecta/all-in-one, zero upstream refs" \
+row 090 "the harness pulls the fork's image — compose.yaml rides the resolved suite-tag pin (AIO_CHASSIS_IMAGE, run.sh reading aio-testbed.sh), zero upstream refs" \
   suite_fork_image "$TREE"
 
 # ── slice 23: the drift-equality row (the FRD S11 gate: README/twig string equality) ──────
