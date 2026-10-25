@@ -132,7 +132,7 @@ test('Log in via token-unblocked login form', async ({ page: containersPage, bro
 
   // Start containers so that the direct login gets blocked
   await containersPage.getByRole('button', { name: 'Iniciar contenedores' }).click();
-  await expect(containersPage.getByRole('link', { name: 'Abrir su Nextcloud ↗' })).toBeVisible({ timeout: 5 * 60 * 1000 });
+  await expect(containersPage.getByRole('link', { name: 'Abrir APS Conecta Gestión ↗' })).toBeVisible({ timeout: 5 * 60 * 1000 });
 
   // After logging out, the login form is blocked
   await containersPage.getByRole('button', { name: 'Cerrar sesión' }).click();
