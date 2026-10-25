@@ -513,9 +513,11 @@ jobs:
             grep -q "$elegida=0" /tmp/aio-testbed/opciones \
               || { echo "FAIL: the testbed's wizard drive did not record $elegida=0 — the choice record is the gate every leg reads" >&2; cat /tmp/aio-testbed/opciones >&2; exit 1; }
           done
-          sudo python3 -c 'import json, sys; sys.exit(0 if set(json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]) & {"farmacia", "estadistica", "totem"} else 1)' \
-            || { echo "FAIL: the lock names an app nobody chose — the fetch leg must resolve nothing for an unchosen optional row" >&2 \
-                 && sudo python3 -c 'import json; print("named:", sorted(set(json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]) & {"farmacia", "estadistica", "totem"}))' >&2; exit 1; }
+          if sudo python3 -c 'import json, sys; sys.exit(0 if set(json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]) & {"farmacia", "estadistica", "totem"} else 1)'; then
+            echo "FAIL: the lock names an app nobody chose — the fetch leg must resolve nothing for an unchosen optional row" >&2
+            sudo python3 -c 'import json; print("named:", sorted(set(json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]) & {"farmacia", "estadistica", "totem"}))' >&2
+            exit 1
+          fi
           for elegida in farmacia estadistica totem; do
             if [ -e "/opt/aps-conecta/apps/$elegida" ]; then
               echo "FAIL: the release store holds $elegida, but nobody chose it" >&2; exit 1
