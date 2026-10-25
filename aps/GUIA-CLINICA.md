@@ -184,29 +184,10 @@ las capas siguen funcionando sobre un fondo liso, y el instalador lo dice y deja
   `aps-conecta datos --importar` los deja cargados (la instalación silenciosa ya lo hace
   sola). Antes de la primera provisión no descarga nada.
 
-Si la suite tenía el mapa local de una versión anterior, `sudo aps-conecta temporizadores` retira
-su temporizador y el archivo (~1 GB) queda en `/srv/aps-conecta/tiles` hasta que usted decida
-liberarlo (`INSTALLER.md` §9; `MIGRATION.md` §12). OpenStreetMap responde a un cliente que bloqueó
+OpenStreetMap responde a un cliente que bloqueó
 con una imagen corriente, no con un error: un fondo que muestra un cuadro de «bloqueado» es como se ve.
 
-## 9. La mudanza (desde la suite anterior)
-
-Si el establecimiento ya tenía la suite anterior (docker compose), la mudanza es una
-herramienta con su propio manual: [`MIGRATION.md`](MIGRATION.md) §2½. Lo que debe saber del
-lado clínico:
-
-- **El ensayo primero**: la mudanza completa se prueba contra un servidor desechable antes de
-  tocar la instalación viva — nunca al revés.
-- La ventana de mudanza se coordina (la instancia vieja sigue siendo el respaldo hasta el
-  momento del cambio).
-- **Después de la mudanza, abra un documento desde OTRO equipo.** Es la prueba que ninguna
-  verificación automática puede hacer por usted: si un documento abre bien desde otra máquina,
-  la oficina quedó bien migrada; si no, es el síntoma conocido (B-019) con su diagnóstico en el
-  manual.
-- Un respaldo de un Nextcloud AIO estándar no se restaura en la suite: la única mudanza es la de
-  esta herramienta.
-
-## 10. Las revisiones manuales (después de instalar y de cada actualización mayor)
+## 9. Las revisiones manuales (después de instalar y de cada actualización mayor)
 
 Ocho verificaciones que no tienen automatización — cinco minutos, con ojo:
 
@@ -227,7 +208,7 @@ Ocho verificaciones que no tienen automatización — cinco minutos, con ojo:
 Cualquier cosa rara: anótela antes de tocar nada — el registro de bugs del repositorio
 (`BUGS.md`) es donde termina viviendo.
 
-## 11. Sin dominio: la dirección IP del servidor
+## 10. Sin dominio: la dirección IP del servidor
 
 Un establecimiento sin dominio instala por una de las direcciones IPv4 de este servidor, escrita donde
 va el dominio: el paso 6, o `SITE_DOMINIO` en el archivo del sitio de la instalación silenciosa. La

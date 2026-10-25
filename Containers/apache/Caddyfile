@@ -99,18 +99,6 @@
         reverse_proxy {$HARP_HOST}:8780
     }
 
-    # APS (R49): the suite's map tiles, same origin. APS_TILES_DIR binds the host directory that holds
-    # chile.pmtiles read-only at /aps-tiles; without it, or before the basemap exists, a path here is a
-    # 404 and never reaches Nextcloud. file_server answers Range with 206 and an ETag, and encode leaves
-    # the archive's octet-stream alone (its tiles are compressed already). no-cache: a 404 cached before
-    # the first build must not outlive it, and revalidating by ETag is cheap.
-    route /tiles/* {
-        uri strip_prefix /tiles
-        root * /aps-tiles
-        header Cache-Control "no-cache"
-        file_server
-    }
-
     # Nextcloud
     route {
         reverse_proxy 127.0.0.1:8000

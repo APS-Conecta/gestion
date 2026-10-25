@@ -451,7 +451,7 @@ print()
 PY
 }
 
-selftest() { # the hermetic self-test — migrate-to-aio.sh's template verbatim: a PATH-shim
+selftest() { # the hermetic self-test — the repo's own self-test idiom: a PATH-shim
   #             docker keyed on argv shapes over a fixture registry, env-knob levers, an
   #             aggregating check(), flip-then-revert, and the verdict as the last stdout
   #             line. The catalogue is a REAL local git repo per discovery scenario (ls-remote

@@ -43,7 +43,6 @@ COPY Containers/nextcloud/config/*.php /
 COPY Containers/nextcloud/dinit.d/ /etc/dinit.d/
 
 # AIO cloning start # Do not remove or change this line!
-COPY app /usr/src/nextcloud/apps/nextcloud-aio
 COPY Containers/nextcloud/root.motd /root.motd
 # AIO cloning end # Do not remove or change this line!
 

@@ -64,7 +64,6 @@ class DesecManager {
             $this->createWildcardCname($token, $domain);
         }
 
-        $this->configurationManager->aioCommunityContainers = ["caddy", "dnsmasq"];
         $this->configurationManager->setDomain($domain, true);
         // Registration is complete; the stored slug is no longer needed.
         $this->configurationManager->desecSlug = '';

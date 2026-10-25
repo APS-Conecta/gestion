@@ -71,11 +71,6 @@
           "source": "%APS_TLS_DIR%",
           "destination": "/aps-tls",
           "writeable": false
-        },
-        {
-          "source": "%APS_TILES_DIR%",
-          "destination": "/aps-tiles",
-          "writeable": false
         }
       ],
       "restart": "unless-stopped",
@@ -275,7 +270,6 @@
         "FULLTEXTSEARCH_PASSWORD=%FULLTEXTSEARCH_PASSWORD%",
         "DOCKER_SOCKET_PROXY_ENABLED=%DOCKER_SOCKET_PROXY_ENABLED%",
         "REMOVE_DISABLED_APPS=%REMOVE_DISABLED_APPS%",
-        "ADDITIONAL_TRUSTED_PROXY=%CADDY_IP_ADDRESS%",
         "THIS_IS_AIO=true",
         "IMAGINARY_SECRET=%IMAGINARY_SECRET%",
         "WHITEBOARD_SECRET=%WHITEBOARD_SECRET%",

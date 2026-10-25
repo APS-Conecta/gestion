@@ -10,9 +10,6 @@
 #     retag and never build; the *.sh scoping excludes it by construction. ensure_own_app's
 #     clone channel is dev-only; the bake that once superseded it is gone (#42) — a repo row's
 #     production path is its own release (ADR-0017), and provisioning never clones at all.
-#   - the entrypoint still honors the skip.update marker (honored at :185, deleted at :1154
-#     today): the migration channel (slice 22) sets it, and with the store off it is
-#     load-bearing for migrated clinics.
 #
 # ROWS — the same contract as brand-gate.sh: every row fires unconditionally; the patch ID is
 #   attribution, never a condition.
@@ -89,12 +86,6 @@ if clone_free; then
   printf '  ok: zero git clone across runtime surfaces — install-time channels stay APS-Conecta-only\n'
 else
   echo "FAIL: a runtime script git-clones — the installer's channels are APS-Conecta-only (see the hits above)" >&2
-  fails=$((fails+1))
-fi
-if grep -q "skip.update" "$TREE/Containers/nextcloud/entrypoint.sh"; then
-  printf '  ok: the entrypoint still honors skip.update — the migration channel (slice 22) depends on it\n'
-else
-  echo "FAIL: the entrypoint no longer honors skip.update — the migration channel (slice 22) depends on it; adopt upstream's rename in the migration tool first" >&2
   fails=$((fails+1))
 fi
 
@@ -284,26 +275,27 @@ s4_install_block() {  # LINE — LINE sits in the entrypoint's fresh-install blo
   if sed -n "${l}p" "$e" | grep -q '^[[:space:]]*#'; then echo "  commented out in the fresh-install block: $1" >&2; return 1; fi
 }
 
-community_channel_closed() {  # 190: the image ships no community container (R25). The third-party
-  # channel upstream offers next to health data (AzuraCast, Jellyfin, Vaultwarden, …) is closed at
-  # its source: the mastercontainer image creates an EMPTY community-containers directory (DataConst
-  # realpaths it, so it must exist), the page no longer includes the section (a17's own arm) and the
-  # template is gone, the restore note about community backups is gone, and the options script
-  # tolerates the absent form. A crafted community-form POST has nothing to enable:
-  # ConfigurationController keeps only ids the directory lists.
+community_channel_closed() {  # 190: the community channel is closed at its source — and, since #48,
+  # removed whole: no community-containers directory in the tree, nothing copied or created in the
+  # mastercontainer image, no template, no section, no comunitari prose, and the PHP readers gone
+  # with it (the directory constant, the config property, the listing method, the form handler, the
+  # Caddy trusted-proxy variable — the crafted community-form POST has no handler left to reach).
   local d="$TREE/Containers/mastercontainer/Dockerfile" c="$TREE/php/templates/containers.twig" \
         j="$TREE/php/public/containers-form-submit.js" fail=0
   s4_files "$d" "$c" "$j" || return 1
-  if grep -n 'COPY community-containers' "$d"; then echo "  the image still copies upstream's community containers" >&2; fail=1; fi
-  grep -qF 'RUN mkdir -p /var/www/docker-aio/community-containers' "$d" \
-    || { echo "  the image no longer creates the empty community-containers directory DataConst reads" >&2; fail=1; }
+  [ ! -e "$TREE/community-containers" ] \
+    || { echo "  the community-containers directory still ships" >&2; fail=1; }
+  if grep -n 'community-containers' "$d"; then echo "  the image still names the community containers" >&2; fail=1; fi
   if grep -nF 'community-containers.twig' "$c"; then echo "  containers.twig still includes the community section" >&2; fail=1; fi
   if [ -e "$TREE/php/templates/includes/community-containers.twig" ]; then
     echo "  the community section's template still ships" >&2; fail=1
   fi
   if grep -niE 'comunitari' "$c"; then echo "  containers.twig still talks about community containers" >&2; fail=1; fi
-  if grep -n 'communityFormSubmit\.' "$j" | grep -v 'if (communityFormSubmit)'; then
-    echo "  containers-form-submit.js dereferences the absent community form" >&2; fail=1
+  if grep -n 'communityFormSubmit' "$j"; then
+    echo "  containers-form-submit.js still carries the community form's script" >&2; fail=1
+  fi
+  if grep -rn 'CommunityContainers\|community-form' "$TREE/php/src" "$TREE/php/public/index.php"; then
+    echo "  a PHP reader of the community directory survived" >&2; fail=1
   fi
   # the restore button keeps a confirm: the restore spec accepts a dialog right before it clicks
   grep -qF "data-confirm='¿Restaurar la copia de seguridad seleccionada? Se reemplazará la instancia completa.'" "$c" \
@@ -311,7 +303,7 @@ community_channel_closed() {  # 190: the image ships no community container (R25
   [ "$fail" -eq 0 ]
 }
 
-row 190 "the image ships no community container — an empty directory instead of upstream's set, no community section or template, no community restore note, the options script tolerant of the absent form (R25)" \
+row 190 "the community channel is gone whole — no directory, no image creation, no template or section, no community form script, no PHP reader (R25, closed at the source; #48 removed the readers)" \
   community_channel_closed
 
 # shellcheck disable=SC2016  # the patterns are literal PHP — their $ is not a shell expansion
@@ -396,13 +388,11 @@ startup_apps_default_empty() {  # 270: the fork's startup-app default is the emp
   # clean boot installs exactly what it installed before: the manifest's set, nothing more.
   # Two arms, the both-halves discipline: the method's fallback IS the empty string, and
   # upstream's startup-set literal is gone from the fork-live surfaces. The scan walks every
-  # fork-live namespace — tests/QA rides --exclude-dir because it is upstream's own QA suite,
-  # #48-doomed with the other un-walked upstream parts (the Helm chart, manual install, the
-  # upstream root docs, the app directory, community containers, the inert workflows); a list
+  # fork-live namespace (#48 removed the upstream QA suite the walk used to exclude); a list
   # re-spelled some other way would evade a literal grep, and that is the clean-boot rehearsal's
   # to catch, not a static row's — the check says what it pins instead of pretending.
   local m="$TREE/php/src/Data/ConfigurationManager.php" body fail=0 app
-  s4_files "$m" "$TREE/compose.yaml" "$TREE/install.sh" || return 1
+  s4_files "$m" "$TREE/install.sh" || return 1
   body="$(awk '/public function getNextcloudStartupApps/,/^    \}/' "$m")"
   [ -n "$body" ] || { echo "  getNextcloudStartupApps is gone — re-point this row" >&2; return 1; }
   printf '%s' "$body" | grep -qF "return '';" \
@@ -414,8 +404,8 @@ startup_apps_default_empty() {  # 270: the fork's startup-app default is the emp
   # --exclude=this gate's own name: the literal above is this row's probe, not an app list (the
   # comm tripwire's precedent — the alarm keeps its own copy on purpose).
   if grep -rnF 'deck twofactor_totp tasks calendar contacts notes' \
-      --exclude=acquisition-gate.sh --exclude-dir=QA \
-      "$TREE/php" "$TREE/Containers" "$TREE/compose.yaml" "$TREE/scripts" "$TREE/host" \
+      --exclude=acquisition-gate.sh \
+      "$TREE/php" "$TREE/Containers" "$TREE/scripts" "$TREE/host" \
       "$TREE/provisioning" "$TREE/aps" "$TREE/docs" "$TREE/sites" "$TREE/themes" \
       "$TREE/tests" "$TREE/install.sh" 2>/dev/null; then
     echo "  an app list beside the suite manifest survives in a fork-live surface (see the hits above)" >&2

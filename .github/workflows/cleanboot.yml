@@ -315,7 +315,7 @@ jobs:
         run: bash /opt/aps-conecta/instalador/scripts/cleanboot-db.sh "$SUITE_TAG"
       # a9 on real systemd: the silent install installed its unit and enabled the weekly timer, on
       # Santiago time; the retired monthly map timer is not there, enabled or not (a fresh install
-      # never had one — an upgraded host is retire_tile_remnants' case, self-tested in the host bundle)
+      # never had one)
       - name: The timers are installed, in Santiago time
         run: |
           systemctl is-enabled aps-conecta.timer

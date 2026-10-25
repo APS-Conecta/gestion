@@ -2424,7 +2424,7 @@ contenedores se reinicia una vez durante la corrección.</p>
         (s.opciones.grabacion ? "activada" : "desactivada") + appsDd +
         "</dd><dt>Respaldo</dt><dd>Diario a las 04:00 hora de Santiago, en este servidor</dd>" +
         (s.ca ? '<dt>Certificado</dt><dd>Propio del instalador. <a href="/api/ca" download>Descargar el ' +
-          'certificado</a>: cada equipo del personal lo importa una vez (guía, §11). Huella SHA-256: ' +
+          'certificado</a>: cada equipo del personal lo importa una vez (guía, §10). Huella SHA-256: ' +
           '<span class="frase" translate="no">' + escapear(s.ca) + "</span></dd>" : "") + "</dl>" +
         (s.frase ? '<div class="aviso"><strong>Frase de contraseña del asistente:</strong> <span ' +
           'class="frase" translate="no">' + escapear(s.frase) + "</span><br>El asistente la pide para ingresar.</div>" +

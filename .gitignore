@@ -1,16 +1,14 @@
 .DS_Store
 
+# Stray bytecode from running the repo's own python (the gates, the resolver): never tracked
+__pycache__/
+*.py[co]
+
 /php/data/*
 /php/session/*
 !/php/data/.gitkeep
 !/php/session/.gitkeep
 /php/vendor
-
-/manual-install/*.conf
-!/manual-install/sample.conf
-/manual-install/docker-compose.yml
-/manual-install/compose.yaml
-/manual-install/.env
 
 # Per-install artifacts: the env file and its secrets, the generated site trees beside the DEIS
 # register, and the site CSS phase 15 writes.

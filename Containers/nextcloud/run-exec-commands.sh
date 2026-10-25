@@ -18,7 +18,7 @@ if [ -n "$NEXTCLOUD_EXEC_COMMANDS" ]; then
         rm /tmp/nextcloud-exec-commands
     fi
 else
-    # Collabora must work also if using manual-install 
+    # Collabora must work also outside AIO
     if [ "$COLLABORA_ENABLED" = yes ]; then
         echo "Activating Collabora config..."
         php /var/www/html/occ richdocuments:activate-config

@@ -39,7 +39,8 @@ prov_path() { printf '%s' "$ROOT/scripts/provisionador.py"; }
 # and the self-test pins the three, so the package downloaded from tag X installs exactly X.
 BUNDLE_TAG="v0.5.0"
 # The package era (FRD S1): the signed tarball unpacks instalador/ here (install.sh); the
-# gestion-clone era ($APS_HOME/gestion) is aps/MIGRATION.md's inert case, detected and named.
+# gestion-clone era ($APS_HOME/gestion) is a named, inert case: no migration path exists (v0.5.0
+# is clean-install only, #48), so the directory is only detected, never followed.
 APS_HOME="${APS_HOME:-/opt/aps-conecta}"
 INSTALADOR_REPO_URL="${INSTALADOR_REPO_URL:-https://github.com/APS-Conecta/instalador}"
 # The git channel is the REHEARSAL's only (cleanboot, ci- tags): empty by default, so the
@@ -69,7 +70,7 @@ staff_ca() {  # by IP (R22), the install's last lines: the CA each staff device 
   is_ipv4 "$(site_domain || true)" && [ -f "$ca" ] || return 0
   fp="$(openssl x509 -in "$ca" -noout -fingerprint -sha256 2>/dev/null)"; fp="${fp#*=}"
   printf '  Certificado para los equipos del personal: %s (huella SHA-256 %s)\n' "$ca" "$fp"
-  printf '  Cada equipo lo importa una vez: aps/GUIA-CLINICA.md §11\n'
+  printf '  Cada equipo lo importa una vez: aps/GUIA-CLINICA.md §10\n'
 }
 BIN_DIR="${BIN_DIR:-/usr/local/bin}"       # where the `aps-conecta` command is linked
 in_checkout() { [ -f "$(prov_path)" ]; }    # false only for the downloaded file, on its own
@@ -981,40 +982,14 @@ EOF
 # validator (start.sh:291-298). Both facts are the slice-5 amendment's own finding (the ratified
 # forced amendment, ledgered in its History row).
 
-# The PMTiles basemap is retired (territorio draws OpenStreetMap's own tile service, ADR-0021 there). A host
-# that ran an earlier bundle still carries its monthly timer, the service it ran and perhaps the old map
-# container, and the archive (~1 GB) the timer kept fresh. Where the archive lived — named once, here.
-TILES_REMNANT_DIR="${TILES_REMNANT_DIR:-/srv/aps-conecta/tiles}"
-
-retire_tile_remnants() {  # idempotent: the timer disabled, its two unit files removed (systemd reloaded
-  # only if one was), the old map container removed, and — only when something was retired and the
-  # archive is still there — ONE line saying it can be freed. The archive is NEVER deleted here: Protomaps'
-  # builds expire, so it cannot be rebuilt, and freeing a gigabyte is the operator's call
-  local dir="$ETC_DIR/systemd/system" u retired=0
-  # the timer off, then a refresh ALREADY RUNNING stopped (disabling a timer leaves the service it fired
-  # alone, and it could rewrite the archive after the line below says it can be freed); absent is fine.
-  # Both before the unit files go: stopping needs the unit loaded
-  systemctl disable --now aps-conecta-tiles.timer >/dev/null 2>&1 || true
-  systemctl stop aps-conecta-tiles.service >/dev/null 2>&1 || true
-  for u in aps-conecta-tiles.service aps-conecta-tiles.timer; do
-    if [ -e "$dir/$u" ]; then rm -f "$dir/$u"; retired=1; fi
-  done
-  [ "$retired" = 0 ] || systemctl daemon-reload >/dev/null 2>&1 || true
-  local names=""   # captured first, matched on a here-string: no pipe for a pipefail caller to read a SIGPIPE from
-  if command -v docker >/dev/null 2>&1; then names="$(docker ps -a --format '{{.Names}}' 2>/dev/null)" || names=""; fi
-  if grep -qx aps-conecta-tiles <<<"$names"; then
-    docker rm -f aps-conecta-tiles >/dev/null 2>&1 || true
-    retired=1
-  fi
-  if [ "$retired" = 1 ] && [ -e "$TILES_REMNANT_DIR" ]; then
-    info "el mapa local ya no se usa (el fondo del mapa es el de OpenStreetMap); puede liberar su espacio cuando quiera: sudo rm -rf $TILES_REMNANT_DIR"
-  fi
-}
+# The PMTiles basemap is retired (territorio draws OpenStreetMap's own tile service, ADR-0021
+# there); its retirement machinery — the v0.4 remnant cleanup — went with the migration paths (#48:
+# v0.5.0 is clean-install only, and no v0.x install is in production).
 
 install_timers() {  # the weekly re-provision (a9): the two units copied from this bundle into systemd,
   # reloaded and enabled — a re-run finds them in place, and an update that changed a unit lands it. A
   # fresh Persistent timer does not fire on enable: its first elapse is computed from now (no stamp yet),
-  # so the install never starts a re-provision of its own. The retired monthly basemap's remnants go too
+  # so the install never starts a re-provision of its own.
   local dir="$ETC_DIR/systemd/system" u changed=0
   if ! is_root; then
     bad "los temporizadores necesitan permisos de administrador" "ejecute: sudo aps-conecta temporizadores"
@@ -1027,7 +1002,6 @@ install_timers() {  # the weekly re-provision (a9): the two units copied from th
     return 0
   fi
   mkdir -p "$dir" || { bad "no se pudo crear $dir" "revise los permisos de $ETC_DIR"; return 0; }
-  retire_tile_remnants
   for u in aps-conecta.service aps-conecta.timer; do
     cmp -s "$HOST_DIR/$u" "$dir/$u" && continue
     install -m 0644 "$HOST_DIR/$u" "$dir/$u" || { bad "no se pudo instalar $u" "revise los permisos de $dir"; return 0; }
@@ -1404,9 +1378,6 @@ reponer() {  # the weekly headless re-provision (the timer's whole job): the Pro
   # run in-process — `provisionador.py --paso generar`, no server, no banner, no token. The phases
   # stream live and the gate's verdict is the exit code: drift self-healing or a loud red, never a
   # silent no-op
-  # A host updated without «temporizadores» keeps the old monthly map timer, whose ExecStart is a subcommand
-  # that is gone: this weekly entry point (root, the unit's own) retires it, so the gap is at most a week
-  if is_root; then retire_tile_remnants; fi
   local code; code="$(site_codigo)" || true
   if [ -z "$code" ]; then
     die "no hay un único sitio en sites/ (una instalación sirve a un solo establecimiento) — elija el centro en el instalador web primero"
@@ -2693,7 +2664,7 @@ SHIM
   sc_dom="$(APS_HOME="$tmp/aps-sc"; staff_ca)"
   check "staff CA (R22): by IP the install ends naming the CA's file and its fingerprint, and the guide's section; else nothing — both tails print it" \
     '[ "$sc_ip" = "  Certificado para los equipos del personal: $tmp/aps-sc/certificados/ca/aps-conecta-ca.crt (huella SHA-256 $sc_fp)
-  Cada equipo lo importa una vez: aps/GUIA-CLINICA.md §11" ] && [[ "$sc_fp" =~ ^([0-9A-F]{2}:){31}[0-9A-F]{2}$ ]] && [ -z "$sc_sin" ] && [ -z "$sc_dom" ] && declare -f step_abrir | grep -qE "^ +staff_ca;?$" && declare -f cmd_install | grep -qE "^ +staff_ca;?$"'
+  Cada equipo lo importa una vez: aps/GUIA-CLINICA.md §10" ] && [[ "$sc_fp" =~ ^([0-9A-F]{2}:){31}[0-9A-F]{2}$ ]] && [ -z "$sc_sin" ] && [ -z "$sc_dom" ] && declare -f step_abrir | grep -qE "^ +staff_ca;?$" && declare -f cmd_install | grep -qE "^ +staff_ca;?$"'
 
   # ── abrir (L3 S1): the web installer runs as a child; a green exit wires the timers and closes the
   # install with «Listo»; Ctrl+C or a failed start says how to reopen (the fake provisionador above)
@@ -2787,10 +2758,6 @@ SHIM
     out="$(APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 2>&1; echo "FAIL=$FAIL")"
     check "install --sitio: a running suite is not started again" \
       '! grep -q "^run" "$tmp/mc.argv" && case "$out" in *"✓ La suite ya está iniciada"*"FAIL=0"*) ;; *) false;; esac'
-    printf 'APS_TILES_DIR=%s\n' "/srv/aps-conecta/tiles" > "$tmp/mc.env"
-    out="$(APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 2>&1; echo "FAIL=$FAIL")"
-    check "install --sitio: a suite created by an earlier release, WITH the map's folder env, is no stranger — nothing reads that line any more, and it is neither refused nor started again" \
-      '! grep -q "^run" "$tmp/mc.argv" && case "$out" in *"✓ La suite ya está iniciada"*"FAIL=0"*) ;; *) false;; esac'
     : > "$tmp/mc.env"
     : > "$tmp/mc.ps"; : > "$tmp/mc.argv"; printf '#!/usr/bin/env bash\nprintf "2: eth0    inet 10.0.0.5/24 scope global eth0\\n"\n' > "$tshim/ip"; chmod +x "$tshim/ip"
     echo 0 > "$tmp/prov.rc"
@@ -2844,7 +2811,7 @@ SHIM
   cp "$tmp/docker.prev" "$tshim/docker"
 
   # ── temporizadores (a9): the two units into a scratch systemd dir, reloaded, the weekly timer enabled — shim
-  # systemctl; and the retired PMTiles basemap's remnants (a host that ran the earlier bundle), shim docker ──
+  # systemctl, shim docker ──
   [ ! -e "$tshim/systemctl" ] || cp "$tshim/systemctl" "$tmp/systemctl.prev"
   cat > "$tshim/systemctl" <<SHIM
 #!/usr/bin/env bash
@@ -2863,66 +2830,15 @@ SHIM
   chmod +x "$tshim/systemctl" "$tshim/docker"; : > "$tmp/systemctl.argv"; : > "$tmp/rt.docker"; printf 'aps-conecta-database\n' > "$tmp/rt.ps"
   printf '#!/usr/bin/env bash\ncase "$1" in -u) echo "${ID_U:-0}" ;; -un) echo root ;; esac\n' > "$tshim/id"; chmod +x "$tshim/id"
   mkdir -p "$tmp/bin-t"; ln -sf "$HOST_DIR/aps-conecta" "$tmp/bin-t/aps-conecta"
-  mkdir -p "$tmp/old-tiles"; echo archive > "$tmp/old-tiles/chile.pmtiles"
   if only_shims systemctl id docker; then
-    out="$(BIN_DIR="$tmp/bin-t"; TILES_REMNANT_DIR="$tmp/old-tiles"; FAIL=0; install_timers 2>&1; echo "FAIL=$FAIL")"
-    check "temporizadores: the two units installed, systemd reloaded, the weekly timer enabled — in Santiago time; a fresh host has no tile remnant to retire, so no word of it" \
-      'for u in aps-conecta.service aps-conecta.timer; do cmp -s "$HOST_DIR/$u" "$ETC_DIR/systemd/system/$u" || exit 1; done; [ ! -e "$ETC_DIR/systemd/system/aps-conecta-tiles.timer" ] && grep -qx "daemon-reload" "$tmp/systemctl.argv" && grep -qx "enable --now aps-conecta.timer" "$tmp/systemctl.argv" && ! grep -q "aps-conecta-tiles.timer\$" <(grep -v "^disable " "$tmp/systemctl.argv") && ! grep -q "^rm" "$tmp/rt.docker" && case "$out" in *"✓ Temporizador activo, en hora de Santiago: re-provisión semanal"*"FAIL=0"*) ;; *) false;; esac && case "$out" in *rm\ -rf*|*"mapa"*) false;; *) true;; esac'
+    out="$(BIN_DIR="$tmp/bin-t"; FAIL=0; install_timers 2>&1; echo "FAIL=$FAIL")"
+    check "temporizadores: the two units installed, systemd reloaded, the weekly timer enabled — in Santiago time; the map-remnant retirement is gone with its readers (#48), so no word of any map" \
+      'for u in aps-conecta.service aps-conecta.timer; do cmp -s "$HOST_DIR/$u" "$ETC_DIR/systemd/system/$u" || exit 1; done; grep -qx "daemon-reload" "$tmp/systemctl.argv" && grep -qx "enable --now aps-conecta.timer" "$tmp/systemctl.argv" && ! grep -q "aps-conecta-tiles" "$tmp/systemctl.argv" && ! grep -q "^rm" "$tmp/rt.docker" && case "$out" in *"✓ Temporizador activo, en hora de Santiago: re-provisión semanal"*"FAIL=0"*) ;; *) false;; esac && case "$out" in *rm\ -rf*|*"mapa"*) false;; *) true;; esac'
     : > "$tmp/systemctl.argv"
-    out="$(BIN_DIR="$tmp/bin-t"; TILES_REMNANT_DIR="$tmp/old-tiles"; FAIL=0; install_timers 2>&1; echo "FAIL=$FAIL")"
+    out="$(BIN_DIR="$tmp/bin-t"; FAIL=0; install_timers 2>&1; echo "FAIL=$FAIL")"
     check "temporizadores: a re-run reloads nothing and enables only the weekly timer" \
       '! grep -q "daemon-reload" "$tmp/systemctl.argv" && grep -qx "enable --now aps-conecta.timer" "$tmp/systemctl.argv" && case "$out" in *"✓ Temporizador activo, en hora de Santiago: re-provisión semanal"*"FAIL=0"*) ;; *) false;; esac'
-    # a host that ran the earlier bundle: both tile units on disk, the old map container, the archive.
-    # retire_tile_remnants disables the timer, removes the unit files, reloads systemd ONCE, removes
-    # the container, and says ONE thing: the archive can be freed — it never frees it itself
-    printf '[Unit]\n' > "$ETC_DIR/systemd/system/aps-conecta-tiles.service"; printf '[Timer]\n' > "$ETC_DIR/systemd/system/aps-conecta-tiles.timer"
-    printf 'aps-conecta-tiles\naps-conecta-database\n' > "$tmp/rt.ps"; : > "$tmp/systemctl.argv"; : > "$tmp/rt.docker"
-    out="$(BIN_DIR="$tmp/bin-t"; TILES_REMNANT_DIR="$tmp/old-tiles"; FAIL=0; install_timers 2>&1; echo "FAIL=$FAIL")"
-    check "temporizadores: the retired map's timer is disabled and a refresh ALREADY RUNNING is stopped (the service), in that order and before the unit files go and systemd reloads once; both unit files removed, the old map container removed, and ONE line says the archive can be freed" \
-      'grep -qx "disable --now aps-conecta-tiles.timer" "$tmp/systemctl.argv" && [ ! -e "$ETC_DIR/systemd/system/aps-conecta-tiles.service" ] && [ ! -e "$ETC_DIR/systemd/system/aps-conecta-tiles.timer" ] && [ "$(grep -cx "daemon-reload" "$tmp/systemctl.argv")" = 1 ] && awk "/^disable --now aps-conecta-tiles.timer\$/ {d=NR} /^stop aps-conecta-tiles.service\$/ {s=NR} /^daemon-reload\$/ {r=NR} END {exit !(d && s && r && d < s && s < r)}" "$tmp/systemctl.argv" && grep -qx "rm -f aps-conecta-tiles" "$tmp/rt.docker" && ! grep -qx "aps-conecta-tiles" "$tmp/rt.ps" && grep -qx "aps-conecta-database" "$tmp/rt.ps" && [ "$(printf "%s\n" "$out" | grep -c "^·")" = 1 ] && case "$out" in *"sudo rm -rf $tmp/old-tiles"*"FAIL=0"*) ;; *) false;; esac'
-    check "temporizadores: the archive is never deleted — the operator frees it, the installer only says how" \
-      '[ "$(cat "$tmp/old-tiles/chile.pmtiles")" = archive ]'
-    : > "$tmp/systemctl.argv"; : > "$tmp/rt.docker"
-    out="$(BIN_DIR="$tmp/bin-t"; TILES_REMNANT_DIR="$tmp/old-tiles"; FAIL=0; install_timers 2>&1; echo "FAIL=$FAIL")"
-    check "temporizadores: the retirement is idempotent — the second run is silent (no line about the map), reloads nothing, removes no container, and still leaves the archive" \
-      '! grep -q "daemon-reload" "$tmp/systemctl.argv" && ! grep -q "^rm " "$tmp/rt.docker" && [ "$(printf "%s\n" "$out" | grep -c "^·")" = 0 ] && case "$out" in *"rm -rf"*) false;; *"✓ Temporizador activo, en hora de Santiago: re-provisión semanal"*"FAIL=0"*) ;; *) false;; esac && [ "$(cat "$tmp/old-tiles/chile.pmtiles")" = archive ]'
-    # only the timer left behind (the unit files gone by hand): still disabled, still said once
-    printf '[Timer]\n' > "$ETC_DIR/systemd/system/aps-conecta-tiles.timer"; : > "$tmp/systemctl.argv"
-    out="$(BIN_DIR="$tmp/bin-t"; TILES_REMNANT_DIR="$tmp/old-tiles"; FAIL=0; install_timers 2>&1; echo "FAIL=$FAIL")"
-    check "temporizadores: a lone leftover timer unit is retired the same way — disabled, removed, one reload, one line" \
-      'grep -qx "disable --now aps-conecta-tiles.timer" "$tmp/systemctl.argv" && [ ! -e "$ETC_DIR/systemd/system/aps-conecta-tiles.timer" ] && [ "$(grep -cx "daemon-reload" "$tmp/systemctl.argv")" = 1 ] && [ "$(printf "%s\n" "$out" | grep -c "^·")" = 1 ]'
-    # nothing to say when there is no archive to free
-    printf '[Timer]\n' > "$ETC_DIR/systemd/system/aps-conecta-tiles.timer"; : > "$tmp/systemctl.argv"
-    out="$(BIN_DIR="$tmp/bin-t"; TILES_REMNANT_DIR="$tmp/no-hay-mapa"; FAIL=0; install_timers 2>&1; echo "FAIL=$FAIL")"
-    check "temporizadores: with no archive left there is nothing to free, so the retirement stays silent" \
-      '[ ! -e "$ETC_DIR/systemd/system/aps-conecta-tiles.timer" ] && [ "$(printf "%s\n" "$out" | grep -c "^·")" = 0 ]'
-    : > "$tmp/systemctl.argv"; ln -sf /bin/true "$tmp/bin-t/aps-conecta"
-    out="$(BIN_DIR="$tmp/bin-t"; FAIL=0; install_timers 2>&1; echo "FAIL=$FAIL")"
-    out2="$(export ID_U=1000; FAIL=0; install_timers 2>&1; echo "FAIL=$FAIL")"
-    check "temporizadores: a command linked to another copy, or no sudo, refuses before systemd is touched — naming the fix" \
-      '[ ! -s "$tmp/systemctl.argv" ] && case "$out" in *"no apunta a esta copia"*"sudo aps-conecta descargar"*"FAIL=1"*) ;; *) false;; esac && case "$out2" in *"sudo aps-conecta temporizadores"*"FAIL=1"*) ;; *) false;; esac'
-    # a host updated without running «temporizadores» keeps the old timer, whose ExecStart is a subcommand
-    # that no longer exists: the weekly run (root, the unit's own entry point) retires it too
-    printf '[Unit]\n' > "$ETC_DIR/systemd/system/aps-conecta-tiles.service"; printf '[Timer]\n' > "$ETC_DIR/systemd/system/aps-conecta-tiles.timer"
-    printf 'aps-conecta-tiles\n' > "$tmp/rt.ps"; : > "$tmp/systemctl.argv"; : > "$tmp/rt.docker"
-    out="$(site_codigo() { echo 113314; }; site_domain() { :; }; python3() { return 0; }; notify_admins() { :; }
-           TILES_REMNANT_DIR="$tmp/old-tiles"; reponer 2>&1)"; rc=$?
-    check "reponer: the weekly run retires the old map timer too — disabled, its running refresh stopped, both unit files gone, the container removed, ONE line; the provision still runs and exits as it did" \
-      '[ ! -e "$ETC_DIR/systemd/system/aps-conecta-tiles.timer" ] && [ ! -e "$ETC_DIR/systemd/system/aps-conecta-tiles.service" ] && grep -qx "stop aps-conecta-tiles.service" "$tmp/systemctl.argv" && grep -qx "rm -f aps-conecta-tiles" "$tmp/rt.docker" && [ "$(printf "%s\n" "$out" | grep -c "^·.*sudo rm -rf $tmp/old-tiles")" = 1 ] && [ "$rc" -eq 0 ]'
-    : > "$tmp/systemctl.argv"
-    out="$(site_codigo() { echo 113314; }; site_domain() { :; }; python3() { return 0; }; notify_admins() { :; }
-           TILES_REMNANT_DIR="$tmp/old-tiles"; reponer 2>&1)"; rc=$?
-    check "reponer: the second weekly run says nothing of the map and reloads nothing" \
-      '! grep -q "daemon-reload" "$tmp/systemctl.argv" && case "$out" in *"rm -rf"*) false;; *) [ "$rc" -eq 0 ];; esac'
-    printf '[Timer]\n' > "$ETC_DIR/systemd/system/aps-conecta-tiles.timer"; : > "$tmp/systemctl.argv"
-    out="$(export ID_U=1000; site_codigo() { echo 113314; }; site_domain() { :; }; python3() { return 0; }; notify_admins() { :; }
-           TILES_REMNANT_DIR="$tmp/old-tiles"; reponer 2>&1)"; rc=$?
-    check "reponer: without root it touches neither systemd nor the unit files — retiring is the admin's, the provision is not blocked" \
-      '[ -e "$ETC_DIR/systemd/system/aps-conecta-tiles.timer" ] && [ ! -s "$tmp/systemctl.argv" ] && [ "$rc" -eq 0 ]'
-    rm -f "$ETC_DIR/systemd/system/aps-conecta-tiles.timer"
   fi
-  check "temporizadores: the retired archive's folder is named once, where the operator reads it" \
-    'grep -qF "TILES_REMNANT_DIR=\"\${TILES_REMNANT_DIR:-/srv/aps-conecta/tiles}\"" "$HOST_DIR/aps-conecta"'
   cp "$tmp/docker.prev" "$tshim/docker"
   rm -f "$tshim/id" "$tshim/systemctl"
   [ ! -e "$tmp/systemctl.prev" ] || cp "$tmp/systemctl.prev" "$tshim/systemctl"
