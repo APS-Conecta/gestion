@@ -83,8 +83,9 @@ cmd_gate() {
   # fake — docker run -d --name aps-conecta-gate-negative \
   #   --label com.docker.compose.project=nextcloud-aio -p 80:80 nginx — and this command must
   # fail until it is removed.
-  local fail=0 seen=0 c line bind pub_pat
+  local fail=0 seen=0 c line bind pub_pat turn_pat
   pub_pat="*:${WIZARD_PORT}"
+  turn_pat="*:${TALK_PORT:-3478}"   # Talk's TURN, published by design when the probe runs Talk (#42)
   while IFS= read -r c; do
     [ -n "$c" ] || continue
     seen=1
@@ -93,13 +94,14 @@ cmd_gate() {
       bind="${line##* -> }"
       case "$bind" in
         127.0.0.1:*|localhost:*|\[::1\]:*) ;;            # loopback: never fights production
-        $pub_pat) ;;                                     # the one public port, by design
+        $pub_pat) ;;                                     # the wizard port, by design
+        $turn_pat) ;;                                     # Talk's TURN when Talk is on, by design
         *) echo "FAIL: $c publishes $bind — the probe must not claim non-loopback ports"; fail=1 ;;
       esac
     done < <(docker port "$c" 2>/dev/null)
   done < <(docker ps --format '{{.Names}}' 2>/dev/null | grep -xE 'nextcloud-aio-mastercontainer|aps-conecta-.*' || true)
   [ "$seen" = 1 ] || { echo "gate: no suite container running — nothing to check"; return 0; }
-  if [ "$fail" = 0 ]; then echo "GATE: PASS — only :${WIZARD_PORT} and loopback claimed"; return 0; fi
+  if [ "$fail" = 0 ]; then echo "GATE: PASS — only :${WIZARD_PORT}, Talk's TURN and loopback claimed"; return 0; fi
   echo "GATE: *** FAIL ***"
   return 1
 }
