@@ -94,8 +94,32 @@ image digests live there and are deliberately not copied here — one fact, one 
   stored tarball, no `signature.json`) and that the suite's violet still paints the menu
   (`background-color` / `background-color-to`, and the stylesheet the app derives from them).
 
+### Changed
+
+- **No image carries an app — the store opens scoped, nothing else does (#42, ADR-0018).** The
+  Nextcloud image now carries the apsconecta theme from the tag tree and nothing else of the
+  suite's. Own and fork apps were already on their own signed releases (ADR-0017); the store
+  rows (calendar, contacts, groupfolders) now install during provisioning through `occ_store` —
+  a scoped command that carries its own `NC_appstoreenabled=1` (the env channel beats both
+  `config.php` and the image's own store-off ENV for that one process and dies with it) — and
+  the Nextcloud entrypoint installs notify_push and Talk the same way, only when they are
+  missing. A bare `occ app:install` fails against the image ENV, the store reads closed in the
+  admin UI, every update path keeps the store closed, and AIO's Saturday automatic
+  `app:update --all` is deleted outright (the env that armed it is passed no more). Store apps
+  install once and never move in place: apps change only when the operator decides
+  (`aps-conecta actualizar`, #46). The clean-boot rehearsal asserts all of it: nothing baked at
+  first boot, the store apps landed, the bare install refused, no `UPDATE_NEXTCLOUD_APPS` in
+  the container; the acquisition gate's 042 rows pin the same in the tree.
+
 ### Removed
 
+- **The bake and the last read of the old gestion (#42, ADR-0018).** `scripts/bake.sh`, the
+  gestion clone in the Images workflow and its `gestion-ref` input, `provisioning/apps` in the
+  composite package, `.paquete.json`'s gestion provenance fields, the vendored fallback of
+  phase 12 (a release row without a lock row is now a FATAL naming the repair, never an
+  improvised install), the patch machinery (`apply_patch`) that fed on vendored tarballs, and
+  the old gestion's release-freeze window in the release ritual — the suite tag is the whole
+  source of a release now.
 - **The per-repo community files (docs-SSOT S2a, shaped like APS-Conecta/aps-common#10).**
   `.github/ISSUE_TEMPLATE/` (Bug_report.md, Feature_request.md, config.yml — upstream AIO's own,
   still pointing at nextcloud's forums) and `.github/pull_request_template.md` leave the tree:
@@ -107,6 +131,44 @@ image digests live there and are deliberately not copied here — one fact, one 
   here so the gate's literal scan stays honest). The fork's fallback for `NEXTCLOUD_STARTUP_APPS` is now the
   empty string, so the suite manifest (`apps.json`) is the only app list in the suite repo. A clean boot
   installs the same apps as before: the host CLI already passed the empty value regardless (#67).
+
+### Fixed
+
+- **The preflight asks no app bytes of a bundle that carries none (#42, A-026).** Step 3's VENDOR
+  walk — every default row demanded `provisioning/apps/<app>` beside a sha256-pinned tarball —
+  survived the bake it checked and reddened the no-apps package eleven rows deep into «vuelva a
+  descargar la suite completa», killing both clean-boot jobs at Paso 3. The walk is gone with the
+  bake: the step verifies the bundle's own shape — a readable manifest, and no `provisioning/apps`
+  at all (a bundle that carries one is refused in the operator's words) — with self-test arms on
+  both shapes.
+- **The nextcloud container is created again (#42, A-027).** `php/containers.json` still passed
+  `%UPDATE_NEXTCLOUD_APPS%` after the arm that answered it died with the Saturday update leg, so
+  `getPlaceholderValue` fell to its unregistered-secret default and aborted the wizard's
+  container start mid-recursion — `aps-conecta-nextcloud` was never created and the nothing-baked
+  bring-up timed out at twenty minutes. The env line is gone from containers.json (the container
+  never receives the variable, exactly what the entrypoint-side deletion intended), and the
+  acquisition gate's 042 row greps containers.json beside the entrypoint so a placeholder without
+  its arm reds in the static gate, not in a bring-up.
+- **The Playwright suite pulls a chassis the registry has (A-028).** `php/tests/compose.yaml`
+  still named upstream's `all-in-one:develop`, a tag the fork never publishes — every run since
+  the suite-tag lockstep red at the pull with manifest unknown (main included). The chassis is
+  now the suite-tag pin in `scripts/aio-testbed.sh`, resolved by `php/tests/run.sh` into
+  `AIO_CHASSIS_IMAGE` (the same single source cleanboot installs, `AIO_TEST_IMAGE` overriding
+  exactly as the testbed's own default), the wizard's host publish rides `AIO_TEST_PORT`, and
+  the compose interpolation is required so a second literal cannot quietly return.
+- **The host bundle's self-test is hermetic again (A-029).** The eight-step silent-install arm
+  reddened on the missing `SITE_COMUNA_CUT` whenever a real `aps-conecta-nextcloud` answered on
+  the box — green on a clean runner, red beside a live suite. The arm now stubs `cmd_datos` like
+  its D9 siblings; the comuna tail keeps its own dedicated arms.
+- **Smoke's signature check watches a signal that can exist (#133, A-030).** Check 10 globbed
+  `provisioning/apps/<app>/*.patch` — a path #42 deleted with the bake — so it passed vacuously
+  on every run since. It now asserts the live edge of the same invariant: no release app (the
+  manifest's own and fork rows) carries `appinfo/signature.json`, whose presence means
+  upstream's tarball replaced the fork's release — a release never packs one (`releases.py`
+  refuses it) and the seed re-imposes its bytes; store apps keep their own true signatures. The
+  mirrors still spelling the dead `UPDATE_NEXTCLOUD_APPS` env (manual-install, the helm chart —
+  upstream's bytes, whose containers do read it) carry a line saying why it stays: inert here on
+  purpose.
 
 ## [0.5.0] — 2026-10-23
 

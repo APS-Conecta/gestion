@@ -250,7 +250,6 @@
         "TALK_ENABLED=%TALK_ENABLED%",
         "ONLYOFFICE_HOST=aps-conecta-onlyoffice",
         "EUROOFFICE_HOST=aps-conecta-eurooffice",
-        "UPDATE_NEXTCLOUD_APPS=%UPDATE_NEXTCLOUD_APPS%",
         "TZ=%TIMEZONE%",
         "TALK_PORT=%TALK_PORT%",
         "TURN_DOMAIN=%TURN_DOMAIN%",

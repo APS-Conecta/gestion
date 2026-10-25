@@ -77,8 +77,10 @@ docker run --init --sig-proxy=false --name nextcloud-aio-mastercontainer \
   ghcr.io/aps-conecta/all-in-one:<suite-tag>
 ```
 
-`NEXTCLOUD_STARTUP_APPS` is deliberately **empty**: the apps and the theme are baked into the
-image (D4), so boot-time installs would be noise. By IP (§14) the command carries two more lines. If preflight reds on the domain probe, do
+`NEXTCLOUD_STARTUP_APPS` is deliberately **empty**: no image carries an app (D4, ADR-0018) — the
+theme is the one suite thing aboard, the apps arrive from their own signed releases and the
+scoped store — so boot-time installs would be noise. By IP (§14) the command carries two more
+lines. If preflight reds on the domain probe, do
 §7 before continuing — the wizard will not pass the check either.
 
 ## 4. The wizard (:8080)

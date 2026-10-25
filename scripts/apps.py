@@ -119,9 +119,10 @@ def _check_pin(app, row):
 
 
 def _check_release(app, row):
-    """release is the bake-or-release switch (ADR-0017): true installs the app from its own
+    """release is the release switch (ADR-0017): true installs the app from its own
     GitHub Release at run time — a store app can never set it, and it never applies without a
-    repo of ours. False or absent: the vendored bake still carries the app (#42 removes it)."""
+    repo of ours. False or absent: the app arrives from the store, through #42's scoped
+    one-command install — the only other channel, now that no image carries an app."""
     release = row.get("release", False)
     if not isinstance(release, bool):
         raise ValueError(f"{app}: release debe ser true o false")

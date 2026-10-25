@@ -8,16 +8,18 @@
 #     the scripts the shipped containers execute). Measured: upstream ships none. The one git
 #     clone upstream does ship is talk-recording's Dockerfile — BUILD-time, in a sibling we
 #     retag and never build; the *.sh scoping excludes it by construction. ensure_own_app's
-#     clone channel is dev-only and superseded by the bake (research-verified).
+#     clone channel is dev-only; the bake that once superseded it is gone (#42) — a repo row's
+#     production path is its own release (ADR-0017), and provisioning never clones at all.
 #   - the entrypoint still honors the skip.update marker (honored at :185, deleted at :1154
 #     today): the migration channel (slice 22) sets it, and with the store off it is
 #     load-bearing for migrated clinics.
 #
 # ROWS — the same contract as brand-gate.sh: every row fires unconditionally; the patch ID is
 #   attribution, never a condition.
-#   020 — the store-off bake: NC_appstoreenabled="0" ENV in the nextcloud Dockerfile. With the
-#         store on, occ upgrade re-downloads every enabled app and no VENDOR pin can hold;
-#         the bake + this ENV make the entrypoint's store legs fail-fast.
+#   020 — the store-off posture: NC_appstoreenabled="0" ENV in the nextcloud Dockerfile. With
+#         the store on, occ upgrade re-downloads every enabled app and no pin can hold. #42
+#         kept the ENV and named its one exception: a command may open the store for itself,
+#         alone (row 042) — nothing else ever sees it open.
 #   040 — self-update opt-in (slice 9): the automatic_updates checkbox defaults OFF and the
 #         wizard carries zero watchtower POST forms. The update channel stays deliberate —
 #         D12's one-distribution rule makes even an opted-in nightly watchtower run a no-op
@@ -27,21 +29,21 @@
 #         (index.php's /desec + /api/desec/register, DesecManager) stay as unreachable dead
 #         code per the zero-PHP rule — unreachable because the markup that reached them is
 #         what this patch deletes.
-#   030 — the bake (slice 13): three rows. (1) The bake channel is checksum-gated at build
-#         time — scripts/bake.sh re-runs gestion's VENDOR sha256 gate before any tarball
-#         enters the image; the tarball BYTES are gestion-side (test.sh:63-70), so this row
-#         pins the MECHANISM to the fork. (2) The suite's skeleton posture is baked —
-#         NC_skeletondirectory="" ENV beside 020's store-off (the compose stack's own key,
-#         compose.yaml: the wizard's admin is created before any phase can write config, and
-#         the NC_ channel is read before config.php). (3) The bake's runtime half is wired —
-#         the aps-bake COPY lines and the ENV_PREFIX wiring grep present in the Dockerfile;
-#         without this row a regeneration that loses them passes every other row green
-#         and ships an unbaked image (the one silently-unbaked-green path
-#         nothing else closes). The plan's fourth row — curl in the runtime apk set — was
-#         dropped live per FINDINGS P6: /usr/bin/curl 8.22.0 measured PRESENT in the AIO
-#         runtime (transitive apk dep; phase 07's AIA fetch already imported the GlobalSign
-#         intermediate on the probe), so the premise "the AIO runtime shipped no curl" was
-#         falsified and the explicit apk entry would pin a dependency that already ships.
+#   030 — the image's own posture (slice 13's bake, retired by #42): the skeleton stays baked
+#         (NC_skeletondirectory="" beside 020's store-off), the theme rides the image from the
+#         tag tree's own themes/apsconecta, and NOTHING app-shaped is copied into
+#         /usr/src/nextcloud — apps arrive by their own channels (ADR-0017 releases for own and
+#         fork rows, row 042's scoped store for store rows). The ENV_PREFIX wiring grep stays:
+#         a server bump that renames the NC_ harvest would flip the store back on with every
+#         gate green.
+#   042 — the store rules, no bake (#42): three rows. (1) The entrypoint installs notify_push
+#         and Talk from the store ONLY when they are missing, and each install opens the store
+#         for that one command — a per-process NC_appstoreenabled=1 prefix while the container
+#         ENV stays "0"; every update leg stays closed. (2) AIO's automatic app updates are
+#         forced off: the entrypoint runs no scheduled app:update --all and reads
+#         UPDATE_NEXTCLOUD_APPS nowhere — apps move only when the operator decides
+#         (`aps-conecta actualizar`). (3) Provisioning's store rows install through the same
+#         scoped open (occ_store in lib.sh), never a bare `occ app:install`.
 #   260 — the pgvector hash pin (moved from brand-gate's row 260 by #73): the database image's
 #         one build-time download — pgvector's release tarball — is checksum-gated in its own
 #         Dockerfile (PGVECTOR_SHA256 + sha256sum -c), the bake's discipline applied to a
@@ -49,15 +51,16 @@
 #         wiring) stayed with brand-gate's row 260.
 #
 # ROUTED (this repo cannot see these channels — recorded so the ledger stays complete, the
-# slice-4 curl→030 precedent): VENDOR sha256s live with the vendored tarballs, read from the old
-# gestion until #42; the host-bundle sha256 is the suite Release's SHA256SUMS (slice 19);
-# data-package checksums are slice 21. Every channel the AIO tree CAN see is checked here or in
+# slice-4 curl→030 precedent): own and fork apps' bytes live in their own repos' signed
+# releases (ADR-0017, resolved and verified by the wizard's fetch leg at install time); the
+# host-bundle sha256 is the suite Release's SHA256SUMS (slice 19); data-package checksums are
+# slice 21. Store apps' bytes live in the Nextcloud app store, fetched per command by the
+# scoped opens this gate pins. Every channel the AIO tree CAN see is checked here or in
 # brand-gate.sh.
 #
 # Usage: scripts/acquisition-gate.sh TREE     (TREE = the tree to assert, e.g. . — the checkout)
 set -uo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 die() { echo "FATAL: $*" >&2; exit 1; }
 
 fails=0
@@ -96,7 +99,7 @@ else
 fi
 
 
-row 020 "the app store is baked off — NC_appstoreenabled=\"0\" ENV in Containers/nextcloud/Dockerfile" \
+row 020 "the app store is off at the image level — NC_appstoreenabled=\"0\" ENV in Containers/nextcloud/Dockerfile; the only openings are 042's per-command scoped installs" \
   grep -q 'NC_appstoreenabled="0"' "$TREE/Containers/nextcloud/Dockerfile"
 
 row 015 "the eurooffice documentserver base pins the suite's certified pairing (DS 9.3.4 ↔ the eurooffice connector — R3's set-certified pin, re-cut from the v0.2.0 choreography's main commit; the connector itself is the APS fork since #36, so its half of the pairing re-certifies per fork release in the office smoke's round-trip)" \
@@ -144,34 +147,24 @@ row 051 "the deSEC registration channel is gone from the wizard — zero deSEC r
 row 051 "the own-domain flow is intact — the domain form still present (the deletion's positive control)" \
   grep -q 'id="domain"' "$TREE/php/templates/containers.twig"
 
-bake_checksum_gate() {  # the bake channel re-runs gestion's VENDOR gate before anything unpacks
-  # (the mechanism lives on the fork — the BYTES it gates are gestion-side: test.sh:63-70)
-  local f="$REPO_ROOT/scripts/bake.sh"
-  [ -f "$f" ] || { echo "  scripts/bake.sh is missing on the fork — the bake channel is ungated" >&2; return 1; }
-  grep -q 'sha256sum --check --status' "$f" \
-    || { echo "  bake.sh no longer runs sha256sum --check against the VENDOR pins — an ungated bake ships whatever the clone carried" >&2; return 1; }
-  grep -qF 'expected exactly 1' "$f" \
-    || { echo "  bake.sh no longer enforces the one-tarball-per-app guard — a stale second tarball would bake silently" >&2; return 1; }
-  grep -qF 'no longer applies' "$f" \
-    || { echo "  bake.sh no longer carries the three-outcome abort — a drifted patch would fuzz or fail soft" >&2; return 1; }
-}
-
-bake_runtime_wired() {  # the bake's runtime half exists in the tree — the COPY lines that
-  # pull the bake's output into the image and the ENV_PREFIX grep that proves the NC_ channel
-  # is real in the shipped server. Without this row a regeneration that loses these lines
-  # passes every other row green while the Images build ships an unbaked image.
+theme_only_image() {  # the image's own posture, post-bake (#42): the theme rides the image
+  # from the tag tree's own themes/apsconecta, NOTHING app-shaped is copied into the server's
+  # app directories, and the ENV_PREFIX wiring grep still proves the NC_ channel is real in
+  # the shipped server. A regeneration that reintroduces an app COPY (or drops the theme or
+  # the grep) reds here — the one silently-baked-green path nothing else closes.
   local f="$TREE/Containers/nextcloud/Dockerfile"
   [ -f "$f" ] || { echo "  no Dockerfile at '$f'" >&2; return 1; }
-  grep -q '^COPY aps-bake/custom_apps/ /usr/src/nextcloud/custom_apps/' "$f" \
-    || { echo "  the bake's custom_apps COPY line is missing — the image builds without the app set" >&2; return 1; }
-  grep -q '^COPY aps-bake/themes/apsconecta/ /usr/src/nextcloud/themes/apsconecta' "$f" \
-    || { echo "  the bake's theme COPY line is missing — the image builds without the apsconecta theme" >&2; return 1; }
+  if grep -nE '^COPY[[:space:]].*[[:space:]]/usr/src/nextcloud/custom_apps/' "$f"; then
+    echo "  a COPY line still fills custom_apps — no image carries suite apps (#42)" >&2
+    return 1
+  fi
+  grep -q '^COPY themes/apsconecta/ /usr/src/nextcloud/themes/apsconecta' "$f" \
+    || { echo "  the theme COPY line is missing — the image carries the theme from the tag tree and nothing else (#42)" >&2; return 1; }
   grep -q 'ENV_PREFIX' "$f" \
     || { echo "  the ENV_PREFIX wiring grep is missing — a server bump that renames the NC_ harvest would silently re-enable the store" >&2; return 1; }
 }
 
-row 030 "the bake channel is checksum-gated at build time — scripts/bake.sh re-runs gestion's VENDOR sha256 gate (sha256sum --check against each tarball's VENDOR pin) before any byte enters the image; the tarball bytes themselves are gestion-side (test.sh:63-70), so this row pins the mechanism to the fork" \
-  bake_checksum_gate
+row 030 "the suite's skeleton posture is baked — NC_skeletondirectory="" ENV beside 020's store-off (the wizard's admin is created at install time, before any phase can write config; the NC_ channel beats config.php)" \
 
 pgvector_hash_pinned() {  # 260: the database image's one build-time download is checked against
   # its pinned hash — the bake's checksum discipline, moved from brand-gate's row 260 by #73:
@@ -190,8 +183,81 @@ row 260 "the pgvector download is hash-pinned — Containers/postgresql/Dockerfi
 row 030 "the suite's skeleton posture is baked — NC_skeletondirectory="" ENV beside 020's store-off (the wizard's admin is created at install time, before any phase can write config; the NC_ channel is read before config.php)" \
   grep -q 'NC_skeletondirectory=""' "$TREE/Containers/nextcloud/Dockerfile"
 
-row 030 "the bake's runtime half is wired — both aps-bake COPY lines and the ENV_PREFIX wiring grep present in the Dockerfile (a regeneration that drops them would otherwise pass every other row green and ship an unbaked image — the one silently-unbaked-green path nothing else closes)" \
-  bake_runtime_wired
+row 030 "the image carries only the theme — zero COPY lines into custom_apps, the theme from the tag tree's own themes/apsconecta, and the ENV_PREFIX wiring grep present (a regeneration that bakes an app back reds here; #42)" \
+  theme_only_image
+
+scoped_store_installs() {  # 042: the entrypoint opens the store per command, for an install,
+  # never an update — and only for notify_push and Talk, the two apps a first boot needs
+  # before provisioning has run. A bare `php occ app:install` in the entrypoint fails against
+  # 020's ENV (the acceptance's own arm), so the per-process prefix IS the mechanism.
+  local e="$TREE/Containers/nextcloud/entrypoint.sh" fail=0
+  [ -f "$e" ] || { echo "  no entrypoint at '$e'" >&2; return 1; }
+  grep -qF 'NC_appstoreenabled=1 php /var/www/html/occ app:install notify_push' "$e" \
+    || { echo "  the notify_push install carries no scoped store-open (NC_appstoreenabled=1, per process)" >&2; fail=1; }
+  grep -qF 'NC_appstoreenabled=1 php /var/www/html/occ app:install spreed' "$e" \
+    || { echo "  the Talk install carries no scoped store-open (NC_appstoreenabled=1, per process)" >&2; fail=1; }
+  if grep -nE 'NC_appstoreenabled=1 .*app:(install|update)' "$e" | grep -vE 'app:install (notify_push|spreed)("| )*$'; then
+    echo "  a store-open reached a command outside the two installs — the scoped open is notify_push and Talk's alone" >&2
+    fail=1
+  fi
+  [ "$fail" -eq 0 ]
+}
+
+row 042 "the entrypoint installs notify_push and Talk scoped — a per-process NC_appstoreenabled=1 on exactly those two installs when they are missing, and never on an update leg (#42)" \
+  scoped_store_installs
+
+aio_auto_updates_off() {  # 042: AIO's Saturday app:update --all is gone and the env that
+  # armed it is read nowhere — apps move only when the operator decides, whatever the config
+  # says. The upgrade-path app:update --all calls stay by design: inert under 020 (the store
+  # fetch answers empty), upstream-shaped, and never a scheduled anything.
+  local e="$TREE/Containers/nextcloud/entrypoint.sh" c="$TREE/php/containers.json" fail=0
+  [ -f "$e" ] || { echo "  no entrypoint at '$e'" >&2; return 1; }
+  if grep -n 'UPDATE_NEXTCLOUD_APPS' "$e"; then
+    echo "  the entrypoint still reads UPDATE_NEXTCLOUD_APPS — AIO's automatic app updates are off, config or not" >&2
+    fail=1
+  fi
+  if grep -n 'date +%u' "$e"; then
+    echo "  the entrypoint still selects a weekday — the Saturday automatic app-update leg is gone" >&2
+    fail=1
+  fi
+  # The placeholder's answering arm is gone with the entrypoint leg (#42): a leftover
+  # %UPDATE_NEXTCLOUD_APPS% in containers.json falls to getRegisteredSecret's default and
+  # kills the container creation mid-recursion — the first nothing-baked rehearsal found
+  # exactly that (aps-conecta-nextcloud never created, the 20-minute bring-up timeout).
+  [ -f "$c" ] || { echo "  no containers.json at '$c'" >&2; return 1; }
+  if grep -n 'UPDATE_NEXTCLOUD_APPS' "$c"; then
+    echo "  containers.json still passes UPDATE_NEXTCLOUD_APPS — the arm that answered the placeholder is gone, and an unregistered placeholder aborts the container start" >&2
+    fail=1
+  fi
+  [ "$fail" -eq 0 ]
+}
+
+row 042 "AIO's automatic app updates are forced off — the entrypoint reads UPDATE_NEXTCLOUD_APPS nowhere and keeps no weekday-selected update leg; apps move only when the operator decides (#42)" \
+  aio_auto_updates_off
+
+provisioning_scoped_store() {  # 042: phase 12's store rows install through occ_store — the
+  # one seam provisioning opens the store on (the same per-process NC_appstoreenabled=1,
+  # ridden through docker exec -e), and no bare app:install call survives under
+  # provisioning/ to bypass it.
+  local l="$TREE/provisioning/lib.sh" fail=0
+  [ -f "$l" ] || { echo "  no lib.sh at '$l'" >&2; return 1; }
+  grep -qF 'nc_exec -e NC_appstoreenabled=1' "$l" \
+    || { echo "  lib.sh no longer opens the store scoped (-e NC_appstoreenabled=1, one command at a time)" >&2; fail=1; }
+  if grep -rnE 'occ app:install' "$TREE/provisioning"; then
+    echo "  a bare app:install call survived under provisioning/ — the scoped open is occ_store's alone" >&2
+    fail=1
+  fi
+  # the seam is an INSTALL seam, never an update one: a future occ_store app:update would
+  # open the store for exactly the leg the doctrine closes, so only app:install may ride it
+  if grep -rnE 'occ_store [^[:space:]]+' "$TREE/provisioning" | grep -vE 'occ_store app:install'; then
+    echo "  occ_store carries a command other than app:install — the scoped open exists for installs alone (#42)" >&2
+    fail=1
+  fi
+  [ "$fail" -eq 0 ]
+}
+
+row 042 "provisioning installs store apps through the scoped seam — occ_store's per-command open in lib.sh, no bare app:install anywhere under provisioning/, and nothing but app:install rides the seam (#42)" \
+  provisioning_scoped_store
 
 # ── L4 S4a: behaviour (R25 community + office, R29 defaults, R28 first-boot calls, R31) ──────
 

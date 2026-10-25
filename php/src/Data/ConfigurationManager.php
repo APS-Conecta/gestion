@@ -1288,7 +1288,10 @@ class ConfigurationManager
             'EUROOFFICE_ENABLED' => $this->officeSuite === OfficeSuite::Eurooffice ? 'yes' : '',
             'COLLABORA_ENABLED' => $this->officeSuite === OfficeSuite::Collabora ? 'yes' : '',
             'TALK_ENABLED' => $this->isTalkEnabled ? 'yes' : '',
-            'UPDATE_NEXTCLOUD_APPS' => ($this->isDailyBackupRunning() && $this->areAutomaticUpdatesEnabled()) ? 'yes' : '',
+            // APS (#42): UPDATE_NEXTCLOUD_APPS is gone — AIO's automatic app updates are off
+            // at the container (the entrypoint runs no scheduled app:update --all), so the
+            // env that armed them is no longer passed either: apps move only when the
+            // operator decides.
             'TIMEZONE' => $this->timezone === '' ? 'Etc/UTC' : $this->timezone,
             'COLLABORA_DICTIONARIES' => $this->collaboraDictionaries === '' ? 'de_DE en_GB en_US es_ES fr_FR it nl pt_BR pt_PT ru' : $this->collaboraDictionaries,
             'IMAGINARY_ENABLED' => $this->isImaginaryEnabled ? 'yes' : '',

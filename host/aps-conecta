@@ -840,10 +840,11 @@ link_command() {  # $BIN_DIR/aps-conecta → this bundle's CLI. A missing or dan
 step_descargar() {  # the bundle at its tag. On its own (the two-line bootstrap) this file brings
   # the suite into $APS_HOME/instalador — the rehearsal's git channel when APS_REPO_URL is set, the
   # operator's install.sh otherwise — root-owned, and the install goes on from that copy — the same
-  # tag, so the same code; in a checkout it verifies that checkout. Either way every app of the suite
-  # manifest is checked against the sha256 its VENDOR pins (the seed's own check, provisioning/lib.sh), and
-  # only a verified bundle is linked as the `aps-conecta` command
-  local v apps rc app dir tars want got n=0 broken=0 dest found
+  # tag, so the same code; in a checkout it verifies that checkout. No app rides the bundle: own
+  # and fork apps arrive from their own signed releases and store apps from the scoped install,
+  # so what is verified here is the bundle's own shape — a readable manifest, no baked apps —
+  # and only a verified bundle is linked as the `aps-conecta` command
+  local v apps rc dest found
   v="$(suite_tag)"
   if [ -z "$v" ]; then
     bad "no se pudo leer la versión de la suite en $ROOT" \
@@ -894,34 +895,18 @@ step_descargar() {  # the bundle at its tag. On its own (the two-line bootstrap)
     bad "$apps" "vuelva a descargar la suite completa"
     return 0
   fi
-  # An optional row never bakes (#39): phase 12 skips it before any arrival path, so the
-  # baked tarball's pin is not its channel — totem arrived optional from day one (#41) and
-  # the package carries no provisioning/apps/totem to ask for. A VENDOR that IS present rides
-  # the package (farmacia's, #42's interim) and keeps its verification; a default row without
-  # one is still a broken package.
-  sin_vendor="$({ opcionales_manifest 2>/dev/null || true; } | cut -f1)"
-  for app in $apps; do
-    dir="$ROOT/provisioning/apps/$app"
-    if [ ! -f "$dir/VENDOR" ]; then
-      printf '%s\n' "$sin_vendor" | grep -qx -- "$app" && continue
-      bad "$app: falta en $ROOT/provisioning/apps" "vuelva a descargar la suite completa"; broken=$((broken + 1)); continue
-    fi
-    n=$((n + 1))
-    tars=("$dir"/*.tar.gz)
-    want="$(sed -n 's/^sha256=//p' "$dir/VENDOR")"
-    got=""
-    [ -f "${tars[0]}" ] && got="$(sha256sum "${tars[0]}" | cut -d' ' -f1)"
-    if [ -z "$got" ] || [ "$got" != "$want" ]; then
-      bad "$app: el archivo no coincide con su suma de verificación" \
-        "vuelva a descargar la suite; un archivo dañado nunca se instala"
-      broken=$((broken + 1))
-    fi
-  done
-  ok "Suite $v ($(du -sh "$ROOT/provisioning/apps" 2>/dev/null | cut -f1))"
-  if [ "$broken" -eq 0 ]; then
-    ok "Sumas de verificación correctas (aplicaciones: $n)"
-    link_command
+  # Nothing app-shaped rides the bundle (#42): own and fork apps arrive from their own
+  # signed releases, store apps from the scoped install, and a provisioning/apps directory
+  # would be baked bytes this version has no channel for — refuse the bundle instead of
+  # installing beside it. The manifest is read here so a broken package reds NOW, in the
+  # operator's own words, and not later inside the wizard.
+  if [ -e "$ROOT/provisioning/apps" ]; then
+    bad "el paquete lleva aplicaciones dentro ($ROOT/provisioning/apps) y esta versión no las empaqueta" \
+      "vuelva a descargar la suite completa; cada aplicación llega de su propia release o de la tienda"
+    return 0
   fi
+  ok "Suite $v (ninguna aplicación viene dentro del paquete)"
+  link_command
   check_paquete "$v"   # the kept package: the signed channel re-verified offline (D5/D7)
   return 0
 }
@@ -2009,6 +1994,9 @@ EOF
     silent_equipos() { ok "equipos-stub"; }
     silent_ejecutar() { ok "ejecutar-stub"; }
     install_timers() { ok "temporizadores-stub"; }
+    cmd_datos()      { ok "datos-stub"; }   # the tail's one real leg, stubbed like the D9 arms:
+    #                                  without it the arm's verdict depends on whether a real
+    #                                  aps-conecta-nextcloud answers on THIS box — hermeticity
     id() { echo "${ID_U:-0}"; }   # hash-proof: bash's command hash can reroute a PATH shim to the real uid (CI = 1001) — a function cannot be rerouted
     cmd_install --sitio "$tmp/dado.sh" --planilla "$tmp/dado.csv" </dev/null 2>&1
   )"; rcs=$?
@@ -2167,32 +2155,28 @@ SHIM
     'case "$step_out" in *"«sin-simulacion-x» would reach the real host"*"rc=1") ;; *) false;; esac'
   rm -f "$tshim"/{apt-get,usermod,systemctl,dpkg,sysctl,curl,git,python3,ca-certificates,docker,docker-ce-cli,containerd.io,docker-buildx-plugin,docker-compose-plugin,signify,ogr2ogr}
 
-  # descargar in a checkout: the checkout is the bundle; a verified one is linked as the command
+  # descargar in a checkout: the checkout is the bundle; a verified one is linked as the command.
+  # The bundle carries no apps, so there is nothing vendored to verify — the arms prove the new
+  # shape: green without provisioning/apps, red with it, red without the manifest.
   local BIN_DIR="$tmp/usr-local-bin" APS_HOME="$tmp/opt"
   mkdir -p "$BIN_DIR" "$ROOT/scripts" "$ROOT/host"; : > "$ROOT/scripts/provisionador.py"; : > "$ROOT/host/aps-conecta"
   cp "$ROOT_BAK/scripts/apps.py" "$ROOT/scripts/apps.py"
   printf '[{"id": "demo", "source": "store", "optional": false, "containers": []}]\n' > "$ROOT/apps.json"
-  mkdir -p "$ROOT/provisioning/apps/demo"
-  printf 'contenido\n' > "$tmp/demo.txt"
-  tar czf "$ROOT/provisioning/apps/demo/demo-1.0.0.tar.gz" -C "$tmp" demo.txt
-  printf 'version=1.0.0\nsha256=%s\n' "$(sha256sum "$ROOT/provisioning/apps/demo/demo-1.0.0.tar.gz" | cut -d' ' -f1)" \
-    > "$ROOT/provisioning/apps/demo/VENDOR"
   step_out="$(FAIL=0; step_descargar; echo "FAIL=$FAIL")"
-  check "descargar: the checkout's version and every vendored app's sha256 green" \
-    'case "$step_out" in *"✓ Suite v9.9.9"*"✓ Sumas de verificación correctas (aplicaciones: 1)"*"FAIL=0") ;; *) false;; esac'
+  check "descargar: the checkout's version green — no apps inside, nothing vendored to verify" \
+    'case "$step_out" in *"✓ Suite v9.9.9 (ninguna aplicación viene dentro del paquete)"*"FAIL=0") ;; *) false;; esac \
+      && case "$step_out" in *"Sumas de verificación correctas"*) false;; *) true;; esac && case "$step_out" in *"FAIL=0") ;; *) false;; esac'
   check "descargar: a verified checkout is linked as the aps-conecta command" \
     '[ "$(readlink -f "$BIN_DIR/aps-conecta")" = "$ROOT/host/aps-conecta" ]'
   step_out="$(export ID_U=1000; BIN_DIR="$tmp/bin-no-sudo"; mkdir -p "$BIN_DIR"; FAIL=0; step_descargar; echo "FAIL=$FAIL")"
   check "descargar: without sudo a verified checkout says the link needs sudo — not a red, no link" \
     'case "$step_out" in *"· el comando aps-conecta se enlaza con permisos de administrador"*"FAIL=0") ;; *) false;; esac && [ ! -e "$tmp/bin-no-sudo/aps-conecta" ]'
+  mkdir -p "$ROOT/provisioning/apps/demo"
   printf 'version=1.0.0\nsha256=%064d\n' 0 > "$ROOT/provisioning/apps/demo/VENDOR"
   step_out="$(FAIL=0; step_descargar; echo "FAIL=$FAIL")"
-  check "descargar: a tarball that does not match its VENDOR reds and is never called correct" \
-    'case "$step_out" in *"✗ demo: el archivo no coincide con su suma de verificación"*"FAIL=1") ;; *) false;; esac && case "$step_out" in *"Sumas de verificación correctas"*) false;; *) true;; esac'
-  rm -rf "$ROOT/provisioning/apps/demo"
-  step_out="$(FAIL=0; step_descargar; echo "FAIL=$FAIL")"
-  check "descargar: an app the suite manifest lists with nothing vendored reds as missing and is never called correct" \
-    'case "$step_out" in *"✗ demo: falta en $ROOT/provisioning/apps"*"FAIL=1") ;; *) false;; esac && case "$step_out" in *"correctas"*) false;; *) true;; esac'
+  check "descargar: a bundle that carries provisioning/apps reds — nothing baked ships, and it is never called correct nor linked twice" \
+    'case "$step_out" in *"✗ el paquete lleva aplicaciones dentro"*"FAIL=1") ;; *) false;; esac && case "$step_out" in *"✓ Suite"*) false;; *) true;; esac'
+  rm -rf "$ROOT/provisioning"
   mv "$ROOT/apps.json" "$tmp/apps.json"
   step_out="$(FAIL=0; step_descargar; echo "FAIL=$FAIL")"
   check "descargar: an unreadable suite manifest reds in one Spanish line with the cause — never a vacuous «correctas (aplicaciones: 0)»" \
@@ -2207,12 +2191,9 @@ SHIM
 
   # the two-line bootstrap: this file on its own clones the suite at its tag, links the command and
   # the install goes on from the clone; a re-run finds it done; another version is refused, untouched
-  mkdir -p "$tmp/standalone" "$tmp/remote/scripts" "$tmp/remote/host" "$tmp/remote/provisioning/apps/demo"
+  mkdir -p "$tmp/standalone" "$tmp/remote/scripts" "$tmp/remote/host"
   : > "$tmp/remote/scripts/provisionador.py"; : > "$tmp/remote/host/aps-conecta"
   cp "$ROOT/scripts/apps.py" "$tmp/remote/scripts/apps.py"; cp "$ROOT/apps.json" "$tmp/remote/apps.json"
-  tar czf "$tmp/remote/provisioning/apps/demo/demo-1.0.0.tar.gz" -C "$tmp" demo.txt
-  printf 'version=1.0.0\nsha256=%s\n' "$(sha256sum "$tmp/remote/provisioning/apps/demo/demo-1.0.0.tar.gz" | cut -d' ' -f1)" \
-    > "$tmp/remote/provisioning/apps/demo/VENDOR"
   git -C "$tmp/remote" init -q && git -C "$tmp/remote" add -A \
     && git -C "$tmp/remote" -c user.email=self@t -c user.name=self commit -q -m uno && git -C "$tmp/remote" tag v1.0.0 \
     && git -C "$tmp/remote" -c user.email=self@t -c user.name=self commit -q --allow-empty -m dos && git -C "$tmp/remote" tag v1.1.0
@@ -2223,7 +2204,7 @@ SHIM
   rm -f "$BIN_DIR/aps-conecta"   # a pristine server: no command linked yet
   step_out="$(bootstrap v1.0.0 2>&1)"
   check "descargar (bootstrap): clones the tag into APS_HOME/instalador, verifies it, writes VERSION, links it, and the install goes on from it" \
-    'case "$step_out" in *"· descargando la suite v1.0.0 en $APS_HOME/instalador"*"✓ Suite v1.0.0"*"✓ Sumas de verificación correctas (aplicaciones: 1)"*"✓ Comando aps-conecta enlazado"*"FAIL=0 ROOT=$APS_HOME/instalador") ;; *) false;; esac && [ "$(git -C "$APS_HOME/instalador" describe --tags)" = v1.0.0 ] && [ "$(head -1 "$APS_HOME/instalador/VERSION")" = v1.0.0 ] && [ "$(readlink -f "$BIN_DIR/aps-conecta")" = "$APS_HOME/instalador/host/aps-conecta" ]'
+    'case "$step_out" in *"· descargando la suite v1.0.0 en $APS_HOME/instalador"*"✓ Suite v1.0.0 (ninguna aplicación viene dentro del paquete)"*"✓ Comando aps-conecta enlazado"*"FAIL=0 ROOT=$APS_HOME/instalador") ;; *) false;; esac && [ "$(git -C "$APS_HOME/instalador" describe --tags)" = v1.0.0 ] && [ "$(head -1 "$APS_HOME/instalador/VERSION")" = v1.0.0 ] && [ "$(readlink -f "$BIN_DIR/aps-conecta")" = "$APS_HOME/instalador/host/aps-conecta" ]'
   check "descargar (bootstrap): the clone prints no git advice (English, about detached HEADs) to the operator" \
     'case "$step_out" in *"git switch"*|*advice*|*"detached HEAD"*) false;; *) true;; esac'
   check "descargar (bootstrap): the root-owned bundle is a safe git directory system-wide, so the admin reads its tag" \
@@ -2431,18 +2412,11 @@ CSHIM
   # ── asistente-aio: the AIO wizard driven through its API, against a stateful fake wizard ──
   # curl answers the six endpoints the drive uses (honouring -o, printing -w's code) and logs every
   # POST; docker answers ps from what the start "created" and occ from an installed instance.
-  # The fixture manifest grows its optional row here (#39): the real apps.py reads it exactly as
-  # the operator's suite reads its own — same code, same shape — and the farmacia VENDOR keeps any
-  # later apps walk over this ROOT green (the count arms below say two now).
+  # The fixture manifest grows its optional rows here (#39/#41): the real apps.py reads it
+  # exactly as the operator's suite reads its own — same code, same shape. No app carries a
+  # provisioning dir (#42): optional rows are release rows, nothing is baked, and the ROOT
+  # stays the shape a real bundle has.
   printf '[{"id": "demo", "source": "store", "optional": false, "containers": []}, {"id": "farmacia", "source": "own", "repo": "APS-Conecta/farmacia", "optional": "off", "containers": [], "release": true, "name": "Farmacia", "summary": "Arsenal farmacológico del establecimiento."}, {"id": "totem", "source": "own", "repo": "APS-Conecta/totem", "optional": "off", "containers": [], "release": true, "name": "Tótem", "summary": "Turnos de atención en sala de espera."}]\n' > "$ROOT/apps.json"
-  # totem carries NO provisioning dir — optional from day one, never baked (#41) — pinning the
-  # preflight's other half: a VENDOR is required only of default rows; one that rides the
-  # package (farmacia's, #42's interim) keeps its verification.
-  mkdir -p "$ROOT/provisioning/apps/farmacia"
-  printf 'contenido\n' > "$tmp/farmacia.txt"
-  tar czf "$ROOT/provisioning/apps/farmacia/farmacia-0.11.1.tar.gz" -C "$tmp" farmacia.txt
-  printf 'version=0.11.1\nsha256=%s\n' "$(sha256sum "$ROOT/provisioning/apps/farmacia/farmacia-0.11.1.tar.gz" | cut -d' ' -f1)" \
-    > "$ROOT/provisioning/apps/farmacia/VENDOR"
   local AIO_URL="https://127.0.0.1:9999" AIO_STATE="$tmp/aio" AIO_POLL=0.05
   : > "$tmp/aio.log"; : > "$tmp/aio.ps"; : > "$tmp/aio.argv"; rm -f "$tmp/aio.configured"
   cat > "$tshim/curl" <<SHIM
@@ -3412,14 +3386,10 @@ FAIL=0" ] \
   out_paq="$( (PATH="$tshim:$minpaq" APS_HOME="$ph" cmd_preflight) 2>&1)"; rc_paq=$?
   check "preflight: the kept package's verification rides the sweep — green line present, reds elsewhere change nothing about it" \
     '[ "$rc_paq" -ne 0 ] && case "$out_paq" in *"✓ Paquete v9.9.9 verificado: la suma y la firma (signify) contra la clave pública de la suite"*) ;; *) false;; esac'
-  mkdir -p "$ROOT/provisioning/apps/demo"
-  tar czf "$ROOT/provisioning/apps/demo/demo-1.0.0.tar.gz" -C "$tmp/paq-fx" dir
-  printf 'version=1.0.0\nsha256=%s\n' "$(sha256sum "$ROOT/provisioning/apps/demo/demo-1.0.0.tar.gz" | cut -d' ' -f1)" > "$ROOT/provisioning/apps/demo/VENDOR"
   out_paq="$( ( PATH="$tshim:$minpaq" APS_HOME="$ph" BIN_DIR="$tmp/paq-bin" \
                  FAIL=0 step_descargar; echo "FAIL=$FAIL" ) 2>&1 )"
-  check "descargar: the kept package's verification rides the step's tail — after the apps' sums, the channel's sum and signature" \
-    'case "$out_paq" in *"✓ Suite v9.9.9"*"✓ Sumas de verificación correctas (aplicaciones: 2)"*"✓ Paquete v9.9.9 verificado: la suma y la firma (signify) contra la clave pública de la suite"*"FAIL=0"*) ;; *) false;; esac'
-  rm -rf "$ROOT/provisioning"
+  check "descargar: the kept package's verification rides the step's tail — after the bundle's own green line, the channel's sum and signature" \
+    'case "$out_paq" in *"✓ Suite v9.9.9 (ninguna aplicación viene dentro del paquete)"*"✓ Paquete v9.9.9 verificado: la suma y la firma (signify) contra la clave pública de la suite"*"FAIL=0"*) ;; *) false;; esac'
   rm -f "$tshim/signify"   # the block-end cleanup (the locked lifecycle: answerable until here)
 
   # ── the units parse (systemd-analyze verify, offline) ──

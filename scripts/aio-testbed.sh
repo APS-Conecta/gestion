@@ -2,7 +2,7 @@
 # AIO test-bed harness — a disposable All-in-One instance for the installer probe (design slice 1).
 #
 # WHY THIS EXISTS. Three couplings decide whether every later gate of the installer program can be
-# trusted — the docker-exec port, the bake-wins probe, divergence-as-gate — and this org's
+# trusted — the docker-exec port, the lock-wins probe, divergence-as-gate — and this org's
 # documented defect class is the silent green: BUGS.md B-001…B-007 came from the first bring-up
 # that was complete on paper and never run; B-014 was a gate that could not go red; 11 of 19
 # handoff claims measured wrong at the 2026-09-13 stand-up (FINDINGS.md). So the couplings are
@@ -83,8 +83,9 @@ cmd_gate() {
   # fake — docker run -d --name aps-conecta-gate-negative \
   #   --label com.docker.compose.project=nextcloud-aio -p 80:80 nginx — and this command must
   # fail until it is removed.
-  local fail=0 seen=0 c line bind pub_pat
+  local fail=0 seen=0 c line bind pub_pat turn_pat
   pub_pat="*:${WIZARD_PORT}"
+  turn_pat="*:${TALK_PORT:-3478}"   # Talk's TURN, published by design when the probe runs Talk (#42)
   while IFS= read -r c; do
     [ -n "$c" ] || continue
     seen=1
@@ -93,13 +94,14 @@ cmd_gate() {
       bind="${line##* -> }"
       case "$bind" in
         127.0.0.1:*|localhost:*|\[::1\]:*) ;;            # loopback: never fights production
-        $pub_pat) ;;                                     # the one public port, by design
+        $pub_pat) ;;                                     # the wizard port, by design
+        $turn_pat) ;;                                     # Talk's TURN when Talk is on, by design
         *) echo "FAIL: $c publishes $bind — the probe must not claim non-loopback ports"; fail=1 ;;
       esac
     done < <(docker port "$c" 2>/dev/null)
   done < <(docker ps --format '{{.Names}}' 2>/dev/null | grep -xE 'nextcloud-aio-mastercontainer|aps-conecta-.*' || true)
   [ "$seen" = 1 ] || { echo "gate: no suite container running — nothing to check"; return 0; }
-  if [ "$fail" = 0 ]; then echo "GATE: PASS — only :${WIZARD_PORT} and loopback claimed"; return 0; fi
+  if [ "$fail" = 0 ]; then echo "GATE: PASS — only :${WIZARD_PORT}, Talk's TURN and loopback claimed"; return 0; fi
   echo "GATE: *** FAIL ***"
   return 1
 }
@@ -156,8 +158,11 @@ cmd_up() {
   # start with progress, the bounded waits, the Nextcloud admin password into $STATE
   local repo_root
   repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+  # --talk (#42): the probe runs Talk ON — the entrypoint's scoped first-boot install of
+  # spreed is half the nothing-baked acceptance, and only an instance with Talk on can prove
+  # it (the store-rules step asserts the app landed scoped; Talk-off is the IP job's world).
   AIO_URL="$WIZ" AIO_STATE="$STATE" bash "$repo_root/host/aps-conecta" asistente-aio \
-    --dominio "$DOMAIN" --sin-validar-dominio \
+    --dominio "$DOMAIN" --sin-validar-dominio --talk \
     || die "the CLI's wizard drive (host/aps-conecta asistente-aio) failed — its ✗ lines above name the step"
 
   # Probe state, set ONCE outside any seed (B-018's rule is about a PHASE re-writing the key
@@ -182,7 +187,8 @@ cmd_up() {
   docker exec --user www-data "$NC" sh -c 'rm -rf /mnt/ncdata/admin/files/*' >/dev/null 2>&1 || true
   docker exec --user www-data "$NC" php /var/www/html/occ files:scan admin >/dev/null 2>&1 || true
 
-  # The theme the seed brands with. The suite's image bakes themes/apsconecta in (patch 030,
+  # The theme the seed brands with. The suite's image carries themes/apsconecta from the tag
+  # tree (the one thing it carries, #42; originally patch 030),
   # S3), from the suite tag it was published with — which may lag this checkout — so the repo's
   # tree is copied over it: the probe brands with the theme under test. phase 15's
   # theming_image_set and smoke's checks 7/11 read /var/www/html/themes/apsconecta in-container;
@@ -194,7 +200,7 @@ cmd_up() {
   [ -d "$theme/core" ] || die "no themes/apsconecta/core under $repo_root — the probe brands with the suite's theme"
   docker cp "$theme" "$NC":/var/www/html/themes/ >/dev/null \
     || die "could not copy $theme into $NC — phase 15 and smoke's checks 7/11 need it in-container"
-  say "theme seeded: ${theme#"$repo_root"/} -> $NC (over the image's bake: the checkout's theme is under test)"
+  say "theme seeded: ${theme#"$repo_root"/} -> $NC (over the image's own: the checkout's theme is under test)"
 
   cmd_gate || die "GATE FAILED — the probe claimed a port it must not claim; inspect with '$0 status'"
 

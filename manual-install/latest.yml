@@ -170,6 +170,7 @@ services:
       - TALK_ENABLED
       - ONLYOFFICE_HOST=nextcloud-aio-onlyoffice
       - EUROOFFICE_HOST=nextcloud-aio-eurooffice
+      # APS (#133): upstream's mirror — its containers still read this env; the fork's reads it nowhere (#42). Inert on purpose.
       - UPDATE_NEXTCLOUD_APPS
       - TZ=${TIMEZONE}
       - TALK_PORT
