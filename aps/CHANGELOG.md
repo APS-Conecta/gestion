@@ -160,6 +160,15 @@ image digests live there and are deliberately not copied here — one fact, one 
   reddened on the missing `SITE_COMUNA_CUT` whenever a real `aps-conecta-nextcloud` answered on
   the box — green on a clean runner, red beside a live suite. The arm now stubs `cmd_datos` like
   its D9 siblings; the comuna tail keeps its own dedicated arms.
+- **Smoke's signature check watches a signal that can exist (#133, A-030).** Check 10 globbed
+  `provisioning/apps/<app>/*.patch` — a path #42 deleted with the bake — so it passed vacuously
+  on every run since. It now asserts the live edge of the same invariant: no release app (the
+  manifest's own and fork rows) carries `appinfo/signature.json`, whose presence means
+  upstream's tarball replaced the fork's release — a release never packs one (`releases.py`
+  refuses it) and the seed re-imposes its bytes; store apps keep their own true signatures. The
+  mirrors still spelling the dead `UPDATE_NEXTCLOUD_APPS` env (manual-install, the helm chart —
+  upstream's bytes, whose containers do read it) carry a line saying why it stays: inert here on
+  purpose.
 
 ## [0.5.0] — 2026-10-23
 

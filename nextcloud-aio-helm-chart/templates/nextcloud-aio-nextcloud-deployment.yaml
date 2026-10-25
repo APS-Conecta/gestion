@@ -199,6 +199,7 @@ spec:
               value: "{{ .Values.TURN_SECRET }}"
             - name: TZ
               value: "{{ .Values.TIMEZONE }}"
+            # APS (#133): upstream's mirror — its containers still read this env; the fork's reads it nowhere (#42). Inert on purpose.
             - name: UPDATE_NEXTCLOUD_APPS
               value: "{{ .Values.UPDATE_NEXTCLOUD_APPS }}"
             - name: WHITEBOARD_ENABLED

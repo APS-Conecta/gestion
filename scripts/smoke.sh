@@ -179,23 +179,30 @@ case "$remember" in
   *)     fail "session posture: could not read loginCanRememberme from /login (got '${remember}') — upstream may have renamed the initial state key" ;;
 esac
 
-# 10. No patched app still carries its vendor signature (#71, phase 12-apps). PATCHED means "a suite
-# app with a .patch file beside its tarball", NOT "a suite app": an untouched app's upstream
-# signature is correct.
+# 10. No release app carries the store's signature (#71, phase 12-apps; #133). The bake-era
+# check globbed `provisioning/apps/<app>/*.patch` — a path ADR-0018 deleted with the bake, so
+# under #42 the glob watched a signal nobody could produce and passed vacuously on every run.
+# What the suite guarantees today is the same invariant at its live edge: white-label renames
+# arrive as commits of the fork's own repos (#36), a release never packs appinfo/signature.json
+# (releases.py refuses one that does), and the seed re-imposes the release's bytes when the
+# installed tree grows one — so the file's presence on a release app is PROOF the bytes are
+# upstream's tarball, not the fork's release: the rename is gone. A store app keeps its own
+# signature, true by construction (unmodified upstream, lib.sh's #82 rule), which is why this
+# reads only the manifest's release rows (apps.py repos: the id where the repo is non-empty).
 # An unreadable manifest is apps.py's to report — its one Spanish line is already on stderr.
-# smoke runs without errexit, so exit by hand, with nothing added beside that one line.
-ids=$(python3 scripts/apps.py ids) || exit $?
-patched=
-for a in $ids; do
-  compgen -G "provisioning/apps/$a/*.patch" >/dev/null && patched="$patched$a "
-done
-if [ -n "$patched" ]; then
-  signed=$(nc_exec --user www-data -- sh -c \
-    "for a in $patched; do [ -e \"/var/www/html/custom_apps/\$a/appinfo/signature.json\" ] && echo \"\$a\"; done; :" \
-    2>/dev/null | tr -d '\r' | tr '\n' ' ')
-  [ -z "${signed// /}" ] \
-    || fail "patched app(s) still signed: ${signed}— the code-integrity check will fail and admin > Overview will show a red warning. Run 'make seed' (phase 12-apps drops it), then click 'Rescan…' in that warning"
-fi
+# smoke runs without errexit, so exit by hand, with nothing added beside that one line (pipefail
+# carries apps.py's failure through the filter pipe).
+release_ids=$(python3 scripts/apps.py repos | python3 -c '
+import sys
+print(" ".join(l.split("\t", 1)[0] for l in sys.stdin if "\t" in l and l.split("\t", 1)[1].strip()))
+') || exit $?
+# The check 8 refusal: an EMPTY want-set satisfies the probe below while asserting nothing at all.
+[ -n "$release_ids" ] || fail "apps.json names no release app — the signature check would assert nothing"
+signed=$(nc_exec --user www-data -- sh -c \
+  "for a in $release_ids; do [ -e \"/var/www/html/custom_apps/\$a/appinfo/signature.json\" ] && echo \"\$a\"; done; :" \
+  2>/dev/null | tr -d '\r' | tr '\n' ' ')
+[ -z "${signed// /}" ] \
+  || fail "release app(s) carrying the store's signature: ${signed}— upstream's tarball replaced the fork's release, so the white-label rename is gone. Run 'make seed' (provisioning re-imposes the release's bytes, which carry no signature)"
 
 # 11. The legacy render path is branded (ADR-0004). TWO TRANSPORTS, because the reachable screen
 # differs. On a compose stack (no overwritehost) an untrusted Host is the ONLY screen in that
@@ -387,4 +394,4 @@ _comuna_name="$(occ config:app:get territorio comuna_name 2>/dev/null | tr -d '\
 [ -n "$_comuna_name" ] \
   || fail "territorio comuna_name is not set — the admin section and the import refusal have no name to show. Re-seed: phase 16-app-policy writes it from sites/<slug>/site.sh's SITE_COMUNA"
 
-echo "PASS: core stack healthy — installed, PostgreSQL ready, Redis PONG, /status.php 200, no branding leak, cron scheduling, app policy, no remember-me, no stale app signature, legacy screens branded, clean admin home, app store off, office URL matches how this instance is reached, territorio's comuna set"
+echo "PASS: core stack healthy — installed, PostgreSQL ready, Redis PONG, /status.php 200, no branding leak, cron scheduling, app policy, no remember-me, no store signature on a release app, legacy screens branded, clean admin home, app store off, office URL matches how this instance is reached, territorio's comuna set"
