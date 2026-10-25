@@ -1733,6 +1733,11 @@ mg_out="$(bash scripts/migrate-to-aio.sh --self-test 2>&1)" \
 rt_out="$(bash scripts/retag.sh --self-test 2>&1)" \
   && echo "  ok:   retag --self-test ($(printf '%s\n' "$rt_out" | tail -1))" \
   || { echo "  FAIL: retag --self-test"; printf '%s\n' "$rt_out" | tail -25; fail=1; }
+# The built-set lockstep assert's own self-test (#76): jq over fixture needs documents — the
+# same hermetic bar (no network, no runner), pinning the one-list walk where CI runs it.
+lk_out="$(bash scripts/lockstep.sh --self-test 2>&1)" \
+  && echo "  ok:   lockstep --self-test ($(printf '%s\n' "$lk_out" | tail -1))" \
+  || { echo "  FAIL: lockstep --self-test"; printf '%s\n' "$lk_out" | tail -25; fail=1; }
 
 echo "== smoke (only if a stack is running) =="
 . scripts/env.sh
