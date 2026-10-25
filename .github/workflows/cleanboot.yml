@@ -17,9 +17,10 @@ on:
   # Everything a clean install reads: the host bundle, the scripts tree, the executor phases and
   # the data masters, the suite manifest, the bootstrap's own three files, the theme the seed
   # brands with, the sites register (it drives the groups, folders and ACL matrix) and .env.example
-  # (the rehearsal's .env is built from it). Docs are deliberately absent. Only the vendored apps
-  # are read elsewhere — the old gestion's provisioning/apps at its main ref, until #42 — and the
-  # schedule and dispatch arms stay their drift backstop, as they are for runner-image drift.
+  # (the rehearsal's .env is built from it). Docs are deliberately absent. Nothing is read
+  # from anywhere else (#42: the tag tree is the whole source — apps arrive from their own
+  # releases and the scoped store), and the schedule and dispatch arms stay their drift
+  # backstop, as they are for runner-image drift.
   pull_request:
     paths:
       - 'host/**'
