@@ -176,10 +176,38 @@ jobs:
       # custom_apps can hold only what the entrypoint itself installed (notify_push; Talk
       # when the wizard enabled it): every suite app the manifest names must be ABSENT, and
       # the scoped install's constant half must be present — the nothing-baked acceptance,
-      # live, before any provisioning can blur it.
+      # live, before any provisioning can blur it. #132: a red against a pre-doctrine tag
+      # names its window beside the FAIL (ventana_pendiente, below).
       - name: Nothing is baked — custom_apps holds only what the entrypoint installs (#42)
         run: |
           set -euo pipefail
+          # #132 — the window, named beside the red. While no release carries nothing-baked
+          # images, the pin (the last release) still bakes, so every PR-event and weekly run
+          # lands on this FAIL by construction — a red that read like a branch bug when it
+          # was the pending-release window. The red STAYS (no waiver, no version floor: its
+          # honesty is the signal the window is open); what the note adds is the reader's
+          # half — what this red is, where the acceptance lives, and what closes it. The
+          # discriminator is honest by construction: the doctrine's own acceptance date (read
+          # live from the ADR in this checkout) against the running image's build date — the
+          # nextcloud image is one of the 4 real builds on every tag (never a retag copy), so
+          # its Created is the tag's true build moment. An image built at or after the
+          # doctrine that still bakes is a regression, and it gets the plain FAIL; any miss
+          # (no ADR date, no image inspect) falls back to the plain FAIL too.
+          ventana_pendiente() {
+            local doctrina creada
+            doctrina="$(sed -nE 's/^Accepted, ([0-9]{4}-[0-9]{2}-[0-9]{2})\.$/\1/p' \
+              docs/adr/0018-nothing-baked-the-store-opens-scoped.md || true)"
+            creada="$(docker image inspect --format '{{.Created}}' \
+              "$(docker inspect --format '{{.Image}}' aps-conecta-nextcloud)" || true)"
+            [ -n "$doctrina" ] && [ -n "$creada" ] || return 0
+            [ "$(date -u -d "$creada" +%s)" -lt "$(date -u -d "$doctrina" +%s)" ] || return 0
+            cat >&2 <<NOTA
+          NOTE — the pending-release window (ADR-0018, #132): suite tag $SUITE_TAG's image was built $creada, before the doctrine ($doctrina), so it still bakes apps and this red is by construction, not a branch bug: no release carries nothing-baked images yet, and the pin names the last one that bakes. The acceptance lives in doctrine images and in the rehearsal — aps/RELEASING.md «Rehearse first, by dispatch»:
+              gh workflow run images.yml    --ref <branch> -f suite-tag=v0.0.0-ci.N -f build-ref=<branch> -f force=true
+              gh workflow run cleanboot.yml --ref <branch> -f suite-tag=v0.0.0-ci.N
+          The release that advances the pin (the existing ritual) is what closes this window; until then the red stays — no waiver, no version floor.
+          NOTA
+          }
           # every manifest row except the entrypoint's own two — read from apps.json, never
           # re-typed: a new row joins this assert the moment it joins the manifest
           mapfile -t filas < <(python3 -c 'import json
@@ -189,7 +217,9 @@ jobs:
           [ "${#filas[@]}" -gt 0 ] || { echo "FAIL: apps.json named no app to walk" >&2; exit 1; }
           for app in "${filas[@]}"; do
             if docker exec --user www-data aps-conecta-nextcloud test -e "/var/www/html/custom_apps/$app"; then
-              echo "FAIL: custom_apps holds $app at first boot — no image carries apps (#42); only the entrypoint's notify_push (and Talk, when on) may be there" >&2; exit 1
+              echo "FAIL: custom_apps holds $app at first boot — no image carries apps (#42); only the entrypoint's notify_push (and Talk, when on) may be there" >&2
+              ventana_pendiente
+              exit 1
             fi
           done
           docker exec --user www-data aps-conecta-nextcloud test -d /var/www/html/custom_apps/notify_push \
