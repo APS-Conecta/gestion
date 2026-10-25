@@ -33,7 +33,7 @@ from the next run on. Continue with:
 
 which links `aps-conecta` into `/usr/local/bin` and walks the steps below. The bundle is
 `aps-conecta`: `install`, `preflight`, `run-command`, `provision`, `asistente-aio`,
-`temporizadores`, `revalidate`, `respaldo`, `datos`, `red` — thin glue; every heavy
+`temporizadores`, `revalidate`, `actualizar`, `respaldo`, `datos`, `red` — thin glue; every heavy
 thing lives where its own gate is.
 
 - **Verifying by hand** — an auditor, or anyone who wants to see it themselves — needs only the
@@ -251,6 +251,22 @@ not patched; the wait ends when the probe times out or the network returns).
 - **A clinic that built the PMTiles basemap** meets one expected change: the map is OpenStreetMap's
   now, and the next `sudo aps-conecta temporizadores` retires the old map timer, its units and the old
   map container — leaving the ~1 GB archive for the operator to free (`aps/MIGRATION.md` §12).
+
+### The applications update: `aps-conecta actualizar` (#46)
+
+The suite's images move with a suite tag (above); the **applications** move only when the
+administrator says so, with `sudo aps-conecta actualizar` (ADR-0017). It refuses to run unless the
+suite is up, the lock exists and the backup is configured — then it prints the plan (current and
+candidate version per application), takes a **full backup first** and stops if it fails, fetches
+and verifies the newest compatible releases into a new lock, applies them one application at a
+time (store applications with one scoped `occ app:update` each, the store closed to everything
+else), moves the lock only when everything succeeded, and revalidates.
+
+`sudo aps-conecta actualizar --revisar` prints the plan and **writes nothing** — the way to see
+what would move before moving anything. On any failure the lock is unchanged, the failing
+application is named, and the restore command (the wizard's «Restaurar la copia de seguridad
+seleccionada») is printed. A Nextcloud major bump is refused while a default application has no
+compatible release; Buscador Documental is pinned to the suite release and never moves here.
 
 ## 11. Backups
 

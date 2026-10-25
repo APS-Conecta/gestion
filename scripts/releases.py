@@ -15,6 +15,21 @@ apps.py beside it — the manifest is IMPORTED, never re-parsed.
       leftover lock row never overrides the choice. One Spanish FATAL line per refusal, naming
       the app and the retry command (the wizard and the silent install both surface it
       verbatim).
+  scripts/releases.py plan [--manifest PATH] [--lock PATH] [--pub PATH] \
+                            [--opciones PATH] --nextcloud 34.0.4
+      The plan `aps-conecta actualizar` prints (#46): per release row, current tag (the lock's
+      row, empty when none) and candidate tag — the lock as a FLOOR, never below it, a pin
+      never moving. Candidates are verified (signature, hashes, id, version) before they are
+      named; a refusal is one Spanish FATAL naming the app. WRITES NOTHING — `--revisar` stops
+      here by contract. TSV: id<TAB>current<TAB>candidate, or id<TAB>omitida for an unchosen
+      optional row.
+  scripts/releases.py actualizar [--manifest PATH] [--lock PATH] [--store PATH] \
+                            [--pub PATH] [--opciones PATH] --nuevo PATH --nextcloud 34.0.4
+      actualizar's fetch leg (#46, ADR-0017): every chosen/default release row re-resolved
+      (lock as floor), downloaded and verified into the store, and the WHOLE new lock written
+      atomically to --nuevo — moved rows, unchanged rows and carried-over unchosen-optional
+      rows, under the running Nextcloud. The server's lock is not touched: the host CLI
+      promotes the new lock only when every app applied.
   scripts/releases.py locked APPID
       The lock's row for one app — `tag<TAB>version<TAB>sha256<TAB>tarball` — or nothing
       (exit 0) when the lock names no such app. Phase 12 installs from this line.
@@ -72,6 +87,10 @@ PUBKEY_DEFAULT = os.path.join(HERE, "..", "apps.pub")
 # The retry the operator reads in every per-app refusal: both entrances re-run this leg —
 # the wizard's «Revisar y ejecutar» and the silent install (which also re-runs green).
 RETRY = "reintente la instalación: «Revisar y ejecutar» en el instalador web, o sudo aps-conecta install"
+# actualizar's own retry (#46): the install's retry names the install, and nothing about an
+# update failure is repaired by re-installing — the plan's refusal is re-read with --revisar,
+# the run retried whole once the cause is fixed.
+RETRY_ACTUALIZAR = "corrija la causa y vuelva a ejecutar sudo aps-conecta actualizar"
 TAG = re.compile(r"v([0-9]+)\.([0-9]+)\.([0-9]+)$")   # v + semver — the release workflow's own assert
 
 
@@ -372,8 +391,9 @@ def resolve(row, major, lock_entry=None, use_lock=True, token=None):
     proven) its entry: (tag, entry|None). The rules, in order — a pin beats everything and
     reads nothing off the network; the LOCK WINS over any resolution (a repair never upgrades,
     #33); `use_lock=False` (actualizar's stance, #46) keeps the lock only as a FLOOR no
-    candidate may fall below; then the latest-release redirect, and only when it is
-    incompatible the ONE releases-API call, newest first."""
+    candidate may fall below — and when nothing at-or-above the floor is compatible, the
+    refusal that follows is the major-bump guard (#46, user story 25); then the latest-release
+    redirect, and only when it is incompatible the ONE releases-API call, newest first."""
     floor = lock_entry["tag"] if lock_entry else None
     if use_lock and lock_entry:
         return lock_entry["tag"], None
@@ -397,8 +417,15 @@ def resolve(row, major, lock_entry=None, use_lock=True, token=None):
     if latest is None and not tags:
         raise Refusal(f"{row['repo']} todavía no publica ninguna release")
     if floor:
-        raise Refusal(f"ninguna release de {row['repo']} más nueva que «{floor}» es compatible "
-                      f"con Nextcloud {major} — el servidor ya instaló «{floor}» y no se baja de ella")
+        # Everything at-or-above the floor being incompatible while the walk exhausted IS the
+        # major bump with no release for it (user story 25, #46) — the one refusal the update
+        # owes: an app the clinic relies on never loses its release to a Nextcloud jump, and
+        # the line names the major and the app's own installed release. (An app at its newest
+        # compatible release never reaches here: the walk inspects the floor itself — it sits
+        # at-or-above — and returns it, so actualizar prints «sin cambios», not a refusal.)
+        raise Refusal(f"ninguna release de {row['repo']} es compatible con Nextcloud {major} — "
+                      f"la instalada «{floor}» tampoco lo es: un salto de major de Nextcloud no "
+                      "puede dejar una aplicación del establecimiento sin release compatible")
     raise Refusal(f"ninguna release de {row['repo']} es compatible con Nextcloud {major}")
 
 
@@ -477,7 +504,98 @@ def fetch_all(rows, nextcloud, path=None, store=None, eleccion=None):
     return lines
 
 
+def plan_all(rows, nextcloud, path=None, eleccion=None):
+    """The plan `aps-conecta actualizar` prints and `--revisar` stops on (#46): for every
+    release row, the tag this server RUNS (the lock's row, empty when none) and the tag the run
+    would move it to — resolved with the lock as a FLOOR, actualizar's stance, so a candidate
+    below the lock is never offered and a pinned row never moves. The three small assets are
+    downloaded and verified (a candidate is only named once the trust chain proved it), but
+    NOTHING IS WRITTEN: no lock move, no tarball — `--revisar` stops here by contract. TSV per
+    row: id<TAB>current<TAB>candidate, or id<TAB>omitida for an unchosen optional one."""
+    lines = []
+    lock = read_lock(path)
+    major = int(nextcloud.split(".")[0])
+    if eleccion is None:
+        eleccion = elegidas()
+    for row in rows:
+        app = row["id"]
+        if row.get("optional") is not False and not eleccion.get(app):
+            lines.append(f"{app}\tomitida")
+            continue
+        try:
+            registrado = lock["apps"].get(app)
+            tag, _ = resolve(row, major, lock_entry=registrado, use_lock=False,
+                             token=os.environ.get("GITHUB_TOKEN"))
+        except Refusal as e:
+            raise Refusal(f"{app}: {e}") from None
+        lines.append(f"{app}\t{registrado['tag'] if registrado else ''}\t{tag}")
+    return lines
+
+
+def fetch_next(rows, nextcloud, nuevo, path=None, store=None, eleccion=None):
+    """actualizar's fetch leg (#46, ADR-0017): every chosen/default release row re-resolved
+    with the lock as a FLOOR — never below it — downloaded, verified, and recorded into a NEW
+    lock at `nuevo`. The server's lock is NOT touched: the host CLI applies the apps and
+    promotes the new lock only when every one of them succeeded. A row whose candidate equals
+    its locked tag downloads nothing (the verified tarball is beside the lock); an unchosen
+    optional row is CARRIED OVER unchanged, never erased — the choice gates updates, and the
+    record that a warm instance still runs the app must survive the run."""
+    lines, movidas = [], {}
+    lock = read_lock(path)
+    major = int(nextcloud.split(".")[0])
+    if eleccion is None:
+        eleccion = elegidas()
+    for row in rows:
+        app = row["id"]
+        if row.get("optional") is not False and not eleccion.get(app):
+            if app in lock["apps"]:
+                lines.append(f"✓ apps: {app} no elegida — su fila del candado se conserva, no se actualiza")
+            else:
+                lines.append(f"✓ apps: {app} no elegida — no se instala (la elección del asistente)")
+            continue
+        try:
+            registrado = lock["apps"].get(app)
+            tag, entry = resolve(row, major, lock_entry=registrado, use_lock=False,
+                                 token=os.environ.get("GITHUB_TOKEN"))
+            if registrado and registrado["tag"] == tag:
+                dest = store_file(app, tag, store)
+                if os.path.isfile(dest) and sha256_file(dest) == registrado["sha256"]:
+                    lines.append(f"✓ apps: {app} {tag} ya está en su última versión — no se descarga nada")
+                    continue
+                lines.append(f"aplicaciones: {app} {tag} — descargando de nuevo y verificando")
+                fetch_release(row, tag, registrado, store)   # the repair keeps the locked tag
+                lines.append(f"✓ apps: {app} {tag} descargada de nuevo y verificada (faltaba en el almacén)")
+                continue
+            lines.append(f"aplicaciones: {app} {tag} — descargando y verificando")
+            entry = fetch_release(row, tag, entry, store)
+            movidas[app] = entry
+            lines.append(f"✓ apps: {app} {registrado['tag'] if registrado else '—'} → {tag} descargada "
+                         f"y verificada (compatible con Nextcloud {nextcloud})")
+        except Refusal as e:
+            raise Refusal(f"{app}: {e}") from None
+    write_lock(nuevo, {"nextcloud": nextcloud, "apps": {**lock["apps"], **movidas}})
+    lines.append("aplicaciones: candado nuevo listo — "
+                 + (", ".join(f"{a} {e['tag']}" for a, e in sorted(movidas.items())) or "sin cambios"))
+    return lines
+
+
 # ── the CLI ───────────────────────────────────────────────────────────────────────────────
+
+
+def _parse(argv, flags):
+    """`k=v options… --nextcloud V` as the verbs read it: {--flag: value}, the version, and
+    whatever is left (non-empty left, or a missing value, is a usage error the caller answers
+    with 2). One parser for fetch, plan and actualizar — three verbs, one grammar."""
+    opts, nextcloud, args = {}, None, list(argv)
+    while args and args[0] in flags:
+        if len(args) < 2:
+            return opts, None, None
+        if args[0] == "--nextcloud":
+            nextcloud = args[1]
+        else:
+            opts[args[0]] = args[1]
+        args = args[2:]
+    return opts, nextcloud, args
 
 
 def main(argv):
@@ -494,18 +612,14 @@ def main(argv):
             print(f"{entry['tag']}\t{entry['version']}\t{entry['sha256']}\t"
                   f"{store_file(argv[1], entry['tag'])}")
         return 0
-    if argv and argv[0] == "fetch":
-        opts, nextcloud, args = {}, None, argv[1:]
-        while args and args[0] in ("--lock", "--store", "--pub", "--manifest", "--nextcloud", "--opciones"):
-            if len(args) < 2:
-                args = None
-                break
-            if args[0] == "--nextcloud":
-                nextcloud = args[1]
-            else:
-                opts[args[0]] = args[1]
-            args = args[2:]
-        if nextcloud is None or args:
+    if argv and argv[0] in ("fetch", "plan", "actualizar"):
+        verbo = argv[0]
+        opts, nextcloud, args = _parse(argv[1:],
+            ("--lock", "--store", "--pub", "--manifest", "--nextcloud", "--opciones", "--nuevo"))
+        if nextcloud is None or args is None or args:
+            print(__doc__.split("\n\n")[1], file=sys.stderr)
+            return 2
+        if verbo == "actualizar" and "--nuevo" not in opts:
             print(__doc__.split("\n\n")[1], file=sys.stderr)
             return 2
         if "--pub" in opts:
@@ -522,11 +636,20 @@ def main(argv):
             print("✓ apps: ninguna app de la suite se instala aún desde releases — nada que descargar")
             return 0
         try:
-            for line in fetch_all(rows, nextcloud, opts.get("--lock"), opts.get("--store"),
-                                  elegidas(opts.get("--opciones"))):
+            if verbo == "fetch":
+                lineas = fetch_all(rows, nextcloud, opts.get("--lock"), opts.get("--store"),
+                                   elegidas(opts.get("--opciones")))
+            elif verbo == "plan":
+                lineas = plan_all(rows, nextcloud, opts.get("--lock"),
+                                  elegidas(opts.get("--opciones")))
+            else:
+                lineas = fetch_next(rows, nextcloud, opts["--nuevo"], opts.get("--lock"),
+                                    opts.get("--store"), elegidas(opts.get("--opciones")))
+            for line in lineas:
                 print(line)
         except Refusal as e:
-            print(f"FATAL: {e} — {RETRY}", file=sys.stderr)
+            reintento = RETRY if verbo == "fetch" else RETRY_ACTUALIZAR
+            print(f"FATAL: {e} — {reintento}", file=sys.stderr)
             return 1
         except Exception as e:   # never a bare traceback as the operator's only line: the
             # Spanish FATAL below is what the wizard surfaces; the traceback rides stderr into
@@ -763,10 +886,23 @@ def selftest():
                              lock_entry={"tag": "v3.0.0", "version": "3.0.0"}, use_lock=False)
         check("no downgrade: with the lock as a floor the newest ABOVE it wins, never one below",
               tag == "v3.5.0")
+        # #46 split the old one refusal in two. An app AT its newest compatible release (the
+        # ones above it target a newer Nextcloud) resolves to itself — the walk inspects the
+        # floor tag, which sits at-or-above itself — so actualizar prints «sin cambios», never
+        # a refusal. And a floor not compatible at the running major is the major-bump guard's
+        # one refusal (user story 25): the line names the major, the app's release and the jump.
+        tag, entry = resolve(fila("APS-Conecta/suelo"), 34,
+                             lock_entry={"tag": "v3.5.0", "version": "3.5.0"}, use_lock=False)
+        check("actualizar's stance (#46): an app already at its newest compatible release resolves to itself — the newer ones target another Nextcloud, and that is «sin cambios», never a refusal",
+              tag == "v3.5.0")
+        causa = refused(resolve, fila("APS-Conecta/territorio"), 35,
+                        lock_entry={"tag": "v0.80.0", "version": "0.80.0"}, use_lock=False)
+        check("the major bump's guard (#46): a floor not compatible at the new major refuses, naming the major, the app's installed release and the jump",
+              "Nextcloud 35" in causa and "«v0.80.0»" in causa and "salto de major" in causa)
         causa = refused(resolve, fila("APS-Conecta/techo"), 34,
                         lock_entry={"tag": "v3.5.0", "version": "3.5.0"}, use_lock=False)
-        check("no downgrade: nothing at-or-above the floor being compatible is a refusal that names it",
-              "no se baja de ella" in causa and "v3.5.0" in causa)
+        check("no downgrade: everything at-or-above an incompatible floor exhausted is the same guard — the line names the release that will not move (#46's wording of the old refusal)",
+              "tampoco lo es" in causa and "«v3.5.0»" in causa)
         antes = dict(server.hits)
         tag, entry = resolve(fila("APS-Conecta/territorio"), 34,
                              lock_entry={"tag": "v0.79.0", "version": "0.79.0"})
@@ -927,6 +1063,88 @@ def selftest():
         check("cli fetch: a refusal stops with one Spanish line naming the app and the retry command",
               run.returncode == 1 and run.stdout == "" and run.stderr.startswith("FATAL: malafirma: ")
               and "apps.pub" in run.stderr and RETRY in run.stderr)
+        # ── #46: actualizar's own two legs — plan reads and names (--revisar's whole leg),
+        #    actualizar fetches into a NEW lock the CLI promotes only on success ──
+        # The server's posture: territorio at v0.79.0 (a v0.80.0 exists), suelo at v3.5.0
+        # (its newest compatible — the ones above target Nextcloud 35), and farmacia with a
+        # leftover lock row the operator no longer chose: one row moves, one stays, one is
+        # carried over untouched.
+        act = os.path.join(tmp, "act")
+        os.makedirs(act, exist_ok=True)
+        os.environ["APS_APPS_STORE"] = os.path.join(act, "almacen")
+        # suelo's row must carry the TRUE sha of its fixture tarball (the unchanged branch
+        # re-verifies it against the lock when the tarball is missing) — and the tarball sits
+        # in the store, exactly as it does on a real server the install already fetched it to
+        entrada_suelo = fetch_release(fila("APS-Conecta/suelo"), "v3.5.0")
+        candado = os.path.join(act, "lock.json")
+        write_lock(candado, {"nextcloud": "34.0.4", "apps": {
+            "territorio": {"source": "own", "repo": "APS-Conecta/territorio",
+                           "tag": "v0.79.0", "version": "0.79.0", "sha256": "a" * 64},
+            "suelo": entrada_suelo,
+            "farmacia": {"source": "own", "repo": "APS-Conecta/farmacia",
+                         "tag": "v0.12.0", "version": "0.12.0", "sha256": "c" * 64}}})
+        with open(os.path.join(tmp, "apps-act.json"), "w", encoding="utf-8") as fh:
+            json.dump([fila("APS-Conecta/territorio"), fila("APS-Conecta/suelo"),
+                       fila("APS-Conecta/farmacia", optional="off")], fh)
+        os.environ["APS_APPS_LOCK"] = candado
+        opciones_act = os.path.join(act, "opciones")   # no farmacia line: unchosen
+        with open(opciones_act, "w", encoding="utf-8") as fh:
+            fh.write("talk=1\n")
+        bytes_candado = open(candado, "rb").read()
+        alm = sorted(os.listdir(os.environ["APS_APPS_STORE"])) \
+            if os.path.exists(os.environ["APS_APPS_STORE"]) else []
+        run = subprocess.run([sys.executable, os.path.abspath(__file__), "plan",
+                              "--manifest", os.path.join(tmp, "apps-act.json"),
+                              "--opciones", opciones_act, "--nextcloud", "34.0.4"],
+                             capture_output=True, text=True, timeout=120)
+        check("cli plan (#46): the move, the stay and the unchosen row as TSV — current and candidate per app",
+              run.returncode == 0 and "territorio\tv0.79.0\tv0.80.0" in run.stdout
+              and "suelo\tv3.5.0\tv3.5.0" in run.stdout and "farmacia\tomitida" in run.stdout)
+        check("cli plan (#46): --revisar's leg writes nothing — the lock's bytes, the store and no tmp left",
+              open(candado, "rb").read() == bytes_candado
+              and (sorted(os.listdir(os.environ["APS_APPS_STORE"]))
+                   if os.path.exists(os.environ["APS_APPS_STORE"]) else []) == alm
+              and not os.path.exists(candado + ".tmp"))
+        nuevo = os.path.join(act, "lock.next.json")
+        run = subprocess.run([sys.executable, os.path.abspath(__file__), "actualizar",
+                              "--manifest", os.path.join(tmp, "apps-act.json"),
+                              "--opciones", opciones_act, "--nuevo", nuevo,
+                              "--nextcloud", "34.0.4"],
+                             capture_output=True, text=True, timeout=120)
+        guardado = read_lock(nuevo)
+        check("cli actualizar (#46): the move downloaded and verified, the stay untouched, the unchosen row carried over — into the NEW lock, the server's lock byte-identical",
+              run.returncode == 0
+              and "✓ apps: territorio v0.79.0 → v0.80.0 descargada y verificada" in run.stdout
+              and "✓ apps: suelo v3.5.0 ya está en su última versión — no se descarga nada" in run.stdout
+              and "✓ apps: farmacia no elegida — su fila del candado se conserva, no se actualiza" in run.stdout
+              and "candado nuevo listo" in run.stdout
+              and guardado["nextcloud"] == "34.0.4"
+              and guardado["apps"]["territorio"]["tag"] == "v0.80.0"
+              and guardado["apps"]["territorio"]["sha256"] == sha256_file(store_file("territorio", "v0.80.0"))
+              and guardado["apps"]["suelo"]["tag"] == "v3.5.0"
+              and guardado["apps"]["suelo"]["sha256"] == entrada_suelo["sha256"]
+              and guardado["apps"]["farmacia"]["tag"] == "v0.12.0"
+              and open(candado, "rb").read() == bytes_candado)
+        os.unlink(nuevo)   # the refusal arms below start from no new lock
+        with open(os.path.join(tmp, "apps-act-mala.json"), "w", encoding="utf-8") as fh:
+            json.dump([fila("APS-Conecta/mala-firma"), fila("APS-Conecta/territorio")], fh)
+        run = subprocess.run([sys.executable, os.path.abspath(__file__), "actualizar",
+                              "--manifest", os.path.join(tmp, "apps-act-mala.json"),
+                              "--nuevo", nuevo, "--nextcloud", "34.0.4"],
+                             capture_output=True, text=True, timeout=120)
+        check("cli actualizar (#46): a bad signature refuses the run before any new lock exists — one FATAL naming the app, apps.pub and actualizar's own retry",
+              run.returncode == 1 and run.stdout == "" and run.stderr.startswith("FATAL: malafirma: ")
+              and "apps.pub" in run.stderr and RETRY_ACTUALIZAR in run.stderr
+              and not os.path.exists(nuevo) and open(candado, "rb").read() == bytes_candado)
+        run = subprocess.run([sys.executable, os.path.abspath(__file__), "actualizar",
+                              "--manifest", os.path.join(tmp, "apps-act.json"),
+                              "--opciones", opciones_act, "--nuevo", nuevo,
+                              "--nextcloud", "35.0.0"],
+                             capture_output=True, text=True, timeout=120)
+        check("cli actualizar (#46): a Nextcloud major bump under an app with no compatible release is refused — the line names the app, the major and the app's installed release; no new lock",
+              run.returncode == 1 and run.stdout == "" and run.stderr.startswith("FATAL: territorio: ")
+              and "Nextcloud 35" in run.stderr and "salto de major" in run.stderr
+              and not os.path.exists(nuevo))
         server.shutdown()
         print(f"self-test: {n} checks OK" if not failed else f"self-test: {failed} of {n} checks FAILED")
         return 1 if failed else 0

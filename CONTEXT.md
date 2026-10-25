@@ -42,7 +42,7 @@ The only list of the suite's apps. Every installer step and gate reads it; `scri
 
 **Lock file**:
 The per-server record of the installed app tags (`/opt/aps-conecta/apps.lock.json`, written by the
-app-release resolver; see ADR-0017).
+app-release resolver and moved only by `aps-conecta actualizar`; see ADR-0017).
 
 **Provisionador**:
 The web wizard that runs the install.
