@@ -179,7 +179,14 @@ jobs:
       - name: Nothing is baked — custom_apps holds only what the entrypoint installs (#42)
         run: |
           set -euo pipefail
-          for app in intravox groupfolders eurooffice calendar contacts epidemiologia estadistica farmacia territorio desktop_workspace side_menu; do
+          # every manifest row except the entrypoint's own two — read from apps.json, never
+          # re-typed: a new row joins this assert the moment it joins the manifest
+          mapfile -t filas < <(python3 -c 'import json
+          for r in json.load(open("apps.json")):
+              if r["id"] not in ("notify_push", "spreed"):
+                  print(r["id"])')
+          [ "${#filas[@]}" -gt 0 ] || { echo "FAIL: apps.json named no app to walk" >&2; exit 1; }
+          for app in "${filas[@]}"; do
             if docker exec --user www-data aps-conecta-nextcloud test -e "/var/www/html/custom_apps/$app"; then
               echo "FAIL: custom_apps holds $app at first boot — no image carries apps (#42); only the entrypoint's notify_push (and Talk, when on) may be there" >&2; exit 1
             fi
@@ -483,6 +490,15 @@ jobs:
             [ "$(occ config:app:get "$app" enabled 2>/dev/null || true)" = "yes" ] \
               || { echo "FAIL: $app is installed but not enabled" >&2; exit 1; }
           done
+          # the entrypoint's own two, the first-boot half of the acceptance: notify_push and
+          # Talk arrived scoped at first boot (the sibling's convergence above proved the
+          # push binary; here the APP halves — installed and enabled)
+          for app in notify_push spreed; do
+            [ -n "$(occ config:app:get "$app" installed_version 2>/dev/null || true)" ] \
+              || { echo "FAIL: $app is not installed — the entrypoint's scoped first-boot install did not land it" >&2; exit 1; }
+            [ "$(occ config:app:get "$app" enabled 2>/dev/null || true)" = "yes" ] \
+              || { echo "FAIL: $app is installed but not enabled" >&2; exit 1; }
+          done
           # the scoped variable is the only key: a bare install fails, and installs nothing
           rc=0; out="$(occ app:install notes 2>&1)" || rc=$?
           [ "$rc" -ne 0 ] \
@@ -490,9 +506,10 @@ jobs:
           echo "bare app:install refused: $(printf '%s' "$out" | tail -c 200)"
           [ -z "$(occ config:app:get notes installed_version 2>/dev/null || true)" ] \
             || { echo "FAIL: the refused install left notes behind" >&2; exit 1; }
-          # AIO's automatic app updates: the env that armed them is passed no more
-          if docker exec aps-conecta-nextcloud printenv UPDATE_NEXTCLOUD_APPS 2>/dev/null | grep -qx yes; then
-            echo "FAIL: the container still receives UPDATE_NEXTCLOUD_APPS=yes — AIO's automatic app updates are off (#42)" >&2; exit 1
+          # AIO's automatic app updates: the env that armed them is passed no more — any
+          # value at all (yes or otherwise) means a mastercontainer still speaks the dead arm
+          if docker exec aps-conecta-nextcloud printenv UPDATE_NEXTCLOUD_APPS 2>/dev/null | grep -q .; then
+            echo "FAIL: the container still receives UPDATE_NEXTCLOUD_APPS — AIO's automatic app updates are off, the arm deleted (#42)" >&2; exit 1
           fi
           echo "store apps landed scoped; the store stays closed to everything without its key; no automatic app updates"
       # #36: eurooffice follows the forks (ADR-0017) — the connector arrives from

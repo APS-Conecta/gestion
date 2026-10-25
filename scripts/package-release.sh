@@ -235,13 +235,13 @@ json.dump(pkg, sys.stdout, indent=2, sort_keys=True)
 print()
 PY
 
-# 8 — the deterministic tarball
+# 7 — the deterministic tarball
 pkg="apsconecta-$tag.tar.gz"
 tar --sort=name --mtime="@$commit_ts" --owner=0 --group=0 --numeric-owner --format=gnu \
     -c -C "$work/staging" instalador | gzip -n > "$out/$pkg" || die "packaging failed"
 pkg_sha="$(sha256sum "$out/$pkg" | cut -d' ' -f1)"
 
-# 9 — SHA256SUMS, the signature, the PROOF
+# 8 — SHA256SUMS, the signature, the PROOF
 printf '%s  %s\n' "$pkg_sha" "$pkg" > "$out/SHA256SUMS"
 keydir="$work/keys"; ( umask 077 && mkdir -p "$keydir" )
 seckey="$keydir/installer.sec"
@@ -255,7 +255,7 @@ signify -V -p "$staging/installer.pub" -m "$out/SHA256SUMS" -x "$out/SHA256SUMS.
   || die "the PROOF failed — the signature does not verify against the committed installer.pub (key rotation half-done? aps/RELEASING.md)"
 ( cd "$out" && sha256sum -c SHA256SUMS ) >/dev/null || die "SHA256SUMS does not verify the tarball beside it"
 
-# 10 — the constants-filled install asset, proven in its final shape (quote-scoped fills: the
+# 9 — the constants-filled install asset, proven in its final shape (quote-scoped fills: the
 #      trailing comments on the constant lines survive, only the quoted values change)
 sed -e "s|^BUNDLE_TAG=\"[^\"]*\"|BUNDLE_TAG=\"$tag\"|" \
     -e "s|^TARBALL_SHA256=\"[^\"]*\"|TARBALL_SHA256=\"$pkg_sha\"|" \

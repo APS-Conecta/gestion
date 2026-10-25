@@ -449,21 +449,14 @@ elif "groupfolders:list" in args:
     # dict it AttributeError'd into 2>/dev/null and saw no folders at all.
     print(json.dumps([{"id": int(r[2]), "mountPoint": r[1], "groups_list": {}}
                       for r in rows if r[0] == "folder"]))
-elif "app:enable" in args:
-    # B-028: enabling an app writes the appconfig 'enabled' row real Nextcloud writes, and
-    # phase 41's enable-guard reads exactly that back (config:app:get intravox enabled -> yes).
-    # The old fall-through no-op'd without state, so the guard FATAL'd only in this sandbox
-    # while the real stack stayed green. Upsert, not append: idempotent re-runs re-enable.
-    app = find("app:enable")
-    if not any(r == ["appconfig", app, "enabled", "yes"] for r in rows):
-        rows.append(["appconfig", app, "enabled", "yes"])
-        save(rows)
-elif "app:install" in args:
-    # #42: a store row installs through the scoped seam (occ_store: docker exec -e
-    # NC_appstoreenabled=1 … app:install) — the stub models the install's effect exactly as
-    # app:enable's: the appconfig 'enabled' row real Nextcloud writes. Upsert, not append:
-    # the seed is a convergence verb, and re-runs install only what the probe says is absent.
-    app = find("app:install")
+elif "app:enable" in args or "app:install" in args:
+    # One arm, two verbs: enabling writes the appconfig 'enabled' row real Nextcloud writes
+    # (B-028: phase 41's enable-guard reads exactly that back — the old fall-through no-op'd
+    # without state, so the guard FATAL'd only in this sandbox while the real stack stayed
+    # green), and #42's scoped install (occ_store: docker exec -e NC_appstoreenabled=1 …
+    # app:install) writes the same row an install writes. Upsert, not append: idempotent
+    # re-runs re-enable, and a re-run installs only what the probe says is absent.
+    app = find("app:enable") or find("app:install")
     if not any(r == ["appconfig", app, "enabled", "yes"] for r in rows):
         rows.append(["appconfig", app, "enabled", "yes"])
         save(rows)
@@ -5702,6 +5695,9 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
             # chose nothing, the fetch resolves nothing for an unchosen row, and the lock
             # mirrors that — or phase 12 would install what nobody chose. The versions mirror
             # the real hubs (releases.py's fixture), so the two self-tests tell one story.
+            # fixture_versions deliberately has NO fallback: a new release row in apps.json
+            # KeyErrors here, beside its cause, instead of silently locking a version nobody
+            # pinned — the self-test's own red is the manifest-change reminder.
             fixture_store = os.path.join(tmp, "fixture-store")
             fixture_versions = {"intravox": ("v3.2.0", "3.2.0"), "eurooffice": ("v11.0.7", "11.0.7"),
                                 "epidemiologia": ("v0.12.0", "0.12.0"), "territorio": ("v0.80.0", "0.80.0"),

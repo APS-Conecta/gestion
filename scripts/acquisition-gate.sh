@@ -217,10 +217,16 @@ provisioning_scoped_store() {  # 042: phase 12's store rows install through occ_
     echo "  a bare app:install call survived under provisioning/ — the scoped open is occ_store's alone" >&2
     fail=1
   fi
+  # the seam is an INSTALL seam, never an update one: a future occ_store app:update would
+  # open the store for exactly the leg the doctrine closes, so only app:install may ride it
+  if grep -rnE 'occ_store [^[:space:]]+' "$TREE/provisioning" | grep -vE 'occ_store app:install'; then
+    echo "  occ_store carries a command other than app:install — the scoped open exists for installs alone (#42)" >&2
+    fail=1
+  fi
   [ "$fail" -eq 0 ]
 }
 
-row 042 "provisioning installs store apps through the scoped seam — occ_store's per-command open in lib.sh, and no bare app:install anywhere under provisioning/ (#42)" \
+row 042 "provisioning installs store apps through the scoped seam — occ_store's per-command open in lib.sh, no bare app:install anywhere under provisioning/, and nothing but app:install rides the seam (#42)" \
   provisioning_scoped_store
 
 # ── L4 S4a: behaviour (R25 community + office, R29 defaults, R28 first-boot calls, R31) ──────
