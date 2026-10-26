@@ -846,7 +846,14 @@ jobs:
           # idiom for exactly this state (#46; surfaced by the ci.13 rehearsal, the first
           # run ever to reach these arms past the pin's pending-release window)
           arc="$(sudo docker exec nextcloud-aio-mastercontainer cat /mnt/docker-aio-config/data/backup_archives.list 2>/dev/null | head -1 || true)"
-          rc=0; out="$(sudo bash /opt/aps-conecta/instalador/host/aps-conecta actualizar 2>&1)" || rc=$?
+          # the backup leg logs into the wizard's API, and the wizard's one-time passphrase
+          # lives where its configurator left it: this job's configurator of record is the
+          # testbed's drive, whose state the install step above also rides. Invoked bare,
+          # actualizar read the default /opt/aps-conecta/aio — no product path ever wrote it
+          # here (the suite was configured before the bootstrap landed) — and its passphrase
+          # poll burned five minutes on an instance that never serves /setup again, reddening
+          # with a boot diagnosis the suite did not have (run 40407976917; BUGS.md A-033)
+          rc=0; out="$(sudo AIO_STATE=/tmp/aio-testbed bash /opt/aps-conecta/instalador/host/aps-conecta actualizar 2>&1)" || rc=$?
           printf '%s\n' "$out" | tail -40
           [ "$rc" -eq 0 ] || { echo "FAIL: actualizar failed on a normal update" >&2; exit 1; }
           case "$out" in *"✓ Respaldo completo creado"*) ;; *) echo "FAIL: no backup was taken" >&2; exit 1 ;; esac

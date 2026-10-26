@@ -3328,6 +3328,8 @@ EOF
     '[ "$(grep -c "api/docker/backup" "$act/aio.log")" -eq 1 ] \
       && grep -q "api/docker/start .*bypass_container_update=1" "$act/aio.log" \
       && ! grep -q "api/docker/start" <(grep -v "bypass_container_update=1" "$act/aio.log")'
+  check "actualizar: the wizard auth rides the configurator's passphrase file — a configured instance never serves /setup again, so no poll (A-033)" \
+    '! grep -q "/setup" "$act/aio.log" && grep -q "api/auth/login .*password@" "$act/aio.log"'
   check "actualizar: the store opened scoped — every app:update rode NC_appstoreenabled=1, and nothing else touched the store" \
     'while IFS= read -r l; do case "$l" in *NC_appstoreenabled=1*) ;; *) exit 1;; esac; done < <(grep "app:update" "$act/docker.log") \
       && grep -q "NC_appstoreenabled=1.*app:update calendar" "$act/docker.log"'
