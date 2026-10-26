@@ -24,9 +24,9 @@ it expects before it dispatches the fork):
       real redirects, real checksums, no network.
 
 Standard library only, on Python 3.10 (Ubuntu 22.04's), like releases.py beside it. The knobs
-are read at call time (APS_SPREED_STORE, APS_APPS_GH, APS_APPS_API) so the self-test points the
-whole tool at its fixtures; production never overrides them. APS_APPS_GH and APS_APPS_API are
-the same knobs releases.py reads, so one environment points both resolvers.
+are read at call time (APS_SPREED_STORE, APS_APPS_API) so the self-test points the whole tool
+at its fixtures; production never overrides them. APS_APPS_API is the same knob releases.py
+reads, so one environment points both resolvers at one fixture world.
 """
 import gzip
 import hashlib
@@ -45,7 +45,6 @@ import xml.etree.ElementTree as ET
 
 APP = "spreed"
 STORE_DEFAULT = "https://apps.nextcloud.com/api/v1/apps.json"
-GH_DEFAULT = "https://github.com"
 API_DEFAULT = "https://api.github.com"
 UA = "aps-conecta-instalador"   # GitHub answers 403 to a bare urllib UA on some routes
 TIMEOUT = 120                   # upstream's tarball is ~54 MB; bounded, never hung
@@ -297,8 +296,6 @@ def selftest():
     cuerpo, info34 = tgz_fixture("24.0.6")
     cuerpo35, _ = tgz_fixture("25.0.6", lo="35", hi="35")
     cuerpo33, _ = tgz_fixture("22.2.4", lo="31", hi="33")
-    # the defects: each knob is one of the refusals the refresh owes
-    t_mala_suma, _ = tgz_fixture("24.0.6")   # bytes right, digest column lied about below
     t_otro_dir, _ = tgz_fixture("24.0.6", top="otro")
     t_otra_id, _ = tgz_fixture("24.0.6", id_xml="distinto")
     t_otra_version, _ = tgz_fixture("24.0.6", version_xml="24.0.5")
@@ -316,7 +313,7 @@ def selftest():
         return [{"id": APP, "releases": [
                      fila(base, "24.0.6", ">=34 <=34", sha(cuerpo), cuerpo),
                      fila(base, "25.0.6", ">=35 <=35", sha(cuerpo35), cuerpo35),
-                     fila(base, "24.0.7-rc1", ">=34 <=34", cuerpo=cuerpo),
+                     fila(base, "24.0.7-rc1", ">=34 <=34", "x" * 64, cuerpo),
                      fila(base, "25.0.7", ">=35 <=35", cuerpo=cuerpo35, nightly=True),
                      fila(base, "22.2.4", ">=31 <=33", sha(cuerpo33), cuerpo33),
                      fila(base, "24.0.5", ">=34 <=34", "0" * 64, cuerpo),  # digest lies about bytes
@@ -375,7 +372,6 @@ def selftest():
     base = f"http://127.0.0.1:{server.server_address[1]}"
     os.environ["APS_SPREED_STORE"] = f"{base}/store.json"
     os.environ["APS_APPS_API"] = base
-    os.environ["APS_APPS_GH"] = base
     store = build_store(base)
     api = {"nextcloud-releases/spreed": {}}
     files = {}
@@ -392,8 +388,16 @@ def selftest():
         check("resolve: another major gets its own newest — and a covered-by-nothing one refuses",
               resolve(35)["version"] == "25.0.6" and resolve(33)["version"] == "22.2.4"
               and "names no stable spreed release" in refused(resolve, 36))
-        check("resolve: prereleases and nightlies are never candidates",
-              r["version"] == "24.0.6" and resolve(35)["version"] == "25.0.6")
+        check("resolve: prereleases and nightlies are never candidates — each loses to the stable "
+              "release below it in its own major, named row by row through newest itself (the rc "
+              "and the nightly would sort ABOVE their stable if they were candidates)",
+              newest([{"version": "24.0.7-rc1", "rawPlatformVersionSpec": ">=34 <=34"},
+                      {"version": "24.0.6", "rawPlatformVersionSpec": ">=34 <=34"}], 34)[0]
+              == "24.0.6"
+              and newest([{"version": "25.0.7", "isNightly": True,
+                           "rawPlatformVersionSpec": ">=35 <=35"},
+                          {"version": "25.0.6", "rawPlatformVersionSpec": ">=35 <=35"}], 35)[0]
+              == "25.0.6")
         check("covers: a spec this cannot read covers nothing",
               not covers(">=34", 34) and not covers("", 34) and covers(">=34 <=34", 34)
               and covers(">=31 <=35", 33) and not covers(">=35 <=35", 34))

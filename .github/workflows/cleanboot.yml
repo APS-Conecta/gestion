@@ -1129,6 +1129,8 @@ jobs:
           cd /opt/aps-conecta/instalador && source scripts/env.sh
           grep -q "talk=0" /opt/aps-conecta/aio/opciones \
             || { echo "FAIL: the wizard's options record does not name talk=0 — the switch the fetch leg gates spreed on" >&2; cat /opt/aps-conecta/aio/opciones >&2; exit 1; }
+          sudo test -f /opt/aps-conecta/apps.lock.json \
+            || { echo "FAIL: no apps lock after the install — the absence arms below would read as \"no spreed row\" for the wrong reason" >&2; exit 1; }
           if sudo python3 -c 'import json, sys; sys.exit(0 if "spreed" in json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"] else 1)'; then
             echo "FAIL: the lock names spreed with Talk off — the fetch leg must resolve nothing for it" >&2; exit 1
           fi
