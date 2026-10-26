@@ -11,6 +11,8 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-10-26
+
 ### Added
 
 - **The #54 acceptance, as one command on a scratch Ubuntu 24.04 VM (`scripts/vm-acceptance.sh`).**
