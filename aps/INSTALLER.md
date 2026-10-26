@@ -19,7 +19,7 @@ the suite's version is a signed release package (D12).
 
 A clinic installs a **signed release package**, never `main` (ADR-0005):
 
-    curl -fsSL https://github.com/APS-Conecta/instalador/releases/download/vX.Y.Z/apsconecta-vX.Y.Z-install.sh | sudo bash
+    curl -fsSL https://github.com/APS-Conecta/gestion/releases/download/vX.Y.Z/apsconecta-vX.Y.Z-install.sh | sudo bash
 
 The one-liner's anchor is the tag-pinned release URL plus TLS, and the installer asset itself
 embeds the package's sha256 and the project's public key: the download is verified **before
@@ -39,7 +39,7 @@ thing lives where its own gate is.
 - **Verifying by hand** — an auditor, or anyone who wants to see it themselves — needs only the
   Release page and `signify-openbsd` (`sudo apt-get install signify-openbsd`): download
   `apsconecta-vX.Y.Z.tar.gz`, `SHA256SUMS`, `SHA256SUMS.minisig` and the committed
-  [`installer.pub`](https://github.com/APS-Conecta/instalador/blob/main/installer.pub), then
+  [`installer.pub`](https://github.com/APS-Conecta/gestion/blob/main/installer.pub), then
 
   ```bash
   signify -V -p installer.pub -m SHA256SUMS -x SHA256SUMS.minisig && sha256sum -c SHA256SUMS

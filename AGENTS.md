@@ -88,7 +88,7 @@ as they ship it; it is not this fork's channel.
 
 ### Issue tracker
 
-GitHub Issues on `APS-Conecta/instalador`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+GitHub Issues on `APS-Conecta/gestion`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

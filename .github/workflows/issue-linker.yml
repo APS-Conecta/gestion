@@ -33,7 +33,7 @@ jobs:
           python3 - <<'PY'
           import json, re, subprocess, sys
 
-          REPO = "APS-Conecta/instalador"
+          REPO = "APS-Conecta/gestion"
           MARK = "<!-- issue-linker -->"   # the standing comment's identity, first line
 
           def gh(*args):

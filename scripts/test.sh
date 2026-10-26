@@ -102,9 +102,11 @@ check env_sh_selfpath_gate
 
 # --- gate: the channel's identity — instalador is the only home the operator is sent to ---------
 # The move re-keyed every operator pointer (D13): the bootstrap, the CLI's remedies, the wizard's
-# help arms, the units' Documentation lines. Three shapes pin that no gestion-era pointer came
-# back:
-#   - no gestion repo URL survives in the two operator entry files (the clone era's channel);
+# help arms, the units' Documentation lines. The rename (#53) made gestion the suite repo's own
+# name, so the entry files must carry it — the forbid-gestion rule of the clone era would now red
+# on the canonical URL. Three shapes pin the channel instead:
+#   - the two operator entry files' repo URL is exactly the suite repo's canonical URL, so any
+#     drift — back to instalador, or on to anything else — reds naming the file;
 #   - the signing key has exactly two committed readers, and they agree (the env.sh lesson):
 #     installer.pub's key line and install.sh's embedded SIGNIFY_PUBKEY — package-release.sh reds
 #     on a disagreement at tag time; this is the PR-time half, before a tag is ever cut;
@@ -113,9 +115,11 @@ check env_sh_selfpath_gate
 #     dead pointer in the package an operator actually holds. aps/CHANGELOG.md is dated history
 #     and keeps what it said when it said it.
 check bash -c '
-  for f in host/aps-conecta install.sh; do
-    [ "$(grep -c "APS-Conecta/gestion" "$f")" = 0 ] || { echo "$f still names the gestion repo" >&2; exit 1; }
-  done'
+  want="https://github.com/APS-Conecta/gestion"
+  got="$(sed -n "s|^REPO_URL=\"\${REPO_URL:-\(.*\)}\".*|\1|p" install.sh | head -1)"
+  [ "$got" = "$want" ] || { echo "install.sh no lleva el URL canónico del repositorio de la suite: $got" >&2; exit 1; }
+  got="$(sed -n "s|^INSTALADOR_REPO_URL=\"\${INSTALADOR_REPO_URL:-\(.*\)}\".*|\1|p" host/aps-conecta | head -1)"
+  [ "$got" = "$want" ] || { echo "host/aps-conecta no lleva el URL canónico del repositorio de la suite: $got" >&2; exit 1; }'
 check bash -c '
   pub="$(sed -n 2p installer.pub)"
   emb="$(sed -n "s/^SIGNIFY_PUBKEY=\"\([^\"]*\)\".*/\1/p" install.sh | head -1)"

@@ -190,7 +190,7 @@ upstream_changelog_urls_absent() {  # zero upstream changelog/releases URLs in t
 }
 
 fork_changelog_present() {  # the positive control: the changelog arms point at the fork's releases
-  grep -q 'https://github.com/APS-Conecta/instalador/releases' "$TREE/php/templates/containers.twig"     || { echo "  no APS-Conecta/instalador releases URL in containers.twig — the changelog arms point nowhere" >&2; return 1; }
+  grep -q 'https://github.com/APS-Conecta/gestion/releases' "$TREE/php/templates/containers.twig"     || { echo "  no APS-Conecta/gestion releases URL in containers.twig — the changelog arms point nowhere" >&2; return 1; }
 }
 
 escl_sweep() {  # MODE — walk swept_table's sentinel pairs. absent = the English sentinel must be
@@ -234,7 +234,7 @@ log_toggle_consistent() {  # the engine's own constraint: log.twig's static togg
 row 060 "the operator-visible changelog links point at the fork's releases — zero upstream github.com/nextcloud* changelog URLs in the templates" \
   upstream_changelog_urls_absent
 
-row 060 "the changelog arms land on APS-Conecta/instalador's releases page (the repoint's positive control; AIO was the pre-move home — 2026-10-17)" \
+row 060 "the changelog arms land on APS-Conecta/gestion's releases page (the repoint's positive control; AIO was the pre-move home — 2026-10-17)" \
   fork_changelog_present
 
 row 060 "the es-CL sweep left no English on any wizard surface — per-file sentinels gone (15 files: containers, includes, components, small views, public JS)" \
@@ -610,7 +610,7 @@ help_links_ours() {  # 140: every help link the wizard renders goes to the suite
   fi
   for a in INSTALLER.md#3-preflight INSTALLER.md#7-dns-the-host-must-reach-its-own-domain-d10 \
            INSTALLER.md#11-backups INSTALLER.md#12-troubleshooting GUIA-CLINICA.md#3-el-asistente-8080; do
-    grep -rqF "https://github.com/APS-Conecta/instalador/blob/main/aps/$a" "$t" \
+    grep -rqF "https://github.com/APS-Conecta/gestion/blob/main/aps/$a" "$t" \
       || { echo "  no link to the suite's docs (instalador/aps)/$a" >&2; fail=1; }
   done
   [ "$fail" -eq 0 ]
@@ -686,7 +686,7 @@ post_start_page() {  # 170: after start the page says only true, APS things (R27
   while IFS= read -r want; do
     grep -qF "$want" "$c" || { echo "  containers.twig does not carry: $want" >&2; fail=1; }
   done <<'EOF'
-https://github.com/APS-Conecta/instalador/blob/main/aps/GUIA-CLINICA.md#7-tras-actualizar
+https://github.com/APS-Conecta/gestion/blob/main/aps/GUIA-CLINICA.md#7-tras-actualizar
 <h2>Suite en marcha</h2>
 <code>sudo aps-conecta abrir</code>
 <p>Contraseña inicial de APS Conecta Gestión: <strong id="initial-nextcloud-password">

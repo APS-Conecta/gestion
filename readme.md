@@ -107,9 +107,9 @@ it.
 
 **Installing.** A clinic installs from the published suite tag, never from this branch — the
 runbook (preflight, the provisionador, backups, the map, updates) lives in
-[`aps/INSTALLER.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/INSTALLER.md),
+[`aps/INSTALLER.md`](https://github.com/APS-Conecta/gestion/blob/main/aps/INSTALLER.md),
 and its Spanish walkthrough for clinic IT in
-[`aps/GUIA-CLINICA.md`](https://github.com/APS-Conecta/instalador/blob/main/aps/GUIA-CLINICA.md).
+[`aps/GUIA-CLINICA.md`](https://github.com/APS-Conecta/gestion/blob/main/aps/GUIA-CLINICA.md).
 
 Bugs this fork's own tooling hit are ledgered in [BUGS.md](BUGS.md); upstream's own issues
 belong to [nextcloud/all-in-one](https://github.com/nextcloud/all-in-one/issues).
