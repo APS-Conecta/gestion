@@ -1643,6 +1643,12 @@ else
 fi
 # brand-tokens.py (#49): the wizard's brand-token projection — pure stdlib, runs everywhere.
 check python3 scripts/brand-tokens.py --self-test
+# vm-acceptance.sh (#54): the ticket's own acceptance, on a scratch Ubuntu 24.04 VM — the
+# self-test pins the classification arms (bootstrap markers, the release five, the store rows,
+# the OCS/status answers, the revisar posture, the absent buscador row) against PATH shims:
+# no root, no docker, no network. The VM run itself is the release ritual's, not CI's
+# (aps/RELEASING.md §7).
+check bash scripts/vm-acceptance.sh --self-test
 # wizard-fonts.py (#49): the wizard's font subsets' coverage — needs fontTools, which ci.yml's
 # gate job installs for row 270; a box without it gets the honest skip (the gate row itself
 # fails loudly there, never passes vacuously — the same stance as the tool's import exit).

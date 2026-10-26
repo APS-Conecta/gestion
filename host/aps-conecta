@@ -114,7 +114,7 @@ STEPS=(
 # the self-test pins the pair
 MOTTO="La salud primaria que compartimos es la que mejora"
 STEP_RESULT=""   # a step that ends in a state other than its registry result says so here
-SILENT_SITE=""; SILENT_ROSTER=""; SILENT_LOG=""; SILENT_APPS=""   # install --sitio/--planilla/--app (a7, #39): the files, the log, the optional apps
+SILENT_SITE=""; SILENT_ROSTER=""; SILENT_LOG=""; SILENT_APPS=""; SILENT_RESPALDO=""   # install --sitio/--planilla/--app/--respaldo (a7, #39, #54): the files, the log, the optional apps, the backup dir
 
 step_field() {  # N FIELD — field FIELD (1 id · 2 título · 3 dónde · 4 propósito · 5 resultado) of step N
   local IFS='|' f
@@ -215,7 +215,7 @@ silent_abrir() { STEP_RESULT="Sin instalador web: modo silencioso."; }
 silent_centro() { python3 "$(prov_path)" --paso sitio --archivo "$SILENT_SITE"; }
 silent_suite() {
   local domain app; domain="$(site_domain || true)"
-  local apps_flags=()
+  local wizard_flags=() apps_flags=()
   if [ -z "$domain" ]; then
     bad "el sitio no declara SITE_DOMINIO" "agregue SITE_DOMINIO=\"<dominio del servidor>\" al sitio y vuelva a ejecutar"
     return 0
@@ -224,7 +224,10 @@ silent_suite() {
   # the optional apps the operator chose at the command line (#39), each as its own --app pair —
   # an array, never a word-split string: an id that ever carried a space is not an id
   for app in $SILENT_APPS; do apps_flags+=(--app "$app"); done
-  ( cmd_aio_wizard --dominio "$domain" "${apps_flags[@]}" )
+  # the daily backup, when the operator named a directory (#54): the browser step's own twin,
+  # forwarded to the wizard drive — without it there is no backup scope and actualizar refuses
+  [ -n "$SILENT_RESPALDO" ] && wizard_flags+=(--respaldo "$SILENT_RESPALDO")
+  ( cmd_aio_wizard --dominio "$domain" "${wizard_flags[@]}" "${apps_flags[@]}" )
 }
 silent_equipos() { python3 "$(prov_path)" --paso usuarios --codigo "$(site_codigo)" --planilla "$SILENT_ROSTER"; }
 silent_ejecutar() { python3 "$(prov_path)" --paso generar --codigo "$(site_codigo)" --resumen; }
@@ -241,7 +244,10 @@ cmd_install() {  # the install: the welcome, then the steps in registry order. I
       --app) app_opcion_requiere "${2:-}"
              case " $SILENT_APPS " in *" ${2:-} "*) ;; *) SILENT_APPS="$SILENT_APPS ${2:-}" ;; esac
              shift 2 ;;
-      *) die "opción desconocida: $1 — uso: sudo aps-conecta install [--sitio <site.sh> --planilla <usuarios.csv>] [--app <aplicación>]" ;;
+      --respaldo) [ -n "${2:-}" ] \
+                    || die "falta el directorio del respaldo: sudo aps-conecta install --respaldo <directorio>"
+                  SILENT_RESPALDO="$2"; shift 2 ;;
+      *) die "opción desconocida: $1 — uso: sudo aps-conecta install [--sitio <site.sh> --planilla <usuarios.csv>] [--app <aplicación>] [--respaldo <directorio>]" ;;
     esac
   done
   local again="sudo aps-conecta install"
@@ -254,6 +260,9 @@ cmd_install() {  # the install: the welcome, then the steps in registry order. I
     SILENT_SITE="$(realpath "$SILENT_SITE")"; SILENT_ROSTER="$(realpath "$SILENT_ROSTER")"
     silent_precheck
     again="$again$(printf ' --sitio %q --planilla %q' "$SILENT_SITE" "$SILENT_ROSTER")"
+    [ -z "$SILENT_RESPALDO" ] || again="$again$(printf ' --respaldo %q' "$SILENT_RESPALDO")"
+  elif [ -n "$SILENT_RESPALDO" ]; then
+    die "--respaldo va con la instalación silenciosa: sudo aps-conecta install --sitio <site.sh> --planilla <usuarios.csv> --respaldo <directorio>"
   fi
   is_root || die "la instalación necesita permisos de administrador: sudo bash aps-conecta install"
   if [ -n "$SILENT_SITE" ]; then
@@ -288,6 +297,7 @@ usage() {  # Spanish, generated from the registry — never a slice of this file
   echo "  sudo aps-conecta install          instala la suite: bienvenida y pasos numerados"
   echo "  sudo aps-conecta install --sitio S --planilla P   la misma instalación, sin preguntas ni navegador"
   echo "  sudo aps-conecta install --app A    además instala la aplicación opcional A (una por --app)"
+  echo "  sudo aps-conecta install --respaldo R   configura el respaldo diario en R (sin él, actualizar no corre)"
   echo
   echo "Pasos sueltos, en el orden de la instalación:"
   for n in $(seq 1 "${#STEPS[@]}"); do
@@ -2175,6 +2185,34 @@ EOF
   step_out="$( (cmd_install --otra) 2>&1)"; rcs=$?
   check "install: an unknown option refuses with the usage, in Spanish" \
     '[ "$rcs" -eq 1 ] && case "$step_out" in *"opción desconocida: --otra"*"--sitio <site.sh> --planilla <usuarios.csv>"*) ;; *) false;; esac'
+  check "install: the usage names the silent backup option (#54)" \
+    'case "$step_out" in *"[--respaldo <directorio>]"*) ;; *) false;; esac'
+  step_out="$( (cmd_install --respaldo) 2>&1)"; rcs=$?
+  check "install --respaldo: without a directory it refuses — never a silently skipped backup" \
+    '[ "$rcs" -eq 1 ] && [ "$step_out" = "✗ falta el directorio del respaldo: sudo aps-conecta install --respaldo <directorio>" ]'
+  step_out="$( (cmd_install --respaldo /srv/respaldos) 2>&1)"; rcs=$?
+  check "install --respaldo: without the silent pair it refuses — the interactive path's backup is the wizard's own screen, never an ignored flag" \
+    '[ "$rcs" -eq 1 ] && case "$step_out" in *"--respaldo va con la instalación silenciosa"*) ;; *) false;; esac'
+  wizard_args="$(
+    site_domain() { printf 'clinica.example'; }
+    start_suite() { return 0; }
+    cmd_aio_wizard() { printf '%s\n' "$@" > "$tmp/wizard.args"; ok "wizard-stub"; }
+    SILENT_APPS="farmacia totem"; SILENT_RESPALDO="/srv/aps-conecta/respaldos"
+    silent_suite 2>&1 >/dev/null || true; paste -sd' ' < "$tmp/wizard.args"
+  )"
+  rm -f "$tmp/wizard.args"
+  check "install --respaldo: the silent wizard drive carries the backup directory beside the apps — the browser step's own twin (#54)" \
+    '[ "$wizard_args" = "--dominio clinica.example --respaldo /srv/aps-conecta/respaldos --app farmacia --app totem" ]'
+  wizard_args="$(
+    site_domain() { printf 'clinica.example'; }
+    start_suite() { return 0; }
+    cmd_aio_wizard() { printf '%s\n' "$@" > "$tmp/wizard.args"; ok "wizard-stub"; }
+    SILENT_APPS=""; SILENT_RESPALDO=""
+    silent_suite 2>&1 >/dev/null || true; paste -sd' ' < "$tmp/wizard.args"
+  )"
+  rm -f "$tmp/wizard.args"
+  check "install: without --respaldo the drive carries no backup flag — the wizard's default posture" \
+    '[ "$wizard_args" = "--dominio clinica.example" ]'
   step_out="$( (cmd_install --sitio "$tmp/no-existe.sh" --planilla "$tmp/no-existe.csv") 2>&1)"; rcs=$?
   check "install --sitio: an unreadable file refuses before anything runs" \
     '[ "$rcs" -eq 1 ] && case "$step_out" in *"no se puede leer $tmp/no-existe.sh"*) ;; *) false;; esac && case "$step_out" in *"Paso 1"*) false;; *) true;; esac'

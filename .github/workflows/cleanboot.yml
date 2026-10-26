@@ -309,9 +309,15 @@ jobs:
       - name: Install through the silent command a clinic runs
         run: |
           set -o pipefail   # run: is `bash -e` without it — the install's own failure, not tee's
+          # --respaldo, the step a clinic also walks (INSTALLER §4): the #46 actualizar arms below
+          # demand a backup scope — actualizar refuses without one, by design — and this job's
+          # drive never configured it, the latent red the v0.0.0-ci.12 rehearsal surfaced (no run
+          # had ever reached those arms: the pin's pending-release window reded earlier)
+          mkdir -p "$RUNNER_TEMP/respaldos"
           sudo env "PATH=$PATH" APS_SKIP_DATOS=1 MIN_DISK_GB=2 AIO_STATE=/tmp/aio-testbed \
             bash /opt/aps-conecta/instalador/host/aps-conecta install \
               --sitio "$RUNNER_TEMP/site.sh" --planilla "$RUNNER_TEMP/usuarios.csv" \
+              --respaldo "$RUNNER_TEMP/respaldos" \
             < /dev/null | tee "$RUNNER_TEMP/install.out"
       # #44 on a whole install, before the smoke below (#57): the database runs the suite tag's own image,
       # and on a tag that carries buscador's database it is ready for buscador

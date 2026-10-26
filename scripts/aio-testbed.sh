@@ -162,8 +162,14 @@ cmd_up() {
   # suite installs now (ADR-0020), and only an instance with Talk on proves the channel end
   # to end: the fetch leg resolves the release, phase 12 lands it, and the release assert
   # pins the lock. Talk-off is the IP job's world (the store-rules step keeps its absence arm).
+  # --respaldo (#54): the daily backup, the step a clinic also walks (INSTALLER §4) — without
+  # it there is no backup scope and the #46 actualizar arms red at their own precondition
+  # («el respaldo de la instancia no está configurado»), the latent red the v0.0.0-ci.12
+  # rehearsal surfaced: this drive, not the install's, is the one that configures the suite
+  # (a started wizard is never configured twice).
+  mkdir -p "$STATE/respaldos"
   AIO_URL="$WIZ" AIO_STATE="$STATE" bash "$repo_root/host/aps-conecta" asistente-aio \
-    --dominio "$DOMAIN" --sin-validar-dominio --talk \
+    --dominio "$DOMAIN" --sin-validar-dominio --talk --respaldo "$STATE/respaldos" \
     || die "the CLI's wizard drive (host/aps-conecta asistente-aio) failed — its ✗ lines above name the step"
 
   # Probe state, set ONCE outside any seed (B-018's rule is about a PHASE re-writing the key

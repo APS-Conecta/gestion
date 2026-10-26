@@ -11,6 +11,22 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ## [Unreleased]
 
+### Added
+
+- **The #54 acceptance, as one command on a scratch Ubuntu 24.04 VM (`scripts/vm-acceptance.sh`).**
+  The real `curl | sudo bash` from a real release URL with no token (`latest` resolves by
+  redirect), the silent install with the three optional apps chosen, and the ticket's six
+  criteria as ✓/✗ lines with evidence: the verified bootstrap, `aps-conecta estado`, the
+  suite's answer through the installer's CA (and its refusal without it), a planilla user over
+  OCS, every default app installed from its channel (own/fork from their releases at the
+  locked tag — tarball, hash, no `signature.json` — store apps enabled) plus the functional
+  opens (notify_push's self-test, the office connector, the desktop's route), each chosen
+  optional installed and named in the wizard's options record, buscador's PDF (or the manifest
+  row it still lacks, naming #149), and `actualizar --revisar` printing the plan while writing
+  nothing. `--dominio` covers the domain posture (public 443 + DNS, ACME as upstream); by IP
+  any VM qualifies. Hermetic self-test (`--self-test`, wired into `scripts/test.sh`) pins the
+  classification with PATH shims; the ritual itself is aps/RELEASING.md §7.
+
 ### Removed
 
 - **The unused upstream AIO parts, with their hidden readers (#48).** Community containers
