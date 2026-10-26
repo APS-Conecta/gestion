@@ -37,6 +37,11 @@
    reference, and the failure names the gate rather than the sentence. Third sibling of the
    no-double-hyphen trap — see MAPEO.md. */
 @import "/themes/apsconecta/core/css/site.css";
+/* THE ONE BRAND TOKEN FILE (palette and fonts) — the second import before any rule. The rest
+   of this file paints the brand through var(--aps-*); a brand hex written here instead of a
+   token reference is a duplicate palette and reds the brand gate's row 270. The ledger (ratios,
+   permitted uses) is MAPEO.md §1. */
+@import "/themes/apsconecta/core/css/tokens.css";
 
 /* ---- Self-hosted webfonts (zero egress) ----
    Absolute paths, as Nextcloud serves them; outside Nextcloud they 404.
@@ -75,7 +80,7 @@
    No documented variable exists for a display face, so Fraunces stays on element selectors.
    --default-font-size and --default-line-height are left alone: they set @nextcloud/vue's density. */
 body {
-  --font-face: "Nunito Sans", system-ui, -apple-system, sans-serif !important;
+  --font-face: var(--aps-font-body) !important;
 }
 /* `.header-appname` exists in ONE template — layout.public.php:51, the public share header — so
    this reaches the share title and nothing else. Kept deliberately: an external recipient is the
@@ -84,15 +89,16 @@ body {
    because per-component CSS on a third-party app is what tema.html § Compromisos y límites forbids. */
 h1, h2, h3,
 #header .header-appname {
-  font-family: "Fraunces", Georgia, serif;
+  font-family: var(--aps-font-display);
   letter-spacing: -0.015em;
 }
 
 /* HEADER gradient — not on the guest (login) header, where it paints a bare strip. Nextcloud sizes
    header contrast from `background_color`, NOT from what is painted here, so that value must stay
-   dark (#5315a8) or the header icons invert to black on violet. See 15-branding.sh. */
+   the dark violet (--aps-violet-dark in the token file) or the header icons invert to black on
+   violet. See 15-branding.sh. */
 #header:not(.header-guest) {
-  background: linear-gradient(90deg, #5315a8, #7f21fe) !important;
+  background: linear-gradient(90deg, var(--aps-violet-dark), var(--aps-violet)) !important;
 }
 
 /* =====================================================================
@@ -175,7 +181,7 @@ h1, h2, h3,
      does it on hover, which is one border fewer to keep in step with the brand. */
   #header a#nextcloud::after {
     content: var(--aps-clinic, "APS Conecta Gestión") / "";
-    font-family: "Nunito Sans", system-ui, sans-serif;
+    font-family: var(--aps-font-body);
     font-size: 14px; font-weight: 600; letter-spacing: 0.02em;
     color: var(--color-background-plain-text);
     padding-inline: 12px; white-space: nowrap;
@@ -221,7 +227,7 @@ h1, h2, h3,
 .login-form__headline::before {
   content: var(--aps-clinic, "APS Conecta Gestión");
   display: block;
-  font-family: Fraunces, Georgia, serif;
+  font-family: var(--aps-font-display);
   font-size: 19px; font-weight: 700; line-height: 1.25;
   margin-block-end: 6px;
   color: var(--color-main-text);
@@ -330,7 +336,7 @@ textarea:focus-visible,
   gap: 12px;
   padding: 5rem 0;
   font-weight: 600;
-  color: #485363; /* ledger: Muted — secondary text */
+  color: var(--aps-muted); /* ledger: Muted — secondary text */
 }
 .aps-mount-loading::before {
   content: "";
@@ -339,7 +345,7 @@ textarea:focus-visible,
   height: 26px;
   border-radius: 50%;
   border: 3px solid var(--color-border, #d4d4d4);
-  border-top-color: var(--color-primary-element, #7f21fe);
+  border-top-color: var(--color-primary-element, var(--aps-violet));
   animation: aps-spin 0.8s linear infinite;
 }
 .aps-mount-noscript {
@@ -347,7 +353,7 @@ textarea:focus-visible,
   max-width: 42ch;
   padding: 0 1rem;
   text-align: center;
-  color: #485363;
+  color: var(--aps-muted);
 }
 @keyframes aps-spin {
   to { transform: rotate(1turn); }

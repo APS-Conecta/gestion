@@ -33,9 +33,10 @@
    right. That makes this file self-limiting, and it is why there is no
    !important anywhere in it: one would break exactly that.
 
-   Product values, never the clinic's — these screens stay byte-identical on
-   every install. The same two colours are written into the theming app by
-   provisioning/phases/15-branding.sh; that file is where they change.
+   Product values, never the clinic's — these screens stay byte-identical on every install. The
+   palette now arrives through the token file (server.css imports it; this file maps onto it),
+   and the same two colours reach the theming app through provisioning/phases/15-branding.sh —
+   which reads the SAME file, so no surface owns a value of its own anymore.
    ===================================================================== */
 
 /* MUST be first: CSS ignores @import after any other rule. Pulls in the fonts
@@ -49,12 +50,14 @@
    `url("../../core/img/logo/logo.svg")` fallback applied; the other four it
    declares with stock values (#00679e, and Nextcloud's photographic backdrop).
    Deliberately absent: --color-background-plain-text and
-   --color-primary-element-text are already #ffffff there, and white on #5315a8
-   is 10.3:1. Restating a correct value only creates a second place to drift. */
+   --color-primary-element-text are already #ffffff there, and white on the dark
+   violet is 10.3:1. Restating a correct value only creates a second place to drift.
+   The three colour VALUES are mapped onto the brand tokens (imported by
+   server.css above) — this file owns none of its own (#49). */
 :root {
   --image-logo: url("/themes/apsconecta/core/img/logo/logo.svg");
   --image-background: url("/themes/apsconecta/core/img/background.svg");
-  --color-background-plain: #5315a8;
-  --color-primary-element: #7f21fe;
-  --color-primary-element-hover: #6b01fa;
+  --color-background-plain: var(--aps-violet-dark);
+  --color-primary-element: var(--aps-violet);
+  --color-primary-element-hover: var(--aps-violet-hover);
 }

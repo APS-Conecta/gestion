@@ -294,7 +294,10 @@ jobs:
           set -euo pipefail
           files=("dist/apsconecta-$RELEASE_TAG.tar.gz" "dist/SHA256SUMS" "dist/SHA256SUMS.minisig" \
                  "dist/apsconecta-$RELEASE_TAG-install.sh" "suite-$RELEASE_TAG-manifest.json")
-          if gh release create "$RELEASE_TAG" --verify-tag --generate-notes "${files[@]}"; then
+          # «APS Conecta Gestión vX.Y.Z» — the product name on the Release the wizard's
+          # changelog arms land on (row 270 pins the shape); --generate-notes fills the body
+          if gh release create "$RELEASE_TAG" --verify-tag --generate-notes \
+              --title "APS Conecta Gestión $RELEASE_TAG" "${files[@]}"; then
             echo "Release $RELEASE_TAG created with ${#files[@]} assets"
             exit 0
           fi

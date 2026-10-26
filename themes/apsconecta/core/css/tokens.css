@@ -1,0 +1,54 @@
+/* SPDX-FileCopyrightText: 2026 APS Conecta
+   SPDX-License-Identifier: AGPL-3.0-or-later */
+
+/* =====================================================================
+   THE ONE BRAND TOKEN FILE — palette and fonts.
+
+   Every hex the brand paints lives HERE and nowhere else. The readers:
+   - the server theme: server.css @imports this file and paints through
+     var(--aps-*); guest.css maps its legacy-screen variables the same way.
+   - the branding phase (provisioning/phases/15-branding.sh): reads the two
+     colours Nextcloud's theming app needs from this file.
+   - the Provisionador (scripts/provisionador.py): reads this file through
+     ASSETS_ROOT and paints the Instalador UI with it.
+   - the wizard (php/public/style.css): cannot fetch this file at run time
+     (its origin is the mastercontainer, not the suite), so
+     scripts/brand-tokens.py projects it into a GENERATED block in the
+     wizard's stylesheet — committed bytes, proven byte-equal by the gate.
+   - the brand gate (scripts/brand-gate.sh): reads THIS file for its
+     expectations; it carries no palette of its own.
+
+   The no-duplicate rule (row 270): a hex declared below appears in this
+   file alone. The ledger — contrast ratios and permitted uses — is
+   MAPEO.md §1; the exceptions that may repeat a value (the ledger itself,
+   the SVG art, the acceptance harness) are named there and in the gate.
+
+   Adding a colour: name it by ROLE (--aps-what-it-paints), give it a row
+   in MAPEO.md §1 with its ratio, and never paste a brand hex into a
+   consumer — reference the token.
+
+   LIGHT ONLY (enforce_theme=light; BRANDING §2). No dark variants exist,
+   so none are declared: a token nobody can reach would be a lie.
+   ===================================================================== */
+
+:root {
+  /* ── Palette ── */
+  --aps-violet:            #7f21fe;  /* primary — AA text/UI 5.57:1 */
+  --aps-violet-dark:       #5315a8;  /* backdrop, headings-derived ~8:1; Nextcloud's background_color MUST be this one */
+  --aps-violet-hover:      #6b01fa;  /* the pressed/active violet */
+  --aps-violet-bright:     #893dff;  /* gradient end only — never text (fails AA small) */
+  --aps-violet-tint:       #f0eaff;  /* selected-state wash behind violet text */
+  --aps-violet-tint-hover: #e4dcf7;  /* the wash's hover step */
+  --aps-error:             #ea003e;  /* 4.33:1 — UI/border/large text, never body */
+  --aps-error-hover:       #ff2d5e;  /* the error violet's pressed step */
+  --aps-error-text:        #b4002e;  /* small-text-safe error red */
+  --aps-success:           #46ba61;  /* the running-then-green success state */
+  --aps-gold:              #e06f00;  /* 3.07:1 — fills, icons, large text ONLY */
+  --aps-gold-dark:         #9a4c00;  /* small-text gold, ≥4.5:1 — the ledger's rule, citable */
+  --aps-ink:               #101828;  /* main text ~16:1 */
+  --aps-muted:             #485363;  /* secondary text ~7:1 */
+
+  /* ── Fonts (the pairing; each consumer's @font-face stays local) ── */
+  --aps-font-display: "Fraunces", Georgia, serif;
+  --aps-font-body: "Nunito Sans", system-ui, -apple-system, sans-serif;
+}

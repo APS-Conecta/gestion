@@ -163,12 +163,32 @@ ASSETS = {
     "nunito-sans.woff2": ("themes/apsconecta/core/fonts/NunitoSans.woff2", "font/woff2"),
     "fondo.svg": ("themes/apsconecta/core/img/background.svg", "image/svg+xml"),
     "favicon.svg": ("themes/apsconecta/core/img/favicon.svg", "image/svg+xml"),
-    # The Centro map pane's engine (L5 S4): Leaflet, vendored beside the brand fonts. The basemap
+# The Centro map pane's engine (L5 S4): Leaflet, vendored beside the brand fonts. The basemap
     # itself is OpenStreetMap's tile service, loaded by the operator's browser (ADR-0021 in
     # territorio) — nothing else rides here. Public like the fonts: open-source bytes, nothing secret.
     "leaflet.js": ("themes/apsconecta/core/mapa/leaflet.js", "text/javascript"),
     "leaflet.css": ("themes/apsconecta/core/mapa/leaflet.css", "text/css"),
 }
+
+# The ONE brand token file (#49): the Instalador UI's palette and font pairing are READ from it,
+# never restated — the self-test's fixture world redirects ASSETS_ROOT, so the read is lazy
+# (at render), not at import. A missing or empty file stops the server before any socket opens:
+# the UI must never fall back to a palette of its own.
+TOKENS_CSS = "themes/apsconecta/core/css/tokens.css"
+
+
+def brand_tokens():
+    """{--aps-name: value} from the token file — the only place the UI reads a brand colour."""
+    path = os.path.join(ASSETS_ROOT, TOKENS_CSS)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError as e:
+        sys.exit(f"✗ no se encontró la ficha de tokens de marca ({path}): {e}")
+    tokens = dict(re.findall(r"^\s*(--aps-[a-z0-9-]+)\s*:\s*([^;]+);", text, re.M))
+    if not tokens:
+        sys.exit(f"✗ la ficha de tokens de marca ({path}) no declara ningún token")
+    return tokens
 
 
 
@@ -1958,25 +1978,29 @@ LOCKUP = (
 
 
 def page_css():
-    """Variant A «Capítulos» (the approved Instalador UI, stage V): the D1 tokens (FRD: primary
-    #7f21fe 5.57:1, background #5315a8, hover #6b01fa, error #ea003e, gold #e06f00 large-only, ink
-    #101828, muted #485363) plus the design's own, the brand fonts from /recursos/, the backdrop
-    rail and chapter column, and the legacy screen classes (.tarjeta, .aviso, tables, forms)
-    restyled to the editorial look. Light-only (BRANDING §2). One function, inlined into <head>."""
-    return """<style>
-@font-face{font-family:"Fraunces";src:url(/recursos/fraunces.woff2) format("woff2");font-weight:400 800;font-style:normal;font-display:swap}
-@font-face{font-family:"Fraunces";src:url(/recursos/fraunces-italica.woff2) format("woff2");font-weight:400 800;font-style:italic;font-display:swap}
-@font-face{font-family:"Nunito Sans";src:url(/recursos/nunito-sans.woff2) format("woff2");font-weight:400 800;font-style:normal;font-display:swap}
-:root{--primario:#7f21fe;--fondo:#5315a8;--encima:#6b01fa;--error:#ea003e;--oro:#e06f00;
---tinta:#101828;--apagado:#485363;--blanco:#fff;--papel:#faf7ff;--linea:#e1d7f4;--velo:#f1e9ff;
+    """Variant A «Capítulos» (the approved Instalador UI, stage V): the brand palette and the
+    font pairing arrive from the ONE token file (themes/apsconecta/core/css/tokens.css, #49) —
+    injected below as --aps-* declarations and mapped through the design's own names, so the
+    Instalador UI owns its neutrals (--papel, --linea, --velo, --ok, --marca) but no brand
+    colour of its own — plus the brand fonts from /recursos/, the backdrop rail and chapter
+    column, and the legacy screen classes (.tarjeta, .aviso, tables, forms) restyled to the
+    editorial look. Light-only (BRANDING §2). One function, inlined into <head>."""
+    aps = "".join(f"{k}:{v};" for k, v in brand_tokens().items())
+    return f"""<style>
+@font-face{{font-family:"Fraunces";src:url(/recursos/fraunces.woff2) format("woff2");font-weight:400 800;font-style:normal;font-display:swap}}
+@font-face{{font-family:"Fraunces";src:url(/recursos/fraunces-italica.woff2) format("woff2");font-weight:400 800;font-style:italic;font-display:swap}}
+@font-face{{font-family:"Nunito Sans";src:url(/recursos/nunito-sans.woff2) format("woff2");font-weight:400 800;font-style:normal;font-display:swap}}
+:root{{{aps}--primario:var(--aps-violet);--fondo:var(--aps-violet-dark);--encima:var(--aps-violet-hover);
+--error:var(--aps-error);--oro:var(--aps-gold);--tinta:var(--aps-ink);--apagado:var(--aps-muted);
+--blanco:#fff;--papel:#faf7ff;--linea:#e1d7f4;--velo:#f1e9ff;
 --ok:#0b7a4b;--marca:#f28f36;--tenue-b:rgba(255,255,255,.88);
---f-display:"Fraunces","Iowan Old Style",Georgia,serif;
---f-cuerpo:"Nunito Sans","Segoe UI",system-ui,sans-serif;
+--f-display:var(--aps-font-display);
+--f-cuerpo:var(--aps-font-body);
 --f-mono:ui-monospace,"SFMono-Regular","Cascadia Mono",Menlo,Consolas,monospace;
 --t-xs:.8125rem;--t-s:.9375rem;--t-m:1.0625rem;--t-l:1.375rem;--t-titulo:clamp(2.1rem,3.6vw,3.25rem);
 --gutter:max(16px,4vw);
 --riel:radial-gradient(circle at 28% 26%,rgba(164,119,255,.45),transparent 65%),
-radial-gradient(circle at 82% 88%,rgba(38,9,79,.55),transparent 55%),linear-gradient(135deg,#893dff,#5315a8)}
+radial-gradient(circle at 82% 88%,rgba(38,9,79,.55),transparent 55%),linear-gradient(135deg,var(--aps-violet-bright),var(--aps-violet-dark))""" """}
 *,*::before,*::after{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--papel);color:var(--tinta);font:400 var(--t-m)/1.6 var(--f-cuerpo)}
@@ -2211,7 +2235,7 @@ async function centro(){
 def head(title):
     """Every page's <head>: the CSS and the one script load here, before any screen script (R34)."""
     return (f'<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
-            f'<title>{esc(title)} — Instalador APS Conecta</title>'
+            f'<title>{esc(title)} — APS Conecta Gestión</title>'
             f'<link rel="icon" href="/recursos/favicon.svg" type="image/svg+xml">{page_css()}{page_js()}')
 
 
@@ -2660,11 +2684,16 @@ autocomplete="off" spellcheck="false">
     notaMapa.hidden = false;
     notaMapa.textContent = "el mapa de fondo (OpenStreetMap) no se pudo cargar — revise la conexión a internet de este equipo; el punto se confirma igual";
   });
-  const anillo = L.circleMarker([0, 0], {radius: 13, weight: 2, color: "#5315a8", dashArray: "4 3",
+  // The ring's colour cannot ride a CSS var (Leaflet paints it as an SVG ATTRIBUTE, which
+  // var() never resolves), so it is read from the page's own cascade at run time — the value
+  // still flows from the ONE token file, never a literal here (#49).
+  const colorAnillo = getComputedStyle(document.documentElement)
+                     .getPropertyValue("--aps-violet-dark").trim();
+  const anillo = L.circleMarker([0, 0], {radius: 13, weight: 2, color: colorAnillo, dashArray: "4 3",
                                          fill: false, interactive: false}).addTo(mp);
   const chincheta = L.divIcon({className: "pin-mapa", iconSize: [26, 40], iconAnchor: [13, 40],
     html: '<svg viewBox="0 0 26 40" width="26" height="40" aria-hidden="true">' +
-      '<path d="M13 40C9 31 0 26.5 0 14A13 13 0 1 1 26 14C26 26.5 17 31 13 40Z" fill="#7f21fe"/>' +
+      '<path d="M13 40C9 31 0 26.5 0 14A13 13 0 1 1 26 14C26 26.5 17 31 13 40Z" style="fill:var(--aps-violet)"/>' +
       '<circle cx="13" cy="14" r="5" fill="#fff"/></svg>'});   // divIcon: leaflet.css's images are never fetched
   const marcador = L.marker([0, 0], {icon: chincheta, draggable: true, autoPan: true,
                                      keyboard: false}).addTo(mp);
@@ -6167,10 +6196,14 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                       "<th>Línea</th><th>Error</th>" in plan and "primer_admin" in plan
                       and "Los cargos" in plan)
 
-                css_ok = all(tok in plan for tok in
-                             ("#7f21fe", "#5315a8", "#6b01fa", "#ea003e", "#e06f00",
-                              "#101828", "#485363"))
-                check("screens: the D1 tokens ride the CSS", css_ok)
+                toks = brand_tokens()
+                css_ok = all(v in plan for v in toks.values())
+                check("screens: the brand palette rides the CSS straight from the ONE token file — every declared value injected, the design's own names mapped onto it, the rail gradient too (#49)",
+                      css_ok and "--primario:var(--aps-violet)" in plan
+                      and "var(--aps-violet-bright)" in plan)
+                check("screens: the pages name the product — «APS Conecta Gestión» in every title, the lockup beside it",
+                      plan.count("— APS Conecta Gestión</title>") >= 1
+                      and "<b>APS Conecta Gestión</b>" in plan)
                 check("screens: no literal provisionador address or port — relative links only, no token",
                       "http://127.0.0.1" not in plan and ":8081" not in plan
                       and ":8082" not in plan and ":8083" not in plan and TOKEN not in plan
