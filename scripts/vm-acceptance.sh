@@ -18,6 +18,8 @@
 #                ACME's, as upstream). Without it: install by this VM's own IPv4, with the
 #                installer's own certificate.
 #   --sin-datos  skip the national data masters (a small VM's disk; Clean boot's own posture)
+#   --sin-respaldo  drive the wizard without the daily backup (criterion 6 will red: actualizar
+#                refuses without a configured backup, by design) — the honest no-backup posture
 #   --solo-chequeos  re-run only the checks against an already-installed VM
 #   --continuar  run the checks even when the install step fails (a red named, not a stop)
 #
@@ -47,13 +49,17 @@ VMA_TAG="${VMA_TAG:-latest}"
 VMA_DOMINIO="${VMA_DOMINIO:-}"                      # empty: install by IP
 VMA_SKIP_DATOS="${VMA_SKIP_DATOS:-0}"
 VMA_DOCKER="${VMA_DOCKER:-docker}"
-VMA_APS="${VMA_APS:-aps-conecta}"                   # the host CLI (on PATH once installed)
+VMA_APS="${VMA_APS:-$VMA_TREE/host/aps-conecta}"   # the CLI the bootstrap prints as its next step (on PATH only after «preparar»)
 VMA_CURL="${VMA_CURL:-curl}"
 VMA_OCC_SHIM="${VMA_OCC_SHIM:-}"                    # set by the self-test; empty on a VM
 VMA_WORK="${VMA_WORK:-$(mktemp -d /tmp/vm-acceptance.XXXXXX)}"
 VMA_APPS="${VMA_APPS:-farmacia estadistica totem}"  # the optional apps the install chooses (#39–#41)
 VMA_PDF_TOKEN="${VMA_PDF_TOKEN:-AZUCARMORADA54}"    # the word only the acceptance PDF carries
 VMA_INSTALL_ENV="${VMA_INSTALL_ENV:-}"             # extra K=V pairs for the install (a rehearsal's APS_SUITE_TAG)
+VMA_RESPALDO="${VMA_RESPALDO-1}"                   # the daily backup a real clinic configures in the wizard (§11):
+                                                     # 1 = "$VMA_ROOT/respaldos"; a path = that path; empty = none
+                                                     # (an install without it cannot pass criterion 6 — actualizar
+                                                     # refuses without a configured backup, by design)
 export VMA_ROOT VMA_TREE VMA_REPO_URL VMA_TAG VMA_DOMINIO VMA_SKIP_DATOS VMA_WORK
 
 die() { printf 'FATAL: %s\n' "$1" >&2; exit 2; }
@@ -356,6 +362,11 @@ silent_install() {  # $1 = site.sh, $2 = usuarios.csv — the operator's own sil
   [ "$VMA_SKIP_DATOS" = 1 ] && envs+=(APS_SKIP_DATOS=1)
   # shellcheck disable=SC2206  # K=V words, by contract — the rehearsal's APS_SUITE_TAG rides here
   envs+=($VMA_INSTALL_ENV)
+  # the wizard's daily backup — the step a clinic also walks (INSTALLER §4): without it there is
+  # no backup scope, and actualizar refuses by design (its precondition, #46)
+  local respaldo="$VMA_RESPALDO"
+  [ "$respaldo" = 1 ] && respaldo="$VMA_ROOT/respaldos"
+  [ -n "$respaldo" ] && flags+=(--respaldo "$respaldo")
   out="$VMA_WORK/install.out"
   # shellcheck disable=SC2024  # preflight guarantees root; the redirect is ours, on purpose
   sudo env "PATH=$PATH" "${envs[@]}" "$VMA_APS" install \
@@ -373,6 +384,7 @@ main() {
       --repo-url) VMA_REPO_URL="${2:?falta la URL}"; shift 2 ;;
       --dominio) VMA_DOMINIO="${2:?falta el dominio}"; shift 2 ;;
       --sin-datos) VMA_SKIP_DATOS=1; shift ;;
+      --sin-respaldo) VMA_RESPALDO=""; shift ;;
       --solo-chequeos) solo=1; shift ;;
       --continuar) continuar=1; shift ;;
       --self-test) if self_test; then exit 0; else exit 1; fi ;;
@@ -429,9 +441,12 @@ self_test() {
   printf '#!/usr/bin/env bash\nexec "$@"\n' > "$shims/sudo"
   cat > "$shims/aps-conecta" <<'SH'
 #!/usr/bin/env bash
-# estado: the verdict file answers; actualizar --revisar: the fixture's script decides
+# estado: the verdict file answers; actualizar --revisar: the fixture's script decides;
+# install: records its args and answers the ✓ line the harness greps
 case "$1" in
   estado) exit "$(cat "$SHIM_STATE/estado.rc" 2>/dev/null || echo 0)" ;;
+  install) printf '%s\n' "$@" > "$SHIM_STATE/install.args"
+            printf 'INSTALACIÓN: ✓ — (shim)\n'; exit 0 ;;
   actualizar) if [ -x "$SHIM_STATE/revisar.hook" ]; then "$SHIM_STATE/revisar.hook"; fi
               cat "$SHIM_STATE/revisar.out" 2>/dev/null
               exit "$(cat "$SHIM_STATE/revisar.rc" 2>/dev/null || echo 0)" ;;
@@ -618,6 +633,19 @@ SH
   printf '#!/usr/bin/env bash\nexit 22\n' > "$shims/curl"; chmod +x "$shims/curl"
   # a subshell: resolve_tag's die exits the probe, never this shell
   t "resolve_tag: an unreachable redirect dies, naming --tag" 2 '( VMA_TAG=latest resolve_tag )'
+
+  # the silent install drives the wizard the way a clinic does: the daily backup configured
+  # (criterion 6's precondition — actualizar refuses without one, by design #46), the chosen
+  # optional apps as --app pairs, and --sin-respaldo honestly leaving it out
+  t "install: drives the wizard with the daily backup configured" 0 \
+    'silent_install "$SHIM_STATE/site.sh" "$SHIM_STATE/usuarios.csv" >/dev/null 2>&1 && grep -qx -- "--respaldo" "$SHIM_STATE/install.args" && grep -qx "$VMA_ROOT/respaldos" "$SHIM_STATE/install.args"'
+  t "install: the chosen optionals ride their own --app pairs" 0 \
+    'grep -c -- "--app" "$SHIM_STATE/install.args" | grep -qx 3'
+  local saved_respaldo="$VMA_RESPALDO"
+  VMA_RESPALDO=""
+  t "install: --sin-respaldo leaves the wizard without a backup" 0 \
+    'silent_install "$SHIM_STATE/site.sh" "$SHIM_STATE/usuarios.csv" >/dev/null 2>&1 && ! grep -q -- "--respaldo" "$SHIM_STATE/install.args"'
+  VMA_RESPALDO="$saved_respaldo"
 
   PATH="$saved_path"; VMA_ROOT="$saved_root"; VMA_TREE="$saved_tree"
   printf 'self-test: %d ok, %d fail\n' "$ok_n" "$fail_n"
