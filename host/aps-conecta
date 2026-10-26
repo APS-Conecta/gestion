@@ -1654,17 +1654,17 @@ act_aplicar() {  # app by app (#46): the release rows through phase 12 itself �
     ( set -e; . provisioning/phases/12-apps.sh )
     # the store rows, scoped: one occ app:update per app, the store open for that command
     # alone (occ_store, lib.sh) — notify_push included (the entrypoint installs it when the
-    # binary is absent; nothing else ever moves an installed store app — this is that path),
-    # spreed only when the suite runs Talk, an unchosen optional row never touched.
+    # binary is absent; nothing else ever moves an installed store app — this is that path).
+    # Talk is a release row now (#145, ADR-0020): its update rode the fetch above and phase
+    # 12's own Talk gate — the store walk never sees it, and an unchosen optional row stays
+    # untouched as always.
     manifest_opcionales="$(python3 "$HERE/../scripts/apps.py" opcionales | cut -f1)"
-    talk="$(nc_exec -- printenv TALK_ENABLED 2>/dev/null || true)"
     while IFS=$'\t' read -r app repo; do
       [ -z "$repo" ] || continue   # release rows: phase 12 above
       if printf '%s\n' "$manifest_opcionales" | grep -qx -- "$app" && ! app_elegida "$app"; then
         log "$app sin actualizar: la aplicación opcional no fue elegida (el registro del asistente)"
         continue
       fi
-      [ "$app" != spreed ] || [ "$talk" = yes ] || { log "spreed sin actualizar: la suite corre sin Talk"; continue; }
       if ! out="$(occ_store app:update "$app" 2>&1)"; then
         log "FAILED $app — occ app:update dijo: $(printf '%s' "$out" | tr '\n' ' ' | tail -c 300)"
         exit 1

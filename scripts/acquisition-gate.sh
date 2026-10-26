@@ -34,13 +34,21 @@
 #         a server bump that renames the NC_ harvest would flip the store back on with every
 #         gate green.
 #   042 — the store rules, no bake (#42): three rows. (1) The entrypoint installs notify_push
-#         and Talk from the store ONLY when they are missing, and each install opens the store
-#         for that one command — a per-process NC_appstoreenabled=1 prefix while the container
-#         ENV stays "0"; every update leg stays closed. (2) AIO's automatic app updates are
-#         forced off: the entrypoint runs no scheduled app:update --all and reads
-#         UPDATE_NEXTCLOUD_APPS nowhere — apps move only when the operator decides
-#         (`aps-conecta actualizar`). (3) Provisioning's store rows install through the same
-#         scoped open (occ_store in lib.sh), never a bare `occ app:install`.
+#         from the store ONLY when it is missing, and that install opens the store for that
+#         one command — a per-process NC_appstoreenabled=1 prefix while the container ENV
+#         stays "0"; every update leg stays closed. Talk left this channel for its fork's
+#         signed releases (ADR-0020, row 145), so notify_push is the scoped open's only
+#         first-boot user. (2) AIO's automatic app updates are forced off: the entrypoint runs
+#         no scheduled app:update --all and reads UPDATE_NEXTCLOUD_APPS nowhere — apps move
+#         only when the operator decides (`aps-conecta actualizar`). (3) Provisioning's store
+#         rows install through the same scoped open (occ_store in lib.sh), never a bare
+#         `occ app:install`.
+#   145 — spreed's channel is the fork's own signed release (ADR-0020): the manifest row is
+#         source fork with release on (never the store), the entrypoint installs spreed
+#         nowhere (its Talk block is presence-gated configuration alone), and the resolver
+#         honours the record's Talk switch — Talk off resolves nothing. The fork repo and its
+#         per-suite-release refresh live outside this tree; the release chain's spreed step
+#         (release.yml) is what keeps them honest at suite-release time.
 #   260 — the pgvector hash pin (moved from brand-gate's row 260 by #73): the database image's
 #         one build-time download — pgvector's release tarball — is checksum-gated in its own
 #         Dockerfile (PGVECTOR_SHA256 + sha256sum -c), the bake's discipline applied to a
@@ -178,24 +186,59 @@ row 030 "the image carries only the theme — zero COPY lines into custom_apps, 
   theme_only_image
 
 scoped_store_installs() {  # 042: the entrypoint opens the store per command, for an install,
-  # never an update — and only for notify_push and Talk, the two apps a first boot needs
-  # before provisioning has run. A bare `php occ app:install` in the entrypoint fails against
-  # 020's ENV (the acceptance's own arm), so the per-process prefix IS the mechanism.
+  # never an update — and only for notify_push, the one app a first boot needs before
+  # provisioning has run (Talk moved to its fork's signed release, ADR-0020 — row 145 pins
+  # that no install of spreed remains anywhere in the entrypoint). A bare `php occ
+  # app:install` in the entrypoint fails against 020's ENV (the acceptance's own arm), so the
+  # per-process prefix IS the mechanism.
   local e="$TREE/Containers/nextcloud/entrypoint.sh" fail=0
   [ -f "$e" ] || { echo "  no entrypoint at '$e'" >&2; return 1; }
   grep -qF 'NC_appstoreenabled=1 php /var/www/html/occ app:install notify_push' "$e" \
     || { echo "  the notify_push install carries no scoped store-open (NC_appstoreenabled=1, per process)" >&2; fail=1; }
-  grep -qF 'NC_appstoreenabled=1 php /var/www/html/occ app:install spreed' "$e" \
-    || { echo "  the Talk install carries no scoped store-open (NC_appstoreenabled=1, per process)" >&2; fail=1; }
-  if grep -nE 'NC_appstoreenabled=1 .*app:(install|update)' "$e" | grep -vE 'app:install (notify_push|spreed)("| )*$'; then
-    echo "  a store-open reached a command outside the two installs — the scoped open is notify_push and Talk's alone" >&2
+  if grep -nE 'app:install spreed' "$e"; then
+    echo "  the entrypoint still installs spreed — Talk arrives from its fork's signed release, never the store (ADR-0020, #145)" >&2
+    fail=1
+  fi
+  if grep -nE 'NC_appstoreenabled=1 .*app:(install|update)' "$e" | grep -vE 'app:install notify_push("| )*$'; then
+    echo "  a store-open reached a command outside the notify_push install — the scoped open is notify_push's alone" >&2
     fail=1
   fi
   [ "$fail" -eq 0 ]
 }
 
-row 042 "the entrypoint installs notify_push and Talk scoped — a per-process NC_appstoreenabled=1 on exactly those two installs when they are missing, and never on an update leg (#42)" \
+row 042 "the entrypoint installs notify_push scoped — a per-process NC_appstoreenabled=1 on exactly that one install when it is missing, never on an update leg; Talk left the store channel for its fork's signed releases (ADR-0020), and no install of spreed remains in the entrypoint (#42, #145)" \
   scoped_store_installs
+
+spreed_from_its_fork() {  # 145: the store→fork migration's tree half (ADR-0020). The
+  # manifest's row names the fork repo with release on (never the store — apps.py refuses a
+  # store row that sets it, so the shape here is the whole channel); the entrypoint installs
+  # spreed nowhere; and the resolver's Talk gate exists — Talk off resolves nothing, the
+  # record's own switch, the same gate phase 12 reads through TALK_ENABLED. What this tree
+  # cannot see — the fork repo's releases, their upstream checksums, the refresh — is the
+  # release chain's spreed step and the clean boot's assert-release-app, both at run time.
+  local m="$TREE/apps.json" r="$TREE/scripts/releases.py" e="$TREE/Containers/nextcloud/entrypoint.sh" fila fail=0
+  for f in "$m" "$r" "$e"; do
+    [ -f "$f" ] || { echo "  no such file: $f — re-point this row" >&2; fail=1; }
+  done
+  [ "$fail" -eq 0 ] || return 1
+  fila="$(python3 -c 'import json, sys
+fila = next(a for a in json.load(open(sys.argv[1])) if a["id"] == "spreed")
+assert fila["source"] == "fork" and fila["repo"] == "APS-Conecta/spreed" and fila.get("release") is True, fila' \
+    "$m" 2>&1)" \
+    || { echo "  apps.json's spreed row is not the fork's release row: $fila" >&2; fail=1; }
+  if grep -nE 'app:(install|update)[[:space:]]+spreed' "$TREE/Containers/nextcloud/entrypoint.sh"; then
+    echo "  the entrypoint installs or updates spreed — the release channel and actualizar are its only movers" >&2
+    fail=1
+  fi
+  grep -qF 'def talk_on(eleccion)' "$r" \
+    || { echo "  releases.py lost the Talk gate — spreed must resolve only with Talk on" >&2; fail=1; }
+  grep -qF '✓ apps: spreed omitida — la suite corre sin Talk' "$r" \
+    || { echo "  releases.py's Talk-off line is gone — the wizard surfaces that line verbatim" >&2; fail=1; }
+  [ "$fail" -eq 0 ]
+}
+
+row 145 "spreed's channel is the fork's own signed release — apps.json's row is source fork with release on, the entrypoint installs spreed nowhere, and the resolver gates it on the record's Talk switch (ADR-0020)" \
+  spreed_from_its_fork
 
 aio_auto_updates_off() {  # 042: AIO's Saturday app:update --all is gone and the env that
   # armed it is read nowhere — apps move only when the operator decides, whatever the config

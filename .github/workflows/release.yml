@@ -19,6 +19,13 @@
 #             callee's manifest job already needs matrix and boot-smoke — so nothing is signed
 #             before a complete, booted, one-snapshot set exists (the boot-smoke-pins-the-
 #             sign-moment rule).
+#   spreed  → the Talk fork's refresh (ADR-0020, #145), parallel to images: upstream's newest
+#             stable spreed for the tag tree's Nextcloud major, dispatched into
+#             APS-Conecta/spreed's own workflow (the app key never leaves an app repo,
+#             ADR-0001), waited for bounded, then verified HERE — signature against the tag
+#             tree's apps.pub, and bytes: upstream's own tarball minus exactly
+#             appinfo/signature.json, at upstream's own commit. A suite release cannot exist
+#             without a compatible, verified Talk release.
 #   package → scripts/package-release.sh: the composite assembly (the suite's tag tree alone —
 #             theme, data, sites register and manifest included, and no app bytes in it, #42),
 #             the publish record (retag.sh manifest — same tool
@@ -28,7 +35,10 @@
 #
 # SECRETS: MINISIGN_SECRET_KEY + MINISIGN_KEY_PASSWORD (package-release.sh's sign: the key
 # lands in a 0600 trap-removed temp file, the passphrase rides stdin — the P45 rule: neither
-# ever reaches argv or a URL); plus the always-present GITHUB_TOKEN.
+# ever reaches argv or a URL); SPREED_REFRESH_TOKEN (the spreed job's dispatch: a fine-grained
+# PAT with Contents read/write on APS-Conecta/spreed alone — the fork's refresh is the one
+# cross-repo move in the chain, and the token's scope is that one repo, never the suite's);
+# plus the always-present GITHUB_TOKEN.
 #
 # ACTIONS SHA-PINNED (upstream's own convention; lint-yaml's zizmor runs over
 # .github/workflows on PRs and catches unpinned uses). Untrusted context (the tag name) reaches
@@ -117,9 +127,113 @@ jobs:
       contents: read
       packages: write   # headroom for the Images pipeline's four pushing jobs
 
+  spreed:
+    name: Refresh the Talk fork's signed release
+    needs: gates   # ADR-0020, #145: the suite release refreshes APS-Conecta/spreed's App
+      # release from upstream's newest stable spreed for THE TAG TREE's Nextcloud major, and
+      # the suite Release is not created until that release exists and has proven itself
+      # against this tag tree's own apps.pub — a suite release without a compatible Talk
+      # release reds here, never on a clinic's first install. The refresh itself runs in the
+      # fork's workflow (the app key's only home is its release environment, ADR-0001); this
+      # step dispatches it, waits bounded, and verifies what it published.
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (upstream's own pin)
+        with:
+          ref: ${{ inputs.suite-tag || github.ref_name }}   # the tag tree: its Nextcloud major, its apps.pub, its resolver
+      - name: Install the verifier (the same apt package the clinic verifies with)
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y signify-openbsd
+          command -v signify >/dev/null 2>&1 || sudo ln -sf "$(command -v signify-openbsd)" /usr/local/bin/signify
+      - name: The tag tree's Nextcloud major and upstream's expected release
+        id: upstream
+        run: |
+          set -euo pipefail
+          python3 scripts/spreed-refresh.py --self-test
+          major="$(sed -nE 's/^ENV NEXTCLOUD_VERSION=([0-9]+)\..*/\1/p' Containers/nextcloud/Dockerfile | head -1)"
+          [ -n "$major" ] || { echo "FAIL: no NEXTCLOUD_VERSION in the tag tree's Dockerfile" >&2; exit 1; }
+          esperada="$(python3 scripts/spreed-refresh.py resolve --nextcloud "$major")" \
+            || { echo "FAIL: upstream publishes no stable spreed for Nextcloud $major — the suite cannot ship Talk at this major yet" >&2; exit 1; }
+          echo "upstream for Nextcloud $major: $(printf '%s' "$esperada" | cut -f1-2)"
+          {
+            echo "major=$major"
+            echo "version=$(printf '%s' "$esperada" | cut -f1)"
+            echo "tag=$(printf '%s' "$esperada" | cut -f2)"
+            echo "url=$(printf '%s' "$esperada" | cut -f3)"
+            echo "sha256=$(printf '%s' "$esperada" | cut -f4)"
+          } >> "$GITHUB_OUTPUT"
+      - name: Dispatch the fork's refresh
+        env:
+          MAJOR: ${{ steps.upstream.outputs.major }}
+          GH_TOKEN: ${{ secrets.SPREED_REFRESH_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "FAIL: SPREED_REFRESH_TOKEN is not set — owner-only, once: a fine-grained PAT with Contents: read/write on APS-Conecta/spreed, stored as this repo's SPREED_REFRESH_TOKEN secret (aps/RELEASING.md)." >&2
+            exit 1
+          fi
+          gh api --method POST repos/APS-Conecta/spreed/dispatches \
+            -f event_type=refresh-spreed -f "client_payload[nextcloud_major]=$MAJOR"
+          echo "dispatched: APS-Conecta/spreed refresh for Nextcloud $MAJOR"
+      - name: Wait for the fork's release
+        env:
+          TAG: ${{ steps.upstream.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for i in $(seq 40); do
+            if gh release view "$TAG" --repo APS-Conecta/spreed >/dev/null 2>&1; then
+              echo "release $TAG is up (attempt $i)"
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "FAIL: APS-Conecta/spreed did not publish $TAG within 20 min — see its Actions: https://github.com/APS-Conecta/spreed/actions" >&2
+          exit 1
+      - name: Verify the release against this tag tree's apps.pub, and against upstream's own bytes
+        env:
+          TAG: ${{ steps.upstream.outputs.tag }}
+          URL: ${{ steps.upstream.outputs.url }}
+          SHA256: ${{ steps.upstream.outputs.sha256 }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf verify && mkdir verify && cd verify
+          gh release download "$TAG" --repo APS-Conecta/spreed
+          for esperado in spreed.tar.gz info.xml SHA256SUMS SHA256SUMS.minisig; do
+            [ -f "$esperado" ] || { echo "FAIL: the release lacks $esperado" >&2; exit 1; }
+          done
+          signify -V -p ../apps.pub -m SHA256SUMS -x SHA256SUMS.minisig \
+            || { echo "FAIL: the release's signature does not verify against THIS TAG TREE's apps.pub — an app key the suite does not trust signed it" >&2; exit 1; }
+          sha256sum -c --quiet SHA256SUMS
+          # the pairing, mechanically: what the fork published is upstream's own tarball minus
+          # exactly appinfo/signature.json — member for member — and the tag is upstream's commit
+          TAG="$TAG" URL="$URL" SHA256="$SHA256" python3 - <<'PY'
+          import hashlib, io, os, tarfile, urllib.request
+          req = urllib.request.Request(os.environ["URL"], headers={"User-Agent": "aps-conecta-instalador"})
+          data = urllib.request.urlopen(req, timeout=300).read()
+          got = hashlib.sha256(data).hexdigest()
+          assert got == os.environ["SHA256"], f"upstream's bytes changed under us: {got}"
+          with tarfile.open(fileobj=io.BytesIO(data)) as arriba:
+              suyos = {m.name for m in arriba.getmembers()}
+          with tarfile.open("spreed.tar.gz") as nuestro:
+              nuestros = {m.name for m in nuestro.getmembers()}
+          assert nuestros == suyos - {"spreed/appinfo/signature.json"}, \
+              "the fork's tarball is not upstream's minus signature.json"
+          PY
+          gh api "repos/APS-Conecta/spreed/git/ref/tags/$TAG" --jq '.object.sha' > sha-fork
+          gh api "repos/nextcloud/spreed/git/ref/tags/$TAG" --jq '.object.sha' > sha-upstream
+          [ "$(cat sha-fork)" = "$(cat sha-upstream)" ] \
+            || { echo "FAIL: the fork's $TAG is not upstream's commit — the fork's tree is no longer zero-change" >&2; exit 1; }
+          echo "verified: $TAG signs against this tree's apps.pub and is upstream's own bytes"
+
   package:
     name: Package, sign, prove, release
-    needs: [gates, images]   # sign only after a complete, booted, one-snapshot image set exists
+    needs: [gates, images, spreed]   # sign only after a complete, booted, one-snapshot image set exists — and after the Talk fork's release is refreshed and verified (ADR-0020)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
