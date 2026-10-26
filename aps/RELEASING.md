@@ -158,3 +158,36 @@ install: the one-liner's asset embeds the expected sha256, and that asset lives 
 URL inside the repository. A compromised key WITH repository access is repository compromise —
 rotate (above) and cut the next release; already-published Releases stay verifiable and their
 bytes never moved.
+
+## 7. The acceptance run (#54)
+
+A release is accepted on a scratch Ubuntu 24.04 VM, by domain and by IP, with no token — the
+establishment's own command, on a machine nobody configured. The rehearsal (§4) proves the
+chain; this proves the published artifact.
+
+**The VM.** Any pristine Ubuntu 24.04 x86-64 machine with ≥ 20 GB free disk, ≥ 4 GB RAM and
+ports 8080/443/3478 free. **By IP** (the installer's own certificate) any VM qualifies. **By
+domain** the VM must be publicly reachable on 443 under a DNS name that resolves to it — the
+domain posture's certificate is ACME's, as upstream (a cloud VM plus its own DNS name is the
+simplest honest example; an RFC-2606 name or a reverse proxy in front reds the posture, not
+the suite).
+
+**The command.** One line, from the repo, on the VM:
+
+    curl -fsSL https://github.com/APS-Conecta/gestion/raw/main/scripts/vm-acceptance.sh \
+      | sudo bash -s -- [--tag vX.Y.Z] [--dominio su.dominio]
+
+Without `--tag` the run resolves `latest` by redirect — no token, no API call. The script runs
+the whole acceptance: the real one-liner from the release URL, the silent install with the
+three optional apps chosen, and the ticket's six criteria, each a ✓/✗ line with its evidence
+path (`/tmp/vm-acceptance.*`): the verified bootstrap, «aps-conecta estado», the suite's answer
+through the installer's CA (and its refusal without it), a planilla user over OCS, every
+default app installed from its channel (own/fork from their releases at the locked tag, store
+apps enabled) with the functional opens (notify_push, the office connector, the desktop's
+route), each chosen optional installed and recorded, buscador's PDF (or the manifest row it
+still lacks — #149), and «actualizar --revisar» writing nothing. `--solo-chequeos` re-runs the
+checks on an installed VM; `--sin-datos` spares a small VM the national masters.
+
+A red is named, never waved through: the script exits non-zero with the failing criterion and
+the command that diagnoses it. The self-test arm (`--self-test`, wired into `scripts/test.sh`)
+pins the classification hermetically — the VM run is for the release, not for CI.
