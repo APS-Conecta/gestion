@@ -48,8 +48,9 @@ STATE=/tmp/aio-testbed
 MC=nextcloud-aio-mastercontainer            # fixed by Containers/mastercontainer/start.sh:164-170
 NC=aps-conecta-nextcloud                   # fixed by the fork's php/containers.json (patch 240)
 # The fork's suite, never upstream's: the suite renames the siblings (patch 240), so upstream's
-# container names would match none of the suite's. Moves with each published suite tag.
-IMAGE="${AIO_TEST_IMAGE:-ghcr.io/aps-conecta/all-in-one:v0.5.0}"
+# container names would match none of the suite's. Names a nothing-baked set (ADR-0018):
+# a rehearsal tag until a release carries one, then each published suite tag (RELEASING §4).
+IMAGE="${AIO_TEST_IMAGE:-ghcr.io/aps-conecta/all-in-one:v0.0.0-ci.13}"
 WIZARD_PORT="${AIO_TEST_PORT:-8080}"
 APACHE_PORT="${AIO_TEST_APACHE_PORT:-11000}"
 DOMAIN="${AIO_TEST_DOMAIN:-aio-test.invalid}"

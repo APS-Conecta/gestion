@@ -39,7 +39,7 @@ on:
   schedule:
     - cron: "0 6 * * 1"          # Mondays 06:00 UTC
   # An image-changing PR reaches clean boot through a rehearsal tag (#27): the dispatch names it, and
-  # both jobs install that tag's images instead of the pinned release.
+  # both jobs install that tag's images instead of the pinned one.
   workflow_dispatch:
     inputs:
       suite-tag:
@@ -93,7 +93,7 @@ jobs:
         with:
           fetch-depth: 1
           persist-credentials: false
-      - name: The suite tag both jobs install — the dispatch's, else the pinned release
+      - name: The suite tag both jobs install — the dispatch's, else the pin
         id: tag
         env:
           DISPATCH_TAG: ${{ inputs.suite-tag }}
@@ -183,10 +183,10 @@ jobs:
       - name: Nothing is baked — custom_apps holds only what the entrypoint installs (#42)
         run: |
           set -euo pipefail
-          # #132 — the window, named beside the red. While no release carries nothing-baked
-          # images, the pin (the last release) still bakes, so every PR-event and weekly run
-          # lands on this FAIL by construction — a red that read like a branch bug when it
-          # was the pending-release window. The red STAYS (no waiver, no version floor: its
+          # #132 — the window, named beside the red. A suite tag built before the doctrine still
+          # bakes, so a run on it lands on this FAIL by construction — a red that reads like a
+          # branch bug when it is the pending-release window; the pin (scripts/aio-testbed.sh)
+          # names a nothing-baked set. The red STAYS (no waiver, no version floor: its
           # honesty is the signal the window is open); what the note adds is the reader's
           # half — what this red is, where the acceptance lives, and what closes it. The
           # discriminator is honest by construction: the doctrine's own acceptance date (read
@@ -204,10 +204,10 @@ jobs:
             [ -n "$doctrina" ] && [ -n "$creada" ] || return 0
             [ "$(date -u -d "$creada" +%s)" -lt "$(date -u -d "$doctrina" +%s)" ] || return 0
             cat >&2 <<NOTA
-          NOTE — the pending-release window (ADR-0018, #132): suite tag $SUITE_TAG's image was built $creada, before the doctrine ($doctrina), so it still bakes apps and this red is by construction, not a branch bug: no release carries nothing-baked images yet, and the pin names the last one that bakes. The acceptance lives in doctrine images and in the rehearsal — aps/RELEASING.md «Rehearse first, by dispatch»:
+          NOTE — the pending-release window (ADR-0018, #132): suite tag $SUITE_TAG's image was built $creada, before the doctrine ($doctrina), so it still bakes apps and this red is by construction, not a branch bug: no release carries nothing-baked images yet, and the pin (scripts/aio-testbed.sh) names a nothing-baked rehearsal set. The acceptance lives in doctrine images and in the rehearsal — aps/RELEASING.md «Rehearse first, by dispatch»:
               gh workflow run images.yml    --ref <branch> -f suite-tag=v0.0.0-ci.N -f build-ref=<branch> -f force=true
               gh workflow run cleanboot.yml --ref <branch> -f suite-tag=v0.0.0-ci.N
-          The release that advances the pin (the existing ritual) is what closes this window; until then the red stays — no waiver, no version floor.
+          A release carrying nothing-baked images, pinned once it is green (aps/RELEASING.md §4), closes this window; until then the red stays — no waiver, no version floor.
           NOTA
           }
           # every manifest row except the entrypoint's own one — read from apps.json, never
