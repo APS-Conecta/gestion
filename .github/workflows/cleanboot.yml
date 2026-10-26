@@ -841,12 +841,16 @@ jobs:
           json.dump(d, open(p, "w"), indent=2, sort_keys=True)
           print(prev)')"
           echo "planted lock: territorio at $vieja"
-          arc="$(sudo docker exec nextcloud-aio-mastercontainer cat /mnt/docker-aio-config/data/backup_archives.list | head -1)"
+          # a fresh install has taken no backup yet — the list is absent until this very run's
+          # first one writes it — so the before-read tolerates it, the --revisar arm's own
+          # idiom for exactly this state (#46; surfaced by the ci.13 rehearsal, the first
+          # run ever to reach these arms past the pin's pending-release window)
+          arc="$(sudo docker exec nextcloud-aio-mastercontainer cat /mnt/docker-aio-config/data/backup_archives.list 2>/dev/null | head -1 || true)"
           rc=0; out="$(sudo bash /opt/aps-conecta/instalador/host/aps-conecta actualizar 2>&1)" || rc=$?
           printf '%s\n' "$out" | tail -40
           [ "$rc" -eq 0 ] || { echo "FAIL: actualizar failed on a normal update" >&2; exit 1; }
           case "$out" in *"✓ Respaldo completo creado"*) ;; *) echo "FAIL: no backup was taken" >&2; exit 1 ;; esac
-          [ "$(sudo docker exec nextcloud-aio-mastercontainer cat /mnt/docker-aio-config/data/backup_archives.list | head -1)" != "$arc" ] \
+          [ "$(sudo docker exec nextcloud-aio-mastercontainer cat /mnt/docker-aio-config/data/backup_archives.list 2>/dev/null | head -1 || true)" != "$arc" ] \
             || { echo "FAIL: no new backup archive" >&2; exit 1; }
           nueva="$(sudo python3 -c 'import json; print(json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["territorio"]["tag"])')"
           [ "$nueva" != "$vieja" ] || { echo "FAIL: the lock did not move off $vieja" >&2; exit 1; }
@@ -892,7 +896,8 @@ jobs:
           trap 'kill $proxypid 2>/dev/null || true' EXIT
           sleep 1
           antes="$(sudo sha256sum "$lock" | cut -d' ' -f1)"
-          arc="$(sudo docker exec nextcloud-aio-mastercontainer cat /mnt/docker-aio-config/data/backup_archives.list | head -1)"
+          # same idiom: absent-until-first-backup is the fresh install's honest state
+          arc="$(sudo docker exec nextcloud-aio-mastercontainer cat /mnt/docker-aio-config/data/backup_archives.list 2>/dev/null | head -1 || true)"
           rc=0; out="$(sudo APS_APPS_GH=http://127.0.0.1:8642 APS_APPS_API=http://127.0.0.1:8642 \
             bash /opt/aps-conecta/instalador/host/aps-conecta actualizar 2>&1)" || rc=$?
           printf '%s\n' "$out" | tail -10
@@ -906,7 +911,7 @@ jobs:
           cd /opt/aps-conecta/instalador && source scripts/env.sh
           [ "$(occ config:app:get territorio installed_version)" = "$(sudo python3 -c 'import json; print(json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["territorio"]["version"])')" ] \
             || { echo "FAIL: the refused run applied territorio anyway" >&2; exit 1; }
-          [ "$(sudo docker exec nextcloud-aio-mastercontainer cat /mnt/docker-aio-config/data/backup_archives.list | head -1)" = "$arc" ] \
+          [ "$(sudo docker exec nextcloud-aio-mastercontainer cat /mnt/docker-aio-config/data/backup_archives.list 2>/dev/null | head -1 || true)" = "$arc" ] \
             || { echo "FAIL: the refused run took a backup" >&2; exit 1; }
           sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
           echo "bad signature: refused at the plan, nothing applied, the lock untouched"
