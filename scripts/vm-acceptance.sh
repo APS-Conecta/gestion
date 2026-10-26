@@ -344,14 +344,16 @@ check_actualizar_revisar() {
 }
 
 # ── the run: preflight → bootstrap → install → checks ───────────────────────────────────────
-preflight() {
+preflight() {  # $1 = solo (1: checks only — the suite OWNS the ports, they must not be free)
   [ "$(id -u)" = 0 ] || die "corra como root (sudo) — el instalador lo exige"
   local os port busy="" gb
   os="$(bash -c '. /etc/os-release 2>/dev/null; printf "%s %s" "${NAME:-}" "${VERSION_ID:-}"')"
   printf 'VM: %s · %s · %d GB libres\n' "$os" "$(uname -m)" "$(df -BG --output=avail . 2>/dev/null | tail -1 | tr -dc '0-9')"
   case "$os" in *"Ubuntu 24.04"*) ;; *) printf 'AVISO: el tiquete nombra Ubuntu 24.04 — esto es «%s»; se continúa\n' "$os" ;; esac
-  for port in 8080 443 3478; do ss -tln 2>/dev/null | grep -q ":$port " && busy="$busy $port"; done
-  [ -z "$busy" ] || die "puertos ocupados:$busy — la suite los necesita libres"
+  if [ "${1:-0}" != 1 ]; then
+    for port in 8080 443 3478; do ss -tln 2>/dev/null | grep -q ":$port " && busy="$busy $port"; done
+    [ -z "$busy" ] || die "puertos ocupados:$busy — la suite los necesita libres"
+  fi
   gb="$(df -BG --output=avail . 2>/dev/null | tail -1 | tr -dc '0-9')"
   [ "${gb:-0}" -ge 20 ] || die "disco: ${gb:-?} GB libres, el mínimo del instalador son 20"
 }
@@ -391,7 +393,7 @@ main() {
       *) die "opción desconocida: $1" ;;
     esac
   done
-  preflight
+  preflight "$solo"
   tag="$(resolve_tag)"
   addr="$(install_address)"
   [ -n "$addr" ] || die "no se pudo determinar la dirección de esta VM (¿red?)"
