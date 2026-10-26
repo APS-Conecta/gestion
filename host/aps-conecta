@@ -1129,16 +1129,53 @@ aio_passphrase() {  # the passphrase GET /setup shows once (the page stops rende
   ok "Contraseña del asistente guardada en $f (solo administrador)"
 }
 
-aio_login() {  # the CSRF pair comes from GET /login with the session jar and serves every POST
-  local html code
+aio_token() {  # the token the wizard generates at every start and hands the Nextcloud container
+  # (DockerController::startTopContainer → AIO_TOKEN; AuthManager::CheckToken is its reader) —
+  # root reads it where it lives; a suite never started carries none
+  local t
+  t="$(docker exec "$NC" printenv AIO_TOKEN 2>/dev/null || true)"
+  [ -n "$t" ] || return 1
+  printf '%s' "$t"
+}
+
+aio_csrf() {  # ARGS: html — the CSRF pair out of the login form, into AIO_CSRF
+  AIO_CSRF=(--data-urlencode "csrf_name=$(printf '%s' "$1" | sed -n 's/.*name="csrf_name" value="\([^"]*\)".*/\1/p' | head -1)"
+            --data-urlencode "csrf_value=$(printf '%s' "$1" | sed -n 's/.*name="csrf_value" value="\([^"]*\)".*/\1/p' | head -1)")
+}
+
+aio_csrf_vacia() {  # the form never came: no pair to serve the POSTs with
+  case "${AIO_CSRF[1]} ${AIO_CSRF[3]}" in "csrf_name= "*|*" csrf_value=") return 0 ;; esac
+  return 1
+}
+
+aio_login() {  # the CSRF pair comes from GET /login with the session jar and serves every POST.
+  # With the suite running the wizard blocks direct login — its own posture (login.twig hides
+  # the form while apache accepts connections; the admin link from Nextcloud is the way in).
+  # Root takes the wizard's own token link (GET /api/auth/getlogin?token=…, the hop the admin
+  # panel's link drives): the passphrase still gates the login itself, and a stopped or booting
+  # suite never needs the hop — the form is served, or the token cannot be read and that is
+  # the honest red of a suite not up
+  local html code tok
   html="$(aio_curl --max-time 10 "$AIO_URL/login" 2>/dev/null)"
-  AIO_CSRF=(--data-urlencode "csrf_name=$(printf '%s' "$html" | sed -n 's/.*name="csrf_name" value="\([^"]*\)".*/\1/p' | head -1)"
-            --data-urlencode "csrf_value=$(printf '%s' "$html" | sed -n 's/.*name="csrf_value" value="\([^"]*\)".*/\1/p' | head -1)")
-  case "${AIO_CSRF[1]} ${AIO_CSRF[3]}" in
-    "csrf_name= "*|*" csrf_value=") bad "el asistente no entregó su formulario de ingreso ($AIO_URL/login)" \
-                                      "revise que la suite esté arrancando: docker logs nextcloud-aio-mastercontainer"
-                                    return 1 ;;
-  esac
+  aio_csrf "$html"
+  if aio_csrf_vacia; then
+    tok="$(aio_token)" || { bad "no se pudo leer el token del asistente (docker exec $NC printenv AIO_TOKEN)" \
+                               "revise que la suite esté en marcha: aps-conecta estado"; return 1; }
+    # the token rides a 0600 file for its seconds of life — the passphrase's own doctrine:
+    # a live credential never sits in argv, where ps shows it
+    ( umask 077 && printf '%s' "$tok" > "$AIO_STATE/aio.token" )
+    aio_curl -G -o /dev/null --max-time 15 --data-urlencode "token@$AIO_STATE/aio.token" \
+      "$AIO_URL/api/auth/getlogin" 2>/dev/null || true
+    rm -f "$AIO_STATE/aio.token"
+    html="$(aio_curl --max-time 10 "$AIO_URL/login" 2>/dev/null)"
+    aio_csrf "$html"
+    if aio_csrf_vacia; then
+      bad "el asistente no entregó su formulario de ingreso ($AIO_URL/login)" \
+        "con la suite en marcha el asistente bloquea el ingreso directo y el token no lo desbloqueó: revise docker logs nextcloud-aio-mastercontainer"
+      return 1
+    fi
+    ok "Ingreso desbloqueado por el enlace de token del asistente (la suite en marcha bloquea el ingreso directo)"
+  fi
   # password@FILE: curl reads the passphrase from its 0600 file — it never sits in argv, where ps shows it
   code="$(aio_curl -o /dev/null -w '%{http_code}' --max-time 20 --data-urlencode "password@$AIO_STATE/master.pw" \
     "${AIO_CSRF[@]}" "$AIO_URL/api/auth/login" 2>/dev/null)"
@@ -3209,6 +3246,12 @@ PYEOF
   ( umask 077 && printf 'frase uno dos\n' > "$act/aio/master.pw" )
   printf 'talk=1\n' > "$act/aio/opciones"
   : > "$act/resolver.log"; : > "$act/aio.log"; : > "$act/docker.log"
+  # the wizard's own posture on a running suite: the direct login form is NOT served until the
+  # session unblocks through the token link (php/public/index.php /login + login.twig's else
+  # branch; AuthManager::CheckToken) — the fixture models exactly that, so every login in this
+  # world must drive the getlogin hop first (A-034: the stateless shim always served the form
+  # and the real collision hid until the ci.13 rehearsal reached the backup leg)
+  rm -f "$act/aio.libre"
   cp "$tshim/docker" "$tmp/docker.prev46"; [ ! -e "$tshim/curl" ] || cp "$tshim/curl" "$tmp/curl.prev46"
   cat > "$tshim/curl" <<EOF
 #!/usr/bin/env bash
@@ -3224,10 +3267,11 @@ while [ \$# -gt 0 ]; do
 done
 printf 'curl %s%s\n' "\$url" "\$data" >> "$act/aio.log"
 case "\$url" in
+  */api/auth/getlogin) case "\$data" in *"token@"*) t="\$(cat "\${data##*token@}" 2>/dev/null)"; [ "\$t" = tok-act46 ] && : > "$act/aio.libre" ;; esac; printf '%s' 302 ;;
   */api/auth/login) [ -n "\$w" ] && printf '%s' 201 ;;
   */api/docker/backup) printf 'borg log\n' > "\$out"; [ -n "\$w" ] && printf '%s' 200 ;;
   */api/docker/start) [ -n "\$w" ] && printf '%s' 200 ;;
-  */login) printf '<input name="csrf_name" value="n1"><input name="csrf_value" value="v1">' ;;
+  */login) [ -e "$act/aio.libre" ] && printf '<input name="csrf_name" value="n1"><input name="csrf_value" value="v1">' ;;
 esac
 EOF
   chmod +x "$tshim/curl"
@@ -3244,7 +3288,7 @@ case "\$1 \$2" in
       *configuration.json*) if [ -e "$act/sin-respaldo" ]; then exit 1; else echo '{"borg_backup_host_location":"/srv/aps-conecta/respaldos"}'; fi ;;
       *backup_archives.list*) echo "nextcloud-aio-2026-10-25-18-00,Thu Oct 25 18:00:00 2026" ;;
     esac ;;
-  "exec aps-conecta-nextcloud") case "\$*" in *printenv*) echo yes ;; esac ;;
+  "exec aps-conecta-nextcloud") case "\$*" in *printenv\ AIO_TOKEN*) echo tok-act46 ;; *printenv*) echo yes ;; esac ;;
   "exec -i") exit 0 ;;
   "exec -e") exit 0 ;;
   "exec --user")
@@ -3306,6 +3350,7 @@ EOF
   # provisioning tree applying from the NEW lock, the scoped store update, the promote, the
   # revalidate sweep
   : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"
+  rm -f "$act/aio.libre"   # a fresh session: the wizard's block is back
   out="$( id() { echo 0; }; act46 2>&1 )"; arc=$?
   check "actualizar: the whole run in order — plan, preconditions, backup, restart, fetch, apply from the new lock, scoped store update, store closed, promote, revalidate" \
     '[ "$arc" -eq 0 ] && printf "%s" "$out" | grep -qF "Plan de actualización — Nextcloud 34.0.4" \
@@ -3330,12 +3375,17 @@ EOF
       && ! grep -q "api/docker/start" <(grep -v "bypass_container_update=1" "$act/aio.log")'
   check "actualizar: the wizard auth rides the configurator's passphrase file — a configured instance never serves /setup again, so no poll (A-033)" \
     '! grep -q "/setup" "$act/aio.log" && grep -q "api/auth/login .*password@" "$act/aio.log"'
+  check "actualizar: on the running suite the wizard's direct login is blocked — root unblocks through the wizard's own token link, then the passphrase still gates (A-034)" \
+    'grep -q "api/auth/getlogin token@" "$act/aio.log" \
+      && grep -q "docker exec aps-conecta-nextcloud printenv AIO_TOKEN$" "$act/docker.log" \
+      && [ "$(grep -n "api/auth/getlogin" "$act/aio.log" | head -1 | cut -d: -f1)" -lt "$(grep -n "api/auth/login" "$act/aio.log" | head -1 | cut -d: -f1)" ]'
   check "actualizar: the store opened scoped — every app:update rode NC_appstoreenabled=1, and nothing else touched the store" \
     'while IFS= read -r l; do case "$l" in *NC_appstoreenabled=1*) ;; *) exit 1;; esac; done < <(grep "app:update" "$act/docker.log") \
       && grep -q "NC_appstoreenabled=1.*app:update calendar" "$act/docker.log"'
 
   # a failed backup applies nothing: no fetch, no lock move
   : > "$act/aio.log"; : > "$act/resolver.log"; cp "$act/lock.bytes" "$act/home/apps.lock.json"
+  rm -f "$act/aio.libre"   # a fresh session: the wizard's block is back
   out="$( id() { echo 0; }; BORG_EXIT=1 act46 2>&1 )"; arc=$?
   check "actualizar: a failed backup stops the run before anything is fetched or applied — the borg code named, the remedy docker logs" \
     '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "✗ el respaldo falló (contenedor de respaldo: código 1) — nada se aplicó, el candado no cambió" \
@@ -3345,6 +3395,7 @@ EOF
 
   # a failed apply: the app named, the lock unchanged, the new lock cleaned, the restore command
   : > "$act/aio.log"; : > "$act/resolver.log"
+  rm -f "$act/aio.libre"   # a fresh session: the wizard's block is back
   out="$( id() { echo 0; }; act_aplicar() { ACT_FALLA="territorio falló al aplicarse — nada más se aplicó, el candado no cambió"; return 1; }; act46 2>&1 )"; arc=$?
   check "actualizar: a failed apply names the app and the restore command, and moves neither lock" \
     '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "✗ territorio falló al aplicarse — nada más se aplicó, el candado no cambió" \
