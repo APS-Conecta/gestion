@@ -5140,8 +5140,8 @@ def selftest():
             fila_farmacia = next(a for a in SUITE_APPS if a["id"] == "farmacia")
             fila_estadistica = next(a for a in SUITE_APPS if a["id"] == "estadistica")
             fila_totem = next(a for a in SUITE_APPS if a["id"] == "totem")
-            check("suite: the APS apps table lists the manifest's named own and fork apps that are NOT optional, by name — since #40 every one of them is a release row, so each cell says what the lock records or its promise (#33–#36, #40); the optional rows are the checkboxes, not table rows (#39, #41); the containers are the host's set plus Nextcloud (a12)",
-                  [f[0] for f in filas] == ["Inicio", "Oficina", "Epidemiología", "Territorio"]
+            check("suite: the APS apps table lists the manifest's named own and fork apps that are NOT optional, by name — since #40 every one of them is a release row, so each cell says what the lock records or its promise (#33–#36, #40); Talk joins the table with its fork release (#145); the optional rows are the checkboxes, not table rows (#39, #41); the containers are the host's set plus Nextcloud (a12)",
+                  [f[0] for f in filas] == ["Inicio", "Oficina", "Epidemiología", "Territorio", "Talk"]
                   and all(v == "según su release" for _n, v, _s in filas)
                   and OPCIONALES == (("estadistica", "Estadística", fila_estadistica["summary"], False),
                                      ("farmacia", "Farmacia", fila_farmacia["summary"], False),
@@ -5161,7 +5161,7 @@ def selftest():
             except Exception as e:   # the crash IS the failure this check reports
                 filas = [[f"{type(e).__name__}: {e}", "", ""]]
             check("suite: step 6 lists only the own and fork apps that carry a name and are not optional, in manifest order — an unnamed fork app is left out, no error (a12, #64)",
-                  [f[0] for f in filas] == ["Oficina", "Epidemiología", "Territorio"]
+                  [f[0] for f in filas] == ["Oficina", "Epidemiología", "Territorio", "Talk"]
                   and filas[0][1] == "según su release"
                   and filas[1][1] == "según su release"
                   and filas[2][1] == "según su release")  # intravox left with its name (#35)
@@ -5701,7 +5701,8 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
             fixture_store = os.path.join(tmp, "fixture-store")
             fixture_versions = {"intravox": ("v3.2.0", "3.2.0"), "eurooffice": ("v11.0.7", "11.0.7"),
                                 "epidemiologia": ("v0.12.0", "0.12.0"), "territorio": ("v0.80.0", "0.80.0"),
-                                "desktop_workspace": ("v0.19.0", "0.19.0"), "side_menu": ("v6.0.1", "6.0.1")}
+                                "desktop_workspace": ("v0.19.0", "0.19.0"), "side_menu": ("v6.0.1", "6.0.1"),
+                                "spreed": ("v24.0.6", "24.0.6")}   # #145: the fork's first release
             filas_lock = {}
             for fila in SUITE_APPS:
                 if not fila.get("release") or fila.get("optional") is not False:

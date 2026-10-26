@@ -37,10 +37,24 @@ On instalador's repository Settings → Secrets and variables → Actions:
   included). The release job writes them to a 0600 trap-removed file; the key never reaches
   argv, a URL, or a log line (the P45 rule).
 - `MINISIGN_KEY_PASSWORD` — the passphrase, or empty for a `-n` key.
+- `SPREED_REFRESH_TOKEN` — a fine-grained PAT with **Contents: read and write on
+  `APS-Conecta/spreed` alone**, nothing else. The release chain's spreed job uses it to
+  dispatch the Talk fork's refresh (ADR-0020); its scope is that one repo, so the worst a
+  leak can do is publish a Talk release that still has to pass the job's own verification
+  against this repo's `apps.pub` — it can never touch a suite release. A missing token reds
+  the spreed job naming this section.
 
 A wrong pair reds the package job loudly ("signing failed — the passphrase
 (MINISIGN_KEY_PASSWORD) or the key (MINISIGN_SECRET_KEY) is wrong"); nothing is released
 half-signed.
+
+The Talk fork's own setup (once, already done — `APS-Conecta/spreed`): a `release`
+environment carrying `APP_SIGNING_KEY`/`APP_SIGNING_KEY_PASSWORD` (the app key `apps.pub`
+trusts — the same pair every app repo carries), Actions enabled, and upstream's own push-CI
+workflows disabled (the fork never changes code, so upstream's linters have nothing to say).
+The refresh refreshes upstream's newest stable spreed per suite release; the first release
+was dispatched by hand (`gh workflow run refresh.yml --repo APS-Conecta/spreed -f
+nextcloud-major=34`), and every later one rides the release chain.
 
 ## 3. The release commit
 

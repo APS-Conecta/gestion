@@ -958,31 +958,38 @@ if [ "$TALK_ENABLED" = 'yes' ]; then
     if [ "$AIO_LOG_LEVEL" != 'debug' ]; then
         set +x
     fi
-    # APS (#42): Talk installs scoped, like notify_push above — the store opens for this one
-    # command on a first boot only, and never on an update leg.
-    if ! [ -d "/var/www/html/custom_apps/spreed" ]; then
-        NC_appstoreenabled=1 php /var/www/html/occ app:install spreed
-    elif [ "$(php /var/www/html/occ config:app:get spreed enabled)" != "yes" ]; then
-        php /var/www/html/occ app:enable spreed
-    fi
-    # We auto-renew the certs via caddy so the outdated cert warning should not be displayed
-    php /var/www/html/occ config:app:set spreed certificate_expiration_days --type=integer --value="2"
-    # Add turn server
-    # shellcheck disable=SC2153
-    if ! php /var/www/html/occ talk:turn:list --output="plain" | grep server | grep -q " $TURN_DOMAIN:$TALK_PORT"; then
-        php /var/www/html/occ talk:turn:add turn "$TURN_DOMAIN:$TALK_PORT" "udp,tcp" --secret="$TURN_SECRET"
-    fi
-    # Add stun server
-    STUN_SERVER="$(php /var/www/html/occ talk:stun:list --output="plain")"
-    if ! echo "$STUN_SERVER" | grep -q " $TURN_DOMAIN:$TALK_PORT"; then
-        php /var/www/html/occ talk:stun:add "$TURN_DOMAIN:$TALK_PORT"
-    fi
-    if [ -z "$STUN_SERVER" ] || echo "$STUN_SERVER" | grep -oP '[a-zA-Z.:0-9]+' | grep -q "^stun.nextcloud.com:443$"; then
-        php /var/www/html/occ talk:stun:delete "stun.nextcloud.com:443"
-    fi
-    # Add HPB
-    if ! php /var/www/html/occ talk:signaling:list --output="plain" | grep -q "https://$TALK_HOST$HPB_PATH"; then
-        php /var/www/html/occ talk:signaling:add "https://$TALK_HOST$HPB_PATH" "$SIGNALING_SECRET" --verify
+    # APS (#145, ADR-0020): Talk arrives from the fork's own signed release — the wizard's
+    # fetch leg resolves and verifies it, phase 12 installs it from the lock — so no boot
+    # installs spreed any more, and the store's scoped open is notify_push's alone. Until
+    # provisioning has run there is nothing to configure: this block is presence-gated like
+    # the recording one under it, and Talk's TURN/STUN/HPB wiring converges at the first boot
+    # after the app lands (the reboot the update-day acceptance and the daily backup both
+    # perform).
+    if [ -d "/var/www/html/custom_apps/spreed" ]; then
+        if [ "$(php /var/www/html/occ config:app:get spreed enabled)" != "yes" ]; then
+            php /var/www/html/occ app:enable spreed
+        fi
+        # We auto-renew the certs via caddy so the outdated cert warning should not be displayed
+        php /var/www/html/occ config:app:set spreed certificate_expiration_days --type=integer --value="2"
+        # Add turn server
+        # shellcheck disable=SC2153
+        if ! php /var/www/html/occ talk:turn:list --output="plain" | grep server | grep -q " $TURN_DOMAIN:$TALK_PORT"; then
+            php /var/www/html/occ talk:turn:add turn "$TURN_DOMAIN:$TALK_PORT" "udp,tcp" --secret="$TURN_SECRET"
+        fi
+        # Add stun server
+        STUN_SERVER="$(php /var/www/html/occ talk:stun:list --output="plain")"
+        if ! echo "$STUN_SERVER" | grep -q " $TURN_DOMAIN:$TALK_PORT"; then
+            php /var/www/html/occ talk:stun:add "$TURN_DOMAIN:$TALK_PORT"
+        fi
+        if [ -z "$STUN_SERVER" ] || echo "$STUN_SERVER" | grep -oP '[a-zA-Z.:0-9]+' | grep -q "^stun.nextcloud.com:443$"; then
+            php /var/www/html/occ talk:stun:delete "stun.nextcloud.com:443"
+        fi
+        # Add HPB
+        if ! php /var/www/html/occ talk:signaling:list --output="plain" | grep -q "https://$TALK_HOST$HPB_PATH"; then
+            php /var/www/html/occ talk:signaling:add "https://$TALK_HOST$HPB_PATH" "$SIGNALING_SECRET" --verify
+        fi
+    else
+        echo "Talk's spreed is not installed yet — its signed release arrives with provisioning (ADR-0020); its configuration follows at the next boot."
     fi
 else
     if [ "$REMOVE_DISABLED_APPS" = yes ] && [ -d "/var/www/html/custom_apps/spreed" ]; then

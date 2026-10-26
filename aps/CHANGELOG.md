@@ -13,6 +13,29 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Added
 
+- **Talk (spreed) from the fork's signed releases (#145, ADR-0020).** The last app-store
+  reach at a container boot is gone: `APS-Conecta/spreed` is a zero-code-change fork of
+  `nextcloud/spreed` hosting our App releases, refreshed from upstream's newest stable
+  release for the suite's Nextcloud major at each suite release — the release chain dispatches
+  the fork's refresh (the app key never leaves the fork's release environment, ADR-0001),
+  waits bounded, and verifies what it published against the tag tree's own `apps.pub` and
+  against upstream's own bytes (the release is upstream's tarball minus exactly
+  `appinfo/signature.json`, at upstream's own commit) before the suite Release exists. The
+  manifest's spreed row is `source: fork, release: true`; installs resolve it through the
+  resolver's usual proof chain and pin it in the lock, gated on the record's Talk switch
+  (Talk off resolves nothing — the same gate phase 12 reads through `TALK_ENABLED`; the
+  absent-record case never turns Talk off). The nextcloud entrypoint's scoped
+  `app:install spreed` is deleted: its Talk block is presence-gated configuration alone, so
+  a first boot with Talk on installs nothing of Talk's and the TURN/STUN/HPB wiring converges
+  at the first boot after provisioning lands the app. `notify_push` is the scoped store
+  open's only first-boot user. The acquisition gate's row 042 is re-cut accordingly and a new
+  row 145 pins the tree's half; clean-boot asserts spreed's release install with Talk on and
+  its total absence with Talk off, and `aps-conecta actualizar` moves spreed with the other
+  release rows through phase 12 (its old store-walk skip line is deleted). The fork's first
+  release is upstream's spreed `v24.0.6` (the newest stable for Nextcloud 34), published;
+  the release chain's dispatch needs the owner-only `SPREED_REFRESH_TOKEN` secret
+  (aps/RELEASING.md), missing which the spreed job reds naming the setup.
+
 - **`aps-conecta actualizar`, the applications update (#46, ADR-0017).** The one path that
   moves the lock deliberately. It refuses to run unless the suite is up, the lock exists and
   the backup is configured; prints the plan — current and candidate per application, `--revisar`

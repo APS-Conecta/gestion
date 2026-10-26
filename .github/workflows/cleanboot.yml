@@ -163,9 +163,10 @@ jobs:
       # container's own start dies when the app binary is absent (Containers/notify-push/
       # start.sh:31-41). No image carries apps (#42), so the first boot installs notify_push
       # itself — the entrypoint opens the store for that one command (a per-process
-      # NC_appstoreenabled=1 over the image's own off) and closes it again; Talk rides the
-      # same scoped install when the wizard enabled it. The observable: the sibling runs, and
-      # the nothing-baked step after this proves the store never opened for anything else.
+      # NC_appstoreenabled=1 over the image's own off) and closes it again. Talk no longer
+      # rides this moment: its acquisition is the fork's signed release at provisioning time
+      # (ADR-0020, #145), so the first boot installs nothing of Talk's and the observable is
+      # the sibling's alone.
       - name: First boot — the notify-push sibling converged
         run: |
           docker ps --filter name=aps-conecta-notify-push --filter status=running --format '{{.Names}}' \
@@ -173,11 +174,12 @@ jobs:
             || { echo "FAIL: aps-conecta-notify-push is not running after first boot (the S3 first-boot acceptance) — diagnose: docker ps -a --filter name=aps-conecta-notify-push ; docker logs aps-conecta-notify-push" >&2; exit 1; }
       # #42's own half, measured at the earliest moment it can be: the image booted, the
       # entrypoint ran, and provisioning has NOT — the silent install comes later. So
-      # custom_apps can hold only what the entrypoint itself installed (notify_push; Talk
-      # when the wizard enabled it): every suite app the manifest names must be ABSENT, and
-      # the scoped install's constant half must be present — the nothing-baked acceptance,
-      # live, before any provisioning can blur it. #132: a red against a pre-doctrine tag
-      # names its window beside the FAIL (ventana_pendiente, below).
+      # custom_apps can hold only what the entrypoint itself installed (notify_push —
+      # Talk's install moment moved to provisioning with ADR-0020, #145): every suite app
+      # the manifest names must be ABSENT, and the scoped install's constant half must be
+      # present — the nothing-baked acceptance, live, before any provisioning can blur it.
+      # #132: a red against a pre-doctrine tag names its window beside the FAIL
+      # (ventana_pendiente, below).
       - name: Nothing is baked — custom_apps holds only what the entrypoint installs (#42)
         run: |
           set -euo pipefail
@@ -208,23 +210,25 @@ jobs:
           The release that advances the pin (the existing ritual) is what closes this window; until then the red stays — no waiver, no version floor.
           NOTA
           }
-          # every manifest row except the entrypoint's own two — read from apps.json, never
-          # re-typed: a new row joins this assert the moment it joins the manifest
+          # every manifest row except the entrypoint's own one — read from apps.json, never
+          # re-typed: a new row joins this assert the moment it joins the manifest (spreed
+          # joined when its channel became the fork's release, #145 — nothing installs it at
+          # a boot any more)
           mapfile -t filas < <(python3 -c 'import json
           for r in json.load(open("apps.json")):
-              if r["id"] not in ("notify_push", "spreed"):
+              if r["id"] != "notify_push":
                   print(r["id"])')
           [ "${#filas[@]}" -gt 0 ] || { echo "FAIL: apps.json named no app to walk" >&2; exit 1; }
           for app in "${filas[@]}"; do
             if docker exec --user www-data aps-conecta-nextcloud test -e "/var/www/html/custom_apps/$app"; then
-              echo "FAIL: custom_apps holds $app at first boot — no image carries apps (#42); only the entrypoint's notify_push (and Talk, when on) may be there" >&2
+              echo "FAIL: custom_apps holds $app at first boot — no image carries apps (#42), and no boot installs Talk any more (#145); only the entrypoint's notify_push may be there" >&2
               ventana_pendiente
               exit 1
             fi
           done
           docker exec --user www-data aps-conecta-nextcloud test -d /var/www/html/custom_apps/notify_push \
             || { echo "FAIL: notify_push is absent at first boot — the entrypoint's scoped store install did not run" >&2; exit 1; }
-          echo "nothing baked: notify_push landed scoped at first boot; every suite app waits for its own channel"
+          echo "nothing baked: notify_push landed scoped at first boot; every suite app (Talk included) waits for its own channel"
       - name: Build the rehearsal package, then install through the real bootstrap
         run: |
           set -euo pipefail
@@ -504,6 +508,17 @@ jobs:
             200|302|303|401) echo "desktop: /apps/desktop_workspace/ answered HTTP $code (route alive)" ;;
             *) echo "FAIL: the desktop does not open — /apps/desktop_workspace/ answered HTTP $code" >&2; exit 1 ;;
           esac
+      # #145 (ADR-0020): Talk follows the same shared assertion the other fork apps ride —
+      # the lock's row names the fork's tag, the instance runs the locked version, the stored
+      # tarball is the locked bytes, no signature.json. This job runs Talk ON, so the fetch
+      # leg resolved spreed from APS-Conecta/spreed's signed release and phase 12 landed it;
+      # the entrypoint installed nothing (the nothing-baked walk proved its absence at first
+      # boot). Talk-off is the IP job's world — its fetch resolves nothing and the app stays
+      # absent, the same total absence the optional apps' step below asserts for its rows.
+      - name: Talk installed from the fork's signed release, at its locked tag
+        uses: ./.github/actions/assert-release-app
+        with:
+          app: spreed
       # #42's store rules, the three live observables: the store apps landed through the
       # scoped seam (calendar, contacts, groupfolders — enabled, with a version, which only
       # an install writes), a bare occ app:install FAILS against the image's store-off ENV
@@ -523,8 +538,9 @@ jobs:
           done
           # the entrypoint's constant half: notify_push arrived scoped at first boot (the
           # sibling's convergence above proved the push binary; here the APP half — installed
-          # and enabled). Talk follows the instance's own switch, as the entrypoint does: on,
-          # and it arrived scoped the same way; off, and even its bytes are gone
+          # and enabled). Talk is a release row now (#145): its presence is the release
+          # assert above — the entrypoint installs nothing, and with Talk off even its bytes
+          # are gone (REMOVE_DISABLED_APPS)
           [ -n "$(occ config:app:get notify_push installed_version 2>/dev/null || true)" ] \
             || { echo "FAIL: notify_push is not installed — the entrypoint's scoped first-boot install did not land it" >&2; exit 1; }
           [ "$(occ config:app:get notify_push enabled 2>/dev/null || true)" = "yes" ] \
@@ -532,7 +548,7 @@ jobs:
           talk="$(docker exec aps-conecta-nextcloud printenv TALK_ENABLED 2>/dev/null || true)"
           if [ "$talk" = "yes" ]; then
             [ -n "$(occ config:app:get spreed installed_version 2>/dev/null || true)" ] \
-              || { echo "FAIL: spreed is not installed — the entrypoint's scoped first-boot install did not land it (TALK_ENABLED=yes)" >&2; exit 1; }
+              || { echo "FAIL: spreed is not installed — the fetch leg resolves the fork's signed release and phase 12 lands it (TALK_ENABLED=yes, ADR-0020)" >&2; exit 1; }
             [ "$(occ config:app:get spreed enabled 2>/dev/null || true)" = "yes" ] \
               || { echo "FAIL: spreed is installed but not enabled" >&2; exit 1; }
           elif docker exec --user www-data aps-conecta-nextcloud test -e /var/www/html/custom_apps/spreed; then
@@ -593,7 +609,8 @@ jobs:
           docker exec --user www-data aps-conecta-nextcloud grep -qF '<name>Euro-Office</name>' /var/www/html/custom_apps/eurooffice/appinfo/info.xml \
             || { echo "FAIL: the update leg replaced the fork's name" >&2; exit 1; }
       # #39/#40: farmacia and estadistica are the optional apps, and this job chose NOTHING — the
-      # testbed's wizard drive recorded talk=0 grabacion=0 farmacia=0 estadistica=0, so the fetch
+      # testbed's wizard drive recorded talk=1 grabacion=0 farmacia=0 estadistica=0 totem=0
+      # (Talk on is this job's posture, #145; the optionals stayed unchecked), so the fetch
       # leg resolved nothing for either row and phase 12 skipped each before any arrival path.
       # "Not installed" is therefore TOTAL absence (#42: no image carries the bytes either): no
       # lock row, no release tarball in the store, no installed version, never enabled, and not
@@ -1100,6 +1117,28 @@ jobs:
         uses: ./.github/actions/assert-release-app
         with:
           app: farmacia
+      # #145, by IP: this job runs Talk OFF (its silent install passes no --talk), so spreed is
+      # the one release row that resolves NOTHING — the record's talk=0 is the gate the fetch
+      # leg reads (releases.py) and phase 12 re-reads through TALK_ENABLED. Total absence,
+      # exactly like an unchosen optional: no lock row, no tarball in the store, no installed
+      # version, not even a directory under custom_apps — the store app it once was is gone
+      # with the channel that installed it.
+      - name: Talk off resolves no spreed — the fork's release is gated by the record's switch (#145)
+        run: |
+          set -euo pipefail
+          cd /opt/aps-conecta/instalador && source scripts/env.sh
+          grep -q "talk=0" /opt/aps-conecta/aio/opciones \
+            || { echo "FAIL: the wizard's options record does not name talk=0 — the switch the fetch leg gates spreed on" >&2; cat /opt/aps-conecta/aio/opciones >&2; exit 1; }
+          if sudo python3 -c 'import json, sys; sys.exit(0 if "spreed" in json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"] else 1)'; then
+            echo "FAIL: the lock names spreed with Talk off — the fetch leg must resolve nothing for it" >&2; exit 1
+          fi
+          [ -z "$(occ config:app:get spreed installed_version 2>/dev/null || true)" ] \
+            || { echo "FAIL: spreed is installed with Talk off" >&2; exit 1; }
+          docker exec --user www-data aps-conecta-nextcloud test ! -e /var/www/html/custom_apps/spreed \
+            || { echo "FAIL: custom_apps holds spreed with Talk off" >&2; exit 1; }
+          sudo test ! -e /opt/aps-conecta/apps/spreed \
+            || { echo "FAIL: the release store holds a spreed tarball with Talk off" >&2; exit 1; }
+          echo "spreed: total absence — Talk off resolves nothing, installs nothing, stores nothing"
       # #40, by IP: estadística — the second optional app — installed from its release because this
       # job chose it, and the DEIS data import RUNNING: the app's own hourly job is what downloads
       # the figures (ADR-0005 in that repo — the installer moves no data), so the assertion is the

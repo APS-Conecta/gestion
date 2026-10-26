@@ -25,8 +25,9 @@ ENV AIO_URL=localhost
 # every store leg fails fast. The one exception rides the same channel in the opposite
 # direction: a command that prefixes its own NC_appstoreenabled=1 (the envCache beats both
 # config.php and this ENV for that process alone) opens the store for exactly one occ call —
-# the entrypoint's notify_push/Talk installs when they are missing, provisioning's store
-# installs. With the store on, occ upgrade would re-download every enabled app and no pin
+# the entrypoint's notify_push install when it is missing, provisioning's store installs.
+# Talk left this channel for its fork's signed releases (ADR-0020, #145), so notify_push is
+# the scoped open's only first-boot user. With the store on, occ upgrade would re-download every enabled app and no pin
 # could hold; scoped opens never survive their own command.
 ENV NC_appstoreenabled="0"
 
