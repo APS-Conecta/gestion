@@ -1591,7 +1591,7 @@ check cleanboot_db_cases
 # answers apache's loopback posture, the connector enabled and --check with $DS_VERSION; a stub
 # curl answers the healthcheck. 9.3.1.37 is what the copied v0.6.0 image answers.
 office_pin_cases() {
-  local tmp out rc v
+  local tmp out rc ver want
   tmp="$(mktemp -d)"; mkdir -p "$tmp/bin" "$tmp/scripts" "$tmp/Containers/eurooffice"
   cp scripts/office-smoke.sh scripts/env.sh "$tmp/scripts/"
   sed 's|documentserver:v[0-9][0-9.]*|documentserver:v1.2.3|' Containers/eurooffice/Dockerfile > "$tmp/Containers/eurooffice/Dockerfile"
@@ -1609,11 +1609,16 @@ exit 0
 STUB
   printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/bin/curl"
   chmod +x "$tmp/bin/docker" "$tmp/bin/curl"
-  for v in 1.2.3.37:0 1.2.3:0 1.2.30.1:1 9.3.1.37:1; do
-    rc=0; out="$(PATH="$tmp/bin:$PATH" DS_VERSION="${v%:*}" bash "$tmp/scripts/office-smoke.sh" 2>&1)" || rc=1
-    [ "$rc" = "${v##*:}" ] \
-      || { echo "office pin: DS ${v%:*} against the pin 1.2.3 exited $rc, want ${v##*:}: $out" >&2; rm -rf "$tmp"; return 1; }
-  done
+  while IFS='|' read -r ver want; do
+    rc=0; out="$(PATH="$tmp/bin:$PATH" DS_VERSION="$ver" bash "$tmp/scripts/office-smoke.sh" 2>&1)" || rc=1
+    [ "$rc" = "$want" ] \
+      || { echo "office pin: DS $ver against the pin 1.2.3 exited $rc, want $want: $out" >&2; rm -rf "$tmp"; return 1; }
+  done <<'CASES'
+1.2.3.37|0
+1.2.3|0
+1.2.30.1|1
+9.3.1.37|1
+CASES
   rm "$tmp/Containers/eurooffice/Dockerfile"
   rc=0; out="$(PATH="$tmp/bin:$PATH" DS_VERSION=1.2.3.37 bash "$tmp/scripts/office-smoke.sh" 2>&1)" || rc=1
   rm -rf "$tmp"

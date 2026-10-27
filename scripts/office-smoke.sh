@@ -14,7 +14,7 @@
 # The version assert is the Dockerfile's pin: the connector's own floor is only "DS > 6.0"
 # (DocumentService.php:415), so a drifted documentserver would pass --check silently.
 # Since #36 the connector is the APS fork (APS-Conecta/eurooffice) and this gate's --check
-# round-trip is the pairing's per-install re-certification. The image assert accepts the two
+# round-trip is the connector's per-install re-certification. The image assert accepts the two
 # namespaces this distribution's lifecycle runs — nextcloud-releases (the probe's stock bring-up,
 # slice 1's harness) and aps-conecta (the suite's channel; the retag preserves the manifest, D12) —
 # and anything else (a stranger's DS, Collabora, OnlyOffice) reds.
@@ -64,7 +64,7 @@ out="$(occ eurooffice:documentserver --check 2>&1)" \
 # successfully connected" — lib/Command/DocumentServer.php:84). The ANSI strip is belt-and-braces:
 # occ strips its own <info> tags when stdout is not a TTY (docker exec), but the parse must not
 # depend on that detection. The DS answers <pin>.<build>, so the pin matches whole or before a
-# dot; the pin is read from the Dockerfile the image is built from (env.sh has moved to the repo
+# dot; the pin is read from the Dockerfile the image is built from (env.sh cds to the repo
 # root), never a second literal. An unreadable version or pin fails CLOSED — a parser that reads
 # nothing must never pass (B-014).
 ver="$(printf '%s\n' "$out" | sed 's/\x1b\[[0-9;]*m//g' | sed -n 's/.* version \([0-9][0-9.]*\) is successfully connected.*/\1/p' | head -1)"
