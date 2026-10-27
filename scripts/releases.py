@@ -22,14 +22,15 @@ apps.py beside it — the manifest is IMPORTED, never re-parsed.
       row, empty when none) and candidate tag — the lock as a FLOOR, never below it, a pin
       never moving. Candidates are verified (signature, hashes, id, version) before they are
       named; a refusal is one Spanish FATAL naming the app. WRITES NOTHING — `--revisar` stops
-      here by contract. TSV: id<TAB>current<TAB>candidate, or id<TAB>omitida for an unchosen
-      optional row.
+      here by contract. TSV: id<TAB>current<TAB>candidate, id<TAB>omitida for an unchosen
+      optional row, or id<TAB>retirada for a lock row whose app left the manifest (#172).
   scripts/releases.py actualizar [--manifest PATH] [--lock PATH] [--store PATH] \
                             [--pub PATH] [--opciones PATH] --nuevo PATH --nextcloud 34.0.4
       actualizar's fetch leg (#46, ADR-0017): every chosen/default release row re-resolved
       (lock as floor), downloaded and verified into the store, and the WHOLE new lock written
       atomically to --nuevo — moved rows, unchanged rows and carried-over unchosen-optional
-      rows, under the running Nextcloud. The server's lock is not touched: the host CLI
+      rows, under the running Nextcloud; a row whose app left the manifest is dropped (#172),
+      and the host CLI uninstalls it. The server's lock is not touched: the host CLI
       promotes the new lock only when every app applied.
   scripts/releases.py locked APPID
       The lock's row for one app — `tag<TAB>version<TAB>sha256<TAB>tarball` — or nothing
@@ -519,14 +520,22 @@ def fetch_all(rows, nextcloud, path=None, store=None, eleccion=None):
     return lines
 
 
-def plan_all(rows, nextcloud, path=None, eleccion=None):
+def retired(lock, ids):
+    """The lock rows whose app left the manifest (#172): the plan names each, actualizar's new
+    lock drops each, and the host CLI uninstalls each. `ids` is EVERY manifest id, not only the
+    release rows — a row that moved to the store is still a suite app."""
+    return sorted(set(lock["apps"]) - set(ids))
+
+
+def plan_all(rows, nextcloud, path=None, eleccion=None, *, ids):
     """The plan `aps-conecta actualizar` prints and `--revisar` stops on (#46): for every
     release row, the tag this server RUNS (the lock's row, empty when none) and the tag the run
     would move it to — resolved with the lock as a FLOOR, actualizar's stance, so a candidate
     below the lock is never offered and a pinned row never moves. The three small assets are
     downloaded and verified (a candidate is only named once the trust chain proved it), but
     NOTHING IS WRITTEN: no lock move, no tarball — `--revisar` stops here by contract. TSV per
-    row: id<TAB>current<TAB>candidate, or id<TAB>omitida for an unchosen optional one."""
+    row: id<TAB>current<TAB>candidate, or id<TAB>omitida for an unchosen optional one; then
+    id<TAB>retirada per lock row whose app left the manifest (`ids`, #172)."""
     lines = []
     lock = read_lock(path)
     major = int(nextcloud.split(".")[0])
@@ -547,17 +556,19 @@ def plan_all(rows, nextcloud, path=None, eleccion=None):
         except Refusal as e:
             raise Refusal(f"{app}: {e}") from None
         lines.append(f"{app}\t{registrado['tag'] if registrado else ''}\t{tag}")
+    lines += [f"{app}\tretirada" for app in retired(lock, ids)]
     return lines
 
 
-def fetch_next(rows, nextcloud, nuevo, path=None, store=None, eleccion=None):
+def fetch_next(rows, nextcloud, nuevo, path=None, store=None, eleccion=None, *, ids):
     """actualizar's fetch leg (#46, ADR-0017): every chosen/default release row re-resolved
     with the lock as a FLOOR — never below it — downloaded, verified, and recorded into a NEW
     lock at `nuevo`. The server's lock is NOT touched: the host CLI applies the apps and
     promotes the new lock only when every one of them succeeded. A row whose candidate equals
     its locked tag downloads nothing (the verified tarball is beside the lock); an unchosen
     optional row is CARRIED OVER unchanged, never erased — the choice gates updates, and the
-    record that a warm instance still runs the app must survive the run."""
+    record that a warm instance still runs the app must survive the run. A row whose app left
+    the manifest (`ids`, #172) is the one row the new lock drops: the host CLI uninstalls it."""
     lines, movidas = [], {}
     lock = read_lock(path)
     major = int(nextcloud.split(".")[0])
@@ -600,9 +611,12 @@ def fetch_next(rows, nextcloud, nuevo, path=None, store=None, eleccion=None):
                          f"y verificada (compatible con Nextcloud {nextcloud})")
         except Refusal as e:
             raise Refusal(f"{app}: {e}") from None
-    write_lock(nuevo, {"nextcloud": nextcloud, "apps": {**lock["apps"], **movidas}})
-    lines.append("aplicaciones: candado nuevo listo — "
-                 + (", ".join(f"{a} {e['tag']}" for a, e in sorted(movidas.items())) or "sin cambios"))
+    dropped = retired(lock, ids)
+    lines += [f"✓ apps: {app} ya no es parte de la suite — se desinstala" for app in dropped]
+    kept = {a: e for a, e in lock["apps"].items() if a not in dropped}
+    write_lock(nuevo, {"nextcloud": nextcloud, "apps": {**kept, **movidas}})
+    changes = [f"{a} {e['tag']}" for a, e in sorted(movidas.items())] + [f"{a} retirada" for a in dropped]
+    lines.append("aplicaciones: candado nuevo listo — " + (", ".join(changes) or "sin cambios"))
     return lines
 
 
@@ -654,8 +668,9 @@ def main(argv):
         try:
             # `or apps.MANIFEST`: no --manifest means the suite's own apps.json — load()'s default
             # is a def-time arg, and passing None through was the crash the first clean boot met
-            rows = [r for r in apps.load(opts.get("--manifest") or apps.MANIFEST)
-                    if r.get("release")]
+            manifest = apps.load(opts.get("--manifest") or apps.MANIFEST)
+            rows = [r for r in manifest if r.get("release")]
+            ids = [r["id"] for r in manifest]
         except ValueError as e:
             print(f"FATAL: {e}", file=sys.stderr)   # apps.py says the manifest's failure once
             return 1
@@ -668,10 +683,10 @@ def main(argv):
                                    elegidas(opts.get("--opciones")))
             elif verbo == "plan":
                 lineas = plan_all(rows, nextcloud, opts.get("--lock"),
-                                  elegidas(opts.get("--opciones")))
+                                  elegidas(opts.get("--opciones")), ids=ids)
             else:
                 lineas = fetch_next(rows, nextcloud, opts["--nuevo"], opts.get("--lock"),
-                                    opts.get("--store"), elegidas(opts.get("--opciones")))
+                                    opts.get("--store"), elegidas(opts.get("--opciones")), ids=ids)
             for line in lineas:
                 print(line)
         except Refusal as e:
@@ -844,14 +859,13 @@ def selftest():
 
         # the repos the arms walk — the hub keeps each one newest-first. The real rows
         # mirror the shipped apps.json's release rows (territorio #33, epidemiologia #34,
-        # IntraVox #35, side_menu #38, desktop_workspace #37, eurooffice #36, and the
-        # optional farmacia #39, estadistica #40 and totem #41): the production-argv arm
-        # below reads the SHIPPED manifest, so a release row without its hub repo reds
-        # there, at the cause. IntraVox declares the fork's real range (32–35); side_menu's
-        # real tag is 6.0.1, the same number the old bake once pinned, which is exactly why
-        # the lock/store pair is what proves the channel; eurooffice rides at its real fork
-        # release, v11.0.7; totem's v0.3.0 is its first release — the one whose tarball
-        # carries the two committed voices (#41).
+        # IntraVox #35, side_menu #38, eurooffice #36, and the optional farmacia #39, estadistica
+        # #40 and totem #41): the production-argv arm below reads the SHIPPED manifest, so a
+        # release row without its hub repo reds there, at the cause. IntraVox declares the fork's
+        # real range (32–35); side_menu's real tag is 6.0.1, the same number the old bake once
+        # pinned, which is exactly why the lock/store pair is what proves the channel; eurooffice
+        # rides at its real fork release, v11.0.7; totem's v0.3.0 is its first release — the one
+        # whose tarball carries the two committed voices (#41).
         mk_release("APS-Conecta/territorio", "v0.80.0", "0.80.0", nc="34", nc_max="34")
         mk_release("APS-Conecta/epidemiologia", "v0.12.0", "0.12.0", nc="34", nc_max="34")
         mk_release("APS-Conecta/IntraVox", "v3.2.0", "3.2.0", nc="32", nc_max="35")
@@ -859,10 +873,6 @@ def selftest():
         mk_release("APS-Conecta/estadistica", "v0.2.0", "0.2.0", nc="34", nc_max="34")
         mk_release("APS-Conecta/totem", "v0.3.0", "0.3.0", nc="34", nc_max="34")
         mk_release("APS-Conecta/side_menu", "v6.0.1", "6.0.1", nc="34", nc_max="34")
-        # #37: the shipped manifest's first FORK release row beside the mirror tarball one — the
-        # fixture mirrors the real app's declared range (33–35) so the arm proves a fork row
-        # fetches exactly like an own one.
-        mk_release("APS-Conecta/desktop_workspace", "v0.19.0", "0.19.0", nc="33", nc_max="35")
         mk_release("APS-Conecta/eurooffice", "v11.0.7", "11.0.7", nc="34", nc_max="34")
         # #145: spreed's fork — the zero-change fork of nextcloud/spreed whose App release is
         # upstream's own tarball re-proven and re-signed (ADR-0020). The fixture mirrors the
@@ -1035,7 +1045,6 @@ def selftest():
               and "✓ apps: epidemiologia v0.12.0" in run.stdout
               and "✓ apps: intravox v3.2.0" in run.stdout
               and "✓ apps: side_menu v6.0.1" in run.stdout
-              and "✓ apps: desktop_workspace v0.19.0" in run.stdout
               and "✓ apps: eurooffice v11.0.7" in run.stdout
               and "✓ apps: spreed v24.0.6" in run.stdout
               and "✓ apps: farmacia no elegida — no se instala" in run.stdout
@@ -1048,7 +1057,6 @@ def selftest():
               and read_lock()["apps"]["epidemiologia"]["tag"] == "v0.12.0"
               and read_lock()["apps"]["intravox"]["tag"] == "v3.2.0"
               and read_lock()["apps"]["side_menu"]["tag"] == "v6.0.1"
-              and read_lock()["apps"]["desktop_workspace"]["tag"] == "v0.19.0"
               and read_lock()["apps"]["eurooffice"]["tag"] == "v11.0.7"
               and read_lock()["apps"]["spreed"]["tag"] == "v24.0.6")
         run = subprocess.run([sys.executable, os.path.abspath(__file__), "fetch",
@@ -1144,7 +1152,8 @@ def selftest():
         # The server's posture: territorio at v0.79.0 (a v0.80.0 exists), suelo at v3.5.0
         # (its newest compatible — the ones above target Nextcloud 35), and farmacia with a
         # leftover lock row the operator no longer chose: one row moves, one stays, one is
-        # carried over untouched.
+        # carried over untouched. #172: viejo's app left the manifest — the one row dropped —
+        # and tienda's moved to the store: still a suite app, carried over like farmacia's.
         act = os.path.join(tmp, "act")
         os.makedirs(act, exist_ok=True)
         os.environ["APS_APPS_STORE"] = os.path.join(act, "almacen")
@@ -1158,10 +1167,15 @@ def selftest():
                            "tag": "v0.79.0", "version": "0.79.0", "sha256": "a" * 64},
             "suelo": entrada_suelo,
             "farmacia": {"source": "own", "repo": "APS-Conecta/farmacia",
-                         "tag": "v0.12.0", "version": "0.12.0", "sha256": "c" * 64}}})
+                         "tag": "v0.12.0", "version": "0.12.0", "sha256": "c" * 64},
+            "viejo": {"source": "fork", "repo": "APS-Conecta/viejo",
+                      "tag": "v1.0.0", "version": "1.0.0", "sha256": "e" * 64},
+            "tienda": {"source": "fork", "repo": "APS-Conecta/tienda",
+                       "tag": "v2.0.0", "version": "2.0.0", "sha256": "f" * 64}}})
         with open(os.path.join(tmp, "apps-act.json"), "w", encoding="utf-8") as fh:
             json.dump([fila("APS-Conecta/territorio"), fila("APS-Conecta/suelo"),
-                       fila("APS-Conecta/farmacia", optional="off")], fh)
+                       fila("APS-Conecta/farmacia", optional="off"),
+                       {"id": "tienda", "source": "store", "optional": False, "containers": []}], fh)
         os.environ["APS_APPS_LOCK"] = candado
         opciones_act = os.path.join(act, "opciones")   # no farmacia line: unchosen
         with open(opciones_act, "w", encoding="utf-8") as fh:
@@ -1176,6 +1190,9 @@ def selftest():
         check("cli plan (#46): the move, the stay and the unchosen row as TSV — current and candidate per app",
               run.returncode == 0 and "territorio\tv0.79.0\tv0.80.0" in run.stdout
               and "suelo\tv3.5.0\tv3.5.0" in run.stdout and "farmacia\tomitida" in run.stdout)
+        check("cli plan (#172): the lock row whose app left the manifest is named retirada, after the manifest's rows; the row that moved to the store is not",
+              run.returncode == 0 and run.stdout.rstrip("\n").split("\n")[-1] == "viejo\tretirada"
+              and "tienda" not in run.stdout)
         check("cli plan (#46): --revisar's leg writes nothing — the lock's bytes, the store and no tmp left",
               open(candado, "rb").read() == bytes_candado
               and (sorted(os.listdir(os.environ["APS_APPS_STORE"]))
@@ -1201,6 +1218,12 @@ def selftest():
               and guardado["apps"]["suelo"]["sha256"] == entrada_suelo["sha256"]
               and guardado["apps"]["farmacia"]["tag"] == "v0.12.0"
               and open(candado, "rb").read() == bytes_candado)
+        check("cli actualizar (#172): the row whose app left the manifest is the one row the new lock drops — its line, the summary naming it; the store-moved row carried over",
+              run.returncode == 0
+              and "✓ apps: viejo ya no es parte de la suite — se desinstala" in run.stdout
+              and "aplicaciones: candado nuevo listo — territorio v0.80.0, viejo retirada" in run.stdout
+              and "viejo" not in guardado["apps"]
+              and guardado["apps"]["tienda"]["tag"] == "v2.0.0")
         os.unlink(nuevo)   # the refusal arms below start from no new lock
         with open(os.path.join(tmp, "apps-act-mala.json"), "w", encoding="utf-8") as fh:
             json.dump([fila("APS-Conecta/mala-firma"), fila("APS-Conecta/territorio")], fh)

@@ -493,27 +493,6 @@ jobs:
           css="$(curl -fsS "http://localhost:${HTTP_PORT}/apps/side_menu/css/stylesheet")"
           grep -q -- "--side-menu-background-color: #5315a8" <<<"$css" \
             || { echo "FAIL: side_menu's stylesheet does not paint the suite's violet — the config keys are set but the menu derives another colour" >&2; exit 1; }
-      # #37: desktop_workspace — the second fork app — follows territorio through the shared
-      # assertion (ADR-0017, #117): the locked bytes, no signature.json.
-      - name: Desktop workspace installed from its release, at its locked tag
-        uses: ./.github/actions/assert-release-app
-        with:
-          app: desktop_workspace
-      # #37, the app's own half: «the desktop opens». The app is enabled, and its page route
-      # answers its own auth check — HTTP 401 to an anonymous visitor (measured on the first
-      # run; the controller refuses instead of redirecting to login), never a 5xx or a 404.
-      # Smoke's authenticated probe (check 15) stays the developer-only deep check.
-      - name: The desktop opens
-        run: |
-          set -euo pipefail
-          cd /opt/aps-conecta/instalador && source scripts/env.sh
-          [ "$(occ config:app:get desktop_workspace enabled)" = "yes" ] \
-            || { echo "FAIL: desktop_workspace is not enabled" >&2; exit 1; }
-          code="$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${HTTP_PORT}/index.php/apps/desktop_workspace/" 2>/dev/null)"
-          case "$code" in
-            200|302|303|401) echo "desktop: /apps/desktop_workspace/ answered HTTP $code (route alive)" ;;
-            *) echo "FAIL: the desktop does not open — /apps/desktop_workspace/ answered HTTP $code" >&2; exit 1 ;;
-          esac
       # #145 (ADR-0020): Talk follows the same shared assertion the other fork apps ride —
       # the lock's row names the fork's tag, the instance runs the locked version, the stored
       # tarball is the locked bytes, no signature.json. This job runs Talk ON, so the fetch
@@ -789,11 +768,11 @@ jobs:
       # office gate answering the AIO sibling since this slice (office-smoke's AIO legs:
       # public-path healthcheck + --check + the DS 9.3.x pin + the image namespaces), and the
       # two hermetic self-tests riding test.sh's static section.
-      # Smoke's check 15 (developer-only, B-031) logs in as the admin .env names; on AIO that
-      # admin's password is AIO's own, so this throwaway testbed's admin takes .env's first.
-      # A clinic's admin login is never touched: install's health line skips check 15. The
-      # password rides docker exec -e, never argv.
-      - name: The testbed's admin takes .env's password — the smoke probe logs in with it
+      # The weekly-drift step below reads the admin's notifications over OCS as the admin .env
+      # names; on AIO that admin's password is AIO's own, so this throwaway testbed's admin
+      # takes .env's first. A clinic's admin login is never touched. The password rides
+      # docker exec -e, never argv.
+      - name: The testbed's admin takes .env's password — the drift step's notification check logs in with it
         run: |
           cd /opt/aps-conecta/instalador && source scripts/env.sh
           OC_PASS="$NEXTCLOUD_ADMIN_PASSWORD" nc_exec -e OC_PASS --user www-data -- \
@@ -959,6 +938,33 @@ jobs:
             | grep -q 'deriva-prueba' || { echo "FAIL: the admin has no notification naming the drift" >&2; exit 1; }
           occ group:delete deriva-prueba >/dev/null
           # the unit ran as root against this checkout: hand it back, as after the install
+          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+      # #172, after the weekly seed (which re-applies side_menu's colours): an app whose row
+      # leaves the manifest is uninstalled by the next actualizar — its code gone, its lock row
+      # dropped, the suite revalidating green. side_menu stands in: the testbed's apps.json
+      # loses its row exactly as a newer suite package's would.
+      - name: An app that leaves the manifest is uninstalled by actualizar, its lock row dropped (#172)
+        run: |
+          set -euo pipefail
+          cd /opt/aps-conecta/instalador && source scripts/env.sh
+          sudo python3 -c '
+          import json
+          p = "/opt/aps-conecta/instalador/apps.json"
+          json.dump([r for r in json.load(open(p)) if r["id"] != "side_menu"], open(p, "w"), indent=4)'
+          rc=0; out="$(sudo AIO_STATE=/tmp/aio-testbed bash /opt/aps-conecta/instalador/host/aps-conecta actualizar 2>&1)" || rc=$?
+          printf '%s\n' "$out" | tail -40
+          [ "$rc" -eq 0 ] || { echo "FAIL: actualizar failed with side_menu out of the manifest" >&2; exit 1; }
+          case "$out" in *"side_menu ya no es parte de la suite — se desinstala"*"app side_menu desinstalada"*) ;;
+            *) echo "FAIL: the run did not name and uninstall side_menu" >&2; exit 1 ;; esac
+          ! occ app:getpath side_menu >/dev/null 2>&1 || { echo "FAIL: side_menu's code is still on the instance" >&2; exit 1; }
+          # app:remove runs the uninstall steps and deletes the code; Nextcloud keeps the app's
+          # config keys (installed_version among them), so "gone" is: no code, not enabled
+          [ "$(occ config:app:get side_menu enabled 2>/dev/null || true)" != yes ] \
+            || { echo "FAIL: side_menu is still enabled" >&2; exit 1; }
+          sudo python3 -c 'import json, sys; sys.exit("side_menu" in json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"])' \
+            || { echo "FAIL: the lock still names side_menu" >&2; exit 1; }
+          case "$out" in *"REVALIDACIÓN: PASS"*) ;; *) echo "FAIL: the run did not revalidate green" >&2; exit 1 ;; esac
+          echo "actualizar: side_menu left the manifest — uninstalled, its lock row dropped, revalidate green"
           sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
       # No compose context exists on this runner anymore: the probe's logs come from docker
       # itself, and the container listing is what shows a sibling that never converged.
@@ -1293,23 +1299,6 @@ jobs:
           css="$(curl -fsS --cacert "$RUNNER_TEMP/ca.crt" "https://$SUITE_IP/apps/side_menu/css/stylesheet")"
           grep -q -- "--side-menu-background-color: #5315a8" <<<"$css" \
             || { echo "FAIL: side_menu's stylesheet does not paint the suite's violet — the config keys are set but the menu derives another colour" >&2; exit 1; }
-      # #37, by IP: the same acceptance the domain job asserts — the shared block plus the
-      # desktop's own «it opens» half, speaking https to $SUITE_IP with the runner's CA.
-      - name: Desktop workspace installed from its release, at its locked tag
-        uses: ./.github/actions/assert-release-app
-        with:
-          app: desktop_workspace
-      - name: The desktop opens
-        run: |
-          set -euo pipefail
-          cd /opt/aps-conecta/instalador && source scripts/env.sh
-          [ "$(occ config:app:get desktop_workspace enabled)" = "yes" ] \
-            || { echo "FAIL: desktop_workspace is not enabled" >&2; exit 1; }
-          code="$(curl -s -o /dev/null -w '%{http_code}' --cacert "$RUNNER_TEMP/ca.crt" "https://$SUITE_IP/index.php/apps/desktop_workspace/" 2>/dev/null)"
-          case "$code" in
-            200|302|303|401) echo "desktop: /apps/desktop_workspace/ answered HTTP $code (route alive)" ;;
-            *) echo "FAIL: the desktop does not open — /apps/desktop_workspace/ answered HTTP $code" >&2; exit 1 ;;
-          esac
       # #36, by IP: the same acceptance the domain job asserts — the connector arrives from
       # APS-Conecta/eurooffice's own release, never the store's eurooffice (the manifest row
       # is source: fork, and no image carries its bytes). The fork's own two proofs —

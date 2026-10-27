@@ -11,6 +11,12 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ## [Unreleased]
 
+### Changed
+
+- **`aps-conecta actualizar` uninstalls a release app whose row left the manifest (#172).** The plan
+  names it, the run removes it last (`occ app:remove`, data included; the backup the run takes first
+  is the way back) and the new lock drops its row, so a warm server converges on the suite's apps.
+
 ### Fixed
 
 - **Nextcloud's instance time zone follows the zone chosen in AIO (APS-Conecta/totem#7).** Phase 10
@@ -28,12 +34,12 @@ image digests live there and are deliberately not copied here — one fact, one 
   suite's answer through the installer's CA (and its refusal without it), a planilla user over
   OCS, every default app installed from its channel (own/fork from their releases at the
   locked tag — tarball, hash, no `signature.json` — store apps enabled) plus the functional
-  opens (notify_push's self-test, the office connector, the desktop's route), each chosen
-  optional installed and named in the wizard's options record, buscador's PDF (or the manifest
-  row it still lacks, naming #149), and `actualizar --revisar` printing the plan while writing
-  nothing. `--dominio` covers the domain posture (public 443 + DNS, ACME as upstream); by IP
-  any VM qualifies. Hermetic self-test (`--self-test`, wired into `scripts/test.sh`) pins the
-  classification with PATH shims; the ritual itself is aps/RELEASING.md §7.
+  opens (notify_push's self-test, the office connector), each chosen optional installed and named
+  in the wizard's options record, buscador's PDF (or the manifest row it still lacks, naming
+  #149), and `actualizar --revisar` printing the plan while writing nothing. `--dominio` covers
+  the domain posture (public 443 + DNS, ACME as upstream); by IP any VM qualifies. Hermetic
+  self-test (`--self-test`, wired into `scripts/test.sh`) pins the classification with PATH shims;
+  the ritual itself is aps/RELEASING.md §7.
 
 ### Removed
 
@@ -491,16 +497,14 @@ image digests live there and are deliberately not copied here — one fact, one 
   list is space-separated `app:key:value` triples and cannot carry a value with a variable expanded
   into it.
 
-- **Talk (`spreed` 24.0.5) and Desktop Workspace (`desktop_workspace` 0.18.2) are part of the
-  suite**, vendored as pinned tarballs like every other app, so a clean install still needs no
-  network and no app store (#98). Two things about Talk are recorded in its `VENDOR` file rather
-  than left to be found: it reaches an **external STUN server** (`stun.nextcloud.com:443`) by
-  default to discover a caller's own address, and **group calls stay small — around four people —
-  without a High Performance Backend**, which this stack does not run. Chat and one-to-one calls are
-  unaffected by the second. Talk's tarball is 52 MB, more than every other vendored app put
-  together, and git keeps a full copy per bump: it is now the first place to look if this repo has
-  to go on a diet. `desktop_workspace` is third-party (`canisdata`), the same posture as
-  `side_menu`.
+- **Talk (`spreed` 24.0.5) is part of the suite**, vendored as pinned tarballs like every other
+  app, so a clean install still needs no network and no app store (#98). Two things about Talk are
+  recorded in its `VENDOR` file rather than left to be found: it reaches an **external STUN
+  server** (`stun.nextcloud.com:443`) by default to discover a caller's own address, and **group
+  calls stay small — around four people — without a High Performance Backend**, which this stack
+  does not run. Chat and one-to-one calls are unaffected by the second. Talk's tarball is 52 MB,
+  more than every other vendored app put together, and git keeps a full copy per bump: it is now
+  the first place to look if this repo has to go on a diet.
 
 - **The licence table is now gated against the apps themselves.** `scripts/test.sh` reads
   `appinfo/info.xml` out of each vendored tarball — tracked, so it needs no network and no running
