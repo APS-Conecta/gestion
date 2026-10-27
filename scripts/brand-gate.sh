@@ -1124,12 +1124,36 @@ wizard_font_coverage() {  # the wizard's two subsets cover every character its o
   # version/domain identifiers) — scripts/wizard-fonts.py owns the measurement and --check
   # re-walks it against the committed subsets' cmaps. Container LOG bytes are runtime data,
   # not wizard strings; they render in the mono face and are out of scope. fontTools is a CI
-  # dependency of this row (ci.yml installs it); without it the check fails loudly, never
-  # passes vacuously.
+  # dependency of this row (every job that runs the gate installs it; the next check proves
+  # it); without it the check fails loudly, never passes vacuously.
   local t="$TREE"
   [ -f "$t/php/public/fonts/Fraunces.woff2" ] && [ -f "$t/php/public/fonts/NunitoSans.woff2" ] \
     || { echo "  the wizard's font subsets are missing" >&2; return 1; }
   python3 "$REPO_ROOT/scripts/wizard-fonts.py" --check "$t"
+}
+
+font_dependency_installed() {  # every workflow job that runs this gate installs fontTools and
+  # brotli before it — without them the font check above reds, and a job that skips the install
+  # reds where it should prove (A-040: the tag's own chain). Jobs are the two-space keys under
+  # `jobs:`; comment lines and trailing comments never count. release.yml's gates job must be
+  # among the jobs found, so a walk that finds none reds.
+  local d="$TREE/.github/workflows"
+  [ -d "$d" ] || { echo "  no such dir: .github/workflows" >&2; return 1; }
+  awk '
+    FNR == 1 { f = FILENAME; sub(/.*\//, "", f); injobs = 0; job = "" }
+    /^[^[:space:]#]/ { injobs = ($0 ~ /^jobs:/); job = ""; next }
+    injobs && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { job = $1; sub(/:$/, "", job); dep = 0; next }
+    job == "" || /^[[:space:]]*#/ { next }
+    { line = $0; sub(/[[:space:]]#.*/, "", line) }
+    line ~ /pip install/ && line ~ /fonttools/ && line ~ /brotli/ { dep = 1 }
+    line ~ /scripts\/brand-gate\.sh/ && !((f, job) in seen) {
+      seen[f, job] = 1
+      if (!dep) { print "  " f ": job " job " runs the brand gate before installing fonttools and brotli"; bad = 1 }
+    }
+    END {
+      if (!(("release.yml", "gates") in seen)) { print "  release.yml: no gates job runs the brand gate"; bad = 1 }
+      exit bad
+    }' "$d"/*.yml
 }
 
 release_title_carries_name() {  # the suite's Releases are titled with the product's name —
@@ -1172,6 +1196,9 @@ row 270 "no duplicate palette — every hex the token file declares appears in t
 
 row 270 "the wizard's font subsets cover every wizard string — the measured universe plus the two random alphabets, re-cut by scripts/wizard-fonts.py, proven against the committed cmaps" \
   wizard_font_coverage
+
+row 270 "every workflow job that runs the brand gate installs the font check's dependencies first — fontTools and brotli, so a tag's gates prove what a PR's do" \
+  font_dependency_installed
 
 row 270 "the suite's Releases are titled «APS Conecta Gestión vX.Y.Z» — the product name on the releases page the wizard's changelog arms land on" \
   release_title_carries_name

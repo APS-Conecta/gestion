@@ -109,8 +109,9 @@ jobs:
   # Arm E (flip a token value in the wizard's generated block — row 270's subject, #49: the
   # block drifts from the ONE token file while every per-surface grep stays green), Arm F
   # (re-insert an entrypoint enable of a policy app — row 280's subject, #155: an absence
-  # check whose pattern missed the real `occ app:enable` line shape would stay green) —
-  # each must red, then revert in place; the job never commits its mutation. PR-only: pushes
+  # check whose pattern missed the real `occ app:enable` line shape would stay green), Arm G
+  # (drop release.yml's font install — row 270's dependency check, A-040: a job walk that
+  # missed the release's gates job would stay green) — each must red, then revert in place; the job never commits its mutation. PR-only: pushes
   # are already gated by the gates job above.
   gate-red-proof:
     name: Prove the gates can red (org L7-2)
@@ -218,3 +219,17 @@ jobs:
           fi
           echo "ARM F green: the re-inserted enable reds the gate"
           sed -i '/^php \/var\/www\/html\/occ app:enable support$/d' "$f"
+      - name: Arm G — drop release.yml's font install, expect the gate to red
+        run: |
+          # row 270's dependency check walks every job that runs the gate: the release's gates
+          # job without its fontTools install is the A-040 shape — the tag's own chain red
+          f=.github/workflows/release.yml
+          grep -q '^      - run: python3 -m pip install --quiet fonttools brotli$' "$f" \
+            || { echo "ARM G target drifted — release.yml's gates job carries no fonttools install line; re-point the arm" >&2; exit 1; }
+          sed -i '/^      - run: python3 -m pip install --quiet fonttools brotli$/d' "$f"
+          if bash scripts/brand-gate.sh .; then
+            echo "ARM G FAILED: release.yml's gates job without the font install did NOT red the brand gate — row 270's dependency check is vacuous" >&2
+            exit 1
+          fi
+          echo "ARM G green: the dropped install reds the gate"
+          git checkout -- "$f"
