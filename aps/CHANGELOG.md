@@ -11,6 +11,12 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ## [Unreleased]
 
+### Fixed
+
+- **Nextcloud's instance time zone follows the zone chosen in AIO (APS-Conecta/totem#7).** Phase 10
+  now seeds `default_timezone` from the Nextcloud container's `TZ`, so Totem's Día, opening-hours
+  check and ticket times follow the clinic's clock instead of UTC.
+
 ## [0.6.0] — 2026-10-27
 
 ### Added
