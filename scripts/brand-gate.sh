@@ -1135,17 +1135,18 @@ wizard_font_coverage() {  # the wizard's two subsets cover every character its o
 font_dependency_installed() {  # every workflow job that runs this gate installs fontTools and
   # brotli before it — without them the font check above reds, and a job that skips the install
   # reds where it should prove (A-040: the tag's own chain). Jobs are the two-space keys under
-  # `jobs:`; comment lines and trailing comments never count. release.yml's gates job must be
+  # `jobs:`; an install is a step (or run-block line) calling `python3 -m pip install`, never a
+  # line that greps or echoes one, and comments never count. release.yml's gates job must be
   # among the jobs found, so a walk that finds none reds.
   local d="$TREE/.github/workflows"
   [ -d "$d" ] || { echo "  no such dir: .github/workflows" >&2; return 1; }
   awk '
     FNR == 1 { f = FILENAME; sub(/.*\//, "", f); injobs = 0; job = "" }
     /^[^[:space:]#]/ { injobs = ($0 ~ /^jobs:/); job = ""; next }
-    injobs && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { job = $1; sub(/:$/, "", job); dep = 0; next }
+    injobs && /^  [A-Za-z0-9_-]+:[[:space:]]*(#.*)?$/ { job = $1; sub(/:$/, "", job); dep = 0; next }
     job == "" || /^[[:space:]]*#/ { next }
     { line = $0; sub(/[[:space:]]#.*/, "", line) }
-    line ~ /pip install/ && line ~ /fonttools/ && line ~ /brotli/ { dep = 1 }
+    line ~ /^[[:space:]]*(- run:[[:space:]]*)?python3 -m pip install .*fonttools.*brotli/ { dep = 1 }
     line ~ /scripts\/brand-gate\.sh/ && !((f, job) in seen) {
       seen[f, job] = 1
       if (!dep) { print "  " f ": job " job " runs the brand gate before installing fonttools and brotli"; bad = 1 }
