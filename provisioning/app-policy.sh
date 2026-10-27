@@ -1,9 +1,9 @@
 # Which apps staff actually see — the inventory, separated from the phase that applies it.
 #
 # SOURCED, NEVER EXECUTED. `provisioning/phases/16-app-policy.sh` sources this and applies it;
-# `scripts/smoke.sh` sources it to assert the instance still matches. Two readers of one
-# declaration, which is the point: the ids used to be typed out in both places, and a policy you
-# can only read by RUNNING a phase is a policy nobody reviews.
+# `scripts/smoke.sh` sources it to assert the instance still matches, `scripts/brand-gate.sh`
+# (row 280) so no container start enables one of its apps. Three readers of one declaration,
+# which is the point: a policy you can only read by RUNNING a phase is a policy nobody reviews.
 #
 # THE MODEL: admin keeps every app; every non-admin account gets the reduced set.
 # LEVER PRECEDENCE: config switch -> group restriction -> disable. Restriction is preferred because

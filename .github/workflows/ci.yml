@@ -107,7 +107,9 @@ jobs:
   # behaviour gone, exactly the vacuous class this job exists to catch), Arm D (orphan one
   # spec link name — row 190's subject, #131: one occurrence reverted, row 170 stays green),
   # Arm E (flip a token value in the wizard's generated block — row 270's subject, #49: the
-  # block drifts from the ONE token file while every per-surface grep stays green) —
+  # block drifts from the ONE token file while every per-surface grep stays green), Arm F
+  # (re-insert an entrypoint enable of a policy app — row 280's subject, #155: an absence
+  # check whose pattern missed the real `occ app:enable` line shape would stay green) —
   # each must red, then revert in place; the job never commits its mutation. PR-only: pushes
   # are already gated by the gates job above.
   gate-red-proof:
@@ -200,3 +202,19 @@ jobs:
           fi
           echo "ARM E green: the drifted token value reds the gate"
           sed -i 's/--aps-violet: #ff00ff;/--aps-violet: #7f21fe;/' "$f"
+      - name: Arm F — re-insert an entrypoint enable of a policy app, expect the gate to red
+        run: |
+          # row 280 reads its ids from provisioning/app-policy.sh: an entrypoint line enabling
+          # support (a POLICY_ADMIN_ONLY app) after the one-click end marker must red it
+          f=Containers/nextcloud/entrypoint.sh
+          grep -qx '# AIO one-click settings end # Do not remove or change this line!' "$f" \
+            || { echo "ARM F target drifted — the one-click end marker is not in $f; re-point the arm" >&2; exit 1; }
+          ( . provisioning/app-policy.sh && case " $POLICY_ADMIN_ONLY " in *" support "*) ;; *) exit 1 ;; esac ) \
+            || { echo "ARM F target drifted — support is not in POLICY_ADMIN_ONLY; re-point the arm" >&2; exit 1; }
+          sed -i '/^# AIO one-click settings end/a php /var/www/html/occ app:enable support' "$f"
+          if bash scripts/brand-gate.sh .; then
+            echo "ARM F FAILED: an entrypoint enable of support did NOT red the brand gate — row 280 is vacuous" >&2
+            exit 1
+          fi
+          echo "ARM F green: the re-inserted enable reds the gate"
+          sed -i '/^php \/var\/www\/html\/occ app:enable support$/d' "$f"
