@@ -1087,6 +1087,14 @@ jobs:
             | python3 -c 'import json, sys; sys.exit(not any(r.get("name") == "aps-conecta-ca.crt" for r in json.load(sys.stdin)))'
           occ notify_push:self-test
           occ eurooffice:documentserver --check
+      # #163: the operator's own check — the silent install's last line names it — run as root the
+      # way a clinic runs it, against the clinic's TLS front (443, the installer's CA by IP).
+      - name: aps-conecta revalidate is green on the clinic's own front (#163)
+        run: |
+          rc=0; out="$(sudo bash /opt/aps-conecta/instalador/host/aps-conecta revalidate 2>&1)" || rc=$?
+          printf '%s\n' "$out"
+          [ "$rc" -eq 0 ] && grep -q '^REVALIDACIÓN: PASS' <<<"$out" \
+            || { echo "FAIL: revalidate did not pass on the clinic's front" >&2; exit 1; }
       # Territorio's map is OpenStreetMap's own tile service, loaded by the browser (ADR-0021 there):
       # phase 16 provisions the comuna the app derives its opening extent from, and no tile_url.
       - name: Territorio carries the site's comuna and no tile_url
