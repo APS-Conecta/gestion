@@ -82,6 +82,12 @@ assembly, SHA256SUMS, the signature, the verify-PROOF against the committed `ins
 the constants-filled install asset) → the Release with five assets. Watch it; a red anywhere
 names its gate.
 
+**The testbed pin follows**. Once the Release is green, one commit moves the pin in
+`scripts/aio-testbed.sh` to `vX.Y.Z` — the suite tag every PR-event and weekly Clean boot
+installs. It cannot ride the release commit: the tag's images do not exist until the push
+publishes them. Until a release carries nothing-baked images (ADR-0018), the pin names a
+nothing-baked rehearsal set.
+
 **The retag source (the self-referential lockstep)**. The 16 registry-side images are copied,
 not built: `retag-source: ours` — the chain's default on every tag push — copies each from
 **our previous suite tag** (the newest digest-complete set; git tags are the suite-tag list).
@@ -113,7 +119,9 @@ substitute: the tag-push chain runs Images without `force`, so re-pushing an exi
 `v0.0.0-ci.N` dies at the pre-check — and pushing a never-used one mints a Release that must
 then be deleted. A never-published `v0.0.0-ci.N` (VERSION and BUNDLE_TAG set to match on the
 branch) is still the way to rehearse the chain itself end-to-end, Release included, deletable;
-the dispatch pair is how you iterate on images and install code.
+the dispatch pair is how you iterate on images and install code. A rehearsal takes an `N` above
+the one the testbed pins: `force` re-publishes a set, and the pinned set never moves under the
+PR runs.
 
 **When a fresh Images dispatch is needed**: only when the image inputs changed — the tree the
 four real builds read at `build-ref` (php/, app/, Containers/, themes/ — the theme is the one

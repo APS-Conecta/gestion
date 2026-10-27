@@ -1179,6 +1179,29 @@ row 270 "the suite's Releases are titled «APS Conecta Gestión vX.Y.Z» — the
 row 270 "no logo master in the tree — no design-tool formats anywhere, and the logo directory holds exactly the three served lockups" \
   logo_masters_absent
 
+# ── #155: the app policy is provisioning's alone ───────────────────────────────────────────────
+policy_apps_left_to_provisioning() {  # no app:enable/install under Containers/nextcloud/ names a
+  # policy app — they run at container start or image upgrade, so one enabling a policy app
+  # reopens it to every user until the next provision (A-035). The ids are app-policy.sh's own,
+  # read in a subshell; an empty read would match nothing, so it reds instead. Every hit prints.
+  local d="$TREE/Containers/nextcloud" ids
+  [ -d "$d" ] || { echo "  policy_apps_left_to_provisioning: no such dir: $d" >&2; return 1; }
+  ids="$( . "$TREE/provisioning/app-policy.sh" && printf '%s %s' "${POLICY_ADMIN_ONLY:-}" "${POLICY_DISABLED:-}")" \
+    || { echo "  provisioning/app-policy.sh did not source" >&2; return 1; }
+  [ -n "${ids// /}" ] || { echo "  provisioning/app-policy.sh declared no app" >&2; return 1; }
+  { grep -rnE 'occ[[:space:]].*app:(enable|install)' "$d" || [ $? -eq 1 ]; } | awk -v ids="$ids" '
+    BEGIN { n = split(ids, a, " "); for (i = 1; i <= n; i++) want[a[i]] = 1 }
+    { text = $0; sub(/^[^:]*:[0-9]+:/, "", text) }
+    text ~ /^[[:space:]]*#/ { next }
+    { rest = text; sub(/.*app:(enable|install)/, "", rest); gsub(/[=,"\047]/, " ", rest)
+      m = split(rest, tok, /[[:space:]]+/)
+      for (i = 1; i <= m; i++) if (tok[i] in want) { print "  " $0; bad = 1; break } }
+    END { exit bad }'
+}
+
+row 280 "the entrypoint enables none of the apps provisioning/app-policy.sh restricts or disables — phase 16 alone sets their state, so no container start reopens one to every user" \
+  policy_apps_left_to_provisioning
+
 if [ "$fails" -gt 0 ]; then
   echo "BRAND GATE: *** FAIL *** — $fails row(s) failed" >&2
   exit 1

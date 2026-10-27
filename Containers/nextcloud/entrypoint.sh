@@ -563,9 +563,8 @@ EOF
 
             run_upgrade_if_needed_due_to_app_update
 
-            # Enable the updatenotification app but disable its UI and server update notifications
+            # APS (#155): updatenotification's UI and update notifications off; phase 16 owns its state
             php /var/www/html/occ config:system:set updatechecker --type=bool --value=false
-            php /var/www/html/occ app:enable updatenotification
             php /var/www/html/occ config:app:set updatenotification notify_groups --value="[]"
 
             # Apply optimization
@@ -633,7 +632,6 @@ php /var/www/html/occ config:system:set one-click-instance --value=true --type=b
 php /var/www/html/occ config:system:set one-click-instance.user-limit --value=100 --type=int
 php /var/www/html/occ config:system:set one-click-instance.link --value="https://nextcloud.com/all-in-one/"
 # AIO one-click settings end # Do not remove or change this line!
-php /var/www/html/occ app:enable support
 if [ -n "$SUBSCRIPTION_KEY" ] && [ -z "$(php /var/www/html/occ config:app:get support potential_subscription_key)" ]; then
     php /var/www/html/occ config:app:set support potential_subscription_key --value="$SUBSCRIPTION_KEY"
     php /var/www/html/occ config:app:delete support last_check
