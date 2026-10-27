@@ -143,8 +143,8 @@ jobs:
       # exercises the office wire without any DNS for the domain.
       AIO_TEST_DOMAIN: aio-ci.invalid
       # The probe's apache binds 127.0.0.1:${AIO_TEST_APACHE_PORT} and runs auto_https OFF
-      # (APACHE_PORT != 443): plain HTTP — which is what lets smoke's curls answer
-      # http://localhost:${HTTP_PORT} with zero HTTP-surface changes. The port is
+      # (APACHE_PORT != 443): plain HTTP on any Host — the gates read that posture from apache
+      # itself and curl http://localhost:${AIO_TEST_APACHE_PORT}. The port is
       # docker-transport-only by design.
       AIO_TEST_APACHE_PORT: "11000"
       # The testbed's mastercontainer, at the suite tag resolved above; its siblings follow its tag.

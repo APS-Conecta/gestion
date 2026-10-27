@@ -69,6 +69,34 @@ occ() { nc_exec --user www-data -- php /var/www/html/occ "$@"; }
 # docker cp takes the container name itself, so it cannot ride nc_exec; same resolution, two sites
 # (lib.sh's certificate copy, phase 41's welcome tree).
 nc_cp() { nc_container; docker cp "$1" "$NC_CONTAINER:$2"; }  # HOST_PATH CONTAINER_PATH
+#
+#    The suite's public URL, the base every gate curl rides (#163, D10: the gates curl the suite
+#    the way its users reach it, from the host itself). Apache's own environment decides, never
+#    .env's HTTP_PORT (the template ships 8180, and a clinic's front is 443): APACHE_PORT other
+#    than 443 is the loopback reverse-proxy posture — Caddy answers any Host on that port
+#    (Containers/apache/start.sh) — and 443 is the suite's own name over TLS, NC_DOMAIN (Caddy's
+#    site and Nextcloud's overwritehost). By IP the installer's CA rides along: --cacert REPLACES
+#    curl's bundle, so a domain keeps the system trust (ACME). Lazy like the seam above, resolved
+#    once in the caller's shell — never inside $(…) — and its FAIL is its own, on stderr.
+SUITE_CA="${SUITE_CA:-/opt/aps-conecta/certificados/ca/aps-conecta-ca.crt}"
+suite_url_resolve() {  # sets SUITE_URL and SUITE_CURL, or prints a FAIL and returns 1
+  local env port dom
+  env="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' aps-conecta-apache 2>/dev/null)" \
+    || { echo "FAIL: cannot read aps-conecta-apache's environment (docker inspect) — the suite's public URL is unknown" >&2; return 1; }
+  port="$(printf '%s\n' "$env" | sed -n 's/^APACHE_PORT=//p' | head -1)"
+  dom="$(printf '%s\n' "$env" | sed -n 's/^NC_DOMAIN=//p' | head -1)"
+  SUITE_CURL=(--connect-timeout 10 --max-time 30)
+  if [ "${port:-443}" != 443 ]; then SUITE_URL="http://localhost:$port"; return 0; fi
+  [ -n "$dom" ] || { echo "FAIL: aps-conecta-apache carries no NC_DOMAIN — the suite's public URL is unknown" >&2; return 1; }
+  SUITE_URL="https://$dom"
+  # host/aps-conecta's IPV4_RE (the install by IP accepts nothing else); this file cannot source it
+  if [[ $dom =~ ^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])[.]){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$ ]]; then
+    [ -r "$SUITE_CA" ] \
+      || { echo "FAIL: the suite answers by IP ($SUITE_URL) but its CA $SUITE_CA is not readable — run: sudo aps-conecta revalidate" >&2; return 1; }
+    SUITE_CURL+=(--cacert "$SUITE_CA")
+  fi
+}
+suite_curl() { curl "${SUITE_CURL[@]}" "$@"; }
 
 # 4. The clinic this stack serves, for the callers that need one — seed.sh, install.sh and
 #    divergence.sh. A function, not a check at source time: smoke.sh, office-smoke.sh,
@@ -179,6 +207,7 @@ FIX
 #!/bin/sh
 echo "$*" >> "$STUB_CALLS"
 [ "$1" = ps ] && printf '%s\n' $STUB_NAMES
+if [ "$1" = inspect ]; then [ "${STUB_ENV:-absent}" = absent ] && exit 1; printf '%b\n' "$STUB_ENV"; fi
 exit 0
 STUB
   chmod +x "$tmp/bin/docker"
@@ -215,6 +244,29 @@ STUB
   }
   ri_arm 'overrides detection' 'make up' 'NC_CONTAINER=apsconecta-gestion-nextcloud-1' aps-conecta-nextcloud
   ri_arm 'make up' 'overrides detection' ''
+  # the suite URL arms (#163): the gates' base URL is apache's own posture, never .env's HTTP_PORT —
+  # the fixture carries the template's 8180 in every arm. A stub inspect answers apache's env
+  # ($STUB_ENV, "absent" = no container); sourcing alone runs no docker; the CA rides only an IP.
+  su_arm() {  # WANT(url, or the FAIL text) CACERT(yes|no|fail) STUB_ENV CA_FILE(1|0)
+    local want="$1" ca="$2" envs="$3" out
+    printf 'HTTP_PORT=8180\n' > "$fx"; : > "$tmp/calls"; rm -f "$tmp/ca.crt"; [ "$4" = 0 ] || : > "$tmp/ca.crt"
+    out="$( export PATH="$tmp/bin:$PATH" STUB_ENV="$envs" STUB_CALLS="$tmp/calls" SUITE_CA="$tmp/ca.crt"
+      cd "$tmp" && . ./scripts/env.sh 2>/dev/null
+      [ ! -s "$tmp/calls" ] || exit 1
+      if [ "$ca" = fail ]; then suite_url_resolve 2>&1 && exit 1; exit 0; fi
+      suite_url_resolve || exit 1
+      case " ${SUITE_CURL[*]} " in *" --cacert $tmp/ca.crt "*) c=yes ;; *) c=no ;; esac
+      printf '%s %s' "$SUITE_URL" "$c" )" \
+      && case "$ca" in fail) [[ $out == *"$want"* ]] ;; *) [ "$out" = "$want $ca" ] ;; esac \
+      || { echo "self-test FAIL: suite URL arm — want «$want» (cacert $ca) for [$envs], got «$out»" >&2; rc=1; }
+  }
+  su_arm http://localhost:11000 no 'APACHE_PORT=11000\nNC_DOMAIN=aio-ci.invalid' 1
+  su_arm https://203.0.113.10 yes 'APACHE_PORT=443\nNC_DOMAIN=203.0.113.10' 1
+  su_arm https://clinica.example no 'APACHE_PORT=443\nNC_DOMAIN=clinica.example' 1
+  su_arm https://clinica.example no 'NC_DOMAIN=clinica.example' 1
+  su_arm "its CA $tmp/ca.crt is not readable" fail 'APACHE_PORT=443\nNC_DOMAIN=203.0.113.10' 0
+  su_arm 'carries no NC_DOMAIN' fail 'APACHE_PORT=443' 1
+  su_arm "cannot read aps-conecta-apache's environment" fail absent 1
   # the multi-line refusal arm: a quoted value split across lines must fail the whole load
   printf 'BROKEN_MULTI="first half of a value\n' > "$fx"
   printf 'still inside the quote"\nX=1\n' >> "$fx"
