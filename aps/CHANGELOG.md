@@ -11,7 +11,7 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ## [Unreleased]
 
-## [0.6.0] — 2026-10-26
+## [0.6.0] — 2026-10-27
 
 ### Added
 
