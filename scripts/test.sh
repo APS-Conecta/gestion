@@ -1679,6 +1679,39 @@ for path in sorted(p for p in pathlib.Path(".").rglob("*")
             print(f"{path}: {why} — apps.py says the failure once, on stderr, beside every reader"); sys.exit(1)
 print("ok")'
 check bash scripts/env.sh --self-test
+# #163: both gates curl the suite's public URL — by IP with the installer's CA — never .env's HTTP_PORT
+# (set to the template's 8180 here). Each gate runs against a stub docker (apache on 443 by IP; checks
+# 1-4 and the connector answer) and a stub curl that records its argv and answers nothing; the gate's
+# FIRST curl is asserted, whatever its verdict.
+public_url_cases() {
+  local tmp gate first
+  tmp="$(mktemp -d)"; mkdir "$tmp/bin"; : > "$tmp/ca.crt"
+  cat > "$tmp/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in
+  ps*) echo aps-conecta-nextcloud ;;
+  inspect*aps-conecta-apache*) printf 'APACHE_PORT=443\nNC_DOMAIN=203.0.113.10\n' ;;
+  *"occ status"*) echo '{"installed":true}' ;;
+  *"config:app:get eurooffice enabled"*) echo yes ;;
+  *redis-cli*) echo PONG ;;
+esac
+exit 0
+STUB
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "$CURL_LOG"\nexit 7\n' > "$tmp/bin/curl"
+  chmod +x "$tmp/bin/docker" "$tmp/bin/curl"
+  for gate in smoke:/status.php office-smoke:/eurooffice/healthcheck; do
+    : > "$tmp/curl.log"
+    PATH="$tmp/bin:$PATH" CURL_LOG="$tmp/curl.log" SUITE_CA="$tmp/ca.crt" HTTP_PORT=8180 \
+      bash "scripts/${gate%%:*}.sh" >/dev/null 2>&1
+    first="$(head -1 "$tmp/curl.log")"
+    case " $first " in
+      *" --cacert $tmp/ca.crt "*" https://203.0.113.10${gate#*:} "*|*" https://203.0.113.10${gate#*:} "*" --cacert $tmp/ca.crt "*) ;;
+      *) echo "public URL: ${gate%%:*}'s first curl is «$first», not https://203.0.113.10${gate#*:} with the CA" >&2; rm -rf "$tmp"; return 1 ;;
+    esac
+  done
+  rm -rf "$tmp"
+}
+check public_url_cases
 # #197: the template ships no Nextcloud container and no caller restates its default or guards it
 # (`:-` `-` `:?` `?`) — env.sh section 3 is the one place it is decided. git grep exits 1 on no
 # match and 128 on error, so only a real "none found" passes (a tree without git is red, not green).

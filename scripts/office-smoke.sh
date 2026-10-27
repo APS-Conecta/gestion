@@ -36,12 +36,6 @@ set -euo pipefail
 # shellcheck source=env.sh
 . "$(dirname "$0")/env.sh"
 
-# The apache surface every smoke curl rides — smoke's own key and default (smoke.sh sets the
-# same line; its first curl consumer is check 5, /status.php).
-# Under AIO the DS answers behind apache's /eurooffice route, never a publish of its own, so the
-# compose-era OFFICE_PORT require retired with the compose legs.
-HTTP_PORT="${HTTP_PORT:-8180}"
-
 
 # Require the eurooffice connector — the sole office backend (AD-5). An app is enabled iff its
 # appconfig `enabled` value is "yes".
@@ -49,12 +43,14 @@ HTTP_PORT="${HTTP_PORT:-8180}"
   || { echo "FAIL: eurooffice connector not enabled — run: make install"; exit 1; }
 
 echo "Office backend: Euro-Office (eurooffice)"
+# the suite's public URL, the base smoke rides too (env.sh, #163)
+suite_url_resolve || exit 1
 
 
 # The public-path healthcheck — through apache, never the DS's own port (#8433's exact leg: this
 # is the URL that goes dark on hairpin-NAT / split-DNS breakage while the container stays green).
-curl -sf "http://localhost:${HTTP_PORT}/eurooffice/healthcheck" >/dev/null \
-  || { echo "FAIL: Euro-Office /healthcheck not reachable through the public path (http://localhost:${HTTP_PORT}/eurooffice) — on a clinic, check the reverse-proxy/hairpin route (D10); on the probe, the loopback apache"; exit 1; }
+suite_curl -sf "$SUITE_URL/eurooffice/healthcheck" >/dev/null \
+  || { echo "FAIL: Euro-Office /healthcheck not reachable through the public path ($SUITE_URL/eurooffice)$SUITE_D10"; exit 1; }
 
 
 # --check proves the whole wire at once: healthcheck + JWT + the version floor + a real docx

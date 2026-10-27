@@ -9,8 +9,6 @@ set -uo pipefail
 # shellcheck source=env.sh
 . "$(dirname "$0")/env.sh"
 
-HTTP_PORT="${HTTP_PORT:-8180}"
-
 fail() { echo "FAIL: $*"; exit 1; }
 
 # 1. nextcloud container running (exec would hang/err on a down stack — detect first). Detection
@@ -26,6 +24,8 @@ nc_container   # once: the occ calls below run in pipes and $(…), whose cache 
 # 2. Nextcloud installed + reachable via occ.
 occ status --output=json 2>/dev/null | grep -q '"installed":true' \
   || fail "occ status: Nextcloud not installed / not reachable"
+# every HTTP check below rides the suite's public URL (env.sh, #163) — resolved once, here
+suite_url_resolve || exit 1
 
 # 3. PostgreSQL accepting connections. Direct docker exec against the AIO sibling's fixed name —
 # these two cannot ride the seam (it targets the nextcloud container) and need no compose context.
@@ -42,10 +42,10 @@ docker exec aps-conecta-database pg_isready -q 2>/dev/null \
 # branding regression there is: unauthenticated, and if `theming productName` is unset it says
 # "Nextcloud" to anyone who asks. The same string leaks through OC.theme, the OCS capabilities and
 # the public-share button, so this one grep covers the family.
-body=$(curl -s -w '\n%{http_code}' "http://localhost:${HTTP_PORT}/status.php" 2>/dev/null || echo $'\n000')
+body=$(suite_curl -s -w '\n%{http_code}' "$SUITE_URL/status.php" 2>/dev/null || echo $'\n000')
 code=${body##*$'\n'}
 body=${body%$'\n'*}
-[ "$code" = "200" ] || fail "GET http://localhost:${HTTP_PORT}/status.php returned HTTP ${code} (expected 200)"
+[ "$code" = "200" ] || fail "GET $SUITE_URL/status.php returned HTTP ${code} (expected 200)$SUITE_D10"
 if printf '%s' "$body" | grep -qi 'nextcloud'; then
   fail "branding leak: /status.php still says Nextcloud — is 'occ config:app:set theming productName' set? Body: ${body}"
 fi
@@ -66,7 +66,7 @@ jobs_mode=$(occ config:app:get core backgroundjobs_mode 2>/dev/null | tr -d '\r'
 
 # Fetch the login page ONCE — checks 7 and 9 both read it, and it is the only unauthenticated page
 # that carries both the manifest link and the login form's initial state.
-login_html=$(curl -s -w '\n%{http_code}' "http://localhost:${HTTP_PORT}/login" 2>/dev/null || echo $'\n000')
+login_html=$(suite_curl -s -w '\n%{http_code}' "$SUITE_URL/login" 2>/dev/null || echo $'\n000')
 login_code=${login_html##*$'\n'}
 login_html=${login_html%$'\n'*}
 [ "$login_code" = "200" ] || fail "GET /login returned HTTP ${login_code} (expected 200)"
@@ -77,8 +77,8 @@ login_html=${login_html%$'\n'*}
 # at themes/<theme>/core/img/manifest.json, which URLGenerator::imagePath() prefers over core's —
 # and being static, its failure mode is DRIFT from `occ theming:config`, not absence. So compare
 # against the app's generated manifest, which is the source of truth.
-theme_man=$(curl -s "http://localhost:${HTTP_PORT}/apps/theming/manifest" 2>/dev/null)
-static_man=$(curl -s "http://localhost:${HTTP_PORT}/themes/apsconecta/core/img/manifest.json" 2>/dev/null)
+theme_man=$(suite_curl -s "$SUITE_URL/apps/theming/manifest" 2>/dev/null)
+static_man=$(suite_curl -s "$SUITE_URL/themes/apsconecta/core/img/manifest.json" 2>/dev/null)
 drift=$(printf '%s\n---SPLIT---\n%s' "$theme_man" "$static_man" | python3 -c '
 import sys, json
 raw = sys.stdin.read().split("\n---SPLIT---\n")
@@ -215,25 +215,28 @@ signed=$(nc_exec --user www-data -- sh -c \
 #
 # Under AIO the screen is structurally unreachable by HTTP: the entrypoint sets overwritehost=
 # <domain>, and NC redirects an untrusted Host to the canonical base URL BEFORE the legacy 400 can
-# render (measured on the probe bed, FINDINGS.md P4 — even a direct request to the apache
-# container's internal httpd bounces). AIO's own protection of the legacy class IS that bounce,
-# so there the check asserts (a) the bounce still holds — a drift to the raw page means the legacy
-# screens became HTTP-reachable, and this goes red for exactly that — and (b) the two branding
-# inputs the legacy path reads when it does render: the active theme's guest.css and defaults.php,
-# read in-container through the seam (the same contract style as test.sh's vendor-block).
-if [ -n "$(occ config:system:get overwritehost 2>/dev/null | tr -d '\r')" ]; then
-  _bounce=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: untrusted.invalid' "http://localhost:${HTTP_PORT}/" 2>/dev/null)
-  case "${_bounce:-000}" in
-    302) : ;;
-    *) fail "untrusted-host requests no longer bounce to the canonical domain (HTTP ${_bounce:-none}, expected 302) — the legacy render class became HTTP-reachable; eyeball whether its screens are still branded (ADR-0004)" ;;
-  esac
+# render (measured on the probe bed, FINDINGS.md P4, apache's internal httpd included). That bounce
+# IS AIO's protection of the legacy class, so the check asks it of the internal httpd from inside
+# the apache container — the leg every posture shares; a clinic's 443 front serves only the suite's
+# own name (#163) — and asserts (a) it still holds: a drift to the raw page means the legacy screens
+# became HTTP-reachable; (b) the two branding inputs the legacy path reads when it does render: the
+# active theme's guest.css and defaults.php, read in-container through the seam (test.sh's
+# vendor-block style).
+_oh="$(occ config:system:get overwritehost 2>/dev/null | tr -d '\r')"
+if [ -n "$_oh" ]; then
+  _resp=$(docker exec aps-conecta-apache sh -c 'printf "GET / HTTP/1.0\r\nHost: untrusted.invalid\r\n\r\n" | nc -w 5 127.0.0.1 8000' 2>/dev/null | tr -d '\r')
+  [ -n "$_resp" ] || fail "check 11: no answer from apache's internal httpd (docker exec aps-conecta-apache … nc 127.0.0.1 8000) — apache down or no nc in its image, not a lost bounce"
+  _status=$(printf '%s\n' "$_resp" | head -1 | cut -d' ' -f2)
+  _location=$(printf '%s\n' "$_resp" | sed -n 's/^[Ll]ocation: //p' | head -1)
+  [ "$_status" = 302 ] && [[ $_location == "https://$_oh/"* ]] \
+    || fail "untrusted-host requests no longer bounce to https://$_oh/ (status ${_status:-none}, Location ${_location:-none}) — the legacy render class became HTTP-reachable (ADR-0004)"
   _theme="$(occ config:system:get theme 2>/dev/null | tr -d '\r')"
   nc_exec --user www-data -- test -f "/var/www/html/themes/${_theme:-apsconecta}/core/css/guest.css" 2>/dev/null \
     || fail "the active theme ships no core/css/guest.css — the legacy render path cannot be branded (ADR-0004)"
   nc_exec --user www-data -- test -f "/var/www/html/themes/${_theme:-apsconecta}/defaults.php" 2>/dev/null \
     || fail "the active theme ships no defaults.php — the legacy render path would name the vendor (ADR-0004)"
 else
-untrusted=$(curl -s -H 'Host: untrusted.invalid' "http://localhost:${HTTP_PORT}/" 2>/dev/null)
+untrusted=$(suite_curl -s -H 'Host: untrusted.invalid' "$SUITE_URL/" 2>/dev/null)
 printf '%s' "$untrusted" | grep -q 'themes/apsconecta/core/css/guest.css' \
   || fail "legacy-rendered screens carry no theme CSS — themes/apsconecta/core/css/guest.css is not linked on the untrusted-domain screen (maintenance, upgrade, 429 and the setup screens render through the same path)"
 # Two vendor URLs are EXEMPT and are listed here rather than assumed (CONTEXT.md, "vendor
@@ -328,7 +331,7 @@ fi
 # without writing anything. The password never touches argv — curl reads stdin.
 if [ "${SMOKE_ADMIN_PROBE:-0}" = 1 ]; then
 smoke_jar="$(mktemp)"
-smoke_login_page=$(curl -s -c "$smoke_jar" "http://localhost:${HTTP_PORT}/login" 2>/dev/null)
+smoke_login_page=$(suite_curl -s -c "$smoke_jar" "$SUITE_URL/login" 2>/dev/null)
 smoke_token=$(printf '%s' "$smoke_login_page" | grep -oE 'data-request-?token="[^"]*"' | head -1 | cut -d'"' -f2)
 [ -n "$smoke_token" ] || fail "check 15: no request token on /login — cannot probe admin settings"
 # form-encode every value: the token is base64 (a raw + decodes to a space and the login fails its
@@ -340,9 +343,9 @@ enc() { printf '%s' "$1" | python3 -c 'import sys,urllib.parse; print(urllib.par
 # none: name the instance's own first trusted domain.
 smoke_origin="http://$(occ config:system:get trusted_domains 0 2>/dev/null | tr -d '\r')"
 login=$(printf 'user=%s&password=%s&requesttoken=%s' "$(enc "$NEXTCLOUD_ADMIN_USER")" "$(enc "${NEXTCLOUD_ADMIN_PASSWORD:-}")" "$(enc "$smoke_token")" \
-  | curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -b "$smoke_jar" -c "$smoke_jar" -H "Origin: $smoke_origin" \
+  | suite_curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -b "$smoke_jar" -c "$smoke_jar" -H "Origin: $smoke_origin" \
       -H 'Content-Type: application/x-www-form-urlencoded;charset=UTF-8' --data-binary @- \
-      "http://localhost:${HTTP_PORT}/login" 2>/dev/null)
+      "$SUITE_URL/login" 2>/dev/null)
 # Nextcloud 34 answers a login POST with 303 either way (B-031): only the target tells success
 # from a refusal, which goes back to /login (measured on the lab: 303 → /login?direct=1&user=…).
 code=${login%% *}; where=${login#* }
@@ -352,7 +355,7 @@ case "$code" in
   *) fail "check 15: admin login answered HTTP $code — cannot probe admin settings" ;;
 esac
 # a fresh token for authenticated POSTs (the login-page token was consumed by the login)
-smoke_page=$(curl -s -b "$smoke_jar" -c "$smoke_jar" "http://localhost:${HTTP_PORT}/index.php/apps/desktop_workspace/" 2>/dev/null)
+smoke_page=$(suite_curl -s -b "$smoke_jar" -c "$smoke_jar" "$SUITE_URL/index.php/apps/desktop_workspace/" 2>/dev/null)
 smoke_token=$(printf '%s' "$smoke_page" | grep -oE 'data-request-?token="[^"]*"' | head -1 | cut -d'"' -f2)
 exp_dis=$(occ config:app:get desktop_workspace experimental_files_disabled 2>/dev/null | tr -d '\r'); [ -n "$exp_dis" ] || exp_dis=no
 read_exp_grp=$(occ config:app:get desktop_workspace experimental_files_groups 2>/dev/null | tr -d '\r'); [ -n "$read_exp_grp" ] || read_exp_grp='[]'
@@ -364,9 +367,9 @@ fbt=$(occ config:app:get desktop_workspace show_files_new_tab 2>/dev/null | tr -
 smoke_body="$(mktemp)"
 smoke_post() {  # PATH PARAMS(already encoded) -> HTTP code
   printf '%s&requesttoken=%s' "$2" "$smoke_token" > "$smoke_body"
-  curl -s -o /dev/null -w '%{http_code}' -b "$smoke_jar" -H "requesttoken: $smoke_token" \
+  suite_curl -s -o /dev/null -w '%{http_code}' -b "$smoke_jar" -H "requesttoken: $smoke_token" \
     -H 'Content-Type: application/x-www-form-urlencoded;charset=UTF-8' --data-binary "@$smoke_body" \
-    "http://localhost:${HTTP_PORT}/index.php/apps/desktop_workspace/$1" 2>/dev/null
+    "$SUITE_URL/index.php/apps/desktop_workspace/$1" 2>/dev/null
 }
 for probe in \
   "settings/admin|experimental_disabled=$exp_dis&experimental_groups=$exp_grp&multi_window_apps=$multi&user_decorations_enabled=$deco" \

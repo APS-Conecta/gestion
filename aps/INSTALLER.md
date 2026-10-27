@@ -189,10 +189,11 @@ domain to check.
 ## 8. The .env the gates ride
 
 The clinic `.env` (in the package root) is minimal by design — the wizard owns the stack, so
-the compose-era keys do not exist under AIO. The keys that matter to the gates:
+the compose-era keys do not exist under AIO. What the gates read:
 
-- `HTTP_PORT=443` — the public apache port; `smoke` and `revalidate` curl it
-  (`http://localhost:${HTTP_PORT}/…`). Set it once; the gates read it every run.
+- **The suite's address, from apache itself** — `smoke`, `office-smoke` and `revalidate` curl
+  `https://<su-dominio>/…` (or `https://<ip>/…`, trusting the installer's CA, which is why they run
+  as root), the leg §7 makes answer from this server. No `.env` key sets it.
 - **The office keys are absent on purpose**: under AIO the wizard's entrypoint owns the public
   document-server URL and the JWT secret on every boot; by IP, `14-office.sh` adds the two internal
   URLs (§13). There is nothing office-shaped to configure on a clinic — and nothing map-shaped

@@ -64,6 +64,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-038 | found reading act_respaldo for A-036: with two archives on the drive, «Respaldo completo creado (…)» would name the oldest | act_respaldo named the list's first line — the oldest archive | the newest line is named (`sort -r \| head -1`); the act46 shim lists two archives oldest first and the whole-run arm names the newest |
 
+| A-039 | `aps-conecta revalidate` — the operator's check the silent install names, and the last leg of actualizar — could not pass on a clinic: Clean boot's IP job, given the step (#163, run 40435991336), reddened «GET http://localhost:8180/status.php returned HTTP 000» and the office healthcheck the same | smoke and office-smoke curled `http://localhost:${HTTP_PORT:-8180}`, the compose-era front, the 8180 from the template `.env` (or the default): only the testbed's loopback posture (11000) ever matched, so every green run was the testbed's; INSTALLER §8 described a key nothing writes | the gates read apache's own posture (`suite_url_resolve`, scripts/env.sh — the reasoning rides the comment there); check 11 asks the bounce of apache's internal httpd (smoke.sh); env.sh's arms pin the choice with the template's 8180 present, test.sh asserts both gates' first curl, and the IP job runs revalidate |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and
