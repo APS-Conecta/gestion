@@ -256,7 +256,8 @@ suite is up, the lock exists and the backup is configured — then it prints the
 candidate version per application), takes a **full backup first** and stops if it fails, fetches
 and verifies the newest compatible releases into a new lock, applies them one application at a
 time (store applications with one scoped `occ app:update` each, the store closed to everything
-else), moves the lock only when everything succeeded, and revalidates.
+else), uninstalls last every release application whose row left the manifest (`occ app:remove`,
+its lock row dropped), moves the lock only when everything succeeded, and revalidates.
 
 `sudo aps-conecta actualizar --revisar` prints the plan and **writes nothing** — the way to see
 what would move before moving anything. On any failure the lock is unchanged, the failing

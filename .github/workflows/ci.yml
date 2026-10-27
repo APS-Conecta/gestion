@@ -60,8 +60,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # No Makefile moved (gestion's dev lifecycle), no desktop_workspace pin seat (tests/ stayed in
-      # gestion).
+      # No Makefile moved (gestion's dev lifecycle).
       # The gate is the script. The signer rides along: package-release's self-test is real
       # crypto over a throwaway keypair, and it is the same apt package the clinic verifies
       # with (D7).

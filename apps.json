@@ -10,7 +10,6 @@
     {"id": "totem", "source": "own", "repo": "APS-Conecta/totem", "optional": "off", "containers": [], "release": true, "name": "Tótem", "summary": "Turnos de atención en sala de espera: el paciente toma su turno y la pantalla lo llama."},
     {"id": "territorio", "source": "own", "repo": "APS-Conecta/territorio", "optional": false, "containers": [], "release": true, "name": "Territorio", "summary": "Mapa territorial: unidades vecinales y establecimientos."},
     {"id": "spreed", "source": "fork", "repo": "APS-Conecta/spreed", "optional": false, "containers": ["aps-conecta-talk"], "release": true, "name": "Talk", "summary": "Chat y videollamadas internas."},
-    {"id": "desktop_workspace", "source": "fork", "repo": "APS-Conecta/desktop_workspace", "optional": false, "containers": [], "release": true},
     {"id": "notify_push", "source": "store", "optional": false, "containers": ["aps-conecta-notify-push"]},
     {"id": "side_menu", "source": "fork", "repo": "APS-Conecta/side_menu", "optional": false, "containers": [], "release": true}
 ]

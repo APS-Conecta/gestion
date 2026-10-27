@@ -190,8 +190,7 @@ three optional apps chosen, and the ticket's six criteria, each a ✓/✗ line w
 path (`/tmp/vm-acceptance.*`): the verified bootstrap, «aps-conecta estado», the suite's answer
 through the installer's CA (and its refusal without it), a planilla user over OCS, every
 default app installed from its channel (own/fork from their releases at the locked tag, store
-apps enabled) with the functional opens (notify_push, the office connector, the desktop's
-route), each chosen optional installed and recorded, buscador's PDF (or the manifest row it
+apps enabled) with the functional opens (notify_push, the office connector), each chosen optional installed and recorded, buscador's PDF (or the manifest row it
 still lacks — #149), and «actualizar --revisar» writing nothing. `--solo-chequeos` re-runs the
 checks on an installed VM; `--sin-datos` spares a small VM the national masters;
 `--sin-respaldo` drives the wizard without the daily backup — criterion 6 will red, because

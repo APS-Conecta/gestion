@@ -5177,11 +5177,9 @@ def selftest():
                                      ("totem", "Tótem", fila_totem["summary"], False))
 
                   and {c for c, _n in CONTENEDORES_SUITE} == set(aio_set) | {"aps-conecta-nextcloud"})
-            # an unnamed fork app (desktop_workspace as #37 makes it) — and intravox
-            # stripped of its name, so the rows read are the fixture's, filtered by name, not by VENDOR
-            sin_nombre = [{"id": a["id"], "source": "fork", "repo": f"APS-Conecta/{a['id']}", "optional": False,
-                           "containers": []} if a["id"] == "desktop_workspace"
-                          else {k: v for k, v in a.items() if k not in ("name", "summary")} if a["id"] == "intravox"
+            # intravox stripped of its name (side_menu is already an unnamed fork row), so the
+            # rows read are the fixture's, filtered by name, not by VENDOR
+            sin_nombre = [{k: v for k, v in a.items() if k not in ("name", "summary")} if a["id"] == "intravox"
                           else a for a in SUITE_APPS]
             with open(os.path.join(tmp, "apps-sin-nombre.json"), "w", encoding="utf-8") as fh:
                 json.dump(sin_nombre, fh)
@@ -5730,7 +5728,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
             fixture_store = os.path.join(tmp, "fixture-store")
             fixture_versions = {"intravox": ("v3.2.0", "3.2.0"), "eurooffice": ("v11.0.7", "11.0.7"),
                                 "epidemiologia": ("v0.12.0", "0.12.0"), "territorio": ("v0.80.0", "0.80.0"),
-                                "desktop_workspace": ("v0.19.0", "0.19.0"), "side_menu": ("v6.0.1", "6.0.1"),
+                                "side_menu": ("v6.0.1", "6.0.1"),
                                 "spreed": ("v24.0.6", "24.0.6")}   # #145: the fork's first release
             filas_lock = {}
             for fila in SUITE_APPS:

@@ -141,12 +141,6 @@ check_user_login() {  # $1 = address, $2 = CA, $3 = uid, $4 = password — OCS, 
     | "$VMA_CURL" -fsS -K - --cacert "$2" -H 'OCS-APIRequest: true' \
         "https://$1/ocs/v2.php/cloud/user?format=json" 2>/dev/null | grep -q "\"id\":\"$3\""
 }
-check_route_alive() {  # $1 = address, $2 = CA, $3 = path — the «it opens» probe (route answers)
-  case "$("$VMA_CURL" -sS -o /dev/null -w '%{http_code}' --cacert "$2" "https://$1$3" 2>/dev/null)" in
-    200|302|303|401) return 0 ;;
-    *) return 1 ;;
-  esac
-}
 
 # The sealed sheet's third column is the password (usuario;nombre;contraseña;primer_admin).
 sealed_password() {  # $1 = uid
@@ -250,13 +244,11 @@ check_apps() {  # $1 = the chosen optional ids, $2 = address, $3 = CA — one ve
   else
     verdict fail "la app de aterrizaje" "es «$(occ config:system:get defaultapp 2>/dev/null || echo '?')», no intravox (ADR-0010)"
   fi
-  # the two functional opens Clean boot also runs, plus the desktop's route probe
+  # the two functional opens Clean boot also runs
   if occ notify_push:self-test >/dev/null 2>&1; then verdict ok "notify_push responde su self-test"
   else verdict fail "notify_push" "occ notify_push:self-test — el empuje de notificaciones"; fi
   if occ eurooffice:documentserver --check >/dev/null 2>&1; then verdict ok "la oficina responde (eurooffice --check)"
   else verdict fail "la oficina" "occ eurooffice:documentserver --check — #140/#147: la primera instalación enrojece sin su arreglo"; fi
-  if check_route_alive "$2" "$3" /index.php/apps/desktop_workspace/; then verdict ok "el escritorio abre"
-  else verdict fail "el escritorio" "/index.php/apps/desktop_workspace/ no contestó 200/302/401"; fi
 }
 
 check_optional_record() {  # $1 = the chosen ids — the wizard's record must name each choice
@@ -585,10 +577,6 @@ PY
   printf '{"ocs":{"data":{"id":"otra.persona"}}}\n' > "$SHIM_STATE/user.body"
   t "user login: red when the id is not the session's" 1 'check_user_login 10.0.0.9 "$VMA_WORK/ca.crt" ana.prueba CAFE-secret'
   printf '{"ocs":{"data":{"id":"ana.prueba"}}}\n' > "$SHIM_STATE/user.body"
-  t "route alive: 200 answers alive" 0 'check_route_alive 10.0.0.9 "$VMA_WORK/ca.crt" /x'
-  printf '502\n' > "$SHIM_STATE/curl.code"
-  t "route alive: a 502 is not alive" 1 'check_route_alive 10.0.0.9 "$VMA_WORK/ca.crt" /x'
-  printf '200\n' > "$SHIM_STATE/curl.code"
   t "estado: green when the CLI answers 0" 0 'check_estado'
   printf '1\n' > "$SHIM_STATE/estado.rc"
   t "estado: red when the CLI answers 1" 1 'check_estado'

@@ -1632,6 +1632,7 @@ act_plan() {  # current and candidate per app (#46's plan, --revisar's whole leg
     app="${fila%%$'\t'*}"; resto="${fila#*$'\t'}"
     case "$resto" in
       omitida) printf '  %-18s no elegida (su fila del candado se conserva)\n' "$app" ;;
+      retirada) printf '  %-18s ya no es parte de la suite — se desinstala\n' "$app" ;;
       *) actual="${resto%%$'\t'*}"; candidato="${resto#*$'\t'}"
          if [ "$actual" = "$candidato" ]; then
            printf '  %-18s %s  (sin cambios)\n' "$app" "${actual:--}"
@@ -1733,8 +1734,13 @@ act_traer() {  # the candidates into the NEW lock (#46, ADR-0017): the resolver 
 act_aplicar() {  # app by app (#46): the release rows through phase 12 itself — its own walk,
   # gates and re-impose discipline, reading the NEW lock (APS_APPS_LOCK), exactly the seam
   # ADR-0017 built — and the store rows through the scoped `occ app:update` (#42's posture:
-  # the store opens for one command at a time). ACT_FALLA names the app on the way out.
-  local salida rc=0
+  # the store opens for one command at a time); last, the apps whose lock rows the new lock
+  # dropped (#172: they left the manifest) are uninstalled. ACT_FALLA names the app on the way out.
+  local salida rc=0 retiradas
+  # the resolver drops exactly the rows whose app left the manifest, so the two locks' difference
+  # is that set — read before APS_APPS_LOCK points at the new lock below
+  retiradas="$(python3 -c 'import json,sys; v,n=(json.load(open(p))["apps"] for p in sys.argv[1:]); print("\n".join(sorted(set(v)-set(n))))' \
+                "$(act_lock)" "$(act_lock_next)")" || { ACT_FALLA="los candados no se pudieron comparar"; return 1; }
   salida="$( 
     set -e
     cd "$ROOT"
@@ -1763,6 +1769,21 @@ act_aplicar() {  # app by app (#46): the release rows through phase 12 itself �
       fi
       log "app $app → actualizada o ya en su versión (tienda abierta solo para ese comando)${out:+ — occ: $(printf '%s' "$out" | tr '\n' ' ' | tail -c 120)}"
     done < <(python3 "$HERE/../scripts/apps.py" repos)
+    # destroy last (#172): an earlier FAILED leaves the app, its data and the old lock as they
+    # were. An app whose code is already gone (a run that removed it, then failed before the
+    # promote) is skipped, so the run converges instead of refusing forever.
+    while IFS= read -r app; do
+      [ -n "$app" ] || continue
+      if ! occ app:getpath "$app" >/dev/null 2>&1; then
+        log "$app ya no está instalada — su fila sale del candado"
+        continue
+      fi
+      if ! out="$(occ app:remove "$app" 2>&1)"; then
+        log "FAILED $app — occ app:remove dijo: $(printf '%s' "$out" | tr '\n' ' ' | tail -c 300)"
+        exit 1
+      fi
+      log "app $app desinstalada: ya no es parte de la suite"
+    done <<< "$retiradas"
     # the run's last assertion (#46): the store closed again — every open above was scoped,
     # so the instance's standing value is what it always was; anything else is a red.
     tienda="$(occ config:system:get appstoreenabled 2>/dev/null || true)"
@@ -3255,6 +3276,8 @@ elif args[0] == "plan":
     print("territorio\tv0.79.0\tv0.80.0")
     print("suelo\tv3.5.0\tv3.5.0")
     print("farmacia\tomitida")
+    print("ausente\tretirada")
+    print("viejo\tretirada")
 else:  # actualizar
     if os.path.exists(os.path.join(act, "fetch-mala")):
         sys.stderr.write("FATAL: territorio: la firma de SHA256SUMS no verifica contra apps.pub "
@@ -3287,7 +3310,7 @@ PYEOF
     printf '#!/usr/bin/env bash\necho "PASS: %s stub"\nexit 0\n' "$g" > "$act/repo/scripts/$g.sh"
   done
   chmod +x "$act/repo/scripts/"*.sh
-  printf '{"nextcloud": "34.0.4", "apps": {"territorio": {"tag": "v0.79.0", "version": "0.79.0", "sha256": "x"}, "farmacia": {"tag": "v0.12.0"}}}\n' > "$act/home/apps.lock.json"
+  printf '{"nextcloud": "34.0.4", "apps": {"territorio": {"tag": "v0.79.0", "version": "0.79.0", "sha256": "x"}, "farmacia": {"tag": "v0.12.0"}, "viejo": {"tag": "v1.0.0"}, "ausente": {"tag": "v1.0.0"}}}\n' > "$act/home/apps.lock.json"
   cp "$act/home/apps.lock.json" "$act/lock.bytes"
   ( umask 077 && printf 'frase uno dos\n' > "$act/aio/master.pw" )
   printf 'talk=1\n' > "$act/aio/opciones"
@@ -3357,6 +3380,9 @@ case "\$1 \$2" in
       *"occ status"*) echo '{"installed":true,"version":"34.0.4"}' ;;
       *"config:app:get calendar"*) echo "4.7.15" ;;
       *"config:system:get appstoreenabled"*) echo "\${TIENDA:-0}" ;;
+      *"occ app:getpath viejo"*) echo /var/www/html/custom_apps/viejo ;;
+      *"occ app:getpath"*) exit 1 ;;
+      *"occ app:remove"*) if [ -e "$act/remove-mala" ]; then echo "viejo could not be removed"; exit 1; fi ;;
     esac ;;
 esac
 EOF
@@ -3450,6 +3476,16 @@ EOF
     '[ "$(grep -c "^docker inspect -f {{.Name}} {{if .State.Health}}{{.State.Health.Status}}{{end}} aps-conecta-nextcloud aps-conecta-apache" "$act/docker.log")" -eq 4 ] \
       && [ "$(grep -c "^docker exec aps-conecta-apache" "$act/docker.log")" -eq 4 ]'
 
+  # #172: the two rows the new lock dropped — viejo still installed, ausente already gone
+  check "actualizar (#172): the plan names each app that left the manifest; the run uninstalls the installed one LAST — after the store update — and skips the one already gone" \
+    'printf "%s" "$out" | grep -E -q "^  viejo +ya no es parte de la suite — se desinstala$" \
+      && printf "%s" "$out" | grep -E -q "^  ausente +ya no es parte de la suite — se desinstala$" \
+      && printf "%s" "$out" | grep -qF "app viejo desinstalada: ya no es parte de la suite" \
+      && printf "%s" "$out" | grep -qF "ausente ya no está instalada — su fila sale del candado" \
+      && grep -q "occ app:remove viejo$" "$act/docker.log" && ! grep -q "app:remove ausente" "$act/docker.log" \
+      && [ "$(grep -n "app:update calendar" "$act/docker.log" | head -1 | cut -d: -f1)" -lt "$(grep -n "app:remove viejo" "$act/docker.log" | head -1 | cut -d: -f1)" ] \
+      && ! grep -q "viejo\|ausente" "$act/home/apps.lock.json"'
+
   # a failed backup applies nothing: no fetch, no lock move
   : > "$act/aio.log"; : > "$act/resolver.log"; cp "$act/lock.bytes" "$act/home/apps.lock.json"
   rm -f "$act/aio.libre"   # a fresh session: the wizard's block is back
@@ -3489,6 +3525,15 @@ EOF
   check "actualizar: a failed apply names the app and the restore command, and moves neither lock" \
     '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "✗ territorio falló al aplicarse — nada más se aplicó, el candado no cambió" \
       && printf "%s" "$out" | grep -qF "→ para volver al estado anterior: el asistente de la suite (puerto 8080 de este servidor) → «Restaurar la copia de seguridad seleccionada»" \
+      && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes" && [ ! -e "$act/home/apps.lock.json.next" ]'
+
+  # #172: an uninstall that fails is a failed apply like any other — named, nothing promoted
+  : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"; cp "$act/lock.bytes" "$act/home/apps.lock.json"
+  rm -f "$act/aio.libre"; touch "$act/remove-mala"
+  out="$( id() { echo 0; }; act46 2>&1 )"; arc=$?; rm -f "$act/remove-mala"
+  check "actualizar (#172): a failed uninstall names the app and the restore command, and moves neither lock" \
+    '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "FAILED viejo — occ app:remove dijo: viejo could not be removed" \
+      && printf "%s" "$out" | grep -qF "✗ viejo falló al aplicarse — nada más se aplicó, el candado no cambió" \
       && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes" && [ ! -e "$act/home/apps.lock.json.next" ]'
 
   rm -f "$tshim/curl"; cp "$tmp/docker.prev46" "$tshim/docker"

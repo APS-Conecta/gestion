@@ -18,8 +18,9 @@
 # and enabled state for store rows (#42): the same seed produces the same instance. A store
 # app never moves after its install (nothing here updates); a release app moves only through
 # `aps-conecta actualizar` (#46), which is the only thing that moves the lock.
-# Removing an app from the manifest does NOT uninstall it — nothing here deletes — so a live
-# instance also needs `occ app:remove <id>` once, by hand.
+# Nothing here deletes: `aps-conecta actualizar` uninstalls a release app whose row left the
+# manifest (its lock row drops, #172); a store app that leaves it needs `occ app:remove <id>`
+# once, by hand.
 phase_begin "12-apps" "apps this instance runs"
 
 # An unreadable manifest is reported by apps.py itself — its one Spanish line is already on
