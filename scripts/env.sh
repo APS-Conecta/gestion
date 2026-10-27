@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Shared preamble: source this first from anything that reads .env or runs `docker compose`.
-# Six jobs, all load-bearing; sourced by install.sh, seed.sh, divergence.sh, smoke.sh,
+# Seven jobs, all load-bearing; sourced by install.sh, seed.sh, divergence.sh, smoke.sh,
 # office-smoke.sh, seed-idempotent.sh, wait-ready.sh and (transitively) every provisioning phase.
 #
 # 1. cd to the repo root. Every `docker compose` call resolves compose.yaml from the process cwd, so
@@ -69,8 +69,8 @@ occ() { nc_exec --user www-data -- php /var/www/html/occ "$@"; }
 # docker cp takes the container name itself, so it cannot ride nc_exec; same resolution, two sites
 # (lib.sh's certificate copy, phase 41's welcome tree).
 nc_cp() { nc_container; docker cp "$1" "$NC_CONTAINER:$2"; }  # HOST_PATH CONTAINER_PATH
-#
-#    The suite's public URL, the base every gate curl rides (#163, D10: the gates curl the suite
+
+# 4. The suite's public URL, the base every gate curl rides (#163, D10: the gates curl the suite
 #    the way its users reach it, from the host itself). Apache's own environment decides, never
 #    .env's HTTP_PORT (the template ships 8180, and a clinic's front is 443): APACHE_PORT other
 #    than 443 is the loopback reverse-proxy posture — Caddy answers any Host on that port
@@ -79,26 +79,28 @@ nc_cp() { nc_container; docker cp "$1" "$NC_CONTAINER:$2"; }  # HOST_PATH CONTAI
 #    curl's bundle, so a domain keeps the system trust (ACME). Lazy like the seam above, resolved
 #    once in the caller's shell — never inside $(…) — and its FAIL is its own, on stderr.
 SUITE_CA="${SUITE_CA:-/opt/aps-conecta/certificados/ca/aps-conecta-ca.crt}"
-suite_url_resolve() {  # sets SUITE_URL and SUITE_CURL, or prints a FAIL and returns 1
+suite_url_resolve() {  # sets SUITE_URL, SUITE_CURL and SUITE_D10, or prints a FAIL and returns 1
   local env port dom
   env="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' aps-conecta-apache 2>/dev/null)" \
     || { echo "FAIL: cannot read aps-conecta-apache's environment (docker inspect) — the suite's public URL is unknown" >&2; return 1; }
   port="$(printf '%s\n' "$env" | sed -n 's/^APACHE_PORT=//p' | head -1)"
   dom="$(printf '%s\n' "$env" | sed -n 's/^NC_DOMAIN=//p' | head -1)"
-  SUITE_CURL=(--connect-timeout 10 --max-time 30)
+  SUITE_CURL=(--connect-timeout 10 --max-time 30); SUITE_D10=""
   if [ "${port:-443}" != 443 ]; then SUITE_URL="http://localhost:$port"; return 0; fi
   [ -n "$dom" ] || { echo "FAIL: aps-conecta-apache carries no NC_DOMAIN — the suite's public URL is unknown" >&2; return 1; }
   SUITE_URL="https://$dom"
   # host/aps-conecta's IPV4_RE (the install by IP accepts nothing else); this file cannot source it
   if [[ $dom =~ ^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])[.]){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$ ]]; then
     [ -r "$SUITE_CA" ] \
-      || { echo "FAIL: the suite answers by IP ($SUITE_URL) but its CA $SUITE_CA is not readable — run: sudo aps-conecta revalidate" >&2; return 1; }
+      || { echo "FAIL: the suite answers by IP ($SUITE_URL) but its CA $SUITE_CA is not readable — run the gates as root (sudo); if root cannot read it either, sudo aps-conecta provision --reponer re-runs the certificate step" >&2; return 1; }
     SUITE_CURL+=(--cacert "$SUITE_CA")
+  else
+    SUITE_D10=" — D10: sudo aps-conecta red --dominio $dom --arreglar"  # a domain not answering from the host itself is D10's hairpin leg
   fi
 }
 suite_curl() { curl "${SUITE_CURL[@]}" "$@"; }
 
-# 4. The clinic this stack serves, for the callers that need one — seed.sh, install.sh and
+# 5. The clinic this stack serves, for the callers that need one — seed.sh, install.sh and
 #    divergence.sh. A function, not a check at source time: smoke.sh, office-smoke.sh,
 #    seed-idempotent.sh and wait-ready.sh source this file too and must keep working on a checkout
 #    that has no clinic yet.
@@ -120,7 +122,7 @@ require_site() {
   }
 }
 
-# 5. Refuse to provision a clinic with the secrets this repository publishes.
+# 6. Refuse to provision a clinic with the secrets this repository publishes.
 #    env-init.sh generates all four from /dev/urandom, so a placeholder only survives a hand-copy
 #    of the template — which is exactly what README step 2 used to ask for, and what somebody does
 #    when `make setup` refuses because .env already exists. The result is a CESFAM whose admin
@@ -266,6 +268,8 @@ STUB
   su_arm https://clinica.example no 'NC_DOMAIN=clinica.example' 1
   su_arm "its CA $tmp/ca.crt is not readable" fail 'APACHE_PORT=443\nNC_DOMAIN=203.0.113.10' 0
   su_arm 'carries no NC_DOMAIN' fail 'APACHE_PORT=443' 1
+  su_arm https://clinica.example no 'APACHE_PORT=\nNC_DOMAIN=clinica.example' 1
+  su_arm 'carries no NC_DOMAIN' fail 'APACHE_PORT=443\nNC_DOMAIN=' 1
   su_arm "cannot read aps-conecta-apache's environment" fail absent 1
   # the multi-line refusal arm: a quoted value split across lines must fail the whole load
   printf 'BROKEN_MULTI="first half of a value\n' > "$fx"
@@ -319,7 +323,7 @@ if [ -f .env ]; then
   unset _line _key _val
 fi
 
-# 6. The engine's storage root, as staff will see it in Files (ADR-0016, IntraVox review L0-02).
+# 7. The engine's storage root, as staff will see it in Files (ADR-0016, IntraVox review L0-02).
 #    Phase 41 tells the engine the name (`occ config:app:set intravox groupfolder_name`) BEFORE
 #    `intravox:setup` creates the mount, then looks the mount up by it; divergence.sh declares it.
 #    After the loader, so .env (or the environment) can override it for a clinic that renamed by

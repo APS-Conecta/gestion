@@ -45,9 +45,7 @@ docker exec aps-conecta-database pg_isready -q 2>/dev/null \
 body=$(suite_curl -s -w '\n%{http_code}' "$SUITE_URL/status.php" 2>/dev/null || echo $'\n000')
 code=${body##*$'\n'}
 body=${body%$'\n'*}
-# a domain that does not answer from the host itself is D10's hairpin leg — its fix is named
-case "$SUITE_URL" in https://*[a-z]*) d10=" — D10: sudo aps-conecta red --dominio ${SUITE_URL#https://} --arreglar" ;; *) d10="" ;; esac
-[ "$code" = "200" ] || fail "GET $SUITE_URL/status.php returned HTTP ${code} (expected 200)$d10"
+[ "$code" = "200" ] || fail "GET $SUITE_URL/status.php returned HTTP ${code} (expected 200)$SUITE_D10"
 if printf '%s' "$body" | grep -qi 'nextcloud'; then
   fail "branding leak: /status.php still says Nextcloud — is 'occ config:app:set theming productName' set? Body: ${body}"
 fi
@@ -217,21 +215,21 @@ signed=$(nc_exec --user www-data -- sh -c \
 #
 # Under AIO the screen is structurally unreachable by HTTP: the entrypoint sets overwritehost=
 # <domain>, and NC redirects an untrusted Host to the canonical base URL BEFORE the legacy 400 can
-# render (measured on the probe bed, FINDINGS.md P4 — even a direct request to the apache
-# container's internal httpd bounces). AIO's own protection of the legacy class IS that bounce,
-# so there the check asserts (a) the bounce still holds — a drift to the raw page means the legacy
-# screens became HTTP-reachable, and this goes red for exactly that — and (b) the two branding
-# inputs the legacy path reads when it does render: the active theme's guest.css and defaults.php,
-# read in-container through the seam (the same contract style as test.sh's vendor-block). The
-# bounce is asked of that internal httpd, from inside the apache container: on a clinic's 443 front
-# Caddy serves only the suite's own name, so an untrusted Host never reaches Nextcloud there (#163).
-oh="$(occ config:system:get overwritehost 2>/dev/null | tr -d '\r')"
-if [ -n "$oh" ]; then
+# render (measured on the probe bed, FINDINGS.md P4, apache's internal httpd included). That bounce
+# IS AIO's protection of the legacy class, so the check asks it of the internal httpd from inside
+# the apache container — the leg every posture shares; a clinic's 443 front serves only the suite's
+# own name (#163) — and asserts (a) it still holds: a drift to the raw page means the legacy screens
+# became HTTP-reachable; (b) the two branding inputs the legacy path reads when it does render: the
+# active theme's guest.css and defaults.php, read in-container through the seam (test.sh's
+# vendor-block style).
+_oh="$(occ config:system:get overwritehost 2>/dev/null | tr -d '\r')"
+if [ -n "$_oh" ]; then
   _resp=$(docker exec aps-conecta-apache sh -c 'printf "GET / HTTP/1.0\r\nHost: untrusted.invalid\r\n\r\n" | nc -w 5 127.0.0.1 8000' 2>/dev/null | tr -d '\r')
-  st=$(printf '%s\n' "$_resp" | head -1 | cut -d' ' -f2)
-  loc=$(printf '%s\n' "$_resp" | sed -n 's/^[Ll]ocation: //p' | head -1)
-  [ "$st" = 302 ] && [[ $loc == "https://$oh/"* ]] \
-    || fail "untrusted-host requests no longer bounce to https://$oh/ (status ${st:-none}, Location ${loc:-none}) — the legacy render class became HTTP-reachable (ADR-0004)"
+  [ -n "$_resp" ] || fail "check 11: no answer from apache's internal httpd (docker exec aps-conecta-apache … nc 127.0.0.1 8000) — apache down or no nc in its image, not a lost bounce"
+  _status=$(printf '%s\n' "$_resp" | head -1 | cut -d' ' -f2)
+  _location=$(printf '%s\n' "$_resp" | sed -n 's/^[Ll]ocation: //p' | head -1)
+  [ "$_status" = 302 ] && [[ $_location == "https://$_oh/"* ]] \
+    || fail "untrusted-host requests no longer bounce to https://$_oh/ (status ${_status:-none}, Location ${_location:-none}) — the legacy render class became HTTP-reachable (ADR-0004)"
   _theme="$(occ config:system:get theme 2>/dev/null | tr -d '\r')"
   nc_exec --user www-data -- test -f "/var/www/html/themes/${_theme:-apsconecta}/core/css/guest.css" 2>/dev/null \
     || fail "the active theme ships no core/css/guest.css — the legacy render path cannot be branded (ADR-0004)"

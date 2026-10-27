@@ -193,8 +193,7 @@ the compose-era keys do not exist under AIO. What the gates read:
 
 - **The suite's address, from apache itself** — `smoke`, `office-smoke` and `revalidate` curl
   `https://<su-dominio>/…` (or `https://<ip>/…`, trusting the installer's CA, which is why they run
-  as root), the leg §7 makes answer from this server. No `.env` key sets it; `HTTP_PORT` is the
-  developer stack's.
+  as root), the leg §7 makes answer from this server. No `.env` key sets it.
 - **The office keys are absent on purpose**: under AIO the wizard's entrypoint owns the public
   document-server URL and the JWT secret on every boot; by IP, `14-office.sh` adds the two internal
   URLs (§13). There is nothing office-shaped to configure on a clinic — and nothing map-shaped

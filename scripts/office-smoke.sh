@@ -49,9 +49,8 @@ suite_url_resolve || exit 1
 
 # The public-path healthcheck — through apache, never the DS's own port (#8433's exact leg: this
 # is the URL that goes dark on hairpin-NAT / split-DNS breakage while the container stays green).
-case "$SUITE_URL" in https://*[a-z]*) d10=" — D10: sudo aps-conecta red --dominio ${SUITE_URL#https://} --arreglar" ;; *) d10="" ;; esac
 suite_curl -sf "$SUITE_URL/eurooffice/healthcheck" >/dev/null \
-  || { echo "FAIL: Euro-Office /healthcheck not reachable through the public path ($SUITE_URL/eurooffice)$d10"; exit 1; }
+  || { echo "FAIL: Euro-Office /healthcheck not reachable through the public path ($SUITE_URL/eurooffice)$SUITE_D10"; exit 1; }
 
 
 # --check proves the whole wire at once: healthcheck + JWT + the version floor + a real docx
