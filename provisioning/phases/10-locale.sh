@@ -16,5 +16,12 @@ config_system_set default_language "es"
 config_system_set force_language "es"
 config_system_set default_locale "es_CL"
 config_system_set default_phone_region "CL"
+# Server-side clocks (IDateTimeZone::getDefaultTimeZone: Totem's Día, opening hours, ticket stamps)
+# read default_timezone or fall back to UTC; Nextcloud ignores the container's TZ. Seed AIO's zone.
+if is_aio; then
+  tz="$(nc_exec -- printenv TZ 2>/dev/null)" \
+    || { echo "FATAL: could not read the suite's time zone (TZ) from the Nextcloud container — is it running?" >&2; exit 1; }
+  config_system_set default_timezone "$tz"
+fi
 
 phase_end

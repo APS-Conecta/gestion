@@ -5891,7 +5891,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   st == 500 and "FATAL: phase 20-groups.sh failed" == body["error"]
                   and "user:list" not in stub_log_text())
             open(stubctl, "w").close()
-            open(stubctl, "w", encoding="utf-8").write("FAIL_ON=printenv\n")
+            open(stubctl, "w", encoding="utf-8").write("FAIL_ON=TALK_ENABLED\n")
             st, body = generar("ejecutar")
             check("generar: the suite's Talk switch unreadable stops phase 12 — never read as Talk off (R29)",
                   st == 500 and body["error"].startswith("FATAL: could not read the suite's Talk switch")

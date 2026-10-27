@@ -58,8 +58,9 @@ they are paid: [arquitectura](https://aps-conecta.github.io/documentation/admini
 `10-locale.sh` sets `default_language=es`, `default_locale=es_CL` for Chilean date and number
 formatting, and `default_phone_region=CL`. The locale stays a default users may change. The language is
 forced (`force_language=es`), because `findLanguage()` consults the browser's Accept-Language before the
-default. Timezone stays per-user, browser-detected. UI text is Spanish; all code, identifiers and config
-keys are English.
+default. A user's timezone stays per-user, browser-detected; the instance default (`default_timezone`, what
+server-side code reads through `IDateTimeZone::getDefaultTimeZone()`) is the zone chosen in AIO, seeded from
+the Nextcloud container's `TZ`. UI text is Spanish; all code, identifiers and config keys are English.
 
 ### AD-8 — Containers reach each other by service name; `host.docker.internal` is host-only
 

@@ -68,6 +68,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-040 | the v0.6.0 tag push (release run 40484421293) reddened at its Gates job: «FATAL: fontTools is required … — ci.yml installs it for the gate» → «FAIL: 270 — the wizard's font subsets cover every wizard string»; nothing published, no Release | row 270's font check (#151) needs fontTools and brotli; ci.yml's gates and gate-red-proof jobs install them, release.yml's gates job never did — and no chain had run since the check landed, so every PR stayed green over a tag that could not pass | release.yml's gates job installs them before the brand gate; row 270's `font_dependency_installed` (brand-gate.sh) reds on any workflow job that runs the gate without them; ci.yml's gate-red-proof Arm G proves it can red |
 
+| A-041 | on installer-built instances Totem's Día, opening hours and ticket stamps ran on UTC, not the clinic's zone (APS-Conecta/totem#7) | Nextcloud's server-side clock (`IDateTimeZone::getDefaultTimeZone`) reads `default_timezone` or falls back to UTC and ignores the container's `TZ`; no phase wrote `default_timezone` | phase 10 (`provisioning/phases/10-locale.sh`) seeds `default_timezone` from the Nextcloud container's `TZ`, the zone chosen in AIO, and stops with a FATAL when it cannot read it; `locale_phase_cases` in `scripts/test.sh` and Clean boot's two zone steps (after the seed, and after the restart) gate it |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and

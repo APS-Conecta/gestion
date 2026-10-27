@@ -701,6 +701,15 @@ jobs:
       # "already correct" from "silently did nothing", because on a warm box those are the
       # same thing.
       - run: bash /opt/aps-conecta/instalador/scripts/seed-idempotent.sh
+      # APS-Conecta/totem#7: server-side clocks (IDateTimeZone — Totem's Día, opening hours,
+      # ticket stamps) read default_timezone, never the container's TZ; the seed writes the one
+      # from the other, so the instance runs on the zone chosen in AIO.
+      - name: The instance time zone is the zone chosen in AIO
+        run: |
+          cd /opt/aps-conecta/instalador && source scripts/env.sh
+          tz="$(docker exec aps-conecta-nextcloud printenv TZ)"
+          [ -n "$tz" ] && [ "$(occ config:system:get default_timezone)" = "$tz" ] \
+            || { echo "FAIL: default_timezone is not the AIO zone" >&2; exit 1; }
       # THE HANDOFF CONTRACT (S8's acceptance): divergence-empty on a clean install, users
       # included — the gate-only domain (slice 5). The gate reads the declared set (the SITE_
       # ROSTER roster the silent install loaded — the standings re-derived from the site it placed
@@ -747,6 +756,11 @@ jobs:
           # globally — the update-day doctrine is converge-then-prove: the convergence seed
           # re-asserts the declared set over whatever the entrypoint reset, and the idempotence
           # proof then holds on the converged state (measured green on the probe).
+          # The restart neither dropped nor overrode the seeded zone (totem#7), before any seed runs.
+          ( cd /opt/aps-conecta/instalador && source scripts/env.sh
+            tz="$(docker exec aps-conecta-nextcloud printenv TZ)"
+            [ -n "$tz" ] && [ "$(occ config:system:get default_timezone)" = "$tz" ] \
+              || { echo "FAIL: default_timezone is not the AIO zone after the restart" >&2; exit 1; } )
           bash /opt/aps-conecta/instalador/provisioning/seed.sh
           bash /opt/aps-conecta/instalador/scripts/seed-idempotent.sh
           bash /opt/aps-conecta/instalador/scripts/divergence.sh --gate
