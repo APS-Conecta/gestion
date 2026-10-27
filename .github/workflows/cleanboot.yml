@@ -957,8 +957,10 @@ jobs:
           case "$out" in *"side_menu ya no es parte de la suite — se desinstala"*"app side_menu desinstalada"*) ;;
             *) echo "FAIL: the run did not name and uninstall side_menu" >&2; exit 1 ;; esac
           ! occ app:getpath side_menu >/dev/null 2>&1 || { echo "FAIL: side_menu's code is still on the instance" >&2; exit 1; }
-          [ -z "$(occ config:app:get side_menu installed_version 2>/dev/null || true)" ] \
-            || { echo "FAIL: side_menu still records an installed version" >&2; exit 1; }
+          # app:remove runs the uninstall steps and deletes the code; Nextcloud keeps the app's
+          # config keys (installed_version among them), so "gone" is: no code, not enabled
+          [ "$(occ config:app:get side_menu enabled 2>/dev/null || true)" != yes ] \
+            || { echo "FAIL: side_menu is still enabled" >&2; exit 1; }
           sudo python3 -c 'import json, sys; sys.exit("side_menu" in json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"])' \
             || { echo "FAIL: the lock still names side_menu" >&2; exit 1; }
           case "$out" in *"REVALIDACIÓN: PASS"*) ;; *) echo "FAIL: the run did not revalidate green" >&2; exit 1 ;; esac
