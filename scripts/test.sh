@@ -801,6 +801,35 @@ conventions_phase_cases() {
 }
 check conventions_phase_cases
 
+# Phase 10 seeds the instance time zone (default_timezone) from the Nextcloud container's TZ, the
+# zone chosen in AIO. Same shape as above: the whole phase under errexit, helpers stubbed, nc_exec
+# standing in for the container's printenv. Not AIO (the legacy container) seeds no zone.
+locale_phase_cases() {
+  local out rc
+  run10() {  # AIO(1|0) CONTAINER_UP(1|0)
+    AIO="$1" UP="$2" bash -c '
+      set -e
+      phase_begin() { :; }; phase_end() { :; }
+      config_system_set() { printf "SET %s|%s\n" "$1" "$2"; }
+      is_aio() { [ "$AIO" = 1 ]; }
+      nc_exec() {
+        [ "$UP" = 1 ] || return 1
+        [ "$*" = "-- printenv TZ" ] && echo America/Santiago
+      }
+      . provisioning/phases/10-locale.sh' 2>&1
+  }
+  out="$(run10 1 1)"; rc=$?
+  [ "$rc" = 0 ] && printf '%s\n' "$out" | grep -qxF 'SET default_timezone|America/Santiago' \
+    || { echo "phase 10: expected default_timezone seeded from the container's TZ, got rc=$rc: $out" >&2; return 1; }
+  out="$(run10 1 0)"; rc=$?
+  [ "$rc" != 0 ] && printf '%s\n' "$out" | grep -q '^FATAL: ' && ! printf '%s\n' "$out" | grep -q '^SET default_timezone' \
+    || { echo "phase 10: an unreadable TZ must stop the phase with a FATAL and no zone written, got rc=$rc: $out" >&2; return 1; }
+  out="$(run10 0 1)"; rc=$?
+  [ "$rc" = 0 ] && ! printf '%s\n' "$out" | grep -q '^SET default_timezone' \
+    || { echo "phase 10: the legacy container has no AIO zone and must get none, got rc=$rc: $out" >&2; return 1; }
+}
+check locale_phase_cases
+
 # The suite manifest unreadable: the gate's apps section says so in ONE Spanish note carrying the
 # cause — apps.py's own stderr no longer reaches the operator beside it, and the red branch never
 # execs into the instance. Extracted, run in a temp tree whose apps.json is not JSON.
