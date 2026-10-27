@@ -37,8 +37,8 @@ try:
     from fontTools.ttLib import TTFont
     from fontTools.varLib.instancer import instantiateVariableFont
 except ImportError:  # pragma: no cover — the loud, never-vacuous failure the gate wants
-    sys.exit("FATAL: fontTools is required (pip install fonttools brotli) — ci.yml installs it "
-             "for the gate; without it this check cannot run")
+    sys.exit("FATAL: fontTools is required (pip install fonttools brotli) — every workflow job "
+             "that runs the gate installs it; without it this check cannot run")
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 SOURCE_FONTS = pathlib.Path("themes/apsconecta/core/fonts")

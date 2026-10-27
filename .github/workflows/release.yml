@@ -65,7 +65,7 @@ on:
   workflow_dispatch:
     inputs:
       suite-tag:
-        description: "Repair arm: re-runs gates + images + package at that tag (a chain that failed before the Release was created)."
+        description: "Repair arm: re-runs gates + images + spreed + package at that tag (a chain that failed before the Release was created)."
         required: true
         type: string
       force-images:
@@ -109,6 +109,9 @@ jobs:
           cd php
           composer install
           composer run lint:twig
+      # row 270's font-coverage check reads woff2 cmaps — fontTools is a gate dependency, not
+      # a nicety: without it the row fails loudly (never passes vacuously), so the chain installs it
+      - run: python3 -m pip install --quiet fonttools brotli
       - name: Brand gate
         run: bash scripts/brand-gate.sh .
       - name: Acquisition gate
