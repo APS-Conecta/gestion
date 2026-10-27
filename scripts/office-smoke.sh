@@ -11,11 +11,10 @@
 # wizard's sibling aps-conecta-eurooffice behind apache's /eurooffice, so every leg answers the
 # stack an operator actually runs. The healthcheck goes through the PUBLIC path — the exact leg
 # that failed in upstream #8433 (the DS's own port can answer while the public route is broken).
-# The version assert pins the 9.3.x line: the connector's own floor is only "DS > 6.0"
-# (DocumentService.php:415), so a drifted documentserver generation would pass --check silently —
-# R3's verified pairing was connector 11.0.5 ↔ DS 9.3.x. Since #36 the connector is the APS
-# fork (APS-Conecta/eurooffice, first release 11.0.7) and this gate's --check round-trip is
-# the pairing's per-install re-certification. The image assert accepts the two
+# The version assert is the Dockerfile's pin: the connector's own floor is only "DS > 6.0"
+# (DocumentService.php:415), so a drifted documentserver would pass --check silently.
+# Since #36 the connector is the APS fork (APS-Conecta/eurooffice) and this gate's --check
+# round-trip is the pairing's per-install re-certification. The image assert accepts the two
 # namespaces this distribution's lifecycle runs — nextcloud-releases (the probe's stock bring-up,
 # slice 1's harness) and aps-conecta (the suite's channel; the retag preserves the manifest, D12) —
 # and anything else (a stranger's DS, Collabora, OnlyOffice) reds.
@@ -61,16 +60,20 @@ suite_curl -sf "$SUITE_URL/eurooffice/healthcheck" >/dev/null \
 out="$(occ eurooffice:documentserver --check 2>&1)" \
   || { echo "FAIL: 'occ eurooffice:documentserver --check' reported the server unreachable"; printf '%s\n' "$out"; exit 1; }
 
-# The version pin, read from --check's own success line ("Document server $url version $v is
+# The version, read from --check's own success line ("Document server $url version $v is
 # successfully connected" — lib/Command/DocumentServer.php:84). The ANSI strip is belt-and-braces:
 # occ strips its own <info> tags when stdout is not a TTY (docker exec), but the parse must not
-# depend on that detection. An unreadable version fails CLOSED — a parser that reads nothing
-# must never pass (B-014).
+# depend on that detection. The DS answers <pin>.<build>, so the pin matches whole or before a
+# dot; the pin is read from the Dockerfile the image is built from (env.sh has moved to the repo
+# root), never a second literal. An unreadable version or pin fails CLOSED — a parser that reads
+# nothing must never pass (B-014).
 ver="$(printf '%s\n' "$out" | sed 's/\x1b\[[0-9;]*m//g' | sed -n 's/.* version \([0-9][0-9.]*\) is successfully connected.*/\1/p' | head -1)"
 [ -n "$ver" ] || { echo "FAIL: could not read the document server version from --check's output:"; printf '%s\n' "$out"; exit 1; }
+pin="$(sed -n 's|^FROM ghcr\.io/euro-office/documentserver:v\([0-9][0-9.]*\)$|\1|p' Containers/eurooffice/Dockerfile 2>/dev/null || true)"
+[ -n "$pin" ] || { echo "FAIL: could not read the document server pin from Containers/eurooffice/Dockerfile"; exit 1; }
 case "$ver" in
-  9.3.*) echo "  ✓ document server ${ver} (the pinned pairing line, R3)" ;;
-  *) echo "FAIL: document server version '${ver}' is outside the pinned 9.3.x line — the suite pairs the eurooffice fork (APS-Conecta/eurooffice) with DS 9.3.x (R3's pairing, re-certified per install by this round-trip); check which image the wizard started"; exit 1 ;;
+  "$pin"|"$pin".*) echo "  ✓ document server ${ver} (the pin, ${pin})" ;;
+  *) echo "FAIL: document server version '${ver}' is not the pinned ${pin} (Containers/eurooffice/Dockerfile) — aio-eurooffice is built from that pin; check which image the wizard started"; exit 1 ;;
 esac
 
 # The DS image: the one this distribution's channel shipped. Resolved through `docker ps` by

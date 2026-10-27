@@ -90,7 +90,7 @@ selftest() { # jq over fixture needs documents — the manifest job's real shape
   assert_line()  { if printf '%s\n' "$out" | grep -qxF "$1"; then pass "$2"; else flunk "$2 (missing line: $1)"; fi; }
   assert_count() { local c; c="$(printf '%s\n' "$out" | grep -cF "$2")"; if [ "$c" = "$1" ]; then pass "$3"; else flunk "$3 ($c lines, want $1)"; fi; }
 
-  # the four of today, one tree — green, every build's commit on its own line
+  # four builds, one tree — green, every build's commit on its own line
   case_run "$four" main
   assert_rc 0 "four builds, one tree: green"
   assert_count 4 "built from: " "four builds: each build's commit printed"

@@ -1584,25 +1584,43 @@ CASES
 check cleanboot_db_cases
 
 
-# --- office-smoke's DS pairing pattern: extracted from its source, proven both directions -------
-# (the LC_ALL precedent — where a static gate cannot observe the behaviour, assert the fix's
-# presence; here the extracted regex can also be behaviorally tested, so both.)
-# (P36, implement-time) slice 20 replaced office-smoke's DS_VERSION_PATTERN variable with the
-# ver-parse + 9.3.* case pin; the detector below extracts the parse from the script's own bytes
-# (a named function — the extraction needs quotes the bash -c wrapper cannot nest) and proves
-# BOTH directions through the same case arm the script carries.
-ds_pairing_detect() {
-  local parse v v2
-  parse="$(grep -m1 -oF "sed -n 's/.* version \([0-9][0-9.]*\) is successfully connected.*/\1/p'" scripts/office-smoke.sh \
-    | sed 's/^sed -n .//; s/.$//')"
-  [ -n "$parse" ] || { echo "DS version parse not found in office-smoke.sh" >&2; return 1; }
-  v="$(printf 'Document server https://x/ version 9.3.4.37 is successfully connected\n' | sed -n "$parse")"
-  [ "$v" = "9.3.4.37" ] || { echo "DS pairing detector: missed the right version" >&2; return 1; }
-  case "$v" in 9.3.*) ;; *) echo "DS pairing detector: the case rejects the right version" >&2; return 1;; esac
-  v2="$(printf 'Document server https://x/ version 9.2.1.5 is successfully connected\n' | sed -n "$parse")"
-  case "$v2" in 9.3.*) echo "DS pairing detector: the case accepts the wrong version" >&2; return 1;; *) :;; esac
+# --- office-smoke's DS pin: the running DocumentServer is the one the Dockerfile pins (#140) -------
+# The real office-smoke (and the env.sh it sources) runs from a fixture tree whose
+# Containers/eurooffice/Dockerfile is the real one with a synthetic pin, v1.2.3: a hard-coded
+# version reds, and so does a FROM line whose shape the parse no longer reads. A stub docker
+# answers apache's loopback posture, the connector enabled and --check with $DS_VERSION; a stub
+# curl answers the healthcheck. 9.3.1.37 is what the copied v0.6.0 image answers.
+office_pin_cases() {
+  local tmp out rc v
+  tmp="$(mktemp -d)"; mkdir -p "$tmp/bin" "$tmp/scripts" "$tmp/Containers/eurooffice"
+  cp scripts/office-smoke.sh scripts/env.sh "$tmp/scripts/"
+  sed 's|documentserver:v[0-9][0-9.]*|documentserver:v1.2.3|' Containers/eurooffice/Dockerfile > "$tmp/Containers/eurooffice/Dockerfile"
+  cat > "$tmp/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in
+  "ps -q"*) echo ds0 ;;
+  ps*) echo aps-conecta-nextcloud ;;
+  inspect*aps-conecta-apache*) printf 'APACHE_PORT=11000\n' ;;
+  "inspect ds0"*) echo ghcr.io/aps-conecta/aio-eurooffice:v0.0.0-ci.0 ;;
+  *"config:app:get eurooffice enabled"*) echo yes ;;
+  *"eurooffice:documentserver --check"*) echo "Document server http://x/ version $DS_VERSION is successfully connected" ;;
+esac
+exit 0
+STUB
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/bin/curl"
+  chmod +x "$tmp/bin/docker" "$tmp/bin/curl"
+  for v in 1.2.3.37:0 1.2.3:0 1.2.30.1:1 9.3.1.37:1; do
+    rc=0; out="$(PATH="$tmp/bin:$PATH" DS_VERSION="${v%:*}" bash "$tmp/scripts/office-smoke.sh" 2>&1)" || rc=1
+    [ "$rc" = "${v##*:}" ] \
+      || { echo "office pin: DS ${v%:*} against the pin 1.2.3 exited $rc, want ${v##*:}: $out" >&2; rm -rf "$tmp"; return 1; }
+  done
+  rm "$tmp/Containers/eurooffice/Dockerfile"
+  rc=0; out="$(PATH="$tmp/bin:$PATH" DS_VERSION=1.2.3.37 bash "$tmp/scripts/office-smoke.sh" 2>&1)" || rc=1
+  rm -rf "$tmp"
+  [ "$rc" = 1 ] && case "$out" in *"could not read the document server pin"*) ;; *) false ;; esac \
+    || { echo "office pin: no Dockerfile must fail closed naming the pin, got exit $rc: $out" >&2; return 1; }
 }
-check ds_pairing_detect
+check office_pin_cases
 
 # --- gate: the anchors the wizard links into these docs still resolve ---------------------
 # The wizard (patch 140's and 170's bytes, committed since the hard fork) links six sections of
