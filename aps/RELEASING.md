@@ -85,8 +85,7 @@ names its gate.
 **The testbed pin follows**. Once the Release is green, one commit moves the pin in
 `scripts/aio-testbed.sh` to `vX.Y.Z` — the suite tag every PR-event and weekly Clean boot
 installs. It cannot ride the release commit: the tag's images do not exist until the push
-publishes them. Until a release carries nothing-baked images (ADR-0018), the pin names a
-nothing-baked rehearsal set.
+publishes them.
 
 **The retag source (the self-referential lockstep)**. The 16 registry-side images are copied,
 not built: `retag-source: ours` — the chain's default on every tag push — copies each from
