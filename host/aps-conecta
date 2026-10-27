@@ -1092,6 +1092,7 @@ start_suite() {  # [ADDRESS] — the mastercontainer, once — the very command 
 AIO_URL="${AIO_URL:-https://127.0.0.1:8080}"   # the wizard (self-signed TLS); the testbed sets its port
 AIO_STATE="${AIO_STATE:-$APS_HOME/aio}"       # passphrase, session jar, admin password — 0600
 AIO_POLL="${AIO_POLL:-5}"                   # seconds between polls; the self-test sets 0
+AIO_RESPALDO_POLLS="${AIO_RESPALDO_POLLS:-1080}"   # the backup's bound: 90 minutes at the default poll; the self-test lowers it
 AIO_SET="aps-conecta-apache aps-conecta-database aps-conecta-redis aps-conecta-notify-push aps-conecta-eurooffice"
 AIO_CSRF=()                                     # the session's CSRF pair, as curl arguments
 # The wizard refuses (403) any request that does not declare Sec-Fetch-Site same-origin or none
@@ -1255,9 +1256,25 @@ aio_start() {  # POST /api/docker/start pulls, creates and starts the whole set 
   esac
 }
 
-aio_wait() {  # bounded: the six containers up (20 min), Nextcloud installed (10 min), its
-  # configuration no longer moving (2 min — probing a moving config is a race, #96)
-  local i st prev cur
+aio_pendientes() {  # the six not yet ready, as «nombre (estado)»: each one healthy, and apache
+  # listening too — Containers/apache/healthcheck.sh exits 0 while Nextcloud is down, before
+  # start.sh opens its ports, so the probe is that file without the shortcut, run inside the
+  # container so it reads apache's own $APACHE_PORT (a clinic's 443 as the testbed's) (A-037)
+  local salud c st out=""
+  salud="$(docker inspect -f '{{.Name}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' "$NC" $AIO_SET 2>/dev/null)"
+  for c in "$NC" $AIO_SET; do
+    st="$(printf '%s\n' "$salud" | sed -n "s#^/$c ##p")"
+    case "$st" in healthy) ;; starting) out="$out, $c (aún arrancando)" ;; unhealthy) out="$out, $c (falla su control de salud)" ;; *) out="$out, $c (sin estado)" ;; esac
+  done
+  [[ $out == *aps-conecta-apache* ]] || docker exec aps-conecta-apache sh -c 'nc -z "$NEXTCLOUD_HOST" 9000 && nc -z 127.0.0.1 8000 && nc -z 127.0.0.1 "$APACHE_PORT"' >/dev/null 2>&1 \
+    || out="$out, aps-conecta-apache (no atiende en su puerto)"
+  printf '%s' "${out#, }"
+}
+
+aio_wait() {  # bounded: the six containers up (20 min), Nextcloud installed (10 min), the six
+  # ready (10 min, aio_pendientes), its configuration no longer moving (2 min — probing a moving
+  # config is a race, #96)
+  local i st prev cur pend
   for i in $(seq 240); do [ "$(aio_count)" = 6 ] && break; sleep "$AIO_POLL"; done
   if [ "$(aio_count)" != 6 ]; then
     bad "los contenedores no terminaron de arrancar en 20 minutos" "docker ps -a --filter name=^aps-conecta-"
@@ -1272,6 +1289,12 @@ aio_wait() {  # bounded: the six containers up (20 min), Nextcloud installed (10
     *'"installed":true'*) ;;
     *) bad "Nextcloud no terminó de instalarse en 10 minutos" "docker logs $NC"; return 1 ;;
   esac
+  for i in $(seq 120); do pend="$(aio_pendientes)"; [ -z "$pend" ] && break; sleep "$AIO_POLL"; done
+  if [ -n "$pend" ]; then
+    bad "la suite no quedó lista en 10 minutos: $pend" \
+        "docker ps -a --filter name=^aps-conecta-; docker logs ${pend%% *}"
+    return 1
+  fi
   prev="$(docker exec --user www-data "$NC" php /var/www/html/occ config:list --output=json 2>/dev/null | sha256sum)"
   for i in $(seq 24); do
     sleep "$AIO_POLL"
@@ -1626,11 +1649,12 @@ act_plan() {  # current and candidate per app (#46's plan, --revisar's whole leg
 
 act_respaldo() {  # the full backup, through the wizard's own API (#46: the run backs up first
   # and stops unless it succeeds). The endpoint stops the suite itself — that is AIO's own
-  # consistency posture — streams its log until the borg container is done, and the borg
-  # container's own exit code is the verdict (the wizard's page reads the same one).
+  # consistency posture — and starts borg; the borg container's own exit code is the verdict
+  # (the wizard's page reads the same one).
   aio_passphrase && aio_login || return 1
   info "respaldo completo: la suite se detiene mientras respalda (varios minutos)"
-  local code ex archivo f="$AIO_STATE/respaldo-actualizar.log"
+  local code ex archivo st="" inicio t0 i f="$AIO_STATE/respaldo-actualizar.log"
+  t0="$(date +%s)"
   code="$(aio_curl -o "$f" -w '%{http_code}' --max-time 5400 \
     "${AIO_CSRF[@]}" "$AIO_URL/api/docker/backup" 2>/dev/null)"
   case "$code" in
@@ -1639,13 +1663,34 @@ act_respaldo() {  # the full backup, through the wizard's own API (#46: the run 
            "revise su sesión: docker logs nextcloud-aio-mastercontainer; nada se aplicó, el candado no cambió"
        return 1 ;;
   esac
-  ex="$(docker inspect aps-conecta-borgbackup -f '{{.State.ExitCode}}' 2>/dev/null || true)"
+  # the POST answers once borg has STARTED (DockerController::startBackup): the backup is borg's
+  # own run, polled until it exits — and only a borg started by this request counts (A-036)
+  for i in $(seq "$AIO_RESPALDO_POLLS"); do
+    st="$(docker inspect aps-conecta-borgbackup -f '{{.State.Running}} {{.State.ExitCode}} {{.State.StartedAt}}' 2>/dev/null || true)"
+    case "$st" in false\ *) break ;; esac
+    sleep "$AIO_POLL"
+  done
+  case "$st" in
+    false\ *) ;;
+    *) bad "el respaldo sigue en curso tras 90 minutos — la suite queda detenida; nada se aplicó, el candado no cambió" \
+           "siga el respaldo con docker logs -f aps-conecta-borgbackup; cuando termine, inicie la suite en el asistente (puerto 8080) y solo entonces vuelva a ejecutar sudo aps-conecta actualizar"
+       return 1 ;;
+  esac
+  read -r _ ex inicio <<<"$st"
+  inicio="$(date -d "$inicio" +%s 2>/dev/null || echo 0)"
+  [ "$inicio" -ge "$t0" ] || {
+    bad "el asistente no arrancó un respaldo nuevo — nada se aplicó, el candado no cambió" \
+        "docker logs nextcloud-aio-mastercontainer; inicie la suite en el asistente (puerto 8080) y vuelva a ejecutar sudo aps-conecta actualizar"
+    return 1
+  }
   [ "$ex" = 0 ] || {
     bad "el respaldo falló (contenedor de respaldo: código ${ex:-sin respuesta}) — nada se aplicó, el candado no cambió" \
         "docker logs aps-conecta-borgbackup nombra la causa; corrija y vuelva a ejecutar sudo aps-conecta actualizar; $ACT_RESTAURAR"
     return 1
   }
-  archivo="$(docker exec nextcloud-aio-mastercontainer cat /mnt/docker-aio-config/data/backup_archives.list 2>/dev/null | head -1 | cut -d, -f1)"
+  # borg writes the list oldest first (Containers/borgbackup/start.sh); the newest heads its
+  # sort -r, as Containers/borgbackup/backupscript.sh reads it (A-038)
+  archivo="$(docker exec nextcloud-aio-mastercontainer cat /mnt/docker-aio-config/data/backup_archives.list 2>/dev/null | sort -r | head -1 | cut -d, -f1)"
   [ -n "$archivo" ] && ok "Respaldo completo creado ($archivo)" || ok "Respaldo completo creado"
 }
 
@@ -2740,6 +2785,7 @@ SHIM
 #!/usr/bin/env bash
 case "\$1" in
   ps) cat "$tmp/aio.ps" ;;
+  inspect) shift 3; for c in "\$@"; do echo "/\$c healthy"; done ;;
   exec) case "\$*" in *"occ status"*) echo '{"installed":true}' ;; *"config:list"*) echo '{"system":{}}' ;; esac ;;
 esac
 SHIM
@@ -3269,8 +3315,10 @@ printf 'curl %s%s\n' "\$url" "\$data" >> "$act/aio.log"
 case "\$url" in
   */api/auth/getlogin) case "\$data" in *"token@"*) t="\$(cat "\${data##*token@}" 2>/dev/null)"; [ "\$t" = tok-act46 ] && : > "$act/aio.libre" ;; esac; printf '%s' 302 ;;
   */api/auth/login) [ -n "\$w" ] && printf '%s' 201 ;;
-  */api/docker/backup) printf 'borg log\n' > "\$out"; [ -n "\$w" ] && printf '%s' 200 ;;
-  */api/docker/start) [ -n "\$w" ] && printf '%s' 200 ;;
+  */api/docker/backup) printf 'borg log\n' > "\$out"; : > "$act/borg.n"; date -u +%Y-%m-%dT%H:%M:%S.%NZ > "$act/borg.t"
+    [ -n "\$w" ] && printf '%s' 200 ;;
+  */api/docker/start) [ "\$(wc -c < "$act/borg.n" 2>/dev/null || echo 99)" -le "\${BORG_RUNS:-2}" ] && echo "start con borg en curso" >> "$act/aio.log"
+    [ -n "\$w" ] && printf '%s' 200 ;;
   */login) [ -e "$act/aio.libre" ] && printf '<input name="csrf_name" value="n1"><input name="csrf_value" value="v1">' ;;
 esac
 EOF
@@ -3282,11 +3330,24 @@ case "\$1 \$2" in
   "ps --format")
     [ -e "$act/suite-caida" ] && exit 0
     printf '%s\n' aps-conecta-nextcloud aps-conecta-apache aps-conecta-database aps-conecta-redis aps-conecta-notify-push aps-conecta-eurooffice ;;
-  "inspect aps-conecta-borgbackup") echo "\${BORG_EXIT:-0}" ;;
+  "inspect aps-conecta-borgbackup")
+    n="\$(wc -c < "$act/borg.n" 2>/dev/null || echo 0)"; printf x >> "$act/borg.n"
+    if [ "\$n" -lt "\${BORG_RUNS:-2}" ]; then echo "true 0 \$(cat "$act/borg.t")"
+    else echo "false \${BORG_EXIT:-0} \${BORG_STARTED:-\$(cat "$act/borg.t")}"; fi ;;
+  "inspect -f")
+    n="\$(wc -c < "$act/salud.n" 2>/dev/null || echo 0)"; printf x >> "$act/salud.n"
+    shift 3; for c in "\$@"; do case "\$c" in
+      "\${SALUD_MALA:-}") echo "/\$c unhealthy" ;;
+      aps-conecta-eurooffice) [ "\$n" -ge 3 ] && echo "/\$c healthy" || echo "/\$c starting" ;;
+      *) echo "/\$c healthy" ;;
+    esac; done ;;
+  "exec aps-conecta-apache")
+    n="\$(wc -c < "$act/apache.n" 2>/dev/null || echo 0)"; printf x >> "$act/apache.n"
+    [ "\$n" -ge 2 ] ;;
   "exec nextcloud-aio-mastercontainer")
     case "\$*" in
       *configuration.json*) if [ -e "$act/sin-respaldo" ]; then exit 1; else echo '{"borg_backup_host_location":"/srv/aps-conecta/respaldos"}'; fi ;;
-      *backup_archives.list*) echo "nextcloud-aio-2026-10-25-18-00,Thu Oct 25 18:00:00 2026" ;;
+      *backup_archives.list*) printf '%s\n' "nextcloud-aio-2026-10-25-18-00,Thu Oct 25 18:00:00 2026" "nextcloud-aio-2026-10-27-01-00,Tue Oct 27 01:00:00 2026" ;;
     esac ;;
   "exec aps-conecta-nextcloud") case "\$*" in *printenv\ AIO_TOKEN*) echo tok-act46 ;; *printenv*) echo yes ;; esac ;;
   "exec -i") exit 0 ;;
@@ -3350,11 +3411,11 @@ EOF
   # provisioning tree applying from the NEW lock, the scoped store update, the promote, the
   # revalidate sweep
   : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"
-  rm -f "$act/aio.libre"   # a fresh session: the wizard's block is back
+  rm -f "$act/aio.libre" "$act/apache.n" "$act/salud.n"   # a fresh session: the wizard's block is back, the suite not yet ready
   out="$( id() { echo 0; }; act46 2>&1 )"; arc=$?
   check "actualizar: the whole run in order — plan, preconditions, backup, restart, fetch, apply from the new lock, scoped store update, store closed, promote, revalidate" \
     '[ "$arc" -eq 0 ] && printf "%s" "$out" | grep -qF "Plan de actualización — Nextcloud 34.0.4" \
-      && printf "%s" "$out" | grep -qF "✓ Respaldo completo creado (nextcloud-aio-2026-10-25-18-00)" \
+      && printf "%s" "$out" | grep -qF "✓ Respaldo completo creado (nextcloud-aio-2026-10-27-01-00)" \
       && printf "%s" "$out" | grep -qF "✓ Suite en marcha de nuevo (imágenes sin tocar)" \
       && printf "%s" "$out" | grep -qF "✓ apps: territorio v0.79.0 → v0.80.0 descargada y verificada" \
       && printf "%s" "$out" | grep -qF "aplicaciones: candado nuevo listo — territorio v0.80.0" \
@@ -3382,6 +3443,12 @@ EOF
   check "actualizar: the store opened scoped — every app:update rode NC_appstoreenabled=1, and nothing else touched the store" \
     'while IFS= read -r l; do case "$l" in *NC_appstoreenabled=1*) ;; *) exit 1;; esac; done < <(grep "app:update" "$act/docker.log") \
       && grep -q "NC_appstoreenabled=1.*app:update calendar" "$act/docker.log"'
+  # the shim: borg runs BORG_RUNS (2) inspects; apache deaf 2 probes, eurooffice starting 3 — ready on the 4th poll
+  check "actualizar: the backup is awaited — the POST answers once borg STARTS, so borg's own state is polled until it exits, and the restart comes only after (A-036)" \
+    '! grep -q "start con borg en curso" "$act/aio.log"'
+  check "actualizar: the restart waits for every container healthy — eurooffice late — and apache listening: its healthcheck exits 0 while Nextcloud is down, so the probe runs it without that shortcut (A-037)" \
+    '[ "$(grep -c "^docker inspect -f {{.Name}} {{if .State.Health}}{{.State.Health.Status}}{{end}} aps-conecta-nextcloud aps-conecta-apache" "$act/docker.log")" -eq 4 ] \
+      && [ "$(grep -c "^docker exec aps-conecta-apache" "$act/docker.log")" -eq 4 ]'
 
   # a failed backup applies nothing: no fetch, no lock move
   : > "$act/aio.log"; : > "$act/resolver.log"; cp "$act/lock.bytes" "$act/home/apps.lock.json"
@@ -3393,8 +3460,30 @@ EOF
       && ! grep -q "^actualizar " "$act/resolver.log" && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes" \
       && [ ! -e "$act/home/apps.lock.json.next" ]'
 
+  # a backup that is not this run's, a backup that never ends, a suite that never gets ready:
+  # each stops the run before anything is fetched, applied or moved
+  : > "$act/aio.log"; : > "$act/resolver.log"; rm -f "$act/aio.libre"; cp "$act/lock.bytes" "$act/home/apps.lock.json"
+  out="$( id() { echo 0; }; BORG_STARTED=2020-01-01T00:00:00Z act46 2>&1 )"; arc=$?
+  check "actualizar: a borg that did not start anew (StartedAt before the request) is no backup — no restart, no fetch, the lock unchanged (A-036)" \
+    '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "✗ el asistente no arrancó un respaldo nuevo — nada se aplicó, el candado no cambió" \
+      && ! grep -q "api/docker/start" "$act/aio.log" && ! grep -q "^actualizar " "$act/resolver.log" \
+      && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes"'
+  : > "$act/aio.log"; : > "$act/resolver.log"; rm -f "$act/aio.libre"; cp "$act/lock.bytes" "$act/home/apps.lock.json"
+  out="$( id() { echo 0; }; BORG_RUNS=999 AIO_RESPALDO_POLLS=3 act46 2>&1 )"; arc=$?
+  check "actualizar: a backup still running at the bound stops the run — the suite left stopped, borg's log and the wizard named, no restart (A-036)" \
+    '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "✗ el respaldo sigue en curso tras 90 minutos — la suite queda detenida; nada se aplicó, el candado no cambió" \
+      && printf "%s" "$out" | grep -qF "docker logs -f aps-conecta-borgbackup" \
+      && ! grep -q "api/docker/start" "$act/aio.log" && ! grep -q "^actualizar " "$act/resolver.log" \
+      && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes"'
+  : > "$act/aio.log"; : > "$act/resolver.log"; rm -f "$act/aio.libre"; cp "$act/lock.bytes" "$act/home/apps.lock.json"
+  out="$( id() { echo 0; }; SALUD_MALA=aps-conecta-eurooffice act46 2>&1 )"; arc=$?
+  check "actualizar: a container never healthy after the restart stops the run naming it — no «Suite en marcha», nothing fetched (A-037)" \
+    '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "✗ la suite no quedó lista en 10 minutos: aps-conecta-eurooffice (falla su control de salud)" \
+      && ! printf "%s" "$out" | grep -qF "Suite en marcha" && ! grep -q "^actualizar " "$act/resolver.log" \
+      && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes"'
+
   # a failed apply: the app named, the lock unchanged, the new lock cleaned, the restore command
-  : > "$act/aio.log"; : > "$act/resolver.log"
+  : > "$act/aio.log"; : > "$act/resolver.log"; cp "$act/lock.bytes" "$act/home/apps.lock.json"
   rm -f "$act/aio.libre"   # a fresh session: the wizard's block is back
   out="$( id() { echo 0; }; act_aplicar() { ACT_FALLA="territorio falló al aplicarse — nada más se aplicó, el candado no cambió"; return 1; }; act46 2>&1 )"; arc=$?
   check "actualizar: a failed apply names the app and the restore command, and moves neither lock" \
