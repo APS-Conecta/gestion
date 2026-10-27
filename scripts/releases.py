@@ -520,14 +520,14 @@ def fetch_all(rows, nextcloud, path=None, store=None, eleccion=None):
     return lines
 
 
-def retiradas(lock, ids):
+def retired(lock, ids):
     """The lock rows whose app left the manifest (#172): the plan names each, actualizar's new
     lock drops each, and the host CLI uninstalls each. `ids` is EVERY manifest id, not only the
     release rows — a row that moved to the store is still a suite app."""
     return sorted(set(lock["apps"]) - set(ids))
 
 
-def plan_all(rows, nextcloud, path=None, eleccion=None, ids=()):
+def plan_all(rows, nextcloud, path=None, eleccion=None, *, ids):
     """The plan `aps-conecta actualizar` prints and `--revisar` stops on (#46): for every
     release row, the tag this server RUNS (the lock's row, empty when none) and the tag the run
     would move it to — resolved with the lock as a FLOOR, actualizar's stance, so a candidate
@@ -556,11 +556,11 @@ def plan_all(rows, nextcloud, path=None, eleccion=None, ids=()):
         except Refusal as e:
             raise Refusal(f"{app}: {e}") from None
         lines.append(f"{app}\t{registrado['tag'] if registrado else ''}\t{tag}")
-    lines += [f"{app}\tretirada" for app in retiradas(lock, ids)]
+    lines += [f"{app}\tretirada" for app in retired(lock, ids)]
     return lines
 
 
-def fetch_next(rows, nextcloud, nuevo, path=None, store=None, eleccion=None, ids=()):
+def fetch_next(rows, nextcloud, nuevo, path=None, store=None, eleccion=None, *, ids):
     """actualizar's fetch leg (#46, ADR-0017): every chosen/default release row re-resolved
     with the lock as a FLOOR — never below it — downloaded, verified, and recorded into a NEW
     lock at `nuevo`. The server's lock is NOT touched: the host CLI applies the apps and
@@ -611,12 +611,12 @@ def fetch_next(rows, nextcloud, nuevo, path=None, store=None, eleccion=None, ids
                          f"y verificada (compatible con Nextcloud {nextcloud})")
         except Refusal as e:
             raise Refusal(f"{app}: {e}") from None
-    fuera = retiradas(lock, ids)
-    lines += [f"✓ apps: {app} ya no es parte de la suite — se desinstala" for app in fuera]
-    quedan = {a: e for a, e in lock["apps"].items() if a not in fuera}
-    write_lock(nuevo, {"nextcloud": nextcloud, "apps": {**quedan, **movidas}})
-    cambios = [f"{a} {e['tag']}" for a, e in sorted(movidas.items())] + [f"{a} retirada" for a in fuera]
-    lines.append("aplicaciones: candado nuevo listo — " + (", ".join(cambios) or "sin cambios"))
+    dropped = retired(lock, ids)
+    lines += [f"✓ apps: {app} ya no es parte de la suite — se desinstala" for app in dropped]
+    kept = {a: e for a, e in lock["apps"].items() if a not in dropped}
+    write_lock(nuevo, {"nextcloud": nextcloud, "apps": {**kept, **movidas}})
+    changes = [f"{a} {e['tag']}" for a, e in sorted(movidas.items())] + [f"{a} retirada" for a in dropped]
+    lines.append("aplicaciones: candado nuevo listo — " + (", ".join(changes) or "sin cambios"))
     return lines
 
 
@@ -668,8 +668,9 @@ def main(argv):
         try:
             # `or apps.MANIFEST`: no --manifest means the suite's own apps.json — load()'s default
             # is a def-time arg, and passing None through was the crash the first clean boot met
-            manifiesto = apps.load(opts.get("--manifest") or apps.MANIFEST)
-            rows = [r for r in manifiesto if r.get("release")]
+            manifest = apps.load(opts.get("--manifest") or apps.MANIFEST)
+            rows = [r for r in manifest if r.get("release")]
+            ids = [r["id"] for r in manifest]
         except ValueError as e:
             print(f"FATAL: {e}", file=sys.stderr)   # apps.py says the manifest's failure once
             return 1
@@ -682,11 +683,10 @@ def main(argv):
                                    elegidas(opts.get("--opciones")))
             elif verbo == "plan":
                 lineas = plan_all(rows, nextcloud, opts.get("--lock"),
-                                  elegidas(opts.get("--opciones")), [r["id"] for r in manifiesto])
+                                  elegidas(opts.get("--opciones")), ids=ids)
             else:
                 lineas = fetch_next(rows, nextcloud, opts["--nuevo"], opts.get("--lock"),
-                                    opts.get("--store"), elegidas(opts.get("--opciones")),
-                                    [r["id"] for r in manifiesto])
+                                    opts.get("--store"), elegidas(opts.get("--opciones")), ids=ids)
             for line in lineas:
                 print(line)
         except Refusal as e:
@@ -859,14 +859,13 @@ def selftest():
 
         # the repos the arms walk — the hub keeps each one newest-first. The real rows
         # mirror the shipped apps.json's release rows (territorio #33, epidemiologia #34,
-        # IntraVox #35, side_menu #38, eurooffice #36, and the
-        # optional farmacia #39, estadistica #40 and totem #41): the production-argv arm
-        # below reads the SHIPPED manifest, so a release row without its hub repo reds
-        # there, at the cause. IntraVox declares the fork's real range (32–35); side_menu's
-        # real tag is 6.0.1, the same number the old bake once pinned, which is exactly why
-        # the lock/store pair is what proves the channel; eurooffice rides at its real fork
-        # release, v11.0.7; totem's v0.3.0 is its first release — the one whose tarball
-        # carries the two committed voices (#41).
+        # IntraVox #35, side_menu #38, eurooffice #36, and the optional farmacia #39, estadistica
+        # #40 and totem #41): the production-argv arm below reads the SHIPPED manifest, so a
+        # release row without its hub repo reds there, at the cause. IntraVox declares the fork's
+        # real range (32–35); side_menu's real tag is 6.0.1, the same number the old bake once
+        # pinned, which is exactly why the lock/store pair is what proves the channel; eurooffice
+        # rides at its real fork release, v11.0.7; totem's v0.3.0 is its first release — the one
+        # whose tarball carries the two committed voices (#41).
         mk_release("APS-Conecta/territorio", "v0.80.0", "0.80.0", nc="34", nc_max="34")
         mk_release("APS-Conecta/epidemiologia", "v0.12.0", "0.12.0", nc="34", nc_max="34")
         mk_release("APS-Conecta/IntraVox", "v3.2.0", "3.2.0", nc="32", nc_max="35")

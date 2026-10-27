@@ -34,12 +34,12 @@ image digests live there and are deliberately not copied here — one fact, one 
   suite's answer through the installer's CA (and its refusal without it), a planilla user over
   OCS, every default app installed from its channel (own/fork from their releases at the
   locked tag — tarball, hash, no `signature.json` — store apps enabled) plus the functional
-  opens (notify_push's self-test, the office connector), each chosen
-  optional installed and named in the wizard's options record, buscador's PDF (or the manifest
-  row it still lacks, naming #149), and `actualizar --revisar` printing the plan while writing
-  nothing. `--dominio` covers the domain posture (public 443 + DNS, ACME as upstream); by IP
-  any VM qualifies. Hermetic self-test (`--self-test`, wired into `scripts/test.sh`) pins the
-  classification with PATH shims; the ritual itself is aps/RELEASING.md §7.
+  opens (notify_push's self-test, the office connector), each chosen optional installed and named
+  in the wizard's options record, buscador's PDF (or the manifest row it still lacks, naming
+  #149), and `actualizar --revisar` printing the plan while writing nothing. `--dominio` covers
+  the domain posture (public 443 + DNS, ACME as upstream); by IP any VM qualifies. Hermetic
+  self-test (`--self-test`, wired into `scripts/test.sh`) pins the classification with PATH shims;
+  the ritual itself is aps/RELEASING.md §7.
 
 ### Removed
 
@@ -497,14 +497,14 @@ image digests live there and are deliberately not copied here — one fact, one 
   list is space-separated `app:key:value` triples and cannot carry a value with a variable expanded
   into it.
 
-- **Talk (`spreed` 24.0.5) is part of the suite**, vendored as pinned tarballs like every other app, so a clean install still needs no
-  network and no app store (#98). Two things about Talk are recorded in its `VENDOR` file rather
-  than left to be found: it reaches an **external STUN server** (`stun.nextcloud.com:443`) by
-  default to discover a caller's own address, and **group calls stay small — around four people —
-  without a High Performance Backend**, which this stack does not run. Chat and one-to-one calls are
-  unaffected by the second. Talk's tarball is 52 MB, more than every other vendored app put
-  together, and git keeps a full copy per bump: it is now the first place to look if this repo has
-  to go on a diet.
+- **Talk (`spreed` 24.0.5) is part of the suite**, vendored as pinned tarballs like every other
+  app, so a clean install still needs no network and no app store (#98). Two things about Talk are
+  recorded in its `VENDOR` file rather than left to be found: it reaches an **external STUN
+  server** (`stun.nextcloud.com:443`) by default to discover a caller's own address, and **group
+  calls stay small — around four people — without a High Performance Backend**, which this stack
+  does not run. Chat and one-to-one calls are unaffected by the second. Talk's tarball is 52 MB,
+  more than every other vendored app put together, and git keeps a full copy per bump: it is now
+  the first place to look if this repo has to go on a diet.
 
 - **The licence table is now gated against the apps themselves.** `scripts/test.sh` reads
   `appinfo/info.xml` out of each vendored tarball — tracked, so it needs no network and no running

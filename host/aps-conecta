@@ -1736,10 +1736,10 @@ act_aplicar() {  # app by app (#46): the release rows through phase 12 itself â€
   # ADR-0017 built â€” and the store rows through the scoped `occ app:update` (#42's posture:
   # the store opens for one command at a time); last, the apps whose lock rows the new lock
   # dropped (#172: they left the manifest) are uninstalled. ACT_FALLA names the app on the way out.
-  local salida rc=0 retiradas
+  local salida rc=0 retired
   # the resolver drops exactly the rows whose app left the manifest, so the two locks' difference
   # is that set â€” read before APS_APPS_LOCK points at the new lock below
-  retiradas="$(python3 -c 'import json,sys; v,n=(json.load(open(p))["apps"] for p in sys.argv[1:]); print("\n".join(sorted(set(v)-set(n))))' \
+  retired="$(python3 -c 'import json,sys; v,n=(json.load(open(p))["apps"] for p in sys.argv[1:]); print("\n".join(sorted(set(v)-set(n))))' \
                 "$(act_lock)" "$(act_lock_next)")" || { ACT_FALLA="los candados no se pudieron comparar"; return 1; }
   salida="$( 
     set -e
@@ -1783,7 +1783,7 @@ act_aplicar() {  # app by app (#46): the release rows through phase 12 itself â€
         exit 1
       fi
       log "app $app desinstalada: ya no es parte de la suite"
-    done <<< "$retiradas"
+    done <<< "$retired"
     # the run's last assertion (#46): the store closed again â€” every open above was scoped,
     # so the instance's standing value is what it always was; anything else is a red.
     tienda="$(occ config:system:get appstoreenabled 2>/dev/null || true)"

@@ -462,14 +462,14 @@ exit 0
 SH
   cat > "$shims/curl" <<'SH'
 #!/usr/bin/env bash
-# curl shim: --cacert must be present for https; bodies and codes come from fixture files
+# curl shim: --cacert must be present for https; bodies come from fixture files; any other URL answers 200
 ca=""
 for a in "$@"; do case "$a" in --cacert) ca=1 ;; esac; done
 case "$*" in
   *status.php*|*cloud/user*) [ -n "$ca" ] || exit 60
                            cat "${SHIM_STATE}/$(case "$*" in *status.php*) echo status.body;; *) echo user.body;; esac)" 2>/dev/null
                            exit 0 ;;
-  *) cat "${SHIM_STATE}/curl.code" 2>/dev/null || echo 200 ;;
+  *) echo 200 ;;
 esac
 SH
   cat > "$shims/docker" <<'SH'
