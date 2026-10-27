@@ -16,7 +16,7 @@ ID the gates' rows name:
 | Patch | What it does |
 |---|---|
 | 010 | the container images re-pointed at this fork's registry (`ghcr.io/aps-conecta/*`) |
-| 015 | the Euro-Office container pinned to the certified pairing — DocumentServer 9.3.4 with its connector 11.0.5 |
+| 015 | the Euro-Office container built from the pinned DocumentServer 9.3.4 |
 | 020 | the app store disabled — apps ship baked, never fetched |
 | 030 | the suite's apps and theme baked into the Nextcloud image |
 | 040 | self-update suppressed — the suite updates as one lockstep set |

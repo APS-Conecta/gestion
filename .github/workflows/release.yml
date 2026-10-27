@@ -10,9 +10,9 @@
 #             produced b960d8d0/c33884f7/d4a54d87 retires with the call. Upstream's own
 #             validator workflows fire on push+PR (ci.yml's gates job rides alongside) but
 #             never on tag pushes — this arm is where the tag's bytes are proven.
-#   images  → the 20-image lockstep (workflow_call): 16 retags copied from OUR previous suite
+#   images  → the 20-image lockstep (workflow_call): 15 retags copied from OUR previous suite
 #             tag (retag-source ours by default — Stage 2's self-referential lockstep)
-#             + 4 builds FROM THE TAG (build-ref = the tag: immutable provenance — the exact
+#             + 5 builds FROM THE TAG (build-ref = the tag: immutable provenance — the exact
 #             bytes the gates just proved; the manifest lockstep assert stays as belt-and-
 #             braces) + matrix + boot-smoke + manifest. Sign sits behind the WHOLE call: a
 #             reusable-workflow job is green only when every job in it is green, and the
@@ -128,7 +128,7 @@ jobs:
       retag-source: ${{ inputs.retag-source || 'ours' }}   # ours on every tag push (inputs.* is null there — the || catches it); the repair arm's pinned passthrough
     permissions:
       contents: read
-      packages: write   # headroom for the Images pipeline's four pushing jobs
+      packages: write   # headroom for the Images pipeline's pushing jobs
 
   spreed:
     name: Refresh the Talk fork's signed release

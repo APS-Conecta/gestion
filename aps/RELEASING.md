@@ -87,7 +87,7 @@ names its gate.
 installs. It cannot ride the release commit: the tag's images do not exist until the push
 publishes them.
 
-**The retag source (the self-referential lockstep)**. The 16 registry-side images are copied,
+**The retag source (the self-referential lockstep)**. The 15 registry-side images are copied,
 not built: `retag-source: ours` — the chain's default on every tag push — copies each from
 **our previous suite tag** (the newest digest-complete set; git tags are the suite-tag list).
 A wiped registry bootstraps once through `aps/BASE.lock`, which records `ours:v0.4.0` — our
@@ -96,9 +96,9 @@ fork). The publish record's `retag_source` names what the walk actually copied f
 (`ours:vX.Y.Z`), so a Release's lineage is auditable from its manifest asset alone.
 
 **The vendor bump is retired** (the hard fork, D-3.5). Picking up a fresh upstream release was
-never a default and is now not a path either: the 16 retagged siblings always copy from our own
+never a default and is now not a path either: the 15 retagged siblings always copy from our own
 previous set. An upstream release arrives the way every upstream change arrives now — a
-deliberate merge into main, then an ordinary release; the 4 real builds pick it up from the
+deliberate merge into main, then an ordinary release; the 5 real builds pick it up from the
 tree, and the retags keep the lockstep.
 
 A repair that only needs the image set re-copied (a mixed or partial set, no Release involved)
@@ -123,8 +123,8 @@ the one the testbed pins: `force` re-publishes a set, and the pinned set never m
 PR runs.
 
 **When a fresh Images dispatch is needed**: only when the image inputs changed — the tree the
-four real builds read at `build-ref` (php/, app/, Containers/, themes/ — the theme is the one
-suite thing an image carries, ADR-0018); the 16 retagged siblings only ever copy the previous set. When only the install
+five real builds read at `build-ref` (php/, app/, Containers/, themes/ — the theme is the one
+suite thing an image carries, ADR-0018); the 15 retagged siblings only ever copy the previous set. When only the install
 path moved (the host bundle, provisioning/, scripts/ on the branch), a Clean boot re-dispatch
 alone is enough: it checks out the branch and installs the suite tag's already-published
 images.

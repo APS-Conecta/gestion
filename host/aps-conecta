@@ -1533,7 +1533,7 @@ cmd_revalidate() {  # post-update: run every read-only gate against the running 
   # clinic's stack moves — a new suite tag on purpose (D12: a published tag's digests never
   # move, so an update IS a deliberate new-tag run) or a container reboot. The three gates are
   # the read-only half of this program's gate stack: smoke (the 14 core invariants),
-  # office-smoke (the office wire: public-path healthcheck + --check + the 9.3.x pin), and
+  # office-smoke (the office wire: public-path healthcheck + --check + the Dockerfile's DS pin), and
   # divergence --gate (live state vs the declared set — the handoff contract the executor and
   # the weekly timer already ride). All three are read-only by their locked contracts, so this
   # arm never writes — the --reponer timer owns convergence; revalidate only measures.

@@ -191,7 +191,7 @@ jobs:
           # half — what this red is, where the acceptance lives, and what closes it. The
           # discriminator is honest by construction: the doctrine's own acceptance date (read
           # live from the ADR in this checkout) against the running image's build date — the
-          # nextcloud image is one of the 4 real builds on every tag (never a retag copy), so
+          # nextcloud image is one of the 5 real builds on every tag (never a retag copy), so
           # its Created is the tag's true build moment. An image built at or after the
           # doctrine that still bakes is a regression, and it gets the plain FAIL; any miss
           # (no ADR date, no image inspect) falls back to the plain FAIL too.
@@ -766,7 +766,7 @@ jobs:
           sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
       # The full local gate — smoke's 14 checks through the probe's loopback apache, the
       # office gate answering the AIO sibling since this slice (office-smoke's AIO legs:
-      # public-path healthcheck + --check + the DS 9.3.x pin + the image namespaces), and the
+      # public-path healthcheck + --check + the Dockerfile's DS pin + the image namespaces), and the
       # two hermetic self-tests riding test.sh's static section.
       # The weekly-drift step below reads the admin's notifications over OCS as the admin .env
       # names; on AIO that admin's password is AIO's own, so this throwaway testbed's admin

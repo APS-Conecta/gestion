@@ -101,7 +101,7 @@ fi
 row 020 "the app store is off at the image level — NC_appstoreenabled=\"0\" ENV in Containers/nextcloud/Dockerfile; the only openings are 042's per-command scoped installs" \
   grep -q 'NC_appstoreenabled="0"' "$TREE/Containers/nextcloud/Dockerfile"
 
-row 015 "the eurooffice documentserver base pins the suite's certified pairing (DS 9.3.4 ↔ the eurooffice connector — R3's set-certified pin, re-cut from the v0.2.0 choreography's main commit; the connector itself is the APS fork since #36, so its half of the pairing re-certifies per fork release in the office smoke's round-trip)" \
+row 015 "the Euro-Office DocumentServer is pinned — Containers/eurooffice/Dockerfile builds FROM documentserver v9.3.4, the version office-smoke asserts the running DS equals" \
   grep -q 'documentserver:v9.3.4' "$TREE/Containers/eurooffice/Dockerfile"
 
 selfupdate_optin() {  # the suite's update channel is opt-in: checkbox defaults off, no watchtower POST remains

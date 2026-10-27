@@ -1,23 +1,24 @@
-# S1 — the lockstep image pipeline. 20 images under ghcr.io/aps-conecta/* per suite tag: 16
+# S1 — the lockstep image pipeline. 20 images under ghcr.io/aps-conecta/* per suite tag: 15
 # registry-side retags of OUR PREVIOUS SUITE TAG (Stage 2, the self-referential lockstep;
 # docker buildx imagetools create — seconds, zero runner disk, the
-# multi-arch manifest list carried byte-for-byte) + 4 real builds (aio-nextcloud, the suite
+# multi-arch manifest list carried byte-for-byte) + 5 real builds (aio-nextcloud, the suite
 # theme it carries and nothing more (#42 — no app rides an image); aio-apache, the web front serving the installer's own certificate
 # that patch 235 slots in; aio-postgresql, pgvector and buscador's roles that patch 260 slots
-# in, tested before its push; all-in-one, the mastercontainer reskin that patch 070 slots in).
+# in, tested before its push; aio-eurooffice, the DocumentServer its Dockerfile pins (patch 015);
+# all-in-one, the mastercontainer reskin that patch 070 slots in).
 # The builds are x86-64 only: the suite's documented server requirement.
 #
 # WHY THE MATRIX GATES THE ANNOUNCE. The wizard resolves every sibling's tag from the mastercontainer's
 # own running image tag (%AIO_CHANNEL% -> the channel = the tag the operator ran,
 # php/src/Docker/DockerActionManager.php BuildImageName). One tag, twenty images: a missing tag is
 # not "one feature down" — the wizard's registry-reachability checks fail the whole start. Existence
-# alone is not enough either: the matrix also proves the 16 retagged images faithfully copy their
+# alone is not enough either: the matrix also proves the 15 retagged images faithfully copy their
 # RESOLVED source — under ours:<tag> the previous set is immutable, so any mismatch means the walk
 # itself erred (the "mixed" concept turns into an integrity proof), and the boot smoke proves
 # the pushed mastercontainer actually PULLS and BOOTS —
 # manifest-inspect never reads a layer byte, so a broken push is invisible to it.
 #
-# THE SOURCE IS OURS, RESOLVED ONCE (Stage 2). The 16 retags copy from ghcr.io/aps-conecta/*:<the
+# THE SOURCE IS OURS, RESOLVED ONCE (Stage 2). The 15 retags copy from ghcr.io/aps-conecta/*:<the
 # previous suite tag>: the retag job's retag.sh resolves the source
 # itself (the newest digest-complete set — git tags ARE the suite-tag list — falling back to the
 # recorded aps/BASE.lock bootstrap, else FATAL). Resolution happens exactly ONCE per run: the walk announces
@@ -44,7 +45,7 @@
 #
 # SECRETS. Only the ephemeral GITHUB_TOKEN (org-linked, packages:write where a job pushes). No PAT
 # lives in this repo: the read:packages PAT is the OPERATOR-side install step (R2's decision), never
-# CI's. Per-job permissions are least-privilege: write only in the four jobs that push.
+# CI's. Per-job permissions are least-privilege: write only in the jobs that push.
 #
 # ACTIONS ARE SHA-PINNED — upstream's own convention in every workflow it ships, and load-bearing
 # here: the mirror's lint-yaml runs zizmor --min-severity medium over .github/workflows on PRs, and
@@ -71,12 +72,12 @@ on:
         required: true
         type: string
       build-ref:
-        description: "The ref the 4 real builds check out. The release chain passes THE TAG (immutable provenance — the bytes the gates proved). main = the default for manual dispatches (repair/testing; post-fork main IS the shipped tree, theme and all)."
+        description: "The ref the 5 real builds check out. The release chain passes THE TAG (immutable provenance — the bytes the gates proved). main = the default for manual dispatches (repair/testing; post-fork main IS the shipped tree, theme and all)."
         required: false
         default: main
         type: string
       retag-source:
-        description: "Where the 16 registry-side retags copy from. ours = our previous suite tag (the lockstep default — resolved by retag.sh: the newest digest-complete set, else the recorded aps/BASE.lock bootstrap). ours:<tag> = an explicit pin for repair runs. Reaches bash only via env: (RETAG_SOURCE), never inline in run:."
+        description: "Where the 15 registry-side retags copy from. ours = our previous suite tag (the lockstep default — resolved by retag.sh: the newest digest-complete set, else the recorded aps/BASE.lock bootstrap). ours:<tag> = an explicit pin for repair runs. Reaches bash only via env: (RETAG_SOURCE), never inline in run:."
         required: false
         default: ours
         type: string
@@ -127,7 +128,7 @@ concurrency:
 
 jobs:
   retag:
-    name: Retag the 16 registry-side images
+    name: Retag the 15 registry-side images
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -326,9 +327,39 @@ jobs:
         env:
           SUITE_TAG: ${{ inputs.suite-tag }}
 
+  build-aio-eurooffice:
+    name: Build aio-eurooffice (the pinned DocumentServer)
+    needs: retag   # same gate as the other builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      sha: ${{ steps.head.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (upstream's own pin)
+        with:
+          ref: ${{ inputs.build-ref }}
+      - id: head
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # No gha cache: the image is one COPY over the ~7 GB base, so a cache would hold only the base.
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: Containers/eurooffice   # the Dockerfile copies its healthcheck.sh from its own directory
+          file: Containers/eurooffice/Dockerfile
+          push: true
+          tags: ghcr.io/aps-conecta/aio-eurooffice:${{ inputs.suite-tag }}
+
   matrix:
     name: Tag-completeness matrix (the gate)
-    needs: [retag, build-aio-nextcloud, build-all-in-one, build-aio-apache, build-aio-postgresql]
+    needs: [retag, build-aio-nextcloud, build-all-in-one, build-aio-apache, build-aio-postgresql, build-aio-eurooffice]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -431,7 +462,7 @@ jobs:
     # edge it would resolve empty — cmd_manifest would then fall into a bare-'ours' resolution
     # of its own (a second discovery racing the walk — exactly what D-5 forbids). No ordering
     # change: the builds and retag are already ancestors via matrix.
-    needs: [retag, matrix, boot-smoke, build-aio-nextcloud, build-all-in-one, build-aio-apache, build-aio-postgresql]
+    needs: [retag, matrix, boot-smoke, build-aio-nextcloud, build-all-in-one, build-aio-apache, build-aio-postgresql, build-aio-eurooffice]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
