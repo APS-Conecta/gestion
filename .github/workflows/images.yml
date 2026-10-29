@@ -1,4 +1,4 @@
-# S1 — the lockstep image pipeline. 18 images under ghcr.io/aps-conecta/* per suite tag: 13
+# S1 — the lockstep image pipeline. 16 images under ghcr.io/aps-conecta/* per suite tag: 11
 # registry-side retags of OUR PREVIOUS SUITE TAG (Stage 2, the self-referential lockstep;
 # docker buildx imagetools create — seconds, zero runner disk, the
 # multi-arch manifest list carried byte-for-byte) + 5 real builds (aio-nextcloud, the suite
@@ -10,9 +10,9 @@
 #
 # WHY THE MATRIX GATES THE ANNOUNCE. The wizard resolves every sibling's tag from the mastercontainer's
 # own running image tag (%AIO_CHANNEL% -> the channel = the tag the operator ran,
-# php/src/Docker/DockerActionManager.php BuildImageName). One tag, eighteen images: a missing tag is
+# php/src/Docker/DockerActionManager.php BuildImageName). One tag, sixteen images: a missing tag is
 # not "one feature down" — the wizard's registry-reachability checks fail the whole start. Existence
-# alone is not enough either: the matrix also proves the 13 retagged images faithfully copy their
+# alone is not enough either: the matrix also proves the 11 retagged images faithfully copy their
 # RESOLVED source — under ours:<tag> the previous set is immutable, so any mismatch means the walk
 # itself erred (the "mixed" concept turns into an integrity proof), and the boot smoke proves
 # the pushed mastercontainer actually PULLS and BOOTS —

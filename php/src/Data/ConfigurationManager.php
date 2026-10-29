@@ -379,10 +379,6 @@ class ConfigurationManager
         }
     }
 
-    private function has(string $key) : bool {
-        return array_key_exists($key, $this->getConfig());
-    }
-
     private function writeOfficeSuite(OfficeSuite $officeSuite) : void
     {
         $this->set('officeSuite', $officeSuite->value);

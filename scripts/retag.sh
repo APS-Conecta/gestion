@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S1's registry mechanics — the 18-image lockstep under ghcr.io/aps-conecta/*, everything the Images
+# S1's registry mechanics — the 16-image lockstep under ghcr.io/aps-conecta/*, everything the Images
 # workflow (.github/workflows/images.yml) rides: the sibling list, the registry-side retag walk, the
 # tag-completeness matrix, the digest manifest, and the generated sed that patch 010 reuses.
 #
@@ -11,7 +11,7 @@
 # That is why the matrix gates the announce, and why a tag is NEVER a raw digest: `image@sha256:...`
 # explodes into a bogus channel and every sibling resolves a tag that cannot exist.
 #
-# WHAT MOVES AND WHAT BUILDS. 13 of the 18 are registry-side retags — `buildx imagetools create`
+# WHAT MOVES AND WHAT BUILDS. 11 of the 16 are registry-side retags — `buildx imagetools create`
 # copies the manifest list at the registry itself (seconds, zero runner disk, the multi-arch entries
 # carried along byte-for-byte); aio-nextcloud (the apps+theme bake, patch 030), aio-apache (the
 # installer's own certificate, patch 235), aio-postgresql (the database, built from this tree and
@@ -20,7 +20,7 @@
 # from build-ref: THE TAG on every release arm, main on manual dispatches (Stage 3, D-3.4).
 #
 # THE SOURCE IS OURS (Stage 2 — the self-referential lockstep; the copy-from-upstream arm retired
-# with the hard fork, D-rev 2026-10-19, D-3.5). The 13 registry-side retags copy from OUR previous
+# with the hard fork, D-rev 2026-10-19, D-3.5). The 11 registry-side retags copy from OUR previous
 # suite tag, only ever: `retag TAG` resolves it (the newest git tag carrying a digest-complete
 # set — git tags ARE the suite-tag list, D4 — falling back to the recorded aps/BASE.lock
 # bootstrap, else FATAL naming the remedy), `--from-tag` pins it for repairs. From the first
@@ -47,7 +47,7 @@
 #   scripts/retag.sh list                         the sibling image names, one per line (parsed, in order)
 #   scripts/retag.sh sed FILE                     apply the org swap in place + verify (patch 010's generator)
 #   scripts/retag.sh retag TAG [--from-tag T] [--force]
-#                                    the 13-image registry-side walk — source OURS, always
+#                                    the 11-image registry-side walk — source OURS, always
 #   scripts/retag.sh matrix TAG [--from-tag T]
 #                                    the gate: all present + the copy keyed to the RESOLVED source
 #   scripts/retag.sh manifest TAG                 the publish record, JSON on stdout (retag_source)
@@ -476,7 +476,7 @@ selftest() { # the hermetic self-test — the repo's own self-test idiom: a PATH
 
   local FORK="$GHCR/$ORG_FORK"
 
-  # the fixture world: 13 retaggable siblings + the 4 built ones = MIN_SIBLINGS (the master
+  # the fixture world: 13 retaggable siblings + the 4 built ones, above MIN_SIBLINGS (the master
   # container is not in containers.json, as in the real one); the registry is a fixture tree
   # where $REG/<full-ref> holds the digest line; auto-digests are distinct per seeding.
   python3 - "$FIX/containers.json" <<'PY'
