@@ -1547,9 +1547,11 @@ check cleanboot_usage_cases
 
 # Clean boot's package installs are bounded (#85): both jobs install through scripts/cleanboot-apt.sh and
 # cleanboot.yml calls apt-get nowhere else. The script runs over PATH stubs — sudo passes through, timeout
-# records its limit and runs the real one at 1s, apt-get stalls on the case's step — and a fixture /etc:
-# a stall fails within seconds, its stderr naming the step and the mirrors (the list behind a mirror+file:
-# URI included); a healthy run passes; every apt-get call ran under a limit of a few minutes.
+# records its limit and runs the real one at 1s, apt-get stalls on the case's step or, on an unreachable
+# mirror, answers as the runner's apt did on the forced stall (update warns and exits 0 unless run with
+# --error-on=any; install then finds no package) — and a fixture /etc: a failure ends within seconds, its
+# FAIL line naming the step and its stderr the mirrors (the list behind a mirror+file: URI included); a
+# healthy run passes; every apt-get call ran under a limit of a few minutes.
 cleanboot_apt_cases() {
   local tmp stall want rc start
   [ "$(grep -c '^          bash scripts/cleanboot-apt.sh signify-openbsd$' .github/workflows/cleanboot.yml)" -eq 2 ] \
@@ -1561,7 +1563,7 @@ cleanboot_apt_cases() {
   printf 'http://azure.invalid/ubuntu/\tpriority:1\n' > "$tmp/mirrors.txt"
   printf '#!/bin/sh\nexec "$@"\n' > "$tmp/bin/sudo"
   printf '#!/bin/sh\necho "$1" >> %s/limits; shift\nAPT_BOUNDED=1 exec %s 1 "$@"\n' "$tmp" "$(command -v timeout)" > "$tmp/bin/timeout"
-  printf '#!/bin/sh\n[ -n "${APT_BOUNDED:-}" ] || echo unbounded >> %s/limits\n[ "$1" = "$STALL" ] && exec sleep 30\nexit 0\n' "$tmp" > "$tmp/bin/apt-get"
+  printf '#!/bin/sh\n[ -n "${APT_BOUNDED:-}" ] || echo unbounded >> %s/limits\n[ "$1" = "$STALL" ] && exec sleep 30\n[ "$STALL" = unreachable ] || exit 0\ncase "$*" in update*--error-on=any*) exit 100 ;; update*) exit 0 ;; *) exit 100 ;; esac\n' "$tmp" > "$tmp/bin/apt-get"
   chmod +x "$tmp/bin/"*
   while IFS='|' read -r stall want; do
     : > "$tmp/limits"; start=$SECONDS
@@ -1569,14 +1571,15 @@ cleanboot_apt_cases() {
     rc=$?
     case "$want" in
       pass) [ "$rc" -eq 0 ] && [ "$(wc -l < "$tmp/limits")" -eq 2 ] ;;
-      fail) [ "$rc" -ne 0 ] && [ $((SECONDS - start)) -lt 10 ] && grep -q "apt-get $stall" "$tmp/err" \
+      *) [ "$rc" -ne 0 ] && [ $((SECONDS - start)) -lt 10 ] && grep -q "^FAIL: apt-get $want " "$tmp/err" \
               && grep -q 'http://10.255.255.1/ubuntu/' "$tmp/err" && grep -q 'http://azure.invalid/ubuntu/' "$tmp/err" ;;
     esac && ! grep -vxE '[0-9]+' "$tmp/limits" && [ "$(sort -n "$tmp/limits" | tail -1)" -le 300 ] \
       || { echo "cleanboot: apt stall=$stall expected $want, got rc=$rc, limits: $(paste -sd' ' "$tmp/limits"), stderr: $(cat "$tmp/err")" >&2; rm -rf "$tmp"; return 1; }
   done <<'CASES'
 none|pass
-update|fail
-install|fail
+update|update
+install|install
+unreachable|update
 CASES
   rm -rf "$tmp"
 }

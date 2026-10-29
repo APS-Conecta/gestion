@@ -5,6 +5,8 @@
 # Clean boot's package install, bounded (#85): apt-get update, then apt-get install of the named
 # packages, each under a time limit. A stalled mirror fails the step within minutes, naming the
 # apt-get call and the configured mirrors, instead of hanging silently until the job's own timeout.
+# update runs with --error-on=any: by default a mirror it cannot reach is only a warning, and the
+# failure then surfaces in install as a missing package.
 # One copy for both Clean boot jobs: by domain and by IP.
 #   scripts/cleanboot-apt.sh PACKAGE...
 set -euo pipefail
@@ -25,5 +27,5 @@ apt_bounded() {
   exit 1
 }
 
-apt_bounded update -qq
+apt_bounded update -qq --error-on=any
 apt_bounded install -y "$@"
