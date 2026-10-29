@@ -42,3 +42,5 @@ jobs:
 
       - name: Check GitHub actions
         run: uvx zizmor --min-severity medium .github/workflows/*.yml
+        env:
+          ZIZMOR_GITHUB_TOKEN: ${{ github.token }}

@@ -16,6 +16,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   # The PR-title gate S2a lost (aps-common#10): Conventional Commits with the instalador
   # scope, in English — the org's language doctrine (#27) says commits AND PR titles are

@@ -79,6 +79,9 @@ concurrency:
 # caught on its PR. It cannot be a REQUIRED check (branch protection needs GitHub Pro or a public
 # repo), so the red X is advisory — exactly why the trigger matters: visibility is the mechanism.
 
+permissions:
+  contents: read
+
 jobs:
   # The suite tag, resolved once for both jobs, and before either: a tag ghcr.io does not have stops
   # the run here, in seconds, instead of fifteen minutes into a bring-up.
