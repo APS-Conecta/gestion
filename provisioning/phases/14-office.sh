@@ -13,8 +13,7 @@ log "AIO: document server URLs, jwt_secret and trusted_domains belong to the ent
 # --- by IP (R22): the server-to-server legs inside the wizard's network ---
 # An install by IP publishes https://<ip>/ under the installer's own CA, which the document server
 # does not trust, at a private address it refuses to fetch from. So both server-to-server legs go
-# inside the wizard's network, by the suite's internal service names (containers.json's
-# aliasgroup1, richdocuments:activate-config): the document server by its container, Nextcloud by
+# inside the wizard's network: the document server by its container name, Nextcloud by
 # apache's plain internal listener. The browser's leg, DocumentServerUrl, stays the entrypoint's
 # https://<ip>/eurooffice. A domain install keeps its public legs (B-019). The address is the one
 # the entrypoint writes into overwrite.cli.url on every boot; a value that cannot be read is said,

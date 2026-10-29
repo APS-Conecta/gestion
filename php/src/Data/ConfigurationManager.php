@@ -383,21 +383,6 @@ class ConfigurationManager
         return array_key_exists($key, $this->getConfig());
     }
 
-    private function unset(string ...$keys) : void {
-        $changed = false;
-        $this->getConfig();
-        foreach ($keys as $key) {
-            if ($this->has($key)) {
-                unset($this->config[$key]);
-                $changed = true;
-            }
-        }
-        // Only write if this isn't called in between startTransaction() and commitTransaction().
-        if ($changed && $this->noWrite !== true) {
-            $this->writeConfig();
-        }
-    }
-
     private function writeOfficeSuite(OfficeSuite $officeSuite) : void
     {
         $this->set('officeSuite', $officeSuite->value);
