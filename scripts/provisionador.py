@@ -20,10 +20,10 @@ certificate. HTTPS on the LAN with that certificate (L3 S1, owner 2026-10-02; a1
 cookie crosses the LAN in clear): the CSPRNG token below is the only auth, so this never faces the
 public internet — preflight (S7) reports the port and the clinic's own firewall keeps the edge.
 
-deis.py is IMPORTED, never shelled out to: load/write_site are the pure functions the
-endpoints ride, and its ask() — input()-driven, terminal-shaped — is replaced by the UI here, with
-ask()'s (gid, display, bare) triple construction replicated exactly: gids flow into SITE_TEAMS,
-SITE_FOLDERS mounts and SITE_ACL rows, so a drift here is a divergence event, not a cosmetic one.
+deis.py is IMPORTED, never shelled out to: load/write_site/team_lines are the pure functions the
+endpoints ride, and its ask() — input()-driven, terminal-shaped — is replaced by the UI here. Both
+build the (gid, display, bare) triples with team_lines, so the gids that flow into SITE_TEAMS,
+SITE_FOLDERS mounts and SITE_ACL rows have one construction.
 deis.py's FATAL paths sys.exit(); on the serving paths the calls catch SystemExit and answer JSON
 instead of dying — a half-served wizard page is worse than an honest 4xx — while startup re-exits
 fatally with the hint intact, before any socket opens.
@@ -527,30 +527,6 @@ elif "inspect" in args:
 sys.exit(0)'''
 
 
-def team_lines(word, gid_prefix, names):
-    """ask()'s triple construction with input() removed — the UI supplies the names, this builds
-    what the register cannot know. Replicated line-for-line from deis.py ask() (the fold, the word
-    strip, the gid join, the display form) because the triples flow into site.sh verbatim.
-    Variants converge — "Sector Estrella" and "SECTOR estrella" land on the same gid, by ask()'s
-    own design — so duplicates collapse to their first occurrence; an empty name is ask()'s
-    terminator and is dropped."""
-    out = {}
-    for name in names:
-        if not isinstance(name, str):
-            raise ValueError("cada sector o programa debe ser texto")
-        name = name.strip()
-        if not name:
-            continue
-        if "|" in name or any(ord(c) < 32 for c in name):   # the site file's field separator, a line break
-            raise ValueError(f"«{name}» no puede llevar «|» ni saltos de línea")
-        bare = name[len(word):].strip() if deis.fold(name).startswith(word) else name
-        if not bare:  # the word alone ("sector") names nothing
-            continue
-        gid = gid_prefix + "-".join(deis.fold(bare).split())
-        out.setdefault(gid, (gid, f"{word.capitalize()} {bare}", bare))
-    return list(out.values())
-
-
 def find_row(codigo):
     return next((r for r in ROWS if r["codigo"] == codigo), None)
 
@@ -898,8 +874,8 @@ def api_sitio(payload):
     if not isinstance(sectors_in, list) or not isinstance(programs_in, list):
         return 400, {"error": "sectores y programas deben ser listas de nombres"}
     try:
-        sectors = team_lines("sector", "sector-", sectors_in)
-        programs = team_lines("programa", "prog-", programs_in)
+        sectors = deis.team_lines("sector", "sector-", sectors_in)
+        programs = deis.team_lines("programa", "prog-", programs_in)
     except ValueError as e:
         return 400, {"error": f"sectores y programas: {e}"}
     equipos = [[gid, display] for gid, display, _ in programs + sectors]   # write_site's order
@@ -976,8 +952,8 @@ def replace_teams(path, row, codigo, sectors, programs):
         with open(path, encoding="utf-8") as fh:
             text = fh.read()
         teams, _roles = site_arrays(path)
-        antes_sec = team_lines("sector", "sector-", [d for g, d in teams if g.startswith("sector-")])
-        antes_prog = team_lines("programa", "prog-", [d for g, d in teams if g.startswith("prog-")])
+        antes_sec = deis.team_lines("sector", "sector-", [d for g, d in teams if g.startswith("sector-")])
+        antes_prog = deis.team_lines("programa", "prog-", [d for g, d in teams if g.startswith("prog-")])
         with tempfile.TemporaryDirectory() as tmp:
             def fresh(name, sec, prog):
                 out = os.path.join(tmp, name)
@@ -1017,7 +993,7 @@ def role_names(path):
     with open(path, encoding="utf-8") as fh:
         roles = [list(m) for m in re.findall(r'^ *"(role-[a-z0-9-]+)\|([^|"]*)\|', fh.read(), re.M)]
     if len(roles) < 22:   # registry_groups' floor discipline: a shape change is refused, never a short list
-        raise ValueError(f"solo {len(roles)} de los 22 cargos compartidos se pudieron leer: el paquete "
+        raise ValueError(f"solo {len(roles)} de los 23 cargos compartidos se pudieron leer: el paquete "
                          "de instalación cambió de forma — reinstálelo")
     return roles
 
@@ -1094,7 +1070,7 @@ def registry_groups(path):
 
 def role_categories(path, site_roles):
     """role id -> the cat-* every holder of the role also joins (a8): the third field of phase
-    20's 22 shared roles plus the site's own SITE_ROLES. Nextcloud groups do not nest, so the
+    20's 23 shared roles plus the site's own SITE_ROLES. Nextcloud groups do not nest, so the
     roster frame adds the category itself. Only the four categories parse, so fewer than 22 means
     the registry's shape moved or a category is misspelled — refused, registry_groups' floor
     discipline. A site role never overrides a shared one (20-groups refuses a bad site category)."""
@@ -1102,7 +1078,7 @@ def role_categories(path, site_roles):
         cats = dict(re.findall(r'^ *"(role-[a-z0-9-]+)\|[^|"]*\|'
                                r'(cat-(?:jefaturas|clinicos|tecnicos|administrativos))"', fh.read(), re.M))
     if len(cats) < 22:
-        raise ValueError(f"solo {len(cats)} de los 22 roles compartidos declaran su categoría en "
+        raise ValueError(f"solo {len(cats)} de los 23 roles compartidos declaran su categoría en "
                          f"{path} — cambió de forma; corríjalo antes de ejecutar")
     for gid, _display, category in site_roles:
         cats.setdefault(gid, category)
@@ -4157,15 +4133,15 @@ def selftest():
                   and not CODIGO.fullmatch("1104857") and not CODIGO.fullmatch("11a302")
                   and not CODIGO.fullmatch("") and not CODIGO.fullmatch("-1"))
 
-            # — ask()'s triple construction, replicated (a drift is a divergence event)
+            # — the team triples: deis.team_lines, the one construction both entry paths use
             check("triples: variants converge, empties drop",
-                  team_lines("sector", "sector-", ["Sector Estrella", "SECTOR estrella", ""])
+                  deis.team_lines("sector", "sector-", ["Sector Estrella", "SECTOR estrella", ""])
                   == [("sector-estrella", "Sector Estrella", "Estrella")])
             check("triples: programs carry the prog- prefix",
-                  team_lines("programa", "prog-", ["Programa Salud Mental"])
+                  deis.team_lines("programa", "prog-", ["Programa Salud Mental"])
                   == [("prog-salud-mental", "Programa Salud Mental", "Salud Mental")])
             try:
-                team_lines("sector", "sector-", [13])
+                deis.team_lines("sector", "sector-", [13])
                 check("triples: non-string names refused (unit)", False)
             except ValueError:
                 check("triples: non-string names refused (unit)", True)
@@ -4411,6 +4387,35 @@ def selftest():
                                                     "programs": [], "vista": True})
             check("teams: a name with «|» is refused before it can break the site file",
                   st == 400 and "«|»" in barra["error"])
+            # #195: punctuated, accented and long names slug into group ids; the cargo phase 50
+            # derives from each passes the account guard and the sealed sheet reads it back
+            largo = "Población Nueva Esperanza y Villa Los Aromos del Valle de Los Ríos Sur"
+            real_here, real_cred = deis.HERE, CRED_PATH
+            with tempfile.TemporaryDirectory() as pn:
+                deis.HERE = os.path.join(pn, "scripts")
+                os.makedirs(deis.HERE)
+                CRED_PATH = os.path.join(pn, "credenciales.txt")
+                try:
+                    st_n, nombres = call("POST", "/api/sitio", {
+                        "codigo": "121567", "sectors": ["Sector O'Higgins", "Norte/Centro", largo],
+                        "programs": ["Programa Cardiovascular (PSCV)"]})
+                    st_u, _ = call("POST", "/api/usuarios", {"codigo": "121567", "csv":
+                                   "usuario;nombre;apellidos;correo;grupos;primer_admin\n"
+                                   "ana.1;Ana;Uno;;sector-o-higgins role-medico;sí\n"})
+                    cargos_n = [u for u in standing_uids(*site_arrays(site_path("121567"))) if u != "admin"]
+                    try:
+                        hoja = sealed_map(CRED_PATH)
+                    except ValueError:
+                        hoja = {}
+                finally:
+                    deis.HERE, CRED_PATH = real_here, real_cred
+            check("teams: «Sector O'Higgins», «Programa Cardiovascular (PSCV)», «Norte/Centro» and a 70-character name become group ids, their cargos pass the account guard and the sealed sheet reads back (#195)",
+                  len(largo) == 70 and st_n == 200
+                  and [g for g, _ in nombres["equipos"]] == [
+                      "prog-cardiovascular-pscv", "sector-o-higgins", "sector-norte-centro",
+                      "sector-poblacion-nueva-esperanza-y-villa-los-aromos-del-valle-de"]
+                  and st_u == 200 and "jefe.o-higgins" in cargos_n
+                  and all(UID_RE.fullmatch(u) for u in cargos_n) and set(cargos_n) | {"ana.1"} <= set(hoja))
             EXEC_LOCK.acquire()
             try:
                 st_e, en_curso = call("POST", "/api/sitio", {"codigo": "113314", "sectors": ["Otro"],
@@ -5396,7 +5401,7 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                   "«sudo aps-conecta datos --importar» los deja cargados" in listo
                   and "«sudo aps-conecta datos --importar» los deja cargados" in sin)
             with tempfile.TemporaryDirectory() as sd:
-                deis.write_site(find_row("113314"), SNAPSHOT, "113314", team_lines("sector", "sector-", ["Norte"]), [],
+                deis.write_site(find_row("113314"), SNAPSHOT, "113314", deis.team_lines("sector", "sector-", ["Norte"]), [],
                                 path=os.path.join(sd, "a.sh"), domain="gestion.clinica.example")
                 deis_site_text = open(os.path.join(sd, "a.sh"), encoding="utf-8").read()
             check("suite: a new site file carries the domain the wizard took",
