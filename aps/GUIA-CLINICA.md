@@ -47,7 +47,7 @@ El asistente está en español. Lo importante:
 - **La oficina es Euro-Office**, la única de la suite: el asistente no ofrece cambiarla ni
   desactivarla. No hay tienda de aplicaciones ni contenedores comunitarios: las apps de la suite
   vienen incorporadas y el conjunto se actualiza junto, nunca por partes.
-- Talk, Whiteboard e Imaginary parten apagados; el paso 6 activa Talk (y su grabación) si caben
+- Talk e Imaginary parten apagados; el paso 6 activa Talk (y su grabación) si caben
   en el servidor.
 - Tras «Iniciar», la tarjeta «Suite en marcha» remite a la pestaña del instalador web
   (`sudo aps-conecta abrir` si se cerró).

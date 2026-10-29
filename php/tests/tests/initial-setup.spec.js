@@ -24,7 +24,6 @@ test('Initial setup', async ({ page: setupPage, browser }) => {
 
   // The additional containers start off (patch 210) and the office is Euro-Office (patch 200)
   await expect(containersPage.locator('#talk')).not.toBeChecked()
-  await expect(containersPage.getByRole('checkbox', { name: 'Whiteboard' })).not.toBeChecked()
   await expect(containersPage.getByRole('checkbox', { name: 'Imaginary' })).not.toBeChecked()
   await expect(containersPage.locator('#office-eurooffice')).toBeChecked()
   await containersPage.locator('#talk').check();

@@ -359,13 +359,13 @@ office_is_euro_office() {  # 200: the suite's office is Euro-Office, and only Eu
 row 200 "the suite's office is Euro-Office only — any other office choice is refused before it is stored (422, Spanish), and the page offers no way to disable it (R25, D12 b)" \
   office_is_euro_office
 
-options_start_off() {  # 210: Talk, Whiteboard and Imaginary start off (R29, R27.5/7; D12 a) — the
-  # three PHP default literals Setup.php copies into a fresh config. The Provisionador's step 7 turns Talk on
+options_start_off() {  # 210: Talk and Imaginary start off (R29, R27.5/7; D12 a) — the
+  # two PHP default literals Setup.php copies into a fresh config. The Provisionador's step 7 turns Talk on
   # where the server's memory and cores allow; the translated suite's persisted-defaults spec
-  # expects the same three falses.
+  # expects the same two falses.
   local m="$TREE/php/src/Data/ConfigurationManager.php" s="$TREE/php/tests/tests/persist-default-config.spec.js" fail=0 k
   s4_files "$m" "$s" || return 1
-  for k in isTalkEnabled isWhiteboardEnabled isImaginaryEnabled; do
+  for k in isTalkEnabled isImaginaryEnabled; do
     grep -qF "get => (bool) \$this->get('$k', false);" "$m" || { echo "  $k does not default to off" >&2; fail=1; }
     if grep -nF "get('$k', true)" "$m"; then echo "  a $k getter still defaults on" >&2; fail=1; fi
     grep -qF "$k: false," "$s" || { echo "  persist-default-config.spec.js does not expect $k off" >&2; fail=1; }
@@ -373,22 +373,18 @@ options_start_off() {  # 210: Talk, Whiteboard and Imaginary start off (R29, R27
   [ "$fail" -eq 0 ]
 }
 
-row 210 "Talk, Whiteboard and Imaginary start off — the three PHP defaults a fresh config copies, and the suite's spec expecting them (R29, D12 a)" \
+row 210 "Talk and Imaginary start off — the two PHP defaults a fresh config copies, and the suite's spec expecting them (R29, D12 a)" \
   options_start_off
 
 first_boot_quiet() {  # 220: a fresh install calls nothing it does not need (R28, the AIO side):
-  # whiteboard's npm never asks the registry about its own update (when Whiteboard is enabled —
-  # 210 starts it off), and nextcloud_announcements is disabled in the fresh-install block, before
-  # its first cron run fetches pushfeed.nextcloud.com. The rest of R28 (the connectivity check, the
-  # resolver noise, HIBP, the tiles image) is the provisioning phases' or the published allowlist's.
-  local w="$TREE/Containers/whiteboard/Dockerfile" fail=0
-  s4_files "$w" "$TREE/Containers/nextcloud/entrypoint.sh" || return 1
-  grep -qF 'ENV NPM_CONFIG_UPDATE_NOTIFIER=false' "$w" || { echo "  whiteboard's npm still checks for its own update" >&2; fail=1; }
-  s4_install_block 'php /var/www/html/occ app:disable nextcloud_announcements' || fail=1
-  [ "$fail" -eq 0 ]
+  # nextcloud_announcements is disabled in the fresh-install block, before its first cron run
+  # fetches pushfeed.nextcloud.com. The rest of R28 (the connectivity check, the resolver noise,
+  # HIBP, the tiles image) is the provisioning phases' or the published allowlist's.
+  s4_files "$TREE/Containers/nextcloud/entrypoint.sh" || return 1
+  s4_install_block 'php /var/www/html/occ app:disable nextcloud_announcements'
 }
 
-row 220 "a fresh install calls nothing it does not need — whiteboard's npm update check off, nextcloud_announcements disabled before its first cron (R28)" \
+row 220 "a fresh install calls nothing it does not need — nextcloud_announcements disabled before its first cron (R28)" \
   first_boot_quiet
 
 circles_probe_skipped() {  # 230: the fresh install logs no «relation "oc_circle_circles" does not

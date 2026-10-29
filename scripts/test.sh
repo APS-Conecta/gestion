@@ -1477,6 +1477,16 @@ check bash -c '
   case "$out" in "docker run"*) ;; *) echo "run-command printed no docker run string: $out" >&2; exit 1 ;; esac
   ! grep -q "APS_TILES_""DIR" <<<"$out"'
 
+# --- gate (#178): AppAPI runs through HaRP only — the board app and the deprecated socket proxy are gone ---
+# #175 removes both from the suite with no tombstone, so the proof is the absence, tree-wide: no image
+# directory, no container definition (the release list is parsed from it), no wizard setting or checkbox,
+# no entrypoint block, no doc line. The pattern is assembled without its literals so this file is not
+# its own hit.
+check bash -c '
+  re="white""board|piza""rra|docker.?socket""[._ -]?proxy"
+  hits="$(git ls-files | grep -iE "$re"; git grep -nIiE "$re")"
+  [ -z "$hits" ] || { printf "still in the tree:\n%s\n" "$hits" >&2; exit 1; }'
+
 # --- gate (#180): the suite carries no document-search footprint ------------------------------------
 # No tracked file names the document-search app, its two database roles or the database extension
 # it needed. BUGS.md's rows are frozen records and keep their bytes. The tokens are assembled
@@ -1666,6 +1676,61 @@ one_click_cap_cases() {
     || { printf 'the row missed a planted cap or flagged the delete:\n%s\n' "$rows" >&2; return 1; }
 }
 check one_click_cap_cases
+
+# --- gate (#202): a restore stops at its first error, and its failure marker stays ----------------
+# The database image's real start.sh, its data and dump directories moved into a temp tree, replays
+# a fixture dump through a stub psql that keeps psql's error contract: a failing statement prints
+# an ERROR and the replay goes on (exit 0) unless ON_ERROR_STOP is set, which stops it (exit 3).
+restore_start() {  # TREE — one start of the copied start.sh: its exit in rc, its output in out
+  rc=0; out="$(PATH="$1/bin:$PATH" POSTGRES_USER=nextcloud POSTGRES_DB=nextcloud_database POSTGRES_PASSWORD=x \
+    timeout 60 bash "$1/start.sh" 2>&1)" || rc=$?
+}
+restore_stop_cases() {
+  local tmp rc out dump
+  tmp="$(mktemp -d)"; mkdir -p "$tmp/bin" "$tmp/data" "$tmp/dump"; dump="$tmp/dump/database-dump.sql"
+  sed "s|/var/lib/postgresql/data|$tmp/data|g; s|/mnt/data|$tmp/dump|g" Containers/postgresql/start.sh > "$tmp/start.sh"
+  if grep -qE '/var/lib/postgresql|/mnt/data' "$tmp/start.sh"; then
+    echo "restore: start.sh names a path the copy did not move" >&2; rm -rf "$tmp"; return 1
+  fi
+  printf '#!/usr/bin/env bash\necho "${PGPORT:-5432}" >> %q\n' "$tmp/started" > "$tmp/bin/docker-entrypoint.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/bin/pg_ctl"
+  cat > "$tmp/bin/psql" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in *" -c "*) exit 0 ;; esac
+stop=0; case "$*" in *ON_ERROR_STOP=1*) stop=1 ;; esac
+n=0
+while IFS= read -r line; do
+  n=$((n + 1))
+  case "$line" in *oc_missing*)
+    echo "psql:<stdin>:$n: ERROR:  relation \"public.oc_missing\" does not exist" >&2
+    [ "$stop" = 0 ] || exit 3 ;;
+  esac
+done
+exit 0
+STUB
+  chmod +x "$tmp/bin/"*
+  cat > "$dump" <<'DUMP'
+--
+-- Name: oc_appconfig; Type: TABLE; Schema: public; Owner: oc_nextcloud
+--
+CREATE TABLE public.oc_appconfig (appid character varying(32) NOT NULL);
+ALTER TABLE public.oc_appconfig OWNER TO oc_nextcloud;
+GRANT ALL ON SCHEMA public TO oc_nextcloud;
+DUMP
+  restore_start "$tmp"
+  [ "$rc" = 0 ] && [ ! -e "$tmp/dump/import.failed" ] && grep -qx 5432 "$tmp/started" \
+    || { echo "restore: a clean dump must restore and start the server (exit $rc): $out" >&2; rm -rf "$tmp"; return 1; }
+  rm -rf "${tmp:?}/data/"* "$tmp/started"
+  echo 'INSERT INTO public.oc_missing VALUES (1);' >> "$dump"
+  restore_start "$tmp"
+  [ "$rc" != 0 ] && [ -e "$tmp/dump/import.failed" ] && ! grep -qx 5432 "$tmp/started" \
+    || { echo "restore: a failing statement must stop the replay, keep import.failed and start nothing (exit $rc): $out" >&2; rm -rf "$tmp"; return 1; }
+  restore_start "$tmp"
+  [ "$rc" = 1 ] && [[ "$out" == *"The database import failed"* ]] && ! grep -qx 5432 "$tmp/started" \
+    || { echo "restore: the start after a failed replay must refuse (exit $rc): $out" >&2; rm -rf "$tmp"; return 1; }
+  rm -rf "$tmp"
+}
+check restore_stop_cases
 
 # --- gate: the anchors the wizard links into these docs still resolve ---------------------
 # The wizard (patch 140's and 170's bytes, committed since the hard fork) links six sections of

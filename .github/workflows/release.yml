@@ -10,7 +10,7 @@
 #             produced b960d8d0/c33884f7/d4a54d87 retires with the call. Upstream's own
 #             validator workflows fire on push+PR (ci.yml's gates job rides alongside) but
 #             never on tag pushes — this arm is where the tag's bytes are proven.
-#   images  → the 20-image lockstep (workflow_call): 15 retags copied from OUR previous suite
+#   images  → the 18-image lockstep (workflow_call): 13 retags copied from OUR previous suite
 #             tag (retag-source ours by default — Stage 2's self-referential lockstep)
 #             + 5 builds FROM THE TAG (build-ref = the tag: immutable provenance — the exact
 #             bytes the gates just proved; the manifest lockstep assert stays as belt-and-
@@ -118,7 +118,7 @@ jobs:
         run: bash scripts/acquisition-gate.sh .
 
   images:
-    name: Publish the 20-image lockstep set
+    name: Publish the 18-image lockstep set
     needs: gates   # a red validator, twig-lint or gate can never move images
     uses: ./.github/workflows/images.yml
     with:

@@ -5250,7 +5250,7 @@ echo "✓ Contraseña del asistente guardada en $AIO_STATE/master.pw (solo admin
 echo "✓ Ingreso al asistente"
 echo "✓ Dominio: $d"
 echo "✓ Zona horaria: America/Santiago"
-echo "✓ Opciones: oficina incluida; Talk activado; grabación apagada; pizarra e imágenes apagadas; sin aplicaciones opcionales"
+echo "✓ Opciones: oficina incluida; Talk activado; grabación apagada; imágenes apagadas; sin aplicaciones opcionales"
 echo "✓ Respaldo diario a las 04:00 hora de Santiago (07:00 UTC), en /srv/aps-conecta/respaldos, con /opt/aps-conecta"
 printf '%s\\n' "$d" > "$AIO_STATE/dominio"
 printf 'talk=%s grabacion=%s farmacia=%s estadistica=%s totem=%s\\n' "$t" "$g" "$f" "$e" "$m" > "$AIO_STATE/opciones"

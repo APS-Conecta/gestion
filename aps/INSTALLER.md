@@ -9,7 +9,7 @@ the suite's version is a signed release package (D12).
 
 - **One host** — Ubuntu or Debian, x86-64, Docker with API ≥ 1.44 (AIO's own floor).
 - **The wizard** — one container (`nextcloud-aio-mastercontainer`) serving `:8080`; it owns the
-  other containers as a lockstep set of 20 images under `ghcr.io/aps-conecta/*`.
+  other containers as a lockstep set of 18 images under `ghcr.io/aps-conecta/*`.
 - **The Provisionador** — the unpacked package at `/opt/aps-conecta/instalador`, driving the
   provisioning phases (`provisioning/` 05→60) over `docker exec` against the running instance.
 - **One address** — a domain the host is reachable at from the LAN and from itself (§7), or, without
@@ -91,7 +91,7 @@ lines. If preflight reds on the domain probe, do
    mastercontainer, captures the initial password (`GET /setup` shows it once; the installer keeps
    it in `/opt/aps-conecta/aio/master.pw`, 0600, and shows it on step 6), and posts the domain (or this
    server's IP, §13), the timezone, the options (Euro-Office, the suite's only office; Talk and its recording as the
-   server's memory and cores allow, port 3478 free; Whiteboard and Imaginary off), the «Aplicaciones
+   server's memory and cores allow, port 3478 free; Imaginary off), the «Aplicaciones
    opcionales» the operator checked (all off by default; today Farmacia, Estadística and Tótem, each
    from its own signed release when chosen, absent otherwise — the choice rides the install options
    and survives every re-provisioning; Estadística's DEIS figures download after install, by the app

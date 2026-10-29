@@ -19,8 +19,6 @@ test('Initial setup persists default container selections', async ({ page: setup
     isTalkRecordingEnabled: false,
     isImaginaryEnabled: false,
     isFulltextsearchEnabled: false,
-    isDockerSocketProxyEnabled: false,
     isHarpEnabled: false,
-    isWhiteboardEnabled: false,
   });
 });

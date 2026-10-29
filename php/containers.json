@@ -10,7 +10,6 @@
         "aps-conecta-collabora",
         "aps-conecta-talk",
         "aps-conecta-notify-push",
-        "aps-conecta-whiteboard",
         "aps-conecta-harp",
         "aps-conecta-nextcloud"
       ],
@@ -53,7 +52,6 @@
         "APACHE_MAX_SIZE=%APACHE_MAX_SIZE%",
         "APACHE_MAX_TIME=%NEXTCLOUD_MAX_TIME%",
         "NOTIFY_PUSH_HOST=aps-conecta-notify-push",
-        "WHITEBOARD_HOST=aps-conecta-whiteboard",
         "HARP_HOST=aps-conecta-harp"
       ],
       "volumes": [
@@ -156,8 +154,7 @@
         "aps-conecta-clamav",
         "aps-conecta-fulltextsearch",
         "aps-conecta-talk-recording",
-        "aps-conecta-imaginary",
-        "aps-conecta-docker-socket-proxy"
+        "aps-conecta-imaginary"
       ],
       "display_name": "Servidor de aplicaciones",
       "image": "ghcr.io/aps-conecta/aio-nextcloud",
@@ -183,7 +180,6 @@
         "SIGNALING_SECRET",
         "FULLTEXTSEARCH_PASSWORD",
         "IMAGINARY_SECRET",
-        "WHITEBOARD_SECRET",
         "HP_SHARED_KEY"
       ],
       "volumes": [
@@ -268,12 +264,9 @@
         "RECORDING_SECRET=%RECORDING_SECRET%",
         "TALK_RECORDING_HOST=aps-conecta-talk-recording",
         "FULLTEXTSEARCH_PASSWORD=%FULLTEXTSEARCH_PASSWORD%",
-        "DOCKER_SOCKET_PROXY_ENABLED=%DOCKER_SOCKET_PROXY_ENABLED%",
         "REMOVE_DISABLED_APPS=%REMOVE_DISABLED_APPS%",
         "THIS_IS_AIO=true",
         "IMAGINARY_SECRET=%IMAGINARY_SECRET%",
-        "WHITEBOARD_SECRET=%WHITEBOARD_SECRET%",
-        "WHITEBOARD_ENABLED=%WHITEBOARD_ENABLED%",
         "HARP_ENABLED=%HARP_ENABLED%",
         "HP_SHARED_KEY=%HP_SHARED_KEY%"
       ],
@@ -912,33 +905,6 @@
       ]
     },
     {
-      "container_name": "aps-conecta-docker-socket-proxy",
-      "image_tag": "%AIO_CHANNEL%",
-      "display_name": "Docker Socket Proxy (deprecated)",
-      "image": "ghcr.io/aps-conecta/aio-docker-socket-proxy",
-      "init": true,
-      "internal_port": "2375",
-      "environment": [
-        "AIO_LOG_LEVEL=%AIO_LOG_LEVEL%",
-        "TZ=%TIMEZONE%"
-      ],
-      "volumes": [
-        {
-          "source": "%WATCHTOWER_DOCKER_SOCKET_PATH%",
-          "destination": "/var/run/docker.sock",
-          "writeable": false
-        }
-      ],
-      "restart": "unless-stopped",
-      "read_only": true,
-      "tmpfs": [
-        "/tmp"
-      ],
-      "cap_drop": [
-        "NET_RAW"
-      ]
-    },
-    {
       "container_name": "aps-conecta-harp",
       "image_tag": "%AIO_CHANNEL%",
       "display_name": "HaRP",
@@ -988,52 +954,6 @@
       ],
       "profiles": [
         "harp"
-      ]
-    },
-    {
-      "container_name": "aps-conecta-whiteboard",
-      "image_tag": "%AIO_CHANNEL%",
-      "display_name": "Whiteboard",
-      "image": "ghcr.io/aps-conecta/aio-whiteboard",
-      "user": "65534",
-      "init": true,
-      "healthcheck": {
-        "start_period": "0s",
-        "test": "/healthcheck.sh",
-        "interval": "30s",
-        "timeout": "30s",
-        "start_interval": "5s",
-        "retries": 3
-      },
-      "expose": [
-        "3002"
-      ],
-      "tmpfs": [
-        "/tmp"
-      ],
-      "internal_port": "3002",
-      "environment": [
-        "AIO_LOG_LEVEL=%AIO_LOG_LEVEL%",
-        "TZ=%TIMEZONE%",
-        "NEXTCLOUD_URL=https://%NC_DOMAIN%",
-        "JWT_SECRET_KEY=%WHITEBOARD_SECRET%",
-        "STORAGE_STRATEGY=redis",
-        "REDIS_HOST=aps-conecta-redis",
-        "REDIS_PORT=6379",
-        "REDIS_HOST_PASSWORD=%REDIS_PASSWORD%",
-        "BACKUP_DIR=/tmp"
-      ],
-      "secrets": [
-        "WHITEBOARD_SECRET",
-        "REDIS_PASSWORD"
-      ],
-      "restart": "unless-stopped",
-      "profiles": [
-        "whiteboard"
-      ],
-      "read_only": true,
-      "cap_drop": [
-        "NET_RAW"
       ]
     }
   ]

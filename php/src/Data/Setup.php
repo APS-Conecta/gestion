@@ -31,9 +31,7 @@ readonly class Setup {
         $this->configurationManager->isImaginaryEnabled = $this->configurationManager->isImaginaryEnabled;
         $this->configurationManager->isTalkEnabled = $this->configurationManager->isTalkEnabled;
         $this->configurationManager->isTalkRecordingEnabled = $this->configurationManager->isTalkRecordingEnabled;
-        $this->configurationManager->isDockerSocketProxyEnabled = $this->configurationManager->isDockerSocketProxyEnabled;
         $this->configurationManager->isHarpEnabled = $this->configurationManager->isHarpEnabled;
-        $this->configurationManager->isWhiteboardEnabled = $this->configurationManager->isWhiteboardEnabled;
         $this->configurationManager->commitTransaction();
         return $password;
     }
