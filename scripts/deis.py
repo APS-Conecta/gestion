@@ -237,7 +237,8 @@ def team_lines(word, gid_prefix, names):
     and the Provisionador's step 7. "Norte", "Sector Norte" and "SECTOR norte" land on the same
     three strings, so it does not matter whether the operator repeats the word; duplicates collapse
     to their first occurrence. A name that slugs to nothing (empty, or the word alone) is dropped.
-    display and bare reach site.sh verbatim, so its field separator and line breaks are refused."""
+    display and bare reach site.sh verbatim, so its field separator and line breaks are refused, and
+    a «/» becomes «-»: each team's folder is named after them, and phase 30 nests mount points on «/»."""
     out = {}
     for name in names:
         if not isinstance(name, str):
@@ -245,7 +246,7 @@ def team_lines(word, gid_prefix, names):
         name = name.strip()
         if "|" in name or any(ord(c) < 32 for c in name):
             raise ValueError(f"«{name}» no puede llevar «|» ni saltos de línea")
-        bare = name[len(word):].strip() if fold(name).startswith(word) else name
+        bare = (name[len(word):].strip() if fold(name).startswith(word) else name).replace("/", "-")
         if slug(bare):
             gid = slug(gid_prefix + bare)
             out.setdefault(gid, (gid, f"{word.capitalize()} {bare}", bare))

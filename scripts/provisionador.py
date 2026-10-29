@@ -4403,6 +4403,8 @@ def selftest():
                                    "usuario;nombre;apellidos;correo;grupos;primer_admin\n"
                                    "ana.1;Ana;Uno;;sector-o-higgins role-medico;sí\n"})
                     cargos_n = [u for u in standing_uids(*site_arrays(site_path("121567"))) if u != "admin"]
+                    with open(site_path("121567"), encoding="utf-8") as fh:
+                        sitio_n = fh.read()
                     try:
                         hoja = sealed_map(CRED_PATH)
                     except ValueError:
@@ -4416,6 +4418,12 @@ def selftest():
                       "sector-poblacion-nueva-esperanza-y-villa-los-aromos-del-valle-de"]
                   and st_u == 200 and "jefe.o-higgins" in cargos_n
                   and all(UID_RE.fullmatch(u) for u in cargos_n) and set(cargos_n) | {"ana.1"} <= set(hoja))
+            check("teams: «Norte/Centro» displays without «/» (#195)",
+                  st_n == 200 and "/" not in dict(nombres["equipos"]).get("sector-norte-centro", "/"))
+            check("teams: site.sh declares «Norte/Centro»'s one folder, 'Sectores/Sector Norte-Centro', so phase 30 nests no mount point (#195)",
+                  [ln.strip() for ln in sitio_n.splitlines()
+                   if ln.strip().startswith("'Sectores/Sector Norte") and "|" not in ln]
+                  == ["'Sectores/Sector Norte-Centro'"])
             EXEC_LOCK.acquire()
             try:
                 st_e, en_curso = call("POST", "/api/sitio", {"codigo": "113314", "sectors": ["Otro"],
