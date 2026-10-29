@@ -20,7 +20,7 @@ ID the gates' rows name:
 | 020 | the app store disabled — apps ship baked, never fetched |
 | 030 | the suite's apps and theme baked into the Nextcloud image |
 | 040 | self-update suppressed — the suite updates as one lockstep set |
-| 050 | the Collabora and OnlyOffice cards removed (Euro-Office is the suite's office) |
+| 050 | Euro-Office is the suite's only office backend, from the wizard through runtime and release images |
 | 051 | the deSEC DNS flow removed |
 | 060 | the operator-visible strings translated to Spanish (es-CL, formal usted) |
 | 070 | the wizard re-skinned to the APS Conecta identity |
@@ -60,20 +60,21 @@ is skipped), patch 235's certificate directory (a setting and its read-only bind
 patch 240's container names (strings, and the log route's name guard), and #48's closures — the
 community channel's readers (the directory constant, the config property, the listing method, the
 form handler, the Caddy trusted-proxy variable) and patch 239's basemap directory (the setting and
-its read-only bind, removed with the route).
+its read-only bind, removed with the route). The office configuration and container lifecycle carry
+only the suite's Euro-Office backend (#177).
 
 **What the operator sees.** The wizard presents itself as «APS Conecta Gestión AIO — Instalador»;
 an already-installed instance greets with «APS Conecta Gestión AIO ya está instalado»; once the
 containers run, the page hands back to the web installer with «Suite en marcha». These are the shipped bytes
 — the brand gate proves them equal to this declaration on every run.
 
-**Why some messages remain in English.** The wizard renders 68 operator-visible messages from
+**Why some messages remain in English.** The wizard renders 64 operator-visible messages from
 PHP code the fork does not translate (its declared PHP changes are behaviour, not strings). They stay English by scope decision, and
 this is the complete list, by source:
 
 | Source | Count | Where | Examples |
 |---|---|---|---|
-| `php/src/Data/ConfigurationManager.php` | 35 | :599–:1148 | "Please enter a domain and not an IP-address!", "The entered timezone does not seem to be a valid timezone!" |
+| `php/src/Data/ConfigurationManager.php` | 31 | validation methods | "Please enter a domain and not an IP-address!", "The entered timezone does not seem to be a valid timezone!" |
 | `php/src/Desec/DesecManager.php` | 17 | — | deSEC registration errors (the flow is removed from the UI; the messages are unreachable) |
 | `php/src/Controller/LoginController.php` | 2 | :22, :34 | "The login is blocked since Nextcloud is running.", "The password is incorrect." |
 | `php/src/Controller/DockerController.php` | 3 | :81, :308, :353 | "Container not found.", "Stopping container", "Automatically reloading the page after 10s." |

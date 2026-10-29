@@ -157,8 +157,6 @@ $app->get('/containers', function (Request $request, Response $response, array $
         'timezone' => $configurationManager->timezone,
         'skip_domain_validation' => $configurationManager->shouldDomainValidationBeSkipped($skip_domain_validation),
         'talk_port' => $configurationManager->talkPort,
-        'collabora_dictionaries' => $configurationManager->collaboraDictionaries,
-        'collabora_additional_options' => $configurationManager->collaboraAdditionalOptions,
         'automatic_updates' => $configurationManager->areAutomaticUpdatesEnabled(),
         'is_backup_section_enabled' => !$configurationManager->disableBackupSection,
         'is_imaginary_enabled' => $configurationManager->isImaginaryEnabled,

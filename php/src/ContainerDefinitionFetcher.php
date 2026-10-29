@@ -55,16 +55,8 @@ readonly class ContainerDefinitionFetcher {
                 if (!$this->configurationManager->isClamavEnabled) {
                     continue;
                 }
-            } elseif ($entry['container_name'] === 'aps-conecta-onlyoffice') {
-                if ($this->configurationManager->officeSuite !== OfficeSuite::Onlyoffice) {
-                    continue;
-                }
             } elseif ($entry['container_name'] === 'aps-conecta-eurooffice') {
                 if ($this->configurationManager->officeSuite !== OfficeSuite::Eurooffice) {
-                    continue;
-                }
-            } elseif ($entry['container_name'] === 'aps-conecta-collabora') {
-                if ($this->configurationManager->officeSuite !== OfficeSuite::Collabora) {
                     continue;
                 }
             } elseif ($entry['container_name'] === 'aps-conecta-talk') {
@@ -161,16 +153,8 @@ readonly class ContainerDefinitionFetcher {
                         if (!$this->configurationManager->isClamavEnabled) {
                             continue;
                         }
-                    } elseif ($value === 'aps-conecta-onlyoffice') {
-                        if ($this->configurationManager->officeSuite !== OfficeSuite::Onlyoffice) {
-                            continue;
-                        }
                     } elseif ($value === 'aps-conecta-eurooffice') {
                         if ($this->configurationManager->officeSuite !== OfficeSuite::Eurooffice) {
-                            continue;
-                        }
-                    } elseif ($value === 'aps-conecta-collabora') {
-                        if ($this->configurationManager->officeSuite !== OfficeSuite::Collabora) {
                             continue;
                         }
                     } elseif ($value === 'aps-conecta-talk') {

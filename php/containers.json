@@ -5,9 +5,7 @@
       "image_tag": "%AIO_CHANNEL%",
       "documentation": "https://github.com/nextcloud/all-in-one/discussions/2105",
       "depends_on": [
-        "aps-conecta-onlyoffice",
         "aps-conecta-eurooffice",
-        "aps-conecta-collabora",
         "aps-conecta-talk",
         "aps-conecta-notify-push",
         "aps-conecta-harp",
@@ -42,11 +40,9 @@
         "NC_DOMAIN=%NC_DOMAIN%",
         "NEXTCLOUD_HOST=aps-conecta-nextcloud",
         "APACHE_HOST=aps-conecta-apache",
-        "COLLABORA_HOST=aps-conecta-collabora",
         "TALK_HOST=aps-conecta-talk",
         "APACHE_PORT=%APACHE_PORT%",
         "AIO_LOG_LEVEL=%AIO_LOG_LEVEL%",
-        "ONLYOFFICE_HOST=aps-conecta-onlyoffice",
         "EUROOFFICE_HOST=aps-conecta-eurooffice",
         "TZ=%TIMEZONE%",
         "APACHE_MAX_SIZE=%APACHE_MAX_SIZE%",
@@ -226,7 +222,6 @@
         "OVERWRITEPROTOCOL=https",
         "TURN_SECRET=%TURN_SECRET%",
         "SIGNALING_SECRET=%SIGNALING_SECRET%",
-        "ONLYOFFICE_SECRET=%ONLYOFFICE_SECRET%",
         "EUROOFFICE_SECRET=%EUROOFFICE_SECRET%",
         "AIO_URL=%AIO_URL%",
         "AIO_LOG_LEVEL=%AIO_LOG_LEVEL%",
@@ -234,12 +229,8 @@
         "NEXTCLOUD_MOUNT=%NEXTCLOUD_MOUNT%",
         "CLAMAV_ENABLED=%CLAMAV_ENABLED%",
         "CLAMAV_HOST=aps-conecta-clamav",
-        "ONLYOFFICE_ENABLED=%ONLYOFFICE_ENABLED%",
         "EUROOFFICE_ENABLED=%EUROOFFICE_ENABLED%",
-        "COLLABORA_ENABLED=%COLLABORA_ENABLED%",
-        "COLLABORA_HOST=aps-conecta-collabora",
         "TALK_ENABLED=%TALK_ENABLED%",
-        "ONLYOFFICE_HOST=aps-conecta-onlyoffice",
         "EUROOFFICE_HOST=aps-conecta-eurooffice",
         "TZ=%TIMEZONE%",
         "TALK_PORT=%TALK_PORT%",
@@ -359,62 +350,11 @@
       ],
       "secrets": [
         "REDIS_PASSWORD",
-        "ONLYOFFICE_SECRET",
         "EUROOFFICE_SECRET",
         "RECORDING_SECRET"
       ],
       "restart": "unless-stopped",
       "read_only": true,
-      "cap_drop": [
-        "NET_RAW"
-      ]
-    },
-    {
-      "container_name": "aps-conecta-collabora",
-      "image_tag": "%AIO_CHANNEL%",
-      "documentation": "https://github.com/nextcloud/all-in-one/discussions/1358",
-      "display_name": "Collabora",
-      "image": "ghcr.io/aps-conecta/aio-collabora",
-      "init": true,
-      "healthcheck": {
-        "start_period": "60s",
-        "test": ["CMD", "/usr/bin/coolwsd", "--probe", "--use-env-vars"],
-        "interval": "30s",
-        "timeout": "30s",
-        "start_interval": "5s",
-        "retries": 9
-      },
-      "expose": [
-        "9980"
-      ],
-      "internal_port": "9980",
-      "environment": [
-        "aliasgroup1=https://%NC_DOMAIN%:443,http://aps-conecta-apache.nextcloud-aio:23973",
-        "extra_params=--o:ssl.enable=false --o:ssl.termination=true --o:logging.disable_server_audit=true --o:welcome.enable=false --o:fetch_update_check=0 --o:allow_update_popup=false %COLLABORA_SECCOMP_POLICY% --o:logging.level=%COLLABORA_LOG_LEVEL% --o:logging.level_startup=%COLLABORA_LOG_LEVEL% --o:remote_font_config.url=https://%NC_DOMAIN%/apps/richdocuments/settings/fonts.json --o:net.post_allow.host[0]=.+",
-        "dictionaries=%COLLABORA_DICTIONARIES%",
-        "AIO_LOG_LEVEL=%AIO_LOG_LEVEL%",
-        "TZ=%TIMEZONE%",
-        "server_name=%NC_DOMAIN%",
-        "DONT_GEN_SSL_CERT=1"
-      ],
-      "restart": "unless-stopped",
-      "nextcloud_exec_commands": [
-        "echo 'Activating Collabora config...'",
-        "php /var/www/html/occ richdocuments:activate-config --wopi-url='http://aps-conecta-apache.nextcloud-aio:23973' --callback-url='http://aps-conecta-apache.nextcloud-aio:23973'"
-      ],
-      "profiles": [
-        "collabora"
-      ],
-      "shm_size": 268435456,
-      "tmpfs": [
-        "/tmp"
-      ],
-      "cap_add": [
-        "SYS_ADMIN",
-        "SYS_CHROOT",
-        "FOWNER",
-        "CHOWN"
-      ],
       "cap_drop": [
         "NET_RAW"
       ]
@@ -710,50 +650,6 @@
         "/run",
         "/tmp",
         "/var/log/clamav"
-      ],
-      "cap_drop": [
-        "NET_RAW"
-      ]
-    },
-    {
-      "container_name": "aps-conecta-onlyoffice",
-      "image_tag": "%AIO_CHANNEL%",
-      "display_name": "OnlyOffice (deprecated)",
-      "image": "ghcr.io/aps-conecta/aio-onlyoffice",
-      "init": true,
-      "healthcheck": {
-        "start_period": "60s",
-        "test": "/healthcheck.sh",
-        "interval": "30s",
-        "timeout": "30s",
-        "start_interval": "5s",
-        "retries": 9
-      },
-      "expose": [
-        "80"
-      ],
-      "internal_port": "80",
-      "environment": [
-        "AIO_LOG_LEVEL=%AIO_LOG_LEVEL%",
-        "LOG_LEVEL=%AIO_LOG_LEVEL%",
-        "TZ=%TIMEZONE%",
-        "JWT_ENABLED=true",
-        "JWT_HEADER=AuthorizationJwt",
-        "JWT_SECRET=%ONLYOFFICE_SECRET%"
-      ],
-      "volumes": [
-        {
-          "source": "nextcloud_aio_onlyoffice",
-          "destination": "/var/lib/onlyoffice",
-          "writeable": true
-        }
-      ],
-      "secrets": [
-        "ONLYOFFICE_SECRET"
-      ],
-      "restart": "unless-stopped",
-      "profiles": [
-        "onlyoffice"
       ],
       "cap_drop": [
         "NET_RAW"
