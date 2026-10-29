@@ -625,13 +625,13 @@ if [ -f "$NEXTCLOUD_DATA_DIR/trigger-preview.scan" ]; then
     rm "$NEXTCLOUD_DATA_DIR/trigger-preview.scan"
 fi
 
-# AIO one-click settings start # Do not remove or change this line!
-# Apply one-click-instance settings
-echo "Applying one-click-instance settings..."
-php /var/www/html/occ config:system:set one-click-instance --value=true --type=bool
-php /var/www/html/occ config:system:set one-click-instance.user-limit --value=100 --type=int
-php /var/www/html/occ config:system:set one-click-instance.link --value="https://nextcloud.com/all-in-one/"
-# AIO one-click settings end # Do not remove or change this line!
+# #176: an establishment has as many accounts as it has staff. A boot removes the account cap
+# AIO's one-click setting puts on an instance: the volume's aio.config.php (synced above only on an
+# install or an upgrade) takes the image's, and the keys a config write copied into config.php go.
+cp "$SOURCE_LOCATION/config/aio.config.php" /var/www/html/config/aio.config.php
+php /var/www/html/occ config:system:delete one-click-instance
+php /var/www/html/occ config:system:delete one-click-instance.user-limit
+php /var/www/html/occ config:system:delete one-click-instance.link
 if [ -n "$SUBSCRIPTION_KEY" ] && [ -z "$(php /var/www/html/occ config:app:get support potential_subscription_key)" ]; then
     php /var/www/html/occ config:app:set support potential_subscription_key --value="$SUBSCRIPTION_KEY"
     php /var/www/html/occ config:app:delete support last_check

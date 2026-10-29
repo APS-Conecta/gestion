@@ -191,13 +191,13 @@ jobs:
       - name: Arm F — re-insert an entrypoint enable of a policy app, expect the gate to red
         run: |
           # row 280 reads its ids from provisioning/app-policy.sh: an entrypoint line enabling
-          # support (a POLICY_ADMIN_ONLY app) after the one-click end marker must red it
+          # support (a POLICY_ADMIN_ONLY app) on every boot, before the log setup, must red it
           f=Containers/nextcloud/entrypoint.sh
-          grep -qx '# AIO one-click settings end # Do not remove or change this line!' "$f" \
-            || { echo "ARM F target drifted — the one-click end marker is not in $f; re-point the arm" >&2; exit 1; }
+          grep -qx '# Adjusting log files to be stored on a volume' "$f" \
+            || { echo "ARM F target drifted — the log setup's comment is not in $f; re-point the arm" >&2; exit 1; }
           ( . provisioning/app-policy.sh && case " $POLICY_ADMIN_ONLY " in *" support "*) ;; *) exit 1 ;; esac ) \
             || { echo "ARM F target drifted — support is not in POLICY_ADMIN_ONLY; re-point the arm" >&2; exit 1; }
-          sed -i '/^# AIO one-click settings end/a php /var/www/html/occ app:enable support' "$f"
+          sed -i '/^# Adjusting log files to be stored on a volume$/i php /var/www/html/occ app:enable support' "$f"
           if bash scripts/brand-gate.sh .; then
             echo "ARM F FAILED: an entrypoint enable of support did NOT red the brand gate — row 280 is vacuous" >&2
             exit 1

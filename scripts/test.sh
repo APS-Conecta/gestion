@@ -1589,6 +1589,25 @@ CASES
 }
 check office_pin_cases
 
+# --- gate (#176): no account cap — what builds the images sets none of the one-click-instance keys -
+# Upstream enforces one-click-instance.user-limit inside createUser (web, OCS and occ alike), so the
+# key set anywhere in the images caps the staff an establishment can have. The keys may appear only
+# where a boot deletes them from an instance that still carries them; the row proves it can red.
+one_click_rows() {  # git-grep lines in, every line that is not a boot's delete out
+  grep -vE '^[^:]+:[0-9]+:php /var/www/html/occ config:system:delete one-click-instance(\.user-limit|\.link)?$' || true
+}
+one_click_cap_cases() {
+  local rows
+  rows="$(git grep -n one-click-instance -- Containers php | one_click_rows)"
+  [ -z "$rows" ] || { printf 'the one-click-instance cap is in the image sources:\n%s\n' "$rows" >&2; return 1; }
+  rows="$(printf '%s\n' "Containers/nextcloud/config/aio.config.php:3:  'one-click-instance' => true," \
+    "Containers/nextcloud/entrypoint.sh:9:php /var/www/html/occ config:system:set one-click-instance.user-limit --value=100 --type=int" \
+    "Containers/nextcloud/entrypoint.sh:10:php /var/www/html/occ config:system:delete one-click-instance.user-limit" | one_click_rows)"
+  [ "$(printf '%s\n' "$rows" | grep -c .)" = 2 ] \
+    || { printf 'the row missed a planted cap or flagged the delete:\n%s\n' "$rows" >&2; return 1; }
+}
+check one_click_cap_cases
+
 # --- gate: the anchors the wizard links into these docs still resolve ---------------------
 # The wizard (patch 140's and 170's bytes, committed since the hard fork) links six sections of
 # the runbooks by their GitHub anchors. A renamed or renumbered heading breaks those links in

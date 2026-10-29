@@ -51,7 +51,7 @@ NC=aps-conecta-nextcloud                   # fixed by the fork's php/containers.
 # container names would match none of the suite's. Names the newest suite tag built from this
 # tree's image inputs: a release's, moved by the commit after each green Release (RELEASING §4),
 # or a rehearsal's while the inputs are ahead of it.
-IMAGE="${AIO_TEST_IMAGE:-ghcr.io/aps-conecta/all-in-one:v0.0.0-ci.15}"
+IMAGE="${AIO_TEST_IMAGE:-ghcr.io/aps-conecta/all-in-one:v0.0.0-ci.16}"
 WIZARD_PORT="${AIO_TEST_PORT:-8080}"
 APACHE_PORT="${AIO_TEST_APACHE_PORT:-11000}"
 DOMAIN="${AIO_TEST_DOMAIN:-aio-test.invalid}"
