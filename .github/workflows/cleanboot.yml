@@ -719,7 +719,7 @@ jobs:
             'update_channel' => 'stable',
           );
           PHP
-          docker exec --user www-data aps-conecta-nextcloud php /var/www/html/occ config:system:set one-click-instance.user-limit --value=100 --type=int
+          docker exec --user www-data aps-conecta-nextcloud php /var/www/html/occ config:system:set one-click-instance.link --value=https://nextcloud.com/all-in-one/
           docker restart aps-conecta-nextcloud
           boot_t0=$(date +%s)
           for i in $(seq 60); do
@@ -755,7 +755,7 @@ jobs:
             [ -n "$tz" ] && [ "$(occ config:system:get default_timezone)" = "$tz" ] \
               || { echo "FAIL: default_timezone is not the AIO zone after the restart" >&2; exit 1; }
             # #176: the restart removed the account cap the instance carried
-            for key in one-click-instance one-click-instance.user-limit; do
+            for key in one-click-instance one-click-instance.user-limit one-click-instance.link; do
               ! occ config:system:get "$key" \
                 || { echo "FAIL: $key survived the restart — the instance still caps its accounts" >&2; exit 1; }
             done )
