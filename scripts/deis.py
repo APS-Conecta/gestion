@@ -226,24 +226,51 @@ def matches(rows, terms):
     return [r for r in rows if all(t in fold(",".join(r[k] for k in COLUMNS)) for t in terms)]
 
 
+def slug(s):
+    """A team name as a group id, and through it phase 50's cargo account: lowercase ASCII, any
+    other run one `-`, trimmed, at most 64 characters (Nextcloud's id limit)."""
+    return re.sub(r"[^a-z0-9]+", "-", fold(s)).strip("-")[:64].strip("-")
+
+
+def team_lines(word, gid_prefix, names):
+    """(gid, display, bare) per team name — the one construction both entry paths use: ask() below
+    and the Provisionador's step 7. "Norte", "Sector Norte" and "SECTOR norte" land on the same
+    three strings, so it does not matter whether the operator repeats the word; duplicates collapse
+    to their first occurrence. A name that slugs to nothing (empty, or the word alone) is dropped.
+    display and bare reach site.sh verbatim, so its field separator and line breaks are refused, and
+    a «/» becomes «-»: each team's folder is named after them, and phase 30 nests mount points on «/»."""
+    out = {}
+    for name in names:
+        if not isinstance(name, str):
+            raise ValueError("cada sector o programa debe ser texto")
+        name = name.strip()
+        if "|" in name or any(ord(c) < 32 for c in name):
+            raise ValueError(f"«{name}» no puede llevar «|» ni saltos de línea")
+        bare = (name[len(word):].strip() if fold(name).startswith(word) else name).replace("/", "-")
+        if slug(bare):
+            gid = slug(gid_prefix + bare)
+            out.setdefault(gid, (gid, f"{word.capitalize()} {bare}", bare))
+    return list(out.values())
+
+
 def ask(question, word, gid_prefix):
     """What neither the register nor the type can tell us: how many sectors and programs there are
     and what they are called. Sectors are numbered here, coloured there, named after a neighbourhood
-    somewhere else — so ask. Returns (gid, display, bare) per line, empty line to finish.
-
-    "Norte", "Sector Norte" and "SECTOR norte" all land on the same three strings, so it
-    does not matter whether the operator repeats the word."""
+    somewhere else — so ask. Returns team_lines' triples, empty line to finish."""
     print(f"\n{question} (one per line, blank line to finish)")
-    out = []
+    names = []
     while True:
         try:
-            name = input(f"  {len(out) + 1}: ").strip()
+            name = input(f"  {len(names) + 1}: ").strip()
         except EOFError:  # answers piped in and exhausted — a traceback would bury the real cause
             sys.exit(f"\nFATAL: input ended while asking: {question}")
         if not name:
-            return out
-        bare = name[len(word):].strip() if fold(name).startswith(word) else name
-        out.append((gid_prefix + "-".join(fold(bare).split()), f"{word.capitalize()} {bare}", bare))
+            break
+        names.append(name)
+    try:
+        return team_lines(word, gid_prefix, names)
+    except ValueError as e:
+        sys.exit(f"FATAL: {e}")
 
 
 def write_site(row, snapshot, name, sectors, programs, path=None, domain=""):
@@ -299,8 +326,9 @@ def write_site(row, snapshot, name, sectors, programs, path=None, domain=""):
 # The suite's address: the domain the wizard took at «Iniciar la suite». Empty = local dev.
 SITE_DOMINIO="{domain}"
 
-# Staff roster, kept OUTSIDE the repo. Path on the install host. Nothing reads it yet — the reader
-# waits on password delivery (#106).
+# Staff roster: empty until the Provisionador loads the planilla, which writes the roster beside this
+# file and its path here. The Provisionador's executor reads it to create the accounts, and
+# scripts/divergence.sh to tell declared accounts from stray ones.
 SITE_ROSTER=""
 
 # --- Teams: programs and territorial sectors (id|display) ---
@@ -321,8 +349,8 @@ SITE_WELCOME=(
   'documentos|wall'
 )
 
-# --- Roles this establishment adds beyond the 22 in the shared registry (id|display|category) (#103) ---
-# Empty is the right default: those 22 are a CESFAM's standard positions and cover an establishment
+# --- Roles this establishment adds beyond the 23 in the shared registry (id|display|category) (#103) ---
+# Empty is the right default: those 23 are a CESFAM's standard positions and cover an establishment
 # with no local unit of its own. Add one here if this one runs a SAR, SAPU or SUR, e.g.
 #   "role-jefe-sar|Jefe/a de SAR|cat-jefaturas"    <- gets a standing account, like the other jefaturas
 #   "role-tens-sar|TENS – SAR|cat-tecnicos"        <- a job title; the people arrive with the roster
