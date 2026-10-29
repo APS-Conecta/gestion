@@ -1608,6 +1608,63 @@ one_click_cap_cases() {
 }
 check one_click_cap_cases
 
+# --- gate (#202): a restore stops at its first error, and its failure marker stays ----------------
+# The database image's real start.sh, its data and dump directories moved into a temp tree, replays
+# a fixture dump through a stub psql that keeps psql's error contract: a failing statement prints
+# an ERROR and the replay goes on (exit 0) unless ON_ERROR_STOP is set, which stops it (exit 3).
+# The fixture's role statements are the only shapes a real suite dump carries (Nextcloud's user
+# owns every object), and init-user-db.sh recreates that user before the replay.
+restore_start() {  # TREE — one start of the copied start.sh: its exit in rc, its output in out
+  rc=0; out="$(PATH="$1/bin:$PATH" POSTGRES_USER=nextcloud POSTGRES_DB=nextcloud_database POSTGRES_PASSWORD=x \
+    timeout 60 bash "$1/start.sh" 2>&1)" || rc=$?
+}
+restore_stop_cases() {
+  local tmp rc out dump
+  tmp="$(mktemp -d)"; mkdir -p "$tmp/bin" "$tmp/data" "$tmp/dump"; dump="$tmp/dump/database-dump.sql"
+  sed "s|/var/lib/postgresql/data|$tmp/data|g; s|/mnt/data|$tmp/dump|g" Containers/postgresql/start.sh > "$tmp/start.sh"
+  if grep -qE '/var/lib/postgresql|/mnt/data' "$tmp/start.sh"; then
+    echo "restore: start.sh names a path the copy did not move" >&2; rm -rf "$tmp"; return 1
+  fi
+  printf '#!/usr/bin/env bash\necho "${PGPORT:-5432}" >> %q\n' "$tmp/started" > "$tmp/bin/docker-entrypoint.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/bin/pg_ctl"
+  cat > "$tmp/bin/psql" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in *" -c "*) exit 0 ;; esac
+stop=0; case "$*" in *ON_ERROR_STOP=1*) stop=1 ;; esac
+n=0
+while IFS= read -r line; do
+  n=$((n + 1))
+  case "$line" in *oc_missing*)
+    echo "psql:<stdin>:$n: ERROR:  relation \"public.oc_missing\" does not exist" >&2
+    [ "$stop" = 0 ] || exit 3 ;;
+  esac
+done
+exit 0
+STUB
+  chmod +x "$tmp/bin/"*
+  cat > "$dump" <<'DUMP'
+--
+-- Name: oc_appconfig; Type: TABLE; Schema: public; Owner: oc_nextcloud
+--
+CREATE TABLE public.oc_appconfig (appid character varying(32) NOT NULL);
+ALTER TABLE public.oc_appconfig OWNER TO oc_nextcloud;
+GRANT ALL ON SCHEMA public TO oc_nextcloud;
+DUMP
+  restore_start "$tmp"
+  [ "$rc" = 0 ] && [ ! -e "$tmp/dump/import.failed" ] && grep -qx 5432 "$tmp/started" \
+    || { echo "restore: a clean dump must restore and start the server (exit $rc): $out" >&2; rm -rf "$tmp"; return 1; }
+  rm -rf "${tmp:?}/data/"* "$tmp/started"
+  echo 'INSERT INTO public.oc_missing VALUES (1);' >> "$dump"
+  restore_start "$tmp"
+  [ "$rc" != 0 ] && [ -e "$tmp/dump/import.failed" ] && ! grep -qx 5432 "$tmp/started" \
+    || { echo "restore: a failing statement must stop the replay, keep import.failed and start nothing (exit $rc): $out" >&2; rm -rf "$tmp"; return 1; }
+  restore_start "$tmp"
+  [ "$rc" = 1 ] && [[ "$out" == *"The database import failed"* ]] && ! grep -qx 5432 "$tmp/started" \
+    || { echo "restore: the start after a failed replay must refuse (exit $rc): $out" >&2; rm -rf "$tmp"; return 1; }
+  rm -rf "$tmp"
+}
+check restore_stop_cases
+
 # --- gate: the anchors the wizard links into these docs still resolve ---------------------
 # The wizard (patch 140's and 170's bytes, committed since the hard fork) links six sections of
 # the runbooks by their GitHub anchors. A renamed or renumbered heading breaks those links in

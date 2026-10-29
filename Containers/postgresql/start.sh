@@ -129,9 +129,10 @@ if ( [ -f "$DATADIR/PG_VERSION" ] && [ "$PG_MAJOR" != "$(cat "$DATADIR/PG_VERSIO
 EOSQL
     fi
 
-    # Restore database
+    # Restore database: the first failing statement stops the replay, so import.failed stays and
+    # Nextcloud never starts on a half-restored database
     echo "Restoring the database from database dump"
-    psql "$POSTGRES_DB" -U "$POSTGRES_USER" < "$DUMP_FILE"
+    psql -v ON_ERROR_STOP=1 "$POSTGRES_DB" -U "$POSTGRES_USER" < "$DUMP_FILE"
 
     # Correct permissions
     if [ -n "$DIFFERENT_DB_OWNER" ]; then
