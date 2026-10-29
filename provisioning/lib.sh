@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # provisioning/lib.sh — shared idempotency-guard helpers for the phase files (Story 0.5, AD-2).
 # Sourced by seed.sh, which then sources each phase; every mutating helper is QUERY-BEFORE-CREATE:
-# it inspects current state and skips/patches rather than blind-creating, so `make seed` is safe to
+# it inspects current state and skips/patches rather than blind-creating, so the seed is safe to
 # re-run. Source this file; do not execute it. Host has python3 (no jq assumed) for JSON parsing.
 #
 # REQUIRES scripts/env.sh to have been sourced first — it provides occ() and nc_exec(), the docker-
@@ -16,7 +16,7 @@ log()         { printf '    %s\n' "$*"; }
 phase_begin() {
   if [ -z "${SEED_CTX:-}" ]; then
     echo "FATAL: phase ${1} run outside the seed — standalone phases are a silent no-op." >&2
-    echo "       Run the whole runner: make seed  (phases see the site file this way)." >&2
+    echo "       Run the whole runner: bash provisioning/seed.sh  (phases see the site file this way)." >&2
     exit 1
   fi
   CURRENT_PHASE="$1"; printf '▶ phase %s — %s\n' "$1" "${2:-}"
@@ -24,14 +24,12 @@ phase_begin() {
 phase_end()   { printf '✓ phase %s\n' "${CURRENT_PHASE:-?}"; }
 
 # --- preconditions ---
-require_installed() {  # the FATAL names the container and the cause; `make up` only off AIO
+require_installed() {  # the FATAL names the container, and an override that misses the running suite
   nc_container   # here, not inside the pipe below, so the message can name it
   occ status --output=json 2>/dev/null | grep -q '"installed":true' && return 0
   echo "FATAL: Nextcloud is not installed/reachable in $NC_CONTAINER." >&2
-  if ! is_aio; then
-    echo "  Run 'make up' first." >&2
-  elif [ "$NC_CONTAINER" != "$AIO_NC" ]; then
-    echo "  The AIO stack is running, but NC_CONTAINER=$NC_CONTAINER (environment or .env) overrides detection — delete that line from .env." >&2
+  if [ "$NC_CONTAINER" != "$AIO_NC" ] && is_aio; then
+    echo "  The AIO stack is running, but NC_CONTAINER=$NC_CONTAINER (environment or .env) overrides it — delete that line from .env." >&2
   fi
   exit 1
 }
@@ -307,82 +305,6 @@ ensure_store_app() {  # APPID — install the store's newest compatible release,
   conf_load
   [ "$(conf_get app "$app" enabled 2>/dev/null || true)" = "yes" ] && { log "app $app enabled"; return 0; }
   # `app:enable` reads what is on disk and never contacts the store — no scope needed.
-  if err="$(occ app:enable "$app" 2>&1)"; then
-    log "app $app -> enabled"
-  else
-    log "FAILED to enable app $app — occ said: $(printf '%s' "$err" | tr '\n' ' ' | tail -c 300)"
-    return 1
-  fi
-}
-
-# An app WE write — a release row (ADR-0017) on a server, a checkout on a dev machine.
-#
-# The server's channel is the app's own signed GitHub Release, resolved and verified by the
-# wizard's download step and installed from the server's lock by ensure_release_app — phase 12
-# dispatches there when a lock row names the app. What reaches THIS function without a lock row
-# is one of two things: a live git clone on a development machine, or a server whose download
-# step never ran.
-#
-# The dispatch is on a fact rather than a flag — `apps/<id>/.git` exists or it does not. A
-# developer always has it and gets left alone (the tarball paths cleared directories before
-# unpacking; over a working tree that is uncommitted work, .git and all). Nobody has to
-# remember to set anything, and the wrong answer is not reachable by forgetting.
-#
-# A server with no lock row is a FATAL, never a fallback: the vendored bake that once fed this
-# branch is gone (#42), the seed is not the door that improvises an app from a channel nobody
-# verified, and every install path runs the download step before the seed — so its absence is
-# a stopped install to re-run, named in the operator's own words.
-ensure_own_app() {  # APPID CLONE_URL
-  local app="$1" url="$2"
-  local info="apps/$app/appinfo/info.xml" disk installed
-
-  # Not a checkout, and the lock named nothing: the download step never ran. Name the two
-  # honest repairs — re-run the install, or make it a dev machine on purpose.
-  if [ ! -d "apps/$app/.git" ]; then
-    log "FAILED $app — its release was never resolved on this server (no lock row, and no image carries apps, #42)."
-    log "        Re-run the install so its download step resolves the release, or clone the app for development:"
-    log "        git clone $url apps/$app"
-    return 1
-  fi
-
-  # A checkout with no info.xml is a half-clone, not a dev machine. Say the command: apps/ is
-  # not tracked, so a clean checkout has no apps/ and this is what a new operator hits.
-  if [ ! -f "$info" ]; then
-    log "FAILED $app — apps/$app has a .git but no $info. Finish the clone:"
-    log "        git clone $url apps/$app"
-    return 1
-  fi
-
-  # disk is the INSTALLED version, read in-container through the same probe as the vendored path:
-  # on a dev machine the apps/ bind mount makes the two reads identical bytes, and under AIO this
-  # branch is unreachable by construction (apps/ has no .git, so the dispatch above already sent
-  # the app to the vendored path). The half-clone guard above stays host-side on purpose — it
-  # describes the CHECKOUT, not the instance.
-  disk="$(app_installed_version "$app")"
-  [ -n "$disk" ] || { log "FAILED $app — no <version> readable in custom_apps/$app/appinfo/info.xml (tag absent, or the stack is down)"; return 1; }
-
-  conf_load
-  installed="$(conf_get app "$app" installed_version 2>/dev/null || true)"
-
-  # Same trap the release path documents, reached by a different route: here the version moves
-  # when someone runs `git pull`, and Nextcloud then answers almost nothing until `occ upgrade`
-  # runs. Doing it inside the phase means a pull followed by `make seed` is enough, and nobody has
-  # to remember the second command. Only on a change, so a normal seed never pays for it.
-  if [ -n "$installed" ] && [ "$installed" != "$disk" ]; then
-    if occ upgrade --no-interaction >/dev/null 2>&1; then
-      log "app $app $installed -> $disk schema reconciled (occ upgrade)"
-      CONF_CACHE=""
-      conf_load
-    else
-      log "FAILED to reconcile $app to $disk — 'occ upgrade' errored; instance may be mid-upgrade"
-      return 1
-    fi
-  else
-    log "app $app $disk from apps/$app (git working tree, not re-imposed)"
-  fi
-
-  [ "$(conf_get app "$app" enabled 2>/dev/null || true)" = "yes" ] && { log "app $app enabled"; return 0; }
-  local err
   if err="$(occ app:enable "$app" 2>&1)"; then
     log "app $app -> enabled"
   else

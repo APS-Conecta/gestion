@@ -31,7 +31,7 @@ standing_uids() {
 
 # The cargo account's first password (a8). The Provisionador seals one per account into
 # credentials.txt with the planilla's and passes them as STANDING_PASSWORDS="uid:pw uid:pw …" (hex,
-# no spaces). `make install` without it — the compose lab, Clean boot — passes none, and every
+# no spaces). A seed without it — Clean boot's — passes none, and every
 # account takes FIXTURE_USER_PASSWORD. A list that lacks a uid is refused: the derivations drifted.
 standing_password() {  # UID
   local kv

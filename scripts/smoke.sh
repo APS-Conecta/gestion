@@ -4,19 +4,16 @@
 # Checks the core invariants only — the office backend has its own scripts/office-smoke.sh.
 set -uo pipefail
 
-# cd to the repo root + load .env, so `bash scripts/smoke.sh` and `make smoke` behave identically
+# cd to the repo root + load .env, so `bash scripts/smoke.sh` behaves identically
 # from any cwd. See scripts/env.sh for why .env is parsed rather than sourced.
 # shellcheck source=env.sh
 . "$(dirname "$0")/env.sh"
 
 fail() { echo "FAIL: $*"; exit 1; }
 
-# 1. nextcloud container running (exec would hang/err on a down stack — detect first). Detection
-# flipped with the docker-exec port: the compose-era stack listing needed compose context, which
-# neither the probe bed nor an AIO clinic has; `docker ps` by NAME works everywhere and names the
-# same container the seam targets. A compose dev stack reads as down here BY DESIGN — its install
-# and seed stay addressable through NC_CONTAINER (D5 interim), and this check answering "no AIO
-# stack" is the labeled failure, not a compose-context false answer.
+# 1. nextcloud container running (exec would hang/err on a down stack — detect first). `docker ps`
+# by NAME works on the probe bed and on a clinic alike, and names the same container the seam
+# targets.
 is_aio \
   || fail "aps-conecta-nextcloud is not running — smoke answers an AIO instance (probe: scripts/aio-testbed.sh up; a clinic: the wizard's container start)"
 nc_container   # once: the occ calls below run in pipes and $(…), whose cache dies with them
@@ -62,7 +59,7 @@ if ! nc_exec --user www-data -- pgrep -f cron.sh >/dev/null 2>&1; then
 fi
 jobs_mode=$(occ config:app:get core backgroundjobs_mode 2>/dev/null | tr -d '\r')
 [ "$jobs_mode" = "cron" ] \
-  || fail "backgroundjobs_mode is '${jobs_mode:-unset}', expected 'cron' — run 'make seed' (phase 06-jobs)"
+  || fail "backgroundjobs_mode is '${jobs_mode:-unset}', expected 'cron' — run: sudo aps-conecta provision --reponer (phase 06-jobs)"
 
 # Fetch the login page ONCE — checks 7 and 9 both read it, and it is the only unauthenticated page
 # that carries both the manifest link and the login form's initial state.
@@ -111,7 +108,7 @@ done
 # 8. App policy holds: staff do not see Nextcloud's product surface (phase 16-app-policy).
 # `enabled` is the whole state — "yes" = everyone, "no" = off, ["admin"] = admin only — so reading
 # that one key per app is an exact assertion, not a proxy. One round-trip for all of them, because
-# smoke runs on every `make test`, and through `occ config:list` rather than a PHP script that
+# smoke runs on every revalidate, and through `occ config:list` rather than a PHP script that
 # boots the server: \OC::$server->getConfig() was REMOVED in NC34 and degrades silently.
 # The inventory is read from provisioning/app-policy.sh, the same declaration phase 16 applies —
 # it used to be typed out again here, which is two lists that must silently agree.
@@ -202,7 +199,7 @@ signed=$(nc_exec --user www-data -- sh -c \
   "for a in $release_ids; do [ -e \"/var/www/html/custom_apps/\$a/appinfo/signature.json\" ] && echo \"\$a\"; done; :" \
   2>/dev/null | tr -d '\r' | tr '\n' ' ')
 [ -z "${signed// /}" ] \
-  || fail "release app(s) carrying the store's signature: ${signed}— upstream's tarball replaced the fork's release, so the white-label rename is gone. Run 'make seed' (provisioning re-imposes the release's bytes, which carry no signature)"
+  || fail "release app(s) carrying the store's signature: ${signed}— upstream's tarball replaced the fork's release, so the white-label rename is gone. Run: sudo aps-conecta provision --reponer (provisioning re-imposes the release's bytes, which carry no signature)"
 
 # 11. The legacy render path is branded (ADR-0004). TWO TRANSPORTS, because the reachable screen
 # differs. On a compose stack (no overwritehost) an untrusted Host is the ONLY screen in that
@@ -290,21 +287,21 @@ got=$(occ config:system:get appstoreenabled 2>/dev/null | tr -d '\r')
 # from a laptop, where localhost means THEIR loopback. It surfaces as a token/security complaint,
 # which sends the search to OFFICE_JWT_SECRET, where nothing is wrong.
 #
-# This CANNOT be tested from the browser's side: this script runs on the box, where localhost:9980
-# answers 200, so a reachability probe passes on precisely the broken configuration. What IS visible
+# This CANNOT be tested from the browser's side: this script runs on the box, where a loopback
+# address answers, so a reachability probe passes on precisely the broken configuration. What IS visible
 # from here is the CONTRADICTION — an instance that publishes a non-loopback trusted domain is
 # reached from somewhere else, and a loopback editor URL cannot be right for that somewhere.
 # Both halves must be true to fail, so the local-only posture this repo ships stays green.
 _office_url=$(occ config:app:get eurooffice DocumentServerUrl 2>/dev/null | tr -d '\r')
 if [ -n "$_office_url" ]; then
-  # Loopback in the value, and any trusted domain that is neither a loopback name nor the compose
-  # service name phase 14 adds for the callback.
+  # Loopback in the value, and any trusted domain that is neither a loopback name nor the bare
+  # service name `nextcloud`.
   _remote_domain=$(occ config:system:get trusted_domains 2>/dev/null \
     | tr -d '\r' | grep -vxE 'localhost|127\.0\.0\.1|\[::1\]|nextcloud|' | head -1)
   case "$_office_url" in
     *localhost*|*127.0.0.1*|*'[::1]'*)
       [ -z "$_remote_domain" ] \
-        || fail "eurooffice DocumentServerUrl is '$_office_url' but this instance is also reached at '$_remote_domain' — the browser loads the editor from that URL, so for anyone not sitting at this box it points at their OWN loopback and the editor never comes up. It reports a token/security problem, which is not what is wrong: set OFFICE_PUBLIC_URL in .env and re-seed (B-019)" ;;
+        || fail "eurooffice DocumentServerUrl is '$_office_url' but this instance is also reached at '$_remote_domain' — the browser loads the editor from that URL, so for anyone not sitting at this box it points at their OWN loopback and the editor never comes up. It reports a token/security problem, which is not what is wrong: the entrypoint writes it from the suite's domain on every boot — sudo docker restart aps-conecta-nextcloud (B-019)" ;;
   esac
   # Scheme, the second half of the same mistake: an http editor inside an https page is blocked as
   # mixed content, so the address can be perfectly reachable and the pane still stays blank.
@@ -312,7 +309,7 @@ if [ -n "$_office_url" ]; then
   if [ "$_proto" = "https" ]; then
     case "$_office_url" in
       https://*) ;;
-      *) fail "overwriteprotocol is https but eurooffice DocumentServerUrl is '$_office_url' — the browser blocks an http editor inside an https page as mixed content, and the pane stays blank with only a console entry. Give OFFICE_PUBLIC_URL an https address and re-seed (B-019)" ;;
+      *) fail "overwriteprotocol is https but eurooffice DocumentServerUrl is '$_office_url' — the browser blocks an http editor inside an https page as mixed content, and the pane stays blank with only a console entry. The entrypoint writes it from the suite's domain on every boot — sudo docker restart aps-conecta-nextcloud (B-019)" ;;
     esac
   fi
 fi

@@ -9,15 +9,13 @@
 # back on (parked in #75 until a target host exists). Reporting costs one command run by hand;
 # deleting costs documents.
 #
-# TWO CONTRACTS, ONE SCRIPT (S8). Report mode — no flag, or --quiet — is the reporter this file has
-# always been: EXIT 0, ALWAYS, because a non-zero exit would fail `make install` for the rest of
-# time after a deliberate removal, which teaches people either to ignore the check or to stop
-# running updates. Neither is a state worth having, so `make divergence` and install.sh's closing
-# `--quiet` call keep exactly that contract. --gate is the handoff gate the Provisionador executor,
-# the revalidation suite and the migration hook consume: it exits 1 on ANY note — real divergence
-# and guard notes alike, because parser rot must not pass a handoff any more than drift may
-# (B-014: a gate that cannot go red is not a gate, and a gate that stays green while its parsers
-# are broken is green for the wrong reason).
+# TWO CONTRACTS, ONE SCRIPT (S8). Report mode — no flag — is the reporter a person runs on
+# purpose: EXIT 0, ALWAYS, because a deliberate removal is not a failure, and a check that fails
+# forever after one teaches people either to ignore it or to stop running updates. --gate is the
+# handoff gate the Provisionador executor, the revalidation suite and the migration hook consume:
+# it exits 1 on ANY note — real divergence and guard notes alike, because parser rot must not
+# pass a handoff any more than drift may (B-014: a gate that cannot go red is not a gate, and a
+# gate that stays green while its parsers are broken is green for the wrong reason).
 #
 # USERS ARE GATE-MODE-ONLY. Report mode still does not cover them, for the reason it never did: a
 # report needs a DECLARED set to compare against, and a hand-run report on a hand-edited clinic has
@@ -48,21 +46,15 @@ nc_container   # once: the occ calls below run in pipes and $(…), whose cache 
 PHASE20=provisioning/phases/20-groups.sh
 
 
-# --quiet says nothing at all when there is nothing to say. `make install` uses it so a clean
-# install ends clean; `make divergence`, which a person ran ON PURPOSE to ask the question, prints
-# the all-clear because silence there is indistinguishable from a broken script.
-# --gate is the handoff contract (see the header). Both flags at once is legal — a quiet gate still
-# prints its findings, because a red gate that says nothing is indistinguishable from a broken one.
-# Anything else is a typo, and a typo behind a future --gate call must not be able to fall through
-# to report mode's exit 0 — unknown args die loudly with usage instead (fail loud, never parse
-# silently; B-014).
-quiet=0
+# Report mode prints the all-clear, because silence there is indistinguishable from a broken script.
+# --gate is the handoff contract (see the header). Anything else is a typo, and a typo behind a
+# future --gate call must not be able to fall through to report mode's exit 0 — unknown args die
+# loudly with usage instead (fail loud, never parse silently; B-014).
 gate=0
 for arg in "$@"; do
   case "$arg" in
-    --quiet) quiet=1 ;;
     --gate)  gate=1 ;;
-    *) printf 'usage: %s [--quiet] [--gate]\n' "$0" >&2; exit 2 ;;
+    *) printf 'usage: %s [--gate]\n' "$0" >&2; exit 2 ;;
   esac
 done
 
@@ -297,7 +289,7 @@ else
 fi
 
 if [ "${#notes[@]}" -eq 0 ]; then
-  [ "$quiet" -eq 1 ] || echo "  nada en la instancia que el repositorio no declare"
+  echo "  nada en la instancia que el repositorio no declare"
   exit 0
 fi
 

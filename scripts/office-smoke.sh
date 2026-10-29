@@ -5,7 +5,7 @@
 # This was two scripts. office-formats.sh shared 14 of its 36 lines with this one verbatim — same
 # preamble, same connector precondition, same healthcheck — and its unique content was one
 # `docker inspect`. Two files meant two chances for the shared half to drift, and the licence half
-# ran only when someone remembered `make office-formats`. Now the licence check runs on every smoke.
+# ran only when someone remembered it. Now the licence check runs on every smoke.
 #
 # THE AIO LEGS (S8, slice 20 — the completion the port deferred): the document server is the
 # wizard's sibling aps-conecta-eurooffice behind apache's /eurooffice, so every leg answers the
@@ -31,7 +31,7 @@
 # that run. Outcome and the ODF caveat live in README.md ("Office suite").
 set -euo pipefail
 
-# Read .env so this behaves the same run directly as through `make` (cf. scripts/smoke.sh).
+# Read .env so this behaves the same from any cwd (cf. scripts/smoke.sh).
 # shellcheck source=env.sh
 . "$(dirname "$0")/env.sh"
 
@@ -39,7 +39,7 @@ set -euo pipefail
 # Require the eurooffice connector — the sole office backend (AD-5). An app is enabled iff its
 # appconfig `enabled` value is "yes".
 [ "$(occ config:app:get eurooffice enabled 2>/dev/null || true)" = "yes" ] \
-  || { echo "FAIL: eurooffice connector not enabled — run: make install"; exit 1; }
+  || { echo "FAIL: eurooffice connector not enabled — run: sudo aps-conecta provision --reponer"; exit 1; }
 
 echo "Office backend: Euro-Office (eurooffice)"
 # the suite's public URL, the base smoke rides too (env.sh, #163)

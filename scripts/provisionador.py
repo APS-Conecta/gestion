@@ -14,7 +14,7 @@ the executor — /api/generar (the FRD's review/dry-run AND the run: .env conver
 roster driver, the divergence gate); slice 17 the eight es-CL screens over these routes. L3 S2 replaced /api/deis with
 /api/centros + /api/centro: the Centro screen's one payload and the held choice.
 
-Python stdlib only, like deis.py — the install host is assumed to carry python3, bash, git and
+Python stdlib only, like deis.py — the install host is assumed to carry python3, bash and
 docker, nothing else (#77) — plus openssl, which ca-certificates brings, to sign the installer's own
 certificate. HTTPS on the LAN with that certificate (L3 S1, owner 2026-10-02; a13: no code and no
 cookie crosses the LAN in clear): the CSPRNG token below is the only auth, so this never faces the
@@ -70,7 +70,7 @@ sys.path.insert(0, HERE)  # deis.py sits beside this file; the host bundle keeps
 import deis  # noqa: E402  — the path insert above is the import mechanism
 import apps as suite_apps  # noqa: E402  — the suite manifest (apps.json), beside deis
 
-# The bearer token, env-init's discipline in Python: 32 bytes from the stdlib CSPRNG, HEX, never
+# The bearer token: 32 bytes from the stdlib CSPRNG, HEX, never
 # base64 (B-004 — no character any layer treats as syntax). Printed ONCE, in the startup banner,
 # compared constant-time, and never logged.
 TOKEN = ""
@@ -117,7 +117,7 @@ MAX_BODY = 8 * 1024 * 1024
 # usuario;nombre;apellidos;correo;grupos;primer_admin — semicolon-delimited, UTF-8. Excel's
 # "CSV UTF-8" carries a BOM: stripped on read, never required, and the canonical copy this writes
 # carries none. NO password column, on purpose: a spreadsheet is the worst place to keep a secret
-# (#80's whole point — env-init exists because hand-invented .env passwords were), so every
+# (#80's whole point — hand-invented .env passwords were), so every
 # password is generated host-side and sealed to credentials.txt below. The file the clinic brings
 # carries no secret material at all.
 ROSTER_HEADER = ("usuario", "nombre", "apellidos", "correo", "grupos", "primer_admin")
@@ -207,7 +207,7 @@ def read_steps():
         sys.exit(f"✗ la lista de pasos ({HOST_CLI}) no se pudo leer\n"
                  "  → descargue de nuevo la suite: sudo aps-conecta descargar")
     return steps
-SEAL_BYTES = 12  # 24 hex chars — env-init's FIXTURE_USER_PASSWORD size, the human-typed precedent
+SEAL_BYTES = 12  # 24 hex chars — the FIXTURE_USER_PASSWORD size, the human-typed precedent
 # The seal is a read-modify-write over one shared file, and the server is threaded: two
 # concurrent /api/usuarios posts (a double-submit is one double-click away) would share the
 # one tmp inode and interleave. One process-wide lock — the D13 single-operator posture makes
@@ -340,7 +340,7 @@ red. Everything it does is logged to FAKE_DOCKER_LOG (one line per argv) — the
 and the AIO-arm arms grep THAT. Control knobs arrive via FAKE_DOCKER_CONTROL (python-assignable
 lines), so the log stays a pure record: FAIL_ON (a word that makes any matching call exit 1 —
 the fail-stop arm), GATE_EXTRA (a uid the user:list answer plants — the gate-red arm), PS_MODE
-('empty' — the compose-arm), PS_LISTA (the containers docker ps -a lists — the step-7
+('empty' — no suite running), PS_LISTA (the containers docker ps -a lists — the step-7
 arms), SLOW (sleep before answering — the timeout arm).
 """
 import json
@@ -414,7 +414,7 @@ if args and args[0] == "ps":
     if control.get("PS_MODE") == "empty":
         sys.exit(0)
     # two --format shapes ride the same verb: the detection idiom asks for bare names
-    # (install.sh/smoke/14-office: grep -qx needs whole lines), the estado leg for name+status
+    # (smoke and phases 10/12: grep -x needs whole lines), the estado leg for name+status
     if any("{{.Status}}" in a for a in args):  # the tab template arrives as ONE argv
         if control.get("PS_LISTA"):   # the step-7 arms' containers, name:status;name:status
             for item in control["PS_LISTA"].split(";"):
@@ -1287,7 +1287,7 @@ def sealed_map(path):
     seal_credentials, factored out because the executor reads the same sheet to feed the roster
     driver (a uid with no sealed row must refuse BEFORE any exec, never reach ensure_user with a
     blank password). Refuses exactly like seal_credentials: a file that does not read as this
-    program's own output raises (env-init's rule — a file we do not own is never interpreted)."""
+    program's own output raises (a file we do not own is never interpreted)."""
     sealed = {}
     if os.path.exists(path):
         try:
@@ -1311,7 +1311,7 @@ def seal_credentials(codigo, rows, path):
     regenerate what an account may already log in with: ensure_user ignores existing accounts,
     so a regenerated row would be a sheet that lies), and a uid that leaves the roster and
     returns finds its original row intact. An existing file that does not read EXACTLY like
-    this program's own output is refused (env-init's rule — a file we do not own is never
+    this program's own output is refused (a file we do not own is never
     overwritten); the operator corrects or moves it by hand. 0600 before content, written to a
     temp file, fsync'd, then renamed into place: the sheet is the only copy of anyone's first
     password, so there is never a window where it is empty or half-written. The whole
@@ -1825,7 +1825,7 @@ def roster_paths(site_text, root, rel, codigo):
 def env_state(root):
     """The .env posture, read-only — the dry-run's preview and the converge's pre-check share it.
     Values are never returned: SITE's line value only ever feeds the D13 comparison, and the
-    fixture password only ever answers «presente» (print-WHERE-never-WHAT, the env-init rule)."""
+    fixture password only ever answers «presente» (print-WHERE-never-WHAT)."""
     path = os.path.join(root, ".env")
     site, fixture, seed_fixtures = None, False, None
     if os.path.exists(path):
@@ -1848,12 +1848,12 @@ def env_converge(root, codigo):
     effect — the /api/sitio converge-or-refuse rule). SEED_FIXTURES is forced to 1 — the
     executor's locked posture runs the fixtures ON, and a .env carrying 0 would skip phase 50's
     standing accounts while the roster still seeded, leaving the clinic without its cargos.
-    FIXTURE_USER_PASSWORD: absent → generated (CSPRNG 24-hex, env-init's size) and appended —
-    present → NEVER touched (env-init's rule: a secret we did not invent is never rewritten);
+    FIXTURE_USER_PASSWORD: absent → generated (CSPRNG 24-hex) and appended —
+    present → NEVER touched (a secret we did not invent is never rewritten);
     a placeholder that survived a hand-copy dies at the seed's own require_real_secrets with its
     own fix hint, carried in the 500's log. A fresh AIO install has no .env at all: this creates
-    it minimal — exactly the keys the seed's own gates demand (the wizard owns the stack; the
-    compose-era keys are unused there) — 0600 before content."""
+    it minimal — exactly the keys the seed's own gates demand (the wizard owns the stack) —
+    0600 before content."""
     st = env_state(root)
     if st["site"] not in (None, codigo):
         raise ValueError(f"el .env nombra el establecimiento SITE={st['site']}, no {codigo} — "
@@ -4104,13 +4104,12 @@ def selftest():
     # before the stub world exists raised UnboundLocalError there and hid the real error.
     old_path = os.environ["PATH"]
     reales = (recursos, puerto_libre)
-    # The stub world must not inherit the caller's exported seed knobs (P37, measured under
-    # make test on the probe: a prior section's `source env.sh` leaves OFFICE_* exported and
-    # env.sh never unsets, so the compose arm's clean fixture .env could not make the OFFICE_PORT
-    # gate fire). Scrub the prefixes the phases read; restore in the finally.
+    # The stub world must not inherit the caller's exported seed knobs (P37, measured under the
+    # local gate on the probe: a prior section's `source env.sh` leaves .env's keys exported and
+    # env.sh never unsets them). Scrub the prefixes the phases read; restore in the finally.
     sin_navegador = os.environ.get("APS_SELFTEST_SIN_NAVEGADOR") == "1"   # read BEFORE the scrub below takes every APS_ name
-    _scrub = tuple(("OFFICE_", "SITE_", "SEED_", "FIXTURE_", "NC_", "APS_", "TILES_", "HTTP_",
-                    "APACHE_", "NEXTCLOUD_", "COMPOSE_", "IV_"))
+    _scrub = tuple(("SITE_", "SEED_", "FIXTURE_", "NC_", "APS_", "TILES_", "HTTP_",
+                    "APACHE_", "NEXTCLOUD_", "IV_"))
     _scrubbed = {k: os.environ.pop(k) for k in list(os.environ) if k.startswith(_scrub)}
     # The fixture reuses the register's real hostile shapes, measured from the shipped register
     # (2026-07-23): 201079's name holds double quotes, 113314's address holds a backtick, 121567
@@ -5928,17 +5927,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
             open(stublog, "w").close()
             open(stubctl, "w", encoding="utf-8").write("PS_MODE=empty\n")
             st, body = generar("ejecutar")
-            check("the compose arm: with no office keys the OFFICE_PORT gate fires inside the branch",
-                  st == 500 and "FATAL: phase 14-office.sh failed" == body["error"]
-                  and "OFFICE_PORT" in body["salida"])
-            env_lines = open(env_path, encoding="utf-8").read().splitlines()
-            env_lines += ["OFFICE_PORT=9980", "OFFICE_JWT_SECRET=" + "a" * 40]
-            open(env_path, "w", encoding="utf-8").write("\n".join(env_lines) + "\n")
-            st, body = generar("ejecutar")
-            check("the compose arm: with the office keys the URL writes return",
-                  st == 200 and "DocumentServerUrl" in stub_log_text()
-                  and "jwt_secret -> (value not printed)" in body["salida"])
-            check("the compose arm: Talk is the stack's own — spreed installs, the suite is never asked (R29)",
+            check("no suite running: Talk is the stack's own — spreed installs, the suite is never asked (R29)",
                   st == 200 and "app spreed" in body["salida"] and "printenv" not in stub_log_text())
             # #33, post-#42: a re-pinned lock row re-imposes — the lock names v1.2.3 with new
             # bytes beside it, and the seed unpacks the changed release through phase 12's own
@@ -5962,8 +5951,6 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   st == 200 and "app territorio -> 1.2.3 unpacked from release v1.2.3" in body["salida"]
                   and "app territorio -> 0.80.0 unpacked from release v0.80.0" not in body["salida"])
             open(stubctl, "w").close()
-            open(env_path, "w", encoding="utf-8").write(
-                "\n".join(l for l in env_lines if not l.startswith("OFFICE_")) + "\n")
 
             rc = subprocess.run(["bash", "-n", os.path.join(deis.HERE, "..", "provisioning", "usuarios.sh")],
                                 capture_output=True).returncode
@@ -7132,7 +7119,7 @@ def main(argv):
     LAN_IP, HOSTNAME = lan_ip(), socket.gethostname()
     with candado_certificados():
         ctx, fingerprint = tls_context(LAN_IP)  # …no certificate, no link
-    TOKEN = secrets.token_hex(32)           # 64 hex chars — the env-init size, via the stdlib CSPRNG
+    TOKEN = secrets.token_hex(32)           # 64 hex chars, via the stdlib CSPRNG
     httpd, PORT = bind_server("", PORTS)   # all interfaces: the LAN reaches it, loopback probes too
     # the handshake runs in the handler thread (its 30 s timeout), never in the accept loop
     httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True, do_handshake_on_connect=False)

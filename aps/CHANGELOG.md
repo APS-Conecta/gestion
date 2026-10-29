@@ -340,7 +340,7 @@ image digests live there and are deliberately not copied here — one fact, one 
 ## [0.4.0] — 2026-10-12
 ### Added
 - The signed package release channel: the `install.sh` bootstrap, the `VERSION` discipline, `installer.pub`.
-- `suite_tag()` reads the package's `VERSION` first; the git channel is rehearsal-only (`APS_REPO_URL`).
+- `suite_tag()` reads the package's `VERSION` first.
 
 ## [0.3.0] — 2026-09-22
 

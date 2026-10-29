@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Idempotency gate — a SECOND seed must not write anything. Run it right AFTER `make seed`;
-# it runs one more and reads the log. AD-2 makes this the pipeline's defining property: `make seed`
+# Idempotency gate — a SECOND seed must not write anything. Run it right AFTER a seed;
+# it runs one more and reads the log. AD-2 makes this the pipeline's defining property: the seed
 # applies desired state, so on an already-provisioned instance it has nothing left to do.
 #
 # THE LOG IS THE ASSERTION. Every mutating helper in lib.sh prints a different verb for "wrote"

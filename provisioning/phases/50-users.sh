@@ -5,7 +5,7 @@
 #
 # GATED BY SEED_FIXTURES. These are POSITIONS, not people, each with its own first password: the
 # Provisionador seals one per account with the planilla's (standings.sh standing_password); only
-# `make install` without it — the compose lab, CI — gives them all FIXTURE_USER_PASSWORD. Every jefe
+# a seed without it — CI's — gives them all FIXTURE_USER_PASSWORD. Every jefe
 # de sector holds a role, a sector team and a category at once — the role-union this phase shows.
 phase_begin "50-users" "The clinic's standing leadership accounts"
 

@@ -62,7 +62,7 @@ thing lives where its own gate is.
 aps-conecta preflight
 ```
 
-Checks docker (API ≥ 1.44), compose v2, the ports (80/443/8080/8443), DNS, x86-64 — each red
+Checks docker (API ≥ 1.44), the ports (80/443/8080/8443), DNS, x86-64 — each red
 comes with its fix hint. It also re-verifies the kept release package when one is there — the
 sum and the signature, offline, against the suite's own `installer.pub`. On green it prints the `docker run` command. **Never re-type it** —
 it is generated from one source:
@@ -188,8 +188,8 @@ domain to check.
 
 ## 8. The .env the gates ride
 
-The clinic `.env` (in the package root) is minimal by design — the wizard owns the stack, so
-the compose-era keys do not exist under AIO. What the gates read:
+The clinic `.env` (in the package root) is minimal by design — the wizard owns the stack. What
+the gates read:
 
 - **The suite's address, from apache itself** — `smoke`, `office-smoke` and `revalidate` curl
   `https://<su-dominio>/…` (or `https://<ip>/…`, trusting the installer's CA, which is why they run

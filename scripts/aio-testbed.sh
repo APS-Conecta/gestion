@@ -41,7 +41,7 @@
 #
 # Env: AIO_TEST_IMAGE (default the fork's suite tag below), AIO_TEST_PORT (8080), AIO_TEST_APACHE_PORT
 # (11000), AIO_TEST_DOMAIN (aio-test.invalid). State: /tmp/aio-testbed/ — secrets 0600, values
-# never printed, only their paths (env-init rule).
+# never printed, only their paths.
 set -uo pipefail
 
 STATE=/tmp/aio-testbed
@@ -118,7 +118,7 @@ cmd_up() {
     80|443) die "AIO_TEST_PORT must never be 80/443 — the probe stays off the production ports by construction" ;;
   esac
   mkdir -p "$STATE"; chmod 700 "$STATE"
-  # 0600 BEFORE content for everything written under $STATE (env-init rule) — passwords and the
+  # 0600 BEFORE content for everything written under $STATE — passwords and the
   # session cookie alike; the explicit chmods below are assertions, not protection.
   umask 077
   check_ram
