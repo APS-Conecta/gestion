@@ -130,7 +130,9 @@ EOSQL
     fi
 
     # Restore database: the first failing statement stops the replay, so import.failed stays and
-    # Nextcloud never starts on a half-restored database
+    # Nextcloud never starts on a half-restored database. A suite dump's only role statements are
+    # ownerships and the schema grant to oc_$POSTGRES_USER, which init-user-db.sh creates before the
+    # replay, so stopping on error does not trip on a healthy dump
     echo "Restoring the database from database dump"
     psql -v ON_ERROR_STOP=1 "$POSTGRES_DB" -U "$POSTGRES_USER" < "$DUMP_FILE"
 

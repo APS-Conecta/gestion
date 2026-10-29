@@ -1663,8 +1663,6 @@ check one_click_cap_cases
 # The database image's real start.sh, its data and dump directories moved into a temp tree, replays
 # a fixture dump through a stub psql that keeps psql's error contract: a failing statement prints
 # an ERROR and the replay goes on (exit 0) unless ON_ERROR_STOP is set, which stops it (exit 3).
-# The fixture's role statements are the only shapes a real suite dump carries (Nextcloud's user
-# owns every object), and init-user-db.sh recreates that user before the replay.
 restore_start() {  # TREE — one start of the copied start.sh: its exit in rc, its output in out
   rc=0; out="$(PATH="$1/bin:$PATH" POSTGRES_USER=nextcloud POSTGRES_DB=nextcloud_database POSTGRES_PASSWORD=x \
     timeout 60 bash "$1/start.sh" 2>&1)" || rc=$?
