@@ -47,7 +47,7 @@ ID the gates' rows name:
 | 239 | dropped by #48: the `/tiles/` basemap route, its `APS_TILES_DIR` setting and read-only bind removed — `/tiles/` answers Nextcloud's own 404 |
 | 240 | the suite's containers are named `aps-conecta-*` (generated; the wizard stays `nextcloud-aio-mastercontainer`; fresh installs only) |
 | 250 | modern TLS only on every ingress — the ACME and internal listeners pin TLS 1.2/1.3, and apache's runtime ACME stanza carries the same pin on 443; nothing older negotiates |
-| 260 | the database image built with pgvector, and Buscador Documental's roles and extensions applied at every start and before a dump restore (`Containers/postgresql/aps-roles.sh`) |
+| 260 | the database image built from this tree, never retagged — its image test runs before the push, and the pushed layers are the tested ones |
 | 270 | one brand token file — `themes/apsconecta/core/css/tokens.css` — the palette and fonts read by the server theme, the wizard, the Provisionador and the brand gate; the wizard's font subsets re-cut to cover every string, and every job that runs the gate installs its font dependencies; Releases titled «APS Conecta Gestión»; no logo master in git |
 | 280 | the entrypoint enables none of the apps `provisioning/app-policy.sh` restricts or disables — phase 16 alone sets their state |
 

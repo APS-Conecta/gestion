@@ -18,12 +18,12 @@
 #                ACME's, as upstream). Without it: install by this VM's own IPv4, with the
 #                installer's own certificate.
 #   --sin-datos  skip the national data masters (a small VM's disk; Clean boot's own posture)
-#   --sin-respaldo  drive the wizard without the daily backup (criterion 6 will red: actualizar
+#   --sin-respaldo  drive the wizard without the daily backup (criterion 5 will red: actualizar
 #                refuses without a configured backup, by design) — the honest no-backup posture
 #   --solo-chequeos  re-run only the checks against an already-installed VM
 #   --continuar  run the checks even when the install step fails (a red named, not a stop)
 #
-# The ticket's six criteria, each asserted on what an administrator observes:
+# The ticket's five criteria, each asserted on what an administrator observes:
 #   1. the bootstrap verified the package's signature and landed the suite at /opt/aps-conecta;
 #   2. «aps-conecta estado» answers, the suite answers at https://<address>/ through the
 #      installer's CA (and refuses without it), and a planilla user logs in over OCS;
@@ -32,9 +32,7 @@
 #      is IntraVox, and the two functional opens answer (notify_push, the office connector);
 #   4. each optional app chosen at the command line is installed from its release, and the
 #      wizard's options record still names the choice;
-#   5. buscador finds a PDF (upload, index, search) — or names why it cannot: the manifest
-#      carries no buscador row until #149 lands;
-#   6. «aps-conecta actualizar --revisar» prints the plan and writes nothing.
+#   5. «aps-conecta actualizar --revisar» prints the plan and writes nothing.
 #
 # The seams (VMA_*) exist for the self-test: every input is a file or a command the self-test
 # stubs — the same PATH-shim doctrine as host/aps-conecta's self-test: no root, no docker.
@@ -54,11 +52,10 @@ VMA_CURL="${VMA_CURL:-curl}"
 VMA_OCC_SHIM="${VMA_OCC_SHIM:-}"                    # set by the self-test; empty on a VM
 VMA_WORK="${VMA_WORK:-$(mktemp -d /tmp/vm-acceptance.XXXXXX)}"
 VMA_APPS="${VMA_APPS:-farmacia estadistica totem}"  # the optional apps the install chooses (#39–#41)
-VMA_PDF_TOKEN="${VMA_PDF_TOKEN:-AZUCARMORADA54}"    # the word only the acceptance PDF carries
 VMA_INSTALL_ENV="${VMA_INSTALL_ENV:-}"             # extra K=V pairs for the install (a rehearsal's APS_SUITE_TAG)
 VMA_RESPALDO="${VMA_RESPALDO-1}"                   # the daily backup a real clinic configures in the wizard (§11):
                                                      # 1 = "$VMA_ROOT/respaldos"; a path = that path; empty = none
-                                                     # (an install without it cannot pass criterion 6 — actualizar
+                                                     # (an install without it cannot pass criterion 5 — actualizar
                                                      # refuses without a configured backup, by design)
 export VMA_ROOT VMA_TREE VMA_REPO_URL VMA_TAG VMA_DOMINIO VMA_SKIP_DATOS VMA_WORK
 
@@ -263,61 +260,7 @@ check_optional_record() {  # $1 = the chosen ids — the wizard's record must na
   done
 }
 
-# ── 5. buscador finds a PDF — or names the reason it cannot ─────────────────────────────────
-check_buscador() {  # $1 = address, $2 = CA, $3 = uid, $4 = password
-  if ! manifest_rows | cut -f1 | grep -qx buscador_documental; then
-    verdict fail "buscador encuentra un PDF" \
-      "el manifiesto no lleva fila de buscador — llega con #149 (verificar y terminar); hoy la suite no instala buscador"
-    return 1
-  fi
-  # The app is in the manifest: the whole flow — a PDF only this run knows, uploaded as staff,
-  # indexed, then found through the app's own search API (the session user's, never another's).
-  local pdf="$VMA_WORK/protocolo.pdf" ap tries
-  python3 - "$pdf" "$VMA_PDF_TOKEN" <<'PY'
-import sys
-path, token = sys.argv[1], sys.argv[2]
-content = f"protocolo {token}".encode()
-objs = [b"<< /Type /Catalog /Pages 2 0 R >>",
-        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R "
-        b"/Resources << /Font << /F1 5 0 R >> >> >>",
-        b"<< /Length " + str(len(content) + 42).encode() + b" >>\nstream\nBT /F1 24 Tf 72 720 Td ("
-        + content + b") Tj ET\nendstream",
-        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
-out = bytearray(b"%PDF-1.4\n")
-offs = []
-for i, o in enumerate(objs, 1):
-    offs.append(len(out))
-    out += f"{i} 0 obj\n".encode() + o + b"\nendobj\n"
-xref = len(out)
-out += f"xref\n0 {len(objs) + 1}\n0000000000 65535 f \n".encode()
-for off in offs:
-    out += f"{off:010d} 00000 n \n".encode()
-out += (f"trailer << /Size {len(objs) + 1} /Root 1 0 R >>\nstartxref {xref}\n%%EOF").encode()
-open(path, "wb").write(bytes(out))
-PY
-  ap="$(printf 'user = "%s:%s"\n' "$3" "$4" \
-        | "$VMA_CURL" -fsS -K - --cacert "$2" -H 'OCS-APIRequest: true' \
-            "https://$1/ocs/v2.php/core/getapppassword" 2>/dev/null \
-        | sed -n 's/.*<apppassword>\(.*\)<\/apppassword>.*/\1/p')"
-  [ -n "$ap" ] || { verdict fail "buscador encuentra un PDF" "no se pudo obtener una contraseña de app para la subida"; return 1; }
-  "$VMA_CURL" -fsS -u "$3:$ap" --cacert "$2" \
-    -T "$pdf" "https://$1/remote.php/dav/files/$3/protocolo-$VMA_PDF_TOKEN.pdf" \
-    || { verdict fail "buscador encuentra un PDF" "la subida WebDAV del PDF falló"; return 1; }
-  for tries in $(seq 36); do   # the worker indexes on its own cadence: bounded at six minutes
-    if "$VMA_CURL" -fsS -u "$3:$ap" --cacert "$2" -H 'Content-Type: application/json' \
-         -d "{\"query\":\"$VMA_PDF_TOKEN\"}" "https://$1/index.php/apps/buscador_documental/search" 2>/dev/null \
-         | grep -q '"status":"ok"'; then
-      verdict ok "buscador encuentra un PDF" "el término $VMA_PDF_TOKEN contestó con resultados"
-      return 0
-    fi
-    sleep 10
-  done
-  verdict fail "buscador encuentra un PDF" \
-    "el término $VMA_PDF_TOKEN no apareció en $((tries * 10)) segundos — ¿indexando? (admin/overview), ¿ámbito sembrado? (#138)"
-}
-
-# ── 6. actualizar --revisar: the plan on the table, nothing moved ───────────────────────────
+# ── 5. actualizar --revisar: the plan on the table, nothing moved ───────────────────────────
 check_actualizar_revisar() {
   local lock="$VMA_ROOT/apps.lock.json" out rc=0 antes paquetes
   antes="$(sudo sha256sum "$lock" 2>/dev/null | cut -d' ' -f1)"
@@ -398,7 +341,7 @@ main() {
   fi
   sudo install -m 0644 "$VMA_ROOT/certificados/ca/aps-conecta-ca.crt" "$ca" 2>/dev/null \
     || die "no se pudo copiar la CA del instalador ($VMA_ROOT/certificados/ca/)"
-  printf '\n== Los seis criterios del tiquete ==\n'
+  printf '\n== Los cinco criterios del tiquete ==\n'
   if check_bootstrap "$tag"; then verdict ok "curl | sudo bash" "firma verificada, suite $tag en $VMA_ROOT/instalador"
   else verdict fail "curl | sudo bash" "el registro no muestra el camino verificado ($VMA_WORK/bootstrap.out)"; fi
   if check_estado; then verdict ok "aps-conecta estado" "responde sin sudo"
@@ -415,7 +358,6 @@ main() {
   fi
   check_apps "$VMA_APPS" "$addr" "$ca"
   check_optional_record "$VMA_APPS"
-  check_buscador "$addr" "$ca" ana.prueba "${pw:-}"
   check_actualizar_revisar
   printf '\nRegistro completo: %s\n' "$VMA_WORK"
   summarize
@@ -608,11 +550,6 @@ HOOK
   t "revisar: red verdict when the lock moved" 0 '[ "$CHECKS_FAIL" = 1 ]'
   rm "$SHIM_STATE/revisar.hook"
 
-  # buscador: the manifest carries no row today — the verdict names #149, never a silent skip
-  CHECKS_OK=0; CHECKS_FAIL=0; CHECKS_SKIP=0
-  check_buscador 10.0.0.9 "$VMA_WORK/ca.crt" ana.prueba CAFE-secret >/dev/null
-  t "buscador: the absent row is a red naming #149" 0 '[ "$CHECKS_FAIL" = 1 ]'
-
   # resolve_tag: the redirect resolves, the failure dies — both without the API
   cat > "$shims/curl" <<'SH'
 #!/usr/bin/env bash
@@ -625,7 +562,7 @@ SH
   t "resolve_tag: an unreachable redirect dies, naming --tag" 2 '( VMA_TAG=latest resolve_tag )'
 
   # the silent install drives the wizard the way a clinic does: the daily backup configured
-  # (criterion 6's precondition — actualizar refuses without one, by design #46), the chosen
+  # (criterion 5's precondition — actualizar refuses without one, by design #46), the chosen
   # optional apps as --app pairs, and --sin-respaldo honestly leaving it out
   t "install: drives the wizard with the daily backup configured" 0 \
     'silent_install "$SHIM_STATE/site.sh" "$SHIM_STATE/usuarios.csv" >/dev/null 2>&1 && grep -qx -- "--respaldo" "$SHIM_STATE/install.args" && grep -qx "$VMA_ROOT/respaldos" "$SHIM_STATE/install.args"'

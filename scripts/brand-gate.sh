@@ -981,55 +981,21 @@ modern_tls() {  # 250: modern TLS only — the mastercontainer's ACME and intern
 row 250 "modern TLS only on every ingress — the mastercontainer's ACME and internal listeners pin protocols tls1.2 tls1.3 in their tls blocks and apache's runtime ACME stanza (start.sh, 235's placeholder) carries the same pin on 443; nothing older negotiates (ead3eb6e's security floor, queue-moved by the parity fence)" \
   modern_tls
 
-buscador_db() {  # 260: the database image ships aps-roles.sh and the script still WRITES what
-  # buscador needs (both roles, the owner-role grant, the worker's CONNECT grant, both
-  # extensions); start.sh runs it at restore time — between the import server's start and the
-  # dump replay — and again at every start; the image is built, not retagged, its image test
-  # runs before the push, and the pushed-layers check proves the pushed image is the tested
-  # one. The pgvector hash pin moved to the acquisition gate (#73) — a download channel's
-  # checksum is an acquisition concern, beside the bake's. scripts/db-image-test.sh proves the
-  # behaviour on the built image; this row keeps the bytes from leaving the tree unnoticed
-  # between releases.
-  local d="$TREE/Containers/postgresql/Dockerfile" s="$TREE/Containers/postgresql/start.sh" \
-        r="$TREE/Containers/postgresql/aps-roles.sh" w="$TREE/.github/workflows/images.yml" \
-        t="$TREE/scripts/retag.sh" f fail=0 import roles replay bg waits j0 j1 test_ln push_ln layers_ln
+db_image_built_tested() {  # 260: the database image is built from this tree, never retagged —
+  # a retag copies the previous suite tag's image, not this tree's bytes; its image test runs
+  # before the push, and the pushed-layers check proves the pushed image is the tested one.
+  # scripts/db-image-test.sh proves the behaviour on the built image; this row keeps the build,
+  # the order and the proof from leaving the pipeline unnoticed between releases.
+  local d="$TREE/Containers/postgresql/Dockerfile" w="$TREE/.github/workflows/images.yml" \
+        t="$TREE/scripts/retag.sh" f fail=0 j0 j1 test_ln push_ln layers_ln
   # the gates' file-presence discipline (acquisition-gate's s4_files): a negative arm over a
   # moved file names it — never a vacuous pass, never a miss misattributed to another check
-  for f in "$d" "$s" "$r" "$w" "$t"; do
+  for f in "$d" "$w" "$t"; do
     [ -f "$f" ] || { echo "  no such file: $f — re-point this row" >&2; fail=1; }
   done
   [ "$fail" -eq 0 ] || return 1
-  # the script's own bytes — a regeneration that keeps the file but loses the behaviour reds
-  # with the line that names it (#73: the row used to stop at the COPY line)
-  grep -qF 'CREATE ROLE bd_owner;' "$r" \
-    || { echo "  aps-roles.sh does not create the bd_owner role" >&2; fail=1; }
-  grep -qF 'CREATE ROLE bd_worker;' "$r" \
-    || { echo "  aps-roles.sh does not create the bd_worker role" >&2; fail=1; }
-  grep -qF 'GRANT bd_owner TO :"nc_user"' "$r" \
-    || { echo "  aps-roles.sh does not grant bd_owner to Nextcloud's user" >&2; fail=1; }
-  grep -qF 'GRANT CONNECT ON DATABASE :"db" TO bd_worker;' "$r" \
-    || { echo "  aps-roles.sh does not grant bd_worker CONNECT on the database" >&2; fail=1; }
-  grep -qF 'CREATE EXTENSION IF NOT EXISTS unaccent' "$r" \
-    || { echo "  aps-roles.sh does not create the unaccent extension" >&2; fail=1; }
-  grep -qF 'CREATE EXTENSION IF NOT EXISTS vector' "$r" \
-    || { echo "  aps-roles.sh does not create the vector extension" >&2; fail=1; }
-  grep -qF 'COPY --chmod=775 aps-roles.sh /aps-roles.sh' "$d" \
-    || { echo "  the database Dockerfile does not copy aps-roles.sh" >&2; fail=1; }
-  # the restore-time call sits BETWEEN the import server's start and the replay: the dump
-  # carries no roles, so a replay onto a database without them fails buscador's ownerships
-  # and grants silently. The import server's start is the FIRST `exec docker-entrypoint.sh
-  # postgres &` — the import branch precedes the main start at the file's end.
-  import="$(grep -nF 'exec docker-entrypoint.sh postgres &' "$s" | head -1 | cut -d: -f1)"
-  roles="$(grep -nE '^[[:space:]]*/aps-roles\.sh$' "$s" | head -1 | cut -d: -f1)"
-  replay="$(grep -nF 'psql "$POSTGRES_DB" -U "$POSTGRES_USER" < "$DUMP_FILE"' "$s" | cut -d: -f1)"
-  { [ -n "$import" ] && [ -n "$roles" ] && [ -n "$replay" ] && [ "$import" -lt "$roles" ] && [ "$roles" -lt "$replay" ]; } \
-    || { echo "  start.sh's restore-time /aps-roles.sh no longer sits between the import server's start and the dump replay" >&2; fail=1; }
-  bg="$(grep -nx 'aps_roles &' "$s" | cut -d: -f1)"
-  waits="$(grep -nxF 'wait "$PG_PID"' "$s" | cut -d: -f1)"
-  [ -n "$bg" ] && [ -n "$waits" ] && [ "$bg" -lt "$waits" ] \
-    || { echo "  start.sh does not start aps_roles before it waits on postgres" >&2; fail=1; }
   grep -qE '^BUILD_IMAGES=\(.*\baio-postgresql\b' "$t" \
-    || { echo "  retag.sh's BUILD_IMAGES lacks aio-postgresql — it would be retagged without pgvector" >&2; fail=1; }
+    || { echo "  retag.sh's BUILD_IMAGES lacks aio-postgresql — it would be retagged from the previous suite tag, not built from this tree" >&2; fail=1; }
   # the build-aio-postgresql JOB: the image test before the push, the pushed-layers check
   # present — the row used to grep the whole file for the test line, so a step that moved
   # after the push (or a deleted layers check) kept it green (#73)
@@ -1040,14 +1006,14 @@ buscador_db() {  # 260: the database image ships aps-roles.sh and the script sti
   push_ln="$(awk -v a="$j0" -v b="$j1" 'NR>=a && NR<=b && /^ +push: true$/ {print NR; exit}' "$w")"
   layers_ln="$(awk -v a="$j0" -v b="$j1" 'NR>=a && NR<=b && /imagetools inspect/ {print NR; exit}' "$w")"
   { [ -n "$test_ln" ] && [ -n "$push_ln" ] && [ "$test_ln" -lt "$push_ln" ]; } \
-    || { echo "  images.yml no longer runs the image test before aio-postgresql is pushed" >&2; fail=1; }
+    || { echo "  images.yml no longer runs the database image test before aio-postgresql is pushed" >&2; fail=1; }
   [ -n "$layers_ln" ] \
-    || { echo "  images.yml's pushed-layers check is gone — nothing proves the pushed image is the tested one" >&2; fail=1; }
+    || { echo "  images.yml's pushed-layers check is gone — nothing proves the pushed database image is the tested one" >&2; fail=1; }
   [ "$fail" -eq 0 ]
 }
 
-row 260 "the database is ready for Buscador Documental — aps-roles.sh ships in the image and still creates both roles (bd_owner, bd_worker), grants bd_owner to Nextcloud's user and CONNECT to bd_worker, and creates the unaccent and vector extensions; start.sh runs it between the import server's start and the dump replay, and again at every start; aio-postgresql is built not retagged, its image test runs before the push, and the pushed-layers check proves the pushed image is the tested one (the pgvector hash pin is the acquisition gate's row since #73)" \
-  buscador_db
+row 260 "the database image is built from this tree — aio-postgresql is in retag.sh's BUILD_IMAGES (a retag would copy the previous suite tag's image, not this tree's bytes), its image test runs before the push, and the pushed-layers check proves the pushed image is the tested one" \
+  db_image_built_tested
 
 # ── #49: one brand token file, the font subsets, the release title, the masters ────────────
 

@@ -129,10 +129,6 @@ if ( [ -f "$DATADIR/PG_VERSION" ] && [ "$PG_MAJOR" != "$(cat "$DATADIR/PG_VERSIO
 EOSQL
     fi
 
-    # Buscador Documental's roles and extensions before the replay: the dump carries no roles, so
-    # without them its ownerships and grants to bd_owner and bd_worker would silently fail
-    /aps-roles.sh
-
     # Restore database
     echo "Restoring the database from database dump"
     psql "$POSTGRES_DB" -U "$POSTGRES_USER" < "$DUMP_FILE"
@@ -266,31 +262,9 @@ do_database_dump() {
     fi
 }
 
-# Buscador Documental's roles and extensions, at every start (first boot included). It waits until
-# the server accepts logins on TCP: the init-time temporary server listens on the socket only, so
-# this never runs beside the init scripts. A failure is logged and the database keeps running.
-aps_roles() {
-    while kill -0 "$PG_PID" 2>/dev/null; do
-        if pg_isready -q -h 127.0.0.1 -p 5432; then
-            for _ in 1 2 3 4 5; do
-                if /aps-roles.sh; then
-                    echo "aps-roles: ok"
-                    return 0
-                fi
-                sleep 5
-            done
-            echo "aps-roles: FAILED (database keeps running)"
-            return 1
-        fi
-        sleep 2
-    done
-}
-
 # Catch docker stop attempts
 trap do_database_dump SIGINT SIGTERM
 
 # Start the database
 exec docker-entrypoint.sh postgres &
-PG_PID=$!
-aps_roles &
-wait "$PG_PID"
+wait $!
