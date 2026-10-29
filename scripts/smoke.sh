@@ -25,7 +25,7 @@ occ status --output=json 2>/dev/null | grep -q '"installed":true' \
 suite_url_resolve || exit 1
 
 # 3. PostgreSQL accepting connections. Direct docker exec against the AIO sibling's fixed name —
-# these two cannot ride the seam (it targets the nextcloud container) and need no compose context.
+# these two cannot ride the seam (it targets the nextcloud container).
 docker exec aps-conecta-database pg_isready -q 2>/dev/null \
   || fail "PostgreSQL (aps-conecta-database) is not accepting connections"
 
@@ -47,13 +47,11 @@ if printf '%s' "$body" | grep -qi 'nextcloud'; then
   fail "branding leak: /status.php still says Nextcloud — is 'occ config:app:set theming productName' set? Body: ${body}"
 fi
 
-# 6. Background jobs are scheduled, not traffic-driven (phase 06-jobs). Under AIO there is no cron
-# CONTAINER: cron.php runs from a 5-minute loop (cron.sh, started by the container's own dinit)
-# inside the nextcloud container, so the compose-era "cron service is running" half becomes an
-# assertion on that loop process. Both halves still get asserted, because either alone is a silent
-# half-fix: the mode without the loop means Nextcloud waits for a cron that never runs (worse than
-# ajax), the loop without the mode means it runs while Nextcloud still self-serves jobs on page
-# loads.
+# 6. Background jobs are scheduled, not traffic-driven (phase 06-jobs). cron.php runs from a
+# 5-minute loop (cron.sh, started by the container's own dinit) inside the nextcloud container.
+# Both halves get asserted, the loop and the mode, because either alone is a silent half-fix: the
+# mode without the loop means Nextcloud waits for a cron that never runs (worse than ajax), the
+# loop without the mode means it runs while Nextcloud still self-serves jobs on page loads.
 if ! nc_exec --user www-data -- pgrep -f cron.sh >/dev/null 2>&1; then
   fail "the cron loop (cron.sh) is not running inside aps-conecta-nextcloud — background jobs would fall back to page-load scheduling"
 fi
@@ -202,9 +200,9 @@ signed=$(nc_exec --user www-data -- sh -c \
   || fail "release app(s) carrying the store's signature: ${signed}— upstream's tarball replaced the fork's release, so the white-label rename is gone. Run: sudo aps-conecta provision --reponer (provisioning re-imposes the release's bytes, which carry no signature)"
 
 # 11. The legacy render path is branded (ADR-0004). TWO TRANSPORTS, because the reachable screen
-# differs. On a compose stack (no overwritehost) an untrusted Host is the ONLY screen in that
-# class reachable without mutating the instance — maintenance, the upgrade screens and the setup
-# screens all have to be staged — and it is also the strictest of them: failing isTrustedDomain()
+# differs. With no overwritehost set, an untrusted Host is the ONLY screen in that class reachable
+# without mutating the instance — maintenance, the upgrade screens and the setup screens all have
+# to be staged — and it is also the strictest of them: failing isTrustedDomain()
 # is what makes Server.php hand out a raw \OC_Defaults instead of ThemingDefaults, so this one
 # request exercises BOTH halves of the fix at once. The themed stylesheet proves guest.css arrived;
 # the absence of the vendor name proves defaults.php did. Everything else in the class shares the
@@ -255,11 +253,9 @@ fi
 # vacuous — phase 15 writes '' into config.php either way; only the files regress. The listing is
 # captured, not piped: an EMPTY home is the passing state, so "clean" and "could not look" are
 # indistinguishable by value and only the exit status separates them. Hence no 2>/dev/null.
-# The default names the account on both stacks: AIO installs with ADMIN_USER=admin (its
-# containers.json), and compose's official image takes the user from the same .env key. The
+# The default names the account: AIO installs with ADMIN_USER=admin (its containers.json). The
 # data DIRECTORY is read from the instance instead of assumed — AIO installs with
-# --data-dir /mnt/ncdata, compose with the image default /var/www/html/data — one occ read,
-# correct on both, and failing to read it must not read as a clean home.
+# --data-dir /mnt/ncdata — one occ read, and failing to read it must not read as a clean home.
 datadir=$(occ config:system:get datadirectory 2>/dev/null | tr -d '\r')
 [ -n "$datadir" ] \
   || fail "cannot read datadirectory — check 12 cannot answer, so it must not report clean"
@@ -268,14 +264,12 @@ home=$(nc_exec --user www-data -- ls -A "${datadir%/}/${NEXTCLOUD_ADMIN_USER:-ad
 printf '%s' "$home" | grep -qi 'nextcloud' \
   && fail "stock Nextcloud skeleton in admin's home — phase 15's skeletondirectory arrives after the image has already created and logged in admin"
 
-# 13. The app store is off (#163, #42). The compose-era loop checked nextcloud AND cron — two
-# containers that had to agree. Under AIO there is ONE container to ask: cron.php runs inside
-# aps-conecta-nextcloud (check 6's loop), so the pair collapses into a single read and the loop
-# is deleted rather than kept degenerate. The lever moved with it — from compose.yaml's
-# NC_appstoreenabled to the image's own ENV: NC_appstoreenabled="0" baked into aio-nextcloud
-# (patch 020), with the scoped per-command installs (#42) as the only openings, none of them on
-# a smoke's path. This asserts the LEVER, not the drift it prevents; an absent key reads "" and
-# is not "0", so this cannot fail open.
+# 13. The app store is off (#163, #42). ONE container answers for web and cron alike: cron.php
+# runs inside aps-conecta-nextcloud (check 6's loop), so a single read covers both. The lever is
+# the image's own ENV: NC_appstoreenabled="0" baked into aio-nextcloud (patch 020), with the
+# scoped per-command installs (#42) as the only openings, none of them on a smoke's path. This
+# asserts the LEVER, not the drift it prevents; an absent key reads "" and is not "0", so this
+# cannot fail open.
 got=$(occ config:system:get appstoreenabled 2>/dev/null | tr -d '\r')
 [ "$got" = "0" ] \
   || fail "the app store is enabled (read '$got') — the image bakes NC_appstoreenabled=0 (patch 020) and only #42's scoped installs open it, one command at a time; occ upgrade would re-download every enabled app (#163)"

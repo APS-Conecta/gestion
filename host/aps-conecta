@@ -255,7 +255,7 @@ cmd_install() {  # the install: the welcome, then the steps in registry order. I
   elif [ -n "$SILENT_RESPALDO" ]; then
     die "--respaldo va con la instalación silenciosa: sudo aps-conecta install --sitio <site.sh> --planilla <usuarios.csv> --respaldo <directorio>"
   fi
-  is_root || die "la instalación necesita permisos de administrador: sudo bash aps-conecta install"
+  is_root || die "la instalación necesita permisos de administrador: $again"
   if [ -n "$SILENT_SITE" ]; then
     SILENT_LOG="$APS_HOME/instalacion.log"
     { mkdir -p "$APS_HOME" && exec 3>&2 2>>"$SILENT_LOG"; } || die "no se pudo abrir el registro $SILENT_LOG"
@@ -2300,7 +2300,7 @@ EOF
     '[ "$rcs" -eq 1 ] && case "$install_out" in *"Resultado ✗ el paso 2 no terminó"*"--sitio"*"(registro: $APS_HOME/instalacion.log)"*) ;; *) false;; esac'
   step_out="$( (export ID_U=1000; cmd_install </dev/null) 2>&1)"; rcs=$?
   check "stepper: install without sudo refuses before the welcome, naming the command to run" \
-    '[ "$rcs" -eq 1 ] && case "$step_out" in *"✗ la instalación necesita permisos de administrador: sudo bash aps-conecta install"*) ;; *) false;; esac && case "$step_out" in *"Paso 1 de 8"*) false;; *) true;; esac'
+    '[ "$rcs" -eq 1 ] && case "$step_out" in *"✗ la instalación necesita permisos de administrador: sudo aps-conecta install"*) ;; *) false;; esac && case "$step_out" in *"Paso 1 de 8"*) false;; *) true;; esac'
   step_out="$(step_browser "$(step_number centro)")"
   check "stepper: a browser step asked for at the console says where it runs" \
     'case "$step_out" in *"el paso 5 («Elegir el centro») se hace en el navegador"*) ;; *) false;; esac'

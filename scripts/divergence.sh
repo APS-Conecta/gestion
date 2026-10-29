@@ -169,11 +169,10 @@ fi
 
 # --- apps unpacked into custom_apps that no inventory names ---
 # The live set is read IN THE CONTAINER: custom_apps is where the seed unpacks (lib.sh) and where a
-# hand-copied app lands, and under AIO there is no host bind mount at all — the compose-era host
-# glob `apps/*/` read the same directory through the mount, and under AIO it silently matched
-# nothing, which is a check that answers green without looking (the exact defect class this gate
-# exists to kill). One exec; the glob runs in the container's own shell so the semantics are the
-# old ones transposed — directories only, trailing slash stripped. The blindness check above already
+# hand-copied app lands, and under AIO there is no host bind mount at all — a host glob would
+# silently match nothing, which is a check that answers green without looking (the exact defect
+# class this gate exists to kill). One exec; the glob runs in the container's own shell —
+# directories only, trailing slash stripped. The blindness check above already
 # refused to report against an instance that cannot answer.
 # Declared = the suite manifest (apps.json; notify_push too, which the entrypoint installs).
 if ! suite_apps="$(python3 scripts/apps.py ids 2>&1)"; then   # an unreadable manifest: the output is apps.py's one Spanish line
@@ -195,9 +194,8 @@ fi
 # built at runtime). The coupling is to that derivation, and drift here can only be loud: a
 # standing account this re-derivation forgets shows up as undeclared on every gate run — a gate
 # that cries wolf, never one that goes green without looking. `admin` is the install's own account
-# (AIO names it admin; compose takes it from NEXTCLOUD_ADMIN_USER — smoke check 12's same
-# expression), and the roster is written by the Provisionador, so an operator that never ran it
-# simply has no roster to read — not a guard, a legitimate empty.
+# (AIO names it admin), and the roster is written by the Provisionador, so an operator that never
+# ran it simply has no roster to read — not a guard, a legitimate empty.
 # One-way diff: live-but-undeclared only. Deleting a user deletes their files (the header's first
 # paragraph), so the note prints the command for a human to run, never runs it.
 if [ "$gate" -eq 1 ]; then

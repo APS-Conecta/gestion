@@ -147,10 +147,10 @@ theming_image_set() {  # KEY ABSOLUTE_PATH
 # (cross-phase state goes through Nextcloud, never shell vars) holds unchanged.
 GROUPS_CACHE=""
 GF_CACHE=""
-# The instance's data directory — same contract as the caches above: one read per phase. Compose
-# installs at the image default, AIO at /mnt/ncdata (--data-dir at install), and the content
-# helpers below used to HARDCODE the compose path: under AIO phase 30/60 would have written a
-# phantom tree with every gate green — the silent-green class this repo exists never to repeat.
+# The instance's data directory — same contract as the caches above: one read per phase. AIO
+# installs it at /mnt/ncdata (--data-dir at install); a hardcoded path in the content helpers below
+# would let phase 30/60 write a phantom tree with every gate green — the silent-green class this
+# repo exists never to repeat.
 # Fails CLOSED: an unreadable datadirectory is never guessed at, so a data path can only be built
 # from an answer the instance actually gave.
 DATADIR=""
@@ -250,15 +250,14 @@ sys.exit(0 if sys.argv[2] in (d.get(sys.argv[1]) or []) else 1)' "$2" "$_uid" &&
 }
 
 # The version of an app as the INSTANCE has it, read in-container from custom_apps — the bake-wins
-# probe, shared by both app helpers below. The compose-era read was host-side through the apps/
-# bind mount (compose.yaml), free but blind under AIO: no bind mount means no host-side file, the
-# probe answers "" for every app, `cur=""` means re-impose, and seed-idempotent stays permanently
-# red. The instance is the only source of truth for what the instance runs.
+# probe, shared by both app helpers below. A host-side read would be blind under AIO: no bind mount
+# means no host-side file, the probe answers "" for every app, `cur=""` means re-impose, and
+# seed-idempotent stays permanently red. The instance is the only source of truth for what the
+# instance runs.
 # ONE exec, no guard: awk's own open-failure IS the absent-app answer (a fresh install has not
 # unpacked anything yet), so `|| true` keeps the set -e/pipefail phases alive and empty output
 # carries the meaning the old `cur=""` initialization did. A transport-level failure reads the
-# same as "absent" and fails LOUDLY one step later at the unpack/enable — the same failure shape
-# the compose-era exec guard had.
+# same as "absent" and fails LOUDLY one step later at the unpack/enable.
 # busybox awk (the AIO image's Alpine base) parses -F'[<>]' identically to gawk — verified.
 app_installed_version() {  # APPID -> prints the installed version, or nothing when absent
   local app="$1"
@@ -595,11 +594,11 @@ gf_prune() {
 gf_files_path() {  # MOUNT REL -> absolute in-container path, or fails
   local id; id="$(groupfolder_id "$1")"
   [ -n "$id" ] || { log "groupfolder '$1' not found — cannot write $2"; return 1; }
-  # Derived from datadir_load, not hardcoded: the compose image default and AIO's /mnt/ncdata
-  # both flow through the same answer, and the jail rule above stays the one path to be wrong
-  # about. Self-heals when a caller skipped the load (a cache filled inside a command
-  # substitution dies with it — documented above — but the VALUE still flows out), so a caller
-  # that forgets datadir_load pays one exec, never a wrong path.
+  # Derived from datadir_load, not hardcoded: AIO's /mnt/ncdata flows through the instance's own
+  # answer, and the jail rule above stays the one path to be wrong about. Self-heals when a caller
+  # skipped the load (a cache filled inside a command substitution dies with it — documented above
+  # — but the VALUE still flows out), so a caller that forgets datadir_load pays one exec, never a
+  # wrong path.
   datadir_load || return 1
   printf '%s/__groupfolders/%s/files/%s\n' "$DATADIR" "$id" "$2"
 }
@@ -635,10 +634,9 @@ ensure_gf_subfolder() {  # MOUNT SUBFOLDER
 # --- content fixtures (query-before-create): put a file in a user's Files, then index it ---
 ensure_sample_file() {  # UID RELPATH CONTENT
   local uid="$1" rel="$2" content="$3"
-  # Datadir-derived (see datadir_load): the compose-era `data/$uid/files` was the image default
-  # written out by hand; under AIO it is a phantom tree with every gate green. One load here,
-  # parent-side — this helper runs in the phase shell itself, no substitution, so the cache holds
-  # for the rest of the phase.
+  # Datadir-derived (see datadir_load): a hand-written `data/$uid/files` is a phantom tree under
+  # AIO with every gate green. One load here, parent-side — this helper runs in the phase shell
+  # itself, no substitution, so the cache holds for the rest of the phase.
   datadir_load || return 1
   if nc_exec --user www-data -- test -f "$DATADIR/$uid/files/$rel" 2>/dev/null; then
     log "file $uid:$rel exists"; return 0

@@ -186,7 +186,7 @@ cmd_up() {
   [ "$got" = "0" ] || die "appstoreenabled reads '$got' after setting 0 — the probe baseline cannot be trusted"
 
   # Probe state, second key: the skeleton. NC_skeletondirectory="" is the suite's own posture
-  # (compose.yaml:90) — AIO's entrypoint only sets the key when NEXTCLOUD_SKELETON_DIRECTORY is
+  # (phase 15) — AIO's entrypoint only sets the key when NEXTCLOUD_SKELETON_DIRECTORY is
   # forwarded, and containers.json does not forward it, so the admin AIO created during install
   # already carries the vendor's stock files (Nextcloud Manual.pdf, the flyer, ...): exactly
   # what smoke's check 12 exists to catch. Set the key for every FUTURE account, then drop the

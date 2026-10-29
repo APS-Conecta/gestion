@@ -1,6 +1,6 @@
 # Phase 06 — background job scheduling mode.  OWNER: post-v1 hardening.
-# Pairs with the `cron` service in compose.yaml: the container schedules the work, this tells
-# Nextcloud to expect it. Both halves are required — either alone is a silent half-fix.
+# Pairs with the AIO Nextcloud container's `cron` dinit service (Containers/nextcloud/cron.sh):
+# the container schedules the work, this tells Nextcloud to expect it.
 phase_begin "06-jobs" "background jobs run from cron, not ajax"
 
 # Nextcloud defaults to `ajax`: jobs run only when a user loads a page, so housekeeping stops

@@ -36,7 +36,8 @@ opcionales_ids="$(printf '%s\n' "$manifest_opcionales" | cut -f1)"
 # Talk is the suite's option under AIO: off unless the wizard turns it on (the fork's patch 210), and
 # with it off the entrypoint removes spreed on every boot (REMOVE_DISABLED_APPS) — installed here, it
 # would be undone at the next restart and leave Talk without its signalling server. The suite's own
-# switch decides, the one the entrypoint reads; compose has no such switch and always runs Talk.
+# switch decides, the one the entrypoint reads; with no AIO stack running there is no switch to
+# read, so Talk stays on.
 talk=yes
 if is_aio; then
   talk="$(nc_exec -- printenv TALK_ENABLED 2>/dev/null)" \

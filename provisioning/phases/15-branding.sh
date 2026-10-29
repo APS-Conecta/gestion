@@ -115,7 +115,7 @@ config_system_set defaultapp "intravox"
 # 2026-07-30). Revisit when someone wants a standard acta or informe.
 config_system_set skeletondirectory ""
 
-# --- Activate the server theme (themes/apsconecta, bind-mounted by compose.yaml) ---
+# --- Activate the server theme (themes/apsconecta) ---
 config_system_set theme apsconecta
 
 # --- The establishment's name, into the theme (#84) ---
