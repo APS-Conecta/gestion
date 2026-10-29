@@ -268,11 +268,11 @@ if [ -n "$APACHE_PORT" ] && [ -n "$TALK_PORT" ]; then
         exit 1
     fi
 fi
-if [ -n "$WATCHTOWER_DOCKER_SOCKET_PATH" ]; then
-    if ! echo "$WATCHTOWER_DOCKER_SOCKET_PATH" | grep -q "^/" || echo "$WATCHTOWER_DOCKER_SOCKET_PATH" | grep -q "/$"; then
-        print_red "You've set WATCHTOWER_DOCKER_SOCKET_PATH but not to an allowed value.
+if [ -n "$DOCKER_SOCKET_PATH" ]; then
+    if ! echo "$DOCKER_SOCKET_PATH" | grep -q "^/" || echo "$DOCKER_SOCKET_PATH" | grep -q "/$"; then
+        print_red "You've set DOCKER_SOCKET_PATH but not to an allowed value.
 The string must start with '/' and must not end with '/'.
-It is set to '$WATCHTOWER_DOCKER_SOCKET_PATH'."
+It is set to '$DOCKER_SOCKET_PATH'."
         exit 1
     fi
 fi
@@ -449,4 +449,4 @@ chown www-data:www-data /tmp/twig-cache
 chmod 770 /tmp/twig-cache
 
 # Start dinit
-exec dinit --system --container php-fpm caddy-internal caddy-acme cron backup-time-file-watcher session-deduplicator domain-validator desec-ip-updater
+exec dinit --system --container php-fpm caddy-internal caddy-acme cron backup-time-file-watcher session-deduplicator domain-validator

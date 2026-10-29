@@ -28,13 +28,9 @@
             {% set hasBackupLocation = borg_backup_host_location or borg_remote_repo %}
             {% set isAnyRunning = false %}
             {% set isAnyRestarting = false %}
-            {% set isWatchtowerRunning = false %}
             {% set isDomaincheckRunning = false %}
             {% set isBackupOrRestoreRunning = false %}
             {% set isApacheStarting = false %}
-            {# Setting newMajorVersion to '' will hide corresponding options/elements, can be set to an integer like 26 in order to show corresponding elements. If set, also increase installLatestMajor in php/src/Controller/DockerController.php #}
-            {% set newMajorVersionString = '' %}
-            {% set oldMajorVersionString = '' %}
 
             {% if is_backup_container_running == true %}
                 {% if borg_backup_mode == 'backup' or borg_backup_mode == 'restore' %}
@@ -49,9 +45,7 @@
                 {% if container.hideFromList != true and container.GetRestartingState().value == 'restarting' %}
                     {% set isAnyRestarting = true %}
                 {% endif %}
-                {% if container.identifier == 'aps-conecta-watchtower' and container.GetRunningState().value == 'running' %}
-                    {% set isWatchtowerRunning = true %}
-                {% endif %}
+
                 {% if container.identifier == 'aps-conecta-domaincheck' and container.GetRunningState().value == 'running' %}
                     {% set isDomaincheckRunning = true %}
                 {% endif %}
@@ -62,22 +56,9 @@
 
             {% if is_daily_backup_running == true %}
                 <p><span class="status running"></span> Copia de seguridad diaria en ejecución. (<a href="log?id=nextcloud-aio-mastercontainer" target="_blank">Registros del asistente</a>) (<a href="log?id=aps-conecta-borgbackup" target="_blank">Registros del contenedor de copia de seguridad de Borg</a>)</p>
-                {% if automatic_updates == true %}
-                    <p>Esto actualizará sus contenedores, el asistente y, los sábados, sus aplicaciones si la copia de seguridad finaliza correctamente.</p>
-                    {% if is_mastercontainer_update_available == true %}
-                        <p>Cuando el asistente se actualice, se reiniciará y quedará indisponible por un momento. (<a href="log?id=aps-conecta-watchtower" target="_blank">Registros</a>)</p>
-                    {% endif %}
-                {% endif %}
-                {% if has_update_available == false %}
-                    <p>El proceso completo no debería tardar más de unos minutos.</p>
-                {% elseif automatic_updates == true %}
-                    <p>El proceso completo puede tardar un poco, ya que sus contenedores se actualizarán.</p>
-                {% endif %}
+
                 <p><a href="" class="button reload">Recargar ↻</a></p>
                 <p>Si la copia de seguridad diaria queda atascada por algún motivo, puede desatascarla ejecutando <strong>sudo docker exec nextcloud-aio-mastercontainer rm /mnt/docker-aio-config/data/daily_backup_running</strong> y recargando luego esta interfaz.</p>
-            {% elseif isWatchtowerRunning == true %}
-                <p><span class="status running"></span> Actualización del asistente en ejecución. Cuando finalice la actualización, el asistente se reiniciará y quedará indisponible por un momento. Espere a que termine. (<a href="log?id=aps-conecta-watchtower" target="_blank">Registros</a>)</p>
-                <p><a href="" class="button reload">Recargar ↻</a></p>
             {% else %}
                 {% if is_backup_container_running == false and domain == "" %}
                     {% if isDomaincheckRunning == false %}
@@ -258,6 +239,7 @@
 
                     {% if was_start_button_clicked == true %}
                         <h2>Contenedores</h2>
+                        <p><a target="_blank" href="https://github.com/APS-Conecta/gestion/releases">Registro de cambios de la suite</a></p>
                         <ul>
                             {# @var containers \AIO\Container\Container[] #}
                             {% for container in containers %}
@@ -267,40 +249,11 @@
                             {% endfor %}
                         </ul>
 
-                        {% if has_update_available == true %}
-                            {% if is_mastercontainer_update_available == false %}
-                                <p>⚠️ Hay actualizaciones disponibles para los contenedores. Haga clic en <strong>Detener contenedores</strong> y en <strong>Iniciar y actualizar contenedores</strong> para actualizarlos. Debería considerar crear antes una copia de seguridad.</p>
-                            {% endif %}
-                        {% else %}
-                            {% if is_mastercontainer_update_available == false %}
-                                <p>Sus contenedores están actualizados.</p>
-                                {% if newMajorVersionString != '' and isAnyRunning == true and isApacheStarting != true %}
-                                    <details>
-                                    <summary>Nota sobre <strong>Nextcloud Hub {{ newMajorVersionString }}</strong></summary>
-<p>Si aún no ha actualizado a Nextcloud Hub {{ newMajorVersionString }} y desea hacerlo ahora, no dude en hacer clic en el botón siguiente. ⚠️ Advertencia: asegúrese de crear una copia de seguridad antes de hacer clic en el botón, ya que la actualización puede fallar y dejar su instancia en un estado no funcional.</p>
-                                        <form method="POST" action="api/docker/nextcloud-upgrade-to-latest-major" target="overlay-log">
-                                            <input type="hidden" name="{{csrf.keys.name}}" value="{{csrf.name}}">
-                                            <input type="hidden" name="{{csrf.keys.value}}" value="{{csrf.value}}">
-                                            <input type="submit" value="Actualizar a Nextcloud Hub {{ newMajorVersionString }}" data-confirm="¿Actualizar a Nextcloud Hub {{ newMajorVersionString }}? Debería considerar crear antes una copia de seguridad." />
-                                        </form>
-                                    </details>
-                                {% endif %}
-                            {% endif %}
-                        {% endif %}
                     {% endif %}
 
                     {% if isAnyRunning == true %}
                         {% if isApacheStarting != true %}
-                            {% if is_mastercontainer_update_available == true %}
-                                <p>⚠️ Hay una actualización del asistente disponible. Haga clic en el botón siguiente para detener sus contenedores y así poder actualizar el asistente.</p>
-                                {% if current_channel starts with 'latest' %}
-                                    <p>Puede encontrar el registro de cambios <a target="_blank" href="https://github.com/APS-Conecta/gestion/releases/latest"><strong>aquí</strong></a></p>
-                                {% elseif current_channel starts with 'beta' %}
-                                    <p>Puede encontrar el registro de cambios <a target="_blank" href="https://github.com/APS-Conecta/gestion/releases"><strong>aquí</strong></a></p>
-                                {% elseif current_channel starts with 'develop' %}
-                                    <p>Puede encontrar todos los cambios <a target="_blank" href="https://github.com/APS-Conecta/gestion/commits/main"><strong>aquí</strong></a></p>
-                                {% endif %}
-                            {% endif %}
+
                             <form method="POST" action="api/docker/stop" target="overlay-log">
                                 <input type="hidden" name="{{csrf.keys.name}}" value="{{csrf.name}}">
                                 <input type="hidden" name="{{csrf.keys.value}}" value="{{csrf.value}}">
@@ -314,40 +267,15 @@
                             {% if was_start_button_clicked == false %}
                                 <p>Al hacer clic en el botón siguiente se descargarán todos los contenedores de Docker y se iniciarán. Esto puede tardar mucho según su conexión a internet. Dado que el tamaño total es de unos pocos GB, puede tomar alrededor de 5-10 minutos o más. ¡Tenga paciencia.</p>
                             {% endif %}
-                                {% if was_start_button_clicked == false %}
-                                    <form method="POST" action="api/docker/start" target="overlay-log">
-                                        <input type="hidden" name="{{csrf.keys.name}}" value="{{csrf.name}}">
-                                        <input type="hidden" name="{{csrf.keys.value}}" value="{{csrf.value}}">
-                                        <input id="base_path" type="hidden" name="base_path" value="">
-                                        {% if bypass_container_update == true %}
-                                            <input type="hidden" name="bypass_container_update" value="true">
-                                        {% endif %}
-                                        {% if newMajorVersionString != '' %}
-                                            <input type="checkbox" id="install_latest_major" name="install_latest_major"><label for="install_latest_major">Instalar Nextcloud Hub {{ newMajorVersionString }} (si no se marca, se instalará Nextcloud Hub {{ oldMajorVersionString }})</label><br>
-                                        {% endif %}
-                                        <input type="submit" value="Descargar e iniciar contenedores" />
-                                    </form>
-                                {% elseif has_update_available == false %}
-                                    <form method="POST" action="api/docker/start" target="overlay-log">
-                                        <input type="hidden" name="{{csrf.keys.name}}" value="{{csrf.name}}">
-                                        <input type="hidden" name="{{csrf.keys.value}}" value="{{csrf.value}}">
-                                        <input id="base_path" type="hidden" name="base_path" value="">
-                                        {% if bypass_container_update == true %}
-                                            <input type="hidden" name="bypass_container_update" value="true">
-                                        {% endif %}
-                                        <input type="submit" value="Iniciar contenedores" />
-                                    </form>
-                                {% else %}
-                                    <form method="POST" action="api/docker/start" target="overlay-log">
-                                        <input type="hidden" name="{{csrf.keys.name}}" value="{{csrf.name}}">
-                                        <input type="hidden" name="{{csrf.keys.value}}" value="{{csrf.value}}">
-                                        <input id="base_path" type="hidden" name="base_path" value="">
-                                        {% if bypass_container_update == true %}
-                                            <input type="hidden" name="bypass_container_update" value="true">
-                                        {% endif %}
-                                        <input class="button " type="submit" value="Iniciar y actualizar contenedores" data-confirm='¿Iniciar y actualizar contenedores? Debería considerar crear antes una copia de seguridad.' />
-                                    </form>
-                                {% endif %}
+                                <form method="POST" action="api/docker/start" target="overlay-log">
+                                    <input type="hidden" name="{{csrf.keys.name}}" value="{{csrf.name}}">
+                                    <input type="hidden" name="{{csrf.keys.value}}" value="{{csrf.value}}">
+                                    <input id="base_path" type="hidden" name="base_path" value="">
+                                    {% if bypass_container_update == true %}
+                                        <input type="hidden" name="bypass_container_update" value="true">
+                                    {% endif %}
+                                    <input type="submit" value="{% if was_start_button_clicked == false %}Descargar e iniciar contenedores{% else %}Iniciar contenedores{% endif %}" />
+                                </form>
                         {% endif %}
                     {% endif %}
 
@@ -496,7 +424,7 @@
                                                 </form>
                                             </details>
 
-                                            <h3>Copia de seguridad diaria y actualizaciones automáticas</h3>
+                                            <h3>Copia de seguridad diaria</h3>
                                             {% if daily_backup_time == "" %}
                                                 <p>Al ingresar una hora a continuación y enviarla, puede activar las copias de seguridad diarias. Se crearán a la hora ingresada en formato de 24 horas. Por ejemplo, <strong>04:00</strong> creará copias a las 4:00 UTC y <strong>16:00</strong> a las 16:00 UTC. Al crear la copia, los contenedores se detendrán y se reiniciarán cuando la copia finalice.</p>
                                                 <form method="POST" action="api/configuration" class="xhr">
@@ -504,14 +432,11 @@
                                                     <input type="hidden" name="{{csrf.keys.name}}" value="{{csrf.name}}">
                                                     <input type="hidden" name="{{csrf.keys.value}}" value="{{csrf.value}}">
                                                     <input type="submit" value="Enviar hora y configuraciones de la copia de seguridad diaria" /><br>
-                                                    <input type="checkbox" id="automatic_updates" name="automatic_updates"><label for="automatic_updates">Actualizar automáticamente todos los contenedores, el asistente y, los sábados, sus aplicaciones</label><br>
                                                     <input type="checkbox" id="success_notification" name="success_notification" checked="checked"><label for="success_notification">Enviar notificaciones sobre copias de seguridad exitosas (las notificaciones sobre copias fallidas siempre se enviarán)</label>
                                                 </form>
                                             {% else %}
                                                 <p>Las copias de seguridad diarias se crearán a las <strong>{{ daily_backup_time }} UTC</strong>. Se enviará una notificación con el resultado de la copia.</p>
-                                                {% if automatic_updates == true %}
-                                                    Además, sus contenedores, el asistente y, los sábados, sus aplicaciones se actualizarán automáticamente.
-                                                {% endif %}
+
                                                 <p>Para cambiar su hora de copia de seguridad, desactive primero las copias de seguridad diarias, luego ingrese su nueva hora y vuelva a activarlas.</p>
                                                 <form method="POST" action="api/configuration" class="xhr">
                                                     <input type="hidden" name="delete_daily_backup_time" value="yes"/>
@@ -611,7 +536,7 @@
                 {% endif %}
             {% endif %}
 
-        {% if isApacheStarting == true or is_backup_container_running == true or isWatchtowerRunning == true or is_daily_backup_running == true %}
+        {% if isApacheStarting == true or is_backup_container_running == true or is_daily_backup_running == true %}
             <script type="text/javascript" src="automatic_reload.js?v2"></script>
         {% else %}
             <script type="text/javascript" src="before-unload.js"></script>

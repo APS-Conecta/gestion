@@ -10,13 +10,8 @@ while true; do
         BACKUP_TIME="$(head -1 "/mnt/docker-aio-config/data/daily_backup_time")"
         export BACKUP_TIME
         export DAILY_BACKUP=1
-        if [ "$(sed -n '2p' "/mnt/docker-aio-config/data/daily_backup_time")" != 'automaticUpdatesAreNotEnabled' ]; then
-            export AUTOMATIC_UPDATES=1
-        else
-            export AUTOMATIC_UPDATES=0
-            export START_CONTAINERS=1
-        fi
-        if [ "$(sed -n '3p' "/mnt/docker-aio-config/data/daily_backup_time")" != 'successNotificationsAreNotEnabled' ]; then
+        export START_CONTAINERS=1
+        if [ "$(sed -n '2p' "/mnt/docker-aio-config/data/daily_backup_time")" != 'successNotificationsAreNotEnabled' ]; then
             export SEND_SUCCESS_NOTIFICATIONS=1
         else
             export SEND_SUCCESS_NOTIFICATIONS=0
@@ -35,7 +30,7 @@ while true; do
         export LOCK_FILE_PRESENT=0
     fi
 
-    # Allow to continue directly if e.g. the mastercontainer was updated. Otherwise wait for the next execution
+    # Resume an interrupted backup immediately; otherwise wait for its scheduled time.
     if [ "$LOCK_FILE_PRESENT" = 0 ]; then
         while [ "$(date +%H:%M)" != "$BACKUP_TIME" ]; do 
             sleep 30
@@ -49,14 +44,6 @@ while true; do
     # Make sure to delete the lock file always
     rm -f "/mnt/docker-aio-config/data/daily_backup_running"
 
-    # Check for updates and send notification if yes on saturdays
-    if [ "$(date +%u)" = 6 ]; then
-        su-exec www-data php /var/www/docker-aio/php/src/Cron/UpdateNotification.php
-    fi
-
-    # Check if AIO is outdated
-    su-exec www-data php /var/www/docker-aio/php/src/Cron/OutdatedNotification.php
-
     # Remove sessions older than 24h
     find "/mnt/docker-aio-config/session/" -mindepth 1 -mmin +1440 -delete
 
@@ -64,10 +51,6 @@ while true; do
     if su-exec www-data docker ps --format "{{.Names}}" --filter "status=exited" | grep -q "^aps-conecta-domaincheck$"; then
         su-exec www-data docker container remove aps-conecta-domaincheck
     fi
-
-    # Remove dangling images (support both deprecated label-schema and OCI standard vendor label)
-    su-exec www-data docker image prune --filter "label=org.label-schema.vendor=Nextcloud" --force
-    su-exec www-data docker image prune --filter "label=org.opencontainers.image.vendor=Nextcloud" --force
 
     # Check for available free space
     su-exec www-data php /var/www/docker-aio/php/src/Cron/CheckFreeDiskSpace.php

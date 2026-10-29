@@ -78,6 +78,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-048 | the suite offered only Euro-Office but still carried two unused office backends, their runtime configuration and release images (#177) | hiding the cards and refusing new choices left container definitions, startup/proxy paths, legacy office settings and release inventory intact | the unused backend directories, definitions, routes and settings are deleted; Euro-Office and its internal callback route remain, sibling floors shrink by two, and the local gate checks the shipped capability surfaces |
 
+| A-049 | the suite still carried independent upstream updates, domain registration and whole-host Docker cleanup behind a restricted wizard (#179) | hiding controls left routes, notification jobs, nightly updates and boot-time major downloads executable; vendor-filtered cron cleanup also reached beyond suite ownership | those paths and the update container are deleted, backup scheduling keeps ordinary restart and success notifications, HaRP retains neutrally named socket plumbing, and local/runtime gates prove the supported lifecycle |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and

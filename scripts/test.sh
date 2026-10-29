@@ -28,6 +28,129 @@ office_backends_removed() {
 }
 check office_backends_removed
 
+# #179: removed upstream capabilities have no route, container or boot entry point.
+# External-updater opt-out labels and Borg archive retention are separate capabilities.
+upstream_surfaces_removed() {
+  local status path
+  for path in Containers/watchtower Containers/nextcloud/upgrade-latest-major.sh \
+      Containers/mastercontainer/desec-ip-updater.sh Containers/mastercontainer/dinit.d/desec-ip-updater \
+      php/src/Desec php/src/Controller/DesecController.php \
+      php/src/Cron/UpdateDesecIp.php php/src/Cron/UpdateMastercontainer.php \
+      php/src/Cron/UpdateNotification.php php/src/Cron/OutdatedNotification.php; do
+    [ ! -e "$path" ] || return 1
+  done
+  if grep -nEi 'watchtower|desec|UpdateNotification\.php|OutdatedNotification\.php|latest-major|INSTALL_LATEST_MAJOR|LATEST_MAJOR_VERSION|api/docker/prune' \
+      php/containers.json php/public/index.php php/templates/containers.twig \
+      Containers/mastercontainer/start.sh Containers/mastercontainer/cron.sh \
+      Containers/mastercontainer/daily-backup.sh Containers/nextcloud/entrypoint.sh; then
+    return 1
+  else
+    status=$?
+    [ "$status" -eq 1 ] || return "$status"
+  fi
+  if grep -nE 'function (SystemPrune|RunNextcloudUpgradeToLatestMajor|StartWatchtowerContainer|startWatchtower|isNextcloudImageOutdated|IsMastercontainerUpdateAvailable)' \
+      php/src/Controller/DockerController.php php/src/Docker/DockerActionManager.php; then
+    return 1
+  else
+    status=$?
+    [ "$status" -eq 1 ] || return "$status"
+  fi
+  if grep -nE 'docker image prune' Containers/mastercontainer/cron.sh; then
+    return 1
+  else
+    status=$?
+    [ "$status" -eq 1 ]
+  fi
+}
+check upstream_surfaces_removed
+
+# Exercise the real backup wrapper at its external-command boundary. Only its fixed
+# state-directory prefix is redirected into the fixture; no host Docker or PHP runs.
+daily_backup_cases() {
+  python3 - "${1:-Containers/mastercontainer/daily-backup.sh}" "${2:-Containers/mastercontainer/cron.sh}" <<'PY'
+import os, pathlib, signal, subprocess, sys, tempfile, time
+
+source = pathlib.Path(sys.argv[1]).read_text()
+with tempfile.TemporaryDirectory(prefix="daily-backup-") as tmp:
+    root = pathlib.Path(tmp)
+    state = root / "state"
+    (state / "data").mkdir(parents=True)
+    (state / "session").mkdir()
+    (state / "data/configuration.json").write_text('{"wasStartButtonClicked":true}\n')
+    script = root / "daily-backup.sh"
+    script.write_text(source.replace("/mnt/docker-aio-config", str(state)))
+    bin_dir = root / "bin"
+    bin_dir.mkdir()
+    shims = {
+        "docker": '''#!/bin/bash
+case "$1" in
+  inspect) echo APACHE_PORT=443 ;;
+  ps) printf 'aps-conecta-apache\\naps-conecta-nextcloud\\n' ;;
+  network) exit 0 ;;
+  *) exit 1 ;;
+esac
+''',
+        "nc": "#!/bin/bash\nexit 0\n",
+        "su-exec": '''#!/bin/bash
+printf '%s\\n' "$*" >> "$CALL_LOG"
+if [ "$2" = touch ]; then /usr/bin/touch "$3"; fi
+''',
+    }
+    for name, content in shims.items():
+        path = bin_dir / name
+        path.write_text(content)
+        path.chmod(0o700)
+    log = root / "calls"
+    env = dict(os.environ, PATH=str(bin_dir) + os.pathsep + os.environ["PATH"],
+               CALL_LOG=str(log), AIO_LOG_LEVEL="warn", DAILY_BACKUP="1",
+               CHECK_BACKUP="0", STOP_CONTAINERS="1", START_CONTAINERS="1",
+               LOCK_FILE_PRESENT="0", AUTOMATIC_UPDATES="1")
+    result = subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+    calls = log.read_text().splitlines()
+    jobs = [line.rsplit("/", 1)[-1] for line in calls if " php " in line]
+    assert jobs == ["StopContainers.php", "CreateBackup.php", "StartContainers.php", "BackupNotification.php"], jobs
+    assert not (state / "data/daily_backup_running").exists(), "backup lock was not cleared"
+
+    # The scheduler must request a restart and preserve the saved notification choice.
+    # Stop its own isolated process group after observing one scheduled invocation.
+    cron = root / "cron.sh"
+    cron.write_text(pathlib.Path(sys.argv[2]).read_text().replace("/mnt/docker-aio-config", str(state)))
+    for name, content in {
+        "date": "#!/bin/bash\necho 04:00\n",
+        "bash": '''#!/bin/bash
+printf '%s\\t%s\\t%s\\n' "$*" "${START_CONTAINERS-unset}" "${SEND_SUCCESS_NOTIFICATIONS-unset}" >> "$CRON_CALLS"
+''',
+    }.items():
+        path = bin_dir / name
+        path.write_text(content)
+        path.chmod(0o700)
+    for enabled in (True, False):
+        saved = "04:00\n" + ("" if enabled else "successNotificationsAreNotEnabled\n")
+        (state / "data/daily_backup_time").write_text(saved)
+        cron_calls = root / ("scheduled-" + str(enabled))
+        cron_env = dict(env, CRON_CALLS=str(cron_calls))
+        cron_env.pop("START_CONTAINERS", None)
+        proc = subprocess.Popen(["/bin/bash", str(cron)], env=cron_env,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                start_new_session=True)
+        try:
+            deadline = time.monotonic() + 3
+            while (not cron_calls.exists() or "\n" not in cron_calls.read_text()) \
+                    and proc.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert cron_calls.exists(), "scheduled backup never ran"
+            expected = "/daily-backup.sh\t1\t" + str(int(enabled))
+            assert cron_calls.read_text().splitlines()[0] == expected, cron_calls.read_text()
+        finally:
+            if proc.poll() is None:
+                os.killpg(proc.pid, signal.SIGTERM)
+            proc.wait(timeout=3)
+print("daily backup preserves ordinary restart and notification without updating images")
+PY
+}
+check daily_backup_cases
+
 # The fork's shell namespace, spelled once for every row that walks it (the sweep below, the
 # dirname gate at #60's row). Unquoted on purpose: the words re-glob where they are used. The
 # comm tripwire a few lines down keeps its own literal copy deliberately — it is the alarm

@@ -36,12 +36,6 @@ class DependencyInjection
             )
         );
         $container->set(
-            \AIO\Desec\DesecManager::class,
-            new \AIO\Desec\DesecManager(
-                $container->get(\AIO\Data\ConfigurationManager::class),
-            )
-        );
-        $container->set(
             \AIO\Auth\PasswordGenerator::class,
             new \AIO\Auth\PasswordGenerator()
         );

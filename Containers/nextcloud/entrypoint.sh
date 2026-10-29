@@ -194,37 +194,8 @@ if ! [ -f "$NEXTCLOUD_DATA_DIR/skip.update" ]; then
         fi
 
         if [ "$installed_version" != "0.0.0.0" ] && [ "$((IMAGE_MAJOR - INSTALLED_MAJOR))" -gt 1 ]; then
-# Do not skip major versions placeholder # Do not remove or change this line!
-# Do not skip major versions start # Do not remove or change this line!
-            set -ex
-            NEXT_MAJOR="$((INSTALLED_MAJOR + 1))"
-            curl -fsSL -o nextcloud.tar.bz2 "https://download.nextcloud.com/server/releases/latest-${NEXT_MAJOR}.tar.bz2"
-            curl -fsSL -o nextcloud.tar.bz2.asc "https://download.nextcloud.com/server/releases/latest-${NEXT_MAJOR}.tar.bz2.asc"
-            GNUPGHOME="$(mktemp -d)"
-            export GNUPGHOME
-            if ! gpg --batch --keyserver keyserver.ubuntu.com --recv-keys 28806A878AE423A28372792ED75899B9A724937A; then
-                if ! gpg --batch --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 28806A878AE423A28372792ED75899B9A724937A; then
-                    curl -sSL https://nextcloud.com/nextcloud.asc | gpg --import
-                fi
-            fi
-            gpg --batch --verify nextcloud.tar.bz2.asc nextcloud.tar.bz2
-            mkdir -p /usr/src/tmp
-            tar -xjf nextcloud.tar.bz2 -C /usr/src/tmp/
-            gpgconf --kill all
-            rm nextcloud.tar.bz2.asc nextcloud.tar.bz2
-            mkdir -p /usr/src/tmp/nextcloud/data
-            mkdir -p /usr/src/tmp/nextcloud/custom_apps
-            chmod +x /usr/src/tmp/nextcloud/occ
-            cp -r "$SOURCE_LOCATION"/config/* /usr/src/tmp/nextcloud/config/
-            mv "$SOURCE_LOCATION" /usr/src/temp-nextcloud
-            mv /usr/src/tmp/nextcloud "$SOURCE_LOCATION"
-            rm -r /usr/src/tmp
-            rm -r /usr/src/temp-nextcloud
-            # shellcheck disable=SC2016
-            image_version="$(php -r "require '$SOURCE_LOCATION/version.php'; echo implode('.', \$OC_Version);")"
-            IMAGE_MAJOR="${image_version%%.*}"
-            set +ex
-# Do not skip major versions end # Do not remove or change this line!
+            echo "La versión instalada no permite actualizar directamente a la versión de esta imagen. Restaure una versión compatible de la suite." >&2
+            exit 1
         fi
 
         if [ "$installed_version" != "0.0.0.0" ]; then
@@ -424,16 +395,6 @@ EOF
             php /var/www/html/occ config:system:set updatechecker --type=bool --value=false
             php /var/www/html/occ config:app:set updatenotification notify_groups --value="[]"
 
-# AIO update to latest start # Do not remove or change this line!
-            if [ "$INSTALL_LATEST_MAJOR" = yes ]; then
-                if ! bash /upgrade-latest-major.sh; then
-                    echo "Upgrade to latest major version failed! Check the output above for details."
-                    exit 1
-                fi
-                # shellcheck disable=SC2016
-                installed_version="$(php -r 'require "/var/www/html/version.php"; echo implode(".", $OC_Version);')"
-            fi
-# AIO update to latest end # Do not remove or change this line!
 
             # Apply log settings
             echo "Applying default settings..."

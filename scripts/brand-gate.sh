@@ -120,8 +120,8 @@ TREE="${1:?usage: scripts/brand-gate.sh TREE (the tree to assert, e.g. .)}"
 row 010 "containers.json carries zero upstream registry refs (the generated sed's post-state)" \
   upstream_refs "$TREE/php/containers.json"
 
-row 010 "containers.json carries at least 15 aps-conecta image refs (the floor — the auto-include property grows it, never shrinks it)" \
-  fork_ref_floor "$TREE/php/containers.json" 15
+row 010 "containers.json carries at least 14 aps-conecta image refs (the floor — the auto-include property grows it, never shrinks it)" \
+  fork_ref_floor "$TREE/php/containers.json" 14
 
 row 080 "php/src carries zero upstream registry refs (the 3 string refs swapped: DockerActionManager.php:788, 789, 1111)" \
   upstream_refs "$TREE/php/src"
@@ -654,7 +654,9 @@ page_choices() {  # 160: the page offers only what the suite ships (R25, its tem
   # keep the container's real name). The server-side refusals are the acquisition gate's (190, 200).
   local c="$TREE/php/templates/containers.twig" o="$TREE/php/templates/includes/optional-containers.twig" fail=0
   s3_files "$c" "$o" "$TREE/php/public/forms.js" || return 1
-  grep -qF "{% set newMajorVersionString = '' %}" "$c" || { echo "  the Hub major-version choice is still offered" >&2; fail=1; }
+  if grep -nE 'newMajorVersionString|oldMajorVersionString|install_latest_major|nextcloud-upgrade-to-latest-major' "$c"; then
+    echo "  an independent major-version upgrade is still offered" >&2; fail=1
+  fi
   grep -qF '<h1>APS Conecta Gestión AIO {{ current_channel }}</h1>' "$c" || { echo "  the heading does not show the suite version" >&2; fail=1; }
   if grep -n 'aio-version.twig' "$c"; then echo "  the heading still reads upstream AIO's version" >&2; fail=1; fi
   grep -qF '<h4>Oficina</h4>' "$o" || { echo "  the office card is not titled Oficina" >&2; fail=1; }
@@ -771,7 +773,7 @@ row 180 "the wizard fits a 360px phone — the viewport declared, the login card
 
 # ── L4 S5: the container names (D9) ──────────────────────────────────────────────────────────
 
-container_names() {  # 240: the suite's 15 containers are aps-conecta-*, and no swept file names one the old
+container_names() {  # 240: the suite's 14 containers are aps-conecta-*, and no swept file names one the old
   # way. The keep-list is the generator's, restated here on purpose: a gate that imported it would agree
   # with any mistake in it.
   local j="$TREE/php/containers.json" fail=0 n left x
@@ -780,7 +782,7 @@ container_names() {  # 240: the suite's 15 containers are aps-conecta-*, and no 
     echo "  containers.json still names a container nextcloud-aio-*" >&2; fail=1
   fi
   n="$(grep -cF '"container_name": "aps-conecta-' "$j")"
-  [ "$n" -ge 15 ] || { echo "  only $n aps-conecta container names in containers.json (floor 15)" >&2; fail=1; }
+  [ "$n" -ge 14 ] || { echo "  only $n aps-conecta container names in containers.json (floor 14)" >&2; fail=1; }
   for x in php/src php/public php/templates php/tests Containers; do
     [ -d "$TREE/$x" ] || { echo "  no such directory: $TREE/$x — the sweep would pass over nothing" >&2; return 1; }
   done
@@ -792,7 +794,7 @@ container_names() {  # 240: the suite's 15 containers are aps-conecta-*, and no 
   [ "$fail" -eq 0 ]
 }
 
-row 240 'the suite containers are named aps-conecta-* — the 15 in containers.json and every reference in php/ and Containers/; only the kept names stay nextcloud-aio-* (the mastercontainer, the test project, the apk virtual package, the npm name)' \
+row 240 'the suite containers are named aps-conecta-* — the 14 in containers.json and every reference in php/ and Containers/; only the kept names stay nextcloud-aio-* (the mastercontainer, the test project, the apk virtual package, the npm name)' \
   container_names
 
 # shellcheck disable=SC2016  # the PHP and JS lines are matched as bytes; $id is their text, not ours

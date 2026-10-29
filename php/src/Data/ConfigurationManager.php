@@ -11,7 +11,6 @@ use GuzzleHttp\Exception\TransferException;
 
 class ConfigurationManager
 {
-    public const string DEDYN_SUFFIX = '.dedyn.io';
 
     private array $secrets = [];
 
@@ -78,12 +77,6 @@ class ConfigurationManager
         // Type-cast because old configs could have 1/0 for this key.
         get => (bool) $this->get('wasStartButtonClicked', false);
         set { $this->set('wasStartButtonClicked', $value); }
-    }
-
-    public string $installLatestMajor {
-        // Type-cast because old configs could have integers for this key.
-        get => (string) $this->get('install_latest_major', '');
-        set { $this->set('install_latest_major', $value); }
     }
 
     public bool $isClamavEnabled {
@@ -164,82 +157,6 @@ class ConfigurationManager
         set { $this->set('turn_domain', $value); }
     }
 
-    public string $desecEmail {
-        get => $this->get('desec_email', '');
-        set { $this->set('desec_email', $value); }
-    }
-
-    /**
-     * The subdomain slug the user last requested. Persisted across the multi-step
-     * registration flow so the slug input can be pre-filled when the form re-renders
-     * (e.g. after email verification). Not a secret; cleared once a domain is set.
-     */
-    public string $desecSlug {
-        get => $this->get('desec_slug', '');
-        set { $this->set('desec_slug', $value); }
-    }
-
-    /**
-     * Base URL of the deSEC API. Configurable via the 'desec_api_base' config key
-     * (configuration.json) only — intentionally NOT an environment variable — so the
-     * endpoint can be pointed at a mock during automated tests without any risk of a
-     * stray env var redirecting it in production.
-     */
-    public string $desecApiBase {
-        get => $this->getEnvironmentalVariableOrConfig('TESTING___DESEC_API_BASE', 'desec_api_base', 'https://desec.io/api/v1');
-    }
-
-    /**
-     * Base URL of the deSEC dynamic-DNS update endpoint. Configurable via the
-     * 'desec_update_url' config key (configuration.json) only — see desecApiBase.
-     */
-    public string $desecUpdateUrl {
-        get => $this->getEnvironmentalVariableOrConfig('TESTING___DESEC_UPDATE_URL', 'desec_update_url', 'https://update.dedyn.io/');
-    }
-
-    public string $desecToken {
-        get {
-            $secrets = $this->get('secrets', []);
-            return isset($secrets['DESEC_TOKEN']) && is_string($secrets['DESEC_TOKEN']) ? $secrets['DESEC_TOKEN'] : '';
-        }
-        set {
-            $secrets = $this->get('secrets', []);
-            $secrets['DESEC_TOKEN'] = $value;
-            $this->set('secrets', $secrets);
-        }
-    }
-
-    public string $desecPassword {
-        get {
-            $secrets = $this->get('secrets', []);
-            return isset($secrets['DESEC_PASSWORD']) && is_string($secrets['DESEC_PASSWORD']) ? $secrets['DESEC_PASSWORD'] : '';
-        }
-        set {
-            $secrets = $this->get('secrets', []);
-            $secrets['DESEC_PASSWORD'] = $value;
-            $this->set('secrets', $secrets);
-        }
-    }
-
-    public function isDesecDomain(): bool {
-        return str_ends_with($this->domain, self::DEDYN_SUFFIX) && $this->desecToken !== '';
-    }
-
-    public function isDesecAccountRegistered(): bool {
-        return $this->desecToken !== '' && $this->desecEmail !== '' && $this->domain === '';
-    }
-
-    /**
-     * True when a new deSEC account was created (email + generated password stored) but
-     * its email has not been verified yet, so no API token could be obtained and no
-     * domain is set. Derived from the stored credentials rather than a separate flag:
-     * once verification succeeds a token is stored and isDesecAccountRegistered() takes
-     * over; once a domain is set the deSEC setup is complete.
-     */
-    public function isDesecAwaitingVerification(): bool {
-        return $this->desecToken === '' && $this->desecEmail !== '' && $this->desecPassword !== '' && $this->domain === '';
-    }
-
     public string $apachePort {
         get => $this->getEnvironmentalVariableOrConfig('APACHE_PORT', 'apache_port', '443');
         set { $this->set('apache_port', $value); }
@@ -291,7 +208,7 @@ class ConfigurationManager
     }
 
     public string $dockerSocketPath {
-        get => $this->getEnvironmentalVariableOrConfig('WATCHTOWER_DOCKER_SOCKET_PATH', 'docker_socket_path', '/var/run/docker.sock');
+        get => $this->getEnvironmentalVariableOrConfig('DOCKER_SOCKET_PATH', 'docker_socket_path', '/var/run/docker.sock');
         set { $this->set('docker_socket_path', $value); }
     }
 
@@ -829,7 +746,7 @@ class ConfigurationManager
     /**
      * @throws InvalidSettingConfigurationException
      */
-    public function setDailyBackupTime(string $time, bool $enableAutomaticUpdates, bool $successNotification) : void {
+    public function setDailyBackupTime(string $time, bool $successNotification) : void {
         if ($time === "") {
             throw new InvalidSettingConfigurationException("The daily backup time must not be empty!");
         }
@@ -838,15 +755,8 @@ class ConfigurationManager
             throw new InvalidSettingConfigurationException("You did not enter a correct time! One correct example is '04:00'!");
         }
 
-        if ($enableAutomaticUpdates === false) {
-            $time .= PHP_EOL . 'automaticUpdatesAreNotEnabled';
-        } else {
-            $time .= PHP_EOL;
-        }
         if ($successNotification === false) {
             $time .= PHP_EOL . 'successNotificationsAreNotEnabled';
-        } else {
-            $time .= PHP_EOL;
         }
         file_put_contents(DataConst::GetDailyBackupTimeFile(), $time);
         $this->dailyBackupFileCache = '';
@@ -884,18 +794,6 @@ class ConfigurationManager
         return $dailyBackupFileArray[0];
     }
 
-    public function areAutomaticUpdatesEnabled() : bool {
-        $content = $this->getDailyBackupFileContent();
-        if ($content === '') {
-            return false;
-        }
-        $dailyBackupFileArray = explode("\n", $content);
-        if (isset($dailyBackupFileArray[1]) && $dailyBackupFileArray[1] === 'automaticUpdatesAreNotEnabled') {
-            return false;
-        } else {
-            return true;
-        }
-    }
 
     public function deleteDailyBackupTime() : void {
         if (file_exists(DataConst::GetDailyBackupTimeFile())) {
@@ -1094,12 +992,10 @@ class ConfigurationManager
             'NEXTCLOUD_STARTUP_APPS' => $this->getNextcloudStartupApps(),
             'NEXTCLOUD_ADDITIONAL_APKS' => $this->nextcloudAdditionalApks,
             'NEXTCLOUD_ADDITIONAL_PHP_EXTENSIONS' => $this->nextcloudAdditionalPhpExtensions,
-            'INSTALL_LATEST_MAJOR' => ($this->installLatestMajor !== '' && $this->installLatestMajor !== 'no') ? 'yes' : '',
             'REMOVE_DISABLED_APPS' => $this->nextcloudKeepDisabledApps ? '' : 'yes',
             // Allow to get local ip-address of database container which allows to talk to it even in host mode (the container that requires this needs to be started first then)
             'AIO_DATABASE_HOST' => NetworkHelper::resolveHostname('aps-conecta-database'),
             'AIO_VERSION' => $this->getAioVersion(),
-            'DESEC_TOKEN' => $this->desecToken,
             default => $this->getRegisteredSecret($placeholder),
         };
     }
