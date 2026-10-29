@@ -3,8 +3,8 @@
 # docker buildx imagetools create — seconds, zero runner disk, the
 # multi-arch manifest list carried byte-for-byte) + 5 real builds (aio-nextcloud, the suite
 # theme it carries and nothing more (#42 — no app rides an image); aio-apache, the web front serving the installer's own certificate
-# that patch 235 slots in; aio-postgresql, the database, tested before its push; aio-eurooffice,
-# the DocumentServer its Dockerfile pins (patch 015);
+# that patch 235 slots in; aio-postgresql, the database, built from this tree and tested before its
+# push (patch 260); aio-eurooffice, the DocumentServer its Dockerfile pins (patch 015);
 # all-in-one, the mastercontainer reskin that patch 070 slots in).
 # The builds are x86-64 only: the suite's documented server requirement.
 #

@@ -14,9 +14,9 @@
 # WHAT MOVES AND WHAT BUILDS. 15 of the 20 are registry-side retags — `buildx imagetools create`
 # copies the manifest list at the registry itself (seconds, zero runner disk, the multi-arch entries
 # carried along byte-for-byte); aio-nextcloud (the apps+theme bake, patch 030), aio-apache (the
-# installer's own certificate, patch 235), aio-postgresql (the database, tested before its push),
-# aio-eurooffice (the pinned DocumentServer, patch 015) and all-in-one (the reskin, patch
-# 070) are real builds the workflow's build jobs own —
+# installer's own certificate, patch 235), aio-postgresql (the database, built from this tree and
+# tested before its push, patch 260), aio-eurooffice (the pinned DocumentServer, patch 015) and
+# all-in-one (the reskin, patch 070) are real builds the workflow's build jobs own —
 # from build-ref: THE TAG on every release arm, main on manual dispatches (Stage 3, D-3.4).
 #
 # THE SOURCE IS OURS (Stage 2 — the self-referential lockstep; the copy-from-upstream arm retired
@@ -64,7 +64,7 @@ set -uo pipefail
 ORG_UPSTREAM="nextcloud-releases"  # the upstream namespace — cmd_sed's swap source only (never a copy source post-fork)
 ORG_FORK="aps-conecta"            # ours — 010's sed and this whole walk swap to exactly this
 GHCR="ghcr.io"
-BUILD_IMAGES=(aio-nextcloud aio-apache aio-postgresql aio-eurooffice)  # the siblings that are BUILT, not retagged (patches 030, 235 and 015; the database, tested before its push)
+BUILD_IMAGES=(aio-nextcloud aio-apache aio-postgresql aio-eurooffice)  # the siblings that are BUILT, not retagged (patches 030, 235, 260 and 015)
 MASTER_IMAGE="all-in-one"         # the mastercontainer — not in containers.json; the operator's docker run names it
 MIN_SIBLINGS="19"                 # shape-rot alarm (divergence's "expected 27+" precedent): a parse that
                                    # silently shrank would green a walk over fewer images than the suite has

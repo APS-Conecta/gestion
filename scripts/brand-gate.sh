@@ -981,6 +981,40 @@ modern_tls() {  # 250: modern TLS only — the mastercontainer's ACME and intern
 row 250 "modern TLS only on every ingress — the mastercontainer's ACME and internal listeners pin protocols tls1.2 tls1.3 in their tls blocks and apache's runtime ACME stanza (start.sh, 235's placeholder) carries the same pin on 443; nothing older negotiates (ead3eb6e's security floor, queue-moved by the parity fence)" \
   modern_tls
 
+db_image_built_tested() {  # 260: the database image is built from this tree, never retagged —
+  # a retag copies the previous suite tag's image, not this tree's bytes; its image test runs
+  # before the push, and the pushed-layers check proves the pushed image is the tested one.
+  # scripts/db-image-test.sh proves the behaviour on the built image; this row keeps the build,
+  # the order and the proof from leaving the pipeline unnoticed between releases.
+  local d="$TREE/Containers/postgresql/Dockerfile" w="$TREE/.github/workflows/images.yml" \
+        t="$TREE/scripts/retag.sh" f fail=0 j0 j1 test_ln push_ln layers_ln
+  # the gates' file-presence discipline (acquisition-gate's s4_files): a negative arm over a
+  # moved file names it — never a vacuous pass, never a miss misattributed to another check
+  for f in "$d" "$w" "$t"; do
+    [ -f "$f" ] || { echo "  no such file: $f — re-point this row" >&2; fail=1; }
+  done
+  [ "$fail" -eq 0 ] || return 1
+  grep -qE '^BUILD_IMAGES=\(.*\baio-postgresql\b' "$t" \
+    || { echo "  retag.sh's BUILD_IMAGES lacks aio-postgresql — it would be retagged from the previous suite tag, not built from this tree" >&2; fail=1; }
+  # the build-aio-postgresql JOB: the image test before the push, the pushed-layers check
+  # present — the row used to grep the whole file for the test line, so a step that moved
+  # after the push (or a deleted layers check) kept it green (#73)
+  j0="$(grep -n '^  build-aio-postgresql:' "$w" | head -1 | cut -d: -f1)"
+  j1="$(awk -v a="${j0:-0}" 'NR>a && /^  [A-Za-z0-9_-]+:$/ {print NR; exit}' "$w")"
+  [ -n "$j1" ] || j1="$(awk 'END {print NR}' "$w")"
+  test_ln="$(awk -v a="$j0" -v b="$j1" 'NR>=a && NR<=b && /^ +run: bash scripts\/db-image-test\.sh/ {print NR; exit}' "$w")"
+  push_ln="$(awk -v a="$j0" -v b="$j1" 'NR>=a && NR<=b && /^ +push: true$/ {print NR; exit}' "$w")"
+  layers_ln="$(awk -v a="$j0" -v b="$j1" 'NR>=a && NR<=b && /imagetools inspect/ {print NR; exit}' "$w")"
+  { [ -n "$test_ln" ] && [ -n "$push_ln" ] && [ "$test_ln" -lt "$push_ln" ]; } \
+    || { echo "  images.yml no longer runs the database image test before aio-postgresql is pushed" >&2; fail=1; }
+  [ -n "$layers_ln" ] \
+    || { echo "  images.yml's pushed-layers check is gone — nothing proves the pushed database image is the tested one" >&2; fail=1; }
+  [ "$fail" -eq 0 ]
+}
+
+row 260 "the database image is built from this tree — aio-postgresql is in retag.sh's BUILD_IMAGES (a retag would copy the previous suite tag's image, not this tree's bytes), its image test runs before the push, and the pushed-layers check proves the pushed image is the tested one" \
+  db_image_built_tested
+
 # ── #49: one brand token file, the font subsets, the release title, the masters ────────────
 
 token_file_read() {  # the ONE brand token file is read by every consumer that paints the brand:
