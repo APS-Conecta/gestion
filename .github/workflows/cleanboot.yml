@@ -234,7 +234,7 @@ jobs:
           # signify BEFORE anything: the runner plays a host that already carries the verifier,
           # so the bootstrap's opportunistic check runs the REAL crypto (D5's second layer), and
           # package-release's own self-test needs it too
-          sudo apt-get update -qq && sudo apt-get install -y signify-openbsd
+          bash scripts/cleanboot-apt.sh signify-openbsd
           sudo ln -sf /usr/bin/signify-openbsd /usr/local/bin/signify   # the apt package ships the binary under its full name
           tag="ci-cleanboot-${GITHUB_SHA:0:12}"
           # the throwaway key replaces the placeholder exactly the way aps/RELEASING.md's real
@@ -1027,7 +1027,7 @@ jobs:
       - name: Build the rehearsal package, then install through the real bootstrap
         run: |
           set -euo pipefail
-          sudo apt-get update -qq && sudo apt-get install -y signify-openbsd
+          bash scripts/cleanboot-apt.sh signify-openbsd
           sudo ln -sf /usr/bin/signify-openbsd /usr/local/bin/signify   # the apt package ships the binary under its full name
           tag="ci-cleanboot-${GITHUB_SHA:0:12}"
           ensayo="$RUNNER_TEMP/ensayo"; mkdir -p "$ensayo/srv/releases/download/$tag" "$ensayo/dist"
