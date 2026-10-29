@@ -266,7 +266,7 @@ datadir=$(occ config:system:get datadirectory 2>/dev/null | tr -d '\r')
 home=$(nc_exec --user www-data -- ls -A "${datadir%/}/${NEXTCLOUD_ADMIN_USER:-admin}/files") \
   || fail "cannot list admin's home — check 12 cannot answer, so it must not report clean"
 printf '%s' "$home" | grep -qi 'nextcloud' \
-  && fail "stock Nextcloud skeleton in admin's home — is NC_skeletondirectory still in compose.yaml? phase 15's skeletondirectory arrives after the image has already created and logged in admin"
+  && fail "stock Nextcloud skeleton in admin's home — phase 15's skeletondirectory arrives after the image has already created and logged in admin"
 
 # 13. The app store is off (#163, #42). The compose-era loop checked nextcloud AND cron — two
 # containers that had to agree. Under AIO there is ONE container to ask: cron.php runs inside
@@ -285,7 +285,7 @@ got=$(occ config:system:get appstoreenabled 2>/dev/null | tr -d '\r')
 # `DocumentServerUrl` is the address the BROWSER loads the editor from, and it defaults to
 # localhost — correct while the browser is on this box, wrong the moment somebody opens the suite
 # from a laptop, where localhost means THEIR loopback. It surfaces as a token/security complaint,
-# which sends the search to OFFICE_JWT_SECRET, where nothing is wrong.
+# which sends the search to the connector's jwt_secret, where nothing is wrong.
 #
 # This CANNOT be tested from the browser's side: this script runs on the box, where a loopback
 # address answers, so a reachability probe passes on precisely the broken configuration. What IS visible
@@ -294,10 +294,9 @@ got=$(occ config:system:get appstoreenabled 2>/dev/null | tr -d '\r')
 # Both halves must be true to fail, so the local-only posture this repo ships stays green.
 _office_url=$(occ config:app:get eurooffice DocumentServerUrl 2>/dev/null | tr -d '\r')
 if [ -n "$_office_url" ]; then
-  # Loopback in the value, and any trusted domain that is neither a loopback name nor the bare
-  # service name `nextcloud`.
+  # Loopback in the value, and any trusted domain that is not a loopback name.
   _remote_domain=$(occ config:system:get trusted_domains 2>/dev/null \
-    | tr -d '\r' | grep -vxE 'localhost|127\.0\.0\.1|\[::1\]|nextcloud|' | head -1)
+    | tr -d '\r' | grep -vxE 'localhost|127\.0\.0\.1|\[::1\]|' | head -1)
   case "$_office_url" in
     *localhost*|*127.0.0.1*|*'[::1]'*)
       [ -z "$_remote_domain" ] \
