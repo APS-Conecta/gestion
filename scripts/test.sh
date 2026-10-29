@@ -1469,6 +1469,16 @@ check bash -c '
   case "$out" in "docker run"*) ;; *) echo "run-command printed no docker run string: $out" >&2; exit 1 ;; esac
   ! grep -q "APS_TILES_""DIR" <<<"$out"'
 
+# --- gate (#178): AppAPI runs through HaRP only — the board app and the deprecated socket proxy are gone ---
+# #175 removes both from the suite with no tombstone, so the proof is the absence, tree-wide: no image
+# directory, no container definition (the release list is parsed from it), no wizard setting or checkbox,
+# no entrypoint block, no doc line. The pattern is assembled without its literals so this file is not
+# its own hit.
+check bash -c '
+  re="white""board|piza""rra|docker.?socket""[._ -]?proxy"
+  hits="$(git ls-files | grep -iE "$re"; git grep -nIiE "$re")"
+  [ -z "$hits" ] || { printf "still in the tree:\n%s\n" "$hits" >&2; exit 1; }'
+
 # --- gate (#180): the suite carries no document-search footprint ------------------------------------
 # No tracked file names the document-search app, its two database roles or the database extension
 # it needed. BUGS.md's rows are frozen records and keep their bytes. The tokens are assembled

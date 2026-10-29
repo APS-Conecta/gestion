@@ -88,12 +88,6 @@
         reverse_proxy {$TALK_HOST}:8081
     }
 
-    # Whiteboard
-    route /whiteboard/* {
-        uri strip_prefix /whiteboard
-        reverse_proxy {$WHITEBOARD_HOST}:3002
-    }
-
     # HaRP (ExApps)
     route /exapps/* {
         reverse_proxy {$HARP_HOST}:8780

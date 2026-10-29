@@ -83,16 +83,8 @@ readonly class ContainerDefinitionFetcher {
                 if (!$this->configurationManager->isFulltextsearchEnabled) {
                     continue;
                 }
-            } elseif ($entry['container_name'] === 'aps-conecta-docker-socket-proxy') {
-                if (!$this->configurationManager->isDockerSocketProxyEnabled) {
-                    continue;
-                }
             } elseif ($entry['container_name'] === 'aps-conecta-harp') {
                 if (!$this->configurationManager->isHarpEnabled) {
-                    continue;
-                }
-            } elseif ($entry['container_name'] === 'aps-conecta-whiteboard') {
-                if (!$this->configurationManager->isWhiteboardEnabled) {
                     continue;
                 }
             }
@@ -197,16 +189,8 @@ readonly class ContainerDefinitionFetcher {
                         if (!$this->configurationManager->isFulltextsearchEnabled) {
                             continue;
                         }
-                    } elseif ($value === 'aps-conecta-docker-socket-proxy') {
-                        if (!$this->configurationManager->isDockerSocketProxyEnabled) {
-                            continue;
-                        }
                     } elseif ($value === 'aps-conecta-harp') {
                         if (!$this->configurationManager->isHarpEnabled) {
-                            continue;
-                        }
-                    } elseif ($value === 'aps-conecta-whiteboard') {
-                        if (!$this->configurationManager->isWhiteboardEnabled) {
                             continue;
                         }
                     }

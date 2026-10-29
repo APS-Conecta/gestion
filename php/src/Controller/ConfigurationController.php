@@ -91,9 +91,7 @@ readonly class ConfigurationController {
                 $this->configurationManager->isTalkRecordingEnabled = isset($request->getParsedBody()['talk-recording']);
                 $this->configurationManager->isImaginaryEnabled = isset($request->getParsedBody()['imaginary']);
                 $this->configurationManager->isFulltextsearchEnabled = isset($request->getParsedBody()['fulltextsearch']);
-                $this->configurationManager->isDockerSocketProxyEnabled = isset($request->getParsedBody()['docker-socket-proxy']);
                 $this->configurationManager->isHarpEnabled = isset($request->getParsedBody()['harp']);
-                $this->configurationManager->isWhiteboardEnabled = isset($request->getParsedBody()['whiteboard']);
             }
 
             if (isset($request->getParsedBody()['delete_collabora_dictionaries'])) {
