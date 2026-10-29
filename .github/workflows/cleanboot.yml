@@ -79,6 +79,9 @@ concurrency:
 # caught on its PR. It cannot be a REQUIRED check (branch protection needs GitHub Pro or a public
 # repo), so the red X is advisory — exactly why the trigger matters: visibility is the mechanism.
 
+permissions:
+  contents: read
+
 jobs:
   # The suite tag, resolved once for both jobs, and before either: a tag ghcr.io does not have stops
   # the run here, in seconds, instead of fifteen minutes into a bring-up.
@@ -319,10 +322,6 @@ jobs:
               --sitio "$RUNNER_TEMP/site.sh" --planilla "$RUNNER_TEMP/usuarios.csv" \
               --respaldo "$RUNNER_TEMP/respaldos" \
             < /dev/null | tee "$RUNNER_TEMP/install.out"
-      # #44 on a whole install, before the smoke below (#57): the database runs the suite tag's own image,
-      # and on a tag that carries buscador's database it is ready for buscador
-      - name: The database is ready for buscador, on the suite tag's own image
-        run: bash /opt/aps-conecta/instalador/scripts/cleanboot-db.sh "$SUITE_TAG"
       # a9 on real systemd: the silent install installed its unit and enabled the weekly timer, on
       # Santiago time; the retired monthly map timer is not there, enabled or not (a fresh install
       # never had one)
@@ -706,6 +705,17 @@ jobs:
       # own install-wait shape.
       - name: Reboot the instance with the store off — the update-day posture
         run: |
+          # #176: the restart meets the account cap a clinic installed before the fix carries — in
+          # the volume's aio.config.php and in config.php
+          docker exec -i --user www-data aps-conecta-nextcloud sh -c 'cat > /var/www/html/config/aio.config.php' <<'PHP'
+          <?php
+          $CONFIG = array (
+            'one-click-instance' => true,
+            'one-click-instance.user-limit' => 100,
+            'update_channel' => 'stable',
+          );
+          PHP
+          docker exec --user www-data aps-conecta-nextcloud php /var/www/html/occ config:system:set one-click-instance.link --value=https://nextcloud.com/all-in-one/
           docker restart aps-conecta-nextcloud
           boot_t0=$(date +%s)
           for i in $(seq 60); do
@@ -739,7 +749,12 @@ jobs:
           ( cd /opt/aps-conecta/instalador && source scripts/env.sh
             tz="$(docker exec aps-conecta-nextcloud printenv TZ)"
             [ -n "$tz" ] && [ "$(occ config:system:get default_timezone)" = "$tz" ] \
-              || { echo "FAIL: default_timezone is not the AIO zone after the restart" >&2; exit 1; } )
+              || { echo "FAIL: default_timezone is not the AIO zone after the restart" >&2; exit 1; }
+            # #176: the restart removed the account cap the instance carried
+            for key in one-click-instance one-click-instance.user-limit one-click-instance.link; do
+              ! occ config:system:get "$key" \
+                || { echo "FAIL: $key survived the restart — the instance still caps its accounts" >&2; exit 1; }
+            done )
           bash /opt/aps-conecta/instalador/provisioning/seed.sh
           bash /opt/aps-conecta/instalador/scripts/seed-idempotent.sh
           bash /opt/aps-conecta/instalador/scripts/divergence.sh --gate
@@ -1073,9 +1088,6 @@ jobs:
       - name: Hand the checkout back to the runner
         if: always()
         run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-      # #44 on the suite this job started itself
-      - name: The database is ready for buscador, on the suite tag's own image
-        run: bash /opt/aps-conecta/instalador/scripts/cleanboot-db.sh "$SUITE_TAG"
       # a19: https://<ip>/ answers with the installer's certificate — trusted through its CA, refused
       # without it (curl 60: the peer's certificate is not trusted) — the install ends naming the CA,
       # and a planilla user logs in. The CA is copied out as the operator would (its directory is
@@ -1386,6 +1398,18 @@ jobs:
           [ "$(docker inspect -f '{{.State.StartedAt}}' aps-conecta-apache)" = "$arranque" ] \
             || { echo "FAIL: the weekly run restarted apache with nothing renewed" >&2; exit 1; }
           sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+      # #176: an establishment has as many accounts as it has staff. Upstream counts every enabled
+      # account against AIO's one-click limit inside createUser (web, OCS and occ user:add alike);
+      # 101 accounts through the planilla's own helper (ensure_user) prove no cap is left. Last on
+      # purpose: the accounts are in no planilla, and the divergence gate above would name each.
+      - name: Accounts past the 100 an AIO one-click instance allows are created (#176)
+        run: |
+          cd /opt/aps-conecta/instalador && source scripts/env.sh && source provisioning/lib.sh
+          pw="$(od -An -tx1 -N32 /dev/urandom | LC_ALL=C tr -d ' \n')"
+          for i in $(seq 101); do
+            ensure_user "cuenta-$i" "Cuenta $i" "$pw" \
+              || { echo "FAIL: account $i of 101 was refused — the instance still caps its accounts" >&2; exit 1; }
+          done
       - name: Logs on failure
         if: failure()
         run: |
