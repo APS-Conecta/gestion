@@ -1424,7 +1424,7 @@ check bash -c '
 # no entrypoint block, no doc line. The pattern is assembled without its literals so this file is not
 # its own hit.
 check bash -c '
-  re="white""board|docker.?socket""[._ -]?proxy"
+  re="white""board|piza""rra|docker.?socket""[._ -]?proxy"
   hits="$(git ls-files | grep -iE "$re"; git grep -nIiE "$re")"
   [ -z "$hits" ] || { printf "still in the tree:\n%s\n" "$hits" >&2; exit 1; }'
 
