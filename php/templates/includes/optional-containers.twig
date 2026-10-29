@@ -126,20 +126,6 @@
         <label for="talk-recording">Servidor de grabación de Talk (requiere que Talk esté activado, ~1 GB de RAM adicional y ~2 vCPU adicionales)</label>
     </p>
 
-    <p{% if is_docker_socket_proxy_enabled != true %} hidden{% endif %}>
-        <input
-            type="checkbox"
-            id="docker-socket-proxy"
-            name="docker-socket-proxy"
-            {% if is_docker_socket_proxy_enabled == true %}
-                checked="checked"
-                data-initial-state="true"
-            {% else %}
-                data-initial-state="false"
-            {% endif %}
-        >
-        <label for="docker-socket-proxy">Docker Socket Proxy (necesario para la Nextcloud App API) ⚠️ El contenedor docker socket proxy está obsoleto. ¡Utilice HaRP (proxy inverso de alta disponibilidad para ExApps de Nextcloud) en su lugar.</label>
-    </p>
     <p{% if is_harp_enabled != true %} hidden{% endif %}>
         <input
             type="checkbox"
@@ -153,20 +139,6 @@
             {% endif %}
         >
         <label for="harp">HaRP (proxy inverso de alta disponibilidad para ExApps de Nextcloud)</label>
-    </p>
-    <p>
-        <input
-            type="checkbox"
-            id="whiteboard"
-            name="whiteboard"
-            {% if is_whiteboard_enabled == true %}
-                checked="checked"
-                data-initial-state="true"
-            {% else %}
-                data-initial-state="false"
-            {% endif %}
-        >
-        <label for="whiteboard">Whiteboard</label>
     </p>
     <input class="options-form-submit" type="submit" value="Guardar cambios" />
 </form>

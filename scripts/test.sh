@@ -1418,6 +1418,16 @@ check bash -c '
   case "$out" in "docker run"*) ;; *) echo "run-command printed no docker run string: $out" >&2; exit 1 ;; esac
   ! grep -q "APS_TILES_""DIR" <<<"$out"'
 
+# --- gate (#178): AppAPI runs through HaRP only — the board app and the deprecated socket proxy are gone ---
+# #175 removes both from the suite with no tombstone, so the proof is the absence, tree-wide: no image
+# directory, no container definition (the release list is parsed from it), no wizard setting or checkbox,
+# no entrypoint block, no doc line. The pattern is assembled without its literals so this file is not
+# its own hit.
+check bash -c '
+  re="white""board|docker.?socket""[._ -]?proxy"
+  hits="$(git ls-files | grep -iE "$re"; git grep -nIiE "$re")"
+  [ -z "$hits" ] || { printf "still in the tree:\n%s\n" "$hits" >&2; exit 1; }'
+
 # Clean boot resolves its suite tag once, in the «suite-tag» job: the dispatch's suite-tag input, else
 # scripts/aio-testbed.sh's one pin, judged by one regex before docker sees it — the rehearsal's ci-YYYYMMDD-N,
 # a release vX.Y.Z, or the pipeline's rehearsal vX.Y.Z-ci.N — then looked up on ghcr.io. The step is extracted

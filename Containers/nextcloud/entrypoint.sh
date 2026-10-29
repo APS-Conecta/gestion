@@ -1124,13 +1124,13 @@ else
     fi
 fi
 
-# Docker socket proxy / HaRP
+# HaRP
 # app_api is a shipped app
 if [ -d "/var/www/html/custom_apps/app_api" ]; then
     php /var/www/html/occ app:disable app_api
     rm -r "/var/www/html/custom_apps/app_api"
 fi
-if [ "$DOCKER_SOCKET_PROXY_ENABLED" = 'yes' ] || [ "$HARP_ENABLED" = 'yes' ]; then
+if [ "$HARP_ENABLED" = 'yes' ]; then
     if [ "$(php /var/www/html/occ config:app:get app_api enabled)" != "yes" ]; then
         php /var/www/html/occ app:enable app_api
     fi
@@ -1139,23 +1139,6 @@ else
         if [ "$(php /var/www/html/occ config:app:get app_api enabled)" != "no" ]; then
             php /var/www/html/occ app:disable app_api
         fi
-    fi
-fi
-
-# Whiteboard app
-if [ "$WHITEBOARD_ENABLED" = 'yes' ]; then
-    if ! [ -d "/var/www/html/custom_apps/whiteboard" ]; then
-        php /var/www/html/occ app:install whiteboard
-    elif [ "$(php /var/www/html/occ config:app:get whiteboard enabled)" != "yes" ]; then
-        php /var/www/html/occ app:enable whiteboard
-    elif [ "$SKIP_UPDATE" != 1 ]; then
-        php /var/www/html/occ app:update whiteboard
-    fi
-    php /var/www/html/occ config:app:set whiteboard collabBackendUrl --value="https://$NC_DOMAIN/whiteboard"
-    php /var/www/html/occ config:app:set whiteboard jwt_secret_key --no-interaction --type=string --value="$WHITEBOARD_SECRET"
-else
-    if [ "$REMOVE_DISABLED_APPS" = yes ] && [ -d "/var/www/html/custom_apps/whiteboard" ]; then
-        php /var/www/html/occ app:remove whiteboard
     fi
 fi
 

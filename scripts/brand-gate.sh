@@ -34,14 +34,13 @@
 #
 # SCOPE (measured against the tree; #48 removed the upstream parts that carried the rest of the
 # set — the root docs, the helm chart, manual-install and the root compose.yaml — so the bare
-# name now lives only where the fork keeps it on purpose): the two build-time fetches upstream
-# keeps (whiteboard's FROM line; the GPG-verified server tarball in the nextcloud Dockerfile,
-# D7), php/README.md's dev example, and the fork's own tooling (office-smoke's DS probe,
+# name now lives only where the fork keeps it on purpose): the build-time fetch upstream keeps
+# (the GPG-verified server tarball in the nextcloud Dockerfile, D7), php/README.md's dev example, and the fork's own tooling (office-smoke's DS probe,
 # retag's swap source, ci.yml's red-proof injection). The count uses the BARE pattern on purpose.
 # None is install-time shipped surface: the docs are slice 23's fork-declaration territory, the
 # harness image is slice 18's, containers.twig's changelog link was 060's operator-visible
 # territory (repointed to the fork's releases — the row landed with slice 11 and measures it),
-# and the build-time fetches are the maintainer's build, not the clinic's install. This gate
+# and the build-time fetch is the maintainer's build, not the clinic's install. This gate
 # owns what the clinic's install actually resolves: containers.json and php/src.
 #
 # Usage: scripts/brand-gate.sh TREE     (TREE = the tree to assert, e.g. . — the checkout)
@@ -95,7 +94,7 @@ php/templates/log.twig|>Disable</button>|>Desactivar</button>
 php/templates/layout.twig|<html lang="en">|<html lang="es">
 php/public/forms.js|Server error. Please check|Error del servidor.
 php/public/second-tab-warning.js|Cannot open multiple instances|No se pueden abrir múltiples instancias
-php/public/containers-form-submit.js|The docker socket proxy container is deprecated|El contenedor docker socket proxy está obsoleto
+php/public/containers-form-submit.js|Enabling this container comes with possible|Activar este contenedor conlleva posibles
 php/public/log-load.js|statusElem.textContent = 'enabled';|statusElem.textContent = 'activada';
 php/public/click-handlers.js|reveal ? 'Hide passphrase' : 'Show passphrase'|reveal ? 'Ocultar frase de contraseña' : 'Mostrar frase de contraseña'
 EOF
@@ -121,8 +120,8 @@ TREE="${1:?usage: scripts/brand-gate.sh TREE (the tree to assert, e.g. .)}"
 row 010 "containers.json carries zero upstream registry refs (the generated sed's post-state)" \
   upstream_refs "$TREE/php/containers.json"
 
-row 010 "containers.json carries at least 19 aps-conecta image refs (the floor — the auto-include property grows it, never shrinks it)" \
-  fork_ref_floor "$TREE/php/containers.json" 19
+row 010 "containers.json carries at least 17 aps-conecta image refs (the floor — the auto-include property grows it, never shrinks it)" \
+  fork_ref_floor "$TREE/php/containers.json" 17
 
 row 080 "php/src carries zero upstream registry refs (the 3 string refs swapped: DockerActionManager.php:788, 789, 1111)" \
   upstream_refs "$TREE/php/src"
@@ -645,12 +644,12 @@ row 150 "the wizard proposes the suite's values — America/Santiago, /srv/aps-c
 page_choices() {  # 160: the page offers only what the suite ships (R25, its template part): the
   # baked Nextcloud Hub (no newer-major checkbox, no upgrade note), the suite's version — its
   # image tag — in the heading instead of upstream AIO's, the office card named for what it is
-  # with no comparison against the removed cards, the deprecated docker socket proxy and HaRP
-  # hidden while off (an instance that has one on still sees it, so it can be unchecked — a
-  # hidden checked box would re-save itself forever), and no «mastercontainer» jargon in any
+  # with no comparison against the removed cards, HaRP hidden while off (an
+  # instance that has it on still sees it, so it can be unchecked — a hidden checked box would
+  # re-save itself forever), and no «mastercontainer» jargon in any
   # template's or script's prose (the asistente, as the docs call it; ids and commands
   # keep the container's real name). The server-side refusals are the acquisition gate's (190, 200).
-  local c="$TREE/php/templates/containers.twig" o="$TREE/php/templates/includes/optional-containers.twig" fail=0 id v
+  local c="$TREE/php/templates/containers.twig" o="$TREE/php/templates/includes/optional-containers.twig" fail=0
   s3_files "$c" "$o" "$TREE/php/public/forms.js" || return 1
   grep -qF "{% set newMajorVersionString = '' %}" "$c" || { echo "  the Hub major-version choice is still offered" >&2; fail=1; }
   grep -qF '<h1>APS Conecta Gestión AIO {{ current_channel }}</h1>' "$c" || { echo "  the heading does not show the suite version" >&2; fail=1; }
@@ -659,18 +658,15 @@ page_choices() {  # 160: the page offers only what the suite ships (R25, its tem
   if grep -nE 'Nextcloud Office|Mejor rendimiento|Compatibilidad ODF limitada|Mejor compatibilidad con Microsoft' "$o"; then
     echo "  the office card still names or compares against upstream's suites" >&2; fail=1
   fi
-  for id in docker-socket-proxy:docker_socket_proxy harp:harp; do
-    v="${id#*:}"; id="${id%%:*}"
-    tr -d '\n' < "$o" | grep -qE "<p\{% if is_${v}_enabled != true %\} hidden\{% endif %\}> *<input +type=\"checkbox\" +id=\"$id\"" \
-      || { echo "  the $id option is not hidden-while-off" >&2; fail=1; }
-  done
+  tr -d '\n' < "$o" | grep -qE "<p\{% if is_harp_enabled != true %\} hidden\{% endif %\}> *<input +type=\"checkbox\" +id=\"harp\"" \
+    || { echo "  the harp option is not hidden-while-off" >&2; fail=1; }
   if grep -rnE '(^|[^-_[:alnum:]])mastercontainer([^-_[:alnum:]]|$)' "$TREE/php/templates" "$TREE/php/public"/*.js | grep -v '{#'; then
     echo "  «mastercontainer» jargon survives in the wizard's prose" >&2; fail=1
   fi
   [ "$fail" -eq 0 ]
 }
 
-row 160 "the page offers only what the suite ships — no Hub major-version choice, the suite version in the heading, the office card titled Oficina, the docker socket proxy and HaRP hidden while off, no mastercontainer jargon (R25, its template part)" \
+row 160 "the page offers only what the suite ships — no Hub major-version choice, the suite version in the heading, the office card titled Oficina, HaRP hidden while off, no mastercontainer jargon (R25, its template part)" \
   page_choices
 
 post_start_page() {  # 170: after start the page says only true, APS things (R27): the suite's
@@ -679,8 +675,8 @@ post_start_page() {  # 170: after start the page says only true, APS things (R27
   # no docker prune button (the route stays — zero PHP), and the suite's names on the
   # credentials, the open button, the container list and the page's prose — with the translated
   # suite asserting the bytes it clicks. «Nextcloud» stays only where the page hides it: the
-  # Hub-upgrade block (160 empties its switch), the docker socket proxy and HaRP options and the
-  # JS alert behind them (160 hides them while off).
+  # Hub-upgrade block (160 empties its switch), the HaRP option and the JS alert behind it (160
+  # hides it while off).
   local c="$TREE/php/templates/containers.twig" j="$TREE/php/containers.json" s="$TREE/php/tests/tests" fail=0 want
   s3_files "$c" "$j" "$s/initial-setup.spec.js" "$s/restore-instance.spec.js" || return 1
   while IFS= read -r want; do
@@ -697,17 +693,17 @@ EOF
   fi
   if grep -rn 'Nextcloud' "$TREE/php/templates" "$TREE/php/public"/*.js \
       | grep -v -e '{#' \
-      | sed -e 's/Nextcloud Hub//g' -e 's/Nextcloud App API//g' -e 's/ExApps de Nextcloud//g' | grep 'Nextcloud'; then
+      | sed -e 's/Nextcloud Hub//g' -e 's/ExApps de Nextcloud//g' | grep 'Nextcloud'; then
     echo "  «Nextcloud» survives in the wizard's prose" >&2; fail=1
   fi
   if grep -rn 'api/docker/prune' "$TREE/php/templates"; then echo "  the docker prune button is still offered" >&2; fail=1; fi
   grep -qF "name: 'Abrir APS Conecta Gestión ↗'" "$s/initial-setup.spec.js" || { echo "  initial-setup.spec.js clicks a button the page no longer has" >&2; fail=1; }
   grep -qF "name: 'Abrir APS Conecta Gestión ↗'" "$s/restore-instance.spec.js" || { echo "  restore-instance.spec.js clicks a button the page no longer has" >&2; fail=1; }
   grep -qF "Contraseña inicial de APS Conecta Gestión:" "$s/initial-setup.spec.js" || { echo "  initial-setup.spec.js waits for a label the page no longer has" >&2; fail=1; }
-  for want in 'Servidor de aplicaciones' Talk 'Grabador de Talk' Euro-Office Whiteboard Collabora; do
+  for want in 'Servidor de aplicaciones' Talk 'Grabador de Talk' Euro-Office Collabora; do
     grep -qF "\"display_name\": \"$want\"" "$j" || { echo "  containers.json lacks the display name $want" >&2; fail=1; }
   done
-  if grep -nE '"display_name": "(Nextcloud|EuroOffice|Nextcloud Talk|Nextcloud Talk Recording|Nextcloud Whiteboard|Nextcloud Office)"' "$j"; then
+  if grep -nE '"display_name": "(Nextcloud|EuroOffice|Nextcloud Talk|Nextcloud Talk Recording|Nextcloud Office)"' "$j"; then
     echo "  an upstream container name survives in the list" >&2; fail=1
   fi
   [ "$fail" -eq 0 ]
@@ -772,7 +768,7 @@ row 180 "the wizard fits a 360px phone — the viewport declared, the login card
 
 # ── L4 S5: the container names (D9) ──────────────────────────────────────────────────────────
 
-container_names() {  # 240: the suite's 19 containers are aps-conecta-*, and no swept file names one the old
+container_names() {  # 240: the suite's 17 containers are aps-conecta-*, and no swept file names one the old
   # way. The keep-list is the generator's, restated here on purpose: a gate that imported it would agree
   # with any mistake in it.
   local j="$TREE/php/containers.json" fail=0 n left x
@@ -781,7 +777,7 @@ container_names() {  # 240: the suite's 19 containers are aps-conecta-*, and no 
     echo "  containers.json still names a container nextcloud-aio-*" >&2; fail=1
   fi
   n="$(grep -cF '"container_name": "aps-conecta-' "$j")"
-  [ "$n" -ge 19 ] || { echo "  only $n aps-conecta container names in containers.json (floor 19)" >&2; fail=1; }
+  [ "$n" -ge 17 ] || { echo "  only $n aps-conecta container names in containers.json (floor 17)" >&2; fail=1; }
   for x in php/src php/public php/templates php/tests Containers; do
     [ -d "$TREE/$x" ] || { echo "  no such directory: $TREE/$x — the sweep would pass over nothing" >&2; return 1; }
   done
@@ -793,7 +789,7 @@ container_names() {  # 240: the suite's 19 containers are aps-conecta-*, and no 
   [ "$fail" -eq 0 ]
 }
 
-row 240 'the suite containers are named aps-conecta-* — the 19 in containers.json and every reference in php/ and Containers/; only the kept names stay nextcloud-aio-* (the mastercontainer, the test project, the apk virtual package, the npm name)' \
+row 240 'the suite containers are named aps-conecta-* — the 17 in containers.json and every reference in php/ and Containers/; only the kept names stay nextcloud-aio-* (the mastercontainer, the test project, the apk virtual package, the npm name)' \
   container_names
 
 # shellcheck disable=SC2016  # the PHP and JS lines are matched as bytes; $id is their text, not ours

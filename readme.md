@@ -37,8 +37,8 @@ ID the gates' rows name:
 | 180 | the wizard laid out for a 360 px phone |
 | 190 | no community containers — the channel removed whole: no directory, no image creation, no PHP readers (#48) |
 | 200 | the office is Euro-Office only — other choices refused (PHP, declared) |
-| 210 | Talk, Whiteboard and Imaginary start off (PHP defaults, declared) |
-| 220 | a fresh install calls nothing it does not need — whiteboard's npm update check, the announcements feed |
+| 210 | Talk and Imaginary start off (PHP defaults, declared) |
+| 220 | a fresh install calls nothing it does not need — the announcements feed |
 | 230 | the fresh install skips circles' legacy-table probe (no «oc_circle_circles» error) |
 | 233 | an IP accepted as the domain while domain validation is skipped — the install by IP over HTTPS (PHP, declared) |
 | 235 | the installer's own certificate served when one is mounted (`APS_TLS_DIR`, an install by IP); otherwise ACME, as upstream (PHP, declared) |
@@ -54,7 +54,7 @@ ID the gates' rows name:
 **PHP logic changes only where declared.** Every other modification is a string, an asset, a
 template, or Dockerfile plumbing — committed bytes the gates verify. The
 declared PHP changes: patch 080's three registry references (strings), patch 200's office guard
-(any office other than Euro-Office is refused), patch 210's defaults (Talk, Whiteboard and
+(any office other than Euro-Office is refused), patch 210's defaults (Talk and
 Imaginary start off), patch 233's IP guard (an IP is accepted as the domain while domain validation
 is skipped), patch 235's certificate directory (a setting and its read-only bind into the web front),
 patch 240's container names (strings, and the log route's name guard), and #48's closures — the
@@ -85,7 +85,7 @@ these as its own canary that the sweep never bled into PHP.
 
 **Nominative use.** The wizard names itself «APS Conecta Gestión AIO»; translated prose calls the
 software inside it «la suite» — «Nextcloud» remains only in the Hub-upgrade block the page never
-renders, the docker socket proxy and HaRP options (shown only where one is already on) and
+renders, the HaRP option (shown only where it is already on) and
 the PHP-borne messages listed above — and the
 wizard's help links point at the suite's own docs — instalador's `aps/INSTALLER.md` and
 `aps/GUIA-CLINICA.md`. The image labels are byte-identical upstream,
