@@ -4,19 +4,16 @@
 # Checks the core invariants only — the office backend has its own scripts/office-smoke.sh.
 set -uo pipefail
 
-# cd to the repo root + load .env, so `bash scripts/smoke.sh` and `make smoke` behave identically
+# cd to the repo root + load .env, so `bash scripts/smoke.sh` behaves identically
 # from any cwd. See scripts/env.sh for why .env is parsed rather than sourced.
 # shellcheck source=env.sh
 . "$(dirname "$0")/env.sh"
 
 fail() { echo "FAIL: $*"; exit 1; }
 
-# 1. nextcloud container running (exec would hang/err on a down stack — detect first). Detection
-# flipped with the docker-exec port: the compose-era stack listing needed compose context, which
-# neither the probe bed nor an AIO clinic has; `docker ps` by NAME works everywhere and names the
-# same container the seam targets. A compose dev stack reads as down here BY DESIGN — its install
-# and seed stay addressable through NC_CONTAINER (D5 interim), and this check answering "no AIO
-# stack" is the labeled failure, not a compose-context false answer.
+# 1. nextcloud container running (exec would hang/err on a down stack — detect first). `docker ps`
+# by NAME works on the probe bed and on a clinic alike, and names the same container the seam
+# targets.
 is_aio \
   || fail "aps-conecta-nextcloud is not running — smoke answers an AIO instance (probe: scripts/aio-testbed.sh up; a clinic: the wizard's container start)"
 nc_container   # once: the occ calls below run in pipes and $(…), whose cache dies with them
@@ -28,7 +25,7 @@ occ status --output=json 2>/dev/null | grep -q '"installed":true' \
 suite_url_resolve || exit 1
 
 # 3. PostgreSQL accepting connections. Direct docker exec against the AIO sibling's fixed name —
-# these two cannot ride the seam (it targets the nextcloud container) and need no compose context.
+# these two cannot ride the seam (it targets the nextcloud container).
 docker exec aps-conecta-database pg_isready -q 2>/dev/null \
   || fail "PostgreSQL (aps-conecta-database) is not accepting connections"
 
@@ -50,19 +47,17 @@ if printf '%s' "$body" | grep -qi 'nextcloud'; then
   fail "branding leak: /status.php still says Nextcloud — is 'occ config:app:set theming productName' set? Body: ${body}"
 fi
 
-# 6. Background jobs are scheduled, not traffic-driven (phase 06-jobs). Under AIO there is no cron
-# CONTAINER: cron.php runs from a 5-minute loop (cron.sh, started by the container's own dinit)
-# inside the nextcloud container, so the compose-era "cron service is running" half becomes an
-# assertion on that loop process. Both halves still get asserted, because either alone is a silent
-# half-fix: the mode without the loop means Nextcloud waits for a cron that never runs (worse than
-# ajax), the loop without the mode means it runs while Nextcloud still self-serves jobs on page
-# loads.
+# 6. Background jobs are scheduled, not traffic-driven (phase 06-jobs). cron.php runs from a
+# 5-minute loop (cron.sh, started by the container's own dinit) inside the nextcloud container.
+# Both halves get asserted, the loop and the mode, because either alone is a silent half-fix: the
+# mode without the loop means Nextcloud waits for a cron that never runs (worse than ajax), the
+# loop without the mode means it runs while Nextcloud still self-serves jobs on page loads.
 if ! nc_exec --user www-data -- pgrep -f cron.sh >/dev/null 2>&1; then
   fail "the cron loop (cron.sh) is not running inside aps-conecta-nextcloud — background jobs would fall back to page-load scheduling"
 fi
 jobs_mode=$(occ config:app:get core backgroundjobs_mode 2>/dev/null | tr -d '\r')
 [ "$jobs_mode" = "cron" ] \
-  || fail "backgroundjobs_mode is '${jobs_mode:-unset}', expected 'cron' — run 'make seed' (phase 06-jobs)"
+  || fail "backgroundjobs_mode is '${jobs_mode:-unset}', expected 'cron' — run: sudo aps-conecta provision --reponer (phase 06-jobs)"
 
 # Fetch the login page ONCE — checks 7 and 9 both read it, and it is the only unauthenticated page
 # that carries both the manifest link and the login form's initial state.
@@ -111,7 +106,7 @@ done
 # 8. App policy holds: staff do not see Nextcloud's product surface (phase 16-app-policy).
 # `enabled` is the whole state — "yes" = everyone, "no" = off, ["admin"] = admin only — so reading
 # that one key per app is an exact assertion, not a proxy. One round-trip for all of them, because
-# smoke runs on every `make test`, and through `occ config:list` rather than a PHP script that
+# smoke runs on every revalidate, and through `occ config:list` rather than a PHP script that
 # boots the server: \OC::$server->getConfig() was REMOVED in NC34 and degrades silently.
 # The inventory is read from provisioning/app-policy.sh, the same declaration phase 16 applies —
 # it used to be typed out again here, which is two lists that must silently agree.
@@ -202,12 +197,12 @@ signed=$(nc_exec --user www-data -- sh -c \
   "for a in $release_ids; do [ -e \"/var/www/html/custom_apps/\$a/appinfo/signature.json\" ] && echo \"\$a\"; done; :" \
   2>/dev/null | tr -d '\r' | tr '\n' ' ')
 [ -z "${signed// /}" ] \
-  || fail "release app(s) carrying the store's signature: ${signed}— upstream's tarball replaced the fork's release, so the white-label rename is gone. Run 'make seed' (provisioning re-imposes the release's bytes, which carry no signature)"
+  || fail "release app(s) carrying the store's signature: ${signed}— upstream's tarball replaced the fork's release, so the white-label rename is gone. Run: sudo aps-conecta provision --reponer (provisioning re-imposes the release's bytes, which carry no signature)"
 
 # 11. The legacy render path is branded (ADR-0004). TWO TRANSPORTS, because the reachable screen
-# differs. On a compose stack (no overwritehost) an untrusted Host is the ONLY screen in that
-# class reachable without mutating the instance — maintenance, the upgrade screens and the setup
-# screens all have to be staged — and it is also the strictest of them: failing isTrustedDomain()
+# differs. With no overwritehost set, an untrusted Host is the ONLY screen in that class reachable
+# without mutating the instance — maintenance, the upgrade screens and the setup screens all have
+# to be staged — and it is also the strictest of them: failing isTrustedDomain()
 # is what makes Server.php hand out a raw \OC_Defaults instead of ThemingDefaults, so this one
 # request exercises BOTH halves of the fix at once. The themed stylesheet proves guest.css arrived;
 # the absence of the vendor name proves defaults.php did. Everything else in the class shares the
@@ -258,27 +253,23 @@ fi
 # vacuous — phase 15 writes '' into config.php either way; only the files regress. The listing is
 # captured, not piped: an EMPTY home is the passing state, so "clean" and "could not look" are
 # indistinguishable by value and only the exit status separates them. Hence no 2>/dev/null.
-# The default names the account on both stacks: AIO installs with ADMIN_USER=admin (its
-# containers.json), and compose's official image takes the user from the same .env key. The
+# The default names the account: AIO installs with ADMIN_USER=admin (its containers.json). The
 # data DIRECTORY is read from the instance instead of assumed — AIO installs with
-# --data-dir /mnt/ncdata, compose with the image default /var/www/html/data — one occ read,
-# correct on both, and failing to read it must not read as a clean home.
+# --data-dir /mnt/ncdata — one occ read, and failing to read it must not read as a clean home.
 datadir=$(occ config:system:get datadirectory 2>/dev/null | tr -d '\r')
 [ -n "$datadir" ] \
   || fail "cannot read datadirectory — check 12 cannot answer, so it must not report clean"
 home=$(nc_exec --user www-data -- ls -A "${datadir%/}/${NEXTCLOUD_ADMIN_USER:-admin}/files") \
   || fail "cannot list admin's home — check 12 cannot answer, so it must not report clean"
 printf '%s' "$home" | grep -qi 'nextcloud' \
-  && fail "stock Nextcloud skeleton in admin's home — is NC_skeletondirectory still in compose.yaml? phase 15's skeletondirectory arrives after the image has already created and logged in admin"
+  && fail "stock Nextcloud skeleton in admin's home — phase 15's skeletondirectory arrives after the image has already created and logged in admin"
 
-# 13. The app store is off (#163, #42). The compose-era loop checked nextcloud AND cron — two
-# containers that had to agree. Under AIO there is ONE container to ask: cron.php runs inside
-# aps-conecta-nextcloud (check 6's loop), so the pair collapses into a single read and the loop
-# is deleted rather than kept degenerate. The lever moved with it — from compose.yaml's
-# NC_appstoreenabled to the image's own ENV: NC_appstoreenabled="0" baked into aio-nextcloud
-# (patch 020), with the scoped per-command installs (#42) as the only openings, none of them on
-# a smoke's path. This asserts the LEVER, not the drift it prevents; an absent key reads "" and
-# is not "0", so this cannot fail open.
+# 13. The app store is off (#163, #42). ONE container answers for web and cron alike: cron.php
+# runs inside aps-conecta-nextcloud (check 6's loop), so a single read covers both. The lever is
+# the image's own ENV: NC_appstoreenabled="0" baked into aio-nextcloud (patch 020), with the
+# scoped per-command installs (#42) as the only openings, none of them on a smoke's path. This
+# asserts the LEVER, not the drift it prevents; an absent key reads "" and is not "0", so this
+# cannot fail open.
 got=$(occ config:system:get appstoreenabled 2>/dev/null | tr -d '\r')
 [ "$got" = "0" ] \
   || fail "the app store is enabled (read '$got') — the image bakes NC_appstoreenabled=0 (patch 020) and only #42's scoped installs open it, one command at a time; occ upgrade would re-download every enabled app (#163)"
@@ -288,23 +279,22 @@ got=$(occ config:system:get appstoreenabled 2>/dev/null | tr -d '\r')
 # `DocumentServerUrl` is the address the BROWSER loads the editor from, and it defaults to
 # localhost — correct while the browser is on this box, wrong the moment somebody opens the suite
 # from a laptop, where localhost means THEIR loopback. It surfaces as a token/security complaint,
-# which sends the search to OFFICE_JWT_SECRET, where nothing is wrong.
+# which sends the search to the connector's jwt_secret, where nothing is wrong.
 #
-# This CANNOT be tested from the browser's side: this script runs on the box, where localhost:9980
-# answers 200, so a reachability probe passes on precisely the broken configuration. What IS visible
+# This CANNOT be tested from the browser's side: this script runs on the box, where a loopback
+# address answers, so a reachability probe passes on precisely the broken configuration. What IS visible
 # from here is the CONTRADICTION — an instance that publishes a non-loopback trusted domain is
 # reached from somewhere else, and a loopback editor URL cannot be right for that somewhere.
 # Both halves must be true to fail, so the local-only posture this repo ships stays green.
 _office_url=$(occ config:app:get eurooffice DocumentServerUrl 2>/dev/null | tr -d '\r')
 if [ -n "$_office_url" ]; then
-  # Loopback in the value, and any trusted domain that is neither a loopback name nor the compose
-  # service name phase 14 adds for the callback.
+  # Loopback in the value, and any trusted domain that is not a loopback name.
   _remote_domain=$(occ config:system:get trusted_domains 2>/dev/null \
-    | tr -d '\r' | grep -vxE 'localhost|127\.0\.0\.1|\[::1\]|nextcloud|' | head -1)
+    | tr -d '\r' | grep -vxE 'localhost|127\.0\.0\.1|\[::1\]|' | head -1)
   case "$_office_url" in
     *localhost*|*127.0.0.1*|*'[::1]'*)
       [ -z "$_remote_domain" ] \
-        || fail "eurooffice DocumentServerUrl is '$_office_url' but this instance is also reached at '$_remote_domain' — the browser loads the editor from that URL, so for anyone not sitting at this box it points at their OWN loopback and the editor never comes up. It reports a token/security problem, which is not what is wrong: set OFFICE_PUBLIC_URL in .env and re-seed (B-019)" ;;
+        || fail "eurooffice DocumentServerUrl is '$_office_url' but this instance is also reached at '$_remote_domain' — the browser loads the editor from that URL, so for anyone not sitting at this box it points at their OWN loopback and the editor never comes up. It reports a token/security problem, which is not what is wrong: the entrypoint writes it from the suite's domain on every boot — sudo docker restart aps-conecta-nextcloud (B-019)" ;;
   esac
   # Scheme, the second half of the same mistake: an http editor inside an https page is blocked as
   # mixed content, so the address can be perfectly reachable and the pane still stays blank.
@@ -312,7 +302,7 @@ if [ -n "$_office_url" ]; then
   if [ "$_proto" = "https" ]; then
     case "$_office_url" in
       https://*) ;;
-      *) fail "overwriteprotocol is https but eurooffice DocumentServerUrl is '$_office_url' — the browser blocks an http editor inside an https page as mixed content, and the pane stays blank with only a console entry. Give OFFICE_PUBLIC_URL an https address and re-seed (B-019)" ;;
+      *) fail "overwriteprotocol is https but eurooffice DocumentServerUrl is '$_office_url' — the browser blocks an http editor inside an https page as mixed content, and the pane stays blank with only a console entry. The entrypoint writes it from the suite's domain on every boot — sudo docker restart aps-conecta-nextcloud (B-019)" ;;
     esac
   fi
 fi

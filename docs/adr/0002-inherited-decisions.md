@@ -33,10 +33,7 @@ AD-2 holds without exception: `seed.sh` is the only writer.
 ### AD-3 — Secrets live in `.env`, never in git and never in a log
 
 Credentials reach the stack through `.env` (gitignored; `.env.example` carries placeholders only) and
-never appear in the repository, in a committed file, or in output. `14-office.sh` writes the office JWT
-secret through an inline guard rather than `app_config_set`, because that helper's log line would put
-the value on stdout; it logs the ` -> ` write marker without the value, so `seed-idempotent.sh` can
-still see a rewrite.
+never appear in the repository, in a committed file, or in output.
 
 ### AD-4 — Group Folders with allow-refinement, never deny
 
@@ -64,11 +61,11 @@ the Nextcloud container's `TZ`. UI text is Spanish; all code, identifiers and co
 
 ### AD-8 — Containers reach each other by service name; `host.docker.internal` is host-only
 
-Container-to-container traffic uses the service name over the container network (`nextcloud`, `db`,
-`redis`, `eurooffice`), never `localhost` and never a host-published port. That is why `14-office.sh`
-sets `DocumentServerInternalUrl=http://eurooffice/` and `StorageUrl=http://nextcloud/` while
-`DocumentServerUrl` (the browser's view) uses `localhost:$OFFICE_PORT`, and why the same phase adds
-`nextcloud` to `trusted_domains`: Nextcloud answers HTTP 400 to a fetch at an untrusted host.
+Container-to-container traffic uses the container name over the container network, never `localhost`
+and never a host-published port. That is why, on an install by IP, `14-office.sh` sets
+`DocumentServerInternalUrl=http://aps-conecta-eurooffice/` and
+`StorageUrl=http://aps-conecta-apache.nextcloud-aio:23973/` while `DocumentServerUrl` (the browser's
+view) stays the suite's public address.
 
 `host.docker.internal` is reserved for the other direction, container → host, and on Linux it needs an
 explicit `host-gateway` mapping.

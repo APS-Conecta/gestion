@@ -83,7 +83,7 @@ occ intravox:setup --skip-demo >/dev/null
 # content lives in the groupfolder — the post-migration repair step's old behavior (pre-3.1.2)
 # or a deliberate `occ intravox:import-demo`. Either way it outranks the seeded welcome for
 # default-language users. Recovery: engine admin deletes the demo language trees (en/… —
-# everything but es/), `occ config:app:delete intravox demo_data_imported`, then `make seed`.
+# everything but es/), `occ config:app:delete intravox demo_data_imported`, then the seed again.
 # v3.1.2 removed the re-injection; this guard is what makes any regression of that loud.
 if [ -n "$(occ config:app:get intravox demo_data_imported 2>/dev/null || true)" ]; then
   echo "FATAL: intravox demo_data_imported is set — demo content outranks the seeded welcome. Delete the demo language trees, occ config:app:delete intravox demo_data_imported, and re-seed." >&2

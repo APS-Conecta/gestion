@@ -1,51 +1,33 @@
 #!/usr/bin/env bash
-# Shared preamble: source this first from anything that reads .env or runs `docker compose`.
-# Seven jobs, all load-bearing; sourced by install.sh, seed.sh, divergence.sh, smoke.sh,
-# office-smoke.sh, seed-idempotent.sh, wait-ready.sh and (transitively) every provisioning phase.
+# Shared preamble: source this first from anything that reads .env or execs into the suite.
+# Seven jobs, all load-bearing; sourced by seed.sh, divergence.sh, smoke.sh, office-smoke.sh,
+# seed-idempotent.sh and (transitively) every provisioning phase.
 #
-# 1. cd to the repo root. Every `docker compose` call resolves compose.yaml from the process cwd, so
-#    `bash scripts/smoke.sh` from anywhere else reported the containers as not running and sent the
-#    operator off to restart a healthy stack.
+# 1. cd to the repo root. .env, sites/ and provisioning/ are read by relative path, so a caller
+#    started from any other directory reads the same files.
 #
 # 2. Read .env the way docker compose reads it, WITHOUT sourcing it. `set -a; . .env` runs every
 #    value through bash expansion, so the two readers disagree about the same key: compose turns
 #    `abc$$def` into `abc$def`, bash into `abc<pid>def`. That is a JWT secret which works in the
 #    documentserver and fails in the connector, with office-smoke green either way. `$VAR` expands
-#    the same, and `$(...)`/backticks EXECUTE on every `make seed`.
+#    the same, and `$(...)`/backticks EXECUTE on every seed.
 #    So: split on the first `=`, strip one layer of quotes, undo compose's `$$`, expand nothing else.
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || { echo "FAIL: cannot cd to the repo root" >&2; exit 1; }
 
 # 3. occ + raw exec inside the running Nextcloud container — one seam, for every caller of this
-#    file, and the one place that decides WHICH container (#197, R41). nc_container resolves it on
-#    first use and caches it in this shell: a value from the environment or .env wins (the loader
-#    below exports it); otherwise docker answers — the AIO container when it runs ($AIO_NC, fixed
-#    by AIO's php/containers.json:145), the compose one when only it runs (compose.yaml's `name:`
-#    pins apsconecta-gestion-nextcloud-1), else $AIO_NC, the production posture, so a stopped
-#    stack fails loudly at require_installed. Both up: AIO wins, so a checkout that serves the
-#    compose lab beside a running AIO testbed sets NC_CONTAINER in its .env.
-#    Lazy, never at source time: a docker ps here would run before every sourcer's first line — a
-#    hung daemon would then swallow the seed's own header (provisionador's SLOW arm) — and for
-#    callers that never touch the container. Not exported: install.sh sources this file before
-#    `make up` starts a compose stack, and an exported pre-bring-up answer would pin every child
-#    (wait-ready, seed) to the wrong container; every reader sources this file, so each process
-#    asks for itself (`export -n` also covers an empty NC_CONTAINER= line the loader exported).
-#    The cache is this shell's: occ inside a pipe or $(…) is a subshell, so scripts that make
-#    dozens of occ calls (seed, divergence, smoke) call nc_container once after their first output.
-#    is_aio = "the AIO stack is running", the question install, smoke, test.sh,
-#    and phase 14 ask. `grep -x >/dev/null`, not `-qx`: grep reads to EOF, so
+#    file, and the one place that decides WHICH container (#197, R41). nc_container sets it in
+#    this shell: a value from the environment or .env wins (the loader below exports it);
+#    otherwise the AIO container ($AIO_NC, fixed by AIO's php/containers.json:145), so a stopped
+#    stack fails loudly at require_installed. Callers call it after their first output, never at
+#    source time: occ inside a pipe or $(…) is a subshell, so scripts that make dozens of occ
+#    calls (seed, divergence, smoke) call nc_container once.
+#    is_aio = "the AIO stack is running", the question smoke, test.sh and phases 10 and 12
+#    ask. `grep -x >/dev/null`, not `-qx`: grep reads to EOF, so
 #    docker never takes a SIGPIPE that a pipefail caller would read as "not running".
 AIO_NC=aps-conecta-nextcloud
 is_aio() { docker ps --format '{{.Names}}' 2>/dev/null | grep -x "$AIO_NC" >/dev/null; }
-nc_container() {  # sets NC_CONTAINER once per shell; always returns 0
-  [ -n "${NC_CONTAINER:-}" ] && return 0
-  if ! is_aio && docker ps --format '{{.Names}}' 2>/dev/null | grep -x apsconecta-gestion-nextcloud-1 >/dev/null; then
-    NC_CONTAINER=apsconecta-gestion-nextcloud-1
-  else
-    NC_CONTAINER=$AIO_NC
-  fi
-  export -n NC_CONTAINER
-}
+nc_container() { NC_CONTAINER="${NC_CONTAINER:-$AIO_NC}"; }  # always returns 0
 #
 #    nc_exec's contract is forced by docker exec's own grammar — options BEFORE the container,
 #    command AFTER — so every docker-exec option word comes first, then `--`, then the command.
@@ -72,7 +54,7 @@ nc_cp() { nc_container; docker cp "$1" "$NC_CONTAINER:$2"; }  # HOST_PATH CONTAI
 
 # 4. The suite's public URL, the base every gate curl rides (#163, D10: the gates curl the suite
 #    the way its users reach it, from the host itself). Apache's own environment decides, never
-#    .env's HTTP_PORT (the template ships 8180, and a clinic's front is 443): APACHE_PORT other
+#    .env's HTTP_PORT (a clinic's front is 443): APACHE_PORT other
 #    than 443 is the loopback reverse-proxy posture — Caddy answers any Host on that port
 #    (Containers/apache/start.sh) — and 443 is the suite's own name over TLS, NC_DOMAIN (Caddy's
 #    site and Nextcloud's overwritehost). By IP the installer's CA rides along: --cacert REPLACES
@@ -100,17 +82,16 @@ suite_url_resolve() {  # sets SUITE_URL, SUITE_CURL and SUITE_D10, or prints a F
 }
 suite_curl() { curl "${SUITE_CURL[@]}" "$@"; }
 
-# 5. The clinic this stack serves, for the callers that need one — seed.sh, install.sh and
-#    divergence.sh. A function, not a check at source time: smoke.sh, office-smoke.sh,
-#    seed-idempotent.sh and wait-ready.sh source this file too and must keep working on a checkout
-#    that has no clinic yet.
+# 5. The clinic this stack serves, for the callers that need one — seed.sh, comuna-package.sh and
+#    divergence.sh. A function, not a check at source time: smoke.sh, office-smoke.sh and
+#    seed-idempotent.sh source this file too and must keep working on a checkout that has no
+#    clinic yet.
 require_site() {
   [ -n "${SITE:-}" ] || {
     echo "FATAL: SITE is unset — .env must name the establishment this stack serves." >&2
     echo "       No establishment ships with this repo; pick yours from the DEIS register:" >&2
     echo "         scripts/deis.py                              # search, then pick a number" >&2
     echo "       then set SITE=<slug> in .env. README step 3 walks it." >&2
-    echo "       No .env yet? run: make setup" >&2
     return 1
   }
   [ -f "sites/$SITE/site.sh" ] || {
@@ -123,10 +104,9 @@ require_site() {
 }
 
 # 6. Refuse to provision a clinic with the secrets this repository publishes.
-#    env-init.sh generates all four from /dev/urandom, so a placeholder only survives a hand-copy
-#    of the template — which is exactly what README step 2 used to ask for, and what somebody does
-#    when `make setup` refuses because .env already exists. The result is a CESFAM whose admin
-#    password is readable by anyone who can read this repo.
+#    The Provisionador generates the fixture password when .env has none, so a placeholder only
+#    survives a hand-copy of the template. The result is a CESFAM whose standing accounts start
+#    with a password anyone who can read this repo can read.
 #
 #    Read out of .env.example rather than listed here: the template is what defines a placeholder,
 #    so one that gets reworded does not quietly stop being one, and a secret added there is covered
@@ -154,38 +134,25 @@ require_real_secrets() {
     echo "FATAL: .env still holds the placeholder .env.example ships for: ${still[*]}" >&2
     echo "       Those values are published in this repository, so anyone who can read it can" >&2
     echo "       read them. A clinic must not be installed with them." >&2
-    echo "         rm .env && bash scripts/env-init.sh     # generates every secret from /dev/urandom" >&2
-    echo "       Only do that on a stack that has not been installed yet — .env is the one copy" >&2
-    echo "       of the secrets a running instance was installed with." >&2
+    echo "       Delete those lines from .env and run the install again: the Provisionador" >&2
+    echo "       generates the fixture password when .env has none." >&2
     return 1
   }
 }
 
 # org L5-05 round-trip gate, in the repo's --self-test idiom (comuna
-# precedents). Four arms, all hermetic: (1) a fixture .env whose tricky-but-legal values
-# load exactly as the loader intends (comment strip, quoted hashes, $$ undo); (2) compose
-# parity over the same fixture — `docker compose --env-file config` resolves values the way
-# the runtime reader does, so parity is asserted, not assumed; (3) a multi-line quoted value
-# is REFUSED loudly instead of silently loading its first half; (4) the container arms —
-# section 3's answer in every posture, fabricated with a stub docker (#197). The fixture IS the scratch
-# root's .env because the loader reads ./.env relative to its own root — the scratch copy
-# makes both readers see the same bytes.
+# precedents). Every arm hermetic: (1) a fixture .env whose tricky-but-legal values load
+# exactly as the loader intends (comment strip, quoted hashes, $$ undo); (2) the container
+# arms — section 3's answer, fabricated with a stub docker (#197), and require_installed's
+# message; (3) the suite URL arms (#163); (4) a multi-line quoted value is REFUSED loudly
+# instead of silently loading its first half. The fixture IS the scratch root's .env because
+# the loader reads ./.env relative to its own root.
 env_self_test() {
   local tmp rc=0
   tmp="$(mktemp -d)" || return 1
   local fx="$tmp/.env"
-  # every ${VAR:?} compose demands, placeholders — `config` resolves without starting
-  # anything, and the fixture only has to be PARSEABLE by both readers the same way
   cat > "$fx" <<'FIX'
-POSTGRES_DB=apsconecta
-POSTGRES_USER=apsconecta
-POSTGRES_PASSWORD=fixture-not-a-real-secret
-NEXTCLOUD_ADMIN_USER=admin
-NEXTCLOUD_ADMIN_PASSWORD=fixture-not-a-real-secret
-NEXTCLOUD_TRUSTED_DOMAINS=localhost
-OFFICE_JWT_SECRET=fixture-not-a-real-secret
-HTTP_PORT=8180
-OFFICE_PORT=9980
+PLAIN=apsconecta
 # a whole-line comment
 UNQUOTED_WITH_COMMENT=some-value # and a trailing one
 DOUBLE_QUOTED_HASH="value # stays"
@@ -195,15 +162,14 @@ FIX
   mkdir -p "$tmp/scripts"
   cp "${BASH_SOURCE[0]}" "$tmp/scripts/env.sh"
   ( cd "$tmp" && . ./scripts/env.sh 2>/dev/null
-    [ "${POSTGRES_DB:-}" = apsconecta ] && [ "${UNQUOTED_WITH_COMMENT:-}" = some-value ] \
+    [ "${PLAIN:-}" = apsconecta ] && [ "${UNQUOTED_WITH_COMMENT:-}" = some-value ] \
       && [ "${DOUBLE_QUOTED_HASH:-}" = 'value # stays' ] && [ "${SINGLE_QUOTED_HASH:-}" = 'other # stays' ] \
       && [ "${DOLLAR_DOUBLED:-}" = 'abc$def' ]
   ) || { echo "self-test FAIL: loader arm — the loader misparsed the fixture" >&2; rc=1; }
   # the container arms (#197): which container occ talks to is decided in this file alone. A stub
   # docker logs every call and answers `ps` with $STUB_NAMES, so each posture is fabricated without
-  # a daemon — AIO up (alone, or beside a compose one), compose only, nothing up, an empty .env key,
-  # and a .env value that must win. Each arm asserts that sourcing alone ran no docker (lazy), and
-  # that a DETECTED name stays unexported (section 3 says why).
+  # a daemon — AIO up, nothing up, an empty .env key, and a .env value that must win. Each arm
+  # asserts that sourcing alone ran no docker.
   mkdir -p "$tmp/bin"
   cat > "$tmp/bin/docker" <<'STUB'
 #!/bin/sh
@@ -222,18 +188,14 @@ STUB
       nc_container
       [ "${NC_CONTAINER:-}" = "$want" ] || exit 1
       if is_aio; then [ "$aio" = 1 ]; else [ "$aio" = 0 ]; fi || exit 1
-      case "$line" in *=?*) ;; *) [ -z "$(bash -c 'printf %s "${NC_CONTAINER-}"')" ] ;; esac
     ) || { echo "self-test FAIL: container arm — want $want (is_aio=$aio) for '${line:-no .env value}' with [${*:-nothing}] running" >&2; rc=1; }
   }
   nc_arm aps-conecta-nextcloud 1 '' aps-conecta-nextcloud
-  nc_arm aps-conecta-nextcloud 1 '' apsconecta-gestion-nextcloud-1 aps-conecta-nextcloud
-  nc_arm apsconecta-gestion-nextcloud-1 0 '' apsconecta-gestion-nextcloud-1
   nc_arm aps-conecta-nextcloud 0 ''
   nc_arm aps-conecta-nextcloud 1 'NC_CONTAINER=' aps-conecta-nextcloud
   nc_arm custom-nc 1 'NC_CONTAINER=custom-nc' aps-conecta-nextcloud
   # ...and its failure names the cause (lib.sh's require_installed, the one place that dies on it):
-  # a configured name that is not the running AIO container is called out — a .env from the
-  # 2026-09-25 template still carries the compose name — and `make up` is advised only off AIO.
+  # a configured name that is not the running AIO container is called out.
   mkdir -p "$tmp/provisioning"
   cp "$(dirname -- "${BASH_SOURCE[0]}")/../provisioning/lib.sh" "$tmp/provisioning/lib.sh"
   ri_arm() {  # WANT_TEXT NOT_TEXT ENV_LINE [RUNNING_NAME…]
@@ -244,10 +206,10 @@ STUB
     case "$out" in *"$want"*) case "$out" in *"$not"*) false ;; esac ;; *) false ;; esac \
       || { echo "self-test FAIL: require_installed arm — want «$want», not «$not» for '${line:-no .env value}' with [${*:-nothing}] running" >&2; rc=1; }
   }
-  ri_arm 'overrides detection' 'make up' 'NC_CONTAINER=apsconecta-gestion-nextcloud-1' aps-conecta-nextcloud
-  ri_arm 'make up' 'overrides detection' ''
+  ri_arm 'NC_CONTAINER=custom-nc (environment or .env) overrides it' 'reachable in aps-conecta-nextcloud.' 'NC_CONTAINER=custom-nc' aps-conecta-nextcloud
+  ri_arm 'reachable in aps-conecta-nextcloud.' 'overrides it' ''
   # the suite URL arms (#163): the gates' base URL is apache's own posture, never .env's HTTP_PORT —
-  # the fixture carries the template's 8180 in every arm. A stub inspect answers apache's env
+  # the fixture carries one in every arm. A stub inspect answers apache's env
   # ($STUB_ENV, "absent" = no container); sourcing alone runs no docker; the CA rides only an IP.
   su_arm() {  # WANT(url, or the FAIL text) CACERT(yes|no|fail) STUB_ENV CA_FILE(1|0)
     local want="$1" ca="$2" envs="$3" out

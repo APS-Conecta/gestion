@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # provisioning/seed.sh — the single idempotent provisioning runner (Story 0.5, AD-2).
-# Invoked by `make seed`. Requires an installed stack, then applies desired state by sourcing the
-# numbered phase files under phases/ in fixed order (05 -> 60). Idempotent: safe to re-run.
+# Run by the Provisionador (the install's «ejecutar», the weekly re-provision). Requires an installed
+# stack, then applies desired state by sourcing the numbered phase files under phases/ in fixed
+# order (05 -> 60). Idempotent: safe to re-run.
 # Fixture phases (>= 50) are skipped when SEED_FIXTURES=0 (the structure-vs-fixtures partition).
 set -uo pipefail
 
@@ -40,11 +41,11 @@ for arr in SITE_FOLDERS SITE_TEAMS; do
 done
 declare -p SITE_WELCOME >/dev/null 2>&1 || { echo "FATAL: sites/$SITE/site.sh must set SITE_WELCOME (empty is legal, unset is not) — a site file written before 2026-09-27 needs the block by hand; see https://aps-conecta.github.io/documentation/desarrollo/intravox.html" >&2; exit 1; }
 
-# Which instalador this is — suite_tag's discipline (host/aps-conecta:958): the package's VERSION
-# first (an unpacked package carries no git, and package-release.sh asserts VERSION == tag before
-# signing), `git describe` for a checkout, `unknown` last. Header line, not `log`: seed-idempotent.sh
-# reads the log for write verbs, and a per-run string must never look like one.
-echo "== APS Conecta provisioning — instalador $(if [ -f "$HERE/../VERSION" ]; then head -1 "$HERE/../VERSION"; else git describe --tags --always --dirty 2>/dev/null || echo unknown; fi) =="
+# Which instalador this is — suite_tag's discipline (host/aps-conecta): the package's VERSION
+# (package-release.sh asserts VERSION == tag before signing), `unknown` without one. Header line,
+# not `log`: seed-idempotent.sh reads the log for write verbs, and a per-run string must never
+# look like one.
+echo "== APS Conecta provisioning — instalador $(head -1 "$HERE/../VERSION" 2>/dev/null || echo unknown) =="
 nc_container   # once, after the header: phases (subshells) inherit it; occ in pipes/$(…) cannot cache
 require_installed
 

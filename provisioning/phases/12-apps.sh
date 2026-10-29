@@ -36,7 +36,8 @@ opcionales_ids="$(printf '%s\n' "$manifest_opcionales" | cut -f1)"
 # Talk is the suite's option under AIO: off unless the wizard turns it on (the fork's patch 210), and
 # with it off the entrypoint removes spreed on every boot (REMOVE_DISABLED_APPS) — installed here, it
 # would be undone at the next restart and leave Talk without its signalling server. The suite's own
-# switch decides, the one the entrypoint reads; compose has no such switch and always runs Talk.
+# switch decides, the one the entrypoint reads; with no AIO stack running there is no switch to
+# read, so Talk stays on.
 talk=yes
 if is_aio; then
   talk="$(nc_exec -- printenv TALK_ENABLED 2>/dev/null)" \
@@ -62,21 +63,20 @@ while IFS=$'\t' read -r -u 3 app repo; do
     log "spreed skipped: the suite runs without Talk (the wizard's option; AIO removes the app when it is off)"
     continue
   fi
-  # Two channels (ADR-0017 + #42), one dev escape:
+  # Two channels (ADR-0017 + #42):
   #   RELEASE — a repo row the server's lock names: the fetched, verified tarball
   #     (ensure_release_app). The lock is the pin; the seed downloads nothing.
   #   STORE — a store-source row: the scoped one-command install (ensure_store_app).
-  #   A DEV CHECKOUT — apps/<id>/.git exists: someone is editing the app, and the seed
-  #     leaves it alone (ensure_own_app's dev half).
-  # A repo row with neither a lock row nor a checkout is a FATAL (ensure_own_app names the
-  # repair) — the bake that once fed that branch is gone (#42), and the seed is not the door
-  # that improvises an app from a channel nobody verified.
+  # A repo row the lock does not name is a FATAL: every install path runs the download step
+  # before the seed, so its absence is a stopped install to re-run, and the seed is not the
+  # door that improvises an app from a channel nobody verified.
   row=""
-  [ -z "$repo" ] || [ -d "apps/$app/.git" ] || row="$(lock_row "$app")"
+  [ -z "$repo" ] || row="$(lock_row "$app")"
   if [ -n "$row" ]; then
     ensure_release_app "$app" "$row"
   elif [ -n "$repo" ]; then
-    ensure_own_app "$app" "https://github.com/$repo.git"
+    log "FAILED $app — its release was never resolved on this server (no lock row). Re-run the install so its download step resolves the release."
+    exit 1
   else
     ensure_store_app "$app"
   fi

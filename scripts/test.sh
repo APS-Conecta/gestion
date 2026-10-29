@@ -247,33 +247,31 @@ installer_ca_cases() (
 check installer_ca_cases
 # R22: phase 14's install-by-IP block, extracted from the phase and run under its errexit. An
 # address in overwrite.cli.url (the entrypoint's, every boot) sends both server-to-server legs
-# inside the wizard's network; a domain or the compose stack writes nothing — a domain install keeps
-# its public legs (B-019) — and a value that cannot be read is said, never taken for a domain (B-014).
+# inside the wizard's network; a domain writes nothing — a domain install keeps its public legs
+# (B-019) — and a value that cannot be read is said, never taken for a domain (B-014).
 office_by_ip_cases() {
-  local block out aio pub want
+  local block out pub want
   block="$(sed -n '/^# --- by IP (R22)/,/^# --- end by IP ---$/p' provisioning/phases/14-office.sh)"
   [ -n "$block" ] || { echo "office by IP: block not found in 14-office.sh" >&2; return 1; }
-  while IFS='|' read -r aio pub want; do
-    out="$(AIO="$aio" PUB="$pub" bash -e -o pipefail -c '
-      aio=$AIO
+  while IFS='|' read -r pub want; do
+    out="$(PUB="$pub" bash -e -o pipefail -c '
       conf_load() { :; }
       conf_get() { [ "$PUB" != fail ] && printf "%s\n" "$PUB"; }
       app_config_set() { printf "SET %s %s %s\n" "$@"; }
       log() { printf "LOG %s\n" "$*"; }
-      eval "$1"' _ "$block" 2>&1)" || { echo "office by IP: the block failed for $aio|$pub: $out" >&2; return 1; }
+      eval "$1"' _ "$block" 2>&1)" || { echo "office by IP: the block failed for $pub: $out" >&2; return 1; }
     case "$want" in
       internal) [ "$out" = "SET eurooffice DocumentServerInternalUrl http://aps-conecta-eurooffice/
 SET eurooffice StorageUrl http://aps-conecta-apache.nextcloud-aio:23973/" ] ;;
       none) [ -z "$out" ] ;;
       said) [ "$out" = "LOG AIO: overwrite.cli.url could not be read — the office's internal URLs left as they are" ] ;;
-    esac || { echo "office by IP: $aio|$pub expected $want, got: $out" >&2; return 1; }
+    esac || { echo "office by IP: $pub expected $want, got: $out" >&2; return 1; }
   done <<'CASES'
-1|https://10.0.0.5/|internal
-1|https://192.168.1.50/|internal
-1|https://clinica.example/|none
-1|https://10.0.0.5.example/|none
-1|fail|said
-0|https://10.0.0.5/|none
+https://10.0.0.5/|internal
+https://192.168.1.50/|internal
+https://clinica.example/|none
+https://10.0.0.5.example/|none
+fail|said
 CASES
 }
 check office_by_ip_cases
@@ -404,9 +402,7 @@ scripts/cleanboot-site.sh
 scripts/comuna-package.sh
 scripts/deis.py
 scripts/divergence.sh
-scripts/env-init.sh
 scripts/env.sh
-scripts/install.sh
 scripts/lockup.py
 scripts/office-smoke.sh
 scripts/package-release.sh
@@ -417,7 +413,6 @@ scripts/seed-idempotent.sh
 scripts/smoke.sh
 scripts/test.sh
 scripts/validate.sh
-scripts/wait-ready.sh
 '
 spdx_offenders() {
   # every argument that neither carries the header line nor sits on the frozen baseline
@@ -453,6 +448,21 @@ spdx_baseline_row() {
   [ ${#dead[@]} -eq 0 ] || { printf 'SPDX_BASELINE lines that no longer name a headerless tracked script:\n' >&2; printf '%s\n' "${dead[@]}" >&2; return 1; }
 }
 check spdx_baseline_row
+# Every script under scripts/ has a caller (#181): another tracked file — a workflow, a script, the
+# host CLI, a runbook — names its path on a live line. Comment lines, the dated history
+# (aps/CHANGELOG.md, BUGS.md) and a bare list entry (the baseline above) call nothing, so a script
+# only they name is dead weight the next reader has to rule out.
+script_caller_row() {
+  local f refs
+  local -a orphans=()
+  for f in $(git ls-files 'scripts/*.sh' 'scripts/*.py'); do
+    refs="$(git grep -n -F -e "$f" -- . ":!$f" ":!aps/CHANGELOG.md" ":!BUGS.md" \
+      | grep -vE "^[^:]+:[0-9]+:[[:space:]]*#" | grep -vxE "[^:]+:[0-9]+:$f")"
+    [ -n "$refs" ] || orphans+=("$f")
+  done
+  [ ${#orphans[@]} -eq 0 ] || { printf 'scripts no tracked file calls:\n' >&2; printf '%s\n' "${orphans[@]}" >&2; return 1; }
+}
+check script_caller_row
 # The detector's own gate (the AGNOSTIC_SHAPE lesson: a row whose detector cannot go red is not a
 # row). The same spdx_offenders bytes the row runs, over a fabricated corpus: a new unheadered
 # script is the one offender; a baseline member without the header and a newcomer WITH it are not.
@@ -1054,23 +1064,21 @@ if real is not None:
 if drill != mutada:
     print("the mutation drill passed — the gate could not see a changed byte")
 sys.exit(0 if real is None and drill == mutada else 1)'
-# A clinic must never be installed with the secrets this repository publishes. env-init.sh generates
-# all four, so a placeholder survives only a hand-copy of the template — which is what somebody does
-# when scripts/env-init.sh refuses because .env is already there. Behavioural, and driven from
-# .env.example: the template is what defines a placeholder, so this cannot rot when one is reworded.
+# A clinic must never be installed with the secrets this repository publishes. The Provisionador
+# generates the fixture password when .env has none, so a placeholder survives only a hand-copy of
+# the template. Behavioural, and driven from .env.example: the template is what defines a
+# placeholder, so this cannot rot when one is reworded.
 check bash -c '
   . scripts/env.sh
   require_real_secrets || exit 1
   shipped() { grep "^$1=" .env.example | cut -d= -f2-; }
-  for key in NEXTCLOUD_ADMIN_PASSWORD POSTGRES_PASSWORD OFFICE_JWT_SECRET FIXTURE_USER_PASSWORD; do
-    ( export "$key=$(shipped "$key")"; require_real_secrets 2>/dev/null ) && exit 1
-  done
+  ( export "FIXTURE_USER_PASSWORD=$(shipped FIXTURE_USER_PASSWORD)"; require_real_secrets 2>/dev/null ) && exit 1
   # And a value that CARRIES the marker without EQUALING the template byte for byte. That is
   # what a quoted placeholder becomes once the loader in env.sh strips its quotes, and what a
   # `$$` one becomes once it undoes the escape — both conventions .env.example already uses.
   # The equality test this replaced let exactly this through: the
   # gate failed OPEN, silently, and a clinic would install with a published secret.
-  ( export NEXTCLOUD_ADMIN_PASSWORD="\"$(shipped NEXTCLOUD_ADMIN_PASSWORD)\""; require_real_secrets 2>/dev/null ) && exit 1
+  ( export FIXTURE_USER_PASSWORD="\"$(shipped FIXTURE_USER_PASSWORD)\""; require_real_secrets 2>/dev/null ) && exit 1
   exit 0'
 # Regression guard (ADR-0003): every STATIC asset server.css references must exist on disk. It shipped
 # for months declaring four .woff2 files that were never generated, and the TTF fallback swallowed the
@@ -1775,9 +1783,8 @@ if twins("## 14. x\n- **A**\n```\na\n```\n", "## 11. y\n```\na\n```\n"): print("
 print("ok")'
 
 # --- org L5-11/L5-05/L5-12: the provisioning self-tests (hermetic) ----------------------------
-# standings.sh: the one uid derivation's fixture parity; env.sh: the loader/compose
-# round-trip (its compose-parity arm self-skips — no compose.yaml moved — and the container arms
-# run on a stub docker); usuarios.sh: the frame guards; apps.py: the suite manifest's shape and
+# standings.sh: the one uid derivation's fixture parity; env.sh: the loader round-trip (its
+# container arms run on a stub docker); usuarios.sh: the frame guards; apps.py: the suite manifest's shape and
 # that every container it names is defined.
 check bash provisioning/standings.sh --self-test
 check python3 scripts/apps.py --self-test
@@ -1932,9 +1939,8 @@ fi
 # makes this deterministic when the stack IS up — without it the gate raced the 120s start_period.
 echo "== office smoke (only if the document server is running) =="
 # The gate and office-smoke's own inspect match the SAME name — the AIO sibling AIO's own
-# containers.json pins (aps-conecta-eurooffice), deterministic on every AIO host the way the
-# compose project name was on compose — so the two cannot drift. A compose dev
-# stack reads as skipped here BY DESIGN — the skip is visible, never silent.
+# containers.json pins (aps-conecta-eurooffice), deterministic on every AIO host — so the two
+# cannot drift. The skip is visible, never silent.
 if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx aps-conecta-eurooffice; then
   if bash scripts/office-smoke.sh; then echo "  ok:   office-smoke"; else echo "  FAIL: office-smoke"; fail=1; fi
 else

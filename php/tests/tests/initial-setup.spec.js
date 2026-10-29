@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { readFileSync, writeFileSync } from 'node:fs'
 import { createPrivateKey, sign } from 'node:crypto'
 import { request } from 'node:http'
+import { spawnSync } from 'node:child_process'
 import { logInToContainersPage } from './helpers.js';
 
 // The es-CL suite (patch 090): every assertion the 060 sweep re-skinned now asserts the
@@ -150,6 +151,7 @@ test('Log in via token-unblocked login form', async ({ page: containersPage, bro
   await tokenPage.getByRole('button', { name: 'Iniciar sesión' }).click();
   await tokenPage.waitForURL('./containers');
   await expect(tokenPage.getByRole('link', { name: 'Abrir APS Conecta Gestión ↗' })).toBeVisible();
+  await waitForSessionDeduplication();
 
   // A signature made with the private key that was handed to the Nextcloud container unblocks the login form
   const signaturePage = await (await browser.newContext()).newPage();
@@ -174,6 +176,14 @@ test('Log in via token-unblocked login form', async ({ page: containersPage, bro
   await expect(preferredPage.locator('body')).toContainText('El inicio de sesión directo está bloqueado porque la suite está en ejecución.');
   await expect(preferredPage.locator('#master-password')).toHaveCount(0);
 });
+
+// session-deduplicator.sh polls every 2 s: once a login rewrites the session date file, it deletes
+// every session without that date, so a session unblocked in that window is lost mid-login. Wait
+// until its own predicate, run without -delete, matches no session.
+async function waitForSessionDeduplication() {
+  const time = readFileSync('/mnt/docker-aio-config/data/session_date_file', 'utf8').trim();
+  await expect.poll(() => spawnSync('find', ['/mnt/docker-aio-config/session/', '-mindepth', '1', '-exec', 'grep', '-qv', time, '{}', ';', '-print'], { encoding: 'utf8' }).stdout).toBe('');
+}
 
 // The private key only lives in the environment of the Nextcloud container, so read it via the Docker API.
 async function getUnblockLoginPrivateKey() {

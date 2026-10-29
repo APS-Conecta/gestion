@@ -38,18 +38,11 @@ ROOT="$(cd "$HOST_DIR/.." && pwd)"
 # No PROV global: ROOT can be overridden (the self-test does exactly that), so every
 # caller resolves scripts/provisionador.py from the CURRENT root.
 prov_path() { printf '%s' "$ROOT/scripts/provisionador.py"; }
-# The suite release this file installs when it runs on its own — the two-line bootstrap, before any
-# clone exists. The release commit sets it beside aps/CHANGELOG's dated entry and the tree's VERSION,
-# and the self-test pins the three, so the package downloaded from tag X installs exactly X.
-BUNDLE_TAG="v0.6.0"
 # The package era (FRD S1): the signed tarball unpacks instalador/ here (install.sh); the
 # gestion-clone era ($APS_HOME/gestion) is a named, inert case: no migration path exists (v0.5.0
 # is clean-install only, #48), so the directory is only detected, never followed.
 APS_HOME="${APS_HOME:-/opt/aps-conecta}"
 INSTALADOR_REPO_URL="${INSTALADOR_REPO_URL:-https://github.com/APS-Conecta/gestion}"
-# The git channel is the REHEARSAL's only (cleanboot, ci- tags): empty by default, so the
-# operator's channel is the release installer's, never a clone.
-APS_REPO_URL="${APS_REPO_URL:-}"
 # An install by IP (R22): the suite's leaf (apache reads it: APS_TLS_DIR, patch 235) and the CA's
 # certificate alone (Nextcloud and Talk trust it: NEXTCLOUD_TRUSTED_CACERTS_DIR), beside the installer's CA —
 # the provisionador's CERT_DIR/suite and CERT_DIR/ca, pinned by its self-test
@@ -77,8 +70,6 @@ staff_ca() {  # by IP (R22), the install's last lines: the CA each staff device 
   printf '  Cada equipo lo importa una vez: aps/GUIA-CLINICA.md §10\n'
 }
 BIN_DIR="${BIN_DIR:-/usr/local/bin}"       # where the `aps-conecta` command is linked
-in_checkout() { [ -f "$(prov_path)" ]; }    # false only for the downloaded file, on its own
-in_checkout || APS_SUITE_TAG="${APS_SUITE_TAG:-$BUNDLE_TAG}"
 
 # The docker API floor is not ours to invent: AIO's own tested requirement is v1.44
 # (php/src/Docker/DockerActionManager.php:19); the mastercontainer itself enforces it at start
@@ -264,7 +255,7 @@ cmd_install() {  # the install: the welcome, then the steps in registry order. I
   elif [ -n "$SILENT_RESPALDO" ]; then
     die "--respaldo va con la instalación silenciosa: sudo aps-conecta install --sitio <site.sh> --planilla <usuarios.csv> --respaldo <directorio>"
   fi
-  is_root || die "la instalación necesita permisos de administrador: sudo bash aps-conecta install"
+  is_root || die "la instalación necesita permisos de administrador: $again"
   if [ -n "$SILENT_SITE" ]; then
     SILENT_LOG="$APS_HOME/instalacion.log"
     { mkdir -p "$APS_HOME" && exec 3>&2 2>>"$SILENT_LOG"; } || die "no se pudo abrir el registro $SILENT_LOG"
@@ -355,15 +346,6 @@ check_docker() {  # API floor measured, not assumed — docker version is the on
   else
     bad "docker API $api es menor que el mínimo 1.44 de AIO" \
       "actualice docker (los repos de Ubuntu suelen quedar atrás: use el repositorio oficial de Docker)"
-  fi
-}
-
-check_compose() {
-  if docker compose version >/dev/null 2>&1; then
-    ok "compose v2 presente"
-  else
-    bad "docker compose v2 no está disponible" \
-      "el plugin compose v2 viene con el docker oficial; «docker-compose» suelto no sirve"
   fi
 }
 
@@ -568,14 +550,14 @@ is_root() { [ "$(id -u)" = 0 ]; }
 
 install_packages() {  # the tools the install itself runs; apt installs only what is missing
   local t missing=() pkgs=()
-  for t in git python3 curl; do
+  for t in python3 curl; do
     command -v "$t" >/dev/null 2>&1 || { missing+=("$t"); pkgs+=("$t"); }
   done
   command -v ogr2ogr >/dev/null 2>&1 || { missing+=(ogr2ogr); pkgs+=(gdal-bin); }
   # the signed channel's verifier (D5): check_paquete proves the kept package's signature
   # with it — a fresh host got the sha anchor from the installer itself
   command -v signify >/dev/null 2>&1 || { missing+=(signify); pkgs+=(signify-openbsd); }
-  if [ ${#missing[@]} -eq 0 ]; then ok "git, python3, curl, ogr2ogr y signify presentes"; return 0; fi
+  if [ ${#missing[@]} -eq 0 ]; then ok "python3, curl, ogr2ogr y signify presentes"; return 0; fi
   if ! command -v apt-get >/dev/null 2>&1; then
     bad "faltan ${missing[*]} y este sistema no usa apt" "instale ${pkgs[*]} y vuelva a ejecutar el paso"
     return 0
@@ -593,7 +575,7 @@ install_packages() {  # the tools the install itself runs; apt installs only wha
   fi
 }
 
-install_docker() {  # Docker Engine + Compose v2 from Docker's own apt repository — the method its
+install_docker() {  # Docker Engine from Docker's own apt repository — the method its
   # docs give for production (the convenience script is not). Ubuntu and Debian only; a docker
   # already present is never replaced (check_docker then judges its API) — only started
   if command -v docker >/dev/null 2>&1; then
@@ -626,7 +608,7 @@ install_docker() {  # Docker Engine + Compose v2 from Docker's own apt repositor
           && printf 'Types: deb\nURIs: https://download.docker.com/linux/%s\nSuites: %s\nComponents: stable\nArchitectures: %s\nSigned-By: /etc/apt/keyrings/docker.asc\n' \
                "$distro" "$suite" "$(dpkg --print-architecture)" > "$ETC_DIR/apt/sources.list.d/docker.sources" ) \
      && "${APT[@]}" update >/dev/null \
-     && "${APT[@]}" install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null; then
+     && "${APT[@]}" install -y docker-ce docker-ce-cli containerd.io >/dev/null; then
     ok "Docker instalado desde su repositorio oficial"
   else
     bad "no se pudo instalar Docker" \
@@ -818,16 +800,7 @@ step_preparar() {  # installs what is missing, then proves each piece with its o
     return 0
   fi
   install_packages; install_docker
-  check_docker; check_compose; ensure_docker_group; ensure_overcommit
-}
-
-trust_bundle() {  # DIR — the bundle is root's; the admin reads it too (`git describe`, preflight).
-  # git ≥ 2.35.2 refuses a repository another user owns unless it is listed as safe, and only the
-  # system scope works on every git the targets ship (`-c safe.directory` is ignored before 2.38)
-  local f="$ETC_DIR/gitconfig"
-  git config --file "$f" --get-all safe.directory 2>/dev/null | grep -qxF "$1" && return 0
-  git config --file "$f" --add safe.directory "$1" \
-    || bad "no se pudo registrar $1 como repositorio seguro" "sudo git config --system --add safe.directory $1"
+  check_docker; ensure_docker_group; ensure_overcommit
 }
 
 link_command() {  # $BIN_DIR/aps-conecta → this bundle's CLI. A missing or dangling link is (re)made;
@@ -853,57 +826,17 @@ link_command() {  # $BIN_DIR/aps-conecta → this bundle's CLI. A missing or dan
   fi
 }
 
-step_descargar() {  # the bundle at its tag. On its own (the two-line bootstrap) this file brings
-  # the suite into $APS_HOME/instalador — the rehearsal's git channel when APS_REPO_URL is set, the
-  # operator's install.sh otherwise — root-owned, and the install goes on from that copy — the same
-  # tag, so the same code; in a checkout it verifies that checkout. No app rides the bundle: own
+step_descargar() {  # the bundle at its tag: install.sh unpacks the signed package and runs this
+  # file from it, so the bundle verified here is this file's own tree. No app rides the bundle: own
   # and fork apps arrive from their own signed releases and store apps from the scoped install,
   # so what is verified here is the bundle's own shape — a readable manifest, no baked apps —
   # and only a verified bundle is linked as the `aps-conecta` command
-  local v apps rc dest found
+  local v apps rc
   v="$(suite_tag)"
   if [ -z "$v" ]; then
     bad "no se pudo leer la versión de la suite en $ROOT" \
-      "descargue la suite en una versión publicada (git clone --branch <versión>)"
+      "descargue el instalador de una versión publicada: $INSTALADOR_REPO_URL/releases"
     return 0
-  fi
-  if ! in_checkout; then
-    if ! is_root; then
-      bad "descargar la suite necesita permisos de administrador" "ejecute: sudo bash aps-conecta install"
-      return 0
-    fi
-    dest="$APS_HOME/instalador"
-    if [ -d "$dest/host" ]; then
-      # VERSION is the version now (an installed package has no git); a clone keeps answering
-      found="$(head -1 "$dest/VERSION" 2>/dev/null || git -C "$dest" describe --tags --exact-match 2>/dev/null || true)"
-      if [ "$found" != "$v" ]; then
-        bad "ya existe una instalación en $dest (versión ${found:-desconocida}), distinta de $v" \
-          "no se modifica: continúe desde esa copia con «sudo bash $dest/host/aps-conecta install»"
-        return 0
-      fi
-      ok "Suite $v ya descargada en $dest"
-    elif [ -e "$dest" ]; then
-      bad "$dest ya existe y no es una copia de la suite" \
-        "muévalo (sudo mv $dest $dest.anterior) y vuelva a ejecutar: sudo bash aps-conecta install"
-      return 0
-    elif [ -n "${APS_REPO_URL:-}" ]; then   # ${:-}: the operator's default is EMPTY — a scrubbed
-      # env (the self-test's arms unset the rehearsal channel) must not trip set -u
-      # the rehearsal git channel (cleanboot, ci- tags); the operator's channel is install.sh's
-      info "descargando la suite $v en $dest (canal git de ensayo)"
-      mkdir -p "$APS_HOME"
-      if ! ( umask 022 && git -c advice.detachedHead=false clone -q --branch "$v" --depth 1 "$APS_REPO_URL" "$dest" ); then
-        bad "no se pudo descargar la suite $v desde $APS_REPO_URL" \
-          "revise la red y vuelva a ejecutar: sudo bash aps-conecta install"
-        return 0
-      fi
-      printf '%s\n' "$v" > "$dest/VERSION"   # the clone answers suite_tag() the package's way
-    else
-      bad "la suite $v no está en este servidor" \
-        "descargue el instalador de la versión y ejecútelo: curl -fsSL $INSTALADOR_REPO_URL/releases/download/$v/apsconecta-$v-install.sh | sudo bash"
-      return 0
-    fi
-    trust_bundle "$dest"
-    ROOT="$dest"; HOST_DIR="$dest/host"   # every remaining path: the bundle is the root now
   fi
   apps="$(python3 "$ROOT/scripts/apps.py" ids 2>&1)"; rc=$?
   if [ "$rc" -ne 0 ]; then   # status 1 is apps.py's own Spanish line; any other is python itself
@@ -961,19 +894,16 @@ step_abrir() {  # the web installer walks steps 5–8 as a CHILD of this console
 
 suite_tag() {
   if [ -n "${APS_SUITE_TAG:-}" ]; then printf '%s' "$APS_SUITE_TAG"; return; fi
-  # The package's VERSION first: an unpacked tarball carries no git, and the release job
-  # asserts VERSION == tag before signing (package-release.sh) — one line, the only source
-  # an installed suite needs. Checkouts without one still fall back to the tag they are.
-  if [ -f "$ROOT/VERSION" ]; then head -1 "$ROOT/VERSION" 2>/dev/null; return; fi
-  git -C "$ROOT" describe --tags --abbrev=0 2>/dev/null && return
-  echo ""
+  # The package's VERSION: the release job asserts VERSION == tag before signing
+  # (package-release.sh) — one line, the only source an installed suite needs.
+  head -1 "$ROOT/VERSION" 2>/dev/null || true
 }
 
 run_command() {  # [ADDRESS] — prints the operator's docker run string (never executes it). An IPv4 is
   # the install by IP (R22): two lines more — the suite's own certificate for apache, its CA for
   # Nextcloud and Talk
   local tag tls=""; tag="$(suite_tag)"
-  [ -n "$tag" ] || die "no pude leer la etiqueta de versión (¿git tags?) — o exporte APS_SUITE_TAG"
+  [ -n "$tag" ] || die "no pude leer la versión de la suite ($ROOT/VERSION) — o exporte APS_SUITE_TAG"
   if is_ipv4 "${1:-}"; then
     tls="  --env APS_TLS_DIR=$(suite_tls_dir) \\
   --env NEXTCLOUD_TRUSTED_CACERTS_DIR=$(suite_ca_dir) \\
@@ -2076,11 +2006,11 @@ check_paquete() {  # [TAG] — the kept package at $APS_HOME/paquete (D11: insta
   # there), re-verified offline: the signify signature over SHA256SUMS against the committed
   # installer.pub, the real sha256sum -c over the tarball, the tag the SUMS line names, and
   # the suite's own VERSION. Measure-only — preflight's family (nothing installs here).
-  # The honest skips: no readable tag, no kept package (the rehearsal git channel, or the
-  # disk was freed), or no signify yet (the installer's own embedded sha already anchored
-  # the bytes at download; «preparar» installs signify-openbsd and the signature verifies
-  # from the next run). A package that IS there and does not verify is a loud red, never a
-  # silent pass
+  # The honest skips: no readable tag, no kept package (the disk was freed — a rehearsal's
+  # KEEP_PACKAGE=0 frees it right after unpacking), or no signify yet (the installer's own
+  # embedded sha already anchored the bytes at download; «preparar» installs signify-openbsd and
+  # the signature verifies from the next run). A package that IS there and does not verify is a
+  # loud red, never a silent pass
   local tag="${1:-}" paquete="$APS_HOME/paquete" pkg sums found
   [ -n "$tag" ] || tag="$(suite_tag)"
   if [ -z "$tag" ]; then
@@ -2089,7 +2019,7 @@ check_paquete() {  # [TAG] — the kept package at $APS_HOME/paquete (D11: insta
   fi
   pkg="$paquete/apsconecta-$tag.tar.gz"
   if [ ! -f "$pkg" ]; then
-    info "no hay paquete guardado de la versión $tag (canal git de ensayo o disco liberado) — nada que verificar"
+    info "no hay paquete guardado de la versión $tag (disco liberado) — nada que verificar"
     return 0
   fi
   if ! command -v signify >/dev/null 2>&1; then
@@ -2146,8 +2076,8 @@ cmd_preflight() {
   esac
   echo "Revisión previa del instalador APS Conecta"
   # bash checks itself (this script IS bash); the rest are real prerequisites
-  need_tool git; need_tool python3; need_tool curl; need_tool docker
-  check_docker; check_compose; check_ports; check_dns; check_arch; check_prov_ports
+  need_tool python3; need_tool curl; need_tool docker
+  check_docker; check_ports; check_dns; check_arch; check_prov_ports
   check_hairpin
   check_paquete   # the kept signed package, when there is one (D5)
   echo
@@ -2166,9 +2096,8 @@ cmd_preflight() {
 # string, the site discovery, and --reponer against a stub provisionador that records its argv.
 
 selftest() {
-  unset APS_SUITE_TAG   # line 81's standalone default (no checkout above) must not leak into the
-                        # goldens: every arm derives its tag explicitly, exactly as an
-                        # in-a-checkout run does
+  unset APS_SUITE_TAG   # a caller's override (a rehearsal's) must not leak into the goldens:
+                        # every arm derives its tag explicitly
   local n=0 tshim tmp ROOT_BAK="$ROOT"
   tmp="$(mktemp -d)"
   tshim="$tmp/bin"; mkdir -p "$tshim"
@@ -2187,7 +2116,6 @@ selftest() {
 #!/usr/bin/env bash
 case "\$1 \$2" in
   "version --format") echo "${1-1.56}" ;;
-  "compose version") exit ${5-0} ;;
   "ps --format") echo "${2-}" ;;
   *) exit 0 ;;
 esac
@@ -2203,8 +2131,7 @@ EOF
   export PATH="$tshim:$PATH"
 
   # ── the generator: ONE string, the FRD's own shape ──
-  ROOT="$tmp/repo"; mkdir -p "$ROOT"
-  git -C "$ROOT" init -q && git -C "$ROOT" -c user.email=self@t -c user.name=self commit -q --allow-empty -m x && git -C "$ROOT" tag v9.9.9
+  ROOT="$tmp/repo"; mkdir -p "$ROOT"; printf 'v9.9.9\n' > "$ROOT/VERSION"
   RC="$(run_command)"
   check "generator: the full operator run string at the release tag — no map folder rides it (the basemap is OpenStreetMap's, nothing is bound for it)" \
     '[ "$RC" = "docker run --init --sig-proxy=false --name nextcloud-aio-mastercontainer \\
@@ -2230,7 +2157,7 @@ EOF
   --volume /var/run/docker.sock:/var/run/docker.sock:ro \\
   ghcr.io/aps-conecta/all-in-one:v9.9.9" ] && [ "$(run_command clinica.example)" = "$RC" ]'
   APS_SUITE_TAG=v0.2.0-rc1; export APS_SUITE_TAG
-  check "generator: APS_SUITE_TAG override wins over the git tag" \
+  check "generator: APS_SUITE_TAG override wins over VERSION" \
     '[ "$(suite_tag)" = "v0.2.0-rc1" ]'
   unset APS_SUITE_TAG
 
@@ -2373,7 +2300,7 @@ EOF
     '[ "$rcs" -eq 1 ] && case "$install_out" in *"Resultado ✗ el paso 2 no terminó"*"--sitio"*"(registro: $APS_HOME/instalacion.log)"*) ;; *) false;; esac'
   step_out="$( (export ID_U=1000; cmd_install </dev/null) 2>&1)"; rcs=$?
   check "stepper: install without sudo refuses before the welcome, naming the command to run" \
-    '[ "$rcs" -eq 1 ] && case "$step_out" in *"✗ la instalación necesita permisos de administrador: sudo bash aps-conecta install"*) ;; *) false;; esac && case "$step_out" in *"Paso 1 de 8"*) false;; *) true;; esac'
+    '[ "$rcs" -eq 1 ] && case "$step_out" in *"✗ la instalación necesita permisos de administrador: sudo aps-conecta install"*) ;; *) false;; esac && case "$step_out" in *"Paso 1 de 8"*) false;; *) true;; esac'
   step_out="$(step_browser "$(step_number centro)")"
   check "stepper: a browser step asked for at the console says where it runs" \
     'case "$step_out" in *"el paso 5 («Elegir el centro») se hace en el navegador"*) ;; *) false;; esac'
@@ -2470,19 +2397,19 @@ case "\$1" in
 esac
 SHIM
   chmod +x "$tshim/sysctl" "$tshim/curl" "$tshim/id"
-  # a fresh server has no docker, git or python3: a PATH of shims plus the few real tools the
-  # shims themselves need — the host's own docker, git and python3 stay out of reach
+  # a fresh server has no docker or python3: a PATH of shims plus the few real tools the
+  # shims themselves need — the host's own docker and python3 stay out of reach
   for c in bash env mkdir chmod tr grep cat sed cp cut; do ln -sf "$(command -v "$c")" "$tmp/minbin/$c"; done
   if only_shims apt-get usermod systemctl dpkg sysctl curl id; then
     step_out="$(PATH="$tshim:$tmp/minbin"; FAIL=0; SUDO_USER=operador step_preparar; echo "FAIL=$FAIL")"
-    check "preparar: a fresh Ubuntu gets git and python3, Docker from Docker's repository, the operator's group and overcommit 1 — each proved" \
-      'case "$step_out" in *"✓ Instalado: git python3 ogr2ogr signify"*"✓ Docker instalado desde su repositorio oficial"*"✓ docker (API 1.56"*"✓ compose v2 presente"*"✓ Usuario operador agregado al grupo docker"*"✓ Memoria del sistema ajustada (vm.overcommit_memory 2 → 1"*"FAIL=0") ;; *) false;; esac'
+    check "preparar: a fresh Ubuntu gets python3, Docker from Docker's repository, the operator's group and overcommit 1 — each proved" \
+      'case "$step_out" in *"✓ Instalado: python3 ogr2ogr signify"*"✓ Docker instalado desde su repositorio oficial"*"✓ docker (API 1.56"*"✓ Usuario operador agregado al grupo docker"*"✓ Memoria del sistema ajustada (vm.overcommit_memory 2 → 1"*"FAIL=0") ;; *) false;; esac'
     check "preparar: the host changes are apt (lock-patient) from Docker's noble suite, usermod and the sysctl.d file applied alone" \
-      'grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y git python3 gdal-bin signify-openbsd" "$tmp/mut.log" && grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y ca-certificates" "$tmp/mut.log" && grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin" "$tmp/mut.log" && grep -qx "usermod -aG docker operador" "$tmp/mut.log" && grep -qx "sysctl -p $ETC_DIR/sysctl.d/90-aps-conecta.conf" "$tmp/mut.log" && grep -qx "Suites: noble" "$ETC_DIR/apt/sources.list.d/docker.sources" && grep -qx "URIs: https://download.docker.com/linux/ubuntu" "$ETC_DIR/apt/sources.list.d/docker.sources" && grep -qx "vm.overcommit_memory = 1" "$ETC_DIR/sysctl.d/90-aps-conecta.conf"'
+      'grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y python3 gdal-bin signify-openbsd" "$tmp/mut.log" && grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y ca-certificates" "$tmp/mut.log" && grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y docker-ce docker-ce-cli containerd.io" "$tmp/mut.log" && grep -qx "usermod -aG docker operador" "$tmp/mut.log" && grep -qx "sysctl -p $ETC_DIR/sysctl.d/90-aps-conecta.conf" "$tmp/mut.log" && grep -qx "Suites: noble" "$ETC_DIR/apt/sources.list.d/docker.sources" && grep -qx "URIs: https://download.docker.com/linux/ubuntu" "$ETC_DIR/apt/sources.list.d/docker.sources" && grep -qx "vm.overcommit_memory = 1" "$ETC_DIR/sysctl.d/90-aps-conecta.conf"'
     : > "$tmp/mut.log"
     step_out="$(PATH="$tshim:$tmp/minbin"; FAIL=0; SUDO_USER=operador step_preparar; echo "FAIL=$FAIL")"
     check "preparar: a re-run finds everything done and changes nothing" \
-      'case "$step_out" in *"✓ git, python3, curl, ogr2ogr y signify presentes"*"✓ Usuario operador en el grupo docker"*"✓ Memoria del sistema ajustada (vm.overcommit_memory = 1)"*"FAIL=0") ;; *) false;; esac && ! grep -qE "^(apt-get|usermod|sysctl -p|curl|systemctl start)" "$tmp/mut.log"'
+      'case "$step_out" in *"✓ python3, curl, ogr2ogr y signify presentes"*"✓ Usuario operador en el grupo docker"*"✓ Memoria del sistema ajustada (vm.overcommit_memory = 1)"*"FAIL=0") ;; *) false;; esac && ! grep -qE "^(apt-get|usermod|sysctl -p|curl|systemctl start)" "$tmp/mut.log"'
     echo 2 > "$tmp/oc"; rm -f "$ETC_DIR/sysctl.d/90-aps-conecta.conf"
     step_out="$(export SYSCTL_FAILS=1; PATH="$tshim:$tmp/minbin"; FAIL=0; ensure_overcommit; echo "FAIL=$FAIL")"
     check "preparar: where the kernel setting cannot be applied now (a container) it stays in its file and says so — not a red" \
@@ -2503,7 +2430,7 @@ SHIM
   step_out="$(only_shims sin-simulacion-x 2>&1; echo "rc=$?")"
   check "self-test guard: a mutator without a shim refuses the installing arms" \
     'case "$step_out" in *"«sin-simulacion-x» would reach the real host"*"rc=1") ;; *) false;; esac'
-  rm -f "$tshim"/{apt-get,usermod,systemctl,dpkg,sysctl,curl,git,python3,ca-certificates,docker,docker-ce-cli,containerd.io,docker-buildx-plugin,docker-compose-plugin,signify,ogr2ogr}
+  rm -f "$tshim"/{apt-get,usermod,systemctl,dpkg,sysctl,curl,python3,ca-certificates,docker,docker-ce-cli,containerd.io,signify,ogr2ogr}
 
   # descargar in a checkout: the checkout is the bundle; a verified one is linked as the command.
   # The bundle carries no apps, so there is nothing vendored to verify — the arms prove the new
@@ -2539,64 +2466,18 @@ SHIM
   mv "$tmp/apps.py" "$ROOT/scripts/apps.py"
   rm -rf "$ROOT/provisioning"
 
-  # the two-line bootstrap: this file on its own clones the suite at its tag, links the command and
-  # the install goes on from the clone; a re-run finds it done; another version is refused, untouched
-  mkdir -p "$tmp/standalone" "$tmp/remote/scripts" "$tmp/remote/host"
-  : > "$tmp/remote/scripts/provisionador.py"; : > "$tmp/remote/host/aps-conecta"
-  cp "$ROOT/scripts/apps.py" "$tmp/remote/scripts/apps.py"; cp "$ROOT/apps.json" "$tmp/remote/apps.json"
-  git -C "$tmp/remote" init -q && git -C "$tmp/remote" add -A \
-    && git -C "$tmp/remote" -c user.email=self@t -c user.name=self commit -q -m uno && git -C "$tmp/remote" tag v1.0.0 \
-    && git -C "$tmp/remote" -c user.email=self@t -c user.name=self commit -q --allow-empty -m dos && git -C "$tmp/remote" tag v1.1.0
-  bootstrap() {  # TAG — step_descargar as the downloaded file runs it: no checkout around it
-    ROOT="$tmp/standalone"; HOST_DIR="$tmp/standalone"; APS_SUITE_TAG="$1"; APS_REPO_URL="file://$tmp/remote"
-    FAIL=0; step_descargar; echo "FAIL=$FAIL ROOT=$ROOT"
-  }
-  rm -f "$BIN_DIR/aps-conecta"   # a pristine server: no command linked yet
-  step_out="$(bootstrap v1.0.0 2>&1)"
-  check "descargar (bootstrap): clones the tag into APS_HOME/instalador, verifies it, writes VERSION, links it, and the install goes on from it" \
-    'case "$step_out" in *"· descargando la suite v1.0.0 en $APS_HOME/instalador"*"✓ Suite v1.0.0 (ninguna aplicación viene dentro del paquete)"*"✓ Comando aps-conecta enlazado"*"FAIL=0 ROOT=$APS_HOME/instalador") ;; *) false;; esac && [ "$(git -C "$APS_HOME/instalador" describe --tags)" = v1.0.0 ] && [ "$(head -1 "$APS_HOME/instalador/VERSION")" = v1.0.0 ] && [ "$(readlink -f "$BIN_DIR/aps-conecta")" = "$APS_HOME/instalador/host/aps-conecta" ]'
-  check "descargar (bootstrap): the clone prints no git advice (English, about detached HEADs) to the operator" \
-    'case "$step_out" in *"git switch"*|*advice*|*"detached HEAD"*) false;; *) true;; esac'
-  check "descargar (bootstrap): the root-owned bundle is a safe git directory system-wide, so the admin reads its tag" \
-    '[ "$(git config --file "$ETC_DIR/gitconfig" --get-all safe.directory)" = "$APS_HOME/instalador" ]'
-  step_out="$(bootstrap v1.0.0 2>&1)"
-  check "descargar (bootstrap): a re-run finds the bundle and the link done and clones nothing" \
-    'case "$step_out" in *"✓ Suite v1.0.0 ya descargada en $APS_HOME/instalador"*"✓ Comando aps-conecta enlazado ($BIN_DIR/aps-conecta)"*"FAIL=0"*) ;; *) false;; esac && case "$step_out" in *descargando*) false;; *) true;; esac && [ "$(git config --file "$ETC_DIR/gitconfig" --get-all safe.directory | wc -l)" -eq 1 ]'
-  step_out="$(bootstrap v1.1.0 2>&1)"
-  check "descargar (bootstrap): an installation of another version is refused and left untouched" \
-    'case "$step_out" in *"✗ ya existe una instalación en $APS_HOME/instalador (versión v1.0.0), distinta de v1.1.0"*"sudo bash $APS_HOME/instalador/host/aps-conecta install"*"FAIL=1"*) ;; *) false;; esac && [ "$(git -C "$APS_HOME/instalador" describe --tags)" = v1.0.0 ]'
-  step_out="$(export ID_U=1000; APS_HOME="$tmp/opt-no-sudo"; bootstrap v1.0.0 2>&1)"
-  check "descargar (bootstrap): without sudo it says so and clones nothing" \
-    'case "$step_out" in *"✗ descargar la suite necesita permisos de administrador"*"FAIL=1"*) ;; *) false;; esac && [ ! -e "$tmp/opt-no-sudo" ]'
-  mkdir -p "$tmp/opt-taken/instalador/restos"
-  step_out="$(APS_HOME="$tmp/opt-taken"; bootstrap v1.0.0 2>&1)"
-  check "descargar (bootstrap): a directory that is not the suite is refused with the move command — never a network hint" \
-    'case "$step_out" in *"✗ $tmp/opt-taken/instalador ya existe y no es una copia de la suite"*"sudo mv $tmp/opt-taken/instalador"*"FAIL=1"*) ;; *) false;; esac && case "$step_out" in *"revise la red"*) false;; *) true;; esac'
-
-  # ── the package era: VERSION answers suite_tag() first; the operator's channel is install.sh's ──
+  # ── the package era: VERSION answers suite_tag() ──
   mkdir -p "$tmp/pkg"; printf 'v9.8.7\n' > "$tmp/pkg/VERSION"
-  check "suite_tag: the package's VERSION file answers first — no git around it" \
+  check "suite_tag: the package's VERSION file answers" \
     '[ "$(ROOT="$tmp/pkg" APS_SUITE_TAG= suite_tag)" = v9.8.7 ]'
-  check "suite_tag: a checkout without VERSION still falls back to git describe" \
-    '[ "$(ROOT="$tmp/repo" APS_SUITE_TAG= suite_tag)" = v9.9.9 ]'
   rm -rf "$tmp/pkg"
-  step_out="$( (unset APS_REPO_URL; ROOT="$tmp/standalone"; HOST_DIR="$tmp/standalone"; APS_SUITE_TAG=v1.2.0; APS_HOME="$tmp/vhome2"; FAIL=0; step_descargar; echo "FAIL=$FAIL") 2>&1)"
-  check "descargar: without the rehearsal channel the package era points at the release installer" \
-    'case "$step_out" in *"✗ la suite v1.2.0 no está en este servidor"*"curl -fsSL https://github.com/APS-Conecta/gestion/releases/download/v1.2.0/apsconecta-v1.2.0-install.sh | sudo bash"*"FAIL=1"*) ;; *) false;; esac'
-  mkdir -p "$tmp/vhome/instalador/host"; printf 'v1.0.0\n' > "$tmp/vhome/instalador/VERSION"
-  step_out="$( (unset APS_REPO_URL; ROOT="$tmp/standalone"; HOST_DIR="$tmp/standalone"; APS_SUITE_TAG=v1.1.0; APS_HOME="$tmp/vhome"; FAIL=0; step_descargar; echo "FAIL=$FAIL") 2>&1)"
-  check "descargar: an installed package of another version is refused by its VERSION alone — no git needed" \
-    'case "$step_out" in *"✗ ya existe una instalación en $tmp/vhome/instalador (versión v1.0.0), distinta de v1.1.0"*"FAIL=1"*) ;; *) false;; esac && [ "$(head -1 "$tmp/vhome/instalador/VERSION")" = v1.0.0 ]'
   mkdir -p "$tmp/other-copy"; : > "$tmp/other-copy/aps-conecta"; ln -sf "$tmp/other-copy/aps-conecta" "$BIN_DIR/aps-conecta"
   step_out="$(FAIL=0; link_command; echo "FAIL=$FAIL")"
   check "descargar: a command already linked to another existing copy is left alone, with the command to switch" \
     'case "$step_out" in *"· $BIN_DIR/aps-conecta ya apunta a $tmp/other-copy/aps-conecta — no se cambia"*"FAIL=0") ;; *) false;; esac && [ "$(readlink -f "$BIN_DIR/aps-conecta")" = "$tmp/other-copy/aps-conecta" ]'
-  mkdir -p "$tmp/solo/host"; cp "$HOST_DIR/aps-conecta" "$tmp/solo/host/aps-conecta"
-  step_out="$(env -u APS_SUITE_TAG bash "$tmp/solo/host/aps-conecta" run-command 2>&1)"
-  check "bootstrap: the file on its own installs its own release — BUNDLE_TAG — with no git around it" \
-    'case "$step_out" in *"ghcr.io/aps-conecta/all-in-one:$BUNDLE_TAG") ;; *) false;; esac'
-  check "bootstrap: BUNDLE_TAG is aps/CHANGELOG's newest release and the tree's VERSION (the release commit sets all three)" \
-    '[ "v$(grep -m1 -oE "^## \[[0-9][^]]*" "$ROOT_BAK/aps/CHANGELOG.md" | cut -c5-)" = "$BUNDLE_TAG" ] && [ "$(head -1 "$ROOT_BAK/VERSION")" = "$BUNDLE_TAG" ]'
+  local bundle_tag; bundle_tag="$(sed -n 's/^BUNDLE_TAG="\([^"]*\)".*/\1/p' "$ROOT_BAK/install.sh")"
+  check "release: install.sh's BUNDLE_TAG is aps/CHANGELOG's newest release and the tree's VERSION (the release commit sets all three)" \
+    '[ -n "$bundle_tag" ] && [ "v$(grep -m1 -oE "^## \[[0-9][^]]*" "$ROOT_BAK/aps/CHANGELOG.md" | cut -c5-)" = "$bundle_tag" ] && [ "$(head -1 "$ROOT_BAK/VERSION")" = "$bundle_tag" ]'
   rm -f "$tshim/id"
 
   # the dispatch as the operator calls it: help is the usage, an unknown word reds, and every
@@ -2650,11 +2531,6 @@ SHIM
   check "docker (R2): a running service the user cannot reach reds with the group command and the re-login" \
     'case "$out" in ✗*"el usuario operador no tiene permiso para usar docker"*"usermod -aG docker operador, y vuelva a iniciar sesión"*) ;; *) false;; esac'
   rm -f "$tshim/systemctl"
-
-  printf '#!/usr/bin/env bash\nexit 1\n' > "$tshim/docker"; chmod +x "$tshim/docker"
-  out="$(check_compose)"
-  check "compose: a broken/absent plugin reds with its fix hint" \
-    'case "$out" in ✗*"compose v2 no está disponible"*) ;; *) false;; esac'
 
   printf '#!/usr/bin/env bash\nif [ "$2" = "sport = :8080" ]; then echo "State Recv-Q"; echo "LISTEN 0 0 *:8080"; fi\nexit 0\n' > "$tshim/ss"; chmod +x "$tshim/ss"
   out="$(port_free 8080 && echo FREE)"
@@ -2935,6 +2811,13 @@ PARES
   out="$( (cmd_preflight) 2>&1)"
   check "preflight (a5): a whole run is Spanish, with no internal id and no English word" \
     '[ -n "$out" ] && ! printf "%s\n" "$out" | grep -qE "$a5_ids" && ! printf "%s\n" "$out" | grep -qiwE "$a5_en" && case "$out" in *"Revisión previa del instalador APS Conecta"*) ;; *) false;; esac'
+  # #181: nothing on the install path runs Compose — a distribution Docker without its plugin passes
+  mv "$tshim/docker" "$tmp/docker-sin-compose"
+  printf '#!/usr/bin/env bash\n[ "$1" = compose ] && exit 1\nexec %q "$@"\n' "$tmp/docker-sin-compose" > "$tshim/docker"; chmod +x "$tshim/docker"
+  out="$( (cmd_preflight) 2>&1)"; rc=$?
+  check "preflight: a working Docker without the Compose plugin is not refused" \
+    '[ "$rc" -eq 0 ] && case "$out" in *"✓ servidor listo"*) ;; *) false;; esac && case "$out" in *ompose*) false;; *) true;; esac'
+  mv "$tmp/docker-sin-compose" "$tshim/docker"
   out="$( (die "prueba") 2>&1)"
   check "errors print the Spanish console's ✗ marker, with no English prefix" \
     '[ "$out" = "✗ prueba" ]'
@@ -3933,8 +3816,8 @@ SHIM
   check "paquete: no readable tag — the honest skip, never a red" \
     '[ "$rc_paq" -eq 0 ] && case "$out_paq" in *"· la versión de la suite aún no se lee en esta copia"*) ;; *) false;; esac'
   out_paq="$(PATH="$tshim:$minpaq" APS_HOME="$ph" check_paquete v9.8.7)"
-  check "paquete: no kept package for the tag (rehearsal channel / freed disk) — the honest skip" \
-    'case "$out_paq" in *"· no hay paquete guardado de la versión v9.8.7 (canal git de ensayo o disco liberado)"*) ;; *) false;; esac'
+  check "paquete: no kept package for the tag (freed disk) — the honest skip" \
+    'case "$out_paq" in *"· no hay paquete guardado de la versión v9.8.7 (disco liberado)"*) ;; *) false;; esac'
   out_paq="$(PATH="$tshim:$minpaq" APS_HOME="$ph" check_paquete)"
   check "paquete: signify not installed yet — the honest skip naming preparar and signify-openbsd (the installer's sha already anchored the bytes)" \
     'case "$out_paq" in *"· signify no está instalado"*"sudo aps-conecta preparar» instala signify-openbsd"*) ;; *) false;; esac'
