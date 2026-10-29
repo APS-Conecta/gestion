@@ -186,16 +186,15 @@ the suite).
 
 Without `--tag` the run resolves `latest` by redirect — no token, no API call. The script runs
 the whole acceptance: the real one-liner from the release URL, the silent install with the
-three optional apps chosen, and the ticket's six criteria, each a ✓/✗ line with its evidence
+three optional apps chosen, and the ticket's five criteria, each a ✓/✗ line with its evidence
 path (`/tmp/vm-acceptance.*`): the verified bootstrap, «aps-conecta estado», the suite's answer
 through the installer's CA (and its refusal without it), a planilla user over OCS, every
 default app installed from its channel (own/fork from their releases at the locked tag, store
 apps enabled) with the functional opens (notify_push, the office connector), each chosen optional
-installed and recorded, buscador's PDF (or the manifest row it still lacks — #149), and
-«actualizar --revisar» writing nothing. `--solo-chequeos` re-runs the checks on an installed VM;
-`--sin-datos` spares a small VM the national masters; `--sin-respaldo` drives the wizard without
-the daily backup — criterion 6 will red, because actualizar refuses without a configured backup,
-by design.
+installed and recorded, and «actualizar --revisar» writing nothing. `--solo-chequeos` re-runs the
+checks on an installed VM; `--sin-datos` spares a small VM the national masters; `--sin-respaldo`
+drives the wizard without the daily backup — criterion 5 will red, because actualizar refuses
+without a configured backup, by design.
 
 A red is named, never waved through: the script exits non-zero with the failing criterion and
 the command that diagnoses it. The self-test arm (`--self-test`, wired into `scripts/test.sh`)

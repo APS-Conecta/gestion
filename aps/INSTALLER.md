@@ -263,7 +263,7 @@ its lock row dropped), moves the lock only when everything succeeded, and revali
 what would move before moving anything. On any failure the lock is unchanged, the failing
 application is named, and the restore command (the wizard's «Restaurar la copia de seguridad
 seleccionada») is printed. A Nextcloud major bump is refused while a default application has no
-compatible release; Buscador Documental is pinned to the suite release and never moves here.
+compatible release.
 
 ## 11. Backups
 

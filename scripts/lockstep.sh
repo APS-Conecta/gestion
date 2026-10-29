@@ -7,8 +7,8 @@
 #
 # THE LIST IS needs. The manifest job already lists every build in its needs array (outputs
 # resolve only for direct dependencies — B-014), and the workflow hands this script the whole
-# needs context as one JSON document, so the assert walks THAT one list: a new build (#45's
-# buscador) is one job that exports sha plus one needs entry — no clause, no variable here.
+# needs context as one JSON document, so the assert walks THAT one list: a new build is one
+# job that exports sha plus one needs entry — no clause, no variable here.
 # The contract a build job owes: an id starting with build- and an outputs.sha naming the
 # commit it checked out.
 #
@@ -79,8 +79,8 @@ selftest() { # jq over fixture needs documents — the manifest job's real shape
   four="$(builds_doc "$base" "build-aio-apache:$s1" "build-aio-nextcloud:$s1" "build-aio-postgresql:$s1" "build-all-in-one:$s1")"
   four_diff="$(builds_doc "$base" "build-aio-apache:$s1" "build-aio-nextcloud:$s2" "build-aio-postgresql:$s1" "build-all-in-one:$s1")"
   four_empty="$(builds_doc "$base" "build-aio-apache:" "build-aio-nextcloud:$s1" "build-aio-postgresql:$s1" "build-all-in-one:$s1")"
-  five="$(builds_doc "$four" "build-buscador:$s1")"   # #45's shape: one more needs entry, nothing else
-  five_diff="$(builds_doc "$four" "build-buscador:$s2")"
+  five="$(builds_doc "$four" "build-aio-eurooffice:$s1")"   # a fifth build: one more needs entry, nothing else
+  five_diff="$(builds_doc "$four" "build-aio-eurooffice:$s2")"
   none="$base"
 
   pass()  { n=$((n+1)); printf '  ok:   %s\n' "$1"; }
@@ -109,9 +109,9 @@ selftest() { # jq over fixture needs documents — the manifest job's real shape
   case_run "$none" main
   assert_rc 1 "no build in the list: red (B-014)"
   assert_line "$(fail_msg 0 main)" "the lost list reds with the one message"
-  # #45's shape — one more needs entry IS the whole change: five builds, no clause anywhere
+  # a fifth build — one more needs entry IS the whole change: five builds, no clause anywhere
   case_run "$five" v0.5.0
-  assert_rc 0 "five builds (#45's shape), one tree: green, list-driven"
+  assert_rc 0 "five builds, one tree: green, list-driven"
   assert_count 5 "built from: " "five builds: each build's commit printed"
   assert_line "one tree: $s1 across 5 builds" "five builds: the one tree named"
   case_run "$five_diff" v0.5.0

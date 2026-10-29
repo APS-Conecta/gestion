@@ -29,17 +29,16 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 - **The #54 acceptance, as one command on a scratch Ubuntu 24.04 VM (`scripts/vm-acceptance.sh`).**
   The real `curl | sudo bash` from a real release URL with no token (`latest` resolves by
-  redirect), the silent install with the three optional apps chosen, and the ticket's six
+  redirect), the silent install with the three optional apps chosen, and the ticket's
   criteria as ✓/✗ lines with evidence: the verified bootstrap, `aps-conecta estado`, the
   suite's answer through the installer's CA (and its refusal without it), a planilla user over
   OCS, every default app installed from its channel (own/fork from their releases at the
   locked tag — tarball, hash, no `signature.json` — store apps enabled) plus the functional
   opens (notify_push's self-test, the office connector), each chosen optional installed and named
-  in the wizard's options record, buscador's PDF (or the manifest row it still lacks, naming
-  #149), and `actualizar --revisar` printing the plan while writing nothing. `--dominio` covers
-  the domain posture (public 443 + DNS, ACME as upstream); by IP any VM qualifies. Hermetic
-  self-test (`--self-test`, wired into `scripts/test.sh`) pins the classification with PATH shims;
-  the ritual itself is aps/RELEASING.md §7.
+  in the wizard's options record, and `actualizar --revisar` printing the plan while writing
+  nothing. `--dominio` covers the domain posture (public 443 + DNS, ACME as upstream); by IP any
+  VM qualifies. Hermetic self-test (`--self-test`, wired into `scripts/test.sh`) pins the
+  classification with PATH shims; the ritual itself is aps/RELEASING.md §7.
 
 ### Removed
 
@@ -128,7 +127,7 @@ image digests live there and are deliberately not copied here — one fact, one 
   lock (a new backup archive, the lock moved, the instance running what it names, revalidate
   green, the store closed), and a bad signature through a local tamper proxy — one tampered
   `SHA256SUMS.minisig`, everything else relayed to the real GitHub — refusing before anything
-  moves. Buscador stays pinned to the suite release and never moves here.
+  moves.
 
 - **Estadística as an optional app (#40, ADR-0017).** The second optional row: its manifest
   entry flips to `optional: "off"` + `release: true` and it arrives from its own signed

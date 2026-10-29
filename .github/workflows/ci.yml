@@ -16,6 +16,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   # The PR-title gate S2a lost (aps-common#10): Conventional Commits with the instalador
   # scope, in English — the org's language doctrine (#27) says commits AND PR titles are
@@ -101,9 +104,7 @@ jobs:
   # each fixed ad-hoc because nothing stood beneath the fix. The substrate is the PR merge
   # checkout itself — no replay, no worktree (post-fork the checkout is the shipped tree):
   # Baseline (green), Arm A (revert a 060 sentinel from the gate's own live table), Arm B
-  # (re-inject an upstream registry ref into containers.json), Arm C (drop the worker's
-  # CONNECT grant from aps-roles.sh — row 260's script-content arm, #73: bytes exist,
-  # behaviour gone, exactly the vacuous class this job exists to catch), Arm D (orphan one
+  # (re-inject an upstream registry ref into containers.json), Arm D (orphan one
   # spec link name — row 190's subject, #131: one occurrence reverted, row 170 stays green),
   # Arm E (flip a token value in the wizard's generated block — row 270's subject, #49: the
   # block drifts from the ONE token file while every per-surface grep stays green), Arm F
@@ -152,22 +153,6 @@ jobs:
           fi
           echo "ARM B green: the re-injected registry ref reds the gate"
           sed -i 's#ghcr.io/nextcloud-releases/#ghcr.io/aps-conecta/#g' "$json"
-      - name: Arm C — drop the worker's CONNECT grant from aps-roles.sh, expect the gate to red
-        run: |
-          # row 260 reads the buscador script's own bytes (#73); this arm proves that arm can
-          # red — the grant line deleted is the class the row's old COPY-line check could
-          # never see (bytes present, behaviour gone)
-          f=Containers/postgresql/aps-roles.sh
-          grant='GRANT CONNECT ON DATABASE :"db" TO bd_worker;'
-          grep -qF "$grant" "$f" \
-            || { echo "ARM C target drifted — the CONNECT grant is not in aps-roles.sh; re-point the arm" >&2; exit 1; }
-          sed -i "s#${grant}#GRANT CONNECT ON DATABASE :\"db\" TO nobody;#" "$f"
-          if bash scripts/brand-gate.sh .; then
-            echo "ARM C FAILED: dropping the worker's CONNECT grant did NOT red the brand gate — row 260's script-content arm is vacuous" >&2
-            exit 1
-          fi
-          echo "ARM C green: the dropped CONNECT grant reds the gate"
-          sed -i "s#GRANT CONNECT ON DATABASE :\"db\" TO nobody;#${grant}#" "$f"
       - name: Arm D — orphan one spec link name, expect the gate to red
         run: |
           # row 190's subject is #131's exact shape: the reskin renamed the containers-page
@@ -206,13 +191,13 @@ jobs:
       - name: Arm F — re-insert an entrypoint enable of a policy app, expect the gate to red
         run: |
           # row 280 reads its ids from provisioning/app-policy.sh: an entrypoint line enabling
-          # support (a POLICY_ADMIN_ONLY app) after the one-click end marker must red it
+          # support (a POLICY_ADMIN_ONLY app) on every boot, before the log setup, must red it
           f=Containers/nextcloud/entrypoint.sh
-          grep -qx '# AIO one-click settings end # Do not remove or change this line!' "$f" \
-            || { echo "ARM F target drifted — the one-click end marker is not in $f; re-point the arm" >&2; exit 1; }
+          grep -qx '# Adjusting log files to be stored on a volume' "$f" \
+            || { echo "ARM F target drifted — the log setup's comment is not in $f; re-point the arm" >&2; exit 1; }
           ( . provisioning/app-policy.sh && case " $POLICY_ADMIN_ONLY " in *" support "*) ;; *) exit 1 ;; esac ) \
             || { echo "ARM F target drifted — support is not in POLICY_ADMIN_ONLY; re-point the arm" >&2; exit 1; }
-          sed -i '/^# AIO one-click settings end/a php /var/www/html/occ app:enable support' "$f"
+          sed -i '/^# Adjusting log files to be stored on a volume$/i php /var/www/html/occ app:enable support' "$f"
           if bash scripts/brand-gate.sh .; then
             echo "ARM F FAILED: an entrypoint enable of support did NOT red the brand gate — row 280 is vacuous" >&2
             exit 1
