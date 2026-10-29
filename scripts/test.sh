@@ -1329,6 +1329,57 @@ if out.returncode != 0:
 rows = out.stdout.split()
 if rows != ["noticias|wall", "vida-cesfam|", "documentos|wall"]:
     print("SITE_WELCOME default is not the three declared rows: " + repr(rows)); sys.exit(1)'
+# The seed's array contract (#195): a PSR or SAPU has no sectors and no programs, and the site file
+# the writer emits for it must seed — empty is legal, unset is not. The real seed.sh runs from a
+# scratch root with env.sh, lib.sh and the phases stubbed, over write_site's own file, that file
+# with SITE_FOLDERS emptied, and that file with each array deleted.
+seed_array_contract_cases() {
+  local tmp out rc name want
+  tmp="$(mktemp -d)"
+  mkdir -p "$tmp/scripts" "$tmp/provisioning/phases"
+  cp provisioning/seed.sh "$tmp/provisioning/"
+  : > "$tmp/scripts/env.sh"
+  echo 'require_site() { :; }; require_real_secrets() { :; }; nc_container() { :; }; require_installed() { :; }' \
+    > "$tmp/provisioning/lib.sh"
+  # shellcheck disable=SC2016  # expanded by the seed, not here
+  printf '%s\n' 'echo "teams=${#SITE_TEAMS[@]}"' 'echo "folders=${#SITE_FOLDERS[@]}"' > "$tmp/provisioning/phases/20-probe.sh"
+  python3 - "$tmp" <<'PY' >/dev/null || { rm -rf "$tmp"; return 1; }
+import csv, glob, os, re, sys
+sys.path.insert(0, "scripts")
+import deis
+tmp = sys.argv[1]
+row = next(csv.DictReader(open(sorted(glob.glob("sites/establecimientos-deis-*.csv"))[-1], encoding="utf-8")))
+deis.HERE = os.path.join(tmp, "scripts")
+deis.write_site(row, "gate", "psr", sectors=[], programs=[])
+text = open(os.path.join(tmp, "sites", "psr", "site.sh"), encoding="utf-8").read()
+def block(name):
+    return re.compile(rf"(?ms)^{name}=\(\n.*?^\)\n")
+for name, body in (("vacio", block("SITE_FOLDERS").sub("SITE_FOLDERS=()\n", text)),
+                   ("sin-SITE_TEAMS", block("SITE_TEAMS").sub("", text)),
+                   ("sin-SITE_FOLDERS", block("SITE_FOLDERS").sub("", text))):
+    if body == text:
+        sys.exit(name + ": the site file did not change — this arm would measure nothing")
+    os.makedirs(os.path.join(tmp, "sites", name))
+    open(os.path.join(tmp, "sites", name, "site.sh"), "w", encoding="utf-8").write(body)
+PY
+  for name in psr vacio sin-SITE_TEAMS sin-SITE_FOLDERS; do
+    out="$(SITE="$name" bash "$tmp/provisioning/seed.sh" 2>&1)"; rc=$?
+    case "$name" in
+      psr) want="teams=0" ;;
+      vacio) want="folders=0" ;;
+      *) want="FATAL: sites/$name/site.sh must set ${name#sin-} (empty is legal, unset is not)" ;;
+    esac
+    if [ "${name#sin-}" = "$name" ]; then
+      [ "$rc" = 0 ] && printf '%s\n' "$out" | grep -qxF "$want" \
+        || { echo "seed: site $name must seed ($want), got rc=$rc: $out" >&2; rm -rf "$tmp"; return 1; }
+    else
+      [ "$rc" != 0 ] && printf '%s\n' "$out" | grep -qxF "$want" && ! printf '%s\n' "$out" | grep -q '^teams=' \
+        || { echo "seed: site $name must be refused ($want), got rc=$rc: $out" >&2; rm -rf "$tmp"; return 1; }
+    fi
+  done
+  rm -rf "$tmp"
+}
+check seed_array_contract_cases
 # --- gate: sites/ ships the register and NOTHING else ------------------------------------
 # The register CSVs are tracked under sites/ beside generated site trees that .gitignore keeps
 # out by DIRECTORY — which stops nothing from `git add -f sites/x/site.sh` landing a real site
