@@ -625,20 +625,6 @@ readonly class DockerActionManager {
         }
     }
 
-    private function isContainerUpdateAvailable(string $id): string {
-        $container = $this->containerDefinitionFetcher->GetContainerById($id);
-
-        $updateAvailable = "";
-        if ($container->GetUpdateState() === VersionState::Different) {
-            $updateAvailable = '1';
-        }
-        foreach ($container->dependsOn as $dependency) {
-            $updateAvailable .= $this->isContainerUpdateAvailable($dependency);
-        }
-        return $updateAvailable;
-    }
-
-
     private function getBackupVolumes(string $id): string {
         $container = $this->containerDefinitionFetcher->GetContainerById($id);
 

@@ -677,11 +677,10 @@ row 160 "the page offers only what the suite ships — no Hub major-version choi
 post_start_page() {  # 170: after start the page says only true, APS things (R27): the suite's
   # update path instead of the no-channel alarm (a pinned suite tag IS the design), «Suite en
   # marcha» naming what the web installer does next instead of the Paso-1 and territorio cards,
-  # no docker prune button (the route stays — zero PHP), and the suite's names on the
+  # no host-wide cleanup control, and the suite's names on the
   # credentials, the open button, the container list and the page's prose — with the translated
-  # suite asserting the bytes it clicks. «Nextcloud» stays only where the page hides it: the
-  # Hub-upgrade block (160 empties its switch), the HaRP option and the JS alert behind it (160
-  # hides it while off).
+  # suite asserting the bytes it clicks. «Nextcloud» stays in the HaRP option and the JS
+  # alert behind it (160 hides it while off).
   local c="$TREE/php/templates/containers.twig" j="$TREE/php/containers.json" s="$TREE/php/tests/tests" fail=0 want
   s3_files "$c" "$j" "$s/initial-setup.spec.js" "$s/restore-instance.spec.js" || return 1
   while IFS= read -r want; do
