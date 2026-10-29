@@ -322,10 +322,6 @@ jobs:
               --sitio "$RUNNER_TEMP/site.sh" --planilla "$RUNNER_TEMP/usuarios.csv" \
               --respaldo "$RUNNER_TEMP/respaldos" \
             < /dev/null | tee "$RUNNER_TEMP/install.out"
-      # #44 on a whole install, before the smoke below (#57): the database runs the suite tag's own image,
-      # and on a tag that carries buscador's database it is ready for buscador
-      - name: The database is ready for buscador, on the suite tag's own image
-        run: bash /opt/aps-conecta/instalador/scripts/cleanboot-db.sh "$SUITE_TAG"
       # a9 on real systemd: the silent install installed its unit and enabled the weekly timer, on
       # Santiago time; the retired monthly map timer is not there, enabled or not (a fresh install
       # never had one)
@@ -1076,9 +1072,6 @@ jobs:
       - name: Hand the checkout back to the runner
         if: always()
         run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-      # #44 on the suite this job started itself
-      - name: The database is ready for buscador, on the suite tag's own image
-        run: bash /opt/aps-conecta/instalador/scripts/cleanboot-db.sh "$SUITE_TAG"
       # a19: https://<ip>/ answers with the installer's certificate — trusted through its CA, refused
       # without it (curl 60: the peer's certificate is not trusted) — the install ends naming the CA,
       # and a planilla user logs in. The CA is copied out as the operator would (its directory is

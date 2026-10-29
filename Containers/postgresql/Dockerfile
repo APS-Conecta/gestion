@@ -3,28 +3,12 @@
 FROM postgres:18.6-alpine
 
 ENV PGDATA=/var/lib/postgresql/data
-ENV PGVECTOR_VERSION=0.8.7
-ENV PGVECTOR_SHA256=cac0b10c360f05b2d521200105ba3697e773d4cd3731f5a915a7e37ebe0bea85
 
 COPY --chmod=775 start.sh /start.sh
 COPY --chmod=775 healthcheck.sh /healthcheck.sh
 COPY --chmod=775 init-user-db.sh /docker-entrypoint-initdb.d/init-user-db.sh
-COPY --chmod=775 aps-roles.sh /aps-roles.sh
 
 SHELL ["/bin/ash", "-o", "pipefail", "-c"]
-# pgvector for Buscador Documental, from its release tag, checked against the pinned hash.
-# OPTFLAGS="" keeps the build portable across x86-64 CPUs; with_llvm=no skips the JIT bitcode.
-RUN set -ex; \
-    apk add --no-cache --virtual .pgvector-build build-base; \
-    wget -q -O /tmp/pgvector.tar.gz "https://github.com/pgvector/pgvector/archive/refs/tags/v$PGVECTOR_VERSION.tar.gz"; \
-    echo "$PGVECTOR_SHA256  /tmp/pgvector.tar.gz" | sha256sum -c -; \
-    mkdir /tmp/pgvector; \
-    tar -xzf /tmp/pgvector.tar.gz -C /tmp/pgvector --strip-components=1; \
-    make -C /tmp/pgvector OPTFLAGS="" with_llvm=no; \
-    make -C /tmp/pgvector OPTFLAGS="" with_llvm=no install; \
-    rm -rf /tmp/pgvector /tmp/pgvector.tar.gz; \
-    apk del --no-cache .pgvector-build
-
 RUN set -ex; \
     apk upgrade --no-cache -a; \
     apk add --no-cache \
