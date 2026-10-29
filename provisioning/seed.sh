@@ -32,12 +32,12 @@ export SEED_CTX=1
 declare -p SITE_ROLES >/dev/null 2>&1 || SITE_ROLES=()
 # org L5-03, the array half: a site file edited halfway leaves an array unset, and a phase
 # looping over it would run zero iterations and log a checkmark. The seed contract refuses
-# that HERE, once, for every array phase: empty is legal (a clinic with no local roles),
-# unset is not.
-: "${SITE_FOLDERS:?sites/$SITE/site.sh must set SITE_FOLDERS (empty is legal, unset is not)}"
-: "${SITE_TEAMS:?sites/$SITE/site.sh must set SITE_TEAMS (empty is legal, unset is not)}"
-# Existence, not index 0: `${arr:?}` reads `${arr[0]}` and refuses a declared-but-EMPTY array — the
-# shape the SITE_FOLDERS/SITE_TEAMS lines above still carry (pre-existing; out of this change's files).
+# that HERE, once, for every array phase: empty is legal (a PSR or SAPU has no sectors and no
+# programs), unset is not. Existence, not index 0: `${arr:?}` reads `${arr[0]}` and would refuse
+# a declared-but-EMPTY array.
+for arr in SITE_FOLDERS SITE_TEAMS; do
+  declare -p "$arr" >/dev/null 2>&1 || { echo "FATAL: sites/$SITE/site.sh must set $arr (empty is legal, unset is not)" >&2; exit 1; }
+done
 declare -p SITE_WELCOME >/dev/null 2>&1 || { echo "FATAL: sites/$SITE/site.sh must set SITE_WELCOME (empty is legal, unset is not) — a site file written before 2026-09-27 needs the block by hand; see https://aps-conecta.github.io/documentation/desarrollo/intravox.html" >&2; exit 1; }
 
 # Which instalador this is — suite_tag's discipline (host/aps-conecta:958): the package's VERSION

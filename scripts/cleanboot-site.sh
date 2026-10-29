@@ -32,8 +32,9 @@ code=${pick%%$'\t'*}
 [ -n "$code" ] || { echo "FATAL: empty register pick" >&2; exit 1; }
 echo "cleanboot: register pick — DEIS $code: ${pick#*$'\t'}"
 # The piped answers are generic by construction — ask() always asks sectors then
-# programs, for every tipo — so they survive the moving pick unchanged.
-printf 'Sector 1\nSector 2\n\nSalud Mental\nInfantil\n\n' | scripts/deis.py "$code" --new "$code"
+# programs, for every tipo — so they survive the moving pick unchanged. One is punctuated: its group,
+# its jefe.* account and that account's sealed row must provision (#195).
+printf "Sector 1\nSector O'Higgins\n\nSalud Mental\nInfantil\n\n" | scripts/deis.py "$code" --new "$code"
 mv "sites/$code/site.sh" "$dir/site.sh" && rmdir "sites/$code"
 # The address (the probe's domain, or the runner's IP), and the establishment-local roles (#103).
 # deis.py writes both empty by design, so the create path would never run anywhere if CI did not
