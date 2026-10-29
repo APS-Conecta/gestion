@@ -3,8 +3,8 @@
 # docker buildx imagetools create — seconds, zero runner disk, the
 # multi-arch manifest list carried byte-for-byte) + 5 real builds (aio-nextcloud, the suite
 # theme it carries and nothing more (#42 — no app rides an image); aio-apache, the web front serving the installer's own certificate
-# that patch 235 slots in; aio-postgresql, pgvector and buscador's roles that patch 260 slots
-# in, tested before its push; aio-eurooffice, the DocumentServer its Dockerfile pins (patch 015);
+# that patch 235 slots in; aio-postgresql, the database, tested before its push; aio-eurooffice,
+# the DocumentServer its Dockerfile pins (patch 015);
 # all-in-one, the mastercontainer reskin that patch 070 slots in).
 # The builds are x86-64 only: the suite's documented server requirement.
 #
@@ -271,7 +271,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=aio-apache
 
   build-aio-postgresql:
-    name: Build aio-postgresql (pgvector and buscador's roles), tested before it ships
+    name: Build aio-postgresql, tested before it ships
     needs: retag   # same gate as the other builds
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -293,7 +293,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       # Built and loaded first, because the base tag is not digest-pinned and the build runs
-      # `apk upgrade`: only the bytes that ship can prove the database is ready for buscador.
+      # `apk upgrade`: only the bytes that ship can prove the database boots and restores.
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: Containers/postgresql   # the Dockerfile copies its scripts from its own directory
@@ -302,7 +302,7 @@ jobs:
           tags: ghcr.io/aps-conecta/aio-postgresql:${{ inputs.suite-tag }}
           cache-from: type=gha,scope=aio-postgresql
           cache-to: type=gha,mode=max,scope=aio-postgresql
-      - name: The image is ready for buscador — clean boot, worker privileges, a second run, restart, dump restore, a pgvector upgrade
+      - name: The image boots, keeps its data across a restart and restores its dump
         run: bash scripts/db-image-test.sh "ghcr.io/aps-conecta/aio-postgresql:${SUITE_TAG}"
         env:
           SUITE_TAG: ${{ inputs.suite-tag }}
@@ -478,7 +478,7 @@ jobs:
       - name: The builds must come from one tree (lockstep for the built set)
         # THE LIST IS needs (#76): toJSON(needs) carries every direct dependency's outputs, and
         # scripts/lockstep.sh walks the build-* entries of the needs array above — one entry per
-        # build, no clause and no variable here (adding #45's buscador is the job plus one needs
+        # build, no clause and no variable here (a new build is the job plus one needs
         # entry, nothing else). It prints each build's commit and reds with the one message when
         # any resolved empty or different — B-014's lesson: never green for the wrong reason.
         run: bash scripts/lockstep.sh

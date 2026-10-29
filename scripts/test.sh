@@ -1418,6 +1418,15 @@ check bash -c '
   case "$out" in "docker run"*) ;; *) echo "run-command printed no docker run string: $out" >&2; exit 1 ;; esac
   ! grep -q "APS_TILES_""DIR" <<<"$out"'
 
+# --- gate (#180): the suite carries no document-search footprint ------------------------------------
+# No tracked file names the document-search app, its two database roles or the database extension
+# it needed. BUGS.md's rows are frozen records and keep their bytes. The tokens are assembled
+# without their literals so this file is not its own hit.
+check bash -c '
+  hits="$(git grep -nIiE "busc""ador|bd_(own""er|work""er)|pgvec""tor|vec""tor extension|extension (if not exists )?vec""tor" -- . \
+          | grep -v "^BUGS\.md:[0-9]*:| A-[0-9]* |" || true)"
+  [ -z "$hits" ] || { printf "document-search footprint survives:\n%s\n" "$hits" >&2; exit 1; }'
+
 # Clean boot resolves its suite tag once, in the «suite-tag» job: the dispatch's suite-tag input, else
 # scripts/aio-testbed.sh's one pin, judged by one regex before docker sees it — the rehearsal's ci-YYYYMMDD-N,
 # a release vX.Y.Z, or the pipeline's rehearsal vX.Y.Z-ci.N — then looked up on ghcr.io. The step is extracted
@@ -1536,53 +1545,6 @@ assert disco[1]["target"] == "/mnt/with space", disco' "$tmp/uso.json" >/dev/nul
 }
 check cleanboot_usage_cases
 
-# Both clean-boot jobs read the installed suite's database with scripts/cleanboot-db.sh (#44 on a whole install).
-# Run here over a stubbed docker: a ready database passes; no tag, the wrong image, vector missing, a buscador
-# role missing or able to log in when it must not, a worker privilege, or no relation read at all each fail;
-# a database image without /aps-roles.sh (a tag older than #44) passes with a notice naming the tag, but only
-# once psql has answered.
-cleanboot_db_cases() {
-  local tag img ext roles priv roles_sh down want out rc
-  local ok_img=ghcr.io/aps-conecta/aio-postgresql:v0.0.0-ci.8
-  while IFS='|' read -r tag img ext roles priv roles_sh down want; do
-    [ "$img" != ok ] || img="$ok_img"
-    out="$(IMG="$img" EXT="$ext" ROLES="$roles" PRIV="$priv" ROLES_SH="$roles_sh" DOWN="$down" bash -c '
-        docker() {
-          case "$1" in
-            inspect) [ -n "$IMG" ] && printf "%s\n" "$IMG" ;;
-            exec) case "$*" in
-                *"test -e /aps-roles.sh"*) [ "$ROLES_SH" = yes ] ;;
-                *pg_extension*) [ "$DOWN" != yes ] && printf "%s\n" "$EXT" ;;
-                *pg_roles*) [ "$DOWN" != yes ] && printf "%s\n" "$ROLES" ;;
-                *has_table_privilege*) [ "$DOWN" != yes ] && printf "%s\n" "$PRIV" ;;
-                *) return 3 ;;
-              esac ;;
-            *) return 3 ;;
-          esac; }
-        export -f docker
-        bash scripts/cleanboot-db.sh "$1"' _ "$tag" 2>&1)"; rc=$?
-    case "$want" in
-      pass)   [ "$rc" -eq 0 ] && ! grep -q '::notice::' <<<"$out" ;;
-      notice) [ "$rc" -eq 0 ] && grep -q "::notice::.*$tag" <<<"$out" ;;
-      fail)   [ "$rc" -ne 0 ] ;;
-    esac || { printf 'cleanboot-db: tag=%s img=%s ext=%s roles=%s priv=%s aps-roles=%s down=%s expected %s, got rc=%s:\n%s\n' \
-                "$tag" "$img" "$ext" "$roles" "$priv" "$roles_sh" "$down" "$want" "$rc" "$out" >&2; return 1; }
-  done <<'CASES'
-v0.0.0-ci.8|ok|plpgsql unaccent vector|bd_owner:false bd_worker:true|0 152|yes|no|pass
-|ok|plpgsql unaccent vector|bd_owner:false bd_worker:true|0 152|yes|no|fail
-v0.0.0-ci.8|ghcr.io/aps-conecta/aio-postgresql:v0.4.0|plpgsql unaccent vector|bd_owner:false bd_worker:true|0 152|yes|no|fail
-v0.0.0-ci.8||plpgsql unaccent vector|bd_owner:false bd_worker:true|0 152|yes|no|fail
-v0.0.0-ci.8|ok|plpgsql unaccent|bd_owner:false bd_worker:true|0 152|yes|no|fail
-v0.0.0-ci.8|ok|plpgsql unaccent vector|bd_owner:false|0 152|yes|no|fail
-v0.0.0-ci.8|ok|plpgsql unaccent vector|bd_owner:true bd_worker:true|0 152|yes|no|fail
-v0.0.0-ci.8|ok|plpgsql unaccent vector|bd_owner:false bd_worker:true|1 152|yes|no|fail
-v0.0.0-ci.8|ok|plpgsql unaccent vector|bd_owner:false bd_worker:true|0 0|yes|no|fail
-v0.0.0-ci.8|ok|plpgsql|||no|no|notice
-v0.0.0-ci.8|ok|plpgsql|||no|yes|fail
-CASES
-}
-check cleanboot_db_cases
-
 
 # --- office-smoke's DS pin: the running DocumentServer is the one the Dockerfile pins (#140) -------
 # The real office-smoke (and the env.sh it sources) runs from a fixture tree whose
@@ -1697,9 +1659,8 @@ fi
 check python3 scripts/brand-tokens.py --self-test
 # vm-acceptance.sh (#54): the ticket's own acceptance, on a scratch Ubuntu 24.04 VM — the
 # self-test pins the classification arms (bootstrap markers, the release five, the store rows,
-# the OCS/status answers, the revisar posture, the absent buscador row) against PATH shims:
-# no root, no docker, no network. The VM run itself is the release ritual's, not CI's
-# (aps/RELEASING.md §7).
+# the OCS/status answers, the revisar posture) against PATH shims: no root, no docker, no
+# network. The VM run itself is the release ritual's, not CI's (aps/RELEASING.md §7).
 check bash scripts/vm-acceptance.sh --self-test
 # wizard-fonts.py (#49): the wizard's font subsets' coverage — needs fontTools, which ci.yml's
 # gate job installs for row 270; a box without it gets the honest skip (the gate row itself
