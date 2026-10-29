@@ -42,7 +42,7 @@ run_tests() {
     
     # Clean up old containers and volumes
     $DOCO --profile $profile down -v --remove-orphans
-    docker container rm --force nextcloud-aio-mastercontainer aps-conecta-{apache,notify-push,nextcloud,redis,database,domaincheck,whiteboard,imaginary,talk,collabora,eurooffice,borgbackup} > /dev/null 2>&1
+    docker container rm --force nextcloud-aio-mastercontainer aps-conecta-{apache,notify-push,nextcloud,redis,database,domaincheck,imaginary,talk,collabora,eurooffice,borgbackup} > /dev/null 2>&1
     docker volume rm nextcloud_aio_{mastercontainer,apache,database,database_dump,nextcloud,nextcloud_data,redis,backup_cache,elasticsearch,eurooffice,eurooffice_data} > /dev/null 2>&1
 
     echo -e "\n 📣  Running playwright tests for ${TESTS_FILE} with SKIP_DOMAIN_VALIDATION=$SKIP_DOMAIN_VALIDATION and profile '$profile'\n"

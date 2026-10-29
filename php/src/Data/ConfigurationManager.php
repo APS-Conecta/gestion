@@ -42,21 +42,9 @@ class ConfigurationManager
         set { $this->set('password', $value); }
     }
 
-    public bool $isDockerSocketProxyEnabled {
-        // Type-cast because old configs could have 1/0 for this key.
-        get => (bool) $this->get('isDockerSocketProxyEnabled', false);
-        set { $this->setDockerSocketProxyEnabled($value); }
-    }
-
     public bool $isHarpEnabled {
         get => $this->get('isHarpEnabled', false);
         set { $this->set('isHarpEnabled', $value); }
-    }
-
-    public bool $isWhiteboardEnabled {
-        // Type-cast because old configs could have 1/0 for this key.
-        get => (bool) $this->get('isWhiteboardEnabled', false);
-        set { $this->set('isWhiteboardEnabled', $value); }
     }
 
     public bool $restoreExcludePreviews {
@@ -416,19 +404,6 @@ class ConfigurationManager
 
     private function has(string $key) : bool {
         return array_key_exists($key, $this->getConfig());
-    }
-
-    /**
-     * The docker socket proxy is deprecated in favor of HaRP. It may stay enabled where it already is, but
-     * must not get enabled anew.
-     */
-    private function setDockerSocketProxyEnabled(bool $value) : void {
-        // Read via get() because accessing the property inside its own set hook does not invoke the get
-        // hook. Type-cast because old configs could have 1/0 for this key.
-        $isEnabled = (bool) $this->get('isDockerSocketProxyEnabled', false);
-        // ANDing only ever moves the value towards false: disabling always works, while enabling is
-        // ignored unless it is already enabled.
-        $this->set('isDockerSocketProxyEnabled', ($isEnabled && $value));
     }
 
     private function unset(string ...$keys) : void {
@@ -1249,7 +1224,6 @@ class ConfigurationManager
             'COLLABORA_DICTIONARIES' => $this->collaboraDictionaries === '' ? 'de_DE en_GB en_US es_ES fr_FR it nl pt_BR pt_PT ru' : $this->collaboraDictionaries,
             'IMAGINARY_ENABLED' => $this->isImaginaryEnabled ? 'yes' : '',
             'FULLTEXTSEARCH_ENABLED' => $this->isFulltextsearchEnabled ? 'yes' : '',
-            'DOCKER_SOCKET_PROXY_ENABLED' => $this->isDockerSocketProxyEnabled ? 'yes' : '',
             'HARP_ENABLED' => $this->isHarpEnabled ? 'yes' : '',
             'NEXTCLOUD_UPLOAD_LIMIT' => $this->nextcloudUploadLimit,
             'NEXTCLOUD_MEMORY_LIMIT' => $this->nextcloudMemoryLimit,
@@ -1269,7 +1243,6 @@ class ConfigurationManager
             'REMOVE_DISABLED_APPS' => $this->nextcloudKeepDisabledApps ? '' : 'yes',
             // Allow to get local ip-address of database container which allows to talk to it even in host mode (the container that requires this needs to be started first then)
             'AIO_DATABASE_HOST' => NetworkHelper::resolveHostname('aps-conecta-database'),
-            'WHITEBOARD_ENABLED' => $this->isWhiteboardEnabled ? 'yes' : '',
             'AIO_VERSION' => $this->getAioVersion(),
             'DESEC_TOKEN' => $this->desecToken,
             default => $this->getRegisteredSecret($placeholder),

@@ -62,23 +62,14 @@ document.addEventListener("DOMContentLoaded", function () {
         checkForOptionContainerChanges();  // Check changes after toggling Talk Recording
     }
 
-    function handleDockerSocketProxyWarning() {
-        if (document.getElementById("docker-socket-proxy").checked) {
-            alert('⚠️ El contenedor docker socket proxy está obsoleto. ¡Utilice HaRP (proxy inverso de alta disponibilidad para ExApps de Nextcloud) en su lugar.');
-            document.getElementById("docker-socket-proxy").checked = false
-        }
-    }
-
     function handleHarpWarning() {
         if (document.getElementById("harp").checked) {
             alert('⚠️ ¡Advertencia! Activar este contenedor conlleva posibles problemas de seguridad, ya que expone el socket de Docker y todos sus privilegios al contenedor HaRP. ¡Actívelo solo si está seguro de lo que hace.');
-            document.getElementById("docker-socket-proxy").checked = false
         }
     }
 
     // Initialize event listeners for specific behaviors
     document.getElementById("talk").addEventListener('change', handleTalkVisibility);
-    document.getElementById("docker-socket-proxy").addEventListener('change', handleDockerSocketProxyWarning);
     if (document.getElementById("harp")) {
         document.getElementById("harp").addEventListener('change', handleHarpWarning);
     }

@@ -108,7 +108,7 @@ jobs:
           [ -z "$DISPATCH_TAG" ] || tag="$DISPATCH_TAG"
           [[ "$tag" =~ ^(ci-[0-9]{8}-[0-9]+|v[0-9]+\.[0-9]+\.[0-9]+(-ci\.[0-9]+)?)$ ]] \
             || { echo "FATAL: «$tag» is not one suite tag — the dispatch's suite-tag, else the pin in scripts/aio-testbed.sh" >&2; exit 1; }
-          # the mastercontainer's tag names all twenty images (%AIO_CHANNEL%): its manifest is the tag's
+          # the mastercontainer's tag names all eighteen images (%AIO_CHANNEL%): its manifest is the tag's
           docker manifest inspect "ghcr.io/aps-conecta/all-in-one:$tag" >/dev/null \
             || { echo "FATAL: suite tag $tag not found or unreachable: ghcr.io/aps-conecta/all-in-one:$tag" >&2; exit 1; }
           echo "suite tag: $tag"

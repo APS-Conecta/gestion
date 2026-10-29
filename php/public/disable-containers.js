@@ -3,12 +3,6 @@ document.addEventListener("DOMContentLoaded", function(event) {
     let clamav = document.getElementById("clamav");
     clamav.disabled = true;
 
-    // Docker socket proxy
-    let dockerSocketProxy = document.getElementById("docker-socket-proxy");
-    if (dockerSocketProxy) {
-        dockerSocketProxy.disabled = true;
-    }
-
     // HaRP
     let harp = document.getElementById("harp");
     if (harp) {
@@ -35,8 +29,4 @@ document.addEventListener("DOMContentLoaded", function(event) {
 
     // Talk-recording
     document.getElementById("talk-recording").disabled = true;
-
-    // Whiteboard
-    let whiteboard = document.getElementById("whiteboard");
-    whiteboard.disabled = true;
 });

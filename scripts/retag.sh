@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# S1's registry mechanics — the 20-image lockstep under ghcr.io/aps-conecta/*, everything the Images
+# S1's registry mechanics — the 18-image lockstep under ghcr.io/aps-conecta/*, everything the Images
 # workflow (.github/workflows/images.yml) rides: the sibling list, the registry-side retag walk, the
 # tag-completeness matrix, the digest manifest, and the generated sed that patch 010 reuses.
 #
-# WHY 20 IMAGES MUST MOVE TOGETHER. The wizard resolves every sibling's tag from the mastercontainer's
+# WHY 18 IMAGES MUST MOVE TOGETHER. The wizard resolves every sibling's tag from the mastercontainer's
 # OWN running image tag: %AIO_CHANNEL% becomes the channel (php/src/Docker/DockerActionManager.php,
 # BuildImageName), which explodes the running image on ':' and takes field 2. The tag the operator
-# runs IS the channel every sibling resolves by — one tag, twenty images, and a missing one is not
+# runs IS the channel every sibling resolves by — one tag, eighteen images, and a missing one is not
 # "one feature down": the wizard's registry-reachability checks (isRegistryReachable) fail the start.
 # That is why the matrix gates the announce, and why a tag is NEVER a raw digest: `image@sha256:...`
 # explodes into a bogus channel and every sibling resolves a tag that cannot exist.
 #
-# WHAT MOVES AND WHAT BUILDS. 15 of the 20 are registry-side retags — `buildx imagetools create`
+# WHAT MOVES AND WHAT BUILDS. 13 of the 18 are registry-side retags — `buildx imagetools create`
 # copies the manifest list at the registry itself (seconds, zero runner disk, the multi-arch entries
 # carried along byte-for-byte); aio-nextcloud (the apps+theme bake, patch 030), aio-apache (the
 # installer's own certificate, patch 235), aio-postgresql (the database, built from this tree and
@@ -20,7 +20,7 @@
 # from build-ref: THE TAG on every release arm, main on manual dispatches (Stage 3, D-3.4).
 #
 # THE SOURCE IS OURS (Stage 2 — the self-referential lockstep; the copy-from-upstream arm retired
-# with the hard fork, D-rev 2026-10-19, D-3.5). The 15 registry-side retags copy from OUR previous
+# with the hard fork, D-rev 2026-10-19, D-3.5). The 13 registry-side retags copy from OUR previous
 # suite tag, only ever: `retag TAG` resolves it (the newest git tag carrying a digest-complete
 # set — git tags ARE the suite-tag list, D4 — falling back to the recorded aps/BASE.lock
 # bootstrap, else FATAL naming the remedy), `--from-tag` pins it for repairs. From the first
@@ -47,7 +47,7 @@
 #   scripts/retag.sh list                         the sibling image names, one per line (parsed, in order)
 #   scripts/retag.sh sed FILE                     apply the org swap in place + verify (patch 010's generator)
 #   scripts/retag.sh retag TAG [--from-tag T] [--force]
-#                                    the 15-image registry-side walk — source OURS, always
+#                                    the 13-image registry-side walk — source OURS, always
 #   scripts/retag.sh matrix TAG [--from-tag T]
 #                                    the gate: all present + the copy keyed to the RESOLVED source
 #   scripts/retag.sh manifest TAG                 the publish record, JSON on stdout (retag_source)
@@ -66,7 +66,7 @@ ORG_FORK="aps-conecta"            # ours — 010's sed and this whole walk swap 
 GHCR="ghcr.io"
 BUILD_IMAGES=(aio-nextcloud aio-apache aio-postgresql aio-eurooffice)  # the siblings that are BUILT, not retagged (patches 030, 235, 260 and 015)
 MASTER_IMAGE="all-in-one"         # the mastercontainer — not in containers.json; the operator's docker run names it
-MIN_SIBLINGS="19"                 # shape-rot alarm (divergence's "expected 27+" precedent): a parse that
+MIN_SIBLINGS="17"                 # shape-rot alarm (divergence's "expected 27+" precedent): a parse that
                                    # silently shrank would green a walk over fewer images than the suite has
 BASE_LOCK="${RETAG_BASE_LOCK:-aps/BASE.lock}"  # the write-once bootstrap record — discovery's fallback (fork-infra on main)
 RESOLVE_DEPTH="${RETAG_RESOLVE_DEPTH:-3}"     # newest tags discovery probes before the lock (B-015)
@@ -460,7 +460,7 @@ selftest() { # the hermetic self-test — the repo's own self-test idiom: a PATH
   #             format, peeled ^{} lines included); every arm runs this script itself as a
   #             subprocess, so each FATAL/exit is caught, not the self-test. Sleep budget: a
   #             failing digest() probe pays digest()'s own one-3s-retry; the arms arrange ~7
-  #             failing probes (~21 s) and deliberately never walk a fresh tag's 20-probe
+  #             failing probes (~21 s) and deliberately never walk a fresh tag's 18-probe
   #             pre-check over an empty set — that path is the ci.6 rehearsal's, not a
   #             self-test's.
   local n=0 FAILED=0 tmp tshim FIX REG CALLS SELF OPATH out rc dg=0
@@ -476,12 +476,12 @@ selftest() { # the hermetic self-test — the repo's own self-test idiom: a PATH
 
   local FORK="$GHCR/$ORG_FORK"
 
-  # the fixture world: 15 retaggable siblings + the 4 built ones = MIN_SIBLINGS (the master
+  # the fixture world: 13 retaggable siblings + the 4 built ones = MIN_SIBLINGS (the master
   # container is not in containers.json, as in the real one); the registry is a fixture tree
   # where $REG/<full-ref> holds the digest line; auto-digests are distinct per seeding.
   python3 - "$FIX/containers.json" <<'PY'
 import json, sys
-sibs = [f"ghcr.io/nextcloud-releases/nextcloud-aio-sib{i:02d}" for i in range(1, 16)]
+sibs = [f"ghcr.io/nextcloud-releases/nextcloud-aio-sib{i:02d}" for i in range(1, 14)]
 sibs += ["ghcr.io/nextcloud-releases/aio-nextcloud", "ghcr.io/nextcloud-releases/aio-apache",
          "ghcr.io/nextcloud-releases/aio-postgresql", "ghcr.io/nextcloud-releases/aio-eurooffice"]
 json.dump({"aio_services_v1": [{"image": s} for s in sibs]}, open(sys.argv[1], "w"), indent=1)
@@ -492,7 +492,7 @@ PY
     else dg=$((dg+1)); printf 'sha256:%064d\n' "$dg" > "$REG/$1"; fi
   }
   local i
-  for i in $(seq -w 1 15); do
+  for i in $(seq -w 1 13); do
     seed "$FORK/nextcloud-aio-sib$i:v0.4.0"
     seed "$FORK/nextcloud-aio-sib$i:v0.5.0"   # DISTINCT digests: presence is all the
   done                                          # immutability arm needs; the forced walk re-copies
@@ -634,9 +634,9 @@ DSHIM
     'grep -qx "RETAG_SOURCE_RESOLVED=ours:v0.4.0" "$tmp/walk.txt"'
   check "resolution: incomplete candidates are said and skipped" \
     'grep -q "v0.9.9.*carries no complete set" "$tmp/walk.txt" && grep -q "v0.8.8.*carries no complete set" "$tmp/walk.txt"'
-  check "walk: 15 copies, every source OUR previous set — upstream is never read" \
-    '[ "$(grep -c "^create " "$CALLS")" -eq 15 ] \
-     && [ "$(grep -c " <- $FORK/nextcloud-aio-sib..:v0.4.0$" "$CALLS")" -eq 15 ] \
+  check "walk: 13 copies, every source OUR previous set — upstream is never read" \
+    '[ "$(grep -c "^create " "$CALLS")" -eq 13 ] \
+     && [ "$(grep -c " <- $FORK/nextcloud-aio-sib..:v0.4.0$" "$CALLS")" -eq 13 ] \
      && ! grep -q "nextcloud-releases" "$CALLS"'
   check "walk: the built images and the mastercontainer are never copied, their skip said" \
     '! grep -qE " <- .*(aio-nextcloud|aio-apache|aio-postgresql|aio-eurooffice|all-in-one):" "$CALLS" \
@@ -671,8 +671,8 @@ DSHIM
   printf '%s\n' "$out" > "$tmp/manifest.json"
   check "manifest: green, naming the resolved spec" \
     '[ "$rc" -eq 0 ] && grep -q "\"retag_source\": \"ours:v0.4.0\"" "$tmp/manifest.json"'
-  check "manifest: 20 image digests and built_from recorded" \
-    '[ "$(grep -c "\"sha256:" "$tmp/manifest.json")" -eq 20 ] && grep -q "\"built_from\"" "$tmp/manifest.json"'
+  check "manifest: 18 image digests and built_from recorded" \
+    '[ "$(grep -c "\"sha256:" "$tmp/manifest.json")" -eq 18 ] && grep -q "\"built_from\"" "$tmp/manifest.json"'
   check "manifest: the retired upstream_channel name is gone" \
     '! grep -q upstream_channel "$tmp/manifest.json"'
 
