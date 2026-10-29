@@ -18,7 +18,7 @@
 # the pushed mastercontainer actually PULLS and BOOTS —
 # manifest-inspect never reads a layer byte, so a broken push is invisible to it.
 #
-# THE SOURCE IS OURS, RESOLVED ONCE (Stage 2). The 13 retags copy from ghcr.io/aps-conecta/*:<the
+# THE SOURCE IS OURS, RESOLVED ONCE (Stage 2). The 11 retags copy from ghcr.io/aps-conecta/*:<the
 # previous suite tag>: the retag job's retag.sh resolves the source
 # itself (the newest digest-complete set — git tags ARE the suite-tag list — falling back to the
 # recorded aps/BASE.lock bootstrap, else FATAL). Resolution happens exactly ONCE per run: the walk announces
@@ -77,7 +77,7 @@ on:
         default: main
         type: string
       retag-source:
-        description: "Where the 13 registry-side retags copy from. ours = our previous suite tag (the lockstep default — resolved by retag.sh: the newest digest-complete set, else the recorded aps/BASE.lock bootstrap). ours:<tag> = an explicit pin for repair runs. Reaches bash only via env: (RETAG_SOURCE), never inline in run:."
+        description: "Where the 11 registry-side retags copy from. ours = our previous suite tag (the lockstep default — resolved by retag.sh: the newest digest-complete set, else the recorded aps/BASE.lock bootstrap). ours:<tag> = an explicit pin for repair runs. Reaches bash only via env: (RETAG_SOURCE), never inline in run:."
         required: false
         default: ours
         type: string
@@ -128,7 +128,7 @@ concurrency:
 
 jobs:
   retag:
-    name: Retag the 13 registry-side images
+    name: Retag the 11 registry-side images
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

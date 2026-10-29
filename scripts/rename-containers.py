@@ -6,7 +6,7 @@ rename is committed bytes now, and an upstream merge that re-introduces a nextcl
 in the swept files re-swaps it here (run from the repo root). Fresh installs only: an existing
 instance keeps its nextcloud-aio-* containers and is reinstalled, never migrated.
 
-The names come from the data: every container_name in php/containers.json (17, the floor),
+The names come from the data: every container_name in php/containers.json (15, the floor),
 never from a list typed here. Kept by design, so never in the data swept: the
 mastercontainer (the host CLI's docker run and the self-update name it), the nextcloud-aio network and compose
 project, the nextcloud_aio_* volumes, the nextcloud-aio app id, the -nextcloud-aio borg archive suffix.
@@ -21,7 +21,7 @@ import re
 import sys
 
 OLD, NEW = "nextcloud-aio-", "aps-conecta-"
-MIN_SUITE = 17
+MIN_SUITE = 15
 # the shipped and tested surfaces (#48 removed the helm chart, manual-install and the upstream docs)
 SWEEP = (
     "php/containers.json",
@@ -40,18 +40,6 @@ KEPT = {
 }
 # what matches containers by pattern, not by name: (file, before, after, occurrences)
 PATTERNS = (
-    (
-        "Containers/nextcloud/entrypoint.sh",
-        'grep -q "nextcloud-.*-collabora"',
-        'grep -q "aps-conecta-collabora"',
-        1,
-    ),
-    (
-        "Containers/nextcloud/entrypoint.sh",
-        'grep -q "nextcloud-.*-onlyoffice"',
-        'grep -q "aps-conecta-onlyoffice"',
-        2,
-    ),
     (
         "Containers/nextcloud/entrypoint.sh",
         'grep -q "nextcloud-.*-eurooffice"',

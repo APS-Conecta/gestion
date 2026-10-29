@@ -10,6 +10,24 @@ fail=0
 check() { if "$@" >/dev/null 2>&1; then echo "  ok:   $*"; else echo "  FAIL: $*"; fail=1; fi; }
 
 echo "== static checks (no running stack needed) =="
+# #177: only the suite's office backend may be created, routed or published. These are
+# shipped capability surfaces, not a word ban over historical records or negative tests.
+office_backends_removed() {
+  local status
+  [ ! -e Containers/collabora ] && [ ! -e Containers/onlyoffice ] \
+    && [ ! -e php/cool-seccomp-profile.json ] || return 1
+  if grep -nEi 'collabora|onlyoffice' php/containers.json .github/workflows/images.yml \
+      Containers/nextcloud/entrypoint.sh Containers/nextcloud/run-exec-commands.sh \
+      Containers/apache/Caddyfile; then
+    return 1
+  else
+    status=$?
+    [ "$status" -eq 1 ] || return "$status"
+  fi
+  bash scripts/retag.sh list | grep -qx aio-eurooffice
+}
+check office_backends_removed
+
 # The fork's shell namespace, spelled once for every row that walks it (the sweep below, the
 # dirname gate at #60's row). Unquoted on purpose: the words re-glob where they are used. The
 # comm tripwire a few lines down keeps its own literal copy deliberately — it is the alarm

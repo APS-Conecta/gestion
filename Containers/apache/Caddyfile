@@ -47,30 +47,10 @@
 
     encode
 
-    # Collabora
-    route /browser/* {
-        reverse_proxy {$COLLABORA_HOST}:9980
-    }
-    route /hosting/* {
-        reverse_proxy {$COLLABORA_HOST}:9980
-    }
-    route /cool/* {
-        reverse_proxy {$COLLABORA_HOST}:9980
-    }
-
     # Notify Push
     route /push/* {
         uri strip_prefix /push
         reverse_proxy {$NOTIFY_PUSH_HOST}:7867
-    }
-
-    # Onlyoffice
-    route /onlyoffice/* {
-        uri strip_prefix /onlyoffice
-        reverse_proxy {$ONLYOFFICE_HOST}:80 {
-            header_up X-Forwarded-Host {http.request.hostport}/onlyoffice
-            header_up X-Forwarded-Proto https
-        }
     }
 
     # EuroOffice
@@ -101,7 +81,7 @@
     redir /.well-known/caldav /remote.php/dav/ 301
 }
 
-http://{$APACHE_HOST}.nextcloud-aio:23973 { # For Collabora callback and WOPI requests, see containers.json
+http://{$APACHE_HOST}.nextcloud-aio:23973 { # For internal suite callbacks, see containers.json
     import aps_routes
 }
 

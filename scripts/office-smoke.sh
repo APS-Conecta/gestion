@@ -17,7 +17,7 @@
 # round-trip is the connector's per-install re-certification. The image assert accepts the two
 # namespaces this distribution's lifecycle runs — nextcloud-releases (the probe's stock bring-up,
 # slice 1's harness) and aps-conecta (the suite's channel; the retag preserves the manifest, D12) —
-# and anything else (a stranger's DS, Collabora, OnlyOffice) reds.
+# and anything else (a different DocumentServer image) reds.
 #
 # The white-label rename grep RETIRED here (slice 13's routing), twice over: the renames are
 # COMMITS in the fork's own repo (#36), so a signed release carries them and nothing under the

@@ -56,10 +56,6 @@ class DataConst {
         return self::GetDataDirectory() . '/session_date_file';
     }
 
-    public static function GetCollaboraSeccompProfilePath() : string {
-        return (string)realpath(__DIR__ . '/../../cool-seccomp-profile.json');
-    }
-
     public static function GetContainersDefinitionPath() : string {
         return (string)realpath(__DIR__ . '/../../containers.json');
     }

@@ -159,30 +159,6 @@ class ConfigurationManager
         }
     }
 
-    /**
-     * @throws InvalidSettingConfigurationException
-     */
-    public string $collaboraDictionaries {
-        get => $this->get('collabora_dictionaries', '');
-        set {
-            // This throws an exception if the validation fails.
-            $this->validateCollaboraDictionaries($value);
-            $this->set('collabora_dictionaries', $value);
-        }
-    }
-
-    /**
-     * @throws InvalidSettingConfigurationException
-     */
-    public string $collaboraAdditionalOptions {
-        get => $this->get('collabora_additional_options', '');
-        set {
-            // This throws an exception if the validation fails.
-            $this->validateCollaboraAdditionalOptions($value);
-            $this->set('collabora_additional_options', $value);
-        }
-    }
-
     public string $turnDomain {
         get => $this->get('turn_domain', '');
         set { $this->set('turn_domain', $value); }
@@ -346,6 +322,7 @@ class ConfigurationManager
         set { $this->set('nextcloud_additional_php_extensions', $value); }
     }
 
+    // APS (#177): this inherited setting still gates search; #189 replaces it with a host refusal.
     public bool $collaboraSeccompDisabled {
         get => $this->booleanize($this->getEnvironmentalVariableOrConfig('COLLABORA_SECCOMP_DISABLED', 'collabora_seccomp_disabled', ''));
         set { $this->set('collabora_seccomp_disabled', $value); }
@@ -423,52 +400,13 @@ class ConfigurationManager
 
     private function writeOfficeSuite(OfficeSuite $officeSuite) : void
     {
-        // Onlyoffice is deprecated in favor of Eurooffice. It may stay selected where it already is, but must
-        // not get selected anew.
-        if ($officeSuite === OfficeSuite::Onlyoffice && $this->readOfficeSuite() !== OfficeSuite::Onlyoffice) {
-            return;
-        }
         $this->set('officeSuite', $officeSuite->value);
-        // Remove the deprecated options.
-        $this->unset('isCollaboraEnabled', 'isOnlyofficeEnabled', 'isEuroofficeEnabled');
     }
 
     private function readOfficeSuite() : OfficeSuite
     {
-        if ($this->has('officeSuite')) {
-            $configValue = (string) $this->get('officeSuite', '');
-            return OfficeSuite::tryFrom($configValue) ?? OfficeSuite::None;
-        }
-
-        // Check the three boolean legacy options. Convert to boolean because very old configs could have
-        // `1`/`0` or even `"1"`/`"0"`/`""` as values.
-        if (boolval($this->get('isCollaboraEnabled', false)) === true) {
-            return OfficeSuite::Collabora;
-        }
-        if (boolval($this->get('isOnlyofficeEnabled', false)) === true) {
-            return OfficeSuite::Onlyoffice;
-        }
-        if (boolval($this->get('isEuroofficeEnabled', false)) === true) {
-            return OfficeSuite::Eurooffice;
-        }
-        
-        // All offices disabled.
-        if (
-            $this->has('isCollaboraEnabled') && boolval($this->get('isCollaboraEnabled')) === false
-            && $this->has('isOnlyofficeEnabled') && boolval($this->get('isOnlyofficeEnabled')) === false
-            && (
-                // Eurooffice can be unset, which should be treated as `false`, too, because it means that
-                // the office choice wasn't ever saved after Eurooffice was introduced, but the user had
-                // previously disabled both available options, which means they want no office.
-                !$this->has('isEuroofficeEnabled')
-                || boolval($this->get('isEuroofficeEnabled')) === false
-            )
-        ) {
-            return OfficeSuite::None;
-        }
-        
-        // Default
-        return OfficeSuite::Eurooffice;
+        return OfficeSuite::tryFrom((string) $this->get('officeSuite', OfficeSuite::Eurooffice->value))
+            ?? OfficeSuite::None;
     }
 
     public function getOfficeSuiteString() : string
@@ -907,25 +845,6 @@ class ConfigurationManager
         return trim((string)file_get_contents(DataConst::GetBackupPublicKey()));
     }
 
-    public function getCollaboraSeccompPolicy() : string {
-        $defaultString = '--o:security.seccomp=';
-        if (!$this->collaboraSeccompDisabled) {
-            return $defaultString . 'true';
-        }
-        return $defaultString . 'false';
-    }
-
-    /**
-     * Translates AIO's global log level into the log levels that coolwsd accepts.
-     */
-    public function getCollaboraLogLevel() : string {
-        return match ($this->aioLogLevel) {
-            'warn' => 'warning',
-            'info' => 'notice',
-            default => $this->aioLogLevel,
-        };
-    }
-
     /**
      * @throws InvalidSettingConfigurationException
      */
@@ -1089,46 +1008,6 @@ class ConfigurationManager
         return '';
     }
 
-    /**
-     * @throws InvalidSettingConfigurationException
-     */
-    private function validateCollaboraDictionaries(string $CollaboraDictionaries) : void {
-        if ($CollaboraDictionaries === "") {
-            throw new InvalidSettingConfigurationException("The dictionaries must not be empty!");
-        }
-
-        if (!preg_match("#^[a-zA-Z_ ]+$#", $CollaboraDictionaries)) {
-            throw new InvalidSettingConfigurationException("The entered dictionaries do not seem to be a valid!");
-        }
-    }
-
-    /**
-     * Provide an extra method since the corresponding attribute setter prevents setting an empty value.
-     */
-    public function deleteCollaboraDictionaries() : void {
-        $this->set('collabora_dictionaries', '');
-    }
-
-    /**
-     * @throws InvalidSettingConfigurationException
-     */
-    private function validateCollaboraAdditionalOptions(string $additionalCollaboraOptions) : void {
-        if ($additionalCollaboraOptions === "") {
-            throw new InvalidSettingConfigurationException("The additional options must not be empty!");
-        }
-
-        if (!preg_match("#^--o:#", $additionalCollaboraOptions)) {
-            throw new InvalidSettingConfigurationException("The entered options must start with '--o:'. So the config does not seem to be a valid!");
-        }
-    }
-
-    /**
-     * Provide an extra method since the corresponding attribute setter prevents setting an empty value.
-     */
-    public function deleteAdditionalCollaboraOptions() : void {
-        $this->set('collabora_additional_options', '');
-    }
-
     private function camelize(string $input, string $delimiter = '_') : string {
         if ($input === '') {
             throw new InvalidSettingConfigurationException('input cannot be empty!');
@@ -1212,16 +1091,13 @@ class ConfigurationManager
             'BACKUP_RESTORE_PASSWORD' => $this->borgRestorePassword,
             'CLAMAV_ENABLED' => $this->isClamavEnabled ? 'yes' : '',
             'TALK_RECORDING_ENABLED' => $this->isTalkRecordingEnabled ? 'yes' : '',
-            'ONLYOFFICE_ENABLED' => $this->officeSuite === OfficeSuite::Onlyoffice ? 'yes' : '',
             'EUROOFFICE_ENABLED' => $this->officeSuite === OfficeSuite::Eurooffice ? 'yes' : '',
-            'COLLABORA_ENABLED' => $this->officeSuite === OfficeSuite::Collabora ? 'yes' : '',
             'TALK_ENABLED' => $this->isTalkEnabled ? 'yes' : '',
             // APS (#42): UPDATE_NEXTCLOUD_APPS is gone — AIO's automatic app updates are off
             // at the container (the entrypoint runs no scheduled app:update --all), so the
             // env that armed them is no longer passed either: apps move only when the
             // operator decides.
             'TIMEZONE' => $this->timezone === '' ? 'Etc/UTC' : $this->timezone,
-            'COLLABORA_DICTIONARIES' => $this->collaboraDictionaries === '' ? 'de_DE en_GB en_US es_ES fr_FR it nl pt_BR pt_PT ru' : $this->collaboraDictionaries,
             'IMAGINARY_ENABLED' => $this->isImaginaryEnabled ? 'yes' : '',
             'FULLTEXTSEARCH_ENABLED' => $this->isFulltextsearchEnabled ? 'yes' : '',
             'HARP_ENABLED' => $this->isHarpEnabled ? 'yes' : '',
@@ -1234,8 +1110,6 @@ class ConfigurationManager
             'ADDITIONAL_DIRECTORIES_BACKUP' => $this->getAdditionalBackupDirectoriesString() !== '' ? 'yes' : '',
             'BORGBACKUP_HOST_LOCATION' => $this->borgBackupHostLocation,
             'APACHE_MAX_SIZE' => (string)($this->getApacheMaxSize()),
-            'COLLABORA_SECCOMP_POLICY' => $this->getCollaboraSeccompPolicy(),
-            'COLLABORA_LOG_LEVEL' => $this->getCollaboraLogLevel(),
             'NEXTCLOUD_STARTUP_APPS' => $this->getNextcloudStartupApps(),
             'NEXTCLOUD_ADDITIONAL_APKS' => $this->nextcloudAdditionalApks,
             'NEXTCLOUD_ADDITIONAL_PHP_EXTENSIONS' => $this->nextcloudAdditionalPhpExtensions,

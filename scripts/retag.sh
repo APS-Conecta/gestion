@@ -3,10 +3,10 @@
 # workflow (.github/workflows/images.yml) rides: the sibling list, the registry-side retag walk, the
 # tag-completeness matrix, the digest manifest, and the generated sed that patch 010 reuses.
 #
-# WHY 18 IMAGES MUST MOVE TOGETHER. The wizard resolves every sibling's tag from the mastercontainer's
+# WHY 16 IMAGES MUST MOVE TOGETHER. The wizard resolves every sibling's tag from the mastercontainer's
 # OWN running image tag: %AIO_CHANNEL% becomes the channel (php/src/Docker/DockerActionManager.php,
 # BuildImageName), which explodes the running image on ':' and takes field 2. The tag the operator
-# runs IS the channel every sibling resolves by — one tag, eighteen images, and a missing one is not
+# runs IS the channel every sibling resolves by — one tag, sixteen images, and a missing one is not
 # "one feature down": the wizard's registry-reachability checks (isRegistryReachable) fail the start.
 # That is why the matrix gates the announce, and why a tag is NEVER a raw digest: `image@sha256:...`
 # explodes into a bogus channel and every sibling resolves a tag that cannot exist.
@@ -66,7 +66,7 @@ ORG_FORK="aps-conecta"            # ours — 010's sed and this whole walk swap 
 GHCR="ghcr.io"
 BUILD_IMAGES=(aio-nextcloud aio-apache aio-postgresql aio-eurooffice)  # the siblings that are BUILT, not retagged (patches 030, 235, 260 and 015)
 MASTER_IMAGE="all-in-one"         # the mastercontainer — not in containers.json; the operator's docker run names it
-MIN_SIBLINGS="17"                 # shape-rot alarm (divergence's "expected 27+" precedent): a parse that
+MIN_SIBLINGS="15"                 # shape-rot alarm (divergence's "expected 27+" precedent): a parse that
                                    # silently shrank would green a walk over fewer images than the suite has
 BASE_LOCK="${RETAG_BASE_LOCK:-aps/BASE.lock}"  # the write-once bootstrap record — discovery's fallback (fork-infra on main)
 RESOLVE_DEPTH="${RETAG_RESOLVE_DEPTH:-3}"     # newest tags discovery probes before the lock (B-015)

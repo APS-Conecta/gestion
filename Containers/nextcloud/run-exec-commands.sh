@@ -15,12 +15,6 @@ if [ -n "$NEXTCLOUD_EXEC_COMMANDS" ]; then
     echo "$NEXTCLOUD_EXEC_COMMANDS" >> /tmp/nextcloud-exec-commands
     bash /tmp/nextcloud-exec-commands
     rm /tmp/nextcloud-exec-commands
-else
-    # Collabora must work also outside AIO
-    if [ "$COLLABORA_ENABLED" = yes ]; then
-        echo "Activating Collabora config..."
-        php /var/www/html/occ richdocuments:activate-config
-    fi
 fi
 
 signal_handler() {

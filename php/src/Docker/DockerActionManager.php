@@ -489,24 +489,6 @@ readonly class DockerActionManager {
             //         $mounts[] = ["Type" => "bind", "Source" => $volume->name, "Target" => $volume->mountPoint, "ReadOnly" => !$volume->isWritable, "BindOptions" => [ "Propagation" => "rshared"]];
             //     }
 
-        // Special things for the collabora container which should not be exposed in the containers.json
-        } elseif ($container->identifier === 'aps-conecta-collabora') {
-            if (!$this->configurationManager->collaboraSeccompDisabled) {
-                // Load reference seccomp profile for collabora
-                $seccompProfile = (string)file_get_contents(DataConst::GetCollaboraSeccompProfilePath());
-                $requestBody['HostConfig']['SecurityOpt'] = ["label:disable", "seccomp=$seccompProfile"];
-            }
-
-            // Additional Collabora options
-            if ($this->configurationManager->collaboraAdditionalOptions !== '') {
-                // Split the list of Collabora options, which are stored as a string but must be assigned as an array.
-                // To avoid problems with whitespace or dashes in option arguments we use a regular expression
-                // that splits the string at every position where a whitespace is followed by '--o:'.
-                // The leading whitespace is removed in the split but the following characters are not.
-                // Example: "--o:example_config1='some thing' --o:example_config2=something-else" -> ["--o:example_config1='some thing'", "--o:example_config2=something-else"]
-                $regEx = '/\s+(?=--o:)/';
-                $requestBody['Cmd'] = preg_split($regEx, rtrim($this->configurationManager->collaboraAdditionalOptions));
-            }
         }
 
         if (count($mounts) > 0) {

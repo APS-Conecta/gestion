@@ -11,8 +11,6 @@ namespace AIO\Data;
 
 enum OfficeSuite: string
 {
-    case Collabora  = 'collabora';
-    case Onlyoffice = 'onlyoffice';
     case Eurooffice = 'eurooffice';
     case None       = '';
 }

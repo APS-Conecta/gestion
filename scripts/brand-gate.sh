@@ -120,8 +120,8 @@ TREE="${1:?usage: scripts/brand-gate.sh TREE (the tree to assert, e.g. .)}"
 row 010 "containers.json carries zero upstream registry refs (the generated sed's post-state)" \
   upstream_refs "$TREE/php/containers.json"
 
-row 010 "containers.json carries at least 17 aps-conecta image refs (the floor — the auto-include property grows it, never shrinks it)" \
-  fork_ref_floor "$TREE/php/containers.json" 17
+row 010 "containers.json carries at least 15 aps-conecta image refs (the floor — the auto-include property grows it, never shrinks it)" \
+  fork_ref_floor "$TREE/php/containers.json" 15
 
 row 080 "php/src carries zero upstream registry refs (the 3 string refs swapped: DockerActionManager.php:788, 789, 1111)" \
   upstream_refs "$TREE/php/src"
@@ -135,12 +135,15 @@ office_ids_absent() {  # PATH... — zero office-collabora/office-onlyoffice ids
   [ "$hits" -eq 0 ]
 }
 
-collabora_forms_gone() {  # the dictionaries/additional-options forms are gone from the TEMPLATES (hits print).
-  # Templates-scoped on purpose: index.php:135-136 passes collabora_dictionaries/collabora_additional_options
-  # into the twig context and STAYS byte-identical (zero-PHP rule) — the deleted section was their only consumer.
-  local hits=0
-  grep -rnHE 'collabora_dictionaries|collabora_additional_options' "$TREE/php/templates" && hits=1
-  [ "$hits" -eq 0 ]
+office_settings_removed() {  # removed backend form fields have no controller or template readers
+  local status
+  if grep -rnE 'collabora_dictionaries|collabora_additional_options' \
+      "$TREE/php/templates" "$TREE/php/public/index.php" "$TREE/php/src/Controller/ConfigurationController.php"; then
+    return 1
+  else
+    status=$?
+    [ "$status" -eq 1 ]
+  fi
 }
 
 office_floor() {  # FILE... — the eurooffice surface present in each (patch 050's positive control)
@@ -161,8 +164,8 @@ files_absent() {  # PATH... — none may exist (a deletion post-state; survivors
 row 050 "the wizard carries zero Collabora/OnlyOffice vendor ids — cards, JS refs, CSS selectors gone from templates and public assets" \
   office_ids_absent "$TREE/php/templates" "$TREE/php/public"
 
-row 050 "the Collabora dictionaries/additional-options forms are gone from the templates (the PHP context pass-through at index.php:135-136 stays, zero-PHP rule)" \
-  collabora_forms_gone
+row 050 "only supported office settings reach the wizard templates and controller" \
+  office_settings_removed
 
 row 050 "the eurooffice card is intact — radio id, CSS selector, JS guard all present (the deletion's positive control)" \
   office_floor "$TREE/php/templates/includes/optional-containers.twig" "$TREE/php/public/style.css" "$TREE/php/public/disable-containers.js"
@@ -700,7 +703,7 @@ EOF
   grep -qF "name: 'Abrir APS Conecta Gestión ↗'" "$s/initial-setup.spec.js" || { echo "  initial-setup.spec.js clicks a button the page no longer has" >&2; fail=1; }
   grep -qF "name: 'Abrir APS Conecta Gestión ↗'" "$s/restore-instance.spec.js" || { echo "  restore-instance.spec.js clicks a button the page no longer has" >&2; fail=1; }
   grep -qF "Contraseña inicial de APS Conecta Gestión:" "$s/initial-setup.spec.js" || { echo "  initial-setup.spec.js waits for a label the page no longer has" >&2; fail=1; }
-  for want in 'Servidor de aplicaciones' Talk 'Grabador de Talk' Euro-Office Collabora; do
+  for want in 'Servidor de aplicaciones' Talk 'Grabador de Talk' Euro-Office; do
     grep -qF "\"display_name\": \"$want\"" "$j" || { echo "  containers.json lacks the display name $want" >&2; fail=1; }
   done
   if grep -nE '"display_name": "(Nextcloud|EuroOffice|Nextcloud Talk|Nextcloud Talk Recording|Nextcloud Office)"' "$j"; then
@@ -768,7 +771,7 @@ row 180 "the wizard fits a 360px phone — the viewport declared, the login card
 
 # ── L4 S5: the container names (D9) ──────────────────────────────────────────────────────────
 
-container_names() {  # 240: the suite's 17 containers are aps-conecta-*, and no swept file names one the old
+container_names() {  # 240: the suite's 15 containers are aps-conecta-*, and no swept file names one the old
   # way. The keep-list is the generator's, restated here on purpose: a gate that imported it would agree
   # with any mistake in it.
   local j="$TREE/php/containers.json" fail=0 n left x
@@ -777,7 +780,7 @@ container_names() {  # 240: the suite's 17 containers are aps-conecta-*, and no 
     echo "  containers.json still names a container nextcloud-aio-*" >&2; fail=1
   fi
   n="$(grep -cF '"container_name": "aps-conecta-' "$j")"
-  [ "$n" -ge 17 ] || { echo "  only $n aps-conecta container names in containers.json (floor 17)" >&2; fail=1; }
+  [ "$n" -ge 15 ] || { echo "  only $n aps-conecta container names in containers.json (floor 15)" >&2; fail=1; }
   for x in php/src php/public php/templates php/tests Containers; do
     [ -d "$TREE/$x" ] || { echo "  no such directory: $TREE/$x — the sweep would pass over nothing" >&2; return 1; }
   done
@@ -789,7 +792,7 @@ container_names() {  # 240: the suite's 17 containers are aps-conecta-*, and no 
   [ "$fail" -eq 0 ]
 }
 
-row 240 'the suite containers are named aps-conecta-* — the 17 in containers.json and every reference in php/ and Containers/; only the kept names stay nextcloud-aio-* (the mastercontainer, the test project, the apk virtual package, the npm name)' \
+row 240 'the suite containers are named aps-conecta-* — the 15 in containers.json and every reference in php/ and Containers/; only the kept names stay nextcloud-aio-* (the mastercontainer, the test project, the apk virtual package, the npm name)' \
   container_names
 
 # shellcheck disable=SC2016  # the PHP and JS lines are matched as bytes; $id is their text, not ours
@@ -805,7 +808,7 @@ container_name_patterns() {  # 240: what matches containers by pattern follows t
   if grep -nF 'grep -q "nextcloud-.*-' "$e"; then
     echo "  the entrypoint still detects the suite's hosts by the old pattern" >&2; fail=1
   fi
-  for x in collabora:1 onlyoffice:2 eurooffice:2 talk:1; do
+  for x in eurooffice:2 talk:1; do
     [ "$(grep -cF "grep -q \"aps-conecta-${x%%:*}\"" "$e")" -eq "${x#*:}" ] \
       || { echo "  the entrypoint does not detect aps-conecta-${x%%:*} ${x#*:} time(s)" >&2; fail=1; }
   done
@@ -825,7 +828,7 @@ container_name_patterns() {  # 240: what matches containers by pattern follows t
   [ "$fail" -eq 0 ]
 }
 
-row 240 'what matches containers by pattern follows the new names — the six entrypoint host checks, the two schema patterns, the three log-route guards (the mastercontainer still allowed), both name lists in the test harness' \
+row 240 'what matches containers by pattern follows the new names — the three entrypoint host checks, the two schema patterns, the three log-route guards (the mastercontainer still allowed), both name lists in the test harness' \
   container_name_patterns
 
 # ── L4 S6: the install by IP over HTTPS (R22) ──────────────────────────────────────────────────
@@ -911,7 +914,7 @@ harness_reset_eurooffice() {  # 237: the suite harness's reset removes Euro-Offi
   # (patch 200): a running one survived the reset and locked the next fresh wizard's options (S5).
   local run="$TREE/php/tests/run.sh"
   s3_files "$run" || return 1
-  { grep -F 'docker container rm --force' "$run" | grep -qF ',collabora,eurooffice,borgbackup}' \
+  { grep -F 'docker container rm --force' "$run" | grep -qF ',talk,eurooffice,borgbackup}' \
       && grep -F 'docker volume rm' "$run" | grep -qF ',elasticsearch,eurooffice,eurooffice_data}'; } \
     || { echo "  run.sh's reset does not remove the Euro-Office container and its two volumes" >&2; return 1; }
 }
@@ -922,7 +925,7 @@ row 237 "the suite harness's reset removes the Euro-Office container and its two
 push_internal_url() {  # 238: the push server reaches Nextcloud over apache's internal plain-http listener, not the
   # public URL. By IP (R22) the public URL carries the installer's certificate, which the push container
   # cannot verify (no CA there; overwrite.cli.url is rewritten on every boot); by domain it saves the
-  # hairpin. The listener is the one Collabora's alias already uses (row 235 pins the block).
+  # hairpin. The listener serves internal suite callbacks (row 235 pins the block).
   local j="$TREE/php/containers.json"
   s3_files "$j" || return 1
   case "$(sed -n '/"container_name": "aps-conecta-notify-push"/,/"container_name": /p' "$j" | tr -d ' \n')" in

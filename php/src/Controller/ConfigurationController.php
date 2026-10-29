@@ -94,24 +94,6 @@ readonly class ConfigurationController {
                 $this->configurationManager->isHarpEnabled = isset($request->getParsedBody()['harp']);
             }
 
-            if (isset($request->getParsedBody()['delete_collabora_dictionaries'])) {
-                $this->configurationManager->deleteCollaboraDictionaries();
-            }
-
-            if (isset($request->getParsedBody()['collabora_dictionaries'])) {
-                $collaboraDictionaries = $request->getParsedBody()['collabora_dictionaries'] ?? '';
-                $this->configurationManager->collaboraDictionaries = $collaboraDictionaries;
-            }
-
-            if (isset($request->getParsedBody()['delete_collabora_additional_options'])) {
-                $this->configurationManager->deleteAdditionalCollaboraOptions();
-            }
-
-            if (isset($request->getParsedBody()['collabora_additional_options'])) {
-                $additionalCollaboraOptions = $request->getParsedBody()['collabora_additional_options'] ?? '';
-                $this->configurationManager->collaboraAdditionalOptions = $additionalCollaboraOptions;
-            }
-
             return $response->withStatus(201)->withHeader('Location', '.');
         } catch (InvalidSettingConfigurationException $ex) {
             $response->getBody()->write($ex->getMessage());
