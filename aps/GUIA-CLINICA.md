@@ -82,6 +82,11 @@ El asistente está en español. Lo importante:
 - **Reinstalar desde cero** (una instalación fallida, o una frase del asistente que no se vio):
   `INSTALLER.md` §12. Borra la instancia y todo su contenido.
 
+La consola confirma el resultado final del asistente antes de informar que inició la suite.
+La espera continúa mientras avance la descarga o aparezcan estados nuevos de los contenedores;
+se detiene tras 20 minutos sin avances. Una sesión vencida se recupera una vez. Si se interrumpe
+la conexión, revise el asistente antes de iniciar otra vez: la operación puede continuar.
+
 ## 4. El instalador web: el enlace y el flujo
 
 ```bash

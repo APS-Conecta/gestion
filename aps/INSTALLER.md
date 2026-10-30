@@ -122,6 +122,11 @@ lines. If preflight reds on the domain probe, do
    the suite on its current images. The daily-backup screen lets you choose notifications
    for successful backups; failures are always reported.
 
+La consola confirma el resultado final del asistente antes de informar que inició la suite.
+La espera continúa mientras avance la descarga o aparezcan estados nuevos de los contenedores;
+se detiene tras 20 minutos sin avances. Una sesión vencida se recupera una vez. Si se interrumpe
+la conexión, revise el asistente antes de iniciar otra vez: la operación puede continuar.
+
 ## 5. Provision
 
 ```bash

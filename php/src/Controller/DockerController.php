@@ -196,41 +196,43 @@ readonly class DockerController {
 
     public function StartContainer(Request $request, Response $response, array $args) : Response
     {
-        $uri = $request->getUri();
-        $host = $uri->getHost();
-        $port = $uri->getPort();
-        $path = $request->getParsedBody()['base_path'] ?? '';
-        if ($port === 8000) {
-            error_log('The AIO_URL-port was discovered to be 8000 which is not expected. It is now set to 443.');
-            $port = 443;
-        }
-
-        $this->configurationManager->startTransaction();
-        // set AIO_URL
-        $this->configurationManager->aioUrl = $host . ':' . (string)$port . $path;
-        // set wasStartButtonClicked
-        $this->configurationManager->wasStartButtonClicked = true;
-        $this->configurationManager->commitTransaction();
-        
-        // Do not pull container images in case 'bypass_container_update' is set via url params
-        // Needed for local testing
-        $pullImage = !isset($request->getParsedBody()['bypass_container_update']);
-        if ($pullImage === false) {
-            error_log('WARNING: Not pulling container images. Instead, using local ones.');
-        }
-        
-        // Get streaming response start and closure
         $nonbufResp = $this->startStreamingResponse($response);
         $addToStreamingResponseBody = $this->getAddToStreamingResponseBody($nonbufResp);
-        
-        // Start container
-        $this->startTopContainer($pullImage, $addToStreamingResponseBody);
+        $status = 'ok';
+        $message = '';
+        try {
+            $uri = $request->getUri();
+            $host = $uri->getHost();
+            $port = $uri->getPort();
+            $path = $request->getParsedBody()['base_path'] ?? '';
+            if ($port === 8000) {
+                error_log('The AIO_URL-port was discovered to be 8000 which is not expected. It is now set to 443.');
+                $port = 443;
+            }
+    
+            $this->configurationManager->startTransaction();
+            // set AIO_URL
+            $this->configurationManager->aioUrl = $host . ':' . (string)$port . $path;
+            // set wasStartButtonClicked
+            $this->configurationManager->wasStartButtonClicked = true;
+            $this->configurationManager->commitTransaction();
+            
+            // Do not pull container images in case 'bypass_container_update' is set via url params
+            // Needed for local testing
+            $pullImage = !isset($request->getParsedBody()['bypass_container_update']);
+            if ($pullImage === false) {
+                error_log('WARNING: Not pulling container images. Instead, using local ones.');
+            }
 
-        // Clear apcu cache in order to check if container updates are available
-        // Temporarily disabled as it leads much faster to docker rate limits
-        // apcu_clear_cache();
-
-        // End streaming response
+            $this->startTopContainer($pullImage, $addToStreamingResponseBody);
+        } catch (\Throwable $e) {
+            $status = 'error';
+            $message = preg_replace('#(https?://)[^\s/<>]*@#i', '$1[redacted]@', $e->getMessage()) ?? 'Container start failed';
+            $addToStreamingResponseBody($message);
+            error_log($message);
+        }
+        $result = json_encode(['status' => $status, 'message' => $message], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR);
+        $nonbufResp->getBody()->write("\n<!-- aps-start-result:" . $result . " -->\n");
         $this->finalizeStreamingResponse($nonbufResp);
         return $nonbufResp;
     }
@@ -378,7 +380,8 @@ readonly class DockerController {
         // Create a closure to pass around to the code, which should to the logging (because it e.g. decides
         // if it'll actually pull an image), but which should not need to know anything about the
         // wanted markup or formatting.
-        $addToStreamingResponseBody = function (string $message, ?Container $container = null) use ($nonbufResp) : void {
+        $progressSequence = 0;
+        $addToStreamingResponseBody = function (string $message, ?Container $container = null, bool $progress = false) use ($nonbufResp, &$progressSequence) : void {
             // If the message is a single dot we treat it as a progress indicator and send a specific, empty
             // HTML element, which gets special treatment by the Javascript code.
             if ($message === '.') {
@@ -390,6 +393,9 @@ readonly class DockerController {
                     $text = sprintf("%s: %s", $container->displayName, $text);
                 }
                 $html = sprintf("<div>%s</div>", htmlspecialchars($text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'));
+            }
+            if ($progress) {
+                $html .= "\n<!-- aps-start-progress:" . ++$progressSequence . " -->\n";
             }
             $nonbufResp->getBody()->write($html);
         };

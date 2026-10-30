@@ -1358,6 +1358,7 @@ aio_select_services() {
   read -ra services <<< "$AIO_SET"
   AIO_EXPECTED="${#services[@]}"
 }
+AIO_REAUTHENTICATED=0
 AIO_CSRF=()                                     # the session's CSRF pair, as curl arguments
 # The wizard refuses (403) any request that does not declare Sec-Fetch-Site same-origin or none
 # (php/public/index.php, "Check Sec-Fetch headers"); a browser sends it, curl does not. "none" is
@@ -1371,7 +1372,7 @@ aio_curl() {  # ARGS… — the wizard with the session jar
 aio_count() {  # how many of the included service containers run
   aio_select_services || return 1
   local c n=0 names
-  names="$(docker ps --format '{{.Names}}' 2>/dev/null)"
+  names="$(timeout 15 docker ps --format '{{.Names}}' 2>/dev/null)"
   for c in $AIO_SET; do printf '%s\n' "$names" | grep -qx "$c" && n=$((n + 1)); done
   echo "$n"
 }
@@ -1477,11 +1478,30 @@ aio_motivo() {  # FILE — the wizard's refusal (upstream's English) as one Span
   esac
 }
 
+aio_relogin() {  # One recovery per command; a redirect never authorizes an unbounded retry.
+  if [ "$AIO_REAUTHENTICATED" = 1 ]; then
+    bad "la sesión del asistente volvió a vencer" "cierre otras sesiones del asistente y vuelva a ejecutar"
+    return 1
+  fi
+  AIO_REAUTHENTICATED=1
+  info "la sesión del asistente venció; se vuelve a ingresar una vez"
+  aio_login
+}
+
 aio_post() {  # PATH --data-urlencode K=V… — the wizard's configuration API answers 201 or refuses
   # with its reason: the console gets the code and the reason, the web installer one line (no path)
   local endpoint="$1" code campo motivo; shift
   code="$(aio_curl -o "$AIO_STATE/respuesta" -w '%{http_code}' --max-time 15 "${AIO_CSRF[@]}" "$@" \
     "$AIO_URL$endpoint" 2>/dev/null)"
+  if [ "$code" = 302 ]; then
+    aio_relogin || return 1
+    code="$(aio_curl -o "$AIO_STATE/respuesta" -w '%{http_code}' --max-time 15 "${AIO_CSRF[@]}" "$@" \
+      "$AIO_URL$endpoint" 2>/dev/null)"
+    if [ "$code" = 302 ]; then
+      bad "la sesión del asistente volvió a vencer" "cierre otras sesiones del asistente y vuelva a ejecutar"
+      return 1
+    fi
+  fi
   [ "$code" = 201 ] && return 0
   case "${2%%=*}" in
     domain) campo="la dirección" ;;
@@ -1495,30 +1515,123 @@ aio_post() {  # PATH --data-urlencode K=V… — the wizard's configuration API 
   return 1
 }
 
-aio_start() {  # POST /api/docker/start pulls, creates and starts the whole set INSIDE the request
-  aio_select_services || return 1
-  # (up to 30 min on a slow link): it runs in the background while the console counts containers
-  local f="$AIO_STATE/inicio.code" pid n seen="" code
-  info "iniciando la suite (descarga de imágenes: varios minutos)"
-  # curl itself is the background job (not a subshell around it), so the trap's kill reaches it
-  curl -sk "${AIO_SEC[@]}" -b "$AIO_STATE/cookies" -c "$AIO_STATE/cookies" -o /dev/null -w '%{http_code}' --max-time 1800 \
-    "${AIO_CSRF[@]}" "$AIO_URL/api/docker/start" > "$f" 2>/dev/null &
-  pid=$!
-  trap 'kill "$pid" 2>/dev/null; exit 130' INT TERM
-  while kill -0 "$pid" 2>/dev/null; do
-    n="$(aio_count)"
-    [ "$n" = "$seen" ] || { info "contenedores en marcha: $n de $AIO_EXPECTED"; seen="$n"; }
-    sleep "$AIO_POLL"
+aio_now() { python3 -c 'import time; print(int(time.monotonic()))'; }
+
+declare -A AIO_PROGRESS_SEEN=()
+AIO_PROGRESS_TIME=0
+AIO_PROGRESS_PULL=0
+
+aio_progress_begin() {
+  AIO_PROGRESS_SEEN=()
+  AIO_PROGRESS_PULL=0
+  AIO_PROGRESS_TIME="$(aio_now)"
+}
+
+aio_states() {
+  local inventory service
+  local -a services=()
+  inventory="$(timeout 15 docker ps -a --format '{{.Names}}' 2>/dev/null)" || return 1
+  for service in $AIO_SET; do
+    case $'\n'"$inventory"$'\n' in *$'\n'"$service"$'\n'*) services+=("$service") ;; esac
   done
-  wait "$pid"
-  trap - INT TERM
-  code="$(cat "$f" 2>/dev/null)"
-  case "$code" in
-    200|201|302) ok "Suite iniciada" ;;
-    *) bad "el asistente no pudo iniciar la suite (HTTP ${code:-sin respuesta})" \
-         "revise la red y las imágenes: docker ps -a --filter name=^aps-conecta-"
-       return 1 ;;
-  esac
+  [ "${#services[@]}" -gt 0 ] || return 0
+  timeout 15 docker inspect -f '{{.Name}} {{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${services[@]}" 2>/dev/null
+}
+
+aio_progressing() {  # Optional stream file; repeated states and heartbeats never renew the budget.
+  local now pull name status health key states
+  now="$(aio_now)"
+  if [ -n "${1:-}" ] && [ -f "$1" ]; then
+    pull="$(sed -n 's/^<!-- aps-start-progress:\([0-9][0-9]*\) -->$/\1/p' "$1" | tail -1)"
+    if [ -n "$pull" ] && [ "$pull" -gt "$AIO_PROGRESS_PULL" ]; then
+      AIO_PROGRESS_PULL="$pull"; AIO_PROGRESS_TIME="$now"
+    fi
+  fi
+  states="$(aio_states)"
+  while read -r name status health; do
+    case " $AIO_SET " in *" ${name#/} "*) ;; *) continue ;; esac
+    case "$status" in created|running|paused|restarting|removing|exited|dead) ;; *) continue ;; esac
+    case "$health" in none|starting|healthy|unhealthy) ;; *) continue ;; esac
+    key="$name:$status:$health"
+    if [ -z "${AIO_PROGRESS_SEEN[$key]:-}" ]; then
+      AIO_PROGRESS_SEEN[$key]=1; AIO_PROGRESS_TIME="$now"
+    fi
+  done <<< "$states"
+  [ "$((now - AIO_PROGRESS_TIME))" -lt 1200 ]
+}
+
+aio_start() {  # Optional start flags; install and post-backup restart share one result contract.
+  aio_select_services || return 1
+  local f="$AIO_STATE/inicio.code" body="$AIO_STATE/inicio.html" pid n seen="" code result baseline baseline_known current transport
+  info "iniciando la suite (la operación puede tardar varios minutos)"
+  while :; do
+    ( umask 077 && : > "$f" && : > "$body" )
+    chmod 600 "$f" "$body"
+    baseline_known=0; baseline="$(aio_states)" && baseline_known=1
+    aio_progress_begin
+    # Curl itself is the job: killing it stops the client, while PHP may still finish the operation.
+    curl -sk "${AIO_SEC[@]}" -b "$AIO_STATE/cookies" -c "$AIO_STATE/cookies" -o "$body" -w '%{http_code}' --no-buffer --connect-timeout 15 \
+      "${AIO_CSRF[@]}" "$@" "$AIO_URL/api/docker/start" > "$f" 2>/dev/null &
+    pid=$!
+    trap 'kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; exit 130' INT TERM
+    while kill -0 "$pid" 2>/dev/null; do
+      n="$(aio_count)"
+      [ "$n" = "$seen" ] || { info "contenedores en marcha: $n de $AIO_EXPECTED"; seen="$n"; }
+      if ! aio_progressing "$body"; then
+        kill "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+        trap - INT TERM
+        printf 'El inicio lleva 20 minutos sin avances. Revise el asistente antes de reintentar.\n' > "$AIO_STATE/motivo"
+        bad "el inicio lleva 20 minutos sin avances" "el asistente puede continuar; revíselo antes de reintentar: docker logs nextcloud-aio-mastercontainer"
+        return 1
+      fi
+      sleep "$AIO_POLL"
+    done
+    transport=0; wait "$pid" || transport=$?
+    trap - INT TERM
+    code="$(cat "$f" 2>/dev/null)"
+    if [ "$transport" -ne 0 ]; then
+      printf 'La conexión con el asistente se interrumpió. Revise su estado antes de reintentar.\n' > "$AIO_STATE/motivo"
+      bad "la conexión con el asistente se interrumpió (curl $transport)" "el inicio puede continuar; revise el asistente antes de reintentar: docker logs nextcloud-aio-mastercontainer"
+      return 1
+    fi
+    if [ "$code" = 302 ] && [ -z "$(cat "$body")" ] && [ "$baseline_known" = 1 ] \
+      && current="$(aio_states)" && [ "$current" = "$baseline" ]; then
+      # AuthMiddleware returned before calling the handler; reconcile state before replaying.
+      aio_relogin || return 1
+      continue
+    fi
+    case "$code" in
+      200|201) break ;;
+      *) bad "el asistente no pudo iniciar la suite (HTTP ${code:-sin respuesta})" \
+           "revise el estado en el asistente antes de reintentar: docker ps -a --filter name=^aps-conecta-"
+         printf 'El asistente no confirmó el inicio (HTTP %s). Revise su estado antes de reintentar.\n' "${code:-sin respuesta}" > "$AIO_STATE/motivo"
+         return 1 ;;
+    esac
+  done
+  result="$(python3 - "$body" <<'PYRESULT'
+import json, pathlib, re, sys
+text = pathlib.Path(sys.argv[1]).read_text(errors="replace")
+markers = re.findall(r'<!-- aps-start-result:(.*?) -->', text)
+try:
+    if len(markers) != 1:
+        raise ValueError("missing result")
+    result = json.loads(markers[0])
+    if result["status"] not in ("ok", "error") or not isinstance(result["message"], str):
+        raise ValueError("invalid result")
+except (ValueError, KeyError, TypeError):
+    print("el asistente no entregó un resultado final válido")
+    sys.exit(1)
+if result["status"] == "error":
+    print(" ".join(result["message"].split())[:400] or "el inicio falló sin detalle")
+    sys.exit(1)
+PYRESULT
+)" || {
+    printf 'El asistente no inició la suite: %s.\n' "$result" > "$AIO_STATE/motivo"
+    bad "el asistente no inició la suite: $result" "revise el asistente antes de volver a iniciar; docker logs nextcloud-aio-mastercontainer"
+    return 1
+  }
+  ok "Suite iniciada"
 }
 
 aio_pendientes() {  # the included services not yet ready, as «nombre (estado)»: each one healthy, and apache
@@ -1527,50 +1640,68 @@ aio_pendientes() {  # the included services not yet ready, as «nombre (estado)�
   # start.sh opens its ports, so the probe is that file without the shortcut, run inside the
   # container so it reads apache's own $APACHE_PORT (a clinic's 443 as the testbed's) (A-037)
   local salud c st out=""
-  salud="$(docker inspect -f '{{.Name}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' $AIO_SET 2>/dev/null)"
+  salud="$(timeout 15 docker inspect -f '{{.Name}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' $AIO_SET 2>/dev/null)"
   for c in $AIO_SET; do
     st="$(printf '%s\n' "$salud" | sed -n "s#^/$c ##p")"
     case "$st" in healthy) ;; starting) out="$out, $c (aún arrancando)" ;; unhealthy) out="$out, $c (falla su control de salud)" ;; *) out="$out, $c (sin estado)" ;; esac
   done
-  [[ $out == *aps-conecta-apache* ]] || docker exec aps-conecta-apache sh -c 'nc -z "$NEXTCLOUD_HOST" 9000 && nc -z 127.0.0.1 8000 && nc -z 127.0.0.1 "$APACHE_PORT"' >/dev/null 2>&1 \
+  [[ $out == *aps-conecta-apache* ]] || timeout 15 docker exec aps-conecta-apache sh -c 'nc -z "$NEXTCLOUD_HOST" 9000 && nc -z 127.0.0.1 8000 && nc -z 127.0.0.1 "$APACHE_PORT"' >/dev/null 2>&1 \
     || out="$out, aps-conecta-apache (no atiende en su puerto)"
   printf '%s' "${out#, }"
 }
 
-aio_wait() {  # bounded: the included service containers up (20 min), Nextcloud installed (10 min), the included services
-  aio_select_services || return 1
-  # ready (10 min, aio_pendientes), its configuration no longer moving (2 min — probing a moving
-  # config is a race, #96)
-  local i st prev cur pend
-  for i in $(seq 240); do [ "$(aio_count)" = "$AIO_EXPECTED" ] && break; sleep "$AIO_POLL"; done
-  if [ "$(aio_count)" != "$AIO_EXPECTED" ]; then
-    bad "los contenedores no terminaron de arrancar en 20 minutos" "docker ps -a --filter name=^aps-conecta-"
+aio_configuration() {
+  local snapshot
+  if ! snapshot="$(timeout 30 docker exec --user www-data "$NC" php /var/www/html/occ config:list --output=json 2>/dev/null)" || [ -z "$snapshot" ]; then
+    printf 'No se pudo leer la configuración de Nextcloud. Revise su estado antes de reintentar.\n' > "$AIO_STATE/motivo"
+    bad "no se pudo leer la configuración de Nextcloud" "revise su estado: docker logs $NC" >&2
     return 1
   fi
-  for i in $(seq 120); do
-    st="$(docker exec --user www-data "$NC" php /var/www/html/occ status --output=json 2>/dev/null || true)"
-    case "$st" in *'"installed":true'*) break ;; esac
+  printf '%s' "$snapshot" | sha256sum
+}
+
+aio_wait() {
+  aio_select_services || return 1
+  local st prev cur pend
+  aio_progress_begin
+  while [ "$(aio_count)" != "$AIO_EXPECTED" ]; do
+    aio_progressing || {
+      bad "el arranque lleva 20 minutos sin avances" "docker ps -a --filter name=^aps-conecta-"
+      return 1
+    }
     sleep "$AIO_POLL"
   done
-  case "$st" in
-    *'"installed":true'*) ;;
-    *) bad "Nextcloud no terminó de instalarse en 10 minutos" "docker logs $NC"; return 1 ;;
-  esac
-  for i in $(seq 120); do pend="$(aio_pendientes)"; [ -z "$pend" ] && break; sleep "$AIO_POLL"; done
-  if [ -n "$pend" ]; then
-    bad "la suite no quedó lista en 10 minutos: $pend" \
-        "docker ps -a --filter name=^aps-conecta-; docker logs ${pend%% *}"
-    return 1
-  fi
-  prev="$(docker exec --user www-data "$NC" php /var/www/html/occ config:list --output=json 2>/dev/null | sha256sum)"
-  for i in $(seq 24); do
+  AIO_PROGRESS_TIME="$(aio_now)"
+  while :; do
+    st="$(timeout 30 docker exec --user www-data "$NC" php /var/www/html/occ status --output=json 2>/dev/null || true)"
+    case "$st" in *'"installed":true'*) break ;; esac
+    aio_progressing || {
+      bad "la instalación de Nextcloud lleva 20 minutos sin avances" "docker logs $NC"
+      return 1
+    }
     sleep "$AIO_POLL"
-    cur="$(docker exec --user www-data "$NC" php /var/www/html/occ config:list --output=json 2>/dev/null | sha256sum)"
+  done
+  AIO_PROGRESS_TIME="$(aio_now)"
+  while :; do
+    pend="$(aio_pendientes)"; [ -z "$pend" ] && break
+    aio_progressing || {
+      bad "la suite lleva 20 minutos sin avances: $pend" "docker ps -a --filter name=^aps-conecta-; docker logs ${pend%% *}"
+      return 1
+    }
+    sleep "$AIO_POLL"
+  done
+  AIO_PROGRESS_TIME="$(aio_now)"
+  prev="$(aio_configuration)" || return 1
+  while :; do
+    sleep "$AIO_POLL"
+    cur="$(aio_configuration)" || return 1
     if [ "$cur" = "$prev" ]; then ok "Suite en marcha: $AIO_EXPECTED contenedores, Nextcloud instalado"; return 0; fi
+    aio_progressing || {
+      bad "la configuración sigue cambiando tras 20 minutos sin avances de los contenedores" "revise el asistente y vuelva a ejecutar"
+      return 1
+    }
     prev="$cur"
   done
-  bad "la configuración siguió cambiando 2 minutos después de instalar" "espere un momento y vuelva a ejecutar"
-  return 1
 }
 
 aio_admin() {  # /containers shows the generated Nextcloud admin password once the set is up
@@ -1965,20 +2096,12 @@ act_respaldo() {  # the full backup, through the wizard's own API (#46: the run 
   [ -n "$archivo" ] && ok "Respaldo completo creado ($archivo)" || ok "Respaldo completo creado"
 }
 
-act_reiniciar() {  # the backup stops the suite; it starts again WITHOUT pulling images — this
-  # update moves apps, never images (an image move is a suite release, D12: a published tag's
-  # digests never move, and `bypass_container_update` is the wizard's own flag for exactly
-  # that). The start endpoint pulls nothing else, and the wait is aio_wait's own bounded one.
+act_reiniciar() {  # The update moves apps; restarting reuses the current suite images.
   info "reiniciando la suite (sin actualizar imágenes)"
-  local f="$AIO_STATE/arranque-actualizar.code"
-  aio_curl -o /dev/null -w '%{http_code}' --max-time 1800 \
-    --data-urlencode "bypass_container_update=1" "${AIO_CSRF[@]}" "$AIO_URL/api/docker/start" > "$f" 2>/dev/null
-  case "$(cat "$f" 2>/dev/null)" in
-    200|201|302) ;;
-    *) bad "la suite no arrancó tras el respaldo (HTTP $(cat "$f" 2>/dev/null || echo 'sin respuesta'))" \
-         "iníciela en el asistente (puerto 8080) o con docker; $ACT_RESTAURAR"
-       return 1 ;;
-  esac
+  aio_start --data-urlencode "bypass_container_update=1" || {
+    info "$ACT_RESTAURAR"
+    return 1
+  }
   aio_wait || return 1
   ok "Suite en marcha de nuevo (imágenes sin tocar)"
 }
@@ -3108,7 +3231,7 @@ fd00:77::/64" ]'
   : > "$tmp/aio.log"; : > "$tmp/aio.ps"; : > "$tmp/aio.argv"; rm -f "$tmp/aio.configured"
   cat > "$tshim/curl" <<SHIM
 #!/usr/bin/env bash
-url=""; data=""; outfile=""; prev=""; sec=0
+url=""; data=""; outfile=""; prev=""; sec=0; max_time=0; append=0
 printf '%s\n' "\$*" >> "$tmp/aio.argv"
 for a in "\$@"; do
   case "\$a" in https://*) url="\$a" ;; "Sec-Fetch-Site: none") sec=1 ;; esac
@@ -3116,6 +3239,7 @@ for a in "\$@"; do
     case "\$a" in password@*) data="\$data password=\$(cat "\${a#password@}")" ;; *) data="\$data \$a" ;; esac
   fi
   [ "\$prev" = -o ] && outfile="\$a"
+  [ "\$prev" = --max-time ] && max_time="\$a"
   prev="\$a"
 done
 body=""; code=""
@@ -3127,25 +3251,64 @@ case "\$url" in
   */setup) [ -e "$tmp/aio.configured" ] || body='<p id="initial-password">frase uno dos</p>' ;;
   */api/auth/login) echo "POST login\$data" >> "$tmp/aio.log"
     case "\$data" in *"password=frase uno dos"*) code=201 ;; *) code=422 ;; esac ;;
-  */login) body='<input name="csrf_name" value="n1"><input name="csrf_value" value="v1">' ;;
+  */login) if [ -e "$tmp/aio.auth-renewed" ]; then body='<input name="csrf_name" value="n2"><input name="csrf_value" value="v2">'; else body='<input name="csrf_name" value="n1"><input name="csrf_value" value="v1">'; fi ;;
   */containers) echo "GET containers" >> "$tmp/aio.log"; body='<span id="initial-nextcloud-password">admin-secreta</span>' ;;
   */api/configuration) echo "POST config\$data" >> "$tmp/aio.log"; touch "$tmp/aio.configured"
-    case "\$data" in *"domain=rechazado.example"*) code=422; body="Please enter a domain and not an IP-address!" ;; *"timezone=America/Santiago"*) if [ -e "$tmp/aio.timezone-fails" ]; then code=422; body="algo inesperado"; else code=201; fi ;; *) code=201 ;; esac ;;
+    if [ -e "$tmp/aio.auth-once" ] || [ -e "$tmp/aio.auth-repeat" ]; then rm -f "$tmp/aio.auth-once"; touch "$tmp/aio.auth-renewed"; code=302
+    else
+    case "\$data" in *"domain=rechazado.example"*) code=422; body="Please enter a domain and not an IP-address!" ;; *"timezone=America/Santiago"*) if [ -e "$tmp/aio.timezone-fails" ]; then code=422; body="algo inesperado"; else code=201; fi ;; *) code=201 ;; esac; fi ;;
   */api/docker/start) echo "POST start\$data" >> "$tmp/aio.log"
-    if [ -e "$tmp/aio.start-fails" ]; then code=500; else
-    printf '%s\n' aps-conecta-nextcloud aps-conecta-database aps-conecta-redis > "$tmp/aio.ps"; sleep 0.4
-    printf '%s\n' aps-conecta-nextcloud $AIO_SET > "$tmp/aio.ps"; code=200; fi ;;
+    if [ -e "$tmp/aio.start-auth" ] || [ -e "$tmp/aio.start-auth-repeat" ] || [ -e "$tmp/aio.start-changed" ]; then
+      rm -f "$tmp/aio.start-auth"; touch "$tmp/aio.auth-renewed"; code=302
+      [ ! -e "$tmp/aio.start-changed" ] || printf '%s\n' aps-conecta-nextcloud > "$tmp/aio.ps"
+    elif [ -e "$tmp/aio.start-fails" ]; then code=500; else
+    printf '%s\n' aps-conecta-nextcloud aps-conecta-database aps-conecta-redis > "$tmp/aio.ps"
+    if [ -e "$tmp/aio.start-disconnected" ]; then printf '<div>Starting</div>' > "\$outfile"; printf 200; exit 56; fi
+    if [ -e "$tmp/aio.progress-pull" ] || [ -e "$tmp/aio.stalled-pull" ]; then
+      : > "\$outfile"; append=1
+      started="\$(cat "$tmp/aio.clock")"; last=0
+      while :; do
+        if [ "\$max_time" -gt 0 ]; then seconds=\$((last + 120))
+        else clock="\$(cat "$tmp/aio.clock")"; seconds=\$((clock - started)); fi
+        if [ "\$max_time" -gt 0 ] && [ "\$seconds" -gt "\$max_time" ]; then printf '%s' "\$seconds" > "$tmp/aio.elapsed"; printf '000'; exit 28; fi
+        if [ "\$seconds" -ge 4200 ]; then printf 4200 > "$tmp/aio.elapsed"; break; fi
+        if [ -e "$tmp/aio.stalled-pull" ]; then
+          printf "<span class='progress-indicator'></span>\n<!-- aps-start-progress:1 -->\n" >> "\$outfile"
+        elif [ "\$seconds" -ne "\$last" ]; then
+          printf '\n<!-- aps-start-progress:%s -->\n' "\$((seconds / 120 + 1))" >> "\$outfile"
+        fi
+        last="\$seconds"; sleep 0.005
+      done
+    else sleep 0.4; fi
+    printf '%s\n' aps-conecta-nextcloud $AIO_SET > "$tmp/aio.ps"; code=200
+    body='<!-- aps-start-result:{"status":"ok","message":""} -->'
+    if [ -e "$tmp/aio.result-error" ]; then body='<!-- aps-start-result:{"status":"error","message":"synthetic image unavailable"} -->'; fi
+    if [ -e "$tmp/aio.result-mode" ]; then
+      case "\$(cat "$tmp/aio.result-mode")" in
+        missing) body='<div>Starting</div>' ;;
+        truncated) body='<!-- aps-start-result:{"status":"ok"' ;;
+        duplicate) body="\$body\$body" ;;
+      esac
+    fi
+    fi ;;
 esac
-if [ -n "\$outfile" ]; then printf '%s\n' "\$body" > "\$outfile"; else [ -z "\$body" ] || printf '%s\n' "\$body"; fi
+if [ -n "\$outfile" ]; then [ "\$append" = 1 ] || : > "\$outfile"; printf '%s\n' "\$body" >> "\$outfile"; else [ -z "\$body" ] || printf '%s\n' "\$body"; fi
 [ -z "\$code" ] || printf '%s' "\$code"
 SHIM
   cat > "$tshim/docker" <<SHIM
 #!/usr/bin/env bash
 case "\$1" in
   info) echo "$tmp/docker-root" ;;
-  ps) cat "$tmp/aio.ps" ;;
-  inspect) shift 3; for c in "\$@"; do echo "/\$c healthy"; done ;;
-  exec) case "\$*" in *"occ status"*) echo '{"installed":true}' ;; *"config:list"*) echo '{"system":{}}' ;; esac ;;
+  ps) if [ "\$2" = -a ] && [ -e "$tmp/aio.state-unknown" ]; then exit 124; fi; cat "$tmp/aio.ps" ;;
+  inspect) format="\$3"; if [[ "\$format" == *State.Status* ]] && [ -e "$tmp/aio.state-unknown" ]; then exit 124; fi
+    shift 3; for c in "\$@"; do
+    if [[ "\$format" == *State.Status* ]]; then
+      grep -qx "\$c" "$tmp/aio.ps" || continue
+      status=running; if [ -e "$tmp/aio.stalled-pull" ] && [ "\$(( \$(cat "$tmp/aio.clock" 2>/dev/null || echo 0) / 120 % 2 ))" = 1 ]; then status=restarting; fi
+      echo "/\$c \$status healthy"
+    else echo "/\$c healthy"; fi
+  done ;;
+  exec) case "\$*" in *"occ status"*) echo '{"installed":true}' ;; *"config:list"*) [ ! -e "$tmp/aio.config-fails" ] || exit 124; echo '{"system":{}}' ;; esac ;;
 esac
 SHIM
   chmod +x "$tshim/curl" "$tshim/docker"
@@ -3191,6 +3354,74 @@ SHIM
     check "asistente-aio: a start the wizard refuses reds with its HTTP code and stops before the waits" \
       '[ "$rc" -eq 1 ] && case "$out" in *"✗ el asistente no pudo iniciar la suite (HTTP 500)"*) ;; *) false;; esac && case "$out" in *"Suite en marcha"*) false;; *) true;; esac'
     rm -f "$tmp/aio.start-fails"
+    : > "$tmp/aio.ps"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; touch "$tmp/aio.result-error"
+    out="$( (cmd_aio_wizard --dominio clinica.example) 2>&1)"; rc=$?
+    check "asistente-aio: HTTP 200 with a terminal error fails with its cause, before success or readiness" \
+      '[ "$rc" -eq 1 ] && case "$out" in *"synthetic image unavailable"*) ;; *) false;; esac && case "$out" in *"✓ Suite iniciada"*|*"✓ Suite en marcha"*) false;; *) true;; esac'
+    rm -f "$tmp/aio.result-error"
+    : > "$tmp/aio.ps"; : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; touch "$tmp/aio.auth-once"
+    out="$( (cmd_aio_wizard --dominio clinica.example) 2>&1)"; rc=$?
+    check "asistente-aio: one rejected configuration POST renews login and CSRF once, then applies the same value" \
+      '[ "$rc" -eq 0 ] && [ "$(grep -c "^POST login" "$tmp/aio.log")" = 2 ] && [ "$(grep -c "^POST config.*domain=clinica.example" "$tmp/aio.log")" = 2 ] && grep -q "^POST config csrf_name=n2 csrf_value=v2 domain=clinica.example" "$tmp/aio.log"'
+    rm -f "$tmp/aio.auth-renewed"
+    : > "$tmp/aio.ps"; : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; touch "$tmp/aio.start-auth"
+    out="$( (cmd_aio_wizard --dominio clinica.example) 2>&1)"; rc=$?
+    check "asistente-aio: a start redirected before execution recovers login once and starts with refreshed CSRF" \
+      '[ "$rc" -eq 0 ] && [ "$(grep -c "^POST login" "$tmp/aio.log")" = 2 ] && [ "$(grep -c "^POST start" "$tmp/aio.log")" = 2 ] && grep -q "^POST start csrf_name=n2 csrf_value=v2$" "$tmp/aio.log"'
+    rm -f "$tmp/aio.auth-renewed"
+    local mode
+    for mode in missing truncated duplicate; do
+      : > "$tmp/aio.ps"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; printf '%s' "$mode" > "$tmp/aio.result-mode"
+      out="$( (cmd_aio_wizard --dominio clinica.example) 2>&1)"; rc=$?
+      check "asistente-aio: a $mode terminal result never confirms success" \
+        '[ "$rc" -eq 1 ] && case "$out" in *"resultado final válido"*) ;; *) false;; esac && case "$out" in *"✓ Suite iniciada"*) false;; *) true;; esac'
+    done
+    rm -f "$tmp/aio.result-mode"
+    for mode in auth-repeat start-auth-repeat; do
+      : > "$tmp/aio.ps"; : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; touch "$tmp/aio.$mode"
+      out="$( (cmd_aio_wizard --dominio clinica.example) 2>&1)"; rc=$?
+      check "asistente-aio: $mode stops after one login recovery" \
+        '[ "$rc" -eq 1 ] && [ "$(grep -c "^POST login" "$tmp/aio.log")" = 2 ] && case "$out" in *"la sesión del asistente volvió a vencer"*) ;; *) false;; esac'
+      rm -f "$tmp/aio.$mode" "$tmp/aio.auth-renewed"
+    done
+    for mode in start-changed start-disconnected; do
+      : > "$tmp/aio.ps"; : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; touch "$tmp/aio.$mode"
+      out="$( (cmd_aio_wizard --dominio clinica.example) 2>&1)"; rc=$?
+      check "asistente-aio: $mode reconciles or reports uncertainty without replaying a start" \
+        '[ "$rc" -eq 1 ] && [ "$(grep -c "^POST start" "$tmp/aio.log")" = 1 ] && [ "$(grep -c "^POST login" "$tmp/aio.log")" = 1 ] && case "$out" in *"antes de reintentar"*) ;; *) false;; esac && case "$out" in *"✓ Suite iniciada"*) false;; *) true;; esac'
+      rm -f "$tmp/aio.$mode" "$tmp/aio.auth-renewed"
+    done
+    : > "$tmp/aio.ps"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; touch "$tmp/aio.config-fails"
+    out="$( (cmd_aio_wizard --dominio clinica.example) 2>&1)"; rc=$?
+    check "asistente-aio: timed-out configuration reads never masquerade as a stable ready instance" \
+      '[ "$rc" -eq 1 ] && case "$out" in *"no se pudo leer la configuración de Nextcloud"*) ;; *) false;; esac && case "$out" in *"✓ Suite en marcha"*) false;; *) true;; esac'
+    rm -f "$tmp/aio.config-fails"
+    : > "$tmp/aio.ps"; : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; touch "$tmp/aio.state-unknown" "$tmp/aio.start-auth"
+    out="$( (cmd_aio_wizard --dominio clinica.example) 2>&1)"; rc=$?
+    check "asistente-aio: unknown Docker state cannot authorize replay after a start redirect" \
+      '[ "$rc" -eq 1 ] && [ "$(grep -c "^POST start" "$tmp/aio.log")" = 1 ] && [ "$(grep -c "^POST login" "$tmp/aio.log")" = 1 ] && case "$out" in *"antes de reintentar"*) ;; *) false;; esac'
+    rm -f "$tmp/aio.state-unknown" "$tmp/aio.auth-renewed"
+    cat > "$tshim/python3" <<SHIM
+#!/usr/bin/env bash
+if [ "\$*" = '-c import time; print(int(time.monotonic()))' ]; then
+  clock="\$(cat "$tmp/aio.clock" 2>/dev/null || echo 0)"; clock=\$((clock + 120))
+  printf '%s' "\$clock" > "$tmp/aio.clock.next"; mv "$tmp/aio.clock.next" "$tmp/aio.clock"; printf '%s\n' "\$clock"
+else exec "$real_python" "\$@"; fi
+SHIM
+    chmod +x "$tshim/python3"
+    if only_shims curl docker python3; then
+      : > "$tmp/aio.ps"; : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; touch "$tmp/aio.progress-pull"; printf 0 > "$tmp/aio.clock"
+      out="$( (cmd_aio_wizard --dominio clinica.example) 2>&1)"; rc=$?
+      check "asistente-aio: a progressing 70-minute pull outlasts the old 30-minute total limit and succeeds" \
+        '[ "$rc" -eq 0 ] && [ "$(cat "$tmp/aio.elapsed")" = 4200 ] && case "$out" in *"✓ Suite iniciada"*"✓ Suite en marcha"*) ;; *) false;; esac'
+      rm -f "$tmp/aio.progress-pull"
+      : > "$tmp/aio.ps"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; touch "$tmp/aio.stalled-pull"; printf 0 > "$tmp/aio.clock"
+      out="$( (cmd_aio_wizard --dominio clinica.example) 2>&1)"; rc=$?
+      check "asistente-aio: dots, repeated progress and a restart loop cannot keep a stalled pull alive" \
+        '[ "$rc" -eq 1 ] && [ "$(cat "$tmp/aio.clock")" -lt 4200 ] && case "$out" in *"20 minutos sin avances"*) ;; *) false;; esac && case "$out" in *"✓ Suite iniciada"*) false;; *) true;; esac'
+      rm -f "$tmp/aio.stalled-pull" "$tmp/aio.clock" "$tmp/aio.elapsed"
+    fi
+    rm -f "$tshim/python3"; hash -r
     out="$( (cmd_aio_wizard --dominio clinica.example --respaldo) 2>&1)"; rc=$?
     check "asistente-aio: --respaldo without a directory refuses — never a silently skipped backup" \
       '[ "$rc" -eq 1 ] && [ "$out" = "✗ falta el directorio del respaldo: aps-conecta asistente-aio --dominio <dominio> --respaldo <directorio>" ]'
@@ -3716,6 +3947,7 @@ case "\$url" in
   */api/docker/backup) printf 'borg log\n' > "\$out"; : > "$act/borg.n"; date -u +%Y-%m-%dT%H:%M:%S.%NZ > "$act/borg.t"
     [ -n "\$w" ] && printf '%s' 200 ;;
   */api/docker/start) [ "\$(wc -c < "$act/borg.n" 2>/dev/null || echo 99)" -le "\${BORG_RUNS:-2}" ] && echo "start con borg en curso" >> "$act/aio.log"
+    [ -z "\$out" ] || printf '%s\n' '<!-- aps-start-result:{"status":"ok","message":""} -->' > "\$out"
     [ -n "\$w" ] && printf '%s' 200 ;;
   */login) [ -e "$act/aio.libre" ] && printf '<input name="csrf_name" value="n1"><input name="csrf_value" value="v1">' ;;
 esac
@@ -3725,7 +3957,7 @@ EOF
 #!/usr/bin/env bash
 printf 'docker %s\n' "\$*" >> "$act/docker.log"
 case "\$1 \$2" in
-  "ps --format")
+  "ps --format"|"ps -a")
     [ -e "$act/suite-caida" ] && exit 0
     printf '%s\n' $AIO_SET ;;
   "inspect aps-conecta-borgbackup")
@@ -3733,12 +3965,16 @@ case "\$1 \$2" in
     if [ "\$n" -lt "\${BORG_RUNS:-2}" ]; then echo "true 0 \$(cat "$act/borg.t")"
     else echo "false \${BORG_EXIT:-0} \${BORG_STARTED:-\$(cat "$act/borg.t")}"; fi ;;
   "inspect -f")
-    n="\$(wc -c < "$act/salud.n" 2>/dev/null || echo 0)"; printf x >> "$act/salud.n"
-    shift 3; for c in "\$@"; do case "\$c" in
-      "\${SALUD_MALA:-}") echo "/\$c unhealthy" ;;
-      aps-conecta-eurooffice) [ "\$n" -ge 3 ] && echo "/\$c healthy" || echo "/\$c starting" ;;
-      *) echo "/\$c healthy" ;;
-    esac; done ;;
+    format="\$3"; n="\$(wc -c < "$act/salud.n" 2>/dev/null || echo 0)"
+    [[ "\$format" == *State.Status* ]] || printf x >> "$act/salud.n"
+    shift 3; for c in "\$@"; do
+      prefix="/\$c"; [[ "\$format" != *State.Status* ]] || prefix="\$prefix running"
+      case "\$c" in
+        "\${SALUD_MALA:-}") echo "\$prefix unhealthy" ;;
+        aps-conecta-eurooffice) [ "\$n" -ge 3 ] && echo "\$prefix healthy" || echo "\$prefix starting" ;;
+        *) echo "\$prefix healthy" ;;
+      esac
+    done ;;
   "exec aps-conecta-apache")
     n="\$(wc -c < "$act/apache.n" 2>/dev/null || echo 0)"; printf x >> "$act/apache.n"
     [ "\$n" -ge 2 ] ;;
@@ -3753,6 +3989,7 @@ case "\$1 \$2" in
   "exec --user")
     case "\$*" in
       *"occ status"*) echo '{"installed":true,"version":"34.0.4"}' ;;
+      *"occ config:list"*) echo '{"system":{}}' ;;
       *"config:app:get calendar"*) echo "4.7.15" ;;
       *"config:system:get appstoreenabled"*) echo "\${TIENDA:-0}" ;;
       *"occ app:getpath viejo"*) echo /var/www/html/custom_apps/viejo ;;
@@ -3886,14 +4123,24 @@ EOF
       && printf "%s" "$out" | grep -qF "docker logs -f aps-conecta-borgbackup" \
       && ! grep -q "api/docker/start" "$act/aio.log" && ! grep -q "^actualizar " "$act/resolver.log" \
       && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes"'
+  cat > "$tshim/python3" <<SHIM
+#!/usr/bin/env bash
+if [ "\$*" = '-c import time; print(int(time.monotonic()))' ]; then
+  clock="\$(cat "$tmp/health.clock" 2>/dev/null || echo 0)"; clock=\$((clock + 120)); printf '%s\n' "\$clock" | tee "$tmp/health.clock"
+else exec "$real_python" "\$@"; fi
+SHIM
+  chmod +x "$tshim/python3"; hash -r
+  only_shims curl docker python3 || return 1
   for blocked in aps-conecta-eurooffice aps-conecta-clamav; do
     : > "$act/aio.log"; : > "$act/resolver.log"; rm -f "$act/aio.libre"; cp "$act/lock.bytes" "$act/home/apps.lock.json"
     out="$( id() { echo 0; }; SALUD_MALA="$blocked" act46 2>&1 )"; arc=$?
     check "actualizar: a container never healthy after the restart stops the run naming it — no «Suite en marcha», nothing fetched (A-037)" \
-      '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "✗ la suite no quedó lista en 10 minutos: $blocked (falla su control de salud)" \
+      '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "✗ la suite lleva 20 minutos sin avances: $blocked (falla su control de salud)" \
         && ! printf "%s" "$out" | grep -qF "Suite en marcha" && ! grep -q "^actualizar " "$act/resolver.log" \
         && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes"'
   done
+
+  rm -f "$tshim/python3"; hash -r
 
   # a failed apply: the app named, the lock unchanged, the new lock cleaned, the restore command
   : > "$act/aio.log"; : > "$act/resolver.log"; cp "$act/lock.bytes" "$act/home/apps.lock.json"

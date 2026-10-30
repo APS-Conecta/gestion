@@ -1155,6 +1155,41 @@ jobs:
           printf '%s\n' "$out"
           [ "$rc" -eq 0 ] && grep -q '^REVALIDACIÓN: PASS' <<<"$out" \
             || { echo "FAIL: revalidate did not pass on the clinic's front" >&2; exit 1; }
+      - name: The wizard reports a terminal error when its configuration cannot be written
+        run: |
+          set -euo pipefail
+          umask 077
+          state=/opt/aps-conecta/aio
+          master=nextcloud-aio-mastercontainer
+          config=/mnt/docker-aio-config/data/configuration.json
+          page="$RUNNER_TEMP/wizard-page.html"
+          result="$RUNNER_TEMP/wizard-result.html"
+          sudo grep -q '^<!-- aps-start-result:{"status":"ok","message":""} -->$' "$state/inicio.html"
+          sudo curl -skS --max-time 30 -H 'Sec-Fetch-Site: none' -b "$state/cookies" -c "$state/cookies" \
+            -o "$page" https://127.0.0.1:8080/containers
+          csrf_name="$(sudo sed -n 's/.*name="csrf_name" value="\([^"]*\)".*/\1/p' "$page" | sed -n '1p')"
+          csrf_value="$(sudo sed -n 's/.*name="csrf_value" value="\([^"]*\)".*/\1/p' "$page" | sed -n '1p')"
+          [ -n "$csrf_name" ] && [ -n "$csrf_value" ]
+          before="$(docker exec "$master" sha256sum "$config")"
+          docker exec "$master" test ! -e "$config.tmp"
+          docker exec "$master" mkdir "$config.tmp"
+          trap 'docker exec "$master" rmdir "$config.tmp"' EXIT
+          code="$(sudo curl -skS --max-time 30 -H 'Sec-Fetch-Site: none' -b "$state/cookies" -c "$state/cookies" \
+            -o "$result" -w '%{http_code}' --data-urlencode "csrf_name=$csrf_name" --data-urlencode "csrf_value=$csrf_value" \
+            --data-urlencode bypass_container_update=1 https://127.0.0.1:8080/api/docker/start)"
+          [ "$code" = 200 ]
+          sudo python3 - "$result" <<'PYRESULT'
+          import json, pathlib, re, sys
+          markers = re.findall(r'<!-- aps-start-result:(.*?) -->', pathlib.Path(sys.argv[1]).read_text())
+          assert len(markers) == 1, 'the start stream must finish with one result'
+          result = json.loads(markers[0])
+          assert result['status'] == 'error' and result['message'], 'a failed configuration write must report its error'
+          print('PASS: HTTP 200 carries the real terminal error')
+          PYRESULT
+          docker exec "$master" rmdir "$config.tmp"
+          trap - EXIT
+          [ "$(docker exec "$master" sha256sum "$config")" = "$before" ]
+          echo 'PASS: the failure left the existing wizard configuration intact'
       # #147: a dependency outage must not disable an installed connector. Waiting for
       # fresh Nextcloud health proves its entrypoint finished the bounded wait, so an
       # enabled check cannot pass early while startup is still waiting for the server.
