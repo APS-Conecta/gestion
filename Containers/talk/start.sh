@@ -173,8 +173,10 @@ SIGNALING_CONF
 JANUS_TURN_USER="$(( $(date +%s) + 7776000 )):$(openssl rand -hex 16)"
 JANUS_TURN_PWD="$(printf '%s' "$JANUS_TURN_USER" | openssl dgst -sha1 -hmac "$TURN_SECRET" -binary | openssl base64)"
 
+# Janus and eTURNAL share this container. A public domain can be unresolved
+# during bootstrap; resolving it here killed Janus before signaling became healthy.
 if [ -z "$TURN_DOMAIN" ]; then
-    TURN_DOMAIN="$NC_DOMAIN"
+    TURN_DOMAIN="127.0.0.1"
 fi
 
 # Build janus.jcfg: strip the entire nat block from the original and append a
