@@ -1043,6 +1043,8 @@ jobs:
           nc -z "$task_proxy_ip" 3128
           printf 'HTTPS_PROXY=http://fixture:%s@%s:3128\nHTTP_PROXY=http://fixture:%s@%s:3128\n' \
             "$task_proxy_password" "$task_proxy_ip" "$task_proxy_password" "$task_proxy_ip" >> "$GITHUB_ENV"
+          task_proxy_bypasses="${NO_PROXY:+$NO_PROXY,}localhost,127.0.0.1,::1,$task_proxy_ip"
+          printf 'NO_PROXY=%s\nno_proxy=%s\n' "$task_proxy_bypasses" "$task_proxy_bypasses" >> "$GITHUB_ENV"
       - name: Build the rehearsal package, then install through the real bootstrap
         run: |
           set -euo pipefail

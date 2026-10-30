@@ -707,9 +707,21 @@ proxy_save() {
 }
 
 prepare_proxy() {
-  local file dropin fingerprint applied
+  local file dropin fingerprint applied applied_fingerprint=""
   proxy_load || return 1
   [ -n "${HTTPS_PROXY:-}" ] || return 0
+  local extra
+  extra="$(
+    host_ipv4s
+    site_domain || true
+    printf '%s\n' "${1:-}"
+    suite_subnets || true
+    if [ -f "$ROOT/php/containers.json" ] && command -v python3 >/dev/null 2>&1; then
+      python3 -c 'import json,sys; print("\n".join(c["container_name"] for c in json.load(open(sys.argv[1]))["aio_services_v1"]))' "$ROOT/php/containers.json"
+    fi
+  )"
+  NO_PROXY="${NO_PROXY},$(printf '%s' "$extra" | paste -sd, -)"; no_proxy="$NO_PROXY"
+  proxy_load || return 1
   local launch
   if command -v docker >/dev/null 2>&1; then
     if ! launch="$(systemctl show --property=ExecStart --value docker 2>/dev/null)"; then
@@ -742,17 +754,6 @@ PY
       bad "la configuración directa de Docker impide aplicar el proxy" "revise las opciones de proxy en daemon.json y en la unidad Docker; use el perfil de APS Conecta"; return 1
     fi
   fi
-  local extra
-  extra="$(
-    host_ipv4s
-    site_domain || true
-    printf '%s\n' "${1:-}"
-    suite_subnets || true
-    if [ -f "$ROOT/php/containers.json" ] && command -v python3 >/dev/null 2>&1; then
-      python3 -c 'import json,sys; print("\n".join(c["container_name"] for c in json.load(open(sys.argv[1]))["aio_services_v1"]))' "$ROOT/php/containers.json"
-    fi
-  )"
-  NO_PROXY="${NO_PROXY},$(printf '%s' "$extra" | paste -sd, -)"; no_proxy="$NO_PROXY"
   proxy_save || return 1
   [ -n "${HTTPS_PROXY:-}" ] || return 0
   file="$(proxy_file)"; dropin="$ETC_DIR/systemd/system/docker.service.d/aps-conecta-proxy.conf"
@@ -765,7 +766,8 @@ PY
   if ! fingerprint="$(sha256sum "$file" "$dropin" | sha256sum | cut -d' ' -f1)"; then
     bad "no se pudo verificar la configuración del proxy" "revise los archivos de configuración y sus permisos"; return 1
   fi
-  if ! grep -qxF "$fingerprint" "$applied" 2>/dev/null && command -v docker >/dev/null 2>&1; then
+  [ ! -r "$applied" ] || IFS= read -r applied_fingerprint < "$applied"
+  if [ "$fingerprint" != "$applied_fingerprint" ] && command -v docker >/dev/null 2>&1; then
     if ! systemctl daemon-reload || ! systemctl restart docker; then
       bad "no se pudo aplicar el proxy de Docker" "revise el servicio Docker y vuelva a ejecutar preparar"; return 1
     fi
@@ -1243,7 +1245,8 @@ start_suite() {  # [ADDRESS] — the mastercontainer, once — the very command 
       grep -q "^$container " <<<"$containers" || continue
       env_now="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$container" 2>/dev/null)"
       for key in HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy; do
-        if ! grep -qxF "$key=${!key}" <<<"$env_now"; then
+        # Compare in Bash so credentials never become a child process argument.
+        if [[ $'\n'"$env_now"$'\n' != *$'\n'"$key=${!key}"$'\n'* ]]; then
           bad "la suite existente conserva otro perfil de proxy" "recree el asistente y Nextcloud con el comando actualizado y conserve sus volúmenes; consulte aps/INSTALLER.md §12"; return 1
         fi
       done
@@ -3437,7 +3440,7 @@ SHIM
       FAIL=0; start_suite 2>&1; echo "FAIL=$FAIL")"
     rm -f "$tshim/grep"
     check "proxy: an existing wizard with a different profile is refused" \
-      'case "$out" in *"✗ "*"proxy"*"FAIL=1") true;; *) false;; esac'
+      'case "$out" in *"✗ la suite existente conserva otro perfil de proxy"*"FAIL=1") true;; *) false;; esac'
     check "proxy: container profile comparisons keep credentials out of process arguments" \
       '[ ! -e "$tmp/proxy-argv-leak" ]'
     : > "$tmp/mc.env"
