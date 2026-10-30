@@ -285,7 +285,8 @@ readonly class DockerActionManager {
         foreach ($envs as $key => $env) {
             $envs[$key] = $this->configurationManager->replaceEnvPlaceholders($env);
         }
-        if ($container->identifier === 'aps-conecta-nextcloud' && getenv('HTTPS_PROXY')) {
+        $httpsProxy = getenv('HTTPS_PROXY');
+        if ($container->identifier === 'aps-conecta-nextcloud' && $httpsProxy !== false && $httpsProxy !== '') {
             foreach (['HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy'] as $key) {
                 $value = getenv($key);
                 if ($value !== false) {
