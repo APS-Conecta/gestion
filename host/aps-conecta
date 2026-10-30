@@ -3150,10 +3150,12 @@ case "\$url" in
   */setup) [ -e "$tmp/aio.configured" ] || body='<p id="initial-password">frase uno dos</p>' ;;
   */api/auth/login) echo "POST login\$data" >> "$tmp/aio.log"
     case "\$data" in *"password=frase uno dos"*) code=201 ;; *) code=422 ;; esac ;;
-  */login) body='<input name="csrf_name" value="n1"><input name="csrf_value" value="v1">' ;;
+  */login) if [ -e "$tmp/aio.auth-renewed" ]; then body='<input name="csrf_name" value="n2"><input name="csrf_value" value="v2">'; else body='<input name="csrf_name" value="n1"><input name="csrf_value" value="v1">'; fi ;;
   */containers) echo "GET containers" >> "$tmp/aio.log"; body='<span id="initial-nextcloud-password">admin-secreta</span>' ;;
   */api/configuration) echo "POST config\$data" >> "$tmp/aio.log"; touch "$tmp/aio.configured"
-    case "\$data" in *"domain=rechazado.example"*) code=422; body="Please enter a domain and not an IP-address!" ;; *"timezone=America/Santiago"*) if [ -e "$tmp/aio.timezone-fails" ]; then code=422; body="algo inesperado"; else code=201; fi ;; *) code=201 ;; esac ;;
+    if [ -e "$tmp/aio.auth-once" ]; then rm -f "$tmp/aio.auth-once"; touch "$tmp/aio.auth-renewed"; code=302
+    else
+    case "\$data" in *"domain=rechazado.example"*) code=422; body="Please enter a domain and not an IP-address!" ;; *"timezone=America/Santiago"*) if [ -e "$tmp/aio.timezone-fails" ]; then code=422; body="algo inesperado"; else code=201; fi ;; *) code=201 ;; esac; fi ;;
   */api/docker/start) echo "POST start\$data" >> "$tmp/aio.log"
     if [ -e "$tmp/aio.start-fails" ]; then code=500; else
     printf '%s\n' aps-conecta-nextcloud aps-conecta-database aps-conecta-redis > "$tmp/aio.ps"; sleep 0.4
@@ -3222,6 +3224,11 @@ SHIM
     check "asistente-aio: HTTP 200 with a terminal error fails with its cause, before success or readiness" \
       '[ "$rc" -eq 1 ] && case "$out" in *"synthetic image unavailable"*) ;; *) false;; esac && case "$out" in *"✓ Suite iniciada"*|*"✓ Suite en marcha"*) false;; *) true;; esac'
     rm -f "$tmp/aio.result-error"
+    : > "$tmp/aio.ps"; : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; touch "$tmp/aio.auth-once"
+    out="$( (cmd_aio_wizard --dominio clinica.example) 2>&1)"; rc=$?
+    check "asistente-aio: one rejected configuration POST renews login and CSRF once, then applies the same value" \
+      '[ "$rc" -eq 0 ] && [ "$(grep -c "^POST login" "$tmp/aio.log")" = 2 ] && [ "$(grep -c "^POST config.*domain=clinica.example" "$tmp/aio.log")" = 2 ] && grep -q "^POST config csrf_name=n2 csrf_value=v2 domain=clinica.example" "$tmp/aio.log"'
+    rm -f "$tmp/aio.auth-renewed"
     out="$( (cmd_aio_wizard --dominio clinica.example --respaldo) 2>&1)"; rc=$?
     check "asistente-aio: --respaldo without a directory refuses — never a silently skipped backup" \
       '[ "$rc" -eq 1 ] && [ "$out" = "✗ falta el directorio del respaldo: aps-conecta asistente-aio --dominio <dominio> --respaldo <directorio>" ]'
