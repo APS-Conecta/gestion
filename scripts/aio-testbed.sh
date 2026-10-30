@@ -48,7 +48,7 @@ cmd_gate() {
 }
 
 cmd_up() {
-  need docker; need curl; need awk; need ss; need sed
+  need docker; need curl; need awk; need ss; need sed; need ip
   [ -S /var/run/docker.sock ] || die "no /var/run/docker.sock — the mastercontainer requires it (read-only mount)"
   docker inspect "$MC" >/dev/null 2>&1 && die "$MC already exists — run '$0 down' first, or '$0 status' to look"
   mkdir -p "$STATE"; chmod 700 "$STATE"

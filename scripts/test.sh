@@ -27,6 +27,7 @@ SH
   cat > "$tmp/bin/docker" <<'SH'
 #!/usr/bin/env bash
 case "$1" in
+  version) echo 1.44 ;;
   inspect) exit 1 ;;
   run) printf 'run\n' >> "$CASE_ROOT/events"; printf '%s\0' "$@" > "$CASE_ROOT/run" ;;
 esac
