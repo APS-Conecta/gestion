@@ -25,7 +25,7 @@ On an institutional proxy network, enter its URL privately and preserve only its
 through sudo for the initial download. Replace `vX.Y.Z` with the chosen release:
 
 ```bash
-read -r -s -p 'Proxy URL: ' HTTPS_PROXY; echo
+read -r -s -p 'Dirección del proxy: ' HTTPS_PROXY; echo
 export HTTPS_PROXY
 curl -fsSL https://github.com/APS-Conecta/gestion/releases/download/vX.Y.Z/apsconecta-vX.Y.Z-install.sh \
   | sudo --preserve-env=HTTPS_PROXY,HTTP_PROXY,NO_PROXY,https_proxy,http_proxy,no_proxy bash

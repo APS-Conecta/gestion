@@ -694,10 +694,43 @@ prepare_proxy() {
   local file dropin fingerprint applied
   proxy_load || return 1
   [ -n "${HTTPS_PROXY:-}" ] || return 0
+  local launch
+  if command -v docker >/dev/null 2>&1; then
+    if ! launch="$(systemctl show --property=ExecStart --value docker 2>/dev/null)"; then
+      bad "no se pudo revisar la configuración de Docker" "revise la unidad Docker antes de configurar el proxy"; return 1
+    fi
+    if ! DOCKER_START="$launch" python3 - "$ETC_DIR/docker/daemon.json" <<'PY'
+import json, os, pathlib, re, shlex, sys
+try:
+    text = os.environ['DOCKER_START']
+    match = re.search(r'argv\[\]=(.*?)(?:\s*;|$)', text)
+    args = shlex.split(match.group(1) if match else text)
+    config = pathlib.Path(sys.argv[1])
+    wanted = {key.lower().replace('_', '-'): os.environ[key] for key in ('HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY')}
+    for index, arg in enumerate(args):
+        key, separator, value = arg.partition('=')
+        if key == '--config-file' or key.removeprefix('--') in wanted:
+            value = value if separator else args[index + 1]
+            if key == '--config-file':
+                config = pathlib.Path(value)
+            elif value != wanted[key.removeprefix('--')]:
+                raise ValueError('conflicting proxy flag')
+    if config.exists():
+        settings = json.loads(config.read_text()).get('proxies', {})
+        if not isinstance(settings, dict) or any(key not in wanted or value != wanted[key] for key, value in settings.items()):
+            raise ValueError('conflicting proxy configuration')
+except (OSError, ValueError, IndexError, AttributeError):
+    sys.exit(1)
+PY
+    then
+      bad "la configuración directa de Docker impide aplicar el proxy" "revise las opciones de proxy en daemon.json y en la unidad Docker; use el perfil de APS Conecta"; return 1
+    fi
+  fi
   local extra
   extra="$(
     host_ipv4s
     site_domain || true
+    printf '%s\n' "${1:-}"
     suite_subnets || true
     if [ -f "$ROOT/php/containers.json" ] && command -v python3 >/dev/null 2>&1; then
       python3 -c 'import json,sys; print("\n".join(c["container_name"] for c in json.load(open(sys.argv[1]))["aio_services_v1"]))' "$ROOT/php/containers.json"
@@ -1185,12 +1218,20 @@ start_suite() {  # [ADDRESS] — the mastercontainer, once — the very command 
         bad "no se pudo preparar la red de la suite" "revise Docker antes de iniciar con el proxy"; return 1
       fi
     fi
-    prepare_proxy || return 1
+    prepare_proxy "$domain" || return 1
   fi
   state="$(docker ps -a --format '{{.Names}} {{.State}}' 2>/dev/null)"   # captured: pipefail-safe
   state="$(printf '%s\n' "$state" | sed -n 's/^nextcloud-aio-mastercontainer //p')"
   if [ -n "$state" ]; then   # both lines are read once, at the wizard's first start: never switched later
     env_now="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' nextcloud-aio-mastercontainer 2>/dev/null)"
+    if [ -n "${HTTPS_PROXY:-}" ]; then
+      local key
+      for key in HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy; do
+        if ! grep -qxF "$key=${!key}" <<<"$env_now"; then
+          bad "el asistente existente conserva otro perfil de proxy" "recree el asistente con el comando actualizado y conserve sus volúmenes; consulte aps/INSTALLER.md §12"; return 1
+        fi
+      done
+    fi
     if is_ipv4 "$domain"; then
       if ! grep -qxF "APS_TLS_DIR=$(suite_tls_dir)" <<<"$env_now" \
          || ! grep -qxF "NEXTCLOUD_TRUSTED_CACERTS_DIR=$(suite_ca_dir)" <<<"$env_now"; then
@@ -4283,7 +4324,7 @@ SH
 # ── dispatch ──────────────────────────────────────────────────────────────────────────────
 
 case "${1:-}" in
-  --self-test|guard-existing-installation) ;;
+  --self-test|guard-existing-installation|--help|-h|""|estado|pasos|run-command) ;;
   *) proxy_load || exit 1 ;;
 esac
 
