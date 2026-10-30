@@ -2380,6 +2380,28 @@ CASES
 }
 check office_pin_cases
 
+# A dependency timeout cannot remove an installed feature. The first-party office
+# overview remains deliberately disabled; it is not the Euro-Office connector.
+entrypoint_timeout_cases() {
+  python3 - <<'PY'
+import pathlib, re, sys
+apps = ('eurooffice', 'files_antivirus', 'fulltextsearch',
+        'fulltextsearch_elasticsearch', 'files_fulltextsearch')
+pattern = re.compile(
+    r'^\s*php\s+/var/www/html/occ\s+app:disable\s+["\']?('
+    + '|'.join(apps) + r')(?=["\'\s]|$)', re.M)
+for app in apps:
+    assert pattern.search('php /var/www/html/occ app:disable ' + app)
+assert not pattern.search('php /var/www/html/occ app:disable office')
+text = pathlib.Path('Containers/nextcloud/entrypoint.sh').read_text()
+matches = pattern.findall(text)
+if matches:
+    print('entrypoint timeouts disable configured apps: ' + ', '.join(matches))
+    sys.exit(1)
+PY
+}
+check entrypoint_timeout_cases
+
 # --- gate (#176): no account cap — what builds the images sets none of the one-click-instance keys -
 # Upstream enforces one-click-instance.user-limit inside createUser (web, OCS and occ alike), so the
 # key set anywhere in the images caps the staff an establishment can have. The keys may appear only
