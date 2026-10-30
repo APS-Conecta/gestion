@@ -2520,7 +2520,7 @@ SHIM
   check "revisar: a port the running suite publishes reads as the suite's own, so a re-run of install goes on" \
     'case "$step_out" in *"✓ puerto 8080 en uso por la suite (ya instalada)"*) ;; *) false;; esac'
   check "revisar: a stranger on a port the suite does not publish reds while the suite runs" \
-    'case "$step_out" in *"✗ puerto 3478 ocupado"*"FAIL=1") ;; *) false;; esac'
+    'case "$step_out" in *"✗ puerto 3478 ocupado"*"FAIL=2") ;; *) false;; esac'
   printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/ss"; chmod +x "$tshim/ss"
   rm -f "$tshim/docker"
 
