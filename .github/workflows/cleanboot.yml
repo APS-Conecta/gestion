@@ -1088,6 +1088,19 @@ jobs:
             bash /opt/aps-conecta/instalador/host/aps-conecta install \
               --sitio "$RUNNER_TEMP/site.sh" --planilla "$RUNNER_TEMP/usuarios.csv" --app farmacia --app estadistica --app totem \
             < /dev/null | tee "$RUNNER_TEMP/install.out"
+      # #183: the service set is a suite invariant, independent of optional apps.
+      - name: Every always-on service exists and runs after installation
+        run: |
+          set -euo pipefail
+          failed=0
+          for container in nextcloud-aio-mastercontainer aps-conecta-{apache,database,redis,nextcloud,notify-push,eurooffice,talk,fulltextsearch,imaginary,clamav,harp}; do
+            running="$(docker inspect --format '{{.State.Running}}' "$container" 2>/dev/null || true)"
+            if [ "$running" != true ]; then
+              echo "FAIL: always-on service $container is absent or stopped" >&2
+              failed=1
+            fi
+          done
+          [ "$failed" -eq 0 ]
       - name: Hand the checkout back to the runner
         if: always()
         run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
