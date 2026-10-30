@@ -3233,7 +3233,8 @@ case "\$url" in
     else
     case "\$data" in *"domain=rechazado.example"*) code=422; body="Please enter a domain and not an IP-address!" ;; *"timezone=America/Santiago"*) if [ -e "$tmp/aio.timezone-fails" ]; then code=422; body="algo inesperado"; else code=201; fi ;; *) code=201 ;; esac; fi ;;
   */api/docker/start) echo "POST start\$data" >> "$tmp/aio.log"
-    if [ -e "$tmp/aio.start-fails" ]; then code=500; else
+    if [ -e "$tmp/aio.start-auth" ]; then rm -f "$tmp/aio.start-auth"; touch "$tmp/aio.auth-renewed"; code=302
+    elif [ -e "$tmp/aio.start-fails" ]; then code=500; else
     printf '%s\n' aps-conecta-nextcloud aps-conecta-database aps-conecta-redis > "$tmp/aio.ps"
     if [ -e "$tmp/aio.progress-pull" ] || [ -e "$tmp/aio.stalled-pull" ]; then
       : > "\$outfile"; append=1
@@ -3321,6 +3322,11 @@ SHIM
     out="$( (cmd_aio_wizard --dominio clinica.example) 2>&1)"; rc=$?
     check "asistente-aio: one rejected configuration POST renews login and CSRF once, then applies the same value" \
       '[ "$rc" -eq 0 ] && [ "$(grep -c "^POST login" "$tmp/aio.log")" = 2 ] && [ "$(grep -c "^POST config.*domain=clinica.example" "$tmp/aio.log")" = 2 ] && grep -q "^POST config csrf_name=n2 csrf_value=v2 domain=clinica.example" "$tmp/aio.log"'
+    rm -f "$tmp/aio.auth-renewed"
+    : > "$tmp/aio.ps"; : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; touch "$tmp/aio.start-auth"
+    out="$( (cmd_aio_wizard --dominio clinica.example) 2>&1)"; rc=$?
+    check "asistente-aio: a start redirected before execution recovers login once and starts with refreshed CSRF" \
+      '[ "$rc" -eq 0 ] && [ "$(grep -c "^POST login" "$tmp/aio.log")" = 2 ] && [ "$(grep -c "^POST start" "$tmp/aio.log")" = 2 ] && grep -q "^POST start csrf_name=n2 csrf_value=v2$" "$tmp/aio.log"'
     rm -f "$tmp/aio.auth-renewed"
     cat > "$tshim/python3" <<SHIM
 #!/usr/bin/env bash
@@ -3867,6 +3873,7 @@ case "\$url" in
   */api/docker/backup) printf 'borg log\n' > "\$out"; : > "$act/borg.n"; date -u +%Y-%m-%dT%H:%M:%S.%NZ > "$act/borg.t"
     [ -n "\$w" ] && printf '%s' 200 ;;
   */api/docker/start) [ "\$(wc -c < "$act/borg.n" 2>/dev/null || echo 99)" -le "\${BORG_RUNS:-2}" ] && echo "start con borg en curso" >> "$act/aio.log"
+    [ -z "\$out" ] || printf '%s\n' '<!-- aps-start-result:{"status":"ok","message":""} -->' > "\$out"
     [ -n "\$w" ] && printf '%s' 200 ;;
   */login) [ -e "$act/aio.libre" ] && printf '<input name="csrf_name" value="n1"><input name="csrf_value" value="v1">' ;;
 esac
