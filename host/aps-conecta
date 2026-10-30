@@ -3286,7 +3286,7 @@ case "\$1" in
       echo "/\$c \$status healthy"
     else echo "/\$c healthy"; fi
   done ;;
-  exec) case "\$*" in *"occ status"*) echo '{"installed":true}' ;; *"config:list"*) echo '{"system":{}}' ;; esac ;;
+  exec) case "\$*" in *"occ status"*) echo '{"installed":true}' ;; *"config:list"*) [ ! -e "$tmp/aio.config-fails" ] || exit 124; echo '{"system":{}}' ;; esac ;;
 esac
 SHIM
   chmod +x "$tshim/curl" "$tshim/docker"
@@ -3369,6 +3369,11 @@ SHIM
         '[ "$rc" -eq 1 ] && [ "$(grep -c "^POST start" "$tmp/aio.log")" = 1 ] && [ "$(grep -c "^POST login" "$tmp/aio.log")" = 1 ] && case "$out" in *"antes de reintentar"*) ;; *) false;; esac && case "$out" in *"✓ Suite iniciada"*) false;; *) true;; esac'
       rm -f "$tmp/aio.$mode" "$tmp/aio.auth-renewed"
     done
+    : > "$tmp/aio.ps"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; touch "$tmp/aio.config-fails"
+    out="$( (cmd_aio_wizard --dominio clinica.example) 2>&1)"; rc=$?
+    check "asistente-aio: timed-out configuration reads never masquerade as a stable ready instance" \
+      '[ "$rc" -eq 1 ] && case "$out" in *"no se pudo leer la configuración de Nextcloud"*) ;; *) false;; esac && case "$out" in *"✓ Suite en marcha"*) false;; *) true;; esac'
+    rm -f "$tmp/aio.config-fails"
     cat > "$tshim/python3" <<SHIM
 #!/usr/bin/env bash
 if [ "\$*" = '-c import time; print(int(time.monotonic()))' ]; then
