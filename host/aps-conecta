@@ -2194,9 +2194,13 @@ selftest() {
   tshim="$tmp/bin"; mkdir -p "$tshim"
   local APS_HOME="$tmp/home" real_stat
   real_stat="$(command -v stat)"
-  mkdir -p "$APS_HOME/instalador/host" "$tmp/docker-root"
-  cp "$HOST_DIR/aps-conecta" "$APS_HOME/instalador/host/"
-  printf 'v9.9.9\n' > "$APS_HOME/instalador/VERSION"
+  fixture_installation() {
+    mkdir -p "$APS_HOME/instalador/host"
+    cp "$HOST_DIR/aps-conecta" "$APS_HOME/instalador/host/"
+    printf 'v9.9.9\n' > "$APS_HOME/instalador/VERSION"
+  }
+  fixture_installation
+  mkdir -p "$tmp/docker-root"
   cat > "$tshim/stat" <<SHIM
 #!/usr/bin/env bash
 if [ "\${!#}" = /dev/fuse ]; then echo 'character special file'; else exec "$real_stat" "\$@"; fi
@@ -2218,12 +2222,14 @@ SHIM
 case "\$1 \$2" in
   "version --format") echo "${1-1.56}" ;;
   "info --format") echo "$tmp/docker-root" ;;
+  "network inspect") [ ! -f "$tmp/no-network" ] || exit 1; echo 10.77.0.0/23 ;;
   "ps --format") echo "${2-}" ;;
   *) exit 0 ;;
 esac
 EOF
     chmod +x "$tshim/docker"
   }
+  mk_docker 1.56 ""
   printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/ss"; chmod +x "$tshim/ss"
   printf '#!/usr/bin/env bash\necho x86_64\n' > "$tshim/uname"; chmod +x "$tshim/uname"
   printf '#!/usr/bin/env bash\necho 127.0.0.1\n' > "$tshim/getent"; chmod +x "$tshim/getent"
@@ -2290,6 +2296,7 @@ EOF
   # install runs as root: the stepper arms answer `id -u` from a shim (ID_U=1000 plays the operator)
   printf '#!/usr/bin/env bash\ncase "$1" in -u) echo "${ID_U:-0}" ;; -un) echo root ;; esac\n' > "$tshim/id"; chmod +x "$tshim/id"
   APS_HOME="$tmp/aps-stepper"   # …and the install's own home answers from the fixture: CI's runner is uid 1001 and /opt is not theirs
+  fixture_installation
   # the stepper end to end with every server step stubbed: the order, the approved header/footer,
   # the hand-over to the browser, and no prompt without a terminal
   install_out="$(
@@ -2417,7 +2424,7 @@ EOF
   printf '#!/usr/bin/env bash\nprintf "HTTP/2 401\\r\\ndate: %%s\\r\\n\\r\\n" "$(date -u "+%%a, %%d %%b %%Y %%H:%%M:%%S GMT")"\n' > "$tshim/curl"; chmod +x "$tshim/curl"
   step_out="$(FAIL=0; step_revisar; echo "FAIL=$FAIL")"
   check "revisar: 7,7 GiB rounds to 8 — green naming both tiers (D8); CPU, 142 GB, the ports, internet and clock, x86-64" \
-    'case "$step_out" in *"✓ Memoria 8 GiB (mínimo 6, recomendado 8)"*"✓ CPU 4 núcleos"*"✓ Disco 142 GB libres (mínimo 20, recomendado 40)"*"✓ Internet y hora"*"✓ x86-64"*"FAIL=0") ;; *) false;; esac && case "$step_out" in *"se recomiendan"*) false;; *) true;; esac'
+    'case "$step_out" in *"✓ Memoria 8 GiB (mínimo 6, recomendado 8)"*"✓ CPU 4 núcleos"*"✓ x86-64"*"✓ Disco 142 GB libres (mínimo 20, recomendado 40)"*"✓ Internet y hora"*"FAIL=0") ;; *) false;; esac && case "$step_out" in *"se recomiendan"*) false;; *) true;; esac'
   printf 'MemTotal:        4000000 kB\n' > "$tmp/meminfo"
   printf '#!/usr/bin/env bash\necho Avail; echo 12\n' > "$tshim/df"; chmod +x "$tshim/df"
   printf '#!/usr/bin/env bash\nprintf "HTTP/2 401\\r\\ndate: %%s\\r\\n\\r\\n" "$(date -u -d "-1 hour" "+%%a, %%d %%b %%Y %%H:%%M:%%S GMT")"\n' > "$tshim/curl"; chmod +x "$tshim/curl"
@@ -2539,6 +2546,7 @@ SHIM
   # The bundle carries no apps, so there is nothing vendored to verify — the arms prove the new
   # shape: green without provisioning/apps, red with it, red without the manifest.
   local BIN_DIR="$tmp/usr-local-bin" APS_HOME="$tmp/opt"
+  fixture_installation
   mkdir -p "$BIN_DIR" "$ROOT/scripts" "$ROOT/host"; : > "$ROOT/scripts/provisionador.py"; : > "$ROOT/host/aps-conecta"
   cp "$ROOT_BAK/scripts/apps.py" "$ROOT/scripts/apps.py"
   printf '[{"id": "demo", "source": "store", "optional": false, "containers": []}]\n' > "$ROOT/apps.json"
@@ -2759,7 +2767,7 @@ CSHIM
   printf '#!/usr/bin/env bash\nexit 1\n' > "$tshim/curl"; chmod +x "$tshim/curl"
   out="$(check_hairpin)"
   check "hairpin: the red carries the ufw recipe and the local-DNS legs, and never SKIP_DOMAIN_VALIDATION as advice" \
-    'case "$out" in *"dnsmasq"*"daemon.json"*"172.18.0.0/16"*"NO use SKIP_DOMAIN_VALIDATION"*"✗ el control de salud de la oficina NO responde"*) ;; *) false;; esac'
+    'case "$out" in *"dnsmasq"*"daemon.json"*"10.77.0.0/23"*"NO use SKIP_DOMAIN_VALIDATION"*"✗ el control de salud de la oficina NO responde"*) ;; *) false;; esac'
 
   # ── asistente-aio: the AIO wizard driven through its API, against a stateful fake wizard ──
   # curl answers the six endpoints the drive uses (honouring -o, printing -w's code) and logs every
@@ -2907,7 +2915,7 @@ SHIM
     rm -rf "$AIO_STATE"
     out="$( (APS_SUITE_TAG=malo cmd_aio_wizard --preparar --dominio clinica.example) 2>&1)"; rc=$?
     check "asistente-aio --preparar: a wizard that cannot start ends red, with one line for the web installer" \
-      '[ "$rc" -eq 1 ] && [ "$(cat "$AIO_STATE/motivo")" = "El asistente no arrancó: el detalle, en la consola del servidor." ]'
+      '[ "$rc" -eq 1 ] && grep -q "no se pudo leer la versión de la suite" "$AIO_STATE/motivo"'
     local motivo_ok=1 en es
     while IFS='|' read -r en es; do
       printf '%s' "$en" > "$tmp/motivo.txt"
@@ -3795,6 +3803,7 @@ SHIM
   cat > "$tshim/docker" <<SHIM
 #!/usr/bin/env bash
 [ "\$1 \$2" = "ps --format" ] && { cat "$tmp/red-ps" 2>/dev/null; exit 0; }
+[ "\$1 \$2" = "network inspect" ] && { echo 10.77.0.0/23; exit 0; }
 exit 0
 SHIM
   printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/curl"; chmod +x "$tshim/curl"
@@ -3905,7 +3914,7 @@ SHIM
     printf '#!/usr/bin/env bash\nexit 1\n' > "$tshim/curl"; chmod +x "$tshim/curl"
     out="$(PREFLIGHT_DOMAIN=clinica.example check_hairpin)"
     check "hairpin: the red now leads with the one command that fixes it — the alternatives and the SKIP warning kept" \
-      'case "$out" in *"sudo aps-conecta red --dominio clinica.example --arreglar"*"dnsmasq"*"daemon.json"*"172.18.0.0/16"*"NO use SKIP_DOMAIN_VALIDATION"*) ;; *) false;; esac'
+      'case "$out" in *"sudo aps-conecta red --dominio clinica.example --arreglar"*"dnsmasq"*"daemon.json"*"10.77.0.0/23"*"NO use SKIP_DOMAIN_VALIDATION"*) ;; *) false;; esac'
     printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/curl"; chmod +x "$tshim/curl"
     out="$(RED_PUBLIC=203.0.113.9 bash "$HOST_DIR/aps-conecta" red --dominio clinica.example 2>&1)"; rc=$?
     check "dispatch: red answers as the operator calls it (report mode, no sudo)" \
