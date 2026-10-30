@@ -2632,8 +2632,8 @@ SH
   check "arch: x86_64 greens" 'case "$out" in *"✓ x86-64"*) ;; *) false;; esac'
   printf '#!/usr/bin/env bash\necho aarch64\n' > "$tshim/uname"; chmod +x "$tshim/uname"
   out="$(check_arch)"
-  check "arch: aarch64 passes with the -arm64 evidence (the suite publishes both)" \
-    'case "$out" in *"✓ arm64"*"-arm64"*) ;; *) false;; esac'
+  check "arch: aarch64 refuses with x86-64 guidance" \
+    'case "$out" in *"✗ arquitectura aarch64 no soportada"*"x86-64"*) ;; *) false;; esac'
   printf '#!/usr/bin/env bash\necho riscv64\n' > "$tshim/uname"; chmod +x "$tshim/uname"
   out="$(check_arch)"
   check "arch: anything else reds with the supported-architectures hint" \
@@ -3918,6 +3918,51 @@ FAIL=0" ] \
     check "units: systemd-analyze leaves only the unwired ExecStart path (INSTALLER.md owns the symlink; no syntax errors, no unknown directives)" \
       'case "$u" in *"Failed to parse"*|*"Unknown"*|*"Invalid"*) false;; *) true;; esac && [ -z "$leftovers" ]'
   fi
+
+  # Host refusal cases use the real entry points and isolated external tools.
+  local preflight_case="$tmp/preflight-cases"
+  mkdir -p "$preflight_case/bin" "$preflight_case/data"
+  cat > "$preflight_case/bin/docker" <<'SH'
+#!/usr/bin/env bash
+case "$1" in
+  info) printf '%s\n' "$CASE_DOCKER_ROOT" ;;
+  ps)
+    case "$*" in
+      *'{{.Ports}}'*) [ "${CASE_ORPHAN:-0}" = 0 ] || echo '0.0.0.0:8080->8080/tcp' ;;
+      *) [ "${CASE_ORPHAN:-0}" = 0 ] || echo nextcloud-aio-mastercontainer ;;
+    esac ;;
+esac
+exit 0
+SH
+  cat > "$preflight_case/bin/df" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$CASE_ROOT/df.calls"
+echo Avail
+if [ "${!#}" = "$CASE_DOCKER_ROOT" ]; then echo 5; else echo 999; fi
+SH
+  cat > "$preflight_case/bin/ss" <<'SH'
+#!/usr/bin/env bash
+if [ "${CASE_ORPHAN:-0}" = 1 ] && [ "$2" = 'sport = :8080' ]; then
+  printf 'State Recv-Q\nLISTEN 0 0 *:8080\n'
+fi
+SH
+  printf '#!/bin/sh\nexit 0\n' > "$preflight_case/bin/systemctl"
+  printf '#!/bin/sh\necho x86_64\n' > "$preflight_case/bin/uname"
+  printf '#!/bin/sh\nexit 1\n' > "$preflight_case/bin/stat"
+  chmod +x "$preflight_case/bin/"*
+  local case_path="$preflight_case/bin:$PATH"
+  out="$(PATH="$case_path" CASE_ORPHAN=1 APS_HOME="$preflight_case/missing"; export PATH CASE_ORPHAN APS_HOME; FAIL=0; check_ports; echo "FAIL=$FAIL")"
+  check "preflight: suite-owned ports never excuse an orphan without its installation folder" \
+    'case "$out" in *"✗ "*"instalación"*"FAIL=1") ;; *) false;; esac'
+  out="$(PATH="$case_path"; export PATH; FAIL=0; check_ram() { :; }; check_cpu() { :; }; check_disk() { :; }; check_ports() { :; }; check_network() { :; }; step_revisar; echo "FAIL=$FAIL")"
+  check "preflight: missing FUSE refuses before preparing the host" \
+    'case "$out" in *"✗ "*"/dev/fuse"*"FAIL=1") ;; *) false;; esac'
+  out="$(PATH="$case_path" CASE_DOCKER_ROOT=/var/snap/docker/common/var-lib-docker; export PATH CASE_DOCKER_ROOT; FAIL=0; install_docker; echo "FAIL=$FAIL")"
+  check "preflight: an installed Snap Docker is refused rather than accepted" \
+    'case "$out" in *"✗ "*"Snap"*"FAIL=1") ;; *) false;; esac'
+  out="$(PATH="$case_path" CASE_ROOT="$preflight_case" CASE_DOCKER_ROOT="$preflight_case/data"; export PATH CASE_ROOT CASE_DOCKER_ROOT; FAIL=0; check_disk; echo "FAIL=$FAIL")"
+  check "preflight: disk space is measured on the active Docker data root" \
+    'case "$out" in *"✗ Disco 5 GB libres"*"FAIL=1") ;; *) false;; esac && grep -qF -- "$preflight_case/data" "$preflight_case/df.calls"'
 
   ROOT="$ROOT_BAK"
   rm -rf "$tmp"
