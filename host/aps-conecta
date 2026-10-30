@@ -1358,6 +1358,7 @@ aio_select_services() {
   read -ra services <<< "$AIO_SET"
   AIO_EXPECTED="${#services[@]}"
 }
+AIO_REAUTHENTICATED=0
 AIO_CSRF=()                                     # the session's CSRF pair, as curl arguments
 # The wizard refuses (403) any request that does not declare Sec-Fetch-Site same-origin or none
 # (php/public/index.php, "Check Sec-Fetch headers"); a browser sends it, curl does not. "none" is
@@ -1477,11 +1478,30 @@ aio_motivo() {  # FILE — the wizard's refusal (upstream's English) as one Span
   esac
 }
 
+aio_relogin() {  # One recovery per command; a redirect never authorizes an unbounded retry.
+  if [ "$AIO_REAUTHENTICATED" = 1 ]; then
+    bad "la sesión del asistente volvió a vencer" "cierre otras sesiones del asistente y vuelva a ejecutar"
+    return 1
+  fi
+  AIO_REAUTHENTICATED=1
+  info "la sesión del asistente venció; se vuelve a ingresar una vez"
+  aio_login
+}
+
 aio_post() {  # PATH --data-urlencode K=V… — the wizard's configuration API answers 201 or refuses
   # with its reason: the console gets the code and the reason, the web installer one line (no path)
   local endpoint="$1" code campo motivo; shift
   code="$(aio_curl -o "$AIO_STATE/respuesta" -w '%{http_code}' --max-time 15 "${AIO_CSRF[@]}" "$@" \
     "$AIO_URL$endpoint" 2>/dev/null)"
+  if [ "$code" = 302 ]; then
+    aio_relogin || return 1
+    code="$(aio_curl -o "$AIO_STATE/respuesta" -w '%{http_code}' --max-time 15 "${AIO_CSRF[@]}" "$@" \
+      "$AIO_URL$endpoint" 2>/dev/null)"
+    if [ "$code" = 302 ]; then
+      bad "la sesión del asistente volvió a vencer" "cierre otras sesiones del asistente y vuelva a ejecutar"
+      return 1
+    fi
+  fi
   [ "$code" = 201 ] && return 0
   case "${2%%=*}" in
     domain) campo="la dirección" ;;
