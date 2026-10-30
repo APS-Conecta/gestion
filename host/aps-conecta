@@ -3288,8 +3288,9 @@ SHIM
 #!/usr/bin/env bash
 case "\$1" in
   info) echo "$tmp/docker-root" ;;
-  ps) cat "$tmp/aio.ps" ;;
-  inspect) format="\$3"; shift 3; for c in "\$@"; do
+  ps) if [ "\$2" = -a ] && [ -e "$tmp/aio.state-unknown" ]; then exit 124; fi; cat "$tmp/aio.ps" ;;
+  inspect) format="\$3"; if [[ "\$format" == *State.Status* ]] && [ -e "$tmp/aio.state-unknown" ]; then exit 124; fi
+    shift 3; for c in "\$@"; do
     if [[ "\$format" == *State.Status* ]]; then
       grep -qx "\$c" "$tmp/aio.ps" || continue
       status=running; if [ -e "$tmp/aio.stalled-pull" ] && [ "\$(( \$(cat "$tmp/aio.clock" 2>/dev/null || echo 0) / 120 % 2 ))" = 1 ]; then status=restarting; fi
@@ -3384,6 +3385,11 @@ SHIM
     check "asistente-aio: timed-out configuration reads never masquerade as a stable ready instance" \
       '[ "$rc" -eq 1 ] && case "$out" in *"no se pudo leer la configuración de Nextcloud"*) ;; *) false;; esac && case "$out" in *"✓ Suite en marcha"*) false;; *) true;; esac'
     rm -f "$tmp/aio.config-fails"
+    : > "$tmp/aio.ps"; : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; touch "$tmp/aio.state-unknown" "$tmp/aio.start-auth"
+    out="$( (cmd_aio_wizard --dominio clinica.example) 2>&1)"; rc=$?
+    check "asistente-aio: unknown Docker state cannot authorize replay after a start redirect" \
+      '[ "$rc" -eq 1 ] && [ "$(grep -c "^POST start" "$tmp/aio.log")" = 1 ] && [ "$(grep -c "^POST login" "$tmp/aio.log")" = 1 ] && case "$out" in *"antes de reintentar"*) ;; *) false;; esac'
+    rm -f "$tmp/aio.state-unknown" "$tmp/aio.auth-renewed"
     cat > "$tshim/python3" <<SHIM
 #!/usr/bin/env bash
 if [ "\$*" = '-c import time; print(int(time.monotonic()))' ]; then
