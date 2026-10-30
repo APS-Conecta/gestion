@@ -502,8 +502,7 @@ jobs:
       # tarball is the locked bytes, no signature.json. This job runs Talk ON, so the fetch
       # leg resolved spreed from APS-Conecta/spreed's signed release and phase 12 landed it;
       # the entrypoint installed nothing (the nothing-baked walk proved its absence at first
-      # boot). Talk-off is the IP job's world — its fetch resolves nothing and the app stays
-      # absent, the same total absence the optional apps' step below asserts for its rows.
+      # boot). Both installation paths acquire this signed app; optional apps stay separate.
       - name: Talk installed from the fork's signed release, at its locked tag
         uses: ./.github/actions/assert-release-app
         with:
@@ -528,21 +527,13 @@ jobs:
           # the entrypoint's constant half: notify_push arrived scoped at first boot (the
           # sibling's convergence above proved the push binary; here the APP half — installed
           # and enabled). Talk is a release row now (#145): its presence is the release
-          # assert above — the entrypoint installs nothing, and with Talk off even its bytes
-          # are gone (REMOVE_DISABLED_APPS)
+          # assertion above — the entrypoint never installs the signed app.
           [ -n "$(occ config:app:get notify_push installed_version 2>/dev/null || true)" ] \
             || { echo "FAIL: notify_push is not installed — the entrypoint's scoped first-boot install did not land it" >&2; exit 1; }
           [ "$(occ config:app:get notify_push enabled 2>/dev/null || true)" = "yes" ] \
             || { echo "FAIL: notify_push is installed but not enabled" >&2; exit 1; }
-          talk="$(docker exec aps-conecta-nextcloud printenv TALK_ENABLED 2>/dev/null || true)"
-          if [ "$talk" = "yes" ]; then
-            [ -n "$(occ config:app:get spreed installed_version 2>/dev/null || true)" ] \
-              || { echo "FAIL: spreed is not installed — the fetch leg resolves the fork's signed release and phase 12 lands it (TALK_ENABLED=yes, ADR-0020)" >&2; exit 1; }
-            [ "$(occ config:app:get spreed enabled 2>/dev/null || true)" = "yes" ] \
-              || { echo "FAIL: spreed is installed but not enabled" >&2; exit 1; }
-          elif docker exec --user www-data aps-conecta-nextcloud test -e /var/www/html/custom_apps/spreed; then
-            echo "FAIL: custom_apps holds spreed with Talk off — AIO removes it, and no image carries apps (#42)" >&2; exit 1
-          fi
+          [ -n "$(occ config:app:get spreed installed_version)" ]
+          [ "$(occ config:app:get spreed enabled)" = yes ]
           # the scoped variable is the only key: a bare install fails, and installs nothing
           rc=0; out="$(occ app:install notes 2>&1)" || rc=$?
           [ "$rc" -ne 0 ] \
@@ -598,7 +589,7 @@ jobs:
           docker exec --user www-data aps-conecta-nextcloud grep -qF '<name>Euro-Office</name>' /var/www/html/custom_apps/eurooffice/appinfo/info.xml \
             || { echo "FAIL: the update leg replaced the fork's name" >&2; exit 1; }
       # #39/#40: farmacia and estadistica are the optional apps, and this job chose NOTHING — the
-      # testbed's wizard drive recorded talk=1 grabacion=0 farmacia=0 estadistica=0 totem=0
+      # testbed's wizard drive records only optional app choices
       # (Talk on is this job's posture, #145; the optionals stayed unchecked), so the fetch
       # leg resolved nothing for either row and phase 12 skipped each before any arrival path.
       # "Not installed" is therefore TOTAL absence (#42: no image carries the bytes either): no
@@ -1025,8 +1016,7 @@ jobs:
     # a19's automatable arm: a clinic without a domain, installed the way any machine installs it — the
     # silent command alone, no testbed. The install starts the suite itself, by this runner's own
     # address (detected, never written down), served on 443 with the installer's own certificate. The
-    # disposable runner owns 443 and 8080; nothing else runs on it. Talk stays off (the silent
-    # install's default), so the pulls are the domain job's.
+    # disposable runner owns 443 and 8080; nothing else runs on it. The service set is identical on both paths.
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -1088,6 +1078,19 @@ jobs:
             bash /opt/aps-conecta/instalador/host/aps-conecta install \
               --sitio "$RUNNER_TEMP/site.sh" --planilla "$RUNNER_TEMP/usuarios.csv" --app farmacia --app estadistica --app totem \
             < /dev/null | tee "$RUNNER_TEMP/install.out"
+      # #183: the service set is a suite invariant, independent of optional apps.
+      - name: Every always-on service exists and runs after installation
+        run: |
+          set -euo pipefail
+          failed=0
+          for container in nextcloud-aio-mastercontainer aps-conecta-{apache,database,redis,nextcloud,notify-push,eurooffice,talk,fulltextsearch,imaginary,clamav,harp}; do
+            running="$(docker inspect --format '{{.State.Running}}' "$container" 2>/dev/null || true)"
+            if [ "$running" != true ]; then
+              echo "FAIL: always-on service $container is absent or stopped" >&2
+              failed=1
+            fi
+          done
+          [ "$failed" -eq 0 ]
       - name: Hand the checkout back to the runner
         if: always()
         run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
@@ -1216,30 +1219,10 @@ jobs:
         uses: ./.github/actions/assert-release-app
         with:
           app: farmacia
-      # #145, by IP: this job runs Talk OFF (its silent install passes no --talk), so spreed is
-      # the one release row that resolves NOTHING — the record's talk=0 is the gate the fetch
-      # leg reads (releases.py) and phase 12 re-reads through TALK_ENABLED. Total absence,
-      # exactly like an unchosen optional: no lock row, no tarball in the store, no installed
-      # version, not even a directory under custom_apps — the store app it once was is gone
-      # with the channel that installed it.
-      - name: Talk off resolves no spreed — the fork's release is gated by the record's switch (#145)
-        run: |
-          set -euo pipefail
-          cd /opt/aps-conecta/instalador && source scripts/env.sh
-          grep -q "talk=0" /opt/aps-conecta/aio/opciones \
-            || { echo "FAIL: the wizard's options record does not name talk=0 — the switch the fetch leg gates spreed on" >&2; cat /opt/aps-conecta/aio/opciones >&2; exit 1; }
-          sudo test -f /opt/aps-conecta/apps.lock.json \
-            || { echo "FAIL: no apps lock after the install — the absence arms below would read as \"no spreed row\" for the wrong reason" >&2; exit 1; }
-          if sudo python3 -c 'import json, sys; sys.exit(0 if "spreed" in json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"] else 1)'; then
-            echo "FAIL: the lock names spreed with Talk off — the fetch leg must resolve nothing for it" >&2; exit 1
-          fi
-          [ -z "$(occ config:app:get spreed installed_version 2>/dev/null || true)" ] \
-            || { echo "FAIL: spreed is installed with Talk off" >&2; exit 1; }
-          docker exec --user www-data aps-conecta-nextcloud test ! -e /var/www/html/custom_apps/spreed \
-            || { echo "FAIL: custom_apps holds spreed with Talk off" >&2; exit 1; }
-          sudo test ! -e /opt/aps-conecta/apps/spreed \
-            || { echo "FAIL: the release store holds a spreed tarball with Talk off" >&2; exit 1; }
-          echo "spreed: total absence — Talk off resolves nothing, installs nothing, stores nothing"
+      - name: Talk is present from its signed fork release on every install
+        uses: ./.github/actions/assert-release-app
+        with:
+          app: spreed
       # #40, by IP: estadística — the second optional app — installed from its release because this
       # job chose it, and the DEIS data import RUNNING: the app's own hourly job is what downloads
       # the figures (ADR-0005 in that repo — the installer moves no data), so the assertion is the

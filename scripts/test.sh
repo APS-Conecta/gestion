@@ -666,6 +666,19 @@ assert {row["dockerfile"] for row in matrix} == {str(p.relative_to(root)) for p 
 assert {row["image"] for row in matrix if row["context"] == "."} == {"all-in-one", "aio-nextcloud"}
 assert {row["image"] for row in matrix if row["database_test"]} == {"aio-postgresql"}
 assert {row["image"] for row in matrix if not row["cache"]} == {"aio-eurooffice"}
+# The existing browser files run sequentially on one runner; no suite-owned
+# service or named volume may survive the reset between those files.
+cleanup = (root / "php/tests/run.sh").read_text()
+import re
+container_match = re.search(r'aps-conecta-\{([^}]+)}', cleanup)
+volume_match = re.search(r'nextcloud_aio_\{([^}]+)}', cleanup)
+assert container_match and volume_match, "browser reset lost its owned resource lists"
+reset_containers = {'aps-conecta-' + name for name in container_match[1].split(',')}
+reset_volumes = {'nextcloud_aio_' + name for name in volume_match[1].split(',')}
+assert {row['container_name'] for row in services} <= reset_containers, "browser reset misses a suite service"
+named_volumes = {v['source'] for row in services for v in row.get('volumes', [])
+                 if v['source'].startswith('nextcloud_aio_')}
+assert named_volumes <= reset_volumes, "browser reset misses a named suite volume"
 print("every suite image is built from its Dockerfile with the required exceptions")
 PY
 }
@@ -2531,6 +2544,46 @@ assert 'app:install' not in entrypoint
 PY
 }
 check app_startup_cases
+
+# Janus uses its co-located TURN server before a public domain exists. Exercise
+# the real startup writer; only container paths and external discovery are fixtures.
+talk_bootstrap_cases() {
+  python3 - <<'PY'
+import os, pathlib, re, subprocess, tempfile
+source = pathlib.Path('Containers/talk/start.sh').read_text()
+with tempfile.TemporaryDirectory() as directory:
+    root = pathlib.Path(directory)
+    conf, sample, commands = root / 'conf', root / 'janus', root / 'bin'
+    for folder in (conf, sample, commands):
+        folder.mkdir()
+    (sample / 'janus.jcfg.sample').write_text('nat: {\n turn_server = "old"\n}\n')
+    script = root / 'start.sh'
+    script.write_text(source.replace('/conf/', str(conf) + '/').replace('/etc/janus/', str(sample) + '/'))
+    for name, body in {
+        'mountpoint': 'exit 1',
+        'hostname': 'echo 172.25.0.7',
+        'dig': 'case "$*" in *" AAAA "*) ;; *) echo 172.25.0.7 ;; esac',
+    }.items():
+        command = commands / name
+        command.write_text('#!/bin/bash\n' + body + '\n')
+        command.chmod(0o755)
+    env = dict(os.environ, PATH=str(commands) + ':' + os.environ['PATH'],
+               NC_DOMAIN='aio-test.invalid', TALK_HOST='aps-conecta-talk', TALK_PORT='3478',
+               TURN_SECRET='synthetic-turn-secret', SIGNALING_SECRET='synthetic-signaling-secret',
+               INTERNAL_SECRET='synthetic-internal-secret', AIO_LOG_LEVEL='warn')
+    for override, expected in ((None, '127.0.0.1'), ('turn.example.test', 'turn.example.test')):
+        env.pop('TURN_DOMAIN', None)
+        if override is not None:
+            env['TURN_DOMAIN'] = override
+        result = subprocess.run(['bash', str(script), '/bin/true'], env=env,
+                                capture_output=True, text=True, timeout=15)
+        assert result.returncode == 0, 'Talk startup fixture failed before configuration'
+        config = (conf / 'janus.jcfg').read_text()
+        server = re.search(r'turn_server\s*=\s*"([^"]+)"', config)
+        assert server and server[1] == expected, f'Janus TURN endpoint is {server[1] if server else "absent"}; expected {expected}'
+PY
+}
+check talk_bootstrap_cases
 
 # --- gate (#176): no account cap — what builds the images sets none of the one-click-instance keys -
 # Upstream enforces one-click-instance.user-limit inside createUser (web, OCS and occ alike), so the

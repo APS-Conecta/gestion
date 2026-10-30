@@ -22,16 +22,10 @@ test('Initial setup', async ({ page: setupPage, browser }) => {
   await containersPage.locator('#domain').fill('example.com');
   await containersPage.getByRole('button', { name: 'Enviar dominio' }).click();
 
-  // The additional containers start off (patch 210) and the office is Euro-Office (patch 200)
-  await expect(containersPage.locator('#talk')).not.toBeChecked()
-  await expect(containersPage.getByRole('checkbox', { name: 'Imaginary' })).not.toBeChecked()
-  await expect(containersPage.locator('#office-eurooffice')).toBeChecked()
-  await containersPage.locator('#talk').check();
-  await containersPage.getByRole('button', { name: 'Guardar cambios' }).last().click();
-  await expect(containersPage.locator('#talk')).toBeChecked()
-  await containersPage.locator('#talk').uncheck();
-  await containersPage.getByRole('button', { name: 'Guardar cambios' }).last().click();
-  await expect(containersPage.locator('#talk')).not.toBeChecked()
+  // Service selections are gone; Office remains identified in the included suite.
+  await expect(containersPage.locator('#options-form')).toHaveCount(0);
+  await expect(containersPage.locator('#office-eurooffice')).toContainText('Oficina');
+  await expect(containersPage.getByRole('heading', { name: 'Servicios incluidos' })).toBeVisible();
 
   // Reject invalid time zones (PHP-borne English: ConfigurationManager.php:1037 — stays, zero-PHP)
   await containersPage.locator('#timezone').click();

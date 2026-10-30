@@ -71,22 +71,14 @@ readonly class ConfigurationController {
                 $this->configurationManager->timezone = $timezone;
             }
 
-            if (isset($request->getParsedBody()['options-form'])) {
-                if (isset($request->getParsedBody()['office_suite_choice'])) {
-                    $inputValue = strval($request->getParsedBody()['office_suite_choice'] ?? '');
-                    $officeSuite = OfficeSuite::tryFrom($inputValue) ?? OfficeSuite::None;
-                    // APS (D12 b): the suite's office is Euro-Office; switching or disabling it is refused.
-                    if ($officeSuite !== OfficeSuite::Eurooffice) {
-                        throw new InvalidSettingConfigurationException('La oficina de la suite es Euro-Office: no se puede cambiar ni desactivar.');
-                    }
-                    $this->configurationManager->officeSuite = $officeSuite;
+            if (isset($request->getParsedBody()['office_suite_choice'])) {
+                $inputValue = strval($request->getParsedBody()['office_suite_choice'] ?? '');
+                $officeSuite = OfficeSuite::tryFrom($inputValue) ?? OfficeSuite::None;
+                // APS (D12 b): the suite's office is Euro-Office; switching or disabling it is refused.
+                if ($officeSuite !== OfficeSuite::Eurooffice) {
+                    throw new InvalidSettingConfigurationException('La oficina de la suite es Euro-Office: no se puede cambiar ni desactivar.');
                 }
-                $this->configurationManager->isClamavEnabled = isset($request->getParsedBody()['clamav']);
-                $this->configurationManager->isTalkEnabled = isset($request->getParsedBody()['talk']);
-                $this->configurationManager->isTalkRecordingEnabled = isset($request->getParsedBody()['talk-recording']);
-                $this->configurationManager->isImaginaryEnabled = isset($request->getParsedBody()['imaginary']);
-                $this->configurationManager->isFulltextsearchEnabled = isset($request->getParsedBody()['fulltextsearch']);
-                $this->configurationManager->isHarpEnabled = isset($request->getParsedBody()['harp']);
+                $this->configurationManager->officeSuite = $officeSuite;
             }
 
             return $response->withStatus(201)->withHeader('Location', '.');

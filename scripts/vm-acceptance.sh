@@ -203,25 +203,10 @@ check_store_app() {  # $1 = app id
 }
 
 check_apps() {  # $1 = the chosen optional ids, $2 = address, $3 = CA — one verdict per manifest row
-  local chosen=" $1 " id source optional detalle talk=0
-  # Talk is the wizard's switch, not the manifest's: the record gates spreed (#145, ADR-0020) —
-  # a silent install is Talk-off, so the fork's release resolves nothing and its ABSENCE is the
-  # contract (total: no lock row, no version, no directory), exactly as Clean boot asserts it.
-  sudo grep -q "talk=1" "$VMA_ROOT/aio/opciones" 2>/dev/null && talk=1
+  local chosen=" $1 " id source optional detalle
   while IFS=$'\t' read -r id source optional; do
     [ -n "$id" ] || continue
     detalle=""
-    if [ "$id" = spreed ] && [ "$talk" = 0 ]; then
-      if [ -z "$(lock_field spreed tag)" ] \
-         && [ -z "$(occ config:app:get spreed installed_version 2>/dev/null)" ] \
-         && ! "$VMA_DOCKER" exec --user www-data aps-conecta-nextcloud \
-              test -e /var/www/html/custom_apps/spreed 2>/dev/null; then
-        verdict ok "Talk apagado: spreed totalmente ausente" "el registro del asistente lo apagó y nada lo instaló (ADR-0020)"
-      else
-        verdict fail "Talk apagado exige ausencia total de spreed" "hay fila, versión o directorio — cat $VMA_ROOT/aio/opciones"
-      fi
-      continue
-    fi
     if [ "$source" = store ]; then
       detalle="$(check_store_app "$id" || true)"
     elif [ "$optional" = 0 ] || case "$chosen" in *" $id "*) true ;; *) false ;; esac; then
@@ -496,24 +481,7 @@ PY
   printf 'yes\n' > "$SHIM_STATE/occ.calendar.enabled"
   t "manifest: the walk reads every row" 0 '[ "$(manifest_rows | wc -l)" -ge 12 ]'
   t "manifest: every row answers its source" 0 'manifest_rows | grep -qxP "\w+\t(own|fork|store)\t[01]" || false'
-  # Talk off (the record the silent install writes): spreed's absence is the contract — and a
-  # lock row for it reds, the way Clean boot's IP job asserts the same posture
-  t "apps walk: Talk-off absence is a green verdict" 0 'check_apps "$VMA_APPS" 10.0.0.9 "$VMA_WORK/ca.crt" 2>/dev/null | grep "Talk apagado: spreed totalmente ausente" >/dev/null'
-  python3 - <<'PY'
-import json, os
-p = os.path.join(os.environ["VMA_ROOT"], "apps.lock.json")
-d = json.load(open(p))
-d["apps"]["spreed"] = {"source": "fork", "tag": "v21.0.0", "version": "21.0.0", "sha256": "x"}
-json.dump(d, open(p, "w"), indent=2)
-PY
-  t "apps walk: a spreed lock row with Talk off reds" 0 'check_apps "$VMA_APPS" 10.0.0.9 "$VMA_WORK/ca.crt" 2>/dev/null | grep "Talk apagado exige ausencia total de spreed" >/dev/null'
-  python3 - <<'PY'
-import json, os
-p = os.path.join(os.environ["VMA_ROOT"], "apps.lock.json")
-d = json.load(open(p))
-del d["apps"]["spreed"]
-json.dump(d, open(p, "w"), indent=2)
-PY
+  t "apps walk: a missing signed Talk release is a failure verdict" 0 'check_apps "$VMA_APPS" 10.0.0.9 "$VMA_WORK/ca.crt" 2>/dev/null | grep "^  ✗ app spreed — " >/dev/null'
   t "status.php: green through the CA" 0 'check_status_php 10.0.0.9 "$VMA_WORK/ca.crt"'
   t "user login: green on the OCS body" 0 'check_user_login 10.0.0.9 "$VMA_WORK/ca.crt" ana.prueba CAFE-secret'
   printf '{"ocs":{"data":{"id":"otra.persona"}}}\n' > "$SHIM_STATE/user.body"

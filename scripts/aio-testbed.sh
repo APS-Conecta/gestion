@@ -51,7 +51,7 @@ NC=aps-conecta-nextcloud                   # fixed by the fork's php/containers.
 # container names would match none of the suite's. Names the newest suite tag built from this
 # tree's image inputs: a release's, moved by the commit after each green Release (RELEASING §4),
 # or a rehearsal's while the inputs are ahead of it.
-IMAGE="${AIO_TEST_IMAGE:-ghcr.io/aps-conecta/all-in-one:v0.0.0-ci.1471}"
+IMAGE="${AIO_TEST_IMAGE:-ghcr.io/aps-conecta/all-in-one:v0.0.0-ci.1833}"
 WIZARD_PORT="${AIO_TEST_PORT:-8080}"
 APACHE_PORT="${AIO_TEST_APACHE_PORT:-11000}"
 DOMAIN="${AIO_TEST_DOMAIN:-aio-test.invalid}"
@@ -160,10 +160,7 @@ cmd_up() {
   # start with progress, the bounded waits, the Nextcloud admin password into $STATE
   local repo_root
   repo_root="$(cd "$(dirname "$0")/.." && pwd)"
-  # --talk (#145): the probe runs Talk ON — the fork's signed release is the only Talk the
-  # suite installs now (ADR-0020), and only an instance with Talk on proves the channel end
-  # to end: the fetch leg resolves the release, phase 12 lands it, and the release assert
-  # pins the lock. Talk-off is the IP job's world (the store-rules step keeps its absence arm).
+  # Both installation paths run Talk and acquire its signed fork release.
   # --respaldo (#54): the daily backup, the step a clinic also walks (INSTALLER §4) — without
   # it there is no backup scope and the #46 actualizar arms red at their own precondition
   # («el respaldo de la instancia no está configurado»), the latent red the v0.0.0-ci.12
@@ -171,7 +168,7 @@ cmd_up() {
   # (a started wizard is never configured twice).
   mkdir -p "$STATE/respaldos"
   AIO_URL="$WIZ" AIO_STATE="$STATE" bash "$repo_root/host/aps-conecta" asistente-aio \
-    --dominio "$DOMAIN" --sin-validar-dominio --talk --respaldo "$STATE/respaldos" \
+    --dominio "$DOMAIN" --sin-validar-dominio --respaldo "$STATE/respaldos" \
     || die "the CLI's wizard drive (host/aps-conecta asistente-aio) failed — its ✗ lines above name the step"
 
   # Probe state, set ONCE outside any seed (B-018's rule is about a PHASE re-writing the key

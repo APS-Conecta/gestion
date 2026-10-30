@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 
-test('Initial setup persists default container selections', async ({ page: setupPage }) => {
+test('Initial setup persists Office identity', async ({ page: setupPage }) => {
   test.setTimeout(10 * 60 * 1000);
 
   await setupPage.goto('./setup');
@@ -14,11 +14,5 @@ test('Initial setup persists default container selections', async ({ page: setup
     }
   }, { timeout: 30_000 }).toMatchObject({
     officeSuite: 'eurooffice',
-    isClamavEnabled: false,
-    isTalkEnabled: false,
-    isTalkRecordingEnabled: false,
-    isImaginaryEnabled: false,
-    isFulltextsearchEnabled: false,
-    isHarpEnabled: false,
   });
 });

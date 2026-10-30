@@ -68,6 +68,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)  # deis.py sits beside this file; the host bundle keeps the repo layout
 import deis  # noqa: E402  — the path insert above is the import mechanism
+from images import runtime_services  # noqa: E402
 import apps as suite_apps  # noqa: E402  — the suite manifest (apps.json), beside deis
 
 # The bearer token: 32 bytes from the stdlib CSPRNG, HEX, never
@@ -259,11 +260,12 @@ PASO_PLANILLA, PASO_GATE = "Cuentas del personal", "Comprobación final"
 PASOS_EJECUCION = [PHASE_TITLES[k] for k in sorted(PHASE_TITLES)] + [PASO_PLANILLA, PASO_GATE]
 # The suite's containers, named for the people who run it: the host's AIO_SET plus Nextcloud's own (an
 # arm pins the set). Talk's two join when the wizard was given Talk — they never block «Siguiente».
-CONTENEDORES_SUITE = (("aps-conecta-apache", "Servidor web"), ("aps-conecta-nextcloud", "Núcleo de la suite"),
-                      ("aps-conecta-database", "Base de datos"), ("aps-conecta-redis", "Caché"),
-                      ("aps-conecta-notify-push", "Notificaciones al instante"),
-                      ("aps-conecta-eurooffice", "Oficina"))
-CONTENEDORES_TALK = (("aps-conecta-talk", "Talk"), ("aps-conecta-talk-recording", "Grabación de Talk"))
+SERVICE_NAMES = {"apache": "Servidor web", "nextcloud": "Núcleo de la suite", "database": "Base de datos",
+                 "redis": "Caché", "notify-push": "Notificaciones al instante", "eurooffice": "Oficina",
+                 "talk": "Talk", "fulltextsearch": "Búsqueda", "imaginary": "Vistas previas",
+                 "clamav": "Antivirus", "harp": "AppAPI"}
+CONTENEDORES_SUITE = tuple((name, SERVICE_NAMES.get(name.removeprefix("aps-conecta-"), name))
+                           for name in runtime_services())
 # Talk sized to the server (R26). ponytail: Talk ~1 GiB is AIO's own figure; the recording's 4 free cores
 # are the approved design's example, above AIO's ~2 vCPU — the conservative side until measured. Clean
 # boot prints the suite's memory; the L7 rehearsal box (12 GiB, 4 cores) confirms or moves them.
@@ -296,7 +298,7 @@ PASOS_SUITE = ((("✓ Suite iniciada", "✓ Suite reanudada", "✓ La suite ya e
                (("✓ Contraseña del asistente",), "Contraseña del asistente"),
                (("✓ Ingreso al asistente",), "Ingreso al asistente"),
                (("✓ Dominio:",), "Dominio"), (("✓ Zona horaria:",), "Zona horaria"),
-               (("✓ Opciones:",), "Opciones"), (("✓ Respaldo diario",), "Respaldo diario"))
+               (("✓ Servicios de la suite incluidos;",), "Servicios incluidos"), (("✓ Respaldo diario",), "Respaldo diario"))
 SUITE = {"estado": "sin_preparar", "hechos": [], "motivo": ""}
 SUITE_GUARD = threading.Lock()
 SUITE_CMD = ["bash", HOST_CLI, "asistente-aio", "--preparar"]   # the host's own drive; the self-test fakes it
@@ -1448,7 +1450,6 @@ def plan_clinico(codigo, teams, rows, cargos):
     hand-built site without the pair, a code the register lacks) — a state, never a blocked run."""
     row = find_row(codigo)
     opciones = opciones_actuales()
-    sin_talk = opciones is not None and not opciones["talk"]   # step 6 left Talk off: phase 12 installs no spreed
     # same for the optional apps (#39): a component only when step 6 chose it — an unchosen
     # optional app is absent from the plan, as it is from the instance
     elegidas = opciones["apps"] if opciones else {i: d for i, _n, _s, d in OPCIONALES}
@@ -1469,8 +1470,7 @@ def plan_clinico(codigo, teams, rows, cargos):
                          for uid, nombre, apellidos, _c, gids, primer in rows],
             "cuentas_de_cargo": len(cargos),
             "componentes": [[nombre, que] for app, nombre, que in COMPONENTES
-                            if not (sin_talk and app == "spreed")
-                            and (app not in OPCIONAL_IDS or elegidas[app])]}
+                            if app not in OPCIONAL_IDS or elegidas[app]]}
 
 
 def record_state(body):
@@ -2356,10 +2356,6 @@ contenedores se reinicia una vez durante la corrección.</p>
 <script>
 (async () => {
   let reloj = null, visto = "", vistoDatos = "", vistoOpc = "", aviso = "", relojRed = null, pedido = null, reintentado = false, redVista = "";
-  const fila = (n, v, activo) => '<li class="' + (v.cabe ? "hecho" : "") + '"><span class="ic">' + (v.cabe ? "✓" : "✗") +
-    "</span><span><b>" + n + ": " + (v.cabe ? "cabe" : "no cabe") + "</b> (" + escapear(v.texto) + ")" +
-    (activo === undefined ? (v.cabe ? " — se activa." : " — queda desactivada.") :   // once prepared: what it was given
-      activo ? " — activado." : " — desactivado.") + "</span></li>";
   const coma = (x) => String(x).replace(".", ",");
   function pintar(s) {
     zona("m").innerHTML = "";
@@ -2393,9 +2389,7 @@ contenedores se reinicia una vez durante la corrección.</p>
       (pisos.ram_min ? '<p class="nota">Pisos del instalador: memoria ' + pisos.ram_min +
         " GiB (recomendado " + pisos.ram_recomendada + " GiB); disco " + pisos.disco_min +
         " GB (recomendado " + pisos.disco_recomendado + " GB).</p>" : "") +
-      '<ul class="lista-estado">' +
-      fila("Talk", s.talk, s.preparada ? s.opciones.talk : undefined) +
-      fila("Grabación", s.grabacion, s.preparada ? s.opciones.grabacion : undefined) + "</ul>";
+      "<p>Talk está incluido. La grabación permanece desactivada.</p>";
     // a suite that exists — prepared here, or already started — is followed, never prepared again
     const p = s.preparacion, hechos = new Set(p.hechos),
       sigue = s.preparada || s.en_marcha || s.contenedores.some(([, e]) => e !== "en espera");
@@ -2420,8 +2414,7 @@ contenedores se reinicia una vez durante la corrección.</p>
       zona("s-datos").innerHTML = '<dl class="dl"><dt>' + (/^[0-9.]+$/.test(s.dominio || "") ? "Dirección IP" : "Dominio") +
         "</dt><dd>" + escapear(s.dominio || "—") +
         "</dd><dt>Zona horaria</dt><dd>Santiago</dd><dt>Oficina</dt><dd>Euro-Office</dd><dt>Talk</dt><dd>" +
-        (s.opciones.talk ? "Activado" : "Desactivado") + "; grabación " +
-        (s.opciones.grabacion ? "activada" : "desactivada") + appsDd +
+        "Incluido; grabación desactivada" + appsDd +
         "</dd><dt>Respaldo</dt><dd>Diario a las 04:00 hora de Santiago, en este servidor</dd>" +
         (s.ca ? '<dt>Certificado</dt><dd>Propio del instalador. <a href="/api/ca" download>Descargar el ' +
           'certificado</a>: cada equipo del personal lo importa una vez (guía, §10). Huella SHA-256: ' +
@@ -3165,7 +3158,7 @@ def ca_personal():
 def opciones_actuales():
     """The install options the wizard was given (the host records them with the domain): None
     before step 6 — or when the record cannot be read as one, so the page asks again — else
-    {"talk", "grabacion", "apps": {optional id: chosen}}. The optional apps ride the same record
+    {"apps": {optional id: chosen}}. The optional apps ride the same record
     (#39): the CLI writes every optional row the manifest names, chosen or not, and a key it does
     not name (a later suite's app, on an older record) reads as not chosen."""
     try:
@@ -3179,10 +3172,9 @@ def opciones_actuales():
         if not sep or valor not in ("0", "1"):   # one shape, or nothing: a hand edit is not a preparation
             return None
         pares[clave] = valor == "1"
-    if "talk" not in pares or "grabacion" not in pares:
+    if not pares:
         return None
-    return {"talk": pares["talk"], "grabacion": pares["grabacion"],
-            "apps": {i: pares.get(i, False) for i in OPCIONAL_IDS}}
+    return {"apps": {i: pares.get(i, False) for i in OPCIONAL_IDS}}
 
 
 def _occ_status():
@@ -3216,9 +3208,7 @@ def talk_ahora(vistos):
     """Talk's verdict now (R26). The port is probed unless the wizard was given Talk: then its own proxy
     holds 3478 and a probe could race it."""
     memoria, nucleos = recursos()
-    opciones = opciones_actuales()
-    libre = ("aps-conecta-talk" in vistos or (opciones is not None and opciones["talk"])
-             or puerto_libre(PUERTO_TALK))
+    libre = "aps-conecta-talk" in vistos or puerto_libre(PUERTO_TALK)
     return veredicto_talk(memoria, nucleos, libre)
 
 
@@ -3233,13 +3223,10 @@ def estado_suite():
     talk, grabacion = talk_ahora(vistos)
     opciones = opciones_actuales()
     if opciones:
-        con_talk, con_grabacion, apps_elegidas = opciones["talk"], opciones["grabacion"], opciones["apps"]
+        apps_elegidas = opciones["apps"]
     else:   # before step 6: Talk as the server allows, the apps at their checkbox's default
-        con_talk, con_grabacion = talk[0], grabacion[0]
         apps_elegidas = {i: d for i, _n, _s, d in OPCIONALES}
     base = [[nombre, estado_contenedor(vistos.get(c))] for c, nombre in CONTENEDORES_SUITE]
-    extra = [[nombre, estado_contenedor(vistos.get(c))]
-             for (c, nombre), si in zip(CONTENEDORES_TALK, (con_talk, con_grabacion)) if si]
     en_marcha = all(e == "en marcha" for _n, e in base)
     instalada = en_marcha and suite_instalada()
     frase = ""
@@ -3257,12 +3244,12 @@ def estado_suite():
                  "grabacion": {"cabe": grabacion[0], "texto": grabacion[1]},
                  "apps": apps_aps(), "dominio": dominio_actual(), "preparada": opciones is not None,
                  "opcionales": [[i, n, s, d, apps_elegidas[i]] for i, n, s, d in OPCIONALES],
-                 "opciones": {"talk": con_talk, "grabacion": con_grabacion, "apps": apps_elegidas},
+                 "opciones": {"apps": apps_elegidas},
                  "preparacion": {"estado": s["estado"], "hechos": list(s["hechos"]), "motivo": s["motivo"],
                                  "pasos": [t for _p, t in PASOS_SUITE]},
                  "frase": frase, "asistente": f"https://{LAN_IP}:8080", "ip": LAN_IP,
                  "ca": huella(ca) if ca else "",
-                 "contenedores": base + extra, "en_marcha": en_marcha, "instalada": instalada}
+                 "contenedores": base, "en_marcha": en_marcha, "instalada": instalada}
 
 
 def iniciar_suite(payload):
@@ -3289,10 +3276,8 @@ def iniciar_suite(payload):
     st, vistos = contenedores()
     if st != 200:
         return st, vistos
-    talk, grabacion = talk_ahora(vistos)
     argv = (SUITE_CMD + ["--dominio", dominio, "--respaldo", RESPALDO_DIR]
             + [p for i, _n, _s, _d in OPCIONALES for p in (("--app", i) if apps.get(i) else ())]
-            + (["--talk"] if talk[0] else []) + (["--grabacion"] if grabacion[0] else [])
             + ([] if payload.get("validar") is not False else ["--sin-validar-dominio"]))
     with SUITE_GUARD:
         if SUITE["estado"] == "en_curso":
@@ -5145,7 +5130,7 @@ def selftest():
                 globals()["puerto_libre"] = lambda _p: True
                 os.remove(os.path.join(AIO_STATE, "opciones"))
             check("suite: once prepared, the port is probed only where Talk is off — Talk's own proxy is never raced, and a taken port still reads taken (R26)",
-                  sin_talk_rec[0] == (False, "el puerto 3478 está ocupado") and con_talk_rec[0][0] is True)
+                  sin_talk_rec[0] == (False, "el puerto 3478 está ocupado") and con_talk_rec[0] == (False, "el puerto 3478 está ocupado"))
             try:
                 with open(os.path.join(AIO_STATE, "opciones"), "w", encoding="utf-8") as fh:
                     fh.write("talk=0 grabacion=0\n")
@@ -5165,18 +5150,17 @@ def selftest():
             finally:
                 os.remove(os.path.join(AIO_STATE, "opciones"))
             check("revisión: Talk is a component only when step 6 gave the suite Talk, and an optional app only when it was chosen (#39, #40, #41) — phase 12 installs nothing else (R29)",
-                  "Talk" not in sin_talk_plan and "Talk" in con_talk_plan
+                  "Talk" in sin_talk_plan and "Talk" in con_talk_plan
                   and "Farmacia" not in sin_talk_plan and "Farmacia" not in con_talk_plan
                   and "Farmacia" in con_apps_plan and "Estadística" not in con_apps_plan and "Tótem" not in con_apps_plan
                   and "Estadística" not in sin_talk_plan and "Estadística" in con_estadistica_plan
                   and "Tótem" not in con_estadistica_plan
                   and "Tótem" in con_totem_plan and "Estadística" not in con_totem_plan
-                  and len(con_talk_plan) == len(COMPONENTES) - len(OPCIONALES) == len(sin_talk_plan) + 1
+                  and len(con_talk_plan) == len(COMPONENTES) - len(OPCIONALES) == len(sin_talk_plan)
                   and len(con_apps_plan) == len(COMPONENTES) - len(OPCIONALES) + 1
                   and len(con_estadistica_plan) == len(COMPONENTES) - len(OPCIONALES) + 1
                   and len(con_totem_plan) == len(COMPONENTES) - len(OPCIONALES) + 2)
-            with open(HOST_CLI, encoding="utf-8") as fh:
-                aio_set = re.search(r'^AIO_SET="([^"]*)"', fh.read(), re.M).group(1).split()
+            aio_set = runtime_services()
             filas = apps_aps()
             fila_farmacia = next(a for a in SUITE_APPS if a["id"] == "farmacia")
             fila_estadistica = next(a for a in SUITE_APPS if a["id"] == "estadistica")
@@ -5234,8 +5218,8 @@ def selftest():
             with open(falso, "w", encoding="utf-8") as fh:
                 fh.write('''#!/usr/bin/env bash
 printf '%s\\n' "$*" > "$AIO_STATE/argv"
-d=""; t=0; g=0; f=0; e=0; m=0
-while [ $# -gt 0 ]; do case "$1" in --dominio) d="$2" ;; --talk) t=1 ;; --grabacion) t=1; g=1 ;; --app) case "$2" in farmacia) f=1 ;; estadistica) e=1 ;; totem) m=1 ;; esac; shift ;; esac; shift; done
+d=""; f=0; e=0; m=0
+while [ $# -gt 0 ]; do case "$1" in --dominio) d="$2" ;; --app) case "$2" in farmacia) f=1 ;; estadistica) e=1 ;; totem) m=1 ;; esac; shift ;; esac; shift; done
 sleep 0.3
 echo "✓ La suite ya está iniciada"
 case "$d" in
@@ -5250,10 +5234,10 @@ echo "✓ Contraseña del asistente guardada en $AIO_STATE/master.pw (solo admin
 echo "✓ Ingreso al asistente"
 echo "✓ Dominio: $d"
 echo "✓ Zona horaria: America/Santiago"
-echo "✓ Opciones: oficina incluida; Talk activado; grabación apagada; imágenes apagadas; sin aplicaciones opcionales"
+echo "✓ Servicios de la suite incluidos; sin aplicaciones opcionales"
 echo "✓ Respaldo diario a las 04:00 hora de Santiago (07:00 UTC), en /srv/aps-conecta/respaldos, con /opt/aps-conecta"
 printf '%s\\n' "$d" > "$AIO_STATE/dominio"
-printf 'talk=%s grabacion=%s farmacia=%s estadistica=%s totem=%s\\n' "$t" "$g" "$f" "$e" "$m" > "$AIO_STATE/opciones"
+printf 'farmacia=%s estadistica=%s totem=%s\\n' "$f" "$e" "$m" > "$AIO_STATE/opciones"
 echo "✓ Asistente listo: falta «Iniciar» en el asistente"
 ''')
             verdadero_cmd = SUITE_CMD
@@ -5316,14 +5300,14 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                   and lista["preparacion"]["hechos"] == [t for _p, t in PASOS_SUITE]
                   and lista["frase"] == "frase uno dos" and lista["dominio"] == "gestion.clinica.example"
                   and lista["preparada"] is True
-                  and lista["opciones"] == {"talk": True, "grabacion": False, "apps": {"farmacia": False, "estadistica": False, "totem": False}}
+                  and lista["opciones"] == {"apps": {"farmacia": False, "estadistica": False, "totem": False}}
                   and lista["opcionales"] == [["estadistica", "Estadística", OPCIONALES[0][2], False, False],
                                                ["farmacia", "Farmacia", OPCIONALES[1][2], False, False],
                                                ["totem", "Tótem", OPCIONALES[2][2], False, False]]
                   and "--sin-validar-dominio" in argv_txt and "--respaldo /srv/aps-conecta/respaldos" in argv_txt
-                  and "--talk" in argv_txt and "--grabacion" not in argv_txt and "--app" not in argv_txt
+                  and "--talk" not in argv_txt and "--grabacion" not in argv_txt and "--app" not in argv_txt
                   and "--sin-validar-dominio" not in argv_rechazo
-                  and "--talk" not in argv_chico and "--talk" in argv_grande and "--grabacion" in argv_grande)
+                  and all("--talk" not in argv and "--grabacion" not in argv for argv in (argv_chico, argv_grande)))
             check("suite: the optional apps ride the same post (#39, #40, #41) — an unchecked box sends no flag, a checked one sends --app and the record answers it; anything but the offered apps, or not a boolean, is refused 400 naming it",
                   sin_apps["preparacion"]["estado"] == "lista"
                   and sin_apps["opciones"]["apps"] == {"farmacia": False, "estadistica": False, "totem": False} and "--app" not in argv_sin_apps
@@ -5378,14 +5362,13 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
             finally:
                 open(stubctl, "w").close()
             check("suite: the containers by name — up, starting, waiting, stopped — then the suite installed, with Talk or with Talk stopped, which never blocks «Siguiente»; the passphrase is no longer served once installed (R48)",
-                  st == 200 and a_medias["contenedores"] == [
-                      ["Servidor web", "en marcha"], ["Núcleo de la suite", "iniciando"], ["Base de datos", "en marcha"],
-                      ["Caché", "iniciando"], ["Notificaciones al instante", "en espera"], ["Oficina", "en marcha"],
-                      ["Talk", "detenido"]]
+                  st == 200 and dict(a_medias["contenedores"])["Núcleo de la suite"] == "iniciando"
+                  and dict(a_medias["contenedores"])["Talk"] == "detenido"
+                  and len(a_medias["contenedores"]) == len(runtime_services())
                   and a_medias["en_marcha"] is False and a_medias["instalada"] is False
                   and a_medias["frase"] == "frase uno dos"
                   and st2 == 200 and completa["instalada"] is True and completa["frase"] == ""
-                  and st3 == 200 and sin_talk["instalada"] is True and ["Talk", "detenido"] in sin_talk["contenedores"])
+                  and st3 == 200 and sin_talk["instalada"] is False and ["Talk", "detenido"] in sin_talk["contenedores"])
             with open(os.path.join(AIO_STATE, "dominio"), "w", encoding="utf-8") as fh:
                 fh.write('x"; id; "\n')
             hostil = dominio_actual()
@@ -5581,7 +5564,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   p.returncode == 2 and "✗ falta el código" in p.stdout)
             with tempfile.TemporaryDirectory() as raiz:   # the start beside a suite manifest that is not JSON
                 os.makedirs(os.path.join(raiz, "scripts"))
-                for fuente in ("provisionador.py", "deis.py", "apps.py"):
+                for fuente in ("provisionador.py", "deis.py", "apps.py", "images.py"):
                     shutil.copy(os.path.join(HERE, fuente), os.path.join(raiz, "scripts", fuente))
                 with open(os.path.join(raiz, "apps.json"), "w", encoding="utf-8") as fh:
                     fh.write("{no es JSON")
@@ -5817,9 +5800,9 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   and "bash /configure-apps.sh eurooffice" in log)
             check("generar: the password policy's breach check is off — no password, nor its hash prefix, leaves the server (R28)",
                   "config:app:set password_policy enforceHaveIBeenPwned --value=0" in log)
-            check("generar: the AIO arm — Talk off in the suite: phase 12 asks the suite and installs no spreed (R29)",
-                  "printenv TALK_ENABLED" in log and "spreed skipped" in body["salida"]
-                  and "app spreed" not in body["salida"])
+            check("generar: Talk always installs its signed release without reading a service switch (#183)",
+                  "printenv TALK_ENABLED" not in log and "spreed skipped" not in body["salida"]
+                  and "app spreed" in body["salida"])
             # B-030: phase 50 creates the standing accounts AFTER phase 41 mapped the registry
             # groups into the engine's, so the FIRST seed must map them too — or the second seed
             # writes (Clean boot's seed-idempotent) and every fresh install converges one run late
@@ -5903,9 +5886,9 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
             open(stubctl, "w").close()
             open(stubctl, "w", encoding="utf-8").write("FAIL_ON=TALK_ENABLED\n")
             st, body = generar("ejecutar")
-            check("generar: the suite's Talk switch unreadable stops phase 12 — never read as Talk off (R29)",
-                  st == 500 and body["error"].startswith("FATAL: could not read the suite's Talk switch")
-                  and "spreed skipped" not in body["salida"])
+            check("generar: an unavailable legacy Talk switch cannot gate signed acquisition (#183)",
+                  st == 200 and "printenv TALK_ENABLED" not in stub_log_text()
+                  and "app spreed" in body["salida"])
             open(stubctl, "w").close()
 
             open(stubctl, "w", encoding="utf-8").write("GATE_EXTRA=intruso.9\n")
@@ -6919,7 +6902,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                             pg.wait_for_selector("#s-abrir", timeout=15000)
                             recargado7 = pg.inner_text("#s-datos")
                             open(stubctl, "w", encoding="utf-8").write("PS_LISTA=" + ";".join(
-                                f"{c}:Up 3 minutes" for c, _n in CONTENEDORES_SUITE + CONTENEDORES_TALK[:1]) + "\n")
+                                f"{c}:Up 3 minutes" for c, _n in CONTENEDORES_SUITE) + "\n")
                             pg.wait_for_selector("#s-sig-fila:not([hidden])", timeout=15000)
                             principal7 = pg.inner_text("#contenido")
                             sin_abrir = pg.query_selector("#s-abrir") is None   # no wait: it is gone
@@ -6931,14 +6914,13 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                                                 antes_txt + error_txt + prep_txt + datos_txt + espera_txt + principal7)
                             paso_suite = ("Inicio" in apps_txt and "según su release" in apps_txt
                                      and "Territorio" in apps_txt
-                                     and "Talk: cabe" in talk_txt and "Grabación: no cabe" in talk_txt
-                                     and "requiere 4 núcleos libres; hay 4 en total" in talk_txt
+                                     and "Talk está incluido" in talk_txt and "La grabación permanece desactivada" in talk_txt
                                      and "El asistente rechazó la dirección" in error_txt and de_nuevo
                                      and "Asistente en marcha" in prep_txt
                                      and "frase uno dos" in datos_txt and "gestion.clinica.example" in datos_txt
                                      and "frase uno dos" in recargado7
                                      and "Esperando «Iniciar» en el asistente" in espera_txt
-                                     and "✓ Suite en marcha: 7 contenedores." in principal7 and jerga7 == []
+                                     and f"✓ Suite en marcha: {len(CONTENEDORES_SUITE)} contenedores." in principal7 and jerga7 == []
                                      and sin_abrir)
                         except Exception as e:   # a Playwright timeout: the arm reports it
                             paso_suite = False

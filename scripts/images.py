@@ -33,6 +33,21 @@ class Image:
     cache: bool
 
 
+def runtime_services():
+    """The fixed running sibling set; backup, domain checking and recording are separate."""
+    try:
+        rows = json.loads((ROOT / "php/containers.json").read_text())["aio_services_v1"]
+        names = [row["container_name"] for row in rows if row["container_name"] not in {
+            "aps-conecta-borgbackup", "aps-conecta-domaincheck", "aps-conecta-talk-recording"}]
+        if not names or len(names) != len(set(names)) or "aps-conecta-nextcloud" not in names or any(
+            not re.fullmatch(r"aps-conecta-[a-z0-9-]+", name) for name in names
+        ):
+            raise ValueError("invalid running service set")
+        return names
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise ImageError(f"cannot read the running service inventory: {exc}") from exc
+
+
 def inventory():
     try:
         services = json.loads((ROOT / "php/containers.json").read_text())["aio_services_v1"]
@@ -186,7 +201,8 @@ def self_test():
         (root / "php").mkdir()
         names = ["aio-postgresql", "aio-eurooffice", "aio-nextcloud"]
         definition = root / "php/containers.json"
-        data = {"aio_services_v1": [{"image": f"{REGISTRY}/{name}", "image_tag": "%AIO_CHANNEL%"} for name in names]}
+        data = {"aio_services_v1": [{"image": f"{REGISTRY}/{name}", "image_tag": "%AIO_CHANNEL%",
+                                  "container_name": "aps-conecta-" + ("database" if name == "aio-postgresql" else name.removeprefix("aio-"))} for name in names]}
         definition.write_text(json.dumps(data))
         for directory in ["postgresql", "eurooffice", "nextcloud", "mastercontainer"]:
             path = root / "Containers" / directory
@@ -315,6 +331,17 @@ else:
             invoke("invalid image tag", "preflight", tag, success=False)
             assert not calls.exists(), "invalid tag touched the registry"
 
+        selected = invoke("fixed services", "runtime-services").stdout.split()
+        assert selected == ["aps-conecta-database", "aps-conecta-eurooffice", "aps-conecta-nextcloud"]
+        with_exclusions = {"aio_services_v1": data["aio_services_v1"] + [
+            {"container_name": "aps-conecta-" + name} for name in ("borgbackup", "domaincheck", "talk-recording")]}
+        definition.write_text(json.dumps(with_exclusions))
+        assert invoke("non-running services excluded", "runtime-services").stdout.split() == selected
+        definition.write_text(json.dumps({"aio_services_v1": data["aio_services_v1"] * 2}))
+        invoke("duplicate running service", "runtime-services", success=False)
+        definition.write_text('{"aio_services_v1":[{"container_name":"aps-conecta-talk"}]}')
+        invoke("missing Nextcloud service", "runtime-services", success=False)
+        definition.write_text(json.dumps(data))
         sha = "a" * 40
         invoke("published source verification", "verify", "v0.5.0", "--sha", sha, registry="present")
         for registry in ["missing-one", "network", "bad-digest", "bad-config", "wrong-source", "wrong-revision", "missing-labels"]:
@@ -350,11 +377,15 @@ def main():
         sub.add_argument("--sha", required=True)
         if name == "manifest":
             sub.add_argument("--ref", required=True)
+    commands.add_parser("runtime-services")
     rewrite = commands.add_parser("rewrite-registry")
     rewrite.add_argument("file")
     args = parser.parse_args()
     if args.self_test:
         self_test()
+        return
+    if args.command == "runtime-services":
+        print(" ".join(runtime_services()))
         return
     if args.command == "preflight":
         preflight(args.tag, args.force)

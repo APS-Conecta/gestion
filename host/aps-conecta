@@ -302,7 +302,7 @@ usage() {  # Spanish, generated from the registry — never a slice of this file
   echo "  aps-conecta run-command [IP]      solo el comando de arranque de la suite (por IP, con su certificado)"
   echo "  aps-conecta provision             abre el instalador web (lo mismo que el paso abrir)"
   echo "  aps-conecta provision --reponer   re-provisión semanal (la ejecuta el temporizador)"
-  echo "  aps-conecta asistente-aio --dominio D [--talk] [--app A] [--preparar]   configura la suite por la API del asistente (--preparar: sin iniciarla; --app: una aplicación opcional por bandera)"
+  echo "  aps-conecta asistente-aio --dominio D [--app A] [--preparar]   configura la suite por la API del asistente (--preparar: sin iniciarla; --app: una aplicación opcional por bandera)"
   echo "  aps-conecta temporizadores        instala y activa la re-provisión semanal"
   echo "  aps-conecta estado                el último resultado de la re-provisión, con cada arreglo (sin sudo)"
   echo "  aps-conecta revalidate            revisa la instancia después de una actualización"
@@ -1023,7 +1023,16 @@ AIO_URL="${AIO_URL:-https://127.0.0.1:8080}"   # the wizard (self-signed TLS); t
 AIO_STATE="${AIO_STATE:-$APS_HOME/aio}"       # passphrase, session jar, admin password — 0600
 AIO_POLL="${AIO_POLL:-5}"                   # seconds between polls; the self-test sets 0
 AIO_RESPALDO_POLLS="${AIO_RESPALDO_POLLS:-1080}"   # the backup's bound: 90 minutes at the default poll; the self-test lowers it
-AIO_SET="aps-conecta-apache aps-conecta-database aps-conecta-redis aps-conecta-notify-push aps-conecta-eurooffice"
+AIO_SET=""
+AIO_EXPECTED=0
+# Lazy: install/preflight must be able to provision Python before using the suite API.
+aio_select_services() {
+  [ -z "$AIO_SET" ] || return 0
+  AIO_SET="$(python3 "$HOST_DIR/../scripts/images.py" runtime-services)" || return 1
+  local -a services
+  read -ra services <<< "$AIO_SET"
+  AIO_EXPECTED="${#services[@]}"
+}
 AIO_CSRF=()                                     # the session's CSRF pair, as curl arguments
 # The wizard refuses (403) any request that does not declare Sec-Fetch-Site same-origin or none
 # (php/public/index.php, "Check Sec-Fetch headers"); a browser sends it, curl does not. "none" is
@@ -1034,10 +1043,11 @@ aio_curl() {  # ARGS… — the wizard with the session jar
   curl -sk "${AIO_SEC[@]}" -b "$AIO_STATE/cookies" -c "$AIO_STATE/cookies" "$@"
 }
 
-aio_count() {  # how many of the six suite containers run
+aio_count() {  # how many of the included service containers run
+  aio_select_services || return 1
   local c n=0 names
   names="$(docker ps --format '{{.Names}}' 2>/dev/null)"
-  for c in "$NC" $AIO_SET; do printf '%s\n' "$names" | grep -qx "$c" && n=$((n + 1)); done
+  for c in $AIO_SET; do printf '%s\n' "$names" | grep -qx "$c" && n=$((n + 1)); done
   echo "$n"
 }
 
@@ -1151,7 +1161,6 @@ aio_post() {  # PATH --data-urlencode K=V… — the wizard's configuration API 
   case "${2%%=*}" in
     domain) campo="la dirección" ;;
     timezone) campo="la zona horaria" ;;
-    options-form) campo="las opciones" ;;
     *) campo="el respaldo" ;;
   esac
   motivo="$(aio_motivo "$AIO_STATE/respuesta")"
@@ -1162,6 +1171,7 @@ aio_post() {  # PATH --data-urlencode K=V… — the wizard's configuration API 
 }
 
 aio_start() {  # POST /api/docker/start pulls, creates and starts the whole set INSIDE the request
+  aio_select_services || return 1
   # (up to 30 min on a slow link): it runs in the background while the console counts containers
   local f="$AIO_STATE/inicio.code" pid n seen="" code
   info "iniciando la suite (descarga de imágenes: varios minutos)"
@@ -1172,7 +1182,7 @@ aio_start() {  # POST /api/docker/start pulls, creates and starts the whole set 
   trap 'kill "$pid" 2>/dev/null; exit 130' INT TERM
   while kill -0 "$pid" 2>/dev/null; do
     n="$(aio_count)"
-    [ "$n" = "$seen" ] || { info "contenedores en marcha: $n de 6"; seen="$n"; }
+    [ "$n" = "$seen" ] || { info "contenedores en marcha: $n de $AIO_EXPECTED"; seen="$n"; }
     sleep "$AIO_POLL"
   done
   wait "$pid"
@@ -1186,13 +1196,14 @@ aio_start() {  # POST /api/docker/start pulls, creates and starts the whole set 
   esac
 }
 
-aio_pendientes() {  # the six not yet ready, as «nombre (estado)»: each one healthy, and apache
+aio_pendientes() {  # the included services not yet ready, as «nombre (estado)»: each one healthy, and apache
+  aio_select_services || return 1
   # listening too — Containers/apache/healthcheck.sh exits 0 while Nextcloud is down, before
   # start.sh opens its ports, so the probe is that file without the shortcut, run inside the
   # container so it reads apache's own $APACHE_PORT (a clinic's 443 as the testbed's) (A-037)
   local salud c st out=""
-  salud="$(docker inspect -f '{{.Name}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' "$NC" $AIO_SET 2>/dev/null)"
-  for c in "$NC" $AIO_SET; do
+  salud="$(docker inspect -f '{{.Name}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' $AIO_SET 2>/dev/null)"
+  for c in $AIO_SET; do
     st="$(printf '%s\n' "$salud" | sed -n "s#^/$c ##p")"
     case "$st" in healthy) ;; starting) out="$out, $c (aún arrancando)" ;; unhealthy) out="$out, $c (falla su control de salud)" ;; *) out="$out, $c (sin estado)" ;; esac
   done
@@ -1201,12 +1212,13 @@ aio_pendientes() {  # the six not yet ready, as «nombre (estado)»: each one he
   printf '%s' "${out#, }"
 }
 
-aio_wait() {  # bounded: the six containers up (20 min), Nextcloud installed (10 min), the six
+aio_wait() {  # bounded: the included service containers up (20 min), Nextcloud installed (10 min), the included services
+  aio_select_services || return 1
   # ready (10 min, aio_pendientes), its configuration no longer moving (2 min — probing a moving
   # config is a race, #96)
   local i st prev cur pend
-  for i in $(seq 240); do [ "$(aio_count)" = 6 ] && break; sleep "$AIO_POLL"; done
-  if [ "$(aio_count)" != 6 ]; then
+  for i in $(seq 240); do [ "$(aio_count)" = "$AIO_EXPECTED" ] && break; sleep "$AIO_POLL"; done
+  if [ "$(aio_count)" != "$AIO_EXPECTED" ]; then
     bad "los contenedores no terminaron de arrancar en 20 minutos" "docker ps -a --filter name=^aps-conecta-"
     return 1
   fi
@@ -1229,7 +1241,7 @@ aio_wait() {  # bounded: the six containers up (20 min), Nextcloud installed (10
   for i in $(seq 24); do
     sleep "$AIO_POLL"
     cur="$(docker exec --user www-data "$NC" php /var/www/html/occ config:list --output=json 2>/dev/null | sha256sum)"
-    if [ "$cur" = "$prev" ]; then ok "Suite en marcha: 6 contenedores, Nextcloud instalado"; return 0; fi
+    if [ "$cur" = "$prev" ]; then ok "Suite en marcha: $AIO_EXPECTED contenedores, Nextcloud instalado"; return 0; fi
     prev="$cur"
   done
   bad "la configuración siguió cambiando 2 minutos después de instalar" "espere un momento y vuelva a ejecutar"
@@ -1279,12 +1291,13 @@ app_opcion_requiere() {  # ID — die unless the manifest offers ID (#39): the o
     || die "aplicación opcional desconocida: ${1:-} — las que el manifiesto ofrece son: $(opcionales_manifest 2>/dev/null | cut -f3 | paste -sd, -)"
 }
 
-cmd_aio_wizard() {  # --dominio D [--sin-validar-dominio] [--respaldo DIR] [--talk] [--grabacion] [--app ID]… [--preparar]
+cmd_aio_wizard() {  # --dominio D [--sin-validar-dominio] [--respaldo DIR] [--app ID]… [--preparar]
+  aio_select_services || return 1
   # --preparar: the web installer's step 6 — the mastercontainer started and the wizard filled, but NO
   # start: the operator presses «Iniciar» in the wizard (S1b: the wizard kept, pre-filled). The
   # optional apps (--app, one per checkbox the operator checked, #39) ride the same options record
   # as Talk: unchosen means not installed, ever — not from a release, not from the bake.
-  local domain="" backup_dir="" options=() talk=0 grabacion=0 preparar=0 opciones=(--data-urlencode options-form=1) hora
+  local domain="" backup_dir="" options=() preparar=0 hora
   local apps_elegidas="" fila id defecto nombre linea_apps nombres
   MOTIVO=""   # a refusal that names its own cause for the web installer (own_ipv4)
   while [ $# -gt 0 ]; do
@@ -1294,21 +1307,17 @@ cmd_aio_wizard() {  # --dominio D [--sin-validar-dominio] [--respaldo DIR] [--ta
       --respaldo) [ -n "${2:-}" ] \
                     || die "falta el directorio del respaldo: aps-conecta asistente-aio --dominio <dominio> --respaldo <directorio>"
                   backup_dir="$2"; shift 2 ;;
-      --talk) talk=1; shift ;;
-      --grabacion) talk=1; grabacion=1; shift ;;   # the recording runs inside Talk
       --app) app_opcion_requiere "${2:-}"
              case " $apps_elegidas " in *" ${2:-} "*) ;; *) apps_elegidas="$apps_elegidas ${2:-}" ;; esac
              shift 2 ;;
       --preparar) preparar=1; shift ;;
-      *) die "opción desconocida: $1 — uso: aps-conecta asistente-aio --dominio <dominio> [--sin-validar-dominio] [--respaldo <directorio>] [--talk] [--grabacion] [--app <aplicación>] [--preparar]" ;;
+      *) die "opción desconocida: $1 — uso: aps-conecta asistente-aio --dominio <dominio> [--sin-validar-dominio] [--respaldo <directorio>] [--app <aplicación>] [--preparar]" ;;
     esac
   done
   valid_address "$domain" \
     || die "falta un dominio válido: aps-conecta asistente-aio --dominio <dominio>"
   # an address cannot pass the wizard's DNS validation: by IP it is skipped, always (patch 233 accepts it then)
   ! is_ipv4 "$domain" || options=(--data-urlencode skip_domain_validation=1)   # the one --sin-validar-dominio sets
-  [ "$talk" = 0 ] || opciones+=(--data-urlencode talk=on)
-  [ "$grabacion" = 0 ] || opciones+=(--data-urlencode talk-recording=on)
   # the options record's app half (#39): one key per optional row the manifest names — chosen 1,
   # unchosen 0 — so the record always answers the whole question, and a later manifest's new app
   # (absent on an older record) reads as not chosen
@@ -1319,7 +1328,7 @@ cmd_aio_wizard() {  # --dominio D [--sin-validar-dominio] [--respaldo DIR] [--ta
     linea_apps="$linea_apps $id=$elegido"
     [ "$elegido" = 0 ] || nombres="${nombres:+$nombres, }$nombre"
   done < <(opcionales_manifest)
-  linea_opciones="talk=$talk grabacion=$grabacion$linea_apps"
+  linea_opciones="${linea_apps# }"
   ( umask 077 && mkdir -p "$AIO_STATE" ) || die "no se pudo crear $AIO_STATE"
   rm -f "$AIO_STATE/motivo"
   if is_ipv4 "$domain" && ! own_ipv4 "$domain"; then   # before any post, on every path (R22)
@@ -1347,8 +1356,7 @@ cmd_aio_wizard() {  # --dominio D [--sin-validar-dominio] [--respaldo DIR] [--ta
     aio_passphrase && aio_login && aio_containers_page \
       && aio_post /api/configuration --data-urlencode "domain=$domain" "${options[@]}" && ok "Dominio: $domain" \
       && aio_post /api/configuration --data-urlencode "timezone=America/Santiago" && ok "Zona horaria: America/Santiago" \
-      && aio_post /api/configuration "${opciones[@]}" \
-      && ok "Opciones: oficina incluida; Talk $([ "$talk" = 1 ] && echo activado || echo apagado); grabación $([ "$grabacion" = 1 ] && echo activada || echo apagada); imágenes apagadas; ${nombres:-sin aplicaciones opcionales}" \
+      && ok "Servicios de la suite incluidos; ${nombres:-sin aplicaciones opcionales}" \
       && { [ -z "$backup_dir" ] || { aio_post /api/configuration --data-urlencode "borg_backup_host_location=$backup_dir" \
              --data-urlencode "borg_remote_repo=" && aio_post /api/configuration --data-urlencode "daily_backup_time=$hora" \
              && aio_post /api/configuration --data-urlencode "additional_backup_directories=$APS_HOME" \
@@ -1522,8 +1530,8 @@ act_precondiciones() {  # the FRD's floor, before anything moves: the suite runs
   # refusal, never a surprise later, mid-run)
   local mc=nextcloud-aio-mastercontainer cfg n
   n="$(aio_count)"
-  if [ "$n" != 6 ]; then
-    bad "la suite no está en marcha ($n de 6 contenedores) — actualizar actualiza una suite instalada" \
+  if [ "$n" != "$AIO_EXPECTED" ]; then
+    bad "la suite no está en marcha ($n de $AIO_EXPECTED contenedores) — actualizar actualiza una suite instalada" \
         "revise «sudo aps-conecta preflight» o inicie los contenedores en el asistente (puerto 8080)"
     return 1
   fi
@@ -1739,6 +1747,7 @@ act_promover() {  # the new lock becomes THE lock only now — every app applied
 }
 
 cmd_actualizar() {  # [--revisar] #46 — the administrator's update: the plan (—-revisar stops
+  aio_select_services || return 1
   # there, writing nothing), the full backup first, the candidates fetched and verified into a
   # new lock, the apps applied one by one (store apps with scoped commands), the lock promoted
   # only when everything succeeded, and the revalidation sweep. A failure anywhere leaves the
@@ -2096,6 +2105,7 @@ cmd_preflight() {
 # string, the site discovery, and --reponer against a stub provisionador that records its argv.
 
 selftest() {
+  aio_select_services || return 1
   unset APS_SUITE_TAG   # a caller's override (a rehearsal's) must not leak into the goldens:
                         # every arm derives its tag explicitly
   local n=0 tshim tmp ROOT_BAK="$ROOT"
@@ -2669,7 +2679,7 @@ case "\$url" in
   */login) body='<input name="csrf_name" value="n1"><input name="csrf_value" value="v1">' ;;
   */containers) echo "GET containers" >> "$tmp/aio.log"; body='<span id="initial-nextcloud-password">admin-secreta</span>' ;;
   */api/configuration) echo "POST config\$data" >> "$tmp/aio.log"; touch "$tmp/aio.configured"
-    case "\$data" in *"domain=rechazado.example"*) code=422; body="Please enter a domain and not an IP-address!" ;; *"options-form=1"*) if [ -e "$tmp/aio.options-fails" ]; then code=422; body="algo inesperado"; else code=201; fi ;; *) code=201 ;; esac ;;
+    case "\$data" in *"domain=rechazado.example"*) code=422; body="Please enter a domain and not an IP-address!" ;; *"timezone=America/Santiago"*) if [ -e "$tmp/aio.timezone-fails" ]; then code=422; body="algo inesperado"; else code=201; fi ;; *) code=201 ;; esac ;;
   */api/docker/start) echo "POST start\$data" >> "$tmp/aio.log"
     if [ -e "$tmp/aio.start-fails" ]; then code=500; else
     printf '%s\n' aps-conecta-nextcloud aps-conecta-database aps-conecta-redis > "$tmp/aio.ps"; sleep 0.4
@@ -2690,11 +2700,11 @@ SHIM
   if only_shims curl docker; then
     out="$( (cmd_aio_wizard --dominio clinica.example --sin-validar-dominio) 2>&1)"; rc=$?
     check "asistente-aio: passphrase, login, domain, timezone, options, start with progress, the waits, the admin password — in order" \
-      '[ "$rc" -eq 0 ] && case "$out" in *"✓ Contraseña del asistente guardada en $AIO_STATE/master.pw"*"✓ Ingreso al asistente"*"✓ Dominio: clinica.example"*"✓ Zona horaria: America/Santiago"*"✓ Opciones: oficina incluida"*"· contenedores en marcha: 3 de 6"*"✓ Suite iniciada"*"✓ Suite en marcha: 6 contenedores, Nextcloud instalado"*"✓ Contraseña del administrador de Nextcloud guardada en $AIO_STATE/nextcloud.pw"*) ;; *) false;; esac'
+      '[ "$rc" -eq 0 ] && case "$out" in *"✓ Contraseña del asistente guardada en $AIO_STATE/master.pw"*"✓ Ingreso al asistente"*"✓ Dominio: clinica.example"*"✓ Zona horaria: America/Santiago"*"✓ Servicios de la suite incluidos; sin aplicaciones opcionales"*"· contenedores en marcha: 3 de $AIO_EXPECTED"*"✓ Suite iniciada"*"✓ Suite en marcha: $AIO_EXPECTED contenedores, Nextcloud instalado"*"✓ Contraseña del administrador de Nextcloud guardada en $AIO_STATE/nextcloud.pw"*) ;; *) false;; esac'
     check "asistente-aio: the load-bearing GET /containers comes before the first configuration POST" \
       '[ "$(grep -n "^GET containers" "$tmp/aio.log" | head -1 | cut -d: -f1)" -lt "$(grep -n "^POST config" "$tmp/aio.log" | head -1 | cut -d: -f1)" ]'
     check "asistente-aio: every POST carries the session's CSRF pair; the skip flag rides the domain; office is never posted" \
-      '[ -z "$(grep "^POST config\|^POST start" "$tmp/aio.log" | grep -v "csrf_name=n1 csrf_value=v1")" ] && grep -q "domain=clinica.example skip_domain_validation=1$" "$tmp/aio.log" && grep -q "timezone=America/Santiago$" "$tmp/aio.log" && grep -q "options-form=1$" "$tmp/aio.log" && ! grep -q office "$tmp/aio.log"'
+      '[ -z "$(grep "^POST config\|^POST start" "$tmp/aio.log" | grep -v "csrf_name=n1 csrf_value=v1")" ] && grep -q "domain=clinica.example skip_domain_validation=1$" "$tmp/aio.log" && grep -q "timezone=America/Santiago$" "$tmp/aio.log" && ! grep -q "options-form" "$tmp/aio.log" && ! grep -q office "$tmp/aio.log"'
     check "asistente-aio: the passphrase reaches curl as a file (password@…), never in its arguments" \
       'grep -q "password=frase uno dos" "$tmp/aio.log" && grep -q "password@$AIO_STATE/master.pw" "$tmp/aio.argv" && ! grep -q "frase uno dos" "$tmp/aio.argv"'
     check "asistente-aio: both secrets are 0600 files and never reach the console" \
@@ -2737,30 +2747,31 @@ SHIM
       '[ "$rc" -eq 1 ] && [ "$out" = "✗ falta un dominio válido: aps-conecta asistente-aio --dominio <dominio>" ]'
     : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"
     printf '%s\n' "nextcloud-aio-mastercontainer running" > "$tmp/aio.ps"
-    out="$( (cmd_aio_wizard --preparar --dominio clinica.example --talk --respaldo /srv/aps-conecta/respaldos) 2>&1)"; rc=$?
+    out="$( (cmd_aio_wizard --preparar --dominio clinica.example --respaldo /srv/aps-conecta/respaldos) 2>&1)"; rc=$?
     check "asistente-aio --preparar: the mastercontainer, then the wizard filled — Talk on, the daily backup with the installer's files — and NO start; the domain and the options recorded for the web installer" \
-      '[ "$rc" -eq 0 ] && case "$out" in *"✓ La suite ya está iniciada"*"✓ Dominio: clinica.example"*"✓ Opciones: oficina incluida; Talk activado; grabación apagada"*"✓ Respaldo diario a las 04:00 hora de Santiago ("*" UTC), en /srv/aps-conecta/respaldos, con "*"✓ Asistente listo: falta «Iniciar» en el asistente"*) ;; *) false;; esac && grep -q "options-form=1 talk=on$" "$tmp/aio.log" && grep -q "additional_backup_directories=$APS_HOME$" "$tmp/aio.log" && ! grep -q "^POST start" "$tmp/aio.log" && [ "$(cat "$AIO_STATE/dominio")" = clinica.example ] && [ "$(cat "$AIO_STATE/opciones")" = "talk=1 grabacion=0 farmacia=0 totem=0" ] && [ ! -e "$AIO_STATE/motivo" ]'
+      '[ "$rc" -eq 0 ] && case "$out" in *"✓ La suite ya está iniciada"*"✓ Dominio: clinica.example"*"✓ Servicios de la suite incluidos; sin aplicaciones opcionales"*"✓ Respaldo diario a las 04:00 hora de Santiago ("*" UTC), en /srv/aps-conecta/respaldos, con "*"✓ Asistente listo: falta «Iniciar» en el asistente"*) ;; *) false;; esac && ! grep -q "options-form" "$tmp/aio.log" && grep -q "additional_backup_directories=$APS_HOME$" "$tmp/aio.log" && ! grep -q "^POST start" "$tmp/aio.log" && [ "$(cat "$AIO_STATE/dominio")" = clinica.example ] && [ "$(cat "$AIO_STATE/opciones")" = "farmacia=0 totem=0" ] && [ ! -e "$AIO_STATE/motivo" ]'
     : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"
-    out="$( (cmd_aio_wizard --preparar --dominio clinica.example --grabacion) 2>&1)"; rc=$?
-    check "asistente-aio --grabacion: the recording rides Talk — both posted, both recorded" \
-      '[ "$rc" -eq 0 ] && grep -q "options-form=1 talk=on talk-recording=on$" "$tmp/aio.log" && case "$out" in *"Talk activado; grabación activada"*) ;; *) false;; esac && [ "$(cat "$AIO_STATE/opciones")" = "talk=1 grabacion=1 farmacia=0 totem=0" ]'
-    : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"
+    for legacy_flag in --talk --grabacion; do
+      out="$( (cmd_aio_wizard --preparar --dominio clinica.example "$legacy_flag") 2>&1)"; rc=$?
+      check "asistente-aio: legacy service flag $legacy_flag is refused" \
+        '[ "$rc" -eq 1 ] && case "$out" in *"opción desconocida: $legacy_flag"*) ;; *) false;; esac'
+    done
     out="$( (cmd_aio_wizard --preparar --dominio clinica.example --app farmacia --app farmacia) 2>&1)"; rc=$?
     check "asistente-aio --app (#39): a checked box names the app in the options line, rides the record chosen — every optional row recorded, a repeated flag is one — and posts nothing extra to the wizard" \
-      '[ "$rc" -eq 0 ] && case "$out" in *"✓ Opciones: oficina incluida; Talk apagado; grabación apagada; imágenes apagadas; Farmacia"*) ;; *) false;; esac && [ "$(cat "$AIO_STATE/opciones")" = "talk=0 grabacion=0 farmacia=1 totem=0" ] && grep -q "options-form=1$" "$tmp/aio.log"'
+      '[ "$rc" -eq 0 ] && case "$out" in *"✓ Servicios de la suite incluidos; Farmacia"*) ;; *) false;; esac && [ "$(cat "$AIO_STATE/opciones")" = "farmacia=1 totem=0" ] && ! grep -q "options-form" "$tmp/aio.log"'
     : > "$tmp/aio.log"
     out="$( (cmd_aio_wizard --preparar --dominio clinica.example --app farmacia --app totem) 2>&1)"; rc=$?
     check "asistente-aio --app (#39, #41): two checkboxes ride as two flags and both land in the record — the silent IP install's exact shape" \
-      '[ "$rc" -eq 0 ] && case "$out" in *"imágenes apagadas; Farmacia, Tótem"*) ;; *) false;; esac && [ "$(cat "$AIO_STATE/opciones")" = "talk=0 grabacion=0 farmacia=1 totem=1" ] && grep -q "options-form=1$" "$tmp/aio.log"'
+      '[ "$rc" -eq 0 ] && case "$out" in *"Servicios de la suite incluidos; Farmacia, Tótem"*) ;; *) false;; esac && [ "$(cat "$AIO_STATE/opciones")" = "farmacia=1 totem=1" ] && ! grep -q "options-form" "$tmp/aio.log"'
     : > "$tmp/aio.log"
     out="$( (cmd_aio_wizard --preparar --dominio clinica.example --app estadistica) 2>&1)"; rc=$?
     check "asistente-aio --app (#39): an app the manifest does not offer is refused before anything runs, naming what it offers" \
       '[ "$rc" -eq 1 ] && [ ! -s "$tmp/aio.log" ] && case "$out" in *"✗ aplicación opcional desconocida: estadistica — las que el manifiesto ofrece son: Farmacia,Tótem"*) ;; *) false;; esac'
-    : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; touch "$tmp/aio.options-fails"
+    : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; touch "$tmp/aio.timezone-fails"
     out="$( (cmd_aio_wizard --preparar --dominio clinica.example) 2>&1)"; rc=$?
     check "asistente-aio --preparar: a refusal after the domain leaves no record — the web installer asks again" \
-      '[ "$rc" -eq 1 ] && [ "$(cat "$AIO_STATE/motivo")" = "El asistente rechazó las opciones: el asistente no aceptó el valor." ] && [ ! -e "$AIO_STATE/dominio" ] && [ ! -e "$AIO_STATE/opciones" ]'
-    rm -f "$tmp/aio.options-fails"
+      '[ "$rc" -eq 1 ] && [ "$(cat "$AIO_STATE/motivo")" = "El asistente rechazó la zona horaria: el asistente no aceptó el valor." ] && [ ! -e "$AIO_STATE/dominio" ] && [ ! -e "$AIO_STATE/opciones" ]'
+    rm -f "$tmp/aio.timezone-fails"
     printf '%s\n' "nextcloud-aio-mastercontainer running" aps-conecta-apache > "$tmp/aio.ps"; : > "$tmp/aio.log"
     out="$( (cmd_aio_wizard --preparar --dominio clinica.example) 2>&1)"; rc=$?
     check "asistente-aio --preparar: a running suite is left as it is — nothing posted, no wait" \
@@ -3235,7 +3246,7 @@ printf 'docker %s\n' "\$*" >> "$act/docker.log"
 case "\$1 \$2" in
   "ps --format")
     [ -e "$act/suite-caida" ] && exit 0
-    printf '%s\n' aps-conecta-nextcloud aps-conecta-apache aps-conecta-database aps-conecta-redis aps-conecta-notify-push aps-conecta-eurooffice ;;
+    printf '%s\n' $AIO_SET ;;
   "inspect aps-conecta-borgbackup")
     n="\$(wc -c < "$act/borg.n" 2>/dev/null || echo 0)"; printf x >> "$act/borg.n"
     if [ "\$n" -lt "\${BORG_RUNS:-2}" ]; then echo "true 0 \$(cat "$act/borg.t")"
@@ -3311,7 +3322,7 @@ EOF
       && [ ! -s "$act/resolver.log" ]'
   out="$( id() { echo 0; }; touch "$act/suite-caida"; act46 --revisar 2>&1 )"; arc=$?; rm -f "$act/suite-caida"
   check "actualizar: a suite not running refuses naming the six" \
-    '[ "$arc" -eq 1 ] && case "$out" in *"✗ la suite no está en marcha (0 de 6 contenedores)"*"aps-conecta preflight"*) ;; *) false;; esac'
+    '[ "$arc" -eq 1 ] && case "$out" in *"✗ la suite no está en marcha (0 de $AIO_EXPECTED contenedores)"*"aps-conecta preflight"*) ;; *) false;; esac'
   out="$( id() { echo 0; }; touch "$act/sin-respaldo"; act46 --revisar 2>&1 )"; arc=$?; rm -f "$act/sin-respaldo"
   check "actualizar: an unconfigured backup refuses — the run backs up first, so this is a precondition, never a surprise" \
     '[ "$arc" -eq 1 ] && case "$out" in *"✗ el respaldo de la instancia no está configurado"*"asistente-aio --respaldo"*) ;; *) false;; esac'
@@ -3356,7 +3367,7 @@ EOF
   check "actualizar: the backup is awaited — the POST answers once borg STARTS, so borg's own state is polled until it exits, and the restart comes only after (A-036)" \
     '! grep -q "start con borg en curso" "$act/aio.log"'
   check "actualizar: the restart waits for every container healthy — eurooffice late — and apache listening: its healthcheck exits 0 while Nextcloud is down, so the probe runs it without that shortcut (A-037)" \
-    '[ "$(grep -c "^docker inspect -f {{.Name}} {{if .State.Health}}{{.State.Health.Status}}{{end}} aps-conecta-nextcloud aps-conecta-apache" "$act/docker.log")" -eq 4 ] \
+    '[ "$(grep -c "^docker inspect -f {{.Name}} {{if .State.Health}}{{.State.Health.Status}}{{end}} $AIO_SET" "$act/docker.log")" -eq 4 ] \
       && [ "$(grep -c "^docker exec aps-conecta-apache" "$act/docker.log")" -eq 4 ]'
 
   # #172: the two rows the new lock dropped — viejo still installed, ausente already gone
@@ -3394,12 +3405,14 @@ EOF
       && printf "%s" "$out" | grep -qF "docker logs -f aps-conecta-borgbackup" \
       && ! grep -q "api/docker/start" "$act/aio.log" && ! grep -q "^actualizar " "$act/resolver.log" \
       && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes"'
-  : > "$act/aio.log"; : > "$act/resolver.log"; rm -f "$act/aio.libre"; cp "$act/lock.bytes" "$act/home/apps.lock.json"
-  out="$( id() { echo 0; }; SALUD_MALA=aps-conecta-eurooffice act46 2>&1 )"; arc=$?
-  check "actualizar: a container never healthy after the restart stops the run naming it — no «Suite en marcha», nothing fetched (A-037)" \
-    '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "✗ la suite no quedó lista en 10 minutos: aps-conecta-eurooffice (falla su control de salud)" \
-      && ! printf "%s" "$out" | grep -qF "Suite en marcha" && ! grep -q "^actualizar " "$act/resolver.log" \
-      && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes"'
+  for blocked in aps-conecta-eurooffice aps-conecta-clamav; do
+    : > "$act/aio.log"; : > "$act/resolver.log"; rm -f "$act/aio.libre"; cp "$act/lock.bytes" "$act/home/apps.lock.json"
+    out="$( id() { echo 0; }; SALUD_MALA="$blocked" act46 2>&1 )"; arc=$?
+    check "actualizar: a container never healthy after the restart stops the run naming it — no «Suite en marcha», nothing fetched (A-037)" \
+      '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "✗ la suite no quedó lista en 10 minutos: $blocked (falla su control de salud)" \
+        && ! printf "%s" "$out" | grep -qF "Suite en marcha" && ! grep -q "^actualizar " "$act/resolver.log" \
+        && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes"'
+  done
 
   # a failed apply: the app named, the lock unchanged, the new lock cleaned, the restore command
   : > "$act/aio.log"; : > "$act/resolver.log"; cp "$act/lock.bytes" "$act/home/apps.lock.json"

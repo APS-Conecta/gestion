@@ -12,8 +12,7 @@ apps.py beside it — the manifest is IMPORTED, never re-parsed.
       the tag in the lock. A row already in the lock downloads nothing. An OPTIONAL row the
       operator did not choose (#39) resolves nothing: the wizard's options record answers
       (default /opt/aps-conecta/aio/opciones), and an unchosen optional app stays absent — a
-      leftover lock row never overrides the choice. spreed rides the record's own Talk switch
-      (#145, ADR-0020): Talk off resolves nothing; an absent record never turns Talk off.
+      leftover lock row never overrides the choice. Spreed always resolves (ADR-0021).
       One Spanish FATAL line per refusal, naming the app and the retry command (the wizard and
       the silent install both surface it verbatim).
   scripts/releases.py plan [--manifest PATH] [--lock PATH] [--pub PATH] \
@@ -118,7 +117,7 @@ def store_path(explicit=None):
 
 
 def opciones_path(explicit=None):
-    """The wizard's install-options record — where the host CLI writes the domain, Talk and the
+    """The wizard's install-options record — where the host CLI writes the
     optional apps' choices (#39). APS_APPS_OPCIONES overrides (the self-test's knob); AIO_STATE,
     the host's own override of the same directory, is honoured beside it."""
     return explicit or os.environ.get("APS_APPS_OPCIONES") \
@@ -141,15 +140,6 @@ def elegidas(path=None):
 
 def pubkey_path():
     return os.environ.get("APS_APPS_PUB", PUBKEY_DEFAULT)
-
-
-def talk_on(eleccion):
-    """Whether the suite runs Talk — the record's own `talk` key (#145, ADR-0020): spreed is a
-    release row now, and it resolves only with Talk on, exactly the gate phase 12 reads through
-    TALK_ENABLED. An absent record never turns Talk off: the wizard writes the record before
-    any ejecutar, and a compose install runs Talk always (plan_clinico's own sin_talk
-    convention, provisionador.py)."""
-    return eleccion.get("talk", True)
 
 
 # ── the lock: one JSON document, the per-server record of installed app tags ───────────────
@@ -480,11 +470,6 @@ def fetch_all(rows, nextcloud, path=None, store=None, eleccion=None):
         eleccion = elegidas()
     for row in rows:
         app = row["id"]
-        # spreed rides Talk (#145): with Talk off it resolves nothing, the same gate phase 12
-        # reads through TALK_ENABLED — and a leftover lock row never overrides the choice
-        if app == "spreed" and not talk_on(eleccion):
-            lines.append("✓ apps: spreed omitida — la suite corre sin Talk")
-            continue
         if row.get("optional") is not False and not eleccion.get(app):
             lines.append(f"✓ apps: {app} no elegida — no se instala (la elección del asistente)")
             continue
@@ -543,9 +528,6 @@ def plan_all(rows, nextcloud, path=None, eleccion=None, *, ids):
         eleccion = elegidas()
     for row in rows:
         app = row["id"]
-        if app == "spreed" and not talk_on(eleccion):   # Talk off is not «omitida por elección»:
-            lines.append("spreed\tomitida")             # it is the suite's own switch (#145)
-            continue
         if row.get("optional") is not False and not eleccion.get(app):
             lines.append(f"{app}\tomitida")
             continue
@@ -576,15 +558,6 @@ def fetch_next(rows, nextcloud, nuevo, path=None, store=None, eleccion=None, *, 
         eleccion = elegidas()
     for row in rows:
         app = row["id"]
-        # spreed rides Talk here too (#145): Talk off carries the row over unchanged — the
-        # record that a warm instance still runs Talk must survive the run, exactly like an
-        # unchosen optional's
-        if app == "spreed" and not talk_on(eleccion):
-            if app in lock["apps"]:
-                lines.append("✓ apps: spreed omitida — la suite corre sin Talk; su fila del candado se conserva")
-            else:
-                lines.append("✓ apps: spreed omitida — la suite corre sin Talk")
-            continue
         if row.get("optional") is not False and not eleccion.get(app):
             if app in lock["apps"]:
                 lines.append(f"✓ apps: {app} no elegida — su fila del candado se conserva, no se actualiza")
@@ -1080,9 +1053,7 @@ def selftest():
                   "source": "own", "repo": "APS-Conecta/totem", "tag": "v0.3.0",
                   "version": "0.3.0",
                   "sha256": sha256_file(store_file("totem", "v0.3.0"))})
-        # #145: the same record with Talk OFF — spreed is the one release row that rides the
-        # suite's own switch: nothing resolves, no lock row, and everything else still does.
-        # A fresh lock and store, so "spreed is absent" is total, not carried over.
+        # Legacy service selections cannot change signed Talk acquisition (ADR-0021).
         os.environ["APS_APPS_LOCK"] = os.path.join(tmp, "sin-talk-lock.json")
         os.environ["APS_APPS_STORE"] = os.path.join(tmp, "sin-talk-store")
         with open(os.path.join(tmp, "prod-sin-talk"), "w", encoding="utf-8") as fh:
@@ -1091,35 +1062,33 @@ def selftest():
                               "--nextcloud", "34.0.4",
                               "--opciones", os.path.join(tmp, "prod-sin-talk")],
                              capture_output=True, text=True, timeout=120)
-        check("cli fetch with Talk off (#145): spreed resolves nothing — one line, no lock row, no stored tarball — while every other release row (chosen optional rows included) still resolves",
+        check("cli fetch ignores a legacy Talk-off selection and resolves the signed release (#183)",
               run.returncode == 0
-              and "✓ apps: spreed omitida — la suite corre sin Talk" in run.stdout
-              and "spreed" not in read_lock()["apps"]
-              and not os.path.exists(store_file("spreed", "v24.0.6"))
+              and "✓ apps: spreed v24.0.6" in run.stdout
+              and read_lock()["apps"]["spreed"]["tag"] == "v24.0.6"
+              and os.path.exists(store_file("spreed", "v24.0.6"))
               and read_lock()["apps"]["territorio"]["tag"] == "v0.80.0"
               and read_lock()["apps"]["farmacia"]["tag"] == "v0.12.0")
-        # #145 on actualizar's leg: the plan says omitida, and the fetch carries a leftover row
-        # over untouched — a warm instance that still runs Talk keeps its record through a run
-        # it did not ask to change (the same rule an unchosen optional's row follows).
+        # Plans and updates ignore the same legacy field.
         run = subprocess.run([sys.executable, os.path.abspath(__file__), "plan",
                               "--nextcloud", "34.0.4",
                               "--opciones", os.path.join(tmp, "prod-sin-talk")],
                              capture_output=True, text=True, timeout=120)
-        check("cli plan with Talk off (#145): spreed's row is omitida in the TSV — named like an unchosen optional's, never a refusal",
-              run.returncode == 0 and "spreed\tomitida" in run.stdout
+        check("cli plan ignores a legacy Talk-off selection (#183)",
+              run.returncode == 0 and "spreed\tv24.0.6\tv24.0.6" in run.stdout
               and "territorio\tv0.80.0" in run.stdout)
         candado_sin_talk = os.path.join(tmp, "sin-talk-lock.json")
         write_lock(candado_sin_talk, {"nextcloud": "34.0.4", "apps": {
             "spreed": {"source": "fork", "repo": "APS-Conecta/spreed", "tag": "v24.0.6",
-                       "version": "24.0.6", "sha256": "d" * 64}}})
+                       "version": "24.0.6", "sha256": sha256_file(store_file("spreed", "v24.0.6"))}}})
         nuevo_sin_talk = os.path.join(tmp, "sin-talk-lock.next.json")
         run = subprocess.run([sys.executable, os.path.abspath(__file__), "actualizar",
                               "--opciones", os.path.join(tmp, "prod-sin-talk"),
                               "--nuevo", nuevo_sin_talk, "--nextcloud", "34.0.4"],
                              capture_output=True, text=True, timeout=120)
-        check("cli actualizar with Talk off (#145): the leftover spreed row is carried over whole — nothing updated, nothing erased — and the line says so",
+        check("cli actualizar verifies and refreshes spreed despite a legacy Talk-off selection (#183)",
               run.returncode == 0
-              and "✓ apps: spreed omitida — la suite corre sin Talk; su fila del candado se conserva" in run.stdout
+              and "✓ apps: spreed v24.0.6" in run.stdout
               and read_lock(nuevo_sin_talk)["apps"]["spreed"]["tag"] == "v24.0.6")
         os.environ["APS_APPS_LOCK"] = os.path.join(tmp, "cli-lock.json")
         os.environ["APS_APPS_STORE"] = os.path.join(tmp, "cli-store")

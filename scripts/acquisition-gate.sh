@@ -190,14 +190,13 @@ assert fila["source"] == "fork" and fila["repo"] == "APS-Conecta/spreed" and fil
     echo "  the entrypoint installs or updates spreed — the release channel and actualizar are its only movers" >&2
     fail=1
   fi
-  grep -qF 'def talk_on(eleccion)' "$r" \
-    || { echo "  releases.py lost the Talk gate — spreed must resolve only with Talk on" >&2; fail=1; }
-  grep -qF '✓ apps: spreed omitida — la suite corre sin Talk' "$r" \
-    || { echo "  releases.py's Talk-off line is gone — the wizard surfaces that line verbatim" >&2; fail=1; }
+  if grep -nE 'def talk_on|TALK_ENABLED' "$r" "$TREE/provisioning/phases/12-apps.sh"; then
+    echo "  a Talk selection gate remains in acquisition" >&2; fail=1
+  fi
   [ "$fail" -eq 0 ]
 }
 
-row 145 "spreed's channel is the fork's own signed release — apps.json's row is source fork with release on, the entrypoint installs spreed nowhere, and the resolver gates it on the record's Talk switch (ADR-0020)" \
+row 145 "spreed's channel is the fork's own signed release — apps.json's row is source fork with release on, the entrypoint installs spreed nowhere, and it always resolves independently of saved service selections (ADR-0021)" \
   spreed_from_its_fork
 
 aio_auto_updates_off() {  # 042: AIO's Saturday app:update --all is gone and the env that
@@ -284,8 +283,8 @@ community_channel_closed() {  # 190: the community channel is closed at its sour
   # with it (the directory constant, the config property, the listing method, the form handler, the
   # Caddy trusted-proxy variable — the crafted community-form POST has no handler left to reach).
   local d="$TREE/Containers/mastercontainer/Dockerfile" c="$TREE/php/templates/containers.twig" \
-        j="$TREE/php/public/containers-form-submit.js" fail=0
-  s4_files "$d" "$c" "$j" || return 1
+        fail=0 rc=0 hits
+  s4_files "$d" "$c" || return 1
   [ ! -e "$TREE/community-containers" ] \
     || { echo "  the community-containers directory still ships" >&2; fail=1; }
   if grep -n 'community-containers' "$d"; then echo "  the image still names the community containers" >&2; fail=1; fi
@@ -294,8 +293,9 @@ community_channel_closed() {  # 190: the community channel is closed at its sour
     echo "  the community section's template still ships" >&2; fail=1
   fi
   if grep -niE 'comunitari' "$c"; then echo "  containers.twig still talks about community containers" >&2; fail=1; fi
-  if grep -n 'communityFormSubmit' "$j"; then
-    echo "  containers-form-submit.js still carries the community form's script" >&2; fail=1
+  hits="$(grep -rn 'communityFormSubmit' "$TREE/php/public")" || rc=$?
+  if [ "$rc" -ne 1 ]; then
+    echo "  a community handler survived or its script scan failed: $hits" >&2; fail=1
   fi
   if grep -rn 'CommunityContainers\|community-form' "$TREE/php/src" "$TREE/php/public/index.php"; then
     echo "  a PHP reader of the community directory survived" >&2; fail=1
@@ -317,7 +317,7 @@ office_is_euro_office() {  # 200: the suite's office is Euro-Office, and only Eu
   # (Setup.php:28) never passes through the controller, so the guard cannot refuse the suite's own
   # default; the suite's drive never posts an office choice.
   local k="$TREE/php/src/Controller/ConfigurationController.php" \
-        o="$TREE/php/templates/includes/optional-containers.twig" s="$TREE/php/tests/tests/initial-setup.spec.js" fail=0 g w
+        o="$TREE/php/templates/includes/suite-services.twig" s="$TREE/php/tests/tests/initial-setup.spec.js" fail=0 g w
   s4_files "$k" "$o" "$s" "$TREE/php/public/style.css" || return 1
   g="$(grep -nF 'if ($officeSuite !== OfficeSuite::Eurooffice) {' "$k" | head -1 | cut -d: -f1)"
   w="$(grep -nF '$this->configurationManager->officeSuite = $officeSuite;' "$k" | head -1 | cut -d: -f1)"
@@ -339,22 +339,23 @@ office_is_euro_office() {  # 200: the suite's office is Euro-Office, and only Eu
 row 200 "the suite's office is Euro-Office only — any other office choice is refused before it is stored (422, Spanish), and the page offers no way to disable it (R25, D12 b)" \
   office_is_euro_office
 
-options_start_off() {  # 210: Talk and Imaginary start off (R29, R27.5/7; D12 a) — the
-  # two PHP default literals Setup.php copies into a fresh config. The Provisionador's step 7 turns Talk on
-  # where the server's memory and cores allow; the translated suite's persisted-defaults spec
-  # expects the same two falses.
-  local m="$TREE/php/src/Data/ConfigurationManager.php" s="$TREE/php/tests/tests/persist-default-config.spec.js" fail=0 k
-  s4_files "$m" "$s" || return 1
-  for k in isTalkEnabled isImaginaryEnabled; do
-    grep -qF "get => (bool) \$this->get('$k', false);" "$m" || { echo "  $k does not default to off" >&2; fail=1; }
-    if grep -nF "get('$k', true)" "$m"; then echo "  a $k getter still defaults on" >&2; fail=1; fi
-    grep -qF "$k: false," "$s" || { echo "  persist-default-config.spec.js does not expect $k off" >&2; fail=1; }
-  done
-  [ "$fail" -eq 0 ]
+fixed_suite_services() {  # 210, 183: included services cannot read persisted selections.
+  python3 - "$TREE" <<'PYCODE'
+import pathlib, re, sys
+root = pathlib.Path(sys.argv[1])
+manager = (root / 'php/src/Data/ConfigurationManager.php').read_text()
+for name in ('isClamavEnabled', 'isTalkEnabled', 'isImaginaryEnabled', 'isFulltextsearchEnabled', 'isHarpEnabled'):
+    assert re.search(r'public bool \$' + name + r' \{\s*get => true;\s*}', manager), name
+assert re.search(r'public bool \$isTalkRecordingEnabled \{\s*get => false;\s*}', manager)
+for name in ('php/src/Data/Setup.php', 'php/src/Controller/ConfigurationController.php'):
+    text = (root / name).read_text()
+    assert not re.search(r'->is(?:Clamav|Talk|TalkRecording|Imaginary|Fulltextsearch|Harp)Enabled\s*=', text), name
+assert 'options-form' not in (root / 'php/src/Controller/ConfigurationController.php').read_text()
+PYCODE
 }
 
-row 210 "Talk and Imaginary start off — the two PHP defaults a fresh config copies, and the suite's spec expecting them (R29, D12 a)" \
-  options_start_off
+row 210 "the full suite is fixed at the configuration boundary; legacy selections cannot disable included services or enable recording (ADR-0021, #183)" \
+  fixed_suite_services
 
 first_boot_quiet() {  # 220: a fresh install calls nothing it does not need (R28, the AIO side):
   # nextcloud_announcements is disabled in the fresh-install block, before its first cron run
