@@ -2298,8 +2298,9 @@ selftest() {
   local n=0 tshim tmp ROOT_BAK="$ROOT"
   tmp="$(mktemp -d)"
   tshim="$tmp/bin"; mkdir -p "$tshim"
-  local APS_HOME="$tmp/home" real_stat
+  local APS_HOME="$tmp/home" real_stat real_python
   real_stat="$(command -v stat)"
+  real_python="$(command -v python3)"
   fixture_installation() {
     mkdir -p "$APS_HOME/instalador/host"
     cp "$HOST_DIR/aps-conecta" "$APS_HOME/instalador/host/"
@@ -2639,6 +2640,12 @@ SHIM
     check "proxy: the generated startup command carries only the private profile path" \
       'case "$step_out" in *"--env-file $tmp/proxy-home/proxy.env"*) true;; *) false;; esac \
        && case "$step_out" in *"synthetic-p"*) false;; *) true;; esac'
+    step_out="$(export HTTPS_PROXY='http://proxy.example:3128'; APS_HOME="$tmp/proxy-network"; ROOT="$ROOT_BAK";
+      python3() { "$real_python" "$@"; }; FAIL=0; prepare_proxy; echo "FAIL=$FAIL")"
+    check "proxy: bypasses include localhost, the actual suite subnet and inventory names" \
+      'grep "^NO_PROXY=" "$tmp/proxy-network/proxy.env" | grep -q "10.77.0.0/23" \
+       && grep "^NO_PROXY=" "$tmp/proxy-network/proxy.env" | grep -q "aps-conecta-nextcloud" \
+       && grep "^NO_PROXY=" "$tmp/proxy-network/proxy.env" | grep -q "localhost"'
     echo 2 > "$tmp/oc"; rm -f "$ETC_DIR/sysctl.d/90-aps-conecta.conf"
     step_out="$(export SYSCTL_FAILS=1; PATH="$tshim:$tmp/minbin"; FAIL=0; ensure_overcommit; echo "FAIL=$FAIL")"
     check "preparar: where the kernel setting cannot be applied now (a container) it stays in its file and says so — not a red" \
