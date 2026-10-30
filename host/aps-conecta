@@ -1527,10 +1527,14 @@ aio_progress_begin() {
   AIO_PROGRESS_TIME="$(aio_now)"
 }
 
-aio_progressing() {  # Optional stream file; repeated states and heartbeats never renew the budget.
-  local now pull name status health key states
+aio_states() {
   local -a services
   read -ra services <<< "$AIO_SET"
+  timeout 15 docker inspect -f '{{.Name}} {{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${services[@]}" 2>/dev/null || true
+}
+
+aio_progressing() {  # Optional stream file; repeated states and heartbeats never renew the budget.
+  local now pull name status health key states
   now="$(aio_now)"
   if [ -n "${1:-}" ] && [ -f "$1" ]; then
     pull="$(sed -n 's/^<!-- aps-start-progress:\([0-9][0-9]*\) -->$/\1/p' "$1" | tail -1)"
@@ -1538,7 +1542,7 @@ aio_progressing() {  # Optional stream file; repeated states and heartbeats neve
       AIO_PROGRESS_PULL="$pull"; AIO_PROGRESS_TIME="$now"
     fi
   fi
-  states="$(timeout 15 docker inspect -f '{{.Name}} {{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${services[@]}" 2>/dev/null || true)"
+  states="$(aio_states)"
   while read -r name status health; do
     case " $AIO_SET " in *" ${name#/} "*) ;; *) continue ;; esac
     case "$status" in created|running|paused|restarting|removing|exited|dead) ;; *) continue ;; esac
@@ -1551,41 +1555,54 @@ aio_progressing() {  # Optional stream file; repeated states and heartbeats neve
   [ "$((now - AIO_PROGRESS_TIME))" -lt 1200 ]
 }
 
-aio_start() {  # POST /api/docker/start pulls, creates and starts the whole set INSIDE the request
+aio_start() {  # Optional start flags; install and post-backup restart share one result contract.
   aio_select_services || return 1
-  # The stream stays open while the wizard works; the console counts containers.
-  local f="$AIO_STATE/inicio.code" body="$AIO_STATE/inicio.html" pid n seen="" code result
-  info "iniciando la suite (descarga de imágenes: varios minutos)"
-  ( umask 077 && : > "$f" && : > "$body" )
-  chmod 600 "$f" "$body"
-  aio_progress_begin
-  # curl itself is the background job (not a subshell around it), so the trap's kill reaches it
-  curl -sk "${AIO_SEC[@]}" -b "$AIO_STATE/cookies" -c "$AIO_STATE/cookies" -o "$body" -w '%{http_code}' --no-buffer --connect-timeout 15 \
-    "${AIO_CSRF[@]}" "$AIO_URL/api/docker/start" > "$f" 2>/dev/null &
-  pid=$!
-  trap 'kill "$pid" 2>/dev/null; exit 130' INT TERM
-  while kill -0 "$pid" 2>/dev/null; do
-    n="$(aio_count)"
-    [ "$n" = "$seen" ] || { info "contenedores en marcha: $n de $AIO_EXPECTED"; seen="$n"; }
-    if ! aio_progressing "$body"; then
-      kill "$pid" 2>/dev/null || true
-      wait "$pid" 2>/dev/null || true
-      trap - INT TERM
-      printf 'El inicio lleva 20 minutos sin avances. Revise el asistente antes de reintentar.\n' > "$AIO_STATE/motivo"
-      bad "el inicio lleva 20 minutos sin avances" "el asistente puede continuar; revíselo antes de reintentar: docker logs nextcloud-aio-mastercontainer"
+  local f="$AIO_STATE/inicio.code" body="$AIO_STATE/inicio.html" pid n seen="" code result baseline transport
+  info "iniciando la suite (la operación puede tardar varios minutos)"
+  while :; do
+    ( umask 077 && : > "$f" && : > "$body" )
+    chmod 600 "$f" "$body"
+    baseline="$(aio_states)"
+    aio_progress_begin
+    # Curl itself is the job: killing it stops the client, while PHP may still finish the operation.
+    curl -sk "${AIO_SEC[@]}" -b "$AIO_STATE/cookies" -c "$AIO_STATE/cookies" -o "$body" -w '%{http_code}' --no-buffer --connect-timeout 15 \
+      "${AIO_CSRF[@]}" "$@" "$AIO_URL/api/docker/start" > "$f" 2>/dev/null &
+    pid=$!
+    trap 'kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; exit 130' INT TERM
+    while kill -0 "$pid" 2>/dev/null; do
+      n="$(aio_count)"
+      [ "$n" = "$seen" ] || { info "contenedores en marcha: $n de $AIO_EXPECTED"; seen="$n"; }
+      if ! aio_progressing "$body"; then
+        kill "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+        trap - INT TERM
+        printf 'El inicio lleva 20 minutos sin avances. Revise el asistente antes de reintentar.\n' > "$AIO_STATE/motivo"
+        bad "el inicio lleva 20 minutos sin avances" "el asistente puede continuar; revíselo antes de reintentar: docker logs nextcloud-aio-mastercontainer"
+        return 1
+      fi
+      sleep "$AIO_POLL"
+    done
+    transport=0; wait "$pid" || transport=$?
+    trap - INT TERM
+    code="$(cat "$f" 2>/dev/null)"
+    if [ "$transport" -ne 0 ]; then
+      printf 'La conexión con el asistente se interrumpió. Revise su estado antes de reintentar.\n' > "$AIO_STATE/motivo"
+      bad "la conexión con el asistente se interrumpió (curl $transport)" "el inicio puede continuar; revise el asistente antes de reintentar: docker logs nextcloud-aio-mastercontainer"
       return 1
     fi
-    sleep "$AIO_POLL"
+    if [ "$code" = 302 ] && [ -z "$(cat "$body")" ] && [ "$(aio_states)" = "$baseline" ]; then
+      # AuthMiddleware returned before calling the handler; reconcile state before replaying.
+      aio_relogin || return 1
+      continue
+    fi
+    case "$code" in
+      200|201) break ;;
+      *) bad "el asistente no pudo iniciar la suite (HTTP ${code:-sin respuesta})" \
+           "revise el estado en el asistente antes de reintentar: docker ps -a --filter name=^aps-conecta-"
+         printf 'El asistente no confirmó el inicio (HTTP %s). Revise su estado antes de reintentar.\n' "${code:-sin respuesta}" > "$AIO_STATE/motivo"
+         return 1 ;;
+    esac
   done
-  wait "$pid"
-  trap - INT TERM
-  code="$(cat "$f" 2>/dev/null)"
-  case "$code" in
-    200|201) ;;
-    *) bad "el asistente no pudo iniciar la suite (HTTP ${code:-sin respuesta})" \
-         "revise la red y las imágenes: docker ps -a --filter name=^aps-conecta-"
-       return 1 ;;
-  esac
   result="$(python3 - "$body" <<'PYRESULT'
 import json, pathlib, re, sys
 text = pathlib.Path(sys.argv[1]).read_text(errors="replace")
@@ -2063,20 +2080,12 @@ act_respaldo() {  # the full backup, through the wizard's own API (#46: the run 
   [ -n "$archivo" ] && ok "Respaldo completo creado ($archivo)" || ok "Respaldo completo creado"
 }
 
-act_reiniciar() {  # the backup stops the suite; it starts again WITHOUT pulling images — this
-  # update moves apps, never images (an image move is a suite release, D12: a published tag's
-  # digests never move, and `bypass_container_update` is the wizard's own flag for exactly
-  # that). The start endpoint pulls nothing else, and the wait is aio_wait's own bounded one.
+act_reiniciar() {  # The update moves apps; restarting reuses the current suite images.
   info "reiniciando la suite (sin actualizar imágenes)"
-  local f="$AIO_STATE/arranque-actualizar.code"
-  aio_curl -o /dev/null -w '%{http_code}' --max-time 1800 \
-    --data-urlencode "bypass_container_update=1" "${AIO_CSRF[@]}" "$AIO_URL/api/docker/start" > "$f" 2>/dev/null
-  case "$(cat "$f" 2>/dev/null)" in
-    200|201|302) ;;
-    *) bad "la suite no arrancó tras el respaldo (HTTP $(cat "$f" 2>/dev/null || echo 'sin respuesta'))" \
-         "iníciela en el asistente (puerto 8080) o con docker; $ACT_RESTAURAR"
-       return 1 ;;
-  esac
+  aio_start --data-urlencode "bypass_container_update=1" || {
+    info "$ACT_RESTAURAR"
+    return 1
+  }
   aio_wait || return 1
   ok "Suite en marcha de nuevo (imágenes sin tocar)"
 }
