@@ -654,9 +654,20 @@ proxy_load() {
   [ -n "$endpoint" ] || return 0
   # Encoded credentials keep one literal format valid for Docker and EnvironmentFile.
   local url_re='^https?://([A-Za-z0-9._~%:+-]+@)?([A-Za-z0-9][A-Za-z0-9.-]*|\[[0-9a-fA-F:]+\])(:[0-9]{1,5})?/?$'
+  local proxy_host proxy_port
   for value in "$endpoint" "${http_proxy:-${HTTP_PROXY:-$endpoint}}"; do
     if ! [[ "$value" =~ $url_re ]]; then
       bad "dirección del proxy no válida" "use una URL http:// o https:// y codifique los caracteres especiales de sus credenciales"; return 1
+    fi
+    proxy_host="${BASH_REMATCH[2]}"; proxy_port="${BASH_REMATCH[3]:-}"; proxy_port="${proxy_port#:}"
+    if [ -n "$proxy_port" ] && { [ "$((10#$proxy_port))" -eq 0 ] || [ "$((10#$proxy_port))" -gt 65535 ]; }; then
+      bad "puerto del proxy no válido" "use un puerto entre 1 y 65535"; return 1
+    fi
+    case "$proxy_host" in
+      localhost|localhost.|127.*) bad "el proxy local no es accesible desde los contenedores" "use una dirección del proxy accesible desde el servidor y la red de la suite"; return 1 ;;
+    esac
+    if [[ "$proxy_host" =~ ^\[[0:]*1\]$ ]]; then
+      bad "el proxy local no es accesible desde los contenedores" "use una dirección del proxy accesible desde el servidor y la red de la suite"; return 1
     fi
   done
   HTTPS_PROXY="$endpoint"; HTTP_PROXY="${http_proxy:-${HTTP_PROXY:-$endpoint}}"
@@ -684,7 +695,12 @@ proxy_save() {
     "$HTTP_PROXY" "$HTTPS_PROXY" "$NO_PROXY" "$HTTP_PROXY" "$HTTPS_PROXY" "$NO_PROXY" > "$tmpfile"; then
     rm -f "$tmpfile"; bad "no se pudo guardar el proxy" "revise el espacio y los permisos de $APS_HOME"; return 1
   fi
-  if cmp -s "$tmpfile" "$file"; then chmod 600 "$file" || return 1; rm -f "$tmpfile"; return 0; fi
+  if cmp -s "$tmpfile" "$file"; then
+    if ! chmod 600 "$file"; then
+      rm -f "$tmpfile"; bad "no se pudo proteger el perfil del proxy" "revise los permisos de $file"; return 1
+    fi
+    rm -f "$tmpfile"; return 0
+  fi
   if ! mv -f "$tmpfile" "$file"; then
     rm -f "$tmpfile"; bad "no se pudo guardar el proxy" "revise los permisos de $APS_HOME"; return 1
   fi
