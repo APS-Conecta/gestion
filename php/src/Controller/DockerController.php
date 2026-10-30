@@ -380,7 +380,8 @@ readonly class DockerController {
         // Create a closure to pass around to the code, which should to the logging (because it e.g. decides
         // if it'll actually pull an image), but which should not need to know anything about the
         // wanted markup or formatting.
-        $addToStreamingResponseBody = function (string $message, ?Container $container = null) use ($nonbufResp) : void {
+        $progressSequence = 0;
+        $addToStreamingResponseBody = function (string $message, ?Container $container = null, bool $progress = false) use ($nonbufResp, &$progressSequence) : void {
             // If the message is a single dot we treat it as a progress indicator and send a specific, empty
             // HTML element, which gets special treatment by the Javascript code.
             if ($message === '.') {
@@ -392,6 +393,9 @@ readonly class DockerController {
                     $text = sprintf("%s: %s", $container->displayName, $text);
                 }
                 $html = sprintf("<div>%s</div>", htmlspecialchars($text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'));
+            }
+            if ($progress) {
+                $html .= "\n<!-- aps-start-progress:" . ++$progressSequence . " -->\n";
             }
             $nonbufResp->getBody()->write($html);
         };

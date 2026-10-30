@@ -1517,11 +1517,11 @@ aio_post() {  # PATH --data-urlencode K=V… — the wizard's configuration API 
 
 aio_start() {  # POST /api/docker/start pulls, creates and starts the whole set INSIDE the request
   aio_select_services || return 1
-  # (up to 30 min on a slow link): it runs in the background while the console counts containers
+  # The stream stays open while the wizard works; the console counts containers.
   local f="$AIO_STATE/inicio.code" body="$AIO_STATE/inicio.html" pid n seen="" code result
   info "iniciando la suite (descarga de imágenes: varios minutos)"
   # curl itself is the background job (not a subshell around it), so the trap's kill reaches it
-  curl -sk "${AIO_SEC[@]}" -b "$AIO_STATE/cookies" -c "$AIO_STATE/cookies" -o "$body" -w '%{http_code}' --max-time 1800 \
+  curl -sk "${AIO_SEC[@]}" -b "$AIO_STATE/cookies" -c "$AIO_STATE/cookies" -o "$body" -w '%{http_code}' --no-buffer --connect-timeout 15 \
     "${AIO_CSRF[@]}" "$AIO_URL/api/docker/start" > "$f" 2>/dev/null &
   pid=$!
   trap 'kill "$pid" 2>/dev/null; exit 130' INT TERM

@@ -581,6 +581,8 @@ readonly class DockerActionManager {
         }
 
         $maxRetries = 3;
+        $pullProgress = [];
+        $progressPending = false;
         for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
             try {
                 // Use streaming so we can write heartbeat messages to the response while the
@@ -601,12 +603,23 @@ readonly class DockerActionManager {
                     if (isset($event['error'])) {
                         $pullErrors[] = $event['error'];
                     } elseif ($addToStreamingResponseBody !== null) {
-                        // Write a heartbeat at most once every 5 seconds so the reverse
-                        // proxy sees continuous data and does not close the connection.
+                        $id = $event['id'] ?? null;
+                        $status = $event['status'] ?? null;
+                        $current = $event['progressDetail']['current'] ?? 0;
+                        if (is_string($id) && $id !== '' && is_string($status)
+                            && in_array($status, ['Pulling fs layer', 'Waiting', 'Downloading', 'Verifying Checksum', 'Download complete', 'Extracting', 'Pull complete', 'Already exists'], true)
+                            && is_int($current) && $current >= 0) {
+                            $key = $id . ':' . $status;
+                            if ($current > ($pullProgress[$key] ?? -1)) {
+                                $pullProgress[$key] = $current;
+                                $progressPending = true;
+                            }
+                        }
+                        // Heartbeats keep the connection open; only new layer states or byte maxima extend the host wait.
                         $now = time();
-                        $interval = time() - $lastHeartbeat;
-                        if ($interval >= self::PULL_HEARTBEAT_INTERVAL_SECONDS) {
-                            $addToStreamingResponseBody(".", $container);
+                        if ($now - $lastHeartbeat >= self::PULL_HEARTBEAT_INTERVAL_SECONDS) {
+                            $addToStreamingResponseBody(".", $container, $progressPending);
+                            $progressPending = false;
                             $lastHeartbeat = $now;
                         }
                     }
