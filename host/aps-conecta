@@ -81,7 +81,7 @@ PROV_PORTS="8081 8082 8083"        # the Provisionador's fallback chain (slice 1
 CONSOLE_FD=2   # die's stream: the silent install sends stderr to its log and keeps die on the console
 die() { echo "✗ $*" >&"$CONSOLE_FD"; exit 1; }
 ok()  { printf '✓ %s\n' "$*"; }
-bad() { printf '✗ %s\n' "$1"; printf '  → %s\n' "$2"; FAIL=1; }
+bad() { printf '✗ %s\n' "$1"; printf '  → %s\n' "$2"; MOTIVO="${MOTIVO:-$1. $2}"; FAIL=1; }
 info(){ printf '· %s\n' "$*"; }
 FAIL=0
 
@@ -357,6 +357,7 @@ port_free() {  # PORT [tcp|udp]
 
 check_ports() {
   local spec p protocol flag holder published
+  if ! check_existing_installation; then return 1; fi
   published="$(docker ps --filter name=^aps-conecta- --filter name=^nextcloud-aio-mastercontainer$ --format '{{.Ports}}' 2>/dev/null || true)"
   for spec in $SUITE_PORTS; do
     protocol="${spec%%:*}"; p="${spec#*:}"; flag=-ltnp
@@ -432,12 +433,71 @@ check_dns() {  # resolves the domain — «--dominio» first, else the SITE reco
   fi
 }
 
-check_arch() {  # x86-64 is the clinic posture; arm64 publishes exist, so it passes with evidence
-  case "$(uname -m)" in
+check_arch() {
+  local arch; arch="$(uname -m)"
+  case "$arch" in
     x86_64) ok "x86-64" ;;
-    aarch64) ok "arm64 (las imágenes -arm64 de la suite existen — la mirada clínica es x86-64)" ;;
-    *) bad "arquitectura $(uname -m) no soportada" "la suite publica x86-64 y arm64 únicamente" ;;
+    *) bad "arquitectura $arch no soportada" "use un servidor x86-64: las imágenes de la suite se publican para esa arquitectura" ;;
   esac
+}
+
+docker_data_root() {
+  if ! command -v docker >/dev/null 2>&1; then
+    if [ -d /var/lib/docker ]; then printf '/var/lib/docker\n'; else printf '/\n'; fi
+    return 0
+  fi
+  local dir
+  dir="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null)" || return 1
+  [[ "$dir" == /* && "$dir" != *$'\n'* ]] || return 1
+  printf '%s\n' "$dir"
+}
+
+check_docker_installation() {
+  command -v docker >/dev/null 2>&1 || return 0
+  local dir binary
+  if ! dir="$(docker_data_root)"; then
+    bad "no se pudo leer el directorio de datos de Docker" "revise: sudo docker info --format '{{.DockerRootDir}}'"
+    return 0
+  fi
+  binary="$(command -v docker)"
+  case "$binary $dir" in
+    /snap/*|*' /var/snap/'*|*' /snap/'*)
+      bad "Docker instalado mediante Snap no es compatible" "respalde sus datos y sustituya Snap por Docker Engine desde su repositorio oficial; guía: https://docs.docker.com/engine/install/" ;;
+  esac
+}
+
+check_fuse() {
+  if [ "$(LC_ALL=C stat -L -c %F -- /dev/fuse 2>/dev/null)" = 'character special file' ]; then
+    ok "/dev/fuse disponible para los respaldos"
+  else
+    bad "falta el dispositivo /dev/fuse para los respaldos" "ejecute sudo modprobe fuse; compruebe /dev/fuse en el anfitrión antes de instalar"
+  fi
+}
+
+check_existing_installation() {
+  command -v docker >/dev/null 2>&1 || return 0
+  if [ -f "$APS_HOME/instalador/VERSION" ] && [ -f "$APS_HOME/instalador/host/aps-conecta" ]; then return 0; fi
+  local names name
+  if ! names="$(docker ps -a --format '{{.Names}}' 2>/dev/null)"; then
+    bad "no se pudo revisar la instalación existente" "revise el servicio Docker y sus permisos antes de instalar"
+    return 1
+  fi
+  while IFS= read -r name; do
+    case "$name" in
+      nextcloud-aio-mastercontainer|aps-conecta-*)
+        bad "instalación incompleta: hay contenedores de APS sin $APS_HOME/instalador" "recupere la carpeta de la instalación y sus respaldos antes de continuar; conserve los contenedores y volúmenes existentes"
+        return 1 ;;
+    esac
+  done <<<"$names"
+  return 0
+}
+
+check_host_installation() {
+  check_arch
+  check_fuse
+  check_docker_installation
+  check_disk
+  check_ports
 }
 
 check_prov_ports() {  # INFO + the identity probe (R33): /api/salud answers the web installer's
@@ -513,10 +573,16 @@ check_ram() {
 
 check_cpu() { ok "CPU $(nproc 2>/dev/null || echo '?') núcleos"; }
 
-check_disk() {  # where the images and the volumes land: docker's root, or / before docker exists
-  local dir=/var/lib/docker gb
-  [ -d "$dir" ] || dir=/
-  gb="$(df -B 1000000000 --output=avail "$dir" 2>/dev/null | tail -1 | tr -dc '0-9')"
+check_disk() {
+  local dir gb
+  if ! dir="$(docker_data_root)"; then
+    bad "no se pudo determinar el disco de Docker" "revise el directorio de datos con sudo docker info antes de instalar"
+    return 0
+  fi
+  if ! gb="$(df -B 1000000000 --output=avail "$dir" 2>/dev/null | tail -1 | tr -dc '0-9')" || [ -z "$gb" ]; then
+    bad "no se pudo medir el disco de Docker ($dir)" "revise que su directorio de datos esté montado y sea accesible"
+    return 0
+  fi
   if [ "${gb:-0}" -ge "$DISCO_GB_RECOMENDADO" ]; then
     ok "Disco $gb GB libres (mínimo $MIN_DISK_GB, recomendado $DISCO_GB_RECOMENDADO)"
   elif [ "${gb:-0}" -ge "$MIN_DISK_GB" ]; then
@@ -583,6 +649,8 @@ install_docker() {  # Docker Engine from Docker's own apt repository — the met
   # docs give for production (the convenience script is not). Ubuntu and Debian only; a docker
   # already present is never replaced (check_docker then judges its API) — only started
   if command -v docker >/dev/null 2>&1; then
+    check_docker_installation
+    [ "$FAIL" -eq 0 ] || return 0
     systemctl is-active --quiet docker 2>/dev/null || systemctl start docker 2>/dev/null || true
     return 0
   fi
@@ -648,7 +716,7 @@ ensure_overcommit() {  # Redis, inside the suite, warns and can fail its saves w
   fi
 }
 
-step_revisar() { check_ram; check_cpu; check_disk; check_ports; check_network; check_arch; }
+step_revisar() { check_ram; check_cpu; check_host_installation; check_network; }
 
 # ── the hairpin fix (D3): dnsmasq split-DNS — the mutator family's four pieces ───────────
 # The failing hop is the reflection: the server asks its own public address for its own
@@ -803,6 +871,8 @@ step_preparar() {  # installs what is missing, then proves each piece with its o
     bad "este paso instala programas y necesita permisos de administrador" "ejecute: sudo aps-conecta preparar"
     return 0
   fi
+  check_host_installation
+  [ "$FAIL" -eq 0 ] || return 0
   install_packages; install_docker
   check_docker; ensure_docker_group; ensure_overcommit
 }
@@ -1339,6 +1409,13 @@ cmd_aio_wizard() {  # --dominio D [--sin-validar-dominio] [--respaldo DIR] [--ap
     printf '%s\n' "$MOTIVO" > "$AIO_STATE/motivo"; exit 1
   fi
   FAIL=0
+  if [ "$preparar" = 1 ]; then
+    check_host_installation
+    if [ "$FAIL" -ne 0 ]; then
+      printf '%s\n' "$MOTIVO" > "$AIO_STATE/motivo"
+      exit 1
+    fi
+  fi
   # the backup hour first: a host without tzdata stops here, before anything is started or posted
   if [ -n "$backup_dir" ] && ! hora="$(backup_hour_utc today)"; then
     printf 'Falta la zona America/Santiago en el servidor (paquete tzdata): no se fija la hora del respaldo.\n' > "$AIO_STATE/motivo"
@@ -2090,7 +2167,7 @@ cmd_preflight() {
   echo "Revisión previa del instalador APS Conecta"
   # bash checks itself (this script IS bash); the rest are real prerequisites
   need_tool python3; need_tool curl; need_tool docker
-  check_docker; check_ports; check_dns; check_arch; check_prov_ports
+  check_docker; check_host_installation; check_dns; check_prov_ports
   check_hairpin
   check_paquete   # the kept signed package, when there is one (D5)
   echo
@@ -2115,6 +2192,16 @@ selftest() {
   local n=0 tshim tmp ROOT_BAK="$ROOT"
   tmp="$(mktemp -d)"
   tshim="$tmp/bin"; mkdir -p "$tshim"
+  local APS_HOME="$tmp/home" real_stat
+  real_stat="$(command -v stat)"
+  mkdir -p "$APS_HOME/instalador/host" "$tmp/docker-root"
+  cp "$HOST_DIR/aps-conecta" "$APS_HOME/instalador/host/"
+  printf 'v9.9.9\n' > "$APS_HOME/instalador/VERSION"
+  cat > "$tshim/stat" <<SHIM
+#!/usr/bin/env bash
+if [ "\${!#}" = /dev/fuse ]; then echo 'character special file'; else exec "$real_stat" "\$@"; fi
+SHIM
+  chmod +x "$tshim/stat"
 
   check() {  # NAME COND
     n=$((n + 1))
@@ -2130,6 +2217,7 @@ selftest() {
 #!/usr/bin/env bash
 case "\$1 \$2" in
   "version --format") echo "${1-1.56}" ;;
+  "info --format") echo "$tmp/docker-root" ;;
   "ps --format") echo "${2-}" ;;
   *) exit 0 ;;
 esac
@@ -2351,6 +2439,7 @@ EOF
   check "revisar: no answer from the internet reds with the network fix" \
     'case "$step_out" in *"✗ sin acceso a internet"*"FAIL=1") ;; *) false;; esac'
   rm -f "$tshim/curl" "$tshim/df" "$tshim/nproc"; MEMINFO=/proc/meminfo
+  printf '#!/bin/sh\nprintf "Avail\\n142\\n"\n' > "$tshim/df"; chmod +x "$tshim/df"
 
   # preparar installs: every tool that changes the host is a logging shim, /etc is a scratch tree
   # (ETC_DIR), and the arms run only when each listed mutator answers from its shim — this
@@ -2413,7 +2502,7 @@ SHIM
   chmod +x "$tshim/sysctl" "$tshim/curl" "$tshim/id"
   # a fresh server has no docker or python3: a PATH of shims plus the few real tools the
   # shims themselves need — the host's own docker and python3 stay out of reach
-  for c in bash env mkdir chmod tr grep cat sed cp cut; do ln -sf "$(command -v "$c")" "$tmp/minbin/$c"; done
+  for c in bash env mkdir chmod tr grep cat sed cp cut tail; do ln -sf "$(command -v "$c")" "$tmp/minbin/$c"; done
   if only_shims apt-get usermod systemctl dpkg sysctl curl id; then
     step_out="$(PATH="$tshim:$tmp/minbin"; FAIL=0; SUDO_USER=operador step_preparar; echo "FAIL=$FAIL")"
     check "preparar: a fresh Ubuntu gets python3, Docker from Docker's repository, the operator's group and overcommit 1 — each proved" \
@@ -2718,6 +2807,7 @@ SHIM
   cat > "$tshim/docker" <<SHIM
 #!/usr/bin/env bash
 case "\$1" in
+  info) echo "$tmp/docker-root" ;;
   ps) cat "$tmp/aio.ps" ;;
   inspect) shift 3; for c in "\$@"; do echo "/\$c healthy"; done ;;
   exec) case "\$*" in *"occ status"*) echo '{"installed":true}' ;; *"config:list"*) echo '{"system":{}}' ;; esac ;;

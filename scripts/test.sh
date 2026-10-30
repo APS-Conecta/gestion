@@ -28,6 +28,7 @@ SH
 #!/usr/bin/env bash
 case "$1" in
   version) echo 1.44 ;;
+  info) printf '%s\n' "$CASE_ROOT" ;;
   inspect) exit 1 ;;
   run) printf 'run\n' >> "$CASE_ROOT/events"; printf '%s\0' "$@" > "$CASE_ROOT/run" ;;
 esac
@@ -49,6 +50,8 @@ SH
   printf '#!/bin/sh\ncase "$*" in *ghcr.io*) printf 401;; esac\n' > "$tmp/bin/curl"
   printf '#!/bin/sh\nexit 0\n' > "$tmp/bin/ss"
   cp "$tmp/bin/ss" "$tmp/bin/sleep"
+  printf '#!/bin/sh\necho "character special file"\n' > "$tmp/bin/stat"
+  printf '#!/bin/sh\nprintf "Avail\\n142\\n"\n' > "$tmp/bin/df"
   printf '#!/bin/sh\necho 1\n' > "$tmp/bin/seq"
   chmod +x "$tmp/bin/"*
   out="$(PATH="$tmp/bin:$PATH" CASE_ROOT="$tmp" CASE_PYTHON="$py" APS_HOME="$tmp/home" \
