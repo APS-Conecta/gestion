@@ -3151,7 +3151,7 @@ fd00:77::/64" ]'
   : > "$tmp/aio.log"; : > "$tmp/aio.ps"; : > "$tmp/aio.argv"; rm -f "$tmp/aio.configured"
   cat > "$tshim/curl" <<SHIM
 #!/usr/bin/env bash
-url=""; data=""; outfile=""; prev=""; sec=0
+url=""; data=""; outfile=""; prev=""; sec=0; max_time=0; append=0
 printf '%s\n' "\$*" >> "$tmp/aio.argv"
 for a in "\$@"; do
   case "\$a" in https://*) url="\$a" ;; "Sec-Fetch-Site: none") sec=1 ;; esac
@@ -3159,6 +3159,7 @@ for a in "\$@"; do
     case "\$a" in password@*) data="\$data password=\$(cat "\${a#password@}")" ;; *) data="\$data \$a" ;; esac
   fi
   [ "\$prev" = -o ] && outfile="\$a"
+  [ "\$prev" = --max-time ] && max_time="\$a"
   prev="\$a"
 done
 body=""; code=""
@@ -3178,13 +3179,22 @@ case "\$url" in
     case "\$data" in *"domain=rechazado.example"*) code=422; body="Please enter a domain and not an IP-address!" ;; *"timezone=America/Santiago"*) if [ -e "$tmp/aio.timezone-fails" ]; then code=422; body="algo inesperado"; else code=201; fi ;; *) code=201 ;; esac; fi ;;
   */api/docker/start) echo "POST start\$data" >> "$tmp/aio.log"
     if [ -e "$tmp/aio.start-fails" ]; then code=500; else
-    printf '%s\n' aps-conecta-nextcloud aps-conecta-database aps-conecta-redis > "$tmp/aio.ps"; sleep 0.4
+    printf '%s\n' aps-conecta-nextcloud aps-conecta-database aps-conecta-redis > "$tmp/aio.ps"
+    if [ -e "$tmp/aio.progress-pull" ]; then
+      : > "\$outfile"; append=1
+      for tick in \$(seq 35); do
+        seconds=\$((tick * 120)); printf '%s' "\$seconds" > "$tmp/aio.clock.next"; mv "$tmp/aio.clock.next" "$tmp/aio.clock"
+        if [ "\$max_time" -gt 0 ] && [ "\$seconds" -gt "\$max_time" ]; then printf '000'; exit 28; fi
+        printf '\n<!-- aps-start-progress:%s -->\n' "\$tick" >> "\$outfile"
+        sleep 0.03
+      done
+    else sleep 0.4; fi
     printf '%s\n' aps-conecta-nextcloud $AIO_SET > "$tmp/aio.ps"; code=200
     body='<!-- aps-start-result:{"status":"ok","message":""} -->'
     if [ -e "$tmp/aio.result-error" ]; then body='<!-- aps-start-result:{"status":"error","message":"synthetic image unavailable"} -->'; fi
     fi ;;
 esac
-if [ -n "\$outfile" ]; then printf '%s\n' "\$body" > "\$outfile"; else [ -z "\$body" ] || printf '%s\n' "\$body"; fi
+if [ -n "\$outfile" ]; then [ "\$append" = 1 ] || : > "\$outfile"; printf '%s\n' "\$body" >> "\$outfile"; else [ -z "\$body" ] || printf '%s\n' "\$body"; fi
 [ -z "\$code" ] || printf '%s' "\$code"
 SHIM
   cat > "$tshim/docker" <<SHIM
@@ -3249,6 +3259,21 @@ SHIM
     check "asistente-aio: one rejected configuration POST renews login and CSRF once, then applies the same value" \
       '[ "$rc" -eq 0 ] && [ "$(grep -c "^POST login" "$tmp/aio.log")" = 2 ] && [ "$(grep -c "^POST config.*domain=clinica.example" "$tmp/aio.log")" = 2 ] && grep -q "^POST config csrf_name=n2 csrf_value=v2 domain=clinica.example" "$tmp/aio.log"'
     rm -f "$tmp/aio.auth-renewed"
+    cat > "$tshim/python3" <<SHIM
+#!/usr/bin/env bash
+if [ "\$*" = '-c import time; print(int(time.monotonic()))' ]; then
+  clock="\$(cat "$tmp/aio.clock" 2>/dev/null)"; printf '%s\n' "\${clock:-0}"
+else exec "$real_python" "\$@"; fi
+SHIM
+    chmod +x "$tshim/python3"
+    if only_shims curl docker python3; then
+      : > "$tmp/aio.ps"; : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; touch "$tmp/aio.progress-pull"; printf 0 > "$tmp/aio.clock"
+      out="$( (cmd_aio_wizard --dominio clinica.example) 2>&1)"; rc=$?
+      check "asistente-aio: a progressing 70-minute pull outlasts the old 30-minute total limit and succeeds" \
+        '[ "$rc" -eq 0 ] && [ "$(cat "$tmp/aio.clock")" = 4200 ] && case "$out" in *"✓ Suite iniciada"*"✓ Suite en marcha"*) ;; *) false;; esac'
+      rm -f "$tmp/aio.progress-pull" "$tmp/aio.clock"
+    fi
+    rm -f "$tshim/python3"; hash -r
     out="$( (cmd_aio_wizard --dominio clinica.example --respaldo) 2>&1)"; rc=$?
     check "asistente-aio: --respaldo without a directory refuses — never a silently skipped backup" \
       '[ "$rc" -eq 1 ] && [ "$out" = "✗ falta el directorio del respaldo: aps-conecta asistente-aio --dominio <dominio> --respaldo <directorio>" ]'
