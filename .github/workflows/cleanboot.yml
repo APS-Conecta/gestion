@@ -1093,6 +1093,8 @@ jobs:
       - name: Install by IP through the silent command a clinic runs, choosing farmacia, estadistica and totem (#39, #40, #41)
         run: |
           set -o pipefail   # run: is `bash -e` without it — the install's own failure, not tee's
+          # Exercise an actual /20 with a same-/16 LAN outside it (#201).
+          docker network create --subnet 192.168.48.0/20 --gateway 192.168.48.1 nextcloud-aio
           # APS_SUITE_TAG: the package's VERSION is this run's throwaway ci-cleanboot-<sha>, but the
           # mastercontainer this job CREATES must run a published image — the resolved suite tag
           # (suite_tag() answers the override first; the rehearsal-window seam it exists for)
@@ -1138,6 +1140,50 @@ jobs:
           printf 'user = "ana.prueba:%s"\n' "$pw" \
             | curl -fsS -K - --cacert "$RUNNER_TEMP/ca.crt" -H 'OCS-APIRequest: true' \
                 "https://$SUITE_IP/ocs/v2.php/cloud/user?format=json" | grep -q '"id":"ana.prueba"'
+      - name: Forwarded addresses require the actual suite network
+        run: |
+          set -euo pipefail
+          cd /opt/aps-conecta/instalador && source scripts/env.sh
+          [ "$(occ config:system:get trusted_proxies 10)" = 192.168.48.0/20 ]
+          [ "$(occ config:system:get trusted_proxies 0)" = 127.0.0.1 ]
+          [ "$(occ config:system:get trusted_proxies 1)" = ::1 ]
+          docker exec aps-conecta-apache caddy adapt --config /tmp/Caddyfile > "$RUNNER_TEMP/ingress-config.json"
+          python3 - "$RUNNER_TEMP/ingress-config.json" <<'PYNETWORK'
+          import json, pathlib, sys
+          servers = json.loads(pathlib.Path(sys.argv[1]).read_text())['apps']['http']['servers']
+          assert servers, 'no HTTP server configuration was checked'
+          for server in servers.values():
+              assert server['trusted_proxies'] == {'source': 'static', 'ranges': ['192.168.48.0/20']}, 'unexpected ingress trust'
+          print('PASS: every Caddy listener and Nextcloud trust the actual /20')
+          PYNETWORK
+          sudo ip link add aps-prefix-lan type dummy
+          trap 'sudo ip link delete aps-prefix-lan' EXIT
+          sudo ip addr add 192.168.32.2/24 dev aps-prefix-lan
+          sudo ip link set aps-prefix-lan up
+          task_apache_ip="$(docker inspect aps-conecta-apache --format '{{(index .NetworkSettings.Networks "nextcloud-aio").IPAddress}}')"
+          attempts() {
+            occ security:bruteforce:attempts "$1" --output=json \
+              | python3 -c 'import json, sys; print(json.load(sys.stdin)["attempts"])'
+          }
+          rejected_login() {
+            local source="$1" forwarded="$2" user="$3" code
+            code="$(curl --noproxy '*' --silent --show-error --output /dev/null --write-out '%{http_code}' \
+              --connect-timeout 10 --max-time 30 --interface "$source" \
+              --connect-to "$SUITE_IP:443:$task_apache_ip:443" --cacert "$RUNNER_TEMP/ca.crt" \
+              --user "$user:invalid-fixture" --header "X-Forwarded-For: $forwarded" \
+              "https://$SUITE_IP/remote.php/dav/files/$user/")"
+            [ "$code" = 401 ]
+          }
+          [ "$(attempts 192.168.32.2)" = 0 ]
+          [ "$(attempts 198.51.100.201)" = 0 ]
+          rejected_login 192.168.32.2 198.51.100.201 prefix-lan
+          [ "$(attempts 192.168.32.2)" -gt 0 ]
+          [ "$(attempts 198.51.100.201)" = 0 ]
+          echo 'PASS: a same-/16 LAN client cannot forge its address'
+          [ "$(attempts 203.0.113.201)" = 0 ]
+          rejected_login 192.168.48.1 203.0.113.201 prefix-proxy
+          [ "$(attempts 203.0.113.201)" -gt 0 ]
+          echo 'PASS: a proxy inside the actual suite network preserves the client address'
       # Nextcloud's own side of the address: its bundle trusts the CA (phase 07), the push server reaches
       # it inside the suite's network (the fork's patch 238), and the office both ways (phase 14).
       - name: Nextcloud trusts the CA; push and office work by IP
