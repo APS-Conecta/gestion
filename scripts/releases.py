@@ -1053,9 +1053,7 @@ def selftest():
                   "source": "own", "repo": "APS-Conecta/totem", "tag": "v0.3.0",
                   "version": "0.3.0",
                   "sha256": sha256_file(store_file("totem", "v0.3.0"))})
-        # #145: the same record with Talk OFF — spreed is the one release row that rides the
-        # suite's own switch: nothing resolves, no lock row, and everything else still does.
-        # A fresh lock and store, so "spreed is absent" is total, not carried over.
+        # Legacy service selections cannot change signed Talk acquisition (ADR-0021).
         os.environ["APS_APPS_LOCK"] = os.path.join(tmp, "sin-talk-lock.json")
         os.environ["APS_APPS_STORE"] = os.path.join(tmp, "sin-talk-store")
         with open(os.path.join(tmp, "prod-sin-talk"), "w", encoding="utf-8") as fh:
@@ -1071,9 +1069,7 @@ def selftest():
               and os.path.exists(store_file("spreed", "v24.0.6"))
               and read_lock()["apps"]["territorio"]["tag"] == "v0.80.0"
               and read_lock()["apps"]["farmacia"]["tag"] == "v0.12.0")
-        # #145 on actualizar's leg: the plan says omitida, and the fetch carries a leftover row
-        # over untouched — a warm instance that still runs Talk keeps its record through a run
-        # it did not ask to change (the same rule an unchosen optional's row follows).
+        # Plans and updates ignore the same legacy field.
         run = subprocess.run([sys.executable, os.path.abspath(__file__), "plan",
                               "--nextcloud", "34.0.4",
                               "--opciones", os.path.join(tmp, "prod-sin-talk")],

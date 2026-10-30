@@ -160,10 +160,7 @@ cmd_up() {
   # start with progress, the bounded waits, the Nextcloud admin password into $STATE
   local repo_root
   repo_root="$(cd "$(dirname "$0")/.." && pwd)"
-  # --talk (#145): the probe runs Talk ON — the fork's signed release is the only Talk the
-  # suite installs now (ADR-0020), and only an instance with Talk on proves the channel end
-  # to end: the fetch leg resolves the release, phase 12 lands it, and the release assert
-  # pins the lock. Talk-off is the IP job's world (the store-rules step keeps its absence arm).
+  # Both installation paths run Talk and acquire its signed fork release.
   # --respaldo (#54): the daily backup, the step a clinic also walks (INSTALLER §4) — without
   # it there is no backup scope and the #46 actualizar arms red at their own precondition
   # («el respaldo de la instancia no está configurado»), the latent red the v0.0.0-ci.12

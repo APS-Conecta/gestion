@@ -3405,12 +3405,14 @@ EOF
       && printf "%s" "$out" | grep -qF "docker logs -f aps-conecta-borgbackup" \
       && ! grep -q "api/docker/start" "$act/aio.log" && ! grep -q "^actualizar " "$act/resolver.log" \
       && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes"'
-  : > "$act/aio.log"; : > "$act/resolver.log"; rm -f "$act/aio.libre"; cp "$act/lock.bytes" "$act/home/apps.lock.json"
-  out="$( id() { echo 0; }; SALUD_MALA=aps-conecta-eurooffice act46 2>&1 )"; arc=$?
-  check "actualizar: a container never healthy after the restart stops the run naming it — no «Suite en marcha», nothing fetched (A-037)" \
-    '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "✗ la suite no quedó lista en 10 minutos: aps-conecta-eurooffice (falla su control de salud)" \
-      && ! printf "%s" "$out" | grep -qF "Suite en marcha" && ! grep -q "^actualizar " "$act/resolver.log" \
-      && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes"'
+  for blocked in aps-conecta-eurooffice aps-conecta-clamav; do
+    : > "$act/aio.log"; : > "$act/resolver.log"; rm -f "$act/aio.libre"; cp "$act/lock.bytes" "$act/home/apps.lock.json"
+    out="$( id() { echo 0; }; SALUD_MALA="$blocked" act46 2>&1 )"; arc=$?
+    check "actualizar: a container never healthy after the restart stops the run naming it — no «Suite en marcha», nothing fetched (A-037)" \
+      '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "✗ la suite no quedó lista en 10 minutos: $blocked (falla su control de salud)" \
+        && ! printf "%s" "$out" | grep -qF "Suite en marcha" && ! grep -q "^actualizar " "$act/resolver.log" \
+        && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes"'
+  done
 
   # a failed apply: the app named, the lock unchanged, the new lock cleaned, the restore command
   : > "$act/aio.log"; : > "$act/resolver.log"; cp "$act/lock.bytes" "$act/home/apps.lock.json"

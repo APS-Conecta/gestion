@@ -196,7 +196,7 @@ assert fila["source"] == "fork" and fila["repo"] == "APS-Conecta/spreed" and fil
   [ "$fail" -eq 0 ]
 }
 
-row 145 "spreed's channel is the fork's own signed release — apps.json's row is source fork with release on, the entrypoint installs spreed nowhere, and the resolver gates it on the record's Talk switch (ADR-0020)" \
+row 145 "spreed's channel is the fork's own signed release — apps.json's row is source fork with release on, the entrypoint installs spreed nowhere, and it always resolves independently of saved service selections (ADR-0021)" \
   spreed_from_its_fork
 
 aio_auto_updates_off() {  # 042: AIO's Saturday app:update --all is gone and the env that

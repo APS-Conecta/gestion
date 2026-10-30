@@ -502,8 +502,7 @@ jobs:
       # tarball is the locked bytes, no signature.json. This job runs Talk ON, so the fetch
       # leg resolved spreed from APS-Conecta/spreed's signed release and phase 12 landed it;
       # the entrypoint installed nothing (the nothing-baked walk proved its absence at first
-      # boot). Talk-off is the IP job's world — its fetch resolves nothing and the app stays
-      # absent, the same total absence the optional apps' step below asserts for its rows.
+      # boot). Both installation paths acquire this signed app; optional apps stay separate.
       - name: Talk installed from the fork's signed release, at its locked tag
         uses: ./.github/actions/assert-release-app
         with:
@@ -528,8 +527,7 @@ jobs:
           # the entrypoint's constant half: notify_push arrived scoped at first boot (the
           # sibling's convergence above proved the push binary; here the APP half — installed
           # and enabled). Talk is a release row now (#145): its presence is the release
-          # assert above — the entrypoint installs nothing, and with Talk off even its bytes
-          # are gone (REMOVE_DISABLED_APPS)
+          # assertion above — the entrypoint never installs the signed app.
           [ -n "$(occ config:app:get notify_push installed_version 2>/dev/null || true)" ] \
             || { echo "FAIL: notify_push is not installed — the entrypoint's scoped first-boot install did not land it" >&2; exit 1; }
           [ "$(occ config:app:get notify_push enabled 2>/dev/null || true)" = "yes" ] \
@@ -591,7 +589,7 @@ jobs:
           docker exec --user www-data aps-conecta-nextcloud grep -qF '<name>Euro-Office</name>' /var/www/html/custom_apps/eurooffice/appinfo/info.xml \
             || { echo "FAIL: the update leg replaced the fork's name" >&2; exit 1; }
       # #39/#40: farmacia and estadistica are the optional apps, and this job chose NOTHING — the
-      # testbed's wizard drive recorded talk=1 grabacion=0 farmacia=0 estadistica=0 totem=0
+      # testbed's wizard drive records only optional app choices
       # (Talk on is this job's posture, #145; the optionals stayed unchecked), so the fetch
       # leg resolved nothing for either row and phase 12 skipped each before any arrival path.
       # "Not installed" is therefore TOTAL absence (#42: no image carries the bytes either): no
@@ -1018,8 +1016,7 @@ jobs:
     # a19's automatable arm: a clinic without a domain, installed the way any machine installs it — the
     # silent command alone, no testbed. The install starts the suite itself, by this runner's own
     # address (detected, never written down), served on 443 with the installer's own certificate. The
-    # disposable runner owns 443 and 8080; nothing else runs on it. Talk stays off (the silent
-    # install's default), so the pulls are the domain job's.
+    # disposable runner owns 443 and 8080; nothing else runs on it. The service set is identical on both paths.
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:

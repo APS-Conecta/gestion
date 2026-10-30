@@ -3172,6 +3172,8 @@ def opciones_actuales():
         if not sep or valor not in ("0", "1"):   # one shape, or nothing: a hand edit is not a preparation
             return None
         pares[clave] = valor == "1"
+    if not pares:
+        return None
     return {"apps": {i: pares.get(i, False) for i in OPCIONAL_IDS}}
 
 
@@ -5216,8 +5218,8 @@ def selftest():
             with open(falso, "w", encoding="utf-8") as fh:
                 fh.write('''#!/usr/bin/env bash
 printf '%s\\n' "$*" > "$AIO_STATE/argv"
-d=""; t=0; g=0; f=0; e=0; m=0
-while [ $# -gt 0 ]; do case "$1" in --dominio) d="$2" ;; --talk) t=1 ;; --grabacion) t=1; g=1 ;; --app) case "$2" in farmacia) f=1 ;; estadistica) e=1 ;; totem) m=1 ;; esac; shift ;; esac; shift; done
+d=""; f=0; e=0; m=0
+while [ $# -gt 0 ]; do case "$1" in --dominio) d="$2" ;; --app) case "$2" in farmacia) f=1 ;; estadistica) e=1 ;; totem) m=1 ;; esac; shift ;; esac; shift; done
 sleep 0.3
 echo "✓ La suite ya está iniciada"
 case "$d" in
@@ -5235,7 +5237,7 @@ echo "✓ Zona horaria: America/Santiago"
 echo "✓ Servicios de la suite incluidos; sin aplicaciones opcionales"
 echo "✓ Respaldo diario a las 04:00 hora de Santiago (07:00 UTC), en /srv/aps-conecta/respaldos, con /opt/aps-conecta"
 printf '%s\\n' "$d" > "$AIO_STATE/dominio"
-printf 'talk=%s grabacion=%s farmacia=%s estadistica=%s totem=%s\\n' "$t" "$g" "$f" "$e" "$m" > "$AIO_STATE/opciones"
+printf 'farmacia=%s estadistica=%s totem=%s\\n' "$f" "$e" "$m" > "$AIO_STATE/opciones"
 echo "✓ Asistente listo: falta «Iniciar» en el asistente"
 ''')
             verdadero_cmd = SUITE_CMD
