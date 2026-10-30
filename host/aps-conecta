@@ -2391,9 +2391,10 @@ selftest() {
   local n=0 tshim tmp ROOT_BAK="$ROOT"
   tmp="$(mktemp -d)"
   tshim="$tmp/bin"; mkdir -p "$tshim"
-  local APS_HOME="$tmp/home" real_stat real_python
+  local APS_HOME="$tmp/home" real_stat real_python real_grep
   real_stat="$(command -v stat)"
   real_python="$(command -v python3)"
+  real_grep="$(command -v grep)"
   fixture_installation() {
     mkdir -p "$APS_HOME/instalador/host"
     cp "$HOST_DIR/aps-conecta" "$APS_HOME/instalador/host/"
@@ -2755,6 +2756,11 @@ SHIM
     step_out="$(export HTTPS_PROXY='http://proxy.example:3128'; APS_HOME="$tmp/proxy-override";
       python3() { "$real_python" "$@"; }; FAIL=0; prepare_proxy; echo "FAIL=$FAIL")"
     check "proxy: a conflicting direct Docker configuration is refused before success" \
+      'case "$step_out" in *"✗ "*"FAIL=1") true;; *) false;; esac'
+    printf '{"proxies":{"no-proxy":"localhost,127.0.0.1,::1,nextcloud-aio-mastercontainer"}}\n' > "$ETC_DIR/docker/daemon.json"
+    step_out="$(export HTTPS_PROXY='http://proxy.example:3128'; APS_HOME="$tmp/proxy-bypass-override";
+      python3() { "$real_python" "$@"; }; FAIL=0; prepare_proxy; echo "FAIL=$FAIL")"
+    check "proxy: direct Docker bypasses must match the final suite exclusions" \
       'case "$step_out" in *"✗ "*"FAIL=1") true;; *) false;; esac'
     rm -f "$ETC_DIR/docker/daemon.json"
     for endpoint in http://localhost:3128 http://proxy.example:99999; do
@@ -3421,10 +3427,19 @@ SHIM
     check "install --sitio: a running suite is not started again" \
       '! grep -q "^run" "$tmp/mc.argv" && case "$out" in *"✓ La suite ya está iniciada"*"FAIL=0"*) ;; *) false;; esac'
     printf 'HTTPS_PROXY=http://old-proxy.example:3128\n' > "$tmp/mc.env"
-    out="$(export HTTPS_PROXY='http://proxy.example:3128'; APS_HOME="$tmp/proxy-existing";
+    cat > "$tshim/grep" <<SHIM
+#!/usr/bin/env bash
+for arg in "\$@"; do case "\$arg" in *synthetic-p%40ss*) touch "$tmp/proxy-argv-leak" ;; esac; done
+exec "$real_grep" "\$@"
+SHIM
+    chmod +x "$tshim/grep"
+    out="$(export HTTPS_PROXY='http://fixture:synthetic-p%40ss@proxy.example:3128'; APS_HOME="$tmp/proxy-existing";
       FAIL=0; start_suite 2>&1; echo "FAIL=$FAIL")"
+    rm -f "$tshim/grep"
     check "proxy: an existing wizard with a different profile is refused" \
       'case "$out" in *"✗ "*"proxy"*"FAIL=1") true;; *) false;; esac'
+    check "proxy: container profile comparisons keep credentials out of process arguments" \
+      '[ ! -e "$tmp/proxy-argv-leak" ]'
     : > "$tmp/mc.env"
     : > "$tmp/mc.ps"; : > "$tmp/mc.argv"; printf '#!/usr/bin/env bash\nprintf "2: eth0    inet 10.0.0.5/24 scope global eth0\\n"\n' > "$tshim/ip"; chmod +x "$tshim/ip"
     echo 0 > "$tmp/prov.rc"
