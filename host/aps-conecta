@@ -637,6 +637,73 @@ check_network() {  # outbound HTTPS and the clock — the image pulls and every 
 
 is_root() { [ "$(id -u)" = 0 ]; }
 
+proxy_file() { printf '%s/proxy.env' "$APS_HOME"; }
+
+proxy_load() {
+  local key value endpoint file; file="$(proxy_file)"
+  if [ -z "${https_proxy:-${HTTPS_PROXY:-${http_proxy:-${HTTP_PROXY:-}}}}" ] && [ -e "$file" ]; then
+    [ -r "$file" ] || { bad "no se pudo leer la configuración del proxy" "ejecute con permisos de administrador"; return 1; }
+    while IFS='=' read -r key value; do
+      case "$key" in
+        HTTP_PROXY|HTTPS_PROXY|NO_PROXY) printf -v "$key" '%s' "$value" ;;
+        *) bad "configuración del proxy no válida" "revise las variables de $file"; return 1 ;;
+      esac
+    done < "$file"
+  fi
+  endpoint="${https_proxy:-${HTTPS_PROXY:-${http_proxy:-${HTTP_PROXY:-}}}}"
+  [ -n "$endpoint" ] || return 0
+  # Encoded credentials keep one literal format valid for Docker and EnvironmentFile.
+  local url_re='^https?://([A-Za-z0-9._~%:+-]+@)?([A-Za-z0-9][A-Za-z0-9.-]*|\[[0-9a-fA-F:]+\])(:[0-9]{1,5})?/?$'
+  for value in "$endpoint" "${http_proxy:-${HTTP_PROXY:-$endpoint}}"; do
+    if ! [[ "$value" =~ $url_re ]]; then
+      bad "dirección del proxy no válida" "use una URL http:// o https:// y codifique los caracteres especiales de sus credenciales"; return 1
+    fi
+  done
+  HTTPS_PROXY="$endpoint"; HTTP_PROXY="${http_proxy:-${HTTP_PROXY:-$endpoint}}"
+  NO_PROXY="${no_proxy:-${NO_PROXY:-}}"
+  NO_PROXY="${NO_PROXY:+$NO_PROXY,}localhost,127.0.0.1,::1,nextcloud-aio-mastercontainer"
+  NO_PROXY="$(printf '%s' "$NO_PROXY" | tr ',' '\n' | awk 'NF && !seen[$0]++' | paste -sd, -)"
+  if [[ "$NO_PROXY" == *[!a-zA-Z0-9.,:/_\*\[\]-]* ]]; then
+    bad "exclusiones del proxy no válidas" "use nombres, direcciones o subredes separados por comas, sin espacios"; return 1
+  fi
+  http_proxy="$HTTP_PROXY"; https_proxy="$HTTPS_PROXY"; no_proxy="$NO_PROXY"
+  export HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy
+}
+
+proxy_save() {
+  proxy_load || return 1
+  [ -n "${HTTPS_PROXY:-}" ] || return 0
+  local file tmpfile; file="$(proxy_file)"
+  if ! tmpfile="$(umask 077; mkdir -p "$APS_HOME" && mktemp "$file.XXXXXX")"; then
+    bad "no se pudo guardar el proxy" "revise los permisos de $APS_HOME"; return 1
+  fi
+  printf 'HTTP_PROXY=%s\nHTTPS_PROXY=%s\nNO_PROXY=%s\n' "$HTTP_PROXY" "$HTTPS_PROXY" "$NO_PROXY" > "$tmpfile"
+  if cmp -s "$tmpfile" "$file"; then rm -f "$tmpfile"; return 0; fi
+  if ! mv -f "$tmpfile" "$file"; then
+    rm -f "$tmpfile"; bad "no se pudo guardar el proxy" "revise los permisos de $APS_HOME"; return 1
+  fi
+  PROXY_CHANGED=1
+}
+
+prepare_proxy() {
+  local PROXY_CHANGED=0 file dropin
+  proxy_save || return 1
+  [ -n "${HTTPS_PROXY:-}" ] || return 0
+  file="$(proxy_file)"; dropin="$ETC_DIR/systemd/system/docker.service.d/aps-conecta-proxy.conf"
+  if ! grep -qxF "EnvironmentFile=$file" "$dropin" 2>/dev/null; then
+    if ! (umask 022; mkdir -p "$(dirname "$dropin")" && printf '[Service]\nEnvironmentFile=%s\n' "$file" > "$dropin"); then
+      bad "no se pudo configurar el proxy de Docker" "revise los permisos de $ETC_DIR"; return 1
+    fi
+    PROXY_CHANGED=1
+  fi
+  if [ "$PROXY_CHANGED" = 1 ] && command -v docker >/dev/null 2>&1; then
+    if ! systemctl daemon-reload || ! systemctl restart docker; then
+      bad "no se pudo aplicar el proxy de Docker" "revise el servicio Docker y vuelva a ejecutar preparar"; return 1
+    fi
+  fi
+  ok "Proxy configurado para la instalación"
+}
+
 install_packages() {  # the tools the install itself runs; apt installs only what is missing
   local t missing=() pkgs=()
   for t in python3 curl; do
@@ -907,6 +974,7 @@ step_preparar() {  # installs what is missing, then proves each piece with its o
   fi
   check_host_installation
   [ "$FAIL" -eq 0 ] || return 0
+  prepare_proxy || return 0
   install_packages; install_docker
   check_docker; ensure_docker_group; ensure_overcommit
 }
