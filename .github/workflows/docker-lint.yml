@@ -4,11 +4,17 @@ on:
   pull_request:
     paths:
       - 'Containers/**'
+      - 'scripts/validate.sh'
+      - 'scripts/ci-tool.sh'
+      - '.github/workflows/docker-lint.yml'
   push:
     branches:
       - main
     paths:
       - 'Containers/**'
+      - 'scripts/validate.sh'
+      - 'scripts/ci-tool.sh'
+      - '.github/workflows/docker-lint.yml'
 
 permissions:
   contents: read
