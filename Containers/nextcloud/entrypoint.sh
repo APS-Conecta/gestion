@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# shellcheck source=Containers/nextcloud/configure-apps.sh
+source /configure-apps.sh
+
 # version_greater A B returns whether A > B
 version_greater() {
     [ "$(printf '%s\n' "$@" | sort -t '.' -n -k1,1 -k2,2 -k3,3 -k4,4 | head -n 1)" != "$1" ]
@@ -452,13 +455,8 @@ EOF
                 read -ra STARTUP_APPS_ARRAY <<< "$STARTUP_APPS"
                 for app in "${STARTUP_APPS_ARRAY[@]}"; do
                     if ! echo "$app" | grep -q '^-'; then 
-                        if [ -z "$(find /var/www/html/apps /var/www/html/custom_apps -type d -maxdepth 1 -mindepth 1 -name "$app" )" ]; then
-                            # If not shipped, install and enable the app
-                            php /var/www/html/occ app:install "$app"
-                        else
-                            # If shipped, enable the app
-                            php /var/www/html/occ app:enable "$app"
-                        fi
+                        rc=0; ensure_startup_app "$app" || rc=$?
+                        [ "$rc" -eq 0 ] || [ "$rc" -eq 2 ] || exit "$rc"
                     else
                         app="${app#-}"
                         # Disable the app if '-' was provided in front of the appid
@@ -675,19 +673,6 @@ fi
 #  and no Nextcloud surface redirects into it any more)
 # AIO app end # Do not remove or change this line!
 
-# Notify push
-# APS (#42): no image carries apps, so a first boot meets an empty custom_apps — the one
-# moment the store opens. SCOPED: the per-process NC_appstoreenabled=1 beats both config.php
-# and the image's own NC_appstoreenabled="0" ENV for this command alone (Config.php's
-# envCache), so the store is open for exactly this install and closed again the moment it
-# ends. Updates never open it — every update path stays closed and apps move only when the
-# operator decides.
-if ! [ -d "/var/www/html/custom_apps/notify_push" ]; then
-    NC_appstoreenabled=1 php /var/www/html/occ app:install notify_push
-elif [ "$(php /var/www/html/occ config:app:get notify_push enabled)" != "yes" ]; then
-    php /var/www/html/occ app:enable notify_push
-fi
-chmod 775 -R /var/www/html/custom_apps/notify_push/bin/
 php /var/www/html/occ config:system:set trusted_proxies 0 --value="127.0.0.1"
 php /var/www/html/occ config:system:set trusted_proxies 1 --value="::1"
 if [ -n "$ADDITIONAL_TRUSTED_PROXY" ]; then
@@ -709,174 +694,9 @@ fi
 if [ -n "$ADDITIONAL_TRUSTED_DOMAIN" ]; then
     php /var/www/html/occ config:system:set trusted_domains 2 --value="$ADDITIONAL_TRUSTED_DOMAIN"
 fi
-php /var/www/html/occ config:app:set notify_push base_endpoint --value="https://$NC_DOMAIN/push"
 
-# EuroOffice
-if [ "$EUROOFFICE_ENABLED" = 'yes' ]; then
-    # Nextcloud 34 ships a first-party `office` overview app enabled by default. It is not this
-    # suite's editor (that is `eurooffice`, which has no nav entry and engages when a document is
-    # opened from Files) and is not wired to it — no editor-url state is ever injected, so the
-    # "Office" tile is an overview that bounces to /f/{fileid}. One office surface per install:
-    # disabled whenever the suite's office app is EuroOffice.
-    php /var/www/html/occ app:disable office
-    # Determine EuroOffice port based on host pattern
-    if echo "$EUROOFFICE_HOST" | grep -q "aps-conecta-eurooffice"; then
-        EUROOFFICE_PORT=80
-    else
-        EUROOFFICE_PORT=443
-    fi
-
-    count=0
-    while ! nc -z "$EUROOFFICE_HOST" "$EUROOFFICE_PORT" && [ "$count" -lt 90 ]; do
-        echo "Waiting for EuroOffice to become available..."
-        count=$((count+5))
-        sleep 5
-    done
-    if [ "$count" -ge 90 ]; then
-        bash /notify.sh "EuroOffice did not start in time!" "Skipping initialization; eurooffice remains enabled and configuration retries on the next start."
-    else
-        # Install or enable EuroOffice app as needed
-        if ! [ -d "/var/www/html/custom_apps/eurooffice" ]; then
-            php /var/www/html/occ app:install eurooffice
-        elif [ "$(php /var/www/html/occ config:app:get eurooffice enabled)" != "yes" ]; then
-            php /var/www/html/occ app:enable eurooffice
-        elif [ "$SKIP_UPDATE" != 1 ]; then
-            php /var/www/html/occ app:update eurooffice
-        fi
-
-        # Set EuroOffice configuration
-        php /var/www/html/occ config:system:set eurooffice editors_check_interval --value="0" --type=integer 
-        php /var/www/html/occ config:system:set eurooffice jwt_secret --value="$EUROOFFICE_SECRET"
-        php /var/www/html/occ config:app:set eurooffice jwt_secret --value="$EUROOFFICE_SECRET"
-        php /var/www/html/occ config:system:set eurooffice jwt_header --value="AuthorizationJwt"
-
-        # Adjust the EuroOffice host if using internal pattern
-        if echo "$EUROOFFICE_HOST" | grep -q "aps-conecta-eurooffice"; then
-            EUROOFFICE_HOST="$NC_DOMAIN/eurooffice"
-            export EUROOFFICE_HOST
-        fi
-
-        php /var/www/html/occ config:app:set eurooffice DocumentServerUrl --value="https://$EUROOFFICE_HOST"
-
-        # Register EuroOffice preview provider in the explicit allowlist.
-        # Use a high fixed index (50) to avoid colliding with AIO's seeded indices (1-7, 23).
-        if ! php /var/www/html/occ config:system:get enabledPreviewProviders | grep -q "Eurooffice"; then
-            php /var/www/html/occ config:system:set enabledPreviewProviders 24 --value="OCA\Eurooffice\Preview"
-        fi
-    fi
-else
-    # Remove EuroOffice app if disabled and removal is requested
-    if [ "$REMOVE_DISABLED_APPS" = yes ] && \
-       [ -d "/var/www/html/custom_apps/eurooffice" ] && \
-       [ -n "$EUROOFFICE_SECRET" ] && \
-       [ "$(php /var/www/html/occ config:system:get eurooffice jwt_secret)" = "$EUROOFFICE_SECRET" ]; then
-        php /var/www/html/occ app:remove eurooffice
-    fi
-fi
-
-# Talk
-if [ "$TALK_ENABLED" = 'yes' ]; then
-    set -x
-    if [ -z "$TALK_HOST" ] || echo "$TALK_HOST" | grep -q "aps-conecta-talk"; then
-        TALK_HOST="$NC_DOMAIN"
-        HPB_PATH="/standalone-signaling/"
-    fi
-    if [ -z "$TURN_DOMAIN" ]; then
-        TURN_DOMAIN="$TALK_HOST"
-    fi
-    if [ "$AIO_LOG_LEVEL" != 'debug' ]; then
-        set +x
-    fi
-    # APS (#145, ADR-0020): Talk arrives from the fork's own signed release — the wizard's
-    # fetch leg resolves and verifies it, phase 12 installs it from the lock — so no boot
-    # installs spreed any more, and the store's scoped open is notify_push's alone. Until
-    # provisioning has run there is nothing to configure: this block is presence-gated like
-    # the recording one under it, and Talk's TURN/STUN/HPB wiring converges at the first boot
-    # after the app lands (the reboot the update-day acceptance and the daily backup both
-    # perform).
-    if [ -d "/var/www/html/custom_apps/spreed" ]; then
-        if [ "$(php /var/www/html/occ config:app:get spreed enabled)" != "yes" ]; then
-            php /var/www/html/occ app:enable spreed
-        fi
-        # We auto-renew the certs via caddy so the outdated cert warning should not be displayed
-        php /var/www/html/occ config:app:set spreed certificate_expiration_days --type=integer --value="2"
-        # Add turn server
-        # shellcheck disable=SC2153
-        if ! php /var/www/html/occ talk:turn:list --output="plain" | grep server | grep -q " $TURN_DOMAIN:$TALK_PORT"; then
-            php /var/www/html/occ talk:turn:add turn "$TURN_DOMAIN:$TALK_PORT" "udp,tcp" --secret="$TURN_SECRET"
-        fi
-        # Add stun server
-        STUN_SERVER="$(php /var/www/html/occ talk:stun:list --output="plain")"
-        if ! echo "$STUN_SERVER" | grep -q " $TURN_DOMAIN:$TALK_PORT"; then
-            php /var/www/html/occ talk:stun:add "$TURN_DOMAIN:$TALK_PORT"
-        fi
-        if [ -z "$STUN_SERVER" ] || echo "$STUN_SERVER" | grep -oP '[a-zA-Z.:0-9]+' | grep -q "^stun.nextcloud.com:443$"; then
-            php /var/www/html/occ talk:stun:delete "stun.nextcloud.com:443"
-        fi
-        # Add HPB
-        if ! php /var/www/html/occ talk:signaling:list --output="plain" | grep -q "https://$TALK_HOST$HPB_PATH"; then
-            php /var/www/html/occ talk:signaling:add "https://$TALK_HOST$HPB_PATH" "$SIGNALING_SECRET" --verify
-        fi
-    else
-        echo "Talk's spreed is not installed yet — its signed release arrives with provisioning (ADR-0020); its configuration follows at the next boot."
-    fi
-else
-    if [ "$REMOVE_DISABLED_APPS" = yes ] && [ -d "/var/www/html/custom_apps/spreed" ]; then
-        php /var/www/html/occ app:remove spreed
-    fi
-fi
-
-# Talk recording
-if [ -d "/var/www/html/custom_apps/spreed" ]; then
-    if [ "$TALK_RECORDING_ENABLED" = 'yes' ]; then
-        while ! nc -z "$TALK_RECORDING_HOST" 1234; do
-            echo "Waiting for Talk Recording to become available..."
-            sleep 5
-        done
-        # TODO: migrate to occ command if that becomes available
-        RECORDING_SERVERS_STRING="{\"servers\":[{\"server\":\"http://$TALK_RECORDING_HOST:1234/\",\"verify\":true}],\"secret\":\"$RECORDING_SECRET\"}"
-        php /var/www/html/occ config:app:set spreed recording_servers --value="$RECORDING_SERVERS_STRING"
-    else
-        if [ "$REMOVE_DISABLED_APPS" = yes ]; then
-            php /var/www/html/occ config:app:delete spreed recording_servers
-        fi
-    fi
-fi
-
-# Clamav
-if [ "$CLAMAV_ENABLED" = 'yes' ]; then
-    count=0
-    while ! nc -z "$CLAMAV_HOST" 3310 && [ "$count" -lt 90 ]; do
-        echo "Waiting for ClamAV to become available..."
-        count=$((count+5))
-        sleep 5
-    done
-    if [ "$count" -ge 90 ]; then
-        bash /notify.sh "ClamAV did not start in time!" "Skipping initialization; files_antivirus remains enabled and configuration retries on the next start."
-    else
-        if ! [ -d "/var/www/html/custom_apps/files_antivirus" ]; then
-            php /var/www/html/occ app:install files_antivirus
-        elif [ "$(php /var/www/html/occ config:app:get files_antivirus enabled)" != "yes" ]; then
-            php /var/www/html/occ app:enable files_antivirus
-        elif [ "$SKIP_UPDATE" != 1 ]; then
-            php /var/www/html/occ app:update files_antivirus
-        fi
-        php /var/www/html/occ config:app:set files_antivirus av_mode --value="daemon"
-        php /var/www/html/occ config:app:set files_antivirus av_port --value="3310"
-        php /var/www/html/occ config:app:set files_antivirus av_host --value="$CLAMAV_HOST"
-        # av_stream_max_length must be synced with StreamMaxLength inside clamav
-        php /var/www/html/occ config:app:set files_antivirus av_stream_max_length --value="2147483648"
-        php /var/www/html/occ config:app:set files_antivirus av_max_file_size --value="-1"
-        php /var/www/html/occ config:app:set files_antivirus av_infected_action --value="only_log"
-        if [ -n "$CLAMAV_BLOCKLISTED_DIRECTORIES" ]; then
-            php /var/www/html/occ config:app:set files_antivirus av_blocklisted_directories --value="$CLAMAV_BLOCKLISTED_DIRECTORIES"
-        fi
-    fi
-else
-    if [ "$REMOVE_DISABLED_APPS" = yes ] && [ -d "/var/www/html/custom_apps/files_antivirus" ]; then
-        php /var/www/html/occ app:remove files_antivirus
-    fi
-fi
+# Managed apps share the same presence, enable and bounded configuration policy.
+configure_startup_apps || exit 1
 
 # Imaginary
 if [ "$IMAGINARY_ENABLED" = 'yes' ]; then
@@ -892,90 +712,6 @@ else
         php /var/www/html/occ config:system:delete enabledPreviewProviders 21
         php /var/www/html/occ config:system:delete enabledPreviewProviders 22
         php /var/www/html/occ config:system:delete enabledPreviewProviders 23
-    fi
-fi
-
-# Fulltextsearch
-if [ "$FULLTEXTSEARCH_ENABLED" = 'yes' ]; then
-    count=0
-    while ! nc -z "$FULLTEXTSEARCH_HOST" "$FULLTEXTSEARCH_PORT" && [ "$count" -lt 90 ]; do
-        echo "Waiting for Fulltextsearch to become available..."
-        count=$((count+5))
-        sleep 5
-    done
-    if [ "$count" -ge 90 ]; then
-        echo "Fulltextsearch did not start in time. Skipping initialization; its apps remain enabled and configuration retries on the next start."
-    else
-        if [ -z "$FULLTEXTSEARCH_PROTOCOL" ]; then
-            FULLTEXTSEARCH_PROTOCOL="http"
-        fi
-        if ! [ -d "/var/www/html/custom_apps/fulltextsearch" ]; then
-            php /var/www/html/occ app:install fulltextsearch
-        elif [ "$(php /var/www/html/occ config:app:get fulltextsearch enabled)" != "yes" ]; then
-            php /var/www/html/occ app:enable fulltextsearch
-        elif [ "$SKIP_UPDATE" != 1 ]; then
-            php /var/www/html/occ app:update fulltextsearch
-        fi    
-        if ! [ -d "/var/www/html/custom_apps/fulltextsearch_elasticsearch" ]; then
-            php /var/www/html/occ app:install fulltextsearch_elasticsearch
-        elif [ "$(php /var/www/html/occ config:app:get fulltextsearch_elasticsearch enabled)" != "yes" ]; then
-            php /var/www/html/occ app:enable fulltextsearch_elasticsearch
-        elif [ "$SKIP_UPDATE" != 1 ]; then
-            php /var/www/html/occ app:update fulltextsearch_elasticsearch
-        fi    
-        if ! [ -d "/var/www/html/custom_apps/files_fulltextsearch" ]; then
-            php /var/www/html/occ app:install files_fulltextsearch
-        elif [ "$(php /var/www/html/occ config:app:get files_fulltextsearch enabled)" != "yes" ]; then
-            php /var/www/html/occ app:enable files_fulltextsearch
-        elif [ "$SKIP_UPDATE" != 1 ]; then
-            php /var/www/html/occ app:update files_fulltextsearch
-        fi
-        php /var/www/html/occ fulltextsearch:configure '{"search_platform":"OCA\\FullTextSearch_Elasticsearch\\Platform\\ElasticSearchPlatform"}'
-        php /var/www/html/occ fulltextsearch_elasticsearch:configure "{\"elastic_host\":\"$FULLTEXTSEARCH_PROTOCOL://$FULLTEXTSEARCH_USER:$FULLTEXTSEARCH_PASSWORD@$FULLTEXTSEARCH_HOST:$FULLTEXTSEARCH_PORT\",\"elastic_index\":\"$FULLTEXTSEARCH_INDEX\"}"
-        php /var/www/html/occ files_fulltextsearch:configure "{\"files_pdf\":true,\"files_office\":true}"
-
-        # Do the index
-        if ! [ -f "$NEXTCLOUD_DATA_DIR/fts-index.done" ]; then
-            echo "Waiting 10 seconds before activating fulltextsearch..."
-            sleep 10
-            echo "Activating fulltextsearch..."
-            if php /var/www/html/occ fulltextsearch:test && php /var/www/html/occ fulltextsearch:index "{\"errors\": \"reset\"}" --no-readline; then
-                touch "$NEXTCLOUD_DATA_DIR/fts-index.done"
-            else
-                echo "Fulltextsearch failed. Could not index."
-                echo "If you want to skip indexing in the future, see https://github.com/nextcloud/all-in-one/discussions/1709"
-            fi
-        fi
-    fi
-else
-    if [ "$REMOVE_DISABLED_APPS" = yes ]; then
-        if [ -d "/var/www/html/custom_apps/fulltextsearch" ]; then
-            php /var/www/html/occ app:remove fulltextsearch
-        fi
-        if [ -d "/var/www/html/custom_apps/fulltextsearch_elasticsearch" ]; then
-            php /var/www/html/occ app:remove fulltextsearch_elasticsearch
-        fi
-        if [ -d "/var/www/html/custom_apps/files_fulltextsearch" ]; then
-            php /var/www/html/occ app:remove files_fulltextsearch
-        fi
-    fi
-fi
-
-# HaRP
-# app_api is a shipped app
-if [ -d "/var/www/html/custom_apps/app_api" ]; then
-    php /var/www/html/occ app:disable app_api
-    rm -r "/var/www/html/custom_apps/app_api"
-fi
-if [ "$HARP_ENABLED" = 'yes' ]; then
-    if [ "$(php /var/www/html/occ config:app:get app_api enabled)" != "yes" ]; then
-        php /var/www/html/occ app:enable app_api
-    fi
-else
-    if [ "$REMOVE_DISABLED_APPS" = yes ]; then
-        if [ "$(php /var/www/html/occ config:app:get app_api enabled)" != "no" ]; then
-            php /var/www/html/occ app:disable app_api
-        fi
     fi
 fi
 

@@ -152,23 +152,16 @@ row 030 "the suite's skeleton posture is baked — NC_skeletondirectory="" ENV b
 row 030 "the image carries only the theme — zero COPY lines into custom_apps, the theme from the tag tree's own themes/apsconecta, and the ENV_PREFIX wiring grep present (a regeneration that bakes an app back reds here; #42)" \
   theme_only_image
 
-scoped_store_installs() {  # 042: the entrypoint opens the store per command, for an install,
-  # never an update — and only for notify_push, the one app a first boot needs before
-  # provisioning has run (Talk moved to its fork's signed release, ADR-0020 — row 145 pins
-  # that no install of spreed remains anywhere in the entrypoint). A bare `php occ
-  # app:install` in the entrypoint fails against 020's ENV (the acceptance's own arm), so the
-  # per-process prefix IS the mechanism.
-  local e="$TREE/Containers/nextcloud/entrypoint.sh" fail=0
-  [ -f "$e" ] || { echo "  no entrypoint at '$e'" >&2; return 1; }
-  grep -qF 'NC_appstoreenabled=1 php /var/www/html/occ app:install notify_push' "$e" \
-    || { echo "  the notify_push install carries no scoped store-open (NC_appstoreenabled=1, per process)" >&2; fail=1; }
-  if grep -nE 'app:install spreed' "$e"; then
-    echo "  the entrypoint still installs spreed — Talk arrives from its fork's signed release, never the store (ADR-0020, #145)" >&2
-    fail=1
-  fi
-  if grep -nE 'NC_appstoreenabled=1 .*app:(install|update)' "$e" | grep -vE 'app:install notify_push("| )*$'; then
-    echo "  a store-open reached a command outside the notify_push install — the scoped open is notify_push's alone" >&2
-    fail=1
+scoped_store_installs() {  # 042, 147: the shared boot helper owns the sole scoped install.
+  local e="$TREE/Containers/nextcloud/entrypoint.sh" helper="$TREE/Containers/nextcloud/configure-apps.sh" fail=0
+  [ -f "$e" ] && [ -f "$helper" ] || return 1
+  grep -qF 'source /configure-apps.sh' "$e" && grep -qF 'configure_startup_apps || exit 1' "$e" \
+    || { echo "  entrypoint lost its shared app configuration pass" >&2; fail=1; }
+  grep -qF 'NC_appstoreenabled=1 php /var/www/html/occ app:install notify_push' "$helper" \
+    || { echo "  notify_push lost its scoped store install" >&2; fail=1; }
+  if grep -nE 'app:install|NC_appstoreenabled=1 .*app:update' "$e" "$helper" \
+      | grep -vE 'NC_appstoreenabled=1 php /var/www/html/occ app:install notify_push \|\| return 1$'; then
+    echo "  a boot install escaped the sole scoped notify_push acquisition" >&2; fail=1
   fi
   [ "$fail" -eq 0 ]
 }
@@ -193,7 +186,7 @@ fila = next(a for a in json.load(open(sys.argv[1])) if a["id"] == "spreed")
 assert fila["source"] == "fork" and fila["repo"] == "APS-Conecta/spreed" and fila.get("release") is True, fila' \
     "$m" 2>&1)" \
     || { echo "  apps.json's spreed row is not the fork's release row: $fila" >&2; fail=1; }
-  if grep -nE 'app:(install|update)[[:space:]]+spreed' "$TREE/Containers/nextcloud/entrypoint.sh"; then
+  if grep -nE 'app:(install|update)[[:space:]]+spreed' "$TREE/Containers/nextcloud/entrypoint.sh" "$TREE/Containers/nextcloud/configure-apps.sh"; then
     echo "  the entrypoint installs or updates spreed — the release channel and actualizar are its only movers" >&2
     fail=1
   fi
