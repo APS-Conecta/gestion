@@ -10,6 +10,11 @@ fail=0
 check() { if "$@" >/dev/null 2>&1; then echo "  ok:   $*"; else echo "  FAIL: $*"; fail=1; fi; }
 
 echo "== static checks (no running stack needed) =="
+trusted_proxy_network_cases() {
+  [ "$(bash Containers/network-prefix.sh 192.168.48.3/20)" = '192.168.48.0/20' ]
+}
+check trusted_proxy_network_cases
+
 testbed_install_command_cases() {
   local tmp py out
   tmp="$(mktemp -d)"; py="$(command -v python3)"
