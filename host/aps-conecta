@@ -1202,7 +1202,7 @@ start_suite() {  # [ADDRESS] — the mastercontainer, once — the very command 
   # detached. An IPv4 is the install by IP (R22): this server's own address, the suite's certificate
   # signed for it first. A mastercontainer that already exists must carry what it reads at its start:
   # the certificate, by IP
-  local domain="${1:-}" state tag cmd env_now
+  local domain="${1:-}" state tag cmd env_now containers container key
   if is_ipv4 "$domain"; then
     if ! [[ "$(suite_tls_dir)$(suite_ca_dir)" =~ ^[A-Za-z0-9._/-]+$ ]] || [[ "$(suite_tls_dir)$(suite_ca_dir)" == *..* ]]; then   # both ride the eval below
       bad "la carpeta de la instalación no es válida («$APS_HOME»)" "use una ruta con letras, números, «.», «_», «-» y «/», sin segmentos «..»"; return 1
@@ -1220,18 +1220,21 @@ start_suite() {  # [ADDRESS] — the mastercontainer, once — the very command 
     fi
     prepare_proxy "$domain" || return 1
   fi
-  state="$(docker ps -a --format '{{.Names}} {{.State}}' 2>/dev/null)"   # captured: pipefail-safe
-  state="$(printf '%s\n' "$state" | sed -n 's/^nextcloud-aio-mastercontainer //p')"
-  if [ -n "$state" ]; then   # both lines are read once, at the wizard's first start: never switched later
-    env_now="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' nextcloud-aio-mastercontainer 2>/dev/null)"
-    if [ -n "${HTTPS_PROXY:-}" ]; then
-      local key
+  containers="$(docker ps -a --format '{{.Names}} {{.State}}' 2>/dev/null)"   # captured: pipefail-safe
+  state="$(printf '%s\n' "$containers" | sed -n 's/^nextcloud-aio-mastercontainer //p')"
+  if [ -n "${HTTPS_PROXY:-}" ]; then
+    for container in nextcloud-aio-mastercontainer aps-conecta-nextcloud; do
+      grep -q "^$container " <<<"$containers" || continue
+      env_now="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$container" 2>/dev/null)"
       for key in HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy; do
         if ! grep -qxF "$key=${!key}" <<<"$env_now"; then
-          bad "el asistente existente conserva otro perfil de proxy" "recree el asistente con el comando actualizado y conserve sus volúmenes; consulte aps/INSTALLER.md §12"; return 1
+          bad "la suite existente conserva otro perfil de proxy" "recree el asistente y Nextcloud con el comando actualizado y conserve sus volúmenes; consulte aps/INSTALLER.md §12"; return 1
         fi
       done
-    fi
+    done
+  fi
+  if [ -n "$state" ]; then   # both lines are read once, at the wizard's first start: never switched later
+    env_now="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' nextcloud-aio-mastercontainer 2>/dev/null)"
     if is_ipv4 "$domain"; then
       if ! grep -qxF "APS_TLS_DIR=$(suite_tls_dir)" <<<"$env_now" \
          || ! grep -qxF "NEXTCLOUD_TRUSTED_CACERTS_DIR=$(suite_ca_dir)" <<<"$env_now"; then
