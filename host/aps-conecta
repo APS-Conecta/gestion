@@ -1031,6 +1031,7 @@ for value in dns:
         address = ipaddress.ip_address(value)
     except ValueError:
         continue
+    # Container DNS cannot use the host's loopback or interface-scoped IPv6.
     if address.version == 6:
         if address.ipv4_mapped:
             address = address.ipv4_mapped
