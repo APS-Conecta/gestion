@@ -283,8 +283,8 @@ community_channel_closed() {  # 190: the community channel is closed at its sour
   # with it (the directory constant, the config property, the listing method, the form handler, the
   # Caddy trusted-proxy variable — the crafted community-form POST has no handler left to reach).
   local d="$TREE/Containers/mastercontainer/Dockerfile" c="$TREE/php/templates/containers.twig" \
-        j="$TREE/php/public/containers-form-submit.js" fail=0
-  s4_files "$d" "$c" "$j" || return 1
+        fail=0 rc=0 hits
+  s4_files "$d" "$c" || return 1
   [ ! -e "$TREE/community-containers" ] \
     || { echo "  the community-containers directory still ships" >&2; fail=1; }
   if grep -n 'community-containers' "$d"; then echo "  the image still names the community containers" >&2; fail=1; fi
@@ -293,8 +293,9 @@ community_channel_closed() {  # 190: the community channel is closed at its sour
     echo "  the community section's template still ships" >&2; fail=1
   fi
   if grep -niE 'comunitari' "$c"; then echo "  containers.twig still talks about community containers" >&2; fail=1; fi
-  if grep -n 'communityFormSubmit' "$j"; then
-    echo "  containers-form-submit.js still carries the community form's script" >&2; fail=1
+  hits="$(grep -rn 'communityFormSubmit' "$TREE/php/public")" || rc=$?
+  if [ "$rc" -ne 1 ]; then
+    echo "  a community handler survived or its script scan failed: $hits" >&2; fail=1
   fi
   if grep -rn 'CommunityContainers\|community-form' "$TREE/php/src" "$TREE/php/public/index.php"; then
     echo "  a PHP reader of the community directory survived" >&2; fail=1
