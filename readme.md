@@ -64,12 +64,12 @@ only the suite's Euro-Office backend (#177). Runtime control is limited to the s
 versioned images, backup lifecycle and domain/IP setup (#179); maintenance never prunes the
 whole Docker host.
 
-**What the operator sees.** The wizard presents itself as «APS Conecta Gestión AIO — Instalador»;
 Institutional proxy configuration persists in a private host profile. Docker reads its
 environment file; the wizard forwards the normalized proxy to Nextcloud, whose existing
 proxy configuration masks credentials in ordinary configuration listings. Docker-socket
 requests stay direct; bypasses include the inspected suite network and service inventory (#192).
 
+**What the operator sees.** The wizard presents itself as «APS Conecta Gestión AIO — Instalador»;
 an already-installed instance greets with «APS Conecta Gestión AIO ya está instalado»; once the
 containers run, the page hands back to the web installer with «Suite en marcha». These are the shipped bytes
 — the brand gate proves them equal to this declaration on every run.
