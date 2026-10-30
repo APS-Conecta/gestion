@@ -960,6 +960,7 @@ jobs:
         if: failure()
         run: |
           docker ps -a --filter name=^aps-conecta- --filter name=^nextcloud-aio-mastercontainer$ --format 'table {{.Names}}\t{{.Status}}'
+          docker logs --tail=100 nextcloud-aio-mastercontainer || true
           docker logs --tail=100 aps-conecta-apache || true
           docker logs --tail=100 aps-conecta-nextcloud || true
           sudo tail -n 100 /opt/aps-conecta/instalacion.log || true
@@ -1462,6 +1463,17 @@ jobs:
             echo "FAIL: an internal request reached the outbound proxy" >&2
             exit 1
           fi
+          umask 077
+          docker exec --user www-data aps-conecta-nextcloud php occ config:list system > "$RUNNER_TEMP/proxy-client-config.json"
+          task_suite_subnet="$(docker network inspect nextcloud-aio --format '{{range .IPAM.Config}}{{println .Subnet}}{{end}}' | head -1)"
+          python3 - "$task_suite_subnet" <<'PYCODE'
+          import json, os, pathlib, sys
+          system = json.loads((pathlib.Path(os.environ['RUNNER_TEMP']) / 'proxy-client-config.json').read_text())['system']
+          assert system['proxy'] == '***REMOVED SENSITIVE VALUE***', 'proxy credentials are not masked'
+          assert sys.argv[1] in system['proxyexclude'], 'actual suite network is not excluded'
+          assert 'aps-conecta-nextcloud' in system['proxyexclude'], 'service names are not excluded'
+          print('PASS: Nextcloud proxy settings are private and exclude the actual suite network')
+          PYCODE
           sudo test -s /opt/aps-conecta/proxy.env
           test "$(sudo stat -c %a /opt/aps-conecta/proxy.env)" = 600
           echo "PASS: authenticated registry and GitHub requests used the proxy; internal requests bypassed it"
@@ -1469,6 +1481,7 @@ jobs:
         if: failure()
         run: |
           docker ps -a --filter name=^aps-conecta- --filter name=^nextcloud-aio-mastercontainer$ --format 'table {{.Names}}\t{{.Status}}'
+          docker logs --tail=100 nextcloud-aio-mastercontainer || true
           docker logs --tail=100 aps-conecta-apache || true
           docker logs --tail=100 aps-conecta-nextcloud || true
           sudo tail -n 100 /opt/aps-conecta/instalacion.log || true
