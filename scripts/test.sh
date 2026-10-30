@@ -2338,7 +2338,10 @@ case "$*" in
 esac
 exit 0
 STUB
-  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/bin/curl"
+  cat > "$tmp/bin/curl" <<'STUB'
+#!/usr/bin/env bash
+printf '%s' "${OFFICE_HEALTH_BODY-true}"
+STUB
   chmod +x "$tmp/bin/docker" "$tmp/bin/curl"
   while IFS='|' read -r ver want; do
     rc=0; out="$(PATH="$tmp/bin:$PATH" DS_VERSION="$ver" bash "$tmp/scripts/office-smoke.sh" 2>&1)" || rc=1
@@ -2350,6 +2353,9 @@ STUB
 1.2.30.1|1
 9.3.1.37|1
 CASES
+  rc=0; out="$(PATH="$tmp/bin:$PATH" DS_VERSION=1.2.3.37 OFFICE_HEALTH_BODY=false bash "$tmp/scripts/office-smoke.sh" 2>&1)" || rc=1
+  [ "$rc" = 1 ] \
+    || { echo "office health: body false must fail despite HTTP success, got exit $rc: $out" >&2; rm -rf "$tmp"; return 1; }
   rm "$tmp/Containers/eurooffice/Dockerfile"
   rc=0; out="$(PATH="$tmp/bin:$PATH" DS_VERSION=1.2.3.37 bash "$tmp/scripts/office-smoke.sh" 2>&1)" || rc=1
   rm -rf "$tmp"
