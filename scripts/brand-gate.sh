@@ -933,8 +933,12 @@ harness_reset_eurooffice() {  # 237: the suite harness's reset removes Euro-Offi
   # (patch 200): a running one survived the reset and locked the next fresh wizard's options (S5).
   local run="$TREE/php/tests/run.sh"
   s3_files "$run" || return 1
-  { grep -F 'docker container rm --force' "$run" | grep -qF ',talk,eurooffice,borgbackup}' \
-      && grep -F 'docker volume rm' "$run" | grep -qF ',elasticsearch,eurooffice,eurooffice_data}'; } \
+  local containers volumes
+  containers="$(grep -E '^[[:space:]]*docker container rm --force ' "$run")" || return 1
+  volumes="$(grep -E '^[[:space:]]*docker volume rm ' "$run")" || return 1
+  { grep -qE '[,{]eurooffice(,|})' <<< "$containers" \
+      && grep -qE '[,{]eurooffice(,|})' <<< "$volumes" \
+      && grep -qE '[,{]eurooffice_data(,|})' <<< "$volumes"; } \
     || { echo "  run.sh's reset does not remove the Euro-Office container and its two volumes" >&2; return 1; }
 }
 
