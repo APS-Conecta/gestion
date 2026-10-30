@@ -1003,6 +1003,43 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 1   # VERSION answers suite_tag() now — no tag history to read
+      - name: Start the authenticated installation proxy
+        run: |
+          set -euo pipefail
+          bash scripts/cleanboot-apt.sh squid apache2-utils
+          sudo systemctl stop squid
+          task_proxy_dir="$RUNNER_TEMP/installation-proxy"
+          mkdir -p "$task_proxy_dir"
+          task_proxy_password="$(openssl rand -hex 16)"
+          printf '%s\n' "$task_proxy_password" | htpasswd -icB "$task_proxy_dir/users" fixture
+          chmod 600 "$task_proxy_dir/users"
+          cat > "$task_proxy_dir/squid.conf" <<EOF
+          http_port 3128
+          visible_hostname aps-installation-proxy
+          cache_effective_user $(id -un)
+          auth_param basic program /usr/lib/squid/basic_ncsa_auth $task_proxy_dir/users
+          auth_param basic realm APS-test
+          acl authenticated proxy_auth REQUIRED
+          acl suite dst 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 ::1/128 fc00::/7
+          http_access deny suite
+          http_access allow authenticated
+          http_access deny all
+          cache deny all
+          access_log stdio:$task_proxy_dir/access.log
+          cache_log $task_proxy_dir/cache.log
+          pid_filename $task_proxy_dir/squid.pid
+          coredump_dir $task_proxy_dir
+          EOF
+          sudo squid -f "$task_proxy_dir/squid.conf" -k parse
+          sudo squid -f "$task_proxy_dir/squid.conf" -N -d 0 > "$task_proxy_dir/start.log" 2>&1 &
+          task_proxy_ip="$(ip -4 -o addr show scope global | awk '$2 !~ /^(docker|br-|veth)/ {split($4,a,"/"); print a[1]; exit}')"
+          for attempt in $(seq 20); do
+            if nc -z "$task_proxy_ip" 3128; then break; fi
+            sleep 1
+          done
+          nc -z "$task_proxy_ip" 3128
+          printf 'HTTPS_PROXY=http://fixture:%s@%s:3128\nHTTP_PROXY=http://fixture:%s@%s:3128\n' \
+            "$task_proxy_password" "$task_proxy_ip" "$task_proxy_password" "$task_proxy_ip" >> "$GITHUB_ENV"
       - name: Build the rehearsal package, then install through the real bootstrap
         run: |
           set -euo pipefail
@@ -1023,7 +1060,8 @@ jobs:
              "$ensayo/dist/SHA256SUMS.minisig" "$ensayo/dist/apsconecta-$tag-install.sh" \
              "$ensayo/srv/releases/download/$tag/"
           curl -fsSL "file://$ensayo/srv/releases/download/$tag/apsconecta-$tag-install.sh" \
-            | sudo env REPO_URL="file://$ensayo/srv" bash 2>&1 | tee "$RUNNER_TEMP/bootstrap.out"
+            | sudo --preserve-env=HTTP_PROXY,HTTPS_PROXY,NO_PROXY,http_proxy,https_proxy,no_proxy \
+                env REPO_URL="file://$ensayo/srv" bash 2>&1 | tee "$RUNNER_TEMP/bootstrap.out"
           grep -q "firma verificada (signify, clave pública del proyecto)" "$RUNNER_TEMP/bootstrap.out"
           grep -qF "Suite $tag en /opt/aps-conecta/instalador (paquete verificado en /opt/aps-conecta/paquete)" "$RUNNER_TEMP/bootstrap.out"
           sudo chown -R "$(id -u):$(id -g)" /opt/aps-conecta/instalador
@@ -1412,6 +1450,19 @@ jobs:
             ensure_user "cuenta-$i" "Cuenta $i" "$pw" \
               || { echo "FAIL: account $i of 101 was refused — the instance still caps its accounts" >&2; exit 1; }
           done
+      - name: Prove authenticated egress and internal bypasses
+        run: |
+          set -euo pipefail
+          task_proxy_log="$RUNNER_TEMP/installation-proxy/access.log"
+          grep -Eq 'TCP_TUNNEL/200 .*ghcr.io:443 .*fixture' "$task_proxy_log"
+          grep -Eq 'TCP_TUNNEL/200 .*(api\.)?github.com:443 .*fixture' "$task_proxy_log"
+          if grep -Eq 'TCP_DENIED/403' "$task_proxy_log"; then
+            echo "FAIL: an internal request reached the outbound proxy" >&2
+            exit 1
+          fi
+          sudo test -s /opt/aps-conecta/proxy.env
+          test "$(sudo stat -c %a /opt/aps-conecta/proxy.env)" = 600
+          echo "PASS: authenticated registry and GitHub requests used the proxy; internal requests bypassed it"
       - name: Logs on failure
         if: failure()
         run: |
@@ -1423,3 +1474,6 @@ jobs:
       - name: Teardown
         if: always()
         run: sudo bash scripts/aio-testbed.sh down
+      - name: Stop the installation proxy
+        if: always()
+        run: sudo squid -f "$RUNNER_TEMP/installation-proxy/squid.conf" -k shutdown || true
