@@ -2605,6 +2605,7 @@ EOF
 #!/usr/bin/env bash
 echo "$c \$*" >> "$tmp/mut.log"
 case "$c \$1" in
+  "systemctl restart") [ "\${PROXY_RESTART_FAIL:-0}" = 0 ] || exit 1 ;;
   "dpkg --print-architecture") echo amd64 ;;
   "usermod -aG") echo "\$3 docker" >> "$tmp/groups" ;;
   "apt-get "*) case " \$* " in *" install "*) for p in "\$@"; do case "\$p" in
@@ -2674,6 +2675,12 @@ SHIM
       'grep "^NO_PROXY=" "$tmp/proxy-network/proxy.env" | grep -q "10.77.0.0/23" \
        && grep "^NO_PROXY=" "$tmp/proxy-network/proxy.env" | grep -q "aps-conecta-nextcloud" \
        && grep "^NO_PROXY=" "$tmp/proxy-network/proxy.env" | grep -q "localhost"'
+    : > "$tmp/mut.log"
+    step_out="$(export HTTPS_PROXY='http://proxy.example:3128'; APS_HOME="$tmp/proxy-retry"; FAIL=0;
+      PROXY_RESTART_FAIL=1 prepare_proxy; echo "FIRST_FAIL=$FAIL"; FAIL=0; prepare_proxy; echo "RETRY_FAIL=$FAIL")"
+    check "proxy: a failed Docker restart remains pending and is applied on retry" \
+      '[ "$(grep -c "^systemctl restart docker$" "$tmp/mut.log")" = 2 ] \
+       && case "$step_out" in *"FIRST_FAIL=1"*"RETRY_FAIL=0") true;; *) false;; esac'
     echo 2 > "$tmp/oc"; rm -f "$ETC_DIR/sysctl.d/90-aps-conecta.conf"
     step_out="$(export SYSCTL_FAILS=1; PATH="$tshim:$tmp/minbin"; FAIL=0; ensure_overcommit; echo "FAIL=$FAIL")"
     check "preparar: where the kernel setting cannot be applied now (a container) it stays in its file and says so — not a red" \
