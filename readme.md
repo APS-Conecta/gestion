@@ -118,4 +118,6 @@ belong to [nextcloud/all-in-one](https://github.com/nextcloud/all-in-one/issues)
 the install guides, the manual-install and Helm-chart walkthroughs, the migration notes — left
 with the unused upstream parts (#48): the suite's documentation is `aps/` above, upstream's own
 docs live in [its repository](https://github.com/nextcloud/all-in-one#readme).
+Host preflight rejects unsupported architectures, missing FUSE, orphaned suite state and Snap Docker before preparation. Disk checks use Docker's active data root; firewall guidance and DNS rules use the suite network's actual subnets (#188).
+
 <!-- aps-fork-declaration-end -->

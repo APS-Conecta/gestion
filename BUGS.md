@@ -93,6 +93,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-056 | lifecycle acceptance installed a separate plain-HTTP loopback setup and copied the checkout theme over its image (#143) | the testbed duplicated the Docker command and certificate posture, while env mapping and Office overrides compensated for its divergence from clinic installs | the testbed delegates preflight and startup to the installer, uses by-IP HTTPS and its CA, and leaves the image theme intact; command/certificate fixtures, protocol-specific port checks and both lifecycle jobs gate the shared path |
 
+| A-057 | host checks accepted ARM, Snap Docker and orphaned containers, missed the backup device, measured the wrong disk and guessed firewall subnets (#188) | runtime requirements were split across entry points and upstream defaults were treated as local facts | shared read-only checks gate preparation and the web installer, measure Docker's active data root, require FUSE and a valid existing bundle, and use validated live network subnets for advice and DNS rules; shim refusals, convergence and malformed/unavailable metadata cases gate the contract |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and

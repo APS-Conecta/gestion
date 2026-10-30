@@ -2228,7 +2228,7 @@ selftest() {
   mkdir -p "$tmp/docker-root"
   cat > "$tshim/stat" <<SHIM
 #!/usr/bin/env bash
-if [ "\${!#}" = /dev/fuse ]; then echo 'character special file'; else exec "$real_stat" "\$@"; fi
+if [ "\${!#}" = /dev/fuse ]; then [ ! -f "$tmp/no-fuse" ] || exit 1; echo 'character special file'; else exec "$real_stat" "\$@"; fi
 SHIM
   chmod +x "$tshim/stat"
 
@@ -2247,7 +2247,7 @@ SHIM
 case "\$1 \$2" in
   "version --format") echo "${1-1.56}" ;;
   "info --format") echo "$tmp/docker-root" ;;
-  "network inspect") [ ! -f "$tmp/no-network" ] || exit 1; echo 10.77.0.0/23 ;;
+  "network inspect") [ ! -f "$tmp/no-network" ] || exit 1; if [ -f "$tmp/network-data" ]; then cat "$tmp/network-data"; else echo 10.77.0.0/23; fi ;;
   "ps --format") echo "${2-}" ;;
   *) exit 0 ;;
 esac
@@ -2785,7 +2785,7 @@ CSHIM
     'case "$out" in *"el instalador web ya está abierto"*"use su enlace"*) ;; *) false;; esac'
 
   # the hairpin probes: green pair and the #8433 red with R4's recorded recipe
-  printf '#!/usr/bin/env bash\nif [ "$1" = ps ]; then echo aps-conecta-apache; exit 0; fi\nexit 0\n' > "$tshim/docker"; chmod +x "$tshim/docker"
+  mk_docker 1.56 aps-conecta-apache
   out="$(check_hairpin)"
   check "hairpin: status.php + healthcheck green from the host (the stack up, the domain set)" \
     'case "$out" in *"status.php responde desde el propio servidor"*"eurooffice/healthcheck responde desde el propio servidor"*) ;; *) false;; esac'
@@ -2798,6 +2798,16 @@ CSHIM
   check "hairpin: unavailable network metadata names the missing subnet and invents no firewall recipe" \
     'case "$out" in *"la subred de la suite no está disponible"*) ;; *) false;; esac && case "$out" in *"ufw route allow"*) false;; *) true;; esac'
   rm -f "$tmp/no-network"
+  printf 'not-a-subnet\n' > "$tmp/network-data"
+  out="$(suite_subnets)"; rc=$?
+  check "network: malformed subnet metadata refuses rather than producing a firewall address" \
+    '[ "$rc" -ne 0 ] && [ -z "$out" ]'
+  printf '10.77.0.0/23\nfd00:77::/64\n10.77.0.0/23\n' > "$tmp/network-data"
+  out="$(suite_subnets)"
+  check "network: actual IPv4 and IPv6 subnets are validated and duplicates removed" \
+    '[ "$out" = "10.77.0.0/23
+fd00:77::/64" ]'
+  rm -f "$tmp/network-data"
 
 
   # ── asistente-aio: the AIO wizard driven through its API, against a stateful fake wizard ──
@@ -2907,6 +2917,11 @@ SHIM
     check "asistente-aio --preparar: the mastercontainer, then the wizard filled — Talk on, the daily backup with the installer's files — and NO start; the domain and the options recorded for the web installer" \
       '[ "$rc" -eq 0 ] && case "$out" in *"✓ La suite ya está iniciada"*"✓ Dominio: clinica.example"*"✓ Servicios de la suite incluidos; sin aplicaciones opcionales"*"✓ Respaldo diario a las 04:00 hora de Santiago ("*" UTC), en /srv/aps-conecta/respaldos, con "*"✓ Asistente listo: falta «Iniciar» en el asistente"*) ;; *) false;; esac && ! grep -q "options-form" "$tmp/aio.log" && grep -q "additional_backup_directories=$APS_HOME$" "$tmp/aio.log" && ! grep -q "^POST start" "$tmp/aio.log" && [ "$(cat "$AIO_STATE/dominio")" = clinica.example ] && [ "$(cat "$AIO_STATE/opciones")" = "farmacia=0 totem=0" ] && [ ! -e "$AIO_STATE/motivo" ]'
     : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"
+    touch "$tmp/no-fuse"
+    out="$( (cmd_aio_wizard --preparar --dominio clinica.example) 2>&1)"; rc=$?
+    check "asistente-aio: shared host refusal reaches the web reason before any configuration POST" \
+      '[ "$rc" -ne 0 ] && [ ! -s "$tmp/aio.log" ] && grep -q "/dev/fuse" "$AIO_STATE/motivo" && grep -q "modprobe fuse" "$AIO_STATE/motivo"'
+    rm -f "$tmp/no-fuse"
     for legacy_flag in --talk --grabacion; do
       out="$( (cmd_aio_wizard --preparar --dominio clinica.example "$legacy_flag") 2>&1)"; rc=$?
       check "asistente-aio: legacy service flag $legacy_flag is refused" \
