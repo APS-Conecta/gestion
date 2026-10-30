@@ -666,6 +666,19 @@ assert {row["dockerfile"] for row in matrix} == {str(p.relative_to(root)) for p 
 assert {row["image"] for row in matrix if row["context"] == "."} == {"all-in-one", "aio-nextcloud"}
 assert {row["image"] for row in matrix if row["database_test"]} == {"aio-postgresql"}
 assert {row["image"] for row in matrix if not row["cache"]} == {"aio-eurooffice"}
+# The existing browser files run sequentially on one runner; no suite-owned
+# service or named volume may survive the reset between those files.
+cleanup = (root / "php/tests/run.sh").read_text()
+import re
+container_match = re.search(r'aps-conecta-\{([^}]+)}', cleanup)
+volume_match = re.search(r'nextcloud_aio_\{([^}]+)}', cleanup)
+assert container_match and volume_match, "browser reset lost its owned resource lists"
+reset_containers = {'aps-conecta-' + name for name in container_match[1].split(',')}
+reset_volumes = {'nextcloud_aio_' + name for name in volume_match[1].split(',')}
+assert {row['container_name'] for row in services} <= reset_containers, "browser reset misses a suite service"
+named_volumes = {v['source'] for row in services for v in row.get('volumes', [])
+                 if v['source'].startswith('nextcloud_aio_')}
+assert named_volumes <= reset_volumes, "browser reset misses a named suite volume"
 print("every suite image is built from its Dockerfile with the required exceptions")
 PY
 }
