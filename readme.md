@@ -70,7 +70,10 @@ proxy configuration masks credentials in ordinary configuration listings. Docker
 requests stay direct; bypasses include the inspected suite network and service inventory (#192).
 
 The wizard's complete start path catches failures and finishes its existing HTML stream
-with an explicit result. The host requires that result before reporting success (#193).
+with an explicit result. The host requires that result before reporting success. Image pulls
+report new layer states and byte maxima separately from heartbeats; the host bounds waits
+by monotonic inactivity and finite container-state transitions. A rejected request can renew
+its session once; an ambiguous start is never replayed automatically (#193).
 
 **What the operator sees.** The wizard presents itself as «APS Conecta Gestión AIO — Instalador»;
 an already-installed instance greets with «APS Conecta Gestión AIO ya está instalado»; once the

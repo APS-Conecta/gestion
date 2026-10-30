@@ -600,8 +600,8 @@ readonly class DockerActionManager {
                     if (!is_array($event)) {
                         continue;
                     }
-                    if (isset($event['error'])) {
-                        $pullErrors[] = $event['error'];
+                    if (isset($event['error']) || isset($event['errorDetail']['message'])) {
+                        $pullErrors[] = $event['error'] ?? $event['errorDetail']['message'];
                     } elseif ($addToStreamingResponseBody !== null) {
                         $id = $event['id'] ?? null;
                         $status = $event['status'] ?? null;
