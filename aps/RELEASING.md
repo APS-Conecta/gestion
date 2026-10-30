@@ -111,7 +111,9 @@ release.yml proves stable tags are contained in main, freezes the checked-out co
 the full local gate (including existing browser checks), validators, Twig and both ownership
 gates on that tree. Only numeric `vX.Y.Z-ci.N` rehearsals may be off main. Images, Talk
 verification and packaging check out the proven SHA, never a second resolution of the tag.
-The image set is built, Talk's signed archive is compared with every upstream member's content,
+The packager receives `RELEASE_SHA`, using it for archived bytes, date and provenance even
+without a local tag. Before publication, the remote tag (including annotated tags) must still
+resolve to that same commit. The image set is built, Talk's signed archive is compared with every upstream member's content,
 then package-release (composite
 assembly, SHA256SUMS, the signature, the verify-PROOF against the committed `installer.pub`,
 the constants-filled install asset) → the Release with five assets. Watch it; a red anywhere

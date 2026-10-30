@@ -373,6 +373,8 @@ def contract(text):
         errors.append('release gates do not prove main ancestry')
     if 'build-ref: ${{ needs.gates.outputs.sha }}' not in definitions.get('images', ''):
         errors.append('images do not build the proven commit')
+    if 'RELEASE_SHA: ${{ needs.gates.outputs.sha }}' not in definitions.get('package', ''):
+        errors.append('the package does not receive the proven SHA')
     required = {'MINISIGN_SECRET_KEY', 'MINISIGN_KEY_PASSWORD', 'SPREED_REFRESH_TOKEN'}
     seen = set()
     for name, job in definitions.items():
@@ -482,16 +484,27 @@ pathlib.Path(os.environ['RELEASE_CALL']).write_text(json.dumps(sys.argv[1:]))
                                      TAG='v24.0.6', ASSET_CALLS=str(asset_calls), SPREED_RELEASE_ASSETS=asset_names),
                             text=True, capture_output=True, timeout=15)
     assert waited.returncode == 0 and int(asset_calls.read_text()) >= 2, 'release readiness accepted a partial asset set'
+    git('tag', 'v1.2.3', main)
+    git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+        'tag', '-a', 'v0.0.0-ci.2031', feature, '-m', 'annotated rehearsal fixture')
+    git('push', '-q', 'origin', 'refs/tags/v1.2.3', 'refs/tags/v0.0.0-ci.2031')
     call = root / 'release-call'
     for tag, rehearsal in [('v1.2.3', False), ('v0.0.0-ci.2031', True)]:
-        result = subprocess.run(['bash', '-euo', 'pipefail', '-c', publish], cwd=root,
+        result = subprocess.run(['bash', '-euo', 'pipefail', '-c', publish], cwd=repo,
                                 env=dict(os.environ, PATH=str(tools) + os.pathsep + os.environ['PATH'],
-                                         RELEASE_TAG=tag, RELEASE_CALL=str(call), GH_TOKEN='fixture'),
+                                         RELEASE_TAG=tag, RELEASE_SHA=feature if rehearsal else main, RELEASE_CALL=str(call), GH_TOKEN='fixture'),
                                 text=True, capture_output=True, timeout=15)
         assert result.returncode == 0, result.stdout + result.stderr
         args = json.loads(call.read_text())
         assert ('--latest=false' in args) == rehearsal, f'Latest policy for {tag}: {args}'
         assert ('--prerelease' in args) == rehearsal, f'prerelease policy for {tag}: {args}'
+    git('push', '-q', '--force', 'origin', f'{feature}:refs/tags/v1.2.3')
+    call.unlink()
+    moved = subprocess.run(['bash', '-euo', 'pipefail', '-c', publish], cwd=repo,
+                           env=dict(os.environ, PATH=str(tools) + os.pathsep + os.environ['PATH'],
+                                    RELEASE_TAG='v1.2.3', RELEASE_SHA=main, RELEASE_CALL=str(call), GH_TOKEN='fixture'),
+                           text=True, capture_output=True, timeout=15)
+    assert moved.returncode != 0 and not call.exists(), 'a moved tag published artifacts from another commit'
 print('release gates, immutable source, secret scope, ancestry and effective publication flags passed')
 PY
 }

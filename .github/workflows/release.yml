@@ -250,6 +250,7 @@ jobs:
       contents: write   # gh release create
       packages: read    # the publish record resolves every digest from the registry
     env:
+      RELEASE_SHA: ${{ needs.gates.outputs.sha }}
       RELEASE_TAG: ${{ inputs.suite-tag || github.ref_name }}   # job-level: every step reads the same tag (a step env never crosses the step boundary)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (upstream's own pin)
@@ -290,6 +291,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # --verify-tag checks existence; bind both lightweight and annotated tags
+          # to the commit proven by gates before attaching any signed assets.
+          [ -n "${RELEASE_SHA:-}" ] || { echo "FAIL: no proven release SHA" >&2; exit 1; }
+          refs="$(git ls-remote --tags origin "refs/tags/$RELEASE_TAG" "refs/tags/$RELEASE_TAG^{}")"
+          tag_sha="$(printf '%s\n' "$refs" | awk -v ref="refs/tags/$RELEASE_TAG" '
+            $2 == ref { direct = $1 }
+            $2 == ref "^{}" { peeled = $1 }
+            END { print peeled != "" ? peeled : direct }')"
+          [ "$tag_sha" = "$RELEASE_SHA" ] \
+            || { echo "FAIL: the remote release tag no longer matches the proven commit" >&2; exit 1; }
           files=("dist/apsconecta-$RELEASE_TAG.tar.gz" "dist/SHA256SUMS" "dist/SHA256SUMS.minisig" \
                  "dist/apsconecta-$RELEASE_TAG-install.sh" "suite-$RELEASE_TAG-manifest.json")
           # «APS Conecta Gestión vX.Y.Z» — the product name on the Release the wizard's
