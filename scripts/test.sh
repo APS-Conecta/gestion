@@ -2320,11 +2320,13 @@ check cleanboot_apt_cases
 # Containers/eurooffice/Dockerfile is the real one with a synthetic pin, v1.2.3: a hard-coded
 # version reds, and so does a FROM line whose shape the parse no longer reads. A stub docker
 # answers apache's loopback posture, the connector enabled and --check with $DS_VERSION; a stub
-# curl answers the healthcheck. 9.3.1.37 is what the copied v0.6.0 image answers.
+# curl answers the healthcheck. Both the public smoke and the real container probe must
+# require a successful response containing true, even when nginx's port is open.
 office_pin_cases() {
-  local tmp out rc ver want
+  local tmp out rc ver want health_body health_status probe
   tmp="$(mktemp -d)"; mkdir -p "$tmp/bin" "$tmp/scripts" "$tmp/Containers/eurooffice"
   cp scripts/office-smoke.sh scripts/env.sh "$tmp/scripts/"
+  cp Containers/eurooffice/healthcheck.sh "$tmp/Containers/eurooffice/"
   sed 's|documentserver:v[0-9][0-9.]*|documentserver:v1.2.3|' Containers/eurooffice/Dockerfile > "$tmp/Containers/eurooffice/Dockerfile"
   cat > "$tmp/bin/docker" <<'STUB'
 #!/usr/bin/env bash
@@ -2338,8 +2340,13 @@ case "$*" in
 esac
 exit 0
 STUB
-  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/bin/curl"
-  chmod +x "$tmp/bin/docker" "$tmp/bin/curl"
+  cat > "$tmp/bin/curl" <<'STUB'
+#!/usr/bin/env bash
+printf '%s' "${OFFICE_HEALTH_BODY-true}"
+exit "${OFFICE_HEALTH_RC:-0}"
+STUB
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/bin/nc"
+  chmod +x "$tmp/bin/docker" "$tmp/bin/curl" "$tmp/bin/nc"
   while IFS='|' read -r ver want; do
     rc=0; out="$(PATH="$tmp/bin:$PATH" DS_VERSION="$ver" bash "$tmp/scripts/office-smoke.sh" 2>&1)" || rc=1
     [ "$rc" = "$want" ] \
@@ -2349,6 +2356,21 @@ STUB
 1.2.3|0
 1.2.30.1|1
 9.3.1.37|1
+CASES
+  while IFS='|' read -r health_body health_status want; do
+    for probe in scripts/office-smoke.sh Containers/eurooffice/healthcheck.sh; do
+      rc=0; out="$(PATH="$tmp/bin:$PATH" DS_VERSION=1.2.3.37 AIO_LOG_LEVEL=info \
+        OFFICE_HEALTH_BODY="$health_body" OFFICE_HEALTH_RC="$health_status" bash "$tmp/$probe" 2>&1)" || rc=1
+      [ "$rc" = "$want" ] \
+        || { echo "office health: $probe body '$health_body' curl exit $health_status gave $rc, want $want: $out" >&2; rm -rf "$tmp"; return 1; }
+    done
+  done <<'CASES'
+true|0|0
+false|0|1
+|0|1
+not-ready|0|1
+true|22|1
+true|28|1
 CASES
   rm "$tmp/Containers/eurooffice/Dockerfile"
   rc=0; out="$(PATH="$tmp/bin:$PATH" DS_VERSION=1.2.3.37 bash "$tmp/scripts/office-smoke.sh" 2>&1)" || rc=1
