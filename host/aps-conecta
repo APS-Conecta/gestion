@@ -2686,6 +2686,17 @@ SHIM
     check "proxy: a failed Docker restart remains pending and is applied on retry" \
       '[ "$(grep -c "^systemctl restart docker$" "$tmp/mut.log")" = 2 ] \
        && case "$step_out" in *"FIRST_FAIL=1"*"RETRY_FAIL=0") true;; *) false;; esac'
+    mkdir -p "$tmp/proxy-local"
+    printf 'INVALID=profile\n' > "$tmp/proxy-local/proxy.env"
+    step_out="$(APS_HOME="$tmp/proxy-local" bash "$HOST_DIR/aps-conecta" --help 2>&1)"; rc=$?
+    check "proxy: local help does not need access to the private outbound profile" '[ "$rc" = 0 ]'
+    mkdir -p "$ETC_DIR/docker"
+    printf '{"proxies":{"https-proxy":"http://old-proxy.example:3128"}}\n' > "$ETC_DIR/docker/daemon.json"
+    step_out="$(export HTTPS_PROXY='http://proxy.example:3128'; APS_HOME="$tmp/proxy-override";
+      python3() { "$real_python" "$@"; }; FAIL=0; prepare_proxy; echo "FAIL=$FAIL")"
+    check "proxy: a conflicting direct Docker configuration is refused before success" \
+      'case "$step_out" in *"✗ "*"FAIL=1") true;; *) false;; esac'
+    rm -f "$ETC_DIR/docker/daemon.json"
     echo 2 > "$tmp/oc"; rm -f "$ETC_DIR/sysctl.d/90-aps-conecta.conf"
     step_out="$(export SYSCTL_FAILS=1; PATH="$tshim:$tmp/minbin"; FAIL=0; ensure_overcommit; echo "FAIL=$FAIL")"
     check "preparar: where the kernel setting cannot be applied now (a container) it stays in its file and says so — not a red" \
@@ -3344,6 +3355,11 @@ SHIM
     out="$(APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 2>&1; echo "FAIL=$FAIL")"
     check "install --sitio: a running suite is not started again" \
       '! grep -q "^run" "$tmp/mc.argv" && case "$out" in *"✓ La suite ya está iniciada"*"FAIL=0"*) ;; *) false;; esac'
+    printf 'HTTPS_PROXY=http://old-proxy.example:3128\n' > "$tmp/mc.env"
+    out="$(export HTTPS_PROXY='http://proxy.example:3128'; APS_HOME="$tmp/proxy-existing";
+      FAIL=0; start_suite 2>&1; echo "FAIL=$FAIL")"
+    check "proxy: an existing wizard with a different profile is refused" \
+      'case "$out" in *"✗ "*"proxy"*"FAIL=1") true;; *) false;; esac'
     : > "$tmp/mc.env"
     : > "$tmp/mc.ps"; : > "$tmp/mc.argv"; printf '#!/usr/bin/env bash\nprintf "2: eth0    inet 10.0.0.5/24 scope global eth0\\n"\n' > "$tshim/ip"; chmod +x "$tshim/ip"
     echo 0 > "$tmp/prov.rc"
