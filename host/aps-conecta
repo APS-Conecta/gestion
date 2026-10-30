@@ -688,11 +688,10 @@ proxy_save() {
   if ! mv -f "$tmpfile" "$file"; then
     rm -f "$tmpfile"; bad "no se pudo guardar el proxy" "revise los permisos de $APS_HOME"; return 1
   fi
-  PROXY_CHANGED=1
 }
 
 prepare_proxy() {
-  local PROXY_CHANGED=0 file dropin
+  local file dropin fingerprint applied
   proxy_load || return 1
   [ -n "${HTTPS_PROXY:-}" ] || return 0
   local extra
@@ -712,11 +711,17 @@ prepare_proxy() {
     if ! (umask 022; mkdir -p "$(dirname "$dropin")" && printf '[Service]\nEnvironmentFile=%s\n' "$file" > "$dropin"); then
       bad "no se pudo configurar el proxy de Docker" "revise los permisos de $ETC_DIR"; return 1
     fi
-    PROXY_CHANGED=1
   fi
-  if [ "$PROXY_CHANGED" = 1 ] && command -v docker >/dev/null 2>&1; then
+  applied="$APS_HOME/proxy.applied.sha256"
+  if ! fingerprint="$(sha256sum "$file" "$dropin" | sha256sum | cut -d' ' -f1)"; then
+    bad "no se pudo verificar la configuración del proxy" "revise los archivos de configuración y sus permisos"; return 1
+  fi
+  if ! grep -qxF "$fingerprint" "$applied" 2>/dev/null && command -v docker >/dev/null 2>&1; then
     if ! systemctl daemon-reload || ! systemctl restart docker; then
       bad "no se pudo aplicar el proxy de Docker" "revise el servicio Docker y vuelva a ejecutar preparar"; return 1
+    fi
+    if ! (umask 077; printf '%s\n' "$fingerprint" > "$applied"); then
+      bad "no se pudo registrar la configuración del proxy" "revise el espacio y los permisos de $APS_HOME"; return 1
     fi
   fi
   ok "Proxy configurado para la instalación"

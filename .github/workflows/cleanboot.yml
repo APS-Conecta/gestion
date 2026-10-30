@@ -1011,6 +1011,7 @@ jobs:
           task_proxy_dir="$RUNNER_TEMP/installation-proxy"
           mkdir -p "$task_proxy_dir"
           task_proxy_password="$(openssl rand -hex 16)"
+          printf '::add-mask::%s\n' "$task_proxy_password"
           printf '%s\n' "$task_proxy_password" | htpasswd -icB "$task_proxy_dir/users" fixture
           chmod 600 "$task_proxy_dir/users"
           cat > "$task_proxy_dir/squid.conf" <<EOF
