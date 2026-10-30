@@ -4068,6 +4068,7 @@ SHIM
   cat > "$tshim/resolvectl" <<SHIM
 #!/usr/bin/env bash
 printf '%s\n' "resolvectl \$*" >> "$rlog"
+[ "\$1" = dns ] && cat "\$ETC_DIR/resolved-dns" 2>/dev/null
 exit 0
 SHIM
   cat > "$tshim/ufw" <<SHIM
@@ -4186,6 +4187,12 @@ SHIM
     check "red --arreglar: an existing daemon.json is MERGED — this server first, the operator's resolver kept, sibling keys intact — and docker restarts for the change" \
       '[ "$rc_red" -eq 0 ] && grep -q "^restart docker$" "$rlog" \
        && [ "$(python3 -c "import json; d = json.load(open(\"$ETC_RED/docker/daemon.json\")); print(\" \".join(d[\"dns\"]), d[\"log-level\"])")" = "10.0.0.5 10.0.0.1 debug" ]'
+    printf 'Global: 10.0.0.5\nLink 2 (eth0): 10.0.0.1 10.0.0.2 10.0.0.1 127.0.0.53 ::1 2001:db8::53\n' > "$ETC_RED/resolved-dns"
+    printf '{"log-level":"debug"}\n' > "$ETC_RED/docker/daemon.json"
+    red_run "$ETC_RED" --dominio clinica.example --arreglar
+    check "red --arreglar: a fresh Docker DNS list retains real host upstreams after LAN, without duplicates or local resolver loops" \
+      '[ "$rc_red" -eq 0 ] && [ "$(python3 -c "import json; d = json.load(open(\"$ETC_RED/docker/daemon.json\")); print(\" \".join(d[\"dns\"]), d[\"log-level\"])")" = "10.0.0.5 10.0.0.1 10.0.0.2 2001:db8::53 debug" ]'
+    rm -f "$ETC_RED/resolved-dns"
     printf 'esto no es json\n' > "$ETC_RED/docker/daemon.json"; cp "$ETC_RED/docker/daemon.json" "$tmp/red-antes"
     : > "$rlog"
     red_run "$ETC_RED" --dominio clinica.example --arreglar
