@@ -126,6 +126,9 @@ main() {
     rm -rf "$tmp"
     die "la revisión de la instalación existente detuvo el arranque; conserve sus contenedores y datos y corrija lo indicado arriba"
   fi
+  if ! APS_HOME="$APS_HOME" bash "$tmp/instalador/host/aps-conecta" proxy-save; then
+    rm -rf "$tmp"; die "no pude guardar la configuración del proxy — no se instala la suite"
+  fi
   ( umask 022 && mv "$tmp/instalador" "$DEST" ) \
     || { rm -rf "$tmp"; die "no pude instalar la suite en $DEST"; }
   rm -rf "$tmp"

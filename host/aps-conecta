@@ -645,7 +645,7 @@ proxy_load() {
     [ -r "$file" ] || { bad "no se pudo leer la configuración del proxy" "ejecute con permisos de administrador"; return 1; }
     while IFS='=' read -r key value; do
       case "$key" in
-        HTTP_PROXY|HTTPS_PROXY|NO_PROXY) printf -v "$key" '%s' "$value" ;;
+        HTTP_PROXY|HTTPS_PROXY|NO_PROXY|http_proxy|https_proxy|no_proxy) printf -v "$key" '%s' "$value" ;;
         *) bad "configuración del proxy no válida" "revise las variables de $file"; return 1 ;;
       esac
     done < "$file"
@@ -677,7 +677,8 @@ proxy_save() {
   if ! tmpfile="$(umask 077; mkdir -p "$APS_HOME" && mktemp "$file.XXXXXX")"; then
     bad "no se pudo guardar el proxy" "revise los permisos de $APS_HOME"; return 1
   fi
-  printf 'HTTP_PROXY=%s\nHTTPS_PROXY=%s\nNO_PROXY=%s\n' "$HTTP_PROXY" "$HTTPS_PROXY" "$NO_PROXY" > "$tmpfile"
+  printf 'HTTP_PROXY=%s\nHTTPS_PROXY=%s\nNO_PROXY=%s\nhttp_proxy=%s\nhttps_proxy=%s\nno_proxy=%s\n' \
+    "$HTTP_PROXY" "$HTTPS_PROXY" "$NO_PROXY" "$HTTP_PROXY" "$HTTPS_PROXY" "$NO_PROXY" > "$tmpfile"
   if cmp -s "$tmpfile" "$file"; then rm -f "$tmpfile"; return 0; fi
   if ! mv -f "$tmpfile" "$file"; then
     rm -f "$tmpfile"; bad "no se pudo guardar el proxy" "revise los permisos de $APS_HOME"; return 1
@@ -1078,19 +1079,22 @@ suite_tag() {
 run_command() {  # [ADDRESS] — prints the operator's docker run string (never executes it). An IPv4 is
   # the install by IP (R22): two lines more — the suite's own certificate for apache, its CA for
   # Nextcloud and Talk
-  local tag tls=""; tag="$(suite_tag)"
+  local tag tls="" proxy=""; tag="$(suite_tag)"
   [ -n "$tag" ] || die "no pude leer la versión de la suite ($ROOT/VERSION) — o exporte APS_SUITE_TAG"
   if is_ipv4 "${1:-}"; then
     tls="  --env APS_TLS_DIR=$(suite_tls_dir) \\
   --env NEXTCLOUD_TRUSTED_CACERTS_DIR=$(suite_ca_dir) \\
 "
   fi
+  if [ -n "${https_proxy:-${HTTPS_PROXY:-${http_proxy:-${HTTP_PROXY:-}}}}" ] || [ -f "$(proxy_file)" ]; then
+    printf -v proxy '  --env-file %q \\\n' "$(proxy_file)"
+  fi
   cat <<EOF
 docker run --init --sig-proxy=false --name nextcloud-aio-mastercontainer \\
   --restart always \\
   --publish 8080:8080 \\
   --env APACHE_PORT=443 \\
-${tls}  --env NEXTCLOUD_STARTUP_APPS="" \\
+${tls}${proxy}  --env NEXTCLOUD_STARTUP_APPS="" \\
   --volume nextcloud_aio_mastercontainer:/mnt/docker-aio-config \\
   --volume /var/run/docker.sock:/var/run/docker.sock:ro \\
   ghcr.io/aps-conecta/all-in-one:$tag
@@ -4216,6 +4220,12 @@ SH
 # ── dispatch ──────────────────────────────────────────────────────────────────────────────
 
 case "${1:-}" in
+  --self-test|guard-existing-installation) ;;
+  *) proxy_load || exit 1 ;;
+esac
+
+case "${1:-}" in
+  proxy-save)   proxy_save ;;
   install)      shift; cmd_install "$@" ;;
   preflight)    shift; cmd_preflight "$@" ;;
   guard-existing-installation) check_existing_installation ;;
