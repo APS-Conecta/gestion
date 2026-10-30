@@ -983,9 +983,9 @@ merge_docker_dns() {  # LAN — the containers' leg: daemon.json's "dns" gains t
   if resolved_active && command -v resolvectl >/dev/null 2>&1; then
     upstreams="$(LC_ALL=C resolvectl dns 2>/dev/null || true)"
   fi
-  python3 - "$f" "$lan" "$upstreams" > "$tmp" <<'PY' || rc=$?
+  python3 - "$f" "$lan" "$upstreams" "$ETC_DIR/resolv.conf" > "$tmp" <<'PY' || rc=$?
 import ipaddress, json, sys
-path, lan, upstreams = sys.argv[1:]
+path, lan, upstreams, resolv_conf = sys.argv[1:]
 try:
     with open(path) as fh:
         cfg = json.load(fh)
@@ -997,12 +997,27 @@ dns = cfg.get("dns")
 dns = list(dns) if isinstance(dns, list) else []
 for line in upstreams.splitlines():
     dns.extend(line.partition(":")[2].split())
+try:
+    with open(resolv_conf, errors="replace") as fh:
+        for line in fh:
+            fields = line.split()
+            if len(fields) > 1 and fields[0] == "nameserver":
+                dns.append(fields[1])
+except OSError:
+    pass
 servers = [lan]
 for value in dns:
+    if not isinstance(value, str):
+        continue
     try:
         address = ipaddress.ip_address(value)
     except ValueError:
         continue
+    if address.version == 6:
+        if address.ipv4_mapped:
+            address = address.ipv4_mapped
+        elif address.is_link_local or address.scope_id:
+            continue
     if address.is_loopback or address.is_unspecified or address.is_multicast:
         continue
     value = str(address)
