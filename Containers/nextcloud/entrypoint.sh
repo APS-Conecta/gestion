@@ -733,8 +733,7 @@ if [ "$EUROOFFICE_ENABLED" = 'yes' ]; then
         sleep 5
     done
     if [ "$count" -ge 90 ]; then
-        bash /notify.sh "EuroOffice did not start in time!" "Skipping initialization and disabling eurooffice app."
-        php /var/www/html/occ app:disable eurooffice
+        bash /notify.sh "EuroOffice did not start in time!" "Skipping initialization; eurooffice remains enabled and configuration retries on the next start."
     else
         # Install or enable EuroOffice app as needed
         if ! [ -d "/var/www/html/custom_apps/eurooffice" ]; then
@@ -853,8 +852,7 @@ if [ "$CLAMAV_ENABLED" = 'yes' ]; then
         sleep 5
     done
     if [ "$count" -ge 90 ]; then
-        bash /notify.sh "ClamAV did not start in time!" "Skipping initialization and disabling files_antivirus app."
-        php /var/www/html/occ app:disable files_antivirus
+        bash /notify.sh "ClamAV did not start in time!" "Skipping initialization; files_antivirus remains enabled and configuration retries on the next start."
     else
         if ! [ -d "/var/www/html/custom_apps/files_antivirus" ]; then
             php /var/www/html/occ app:install files_antivirus
@@ -906,10 +904,7 @@ if [ "$FULLTEXTSEARCH_ENABLED" = 'yes' ]; then
         sleep 5
     done
     if [ "$count" -ge 90 ]; then
-        echo "Fulltextsearch did not start in time. Skipping initialization and disabling fulltextsearch apps."
-        php /var/www/html/occ app:disable fulltextsearch
-        php /var/www/html/occ app:disable fulltextsearch_elasticsearch
-        php /var/www/html/occ app:disable files_fulltextsearch
+        echo "Fulltextsearch did not start in time. Skipping initialization; its apps remain enabled and configuration retries on the next start."
     else
         if [ -z "$FULLTEXTSEARCH_PROTOCOL" ]; then
             FULLTEXTSEARCH_PROTOCOL="http"
