@@ -3436,7 +3436,7 @@ for arg in "\$@"; do case "\$arg" in *synthetic-p%40ss*) touch "$tmp/proxy-argv-
 exec "$real_grep" "\$@"
 SHIM
     chmod +x "$tshim/grep"
-    out="$(export HTTPS_PROXY='http://fixture:synthetic-p%40ss@proxy.example:3128'; APS_HOME="$tmp/proxy-existing";
+    out="$(PATH="$tshim:$PATH"; export PATH; export HTTPS_PROXY='http://fixture:synthetic-p%40ss@proxy.example:3128'; APS_HOME="$tmp/proxy-existing";
       FAIL=0; start_suite 2>&1; echo "FAIL=$FAIL")"
     rm -f "$tshim/grep"
     check "proxy: an existing wizard with a different profile is refused" \
