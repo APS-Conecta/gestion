@@ -121,6 +121,11 @@ main() {
     || { rm -rf "$tmp"; die "el paquete no trae la suite (falta instalador/host/aps-conecta) — repórtelo"; }
   [ "$(head -1 "$tmp/instalador/VERSION" 2>/dev/null)" = "$tag" ] \
     || { rm -rf "$tmp"; die "la versión dentro del paquete no es $tag — la versión está inconsistente; repórtelo"; }
+  # Inspect the old installation state before promotion can hide a missing bundle.
+  if ! APS_HOME="$APS_HOME" bash "$tmp/instalador/host/aps-conecta" guard-existing-installation; then
+    rm -rf "$tmp"
+    die "la revisión de la instalación existente detuvo el arranque; conserve sus contenedores y datos y corrija lo indicado arriba"
+  fi
   ( umask 022 && mv "$tmp/instalador" "$DEST" ) \
     || { rm -rf "$tmp"; die "no pude instalar la suite en $DEST"; }
   rm -rf "$tmp"
