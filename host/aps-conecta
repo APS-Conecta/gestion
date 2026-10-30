@@ -519,6 +519,16 @@ check_prov_ports() {  # INFO + the identity probe (R33): /api/salud answers the 
   return 0
 }
 
+suite_subnets() {
+  local subnets
+  subnets="$(docker network inspect nextcloud-aio --format '{{range .IPAM.Config}}{{println .Subnet}}{{end}}' 2>/dev/null)" || return 1
+  [ -n "$subnets" ] || return 1
+  printf '%s\n' "$subnets" | python3 -c 'import ipaddress, sys
+rows = [str(ipaddress.ip_network(line.strip())) for line in sys.stdin if line.strip()]
+if not rows: sys.exit(1)
+print("\n".join(dict.fromkeys(rows)))' 2>/dev/null
+}
+
 check_hairpin() {  # the D10 leg (upstream #8433): the HOST curls its own public domain — the exact
   # failing hop (hairpin NAT). Runs only when the stack is up; preflight on a fresh host says so.
   local d; d="${PREFLIGHT_DOMAIN:-$(site_domain || true)}"
@@ -530,8 +540,17 @@ check_hairpin() {  # the D10 leg (upstream #8433): the HOST curls its own public
   if curl -sk --max-time 10 "https://$d/status.php" >/dev/null 2>&1; then
     ok "https://$d/status.php responde desde el propio servidor (se alcanza por su dominio)"
   else
+    local subnets subnet firewall=""
+    if subnets="$(suite_subnets)"; then
+      while IFS= read -r subnet; do
+        firewall="${firewall:+$firewall; }ufw route allow proto tcp from $subnet to any port 443"
+      done <<<"$subnets"
+      firewall="si prefiere permitir el reflejo del NAT: «$firewall»"
+    else
+      firewall="la subred de la suite no está disponible; revise docker network inspect nextcloud-aio antes de configurar el cortafuegos"
+    fi
     bad "https://$d/status.php NO responde desde el propio servidor (el NAT no refleja el tráfico hacia su dominio)" \
-      "corríjalo en un paso: «sudo aps-conecta red --dominio $d --arreglar» (DNS local: dnsmasq, el DNS del propio servidor y el dns del daemon.json de docker); si prefiere permitir el reflejo del NAT: «ufw route allow proto tcp from 172.18.0.0/16 to any port 443»; NO use SKIP_DOMAIN_VALIDATION — no resuelve este tramo"
+      "corríjalo en un paso: «sudo aps-conecta red --dominio $d --arreglar» (DNS local: dnsmasq, el DNS del propio servidor y el dns del daemon.json de docker); $firewall; NO use SKIP_DOMAIN_VALIDATION — no resuelve este tramo"
   fi
   if curl -sk --max-time 10 "https://$d/eurooffice/healthcheck" >/dev/null 2>&1; then
     ok "https://$d/eurooffice/healthcheck responde desde el propio servidor"
@@ -852,17 +871,23 @@ PY
   fi
 }
 
-allow_container_dns_ufw() {  # the containers reach dnsmasq on the host's LAN address: when
-  # ufw manages this server's firewall, that answer needs the door open for Docker's
-  # private nets (the bridge pools, not just today's networks)
+allow_container_dns_ufw() {
   command -v ufw >/dev/null 2>&1 || return 0
-  ufw status 2>/dev/null | grep -q 'Status: active' || return 0
-  ufw status 2>/dev/null | grep -q '172\.16\.0\.0/12' && return 0
-  if ufw allow from 172.16.0.0/12 to any port 53 >/dev/null 2>&1; then
-    ok "Cortafuegos: el DNS local abierto a los contenedores (ufw)"
-  else
-    bad "no se pudo abrir el DNS local en el cortafuegos" "sudo ufw allow from 172.16.0.0/12 to any port 53"
+  local status subnets subnet
+  status="$(LC_ALL=C ufw status 2>/dev/null)" || { bad "no se pudo revisar el cortafuegos" "revise sudo ufw status"; return 0; }
+  grep -q 'Status: active' <<<"$status" || return 0
+  if ! subnets="$(suite_subnets)"; then
+    info "Cortafuegos pendiente: la subred de la suite no está disponible; repita red --arreglar cuando el asistente haya creado su red"
+    return 0
   fi
+  while IFS= read -r subnet; do
+    if awk -v source="$subnet" '{s=p=a=0; for(i=1;i<=NF;i++){if($i==source)s=1;if($i=="53")p=1;if($i=="ALLOW")a=1}if(s&&p&&a)found=1} END{exit !found}' <<<"$status"; then continue; fi
+    if ufw allow from "$subnet" to any port 53 >/dev/null 2>&1; then
+      ok "Cortafuegos: el DNS local abierto a los contenedores (ufw), subred $subnet"
+    else
+      bad "no se pudo abrir el DNS local en el cortafuegos" "sudo ufw allow from $subnet to any port 53"
+    fi
+  done <<<"$subnets"
 }
 
 step_preparar() {  # installs what is missing, then proves each piece with its own check: the tools,
@@ -2768,6 +2793,12 @@ CSHIM
   out="$(check_hairpin)"
   check "hairpin: the red carries the ufw recipe and the local-DNS legs, and never SKIP_DOMAIN_VALIDATION as advice" \
     'case "$out" in *"dnsmasq"*"daemon.json"*"10.77.0.0/23"*"NO use SKIP_DOMAIN_VALIDATION"*"✗ el control de salud de la oficina NO responde"*) ;; *) false;; esac'
+  touch "$tmp/no-network"
+  out="$(PREFLIGHT_DOMAIN=clinica.example check_hairpin)"
+  check "hairpin: unavailable network metadata names the missing subnet and invents no firewall recipe" \
+    'case "$out" in *"la subred de la suite no está disponible"*) ;; *) false;; esac && case "$out" in *"ufw route allow"*) false;; *) true;; esac'
+  rm -f "$tmp/no-network"
+
 
   # ── asistente-aio: the AIO wizard driven through its API, against a stateful fake wizard ──
   # curl answers the six endpoints the drive uses (honouring -o, printing -w's code) and logs every
@@ -3781,7 +3812,7 @@ if [ "\$1" = status ]; then
   exit 0
 fi
 printf '%s\n' "ufw \$*" >> "$rlog"
-case "\$*" in "allow from 172.16.0.0/12 to any port 53") printf 'Anywhere 172.16.0.0/12 53\n' >> "$tmp/red-ufw" ;; esac
+case "\$*" in "allow from 10.77.0.0/23 to any port 53") printf '53 ALLOW 10.77.0.0/23\n' >> "$tmp/red-ufw" ;; esac
 exit 0
 SHIM
   cat > "$tshim/getent" <<SHIM
@@ -3855,7 +3886,7 @@ SHIM
        && grep -q "^enable --now dnsmasq$" "$rlog" && grep -q "^restart dnsmasq$" "$rlog" \
        && grep -q "^restart systemd-resolved$" "$rlog" && grep -q "^restart docker$" "$rlog" \
        && grep -q -- "-qq .*install -y dnsmasq" "$rlog" \
-       && grep -q "^ufw allow from 172.16.0.0/12 to any port 53$" "$rlog" \
+       && grep -q "^ufw allow from 10.77.0.0/23 to any port 53$" "$rlog" \
        && case "$out_red" in *"✓ DNS local listo: clinica.example responde 10.0.0.5 desde este servidor (dnsmasq)"*"✓ El DNS del propio servidor enrutó clinica.example al DNS local (systemd-resolved)"*"✓ DNS de los contenedores: el daemon de docker usa este servidor como DNS (10.0.0.5 primero)"*"✓ Cortafuegos: el DNS local abierto a los contenedores (ufw)"*"✓ clinica.example resuelve a 10.0.0.5 desde este servidor — re-intente el paso en el instalador web"*) ;; *) false;; esac'
     check "red --arreglar: dnsmasq first, the host's routing, docker last — the daemon restarts after the whole answer is local" \
       '[ "$(grep -n "^enable --now dnsmasq$" "$rlog" | head -1 | cut -d: -f1)" -lt "$(grep -n "^restart systemd-resolved$" "$rlog" | head -1 | cut -d: -f1)" ] && [ "$(grep -n "^restart systemd-resolved$" "$rlog" | head -1 | cut -d: -f1)" -lt "$(grep -n "^restart docker$" "$rlog" | head -1 | cut -d: -f1)" ]'
