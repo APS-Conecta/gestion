@@ -118,7 +118,7 @@ def store_path(explicit=None):
 
 
 def opciones_path(explicit=None):
-    """The wizard's install-options record — where the host CLI writes the domain, Talk and the
+    """The wizard's install-options record — where the host CLI writes the
     optional apps' choices (#39). APS_APPS_OPCIONES overrides (the self-test's knob); AIO_STATE,
     the host's own override of the same directory, is honoured beside it."""
     return explicit or os.environ.get("APS_APPS_OPCIONES") \
@@ -141,15 +141,6 @@ def elegidas(path=None):
 
 def pubkey_path():
     return os.environ.get("APS_APPS_PUB", PUBKEY_DEFAULT)
-
-
-def talk_on(eleccion):
-    """Whether the suite runs Talk — the record's own `talk` key (#145, ADR-0020): spreed is a
-    release row now, and it resolves only with Talk on, exactly the gate phase 12 reads through
-    TALK_ENABLED. An absent record never turns Talk off: the wizard writes the record before
-    any ejecutar, and a compose install runs Talk always (plan_clinico's own sin_talk
-    convention, provisionador.py)."""
-    return eleccion.get("talk", True)
 
 
 # ── the lock: one JSON document, the per-server record of installed app tags ───────────────
@@ -480,11 +471,6 @@ def fetch_all(rows, nextcloud, path=None, store=None, eleccion=None):
         eleccion = elegidas()
     for row in rows:
         app = row["id"]
-        # spreed rides Talk (#145): with Talk off it resolves nothing, the same gate phase 12
-        # reads through TALK_ENABLED — and a leftover lock row never overrides the choice
-        if app == "spreed" and not talk_on(eleccion):
-            lines.append("✓ apps: spreed omitida — la suite corre sin Talk")
-            continue
         if row.get("optional") is not False and not eleccion.get(app):
             lines.append(f"✓ apps: {app} no elegida — no se instala (la elección del asistente)")
             continue
@@ -543,9 +529,6 @@ def plan_all(rows, nextcloud, path=None, eleccion=None, *, ids):
         eleccion = elegidas()
     for row in rows:
         app = row["id"]
-        if app == "spreed" and not talk_on(eleccion):   # Talk off is not «omitida por elección»:
-            lines.append("spreed\tomitida")             # it is the suite's own switch (#145)
-            continue
         if row.get("optional") is not False and not eleccion.get(app):
             lines.append(f"{app}\tomitida")
             continue
@@ -576,15 +559,6 @@ def fetch_next(rows, nextcloud, nuevo, path=None, store=None, eleccion=None, *, 
         eleccion = elegidas()
     for row in rows:
         app = row["id"]
-        # spreed rides Talk here too (#145): Talk off carries the row over unchanged — the
-        # record that a warm instance still runs Talk must survive the run, exactly like an
-        # unchosen optional's
-        if app == "spreed" and not talk_on(eleccion):
-            if app in lock["apps"]:
-                lines.append("✓ apps: spreed omitida — la suite corre sin Talk; su fila del candado se conserva")
-            else:
-                lines.append("✓ apps: spreed omitida — la suite corre sin Talk")
-            continue
         if row.get("optional") is not False and not eleccion.get(app):
             if app in lock["apps"]:
                 lines.append(f"✓ apps: {app} no elegida — su fila del candado se conserva, no se actualiza")

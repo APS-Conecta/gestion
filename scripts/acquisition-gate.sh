@@ -190,10 +190,9 @@ assert fila["source"] == "fork" and fila["repo"] == "APS-Conecta/spreed" and fil
     echo "  the entrypoint installs or updates spreed — the release channel and actualizar are its only movers" >&2
     fail=1
   fi
-  grep -qF 'def talk_on(eleccion)' "$r" \
-    || { echo "  releases.py lost the Talk gate — spreed must resolve only with Talk on" >&2; fail=1; }
-  grep -qF '✓ apps: spreed omitida — la suite corre sin Talk' "$r" \
-    || { echo "  releases.py's Talk-off line is gone — the wizard surfaces that line verbatim" >&2; fail=1; }
+  if grep -nE 'def talk_on|TALK_ENABLED|spreed.*omitida.*Talk' "$r" "$TREE/provisioning/phases/12-apps.sh"; then
+    echo "  a Talk selection gate remains in acquisition" >&2; fail=1
+  fi
   [ "$fail" -eq 0 ]
 }
 
@@ -339,22 +338,23 @@ office_is_euro_office() {  # 200: the suite's office is Euro-Office, and only Eu
 row 200 "the suite's office is Euro-Office only — any other office choice is refused before it is stored (422, Spanish), and the page offers no way to disable it (R25, D12 b)" \
   office_is_euro_office
 
-options_start_off() {  # 210: Talk and Imaginary start off (R29, R27.5/7; D12 a) — the
-  # two PHP default literals Setup.php copies into a fresh config. The Provisionador's step 7 turns Talk on
-  # where the server's memory and cores allow; the translated suite's persisted-defaults spec
-  # expects the same two falses.
-  local m="$TREE/php/src/Data/ConfigurationManager.php" s="$TREE/php/tests/tests/persist-default-config.spec.js" fail=0 k
-  s4_files "$m" "$s" || return 1
-  for k in isTalkEnabled isImaginaryEnabled; do
-    grep -qF "get => (bool) \$this->get('$k', false);" "$m" || { echo "  $k does not default to off" >&2; fail=1; }
-    if grep -nF "get('$k', true)" "$m"; then echo "  a $k getter still defaults on" >&2; fail=1; fi
-    grep -qF "$k: false," "$s" || { echo "  persist-default-config.spec.js does not expect $k off" >&2; fail=1; }
-  done
-  [ "$fail" -eq 0 ]
+fixed_suite_services() {  # 210, 183: included services cannot read persisted selections.
+  python3 - "$TREE" <<'PYCODE'
+import pathlib, re, sys
+root = pathlib.Path(sys.argv[1])
+manager = (root / 'php/src/Data/ConfigurationManager.php').read_text()
+for name in ('isClamavEnabled', 'isTalkEnabled', 'isImaginaryEnabled', 'isFulltextsearchEnabled', 'isHarpEnabled'):
+    assert re.search(r'public bool \$' + name + r' \{\s*get => true;\s*}', manager), name
+assert re.search(r'public bool \$isTalkRecordingEnabled \{\s*get => false;\s*}', manager)
+for name in ('php/src/Data/Setup.php', 'php/src/Controller/ConfigurationController.php'):
+    text = (root / name).read_text()
+    assert not re.search(r'->is(?:Clamav|Talk|TalkRecording|Imaginary|Fulltextsearch|Harp)Enabled\s*=', text), name
+assert 'options-form' not in (root / 'php/src/Controller/ConfigurationController.php').read_text()
+PYCODE
 }
 
-row 210 "Talk and Imaginary start off — the two PHP defaults a fresh config copies, and the suite's spec expecting them (R29, D12 a)" \
-  options_start_off
+row 210 "the full suite is fixed at the configuration boundary; legacy selections cannot disable included services or enable recording (ADR-0021, #183)" \
+  fixed_suite_services
 
 first_boot_quiet() {  # 220: a fresh install calls nothing it does not need (R28, the AIO side):
   # nextcloud_announcements is disabled in the fresh-install block, before its first cron run

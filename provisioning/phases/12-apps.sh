@@ -33,17 +33,6 @@ manifest_opcionales="$(python3 "$HERE/../scripts/apps.py" opcionales)"
 # pipeline per row over the same list
 opcionales_ids="$(printf '%s\n' "$manifest_opcionales" | cut -f1)"
 
-# Talk is the suite's option under AIO: off unless the wizard turns it on (the fork's patch 210), and
-# with it off the entrypoint removes spreed on every boot (REMOVE_DISABLED_APPS) — installed here, it
-# would be undone at the next restart and leave Talk without its signalling server. The suite's own
-# switch decides, the one the entrypoint reads; with no AIO stack running there is no switch to
-# read, so Talk stays on.
-talk=yes
-if is_aio; then
-  talk="$(nc_exec -- printenv TALK_ENABLED 2>/dev/null)" \
-    || { echo "FATAL: could not read the suite's Talk switch (TALK_ENABLED) from the Nextcloud container — is it running?" >&2; exit 1; }
-fi
-
 # fd 3, not stdin: occ_sh runs `docker exec -i`, which would swallow the rest of the manifest.
 while IFS=$'\t' read -r -u 3 app repo; do
   # notify_push is the entrypoint's own: it installs the app scoped when the binary is absent
@@ -57,10 +46,6 @@ while IFS=$'\t' read -r -u 3 app repo; do
   # `occ app:remove <id>`, by hand.
   if printf '%s\n' "$opcionales_ids" | grep -qx -- "$app" && ! app_elegida "$app"; then
     log "$app skipped: la aplicación opcional no fue elegida (el registro del asistente)"
-    continue
-  fi
-  if [ "$app" = spreed ] && [ "$talk" != yes ]; then
-    log "spreed skipped: the suite runs without Talk (the wizard's option; AIO removes the app when it is off)"
     continue
   fi
   # Two channels (ADR-0017 + #42):

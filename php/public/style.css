@@ -629,7 +629,7 @@ input[type="checkbox"]:disabled:not(:checked) + label {
     transform: translateY(-2px);
 }
 
-#office-eurooffice:checked + .office-card {
+#office-eurooffice {
     border-color: var(--color-nextcloud-blue);
     background: linear-gradient(135deg, rgba(127, 33, 254, 0.08) 0%, rgba(127, 33, 254, 0.02) 100%);
 }
@@ -661,7 +661,7 @@ input[type="checkbox"]:disabled:not(:checked) + label {
     display: none;
 }
 
-#office-eurooffice:checked + .office-card .office-checkmark {
+#office-eurooffice .office-checkmark {
     display: block;
 }
 

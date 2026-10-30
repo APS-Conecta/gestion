@@ -203,25 +203,10 @@ check_store_app() {  # $1 = app id
 }
 
 check_apps() {  # $1 = the chosen optional ids, $2 = address, $3 = CA — one verdict per manifest row
-  local chosen=" $1 " id source optional detalle talk=0
-  # Talk is the wizard's switch, not the manifest's: the record gates spreed (#145, ADR-0020) —
-  # a silent install is Talk-off, so the fork's release resolves nothing and its ABSENCE is the
-  # contract (total: no lock row, no version, no directory), exactly as Clean boot asserts it.
-  sudo grep -q "talk=1" "$VMA_ROOT/aio/opciones" 2>/dev/null && talk=1
+  local chosen=" $1 " id source optional detalle
   while IFS=$'\t' read -r id source optional; do
     [ -n "$id" ] || continue
     detalle=""
-    if [ "$id" = spreed ] && [ "$talk" = 0 ]; then
-      if [ -z "$(lock_field spreed tag)" ] \
-         && [ -z "$(occ config:app:get spreed installed_version 2>/dev/null)" ] \
-         && ! "$VMA_DOCKER" exec --user www-data aps-conecta-nextcloud \
-              test -e /var/www/html/custom_apps/spreed 2>/dev/null; then
-        verdict ok "Talk apagado: spreed totalmente ausente" "el registro del asistente lo apagó y nada lo instaló (ADR-0020)"
-      else
-        verdict fail "Talk apagado exige ausencia total de spreed" "hay fila, versión o directorio — cat $VMA_ROOT/aio/opciones"
-      fi
-      continue
-    fi
     if [ "$source" = store ]; then
       detalle="$(check_store_app "$id" || true)"
     elif [ "$optional" = 0 ] || case "$chosen" in *" $id "*) true ;; *) false ;; esac; then

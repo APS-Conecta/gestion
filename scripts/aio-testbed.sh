@@ -51,7 +51,7 @@ NC=aps-conecta-nextcloud                   # fixed by the fork's php/containers.
 # container names would match none of the suite's. Names the newest suite tag built from this
 # tree's image inputs: a release's, moved by the commit after each green Release (RELEASING §4),
 # or a rehearsal's while the inputs are ahead of it.
-IMAGE="${AIO_TEST_IMAGE:-ghcr.io/aps-conecta/all-in-one:v0.0.0-ci.1471}"
+IMAGE="${AIO_TEST_IMAGE:-ghcr.io/aps-conecta/all-in-one:v0.0.0-ci.1831}"
 WIZARD_PORT="${AIO_TEST_PORT:-8080}"
 APACHE_PORT="${AIO_TEST_APACHE_PORT:-11000}"
 DOMAIN="${AIO_TEST_DOMAIN:-aio-test.invalid}"
@@ -171,7 +171,7 @@ cmd_up() {
   # (a started wizard is never configured twice).
   mkdir -p "$STATE/respaldos"
   AIO_URL="$WIZ" AIO_STATE="$STATE" bash "$repo_root/host/aps-conecta" asistente-aio \
-    --dominio "$DOMAIN" --sin-validar-dominio --talk --respaldo "$STATE/respaldos" \
+    --dominio "$DOMAIN" --sin-validar-dominio --respaldo "$STATE/respaldos" \
     || die "the CLI's wizard drive (host/aps-conecta asistente-aio) failed — its ✗ lines above name the step"
 
   # Probe state, set ONCE outside any seed (B-018's rule is about a PHASE re-writing the key

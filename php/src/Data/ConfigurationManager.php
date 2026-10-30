@@ -41,9 +41,9 @@ class ConfigurationManager
         set { $this->set('password', $value); }
     }
 
+    // Fixed suite policy (ADR-0021); persisted legacy selections are ignored.
     public bool $isHarpEnabled {
-        get => $this->get('isHarpEnabled', false);
-        set { $this->set('isHarpEnabled', $value); }
+        get => true;
     }
 
     public bool $restoreExcludePreviews {
@@ -79,10 +79,9 @@ class ConfigurationManager
         set { $this->set('wasStartButtonClicked', $value); }
     }
 
+    // Fixed suite policy (ADR-0021); persisted legacy selections are ignored.
     public bool $isClamavEnabled {
-        // Type-cast because old configs could have 1/0 for this key.
-        get => (bool) $this->get('isClamavEnabled', false);
-        set { $this->set('isClamavEnabled', $value); }
+        get => true;
     }
 
     public OfficeSuite $officeSuite {
@@ -90,29 +89,24 @@ class ConfigurationManager
         set  { $this->writeOfficeSuite($value); }
     }
 
+    // Fixed suite policy (ADR-0021); persisted legacy selections are ignored.
     public bool $isTalkEnabled {
-        // Type-cast because old configs could have 1/0 for this key.
-        get => (bool) $this->get('isTalkEnabled', false);
-        set { $this->set('isTalkEnabled', $value); }
+        get => true;
     }
 
+    // Fixed suite policy (ADR-0021); persisted legacy selections are ignored.
     public bool $isTalkRecordingEnabled {
-        // Type-cast because old configs could have 1/0 for this key.
-        get => (bool) $this->isTalkEnabled && $this->get('isTalkRecordingEnabled', false);
-        set { $this->set('isTalkRecordingEnabled', $this->isTalkEnabled && $value); }
+        get => false;
     }
 
+    // Fixed suite policy (ADR-0021); persisted legacy selections are ignored.
     public bool $isImaginaryEnabled {
-        // Type-cast because old configs could have 1/0 for this key.
-        get => (bool) $this->get('isImaginaryEnabled', false);
-        set { $this->set('isImaginaryEnabled', $value); }
+        get => true;
     }
 
+    // Fixed suite policy (ADR-0021); persisted legacy selections are ignored.
     public bool $isFulltextsearchEnabled {
-        // Type-cast because old configs could have 1/0 for this key.
-        get => (bool) $this->get('isFulltextsearchEnabled', false);
-        // Elasticsearch does not work on kernels without seccomp anymore. See https://github.com/nextcloud/all-in-one/discussions/5768
-        set { $this->set('isFulltextsearchEnabled', (!$this->collaboraSeccompDisabled && $value)); }
+        get => true;
     }
 
     public string $domain {

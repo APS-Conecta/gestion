@@ -33,6 +33,21 @@ class Image:
     cache: bool
 
 
+def runtime_services():
+    """The fixed running sibling set; backup, domain checking and recording are separate."""
+    try:
+        rows = json.loads((ROOT / "php/containers.json").read_text())["aio_services_v1"]
+        names = [row["container_name"] for row in rows if row["container_name"] not in {
+            "aps-conecta-borgbackup", "aps-conecta-domaincheck", "aps-conecta-talk-recording"}]
+        if not names or len(names) != len(set(names)) or "aps-conecta-nextcloud" not in names or any(
+            not re.fullmatch(r"aps-conecta-[a-z0-9-]+", name) for name in names
+        ):
+            raise ValueError("invalid running service set")
+        return names
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise ImageError(f"cannot read the running service inventory: {exc}") from exc
+
+
 def inventory():
     try:
         services = json.loads((ROOT / "php/containers.json").read_text())["aio_services_v1"]
@@ -350,11 +365,15 @@ def main():
         sub.add_argument("--sha", required=True)
         if name == "manifest":
             sub.add_argument("--ref", required=True)
+    commands.add_parser("runtime-services")
     rewrite = commands.add_parser("rewrite-registry")
     rewrite.add_argument("file")
     args = parser.parse_args()
     if args.self_test:
         self_test()
+        return
+    if args.command == "runtime-services":
+        print(" ".join(runtime_services()))
         return
     if args.command == "preflight":
         preflight(args.tag, args.force)

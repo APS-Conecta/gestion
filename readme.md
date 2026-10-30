@@ -37,7 +37,7 @@ ID the gates' rows name:
 | 180 | the wizard laid out for a 360 px phone |
 | 190 | no community containers — the channel removed whole: no directory, no image creation, no PHP readers (#48) |
 | 200 | the office is Euro-Office only — other choices refused (PHP, declared) |
-| 210 | Talk and Imaginary start off (PHP defaults, declared) |
+| 210 | the included service set is fixed; recording stays off until the hardware policy (#183) |
 | 220 | a fresh install calls nothing it does not need — the announcements feed |
 | 230 | the fresh install skips circles' legacy-table probe (no «oc_circle_circles» error) |
 | 233 | an IP accepted as the domain while domain validation is skipped — the install by IP over HTTPS (PHP, declared) |
@@ -54,8 +54,7 @@ ID the gates' rows name:
 **PHP logic changes only where declared.** Every other modification is a string, an asset, a
 template, or Dockerfile plumbing — committed bytes the gates verify. The
 declared PHP changes: patch 080's three registry references (strings), patch 200's office guard
-(any office other than Euro-Office is refused), patch 210's defaults (Talk and
-Imaginary start off), patch 233's IP guard (an IP is accepted as the domain while domain validation
+(any office other than Euro-Office is refused), patch 210's fixed service policy (ADR-0021), patch 233's IP guard (an IP is accepted as the domain while domain validation
 is skipped), patch 235's certificate directory (a setting and its read-only bind into the web front),
 patch 240's container names (strings, and the log route's name guard), and #48's closures — the
 community channel's readers (the directory constant, the config property, the listing method, the
@@ -85,7 +84,7 @@ The translated Playwright suite (`php/tests`, patch 090) keeps English assertion
 selected messages as its canary that the translation sweep never bled into PHP.
 
 **Nominative use.** The wizard names itself «APS Conecta Gestión AIO»; translated prose calls the
-software inside it «la suite» — «Nextcloud» remains in the HaRP option (shown only where it is already on) and
+software inside it «la suite» — «Nextcloud» remains in
 the PHP-borne messages listed above — and the
 wizard's help links point at the suite's own docs — instalador's `aps/INSTALLER.md` and
 `aps/GUIA-CLINICA.md`. The source and revision image labels identify APS-Conecta/gestion and the built commit.

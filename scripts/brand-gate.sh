@@ -107,7 +107,7 @@ swept_table() {  # 060's per-file sentinel table — ONE writer, three readers: 
   # bytes across 060 regenerations instead of sed-ing nothing against a reworded table).
   cat <<'EOF'
 php/templates/containers.twig|value="Log out"|value="Cerrar sesión"
-php/templates/includes/optional-containers.twig|value="Save changes"|value="Guardar cambios"
+php/templates/includes/suite-services.twig|Included services|Servicios incluidos
 php/templates/includes/aio-config.twig|Click here to view the current AIO config|Haga clic aquí para ver la configuración actual
 php/templates/includes/backup-dirs.twig|An example for Linux is|Un ejemplo para Linux es
 php/templates/components/container-state.twig|>Stopped</a>|>Detenido</a>
@@ -185,8 +185,8 @@ row 050 "the wizard carries zero Collabora/OnlyOffice vendor ids — cards, JS r
 row 050 "only supported office settings reach the wizard templates and controller" \
   office_settings_removed
 
-row 050 "the eurooffice card is intact — radio id, CSS selector, JS guard all present (the deletion's positive control)" \
-  office_floor "$TREE/php/templates/includes/optional-containers.twig" "$TREE/php/public/style.css" "$TREE/php/public/disable-containers.js"
+row 050 "the eurooffice card is intact — static identity and CSS selector present (the deletion's positive control)" \
+  office_floor "$TREE/php/templates/includes/suite-services.twig" "$TREE/php/public/style.css"
 
 row 050 "the vendor logo assets are gone — img/collabora.svg, img/onlyoffice.svg (dead bytes post-deletion)" \
   files_absent "$TREE/php/public/img/collabora.svg" "$TREE/php/public/img/onlyoffice.svg"
@@ -665,12 +665,12 @@ row 150 "the wizard proposes the suite's values — America/Santiago, /srv/aps-c
 page_choices() {  # 160: the page offers only what the suite ships (R25, its template part): the
   # baked Nextcloud Hub (no newer-major checkbox, no upgrade note), the suite's version — its
   # image tag — in the heading instead of upstream AIO's, the office card named for what it is
-  # with no comparison against the removed cards, HaRP hidden while off (an
+  # with no comparison against the removed cards, included services without selection (an
   # instance that has it on still sees it, so it can be unchecked — a hidden checked box would
   # re-save itself forever), and no «mastercontainer» jargon in any
   # template's or script's prose (the asistente, as the docs call it; ids and commands
   # keep the container's real name). The server-side refusals are the acquisition gate's (190, 200).
-  local c="$TREE/php/templates/containers.twig" o="$TREE/php/templates/includes/optional-containers.twig" fail=0
+  local c="$TREE/php/templates/containers.twig" o="$TREE/php/templates/includes/suite-services.twig" fail=0
   s3_files "$c" "$o" "$TREE/php/public/forms.js" || return 1
   if ! matches_absent -nE 'newMajorVersionString|oldMajorVersionString|install_latest_major|nextcloud-upgrade-to-latest-major' "$c"; then
     echo "  an independent major-version upgrade is still offered" >&2; fail=1
@@ -681,15 +681,16 @@ page_choices() {  # 160: the page offers only what the suite ships (R25, its tem
   if ! matches_absent -nE 'Nextcloud Office|Mejor rendimiento|Compatibilidad ODF limitada|Mejor compatibilidad con Microsoft' "$o"; then
     echo "  the office card still names or compares against upstream's suites" >&2; fail=1
   fi
-  tr -d '\n' < "$o" | grep -qE "<p\{% if is_harp_enabled != true %\} hidden\{% endif %\}> *<input +type=\"checkbox\" +id=\"harp\"" \
-    || { echo "  the harp option is not hidden-while-off" >&2; fail=1; }
+  if ! matches_absent -nE '<form|type="(checkbox|radio)"|options-form|is_.*_enabled' "$o"; then
+    echo "  the included services still offer selections" >&2; fail=1
+  fi
   if ! find_matches -rnE '(^|[^-_[:alnum:]])mastercontainer([^-_[:alnum:]]|$)' "$TREE/php/templates" "$TREE/php/public"/*.js | matches_absent -v '{#'; then
     echo "  «mastercontainer» jargon survives in the wizard's prose" >&2; fail=1
   fi
   [ "$fail" -eq 0 ]
 }
 
-row 160 "the page offers only what the suite ships — no Hub major-version choice, the suite version in the heading, the office card titled Oficina, HaRP hidden while off, no mastercontainer jargon (R25, its template part)" \
+row 160 "the page offers only what the suite ships — no Hub major-version choice, the suite version in the heading, the office card titled Oficina, included services without selection, no mastercontainer jargon (R25, its template part)" \
   page_choices
 
 post_start_page() {  # 170: after start the page says only true, APS things (R27): the suite's

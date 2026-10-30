@@ -37,6 +37,7 @@ for the cookie and wipes it from the address bar. On the wire the Authorization 
 login cookie) is the only carrier, and the request log is silent (R42).
 """
 import csv
+from images import runtime_services
 import errno
 import fcntl
 import base64
@@ -259,11 +260,12 @@ PASO_PLANILLA, PASO_GATE = "Cuentas del personal", "Comprobación final"
 PASOS_EJECUCION = [PHASE_TITLES[k] for k in sorted(PHASE_TITLES)] + [PASO_PLANILLA, PASO_GATE]
 # The suite's containers, named for the people who run it: the host's AIO_SET plus Nextcloud's own (an
 # arm pins the set). Talk's two join when the wizard was given Talk — they never block «Siguiente».
-CONTENEDORES_SUITE = (("aps-conecta-apache", "Servidor web"), ("aps-conecta-nextcloud", "Núcleo de la suite"),
-                      ("aps-conecta-database", "Base de datos"), ("aps-conecta-redis", "Caché"),
-                      ("aps-conecta-notify-push", "Notificaciones al instante"),
-                      ("aps-conecta-eurooffice", "Oficina"))
-CONTENEDORES_TALK = (("aps-conecta-talk", "Talk"), ("aps-conecta-talk-recording", "Grabación de Talk"))
+SERVICE_NAMES = {"apache": "Servidor web", "nextcloud": "Núcleo de la suite", "database": "Base de datos",
+                 "redis": "Caché", "notify-push": "Notificaciones al instante", "eurooffice": "Oficina",
+                 "talk": "Talk", "fulltextsearch": "Búsqueda", "imaginary": "Vistas previas",
+                 "clamav": "Antivirus", "harp": "AppAPI"}
+CONTENEDORES_SUITE = tuple((name, SERVICE_NAMES.get(name.removeprefix("aps-conecta-"), name))
+                           for name in runtime_services())
 # Talk sized to the server (R26). ponytail: Talk ~1 GiB is AIO's own figure; the recording's 4 free cores
 # are the approved design's example, above AIO's ~2 vCPU — the conservative side until measured. Clean
 # boot prints the suite's memory; the L7 rehearsal box (12 GiB, 4 cores) confirms or moves them.
@@ -1448,7 +1450,6 @@ def plan_clinico(codigo, teams, rows, cargos):
     hand-built site without the pair, a code the register lacks) — a state, never a blocked run."""
     row = find_row(codigo)
     opciones = opciones_actuales()
-    sin_talk = opciones is not None and not opciones["talk"]   # step 6 left Talk off: phase 12 installs no spreed
     # same for the optional apps (#39): a component only when step 6 chose it — an unchosen
     # optional app is absent from the plan, as it is from the instance
     elegidas = opciones["apps"] if opciones else {i: d for i, _n, _s, d in OPCIONALES}
@@ -1469,8 +1470,7 @@ def plan_clinico(codigo, teams, rows, cargos):
                          for uid, nombre, apellidos, _c, gids, primer in rows],
             "cuentas_de_cargo": len(cargos),
             "componentes": [[nombre, que] for app, nombre, que in COMPONENTES
-                            if not (sin_talk and app == "spreed")
-                            and (app not in OPCIONAL_IDS or elegidas[app])]}
+                            if app not in OPCIONAL_IDS or elegidas[app]]}
 
 
 def record_state(body):
@@ -2394,8 +2394,8 @@ contenedores se reinicia una vez durante la corrección.</p>
         " GiB (recomendado " + pisos.ram_recomendada + " GiB); disco " + pisos.disco_min +
         " GB (recomendado " + pisos.disco_recomendado + " GB).</p>" : "") +
       '<ul class="lista-estado">' +
-      fila("Talk", s.talk, s.preparada ? s.opciones.talk : undefined) +
-      fila("Grabación", s.grabacion, s.preparada ? s.opciones.grabacion : undefined) + "</ul>";
+      fila("Talk", s.talk, true) +
+      fila("Grabación", s.grabacion, false) + "</ul>";
     // a suite that exists — prepared here, or already started — is followed, never prepared again
     const p = s.preparacion, hechos = new Set(p.hechos),
       sigue = s.preparada || s.en_marcha || s.contenedores.some(([, e]) => e !== "en espera");
@@ -2420,8 +2420,7 @@ contenedores se reinicia una vez durante la corrección.</p>
       zona("s-datos").innerHTML = '<dl class="dl"><dt>' + (/^[0-9.]+$/.test(s.dominio || "") ? "Dirección IP" : "Dominio") +
         "</dt><dd>" + escapear(s.dominio || "—") +
         "</dd><dt>Zona horaria</dt><dd>Santiago</dd><dt>Oficina</dt><dd>Euro-Office</dd><dt>Talk</dt><dd>" +
-        (s.opciones.talk ? "Activado" : "Desactivado") + "; grabación " +
-        (s.opciones.grabacion ? "activada" : "desactivada") + appsDd +
+        "Incluido; grabación desactivada" + appsDd +
         "</dd><dt>Respaldo</dt><dd>Diario a las 04:00 hora de Santiago, en este servidor</dd>" +
         (s.ca ? '<dt>Certificado</dt><dd>Propio del instalador. <a href="/api/ca" download>Descargar el ' +
           'certificado</a>: cada equipo del personal lo importa una vez (guía, §10). Huella SHA-256: ' +
@@ -3179,10 +3178,7 @@ def opciones_actuales():
         if not sep or valor not in ("0", "1"):   # one shape, or nothing: a hand edit is not a preparation
             return None
         pares[clave] = valor == "1"
-    if "talk" not in pares or "grabacion" not in pares:
-        return None
-    return {"talk": pares["talk"], "grabacion": pares["grabacion"],
-            "apps": {i: pares.get(i, False) for i in OPCIONAL_IDS}}
+    return {"apps": {i: pares.get(i, False) for i in OPCIONAL_IDS}}
 
 
 def _occ_status():
@@ -3216,9 +3212,7 @@ def talk_ahora(vistos):
     """Talk's verdict now (R26). The port is probed unless the wizard was given Talk: then its own proxy
     holds 3478 and a probe could race it."""
     memoria, nucleos = recursos()
-    opciones = opciones_actuales()
-    libre = ("aps-conecta-talk" in vistos or (opciones is not None and opciones["talk"])
-             or puerto_libre(PUERTO_TALK))
+    libre = "aps-conecta-talk" in vistos or puerto_libre(PUERTO_TALK)
     return veredicto_talk(memoria, nucleos, libre)
 
 
@@ -3233,13 +3227,10 @@ def estado_suite():
     talk, grabacion = talk_ahora(vistos)
     opciones = opciones_actuales()
     if opciones:
-        con_talk, con_grabacion, apps_elegidas = opciones["talk"], opciones["grabacion"], opciones["apps"]
+        apps_elegidas = opciones["apps"]
     else:   # before step 6: Talk as the server allows, the apps at their checkbox's default
-        con_talk, con_grabacion = talk[0], grabacion[0]
         apps_elegidas = {i: d for i, _n, _s, d in OPCIONALES}
     base = [[nombre, estado_contenedor(vistos.get(c))] for c, nombre in CONTENEDORES_SUITE]
-    extra = [[nombre, estado_contenedor(vistos.get(c))]
-             for (c, nombre), si in zip(CONTENEDORES_TALK, (con_talk, con_grabacion)) if si]
     en_marcha = all(e == "en marcha" for _n, e in base)
     instalada = en_marcha and suite_instalada()
     frase = ""
@@ -3257,12 +3248,12 @@ def estado_suite():
                  "grabacion": {"cabe": grabacion[0], "texto": grabacion[1]},
                  "apps": apps_aps(), "dominio": dominio_actual(), "preparada": opciones is not None,
                  "opcionales": [[i, n, s, d, apps_elegidas[i]] for i, n, s, d in OPCIONALES],
-                 "opciones": {"talk": con_talk, "grabacion": con_grabacion, "apps": apps_elegidas},
+                 "opciones": {"apps": apps_elegidas},
                  "preparacion": {"estado": s["estado"], "hechos": list(s["hechos"]), "motivo": s["motivo"],
                                  "pasos": [t for _p, t in PASOS_SUITE]},
                  "frase": frase, "asistente": f"https://{LAN_IP}:8080", "ip": LAN_IP,
                  "ca": huella(ca) if ca else "",
-                 "contenedores": base + extra, "en_marcha": en_marcha, "instalada": instalada}
+                 "contenedores": base, "en_marcha": en_marcha, "instalada": instalada}
 
 
 def iniciar_suite(payload):
@@ -3292,7 +3283,6 @@ def iniciar_suite(payload):
     talk, grabacion = talk_ahora(vistos)
     argv = (SUITE_CMD + ["--dominio", dominio, "--respaldo", RESPALDO_DIR]
             + [p for i, _n, _s, _d in OPCIONALES for p in (("--app", i) if apps.get(i) else ())]
-            + (["--talk"] if talk[0] else []) + (["--grabacion"] if grabacion[0] else [])
             + ([] if payload.get("validar") is not False else ["--sin-validar-dominio"]))
     with SUITE_GUARD:
         if SUITE["estado"] == "en_curso":
