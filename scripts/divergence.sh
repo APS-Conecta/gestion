@@ -64,6 +64,41 @@ done
 notes=()
 note() { notes+=("$1"); }
 
+# One parser owns the JSON inventories. A command/parse failure must survive
+# pipefail and become a guard note, rather than an apparently empty live set.
+occ_inventory() {  # folders|ids OCC_ARGUMENTS...
+  local shape="$1"; shift
+  occ "$@" | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    if not isinstance(data, (dict, list)):
+        raise ValueError("inventory must be an object or array")
+    if sys.argv[1] == "folders":
+        rows = data.values() if isinstance(data, dict) else data
+        records = []
+        for row in rows:
+            if not isinstance(row, dict):
+                raise ValueError("folder entry must be an object")
+            mount = row.get("mountPoint") or row.get("mount_point")
+            fid = row.get("id")
+            if not isinstance(mount, str) or not mount or any(c in mount for c in "\t\r\n"):
+                raise ValueError("folder has no usable mount point")
+            if isinstance(fid, bool) or not isinstance(fid, (int, str)) or not str(fid).isdigit():
+                raise ValueError("folder has no usable id")
+            records.append(str(fid) + "\t" + mount)
+    elif sys.argv[1] == "ids":
+        records = list(data)
+        if any(not isinstance(value, str) or not value or any(c in value for c in "\r\n") for value in records):
+            raise ValueError("inventory ids must be nonempty single-line strings")
+    else:
+        raise ValueError("unknown inventory shape")
+    print("\n".join(records))
+except (ValueError, TypeError, KeyError):
+    sys.exit(1)
+' "$shape"
+}
+
 # Blindness check, before any domain runs. Forced by the apps retarget below: the live set now
 # comes from the instance, so a report assembled against an unreachable instance would be green
 # only because every read came back empty — the silent-green class this repo exists never to
@@ -79,15 +114,10 @@ occ status >/dev/null 2>&1 \
 # --- group folders: SITE_FOLDERS is the whole declared set ---
 # Deleting one deletes every file inside it, which is why this is the report's headline case and why
 # the suggested command is printed for a human to run rather than run here.
-live_folders="$(occ groupfolders:list --output=json 2>/dev/null | python3 -c '
-import sys, json
-try: d = json.load(sys.stdin)
-except Exception: sys.exit(0)
-for r in (d.values() if isinstance(d, dict) else d):
-    m = r.get("mountPoint") or r.get("mount_point")
-    fid = r.get("id")
-    if m: print(str(fid) + "\t" + m)
-')"
+if ! live_folders="$(occ_inventory folders groupfolders:list --output=json 2>/dev/null)"; then
+  note "no se pudieron revisar las carpetas compartidas: occ no respondió con una lista JSON válida; revise la instancia y vuelva a ejecutar la revisión"
+  live_folders=""
+fi
 declared_folders="$(printf '%s\n%s\n' "${SITE_FOLDERS[@]}" "$IV_MOUNT")"   # engine mount (design §5, ADR-0016): created by
 # intravox:setup, not in any SITE_FOLDERS matrix; gf_prune already leaves it alone (prune only
 # touches matrix mounts)
@@ -153,12 +183,14 @@ else
   # The difference is taken ONCE into a variable, then looped over with a here-string. Piping `occ`
   # straight into the `while` would put the loop in a subshell, where every `note` appends to a copy
   # of the array that dies with it — the report would find things and then print the all-clear.
-  extra_groups="$(occ group:list --output=json 2>/dev/null | python3 -c '
-import sys, json
-try: d = json.load(sys.stdin)
-except Exception: sys.exit(0)
-for g in (d.keys() if isinstance(d, dict) else d): print(g)
-' | grep -vxF -f <(printf '%s\n' "$declared_groups") || true)"
+  if ! live_groups="$(occ_inventory ids group:list --output=json 2>/dev/null)"; then
+    note "no se pudieron revisar los grupos: occ no respondió con una lista JSON válida; revise la instancia y vuelva a ejecutar la revisión"
+    extra_groups=""
+  else
+    extra_groups="$(printf '%s\n' "$live_groups" | grep -vxF -f <(printf '%s\n' "$declared_groups"))"
+    filter_status=$?
+    [ "$filter_status" -le 1 ] || note "no se pudieron revisar los grupos: falló la comparación con los grupos declarados"
+  fi
   while read -r gid; do
     [ -n "$gid" ] || continue
     # Named, not deleted: a group that is a group folder's only grantee strands that folder when
@@ -231,12 +263,14 @@ with open(sys.argv[1], encoding="utf-8-sig", newline="") as fh:
   # staff would have its tail silently unlisted — the gate reading green without ever looking at
   # the accounts it was built to judge. The default listing includes disabled accounts, which is
   # what this wants: a disabled stray account is still an account that owns files.
-  extra_users="$(occ user:list --output=json --limit 0 2>/dev/null | python3 -c '
-import sys, json
-try: d = json.load(sys.stdin)
-except Exception: sys.exit(0)
-for u in (d.keys() if isinstance(d, dict) else d): print(u)
-' | grep -vxF -f <(printf '%s\n' "$declared_users") || true)"
+  if ! live_users="$(occ_inventory ids user:list --output=json --limit 0 2>/dev/null)"; then
+    note "no se pudieron revisar los usuarios: occ no respondió con una lista JSON válida; revise la instancia y vuelva a ejecutar la revisión"
+    extra_users=""
+  else
+    extra_users="$(printf '%s\n' "$live_users" | grep -vxF -f <(printf '%s\n' "$declared_users"))"
+    filter_status=$?
+    [ "$filter_status" -le 1 ] || note "no se pudieron revisar los usuarios: falló la comparación con los usuarios declarados"
+  fi
   while read -r uid; do
     [ -n "$uid" ] || continue
     note "el usuario '$uid' existe pero no está declarado — ni en la planilla, ni es cuenta de cargo, ni el administrador de la instalación; eliminar un usuario elimina sus archivos: hágalo a propósito con 'occ user:delete $uid' si es lo que quiere"

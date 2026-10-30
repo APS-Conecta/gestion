@@ -7,34 +7,45 @@
 # job and upstream's own workflows cover push/PR. twig-lint is not here: it needs PHP
 # 8.5 + apcu, so it rides the workflow's own setup-php step beside this script.
 #
-# Usage: scripts/validate.sh TREE     (TREE = the tree to validate, e.g. . — the checkout)
+# Usage: scripts/validate.sh [--docker-lint] TREE     (TREE = the tree to validate, e.g. . — the checkout)
 set -uo pipefail
 
 TMPD="$(mktemp -d)"; trap 'rm -rf "$TMPD"' EXIT
 
 die() { echo "FATAL: $*" >&2; exit 1; }
 
-tree="${1:?usage: scripts/validate.sh TREE (the tree to validate, e.g. .)}"
+docker_only=0
+if [ "${1:-}" = --docker-lint ]; then docker_only=1; shift; fi
+tree="${1:?usage: scripts/validate.sh [--docker-lint] TREE (the tree to validate, e.g. .)}"
 [ -d "$tree" ] || die "no tree at '$tree'"
-venv="$TMPD/venv"
-python3 -m venv "$venv" || die "cannot create the validator venv (PEP 668 — everything installs in here, never the system python)"
-"$venv/bin/pip" install --quiet codespell json-spec || die "cannot install codespell+json-spec"
+if [ "$docker_only" -eq 0 ]; then
+  venv="$TMPD/venv"
+  python3 -m venv "$venv" || die "cannot create the validator venv (PEP 668 — everything installs in here, never the system python)"
+  "$venv/bin/pip" install --quiet codespell json-spec || die "cannot install codespell+json-spec"
 
-echo "== codespell (upstream's own flags — the es-CL strings of patch 060 ride this gate too) =="
-"$venv/bin/codespell" --check-filenames --check-hidden "$tree" \
-  || { echo "VALIDATE: codespell FAIL — a misspelling entered the tree (upstream's own tree passes this)" >&2; exit 1; }
+  echo "== codespell (upstream's own flags — the es-CL strings of patch 060 ride this gate too) =="
+  "$venv/bin/codespell" --check-filenames --check-hidden "$tree" \
+    || { echo "VALIDATE: codespell FAIL — a misspelling entered the tree (upstream's own tree passes this)" >&2; exit 1; }
+fi
 
 echo "== docker-lint (hadolint, upstream's own ignores — patches 020/030 edit this Dockerfile) =="
-timeout 60 wget -q https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64 -O "$TMPD/hadolint" \
-  || die "cannot download hadolint (bounded 60s)"
-chmod +x "$TMPD/hadolint"
+bash "$(dirname "$0")/ci-tool.sh" hadolint "$TMPD/hadolint" || die "cannot acquire the pinned Dockerfile linter"
 : > "$TMPD/hadolint.log"
+find "$tree/Containers" -name "*Dockerfile" -print > "$TMPD/dockerfiles" || die "cannot enumerate Dockerfiles"
+[ -s "$TMPD/dockerfiles" ] || die "no Dockerfiles to validate"
 while IFS= read -r f; do
-  "$TMPD/hadolint" "$f" --ignore DL3018 --ignore DL3041 --ignore DL3066 | tee -a "$TMPD/hadolint.log"
-done < <(find "$tree/Containers" -name "*Dockerfile")
+  if ! "$TMPD/hadolint" "$f" --ignore DL3018 --ignore DL3041 --ignore DL3066 | tee -a "$TMPD/hadolint.log"; then
+    die "hadolint could not validate $f"
+  fi
+done < "$TMPD/dockerfiles"
 if [ -s "$TMPD/hadolint.log" ]; then
   echo "VALIDATE: docker-lint FAIL — hadolint findings above (upstream's own tree passes this)" >&2
   exit 1
+fi
+
+if [ "$docker_only" -eq 1 ]; then
+  echo "VALIDATE: PASS — Dockerfile lint green against $tree"
+  exit 0
 fi
 
 echo "== json-validator (json-spec, upstream's exact commands — 010 edits containers.json) =="

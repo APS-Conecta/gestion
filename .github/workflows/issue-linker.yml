@@ -13,7 +13,6 @@ on:
   workflow_dispatch:
 
 permissions:
-  issues: write
   contents: read
 
 concurrency:
@@ -22,6 +21,9 @@ concurrency:
 
 jobs:
   link:
+    permissions:
+      contents: read
+      issues: write
     name: link open issues to their merged commits
     runs-on: ubuntu-latest
     timeout-minutes: 10

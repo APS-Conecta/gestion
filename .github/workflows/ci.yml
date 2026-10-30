@@ -49,20 +49,21 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0    # a secret lives wherever history put it, not only at HEAD
-      - name: gitleaks 8.18.2 (pinned)
+      - name: Verify and run the pinned gitleaks binary
         run: |
-          curl -fsSL -o /tmp/gitleaks.tgz \
-            https://github.com/gitleaks/gitleaks/releases/download/v8.18.2/gitleaks_8.18.2_linux_x64.tar.gz
-          tar -xzf /tmp/gitleaks.tgz -C /usr/local/bin gitleaks
-          gitleaks version
-          gitleaks detect --redact --source "$GITHUB_WORKSPACE" --exit-code 1 --verbose
+          bash scripts/ci-tool.sh gitleaks "$RUNNER_TEMP/gitleaks"
+          "$RUNNER_TEMP/gitleaks" version
+          "$RUNNER_TEMP/gitleaks" detect --redact --source "$GITHUB_WORKSPACE" --exit-code 1 --verbose
 
   static:
     name: Static gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # No Makefile moved (gestion's dev lifecycle).
       # The gate is the script. The signer rides along: package-release's self-test is real
       # crypto over a throwaway keypair, and it is the same apt package the clinic verifies
@@ -92,6 +93,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # row 270's font-coverage check reads woff2 cmaps — fontTools is a gate dependency, not
       # a nicety: without it the row fails loudly (never passes vacuously), so CI installs it
       - run: python3 -m pip install --quiet fonttools brotli
@@ -123,6 +126,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: python3 -m pip install --quiet fonttools brotli   # row 270's font check, same as the gates job
       - name: Baseline — the gate is green before any injection
         run: bash scripts/brand-gate.sh .

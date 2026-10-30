@@ -10,6 +10,312 @@ fail=0
 check() { if "$@" >/dev/null 2>&1; then echo "  ok:   $*"; else echo "  FAIL: $*"; fail=1; fi; }
 
 echo "== static checks (no running stack needed) =="
+# #204: check token defaults and checkout persistence, then let ShellCheck parse
+# each run block for SC2251 (a negation that silently skips errexit).
+workflow_safety_cases() {
+  python3 - "${1:-.github/workflows}" <<'PY'
+import json, pathlib, re, subprocess, sys, textwrap
+
+
+def policy(text, name):
+    errors = []
+    lines = text.splitlines()
+    top = re.search(r'^permissions:\s*\n((?:[ \t]+[^\n]*\n|\n)*)', text, re.M)
+    permissions = dict(re.findall(r'^  ([\w-]+):\s+(read|write|none)\b', top[1], re.M)) if top else {}
+    # A reusable publisher must advertise its caller's package-write ceiling.
+    allowed_write = {"packages"} if name == "images.yml" else set()
+    if permissions.get("contents") != "read" or any(
+        value == "write" and key not in allowed_write for key, value in permissions.items()
+    ):
+        errors.append("workflow defaults must be read-only (Images keeps its package publishing ceiling)")
+    for index, line in enumerate(lines):
+        if re.match(r'^\s+(?:- )?uses: actions/checkout@', line):
+            indent = len(line) - len(line.lstrip()) + (2 if line.lstrip().startswith('- ') else 0)
+            block = []
+            for following in lines[index + 1:]:
+                if following.strip() and not following.lstrip().startswith('#') and len(following) - len(following.lstrip()) < indent:
+                    break
+                block.append(following)
+            if not re.search(r'^\s+persist-credentials: false(?:\s|$)', '\n'.join(block), re.M):
+                errors.append(f"line {index + 1}: checkout must set persist-credentials: false")
+        run = re.match(r'^(\s+)(?:- )?run:\s*(.*)$', line)
+        if not run:
+            continue
+        value = run[2]
+        if value.startswith('|'):
+            body = []
+            indent = len(run[1]) + (2 if line.lstrip().startswith('- ') else 0)
+            for following in lines[index + 1:]:
+                if following.strip() and len(following) - len(following.lstrip()) <= indent:
+                    break
+                body.append(following)
+            script = textwrap.dedent('\n'.join(body))
+        elif value.startswith('>'):
+            errors.append(f"line {index + 1}: use a literal run block so shell assertions can be checked")
+            continue
+        elif value.startswith("'") and value.endswith("'"):
+            script = value[1:-1].replace("''", "'")
+        elif value.startswith('"'):
+            script = json.loads(value)
+        else:
+            script = value
+        script = re.sub(r'\$\{\{.*?\}\}', 'workflow_value', script, flags=re.S)
+        result = subprocess.run(['shellcheck', '--norc', '-s', 'bash', '-i', 'SC2251', '-'],
+                                input='set -e\n' + script, text=True, capture_output=True)
+        if result.returncode:
+            errors.append(f"line {index + 1}: unsafe or unparseable shell assertion\n{result.stdout}{result.stderr}")
+    return errors
+
+
+fixture = '''permissions:
+  contents: read
+jobs:
+  check:
+    steps:
+      - uses: actions/checkout@fixed
+        with:
+          persist-credentials: false
+      - run: |
+          echo checked
+'''
+assert not policy(fixture, 'fixture.yml')
+for bad in [fixture.replace('permissions:\n  contents: read\n', ''),
+            fixture.replace('contents: read', 'contents: write'),
+            fixture.replace('contents: read', 'contents: read\n  issues: write'),
+            fixture.replace('persist-credentials: false', 'persist-credentials: true'),
+            fixture.replace('          persist-credentials: false\n', ''),
+            fixture.replace('echo checked', '! grep pattern file\n          echo checked')]:
+    assert policy(bad, 'fixture.yml'), 'an unsafe workflow fixture passed'
+assert not policy(fixture.replace('echo checked', '! grep pattern file'), 'fixture.yml')
+assert not policy(fixture.replace('echo checked', 'if grep pattern file; then exit 1; fi'), 'fixture.yml')
+assert not policy(fixture.replace('contents: read', 'contents: read\n  packages: write'), 'images.yml')
+failures = []
+paths = sorted(pathlib.Path(sys.argv[1]).glob('*.yml'))
+assert paths, 'no workflows were checked'
+for path in paths:
+    failures.extend(f'{path}: {error}' for error in policy(path.read_text(), path.name))
+if failures:
+    print('\n'.join(failures))
+    sys.exit(1)
+print('workflow permission, checkout and shell-assertion checks passed')
+PY
+}
+check workflow_safety_cases
+
+# Run the actual wrapper with external tools replaced: no package installation or network.
+validator_failure_cases() {
+  python3 - <<'PY'
+import os, pathlib, subprocess, tempfile
+with tempfile.TemporaryDirectory(prefix='validator-cases-') as tmp:
+    root = pathlib.Path(tmp)
+    tools = root / 'bin'
+    tools.mkdir()
+    tree = root / 'tree'
+    (tree / 'Containers/example').mkdir(parents=True)
+    (tree / 'Containers/example/Dockerfile').write_text('FROM scratch\n')
+    def tool(name, body):
+        path = tools / name
+        path.write_text('#!/usr/bin/env bash\n' + body)
+        path.chmod(0o755)
+    tool('python3', '''[ "$1" = -m ] && [ "$2" = venv ] || exit 90
+mkdir -p "$3/bin"
+for cmd in pip codespell json; do printf '#!/bin/sh\\nexit 0\\n' > "$3/bin/$cmd"; chmod +x "$3/bin/$cmd"; done
+''')
+    tool('wget', '''while [ "$#" -gt 0 ]; do if [ "$1" = -O ]; then cp "$FAKE_HADOLINT" "$2"; exit; fi; shift; done
+exit 91
+''')
+    tool('curl', '''while [ "$#" -gt 0 ]; do if [ "$1" = --output ] || [ "$1" = -o ]; then cp "$FAKE_HADOLINT" "$2"; exit; fi; shift; done
+exit 91
+''')
+    # This test isolates wrapper failure propagation. ci_tool_cases separately
+    # rejects corrupted bytes with the real checksum tool.
+    tool('sha256sum', 'cat >/dev/null\nexit 0\n')
+    fake = root / 'hadolint'
+    fake.write_text('#!/usr/bin/env bash\n[ -z "$LINT_OUTPUT" ] || echo "$LINT_OUTPUT"\nexit "$LINT_EXIT"\n')
+    fake.chmod(0o755)
+    env = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ['PATH'], FAKE_HADOLINT=str(fake))
+    for status, output, success in [(0, '', True), (126, '', False), (1, 'finding', False), (0, 'finding', False)]:
+        result = subprocess.run(['bash', 'scripts/validate.sh', str(tree)],
+                                env=dict(env, LINT_EXIT=str(status), LINT_OUTPUT=output),
+                                text=True, capture_output=True, timeout=15)
+        assert (result.returncode == 0) == success, f'linter status {status}, output {output!r}: {result.stdout}{result.stderr}'
+print('validator propagates failed tools and findings')
+PY
+}
+check validator_failure_cases
+
+ci_tool_cases() {
+  python3 - <<'PY'
+import io, os, pathlib, re, shutil, subprocess, tarfile, tempfile
+with tempfile.TemporaryDirectory(prefix='ci-tool-cases-') as tmp:
+    root = pathlib.Path(tmp)
+    tools = root / 'bin'
+    tools.mkdir()
+    payload = b'#!/bin/sh\nprintf "fixture tool\\n"\n'
+    binary = root / 'fixture-binary'
+    binary.write_bytes(payload)
+    archive = root / 'fixture-archive'
+    with tarfile.open(archive, 'w:gz') as tar:
+        entry = tarfile.TarInfo('gitleaks')
+        entry.size = len(payload)
+        tar.addfile(entry, io.BytesIO(payload))
+    real_sha = shutil.which('sha256sum')
+    curl = tools / 'curl'
+    curl.write_text('''#!/usr/bin/env python3
+import os, pathlib, shutil, sys
+args = sys.argv[1:]
+url = args[-1]
+assert '/releases/download/v' in url and '/latest/' not in url, url
+with open(os.environ['DOWNLOAD_LOG'], 'a') as log: log.write(url + '\\n')
+if os.environ.get('DOWNLOAD_FAIL') == '1': sys.exit(22)
+source = 'fixture-archive' if url.endswith('.tar.gz') else 'fixture-binary'
+shutil.copyfile(pathlib.Path(os.environ['TOOL_FIXTURES']) / source, args[args.index('--output') + 1])
+''')
+    curl.chmod(0o755)
+    sha = tools / 'sha256sum'
+    sha.write_text('''#!/usr/bin/env python3
+import os, pathlib, re, subprocess, sys
+text = sys.stdin.read()
+assert '--check' in sys.argv
+match = re.fullmatch(r'([a-f0-9]{64})  (.+)\\n', text)
+assert match and pathlib.Path(match[2]).is_file(), text
+pathlib.Path(os.environ['CHECKSUM_LOG']).write_text(text)
+if os.environ.get('VERIFIED_FIXTURE') == '1': sys.exit(0)
+sys.exit(subprocess.run([os.environ['REAL_SHA'], *sys.argv[1:]], input=text, text=True).returncode)
+''')
+    sha.chmod(0o755)
+    env = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ['PATH'],
+               TOOL_FIXTURES=str(root), REAL_SHA=real_sha, DOWNLOAD_LOG=str(root / 'downloads'),
+               CHECKSUM_LOG=str(root / 'checksums'))
+    for name in ['hadolint', 'gitleaks']:
+        for verified, success in [('1', True), ('0', False)]:
+            destination = root / (name + verified)
+            result = subprocess.run(['bash', 'scripts/ci-tool.sh', name, str(destination)],
+                                    env=dict(env, VERIFIED_FIXTURE=verified), capture_output=True, text=True, timeout=15)
+            assert (result.returncode == 0) == success, result.stdout + result.stderr
+            assert (root / 'checksums').exists(), 'the downloaded bytes were not checked'
+            if success:
+                assert os.access(destination, os.X_OK) and destination.read_bytes() == payload
+                assert subprocess.check_output([str(destination)], text=True).strip() == 'fixture tool'
+            else:
+                assert not destination.exists(), 'corrupted bytes reached the destination'
+        failed = root / (name + '-failed')
+        result = subprocess.run(['bash', 'scripts/ci-tool.sh', name, str(failed)],
+                                env=dict(env, DOWNLOAD_FAIL='1'), capture_output=True, text=True, timeout=15)
+        assert result.returncode != 0 and not failed.exists(), 'failed download was accepted'
+    (root / 'downloads').unlink()
+    result = subprocess.run(['bash', 'scripts/ci-tool.sh', 'unknown', str(root / 'unknown')],
+                            env=env, capture_output=True, text=True, timeout=15)
+    assert result.returncode != 0 and not (root / 'downloads').exists()
+print('pinned CI tools refuse failed downloads and corrupted bytes before installation')
+PY
+}
+check ci_tool_cases
+
+brand_grep_error_cases() {
+  python3 - <<'PY'
+import os, pathlib, shutil, subprocess, tempfile
+with tempfile.TemporaryDirectory(prefix='brand-grep-cases-') as tmp:
+    root = pathlib.Path(tmp)
+    grep = root / 'grep'
+    grep.write_text('''#!/usr/bin/env python3
+import os, sys
+if os.environ['GREP_ERROR_PATTERN'] in sys.argv[1:]:
+    print('fixture grep I/O error', file=sys.stderr)
+    sys.exit(2)
+os.execv(os.environ['REAL_GREP'], [os.environ['REAL_GREP'], *sys.argv[1:]])
+''')
+    grep.chmod(0o755)
+    env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ['PATH'], REAL_GREP=shutil.which('grep'))
+    for pattern in ['ghcr.io/nextcloud-releases', 'office-collabora|office-onlyoffice',
+                    'github.com/nextcloud/all-in-one/releases|github.com/nextcloud-releases',
+                    'theme-toggle|theme-icon', r'\[data-theme="dark"\]',
+                    'value="Log out"', 'No se encontró ningún canal|territorio-card|pendiente de empaquetado|aps-conecta provision']:
+        result = subprocess.run(['bash', 'scripts/brand-gate.sh', '.'],
+                                env=dict(env, GREP_ERROR_PATTERN=pattern), text=True,
+                                capture_output=True, timeout=30)
+        assert 'fixture grep I/O error' in result.stderr, f'the error injection missed {pattern}'
+        assert result.returncode != 0, f'the brand gate accepted unreadable input for {pattern}'
+print('brand gate refuses grep errors across negative checks')
+PY
+}
+check brand_grep_error_cases
+
+divergence_parse_error_cases() {
+  python3 - <<'PY'
+import os, pathlib, shutil, subprocess, tempfile
+with tempfile.TemporaryDirectory(prefix='divergence-json-cases-') as tmp:
+    root = pathlib.Path(tmp)
+    for name in ['scripts/divergence.sh', 'scripts/env.sh', 'scripts/apps.py', 'apps.json',
+                 'provisioning/standings.sh', 'provisioning/phases/20-groups.sh']:
+        target = root / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(name, target)
+    site = root / 'sites/synthetic/site.sh'
+    site.parent.mkdir(parents=True)
+    site.write_text('''SITE_FOLDERS=()
+SITE_TEAMS=()
+SITE_ROLES=()
+SITE_WELCOME=()
+SITE_ROSTER=""
+IV_MOUNT=Intranet
+SITE_COMUNA_CUT=13101
+SITE_COMUNA=Prueba
+SITE_DEIS=999999
+SITE_TIPO=CESFAM
+''')
+    tools = root / 'bin'
+    tools.mkdir()
+    docker = tools / 'docker'
+    docker.write_text('''#!/usr/bin/env python3
+import json, os, sys
+args = sys.argv[1:]
+if '/var/www/html/occ' not in args: sys.exit(0)
+args = args[args.index('/var/www/html/occ') + 1:]
+cmd = args[0]
+if cmd == os.environ.get('BAD_INVENTORY'):
+    mode = os.environ['BAD_RESPONSE']
+    if mode == 'json': print('{')
+    elif mode == 'shape': print('42')
+    elif mode == 'members': print('{"1":"invalid"}' if cmd == 'groupfolders:list' else '[1]')
+    elif mode == 'transport':
+        print('{}')
+        sys.exit(7)
+    sys.exit(0)
+if cmd in ['groupfolders:list', 'group:list', 'user:list']:
+    shape = os.environ.get('GOOD_INVENTORY', 'empty')
+    if shape == 'empty': print('{}')
+    elif cmd == 'groupfolders:list':
+        folder = {'id': 1, 'mount_point': 'Intranet'}
+        print(json.dumps({'1': folder} if shape == 'mapping' else [folder]))
+    else: print(json.dumps({'admin': 'Synthetic Admin'} if shape == 'mapping' else ['admin']))
+elif args[:2] == ['config:system:get', 'datadirectory']: print('/mnt/fixture')
+elif args[:2] == ['config:app:get', 'territorio']:
+    print('13101' if args[2] == 'comuna_cut' else 'Prueba')
+elif args[:2] == ['config:app:get', 'estadistica']:
+    print({'deis_code': '999999', 'establishment_type': 'CESFAM', 'comuna_cut': '13101'}[args[2]])
+''')
+    docker.chmod(0o755)
+    env = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ['PATH'], SITE='synthetic')
+    def run(*args, **extra):
+        return subprocess.run(['bash', 'scripts/divergence.sh', *args], cwd=root,
+                              env=dict(env, **extra), text=True, capture_output=True, timeout=15)
+    for shape in ['empty', 'mapping', 'list']:
+        healthy = run('--gate', GOOD_INVENTORY=shape)
+        assert healthy.returncode == 0 and 'nada en la instancia' in healthy.stdout, healthy.stdout + healthy.stderr
+    for inventory in ['groupfolders:list', 'group:list', 'user:list']:
+        for response in ['json', 'shape', 'members', 'empty', 'transport']:
+            result = run('--gate', BAD_INVENTORY=inventory, BAD_RESPONSE=response)
+            assert result.returncode != 0, f'{inventory} accepted {response}: {result.stdout}{result.stderr}'
+            assert 'no se pudieron revisar' in result.stdout, result.stdout + result.stderr
+            assert 'nada en la instancia' not in result.stdout
+    report = run(BAD_INVENTORY='groupfolders:list', BAD_RESPONSE='json')
+    assert report.returncode == 0 and 'no se pudieron revisar' in report.stdout
+print('divergence rejects unreadable inventories in gate mode and reports them without an all-clear')
+PY
+}
+check divergence_parse_error_cases
+
 # #177: only the suite's office backend may be created, routed or published. These are
 # shipped capability surfaces, not a word ban over historical records or negative tests.
 office_backends_removed() {

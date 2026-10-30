@@ -82,6 +82,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-050 | container changes could miss releases because most sibling images were copied from a previous suite, and force could overwrite images of a published Release (#182) | the maintained build subset and base lock bypassed surviving Dockerfiles; existing-image checks did not establish Release publication state | one generated matrix builds every runtime image from a fixed commit, verifies canonical source/revision labels, preserves database test-before-push, and refuses published Release rebuilds even with force; hermetic checks and a rebuilt-image rehearsal gate it |
 
+| A-051 | failed CI tools, unreadable grep inputs and malformed live inventories could still produce green gates; checkouts retained credentials and raw gate binaries lacked verified pins (#204) | negative commands bypassed errexit, hadolint status was discarded, grep errors counted as absence and JSON parsers returned success on invalid input | the local gate checks workflow defaults and shell assertions, checkout credentials are disabled, shared pinned/checksummed tool acquisition precedes execution, and validator/brand/divergence failures propagate; report mode keeps its exit contract while naming unreadable inventories, and smoke cleanup matches its real volume |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and

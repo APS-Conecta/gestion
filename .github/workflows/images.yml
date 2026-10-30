@@ -197,13 +197,13 @@ jobs:
             "ghcr.io/aps-conecta/all-in-one:${SUITE_TAG}"
           cleanup() {
             docker rm -f nextcloud-aio-mastercontainer >/dev/null 2>&1 || true
-            docker volume rm nextcloud_aio_mastercontainer_smoke >/dev/null 2>&1 || true
+            docker volume rm nextcloud_aio_mastercontainer >/dev/null 2>&1 || true
           }
           trap cleanup EXIT
           # The wizard serves the one-time initial password on the first GET /setup (slice 1's own
-          # verified capture point). Bounded: 5 minutes (90 × ~3 s) — the first boot on a cold runner
-          # is pull + caddy/php bring-up, observed ready at ~2.5 min (ci.2's BOOTSMOKE annotation);
-          # no unbounded hang anywhere (B-015).
+          # verified capture point). Each of 90 attempts has a 5-second request timeout
+          # and a 3-second retry delay; the job also has a 10-minute timeout. A cold
+          # runner must pull and bring up caddy/php before it can answer.
           for _ in $(seq 90); do
             # Sec-Fetch-Site: none = a browser address-bar navigation. Upstream's cross-origin
             # guard (index.php's Sec-Fetch middleware, #7696-era) 403s 'Forbidden' on any request
@@ -223,7 +223,7 @@ jobs:
           logs="$(docker logs --tail=40 nextcloud-aio-mastercontainer 2>&1 | tail -40 | tr '\n' '|' || true)"
           echo "::error title=BOOTSMOKE::state=${state} :: logs: ${logs:0:3000}"
           docker logs --tail=50 nextcloud-aio-mastercontainer >&2 || true
-          echo "FAIL: ghcr.io/aps-conecta/all-in-one:${SUITE_TAG} never served the wizard on :8080 within 2 min" >&2
+          echo "FAIL: ghcr.io/aps-conecta/all-in-one:${SUITE_TAG} never served the wizard on :8080 after 90 bounded attempts" >&2
           exit 1
         env:
           SUITE_TAG: ${{ inputs.suite-tag }}
