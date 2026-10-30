@@ -76,7 +76,6 @@ BIN_DIR="${BIN_DIR:-/usr/local/bin}"       # where the `aps-conecta` command is 
 # (start.sh:125-145). Preflight only says it BEFORE the wizard does, with a fix hint.
 API_FLOOR=144        # 1.44 as major*100+minor
 SUITE_PORTS="tcp:443 udp:443 tcp:8080 tcp:3478 udp:3478"
-                                  # reverse-proxy companions upstream's install path expects
 PROV_PORTS="8081 8082 8083"        # the Provisionador's fallback chain (slice 14) — INFO only
 
 CONSOLE_FD=2   # die's stream: the silent install sends stderr to its log and keeps die on the console
@@ -2555,6 +2554,25 @@ SHIM
     'case "$out" in *"✗ puerto 8080 ocupado"*"detenga el servicio"*) ;; *) false;; esac'
   check "ports: the free ports of the sweep print their ok lines" \
     'case "$out" in *"puerto 443 libre"*"puerto 3478 libre"*) ;; *) false;; esac'
+
+  cat > "$tshim/ss" <<'SH'
+#!/usr/bin/env bash
+if [ "${1%p}" = "$SS_BUSY_PROTO" ] && [ "$2" = "sport = :$SS_BUSY_PORT" ]; then
+  printf 'State Recv-Q\nLISTEN 0 0 *:%s\n' "$SS_BUSY_PORT"
+fi
+SH
+  local port_case proto_case
+  for port_case in 443 8080 3478; do
+    for proto_case in -ltn -lun; do
+      [ "$port_case:$proto_case" != 8080:-lun ] || continue
+      out="$(SS_BUSY_PORT="$port_case" SS_BUSY_PROTO="$proto_case"; export SS_BUSY_PORT SS_BUSY_PROTO; FAIL=0; check_ports; echo "FAIL=$FAIL")"
+      check "ports: occupied $port_case/$proto_case refuses installation" \
+        'case "$out" in *"✗ puerto $port_case ocupado"*"FAIL=1") ;; *) false;; esac'
+    done
+  done
+  out="$(SS_BUSY_PORT=80 SS_BUSY_PROTO=-ltn; export SS_BUSY_PORT SS_BUSY_PROTO; FAIL=0; check_ports; echo "FAIL=$FAIL")"
+  check "ports: occupied 80 is outside the suite port set" \
+    'case "$out" in *"FAIL=0") ;; *) false;; esac'
 
   # ── site discovery + DNS + arch ──
   mkdir -p "$ROOT/sites/113314"; printf 'SITE_DOMINIO="clinic.example"\n' > "$ROOT/sites/113314/site.sh"

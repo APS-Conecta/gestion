@@ -91,6 +91,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-055 | the full-service readiness check exposed an unhealthy Talk backend when the bootstrap used an unresolved domain (#183) | Janus selected the public Nextcloud domain for the TURN server sharing its container; failed DNS killed Janus and signaling, while the former six-container check ignored Talk | Janus defaults to its local TURN endpoint and preserves an explicit override; the real startup-writer fixture fails on the former default, and an isolated published-image control proves health with the local endpoint |
 
+| A-056 | lifecycle acceptance installed a separate plain-HTTP loopback setup and copied the checkout theme over its image (#143) | the testbed duplicated the Docker command and certificate posture, while env mapping and Office overrides compensated for its divergence from clinic installs | the testbed delegates preflight and startup to the installer, uses by-IP HTTPS and its CA, and leaves the image theme intact; command/certificate fixtures, protocol-specific port checks and both lifecycle jobs gate the shared path |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and

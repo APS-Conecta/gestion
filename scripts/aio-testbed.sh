@@ -32,9 +32,11 @@ check_ram() {
 }
 
 cmd_gate() {
-  local c line bind
+  local c line bind names ports
+  names="$(docker ps --format '{{.Names}}')" || return 1
   while IFS= read -r c; do
-    [ -n "$c" ] || continue
+    case "$c" in nextcloud-aio-mastercontainer|aps-conecta-*) ;; *) continue ;; esac
+    ports="$(docker port "$c")" || return 1
     while IFS= read -r line; do
       case "$line" in *" -> "*) ;; *) continue ;; esac
       bind="${line##* -> }"
@@ -42,8 +44,8 @@ cmd_gate() {
         '8080/tcp '*:8080|'443/tcp '*:443|'443/udp '*:443|'3478/tcp '*:3478|'3478/udp '*:3478) ;;
         *) echo "FAIL: $c publishes $line outside the suite port set" >&2; return 1 ;;
       esac
-    done < <(docker port "$c")
-  done < <(docker ps --format '{{.Names}}' | grep -xE 'nextcloud-aio-mastercontainer|aps-conecta-.*' || true)
+    done <<<"$ports"
+  done <<<"$names"
   echo 'GATE: PASS — suite ports only'
 }
 
@@ -73,6 +75,7 @@ cmd_up() {
   export APS_SUITE_TAG="$tag" AIO_STATE="$STATE"
   bash "$repo_root/host/aps-conecta" preflight --dominio "$domain" || die 'installer preflight failed'
   mkdir -p "$STATE/respaldos"
+  # --preparar owns certificate generation and the installed run command.
   bash "$repo_root/host/aps-conecta" asistente-aio --dominio "$domain" \
     --respaldo "$STATE/respaldos" --preparar || die 'installer preparation failed'
   bash "$repo_root/host/aps-conecta" asistente-aio --dominio "$domain" \

@@ -142,9 +142,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 1   # VERSION answers suite_tag() now — no tag history to read
-      # The probe bed FIRST, so a harness preflight failure (RAM, ports, ghcr reachability) is
-      # the first thing a red log shows. Every wait inside is bounded, and `up` ends in its own
-      # port gate — the runner never claims 80/443, and :8080 is the only publish.
+      # Preflight and startup use the same suite ports and certificate as a clinic.
       - name: Bring up the disposable AIO instance through the installer
         run: |
           sudo env "PATH=$PATH" AIO_TEST_IMAGE="$AIO_TEST_IMAGE" bash scripts/aio-testbed.sh up
@@ -651,7 +649,6 @@ jobs:
             echo "FAIL: tens.sar exists — a cat-tecnicos role must not create a standing account" >&2
             exit 1
           fi
-      # (P35, implement-time — measured on the probe) the entrypoint writes only the PUBLIC
       - run: bash /opt/aps-conecta/instalador/scripts/seed-idempotent.sh
       # APS-Conecta/totem#7: server-side clocks (IDateTimeZone — Totem's Día, opening hours,
       # ticket stamps) read default_timezone, never the container's TZ; the seed writes the one
