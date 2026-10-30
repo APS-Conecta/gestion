@@ -4,12 +4,12 @@ Research date: 2026-10-30. This is a separate future plan. It changes neither ma
 
 ## Confirmed product decisions
 
-- One dedicated mail VM per establishment, on the same physical server as APS; both APS and mail are public services.
+- One dedicated mail VM per establishment, on the same physical server as APS; both services use one static public IP through a validated shared ingress. Nextcloud Mail is the staff-facing mail interface; SMTP delivery and technical management remain backend services.
 - The installer accepts the establishment's controlled email domain and preserves APS Nextcloud 34 as the application instance.
 - Personal primary addresses include given name(s), both surnames and the selected role. Example: `ana.maria.rojas.fuentes.enfermeria@center.example.org`.
 - Collisions receive a persisted numeric suffix, with administrator preview and a validated correction option. Reinstalling preserves existing allocations.
 - The existing roster has one combined `apellidos` field and permits several role groups. The mail plan needs explicit surname fields and a selected mail role; it must not guess compound surnames or break the current six-column template.
-- Public-IP/ingress design and the supported credential bridge remain decision/proof gates. No deployment is authorized by this research artifact.
+- Prove shared HTTPS/ACME/mail routing, restricted VM administration and the credential bridge before implementation. This research authorizes no deployment.
 
 ## Versions and deployment
 
@@ -47,7 +47,7 @@ For distinct mailbox credentials, Mail's existing user-facing account-creation r
 
 ## Unresolved decisions and proof spikes
 
-1. Prove the confirmed same-physical-server, dedicated-VM-per-center deployment. Settle public-IP/ingress and domain/DNS ownership. Confirm provider PTR control and unblocked port 25 before provisioning users.
+1. Prove the confirmed same-physical-server, dedicated-VM-per-center deployment. Prove the confirmed one-static-IP shared ingress and record domain/DNS ownership. Confirm provider PTR control and unblocked port 25 before provisioning users.
 2. Implement the confirmed given-name + both-surnames + role naming rule and stable numeric collision suffixes. Settle permanent cargo-account mailboxes, rename preservation, leaver access, handover history and retention. Bind ownership to immutable identity, not mutable names.
 3. Choose an authentication model. Prove native aligned-password provisioning, or prove the version-pinned authenticated account route for independent credentials. Confirm secret handling on **both** hosts; resolve MIAB's internal argv behavior before claiming the strict guarantee.
 4. On disposable hosts with synthetic users only, prove interrupted creation/retry, preexisting-address refusal, per-center isolation, TLS failure, password rotation, disabled-user access, role send-as revocation and active-session behavior. A successful API POST is not mail acceptance.
