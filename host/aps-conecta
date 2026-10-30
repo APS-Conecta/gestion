@@ -3266,13 +3266,18 @@ case "\$url" in
     if [ -e "$tmp/aio.start-disconnected" ]; then printf '<div>Starting</div>' > "\$outfile"; printf 200; exit 56; fi
     if [ -e "$tmp/aio.progress-pull" ] || [ -e "$tmp/aio.stalled-pull" ]; then
       : > "\$outfile"; append=1
-      for tick in \$(seq 35); do
-        seconds=\$((tick * 120)); printf '%s' "\$seconds" > "$tmp/aio.clock.next"; mv "$tmp/aio.clock.next" "$tmp/aio.clock"
-        if [ "\$max_time" -gt 0 ] && [ "\$seconds" -gt "\$max_time" ]; then printf '000'; exit 28; fi
+      started="\$(cat "$tmp/aio.clock")"; last=0
+      while :; do
+        if [ "\$max_time" -gt 0 ]; then seconds=\$((last + 120))
+        else clock="\$(cat "$tmp/aio.clock")"; seconds=\$((clock - started)); fi
+        if [ "\$max_time" -gt 0 ] && [ "\$seconds" -gt "\$max_time" ]; then printf '%s' "\$seconds" > "$tmp/aio.elapsed"; printf '000'; exit 28; fi
+        if [ "\$seconds" -ge 4200 ]; then printf 4200 > "$tmp/aio.elapsed"; break; fi
         if [ -e "$tmp/aio.stalled-pull" ]; then
           printf "<span class='progress-indicator'></span>\n<!-- aps-start-progress:1 -->\n" >> "\$outfile"
-        else printf '\n<!-- aps-start-progress:%s -->\n' "\$tick" >> "\$outfile"; fi
-        sleep 0.03
+        elif [ "\$seconds" -ne "\$last" ]; then
+          printf '\n<!-- aps-start-progress:%s -->\n' "\$((seconds / 120 + 1))" >> "\$outfile"
+        fi
+        last="\$seconds"; sleep 0.005
       done
     else sleep 0.4; fi
     printf '%s\n' aps-conecta-nextcloud $AIO_SET > "$tmp/aio.ps"; code=200
@@ -3399,7 +3404,8 @@ SHIM
     cat > "$tshim/python3" <<SHIM
 #!/usr/bin/env bash
 if [ "\$*" = '-c import time; print(int(time.monotonic()))' ]; then
-  clock="\$(cat "$tmp/aio.clock" 2>/dev/null)"; printf '%s\n' "\${clock:-0}"
+  clock="\$(cat "$tmp/aio.clock" 2>/dev/null || echo 0)"; clock=\$((clock + 120))
+  printf '%s' "\$clock" > "$tmp/aio.clock.next"; mv "$tmp/aio.clock.next" "$tmp/aio.clock"; printf '%s\n' "\$clock"
 else exec "$real_python" "\$@"; fi
 SHIM
     chmod +x "$tshim/python3"
@@ -3407,13 +3413,13 @@ SHIM
       : > "$tmp/aio.ps"; : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; touch "$tmp/aio.progress-pull"; printf 0 > "$tmp/aio.clock"
       out="$( (cmd_aio_wizard --dominio clinica.example) 2>&1)"; rc=$?
       check "asistente-aio: a progressing 70-minute pull outlasts the old 30-minute total limit and succeeds" \
-        '[ "$rc" -eq 0 ] && [ "$(cat "$tmp/aio.clock")" = 4200 ] && case "$out" in *"✓ Suite iniciada"*"✓ Suite en marcha"*) ;; *) false;; esac'
+        '[ "$rc" -eq 0 ] && [ "$(cat "$tmp/aio.elapsed")" = 4200 ] && case "$out" in *"✓ Suite iniciada"*"✓ Suite en marcha"*) ;; *) false;; esac'
       rm -f "$tmp/aio.progress-pull"
       : > "$tmp/aio.ps"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; touch "$tmp/aio.stalled-pull"; printf 0 > "$tmp/aio.clock"
       out="$( (cmd_aio_wizard --dominio clinica.example) 2>&1)"; rc=$?
       check "asistente-aio: dots, repeated progress and a restart loop cannot keep a stalled pull alive" \
         '[ "$rc" -eq 1 ] && [ "$(cat "$tmp/aio.clock")" -lt 4200 ] && case "$out" in *"20 minutos sin avances"*) ;; *) false;; esac && case "$out" in *"✓ Suite iniciada"*) false;; *) true;; esac'
-      rm -f "$tmp/aio.stalled-pull" "$tmp/aio.clock"
+      rm -f "$tmp/aio.stalled-pull" "$tmp/aio.clock" "$tmp/aio.elapsed"
     fi
     rm -f "$tshim/python3"; hash -r
     out="$( (cmd_aio_wizard --dominio clinica.example --respaldo) 2>&1)"; rc=$?
