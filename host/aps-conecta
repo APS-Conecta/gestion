@@ -4161,9 +4161,9 @@ SHIM
        && case "$out_red" in *"✓ DNS local listo: clinica.example responde 10.0.0.5 desde este servidor (dnsmasq)"*"✓ El DNS del propio servidor enrutó clinica.example al DNS local (systemd-resolved)"*"✓ DNS de los contenedores: el daemon de docker usa este servidor como DNS (10.0.0.5 primero)"*"✓ Cortafuegos: el DNS local abierto a los contenedores (ufw)"*"✓ clinica.example resuelve a 10.0.0.5 desde este servidor — re-intente el paso en el instalador web"*) ;; *) false;; esac'
     check "red --arreglar: dnsmasq first, the host's routing, docker last — the daemon restarts after the whole answer is local" \
       '[ "$(grep -n "^enable --now dnsmasq$" "$rlog" | head -1 | cut -d: -f1)" -lt "$(grep -n "^restart systemd-resolved$" "$rlog" | head -1 | cut -d: -f1)" ] && [ "$(grep -n "^restart systemd-resolved$" "$rlog" | head -1 | cut -d: -f1)" -lt "$(grep -n "^restart docker$" "$rlog" | head -1 | cut -d: -f1)" ]'
-    check "red --arreglar: the dnsmasq conf — loopback plus the LAN address, the suite's domain pinned to it, and (with resolved) the upstream list from resolved's own plain file" \
+    check "red --arreglar: DNS binds dynamically to loopback and the LAN address, retains the domain and resolved upstreams" \
       'grep -qx "listen-address=127.0.0.1,10.0.0.5" "$ETC_RED/dnsmasq.d/aps-conecta.conf" \
-       && grep -qx "bind-interfaces" "$ETC_RED/dnsmasq.d/aps-conecta.conf" \
+       && grep -qx "bind-dynamic" "$ETC_RED/dnsmasq.d/aps-conecta.conf" \
        && grep -qx "resolv-file=/run/systemd/resolve/resolv.conf" "$ETC_RED/dnsmasq.d/aps-conecta.conf" \
        && grep -qx "address=/clinica.example/10.0.0.5" "$ETC_RED/dnsmasq.d/aps-conecta.conf"'
     check "red --arreglar: the resolved drop-in routes ONLY the suite's domain, to the LAN address dnsmasq also listens on" \
