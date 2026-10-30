@@ -80,6 +80,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-049 | the suite still carried independent upstream updates, domain registration and whole-host Docker cleanup behind a restricted wizard (#179) | hiding controls left routes, notification jobs, nightly updates and boot-time major downloads executable; vendor-filtered cron cleanup also reached beyond suite ownership | those paths and the update container are deleted, backup scheduling keeps ordinary restart and success notifications, HaRP retains neutrally named socket plumbing, and local/runtime gates prove the supported lifecycle |
 
+| A-050 | container changes could miss releases because most sibling images were copied from a previous suite, and force could overwrite images of a published Release (#182) | the maintained build subset and base lock bypassed surviving Dockerfiles; existing-image checks did not establish Release publication state | one generated matrix builds every runtime image from a fixed commit, verifies canonical source/revision labels, preserves database test-before-push, and refuses published Release rebuilds even with force; hermetic checks and a rebuilt-image rehearsal gate it |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and

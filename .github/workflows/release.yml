@@ -10,15 +10,8 @@
 #             produced b960d8d0/c33884f7/d4a54d87 retires with the call. Upstream's own
 #             validator workflows fire on push+PR (ci.yml's gates job rides alongside) but
 #             never on tag pushes — this arm is where the tag's bytes are proven.
-#   images  → the 18-image lockstep (workflow_call): 13 retags copied from OUR previous suite
-#             tag (retag-source ours by default — Stage 2's self-referential lockstep)
-#             + 5 builds FROM THE TAG (build-ref = the tag: immutable provenance — the exact
-#             bytes the gates just proved; the manifest lockstep assert stays as belt-and-
-#             braces) + matrix + boot-smoke + manifest. Sign sits behind the WHOLE call: a
-#             reusable-workflow job is green only when every job in it is green, and the
-#             callee's manifest job already needs matrix and boot-smoke — so nothing is signed
-#             before a complete, booted, one-snapshot set exists (the boot-smoke-pins-the-
-#             sign-moment rule).
+#   images  → every suite image built from one resolved tag commit, then source-label
+#             verification, boot-smoke and a digest manifest. Signing waits for the whole call.
 #   spreed  → the Talk fork's refresh (ADR-0020, #145), parallel to images: upstream's newest
 #             stable spreed for the tag tree's Nextcloud major, dispatched into
 #             APS-Conecta/spreed's own workflow (the app key never leaves an app repo,
@@ -28,7 +21,7 @@
 #             without a compatible, verified Talk release.
 #   package → scripts/package-release.sh: the composite assembly (the suite's tag tree alone —
 #             theme, data, sites register and manifest included, and no app bytes in it, #42),
-#             the publish record (retag.sh manifest — same tool
+#             the publish record (images.py manifest — same tool
 #             and digest format the Images manifest job emits, so the two are diffable), SHA256SUMS, the
 #             signify signature over it, the verify-PROOF with the committed installer.pub, and
 #             the constants-filled install asset; then gh release create with all five assets.
@@ -73,11 +66,6 @@ on:
         required: false
         default: false
         type: boolean
-      retag-source:
-        description: "The retag source for the images call: ours (default — our previous suite tag, the lockstep; on a tag push this is always the value) | ours:<tag> (a pinned repair). Reaches bash only via env: inside the Images pipeline, never inline in run:."
-        required: false
-        default: ours
-        type: string
 
 permissions:
   contents: write   # the package job creates the Release (gates/images declare tighter job-level grants)
@@ -118,14 +106,13 @@ jobs:
         run: bash scripts/acquisition-gate.sh .
 
   images:
-    name: Publish the 18-image lockstep set
+    name: Build and publish every suite image
     needs: gates   # a red validator, twig-lint or gate can never move images
     uses: ./.github/workflows/images.yml
     with:
       suite-tag: ${{ inputs.suite-tag || github.ref_name }}
       build-ref: ${{ inputs.suite-tag || github.ref_name }}   # THE TAG (D-3.4): immutable provenance — the exact bytes the gates just proved; no mid-run ref race
       force: ${{ inputs.force-images || false }}
-      retag-source: ${{ inputs.retag-source || 'ours' }}   # ours on every tag push (inputs.* is null there — the || catches it); the repair arm's pinned passthrough
     permissions:
       contents: read
       packages: write   # headroom for the Images pipeline's pushing jobs
@@ -265,25 +252,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Emit the publish record (the manifest asset)
-        env:
-          # The RETAG job's ONE resolution (D-5), handed up through the images call's
-          # workflow_call output: the tag-tree's retag.sh records in retag_source the same
-          # spec the walk copied from — the package re-emit must never resolve a second time
-          # (a discovery here would race the walk). images is a DIRECT need of this job, so
-          # the output resolves; the guard below reds if a future refactor breaks that edge
-          # (the B-014 lesson: a transitive need resolves empty, and empty RETAG_SOURCE would
-          # silently fall into a bare-'ours' resolution of its own).
-          RETAG_SOURCE: ${{ needs.images.outputs.retag-source }}
         run: |
           set -euo pipefail
-          # The registry is the truth and digests are immutable, so the digest half of this
-          # re-emit equals the Images manifest job's own record (same tool, same format —
-          # diffable). built_from is EXACT provenance since the hard fork: this job's checkout
-          # IS the tag tree, and the images pipeline built from the same tag (build-ref = the
-          # tag, D-3.4) — no remote resolution, no race, nothing left to resolve.
-          [ -n "${RETAG_SOURCE:-}" ] || { echo "FAIL: the images job's resolved retag source did not thread — needs.images must stay a direct dependency of this job" >&2; exit 1; }
-          RETAG_BUILT_REF="$RELEASE_TAG" RETAG_BUILT_SHA="$(git rev-parse HEAD)" \
-            bash scripts/retag.sh manifest "$RELEASE_TAG" > "suite-$RELEASE_TAG-manifest.json"
+          # Verify the same source labels and immutable digests as the Images publish record.
+          python3 scripts/images.py manifest "$RELEASE_TAG" --sha "$(git rev-parse HEAD)" \
+            --ref "$RELEASE_TAG" > "suite-$RELEASE_TAG-manifest.json"
           cat "suite-$RELEASE_TAG-manifest.json"
       - name: Assemble, sign, prove, fill
         run: |
@@ -305,7 +278,7 @@ jobs:
             exit 0
           fi
           # A re-run after a partially-uploaded Release: complete the MISSING assets only —
-          # never clobber a published one (the retag immutability rule extends to the signed
+          # never clobber a published one (the image immutability rule extends to the signed
           # set). Exact-line match: SHA256SUMS is a substring of SHA256SUMS.minisig.
           echo "release $RELEASE_TAG already exists — completing missing assets only (published assets never move)"
           have="$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')"

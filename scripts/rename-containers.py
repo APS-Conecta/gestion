@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """The container-name re-swap: nextcloud-aio-<x> -> aps-conecta-<x> across the suite (D9).
 
-Born as patch 240's generator; kept past the hard fork on retag.sh's cmd_sed precedent — the
-rename is committed bytes now, and an upstream merge that re-introduces a nextcloud-aio-* name
+The rename is committed bytes. An upstream merge that re-introduces a nextcloud-aio-* name
 in the swept files re-swaps it here (run from the repo root). Fresh installs only: an existing
 instance keeps its nextcloud-aio-* containers and is reinstalled, never migrated.
 
 The names come from the data: every container_name in php/containers.json (14, the floor),
 never from a list typed here. Kept by design, so never in the data swept: the
-mastercontainer (the host CLI's docker run and the self-update name it), the nextcloud-aio network and compose
+mastercontainer (the host CLI's docker run names it), the nextcloud-aio network and compose
 project, the nextcloud_aio_* volumes, the nextcloud-aio app id, the -nextcloud-aio borg archive suffix.
 
 Its verify is the outcome: an old name left in the swept files, or a pattern rewrite that did not land

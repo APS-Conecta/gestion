@@ -6,8 +6,7 @@
 # upstream change that does is the drift signal, loudly:
 #   - zero `git clone` across the runtime surfaces (every *.sh under Containers/ and php/ —
 #     the scripts the shipped containers execute). Measured: upstream ships none. The one git
-#     clone upstream does ship is talk-recording's Dockerfile — BUILD-time, in a sibling we
-#     retag and never build; the *.sh scoping excludes it by construction. A repo row's
+#     clone upstream does ship is talk-recording's Dockerfile — BUILD-time, from the suite's source tree; the *.sh scoping excludes it by construction. A repo row's
 #     path is its own release (ADR-0017), and provisioning never clones at all.
 #
 # ROWS — the same contract as brand-gate.sh: every row fires unconditionally; the patch ID is

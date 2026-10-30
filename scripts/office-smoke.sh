@@ -16,7 +16,7 @@
 # Since #36 the connector is the APS fork (APS-Conecta/eurooffice) and this gate's --check
 # round-trip is the connector's per-install re-certification. The image assert accepts the two
 # namespaces this distribution's lifecycle runs — nextcloud-releases (the probe's stock bring-up,
-# slice 1's harness) and aps-conecta (the suite's channel; the retag preserves the manifest, D12) —
+# slice 1's harness) and aps-conecta (the suite's own source build) —
 # and anything else (a different DocumentServer image) reds.
 #
 # The white-label rename grep RETIRED here (slice 13's routing), twice over: the renames are
@@ -81,7 +81,7 @@ esac
 # test.sh's office gate matches, so the two cannot drift.
 img="$(docker inspect "$(docker ps -q --filter name=^aps-conecta-eurooffice$ | head -1)" --format '{{.Config.Image}}' 2>/dev/null || true)"
 # (P35, implement-time — measured on the probe) upstream's office image is named aio-eurooffice
-# (the aio- prefix, like aio-nextcloud); the fork's retag keeps the name and swaps the namespace.
+# (the aio- prefix, like aio-nextcloud); the fork builds it in its own namespace.
 # The unprefixed eurooffice shapes the fence carried never exist.
 case "$img" in
   ghcr.io/nextcloud-releases/aio-eurooffice*|ghcr.io/aps-conecta/aio-eurooffice*) echo "  ✓ DS image: ${img}" ;;

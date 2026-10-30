@@ -1,7 +1,0 @@
-# The lockstep's recorded bootstrap base — consulted only when tag discovery finds no complete
-# set (a wiped registry). Write-once by design: once a suite tag exists, discovery always
-# succeeds and this file is never read again. Repointed to our own v0.4.0 with the hard fork
-# (Stage 3, D-3.5): a wiped-registry cold start bootstraps from OUR last digest-complete set —
-# the copy-from-upstream arm is retired, vendor images are never injected again.
-# Format: exactly one spec line below the comments — ours:<tag>.
-ours:v0.4.0

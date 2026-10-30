@@ -190,7 +190,7 @@ jobs:
           # half — what this red is, where the acceptance lives, and what closes it. The
           # discriminator is honest by construction: the doctrine's own acceptance date (read
           # live from the ADR in this checkout) against the running image's build date — the
-          # nextcloud image is one of the 5 real builds on every tag (never a retag copy), so
+          # nextcloud image is built from the resolved source on every tag, so
           # its Created is the tag's true build moment. An image built at or after the
           # doctrine that still bakes is a regression, and it gets the plain FAIL; any miss
           # (no ADR date, no image inspect) falls back to the plain FAIL too.

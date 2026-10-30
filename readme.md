@@ -88,8 +88,8 @@ selected messages as its canary that the translation sweep never bled into PHP.
 software inside it «la suite» — «Nextcloud» remains in the HaRP option (shown only where it is already on) and
 the PHP-borne messages listed above — and the
 wizard's help links point at the suite's own docs — instalador's `aps/INSTALLER.md` and
-`aps/GUIA-CLINICA.md`. The image labels are byte-identical upstream,
-deliberately, and both readings are recorded: `org.opencontainers.image.vendor` says
+`aps/GUIA-CLINICA.md`. The source and revision image labels identify APS-Conecta/gestion and the built commit.
+Upstream attribution stays in the vendor and documentation labels: `org.opencontainers.image.vendor` says
 "Nextcloud" — true and honest nominative use, the software inside the image IS Nextcloud,
 with this declaration carrying the fork's attribution — and `org.opencontainers.image.url`
 points at Nextcloud's own documentation, which is correct for the software but not for this

@@ -1,7 +1,7 @@
 # RELEASING — cutting a signed suite release
 
 The runbook for the maintainer who cuts a release. One tag on instalador is the whole ritual —
-the 18-image channel, the composite package, the manifest's release identity (D4). This file owns the parts only a person can do: the keypair, the secrets,
+the complete suite image set, the composite package, the manifest's release identity (D4). This file owns the parts only a person can do: the keypair, the secrets,
 the release commit, and what to do when a key must change. The machine's
 half — gates → images → package → sign → prove → Release — is
 [.github/workflows/release.yml](../.github/workflows/release.yml), and every guard it runs is
@@ -76,7 +76,7 @@ asserts it):
     git tag vX.Y.Z && git push origin vX.Y.Z
 
 release.yml runs the whole chain: gates (upstream's own validators + twig-lint + brand gate +
-acquisition gate, inline against the tag tree) → the 18-image lockstep publish FROM THE TAG → package-release (composite
+acquisition gate, inline against the tag tree) → every suite image built FROM THE TAG → package-release (composite
 assembly, SHA256SUMS, the signature, the verify-PROOF against the committed `installer.pub`,
 the constants-filled install asset) → the Release with five assets. Watch it; a red anywhere
 names its gate.
@@ -86,47 +86,34 @@ names its gate.
 installs. It cannot ride the release commit: the tag's images do not exist until the push
 publishes them.
 
-**The retag source (the self-referential lockstep)**. The 13 registry-side images are copied,
-not built: `retag-source: ours` — the chain's default on every tag push — copies each from
-**our previous suite tag** (the newest digest-complete set; git tags are the suite-tag list).
-A wiped registry bootstraps once through `aps/BASE.lock`, which records `ours:v0.4.0` — our
-own last digest-complete set, never a vendor image (the vendor arm retired with the hard
-fork). The publish record's `retag_source` names what the walk actually copied from
-(`ours:vX.Y.Z`), so a Release's lineage is auditable from its manifest asset alone.
+**One source tree for every image.** Images resolves `build-ref` once, generates its build
+matrix from `php/containers.json` and the mastercontainer, and checks out that commit in every
+build. Every surviving `Containers/*/Dockerfile` must have a matrix entry. PostgreSQL is tested
+before publication; Euro-Office keeps its cache exception. The manifest verifies each image's
+source label (`https://github.com/APS-Conecta/gestion`) and revision against that commit.
+There is no previous-image copy step or base lock. Upstream updates arrive through deliberate
+merges into main, then ordinary builds.
 
-**The vendor bump is retired** (the hard fork, D-3.5). Picking up a fresh upstream release was
-never a default and is now not a path either: the 13 retagged siblings always copy from our own
-previous set. An upstream release arrives the way every upstream change arrives now — a
-deliberate merge into main, then an ordinary release; the 5 real builds pick it up from the
-tree, and the retags keep the lockstep.
+Before any build can push, Images checks the repository and target Release through GitHub.
+A published Release, including a prerelease, always refuses rebuilding, even with `force`.
+An unreadable publication state also refuses. `force` permits repairing a complete image set
+only while its Release is absent or still a draft.
 
-A repair that only needs the image set re-copied (a mixed or partial set, no Release involved)
-dispatches Images directly with `retag-source: ours:vX.Y.Z` and `force` — the pinned previous
-set, re-copied faithfully.
+**Rehearse first, by dispatch.** Two `gh` commands publish images and test them without
+creating a git tag or Release:
 
-**Rehearse first, by dispatch**. Two `gh` commands, no git tag, no Release:
-
-    gh workflow run images.yml    --ref <branch> -f suite-tag=v0.0.0-ci.N -f build-ref=<branch> -f force=true
+    gh workflow run images.yml    --ref <branch> -f suite-tag=v0.0.0-ci.N -f build-ref=<commit-sha>
     gh workflow run cleanboot.yml --ref <branch> -f suite-tag=v0.0.0-ci.N
 
-`force` because a rehearsal suite tag is throwaway and its set is usually already on the
-registry — every `v0.0.0-ci.N` ever dispatched stays there (immutability, D12; ci.1–ci.8
-exist), and the retag pre-check refuses a fully-present set without `force`, whose own
-contract names refreshing a throwaway CI tag. That refusal is also why a tag push cannot
-substitute: the tag-push chain runs Images without `force`, so re-pushing an existing
-`v0.0.0-ci.N` dies at the pre-check — and pushing a never-used one mints a Release that must
-then be deleted. A never-published `v0.0.0-ci.N` (VERSION and BUNDLE_TAG set to match on the
-branch) is still the way to rehearse the chain itself end-to-end, Release included, deletable;
-the dispatch pair is how you iterate on images and install code. A rehearsal takes an `N` above
-the one the testbed pins: `force` re-publishes a set, and the pinned set never moves under the
-PR runs.
+Choose an unused rehearsal number above the testbed's pin. Reusing a complete unpublished
+rehearsal set requires `-f force=true`; use a new number when preserving prior evidence.
+Git tags, GitHub Releases and Latest changes require the release owner's authorization.
 
-**When a fresh Images dispatch is needed**: only when the image inputs changed — the tree the
-five real builds read at `build-ref` (php/, app/, Containers/, themes/ — the theme is the one
-suite thing an image carries, ADR-0018); the 13 retagged siblings only ever copy the previous set. When only the install
-path moved (the host bundle, provisioning/, scripts/ on the branch), a Clean boot re-dispatch
-alone is enough: it checks out the branch and installs the suite tag's already-published
-images.
+**When a fresh Images dispatch is needed:** changes to any container directory or shared
+build input (including PHP, the application and themes) need new images. When only the host
+bundle, provisioning or install scripts change, Clean boot can install the already-published
+suite images while checking out the new branch code. Independently released apps remain
+outside the images (ADR-0018).
 
 release.yml's repair arm (workflow_dispatch with `suite-tag`, plus `force-images` only for a
 chain that died mid-publish) exists for a chain that failed BEFORE `gh release create` — a
