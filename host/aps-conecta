@@ -1372,7 +1372,7 @@ aio_curl() {  # ARGS… — the wizard with the session jar
 aio_count() {  # how many of the included service containers run
   aio_select_services || return 1
   local c n=0 names
-  names="$(docker ps --format '{{.Names}}' 2>/dev/null)"
+  names="$(timeout 15 docker ps --format '{{.Names}}' 2>/dev/null)"
   for c in $AIO_SET; do printf '%s\n' "$names" | grep -qx "$c" && n=$((n + 1)); done
   echo "$n"
 }
@@ -1515,11 +1515,48 @@ aio_post() {  # PATH --data-urlencode K=V… — the wizard's configuration API 
   return 1
 }
 
+aio_now() { python3 -c 'import time; print(int(time.monotonic()))'; }
+
+declare -A AIO_PROGRESS_SEEN=()
+AIO_PROGRESS_TIME=0
+AIO_PROGRESS_PULL=0
+
+aio_progress_begin() {
+  AIO_PROGRESS_SEEN=()
+  AIO_PROGRESS_PULL=0
+  AIO_PROGRESS_TIME="$(aio_now)"
+}
+
+aio_progressing() {  # Optional stream file; repeated states and heartbeats never renew the budget.
+  local now pull name status health key states
+  now="$(aio_now)"
+  if [ -n "${1:-}" ] && [ -f "$1" ]; then
+    pull="$(sed -n 's/^<!-- aps-start-progress:\([0-9][0-9]*\) -->$/\1/p' "$1" | tail -1)"
+    if [ -n "$pull" ] && [ "$pull" -gt "$AIO_PROGRESS_PULL" ]; then
+      AIO_PROGRESS_PULL="$pull"; AIO_PROGRESS_TIME="$now"
+    fi
+  fi
+  states="$(timeout 15 docker inspect -f '{{.Name}} {{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $AIO_SET 2>/dev/null || true)"
+  while read -r name status health; do
+    case " $AIO_SET " in *" ${name#/} "*) ;; *) continue ;; esac
+    case "$status" in created|running|paused|restarting|removing|exited|dead) ;; *) continue ;; esac
+    case "$health" in none|starting|healthy|unhealthy) ;; *) continue ;; esac
+    key="$name:$status:$health"
+    if [ -z "${AIO_PROGRESS_SEEN[$key]:-}" ]; then
+      AIO_PROGRESS_SEEN[$key]=1; AIO_PROGRESS_TIME="$now"
+    fi
+  done <<< "$states"
+  [ "$((now - AIO_PROGRESS_TIME))" -lt 1200 ]
+}
+
 aio_start() {  # POST /api/docker/start pulls, creates and starts the whole set INSIDE the request
   aio_select_services || return 1
   # The stream stays open while the wizard works; the console counts containers.
   local f="$AIO_STATE/inicio.code" body="$AIO_STATE/inicio.html" pid n seen="" code result
   info "iniciando la suite (descarga de imágenes: varios minutos)"
+  ( umask 077 && : > "$f" && : > "$body" )
+  chmod 600 "$f" "$body"
+  aio_progress_begin
   # curl itself is the background job (not a subshell around it), so the trap's kill reaches it
   curl -sk "${AIO_SEC[@]}" -b "$AIO_STATE/cookies" -c "$AIO_STATE/cookies" -o "$body" -w '%{http_code}' --no-buffer --connect-timeout 15 \
     "${AIO_CSRF[@]}" "$AIO_URL/api/docker/start" > "$f" 2>/dev/null &
@@ -1528,6 +1565,14 @@ aio_start() {  # POST /api/docker/start pulls, creates and starts the whole set 
   while kill -0 "$pid" 2>/dev/null; do
     n="$(aio_count)"
     [ "$n" = "$seen" ] || { info "contenedores en marcha: $n de $AIO_EXPECTED"; seen="$n"; }
+    if ! aio_progressing "$body"; then
+      kill "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      trap - INT TERM
+      printf 'El inicio lleva 20 minutos sin avances. Revise el asistente antes de reintentar.\n' > "$AIO_STATE/motivo"
+      bad "el inicio lleva 20 minutos sin avances" "el asistente puede continuar; revíselo antes de reintentar: docker logs nextcloud-aio-mastercontainer"
+      return 1
+    fi
     sleep "$AIO_POLL"
   done
   wait "$pid"
@@ -1570,50 +1615,58 @@ aio_pendientes() {  # the included services not yet ready, as «nombre (estado)�
   # start.sh opens its ports, so the probe is that file without the shortcut, run inside the
   # container so it reads apache's own $APACHE_PORT (a clinic's 443 as the testbed's) (A-037)
   local salud c st out=""
-  salud="$(docker inspect -f '{{.Name}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' $AIO_SET 2>/dev/null)"
+  salud="$(timeout 15 docker inspect -f '{{.Name}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' $AIO_SET 2>/dev/null)"
   for c in $AIO_SET; do
     st="$(printf '%s\n' "$salud" | sed -n "s#^/$c ##p")"
     case "$st" in healthy) ;; starting) out="$out, $c (aún arrancando)" ;; unhealthy) out="$out, $c (falla su control de salud)" ;; *) out="$out, $c (sin estado)" ;; esac
   done
-  [[ $out == *aps-conecta-apache* ]] || docker exec aps-conecta-apache sh -c 'nc -z "$NEXTCLOUD_HOST" 9000 && nc -z 127.0.0.1 8000 && nc -z 127.0.0.1 "$APACHE_PORT"' >/dev/null 2>&1 \
+  [[ $out == *aps-conecta-apache* ]] || timeout 15 docker exec aps-conecta-apache sh -c 'nc -z "$NEXTCLOUD_HOST" 9000 && nc -z 127.0.0.1 8000 && nc -z 127.0.0.1 "$APACHE_PORT"' >/dev/null 2>&1 \
     || out="$out, aps-conecta-apache (no atiende en su puerto)"
   printf '%s' "${out#, }"
 }
 
-aio_wait() {  # bounded: the included service containers up (20 min), Nextcloud installed (10 min), the included services
+aio_wait() {
   aio_select_services || return 1
-  # ready (10 min, aio_pendientes), its configuration no longer moving (2 min — probing a moving
-  # config is a race, #96)
-  local i st prev cur pend
-  for i in $(seq 240); do [ "$(aio_count)" = "$AIO_EXPECTED" ] && break; sleep "$AIO_POLL"; done
-  if [ "$(aio_count)" != "$AIO_EXPECTED" ]; then
-    bad "los contenedores no terminaron de arrancar en 20 minutos" "docker ps -a --filter name=^aps-conecta-"
-    return 1
-  fi
-  for i in $(seq 120); do
-    st="$(docker exec --user www-data "$NC" php /var/www/html/occ status --output=json 2>/dev/null || true)"
-    case "$st" in *'"installed":true'*) break ;; esac
+  local st prev cur pend
+  aio_progress_begin
+  while [ "$(aio_count)" != "$AIO_EXPECTED" ]; do
+    aio_progressing || {
+      bad "el arranque lleva 20 minutos sin avances" "docker ps -a --filter name=^aps-conecta-"
+      return 1
+    }
     sleep "$AIO_POLL"
   done
-  case "$st" in
-    *'"installed":true'*) ;;
-    *) bad "Nextcloud no terminó de instalarse en 10 minutos" "docker logs $NC"; return 1 ;;
-  esac
-  for i in $(seq 120); do pend="$(aio_pendientes)"; [ -z "$pend" ] && break; sleep "$AIO_POLL"; done
-  if [ -n "$pend" ]; then
-    bad "la suite no quedó lista en 10 minutos: $pend" \
-        "docker ps -a --filter name=^aps-conecta-; docker logs ${pend%% *}"
-    return 1
-  fi
-  prev="$(docker exec --user www-data "$NC" php /var/www/html/occ config:list --output=json 2>/dev/null | sha256sum)"
-  for i in $(seq 24); do
+  AIO_PROGRESS_TIME="$(aio_now)"
+  while :; do
+    st="$(timeout 30 docker exec --user www-data "$NC" php /var/www/html/occ status --output=json 2>/dev/null || true)"
+    case "$st" in *'"installed":true'*) break ;; esac
+    aio_progressing || {
+      bad "la instalación de Nextcloud lleva 20 minutos sin avances" "docker logs $NC"
+      return 1
+    }
     sleep "$AIO_POLL"
-    cur="$(docker exec --user www-data "$NC" php /var/www/html/occ config:list --output=json 2>/dev/null | sha256sum)"
+  done
+  AIO_PROGRESS_TIME="$(aio_now)"
+  while :; do
+    pend="$(aio_pendientes)"; [ -z "$pend" ] && break
+    aio_progressing || {
+      bad "la suite lleva 20 minutos sin avances: $pend" "docker ps -a --filter name=^aps-conecta-; docker logs ${pend%% *}"
+      return 1
+    }
+    sleep "$AIO_POLL"
+  done
+  AIO_PROGRESS_TIME="$(aio_now)"
+  prev="$(timeout 30 docker exec --user www-data "$NC" php /var/www/html/occ config:list --output=json 2>/dev/null | sha256sum)"
+  while :; do
+    sleep "$AIO_POLL"
+    cur="$(timeout 30 docker exec --user www-data "$NC" php /var/www/html/occ config:list --output=json 2>/dev/null | sha256sum)"
     if [ "$cur" = "$prev" ]; then ok "Suite en marcha: $AIO_EXPECTED contenedores, Nextcloud instalado"; return 0; fi
+    aio_progressing || {
+      bad "la configuración sigue cambiando tras 20 minutos sin avances de los contenedores" "revise el asistente y vuelva a ejecutar"
+      return 1
+    }
     prev="$cur"
   done
-  bad "la configuración siguió cambiando 2 minutos después de instalar" "espere un momento y vuelva a ejecutar"
-  return 1
 }
 
 aio_admin() {  # /containers shows the generated Nextcloud admin password once the set is up
@@ -3982,14 +4035,24 @@ EOF
       && printf "%s" "$out" | grep -qF "docker logs -f aps-conecta-borgbackup" \
       && ! grep -q "api/docker/start" "$act/aio.log" && ! grep -q "^actualizar " "$act/resolver.log" \
       && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes"'
+  cat > "$tshim/python3" <<SHIM
+#!/usr/bin/env bash
+if [ "\$*" = '-c import time; print(int(time.monotonic()))' ]; then
+  clock="\$(cat "$tmp/health.clock" 2>/dev/null || echo 0)"; clock=\$((clock + 120)); printf '%s\n' "\$clock" | tee "$tmp/health.clock"
+else exec "$real_python" "\$@"; fi
+SHIM
+  chmod +x "$tshim/python3"; hash -r
+  only_shims curl docker python3 || return 1
   for blocked in aps-conecta-eurooffice aps-conecta-clamav; do
     : > "$act/aio.log"; : > "$act/resolver.log"; rm -f "$act/aio.libre"; cp "$act/lock.bytes" "$act/home/apps.lock.json"
     out="$( id() { echo 0; }; SALUD_MALA="$blocked" act46 2>&1 )"; arc=$?
     check "actualizar: a container never healthy after the restart stops the run naming it — no «Suite en marcha», nothing fetched (A-037)" \
-      '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "✗ la suite no quedó lista en 10 minutos: $blocked (falla su control de salud)" \
+      '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "✗ la suite lleva 20 minutos sin avances: $blocked (falla su control de salud)" \
         && ! printf "%s" "$out" | grep -qF "Suite en marcha" && ! grep -q "^actualizar " "$act/resolver.log" \
         && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes"'
   done
+
+  rm -f "$tshim/python3"; hash -r
 
   # a failed apply: the app named, the lock unchanged, the new lock cleaned, the restore command
   : > "$act/aio.log"; : > "$act/resolver.log"; cp "$act/lock.bytes" "$act/home/apps.lock.json"
