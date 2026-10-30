@@ -1,88 +1,21 @@
-# S1 — the lockstep image pipeline. 15 images under ghcr.io/aps-conecta/* per suite tag: 10
-# registry-side retags of OUR PREVIOUS SUITE TAG (Stage 2, the self-referential lockstep;
-# docker buildx imagetools create — seconds, zero runner disk, the
-# multi-arch manifest list carried byte-for-byte) + 5 real builds (aio-nextcloud, the suite
-# theme it carries and nothing more (#42 — no app rides an image); aio-apache, the web front serving the installer's own certificate
-# that patch 235 slots in; aio-postgresql, the database, built from this tree and tested before its
-# push (patch 260); aio-eurooffice, the DocumentServer its Dockerfile pins (patch 015);
-# all-in-one, the mastercontainer reskin that patch 070 slots in).
-# The builds are x86-64 only: the suite's documented server requirement.
-#
-# WHY THE MATRIX GATES THE ANNOUNCE. The wizard resolves every sibling's tag from the mastercontainer's
-# own running image tag (%AIO_CHANNEL% -> the channel = the tag the operator ran,
-# php/src/Docker/DockerActionManager.php BuildImageName). One tag, fifteen images: a missing tag is
-# not "one feature down" — the wizard's registry-reachability checks fail the whole start. Existence
-# alone is not enough either: the matrix also proves the 10 retagged images faithfully copy their
-# RESOLVED source — under ours:<tag> the previous set is immutable, so any mismatch means the walk
-# itself erred (the "mixed" concept turns into an integrity proof), and the boot smoke proves
-# the pushed mastercontainer actually PULLS and BOOTS —
-# manifest-inspect never reads a layer byte, so a broken push is invisible to it.
-#
-# THE SOURCE IS OURS, RESOLVED ONCE (Stage 2). The 10 retags copy from ghcr.io/aps-conecta/*:<the
-# previous suite tag>: the retag job's retag.sh resolves the source
-# itself (the newest digest-complete set — git tags ARE the suite-tag list — falling back to the
-# recorded aps/BASE.lock bootstrap, else FATAL). Resolution happens exactly ONCE per run: the walk announces
-# RETAG_SOURCE_RESOLVED=<spec>, this job's output carries it, the matrix and the manifest jobs
-# consume needs.retag.outputs.retag-source, and the workflow_call output hands the same spec to
-# the release's package re-emit — no job re-resolves (a second resolution could race a concurrent
-# publish of the same tag).
-#
-# THE BUILD-REF SEAM. THE TAG is what the release chain passes (D-rev 2026-10-19, Stage 3:
-# build-ref = the tag — immutable provenance, the exact bytes the gates proved, no mid-run ref
-# race; the manifest lockstep assert stays as belt-and-braces). main is the DEFAULT for manual
-# dispatches — post-fork main IS the shipped tree (first-class bytes, theme and all), so a
-# manual dispatch builds the shipped tree without ceremony; "the unpatched mirror" mode ceased
-# to exist with the fork. Only the BUILD jobs read build-ref; the retag job checks out
-# the default branch everywhere. The build jobs refuse to mix trees: the manifest job asserts
-# every build resolved the same commit of build-ref — one list, its needs entries (#76), so a
-# build from a different commit still reds the announce, and a new build is one entry.
-#
-# IMMUTABILITY. A published tag's digests never move (D12: one distribution, one version). The retag
-# job refuses a fully-present set without force, and the builds run needs: retag so the refusal also
-# stops THEM — a rejected re-dispatch moves zero bytes (the builds serialize behind the pre-check's
-# ~2 min of digest reads; that overlap is not worth the immutability rule). --force exists to repair
-# a set that failed verification, or to refresh a throwaway CI tag — never a green, published release.
-#
-# SECRETS. Only the ephemeral GITHUB_TOKEN (org-linked, packages:write where a job pushes). No PAT
-# lives in this repo: the read:packages PAT is the OPERATOR-side install step (R2's decision), never
-# CI's. Per-job permissions are least-privilege: write only in the jobs that push.
-#
-# ACTIONS ARE SHA-PINNED — upstream's own convention in every workflow it ships, and load-bearing
-# here: the mirror's lint-yaml runs zizmor --min-severity medium over .github/workflows on PRs, and
-# unpinned uses are exactly what it exists to catch. Bump = resolve the new tag's SHA, change the
-# pin, keep the # comment naming the version.
-#
-# PLACEMENT (post-fork, D-rev 2026-10-19). This workflow lives on main, the default branch —
-# dispatch and reusable workflows must exist there for GitHub to run them at all (that is why
-# the fork's CI lives on main and not on a tag tree). main is the shipped tree since the hard
-# fork — one tree, no mirror, no queue. Upstream's own validators (shellcheck on **.sh,
-# lint-yaml/zizmor, json-validator) run on our files too — green on them is a program
-# requirement.
-#
-# The release ordering this workflow serves: the suite tag IS the suite repo's release tag (D4);
-# the release chain (release.yml) consumes this manifest as its channel source, and the manifest
-# job's JSON is the publish-time record.
+# Every suite image is built from this tree. The prepare job resolves one source
+# commit; every matrix entry, verification and manifest uses that immutable SHA.
 name: Images
 
 on:
   workflow_dispatch:
     inputs:
       suite-tag:
-        description: "The suite tag this lockstep set publishes — the instalador release tag it accompanies (v0.4.0). Channel-valid Docker tag; 'latest*' reserved."
+        description: "Versioned image tag; use v0.0.0-ci.N for a rehearsal."
         required: true
         type: string
       build-ref:
-        description: "The ref the 5 real builds check out. The release chain passes THE TAG (immutable provenance — the bytes the gates proved). main = the default for manual dispatches (repair/testing; post-fork main IS the shipped tree, theme and all)."
+        description: "Source ref, resolved once before any image is published."
         required: false
         default: main
         type: string
-      retag-source:
-        description: "Where the 10 registry-side retags copy from. ours = our previous suite tag (the lockstep default — resolved by retag.sh: the newest digest-complete set, else the recorded aps/BASE.lock bootstrap). ours:<tag> = an explicit pin for repair runs. Reaches bash only via env: (RETAG_SOURCE), never inline in run:."
-        required: false
-        default: ours
-        type: string
       force:
-        description: "Re-publish over a fully-present set — repair a set that failed verification, or refresh a throwaway CI tag. Never a green release tag."
+        description: "Rebuild an unpublished image set; a published Release always refuses."
         required: false
         default: false
         type: boolean
@@ -91,305 +24,150 @@ on:
       suite-tag:
         required: true
         type: string
-        description: "See workflow_dispatch."
       build-ref:
         required: false
         default: main
         type: string
-        description: "See workflow_dispatch."
-      retag-source:
-        required: false
-        default: ours
-        type: string
-        description: "See workflow_dispatch."
       force:
         required: false
         default: false
         type: boolean
-        description: "See workflow_dispatch."
-    outputs:
-      retag-source:
-        description: "The RESOLVED retag source (ours:<tag>) — the one resolution this run made. The caller's package re-emit threads it into RETAG_SOURCE so the tag-tree's retag.sh records the same spec the walk copied from (no second resolution)."
-        value: ${{ jobs.retag.outputs.retag-source }}
 
 permissions:
   contents: read
-  # packages: write at WORKFLOW level — not decoration: in a CALLED workflow this block is the
-  # CEILING for every nested job (unlike a top-level workflow, where job-level may escalate),
-  # so the pushing jobs' own packages: write was silently capped to none and ghcr answered
-  # every push with "denied: permission_denied: write_package" (found by the v0.0.0-ci.1
-  # rehearsal's retag walk, 2026-10-16). The caller (release.yml's images job) grants
-  # contents: read + packages: write — the ceiling chain holds end to end.
+  # The reusable caller grants package publication; only the matrix build job uses it.
   packages: write
 
 concurrency:
   group: images-${{ inputs.suite-tag }}
-  cancel-in-progress: false   # a publish walk is never cancelled mid-flight; runs for one tag serialize
+  cancel-in-progress: false
 
 jobs:
-  retag:
-    name: Retag the 10 registry-side images
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      packages: write
-    outputs:
-      # the ONE resolution this run made (D-5) — consumed by matrix/manifest below and handed to
-      # the caller through the workflow_call output; nobody re-resolves.
-      retag-source: ${{ steps.resolve.outputs.retag-source }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (upstream's own pin)
-        # main (default): containers.json — the sibling list's source (parsed, never hardcoded) —
-        # and aps/BASE.lock, the bootstrap fallback the source resolution below reads when tag
-        # discovery finds no complete set (the sibling names are identical on every ref —
-        # 010's auto-include property — and aps/BASE.lock rides the default branch).
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Registry-side retag walk (the source resolved ONCE here — threaded below, never re-derived)
-        id: resolve
-        # tee, not capture: the walk's stdout (say-notes + the machine-readable announcement)
-        # streams live into the Actions log AND lands in the tempfile the output capture greps —
-        # a 15-min job must show where it stood if it dies mid-walk.
-        run: |
-          set -euo pipefail
-          log="$(mktemp)"
-          args=()
-          if [ "$FORCE" = "true" ]; then args+=(--force); fi
-          bash scripts/retag.sh retag "$SUITE_TAG" "${args[@]}" 2>&1 | tee "$log"
-          # the walk announced its resolution (RETAG_SOURCE_RESOLVED=<spec>, retag.sh's D-5 line);
-          # capture it into the job output. The spec charset is [A-Za-z0-9._:-] — single-line
-          # GITHUB_OUTPUT writes need no delimiters.
-          line="$(grep -m1 '^RETAG_SOURCE_RESOLVED=' "$log" || true)"
-          [ -n "$line" ] || { echo "::error title=RETAG::the walk announced no resolved source"; exit 1; }
-          echo "retag-source=${line#RETAG_SOURCE_RESOLVED=}" >> "$GITHUB_OUTPUT"
-        env:
-          SUITE_TAG: ${{ inputs.suite-tag }}
-          RETAG_SOURCE: ${{ inputs.retag-source }}
-          FORCE: ${{ inputs.force }}
-
-  build-aio-nextcloud:
-    name: Build aio-nextcloud (the theme's slot)
-    needs: retag   # the immutability pre-check gates the builds too: a refused re-dispatch moves zero bytes
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    permissions:
-      contents: read
-      packages: write
-    outputs:
-      sha: ${{ steps.head.outputs.sha }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (upstream's own pin)
-        with:
-          ref: ${{ inputs.build-ref }}
-      - id: head
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      # #42: no bake step exists anymore. The build context is the checkout itself — the
-      # Dockerfile copies the tree's own themes/apsconecta and nothing else of the suite's; the
-      # acquisition gate's 030 row (run by the gates job against this same ref) already refuses
-      # a tree that tries to COPY app bytes into the image. The apps arrive at run time: own
-      # and fork from their signed releases (ADR-0017), store apps from the scoped install —
-      # never from an image.
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .   # the Dockerfile copies from repo root (php/, app/, Containers/, themes/ — the theme is the tree's own)
-          file: Containers/nextcloud/Dockerfile
-          push: true
-          tags: ghcr.io/aps-conecta/aio-nextcloud:${{ inputs.suite-tag }}
-          cache-from: type=gha,scope=aio-nextcloud
-          cache-to: type=gha,mode=max,scope=aio-nextcloud
-
-  build-all-in-one:
-    name: Build all-in-one (the mastercontainer reskin's slot)
-    needs: retag   # same gate as the other build: the pre-check refusal stops the push, not just the retags
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    permissions:
-      contents: read
-      packages: write
-    outputs:
-      sha: ${{ steps.head.outputs.sha }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (upstream's own pin)
-        with:
-          ref: ${{ inputs.build-ref }}
-      - id: head
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          file: Containers/mastercontainer/Dockerfile
-          push: true
-          tags: ghcr.io/aps-conecta/all-in-one:${{ inputs.suite-tag }}
-          cache-from: type=gha,scope=all-in-one
-          cache-to: type=gha,mode=max,scope=all-in-one
-
-  build-aio-apache:
-    name: Build aio-apache (the installer certificate's slot)
-    needs: retag   # same gate as the other builds
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-      packages: write
-    outputs:
-      sha: ${{ steps.head.outputs.sha }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (upstream's own pin)
-        with:
-          ref: ${{ inputs.build-ref }}
-      - id: head
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: Containers/apache   # the Dockerfile copies its Caddyfile and start.sh from its own directory
-          file: Containers/apache/Dockerfile
-          push: true
-          tags: ghcr.io/aps-conecta/aio-apache:${{ inputs.suite-tag }}
-          cache-from: type=gha,scope=aio-apache
-          cache-to: type=gha,mode=max,scope=aio-apache
-
-  build-aio-postgresql:
-    name: Build aio-postgresql, tested before it ships
-    needs: retag   # same gate as the other builds
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    permissions:
-      contents: read
-      packages: write
-    outputs:
-      sha: ${{ steps.head.outputs.sha }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (upstream's own pin)
-        with:
-          ref: ${{ inputs.build-ref }}
-      - id: head
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      # Built and loaded first, because the base tag is not digest-pinned and the build runs
-      # `apk upgrade`: only the bytes that ship can prove the database boots and restores.
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: Containers/postgresql   # the Dockerfile copies its scripts from its own directory
-          file: Containers/postgresql/Dockerfile
-          load: true
-          tags: ghcr.io/aps-conecta/aio-postgresql:${{ inputs.suite-tag }}
-          cache-from: type=gha,scope=aio-postgresql
-          cache-to: type=gha,mode=max,scope=aio-postgresql
-      - name: The image boots, keeps its data across a restart and restores its dump
-        run: bash scripts/db-image-test.sh "ghcr.io/aps-conecta/aio-postgresql:${SUITE_TAG}"
-        env:
-          SUITE_TAG: ${{ inputs.suite-tag }}
-      # Pushed from the same builder: every layer is a cache hit of the tested build.
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: Containers/postgresql
-          file: Containers/postgresql/Dockerfile
-          push: true
-          tags: ghcr.io/aps-conecta/aio-postgresql:${{ inputs.suite-tag }}
-          cache-from: type=gha,scope=aio-postgresql
-      - name: The pushed image carries the tested layers
-        run: |
-          set -euo pipefail
-          ref="ghcr.io/aps-conecta/aio-postgresql:${SUITE_TAG}"
-          tested="$(docker image inspect "$ref" --format '{{json .RootFS.Layers}}' | jq -c .)"
-          pushed="$(docker buildx imagetools inspect "$ref" --format '{{json .Image}}' | jq -c .rootfs.diff_ids)"
-          echo "tested: $tested"
-          echo "pushed: $pushed"
-          [ "$tested" != "null" ] && [ "$tested" = "$pushed" ] \
-            || { echo "FAIL: the pushed image's layers differ from the tested image's" >&2; exit 1; }
-        env:
-          SUITE_TAG: ${{ inputs.suite-tag }}
-
-  build-aio-eurooffice:
-    name: Build aio-eurooffice (the pinned DocumentServer)
-    needs: retag   # same gate as the other builds
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    permissions:
-      contents: read
-      packages: write
-    outputs:
-      sha: ${{ steps.head.outputs.sha }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (upstream's own pin)
-        with:
-          ref: ${{ inputs.build-ref }}
-      - id: head
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      # No gha cache: the image is one COPY over the ~7 GB base, so a cache would hold only the base.
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: Containers/eurooffice   # the Dockerfile copies its healthcheck.sh from its own directory
-          file: Containers/eurooffice/Dockerfile
-          push: true
-          tags: ghcr.io/aps-conecta/aio-eurooffice:${{ inputs.suite-tag }}
-
-  matrix:
-    name: Tag-completeness matrix (the gate)
-    needs: [retag, build-aio-nextcloud, build-all-in-one, build-aio-apache, build-aio-postgresql, build-aio-eurooffice]
+  prepare:
+    name: Resolve source, inventory and publication permission
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
       packages: read
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+      matrix: ${{ steps.source.outputs.matrix }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (upstream's own pin)
-        # main (default), NOT build-ref: the sibling NAMES are identical on every ref — 010's
-        # generated sed swaps the org prefix and never the names (the auto-include property), and
-        # retag.sh parses the basename, so main's containers.json is the one list wherever
-        # the build comes from. A fork-side rename of an image is out of scope by locked
-        # design (010 is prefix-only); an upstream rename/addition arrives the way every
-        # upstream change arrives now: a deliberate merge into main.
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0   # freshly-pushed packages are private until the org flips them public
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.build-ref }}
+          persist-credentials: false
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Matrix — all images present + the copy keyed to the RESOLVED source
-        # RETAG_SOURCE carries the RETAG job's one resolution (D-5): the comparator proofs the
-        # copy against what the walk actually copied FROM — ours:<tag>: the immutable previous
-        # set, a faithful-copy integrity proof.
-        run: bash scripts/retag.sh matrix "$SUITE_TAG"
+      - name: Refuse published tags before any build can push
+        id: source
         env:
           SUITE_TAG: ${{ inputs.suite-tag }}
-          RETAG_SOURCE: ${{ needs.retag.outputs.retag-source }}
+          FORCE: ${{ inputs.force }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "$FORCE" = true ]; then args+=(--force); fi
+          python3 scripts/images.py preflight "$SUITE_TAG" "${args[@]}"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "matrix=$(python3 scripts/images.py build-matrix)" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.image }}
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - name: Check the frozen source
+        env:
+          SOURCE_SHA: ${{ needs.prepare.outputs.sha }}
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # PostgreSQL loads locally for its tests; other entries publish directly.
+      # Euro-Office skips gha caching because its roughly 7 GB base dominates it.
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          load: ${{ matrix.database_test }}
+          push: ${{ !matrix.database_test }}
+          tags: ghcr.io/aps-conecta/${{ matrix.image }}:${{ inputs.suite-tag }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/APS-Conecta/gestion
+            org.opencontainers.image.revision=${{ needs.prepare.outputs.sha }}
+          cache-from: ${{ matrix.cache && format('type=gha,scope={0}', matrix.image) || '' }}
+          cache-to: ${{ matrix.cache && format('type=gha,mode=max,scope={0}', matrix.image) || '' }}
+      - name: The database boots, restarts and restores its dump before publication
+        if: matrix.database_test
+        run: bash scripts/db-image-test.sh "$IMAGE_REF"
+        env:
+          IMAGE_REF: ghcr.io/aps-conecta/${{ matrix.image }}:${{ inputs.suite-tag }}
+      - name: Push the tested database image without rebuilding it
+        if: matrix.database_test
+        run: docker push "$IMAGE_REF"
+        env:
+          IMAGE_REF: ghcr.io/aps-conecta/${{ matrix.image }}:${{ inputs.suite-tag }}
+      - name: The published database carries the tested layers
+        if: matrix.database_test
+        env:
+          IMAGE_REF: ghcr.io/aps-conecta/${{ matrix.image }}:${{ inputs.suite-tag }}
+        run: |
+          set -euo pipefail
+          tested="$(docker image inspect "$IMAGE_REF" --format '{{json .RootFS.Layers}}' | jq -c .)"
+          pushed="$(docker buildx imagetools inspect "$IMAGE_REF" --format '{{json .Image}}' | jq -c .rootfs.diff_ids)"
+          if [ "$tested" = null ] || [ "$tested" != "$pushed" ]; then
+            echo "FAIL: the published database differs from the tested image" >&2
+            exit 1
+          fi
+
+  verify:
+    name: Verify every published image comes from the resolved source
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Check completeness and source/revision labels
+        env:
+          SUITE_TAG: ${{ inputs.suite-tag }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.sha }}
+        run: python3 scripts/images.py verify "$SUITE_TAG" --sha "$SOURCE_SHA"
 
   boot-smoke:
     name: Wizard-boot smoke (interim)
-    needs: matrix
+    needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -451,56 +229,32 @@ jobs:
           SUITE_TAG: ${{ inputs.suite-tag }}
 
   manifest:
-    name: Digest manifest (the announce)
-    # The builds are listed DIRECTLY, not left to transitivity: the needs context only exposes
-    # outputs of direct dependencies, so without these entries the lockstep assert below (which
-    # reads toJSON(needs)) and RETAG_BUILT_SHA would resolve empty — the assert would compare
-    # '' to '' and stay green for the wrong reason (B-014). That direct list IS the assert's
-    # one list (#76): scripts/lockstep.sh walks its build-* entries, so a new build is one
-    # entry here — not one more clause and variable in the check. retag joins them for the same
-    # reason: RETAG_SOURCE below reads needs.retag.outputs.retag-source, and without the direct
-    # edge it would resolve empty — cmd_manifest would then fall into a bare-'ours' resolution
-    # of its own (a second discovery racing the walk — exactly what D-5 forbids). No ordering
-    # change: the builds and retag are already ancestors via matrix.
-    needs: [retag, matrix, boot-smoke, build-aio-nextcloud, build-all-in-one, build-aio-apache, build-aio-postgresql, build-aio-eurooffice]
+    name: Publish the digest manifest
+    needs: [prepare, verify, boot-smoke]
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: read
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (upstream's own pin)   # scripts/retag.sh
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: The builds must come from one tree (lockstep for the built set)
-        # THE LIST IS needs (#76): toJSON(needs) carries every direct dependency's outputs, and
-        # scripts/lockstep.sh walks the build-* entries of the needs array above — one entry per
-        # build, no clause and no variable here (a new build is the job plus one needs
-        # entry, nothing else). It prints each build's commit and reds with the one message when
-        # any resolved empty or different — B-014's lesson: never green for the wrong reason.
-        run: bash scripts/lockstep.sh
-        env:
-          NEEDS_JSON: ${{ toJSON(needs) }}
-          BUILD_REF: ${{ inputs.build-ref }}
-      - name: Emit the publish record
-        run: |
-          set -euo pipefail
-          bash scripts/retag.sh manifest "$SUITE_TAG" > "suite-${SUITE_TAG}-manifest.json"
-          cat "suite-${SUITE_TAG}-manifest.json"
-          {
-            echo "### Suite tag \`${SUITE_TAG}\` — publish record"
-            echo '```json'
-            cat "suite-${SUITE_TAG}-manifest.json"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Emit the verified publish record
         env:
           SUITE_TAG: ${{ inputs.suite-tag }}
-          RETAG_SOURCE: ${{ needs.retag.outputs.retag-source }}
-          RETAG_BUILT_REF: ${{ inputs.build-ref }}
-          RETAG_BUILT_SHA: ${{ needs.build-aio-nextcloud.outputs.sha }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.sha }}
+          SOURCE_REF: ${{ inputs.build-ref }}
+        run: |
+          set -euo pipefail
+          python3 scripts/images.py manifest "$SUITE_TAG" --sha "$SOURCE_SHA" --ref "$SOURCE_REF" > "suite-$SUITE_TAG-manifest.json"
+          cat "suite-$SUITE_TAG-manifest.json"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: suite-manifest-${{ inputs.suite-tag }}

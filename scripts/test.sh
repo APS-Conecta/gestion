@@ -24,7 +24,7 @@ office_backends_removed() {
     status=$?
     [ "$status" -eq 1 ] || return "$status"
   fi
-  bash scripts/retag.sh list | grep -qx aio-eurooffice
+  python3 scripts/images.py list | grep -qx aio-eurooffice
 }
 check office_backends_removed
 
@@ -150,6 +150,26 @@ print("daily backup preserves ordinary restart and notification without updating
 PY
 }
 check daily_backup_cases
+
+# #182: the public build-matrix output covers the runtime inventory and every
+# surviving Dockerfile, with only the documented context/test/cache exceptions.
+image_build_coverage() {
+  python3 - <<'PY'
+import json, pathlib, subprocess
+
+root = pathlib.Path.cwd()
+matrix = json.loads(subprocess.check_output(["python3", "scripts/images.py", "build-matrix"], text=True))["include"]
+services = json.loads((root / "php/containers.json").read_text())["aio_services_v1"]
+expected = {row["image"].rsplit("/", 1)[-1] for row in services} | {"all-in-one"}
+assert len(matrix) == len(expected) and {row["image"] for row in matrix} == expected
+assert {row["dockerfile"] for row in matrix} == {str(p.relative_to(root)) for p in (root / "Containers").glob("*/Dockerfile")}
+assert {row["image"] for row in matrix if row["context"] == "."} == {"all-in-one", "aio-nextcloud"}
+assert {row["image"] for row in matrix if row["database_test"]} == {"aio-postgresql"}
+assert {row["image"] for row in matrix if not row["cache"]} == {"aio-eurooffice"}
+print("every suite image is built from its Dockerfile with the required exceptions")
+PY
+}
+check image_build_coverage
 
 # The fork's shell namespace, spelled once for every row that walks it (the sweep below, the
 # dirname gate at #60's row). Unquoted on purpose: the words re-glob where they are used. The
@@ -549,7 +569,6 @@ scripts/office-smoke.sh
 scripts/package-release.sh
 scripts/provisionador.py
 scripts/rename-containers.py
-scripts/retag.sh
 scripts/seed-idempotent.sh
 scripts/smoke.sh
 scripts/test.sh
@@ -2090,17 +2109,10 @@ if command -v signify >/dev/null 2>&1; then
 else
   echo "  skipped: package-release --self-test (no signify — sudo apt-get install signify-openbsd)"
 fi
-# The retag self-test rides the same capture-and-tail idiom: hermetic (a PATH-shim docker over
-# a fixture registry, local git repos as the discovery catalogue — no network, no daemon), so
-# it runs everywhere test.sh runs. A green arm prints its verdict line; a red one its tail.
-rt_out="$(bash scripts/retag.sh --self-test 2>&1)" \
-  && echo "  ok:   retag --self-test ($(printf '%s\n' "$rt_out" | tail -1))" \
-  || { echo "  FAIL: retag --self-test"; printf '%s\n' "$rt_out" | tail -25; fail=1; }
-# The built-set lockstep assert's own self-test (#76): jq over fixture needs documents — the
-# same hermetic bar (no network, no runner), pinning the one-list walk where CI runs it.
-lk_out="$(bash scripts/lockstep.sh --self-test 2>&1)" \
-  && echo "  ok:   lockstep --self-test ($(printf '%s\n' "$lk_out" | tail -1))" \
-  || { echo "  FAIL: lockstep --self-test"; printf '%s\n' "$lk_out" | tail -25; fail=1; }
+# Hermetic image CLI checks use fixture inventories and read-only registry/GitHub shims.
+im_out="$(python3 scripts/images.py --self-test 2>&1)" \
+  && echo "  ok:   images --self-test ($(printf '%s\n' "$im_out" | tail -1))" \
+  || { echo "  FAIL: images --self-test"; printf '%s\n' "$im_out" | tail -25; fail=1; }
 
 echo "== smoke (only if a stack is running) =="
 . scripts/env.sh

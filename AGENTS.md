@@ -23,7 +23,7 @@ no patch queue, no mirror-parity fence, no replay machinery, no `upstream` remot
 `aps/main` branch. An upstream release arrives the way every upstream change arrives: a
 deliberate merge into `main`, then an ordinary release (`aps/RELEASING.md` owns the ritual).
 A merge that re-introduces upstream identifiers is followed by the merge-time re-swap tools:
-`scripts/retag.sh sed` and `scripts/rename-containers.py`.
+`python3 scripts/images.py rewrite-registry php/containers.json` and `scripts/rename-containers.py`.
 
 - NEVER force-push `main` — it is append-only; rollback is a revert.
 - NEVER edit the wizard's operator-visible strings without reading `readme.md`'s
@@ -42,7 +42,7 @@ A merge that re-introduces upstream identifiers is followed by the merge-time re
   CI, the check beside it says so instead of pretending.
 - `scripts/validate.sh` runs upstream's own three validators (codespell, docker-lint,
   json-spec) against any tree.
-- `scripts/retag.sh --self-test` is hermetic: stub registry, local fixture repos, no network.
+- `python3 scripts/images.py --self-test` is hermetic: fixture inventory, stub registry and GitHub, no network.
 
 A red gate is information. Fix the bytes, or change the contract deliberately in a commit
 that says so — never weaken a row to get a green run.

@@ -69,6 +69,6 @@ LABEL com.centurylinklabs.watchtower.enable="false" \
     org.opencontainers.image.title="Talk Recording for Nextcloud AIO" \
     org.opencontainers.image.description="Nextcloud Talk recording service for Nextcloud All-in-One" \
     org.opencontainers.image.url="https://github.com/nextcloud/all-in-one" \
-    org.opencontainers.image.source="https://github.com/nextcloud/all-in-one" \
+    org.opencontainers.image.source="https://github.com/APS-Conecta/gestion" \
     org.opencontainers.image.vendor="Nextcloud" \
     org.opencontainers.image.documentation="https://github.com/nextcloud/all-in-one/blob/main/readme.md"

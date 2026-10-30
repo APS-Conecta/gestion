@@ -172,7 +172,7 @@ command -v sha256sum >/dev/null 2>&1 || die "sha256sum missing on this runner"
 command -v signify >/dev/null 2>&1   || die "signify (signify-openbsd) missing — sudo apt-get install -y signify-openbsd (the same package the clinic verifies with)"
 
 tag="${RELEASE_TAG:?set RELEASE_TAG to the instalador tag being packaged}"
-[[ "$tag" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] || die "tag '$tag' is not channel-valid (retag.sh's tag_valid shape — it names assets and a sed line)"
+[[ "$tag" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] || die "tag '$tag' is not channel-valid (a versioned Docker tag — it names assets and a sed line)"
 tree="${REPO_TREE:-$REPO_ROOT}"
 
 mkdir -p "$out"
