@@ -778,30 +778,48 @@ PY
   ok "Proxy configurado para la instalación"
 }
 
-install_packages() {  # the tools the install itself runs; apt installs only what is missing
-  local t missing=() pkgs=()
+install_packages() {  # required tools and the optional verifier use separate apt transactions
+  local t missing=() pkgs=() verifier_missing=0
+  local verifier_hint="Verificación de firma pendiente: instale signify-openbsd; en Ubuntu, ejecute sudo add-apt-repository universe y sudo apt-get update; repita sudo aps-conecta preparar"
   for t in python3 curl; do
     command -v "$t" >/dev/null 2>&1 || { missing+=("$t"); pkgs+=("$t"); }
   done
   command -v ogr2ogr >/dev/null 2>&1 || { missing+=(ogr2ogr); pkgs+=(gdal-bin); }
-  # the signed channel's verifier (D5): check_paquete proves the kept package's signature
-  # with it — a fresh host got the sha anchor from the installer itself
-  command -v signify >/dev/null 2>&1 || { missing+=(signify); pkgs+=(signify-openbsd); }
-  if [ ${#missing[@]} -eq 0 ]; then ok "python3, curl, ogr2ogr y signify presentes"; return 0; fi
+  command -v signify >/dev/null 2>&1 || verifier_missing=1
+  if [ ${#missing[@]} -eq 0 ] && [ "$verifier_missing" = 0 ]; then
+    ok "python3, curl, ogr2ogr y signify presentes"; return 0
+  fi
   if ! command -v apt-get >/dev/null 2>&1; then
-    bad "faltan ${missing[*]} y este sistema no usa apt" "instale ${pkgs[*]} y vuelva a ejecutar el paso"
+    if [ ${#missing[@]} -gt 0 ]; then
+      bad "faltan ${missing[*]} y este sistema no usa apt" "instale ${pkgs[*]} y vuelva a ejecutar el paso"
+    fi
+    [ "$verifier_missing" = 0 ] || info "$verifier_hint"
     return 0
   fi
-  info "instalando ${missing[*]}"
-  if "${APT[@]}" update >/dev/null && "${APT[@]}" install -y "${pkgs[@]}" >/dev/null; then
-    # Ubuntu/Debian ship the binary as signify-openbsd; the suite (y esta misma herramienta)
-    # llama al nombre canónico `signify` — se provee una vez, al instalar, para que la
-    # promesa «la firma se verifica desde la próxima corrida» sea cierta (el hueco del
-    # v0.0.0-ci.4: instalar el paquete no creaba el nombre que check_paquete busca).
-    command -v signify >/dev/null 2>&1 || ln -sf "$(command -v signify-openbsd)" /usr/local/bin/signify 2>/dev/null || true
-    ok "Instalado: ${missing[*]}"
-  else
-    bad "no se pudo instalar ${missing[*]}" "revise la red y apt (sudo apt-get update) y vuelva a ejecutar el paso"
+  if ! "${APT[@]}" update >/dev/null; then
+    if [ ${#missing[@]} -gt 0 ]; then
+      bad "no se pudo instalar ${missing[*]}" "revise la red y apt (sudo apt-get update) y vuelva a ejecutar el paso"
+    fi
+    [ "$verifier_missing" = 0 ] || info "$verifier_hint"
+    return 0
+  fi
+  if [ ${#missing[@]} -gt 0 ]; then
+    info "instalando ${missing[*]}"
+    if "${APT[@]}" install -y "${pkgs[@]}" >/dev/null; then
+      ok "Instalado: ${missing[*]}"
+    else
+      bad "no se pudo instalar ${missing[*]}" "revise la red y apt (sudo apt-get update) y vuelva a ejecutar el paso"
+    fi
+  fi
+  if [ "$verifier_missing" = 1 ]; then
+    info "instalando signify"
+    if "${APT[@]}" install -y signify-openbsd >/dev/null; then
+      # Debian and Ubuntu may provide the executable as signify-openbsd.
+      command -v signify >/dev/null 2>&1 || ln -sf "$(command -v signify-openbsd)" /usr/local/bin/signify 2>/dev/null || true
+      ok "Instalado: signify"
+    else
+      info "$verifier_hint"
+    fi
   fi
 }
 
@@ -2345,7 +2363,7 @@ check_paquete() {  # [TAG] — the kept package at $APS_HOME/paquete (D11: insta
     return 0
   fi
   if ! command -v signify >/dev/null 2>&1; then
-    info "signify no está instalado: la suma del instalador ya probó los bytes al descargar; «sudo aps-conecta preparar» instala signify-openbsd y la firma se verifica desde la próxima corrida"
+    info "signify no está instalado: la suma del instalador ya probó los bytes al descargar; «sudo aps-conecta preparar» instala signify-openbsd cuando está disponible; la firma queda pendiente hasta disponer de la herramienta"
     return 0
   fi
   sums="$paquete/SHA256SUMS"
