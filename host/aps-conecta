@@ -75,8 +75,7 @@ BIN_DIR="${BIN_DIR:-/usr/local/bin}"       # where the `aps-conecta` command is 
 # (php/src/Docker/DockerActionManager.php:19); the mastercontainer itself enforces it at start
 # (start.sh:125-145). Preflight only says it BEFORE the wizard does, with a fix hint.
 API_FLOOR=144        # 1.44 as major*100+minor
-WIZARD_PORTS="80 443 8080 8443"   # the wizard needs 8080; apache takes 443; 80/8443 are the
-                                  # reverse-proxy companions upstream's install path expects
+SUITE_PORTS="tcp:443 udp:443 tcp:8080 tcp:3478 udp:3478"
 PROV_PORTS="8081 8082 8083"        # the Provisionador's fallback chain (slice 14) — INFO only
 
 CONSOLE_FD=2   # die's stream: the silent install sends stderr to its log and keeps die on the console
@@ -349,23 +348,28 @@ check_docker() {  # API floor measured, not assumed — docker version is the on
   fi
 }
 
-port_free() {  # PORT — the rule-10 discipline (the slice-3 testbed's own idiom)
-  ss -ltn "sport = :$1" 2>/dev/null | tail -n +2 | grep -q . && return 1
-  return 0
+port_free() {  # PORT [tcp|udp]
+  local listeners flag=-ltn
+  [ "${2:-tcp}" != udp ] || flag=-lun
+  listeners="$(ss "$flag" "sport = :$1" 2>/dev/null)" || return 2
+  [ -z "$(tail -n +2 <<<"$listeners")" ]
 }
 
-check_ports() {  # the four wizard-facing ports; a busy one names its holder — unless a suite
-  # container publishes it (a re-run of the install after the suite started reads its own as ✓)
-  local p holder published
+check_ports() {
+  local spec p protocol flag holder published
   published="$(docker ps --filter name=^aps-conecta- --filter name=^nextcloud-aio-mastercontainer$ --format '{{.Ports}}' 2>/dev/null || true)"
-  for p in $WIZARD_PORTS; do
-    if port_free "$p"; then
-      ok "puerto $p libre"
-    elif case "$published" in *":$p->"*) true ;; *) false ;; esac; then
+  for spec in $SUITE_PORTS; do
+    protocol="${spec%%:*}"; p="${spec#*:}"; flag=-ltnp
+    [ "$protocol" != udp ] || flag=-lunp
+    if port_free "$p" "$protocol"; then
+      ok "puerto $p libre ($protocol)"
+    elif [ "$?" -ne 1 ]; then
+      bad "no se pudo revisar el puerto $p ($protocol)" "revise ss del paquete iproute2 antes de instalar"
+    elif tr ', ' '\n\n' <<<"$published" | grep -qE ":$p->[0-9]+/$protocol$"; then
       ok "puerto $p en uso por la suite (ya instalada)"
     else
-      holder="$(ss -ltnp "sport = :$p" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1)"
-      bad "puerto $p ocupado${holder:+ (pid $holder)}" \
+      holder="$(ss "$flag" "sport = :$p" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1)"
+      bad "puerto $p ocupado ($protocol)${holder:+ (pid $holder)}" \
         "detenga el servicio que usa el puerto $p o desinstálelo antes del asistente"
     fi
   done
@@ -2512,13 +2516,13 @@ SHIM
 
   # a re-run after the suite started: a port the suite publishes reads as its own; a stranger on a
   # port the suite does not publish still reds (the mastercontainer publishes 8080 only)
-  printf '#!/usr/bin/env bash\ncase "$2" in "sport = :8080"|"sport = :80") echo "State"; echo "LISTEN 0 0 *:${2##*:}";; esac\nexit 0\n' > "$tshim/ss"; chmod +x "$tshim/ss"
+  printf '#!/usr/bin/env bash\ncase "$2" in "sport = :8080"|"sport = :3478") echo "State"; echo "LISTEN 0 0 *:${2##*:}";; esac\nexit 0\n' > "$tshim/ss"; chmod +x "$tshim/ss"
   printf '#!/usr/bin/env bash\ncase "$*" in *"{{.Names}}"*) echo nextcloud-aio-mastercontainer;; *"{{.Ports}}"*) echo "0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp";; esac\nexit 0\n' > "$tshim/docker"; chmod +x "$tshim/docker"
   step_out="$(FAIL=0; check_ports; echo "FAIL=$FAIL")"
   check "revisar: a port the running suite publishes reads as the suite's own, so a re-run of install goes on" \
     'case "$step_out" in *"✓ puerto 8080 en uso por la suite (ya instalada)"*) ;; *) false;; esac'
   check "revisar: a stranger on a port the suite does not publish reds while the suite runs" \
-    'case "$step_out" in *"✗ puerto 80 ocupado"*"FAIL=1") ;; *) false;; esac'
+    'case "$step_out" in *"✗ puerto 3478 ocupado"*"FAIL=1") ;; *) false;; esac && [ "$(grep -c "✗ puerto 3478 ocupado" <<<"$step_out")" -eq 2 ]'
   printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/ss"; chmod +x "$tshim/ss"
   rm -f "$tshim/docker"
 
@@ -2551,7 +2555,30 @@ SHIM
   check "ports: the sweep reds the busy one (with holder + hint) and greens the free ones" \
     'case "$out" in *"✗ puerto 8080 ocupado"*"detenga el servicio"*) ;; *) false;; esac'
   check "ports: the free ports of the sweep print their ok lines" \
-    'case "$out" in *"puerto 443 libre"*"puerto 8443 libre"*) ;; *) false;; esac'
+    'case "$out" in *"puerto 443 libre"*"puerto 3478 libre"*) ;; *) false;; esac'
+
+  cat > "$tshim/ss" <<'SH'
+#!/usr/bin/env bash
+if [ "${1%p}" = "$SS_BUSY_PROTO" ] && [ "$2" = "sport = :$SS_BUSY_PORT" ]; then
+  printf 'State Recv-Q\nLISTEN 0 0 *:%s\n' "$SS_BUSY_PORT"
+fi
+SH
+  local port_case proto_case
+  for port_case in 443 8080 3478; do
+    for proto_case in -ltn -lun; do
+      [ "$port_case:$proto_case" != 8080:-lun ] || continue
+      out="$(SS_BUSY_PORT="$port_case" SS_BUSY_PROTO="$proto_case"; export SS_BUSY_PORT SS_BUSY_PROTO; FAIL=0; check_ports; echo "FAIL=$FAIL")"
+      check "ports: occupied $port_case/$proto_case refuses installation" \
+        'case "$out" in *"✗ puerto $port_case ocupado"*"FAIL=1") ;; *) false;; esac'
+    done
+  done
+  out="$(SS_BUSY_PORT=80 SS_BUSY_PROTO=-ltn; export SS_BUSY_PORT SS_BUSY_PROTO; FAIL=0; check_ports; echo "FAIL=$FAIL")"
+  check "ports: occupied 80 is outside the suite port set" \
+    'case "$out" in *"FAIL=0") ;; *) false;; esac'
+  printf '#!/bin/sh\nexit 2\n' > "$tshim/ss"
+  out="$(FAIL=0; check_ports; echo "FAIL=$FAIL")"
+  check "ports: failed inspection refuses explicitly instead of reporting free ports" \
+    'case "$out" in *"no se pudo revisar el puerto"*"FAIL=1") ;; *) false;; esac && [ "$(grep -c "no se pudo revisar el puerto" <<<"$out")" -eq 5 ]'
 
   # ── site discovery + DNS + arch ──
   mkdir -p "$ROOT/sites/113314"; printf 'SITE_DOMINIO="clinic.example"\n' > "$ROOT/sites/113314/site.sh"

@@ -132,20 +132,7 @@ jobs:
     # backstop above those, and 45 would cut a legitimately slow reboot mid-walk.
     timeout-minutes: 60
     env:
-      # One identity, derived everywhere below. The harness installs this throwaway domain
-      # (SKIP_DOMAIN_VALIDATION + RFC-2606 .invalid: no DNS, no Let's Encrypt). Under AIO the
-      # entrypoint rewrites the connector's public DocumentServerUrl (https://$NC_DOMAIN/eurooffice)
-      # and jwt_secret on every boot and leaves the internal URLs unset (phase 14 writes them for
-      # an install by IP only); this probe sets them itself (the «Probe office wire» step), and
-      # office-smoke's legs (slice 20) assert against the values the instance
-      # carries — --check answers the internal URL, the healthcheck the public path, so the probe
-      # exercises the office wire without any DNS for the domain.
-      AIO_TEST_DOMAIN: aio-ci.invalid
-      # The probe's apache binds 127.0.0.1:${AIO_TEST_APACHE_PORT} and runs auto_https OFF
-      # (APACHE_PORT != 443): plain HTTP on any Host — the gates read that posture from apache
-      # itself and curl http://localhost:${AIO_TEST_APACHE_PORT}. The port is
-      # docker-transport-only by design.
-      AIO_TEST_APACHE_PORT: "11000"
+      # Lifecycle acceptance uses the same by-IP HTTPS setup as the fresh-install job.
       # The testbed's mastercontainer, at the suite tag resolved above; its siblings follow its tag.
       AIO_TEST_IMAGE: ghcr.io/aps-conecta/all-in-one:${{ needs.suite-tag.outputs.tag }}
       SUITE_TAG: ${{ needs.suite-tag.outputs.tag }}
@@ -154,11 +141,17 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 1   # VERSION answers suite_tag() now — no tag history to read
-      # The probe bed FIRST, so a harness preflight failure (RAM, ports, ghcr reachability) is
-      # the first thing a red log shows. Every wait inside is bounded, and `up` ends in its own
-      # port gate — the runner never claims 80/443, and :8080 is the only publish.
-      - name: Bring up the disposable AIO instance
-        run: bash scripts/aio-testbed.sh up
+      # Preflight and startup use the same suite ports and certificate as a clinic.
+      - name: Bring up the disposable AIO instance through the installer
+        env:
+          SUITE_CA: ${{ runner.temp }}/ca.crt
+        run: |
+          sudo env "PATH=$PATH" AIO_TEST_IMAGE="$AIO_TEST_IMAGE" bash scripts/aio-testbed.sh up
+          echo "SUITE_IP=$(sudo cat /tmp/aio-testbed/dominio)" >> "$GITHUB_ENV"
+          sudo cp /opt/aps-conecta/certificados/ca/aps-conecta-ca.crt "$SUITE_CA"
+          sudo chmod 644 "$SUITE_CA"
+          echo "SUITE_CA=$SUITE_CA" >> "$GITHUB_ENV"
+          sudo chown -R "$(id -u):$(id -g)" /tmp/aio-testbed
       # FIRST BOOT, the one sibling whose absence kills a first boot: the notify-push
       # container's own start dies when the app binary is absent (Containers/notify-push/
       # start.sh:31-41). No image carries apps (#42), so the first boot installs notify_push
@@ -272,14 +265,13 @@ jobs:
               "$pkg/.env.example" > "$pkg/.env"
           chmod 600 "$pkg/.env"
           {
-            echo "HTTP_PORT=${AIO_TEST_APACHE_PORT}"
             echo "NEXTCLOUD_ADMIN_USER=admin"
             echo "NEXTCLOUD_ADMIN_PASSWORD=$(hex)"
           } >> "$pkg/.env"
       # No establishment ships: the site and the planilla a clinic brings, generated at run time
       # (scripts/cleanboot-site.sh — one copy for both jobs) for the probe's domain.
       - name: The site and the planilla a clinic brings
-        run: bash /opt/aps-conecta/instalador/scripts/cleanboot-site.sh "$AIO_TEST_DOMAIN" "$RUNNER_TEMP"
+        run: bash /opt/aps-conecta/instalador/scripts/cleanboot-site.sh "$SUITE_IP" "$RUNNER_TEMP"
       # D8's default floors, measured on real hardware before the probe's own override lowers
       # them: RAM reads green naming both tiers; the disk is the honest variable — the assert
       # holds either way, and the red (when it reds) must name minimum AND recommended tier.
@@ -494,7 +486,7 @@ jobs:
             got="$(occ config:app:get side_menu "$clave")"
             [ "$got" = "#5315a8" ] || { echo "FAIL: side_menu $clave is '$got', not the suite's violet #5315a8 — the branding phase did not apply" >&2; exit 1; }
           done
-          css="$(curl -fsS "http://localhost:${HTTP_PORT}/apps/side_menu/css/stylesheet")"
+          css="$(curl -fsS --cacert "$SUITE_CA" "https://$SUITE_IP/apps/side_menu/css/stylesheet")"
           grep -q -- "--side-menu-background-color: #5315a8" <<<"$css" \
             || { echo "FAIL: side_menu's stylesheet does not paint the suite's violet — the config keys are set but the menu derives another colour" >&2; exit 1; }
       # #145 (ADR-0020): Talk follows the same shared assertion the other fork apps ride —
@@ -659,21 +651,6 @@ jobs:
             echo "FAIL: tens.sar exists — a cat-tecnicos role must not create a standing account" >&2
             exit 1
           fi
-      # (P35, implement-time — measured on the probe) the entrypoint writes only the PUBLIC
-      # DocumentServerUrl; a real clinic's public DNS answers every server-side office leg. The
-      # probe's .invalid domain has no DNS and its apache listens on $AIO_TEST_APACHE_PORT
-      # internally, so the office wire's server-to-server legs get the internal names — the
-      # same probe-adaptation posture HTTP_PORT already carries.
-      - name: Probe office wire — the internal URLs the loopback-only probe needs
-        run: |
-          cd /opt/aps-conecta/instalador && source scripts/env.sh
-          occ config:app:set eurooffice DocumentServerInternalUrl --value http://aps-conecta-eurooffice/
-          occ config:app:set eurooffice StorageUrl --value "http://aps-conecta-apache:${AIO_TEST_APACHE_PORT}/"
-          occ config:system:set trusted_domains 2 --value=aps-conecta-apache
-      # The only place a first AND a second seed both exist. Idempotency is the pipeline's
-      # defining property (AD-2) and nothing else asserts it: a warm dev box cannot tell
-      # "already correct" from "silently did nothing", because on a warm box those are the
-      # same thing.
       - run: bash /opt/aps-conecta/instalador/scripts/seed-idempotent.sh
       # APS-Conecta/totem#7: server-side clocks (IDateTimeZone — Totem's Día, opening hours,
       # ticket stamps) read default_timezone, never the container's TZ; the seed writes the one
@@ -945,7 +922,7 @@ jobs:
           grep -q "el grupo 'deriva-prueba' existe pero no está declarado" "$RUNNER_TEMP/estado.out"
           grep -q "occ group:delete deriva-prueba" "$RUNNER_TEMP/estado.out"
           curl -fsS -u "${NEXTCLOUD_ADMIN_USER:-admin}:${NEXTCLOUD_ADMIN_PASSWORD}" -H 'OCS-APIRequest: true' \
-            "http://localhost:${HTTP_PORT}/ocs/v2.php/apps/notifications/api/v2/notifications?format=json" \
+            --cacert "$SUITE_CA" "https://$SUITE_IP/ocs/v2.php/apps/notifications/api/v2/notifications?format=json" \
             | grep -q 'deriva-prueba' || { echo "FAIL: the admin has no notification naming the drift" >&2; exit 1; }
           occ group:delete deriva-prueba >/dev/null
           # the unit ran as root against this checkout: hand it back, as after the install
@@ -1008,7 +985,7 @@ jobs:
       # about never leaving the wizard port published.
       - name: Probe teardown
         if: always()
-        run: bash scripts/aio-testbed.sh down
+        run: sudo bash scripts/aio-testbed.sh down
 
   cleanboot-ip:
     name: Clean boot by IP
@@ -1388,6 +1365,7 @@ jobs:
           paquetes="$(sudo find /opt/aps-conecta/apps -name '*.tar.gz' -printf '%p %T@\n' | sort)"
           arranque="$(docker inspect -f '{{.State.StartedAt}}' aps-conecta-apache)"
           sudo env "PATH=$PATH" bash /opt/aps-conecta/instalador/host/aps-conecta provision --reponer 2>&1 | tee "$RUNNER_TEMP/reponer-ip.out"
+          sudo env "PATH=$PATH" bash /opt/aps-conecta/instalador/scripts/seed-idempotent.sh
           [ "$(sudo sha256sum "$leaf")" = "$antes" ] || { echo "FAIL: the weekly run signed a leaf that was valid" >&2; exit 1; }
           [ "$(sudo sha256sum "$lock" | cut -d' ' -f1)" = "$lock_antes" ] \
             || { echo "FAIL: the weekly run rewrote the lock" >&2; exit 1; }
@@ -1444,4 +1422,4 @@ jobs:
       # The same scoped teardown as the domain job: the suite's containers, its volumes, the wizard.
       - name: Teardown
         if: always()
-        run: bash scripts/aio-testbed.sh down
+        run: sudo bash scripts/aio-testbed.sh down

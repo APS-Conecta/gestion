@@ -54,21 +54,14 @@ nc_cp() { nc_container; docker cp "$1" "$NC_CONTAINER:$2"; }  # HOST_PATH CONTAI
 
 # 4. The suite's public URL, the base every gate curl rides (#163, D10: the gates curl the suite
 #    the way its users reach it, from the host itself). Apache's own environment decides, never
-#    .env's HTTP_PORT (a clinic's front is 443): APACHE_PORT other
-#    than 443 is the loopback reverse-proxy posture — Caddy answers any Host on that port
-#    (Containers/apache/start.sh) — and 443 is the suite's own name over TLS, NC_DOMAIN (Caddy's
-#    site and Nextcloud's overwritehost). By IP the installer's CA rides along: --cacert REPLACES
-#    curl's bundle, so a domain keeps the system trust (ACME). Lazy like the seam above, resolved
-#    once in the caller's shell — never inside $(…) — and its FAIL is its own, on stderr.
+#    .env's HTTP_PORT. The suite uses its public HTTPS name; an IP also needs the installer's CA.
 SUITE_CA="${SUITE_CA:-/opt/aps-conecta/certificados/ca/aps-conecta-ca.crt}"
 suite_url_resolve() {  # sets SUITE_URL, SUITE_CURL and SUITE_D10, or prints a FAIL and returns 1
-  local env port dom
+  local env dom
   env="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' aps-conecta-apache 2>/dev/null)" \
     || { echo "FAIL: cannot read aps-conecta-apache's environment (docker inspect) — the suite's public URL is unknown" >&2; return 1; }
-  port="$(printf '%s\n' "$env" | sed -n 's/^APACHE_PORT=//p' | head -1)"
   dom="$(printf '%s\n' "$env" | sed -n 's/^NC_DOMAIN=//p' | head -1)"
   SUITE_CURL=(--connect-timeout 10 --max-time 30); SUITE_D10=""
-  if [ "${port:-443}" != 443 ]; then SUITE_URL="http://localhost:$port"; return 0; fi
   [ -n "$dom" ] || { echo "FAIL: aps-conecta-apache carries no NC_DOMAIN — the suite's public URL is unknown" >&2; return 1; }
   SUITE_URL="https://$dom"
   # host/aps-conecta's IPV4_RE (the install by IP accepts nothing else); this file cannot source it
@@ -224,7 +217,6 @@ STUB
       && case "$ca" in fail) [[ $out == *"$want"* ]] ;; *) [ "$out" = "$want $ca" ] ;; esac \
       || { echo "self-test FAIL: suite URL arm — want «$want» (cacert $ca) for [$envs], got «$out»" >&2; rc=1; }
   }
-  su_arm http://localhost:11000 no 'APACHE_PORT=11000\nNC_DOMAIN=aio-ci.invalid' 1
   su_arm https://203.0.113.10 yes 'APACHE_PORT=443\nNC_DOMAIN=203.0.113.10' 1
   su_arm https://clinica.example no 'APACHE_PORT=443\nNC_DOMAIN=clinica.example' 1
   su_arm https://clinica.example no 'NC_DOMAIN=clinica.example' 1

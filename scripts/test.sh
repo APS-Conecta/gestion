@@ -10,6 +10,67 @@ fail=0
 check() { if "$@" >/dev/null 2>&1; then echo "  ok:   $*"; else echo "  FAIL: $*"; fail=1; fi; }
 
 echo "== static checks (no running stack needed) =="
+testbed_install_command_cases() {
+  local tmp py out
+  tmp="$(mktemp -d)"; py="$(command -v python3)"
+  mkdir -p "$tmp"/{scripts,host,php,bin}
+  cp host/aps-conecta "$tmp/host/"
+  cp scripts/{images.py,apps.py} "$tmp/scripts/"
+  cp php/containers.json "$tmp/php/"
+  cp apps.json VERSION "$tmp/"
+  sed '/^case "${1:-}" in/,$d; s|\[ -S /var/run/docker.sock \]|true|' scripts/aio-testbed.sh > "$tmp/scripts/bed.sh"
+  cat >> "$tmp/scripts/bed.sh" <<'SH'
+STATE="$CASE_ROOT/state"
+check_ram() { :; }
+cmd_up
+SH
+  cat > "$tmp/bin/docker" <<'SH'
+#!/usr/bin/env bash
+case "$1" in
+  version) echo 1.44 ;;
+  inspect) exit 1 ;;
+  run) printf 'run\n' >> "$CASE_ROOT/events"; printf '%s\0' "$@" > "$CASE_ROOT/run" ;;
+esac
+SH
+  cat > "$tmp/bin/ip" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  *addr*) echo '2: eth0 inet 203.0.113.10/24 brd 203.0.113.255 scope global eth0' ;;
+  *) echo '1.1.1.1 via 203.0.113.1 dev eth0 src 203.0.113.10' ;;
+esac
+SH
+  cat > "$tmp/bin/python3" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  *'--paso certificado-suite'*) printf 'certificate\n' >> "$CASE_ROOT/events" ;;
+  *) exec "$CASE_PYTHON" "$@" ;;
+esac
+SH
+  printf '#!/bin/sh\ncase "$*" in *ghcr.io*) printf 401;; esac\n' > "$tmp/bin/curl"
+  printf '#!/bin/sh\nexit 0\n' > "$tmp/bin/ss"
+  cp "$tmp/bin/ss" "$tmp/bin/sleep"
+  printf '#!/bin/sh\necho 1\n' > "$tmp/bin/seq"
+  chmod +x "$tmp/bin/"*
+  out="$(PATH="$tmp/bin:$PATH" CASE_ROOT="$tmp" CASE_PYTHON="$py" APS_HOME="$tmp/home" \
+    AIO_POLL=0 AIO_TEST_IMAGE=ghcr.io/aps-conecta/all-in-one:v9.9.9 \
+    bash "$tmp/scripts/bed.sh" 2>&1)" || true
+  APS_HOME="$tmp/home" APS_SUITE_TAG=v9.9.9 bash "$tmp/host/aps-conecta" run-command 203.0.113.10 > "$tmp/expected"
+  "$py" - "$tmp" <<'PY'
+import pathlib, shlex, sys
+root = pathlib.Path(sys.argv[1])
+actual = (root / 'run').read_bytes().decode().rstrip('\0').split('\0')
+actual = [arg for arg in actual if arg != '-d']
+expected = shlex.split((root / 'expected').read_text().replace('\\\n', ''))[1:]
+assert actual == expected, f'testbed run differs from installer: {actual!r} != {expected!r}'
+assert (root / 'events').read_text().splitlines() == ['certificate', 'run'], 'certificate must precede installer run'
+PY
+  local rc=$?
+  [ "$rc" = 0 ] || printf '%s\n' "$out" >&2
+  rm -rf "$tmp"
+  return "$rc"
+}
+check testbed_install_command_cases
+
 # #204: check token defaults and checkout persistence, then let ShellCheck parse
 # each run block for SC2251 (a negation that silently skips errexit).
 workflow_safety_cases() {
@@ -1070,7 +1131,6 @@ provisioning/seed.sh
 provisioning/standings.sh
 provisioning/usuarios.sh
 scripts/acquisition-gate.sh
-scripts/aio-testbed.sh
 scripts/brand-gate.sh
 scripts/cleanboot-site.sh
 scripts/comuna-package.sh
@@ -2332,7 +2392,7 @@ check cleanboot_apt_cases
 # The real office-smoke (and the env.sh it sources) runs from a fixture tree whose
 # Containers/eurooffice/Dockerfile is the real one with a synthetic pin, v1.2.3: a hard-coded
 # version reds, and so does a FROM line whose shape the parse no longer reads. A stub docker
-# answers apache's loopback posture, the connector enabled and --check with $DS_VERSION; a stub
+# answers apache's public HTTPS posture, the connector enabled and --check with $DS_VERSION; a stub
 # curl answers the healthcheck. Both the public smoke and the real container probe must
 # require a successful response containing true, even when nginx's port is open.
 office_pin_cases() {
@@ -2346,7 +2406,7 @@ office_pin_cases() {
 case "$*" in
   "ps -q"*) echo ds0 ;;
   ps*) echo aps-conecta-nextcloud ;;
-  inspect*aps-conecta-apache*) printf 'APACHE_PORT=11000\n' ;;
+  inspect*aps-conecta-apache*) printf 'APACHE_PORT=443\nNC_DOMAIN=clinica.example\n' ;;
   "inspect ds0"*) echo ghcr.io/aps-conecta/aio-eurooffice:v0.0.0-ci.0 ;;
   *"config:app:get eurooffice enabled"*) echo yes ;;
   *"eurooffice:documentserver --check"*) echo "Document server http://x/ version $DS_VERSION is successfully connected" ;;
