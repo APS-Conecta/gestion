@@ -58,7 +58,7 @@ SH
     AIO_POLL=0 AIO_TEST_IMAGE=ghcr.io/aps-conecta/all-in-one:v9.9.9 \
     bash "$tmp/scripts/bed.sh" 2>&1)" || true
   APS_HOME="$tmp/home" APS_SUITE_TAG=v9.9.9 bash "$tmp/host/aps-conecta" run-command 203.0.113.10 > "$tmp/expected"
-  "$py" - "$tmp" <<'PY'
+  "$py" - "$tmp" .github/workflows/cleanboot.yml <<'PY'
 import pathlib, shlex, sys
 root = pathlib.Path(sys.argv[1])
 actual = (root / 'run').read_bytes().decode().rstrip('\0').split('\0')
@@ -66,6 +66,13 @@ actual = [arg for arg in actual if arg != '-d']
 expected = shlex.split((root / 'expected').read_text().replace('\\\n', ''))[1:]
 assert actual == expected, f'testbed run differs from installer: {actual!r} != {expected!r}'
 assert (root / 'events').read_text().splitlines() == ['certificate', 'run'], 'certificate must precede installer run'
+workflow = pathlib.Path(sys.argv[2]).read_text()
+lifecycle = workflow.split('\n  cleanboot:', 1)[1].split('\n  cleanboot-ip:', 1)[0]
+bootstrap = lifecycle.index('- name: Build the rehearsal package, then install through the real bootstrap')
+startup = lifecycle.index('- name: Bring up the disposable AIO instance through the installer')
+assert bootstrap < startup, 'bootstrap must establish the package before suite containers exist'
+assert '/opt/aps-conecta/instalador/scripts/aio-testbed.sh up' in lifecycle[startup:], 'startup must use the verified package'
+
 PY
   local rc=$?
   [ "$rc" = 0 ] || printf '%s\n' "$out" >&2
