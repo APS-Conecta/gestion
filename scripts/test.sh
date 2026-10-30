@@ -2380,6 +2380,158 @@ CASES
 }
 check office_pin_cases
 
+# A dependency timeout cannot remove an installed feature. The first-party office
+# overview remains deliberately disabled; it is not the Euro-Office connector.
+entrypoint_timeout_cases() {
+  python3 - <<'PY'
+import pathlib, re, sys
+apps = ('eurooffice', 'files_antivirus', 'fulltextsearch',
+        'fulltextsearch_elasticsearch', 'files_fulltextsearch')
+pattern = re.compile(
+    r'^\s*(?:php\s+/var/www/html/occ|startup_occ)\s+app:disable\s+["\']?('
+    + '|'.join(apps) + r')(?=["\'\s]|$)', re.M)
+for app in apps:
+    assert pattern.search('php /var/www/html/occ app:disable ' + app)
+assert not pattern.search('php /var/www/html/occ app:disable office')
+text = '\n'.join(path.read_text() for path in pathlib.Path('Containers/nextcloud').glob('*.sh'))
+matches = pattern.findall(text)
+if matches:
+    print('entrypoint timeouts disable configured apps: ' + ', '.join(matches))
+    sys.exit(1)
+PY
+}
+check entrypoint_timeout_cases
+
+# Exercise the actual public container module with disposable command fixtures;
+# the JSON parser is real PHP, while OCC and backend probes have controlled state.
+app_startup_cases() {
+  python3 - <<'PY'
+import json, os, pathlib, shutil, subprocess, sys, tempfile
+module = pathlib.Path('Containers/nextcloud/configure-apps.sh').resolve()
+with tempfile.TemporaryDirectory() as directory:
+    root = pathlib.Path(directory)
+    commands = root / 'bin'
+    commands.mkdir()
+    state_path = root / 'state.json'
+    real_php = shutil.which('php')
+    assert real_php
+    php = commands / 'php'
+    php.write_text('#!' + sys.executable + '\n' + r'''
+import json, os, pathlib, sys
+if sys.argv[1] == '-r':
+    os.execv(os.environ['REAL_PHP'], [os.environ['REAL_PHP'], *sys.argv[1:]])
+p = pathlib.Path(os.environ['APP_STATE'])
+s = json.loads(p.read_text())
+a = sys.argv[2:]
+s['calls'].append(a)
+def save(): p.write_text(json.dumps(s))
+if s.get('fail') == a[0]:
+    save(); print('synthetic secret must never escape'); sys.exit(1)
+if a[0] == 'app:list':
+    save()
+    if s.get('malformed'):
+        print('{broken'); sys.exit()
+    print(json.dumps({key: {app: '1.0' for app in s[key]} for key in ('enabled', 'disabled')}))
+elif a[0] in ('app:enable', 'app:install'):
+    if a[0] == 'app:install':
+        assert a[1] == 'notify_push' and os.environ.get('NC_appstoreenabled') == '1'
+    if a[1] in s['disabled']: s['disabled'].remove(a[1])
+    if a[1] not in s['enabled']: s['enabled'].append(a[1])
+    save()
+elif a[0] in ('config:app:set', 'config:system:set'):
+    key = ':'.join(a[:3])
+    old = s['config'].get(key)
+    s['config'][key] = a[3:]
+    save()
+    print('Config value were not updated' if old == a[3:] else "Config value 'key' for app 'app' is now set to 'synthetic secret must never escape'")
+elif a[0] == 'config:system:get':
+    save(); print('OCA\\Eurooffice\\Preview')
+else:
+    save()
+''')
+    php.chmod(0o755)
+    for name, body in {
+        'nc': 'exit 0', 'chmod': 'exit 0',
+    }.items():
+        command = commands / name
+        command.write_text('#!/bin/bash\n' + body + '\n')
+        command.chmod(0o755)
+    digest = commands / 'sha256sum'
+    digest.write_text('#!' + sys.executable + '\n' +
+                      'import hashlib, json, os\n' +
+                      's = json.load(open(os.environ["APP_STATE"]))\n' +
+                      'system = {k:v for k,v in s["config"].items() if k.startswith("config:system:set:")}\n' +
+                      'print(hashlib.sha256(json.dumps(system, sort_keys=True).encode()).hexdigest())\n')
+    digest.chmod(0o755)
+    env = dict(os.environ, PATH=str(commands) + ':' + os.environ['PATH'],
+               APP_STATE=str(state_path), REAL_PHP=real_php,
+               EUROOFFICE_ENABLED='yes', EUROOFFICE_HOST='aps-conecta-eurooffice',
+               EUROOFFICE_SECRET='synthetic secret must never escape', NC_DOMAIN='test.invalid',
+               TALK_ENABLED='no', TALK_RECORDING_ENABLED='no', CLAMAV_ENABLED='no',
+               FULLTEXTSEARCH_ENABLED='no', HARP_ENABLED='no', REMOVE_DISABLED_APPS='no',
+               NEXTCLOUD_DATA_DIR=str(root), CLAMAV_HOST='clam', CLAMAV_BLOCKLISTED_DIRECTORIES='',
+               FULLTEXTSEARCH_HOST='search', FULLTEXTSEARCH_PORT='9200', FULLTEXTSEARCH_USER='test',
+               FULLTEXTSEARCH_PASSWORD='synthetic secret must never escape', FULLTEXTSEARCH_INDEX='test')
+    (root / 'fts-index.done').touch()
+    def reset(enabled=(), disabled=(), **extra):
+        state_path.write_text(json.dumps(dict(enabled=list(enabled), disabled=list(disabled),
+                                              config={}, calls=[], **extra)))
+    def run(target='eurooffice', success=True, extra=None):
+        result = subprocess.run(['bash', '-x', str(module), target], env=dict(env, **(extra or {})),
+                                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        assert (result.returncode == 0) == success, (result.returncode, result.stdout, result.stderr)
+        assert 'synthetic secret must never escape' not in result.stdout + result.stderr
+        return json.loads(state_path.read_text()), result.stdout
+    reset()
+    state, output = run()
+    assert 'deferred' in output
+    assert not any(call[0] in ('app:install', 'config:app:set', 'config:system:set') for call in state['calls'])
+    reset(disabled=['eurooffice'])
+    state, output = run()
+    assert ['app:enable', 'eurooffice'] in state['calls']
+    assert any(call[:3] == ['config:app:set', 'eurooffice', 'DocumentServerUrl'] and
+               call[3] == '--value=https://test.invalid/eurooffice' for call in state['calls'])
+    assert 'app:eurooffice:DocumentServerUrl -> updated' in output
+    assert output.count('system:eurooffice -> updated') == 3
+    first_config = state['config']
+    state, output = run()
+    assert state['config'] == first_config and ' -> ' not in output
+    assert sum(call == ['app:enable', 'eurooffice'] for call in state['calls']) == 1
+    for failure in ('app:list', 'app:enable', 'config:app:set', 'config:system:set'):
+        reset(disabled=['eurooffice'], fail=failure)
+        run(success=False)
+    reset(malformed=True)
+    run(success=False)
+    reset(fail='app:install')
+    run('boot', success=False)
+    reset(enabled=['notify_push'])
+    state, _ = run('boot', extra={'CLAMAV_ENABLED': 'yes', 'FULLTEXTSEARCH_ENABLED': 'yes'})
+    assert not any(call[0] == 'app:install' or call[0].endswith(':configure') for call in state['calls'])
+    assert not any(call[:2] == ['app:disable', app] for app in
+                   ('eurooffice', 'files_antivirus', 'fulltextsearch', 'fulltextsearch_elasticsearch', 'files_fulltextsearch')
+                   for call in state['calls'])
+    reset()
+    state, _ = run('boot')
+    assert [call for call in state['calls'] if call[0] == 'app:install'] == [['app:install', 'notify_push']]
+    reset(enabled=['notify_push', 'eurooffice', 'files_antivirus', 'fulltextsearch',
+                   'fulltextsearch_elasticsearch', 'files_fulltextsearch', 'app_api'])
+    state, _ = run('boot', extra={'CLAMAV_ENABLED': 'yes', 'FULLTEXTSEARCH_ENABLED': 'yes', 'HARP_ENABLED': 'yes'})
+    assert sum(call[0].endswith(':configure') for call in state['calls']) == 3
+    assert any(call[:3] == ['config:app:set', 'files_antivirus', 'av_host'] for call in state['calls'])
+    reset(enabled=['notify_push', 'eurooffice', 'fulltextsearch', 'files_fulltextsearch'])
+    state, _ = run('boot', extra={'FULLTEXTSEARCH_ENABLED': 'yes'})
+    assert not any(call[0].endswith(':configure') for call in state['calls'])
+    reset()
+    run('unknown', success=False)
+phase = pathlib.Path('provisioning/phases/14-office.sh').read_text()
+assert 'nc_exec --user www-data -- bash /configure-apps.sh eurooffice' in phase
+entrypoint = pathlib.Path('Containers/nextcloud/entrypoint.sh').read_text()
+assert 'source /configure-apps.sh' in entrypoint and 'configure_startup_apps || exit 1' in entrypoint
+assert 'app:install' not in entrypoint
+PY
+}
+check app_startup_cases
+
 # --- gate (#176): no account cap — what builds the images sets none of the one-click-instance keys -
 # Upstream enforces one-click-instance.user-limit inside createUser (web, OCS and occ alike), so the
 # key set anywhere in the images caps the staff an establishment can have. The keys may appear only

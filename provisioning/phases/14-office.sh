@@ -1,14 +1,11 @@
 # Phase 14 — Euro-Office connector configuration.  OWNER: AD-5 + the installer suite (slice 16's AIO arm).
 # Runs after 12-apps (which installs the `eurooffice` connector) and before 15-branding.
 #
-# The wizard's stack owns the document server's identity. Its entrypoint rewrites the public
-# DocumentServerUrl (https://$NC_DOMAIN/eurooffice), jwt_secret and trusted_domains ($NC_DOMAIN,
-# entrypoint :692) on every boot — and nothing else: the internal URLs are left unset, so a
-# domain install's server-to-server legs ride the public URL as well. This phase writes the
-# internal URLs for an install by IP, below, and the suite's own keys the entrypoint does not
-# write — sameTab, customizationTheme, editFormats, defFormats.
+# Share identity and public URL configuration with normal container startup. Phase 12
+# installs the signed connector after the first boot, so presence-gated startup alone
+# cannot configure a fresh install. No restart or second JWT/URL implementation.
 phase_begin "14-office" "Euro-Office connector configuration (AD-5)"
-log "AIO: document server URLs, jwt_secret and trusted_domains belong to the entrypoint"
+nc_exec --user www-data -- bash /configure-apps.sh eurooffice
 
 # --- by IP (R22): the server-to-server legs inside the wizard's network ---
 # An install by IP publishes https://<ip>/ under the installer's own CA, which the document server

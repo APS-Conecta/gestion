@@ -192,7 +192,7 @@ row 050 "the vendor logo assets are gone — img/collabora.svg, img/onlyoffice.s
   files_absent "$TREE/php/public/img/collabora.svg" "$TREE/php/public/img/onlyoffice.svg"
 
 office_overview_disabled() {  # the entrypoint kills the first-party `office` app when EuroOffice is on
-  grep -q 'occ app:disable office' "$TREE/Containers/nextcloud/entrypoint.sh"
+  grep -q 'occ app:disable office' "$TREE/Containers/nextcloud/configure-apps.sh"
 }
 
 row 100 "the first-party 'office' overview app is disabled whenever the suite's office app is EuroOffice — NC34 ships it enabled by default, unwired to EuroOffice (no editor-url), a name-colliding dead surface; the entrypoint owns the kill so every install and reboot re-asserts it (the 2026-09-23 owner flip of the 2026-07-31 'not a duplicate' verdict)" \
@@ -818,7 +818,7 @@ row 240 'the suite containers are named aps-conecta-* — the 14 in containers.j
 container_name_patterns() {  # 240: what matches containers by pattern follows the new names — the
   # entrypoint's office and Talk detection (a miss reads the suite's own host as external), the schema the
   # validator holds every JSON to, and the log route's three guards, which still let the wizard's own log in
-  local e="$TREE/Containers/nextcloud/entrypoint.sh" sch="$TREE/php/containers-schema.json" fail=0 x
+  local e="$TREE/Containers/nextcloud/configure-apps.sh" sch="$TREE/php/containers-schema.json" fail=0 x
   local run="$TREE/php/tests/run.sh"
   for x in "$e" "$sch" "$TREE/php/public/index.php" "$TREE/php/public/log-load.js" \
            "$TREE/php/src/Controller/DockerController.php" "$run"; do

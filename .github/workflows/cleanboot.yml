@@ -1130,6 +1130,44 @@ jobs:
           printf '%s\n' "$out"
           [ "$rc" -eq 0 ] && grep -q '^REVALIDACIÓN: PASS' <<<"$out" \
             || { echo "FAIL: revalidate did not pass on the clinic's front" >&2; exit 1; }
+      # #147: a dependency outage must not disable an installed connector. Waiting for
+      # fresh Nextcloud health proves its entrypoint finished the bounded wait, so an
+      # enabled check cannot pass early while startup is still waiting for the server.
+      - name: A late DocumentServer keeps its app enabled and converges on the next start
+        run: |
+          set -euo pipefail
+          cd /opt/aps-conecta/instalador && source scripts/env.sh
+          wait_healthy() {
+            local container="$1"
+            for attempt in $(seq 120); do
+              if [ "$(docker inspect "$container" --format '{{.State.Health.Status}}' 2>/dev/null)" = healthy ]; then
+                return 0
+              fi
+              sleep 3
+            done
+            echo "FAIL: $container did not become healthy within six minutes" >&2
+            return 1
+          }
+          [ "$(occ config:app:get eurooffice enabled)" = yes ]
+          marker=https://office-wait.invalid/deferred
+          occ config:app:set eurooffice DocumentServerUrl --value "$marker" >/dev/null
+          trap 'docker start aps-conecta-eurooffice >/dev/null 2>&1 || true' EXIT
+          docker stop --time 10 aps-conecta-eurooffice >/dev/null
+          docker restart aps-conecta-nextcloud >/dev/null
+          wait_healthy aps-conecta-nextcloud
+          [ "$(occ config:app:get eurooffice enabled)" = yes ] \
+            || { echo "FAIL: a late DocumentServer disabled the installed eurooffice connector" >&2; exit 1; }
+          [ "$(occ config:app:get eurooffice DocumentServerUrl)" = "$marker" ] \
+            || { echo "FAIL: an unavailable DocumentServer was reported as configured" >&2; exit 1; }
+          docker start aps-conecta-eurooffice >/dev/null
+          wait_healthy aps-conecta-eurooffice
+          docker restart aps-conecta-nextcloud >/dev/null
+          wait_healthy aps-conecta-nextcloud
+          [ "$(occ config:app:get eurooffice enabled)" = yes ]
+          [ "$(occ config:app:get eurooffice DocumentServerUrl)" = "https://$SUITE_IP/eurooffice" ] \
+            || { echo "FAIL: the next start did not restore the office URL after recovery" >&2; exit 1; }
+          occ eurooffice:documentserver --check
+          trap - EXIT
       # Territorio's map is OpenStreetMap's own tile service, loaded by the browser (ADR-0021 there):
       # phase 16 provisions the comuna the app derives its opening extent from, and no tile_url.
       - name: Territorio carries the site's comuna and no tile_url
