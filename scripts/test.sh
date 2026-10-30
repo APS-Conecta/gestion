@@ -20,8 +20,25 @@ import json, pathlib, re, subprocess, sys, textwrap
 def policy(text, name):
     errors = []
     lines = text.splitlines()
-    top = re.search(r'^permissions:\s*\n((?:[ \t]+[^\n]*\n|\n)*)', text, re.M)
-    permissions = dict(re.findall(r'^  ([\w-]+):\s+(read|write|none)\b', top[1], re.M)) if top else {}
+    def block_after(start, parent_indent):
+        block = []
+        for following in lines[start + 1:]:
+            if following.strip() and not following.lstrip().startswith('#') and len(following) - len(following.lstrip()) <= parent_indent:
+                break
+            block.append(following)
+        return block
+
+    permissions = {}
+    top = next((i for i, line in enumerate(lines) if line.startswith('permissions:')), None)
+    if top is not None and re.fullmatch(r'permissions:\s*(?:#.*)?', lines[top]):
+        for entry in block_after(top, 0):
+            if not entry.strip() or entry.lstrip().startswith('#'):
+                continue
+            match = re.fullmatch(r"  ([\w-]+):\s*(read|write|none|'(?:read|write|none)'|\"(?:read|write|none)\")(?:\s+#.*)?\s*", entry)
+            if not match:
+                errors.append("unparsed workflow permission entry: " + entry.strip())
+            else:
+                permissions[match[1]] = match[2].strip("\"'")
     # A reusable publisher must advertise its caller's package-write ceiling.
     allowed_write = {"packages"} if name == "images.yml" else set()
     if permissions.get("contents") != "read" or any(
@@ -31,13 +48,18 @@ def policy(text, name):
     for index, line in enumerate(lines):
         if re.match(r'^\s+(?:- )?uses: actions/checkout@', line):
             indent = len(line) - len(line.lstrip()) + (2 if line.lstrip().startswith('- ') else 0)
-            block = []
-            for following in lines[index + 1:]:
-                if following.strip() and not following.lstrip().startswith('#') and len(following) - len(following.lstrip()) < indent:
-                    break
-                block.append(following)
-            if not re.search(r'^\s+persist-credentials: false(?:\s|$)', '\n'.join(block), re.M):
-                errors.append(f"line {index + 1}: checkout must set persist-credentials: false")
+            step = block_after(index, indent - 1)
+            with_offset = next((i for i, item in enumerate(step)
+                                if re.fullmatch(' ' * indent + r'with:\s*(?:#.*)?', item)), None)
+            credentials = []
+            if with_offset is not None:
+                for item in step[with_offset + 1:]:
+                    if item.strip() and not item.lstrip().startswith('#') and len(item) - len(item.lstrip()) <= indent:
+                        break
+                    if re.fullmatch(' ' * (indent + 2) + r'persist-credentials: (?:false|"false"|\'false\')(?:\s+#.*)?', item):
+                        credentials.append(item)
+            if len(credentials) != 1:
+                errors.append(f"line {index + 1}: checkout must set with.persist-credentials: false")
         run = re.match(r'^(\s+)(?:- )?run:\s*(.*)$', line)
         if not run:
             continue
@@ -82,6 +104,8 @@ assert not policy(fixture, 'fixture.yml')
 for bad in [fixture.replace('permissions:\n  contents: read\n', ''),
             fixture.replace('contents: read', 'contents: write'),
             fixture.replace('contents: read', 'contents: read\n  issues: write'),
+            fixture.replace('contents: read', 'contents: read\n  issues: \"write\"'),
+            fixture.replace('with:\n          persist-credentials: false', 'env:\n          persist-credentials: false'),
             fixture.replace('persist-credentials: false', 'persist-credentials: true'),
             fixture.replace('          persist-credentials: false\n', ''),
             fixture.replace('echo checked', '! grep pattern file\n          echo checked')]:
@@ -230,7 +254,7 @@ os.execv(os.environ['REAL_GREP'], [os.environ['REAL_GREP'], *sys.argv[1:]])
     for pattern in ['ghcr.io/nextcloud-releases', 'office-collabora|office-onlyoffice',
                     'github.com/nextcloud/all-in-one/releases|github.com/nextcloud-releases',
                     'theme-toggle|theme-icon', r'\[data-theme="dark"\]',
-                    'value="Log out"', 'No se encontró ningún canal|territorio-card|pendiente de empaquetado|aps-conecta provision']:
+                    'value="Log out"', 'nextcloud-aio-[a-z0-9-]*', 'No se encontró ningún canal|territorio-card|pendiente de empaquetado|aps-conecta provision']:
         result = subprocess.run(['bash', 'scripts/brand-gate.sh', '.'],
                                 env=dict(env, GREP_ERROR_PATTERN=pattern), text=True,
                                 capture_output=True, timeout=30)
