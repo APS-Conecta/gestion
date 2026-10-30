@@ -2762,7 +2762,7 @@ SHIM
       'case "$step_out" in *"✓ python3, curl, ogr2ogr y signify presentes"*"✓ Usuario operador en el grupo docker"*"✓ Memoria del sistema ajustada (vm.overcommit_memory = 1)"*"FAIL=0") ;; *) false;; esac && ! grep -qE "^(apt-get|usermod|sysctl -p|curl|systemctl start)" "$tmp/mut.log"'
     rm -f "$tshim/python3" "$tshim/ogr2ogr" "$tshim/signify"
     : > "$tmp/mut.log"
-    step_out="$(PATH="$tshim:$tmp/minbin"; OPTIONAL_VERIFIER_UNAVAILABLE=1; FAIL=0; SUDO_USER=operador step_preparar; echo "FAIL=$FAIL")"
+    step_out="$(PATH="$tshim:$tmp/minbin"; export OPTIONAL_VERIFIER_UNAVAILABLE=1; FAIL=0; SUDO_USER=operador step_preparar; echo "FAIL=$FAIL")"
     check "preparar: an unavailable optional verifier retains required tools and reports the Ubuntu repository fix without a false signature claim" \
       '[ -x "$tshim/python3" ] && [ -x "$tshim/ogr2ogr" ] && [ ! -e "$tshim/signify" ] \
        && case "$step_out" in *"✓ Instalado: python3 ogr2ogr"*"Verificación de firma pendiente"*"add-apt-repository universe"*"FAIL=0") ;; *) false;; esac'
