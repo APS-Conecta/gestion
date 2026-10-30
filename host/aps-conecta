@@ -1528,9 +1528,14 @@ aio_progress_begin() {
 }
 
 aio_states() {
-  local -a services
-  read -ra services <<< "$AIO_SET"
-  timeout 15 docker inspect -f '{{.Name}} {{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${services[@]}" 2>/dev/null || true
+  local inventory service
+  local -a services=()
+  inventory="$(timeout 15 docker ps -a --format '{{.Names}}' 2>/dev/null)" || return 1
+  for service in $AIO_SET; do
+    case $'\n'"$inventory"$'\n' in *$'\n'"$service"$'\n'*) services+=("$service") ;; esac
+  done
+  [ "${#services[@]}" -gt 0 ] || return 0
+  timeout 15 docker inspect -f '{{.Name}} {{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${services[@]}" 2>/dev/null
 }
 
 aio_progressing() {  # Optional stream file; repeated states and heartbeats never renew the budget.
@@ -1557,12 +1562,12 @@ aio_progressing() {  # Optional stream file; repeated states and heartbeats neve
 
 aio_start() {  # Optional start flags; install and post-backup restart share one result contract.
   aio_select_services || return 1
-  local f="$AIO_STATE/inicio.code" body="$AIO_STATE/inicio.html" pid n seen="" code result baseline transport
+  local f="$AIO_STATE/inicio.code" body="$AIO_STATE/inicio.html" pid n seen="" code result baseline baseline_known current transport
   info "iniciando la suite (la operación puede tardar varios minutos)"
   while :; do
     ( umask 077 && : > "$f" && : > "$body" )
     chmod 600 "$f" "$body"
-    baseline="$(aio_states)"
+    baseline_known=0; baseline="$(aio_states)" && baseline_known=1
     aio_progress_begin
     # Curl itself is the job: killing it stops the client, while PHP may still finish the operation.
     curl -sk "${AIO_SEC[@]}" -b "$AIO_STATE/cookies" -c "$AIO_STATE/cookies" -o "$body" -w '%{http_code}' --no-buffer --connect-timeout 15 \
@@ -1590,7 +1595,8 @@ aio_start() {  # Optional start flags; install and post-backup restart share one
       bad "la conexión con el asistente se interrumpió (curl $transport)" "el inicio puede continuar; revise el asistente antes de reintentar: docker logs nextcloud-aio-mastercontainer"
       return 1
     fi
-    if [ "$code" = 302 ] && [ -z "$(cat "$body")" ] && [ "$(aio_states)" = "$baseline" ]; then
+    if [ "$code" = 302 ] && [ -z "$(cat "$body")" ] && [ "$baseline_known" = 1 ] \
+      && current="$(aio_states)" && [ "$current" = "$baseline" ]; then
       # AuthMiddleware returned before calling the handler; reconcile state before replaying.
       aio_relogin || return 1
       continue
@@ -3945,7 +3951,7 @@ EOF
 #!/usr/bin/env bash
 printf 'docker %s\n' "\$*" >> "$act/docker.log"
 case "\$1 \$2" in
-  "ps --format")
+  "ps --format"|"ps -a")
     [ -e "$act/suite-caida" ] && exit 0
     printf '%s\n' $AIO_SET ;;
   "inspect aps-conecta-borgbackup")
