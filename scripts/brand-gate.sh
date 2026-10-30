@@ -36,7 +36,7 @@
 # set — the root docs, the helm chart, manual-install and the root compose.yaml — so the bare
 # name now lives only where the fork keeps it on purpose): the build-time fetch upstream keeps
 # (the GPG-verified server tarball in the nextcloud Dockerfile, D7), php/README.md's dev example, and the fork's own tooling (office-smoke's DS probe,
-# retag's swap source, ci.yml's red-proof injection). The count uses the BARE pattern on purpose.
+# images.py's registry rewrite, ci.yml's red-proof injection). The count uses the BARE pattern on purpose.
 # None is install-time shipped surface: the docs are slice 23's fork-declaration territory, the
 # harness image is slice 18's, containers.twig's changelog link was 060's operator-visible
 # territory (repointed to the fork's releases — the row landed with slice 11 and measures it),
