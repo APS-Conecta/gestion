@@ -481,7 +481,7 @@ PY
   printf 'yes\n' > "$SHIM_STATE/occ.calendar.enabled"
   t "manifest: the walk reads every row" 0 '[ "$(manifest_rows | wc -l)" -ge 12 ]'
   t "manifest: every row answers its source" 0 'manifest_rows | grep -qxP "\w+\t(own|fork|store)\t[01]" || false'
-  t "apps walk: a missing signed Talk release is a failure verdict" 0 'check_apps "$VMA_APPS" 10.0.0.9 "$VMA_WORK/ca.crt" 2>/dev/null | grep "spreed" >/dev/null'
+  t "apps walk: a missing signed Talk release is a failure verdict" 0 'check_apps "$VMA_APPS" 10.0.0.9 "$VMA_WORK/ca.crt" 2>/dev/null | grep "^  ✗ app spreed — " >/dev/null'
   t "status.php: green through the CA" 0 'check_status_php 10.0.0.9 "$VMA_WORK/ca.crt"'
   t "user login: green on the OCS body" 0 'check_user_login 10.0.0.9 "$VMA_WORK/ca.crt" ana.prueba CAFE-secret'
   printf '{"ocs":{"data":{"id":"otra.persona"}}}\n' > "$SHIM_STATE/user.body"

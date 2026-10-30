@@ -602,31 +602,14 @@ input[type="checkbox"]:disabled:not(:checked) + label {
     align-items: stretch;
 }
 
-.office-radio {
-    display: none;
-}
-
 .office-card {
     position: relative;
     border: 2px solid var(--color-border-maxcontrast);
     border-radius: var(--border-radius-large);
     padding: 20px;
-    cursor: pointer;
-    transition: all 0.3s ease;
     background-color: var(--color-main-background);
     display: flex;
     flex-direction: column;
-}
-
-.office-card-disabled {
-    opacity: 50%;
-    pointer-events: none;
-}
-
-.office-card:hover {
-    border-color: var(--color-primary-element);
-    box-shadow: 0 4px 12px rgba(127, 33, 254, 0.15);
-    transform: translateY(-2px);
 }
 
 #office-eurooffice {
@@ -656,16 +639,7 @@ input[type="checkbox"]:disabled:not(:checked) + label {
     opacity: 0.7;
 }
 
-.office-checkmark {
-    flex-shrink: 0;
-    display: none;
-}
-
-#office-eurooffice .office-checkmark {
-    display: block;
-}
-
-.office-features {
+#office-eurooffice .office-features {
     list-style: none;
     padding: 0;
     margin: 0;

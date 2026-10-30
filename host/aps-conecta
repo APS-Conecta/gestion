@@ -3367,7 +3367,7 @@ EOF
   check "actualizar: the backup is awaited — the POST answers once borg STARTS, so borg's own state is polled until it exits, and the restart comes only after (A-036)" \
     '! grep -q "start con borg en curso" "$act/aio.log"'
   check "actualizar: the restart waits for every container healthy — eurooffice late — and apache listening: its healthcheck exits 0 while Nextcloud is down, so the probe runs it without that shortcut (A-037)" \
-    '[ "$(grep -c "^docker inspect -f {{.Name}} {{if .State.Health}}{{.State.Health.Status}}{{end}} aps-conecta-nextcloud aps-conecta-apache" "$act/docker.log")" -eq 4 ] \
+    '[ "$(grep -c "^docker inspect -f {{.Name}} {{if .State.Health}}{{.State.Health.Status}}{{end}} $AIO_SET" "$act/docker.log")" -eq 4 ] \
       && [ "$(grep -c "^docker exec aps-conecta-apache" "$act/docker.log")" -eq 4 ]'
 
   # #172: the two rows the new lock dropped — viejo still installed, ausente already gone

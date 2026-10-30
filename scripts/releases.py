@@ -1084,7 +1084,7 @@ def selftest():
         candado_sin_talk = os.path.join(tmp, "sin-talk-lock.json")
         write_lock(candado_sin_talk, {"nextcloud": "34.0.4", "apps": {
             "spreed": {"source": "fork", "repo": "APS-Conecta/spreed", "tag": "v24.0.6",
-                       "version": "24.0.6", "sha256": "d" * 64}}})
+                       "version": "24.0.6", "sha256": sha256_file(store_file("spreed", "v24.0.6"))}}})
         nuevo_sin_talk = os.path.join(tmp, "sin-talk-lock.next.json")
         run = subprocess.run([sys.executable, os.path.abspath(__file__), "actualizar",
                               "--opciones", os.path.join(tmp, "prod-sin-talk"),
