@@ -196,41 +196,43 @@ readonly class DockerController {
 
     public function StartContainer(Request $request, Response $response, array $args) : Response
     {
-        $uri = $request->getUri();
-        $host = $uri->getHost();
-        $port = $uri->getPort();
-        $path = $request->getParsedBody()['base_path'] ?? '';
-        if ($port === 8000) {
-            error_log('The AIO_URL-port was discovered to be 8000 which is not expected. It is now set to 443.');
-            $port = 443;
-        }
-
-        $this->configurationManager->startTransaction();
-        // set AIO_URL
-        $this->configurationManager->aioUrl = $host . ':' . (string)$port . $path;
-        // set wasStartButtonClicked
-        $this->configurationManager->wasStartButtonClicked = true;
-        $this->configurationManager->commitTransaction();
-        
-        // Do not pull container images in case 'bypass_container_update' is set via url params
-        // Needed for local testing
-        $pullImage = !isset($request->getParsedBody()['bypass_container_update']);
-        if ($pullImage === false) {
-            error_log('WARNING: Not pulling container images. Instead, using local ones.');
-        }
-        
-        // Get streaming response start and closure
         $nonbufResp = $this->startStreamingResponse($response);
         $addToStreamingResponseBody = $this->getAddToStreamingResponseBody($nonbufResp);
-        
-        // Start container
-        $this->startTopContainer($pullImage, $addToStreamingResponseBody);
+        $status = 'ok';
+        $message = '';
+        try {
+            $uri = $request->getUri();
+            $host = $uri->getHost();
+            $port = $uri->getPort();
+            $path = $request->getParsedBody()['base_path'] ?? '';
+            if ($port === 8000) {
+                error_log('The AIO_URL-port was discovered to be 8000 which is not expected. It is now set to 443.');
+                $port = 443;
+            }
+    
+            $this->configurationManager->startTransaction();
+            // set AIO_URL
+            $this->configurationManager->aioUrl = $host . ':' . (string)$port . $path;
+            // set wasStartButtonClicked
+            $this->configurationManager->wasStartButtonClicked = true;
+            $this->configurationManager->commitTransaction();
+            
+            // Do not pull container images in case 'bypass_container_update' is set via url params
+            // Needed for local testing
+            $pullImage = !isset($request->getParsedBody()['bypass_container_update']);
+            if ($pullImage === false) {
+                error_log('WARNING: Not pulling container images. Instead, using local ones.');
+            }
 
-        // Clear apcu cache in order to check if container updates are available
-        // Temporarily disabled as it leads much faster to docker rate limits
-        // apcu_clear_cache();
-
-        // End streaming response
+            $this->startTopContainer($pullImage, $addToStreamingResponseBody);
+        } catch (\Throwable $e) {
+            $status = 'error';
+            $message = preg_replace('#(https?://)[^\s/<>]*@#i', '$1[redacted]@', $e->getMessage()) ?? 'Container start failed';
+            $addToStreamingResponseBody($message);
+            error_log($message);
+        }
+        $result = json_encode(['status' => $status, 'message' => $message], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR);
+        $nonbufResp->getBody()->write("\n<!-- aps-start-result:" . $result . " -->\n");
         $this->finalizeStreamingResponse($nonbufResp);
         return $nonbufResp;
     }

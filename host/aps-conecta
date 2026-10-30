@@ -1498,10 +1498,10 @@ aio_post() {  # PATH --data-urlencode K=V… — the wizard's configuration API 
 aio_start() {  # POST /api/docker/start pulls, creates and starts the whole set INSIDE the request
   aio_select_services || return 1
   # (up to 30 min on a slow link): it runs in the background while the console counts containers
-  local f="$AIO_STATE/inicio.code" pid n seen="" code
+  local f="$AIO_STATE/inicio.code" body="$AIO_STATE/inicio.html" pid n seen="" code result
   info "iniciando la suite (descarga de imágenes: varios minutos)"
   # curl itself is the background job (not a subshell around it), so the trap's kill reaches it
-  curl -sk "${AIO_SEC[@]}" -b "$AIO_STATE/cookies" -c "$AIO_STATE/cookies" -o /dev/null -w '%{http_code}' --max-time 1800 \
+  curl -sk "${AIO_SEC[@]}" -b "$AIO_STATE/cookies" -c "$AIO_STATE/cookies" -o "$body" -w '%{http_code}' --max-time 1800 \
     "${AIO_CSRF[@]}" "$AIO_URL/api/docker/start" > "$f" 2>/dev/null &
   pid=$!
   trap 'kill "$pid" 2>/dev/null; exit 130' INT TERM
@@ -1514,11 +1514,34 @@ aio_start() {  # POST /api/docker/start pulls, creates and starts the whole set 
   trap - INT TERM
   code="$(cat "$f" 2>/dev/null)"
   case "$code" in
-    200|201|302) ok "Suite iniciada" ;;
+    200|201) ;;
     *) bad "el asistente no pudo iniciar la suite (HTTP ${code:-sin respuesta})" \
          "revise la red y las imágenes: docker ps -a --filter name=^aps-conecta-"
        return 1 ;;
   esac
+  result="$(python3 - "$body" <<'PYRESULT'
+import json, pathlib, re, sys
+text = pathlib.Path(sys.argv[1]).read_text(errors="replace")
+markers = re.findall(r'<!-- aps-start-result:(.*?) -->', text)
+try:
+    if len(markers) != 1:
+        raise ValueError("missing result")
+    result = json.loads(markers[0])
+    if result["status"] not in ("ok", "error") or not isinstance(result["message"], str):
+        raise ValueError("invalid result")
+except (ValueError, KeyError, TypeError):
+    print("el asistente no entregó un resultado final válido")
+    sys.exit(1)
+if result["status"] == "error":
+    print(" ".join(result["message"].split())[:400] or "el inicio falló sin detalle")
+    sys.exit(1)
+PYRESULT
+)" || {
+    printf 'El asistente no inició la suite: %s.\n' "$result" > "$AIO_STATE/motivo"
+    bad "el asistente no inició la suite: $result" "revise el asistente antes de volver a iniciar; docker logs nextcloud-aio-mastercontainer"
+    return 1
+  }
+  ok "Suite iniciada"
 }
 
 aio_pendientes() {  # the included services not yet ready, as «nombre (estado)»: each one healthy, and apache

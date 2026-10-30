@@ -69,6 +69,9 @@ environment file; the wizard forwards the normalized proxy to Nextcloud, whose e
 proxy configuration masks credentials in ordinary configuration listings. Docker-socket
 requests stay direct; bypasses include the inspected suite network and service inventory (#192).
 
+The wizard's complete start path catches failures and finishes its existing HTML stream
+with an explicit result. The host requires that result before reporting success (#193).
+
 **What the operator sees.** The wizard presents itself as «APS Conecta Gestión AIO — Instalador»;
 an already-installed instance greets with «APS Conecta Gestión AIO ya está instalado»; once the
 containers run, the page hands back to the web installer with «Suite en marcha». These are the shipped bytes
