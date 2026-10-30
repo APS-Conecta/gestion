@@ -5811,10 +5811,10 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   and "inspect" not in log
                   and all(any(sealed_now[u][0] in l for l in oc)
                           for u in ("maria.perez", "elena.diaz")))
-            check("generar: the AIO arm — no document-server URL writes, the suite's own keys still set",
+            check("generar: the AIO arm shares container Office configuration without duplicate URL writes",
                   "DocumentServerUrl" not in log and "sameTab" in log
                   and "trusted_domains" not in log
-                  and "belong to the entrypoint" in body["salida"])
+                  and "bash /configure-apps.sh eurooffice" in log)
             check("generar: the password policy's breach check is off — no password, nor its hash prefix, leaves the server (R28)",
                   "config:app:set password_policy enforceHaveIBeenPwned --value=0" in log)
             check("generar: the AIO arm — Talk off in the suite: phase 12 asks the suite and installs no spreed (R29)",
