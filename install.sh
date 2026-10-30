@@ -121,6 +121,11 @@ main() {
     || { rm -rf "$tmp"; die "el paquete no trae la suite (falta instalador/host/aps-conecta) — repórtelo"; }
   [ "$(head -1 "$tmp/instalador/VERSION" 2>/dev/null)" = "$tag" ] \
     || { rm -rf "$tmp"; die "la versión dentro del paquete no es $tag — la versión está inconsistente; repórtelo"; }
+  # Inspect the old installation state before promotion can hide a missing bundle.
+  if ! APS_HOME="$APS_HOME" bash "$tmp/instalador/host/aps-conecta" guard-existing-installation; then
+    rm -rf "$tmp"
+    die "la revisión de la instalación existente detuvo el arranque; conserve sus contenedores y datos y corrija lo indicado arriba"
+  fi
   ( umask 022 && mv "$tmp/instalador" "$DEST" ) \
     || { rm -rf "$tmp"; die "no pude instalar la suite en $DEST"; }
   rm -rf "$tmp"
@@ -135,7 +140,8 @@ main() {
 # and a failing main dies inside the subshell, never the test run (|| rc=$? keeps errexit out
 # of the verdict).
 selftest() {
-  local n=0 tmp tshim out rc pkgsha
+  local n=0 tmp tshim out rc pkgsha source_root
+  source_root="$(cd "${1:-$(dirname "$0")}" && pwd)"
   tmp="$(mktemp -d)"; tshim="$tmp/bin"; mkdir -p "$tshim"
   check() { n=$((n + 1)); if eval "$2"; then :; else echo "  FAIL: $1" >&2; FAILED=$((FAILED + 1)); fi; }
   FAILED=0
@@ -145,7 +151,7 @@ selftest() {
   # for it installed; run_main routes every main() call through this PATH, and the arms
   # control signify solely by the shim's presence on $tshim)
   imin="$tmp/imin"; mkdir -p "$imin"
-  for c in bash env cp mkdir rm mv mktemp tar gzip sha256sum head cut cat sed grep; do
+  for c in bash env cp mkdir rm mv mktemp tar gzip sha256sum head cut cat sed grep dirname readlink; do
     ln -sf "$(command -v "$c")" "$imin/$c"
   done
 
@@ -261,7 +267,26 @@ EOF
   check "truncation guard: main \"\$@\" is the file's last line (a half download cannot half-run)" \
     '[ "$(tail -1 "$0")" = "main \"\$@\"" ]'
   check "pubkey shape: installer.pub is two lines and its key line is a real signify key's shape (base64, 42 bytes, no padding)" \
-    '[ "$(wc -l < "$(dirname "$0")/installer.pub")" = 2 ] && sed -n 2p "$(dirname "$0")/installer.pub" | grep -qE "^RW[A-Za-z0-9+/]{54}$"'
+    '[ "$(wc -l < "$source_root/installer.pub")" = 2 ] && sed -n 2p "$source_root/installer.pub" | grep -qE "^RW[A-Za-z0-9+/]{54}$"'
+
+  cp "$source_root/host/aps-conecta" "$tmp/fx/instalador/host/aps-conecta"
+  tar -czf "$tmp/fx/fixture.tar.gz" -C "$tmp/fx" instalador
+  pkgsha="$(sha256sum "$tmp/fx/fixture.tar.gz" | cut -d' ' -f1)"
+  printf '%s  apsconecta-v9.8.7.tar.gz\n' "$pkgsha" > "$tmp/fx/SHA256SUMS"
+  cat > "$tshim/docker" <<'SH'
+#!/usr/bin/env bash
+if [ "$1" = ps ]; then echo nextcloud-aio-mastercontainer; fi
+SH
+  chmod +x "$tshim/docker"
+  run_main "$tmp/orphan" v9.8.7 "$pkgsha"
+  check "orphan: the real staged host guard refuses before bootstrap can create a valid-looking installation folder" \
+    '[ "$rc" -ne 0 ] && [ ! -e "$tmp/orphan/instalador" ] && case "$out" in *"instalación incompleta"*) ;; *) false;; esac'
+
+  if [ -z "${1:-}" ]; then
+    cp "$0" "$tmp/install.sh"
+    check "standalone: generated asset runs the same tests using the verified source fixtures" \
+      'bash "$tmp/install.sh" --self-test "$source_root" >/dev/null 2>&1'
+  fi
 
   rm -rf "$tmp"
   echo
@@ -270,5 +295,5 @@ EOF
   return 0
 }
 
-if [ "${1:-}" = "--self-test" ]; then selftest; exit $?; fi
+if [ "${1:-}" = "--self-test" ]; then selftest "${2:-}"; exit $?; fi
 main "$@"

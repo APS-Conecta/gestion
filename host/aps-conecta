@@ -81,7 +81,7 @@ PROV_PORTS="8081 8082 8083"        # the Provisionador's fallback chain (slice 1
 CONSOLE_FD=2   # die's stream: the silent install sends stderr to its log and keeps die on the console
 die() { echo "✗ $*" >&"$CONSOLE_FD"; exit 1; }
 ok()  { printf '✓ %s\n' "$*"; }
-bad() { printf '✗ %s\n' "$1"; printf '  → %s\n' "$2"; FAIL=1; }
+bad() { printf '✗ %s\n' "$1"; printf '  → %s\n' "$2"; MOTIVO="${MOTIVO:-$1. $2}"; FAIL=1; }
 info(){ printf '· %s\n' "$*"; }
 FAIL=0
 
@@ -357,6 +357,7 @@ port_free() {  # PORT [tcp|udp]
 
 check_ports() {
   local spec p protocol flag holder published
+  if ! check_existing_installation; then return 1; fi
   published="$(docker ps --filter name=^aps-conecta- --filter name=^nextcloud-aio-mastercontainer$ --format '{{.Ports}}' 2>/dev/null || true)"
   for spec in $SUITE_PORTS; do
     protocol="${spec%%:*}"; p="${spec#*:}"; flag=-ltnp
@@ -432,12 +433,71 @@ check_dns() {  # resolves the domain — «--dominio» first, else the SITE reco
   fi
 }
 
-check_arch() {  # x86-64 is the clinic posture; arm64 publishes exist, so it passes with evidence
-  case "$(uname -m)" in
+check_arch() {
+  local arch; arch="$(uname -m)"
+  case "$arch" in
     x86_64) ok "x86-64" ;;
-    aarch64) ok "arm64 (las imágenes -arm64 de la suite existen — la mirada clínica es x86-64)" ;;
-    *) bad "arquitectura $(uname -m) no soportada" "la suite publica x86-64 y arm64 únicamente" ;;
+    *) bad "arquitectura $arch no soportada" "use un servidor x86-64: las imágenes de la suite se publican para esa arquitectura" ;;
   esac
+}
+
+docker_data_root() {
+  if ! command -v docker >/dev/null 2>&1; then
+    if [ -d /var/lib/docker ]; then printf '/var/lib/docker\n'; else printf '/\n'; fi
+    return 0
+  fi
+  local dir
+  dir="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null)" || return 1
+  [[ "$dir" == /* && "$dir" != *$'\n'* ]] || return 1
+  printf '%s\n' "$dir"
+}
+
+check_docker_installation() {
+  command -v docker >/dev/null 2>&1 || return 0
+  local dir binary
+  if ! dir="$(docker_data_root)"; then
+    bad "no se pudo leer el directorio de datos de Docker" "revise: sudo docker info --format '{{.DockerRootDir}}'"
+    return 0
+  fi
+  binary="$(command -v docker)"
+  case "$binary $dir" in
+    /snap/*|*' /var/snap/'*|*' /snap/'*)
+      bad "Docker instalado mediante Snap no es compatible" "respalde sus datos y sustituya Snap por Docker Engine desde su repositorio oficial; guía: https://docs.docker.com/engine/install/" ;;
+  esac
+}
+
+check_fuse() {
+  if [ "$(LC_ALL=C stat -L -c %F -- /dev/fuse 2>/dev/null)" = 'character special file' ]; then
+    ok "/dev/fuse disponible para los respaldos"
+  else
+    bad "falta el dispositivo /dev/fuse para los respaldos" "ejecute sudo modprobe fuse; compruebe /dev/fuse en el anfitrión antes de instalar"
+  fi
+}
+
+check_existing_installation() {
+  command -v docker >/dev/null 2>&1 || return 0
+  if [ -f "$APS_HOME/instalador/VERSION" ] && [ -f "$APS_HOME/instalador/host/aps-conecta" ]; then return 0; fi
+  local names name
+  if ! names="$(docker ps -a --format '{{.Names}}' 2>/dev/null)"; then
+    bad "no se pudo revisar la instalación existente" "revise el servicio Docker y sus permisos antes de instalar"
+    return 1
+  fi
+  while IFS= read -r name; do
+    case "$name" in
+      nextcloud-aio-mastercontainer|aps-conecta-*)
+        bad "instalación incompleta: hay contenedores de APS sin $APS_HOME/instalador" "recupere la carpeta de la instalación y sus respaldos antes de continuar; conserve los contenedores y volúmenes existentes"
+        return 1 ;;
+    esac
+  done <<<"$names"
+  return 0
+}
+
+check_host_installation() {
+  check_arch
+  check_fuse
+  check_docker_installation
+  check_disk
+  check_ports
 }
 
 check_prov_ports() {  # INFO + the identity probe (R33): /api/salud answers the web installer's
@@ -459,6 +519,16 @@ check_prov_ports() {  # INFO + the identity probe (R33): /api/salud answers the 
   return 0
 }
 
+suite_subnets() {
+  local subnets
+  subnets="$(docker network inspect nextcloud-aio --format '{{range .IPAM.Config}}{{println .Subnet}}{{end}}' 2>/dev/null)" || return 1
+  [ -n "$subnets" ] || return 1
+  printf '%s\n' "$subnets" | python3 -c 'import ipaddress, sys
+rows = [str(ipaddress.ip_network(line.strip())) for line in sys.stdin if line.strip()]
+if not rows: sys.exit(1)
+print("\n".join(dict.fromkeys(rows)))' 2>/dev/null
+}
+
 check_hairpin() {  # the D10 leg (upstream #8433): the HOST curls its own public domain — the exact
   # failing hop (hairpin NAT). Runs only when the stack is up; preflight on a fresh host says so.
   local d; d="${PREFLIGHT_DOMAIN:-$(site_domain || true)}"
@@ -470,8 +540,17 @@ check_hairpin() {  # the D10 leg (upstream #8433): the HOST curls its own public
   if curl -sk --max-time 10 "https://$d/status.php" >/dev/null 2>&1; then
     ok "https://$d/status.php responde desde el propio servidor (se alcanza por su dominio)"
   else
+    local subnets subnet firewall=""
+    if subnets="$(suite_subnets)"; then
+      while IFS= read -r subnet; do
+        firewall="${firewall:+$firewall; }ufw route allow proto tcp from $subnet to any port 443"
+      done <<<"$subnets"
+      firewall="si prefiere permitir el reflejo del NAT: «$firewall»"
+    else
+      firewall="la subred de la suite no está disponible; revise docker network inspect nextcloud-aio antes de configurar el cortafuegos"
+    fi
     bad "https://$d/status.php NO responde desde el propio servidor (el NAT no refleja el tráfico hacia su dominio)" \
-      "corríjalo en un paso: «sudo aps-conecta red --dominio $d --arreglar» (DNS local: dnsmasq, el DNS del propio servidor y el dns del daemon.json de docker); si prefiere permitir el reflejo del NAT: «ufw route allow proto tcp from 172.18.0.0/16 to any port 443»; NO use SKIP_DOMAIN_VALIDATION — no resuelve este tramo"
+      "corríjalo en un paso: «sudo aps-conecta red --dominio $d --arreglar» (DNS local: dnsmasq, el DNS del propio servidor y el dns del daemon.json de docker); $firewall; NO use SKIP_DOMAIN_VALIDATION — no resuelve este tramo"
   fi
   if curl -sk --max-time 10 "https://$d/eurooffice/healthcheck" >/dev/null 2>&1; then
     ok "https://$d/eurooffice/healthcheck responde desde el propio servidor"
@@ -513,10 +592,16 @@ check_ram() {
 
 check_cpu() { ok "CPU $(nproc 2>/dev/null || echo '?') núcleos"; }
 
-check_disk() {  # where the images and the volumes land: docker's root, or / before docker exists
-  local dir=/var/lib/docker gb
-  [ -d "$dir" ] || dir=/
-  gb="$(df -B 1000000000 --output=avail "$dir" 2>/dev/null | tail -1 | tr -dc '0-9')"
+check_disk() {
+  local dir gb
+  if ! dir="$(docker_data_root)"; then
+    bad "no se pudo determinar el disco de Docker" "revise el directorio de datos con sudo docker info antes de instalar"
+    return 0
+  fi
+  if ! gb="$(df -B 1000000000 --output=avail "$dir" 2>/dev/null | tail -1 | tr -dc '0-9')" || [ -z "$gb" ]; then
+    bad "no se pudo medir el disco de Docker ($dir)" "revise que su directorio de datos esté montado y sea accesible"
+    return 0
+  fi
   if [ "${gb:-0}" -ge "$DISCO_GB_RECOMENDADO" ]; then
     ok "Disco $gb GB libres (mínimo $MIN_DISK_GB, recomendado $DISCO_GB_RECOMENDADO)"
   elif [ "${gb:-0}" -ge "$MIN_DISK_GB" ]; then
@@ -583,6 +668,8 @@ install_docker() {  # Docker Engine from Docker's own apt repository — the met
   # docs give for production (the convenience script is not). Ubuntu and Debian only; a docker
   # already present is never replaced (check_docker then judges its API) — only started
   if command -v docker >/dev/null 2>&1; then
+    check_docker_installation
+    [ "$FAIL" -eq 0 ] || return 0
     systemctl is-active --quiet docker 2>/dev/null || systemctl start docker 2>/dev/null || true
     return 0
   fi
@@ -648,7 +735,7 @@ ensure_overcommit() {  # Redis, inside the suite, warns and can fail its saves w
   fi
 }
 
-step_revisar() { check_ram; check_cpu; check_disk; check_ports; check_network; check_arch; }
+step_revisar() { check_ram; check_cpu; check_host_installation; check_network; }
 
 # ── the hairpin fix (D3): dnsmasq split-DNS — the mutator family's four pieces ───────────
 # The failing hop is the reflection: the server asks its own public address for its own
@@ -784,17 +871,32 @@ PY
   fi
 }
 
-allow_container_dns_ufw() {  # the containers reach dnsmasq on the host's LAN address: when
-  # ufw manages this server's firewall, that answer needs the door open for Docker's
-  # private nets (the bridge pools, not just today's networks)
+allow_container_dns_ufw() {
   command -v ufw >/dev/null 2>&1 || return 0
-  ufw status 2>/dev/null | grep -q 'Status: active' || return 0
-  ufw status 2>/dev/null | grep -q '172\.16\.0\.0/12' && return 0
-  if ufw allow from 172.16.0.0/12 to any port 53 >/dev/null 2>&1; then
-    ok "Cortafuegos: el DNS local abierto a los contenedores (ufw)"
-  else
-    bad "no se pudo abrir el DNS local en el cortafuegos" "sudo ufw allow from 172.16.0.0/12 to any port 53"
+  local status subnets subnet
+  status="$(LC_ALL=C ufw status 2>/dev/null)" || { bad "no se pudo revisar el cortafuegos" "revise sudo ufw status"; return 0; }
+  grep -q 'Status: active' <<<"$status" || return 0
+  if ! subnets="$(suite_subnets)"; then
+    info "Cortafuegos pendiente: la subred de la suite no está disponible; repita red --arreglar cuando el asistente haya creado su red"
+    return 0
   fi
+  while IFS= read -r subnet; do
+    if awk -v source="$subnet" '
+      {
+        i=2
+        if ($i == "(v6)") i++
+        if ($1 != "53" || $i != "ALLOW") next
+        i++
+        if ($i == "IN") i++
+        if ($i == source) found=1
+      }
+      END {exit !found}' <<<"$status"; then continue; fi
+    if ufw allow from "$subnet" to any port 53 >/dev/null 2>&1; then
+      ok "Cortafuegos: el DNS local abierto a los contenedores (ufw), subred $subnet"
+    else
+      bad "no se pudo abrir el DNS local en el cortafuegos" "sudo ufw allow from $subnet to any port 53"
+    fi
+  done <<<"$subnets"
 }
 
 step_preparar() {  # installs what is missing, then proves each piece with its own check: the tools,
@@ -803,6 +905,8 @@ step_preparar() {  # installs what is missing, then proves each piece with its o
     bad "este paso instala programas y necesita permisos de administrador" "ejecute: sudo aps-conecta preparar"
     return 0
   fi
+  check_host_installation
+  [ "$FAIL" -eq 0 ] || return 0
   install_packages; install_docker
   check_docker; ensure_docker_group; ensure_overcommit
 }
@@ -1339,6 +1443,13 @@ cmd_aio_wizard() {  # --dominio D [--sin-validar-dominio] [--respaldo DIR] [--ap
     printf '%s\n' "$MOTIVO" > "$AIO_STATE/motivo"; exit 1
   fi
   FAIL=0
+  if [ "$preparar" = 1 ]; then
+    check_host_installation
+    if [ "$FAIL" -ne 0 ]; then
+      printf '%s\n' "$MOTIVO" > "$AIO_STATE/motivo"
+      exit 1
+    fi
+  fi
   # the backup hour first: a host without tzdata stops here, before anything is started or posted
   if [ -n "$backup_dir" ] && ! hora="$(backup_hour_utc today)"; then
     printf 'Falta la zona America/Santiago en el servidor (paquete tzdata): no se fija la hora del respaldo.\n' > "$AIO_STATE/motivo"
@@ -2090,7 +2201,7 @@ cmd_preflight() {
   echo "Revisión previa del instalador APS Conecta"
   # bash checks itself (this script IS bash); the rest are real prerequisites
   need_tool python3; need_tool curl; need_tool docker
-  check_docker; check_ports; check_dns; check_arch; check_prov_ports
+  check_docker; check_host_installation; check_dns; check_prov_ports
   check_hairpin
   check_paquete   # the kept signed package, when there is one (D5)
   echo
@@ -2115,6 +2226,20 @@ selftest() {
   local n=0 tshim tmp ROOT_BAK="$ROOT"
   tmp="$(mktemp -d)"
   tshim="$tmp/bin"; mkdir -p "$tshim"
+  local APS_HOME="$tmp/home" real_stat
+  real_stat="$(command -v stat)"
+  fixture_installation() {
+    mkdir -p "$APS_HOME/instalador/host"
+    cp "$HOST_DIR/aps-conecta" "$APS_HOME/instalador/host/"
+    printf 'v9.9.9\n' > "$APS_HOME/instalador/VERSION"
+  }
+  fixture_installation
+  mkdir -p "$tmp/docker-root"
+  cat > "$tshim/stat" <<SHIM
+#!/usr/bin/env bash
+if [ "\${!#}" = /dev/fuse ]; then [ ! -f "$tmp/no-fuse" ] || exit 1; echo 'character special file'; else exec "$real_stat" "\$@"; fi
+SHIM
+  chmod +x "$tshim/stat"
 
   check() {  # NAME COND
     n=$((n + 1))
@@ -2130,12 +2255,15 @@ selftest() {
 #!/usr/bin/env bash
 case "\$1 \$2" in
   "version --format") echo "${1-1.56}" ;;
+  "info --format") echo "$tmp/docker-root" ;;
+  "network inspect") [ ! -f "$tmp/no-network" ] || exit 1; if [ -f "$tmp/network-data" ]; then cat "$tmp/network-data"; else echo 10.77.0.0/23; fi ;;
   "ps --format") echo "${2-}" ;;
   *) exit 0 ;;
 esac
 EOF
     chmod +x "$tshim/docker"
   }
+  mk_docker 1.56 ""
   printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/ss"; chmod +x "$tshim/ss"
   printf '#!/usr/bin/env bash\necho x86_64\n' > "$tshim/uname"; chmod +x "$tshim/uname"
   printf '#!/usr/bin/env bash\necho 127.0.0.1\n' > "$tshim/getent"; chmod +x "$tshim/getent"
@@ -2202,6 +2330,7 @@ EOF
   # install runs as root: the stepper arms answer `id -u` from a shim (ID_U=1000 plays the operator)
   printf '#!/usr/bin/env bash\ncase "$1" in -u) echo "${ID_U:-0}" ;; -un) echo root ;; esac\n' > "$tshim/id"; chmod +x "$tshim/id"
   APS_HOME="$tmp/aps-stepper"   # …and the install's own home answers from the fixture: CI's runner is uid 1001 and /opt is not theirs
+  fixture_installation
   # the stepper end to end with every server step stubbed: the order, the approved header/footer,
   # the hand-over to the browser, and no prompt without a terminal
   install_out="$(
@@ -2329,7 +2458,7 @@ EOF
   printf '#!/usr/bin/env bash\nprintf "HTTP/2 401\\r\\ndate: %%s\\r\\n\\r\\n" "$(date -u "+%%a, %%d %%b %%Y %%H:%%M:%%S GMT")"\n' > "$tshim/curl"; chmod +x "$tshim/curl"
   step_out="$(FAIL=0; step_revisar; echo "FAIL=$FAIL")"
   check "revisar: 7,7 GiB rounds to 8 — green naming both tiers (D8); CPU, 142 GB, the ports, internet and clock, x86-64" \
-    'case "$step_out" in *"✓ Memoria 8 GiB (mínimo 6, recomendado 8)"*"✓ CPU 4 núcleos"*"✓ Disco 142 GB libres (mínimo 20, recomendado 40)"*"✓ Internet y hora"*"✓ x86-64"*"FAIL=0") ;; *) false;; esac && case "$step_out" in *"se recomiendan"*) false;; *) true;; esac'
+    'case "$step_out" in *"✓ Memoria 8 GiB (mínimo 6, recomendado 8)"*"✓ CPU 4 núcleos"*"✓ x86-64"*"✓ Disco 142 GB libres (mínimo 20, recomendado 40)"*"✓ Internet y hora"*"FAIL=0") ;; *) false;; esac && case "$step_out" in *"se recomiendan"*) false;; *) true;; esac'
   printf 'MemTotal:        4000000 kB\n' > "$tmp/meminfo"
   printf '#!/usr/bin/env bash\necho Avail; echo 12\n' > "$tshim/df"; chmod +x "$tshim/df"
   printf '#!/usr/bin/env bash\nprintf "HTTP/2 401\\r\\ndate: %%s\\r\\n\\r\\n" "$(date -u -d "-1 hour" "+%%a, %%d %%b %%Y %%H:%%M:%%S GMT")"\n' > "$tshim/curl"; chmod +x "$tshim/curl"
@@ -2351,6 +2480,7 @@ EOF
   check "revisar: no answer from the internet reds with the network fix" \
     'case "$step_out" in *"✗ sin acceso a internet"*"FAIL=1") ;; *) false;; esac'
   rm -f "$tshim/curl" "$tshim/df" "$tshim/nproc"; MEMINFO=/proc/meminfo
+  printf '#!/bin/sh\nprintf "Avail\\n142\\n"\n' > "$tshim/df"; chmod +x "$tshim/df"
 
   # preparar installs: every tool that changes the host is a logging shim, /etc is a scratch tree
   # (ETC_DIR), and the arms run only when each listed mutator answers from its shim — this
@@ -2413,7 +2543,7 @@ SHIM
   chmod +x "$tshim/sysctl" "$tshim/curl" "$tshim/id"
   # a fresh server has no docker or python3: a PATH of shims plus the few real tools the
   # shims themselves need — the host's own docker and python3 stay out of reach
-  for c in bash env mkdir chmod tr grep cat sed cp cut; do ln -sf "$(command -v "$c")" "$tmp/minbin/$c"; done
+  for c in bash env mkdir chmod tr grep cat sed cp cut tail; do ln -sf "$(command -v "$c")" "$tmp/minbin/$c"; done
   if only_shims apt-get usermod systemctl dpkg sysctl curl id; then
     step_out="$(PATH="$tshim:$tmp/minbin"; FAIL=0; SUDO_USER=operador step_preparar; echo "FAIL=$FAIL")"
     check "preparar: a fresh Ubuntu gets python3, Docker from Docker's repository, the operator's group and overcommit 1 — each proved" \
@@ -2450,6 +2580,7 @@ SHIM
   # The bundle carries no apps, so there is nothing vendored to verify — the arms prove the new
   # shape: green without provisioning/apps, red with it, red without the manifest.
   local BIN_DIR="$tmp/usr-local-bin" APS_HOME="$tmp/opt"
+  fixture_installation
   mkdir -p "$BIN_DIR" "$ROOT/scripts" "$ROOT/host"; : > "$ROOT/scripts/provisionador.py"; : > "$ROOT/host/aps-conecta"
   cp "$ROOT_BAK/scripts/apps.py" "$ROOT/scripts/apps.py"
   printf '[{"id": "demo", "source": "store", "optional": false, "containers": []}]\n' > "$ROOT/apps.json"
@@ -2632,8 +2763,8 @@ SH
   check "arch: x86_64 greens" 'case "$out" in *"✓ x86-64"*) ;; *) false;; esac'
   printf '#!/usr/bin/env bash\necho aarch64\n' > "$tshim/uname"; chmod +x "$tshim/uname"
   out="$(check_arch)"
-  check "arch: aarch64 passes with the -arm64 evidence (the suite publishes both)" \
-    'case "$out" in *"✓ arm64"*"-arm64"*) ;; *) false;; esac'
+  check "arch: aarch64 refuses with x86-64 guidance" \
+    'case "$out" in *"✗ arquitectura aarch64 no soportada"*"x86-64"*) ;; *) false;; esac'
   printf '#!/usr/bin/env bash\necho riscv64\n' > "$tshim/uname"; chmod +x "$tshim/uname"
   out="$(check_arch)"
   check "arch: anything else reds with the supported-architectures hint" \
@@ -2663,14 +2794,30 @@ CSHIM
     'case "$out" in *"el instalador web ya está abierto"*"use su enlace"*) ;; *) false;; esac'
 
   # the hairpin probes: green pair and the #8433 red with R4's recorded recipe
-  printf '#!/usr/bin/env bash\nif [ "$1" = ps ]; then echo aps-conecta-apache; exit 0; fi\nexit 0\n' > "$tshim/docker"; chmod +x "$tshim/docker"
+  mk_docker 1.56 aps-conecta-apache
   out="$(check_hairpin)"
   check "hairpin: status.php + healthcheck green from the host (the stack up, the domain set)" \
     'case "$out" in *"status.php responde desde el propio servidor"*"eurooffice/healthcheck responde desde el propio servidor"*) ;; *) false;; esac'
   printf '#!/usr/bin/env bash\nexit 1\n' > "$tshim/curl"; chmod +x "$tshim/curl"
   out="$(check_hairpin)"
   check "hairpin: the red carries the ufw recipe and the local-DNS legs, and never SKIP_DOMAIN_VALIDATION as advice" \
-    'case "$out" in *"dnsmasq"*"daemon.json"*"172.18.0.0/16"*"NO use SKIP_DOMAIN_VALIDATION"*"✗ el control de salud de la oficina NO responde"*) ;; *) false;; esac'
+    'case "$out" in *"dnsmasq"*"daemon.json"*"10.77.0.0/23"*"NO use SKIP_DOMAIN_VALIDATION"*"✗ el control de salud de la oficina NO responde"*) ;; *) false;; esac'
+  touch "$tmp/no-network"
+  out="$(PREFLIGHT_DOMAIN=clinica.example check_hairpin)"
+  check "hairpin: unavailable network metadata names the missing subnet and invents no firewall recipe" \
+    'case "$out" in *"la subred de la suite no está disponible"*) ;; *) false;; esac && case "$out" in *"ufw route allow"*) false;; *) true;; esac'
+  rm -f "$tmp/no-network"
+  printf 'not-a-subnet\n' > "$tmp/network-data"
+  out="$(suite_subnets)"; rc=$?
+  check "network: malformed subnet metadata refuses rather than producing a firewall address" \
+    '[ "$rc" -ne 0 ] && [ -z "$out" ]'
+  printf '10.77.0.0/23\nfd00:77::/64\n10.77.0.0/23\n' > "$tmp/network-data"
+  out="$(suite_subnets)"
+  check "network: actual IPv4 and IPv6 subnets are validated and duplicates removed" \
+    '[ "$out" = "10.77.0.0/23
+fd00:77::/64" ]'
+  rm -f "$tmp/network-data"
+
 
   # ── asistente-aio: the AIO wizard driven through its API, against a stateful fake wizard ──
   # curl answers the six endpoints the drive uses (honouring -o, printing -w's code) and logs every
@@ -2718,6 +2865,7 @@ SHIM
   cat > "$tshim/docker" <<SHIM
 #!/usr/bin/env bash
 case "\$1" in
+  info) echo "$tmp/docker-root" ;;
   ps) cat "$tmp/aio.ps" ;;
   inspect) shift 3; for c in "\$@"; do echo "/\$c healthy"; done ;;
   exec) case "\$*" in *"occ status"*) echo '{"installed":true}' ;; *"config:list"*) echo '{"system":{}}' ;; esac ;;
@@ -2778,6 +2926,11 @@ SHIM
     check "asistente-aio --preparar: the mastercontainer, then the wizard filled — Talk on, the daily backup with the installer's files — and NO start; the domain and the options recorded for the web installer" \
       '[ "$rc" -eq 0 ] && case "$out" in *"✓ La suite ya está iniciada"*"✓ Dominio: clinica.example"*"✓ Servicios de la suite incluidos; sin aplicaciones opcionales"*"✓ Respaldo diario a las 04:00 hora de Santiago ("*" UTC), en /srv/aps-conecta/respaldos, con "*"✓ Asistente listo: falta «Iniciar» en el asistente"*) ;; *) false;; esac && ! grep -q "options-form" "$tmp/aio.log" && grep -q "additional_backup_directories=$APS_HOME$" "$tmp/aio.log" && ! grep -q "^POST start" "$tmp/aio.log" && [ "$(cat "$AIO_STATE/dominio")" = clinica.example ] && [ "$(cat "$AIO_STATE/opciones")" = "farmacia=0 totem=0" ] && [ ! -e "$AIO_STATE/motivo" ]'
     : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"
+    touch "$tmp/no-fuse"
+    out="$( (cmd_aio_wizard --preparar --dominio clinica.example) 2>&1)"; rc=$?
+    check "asistente-aio: shared host refusal reaches the web reason before any configuration POST" \
+      '[ "$rc" -ne 0 ] && [ ! -s "$tmp/aio.log" ] && grep -q "/dev/fuse" "$AIO_STATE/motivo" && grep -q "modprobe fuse" "$AIO_STATE/motivo"'
+    rm -f "$tmp/no-fuse"
     for legacy_flag in --talk --grabacion; do
       out="$( (cmd_aio_wizard --preparar --dominio clinica.example "$legacy_flag") 2>&1)"; rc=$?
       check "asistente-aio: legacy service flag $legacy_flag is refused" \
@@ -2817,7 +2970,7 @@ SHIM
     rm -rf "$AIO_STATE"
     out="$( (APS_SUITE_TAG=malo cmd_aio_wizard --preparar --dominio clinica.example) 2>&1)"; rc=$?
     check "asistente-aio --preparar: a wizard that cannot start ends red, with one line for the web installer" \
-      '[ "$rc" -eq 1 ] && [ "$(cat "$AIO_STATE/motivo")" = "El asistente no arrancó: el detalle, en la consola del servidor." ]'
+      '[ "$rc" -eq 1 ] && grep -q "no se pudo leer la versión de la suite" "$AIO_STATE/motivo"'
     local motivo_ok=1 en es
     while IFS='|' read -r en es; do
       printf '%s' "$en" > "$tmp/motivo.txt"
@@ -3683,7 +3836,7 @@ if [ "\$1" = status ]; then
   exit 0
 fi
 printf '%s\n' "ufw \$*" >> "$rlog"
-case "\$*" in "allow from 172.16.0.0/12 to any port 53") printf 'Anywhere 172.16.0.0/12 53\n' >> "$tmp/red-ufw" ;; esac
+case "\$*" in "allow from 10.77.0.0/23 to any port 53") printf '53 ALLOW 10.77.0.0/23\n' >> "$tmp/red-ufw" ;; esac
 exit 0
 SHIM
   cat > "$tshim/getent" <<SHIM
@@ -3705,6 +3858,7 @@ SHIM
   cat > "$tshim/docker" <<SHIM
 #!/usr/bin/env bash
 [ "\$1 \$2" = "ps --format" ] && { cat "$tmp/red-ps" 2>/dev/null; exit 0; }
+[ "\$1 \$2" = "network inspect" ] && { echo 10.77.0.0/23; exit 0; }
 exit 0
 SHIM
   printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/curl"; chmod +x "$tshim/curl"
@@ -3731,6 +3885,12 @@ SHIM
     return 0
   }
   if only_shims systemctl apt-get resolvectl ufw docker curl getent ip id; then
+    printf '53 ALLOW OUT 10.77.0.0/23\n' > "$tmp/red-ufw"
+    : > "$rlog"
+    out="$(PATH="$tshim:$minred" UFW_RED=1 allow_container_dns_ufw)"
+    check "firewall: an outbound-only rule never suppresses the required inbound DNS rule" \
+      'grep -qx "ufw allow from 10.77.0.0/23 to any port 53" "$rlog"'
+    : > "$rlog"; : > "$tmp/red-ufw"
     red_run "$ETC_RED"
     check "red: without --dominio it refuses, naming the form" \
       '[ "$rc_red" -eq 1 ] && case "$out_red" in *"✗ falta el dominio: aps-conecta red --dominio <dominio> [--arreglar]"*) ;; *) false;; esac'
@@ -3756,7 +3916,7 @@ SHIM
        && grep -q "^enable --now dnsmasq$" "$rlog" && grep -q "^restart dnsmasq$" "$rlog" \
        && grep -q "^restart systemd-resolved$" "$rlog" && grep -q "^restart docker$" "$rlog" \
        && grep -q -- "-qq .*install -y dnsmasq" "$rlog" \
-       && grep -q "^ufw allow from 172.16.0.0/12 to any port 53$" "$rlog" \
+       && grep -q "^ufw allow from 10.77.0.0/23 to any port 53$" "$rlog" \
        && case "$out_red" in *"✓ DNS local listo: clinica.example responde 10.0.0.5 desde este servidor (dnsmasq)"*"✓ El DNS del propio servidor enrutó clinica.example al DNS local (systemd-resolved)"*"✓ DNS de los contenedores: el daemon de docker usa este servidor como DNS (10.0.0.5 primero)"*"✓ Cortafuegos: el DNS local abierto a los contenedores (ufw)"*"✓ clinica.example resuelve a 10.0.0.5 desde este servidor — re-intente el paso en el instalador web"*) ;; *) false;; esac'
     check "red --arreglar: dnsmasq first, the host's routing, docker last — the daemon restarts after the whole answer is local" \
       '[ "$(grep -n "^enable --now dnsmasq$" "$rlog" | head -1 | cut -d: -f1)" -lt "$(grep -n "^restart systemd-resolved$" "$rlog" | head -1 | cut -d: -f1)" ] && [ "$(grep -n "^restart systemd-resolved$" "$rlog" | head -1 | cut -d: -f1)" -lt "$(grep -n "^restart docker$" "$rlog" | head -1 | cut -d: -f1)" ]'
@@ -3815,7 +3975,7 @@ SHIM
     printf '#!/usr/bin/env bash\nexit 1\n' > "$tshim/curl"; chmod +x "$tshim/curl"
     out="$(PREFLIGHT_DOMAIN=clinica.example check_hairpin)"
     check "hairpin: the red now leads with the one command that fixes it — the alternatives and the SKIP warning kept" \
-      'case "$out" in *"sudo aps-conecta red --dominio clinica.example --arreglar"*"dnsmasq"*"daemon.json"*"172.18.0.0/16"*"NO use SKIP_DOMAIN_VALIDATION"*) ;; *) false;; esac'
+      'case "$out" in *"sudo aps-conecta red --dominio clinica.example --arreglar"*"dnsmasq"*"daemon.json"*"10.77.0.0/23"*"NO use SKIP_DOMAIN_VALIDATION"*) ;; *) false;; esac'
     printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/curl"; chmod +x "$tshim/curl"
     out="$(RED_PUBLIC=203.0.113.9 bash "$HOST_DIR/aps-conecta" red --dominio clinica.example 2>&1)"; rc=$?
     check "dispatch: red answers as the operator calls it (report mode, no sudo)" \
@@ -3919,6 +4079,51 @@ FAIL=0" ] \
       'case "$u" in *"Failed to parse"*|*"Unknown"*|*"Invalid"*) false;; *) true;; esac && [ -z "$leftovers" ]'
   fi
 
+  # Host refusal cases use the real entry points and isolated external tools.
+  local preflight_case="$tmp/preflight-cases"
+  mkdir -p "$preflight_case/bin" "$preflight_case/data"
+  cat > "$preflight_case/bin/docker" <<'SH'
+#!/usr/bin/env bash
+case "$1" in
+  info) printf '%s\n' "$CASE_DOCKER_ROOT" ;;
+  ps)
+    case "$*" in
+      *'{{.Ports}}'*) [ "${CASE_ORPHAN:-0}" = 0 ] || echo '0.0.0.0:8080->8080/tcp' ;;
+      *) [ "${CASE_ORPHAN:-0}" = 0 ] || echo nextcloud-aio-mastercontainer ;;
+    esac ;;
+esac
+exit 0
+SH
+  cat > "$preflight_case/bin/df" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$CASE_ROOT/df.calls"
+echo Avail
+if [ "${!#}" = "$CASE_DOCKER_ROOT" ]; then echo 5; else echo 999; fi
+SH
+  cat > "$preflight_case/bin/ss" <<'SH'
+#!/usr/bin/env bash
+if [ "${CASE_ORPHAN:-0}" = 1 ] && [ "$2" = 'sport = :8080' ]; then
+  printf 'State Recv-Q\nLISTEN 0 0 *:8080\n'
+fi
+SH
+  printf '#!/bin/sh\nexit 0\n' > "$preflight_case/bin/systemctl"
+  printf '#!/bin/sh\necho x86_64\n' > "$preflight_case/bin/uname"
+  printf '#!/bin/sh\nexit 1\n' > "$preflight_case/bin/stat"
+  chmod +x "$preflight_case/bin/"*
+  local case_path="$preflight_case/bin:$PATH"
+  out="$(PATH="$case_path" CASE_ORPHAN=1 APS_HOME="$preflight_case/missing"; export PATH CASE_ORPHAN APS_HOME; FAIL=0; check_ports; echo "FAIL=$FAIL")"
+  check "preflight: suite-owned ports never excuse an orphan without its installation folder" \
+    'case "$out" in *"✗ "*"instalación"*"FAIL=1") ;; *) false;; esac'
+  out="$(PATH="$case_path"; export PATH; FAIL=0; check_ram() { :; }; check_cpu() { :; }; check_disk() { :; }; check_ports() { :; }; check_network() { :; }; step_revisar; echo "FAIL=$FAIL")"
+  check "preflight: missing FUSE refuses before preparing the host" \
+    'case "$out" in *"✗ "*"/dev/fuse"*"FAIL=1") ;; *) false;; esac'
+  out="$(PATH="$case_path" CASE_DOCKER_ROOT=/var/snap/docker/common/var-lib-docker; export PATH CASE_DOCKER_ROOT; FAIL=0; install_docker; echo "FAIL=$FAIL")"
+  check "preflight: an installed Snap Docker is refused rather than accepted" \
+    'case "$out" in *"✗ "*"Snap"*"FAIL=1") ;; *) false;; esac'
+  out="$(PATH="$case_path" CASE_ROOT="$preflight_case" CASE_DOCKER_ROOT="$preflight_case/data"; export PATH CASE_ROOT CASE_DOCKER_ROOT; FAIL=0; check_disk; echo "FAIL=$FAIL")"
+  check "preflight: disk space is measured on the active Docker data root" \
+    'case "$out" in *"✗ Disco 5 GB libres"*"FAIL=1") ;; *) false;; esac && grep -qF -- "$preflight_case/data" "$preflight_case/df.calls"'
+
   ROOT="$ROOT_BAK"
   rm -rf "$tmp"
   echo
@@ -3932,6 +4137,7 @@ FAIL=0" ] \
 case "${1:-}" in
   install)      shift; cmd_install "$@" ;;
   preflight)    shift; cmd_preflight "$@" ;;
+  guard-existing-installation) check_existing_installation ;;
   run-command)  run_command "${2:-}" ;;
   provision)    shift; cmd_provision "${1:-}" ;;
   asistente-aio) shift; cmd_aio_wizard "$@" ;;

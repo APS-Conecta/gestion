@@ -141,12 +141,45 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 1   # VERSION answers suite_tag() now — no tag history to read
+      - name: Build the rehearsal package, then install through the real bootstrap
+        run: |
+          set -euo pipefail
+          # signify BEFORE anything: the runner plays a host that already carries the verifier,
+          # so the bootstrap's opportunistic check runs the REAL crypto (D5's second layer), and
+          # package-release's own self-test needs it too
+          bash scripts/cleanboot-apt.sh signify-openbsd
+          sudo ln -sf /usr/bin/signify-openbsd /usr/local/bin/signify   # the apt package ships the binary under its full name
+          tag="ci-cleanboot-${GITHUB_SHA:0:12}"
+          # the throwaway key replaces the placeholder exactly the way aps/RELEASING.md's real
+          # keygen will (one commit: installer.pub + install.sh's constant), and the throwaway
+          # tag carries VERSION — the release job's own assert, proven on every PR
+          ensayo="$RUNNER_TEMP/ensayo"; mkdir -p "$ensayo/srv/releases/download/$tag" "$ensayo/dist"
+          ( umask 077 && signify -G -n -p "$ensayo/installer.pub" -s "$ensayo/installer.sec" -c "cleanboot rehearsal key" )
+          sed -i "s|^SIGNIFY_PUBKEY=\"[^\"]*\"|SIGNIFY_PUBKEY=\"$(sed -n 2p "$ensayo/installer.pub")\"|" install.sh
+          cp "$ensayo/installer.pub" installer.pub
+          printf '%s\n' "$tag" > VERSION
+          git config user.email cleanboot@invalid && git config user.name cleanboot
+          git add -A && git commit -qm "rehearsal: the package at $tag" && git tag "$tag"
+          RELEASE_TAG="$tag" \
+            MINISIGN_SECRET_KEY="$(cat "$ensayo/installer.sec")" MINISIGN_KEY_PASSWORD="" \
+            bash scripts/package-release.sh --out "$ensayo/dist"
+          cp "$ensayo/dist/apsconecta-$tag.tar.gz" "$ensayo/dist/SHA256SUMS" \
+             "$ensayo/dist/SHA256SUMS.minisig" "$ensayo/dist/apsconecta-$tag-install.sh" \
+             "$ensayo/srv/releases/download/$tag/"
+          # the one-liner's own shape, against a file:// release layout: verify (sha, SUMS
+          # parity, the signature) → unpack atomically → keep the package at paquete/
+          curl -fsSL "file://$ensayo/srv/releases/download/$tag/apsconecta-$tag-install.sh" \
+            | sudo env REPO_URL="file://$ensayo/srv" bash 2>&1 | tee "$RUNNER_TEMP/bootstrap.out"
+          grep -q "firma verificada (signify, clave pública del proyecto)" "$RUNNER_TEMP/bootstrap.out"
+          grep -qF "Suite $tag en /opt/aps-conecta/instalador (paquete verificado en /opt/aps-conecta/paquete)" "$RUNNER_TEMP/bootstrap.out"
+          # the gates below source env.sh from the package root: the runner writes there
+          sudo chown -R "$(id -u):$(id -g)" /opt/aps-conecta/instalador
       # Preflight and startup use the same suite ports and certificate as a clinic.
       - name: Bring up the disposable AIO instance through the installer
         env:
           SUITE_CA: ${{ runner.temp }}/ca.crt
         run: |
-          sudo env "PATH=$PATH" AIO_TEST_IMAGE="$AIO_TEST_IMAGE" bash scripts/aio-testbed.sh up
+          sudo env "PATH=$PATH" AIO_TEST_IMAGE="$AIO_TEST_IMAGE" bash /opt/aps-conecta/instalador/scripts/aio-testbed.sh up
           echo "SUITE_IP=$(sudo cat /tmp/aio-testbed/dominio)" >> "$GITHUB_ENV"
           sudo cp /opt/aps-conecta/certificados/ca/aps-conecta-ca.crt "$SUITE_CA"
           sudo chmod 644 "$SUITE_CA"
@@ -222,39 +255,6 @@ jobs:
           docker exec --user www-data aps-conecta-nextcloud test -d /var/www/html/custom_apps/notify_push \
             || { echo "FAIL: notify_push is absent at first boot — the entrypoint's scoped store install did not run" >&2; exit 1; }
           echo "nothing baked: notify_push landed scoped at first boot; every suite app (Talk included) waits for its own channel"
-      - name: Build the rehearsal package, then install through the real bootstrap
-        run: |
-          set -euo pipefail
-          # signify BEFORE anything: the runner plays a host that already carries the verifier,
-          # so the bootstrap's opportunistic check runs the REAL crypto (D5's second layer), and
-          # package-release's own self-test needs it too
-          bash scripts/cleanboot-apt.sh signify-openbsd
-          sudo ln -sf /usr/bin/signify-openbsd /usr/local/bin/signify   # the apt package ships the binary under its full name
-          tag="ci-cleanboot-${GITHUB_SHA:0:12}"
-          # the throwaway key replaces the placeholder exactly the way aps/RELEASING.md's real
-          # keygen will (one commit: installer.pub + install.sh's constant), and the throwaway
-          # tag carries VERSION — the release job's own assert, proven on every PR
-          ensayo="$RUNNER_TEMP/ensayo"; mkdir -p "$ensayo/srv/releases/download/$tag" "$ensayo/dist"
-          ( umask 077 && signify -G -n -p "$ensayo/installer.pub" -s "$ensayo/installer.sec" -c "cleanboot rehearsal key" )
-          sed -i "s|^SIGNIFY_PUBKEY=\"[^\"]*\"|SIGNIFY_PUBKEY=\"$(sed -n 2p "$ensayo/installer.pub")\"|" install.sh
-          cp "$ensayo/installer.pub" installer.pub
-          printf '%s\n' "$tag" > VERSION
-          git config user.email cleanboot@invalid && git config user.name cleanboot
-          git add -A && git commit -qm "rehearsal: the package at $tag" && git tag "$tag"
-          RELEASE_TAG="$tag" \
-            MINISIGN_SECRET_KEY="$(cat "$ensayo/installer.sec")" MINISIGN_KEY_PASSWORD="" \
-            bash scripts/package-release.sh --out "$ensayo/dist"
-          cp "$ensayo/dist/apsconecta-$tag.tar.gz" "$ensayo/dist/SHA256SUMS" \
-             "$ensayo/dist/SHA256SUMS.minisig" "$ensayo/dist/apsconecta-$tag-install.sh" \
-             "$ensayo/srv/releases/download/$tag/"
-          # the one-liner's own shape, against a file:// release layout: verify (sha, SUMS
-          # parity, the signature) → unpack atomically → keep the package at paquete/
-          curl -fsSL "file://$ensayo/srv/releases/download/$tag/apsconecta-$tag-install.sh" \
-            | sudo env REPO_URL="file://$ensayo/srv" bash 2>&1 | tee "$RUNNER_TEMP/bootstrap.out"
-          grep -q "firma verificada (signify, clave pública del proyecto)" "$RUNNER_TEMP/bootstrap.out"
-          grep -qF "Suite $tag en /opt/aps-conecta/instalador (paquete verificado en /opt/aps-conecta/paquete)" "$RUNNER_TEMP/bootstrap.out"
-          # the gates below source env.sh from the package root: the runner writes there
-          sudo chown -R "$(id -u):$(id -g)" /opt/aps-conecta/instalador
       - name: The rehearsal's .env, in the package the install will run from
         run: |
           pkg=/opt/aps-conecta/instalador
