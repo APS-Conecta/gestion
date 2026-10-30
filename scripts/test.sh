@@ -2393,7 +2393,7 @@ check cleanboot_apt_cases
 # The real office-smoke (and the env.sh it sources) runs from a fixture tree whose
 # Containers/eurooffice/Dockerfile is the real one with a synthetic pin, v1.2.3: a hard-coded
 # version reds, and so does a FROM line whose shape the parse no longer reads. A stub docker
-# answers apache's loopback posture, the connector enabled and --check with $DS_VERSION; a stub
+# answers apache's public HTTPS posture, the connector enabled and --check with $DS_VERSION; a stub
 # curl answers the healthcheck. Both the public smoke and the real container probe must
 # require a successful response containing true, even when nginx's port is open.
 office_pin_cases() {
@@ -2407,7 +2407,7 @@ office_pin_cases() {
 case "$*" in
   "ps -q"*) echo ds0 ;;
   ps*) echo aps-conecta-nextcloud ;;
-  inspect*aps-conecta-apache*) printf 'APACHE_PORT=11000\n' ;;
+  inspect*aps-conecta-apache*) printf 'APACHE_PORT=443\nNC_DOMAIN=clinica.example\n' ;;
   "inspect ds0"*) echo ghcr.io/aps-conecta/aio-eurooffice:v0.0.0-ci.0 ;;
   *"config:app:get eurooffice enabled"*) echo yes ;;
   *"eurooffice:documentserver --check"*) echo "Document server http://x/ version $DS_VERSION is successfully connected" ;;
