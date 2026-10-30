@@ -660,6 +660,9 @@ proxy_load() {
     fi
   done
   HTTPS_PROXY="$endpoint"; HTTP_PROXY="${http_proxy:-${HTTP_PROXY:-$endpoint}}"
+  if [ "$HTTP_PROXY" != "$HTTPS_PROXY" ]; then
+    bad "se configuraron dos proxies distintos" "use la misma dirección para HTTP_PROXY y HTTPS_PROXY"; return 1
+  fi
   NO_PROXY="${no_proxy:-${NO_PROXY:-}}"
   NO_PROXY="${NO_PROXY:+$NO_PROXY,}localhost,127.0.0.1,::1,nextcloud-aio-mastercontainer"
   NO_PROXY="$(printf '%s' "$NO_PROXY" | tr ',' '\n' | awk 'NF && !seen[$0]++' | paste -sd, -)"
@@ -677,9 +680,11 @@ proxy_save() {
   if ! tmpfile="$(umask 077; mkdir -p "$APS_HOME" && mktemp "$file.XXXXXX")"; then
     bad "no se pudo guardar el proxy" "revise los permisos de $APS_HOME"; return 1
   fi
-  printf 'HTTP_PROXY=%s\nHTTPS_PROXY=%s\nNO_PROXY=%s\nhttp_proxy=%s\nhttps_proxy=%s\nno_proxy=%s\n' \
-    "$HTTP_PROXY" "$HTTPS_PROXY" "$NO_PROXY" "$HTTP_PROXY" "$HTTPS_PROXY" "$NO_PROXY" > "$tmpfile"
-  if cmp -s "$tmpfile" "$file"; then rm -f "$tmpfile"; return 0; fi
+  if ! printf 'HTTP_PROXY=%s\nHTTPS_PROXY=%s\nNO_PROXY=%s\nhttp_proxy=%s\nhttps_proxy=%s\nno_proxy=%s\n' \
+    "$HTTP_PROXY" "$HTTPS_PROXY" "$NO_PROXY" "$HTTP_PROXY" "$HTTPS_PROXY" "$NO_PROXY" > "$tmpfile"; then
+    rm -f "$tmpfile"; bad "no se pudo guardar el proxy" "revise el espacio y los permisos de $APS_HOME"; return 1
+  fi
+  if cmp -s "$tmpfile" "$file"; then chmod 600 "$file" || return 1; rm -f "$tmpfile"; return 0; fi
   if ! mv -f "$tmpfile" "$file"; then
     rm -f "$tmpfile"; bad "no se pudo guardar el proxy" "revise los permisos de $APS_HOME"; return 1
   fi
@@ -1168,6 +1173,14 @@ start_suite() {  # [ADDRESS] — the mastercontainer, once — the very command 
     python3 "$(prov_path)" --paso certificado-suite --ip "$domain" --certificados "$APS_HOME/certificados" \
       || { bad "no se pudo preparar el certificado de la suite" "corrija lo indicado arriba y vuelva a ejecutar"; return 1; }
     reload_suite_leaf || return 1   # a running suite loads a leaf this start signed again
+  fi
+  if [ -n "${HTTPS_PROXY:-}" ]; then
+    if ! docker network inspect nextcloud-aio >/dev/null 2>&1; then
+      if ! docker network create nextcloud-aio >/dev/null; then
+        bad "no se pudo preparar la red de la suite" "revise Docker antes de iniciar con el proxy"; return 1
+      fi
+    fi
+    prepare_proxy || return 1
   fi
   state="$(docker ps -a --format '{{.Names}} {{.State}}' 2>/dev/null)"   # captured: pipefail-safe
   state="$(printf '%s\n' "$state" | sed -n 's/^nextcloud-aio-mastercontainer //p')"
@@ -2309,6 +2322,7 @@ selftest() {
   aio_select_services || return 1
   unset APS_SUITE_TAG   # a caller's override (a rehearsal's) must not leak into the goldens:
                         # every arm derives its tag explicitly
+  unset HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy
   local n=0 tshim tmp ROOT_BAK="$ROOT"
   tmp="$(mktemp -d)"
   tshim="$tmp/bin"; mkdir -p "$tshim"

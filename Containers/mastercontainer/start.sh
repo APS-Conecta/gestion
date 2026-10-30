@@ -372,11 +372,6 @@ if [ -n "$TZ" ]; then
     # Disable exit since it seems to be by default set on unraid and we dont want to break these instances
     # exit 1
 fi
-# Check that http proxy or no_proxy variable is not set which AIO does not support
-if [ -n "$HTTP_PROXY" ] || [ -n "$http_proxy" ] || [ -n "$HTTPS_PROXY" ] || [ -n "$https_proxy" ] || [ -n "$NO_PROXY" ] || [ -n "$no_proxy" ]; then
-    print_red "The environmental variable HTTP_PROXY, http_proxy, HTTPS_PROXY, https_proxy, NO_PROXY or no_proxy has been set which is not supported by AIO."
-    exit 1
-fi
 if mountpoint -q /etc/localtime; then
     print_red "/etc/localtime has been mounted into the container which is not allowed because AIO only supports running in the default Etc/UTC timezone!"
     echo "The correct timezone can be set in the AIO interface later on!"

@@ -1031,10 +1031,11 @@ jobs:
           coredump_dir $task_proxy_dir
           EOF
           sudo squid -f "$task_proxy_dir/squid.conf" -k parse
-          sudo squid -f "$task_proxy_dir/squid.conf" -N -d 0 > "$task_proxy_dir/start.log" 2>&1 &
+          squid -f "$task_proxy_dir/squid.conf" -N -d 0 > "$task_proxy_dir/start.log" 2>&1 &
           task_proxy_ip="$(ip -4 -o addr show scope global | awk '$2 !~ /^(docker|br-|veth)/ {split($4,a,"/"); print a[1]; exit}')"
           for attempt in $(seq 20); do
             if nc -z "$task_proxy_ip" 3128; then break; fi
+            echo "Waiting for the installation proxy ($attempt/20)"
             sleep 1
           done
           nc -z "$task_proxy_ip" 3128
