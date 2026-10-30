@@ -780,7 +780,7 @@ services = json.loads((root / "php/containers.json").read_text())["aio_services_
 expected = {row["image"].rsplit("/", 1)[-1] for row in services} | {"all-in-one"}
 assert len(matrix) == len(expected) and {row["image"] for row in matrix} == expected
 assert {row["dockerfile"] for row in matrix} == {str(p.relative_to(root)) for p in (root / "Containers").glob("*/Dockerfile")}
-assert {row["image"] for row in matrix if row["context"] == "."} == {"all-in-one", "aio-nextcloud"}
+assert {row["image"] for row in matrix if row["context"] == "."} == {"all-in-one", "aio-nextcloud", "aio-apache"}
 assert {row["image"] for row in matrix if row["database_test"]} == {"aio-postgresql"}
 assert {row["image"] for row in matrix if not row["cache"]} == {"aio-eurooffice"}
 # The existing browser files run sequentially on one runner; no suite-owned
