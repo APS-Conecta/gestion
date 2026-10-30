@@ -3876,6 +3876,12 @@ SHIM
     return 0
   }
   if only_shims systemctl apt-get resolvectl ufw docker curl getent ip id; then
+    printf '53 ALLOW OUT 10.77.0.0/23\n' > "$tmp/red-ufw"
+    : > "$rlog"
+    out="$(PATH="$tshim:$minred" UFW_RED=1 allow_container_dns_ufw)"
+    check "firewall: an outbound-only rule never suppresses the required inbound DNS rule" \
+      'grep -qx "ufw allow from 10.77.0.0/23 to any port 53" "$rlog"'
+    : > "$rlog"; : > "$tmp/red-ufw"
     red_run "$ETC_RED"
     check "red: without --dominio it refuses, naming the form" \
       '[ "$rc_red" -eq 1 ] && case "$out_red" in *"✗ falta el dominio: aps-conecta red --dominio <dominio> [--arreglar]"*) ;; *) false;; esac'

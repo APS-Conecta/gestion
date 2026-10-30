@@ -145,7 +145,7 @@ selftest() {
   # for it installed; run_main routes every main() call through this PATH, and the arms
   # control signify solely by the shim's presence on $tshim)
   imin="$tmp/imin"; mkdir -p "$imin"
-  for c in bash env cp mkdir rm mv mktemp tar gzip sha256sum head cut cat sed grep; do
+  for c in bash env cp mkdir rm mv mktemp tar gzip sha256sum head cut cat sed grep dirname readlink; do
     ln -sf "$(command -v "$c")" "$imin/$c"
   done
 
@@ -262,6 +262,19 @@ EOF
     '[ "$(tail -1 "$0")" = "main \"\$@\"" ]'
   check "pubkey shape: installer.pub is two lines and its key line is a real signify key's shape (base64, 42 bytes, no padding)" \
     '[ "$(wc -l < "$(dirname "$0")/installer.pub")" = 2 ] && sed -n 2p "$(dirname "$0")/installer.pub" | grep -qE "^RW[A-Za-z0-9+/]{54}$"'
+
+  cp "$(dirname "$0")/host/aps-conecta" "$tmp/fx/instalador/host/aps-conecta"
+  tar -czf "$tmp/fx/fixture.tar.gz" -C "$tmp/fx" instalador
+  pkgsha="$(sha256sum "$tmp/fx/fixture.tar.gz" | cut -d' ' -f1)"
+  printf '%s  apsconecta-v9.8.7.tar.gz\n' "$pkgsha" > "$tmp/fx/SHA256SUMS"
+  cat > "$tshim/docker" <<'SH'
+#!/usr/bin/env bash
+if [ "$1" = ps ]; then echo nextcloud-aio-mastercontainer; fi
+SH
+  chmod +x "$tshim/docker"
+  run_main "$tmp/orphan" v9.8.7 "$pkgsha"
+  check "orphan: the real staged host guard refuses before bootstrap can create a valid-looking installation folder" \
+    '[ "$rc" -ne 0 ] && [ ! -e "$tmp/orphan/instalador" ] && case "$out" in *"instalación incompleta"*) ;; *) false;; esac'
 
   rm -rf "$tmp"
   echo
