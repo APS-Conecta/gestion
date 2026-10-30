@@ -1144,10 +1144,14 @@ jobs:
         run: |
           set -euo pipefail
           cd /opt/aps-conecta/instalador && source scripts/env.sh
-          [ "$(occ config:system:get trusted_proxies 10)" = 192.168.48.0/20 ]
-          [ "$(occ config:system:get trusted_proxies 0)" = 127.0.0.1 ]
-          [ "$(occ config:system:get trusted_proxies 1)" = ::1 ]
-          docker exec aps-conecta-apache caddy adapt --config /tmp/Caddyfile > "$RUNNER_TEMP/ingress-config.json"
+          [ "$(occ config:system:get trusted_proxies 10)" = 192.168.48.0/20 ] \
+            || { echo 'FAIL: Nextcloud does not trust the actual /20' >&2; exit 1; }
+          [ "$(occ config:system:get trusted_proxies 0)" = 127.0.0.1 ] \
+            && [ "$(occ config:system:get trusted_proxies 1)" = ::1 ] \
+            || { echo 'FAIL: Nextcloud lost loopback trust' >&2; exit 1; }
+          # docker exec does not inherit the variables exported by start.sh.
+          docker exec --env PROTOCOL=https --env CADDY_LOG_LEVEL=WARN aps-conecta-apache \
+            caddy adapt --config /tmp/Caddyfile > "$RUNNER_TEMP/ingress-config.json"
           python3 - "$RUNNER_TEMP/ingress-config.json" <<'PYNETWORK'
           import json, pathlib, sys
           servers = json.loads(pathlib.Path(sys.argv[1]).read_text())['apps']['http']['servers']
@@ -1172,17 +1176,21 @@ jobs:
               --connect-to "$SUITE_IP:443:$task_apache_ip:443" --cacert "$RUNNER_TEMP/ca.crt" \
               --user "$user:invalid-fixture" --header "X-Forwarded-For: $forwarded" \
               "https://$SUITE_IP/remote.php/dav/files/$user/")"
-            [ "$code" = 401 ]
+            [ "$code" = 401 ] \
+              || { echo "FAIL: the synthetic login returned HTTP $code instead of 401" >&2; return 1; }
           }
           [ "$(attempts 192.168.32.2)" = 0 ]
           [ "$(attempts 198.51.100.201)" = 0 ]
           rejected_login 192.168.32.2 198.51.100.201 prefix-lan
-          [ "$(attempts 192.168.32.2)" -gt 0 ]
-          [ "$(attempts 198.51.100.201)" = 0 ]
+          [ "$(attempts 192.168.32.2)" -gt 0 ] \
+            || { echo 'FAIL: the LAN login was not counted at its source address' >&2; exit 1; }
+          [ "$(attempts 198.51.100.201)" = 0 ] \
+            || { echo 'FAIL: the forged client address received the LAN login attempt' >&2; exit 1; }
           echo 'PASS: a same-/16 LAN client cannot forge its address'
           [ "$(attempts 203.0.113.201)" = 0 ]
           rejected_login 192.168.48.1 203.0.113.201 prefix-proxy
-          [ "$(attempts 203.0.113.201)" -gt 0 ]
+          [ "$(attempts 203.0.113.201)" -gt 0 ] \
+            || { echo 'FAIL: the internal proxy lost the forwarded client address' >&2; exit 1; }
           echo 'PASS: a proxy inside the actual suite network preserves the client address'
       # Nextcloud's own side of the address: its bundle trusts the CA (phase 07), the push server reaches
       # it inside the suite's network (the fork's patch 238), and the office both ways (phase 14).
