@@ -4222,9 +4222,14 @@ SHIM
        && ! grep -q "10.0.0.6" "$ETC_RED2/dnsmasq.d/aps-conecta.conf" && case "$out_red" in *"responde 10.0.0.5"*) ;; *) false;; esac'
     printf '10.0.0.5\n' > "$tmp/red-lan"
     rm -rf "$ETC_RED2"; mkdir -p "$ETC_RED2"
+    printf '%s\n' 'nameserver 127.0.0.53' 'nameserver ::ffff:127.0.0.1' \
+      'nameserver 10.0.0.5' 'nameserver 10.0.0.1' 'nameserver 10.0.0.1' \
+      'nameserver 2001:db8::53' 'nameserver fe80::1%eth0' 'nameserver 2001:db8::53%eth0' \
+      'nameserver 169.254.169.253' 'nameserver 0.0.0.0' > "$ETC_RED2/resolv.conf"
     red_run "$ETC_RED2" "" 0 --dominio clinica.example --arreglar
-    check "red --arreglar: a host without systemd-resolved fixes the containers' legs, refuses the host's own honestly, and never writes the drop-in" \
+    check "red --arreglar: without resolved, usable resolv.conf upstreams follow LAN and the unsupported host route remains explicit" \
       '[ "$rc_red" -eq 1 ] && [ ! -e "$ETC_RED2/systemd/resolved.conf.d" ] && [ -f "$ETC_RED2/docker/daemon.json" ] \
+       && [ "$(python3 -c "import json; print(\" \".join(json.load(open(\"$ETC_RED2/docker/daemon.json\"))[\"dns\"]))")" = "10.0.0.5 10.0.0.1 2001:db8::53 169.254.169.253" ] \
        && ! grep -q "resolv-file" "$ETC_RED2/dnsmasq.d/aps-conecta.conf" \
        && case "$out_red" in *"✗ este servidor no usa systemd-resolved"*"✗ clinica.example aún no resuelve a 10.0.0.5"*) ;; *) false;; esac'
     rm -rf "$ETC_RED2"; mkdir -p "$ETC_RED2"; : > "$tmp/red-ps"; : > "$rlog"
