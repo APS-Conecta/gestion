@@ -3414,6 +3414,11 @@ EOF
     '[ "$out4" = "rc=0" ] && [ "$argv_apps" = "--dominio c.example --app farmacia" ]'
   SILENT_SITE=""; SILENT_ROSTER=""
   cp "$tshim/docker" "$tmp/docker.prev"
+  local mc_path="$PATH"
+  [ ! -e "$tshim/systemctl" ] || cp -P "$tshim/systemctl" "$tmp/mc-systemctl.prev"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/mc-systemctl"
+  chmod +x "$tmp/mc-systemctl"
+  mv "$tmp/mc-systemctl" "$tshim/systemctl"
   cat > "$tshim/docker" <<SHIM
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "$tmp/mc.argv"
@@ -3421,7 +3426,8 @@ case "\$1 \$3" in ps*) cat "$tmp/mc.ps" 2>/dev/null ;; *State.Running*) cat "$tm
 exit 0
 SHIM
   chmod +x "$tshim/docker"; : > "$tmp/mc.argv"; : > "$tmp/mc.ps"
-  if only_shims docker; then
+  PATH="$tshim:$PATH"; export PATH
+  if only_shims docker systemctl; then
     out="$(APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 2>&1; echo "FAIL=$FAIL")"
     check "install --sitio: an absent suite starts detached — the command preflight prints, at the file's own tag" \
       'grep -q "^run -d --init --sig-proxy=false --name nextcloud-aio-mastercontainer .*--env APACHE_PORT=443 .*ghcr.io/aps-conecta/all-in-one:v9.9.9\$" "$tmp/mc.argv" && case "$out" in *"✓ Suite iniciada: ghcr.io/aps-conecta/all-in-one:v9.9.9"*"FAIL=0"*) ;; *) false;; esac'
@@ -3494,6 +3500,10 @@ SHIM
       '! grep -q "^run" "$tmp/mc.argv" && case "$out" in *"✗ la carpeta de la instalación no es válida"*"«..»"*) ;; *) false;; esac'
   fi
   cp "$tmp/docker.prev" "$tshim/docker"
+
+  if [ -e "$tmp/mc-systemctl.prev" ]; then mv "$tmp/mc-systemctl.prev" "$tshim/systemctl"
+  else rm -f "$tshim/systemctl"; fi
+  PATH="$mc_path"; export PATH
 
   # ── temporizadores (a9): the two units into a scratch systemd dir, reloaded, the weekly timer enabled — shim
   # systemctl, shim docker ──
