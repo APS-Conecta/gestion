@@ -29,20 +29,40 @@ two readers are pinned equal by the gate (`scripts/test.sh`) and re-proven at ev
 Keep `installer.sec` OUT of the repository. After registering the secrets (§2), store it where
 you store the farm's other keys, or delete it — rotation (§6) does not need the old secret key.
 
-## 2. The secrets (once)
+## 2. The Release environment and secrets (once)
 
-On instalador's repository Settings → Secrets and variables → Actions:
+On this repository's Settings → Environments → **Release**, restrict deployment refs to
+**tags matching `v*`**. Use no required human reviewers or wait timer: successful automated
+gates permit progression. Disable administrator bypass of environment protection. The
+repository's active `v*` tag ruleset restricts creation, updates and deletion to the release
+owner's administrator role; it admits owner-managed numeric `vX.Y.Z-ci.N` rehearsals.
+
+Store these secrets in that environment:
 
 - `MINISIGN_SECRET_KEY` — the CONTENTS of `installer.sec` (both lines, untrusted comment
   included). The release job writes them to a 0600 trap-removed file; the key never reaches
   argv, a URL, or a log line (the P45 rule).
 - `MINISIGN_KEY_PASSWORD` — the passphrase, or empty for a `-n` key.
-- `SPREED_REFRESH_TOKEN` — a fine-grained PAT with **Contents: read and write on
-  `APS-Conecta/spreed` alone**, nothing else. The release chain's spreed job uses it to
+- `SPREED_REFRESH_TOKEN` — a fine-grained PAT with resource owner **APS-Conecta** and
+  **Contents: read and write on `APS-Conecta/spreed` alone**, nothing else. The release chain's spreed job uses it to
   dispatch the Talk fork's refresh (ADR-0020); its scope is that one repo, so the worst a
   leak can do is publish a Talk release that still has to pass the job's own verification
   against this repo's `apps.pub` — it can never touch a suite release. A missing token reds
   the spreed job naming this section.
+
+The signing pair reaches only the package assembly/signing step; the refresh token reaches
+only the Talk dispatch step. Neither is available to the gates or image builds. The app
+signing key remains in the app repository; the suite key is a separate identity.
+
+Populate environment secrets through GitHub's UI or the CLI's masked interactive prompt:
+
+    gh secret set MINISIGN_SECRET_KEY --repo APS-Conecta/gestion --env Release < installer.sec
+    gh secret set MINISIGN_KEY_PASSWORD --repo APS-Conecta/gestion --env Release
+    gh secret set SPREED_REFRESH_TOKEN --repo APS-Conecta/gestion --env Release
+
+Finish migration by removing the old repository-level copies of these names. Verify the
+Release environment's secret names and complete a protected rehearsal; secret values never
+belong in chat, argv, repository files or logs.
 
 A wrong pair reds the package job loudly ("signing failed — the passphrase
 (MINISIGN_KEY_PASSWORD) or the key (MINISIGN_SECRET_KEY) is wrong"); nothing is released
@@ -87,8 +107,12 @@ asserts it):
 
     git tag vX.Y.Z && git push origin vX.Y.Z
 
-release.yml runs the whole chain: gates (upstream's own validators + twig-lint + brand gate +
-acquisition gate, inline against the tag tree) → every suite image built FROM THE TAG → package-release (composite
+release.yml proves stable tags are contained in main, freezes the checked-out commit and runs
+the full local gate (including existing browser checks), validators, Twig and both ownership
+gates on that tree. Only numeric `vX.Y.Z-ci.N` rehearsals may be off main. Images, Talk
+verification and packaging check out the proven SHA, never a second resolution of the tag.
+The image set is built, Talk's signed archive is compared with every upstream member's content,
+then package-release (composite
 assembly, SHA256SUMS, the signature, the verify-PROOF against the committed `installer.pub`,
 the constants-filled install asset) → the Release with five assets. Watch it; a red anywhere
 names its gate.
@@ -127,8 +151,15 @@ bundle, provisioning or install scripts change, Clean boot can install the alrea
 suite images while checking out the new branch code. Independently released apps remain
 outside the images (ADR-0018).
 
-release.yml's repair arm (workflow_dispatch with `suite-tag`, plus `force-images` only for a
-chain that died mid-publish) exists for a chain that failed BEFORE `gh release create` — a
+**Protected release rehearsal.** After the owner authorizes an exact rehearsal commit with
+matching VERSION, BUNDLE_TAG and changelog, the owner creates its numeric CI tag. Tag push
+runs the protected chain automatically. Its suite Release uses `--prerelease --latest=false`;
+record the current `/releases/latest` tag before and after to prove Latest stayed unchanged.
+The Talk refresh can also publish its independently signed app release.
+
+For a repair, dispatch from the tag itself (`--ref vX.Y.Z`), not a branch: Release environment
+eligibility follows the workflow ref. The repair arm uses `suite-tag`, plus `force-images`
+only for a chain that died mid-publish, and exists for a chain that failed BEFORE `gh release create` — a
 published Release's assets never move (D12).
 
 ## 5. Auditing a release offline

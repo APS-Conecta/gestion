@@ -340,6 +340,163 @@ PY
 }
 check divergence_parse_error_cases
 
+# #203: inspect the tag-tree contract and execute its ancestry/publication scripts
+# against local git fixtures and a recording gh, never against a real Release.
+release_contract_cases() {
+  python3 - <<'PY'
+import json, os, pathlib, re, subprocess, tempfile, textwrap
+source = pathlib.Path('.github/workflows/release.yml').read_text()
+
+
+def jobs(text):
+    return dict(re.findall(r'^  ([a-z][a-z0-9_-]*):\n(.*?)(?=^  [a-z][a-z0-9_-]*:|\Z)', text, re.M | re.S))
+
+
+def steps(job):
+    return re.findall(r'^      - (.*?)(?=^      - |\Z)', job, re.M | re.S)
+
+
+def run_script(step):
+    run = re.search(r'^        run: \|\n(.*)', step, re.M | re.S)
+    return textwrap.dedent(run[1]) if run else ''
+
+
+def contract(text):
+    errors = []
+    definitions = jobs(text)
+    gates = definitions.get('gates', '')
+    if not re.search(r'^\s+(?:- )?run: bash scripts/test\.sh\s*$', gates, re.M):
+        errors.append('release gates do not run the full local gate')
+    if 'APS_SELFTEST_SIN_NAVEGADOR' in gates:
+        errors.append('release gates waive browser checks')
+    if 'git merge-base --is-ancestor' not in gates:
+        errors.append('release gates do not prove main ancestry')
+    if 'build-ref: ${{ needs.gates.outputs.sha }}' not in definitions.get('images', ''):
+        errors.append('images do not build the proven commit')
+    required = {'MINISIGN_SECRET_KEY', 'MINISIGN_KEY_PASSWORD', 'SPREED_REFRESH_TOKEN'}
+    seen = set()
+    for name, job in definitions.items():
+        refs = set(re.findall(r'secrets\.(MINISIGN_SECRET_KEY|MINISIGN_KEY_PASSWORD|SPREED_REFRESH_TOKEN)', job))
+        if not refs:
+            continue
+        seen |= refs
+        if not re.search(r'^    environment: Release\s*$', job, re.M):
+            errors.append(f'{name} reads release secrets outside the Release environment')
+        if re.search(r'secrets\.(?:MINISIGN|SPREED)', job.split('    steps:', 1)[0]):
+            errors.append(f'{name} exposes release secrets to the entire job')
+        for step in steps(job):
+            for secret in required:
+                if f'secrets.{secret}' not in step:
+                    continue
+                consumer = ('bash scripts/package-release.sh' in step and name == 'package'
+                            if secret.startswith('MINISIGN') else
+                            'repos/APS-Conecta/spreed/dispatches' in step and name == 'spreed')
+                env_key = secret if secret.startswith('MINISIGN') else 'GH_TOKEN'
+                env_match = re.search(r'^          ' + env_key + r': \$\{\{ secrets\.' + secret + r' \}\}\s*$', step, re.M)
+                if not consumer or not env_match:
+                    errors.append(f'{secret} escapes its consuming step environment')
+    if seen != required:
+        errors.append('release signing or refresh secrets are missing')
+    if 'scripts/spreed-refresh.py verify' not in definitions.get('spreed', ''):
+        errors.append('Talk archives are not checked by the shared content verifier')
+    publisher = next((step for step in steps(definitions.get('package', '')) if 'gh release create ' in step), '')
+    if '--latest=false' not in publisher:
+        errors.append('rehearsal creation does not explicitly refuse Latest')
+    return errors
+
+
+errors = contract(source)
+if errors:
+    print('\n'.join(errors))
+    raise SystemExit(1)
+# Deliberately damage the real contract; every arm must detect its own regression.
+for bad in [source.replace('run: bash scripts/test.sh', 'run: echo skipped'),
+            source.replace('    environment: Release\n', ''),
+            source.replace('--latest=false', '--latest'),
+            source.replace('scripts/spreed-refresh.py verify', 'scripts/spreed-refresh.py resolve'),
+            source.replace('secrets.MINISIGN_KEY_PASSWORD', 'secrets.OTHER_KEY')]:
+    assert contract(bad), 'a broken release contract passed'
+
+definitions = jobs(source)
+ancestry = next(run_script(step) for step in steps(definitions['gates']) if 'git merge-base --is-ancestor' in step)
+publish = next(run_script(step) for step in steps(definitions['package']) if 'gh release create ' in step)
+asset_wait = next(run_script(step) for step in steps(definitions['spreed']) if step.startswith("name: Wait for the fork"))
+with tempfile.TemporaryDirectory(prefix='release-contract-') as tmp:
+    root = pathlib.Path(tmp)
+    repo = root / 'source'
+    def git(*args):
+        return subprocess.run(['git', '-C', str(repo), *args], check=True, capture_output=True, text=True).stdout.strip()
+    repo.mkdir()
+    git('init', '-q', '--initial-branch=main')
+    (repo / 'marker').write_text('main\n')
+    git('add', 'marker')
+    git('status', '--short')
+    git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'main fixture')
+    main = git('rev-parse', 'HEAD')
+    origin = root / 'origin.git'
+    subprocess.run(['git', 'clone', '-q', '--bare', str(repo), str(origin)], check=True)
+    git('remote', 'add', 'origin', str(origin))
+    git('switch', '-qc', 'feature')
+    (repo / 'marker').write_text('feature\n')
+    git('add', 'marker')
+    git('status', '--short')
+    git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'feature fixture')
+    feature = git('rev-parse', 'HEAD')
+    for commit, tag, success in [(main, 'v1.2.3', True), (feature, 'v1.2.3', False),
+                                 (feature, 'v0.0.0-ci.2031', True)]:
+        git('checkout', '-q', '--detach', commit)
+        output = root / 'output'
+        output.write_text('')
+        result = subprocess.run(['bash', '-euo', 'pipefail', '-c', ancestry], cwd=repo,
+                                env=dict(os.environ, RELEASE_TAG=tag, GITHUB_OUTPUT=str(output)),
+                                text=True, capture_output=True, timeout=15)
+        assert (result.returncode == 0) == success, f'ancestry {tag}: {result.stdout}{result.stderr}'
+        if success:
+            assert f'sha={commit}' in output.read_text(), 'the proven commit was not frozen'
+    tools = root / 'bin'
+    tools.mkdir()
+    gh = tools / 'gh'
+    gh.write_text('''#!/usr/bin/env python3
+import json, os, pathlib, sys
+if sys.argv[1:3] == ['release', 'view']:
+    counter = pathlib.Path(os.environ['ASSET_CALLS'])
+    count = int(counter.read_text()) + 1 if counter.exists() else 1
+    counter.write_text(str(count))
+    print('spreed.tar.gz' if count == 1 else 'spreed.tar.gz\\ninfo.xml\\nSHA256SUMS\\nSHA256SUMS.minisig')
+    sys.exit(0)
+assert sys.argv[1:3] == ['release', 'create'], sys.argv
+pathlib.Path(os.environ['RELEASE_CALL']).write_text(json.dumps(sys.argv[1:]))
+''')
+    gh.chmod(0o755)
+    sleep = tools / 'sleep'
+    sleep.write_text('#!/bin/sh\nexit 0\n')
+    sleep.chmod(0o755)
+    asset_calls = root / 'asset-calls'
+    asset_names = 'spreed.tar.gz info.xml SHA256SUMS SHA256SUMS.minisig'
+    configured = re.search(r'^      SPREED_RELEASE_ASSETS: "([^"]+)"$', definitions['spreed'], re.M)
+    if configured:
+        assert set(configured[1].split()) == set(asset_names.split()), 'the readiness inventory is incomplete'
+        asset_names = configured[1]
+    waited = subprocess.run(['bash', '-euo', 'pipefail', '-c', asset_wait], cwd=root,
+                            env=dict(os.environ, PATH=str(tools) + os.pathsep + os.environ['PATH'],
+                                     TAG='v24.0.6', ASSET_CALLS=str(asset_calls), SPREED_RELEASE_ASSETS=asset_names),
+                            text=True, capture_output=True, timeout=15)
+    assert waited.returncode == 0 and int(asset_calls.read_text()) >= 2, 'release readiness accepted a partial asset set'
+    call = root / 'release-call'
+    for tag, rehearsal in [('v1.2.3', False), ('v0.0.0-ci.2031', True)]:
+        result = subprocess.run(['bash', '-euo', 'pipefail', '-c', publish], cwd=root,
+                                env=dict(os.environ, PATH=str(tools) + os.pathsep + os.environ['PATH'],
+                                         RELEASE_TAG=tag, RELEASE_CALL=str(call), GH_TOKEN='fixture'),
+                                text=True, capture_output=True, timeout=15)
+        assert result.returncode == 0, result.stdout + result.stderr
+        args = json.loads(call.read_text())
+        assert ('--latest=false' in args) == rehearsal, f'Latest policy for {tag}: {args}'
+        assert ('--prerelease' in args) == rehearsal, f'prerelease policy for {tag}: {args}'
+print('release gates, immutable source, secret scope, ancestry and effective publication flags passed')
+PY
+}
+check release_contract_cases
+
 # #177: only the suite's office backend may be created, routed or published. These are
 # shipped capability surfaces, not a word ban over historical records or negative tests.
 office_backends_removed() {
@@ -2327,6 +2484,8 @@ if command -v signify >/dev/null 2>&1; then
 else
   echo "  skipped: releases --self-test (no signify — sudo apt-get install signify-openbsd)"
 fi
+# The shared Talk release verifier includes byte-tamper and upstream-digest refusals.
+check python3 scripts/spreed-refresh.py --self-test
 # brand-tokens.py (#49): the wizard's brand-token projection — pure stdlib, runs everywhere.
 check python3 scripts/brand-tokens.py --self-test
 # vm-acceptance.sh (#54): the ticket's own acceptance, on a scratch Ubuntu 24.04 VM — the
