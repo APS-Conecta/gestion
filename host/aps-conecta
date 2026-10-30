@@ -778,30 +778,48 @@ PY
   ok "Proxy configurado para la instalación"
 }
 
-install_packages() {  # the tools the install itself runs; apt installs only what is missing
-  local t missing=() pkgs=()
+install_packages() {  # required tools and the optional verifier use separate apt transactions
+  local t missing=() pkgs=() verifier_missing=0
+  local verifier_hint="Verificación de firma pendiente: instale signify-openbsd; en Ubuntu, ejecute sudo add-apt-repository universe y sudo apt-get update; repita sudo aps-conecta preparar"
   for t in python3 curl; do
     command -v "$t" >/dev/null 2>&1 || { missing+=("$t"); pkgs+=("$t"); }
   done
   command -v ogr2ogr >/dev/null 2>&1 || { missing+=(ogr2ogr); pkgs+=(gdal-bin); }
-  # the signed channel's verifier (D5): check_paquete proves the kept package's signature
-  # with it — a fresh host got the sha anchor from the installer itself
-  command -v signify >/dev/null 2>&1 || { missing+=(signify); pkgs+=(signify-openbsd); }
-  if [ ${#missing[@]} -eq 0 ]; then ok "python3, curl, ogr2ogr y signify presentes"; return 0; fi
+  command -v signify >/dev/null 2>&1 || verifier_missing=1
+  if [ ${#missing[@]} -eq 0 ] && [ "$verifier_missing" = 0 ]; then
+    ok "python3, curl, ogr2ogr y signify presentes"; return 0
+  fi
   if ! command -v apt-get >/dev/null 2>&1; then
-    bad "faltan ${missing[*]} y este sistema no usa apt" "instale ${pkgs[*]} y vuelva a ejecutar el paso"
+    if [ ${#missing[@]} -gt 0 ]; then
+      bad "faltan ${missing[*]} y este sistema no usa apt" "instale ${pkgs[*]} y vuelva a ejecutar el paso"
+    fi
+    [ "$verifier_missing" = 0 ] || info "$verifier_hint"
     return 0
   fi
-  info "instalando ${missing[*]}"
-  if "${APT[@]}" update >/dev/null && "${APT[@]}" install -y "${pkgs[@]}" >/dev/null; then
-    # Ubuntu/Debian ship the binary as signify-openbsd; the suite (y esta misma herramienta)
-    # llama al nombre canónico `signify` — se provee una vez, al instalar, para que la
-    # promesa «la firma se verifica desde la próxima corrida» sea cierta (el hueco del
-    # v0.0.0-ci.4: instalar el paquete no creaba el nombre que check_paquete busca).
-    command -v signify >/dev/null 2>&1 || ln -sf "$(command -v signify-openbsd)" /usr/local/bin/signify 2>/dev/null || true
-    ok "Instalado: ${missing[*]}"
-  else
-    bad "no se pudo instalar ${missing[*]}" "revise la red y apt (sudo apt-get update) y vuelva a ejecutar el paso"
+  if ! "${APT[@]}" update >/dev/null; then
+    if [ ${#missing[@]} -gt 0 ]; then
+      bad "no se pudo instalar ${missing[*]}" "revise la red y apt (sudo apt-get update) y vuelva a ejecutar el paso"
+    fi
+    [ "$verifier_missing" = 0 ] || info "$verifier_hint"
+    return 0
+  fi
+  if [ ${#missing[@]} -gt 0 ]; then
+    info "instalando ${missing[*]}"
+    if "${APT[@]}" install -y "${pkgs[@]}" >/dev/null; then
+      ok "Instalado: ${missing[*]}"
+    else
+      bad "no se pudo instalar ${missing[*]}" "revise la red y apt (sudo apt-get update) y vuelva a ejecutar el paso"
+    fi
+  fi
+  if [ "$verifier_missing" = 1 ]; then
+    info "instalando signify"
+    if "${APT[@]}" install -y signify-openbsd >/dev/null; then
+      # Debian and Ubuntu may provide the executable as signify-openbsd.
+      command -v signify >/dev/null 2>&1 || ln -sf "$(command -v signify-openbsd)" /usr/local/bin/signify 2>/dev/null || true
+      ok "Instalado: signify"
+    else
+      info "$verifier_hint"
+    fi
   fi
 }
 
@@ -917,7 +935,7 @@ ensure_dnsmasq_local() {  # D LAN — the local answer: dnsmasq answers the suit
     "# APS Conecta — DNS local para el dominio de la suite"
     "# Escrito por «aps-conecta red --dominio $d --arreglar»; re-ejecútelo para cambiarlo."
     "listen-address=127.0.0.1,$lan"
-    "bind-interfaces"
+    "bind-dynamic"
   )
   # with resolved, /etc/resolv.conf is its stub: dnsmasq's upstream list must come from
   # resolved's own plain file (the loopback in the default one is ignored, a silent loop)
@@ -975,14 +993,17 @@ merge_docker_dns() {  # LAN — the containers' leg: daemon.json's "dns" gains t
   # D10): sibling keys and the operator's own resolvers survive, an unparseable file is
   # refused untouched with the hand fix, and the daemon restarts only when the bytes
   # changed — a consent re-run never bounces a running suite for nothing
-  local f="$ETC_DIR/docker/daemon.json" lan="$1" tmp rc=0
+  local f="$ETC_DIR/docker/daemon.json" lan="$1" tmp rc=0 upstreams=""
   ( umask 022 && mkdir -p "$ETC_DIR/docker" ) \
     || { bad "no se pudo preparar $ETC_DIR/docker" "revise los permisos de $ETC_DIR y vuelva a ejecutar el comando"; return 0; }
   tmp="$(mktemp "$ETC_DIR/docker/.daemon.json.XXXXXX")" \
     || { bad "no se pudo escribir en $ETC_DIR/docker" "revise los permisos de $ETC_DIR y vuelva a ejecutar el comando"; return 0; }
-  python3 - "$f" "$lan" > "$tmp" <<'PY' || rc=$?
-import json, sys
-path, lan = sys.argv[1], sys.argv[2]
+  if resolved_active && command -v resolvectl >/dev/null 2>&1; then
+    upstreams="$(LC_ALL=C resolvectl dns 2>/dev/null || true)"
+  fi
+  python3 - "$f" "$lan" "$upstreams" "$ETC_DIR/resolv.conf" > "$tmp" <<'PY' || rc=$?
+import ipaddress, json, sys
+path, lan, upstreams, resolv_conf = sys.argv[1:]
 try:
     with open(path) as fh:
         cfg = json.load(fh)
@@ -992,7 +1013,36 @@ except (ValueError, UnicodeDecodeError):
     sys.exit(3)   # unparseable: refuse, never overwrite
 dns = cfg.get("dns")
 dns = list(dns) if isinstance(dns, list) else []
-cfg["dns"] = [lan] + [s for s in dns if s != lan]
+for line in upstreams.splitlines():
+    dns.extend(line.partition(":")[2].split())
+try:
+    with open(resolv_conf, errors="replace") as fh:
+        for line in fh:
+            fields = line.split()
+            if len(fields) > 1 and fields[0] == "nameserver":
+                dns.append(fields[1])
+except OSError:
+    pass
+servers = [lan]
+for value in dns:
+    if not isinstance(value, str):
+        continue
+    try:
+        address = ipaddress.ip_address(value)
+    except ValueError:
+        continue
+    # Container DNS cannot use the host's loopback or interface-scoped IPv6.
+    if address.version == 6:
+        if address.ipv4_mapped:
+            address = address.ipv4_mapped
+        elif address.is_link_local or address.scope_id:
+            continue
+    if address.is_loopback or address.is_unspecified or address.is_multicast:
+        continue
+    value = str(address)
+    if value not in servers:
+        servers.append(value)
+cfg["dns"] = servers
 print(json.dumps(cfg, indent=2, ensure_ascii=False))
 PY
   if [ "$rc" -ne 0 ]; then
@@ -2314,7 +2364,7 @@ check_paquete() {  # [TAG] — the kept package at $APS_HOME/paquete (D11: insta
     return 0
   fi
   if ! command -v signify >/dev/null 2>&1; then
-    info "signify no está instalado: la suma del instalador ya probó los bytes al descargar; «sudo aps-conecta preparar» instala signify-openbsd y la firma se verifica desde la próxima corrida"
+    info "signify no está instalado: la suma del instalador ya probó los bytes al descargar; «sudo aps-conecta preparar» instala signify-openbsd cuando está disponible; la firma queda pendiente hasta disponer de la herramienta"
     return 0
   fi
   sums="$paquete/SHA256SUMS"
@@ -2677,7 +2727,11 @@ case "$c \$1" in
   "systemctl restart") [ "\${PROXY_RESTART_FAIL:-0}" = 0 ] || exit 1 ;;
   "dpkg --print-architecture") echo amd64 ;;
   "usermod -aG") echo "\$3 docker" >> "$tmp/groups" ;;
-  "apt-get "*) case " \$* " in *" install "*) for p in "\$@"; do case "\$p" in
+  "apt-get "*)
+    if [ "\${OPTIONAL_VERIFIER_UNAVAILABLE:-0}" = 1 ]; then
+      case " \$* " in *" signify-openbsd "*) exit 100 ;; esac
+    fi
+    case " \$* " in *" install "*) for p in "\$@"; do case "\$p" in
       -*|install|DPkg::*) ;;
       docker-ce) cp "$tmp/docker-installed" "$tshim/docker" ;;
       gdal-bin) printf '#!/usr/bin/env bash\nexit 0\n' > "$tshim/ogr2ogr"; chmod +x "$tshim/ogr2ogr" ;;
@@ -2718,13 +2772,19 @@ SHIM
   if only_shims apt-get usermod systemctl dpkg sysctl curl id; then
     step_out="$(PATH="$tshim:$tmp/minbin"; FAIL=0; SUDO_USER=operador step_preparar; echo "FAIL=$FAIL")"
     check "preparar: a fresh Ubuntu gets python3, Docker from Docker's repository, the operator's group and overcommit 1 — each proved" \
-      'case "$step_out" in *"✓ Instalado: python3 ogr2ogr signify"*"✓ Docker instalado desde su repositorio oficial"*"✓ docker (API 1.56"*"✓ Usuario operador agregado al grupo docker"*"✓ Memoria del sistema ajustada (vm.overcommit_memory 2 → 1"*"FAIL=0") ;; *) false;; esac'
+      'case "$step_out" in *"✓ Instalado: python3 ogr2ogr"*"✓ Instalado: signify"*"✓ Docker instalado desde su repositorio oficial"*"✓ docker (API 1.56"*"✓ Usuario operador agregado al grupo docker"*"✓ Memoria del sistema ajustada (vm.overcommit_memory 2 → 1"*"FAIL=0") ;; *) false;; esac'
     check "preparar: the host changes are apt (lock-patient) from Docker's noble suite, usermod and the sysctl.d file applied alone" \
-      'grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y python3 gdal-bin signify-openbsd" "$tmp/mut.log" && grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y ca-certificates" "$tmp/mut.log" && grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y docker-ce docker-ce-cli containerd.io" "$tmp/mut.log" && grep -qx "usermod -aG docker operador" "$tmp/mut.log" && grep -qx "sysctl -p $ETC_DIR/sysctl.d/90-aps-conecta.conf" "$tmp/mut.log" && grep -qx "Suites: noble" "$ETC_DIR/apt/sources.list.d/docker.sources" && grep -qx "URIs: https://download.docker.com/linux/ubuntu" "$ETC_DIR/apt/sources.list.d/docker.sources" && grep -qx "vm.overcommit_memory = 1" "$ETC_DIR/sysctl.d/90-aps-conecta.conf"'
+      'grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y python3 gdal-bin" "$tmp/mut.log" && grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y signify-openbsd" "$tmp/mut.log" && grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y ca-certificates" "$tmp/mut.log" && grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y docker-ce docker-ce-cli containerd.io" "$tmp/mut.log" && grep -qx "usermod -aG docker operador" "$tmp/mut.log" && grep -qx "sysctl -p $ETC_DIR/sysctl.d/90-aps-conecta.conf" "$tmp/mut.log" && grep -qx "Suites: noble" "$ETC_DIR/apt/sources.list.d/docker.sources" && grep -qx "URIs: https://download.docker.com/linux/ubuntu" "$ETC_DIR/apt/sources.list.d/docker.sources" && grep -qx "vm.overcommit_memory = 1" "$ETC_DIR/sysctl.d/90-aps-conecta.conf"'
     : > "$tmp/mut.log"
     step_out="$(PATH="$tshim:$tmp/minbin"; FAIL=0; SUDO_USER=operador step_preparar; echo "FAIL=$FAIL")"
     check "preparar: a re-run finds everything done and changes nothing" \
       'case "$step_out" in *"✓ python3, curl, ogr2ogr y signify presentes"*"✓ Usuario operador en el grupo docker"*"✓ Memoria del sistema ajustada (vm.overcommit_memory = 1)"*"FAIL=0") ;; *) false;; esac && ! grep -qE "^(apt-get|usermod|sysctl -p|curl|systemctl start)" "$tmp/mut.log"'
+    rm -f "$tshim/python3" "$tshim/ogr2ogr" "$tshim/signify"
+    : > "$tmp/mut.log"
+    step_out="$(PATH="$tshim:$tmp/minbin"; export OPTIONAL_VERIFIER_UNAVAILABLE=1; FAIL=0; SUDO_USER=operador step_preparar; echo "FAIL=$FAIL")"
+    check "preparar: an unavailable optional verifier retains required tools and reports the Ubuntu repository fix without a false signature claim" \
+      '[ -x "$tshim/python3" ] && [ -x "$tshim/ogr2ogr" ] && [ ! -e "$tshim/signify" ] \
+       && case "$step_out" in *"✓ Instalado: python3 ogr2ogr"*"Verificación de firma pendiente"*"add-apt-repository universe"*"FAIL=0") ;; *) false;; esac'
     step_out="$(export HTTPS_PROXY='http://fixture:synthetic-p%40ss@proxy.example:3128';
       APS_HOME="$tmp/proxy-home"; FAIL=0; SUDO_USER=operador step_preparar; echo "FAIL=$FAIL")"
     check "proxy: preparation persists a private profile and configures Docker without printing credentials" \
@@ -4068,6 +4128,7 @@ SHIM
   cat > "$tshim/resolvectl" <<SHIM
 #!/usr/bin/env bash
 printf '%s\n' "resolvectl \$*" >> "$rlog"
+[ "\$1" = dns ] && cat "\$ETC_DIR/resolved-dns" 2>/dev/null
 exit 0
 SHIM
   cat > "$tshim/ufw" <<SHIM
@@ -4161,9 +4222,9 @@ SHIM
        && case "$out_red" in *"✓ DNS local listo: clinica.example responde 10.0.0.5 desde este servidor (dnsmasq)"*"✓ El DNS del propio servidor enrutó clinica.example al DNS local (systemd-resolved)"*"✓ DNS de los contenedores: el daemon de docker usa este servidor como DNS (10.0.0.5 primero)"*"✓ Cortafuegos: el DNS local abierto a los contenedores (ufw)"*"✓ clinica.example resuelve a 10.0.0.5 desde este servidor — re-intente el paso en el instalador web"*) ;; *) false;; esac'
     check "red --arreglar: dnsmasq first, the host's routing, docker last — the daemon restarts after the whole answer is local" \
       '[ "$(grep -n "^enable --now dnsmasq$" "$rlog" | head -1 | cut -d: -f1)" -lt "$(grep -n "^restart systemd-resolved$" "$rlog" | head -1 | cut -d: -f1)" ] && [ "$(grep -n "^restart systemd-resolved$" "$rlog" | head -1 | cut -d: -f1)" -lt "$(grep -n "^restart docker$" "$rlog" | head -1 | cut -d: -f1)" ]'
-    check "red --arreglar: the dnsmasq conf — loopback plus the LAN address, the suite's domain pinned to it, and (with resolved) the upstream list from resolved's own plain file" \
+    check "red --arreglar: DNS binds dynamically to loopback and the LAN address, retains the domain and resolved upstreams" \
       'grep -qx "listen-address=127.0.0.1,10.0.0.5" "$ETC_RED/dnsmasq.d/aps-conecta.conf" \
-       && grep -qx "bind-interfaces" "$ETC_RED/dnsmasq.d/aps-conecta.conf" \
+       && grep -qx "bind-dynamic" "$ETC_RED/dnsmasq.d/aps-conecta.conf" \
        && grep -qx "resolv-file=/run/systemd/resolve/resolv.conf" "$ETC_RED/dnsmasq.d/aps-conecta.conf" \
        && grep -qx "address=/clinica.example/10.0.0.5" "$ETC_RED/dnsmasq.d/aps-conecta.conf"'
     check "red --arreglar: the resolved drop-in routes ONLY the suite's domain, to the LAN address dnsmasq also listens on" \
@@ -4186,6 +4247,12 @@ SHIM
     check "red --arreglar: an existing daemon.json is MERGED — this server first, the operator's resolver kept, sibling keys intact — and docker restarts for the change" \
       '[ "$rc_red" -eq 0 ] && grep -q "^restart docker$" "$rlog" \
        && [ "$(python3 -c "import json; d = json.load(open(\"$ETC_RED/docker/daemon.json\")); print(\" \".join(d[\"dns\"]), d[\"log-level\"])")" = "10.0.0.5 10.0.0.1 debug" ]'
+    printf 'Global: 10.0.0.5\nLink 2 (eth0): 10.0.0.1 10.0.0.2 10.0.0.1 127.0.0.53 ::1 2001:db8::53\n' > "$ETC_RED/resolved-dns"
+    printf '{"log-level":"debug"}\n' > "$ETC_RED/docker/daemon.json"
+    red_run "$ETC_RED" --dominio clinica.example --arreglar
+    check "red --arreglar: a fresh Docker DNS list retains real host upstreams after LAN, without duplicates or local resolver loops" \
+      '[ "$rc_red" -eq 0 ] && [ "$(python3 -c "import json; d = json.load(open(\"$ETC_RED/docker/daemon.json\")); print(\" \".join(d[\"dns\"]), d[\"log-level\"])")" = "10.0.0.5 10.0.0.1 10.0.0.2 2001:db8::53 debug" ]'
+    rm -f "$ETC_RED/resolved-dns"
     printf 'esto no es json\n' > "$ETC_RED/docker/daemon.json"; cp "$ETC_RED/docker/daemon.json" "$tmp/red-antes"
     : > "$rlog"
     red_run "$ETC_RED" --dominio clinica.example --arreglar
@@ -4199,9 +4266,14 @@ SHIM
        && ! grep -q "10.0.0.6" "$ETC_RED2/dnsmasq.d/aps-conecta.conf" && case "$out_red" in *"responde 10.0.0.5"*) ;; *) false;; esac'
     printf '10.0.0.5\n' > "$tmp/red-lan"
     rm -rf "$ETC_RED2"; mkdir -p "$ETC_RED2"
+    printf '%s\n' 'nameserver 127.0.0.53' 'nameserver ::ffff:127.0.0.1' \
+      'nameserver 10.0.0.5' 'nameserver 10.0.0.1' 'nameserver 10.0.0.1' \
+      'nameserver 2001:db8::53' 'nameserver fe80::1%eth0' 'nameserver 2001:db8::53%eth0' \
+      'nameserver 169.254.169.253' 'nameserver 0.0.0.0' > "$ETC_RED2/resolv.conf"
     red_run "$ETC_RED2" "" 0 --dominio clinica.example --arreglar
-    check "red --arreglar: a host without systemd-resolved fixes the containers' legs, refuses the host's own honestly, and never writes the drop-in" \
+    check "red --arreglar: without resolved, usable resolv.conf upstreams follow LAN and the unsupported host route remains explicit" \
       '[ "$rc_red" -eq 1 ] && [ ! -e "$ETC_RED2/systemd/resolved.conf.d" ] && [ -f "$ETC_RED2/docker/daemon.json" ] \
+       && [ "$(python3 -c "import json; print(\" \".join(json.load(open(\"$ETC_RED2/docker/daemon.json\"))[\"dns\"]))")" = "10.0.0.5 10.0.0.1 2001:db8::53 169.254.169.253" ] \
        && ! grep -q "resolv-file" "$ETC_RED2/dnsmasq.d/aps-conecta.conf" \
        && case "$out_red" in *"✗ este servidor no usa systemd-resolved"*"✗ clinica.example aún no resuelve a 10.0.0.5"*) ;; *) false;; esac'
     rm -rf "$ETC_RED2"; mkdir -p "$ETC_RED2"; : > "$tmp/red-ps"; : > "$rlog"
@@ -4261,7 +4333,7 @@ SHIM
     'case "$out_paq" in *"· no hay paquete guardado de la versión v9.8.7 (disco liberado)"*) ;; *) false;; esac'
   out_paq="$(PATH="$tshim:$minpaq" APS_HOME="$ph" check_paquete)"
   check "paquete: signify not installed yet — the honest skip naming preparar and signify-openbsd (the installer's sha already anchored the bytes)" \
-    'case "$out_paq" in *"· signify no está instalado"*"sudo aps-conecta preparar» instala signify-openbsd"*) ;; *) false;; esac'
+    'case "$out_paq" in *"· signify no está instalado"*"sudo aps-conecta preparar» instala signify-openbsd"*"la firma queda pendiente"*) ;; *) false;; esac'
   mv "$tmp/sig-guard" "$tshim/signify"   # PRESENT again: the reds, the green, the sweeps
   echo 0 > "$tmp/paq-sig.rc"; : > "$plog"
   mv "$ph/paquete/SHA256SUMS" "$tmp/sums.bak"

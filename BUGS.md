@@ -101,6 +101,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-060 | Clean boot could reject valid Spanish certificate output whenever a SHA-256 fingerprint contained a byte such as D5 (#192 acceptance) | the internal-reference language pattern also matched hexadecimal bytes in a random certificate fingerprint | normalize complete SHA-256 fingerprints only for the language check; the existing workflow safety seam accepts a valid fingerprint and still rejects English warnings and internal references |
 
+| A-061 | host preparation could lose DNS upstreams, fail when a LAN interface appeared late and leave required tools uninstalled when the optional verifier package was unavailable (#194) | fixed DNS binding and a LAN-only Docker DNS merge assumed the CI host's network, while one apt transaction coupled required tools to signify-openbsd | dynamic binding retains restricted listeners; the existing JSON writer merges usable Docker and host resolvers behind LAN; separate apt transactions keep required tools available and report pending signature verification with Ubuntu universe guidance; host fixtures fail before each correction |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and

@@ -33,6 +33,14 @@ El recorrido completo, paso a paso con los comandos, está en `INSTALLER.md` §2
    ejecución encuentra deriva (algo en la instancia que no se declaró), cada administrador recibe
    un aviso al entrar, y `aps-conecta estado` — sin sudo — muestra cada elemento con su arreglo.
 
+### Preparación del servidor
+
+Ejecute `sudo aps-conecta preparar` para instalar las herramientas requeridas. El verificador
+de firma se instala por separado. Si queda pendiente, en Ubuntu habilite el repositorio con
+`sudo add-apt-repository universe`, ejecute `sudo apt-get update` y repita la preparación.
+La suma del paquete se verifica desde la descarga; la firma se comprueba cuando el verificador
+está disponible.
+
 ### Instalación mediante un proxy institucional
 
 Ingrese la dirección del proxy de forma privada y conserve sus variables durante la descarga
@@ -62,6 +70,8 @@ El asistente está en español. Lo importante:
   con un clic («Sí, corregir la red»: un DNS local responde por el dominio desde el servidor);
   a mano, `sudo aps-conecta red --dominio <dominio> --arreglar` hace lo mismo
   (`INSTALLER.md` §7 trae el detalle). Sin dominio, la dirección IP del servidor (§11).
+  El DNS local admite una interfaz LAN tardía. Docker conserva la dirección LAN primero y los
+  servidores DNS válidos del anfitrión y de su configuración anterior, sin duplicados ni bucles.
 - **La oficina es Euro-Office**, la única de la suite: el asistente no ofrece cambiarla ni
   desactivarla. No hay tienda de aplicaciones ni contenedores comunitarios: las apps de la suite
   vienen incorporadas y el conjunto se actualiza junto, nunca por partes.
