@@ -133,7 +133,6 @@ jobs:
     timeout-minutes: 60
     env:
       # Lifecycle acceptance uses the same by-IP HTTPS setup as the fresh-install job.
-      SUITE_CA: ${{ runner.temp }}/ca.crt
       # The testbed's mastercontainer, at the suite tag resolved above; its siblings follow its tag.
       AIO_TEST_IMAGE: ghcr.io/aps-conecta/all-in-one:${{ needs.suite-tag.outputs.tag }}
       SUITE_TAG: ${{ needs.suite-tag.outputs.tag }}
@@ -144,11 +143,14 @@ jobs:
           fetch-depth: 1   # VERSION answers suite_tag() now — no tag history to read
       # Preflight and startup use the same suite ports and certificate as a clinic.
       - name: Bring up the disposable AIO instance through the installer
+        env:
+          SUITE_CA: ${{ runner.temp }}/ca.crt
         run: |
           sudo env "PATH=$PATH" AIO_TEST_IMAGE="$AIO_TEST_IMAGE" bash scripts/aio-testbed.sh up
           echo "SUITE_IP=$(sudo cat /tmp/aio-testbed/dominio)" >> "$GITHUB_ENV"
           sudo cp /opt/aps-conecta/certificados/ca/aps-conecta-ca.crt "$SUITE_CA"
           sudo chmod 644 "$SUITE_CA"
+          echo "SUITE_CA=$SUITE_CA" >> "$GITHUB_ENV"
           sudo chown -R "$(id -u):$(id -g)" /tmp/aio-testbed
       # FIRST BOOT, the one sibling whose absence kills a first boot: the notify-push
       # container's own start dies when the app binary is absent (Containers/notify-push/

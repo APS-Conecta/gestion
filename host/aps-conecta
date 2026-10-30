@@ -363,6 +363,8 @@ check_ports() {
     [ "$protocol" != udp ] || flag=-lunp
     if port_free "$p" "$protocol"; then
       ok "puerto $p libre ($protocol)"
+    elif [ "$?" -ne 1 ]; then
+      bad "no se pudo revisar el puerto $p ($protocol)" "revise ss del paquete iproute2 antes de instalar"
     elif tr ', ' '\n\n' <<<"$published" | grep -qE ":$p->[0-9]+/$protocol$"; then
       ok "puerto $p en uso por la suite (ya instalada)"
     else
