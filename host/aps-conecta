@@ -688,6 +688,18 @@ proxy_save() {
 
 prepare_proxy() {
   local PROXY_CHANGED=0 file dropin
+  proxy_load || return 1
+  [ -n "${HTTPS_PROXY:-}" ] || return 0
+  local extra
+  extra="$(
+    host_ipv4s
+    site_domain || true
+    suite_subnets || true
+    if [ -f "$ROOT/php/containers.json" ] && command -v python3 >/dev/null 2>&1; then
+      python3 -c 'import json,sys; print("\n".join(c["container_name"] for c in json.load(open(sys.argv[1]))["aio_services_v1"]))' "$ROOT/php/containers.json"
+    fi
+  )"
+  NO_PROXY="${NO_PROXY},$(printf '%s' "$extra" | paste -sd, -)"; no_proxy="$NO_PROXY"
   proxy_save || return 1
   [ -n "${HTTPS_PROXY:-}" ] || return 0
   file="$(proxy_file)"; dropin="$ETC_DIR/systemd/system/docker.service.d/aps-conecta-proxy.conf"
@@ -975,8 +987,10 @@ step_preparar() {  # installs what is missing, then proves each piece with its o
   fi
   check_host_installation
   [ "$FAIL" -eq 0 ] || return 0
+  proxy_load || return 0
+  install_packages
   prepare_proxy || return 0
-  install_packages; install_docker
+  install_docker
   check_docker; ensure_docker_group; ensure_overcommit
 }
 
