@@ -2452,11 +2452,17 @@ else:
     php.chmod(0o755)
     for name, body in {
         'nc': 'exit 0', 'chmod': 'exit 0',
-        'sha256sum': 'printf "unchanged-config-hash\\n"',
     }.items():
         command = commands / name
         command.write_text('#!/bin/bash\n' + body + '\n')
         command.chmod(0o755)
+    digest = commands / 'sha256sum'
+    digest.write_text('#!' + sys.executable + '\n' +
+                      'import hashlib, json, os\n' +
+                      's = json.load(open(os.environ["APP_STATE"]))\n' +
+                      'system = {k:v for k,v in s["config"].items() if k.startswith("config:system:set:")}\n' +
+                      'print(hashlib.sha256(json.dumps(system, sort_keys=True).encode()).hexdigest())\n')
+    digest.chmod(0o755)
     env = dict(os.environ, PATH=str(commands) + ':' + os.environ['PATH'],
                APP_STATE=str(state_path), REAL_PHP=real_php,
                EUROOFFICE_ENABLED='yes', EUROOFFICE_HOST='aps-conecta-eurooffice',
@@ -2485,7 +2491,8 @@ else:
     assert ['app:enable', 'eurooffice'] in state['calls']
     assert any(call[:3] == ['config:app:set', 'eurooffice', 'DocumentServerUrl'] and
                call[3] == '--value=https://test.invalid/eurooffice' for call in state['calls'])
-    assert ' -> updated' in output
+    assert 'app:eurooffice:DocumentServerUrl -> updated' in output
+    assert output.count('system:eurooffice -> updated') == 3
     first_config = state['config']
     state, output = run()
     assert state['config'] == first_config and ' -> ' not in output

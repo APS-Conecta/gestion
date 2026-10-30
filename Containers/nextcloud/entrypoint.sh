@@ -544,8 +544,6 @@ EOF
     # app:update --all on Saturdays when its config asked for it; that leg is deleted, not
     # gated — apps move only when the operator decides (`aps-conecta actualizar`), and the
     # store stays closed on every update path besides.
-else
-    SKIP_UPDATE=1
 fi
 
 run_upgrade_if_needed_due_to_app_update
