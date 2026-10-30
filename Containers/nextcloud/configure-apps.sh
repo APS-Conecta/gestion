@@ -10,7 +10,9 @@ startup_occ() { php /var/www/html/occ "$@"; }
 # app:list includes both shipped and custom apps, including group-enabled apps.
 ensure_startup_app() {
     local app="$1" snapshot state
-    snapshot="$(startup_occ app:list --output=json)" || return 1
+    snapshot="$(startup_occ app:list --output=json 2>/dev/null)" || {
+        echo "app-startup: failed to list installed apps" >&2; return 1;
+    }
     state="$(printf '%s' "$snapshot" | php -r '
         try {
             $apps = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
@@ -23,10 +25,17 @@ ensure_startup_app() {
     ' "$app")" || { echo "app-startup: cannot read installed apps" >&2; return 1; }
     case "$state" in
         enabled) return 0 ;;
-        disabled) startup_occ app:enable "$app" || return 1 ;;
+        disabled)
+            if ! startup_occ app:enable "$app" >/dev/null 2>&1; then
+                echo "app-startup: failed to enable $app" >&2; return 1
+            fi
+            echo "app-startup: $app -> enabled" ;;
         missing)
             if [ "$app" = notify_push ]; then
-                NC_appstoreenabled=1 php /var/www/html/occ app:install notify_push || return 1
+                NC_appstoreenabled=1 php /var/www/html/occ app:install notify_push >/dev/null 2>&1 || {
+                    echo "app-startup: failed to install notify_push" >&2; return 1;
+                }
+                echo "app-startup: notify_push -> installed"
             else
                 echo "app-startup: $app is absent; configuration deferred until it is installed"
                 return 2

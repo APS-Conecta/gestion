@@ -160,7 +160,7 @@ scoped_store_installs() {  # 042, 147: the shared boot helper owns the sole scop
   grep -qF 'NC_appstoreenabled=1 php /var/www/html/occ app:install notify_push' "$helper" \
     || { echo "  notify_push lost its scoped store install" >&2; fail=1; }
   if grep -nE 'app:install|NC_appstoreenabled=1 .*app:update' "$e" "$helper" \
-      | grep -vE 'NC_appstoreenabled=1 php /var/www/html/occ app:install notify_push \|\| return 1$'; then
+      | grep -vE 'NC_appstoreenabled=1 php /var/www/html/occ app:install notify_push >/dev/null 2>&1 \|\| \{$'; then
     echo "  a boot install escaped the sole scoped notify_push acquisition" >&2; fail=1
   fi
   [ "$fail" -eq 0 ]
