@@ -3134,7 +3134,10 @@ case "\$url" in
   */api/docker/start) echo "POST start\$data" >> "$tmp/aio.log"
     if [ -e "$tmp/aio.start-fails" ]; then code=500; else
     printf '%s\n' aps-conecta-nextcloud aps-conecta-database aps-conecta-redis > "$tmp/aio.ps"; sleep 0.4
-    printf '%s\n' aps-conecta-nextcloud $AIO_SET > "$tmp/aio.ps"; code=200; fi ;;
+    printf '%s\n' aps-conecta-nextcloud $AIO_SET > "$tmp/aio.ps"; code=200
+    body='<!-- aps-start-result:{"status":"ok","message":""} -->'
+    if [ -e "$tmp/aio.result-error" ]; then body='<!-- aps-start-result:{"status":"error","message":"synthetic image unavailable"} -->'; fi
+    fi ;;
 esac
 if [ -n "\$outfile" ]; then printf '%s\n' "\$body" > "\$outfile"; else [ -z "\$body" ] || printf '%s\n' "\$body"; fi
 [ -z "\$code" ] || printf '%s' "\$code"
@@ -3191,6 +3194,11 @@ SHIM
     check "asistente-aio: a start the wizard refuses reds with its HTTP code and stops before the waits" \
       '[ "$rc" -eq 1 ] && case "$out" in *"✗ el asistente no pudo iniciar la suite (HTTP 500)"*) ;; *) false;; esac && case "$out" in *"Suite en marcha"*) false;; *) true;; esac'
     rm -f "$tmp/aio.start-fails"
+    : > "$tmp/aio.ps"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; touch "$tmp/aio.result-error"
+    out="$( (cmd_aio_wizard --dominio clinica.example) 2>&1)"; rc=$?
+    check "asistente-aio: HTTP 200 with a terminal error fails with its cause, before success or readiness" \
+      '[ "$rc" -eq 1 ] && case "$out" in *"synthetic image unavailable"*) ;; *) false;; esac && case "$out" in *"✓ Suite iniciada"*|*"✓ Suite en marcha"*) false;; *) true;; esac'
+    rm -f "$tmp/aio.result-error"
     out="$( (cmd_aio_wizard --dominio clinica.example --respaldo) 2>&1)"; rc=$?
     check "asistente-aio: --respaldo without a directory refuses — never a silently skipped backup" \
       '[ "$rc" -eq 1 ] && [ "$out" = "✗ falta el directorio del respaldo: aps-conecta asistente-aio --dominio <dominio> --respaldo <directorio>" ]'
