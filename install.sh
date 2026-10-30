@@ -140,7 +140,8 @@ main() {
 # and a failing main dies inside the subshell, never the test run (|| rc=$? keeps errexit out
 # of the verdict).
 selftest() {
-  local n=0 tmp tshim out rc pkgsha
+  local n=0 tmp tshim out rc pkgsha source_root
+  source_root="$(cd "${1:-$(dirname "$0")}" && pwd)"
   tmp="$(mktemp -d)"; tshim="$tmp/bin"; mkdir -p "$tshim"
   check() { n=$((n + 1)); if eval "$2"; then :; else echo "  FAIL: $1" >&2; FAILED=$((FAILED + 1)); fi; }
   FAILED=0
@@ -281,6 +282,12 @@ SH
   check "orphan: the real staged host guard refuses before bootstrap can create a valid-looking installation folder" \
     '[ "$rc" -ne 0 ] && [ ! -e "$tmp/orphan/instalador" ] && case "$out" in *"instalación incompleta"*) ;; *) false;; esac'
 
+  if [ -z "${1:-}" ]; then
+    cp "$0" "$tmp/install.sh"
+    check "standalone: generated asset runs the same tests using the verified source fixtures" \
+      'bash "$tmp/install.sh" --self-test "$source_root" >/dev/null 2>&1'
+  fi
+
   rm -rf "$tmp"
   echo
   echo "self-test: $n checks OK"
@@ -288,5 +295,5 @@ SH
   return 0
 }
 
-if [ "${1:-}" = "--self-test" ]; then selftest; exit $?; fi
+if [ "${1:-}" = "--self-test" ]; then selftest "${2:-}"; exit $?; fi
 main "$@"
