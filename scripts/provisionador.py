@@ -298,7 +298,7 @@ PASOS_SUITE = ((("✓ Suite iniciada", "✓ Suite reanudada", "✓ La suite ya e
                (("✓ Contraseña del asistente",), "Contraseña del asistente"),
                (("✓ Ingreso al asistente",), "Ingreso al asistente"),
                (("✓ Dominio:",), "Dominio"), (("✓ Zona horaria:",), "Zona horaria"),
-               (("✓ Opciones:",), "Opciones"), (("✓ Respaldo diario",), "Respaldo diario"))
+               (("✓ Servicios de la suite incluidos;",), "Servicios incluidos"), (("✓ Respaldo diario",), "Respaldo diario"))
 SUITE = {"estado": "sin_preparar", "hechos": [], "motivo": ""}
 SUITE_GUARD = threading.Lock()
 SUITE_CMD = ["bash", HOST_CLI, "asistente-aio", "--preparar"]   # the host's own drive; the self-test fakes it
@@ -2356,10 +2356,6 @@ contenedores se reinicia una vez durante la corrección.</p>
 <script>
 (async () => {
   let reloj = null, visto = "", vistoDatos = "", vistoOpc = "", aviso = "", relojRed = null, pedido = null, reintentado = false, redVista = "";
-  const fila = (n, v, activo) => '<li class="' + (v.cabe ? "hecho" : "") + '"><span class="ic">' + (v.cabe ? "✓" : "✗") +
-    "</span><span><b>" + n + ": " + (v.cabe ? "cabe" : "no cabe") + "</b> (" + escapear(v.texto) + ")" +
-    (activo === undefined ? (v.cabe ? " — se activa." : " — queda desactivada.") :   // once prepared: what it was given
-      activo ? " — activado." : " — desactivado.") + "</span></li>";
   const coma = (x) => String(x).replace(".", ",");
   function pintar(s) {
     zona("m").innerHTML = "";
@@ -2393,9 +2389,7 @@ contenedores se reinicia una vez durante la corrección.</p>
       (pisos.ram_min ? '<p class="nota">Pisos del instalador: memoria ' + pisos.ram_min +
         " GiB (recomendado " + pisos.ram_recomendada + " GiB); disco " + pisos.disco_min +
         " GB (recomendado " + pisos.disco_recomendado + " GB).</p>" : "") +
-      '<ul class="lista-estado">' +
-      fila("Talk", s.talk, true) +
-      fila("Grabación", s.grabacion, false) + "</ul>";
+      "<p>Talk está incluido. La grabación permanece desactivada.</p>";
     // a suite that exists — prepared here, or already started — is followed, never prepared again
     const p = s.preparacion, hechos = new Set(p.hechos),
       sigue = s.preparada || s.en_marcha || s.contenedores.some(([, e]) => e !== "en espera");
@@ -3280,7 +3274,6 @@ def iniciar_suite(payload):
     st, vistos = contenedores()
     if st != 200:
         return st, vistos
-    talk, grabacion = talk_ahora(vistos)
     argv = (SUITE_CMD + ["--dominio", dominio, "--respaldo", RESPALDO_DIR]
             + [p for i, _n, _s, _d in OPCIONALES for p in (("--app", i) if apps.get(i) else ())]
             + ([] if payload.get("validar") is not False else ["--sin-validar-dominio"]))
@@ -5239,7 +5232,7 @@ echo "✓ Contraseña del asistente guardada en $AIO_STATE/master.pw (solo admin
 echo "✓ Ingreso al asistente"
 echo "✓ Dominio: $d"
 echo "✓ Zona horaria: America/Santiago"
-echo "✓ Opciones: oficina incluida; Talk activado; grabación apagada; imágenes apagadas; sin aplicaciones opcionales"
+echo "✓ Servicios de la suite incluidos; sin aplicaciones opcionales"
 echo "✓ Respaldo diario a las 04:00 hora de Santiago (07:00 UTC), en /srv/aps-conecta/respaldos, con /opt/aps-conecta"
 printf '%s\\n' "$d" > "$AIO_STATE/dominio"
 printf 'talk=%s grabacion=%s farmacia=%s estadistica=%s totem=%s\\n' "$t" "$g" "$f" "$e" "$m" > "$AIO_STATE/opciones"
@@ -5805,9 +5798,9 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   and "bash /configure-apps.sh eurooffice" in log)
             check("generar: the password policy's breach check is off — no password, nor its hash prefix, leaves the server (R28)",
                   "config:app:set password_policy enforceHaveIBeenPwned --value=0" in log)
-            check("generar: the AIO arm — Talk off in the suite: phase 12 asks the suite and installs no spreed (R29)",
-                  "printenv TALK_ENABLED" in log and "spreed skipped" in body["salida"]
-                  and "app spreed" not in body["salida"])
+            check("generar: Talk always installs its signed release without reading a service switch (#183)",
+                  "printenv TALK_ENABLED" not in log and "spreed skipped" not in body["salida"]
+                  and "app spreed" in body["salida"])
             # B-030: phase 50 creates the standing accounts AFTER phase 41 mapped the registry
             # groups into the engine's, so the FIRST seed must map them too — or the second seed
             # writes (Clean boot's seed-idempotent) and every fresh install converges one run late
@@ -5891,9 +5884,9 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
             open(stubctl, "w").close()
             open(stubctl, "w", encoding="utf-8").write("FAIL_ON=TALK_ENABLED\n")
             st, body = generar("ejecutar")
-            check("generar: the suite's Talk switch unreadable stops phase 12 — never read as Talk off (R29)",
-                  st == 500 and body["error"].startswith("FATAL: could not read the suite's Talk switch")
-                  and "spreed skipped" not in body["salida"])
+            check("generar: an unavailable legacy Talk switch cannot gate signed acquisition (#183)",
+                  st == 200 and "printenv TALK_ENABLED" not in stub_log_text()
+                  and "app spreed" in body["salida"])
             open(stubctl, "w").close()
 
             open(stubctl, "w", encoding="utf-8").write("GATE_EXTRA=intruso.9\n")
@@ -6907,7 +6900,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                             pg.wait_for_selector("#s-abrir", timeout=15000)
                             recargado7 = pg.inner_text("#s-datos")
                             open(stubctl, "w", encoding="utf-8").write("PS_LISTA=" + ";".join(
-                                f"{c}:Up 3 minutes" for c, _n in CONTENEDORES_SUITE + CONTENEDORES_TALK[:1]) + "\n")
+                                f"{c}:Up 3 minutes" for c, _n in CONTENEDORES_SUITE) + "\n")
                             pg.wait_for_selector("#s-sig-fila:not([hidden])", timeout=15000)
                             principal7 = pg.inner_text("#contenido")
                             sin_abrir = pg.query_selector("#s-abrir") is None   # no wait: it is gone
@@ -6919,14 +6912,13 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                                                 antes_txt + error_txt + prep_txt + datos_txt + espera_txt + principal7)
                             paso_suite = ("Inicio" in apps_txt and "según su release" in apps_txt
                                      and "Territorio" in apps_txt
-                                     and "Talk: cabe" in talk_txt and "Grabación: no cabe" in talk_txt
-                                     and "requiere 4 núcleos libres; hay 4 en total" in talk_txt
+                                     and "Talk está incluido" in talk_txt and "La grabación permanece desactivada" in talk_txt
                                      and "El asistente rechazó la dirección" in error_txt and de_nuevo
                                      and "Asistente en marcha" in prep_txt
                                      and "frase uno dos" in datos_txt and "gestion.clinica.example" in datos_txt
                                      and "frase uno dos" in recargado7
                                      and "Esperando «Iniciar» en el asistente" in espera_txt
-                                     and "✓ Suite en marcha: 7 contenedores." in principal7 and jerga7 == []
+                                     and f"✓ Suite en marcha: {len(CONTENEDORES_SUITE)} contenedores." in principal7 and jerga7 == []
                                      and sin_abrir)
                         except Exception as e:   # a Playwright timeout: the arm reports it
                             paso_suite = False

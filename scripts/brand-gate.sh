@@ -118,7 +118,6 @@ php/templates/log.twig|>Disable</button>|>Desactivar</button>
 php/templates/layout.twig|<html lang="en">|<html lang="es">
 php/public/forms.js|Server error. Please check|Error del servidor.
 php/public/second-tab-warning.js|Cannot open multiple instances|No se pueden abrir múltiples instancias
-php/public/containers-form-submit.js|Enabling this container comes with possible|Activar este contenedor conlleva posibles
 php/public/log-load.js|statusElem.textContent = 'enabled';|statusElem.textContent = 'activada';
 php/public/click-handlers.js|reveal ? 'Hide passphrase' : 'Show passphrase'|reveal ? 'Ocultar frase de contraseña' : 'Mostrar frase de contraseña'
 EOF
