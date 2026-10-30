@@ -1529,6 +1529,8 @@ aio_progress_begin() {
 
 aio_progressing() {  # Optional stream file; repeated states and heartbeats never renew the budget.
   local now pull name status health key states
+  local -a services
+  read -ra services <<< "$AIO_SET"
   now="$(aio_now)"
   if [ -n "${1:-}" ] && [ -f "$1" ]; then
     pull="$(sed -n 's/^<!-- aps-start-progress:\([0-9][0-9]*\) -->$/\1/p' "$1" | tail -1)"
@@ -1536,7 +1538,7 @@ aio_progressing() {  # Optional stream file; repeated states and heartbeats neve
       AIO_PROGRESS_PULL="$pull"; AIO_PROGRESS_TIME="$now"
     fi
   fi
-  states="$(timeout 15 docker inspect -f '{{.Name}} {{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $AIO_SET 2>/dev/null || true)"
+  states="$(timeout 15 docker inspect -f '{{.Name}} {{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${services[@]}" 2>/dev/null || true)"
   while read -r name status health; do
     case " $AIO_SET " in *" ${name#/} "*) ;; *) continue ;; esac
     case "$status" in created|running|paused|restarting|removing|exited|dead) ;; *) continue ;; esac
@@ -3882,12 +3884,16 @@ case "\$1 \$2" in
     if [ "\$n" -lt "\${BORG_RUNS:-2}" ]; then echo "true 0 \$(cat "$act/borg.t")"
     else echo "false \${BORG_EXIT:-0} \${BORG_STARTED:-\$(cat "$act/borg.t")}"; fi ;;
   "inspect -f")
-    n="\$(wc -c < "$act/salud.n" 2>/dev/null || echo 0)"; printf x >> "$act/salud.n"
-    shift 3; for c in "\$@"; do case "\$c" in
-      "\${SALUD_MALA:-}") echo "/\$c unhealthy" ;;
-      aps-conecta-eurooffice) [ "\$n" -ge 3 ] && echo "/\$c healthy" || echo "/\$c starting" ;;
-      *) echo "/\$c healthy" ;;
-    esac; done ;;
+    format="\$3"; n="\$(wc -c < "$act/salud.n" 2>/dev/null || echo 0)"
+    [[ "\$format" == *State.Status* ]] || printf x >> "$act/salud.n"
+    shift 3; for c in "\$@"; do
+      prefix="/\$c"; [[ "\$format" != *State.Status* ]] || prefix="\$prefix running"
+      case "\$c" in
+        "\${SALUD_MALA:-}") echo "\$prefix unhealthy" ;;
+        aps-conecta-eurooffice) [ "\$n" -ge 3 ] && echo "\$prefix healthy" || echo "\$prefix starting" ;;
+        *) echo "\$prefix healthy" ;;
+      esac
+    done ;;
   "exec aps-conecta-apache")
     n="\$(wc -c < "$act/apache.n" 2>/dev/null || echo 0)"; printf x >> "$act/apache.n"
     [ "\$n" -ge 2 ] ;;
