@@ -2325,6 +2325,7 @@ office_pin_cases() {
   local tmp out rc ver want
   tmp="$(mktemp -d)"; mkdir -p "$tmp/bin" "$tmp/scripts" "$tmp/Containers/eurooffice"
   cp scripts/office-smoke.sh scripts/env.sh "$tmp/scripts/"
+  cp Containers/eurooffice/healthcheck.sh "$tmp/Containers/eurooffice/"
   sed 's|documentserver:v[0-9][0-9.]*|documentserver:v1.2.3|' Containers/eurooffice/Dockerfile > "$tmp/Containers/eurooffice/Dockerfile"
   cat > "$tmp/bin/docker" <<'STUB'
 #!/usr/bin/env bash
@@ -2342,7 +2343,8 @@ STUB
 #!/usr/bin/env bash
 printf '%s' "${OFFICE_HEALTH_BODY-true}"
 STUB
-  chmod +x "$tmp/bin/docker" "$tmp/bin/curl"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/bin/nc"
+  chmod +x "$tmp/bin/docker" "$tmp/bin/curl" "$tmp/bin/nc"
   while IFS='|' read -r ver want; do
     rc=0; out="$(PATH="$tmp/bin:$PATH" DS_VERSION="$ver" bash "$tmp/scripts/office-smoke.sh" 2>&1)" || rc=1
     [ "$rc" = "$want" ] \
@@ -2356,6 +2358,9 @@ CASES
   rc=0; out="$(PATH="$tmp/bin:$PATH" DS_VERSION=1.2.3.37 OFFICE_HEALTH_BODY=false bash "$tmp/scripts/office-smoke.sh" 2>&1)" || rc=1
   [ "$rc" = 1 ] \
     || { echo "office health: body false must fail despite HTTP success, got exit $rc: $out" >&2; rm -rf "$tmp"; return 1; }
+  rc=0; out="$(PATH="$tmp/bin:$PATH" AIO_LOG_LEVEL=info OFFICE_HEALTH_BODY=false bash "$tmp/Containers/eurooffice/healthcheck.sh" 2>&1)" || rc=1
+  [ "$rc" = 1 ] \
+    || { echo "office container health: body false must fail despite an open port, got exit $rc: $out" >&2; rm -rf "$tmp"; return 1; }
   rm "$tmp/Containers/eurooffice/Dockerfile"
   rc=0; out="$(PATH="$tmp/bin:$PATH" DS_VERSION=1.2.3.37 bash "$tmp/scripts/office-smoke.sh" 2>&1)" || rc=1
   rm -rf "$tmp"
