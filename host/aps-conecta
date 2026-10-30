@@ -3238,13 +3238,16 @@ case "\$url" in
   */login) if [ -e "$tmp/aio.auth-renewed" ]; then body='<input name="csrf_name" value="n2"><input name="csrf_value" value="v2">'; else body='<input name="csrf_name" value="n1"><input name="csrf_value" value="v1">'; fi ;;
   */containers) echo "GET containers" >> "$tmp/aio.log"; body='<span id="initial-nextcloud-password">admin-secreta</span>' ;;
   */api/configuration) echo "POST config\$data" >> "$tmp/aio.log"; touch "$tmp/aio.configured"
-    if [ -e "$tmp/aio.auth-once" ]; then rm -f "$tmp/aio.auth-once"; touch "$tmp/aio.auth-renewed"; code=302
+    if [ -e "$tmp/aio.auth-once" ] || [ -e "$tmp/aio.auth-repeat" ]; then rm -f "$tmp/aio.auth-once"; touch "$tmp/aio.auth-renewed"; code=302
     else
     case "\$data" in *"domain=rechazado.example"*) code=422; body="Please enter a domain and not an IP-address!" ;; *"timezone=America/Santiago"*) if [ -e "$tmp/aio.timezone-fails" ]; then code=422; body="algo inesperado"; else code=201; fi ;; *) code=201 ;; esac; fi ;;
   */api/docker/start) echo "POST start\$data" >> "$tmp/aio.log"
-    if [ -e "$tmp/aio.start-auth" ]; then rm -f "$tmp/aio.start-auth"; touch "$tmp/aio.auth-renewed"; code=302
+    if [ -e "$tmp/aio.start-auth" ] || [ -e "$tmp/aio.start-auth-repeat" ] || [ -e "$tmp/aio.start-changed" ]; then
+      rm -f "$tmp/aio.start-auth"; touch "$tmp/aio.auth-renewed"; code=302
+      [ ! -e "$tmp/aio.start-changed" ] || printf '%s\n' aps-conecta-nextcloud > "$tmp/aio.ps"
     elif [ -e "$tmp/aio.start-fails" ]; then code=500; else
     printf '%s\n' aps-conecta-nextcloud aps-conecta-database aps-conecta-redis > "$tmp/aio.ps"
+    if [ -e "$tmp/aio.start-disconnected" ]; then printf '<div>Starting</div>' > "\$outfile"; printf 200; exit 56; fi
     if [ -e "$tmp/aio.progress-pull" ] || [ -e "$tmp/aio.stalled-pull" ]; then
       : > "\$outfile"; append=1
       for tick in \$(seq 35); do
@@ -3259,6 +3262,13 @@ case "\$url" in
     printf '%s\n' aps-conecta-nextcloud $AIO_SET > "$tmp/aio.ps"; code=200
     body='<!-- aps-start-result:{"status":"ok","message":""} -->'
     if [ -e "$tmp/aio.result-error" ]; then body='<!-- aps-start-result:{"status":"error","message":"synthetic image unavailable"} -->'; fi
+    if [ -e "$tmp/aio.result-mode" ]; then
+      case "\$(cat "$tmp/aio.result-mode")" in
+        missing) body='<div>Starting</div>' ;;
+        truncated) body='<!-- aps-start-result:{"status":"ok"' ;;
+        duplicate) body="\$body\$body" ;;
+      esac
+    fi
     fi ;;
 esac
 if [ -n "\$outfile" ]; then [ "\$append" = 1 ] || : > "\$outfile"; printf '%s\n' "\$body" >> "\$outfile"; else [ -z "\$body" ] || printf '%s\n' "\$body"; fi
@@ -3337,6 +3347,28 @@ SHIM
     check "asistente-aio: a start redirected before execution recovers login once and starts with refreshed CSRF" \
       '[ "$rc" -eq 0 ] && [ "$(grep -c "^POST login" "$tmp/aio.log")" = 2 ] && [ "$(grep -c "^POST start" "$tmp/aio.log")" = 2 ] && grep -q "^POST start csrf_name=n2 csrf_value=v2$" "$tmp/aio.log"'
     rm -f "$tmp/aio.auth-renewed"
+    local mode
+    for mode in missing truncated duplicate; do
+      : > "$tmp/aio.ps"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; printf '%s' "$mode" > "$tmp/aio.result-mode"
+      out="$( (cmd_aio_wizard --dominio clinica.example) 2>&1)"; rc=$?
+      check "asistente-aio: a $mode terminal result never confirms success" \
+        '[ "$rc" -eq 1 ] && case "$out" in *"resultado final válido"*) ;; *) false;; esac && case "$out" in *"✓ Suite iniciada"*) false;; *) true;; esac'
+    done
+    rm -f "$tmp/aio.result-mode"
+    for mode in auth-repeat start-auth-repeat; do
+      : > "$tmp/aio.ps"; : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; touch "$tmp/aio.$mode"
+      out="$( (cmd_aio_wizard --dominio clinica.example) 2>&1)"; rc=$?
+      check "asistente-aio: $mode stops after one login recovery" \
+        '[ "$rc" -eq 1 ] && [ "$(grep -c "^POST login" "$tmp/aio.log")" = 2 ] && case "$out" in *"la sesión del asistente volvió a vencer"*) ;; *) false;; esac'
+      rm -f "$tmp/aio.$mode" "$tmp/aio.auth-renewed"
+    done
+    for mode in start-changed start-disconnected; do
+      : > "$tmp/aio.ps"; : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; touch "$tmp/aio.$mode"
+      out="$( (cmd_aio_wizard --dominio clinica.example) 2>&1)"; rc=$?
+      check "asistente-aio: $mode reconciles or reports uncertainty without replaying a start" \
+        '[ "$rc" -eq 1 ] && [ "$(grep -c "^POST start" "$tmp/aio.log")" = 1 ] && [ "$(grep -c "^POST login" "$tmp/aio.log")" = 1 ] && case "$out" in *"antes de reintentar"*) ;; *) false;; esac && case "$out" in *"✓ Suite iniciada"*) false;; *) true;; esac'
+      rm -f "$tmp/aio.$mode" "$tmp/aio.auth-renewed"
+    done
     cat > "$tshim/python3" <<SHIM
 #!/usr/bin/env bash
 if [ "\$*" = '-c import time; print(int(time.monotonic()))' ]; then
