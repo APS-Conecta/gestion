@@ -85,7 +85,7 @@ check testbed_install_command_cases
 # each run block for SC2251 (a negation that silently skips errexit).
 workflow_safety_cases() {
   python3 - "${1:-.github/workflows}" <<'PY'
-import json, pathlib, re, subprocess, sys, textwrap
+import json, os, pathlib, re, subprocess, sys, tempfile, textwrap
 
 
 def policy(text, name):
@@ -184,6 +184,17 @@ for bad in [fixture.replace('permissions:\n  contents: read\n', ''),
 assert not policy(fixture.replace('echo checked', '! grep pattern file'), 'fixture.yml')
 assert not policy(fixture.replace('echo checked', 'if grep pattern file; then exit 1; fi'), 'fixture.yml')
 assert not policy(fixture.replace('contents: read', 'contents: read\n  packages: write'), 'images.yml')
+workflow = pathlib.Path(sys.argv[1]) / 'cleanboot.yml'
+if workflow.exists():
+    step = workflow.read_text().split('      - name: The silent install printed only Spanish lines\n', 1)[1].split('\n      - name:', 1)[0]
+    script = textwrap.dedent(step.split('        run: |\n', 1)[1])
+    fingerprint = 'D5:00:01:02:03:04:05:06:07:08:09:0A:0B:0C:0D:0E:0F:10:11:12:13:14:15:16:17:18:19:1A:1B:1C:1D:1E'
+    output = f'INSTALACIÓN: ✓\nCertificado del servidor (huella SHA-256 {fingerprint})\n'
+    with tempfile.TemporaryDirectory(prefix='install-language-') as tmp:
+        for extra, expected in [('', 0), ('warning: unexpected output\n', 1), ('Referencia interna D5\n', 1)]:
+            pathlib.Path(tmp, 'install.out').write_text(output + extra)
+            result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', script], env=dict(os.environ, RUNNER_TEMP=tmp), capture_output=True, text=True)
+            assert result.returncode == expected, f'language gate rejected a valid fingerprint or accepted unexpected output: {extra!r}'
 failures = []
 paths = sorted(pathlib.Path(sys.argv[1]).glob('*.yml'))
 assert paths, 'no workflows were checked'

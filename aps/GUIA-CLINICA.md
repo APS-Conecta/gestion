@@ -33,6 +33,24 @@ El recorrido completo, paso a paso con los comandos, está en `INSTALLER.md` §2
    ejecución encuentra deriva (algo en la instancia que no se declaró), cada administrador recibe
    un aviso al entrar, y `aps-conecta estado` — sin sudo — muestra cada elemento con su arreglo.
 
+### Instalación mediante un proxy institucional
+
+Ingrese la dirección del proxy de forma privada y conserve sus variables durante la descarga
+inicial. Sustituya `vX.Y.Z` por la versión elegida:
+
+```bash
+read -r -s -p 'Dirección del proxy: ' HTTPS_PROXY; echo
+export HTTPS_PROXY HTTP_PROXY="$HTTPS_PROXY" https_proxy="$HTTPS_PROXY" http_proxy="$HTTPS_PROXY"
+curl -fsSL https://github.com/APS-Conecta/gestion/releases/download/vX.Y.Z/apsconecta-vX.Y.Z-install.sh \
+  | sudo --preserve-env=HTTPS_PROXY,HTTP_PROXY,NO_PROXY,https_proxy,http_proxy,no_proxy bash
+```
+
+Use una dirección HTTP(S) accesible desde el servidor y sus contenedores. Si utiliza usuario
+y contraseña, codifique sus caracteres especiales en la URL. El instalador guarda el perfil
+con permisos privados en `/opt/aps-conecta/proxy.env`; las ejecuciones posteriores lo cargan
+automáticamente. La preparación configura Docker y comprueba su reinicio. La comunicación
+local utiliza las exclusiones del perfil. Conserve este archivo en el respaldo cifrado.
+
 ## 3. El asistente (:8080)
 
 El asistente está en español. Lo importante:

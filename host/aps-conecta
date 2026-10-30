@@ -637,6 +637,147 @@ check_network() {  # outbound HTTPS and the clock — the image pulls and every 
 
 is_root() { [ "$(id -u)" = 0 ]; }
 
+proxy_file() { printf '%s/proxy.env' "$APS_HOME"; }
+
+proxy_load() {
+  local key value endpoint file; file="$(proxy_file)"
+  if [ -z "${https_proxy:-${HTTPS_PROXY:-${http_proxy:-${HTTP_PROXY:-}}}}" ] && [ -e "$file" ]; then
+    [ -r "$file" ] || { bad "no se pudo leer la configuración del proxy" "ejecute con permisos de administrador"; return 1; }
+    while IFS='=' read -r key value; do
+      case "$key" in
+        HTTP_PROXY|HTTPS_PROXY|NO_PROXY|http_proxy|https_proxy|no_proxy) printf -v "$key" '%s' "$value" ;;
+        *) bad "configuración del proxy no válida" "revise las variables de $file"; return 1 ;;
+      esac
+    done < "$file"
+  fi
+  endpoint="${https_proxy:-${HTTPS_PROXY:-${http_proxy:-${HTTP_PROXY:-}}}}"
+  [ -n "$endpoint" ] || return 0
+  # Encoded credentials keep one literal format valid for Docker and EnvironmentFile.
+  local url_re='^https?://([A-Za-z0-9._~%:+-]+@)?([A-Za-z0-9][A-Za-z0-9.-]*|\[[0-9a-fA-F:]+\])(:[0-9]{1,5})?/?$'
+  local proxy_host proxy_port
+  for value in "$endpoint" "${http_proxy:-${HTTP_PROXY:-$endpoint}}"; do
+    if ! [[ "$value" =~ $url_re ]]; then
+      bad "dirección del proxy no válida" "use una URL http:// o https:// y codifique los caracteres especiales de sus credenciales"; return 1
+    fi
+    proxy_host="${BASH_REMATCH[2]}"; proxy_port="${BASH_REMATCH[3]:-}"; proxy_port="${proxy_port#:}"
+    if [ -n "$proxy_port" ] && { [ "$((10#$proxy_port))" -eq 0 ] || [ "$((10#$proxy_port))" -gt 65535 ]; }; then
+      bad "puerto del proxy no válido" "use un puerto entre 1 y 65535"; return 1
+    fi
+    case "$proxy_host" in
+      localhost|localhost.|127.*) bad "el proxy local no es accesible desde los contenedores" "use una dirección del proxy accesible desde el servidor y la red de la suite"; return 1 ;;
+    esac
+    if [[ "$proxy_host" =~ ^\[[0:]*1\]$ ]]; then
+      bad "el proxy local no es accesible desde los contenedores" "use una dirección del proxy accesible desde el servidor y la red de la suite"; return 1
+    fi
+  done
+  HTTPS_PROXY="$endpoint"; HTTP_PROXY="${http_proxy:-${HTTP_PROXY:-$endpoint}}"
+  if [ "$HTTP_PROXY" != "$HTTPS_PROXY" ]; then
+    bad "se configuraron dos proxies distintos" "use la misma dirección para HTTP_PROXY y HTTPS_PROXY"; return 1
+  fi
+  NO_PROXY="${no_proxy:-${NO_PROXY:-}}"
+  NO_PROXY="${NO_PROXY:+$NO_PROXY,}localhost,127.0.0.1,::1,nextcloud-aio-mastercontainer"
+  NO_PROXY="$(printf '%s' "$NO_PROXY" | tr ',' '\n' | awk 'NF && !seen[$0]++' | paste -sd, -)"
+  if [[ "$NO_PROXY" == *[!a-zA-Z0-9.,:/_\*\[\]-]* ]]; then
+    bad "exclusiones del proxy no válidas" "use nombres, direcciones o subredes separados por comas, sin espacios"; return 1
+  fi
+  http_proxy="$HTTP_PROXY"; https_proxy="$HTTPS_PROXY"; no_proxy="$NO_PROXY"
+  export HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy
+}
+
+proxy_save() {
+  proxy_load || return 1
+  [ -n "${HTTPS_PROXY:-}" ] || return 0
+  local file tmpfile; file="$(proxy_file)"
+  if ! tmpfile="$(umask 077; mkdir -p "$APS_HOME" && mktemp "$file.XXXXXX")"; then
+    bad "no se pudo guardar el proxy" "revise los permisos de $APS_HOME"; return 1
+  fi
+  if ! printf 'HTTP_PROXY=%s\nHTTPS_PROXY=%s\nNO_PROXY=%s\nhttp_proxy=%s\nhttps_proxy=%s\nno_proxy=%s\n' \
+    "$HTTP_PROXY" "$HTTPS_PROXY" "$NO_PROXY" "$HTTP_PROXY" "$HTTPS_PROXY" "$NO_PROXY" > "$tmpfile"; then
+    rm -f "$tmpfile"; bad "no se pudo guardar el proxy" "revise el espacio y los permisos de $APS_HOME"; return 1
+  fi
+  if cmp -s "$tmpfile" "$file"; then
+    if ! chmod 600 "$file"; then
+      rm -f "$tmpfile"; bad "no se pudo proteger el perfil del proxy" "revise los permisos de $file"; return 1
+    fi
+    rm -f "$tmpfile"; return 0
+  fi
+  if ! mv -f "$tmpfile" "$file"; then
+    rm -f "$tmpfile"; bad "no se pudo guardar el proxy" "revise los permisos de $APS_HOME"; return 1
+  fi
+}
+
+prepare_proxy() {
+  local file dropin fingerprint applied applied_fingerprint=""
+  proxy_load || return 1
+  [ -n "${HTTPS_PROXY:-}" ] || return 0
+  local extra
+  extra="$(
+    host_ipv4s
+    site_domain || true
+    printf '%s\n' "${1:-}"
+    suite_subnets || true
+    if [ -f "$ROOT/php/containers.json" ] && command -v python3 >/dev/null 2>&1; then
+      python3 -c 'import json,sys; print("\n".join(c["container_name"] for c in json.load(open(sys.argv[1]))["aio_services_v1"]))' "$ROOT/php/containers.json"
+    fi
+  )"
+  NO_PROXY="${NO_PROXY},$(printf '%s' "$extra" | paste -sd, -)"; no_proxy="$NO_PROXY"
+  proxy_load || return 1
+  local launch
+  if command -v docker >/dev/null 2>&1; then
+    if ! launch="$(systemctl show --property=ExecStart --value docker 2>/dev/null)"; then
+      bad "no se pudo revisar la configuración de Docker" "revise la unidad Docker antes de configurar el proxy"; return 1
+    fi
+    if ! DOCKER_START="$launch" python3 - "$ETC_DIR/docker/daemon.json" <<'PY'
+import json, os, pathlib, re, shlex, sys
+try:
+    text = os.environ['DOCKER_START']
+    match = re.search(r'argv\[\]=(.*?)(?:\s*;|$)', text)
+    args = shlex.split(match.group(1) if match else text)
+    config = pathlib.Path(sys.argv[1])
+    wanted = {key.lower().replace('_', '-'): os.environ[key] for key in ('HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY')}
+    for index, arg in enumerate(args):
+        key, separator, value = arg.partition('=')
+        if key == '--config-file' or key.removeprefix('--') in wanted:
+            value = value if separator else args[index + 1]
+            if key == '--config-file':
+                config = pathlib.Path(value)
+            elif value != wanted[key.removeprefix('--')]:
+                raise ValueError('conflicting proxy flag')
+    if config.exists():
+        settings = json.loads(config.read_text()).get('proxies', {})
+        if not isinstance(settings, dict) or any(key not in wanted or value != wanted[key] for key, value in settings.items()):
+            raise ValueError('conflicting proxy configuration')
+except (OSError, ValueError, IndexError, AttributeError):
+    sys.exit(1)
+PY
+    then
+      bad "la configuración directa de Docker impide aplicar el proxy" "revise las opciones de proxy en daemon.json y en la unidad Docker; use el perfil de APS Conecta"; return 1
+    fi
+  fi
+  proxy_save || return 1
+  [ -n "${HTTPS_PROXY:-}" ] || return 0
+  file="$(proxy_file)"; dropin="$ETC_DIR/systemd/system/docker.service.d/aps-conecta-proxy.conf"
+  if ! grep -qxF "EnvironmentFile=$file" "$dropin" 2>/dev/null; then
+    if ! (umask 022; mkdir -p "$(dirname "$dropin")" && printf '[Service]\nEnvironmentFile=%s\n' "$file" > "$dropin"); then
+      bad "no se pudo configurar el proxy de Docker" "revise los permisos de $ETC_DIR"; return 1
+    fi
+  fi
+  applied="$APS_HOME/proxy.applied.sha256"
+  if ! fingerprint="$(sha256sum "$file" "$dropin" | sha256sum | cut -d' ' -f1)"; then
+    bad "no se pudo verificar la configuración del proxy" "revise los archivos de configuración y sus permisos"; return 1
+  fi
+  [ ! -r "$applied" ] || IFS= read -r applied_fingerprint < "$applied"
+  if [ "$fingerprint" != "$applied_fingerprint" ] && command -v docker >/dev/null 2>&1; then
+    if ! systemctl daemon-reload || ! systemctl restart docker; then
+      bad "no se pudo aplicar el proxy de Docker" "revise el servicio Docker y vuelva a ejecutar preparar"; return 1
+    fi
+    if ! (umask 077; printf '%s\n' "$fingerprint" > "$applied"); then
+      bad "no se pudo registrar la configuración del proxy" "revise el espacio y los permisos de $APS_HOME"; return 1
+    fi
+  fi
+  ok "Proxy configurado para la instalación"
+}
+
 install_packages() {  # the tools the install itself runs; apt installs only what is missing
   local t missing=() pkgs=()
   for t in python3 curl; do
@@ -907,7 +1048,10 @@ step_preparar() {  # installs what is missing, then proves each piece with its o
   fi
   check_host_installation
   [ "$FAIL" -eq 0 ] || return 0
-  install_packages; install_docker
+  proxy_load || return 0
+  install_packages
+  prepare_proxy || return 0
+  install_docker
   check_docker; ensure_docker_group; ensure_overcommit
 }
 
@@ -1010,19 +1154,22 @@ suite_tag() {
 run_command() {  # [ADDRESS] — prints the operator's docker run string (never executes it). An IPv4 is
   # the install by IP (R22): two lines more — the suite's own certificate for apache, its CA for
   # Nextcloud and Talk
-  local tag tls=""; tag="$(suite_tag)"
+  local tag tls="" proxy=""; tag="$(suite_tag)"
   [ -n "$tag" ] || die "no pude leer la versión de la suite ($ROOT/VERSION) — o exporte APS_SUITE_TAG"
   if is_ipv4 "${1:-}"; then
     tls="  --env APS_TLS_DIR=$(suite_tls_dir) \\
   --env NEXTCLOUD_TRUSTED_CACERTS_DIR=$(suite_ca_dir) \\
 "
   fi
+  if [ -n "${https_proxy:-${HTTPS_PROXY:-${http_proxy:-${HTTP_PROXY:-}}}}" ] || [ -f "$(proxy_file)" ]; then
+    printf -v proxy '  --env-file %q \\\n' "$(proxy_file)"
+  fi
   cat <<EOF
 docker run --init --sig-proxy=false --name nextcloud-aio-mastercontainer \\
   --restart always \\
   --publish 8080:8080 \\
   --env APACHE_PORT=443 \\
-${tls}  --env NEXTCLOUD_STARTUP_APPS="" \\
+${tls}${proxy}  --env NEXTCLOUD_STARTUP_APPS="" \\
   --volume nextcloud_aio_mastercontainer:/mnt/docker-aio-config \\
   --volume /var/run/docker.sock:/var/run/docker.sock:ro \\
   ghcr.io/aps-conecta/all-in-one:$tag
@@ -1073,7 +1220,7 @@ start_suite() {  # [ADDRESS] — the mastercontainer, once — the very command 
   # detached. An IPv4 is the install by IP (R22): this server's own address, the suite's certificate
   # signed for it first. A mastercontainer that already exists must carry what it reads at its start:
   # the certificate, by IP
-  local domain="${1:-}" state tag cmd env_now
+  local domain="${1:-}" state tag cmd env_now containers container key
   if is_ipv4 "$domain"; then
     if ! [[ "$(suite_tls_dir)$(suite_ca_dir)" =~ ^[A-Za-z0-9._/-]+$ ]] || [[ "$(suite_tls_dir)$(suite_ca_dir)" == *..* ]]; then   # both ride the eval below
       bad "la carpeta de la instalación no es válida («$APS_HOME»)" "use una ruta con letras, números, «.», «_», «-» y «/», sin segmentos «..»"; return 1
@@ -1083,8 +1230,28 @@ start_suite() {  # [ADDRESS] — the mastercontainer, once — the very command 
       || { bad "no se pudo preparar el certificado de la suite" "corrija lo indicado arriba y vuelva a ejecutar"; return 1; }
     reload_suite_leaf || return 1   # a running suite loads a leaf this start signed again
   fi
-  state="$(docker ps -a --format '{{.Names}} {{.State}}' 2>/dev/null)"   # captured: pipefail-safe
-  state="$(printf '%s\n' "$state" | sed -n 's/^nextcloud-aio-mastercontainer //p')"
+  if [ -n "${HTTPS_PROXY:-}" ]; then
+    if ! docker network inspect nextcloud-aio >/dev/null 2>&1; then
+      if ! docker network create nextcloud-aio >/dev/null; then
+        bad "no se pudo preparar la red de la suite" "revise Docker antes de iniciar con el proxy"; return 1
+      fi
+    fi
+    prepare_proxy "$domain" || return 1
+  fi
+  containers="$(docker ps -a --format '{{.Names}} {{.State}}' 2>/dev/null)"   # captured: pipefail-safe
+  state="$(printf '%s\n' "$containers" | sed -n 's/^nextcloud-aio-mastercontainer //p')"
+  if [ -n "${HTTPS_PROXY:-}" ]; then
+    for container in nextcloud-aio-mastercontainer aps-conecta-nextcloud; do
+      grep -q "^$container " <<<"$containers" || continue
+      env_now="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$container" 2>/dev/null)"
+      for key in HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy; do
+        # Compare in Bash so credentials never become a child process argument.
+        if [[ $'\n'"$env_now"$'\n' != *$'\n'"$key=${!key}"$'\n'* ]]; then
+          bad "la suite existente conserva otro perfil de proxy" "recree el asistente y Nextcloud con el comando actualizado y conserve sus volúmenes; consulte aps/INSTALLER.md §12"; return 1
+        fi
+      done
+    done
+  fi
   if [ -n "$state" ]; then   # both lines are read once, at the wizard's first start: never switched later
     env_now="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' nextcloud-aio-mastercontainer 2>/dev/null)"
     if is_ipv4 "$domain"; then
@@ -2223,11 +2390,14 @@ selftest() {
   aio_select_services || return 1
   unset APS_SUITE_TAG   # a caller's override (a rehearsal's) must not leak into the goldens:
                         # every arm derives its tag explicitly
+  unset HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy
   local n=0 tshim tmp ROOT_BAK="$ROOT"
   tmp="$(mktemp -d)"
   tshim="$tmp/bin"; mkdir -p "$tshim"
-  local APS_HOME="$tmp/home" real_stat
+  local APS_HOME="$tmp/home" real_stat real_python real_grep
   real_stat="$(command -v stat)"
+  real_python="$(command -v python3)"
+  real_grep="$(command -v grep)"
   fixture_installation() {
     mkdir -p "$APS_HOME/instalador/host"
     cp "$HOST_DIR/aps-conecta" "$APS_HOME/instalador/host/"
@@ -2504,6 +2674,7 @@ EOF
 #!/usr/bin/env bash
 echo "$c \$*" >> "$tmp/mut.log"
 case "$c \$1" in
+  "systemctl restart") [ "\${PROXY_RESTART_FAIL:-0}" = 0 ] || exit 1 ;;
   "dpkg --print-architecture") echo amd64 ;;
   "usermod -aG") echo "\$3 docker" >> "$tmp/groups" ;;
   "apt-get "*) case " \$* " in *" install "*) for p in "\$@"; do case "\$p" in
@@ -2554,6 +2725,52 @@ SHIM
     step_out="$(PATH="$tshim:$tmp/minbin"; FAIL=0; SUDO_USER=operador step_preparar; echo "FAIL=$FAIL")"
     check "preparar: a re-run finds everything done and changes nothing" \
       'case "$step_out" in *"✓ python3, curl, ogr2ogr y signify presentes"*"✓ Usuario operador en el grupo docker"*"✓ Memoria del sistema ajustada (vm.overcommit_memory = 1)"*"FAIL=0") ;; *) false;; esac && ! grep -qE "^(apt-get|usermod|sysctl -p|curl|systemctl start)" "$tmp/mut.log"'
+    step_out="$(export HTTPS_PROXY='http://fixture:synthetic-p%40ss@proxy.example:3128';
+      APS_HOME="$tmp/proxy-home"; FAIL=0; SUDO_USER=operador step_preparar; echo "FAIL=$FAIL")"
+    check "proxy: preparation persists a private profile and configures Docker without printing credentials" \
+      '[ -f "$tmp/proxy-home/proxy.env" ] && [ "$("$real_stat" -c %a "$tmp/proxy-home/proxy.env")" = 600 ] \
+       && grep -qx "HTTPS_PROXY=http://fixture:synthetic-p%40ss@proxy.example:3128" "$tmp/proxy-home/proxy.env" \
+       && grep -qF "EnvironmentFile=$tmp/proxy-home/proxy.env" "$ETC_DIR/systemd/system/docker.service.d/aps-conecta-proxy.conf" \
+       && grep -qx "systemctl daemon-reload" "$tmp/mut.log" && grep -qx "systemctl restart docker" "$tmp/mut.log" \
+       && case "$step_out" in *"synthetic-p"*) false;; *"FAIL=0") true;; *) false;; esac'
+
+    step_out="$(APS_HOME="$tmp/proxy-home"; run_command)"
+    check "proxy: the generated startup command carries only the private profile path" \
+      'case "$step_out" in *"--env-file $tmp/proxy-home/proxy.env"*) true;; *) false;; esac \
+       && case "$step_out" in *"synthetic-p"*) false;; *) true;; esac'
+    step_out="$(export HTTPS_PROXY='http://proxy.example:3128'; APS_HOME="$tmp/proxy-network"; ROOT="$ROOT_BAK";
+      python3() { "$real_python" "$@"; }; FAIL=0; prepare_proxy; echo "FAIL=$FAIL")"
+    check "proxy: bypasses include localhost, the actual suite subnet and inventory names" \
+      'grep "^NO_PROXY=" "$tmp/proxy-network/proxy.env" | grep -q "10.77.0.0/23" \
+       && grep "^NO_PROXY=" "$tmp/proxy-network/proxy.env" | grep -q "aps-conecta-nextcloud" \
+       && grep "^NO_PROXY=" "$tmp/proxy-network/proxy.env" | grep -q "localhost"'
+    : > "$tmp/mut.log"
+    step_out="$(export HTTPS_PROXY='http://proxy.example:3128'; APS_HOME="$tmp/proxy-retry"; FAIL=0;
+      PROXY_RESTART_FAIL=1 prepare_proxy; echo "FIRST_FAIL=$FAIL"; FAIL=0; prepare_proxy; echo "RETRY_FAIL=$FAIL")"
+    check "proxy: a failed Docker restart remains pending and is applied on retry" \
+      '[ "$(grep -c "^systemctl restart docker$" "$tmp/mut.log")" = 2 ] \
+       && case "$step_out" in *"FIRST_FAIL=1"*"RETRY_FAIL=0") true;; *) false;; esac'
+    mkdir -p "$tmp/proxy-local"
+    printf 'INVALID=profile\n' > "$tmp/proxy-local/proxy.env"
+    step_out="$(APS_HOME="$tmp/proxy-local" bash "$HOST_DIR/aps-conecta" --help 2>&1)"; rc=$?
+    check "proxy: local help does not need access to the private outbound profile" '[ "$rc" = 0 ]'
+    mkdir -p "$ETC_DIR/docker"
+    printf '{"proxies":{"https-proxy":"http://old-proxy.example:3128"}}\n' > "$ETC_DIR/docker/daemon.json"
+    step_out="$(export HTTPS_PROXY='http://proxy.example:3128'; APS_HOME="$tmp/proxy-override";
+      python3() { "$real_python" "$@"; }; FAIL=0; prepare_proxy; echo "FAIL=$FAIL")"
+    check "proxy: a conflicting direct Docker configuration is refused before success" \
+      'case "$step_out" in *"✗ "*"FAIL=1") true;; *) false;; esac'
+    printf '{"proxies":{"no-proxy":"localhost,127.0.0.1,::1,nextcloud-aio-mastercontainer"}}\n' > "$ETC_DIR/docker/daemon.json"
+    step_out="$(export HTTPS_PROXY='http://proxy.example:3128'; APS_HOME="$tmp/proxy-bypass-override";
+      python3() { "$real_python" "$@"; }; FAIL=0; prepare_proxy; echo "FAIL=$FAIL")"
+    check "proxy: direct Docker bypasses must match the final suite exclusions" \
+      'case "$step_out" in *"✗ "*"FAIL=1") true;; *) false;; esac'
+    rm -f "$ETC_DIR/docker/daemon.json"
+    for endpoint in http://localhost:3128 http://proxy.example:99999; do
+      step_out="$(APS_HOME="$tmp/proxy-invalid" HTTPS_PROXY="$endpoint" bash "$HOST_DIR/aps-conecta" proxy-save 2>&1)"; rc=$?
+      check "proxy: unreachable loopback or invalid-port endpoints are refused before persistence" \
+        '[ "$rc" -ne 0 ] && [ ! -e "$tmp/proxy-invalid/proxy.env" ]'
+    done
     echo 2 > "$tmp/oc"; rm -f "$ETC_DIR/sysctl.d/90-aps-conecta.conf"
     step_out="$(export SYSCTL_FAILS=1; PATH="$tshim:$tmp/minbin"; FAIL=0; ensure_overcommit; echo "FAIL=$FAIL")"
     check "preparar: where the kernel setting cannot be applied now (a container) it stays in its file and says so — not a red" \
@@ -3197,6 +3414,11 @@ EOF
     '[ "$out4" = "rc=0" ] && [ "$argv_apps" = "--dominio c.example --app farmacia" ]'
   SILENT_SITE=""; SILENT_ROSTER=""
   cp "$tshim/docker" "$tmp/docker.prev"
+  local mc_path="$PATH"
+  [ ! -e "$tshim/systemctl" ] || cp -P "$tshim/systemctl" "$tmp/mc-systemctl.prev"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/mc-systemctl"
+  chmod +x "$tmp/mc-systemctl"
+  mv "$tmp/mc-systemctl" "$tshim/systemctl"
   cat > "$tshim/docker" <<SHIM
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "$tmp/mc.argv"
@@ -3204,7 +3426,8 @@ case "\$1 \$3" in ps*) cat "$tmp/mc.ps" 2>/dev/null ;; *State.Running*) cat "$tm
 exit 0
 SHIM
   chmod +x "$tshim/docker"; : > "$tmp/mc.argv"; : > "$tmp/mc.ps"
-  if only_shims docker; then
+  PATH="$tshim:$PATH"; export PATH
+  if only_shims docker systemctl; then
     out="$(APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 2>&1; echo "FAIL=$FAIL")"
     check "install --sitio: an absent suite starts detached — the command preflight prints, at the file's own tag" \
       'grep -q "^run -d --init --sig-proxy=false --name nextcloud-aio-mastercontainer .*--env APACHE_PORT=443 .*ghcr.io/aps-conecta/all-in-one:v9.9.9\$" "$tmp/mc.argv" && case "$out" in *"✓ Suite iniciada: ghcr.io/aps-conecta/all-in-one:v9.9.9"*"FAIL=0"*) ;; *) false;; esac'
@@ -3212,6 +3435,20 @@ SHIM
     out="$(APS_SUITE_TAG=v9.9.9; FAIL=0; start_suite 2>&1; echo "FAIL=$FAIL")"
     check "install --sitio: a running suite is not started again" \
       '! grep -q "^run" "$tmp/mc.argv" && case "$out" in *"✓ La suite ya está iniciada"*"FAIL=0"*) ;; *) false;; esac'
+    printf 'HTTPS_PROXY=http://old-proxy.example:3128\n' > "$tmp/mc.env"
+    cat > "$tshim/grep" <<SHIM
+#!/usr/bin/env bash
+for arg in "\$@"; do case "\$arg" in *synthetic-p%40ss*) touch "$tmp/proxy-argv-leak" ;; esac; done
+exec "$real_grep" "\$@"
+SHIM
+    chmod +x "$tshim/grep"
+    out="$(PATH="$tshim:$PATH"; export PATH; export HTTPS_PROXY='http://fixture:synthetic-p%40ss@proxy.example:3128'; APS_HOME="$tmp/proxy-existing";
+      FAIL=0; start_suite 2>&1; echo "FAIL=$FAIL")"
+    rm -f "$tshim/grep"
+    check "proxy: an existing wizard with a different profile is refused" \
+      'case "$out" in *"✗ la suite existente conserva otro perfil de proxy"*"FAIL=1") true;; *) false;; esac'
+    check "proxy: container profile comparisons keep credentials out of process arguments" \
+      '[ ! -e "$tmp/proxy-argv-leak" ]'
     : > "$tmp/mc.env"
     : > "$tmp/mc.ps"; : > "$tmp/mc.argv"; printf '#!/usr/bin/env bash\nprintf "2: eth0    inet 10.0.0.5/24 scope global eth0\\n"\n' > "$tshim/ip"; chmod +x "$tshim/ip"
     echo 0 > "$tmp/prov.rc"
@@ -3263,6 +3500,10 @@ SHIM
       '! grep -q "^run" "$tmp/mc.argv" && case "$out" in *"✗ la carpeta de la instalación no es válida"*"«..»"*) ;; *) false;; esac'
   fi
   cp "$tmp/docker.prev" "$tshim/docker"
+
+  if [ -e "$tmp/mc-systemctl.prev" ]; then mv "$tmp/mc-systemctl.prev" "$tshim/systemctl"
+  else rm -f "$tshim/systemctl"; fi
+  PATH="$mc_path"; export PATH
 
   # ── temporizadores (a9): the two units into a scratch systemd dir, reloaded, the weekly timer enabled — shim
   # systemctl, shim docker ──
@@ -4135,6 +4376,12 @@ SH
 # ── dispatch ──────────────────────────────────────────────────────────────────────────────
 
 case "${1:-}" in
+  --self-test|guard-existing-installation|--help|-h|""|estado|pasos|run-command) ;;
+  *) proxy_load || exit 1 ;;
+esac
+
+case "${1:-}" in
+  proxy-save)   proxy_save ;;
   install)      shift; cmd_install "$@" ;;
   preflight)    shift; cmd_preflight "$@" ;;
   guard-existing-installation) check_existing_installation ;;

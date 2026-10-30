@@ -2,7 +2,7 @@
 # install.sh — the clinic's one-line entry (FRD S1: one signed tarball per suite tag + a
 # one-line bootstrap that unpacks, verifies sha256, starts the wizard).
 #
-#   curl -fsSL "$REPO_URL/releases/download/vX.Y.Z/apsconecta-vX.Y.Z-install.sh" | sudo bash
+#   curl -fsSL "$REPO_URL/releases/download/vX.Y.Z/apsconecta-vX.Y.Z-install.sh" | sudo --preserve-env=HTTPS_PROXY,HTTP_PROXY,NO_PROXY,https_proxy,http_proxy,no_proxy bash
 #
 # TRUST (the cargo-dist/Astral model, astral.sh/uv/install.sh): the one-liner's anchor is the
 # TAG-PINNED RELEASE URL + TLS, and this script embeds the package's expected sha256 — set by
@@ -47,7 +47,7 @@ need() { command -v "$1" >/dev/null 2>&1 \
            || die "falta $1 en este servidor: instálelo (sudo apt-get install -y $1) y vuelva a ejecutar el instalador"; }
 
 main() {
-  [ "$(id -u)" = 0 ] || die "el instalador necesita permisos de administrador: añada sudo al comando (curl … | sudo bash)"
+  [ "$(id -u)" = 0 ] || die "el instalador necesita permisos de administrador: use sudo --preserve-env=HTTPS_PROXY,HTTP_PROXY,NO_PROXY,https_proxy,http_proxy,no_proxy bash después de curl"
   need curl; need tar; need sha256sum
 
   [ -n "$TARBALL_SHA256" ] \
@@ -125,6 +125,9 @@ main() {
   if ! APS_HOME="$APS_HOME" bash "$tmp/instalador/host/aps-conecta" guard-existing-installation; then
     rm -rf "$tmp"
     die "la revisión de la instalación existente detuvo el arranque; conserve sus contenedores y datos y corrija lo indicado arriba"
+  fi
+  if ! APS_HOME="$APS_HOME" bash "$tmp/instalador/host/aps-conecta" proxy-save; then
+    rm -rf "$tmp"; die "no pude guardar la configuración del proxy — no se instala la suite"
   fi
   ( umask 022 && mv "$tmp/instalador" "$DEST" ) \
     || { rm -rf "$tmp"; die "no pude instalar la suite en $DEST"; }

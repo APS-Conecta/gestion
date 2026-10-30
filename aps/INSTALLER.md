@@ -21,6 +21,23 @@ A clinic installs a **signed release package**, never `main` (ADR-0005):
 
     curl -fsSL https://github.com/APS-Conecta/gestion/releases/download/vX.Y.Z/apsconecta-vX.Y.Z-install.sh | sudo bash
 
+On an institutional proxy network, enter its URL privately and preserve only its variables
+through sudo for the initial download. Replace `vX.Y.Z` with the chosen release:
+
+```bash
+read -r -s -p 'Dirección del proxy: ' HTTPS_PROXY; echo
+export HTTPS_PROXY HTTP_PROXY="$HTTPS_PROXY" https_proxy="$HTTPS_PROXY" http_proxy="$HTTPS_PROXY"
+curl -fsSL https://github.com/APS-Conecta/gestion/releases/download/vX.Y.Z/apsconecta-vX.Y.Z-install.sh \
+  | sudo --preserve-env=HTTPS_PROXY,HTTP_PROXY,NO_PROXY,https_proxy,http_proxy,no_proxy bash
+```
+
+Use an HTTP(S) endpoint reachable from both the host and containers. Encode special
+characters in Basic credentials. The verified bootstrap saves the profile privately in
+`/opt/aps-conecta/proxy.env`; subsequent commands load it automatically. Preparation applies
+Docker's systemd drop-in and restarts Docker when its configuration needs application.
+Localhost, the suite address, service names and the inspected network bypass the proxy.
+Keep the profile in the encrypted backup of `/opt/aps-conecta`.
+
 The one-liner's anchor is the tag-pinned release URL plus TLS, and the installer asset itself
 embeds the package's sha256 and the project's public key: the download is verified **before
 anything unpacks** (a host that already carries `signify` verifies the signature too — the

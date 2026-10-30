@@ -97,6 +97,10 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-058 | package promotion could mask orphaned suite containers before host checks, and an outbound UFW rule could suppress inbound DNS access (#188) | newly unpacked package files looked like an existing installation, and token-only firewall matching ignored rule direction | the verified staged host checks orphan state before promotion, lifecycle acceptance bootstraps before creating containers, and inbound destination/source matching excludes OUT/FWD rules; real-host bootstrap and direction fixtures fail before the corrections |
 
+| A-059 | a mandatory proxy passed preflight but Docker ignored it and the wizard refused it (#192) | proxy state did not cross sudo, Docker's service environment or the Nextcloud container boundary | a private persisted profile configures Docker and startup through an env-file; inspected network/service bypasses keep local traffic direct; Nextcloud reuses its proxy configuration with credential masking; host regression cases and authenticated Clean boot cover the path |
+
+| A-060 | Clean boot could reject valid Spanish certificate output whenever a SHA-256 fingerprint contained a byte such as D5 (#192 acceptance) | the internal-reference language pattern also matched hexadecimal bytes in a random certificate fingerprint | normalize complete SHA-256 fingerprints only for the language check; the existing workflow safety seam accepts a valid fingerprint and still rejects English warnings and internal references |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and

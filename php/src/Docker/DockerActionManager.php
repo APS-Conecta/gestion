@@ -26,7 +26,7 @@ readonly class DockerActionManager {
         private DockerHubManager               $dockerHubManager,
         private GitHubContainerRegistryManager $gitHubContainerRegistryManager
     ) {
-        $this->guzzleClient = new Client(['curl' => [CURLOPT_UNIX_SOCKET_PATH => '/var/run/docker.sock']]);
+        $this->guzzleClient = new Client(['proxy' => '', 'curl' => [CURLOPT_UNIX_SOCKET_PATH => '/var/run/docker.sock']]);
     }
 
     private function BuildApiUrl(string $url): string {
@@ -284,6 +284,15 @@ readonly class DockerActionManager {
         }
         foreach ($envs as $key => $env) {
             $envs[$key] = $this->configurationManager->replaceEnvPlaceholders($env);
+        }
+        $httpsProxy = getenv('HTTPS_PROXY');
+        if ($container->identifier === 'aps-conecta-nextcloud' && $httpsProxy !== false && $httpsProxy !== '') {
+            foreach (['HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy'] as $key) {
+                $value = getenv($key);
+                if ($value !== false) {
+                    $envs[] = $key . '=' . $value;
+                }
+            }
         }
 
         if (count($envs) > 0) {
