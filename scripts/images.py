@@ -332,7 +332,7 @@ else:
             assert not calls.exists(), "invalid tag touched the registry"
 
         selected = invoke("fixed services", "runtime-services").stdout.split()
-        assert selected == ["aps-conecta-database", "aps-conecta-eurooffice", "aps-conecta-nextcloud"]
+        assert selected == ["aps-conecta-database", "aps-conecta-eurooffice", "aps-conecta-nextcloud", "aps-conecta-apache"]
         with_exclusions = {"aio_services_v1": data["aio_services_v1"] + [
             {"container_name": "aps-conecta-" + name} for name in ("borgbackup", "domaincheck", "talk-recording")]}
         definition.write_text(json.dumps(with_exclusions))

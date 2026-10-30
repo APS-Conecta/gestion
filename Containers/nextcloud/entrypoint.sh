@@ -681,7 +681,7 @@ if [ -z "$NEXTCLOUD_HOST" ]; then
     export NEXTCLOUD_HOST="aps-conecta-nextcloud"
 fi
 SUITE_NETWORK="$(bash /network-prefix.sh --host "$NEXTCLOUD_HOST")" || exit 1
-php /var/www/html/occ config:system:set trusted_proxies 10 --value="$SUITE_NETWORK"
+php /var/www/html/occ config:system:set trusted_proxies 10 --value="$SUITE_NETWORK" || exit 1
 
 if [ -n "$ADDITIONAL_TRUSTED_DOMAIN" ]; then
     php /var/www/html/occ config:system:set trusted_domains 2 --value="$ADDITIONAL_TRUSTED_DOMAIN"

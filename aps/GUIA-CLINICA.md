@@ -72,6 +72,8 @@ El asistente está en español. Lo importante:
   (`INSTALLER.md` §7 trae el detalle). Sin dominio, la dirección IP del servidor (§11).
   El DNS local admite una interfaz LAN tardía. Docker conserva la dirección LAN primero y los
   servidores DNS válidos del anfitrión y de su configuración anterior, sin duplicados ni bucles.
+  Nextcloud y el servidor web calculan la red interna real para validar las direcciones reenviadas.
+  Los registros y la protección de acceso conservan la dirección del cliente de la LAN.
 - **La oficina es Euro-Office**, la única de la suite: el asistente no ofrece cambiarla ni
   desactivarla. No hay tienda de aplicaciones ni contenedores comunitarios: las apps de la suite
   vienen incorporadas y el conjunto se actualiza junto, nunca por partes.
