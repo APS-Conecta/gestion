@@ -56,6 +56,18 @@ The refresh refreshes upstream's newest stable spreed per suite release; the fir
 was dispatched by hand (`gh workflow run refresh.yml --repo APS-Conecta/spreed -f
 nextcloud-major=34`), and every later one rides the release chain.
 
+Repository Settings → Actions → General → Workflow permissions must use **Read repository
+contents and packages permissions**, with **Allow GitHub Actions to create and approve pull
+requests** disabled. Publishing jobs declare their required writes explicitly; Images keeps
+its reusable-workflow package-write ceiling and narrows every non-publishing job to read.
+Read back the effective repository defaults after changing them:
+
+    gh api repos/APS-Conecta/gestion/actions/permissions/workflow
+
+`scripts/ci-tool.sh` owns the raw gate binaries and their pinned checksums. The Dockerfile
+workflow reuses `scripts/validate.sh --docker-lint`; it has no separate downloader or exit-status
+policy. A tool update changes its version and publisher-verified checksum together.
+
 ## 3. The release commit
 
 X.Y.Z is chosen from the changes, not from the last number plus one: read the commits since

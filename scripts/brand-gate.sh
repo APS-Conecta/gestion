@@ -60,18 +60,42 @@ row() {  # ID DESCRIPTION CMD... — fires unconditionally; the ID names the cha
   fi
 }
 
+# grep has three outcomes: matches, absence and failure. Negative checks accept
+# only absence; pipeline filters also preserve an unreadable input as a failure.
+find_matches() {
+  local result=0
+  grep "$@" || result=$?
+  if [ "$result" -gt 1 ]; then
+    echo "  grep failed (status $result); the input was not checked" >&2
+    return 1
+  fi
+  return 0
+}
+
+matches_absent() {
+  local result
+  if grep "$@"; then
+    return 1
+  else
+    result=$?
+    [ "$result" -eq 1 ] && return 0
+    echo "  grep failed (status $result); absence was not established" >&2
+    return 1
+  fi
+}
+
 upstream_refs() {  # PATH... — zero ghcr.io/nextcloud-releases refs; every hit prints as evidence
   local f hits=0
   for f in "$@"; do
     [ -e "$f" ] || { echo "upstream_refs: no such path: $f" >&2; return 1; }
-    grep -rnH "ghcr.io/nextcloud-releases" "$f" && hits=$((hits+1))
+    matches_absent -rnH "ghcr.io/nextcloud-releases" "$f" || hits=$((hits+1))
   done
   [ "$hits" -eq 0 ]
 }
 
 fork_ref_floor() {  # FILE MIN — at least MIN ghcr.io/aps-conecta/ refs (line-counted)
   local n
-  n="$(grep -c "ghcr.io/aps-conecta/" "$1")"
+  n="$(grep -c "ghcr.io/aps-conecta/" "$1")" || return 1
   [ "$n" -ge "$2" ] \
     || { echo "  only $n aps-conecta refs in $1 (floor $2) — the sed's prefix rule missed a ref shape, or the list shrank" >&2; return 1; }
 }
@@ -130,20 +154,14 @@ office_ids_absent() {  # PATH... — zero office-collabora/office-onlyoffice ids
   local f hits=0
   for f in "$@"; do
     [ -e "$f" ] || { echo "office_ids_absent: no such path: $f" >&2; return 1; }
-    grep -rnHE 'office-collabora|office-onlyoffice' "$f" && hits=$((hits+1))
+    matches_absent -rnHE 'office-collabora|office-onlyoffice' "$f" || hits=$((hits+1))
   done
   [ "$hits" -eq 0 ]
 }
 
-office_settings_removed() {  # removed backend form fields have no controller or template readers
-  local status
-  if grep -rnE 'collabora_dictionaries|collabora_additional_options' \
-      "$TREE/php/templates" "$TREE/php/public/index.php" "$TREE/php/src/Controller/ConfigurationController.php"; then
-    return 1
-  else
-    status=$?
-    [ "$status" -eq 1 ]
-  fi
+office_settings_removed() {  # removed backend fields have no controller or template readers
+  matches_absent -rnE 'collabora_dictionaries|collabora_additional_options' \
+    "$TREE/php/templates" "$TREE/php/public/index.php" "$TREE/php/src/Controller/ConfigurationController.php"
 }
 
 office_floor() {  # FILE... — the eurooffice surface present in each (patch 050's positive control)
@@ -186,7 +204,7 @@ upstream_changelog_urls_absent() {  # zero upstream changelog/releases URLs in t
   local f hits=0
   for f in "$TREE/php/templates"/*.twig "$TREE/php/templates"/includes/*.twig; do
     [ -e "$f" ] || continue
-    grep -nHE 'github.com/nextcloud/all-in-one/releases|github.com/nextcloud-releases' "$f" && hits=$((hits+1))
+    matches_absent -nHE 'github.com/nextcloud/all-in-one/releases|github.com/nextcloud-releases' "$f" || hits=$((hits+1))
   done
   [ "$hits" -eq 0 ]
 }
@@ -211,7 +229,7 @@ escl_sweep() {  # MODE — walk swept_table's sentinel pairs. absent = the Engli
   while IFS='|' read -r f en es; do
     [ -f "$TREE/$f" ] || { echo "escl_sweep: no such file: $f" >&2; return 1; }
     if [ "$mode" = absent ]; then
-      if grep -nF "$en" "$TREE/$f" >/dev/null; then
+      if ! matches_absent -nF "$en" "$TREE/$f" >/dev/null; then
         grep -nF "$en" "$TREE/$f" | head -3 | sed 's/^/  /' >&2
         echo "  English residue in $f — the sweep did not land there" >&2; fail=1
       fi
@@ -262,7 +280,7 @@ reskin_identity() {  # MODE — walk 070's identity table (the <title>/h1/h2 loc
   while IFS='|' read -r f old new; do
     [ -f "$TREE/$f" ] || { echo "reskin_identity: no such file: $f" >&2; return 1; }
     if [ "$mode" = absent ]; then
-      if grep -nF "$old" "$TREE/$f" >/dev/null; then
+      if ! matches_absent -nF "$old" "$TREE/$f" >/dev/null; then
         grep -nF "$old" "$TREE/$f" | head -3 | sed 's/^/  /' >&2
         echo "  upstream identity residue in $f — the reskin did not land there" >&2; fail=1
       fi
@@ -288,8 +306,8 @@ dark_mode_gone() {  # the toggle is deleted and nothing can re-apply a stale dar
   # surface). A stale 'dark' key with the dark rules deleted is inert the moment the new
   # bytes load; the removeItem clears it for every load after that.
   local hits=0
-  grep -rnHE 'theme-toggle|theme-icon' "$TREE/php/templates" "$TREE/php/public/style.css" && hits=$((hits+1))
-  grep -nHE '\[data-theme="dark"\]' "$TREE/php/public/style.css" && hits=$((hits+1))
+  matches_absent -rnHE 'theme-toggle|theme-icon' "$TREE/php/templates" "$TREE/php/public/style.css" || hits=$((hits+1))
+  matches_absent -nHE '\[data-theme="dark"\]' "$TREE/php/public/style.css" || hits=$((hits+1))
   [ -e "$TREE/php/public/toggle-dark-mode.js" ] && { echo "  still present: toggle-dark-mode.js" >&2; hits=$((hits+1)); }
   grep -q "localStorage.removeItem('theme')" "$TREE/php/public/apply-theme.js" \
     || { echo "  the one-shot theme clear is missing from apply-theme.js" >&2; hits=$((hits+1)); }
@@ -350,7 +368,7 @@ EOF
   if [ ! -f "$TREE/php/public/fonts/Fraunces.woff2" ] || [ ! -f "$TREE/php/public/fonts/NunitoSans.woff2" ]; then
     echo "  the font subset files are missing from php/public/fonts/" >&2; fail=1
   fi
-  if grep -nE 'url\(.?https?:|@import' "$css"; then
+  if ! matches_absent -nE 'url\(.?https?:|@import' "$css"; then
     echo "  style.css reaches a remote URL — the wizard must ship every byte it renders" >&2; fail=1
   fi
   [ "$fail" -eq 0 ]
@@ -364,7 +382,7 @@ paso1_card() {  # the handoff card is present — and never a literal URL or por
   # things 070 still owns — the card and the no-port rule.
   local t="$TREE/php/templates/containers.twig"
   grep -qF 'id="paso-1-card"' "$t" || { echo "  the Paso-1 handoff card is missing" >&2; return 1; }
-  if grep -nE ':808[0-9]' "$t"; then
+  if ! matches_absent -nE ':808[0-9]' "$t"; then
     echo "  a literal provisioner port leaked into containers.twig — the card must show the command only" >&2; return 1
   fi
 }
@@ -433,13 +451,13 @@ suite_desec_absent() {  # TREE — 051's consequence, routed to 090: the deSEC f
            php/tests/tests/desec-existing-slug.spec.js php/tests/desec-mock.mjs; do
     [ -e "$t/$f" ] && { echo "  dead deSEC file survived: $f" >&2; return 1; }
   done
-  if grep -rni "desec" "$t/php/tests/" --include="*" 2>/dev/null | grep -qv "^$t/php/tests/package-lock.json"; then
+  if ! find_matches -rni "desec" "$t/php/tests/" --include="*" 2>/dev/null | matches_absent -qv "^$t/php/tests/package-lock.json"; then
     grep -rni "desec" "$t/php/tests/" 2>/dev/null | head -3 | sed 's/^/  /' >&2
     echo "  deSEC residue in the test harness" >&2; return 1
   fi
   # the workflow invokers too — run.sh would exit 1 on every dead-spec step (the R1 half-state
   # find: slice 10's referencer list omitted them; this row now owns "every reference" for real)
-  if grep -rni "desec\|AIO_TEST_PASSWORD" "$t/.github/workflows/" 2>/dev/null; then
+  if ! matches_absent -rni "desec\|AIO_TEST_PASSWORD" "$t/.github/workflows/" 2>/dev/null; then
     grep -rni "desec\|AIO_TEST_PASSWORD" "$t/.github/workflows/" | head -3 | sed 's/^/  /' >&2
     echo "  deSEC residue in the workflow invokers" >&2; return 1
   fi
@@ -523,7 +541,7 @@ csp_fonts_self() {  # 110: the wizard's CSP lets its own brand fonts load. Match
     || { echo "  no Content-Security-Policy line in headers.Caddyfile" >&2; return 1; }
   case "$line" in *"default-src 'none';"*) ;; *) echo "  the CSP lost default-src 'none'" >&2; return 1 ;; esac
   case "$line" in *"font-src 'self';"*) ;; *) echo "  the CSP blocks the wizard's own fonts (no font-src 'self')" >&2; return 1 ;; esac
-  if printf '%s\n' "$line" | grep -qE "font-src[^;]*([*]|data:|https?:)"; then
+  if ! printf '%s\n' "$line" | matches_absent -qE "font-src[^;]*([*]|data:|https?:)"; then
     echo "  font-src reaches beyond the wizard's own origin" >&2; return 1
   fi
 }
@@ -535,7 +553,7 @@ lockup_outlines() {  # 120: the banner lockup's wordmark is outlines. A <use> cl
   local f="$TREE/php/public/img/logo.svg"
   grep -q 'id="logo"' "$f" || { echo '  logo.svg lost id="logo"' >&2; return 1; }
   grep -q 'id="wordmark"' "$f" || { echo '  logo.svg lost id="wordmark"' >&2; return 1; }
-  if grep -nE '<text|@font-face|data:font' "$f"; then
+  if ! matches_absent -nE '<text|@font-face|data:font' "$f"; then
     echo "  the lockup still depends on a font" >&2; return 1
   fi
   [ "$(sed -n '/<g id="wordmark">/,/<\/g>/p' "$f" | grep -c '<path ')" -ge 2 ] \
@@ -569,7 +587,7 @@ php/templates/setup.twig|Logotipo de APS Conecta Gestión</text>
 php/templates/login.twig|Logotipo de APS Conecta Gestión</text>
 php/templates/already-installed.twig|Logotipo de APS Conecta Gestión</text>
 EOF
-  if grep -rnIE 'APS Conecta AIO|Nextcloud AIO|All-in-One|All-In-One' "$TREE/php/templates" "$TREE/php/public"; then
+  if ! matches_absent -rnIE 'APS Conecta AIO|Nextcloud AIO|All-in-One|All-In-One' "$TREE/php/templates" "$TREE/php/public"; then
     echo "  an upstream or pre-Gestión product name survives on a wizard surface" >&2; fail=1
   fi
   [ "$fail" -eq 0 ]
@@ -601,13 +619,13 @@ help_links_ours() {  # 140: every help link the wizard renders goes to the suite
   # mapped to is linked (the positive control).
   local t="$TREE/php/templates" fail=0 a
   s3_files "$t/components/container-state.twig" "$t/includes/backup-dirs.twig" || return 1
-  if grep -rnIE 'github\.com/(nextcloud|nextcloud-releases|cloud-py-api)/|([a-z0-9-]+\.)*nextcloud\.(com|org)|nextcloud\.github\.io' "$t" "$TREE/php/public"; then
+  if ! matches_absent -rnIE 'github\.com/(nextcloud|nextcloud-releases|cloud-py-api)/|([a-z0-9-]+\.)*nextcloud\.(com|org)|nextcloud\.github\.io' "$t" "$TREE/php/public"; then
     echo "  an upstream URL survives on a wizard surface" >&2; fail=1
   fi
-  if grep -n 'c.documentation' "$t/components/container-state.twig"; then
+  if ! matches_absent -n 'c.documentation' "$t/components/container-state.twig"; then
     echo "  the container list still renders containers.json's upstream documentation links" >&2; fail=1
   fi
-  if grep -nE 'Synology|macOS|Windows' "$t/includes/backup-dirs.twig"; then
+  if ! matches_absent -nE 'Synology|macOS|Windows' "$t/includes/backup-dirs.twig"; then
     echo "  backup-dirs.twig still offers platforms the suite does not run on" >&2; fail=1
   fi
   for a in INSTALLER.md#3-preflight INSTALLER.md#7-dns-the-host-must-reach-its-own-domain-d10 \
@@ -635,7 +653,7 @@ containers.twig|<input type="text" id="timezone" name="timezone" value="America/
 containers.twig|placeholder="/opt/aps-conecta"
 includes/backup-dirs.twig|<strong>/srv/aps-conecta/respaldos</strong>
 EOF
-  if grep -rnE '/mnt/backup|Europe/Berlin|nextcloud\.yourdomain\.com|/directory/on/the/host|my_custom_docker_volume' "$t"; then
+  if ! matches_absent -rnE '/mnt/backup|Europe/Berlin|nextcloud\.yourdomain\.com|/directory/on/the/host|my_custom_docker_volume' "$t"; then
     echo "  an upstream example survives in the wizard" >&2; fail=1
   fi
   [ "$fail" -eq 0 ]
@@ -654,18 +672,18 @@ page_choices() {  # 160: the page offers only what the suite ships (R25, its tem
   # keep the container's real name). The server-side refusals are the acquisition gate's (190, 200).
   local c="$TREE/php/templates/containers.twig" o="$TREE/php/templates/includes/optional-containers.twig" fail=0
   s3_files "$c" "$o" "$TREE/php/public/forms.js" || return 1
-  if grep -nE 'newMajorVersionString|oldMajorVersionString|install_latest_major|nextcloud-upgrade-to-latest-major' "$c"; then
+  if ! matches_absent -nE 'newMajorVersionString|oldMajorVersionString|install_latest_major|nextcloud-upgrade-to-latest-major' "$c"; then
     echo "  an independent major-version upgrade is still offered" >&2; fail=1
   fi
   grep -qF '<h1>APS Conecta Gestión AIO {{ current_channel }}</h1>' "$c" || { echo "  the heading does not show the suite version" >&2; fail=1; }
-  if grep -n 'aio-version.twig' "$c"; then echo "  the heading still reads upstream AIO's version" >&2; fail=1; fi
+  if ! matches_absent -n 'aio-version.twig' "$c"; then echo "  the heading still reads upstream AIO's version" >&2; fail=1; fi
   grep -qF '<h4>Oficina</h4>' "$o" || { echo "  the office card is not titled Oficina" >&2; fail=1; }
-  if grep -nE 'Nextcloud Office|Mejor rendimiento|Compatibilidad ODF limitada|Mejor compatibilidad con Microsoft' "$o"; then
+  if ! matches_absent -nE 'Nextcloud Office|Mejor rendimiento|Compatibilidad ODF limitada|Mejor compatibilidad con Microsoft' "$o"; then
     echo "  the office card still names or compares against upstream's suites" >&2; fail=1
   fi
   tr -d '\n' < "$o" | grep -qE "<p\{% if is_harp_enabled != true %\} hidden\{% endif %\}> *<input +type=\"checkbox\" +id=\"harp\"" \
     || { echo "  the harp option is not hidden-while-off" >&2; fail=1; }
-  if grep -rnE '(^|[^-_[:alnum:]])mastercontainer([^-_[:alnum:]]|$)' "$TREE/php/templates" "$TREE/php/public"/*.js | grep -v '{#'; then
+  if ! find_matches -rnE '(^|[^-_[:alnum:]])mastercontainer([^-_[:alnum:]]|$)' "$TREE/php/templates" "$TREE/php/public"/*.js | matches_absent -v '{#'; then
     echo "  «mastercontainer» jargon survives in the wizard's prose" >&2; fail=1
   fi
   [ "$fail" -eq 0 ]
@@ -692,22 +710,22 @@ https://github.com/APS-Conecta/gestion/blob/main/aps/GUIA-CLINICA.md#7-tras-actu
 <p>Contraseña inicial de APS Conecta Gestión: <strong id="initial-nextcloud-password">
 >Abrir APS Conecta Gestión ↗</a>
 EOF
-  if grep -nE 'No se encontró ningún canal|territorio-card|pendiente de empaquetado|aps-conecta provision' "$c"; then
+  if ! matches_absent -nE 'No se encontró ningún canal|territorio-card|pendiente de empaquetado|aps-conecta provision' "$c"; then
     echo "  a false or stale statement survives on the post-start page" >&2; fail=1
   fi
-  if grep -rn 'Nextcloud' "$TREE/php/templates" "$TREE/php/public"/*.js \
-      | grep -v -e '{#' \
-      | sed -e 's/Nextcloud Hub//g' -e 's/ExApps de Nextcloud//g' | grep 'Nextcloud'; then
+  if ! find_matches -rn 'Nextcloud' "$TREE/php/templates" "$TREE/php/public"/*.js \
+      | find_matches -v -e '{#' \
+      | sed -e 's/Nextcloud Hub//g' -e 's/ExApps de Nextcloud//g' | matches_absent 'Nextcloud'; then
     echo "  «Nextcloud» survives in the wizard's prose" >&2; fail=1
   fi
-  if grep -rn 'api/docker/prune' "$TREE/php/templates"; then echo "  the docker prune button is still offered" >&2; fail=1; fi
+  if ! matches_absent -rn 'api/docker/prune' "$TREE/php/templates"; then echo "  the docker prune button is still offered" >&2; fail=1; fi
   grep -qF "name: 'Abrir APS Conecta Gestión ↗'" "$s/initial-setup.spec.js" || { echo "  initial-setup.spec.js clicks a button the page no longer has" >&2; fail=1; }
   grep -qF "name: 'Abrir APS Conecta Gestión ↗'" "$s/restore-instance.spec.js" || { echo "  restore-instance.spec.js clicks a button the page no longer has" >&2; fail=1; }
   grep -qF "Contraseña inicial de APS Conecta Gestión:" "$s/initial-setup.spec.js" || { echo "  initial-setup.spec.js waits for a label the page no longer has" >&2; fail=1; }
   for want in 'Servidor de aplicaciones' Talk 'Grabador de Talk' Euro-Office; do
     grep -qF "\"display_name\": \"$want\"" "$j" || { echo "  containers.json lacks the display name $want" >&2; fail=1; }
   done
-  if grep -nE '"display_name": "(Nextcloud|EuroOffice|Nextcloud Talk|Nextcloud Talk Recording|Nextcloud Office)"' "$j"; then
+  if ! matches_absent -nE '"display_name": "(Nextcloud|EuroOffice|Nextcloud Talk|Nextcloud Talk Recording|Nextcloud Office)"' "$j"; then
     echo "  an upstream container name survives in the list" >&2; fail=1
   fi
   [ "$fail" -eq 0 ]
@@ -758,7 +776,7 @@ phone_layout() {  # 180: the wizard fits a 360px phone. layout.twig declares the
   s3_files "$t/layout.twig" "$t/log.twig" "$t/containers.twig" "$css" || return 1
   grep -qF '<meta name="viewport" content="width=device-width, initial-scale=1.0"/>' "$t/layout.twig" \
     || { echo "  layout.twig declares no viewport" >&2; fail=1; }
-  if grep -n '<head>' "$t/containers.twig"; then echo "  containers.twig still carries a <head> stub in its body" >&2; fail=1; fi
+  if ! matches_absent -n '<head>' "$t/containers.twig"; then echo "  containers.twig still carries a <head> stub in its body" >&2; fail=1; fi
   block="$(sed -n '/^@media only screen and (max-width: 640px) {/,/^}/p' "$css" | sed -n '/^    \.login {/,/^    }/p')"
   case "$block" in *"position: static;"*"transform: none;"*"width: auto;"*) ;;
     *) echo "  style.css has no 640px rule letting the login card flow" >&2; fail=1 ;; esac
@@ -777,7 +795,7 @@ container_names() {  # 240: the suite's 14 containers are aps-conecta-*, and no 
   # with any mistake in it.
   local j="$TREE/php/containers.json" fail=0 n left x
   [ -f "$j" ] || { echo "  no such file: $j" >&2; return 1; }
-  if grep -nF '"container_name": "nextcloud-aio-' "$j"; then
+  if ! matches_absent -nF '"container_name": "nextcloud-aio-' "$j"; then
     echo "  containers.json still names a container nextcloud-aio-*" >&2; fail=1
   fi
   n="$(grep -cF '"container_name": "aps-conecta-' "$j")"
@@ -786,9 +804,9 @@ container_names() {  # 240: the suite's 14 containers are aps-conecta-*, and no 
     [ -d "$TREE/$x" ] || { echo "  no such directory: $TREE/$x — the sweep would pass over nothing" >&2; return 1; }
   done
   # [a-z0-9-]*: a bare prefix (a filter or a str_starts_with on «nextcloud-aio-») is a miss too
-  left="$(cd "$TREE" && grep -rhoE --exclude='*.md' 'nextcloud-aio-[a-z0-9-]*' php/containers.json php/src php/public \
+  left="$(cd "$TREE" && find_matches -rhoE --exclude='*.md' 'nextcloud-aio-[a-z0-9-]*' php/containers.json php/src php/public \
             php/templates php/tests Containers \
-          | sort -u | grep -vxE 'nextcloud-aio-(mastercontainer|mastercontainer-tests|test|rundeps)')"
+          | sort -u | find_matches -vxE 'nextcloud-aio-(mastercontainer|mastercontainer-tests|test|rundeps)')" || return 1
   [ -z "$left" ] || { echo "  old names left in the swept files: $(echo "$left" | tr '\n' ' ')" >&2; fail=1; }
   [ "$fail" -eq 0 ]
 }
@@ -806,7 +824,7 @@ container_name_patterns() {  # 240: what matches containers by pattern follows t
            "$TREE/php/src/Controller/DockerController.php" "$run"; do
     [ -f "$x" ] || { echo "  no such file: $x — re-point this row" >&2; return 1; }
   done
-  if grep -nF 'grep -q "nextcloud-.*-' "$e"; then
+  if ! matches_absent -nF 'grep -q "nextcloud-.*-' "$e"; then
     echo "  the entrypoint still detects the suite's hosts by the old pattern" >&2; fail=1
   fi
   for x in eurooffice:2 talk:1; do
@@ -844,10 +862,10 @@ ip_when_skipped() {  # 233: an IP is a valid domain while domain validation is s
   grep -A1 -F 'if(filter_var($domain, FILTER_VALIDATE_IP) && !$this->shouldDomainValidationBeSkipped($skipDomainValidation)) {' "$m" \
     | grep -qF 'throw new InvalidSettingConfigurationException("Please enter a domain and not an IP-address!");' \
     || { echo "  setDomain does not refuse an IP only while domain validation is on" >&2; fail=1; }
-  if grep -nF 'if(filter_var($domain, FILTER_VALIDATE_IP)) {' "$m"; then
+  if ! matches_absent -nF 'if(filter_var($domain, FILTER_VALIDATE_IP)) {' "$m"; then
     echo "  setDomain still refuses every IP" >&2; fail=1
   fi
-  if grep -nF "fill('1.1.1.1')" "$t/initial-setup.spec.js"; then
+  if ! matches_absent -nF "fill('1.1.1.1')" "$t/initial-setup.spec.js"; then
     echo "  initial-setup.spec.js still expects an IP refused while it skips validation" >&2; fail=1
   fi
   grep -A2 -F "fill('1.1.1.1')" "$t/restore-instance.spec.js" \
@@ -897,7 +915,7 @@ installer_certificate() {  # 235: apache serves the installer's own certificate 
   [ "$(grep -c 'auto_https' "$c")" -eq 1 ] || { echo "  a second Caddyfile line names auto_https — start.sh would rewrite it" >&2; fail=1; }
   [ "$(grep -c 'ADDITIONAL_TRUSTED_DOMAIN' "$c")" -eq 1 ] \
     || { echo "  a second Caddyfile line names ADDITIONAL_TRUSTED_DOMAIN — start.sh would delete it" >&2; fail=1; }
-  if grep -nF 'issuer acme' "$c"; then echo "  the Caddyfile still hard-codes the ACME issuer" >&2; fail=1; fi
+  if ! matches_absent -nF 'issuer acme' "$c"; then echo "  the Caddyfile still hard-codes the ACME issuer" >&2; fail=1; fi
   { grep -qF "if [ \"\$APACHE_PORT\" = '443' ] && [ -r /aps-tls/tls.crt ] && [ -r /aps-tls/tls.key ]; then" "$s" \
       && grep -qF "TLS_STANZA='tls /aps-tls/tls.crt /aps-tls/tls.key'" "$s" \
       && grep -qF 'DEFAULT_SNI="default_sni $NC_DOMAIN"' "$s" \
@@ -950,10 +968,10 @@ tiles_route_dropped() {  # 239, dropped by #48 (the #23 redo): the suite stopped
         m="$TREE/php/src/Data/ConfigurationManager.php" mc="$TREE/Containers/mastercontainer/start.sh" \
         c="$TREE/Containers/apache/Caddyfile" fail=0
   s3_files "$j" "$f" "$m" "$mc" "$c" || return 1
-  if grep -rn 'APS_TILES_DIR\|aps_tiles_dir\|apsTilesDir\|/aps-tiles' "$j" "$f" "$m" "$mc" "$c"; then
+  if ! matches_absent -rn 'APS_TILES_DIR\|aps_tiles_dir\|apsTilesDir\|/aps-tiles' "$j" "$f" "$m" "$mc" "$c"; then
     echo "  a basemap token survived a surface patch 239 introduced" >&2; fail=1
   fi
-  if grep -n 'route /tiles' "$c"; then
+  if ! matches_absent -n 'route /tiles' "$c"; then
     echo "  the /tiles/ route survived in apache's Caddyfile" >&2; fail=1
   fi
   [ "$fail" -eq 0 ]
@@ -1067,18 +1085,20 @@ no_duplicate_palette() {  # every hex the token file declares appears in the tok
            "$t/scripts/provisionador.py" "$t/php/public/style.css"; do
     [ -f "$f" ] || { echo "  no such swept file: ${f#"$t"/} — re-point this row" >&2; return 1; }
   done
+  local palette
+  palette="$(find_matches -oE '#[0-9a-fA-F]{6}' "$tk" | sort -u)" || return 1
   while IFS= read -r hex; do
     [ -n "$hex" ] || continue
     for f in "$t/themes/apsconecta/core/css/server.css" "$t/themes/apsconecta/core/css/guest.css" \
              "$t/provisioning/phases/15-branding.sh" "$t/scripts/brand-gate.sh" \
              "$t/scripts/provisionador.py"; do
-      if grep -nF "$hex" "$f"; then
+      if ! matches_absent -nF "$hex" "$f"; then
         echo "  $hex survives in ${f#"$t"/} — the palette is defined twice" >&2; fail=1; fi
     done
-    if sed '/aps-brand-tokens begin/,/aps-brand-tokens end/d' "$t/php/public/style.css" | grep -nF "$hex"; then
+    if ! sed '/aps-brand-tokens begin/,/aps-brand-tokens end/d' "$t/php/public/style.css" | matches_absent -nF "$hex"; then
       echo "  $hex survives in php/public/style.css outside the generated block" >&2; fail=1
     fi
-  done < <(grep -oE '#[0-9a-fA-F]{6}' "$tk" | sort -u)
+  done <<< "$palette"
   [ "$fail" -eq 0 ]
 }
 

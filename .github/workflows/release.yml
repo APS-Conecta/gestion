@@ -68,7 +68,7 @@ on:
         type: boolean
 
 permissions:
-  contents: write   # the package job creates the Release (gates/images declare tighter job-level grants)
+  contents: read   # publishing grants live on the jobs that need them
 
 concurrency:
   group: release-${{ inputs.suite-tag || github.ref_name }}
@@ -84,6 +84,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (upstream's own pin)
         with:
+          persist-credentials: false
           ref: ${{ inputs.suite-tag || github.ref_name }}   # the tag tree — the bytes this chain ships and the builds build
       - name: Upstream validators I — codespell, docker-lint, json-validator
         run: bash scripts/validate.sh .
@@ -133,6 +134,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (upstream's own pin)
         with:
+          persist-credentials: false
           ref: ${{ inputs.suite-tag || github.ref_name }}   # the tag tree: its Nextcloud major, its apps.pub, its resolver
       - name: Install the verifier (the same apt package the clinic verifies with)
         run: |
@@ -236,6 +238,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (upstream's own pin)
         with:
+          persist-credentials: false
           ref: ${{ inputs.suite-tag || github.ref_name }}   # the tag tree: install.sh, installer.pub, VERSION, scripts/
       - name: Install the signer (the same apt package the clinic verifies with)
         run: |

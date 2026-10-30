@@ -152,6 +152,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 1   # VERSION answers suite_tag() now — no tag history to read
       # The probe bed FIRST, so a harness preflight failure (RAM, ports, ghcr reachability) is
       # the first thing a red log shows. Every wait inside is bounded, and `up` ends in its own
@@ -402,8 +403,18 @@ jobs:
         run: |
           out="$RUNNER_TEMP/install.out"
           grep -q '^INSTALACIÓN: ✓' "$out"
-          ! grep -nE '^[[:space:]]*#|set -uo|readlink|HOST_DIR|\$\{|\bslice\b|\bFRD\b|\bB-[0-9]{3}\b|\bR[0-9]{1,2}\b|\bD[0-9]{1,2}\b|#[0-9]{2,}' "$out"
-          ! grep -niwE 'the|failed|not found|warning|missing|usage|error|pulling|phase' "$out"
+          assert_absent() {
+            local result
+            if grep "$@" "$out"; then
+              echo "FAIL: the silent install exposed unexpected operator output" >&2
+              exit 1
+            else
+              result=$?
+              [ "$result" -eq 1 ] || exit "$result"
+            fi
+          }
+          assert_absent -nE '^[[:space:]]*#|set -uo|readlink|HOST_DIR|\$\{|\bslice\b|\bFRD\b|\bB-[0-9]{3}\b|\bR[0-9]{1,2}\b|\bD[0-9]{1,2}\b|#[0-9]{2,}'
+          assert_absent -niwE 'the|failed|not found|warning|missing|usage|error|pulling|phase'
       # a8, on the instance the silent install left: every planilla user is in all-staff and the
       # category of their role, and every cargo account has its own sealed first password
       - name: The planilla landed by role, and each cargo has its own password
@@ -1023,6 +1034,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 1   # VERSION answers suite_tag() now — no tag history to read
       - name: Build the rehearsal package, then install through the real bootstrap
         run: |

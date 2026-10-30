@@ -4,11 +4,17 @@ on:
   pull_request:
     paths:
       - 'Containers/**'
+      - 'scripts/validate.sh'
+      - 'scripts/ci-tool.sh'
+      - '.github/workflows/docker-lint.yml'
   push:
     branches:
       - main
     paths:
       - 'Containers/**'
+      - 'scripts/validate.sh'
+      - 'scripts/ci-tool.sh'
+      - '.github/workflows/docker-lint.yml'
 
 permissions:
   contents: read
@@ -26,21 +32,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - name: Install hadolint
-        run: |
-          sudo wget https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64 -O /usr/bin/hadolint
-          sudo chmod +x /usr/bin/hadolint
-
-      - name: run lint
-        run: |
-          for file in $(find Containers -name "*Dockerfile"); do
-            # DL3018 warning: Pin versions in apk add. Instead of `apk add <package>` use `apk add <package>=<version>`
-            # DL3041 warning: Specify version with `dnf install -y <package>-<version>`.
-            # DL3066 info: Non-numeric user-id may not be resolvable by host system
-            hadolint "$file" --ignore DL3018 --ignore DL3041 --ignore DL3066 | tee -a hadolint.log
-          done
-          # hadolint only prints to console if it finds issues, so the workflow needs to fail if it printed something
-          if [ -s hadolint.log ]; then
-            exit 1
-          fi
+      - name: Lint with the shared pinned validator
+        run: bash scripts/validate.sh --docker-lint .
