@@ -73,7 +73,7 @@ def inventory():
         dockerfile = f"Containers/{directory}/Dockerfile"
         if not (ROOT / dockerfile).is_file():
             raise ImageError(f"missing Dockerfile for {name}: {dockerfile}")
-        context = "." if name in {"all-in-one", "aio-nextcloud"} else f"Containers/{directory}"
+        context = "." if name in {"all-in-one", "aio-nextcloud", "aio-apache"} else f"Containers/{directory}"
         images.append(Image(name, dockerfile, context, name == "aio-postgresql", name != "aio-eurooffice"))
 
     found = {str(path.relative_to(ROOT)) for path in (ROOT / "Containers").glob("*/Dockerfile")}
@@ -199,12 +199,12 @@ def self_test():
         script = root / "scripts/images.py"
         shutil.copyfile(__file__, script)
         (root / "php").mkdir()
-        names = ["aio-postgresql", "aio-eurooffice", "aio-nextcloud"]
+        names = ["aio-postgresql", "aio-eurooffice", "aio-nextcloud", "aio-apache"]
         definition = root / "php/containers.json"
         data = {"aio_services_v1": [{"image": f"{REGISTRY}/{name}", "image_tag": "%AIO_CHANNEL%",
                                   "container_name": "aps-conecta-" + ("database" if name == "aio-postgresql" else name.removeprefix("aio-"))} for name in names]}
         definition.write_text(json.dumps(data))
-        for directory in ["postgresql", "eurooffice", "nextcloud", "mastercontainer"]:
+        for directory in ["postgresql", "eurooffice", "nextcloud", "apache", "mastercontainer"]:
             path = root / "Containers" / directory
             path.mkdir(parents=True)
             (path / "Dockerfile").write_text("FROM scratch\n")
@@ -289,8 +289,8 @@ else:
             return result
 
         matrix = json.loads(invoke("matrix", "build-matrix").stdout)["include"]
-        assert {row["image"] for row in matrix} == {*names, "all-in-one"} and len(matrix) == 4
-        assert {row["image"] for row in matrix if row["context"] == "."} == {"aio-nextcloud", "all-in-one"}
+        assert {row["image"] for row in matrix} == {*names, "all-in-one"} and len(matrix) == 5
+        assert {row["image"] for row in matrix if row["context"] == "."} == {"aio-nextcloud", "aio-apache", "all-in-one"}
         assert {row["image"] for row in matrix if row["database_test"]} == {"aio-postgresql"}
         assert {row["image"] for row in matrix if not row["cache"]} == {"aio-eurooffice"}
         assert set(invoke("list", "list").stdout.splitlines()) == {*names, "all-in-one"}
