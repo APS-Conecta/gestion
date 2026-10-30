@@ -917,7 +917,7 @@ ensure_dnsmasq_local() {  # D LAN — the local answer: dnsmasq answers the suit
     "# APS Conecta — DNS local para el dominio de la suite"
     "# Escrito por «aps-conecta red --dominio $d --arreglar»; re-ejecútelo para cambiarlo."
     "listen-address=127.0.0.1,$lan"
-    "bind-interfaces"
+    "bind-dynamic"
   )
   # with resolved, /etc/resolv.conf is its stub: dnsmasq's upstream list must come from
   # resolved's own plain file (the loopback in the default one is ignored, a silent loop)
