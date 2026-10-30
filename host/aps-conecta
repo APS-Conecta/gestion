@@ -2554,6 +2554,15 @@ SHIM
     step_out="$(PATH="$tshim:$tmp/minbin"; FAIL=0; SUDO_USER=operador step_preparar; echo "FAIL=$FAIL")"
     check "preparar: a re-run finds everything done and changes nothing" \
       'case "$step_out" in *"✓ python3, curl, ogr2ogr y signify presentes"*"✓ Usuario operador en el grupo docker"*"✓ Memoria del sistema ajustada (vm.overcommit_memory = 1)"*"FAIL=0") ;; *) false;; esac && ! grep -qE "^(apt-get|usermod|sysctl -p|curl|systemctl start)" "$tmp/mut.log"'
+    step_out="$(export HTTPS_PROXY='http://fixture:synthetic-p%40ss@proxy.example:3128';
+      APS_HOME="$tmp/proxy-home"; FAIL=0; SUDO_USER=operador step_preparar; echo "FAIL=$FAIL")"
+    check "proxy: preparation persists a private profile and configures Docker without printing credentials" \
+      '[ -f "$tmp/proxy-home/proxy.env" ] && [ "$("$real_stat" -c %a "$tmp/proxy-home/proxy.env")" = 600 ] \
+       && grep -qx "HTTPS_PROXY=http://fixture:synthetic-p%40ss@proxy.example:3128" "$tmp/proxy-home/proxy.env" \
+       && grep -qF "EnvironmentFile=$tmp/proxy-home/proxy.env" "$ETC_DIR/systemd/system/docker.service.d/aps-conecta-proxy.conf" \
+       && grep -qx "systemctl daemon-reload" "$tmp/mut.log" && grep -qx "systemctl restart docker" "$tmp/mut.log" \
+       && case "$step_out" in *"synthetic-p"*) false;; *"FAIL=0") true;; *) false;; esac'
+
     echo 2 > "$tmp/oc"; rm -f "$ETC_DIR/sysctl.d/90-aps-conecta.conf"
     step_out="$(export SYSCTL_FAILS=1; PATH="$tshim:$tmp/minbin"; FAIL=0; ensure_overcommit; echo "FAIL=$FAIL")"
     check "preparar: where the kernel setting cannot be applied now (a container) it stays in its file and says so — not a red" \
