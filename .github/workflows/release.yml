@@ -76,9 +76,11 @@ concurrency:
 
 jobs:
   gates:
-    name: Gates (validators + brand + acquisition, against the tag tree)
+    name: Prove the tagged tree before publication
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
     permissions:
       contents: read   # the gates arm proves; it moves nothing (the write headroom the callee's pushes needed died with the call)
     steps:
@@ -86,6 +88,19 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.suite-tag || github.ref_name }}   # the tag tree — the bytes this chain ships and the builds build
+          fetch-depth: 0
+      - name: Prove the source and freeze its commit
+        id: source
+        env:
+          RELEASE_TAG: ${{ inputs.suite-tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-ci\.[0-9]+$ ]]; then
+            git fetch --no-tags origin main:refs/remotes/origin/main
+            git merge-base --is-ancestor HEAD origin/main \
+              || { echo "FAIL: a release must be contained in main" >&2; exit 1; }
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Upstream validators I — codespell, docker-lint, json-validator
         run: bash scripts/validate.sh .
       - uses: shivammathur/setup-php@7c071dfe9dc99bdf297fa79cb49ea005b9fcadbc # 2.37.1 (upstream's own pin)
@@ -100,7 +115,14 @@ jobs:
           composer run lint:twig
       # row 270's font-coverage check reads woff2 cmaps — fontTools is a gate dependency, not
       # a nicety: without it the row fails loudly (never passes vacuously), so the chain installs it
-      - run: python3 -m pip install --quiet fonttools brotli
+      - name: Install full-gate dependencies
+        run: |
+          python3 -m pip install --quiet fonttools brotli playwright==1.64.1
+          python3 -m playwright install --with-deps chromium
+          sudo apt-get update -qq && sudo apt-get install -y signify-openbsd shellcheck
+          command -v signify >/dev/null 2>&1 || sudo ln -sf /usr/bin/signify-openbsd /usr/local/bin/signify
+      - name: Full local gate, including browser checks
+        run: bash scripts/test.sh
       - name: Brand gate
         run: bash scripts/brand-gate.sh .
       - name: Acquisition gate
@@ -112,7 +134,7 @@ jobs:
     uses: ./.github/workflows/images.yml
     with:
       suite-tag: ${{ inputs.suite-tag || github.ref_name }}
-      build-ref: ${{ inputs.suite-tag || github.ref_name }}   # THE TAG (D-3.4): immutable provenance — the exact bytes the gates just proved; no mid-run ref race
+      build-ref: ${{ needs.gates.outputs.sha }}   # the commit proven by the gates
       force: ${{ inputs.force-images || false }}
     permissions:
       contents: read
@@ -120,6 +142,9 @@ jobs:
 
   spreed:
     name: Refresh the Talk fork's signed release
+    environment: Release
+    env:
+      SPREED_RELEASE_ASSETS: "spreed.tar.gz info.xml SHA256SUMS SHA256SUMS.minisig"
     needs: gates   # ADR-0020, #145: the suite release refreshes APS-Conecta/spreed's App
       # release from upstream's newest stable spreed for THE TAG TREE's Nextcloud major, and
       # the suite Release is not created until that release exists and has proven itself
@@ -135,7 +160,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (upstream's own pin)
         with:
           persist-credentials: false
-          ref: ${{ inputs.suite-tag || github.ref_name }}   # the tag tree: its Nextcloud major, its apps.pub, its resolver
+          ref: ${{ needs.gates.outputs.sha }}   # the proven Nextcloud major, public key and resolver
       - name: Install the verifier (the same apt package the clinic verifies with)
         run: |
           set -euo pipefail
@@ -165,7 +190,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${GH_TOKEN:-}" ]; then
-            echo "FAIL: SPREED_REFRESH_TOKEN is not set — owner-only, once: a fine-grained PAT with Contents: read/write on APS-Conecta/spreed, stored as this repo's SPREED_REFRESH_TOKEN secret (aps/RELEASING.md)." >&2
+            echo "FAIL: SPREED_REFRESH_TOKEN is not set — owner-only, once: a fine-grained PAT with Contents: read/write on APS-Conecta/spreed, stored in the Release environment's SPREED_REFRESH_TOKEN secret (aps/RELEASING.md)." >&2
             exit 1
           fi
           gh api --method POST repos/APS-Conecta/spreed/dispatches \
@@ -178,13 +203,19 @@ jobs:
         run: |
           set -euo pipefail
           for i in $(seq 40); do
-            if gh release view "$TAG" --repo APS-Conecta/spreed >/dev/null 2>&1; then
-              echo "release $TAG is up (attempt $i)"
-              exit 0
+            if assets="$(gh release view "$TAG" --repo APS-Conecta/spreed --json assets --jq '.assets[].name' 2>/dev/null)"; then
+              complete=true
+              for expected in $SPREED_RELEASE_ASSETS; do
+                printf '%s\n' "$assets" | grep -qxF "$expected" || complete=false
+              done
+              if [ "$complete" = true ]; then
+                echo "release $TAG and its signed assets are ready (attempt $i)"
+                exit 0
+              fi
             fi
             sleep 30
           done
-          echo "FAIL: APS-Conecta/spreed did not publish $TAG within 20 min — see its Actions: https://github.com/APS-Conecta/spreed/actions" >&2
+          echo "FAIL: APS-Conecta/spreed did not publish all signed assets for $TAG within 20 min — see its Actions: https://github.com/APS-Conecta/spreed/actions" >&2
           exit 1
       - name: Verify the release against this tag tree's apps.pub, and against upstream's own bytes
         env:
@@ -196,27 +227,13 @@ jobs:
           set -euo pipefail
           rm -rf verify && mkdir verify && cd verify
           gh release download "$TAG" --repo APS-Conecta/spreed
-          for esperado in spreed.tar.gz info.xml SHA256SUMS SHA256SUMS.minisig; do
-            [ -f "$esperado" ] || { echo "FAIL: the release lacks $esperado" >&2; exit 1; }
+          for expected in $SPREED_RELEASE_ASSETS; do
+            [ -f "$expected" ] || { echo "FAIL: the release lacks $expected" >&2; exit 1; }
           done
           signify -V -p ../apps.pub -m SHA256SUMS -x SHA256SUMS.minisig \
             || { echo "FAIL: the release's signature does not verify against THIS TAG TREE's apps.pub — an app key the suite does not trust signed it" >&2; exit 1; }
           sha256sum -c --quiet SHA256SUMS
-          # the pairing, mechanically: what the fork published is upstream's own tarball minus
-          # exactly appinfo/signature.json — member for member — and the tag is upstream's commit
-          TAG="$TAG" URL="$URL" SHA256="$SHA256" python3 - <<'PY'
-          import hashlib, io, os, tarfile, urllib.request
-          req = urllib.request.Request(os.environ["URL"], headers={"User-Agent": "aps-conecta-instalador"})
-          data = urllib.request.urlopen(req, timeout=300).read()
-          got = hashlib.sha256(data).hexdigest()
-          assert got == os.environ["SHA256"], f"upstream's bytes changed under us: {got}"
-          with tarfile.open(fileobj=io.BytesIO(data)) as arriba:
-              suyos = {m.name for m in arriba.getmembers()}
-          with tarfile.open("spreed.tar.gz") as nuestro:
-              nuestros = {m.name for m in nuestro.getmembers()}
-          assert nuestros == suyos - {"spreed/appinfo/signature.json"}, \
-              "the fork's tarball is not upstream's minus signature.json"
-          PY
+          python3 ../scripts/spreed-refresh.py verify --url "$URL" --sha256 "$SHA256" --archive spreed.tar.gz
           gh api "repos/APS-Conecta/spreed/git/ref/tags/$TAG" --jq '.object.sha' > sha-fork
           gh api "repos/nextcloud/spreed/git/ref/tags/$TAG" --jq '.object.sha' > sha-upstream
           [ "$(cat sha-fork)" = "$(cat sha-upstream)" ] \
@@ -225,6 +242,7 @@ jobs:
 
   package:
     name: Package, sign, prove, release
+    environment: Release
     needs: [gates, images, spreed]   # sign only after a complete, booted, one-snapshot image set exists — and after the Talk fork's release is refreshed and verified (ADR-0020)
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -232,14 +250,13 @@ jobs:
       contents: write   # gh release create
       packages: read    # the publish record resolves every digest from the registry
     env:
+      RELEASE_SHA: ${{ needs.gates.outputs.sha }}
       RELEASE_TAG: ${{ inputs.suite-tag || github.ref_name }}   # job-level: every step reads the same tag (a step env never crosses the step boundary)
-      MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
-      MINISIGN_KEY_PASSWORD: ${{ secrets.MINISIGN_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (upstream's own pin)
         with:
           persist-credentials: false
-          ref: ${{ inputs.suite-tag || github.ref_name }}   # the tag tree: install.sh, installer.pub, VERSION, scripts/
+          ref: ${{ needs.gates.outputs.sha }}   # the proven package source and public key
       - name: Install the signer (the same apt package the clinic verifies with)
         run: |
           set -euo pipefail
@@ -262,6 +279,9 @@ jobs:
             --ref "$RELEASE_TAG" > "suite-$RELEASE_TAG-manifest.json"
           cat "suite-$RELEASE_TAG-manifest.json"
       - name: Assemble, sign, prove, fill
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+          MINISIGN_KEY_PASSWORD: ${{ secrets.MINISIGN_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           mkdir -p dist
@@ -271,12 +291,26 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # --verify-tag checks existence; bind both lightweight and annotated tags
+          # to the commit proven by gates before attaching any signed assets.
+          [ -n "${RELEASE_SHA:-}" ] || { echo "FAIL: no proven release SHA" >&2; exit 1; }
+          refs="$(git ls-remote --tags origin "refs/tags/$RELEASE_TAG" "refs/tags/$RELEASE_TAG^{}")"
+          tag_sha="$(printf '%s\n' "$refs" | awk -v ref="refs/tags/$RELEASE_TAG" '
+            $2 == ref { direct = $1 }
+            $2 == ref "^{}" { peeled = $1 }
+            END { print peeled != "" ? peeled : direct }')"
+          [ "$tag_sha" = "$RELEASE_SHA" ] \
+            || { echo "FAIL: the remote release tag no longer matches the proven commit" >&2; exit 1; }
           files=("dist/apsconecta-$RELEASE_TAG.tar.gz" "dist/SHA256SUMS" "dist/SHA256SUMS.minisig" \
                  "dist/apsconecta-$RELEASE_TAG-install.sh" "suite-$RELEASE_TAG-manifest.json")
           # «APS Conecta Gestión vX.Y.Z» — the product name on the Release the wizard's
           # changelog arms land on (row 270 pins the shape); --generate-notes fills the body
+          release_flags=()
+          if [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-ci\.[0-9]+$ ]]; then
+            release_flags+=(--latest=false --prerelease)
+          fi
           if gh release create "$RELEASE_TAG" --verify-tag --generate-notes \
-              --title "APS Conecta Gestión $RELEASE_TAG" "${files[@]}"; then
+              --title "APS Conecta Gestión $RELEASE_TAG" "${release_flags[@]}" "${files[@]}"; then
             echo "Release $RELEASE_TAG created with ${#files[@]} assets"
             exit 0
           fi

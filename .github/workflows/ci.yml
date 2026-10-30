@@ -214,10 +214,16 @@ jobs:
           # row 270's dependency check walks every job that runs the gate: the release's gates
           # job without its fontTools install is the A-040 shape — the tag's own chain red
           f=.github/workflows/release.yml
-          install='      - run: python3 -m pip install --quiet fonttools brotli'
-          grep -qxF "$install" "$f" \
-            || { echo "ARM G target drifted — release.yml's gates job carries no fonttools install line; re-point the arm" >&2; exit 1; }
-          sed -i "/^${install}\$/d" "$f"
+          python3 - "$f" <<'PYTHON'
+          import pathlib, re, sys
+          path = pathlib.Path(sys.argv[1])
+          text = path.read_text()
+          pattern = r'^ +(?:- run: )?python3 -m pip install .*fonttools.*brotli.*$'
+          changed, count = re.subn(pattern, '', text, flags=re.M)
+          if count != 1:
+              sys.exit("ARM G target drifted: expected exactly one release font-dependency install")
+          path.write_text(changed)
+          PYTHON
           if bash scripts/brand-gate.sh .; then
             echo "ARM G FAILED: release.yml's gates job without the font install did NOT red the brand gate — row 270's dependency check is vacuous" >&2
             exit 1

@@ -35,6 +35,7 @@
 #
 # Usage: scripts/package-release.sh [--out DIR] [--manifest FILE]
 # Env:  RELEASE_TAG            the tag being packaged (asserted == the tree's VERSION, D6)
+#       RELEASE_SHA           proven source commit (optional; otherwise resolve RELEASE_TAG once)
 #       REPO_TREE              the git tree to archive the suite half from (default: this repo)
 #       MINISIGN_SECRET_KEY    the .sec key file's contents
 #       MINISIGN_KEY_PASSWORD  the key's passphrase ("" for a passphrase-less key)
@@ -83,10 +84,10 @@ if [ "${1:-}" = "--self-test" ]; then
       python3 -c 'import json; print(json.dumps([{"id": f"app{i}", "source": "store", "optional": False, "containers": []} for i in range(1, 11)] + [{"id": "app11", "source": "own", "repo": "APS-Conecta/app11", "optional": "off", "containers": [], "release": True}]))' > apps.json
       git add -A && git commit -qm fixture && git tag -f v9.8.7 )
   }
-  # run_pkg OUT REPO SECKEY PW — one packaging pass; rc carries its status (a red dies inside the
+  # run_pkg OUT REPO SECKEY PW [SHA] — one packaging pass; rc carries its status (a red dies inside the
   # subshell, never the test run — and $? is never read after check()'s own counter assignment)
   run_pkg() { rc=0
-    ( RELEASE_TAG=v9.8.7 REPO_TREE="$2" \
+    ( RELEASE_TAG=v9.8.7 RELEASE_SHA="${5:-}" REPO_TREE="$2" \
         MINISIGN_SECRET_KEY="$(cat "$3")" MINISIGN_KEY_PASSWORD="$4" \
         bash "$REPO_ROOT/scripts/package-release.sh" --out "$1" ) >/dev/null 2>&1 || rc=$?
     return 0
@@ -119,6 +120,19 @@ if [ "${1:-}" = "--self-test" ]; then
   run_pkg "$tmp/o2" "$tmp/repo" "$tmp/installer.sec" ""
   check "determinism: a second pass rebuilds the same bytes (any clone of the tag → one sha256)" \
     '[ "$rc" -eq 0 ] && [ "$(sha256sum "$tmp/o2/apsconecta-v9.8.7.tar.gz" | cut -d" " -f1)" = "$sha1" ]'
+
+  mk_repo "$tmp/sha-repo" "$tmp/installer.pub"
+  frozen_sha="$(git -C "$tmp/sha-repo" rev-parse HEAD)"
+  git -C "$tmp/sha-repo" tag -d v9.8.7 >/dev/null
+  run_pkg "$tmp/sha-only" "$tmp/sha-repo" "$tmp/installer.sec" "" "$frozen_sha"
+  check "frozen source: a SHA-only checkout packages without a local tag" \
+    '[ "$rc" -eq 0 ] && [ -f "$tmp/sha-only/apsconecta-v9.8.7.tar.gz" ]'
+  ( cd "$tmp/sha-repo" && printf 'untested\n' > untested && git add untested \
+    && git status --short >/dev/null && git commit -qm "new untested fixture" && git tag v9.8.7 )
+  run_pkg "$tmp/moved-tag" "$tmp/sha-repo" "$tmp/installer.sec" "" "$frozen_sha"
+  check "frozen source: a moved tag cannot change archived bytes or provenance" \
+    '[ "$rc" -eq 0 ] && ! tar -tzf "$tmp/moved-tag/apsconecta-v9.8.7.tar.gz" | grep -q "instalador/untested" \
+      && tar -xzOf "$tmp/moved-tag/apsconecta-v9.8.7.tar.gz" instalador/.paquete.json | grep -q "$frozen_sha"'
 
   ( cd "$tmp/repo" && printf 'v9.9.9\n' > VERSION && git add -A && git commit -qm drift && git tag -f v9.8.7 )
   run_pkg "$tmp/o3" "$tmp/repo" "$tmp/installer.sec" ""
@@ -174,6 +188,11 @@ command -v signify >/dev/null 2>&1   || die "signify (signify-openbsd) missing �
 tag="${RELEASE_TAG:?set RELEASE_TAG to the instalador tag being packaged}"
 [[ "$tag" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] || die "tag '$tag' is not channel-valid (a versioned Docker tag — it names assets and a sed line)"
 tree="${REPO_TREE:-$REPO_ROOT}"
+if [ -n "${RELEASE_SHA:-}" ] && [[ ! "$RELEASE_SHA" =~ ^[a-f0-9]{40}$ ]]; then
+  die "RELEASE_SHA must be one full proven commit SHA"
+fi
+source_commit="$(git -C "$tree" rev-parse --verify "${RELEASE_SHA:-$tag}^{commit}")" \
+  || die "cannot resolve the package source commit"
 
 mkdir -p "$out"
 [ -z "$(ls -A "$out" 2>/dev/null)" ] || die "--out ($out) is not empty — refusing to overwrite (bake into a clean dir)"
@@ -183,9 +202,10 @@ trap 'rm -rf "$work"' EXIT
 staging="$work/staging/instalador"
 mkdir -p "$staging"
 
-# 1 — the instalador half: the tag's tree, from git archive (never a working tree)
-git -C "$tree" archive --format=tar "$tag" | tar -x -C "$staging" \
-  || die "git archive $tag failed — run from a clone that carries the tag"
+# 1 — archive the resolved commit, never a working tree or a second tag lookup.
+# Release workflows fetch only this proven SHA; a local tag need not exist.
+git -C "$tree" archive --format=tar "$source_commit" | tar -x -C "$staging" \
+  || die "git archive $source_commit failed"
 
 # 2 — the counted floors on the instalador half (D6's assert lives here, not in trust)
 [ -f "$staging/VERSION" ] || die "the tag tree carries no VERSION — the release commit sets it (D6)"
@@ -224,8 +244,8 @@ if [ -n "$manifest" ]; then
   [ -f "$manifest" ] || die "--manifest $manifest: no such file"
   manifest_sha="$(sha256sum "$manifest" | cut -d' ' -f1)"
 fi
-commit_ts="$(git -C "$tree" show -s --format=%ct "$tag" || die "cannot read the tag commit's date")"
-python3 - "$tag" "$(git -C "$tree" rev-parse "$tag^{commit}")" "$manifest_sha" > "$staging/.paquete.json" <<'PY'
+commit_ts="$(git -C "$tree" show -s --format=%ct "$source_commit" || die "cannot read the source commit date")"
+python3 - "$tag" "$source_commit" "$manifest_sha" > "$staging/.paquete.json" <<'PY'
 import json, sys
 tag, isha, msha = sys.argv[1:4]
 pkg = {"release": tag, "instalador_sha": isha}

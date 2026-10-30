@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The spreed fork's refresh (ADR-0020, #145): upstream's newest stable release for a
 Nextcloud major, proven against upstream's own checksums and repacked as the App release the
-suite installs. Two verbs, one resolver, run from two places — the fork repo's refresh
+suite installs. One resolver and archive verifier, run from two places — the fork repo's refresh
 workflow (which signs and publishes) and instalador's release chain (which names the release
 it expects before it dispatches the fork):
 
@@ -19,6 +19,9 @@ it expects before it dispatches the fork):
       release of ours never carries, ADR-0017), info.xml (the tarball's own), and SHA256SUMS
       over both. Nothing is written until upstream's digest has proven the download and the
       tarball's own info.xml has proven id, version and the range (fail closed, everywhere).
+  scripts/spreed-refresh.py verify --url URL --sha256 DIGEST --archive spreed.tar.gz
+      Prove the downloaded upstream digest and compare every archive member: file content,
+      type, mode and link target. Only upstream appinfo/signature.json may be removed.
   scripts/spreed-refresh.py --self-test
       Hermetic: a fixture store, a fixture GitHub API and fixture tarballs over local HTTP —
       real redirects, real checksums, no network.
@@ -216,6 +219,43 @@ def refresh(major, out):
     return r
 
 
+def archive_members(data):
+    """Content identity without extraction, timestamps or archive ordering."""
+    records = {}
+    try:
+        with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:
+            for member in archive.getmembers():
+                if member.name in records:
+                    raise Refusal(f"duplicate archive member: {member.name}")
+                digest = None
+                if member.isfile():
+                    hasher = hashlib.sha256()
+                    with archive.extractfile(member) as stream:
+                        for block in iter(lambda: stream.read(1024 * 1024), b""):
+                            hasher.update(block)
+                    digest = hasher.hexdigest()
+                records[member.name] = (member.type, member.mode, member.size, member.linkname, digest)
+    except (tarfile.TarError, OSError, EOFError) as error:
+        raise Refusal(f"archive is not a legible tar.gz: {error}") from None
+    return records
+
+
+def verify(url, expected_digest, filename):
+    if not re.fullmatch(r"[a-f0-9]{64}", expected_digest):
+        raise Refusal("the upstream digest must be one SHA256 hex value")
+    upstream = _get(url)
+    if hashlib.sha256(upstream).hexdigest() != expected_digest:
+        raise Refusal("the upstream download differs from its resolved digest")
+    expected = archive_members(upstream)
+    expected.pop(f"{APP}/appinfo/signature.json", None)
+    with open(filename, "rb") as archive:
+        actual = archive_members(archive.read())
+    for name in sorted(expected.keys() | actual.keys()):
+        if name not in expected or name not in actual or expected[name] != actual[name]:
+            raise Refusal(f"the fork archive differs from upstream at {name}")
+    return len(actual)
+
+
 # ── the CLI ───────────────────────────────────────────────────────────────────────────────
 
 
@@ -239,6 +279,15 @@ def main(argv):
             return 1
         print(f"✓ spreed {r['version']} ({r['tag']}) proven against upstream's own checksum "
               f"and repacked in {argv[4]}")
+        return 0
+    if (len(argv) == 7 and argv[0] == "verify"
+            and argv[1::2] == ["--url", "--sha256", "--archive"]):
+        try:
+            count = verify(argv[2], argv[4], argv[6])
+        except (Refusal, ValueError, OSError) as error:
+            print(f"the spreed verification refused: {error}", file=sys.stderr)
+            return 1
+        print(f"verified: {count} archive members match upstream content")
         return 0
     print(__doc__.split("\n\n")[1], file=sys.stderr)
     return 2
@@ -465,6 +514,29 @@ def selftest():
               and os.path.isfile(os.path.join(cli_out, "spreed.tar.gz"))
               and os.path.isfile(os.path.join(cli_out, "info.xml"))
               and os.path.isfile(os.path.join(cli_out, "SHA256SUMS")))
+        verify_args = [sys.executable, os.path.abspath(__file__), "verify", "--url",
+                       f"{base}/nextcloud-releases/spreed/releases/download/v24.0.6/spreed-v24.0.6.tar.gz",
+                       "--sha256", sha(cuerpo), "--archive", os.path.join(cli_out, "spreed.tar.gz")]
+        verified = subprocess.run(verify_args, capture_output=True, text=True, timeout=60)
+        check("cli verify: the signed fork archive is upstream minus its signature file",
+              verified.returncode == 0 and verified.stdout.startswith("verified:"))
+        # Keep every member name and metadata; mutate one byte in a real file.
+        changed = os.path.join(tmp, "changed.tar.gz")
+        with tarfile.open(os.path.join(cli_out, "spreed.tar.gz")) as original, \
+                tarfile.open(changed, "w:gz") as altered:
+            for member in original.getmembers():
+                content = original.extractfile(member).read() if member.isfile() else None
+                if member.name == f"{APP}/lib/App.php":
+                    content = content.replace(b"php", b"phq", 1)
+                altered.addfile(member, io.BytesIO(content) if content is not None else None)
+        tampered = subprocess.run([*verify_args[:-1], changed], capture_output=True, text=True, timeout=60)
+        check("cli verify: identical names with one changed byte are refused",
+              tampered.returncode == 1 and "differs" in tampered.stderr)
+        wrong_digest = verify_args.copy()
+        wrong_digest[wrong_digest.index("--sha256") + 1] = "0" * 64
+        refused_digest = subprocess.run(wrong_digest, capture_output=True, text=True, timeout=60)
+        check("cli verify: upstream download must still match its resolved digest",
+              refused_digest.returncode == 1 and "digest" in refused_digest.stderr)
         run = subprocess.run([sys.executable, os.path.abspath(__file__), "refresh",
                               "--nextcloud", "36", "--out", os.path.join(tmp, "nada")],
                              capture_output=True, text=True, timeout=60)
