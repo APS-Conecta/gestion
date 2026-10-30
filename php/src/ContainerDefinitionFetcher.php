@@ -113,7 +113,7 @@ readonly class ContainerDefinitionFetcher {
                         if ($value['source'] === '') {
                             continue;
                         }
-                    } elseif ($value['source'] === '%WATCHTOWER_DOCKER_SOCKET_PATH%') {
+                    } elseif ($value['source'] === '%DOCKER_SOCKET_PATH%') {
                         $value['source'] = $this->configurationManager->dockerSocketPath;
                         if($value['source'] === '') {
                             continue;

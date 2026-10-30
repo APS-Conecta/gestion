@@ -89,8 +89,6 @@ $app->add(function (Request $request, \Psr\Http\Server\RequestHandlerInterface $
 });
 
 // API
-$app->post('/api/docker/watchtower', AIO\Controller\DockerController::class . ':StartWatchtowerContainer');
-$app->get('/api/docker/getwatchtower', AIO\Controller\DockerController::class . ':StartWatchtowerContainer');
 $app->post('/api/docker/start', AIO\Controller\DockerController::class . ':StartContainer');
 $app->post('/api/docker/backup', AIO\Controller\DockerController::class . ':StartBackupContainerBackup');
 $app->post('/api/docker/backup-check', AIO\Controller\DockerController::class . ':StartBackupContainerCheck');
@@ -100,14 +98,11 @@ $app->post('/api/docker/backup-test', AIO\Controller\DockerController::class . '
 $app->post('/api/docker/restore', AIO\Controller\DockerController::class . ':StartBackupContainerRestore');
 $app->post('/api/docker/stop', AIO\Controller\DockerController::class . ':StopContainer');
 $app->post('/api/docker/backup-reset-location', AIO\Controller\DockerController::class . ':DeleteBorgBackupConfig');
-$app->post('/api/docker/nextcloud-upgrade-to-latest-major', AIO\Controller\DockerController::class . ':RunNextcloudUpgradeToLatestMajor');
-$app->post('/api/docker/prune', AIO\Controller\DockerController::class . ':SystemPrune');
 $app->get('/api/docker/logs', AIO\Controller\DockerController::class . ':GetLogs');
 $app->post('/api/auth/login', AIO\Controller\LoginController::class . ':TryLogin');
 $app->get('/api/auth/getlogin', AIO\Controller\LoginController::class . ':GetTryLogin');
 $app->post('/api/auth/logout', AIO\Controller\LoginController::class . ':Logout');
 $app->post('/api/configuration', \AIO\Controller\ConfigurationController::class . ':SetConfig');
-$app->post('/api/desec/register', \AIO\Controller\DesecController::class . ':Register');
 
 // Views
 $app->get('/containers', function (Request $request, Response $response, array $args) use ($container) {
@@ -122,9 +117,7 @@ $app->get('/containers', function (Request $request, Response $response, array $
     $dockerActionManager->ConnectMasterContainerToNetwork();
     $dockerController->StartDomaincheckContainer();
 
-    // Check if bypass_mastercontainer_update is provided on the URL, a special developer mode to bypass a mastercontainer update and use local image.
     $params = $request->getQueryParams();
-    $bypass_mastercontainer_update = isset($params['bypass_mastercontainer_update']);
     $bypass_container_update = isset($params['bypass_container_update']);
     $skip_domain_validation = isset($params['skip_domain_validation']);
 
@@ -137,14 +130,12 @@ $app->get('/containers', function (Request $request, Response $response, array $
         'nextcloud_password' => $configurationManager->getAndGenerateSecret('NEXTCLOUD_PASSWORD'),
         'containers' => (new \AIO\ContainerDefinitionFetcher($container->get(\AIO\Data\ConfigurationManager::class), $container))->FetchDefinition(),
         'borgbackup_password' => $configurationManager->getAndGenerateSecret('BORGBACKUP_PASSWORD'),
-        'is_mastercontainer_update_available' => ( $bypass_mastercontainer_update ? false : $dockerActionManager->IsMastercontainerUpdateAvailable() ),
         'has_backup_run_once' => $configurationManager->hasBackupRunOnce(),
         'is_backup_container_running' => $dockerActionManager->isBackupContainerRunning(),
         'backup_exit_code' => $dockerActionManager->GetBackupcontainerExitCode(),
         'is_instance_restore_attempt' => $configurationManager->instanceRestoreAttempt,
         'borg_backup_mode' => $configurationManager->backupMode,
         'was_start_button_clicked' => $configurationManager->wasStartButtonClicked,
-        'has_update_available' => $dockerActionManager->isAnyUpdateAvailable(),
         'last_backup_time' => $configurationManager->getLastBackupTime(),
         'backup_times' => $configurationManager->getBackupTimes(),
         'current_channel' => $dockerActionManager->GetCurrentChannel(),
@@ -157,7 +148,6 @@ $app->get('/containers', function (Request $request, Response $response, array $
         'timezone' => $configurationManager->timezone,
         'skip_domain_validation' => $configurationManager->shouldDomainValidationBeSkipped($skip_domain_validation),
         'talk_port' => $configurationManager->talkPort,
-        'automatic_updates' => $configurationManager->areAutomaticUpdatesEnabled(),
         'is_backup_section_enabled' => !$configurationManager->disableBackupSection,
         'is_imaginary_enabled' => $configurationManager->isImaginaryEnabled,
         'is_fulltextsearch_enabled' => $configurationManager->isFulltextsearchEnabled,
@@ -172,34 +162,9 @@ $app->get('/containers', function (Request $request, Response $response, array $
         'is_talk_recording_enabled' => $configurationManager->isTalkRecordingEnabled,
         'is_harp_enabled' => $configurationManager->isHarpEnabled,
         'bypass_container_update' => $bypass_container_update,
-        'desec_email' => $configurationManager->desecEmail,
-        'desec_password' => $configurationManager->desecPassword,
-        'is_desec_domain' => $configurationManager->isDesecDomain(),
-        'desec_account_registered' => $configurationManager->isDesecAccountRegistered(),
-        'desec_awaiting_verification' => $configurationManager->isDesecAwaitingVerification(),
     // Do not cache the page as it shows credentials
     ])->withHeader('Cache-Control', 'no-store');
 })->setName('profile');
-
-// Renders only the deSEC registration flow. The containers page opens this in a modal
-// iframe so the user can run the multi-step register -> verify -> domain process (adjusting
-// the inputs and re-submitting as needed) without reloading the whole page each time. Once a
-// deSEC domain is configured the view tells the parent window to reload (see desec-done.js).
-$app->get('/desec', function (Request $request, Response $response, array $args) use ($container) {
-    $view = Twig::fromRequest($request);
-    /** @var \AIO\Data\ConfigurationManager $configurationManager */
-    $configurationManager = $container->get(\AIO\Data\ConfigurationManager::class);
-    return $view->render($response, 'desec.twig', [
-        'domain' => $configurationManager->domain,
-        'desec_email' => $configurationManager->desecEmail,
-        'desec_password' => $configurationManager->desecPassword,
-        'desec_slug' => $configurationManager->desecSlug,
-        'is_desec_domain' => $configurationManager->isDesecDomain(),
-        'desec_account_registered' => $configurationManager->isDesecAccountRegistered(),
-        'desec_awaiting_verification' => $configurationManager->isDesecAwaitingVerification(),
-    // Do not cache the page as it shows credentials
-    ])->withHeader('Cache-Control', 'no-store');
-})->setName('desec');
 
 $app->get('/login', function (Request $request, Response $response, array $args) use ($container) {
     $view = Twig::fromRequest($request);

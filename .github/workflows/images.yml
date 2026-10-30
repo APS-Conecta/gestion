@@ -1,4 +1,4 @@
-# S1 — the lockstep image pipeline. 16 images under ghcr.io/aps-conecta/* per suite tag: 11
+# S1 — the lockstep image pipeline. 15 images under ghcr.io/aps-conecta/* per suite tag: 10
 # registry-side retags of OUR PREVIOUS SUITE TAG (Stage 2, the self-referential lockstep;
 # docker buildx imagetools create — seconds, zero runner disk, the
 # multi-arch manifest list carried byte-for-byte) + 5 real builds (aio-nextcloud, the suite
@@ -10,15 +10,15 @@
 #
 # WHY THE MATRIX GATES THE ANNOUNCE. The wizard resolves every sibling's tag from the mastercontainer's
 # own running image tag (%AIO_CHANNEL% -> the channel = the tag the operator ran,
-# php/src/Docker/DockerActionManager.php BuildImageName). One tag, sixteen images: a missing tag is
+# php/src/Docker/DockerActionManager.php BuildImageName). One tag, fifteen images: a missing tag is
 # not "one feature down" — the wizard's registry-reachability checks fail the whole start. Existence
-# alone is not enough either: the matrix also proves the 11 retagged images faithfully copy their
+# alone is not enough either: the matrix also proves the 10 retagged images faithfully copy their
 # RESOLVED source — under ours:<tag> the previous set is immutable, so any mismatch means the walk
 # itself erred (the "mixed" concept turns into an integrity proof), and the boot smoke proves
 # the pushed mastercontainer actually PULLS and BOOTS —
 # manifest-inspect never reads a layer byte, so a broken push is invisible to it.
 #
-# THE SOURCE IS OURS, RESOLVED ONCE (Stage 2). The 11 retags copy from ghcr.io/aps-conecta/*:<the
+# THE SOURCE IS OURS, RESOLVED ONCE (Stage 2). The 10 retags copy from ghcr.io/aps-conecta/*:<the
 # previous suite tag>: the retag job's retag.sh resolves the source
 # itself (the newest digest-complete set — git tags ARE the suite-tag list — falling back to the
 # recorded aps/BASE.lock bootstrap, else FATAL). Resolution happens exactly ONCE per run: the walk announces
@@ -77,7 +77,7 @@ on:
         default: main
         type: string
       retag-source:
-        description: "Where the 11 registry-side retags copy from. ours = our previous suite tag (the lockstep default — resolved by retag.sh: the newest digest-complete set, else the recorded aps/BASE.lock bootstrap). ours:<tag> = an explicit pin for repair runs. Reaches bash only via env: (RETAG_SOURCE), never inline in run:."
+        description: "Where the 10 registry-side retags copy from. ours = our previous suite tag (the lockstep default — resolved by retag.sh: the newest digest-complete set, else the recorded aps/BASE.lock bootstrap). ours:<tag> = an explicit pin for repair runs. Reaches bash only via env: (RETAG_SOURCE), never inline in run:."
         required: false
         default: ours
         type: string
@@ -128,7 +128,7 @@ concurrency:
 
 jobs:
   retag:
-    name: Retag the 11 registry-side images
+    name: Retag the 10 registry-side images
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

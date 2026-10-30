@@ -495,7 +495,7 @@ readonly class DockerActionManager {
             $requestBody['HostConfig']['Mounts'] = $mounts;
         }
 
-        // All AIO-managed containers should not be updated externally via watchtower but gracefully by AIO's backup and update feature.
+        // External image updaters must not bypass the suite's deliberate release/update path.
         // Also DIUN should not send update notifications. See https://crazymax.dev/diun/providers/docker/#docker-labels
         // Also Dockhand should not be auto updating the containers. See https://dockhand.pro/manual/#container-labels-behavior
         // Additionally set a default org.label-schema.vendor and com.docker.compose.project
@@ -625,33 +625,6 @@ readonly class DockerActionManager {
         }
     }
 
-    private function isContainerUpdateAvailable(string $id): string {
-        $container = $this->containerDefinitionFetcher->GetContainerById($id);
-
-        $updateAvailable = "";
-        if ($container->GetUpdateState() === VersionState::Different) {
-            $updateAvailable = '1';
-        }
-        foreach ($container->dependsOn as $dependency) {
-            $updateAvailable .= $this->isContainerUpdateAvailable($dependency);
-        }
-        return $updateAvailable;
-    }
-
-    public function isAnyUpdateAvailable(): bool {
-        // return early if instance is not installed
-        if (!$this->configurationManager->wasStartButtonClicked) {
-            return false;
-        }
-        $id = 'aps-conecta-apache';
-
-        if ($this->isContainerUpdateAvailable($id) !== "") {
-            return true;
-        } else {
-            return false;
-        }
-    }
-
     private function getBackupVolumes(string $id): string {
         $container = $this->containerDefinitionFetcher->GetContainerById($id);
 
@@ -730,32 +703,6 @@ readonly class DockerActionManager {
         }
     }
 
-    private function GetCurrentImageName(): string {
-        $cacheKey = 'aio-image-name';
-        $imageName = apcu_fetch($cacheKey);
-        if ($imageName !== false && is_string($imageName)) {
-            return $imageName;
-        }
-
-        $containerName = 'nextcloud-aio-mastercontainer';
-        $url = $this->BuildApiUrl(sprintf('containers/%s/json', $containerName));
-        try {
-            $output = json_decode($this->sendHttpRequest('GET', $url)->getBody()->getContents(), true, 512, JSON_THROW_ON_ERROR);
-            $imageNameArray = explode(':', $output['Config']['Image']);
-            if (count($imageNameArray) === 2) {
-                $imageName = $imageNameArray[0];
-            } else {
-                error_log("Unexpected image name was found when getting the current image name of the mastercontainer. You probably did not follow the documentation correctly. Changing the image name to the default 'ghcr.io/aps-conecta/all-in-one'.");
-                $imageName = 'ghcr.io/aps-conecta/all-in-one';
-            }
-            apcu_add($cacheKey, $imageName);
-            return $imageName;
-        } catch (\Exception $e) {
-            error_log('Could not get current imageName ' . $e->getMessage());
-        }
-
-        return 'nextcloud/all-in-one';
-    }
 
     public function GetCurrentChannel(): string {
         $cacheKey = 'aio-ChannelName';
@@ -784,28 +731,6 @@ readonly class DockerActionManager {
         return 'latest';
     }
 
-    public function IsMastercontainerUpdateAvailable(): bool {
-        $imageName = $this->GetCurrentImageName();
-        $containerName = 'nextcloud-aio-mastercontainer';
-
-        $tag = $this->GetCurrentChannel();
-
-        $runningDigests = $this->GetRepoDigestsOfContainer($containerName);
-        if ($runningDigests === null) {
-            return true;
-        }
-        $remoteDigest = $this->GetLatestDigestOfTag($imageName, $tag);
-        if ($remoteDigest === null) {
-            return false;
-        }
-
-        foreach ($runningDigests as $runningDigest) {
-            if ($remoteDigest === $runningDigest) {
-                return false;
-            }
-        }
-        return true;
-    }
 
     public function sendNotification(Container $container, string $subject, string $message, string $file = '/notify.sh'): void {
         $this->execCommandInContainer($container, ['bash', $file, $subject, $message]);
@@ -1046,45 +971,11 @@ readonly class DockerActionManager {
         return false;
     }
 
-    private function GetCreatedTimeOfNextcloudImage(string $imageName): ?string {
-        $imageName = $imageName . ':' . $this->GetCurrentChannel();
-        try {
-            $imageUrl = $this->BuildApiUrl(sprintf('images/%s/json', $imageName));
-            $imageOutput = json_decode($this->sendHttpRequest('GET', $imageUrl)->getBody()->getContents(), true, 512, JSON_THROW_ON_ERROR);
-
-            if (!isset($imageOutput['Created'])) {
-                error_log('Created is not set of image ' . $imageName);
-                return null;
-            }
-
-            return str_replace('T', ' ', (string)$imageOutput['Created']);
-        } catch (\Exception $e) {
-            return null;
-        }
-    }
 
     public function GetAndGenerateSecretWrapper(string $secretId): string {
         return $this->configurationManager->getAndGenerateSecret($secretId);
     }
 
-    public function isNextcloudImageOutdated(): bool {
-        $createdTime = $this->GetCreatedTimeOfNextcloudImage('ghcr.io/aps-conecta/aio-nextcloud');
-
-        if ($createdTime === null) {
-            $createdTime = $this->GetCreatedTimeOfNextcloudImage('nextcloud/aio-nextcloud');
-        }
-
-        if ($createdTime === null) {
-            return false;
-        }
-
-        // If the image is older than 90 days, it is outdated.
-        if ((time() - (60 * 60 * 24 * 90)) > strtotime($createdTime)) {
-            return true;
-        }
-
-        return false;
-    }
 
     public function GetLatestDigestOfTag(string $imageName, string $tag): ?string {
         $prefix = 'ghcr.io/';
@@ -1095,77 +986,7 @@ readonly class DockerActionManager {
         }
     }
 
-    public function RunNextcloudUpgradeToLatestMajor(\Closure $addToStreamingResponseBody): void {
-        $container = $this->containerDefinitionFetcher->GetContainerById('aps-conecta-nextcloud');
-        $this->execCommandInContainer($container, ['bash', '/upgrade-latest-major.sh'], $addToStreamingResponseBody);
-    }
 
-    public function SystemPrune(?\Closure $addToStreamingResponseBody = null): void {
-        $endpoints = [
-            // Remove stopped containers
-            'containers/prune',
-            // Remove unused images
-            'images/prune',
-            // Remove unused volumes
-            'volumes/prune',
-            // Remove unused networks
-            'networks/prune',
-            // Prune build cache
-            'build/prune',
-        ];
-
-        foreach ($endpoints as $endpoint) {
-            // Special-case images prune to include the dangling filter as requested
-            if ($endpoint === 'images/prune') {
-                $filters = json_encode(['dangling' => ['false']]);
-                $url = $this->BuildApiUrl($endpoint . '?filters=' . urlencode((string) $filters));
-            } else {
-                $url = $this->BuildApiUrl($endpoint);
-            }
-
-            if ($addToStreamingResponseBody !== null) {
-                $addToStreamingResponseBody("Running $endpoint...");
-            }
-
-            try {
-                $response = $this->sendHttpRequest('POST', $url);
-                if ($addToStreamingResponseBody !== null) {
-                    $data = json_decode((string)$response->getBody(), true);
-                    $deleted = 0;
-                    foreach (['ContainersDeleted', 'ImagesDeleted', 'VolumesDeleted', 'NetworksDeleted', 'CachesDeleted'] as $key) {
-                        if (isset($data[$key]) && is_array($data[$key])) {
-                            $deleted += count($data[$key]);
-                        }
-                    }
-                    $reclaimed = $data['SpaceReclaimed'] ?? 0;
-                    $parts = [];
-                    if ($deleted > 0) {
-                        $parts[] = "$deleted item(s) deleted";
-                    }
-                    if ($reclaimed > 0) {
-                        $i = (int)floor(log($reclaimed, 1024));
-                        $parts[] = 'Space reclaimed: ' . (string)round($reclaimed / (1024 ** $i), 2) . ' ' . ['B','KB','MB','GB'][$i];
-                    }
-                    $addToStreamingResponseBody(!empty($parts) ? implode('. ', $parts) . '.' : 'Nothing to prune.');
-                }
-            } catch (RequestException $e) {
-                error_log(sprintf('Docker prune (%s) failed: %s', $endpoint, $e->getMessage()));
-                if ($addToStreamingResponseBody !== null) {
-                    $addToStreamingResponseBody('Error: ' . $e->getMessage());
-                }
-                // continue with next prune step
-            }
-        }
-
-        if ($addToStreamingResponseBody !== null) {
-            $addToStreamingResponseBody("Docker system prune completed.");
-            sleep(1);
-
-            // We automatically reload after 10s so that the output can be read or copied if necessary
-            $addToStreamingResponseBody("Automatically reloading the page after 10s.");
-            sleep(10);
-        }
-    }
 
     protected function sendHttpRequest(string $httpMethod, string $url, array $requestOptions = []): \Psr\Http\Message\ResponseInterface {
         if (($requestOptions['stream'] ?? null) === true) {

@@ -67,12 +67,9 @@ test('Restore instance', async ({ page: setupPage }) => {
   await expect(containersPage.getByRole('main')).toContainText('¡El último restore fue exitoso!', { timeout: 3 * 60 * 1000 });
   await containersPage.getByText('Haga clic aquí para mostrar todas las opciones de copia de seguridad').click();
   await expect(containersPage.getByText('Mostrar su contraseña de cifrado para las copias de seguridad')).toBeVisible();
-  await expect(containersPage.getByRole('main')).toContainText('⚠️ Hay actualizaciones disponibles para los contenedores.');
-  containersPage.once('dialog', dialog => {
-    console.log(`Dialog message: ${dialog.message()}`)
-    dialog.accept()
-  });
-  await containersPage.getByRole('button', { name: 'Iniciar y actualizar contenedores' }).click();
+  await expect(containersPage.getByRole('main')).not.toContainText('⚠️ Hay actualizaciones disponibles para los contenedores.');
+  await expect(containersPage.getByRole('button', { name: 'Iniciar y actualizar contenedores' })).toHaveCount(0);
+  await containersPage.getByRole('button', { name: 'Iniciar contenedores', exact: true }).click();
   await expect(containersPage.getByRole('link', { name: 'Abrir APS Conecta Gestión ↗' })).toBeVisible({ timeout: 8 * 60 * 1000 });
   await expect(containersPage.getByRole('main')).toContainText(initialNextcloudPassword);
 

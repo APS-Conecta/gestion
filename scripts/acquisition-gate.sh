@@ -16,15 +16,8 @@
 #         the store on, occ upgrade re-downloads every enabled app and no pin can hold. #42
 #         kept the ENV and named its one exception: a command may open the store for itself,
 #         alone (row 042) — nothing else ever sees it open.
-#   040 — self-update opt-in (slice 9): the automatic_updates checkbox defaults OFF and the
-#         wizard carries zero watchtower POST forms. The update channel stays deliberate —
-#         D12's one-distribution rule makes even an opted-in nightly watchtower run a no-op
-#         (a published tag's digests never move) until the operator runs a new tag on purpose.
-#   051 — deSEC removal (slice 10, the v0.2.0 spec): zero deSEC surfaces across templates and
-#         public assets; the own-domain form stays as the positive control. The PHP routes
-#         (index.php's /desec + /api/desec/register, DesecManager) stay as unreachable dead
-#         code per the zero-PHP rule — unreachable because the markup that reached them is
-#         what this patch deletes.
+#   040 — independent self-update paths are absent from the wizard and nightly backup.
+#   051 — deSEC registration and IP updates are absent from runtime, including PHP.
 #   030 — the image's own posture (slice 13's bake, retired by #42): the skeleton stays baked
 #         (NC_skeletondirectory="" beside 020's store-off), the theme rides the image from the
 #         tag tree's own themes/apsconecta, and NOTHING app-shaped is copied into
@@ -98,43 +91,38 @@ row 020 "the app store is off at the image level — NC_appstoreenabled=\"0\" EN
 row 015 "the Euro-Office DocumentServer is pinned — Containers/eurooffice/Dockerfile builds FROM documentserver v9.3.4, the version office-smoke asserts the running DS equals" \
   grep -q 'documentserver:v9.3.4' "$TREE/Containers/eurooffice/Dockerfile"
 
-selfupdate_optin() {  # the suite's update channel is opt-in: checkbox defaults off, no watchtower POST remains
-  local f="$TREE/php/templates/containers.twig"
-  # both halves (test.sh:217-263 discipline): the unchecked shape PRESENT, the checked shape ABSENT
-  if ! grep -q 'id="automatic_updates" name="automatic_updates">' "$f"; then
-    echo "  the automatic_updates checkbox is missing or attribute-shaped differently — patch 040's default-off flip is not in the tree" >&2
+selfupdate_absent() {
+  local status
+  if grep -nEi 'watchtower|automatic_updates|UpdateMastercontainer|StartAndUpdateContainers|PullContainerImages' \
+      "$TREE/php/public/index.php" "$TREE/php/templates/containers.twig" \
+      "$TREE/Containers/mastercontainer/cron.sh" "$TREE/Containers/mastercontainer/daily-backup.sh"; then
     return 1
+  else
+    status=$?
+    [ "$status" -eq 1 ] || return "$status"
   fi
-  if grep -q 'id="automatic_updates" name="automatic_updates" checked' "$f"; then
-    echo "  the automatic_updates checkbox still defaults ON — the nightly chain would arm itself on first save" >&2
+  grep -q 'api/docker/start' "$TREE/php/templates/containers.twig"
+}
+
+row 040 "the wizard and nightly backup have no independent self-update path; normal container start remains" \
+  selfupdate_absent
+
+desec_surfaces_gone() {
+  local status
+  [ ! -e "$TREE/php/src/Desec" ] \
+    && [ ! -e "$TREE/php/src/Controller/DesecController.php" ] \
+    && [ ! -e "$TREE/Containers/mastercontainer/desec-ip-updater.sh" ] || return 1
+  if grep -rniHE 'desec|DEDYN_SUFFIX' "$TREE/php/templates" "$TREE/php/public" \
+      "$TREE/php/src/Data/ConfigurationManager.php" "$TREE/php/src/DependencyInjection.php" \
+      "$TREE/php/src/Controller" "$TREE/Containers/mastercontainer"; then
     return 1
-  fi
-  if grep -q 'api/docker/watchtower' "$f"; then
-    echo "  a watchtower POST form survived — the manual mastercontainer-update trigger is still reachable from the wizard" >&2
-    return 1
-  fi
-  if ! grep -q 'api/docker/start' "$f"; then
-    echo "  the container-start forms vanished — patch 040 ate more than the watchtower arms" >&2
-    return 1
+  else
+    status=$?
+    [ "$status" -eq 1 ]
   fi
 }
 
-
-row 040 "self-update stays opt-in — the automatic_updates checkbox defaults OFF and the wizard carries zero watchtower POST forms (the nightly chain arms only by deliberate operator choice)" \
-  selfupdate_optin
-
-desec_surfaces_gone() {  # zero deSEC refs across wizard templates and public assets (hits print).
-  # PHP stays byte-identical (zero-PHP rule): index.php keeps the /desec route and the twig
-  # context vars, php/src keeps DesecManager — the scan excludes PHP by construction (templates
-  # carry no PHP; the public half is include-scoped to js/css).
-  local hits=0
-  grep -rniHE 'desec' "$TREE/php/templates" && hits=1
-  grep -rniHE --include='*.js' --include='*.css' 'desec' "$TREE/php/public" && hits=1
-  [ "$hits" -eq 0 ]
-}
-
-
-row 051 "the deSEC registration channel is gone from the wizard — zero deSEC refs across templates and public assets (the third-party domain-registration flow removed at the only layer the operator sees)" \
+row 051 "the runtime carries only the establishment's own-domain path" \
   desec_surfaces_gone
 
 row 051 "the own-domain flow is intact — the domain form still present (the deletion's positive control)" \

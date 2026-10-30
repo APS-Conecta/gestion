@@ -19,9 +19,9 @@ ID the gates' rows name:
 | 015 | the Euro-Office container built from the pinned DocumentServer 9.3.4 |
 | 020 | the app store disabled — apps ship baked, never fetched |
 | 030 | the suite's apps and theme baked into the Nextcloud image |
-| 040 | self-update suppressed — the suite updates as one lockstep set |
+| 040 | updates follow the suite's deliberate versioned path; scheduled backups restart the current images |
 | 050 | Euro-Office is the suite's only office backend, from the wizard through runtime and release images |
-| 051 | the deSEC DNS flow removed |
+| 051 | the establishment supplies its own domain or IP address |
 | 060 | the operator-visible strings translated to Spanish (es-CL, formal usted) |
 | 070 | the wizard re-skinned to the APS Conecta identity |
 | 080 | the three php/src registry references re-pointed at this fork |
@@ -33,7 +33,7 @@ ID the gates' rows name:
 | 140 | the wizard's help links pointed at the suite's own docs (instalador's aps/INSTALLER.md and aps/GUIA-CLINICA.md), the rest removed |
 | 150 | the suite's values pre-filled — America/Santiago, `/srv/aps-conecta/respaldos`, a gestion domain pattern |
 | 160 | the page offers only what the suite ships — the baked Hub, the suite version, the office card, no ExApp proxies, no «mastercontainer» jargon |
-| 170 | the post-start page: the update path, «Suite en marcha», no Docker prune button (the route stays), the suite's names |
+| 170 | the post-start page: the update path, «Suite en marcha», no host-wide Docker cleanup, the suite's names |
 | 180 | the wizard laid out for a 360 px phone |
 | 190 | no community containers — the channel removed whole: no directory, no image creation, no PHP readers (#48) |
 | 200 | the office is Euro-Office only — other choices refused (PHP, declared) |
@@ -61,32 +61,31 @@ patch 240's container names (strings, and the log route's name guard), and #48's
 community channel's readers (the directory constant, the config property, the listing method, the
 form handler, the Caddy trusted-proxy variable) and patch 239's basemap directory (the setting and
 its read-only bind, removed with the route). The office configuration and container lifecycle carry
-only the suite's Euro-Office backend (#177).
+only the suite's Euro-Office backend (#177). Runtime control is limited to the suite's own
+versioned images, backup lifecycle and domain/IP setup (#179); maintenance never prunes the
+whole Docker host.
 
 **What the operator sees.** The wizard presents itself as «APS Conecta Gestión AIO — Instalador»;
 an already-installed instance greets with «APS Conecta Gestión AIO ya está instalado»; once the
 containers run, the page hands back to the web installer with «Suite en marcha». These are the shipped bytes
 — the brand gate proves them equal to this declaration on every run.
 
-**Why some messages remain in English.** The wizard renders 64 operator-visible messages from
-PHP code the fork does not translate (its declared PHP changes are behaviour, not strings). They stay English by scope decision, and
-this is the complete list, by source:
+**Why some messages remain in English.** Upstream PHP messages remain for configuration
+validation, authentication and ordinary container operations. Their sources are:
 
-| Source | Count | Where | Examples |
-|---|---|---|---|
-| `php/src/Data/ConfigurationManager.php` | 31 | validation methods | "Please enter a domain and not an IP-address!", "The entered timezone does not seem to be a valid timezone!" |
-| `php/src/Desec/DesecManager.php` | 17 | — | deSEC registration errors (the flow is removed from the UI; the messages are unreachable) |
-| `php/src/Controller/LoginController.php` | 2 | :22, :34 | "The login is blocked since Nextcloud is running.", "The password is incorrect." |
-| `php/src/Controller/DockerController.php` | 3 | :81, :308, :353 | "Container not found.", "Stopping container", "Automatically reloading the page after 10s." |
-| `php/src/Docker/DockerActionManager.php` | 9 | :198–:1205 | the four "Could not …" errors, the two "You probably did not follow the documentation correctly" messages, the streaming lines ("Starting container", "Docker system prune completed.", "Automatically reloading the page after 10s.") |
-| `php/public/index.php` | 2 | :264, :274 | "Not Found", "Method not allowed" |
+| Source | Examples |
+|---|---|
+| `php/src/Data/ConfigurationManager.php` | "Please enter a domain and not an IP-address!", "The entered timezone does not seem to be a valid timezone!" |
+| `php/src/Controller/LoginController.php` | "The login is blocked since Nextcloud is running.", "The password is incorrect." |
+| `php/src/Controller/DockerController.php` | "Container not found.", "Stopping container" |
+| `php/src/Docker/DockerActionManager.php` | Docker request failures and container-start progress |
+| `php/public/index.php` | "Not Found", "Method not allowed" |
 
-The translated Playwright suite (`php/tests`, patch 090) keeps English assertions on three of
-these as its own canary that the sweep never bled into PHP.
+The translated Playwright suite (`php/tests`, patch 090) keeps English assertions on
+selected messages as its canary that the translation sweep never bled into PHP.
 
 **Nominative use.** The wizard names itself «APS Conecta Gestión AIO»; translated prose calls the
-software inside it «la suite» — «Nextcloud» remains only in the Hub-upgrade block the page never
-renders, the HaRP option (shown only where it is already on) and
+software inside it «la suite» — «Nextcloud» remains in the HaRP option (shown only where it is already on) and
 the PHP-borne messages listed above — and the
 wizard's help links point at the suite's own docs — instalador's `aps/INSTALLER.md` and
 `aps/GUIA-CLINICA.md`. The image labels are byte-identical upstream,

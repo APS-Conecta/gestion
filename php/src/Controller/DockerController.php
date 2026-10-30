@@ -7,7 +7,6 @@ use AIO\Auth\AuthManager;
 use AIO\Container\Container;
 use AIO\Container\ContainerState;
 use AIO\ContainerDefinitionFetcher;
-use AIO\Desec\DesecManager;
 use AIO\Docker\DockerActionManager;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -16,13 +15,11 @@ use Slim\Psr7\NonBufferedBody;
 
 readonly class DockerController {
     private const string TOP_CONTAINER = 'aps-conecta-apache';
-    private const string LATEST_MAJOR_VERSION = '35';
 
     public function __construct(
         private DockerActionManager           $dockerActionManager,
         private ContainerDefinitionFetcher    $containerDefinitionFetcher,
         private ConfigurationManager $configurationManager,
-        private DesecManager $desecManager,
     ) {
     }
 
@@ -49,23 +46,7 @@ readonly class DockerController {
         $this->dockerActionManager->ConnectContainerToNetwork($container);
     }
 
-    private function PerformRecursiveImagePull(string $id) : void {
-        $container = $this->containerDefinitionFetcher->GetContainerById($id);
 
-        // Pull all dependencies first and then itself
-        foreach($container->dependsOn as $dependency) {
-            $this->PerformRecursiveImagePull($dependency);
-        }
-
-        $this->dockerActionManager->PullImage($container, true);
-    }
-
-    public function PullAllContainerImages(): void {
-
-        $id = self::TOP_CONTAINER;
-
-        $this->PerformRecursiveImagePull($id);
-    }
 
     public function GetLogs(Request $request, Response $response, array $args) : Response
     {
@@ -224,14 +205,7 @@ readonly class DockerController {
             $port = 443;
         }
 
-        if (isset($request->getParsedBody()['install_latest_major'])) {
-            $installLatestMajor = self::LATEST_MAJOR_VERSION;
-        } else {
-            $installLatestMajor = '';
-        }
-        
         $this->configurationManager->startTransaction();
-        $this->configurationManager->installLatestMajor = $installLatestMajor;
         // set AIO_URL
         $this->configurationManager->aioUrl = $host . ':' . (string)$port . $path;
         // set wasStartButtonClicked
@@ -268,31 +242,13 @@ readonly class DockerController {
         // Stop domaincheck since apache would not be able to start otherwise
         $this->StopDomaincheckContainer();
 
-        // Refresh the deSEC DNS record with the current public IP before starting containers
-        $this->desecManager->updateIpIfDesecDomain();
 
         $id = self::TOP_CONTAINER;
 
         $this->PerformRecursiveContainerStart($id, $pullImage, $addToStreamingResponseBody);
     }
 
-    public function StartWatchtowerContainer(Request $request, Response $response, array $args) : Response {
-        // Get streaming response start and closure
-        $nonbufResp = $this->startStreamingResponse($response);
-        $addToStreamingResponseBody = $this->getAddToStreamingResponseBody($nonbufResp);
 
-        $this->startWatchtower($addToStreamingResponseBody);
-
-        // End streaming response
-        $this->finalizeStreamingResponse($nonbufResp);
-        return $nonbufResp;
-    }
-
-    public function startWatchtower(?\Closure $addToStreamingResponseBody = null) : void {
-        $id = 'aps-conecta-watchtower';
-
-        $this->PerformRecursiveContainerStart($id, true, $addToStreamingResponseBody);
-    }
 
     private function PerformRecursiveContainerStop(string $id, bool $forceStopNextcloud = false, ?\Closure $addToStreamingResponseBody = null) : void
     {
@@ -334,37 +290,7 @@ readonly class DockerController {
         return $response->withStatus(201)->withHeader('Location', '.');
     }
 
-    public function RunNextcloudUpgradeToLatestMajor(Request $request, Response $response, array $args) : Response {
-        $this->configurationManager->installLatestMajor = self::LATEST_MAJOR_VERSION;
 
-        // Get streaming response start and closure
-        $nonbufResp = $this->startStreamingResponse($response);
-        $addToStreamingResponseBody = $this->getAddToStreamingResponseBody($nonbufResp);
-
-        $this->dockerActionManager->RunNextcloudUpgradeToLatestMajor($addToStreamingResponseBody);
-
-        // We automatically reload after 10s so that the output can be read or copied if necessary 
-        $addToStreamingResponseBody("Automatically reloading the page after 10s."); 
-        sleep(10); 
- 
-        // End streaming response
-        $this->finalizeStreamingResponse($nonbufResp);
-        return $nonbufResp;
-    }
-
-    public function SystemPrune(Request $request, Response $response, array $args) : Response {
-        // Get streaming response start and closure
-        $nonbufResp = $this->startStreamingResponse($response);
-
-        $body = $nonbufResp->getBody();
-        $addToStreamingResponseBody = $this->getAddToStreamingResponseBody($nonbufResp);
-
-        $this->dockerActionManager->SystemPrune($addToStreamingResponseBody);
-
-        // End streaming response
-        $this->finalizeStreamingResponse($nonbufResp);
-        return $nonbufResp;
-    }
 
     public function stopTopContainer() : void {
         $id = self::TOP_CONTAINER;

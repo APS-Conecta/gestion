@@ -250,7 +250,6 @@
         "STARTUP_APPS=%NEXTCLOUD_STARTUP_APPS%",
         "ADDITIONAL_APKS=%NEXTCLOUD_ADDITIONAL_APKS%",
         "ADDITIONAL_PHP_EXTENSIONS=%NEXTCLOUD_ADDITIONAL_PHP_EXTENSIONS%",
-        "INSTALL_LATEST_MAJOR=%INSTALL_LATEST_MAJOR%",
         "TALK_RECORDING_ENABLED=%TALK_RECORDING_ENABLED%",
         "RECORDING_SECRET=%RECORDING_SECRET%",
         "TALK_RECORDING_HOST=aps-conecta-talk-recording",
@@ -555,29 +554,6 @@
       ]
     },
     {
-      "container_name": "aps-conecta-watchtower",
-      "display_name": "Watchtower",
-      "hide_from_list": true,
-      "image_tag": "%AIO_CHANNEL%",
-      "image": "ghcr.io/aps-conecta/aio-watchtower",
-      "init": true,
-      "environment": [
-        "CONTAINER_TO_UPDATE=nextcloud-aio-mastercontainer",
-        "AIO_LOG_LEVEL=%AIO_LOG_LEVEL%"
-      ],
-      "volumes": [
-        {
-          "source": "%WATCHTOWER_DOCKER_SOCKET_PATH%",
-          "destination": "/var/run/docker.sock",
-          "writeable": false
-        }
-      ],
-      "read_only": true,
-      "cap_drop": [
-        "NET_RAW"
-      ]
-    },
-    {
       "container_name": "aps-conecta-domaincheck",
       "display_name": "Domaincheck",
       "hide_from_list": true,
@@ -829,7 +805,7 @@
       ],
       "volumes": [
         {
-          "source": "%WATCHTOWER_DOCKER_SOCKET_PATH%",
+          "source": "%DOCKER_SOCKET_PATH%",
           "destination": "/var/run/docker.sock",
           "writeable": false
         },

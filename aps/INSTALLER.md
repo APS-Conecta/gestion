@@ -101,8 +101,9 @@ lines. If preflight reds on the domain probe, do
    the installer's review lists Talk from step 6's choice, and the optional apps only when they were
    checked. Step 6 follows the containers until
    Nextcloud is installed. The wizard has no app store, no community containers and no other
-   office: a request to switch or disable the office is refused. The daily-backup screen's
-   automatic-update box ships **unchecked** — leave it: the suite updates as one set.
+   office: a request to switch or disable the office is refused. Scheduled backups restart
+   the suite on its current images. The daily-backup screen lets you choose notifications
+   for successful backups; failures are always reported.
 
 ## 5. Provision
 

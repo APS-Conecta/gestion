@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# S1's registry mechanics — the 16-image lockstep under ghcr.io/aps-conecta/*, everything the Images
+# S1's registry mechanics — the 15-image lockstep under ghcr.io/aps-conecta/*, everything the Images
 # workflow (.github/workflows/images.yml) rides: the sibling list, the registry-side retag walk, the
 # tag-completeness matrix, the digest manifest, and the generated sed that patch 010 reuses.
 #
-# WHY 16 IMAGES MUST MOVE TOGETHER. The wizard resolves every sibling's tag from the mastercontainer's
+# WHY 15 IMAGES MUST MOVE TOGETHER. The wizard resolves every sibling's tag from the mastercontainer's
 # OWN running image tag: %AIO_CHANNEL% becomes the channel (php/src/Docker/DockerActionManager.php,
 # BuildImageName), which explodes the running image on ':' and takes field 2. The tag the operator
-# runs IS the channel every sibling resolves by — one tag, sixteen images, and a missing one is not
+# runs IS the channel every sibling resolves by — one tag, fifteen images, and a missing one is not
 # "one feature down": the wizard's registry-reachability checks (isRegistryReachable) fail the start.
 # That is why the matrix gates the announce, and why a tag is NEVER a raw digest: `image@sha256:...`
 # explodes into a bogus channel and every sibling resolves a tag that cannot exist.
 #
-# WHAT MOVES AND WHAT BUILDS. 11 of the 16 are registry-side retags — `buildx imagetools create`
+# WHAT MOVES AND WHAT BUILDS. 10 of the 15 are registry-side retags — `buildx imagetools create`
 # copies the manifest list at the registry itself (seconds, zero runner disk, the multi-arch entries
 # carried along byte-for-byte); aio-nextcloud (the apps+theme bake, patch 030), aio-apache (the
 # installer's own certificate, patch 235), aio-postgresql (the database, built from this tree and
@@ -20,7 +20,7 @@
 # from build-ref: THE TAG on every release arm, main on manual dispatches (Stage 3, D-3.4).
 #
 # THE SOURCE IS OURS (Stage 2 — the self-referential lockstep; the copy-from-upstream arm retired
-# with the hard fork, D-rev 2026-10-19, D-3.5). The 11 registry-side retags copy from OUR previous
+# with the hard fork, D-rev 2026-10-19, D-3.5). The 10 registry-side retags copy from OUR previous
 # suite tag, only ever: `retag TAG` resolves it (the newest git tag carrying a digest-complete
 # set — git tags ARE the suite-tag list, D4 — falling back to the recorded aps/BASE.lock
 # bootstrap, else FATAL naming the remedy), `--from-tag` pins it for repairs. From the first
@@ -47,7 +47,7 @@
 #   scripts/retag.sh list                         the sibling image names, one per line (parsed, in order)
 #   scripts/retag.sh sed FILE                     apply the org swap in place + verify (patch 010's generator)
 #   scripts/retag.sh retag TAG [--from-tag T] [--force]
-#                                    the 11-image registry-side walk — source OURS, always
+#                                    the 10-image registry-side walk — source OURS, always
 #   scripts/retag.sh matrix TAG [--from-tag T]
 #                                    the gate: all present + the copy keyed to the RESOLVED source
 #   scripts/retag.sh manifest TAG                 the publish record, JSON on stdout (retag_source)
@@ -66,7 +66,7 @@ ORG_FORK="aps-conecta"            # ours — 010's sed and this whole walk swap 
 GHCR="ghcr.io"
 BUILD_IMAGES=(aio-nextcloud aio-apache aio-postgresql aio-eurooffice)  # the siblings that are BUILT, not retagged (patches 030, 235, 260 and 015)
 MASTER_IMAGE="all-in-one"         # the mastercontainer — not in containers.json; the operator's docker run names it
-MIN_SIBLINGS="15"                 # shape-rot alarm (divergence's "expected 27+" precedent): a parse that
+MIN_SIBLINGS="14"                 # shape-rot alarm (divergence's "expected 27+" precedent): a parse that
                                    # silently shrank would green a walk over fewer images than the suite has
 BASE_LOCK="${RETAG_BASE_LOCK:-aps/BASE.lock}"  # the write-once bootstrap record — discovery's fallback (fork-infra on main)
 RESOLVE_DEPTH="${RETAG_RESOLVE_DEPTH:-3}"     # newest tags discovery probes before the lock (B-015)
