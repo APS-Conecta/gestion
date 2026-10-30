@@ -1,7 +1,7 @@
 # RELEASING — cutting a signed suite release
 
 The runbook for the maintainer who cuts a release. One tag on instalador is the whole ritual —
-the 18-image channel, the composite package, the manifest's release identity (D4). This file owns the parts only a person can do: the keypair, the secrets,
+the complete suite image set, the composite package, the manifest's release identity (D4). This file owns the parts only a person can do: the keypair, the secrets,
 the release commit, and what to do when a key must change. The machine's
 half — gates → images → package → sign → prove → Release — is
 [.github/workflows/release.yml](../.github/workflows/release.yml), and every guard it runs is
