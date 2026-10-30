@@ -2575,6 +2575,10 @@ SH
   out="$(SS_BUSY_PORT=80 SS_BUSY_PROTO=-ltn; export SS_BUSY_PORT SS_BUSY_PROTO; FAIL=0; check_ports; echo "FAIL=$FAIL")"
   check "ports: occupied 80 is outside the suite port set" \
     'case "$out" in *"FAIL=0") ;; *) false;; esac'
+  printf '#!/bin/sh\nexit 2\n' > "$tshim/ss"
+  out="$(FAIL=0; check_ports; echo "FAIL=$FAIL")"
+  check "ports: failed inspection refuses explicitly instead of reporting free ports" \
+    'case "$out" in *"no se pudo revisar el puerto"*"FAIL=5") ;; *) false;; esac'
 
   # ── site discovery + DNS + arch ──
   mkdir -p "$ROOT/sites/113314"; printf 'SITE_DOMINIO="clinic.example"\n' > "$ROOT/sites/113314/site.sh"

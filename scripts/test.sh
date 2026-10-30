@@ -1131,7 +1131,6 @@ provisioning/seed.sh
 provisioning/standings.sh
 provisioning/usuarios.sh
 scripts/acquisition-gate.sh
-scripts/aio-testbed.sh
 scripts/brand-gate.sh
 scripts/cleanboot-site.sh
 scripts/comuna-package.sh
