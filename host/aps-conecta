@@ -2679,7 +2679,7 @@ case "\$url" in
   */login) body='<input name="csrf_name" value="n1"><input name="csrf_value" value="v1">' ;;
   */containers) echo "GET containers" >> "$tmp/aio.log"; body='<span id="initial-nextcloud-password">admin-secreta</span>' ;;
   */api/configuration) echo "POST config\$data" >> "$tmp/aio.log"; touch "$tmp/aio.configured"
-    case "\$data" in *"domain=rechazado.example"*) code=422; body="Please enter a domain and not an IP-address!" ;; *"options-form=1"*) if [ -e "$tmp/aio.options-fails" ]; then code=422; body="algo inesperado"; else code=201; fi ;; *) code=201 ;; esac ;;
+    case "\$data" in *"domain=rechazado.example"*) code=422; body="Please enter a domain and not an IP-address!" ;; *"timezone=America/Santiago"*) if [ -e "$tmp/aio.timezone-fails" ]; then code=422; body="algo inesperado"; else code=201; fi ;; *) code=201 ;; esac ;;
   */api/docker/start) echo "POST start\$data" >> "$tmp/aio.log"
     if [ -e "$tmp/aio.start-fails" ]; then code=500; else
     printf '%s\n' aps-conecta-nextcloud aps-conecta-database aps-conecta-redis > "$tmp/aio.ps"; sleep 0.4
@@ -2700,11 +2700,11 @@ SHIM
   if only_shims curl docker; then
     out="$( (cmd_aio_wizard --dominio clinica.example --sin-validar-dominio) 2>&1)"; rc=$?
     check "asistente-aio: passphrase, login, domain, timezone, options, start with progress, the waits, the admin password — in order" \
-      '[ "$rc" -eq 0 ] && case "$out" in *"✓ Contraseña del asistente guardada en $AIO_STATE/master.pw"*"✓ Ingreso al asistente"*"✓ Dominio: clinica.example"*"✓ Zona horaria: America/Santiago"*"✓ Opciones: oficina incluida"*"· contenedores en marcha: 3 de $AIO_EXPECTED"*"✓ Suite iniciada"*"✓ Suite en marcha: $AIO_EXPECTED contenedores, Nextcloud instalado"*"✓ Contraseña del administrador de Nextcloud guardada en $AIO_STATE/nextcloud.pw"*) ;; *) false;; esac'
+      '[ "$rc" -eq 0 ] && case "$out" in *"✓ Contraseña del asistente guardada en $AIO_STATE/master.pw"*"✓ Ingreso al asistente"*"✓ Dominio: clinica.example"*"✓ Zona horaria: America/Santiago"*"✓ Servicios de la suite incluidos; sin aplicaciones opcionales"*"· contenedores en marcha: 3 de $AIO_EXPECTED"*"✓ Suite iniciada"*"✓ Suite en marcha: $AIO_EXPECTED contenedores, Nextcloud instalado"*"✓ Contraseña del administrador de Nextcloud guardada en $AIO_STATE/nextcloud.pw"*) ;; *) false;; esac'
     check "asistente-aio: the load-bearing GET /containers comes before the first configuration POST" \
       '[ "$(grep -n "^GET containers" "$tmp/aio.log" | head -1 | cut -d: -f1)" -lt "$(grep -n "^POST config" "$tmp/aio.log" | head -1 | cut -d: -f1)" ]'
     check "asistente-aio: every POST carries the session's CSRF pair; the skip flag rides the domain; office is never posted" \
-      '[ -z "$(grep "^POST config\|^POST start" "$tmp/aio.log" | grep -v "csrf_name=n1 csrf_value=v1")" ] && grep -q "domain=clinica.example skip_domain_validation=1$" "$tmp/aio.log" && grep -q "timezone=America/Santiago$" "$tmp/aio.log" && grep -q "options-form=1$" "$tmp/aio.log" && ! grep -q office "$tmp/aio.log"'
+      '[ -z "$(grep "^POST config\|^POST start" "$tmp/aio.log" | grep -v "csrf_name=n1 csrf_value=v1")" ] && grep -q "domain=clinica.example skip_domain_validation=1$" "$tmp/aio.log" && grep -q "timezone=America/Santiago$" "$tmp/aio.log" && ! grep -q "options-form" "$tmp/aio.log" && ! grep -q office "$tmp/aio.log"'
     check "asistente-aio: the passphrase reaches curl as a file (password@…), never in its arguments" \
       'grep -q "password=frase uno dos" "$tmp/aio.log" && grep -q "password@$AIO_STATE/master.pw" "$tmp/aio.argv" && ! grep -q "frase uno dos" "$tmp/aio.argv"'
     check "asistente-aio: both secrets are 0600 files and never reach the console" \
@@ -2747,30 +2747,31 @@ SHIM
       '[ "$rc" -eq 1 ] && [ "$out" = "✗ falta un dominio válido: aps-conecta asistente-aio --dominio <dominio>" ]'
     : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"
     printf '%s\n' "nextcloud-aio-mastercontainer running" > "$tmp/aio.ps"
-    out="$( (cmd_aio_wizard --preparar --dominio clinica.example --talk --respaldo /srv/aps-conecta/respaldos) 2>&1)"; rc=$?
+    out="$( (cmd_aio_wizard --preparar --dominio clinica.example --respaldo /srv/aps-conecta/respaldos) 2>&1)"; rc=$?
     check "asistente-aio --preparar: the mastercontainer, then the wizard filled — Talk on, the daily backup with the installer's files — and NO start; the domain and the options recorded for the web installer" \
-      '[ "$rc" -eq 0 ] && case "$out" in *"✓ La suite ya está iniciada"*"✓ Dominio: clinica.example"*"✓ Opciones: oficina incluida; Talk activado; grabación apagada"*"✓ Respaldo diario a las 04:00 hora de Santiago ("*" UTC), en /srv/aps-conecta/respaldos, con "*"✓ Asistente listo: falta «Iniciar» en el asistente"*) ;; *) false;; esac && grep -q "options-form=1 talk=on$" "$tmp/aio.log" && grep -q "additional_backup_directories=$APS_HOME$" "$tmp/aio.log" && ! grep -q "^POST start" "$tmp/aio.log" && [ "$(cat "$AIO_STATE/dominio")" = clinica.example ] && [ "$(cat "$AIO_STATE/opciones")" = "talk=1 grabacion=0 farmacia=0 totem=0" ] && [ ! -e "$AIO_STATE/motivo" ]'
+      '[ "$rc" -eq 0 ] && case "$out" in *"✓ La suite ya está iniciada"*"✓ Dominio: clinica.example"*"✓ Servicios de la suite incluidos; sin aplicaciones opcionales"*"✓ Respaldo diario a las 04:00 hora de Santiago ("*" UTC), en /srv/aps-conecta/respaldos, con "*"✓ Asistente listo: falta «Iniciar» en el asistente"*) ;; *) false;; esac && ! grep -q "options-form" "$tmp/aio.log" && grep -q "additional_backup_directories=$APS_HOME$" "$tmp/aio.log" && ! grep -q "^POST start" "$tmp/aio.log" && [ "$(cat "$AIO_STATE/dominio")" = clinica.example ] && [ "$(cat "$AIO_STATE/opciones")" = "farmacia=0 totem=0" ] && [ ! -e "$AIO_STATE/motivo" ]'
     : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"
-    out="$( (cmd_aio_wizard --preparar --dominio clinica.example --grabacion) 2>&1)"; rc=$?
-    check "asistente-aio --grabacion: the recording rides Talk — both posted, both recorded" \
-      '[ "$rc" -eq 0 ] && grep -q "options-form=1 talk=on talk-recording=on$" "$tmp/aio.log" && case "$out" in *"Talk activado; grabación activada"*) ;; *) false;; esac && [ "$(cat "$AIO_STATE/opciones")" = "talk=1 grabacion=1 farmacia=0 totem=0" ]'
-    : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"
+    for legacy_flag in --talk --grabacion; do
+      out="$( (cmd_aio_wizard --preparar --dominio clinica.example "$legacy_flag") 2>&1)"; rc=$?
+      check "asistente-aio: legacy service flag $legacy_flag is refused" \
+        '[ "$rc" -eq 1 ] && case "$out" in *"opción desconocida: $legacy_flag"*) ;; *) false;; esac'
+    done
     out="$( (cmd_aio_wizard --preparar --dominio clinica.example --app farmacia --app farmacia) 2>&1)"; rc=$?
     check "asistente-aio --app (#39): a checked box names the app in the options line, rides the record chosen — every optional row recorded, a repeated flag is one — and posts nothing extra to the wizard" \
-      '[ "$rc" -eq 0 ] && case "$out" in *"✓ Opciones: oficina incluida; Talk apagado; grabación apagada; imágenes apagadas; Farmacia"*) ;; *) false;; esac && [ "$(cat "$AIO_STATE/opciones")" = "talk=0 grabacion=0 farmacia=1 totem=0" ] && grep -q "options-form=1$" "$tmp/aio.log"'
+      '[ "$rc" -eq 0 ] && case "$out" in *"✓ Servicios de la suite incluidos; Farmacia"*) ;; *) false;; esac && [ "$(cat "$AIO_STATE/opciones")" = "farmacia=1 totem=0" ] && ! grep -q "options-form" "$tmp/aio.log"'
     : > "$tmp/aio.log"
     out="$( (cmd_aio_wizard --preparar --dominio clinica.example --app farmacia --app totem) 2>&1)"; rc=$?
     check "asistente-aio --app (#39, #41): two checkboxes ride as two flags and both land in the record — the silent IP install's exact shape" \
-      '[ "$rc" -eq 0 ] && case "$out" in *"imágenes apagadas; Farmacia, Tótem"*) ;; *) false;; esac && [ "$(cat "$AIO_STATE/opciones")" = "talk=0 grabacion=0 farmacia=1 totem=1" ] && grep -q "options-form=1$" "$tmp/aio.log"'
+      '[ "$rc" -eq 0 ] && case "$out" in *"Servicios de la suite incluidos; Farmacia, Tótem"*) ;; *) false;; esac && [ "$(cat "$AIO_STATE/opciones")" = "farmacia=1 totem=1" ] && ! grep -q "options-form" "$tmp/aio.log"'
     : > "$tmp/aio.log"
     out="$( (cmd_aio_wizard --preparar --dominio clinica.example --app estadistica) 2>&1)"; rc=$?
     check "asistente-aio --app (#39): an app the manifest does not offer is refused before anything runs, naming what it offers" \
       '[ "$rc" -eq 1 ] && [ ! -s "$tmp/aio.log" ] && case "$out" in *"✗ aplicación opcional desconocida: estadistica — las que el manifiesto ofrece son: Farmacia,Tótem"*) ;; *) false;; esac'
-    : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; touch "$tmp/aio.options-fails"
+    : > "$tmp/aio.log"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; touch "$tmp/aio.timezone-fails"
     out="$( (cmd_aio_wizard --preparar --dominio clinica.example) 2>&1)"; rc=$?
     check "asistente-aio --preparar: a refusal after the domain leaves no record — the web installer asks again" \
-      '[ "$rc" -eq 1 ] && [ "$(cat "$AIO_STATE/motivo")" = "El asistente rechazó las opciones: el asistente no aceptó el valor." ] && [ ! -e "$AIO_STATE/dominio" ] && [ ! -e "$AIO_STATE/opciones" ]'
-    rm -f "$tmp/aio.options-fails"
+      '[ "$rc" -eq 1 ] && [ "$(cat "$AIO_STATE/motivo")" = "El asistente rechazó la zona horaria: el asistente no aceptó el valor." ] && [ ! -e "$AIO_STATE/dominio" ] && [ ! -e "$AIO_STATE/opciones" ]'
+    rm -f "$tmp/aio.timezone-fails"
     printf '%s\n' "nextcloud-aio-mastercontainer running" aps-conecta-apache > "$tmp/aio.ps"; : > "$tmp/aio.log"
     out="$( (cmd_aio_wizard --preparar --dominio clinica.example) 2>&1)"; rc=$?
     check "asistente-aio --preparar: a running suite is left as it is — nothing posted, no wait" \
@@ -3245,7 +3246,7 @@ printf 'docker %s\n' "\$*" >> "$act/docker.log"
 case "\$1 \$2" in
   "ps --format")
     [ -e "$act/suite-caida" ] && exit 0
-    printf '%s\n' aps-conecta-nextcloud aps-conecta-apache aps-conecta-database aps-conecta-redis aps-conecta-notify-push aps-conecta-eurooffice ;;
+    printf '%s\n' $AIO_SET ;;
   "inspect aps-conecta-borgbackup")
     n="\$(wc -c < "$act/borg.n" 2>/dev/null || echo 0)"; printf x >> "$act/borg.n"
     if [ "\$n" -lt "\${BORG_RUNS:-2}" ]; then echo "true 0 \$(cat "$act/borg.t")"

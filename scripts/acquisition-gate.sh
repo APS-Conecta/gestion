@@ -190,7 +190,7 @@ assert fila["source"] == "fork" and fila["repo"] == "APS-Conecta/spreed" and fil
     echo "  the entrypoint installs or updates spreed — the release channel and actualizar are its only movers" >&2
     fail=1
   fi
-  if grep -nE 'def talk_on|TALK_ENABLED|spreed.*omitida.*Talk' "$r" "$TREE/provisioning/phases/12-apps.sh"; then
+  if grep -nE 'def talk_on|TALK_ENABLED' "$r" "$TREE/provisioning/phases/12-apps.sh"; then
     echo "  a Talk selection gate remains in acquisition" >&2; fail=1
   fi
   [ "$fail" -eq 0 ]
@@ -316,7 +316,7 @@ office_is_euro_office() {  # 200: the suite's office is Euro-Office, and only Eu
   # (Setup.php:28) never passes through the controller, so the guard cannot refuse the suite's own
   # default; the suite's drive never posts an office choice.
   local k="$TREE/php/src/Controller/ConfigurationController.php" \
-        o="$TREE/php/templates/includes/optional-containers.twig" s="$TREE/php/tests/tests/initial-setup.spec.js" fail=0 g w
+        o="$TREE/php/templates/includes/suite-services.twig" s="$TREE/php/tests/tests/initial-setup.spec.js" fail=0 g w
   s4_files "$k" "$o" "$s" "$TREE/php/public/style.css" || return 1
   g="$(grep -nF 'if ($officeSuite !== OfficeSuite::Eurooffice) {' "$k" | head -1 | cut -d: -f1)"
   w="$(grep -nF '$this->configurationManager->officeSuite = $officeSuite;' "$k" | head -1 | cut -d: -f1)"

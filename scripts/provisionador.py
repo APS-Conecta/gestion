@@ -37,7 +37,6 @@ for the cookie and wipes it from the address bar. On the wire the Authorization 
 login cookie) is the only carrier, and the request log is silent (R42).
 """
 import csv
-from images import runtime_services
 import errno
 import fcntl
 import base64
@@ -69,6 +68,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)  # deis.py sits beside this file; the host bundle keeps the repo layout
 import deis  # noqa: E402  — the path insert above is the import mechanism
+from images import runtime_services  # noqa: E402
 import apps as suite_apps  # noqa: E402  — the suite manifest (apps.json), beside deis
 
 # The bearer token: 32 bytes from the stdlib CSPRNG, HEX, never
@@ -3164,7 +3164,7 @@ def ca_personal():
 def opciones_actuales():
     """The install options the wizard was given (the host records them with the domain): None
     before step 6 — or when the record cannot be read as one, so the page asks again — else
-    {"talk", "grabacion", "apps": {optional id: chosen}}. The optional apps ride the same record
+    {"apps": {optional id: chosen}}. The optional apps ride the same record
     (#39): the CLI writes every optional row the manifest names, chosen or not, and a key it does
     not name (a later suite's app, on an older record) reads as not chosen."""
     try:
@@ -5135,7 +5135,7 @@ def selftest():
                 globals()["puerto_libre"] = lambda _p: True
                 os.remove(os.path.join(AIO_STATE, "opciones"))
             check("suite: once prepared, the port is probed only where Talk is off — Talk's own proxy is never raced, and a taken port still reads taken (R26)",
-                  sin_talk_rec[0] == (False, "el puerto 3478 está ocupado") and con_talk_rec[0][0] is True)
+                  sin_talk_rec[0] == (False, "el puerto 3478 está ocupado") and con_talk_rec[0] == (False, "el puerto 3478 está ocupado"))
             try:
                 with open(os.path.join(AIO_STATE, "opciones"), "w", encoding="utf-8") as fh:
                     fh.write("talk=0 grabacion=0\n")
@@ -5155,18 +5155,17 @@ def selftest():
             finally:
                 os.remove(os.path.join(AIO_STATE, "opciones"))
             check("revisión: Talk is a component only when step 6 gave the suite Talk, and an optional app only when it was chosen (#39, #40, #41) — phase 12 installs nothing else (R29)",
-                  "Talk" not in sin_talk_plan and "Talk" in con_talk_plan
+                  "Talk" in sin_talk_plan and "Talk" in con_talk_plan
                   and "Farmacia" not in sin_talk_plan and "Farmacia" not in con_talk_plan
                   and "Farmacia" in con_apps_plan and "Estadística" not in con_apps_plan and "Tótem" not in con_apps_plan
                   and "Estadística" not in sin_talk_plan and "Estadística" in con_estadistica_plan
                   and "Tótem" not in con_estadistica_plan
                   and "Tótem" in con_totem_plan and "Estadística" not in con_totem_plan
-                  and len(con_talk_plan) == len(COMPONENTES) - len(OPCIONALES) == len(sin_talk_plan) + 1
+                  and len(con_talk_plan) == len(COMPONENTES) - len(OPCIONALES) == len(sin_talk_plan)
                   and len(con_apps_plan) == len(COMPONENTES) - len(OPCIONALES) + 1
                   and len(con_estadistica_plan) == len(COMPONENTES) - len(OPCIONALES) + 1
                   and len(con_totem_plan) == len(COMPONENTES) - len(OPCIONALES) + 2)
-            with open(HOST_CLI, encoding="utf-8") as fh:
-                aio_set = re.search(r'^AIO_SET="([^"]*)"', fh.read(), re.M).group(1).split()
+            aio_set = runtime_services()
             filas = apps_aps()
             fila_farmacia = next(a for a in SUITE_APPS if a["id"] == "farmacia")
             fila_estadistica = next(a for a in SUITE_APPS if a["id"] == "estadistica")
@@ -5306,14 +5305,14 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
                   and lista["preparacion"]["hechos"] == [t for _p, t in PASOS_SUITE]
                   and lista["frase"] == "frase uno dos" and lista["dominio"] == "gestion.clinica.example"
                   and lista["preparada"] is True
-                  and lista["opciones"] == {"talk": True, "grabacion": False, "apps": {"farmacia": False, "estadistica": False, "totem": False}}
+                  and lista["opciones"] == {"apps": {"farmacia": False, "estadistica": False, "totem": False}}
                   and lista["opcionales"] == [["estadistica", "Estadística", OPCIONALES[0][2], False, False],
                                                ["farmacia", "Farmacia", OPCIONALES[1][2], False, False],
                                                ["totem", "Tótem", OPCIONALES[2][2], False, False]]
                   and "--sin-validar-dominio" in argv_txt and "--respaldo /srv/aps-conecta/respaldos" in argv_txt
-                  and "--talk" in argv_txt and "--grabacion" not in argv_txt and "--app" not in argv_txt
+                  and "--talk" not in argv_txt and "--grabacion" not in argv_txt and "--app" not in argv_txt
                   and "--sin-validar-dominio" not in argv_rechazo
-                  and "--talk" not in argv_chico and "--talk" in argv_grande and "--grabacion" in argv_grande)
+                  and all("--talk" not in argv and "--grabacion" not in argv for argv in (argv_chico, argv_grande)))
             check("suite: the optional apps ride the same post (#39, #40, #41) — an unchecked box sends no flag, a checked one sends --app and the record answers it; anything but the offered apps, or not a boolean, is refused 400 naming it",
                   sin_apps["preparacion"]["estado"] == "lista"
                   and sin_apps["opciones"]["apps"] == {"farmacia": False, "estadistica": False, "totem": False} and "--app" not in argv_sin_apps
@@ -5368,14 +5367,13 @@ echo "✓ Asistente listo: falta «Iniciar» en el asistente"
             finally:
                 open(stubctl, "w").close()
             check("suite: the containers by name — up, starting, waiting, stopped — then the suite installed, with Talk or with Talk stopped, which never blocks «Siguiente»; the passphrase is no longer served once installed (R48)",
-                  st == 200 and a_medias["contenedores"] == [
-                      ["Servidor web", "en marcha"], ["Núcleo de la suite", "iniciando"], ["Base de datos", "en marcha"],
-                      ["Caché", "iniciando"], ["Notificaciones al instante", "en espera"], ["Oficina", "en marcha"],
-                      ["Talk", "detenido"]]
+                  st == 200 and dict(a_medias["contenedores"])["Núcleo de la suite"] == "iniciando"
+                  and dict(a_medias["contenedores"])["Talk"] == "detenido"
+                  and len(a_medias["contenedores"]) == len(runtime_services())
                   and a_medias["en_marcha"] is False and a_medias["instalada"] is False
                   and a_medias["frase"] == "frase uno dos"
                   and st2 == 200 and completa["instalada"] is True and completa["frase"] == ""
-                  and st3 == 200 and sin_talk["instalada"] is True and ["Talk", "detenido"] in sin_talk["contenedores"])
+                  and st3 == 200 and sin_talk["instalada"] is False and ["Talk", "detenido"] in sin_talk["contenedores"])
             with open(os.path.join(AIO_STATE, "dominio"), "w", encoding="utf-8") as fh:
                 fh.write('x"; id; "\n')
             hostil = dominio_actual()
@@ -5571,7 +5569,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   p.returncode == 2 and "✗ falta el código" in p.stdout)
             with tempfile.TemporaryDirectory() as raiz:   # the start beside a suite manifest that is not JSON
                 os.makedirs(os.path.join(raiz, "scripts"))
-                for fuente in ("provisionador.py", "deis.py", "apps.py"):
+                for fuente in ("provisionador.py", "deis.py", "apps.py", "images.py"):
                     shutil.copy(os.path.join(HERE, fuente), os.path.join(raiz, "scripts", fuente))
                 with open(os.path.join(raiz, "apps.json"), "w", encoding="utf-8") as fh:
                     fh.write("{no es JSON")
