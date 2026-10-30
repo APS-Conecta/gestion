@@ -23,6 +23,14 @@ image digests live there and are deliberately not copied here — one fact, one 
   now seeds `default_timezone` from the Nextcloud container's `TZ`, so Totem's Día, opening-hours
   check and ticket times follow the clinic's clock instead of UTC.
 
+## [0.0.0-ci.2031] — 2026-10-30
+
+### Changed
+
+- Protected release rehearsal for #203: prove source ancestry, signed Talk content,
+  environment secret scope and explicit not-Latest publication. This branch awaits the
+  release owner's authorization before tagging and is not a clinic release.
+
 ## [0.6.0] — 2026-10-27
 
 ### Added
