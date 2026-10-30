@@ -395,6 +395,8 @@ jobs:
         run: |
           out="$RUNNER_TEMP/install.out"
           grep -q '^INSTALACIÓN: ✓' "$out"
+          sed -E 's/([[:xdigit:]]{2}:){31}[[:xdigit:]]{2}/HUELLA/g' "$out" > "$RUNNER_TEMP/install-language.out"
+          out="$RUNNER_TEMP/install-language.out"
           assert_absent() {
             local result
             if grep "$@" "$out"; then

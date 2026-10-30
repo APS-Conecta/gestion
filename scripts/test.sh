@@ -193,7 +193,7 @@ if workflow.exists():
     with tempfile.TemporaryDirectory(prefix='install-language-') as tmp:
         for extra, expected in [('', 0), ('warning: unexpected output\n', 1), ('Referencia interna D5\n', 1)]:
             pathlib.Path(tmp, 'install.out').write_text(output + extra)
-            result = subprocess.run(['bash', '-c', script], env=dict(os.environ, RUNNER_TEMP=tmp), capture_output=True, text=True)
+            result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', script], env=dict(os.environ, RUNNER_TEMP=tmp), capture_output=True, text=True)
             assert result.returncode == expected, f'language gate rejected a valid fingerprint or accepted unexpected output: {extra!r}'
 failures = []
 paths = sorted(pathlib.Path(sys.argv[1]).glob('*.yml'))
