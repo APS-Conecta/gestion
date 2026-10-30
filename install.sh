@@ -267,9 +267,9 @@ EOF
   check "truncation guard: main \"\$@\" is the file's last line (a half download cannot half-run)" \
     '[ "$(tail -1 "$0")" = "main \"\$@\"" ]'
   check "pubkey shape: installer.pub is two lines and its key line is a real signify key's shape (base64, 42 bytes, no padding)" \
-    '[ "$(wc -l < "$(dirname "$0")/installer.pub")" = 2 ] && sed -n 2p "$(dirname "$0")/installer.pub" | grep -qE "^RW[A-Za-z0-9+/]{54}$"'
+    '[ "$(wc -l < "$source_root/installer.pub")" = 2 ] && sed -n 2p "$source_root/installer.pub" | grep -qE "^RW[A-Za-z0-9+/]{54}$"'
 
-  cp "$(dirname "$0")/host/aps-conecta" "$tmp/fx/instalador/host/aps-conecta"
+  cp "$source_root/host/aps-conecta" "$tmp/fx/instalador/host/aps-conecta"
   tar -czf "$tmp/fx/fixture.tar.gz" -C "$tmp/fx" instalador
   pkgsha="$(sha256sum "$tmp/fx/fixture.tar.gz" | cut -d' ' -f1)"
   printf '%s  apsconecta-v9.8.7.tar.gz\n' "$pkgsha" > "$tmp/fx/SHA256SUMS"

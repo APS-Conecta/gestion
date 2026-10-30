@@ -283,10 +283,8 @@ sed -e "s|^BUNDLE_TAG=\"[^\"]*\"|BUNDLE_TAG=\"$tag\"|" \
 chmod 0755 "$out/apsconecta-$tag-install.sh"
 [ "$(sed -n 's/^TARBALL_SHA256="\([^"]*\)".*/\1/p' "$out/apsconecta-$tag-install.sh" | head -1)" = "$pkg_sha" ] \
   || die "the install asset's TARBALL_SHA256 is not the measured sha — the fill drifted"
-cp "$staging/installer.pub" "$out/installer.pub"   # the asset's self-test reads installer.pub beside it
-bash "$out/apsconecta-$tag-install.sh" --self-test >/dev/null 2>&1 \
+bash "$out/apsconecta-$tag-install.sh" --self-test "$staging" >/dev/null 2>&1 \
   || die "the filled install asset fails its own self-test"
-rm -f "$out/installer.pub"
 
 say "package:    $out/$pkg  sha256=$pkg_sha"
 say "provenance: instalador $tag${manifest_sha:+ / manifest $manifest_sha}"
