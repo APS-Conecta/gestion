@@ -975,14 +975,17 @@ merge_docker_dns() {  # LAN — the containers' leg: daemon.json's "dns" gains t
   # D10): sibling keys and the operator's own resolvers survive, an unparseable file is
   # refused untouched with the hand fix, and the daemon restarts only when the bytes
   # changed — a consent re-run never bounces a running suite for nothing
-  local f="$ETC_DIR/docker/daemon.json" lan="$1" tmp rc=0
+  local f="$ETC_DIR/docker/daemon.json" lan="$1" tmp rc=0 upstreams=""
   ( umask 022 && mkdir -p "$ETC_DIR/docker" ) \
     || { bad "no se pudo preparar $ETC_DIR/docker" "revise los permisos de $ETC_DIR y vuelva a ejecutar el comando"; return 0; }
   tmp="$(mktemp "$ETC_DIR/docker/.daemon.json.XXXXXX")" \
     || { bad "no se pudo escribir en $ETC_DIR/docker" "revise los permisos de $ETC_DIR y vuelva a ejecutar el comando"; return 0; }
-  python3 - "$f" "$lan" > "$tmp" <<'PY' || rc=$?
-import json, sys
-path, lan = sys.argv[1], sys.argv[2]
+  if resolved_active && command -v resolvectl >/dev/null 2>&1; then
+    upstreams="$(LC_ALL=C resolvectl dns 2>/dev/null || true)"
+  fi
+  python3 - "$f" "$lan" "$upstreams" > "$tmp" <<'PY' || rc=$?
+import ipaddress, json, sys
+path, lan, upstreams = sys.argv[1:]
 try:
     with open(path) as fh:
         cfg = json.load(fh)
@@ -992,7 +995,20 @@ except (ValueError, UnicodeDecodeError):
     sys.exit(3)   # unparseable: refuse, never overwrite
 dns = cfg.get("dns")
 dns = list(dns) if isinstance(dns, list) else []
-cfg["dns"] = [lan] + [s for s in dns if s != lan]
+for line in upstreams.splitlines():
+    dns.extend(line.partition(":")[2].split())
+servers = [lan]
+for value in dns:
+    try:
+        address = ipaddress.ip_address(value)
+    except ValueError:
+        continue
+    if address.is_loopback or address.is_unspecified or address.is_multicast:
+        continue
+    value = str(address)
+    if value not in servers:
+        servers.append(value)
+cfg["dns"] = servers
 print(json.dumps(cfg, indent=2, ensure_ascii=False))
 PY
   if [ "$rc" -ne 0 ]; then
