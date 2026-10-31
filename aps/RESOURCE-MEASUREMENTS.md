@@ -27,7 +27,8 @@ La prueba de compatibilidad en Hostinger utiliza LXD 5.21.8 y Ubuntu 24.04, con 
 como usuario sin privilegios y el montaje de un archivo Borg mediante FUSE. Estos límites
 pertenecen a la prueba de compatibilidad y preceden al ensayo de la suite completa.
 El perfil permite anidamiento e intercepta `mknod` y `setxattr`; incorpora `/dev/fuse`.
-Borg conserva su configuración publicada, incluida su excepción AppArmor interna.
+La prueba de Borg reproduce las capacidades, el dispositivo FUSE y las opciones `--security-opt`
+definidos por la suite. El ensayo completo verifica el resto de la configuración publicada.
 La API LXD permanece local y el entorno utiliza una red privada sin ocupar los puertos públicos.
 
 Referencias: [límites de Hostinger](https://www.hostinger.com/support/10429687-is-nested-virtualization-supported-in-hostinger/),
