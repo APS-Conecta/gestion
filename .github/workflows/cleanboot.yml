@@ -1648,6 +1648,25 @@ jobs:
             "$task_av_url/$task_av_share_name/clean.txt")"
           [ "$code" = 204 ]
           echo 'PASS: an update-only share without parent CREATE refuses unsafe staging and preserves the original'
+          # A valid assembled overwrite at the scan limit must still succeed.
+          code="$(dav --request MKCOL --output "$task_av_dir/response.xml" "$task_av_chunks_url")"
+          expect_status 201 "$code" 'at-limit assembly collection creation'
+          printf 'Assembled clean overwrite.\n' > "$task_av_dir/chunk.bin"
+          truncate -s 524288 "$task_av_dir/chunk.bin"
+          cat "$task_av_dir/chunk.bin" "$task_av_dir/chunk.bin" > "$task_av_dir/assembled.bin"
+          for part in 00001 00002; do
+            code="$(dav --upload-file "$task_av_dir/chunk.bin" --output "$task_av_dir/response.xml" "$task_av_chunks_url/$part")"
+            expect_status 201 "$code" "at-limit assembly chunk $part upload"
+          done
+          code="$(dav --request MOVE --header "Destination: $task_av_url/antivirus-at-limit-184.bin" \
+            --header 'OC-Total-Length: 1048576' --output "$task_av_dir/response.xml" "$task_av_chunks_url/.file")"
+          expect_status 204 "$code" 'at-limit assembled overwrite'
+          code="$(dav --output "$task_av_dir/download.bin" "$task_av_url/antivirus-at-limit-184.bin")"
+          expect_status 200 "$code" 'at-limit assembled overwrite download'
+          cmp "$task_av_dir/assembled.bin" "$task_av_dir/download.bin"
+          echo 'PASS: an assembled clean overwrite at the scan limit succeeds'
+          code="$(dav --request DELETE --output /dev/null "$task_av_chunks_url")"
+          if [ "$code" != 204 ]; then expect_status 404 "$code" 'at-limit assembly collection cleanup'; fi
           # Splitting the signature must not evade the scan of the assembled content.
           code="$(dav --request MKCOL --output "$task_av_dir/response.xml" "$task_av_chunks_url")"
           expect_status 201 "$code" 'chunked EICAR collection creation'
