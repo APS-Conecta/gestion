@@ -5722,12 +5722,10 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
             # KeyErrors here, beside its cause, instead of silently locking a version nobody
             # pinned — the self-test's own red is the manifest-change reminder.
             fixture_store = os.path.join(tmp, "fixture-store")
-            fixture_versions = {"intravox": ("v3.2.0", "3.2.0"), "eurooffice": ("v11.0.7", "11.0.7"),
+            fixture_versions = {"intravox": ("v3.2.0", "3.2.0"),
                                 "epidemiologia": ("v0.12.0", "0.12.0"), "territorio": ("v0.80.0", "0.80.0"),
-                                "side_menu": ("v6.0.1", "6.0.1"),
                                 "files_upload_guard": ("v0.1.0", "0.1.0"),
-                                "files_fulltextsearch": ("v34.0.3", "34.0.3"),
-                                "spreed": ("v24.0.6", "24.0.6")}   # #145: the fork's first release
+                                "files_fulltextsearch": ("v34.0.3", "34.0.3")}
             filas_lock = {}
             for fila in SUITE_APPS:
                 if not fila.get("release") or fila.get("optional") is not False:

@@ -3424,8 +3424,6 @@ if command -v signify >/dev/null 2>&1; then
 else
   echo "  skipped: releases --self-test (no signify — sudo apt-get install signify-openbsd)"
 fi
-# The shared Talk release verifier includes byte-tamper and upstream-digest refusals.
-check python3 scripts/spreed-refresh.py --self-test
 # brand-tokens.py (#49): the wizard's brand-token projection — pure stdlib, runs everywhere.
 check python3 scripts/brand-tokens.py --self-test
 # vm-acceptance.sh (#54): the ticket's own acceptance, on a scratch Ubuntu 24.04 VM — the

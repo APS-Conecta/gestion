@@ -98,10 +98,9 @@ gates on that tree. Only numeric `vX.Y.Z-ci.N` rehearsals may be off main. Image
 packaging check out the proven SHA, never a second resolution of the tag.
 The packager receives `RELEASE_SHA`, using it for archived bytes, date and provenance even
 without a local tag. Before publication, the remote tag (including annotated tags) must still
-resolve to that same commit. The complete image set passes its native checks, then package-release assembles the composite,
-including SHA256SUMS, the signature, the verify-PROOF against the committed `installer.pub`,
-the constants-filled install asset) → the Release with five assets. Watch it; a red anywhere
-names its gate.
+resolve to that same commit. After the complete image set passes its native checks,
+package-release assembles the composite, SHA256SUMS, the signature, the verification proof
+against `installer.pub` and the install asset. The Release publishes those five assets.
 
 **The testbed pin follows**. Once the Release is green, one commit moves the pin in
 `scripts/aio-testbed.sh` to `vX.Y.Z` — the suite tag every PR-event and weekly Clean boot
