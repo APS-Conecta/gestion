@@ -54,7 +54,7 @@ y períodos completos. Un archivo existente se conserva y la nueva ejecución lo
 reinicio de Docker. En ese caso `contenedores` es `null`, nunca un consumo supuesto de cero.
 Una interrupción durante la carga estable invalida esa repetición para decidir capacidad.
 
-## Carga acordada y perfil propuesto
+## Carga y perfil acordados
 
 La carga acordada comprende diez cuentas ficticias simultáneas: dos sesiones activas de
 Office, cuatro participantes con audio y video en Talk y cuatro cuentas para cargas,
@@ -62,7 +62,7 @@ antivirus, indexación y búsqueda. Las cuentas y los documentos pertenecen al e
 Verifique ediciones guardadas, resultados por texto del documento y recepción real de medios.
 Las comprobaciones de conexión, conversión y chat son requisitos previos de esas operaciones.
 
-El perfil inicial propuesto usa video de 720p a 30 cuadros por segundo, quince minutos de
+El perfil inicial acordado usa video de 720p a 30 cuadros por segundo, quince minutos de
 calentamiento y treinta minutos de carga estable, con tres repeticiones por configuración.
 Antes de ejecutarlo, fije tamaños, cadencias, corpus, objetivos de latencia y margen requerido.
 Registre fallos y tiempos de las operaciones junto con las muestras. La variante de grabación
