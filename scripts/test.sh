@@ -2597,11 +2597,10 @@ check cleanboot_apt_cases
 # curl answers the healthcheck. Both the public smoke and the real container probe must
 # require a successful response containing true, even when nginx's port is open.
 office_pin_cases() {
-  local tmp out rc ver want health_body health_status probe
+  local tmp out rc tag ver want health_body health_status probe
   tmp="$(mktemp -d)"; mkdir -p "$tmp/bin" "$tmp/scripts" "$tmp/Containers/eurooffice"
   cp scripts/office-smoke.sh scripts/env.sh "$tmp/scripts/"
   cp Containers/eurooffice/healthcheck.sh "$tmp/Containers/eurooffice/"
-  sed 's|documentserver:v[0-9][0-9.]*|documentserver:v1.2.3|' Containers/eurooffice/Dockerfile > "$tmp/Containers/eurooffice/Dockerfile"
   cat > "$tmp/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 case "$*" in
@@ -2621,16 +2620,22 @@ exit "${OFFICE_HEALTH_RC:-0}"
 STUB
   printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/bin/nc"
   chmod +x "$tmp/bin/docker" "$tmp/bin/curl" "$tmp/bin/nc"
-  while IFS='|' read -r ver want; do
+  while IFS='|' read -r tag ver want; do
+    printf 'FROM ghcr.io/euro-office/documentserver:v%s\n' "$tag" > "$tmp/Containers/eurooffice/Dockerfile"
     rc=0; out="$(PATH="$tmp/bin:$PATH" DS_VERSION="$ver" bash "$tmp/scripts/office-smoke.sh" 2>&1)" || rc=1
     [ "$rc" = "$want" ] \
-      || { echo "office pin: DS $ver against the pin 1.2.3 exited $rc, want $want: $out" >&2; rm -rf "$tmp"; return 1; }
+      || { echo "office pin: DS $ver against the pin $tag exited $rc, want $want: $out" >&2; rm -rf "$tmp"; return 1; }
   done <<'CASES'
-1.2.3.37|0
-1.2.3|0
-1.2.30.1|1
-9.3.1.37|1
+1.2.3|1.2.3.37|0
+1.2.3|1.2.3|0
+1.2.3|1.2.30.1|1
+1.2.3|9.3.1.37|1
+1.2.3-1|1.2.3.37|0
+1.2.3-1|1.2.3|0
+1.2.3-1|1.2.30.1|1
+1.2.3-rc.1|1.2.3.37|1
 CASES
+  printf 'FROM ghcr.io/euro-office/documentserver:v1.2.3\n' > "$tmp/Containers/eurooffice/Dockerfile"
   while IFS='|' read -r health_body health_status want; do
     for probe in scripts/office-smoke.sh Containers/eurooffice/healthcheck.sh; do
       rc=0; out="$(PATH="$tmp/bin:$PATH" DS_VERSION=1.2.3.37 AIO_LOG_LEVEL=info \
