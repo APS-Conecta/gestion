@@ -810,6 +810,11 @@
           "writeable": false
         },
         {
+          "source": "%NEXTCLOUD_TRUSTED_CACERTS_DIR%",
+          "destination": "/usr/local/share/ca-certificates",
+          "writeable": false
+        },
+        {
           "source": "nextcloud_aio_harp",
           "destination": "/certs",
           "writeable": true
