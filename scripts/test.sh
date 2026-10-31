@@ -2402,7 +2402,7 @@ check cleanboot_tile_url_cases
 # written, one row per source, each named by the columns asked for. Host counters use explicit
 # fixtures so the sample cannot substitute the runner's nominal size or silently omit pressure.
 cleanboot_usage_cases() {
-  local py tmp rc
+  local py tmp rc task_usage_error
   py="$(cat scripts/usage.py)"
   [ -n "$py" ] || { echo "cleanboot: the usage collector was not found" >&2; return 1; }
   tmp="$(mktemp -d)"; mkdir "$tmp/bin"
@@ -2461,7 +2461,7 @@ assert all('host' in row and 'sampled_at' in row for row in rows[:-1]), rows
 PY
   if [ "$?" -ne 0 ] || [ "$rc" -ne 0 ]; then cat "$tmp/result" >&2; rm -rf "$tmp"; return 1; fi
   PATH="$tmp/bin:$PATH" python3 - "$tmp" <<'PY' > "$tmp/result" 2>&1
-import json, pathlib, subprocess, sys, time
+import json, os, pathlib, subprocess, sys, time
 root = pathlib.Path(sys.argv[1])
 output, pid_file = root / 'stopped.jsonl', root / 'sampler.pid'
 command = [sys.executable, 'scripts/usage.py', str(output)]
@@ -2484,6 +2484,29 @@ try:
     rows = [json.loads(line) for line in output.read_text().splitlines()]
     assert rows[-1]['event'] == 'complete' and rows[-1]['reason'] == 'stopped', rows
     assert rows[-1]['samples'] == len(rows) - 1 >= 2, rows
+    process.stderr.close()
+    output = root / 'duration-complete.jsonl'
+    command = [sys.executable, 'scripts/usage.py', str(output)]
+    process = subprocess.Popen(command + ['--interval', '0.05', '--duration', '0.5'],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    pid_file.write_text(str(process.pid))
+    deadline = time.monotonic() + 10
+    while True:
+        try:
+            rows = [json.loads(line) for line in output.read_text().splitlines()]
+            if rows and rows[-1].get('event') == 'complete':
+                break
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
+        assert time.monotonic() < deadline, 'sampler did not reach its duration'
+        time.sleep(0.05)
+    time.sleep(0.05)
+    result = subprocess.run(command + ['--stop', str(pid_file)], capture_output=True, text=True, timeout=25)
+    assert result.returncode == 0, result.stderr
+    assert process.wait(timeout=5) == 0, process.stderr.read()
+    pid_file.write_text(str(os.getpid()))
+    result = subprocess.run(command + ['--stop', str(pid_file)], capture_output=True, text=True, timeout=5)
+    assert result.returncode == 1, 'an unrelated PID accepted another collector\'s complete series'
 finally:
     if process.poll() is None:
         process.terminate()
@@ -2495,15 +2518,20 @@ finally:
     process.stderr.close()
 PY
   if [ "$?" -ne 0 ]; then cat "$tmp/result" >&2; rm -rf "$tmp"; return 1; fi
-  printf '#!/bin/sh\nexit 1\n' > "$tmp/bin/docker"
-  PATH="$tmp/bin:$PATH" python3 scripts/usage.py "$tmp/unavailable.json" > "$tmp/result" 2>&1; rc=$?
-  python3 - "$tmp/unavailable.json" <<'PY' >> "$tmp/result" 2>&1
+  for task_usage_error in unavailable disappeared; do
+    case "$task_usage_error" in
+      unavailable) printf '#!/bin/sh\nexit 1\n' > "$tmp/bin/docker" ;;
+      disappeared) printf '#!/bin/sh\ncase "$1" in ps) echo aps-conecta-nextcloud;; esac\n' > "$tmp/bin/docker" ;;
+    esac
+    PATH="$tmp/bin:$PATH" python3 scripts/usage.py "$tmp/$task_usage_error.json" > "$tmp/result" 2>&1; rc=$?
+    python3 - "$tmp/$task_usage_error.json" <<'PY' >> "$tmp/result" 2>&1
 import json, pathlib, sys
 record = json.loads(pathlib.Path(sys.argv[1]).read_text())
 assert record['containers_status'] == 'unavailable' and record['contenedores'] is None, record
 assert record['host']['memory_total_kib'] > 0, record
 PY
-  if [ "$?" -ne 0 ] || [ "$rc" -ne 0 ]; then cat "$tmp/result" >&2; rm -rf "$tmp"; return 1; fi
+    if [ "$?" -ne 0 ] || [ "$rc" -ne 0 ]; then cat "$tmp/result" >&2; rm -rf "$tmp"; return 1; fi
+  done
   rm -rf "$tmp"
 }
 check cleanboot_usage_cases

@@ -58,7 +58,9 @@ def snapshot():
                     "--filter", "name=^nextcloud-aio-mastercontainer$", "--format", "{{.Names}}").splitlines()
         stats = [json.loads(line) for line in run("docker", "stats", "--no-stream", "--format",
                                                  "{{json .}}", *names).splitlines() if line.strip()] if names else []
-    except (OSError, ValueError, subprocess.TimeoutExpired):
+        if len(stats) != len(names) or {row["Name"].lstrip("/") for row in stats} != set(names):
+            raise ValueError("Container disappeared during its usage sample")
+    except (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired):
         containers_status, stats = "unavailable", None
     fields = ("source", "fstype", "size", "used", "avail", "pcent", "target")
     lines = run("df", "-B1", "--output=" + ",".join(fields), "/", "/var/lib/docker").splitlines()
@@ -84,16 +86,32 @@ def sample(path, interval, duration):
                 count += 1
                 stopped.wait(min(interval, max(0, deadline - time.monotonic())))
             stream.write(json.dumps({"event": "complete", "sampled_at": now(), "samples": count,
+                                     "sampler_pid": os.getpid(),
                                      "reason": "stopped" if stopped.is_set() else "duration"}) + "\n")
     finally:
         for sig, handler in previous.items():
             signal.signal(sig, handler)
 
 
+def completed(path, pid):
+    try:
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+    except (FileNotFoundError, json.JSONDecodeError):
+        return False
+    if not rows or rows[-1].get("event") != "complete":
+        return False
+    if (rows[-1]["samples"] < 2 or rows[-1]["samples"] != len(rows) - 1
+            or rows[-1]["sampler_pid"] != pid):
+        raise ValueError("Resource series does not belong to this sampler or has insufficient samples")
+    return True
+
+
 def stop(path, pid_file):
     pid = int(pid_file.read_text().strip())
     if pid <= 1:
         raise ValueError("Invalid sampler PID")
+    if completed(path, pid):
+        return
     try:
         command = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
         if os.fsencode(str(path)) not in command or not any(Path(os.fsdecode(arg)).name == "usage.py" for arg in command if arg):
@@ -103,14 +121,8 @@ def stop(path, pid_file):
         pass
     deadline = time.monotonic() + 20
     while True:
-        try:
-            rows = [json.loads(line) for line in path.read_text().splitlines()]
-            if rows and rows[-1].get("event") == "complete":
-                if rows[-1]["samples"] < 2 or rows[-1]["samples"] != len(rows) - 1:
-                    raise ValueError("Resource series has insufficient samples")
-                return
-        except (FileNotFoundError, json.JSONDecodeError):
-            pass
+        if completed(path, pid):
+            return
         if time.monotonic() >= deadline:
             raise ValueError("Resource collector did not complete within 20 seconds")
         time.sleep(0.1)

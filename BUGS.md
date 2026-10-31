@@ -138,6 +138,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-079 | Talk acceptance can pass without verifying delivered message text (#148) | the native job checks installation and wiring but never reads a staff message through the chat API | after revalidation, the by-IP job repeats the shared readiness guard, creates a v4 group as an ordinary user, posts through chat v1 and matches the exact message as another ordinary user; the creator removes only that conversation, and an unreachable-signaling control proves the guard rejects chat writes |
 
+| A-080 | final usage snapshots cannot establish resource capacity (#189 preparation) | two near-end container readings omit host pressure, workload intervals and collection completeness | both existing Clean boot jobs retain bounded host/container series with boot identity, raw CPU/swap/OOM units, explicit missing observations and process-bound completion; the usage self-test covers collection and shutdown, while numerical thresholds remain pending real workload measurements |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and

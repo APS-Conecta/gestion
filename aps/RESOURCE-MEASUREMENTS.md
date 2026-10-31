@@ -46,7 +46,7 @@ python3 scripts/usage.py "$measurement_dir/usage.jsonl" --stop "$measurement_dir
 ```
 
 Cada muestra tiene fecha UTC, tiempo monotónico e identidad del arranque. El cierre incluye
-cantidad de muestras y motivo: duración cumplida o detención solicitada. Un cierre correcto
+cantidad de muestras, PID del colector y motivo: duración cumplida o detención solicitada. Un cierre correcto
 del colector acredita la captura; el cumplimiento del ensayo requiere además sus operaciones
 y períodos completos. Un archivo existente se conserva y la nueva ejecución lo rechaza.
 

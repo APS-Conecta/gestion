@@ -143,6 +143,7 @@ jobs:
           fetch-depth: 1   # VERSION answers suite_tag() now — no tag history to read
       - name: Sample host and container usage through installation and lifecycle checks
         run: |
+          test ! -e "$RUNNER_TEMP/usage-series.jsonl"
           python3 scripts/usage.py "$RUNNER_TEMP/usage-series.jsonl" --interval 5 --duration 3600 \
             > "$RUNNER_TEMP/usage-series.log" 2>&1 < /dev/null &
           echo "$!" > "$RUNNER_TEMP/usage-series.pid"
@@ -1005,6 +1006,7 @@ jobs:
           fetch-depth: 1   # VERSION answers suite_tag() now — no tag history to read
       - name: Sample host and container usage through installation and lifecycle checks
         run: |
+          test ! -e "$RUNNER_TEMP/usage-series.jsonl"
           python3 scripts/usage.py "$RUNNER_TEMP/usage-series.jsonl" --interval 5 --duration 3600 \
             > "$RUNNER_TEMP/usage-series.log" 2>&1 < /dev/null &
           echo "$!" > "$RUNNER_TEMP/usage-series.pid"
