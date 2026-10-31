@@ -15,7 +15,7 @@
 #   aps-conecta provision --reponer  headless weekly re-provision (the systemd timer's job)
 #   aps-conecta respaldo             wire /opt/aps-conecta into AIO's backup scope (idempotent)
 #   aps-conecta asistente-aio --dominio D   drive the AIO wizard through its API (no browser)
-#   aps-conecta revalidate          post-update gate sweep: smoke + office-smoke + divergence
+#   aps-conecta revalidate          post-update: smoke, office, AppAPI, Talk and divergence
 #   aps-conecta actualizar [--revisar]  the update (#46): plan; full backup first; candidates fetched
 #                                    and verified into a new lock; applied app by app (store apps
 #                                    with scoped commands); the lock moved only when everything
@@ -1955,6 +1955,9 @@ cmd_revalidate() {  # post-update: run every read-only gate against the running 
       divergence-gate) out="$(bash "$ROOT/scripts/divergence.sh" --gate 2>&1)"; st=$? ;;
     esac
     if [ "$st" -eq 0 ]; then
+      if [ "$name" = talk-smoke ] && printf '%s\n' "$out" | grep -Fx 'WARN: supported signaling backend lacks the optional changed-users optimization' >/dev/null; then
+        printf '  ADVERTENCIA: Talk — compatibilidad con advertencia opcional changed-users; caché Redis verificada\n'
+      fi
       printf '  ✓ %s — %s\n' "$name" "$(printf '%s\n' "$out" | tail -1)"
     else
       printf '  ✗ %s — el detalle completo:\n' "$name"
@@ -3858,7 +3861,7 @@ SHIM
   rm -f "$tshim/id" "$tshim/systemctl"
   [ ! -e "$tmp/systemctl.prev" ] || cp "$tmp/systemctl.prev" "$tshim/systemctl"
 
-  # the revalidate arm (slice 20): three stub gate scripts under a fixture root — the
+  # The revalidate arm: five stub gate scripts under a fixture root — the
   # aggregation + the exit contract, never first-fail. The command substitution scopes the
   # ROOT override (a bare ROOT=x prefix on a function call persists AFTER the call in bash —
   # the control-knob lesson's function-call variant).

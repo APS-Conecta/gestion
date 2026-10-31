@@ -1283,7 +1283,7 @@ jobs:
           sudo ip link set aps-talk-lan up
           sudo python3 - "$SUITE_IP" <<'PYTURN'
           import base64, hashlib, hmac, json, os, select, socket, struct, subprocess, sys, time
-          
+
           COOKIE = 0x2112A442
           server = (sys.argv[1], 3478)
           client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -1294,16 +1294,16 @@ jobs:
           peer.settimeout(2)
           receiver = None
           key = None
-          
+
           def attribute(kind, value):
               return struct.pack('!HH', kind, len(value)) + value + b'\0' * (-len(value) % 4)
-          
+
           def message(kind, body, transaction, signing_key=None):
               header = struct.pack('!HHI12s', kind, len(body) + (24 if signing_key else 0), COOKIE, transaction)
               if signing_key:
                   body += attribute(8, hmac.new(signing_key, header + body, hashlib.sha1).digest())
               return header + body
-          
+
           def decode(packet, signing_key=None):
               kind, length, cookie, transaction = struct.unpack('!HHI12s', packet[:20])
               assert cookie == COOKIE and length % 4 == 0 and len(packet) == 20 + length
@@ -1320,7 +1320,7 @@ jobs:
                   offset += 4 + size + (-size % 4)
               assert offset == len(packet) and (not signing_key or verified)
               return kind, transaction, values
-          
+
           def request(kind, body, authenticated=False):
               transaction = os.urandom(12)
               if authenticated:
@@ -1337,26 +1337,26 @@ jobs:
                       if response[1] == transaction:
                           return response[0], response[2]
               raise AssertionError('TURN response deadline')
-          
+
           def xor_address(address):
               ip, port = address
               return struct.pack('!BBHI', 0, 1, port ^ (COOKIE >> 16), int.from_bytes(socket.inet_aton(ip)) ^ COOKIE)
-          
+
           def address(value):
               reserved, family, port, ip = struct.unpack('!BBHI', value)
               assert reserved == 0 and family == 1
               return socket.inet_ntoa((ip ^ COOKIE).to_bytes(4)), port ^ (COOKIE >> 16)
-          
+
           def error_code(values):
               return (values[9][2] & 7) * 100 + values[9][3]
-          
+
           def send_to(destination, payload):
               client.send(message(0x16, attribute(0x12, xor_address(destination)) + attribute(0x13, payload), os.urandom(12)))
-          
+
           def receive_from(destination, payload):
               kind, _, values = decode(client.recv(65535))
               assert kind == 0x17 and address(values[0x12]) == destination and values[0x13] == payload
-          
+
           try:
               kind, values = request(1, b'')
               assert kind == 0x101 and address(values[0x20])[1] > 0
