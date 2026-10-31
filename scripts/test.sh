@@ -2442,6 +2442,18 @@ assert record['host'] == {
     'vm_counters': {'pswpin': 11, 'pswpout': 12, 'oom_kill': 2},
 }, record
 assert record['sampled_at'].endswith('+00:00'), record
+root = pathlib.Path(sys.argv[1]).parent
+race, pid_file = root / 'completion-race.jsonl', root / 'completion-race.pid'
+race.write_text((json.dumps(record) + '\n') * 2)
+pid_file.write_text('4242')
+def finish_before_cmdline(path):
+    assert str(path) == '/proc/4242/cmdline'
+    with race.open('a') as stream:
+        stream.write(json.dumps({'event': 'complete', 'samples': 2, 'sampler_pid': 4242}) + '\n')
+    return b''
+with patch('pathlib.Path.read_bytes', finish_before_cmdline), patch('os.kill') as kill:
+    namespace['stop'](race, pid_file)
+    kill.assert_not_called()
 PY
   rc=$?
   if [ "$rc" -ne 0 ]; then cat "$tmp/result" >&2; rm -rf "$tmp"; return 1; fi

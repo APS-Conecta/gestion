@@ -115,6 +115,8 @@ def stop(path, pid_file):
     try:
         command = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
         if os.fsencode(str(path)) not in command or not any(Path(os.fsdecode(arg)).name == "usage.py" for arg in command if arg):
+            if completed(path, pid):
+                return
             raise ValueError("Sampler PID does not identify this resource collector")
         os.kill(pid, signal.SIGTERM)
     except (FileNotFoundError, ProcessLookupError):
