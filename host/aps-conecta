@@ -1946,11 +1946,12 @@ cmd_revalidate() {  # post-update: run every read-only gate against the running 
   # Report every read-only gate after an update or restart. Provisioning owns writes;
   # revalidation returns failure when any gate fails and still reports the remaining gates.
   local rc=0 out st name
-  for name in smoke office-smoke appapi-smoke divergence-gate; do
+  for name in smoke office-smoke appapi-smoke talk-smoke divergence-gate; do
     case "$name" in
       smoke)           out="$(bash "$ROOT/scripts/smoke.sh" 2>&1)"; st=$? ;;
       office-smoke)    out="$(bash "$ROOT/scripts/office-smoke.sh" 2>&1)"; st=$? ;;
       appapi-smoke)    out="$(bash "$ROOT/scripts/appapi-smoke.sh" 2>&1)"; st=$? ;;
+      talk-smoke)      out="$(bash "$ROOT/scripts/talk-smoke.sh" 2>&1)"; st=$? ;;
       divergence-gate) out="$(bash "$ROOT/scripts/divergence.sh" --gate 2>&1)"; st=$? ;;
     esac
     if [ "$st" -eq 0 ]; then
@@ -1962,7 +1963,7 @@ cmd_revalidate() {  # post-update: run every read-only gate against the running 
     fi
   done
   if [ "$rc" -eq 0 ]; then
-    echo "REVALIDACIÓN: PASS — humo ✓, oficina ✓, AppAPI ✓, divergencia vacía ✓ (la instancia sigue convergida)"
+    echo "REVALIDACIÓN: PASS — humo ✓, oficina ✓, AppAPI ✓, llamadas ✓, divergencia vacía ✓ (la instancia sigue convergida)"
   else
     echo "REVALIDACIÓN: FAIL — lo de arriba quedó tras la actualización; «aps-conecta provision» re-converge el estado declarado, y el informe de divergencia nombra el resto" >&2
   fi
@@ -3866,6 +3867,7 @@ SHIM
   printf '#!/usr/bin/env bash\necho "PASS: smoke stub"\nexit 0\n'      > "$rvd/scripts/smoke.sh"
   printf '#!/usr/bin/env bash\necho "FAIL: office stub red"\nexit 1\n' > "$rvd/scripts/office-smoke.sh"
   printf '#!/usr/bin/env bash\necho "PASS: AppAPI stub"\nexit 0\n'   > "$rvd/scripts/appapi-smoke.sh"
+  printf '#!/usr/bin/env bash\necho "PASS: Talk stub"\nexit 0\n'     > "$rvd/scripts/talk-smoke.sh"
   printf '#!/usr/bin/env bash\necho "no notes"\nexit 0\n'             > "$rvd/scripts/divergence.sh"
   chmod +x "$rvd/scripts/"*.sh
   rout="$(ROOT="$rvd" cmd_revalidate 2>&1)"; rrc=$?
@@ -3945,7 +3947,7 @@ elif sys.argv[1:] == ["opcionales"]:
     print("farmacia\toff\tFarmacia")
 PYEOF
   # the three gates revalidate runs, stubbed green (their own arms are above)
-  for g in smoke office-smoke appapi-smoke divergence; do
+  for g in smoke office-smoke appapi-smoke talk-smoke divergence; do
     printf '#!/usr/bin/env bash\necho "PASS: %s stub"\nexit 0\n' "$g" > "$act/repo/scripts/$g.sh"
   done
   chmod +x "$act/repo/scripts/"*.sh
