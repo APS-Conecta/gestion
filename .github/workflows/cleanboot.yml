@@ -1206,6 +1206,9 @@ jobs:
           )"
           printf '::add-mask::%s\n' "$task_av_password"
           task_av_url="https://$SUITE_IP/remote.php/dav/files/ana.prueba"
+          task_av_version="$(docker exec --user www-data aps-conecta-nextcloud php occ config:app:get files_antivirus installed_version)"
+          [ -n "$task_av_version" ] || { echo 'FAIL: the antivirus app has no installed version' >&2; exit 1; }
+          printf 'Antivirus store app runtime version: %s\n' "$task_av_version"
           task_av_boundary_active=0
           dav() {
             printf 'user = "ana.prueba:%s"\n' "$task_av_password" \
