@@ -2399,7 +2399,8 @@ check cleanboot_tile_url_cases
 
 # The usage record's python, out of cleanboot.yml and over a stub df that prints GNU's real header
 # (8 words for 7 columns), a source seen twice and a mount point with a space: the record is
-# written, one row per source, each named by the columns asked for.
+# written, one row per source, each named by the columns asked for. Host counters use explicit
+# fixtures so the sample cannot substitute the runner's nominal size or silently omit pressure.
 cleanboot_usage_cases() {
   local py tmp rc
   py="$(awk '/- name: The measured usage/ {f=1; next}
@@ -2411,7 +2412,36 @@ cleanboot_usage_cases() {
   printf '#!/bin/sh\nexit 0\n' > "$tmp/bin/docker"
   printf '#!/bin/sh\nprintf "%%s\\n" "Filesystem Type 1B-blocks Used Avail Use%% Mounted on" "/dev/sda1 ext4 100 40 60 40%% /" "/dev/sda1 ext4 100 40 60 40%% /var/lib/docker" "/dev/sdb1 ext4 100 10 90 10%% /mnt/with space"\n' > "$tmp/bin/df"
   chmod +x "$tmp/bin/docker" "$tmp/bin/df"
-  PATH="$tmp/bin:$PATH" python3 - "$tmp/uso.json" <<<"$py" >/dev/null 2>&1; rc=$?
+  printf '%s\n' "$py" > "$tmp/usage.py"
+  PATH="$tmp/bin:$PATH" python3 - "$tmp/uso.json" "$tmp/usage.py" <<'PY' > "$tmp/result" 2>&1
+import builtins, io, json, os, pathlib, sys
+from unittest.mock import patch
+
+source = pathlib.Path(sys.argv[2]).read_text()
+real_open = builtins.open
+fixtures = {
+    '/proc/meminfo': 'MemTotal: 12582912 kB\nMemAvailable: 3145728 kB\nSwapTotal: 2097152 kB\nSwapFree: 1048576 kB\n',
+    '/proc/stat': 'cpu 100 2 30 400 5 6 7 8 9 10\n',
+    '/proc/vmstat': 'pswpin 11\npswpout 12\noom_kill 2\n',
+}
+def fixture_open(path, *args, **kwargs):
+    return io.StringIO(fixtures[str(path)]) if str(path) in fixtures else real_open(path, *args, **kwargs)
+
+with patch('builtins.open', fixture_open), patch('os.cpu_count', return_value=6), \
+        patch('os.sched_getaffinity', return_value={1, 3, 5}):
+    exec(compile(source, '.github/workflows/cleanboot.yml:usage', 'exec'), {'__name__': '__main__'})
+record = json.loads(pathlib.Path(sys.argv[1]).read_text())
+assert record['host'] == {
+    'memory_total_kib': 12582912, 'memory_available_kib': 3145728,
+    'swap_total_kib': 2097152, 'swap_free_kib': 1048576,
+    'logical_cpus': 6, 'available_cpus': 3,
+    'cpu_ticks': [100, 2, 30, 400, 5, 6, 7, 8, 9, 10],
+    'vm_counters': {'pswpin': 11, 'pswpout': 12, 'oom_kill': 2},
+}, record
+assert record['sampled_at'].endswith('+00:00'), record
+PY
+  rc=$?
+  if [ "$rc" -ne 0 ]; then cat "$tmp/result" >&2; rm -rf "$tmp"; return 1; fi
   python3 -c '
 import json, sys
 disco = json.load(open(sys.argv[1], encoding="utf-8"))["disco"]
