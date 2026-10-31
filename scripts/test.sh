@@ -2597,7 +2597,7 @@ check cleanboot_apt_cases
 # curl answers the healthcheck. Both the public smoke and the real container probe must
 # require a successful response containing true, even when nginx's port is open.
 office_pin_cases() {
-  local tmp out rc tag ver want health_body health_status probe
+  local tmp out rc tag ver want health_body health_status probe signature_rc integrity_rc
   tmp="$(mktemp -d)"; mkdir -p "$tmp/bin" "$tmp/scripts" "$tmp/Containers/eurooffice"
   cp scripts/office-smoke.sh scripts/env.sh "$tmp/scripts/"
   cp Containers/eurooffice/healthcheck.sh "$tmp/Containers/eurooffice/"
@@ -2609,6 +2609,8 @@ case "$*" in
   inspect*aps-conecta-apache*) printf 'APACHE_PORT=443\nNC_DOMAIN=clinica.example\n' ;;
   "inspect ds0"*) echo ghcr.io/aps-conecta/aio-eurooffice:v0.0.0-ci.0 ;;
   *"config:app:get eurooffice enabled"*) echo yes ;;
+  *"test -s /var/www/html/custom_apps/eurooffice/appinfo/signature.json"*) exit "${OFFICE_SIGNATURE_RC:-0}" ;;
+  *"integrity:check-app eurooffice"*) exit "${OFFICE_INTEGRITY_RC:-0}" ;;
   *"eurooffice:documentserver --check"*) echo "Document server http://x/ version $DS_VERSION is successfully connected" ;;
 esac
 exit 0
@@ -2650,6 +2652,17 @@ false|0|1
 not-ready|0|1
 true|22|1
 true|28|1
+CASES
+  while IFS='|' read -r signature_rc integrity_rc want; do
+    rc=0; out="$(PATH="$tmp/bin:$PATH" DS_VERSION=1.2.3.37 \
+      OFFICE_SIGNATURE_RC="$signature_rc" OFFICE_INTEGRITY_RC="$integrity_rc" \
+      bash "$tmp/scripts/office-smoke.sh" 2>&1)" || rc=1
+    [ "$rc" = "$want" ] \
+      || { echo "office provenance: signature exit $signature_rc, integrity exit $integrity_rc gave $rc, want $want: $out" >&2; rm -rf "$tmp"; return 1; }
+  done <<'CASES'
+0|0|0
+1|0|1
+0|1|1
 CASES
   rm "$tmp/Containers/eurooffice/Dockerfile"
   rc=0; out="$(PATH="$tmp/bin:$PATH" DS_VERSION=1.2.3.37 bash "$tmp/scripts/office-smoke.sh" 2>&1)" || rc=1
