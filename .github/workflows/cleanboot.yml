@@ -1379,7 +1379,7 @@ jobs:
               assert talk_ip != '192.168.32.2' and relay[0] == talk_ip
               control = (talk_ip, 40000)
               receiver = subprocess.Popen(['docker', 'exec', '-i', 'aps-conecta-talk',
-                  'nc', '-u', '-l', '-p', '40000', '-w', '15'], stdin=subprocess.PIPE,
+                  'timeout', '30', 'nc', '-u', '-l', '-p', '40000'], stdin=subprocess.PIPE,
                   stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
               kind, _ = request(8, attribute(0x12, xor_address(control)), authenticated=True)
               assert kind == 0x108
