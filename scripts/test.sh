@@ -46,7 +46,21 @@ PY
 check trusted_proxy_network_cases
 
 antivirus_limit_cases() {
-  [ "$(bash Containers/antivirus-limit.sh 1M)" = 1048576 ]
+  python3 - <<'PY'
+import pathlib, subprocess
+helper = pathlib.Path('Containers/antivirus-limit.sh').resolve()
+for value, expected in [
+    ('1M', '1048576'), ('1G', '1073741824'), ('2000M', '2097152000'),
+    ('2G', '2147483645'), ('2147483645', '2147483645'),
+    ('2147483646', '2147483645'), ('0001m', '1048576'), ('64K', '65536'),
+    ('999999999999999999999G', '2147483645')]:
+    result = subprocess.run(['bash', str(helper), value], capture_output=True, text=True, timeout=3)
+    assert result.returncode == 0 and result.stdout == expected + '\n', (value, result.stdout, result.stderr)
+for value in ['', '0', '000G', '-1', '1.5G', '1T', '1G\n2G', '1 M', '1M;true']:
+    result = subprocess.run(['bash', str(helper), value], capture_output=True, text=True, timeout=3)
+    assert result.returncode != 0 and not result.stdout and result.stderr, (value, result.stdout, result.stderr)
+print('one bounded antivirus content budget accepts units and refuses invalid input')
+PY
 }
 check antivirus_limit_cases
 
