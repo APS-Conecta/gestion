@@ -11,28 +11,24 @@ de medición. Los valores actuales del instalador son anteriores a este trabajo.
 
 ## Entorno y procedencia
 
-Use un entorno desechable con memoria y CPU ajustables: una VPS exclusiva o un contenedor
-de sistema LXD sin privilegios. Mantenga los clientes de navegador en otros equipos.
-Registre el hipervisor o gestor de contenedores, la asignación efectiva, el sistema, el núcleo,
-Docker, el almacenamiento, la red y la actividad concurrente del servidor físico.
-La carga de los clientes y la sobreasignación del hipervisor afectan la interpretación.
+Use un entorno de ensayo con recursos controlados. Mantenga la carga de los clientes separada
+de la medición de la suite. Registre la asignación efectiva, el sistema, el núcleo, Docker,
+el almacenamiento, la red y la actividad concurrente del servidor.
+Conserve los límites efectivos de CPU y memoria junto con las mediciones del servidor;
+compruebe el alcance de cada contador antes de atribuirlo a la suite.
 
-Los contenedores LXD comparten el núcleo del anfitrión. Conserve los contadores del cgroup
-(`memory.max`, `memory.current`, `memory.peak`, `memory.events`, `cpu.stat` y CPU disponibles)
-junto con las mediciones simultáneas del anfitrión. Los valores virtualizados de `/proc`
-describen el contenedor; el mínimo del servidor debe incluir el consumo y margen del anfitrión.
+## Referencias oficiales de hardware
 
-La prueba de compatibilidad en Hostinger utiliza LXD 5.21.8 y Ubuntu 24.04, con dos CPU y
-2 GiB de memoria limitada. Verifica Docker, la incorporación de un filtro seccomp adicional
-como usuario sin privilegios y el montaje de un archivo Borg mediante FUSE. Estos límites
-pertenecen a la prueba de compatibilidad y preceden al ensayo de la suite completa.
-El perfil permite anidamiento e intercepta `mknod` y `setxattr`; incorpora `/dev/fuse`.
-La prueba de Borg reproduce las capacidades, el dispositivo FUSE y las opciones `--security-opt`
-definidos por la suite. El ensayo completo verifica el resto de la configuración publicada.
-La API LXD permanece local y el entorno utiliza una red privada sin ocupar los puertos públicos.
+[Nextcloud 34](https://github.com/nextcloud/documentation/blob/655c01bf5cd7b71dca088b67f701b74c1aa74b0d/admin_manual/installation/system_requirements.rst#L66)
+indica 128 MB de RAM como mínimo por proceso y recomienda 512 MB por proceso.
+La memoria total depende de las personas activas, las aplicaciones, los archivos y la actividad.
+Los [requisitos oficiales de Nextcloud AIO 14.4.3](https://github.com/nextcloud/all-in-one/blob/9774b360eef1c5f15adaa097182908895e496dca/php/templates/includes/optional-containers.twig#L266)
+aportan referencias de CPU y RAM para el conjunto de servicios de esa versión.
 
-Referencias: [límites de Hostinger](https://www.hostinger.com/support/10429687-is-nested-virtualization-supported-in-hostinger/),
-[Docker dentro de LXD](https://canonical.com/lxd/docs/v5.21/faq/#how-can-i-run-docker-inside-a-lxd-container).
+El mínimo y la recomendación de APS Conecta se fundamentan en esas referencias y en los
+resultados del ensayo de la suite completa. Publique cada valor con su fuente, versión,
+configuración, carga, resultado y margen observado. Los recursos asignados a una prueba
+constituyen entradas del ensayo; sus resultados determinan la capacidad verificada.
 
 Conserve el SHA completo del código del instalador, el estado de su árbol, la etiqueta
 y los identificadores de las imágenes, el SHA de su compilación y el enlace de Clean boot.
@@ -100,7 +96,7 @@ del mismo arranque. Un aumento de `oom_kill` requiere investigar el proceso afec
 Un contador nulo de OOM no acredita latencia ni ausencia de otros fallos.
 
 Los contadores de CPU son acumulativos. Evite sumar nuevamente `guest` y `guest_nice`,
-ya incluidos en otros campos. Separe espera de E/S y tiempo sustraído por el hipervisor;
+ya incluidos en otros campos. Separe espera de E/S y tiempo de CPU no disponible;
 las diferencias inválidas permanecen desconocidas. La memoria presentada por `docker stats`
 descuenta caché y su suma no representa el consumo completo del anfitrión.
 
