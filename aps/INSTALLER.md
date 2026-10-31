@@ -223,7 +223,7 @@ domain to check.
 The clinic `.env` (in the package root) is minimal by design — the wizard owns the stack. What
 the gates read:
 
-- **The suite's address, from apache itself** — `smoke`, `office-smoke` and `revalidate` curl
+- **The suite's address, from apache itself** — `smoke`, `office-smoke`, `appapi-smoke` and `revalidate` curl
   `https://<su-dominio>/…` (or `https://<ip>/…`, trusting the installer's CA, which is why they run
   as root), the leg §7 makes answer from this server. No `.env` key sets it.
 - **The office keys are absent on purpose**: under AIO the wizard's entrypoint owns the public
