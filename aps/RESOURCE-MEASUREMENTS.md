@@ -11,10 +11,27 @@ de medición. Los valores actuales del instalador son anteriores a este trabajo.
 
 ## Entorno y procedencia
 
-Use una VM desechable con memoria y vCPU ajustables. Mantenga los clientes de navegador en
-otros equipos. Registre el hipervisor, la asignación efectiva, el sistema, el núcleo,
+Use un entorno desechable con memoria y CPU ajustables: una VPS exclusiva o un contenedor
+de sistema LXD sin privilegios. Mantenga los clientes de navegador en otros equipos.
+Registre el hipervisor o gestor de contenedores, la asignación efectiva, el sistema, el núcleo,
 Docker, el almacenamiento, la red y la actividad concurrente del servidor físico.
 La carga de los clientes y la sobreasignación del hipervisor afectan la interpretación.
+
+Los contenedores LXD comparten el núcleo del anfitrión. Conserve los contadores del cgroup
+(`memory.max`, `memory.current`, `memory.peak`, `memory.events`, `cpu.stat` y CPU disponibles)
+junto con las mediciones simultáneas del anfitrión. Los valores virtualizados de `/proc`
+describen el contenedor; el mínimo del servidor debe incluir el consumo y margen del anfitrión.
+
+La prueba de compatibilidad en Hostinger utiliza LXD 5.21.8 y Ubuntu 24.04, con dos CPU y
+2 GiB de memoria limitada. Verifica Docker, la incorporación de un filtro seccomp adicional
+como usuario sin privilegios y el montaje de un archivo Borg mediante FUSE. Estos límites
+pertenecen a la prueba de compatibilidad y preceden al ensayo de la suite completa.
+El perfil permite anidamiento e intercepta `mknod` y `setxattr`; incorpora `/dev/fuse`.
+Borg conserva su configuración publicada, incluida su excepción AppArmor interna.
+La API LXD permanece local y el entorno utiliza una red privada sin ocupar los puertos públicos.
+
+Referencias: [límites de Hostinger](https://www.hostinger.com/support/10429687-is-nested-virtualization-supported-in-hostinger/),
+[Docker dentro de LXD](https://canonical.com/lxd/docs/v5.21/faq/#how-can-i-run-docker-inside-a-lxd-container).
 
 Conserve el SHA completo del código del instalador, el estado de su árbol, la etiqueta
 y los identificadores de las imágenes, el SHA de su compilación y el enlace de Clean boot.
@@ -28,7 +45,7 @@ Clean boot conserva una serie por trabajo y la instantánea final del trabajo de
 El colector lee contadores del anfitrión y métricas de contenedores de la suite; conserva
 los campos anteriores `memoria_gib`, `contenedores` y `disco`.
 
-Para una sesión de medición en la VM preparada, ejecute desde la revisión que se medirá:
+Para cada repetición en el entorno preparado, ejecute desde la revisión que se medirá:
 
 ```bash
 umask 077
