@@ -128,6 +128,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-074 | the hosted static gate fails three host fixtures during the Ubuntu 24-to-26 runner rollout (#185) | uutils date correctly resolves Santiago through fallback data despite an empty TZDIR, and systemd 259 reports deprecated directives in unrelated installed units | date fixtures model UTC fallback and command failure directly; isolated service and timer validation uses the supported non-recursive mode and rejects deliberate unknown-directive and calendar mutations |
 
+| A-075 | AppAPI lists its default HaRP daemon but cannot reach it, and HaRP rejects the suite certificate on an IP installation (#186) | native AppAPI keeps its upstream daemon hostname after the container rename; HaRP has no suite CA mount or Python trust adapter | Docker creates the compatibility alias on the primary endpoint, the existing proxy collector excludes it, and the read-only HaRP entrypoint combines system roots with the public suite CA before starting the upstream agent; the shared AppAPI gate checks native reachability and strict reverse HTTPS during installation, revalidation, reboot and reapplication |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and
