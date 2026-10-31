@@ -3874,6 +3874,7 @@ SHIM
   mkdir -p "$rvd/scripts"
   printf '#!/usr/bin/env bash\necho "PASS: smoke stub"\nexit 0\n'      > "$rvd/scripts/smoke.sh"
   printf '#!/usr/bin/env bash\necho "FAIL: office stub red"\nexit 1\n' > "$rvd/scripts/office-smoke.sh"
+  printf '#!/usr/bin/env bash\necho "PASS: AppAPI stub"\nexit 0\n'   > "$rvd/scripts/appapi-smoke.sh"
   printf '#!/usr/bin/env bash\necho "no notes"\nexit 0\n'             > "$rvd/scripts/divergence.sh"
   chmod +x "$rvd/scripts/"*.sh
   rout="$(ROOT="$rvd" cmd_revalidate 2>&1)"; rrc=$?
@@ -3883,6 +3884,10 @@ SHIM
   rout="$(ROOT="$rvd" cmd_revalidate 2>&1)"; rrc=$?
   check "revalidate aggregates green (exit 0 + the PASS line)" \
     '[ "$rrc" -eq 0 ] && printf "%s" "$rout" | grep -q "REVALIDACIÓN: PASS"'
+  printf '#!/usr/bin/env bash\necho "FAIL: AppAPI daemon unreachable"\nexit 1\n' > "$rvd/scripts/appapi-smoke.sh"
+  rout="$(ROOT="$rvd" cmd_revalidate 2>&1)"; rrc=$?
+  check "revalidate refuses an unreachable AppAPI daemon beside otherwise healthy gates" \
+    '[ "$rrc" -eq 1 ] && printf "%s" "$rout" | grep -q "AppAPI daemon unreachable" && printf "%s" "$rout" | grep -q "divergence-gate — no notes"'
 
   # ── actualizar (#46): the update command against a fake resolver, a fixture lock and the
   # wizard's own API — every leg hermetic (PATH shims, no docker, no network). The fake
@@ -3949,7 +3954,7 @@ elif sys.argv[1:] == ["opcionales"]:
     print("farmacia\toff\tFarmacia")
 PYEOF
   # the three gates revalidate runs, stubbed green (their own arms are above)
-  for g in smoke office-smoke divergence; do
+  for g in smoke office-smoke appapi-smoke divergence; do
     printf '#!/usr/bin/env bash\necho "PASS: %s stub"\nexit 0\n' "$g" > "$act/repo/scripts/$g.sh"
   done
   chmod +x "$act/repo/scripts/"*.sh
