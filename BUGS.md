@@ -108,6 +108,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-064 | staff uploads could bypass antivirus installation or exceed the scanner's configured capacity (#184) | the default app manifest omitted the antivirus app and upload configuration did not share the scanner's effective whole-file limit | phase 12 installs the store app, the shared startup helper configures whole-file ICAP scanning before backend waits, and one bounded byte calculation sets the app and ClamAV budget; existing local and WebDAV acceptance seams cover clean, infected, boundary and failure outcomes |
 
+| A-065 | the native antivirus frontend restarted repeatedly and held installation at scanner readiness (#184 rehearsal) | explicit c-icap User and Group directives attempted privileged supplementary-group changes inside an already unprivileged container | the frontend inherits the Docker container identity; a bounded published-image health probe in the by-IP job records native diagnostics before full installation |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and
