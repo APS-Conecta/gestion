@@ -1231,17 +1231,38 @@ jobs:
           [ -n "$task_av_version" ] || { echo 'FAIL: the antivirus app has no installed version' >&2; exit 1; }
           printf 'Antivirus store app runtime version: %s\n' "$task_av_version"
           task_av_boundary_active=0
+          task_av_pid=
+          task_av_chunks_url="https://$SUITE_IP/remote.php/dav/uploads/ana.prueba/antivirus-chunks-184"
+          task_av_curl=(curl --config - --silent --show-error --connect-timeout 10 --max-time 60
+            --cacert "$RUNNER_TEMP/ca.crt" --write-out '%{http_code}')
           dav() {
             printf 'user = "ana.prueba:%s"\n' "$task_av_password" \
-              | curl --config - --silent --show-error --connect-timeout 10 --max-time 60 \
-                  --cacert "$RUNNER_TEMP/ca.crt" --write-out '%{http_code}' "$@"
+              | "${task_av_curl[@]}" "$@"
+          }
+          wait_boundary() {
+            local deadline=$((SECONDS + 180))
+            while [ "$SECONDS" -lt "$deadline" ]; do
+              if timeout 15 docker exec aps-antivirus-boundary /healthcheck.sh >/dev/null 2>&1; then
+                return 0
+              fi
+              sleep 2
+            done
+            docker logs --tail=30 aps-antivirus-boundary >&2 || true
+            echo 'FAIL: the boundary scanner did not complete a fresh health scan' >&2
+            return 1
           }
           cleanup() {
             local name failed=0
+            if [ -n "$task_av_pid" ]; then
+              kill "$task_av_pid" 2>/dev/null || true
+              wait "$task_av_pid" 2>/dev/null || true
+            fi
             for name in antivirus-clean-184.txt antivirus-eicar-184.txt antivirus-at-limit-184.bin \
-              antivirus-over-limit-184.bin antivirus-failure-184.txt antivirus-expanded-184.zip antivirus-encrypted-184.zip; do
+              antivirus-over-limit-184.bin antivirus-failure-184.txt antivirus-expanded-184.zip antivirus-encrypted-184.zip \
+              antivirus-assembled-184.bin antivirus-midstream-184.bin antivirus-unavailable-184.txt; do
               dav --request DELETE --output /dev/null "$task_av_url/$name" >/dev/null || failed=1
             done
+            dav --request DELETE --output /dev/null "$task_av_chunks_url" >/dev/null || failed=1
             if [ "$task_av_boundary_active" = 1 ]; then
               docker start aps-conecta-clamav >/dev/null || failed=1
               docker exec --user www-data aps-conecta-nextcloud bash /configure-apps.sh antivirus >/dev/null || failed=1
@@ -1275,12 +1296,7 @@ jobs:
             --env MAX_SIZE="$task_av_limit" --env AIO_LOG_LEVEL=warn \
             --health-interval=2s --health-timeout=10s --health-start-period=1s --health-retries=90 \
             "$task_av_image" >/dev/null
-          for attempt in $(seq 90); do
-            [ "$(docker inspect aps-antivirus-boundary --format '{{.State.Health.Status}}')" != healthy ] || break
-            sleep 2
-          done
-          [ "$(docker inspect aps-antivirus-boundary --format '{{.State.Health.Status}}')" = healthy ] \
-            || { echo 'FAIL: the boundary scanner did not become healthy' >&2; exit 1; }
+          wait_boundary
           docker exec --user www-data --env PHP_UPLOAD_LIMIT="$task_av_limit" --env CLAMAV_HOST=aps-antivirus-boundary \
             aps-conecta-nextcloud bash /configure-apps.sh antivirus
           truncate -s 1048576 "$task_av_dir/at-limit.bin"
@@ -1337,6 +1353,75 @@ jobs:
             || { echo "FAIL: an unchecked upload remains readable (HTTP $code)" >&2; exit 1; }
           docker exec aps-antivirus-boundary mv /tmp/clamd.sock.offline /tmp/clamd.sock
           echo 'PASS: a scanner failure rejects the upload with actionable Spanish guidance'
+          code="$(dav --upload-file "$task_av_dir/clean.txt" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-failure-184.txt")"
+          [ "$code" = 201 ] || [ "$code" = 204 ]
+          code="$(dav --output "$task_av_dir/download.txt" "$task_av_url/antivirus-failure-184.txt")"
+          [ "$code" = 200 ] && cmp "$task_av_dir/clean.txt" "$task_av_dir/download.txt"
+          code="$(dav --upload-file "$task_av_dir/eicar.txt" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-clean-184.txt")"
+          [ "$code" = 415 ]
+          code="$(dav --output "$task_av_dir/download.txt" "$task_av_url/antivirus-clean-184.txt")"
+          [ "$code" = 200 ] && cmp "$task_av_dir/clean.txt" "$task_av_dir/download.txt" \
+            || { echo 'FAIL: a rejected overwrite lost the previous clean file' >&2; exit 1; }
+          echo 'PASS: recovery accepts clean files and a rejected overwrite preserves the original'
+          # V1 chunking accepts the sub-limit pieces needed to prove whole-file enforcement.
+          code="$(dav --request MKCOL --output "$task_av_dir/response.xml" "$task_av_chunks_url")"
+          [ "$code" = 201 ]
+          truncate -s 786432 "$task_av_dir/chunk.bin"
+          for part in 00001 00002; do
+            code="$(dav --upload-file "$task_av_dir/chunk.bin" --output "$task_av_dir/response.xml" "$task_av_chunks_url/$part")"
+            [ "$code" = 201 ]
+          done
+          code="$(dav --request MOVE --header "Destination: $task_av_url/antivirus-assembled-184.bin" \
+            --header 'OC-Total-Length: 1572864' --output "$task_av_dir/response.xml" "$task_av_chunks_url/.file")"
+          [ "$code" = 415 ] && grep -q 'El antivirus rechazó el archivo' "$task_av_dir/response.xml" \
+            || { echo "FAIL: assembled chunks returned HTTP $code instead of a whole-file rejection" >&2; exit 1; }
+          code="$(dav --output /dev/null "$task_av_url/antivirus-assembled-184.bin")"
+          [ "$code" = 404 ]
+          echo 'PASS: individually accepted chunks cannot bypass the complete-file scan limit'
+          # Hold the native frontend so the active upload cannot finish before its connection is interrupted.
+          docker exec aps-antivirus-boundary killall -STOP c-icap
+          printf 'user = "ana.prueba:%s"\n' "$task_av_password" \
+            | "${task_av_curl[@]}" --limit-rate 128k --upload-file "$task_av_dir/at-limit.bin" \
+                --output "$task_av_dir/midstream.xml" "$task_av_url/antivirus-midstream-184.bin" > "$task_av_dir/midstream.code" &
+          task_av_pid=$!
+          sleep 9
+          task_av_connected=0
+          for attempt in $(seq 30); do
+            if docker exec aps-conecta-nextcloud awk '$3 ~ /:0540$/ && $4 == "01" { found=1 } END { exit !found }' /proc/net/tcp /proc/net/tcp6; then
+              task_av_connected=1
+              break
+            fi
+            sleep 0.5
+          done
+          [ "$task_av_connected" = 1 ] && kill -0 "$task_av_pid" \
+            || { echo 'FAIL: the upload did not hold an active scanner connection' >&2; exit 1; }
+          docker exec aps-antivirus-boundary killall -KILL c-icap
+          task_av_transport=0
+          wait "$task_av_pid" || task_av_transport=$?
+          task_av_pid=
+          code="$(cat "$task_av_dir/midstream.code")"
+          [ "$task_av_transport" -ne 0 ] || [[ "$code" =~ ^[45][0-9][0-9]$ ]] \
+            || { echo "FAIL: an interrupted scan returned HTTP $code" >&2; exit 1; }
+          code="$(dav --output /dev/null "$task_av_url/antivirus-midstream-184.bin")"
+          [ "$code" = 404 ]
+          wait_boundary
+          code="$(dav --upload-file "$task_av_dir/clean.txt" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-midstream-184.bin")"
+          [ "$code" = 201 ] || [ "$code" = 204 ]
+          echo 'PASS: an interrupted scan rejects the upload and recovers for a clean retry'
+          docker stop --time 10 aps-antivirus-boundary >/dev/null
+          code="$(dav --upload-file "$task_av_dir/clean.txt" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-unavailable-184.txt")"
+          [ "$code" = 415 ] && grep -q 'El antivirus no está disponible' "$task_av_dir/response.xml" \
+            || { echo "FAIL: an unavailable scanner returned HTTP $code without Spanish recovery guidance" >&2; exit 1; }
+          code="$(dav --output /dev/null "$task_av_url/antivirus-unavailable-184.txt")"
+          [ "$code" = 404 ]
+          [ "$(docker exec --user www-data aps-conecta-nextcloud php occ config:app:get files_antivirus enabled)" = yes ]
+          docker start aps-antivirus-boundary >/dev/null
+          wait_boundary
+          code="$(dav --upload-file "$task_av_dir/clean.txt" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-unavailable-184.txt")"
+          [ "$code" = 201 ] || [ "$code" = 204 ]
+          code="$(dav --output "$task_av_dir/download.txt" "$task_av_url/antivirus-unavailable-184.txt")"
+          [ "$code" = 200 ] && cmp "$task_av_dir/clean.txt" "$task_av_dir/download.txt"
+          echo 'PASS: scanner unavailability keeps the app enabled, rejects uploads and recovers'
       # Nextcloud's own side of the address: its bundle trusts the CA (phase 07), the push server reaches
       # it inside the suite's network (the fork's patch 238), and the office both ways (phase 14).
       - name: Nextcloud trusts the CA; push and office work by IP
@@ -1412,8 +1497,16 @@ jobs:
           occ config:app:set eurooffice DocumentServerUrl --value "$marker" >/dev/null
           trap 'docker start aps-conecta-eurooffice >/dev/null 2>&1 || true' EXIT
           docker stop --time 10 aps-conecta-eurooffice >/dev/null
+          task_theme_css_before="$(docker exec aps-conecta-nextcloud sha256sum /var/www/html/themes/apsconecta/core/css/site.css)"
+          printf '%s\n' '{"translations":{},"pluralForm":"nplurals=2; plural=(n != 1);"}' \
+            | docker exec -i aps-conecta-nextcloud sh -c 'cat > /var/www/html/themes/apsconecta/custom_apps/files_antivirus/l10n/es.json'
           docker restart aps-conecta-nextcloud >/dev/null
           wait_healthy aps-conecta-nextcloud
+          docker exec aps-conecta-nextcloud cmp /usr/src/nextcloud/themes/apsconecta/custom_apps/files_antivirus/l10n/es.json \
+            /var/www/html/themes/apsconecta/custom_apps/files_antivirus/l10n/es.json
+          [ "$(docker exec aps-conecta-nextcloud sha256sum /var/www/html/themes/apsconecta/core/css/site.css)" = "$task_theme_css_before" ] \
+            || { echo 'FAIL: refreshing the image theme changed the establishment CSS' >&2; exit 1; }
+          echo 'PASS: a warm restart refreshes antivirus messages and preserves establishment CSS'
           [ "$(occ config:app:get eurooffice enabled)" = yes ] \
             || { echo "FAIL: a late DocumentServer disabled the installed eurooffice connector" >&2; exit 1; }
           [ "$(occ config:app:get eurooffice DocumentServerUrl)" = "$marker" ] \
