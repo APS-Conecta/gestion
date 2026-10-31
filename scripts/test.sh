@@ -2771,6 +2771,15 @@ elif a[0] in ('config:app:set', 'config:system:set'):
     s['config'][key] = a[3:]
     save()
     print('Config value were not updated' if old == a[3:] else "Config value 'key' for app 'app' is now set to 'synthetic secret must never escape'")
+elif a[0] == 'config:list':
+    save()
+    print('{broken' if s.get('malformed_config') else json.dumps({'apps': {'spreed': s['config'].get('spreed', {})}}))
+elif a[0] == 'config:import':
+    payload = json.load(sys.stdin)
+    assert set(payload) == {'apps'} and set(payload['apps']) == {'spreed'}
+    s['config'].setdefault('spreed', {}).update(payload['apps']['spreed'])
+    s.setdefault('imports', []).append(payload)
+    save()
 elif a[0] == 'config:system:get':
     save(); print('OCA\\Eurooffice\\Preview')
 elif a[0].endswith(':configure'):
@@ -2867,6 +2876,41 @@ else:
     assert not any(call[0] == 'app:install' for call in state['calls'])
     reset()
     run('unknown', success=False)
+    talk = dict(TALK_ENABLED='yes', TALK_HOST='aps-conecta-talk', TALK_PORT='3478',
+                TURN_SECRET='synthetic secret must never escape " \\ $',
+                SIGNALING_SECRET='synthetic secret must never escape " \\ $')
+    reset()
+    state, output = run('talk', extra=talk)
+    assert 'deferred' in output and not state.get('imports')
+    reset(disabled=['spreed'])
+    state, output = run('talk', extra=talk)
+    assert state['enabled'] == ['spreed']
+    config = state['config']['spreed']
+    assert json.loads(config['signaling_servers']) == {
+        'servers': [{'server': 'https://test.invalid/standalone-signaling/', 'verify': True}],
+        'secret': talk['SIGNALING_SECRET']}
+    assert json.loads(config['turn_servers']) == [{'schemes': 'turn', 'server': 'test.invalid:3478',
+        'protocols': 'udp,tcp', 'secret': talk['TURN_SECRET']}]
+    assert json.loads(config['stun_servers']) == ['test.invalid:3478']
+    assert config['certificate_expiration_days'] == '2'
+    assert len(state['imports']) == 1
+    state, output = run('talk', extra=talk)
+    assert len(state['imports']) == 1 and ' -> ' not in output, 'Repeated Talk wiring must not write'
+    rotated = dict(talk, SIGNALING_SECRET=talk['SIGNALING_SECRET'] + ' rotated')
+    state, _ = run('talk', extra=rotated)
+    assert set(state['imports'][-1]['apps']['spreed']) == {'signaling_servers'}
+    assert json.loads(state['config']['spreed']['signaling_servers'])['secret'] == rotated['SIGNALING_SECRET']
+    assert 'synthetic secret must never escape' not in json.dumps(state['calls']), 'Talk secrets entered process arguments'
+    for failure in ('app:list', 'app:enable', 'config:list', 'config:import'):
+        reset(disabled=['spreed'], fail=failure)
+        run('talk', success=False, extra=talk)
+    reset(enabled=['spreed'], malformed_config=True)
+    run('talk', success=False, extra=talk)
+    reset(enabled=['spreed'])
+    run('talk', success=False, extra=dict(talk, TURN_SECRET=''))
+    reset(enabled=['notify_push', 'spreed'])
+    state, _ = run('boot', extra=talk)
+    assert len(state['imports']) == 1, 'Boot must use the same Talk configuration owner'
 phase = pathlib.Path('provisioning/phases/14-office.sh').read_text()
 assert 'nc_exec --user www-data -- bash /configure-apps.sh eurooffice' in phase
 entrypoint = pathlib.Path('Containers/nextcloud/entrypoint.sh').read_text()
