@@ -1,5 +1,6 @@
 type = process
-command = clamav-milter --config-file=/etc/clamav/clamav-milter.conf
+command = /start-icap.sh
+depends-on = clamd
 term-signal = TERM
 restart = yes
 options = shares-console

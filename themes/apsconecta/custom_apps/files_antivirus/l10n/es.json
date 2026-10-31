@@ -1,0 +1,7 @@
+{
+  "translations": {
+    "Virus %s is detected in the file. Upload cannot be completed.": "El antivirus rechazó el archivo. Revise su contenido y tamaño; si el problema continúa, contacte a la administración.",
+    "%s. Upload cannot be completed.": "El antivirus no está disponible. Espere y vuelva a cargar el archivo; si el problema continúa, contacte a la administración."
+  },
+  "pluralForm": "nplurals=2; plural=(n != 1);"
+}

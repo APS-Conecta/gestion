@@ -234,7 +234,8 @@ TIMEOUTS = {"seed": 1800, "roster": 1800, "gate": 300, "suite": 900, "apps": 600
 PHASE_TITLES = {
     "05-security": "Seguridad de sesión", "06-jobs": "Tareas programadas",
     "07-certs": "Certificados del servidor", "10-locale": "Idioma y región (es-CL)",
-    "12-apps": "Aplicaciones de la suite", "14-office": "Oficina en línea",
+    "12-apps": "Aplicaciones de la suite", "14-antivirus": "Antivirus de archivos",
+    "14-office": "Oficina en línea",
     "15-branding": "Imagen de APS Conecta", "16-app-policy": "Aplicaciones por perfil",
     "20-groups": "Grupos: roles, categorías y equipos", "30-folders": "Carpetas compartidas",
     "40-acl": "Permisos de las carpetas", "41-intravox": "Portada del establecimiento",
@@ -4913,7 +4914,8 @@ def selftest():
             check("generar: revision answers the plan — zero execs, zero writes",
                   st == 200 and body["modo"] == "revision" and body["usuarios"] == 2
                   and body["primer_admin"] == "elena.diaz" and body["contrasenas_selladas"] >= 2
-                  and len(body["fases"]) == 14 and execs[0] == 0 and same
+                  and len(body["fases"]) == 15 and "14-antivirus.sh" in body["fases"]
+                  and execs[0] == 0 and same
                   and body["env"]["FIXTURE_USER_PASSWORD"] == "se generará")
             check("generar: review mode downloads nothing — the release apps' fetch leg never ran (#33)",
                   not os.path.exists(apps_argv))
@@ -4932,7 +4934,7 @@ def selftest():
                 subprocess.Popen = real_popen
             check("--paso generar --revision: the plan in one Spanish line, nothing executed, exit 0",
                   rc == 0 and execs[0] == 0
-                  and "✓ Revisión: 14 fases, 2 usuarios (administrador inicial elena.diaz)" in out)
+                  and "✓ Revisión: 15 fases, 2 usuarios (administrador inicial elena.diaz)" in out)
             st, plan = api_generar({"codigo": "113314", "modo": "revision"})
             visibles = json.dumps({k: plan.get(k) for k in ("centro", "sectores", "programas", "personas",
                                                             "componentes")}, ensure_ascii=False)
@@ -4970,12 +4972,12 @@ def selftest():
             fuera = list(EJECUCION["hechos"])
             EJECUCION.update(estado="en_curso")
             for ln in ("▶ phase 05-security\n", "✓ phase 05-security\n", "otra línea\n",
-                       "✓ phase 14-office\n", "== roster: 3 usuario(s)\n"):
+                       "✓ phase 14-antivirus\n", "✓ phase 14-office\n", "== roster: 3 usuario(s)\n"):
                 avance(ln)
-            check("ejecución: none yet answers «sin_ejecutar» with the 16 steps; a browser run's executor lines become the console's own titles, any other run's are not followed (a14)",
+            check("ejecución: none yet answers «sin_ejecutar» with the 17 steps; a browser run's executor lines become the console's own titles, any other run's are not followed (a14)",
                   st == 200 and nada["ejecucion"] == "sin_ejecutar" and nada["pasos"] == PASOS_EJECUCION
-                  and len(PASOS_EJECUCION) == 16 and fuera == []
-                  and EJECUCION["hechos"] == ["Seguridad de sesión", "Oficina en línea", "Cuentas del personal"])
+                  and len(PASOS_EJECUCION) == 17 and fuera == []
+                  and EJECUCION["hechos"] == ["Seguridad de sesión", "Antivirus de archivos", "Oficina en línea", "Cuentas del personal"])
             EJECUCION.update(estado="sin_ejecutar", hechos=[])
             verdadero, suelta = globals()["api_generar"], threading.Event()
 
@@ -5724,6 +5726,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
             fixture_versions = {"intravox": ("v3.2.0", "3.2.0"), "eurooffice": ("v11.0.7", "11.0.7"),
                                 "epidemiologia": ("v0.12.0", "0.12.0"), "territorio": ("v0.80.0", "0.80.0"),
                                 "side_menu": ("v6.0.1", "6.0.1"),
+                                "files_upload_guard": ("v0.1.0", "0.1.0"),
                                 "spreed": ("v24.0.6", "24.0.6")}   # #145: the fork's first release
             filas_lock = {}
             for fila in SUITE_APPS:
@@ -5748,9 +5751,9 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   and lista["servidor"]["pisos"] == pisos_servidor()
                   and all(t in __import__("inspect").getsource(screen_contenedores)
                           for t in ("pisos.ram_min", "Pisos del instalador")))
-            check("generar: ejecutar runs the whole world green — 14 phases, 2 roster users, gate clean",
+            check("generar: ejecutar runs the whole world green — 15 phases, 2 roster users, gate clean",
                   st == 200 and body["ok"] and body["divergencia_vacia"]
-                  and "14 phase(s) run" in body["salida"] and "== roster: 2 usuario(s) ==" in body["salida"]
+                  and "15 phase(s) run" in body["salida"] and "== roster: 2 usuario(s) ==" in body["salida"]
                   and "user elena.diaz added to group admin" in body["salida"]
                   and "nada en la instancia que el repositorio no declare" in body["divergencia"])
             check("generar: ejecutar resolves and fetches the release apps first, with the version the instance answers (#33)",
@@ -5768,7 +5771,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   st2 == 500
                   and body2["error"] == "FATAL: territorio: la firma de SHA256SUMS no verifica contra apps.pub"
                   and "== APS Conecta provisioning" not in body2["salida"]
-                  and "14 phase(s) run" not in body2["salida"])
+                  and "15 phase(s) run" not in body2["salida"])
             globals()["APPS_CMD"] = ["bash", apps_stub("lenta")]
             viejo = TIMEOUTS["apps"]
             TIMEOUTS["apps"] = 1
@@ -5852,6 +5855,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
             log_text = open(os.path.join(deis.HERE, "..", ".install.log"), encoding="utf-8").read()
             check("generar --resumen: one Spanish line per phase, the apps' download and the roster's count on the console, the whole log in .install.log (R42, #33)",
                   "  ✓ Grupos: roles, categorías y equipos\n" in console
+                  and "  ✓ Antivirus de archivos\n" in console
                   and "  ✓ Planilla: 2 personas\n" in console
                   and "  ✓ Aplicaciones: territorio v0.80.0 descargada y verificada" in console
                   and console.count("  ✓ ") == len(PHASE_TITLES) + 2

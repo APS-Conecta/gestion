@@ -11,5 +11,7 @@
     {"id": "territorio", "source": "own", "repo": "APS-Conecta/territorio", "optional": false, "containers": [], "release": true, "name": "Territorio", "summary": "Mapa territorial: unidades vecinales y establecimientos."},
     {"id": "spreed", "source": "fork", "repo": "APS-Conecta/spreed", "optional": false, "containers": ["aps-conecta-talk"], "release": true, "name": "Talk", "summary": "Chat y videollamadas internas."},
     {"id": "notify_push", "source": "store", "optional": false, "containers": ["aps-conecta-notify-push"]},
+    {"id": "files_upload_guard", "source": "own", "repo": "APS-Conecta/files-upload-guard", "optional": false, "containers": [], "release": true},
+    {"id": "files_antivirus", "source": "store", "optional": false, "containers": ["aps-conecta-clamav"], "name": "Antivirus", "summary": "Revisión de archivos cargados antes de guardarlos."},
     {"id": "side_menu", "source": "fork", "repo": "APS-Conecta/side_menu", "optional": false, "containers": [], "release": true}
 ]

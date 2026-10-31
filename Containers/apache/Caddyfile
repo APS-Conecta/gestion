@@ -75,7 +75,26 @@
 
     # Nextcloud
     route {
-        reverse_proxy 127.0.0.1:8000
+        reverse_proxy 127.0.0.1:8000 {
+            @failed status 500
+            handle_response @failed {
+                @upload {
+                    method PUT MOVE
+                    path /remote.php/dav/files/* /remote.php/dav/uploads/* /remote.php/webdav/*
+                }
+                handle @upload {
+                    copy_response_headers {
+                        exclude Content-Length Content-Encoding Content-Type ETag
+                    }
+                    header Content-Type "application/xml; charset=utf-8"
+                    respond `<?xml version="1.0" encoding="utf-8"?><d:error xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns"><s:message>No se pudo confirmar la carga. Revise Archivos antes de repetirla. Si el problema continúa, contacte a la administración.</s:message></d:error>` 500
+                }
+                handle {
+                    copy_response_headers
+                    copy_response
+                }
+            }
+        }
     }
     redir /.well-known/carddav /remote.php/dav/ 301
     redir /.well-known/caldav /remote.php/dav/ 301

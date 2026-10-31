@@ -633,6 +633,11 @@ if [ -z "$NEXTCLOUD_MAINTENANCE_WINDOW" ]; then
 fi
 php /var/www/html/occ config:system:set maintenance_window_start --type=int --value="$NEXTCLOUD_MAINTENANCE_WINDOW"
 
+# Refresh image-owned assets while retaining the establishment's generated CSS.
+mkdir -p /var/www/html/themes/apsconecta || exit 1
+rsync -rlD --delete --exclude='/core/css/site.css' \
+    "$SOURCE_LOCATION/themes/apsconecta/" /var/www/html/themes/apsconecta/ || exit 1
+
 # Apply network settings
 echo "Applying network settings..."
 php /var/www/html/occ config:system:set allow_local_remote_servers --type=bool --value=true

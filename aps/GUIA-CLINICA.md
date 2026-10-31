@@ -147,6 +147,15 @@ Después de la bienvenida, el navegador recorre los pasos 5 a 8 de la instalaci�
      su encabezado, y el detalle y el arreglo están en la consola del servidor
      (`aps-conecta estado`). Corríjalo y vuelva a ejecutar.
 
+### Antivirus de archivos
+
+El aprovisionamiento instala y configura el antivirus antes de entregar la suite.
+Cada carga se analiza antes de guardarse. `NEXTCLOUD_UPLOAD_LIMIT` define el límite del
+archivo completo, también para cargas fragmentadas; el valor predeterminado es `1G` (1 GiB).
+El analizador admite hasta 2.147.483.645 bytes y rechaza límites de análisis y archivos
+comprimidos cifrados. Ante un rechazo, revise el contenido y el tamaño. Si el servicio está
+indisponible, espere su recuperación y repita la carga; si continúa, contacte a la administración.
+
 ## 5. La planilla de usuarios
 
 Un archivo de texto con **seis columnas separadas por punto y coma**, una fila por persona:

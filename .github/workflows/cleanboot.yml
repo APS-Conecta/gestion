@@ -141,6 +141,11 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 1   # VERSION answers suite_tag() now — no tag history to read
+      - name: Free unused SDKs on the disposable runner
+        run: |
+          df -h /var/lib/docker
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android
+          df -h /var/lib/docker
       - name: Build the rehearsal package, then install through the real bootstrap
         run: |
           set -euo pipefail
@@ -1085,11 +1090,155 @@ jobs:
           [ -n "$ip" ] || { echo "FATAL: no routed IPv4 address on this runner" >&2; exit 1; }
           echo "SUITE_IP=$ip" >> "$GITHUB_ENV"
           bash /opt/aps-conecta/instalador/scripts/cleanboot-site.sh "$ip" "$RUNNER_TEMP"
+      - name: The published antivirus image completes its clean scan before installation
+        run: |
+          set -euo pipefail
+          trap 'status=$?; docker rm --force --volumes aps-antivirus-preflight >/dev/null || status=1; exit "$status"' EXIT
+          docker run --detach --init --name aps-antivirus-preflight --network none \
+            --read-only --tmpfs /run --tmpfs /tmp --tmpfs /var/log/clamav --cap-drop NET_RAW \
+            --env MAX_SIZE=1M --env AIO_LOG_LEVEL=warn \
+            --health-interval=2s --health-timeout=15s --health-start-period=1s --health-retries=40 \
+            "ghcr.io/aps-conecta/aio-clamav:$SUITE_TAG" >/dev/null
+          deadline=$((SECONDS + 120))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            if [ "$(docker inspect aps-antivirus-preflight --format '{{.State.Health.Status}}')" = healthy ]; then
+              echo 'PASS: the published scanner completes a clean health scan'
+              exit 0
+            fi
+            sleep 2
+          done
+          docker inspect aps-antivirus-preflight --format '{{range .State.Health.Log}}{{println .ExitCode .Output}}{{end}}'
+          docker logs --tail=60 aps-antivirus-preflight
+          echo 'FAIL: the published scanner did not complete its clean health scan' >&2
+          exit 1
       # The silent install, as root, with no terminal. The suite tag is the one the «suite-tag» job
       # resolved, so both jobs run the same published suite. #39 chose farmacia; #40 adds
       # estadistica and #41 totem — the three optional apps ride the same --app flags into the
       # wizard drive and its options record, the way an operator without a browser checks
       # every box at once.
+      - name: Upload errors preserve status and unrelated responses
+        run: |
+          set -euo pipefail
+          umask 077
+          task_ingress_dir="$RUNNER_TEMP/upload-error-responses"
+          mkdir -p "$task_ingress_dir"
+          task_ingress_name="aps-upload-errors-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          task_ingress_created=0
+          task_ingress_pid=
+          cleanup_ingress() {
+            local status=$?
+            if [ "$task_ingress_created" = 1 ]; then
+              docker rm --force --volumes "$task_ingress_name" >/dev/null || status=1
+            fi
+            if [ -n "$task_ingress_pid" ]; then
+              kill "$task_ingress_pid" 2>/dev/null || true
+              wait "$task_ingress_pid" 2>/dev/null || true
+            fi
+            exit "$status"
+          }
+          trap cleanup_ingress EXIT
+          task_ingress_image="ghcr.io/aps-conecta/aio-apache:$SUITE_TAG"
+          docker run --rm --network none --read-only --entrypoint cat "$task_ingress_image" /Caddyfile \
+            > "$task_ingress_dir/published-caddyfile"
+          python3 - "$task_ingress_dir" <<'PYBACKEND' &
+          import gzip, http.server, pathlib, socket, sys
+          root = pathlib.Path(sys.argv[1])
+          class Handler(http.server.BaseHTTPRequestHandler):
+              count = 0
+              def reply(self):
+                  self.rfile.read(int(self.headers.get('Content-Length', '0')))
+                  Handler.count += 1
+                  (root / 'count').write_text(str(Handler.count))
+                  success = self.path.endswith('/success.txt')
+                  body = b'clean fixture' if success else gzip.compress(b'original upstream error')
+                  self.send_response(201 if success else 500)
+                  self.send_header('Content-Type', 'application/octet-stream')
+                  self.send_header('Content-Length', str(len(body)))
+                  self.send_header('ETag', '"fixture-184"')
+                  self.send_header('X-Request-ID', 'fixture-184')
+                  if not success:
+                      self.send_header('Content-Encoding', 'gzip')
+                  self.end_headers()
+                  self.wfile.write(body)
+              do_GET = do_POST = do_PUT = do_MOVE = reply
+              def log_message(self, *args):
+                  pass
+          server = http.server.HTTPServer(('127.0.0.1', 0), Handler)
+          with socket.socket() as probe:
+              probe.bind(('127.0.0.1', 0))
+              frontend_port = probe.getsockname()[1]
+          source = (root / 'published-caddyfile').read_text()
+          snippet = source.split('(aps_routes) {', 1)[1].split('\n}\n\nhttp://', 1)[0]
+          assert snippet.count('127.0.0.1:8000') == 1
+          snippet = snippet.replace('127.0.0.1:8000', f'127.0.0.1:{server.server_port}')
+          config = '{\n admin off\n auto_https off\n}\n(aps_routes) {' + snippet
+          config += '\n}\nhttp://127.0.0.1:' + str(frontend_port) + ' {\n import aps_routes\n}\n'
+          (root / 'Caddyfile').write_text(config)
+          (root / 'Caddyfile').chmod(0o644)
+          (root / 'port').write_text(str(frontend_port))
+          server.serve_forever()
+          PYBACKEND
+          task_ingress_pid=$!
+          for attempt in $(seq 50); do
+            [ ! -s "$task_ingress_dir/port" ] || break
+            kill -0 "$task_ingress_pid"
+            sleep 0.1
+          done
+          task_ingress_port="$(cat "$task_ingress_dir/port")"
+          task_ingress_created=1
+          docker run --detach --name "$task_ingress_name" --network host --read-only --tmpfs /tmp \
+            --env NOTIFY_PUSH_HOST=127.0.0.1 --env EUROOFFICE_HOST=127.0.0.1 \
+            --env TALK_HOST=127.0.0.1 --env HARP_HOST=127.0.0.1 \
+            --mount "type=bind,source=$task_ingress_dir/Caddyfile,target=/etc/caddy/Caddyfile,readonly" \
+            --entrypoint /usr/bin/caddy "$task_ingress_image" run --config /etc/caddy/Caddyfile >/dev/null
+          task_ingress_ready=0
+          for attempt in $(seq 30); do
+            code="$(curl --silent --connect-timeout 1 --max-time 2 --output /dev/null --write-out '%{http_code}' \
+              "http://127.0.0.1:$task_ingress_port/status.php" || true)"
+            if [ "$code" = 500 ]; then task_ingress_ready=1; break; fi
+            sleep 0.2
+          done
+          [ "$task_ingress_ready" = 1 ] \
+            || { docker logs --tail=30 "$task_ingress_name"; echo 'FAIL: upload error fixture did not start' >&2; exit 1; }
+          python3 - "$task_ingress_dir" "$task_ingress_port" <<'PYRESPONSES'
+          import gzip, pathlib, sys, urllib.error, urllib.request, xml.etree.ElementTree as ET
+          root = pathlib.Path(sys.argv[1])
+          cases = [
+              ('PUT', '/remote.php/dav/files/staff/error.txt', True),
+              ('MOVE', '/remote.php/dav/uploads/staff/chunks/.file', True),
+              ('PUT', '/remote.php/webdav/error.txt', True),
+              ('GET', '/remote.php/dav/files/staff/error.txt', False),
+              ('POST', '/remote.php/dav/files/staff/error.txt', False),
+              ('PUT', '/status.php', False),
+              ('PUT', '/remote.php/dav/files/staff/success.txt', False),
+          ]
+          for method, path, translated in cases:
+              before = int((root / 'count').read_text())
+              request = urllib.request.Request(f'http://127.0.0.1:{sys.argv[2]}{path}',
+                  data=b'fixture', method=method, headers={'Accept-Encoding': 'identity'})
+              try:
+                  response = urllib.request.urlopen(request, timeout=10)
+              except urllib.error.HTTPError as error:
+                  response = error
+              with response:
+                  body = response.read()
+                  success = path.endswith('/success.txt')
+                  assert response.status == (201 if success else 500), (method, path, response.status)
+                  assert response.headers['X-Request-ID'] == 'fixture-184'
+                  assert int(response.headers['Content-Length']) == len(body)
+                  if translated:
+                      assert response.headers['Content-Type'] == 'application/xml; charset=utf-8'
+                      assert response.headers.get('Content-Encoding') is None
+                      assert response.headers.get('ETag') is None
+                      message = ET.fromstring(body).findtext('{http://sabredav.org/ns}message')
+                      assert 'contacte a la administración' in message
+                  else:
+                      assert response.headers['ETag'] == '"fixture-184"'
+                      actual = body if success else gzip.decompress(body)
+                      assert actual == (b'clean fixture' if success else b'original upstream error')
+              assert int((root / 'count').read_text()) == before + 1, 'the proxy replayed a request'
+          print('PASS: upload errors retain HTTP 500 and Spanish guidance; other responses stay intact without replay')
+          PYRESPONSES
       - name: Install by IP through the silent command a clinic runs, choosing farmacia, estadistica and totem (#39, #40, #41)
         run: |
           set -o pipefail   # run: is `bash -e` without it — the install's own failure, not tee's
@@ -1192,6 +1341,452 @@ jobs:
           [ "$(attempts 203.0.113.201)" -gt 0 ] \
             || { echo 'FAIL: the internal proxy lost the forwarded client address' >&2; exit 1; }
           echo 'PASS: a proxy inside the actual suite network preserves the client address'
+      - uses: ./.github/actions/assert-release-app
+        with:
+          app: files_upload_guard
+      - name: Staff uploads are scanned before acceptance
+        run: |
+          set -euo pipefail
+          umask 077
+          task_av_dir="$RUNNER_TEMP/antivirus-uploads"
+          mkdir -p "$task_av_dir"
+          mapfile -t task_av_passwords < <(sudo python3 - <<'PYAV'
+          import csv
+          with open('/opt/aps-conecta/credentials.txt', encoding='utf-8') as stream:
+              passwords = {row[0]: row[2] for row in csv.reader(stream, delimiter=';')
+                  if row and row[0] in ('ana.prueba', 'beto.prueba')}
+          for user in ['ana.prueba', 'beto.prueba']:
+              print(passwords[user])
+          PYAV
+          )
+          [ "${#task_av_passwords[@]}" = 2 ]
+          task_av_password="${task_av_passwords[0]}"
+          task_av_staff_password="${task_av_passwords[1]}"
+          printf '::add-mask::%s\n' "$task_av_password"
+          printf '::add-mask::%s\n' "$task_av_staff_password"
+          task_av_url="https://$SUITE_IP/remote.php/dav/files/ana.prueba"
+          task_av_version="$(docker exec --user www-data aps-conecta-nextcloud php occ config:app:get files_antivirus installed_version)"
+          [ -n "$task_av_version" ] || { echo 'FAIL: the antivirus app has no installed version' >&2; exit 1; }
+          printf 'Antivirus store app runtime version: %s\n' "$task_av_version"
+          task_av_boundary_active=0
+          task_av_pid=
+          task_av_failed=0
+          task_av_group_id=
+          task_av_share_id=
+          task_av_share_name="antivirus-share-$GITHUB_RUN_ID-184"
+          task_av_shares_url="https://$SUITE_IP/ocs/v2.php/apps/files_sharing/api/v1/shares"
+          task_av_chunks_url="https://$SUITE_IP/remote.php/dav/uploads/ana.prueba/antivirus-chunks-184"
+          task_av_curl=(curl --config - --silent --show-error --connect-timeout 10 --max-time 60
+            --cacert "$RUNNER_TEMP/ca.crt" --write-out '%{http_code}')
+          dav_as() {
+            local user="$1" password="$2"
+            shift 2
+            printf 'user = "%s:%s"\n' "$user" "$password" \
+              | "${task_av_curl[@]}" "$@"
+          }
+          dav() { dav_as ana.prueba "$task_av_password" "$@"; }
+          staff_dav() { dav_as beto.prueba "$task_av_staff_password" "$@"; }
+          expect_status() {
+            local expected="$1" actual="$2" operation="$3"
+            if [ "$actual" != "$expected" ]; then
+              printf 'FAIL: %s returned HTTP %s; expected %s\n' "$operation" "$actual" "$expected" >&2
+              return 1
+            fi
+          }
+          wait_boundary() {
+            local deadline=$((SECONDS + 180))
+            while [ "$SECONDS" -lt "$deadline" ]; do
+              if timeout 15 docker exec aps-antivirus-boundary /healthcheck.sh >/dev/null 2>&1; then
+                return 0
+              fi
+              sleep 2
+            done
+            docker logs --tail=30 aps-antivirus-boundary >&2 || true
+            echo 'FAIL: the boundary scanner did not complete a fresh health scan' >&2
+            return 1
+          }
+          cleanup() {
+            local name code failed=0
+            if [ -n "$task_av_pid" ]; then
+              kill "$task_av_pid" 2>/dev/null || true
+              wait "$task_av_pid" 2>/dev/null || true
+            fi
+            for name in antivirus-clean-184.txt antivirus-eicar-184.txt antivirus-at-limit-184.bin \
+              antivirus-over-limit-184.bin antivirus-failure-184.txt antivirus-expanded-184.zip antivirus-encrypted-184.zip \
+              antivirus-assembled-184.bin antivirus-chunked-eicar-184.txt antivirus-midstream-184.bin antivirus-unavailable-184.txt; do
+              dav --request DELETE --output /dev/null "$task_av_url/$name" >/dev/null || failed=1
+            done
+            dav --request DELETE --output /dev/null "$task_av_chunks_url" >/dev/null || failed=1
+            if [ -n "$task_av_share_id" ]; then
+              code="$(dav --request DELETE --header 'OCS-APIRequest: true' --output /dev/null \
+                "$task_av_shares_url/$task_av_share_id")" || failed=1
+              [ "$code" = 200 ] || [ "$code" = 404 ] || failed=1
+            fi
+            code="$(dav --request DELETE --output /dev/null "$task_av_url/$task_av_share_name")" || failed=1
+            [ "$code" = 204 ] || [ "$code" = 404 ] || failed=1
+            if [ -n "$task_av_group_id" ]; then
+              docker exec --user www-data aps-conecta-nextcloud php occ groupfolders:delete \
+                "$task_av_group_id" --force >/dev/null || failed=1
+            fi
+            if [ "$task_av_boundary_active" = 1 ]; then
+              docker start aps-conecta-clamav >/dev/null || failed=1
+              docker exec --user www-data aps-conecta-nextcloud bash /configure-apps.sh antivirus >/dev/null || failed=1
+              docker rm --force --volumes aps-antivirus-boundary >/dev/null || failed=1
+            fi
+            return "$failed"
+          }
+          trap 'task_av_status=$?; cleanup || task_av_status=1; exit "$task_av_status"' EXIT
+          printf 'APS Conecta antivirus acceptance.\n' > "$task_av_dir/clean.txt"
+          printf '%s' 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > "$task_av_dir/eicar.txt"
+          code="$(dav --upload-file "$task_av_dir/clean.txt" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-clean-184.txt")"
+          [ "$code" = 201 ] || [ "$code" = 204 ] \
+            || { echo "FAIL: a clean staff upload returned HTTP $code" >&2; exit 1; }
+          code="$(dav --output "$task_av_dir/download.txt" "$task_av_url/antivirus-clean-184.txt")"
+          [ "$code" = 200 ] && cmp "$task_av_dir/clean.txt" "$task_av_dir/download.txt" \
+            || { echo 'FAIL: the clean upload did not round-trip' >&2; exit 1; }
+          echo 'PASS: a staff member uploads and reads a clean file'
+          code="$(dav --upload-file "$task_av_dir/eicar.txt" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-eicar-184.txt")"
+          [ "$code" = 415 ] && grep -qi virus "$task_av_dir/response.xml" \
+            || { echo "FAIL: EICAR upload returned HTTP $code; expected antivirus rejection (415)" >&2; exit 1; }
+          code="$(dav --output /dev/null "$task_av_url/antivirus-eicar-184.txt")"
+          [ "$code" = 404 ] \
+            || { echo "FAIL: the rejected upload remains readable (HTTP $code)" >&2; exit 1; }
+          echo 'PASS: EICAR is rejected and no infected file is stored'
+          task_av_image="$(docker inspect aps-conecta-clamav --format '{{.Config.Image}}')"
+          task_av_limit=1M
+          task_av_boundary_active=1
+          docker stop --time 10 aps-conecta-clamav >/dev/null
+          docker run --detach --init --name aps-antivirus-boundary --network nextcloud-aio \
+            --read-only --tmpfs /run --tmpfs /tmp --tmpfs /var/log/clamav \
+            --env MAX_SIZE="$task_av_limit" --env AIO_LOG_LEVEL=warn \
+            --health-interval=2s --health-timeout=10s --health-start-period=1s --health-retries=90 \
+            "$task_av_image" >/dev/null
+          wait_boundary
+          docker exec --user www-data --env PHP_UPLOAD_LIMIT="$task_av_limit" --env CLAMAV_HOST=aps-antivirus-boundary \
+            aps-conecta-nextcloud bash /configure-apps.sh antivirus
+          truncate -s 1048576 "$task_av_dir/at-limit.bin"
+          truncate -s 1048577 "$task_av_dir/over-limit.bin"
+          code="$(dav --upload-file "$task_av_dir/at-limit.bin" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-at-limit-184.bin")"
+          [ "$code" = 201 ] || [ "$code" = 204 ] \
+            || { echo "FAIL: a file at the scan limit returned HTTP $code" >&2; exit 1; }
+          code="$(dav --output "$task_av_dir/download.bin" "$task_av_url/antivirus-at-limit-184.bin")"
+          [ "$code" = 200 ] && cmp "$task_av_dir/at-limit.bin" "$task_av_dir/download.bin" \
+            || { echo 'FAIL: the file at the scan limit did not round-trip' >&2; exit 1; }
+          echo 'PASS: a complete file at the scan limit is accepted'
+          code="$(dav --upload-file "$task_av_dir/over-limit.bin" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-over-limit-184.bin")"
+          [ "$code" = 415 ] && grep -qi virus "$task_av_dir/response.xml" \
+            || { echo "FAIL: a file above the scan limit returned HTTP $code; expected antivirus rejection (415)" >&2; exit 1; }
+          code="$(dav --output /dev/null "$task_av_url/antivirus-over-limit-184.bin")"
+          [ "$code" = 404 ] \
+            || { echo "FAIL: a file above the scan limit remains readable (HTTP $code)" >&2; exit 1; }
+          echo 'PASS: a complete file above the scan limit is rejected'
+          python3 - "$task_av_dir" <<'PYZIP'
+          import pathlib, sys, zipfile
+          root = pathlib.Path(sys.argv[1])
+          member = zipfile.ZipInfo('expanded.txt', (1980, 1, 1, 0, 0, 0))
+          with zipfile.ZipFile(root / 'expanded.zip', 'w') as archive:
+              archive.writestr(member, b'A' * 1572864, compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
+          assert (root / 'expanded.zip').stat().st_size < 1048576
+          PYZIP
+          if ! command -v zip >/dev/null; then
+            bash scripts/cleanboot-apt.sh zip
+          fi
+          (cd "$task_av_dir" && zip --quiet --password fixture-184 encrypted.zip clean.txt)
+          task_av_archive_since="$(date --utc +%Y-%m-%dT%H:%M:%SZ)"
+          for sample in expanded encrypted; do
+            code="$(dav --upload-file "$task_av_dir/$sample.zip" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-$sample-184.zip")"
+            [ "$code" = 415 ] && grep -q 'El antivirus rechazó el archivo' "$task_av_dir/response.xml" \
+              || { echo "FAIL: the $sample archive returned HTTP $code without a Spanish rejection" >&2; exit 1; }
+            code="$(dav --output /dev/null "$task_av_url/antivirus-$sample-184.zip")"
+            [ "$code" = 404 ] \
+              || { echo "FAIL: the rejected $sample archive remains readable (HTTP $code)" >&2; exit 1; }
+          done
+          docker logs --since "$task_av_archive_since" aps-antivirus-boundary > "$task_av_dir/archive-scans.log" 2>&1
+          grep -Eq 'VIRUS DETECTED: Heuristics\.Limits\.Exceeded' "$task_av_dir/archive-scans.log" \
+            || { echo 'FAIL: the scanner did not report the expanded archive limit' >&2; exit 1; }
+          grep -Eq 'VIRUS DETECTED: Heuristics\.Encrypted\.Zip' "$task_av_dir/archive-scans.log" \
+            || { echo 'FAIL: the scanner did not report the encrypted archive' >&2; exit 1; }
+          echo 'PASS: scanner-reported archive limits and encryption reject the uploads'
+          docker exec aps-antivirus-boundary mv /tmp/clamd.sock /tmp/clamd.sock.offline
+          code="$(dav --upload-file "$task_av_dir/clean.txt" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-failure-184.txt")"
+          [ "$code" = 415 ] && grep -q 'El antivirus rechazó el archivo' "$task_av_dir/response.xml" \
+            && grep -q 'contacte a la administración' "$task_av_dir/response.xml" \
+            || { echo "FAIL: a scanner failure returned HTTP $code without actionable Spanish guidance" >&2; exit 1; }
+          code="$(dav --output /dev/null "$task_av_url/antivirus-failure-184.txt")"
+          [ "$code" = 404 ] \
+            || { echo "FAIL: an unchecked upload remains readable (HTTP $code)" >&2; exit 1; }
+          code="$(dav --upload-file "$task_av_dir/clean.txt" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-clean-184.txt")"
+          [ "$code" = 415 ]
+          code="$(dav --output "$task_av_dir/download.txt" "$task_av_url/antivirus-clean-184.txt")"
+          if [ "$code" != 200 ] || ! cmp -s "$task_av_dir/clean.txt" "$task_av_dir/download.txt"; then
+            echo 'FAIL: a scanner failure changed the previous clean file' >&2
+            task_av_failed=1
+          else
+            echo 'PASS: a scanner failure preserves the previous clean file'
+          fi
+          docker exec aps-antivirus-boundary mv /tmp/clamd.sock.offline /tmp/clamd.sock
+          echo 'PASS: a scanner failure rejects the upload with actionable Spanish guidance'
+          code="$(dav --upload-file "$task_av_dir/clean.txt" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-failure-184.txt")"
+          [ "$code" = 201 ] || [ "$code" = 204 ]
+          code="$(dav --output "$task_av_dir/download.txt" "$task_av_url/antivirus-failure-184.txt")"
+          [ "$code" = 200 ] && cmp "$task_av_dir/clean.txt" "$task_av_dir/download.txt"
+          printf 'Updated clean content for overwrite acceptance.\n' > "$task_av_dir/updated.txt"
+          code="$(dav --upload-file "$task_av_dir/updated.txt" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-failure-184.txt")"
+          [ "$code" = 204 ]
+          code="$(dav --output "$task_av_dir/download.txt" "$task_av_url/antivirus-failure-184.txt")"
+          [ "$code" = 200 ] && cmp "$task_av_dir/updated.txt" "$task_av_dir/download.txt"
+          echo 'PASS: a successful overwrite replaces the previous content'
+          code="$(dav --upload-file "$task_av_dir/eicar.txt" --dump-header "$task_av_dir/overwrite.headers" \
+            --output "$task_av_dir/response.xml" "$task_av_url/antivirus-clean-184.txt")"
+          [ "$code" = 415 ]
+          code="$(dav --output "$task_av_dir/download.txt" "$task_av_url/antivirus-clean-184.txt")"
+          if [ "$code" != 200 ] || ! cmp -s "$task_av_dir/clean.txt" "$task_av_dir/download.txt"; then
+            echo 'FAIL: the previous clean file could not be read after a rejected overwrite' >&2
+            task_av_failed=1
+          else
+            echo 'PASS: recovery accepts clean files and a rejected overwrite preserves the original'
+          fi
+          task_av_group_mount="antivirus-$GITHUB_RUN_ID-184"
+          docker exec --user www-data aps-conecta-nextcloud php occ groupfolders:create "$task_av_group_mount" \
+            > "$task_av_dir/group-create.txt"
+          docker exec --user www-data aps-conecta-nextcloud php occ groupfolders:list --output=json \
+            > "$task_av_dir/groupfolders.json"
+          task_av_group_id="$(python3 - "$task_av_dir/groupfolders.json" "$task_av_group_mount" <<'PYGROUP'
+          import json, pathlib, sys
+          data = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          rows = data.values() if isinstance(data, dict) else data
+          matches = [str(row['id']) for row in rows if (row.get('mountPoint') or row.get('mount_point')) == sys.argv[2]]
+          assert len(matches) == 1
+          print(matches[0])
+          PYGROUP
+          )"
+          [[ "$task_av_group_id" =~ ^[1-9][0-9]*$ ]]
+          docker exec --user www-data aps-conecta-nextcloud php occ groupfolders:group \
+            "$task_av_group_id" role-tens-sar read write delete
+          task_av_group_url="https://$SUITE_IP/remote.php/dav/files/beto.prueba/$task_av_group_mount"
+          code="$(staff_dav --upload-file "$task_av_dir/clean.txt" --output "$task_av_dir/response.xml" "$task_av_group_url/clean.txt")"
+          [ "$code" = 201 ]
+          code="$(staff_dav --upload-file "$task_av_dir/eicar.txt" --output "$task_av_dir/response.xml" "$task_av_group_url/clean.txt")"
+          [ "$code" = 415 ]
+          code="$(staff_dav --output "$task_av_dir/download.txt" "$task_av_group_url/clean.txt")"
+          [ "$code" = 200 ] && cmp "$task_av_dir/clean.txt" "$task_av_dir/download.txt" \
+            || { echo 'FAIL: a rejected group-folder overwrite changed the original' >&2; exit 1; }
+          docker exec --user www-data aps-conecta-nextcloud php occ groupfolders:group \
+            "$task_av_group_id" role-tens-sar read
+          code="$(staff_dav --upload-file "$task_av_dir/updated.txt" --output "$task_av_dir/response.xml" "$task_av_group_url/clean.txt")"
+          [ "$code" = 403 ] \
+            || { echo "FAIL: a read-only group-folder overwrite returned HTTP $code" >&2; exit 1; }
+          code="$(staff_dav --output "$task_av_dir/download.txt" "$task_av_group_url/clean.txt")"
+          [ "$code" = 200 ] && cmp "$task_av_dir/clean.txt" "$task_av_dir/download.txt"
+          code="$(staff_dav --upload-file "$task_av_dir/clean.txt" --output "$task_av_dir/response.xml" "$task_av_group_url/denied.txt")"
+          [ "$code" = 403 ] \
+            || { echo "FAIL: creation in a read-only group folder returned HTTP $code" >&2; exit 1; }
+          code="$(staff_dav --output /dev/null "$task_av_group_url/denied.txt")"
+          [ "$code" = 404 ]
+          docker exec --user www-data aps-conecta-nextcloud php occ groupfolders:group \
+            "$task_av_group_id" role-tens-sar read write delete
+          code="$(staff_dav --upload-file "$task_av_dir/updated.txt" --output "$task_av_dir/response.xml" "$task_av_group_url/clean.txt")"
+          [ "$code" = 204 ]
+          code="$(staff_dav --output "$task_av_dir/download.txt" "$task_av_group_url/clean.txt")"
+          [ "$code" = 200 ] && cmp "$task_av_dir/updated.txt" "$task_av_dir/download.txt"
+          echo 'PASS: group-folder scans preserve originals and enforce parent CREATE and target UPDATE permissions'
+          code="$(dav --request MKCOL --output "$task_av_dir/response.xml" "$task_av_url/$task_av_share_name")"
+          [ "$code" = 201 ]
+          code="$(dav --upload-file "$task_av_dir/clean.txt" --output "$task_av_dir/response.xml" \
+            "$task_av_url/$task_av_share_name/clean.txt")"
+          [ "$code" = 201 ]
+          code="$(dav --header 'OCS-APIRequest: true' --data-urlencode "path=/$task_av_share_name" \
+            --data 'shareType=0&shareWith=beto.prueba&permissions=3' \
+            --output "$task_av_dir/share.json" "$task_av_shares_url?format=json")"
+          [ "$code" = 200 ] || [ "$code" = 201 ]
+          task_av_share_id="$(python3 - "$task_av_dir/share.json" <<'PYSHARE'
+          import json, pathlib, sys
+          response = json.loads(pathlib.Path(sys.argv[1]).read_text())['ocs']
+          assert response['meta']['statuscode'] in (100, 200)
+          assert int(response['data']['permissions']) == 3
+          print(response['data']['id'])
+          PYSHARE
+          )"
+          [[ "$task_av_share_id" =~ ^[1-9][0-9]*$ ]]
+          task_av_shared_path="$(python3 - "$task_av_dir/share.json" <<'PYSHAREPATH'
+          import json, pathlib, sys, urllib.parse
+          share = json.loads(pathlib.Path(sys.argv[1]).read_text())['ocs']['data']
+          print(urllib.parse.quote(share['file_target'].lstrip('/'), safe='/'))
+          PYSHAREPATH
+          )"
+          task_av_shared_url="https://$SUITE_IP/remote.php/dav/files/beto.prueba/$task_av_shared_path"
+          for target in parent file; do
+            task_av_probe_url="$task_av_shared_url"
+            if [ "$target" = file ]; then task_av_probe_url="$task_av_probe_url/clean.txt"; fi
+            code="$(staff_dav --request PROPFIND --header 'Depth: 0' --header 'Content-Type: application/xml' \
+              --data '<d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:prop><oc:permissions/></d:prop></d:propfind>' \
+              --output "$task_av_dir/$target-permissions.xml" "$task_av_probe_url")"
+            [ "$code" = 207 ]
+          done
+          python3 - "$task_av_dir" <<'PYPERMISSIONS'
+          import pathlib, sys, xml.etree.ElementTree as ET
+          root = pathlib.Path(sys.argv[1])
+          def permissions(name):
+              values = ET.parse(root / f'{name}-permissions.xml').findall('.//{http://owncloud.org/ns}permissions')
+              assert len(values) == 1
+              return values[0].text or ''
+          assert 'W' in permissions('file'), 'the shared file must permit UPDATE'
+          parent = permissions('parent')
+          assert 'C' not in parent and 'K' not in parent, 'the shared parent must deny CREATE'
+          PYPERMISSIONS
+          code="$(staff_dav --output "$task_av_dir/download.txt" "$task_av_shared_url/clean.txt")"
+          [ "$code" = 200 ] && cmp "$task_av_dir/clean.txt" "$task_av_dir/download.txt"
+          code="$(staff_dav --upload-file "$task_av_dir/updated.txt" --output "$task_av_dir/response.xml" \
+            "$task_av_shared_url/clean.txt")"
+          [[ "$code" =~ ^[45][0-9][0-9]$ ]] \
+            || { echo "FAIL: an update-only share bypassed safe staging (HTTP $code)" >&2; exit 1; }
+          code="$(staff_dav --output "$task_av_dir/download.txt" "$task_av_shared_url/clean.txt")"
+          [ "$code" = 200 ] && cmp "$task_av_dir/clean.txt" "$task_av_dir/download.txt"
+          code="$(dav --output "$task_av_dir/download.txt" "$task_av_url/$task_av_share_name/clean.txt")"
+          [ "$code" = 200 ] && cmp "$task_av_dir/clean.txt" "$task_av_dir/download.txt"
+          code="$(dav --upload-file "$task_av_dir/updated.txt" --output "$task_av_dir/response.xml" \
+            "$task_av_url/$task_av_share_name/clean.txt")"
+          [ "$code" = 204 ]
+          echo 'PASS: an update-only share without parent CREATE refuses unsafe staging and preserves the original'
+          # A valid assembled overwrite at the scan limit must still succeed.
+          code="$(dav --request MKCOL --output "$task_av_dir/response.xml" "$task_av_chunks_url")"
+          expect_status 201 "$code" 'at-limit assembly collection creation'
+          printf 'Assembled clean overwrite.\n' > "$task_av_dir/chunk.bin"
+          truncate -s 524288 "$task_av_dir/chunk.bin"
+          cat "$task_av_dir/chunk.bin" "$task_av_dir/chunk.bin" > "$task_av_dir/assembled.bin"
+          for part in 00001 00002; do
+            code="$(dav --upload-file "$task_av_dir/chunk.bin" --output "$task_av_dir/response.xml" "$task_av_chunks_url/$part")"
+            expect_status 201 "$code" "at-limit assembly chunk $part upload"
+          done
+          code="$(dav --request MOVE --header "Destination: $task_av_url/antivirus-at-limit-184.bin" \
+            --header 'OC-Total-Length: 1048576' --output "$task_av_dir/response.xml" "$task_av_chunks_url/.file")"
+          expect_status 204 "$code" 'at-limit assembled overwrite'
+          code="$(dav --output "$task_av_dir/download.bin" "$task_av_url/antivirus-at-limit-184.bin")"
+          expect_status 200 "$code" 'at-limit assembled overwrite download'
+          cmp "$task_av_dir/assembled.bin" "$task_av_dir/download.bin"
+          echo 'PASS: an assembled clean overwrite at the scan limit succeeds'
+          code="$(dav --request DELETE --output /dev/null "$task_av_chunks_url")"
+          if [ "$code" != 204 ]; then expect_status 404 "$code" 'at-limit assembly collection cleanup'; fi
+          # Splitting the signature must not evade the scan of the assembled content.
+          code="$(dav --request MKCOL --output "$task_av_dir/response.xml" "$task_av_chunks_url")"
+          expect_status 201 "$code" 'chunked EICAR collection creation'
+          python3 - "$task_av_dir" <<'PYSPLIT'
+          import pathlib, sys
+          root = pathlib.Path(sys.argv[1])
+          content = (root / 'eicar.txt').read_bytes()
+          midpoint = len(content) // 2
+          (root / '00001').write_bytes(content[:midpoint])
+          (root / '00002').write_bytes(content[midpoint:])
+          PYSPLIT
+          for part in 00001 00002; do
+            code="$(dav --upload-file "$task_av_dir/$part" --output "$task_av_dir/response.xml" "$task_av_chunks_url/$part")"
+            expect_status 201 "$code" "EICAR chunk $part upload"
+          done
+          code="$(dav --request MOVE --header "Destination: $task_av_url/antivirus-chunked-eicar-184.txt" \
+            --header "OC-Total-Length: $(stat -c %s "$task_av_dir/eicar.txt")" \
+            --output "$task_av_dir/response.xml" "$task_av_chunks_url/.file")"
+          if [ "$code" != 415 ] || ! grep -q 'El antivirus rechazó el archivo' "$task_av_dir/response.xml"; then
+            echo "FAIL: chunked EICAR returned HTTP $code instead of an antivirus rejection" >&2
+            task_av_failed=1
+          fi
+          code="$(dav --output /dev/null "$task_av_url/antivirus-chunked-eicar-184.txt")"
+          if [ "$code" != 404 ]; then
+            echo "FAIL: chunked EICAR remains readable (HTTP $code)" >&2
+            task_av_failed=1
+          fi
+          code="$(dav --request DELETE --output /dev/null "$task_av_chunks_url")"
+          if [ "$code" != 204 ]; then expect_status 404 "$code" 'chunked EICAR collection cleanup'; fi
+          # V1 chunking accepts the sub-limit pieces needed to prove whole-file enforcement.
+          code="$(dav --request MKCOL --output "$task_av_dir/response.xml" "$task_av_chunks_url")"
+          expect_status 201 "$code" 'oversized assembly collection creation'
+          truncate -s 786432 "$task_av_dir/chunk.bin"
+          for part in 00001 00002; do
+            code="$(dav --upload-file "$task_av_dir/chunk.bin" --output "$task_av_dir/response.xml" "$task_av_chunks_url/$part")"
+            expect_status 201 "$code" "oversized assembly chunk $part upload"
+          done
+          code="$(dav --request MOVE --header "Destination: $task_av_url/antivirus-assembled-184.bin" \
+            --header 'OC-Total-Length: 1572864' --output "$task_av_dir/response.xml" "$task_av_chunks_url/.file")"
+          task_av_chunks_rejected=1
+          if [ "$code" != 415 ] || ! grep -q 'El antivirus rechazó el archivo' "$task_av_dir/response.xml"; then
+            echo "FAIL: assembled chunks returned HTTP $code instead of a whole-file rejection" >&2
+            task_av_failed=1
+            task_av_chunks_rejected=0
+          fi
+          code="$(dav --output /dev/null "$task_av_url/antivirus-assembled-184.bin")"
+          if [ "$code" != 404 ]; then
+            echo "FAIL: the assembled upload remains readable (HTTP $code)" >&2
+            task_av_failed=1
+            task_av_chunks_rejected=0
+          fi
+          if [ "$task_av_chunks_rejected" = 1 ]; then
+            echo 'PASS: individually accepted chunks cannot bypass the complete-file scan limit'
+          fi
+          # Hold the engine until the running frontend has staged the upload, then interrupt its connection.
+          docker exec aps-antivirus-boundary killall -STOP clamd
+          printf 'user = "ana.prueba:%s"\n' "$task_av_password" \
+            | "${task_av_curl[@]}" --limit-rate 128k --upload-file "$task_av_dir/at-limit.bin" \
+                --output "$task_av_dir/midstream.xml" "$task_av_url/antivirus-midstream-184.bin" > "$task_av_dir/midstream.code" &
+          task_av_pid=$!
+          task_av_staged=0
+          task_av_stage_deadline=$((SECONDS + 45))
+          while [ "$SECONDS" -lt "$task_av_stage_deadline" ]; do
+            if docker exec aps-antivirus-boundary sh -c '
+              for file in /tmp/CI_TMP_*; do
+                [ -f "$file" ] || continue
+                [ "$(stat -c %s "$file")" -ge 65536 ] && exit 0
+              done
+              exit 1
+            '; then
+              task_av_staged=1
+              break
+            fi
+            sleep 0.5
+          done
+          [ "$task_av_staged" = 1 ] && kill -0 "$task_av_pid" \
+            || { echo 'FAIL: the frontend did not stage an in-flight upload' >&2; exit 1; }
+          docker exec aps-antivirus-boundary killall -KILL c-icap
+          docker exec aps-antivirus-boundary killall -CONT clamd
+          task_av_transport=0
+          wait "$task_av_pid" || task_av_transport=$?
+          task_av_pid=
+          code="$(cat "$task_av_dir/midstream.code")"
+          if [ "$task_av_transport" != 0 ] || ! [[ "$code" =~ ^[45][0-9][0-9]$ ]] \
+            || ! grep -q 'contacte a la administración' "$task_av_dir/midstream.xml"; then
+            echo "FAIL: an interrupted scan returned HTTP $code without actionable Spanish guidance" >&2
+            task_av_failed=1
+          fi
+          code="$(dav --output /dev/null "$task_av_url/antivirus-midstream-184.bin")"
+          [ "$code" = 404 ]
+          wait_boundary
+          code="$(dav --upload-file "$task_av_dir/clean.txt" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-midstream-184.bin")"
+          [ "$code" = 201 ] || [ "$code" = 204 ]
+          echo 'PASS: an interrupted scan rejects the upload and recovers for a clean retry'
+          docker stop --time 10 aps-antivirus-boundary >/dev/null
+          code="$(dav --upload-file "$task_av_dir/clean.txt" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-unavailable-184.txt")"
+          [ "$code" = 415 ] && grep -q 'El antivirus no está disponible' "$task_av_dir/response.xml" \
+            || { echo "FAIL: an unavailable scanner returned HTTP $code without Spanish recovery guidance" >&2; exit 1; }
+          code="$(dav --output /dev/null "$task_av_url/antivirus-unavailable-184.txt")"
+          [ "$code" = 404 ]
+          [ "$(docker exec --user www-data aps-conecta-nextcloud php occ config:app:get files_antivirus enabled)" = yes ]
+          docker start aps-antivirus-boundary >/dev/null
+          wait_boundary
+          code="$(dav --upload-file "$task_av_dir/clean.txt" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-unavailable-184.txt")"
+          [ "$code" = 201 ] || [ "$code" = 204 ]
+          code="$(dav --output "$task_av_dir/download.txt" "$task_av_url/antivirus-unavailable-184.txt")"
+          [ "$code" = 200 ] && cmp "$task_av_dir/clean.txt" "$task_av_dir/download.txt"
+          echo 'PASS: scanner unavailability keeps the app enabled, rejects uploads and recovers'
+          [ "$task_av_failed" = 0 ]
+      - name: Native core and store antivirus integrity remain clean
+        run: |
+          docker exec --user www-data aps-conecta-nextcloud php occ integrity:check-core \
+            > "$RUNNER_TEMP/antivirus-core-integrity.out" 2>&1 \
+            || { echo 'FAIL: Nextcloud core integrity check failed' >&2; exit 1; }
+          docker exec aps-conecta-nextcloud test -s /var/www/html/custom_apps/files_antivirus/appinfo/signature.json \
+            || { echo 'FAIL: the store antivirus signature is absent' >&2; exit 1; }
+          docker exec --user www-data aps-conecta-nextcloud php occ integrity:check-app files_antivirus \
+            > "$RUNNER_TEMP/antivirus-store-integrity.out" 2>&1 \
+            || { echo 'FAIL: store antivirus integrity check failed' >&2; exit 1; }
+          echo 'PASS: native core and store antivirus integrity checks remain clean'
       # Nextcloud's own side of the address: its bundle trusts the CA (phase 07), the push server reaches
       # it inside the suite's network (the fork's patch 238), and the office both ways (phase 14).
       - name: Nextcloud trusts the CA; push and office work by IP
@@ -1244,6 +1839,46 @@ jobs:
           trap - EXIT
           [ "$(docker exec "$master" sha256sum "$config")" = "$before" ]
           echo 'PASS: the failure left the existing wizard configuration intact'
+      # Observe scheduled data work before fault tests can interrupt its hourly job.
+      # #40, by IP: estadística — the second optional app — installed from its release because this
+      # job chose it, and the DEIS data import RUNNING: the app's own hourly job is what downloads
+      # the figures (ADR-0005 in that repo — the installer moves no data), so the assertion is the
+      # job's own observable state, not a table: after cron's first tick (the suite's nextcloud runs
+      # cron every 5 min) deis_checked_at records the first DEIS contact and deis_register the Base
+      # de Establecimientos it imported — real DEIS bytes landed, and the window's members are
+      # queued for the ticks that follow.
+      - name: Estadística installed from its release because it was chosen, and its DEIS import runs (#40)
+        run: |
+          set -euo pipefail
+          grep -q "estadistica=1" /opt/aps-conecta/aio/opciones \
+            || { echo "FAIL: the wizard's options record does not name estadistica=1 — the choice the install was given" >&2; cat /opt/aps-conecta/aio/opciones >&2; exit 1; }
+      - name: Estadística installed from its release, at its locked tag, with no signature.json
+        uses: ./.github/actions/assert-release-app
+        with:
+          app: estadistica
+      - name: Estadística's DEIS data import runs — the job contacted DEIS and imported its register (#40)
+        run: |
+          set -euo pipefail
+          cd /opt/aps-conecta/instalador && source scripts/env.sh
+          occ background-job:list --class 'OCA\Estadistica\BackgroundJob\RemJob' --output=json \
+            | python3 -c 'import json, sys; print(json.dumps([{k: row[k] for k in ("id", "class", "last_run")} for row in json.load(sys.stdin)]))'
+          # cron ticks every 5 min; the job runs on the first tick after enable. The bound is the
+          # family's own (the store-off reboot's 10 min): enough for two ticks.
+          chequeo=""
+          for i in $(seq 60); do
+            chequeo="$(occ config:app:get estadistica deis_checked_at 2>/dev/null || true)"
+            [ -n "$chequeo" ] && { echo "deis_checked_at set (attempt $i)"; break; }
+            sleep 10
+          done
+          [ -n "$chequeo" ] \
+            || { echo "FAIL: estadistica's DEIS job never ran within 10 min of the install — deis_checked_at is empty; the app is installed, so its hourly job (cron.php, every 5 min) should have checked DEIS. " >&2; exit 1; }
+          # The Base de Establecimientos is the import's first landing: a real DEIS database file
+          # (~1 MB) read, imported and recorded. Empty here with a set checked_at means the check
+          # ran but could not reach DEIS — said loudly, never waved through.
+          registro="$(occ config:app:get estadistica deis_register 2>/dev/null || true)"
+          [ -n "$registro" ] \
+            || { echo "FAIL: deis_checked_at is set ($chequeo) but deis_register is empty — the DEIS check ran without importing the Base de Establecimientos; the runner may not reach repositoriodeis.minsal.cl (see deis_check_errors: $(occ config:app:get estadistica deis_check_errors 2>/dev/null || true))" >&2; exit 1; }
+          echo "estadística: la importación del DEIS corre — contacto registrado, Base de Establecimientos importada, la ventana REM queda en cola"
       # #147: a dependency outage must not disable an installed connector. Waiting for
       # fresh Nextcloud health proves its entrypoint finished the bounded wait, so an
       # enabled check cannot pass early while startup is still waiting for the server.
@@ -1267,8 +1902,16 @@ jobs:
           occ config:app:set eurooffice DocumentServerUrl --value "$marker" >/dev/null
           trap 'docker start aps-conecta-eurooffice >/dev/null 2>&1 || true' EXIT
           docker stop --time 10 aps-conecta-eurooffice >/dev/null
+          task_theme_css_before="$(docker exec aps-conecta-nextcloud sha256sum /var/www/html/themes/apsconecta/core/css/site.css)"
+          printf '%s\n' '{"translations":{},"pluralForm":"nplurals=2; plural=(n != 1);"}' \
+            | docker exec -i aps-conecta-nextcloud sh -c 'cat > /var/www/html/themes/apsconecta/custom_apps/files_antivirus/l10n/es.json'
           docker restart aps-conecta-nextcloud >/dev/null
           wait_healthy aps-conecta-nextcloud
+          docker exec aps-conecta-nextcloud cmp /usr/src/nextcloud/themes/apsconecta/custom_apps/files_antivirus/l10n/es.json \
+            /var/www/html/themes/apsconecta/custom_apps/files_antivirus/l10n/es.json
+          [ "$(docker exec aps-conecta-nextcloud sha256sum /var/www/html/themes/apsconecta/core/css/site.css)" = "$task_theme_css_before" ] \
+            || { echo 'FAIL: refreshing the image theme changed the establishment CSS' >&2; exit 1; }
+          echo 'PASS: a warm restart refreshes antivirus messages and preserves establishment CSS'
           [ "$(occ config:app:get eurooffice enabled)" = yes ] \
             || { echo "FAIL: a late DocumentServer disabled the installed eurooffice connector" >&2; exit 1; }
           [ "$(occ config:app:get eurooffice DocumentServerUrl)" = "$marker" ] \
@@ -1334,43 +1977,6 @@ jobs:
         uses: ./.github/actions/assert-release-app
         with:
           app: spreed
-      # #40, by IP: estadística — the second optional app — installed from its release because this
-      # job chose it, and the DEIS data import RUNNING: the app's own hourly job is what downloads
-      # the figures (ADR-0005 in that repo — the installer moves no data), so the assertion is the
-      # job's own observable state, not a table: after cron's first tick (the suite's nextcloud runs
-      # cron every 5 min) deis_checked_at records the first DEIS contact and deis_register the Base
-      # de Establecimientos it imported — real DEIS bytes landed, and the window's members are
-      # queued for the ticks that follow.
-      - name: Estadística installed from its release because it was chosen, and its DEIS import runs (#40)
-        run: |
-          set -euo pipefail
-          grep -q "estadistica=1" /opt/aps-conecta/aio/opciones \
-            || { echo "FAIL: the wizard's options record does not name estadistica=1 — the choice the install was given" >&2; cat /opt/aps-conecta/aio/opciones >&2; exit 1; }
-      - name: Estadística installed from its release, at its locked tag, with no signature.json
-        uses: ./.github/actions/assert-release-app
-        with:
-          app: estadistica
-      - name: Estadística's DEIS data import runs — the job contacted DEIS and imported its register (#40)
-        run: |
-          set -euo pipefail
-          cd /opt/aps-conecta/instalador && source scripts/env.sh
-          # cron ticks every 5 min; the job runs on the first tick after enable. The bound is the
-          # family's own (the store-off reboot's 10 min): enough for two ticks.
-          chequeo=""
-          for i in $(seq 60); do
-            chequeo="$(occ config:app:get estadistica deis_checked_at 2>/dev/null || true)"
-            [ -n "$chequeo" ] && { echo "deis_checked_at set (attempt $i)"; break; }
-            sleep 10
-          done
-          [ -n "$chequeo" ] \
-            || { echo "FAIL: estadistica's DEIS job never ran within 10 min of the install — deis_checked_at is empty; the app is installed, so its hourly job (cron.php, every 5 min) should have checked DEIS. " >&2; exit 1; }
-          # The Base de Establecimientos is the import's first landing: a real DEIS database file
-          # (~1 MB) read, imported and recorded. Empty here with a set checked_at means the check
-          # ran but could not reach DEIS — said loudly, never waved through.
-          registro="$(occ config:app:get estadistica deis_register 2>/dev/null || true)"
-          [ -n "$registro" ] \
-            || { echo "FAIL: deis_checked_at is set ($chequeo) but deis_register is empty — the DEIS check ran without importing the Base de Establecimientos; the runner may not reach repositoriodeis.minsal.cl (see deis_check_errors: $(occ config:app:get estadistica deis_check_errors 2>/dev/null || true))" >&2; exit 1; }
-          echo "estadística: la importación del DEIS corre — contacto registrado, Base de Establecimientos importada, la ventana REM queda en cola"
       # #41, by IP: totem — the third optional app — installed from its release because this
       # job chose it beside farmacia. Its release is the only channel that ever existed (the
       # bake never vendored a totem tarball — #41 shipped it optional from day one), and #42

@@ -1,0 +1,52 @@
+--- a/services/virus_scan/virus_scan.c
++++ b/services/virus_scan/virus_scan.c
+@@ -310,0 +311 @@
++          data->scan_incomplete = 0;
+@@ -368,0 +370,15 @@
++/* Keep the staged body within the engine budget and never scan a truncated file. */
++static int write_scan_body(av_req_data_t *data, char *buf, int len, int iseof)
++{
++     ci_off_t stored = av_body_data_size(&data->body);
++     if (data->scan_incomplete)
++         return len;
++     if (MAX_OBJECT_SIZE > 0 && len > 0 &&
++         (stored > MAX_OBJECT_SIZE || (ci_off_t)len > MAX_OBJECT_SIZE - stored)) {
++         data->scan_incomplete = 1;
++         ci_debug_printf(1, "Scan body exceeds the configured limit; refusing scan\n");
++         return len;
++     }
++     return av_body_data_write(&data->body, buf, len, iseof);
++}
++
+@@ -416,2 +432,3 @@
+-         ci_debug_printf(1, "Antivirus engine is not available, allow 204\n");
+-         return CI_MOD_ALLOW204;
++         ci_debug_printf(1, "Antivirus engine is not available, refusing scan\n");
++         ci_icap_add_xheader(req, "X-Error-Code: decode_error");
++         return CI_ERROR;
+@@ -444 +461 @@
+-         if (av_body_data_write(&data->body, preview_data, preview_data_len,
++         if (write_scan_body(data, preview_data, preview_data_len,
+@@ -492 +509 @@
+-          return av_body_data_write(&data->body, buf, len, iseof);
++          return write_scan_body(data, buf, len, iseof);
+@@ -521 +538 @@
+-     return av_body_data_write(&data->body, buf, len, iseof);
++     return write_scan_body(data, buf, len, iseof);
+@@ -587,0 +605,2 @@
++         /* The client classifies this compatibility code as an incomplete scan. */
++         ci_icap_add_xheader(req, "X-Error-Code: decode_error");
+@@ -702 +721 @@
+-        data->must_scanned = NO_SCAN;
++        data->scan_incomplete = 1;
+@@ -727,0 +747,3 @@
++
++    if (data->scan_incomplete)
++        return CI_ERROR;
+@@ -767 +789 @@
+-    return CI_OK;
++    return data->scan_incomplete ? CI_ERROR : CI_OK;
+--- a/services/virus_scan/virus_scan.h
++++ b/services/virus_scan/virus_scan.h
+@@ -58,0 +59 @@
++     int scan_incomplete;

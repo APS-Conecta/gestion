@@ -847,6 +847,8 @@ def selftest():
         mk_release("APS-Conecta/totem", "v0.3.0", "0.3.0", nc="34", nc_max="34")
         mk_release("APS-Conecta/side_menu", "v6.0.1", "6.0.1", nc="34", nc_max="34")
         mk_release("APS-Conecta/eurooffice", "v11.0.7", "11.0.7", nc="34", nc_max="34")
+        mk_release("APS-Conecta/files-upload-guard", "v0.1.0", "0.1.0",
+                   nc="34", nc_max="34", app="files_upload_guard")
         # #145: spreed's fork — the zero-change fork of nextcloud/spreed whose App release is
         # upstream's own tarball re-proven and re-signed (ADR-0020). The fixture mirrors the
         # real first refresh: v24.0.6, upstream's newest stable for Nextcloud 34.
@@ -1031,7 +1033,8 @@ def selftest():
               and read_lock()["apps"]["intravox"]["tag"] == "v3.2.0"
               and read_lock()["apps"]["side_menu"]["tag"] == "v6.0.1"
               and read_lock()["apps"]["eurooffice"]["tag"] == "v11.0.7"
-              and read_lock()["apps"]["spreed"]["tag"] == "v24.0.6")
+              and read_lock()["apps"]["spreed"]["tag"] == "v24.0.6"
+              and read_lock()["apps"]["files_upload_guard"]["tag"] == "v0.1.0")
         run = subprocess.run([sys.executable, os.path.abspath(__file__), "fetch",
                               "--nextcloud", "34.0.4",
                               "--opciones", os.path.join(tmp, "prod-opciones")],

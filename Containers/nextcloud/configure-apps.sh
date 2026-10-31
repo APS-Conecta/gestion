@@ -208,19 +208,27 @@ startup_clam() {
         ensure_startup_app files_antivirus || rc=$?
         [ "$rc" -ne 2 ] || return 0
         [ "$rc" -eq 0 ] || return "$rc"
-        rc=0; startup_wait "$CLAMAV_HOST" 3310 ClamAV || rc=$?
+        local policy_dir
+        policy_dir="$(dirname "${BASH_SOURCE[0]}")/.."
+        bash "$policy_dir/antivirus-limit.sh" "${PHP_UPLOAD_LIMIT:-}" >/dev/null || return 1
+        startup_app_set files_antivirus av_mode --value="icap" || return 1
+        startup_app_set files_antivirus av_port --value="1344" || return 1
+        startup_app_set files_antivirus av_host --value="$CLAMAV_HOST" || return 1
+        startup_app_set files_antivirus av_icap_request_service --value="avscan" || return 1
+        startup_app_set files_antivirus av_icap_mode --value="reqmod" || return 1
+        startup_app_set files_antivirus av_icap_response_header --value="X-Infection-Found" || return 1
+        startup_app_set files_antivirus av_icap_tls --value=false --type=boolean --no-interaction || return 1
+        # This is a transport threshold, not a content cap: never split a file into separate scans.
+        startup_app_set files_antivirus av_stream_max_length --value=9223372036854775807 --type=integer --no-interaction || return 1
+        # This threshold skips large assembled uploads; the backend enforces the shared content budget.
+        startup_app_set files_antivirus av_max_file_size --value=-1 --type=integer --no-interaction || return 1
+        startup_app_set files_antivirus av_scan_first_bytes --value=-1 --type=integer --no-interaction || return 1
+        startup_app_set files_antivirus av_block_unreachable --value=true --type=boolean --no-interaction || return 1
+        startup_app_set files_antivirus av_block_unscannable --value=true --type=boolean --no-interaction || return 1
+        startup_app_set files_antivirus av_blocklisted_directories --value='[]' --type=array --no-interaction || return 1
+        rc=0; startup_wait "$CLAMAV_HOST" 1344 ClamAV || rc=$?
         [ "$rc" -ne 2 ] || return 0
         [ "$rc" -eq 0 ] || return "$rc"
-        startup_app_set files_antivirus av_mode --value="daemon" || return 1
-        startup_app_set files_antivirus av_port --value="3310" || return 1
-        startup_app_set files_antivirus av_host --value="$CLAMAV_HOST" || return 1
-        # av_stream_max_length must be synced with StreamMaxLength inside clamav
-        startup_app_set files_antivirus av_stream_max_length --value="2147483648" || return 1
-        startup_app_set files_antivirus av_max_file_size --value="-1" || return 1
-        startup_app_set files_antivirus av_infected_action --value="only_log" || return 1
-        if [ -n "$CLAMAV_BLOCKLISTED_DIRECTORIES" ]; then
-            startup_app_set files_antivirus av_blocklisted_directories --value="$CLAMAV_BLOCKLISTED_DIRECTORIES" || return 1
-        fi
     else
         if [ "$REMOVE_DISABLED_APPS" = yes ] && [ -d "/var/www/html/custom_apps/files_antivirus" ]; then
             php /var/www/html/occ app:remove files_antivirus || return 1
@@ -297,6 +305,7 @@ configure_startup_apps() {
     case "$-" in *x*) traced=1; set +x ;; esac
     case "$target" in
         eurooffice) startup_office || rc=$? ;;
+        antivirus) startup_clam || rc=$? ;;
         boot)
             startup_notify && startup_office && startup_talk && startup_recording &&
                 startup_clam && startup_fts && startup_harp || rc=$? ;;
