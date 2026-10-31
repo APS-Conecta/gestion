@@ -1214,7 +1214,7 @@ jobs:
           }
           cleanup() {
             local name failed=0
-            for name in antivirus-clean-184.txt antivirus-eicar-184.txt antivirus-at-limit-184.bin antivirus-over-limit-184.bin; do
+            for name in antivirus-clean-184.txt antivirus-eicar-184.txt antivirus-at-limit-184.bin antivirus-over-limit-184.bin antivirus-failure-184.txt; do
               dav --request DELETE --output /dev/null "$task_av_url/$name" >/dev/null || failed=1
             done
             if [ "$task_av_boundary_active" = 1 ]; then
@@ -1274,6 +1274,16 @@ jobs:
           [ "$code" = 404 ] \
             || { echo "FAIL: a file above the scan limit remains readable (HTTP $code)" >&2; exit 1; }
           echo 'PASS: a complete file above the scan limit is rejected'
+          docker exec aps-antivirus-boundary mv /tmp/clamd.sock /tmp/clamd.sock.offline
+          code="$(dav --upload-file "$task_av_dir/clean.txt" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-failure-184.txt")"
+          [ "$code" = 415 ] && grep -q 'El antivirus rechazó el archivo' "$task_av_dir/response.xml" \
+            && grep -q 'contacte a la administración' "$task_av_dir/response.xml" \
+            || { echo "FAIL: a scanner failure returned HTTP $code without actionable Spanish guidance" >&2; exit 1; }
+          code="$(dav --output /dev/null "$task_av_url/antivirus-failure-184.txt")"
+          [ "$code" = 404 ] \
+            || { echo "FAIL: an unchecked upload remains readable (HTTP $code)" >&2; exit 1; }
+          docker exec aps-antivirus-boundary mv /tmp/clamd.sock.offline /tmp/clamd.sock
+          echo 'PASS: a scanner failure rejects the upload with actionable Spanish guidance'
       # Nextcloud's own side of the address: its bundle trusts the CA (phase 07), the push server reaches
       # it inside the suite's network (the fork's patch 238), and the office both ways (phase 14).
       - name: Nextcloud trusts the CA; push and office work by IP
