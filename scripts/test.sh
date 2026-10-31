@@ -3042,6 +3042,7 @@ elif args[0] == 'sh':
     save(); assert 'test -e custom_apps/spreed/appinfo/signature.json' in args[2]
     sys.exit(1)
 elif args[0] == 'php' and args[2] == 'config:list':
+    if state.get('fail') == 'config': save(); sys.exit(1)
     save(); print(json.dumps({'apps':{'spreed':{'enabled':'yes' if state['enabled'] else 'no'}}}))
 elif args[0] == 'php' and args[2:4] == ['app:enable', 'spreed']:
     state['enabled'] = True
@@ -3078,10 +3079,10 @@ source provisioning/phases/12-apps.sh
     state = run()
     assert state['wired'] == 2, 'An already installed release must still converge its Talk configuration'
     assert sum(call[0] == 'tar' for call in state['calls']) == 1, 'A repeated phase must preserve the installed release'
-    for failure in ('install', 'wire'):
+    for failure in ('install', 'config', 'wire'):
         state_path.write_text(json.dumps({'enabled':False, 'wired':0, 'calls':[], 'fail':failure}))
         state = run(success=False)
-        assert state['wired'] == (0 if failure == 'install' else 1)
+        assert state['wired'] == (1 if failure == 'wire' else 0)
 print('Phase 12 wires fresh and existing Talk releases and propagates installation/configuration failures')
 PY
 }
