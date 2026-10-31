@@ -1242,6 +1242,7 @@ jobs:
           print('PASS: upload errors retain HTTP 500 and Spanish guidance; other responses stay intact without replay')
           PYRESPONSES
       - name: Install by IP through the silent command a clinic runs, choosing farmacia, estadistica and totem (#39, #40, #41)
+        id: install_by_ip
         run: |
           set -o pipefail   # run: is `bash -e` without it — the install's own failure, not tee's
           # Exercise an actual /20 with a same-/16 LAN outside it (#201).
@@ -1273,6 +1274,7 @@ jobs:
           sudo bash /opt/aps-conecta/instalador/scripts/appapi-smoke.sh
           sudo bash /opt/aps-conecta/instalador/scripts/talk-smoke.sh
       - name: STUN and TURN record public reachability and private LAN relay policy
+        if: ${{ !cancelled() && steps.install_by_ip.conclusion == 'success' }}
         run: |
           set -euo pipefail
           sudo ip link add aps-talk-lan type dummy
