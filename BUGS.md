@@ -106,6 +106,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-063 | forwarded-header trust covered an invented /16, and Caddy's HTTP path trusted all private ranges (#201) | both startup scripts discarded the real interface prefix and maintained separate trust calculations | one packaged helper matches the service address to its local interface and computes the canonical IPv4 network; both ingress paths refuse missing or ambiguous discovery; the local gate covers /20 and other prefixes, and Clean boot checks real and forged forwarding headers |
 
+| A-064 | staff uploads could bypass antivirus installation or exceed the scanner's configured capacity (#184) | the default app manifest omitted the antivirus app and upload configuration did not share the scanner's effective whole-file limit | phase 12 installs the store app, the shared startup helper configures whole-file ICAP scanning before backend waits, and one bounded byte calculation sets the app and ClamAV budget; existing local and WebDAV acceptance seams cover clean, infected, boundary and failure outcomes |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and

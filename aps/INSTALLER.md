@@ -162,6 +162,15 @@ that matter:
   cargo account. Hand it out row by row and keep it — the weekly re-provision reads it to create the
   accounts still missing (the GUIA's ritual, §6; B-034).
 
+### Antivirus uploads
+
+Phase 12 installs the store antivirus app; phase 14 and boot share its configuration.
+`NEXTCLOUD_UPLOAD_LIMIT` supplies one whole-file scan budget (default `1G`, binary units),
+capped at 2,147,483,645 bytes for ClamAV. Chunked uploads retain that complete-file limit.
+ClamAV reports exceeded analysis limits and encrypted archives as rejections. An unavailable
+scanner keeps the app enabled and refuses uploads; restore the scanner and retry the upload.
+The Spanish rejection directs staff to review the file or contact administration.
+
 ## 6. Wire the timers
 
 The silent install (`install --sitio --planilla`) and the browser install (at «Listo») install and
