@@ -3183,7 +3183,7 @@ check talk_smoke_cases
 
 phase12_talk_cases() {
   python3 - <<'PY'
-import hashlib, io, json, os, pathlib, shutil, subprocess, sys, tarfile, tempfile
+import json, os, pathlib, shutil, subprocess, sys, tempfile
 with tempfile.TemporaryDirectory() as directory:
     root = pathlib.Path(directory)
     for name in ('scripts', 'provisioning/phases', 'bin', 'store/spreed'):
@@ -3192,42 +3192,29 @@ with tempfile.TemporaryDirectory() as directory:
                  'provisioning/lib.sh', 'provisioning/phases/12-apps.sh'):
         shutil.copyfile(name, root / name)
     (root / 'apps.json').write_text(json.dumps([
-        {'id':'spreed', 'source':'fork', 'repo':'APS-Conecta/spreed',
-         'release':True, 'optional':False, 'containers':[]}]))
-    package = root / 'store/spreed/v24.0.6.tar.gz'
-    with tarfile.open(package, 'w:gz') as archive:
-        content = b'<info><id>spreed</id><version>24.0.6</version></info>'
-        member = tarfile.TarInfo('spreed/appinfo/info.xml')
-        member.size = len(content)
-        archive.addfile(member, io.BytesIO(content))
-    (root / 'lock.json').write_text(json.dumps({'nextcloud':'34.0.5', 'apps':{'spreed':{
-        'tag':'v24.0.6', 'version':'24.0.6', 'sha256':hashlib.sha256(package.read_bytes()).hexdigest()}}}))
+        {'id':'spreed', 'source':'store', 'optional':False, 'containers':[]}]))
     state_path = root / 'state.json'
     docker = root / 'bin/docker'
     docker.write_text('#!' + sys.executable + '\n' + r'''
-import io, json, os, pathlib, sys, tarfile, xml.etree.ElementTree as ET
+import json, os, pathlib, sys
 path = pathlib.Path(os.environ['TALK_PHASE_STATE'])
 state = json.loads(path.read_text())
 args = sys.argv[1:]
 assert args.pop(0) == 'exec'
 while args[0].startswith('-'):
     option = args.pop(0)
-    if option == '--user': args.pop(0)
+    if option in ('--user', '-e'): args.pop(0)
     else: assert option == '-i'
 assert args.pop(0) == 'aps-conecta-nextcloud'
 state['calls'].append(args)
 def save(): path.write_text(json.dumps(state))
 if args[0] == 'awk':
     save(); print(state.get('version', ''))
-elif args[0] == 'tar':
-    content = sys.stdin.buffer.read()
+elif args[:4] == ['php', '/var/www/html/occ', 'app:install', 'spreed']:
+    assert '-e' in sys.argv and 'NC_appstoreenabled=1' in sys.argv, 'Store install must be scoped'
     if state.get('fail') == 'install': save(); sys.exit(1)
-    with tarfile.open(fileobj=io.BytesIO(content), mode='r:gz') as archive:
-        state['version'] = ET.fromstring(archive.extractfile('spreed/appinfo/info.xml').read()).findtext('version')
+    state['version'] = '24.0.6'
     save()
-elif args[0] == 'sh':
-    save(); assert 'test -e custom_apps/spreed/appinfo/signature.json' in args[2]
-    sys.exit(1)
 elif args[0] == 'php' and args[2] == 'config:list':
     if state.get('fail') == 'config': save(); sys.exit(1)
     save(); print(json.dumps({'apps':{'spreed':{'enabled':'yes' if state['enabled'] else 'no'}}}))
@@ -3261,16 +3248,16 @@ source provisioning/phases/12-apps.sh
         return json.loads(state_path.read_text())
     state_path.write_text(json.dumps({'enabled':False, 'wired':0, 'calls':[]}))
     state = run()
-    assert state['wired'] == 1, 'Phase 12 must wire Talk immediately after its signed release lands'
+    assert state['wired'] == 1, 'Phase 12 must wire Talk immediately after its official store install'
     assert state['calls'].index(['php', '/var/www/html/occ', 'app:enable', 'spreed']) < state['calls'].index(['bash', '/configure-apps.sh', 'talk'])
     state = run()
-    assert state['wired'] == 2, 'An already installed release must still converge its Talk configuration'
-    assert sum(call[0] == 'tar' for call in state['calls']) == 1, 'A repeated phase must preserve the installed release'
+    assert state['wired'] == 2, 'An already installed store app must still converge its Talk configuration'
+    assert sum(call[:4] == ['php', '/var/www/html/occ', 'app:install', 'spreed'] for call in state['calls']) == 1, 'A repeated phase must preserve the installed app'
     for failure in ('install', 'config', 'wire'):
         state_path.write_text(json.dumps({'enabled':False, 'wired':0, 'calls':[], 'fail':failure}))
         state = run(success=False)
         assert state['wired'] == (1 if failure == 'wire' else 0)
-print('Phase 12 wires fresh and existing Talk releases and propagates installation/configuration failures')
+print('Phase 12 wires fresh and existing official Talk installs and propagates installation/configuration failures')
 PY
 }
 check phase12_talk_cases
