@@ -2550,6 +2550,76 @@ PY
 }
 check entrypoint_timeout_cases
 
+harp_trust_cases() {
+  python3 - <<'PY'
+import json, os, pathlib, shutil, subprocess, sys, tempfile
+entrypoint = pathlib.Path('Containers/harp/start.sh')
+assert entrypoint.is_file(), 'HaRP must adapt the suite CA before starting its upstream agent'
+with tempfile.TemporaryDirectory(prefix='aps harp ') as directory:
+    root = pathlib.Path(directory)
+    certificates = root / 'certificates'
+    certificates.mkdir()
+    def openssl(*args, success=True):
+        result = subprocess.run(['openssl', *map(str, args)], capture_output=True)
+        assert (result.returncode == 0) == success, 'Unexpected certificate verification result'
+    for name in ('system', 'suite', 'unknown'):
+        openssl('req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
+                '-subj', '/CN=' + name, '-keyout', root / (name + '.key'),
+                '-out', root / (name + '.crt'))
+    shutil.copyfile(root / 'suite.crt', certificates / 'suite.crt')
+    openssl('req', '-new', '-newkey', 'rsa:2048', '-nodes', '-subj', '/CN=127.0.0.1',
+            '-keyout', root / 'leaf.key', '-out', root / 'leaf.csr')
+    (root / 'extensions').write_text('subjectAltName=IP:127.0.0.1\nbasicConstraints=CA:FALSE\nextendedKeyUsage=serverAuth\n')
+    for name in ('suite', 'unknown'):
+        openssl('x509', '-req', '-days', '1', '-in', root / 'leaf.csr', '-set_serial', '1',
+                '-CA', root / (name + '.crt'), '-CAkey', root / (name + '.key'),
+                '-extfile', root / 'extensions', '-out', root / (name + '-leaf.crt'))
+    result_file = root / 'result.json'
+    upstream = root / 'upstream'
+    upstream.write_text('#!' + sys.executable + '\n' +
+        'import json, os, sys\n' +
+        'json.dump({"ca":os.environ.get("SSL_CERT_FILE"),"args":sys.argv[1:]},open(os.environ["HARP_RESULT"],"w"))\n' +
+        'sys.exit(int(os.environ.get("HARP_EXIT", "0")))\n')
+    upstream.chmod(0o755)
+    source = entrypoint.read_text()
+    for original, replacement in {
+        '/usr/local/share/ca-certificates': certificates,
+        '/etc/ssl/certs/ca-certificates.crt': root / 'system.crt',
+        '/tmp/ca-certificates.crt': root / 'bundle.crt',
+        '/usr/local/bin/start.sh': upstream,
+    }.items():
+        assert original in source, 'The entrypoint filesystem boundary moved'
+        source = source.replace(original, str(replacement))
+    wrapper = root / 'start.sh'
+    wrapper.write_text(source)
+    env = dict(os.environ, HARP_RESULT=str(result_file))
+    for key in ('SSL_CERT_FILE', 'SSL_CERT_DIR'):
+        env.pop(key, None)
+    def run(status=0, **extra):
+        result_file.unlink(missing_ok=True)
+        result = subprocess.run(['bash', str(wrapper), 'argument with spaces', 'second'],
+                                env=dict(env, **extra), capture_output=True, text=True)
+        assert result.returncode == status, 'HaRP entrypoint returned an unexpected status'
+        return json.loads(result_file.read_text()) if result_file.exists() else None
+    state = run()
+    assert state == {'ca':str(root / 'bundle.crt'), 'args':['argument with spaces', 'second']}
+    for certificate in ('system.crt', 'suite-leaf.crt'):
+        openssl('verify', '-CAfile', state['ca'], root / certificate)
+    openssl('verify', '-purpose', 'sslserver', '-verify_ip', '127.0.0.1',
+            '-CAfile', state['ca'], root / 'suite-leaf.crt')
+    openssl('verify', '-purpose', 'sslserver', '-verify_ip', '127.0.0.1',
+            '-CAfile', state['ca'], root / 'unknown-leaf.crt', success=False)
+    (root / 'system.crt').unlink()
+    assert run(status=1) is None, 'A failed CA bundle must not start the agent'
+    shutil.rmtree(certificates)
+    state = run()
+    assert state == {'ca':None, 'args':['argument with spaces', 'second']}
+    run(status=23, HARP_EXIT='23')
+print('HaRP preserves system roots, trusts the suite CA, rejects an unknown CA and retains upstream arguments/status')
+PY
+}
+check harp_trust_cases
+
 # Exercise the actual public container module with disposable command fixtures;
 # the JSON parser is real PHP, while OCC and backend probes have controlled state.
 app_startup_cases() {
