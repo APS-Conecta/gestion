@@ -2672,12 +2672,61 @@ check entrypoint_timeout_cases
 
 recording_trust_cases() {
   python3 - <<'PY'
-import json, pathlib
+import json, pathlib, shutil, subprocess, tempfile
 containers = json.loads(pathlib.Path('php/containers.json').read_text())['aio_services_v1']
 recorder = next(row for row in containers if row['container_name'] == 'aps-conecta-talk-recording')
 assert any(row['source'] == '%NEXTCLOUD_TRUSTED_CACERTS_DIR%'
            and row['destination'] == '/usr/local/share/ca-certificates'
            and row['writeable'] is False for row in recorder['volumes']), 'Recording must receive the suite CA read-only'
+helper = pathlib.Path('Containers/talk-recording/prepare-trust.py')
+assert helper.is_file(), 'Recording must prepare verified Python and Firefox trust before starting'
+with tempfile.TemporaryDirectory(prefix='aps recording ') as directory:
+    root = pathlib.Path(directory)
+    certificates = root / 'certificates'
+    certificates.mkdir()
+    output = root / 'output'
+    output.mkdir()
+    def openssl(*args, success=True):
+        result = subprocess.run(['openssl', *map(str, args)], capture_output=True)
+        assert (result.returncode == 0) == success, result.stderr.decode()
+    for name in ('system', 'suite', 'unknown'):
+        openssl('req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256',
+                '-nodes', '-days', '1', '-subj', '/CN=' + name,
+                '-keyout', root / (name + '.key'), '-out', root / (name + '.crt'))
+    shutil.copyfile(root / 'suite.crt', certificates / 'suite.crt')
+    openssl('req', '-new', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256',
+            '-nodes', '-subj', '/CN=127.0.0.1', '-keyout', root / 'leaf.key', '-out', root / 'leaf.csr')
+    (root / 'extensions').write_text('subjectAltName=IP:127.0.0.1\nbasicConstraints=CA:FALSE\nextendedKeyUsage=serverAuth\n')
+    for name in ('suite', 'unknown'):
+        openssl('x509', '-req', '-days', '1', '-in', root / 'leaf.csr', '-set_serial', '1',
+                '-CA', root / (name + '.crt'), '-CAkey', root / (name + '.key'),
+                '-extfile', root / 'extensions', '-out', root / (name + '-leaf.crt'))
+    def prepare(success=True):
+        result = subprocess.run(['python3', str(helper), str(root / 'system.crt'),
+                                 str(certificates), str(output)], capture_output=True, text=True, timeout=5)
+        assert (result.returncode == 0) == success, result.stderr
+    prepare()
+    bundle = output / 'ca-certificates.crt'
+    openssl('verify', '-CAfile', bundle, root / 'system.crt')
+    openssl('verify', '-purpose', 'sslserver', '-verify_ip', '127.0.0.1', '-CAfile', bundle,
+            root / 'suite-leaf.crt')
+    openssl('verify', '-purpose', 'sslserver', '-verify_ip', '127.0.0.2', '-CAfile', bundle,
+            root / 'suite-leaf.crt', success=False)
+    openssl('verify', '-CAfile', bundle, root / 'unknown-leaf.crt', success=False)
+    policies = json.loads((output / 'firefox-policies.json').read_text())
+    assert policies == {'policies': {'Certificates': {'Install': [str(certificates / 'suite.crt')]}}}
+    shutil.copyfile(root / 'unknown.crt', certificates / 'suite.crt')
+    prepare()
+    openssl('verify', '-CAfile', bundle, root / 'suite-leaf.crt', success=False)
+    openssl('verify', '-CAfile', bundle, root / 'unknown-leaf.crt')
+    (certificates / 'suite.crt').write_text('invalid certificate')
+    prepare(success=False)
+    (certificates / 'suite.crt').unlink()
+    prepare()
+    openssl('verify', '-CAfile', bundle, root / 'system.crt')
+    assert json.loads((output / 'firefox-policies.json').read_text()) == {'policies': {'Certificates': {'Install': []}}}
+    (root / 'system.crt').unlink()
+    prepare(success=False)
 PY
 }
 check recording_trust_cases
