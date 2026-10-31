@@ -141,6 +141,11 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 1   # VERSION answers suite_tag() now — no tag history to read
+      - name: Sample host and container usage through installation and lifecycle checks
+        run: |
+          python3 scripts/usage.py "$RUNNER_TEMP/usage-series.jsonl" --interval 5 --duration 3600 \
+            > "$RUNNER_TEMP/usage-series.log" 2>&1 < /dev/null &
+          echo "$!" > "$RUNNER_TEMP/usage-series.pid"
       - name: Free unused SDKs on the disposable runner
         run: |
           df -h /var/lib/docker
@@ -358,46 +363,7 @@ jobs:
                          print "| " $1 " | " m[1] " |" }
                        END { printf "| **total** | %.0f MiB |\n", s }' "$RUNNER_TEMP/memoria.txt"
           } | tee -a "$GITHUB_STEP_SUMMARY"
-          python3 - "$RUNNER_TEMP/uso.json" <<'PY'
-          import datetime, json, os, subprocess, sys
-          def run(*cmd):
-              return subprocess.run(cmd, capture_output=True, text=True).stdout
-          def counters(path, keys):
-              with open(path, encoding="utf-8") as stream:
-                  values = {parts[0].rstrip(":"): int(parts[1]) for line in stream
-                            if (parts := line.split()) and parts[0].rstrip(":") in keys}
-              if set(values) != set(keys) or any(value < 0 for value in values.values()):
-                  raise ValueError("Incomplete host resource counters")
-              return values
-          memory = counters("/proc/meminfo", ("MemTotal", "MemAvailable", "SwapTotal", "SwapFree"))
-          with open("/proc/stat", encoding="utf-8") as stream:
-              cpu = stream.readline().split()
-          if not cpu or cpu[0] != "cpu" or len(cpu) < 9:
-              raise ValueError("Incomplete host CPU counters")
-          host = {"memory_total_kib": memory["MemTotal"], "memory_available_kib": memory["MemAvailable"],
-                  "swap_total_kib": memory["SwapTotal"], "swap_free_kib": memory["SwapFree"],
-                  "logical_cpus": os.cpu_count(), "available_cpus": len(os.sched_getaffinity(0)),
-                  "cpu_ticks": [int(value) for value in cpu[1:]],
-                  "vm_counters": counters("/proc/vmstat", ("pswpin", "pswpout", "oom_kill"))}
-          names = [n for n in run("docker", "ps", "--filter", "name=^aps-conecta-",
-                                  "--filter", "name=^nextcloud-aio-mastercontainer$",
-                                  "--format", "{{.Names}}").splitlines() if n]
-          stats = [json.loads(ln) for ln in
-                   run("docker", "stats", "--no-stream", "--format", "{{json .}}", *names).splitlines()
-                   if ln.strip()] if names else []
-          # df's header is 8 words for 7 columns ("Mounted on"): the names are ours, never read back from it.
-          campos = ("source", "fstype", "size", "used", "avail", "pcent", "target")
-          lineas = run("df", "-B1", "--output=" + ",".join(campos), "/", "/var/lib/docker").splitlines()
-          disco, vistos = [], set()
-          for ln in lineas[1:]:
-              fila = dict(zip(campos, ln.split(None, len(campos) - 1)))
-              if fila["source"] not in vistos:
-                  vistos.add(fila["source"]); disco.append(fila)
-          json.dump({"memoria_gib": round(memory["MemTotal"] / 1048576, 1),
-                     "sampled_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                     "host": host, "contenedores": stats, "disco": disco},
-                    open(sys.argv[1], "w", encoding="utf-8"), indent=1)
-          PY
+          python3 scripts/usage.py "$RUNNER_TEMP/uso.json"
       - name: The usage record, as an artifact (a missing record is a red, never a silent skip)
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -1007,6 +973,16 @@ jobs:
       # (name/label-filtered) plus its own state dir, so `down` after a failed `up` is safe by
       # construction. On an ephemeral runner this is hygiene; it also keeps the job honest
       # about never leaving the wizard port published.
+      - name: Finish and validate the bounded usage series
+        if: always()
+        run: python3 scripts/usage.py "$RUNNER_TEMP/usage-series.jsonl" --stop "$RUNNER_TEMP/usage-series.pid"
+      - name: Preserve the usage series
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: usage-series-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+          path: ${{ runner.temp }}/usage-series.jsonl
+          if-no-files-found: error
       - name: Probe teardown
         if: always()
         run: sudo bash scripts/aio-testbed.sh down
@@ -1027,6 +1003,11 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 1   # VERSION answers suite_tag() now — no tag history to read
+      - name: Sample host and container usage through installation and lifecycle checks
+        run: |
+          python3 scripts/usage.py "$RUNNER_TEMP/usage-series.jsonl" --interval 5 --duration 3600 \
+            > "$RUNNER_TEMP/usage-series.log" 2>&1 < /dev/null &
+          echo "$!" > "$RUNNER_TEMP/usage-series.pid"
       - name: Start the authenticated installation proxy
         run: |
           set -euo pipefail
@@ -2523,6 +2504,16 @@ jobs:
           docker logs --tail=100 aps-conecta-nextcloud || true
           sudo tail -n 100 /opt/aps-conecta/instalacion.log || true
       # The same scoped teardown as the domain job: the suite's containers, its volumes, the wizard.
+      - name: Finish and validate the bounded usage series
+        if: always()
+        run: python3 scripts/usage.py "$RUNNER_TEMP/usage-series.jsonl" --stop "$RUNNER_TEMP/usage-series.pid"
+      - name: Preserve the usage series
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: usage-series-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+          path: ${{ runner.temp }}/usage-series.jsonl
+          if-no-files-found: error
       - name: Teardown
         if: always()
         run: sudo bash scripts/aio-testbed.sh down

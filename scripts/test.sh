@@ -2397,17 +2397,14 @@ CASES
 }
 check cleanboot_tile_url_cases
 
-# The usage record's python, out of cleanboot.yml and over a stub df that prints GNU's real header
+# Clean boot's usage collector over a stub df that prints GNU's real header
 # (8 words for 7 columns), a source seen twice and a mount point with a space: the record is
 # written, one row per source, each named by the columns asked for. Host counters use explicit
 # fixtures so the sample cannot substitute the runner's nominal size or silently omit pressure.
 cleanboot_usage_cases() {
   local py tmp rc
-  py="$(awk '/- name: The measured usage/ {f=1; next}
-             f && /<<.PY.$/ {r=1; next}
-             r && /^ *PY$/ {exit}
-             r {sub(/^          /, ""); print}' .github/workflows/cleanboot.yml)"
-  [ -n "$py" ] || { echo "cleanboot: the usage record's python was not found" >&2; return 1; }
+  py="$(cat scripts/usage.py)"
+  [ -n "$py" ] || { echo "cleanboot: the usage collector was not found" >&2; return 1; }
   tmp="$(mktemp -d)"; mkdir "$tmp/bin"
   printf '#!/bin/sh\nexit 0\n' > "$tmp/bin/docker"
   printf '#!/bin/sh\nprintf "%%s\\n" "Filesystem Type 1B-blocks Used Avail Use%% Mounted on" "/dev/sda1 ext4 100 40 60 40%% /" "/dev/sda1 ext4 100 40 60 40%% /var/lib/docker" "/dev/sdb1 ext4 100 10 90 10%% /mnt/with space"\n' > "$tmp/bin/df"
@@ -2423,18 +2420,24 @@ fixtures = {
     '/proc/meminfo': 'MemTotal: 12582912 kB\nMemAvailable: 3145728 kB\nSwapTotal: 2097152 kB\nSwapFree: 1048576 kB\n',
     '/proc/stat': 'cpu 100 2 30 400 5 6 7 8 9 10\n',
     '/proc/vmstat': 'pswpin 11\npswpout 12\noom_kill 2\n',
+    '/proc/sys/kernel/random/boot_id': '00000000-0000-0000-0000-000000000001\n',
 }
 def fixture_open(path, *args, **kwargs):
     return io.StringIO(fixtures[str(path)]) if str(path) in fixtures else real_open(path, *args, **kwargs)
 
 with patch('builtins.open', fixture_open), patch('os.cpu_count', return_value=6), \
-        patch('os.sched_getaffinity', return_value={1, 3, 5}):
-    exec(compile(source, '.github/workflows/cleanboot.yml:usage', 'exec'), {'__name__': '__main__'})
+        patch('os.sched_getaffinity', return_value={1, 3, 5}), \
+        patch('os.sysconf', side_effect={'SC_PAGE_SIZE': 4096, 'SC_CLK_TCK': 100}.__getitem__):
+    namespace = {'__name__': 'usage_fixture'}
+    exec(compile(source, 'scripts/usage.py', 'exec'), namespace)
+    assert namespace['main']([sys.argv[1]]) == 0
 record = json.loads(pathlib.Path(sys.argv[1]).read_text())
 assert record['host'] == {
     'memory_total_kib': 12582912, 'memory_available_kib': 3145728,
     'swap_total_kib': 2097152, 'swap_free_kib': 1048576,
     'logical_cpus': 6, 'available_cpus': 3,
+    'page_size_bytes': 4096, 'clock_ticks_per_second': 100,
+    'boot_id': '00000000-0000-0000-0000-000000000001',
     'cpu_ticks': [100, 2, 30, 400, 5, 6, 7, 8, 9, 10],
     'vm_counters': {'pswpin': 11, 'pswpout': 12, 'oom_kill': 2},
 }, record
@@ -2452,9 +2455,53 @@ assert disco[1]["target"] == "/mnt/with space", disco' "$tmp/uso.json" >/dev/nul
   python3 - "$tmp/series.jsonl" <<'PY' >> "$tmp/result" 2>&1
 import json, pathlib, sys
 rows = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
-assert len(rows) >= 3 and rows[-1]['event'] == 'complete', rows
+assert len(rows) >= 3 and rows[-1]['event'] == 'complete' and rows[-1]['reason'] == 'duration', rows
 assert rows[-1]['samples'] == len(rows) - 1, rows
 assert all('host' in row and 'sampled_at' in row for row in rows[:-1]), rows
+PY
+  if [ "$?" -ne 0 ] || [ "$rc" -ne 0 ]; then cat "$tmp/result" >&2; rm -rf "$tmp"; return 1; fi
+  PATH="$tmp/bin:$PATH" python3 - "$tmp" <<'PY' > "$tmp/result" 2>&1
+import json, pathlib, subprocess, sys, time
+root = pathlib.Path(sys.argv[1])
+output, pid_file = root / 'stopped.jsonl', root / 'sampler.pid'
+command = [sys.executable, 'scripts/usage.py', str(output)]
+process = subprocess.Popen(command + ['--interval', '0.05', '--duration', '30'],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+try:
+    pid_file.write_text(str(process.pid))
+    deadline = time.monotonic() + 10
+    while True:
+        try:
+            if len(output.read_text().splitlines()) >= 2:
+                break
+        except FileNotFoundError:
+            pass
+        assert process.poll() is None and time.monotonic() < deadline, 'sampler did not produce two records'
+        time.sleep(0.05)
+    result = subprocess.run(command + ['--stop', str(pid_file)], capture_output=True, text=True, timeout=25)
+    assert result.returncode == 0, result.stderr
+    assert process.wait(timeout=5) == 0, process.stderr.read()
+    rows = [json.loads(line) for line in output.read_text().splitlines()]
+    assert rows[-1]['event'] == 'complete' and rows[-1]['reason'] == 'stopped', rows
+    assert rows[-1]['samples'] == len(rows) - 1 >= 2, rows
+finally:
+    if process.poll() is None:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+    process.stderr.close()
+PY
+  if [ "$?" -ne 0 ]; then cat "$tmp/result" >&2; rm -rf "$tmp"; return 1; fi
+  printf '#!/bin/sh\nexit 1\n' > "$tmp/bin/docker"
+  PATH="$tmp/bin:$PATH" python3 scripts/usage.py "$tmp/unavailable.json" > "$tmp/result" 2>&1; rc=$?
+  python3 - "$tmp/unavailable.json" <<'PY' >> "$tmp/result" 2>&1
+import json, pathlib, sys
+record = json.loads(pathlib.Path(sys.argv[1]).read_text())
+assert record['containers_status'] == 'unavailable' and record['contenedores'] is None, record
+assert record['host']['memory_total_kib'] > 0, record
 PY
   if [ "$?" -ne 0 ] || [ "$rc" -ne 0 ]; then cat "$tmp/result" >&2; rm -rf "$tmp"; return 1; fi
   rm -rf "$tmp"
