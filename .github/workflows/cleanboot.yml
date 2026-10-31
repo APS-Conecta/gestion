@@ -1192,6 +1192,48 @@ jobs:
           [ "$(attempts 203.0.113.201)" -gt 0 ] \
             || { echo 'FAIL: the internal proxy lost the forwarded client address' >&2; exit 1; }
           echo 'PASS: a proxy inside the actual suite network preserves the client address'
+      - name: Staff uploads accept clean files and reject EICAR
+        run: |
+          set -euo pipefail
+          umask 077
+          task_av_dir="$RUNNER_TEMP/antivirus-uploads"
+          mkdir -p "$task_av_dir"
+          task_av_password="$(sudo python3 - <<'PYAV'
+          import csv
+          with open('/opt/aps-conecta/credentials.txt', encoding='utf-8') as stream:
+              print(next(row[2] for row in csv.reader(stream, delimiter=';') if row and row[0] == 'ana.prueba'))
+          PYAV
+          )"
+          printf '::add-mask::%s\n' "$task_av_password"
+          task_av_url="https://$SUITE_IP/remote.php/dav/files/ana.prueba"
+          dav() {
+            printf 'user = "ana.prueba:%s"\n' "$task_av_password" \
+              | curl --config - --silent --show-error --connect-timeout 10 --max-time 60 \
+                  --cacert "$RUNNER_TEMP/ca.crt" --write-out '%{http_code}' "$@"
+          }
+          cleanup() {
+            local name
+            for name in antivirus-clean-184.txt antivirus-eicar-184.txt; do
+              dav --request DELETE --output /dev/null "$task_av_url/$name" >/dev/null || true
+            done
+          }
+          trap cleanup EXIT
+          printf 'APS Conecta antivirus acceptance.\n' > "$task_av_dir/clean.txt"
+          printf '%s' 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > "$task_av_dir/eicar.txt"
+          code="$(dav --upload-file "$task_av_dir/clean.txt" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-clean-184.txt")"
+          [ "$code" = 201 ] || [ "$code" = 204 ] \
+            || { echo "FAIL: a clean staff upload returned HTTP $code" >&2; exit 1; }
+          code="$(dav --output "$task_av_dir/download.txt" "$task_av_url/antivirus-clean-184.txt")"
+          [ "$code" = 200 ] && cmp "$task_av_dir/clean.txt" "$task_av_dir/download.txt" \
+            || { echo 'FAIL: the clean upload did not round-trip' >&2; exit 1; }
+          echo 'PASS: a staff member uploads and reads a clean file'
+          code="$(dav --upload-file "$task_av_dir/eicar.txt" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-eicar-184.txt")"
+          [ "$code" = 415 ] && grep -qi virus "$task_av_dir/response.xml" \
+            || { echo "FAIL: EICAR upload returned HTTP $code; expected antivirus rejection (415)" >&2; exit 1; }
+          code="$(dav --output /dev/null "$task_av_url/antivirus-eicar-184.txt")"
+          [ "$code" = 404 ] \
+            || { echo "FAIL: the rejected upload remains readable (HTTP $code)" >&2; exit 1; }
+          echo 'PASS: EICAR is rejected and no infected file is stored'
       # Nextcloud's own side of the address: its bundle trusts the CA (phase 07), the push server reaches
       # it inside the suite's network (the fork's patch 238), and the office both ways (phase 14).
       - name: Nextcloud trusts the CA; push and office work by IP
