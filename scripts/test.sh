@@ -2620,6 +2620,61 @@ PY
 }
 check harp_trust_cases
 
+appapi_smoke_cases() {
+  python3 - <<'PY'
+import os, pathlib, shutil, subprocess, sys, tempfile
+with tempfile.TemporaryDirectory() as directory:
+    root = pathlib.Path(directory)
+    (root / 'scripts').mkdir()
+    (root / 'bin').mkdir()
+    for name in ('appapi-smoke.sh', 'env.sh'):
+        shutil.copyfile(pathlib.Path('scripts') / name, root / 'scripts' / name)
+    docker = root / 'bin/docker'
+    docker.write_text('#!' + sys.executable + '\n' + r'''
+import json, os, sys
+args = sys.argv[1:]
+case = os.environ['APPAPI_CASE']
+if args[0] == 'inspect':
+    print('NC_DOMAIN=clinica.example')
+elif args[:3] == ['exec', '-i', 'aps-conecta-harp']:
+    sys.stdin.read()
+    if case == 'tls':
+        print('FAIL: synthetic TLS peer rejected', file=sys.stderr)
+        sys.exit(1)
+elif 'app_api:daemon:list' in args:
+    daemon = {'name':'harp_aio', 'deploy_id':'docker-install', 'protocol':'http',
+              'host':'nextcloud-aio-harp:8780', 'deploy_config':{
+                  'net':'nextcloud-aio', 'nextcloud_url':'https://clinica.example',
+                  'haproxy_password':'synthetic credential must stay private',
+                  'harp':{'exapp_direct':True, 'docker_socket_port':24000}}}
+    if case == 'string-port': daemon['deploy_config']['harp']['docker_socket_port'] = '24000'
+    if case == 'wrong-network': daemon['deploy_config']['net'] = 'another-network'
+    if case == 'malformed': print('{broken')
+    elif case == 'empty': print('No registered daemon configs.')
+    else: print(json.dumps([daemon, daemon] if case == 'duplicate' else [daemon]))
+elif 'config:app:get' in args:
+    print('' if case == 'no-default' else 'harp_aio')
+elif 'setupchecks' in args:
+    severity = 'error' if case == 'unreachable' else 'success'
+    print(json.dumps({'system':{'OCA\\AppAPI\\SetupChecks\\DaemonCheck':{'severity':severity},
+                                 'AnotherCheck':{'severity':'warning'}}}))
+    sys.exit(1)
+else:
+    sys.exit(2)
+''')
+    docker.chmod(0o755)
+    for case in ('good', 'string-port', 'wrong-network', 'malformed', 'empty',
+                 'duplicate', 'no-default', 'unreachable', 'tls'):
+        result = subprocess.run(['bash', str(root / 'scripts/appapi-smoke.sh')],
+            env=dict(os.environ, PATH=str(root / 'bin') + os.pathsep + os.environ['PATH'], APPAPI_CASE=case),
+            capture_output=True, text=True, timeout=20)
+        assert (result.returncode == 0) == (case in ('good', 'string-port')), case
+        assert 'synthetic credential' not in result.stdout + result.stderr, case
+print('AppAPI accepts valid native state and refuses missing, duplicate, malformed, unreachable or untrusted state')
+PY
+}
+check appapi_smoke_cases
+
 # Exercise the actual public container module with disposable command fixtures;
 # the JSON parser is real PHP, while OCC and backend probes have controlled state.
 app_startup_cases() {

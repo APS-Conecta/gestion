@@ -42,7 +42,7 @@ except (KeyError, TypeError, ValueError, OSError, subprocess.SubprocessError):
     print('FAIL: AppAPI did not return valid native daemon state', file=sys.stderr)
     sys.exit(1)
 PYDAEMON
-docker exec -i aps-conecta-harp python3 - "$SUITE_URL" "$NC_CONTAINER" <<'PYHARPTLS' || task_harp_failed=1
+docker exec -i aps-conecta-harp python3 - "$SUITE_URL" <<'PYHARPTLS' || task_harp_failed=1
 import asyncio, os, pathlib, sys
 try:
     agents = []
