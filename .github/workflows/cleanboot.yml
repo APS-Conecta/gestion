@@ -1123,7 +1123,7 @@ jobs:
           cleanup_ingress() {
             local status=$?
             if [ "$task_ingress_created" = 1 ]; then
-              docker rm --force "$task_ingress_name" >/dev/null || status=1
+              docker rm --force --volumes "$task_ingress_name" >/dev/null || status=1
             fi
             if [ -n "$task_ingress_pid" ]; then
               kill "$task_ingress_pid" 2>/dev/null || true
