@@ -14,6 +14,7 @@ ENV ALLOW_ALL=false \
     AIO_LOG_LEVEL=warn
 
 SHELL ["/bin/ash", "-o", "pipefail", "-c"]
+# Prepared callbacks use certifi; Firefox uses its native certificate policy.
 RUN set -ex; \
     apk upgrade --no-cache -a; \
     apk add --no-cache \

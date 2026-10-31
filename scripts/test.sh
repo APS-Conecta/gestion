@@ -2672,7 +2672,7 @@ check entrypoint_timeout_cases
 
 entrypoint_wait_cases() {
   python3 - <<'PY'
-import pathlib, re, subprocess
+import os, pathlib, re, subprocess, tempfile
 entrypoint = pathlib.Path('Containers/nextcloud/entrypoint.sh').read_text()
 for condition in re.findall(r'^\s*(?:while|until)\s+([^\n]+)', entrypoint, re.M):
     assert re.search(r'\[ "\$(?:SECONDS|try)" -lt "\$(?:[a-z_]+_deadline|max_retries)" \]', condition), \
@@ -2685,6 +2685,25 @@ sleep() { SECONDS=$((SECONDS + $1)); }
 startup_wait unavailable.invalid 1234 'Talk Recording'
 ''', 'wait-fixture', str(module)], capture_output=True, text=True, timeout=5)
 assert result.returncode == 2 and 'configuration deferred' in result.stdout
+block = entrypoint.split('# Check connection to appstore start', 1)[1].split('# Check connection to appstore end', 1)[0]
+block = block.split('\n', 1)[1]
+with tempfile.TemporaryDirectory() as directory:
+    root = pathlib.Path(directory)
+    wrapper = root / 'wait.sh'
+    wrapper.write_text('''#!/bin/bash
+grep() { return 1; }
+sleep() { SECONDS=$((SECONDS + $1)); }
+curl() { printf '%s\\n' "$*" >> "$CASE_CALLS"; printf '%s' "$CASE_STATUS"; }
+''' + block + '\nprintf "continued\\n"\n')
+    for status in ('200', '503'):
+        calls = root / ('calls-' + status)
+        result = subprocess.run(['bash', str(wrapper)], capture_output=True, text=True, timeout=5,
+                                env=dict(os.environ, CASE_STATUS=status, CASE_CALLS=str(calls)))
+        assert (result.returncode == 0) == (status == '200'), result.stderr
+        assert ('continued' in result.stdout) == (status == '200')
+        requests = calls.read_text().splitlines()
+        assert requests and all('--connect-timeout 5' in line and '--max-time ' in line for line in requests)
+        assert len(requests) <= 18, 'The app-store wait exceeded its existing 90-second budget'
 PY
 }
 check entrypoint_wait_cases
@@ -3111,6 +3130,16 @@ else:
     reset(enabled=['notify_push', 'spreed'])
     state, _ = run('boot', extra=talk)
     assert len(state['imports']) == 1, 'Boot must use the same Talk configuration owner'
+    clock = root / 'clock.sh'
+    clock.write_text('sleep() { SECONDS=$((SECONDS + $1)); }\n')
+    (commands / 'nc').write_text('#!/bin/bash\nexit 1\n')
+    reset(enabled=['notify_push', 'spreed'])
+    state, output = run('boot', extra=dict(talk, TALK_RECORDING_ENABLED='yes',
+        TALK_RECORDING_HOST='recording.invalid', RECORDING_SECRET='synthetic secret must never escape',
+        BASH_ENV=str(clock)))
+    assert 'Talk Recording unavailable' in output
+    assert not any(call[:3] == ['config:app:set', 'spreed', 'recording_servers'] for call in state['calls'])
+    assert state['enabled'] == ['notify_push', 'spreed'], 'Recording timeout must preserve Talk'
 phase = pathlib.Path('provisioning/phases/14-office.sh').read_text()
 assert 'nc_exec --user www-data -- bash /configure-apps.sh eurooffice' in phase
 entrypoint = pathlib.Path('Containers/nextcloud/entrypoint.sh').read_text()

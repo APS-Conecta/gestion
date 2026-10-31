@@ -103,10 +103,10 @@ fi
 
 # Only start container if Redis is accessible
 # shellcheck disable=SC2153
-while ! nc -z "$REDIS_HOST" "$REDIS_PORT"; do
-    echo "Waiting for Redis to start..."
-    sleep 5
-done
+if ! startup_wait "$REDIS_HOST" "$REDIS_PORT" Redis; then
+    echo "Redis is unavailable; Nextcloud startup stopped." >&2
+    exit 1
+fi
 
 # Check permissions in ncdata
 test_file="$NEXTCLOUD_DATA_DIR/this-is-a-test-file"
@@ -203,7 +203,9 @@ if ! [ -f "$NEXTCLOUD_DATA_DIR/skip.update" ]; then
 
         if [ "$installed_version" != "0.0.0.0" ]; then
 # Check connection to appstore start # Do not remove or change this line!
-            while true; do
+            appstore_deadline=$((SECONDS + 90))
+            CURL_STATUS=""
+            while [ "$SECONDS" -lt "$appstore_deadline" ]; do
                 echo -e "Checking connection to the app store..."
                 APPSTORE_URL="https://apps.nextcloud.com/api/v1"
                 if grep -q appstoreurl /var/www/html/config/config.php; then
@@ -214,16 +216,27 @@ if ! [ -f "$NEXTCLOUD_DATA_DIR/skip.update" ]; then
                     fi
                 fi
                 # Default appstoreurl parameter in config.php defaults to 'https://apps.nextcloud.com/api/v1' so we check for the apps.json file stored in there
-                CURL_STATUS="$(curl -LI "$APPSTORE_URL"/apps.json -o /dev/null -w '%{http_code}\n' -s)"
+                appstore_remaining=$((appstore_deadline - SECONDS))
+                [ "$appstore_remaining" -gt 0 ] || break
+                CURL_STATUS="$(curl -LI "$APPSTORE_URL"/apps.json --connect-timeout 5 \
+                    --max-time "$appstore_remaining" -o /dev/null -w '%{http_code}\n' -s)"
                 if [[ "$CURL_STATUS" = "200" ]]
                 then
                     echo "App store is reachable."
                     break
                 else
                     echo "Curl did not return a 200 status. Is the app store reachable?"
-                    sleep 5
+                    appstore_remaining=$((appstore_deadline - SECONDS))
+                    if [ "$appstore_remaining" -gt 0 ]; then
+                        [ "$appstore_remaining" -le 5 ] || appstore_remaining=5
+                        sleep "$appstore_remaining"
+                    fi
                 fi
             done
+            if [ "$CURL_STATUS" != 200 ]; then
+                echo "The app store is unavailable; Nextcloud update stopped." >&2
+                exit 1
+            fi
 # Check connection to appstore end # Do not remove or change this line!
 
             run_upgrade_if_needed_due_to_app_update
