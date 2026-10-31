@@ -43,7 +43,7 @@ try:
         ('Advertencia: Versión en ejecución: ', '; El servidor no soporta todas las características de esta versión de Talk, características que faltan: '),
     )
     optional_warning = severity == 'warning' and isinstance(description, str) and any(
-        re.fullmatch(re.escape(prefix) + r'.+' + re.escape(separator) + 'changed-users', description)
+        re.fullmatch(re.escape(prefix) + r'[0-9][0-9A-Za-z.+_~-]*' + re.escape(separator) + 'changed-users', description)
         for prefix, separator in optional_templates)
     if optional_warning:
         cache = checks['system']['OCA\\Settings\\SetupChecks\\MemcacheConfigured']
