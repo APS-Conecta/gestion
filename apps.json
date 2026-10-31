@@ -13,7 +13,7 @@
     {"id": "notify_push", "source": "store", "optional": false, "containers": ["aps-conecta-notify-push"]},
     {"id": "fulltextsearch", "source": "store", "optional": false, "containers": ["aps-conecta-fulltextsearch"]},
     {"id": "fulltextsearch_elasticsearch", "source": "store", "optional": false, "containers": []},
-    {"id": "files_fulltextsearch", "source": "store", "optional": false, "containers": []},
+    {"id": "files_fulltextsearch", "source": "fork", "repo": "APS-Conecta/files-fulltextsearch", "optional": false, "containers": [], "release": true},
     {"id": "files_upload_guard", "source": "own", "repo": "APS-Conecta/files-upload-guard", "optional": false, "containers": [], "release": true},
     {"id": "files_antivirus", "source": "store", "optional": false, "containers": ["aps-conecta-clamav"], "name": "Antivirus", "summary": "Revisión de archivos cargados antes de guardarlos."},
     {"id": "side_menu", "source": "fork", "repo": "APS-Conecta/side_menu", "optional": false, "containers": [], "release": true}

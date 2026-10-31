@@ -1344,6 +1344,9 @@ jobs:
       - uses: ./.github/actions/assert-release-app
         with:
           app: files_upload_guard
+      - uses: ./.github/actions/assert-release-app
+        with:
+          app: files_fulltextsearch
       - name: Staff uploads are scanned and their contents can be searched
         run: |
           set -euo pipefail

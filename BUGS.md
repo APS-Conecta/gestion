@@ -124,6 +124,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-072 | staff cannot find words inside uploaded documents (#185) | the suite manifest omitted all three full-text apps, first boot deferred their configuration, and host preparation omitted Elasticsearch's map count | phase 12 installs the store apps and phase 14 reuses their boot configuration; host preparation reconciles the persistent map count alongside Redis's setting; by-IP acceptance indexes a non-admin user's upload and searches a token present only in its body |
 
+| A-073 | a dotted staff UID returns no content-search result even after its document is indexed (#185, #241) | the supported files provider 34.0.2 regex-escapes the author before native identity lookup | the signed APS provider carries upstream's stable34 correction through the normal release and lock channel (ADR-0023); acceptance proves exact indexed content and requires the same staff result within a bounded visibility window |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and

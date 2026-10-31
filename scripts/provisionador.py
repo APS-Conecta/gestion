@@ -5728,6 +5728,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                                 "epidemiologia": ("v0.12.0", "0.12.0"), "territorio": ("v0.80.0", "0.80.0"),
                                 "side_menu": ("v6.0.1", "6.0.1"),
                                 "files_upload_guard": ("v0.1.0", "0.1.0"),
+                                "files_fulltextsearch": ("v34.0.3", "34.0.3"),
                                 "spreed": ("v24.0.6", "24.0.6")}   # #145: the fork's first release
             filas_lock = {}
             for fila in SUITE_APPS:
