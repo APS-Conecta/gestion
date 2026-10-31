@@ -39,6 +39,7 @@ ENV NC_appstoreenabled="0"
 ENV NC_skeletondirectory=""
 
 COPY --chmod=775 Containers/nextcloud/*.sh /
+COPY --chmod=755 Containers/network-prefix.sh /network-prefix.sh
 COPY --chmod=774 Containers/nextcloud/upgrade.exclude /upgrade.exclude
 COPY Containers/nextcloud/config/*.php /
 COPY Containers/nextcloud/dinit.d/ /etc/dinit.d/
@@ -250,6 +251,7 @@ RUN set -ex; \
     \
     apk add --no-cache \
         bash \
+        iproute2 \
         netcat-openbsd \
         openssl \
         gnupg \

@@ -10,6 +10,41 @@ fail=0
 check() { if "$@" >/dev/null 2>&1; then echo "  ok:   $*"; else echo "  FAIL: $*"; fail=1; fi; }
 
 echo "== static checks (no running stack needed) =="
+trusted_proxy_network_cases() {
+  python3 - <<'PY'
+import os, pathlib, subprocess, tempfile
+helper = pathlib.Path('Containers/network-prefix.sh').resolve()
+def check(value, expected=None, env=None):
+    result = subprocess.run(['bash', str(helper), *value], capture_output=True, text=True, env=env, timeout=5)
+    assert (result.returncode == 0) == (expected is not None), (value, result.stderr)
+    assert result.stdout == (expected + '\n' if expected is not None else ''), (value, result.stdout)
+for value, expected in [
+    ('192.168.48.3/20', '192.168.48.0/20'), ('172.19.7.25/16', '172.19.0.0/16'),
+    ('10.77.3.9/23', '10.77.2.0/23'), ('192.168.48.3/24', '192.168.48.0/24'),
+    ('192.168.48.3/31', '192.168.48.2/31'), ('192.168.48.3/32', '192.168.48.3/32'),
+    ('192.168.48.3/0', '0.0.0.0/0'), ('192.168.48.3/1', '128.0.0.0/1')]:
+    check([value], expected)
+for value in ['', '192.168.48.3', '192.168.48.3/33', '192.168.48.3/-1',
+              '256.168.48.3/20', '192.168.048.3/20', '192.168.48.3/020', '::1/128',
+              '192.168.48.3/20\n10.0.0.1/8', 'x/20']:
+    check([value])
+with tempfile.TemporaryDirectory(prefix='proxy-network-') as tmp:
+    root = pathlib.Path(tmp)
+    for name, body in [('dig', 'printf "%s\\n" "$CASE_DNS"\n'), ('ip', 'printf "%s\\n" "$CASE_ADDR"\n')]:
+        path = root / name
+        path.write_text('#!/bin/sh\n' + body)
+        path.chmod(0o755)
+    env = dict(os.environ, PATH=tmp + os.pathsep + os.environ['PATH'], CASE_DNS='192.168.48.3',
+               CASE_ADDR='2: eth0 inet 192.168.48.3/20 brd 192.168.63.255 scope global eth0\n3: eth1 inet 10.9.0.2/24 scope global eth1')
+    check(['--host', 'aps-conecta-nextcloud'], '192.168.48.0/20', env)
+    for dns, addresses in [('', env['CASE_ADDR']), ('192.168.32.3', env['CASE_ADDR']),
+                           ('192.168.48.3', ''), ('192.168.48.3\n10.9.0.2', env['CASE_ADDR'])]:
+        check(['--host', 'aps-conecta-nextcloud'], env=dict(env, CASE_DNS=dns, CASE_ADDR=addresses))
+print('actual container prefixes and ambiguous discovery checked')
+PY
+}
+check trusted_proxy_network_cases
+
 testbed_install_command_cases() {
   local tmp py out
   tmp="$(mktemp -d)"; py="$(command -v python3)"
@@ -745,7 +780,7 @@ services = json.loads((root / "php/containers.json").read_text())["aio_services_
 expected = {row["image"].rsplit("/", 1)[-1] for row in services} | {"all-in-one"}
 assert len(matrix) == len(expected) and {row["image"] for row in matrix} == expected
 assert {row["dockerfile"] for row in matrix} == {str(p.relative_to(root)) for p in (root / "Containers").glob("*/Dockerfile")}
-assert {row["image"] for row in matrix if row["context"] == "."} == {"all-in-one", "aio-nextcloud"}
+assert {row["image"] for row in matrix if row["context"] == "."} == {"all-in-one", "aio-nextcloud", "aio-apache"}
 assert {row["image"] for row in matrix if row["database_test"]} == {"aio-postgresql"}
 assert {row["image"] for row in matrix if not row["cache"]} == {"aio-eurooffice"}
 # The existing browser files run sequentially on one runner; no suite-owned

@@ -6,11 +6,12 @@ FROM httpd:2.4.69-alpine3.24
 
 COPY --from=caddy /usr/bin/caddy /usr/bin/caddy
 
-COPY --chown=33:33 Caddyfile /Caddyfile
-COPY --chmod=664 nextcloud.conf /usr/local/apache2/conf/nextcloud.conf
-COPY dinit.d/ /etc/dinit.d/
-COPY --chmod=775 start.sh /start.sh
-COPY --chmod=775 healthcheck.sh /healthcheck.sh
+COPY --chown=33:33 Containers/apache/Caddyfile /Caddyfile
+COPY --chmod=664 Containers/apache/nextcloud.conf /usr/local/apache2/conf/nextcloud.conf
+COPY Containers/apache/dinit.d/ /etc/dinit.d/
+COPY --chmod=775 Containers/apache/start.sh /start.sh
+COPY --chmod=775 Containers/apache/healthcheck.sh /healthcheck.sh
+COPY --chmod=755 Containers/network-prefix.sh /network-prefix.sh
 
 VOLUME /mnt/data
 
@@ -28,6 +29,7 @@ RUN set -ex; \
     \
     apk add --no-cache \
         bash \
+        iproute2 \
         dinit \
         tzdata \
         ca-certificates \

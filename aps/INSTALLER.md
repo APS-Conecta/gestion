@@ -332,6 +332,10 @@ Santiago time. To move it, the wizard's backup section takes a new time, in UTC.
   of `/opt/aps-conecta` (the site record, `credentials.txt`) stays. Then `sudo aps-conecta abrir`:
   step 6 prepares a new wizard.
 
+Nextcloud and Caddy derive forwarded-header trust from the suite's actual IPv4 interface prefix.
+Startup refuses missing or ambiguous network discovery. LAN clients outside that network retain
+their own address in access protection and logs, even when they send forwarding headers.
+
 ## 13. Without a domain: this server's IP
 
 A clinic without a domain installs by one of this server's IPv4 addresses, written where the domain
