@@ -136,6 +136,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-078 | readiness rejects the officially supported signaling backend for an unreleased optimization (#187) | the native compatibility API returns HTTP 200 with an optional `changed-users` warning, while the first gate requires literal setup-check success | ADR-0024 recognizes only that complete native warning, retains it visibly and verifies native Redis cache health independently; other warnings and errors remain fatal, with removal tied to an official supported release and native acceptance |
 
+| A-079 | Talk acceptance can pass without verifying delivered message text (#148) | the native job checks installation and wiring but never reads a staff message through the chat API | after revalidation, the by-IP job repeats the shared readiness guard, creates a v4 group as an ordinary user, posts through chat v1 and matches the exact message as another ordinary user; the creator removes only that conversation, and an unreachable-signaling control proves the guard rejects chat writes |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and
