@@ -2954,6 +2954,7 @@ SHIM
     check "proxy: bypasses include localhost, the actual suite subnet and inventory names" \
       'grep "^NO_PROXY=" "$tmp/proxy-network/proxy.env" | grep -q "10.77.0.0/23" \
        && grep "^NO_PROXY=" "$tmp/proxy-network/proxy.env" | grep -q "aps-conecta-nextcloud" \
+       && grep "^NO_PROXY=" "$tmp/proxy-network/proxy.env" | grep -q "nextcloud-aio-harp" \
        && grep "^NO_PROXY=" "$tmp/proxy-network/proxy.env" | grep -q "localhost"'
     : > "$tmp/mut.log"
     step_out="$(export HTTPS_PROXY='http://proxy.example:3128'; APS_HOME="$tmp/proxy-retry"; FAIL=0;
