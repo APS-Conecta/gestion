@@ -2840,7 +2840,7 @@ EOF
   }
   mkdir -p "$ETC_DIR" "$tmp/minbin"
   printf 'ID=ubuntu\nVERSION_CODENAME=noble\nUBUNTU_CODENAME=noble\n' > "$ETC_DIR/os-release"
-  : > "$tmp/mut.log"; echo 2 > "$tmp/oc"; : > "$tmp/groups"
+  : > "$tmp/mut.log"; echo 2 > "$tmp/oc"; echo 65530 > "$tmp/maps"; : > "$tmp/groups"
   mk_docker 1.56 ""; mv "$tshim/docker" "$tmp/docker-installed"
   for c in apt-get usermod systemctl dpkg; do
     cat > "$tshim/$c" <<SHIM
@@ -2870,8 +2870,18 @@ SHIM
 #!/usr/bin/env bash
 echo "sysctl \$*" >> "$tmp/mut.log"
 case "\$1" in
-  -n) cat "$tmp/oc" ;;
-  -p) [ -n "\${SYSCTL_FAILS:-}" ] && exit 1; sed -n 's/^vm.overcommit_memory = //p' "\$2" > "$tmp/oc" ;;
+  -n) case "\$2" in
+    vm.overcommit_memory) cat "$tmp/oc" ;;
+    vm.max_map_count) cat "$tmp/maps" ;;
+    *) exit 1 ;;
+  esac ;;
+  -p)
+    [ -n "\${SYSCTL_FAILS:-}" ] && exit 1
+    overcommit="\$(sed -nE 's/^vm[.]overcommit_memory[[:space:]]*=[[:space:]]*([0-9]+)[[:space:]]*$/\1/p' "\$2")"
+    maps="\$(sed -nE 's/^vm[.]max_map_count[[:space:]]*=[[:space:]]*([0-9]+)[[:space:]]*$/\1/p' "\$2")"
+    [ -z "\$overcommit" ] || printf '%s\n' "\$overcommit" > "$tmp/oc"
+    [ -z "\$maps" ] || printf '%s\n' "\$maps" > "$tmp/maps"
+    ;;
 esac
 SHIM
   cat > "$tshim/curl" <<SHIM
@@ -2898,10 +2908,16 @@ SHIM
       'case "$step_out" in *"✓ Instalado: python3 ogr2ogr"*"✓ Instalado: signify"*"✓ Docker instalado desde su repositorio oficial"*"✓ docker (API 1.56"*"✓ Usuario operador agregado al grupo docker"*"✓ Memoria del sistema ajustada (vm.overcommit_memory 2 → 1"*"FAIL=0") ;; *) false;; esac'
     check "preparar: the host changes are apt (lock-patient) from Docker's noble suite, usermod and the sysctl.d file applied alone" \
       'grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y python3 gdal-bin" "$tmp/mut.log" && grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y signify-openbsd" "$tmp/mut.log" && grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y ca-certificates" "$tmp/mut.log" && grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y docker-ce docker-ce-cli containerd.io" "$tmp/mut.log" && grep -qx "usermod -aG docker operador" "$tmp/mut.log" && grep -qx "sysctl -p $ETC_DIR/sysctl.d/90-aps-conecta.conf" "$tmp/mut.log" && grep -qx "Suites: noble" "$ETC_DIR/apt/sources.list.d/docker.sources" && grep -qx "URIs: https://download.docker.com/linux/ubuntu" "$ETC_DIR/apt/sources.list.d/docker.sources" && grep -qx "vm.overcommit_memory = 1" "$ETC_DIR/sysctl.d/90-aps-conecta.conf"'
+    check "preparar: search map count is persisted and applied alongside overcommit" \
+      'grep -Eq "^vm[.]max_map_count[[:space:]]*=[[:space:]]*1048576[[:space:]]*$" "$ETC_DIR/sysctl.d/90-aps-conecta.conf" && [ "$(PATH="$tshim:$tmp/minbin" sysctl -n vm.max_map_count)" = 1048576 ]'
     : > "$tmp/mut.log"
     step_out="$(PATH="$tshim:$tmp/minbin"; FAIL=0; SUDO_USER=operador step_preparar; echo "FAIL=$FAIL")"
     check "preparar: a re-run finds everything done and changes nothing" \
       'case "$step_out" in *"✓ python3, curl, ogr2ogr y signify presentes"*"✓ Usuario operador en el grupo docker"*"✓ Memoria del sistema ajustada (vm.overcommit_memory = 1)"*"FAIL=0") ;; *) false;; esac && ! grep -qE "^(apt-get|usermod|sysctl -p|curl|systemctl start)" "$tmp/mut.log"'
+    echo 2097152 > "$tmp/maps"
+    step_out="$(PATH="$tshim:$tmp/minbin"; FAIL=0; SUDO_USER=operador step_preparar; echo "FAIL=$FAIL")"
+    check "preparar: a larger active operator map count remains applied and persistent" \
+      'grep -Eq "^vm[.]max_map_count[[:space:]]*=[[:space:]]*2097152[[:space:]]*$" "$ETC_DIR/sysctl.d/90-aps-conecta.conf" && [ "$(PATH="$tshim:$tmp/minbin" sysctl -n vm.max_map_count)" = 2097152 ] && [ "$(cat "$tmp/oc")" = 1 ]'
     rm -f "$tshim/python3" "$tshim/ogr2ogr" "$tshim/signify"
     : > "$tmp/mut.log"
     step_out="$(PATH="$tshim:$tmp/minbin"; export OPTIONAL_VERIFIER_UNAVAILABLE=1; FAIL=0; SUDO_USER=operador step_preparar; echo "FAIL=$FAIL")"
