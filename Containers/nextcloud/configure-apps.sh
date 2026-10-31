@@ -306,6 +306,7 @@ configure_startup_apps() {
     case "$target" in
         eurooffice) startup_office || rc=$? ;;
         antivirus) startup_clam || rc=$? ;;
+        fulltextsearch) startup_fts || rc=$? ;;
         boot)
             startup_notify && startup_office && startup_talk && startup_recording &&
                 startup_clam && startup_fts && startup_harp || rc=$? ;;

@@ -877,20 +877,32 @@ ensure_docker_group() {  # the operator who ran sudo reaches docker without it, 
   fi
 }
 
-ensure_overcommit() {  # Redis, inside the suite, warns and can fail its saves without it — the
-  # run's acceptance a3 requires vm.overcommit_memory = 1 (R30); its own sysctl.d file keeps it
-  # across reboots, and `sysctl -p` applies that file alone (--system would reload every file)
-  local f="$ETC_DIR/sysctl.d/90-aps-conecta.conf" before
+ensure_kernel_memory() {
+  # One profile owns Redis overcommit and Elasticsearch's recommended map count.
+  # Keep a larger active operator value; apply only this file, never every sysctl profile.
+  local f="$ETC_DIR/sysctl.d/90-aps-conecta.conf" before maps_before map_count=1048576
   before="$(sysctl -n vm.overcommit_memory 2>/dev/null)"
-  if [ "$before" = 1 ] && [ -f "$f" ]; then ok "Memoria del sistema ajustada (vm.overcommit_memory = 1)"; return 0; fi
-  if ! ( umask 022 && mkdir -p "$ETC_DIR/sysctl.d" && printf 'vm.overcommit_memory = 1\n' > "$f" ); then
-    bad "no se pudo escribir $f" "echo 'vm.overcommit_memory = 1' | sudo tee /etc/sysctl.d/90-aps-conecta.conf"
+  maps_before="$(sysctl -n vm.max_map_count 2>/dev/null)"
+  case "$maps_before" in ''|*[!0-9]*) maps_before=0 ;; esac
+  if [ "$maps_before" -gt "$map_count" ]; then map_count="$maps_before"; fi
+  if [ "$before" = 1 ] && [ "$maps_before" = "$map_count" ] && [ -f "$f" ] \
+      && grep -qxF 'vm.overcommit_memory = 1' "$f" && grep -qxF "vm.max_map_count = $map_count" "$f"; then
+    ok "Memoria del sistema ajustada (vm.overcommit_memory = 1)"
+    ok "Límite de mapas de memoria ajustado (vm.max_map_count = $map_count)"
     return 0
   fi
-  if sysctl -p "$f" >/dev/null 2>&1 && [ "$(sysctl -n vm.overcommit_memory 2>/dev/null)" = 1 ]; then
+  if ! ( umask 022 && mkdir -p "$ETC_DIR/sysctl.d" \
+      && printf 'vm.overcommit_memory = 1\nvm.max_map_count = %s\n' "$map_count" > "$f" ); then
+    bad "no se pudo escribir $f" "revise los permisos de /etc/sysctl.d y vuelva a ejecutar la preparación"
+    return 0
+  fi
+  if sysctl -p "$f" >/dev/null 2>&1 && [ "$(sysctl -n vm.overcommit_memory 2>/dev/null)" = 1 ] \
+      && [ "$(sysctl -n vm.max_map_count 2>/dev/null)" -ge "$map_count" ]; then
     ok "Memoria del sistema ajustada (vm.overcommit_memory ${before:-?} → 1, en $f)"
+    ok "Límite de mapas de memoria ajustado (vm.max_map_count $maps_before → $map_count, en $f)"
   else  # as root this fails only where /proc/sys/vm is read-only — an unprivileged container
     info "vm.overcommit_memory queda en $f para el próximo arranque; ahora no se pudo aplicar (en un contenedor, ajústelo en el anfitrión: sysctl -w vm.overcommit_memory=1)"
+    info "vm.max_map_count queda en $f; aplíquelo en el anfitrión con sudo sysctl -p /etc/sysctl.d/90-aps-conecta.conf"
   fi
 }
 
@@ -1091,7 +1103,7 @@ allow_container_dns_ufw() {
 }
 
 step_preparar() {  # installs what is missing, then proves each piece with its own check: the tools,
-  # Docker (from Docker's own apt repository), the operator's docker group, the overcommit
+  # Docker (from Docker's own apt repository), the operator's docker group and kernel memory settings.
   if ! is_root; then
     bad "este paso instala programas y necesita permisos de administrador" "ejecute: sudo aps-conecta preparar"
     return 0
@@ -1102,7 +1114,7 @@ step_preparar() {  # installs what is missing, then proves each piece with its o
   install_packages
   prepare_proxy || return 0
   install_docker
-  check_docker; ensure_docker_group; ensure_overcommit
+  check_docker; ensure_docker_group; ensure_kernel_memory
 }
 
 link_command() {  # $BIN_DIR/aps-conecta → this bundle's CLI. A missing or dangling link is (re)made;
@@ -2840,7 +2852,7 @@ EOF
   }
   mkdir -p "$ETC_DIR" "$tmp/minbin"
   printf 'ID=ubuntu\nVERSION_CODENAME=noble\nUBUNTU_CODENAME=noble\n' > "$ETC_DIR/os-release"
-  : > "$tmp/mut.log"; echo 2 > "$tmp/oc"; : > "$tmp/groups"
+  : > "$tmp/mut.log"; echo 2 > "$tmp/oc"; echo 65530 > "$tmp/maps"; : > "$tmp/groups"
   mk_docker 1.56 ""; mv "$tshim/docker" "$tmp/docker-installed"
   for c in apt-get usermod systemctl dpkg; do
     cat > "$tshim/$c" <<SHIM
@@ -2870,8 +2882,18 @@ SHIM
 #!/usr/bin/env bash
 echo "sysctl \$*" >> "$tmp/mut.log"
 case "\$1" in
-  -n) cat "$tmp/oc" ;;
-  -p) [ -n "\${SYSCTL_FAILS:-}" ] && exit 1; sed -n 's/^vm.overcommit_memory = //p' "\$2" > "$tmp/oc" ;;
+  -n) case "\$2" in
+    vm.overcommit_memory) cat "$tmp/oc" ;;
+    vm.max_map_count) cat "$tmp/maps" ;;
+    *) exit 1 ;;
+  esac ;;
+  -p)
+    [ -n "\${SYSCTL_FAILS:-}" ] && exit 1
+    overcommit="\$(sed -nE 's/^vm[.]overcommit_memory[[:space:]]*=[[:space:]]*([0-9]+)[[:space:]]*$/\1/p' "\$2")"
+    maps="\$(sed -nE 's/^vm[.]max_map_count[[:space:]]*=[[:space:]]*([0-9]+)[[:space:]]*$/\1/p' "\$2")"
+    [ -z "\$overcommit" ] || printf '%s\n' "\$overcommit" > "$tmp/oc"
+    [ -z "\$maps" ] || printf '%s\n' "\$maps" > "$tmp/maps"
+    ;;
 esac
 SHIM
   cat > "$tshim/curl" <<SHIM
@@ -2898,10 +2920,16 @@ SHIM
       'case "$step_out" in *"✓ Instalado: python3 ogr2ogr"*"✓ Instalado: signify"*"✓ Docker instalado desde su repositorio oficial"*"✓ docker (API 1.56"*"✓ Usuario operador agregado al grupo docker"*"✓ Memoria del sistema ajustada (vm.overcommit_memory 2 → 1"*"FAIL=0") ;; *) false;; esac'
     check "preparar: the host changes are apt (lock-patient) from Docker's noble suite, usermod and the sysctl.d file applied alone" \
       'grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y python3 gdal-bin" "$tmp/mut.log" && grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y signify-openbsd" "$tmp/mut.log" && grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y ca-certificates" "$tmp/mut.log" && grep -qx "apt-get -qq -o DPkg::Lock::Timeout=300 install -y docker-ce docker-ce-cli containerd.io" "$tmp/mut.log" && grep -qx "usermod -aG docker operador" "$tmp/mut.log" && grep -qx "sysctl -p $ETC_DIR/sysctl.d/90-aps-conecta.conf" "$tmp/mut.log" && grep -qx "Suites: noble" "$ETC_DIR/apt/sources.list.d/docker.sources" && grep -qx "URIs: https://download.docker.com/linux/ubuntu" "$ETC_DIR/apt/sources.list.d/docker.sources" && grep -qx "vm.overcommit_memory = 1" "$ETC_DIR/sysctl.d/90-aps-conecta.conf"'
+    check "preparar: search map count is persisted and applied alongside overcommit" \
+      'grep -Eq "^vm[.]max_map_count[[:space:]]*=[[:space:]]*1048576[[:space:]]*$" "$ETC_DIR/sysctl.d/90-aps-conecta.conf" && [ "$(PATH="$tshim:$tmp/minbin" sysctl -n vm.max_map_count)" = 1048576 ]'
     : > "$tmp/mut.log"
     step_out="$(PATH="$tshim:$tmp/minbin"; FAIL=0; SUDO_USER=operador step_preparar; echo "FAIL=$FAIL")"
     check "preparar: a re-run finds everything done and changes nothing" \
       'case "$step_out" in *"✓ python3, curl, ogr2ogr y signify presentes"*"✓ Usuario operador en el grupo docker"*"✓ Memoria del sistema ajustada (vm.overcommit_memory = 1)"*"FAIL=0") ;; *) false;; esac && ! grep -qE "^(apt-get|usermod|sysctl -p|curl|systemctl start)" "$tmp/mut.log"'
+    echo 2097152 > "$tmp/maps"
+    step_out="$(PATH="$tshim:$tmp/minbin"; FAIL=0; SUDO_USER=operador step_preparar; echo "FAIL=$FAIL")"
+    check "preparar: a larger active operator map count remains applied and persistent" \
+      'grep -Eq "^vm[.]max_map_count[[:space:]]*=[[:space:]]*2097152[[:space:]]*$" "$ETC_DIR/sysctl.d/90-aps-conecta.conf" && [ "$(PATH="$tshim:$tmp/minbin" sysctl -n vm.max_map_count)" = 2097152 ] && [ "$(cat "$tmp/oc")" = 1 ]'
     rm -f "$tshim/python3" "$tshim/ogr2ogr" "$tshim/signify"
     : > "$tmp/mut.log"
     step_out="$(PATH="$tshim:$tmp/minbin"; export OPTIONAL_VERIFIER_UNAVAILABLE=1; FAIL=0; SUDO_USER=operador step_preparar; echo "FAIL=$FAIL")"
@@ -2955,9 +2983,9 @@ SHIM
         '[ "$rc" -ne 0 ] && [ ! -e "$tmp/proxy-invalid/proxy.env" ]'
     done
     echo 2 > "$tmp/oc"; rm -f "$ETC_DIR/sysctl.d/90-aps-conecta.conf"
-    step_out="$(export SYSCTL_FAILS=1; PATH="$tshim:$tmp/minbin"; FAIL=0; ensure_overcommit; echo "FAIL=$FAIL")"
+    step_out="$(export SYSCTL_FAILS=1; PATH="$tshim:$tmp/minbin"; FAIL=0; ensure_kernel_memory; echo "FAIL=$FAIL")"
     check "preparar: where the kernel setting cannot be applied now (a container) it stays in its file and says so — not a red" \
-      'case "$step_out" in *"· vm.overcommit_memory queda en $ETC_DIR/sysctl.d/90-aps-conecta.conf para el próximo arranque"*"FAIL=0") ;; *) false;; esac && grep -qx "vm.overcommit_memory = 1" "$ETC_DIR/sysctl.d/90-aps-conecta.conf"'
+      'case "$step_out" in *"· vm.overcommit_memory queda en $ETC_DIR/sysctl.d/90-aps-conecta.conf para el próximo arranque"*"FAIL=0") ;; *) false;; esac && grep -qx "vm.overcommit_memory = 1" "$ETC_DIR/sysctl.d/90-aps-conecta.conf" && grep -qx "vm.max_map_count = 2097152" "$ETC_DIR/sysctl.d/90-aps-conecta.conf"'
     : > "$tmp/mut.log"
     step_out="$(export ID_U=1000; PATH="$tshim:$tmp/minbin"; FAIL=0; step_preparar; echo "FAIL=$FAIL")"
     check "preparar: without sudo it says so and touches nothing" \
@@ -3334,11 +3362,18 @@ SHIM
     out="$( (cmd_aio_wizard --dominio backup.example --respaldo /mnt/backup) 2>&1)"; rc=$?
     check "asistente-aio: --respaldo posts the borg location and the daily time — a location alone schedules nothing" \
       '[ "$rc" -eq 0 ] && grep -q "borg_backup_host_location=/mnt/backup borg_remote_repo=$" "$tmp/aio.log" && grep -q "daily_backup_time=$(backup_hour_utc today)$" "$tmp/aio.log" && ! grep -q "daily_backup_time=04:00$" "$tmp/aio.log" && case "$out" in *"✓ Respaldo diario a las 04:00 hora de Santiago ($(backup_hour_utc today) UTC), en /mnt/backup"*) ;; *) false;; esac'
-    mkdir -p "$tmp/notz"
-    check "backup hour: 04:00 in Santiago as the wizard's UTC hour — 07:00 in summer time, 08:00 in winter; a host without tzdata is refused, never 04:00 UTC (B-035)" \
-      '[ "$(backup_hour_utc 2026-01-15)" = 07:00 ] && [ "$(backup_hour_utc 2026-07-01)" = 08:00 ] && ! TZDIR="$tmp/notz" backup_hour_utc 2026-07-01 2>/dev/null'
+    # An empty TZDIR can fall back to system data. Model the resolver's observable failures.
+    local date_fallback="$tmp/date-fallback" date_failure="$tmp/date-failure"
+    mkdir -p "$date_fallback" "$date_failure"
+    printf '#!/bin/bash\nprintf "04:00\\n"\n' > "$date_fallback/date"
+    printf '#!/bin/bash\nexit 1\n' > "$date_failure/date"
+    chmod +x "$date_fallback/date" "$date_failure/date"
+    check "backup hour: 04:00 in Santiago becomes 07:00 in summer and 08:00 in winter; a resolver's UTC fallback is refused (B-035)" \
+      '[ "$(backup_hour_utc 2026-01-15)" = 07:00 ] && [ "$(backup_hour_utc 2026-07-01)" = 08:00 ] && ! PATH="$date_fallback:$PATH" backup_hour_utc 2026-07-01 2>/dev/null'
+    check "backup hour: a failed date conversion is refused" \
+      '! PATH="$date_failure:$PATH" backup_hour_utc 2026-07-01 2>/dev/null'
     : > "$tmp/aio.ps"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; : > "$tmp/aio.log"
-    out="$( (TZDIR="$tmp/notz" cmd_aio_wizard --dominio backup.example --respaldo /mnt/backup) 2>&1)"; rc=$?
+    out="$( (PATH="$date_fallback:$PATH" cmd_aio_wizard --dominio backup.example --respaldo /mnt/backup) 2>&1)"; rc=$?
     check "asistente-aio: a host without tzdata stops before any post, the cause in motivo for the web installer (B-035)" \
       '[ "$rc" -eq 1 ] && [ ! -s "$tmp/aio.log" ] && [ "$(cat "$AIO_STATE/motivo")" = "Falta la zona America/Santiago en el servidor (paquete tzdata): no se fija la hora del respaldo." ]'
     : > "$tmp/aio.ps"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; : > "$tmp/aio.log"
@@ -4631,12 +4666,34 @@ FAIL=0" ] \
 
   # ── the units parse (systemd-analyze verify, offline) ──
   if command -v systemd-analyze >/dev/null 2>&1; then
-    u="$(systemd-analyze verify "$HOST_DIR/aps-conecta.service" "$HOST_DIR/aps-conecta.timer" 2>&1 || true)"
-    # the executable-path complaint is this box's expected state (no symlink on a dev
-    # box — INSTALLER.md owns the wiring); any OTHER output is a unit defect
-    leftovers="$(printf '%s' "$u" | grep -v 'aps-conecta' || true)"
-    check "units: systemd-analyze leaves only the unwired ExecStart path (INSTALLER.md owns the symlink; no syntax errors, no unknown directives)" \
-      'case "$u" in *"Failed to parse"*|*"Unknown"*|*"Invalid"*) false;; *) true;; esac && [ -z "$leftovers" ]'
+    local unit_fixture="$tmp/units" unit_help
+    local -a unit_verify=(systemd-analyze)
+    unit_help="$(systemd-analyze --help)"
+    if [[ "$unit_help" = *--recursive-errors* ]]; then unit_verify+=(--recursive-errors=no); fi
+    unit_verify+=(verify)
+    verify_unit_fixture() {
+      local status=0 unit
+      u="$(SYSTEMD_COLORS=0 SYSTEMD_LOG_LEVEL=warning "${unit_verify[@]}" "$@" 2>&1)" || status=$?
+      [ "$status" -eq 0 ] || return 1
+      # Older systemd can warn without failing; reject diagnostics naming a supplied unit too.
+      for unit in "$@"; do
+        case "$u" in *"${unit##*/}:"*) return 1 ;; esac
+      done
+      return 0
+    }
+    mkdir -p "$unit_fixture"
+    printf '#!/bin/bash\nexit 0\n' > "$unit_fixture/aps-conecta"
+    chmod +x "$unit_fixture/aps-conecta"
+    sed "s|/usr/local/bin/aps-conecta|$unit_fixture/aps-conecta|g" \
+      "$HOST_DIR/aps-conecta.service" > "$unit_fixture/aps-conecta.service"
+    cp "$HOST_DIR/aps-conecta.timer" "$unit_fixture/aps-conecta.timer"
+    # Validate these units, with an executable fixture; unrelated host units do not define their validity.
+    check "units: systemd-analyze accepts the declared service and calendar without ambient dependency errors" \
+      'if verify_unit_fixture "$unit_fixture/aps-conecta.service" "$unit_fixture/aps-conecta.timer"; then true; else printf "%s\n" "$u" >&2; false; fi'
+    sed '/^\[Service\]$/a TestUnknownDirective=yes' "$unit_fixture/aps-conecta.service" > "$unit_fixture/invalid.service"
+    check "units: an unknown directive in the service is rejected" '! verify_unit_fixture "$unit_fixture/invalid.service"'
+    sed '/^\[Timer\]$/a OnCalendar=not-a-calendar' "$unit_fixture/aps-conecta.timer" > "$unit_fixture/invalid.timer"
+    check "units: an invalid calendar in the timer is rejected" '! verify_unit_fixture "$unit_fixture/aps-conecta.service" "$unit_fixture/invalid.timer"'
   fi
 
   # Host refusal cases use the real entry points and isolated external tools.

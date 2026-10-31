@@ -2594,6 +2594,11 @@ elif a[0] in ('config:app:set', 'config:system:set'):
     print('Config value were not updated' if old == a[3:] else "Config value 'key' for app 'app' is now set to 'synthetic secret must never escape'")
 elif a[0] == 'config:system:get':
     save(); print('OCA\\Eurooffice\\Preview')
+elif a[0].endswith(':configure'):
+    app = a[0].split(':')[0]
+    for key, value in json.loads(a[1]).items():
+        s['config']['app:' + app + ':' + key] = value
+    save()
 else:
     save()
 ''')
@@ -2669,6 +2674,18 @@ else:
     reset(enabled=['notify_push', 'eurooffice', 'fulltextsearch', 'files_fulltextsearch'])
     state, _ = run('boot', extra={'FULLTEXTSEARCH_ENABLED': 'yes'})
     assert not any(call[0].endswith(':configure') for call in state['calls'])
+    reset()
+    state, output = run('fulltextsearch', extra={'FULLTEXTSEARCH_ENABLED': 'yes'})
+    assert 'deferred' in output
+    assert not any(call[0] == 'app:install' or call[0].endswith(':configure') for call in state['calls'])
+    reset(disabled=['fulltextsearch', 'fulltextsearch_elasticsearch', 'files_fulltextsearch'])
+    state, _ = run('fulltextsearch', extra={'FULLTEXTSEARCH_ENABLED': 'yes'})
+    assert set(state['enabled']) == {'fulltextsearch', 'fulltextsearch_elasticsearch', 'files_fulltextsearch'}
+    assert state['config']['app:fulltextsearch:search_platform'] == 'OCA\\FullTextSearch_Elasticsearch\\Platform\\ElasticSearchPlatform'
+    assert state['config']['app:fulltextsearch_elasticsearch:elastic_index'] == 'test'
+    assert state['config']['app:files_fulltextsearch:files_pdf'] is True
+    assert state['config']['app:files_fulltextsearch:files_office'] is True
+    assert not any(call[0] == 'app:install' for call in state['calls'])
     reset()
     run('unknown', success=False)
 phase = pathlib.Path('provisioning/phases/14-office.sh').read_text()

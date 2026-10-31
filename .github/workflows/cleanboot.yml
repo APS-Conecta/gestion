@@ -1344,7 +1344,10 @@ jobs:
       - uses: ./.github/actions/assert-release-app
         with:
           app: files_upload_guard
-      - name: Staff uploads are scanned before acceptance
+      - uses: ./.github/actions/assert-release-app
+        with:
+          app: files_fulltextsearch
+      - name: Staff uploads are scanned and their contents can be searched
         run: |
           set -euo pipefail
           umask 077
@@ -1365,6 +1368,7 @@ jobs:
           printf '::add-mask::%s\n' "$task_av_password"
           printf '::add-mask::%s\n' "$task_av_staff_password"
           task_av_url="https://$SUITE_IP/remote.php/dav/files/ana.prueba"
+          task_fts_url="https://$SUITE_IP/remote.php/dav/files/beto.prueba/content-search-185.txt"
           task_av_version="$(docker exec --user www-data aps-conecta-nextcloud php occ config:app:get files_antivirus installed_version)"
           [ -n "$task_av_version" ] || { echo 'FAIL: the antivirus app has no installed version' >&2; exit 1; }
           printf 'Antivirus store app runtime version: %s\n' "$task_av_version"
@@ -1416,6 +1420,7 @@ jobs:
               antivirus-assembled-184.bin antivirus-chunked-eicar-184.txt antivirus-midstream-184.bin antivirus-unavailable-184.txt; do
               dav --request DELETE --output /dev/null "$task_av_url/$name" >/dev/null || failed=1
             done
+            staff_dav --request DELETE --output /dev/null "$task_fts_url" >/dev/null || failed=1
             dav --request DELETE --output /dev/null "$task_av_chunks_url" >/dev/null || failed=1
             if [ -n "$task_av_share_id" ]; then
               code="$(dav --request DELETE --header 'OCS-APIRequest: true' --output /dev/null \
@@ -1436,7 +1441,8 @@ jobs:
             return "$failed"
           }
           trap 'task_av_status=$?; cleanup || task_av_status=1; exit "$task_av_status"' EXIT
-          printf 'APS Conecta antivirus acceptance.\n' > "$task_av_dir/clean.txt"
+          task_fts_token="apsfts185${GITHUB_RUN_ID}"
+          printf 'APS Conecta antivirus acceptance. %s\n' "$task_fts_token" > "$task_av_dir/clean.txt"
           printf '%s' 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > "$task_av_dir/eicar.txt"
           code="$(dav --upload-file "$task_av_dir/clean.txt" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-clean-184.txt")"
           [ "$code" = 201 ] || [ "$code" = 204 ] \
@@ -1445,6 +1451,58 @@ jobs:
           [ "$code" = 200 ] && cmp "$task_av_dir/clean.txt" "$task_av_dir/download.txt" \
             || { echo 'FAIL: the clean upload did not round-trip' >&2; exit 1; }
           echo 'PASS: a staff member uploads and reads a clean file'
+          code="$(staff_dav --upload-file "$task_av_dir/clean.txt" --output "$task_av_dir/response.xml" "$task_fts_url")"
+          expect_status 201 "$code" 'non-administrator full-text document upload'
+          code="$(staff_dav --request PROPFIND --header 'Depth: 0' --header 'Content-Type: application/xml' \
+            --data '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:prop><oc:fileid/></d:prop></d:propfind>' \
+            --output "$task_av_dir/fulltext-file.xml" "$task_fts_url")"
+          expect_status 207 "$code" 'full-text document identity lookup'
+          docker exec --user www-data aps-conecta-nextcloud php occ app:list --output=json \
+            | python3 -c 'import json, sys; a=json.load(sys.stdin); print("Full-text apps:", {n: a.get("enabled", {}).get(n, "not enabled") for n in ("fulltextsearch", "fulltextsearch_elasticsearch", "files_fulltextsearch")})'
+          task_fts_options='{"provider":"files","user":"beto.prueba","path":"/content-search-185.txt","force":true}'
+          if ! docker exec --user www-data aps-conecta-nextcloud php occ fulltextsearch:index \
+            "$task_fts_options" --no-readline > "$task_av_dir/fulltext-index.log" 2>&1; then
+            echo 'FAIL: scoped full-text indexing failed; see the installed app states' >&2
+            exit 1
+          fi
+          python3 - "$task_av_dir" "$task_fts_token" <<'PYFTS'
+          import json, pathlib, subprocess, sys, time, xml.etree.ElementTree as ET
+          root = pathlib.Path(sys.argv[1])
+          ids = [node.text for node in ET.parse(root / 'fulltext-file.xml').findall('.//{http://owncloud.org/ns}fileid') if node.text]
+          assert len(ids) == 1, 'DAV did not return one document identity'
+          native = ['docker', 'exec', '--user', 'www-data', 'aps-conecta-nextcloud', 'php', 'occ']
+          with (root / 'fulltext-platform.json').open('w') as output:
+              result = subprocess.run(native + ['fulltextsearch:document:platform', 'files', ids[0], '--content'],
+                                      stdout=output, stderr=subprocess.STDOUT, timeout=30)
+          assert result.returncode == 0, 'Native search platform could not read the indexed document'
+          indexed = json.loads((root / 'fulltext-platform.json').read_text())
+          document = indexed.get('document', {})
+          assert document.get('providerId') == 'files' and str(document.get('id')) == ids[0], 'Indexed document identity differs'
+          assert sys.argv[2] in indexed.get('content', ''), 'Search platform did not store the uploaded body'
+          print('PASS: search platform stores the uploaded document and its body-only term')
+          deadline = time.monotonic() + 30
+          while True:
+              remaining = deadline - time.monotonic()
+              assert remaining > 0, 'Full-text search did not return the uploaded document within 30 seconds'
+              with (root / 'fulltext-results.json').open('w') as output:
+                  try:
+                      result = subprocess.run(native + ['fulltextsearch:search', 'beto.prueba', sys.argv[2], '--output=json'],
+                                              stdout=output, stderr=subprocess.STDOUT, timeout=remaining)
+                  except subprocess.TimeoutExpired:
+                      raise AssertionError('Native full-text search exceeded the visibility deadline') from None
+              assert result.returncode == 0, 'Native full-text search failed'
+              results = json.loads((root / 'fulltext-results.json').read_text())
+              assert isinstance(results, dict) and isinstance(results.get('files', []), list), 'Malformed full-text search results'
+              if any(
+                  row.get('providerId') == 'files' and str(row.get('id')) == ids[0]
+                  and row.get('info', {}).get('path') == '/content-search-185.txt'
+                  and row.get('info', {}).get('type') == 'file'
+                  for row in results.get('files', [])
+              ):
+                  break
+              time.sleep(max(0, min(2, deadline - time.monotonic())))
+          print('PASS: full-text search returns the uploaded document by its body-only term')
+          PYFTS
           code="$(dav --upload-file "$task_av_dir/eicar.txt" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-eicar-184.txt")"
           [ "$code" = 415 ] && grep -qi virus "$task_av_dir/response.xml" \
             || { echo "FAIL: EICAR upload returned HTTP $code; expected antivirus rejection (415)" >&2; exit 1; }
