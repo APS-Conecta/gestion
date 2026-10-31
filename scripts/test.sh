@@ -2675,6 +2675,60 @@ PY
 }
 check appapi_smoke_cases
 
+registry_manifest_cases() {
+  python3 - <<'PY'
+import os, pathlib, subprocess, tempfile
+module = pathlib.Path('php/src/Docker/GitHubContainerRegistryManager.php').resolve()
+with tempfile.TemporaryDirectory() as directory:
+    fixture = pathlib.Path(directory) / 'registry.php'
+    fixture.write_text(r'''<?php
+namespace GuzzleHttp {
+    class Reply {
+        public function __construct(private string $body = '') {}
+        public function getBody(): self { return $this; }
+        public function getContents(): string { return $this->body; }
+        public function getHeader(string $name): array { return ['sha256:' . str_repeat('a', 64)]; }
+    }
+    class Client {
+        public function request(string $method, string $url, array $options = []): Reply {
+            if ($method === 'GET') {
+                return new Reply(json_encode(['token' => 'synthetic registry credential']));
+            }
+            if (getenv('REGISTRY_UNAVAILABLE') === '1') { throw new \RuntimeException('registry unavailable'); }
+            $accepted = array_map('trim', explode(',', $options['headers']['Accept']));
+            if (!in_array(getenv('REGISTRY_MEDIA_TYPE'), $accepted, true)) {
+                throw new \RuntimeException('registry cannot serve this manifest format');
+            }
+            return new Reply();
+        }
+    }
+}
+namespace AIO\Docker {
+    function apcu_fetch(string $key): bool { return false; }
+    function apcu_add(string $key, string $value, int $ttl): bool { return true; }
+}
+namespace {
+    require $argv[1];
+    $digest = (new \AIO\Docker\GitHubContainerRegistryManager())->GetLatestDigestOfTag('aps-conecta/aio-postgresql', 'fixture');
+    echo $digest ?? 'missing';
+}
+''')
+    for media_type in ('application/vnd.docker.distribution.manifest.v2+json',
+                       'application/vnd.docker.distribution.manifest.list.v2+json',
+                       'application/vnd.oci.image.index.v1+json',
+                       'application/vnd.oci.image.manifest.v1+json'):
+        for unavailable in ('0', '1'):
+            result = subprocess.run(['php', str(fixture), str(module)],
+                env=dict(os.environ, REGISTRY_MEDIA_TYPE=media_type, REGISTRY_UNAVAILABLE=unavailable),
+                capture_output=True, text=True, timeout=10)
+            assert result.returncode == 0, 'The native registry method failed'
+            assert result.stdout == ('missing' if unavailable == '1' else 'sha256:' + 'a' * 64), media_type
+            assert 'synthetic registry credential' not in result.stdout + result.stderr
+print('The native registry client accepts Docker and OCI manifests and preserves unavailable-registry results')
+PY
+}
+check registry_manifest_cases
+
 # Exercise the actual public container module with disposable command fixtures;
 # the JSON parser is real PHP, while OCC and backend probes have controlled state.
 app_startup_cases() {
