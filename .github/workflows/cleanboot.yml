@@ -1324,8 +1324,7 @@ jobs:
           assert (root / 'expanded.zip').stat().st_size < 1048576
           PYZIP
           if ! command -v zip >/dev/null; then
-            sudo apt-get update
-            sudo apt-get install --yes zip
+            bash scripts/cleanboot-apt.sh zip
           fi
           (cd "$task_av_dir" && zip --quiet --password fixture-184 encrypted.zip clean.txt)
           task_av_archive_since="$(date --utc +%Y-%m-%dT%H:%M:%SZ)"
