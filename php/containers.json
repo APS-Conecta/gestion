@@ -459,6 +459,11 @@
           "source": "nextcloud_aio_talk_recording",
           "destination": "/tmp",
           "writeable": true
+        },
+        {
+          "source": "%NEXTCLOUD_TRUSTED_CACERTS_DIR%",
+          "destination": "/usr/local/share/ca-certificates",
+          "writeable": false
         }
       ],
       "shm_size": 2147483648,

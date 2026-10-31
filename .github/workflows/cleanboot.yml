@@ -1420,6 +1420,67 @@ jobs:
           printf 'user = "ana.prueba:%s"\n' "$pw" \
             | curl -fsS -K - --cacert "$RUNNER_TEMP/ca.crt" -H 'OCS-APIRequest: true' \
                 "https://$SUITE_IP/ocs/v2.php/cloud/user?format=json" | grep -q '"id":"ana.prueba"'
+      - name: Official recording clients verify suite HTTPS by IP
+        timeout-minutes: 7
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/recording-trust.py" <<'PYRECORDING'
+          import logging, os
+          from requests import Request
+          from requests.exceptions import SSLError
+          from selenium.common.exceptions import InsecureCertificateException
+          from nextcloud.talk.recording import __version__
+          from nextcloud.talk.recording.BackendNotifier import doRequest
+          from nextcloud.talk.recording.Config import config
+          from nextcloud.talk.recording.Participant import Participant
+
+          config.load('/conf/recording.conf')
+          url = 'https://' + os.environ['NC_DOMAIN']
+          expected = os.environ['EXPECT_TRUST'] == 'yes'
+          assert config.getBackendSkipVerify(url) is False
+          logging.getLogger('nextcloud.talk.recording.BackendNotifier').setLevel(logging.CRITICAL)
+          try:
+              response = doRequest(url, Request('GET', url + '/status.php'), retries=1)
+          except SSLError:
+              assert not expected, 'The recorder callback did not trust the suite CA'
+          else:
+              assert expected, 'The recorder callback accepted HTTPS without the suite CA'
+              assert response.json()['installed'] is True
+
+          participant = Participant('firefox', url, 800, 600,
+              dict(os.environ, MOZ_HEADLESS='1'), '/usr/bin/geckodriver', '/usr/bin/firefox',
+              logging.getLogger('recording-trust'))
+          driver = participant.seleniumHelper.driver
+          try:
+              assert driver.capabilities['acceptInsecureCerts'] is False
+              driver.set_page_load_timeout(30)
+              try:
+                  driver.get(url + '/login')
+              except InsecureCertificateException:
+                  assert not expected, 'Recording Firefox did not trust the suite CA'
+              else:
+                  assert expected, 'Recording Firefox accepted HTTPS without the suite CA'
+                  assert driver.find_element('id', 'user').is_displayed()
+          finally:
+              driver.quit()
+              participant.seleniumHelper.driver = None
+          print('PASS: official recorder', __version__, 'Python and Firefox, suite CA trusted:', expected)
+          PYRECORDING
+          task_recording_probe="recording-trust-$GITHUB_RUN_ID"
+          trap 'docker rm -f "$task_recording_probe" >/dev/null 2>&1 || true' EXIT
+          for trust in yes no; do
+            mounts=()
+            if [ "$trust" = yes ]; then
+              mounts+=(--mount type=bind,src=/opt/aps-conecta/certificados/ca,dst=/usr/local/share/ca-certificates,readonly)
+            fi
+            timeout 180 docker run --rm --init --interactive --name "$task_recording_probe" \
+              --network nextcloud-aio --read-only --cap-drop NET_RAW --security-opt label:disable \
+              --tmpfs /conf:uid=122,mode=700 --tmpfs /tmp:mode=1777 --shm-size=2g \
+              "${mounts[@]}" --env "NC_DOMAIN=$SUITE_IP" --env "EXPECT_TRUST=$trust" \
+              --env RECORDING_SECRET=tls-fixture --env INTERNAL_SECRET=tls-fixture \
+              "ghcr.io/aps-conecta/aio-talk-recording:$SUITE_TAG" python - \
+              < "$RUNNER_TEMP/recording-trust.py"
+          done
       - name: Forwarded addresses require the actual suite network
         run: |
           set -euo pipefail

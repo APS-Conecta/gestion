@@ -142,6 +142,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-081 | Office opens real edits but rejects final saveback as corrupted (#189 prerequisite) | 9.3.4's shipped scripts fail in the native renderer while browser editing and HTTP health still work | pin the verified 9.3.7-1 fix and require fresh nonempty renderer caches in the existing by-IP job; the old published image fails with native exit 132, while the fixed image compiles and two ordinary browser edits persist through normal Nextcloud saveback |
 
+| A-082 | the recorder cannot verify by-IP HTTPS and Nextcloud can wait indefinitely during startup (#190) | the recorder receives no suite CA; Python callbacks and Firefox use separate trust stores; Redis and app-store waits have no deadline | mount the public CA read-only, prepare the Python bundle and native Firefox certificate policy, and bound the remaining waits; the existing by-IP job checks both official clients with and without the CA; hardware activation remains pending #189 |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and
