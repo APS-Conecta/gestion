@@ -2561,7 +2561,7 @@ with tempfile.TemporaryDirectory(prefix='aps harp ') as directory:
     certificates.mkdir()
     def openssl(*args, success=True):
         result = subprocess.run(['openssl', *map(str, args)], capture_output=True)
-        assert (result.returncode == 0) == success, 'Unexpected certificate verification result'
+        assert (result.returncode == 0) == success, f'Certificate command {args}: {result.stderr.decode()}'
     for name in ('system', 'suite', 'unknown'):
         openssl('req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
                 '-subj', '/CN=' + name, '-keyout', root / (name + '.key'),

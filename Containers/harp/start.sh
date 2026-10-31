@@ -6,7 +6,7 @@ set -euo pipefail
 
 if [ -d "/usr/local/share/ca-certificates" ]; then
     cp "/etc/ssl/certs/ca-certificates.crt" "/tmp/ca-certificates.crt"
-    for certificate in /usr/local/share/ca-certificates/*; do
+    for certificate in "/usr/local/share/ca-certificates"/*; do
         [ -f "$certificate" ] || continue
         cat "$certificate" >> "/tmp/ca-certificates.crt"
     done
