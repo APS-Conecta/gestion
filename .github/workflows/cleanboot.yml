@@ -1111,6 +1111,129 @@ jobs:
       # estadistica and #41 totem — the three optional apps ride the same --app flags into the
       # wizard drive and its options record, the way an operator without a browser checks
       # every box at once.
+      - name: Upload errors preserve status and unrelated responses
+        run: |
+          set -euo pipefail
+          umask 077
+          task_ingress_dir="$RUNNER_TEMP/upload-error-responses"
+          mkdir -p "$task_ingress_dir"
+          task_ingress_name="aps-upload-errors-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          task_ingress_created=0
+          task_ingress_pid=
+          cleanup_ingress() {
+            local status=$?
+            if [ "$task_ingress_created" = 1 ]; then
+              docker rm --force "$task_ingress_name" >/dev/null || status=1
+            fi
+            if [ -n "$task_ingress_pid" ]; then
+              kill "$task_ingress_pid" 2>/dev/null || true
+              wait "$task_ingress_pid" 2>/dev/null || true
+            fi
+            exit "$status"
+          }
+          trap cleanup_ingress EXIT
+          task_ingress_image="ghcr.io/aps-conecta/aio-apache:$SUITE_TAG"
+          docker run --rm --network none --read-only --entrypoint cat "$task_ingress_image" /Caddyfile \
+            > "$task_ingress_dir/published-caddyfile"
+          python3 - "$task_ingress_dir" <<'PYBACKEND' &
+          import gzip, http.server, pathlib, socket, sys
+          root = pathlib.Path(sys.argv[1])
+          class Handler(http.server.BaseHTTPRequestHandler):
+              count = 0
+              def reply(self):
+                  self.rfile.read(int(self.headers.get('Content-Length', '0')))
+                  Handler.count += 1
+                  (root / 'count').write_text(str(Handler.count))
+                  success = self.path.endswith('/success.txt')
+                  body = b'clean fixture' if success else gzip.compress(b'original upstream error')
+                  self.send_response(201 if success else 500)
+                  self.send_header('Content-Type', 'application/octet-stream')
+                  self.send_header('Content-Length', str(len(body)))
+                  self.send_header('ETag', '"fixture-184"')
+                  self.send_header('X-Request-ID', 'fixture-184')
+                  if not success:
+                      self.send_header('Content-Encoding', 'gzip')
+                  self.end_headers()
+                  self.wfile.write(body)
+              do_GET = do_POST = do_PUT = do_MOVE = reply
+              def log_message(self, *args):
+                  pass
+          server = http.server.HTTPServer(('127.0.0.1', 0), Handler)
+          with socket.socket() as probe:
+              probe.bind(('127.0.0.1', 0))
+              frontend_port = probe.getsockname()[1]
+          source = (root / 'published-caddyfile').read_text()
+          snippet = source.split('(aps_routes) {', 1)[1].split('\n}\n\nhttp://', 1)[0]
+          assert snippet.count('127.0.0.1:8000') == 1
+          snippet = snippet.replace('127.0.0.1:8000', f'127.0.0.1:{server.server_port}')
+          config = '{\n admin off\n auto_https off\n}\n(aps_routes) {' + snippet
+          config += '\n}\nhttp://127.0.0.1:' + str(frontend_port) + ' {\n import aps_routes\n}\n'
+          (root / 'Caddyfile').write_text(config)
+          (root / 'Caddyfile').chmod(0o644)
+          (root / 'port').write_text(str(frontend_port))
+          server.serve_forever()
+          PYBACKEND
+          task_ingress_pid=$!
+          for attempt in $(seq 50); do
+            [ ! -s "$task_ingress_dir/port" ] || break
+            kill -0 "$task_ingress_pid"
+            sleep 0.1
+          done
+          task_ingress_port="$(cat "$task_ingress_dir/port")"
+          task_ingress_created=1
+          docker run --detach --name "$task_ingress_name" --network host --read-only --tmpfs /tmp \
+            --env NOTIFY_PUSH_HOST=127.0.0.1 --env EUROOFFICE_HOST=127.0.0.1 \
+            --env TALK_HOST=127.0.0.1 --env HARP_HOST=127.0.0.1 \
+            --mount "type=bind,source=$task_ingress_dir/Caddyfile,target=/etc/caddy/Caddyfile,readonly" \
+            --entrypoint /usr/bin/caddy "$task_ingress_image" run --config /etc/caddy/Caddyfile >/dev/null
+          task_ingress_ready=0
+          for attempt in $(seq 30); do
+            code="$(curl --silent --connect-timeout 1 --max-time 2 --output /dev/null --write-out '%{http_code}' \
+              "http://127.0.0.1:$task_ingress_port/status.php" || true)"
+            if [ "$code" = 500 ]; then task_ingress_ready=1; break; fi
+            sleep 0.2
+          done
+          [ "$task_ingress_ready" = 1 ] \
+            || { docker logs --tail=30 "$task_ingress_name"; echo 'FAIL: upload error fixture did not start' >&2; exit 1; }
+          python3 - "$task_ingress_dir" "$task_ingress_port" <<'PYRESPONSES'
+          import gzip, pathlib, sys, urllib.error, urllib.request, xml.etree.ElementTree as ET
+          root = pathlib.Path(sys.argv[1])
+          cases = [
+              ('PUT', '/remote.php/dav/files/staff/error.txt', True),
+              ('MOVE', '/remote.php/dav/uploads/staff/chunks/.file', True),
+              ('PUT', '/remote.php/webdav/error.txt', True),
+              ('GET', '/remote.php/dav/files/staff/error.txt', False),
+              ('POST', '/remote.php/dav/files/staff/error.txt', False),
+              ('PUT', '/status.php', False),
+              ('PUT', '/remote.php/dav/files/staff/success.txt', False),
+          ]
+          for method, path, translated in cases:
+              before = int((root / 'count').read_text())
+              request = urllib.request.Request(f'http://127.0.0.1:{sys.argv[2]}{path}',
+                  data=b'fixture', method=method, headers={'Accept-Encoding': 'identity'})
+              try:
+                  response = urllib.request.urlopen(request, timeout=10)
+              except urllib.error.HTTPError as error:
+                  response = error
+              with response:
+                  body = response.read()
+                  success = path.endswith('/success.txt')
+                  assert response.status == (201 if success else 500), (method, path, response.status)
+                  assert response.headers['X-Request-ID'] == 'fixture-184'
+                  assert int(response.headers['Content-Length']) == len(body)
+                  if translated:
+                      assert response.headers['Content-Type'] == 'application/xml; charset=utf-8'
+                      assert response.headers.get('Content-Encoding') is None
+                      assert response.headers.get('ETag') is None
+                      message = ET.fromstring(body).findtext('{http://sabredav.org/ns}message')
+                      assert 'contacte a la administración' in message
+                  else:
+                      assert response.headers['ETag'] == '"fixture-184"'
+                      actual = body if success else gzip.decompress(body)
+                      assert actual == (b'clean fixture' if success else b'original upstream error')
+              assert int((root / 'count').read_text()) == before + 1, 'the proxy replayed a request'
+          print('PASS: upload errors retain HTTP 500 and Spanish guidance; other responses stay intact without replay')
+          PYRESPONSES
       - name: Install by IP through the silent command a clinic runs, choosing farmacia, estadistica and totem (#39, #40, #41)
         run: |
           set -o pipefail   # run: is `bash -e` without it — the install's own failure, not tee's
@@ -1213,128 +1336,6 @@ jobs:
           [ "$(attempts 203.0.113.201)" -gt 0 ] \
             || { echo 'FAIL: the internal proxy lost the forwarded client address' >&2; exit 1; }
           echo 'PASS: a proxy inside the actual suite network preserves the client address'
-      - name: Upload errors preserve status and unrelated responses
-        run: |
-          set -euo pipefail
-          umask 077
-          task_ingress_dir="$RUNNER_TEMP/upload-error-responses"
-          mkdir -p "$task_ingress_dir"
-          task_ingress_name="aps-upload-errors-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          task_ingress_created=0
-          task_ingress_pid=
-          cleanup_ingress() {
-            local status=$?
-            if [ "$task_ingress_created" = 1 ]; then
-              docker rm --force "$task_ingress_name" >/dev/null || status=1
-            fi
-            if [ -n "$task_ingress_pid" ]; then
-              kill "$task_ingress_pid" 2>/dev/null || true
-              wait "$task_ingress_pid" 2>/dev/null || true
-            fi
-            exit "$status"
-          }
-          trap cleanup_ingress EXIT
-          docker cp aps-conecta-apache:/tmp/Caddyfile "$task_ingress_dir/published-caddyfile"
-          python3 - "$task_ingress_dir" <<'PYBACKEND' &
-          import gzip, http.server, pathlib, socket, sys
-          root = pathlib.Path(sys.argv[1])
-          class Handler(http.server.BaseHTTPRequestHandler):
-              count = 0
-              def reply(self):
-                  self.rfile.read(int(self.headers.get('Content-Length', '0')))
-                  Handler.count += 1
-                  (root / 'count').write_text(str(Handler.count))
-                  success = self.path.endswith('/success.txt')
-                  body = b'clean fixture' if success else gzip.compress(b'original upstream error')
-                  self.send_response(201 if success else 500)
-                  self.send_header('Content-Type', 'application/octet-stream')
-                  self.send_header('Content-Length', str(len(body)))
-                  self.send_header('ETag', '"fixture-184"')
-                  self.send_header('X-Request-ID', 'fixture-184')
-                  if not success:
-                      self.send_header('Content-Encoding', 'gzip')
-                  self.end_headers()
-                  self.wfile.write(body)
-              do_GET = do_POST = do_PUT = do_MOVE = reply
-              def log_message(self, *args):
-                  pass
-          server = http.server.HTTPServer(('127.0.0.1', 0), Handler)
-          with socket.socket() as probe:
-              probe.bind(('127.0.0.1', 0))
-              frontend_port = probe.getsockname()[1]
-          source = (root / 'published-caddyfile').read_text()
-          snippet = source.split('(aps_routes) {', 1)[1].split('\n}\n\nhttp://', 1)[0]
-          assert snippet.count('127.0.0.1:8000') == 1
-          snippet = snippet.replace('127.0.0.1:8000', f'127.0.0.1:{server.server_port}')
-          config = '{\n admin off\n auto_https off\n}\n(aps_routes) {' + snippet
-          config += '\n}\nhttp://127.0.0.1:' + str(frontend_port) + ' {\n import aps_routes\n}\n'
-          (root / 'Caddyfile').write_text(config)
-          (root / 'Caddyfile').chmod(0o644)
-          (root / 'port').write_text(str(frontend_port))
-          server.serve_forever()
-          PYBACKEND
-          task_ingress_pid=$!
-          for attempt in $(seq 50); do
-            [ ! -s "$task_ingress_dir/port" ] || break
-            kill -0 "$task_ingress_pid"
-            sleep 0.1
-          done
-          task_ingress_port="$(cat "$task_ingress_dir/port")"
-          task_ingress_image="$(docker inspect aps-conecta-apache --format '{{.Config.Image}}')"
-          task_ingress_created=1
-          docker run --detach --name "$task_ingress_name" --network host --read-only --tmpfs /tmp \
-            --env NOTIFY_PUSH_HOST=127.0.0.1 --env EUROOFFICE_HOST=127.0.0.1 \
-            --env TALK_HOST=127.0.0.1 --env HARP_HOST=127.0.0.1 \
-            --mount "type=bind,source=$task_ingress_dir/Caddyfile,target=/etc/caddy/Caddyfile,readonly" \
-            --entrypoint /usr/bin/caddy "$task_ingress_image" run --config /etc/caddy/Caddyfile >/dev/null
-          task_ingress_ready=0
-          for attempt in $(seq 30); do
-            code="$(curl --silent --connect-timeout 1 --max-time 2 --output /dev/null --write-out '%{http_code}' \
-              "http://127.0.0.1:$task_ingress_port/status.php" || true)"
-            if [ "$code" = 500 ]; then task_ingress_ready=1; break; fi
-            sleep 0.2
-          done
-          [ "$task_ingress_ready" = 1 ] \
-            || { docker logs --tail=30 "$task_ingress_name"; echo 'FAIL: upload error fixture did not start' >&2; exit 1; }
-          python3 - "$task_ingress_dir" "$task_ingress_port" <<'PYRESPONSES'
-          import gzip, pathlib, sys, urllib.error, urllib.request, xml.etree.ElementTree as ET
-          root = pathlib.Path(sys.argv[1])
-          cases = [
-              ('PUT', '/remote.php/dav/files/staff/error.txt', True),
-              ('MOVE', '/remote.php/dav/uploads/staff/chunks/.file', True),
-              ('PUT', '/remote.php/webdav/error.txt', True),
-              ('GET', '/remote.php/dav/files/staff/error.txt', False),
-              ('POST', '/remote.php/dav/files/staff/error.txt', False),
-              ('PUT', '/status.php', False),
-              ('PUT', '/remote.php/dav/files/staff/success.txt', False),
-          ]
-          for method, path, translated in cases:
-              before = int((root / 'count').read_text())
-              request = urllib.request.Request(f'http://127.0.0.1:{sys.argv[2]}{path}',
-                  data=b'fixture', method=method, headers={'Accept-Encoding': 'identity'})
-              try:
-                  response = urllib.request.urlopen(request, timeout=10)
-              except urllib.error.HTTPError as error:
-                  response = error
-              with response:
-                  body = response.read()
-                  success = path.endswith('/success.txt')
-                  assert response.status == (201 if success else 500), (method, path, response.status)
-                  assert response.headers['X-Request-ID'] == 'fixture-184'
-                  assert int(response.headers['Content-Length']) == len(body)
-                  if translated:
-                      assert response.headers['Content-Type'] == 'application/xml; charset=utf-8'
-                      assert response.headers.get('Content-Encoding') is None
-                      assert response.headers.get('ETag') is None
-                      message = ET.fromstring(body).findtext('{http://sabredav.org/ns}message')
-                      assert 'contacte a la administración' in message
-                  else:
-                      assert response.headers['ETag'] == '"fixture-184"'
-                      actual = body if success else gzip.decompress(body)
-                      assert actual == (b'clean fixture' if success else b'original upstream error')
-              assert int((root / 'count').read_text()) == before + 1, 'the proxy replayed a request'
-          print('PASS: upload errors retain HTTP 500 and Spanish guidance; other responses stay intact without replay')
-          PYRESPONSES
       - uses: ./.github/actions/assert-release-app
         with:
           app: files_upload_guard
