@@ -2961,7 +2961,9 @@ else:
         'talk:signaling:list': json.dumps({'servers': [{'server': 'https://192.0.2.50/standalone-signaling/', 'verify': True}], 'secret': 'synthetic secret must never escape'}),
         'talk:turn:list': json.dumps([{'schemes': 'turn', 'server': '192.0.2.50:3478', 'protocols': 'udp,tcp', 'secret': 'synthetic secret must never escape'}]),
         'talk:stun:list': '["192.0.2.50:3478"]',
-        'setupchecks': json.dumps({'talk': {check: {'severity': 'success'}}})}}
+        'setupchecks': json.dumps({'talk': {check: {'severity': 'success'}},
+            'system': {'OCA\\Settings\\SetupChecks\\MemcacheConfigured': {'severity': 'success'}}}),
+        'config:system:get': '\\OC\\Memcache\\Redis'}}
     env = dict(os.environ, PATH=str(root / 'bin') + os.pathsep + os.environ['PATH'],
                SUITE_CA=str(ca), TALK_SMOKE_STATE=str(state_path), NC_CONTAINER='aps-conecta-nextcloud')
     def run(state, success=True):
@@ -2981,6 +2983,14 @@ else:
     assert not any(arg in ('-k', '--insecure', '-L', '--location') for arg in curl)
     state = copy.deepcopy(base); state['setup_exit'] = 1
     run(state)
+    state = copy.deepcopy(base)
+    checks = json.loads(state['native']['setupchecks'])
+    checks['talk'][check] = {'severity': 'warning', 'description':
+        'Warning: Running version: 2.1.1; Server does not support all features of this Talk version, missing features: changed-users'}
+    state['native']['setupchecks'] = json.dumps(checks)
+    state['setup_exit'] = 1
+    result = run(state)
+    assert 'WARN:' in result['output'] and any('config:system:get' in call for call in result['calls'])
     state = copy.deepcopy(base)
     state['native']['setupchecks'] = json.dumps({'talk': {check: {'severity': 'warning',
         'description': 'synthetic secret must never escape; changed-users'}}})
