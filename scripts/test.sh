@@ -2876,6 +2876,99 @@ PY
 }
 check app_startup_cases
 
+phase12_talk_cases() {
+  python3 - <<'PY'
+import hashlib, io, json, os, pathlib, shutil, subprocess, sys, tarfile, tempfile
+with tempfile.TemporaryDirectory() as directory:
+    root = pathlib.Path(directory)
+    for name in ('scripts', 'provisioning/phases', 'bin', 'store/spreed'):
+        (root / name).mkdir(parents=True)
+    for name in ('scripts/env.sh', 'scripts/apps.py', 'scripts/releases.py',
+                 'provisioning/lib.sh', 'provisioning/phases/12-apps.sh'):
+        shutil.copyfile(name, root / name)
+    (root / 'apps.json').write_text(json.dumps([
+        {'id':'spreed', 'source':'fork', 'repo':'APS-Conecta/spreed',
+         'release':True, 'optional':False, 'containers':[]}]))
+    package = root / 'store/spreed/v24.0.6.tar.gz'
+    with tarfile.open(package, 'w:gz') as archive:
+        content = b'<info><id>spreed</id><version>24.0.6</version></info>'
+        member = tarfile.TarInfo('spreed/appinfo/info.xml')
+        member.size = len(content)
+        archive.addfile(member, io.BytesIO(content))
+    (root / 'lock.json').write_text(json.dumps({'nextcloud':'34.0.5', 'apps':{'spreed':{
+        'tag':'v24.0.6', 'version':'24.0.6', 'sha256':hashlib.sha256(package.read_bytes()).hexdigest()}}}))
+    state_path = root / 'state.json'
+    docker = root / 'bin/docker'
+    docker.write_text('#!' + sys.executable + '\n' + r'''
+import io, json, os, pathlib, sys, tarfile, xml.etree.ElementTree as ET
+path = pathlib.Path(os.environ['TALK_PHASE_STATE'])
+state = json.loads(path.read_text())
+args = sys.argv[1:]
+assert args.pop(0) == 'exec'
+while args[0].startswith('-'):
+    option = args.pop(0)
+    if option == '--user': args.pop(0)
+    else: assert option == '-i'
+assert args.pop(0) == 'aps-conecta-nextcloud'
+state['calls'].append(args)
+def save(): path.write_text(json.dumps(state))
+if args[0] == 'awk':
+    save(); print(state.get('version', ''))
+elif args[0] == 'tar':
+    content = sys.stdin.buffer.read()
+    if state.get('fail') == 'install': save(); sys.exit(1)
+    with tarfile.open(fileobj=io.BytesIO(content), mode='r:gz') as archive:
+        state['version'] = ET.fromstring(archive.extractfile('spreed/appinfo/info.xml').read()).findtext('version')
+    save()
+elif args[0] == 'sh':
+    save(); assert 'test -e custom_apps/spreed/appinfo/signature.json' in args[2]
+    sys.exit(1)
+elif args[0] == 'php' and args[2] == 'config:list':
+    save(); print(json.dumps({'apps':{'spreed':{'enabled':'yes' if state['enabled'] else 'no'}}}))
+elif args[0] == 'php' and args[2:4] == ['app:enable', 'spreed']:
+    state['enabled'] = True
+    save()
+elif args == ['bash', '/configure-apps.sh', 'talk']:
+    assert state['enabled'] and state['version'] == '24.0.6', 'Talk wiring ran before installation'
+    state['wired'] += 1
+    save()
+    if state.get('fail') == 'wire': sys.exit(1)
+else:
+    raise AssertionError('Unexpected container command')
+''')
+    docker.chmod(0o755)
+    env = dict(os.environ, PATH=str(root / 'bin') + os.pathsep + os.environ['PATH'],
+               APS_APPS_LOCK=str(root / 'lock.json'), APS_APPS_STORE=str(root / 'store'),
+               TALK_PHASE_STATE=str(state_path))
+    env.pop('NC_CONTAINER', None)
+    runner = '''set -euo pipefail
+source scripts/env.sh
+source provisioning/lib.sh
+HERE="$PWD/provisioning"
+SEED_CTX=1
+source provisioning/phases/12-apps.sh
+'''
+    def run(success=True):
+        result = subprocess.run(['bash', '-c', runner], cwd=root, env=env,
+                                capture_output=True, text=True, timeout=20)
+        assert (result.returncode == 0) == success, 'Phase 12 returned an unexpected status'
+        return json.loads(state_path.read_text())
+    state_path.write_text(json.dumps({'enabled':False, 'wired':0, 'calls':[]}))
+    state = run()
+    assert state['wired'] == 1, 'Phase 12 must wire Talk immediately after its signed release lands'
+    assert state['calls'].index(['php', '/var/www/html/occ', 'app:enable', 'spreed']) < state['calls'].index(['bash', '/configure-apps.sh', 'talk'])
+    state = run()
+    assert state['wired'] == 2, 'An already installed release must still converge its Talk configuration'
+    assert sum(call[0] == 'tar' for call in state['calls']) == 1, 'A repeated phase must preserve the installed release'
+    for failure in ('install', 'wire'):
+        state_path.write_text(json.dumps({'enabled':False, 'wired':0, 'calls':[], 'fail':failure}))
+        state = run(success=False)
+        assert state['wired'] == (0 if failure == 'install' else 1)
+print('Phase 12 wires fresh and existing Talk releases and propagates installation/configuration failures')
+PY
+}
+check phase12_talk_cases
+
 # Janus uses its co-located TURN server before a public domain exists. Exercise
 # the real startup writer; only container paths and external discovery are fixtures.
 talk_bootstrap_cases() {
