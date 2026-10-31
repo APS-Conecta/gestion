@@ -4914,7 +4914,7 @@ def selftest():
             check("generar: revision answers the plan — zero execs, zero writes",
                   st == 200 and body["modo"] == "revision" and body["usuarios"] == 2
                   and body["primer_admin"] == "elena.diaz" and body["contrasenas_selladas"] >= 2
-                  and len(body["fases"]) == 15 and "14-antivirus" in body["fases"]
+                  and len(body["fases"]) == 15 and "14-antivirus.sh" in body["fases"]
                   and execs[0] == 0 and same
                   and body["env"]["FIXTURE_USER_PASSWORD"] == "se generará")
             check("generar: review mode downloads nothing — the release apps' fetch leg never ran (#33)",
