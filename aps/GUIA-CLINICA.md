@@ -212,7 +212,9 @@ resultados y devuelve un fallo si alguna verificación falla. AppAPI comprueba s
 predeterminado y la conexión HTTPS de HaRP con la suite. Llamadas comprueba TURN, STUN,
 la ruta HTTPS pública de señalización y el diagnóstico nativo de Talk. La configuración se
 aplica durante la instalación y en cada arranque. El diagnóstico conserva esa configuración;
-Nextcloud administra sus claves y capacidades internas. Si el panel de registros del asistente se ve sin estilo
+Nextcloud administra sus claves y capacidades internas. La advertencia conocida por la
+optimización opcional `changed-users` conserva su aviso y requiere verificar la caché Redis.
+Otras advertencias o errores de señalización producen un fallo. Si el panel de registros del asistente se ve sin estilo
 después de una actualización, un refresco fuerte del navegador (Ctrl+Shift+R) lo arregla: es un
 archivo en caché que PHP fija y el fork no toca.
 

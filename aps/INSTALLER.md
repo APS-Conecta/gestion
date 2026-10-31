@@ -276,6 +276,8 @@ names its failed gate. Phase 12 configures Talk immediately after its signed rel
 using the same owner as boot. Talk checks native TURN/STUN/signaling settings, the public
 CA-verified welcome route and Nextcloud's native signaling diagnostic. It preserves wiring;
 native diagnostics may initialize signing keys and record backend capabilities.
+The supported server's exact optional `changed-users` warning remains visible and additionally
+requires native Redis cache verification (ADR-0024). Every other signaling warning or error fails.
 An install from v0.3.0 or earlier runs the suite under upstream's container
 names; the suite now names them `aps-conecta-*` and does not migrate them: reinstall it. Three
 honest notes:
