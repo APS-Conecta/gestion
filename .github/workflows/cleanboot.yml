@@ -1776,6 +1776,17 @@ jobs:
           [ "$code" = 200 ] && cmp "$task_av_dir/clean.txt" "$task_av_dir/download.txt"
           echo 'PASS: scanner unavailability keeps the app enabled, rejects uploads and recovers'
           [ "$task_av_failed" = 0 ]
+      - name: Native core and store antivirus integrity remain clean
+        run: |
+          docker exec --user www-data aps-conecta-nextcloud php occ integrity:check-core \
+            > "$RUNNER_TEMP/antivirus-core-integrity.out" 2>&1 \
+            || { echo 'FAIL: Nextcloud core integrity check failed' >&2; exit 1; }
+          docker exec aps-conecta-nextcloud test -s /var/www/html/custom_apps/files_antivirus/appinfo/signature.json \
+            || { echo 'FAIL: the store antivirus signature is absent' >&2; exit 1; }
+          docker exec --user www-data aps-conecta-nextcloud php occ integrity:check-app files_antivirus \
+            > "$RUNNER_TEMP/antivirus-store-integrity.out" 2>&1 \
+            || { echo 'FAIL: store antivirus integrity check failed' >&2; exit 1; }
+          echo 'PASS: native core and store antivirus integrity checks remain clean'
       # Nextcloud's own side of the address: its bundle trusts the CA (phase 07), the push server reaches
       # it inside the suite's network (the fork's patch 238), and the office both ways (phase 14).
       - name: Nextcloud trusts the CA; push and office work by IP
