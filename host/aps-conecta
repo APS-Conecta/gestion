@@ -4666,8 +4666,21 @@ FAIL=0" ] \
 
   # ── the units parse (systemd-analyze verify, offline) ──
   if command -v systemd-analyze >/dev/null 2>&1; then
-    local unit_fixture="$tmp/units" unit_rc
-    local -a unit_verify=(systemd-analyze --recursive-errors=no verify)
+    local unit_fixture="$tmp/units" unit_help
+    local -a unit_verify=(systemd-analyze)
+    unit_help="$(systemd-analyze --help)"
+    if [[ "$unit_help" = *--recursive-errors* ]]; then unit_verify+=(--recursive-errors=no); fi
+    unit_verify+=(verify)
+    verify_unit_fixture() {
+      local status=0 unit
+      u="$(SYSTEMD_COLORS=0 SYSTEMD_LOG_LEVEL=warning "${unit_verify[@]}" "$@" 2>&1)" || status=$?
+      [ "$status" -eq 0 ] || return 1
+      # Older systemd can warn without failing; reject diagnostics naming a supplied unit too.
+      for unit in "$@"; do
+        case "$u" in *"${unit##*/}:"*) return 1 ;; esac
+      done
+      return 0
+    }
     mkdir -p "$unit_fixture"
     printf '#!/bin/bash\nexit 0\n' > "$unit_fixture/aps-conecta"
     chmod +x "$unit_fixture/aps-conecta"
@@ -4675,15 +4688,12 @@ FAIL=0" ] \
       "$HOST_DIR/aps-conecta.service" > "$unit_fixture/aps-conecta.service"
     cp "$HOST_DIR/aps-conecta.timer" "$unit_fixture/aps-conecta.timer"
     # Validate these units, with an executable fixture; unrelated host units do not define their validity.
-    u="$("${unit_verify[@]}" "$unit_fixture/aps-conecta.service" "$unit_fixture/aps-conecta.timer" 2>&1)"; unit_rc=$?
     check "units: systemd-analyze accepts the declared service and calendar without ambient dependency errors" \
-      'if [ "$unit_rc" -eq 0 ]; then true; else printf "%s\n" "$u" >&2; false; fi'
+      'if verify_unit_fixture "$unit_fixture/aps-conecta.service" "$unit_fixture/aps-conecta.timer"; then true; else printf "%s\n" "$u" >&2; false; fi'
     sed '/^\[Service\]$/a TestUnknownDirective=yes' "$unit_fixture/aps-conecta.service" > "$unit_fixture/invalid.service"
-    "${unit_verify[@]}" "$unit_fixture/invalid.service" >/dev/null 2>&1; unit_rc=$?
-    check "units: an unknown directive in the service is rejected" '[ "$unit_rc" -ne 0 ]'
+    check "units: an unknown directive in the service is rejected" '! verify_unit_fixture "$unit_fixture/invalid.service"'
     sed '/^\[Timer\]$/a OnCalendar=not-a-calendar' "$unit_fixture/aps-conecta.timer" > "$unit_fixture/invalid.timer"
-    "${unit_verify[@]}" "$unit_fixture/aps-conecta.service" "$unit_fixture/invalid.timer" >/dev/null 2>&1; unit_rc=$?
-    check "units: an invalid calendar in the timer is rejected" '[ "$unit_rc" -ne 0 ]'
+    check "units: an invalid calendar in the timer is rejected" '! verify_unit_fixture "$unit_fixture/aps-conecta.service" "$unit_fixture/invalid.timer"'
   fi
 
   # Host refusal cases use the real entry points and isolated external tools.
