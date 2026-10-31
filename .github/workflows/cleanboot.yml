@@ -1287,7 +1287,7 @@ jobs:
               config = daemon['deploy_config']
               assert config['net'] == 'nextcloud-aio', 'The daemon does not use the suite network'
               assert config['nextcloud_url'] == 'https://' + sys.argv[1], 'The daemon does not use the public suite URL'
-              assert config['harp']['exapp_direct'] is True and config['harp']['docker_socket_port'] == 24000, 'HaRP local deployment is not configured'
+              assert config['harp']['exapp_direct'] is True and str(config['harp']['docker_socket_port']) == '24000', 'HaRP local deployment is not configured'
               print('PASS: one default HaRP daemon uses the suite network and public URL', flush=True)
               checks = json.loads(read('setupchecks', '--output=json', allowed=(0, 1)))
               check = checks['system']['OCA\\AppAPI\\SetupChecks\\DaemonCheck']
