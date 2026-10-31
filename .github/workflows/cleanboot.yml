@@ -359,9 +359,26 @@ jobs:
                        END { printf "| **total** | %.0f MiB |\n", s }' "$RUNNER_TEMP/memoria.txt"
           } | tee -a "$GITHUB_STEP_SUMMARY"
           python3 - "$RUNNER_TEMP/uso.json" <<'PY'
-          import json, subprocess, sys
+          import datetime, json, os, subprocess, sys
           def run(*cmd):
               return subprocess.run(cmd, capture_output=True, text=True).stdout
+          def counters(path, keys):
+              with open(path, encoding="utf-8") as stream:
+                  values = {parts[0].rstrip(":"): int(parts[1]) for line in stream
+                            if (parts := line.split()) and parts[0].rstrip(":") in keys}
+              if set(values) != set(keys) or any(value < 0 for value in values.values()):
+                  raise ValueError("Incomplete host resource counters")
+              return values
+          memory = counters("/proc/meminfo", ("MemTotal", "MemAvailable", "SwapTotal", "SwapFree"))
+          with open("/proc/stat", encoding="utf-8") as stream:
+              cpu = stream.readline().split()
+          if not cpu or cpu[0] != "cpu" or len(cpu) < 9:
+              raise ValueError("Incomplete host CPU counters")
+          host = {"memory_total_kib": memory["MemTotal"], "memory_available_kib": memory["MemAvailable"],
+                  "swap_total_kib": memory["SwapTotal"], "swap_free_kib": memory["SwapFree"],
+                  "logical_cpus": os.cpu_count(), "available_cpus": len(os.sched_getaffinity(0)),
+                  "cpu_ticks": [int(value) for value in cpu[1:]],
+                  "vm_counters": counters("/proc/vmstat", ("pswpin", "pswpout", "oom_kill"))}
           names = [n for n in run("docker", "ps", "--filter", "name=^aps-conecta-",
                                   "--filter", "name=^nextcloud-aio-mastercontainer$",
                                   "--format", "{{.Names}}").splitlines() if n]
@@ -376,12 +393,9 @@ jobs:
               fila = dict(zip(campos, ln.split(None, len(campos) - 1)))
               if fila["source"] not in vistos:
                   vistos.add(fila["source"]); disco.append(fila)
-          try:
-              total = int(next(l.split()[1] for l in open("/proc/meminfo", encoding="utf-8")
-                               if l.startswith("MemTotal:")))
-          except (OSError, StopIteration, ValueError):
-              total = 0
-          json.dump({"memoria_gib": round(total / 1048576, 1), "contenedores": stats, "disco": disco},
+          json.dump({"memoria_gib": round(memory["MemTotal"] / 1048576, 1),
+                     "sampled_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                     "host": host, "contenedores": stats, "disco": disco},
                     open(sys.argv[1], "w", encoding="utf-8"), indent=1)
           PY
       - name: The usage record, as an artifact (a missing record is a red, never a silent skip)
