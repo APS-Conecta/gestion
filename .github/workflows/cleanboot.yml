@@ -1839,6 +1839,46 @@ jobs:
           trap - EXIT
           [ "$(docker exec "$master" sha256sum "$config")" = "$before" ]
           echo 'PASS: the failure left the existing wizard configuration intact'
+      # Observe scheduled data work before fault tests can interrupt its hourly job.
+      # #40, by IP: estadística — the second optional app — installed from its release because this
+      # job chose it, and the DEIS data import RUNNING: the app's own hourly job is what downloads
+      # the figures (ADR-0005 in that repo — the installer moves no data), so the assertion is the
+      # job's own observable state, not a table: after cron's first tick (the suite's nextcloud runs
+      # cron every 5 min) deis_checked_at records the first DEIS contact and deis_register the Base
+      # de Establecimientos it imported — real DEIS bytes landed, and the window's members are
+      # queued for the ticks that follow.
+      - name: Estadística installed from its release because it was chosen, and its DEIS import runs (#40)
+        run: |
+          set -euo pipefail
+          grep -q "estadistica=1" /opt/aps-conecta/aio/opciones \
+            || { echo "FAIL: the wizard's options record does not name estadistica=1 — the choice the install was given" >&2; cat /opt/aps-conecta/aio/opciones >&2; exit 1; }
+      - name: Estadística installed from its release, at its locked tag, with no signature.json
+        uses: ./.github/actions/assert-release-app
+        with:
+          app: estadistica
+      - name: Estadística's DEIS data import runs — the job contacted DEIS and imported its register (#40)
+        run: |
+          set -euo pipefail
+          cd /opt/aps-conecta/instalador && source scripts/env.sh
+          occ background-job:list --class 'OCA\Estadistica\BackgroundJob\RemJob' --output=json \
+            | python3 -c 'import json, sys; print(json.dumps([{k: row[k] for k in ("id", "class", "last_run")} for row in json.load(sys.stdin)]))'
+          # cron ticks every 5 min; the job runs on the first tick after enable. The bound is the
+          # family's own (the store-off reboot's 10 min): enough for two ticks.
+          chequeo=""
+          for i in $(seq 60); do
+            chequeo="$(occ config:app:get estadistica deis_checked_at 2>/dev/null || true)"
+            [ -n "$chequeo" ] && { echo "deis_checked_at set (attempt $i)"; break; }
+            sleep 10
+          done
+          [ -n "$chequeo" ] \
+            || { echo "FAIL: estadistica's DEIS job never ran within 10 min of the install — deis_checked_at is empty; the app is installed, so its hourly job (cron.php, every 5 min) should have checked DEIS. " >&2; exit 1; }
+          # The Base de Establecimientos is the import's first landing: a real DEIS database file
+          # (~1 MB) read, imported and recorded. Empty here with a set checked_at means the check
+          # ran but could not reach DEIS — said loudly, never waved through.
+          registro="$(occ config:app:get estadistica deis_register 2>/dev/null || true)"
+          [ -n "$registro" ] \
+            || { echo "FAIL: deis_checked_at is set ($chequeo) but deis_register is empty — the DEIS check ran without importing the Base de Establecimientos; the runner may not reach repositoriodeis.minsal.cl (see deis_check_errors: $(occ config:app:get estadistica deis_check_errors 2>/dev/null || true))" >&2; exit 1; }
+          echo "estadística: la importación del DEIS corre — contacto registrado, Base de Establecimientos importada, la ventana REM queda en cola"
       # #147: a dependency outage must not disable an installed connector. Waiting for
       # fresh Nextcloud health proves its entrypoint finished the bounded wait, so an
       # enabled check cannot pass early while startup is still waiting for the server.
@@ -1937,43 +1977,6 @@ jobs:
         uses: ./.github/actions/assert-release-app
         with:
           app: spreed
-      # #40, by IP: estadística — the second optional app — installed from its release because this
-      # job chose it, and the DEIS data import RUNNING: the app's own hourly job is what downloads
-      # the figures (ADR-0005 in that repo — the installer moves no data), so the assertion is the
-      # job's own observable state, not a table: after cron's first tick (the suite's nextcloud runs
-      # cron every 5 min) deis_checked_at records the first DEIS contact and deis_register the Base
-      # de Establecimientos it imported — real DEIS bytes landed, and the window's members are
-      # queued for the ticks that follow.
-      - name: Estadística installed from its release because it was chosen, and its DEIS import runs (#40)
-        run: |
-          set -euo pipefail
-          grep -q "estadistica=1" /opt/aps-conecta/aio/opciones \
-            || { echo "FAIL: the wizard's options record does not name estadistica=1 — the choice the install was given" >&2; cat /opt/aps-conecta/aio/opciones >&2; exit 1; }
-      - name: Estadística installed from its release, at its locked tag, with no signature.json
-        uses: ./.github/actions/assert-release-app
-        with:
-          app: estadistica
-      - name: Estadística's DEIS data import runs — the job contacted DEIS and imported its register (#40)
-        run: |
-          set -euo pipefail
-          cd /opt/aps-conecta/instalador && source scripts/env.sh
-          # cron ticks every 5 min; the job runs on the first tick after enable. The bound is the
-          # family's own (the store-off reboot's 10 min): enough for two ticks.
-          chequeo=""
-          for i in $(seq 60); do
-            chequeo="$(occ config:app:get estadistica deis_checked_at 2>/dev/null || true)"
-            [ -n "$chequeo" ] && { echo "deis_checked_at set (attempt $i)"; break; }
-            sleep 10
-          done
-          [ -n "$chequeo" ] \
-            || { echo "FAIL: estadistica's DEIS job never ran within 10 min of the install — deis_checked_at is empty; the app is installed, so its hourly job (cron.php, every 5 min) should have checked DEIS. " >&2; exit 1; }
-          # The Base de Establecimientos is the import's first landing: a real DEIS database file
-          # (~1 MB) read, imported and recorded. Empty here with a set checked_at means the check
-          # ran but could not reach DEIS — said loudly, never waved through.
-          registro="$(occ config:app:get estadistica deis_register 2>/dev/null || true)"
-          [ -n "$registro" ] \
-            || { echo "FAIL: deis_checked_at is set ($chequeo) but deis_register is empty — the DEIS check ran without importing the Base de Establecimientos; the runner may not reach repositoriodeis.minsal.cl (see deis_check_errors: $(occ config:app:get estadistica deis_check_errors 2>/dev/null || true))" >&2; exit 1; }
-          echo "estadística: la importación del DEIS corre — contacto registrado, Base de Establecimientos importada, la ventana REM queda en cola"
       # #41, by IP: totem — the third optional app — installed from its release because this
       # job chose it beside farmacia. Its release is the only channel that ever existed (the
       # bake never vendored a totem tarball — #41 shipped it optional from day one), and #42
