@@ -1378,30 +1378,38 @@ jobs:
           code="$(dav --output /dev/null "$task_av_url/antivirus-assembled-184.bin")"
           [ "$code" = 404 ]
           echo 'PASS: individually accepted chunks cannot bypass the complete-file scan limit'
-          # Hold the native frontend so the active upload cannot finish before its connection is interrupted.
-          docker exec aps-antivirus-boundary killall -STOP c-icap
+          # Hold the engine until the running frontend has staged the upload, then interrupt its connection.
+          docker exec aps-antivirus-boundary killall -STOP clamd
           printf 'user = "ana.prueba:%s"\n' "$task_av_password" \
             | "${task_av_curl[@]}" --limit-rate 128k --upload-file "$task_av_dir/at-limit.bin" \
                 --output "$task_av_dir/midstream.xml" "$task_av_url/antivirus-midstream-184.bin" > "$task_av_dir/midstream.code" &
           task_av_pid=$!
-          sleep 9
-          task_av_connected=0
-          for attempt in $(seq 30); do
-            if docker exec aps-conecta-nextcloud awk '$3 ~ /:0540$/ && $4 == "01" { found=1 } END { exit !found }' /proc/net/tcp /proc/net/tcp6; then
-              task_av_connected=1
+          task_av_staged=0
+          task_av_stage_deadline=$((SECONDS + 45))
+          while [ "$SECONDS" -lt "$task_av_stage_deadline" ]; do
+            if docker exec aps-antivirus-boundary sh -c '
+              for file in /tmp/CI_TMP_*; do
+                [ -f "$file" ] || continue
+                [ "$(stat -c %s "$file")" -ge 65536 ] && exit 0
+              done
+              exit 1
+            '; then
+              task_av_staged=1
               break
             fi
             sleep 0.5
           done
-          [ "$task_av_connected" = 1 ] && kill -0 "$task_av_pid" \
-            || { echo 'FAIL: the upload did not hold an active scanner connection' >&2; exit 1; }
+          [ "$task_av_staged" = 1 ] && kill -0 "$task_av_pid" \
+            || { echo 'FAIL: the frontend did not stage an in-flight upload' >&2; exit 1; }
           docker exec aps-antivirus-boundary killall -KILL c-icap
+          docker exec aps-antivirus-boundary killall -CONT clamd
           task_av_transport=0
           wait "$task_av_pid" || task_av_transport=$?
           task_av_pid=
           code="$(cat "$task_av_dir/midstream.code")"
-          [ "$task_av_transport" -ne 0 ] || [[ "$code" =~ ^[45][0-9][0-9]$ ]] \
-            || { echo "FAIL: an interrupted scan returned HTTP $code" >&2; exit 1; }
+          [ "$task_av_transport" = 0 ] && [[ "$code" =~ ^[45][0-9][0-9]$ ]] \
+            && grep -q 'contacte a la administración' "$task_av_dir/midstream.xml" \
+            || { echo "FAIL: an interrupted scan returned HTTP $code without actionable Spanish guidance" >&2; exit 1; }
           code="$(dav --output /dev/null "$task_av_url/antivirus-midstream-184.bin")"
           [ "$code" = 404 ]
           wait_boundary
