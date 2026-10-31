@@ -1192,7 +1192,7 @@ jobs:
           [ "$(attempts 203.0.113.201)" -gt 0 ] \
             || { echo 'FAIL: the internal proxy lost the forwarded client address' >&2; exit 1; }
           echo 'PASS: a proxy inside the actual suite network preserves the client address'
-      - name: Staff uploads accept clean files and reject EICAR
+      - name: Staff uploads are scanned before acceptance
         run: |
           set -euo pipefail
           umask 077
@@ -1206,18 +1206,25 @@ jobs:
           )"
           printf '::add-mask::%s\n' "$task_av_password"
           task_av_url="https://$SUITE_IP/remote.php/dav/files/ana.prueba"
+          task_av_boundary_active=0
           dav() {
             printf 'user = "ana.prueba:%s"\n' "$task_av_password" \
               | curl --config - --silent --show-error --connect-timeout 10 --max-time 60 \
                   --cacert "$RUNNER_TEMP/ca.crt" --write-out '%{http_code}' "$@"
           }
           cleanup() {
-            local name
-            for name in antivirus-clean-184.txt antivirus-eicar-184.txt; do
-              dav --request DELETE --output /dev/null "$task_av_url/$name" >/dev/null || true
+            local name failed=0
+            for name in antivirus-clean-184.txt antivirus-eicar-184.txt antivirus-at-limit-184.bin antivirus-over-limit-184.bin; do
+              dav --request DELETE --output /dev/null "$task_av_url/$name" >/dev/null || failed=1
             done
+            if [ "$task_av_boundary_active" = 1 ]; then
+              docker start aps-conecta-clamav >/dev/null || failed=1
+              docker exec --user www-data aps-conecta-nextcloud bash /configure-apps.sh antivirus >/dev/null || failed=1
+              docker rm --force --volumes aps-antivirus-boundary >/dev/null || failed=1
+            fi
+            return "$failed"
           }
-          trap cleanup EXIT
+          trap 'task_av_status=$?; cleanup || task_av_status=1; exit "$task_av_status"' EXIT
           printf 'APS Conecta antivirus acceptance.\n' > "$task_av_dir/clean.txt"
           printf '%s' 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > "$task_av_dir/eicar.txt"
           code="$(dav --upload-file "$task_av_dir/clean.txt" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-clean-184.txt")"
@@ -1234,6 +1241,39 @@ jobs:
           [ "$code" = 404 ] \
             || { echo "FAIL: the rejected upload remains readable (HTTP $code)" >&2; exit 1; }
           echo 'PASS: EICAR is rejected and no infected file is stored'
+          task_av_image="$(docker inspect aps-conecta-clamav --format '{{.Config.Image}}')"
+          task_av_limit=1M
+          task_av_boundary_active=1
+          docker stop --time 10 aps-conecta-clamav >/dev/null
+          docker run --detach --init --name aps-antivirus-boundary --network nextcloud-aio \
+            --read-only --tmpfs /run --tmpfs /tmp --tmpfs /var/log/clamav \
+            --env MAX_SIZE="$task_av_limit" --env AIO_LOG_LEVEL=warn \
+            --health-interval=2s --health-timeout=10s --health-start-period=1s --health-retries=90 \
+            "$task_av_image" >/dev/null
+          for attempt in $(seq 90); do
+            [ "$(docker inspect aps-antivirus-boundary --format '{{.State.Health.Status}}')" != healthy ] || break
+            sleep 2
+          done
+          [ "$(docker inspect aps-antivirus-boundary --format '{{.State.Health.Status}}')" = healthy ] \
+            || { echo 'FAIL: the boundary scanner did not become healthy' >&2; exit 1; }
+          docker exec --user www-data --env PHP_UPLOAD_LIMIT="$task_av_limit" --env CLAMAV_HOST=aps-antivirus-boundary \
+            aps-conecta-nextcloud bash /configure-apps.sh antivirus
+          truncate -s 1048576 "$task_av_dir/at-limit.bin"
+          truncate -s 1048577 "$task_av_dir/over-limit.bin"
+          code="$(dav --upload-file "$task_av_dir/at-limit.bin" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-at-limit-184.bin")"
+          [ "$code" = 201 ] || [ "$code" = 204 ] \
+            || { echo "FAIL: a file at the scan limit returned HTTP $code" >&2; exit 1; }
+          code="$(dav --output "$task_av_dir/download.bin" "$task_av_url/antivirus-at-limit-184.bin")"
+          [ "$code" = 200 ] && cmp "$task_av_dir/at-limit.bin" "$task_av_dir/download.bin" \
+            || { echo 'FAIL: the file at the scan limit did not round-trip' >&2; exit 1; }
+          echo 'PASS: a complete file at the scan limit is accepted'
+          code="$(dav --upload-file "$task_av_dir/over-limit.bin" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-over-limit-184.bin")"
+          [ "$code" = 415 ] && grep -qi virus "$task_av_dir/response.xml" \
+            || { echo "FAIL: a file above the scan limit returned HTTP $code; expected antivirus rejection (415)" >&2; exit 1; }
+          code="$(dav --output /dev/null "$task_av_url/antivirus-over-limit-184.bin")"
+          [ "$code" = 404 ] \
+            || { echo "FAIL: a file above the scan limit remains readable (HTTP $code)" >&2; exit 1; }
+          echo 'PASS: a complete file above the scan limit is rejected'
       # Nextcloud's own side of the address: its bundle trusts the CA (phase 07), the push server reaches
       # it inside the suite's network (the fork's patch 238), and the office both ways (phase 14).
       - name: Nextcloud trusts the CA; push and office work by IP
