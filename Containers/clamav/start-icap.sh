@@ -11,4 +11,4 @@ until [ "$(printf 'PING\n' | timeout 2 nc 127.0.0.1 3310)" = PONG ]; do
     fi
     sleep 2
 done
-exec c-icap -N -f /etc/c-icap/c-icap.conf
+exec c-icap -N -f /tmp/c-icap.conf

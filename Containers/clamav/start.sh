@@ -15,6 +15,8 @@ for setting in MaxScanSize MaxFileSize PCREMaxFileSize StreamMaxLength; do
     printf '%s %s\n' "$setting" "$limit" >> /tmp/clamd.conf
 done
 printf 'ScanArchive yes\nAlertExceedsMax yes\nAlertEncrypted yes\n' >> /tmp/clamd.conf
+sed "s/^virus_scan.MaxObjectSize .*/virus_scan.MaxObjectSize $limit/" \
+    /etc/c-icap/c-icap.conf > /tmp/c-icap.conf
 
 # Print out clamav version for compliance reasons
 clamscan --version

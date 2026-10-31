@@ -110,6 +110,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-065 | the native antivirus frontend restarted repeatedly and held installation at scanner readiness (#184 rehearsal) | explicit c-icap User and Group directives attempted privileged supplementary-group changes inside an already unprivileged container | the frontend inherits the Docker container identity; a bounded published-image health probe in the by-IP job records native diagnostics before full installation |
 
+| A-066 | a scanner failure returned generic HTTP 500 instead of an actionable Spanish upload rejection (#184 rehearsal) | the native endpoint omitted the store app's recognized incomplete-scan classification | the pinned native module maps failed or incomplete scans to the supported unscannable response, bounds staging and decoding with the same scan budget, and retains the complete-body output lock; the real staff WebDAV fault probe requires rejection, Spanish guidance and no readable accepted file |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and
