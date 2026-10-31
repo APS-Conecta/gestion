@@ -2989,8 +2989,34 @@ else:
         'Warning: Running version: 2.1.1; Server does not support all features of this Talk version, missing features: changed-users'}
     state['native']['setupchecks'] = json.dumps(checks)
     state['setup_exit'] = 1
+    compatible = copy.deepcopy(state)
     result = run(state)
     assert 'WARN:' in result['output'] and any('config:system:get' in call for call in result['calls'])
+    checks['talk'][check]['description'] = 'Advertencia: Versión en ejecución: 2.1.1; El servidor no soporta todas las características de esta versión de Talk, características que faltan: changed-users'
+    state['native']['setupchecks'] = json.dumps(checks)
+    run(state)
+    for description in (
+        'Warning: Running version: 2.1.1; Server does not support all features of this Talk version, missing features: chat-relay, changed-users',
+        'Warning: Running version: 2.1.1; Server does not support all features of this Talk version, missing features: chat-relay; Server does not support all features of this Talk version, missing features: changed-users',
+        'It is highly recommended to configure a memory cache when running Nextcloud Talk with a High-performance backend.',
+    ):
+        state = copy.deepcopy(compatible)
+        checks = json.loads(state['native']['setupchecks'])
+        checks['talk'][check]['description'] = description
+        state['native']['setupchecks'] = json.dumps(checks)
+        run(state, success=False)
+    for cache_state in ('warning', 'error', 'missing'):
+        state = copy.deepcopy(compatible)
+        checks = json.loads(state['native']['setupchecks'])
+        checks['system'] = {} if cache_state == 'missing' else {'OCA\\Settings\\SetupChecks\\MemcacheConfigured': {'severity': cache_state}}
+        state['native']['setupchecks'] = json.dumps(checks)
+        run(state, success=False)
+    state = copy.deepcopy(compatible)
+    state['native']['config:system:get'] = '\\OC\\Memcache\\NullCache'
+    run(state, success=False)
+    for key, value in [('native_failure', 'config:system:get'), ('curl_failure', True), ('setup_exit', 2)]:
+        state = copy.deepcopy(compatible); state[key] = value
+        run(state, success=False)
     state = copy.deepcopy(base)
     state['native']['setupchecks'] = json.dumps({'talk': {check: {'severity': 'warning',
         'description': 'synthetic secret must never escape; changed-users'}}})
