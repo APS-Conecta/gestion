@@ -830,31 +830,17 @@ def selftest():
             return {"id": repo.split("/")[-1].lower().replace("-", ""), "source": "own",
                     "repo": repo, "optional": False, "containers": [], "release": True, **extra}
 
-        # the repos the arms walk — the hub keeps each one newest-first. The real rows
-        # mirror the shipped apps.json's release rows (territorio #33, epidemiologia #34,
-        # IntraVox #35, side_menu #38, eurooffice #36, and the optional farmacia #39, estadistica
-        # #40 and totem #41): the production-argv arm below reads the SHIPPED manifest, so a
-        # release row without its hub repo reds there, at the cause. IntraVox declares the fork's
-        # real range (32–35); side_menu's real tag is 6.0.1, the same number the old bake once
-        # pinned, which is exactly why the lock/store pair is what proves the channel; eurooffice
-        # rides at its real fork release, v11.0.7; totem's v0.3.0 is its first release — the one
-        # whose tarball carries the two committed voices (#41).
+        # Production-manifest release rows need matching hub fixtures.
         mk_release("APS-Conecta/territorio", "v0.80.0", "0.80.0", nc="34", nc_max="34")
         mk_release("APS-Conecta/epidemiologia", "v0.12.0", "0.12.0", nc="34", nc_max="34")
         mk_release("APS-Conecta/IntraVox", "v3.2.0", "3.2.0", nc="32", nc_max="35")
         mk_release("APS-Conecta/farmacia", "v0.12.0", "0.12.0", nc="34", nc_max="34")
         mk_release("APS-Conecta/estadistica", "v0.2.0", "0.2.0", nc="34", nc_max="34")
         mk_release("APS-Conecta/totem", "v0.3.0", "0.3.0", nc="34", nc_max="34")
-        mk_release("APS-Conecta/side_menu", "v6.0.1", "6.0.1", nc="34", nc_max="34")
-        mk_release("APS-Conecta/eurooffice", "v11.0.7", "11.0.7", nc="34", nc_max="34")
         mk_release("APS-Conecta/files-upload-guard", "v0.1.0", "0.1.0",
                    nc="34", nc_max="34", app="files_upload_guard")
         mk_release("APS-Conecta/files-fulltextsearch", "v34.0.3", "34.0.3",
                    nc="34", nc_max="34", app="files_fulltextsearch")
-        # #145: spreed's fork — the zero-change fork of nextcloud/spreed whose App release is
-        # upstream's own tarball re-proven and re-signed (ADR-0020). The fixture mirrors the
-        # real first refresh: v24.0.6, upstream's newest stable for Nextcloud 34.
-        mk_release("APS-Conecta/spreed", "v24.0.6", "24.0.6", nc="34", nc_max="34")
         mk_release("APS-Conecta/vieja", "v2.0.0", "2.0.0", nc="35", nc_max="35")
         mk_release("APS-Conecta/vieja", "v1.9.0", "1.9.0", nc="34", nc_max="34")
         mk_release("APS-Conecta/mala-firma", "v1.0.0", "1.0.0", firma="ajena")
@@ -1017,13 +1003,10 @@ def selftest():
                               "--nextcloud", "34.0.4",
                               "--opciones", os.path.join(tmp, "prod-sin-eleccion")],
                              capture_output=True, text=True, timeout=120)
-        check("cli fetch without --manifest: the shipped manifest's release rows all resolve and fetch over the hub — a row that reds here lacks its fixture: add mk_release(<repo>, tag, version, nc=…, nc_max=…) to the list above (#33–#41, #119); the optional rows resolve NOTHING unchosen (#39, #40, #41), and spreed resolves with NO record too — an absent record never turns Talk off (#145)",
+        check("cli fetch without --manifest: the shipped manifest's release rows all resolve and fetch over the hub — a row that reds here lacks its fixture: add mk_release(<repo>, tag, version, nc=…, nc_max=…) to the list above (#33–#41, #119); the optional rows resolve NOTHING unchosen (#39, #40, #41)",
               run.returncode == 0 and "✓ apps: territorio v0.80.0" in run.stdout
               and "✓ apps: epidemiologia v0.12.0" in run.stdout
               and "✓ apps: intravox v3.2.0" in run.stdout
-              and "✓ apps: side_menu v6.0.1" in run.stdout
-              and "✓ apps: eurooffice v11.0.7" in run.stdout
-              and "✓ apps: spreed v24.0.6" in run.stdout
               and "✓ apps: farmacia no elegida — no se instala" in run.stdout
               and "✓ apps: estadistica no elegida — no se instala" in run.stdout
               and "✓ apps: totem no elegida — no se instala" in run.stdout
@@ -1033,9 +1016,9 @@ def selftest():
               and read_lock()["apps"]["territorio"]["tag"] == "v0.80.0"
               and read_lock()["apps"]["epidemiologia"]["tag"] == "v0.12.0"
               and read_lock()["apps"]["intravox"]["tag"] == "v3.2.0"
-              and read_lock()["apps"]["side_menu"]["tag"] == "v6.0.1"
-              and read_lock()["apps"]["eurooffice"]["tag"] == "v11.0.7"
-              and read_lock()["apps"]["spreed"]["tag"] == "v24.0.6"
+              and "side_menu" not in read_lock()["apps"]
+              and "eurooffice" not in read_lock()["apps"]
+              and "spreed" not in read_lock()["apps"]
               and read_lock()["apps"]["files_upload_guard"]["tag"] == "v0.1.0"
               and read_lock()["apps"]["files_fulltextsearch"]["tag"] == "v34.0.3")
         run = subprocess.run([sys.executable, os.path.abspath(__file__), "fetch",
@@ -1059,7 +1042,7 @@ def selftest():
                   "source": "own", "repo": "APS-Conecta/totem", "tag": "v0.3.0",
                   "version": "0.3.0",
                   "sha256": sha256_file(store_file("totem", "v0.3.0"))})
-        # Legacy service selections cannot change signed Talk acquisition (ADR-0021).
+        # Legacy service selections leave official store apps outside the release resolver.
         os.environ["APS_APPS_LOCK"] = os.path.join(tmp, "sin-talk-lock.json")
         os.environ["APS_APPS_STORE"] = os.path.join(tmp, "sin-talk-store")
         with open(os.path.join(tmp, "prod-sin-talk"), "w", encoding="utf-8") as fh:
@@ -1068,11 +1051,10 @@ def selftest():
                               "--nextcloud", "34.0.4",
                               "--opciones", os.path.join(tmp, "prod-sin-talk")],
                              capture_output=True, text=True, timeout=120)
-        check("cli fetch ignores a legacy Talk-off selection and resolves the signed release (#183)",
+        check("cli fetch ignores legacy service selections and leaves official Talk to provisioning",
               run.returncode == 0
-              and "✓ apps: spreed v24.0.6" in run.stdout
-              and read_lock()["apps"]["spreed"]["tag"] == "v24.0.6"
-              and os.path.exists(store_file("spreed", "v24.0.6"))
+              and "spreed" not in read_lock()["apps"]
+              and not os.path.exists(store_file("spreed", "v24.0.6"))
               and read_lock()["apps"]["territorio"]["tag"] == "v0.80.0"
               and read_lock()["apps"]["farmacia"]["tag"] == "v0.12.0")
         # Plans and updates ignore the same legacy field.
@@ -1081,20 +1063,19 @@ def selftest():
                               "--opciones", os.path.join(tmp, "prod-sin-talk")],
                              capture_output=True, text=True, timeout=120)
         check("cli plan ignores a legacy Talk-off selection (#183)",
-              run.returncode == 0 and "spreed\tv24.0.6\tv24.0.6" in run.stdout
+              run.returncode == 0 and "spreed\t" not in run.stdout
               and "territorio\tv0.80.0" in run.stdout)
         candado_sin_talk = os.path.join(tmp, "sin-talk-lock.json")
         write_lock(candado_sin_talk, {"nextcloud": "34.0.4", "apps": {
             "spreed": {"source": "fork", "repo": "APS-Conecta/spreed", "tag": "v24.0.6",
-                       "version": "24.0.6", "sha256": sha256_file(store_file("spreed", "v24.0.6"))}}})
+                       "version": "24.0.6", "sha256": "0" * 64}}})
         nuevo_sin_talk = os.path.join(tmp, "sin-talk-lock.next.json")
         run = subprocess.run([sys.executable, os.path.abspath(__file__), "actualizar",
                               "--opciones", os.path.join(tmp, "prod-sin-talk"),
                               "--nuevo", nuevo_sin_talk, "--nextcloud", "34.0.4"],
                              capture_output=True, text=True, timeout=120)
-        check("cli actualizar verifies and refreshes spreed despite a legacy Talk-off selection (#183)",
+        check("cli actualizar preserves a stale store-transition lock without refreshing the retired fork",
               run.returncode == 0
-              and "✓ apps: spreed v24.0.6" in run.stdout
               and read_lock(nuevo_sin_talk)["apps"]["spreed"]["tag"] == "v24.0.6")
         os.environ["APS_APPS_LOCK"] = os.path.join(tmp, "cli-lock.json")
         os.environ["APS_APPS_STORE"] = os.path.join(tmp, "cli-store")

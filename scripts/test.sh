@@ -511,7 +511,7 @@ def contract(text):
         errors.append('images do not build the proven commit')
     if 'RELEASE_SHA: ${{ needs.gates.outputs.sha }}' not in definitions.get('package', ''):
         errors.append('the package does not receive the proven SHA')
-    required = {'MINISIGN_SECRET_KEY', 'MINISIGN_KEY_PASSWORD', 'SPREED_REFRESH_TOKEN'}
+    required = {'MINISIGN_SECRET_KEY', 'MINISIGN_KEY_PASSWORD'}
     seen = set()
     for name, job in definitions.items():
         refs = set(re.findall(r'secrets\.(MINISIGN_SECRET_KEY|MINISIGN_KEY_PASSWORD|SPREED_REFRESH_TOKEN)', job))
@@ -526,17 +526,15 @@ def contract(text):
             for secret in required:
                 if f'secrets.{secret}' not in step:
                     continue
-                consumer = ('bash scripts/package-release.sh' in step and name == 'package'
-                            if secret.startswith('MINISIGN') else
-                            'repos/APS-Conecta/spreed/dispatches' in step and name == 'spreed')
-                env_key = secret if secret.startswith('MINISIGN') else 'GH_TOKEN'
+                consumer = 'bash scripts/package-release.sh' in step and name == 'package'
+                env_key = secret
                 env_match = re.search(r'^          ' + env_key + r': \$\{\{ secrets\.' + secret + r' \}\}\s*$', step, re.M)
                 if not consumer or not env_match:
                     errors.append(f'{secret} escapes its consuming step environment')
     if seen != required:
-        errors.append('release signing or refresh secrets are missing')
-    if 'scripts/spreed-refresh.py verify' not in definitions.get('spreed', ''):
-        errors.append('Talk archives are not checked by the shared content verifier')
+        errors.append('release signing secrets are missing or an obsolete refresh secret is used')
+    if 'spreed' in definitions:
+        errors.append('the release chain still refreshes the retired Talk fork')
     publisher = next((step for step in steps(definitions.get('package', '')) if 'gh release create ' in step), '')
     if '--latest=false' not in publisher:
         errors.append('rehearsal creation does not explicitly refuse Latest')
@@ -551,14 +549,12 @@ if errors:
 for bad in [source.replace('run: bash scripts/test.sh', 'run: echo skipped'),
             source.replace('    environment: Release\n', ''),
             source.replace('--latest=false', '--latest'),
-            source.replace('scripts/spreed-refresh.py verify', 'scripts/spreed-refresh.py resolve'),
             source.replace('secrets.MINISIGN_KEY_PASSWORD', 'secrets.OTHER_KEY')]:
     assert contract(bad), 'a broken release contract passed'
 
 definitions = jobs(source)
 ancestry = next(run_script(step) for step in steps(definitions['gates']) if 'git merge-base --is-ancestor' in step)
 publish = next(run_script(step) for step in steps(definitions['package']) if 'gh release create ' in step)
-asset_wait = next(run_script(step) for step in steps(definitions['spreed']) if step.startswith("name: Wait for the fork"))
 with tempfile.TemporaryDirectory(prefix='release-contract-') as tmp:
     root = pathlib.Path(tmp)
     repo = root / 'source'
@@ -596,30 +592,10 @@ with tempfile.TemporaryDirectory(prefix='release-contract-') as tmp:
     gh = tools / 'gh'
     gh.write_text('''#!/usr/bin/env python3
 import json, os, pathlib, sys
-if sys.argv[1:3] == ['release', 'view']:
-    counter = pathlib.Path(os.environ['ASSET_CALLS'])
-    count = int(counter.read_text()) + 1 if counter.exists() else 1
-    counter.write_text(str(count))
-    print('spreed.tar.gz' if count == 1 else 'spreed.tar.gz\\ninfo.xml\\nSHA256SUMS\\nSHA256SUMS.minisig')
-    sys.exit(0)
 assert sys.argv[1:3] == ['release', 'create'], sys.argv
 pathlib.Path(os.environ['RELEASE_CALL']).write_text(json.dumps(sys.argv[1:]))
 ''')
     gh.chmod(0o755)
-    sleep = tools / 'sleep'
-    sleep.write_text('#!/bin/sh\nexit 0\n')
-    sleep.chmod(0o755)
-    asset_calls = root / 'asset-calls'
-    asset_names = 'spreed.tar.gz info.xml SHA256SUMS SHA256SUMS.minisig'
-    configured = re.search(r'^      SPREED_RELEASE_ASSETS: "([^"]+)"$', definitions['spreed'], re.M)
-    if configured:
-        assert set(configured[1].split()) == set(asset_names.split()), 'the readiness inventory is incomplete'
-        asset_names = configured[1]
-    waited = subprocess.run(['bash', '-euo', 'pipefail', '-c', asset_wait], cwd=root,
-                            env=dict(os.environ, PATH=str(tools) + os.pathsep + os.environ['PATH'],
-                                     TAG='v24.0.6', ASSET_CALLS=str(asset_calls), SPREED_RELEASE_ASSETS=asset_names),
-                            text=True, capture_output=True, timeout=15)
-    assert waited.returncode == 0 and int(asset_calls.read_text()) >= 2, 'release readiness accepted a partial asset set'
     git('tag', 'v1.2.3', main)
     git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
         'tag', '-a', 'v0.0.0-ci.2031', feature, '-m', 'annotated rehearsal fixture')
@@ -2397,27 +2373,153 @@ CASES
 }
 check cleanboot_tile_url_cases
 
-# The usage record's python, out of cleanboot.yml and over a stub df that prints GNU's real header
+# Clean boot's usage collector over a stub df that prints GNU's real header
 # (8 words for 7 columns), a source seen twice and a mount point with a space: the record is
-# written, one row per source, each named by the columns asked for.
+# written, one row per source, each named by the columns asked for. Host counters use explicit
+# fixtures so the sample cannot substitute the runner's nominal size or silently omit pressure.
 cleanboot_usage_cases() {
-  local py tmp rc
-  py="$(awk '/- name: The measured usage/ {f=1; next}
-             f && /<<.PY.$/ {r=1; next}
-             r && /^ *PY$/ {exit}
-             r {sub(/^          /, ""); print}' .github/workflows/cleanboot.yml)"
-  [ -n "$py" ] || { echo "cleanboot: the usage record's python was not found" >&2; return 1; }
+  local py tmp rc task_usage_error
+  py="$(cat scripts/usage.py)"
+  [ -n "$py" ] || { echo "cleanboot: the usage collector was not found" >&2; return 1; }
   tmp="$(mktemp -d)"; mkdir "$tmp/bin"
   printf '#!/bin/sh\nexit 0\n' > "$tmp/bin/docker"
   printf '#!/bin/sh\nprintf "%%s\\n" "Filesystem Type 1B-blocks Used Avail Use%% Mounted on" "/dev/sda1 ext4 100 40 60 40%% /" "/dev/sda1 ext4 100 40 60 40%% /var/lib/docker" "/dev/sdb1 ext4 100 10 90 10%% /mnt/with space"\n' > "$tmp/bin/df"
   chmod +x "$tmp/bin/docker" "$tmp/bin/df"
-  PATH="$tmp/bin:$PATH" python3 - "$tmp/uso.json" <<<"$py" >/dev/null 2>&1; rc=$?
+  printf '%s\n' "$py" > "$tmp/usage.py"
+  PATH="$tmp/bin:$PATH" python3 - "$tmp/uso.json" "$tmp/usage.py" <<'PY' > "$tmp/result" 2>&1
+import builtins, io, json, os, pathlib, sys
+from unittest.mock import patch
+
+source = pathlib.Path(sys.argv[2]).read_text()
+real_open = builtins.open
+fixtures = {
+    '/proc/meminfo': 'MemTotal: 12582912 kB\nMemAvailable: 3145728 kB\nSwapTotal: 2097152 kB\nSwapFree: 1048576 kB\n',
+    '/proc/stat': 'cpu 100 2 30 400 5 6 7 8 9 10\n',
+    '/proc/vmstat': 'pswpin 11\npswpout 12\noom_kill 2\n',
+    '/proc/sys/kernel/random/boot_id': '00000000-0000-0000-0000-000000000001\n',
+}
+def fixture_open(path, *args, **kwargs):
+    return io.StringIO(fixtures[str(path)]) if str(path) in fixtures else real_open(path, *args, **kwargs)
+
+with patch('builtins.open', fixture_open), patch('os.cpu_count', return_value=6), \
+        patch('os.sched_getaffinity', return_value={1, 3, 5}), \
+        patch('os.sysconf', side_effect={'SC_PAGE_SIZE': 4096, 'SC_CLK_TCK': 100}.__getitem__):
+    namespace = {'__name__': 'usage_fixture'}
+    exec(compile(source, 'scripts/usage.py', 'exec'), namespace)
+    assert namespace['main']([sys.argv[1]]) == 0
+record = json.loads(pathlib.Path(sys.argv[1]).read_text())
+assert record['host'] == {
+    'memory_total_kib': 12582912, 'memory_available_kib': 3145728,
+    'swap_total_kib': 2097152, 'swap_free_kib': 1048576,
+    'logical_cpus': 6, 'available_cpus': 3,
+    'page_size_bytes': 4096, 'clock_ticks_per_second': 100,
+    'boot_id': '00000000-0000-0000-0000-000000000001',
+    'cpu_ticks': [100, 2, 30, 400, 5, 6, 7, 8, 9, 10],
+    'vm_counters': {'pswpin': 11, 'pswpout': 12, 'oom_kill': 2},
+}, record
+assert record['sampled_at'].endswith('+00:00'), record
+root = pathlib.Path(sys.argv[1]).parent
+race, pid_file = root / 'completion-race.jsonl', root / 'completion-race.pid'
+race.write_text((json.dumps(record) + '\n') * 2)
+pid_file.write_text('4242')
+def finish_before_cmdline(path):
+    assert str(path) == '/proc/4242/cmdline'
+    with race.open('a') as stream:
+        stream.write(json.dumps({'event': 'complete', 'samples': 2, 'sampler_pid': 4242}) + '\n')
+    return b''
+with patch('pathlib.Path.read_bytes', finish_before_cmdline), patch('os.kill') as kill:
+    namespace['stop'](race, pid_file)
+    kill.assert_not_called()
+PY
+  rc=$?
+  if [ "$rc" -ne 0 ]; then cat "$tmp/result" >&2; rm -rf "$tmp"; return 1; fi
   python3 -c '
 import json, sys
 disco = json.load(open(sys.argv[1], encoding="utf-8"))["disco"]
 assert len(disco) == 2 and all("source" in d and "target" in d for d in disco), disco
 assert disco[1]["target"] == "/mnt/with space", disco' "$tmp/uso.json" >/dev/null 2>&1 && [ "$rc" -eq 0 ] \
     || { echo "cleanboot: the usage record was not written as one row per source (rc=$rc)" >&2; rm -rf "$tmp"; return 1; }
+  PATH="$tmp/bin:$PATH" python3 - "$tmp/series.jsonl" --interval 0.05 --duration 0.5 <<<"$py" > "$tmp/result" 2>&1; rc=$?
+  python3 - "$tmp/series.jsonl" <<'PY' >> "$tmp/result" 2>&1
+import json, pathlib, sys
+rows = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+assert len(rows) >= 3 and rows[-1]['event'] == 'complete' and rows[-1]['reason'] == 'duration', rows
+assert rows[-1]['samples'] == len(rows) - 1, rows
+assert all('host' in row and 'sampled_at' in row for row in rows[:-1]), rows
+PY
+  if [ "$?" -ne 0 ] || [ "$rc" -ne 0 ]; then cat "$tmp/result" >&2; rm -rf "$tmp"; return 1; fi
+  PATH="$tmp/bin:$PATH" python3 - "$tmp" <<'PY' > "$tmp/result" 2>&1
+import json, os, pathlib, subprocess, sys, time
+root = pathlib.Path(sys.argv[1])
+output, pid_file = root / 'stopped.jsonl', root / 'sampler.pid'
+command = [sys.executable, 'scripts/usage.py', str(output)]
+process = subprocess.Popen(command + ['--interval', '0.05', '--duration', '30'],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+try:
+    pid_file.write_text(str(process.pid))
+    deadline = time.monotonic() + 10
+    while True:
+        try:
+            if len(output.read_text().splitlines()) >= 2:
+                break
+        except FileNotFoundError:
+            pass
+        assert process.poll() is None and time.monotonic() < deadline, 'sampler did not produce two records'
+        time.sleep(0.05)
+    result = subprocess.run(command + ['--stop', str(pid_file)], capture_output=True, text=True, timeout=25)
+    assert result.returncode == 0, result.stderr
+    assert process.wait(timeout=5) == 0, process.stderr.read()
+    rows = [json.loads(line) for line in output.read_text().splitlines()]
+    assert rows[-1]['event'] == 'complete' and rows[-1]['reason'] == 'stopped', rows
+    assert rows[-1]['samples'] == len(rows) - 1 >= 2, rows
+    process.stderr.close()
+    output = root / 'duration-complete.jsonl'
+    command = [sys.executable, 'scripts/usage.py', str(output)]
+    process = subprocess.Popen(command + ['--interval', '0.05', '--duration', '0.5'],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    pid_file.write_text(str(process.pid))
+    deadline = time.monotonic() + 10
+    while True:
+        try:
+            rows = [json.loads(line) for line in output.read_text().splitlines()]
+            if rows and rows[-1].get('event') == 'complete':
+                break
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
+        assert time.monotonic() < deadline, 'sampler did not reach its duration'
+        time.sleep(0.05)
+    time.sleep(0.05)
+    result = subprocess.run(command + ['--stop', str(pid_file)], capture_output=True, text=True, timeout=25)
+    assert result.returncode == 0, result.stderr
+    assert process.wait(timeout=5) == 0, process.stderr.read()
+    pid_file.write_text(str(os.getpid()))
+    result = subprocess.run(command + ['--stop', str(pid_file)], capture_output=True, text=True, timeout=5)
+    assert result.returncode == 1, 'an unrelated PID accepted another collector\'s complete series'
+finally:
+    if process.poll() is None:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+    process.stderr.close()
+PY
+  if [ "$?" -ne 0 ]; then cat "$tmp/result" >&2; rm -rf "$tmp"; return 1; fi
+  for task_usage_error in unavailable disappeared; do
+    case "$task_usage_error" in
+      unavailable) printf '#!/bin/sh\nexit 1\n' > "$tmp/bin/docker" ;;
+      disappeared) printf '#!/bin/sh\ncase "$1" in ps) echo aps-conecta-nextcloud;; esac\n' > "$tmp/bin/docker" ;;
+    esac
+    PATH="$tmp/bin:$PATH" python3 scripts/usage.py "$tmp/$task_usage_error.json" > "$tmp/result" 2>&1; rc=$?
+    python3 - "$tmp/$task_usage_error.json" <<'PY' >> "$tmp/result" 2>&1
+import json, pathlib, sys
+record = json.loads(pathlib.Path(sys.argv[1]).read_text())
+assert record['containers_status'] == 'unavailable' and record['contenedores'] is None, record
+assert record['host']['memory_total_kib'] > 0, record
+PY
+    if [ "$?" -ne 0 ] || [ "$rc" -ne 0 ]; then cat "$tmp/result" >&2; rm -rf "$tmp"; return 1; fi
+  done
   rm -rf "$tmp"
 }
 check cleanboot_usage_cases
@@ -2471,11 +2573,10 @@ check cleanboot_apt_cases
 # curl answers the healthcheck. Both the public smoke and the real container probe must
 # require a successful response containing true, even when nginx's port is open.
 office_pin_cases() {
-  local tmp out rc ver want health_body health_status probe
+  local tmp out rc tag ver want health_body health_status probe signature_rc integrity_rc
   tmp="$(mktemp -d)"; mkdir -p "$tmp/bin" "$tmp/scripts" "$tmp/Containers/eurooffice"
   cp scripts/office-smoke.sh scripts/env.sh "$tmp/scripts/"
   cp Containers/eurooffice/healthcheck.sh "$tmp/Containers/eurooffice/"
-  sed 's|documentserver:v[0-9][0-9.]*|documentserver:v1.2.3|' Containers/eurooffice/Dockerfile > "$tmp/Containers/eurooffice/Dockerfile"
   cat > "$tmp/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 case "$*" in
@@ -2484,6 +2585,8 @@ case "$*" in
   inspect*aps-conecta-apache*) printf 'APACHE_PORT=443\nNC_DOMAIN=clinica.example\n' ;;
   "inspect ds0"*) echo ghcr.io/aps-conecta/aio-eurooffice:v0.0.0-ci.0 ;;
   *"config:app:get eurooffice enabled"*) echo yes ;;
+  *"test -s /var/www/html/custom_apps/eurooffice/appinfo/signature.json"*) exit "${OFFICE_SIGNATURE_RC:-0}" ;;
+  *"integrity:check-app eurooffice"*) exit "${OFFICE_INTEGRITY_RC:-0}" ;;
   *"eurooffice:documentserver --check"*) echo "Document server http://x/ version $DS_VERSION is successfully connected" ;;
 esac
 exit 0
@@ -2495,16 +2598,22 @@ exit "${OFFICE_HEALTH_RC:-0}"
 STUB
   printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/bin/nc"
   chmod +x "$tmp/bin/docker" "$tmp/bin/curl" "$tmp/bin/nc"
-  while IFS='|' read -r ver want; do
+  while IFS='|' read -r tag ver want; do
+    printf 'FROM ghcr.io/euro-office/documentserver:v%s\n' "$tag" > "$tmp/Containers/eurooffice/Dockerfile"
     rc=0; out="$(PATH="$tmp/bin:$PATH" DS_VERSION="$ver" bash "$tmp/scripts/office-smoke.sh" 2>&1)" || rc=1
     [ "$rc" = "$want" ] \
-      || { echo "office pin: DS $ver against the pin 1.2.3 exited $rc, want $want: $out" >&2; rm -rf "$tmp"; return 1; }
+      || { echo "office pin: DS $ver against the pin $tag exited $rc, want $want: $out" >&2; rm -rf "$tmp"; return 1; }
   done <<'CASES'
-1.2.3.37|0
-1.2.3|0
-1.2.30.1|1
-9.3.1.37|1
+1.2.3|1.2.3.37|0
+1.2.3|1.2.3|0
+1.2.3|1.2.30.1|1
+1.2.3|9.3.1.37|1
+1.2.3-1|1.2.3.37|0
+1.2.3-1|1.2.3|0
+1.2.3-1|1.2.30.1|1
+1.2.3-rc.1|1.2.3.37|1
 CASES
+  printf 'FROM ghcr.io/euro-office/documentserver:v1.2.3\n' > "$tmp/Containers/eurooffice/Dockerfile"
   while IFS='|' read -r health_body health_status want; do
     for probe in scripts/office-smoke.sh Containers/eurooffice/healthcheck.sh; do
       rc=0; out="$(PATH="$tmp/bin:$PATH" DS_VERSION=1.2.3.37 AIO_LOG_LEVEL=info \
@@ -2519,6 +2628,17 @@ false|0|1
 not-ready|0|1
 true|22|1
 true|28|1
+CASES
+  while IFS='|' read -r signature_rc integrity_rc want; do
+    rc=0; out="$(PATH="$tmp/bin:$PATH" DS_VERSION=1.2.3.37 \
+      OFFICE_SIGNATURE_RC="$signature_rc" OFFICE_INTEGRITY_RC="$integrity_rc" \
+      bash "$tmp/scripts/office-smoke.sh" 2>&1)" || rc=1
+    [ "$rc" = "$want" ] \
+      || { echo "office provenance: signature exit $signature_rc, integrity exit $integrity_rc gave $rc, want $want: $out" >&2; rm -rf "$tmp"; return 1; }
+  done <<'CASES'
+0|0|0
+1|0|1
+0|1|1
 CASES
   rm "$tmp/Containers/eurooffice/Dockerfile"
   rc=0; out="$(PATH="$tmp/bin:$PATH" DS_VERSION=1.2.3.37 bash "$tmp/scripts/office-smoke.sh" 2>&1)" || rc=1
@@ -2944,6 +3064,10 @@ if pathlib.Path(sys.argv[0]).name == 'curl':
     print(s['welcome'] + '\n' + s.get('http_status', '200'))
 elif a[0] == 'inspect':
     print('NC_DOMAIN=192.0.2.50')
+elif a[4:7] == ['test', '-s', '/var/www/html/custom_apps/spreed/appinfo/signature.json']:
+    sys.exit(s.get('signature_exit', 0))
+elif a[6:8] == ['integrity:check-app', 'spreed']:
+    sys.exit(s.get('integrity_exit', 0))
 else:
     assert a[:5] == ['exec', '--user', 'www-data', 'aps-conecta-nextcloud', 'php']
     name = a[6]
@@ -2981,6 +3105,9 @@ else:
     assert '--cacert' in curl and str(ca) in curl
     assert curl[-1] == 'https://192.0.2.50/standalone-signaling/api/v1/welcome'
     assert not any(arg in ('-k', '--insecure', '-L', '--location') for arg in curl)
+    for key in ('signature_exit', 'integrity_exit'):
+        state = copy.deepcopy(base); state[key] = 1
+        run(state, success=False)
     state = copy.deepcopy(base); state['setup_exit'] = 1
     run(state)
     state = copy.deepcopy(base)
@@ -3039,7 +3166,7 @@ check talk_smoke_cases
 
 phase12_talk_cases() {
   python3 - <<'PY'
-import hashlib, io, json, os, pathlib, shutil, subprocess, sys, tarfile, tempfile
+import json, os, pathlib, shutil, subprocess, sys, tempfile
 with tempfile.TemporaryDirectory() as directory:
     root = pathlib.Path(directory)
     for name in ('scripts', 'provisioning/phases', 'bin', 'store/spreed'):
@@ -3048,42 +3175,29 @@ with tempfile.TemporaryDirectory() as directory:
                  'provisioning/lib.sh', 'provisioning/phases/12-apps.sh'):
         shutil.copyfile(name, root / name)
     (root / 'apps.json').write_text(json.dumps([
-        {'id':'spreed', 'source':'fork', 'repo':'APS-Conecta/spreed',
-         'release':True, 'optional':False, 'containers':[]}]))
-    package = root / 'store/spreed/v24.0.6.tar.gz'
-    with tarfile.open(package, 'w:gz') as archive:
-        content = b'<info><id>spreed</id><version>24.0.6</version></info>'
-        member = tarfile.TarInfo('spreed/appinfo/info.xml')
-        member.size = len(content)
-        archive.addfile(member, io.BytesIO(content))
-    (root / 'lock.json').write_text(json.dumps({'nextcloud':'34.0.5', 'apps':{'spreed':{
-        'tag':'v24.0.6', 'version':'24.0.6', 'sha256':hashlib.sha256(package.read_bytes()).hexdigest()}}}))
+        {'id':'spreed', 'source':'store', 'optional':False, 'containers':[]}]))
     state_path = root / 'state.json'
     docker = root / 'bin/docker'
     docker.write_text('#!' + sys.executable + '\n' + r'''
-import io, json, os, pathlib, sys, tarfile, xml.etree.ElementTree as ET
+import json, os, pathlib, sys
 path = pathlib.Path(os.environ['TALK_PHASE_STATE'])
 state = json.loads(path.read_text())
 args = sys.argv[1:]
 assert args.pop(0) == 'exec'
 while args[0].startswith('-'):
     option = args.pop(0)
-    if option == '--user': args.pop(0)
+    if option in ('--user', '-e'): args.pop(0)
     else: assert option == '-i'
 assert args.pop(0) == 'aps-conecta-nextcloud'
 state['calls'].append(args)
 def save(): path.write_text(json.dumps(state))
 if args[0] == 'awk':
     save(); print(state.get('version', ''))
-elif args[0] == 'tar':
-    content = sys.stdin.buffer.read()
+elif args[:4] == ['php', '/var/www/html/occ', 'app:install', 'spreed']:
+    assert '-e' in sys.argv and 'NC_appstoreenabled=1' in sys.argv, 'Store install must be scoped'
     if state.get('fail') == 'install': save(); sys.exit(1)
-    with tarfile.open(fileobj=io.BytesIO(content), mode='r:gz') as archive:
-        state['version'] = ET.fromstring(archive.extractfile('spreed/appinfo/info.xml').read()).findtext('version')
+    state['version'] = '24.0.6'
     save()
-elif args[0] == 'sh':
-    save(); assert 'test -e custom_apps/spreed/appinfo/signature.json' in args[2]
-    sys.exit(1)
 elif args[0] == 'php' and args[2] == 'config:list':
     if state.get('fail') == 'config': save(); sys.exit(1)
     save(); print(json.dumps({'apps':{'spreed':{'enabled':'yes' if state['enabled'] else 'no'}}}))
@@ -3117,16 +3231,16 @@ source provisioning/phases/12-apps.sh
         return json.loads(state_path.read_text())
     state_path.write_text(json.dumps({'enabled':False, 'wired':0, 'calls':[]}))
     state = run()
-    assert state['wired'] == 1, 'Phase 12 must wire Talk immediately after its signed release lands'
+    assert state['wired'] == 1, 'Phase 12 must wire Talk immediately after its official store install'
     assert state['calls'].index(['php', '/var/www/html/occ', 'app:enable', 'spreed']) < state['calls'].index(['bash', '/configure-apps.sh', 'talk'])
     state = run()
-    assert state['wired'] == 2, 'An already installed release must still converge its Talk configuration'
-    assert sum(call[0] == 'tar' for call in state['calls']) == 1, 'A repeated phase must preserve the installed release'
+    assert state['wired'] == 2, 'An already installed store app must still converge its Talk configuration'
+    assert sum(call[:4] == ['php', '/var/www/html/occ', 'app:install', 'spreed'] for call in state['calls']) == 1, 'A repeated phase must preserve the installed app'
     for failure in ('install', 'config', 'wire'):
         state_path.write_text(json.dumps({'enabled':False, 'wired':0, 'calls':[], 'fail':failure}))
         state = run(success=False)
         assert state['wired'] == (1 if failure == 'wire' else 0)
-print('Phase 12 wires fresh and existing Talk releases and propagates installation/configuration failures')
+print('Phase 12 wires fresh and existing official Talk installs and propagates installation/configuration failures')
 PY
 }
 check phase12_talk_cases
@@ -3310,8 +3424,6 @@ if command -v signify >/dev/null 2>&1; then
 else
   echo "  skipped: releases --self-test (no signify — sudo apt-get install signify-openbsd)"
 fi
-# The shared Talk release verifier includes byte-tamper and upstream-digest refusals.
-check python3 scripts/spreed-refresh.py --self-test
 # brand-tokens.py (#49): the wizard's brand-token projection — pure stdlib, runs everywhere.
 check python3 scripts/brand-tokens.py --self-test
 # vm-acceptance.sh (#54): the ticket's own acceptance, on a scratch Ubuntu 24.04 VM — the
@@ -3437,11 +3549,7 @@ else
   echo "  skipped: no running AIO stack (static-only gate)"
 fi
 
-# Euro-Office joined the standard gate in #81, because it joined the stack: office-smoke was
-# separate only because it needed a service that might not be running. Its rename assertions
-# retired with the bake (#42): the white-label renames are COMMITS in the fork's own repo now,
-# carried by its signed release, and the clean-boot greps the installed bytes on every run.
-#
+# Office uses the official connector and its native integrity and connectivity checks.
 # Still guarded on the service, not assumed: this script runs in the static CI gate with no stack
 # at all, and stopping the office backend is a documented way to reclaim the RAM. `--wait` is what
 # makes this deterministic when the stack IS up — without it the gate raced the 120s start_period.

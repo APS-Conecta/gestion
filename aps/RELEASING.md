@@ -43,22 +43,13 @@ Store these secrets in that environment:
   included). The release job writes them to a 0600 trap-removed file; the key never reaches
   argv, a URL, or a log line (the P45 rule).
 - `MINISIGN_KEY_PASSWORD` — the passphrase, or empty for a `-n` key.
-- `SPREED_REFRESH_TOKEN` — a fine-grained PAT with resource owner **APS-Conecta** and
-  **Contents: read and write on `APS-Conecta/spreed` alone**, nothing else. The release chain's spreed job uses it to
-  dispatch the Talk fork's refresh (ADR-0020); its scope is that one repo, so the worst a
-  leak can do is publish a Talk release that still has to pass the job's own verification
-  against this repo's `apps.pub` — it can never touch a suite release. A missing token reds
-  the spreed job naming this section.
-
-The signing pair reaches only the package assembly/signing step; the refresh token reaches
-only the Talk dispatch step. Neither is available to the gates or image builds. The app
-signing key remains in the app repository; the suite key is a separate identity.
+The signing pair reaches the package assembly step. The gates and image builds use their
+job permissions. App repositories retain the separate app-signing identity.
 
 Populate environment secrets through GitHub's UI or the CLI's masked interactive prompt:
 
     gh secret set MINISIGN_SECRET_KEY --repo APS-Conecta/gestion --env Release < installer.sec
     gh secret set MINISIGN_KEY_PASSWORD --repo APS-Conecta/gestion --env Release
-    gh secret set SPREED_REFRESH_TOKEN --repo APS-Conecta/gestion --env Release
 
 Finish migration by removing the old repository-level copies of these names. Verify the
 Release environment's secret names and complete a protected rehearsal; secret values never
@@ -68,13 +59,7 @@ A wrong pair reds the package job loudly ("signing failed — the passphrase
 (MINISIGN_KEY_PASSWORD) or the key (MINISIGN_SECRET_KEY) is wrong"); nothing is released
 half-signed.
 
-The Talk fork's own setup (once, already done — `APS-Conecta/spreed`): a `release`
-environment carrying `APP_SIGNING_KEY`/`APP_SIGNING_KEY_PASSWORD` (the app key `apps.pub`
-trusts — the same pair every app repo carries), Actions enabled, and upstream's own push-CI
-workflows disabled (the fork never changes code, so upstream's linters have nothing to say).
-The refresh refreshes upstream's newest stable spreed per suite release; the first release
-was dispatched by hand (`gh workflow run refresh.yml --repo APS-Conecta/spreed -f
-nextcloud-major=34`), and every later one rides the release chain.
+Talk installs its official signed package through the scoped store command (ADR-0025).
 
 Repository Settings → Actions → General → Workflow permissions must use **Read repository
 contents and packages permissions**, with **Allow GitHub Actions to create and approve pull
@@ -109,15 +94,13 @@ asserts it):
 
 release.yml proves stable tags are contained in main, freezes the checked-out commit and runs
 the full local gate (including existing browser checks), validators, Twig and both ownership
-gates on that tree. Only numeric `vX.Y.Z-ci.N` rehearsals may be off main. Images, Talk
-verification and packaging check out the proven SHA, never a second resolution of the tag.
+gates on that tree. Only numeric `vX.Y.Z-ci.N` rehearsals may be off main. Images and
+packaging check out the proven SHA, never a second resolution of the tag.
 The packager receives `RELEASE_SHA`, using it for archived bytes, date and provenance even
 without a local tag. Before publication, the remote tag (including annotated tags) must still
-resolve to that same commit. The image set is built, Talk's signed archive is compared with every upstream member's content,
-then package-release (composite
-assembly, SHA256SUMS, the signature, the verify-PROOF against the committed `installer.pub`,
-the constants-filled install asset) → the Release with five assets. Watch it; a red anywhere
-names its gate.
+resolve to that same commit. After the complete image set passes its native checks,
+package-release assembles the composite, SHA256SUMS, the signature, the verification proof
+against `installer.pub` and the install asset. The Release publishes those five assets.
 
 **The testbed pin follows**. Once the Release is green, one commit moves the pin in
 `scripts/aio-testbed.sh` to `vX.Y.Z` — the suite tag every PR-event and weekly Clean boot
@@ -157,7 +140,6 @@ outside the images (ADR-0018).
 matching VERSION, BUNDLE_TAG and changelog, the owner creates its numeric CI tag. Tag push
 runs the protected chain automatically. Its suite Release uses `--prerelease --latest=false`;
 record the current `/releases/latest` tag before and after to prove Latest stayed unchanged.
-The Talk refresh can also publish its independently signed app release.
 
 For a repair, dispatch from the tag itself (`--ref vX.Y.Z`), not a branch: Release environment
 eligibility follows the workflow ref. The repair arm uses `suite-tag`, plus `force-images`

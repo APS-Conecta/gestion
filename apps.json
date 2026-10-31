@@ -1,7 +1,7 @@
 [
     {"id": "intravox", "source": "fork", "repo": "APS-Conecta/IntraVox", "optional": false, "containers": [], "release": true, "name": "Inicio", "summary": "Portada del establecimiento: noticias, avisos y accesos del equipo."},
     {"id": "groupfolders", "source": "store", "optional": false, "containers": [], "name": "Documentos", "summary": "Carpetas compartidas por sector y programa, con permisos por grupo."},
-    {"id": "eurooffice", "source": "fork", "repo": "APS-Conecta/eurooffice", "optional": false, "containers": ["aps-conecta-eurooffice"], "release": true, "name": "Oficina", "summary": "Edición en línea de documentos, planillas y presentaciones."},
+    {"id": "eurooffice", "source": "store", "optional": false, "containers": ["aps-conecta-eurooffice"], "name": "Oficina", "summary": "Edición en línea de documentos, planillas y presentaciones."},
     {"id": "calendar", "source": "store", "optional": false, "containers": [], "name": "Calendario", "summary": "Agendas personales y compartidas del equipo."},
     {"id": "contacts", "source": "store", "optional": false, "containers": [], "name": "Contactos", "summary": "Directorio del personal y contactos externos."},
     {"id": "epidemiologia", "source": "own", "repo": "APS-Conecta/epidemiologia", "optional": false, "containers": [], "release": true, "name": "Epidemiología", "summary": "Alertas del MINSAL y del ISP, informes IRAG y tablero nacional."},
@@ -9,12 +9,12 @@
     {"id": "farmacia", "source": "own", "repo": "APS-Conecta/farmacia", "optional": "off", "containers": [], "release": true, "name": "Farmacia", "summary": "Arsenal farmacológico del establecimiento con información de seguridad clínica."},
     {"id": "totem", "source": "own", "repo": "APS-Conecta/totem", "optional": "off", "containers": [], "release": true, "name": "Tótem", "summary": "Turnos de atención en sala de espera: el paciente toma su turno y la pantalla lo llama."},
     {"id": "territorio", "source": "own", "repo": "APS-Conecta/territorio", "optional": false, "containers": [], "release": true, "name": "Territorio", "summary": "Mapa territorial: unidades vecinales y establecimientos."},
-    {"id": "spreed", "source": "fork", "repo": "APS-Conecta/spreed", "optional": false, "containers": ["aps-conecta-talk"], "release": true, "name": "Talk", "summary": "Chat y videollamadas internas."},
+    {"id": "spreed", "source": "store", "optional": false, "containers": ["aps-conecta-talk"], "name": "Talk", "summary": "Chat y videollamadas internas."},
     {"id": "notify_push", "source": "store", "optional": false, "containers": ["aps-conecta-notify-push"]},
     {"id": "fulltextsearch", "source": "store", "optional": false, "containers": ["aps-conecta-fulltextsearch"]},
     {"id": "fulltextsearch_elasticsearch", "source": "store", "optional": false, "containers": []},
     {"id": "files_fulltextsearch", "source": "fork", "repo": "APS-Conecta/files-fulltextsearch", "optional": false, "containers": [], "release": true},
     {"id": "files_upload_guard", "source": "own", "repo": "APS-Conecta/files-upload-guard", "optional": false, "containers": [], "release": true},
     {"id": "files_antivirus", "source": "store", "optional": false, "containers": ["aps-conecta-clamav"], "name": "Antivirus", "summary": "Revisión de archivos cargados antes de guardarlos."},
-    {"id": "side_menu", "source": "fork", "repo": "APS-Conecta/side_menu", "optional": false, "containers": [], "release": true}
+    {"id": "side_menu", "source": "store", "optional": false, "containers": []}
 ]
