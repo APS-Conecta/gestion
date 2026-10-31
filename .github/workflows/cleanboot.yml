@@ -739,6 +739,7 @@ jobs:
           bash /opt/aps-conecta/instalador/scripts/seed-idempotent.sh
           bash /opt/aps-conecta/instalador/scripts/divergence.sh --gate
           sudo bash /opt/aps-conecta/instalador/scripts/appapi-smoke.sh
+          sudo bash /opt/aps-conecta/instalador/scripts/talk-smoke.sh
           docker ps --filter name=aps-conecta-notify-push --filter status=running --format '{{.Names}}' \
             | grep -qx aps-conecta-notify-push \
             || { echo "FAIL: aps-conecta-notify-push is not running after the store-off reboot" >&2; exit 1; }
@@ -1270,6 +1271,7 @@ jobs:
           set -euo pipefail
           [ "$(docker exec aps-conecta-apache printenv NC_DOMAIN)" = "$SUITE_IP" ]
           sudo bash /opt/aps-conecta/instalador/scripts/appapi-smoke.sh
+          sudo bash /opt/aps-conecta/instalador/scripts/talk-smoke.sh
       - name: Hand the checkout back to the runner
         if: always()
         run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
@@ -2204,6 +2206,7 @@ jobs:
           [ "$(docker inspect -f '{{.State.StartedAt}}' aps-conecta-apache)" = "$arranque" ] \
             || { echo "FAIL: the weekly run restarted apache with nothing renewed" >&2; exit 1; }
           sudo bash /opt/aps-conecta/instalador/scripts/appapi-smoke.sh
+          sudo bash /opt/aps-conecta/instalador/scripts/talk-smoke.sh
           sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
       # #176: an establishment has as many accounts as it has staff. Upstream counts every enabled
       # account against AIO's one-click limit inside createUser (web, OCS and occ user:add alike);

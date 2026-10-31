@@ -207,9 +207,12 @@ Cuando salga una nueva versión de la suite (la etiqueta nueva), después de act
 aps-conecta revalidate
 ```
 
-Ejecuta cuatro verificaciones: humo, oficina, AppAPI y divergencia. Informa **todos** los
+Ejecuta cinco verificaciones: humo, oficina, AppAPI, llamadas y divergencia. Informa **todos** los
 resultados y devuelve un fallo si alguna verificación falla. AppAPI comprueba su servicio
-predeterminado y la conexión HTTPS de HaRP con la suite. Si el panel de registros del asistente se ve sin estilo
+predeterminado y la conexión HTTPS de HaRP con la suite. Llamadas comprueba TURN, STUN,
+la ruta HTTPS pública de señalización y el diagnóstico nativo de Talk. La configuración se
+aplica durante la instalación y en cada arranque. El diagnóstico conserva esa configuración;
+Nextcloud administra sus claves y capacidades internas. Si el panel de registros del asistente se ve sin estilo
 después de una actualización, un refresco fuerte del navegador (Ctrl+Shift+R) lo arregla: es un
 archivo en caché que PHP fija y el fork no toca.
 
