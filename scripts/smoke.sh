@@ -21,6 +21,7 @@ nc_container   # once: the occ calls below run in pipes and $(…), whose cache 
 # 2. Nextcloud installed + reachable via occ.
 occ status --output=json 2>/dev/null | grep -q '"installed":true' \
   || fail "occ status: Nextcloud not installed / not reachable"
+require_store_app_integrity side_menu || exit 1
 # every HTTP check below rides the suite's public URL (env.sh, #163) — resolved once, here
 suite_url_resolve || exit 1
 

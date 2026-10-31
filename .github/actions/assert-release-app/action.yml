@@ -10,6 +10,7 @@
 # conflict with a sibling app's flip at the same anchor (#117 — the copies collided
 # twice before this existed), and an assertion added here reaches every app at once.
 name: Assert an app installed from its release
+description: Verify the installed app against its signed release lock and package.
 inputs:
   app:
     description: The app id, as in apps.json, the lock and custom_apps/.

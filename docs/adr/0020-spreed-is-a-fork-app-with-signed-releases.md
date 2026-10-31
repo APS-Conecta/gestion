@@ -5,6 +5,8 @@
 
 # 0020 — Spreed is a fork app with signed releases
 
+Superseded by [ADR-0025](0025-use-official-application-packages.md), 2026-10-31.
+
 Accepted, 2026-10-25.
 
 ## Context

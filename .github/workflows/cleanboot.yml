@@ -141,6 +141,12 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 1   # VERSION answers suite_tag() now — no tag history to read
+      - name: Sample host and container usage through installation and lifecycle checks
+        run: |
+          test ! -e "$RUNNER_TEMP/usage-series.jsonl"
+          python3 scripts/usage.py "$RUNNER_TEMP/usage-series.jsonl" --interval 5 --duration 3600 \
+            > "$RUNNER_TEMP/usage-series.log" 2>&1 < /dev/null &
+          echo "$!" > "$RUNNER_TEMP/usage-series.pid"
       - name: Free unused SDKs on the disposable runner
         run: |
           df -h /var/lib/docker
@@ -242,9 +248,7 @@ jobs:
           NOTA
           }
           # every manifest row except the entrypoint's own one — read from apps.json, never
-          # re-typed: a new row joins this assert the moment it joins the manifest (spreed
-          # joined when its channel became the fork's release, #145 — nothing installs it at
-          # a boot any more)
+          # re-typed: each new manifest row joins this assertion automatically.
           mapfile -t filas < <(python3 -c 'import json
           for r in json.load(open("apps.json")):
               if r["id"] != "notify_push":
@@ -358,32 +362,7 @@ jobs:
                          print "| " $1 " | " m[1] " |" }
                        END { printf "| **total** | %.0f MiB |\n", s }' "$RUNNER_TEMP/memoria.txt"
           } | tee -a "$GITHUB_STEP_SUMMARY"
-          python3 - "$RUNNER_TEMP/uso.json" <<'PY'
-          import json, subprocess, sys
-          def run(*cmd):
-              return subprocess.run(cmd, capture_output=True, text=True).stdout
-          names = [n for n in run("docker", "ps", "--filter", "name=^aps-conecta-",
-                                  "--filter", "name=^nextcloud-aio-mastercontainer$",
-                                  "--format", "{{.Names}}").splitlines() if n]
-          stats = [json.loads(ln) for ln in
-                   run("docker", "stats", "--no-stream", "--format", "{{json .}}", *names).splitlines()
-                   if ln.strip()] if names else []
-          # df's header is 8 words for 7 columns ("Mounted on"): the names are ours, never read back from it.
-          campos = ("source", "fstype", "size", "used", "avail", "pcent", "target")
-          lineas = run("df", "-B1", "--output=" + ",".join(campos), "/", "/var/lib/docker").splitlines()
-          disco, vistos = [], set()
-          for ln in lineas[1:]:
-              fila = dict(zip(campos, ln.split(None, len(campos) - 1)))
-              if fila["source"] not in vistos:
-                  vistos.add(fila["source"]); disco.append(fila)
-          try:
-              total = int(next(l.split()[1] for l in open("/proc/meminfo", encoding="utf-8")
-                               if l.startswith("MemTotal:")))
-          except (OSError, StopIteration, ValueError):
-              total = 0
-          json.dump({"memoria_gib": round(total / 1048576, 1), "contenedores": stats, "disco": disco},
-                    open(sys.argv[1], "w", encoding="utf-8"), indent=1)
-          PY
+          python3 scripts/usage.py "$RUNNER_TEMP/uso.json"
       - name: The usage record, as an artifact (a missing record is a red, never a silent skip)
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -461,34 +440,11 @@ jobs:
         with:
           app: intravox
           landing: true
-      # #38: side_menu follows territorio (ADR-0017) — the fork the suite mirrors itself, because
-      # upstream (gitnet.fr, the app's only source) is unreachable (#169), so APS-Conecta/side_menu
-      # is the app's source of truth from here on. No image carries its bytes (#42), so the
-      # release path is the only path — proven by what only the fetch leg writes: the lock's
-      # row, the verified tarball inside /opt/aps-conecta/apps (only the fetch leg's tarball
-      # lands there), and no signature.json. And the branding must still apply: 15-branding
-      # paints the menu violet — the two colour keys side_menu's own CSS derives from.
-      - name: side_menu installed from its release, its colour still the suite's violet
+      - name: Official Custom Menu retains the suite colours
         run: |
           set -euo pipefail
           cd /opt/aps-conecta/instalador && source scripts/env.sh
-          sudo test -f /opt/aps-conecta/apps.lock.json || { echo "FAIL: no apps lock after the install" >&2; exit 1; }
-          # word-split (read -r), never mapfile: python prints ONE line, and an indexed mapfile
-          # would leave campos[1] unbound under set -u — the bug territorio's first run met
-          read -r tag version sha <<< "$(sudo python3 -c 'import json; a = json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["side_menu"]; print(a["tag"], a["version"], a["sha256"])')"
-          echo "lock: side_menu $tag ($version)"
-          [ "${tag#v}" = "$version" ] || { echo "FAIL: the lock's tag and version disagree" >&2; exit 1; }
-          got="$(occ config:app:get side_menu installed_version)"
-          [ "$got" = "$version" ] || { echo "FAIL: the instance runs side_menu $got, the lock names $version" >&2; exit 1; }
-          sudo test -f "/opt/aps-conecta/apps/side_menu/$tag.tar.gz" || { echo "FAIL: the locked tarball is not in the store — only the fetch leg's tarball lands there" >&2; exit 1; }
-          echo "$sha  /opt/aps-conecta/apps/side_menu/$tag.tar.gz" | sudo sha256sum --check - \
-            || { echo "FAIL: the stored tarball is not the locked bytes" >&2; exit 1; }
-          if docker exec --user www-data aps-conecta-nextcloud test -e /var/www/html/custom_apps/side_menu/appinfo/signature.json; then
-            echo "FAIL: side_menu carries appinfo/signature.json — a release never does" >&2; exit 1
-          fi
-          # the violet background, both halves: the two keys 15-branding writes, then the
-          # stylesheet the app DERIVES from them — a public page (no login), so what the browser
-          # actually paints is asserted, not only the config it paints from
+          require_store_app_integrity side_menu
           for clave in background-color background-color-to; do
             got="$(occ config:app:get side_menu "$clave")"
             [ "$got" = "#5315a8" ] || { echo "FAIL: side_menu $clave is '$got', not the suite's violet #5315a8 — the branding phase did not apply" >&2; exit 1; }
@@ -496,16 +452,11 @@ jobs:
           css="$(curl -fsS --cacert "$SUITE_CA" "https://$SUITE_IP/apps/side_menu/css/stylesheet")"
           grep -q -- "--side-menu-background-color: #5315a8" <<<"$css" \
             || { echo "FAIL: side_menu's stylesheet does not paint the suite's violet — the config keys are set but the menu derives another colour" >&2; exit 1; }
-      # #145 (ADR-0020): Talk follows the same shared assertion the other fork apps ride —
-      # the lock's row names the fork's tag, the instance runs the locked version, the stored
-      # tarball is the locked bytes, no signature.json. This job runs Talk ON, so the fetch
-      # leg resolved spreed from APS-Conecta/spreed's signed release and phase 12 landed it;
-      # the entrypoint installed nothing (the nothing-baked walk proved its absence at first
-      # boot). Both installation paths acquire this signed app; optional apps stay separate.
-      - name: Talk installed from the fork's signed release, at its locked tag
-        uses: ./.github/actions/assert-release-app
-        with:
-          app: spreed
+      - name: Talk retains its official package signature
+        run: |
+          set -euo pipefail
+          cd /opt/aps-conecta/instalador && source scripts/env.sh
+          require_store_app_integrity spreed
       # #42's store rules, the three live observables: the store apps landed through the
       # scoped seam (calendar, contacts, groupfolders — enabled, with a version, which only
       # an install writes), a bare occ app:install FAILS against the image's store-off ENV
@@ -517,16 +468,13 @@ jobs:
         run: |
           set -euo pipefail
           cd /opt/aps-conecta/instalador && source scripts/env.sh
-          for app in calendar contacts groupfolders; do
+          for app in calendar contacts groupfolders eurooffice spreed side_menu; do
             got="$(occ config:app:get "$app" installed_version 2>/dev/null || true)"
             [ -n "$got" ] || { echo "FAIL: $app is not installed — phase 12's scoped store install did not land it" >&2; exit 1; }
             [ "$(occ config:app:get "$app" enabled 2>/dev/null || true)" = "yes" ] \
               || { echo "FAIL: $app is installed but not enabled" >&2; exit 1; }
           done
-          # the entrypoint's constant half: notify_push arrived scoped at first boot (the
-          # sibling's convergence above proved the push binary; here the APP half — installed
-          # and enabled). Talk is a release row now (#145): its presence is the release
-          # assertion above — the entrypoint never installs the signed app.
+          # notify_push installs at first boot; phase 12 installs the other store apps.
           [ -n "$(occ config:app:get notify_push installed_version 2>/dev/null || true)" ] \
             || { echo "FAIL: notify_push is not installed — the entrypoint's scoped first-boot install did not land it" >&2; exit 1; }
           [ "$(occ config:app:get notify_push enabled 2>/dev/null || true)" = "yes" ] \
@@ -546,47 +494,17 @@ jobs:
             echo "FAIL: the container still receives UPDATE_NEXTCLOUD_APPS — AIO's automatic app updates are off, the arm deleted (#42)" >&2; exit 1
           fi
           echo "store apps landed scoped; the store stays closed to everything without its key; no automatic app updates"
-      # #36: eurooffice follows the forks (ADR-0017) — the connector arrives from
-      # APS-Conecta/eurooffice's own release, never the store's eurooffice (the manifest row
-      # is source: fork, and no image carries its bytes). The fork's own two proofs —
-      # our names in the installed files, and the store-closed update posture — ride in the
-      # step after this call.
-      - uses: ./.github/actions/assert-release-app
-        with:
-          app: eurooffice
-      # The fork's own two proofs (#36). Our two names, in the installed files — the fork
-      # carries the white-label renames as COMMITS (the bake's two patches became them), and
-      # the office smoke retired its runtime grep (slice 13: nothing can revert a rename under
-      # the suite), so this re-points the proof at the bytes the release installed. And the
-      # store posture's other half: `occ app:update eurooffice` with the store closed answers
-      # nothing and changes nothing — no update path replaces the fork with the store's
-      # namesake. The entrypoint's own eurooffice update leg gets the same posture in the
-      # store-off reboot below, and the office smoke that runs after it answers the connector
-      # still enabled and wired.
-      - name: The fork's two names are installed, and an app update with the store closed leaves the fork in place
+      - name: Official Office connector survives an update with the store closed
         run: |
           set -euo pipefail
           cd /opt/aps-conecta/instalador && source scripts/env.sh
-          # the lock's row says who installed it: fork, never store
-          fuente="$(sudo python3 -c 'import json; print(json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["eurooffice"]["source"])')"
-          [ "$fuente" = "fork" ] || { echo "FAIL: the lock's eurooffice row is source '$fuente', not fork — the store's eurooffice was installed" >&2; exit 1; }
+          require_store_app_integrity eurooffice
           version="$(occ config:app:get eurooffice installed_version)"
-          docker exec --user www-data aps-conecta-nextcloud grep -qF 'return "Euro-Office";' /var/www/html/custom_apps/eurooffice/lib/AdminSection.php \
-            || { echo "FAIL: the admin section is not Euro-Office — the store's namesake replaced the fork" >&2; exit 1; }
-          docker exec --user www-data aps-conecta-nextcloud grep -qF '<name>Euro-Office</name>' /var/www/html/custom_apps/eurooffice/appinfo/info.xml \
-            || { echo "FAIL: the app's name is not Euro-Office — the store's namesake replaced the fork" >&2; exit 1; }
-          tienda="$(occ config:system:get appstoreenabled 2>/dev/null || true)"
-          [ "$tienda" = "0" ] || { echo "FAIL: the store is not closed (appstoreenabled='$tienda')" >&2; exit 1; }
-          # occ's answer is captured and printed (evidence); the assertions are on the state,
-          # never on occ's wording.
-          respuesta="$(occ app:update eurooffice 2>&1 || true)"
-          echo "occ app:update eurooffice (store closed) answered: ${respuesta:-<nothing>}"
-          [ "$(occ config:app:get eurooffice installed_version)" = "$version" ] \
-            || { echo "FAIL: an app update with the store closed moved eurooffice off $version" >&2; exit 1; }
-          [ "$(occ config:app:get eurooffice enabled)" = "yes" ] \
-            || { echo "FAIL: an app update with the store closed disabled eurooffice" >&2; exit 1; }
-          docker exec --user www-data aps-conecta-nextcloud grep -qF '<name>Euro-Office</name>' /var/www/html/custom_apps/eurooffice/appinfo/info.xml \
-            || { echo "FAIL: the update leg replaced the fork's name" >&2; exit 1; }
+          [ "$(occ config:system:get appstoreenabled)" = 0 ]
+          response="$(occ app:update eurooffice 2>&1 || true)"
+          echo "occ app:update eurooffice (store closed): ${response:-<nothing>}"
+          [ "$(occ config:app:get eurooffice installed_version)" = "$version" ]
+          sudo env "PATH=$PATH" bash scripts/office-smoke.sh
       # #39/#40: farmacia and estadistica are the optional apps, and this job chose NOTHING — the
       # testbed's wizard drive records only optional app choices
       # (Talk on is this job's posture, #145; the optionals stayed unchecked), so the fetch
@@ -936,10 +854,7 @@ jobs:
           occ group:delete deriva-prueba >/dev/null
           # the unit ran as root against this checkout: hand it back, as after the install
           sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-      # #172, after the weekly seed (which re-applies side_menu's colours): an app whose row
-      # leaves the manifest is uninstalled by the next actualizar — its code gone, its lock row
-      # dropped, the suite revalidating green. side_menu stands in: the testbed's apps.json
-      # loses its row exactly as a newer suite package's would.
+      # #172: a removed release app is uninstalled and its lock row is dropped.
       - name: An app that leaves the manifest is uninstalled by actualizar, its lock row dropped (#172)
         run: |
           set -euo pipefail
@@ -947,21 +862,21 @@ jobs:
           sudo python3 -c '
           import json
           p = "/opt/aps-conecta/instalador/apps.json"
-          json.dump([r for r in json.load(open(p)) if r["id"] != "side_menu"], open(p, "w"), indent=4)'
+          json.dump([r for r in json.load(open(p)) if r["id"] != "epidemiologia"], open(p, "w"), indent=4)'
           rc=0; out="$(sudo AIO_STATE=/tmp/aio-testbed bash /opt/aps-conecta/instalador/host/aps-conecta actualizar 2>&1)" || rc=$?
           printf '%s\n' "$out" | tail -40
-          [ "$rc" -eq 0 ] || { echo "FAIL: actualizar failed with side_menu out of the manifest" >&2; exit 1; }
-          case "$out" in *"side_menu ya no es parte de la suite — se desinstala"*"app side_menu desinstalada"*) ;;
-            *) echo "FAIL: the run did not name and uninstall side_menu" >&2; exit 1 ;; esac
-          ! occ app:getpath side_menu >/dev/null 2>&1 || { echo "FAIL: side_menu's code is still on the instance" >&2; exit 1; }
+          [ "$rc" -eq 0 ] || { echo "FAIL: actualizar failed with epidemiologia out of the manifest" >&2; exit 1; }
+          case "$out" in *"epidemiologia ya no es parte de la suite — se desinstala"*"app epidemiologia desinstalada"*) ;;
+            *) echo "FAIL: the run did not name and uninstall epidemiologia" >&2; exit 1 ;; esac
+          ! occ app:getpath epidemiologia >/dev/null 2>&1 || { echo "FAIL: epidemiologia's code is still on the instance" >&2; exit 1; }
           # app:remove runs the uninstall steps and deletes the code; Nextcloud keeps the app's
           # config keys (installed_version among them), so "gone" is: no code, not enabled
-          [ "$(occ config:app:get side_menu enabled 2>/dev/null || true)" != yes ] \
-            || { echo "FAIL: side_menu is still enabled" >&2; exit 1; }
-          sudo python3 -c 'import json, sys; sys.exit("side_menu" in json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"])' \
-            || { echo "FAIL: the lock still names side_menu" >&2; exit 1; }
+          [ "$(occ config:app:get epidemiologia enabled 2>/dev/null || true)" != yes ] \
+            || { echo "FAIL: epidemiologia is still enabled" >&2; exit 1; }
+          sudo python3 -c 'import json, sys; sys.exit("epidemiologia" in json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"])' \
+            || { echo "FAIL: the lock still names epidemiologia" >&2; exit 1; }
           case "$out" in *"REVALIDACIÓN: PASS"*) ;; *) echo "FAIL: the run did not revalidate green" >&2; exit 1 ;; esac
-          echo "actualizar: side_menu left the manifest — uninstalled, its lock row dropped, revalidate green"
+          echo "actualizar: epidemiologia left the manifest — uninstalled, its lock row dropped, revalidate green"
           sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
       # No compose context exists on this runner anymore: the probe's logs come from docker
       # itself, and the container listing is what shows a sibling that never converged.
@@ -993,6 +908,16 @@ jobs:
       # (name/label-filtered) plus its own state dir, so `down` after a failed `up` is safe by
       # construction. On an ephemeral runner this is hygiene; it also keeps the job honest
       # about never leaving the wizard port published.
+      - name: Finish and validate the bounded usage series
+        if: always()
+        run: python3 scripts/usage.py "$RUNNER_TEMP/usage-series.jsonl" --stop "$RUNNER_TEMP/usage-series.pid"
+      - name: Preserve the usage series
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: usage-series-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+          path: ${{ runner.temp }}/usage-series.jsonl
+          if-no-files-found: error
       - name: Probe teardown
         if: always()
         run: sudo bash scripts/aio-testbed.sh down
@@ -1013,6 +938,12 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 1   # VERSION answers suite_tag() now — no tag history to read
+      - name: Sample host and container usage through installation and lifecycle checks
+        run: |
+          test ! -e "$RUNNER_TEMP/usage-series.jsonl"
+          python3 scripts/usage.py "$RUNNER_TEMP/usage-series.jsonl" --interval 5 --duration 3600 \
+            > "$RUNNER_TEMP/usage-series.log" 2>&1 < /dev/null &
+          echo "$!" > "$RUNNER_TEMP/usage-series.pid"
       - name: Start the authenticated installation proxy
         run: |
           set -euo pipefail
@@ -1115,6 +1046,30 @@ jobs:
           docker logs --tail=60 aps-antivirus-preflight
           echo 'FAIL: the published scanner did not complete its clean health scan' >&2
           exit 1
+      - name: The published Office renderer compiles the document scripts
+        run: |
+          set -euo pipefail
+          trap 'status=$?; docker rm --force --volumes aps-office-renderer-preflight >/dev/null || status=1; exit "$status"' EXIT
+          image="ghcr.io/aps-conecta/aio-eurooffice:$SUITE_TAG"
+          docker pull "$image"
+          result=0
+          timeout 120 docker run --name aps-office-renderer-preflight --network none --init \
+            --cap-drop NET_RAW --pull=never --entrypoint /bin/sh "$image" -c '
+              set -eu
+              sdk=/var/www/euro-office/documentserver/sdkjs
+              for format in word cell slide pdf visio; do
+                rm -f "$sdk/$format/sdk-all.cache"
+              done
+              /var/www/euro-office/documentserver/server/FileConverter/bin/x2t -create-js-cache
+              for format in word cell slide pdf visio; do
+                test -s "$sdk/$format/sdk-all.cache"
+              done
+            ' > "$RUNNER_TEMP/office-renderer.log" 2>&1 || result=$?
+          if [ "$result" -ne 0 ]; then
+            echo "FAIL: the published Office renderer could not compile its document scripts (exit $result)" >&2
+            exit 1
+          fi
+          echo 'PASS: the published Office renderer compiles every document script'
       # The silent install, as root, with no terminal. The suite tag is the one the «suite-tag» job
       # resolved, so both jobs run the same published suite. #39 chose farmacia; #40 adds
       # estadistica and #41 totem — the three optional apps ride the same --app flags into the
@@ -2294,10 +2249,11 @@ jobs:
         uses: ./.github/actions/assert-release-app
         with:
           app: farmacia
-      - name: Talk is present from its signed fork release on every install
-        uses: ./.github/actions/assert-release-app
-        with:
-          app: spreed
+      - name: Talk retains its official package signature
+        run: |
+          set -euo pipefail
+          cd /opt/aps-conecta/instalador && source scripts/env.sh
+          require_store_app_integrity spreed
       # #41, by IP: totem — the third optional app — installed from its release because this
       # job chose it beside farmacia. Its release is the only channel that ever existed (the
       # bake never vendored a totem tarball — #41 shipped it optional from day one), and #42
@@ -2346,26 +2302,11 @@ jobs:
               || { echo "FAIL: the $voz voice answered $bytes bytes — the display cannot load its voice" >&2; exit 1; }
           done
           echo "totem: instalada desde su release, con sus dos voces servidas al display"
-      # #38, by IP: side_menu from its own release at its locked tag, its colour still violet —
-      # the same acceptance the domain job asserts, on an install that reached the suite by
-      # address. Same reasoning as there: no image carries its bytes (#42), so the store + lock
-      # prove the release path, and the colour keys plus the stylesheet they derive prove the
-      # branding (reached as every step here reaches it: https://$SUITE_IP, the installer's CA).
-      - name: side_menu installed from its release, its colour still the suite's violet
+      - name: Official Custom Menu retains the suite colours
         run: |
           set -euo pipefail
           cd /opt/aps-conecta/instalador && source scripts/env.sh
-          read -r tag version sha <<< "$(sudo python3 -c 'import json; a = json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["side_menu"]; print(a["tag"], a["version"], a["sha256"])')"
-          echo "lock: side_menu $tag ($version)"
-          [ "${tag#v}" = "$version" ] || { echo "FAIL: the lock's tag and version disagree" >&2; exit 1; }
-          got="$(occ config:app:get side_menu installed_version)"
-          [ "$got" = "$version" ] || { echo "FAIL: the instance runs side_menu $got, the lock names $version" >&2; exit 1; }
-          sudo test -f "/opt/aps-conecta/apps/side_menu/$tag.tar.gz" || { echo "FAIL: the locked tarball is not in the store — only the fetch leg's tarball lands there" >&2; exit 1; }
-          echo "$sha  /opt/aps-conecta/apps/side_menu/$tag.tar.gz" | sudo sha256sum --check - \
-            || { echo "FAIL: the stored tarball is not the locked bytes" >&2; exit 1; }
-          if docker exec --user www-data aps-conecta-nextcloud test -e /var/www/html/custom_apps/side_menu/appinfo/signature.json; then
-            echo "FAIL: side_menu carries appinfo/signature.json — a release never does" >&2; exit 1
-          fi
+          require_store_app_integrity side_menu
           for clave in background-color background-color-to; do
             got="$(occ config:app:get side_menu "$clave")"
             [ "$got" = "#5315a8" ] || { echo "FAIL: side_menu $clave is '$got', not the suite's violet #5315a8 — the branding phase did not apply" >&2; exit 1; }
@@ -2373,47 +2314,17 @@ jobs:
           css="$(curl -fsS --cacert "$RUNNER_TEMP/ca.crt" "https://$SUITE_IP/apps/side_menu/css/stylesheet")"
           grep -q -- "--side-menu-background-color: #5315a8" <<<"$css" \
             || { echo "FAIL: side_menu's stylesheet does not paint the suite's violet — the config keys are set but the menu derives another colour" >&2; exit 1; }
-      # #36, by IP: the same acceptance the domain job asserts — the connector arrives from
-      # APS-Conecta/eurooffice's own release, never the store's eurooffice (the manifest row
-      # is source: fork, and no image carries its bytes). The fork's own two proofs —
-      # our names in the installed files, and the store-closed update posture — ride in the
-      # step after this call.
-      - uses: ./.github/actions/assert-release-app
-        with:
-          app: eurooffice
-      # The fork's own two proofs (#36). Our two names, in the installed files — the fork
-      # carries the white-label renames as COMMITS (the bake's two patches became them), and
-      # the office smoke retired its runtime grep (slice 13: nothing can revert a rename under
-      # the suite), so this re-points the proof at the bytes the release installed. And the
-      # store posture's other half: `occ app:update eurooffice` with the store closed answers
-      # nothing and changes nothing — no update path replaces the fork with the store's
-      # namesake. The entrypoint's own eurooffice update leg gets the same posture in the
-      # store-off reboot below, and the office smoke that runs after it answers the connector
-      # still enabled and wired.
-      - name: The fork's two names are installed, and an app update with the store closed leaves the fork in place
+      - name: Official Office connector survives an update with the store closed
         run: |
           set -euo pipefail
           cd /opt/aps-conecta/instalador && source scripts/env.sh
-          # the lock's row says who installed it: fork, never store
-          fuente="$(sudo python3 -c 'import json; print(json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["eurooffice"]["source"])')"
-          [ "$fuente" = "fork" ] || { echo "FAIL: the lock's eurooffice row is source '$fuente', not fork — the store's eurooffice was installed" >&2; exit 1; }
+          require_store_app_integrity eurooffice
           version="$(occ config:app:get eurooffice installed_version)"
-          docker exec --user www-data aps-conecta-nextcloud grep -qF 'return "Euro-Office";' /var/www/html/custom_apps/eurooffice/lib/AdminSection.php \
-            || { echo "FAIL: the admin section is not Euro-Office — the store's namesake replaced the fork" >&2; exit 1; }
-          docker exec --user www-data aps-conecta-nextcloud grep -qF '<name>Euro-Office</name>' /var/www/html/custom_apps/eurooffice/appinfo/info.xml \
-            || { echo "FAIL: the app's name is not Euro-Office — the store's namesake replaced the fork" >&2; exit 1; }
-          tienda="$(occ config:system:get appstoreenabled 2>/dev/null || true)"
-          [ "$tienda" = "0" ] || { echo "FAIL: the store is not closed (appstoreenabled='$tienda')" >&2; exit 1; }
-          # occ's answer is captured and printed (evidence); the assertions are on the state,
-          # never on occ's wording.
-          respuesta="$(occ app:update eurooffice 2>&1 || true)"
-          echo "occ app:update eurooffice (store closed) answered: ${respuesta:-<nothing>}"
-          [ "$(occ config:app:get eurooffice installed_version)" = "$version" ] \
-            || { echo "FAIL: an app update with the store closed moved eurooffice off $version" >&2; exit 1; }
-          [ "$(occ config:app:get eurooffice enabled)" = "yes" ] \
-            || { echo "FAIL: an app update with the store closed disabled eurooffice" >&2; exit 1; }
-          docker exec --user www-data aps-conecta-nextcloud grep -qF '<name>Euro-Office</name>' /var/www/html/custom_apps/eurooffice/appinfo/info.xml \
-            || { echo "FAIL: the update leg replaced the fork's name" >&2; exit 1; }
+          [ "$(occ config:system:get appstoreenabled)" = 0 ]
+          response="$(occ app:update eurooffice 2>&1 || true)"
+          echo "occ app:update eurooffice (store closed): ${response:-<nothing>}"
+          [ "$(occ config:app:get eurooffice installed_version)" = "$version" ]
+          sudo env "PATH=$PATH" bash scripts/office-smoke.sh
       # The weekly run, by IP, on the instance just installed: the leaf is kept (same fingerprint) and
       # apache is not restarted; the seed converges again, idempotent by IP too. #33 adds its half:
       # the same run downloads nothing and leaves the lock unchanged.
@@ -2509,6 +2420,16 @@ jobs:
           docker logs --tail=100 aps-conecta-nextcloud || true
           sudo tail -n 100 /opt/aps-conecta/instalacion.log || true
       # The same scoped teardown as the domain job: the suite's containers, its volumes, the wizard.
+      - name: Finish and validate the bounded usage series
+        if: always()
+        run: python3 scripts/usage.py "$RUNNER_TEMP/usage-series.jsonl" --stop "$RUNNER_TEMP/usage-series.pid"
+      - name: Preserve the usage series
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: usage-series-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+          path: ${{ runner.temp }}/usage-series.jsonl
+          if-no-files-found: error
       - name: Teardown
         if: always()
         run: sudo bash scripts/aio-testbed.sh down

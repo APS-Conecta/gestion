@@ -26,15 +26,11 @@
 # and the changelog links point at the fork's own releases, never upstream's. 070's brand
 # rows landed with slice 12 (the <title>/h1 swap is the reskin's, not the sweep's — plus the
 # asset/token/font floors, the dark-toggle deletion, and the two handoff cards). 030's row
-# landed with slice 13 as a build-time assert in the bake, and #42 moved it once more: the
-# renames are commits in the fork's own repo now (#36), no image carries app bytes, and the
-# enforcement is the clean-boot rehearsal's greps over the INSTALLED bytes — the row pins
-# that owner, and the manifest's source:fork, to this tree. And slice 23 extends
-# this gate with the README/twig string-equality drift gate.
-#
-# SCOPE (measured against the tree; #48 removed the upstream parts that carried the rest of the
-# set — the root docs, the helm chart, manual-install and the root compose.yaml — so the bare
-# name now lives only where the fork keeps it on purpose): the build-time fetch upstream keeps
+# landed with slice 13 as a build-time assert in the bake. Under ADR-0025,
+# Office, Talk and Custom Menu retain their official packages and signatures (ADR-0025).
+# Row 030 pins their store channels and native integrity checks. Suite-owned labels remain
+# configuration; upstream connector bytes retain upstream identity.
+# The remaining upstream references belong to build or tooling surfaces: the build-time fetch upstream keeps
 # (the GPG-verified server tarball in the nextcloud Dockerfile, D7), php/README.md's dev example, and the fork's own tooling (office-smoke's DS probe,
 # images.py's registry rewrite, ci.yml's red-proof injection). The count uses the BARE pattern on purpose.
 # None is install-time shipped surface: the docs are slice 23's fork-declaration territory, the
@@ -405,26 +401,30 @@ row 070 "the token table maps the wizard's Nextcloud-named tokens onto the --aps
 row 070 "the handoff card is present — and no literal provisioner port anywhere in containers.twig (170 owns its words)" \
   paso1_card
 
-whitelabel_installed() {  # the renames are COMMITS in the fork's own repo (#36) and no image
-  # carries app bytes (#42), so this tree cannot grep them at build time — the clean-boot
-  # rehearsal owns the enforcement, grepping the INSTALLED bytes on every run. This row pins
-  # that owner to the fork's tree: both served-file pairs (office-smoke.sh:37's exact pairs)
-  # must stay in the rehearsal, and the manifest must keep eurooffice source:fork so the
-  # store's namesake can never replace it through any channel this repo controls.
-  local f="$REPO_ROOT/.github/workflows/cleanboot.yml" m="$REPO_ROOT/apps.json" fail=0
-  [ -f "$f" ] || { echo "  the clean-boot workflow is missing — the white-label asserts' owner" >&2; return 1; }
-  [ -f "$m" ] || { echo "  no apps.json at the root" >&2; return 1; }
-  grep -qF 'grep -qF '"'"'return "Euro-Office";'"'"' /var/www/html/custom_apps/eurooffice/lib/AdminSection.php' "$f" \
-    || { echo "  the rehearsal no longer greps the installed AdminSection.php rename" >&2; fail=1; }
-  grep -qF "grep -qF '<name>Euro-Office</name>' /var/www/html/custom_apps/eurooffice/appinfo/info.xml" "$f" \
-    || { echo "  the rehearsal no longer greps the installed info.xml <name> rename" >&2; fail=1; }
-  grep -q '"id": "eurooffice", "source": "fork"' "$m" \
-    || { echo "  the manifest no longer declares eurooffice a fork of ours — the store's namesake could arrive through any channel we control" >&2; fail=1; }
-  [ "$fail" -eq 0 ]
+official_app_sources() {
+  python3 - "$TREE/apps.json" <<'PYCODE' || return 1
+import json, sys
+rows = json.load(open(sys.argv[1]))
+for app in ('eurooffice', 'spreed', 'side_menu'):
+    found = [row for row in rows if row.get('id') == app]
+    if len(found) != 1 or found[0].get('source') != 'store' or found[0].get('repo') or found[0].get('release'):
+        sys.exit(f"  {app} must use the official store channel (ADR-0025)")
+PYCODE
+  local app gate
+  grep -qF 'test -s "/var/www/html/custom_apps/$app/appinfo/signature.json"' "$TREE/scripts/env.sh" || return 1
+  grep -qF 'occ integrity:check-app "$app"' "$TREE/scripts/env.sh" || return 1
+  for app in eurooffice spreed side_menu; do
+    case "$app" in
+      eurooffice) gate=office-smoke.sh ;;
+      spreed) gate=talk-smoke.sh ;;
+      side_menu) gate=smoke.sh ;;
+    esac
+    grep -qF "require_store_app_integrity $app || exit 1" "$TREE/scripts/$gate" || return 1
+  done
 }
 
-row 030 "the white-label rename is enforced at acceptance — the clean-boot rehearsal greps both served-file pairs in the installed bytes every run, and the manifest keeps eurooffice source:fork (the bake's build-time asserts died with the bake; the renames are commits in the fork's own repo, #36/#42)" \
-  whitelabel_installed
+row 030 "Office, Talk and Custom Menu use official store packages with native signature and integrity checks (ADR-0025)" \
+  official_app_sources
 
 suite_escl_present() {  # TREE — the translated suite's positive control: one es-CL sentinel per
   # spec file + helpers (a lost 090 leaves the upstream English assertions in place and

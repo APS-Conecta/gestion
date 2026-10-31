@@ -27,19 +27,14 @@
 #   042 — the store rules, no bake (#42): three rows. (1) The entrypoint installs notify_push
 #         from the store ONLY when it is missing, and that install opens the store for that
 #         one command — a per-process NC_appstoreenabled=1 prefix while the container ENV
-#         stays "0"; every update leg stays closed. Talk left this channel for its fork's
-#         signed releases (ADR-0020, row 145), so notify_push is the scoped open's only
+#         stays "0"; every update leg stays closed. notify_push is the scoped open's only
 #         first-boot user. (2) AIO's automatic app updates are forced off: the entrypoint runs
 #         no scheduled app:update --all and reads UPDATE_NEXTCLOUD_APPS nowhere — apps move
 #         only when the operator decides (`aps-conecta actualizar`). (3) Provisioning's store
 #         rows install through the same scoped open (occ_store in lib.sh), never a bare
 #         `occ app:install`.
-#   145 — spreed's channel is the fork's own signed release (ADR-0020): the manifest row is
-#         source fork with release on (never the store), the entrypoint installs spreed
-#         nowhere (its Talk block is presence-gated configuration alone), and the resolver
-#         honours the record's Talk switch — Talk off resolves nothing. The fork repo and its
-#         per-suite-release refresh live outside this tree; the release chain's spreed step
-#         (release.yml) is what keeps them honest at suite-release time.
+#   145 — Talk installs from the official store in phase 12, then receives the shared
+#         startup configuration. The entrypoint configures an installed Talk app.
 #
 # ROUTED (this repo cannot see these channels — recorded so the ledger stays complete, the
 # slice-4 curl→030 precedent): own and fork apps' bytes live in their own repos' signed
@@ -87,8 +82,8 @@ fi
 row 020 "the app store is off at the image level — NC_appstoreenabled=\"0\" ENV in Containers/nextcloud/Dockerfile; the only openings are 042's per-command scoped installs" \
   grep -q 'NC_appstoreenabled="0"' "$TREE/Containers/nextcloud/Dockerfile"
 
-row 015 "the Euro-Office DocumentServer is pinned — Containers/eurooffice/Dockerfile builds FROM documentserver v9.3.4, the version office-smoke asserts the running DS equals" \
-  grep -q 'documentserver:v9.3.4' "$TREE/Containers/eurooffice/Dockerfile"
+row 015 "the Euro-Office DocumentServer is pinned — Containers/eurooffice/Dockerfile builds FROM documentserver v9.3.7-1, and office-smoke verifies its native core version" \
+  grep -Fxq 'FROM ghcr.io/euro-office/documentserver:v9.3.7-1' "$TREE/Containers/eurooffice/Dockerfile"
 
 selfupdate_absent() {
   local status
@@ -166,38 +161,28 @@ scoped_store_installs() {  # 042, 147: the shared boot helper owns the sole scop
   [ "$fail" -eq 0 ]
 }
 
-row 042 "the entrypoint installs notify_push scoped — a per-process NC_appstoreenabled=1 on exactly that one install when it is missing, never on an update leg; Talk left the store channel for its fork's signed releases (ADR-0020), and no install of spreed remains in the entrypoint (#42, #145)" \
+row 042 "the entrypoint installs notify_push through its scoped store command; phase 12 owns Talk acquisition" \
   scoped_store_installs
 
-spreed_from_its_fork() {  # 145: the store→fork migration's tree half (ADR-0020). The
-  # manifest's row names the fork repo with release on (never the store — apps.py refuses a
-  # store row that sets it, so the shape here is the whole channel); the entrypoint installs
-  # spreed nowhere; and the resolver's Talk gate exists — Talk off resolves nothing, the
-  # record's own switch, the same gate phase 12 reads through TALK_ENABLED. What this tree
-  # cannot see — the fork repo's releases, their upstream checksums, the refresh — is the
-  # release chain's spreed step and the clean boot's assert-release-app, both at run time.
-  local m="$TREE/apps.json" r="$TREE/scripts/releases.py" e="$TREE/Containers/nextcloud/entrypoint.sh" fila fail=0
-  for f in "$m" "$r" "$e"; do
-    [ -f "$f" ] || { echo "  no such file: $f — re-point this row" >&2; fail=1; }
-  done
-  [ "$fail" -eq 0 ] || return 1
-  fila="$(python3 -c 'import json, sys
-fila = next(a for a in json.load(open(sys.argv[1])) if a["id"] == "spreed")
-assert fila["source"] == "fork" and fila["repo"] == "APS-Conecta/spreed" and fila.get("release") is True, fila' \
-    "$m" 2>&1)" \
-    || { echo "  apps.json's spreed row is not the fork's release row: $fila" >&2; fail=1; }
+talk_store_channel() {
+  python3 - "$TREE/apps.json" <<'PYCODE' || return 1
+import json, sys
+row = next(row for row in json.load(open(sys.argv[1])) if row['id'] == 'spreed')
+assert row['source'] == 'store' and not row.get('repo') and not row.get('release'), row
+PYCODE
   if grep -nE 'app:(install|update)[[:space:]]+spreed' "$TREE/Containers/nextcloud/entrypoint.sh" "$TREE/Containers/nextcloud/configure-apps.sh"; then
-    echo "  the entrypoint installs or updates spreed — the release channel and actualizar are its only movers" >&2
-    fail=1
+    echo "  phase 12 owns Talk acquisition" >&2
+    return 1
   fi
-  if grep -nE 'def talk_on|TALK_ENABLED' "$r" "$TREE/provisioning/phases/12-apps.sh"; then
-    echo "  a Talk selection gate remains in acquisition" >&2; fail=1
+  if grep -nE 'def talk_on|TALK_ENABLED' "$TREE/scripts/releases.py" "$TREE/provisioning/phases/12-apps.sh"; then
+    echo "  a Talk selection gate remains in acquisition" >&2
+    return 1
   fi
-  [ "$fail" -eq 0 ]
+  grep -qF 'nc_exec --user www-data -- bash /configure-apps.sh talk || exit 1' "$TREE/provisioning/phases/12-apps.sh"
 }
 
-row 145 "spreed's channel is the fork's own signed release — apps.json's row is source fork with release on, the entrypoint installs spreed nowhere, and it always resolves independently of saved service selections (ADR-0021)" \
-  spreed_from_its_fork
+row 145 "Talk uses the official store channel and phase 12 configures it immediately after installation (ADR-0025)" \
+  talk_store_channel
 
 aio_auto_updates_off() {  # 042: AIO's Saturday app:update --all is gone and the env that
   # armed it is read nowhere — apps move only when the operator decides, whatever the config

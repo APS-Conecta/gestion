@@ -48,6 +48,14 @@ nc_exec() {  # [docker-exec option words…] -- COMMAND [args…] — exec into 
   docker exec "${opts[@]}" "$NC_CONTAINER" "$@"
 }
 occ() { nc_exec --user www-data -- php /var/www/html/occ "$@"; }
+require_store_app_integrity() {
+  local app="${1:?usage: require_store_app_integrity APP}"
+  # The native checker can skip an unsigned app and return zero.
+  nc_exec --user www-data -- test -s "/var/www/html/custom_apps/$app/appinfo/signature.json" \
+    || { echo "FAIL: $app official store signature is missing"; return 1; }
+  occ integrity:check-app "$app" >/dev/null \
+    || { echo "FAIL: $app official connector integrity check failed"; return 1; }
+}
 # docker cp takes the container name itself, so it cannot ride nc_exec; same resolution, two sites
 # (lib.sh's certificate copy, phase 41's welcome tree).
 nc_cp() { nc_container; docker cp "$1" "$NC_CONTAINER:$2"; }  # HOST_PATH CONTAINER_PATH

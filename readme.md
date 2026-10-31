@@ -16,9 +16,9 @@ ID the gates' rows name:
 | Patch | What it does |
 |---|---|
 | 010 | the container images re-pointed at this fork's registry (`ghcr.io/aps-conecta/*`) |
-| 015 | the Euro-Office container built from the pinned DocumentServer 9.3.4 |
+| 015 | the Euro-Office container built from the pinned DocumentServer 9.3.7-1 |
 | 020 | the app store disabled — apps ship baked, never fetched |
-| 030 | the suite's apps and theme baked into the Nextcloud image |
+| 030 | the suite theme and official Office, Talk and Custom Menu packages |
 | 040 | updates follow the suite's deliberate versioned path; scheduled backups restart the current images |
 | 050 | Euro-Office is the suite's only office backend, from the wizard through runtime and release images |
 | 051 | the establishment supplies its own domain or IP address |
