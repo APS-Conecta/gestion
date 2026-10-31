@@ -364,6 +364,8 @@ goes: step 6, or `SITE_DOMINIO` in the site file of the silent install. The suit
   address, nor the reverse: it is reinstalled (§12).
 - **Nextcloud** trusts the CA (phase 07); **the office** reaches Nextcloud inside the suite's network
   (phase 14 writes the two internal URLs). Nothing to configure.
+- **HaRP** receives the public CA certificate read-only and combines it with system certificates
+  before starting its AppAPI agent.
 
 Every device that opens the suite imports the CA once. Step 6 offers it («Descargar el
 certificado») with its SHA-256 fingerprint, and the console prints both at the end of the install;
