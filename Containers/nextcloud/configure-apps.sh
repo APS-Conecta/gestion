@@ -297,6 +297,7 @@ configure_startup_apps() {
     case "$-" in *x*) traced=1; set +x ;; esac
     case "$target" in
         eurooffice) startup_office || rc=$? ;;
+        antivirus) startup_clam || rc=$? ;;
         boot)
             startup_notify && startup_office && startup_talk && startup_recording &&
                 startup_clam && startup_fts && startup_harp || rc=$? ;;
