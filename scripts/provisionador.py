@@ -4914,7 +4914,8 @@ def selftest():
             check("generar: revision answers the plan — zero execs, zero writes",
                   st == 200 and body["modo"] == "revision" and body["usuarios"] == 2
                   and body["primer_admin"] == "elena.diaz" and body["contrasenas_selladas"] >= 2
-                  and len(body["fases"]) == 14 and execs[0] == 0 and same
+                  and len(body["fases"]) == 15 and "14-antivirus" in body["fases"]
+                  and execs[0] == 0 and same
                   and body["env"]["FIXTURE_USER_PASSWORD"] == "se generará")
             check("generar: review mode downloads nothing — the release apps' fetch leg never ran (#33)",
                   not os.path.exists(apps_argv))
@@ -4933,7 +4934,7 @@ def selftest():
                 subprocess.Popen = real_popen
             check("--paso generar --revision: the plan in one Spanish line, nothing executed, exit 0",
                   rc == 0 and execs[0] == 0
-                  and "✓ Revisión: 14 fases, 2 usuarios (administrador inicial elena.diaz)" in out)
+                  and "✓ Revisión: 15 fases, 2 usuarios (administrador inicial elena.diaz)" in out)
             st, plan = api_generar({"codigo": "113314", "modo": "revision"})
             visibles = json.dumps({k: plan.get(k) for k in ("centro", "sectores", "programas", "personas",
                                                             "componentes")}, ensure_ascii=False)
@@ -5749,9 +5750,9 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   and lista["servidor"]["pisos"] == pisos_servidor()
                   and all(t in __import__("inspect").getsource(screen_contenedores)
                           for t in ("pisos.ram_min", "Pisos del instalador")))
-            check("generar: ejecutar runs the whole world green — 14 phases, 2 roster users, gate clean",
+            check("generar: ejecutar runs the whole world green — 15 phases, 2 roster users, gate clean",
                   st == 200 and body["ok"] and body["divergencia_vacia"]
-                  and "14 phase(s) run" in body["salida"] and "== roster: 2 usuario(s) ==" in body["salida"]
+                  and "15 phase(s) run" in body["salida"] and "== roster: 2 usuario(s) ==" in body["salida"]
                   and "user elena.diaz added to group admin" in body["salida"]
                   and "nada en la instancia que el repositorio no declare" in body["divergencia"])
             check("generar: ejecutar resolves and fetches the release apps first, with the version the instance answers (#33)",
@@ -5769,7 +5770,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   st2 == 500
                   and body2["error"] == "FATAL: territorio: la firma de SHA256SUMS no verifica contra apps.pub"
                   and "== APS Conecta provisioning" not in body2["salida"]
-                  and "14 phase(s) run" not in body2["salida"])
+                  and "15 phase(s) run" not in body2["salida"])
             globals()["APPS_CMD"] = ["bash", apps_stub("lenta")]
             viejo = TIMEOUTS["apps"]
             TIMEOUTS["apps"] = 1
@@ -5853,6 +5854,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
             log_text = open(os.path.join(deis.HERE, "..", ".install.log"), encoding="utf-8").read()
             check("generar --resumen: one Spanish line per phase, the apps' download and the roster's count on the console, the whole log in .install.log (R42, #33)",
                   "  ✓ Grupos: roles, categorías y equipos\n" in console
+                  and "  ✓ Antivirus de archivos\n" in console
                   and "  ✓ Planilla: 2 personas\n" in console
                   and "  ✓ Aplicaciones: territorio v0.80.0 descargada y verificada" in console
                   and console.count("  ✓ ") == len(PHASE_TITLES) + 2
