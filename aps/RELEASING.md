@@ -94,13 +94,12 @@ asserts it):
 
 release.yml proves stable tags are contained in main, freezes the checked-out commit and runs
 the full local gate (including existing browser checks), validators, Twig and both ownership
-gates on that tree. Only numeric `vX.Y.Z-ci.N` rehearsals may be off main. Images, Talk
-verification and packaging check out the proven SHA, never a second resolution of the tag.
+gates on that tree. Only numeric `vX.Y.Z-ci.N` rehearsals may be off main. Images and
+packaging check out the proven SHA, never a second resolution of the tag.
 The packager receives `RELEASE_SHA`, using it for archived bytes, date and provenance even
 without a local tag. Before publication, the remote tag (including annotated tags) must still
-resolve to that same commit. The image set is built, Talk's signed archive is compared with every upstream member's content,
-then package-release (composite
-assembly, SHA256SUMS, the signature, the verify-PROOF against the committed `installer.pub`,
+resolve to that same commit. The complete image set passes its native checks, then package-release assembles the composite,
+including SHA256SUMS, the signature, the verify-PROOF against the committed `installer.pub`,
 the constants-filled install asset) → the Release with five assets. Watch it; a red anywhere
 names its gate.
 
@@ -142,7 +141,6 @@ outside the images (ADR-0018).
 matching VERSION, BUNDLE_TAG and changelog, the owner creates its numeric CI tag. Tag push
 runs the protected chain automatically. Its suite Release uses `--prerelease --latest=false`;
 record the current `/releases/latest` tag before and after to prove Latest stayed unchanged.
-The Talk refresh can also publish its independently signed app release.
 
 For a repair, dispatch from the tag itself (`--ref vX.Y.Z`), not a branch: Release environment
 eligibility follows the workflow ref. The repair arm uses `suite-tag`, plus `force-images`
