@@ -15,7 +15,7 @@
             El contenedor de la suite tiene acceso al directorio {{ nextcloud_mount }} y el almacenamiento externo local está activado.
         {% endif %}</p>
 
-    <p>La suite tiene configurado un límite de subida de {{ nextcloud_upload_limit }} (para subidas no fragmentadas. Las subidas más grandes siempre son posibles cuando se usa fragmentación, lo que ocurre cuando los usuarios han iniciado sesión y para subidas públicas).</p>
+    <p>Las cargas sin fragmentar tienen configurado un límite de {{ nextcloud_upload_limit }}. Las cargas fragmentadas también deben cumplir el límite de revisión antivirus del archivo completo.</p>
 
     <p>La suite tiene configurado un límite de memoria de {{ nextcloud_memory_limit }} por proceso PHP.</p>
 

@@ -40,6 +40,7 @@ ENV NC_skeletondirectory=""
 
 COPY --chmod=775 Containers/nextcloud/*.sh /
 COPY --chmod=755 Containers/network-prefix.sh /network-prefix.sh
+COPY --chmod=755 Containers/antivirus-limit.sh /antivirus-limit.sh
 COPY --chmod=774 Containers/nextcloud/upgrade.exclude /upgrade.exclude
 COPY Containers/nextcloud/config/*.php /
 COPY Containers/nextcloud/dinit.d/ /etc/dinit.d/

@@ -799,7 +799,7 @@ services = json.loads((root / "php/containers.json").read_text())["aio_services_
 expected = {row["image"].rsplit("/", 1)[-1] for row in services} | {"all-in-one"}
 assert len(matrix) == len(expected) and {row["image"] for row in matrix} == expected
 assert {row["dockerfile"] for row in matrix} == {str(p.relative_to(root)) for p in (root / "Containers").glob("*/Dockerfile")}
-assert {row["image"] for row in matrix if row["context"] == "."} == {"all-in-one", "aio-nextcloud", "aio-apache"}
+assert {row["image"] for row in matrix if row["context"] == "."} == {"all-in-one", "aio-nextcloud", "aio-apache", "aio-clamav"}
 assert {row["image"] for row in matrix if row["database_test"]} == {"aio-postgresql"}
 assert {row["image"] for row in matrix if not row["cache"]} == {"aio-eurooffice"}
 # The existing browser files run sequentially on one runner; no suite-owned
@@ -2617,7 +2617,7 @@ else:
                EUROOFFICE_SECRET='synthetic secret must never escape', NC_DOMAIN='test.invalid',
                TALK_ENABLED='no', TALK_RECORDING_ENABLED='no', CLAMAV_ENABLED='no',
                FULLTEXTSEARCH_ENABLED='no', HARP_ENABLED='no', REMOVE_DISABLED_APPS='no',
-               NEXTCLOUD_DATA_DIR=str(root), CLAMAV_HOST='clam', CLAMAV_BLOCKLISTED_DIRECTORIES='',
+               NEXTCLOUD_DATA_DIR=str(root), CLAMAV_HOST='clam', CLAMAV_BLOCKLISTED_DIRECTORIES='', PHP_UPLOAD_LIMIT='1G',
                FULLTEXTSEARCH_HOST='search', FULLTEXTSEARCH_PORT='9200', FULLTEXTSEARCH_USER='test',
                FULLTEXTSEARCH_PASSWORD='synthetic secret must never escape', FULLTEXTSEARCH_INDEX='test')
     (root / 'fts-index.done').touch()

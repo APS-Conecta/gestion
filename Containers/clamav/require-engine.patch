@@ -1,0 +1,9 @@
+--- a/services/virus_scan/virus_scan.c
++++ b/services/virus_scan/virus_scan.c
+@@ -415,4 +415,4 @@
+      if (!data->engine[0]) {
+-         ci_debug_printf(1, "Antivirus engine is not available, allow 204\n");
+-         return CI_MOD_ALLOW204;
++         ci_debug_printf(1, "Antivirus engine is not available, refusing scan\n");
++         return CI_ERROR;
+      }
