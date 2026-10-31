@@ -1366,9 +1366,47 @@ jobs:
             for sample in clean.txt eicar.txt download.txt; do
               printf '[DEBUG-184] %s SHA256=%s\n' "$sample" "$(sha256sum "$task_av_dir/$sample" | cut -d' ' -f1)"
             done
-            task_av_request_id="$(awk 'tolower($1) == "x-request-id:" { gsub("\r", "", $2); print $2; exit }' "$task_av_dir/overwrite.headers")"
+            python3 - "$task_av_dir/download.txt" <<'PYOVERWRITE'
+          import pathlib, re, sys, xml.etree.ElementTree as ET
+          try:
+              root = ET.fromstring(pathlib.Path(sys.argv[1]).read_bytes())
+              message = next((node.text or '' for node in root.iter() if node.tag.endswith('}message')), '')
+          except (ET.ParseError, OSError):
+              message = '(no structured error message)'
+          print('[DEBUG-184] overwrite read error:', re.sub(r'[A-Za-z0-9_+/=-]{40,}', '[redacted]', message)[:250])
+          PYOVERWRITE
+            task_av_data_dir="$(docker exec --user www-data aps-conecta-nextcloud php occ config:system:get datadirectory)"
             docker exec --user www-data aps-conecta-nextcloud php -r '
-              $stream = @fopen("/var/www/html/data/nextcloud.log", "r");
+              $path = $argv[1] . "/ana.prueba/files/antivirus-clean-184.txt";
+              echo "[DEBUG-184] physical original=" . json_encode([
+                "exists" => file_exists($path), "readable" => is_readable($path),
+                "sha256" => is_file($path) ? hash_file("sha256", $path) : null]) . PHP_EOL;
+            ' "$task_av_data_dir"
+            task_av_request_id="$(awk 'tolower($1) == "x-request-id:" { gsub("\r", "", $2); print $2; exit }' "$task_av_dir/overwrite.headers")"
+            docker logs --since=2m aps-conecta-nextcloud > "$task_av_dir/overwrite-nextcloud.log" 2>&1
+            python3 - "$task_av_dir/overwrite-nextcloud.log" "$task_av_request_id" <<'PYAVLOG'
+          import json, pathlib, sys
+          matched = False
+          for line in pathlib.Path(sys.argv[1]).read_text().splitlines():
+              start = line.find('{')
+              if start < 0:
+                  continue
+              try:
+                  row = json.loads(line[start:])
+              except json.JSONDecodeError:
+                  continue
+              if row.get('app') != 'files_antivirus' or row.get('reqId') != sys.argv[2]:
+                  continue
+              matched = True
+              message = str(row.get('message', ''))
+              print('[DEBUG-184] rejected path classification=' + json.dumps({
+                  'part': '.part' in message,
+                  'final': 'antivirus-clean-184.txt' in message}))
+          print('[DEBUG-184] matching container antivirus event=' + str(matched))
+          PYAVLOG
+            task_av_log_file="$(docker exec --user www-data aps-conecta-nextcloud php occ config:system:get logfile || true)"
+            docker exec --user www-data aps-conecta-nextcloud php -r '
+              $stream = $argv[2] !== "" ? @fopen($argv[2], "r") : false;
               $matched = false;
               if ($stream) {
                 while (($line = fgets($stream)) !== false) {
@@ -1385,8 +1423,8 @@ jobs:
                 fclose($stream);
               }
               echo "[DEBUG-184] matching antivirus event=" . ($matched ? "yes" : "no") . PHP_EOL;
-            ' "$task_av_request_id"
-            echo 'FAIL: a rejected overwrite lost the previous clean file' >&2
+            ' "$task_av_request_id" "$task_av_log_file"
+            echo 'FAIL: the previous clean file could not be read after a rejected overwrite' >&2
             task_av_failed=1
           else
             echo 'PASS: recovery accepts clean files and a rejected overwrite preserves the original'
@@ -1401,11 +1439,21 @@ jobs:
           done
           code="$(dav --request MOVE --header "Destination: $task_av_url/antivirus-assembled-184.bin" \
             --header 'OC-Total-Length: 1572864' --output "$task_av_dir/response.xml" "$task_av_chunks_url/.file")"
-          [ "$code" = 415 ] && grep -q 'El antivirus rechazó el archivo' "$task_av_dir/response.xml" \
-            || { echo "FAIL: assembled chunks returned HTTP $code instead of a whole-file rejection" >&2; exit 1; }
+          task_av_chunks_rejected=1
+          if [ "$code" != 415 ] || ! grep -q 'El antivirus rechazó el archivo' "$task_av_dir/response.xml"; then
+            echo "FAIL: assembled chunks returned HTTP $code instead of a whole-file rejection" >&2
+            task_av_failed=1
+            task_av_chunks_rejected=0
+          fi
           code="$(dav --output /dev/null "$task_av_url/antivirus-assembled-184.bin")"
-          [ "$code" = 404 ]
-          echo 'PASS: individually accepted chunks cannot bypass the complete-file scan limit'
+          if [ "$code" != 404 ]; then
+            echo "FAIL: the assembled upload remains readable (HTTP $code)" >&2
+            task_av_failed=1
+            task_av_chunks_rejected=0
+          fi
+          if [ "$task_av_chunks_rejected" = 1 ]; then
+            echo 'PASS: individually accepted chunks cannot bypass the complete-file scan limit'
+          fi
           # Hold the engine until the running frontend has staged the upload, then interrupt its connection.
           docker exec aps-antivirus-boundary killall -STOP clamd
           printf 'user = "ana.prueba:%s"\n' "$task_av_password" \
