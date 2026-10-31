@@ -2920,6 +2920,80 @@ PY
 }
 check app_startup_cases
 
+talk_smoke_cases() {
+  python3 - <<'PY'
+import copy, json, os, pathlib, shutil, subprocess, sys, tempfile
+with tempfile.TemporaryDirectory() as directory:
+    root = pathlib.Path(directory)
+    for name in ('scripts', 'bin'):
+        (root / name).mkdir()
+    for name in ('env.sh', 'talk-smoke.sh'):
+        shutil.copyfile('scripts/' + name, root / 'scripts' / name)
+    ca = root / 'ca.crt'
+    ca.touch()
+    state_path = root / 'state.json'
+    command = '#!' + sys.executable + '\n' + r'''
+import json, os, pathlib, sys
+p = pathlib.Path(os.environ['TALK_SMOKE_STATE'])
+s = json.loads(p.read_text())
+a = sys.argv[1:]
+s['calls'].append([pathlib.Path(sys.argv[0]).name, *a])
+p.write_text(json.dumps(s))
+if pathlib.Path(sys.argv[0]).name == 'curl':
+    if s.get('curl_failure'): print('synthetic secret must never escape', file=sys.stderr); sys.exit(60)
+    print(s['welcome'] + '\n' + s.get('http_status', '200'))
+elif a[0] == 'inspect':
+    print('NC_DOMAIN=192.0.2.50')
+else:
+    assert a[:5] == ['exec', '--user', 'www-data', 'aps-conecta-nextcloud', 'php']
+    name = a[6]
+    assert name in s['native']
+    if s.get('native_failure') == name: print('synthetic secret must never escape'); sys.exit(2)
+    print(s['native'][name])
+    sys.exit(s.get('setup_exit', 0) if name == 'setupchecks' else 0)
+'''
+    for name in ('docker', 'curl'):
+        path = root / 'bin' / name
+        path.write_text(command)
+        path.chmod(0o755)
+    check = 'OCA\\Talk\\SetupCheck\\HighPerformanceBackend'
+    base = {'calls': [], 'welcome': '{"nextcloud-spreed-signaling":"Welcome","version":"2.1.1"}', 'native': {
+        'talk:signaling:list': json.dumps({'servers': [{'server': 'https://192.0.2.50/standalone-signaling/', 'verify': True}], 'secret': 'synthetic secret must never escape'}),
+        'talk:turn:list': json.dumps([{'schemes': 'turn', 'server': '192.0.2.50:3478', 'protocols': 'udp,tcp', 'secret': 'synthetic secret must never escape'}]),
+        'talk:stun:list': '["192.0.2.50:3478"]',
+        'setupchecks': json.dumps({'talk': {check: {'severity': 'success'}}})}}
+    env = dict(os.environ, PATH=str(root / 'bin') + os.pathsep + os.environ['PATH'],
+               SUITE_CA=str(ca), TALK_SMOKE_STATE=str(state_path), NC_CONTAINER='aps-conecta-nextcloud')
+    def run(state, success=True):
+        state_path.write_text(json.dumps(state))
+        result = subprocess.run(['bash', str(root / 'scripts/talk-smoke.sh')], env=env,
+                                capture_output=True, text=True, timeout=20)
+        assert (result.returncode == 0) == success, result.stdout + result.stderr
+        assert 'synthetic secret must never escape' not in result.stdout + result.stderr
+        return json.loads(state_path.read_text())
+    state = run(base)
+    assert any(call[0] == 'docker' and 'setupchecks' in call for call in state['calls']), 'Talk smoke must run the native signaling check'
+    curl = next(call for call in state['calls'] if call[0] == 'curl')
+    assert '--cacert' in curl and str(ca) in curl
+    assert curl[-1] == 'https://192.0.2.50/standalone-signaling/api/v1/welcome'
+    assert not any(arg in ('-k', '--insecure', '-L', '--location') for arg in curl)
+    state = copy.deepcopy(base); state['setup_exit'] = 1
+    run(state)
+    for name, value in [('talk:signaling:list', '[]'), ('talk:turn:list', '[]'),
+                        ('talk:stun:list', '["stun.nextcloud.com:443"]'), ('setupchecks', '{}'),
+                        ('setupchecks', json.dumps({'talk': {check: {'severity': 'warning'}}})),
+                        ('setupchecks', '{broken')]:
+        state = copy.deepcopy(base); state['native'][name] = value
+        run(state, success=False)
+    for key, value in [('native_failure', 'setupchecks'), ('curl_failure', True),
+                       ('welcome', '{}'), ('welcome', '{broken'), ('http_status', '302')]:
+        state = copy.deepcopy(base); state[key] = value
+        run(state, success=False)
+print('Talk smoke verifies native wiring, CA-verified public welcome and the native signaling diagnostic')
+PY
+}
+check talk_smoke_cases
+
 phase12_talk_cases() {
   python3 - <<'PY'
 import hashlib, io, json, os, pathlib, shutil, subprocess, sys, tarfile, tempfile
