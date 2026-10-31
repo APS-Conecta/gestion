@@ -1092,6 +1092,8 @@ jobs:
           [ -n "$ip" ] || { echo "FATAL: no routed IPv4 address on this runner" >&2; exit 1; }
           echo "SUITE_IP=$ip" >> "$GITHUB_ENV"
           bash /opt/aps-conecta/instalador/scripts/cleanboot-site.sh "$ip" "$RUNNER_TEMP"
+          # A second ordinary staff member for the chat check; Ana remains the first administrator.
+          printf 'carla.chat;Carla;Prueba Tres;;role-medico;no\n' >> "$RUNNER_TEMP/usuarios.csv"
       - name: The published antivirus image completes its clean scan before installation
         run: |
           set -euo pipefail
@@ -2036,6 +2038,93 @@ jobs:
           printf '%s\n' "$out"
           [ "$rc" -eq 0 ] && grep -q '^REVALIDACIÓN: PASS' <<<"$out" \
             || { echo "FAIL: revalidate did not pass on the clinic's front" >&2; exit 1; }
+      - name: Staff chat text round-trips over the public suite HTTPS address
+        run: |
+          set -euo pipefail
+          cd /opt/aps-conecta/instalador
+          source scripts/env.sh
+          suite_url_resolve
+          # First native RED control: the new step must reject currently unreachable signaling.
+          docker stop aps-conecta-talk >/dev/null
+          sudo bash scripts/talk-smoke.sh
+          # Recording remains off on these four-core runners; its measured policy belongs to #189.
+          sudo python3 - "$SUITE_URL" "$SUITE_CA" <<'PYCHAT'
+          import base64, csv, json, ssl, sys, urllib.parse, urllib.request, uuid
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, request, response, code, message, headers, new_url):
+                  return None
+
+          stage = 'reading the protected staff credentials'
+          token = None
+          failure = None
+          try:
+              with open('/opt/aps-conecta/credentials.txt', encoding='utf-8', newline='') as stream:
+                  rows = list(csv.reader(stream, delimiter=';'))
+              credentials = {}
+              for user in ('beto.prueba', 'carla.chat'):
+                  matches = [row for row in rows if len(row) > 2 and row[0] == user]
+                  assert len(matches) == 1 and matches[0][2]
+                  credentials[user] = matches[0][2]
+              opener = urllib.request.build_opener(
+                  urllib.request.HTTPSHandler(context=ssl.create_default_context(cafile=sys.argv[2])),
+                  RejectRedirects())
+              base = sys.argv[1] + '/ocs/v2.php/apps/spreed/api/'
+
+              def api(method, path, user, expected, fields=None):
+                  authorization = base64.b64encode((user + ':' + credentials[user]).encode()).decode('ascii')
+                  headers = {'Authorization': 'Basic ' + authorization, 'OCS-APIRequest': 'true',
+                             'Accept': 'application/json'}
+                  data = None
+                  if fields is not None:
+                      headers['Content-Type'] = 'application/x-www-form-urlencoded'
+                      data = urllib.parse.urlencode(fields).encode()
+                  request = urllib.request.Request(base + path, data=data, headers=headers, method=method)
+                  with opener.open(request, timeout=30) as response:
+                      assert response.status == expected
+                      result = json.load(response)['ocs']
+                  assert result['meta']['status'] == 'ok' and result['meta']['statuscode'] == expected
+                  return result['data']
+
+              stage = 'creating the disposable group conversation'
+              room_name = 'APS Conecta CI ' + uuid.uuid4().hex
+              room = api('POST', 'v4/room', 'beto.prueba', 201, {'roomType': 2, 'roomName': room_name})
+              token = room['token']
+              assert isinstance(token, str) and token and room['name'] == room_name and room['type'] == 2
+              room_path = 'v4/room/' + urllib.parse.quote(token, safe='')
+              chat_path = 'v1/chat/' + urllib.parse.quote(token, safe='')
+              stage = 'adding the other ordinary staff member'
+              api('POST', room_path + '/participants', 'beto.prueba', 200,
+                  {'newParticipant': 'carla.chat', 'source': 'users'})
+              stage = 'posting the staff message'
+              text = 'APS Conecta chat acceptance ' + uuid.uuid4().hex
+              posted = api('POST', chat_path, 'beto.prueba', 201, {'message': text})
+              message_id = posted['id']
+              assert type(message_id) is int and message_id > 0
+              stage = 'reading the exact message as the other staff member'
+              query = urllib.parse.urlencode({'lookIntoFuture': 0, 'limit': 100, 'lastKnownMessageId': 0,
+                  'setReadMarker': 0, 'noStatusUpdate': 1})
+              messages = api('GET', chat_path + '?' + query, 'carla.chat', 200)
+              assert isinstance(messages, list) and any(
+                  message.get('id') == message_id and message.get('token') == token and
+                  message.get('actorType') == 'users' and message.get('actorId') == 'beto.prueba' and
+                  message.get('messageType') == 'comment' and message.get('systemMessage') == '' and
+                  message.get('message') == text for message in messages)
+          except Exception:
+              failure = 'FAIL: staff chat acceptance failed while ' + stage
+          finally:
+              if isinstance(token, str) and token:
+                  try:
+                      api('DELETE', 'v4/room/' + urllib.parse.quote(token, safe=''), 'beto.prueba', 200)
+                  except Exception:
+                      print('FAIL: the creator could not remove its disposable conversation', file=sys.stderr)
+                      failure = failure or 'FAIL: staff chat cleanup failed'
+          if failure:
+              print(failure, file=sys.stderr)
+              sys.exit(1)
+          print('PASS: ordinary staff chat text round-trips through the public HTTPS v4 room and v1 chat APIs')
+          print('PASS: the creator removed its disposable conversation')
+          PYCHAT
       - name: The wizard reports a terminal error when its configuration cannot be written
         run: |
           set -euo pipefail
