@@ -62,7 +62,7 @@ theming_set disable-user-theming yes 1   # writes 'yes', stores '1' — see them
 
 # --- Brand images ---
 # occ DOES set all four on NC34 (ImageManager::SUPPORTED_IMAGE_KEYS) — it just needs an ABSOLUTE
-# path resolvable inside the container, which the themes/ bind mount provides. Going through the
+# path resolvable inside the running container. Going through the
 # Theming app's pipeline is what makes favicon rasterisation, the webmanifest and branded emails
 # work, and is the only way to set `background` at all, since core ships no background image.
 IMG=/var/www/html/themes/apsconecta/core/img
@@ -123,12 +123,9 @@ config_system_set theme apsconecta
 # the header slot and above the login heading; everything else in the theme is identical on every
 # install, which is what keeps themes/ a single committed artifact across establishments.
 #
-# Written on the HOST, not through occ: themes/ is a bind mount, so the file the container serves
-# is this one. It is NOT tracked — its content depends on which establishment is installed, so it
-# follows the same rule as sites/<slug>/site.sh and .env. A checkout that has never run this phase
-# therefore has no such file: server.css's `var(--aps-clinic, "APS Conecta Gestión")` fallback
-# renders the product's own name, and scripts/test.sh's asset guard skips this one path by name for
-# that reason (every other themed path it checks is a static asset that must exist).
+# Generated on the host and synchronized into Nextcloud's volume. Its establishment-specific
+# content is untracked, like sites/<slug>/site.sh and .env. Until the first seed, server.css's
+# `var(--aps-clinic, "APS Conecta Gestión")` fallback renders the product name.
 #
 # Not query-before-set. Comparing would mean parsing CSS to recover one string; rewriting two lines
 # is cheaper than the guard, and the content is a pure function of SITE_NOMBRE_CORTO. It is written
@@ -153,6 +150,11 @@ CSS
   log "site.css -> --aps-clinic: $SITE_NOMBRE_CORTO"
 else
   log "site.css already names $SITE_NOMBRE_CORTO"
+fi
+if ! nc_exec -i --user www-data -- cmp -s - "/var/www/html/$SITE_CSS" < "$SITE_CSS"; then
+  nc_cp "$SITE_CSS" "/var/www/html/$SITE_CSS" || return 1
+  nc_exec -- chmod 644 "/var/www/html/$SITE_CSS" || return 1
+  log "site.css -> running Nextcloud theme"
 fi
 
 phase_end
