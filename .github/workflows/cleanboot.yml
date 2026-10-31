@@ -1088,7 +1088,7 @@ jobs:
       - name: The published antivirus image completes its clean scan before installation
         run: |
           set -euo pipefail
-          trap 'docker rm --force --volumes aps-antivirus-preflight >/dev/null' EXIT
+          trap 'status=$?; docker rm --force --volumes aps-antivirus-preflight >/dev/null || status=1; exit "$status"' EXIT
           docker run --detach --init --name aps-antivirus-preflight --network none \
             --read-only --tmpfs /run --tmpfs /tmp --tmpfs /var/log/clamav --cap-drop NET_RAW \
             --env MAX_SIZE=1M --env AIO_LOG_LEVEL=warn \
