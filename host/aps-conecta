@@ -3877,6 +3877,11 @@ SHIM
   rout="$(ROOT="$rvd" cmd_revalidate 2>&1)"; rrc=$?
   check "revalidate aggregates green (exit 0 + the PASS line)" \
     '[ "$rrc" -eq 0 ] && printf "%s" "$rout" | grep -q "REVALIDACIÓN: PASS"'
+  printf '#!/usr/bin/env bash\necho "WARN: synthetic private detail must never escape"\necho "WARN: supported signaling backend lacks the optional changed-users optimization"\necho "PASS: Talk stub"\nexit 0\n' > "$rvd/scripts/talk-smoke.sh"
+  rout="$(ROOT="$rvd" cmd_revalidate 2>&1)"; rrc=$?
+  check "revalidate preserves the known Talk warning without exposing other details" \
+    '[ "$rrc" -eq 0 ] && case "$rout" in *"ADVERTENCIA: Talk"*"changed-users"*"REVALIDACIÓN: PASS"*) ;; *) false;; esac && case "$rout" in *"synthetic private detail"*) false;; *) true;; esac'
+  printf '#!/usr/bin/env bash\necho "PASS: Talk stub"\nexit 0\n' > "$rvd/scripts/talk-smoke.sh"
   printf '#!/usr/bin/env bash\necho "FAIL: AppAPI daemon unreachable"\nexit 1\n' > "$rvd/scripts/appapi-smoke.sh"
   rout="$(ROOT="$rvd" cmd_revalidate 2>&1)"; rrc=$?
   check "revalidate refuses an unreachable AppAPI daemon beside otherwise healthy gates" \
