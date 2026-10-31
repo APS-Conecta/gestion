@@ -1335,19 +1335,28 @@ jobs:
               assert int((root / 'count').read_text()) == before + 1, 'the proxy replayed a request'
           print('PASS: upload errors retain HTTP 500 and Spanish guidance; other responses stay intact without replay')
           PYRESPONSES
+      - uses: ./.github/actions/assert-release-app
+        with:
+          app: files_upload_guard
       - name: Staff uploads are scanned before acceptance
         run: |
           set -euo pipefail
           umask 077
           task_av_dir="$RUNNER_TEMP/antivirus-uploads"
           mkdir -p "$task_av_dir"
-          task_av_password="$(sudo python3 - <<'PYAV'
+          mapfile -t task_av_passwords < <(sudo python3 - <<'PYAV'
           import csv
           with open('/opt/aps-conecta/credentials.txt', encoding='utf-8') as stream:
-              print(next(row[2] for row in csv.reader(stream, delimiter=';') if row and row[0] == 'ana.prueba'))
+              passwords = {row[0]: row[2] for row in csv.reader(stream, delimiter=';') if row}
+          for user in ['ana.prueba', 'beto.prueba']:
+              print(passwords[user])
           PYAV
-          )"
+          )
+          [ "${#task_av_passwords[@]}" = 2 ]
+          task_av_password="${task_av_passwords[0]}"
+          task_av_staff_password="${task_av_passwords[1]}"
           printf '::add-mask::%s\n' "$task_av_password"
+          printf '::add-mask::%s\n' "$task_av_staff_password"
           task_av_url="https://$SUITE_IP/remote.php/dav/files/ana.prueba"
           task_av_version="$(docker exec --user www-data aps-conecta-nextcloud php occ config:app:get files_antivirus installed_version)"
           [ -n "$task_av_version" ] || { echo 'FAIL: the antivirus app has no installed version' >&2; exit 1; }
@@ -1355,13 +1364,18 @@ jobs:
           task_av_boundary_active=0
           task_av_pid=
           task_av_failed=0
+          task_av_group_id=
           task_av_chunks_url="https://$SUITE_IP/remote.php/dav/uploads/ana.prueba/antivirus-chunks-184"
           task_av_curl=(curl --config - --silent --show-error --connect-timeout 10 --max-time 60
             --cacert "$RUNNER_TEMP/ca.crt" --write-out '%{http_code}')
-          dav() {
-            printf 'user = "ana.prueba:%s"\n' "$task_av_password" \
+          dav_as() {
+            local user="$1" password="$2"
+            shift 2
+            printf 'user = "%s:%s"\n' "$user" "$password" \
               | "${task_av_curl[@]}" "$@"
           }
+          dav() { dav_as ana.prueba "$task_av_password" "$@"; }
+          staff_dav() { dav_as beto.prueba "$task_av_staff_password" "$@"; }
           wait_boundary() {
             local deadline=$((SECONDS + 180))
             while [ "$SECONDS" -lt "$deadline" ]; do
@@ -1386,6 +1400,10 @@ jobs:
               dav --request DELETE --output /dev/null "$task_av_url/$name" >/dev/null || failed=1
             done
             dav --request DELETE --output /dev/null "$task_av_chunks_url" >/dev/null || failed=1
+            if [ -n "$task_av_group_id" ]; then
+              docker exec --user www-data aps-conecta-nextcloud php occ groupfolders:delete \
+                "$task_av_group_id" --force >/dev/null || failed=1
+            fi
             if [ "$task_av_boundary_active" = 1 ]; then
               docker start aps-conecta-clamav >/dev/null || failed=1
               docker exec --user www-data aps-conecta-nextcloud bash /configure-apps.sh antivirus >/dev/null || failed=1
@@ -1473,12 +1491,27 @@ jobs:
           code="$(dav --output /dev/null "$task_av_url/antivirus-failure-184.txt")"
           [ "$code" = 404 ] \
             || { echo "FAIL: an unchecked upload remains readable (HTTP $code)" >&2; exit 1; }
+          code="$(dav --upload-file "$task_av_dir/clean.txt" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-clean-184.txt")"
+          [ "$code" = 415 ]
+          code="$(dav --output "$task_av_dir/download.txt" "$task_av_url/antivirus-clean-184.txt")"
+          if [ "$code" != 200 ] || ! cmp -s "$task_av_dir/clean.txt" "$task_av_dir/download.txt"; then
+            echo 'FAIL: a scanner failure changed the previous clean file' >&2
+            task_av_failed=1
+          else
+            echo 'PASS: a scanner failure preserves the previous clean file'
+          fi
           docker exec aps-antivirus-boundary mv /tmp/clamd.sock.offline /tmp/clamd.sock
           echo 'PASS: a scanner failure rejects the upload with actionable Spanish guidance'
           code="$(dav --upload-file "$task_av_dir/clean.txt" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-failure-184.txt")"
           [ "$code" = 201 ] || [ "$code" = 204 ]
           code="$(dav --output "$task_av_dir/download.txt" "$task_av_url/antivirus-failure-184.txt")"
           [ "$code" = 200 ] && cmp "$task_av_dir/clean.txt" "$task_av_dir/download.txt"
+          printf 'Updated clean content for overwrite acceptance.\n' > "$task_av_dir/updated.txt"
+          code="$(dav --upload-file "$task_av_dir/updated.txt" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-failure-184.txt")"
+          [ "$code" = 204 ]
+          code="$(dav --output "$task_av_dir/download.txt" "$task_av_url/antivirus-failure-184.txt")"
+          [ "$code" = 200 ] && cmp "$task_av_dir/updated.txt" "$task_av_dir/download.txt"
+          echo 'PASS: a successful overwrite replaces the previous content'
           code="$(dav --upload-file "$task_av_dir/eicar.txt" --dump-header "$task_av_dir/overwrite.headers" \
             --output "$task_av_dir/response.xml" "$task_av_url/antivirus-clean-184.txt")"
           [ "$code" = 415 ]
@@ -1489,6 +1522,50 @@ jobs:
           else
             echo 'PASS: recovery accepts clean files and a rejected overwrite preserves the original'
           fi
+          task_av_group_mount="antivirus-$GITHUB_RUN_ID-184"
+          docker exec --user www-data aps-conecta-nextcloud php occ groupfolders:create "$task_av_group_mount" \
+            > "$task_av_dir/group-create.txt"
+          docker exec --user www-data aps-conecta-nextcloud php occ groupfolders:list --output=json \
+            > "$task_av_dir/groupfolders.json"
+          task_av_group_id="$(python3 - "$task_av_dir/groupfolders.json" "$task_av_group_mount" <<'PYGROUP'
+          import json, pathlib, sys
+          data = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          rows = data.values() if isinstance(data, dict) else data
+          matches = [str(row['id']) for row in rows if (row.get('mountPoint') or row.get('mount_point')) == sys.argv[2]]
+          assert len(matches) == 1
+          print(matches[0])
+          PYGROUP
+          )"
+          [[ "$task_av_group_id" =~ ^[1-9][0-9]*$ ]]
+          docker exec --user www-data aps-conecta-nextcloud php occ groupfolders:group \
+            "$task_av_group_id" role-tens-sar read write delete
+          task_av_group_url="https://$SUITE_IP/remote.php/dav/files/beto.prueba/$task_av_group_mount"
+          code="$(staff_dav --upload-file "$task_av_dir/clean.txt" --output "$task_av_dir/response.xml" "$task_av_group_url/clean.txt")"
+          [ "$code" = 201 ]
+          code="$(staff_dav --upload-file "$task_av_dir/eicar.txt" --output "$task_av_dir/response.xml" "$task_av_group_url/clean.txt")"
+          [ "$code" = 415 ]
+          code="$(staff_dav --output "$task_av_dir/download.txt" "$task_av_group_url/clean.txt")"
+          [ "$code" = 200 ] && cmp "$task_av_dir/clean.txt" "$task_av_dir/download.txt" \
+            || { echo 'FAIL: a rejected group-folder overwrite changed the original' >&2; exit 1; }
+          docker exec --user www-data aps-conecta-nextcloud php occ groupfolders:group \
+            "$task_av_group_id" role-tens-sar read
+          code="$(staff_dav --upload-file "$task_av_dir/updated.txt" --output "$task_av_dir/response.xml" "$task_av_group_url/clean.txt")"
+          [ "$code" = 403 ] \
+            || { echo "FAIL: a read-only group-folder overwrite returned HTTP $code" >&2; exit 1; }
+          code="$(staff_dav --output "$task_av_dir/download.txt" "$task_av_group_url/clean.txt")"
+          [ "$code" = 200 ] && cmp "$task_av_dir/clean.txt" "$task_av_dir/download.txt"
+          code="$(staff_dav --upload-file "$task_av_dir/clean.txt" --output "$task_av_dir/response.xml" "$task_av_group_url/denied.txt")"
+          [ "$code" = 403 ] \
+            || { echo "FAIL: creation in a read-only group folder returned HTTP $code" >&2; exit 1; }
+          code="$(staff_dav --output /dev/null "$task_av_group_url/denied.txt")"
+          [ "$code" = 404 ]
+          docker exec --user www-data aps-conecta-nextcloud php occ groupfolders:group \
+            "$task_av_group_id" role-tens-sar read write delete
+          code="$(staff_dav --upload-file "$task_av_dir/updated.txt" --output "$task_av_dir/response.xml" "$task_av_group_url/clean.txt")"
+          [ "$code" = 204 ]
+          code="$(staff_dav --output "$task_av_dir/download.txt" "$task_av_group_url/clean.txt")"
+          [ "$code" = 200 ] && cmp "$task_av_dir/updated.txt" "$task_av_dir/download.txt"
+          echo 'PASS: group-folder scans preserve originals and enforce parent CREATE and target UPDATE permissions'
           # Splitting the signature must not evade the scan of the assembled content.
           code="$(dav --request MKCOL --output "$task_av_dir/response.xml" "$task_av_chunks_url")"
           [ "$code" = 201 ]
