@@ -71,6 +71,7 @@ proxy configuration masks credentials in ordinary configuration listings. Docker
 requests stay direct; bypasses include the inspected suite network and service inventory (#192).
 The native AppAPI daemon hostname also bypasses the proxy. HaRP trusts the public suite CA
 alongside system roots before its upstream agent starts; revalidation checks both directions (#186).
+Image discovery accepts Docker and OCI image manifests and their indexes from the suite registry (#243).
 
 The wizard's complete start path catches failures and finishes its existing HTML stream
 with an explicit result. The host requires that result before reporting success. Image pulls
