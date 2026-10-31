@@ -9,7 +9,8 @@ set -euo pipefail
 suite_url_resolve
 nc_container
 
-python3 - "$NC_CONTAINER" "$SUITE_URL" <<'PY'
+talk_native_failed=0
+python3 - "$NC_CONTAINER" "$SUITE_URL" <<'PY' || talk_native_failed=1
 import json, subprocess, sys, urllib.parse
 native = ['docker', 'exec', '--user', 'www-data', sys.argv[1], 'php', '/var/www/html/occ']
 def read(command, allowed=(0,)):
@@ -33,7 +34,13 @@ try:
     # they do not provision or change TURN, STUN or signaling configuration.
     checks = read('setupchecks', allowed=(0, 1))
     check = checks['talk']['OCA\\Talk\\SetupCheck\\HighPerformanceBackend']
-    assert check['severity'] == 'success', 'The native Talk signaling check is not successful'
+    severity = check.get('severity')
+    if severity != 'success':
+        safe_severity = severity if severity in ('error', 'warning', 'info') else 'unknown'
+        description = check.get('description')
+        changed_users = 'yes' if isinstance(description, str) and 'changed-users' in description else 'no'
+        raise AssertionError('The native Talk signaling check is not successful '
+            f'(severity={safe_severity}; changed-users mentioned={changed_users})')
 except AssertionError as error:
     print('FAIL: ' + str(error), file=sys.stderr)
     sys.exit(1)
@@ -61,3 +68,4 @@ except (AssertionError, KeyError, TypeError, ValueError):
     sys.exit(1)
 print("PASS: Talk signaling welcome answers through the public suite route with verified TLS")
 '
+[ "$talk_native_failed" -eq 0 ]
