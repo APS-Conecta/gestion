@@ -2045,8 +2045,7 @@ jobs:
           source scripts/env.sh
           export SUITE_CA="$RUNNER_TEMP/ca.crt"
           suite_url_resolve
-          # First native RED control: the new step must reject currently unreachable signaling.
-          docker stop aps-conecta-talk >/dev/null
+          # Stored chat alone cannot certify the current signaling connection.
           sudo bash scripts/talk-smoke.sh
           # Recording remains off on these four-core runners; its measured policy belongs to #189.
           sudo python3 - "$SUITE_URL" "$SUITE_CA" <<'PYCHAT'
