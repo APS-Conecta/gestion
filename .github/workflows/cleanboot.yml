@@ -1085,6 +1085,27 @@ jobs:
           [ -n "$ip" ] || { echo "FATAL: no routed IPv4 address on this runner" >&2; exit 1; }
           echo "SUITE_IP=$ip" >> "$GITHUB_ENV"
           bash /opt/aps-conecta/instalador/scripts/cleanboot-site.sh "$ip" "$RUNNER_TEMP"
+      - name: The published antivirus image completes its clean scan before installation
+        run: |
+          set -euo pipefail
+          trap 'docker rm --force --volumes aps-antivirus-preflight >/dev/null' EXIT
+          docker run --detach --init --name aps-antivirus-preflight --network none \
+            --read-only --tmpfs /run --tmpfs /tmp --tmpfs /var/log/clamav --cap-drop NET_RAW \
+            --env MAX_SIZE=1M --env AIO_LOG_LEVEL=warn \
+            --health-interval=2s --health-timeout=15s --health-start-period=1s --health-retries=40 \
+            "ghcr.io/aps-conecta/aio-clamav:$SUITE_TAG" >/dev/null
+          deadline=$((SECONDS + 120))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            if [ "$(docker inspect aps-antivirus-preflight --format '{{.State.Health.Status}}')" = healthy ]; then
+              echo 'PASS: the published scanner completes a clean health scan'
+              exit 0
+            fi
+            sleep 2
+          done
+          docker inspect aps-antivirus-preflight --format '{{range .State.Health.Log}}{{println .ExitCode .Output}}{{end}}'
+          docker logs --tail=60 aps-antivirus-preflight
+          echo 'FAIL: the published scanner did not complete its clean health scan' >&2
+          exit 1
       # The silent install, as root, with no terminal. The suite tag is the one the «suite-tag» job
       # resolved, so both jobs run the same published suite. #39 chose farmacia; #40 adds
       # estadistica and #41 totem — the three optional apps ride the same --app flags into the
