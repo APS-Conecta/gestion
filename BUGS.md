@@ -130,6 +130,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-075 | AppAPI lists its default HaRP daemon but cannot reach it, and HaRP rejects the suite certificate on an IP installation (#186) | native AppAPI keeps its upstream daemon hostname after the container rename; HaRP has no suite CA mount or Python trust adapter | Docker creates the compatibility alias on the primary endpoint, the existing proxy collector excludes it, and the read-only HaRP entrypoint combines system roots with the public suite CA before starting the upstream agent; the shared AppAPI gate checks native reachability and strict reverse HTTPS during installation, revalidation, reboot and reapplication |
 
+| A-076 | a fresh installation skips the published database image and then reports it missing (#186, #243) | the registry client accepts OCI indexes and Docker manifests but omits OCI image manifests; GHCR answers 404 for the new PostgreSQL descriptor despite its published digest | the native registry request accepts the OCI image manifest alongside its existing formats; public-method fixtures cover every descriptor and unavailable registries, and the native installation uses a new verified all-image rehearsal |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and
