@@ -114,9 +114,12 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-067 | assembled chunks above the scan budget were accepted despite direct-upload enforcement (#184 rehearsal) | the store app treats av_max_file_size as a scan-skipping threshold for large assembled uploads | keep every upload eligible with the supported -1 sentinel; the shared ICAP and ClamAV content budget supplies the rejection, and the real two-chunk MOVE probe verifies the complete-file limit |
 
+| A-068 | rejecting an infected DAV overwrite removes the original clean file (#184, #239) | Nextcloud 34 applies a directory-only creatability check to a staging filename and falls back to writing the live file | the signed own storage guard restores staging under the narrow ADR-0022 exception; real overwrite and permission checks retain core and store-app integrity |
+
+| A-069 | an interrupted scanner connection returns an untranslated DAV HTTP 500 (#184) | unexpected connection exceptions bypass the antivirus app translation path | the existing ingress preserves HTTP 500 and supplies Spanish upload-recovery guidance; unrelated requests retain their original response |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and
 the gate that stops it recurring in `scripts/brand-gate.sh`, `scripts/acquisition-gate.sh`,
 `scripts/test.sh` or the relevant script's own self-test.
-

@@ -1362,68 +1362,6 @@ jobs:
           [ "$code" = 415 ]
           code="$(dav --output "$task_av_dir/download.txt" "$task_av_url/antivirus-clean-184.txt")"
           if [ "$code" != 200 ] || ! cmp -s "$task_av_dir/clean.txt" "$task_av_dir/download.txt"; then
-            printf '[DEBUG-184] overwrite GET status=%s bytes=%s\n' "$code" "$(stat -c %s "$task_av_dir/download.txt")"
-            for sample in clean.txt eicar.txt download.txt; do
-              printf '[DEBUG-184] %s SHA256=%s\n' "$sample" "$(sha256sum "$task_av_dir/$sample" | cut -d' ' -f1)"
-            done
-            python3 - "$task_av_dir/download.txt" <<'PYOVERWRITE'
-          import pathlib, re, sys, xml.etree.ElementTree as ET
-          try:
-              root = ET.fromstring(pathlib.Path(sys.argv[1]).read_bytes())
-              message = next((node.text or '' for node in root.iter() if node.tag.endswith('}message')), '')
-          except (ET.ParseError, OSError):
-              message = '(no structured error message)'
-          print('[DEBUG-184] overwrite read error:', re.sub(r'[A-Za-z0-9_+/=-]{40,}', '[redacted]', message)[:250])
-          PYOVERWRITE
-            task_av_data_dir="$(docker exec --user www-data aps-conecta-nextcloud php occ config:system:get datadirectory)"
-            docker exec --user www-data aps-conecta-nextcloud php -r '
-              $path = $argv[1] . "/ana.prueba/files/antivirus-clean-184.txt";
-              echo "[DEBUG-184] physical original=" . json_encode([
-                "exists" => file_exists($path), "readable" => is_readable($path),
-                "sha256" => is_file($path) ? hash_file("sha256", $path) : null]) . PHP_EOL;
-            ' "$task_av_data_dir"
-            task_av_request_id="$(awk 'tolower($1) == "x-request-id:" { gsub("\r", "", $2); print $2; exit }' "$task_av_dir/overwrite.headers")"
-            docker logs --since=2m aps-conecta-nextcloud > "$task_av_dir/overwrite-nextcloud.log" 2>&1
-            python3 - "$task_av_dir/overwrite-nextcloud.log" "$task_av_request_id" <<'PYAVLOG'
-          import json, pathlib, sys
-          matched = False
-          for line in pathlib.Path(sys.argv[1]).read_text().splitlines():
-              start = line.find('{')
-              if start < 0:
-                  continue
-              try:
-                  row = json.loads(line[start:])
-              except json.JSONDecodeError:
-                  continue
-              if row.get('app') != 'files_antivirus' or row.get('reqId') != sys.argv[2]:
-                  continue
-              matched = True
-              message = str(row.get('message', ''))
-              print('[DEBUG-184] rejected path classification=' + json.dumps({
-                  'part': '.part' in message,
-                  'final': 'antivirus-clean-184.txt' in message}))
-          print('[DEBUG-184] matching container antivirus event=' + str(matched))
-          PYAVLOG
-            task_av_log_file="$(docker exec --user www-data aps-conecta-nextcloud php occ config:system:get logfile || true)"
-            docker exec --user www-data aps-conecta-nextcloud php -r '
-              $stream = $argv[2] !== "" ? @fopen($argv[2], "r") : false;
-              $matched = false;
-              if ($stream) {
-                while (($line = fgets($stream)) !== false) {
-                  $row = json_decode($line, true);
-                  if (($row["app"] ?? "") !== "files_antivirus" || ($row["reqId"] ?? "") !== $argv[1]) { continue; }
-                  $matched = true;
-                  $message = (string)($row["message"] ?? "");
-                  preg_match("/(?:File:|Path:)\\s*(\\S+)/", $message, $path);
-                  $value = $path[1] ?? ($row["data"]["file"] ?? "");
-                  echo "[DEBUG-184] rejected path classification=" . json_encode([
-                    "part" => str_ends_with($value, ".part"),
-                    "final" => str_ends_with($value, "antivirus-clean-184.txt")]) . PHP_EOL;
-                }
-                fclose($stream);
-              }
-              echo "[DEBUG-184] matching antivirus event=" . ($matched ? "yes" : "no") . PHP_EOL;
-            ' "$task_av_request_id" "$task_av_log_file"
             echo 'FAIL: the previous clean file could not be read after a rejected overwrite' >&2
             task_av_failed=1
           else
@@ -1514,15 +1452,6 @@ jobs:
           code="$(cat "$task_av_dir/midstream.code")"
           if [ "$task_av_transport" != 0 ] || ! [[ "$code" =~ ^[45][0-9][0-9]$ ]] \
             || ! grep -q 'contacte a la administración' "$task_av_dir/midstream.xml"; then
-            python3 - "$task_av_dir/midstream.xml" <<'PYERROR'
-          import pathlib, re, sys, xml.etree.ElementTree as ET
-          try:
-              root = ET.fromstring(pathlib.Path(sys.argv[1]).read_bytes())
-              message = next((node.text or '' for node in root.iter() if node.tag.endswith('}message')), '')
-          except (ET.ParseError, OSError):
-              message = '(no structured error message)'
-          print('[DEBUG-184] upload error message:', re.sub(r'[A-Za-z0-9_+/=-]{40,}', '[redacted]', message)[:250])
-          PYERROR
             echo "FAIL: an interrupted scan returned HTTP $code without actionable Spanish guidance" >&2
             task_av_failed=1
           fi
