@@ -2670,6 +2670,25 @@ PY
 }
 check entrypoint_timeout_cases
 
+entrypoint_wait_cases() {
+  python3 - <<'PY'
+import pathlib, re, subprocess
+entrypoint = pathlib.Path('Containers/nextcloud/entrypoint.sh').read_text()
+for condition in re.findall(r'^\s*(?:while|until)\s+([^\n]+)', entrypoint, re.M):
+    assert re.search(r'\[ "\$(?:SECONDS|try)" -lt "\$(?:[a-z_]+_deadline|max_retries)" \]', condition), \
+        'Nextcloud wait has no finite condition: ' + condition
+module = pathlib.Path('Containers/nextcloud/configure-apps.sh').resolve()
+result = subprocess.run(['bash', '-c', '''
+source "$1"
+nc() { return 1; }
+sleep() { SECONDS=$((SECONDS + $1)); }
+startup_wait unavailable.invalid 1234 'Talk Recording'
+''', 'wait-fixture', str(module)], capture_output=True, text=True, timeout=5)
+assert result.returncode == 2 and 'configuration deferred' in result.stdout
+PY
+}
+check entrypoint_wait_cases
+
 recording_trust_cases() {
   python3 - <<'PY'
 import json, pathlib, shutil, subprocess, tempfile
