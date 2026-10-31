@@ -11,8 +11,8 @@ rejected infected overwrite removes the previous clean file. This matches
 [upstream issue 62853](https://github.com/nextcloud/server/issues/62853).
 
 The own app `files_upload_guard` preserves staging during PUT and MOVE requests. It
-checks CREATE on the parent of Nextcloud 34's generated `.ocTransferId<digits>.part`
-path and refuses an occupied or non-creatable staging location. Other permission
+checks CREATE on the parent of Nextcloud 34's generated
+`<32-hex-hash>.ocTransferId<digits>.part` path and refuses an occupied or non-creatable staging location. Other permission
 probes delegate unchanged; core still enforces target UPDATE permissions. A share
 that permits updating but provides no writable staging location fails closed.
 
