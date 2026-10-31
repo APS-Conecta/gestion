@@ -45,6 +45,11 @@ PY
 }
 check trusted_proxy_network_cases
 
+antivirus_limit_cases() {
+  [ "$(bash Containers/antivirus-limit.sh 1M)" = 1048576 ]
+}
+check antivirus_limit_cases
+
 testbed_install_command_cases() {
   local tmp py out
   tmp="$(mktemp -d)"; py="$(command -v python3)"
