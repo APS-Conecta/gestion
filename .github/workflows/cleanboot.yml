@@ -1112,6 +1112,30 @@ jobs:
           docker logs --tail=60 aps-antivirus-preflight
           echo 'FAIL: the published scanner did not complete its clean health scan' >&2
           exit 1
+      - name: The published Office renderer compiles the document scripts
+        run: |
+          set -euo pipefail
+          trap 'status=$?; docker rm --force --volumes aps-office-renderer-preflight >/dev/null || status=1; exit "$status"' EXIT
+          image="ghcr.io/aps-conecta/aio-eurooffice:$SUITE_TAG"
+          docker pull "$image"
+          result=0
+          timeout 120 docker run --name aps-office-renderer-preflight --network none --init \
+            --cap-drop NET_RAW --pull=never --entrypoint /bin/sh "$image" -c '
+              set -eu
+              sdk=/var/www/euro-office/documentserver/sdkjs
+              for format in word cell slide pdf visio; do
+                rm -f "$sdk/$format/sdk-all.cache"
+              done
+              /var/www/euro-office/documentserver/server/FileConverter/bin/x2t -create-js-cache
+              for format in word cell slide pdf visio; do
+                test -s "$sdk/$format/sdk-all.cache"
+              done
+            ' > "$RUNNER_TEMP/office-renderer.log" 2>&1 || result=$?
+          if [ "$result" -ne 0 ]; then
+            echo "FAIL: the published Office renderer could not compile its document scripts (exit $result)" >&2
+            exit 1
+          fi
+          echo 'PASS: the published Office renderer compiles every document script'
       # The silent install, as root, with no terminal. The suite tag is the one the «suite-tag» job
       # resolved, so both jobs run the same published suite. #39 chose farmacia; #40 adds
       # estadistica and #41 totem — the three optional apps ride the same --app flags into the
