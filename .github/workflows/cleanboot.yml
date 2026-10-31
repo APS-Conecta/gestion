@@ -1365,6 +1365,9 @@ jobs:
           task_av_pid=
           task_av_failed=0
           task_av_group_id=
+          task_av_share_id=
+          task_av_share_name="antivirus-share-$GITHUB_RUN_ID-184"
+          task_av_shares_url="https://$SUITE_IP/ocs/v2.php/apps/files_sharing/api/v1/shares"
           task_av_chunks_url="https://$SUITE_IP/remote.php/dav/uploads/ana.prueba/antivirus-chunks-184"
           task_av_curl=(curl --config - --silent --show-error --connect-timeout 10 --max-time 60
             --cacert "$RUNNER_TEMP/ca.crt" --write-out '%{http_code}')
@@ -1389,7 +1392,7 @@ jobs:
             return 1
           }
           cleanup() {
-            local name failed=0
+            local name code failed=0
             if [ -n "$task_av_pid" ]; then
               kill "$task_av_pid" 2>/dev/null || true
               wait "$task_av_pid" 2>/dev/null || true
@@ -1400,6 +1403,13 @@ jobs:
               dav --request DELETE --output /dev/null "$task_av_url/$name" >/dev/null || failed=1
             done
             dav --request DELETE --output /dev/null "$task_av_chunks_url" >/dev/null || failed=1
+            if [ -n "$task_av_share_id" ]; then
+              code="$(dav --request DELETE --header 'OCS-APIRequest: true' --output /dev/null \
+                "$task_av_shares_url/$task_av_share_id")" || failed=1
+              [ "$code" = 200 ] || [ "$code" = 404 ] || failed=1
+            fi
+            code="$(dav --request DELETE --output /dev/null "$task_av_url/$task_av_share_name")" || failed=1
+            [ "$code" = 204 ] || [ "$code" = 404 ] || failed=1
             if [ -n "$task_av_group_id" ]; then
               docker exec --user www-data aps-conecta-nextcloud php occ groupfolders:delete \
                 "$task_av_group_id" --force >/dev/null || failed=1
@@ -1566,6 +1576,64 @@ jobs:
           code="$(staff_dav --output "$task_av_dir/download.txt" "$task_av_group_url/clean.txt")"
           [ "$code" = 200 ] && cmp "$task_av_dir/updated.txt" "$task_av_dir/download.txt"
           echo 'PASS: group-folder scans preserve originals and enforce parent CREATE and target UPDATE permissions'
+          code="$(dav --request MKCOL --output "$task_av_dir/response.xml" "$task_av_url/$task_av_share_name")"
+          [ "$code" = 201 ]
+          code="$(dav --upload-file "$task_av_dir/clean.txt" --output "$task_av_dir/response.xml" \
+            "$task_av_url/$task_av_share_name/clean.txt")"
+          [ "$code" = 201 ]
+          code="$(dav --header 'OCS-APIRequest: true' --data-urlencode "path=/$task_av_share_name" \
+            --data 'shareType=0&shareWith=beto.prueba&permissions=3' \
+            --output "$task_av_dir/share.json" "$task_av_shares_url?format=json")"
+          [ "$code" = 200 ] || [ "$code" = 201 ]
+          task_av_share_id="$(python3 - "$task_av_dir/share.json" <<'PYSHARE'
+          import json, pathlib, sys
+          response = json.loads(pathlib.Path(sys.argv[1]).read_text())['ocs']
+          assert response['meta']['statuscode'] in (100, 200)
+          assert int(response['data']['permissions']) == 3
+          print(response['data']['id'])
+          PYSHARE
+          )"
+          [[ "$task_av_share_id" =~ ^[1-9][0-9]*$ ]]
+          task_av_shared_path="$(python3 - "$task_av_dir/share.json" <<'PYSHAREPATH'
+          import json, pathlib, sys, urllib.parse
+          share = json.loads(pathlib.Path(sys.argv[1]).read_text())['ocs']['data']
+          print(urllib.parse.quote(share['file_target'].lstrip('/'), safe='/'))
+          PYSHAREPATH
+          )"
+          task_av_shared_url="https://$SUITE_IP/remote.php/dav/files/beto.prueba/$task_av_shared_path"
+          for target in parent file; do
+            task_av_probe_url="$task_av_shared_url"
+            if [ "$target" = file ]; then task_av_probe_url="$task_av_probe_url/clean.txt"; fi
+            code="$(staff_dav --request PROPFIND --header 'Depth: 0' --header 'Content-Type: application/xml' \
+              --data '<d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:prop><oc:permissions/></d:prop></d:propfind>' \
+              --output "$task_av_dir/$target-permissions.xml" "$task_av_probe_url")"
+            [ "$code" = 207 ]
+          done
+          python3 - "$task_av_dir" <<'PYPERMISSIONS'
+          import pathlib, sys, xml.etree.ElementTree as ET
+          root = pathlib.Path(sys.argv[1])
+          def permissions(name):
+              values = ET.parse(root / f'{name}-permissions.xml').findall('.//{http://owncloud.org/ns}permissions')
+              assert len(values) == 1
+              return values[0].text or ''
+          assert 'W' in permissions('file'), 'the shared file must permit UPDATE'
+          parent = permissions('parent')
+          assert 'C' not in parent and 'K' not in parent, 'the shared parent must deny CREATE'
+          PYPERMISSIONS
+          code="$(staff_dav --output "$task_av_dir/download.txt" "$task_av_shared_url/clean.txt")"
+          [ "$code" = 200 ] && cmp "$task_av_dir/clean.txt" "$task_av_dir/download.txt"
+          code="$(staff_dav --upload-file "$task_av_dir/updated.txt" --output "$task_av_dir/response.xml" \
+            "$task_av_shared_url/clean.txt")"
+          [[ "$code" =~ ^[45][0-9][0-9]$ ]] \
+            || { echo "FAIL: an update-only share bypassed safe staging (HTTP $code)" >&2; exit 1; }
+          code="$(staff_dav --output "$task_av_dir/download.txt" "$task_av_shared_url/clean.txt")"
+          [ "$code" = 200 ] && cmp "$task_av_dir/clean.txt" "$task_av_dir/download.txt"
+          code="$(dav --output "$task_av_dir/download.txt" "$task_av_url/$task_av_share_name/clean.txt")"
+          [ "$code" = 200 ] && cmp "$task_av_dir/clean.txt" "$task_av_dir/download.txt"
+          code="$(dav --upload-file "$task_av_dir/updated.txt" --output "$task_av_dir/response.xml" \
+            "$task_av_url/$task_av_share_name/clean.txt")"
+          [ "$code" = 204 ]
+          echo 'PASS: an update-only share without parent CREATE refuses unsafe staging and preserves the original'
           # Splitting the signature must not evade the scan of the assembled content.
           code="$(dav --request MKCOL --output "$task_av_dir/response.xml" "$task_av_chunks_url")"
           [ "$code" = 201 ]
