@@ -2043,6 +2043,7 @@ jobs:
           set -euo pipefail
           cd /opt/aps-conecta/instalador
           source scripts/env.sh
+          export SUITE_CA="$RUNNER_TEMP/ca.crt"
           suite_url_resolve
           # First native RED control: the new step must reject currently unreachable signaling.
           docker stop aps-conecta-talk >/dev/null
