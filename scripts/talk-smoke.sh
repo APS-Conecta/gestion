@@ -11,7 +11,7 @@ nc_container
 
 talk_native_failed=0
 python3 - "$NC_CONTAINER" "$SUITE_URL" <<'PY' || talk_native_failed=1
-import json, subprocess, sys, urllib.parse
+import json, re, subprocess, sys, urllib.parse
 native = ['docker', 'exec', '--user', 'www-data', sys.argv[1], 'php', '/var/www/html/occ']
 def read(command, allowed=(0,)):
     result = subprocess.run(native + [command, '--output=json'], capture_output=True, text=True, timeout=180)
@@ -35,9 +35,26 @@ try:
     checks = read('setupchecks', allowed=(0, 1))
     check = checks['talk']['OCA\\Talk\\SetupCheck\\HighPerformanceBackend']
     severity = check.get('severity')
-    if severity != 'success':
+    description = check.get('description')
+    # The supported stable backend lacks this unreleased optimization (ADR-0024).
+    # Match the complete native result; other feature warnings still fail closed.
+    optional_templates = (
+        ('Warning: Running version: ', '; Server does not support all features of this Talk version, missing features: '),
+        ('Advertencia: Versión en ejecución: ', '; El servidor no soporta todas las características de esta versión de Talk, características que faltan: '),
+    )
+    optional_warning = severity == 'warning' and isinstance(description, str) and any(
+        re.fullmatch(re.escape(prefix) + r'.+' + re.escape(separator) + 'changed-users', description)
+        for prefix, separator in optional_templates)
+    if optional_warning:
+        cache = checks['system']['OCA\\Settings\\SetupChecks\\MemcacheConfigured']
+        assert cache['severity'] == 'success', 'The native memory cache check is not successful'
+        backend = subprocess.run(native + ['config:system:get', 'memcache.distributed'],
+            capture_output=True, text=True, timeout=30)
+        assert backend.returncode == 0 and backend.stdout.strip() == r'\OC\Memcache\Redis', 'Talk does not have the suite distributed cache'
+        print('WARN: supported signaling backend lacks the optional changed-users optimization', flush=True)
+        print('PASS: native Talk compatibility has only the documented optional warning and verified Redis cache', flush=True)
+    elif severity != 'success':
         safe_severity = severity if severity in ('error', 'warning', 'info') else 'unknown'
-        description = check.get('description')
         changed_users = 'yes' if isinstance(description, str) and 'changed-users' in description else 'no'
         raise AssertionError('The native Talk signaling check is not successful '
             f'(severity={safe_severity}; changed-users mentioned={changed_users})')
