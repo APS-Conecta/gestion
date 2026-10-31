@@ -3362,11 +3362,18 @@ SHIM
     out="$( (cmd_aio_wizard --dominio backup.example --respaldo /mnt/backup) 2>&1)"; rc=$?
     check "asistente-aio: --respaldo posts the borg location and the daily time — a location alone schedules nothing" \
       '[ "$rc" -eq 0 ] && grep -q "borg_backup_host_location=/mnt/backup borg_remote_repo=$" "$tmp/aio.log" && grep -q "daily_backup_time=$(backup_hour_utc today)$" "$tmp/aio.log" && ! grep -q "daily_backup_time=04:00$" "$tmp/aio.log" && case "$out" in *"✓ Respaldo diario a las 04:00 hora de Santiago ($(backup_hour_utc today) UTC), en /mnt/backup"*) ;; *) false;; esac'
-    mkdir -p "$tmp/notz"
-    check "backup hour: 04:00 in Santiago as the wizard's UTC hour — 07:00 in summer time, 08:00 in winter; a host without tzdata is refused, never 04:00 UTC (B-035)" \
-      '[ "$(backup_hour_utc 2026-01-15)" = 07:00 ] && [ "$(backup_hour_utc 2026-07-01)" = 08:00 ] && ! TZDIR="$tmp/notz" backup_hour_utc 2026-07-01 2>/dev/null'
+    # An empty TZDIR can fall back to system data. Model the resolver's observable failures.
+    local date_fallback="$tmp/date-fallback" date_failure="$tmp/date-failure"
+    mkdir -p "$date_fallback" "$date_failure"
+    printf '#!/bin/bash\nprintf "04:00\\n"\n' > "$date_fallback/date"
+    printf '#!/bin/bash\nexit 1\n' > "$date_failure/date"
+    chmod +x "$date_fallback/date" "$date_failure/date"
+    check "backup hour: 04:00 in Santiago becomes 07:00 in summer and 08:00 in winter; a resolver's UTC fallback is refused (B-035)" \
+      '[ "$(backup_hour_utc 2026-01-15)" = 07:00 ] && [ "$(backup_hour_utc 2026-07-01)" = 08:00 ] && ! PATH="$date_fallback:$PATH" backup_hour_utc 2026-07-01 2>/dev/null'
+    check "backup hour: a failed date conversion is refused" \
+      '! PATH="$date_failure:$PATH" backup_hour_utc 2026-07-01 2>/dev/null'
     : > "$tmp/aio.ps"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; : > "$tmp/aio.log"
-    out="$( (TZDIR="$tmp/notz" cmd_aio_wizard --dominio backup.example --respaldo /mnt/backup) 2>&1)"; rc=$?
+    out="$( (PATH="$date_fallback:$PATH" cmd_aio_wizard --dominio backup.example --respaldo /mnt/backup) 2>&1)"; rc=$?
     check "asistente-aio: a host without tzdata stops before any post, the cause in motivo for the web installer (B-035)" \
       '[ "$rc" -eq 1 ] && [ ! -s "$tmp/aio.log" ] && [ "$(cat "$AIO_STATE/motivo")" = "Falta la zona America/Santiago en el servidor (paquete tzdata): no se fija la hora del respaldo." ]'
     : > "$tmp/aio.ps"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; : > "$tmp/aio.log"
@@ -4659,12 +4666,24 @@ FAIL=0" ] \
 
   # ── the units parse (systemd-analyze verify, offline) ──
   if command -v systemd-analyze >/dev/null 2>&1; then
-    u="$(systemd-analyze verify "$HOST_DIR/aps-conecta.service" "$HOST_DIR/aps-conecta.timer" 2>&1 || true)"
-    # the executable-path complaint is this box's expected state (no symlink on a dev
-    # box — INSTALLER.md owns the wiring); any OTHER output is a unit defect
-    leftovers="$(printf '%s' "$u" | grep -v 'aps-conecta' || true)"
-    check "units: systemd-analyze leaves only the unwired ExecStart path (INSTALLER.md owns the symlink; no syntax errors, no unknown directives)" \
-      'case "$u" in *"Failed to parse"*|*"Unknown"*|*"Invalid"*) false;; *) true;; esac && [ -z "$leftovers" ]'
+    local unit_fixture="$tmp/units" unit_rc
+    local -a unit_verify=(systemd-analyze --recursive-errors=no verify)
+    mkdir -p "$unit_fixture"
+    printf '#!/bin/bash\nexit 0\n' > "$unit_fixture/aps-conecta"
+    chmod +x "$unit_fixture/aps-conecta"
+    sed "s|/usr/local/bin/aps-conecta|$unit_fixture/aps-conecta|g" \
+      "$HOST_DIR/aps-conecta.service" > "$unit_fixture/aps-conecta.service"
+    cp "$HOST_DIR/aps-conecta.timer" "$unit_fixture/aps-conecta.timer"
+    # Validate these units, with an executable fixture; unrelated host units do not define their validity.
+    u="$("${unit_verify[@]}" "$unit_fixture/aps-conecta.service" "$unit_fixture/aps-conecta.timer" 2>&1)"; unit_rc=$?
+    check "units: systemd-analyze accepts the declared service and calendar without ambient dependency errors" \
+      'if [ "$unit_rc" -eq 0 ]; then true; else printf "%s\n" "$u" >&2; false; fi'
+    sed '/^\[Service\]$/a TestUnknownDirective=yes' "$unit_fixture/aps-conecta.service" > "$unit_fixture/invalid.service"
+    "${unit_verify[@]}" "$unit_fixture/invalid.service" >/dev/null 2>&1; unit_rc=$?
+    check "units: an unknown directive in the service is rejected" '[ "$unit_rc" -ne 0 ]'
+    sed '/^\[Timer\]$/a OnCalendar=not-a-calendar' "$unit_fixture/aps-conecta.timer" > "$unit_fixture/invalid.timer"
+    "${unit_verify[@]}" "$unit_fixture/aps-conecta.service" "$unit_fixture/invalid.timer" >/dev/null 2>&1; unit_rc=$?
+    check "units: an invalid calendar in the timer is rejected" '[ "$unit_rc" -ne 0 ]'
   fi
 
   # Host refusal cases use the real entry points and isolated external tools.

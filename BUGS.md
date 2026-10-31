@@ -126,6 +126,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-073 | a dotted staff UID returns no content-search result even after its document is indexed (#185, #241) | the supported files provider 34.0.2 regex-escapes the author before native identity lookup | the signed APS provider carries upstream's stable34 correction through the normal release and lock channel (ADR-0023); acceptance proves exact indexed content and requires the same staff result within a bounded visibility window |
 
+| A-074 | the hosted static gate fails three host fixtures during the Ubuntu 24-to-26 runner rollout (#185) | uutils date correctly resolves Santiago through fallback data despite an empty TZDIR, and systemd 259 reports deprecated directives in unrelated installed units | date fixtures model UTC fallback and command failure directly; isolated service and timer validation uses the supported non-recursive mode and rejects deliberate unknown-directive and calendar mutations |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and
