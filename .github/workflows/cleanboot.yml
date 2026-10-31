@@ -504,7 +504,7 @@ jobs:
           response="$(occ app:update eurooffice 2>&1 || true)"
           echo "occ app:update eurooffice (store closed): ${response:-<nothing>}"
           [ "$(occ config:app:get eurooffice installed_version)" = "$version" ]
-          bash scripts/office-smoke.sh
+          sudo env "PATH=$PATH" bash scripts/office-smoke.sh
       # #39/#40: farmacia and estadistica are the optional apps, and this job chose NOTHING — the
       # testbed's wizard drive records only optional app choices
       # (Talk on is this job's posture, #145; the optionals stayed unchecked), so the fetch
@@ -2324,7 +2324,7 @@ jobs:
           response="$(occ app:update eurooffice 2>&1 || true)"
           echo "occ app:update eurooffice (store closed): ${response:-<nothing>}"
           [ "$(occ config:app:get eurooffice installed_version)" = "$version" ]
-          bash scripts/office-smoke.sh
+          sudo env "PATH=$PATH" bash scripts/office-smoke.sh
       # The weekly run, by IP, on the instance just installed: the leaf is kept (same fingerprint) and
       # apache is not restarted; the seed converges again, idempotent by IP too. #33 adds its half:
       # the same run downloads nothing and leaves the lock unchanged.
