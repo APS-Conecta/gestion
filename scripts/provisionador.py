@@ -235,7 +235,7 @@ PHASE_TITLES = {
     "05-security": "Seguridad de sesión", "06-jobs": "Tareas programadas",
     "07-certs": "Certificados del servidor", "10-locale": "Idioma y región (es-CL)",
     "12-apps": "Aplicaciones de la suite", "14-antivirus": "Antivirus de archivos",
-    "14-office": "Oficina en línea",
+    "14-fulltextsearch": "Búsqueda en documentos", "14-office": "Oficina en línea",
     "15-branding": "Imagen de APS Conecta", "16-app-policy": "Aplicaciones por perfil",
     "20-groups": "Grupos: roles, categorías y equipos", "30-folders": "Carpetas compartidas",
     "40-acl": "Permisos de las carpetas", "41-intravox": "Portada del establecimiento",
@@ -4914,7 +4914,7 @@ def selftest():
             check("generar: revision answers the plan — zero execs, zero writes",
                   st == 200 and body["modo"] == "revision" and body["usuarios"] == 2
                   and body["primer_admin"] == "elena.diaz" and body["contrasenas_selladas"] >= 2
-                  and len(body["fases"]) == 15 and "14-antivirus.sh" in body["fases"]
+                  and len(body["fases"]) == 16 and "14-fulltextsearch.sh" in body["fases"]
                   and execs[0] == 0 and same
                   and body["env"]["FIXTURE_USER_PASSWORD"] == "se generará")
             check("generar: review mode downloads nothing — the release apps' fetch leg never ran (#33)",
@@ -5751,9 +5751,9 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   and lista["servidor"]["pisos"] == pisos_servidor()
                   and all(t in __import__("inspect").getsource(screen_contenedores)
                           for t in ("pisos.ram_min", "Pisos del instalador")))
-            check("generar: ejecutar runs the whole world green — 15 phases, 2 roster users, gate clean",
+            check("generar: ejecutar runs the whole world green — 16 phases, 2 roster users, gate clean",
                   st == 200 and body["ok"] and body["divergencia_vacia"]
-                  and "15 phase(s) run" in body["salida"] and "== roster: 2 usuario(s) ==" in body["salida"]
+                  and "16 phase(s) run" in body["salida"] and "== roster: 2 usuario(s) ==" in body["salida"]
                   and "user elena.diaz added to group admin" in body["salida"]
                   and "nada en la instancia que el repositorio no declare" in body["divergencia"])
             check("generar: ejecutar resolves and fetches the release apps first, with the version the instance answers (#33)",
@@ -5771,7 +5771,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   st2 == 500
                   and body2["error"] == "FATAL: territorio: la firma de SHA256SUMS no verifica contra apps.pub"
                   and "== APS Conecta provisioning" not in body2["salida"]
-                  and "15 phase(s) run" not in body2["salida"])
+                  and "16 phase(s) run" not in body2["salida"])
             globals()["APPS_CMD"] = ["bash", apps_stub("lenta")]
             viejo = TIMEOUTS["apps"]
             TIMEOUTS["apps"] = 1
