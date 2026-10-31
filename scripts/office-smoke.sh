@@ -71,7 +71,8 @@ out="$(occ eurooffice:documentserver --check 2>&1)" \
 # nothing must never pass (B-014).
 ver="$(printf '%s\n' "$out" | sed 's/\x1b\[[0-9;]*m//g' | sed -n 's/.* version \([0-9][0-9.]*\) is successfully connected.*/\1/p' | head -1)"
 [ -n "$ver" ] || { echo "FAIL: could not read the document server version from --check's output:"; printf '%s\n' "$out"; exit 1; }
-pin="$(sed -n 's|^FROM ghcr\.io/euro-office/documentserver:v\([0-9][0-9.]*\)$|\1|p' Containers/eurooffice/Dockerfile 2>/dev/null || true)"
+# Official -N tags revise the package; the native API still reports the core version.
+pin="$(sed -nE 's|^FROM ghcr\.io/euro-office/documentserver:v([0-9]+\.[0-9]+\.[0-9]+)(-[1-9][0-9]*)?$|\1|p' Containers/eurooffice/Dockerfile 2>/dev/null || true)"
 [ -n "$pin" ] || { echo "FAIL: could not read the document server pin from Containers/eurooffice/Dockerfile"; exit 1; }
 case "$ver" in
   "$pin"|"$pin".*) echo "  ✓ document server ${ver} (the pin, ${pin})" ;;
