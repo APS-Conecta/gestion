@@ -2670,6 +2670,18 @@ PY
 }
 check entrypoint_timeout_cases
 
+recording_trust_cases() {
+  python3 - <<'PY'
+import json, pathlib
+containers = json.loads(pathlib.Path('php/containers.json').read_text())['aio_services_v1']
+recorder = next(row for row in containers if row['container_name'] == 'aps-conecta-talk-recording')
+assert any(row['source'] == '%NEXTCLOUD_TRUSTED_CACERTS_DIR%'
+           and row['destination'] == '/usr/local/share/ca-certificates'
+           and row['writeable'] is False for row in recorder['volumes']), 'Recording must receive the suite CA read-only'
+PY
+}
+check recording_trust_cases
+
 harp_trust_cases() {
   python3 - <<'PY'
 import json, os, pathlib, shutil, subprocess, sys, tempfile
