@@ -33,8 +33,9 @@ constituyen entradas del ensayo; sus resultados determinan la capacidad verifica
 Conserve el SHA completo del código del instalador, el estado de su árbol, la etiqueta
 y los identificadores de las imágenes, el SHA de su compilación y el enlace de Clean boot.
 El código del instalador y el código de las imágenes pueden tener revisiones distintas.
-La etiqueta reutilizada `v0.0.0-ci.1870` corresponde a las imágenes verificadas de
-`7b9a335c191fe417b486718ba6a330952fda314f`.
+El conjunto de ensayo `v0.0.0-ci.1890` corresponde a las imágenes verificadas de
+`3f3a5f9de637a99b70d0aa970f5e2cc9c9f176da` en
+[Images 41242470715](https://github.com/APS-Conecta/gestion/actions/runs/41242470715).
 
 ## Registro de uso
 
@@ -45,10 +46,10 @@ los campos anteriores `memoria_gib`, `contenedores` y `disco`.
 Para cada repetición en el entorno preparado, ejecute desde la revisión que se medirá:
 
 ```bash
-umask 077
 measurement_dir="$(mktemp -d /tmp/aps-measurement.XXXXXX)"
-python3 scripts/usage.py "$measurement_dir/usage.jsonl" --interval 5 --duration 7200 \
-  > "$measurement_dir/collector.log" 2>&1 < /dev/null &
+(umask 077
+ exec python3 scripts/usage.py "$measurement_dir/usage.jsonl" --interval 5 --duration 7200 \
+   > "$measurement_dir/collector.log" 2>&1 < /dev/null) &
 printf '%s\n' "$!" > "$measurement_dir/collector.pid"
 ```
 
@@ -74,6 +75,7 @@ La carga acordada comprende diez cuentas ficticias simultáneas: dos sesiones ac
 Office, cuatro participantes con audio y video en Talk y cuatro cuentas para cargas,
 antivirus, indexación y búsqueda. Las cuentas y los documentos pertenecen al entorno de ensayo.
 Verifique ediciones guardadas, resultados por texto del documento y recepción real de medios.
+Registre la resolución, los cuadros enviados y recibidos, y las limitaciones que informa el navegador.
 Las comprobaciones de conexión, conversión y chat son requisitos previos de esas operaciones.
 
 El perfil inicial acordado usa video de 720p a 30 cuadros por segundo, quince minutos de
