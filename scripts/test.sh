@@ -2448,6 +2448,15 @@ disco = json.load(open(sys.argv[1], encoding="utf-8"))["disco"]
 assert len(disco) == 2 and all("source" in d and "target" in d for d in disco), disco
 assert disco[1]["target"] == "/mnt/with space", disco' "$tmp/uso.json" >/dev/null 2>&1 && [ "$rc" -eq 0 ] \
     || { echo "cleanboot: the usage record was not written as one row per source (rc=$rc)" >&2; rm -rf "$tmp"; return 1; }
+  PATH="$tmp/bin:$PATH" python3 - "$tmp/series.jsonl" --interval 0.05 --duration 0.5 <<<"$py" > "$tmp/result" 2>&1; rc=$?
+  python3 - "$tmp/series.jsonl" <<'PY' >> "$tmp/result" 2>&1
+import json, pathlib, sys
+rows = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+assert len(rows) >= 3 and rows[-1]['event'] == 'complete', rows
+assert rows[-1]['samples'] == len(rows) - 1, rows
+assert all('host' in row and 'sampled_at' in row for row in rows[:-1]), rows
+PY
+  if [ "$?" -ne 0 ] || [ "$rc" -ne 0 ]; then cat "$tmp/result" >&2; rm -rf "$tmp"; return 1; fi
   rm -rf "$tmp"
 }
 check cleanboot_usage_cases
