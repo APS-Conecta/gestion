@@ -208,9 +208,9 @@ startup_clam() {
         ensure_startup_app files_antivirus || rc=$?
         [ "$rc" -ne 2 ] || return 0
         [ "$rc" -eq 0 ] || return "$rc"
-        local limit policy_dir
+        local policy_dir
         policy_dir="$(dirname "${BASH_SOURCE[0]}")/.."
-        limit="$(bash "$policy_dir/antivirus-limit.sh" "${PHP_UPLOAD_LIMIT:-}")" || return 1
+        bash "$policy_dir/antivirus-limit.sh" "${PHP_UPLOAD_LIMIT:-}" >/dev/null || return 1
         startup_app_set files_antivirus av_mode --value="icap" || return 1
         startup_app_set files_antivirus av_port --value="1344" || return 1
         startup_app_set files_antivirus av_host --value="$CLAMAV_HOST" || return 1
@@ -220,7 +220,8 @@ startup_clam() {
         startup_app_set files_antivirus av_icap_tls --value=false --type=boolean --no-interaction || return 1
         # This is a transport threshold, not a content cap: never split a file into separate scans.
         startup_app_set files_antivirus av_stream_max_length --value=9223372036854775807 --type=integer --no-interaction || return 1
-        startup_app_set files_antivirus av_max_file_size --value="$limit" --type=integer --no-interaction || return 1
+        # This threshold skips large assembled uploads; the backend enforces the shared content budget.
+        startup_app_set files_antivirus av_max_file_size --value=-1 --type=integer --no-interaction || return 1
         startup_app_set files_antivirus av_scan_first_bytes --value=-1 --type=integer --no-interaction || return 1
         startup_app_set files_antivirus av_block_unreachable --value=true --type=boolean --no-interaction || return 1
         startup_app_set files_antivirus av_block_unscannable --value=true --type=boolean --no-interaction || return 1

@@ -112,6 +112,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-066 | a scanner failure returned generic HTTP 500 instead of an actionable Spanish upload rejection (#184 rehearsal) | the native endpoint omitted the store app's recognized incomplete-scan classification | the pinned native module maps failed or incomplete scans to the supported unscannable response, bounds staging and decoding with the same scan budget, and retains the complete-body output lock; the real staff WebDAV fault probe requires rejection, Spanish guidance and no readable accepted file |
 
+| A-067 | assembled chunks above the scan budget were accepted despite direct-upload enforcement (#184 rehearsal) | the store app treats av_max_file_size as a scan-skipping threshold for large assembled uploads | keep every upload eligible with the supported -1 sentinel; the shared ICAP and ClamAV content budget supplies the rejection, and the real two-chunk MOVE probe verifies the complete-file limit |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and
