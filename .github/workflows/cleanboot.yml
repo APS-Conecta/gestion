@@ -1238,7 +1238,8 @@ jobs:
           }
           cleanup() {
             local name failed=0
-            for name in antivirus-clean-184.txt antivirus-eicar-184.txt antivirus-at-limit-184.bin antivirus-over-limit-184.bin antivirus-failure-184.txt; do
+            for name in antivirus-clean-184.txt antivirus-eicar-184.txt antivirus-at-limit-184.bin \
+              antivirus-over-limit-184.bin antivirus-failure-184.txt antivirus-expanded-184.zip antivirus-encrypted-184.zip; do
               dav --request DELETE --output /dev/null "$task_av_url/$name" >/dev/null || failed=1
             done
             if [ "$task_av_boundary_active" = 1 ]; then
@@ -1298,6 +1299,34 @@ jobs:
           [ "$code" = 404 ] \
             || { echo "FAIL: a file above the scan limit remains readable (HTTP $code)" >&2; exit 1; }
           echo 'PASS: a complete file above the scan limit is rejected'
+          python3 - "$task_av_dir" <<'PYZIP'
+          import pathlib, sys, zipfile
+          root = pathlib.Path(sys.argv[1])
+          member = zipfile.ZipInfo('expanded.txt', (1980, 1, 1, 0, 0, 0))
+          with zipfile.ZipFile(root / 'expanded.zip', 'w') as archive:
+              archive.writestr(member, b'A' * 1572864, compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
+          assert (root / 'expanded.zip').stat().st_size < 1048576
+          PYZIP
+          if ! command -v zip >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install --yes zip
+          fi
+          (cd "$task_av_dir" && zip --quiet --password fixture-184 encrypted.zip clean.txt)
+          task_av_archive_since="$(date --utc +%Y-%m-%dT%H:%M:%SZ)"
+          for sample in expanded encrypted; do
+            code="$(dav --upload-file "$task_av_dir/$sample.zip" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-$sample-184.zip")"
+            [ "$code" = 415 ] && grep -q 'El antivirus rechazó el archivo' "$task_av_dir/response.xml" \
+              || { echo "FAIL: the $sample archive returned HTTP $code without a Spanish rejection" >&2; exit 1; }
+            code="$(dav --output /dev/null "$task_av_url/antivirus-$sample-184.zip")"
+            [ "$code" = 404 ] \
+              || { echo "FAIL: the rejected $sample archive remains readable (HTTP $code)" >&2; exit 1; }
+          done
+          docker logs --since "$task_av_archive_since" aps-antivirus-boundary > "$task_av_dir/archive-scans.log" 2>&1
+          grep -Eq 'VIRUS DETECTED: Heuristics\.Limits\.Exceeded' "$task_av_dir/archive-scans.log" \
+            || { echo 'FAIL: the scanner did not report the expanded archive limit' >&2; exit 1; }
+          grep -Eq 'VIRUS DETECTED: Heuristics\.Encrypted\.Zip' "$task_av_dir/archive-scans.log" \
+            || { echo 'FAIL: the scanner did not report the encrypted archive' >&2; exit 1; }
+          echo 'PASS: scanner-reported archive limits and encryption reject the uploads'
           docker exec aps-antivirus-boundary mv /tmp/clamd.sock /tmp/clamd.sock.offline
           code="$(dav --upload-file "$task_av_dir/clean.txt" --output "$task_av_dir/response.xml" "$task_av_url/antivirus-failure-184.txt")"
           [ "$code" = 415 ] && grep -q 'El antivirus rechazó el archivo' "$task_av_dir/response.xml" \
