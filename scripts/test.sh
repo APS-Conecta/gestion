@@ -2550,6 +2550,185 @@ PY
 }
 check entrypoint_timeout_cases
 
+harp_trust_cases() {
+  python3 - <<'PY'
+import json, os, pathlib, shutil, subprocess, sys, tempfile
+entrypoint = pathlib.Path('Containers/harp/start.sh')
+assert entrypoint.is_file(), 'HaRP must adapt the suite CA before starting its upstream agent'
+with tempfile.TemporaryDirectory(prefix='aps harp ') as directory:
+    root = pathlib.Path(directory)
+    certificates = root / 'certificates'
+    certificates.mkdir()
+    def openssl(*args, success=True):
+        result = subprocess.run(['openssl', *map(str, args)], capture_output=True)
+        assert (result.returncode == 0) == success, f'Certificate command {args}: {result.stderr.decode()}'
+    for name in ('system', 'suite', 'unknown'):
+        openssl('req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
+                '-subj', '/CN=' + name, '-keyout', root / (name + '.key'),
+                '-out', root / (name + '.crt'))
+    shutil.copyfile(root / 'suite.crt', certificates / 'suite.crt')
+    openssl('req', '-new', '-newkey', 'rsa:2048', '-nodes', '-subj', '/CN=127.0.0.1',
+            '-keyout', root / 'leaf.key', '-out', root / 'leaf.csr')
+    (root / 'extensions').write_text('subjectAltName=IP:127.0.0.1\nbasicConstraints=CA:FALSE\nextendedKeyUsage=serverAuth\n')
+    for name in ('suite', 'unknown'):
+        openssl('x509', '-req', '-days', '1', '-in', root / 'leaf.csr', '-set_serial', '1',
+                '-CA', root / (name + '.crt'), '-CAkey', root / (name + '.key'),
+                '-extfile', root / 'extensions', '-out', root / (name + '-leaf.crt'))
+    result_file = root / 'result.json'
+    upstream = root / 'upstream'
+    upstream.write_text('#!' + sys.executable + '\n' +
+        'import json, os, sys\n' +
+        'json.dump({"ca":os.environ.get("SSL_CERT_FILE"),"args":sys.argv[1:]},open(os.environ["HARP_RESULT"],"w"))\n' +
+        'sys.exit(int(os.environ.get("HARP_EXIT", "0")))\n')
+    upstream.chmod(0o755)
+    source = entrypoint.read_text()
+    for original, replacement in {
+        '/usr/local/share/ca-certificates': certificates,
+        '/etc/ssl/certs/ca-certificates.crt': root / 'system.crt',
+        '/tmp/ca-certificates.crt': root / 'bundle.crt',
+        '/usr/local/bin/start.sh': upstream,
+    }.items():
+        assert original in source, 'The entrypoint filesystem boundary moved'
+        source = source.replace(original, str(replacement))
+    wrapper = root / 'start.sh'
+    wrapper.write_text(source)
+    env = dict(os.environ, HARP_RESULT=str(result_file))
+    for key in ('SSL_CERT_FILE', 'SSL_CERT_DIR'):
+        env.pop(key, None)
+    def run(status=0, **extra):
+        result_file.unlink(missing_ok=True)
+        result = subprocess.run(['bash', str(wrapper), 'argument with spaces', 'second'],
+                                env=dict(env, **extra), capture_output=True, text=True)
+        assert result.returncode == status, 'HaRP entrypoint returned an unexpected status'
+        return json.loads(result_file.read_text()) if result_file.exists() else None
+    state = run()
+    assert state == {'ca':str(root / 'bundle.crt'), 'args':['argument with spaces', 'second']}
+    for certificate in ('system.crt', 'suite-leaf.crt'):
+        openssl('verify', '-CAfile', state['ca'], root / certificate)
+    openssl('verify', '-purpose', 'sslserver', '-verify_ip', '127.0.0.1',
+            '-CAfile', state['ca'], root / 'suite-leaf.crt')
+    openssl('verify', '-purpose', 'sslserver', '-verify_ip', '127.0.0.1',
+            '-CAfile', state['ca'], root / 'unknown-leaf.crt', success=False)
+    (root / 'system.crt').unlink()
+    assert run(status=1) is None, 'A failed CA bundle must not start the agent'
+    shutil.rmtree(certificates)
+    state = run()
+    assert state == {'ca':None, 'args':['argument with spaces', 'second']}
+    run(status=23, HARP_EXIT='23')
+print('HaRP preserves system roots, trusts the suite CA, rejects an unknown CA and retains upstream arguments/status')
+PY
+}
+check harp_trust_cases
+
+appapi_smoke_cases() {
+  python3 - <<'PY'
+import os, pathlib, shutil, subprocess, sys, tempfile
+with tempfile.TemporaryDirectory() as directory:
+    root = pathlib.Path(directory)
+    (root / 'scripts').mkdir()
+    (root / 'bin').mkdir()
+    for name in ('appapi-smoke.sh', 'env.sh'):
+        shutil.copyfile(pathlib.Path('scripts') / name, root / 'scripts' / name)
+    docker = root / 'bin/docker'
+    docker.write_text('#!' + sys.executable + '\n' + r'''
+import json, os, sys
+args = sys.argv[1:]
+case = os.environ['APPAPI_CASE']
+if args[0] == 'inspect':
+    print('NC_DOMAIN=clinica.example')
+elif args[:3] == ['exec', '-i', 'aps-conecta-harp']:
+    sys.stdin.read()
+    if case == 'tls':
+        print('FAIL: synthetic TLS peer rejected', file=sys.stderr)
+        sys.exit(1)
+elif 'app_api:daemon:list' in args:
+    daemon = {'name':'harp_aio', 'deploy_id':'docker-install', 'protocol':'http',
+              'host':'nextcloud-aio-harp:8780', 'deploy_config':{
+                  'net':'nextcloud-aio', 'nextcloud_url':'https://clinica.example',
+                  'haproxy_password':'synthetic credential must stay private',
+                  'harp':{'exapp_direct':True, 'docker_socket_port':24000}}}
+    if case == 'string-port': daemon['deploy_config']['harp']['docker_socket_port'] = '24000'
+    if case == 'wrong-network': daemon['deploy_config']['net'] = 'another-network'
+    if case == 'malformed': print('{broken')
+    elif case == 'empty': print('No registered daemon configs.')
+    else: print(json.dumps([daemon, daemon] if case == 'duplicate' else [daemon]))
+elif 'config:app:get' in args:
+    print('' if case == 'no-default' else 'harp_aio')
+elif 'setupchecks' in args:
+    severity = 'error' if case == 'unreachable' else 'success'
+    print(json.dumps({'system':{'OCA\\AppAPI\\SetupChecks\\DaemonCheck':{'severity':severity},
+                                 'AnotherCheck':{'severity':'warning'}}}))
+    sys.exit(1)
+else:
+    sys.exit(2)
+''')
+    docker.chmod(0o755)
+    for case in ('good', 'string-port', 'wrong-network', 'malformed', 'empty',
+                 'duplicate', 'no-default', 'unreachable', 'tls'):
+        result = subprocess.run(['bash', str(root / 'scripts/appapi-smoke.sh')],
+            env=dict(os.environ, PATH=str(root / 'bin') + os.pathsep + os.environ['PATH'], APPAPI_CASE=case),
+            capture_output=True, text=True, timeout=20)
+        assert (result.returncode == 0) == (case in ('good', 'string-port')), case
+        assert 'synthetic credential' not in result.stdout + result.stderr, case
+print('AppAPI accepts valid native state and refuses missing, duplicate, malformed, unreachable or untrusted state')
+PY
+}
+check appapi_smoke_cases
+
+registry_manifest_cases() {
+  python3 - <<'PY'
+import os, pathlib, subprocess, tempfile
+module = pathlib.Path('php/src/Docker/GitHubContainerRegistryManager.php').resolve()
+with tempfile.TemporaryDirectory() as directory:
+    fixture = pathlib.Path(directory) / 'registry.php'
+    fixture.write_text(r'''<?php
+namespace GuzzleHttp {
+    class Reply {
+        public function __construct(private string $body = '') {}
+        public function getBody(): self { return $this; }
+        public function getContents(): string { return $this->body; }
+        public function getHeader(string $name): array { return ['sha256:' . str_repeat('a', 64)]; }
+    }
+    class Client {
+        public function request(string $method, string $url, array $options = []): Reply {
+            if ($method === 'GET') {
+                return new Reply(json_encode(['token' => 'synthetic registry credential']));
+            }
+            if (getenv('REGISTRY_UNAVAILABLE') === '1') { throw new \RuntimeException('registry unavailable'); }
+            $accepted = array_map('trim', explode(',', $options['headers']['Accept']));
+            if (!in_array(getenv('REGISTRY_MEDIA_TYPE'), $accepted, true)) {
+                throw new \RuntimeException('registry cannot serve this manifest format');
+            }
+            return new Reply();
+        }
+    }
+}
+namespace AIO\Docker {
+    function apcu_fetch(string $key): bool { return false; }
+    function apcu_add(string $key, string $value, int $ttl): bool { return true; }
+}
+namespace {
+    require $argv[1];
+    $digest = (new \AIO\Docker\GitHubContainerRegistryManager())->GetLatestDigestOfTag('aps-conecta/aio-postgresql', 'fixture');
+    echo $digest ?? 'missing';
+}
+''')
+    for media_type in ('application/vnd.docker.distribution.manifest.v2+json',
+                       'application/vnd.docker.distribution.manifest.list.v2+json',
+                       'application/vnd.oci.image.index.v1+json',
+                       'application/vnd.oci.image.manifest.v1+json'):
+        for unavailable in ('0', '1'):
+            result = subprocess.run(['php', str(fixture), str(module)],
+                env=dict(os.environ, REGISTRY_MEDIA_TYPE=media_type, REGISTRY_UNAVAILABLE=unavailable),
+                capture_output=True, text=True, timeout=10)
+            assert result.returncode == 0, 'The native registry method failed'
+            assert result.stdout == ('missing' if unavailable == '1' else 'sha256:' + 'a' * 64), media_type
+            assert 'synthetic registry credential' not in result.stdout + result.stderr
+print('The native registry client accepts Docker and OCI manifests and preserves unavailable-registry results')
+PY
+}
+check registry_manifest_cases
+
 # Exercise the actual public container module with disposable command fixtures;
 # the JSON parser is real PHP, while OCC and backend probes have controlled state.
 app_startup_cases() {

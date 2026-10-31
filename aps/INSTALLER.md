@@ -223,9 +223,10 @@ domain to check.
 The clinic `.env` (in the package root) is minimal by design — the wizard owns the stack. What
 the gates read:
 
-- **The suite's address, from apache itself** — `smoke`, `office-smoke` and `revalidate` curl
-  `https://<su-dominio>/…` (or `https://<ip>/…`, trusting the installer's CA, which is why they run
-  as root), the leg §7 makes answer from this server. No `.env` key sets it.
+- **The suite's address, from apache itself** — the gates resolve `https://<su-dominio>/…` or
+  `https://<ip>/…` from apache. `smoke` and `office-smoke` request it from the host with the
+  installer's CA; `appapi-smoke` verifies it from HaRP with the running agent's trust.
+  `revalidate` runs every gate as root. No `.env` key sets the address.
 - **The office keys are absent on purpose**: under AIO the wizard's entrypoint owns the public
   document-server URL and the JWT secret on every boot; by IP, `14-office.sh` adds the two internal
   URLs (§13). There is nothing office-shaped to configure on a clinic — and nothing map-shaped
@@ -363,6 +364,8 @@ goes: step 6, or `SITE_DOMINIO` in the site file of the silent install. The suit
   address, nor the reverse: it is reinstalled (§12).
 - **Nextcloud** trusts the CA (phase 07); **the office** reaches Nextcloud inside the suite's network
   (phase 14 writes the two internal URLs). Nothing to configure.
+- **HaRP** receives the public CA certificate read-only and combines it with system certificates
+  before starting its AppAPI agent.
 
 Every device that opens the suite imports the CA once. Step 6 offers it («Descargar el
 certificado») with its SHA-256 fingerprint, and the console prints both at the end of the install;

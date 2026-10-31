@@ -1,6 +1,9 @@
 # syntax=docker/dockerfile:latest
 FROM ghcr.io/nextcloud/nextcloud-appapi-harp:v0.4.5
 
+COPY --chmod=755 start.sh /start.sh
+ENTRYPOINT ["/start.sh"]
+
 # USER root is probably used
 
 LABEL com.centurylinklabs.watchtower.enable="false" \

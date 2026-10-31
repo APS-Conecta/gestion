@@ -56,7 +56,8 @@ template, or Dockerfile plumbing — committed bytes the gates verify. The
 declared PHP changes: patch 080's three registry references (strings), patch 200's office guard
 (any office other than Euro-Office is refused), patch 210's fixed service policy (ADR-0021), patch 233's IP guard (an IP is accepted as the domain while domain validation
 is skipped), patch 235's certificate directory (a setting and its read-only bind into the web front),
-patch 240's container names (strings, and the log route's name guard), and #48's closures — the
+patch 240's container names (strings, the log route's name guard, and #186's creation-time
+HaRP compatibility alias), and #48's closures — the
 community channel's readers (the directory constant, the config property, the listing method, the
 form handler, the Caddy trusted-proxy variable) and patch 239's basemap directory (the setting and
 its read-only bind, removed with the route). The office configuration and container lifecycle carry
@@ -68,6 +69,9 @@ Institutional proxy configuration persists in a private host profile. Docker rea
 environment file; the wizard forwards the normalized proxy to Nextcloud, whose existing
 proxy configuration masks credentials in ordinary configuration listings. Docker-socket
 requests stay direct; bypasses include the inspected suite network and service inventory (#192).
+The native AppAPI daemon hostname also bypasses the proxy. HaRP trusts the public suite CA
+alongside system roots before its upstream agent starts; revalidation checks both directions (#186).
+Image discovery accepts Docker and OCI image manifests and their indexes from the suite registry (#243).
 
 The wizard's complete start path catches failures and finishes its existing HTML stream
 with an explicit result. The host requires that result before reporting success. Image pulls

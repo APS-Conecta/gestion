@@ -716,6 +716,7 @@ prepare_proxy() {
     site_domain || true
     printf '%s\n' "${1:-}"
     suite_subnets || true
+    printf '%s\n' nextcloud-aio-harp  # Bundled AppAPI's internal daemon hostname.
     if [ -f "$ROOT/php/containers.json" ] && command -v python3 >/dev/null 2>&1; then
       python3 -c 'import json,sys; print("\n".join(c["container_name"] for c in json.load(open(sys.argv[1]))["aio_services_v1"]))' "$ROOT/php/containers.json"
     fi
@@ -1942,23 +1943,14 @@ cmd_respaldo() {  # wire /opt/aps-conecta into AIO's backup scope — idempotent
 # ── revalidate ─────────────────────────────────────────────────────────────────────────────
 
 cmd_revalidate() {  # post-update: run every read-only gate against the running instance
-  # The FRD S8's post-update revalidation suite. WHEN the operator runs it: right after the
-  # clinic's stack moves — a new suite tag on purpose (D12: a published tag's digests never
-  # move, so an update IS a deliberate new-tag run) or a container reboot. The three gates are
-  # the read-only half of this program's gate stack: smoke (the 14 core invariants),
-  # office-smoke (the office wire: public-path healthcheck + --check + the Dockerfile's DS pin), and
-  # divergence --gate (live state vs the declared set — the handoff contract the executor and
-  # the weekly timer already ride). All three are read-only by their locked contracts, so this
-  # arm never writes — the --reponer timer owns convergence; revalidate only measures.
-  # ALL THREE run, first-fail is not the shape: after an update, clinic IT needs the complete
-  # picture (WHICH gates are red), not the first one (test.sh's aggregation lesson). The exit
-  # code is the aggregate — 0 iff all three green — the same verdict shape --reponer exits, so
-  # a red revalidate reads identically to a red weekly unit wherever operators look.
+  # Report every read-only gate after an update or restart. Provisioning owns writes;
+  # revalidation returns failure when any gate fails and still reports the remaining gates.
   local rc=0 out st name
-  for name in smoke office-smoke divergence-gate; do
+  for name in smoke office-smoke appapi-smoke divergence-gate; do
     case "$name" in
       smoke)           out="$(bash "$ROOT/scripts/smoke.sh" 2>&1)"; st=$? ;;
       office-smoke)    out="$(bash "$ROOT/scripts/office-smoke.sh" 2>&1)"; st=$? ;;
+      appapi-smoke)    out="$(bash "$ROOT/scripts/appapi-smoke.sh" 2>&1)"; st=$? ;;
       divergence-gate) out="$(bash "$ROOT/scripts/divergence.sh" --gate 2>&1)"; st=$? ;;
     esac
     if [ "$st" -eq 0 ]; then
@@ -1970,7 +1962,7 @@ cmd_revalidate() {  # post-update: run every read-only gate against the running 
     fi
   done
   if [ "$rc" -eq 0 ]; then
-    echo "REVALIDACIÓN: PASS — humo ✓, oficina ✓, divergencia vacía ✓ (la instancia sigue convergida)"
+    echo "REVALIDACIÓN: PASS — humo ✓, oficina ✓, AppAPI ✓, divergencia vacía ✓ (la instancia sigue convergida)"
   else
     echo "REVALIDACIÓN: FAIL — lo de arriba quedó tras la actualización; «aps-conecta provision» re-converge el estado declarado, y el informe de divergencia nombra el resto" >&2
   fi
@@ -2954,6 +2946,7 @@ SHIM
     check "proxy: bypasses include localhost, the actual suite subnet and inventory names" \
       'grep "^NO_PROXY=" "$tmp/proxy-network/proxy.env" | grep -q "10.77.0.0/23" \
        && grep "^NO_PROXY=" "$tmp/proxy-network/proxy.env" | grep -q "aps-conecta-nextcloud" \
+       && grep "^NO_PROXY=" "$tmp/proxy-network/proxy.env" | grep -q "nextcloud-aio-harp" \
        && grep "^NO_PROXY=" "$tmp/proxy-network/proxy.env" | grep -q "localhost"'
     : > "$tmp/mut.log"
     step_out="$(export HTTPS_PROXY='http://proxy.example:3128'; APS_HOME="$tmp/proxy-retry"; FAIL=0;
@@ -3872,6 +3865,7 @@ SHIM
   mkdir -p "$rvd/scripts"
   printf '#!/usr/bin/env bash\necho "PASS: smoke stub"\nexit 0\n'      > "$rvd/scripts/smoke.sh"
   printf '#!/usr/bin/env bash\necho "FAIL: office stub red"\nexit 1\n' > "$rvd/scripts/office-smoke.sh"
+  printf '#!/usr/bin/env bash\necho "PASS: AppAPI stub"\nexit 0\n'   > "$rvd/scripts/appapi-smoke.sh"
   printf '#!/usr/bin/env bash\necho "no notes"\nexit 0\n'             > "$rvd/scripts/divergence.sh"
   chmod +x "$rvd/scripts/"*.sh
   rout="$(ROOT="$rvd" cmd_revalidate 2>&1)"; rrc=$?
@@ -3881,6 +3875,10 @@ SHIM
   rout="$(ROOT="$rvd" cmd_revalidate 2>&1)"; rrc=$?
   check "revalidate aggregates green (exit 0 + the PASS line)" \
     '[ "$rrc" -eq 0 ] && printf "%s" "$rout" | grep -q "REVALIDACIÓN: PASS"'
+  printf '#!/usr/bin/env bash\necho "FAIL: AppAPI daemon unreachable"\nexit 1\n' > "$rvd/scripts/appapi-smoke.sh"
+  rout="$(ROOT="$rvd" cmd_revalidate 2>&1)"; rrc=$?
+  check "revalidate refuses an unreachable AppAPI daemon beside otherwise healthy gates" \
+    '[ "$rrc" -eq 1 ] && printf "%s" "$rout" | grep -q "AppAPI daemon unreachable" && printf "%s" "$rout" | grep -q "divergence-gate — no notes"'
 
   # ── actualizar (#46): the update command against a fake resolver, a fixture lock and the
   # wizard's own API — every leg hermetic (PATH shims, no docker, no network). The fake
@@ -3947,7 +3945,7 @@ elif sys.argv[1:] == ["opcionales"]:
     print("farmacia\toff\tFarmacia")
 PYEOF
   # the three gates revalidate runs, stubbed green (their own arms are above)
-  for g in smoke office-smoke divergence; do
+  for g in smoke office-smoke appapi-smoke divergence; do
     printf '#!/usr/bin/env bash\necho "PASS: %s stub"\nexit 0\n' "$g" > "$act/repo/scripts/$g.sh"
   done
   chmod +x "$act/repo/scripts/"*.sh

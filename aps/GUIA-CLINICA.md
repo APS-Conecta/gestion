@@ -207,8 +207,9 @@ Cuando salga una nueva versión de la suite (la etiqueta nueva), después de act
 aps-conecta revalidate
 ```
 
-corre las tres verificaciones (humo, oficina, divergencia) y las reporta **todas**, aunque
-una falle — el éxito es el conjunto. Si el panel de registros del asistente se ve sin estilo
+Ejecuta cuatro verificaciones: humo, oficina, AppAPI y divergencia. Informa **todos** los
+resultados y devuelve un fallo si alguna verificación falla. AppAPI comprueba su servicio
+predeterminado y la conexión HTTPS de HaRP con la suite. Si el panel de registros del asistente se ve sin estilo
 después de una actualización, un refresco fuerte del navegador (Ctrl+Shift+R) lo arregla: es un
 archivo en caché que PHP fija y el fork no toca.
 
@@ -278,6 +279,8 @@ instalador, la misma que firma su enlace (§4).
   una dirección, ni al revés: se reinstala (`INSTALLER.md` §12).
 - **Nextcloud** confía en la autoridad (fase 07); **la oficina** llega a Nextcloud dentro de la red de
   la suite (la fase 14 escribe las dos direcciones internas). Nada que configurar.
+- **HaRP** recibe el certificado público de la autoridad en modo de solo lectura y lo incorpora
+  junto con los certificados del sistema antes de iniciar su agente de AppAPI.
 
 Cada equipo que abre la suite importa la autoridad una vez. El paso 6 la ofrece («Descargar el
 certificado») con su huella SHA-256, y la consola imprime ambas al terminar la instalación; en el
