@@ -43,22 +43,13 @@ Store these secrets in that environment:
   included). The release job writes them to a 0600 trap-removed file; the key never reaches
   argv, a URL, or a log line (the P45 rule).
 - `MINISIGN_KEY_PASSWORD` — the passphrase, or empty for a `-n` key.
-- `SPREED_REFRESH_TOKEN` — a fine-grained PAT with resource owner **APS-Conecta** and
-  **Contents: read and write on `APS-Conecta/spreed` alone**, nothing else. The release chain's spreed job uses it to
-  dispatch the Talk fork's refresh (ADR-0020); its scope is that one repo, so the worst a
-  leak can do is publish a Talk release that still has to pass the job's own verification
-  against this repo's `apps.pub` — it can never touch a suite release. A missing token reds
-  the spreed job naming this section.
-
-The signing pair reaches only the package assembly/signing step; the refresh token reaches
-only the Talk dispatch step. Neither is available to the gates or image builds. The app
-signing key remains in the app repository; the suite key is a separate identity.
+The signing pair reaches the package assembly step. The gates and image builds use their
+job permissions. App repositories retain the separate app-signing identity.
 
 Populate environment secrets through GitHub's UI or the CLI's masked interactive prompt:
 
     gh secret set MINISIGN_SECRET_KEY --repo APS-Conecta/gestion --env Release < installer.sec
     gh secret set MINISIGN_KEY_PASSWORD --repo APS-Conecta/gestion --env Release
-    gh secret set SPREED_REFRESH_TOKEN --repo APS-Conecta/gestion --env Release
 
 Finish migration by removing the old repository-level copies of these names. Verify the
 Release environment's secret names and complete a protected rehearsal; secret values never
@@ -68,13 +59,7 @@ A wrong pair reds the package job loudly ("signing failed — the passphrase
 (MINISIGN_KEY_PASSWORD) or the key (MINISIGN_SECRET_KEY) is wrong"); nothing is released
 half-signed.
 
-The Talk fork's own setup (once, already done — `APS-Conecta/spreed`): a `release`
-environment carrying `APP_SIGNING_KEY`/`APP_SIGNING_KEY_PASSWORD` (the app key `apps.pub`
-trusts — the same pair every app repo carries), Actions enabled, and upstream's own push-CI
-workflows disabled (the fork never changes code, so upstream's linters have nothing to say).
-The refresh refreshes upstream's newest stable spreed per suite release; the first release
-was dispatched by hand (`gh workflow run refresh.yml --repo APS-Conecta/spreed -f
-nextcloud-major=34`), and every later one rides the release chain.
+Talk installs its official signed package through the scoped store command (ADR-0025).
 
 Repository Settings → Actions → General → Workflow permissions must use **Read repository
 contents and packages permissions**, with **Allow GitHub Actions to create and approve pull

@@ -511,7 +511,7 @@ def contract(text):
         errors.append('images do not build the proven commit')
     if 'RELEASE_SHA: ${{ needs.gates.outputs.sha }}' not in definitions.get('package', ''):
         errors.append('the package does not receive the proven SHA')
-    required = {'MINISIGN_SECRET_KEY', 'MINISIGN_KEY_PASSWORD', 'SPREED_REFRESH_TOKEN'}
+    required = {'MINISIGN_SECRET_KEY', 'MINISIGN_KEY_PASSWORD'}
     seen = set()
     for name, job in definitions.items():
         refs = set(re.findall(r'secrets\.(MINISIGN_SECRET_KEY|MINISIGN_KEY_PASSWORD|SPREED_REFRESH_TOKEN)', job))
@@ -526,17 +526,15 @@ def contract(text):
             for secret in required:
                 if f'secrets.{secret}' not in step:
                     continue
-                consumer = ('bash scripts/package-release.sh' in step and name == 'package'
-                            if secret.startswith('MINISIGN') else
-                            'repos/APS-Conecta/spreed/dispatches' in step and name == 'spreed')
-                env_key = secret if secret.startswith('MINISIGN') else 'GH_TOKEN'
+                consumer = 'bash scripts/package-release.sh' in step and name == 'package'
+                env_key = secret
                 env_match = re.search(r'^          ' + env_key + r': \$\{\{ secrets\.' + secret + r' \}\}\s*$', step, re.M)
                 if not consumer or not env_match:
                     errors.append(f'{secret} escapes its consuming step environment')
     if seen != required:
-        errors.append('release signing or refresh secrets are missing')
-    if 'scripts/spreed-refresh.py verify' not in definitions.get('spreed', ''):
-        errors.append('Talk archives are not checked by the shared content verifier')
+        errors.append('release signing secrets are missing or an obsolete refresh secret is used')
+    if 'spreed' in definitions:
+        errors.append('the release chain still refreshes the retired Talk fork')
     publisher = next((step for step in steps(definitions.get('package', '')) if 'gh release create ' in step), '')
     if '--latest=false' not in publisher:
         errors.append('rehearsal creation does not explicitly refuse Latest')
@@ -551,14 +549,12 @@ if errors:
 for bad in [source.replace('run: bash scripts/test.sh', 'run: echo skipped'),
             source.replace('    environment: Release\n', ''),
             source.replace('--latest=false', '--latest'),
-            source.replace('scripts/spreed-refresh.py verify', 'scripts/spreed-refresh.py resolve'),
             source.replace('secrets.MINISIGN_KEY_PASSWORD', 'secrets.OTHER_KEY')]:
     assert contract(bad), 'a broken release contract passed'
 
 definitions = jobs(source)
 ancestry = next(run_script(step) for step in steps(definitions['gates']) if 'git merge-base --is-ancestor' in step)
 publish = next(run_script(step) for step in steps(definitions['package']) if 'gh release create ' in step)
-asset_wait = next(run_script(step) for step in steps(definitions['spreed']) if step.startswith("name: Wait for the fork"))
 with tempfile.TemporaryDirectory(prefix='release-contract-') as tmp:
     root = pathlib.Path(tmp)
     repo = root / 'source'
@@ -596,30 +592,10 @@ with tempfile.TemporaryDirectory(prefix='release-contract-') as tmp:
     gh = tools / 'gh'
     gh.write_text('''#!/usr/bin/env python3
 import json, os, pathlib, sys
-if sys.argv[1:3] == ['release', 'view']:
-    counter = pathlib.Path(os.environ['ASSET_CALLS'])
-    count = int(counter.read_text()) + 1 if counter.exists() else 1
-    counter.write_text(str(count))
-    print('spreed.tar.gz' if count == 1 else 'spreed.tar.gz\\ninfo.xml\\nSHA256SUMS\\nSHA256SUMS.minisig')
-    sys.exit(0)
 assert sys.argv[1:3] == ['release', 'create'], sys.argv
 pathlib.Path(os.environ['RELEASE_CALL']).write_text(json.dumps(sys.argv[1:]))
 ''')
     gh.chmod(0o755)
-    sleep = tools / 'sleep'
-    sleep.write_text('#!/bin/sh\nexit 0\n')
-    sleep.chmod(0o755)
-    asset_calls = root / 'asset-calls'
-    asset_names = 'spreed.tar.gz info.xml SHA256SUMS SHA256SUMS.minisig'
-    configured = re.search(r'^      SPREED_RELEASE_ASSETS: "([^"]+)"$', definitions['spreed'], re.M)
-    if configured:
-        assert set(configured[1].split()) == set(asset_names.split()), 'the readiness inventory is incomplete'
-        asset_names = configured[1]
-    waited = subprocess.run(['bash', '-euo', 'pipefail', '-c', asset_wait], cwd=root,
-                            env=dict(os.environ, PATH=str(tools) + os.pathsep + os.environ['PATH'],
-                                     TAG='v24.0.6', ASSET_CALLS=str(asset_calls), SPREED_RELEASE_ASSETS=asset_names),
-                            text=True, capture_output=True, timeout=15)
-    assert waited.returncode == 0 and int(asset_calls.read_text()) >= 2, 'release readiness accepted a partial asset set'
     git('tag', 'v1.2.3', main)
     git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
         'tag', '-a', 'v0.0.0-ci.2031', feature, '-m', 'annotated rehearsal fixture')
@@ -3088,6 +3064,10 @@ if pathlib.Path(sys.argv[0]).name == 'curl':
     print(s['welcome'] + '\n' + s.get('http_status', '200'))
 elif a[0] == 'inspect':
     print('NC_DOMAIN=192.0.2.50')
+elif a[4:7] == ['test', '-s', '/var/www/html/custom_apps/spreed/appinfo/signature.json']:
+    sys.exit(s.get('signature_exit', 0))
+elif a[6:8] == ['integrity:check-app', 'spreed']:
+    sys.exit(s.get('integrity_exit', 0))
 else:
     assert a[:5] == ['exec', '--user', 'www-data', 'aps-conecta-nextcloud', 'php']
     name = a[6]
@@ -3125,6 +3105,9 @@ else:
     assert '--cacert' in curl and str(ca) in curl
     assert curl[-1] == 'https://192.0.2.50/standalone-signaling/api/v1/welcome'
     assert not any(arg in ('-k', '--insecure', '-L', '--location') for arg in curl)
+    for key in ('signature_exit', 'integrity_exit'):
+        state = copy.deepcopy(base); state[key] = 1
+        run(state, success=False)
     state = copy.deepcopy(base); state['setup_exit'] = 1
     run(state)
     state = copy.deepcopy(base)
@@ -3568,11 +3551,7 @@ else
   echo "  skipped: no running AIO stack (static-only gate)"
 fi
 
-# Euro-Office joined the standard gate in #81, because it joined the stack: office-smoke was
-# separate only because it needed a service that might not be running. Its rename assertions
-# retired with the bake (#42): the white-label renames are COMMITS in the fork's own repo now,
-# carried by its signed release, and the clean-boot greps the installed bytes on every run.
-#
+# Office uses the official connector and its native integrity and connectivity checks.
 # Still guarded on the service, not assumed: this script runs in the static CI gate with no stack
 # at all, and stopping the office backend is a documented way to reclaim the RAM. `--wait` is what
 # makes this deterministic when the stack IS up — without it the gate raced the 120s start_period.

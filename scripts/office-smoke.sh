@@ -13,22 +13,12 @@
 # that failed in upstream #8433 (the DS's own port can answer while the public route is broken).
 # The version assert is the Dockerfile's pin: the connector's own floor is only "DS > 6.0"
 # (DocumentService.php:415), so a drifted documentserver would pass --check silently.
-# Since #36 the connector is the APS fork (APS-Conecta/eurooffice) and this gate's --check
-# round-trip is the connector's per-install re-certification. The image assert accepts the two
+# The connector is installed unchanged from the official store. The image assert accepts the two
 # namespaces this distribution's lifecycle runs — nextcloud-releases (the probe's stock bring-up,
 # slice 1's harness) and aps-conecta (the suite's own source build) —
 # and anything else (a different DocumentServer image) reds.
 #
-# The white-label rename grep RETIRED here (slice 13's routing), twice over: the renames are
-# COMMITS in the fork's own repo (#36), so a signed release carries them and nothing under the
-# suite can revert them — the store is off (patch 020), a published tag's digests never move
-# (D12), and no image carries app bytes any more (#42). The clean-boot greps the installed
-# bytes on every run; nothing here has a threat model left.
-
-# NOT covered here, because no gate can: in-browser rendering, live convergence, cursor presence,
-# and open/save FIDELITY — plus per-format editing, since Euro-Office exposes no WOPI discovery to
-# parse. Checked by hand in a browser on 2026-07-24 and passed; the standing runbook retired with
-# that run. Outcome and the ODF caveat live in README.md ("Office suite").
+# Browser editing and format fidelity are verified separately through real clients.
 set -euo pipefail
 
 # Read .env so this behaves the same from any cwd (cf. scripts/smoke.sh).
@@ -40,6 +30,8 @@ set -euo pipefail
 # appconfig `enabled` value is "yes".
 [ "$(occ config:app:get eurooffice enabled 2>/dev/null || true)" = "yes" ] \
   || { echo "FAIL: eurooffice connector not enabled — run: sudo aps-conecta provision --reponer"; exit 1; }
+
+require_store_app_integrity eurooffice || exit 1
 
 echo "Office backend: Euro-Office (eurooffice)"
 # the suite's public URL, the base smoke rides too (env.sh, #163)

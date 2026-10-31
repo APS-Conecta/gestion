@@ -13,7 +13,7 @@
 # are the one deliberate exception — their scoped install IS their acquisition moment (#42) —
 # and it opens the store for that single command, never longer.
 # Database configuration survives app updates. Its owners remain the policy phases and
-# the shared startup module, called here as soon as the signed Talk app is available.
+# the shared startup module, called here as soon as Talk is installed.
 # Converges on WHAT THE SERVER RECORDS — the lock's tag for release rows (ADR-0017), presence
 # and enabled state for store rows (#42): the same seed produces the same instance. A store
 # app never moves after its install (nothing here updates); a release app moves only through
@@ -59,14 +59,14 @@ while IFS=$'\t' read -r -u 3 app repo; do
   [ -z "$repo" ] || row="$(lock_row "$app")"
   if [ -n "$row" ]; then
     ensure_release_app "$app" "$row" || exit 1
-    if [ "$app" = spreed ]; then
-      nc_exec --user www-data -- bash /configure-apps.sh talk || exit 1
-    fi
   elif [ -n "$repo" ]; then
     log "FAILED $app — its release was never resolved on this server (no lock row). Re-run the install so its download step resolves the release."
     exit 1
   else
-    ensure_store_app "$app"
+    ensure_store_app "$app" || exit 1
+  fi
+  if [ "$app" = spreed ]; then
+    nc_exec --user www-data -- bash /configure-apps.sh talk || exit 1
   fi
 done 3<<< "$manifest"
 

@@ -5168,16 +5168,15 @@ def selftest():
             fila_farmacia = next(a for a in SUITE_APPS if a["id"] == "farmacia")
             fila_estadistica = next(a for a in SUITE_APPS if a["id"] == "estadistica")
             fila_totem = next(a for a in SUITE_APPS if a["id"] == "totem")
-            check("suite: the APS apps table lists the manifest's named own and fork apps that are NOT optional, by name — since #40 every one of them is a release row, so each cell says what the lock records or its promise (#33–#36, #40); Talk joins the table with its fork release (#145); the optional rows are the checkboxes, not table rows (#39, #41); the containers are the host's set plus Nextcloud (a12)",
-                  [f[0] for f in filas] == ["Inicio", "Oficina", "Epidemiología", "Territorio", "Talk"]
+            check("suite: the APS apps table lists named default release apps; official store apps use their own channel",
+                  [f[0] for f in filas] == ["Inicio", "Epidemiología", "Territorio"]
                   and all(v == "según su release" for _n, v, _s in filas)
                   and OPCIONALES == (("estadistica", "Estadística", fila_estadistica["summary"], False),
                                      ("farmacia", "Farmacia", fila_farmacia["summary"], False),
                                      ("totem", "Tótem", fila_totem["summary"], False))
 
                   and {c for c, _n in CONTENEDORES_SUITE} == set(aio_set) | {"aps-conecta-nextcloud"})
-            # intravox stripped of its name (side_menu is already an unnamed fork row), so the
-            # rows read are the fixture's, filtered by name, not by VENDOR
+            # Unnamed release apps stay out of the table.
             sin_nombre = [{k: v for k, v in a.items() if k not in ("name", "summary")} if a["id"] == "intravox"
                           else a for a in SUITE_APPS]
             with open(os.path.join(tmp, "apps-sin-nombre.json"), "w", encoding="utf-8") as fh:
@@ -5187,10 +5186,9 @@ def selftest():
             except Exception as e:   # the crash IS the failure this check reports
                 filas = [[f"{type(e).__name__}: {e}", "", ""]]
             check("suite: step 6 lists only the own and fork apps that carry a name and are not optional, in manifest order — an unnamed fork app is left out, no error (a12, #64)",
-                  [f[0] for f in filas] == ["Oficina", "Epidemiología", "Territorio", "Talk"]
+                  [f[0] for f in filas] == ["Epidemiología", "Territorio"]
                   and filas[0][1] == "según su release"
-                  and filas[1][1] == "según su release"
-                  and filas[2][1] == "según su release")  # intravox left with its name (#35)
+                  and filas[1][1] == "según su release")
 
             with open(os.environ["APS_APPS_LOCK"], "w", encoding="utf-8") as fh:
                 json.dump({"nextcloud": "34.0.4", "apps": {
@@ -5210,11 +5208,11 @@ def selftest():
                 filas = apps_aps()
             finally:   # gone before any ejecutar: phase 12 probes this same lock
                 os.remove(os.environ["APS_APPS_LOCK"])
-            check("suite: a release row the lock already recorded shows its locked version (#33–#36)",
+            check("suite: a release row the lock already recorded shows its locked version (#33–#35); a stale fork lock does not relabel an official store app",
                   {n: v for n, v, _q in filas}["Territorio"] == "0.80.0"
                   and {n: v for n, v, _q in filas}["Epidemiología"] == "0.12.0"
                   and {n: v for n, v, _q in filas}["Inicio"] == "3.2.0"
-                  and {n: v for n, v, _q in filas}["Oficina"] == "11.0.7")
+                  and "Oficina" not in {n for n, _v, _q in filas})
             fijo = centro_actual()[1].get("codigo")   # the site the preparation fills, then restored
             antes_fijo = open(site_path(fijo), encoding="utf-8").read() if fijo else None
             falso = os.path.join(tmp, "asistente-falso.sh")

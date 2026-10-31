@@ -8,6 +8,7 @@ set -euo pipefail
 . "$(dirname "$0")/env.sh"
 suite_url_resolve
 nc_container
+require_store_app_integrity spreed || exit 1
 
 talk_native_failed=0
 python3 - "$NC_CONTAINER" "$SUITE_URL" <<'PY' || talk_native_failed=1
