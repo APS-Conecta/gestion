@@ -4972,12 +4972,12 @@ def selftest():
             fuera = list(EJECUCION["hechos"])
             EJECUCION.update(estado="en_curso")
             for ln in ("▶ phase 05-security\n", "✓ phase 05-security\n", "otra línea\n",
-                       "✓ phase 14-office\n", "== roster: 3 usuario(s)\n"):
+                       "✓ phase 14-antivirus\n", "✓ phase 14-office\n", "== roster: 3 usuario(s)\n"):
                 avance(ln)
-            check("ejecución: none yet answers «sin_ejecutar» with the 16 steps; a browser run's executor lines become the console's own titles, any other run's are not followed (a14)",
+            check("ejecución: none yet answers «sin_ejecutar» with the 17 steps; a browser run's executor lines become the console's own titles, any other run's are not followed (a14)",
                   st == 200 and nada["ejecucion"] == "sin_ejecutar" and nada["pasos"] == PASOS_EJECUCION
-                  and len(PASOS_EJECUCION) == 16 and fuera == []
-                  and EJECUCION["hechos"] == ["Seguridad de sesión", "Oficina en línea", "Cuentas del personal"])
+                  and len(PASOS_EJECUCION) == 17 and fuera == []
+                  and EJECUCION["hechos"] == ["Seguridad de sesión", "Antivirus de archivos", "Oficina en línea", "Cuentas del personal"])
             EJECUCION.update(estado="sin_ejecutar", hechos=[])
             verdadero, suelta = globals()["api_generar"], threading.Event()
 
