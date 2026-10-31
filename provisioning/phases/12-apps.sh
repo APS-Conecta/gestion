@@ -12,8 +12,8 @@
 # seed only installs what that leg already verified and stored beside the lock. The store rows
 # are the one deliberate exception — their scoped install IS their acquisition moment (#42) —
 # and it opens the store for that single command, never longer.
-# Only FILE edits belong in phases — `occ config:app:set` lives in the database, so it survives
-# an app update, and stays in 15-branding, 16-app-policy and 14-office.
+# Database configuration survives app updates. Its owners remain the policy phases and
+# the shared startup module, called here as soon as the signed Talk app is available.
 # Converges on WHAT THE SERVER RECORDS — the lock's tag for release rows (ADR-0017), presence
 # and enabled state for store rows (#42): the same seed produces the same instance. A store
 # app never moves after its install (nothing here updates); a release app moves only through
@@ -58,7 +58,10 @@ while IFS=$'\t' read -r -u 3 app repo; do
   row=""
   [ -z "$repo" ] || row="$(lock_row "$app")"
   if [ -n "$row" ]; then
-    ensure_release_app "$app" "$row"
+    ensure_release_app "$app" "$row" || exit 1
+    if [ "$app" = spreed ]; then
+      nc_exec --user www-data -- bash /configure-apps.sh talk || exit 1
+    fi
   elif [ -n "$repo" ]; then
     log "FAILED $app — its release was never resolved on this server (no lock row). Re-run the install so its download step resolves the release."
     exit 1
