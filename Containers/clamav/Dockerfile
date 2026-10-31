@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:latest
 FROM alpine:3.24.2 AS icap-build
 SHELL ["/bin/ash", "-o", "pipefail", "-c"]
+WORKDIR /build/server
 
 RUN set -ex; \
     apk add --no-cache build-base autoconf automake libtool curl; \
@@ -8,19 +9,18 @@ RUN set -ex; \
     curl -fsSL https://codeload.github.com/c-icap/c-icap-server/tar.gz/b34baf32b764a2d79db34c61041cd9f92c39a535 -o /build/server.tar.gz; \
     echo "d80703ab8056d6a813a183c8c8d6453dd4eda51b400fc4bd0c4a194f4dac54d8  /build/server.tar.gz" | sha256sum -c -; \
     tar -xzf /build/server.tar.gz --strip-components=1 -C /build/server; \
-    cd /build/server; \
     sh RECONF; \
     ./configure --prefix=/usr --libdir=/usr/lib --sysconfdir=/etc/c-icap; \
     make -j "$(nproc)"; \
     make install
 
 COPY Containers/clamav/require-engine.patch /build/require-engine.patch
+WORKDIR /build/modules
 RUN set -ex; \
     mkdir -p /build/modules; \
     curl -fsSL https://codeload.github.com/c-icap/c-icap-modules/tar.gz/e1f6af0e06be1ae1e8b8f822ae74bc0d352b788f -o /build/modules.tar.gz; \
     echo "ba869cb9c6d6e98955802aed829c23f602f437e53c07924f859fb56a5b47fa50  /build/modules.tar.gz" | sha256sum -c -; \
     tar -xzf /build/modules.tar.gz --strip-components=1 -C /build/modules; \
-    cd /build/modules; \
     patch --batch --fuzz=0 --forward -p1 < /build/require-engine.patch; \
     sh RECONF; \
     ./configure --with-c-icap=/usr --without-clamav --without-bdb; \
