@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:latest
-FROM ghcr.io/euro-office/documentserver:v9.3.4
+# Includes the native SDK parsing fix needed to save edited documents (Euro-Office/sdkjs#81).
+FROM ghcr.io/euro-office/documentserver:v9.3.7-1
 
 # USER root is probably used
 

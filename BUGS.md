@@ -140,6 +140,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-080 | final usage snapshots cannot establish resource capacity (#189 preparation) | two near-end container readings omit host pressure, workload intervals and collection completeness | both existing Clean boot jobs retain bounded host/container series with boot identity, raw CPU/swap/OOM units, explicit missing observations and process-bound completion; the usage self-test covers collection and shutdown, while numerical thresholds remain pending real workload measurements |
 
+| A-081 | Office opens real edits but rejects final saveback as corrupted (#189 prerequisite) | 9.3.4's shipped scripts fail in the native renderer while browser editing and HTTP health still work | pin the verified 9.3.7-1 fix and require fresh nonempty renderer caches in the existing by-IP job; the old published image fails with native exit 132, while the fixed image compiles and two ordinary browser edits persist through normal Nextcloud saveback |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and
