@@ -15,7 +15,7 @@
 #   aps-conecta provision --reponer  headless weekly re-provision (the systemd timer's job)
 #   aps-conecta respaldo             wire /opt/aps-conecta into AIO's backup scope (idempotent)
 #   aps-conecta asistente-aio --dominio D   drive the AIO wizard through its API (no browser)
-#   aps-conecta revalidate          post-update gate sweep: smoke + office-smoke + divergence
+#   aps-conecta revalidate          post-update: smoke, office, AppAPI, Talk and divergence
 #   aps-conecta actualizar [--revisar]  the update (#46): plan; full backup first; candidates fetched
 #                                    and verified into a new lock; applied app by app (store apps
 #                                    with scoped commands); the lock moved only when everything
@@ -1946,14 +1946,18 @@ cmd_revalidate() {  # post-update: run every read-only gate against the running 
   # Report every read-only gate after an update or restart. Provisioning owns writes;
   # revalidation returns failure when any gate fails and still reports the remaining gates.
   local rc=0 out st name
-  for name in smoke office-smoke appapi-smoke divergence-gate; do
+  for name in smoke office-smoke appapi-smoke talk-smoke divergence-gate; do
     case "$name" in
       smoke)           out="$(bash "$ROOT/scripts/smoke.sh" 2>&1)"; st=$? ;;
       office-smoke)    out="$(bash "$ROOT/scripts/office-smoke.sh" 2>&1)"; st=$? ;;
       appapi-smoke)    out="$(bash "$ROOT/scripts/appapi-smoke.sh" 2>&1)"; st=$? ;;
+      talk-smoke)      out="$(bash "$ROOT/scripts/talk-smoke.sh" 2>&1)"; st=$? ;;
       divergence-gate) out="$(bash "$ROOT/scripts/divergence.sh" --gate 2>&1)"; st=$? ;;
     esac
     if [ "$st" -eq 0 ]; then
+      if [ "$name" = talk-smoke ] && printf '%s\n' "$out" | grep -Fx 'WARN: supported signaling backend lacks the optional changed-users optimization' >/dev/null; then
+        printf '  ADVERTENCIA: Talk — compatibilidad con advertencia opcional changed-users; caché Redis verificada\n'
+      fi
       printf '  ✓ %s — %s\n' "$name" "$(printf '%s\n' "$out" | tail -1)"
     else
       printf '  ✗ %s — el detalle completo:\n' "$name"
@@ -1962,7 +1966,7 @@ cmd_revalidate() {  # post-update: run every read-only gate against the running 
     fi
   done
   if [ "$rc" -eq 0 ]; then
-    echo "REVALIDACIÓN: PASS — humo ✓, oficina ✓, AppAPI ✓, divergencia vacía ✓ (la instancia sigue convergida)"
+    echo "REVALIDACIÓN: PASS — humo ✓, oficina ✓, AppAPI ✓, llamadas ✓, divergencia vacía ✓ (la instancia sigue convergida)"
   else
     echo "REVALIDACIÓN: FAIL — lo de arriba quedó tras la actualización; «aps-conecta provision» re-converge el estado declarado, y el informe de divergencia nombra el resto" >&2
   fi
@@ -3857,7 +3861,7 @@ SHIM
   rm -f "$tshim/id" "$tshim/systemctl"
   [ ! -e "$tmp/systemctl.prev" ] || cp "$tmp/systemctl.prev" "$tshim/systemctl"
 
-  # the revalidate arm (slice 20): three stub gate scripts under a fixture root — the
+  # The revalidate arm: five stub gate scripts under a fixture root — the
   # aggregation + the exit contract, never first-fail. The command substitution scopes the
   # ROOT override (a bare ROOT=x prefix on a function call persists AFTER the call in bash —
   # the control-knob lesson's function-call variant).
@@ -3866,6 +3870,7 @@ SHIM
   printf '#!/usr/bin/env bash\necho "PASS: smoke stub"\nexit 0\n'      > "$rvd/scripts/smoke.sh"
   printf '#!/usr/bin/env bash\necho "FAIL: office stub red"\nexit 1\n' > "$rvd/scripts/office-smoke.sh"
   printf '#!/usr/bin/env bash\necho "PASS: AppAPI stub"\nexit 0\n'   > "$rvd/scripts/appapi-smoke.sh"
+  printf '#!/usr/bin/env bash\necho "PASS: Talk stub"\nexit 0\n'     > "$rvd/scripts/talk-smoke.sh"
   printf '#!/usr/bin/env bash\necho "no notes"\nexit 0\n'             > "$rvd/scripts/divergence.sh"
   chmod +x "$rvd/scripts/"*.sh
   rout="$(ROOT="$rvd" cmd_revalidate 2>&1)"; rrc=$?
@@ -3875,6 +3880,11 @@ SHIM
   rout="$(ROOT="$rvd" cmd_revalidate 2>&1)"; rrc=$?
   check "revalidate aggregates green (exit 0 + the PASS line)" \
     '[ "$rrc" -eq 0 ] && printf "%s" "$rout" | grep -q "REVALIDACIÓN: PASS"'
+  printf '#!/usr/bin/env bash\necho "WARN: synthetic private detail must never escape"\necho "WARN: supported signaling backend lacks the optional changed-users optimization"\necho "PASS: Talk stub"\nexit 0\n' > "$rvd/scripts/talk-smoke.sh"
+  rout="$(ROOT="$rvd" cmd_revalidate 2>&1)"; rrc=$?
+  check "revalidate preserves the known Talk warning without exposing other details" \
+    '[ "$rrc" -eq 0 ] && case "$rout" in *"ADVERTENCIA: Talk"*"changed-users"*"REVALIDACIÓN: PASS"*) ;; *) false;; esac && case "$rout" in *"synthetic private detail"*) false;; *) true;; esac'
+  printf '#!/usr/bin/env bash\necho "PASS: Talk stub"\nexit 0\n' > "$rvd/scripts/talk-smoke.sh"
   printf '#!/usr/bin/env bash\necho "FAIL: AppAPI daemon unreachable"\nexit 1\n' > "$rvd/scripts/appapi-smoke.sh"
   rout="$(ROOT="$rvd" cmd_revalidate 2>&1)"; rrc=$?
   check "revalidate refuses an unreachable AppAPI daemon beside otherwise healthy gates" \
@@ -3945,7 +3955,7 @@ elif sys.argv[1:] == ["opcionales"]:
     print("farmacia\toff\tFarmacia")
 PYEOF
   # the three gates revalidate runs, stubbed green (their own arms are above)
-  for g in smoke office-smoke appapi-smoke divergence; do
+  for g in smoke office-smoke appapi-smoke talk-smoke divergence; do
     printf '#!/usr/bin/env bash\necho "PASS: %s stub"\nexit 0\n' "$g" > "$act/repo/scripts/$g.sh"
   done
   chmod +x "$act/repo/scripts/"*.sh

@@ -2771,6 +2771,15 @@ elif a[0] in ('config:app:set', 'config:system:set'):
     s['config'][key] = a[3:]
     save()
     print('Config value were not updated' if old == a[3:] else "Config value 'key' for app 'app' is now set to 'synthetic secret must never escape'")
+elif a[0] == 'config:list':
+    save()
+    print('{broken' if s.get('malformed_config') else json.dumps({'apps': {'spreed': s['config'].get('spreed', {})}}))
+elif a[0] == 'config:import':
+    payload = json.load(sys.stdin)
+    assert set(payload) == {'apps'} and set(payload['apps']) == {'spreed'}
+    s['config'].setdefault('spreed', {}).update(payload['apps']['spreed'])
+    s.setdefault('imports', []).append(payload)
+    save()
 elif a[0] == 'config:system:get':
     save(); print('OCA\\Eurooffice\\Preview')
 elif a[0].endswith(':configure'):
@@ -2867,6 +2876,41 @@ else:
     assert not any(call[0] == 'app:install' for call in state['calls'])
     reset()
     run('unknown', success=False)
+    talk = dict(TALK_ENABLED='yes', TALK_HOST='aps-conecta-talk', TALK_PORT='3478',
+                TURN_SECRET='synthetic secret must never escape " \\ $',
+                SIGNALING_SECRET='synthetic secret must never escape " \\ $')
+    reset()
+    state, output = run('talk', extra=talk)
+    assert 'deferred' in output and not state.get('imports')
+    reset(disabled=['spreed'])
+    state, output = run('talk', extra=talk)
+    assert state['enabled'] == ['spreed']
+    config = state['config']['spreed']
+    assert json.loads(config['signaling_servers']) == {
+        'servers': [{'server': 'https://test.invalid/standalone-signaling/', 'verify': True}],
+        'secret': talk['SIGNALING_SECRET']}
+    assert json.loads(config['turn_servers']) == [{'schemes': 'turn', 'server': 'test.invalid:3478',
+        'protocols': 'udp,tcp', 'secret': talk['TURN_SECRET']}]
+    assert json.loads(config['stun_servers']) == ['test.invalid:3478']
+    assert config['certificate_expiration_days'] == '2'
+    assert len(state['imports']) == 1
+    state, output = run('talk', extra=talk)
+    assert len(state['imports']) == 1 and ' -> ' not in output, 'Repeated Talk wiring must not write'
+    rotated = dict(talk, SIGNALING_SECRET=talk['SIGNALING_SECRET'] + ' rotated')
+    state, _ = run('talk', extra=rotated)
+    assert set(state['imports'][-1]['apps']['spreed']) == {'signaling_servers'}
+    assert json.loads(state['config']['spreed']['signaling_servers'])['secret'] == rotated['SIGNALING_SECRET']
+    assert 'synthetic secret must never escape' not in json.dumps(state['calls']), 'Talk secrets entered process arguments'
+    for failure in ('app:list', 'app:enable', 'config:list', 'config:import'):
+        reset(disabled=['spreed'], fail=failure)
+        run('talk', success=False, extra=talk)
+    reset(enabled=['spreed'], malformed_config=True)
+    run('talk', success=False, extra=talk)
+    reset(enabled=['spreed'])
+    run('talk', success=False, extra=dict(talk, TURN_SECRET=''))
+    reset(enabled=['notify_push', 'spreed'])
+    state, _ = run('boot', extra=talk)
+    assert len(state['imports']) == 1, 'Boot must use the same Talk configuration owner'
 phase = pathlib.Path('provisioning/phases/14-office.sh').read_text()
 assert 'nc_exec --user www-data -- bash /configure-apps.sh eurooffice' in phase
 entrypoint = pathlib.Path('Containers/nextcloud/entrypoint.sh').read_text()
@@ -2875,6 +2919,217 @@ assert 'app:install' not in entrypoint
 PY
 }
 check app_startup_cases
+
+talk_smoke_cases() {
+  python3 - <<'PY'
+import copy, json, os, pathlib, shutil, subprocess, sys, tempfile
+with tempfile.TemporaryDirectory() as directory:
+    root = pathlib.Path(directory)
+    for name in ('scripts', 'bin'):
+        (root / name).mkdir()
+    for name in ('env.sh', 'talk-smoke.sh'):
+        shutil.copyfile('scripts/' + name, root / 'scripts' / name)
+    ca = root / 'ca.crt'
+    ca.touch()
+    state_path = root / 'state.json'
+    command = '#!' + sys.executable + '\n' + r'''
+import json, os, pathlib, sys
+p = pathlib.Path(os.environ['TALK_SMOKE_STATE'])
+s = json.loads(p.read_text())
+a = sys.argv[1:]
+s['calls'].append([pathlib.Path(sys.argv[0]).name, *a])
+p.write_text(json.dumps(s))
+if pathlib.Path(sys.argv[0]).name == 'curl':
+    if s.get('curl_failure'): print('synthetic secret must never escape', file=sys.stderr); sys.exit(60)
+    print(s['welcome'] + '\n' + s.get('http_status', '200'))
+elif a[0] == 'inspect':
+    print('NC_DOMAIN=192.0.2.50')
+else:
+    assert a[:5] == ['exec', '--user', 'www-data', 'aps-conecta-nextcloud', 'php']
+    name = a[6]
+    assert name in s['native']
+    if s.get('native_failure') == name: print('synthetic secret must never escape'); sys.exit(2)
+    print(s['native'][name])
+    sys.exit(s.get('setup_exit', 0) if name == 'setupchecks' else 0)
+'''
+    for name in ('docker', 'curl'):
+        path = root / 'bin' / name
+        path.write_text(command)
+        path.chmod(0o755)
+    check = 'OCA\\Talk\\SetupCheck\\HighPerformanceBackend'
+    base = {'calls': [], 'welcome': '{"nextcloud-spreed-signaling":"Welcome","version":"2.1.1"}', 'native': {
+        'talk:signaling:list': json.dumps({'servers': [{'server': 'https://192.0.2.50/standalone-signaling/', 'verify': True}], 'secret': 'synthetic secret must never escape'}),
+        'talk:turn:list': json.dumps([{'schemes': 'turn', 'server': '192.0.2.50:3478', 'protocols': 'udp,tcp', 'secret': 'synthetic secret must never escape'}]),
+        'talk:stun:list': '["192.0.2.50:3478"]',
+        'setupchecks': json.dumps({'talk': {check: {'severity': 'success'}},
+            'system': {'OCA\\Settings\\SetupChecks\\MemcacheConfigured': {'severity': 'success'}}}),
+        'config:system:get': '\\OC\\Memcache\\Redis'}}
+    env = dict(os.environ, PATH=str(root / 'bin') + os.pathsep + os.environ['PATH'],
+               SUITE_CA=str(ca), TALK_SMOKE_STATE=str(state_path), NC_CONTAINER='aps-conecta-nextcloud')
+    def run(state, success=True):
+        state_path.write_text(json.dumps(state))
+        result = subprocess.run(['bash', str(root / 'scripts/talk-smoke.sh')], env=env,
+                                capture_output=True, text=True, timeout=20)
+        assert (result.returncode == 0) == success, result.stdout + result.stderr
+        assert 'synthetic secret must never escape' not in result.stdout + result.stderr
+        state = json.loads(state_path.read_text())
+        state['output'] = result.stdout + result.stderr
+        return state
+    state = run(base)
+    assert any(call[0] == 'docker' and 'setupchecks' in call for call in state['calls']), 'Talk smoke must run the native signaling check'
+    curl = next(call for call in state['calls'] if call[0] == 'curl')
+    assert '--cacert' in curl and str(ca) in curl
+    assert curl[-1] == 'https://192.0.2.50/standalone-signaling/api/v1/welcome'
+    assert not any(arg in ('-k', '--insecure', '-L', '--location') for arg in curl)
+    state = copy.deepcopy(base); state['setup_exit'] = 1
+    run(state)
+    state = copy.deepcopy(base)
+    checks = json.loads(state['native']['setupchecks'])
+    checks['talk'][check] = {'severity': 'warning', 'description':
+        'Warning: Running version: 2.1.1; Server does not support all features of this Talk version, missing features: changed-users'}
+    state['native']['setupchecks'] = json.dumps(checks)
+    state['setup_exit'] = 1
+    compatible = copy.deepcopy(state)
+    result = run(state)
+    assert 'WARN:' in result['output'] and any('config:system:get' in call for call in result['calls'])
+    checks['talk'][check]['description'] = 'Advertencia: Versión en ejecución: 2.1.1; El servidor no soporta todas las características de esta versión de Talk, características que faltan: changed-users'
+    state['native']['setupchecks'] = json.dumps(checks)
+    run(state)
+    for description in (
+        'Warning: Running version: 2.1.1; Server does not support all features of this Talk version, missing features: chat-relay, changed-users',
+        'Warning: Running version: 2.1.1; Server does not support all features of this Talk version, missing features: chat-relay; Server does not support all features of this Talk version, missing features: changed-users',
+        'It is highly recommended to configure a memory cache when running Nextcloud Talk with a High-performance backend.',
+    ):
+        state = copy.deepcopy(compatible)
+        checks = json.loads(state['native']['setupchecks'])
+        checks['talk'][check]['description'] = description
+        state['native']['setupchecks'] = json.dumps(checks)
+        run(state, success=False)
+    for cache_state in ('warning', 'error', 'missing'):
+        state = copy.deepcopy(compatible)
+        checks = json.loads(state['native']['setupchecks'])
+        checks['system'] = {} if cache_state == 'missing' else {'OCA\\Settings\\SetupChecks\\MemcacheConfigured': {'severity': cache_state}}
+        state['native']['setupchecks'] = json.dumps(checks)
+        run(state, success=False)
+    state = copy.deepcopy(compatible)
+    state['native']['config:system:get'] = '\\OC\\Memcache\\NullCache'
+    run(state, success=False)
+    for key, value in [('native_failure', 'config:system:get'), ('curl_failure', True), ('setup_exit', 2)]:
+        state = copy.deepcopy(compatible); state[key] = value
+        run(state, success=False)
+    state = copy.deepcopy(base)
+    state['native']['setupchecks'] = json.dumps({'talk': {check: {'severity': 'warning',
+        'description': 'synthetic secret must never escape; changed-users'}}})
+    result = run(state, success=False)
+    assert 'severity=warning; changed-users mentioned=yes' in result['output'], 'Native failure details must expose only safe diagnostic facts'
+    for name, value in [('talk:signaling:list', '[]'), ('talk:turn:list', '[]'),
+                        ('talk:stun:list', '["stun.nextcloud.com:443"]'), ('setupchecks', '{}'),
+                        ('setupchecks', json.dumps({'talk': {check: {'severity': 'warning'}}})),
+                        ('setupchecks', '{broken')]:
+        state = copy.deepcopy(base); state['native'][name] = value
+        run(state, success=False)
+    for key, value in [('native_failure', 'setupchecks'), ('curl_failure', True),
+                       ('welcome', '{}'), ('welcome', '{broken'), ('http_status', '302')]:
+        state = copy.deepcopy(base); state[key] = value
+        run(state, success=False)
+print('Talk smoke verifies native wiring, CA-verified public welcome and the native signaling diagnostic')
+PY
+}
+check talk_smoke_cases
+
+phase12_talk_cases() {
+  python3 - <<'PY'
+import hashlib, io, json, os, pathlib, shutil, subprocess, sys, tarfile, tempfile
+with tempfile.TemporaryDirectory() as directory:
+    root = pathlib.Path(directory)
+    for name in ('scripts', 'provisioning/phases', 'bin', 'store/spreed'):
+        (root / name).mkdir(parents=True)
+    for name in ('scripts/env.sh', 'scripts/apps.py', 'scripts/releases.py',
+                 'provisioning/lib.sh', 'provisioning/phases/12-apps.sh'):
+        shutil.copyfile(name, root / name)
+    (root / 'apps.json').write_text(json.dumps([
+        {'id':'spreed', 'source':'fork', 'repo':'APS-Conecta/spreed',
+         'release':True, 'optional':False, 'containers':[]}]))
+    package = root / 'store/spreed/v24.0.6.tar.gz'
+    with tarfile.open(package, 'w:gz') as archive:
+        content = b'<info><id>spreed</id><version>24.0.6</version></info>'
+        member = tarfile.TarInfo('spreed/appinfo/info.xml')
+        member.size = len(content)
+        archive.addfile(member, io.BytesIO(content))
+    (root / 'lock.json').write_text(json.dumps({'nextcloud':'34.0.5', 'apps':{'spreed':{
+        'tag':'v24.0.6', 'version':'24.0.6', 'sha256':hashlib.sha256(package.read_bytes()).hexdigest()}}}))
+    state_path = root / 'state.json'
+    docker = root / 'bin/docker'
+    docker.write_text('#!' + sys.executable + '\n' + r'''
+import io, json, os, pathlib, sys, tarfile, xml.etree.ElementTree as ET
+path = pathlib.Path(os.environ['TALK_PHASE_STATE'])
+state = json.loads(path.read_text())
+args = sys.argv[1:]
+assert args.pop(0) == 'exec'
+while args[0].startswith('-'):
+    option = args.pop(0)
+    if option == '--user': args.pop(0)
+    else: assert option == '-i'
+assert args.pop(0) == 'aps-conecta-nextcloud'
+state['calls'].append(args)
+def save(): path.write_text(json.dumps(state))
+if args[0] == 'awk':
+    save(); print(state.get('version', ''))
+elif args[0] == 'tar':
+    content = sys.stdin.buffer.read()
+    if state.get('fail') == 'install': save(); sys.exit(1)
+    with tarfile.open(fileobj=io.BytesIO(content), mode='r:gz') as archive:
+        state['version'] = ET.fromstring(archive.extractfile('spreed/appinfo/info.xml').read()).findtext('version')
+    save()
+elif args[0] == 'sh':
+    save(); assert 'test -e custom_apps/spreed/appinfo/signature.json' in args[2]
+    sys.exit(1)
+elif args[0] == 'php' and args[2] == 'config:list':
+    if state.get('fail') == 'config': save(); sys.exit(1)
+    save(); print(json.dumps({'apps':{'spreed':{'enabled':'yes' if state['enabled'] else 'no'}}}))
+elif args[0] == 'php' and args[2:4] == ['app:enable', 'spreed']:
+    state['enabled'] = True
+    save()
+elif args == ['bash', '/configure-apps.sh', 'talk']:
+    assert state['enabled'] and state['version'] == '24.0.6', 'Talk wiring ran before installation'
+    state['wired'] += 1
+    save()
+    if state.get('fail') == 'wire': sys.exit(1)
+else:
+    raise AssertionError('Unexpected container command')
+''')
+    docker.chmod(0o755)
+    env = dict(os.environ, PATH=str(root / 'bin') + os.pathsep + os.environ['PATH'],
+               APS_APPS_LOCK=str(root / 'lock.json'), APS_APPS_STORE=str(root / 'store'),
+               TALK_PHASE_STATE=str(state_path))
+    env.pop('NC_CONTAINER', None)
+    runner = '''set -euo pipefail
+source scripts/env.sh
+source provisioning/lib.sh
+HERE="$PWD/provisioning"
+SEED_CTX=1
+source provisioning/phases/12-apps.sh
+'''
+    def run(success=True):
+        result = subprocess.run(['bash', '-c', runner], cwd=root, env=env,
+                                capture_output=True, text=True, timeout=20)
+        assert (result.returncode == 0) == success, 'Phase 12 returned an unexpected status'
+        return json.loads(state_path.read_text())
+    state_path.write_text(json.dumps({'enabled':False, 'wired':0, 'calls':[]}))
+    state = run()
+    assert state['wired'] == 1, 'Phase 12 must wire Talk immediately after its signed release lands'
+    assert state['calls'].index(['php', '/var/www/html/occ', 'app:enable', 'spreed']) < state['calls'].index(['bash', '/configure-apps.sh', 'talk'])
+    state = run()
+    assert state['wired'] == 2, 'An already installed release must still converge its Talk configuration'
+    assert sum(call[0] == 'tar' for call in state['calls']) == 1, 'A repeated phase must preserve the installed release'
+    for failure in ('install', 'config', 'wire'):
+        state_path.write_text(json.dumps({'enabled':False, 'wired':0, 'calls':[], 'fail':failure}))
+        state = run(success=False)
+        assert state['wired'] == (1 if failure == 'wire' else 0)
+print('Phase 12 wires fresh and existing Talk releases and propagates installation/configuration failures')
+PY
+}
+check phase12_talk_cases
 
 # Janus uses its co-located TURN server before a public domain exists. Exercise
 # the real startup writer; only container paths and external discovery are fixtures.

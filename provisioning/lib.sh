@@ -392,7 +392,7 @@ ensure_release_app() {  # APPID ROW — install the release the lock names, from
     fi
   fi
 
-  conf_load
+  conf_load || { log "FAILED $app — cannot read installed app configuration"; return 1; }
   [ "$(conf_get app "$app" enabled 2>/dev/null || true)" = "yes" ] && { log "app $app enabled"; return 0; }
   local err
   if err="$(occ app:enable "$app" 2>&1)"; then

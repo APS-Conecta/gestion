@@ -739,6 +739,7 @@ jobs:
           bash /opt/aps-conecta/instalador/scripts/seed-idempotent.sh
           bash /opt/aps-conecta/instalador/scripts/divergence.sh --gate
           sudo bash /opt/aps-conecta/instalador/scripts/appapi-smoke.sh
+          sudo bash /opt/aps-conecta/instalador/scripts/talk-smoke.sh
           docker ps --filter name=aps-conecta-notify-push --filter status=running --format '{{.Names}}' \
             | grep -qx aps-conecta-notify-push \
             || { echo "FAIL: aps-conecta-notify-push is not running after the store-off reboot" >&2; exit 1; }
@@ -1241,6 +1242,7 @@ jobs:
           print('PASS: upload errors retain HTTP 500 and Spanish guidance; other responses stay intact without replay')
           PYRESPONSES
       - name: Install by IP through the silent command a clinic runs, choosing farmacia, estadistica and totem (#39, #40, #41)
+        id: install_by_ip
         run: |
           set -o pipefail   # run: is `bash -e` without it — the install's own failure, not tee's
           # Exercise an actual /20 with a same-/16 LAN outside it (#201).
@@ -1270,6 +1272,172 @@ jobs:
           set -euo pipefail
           [ "$(docker exec aps-conecta-apache printenv NC_DOMAIN)" = "$SUITE_IP" ]
           sudo bash /opt/aps-conecta/instalador/scripts/appapi-smoke.sh
+          sudo bash /opt/aps-conecta/instalador/scripts/talk-smoke.sh
+      - name: STUN and TURN record public reachability and private LAN relay policy
+        if: ${{ !cancelled() && steps.install_by_ip.conclusion == 'success' }}
+        run: |
+          set -euo pipefail
+          sudo ip link add aps-talk-lan type dummy
+          trap 'sudo ip link delete aps-talk-lan' EXIT
+          sudo ip addr add 192.168.32.2/24 dev aps-talk-lan
+          sudo ip link set aps-talk-lan up
+          sudo python3 - "$SUITE_IP" <<'PYTURN'
+          import base64, hashlib, hmac, json, os, select, socket, struct, subprocess, sys, time
+
+          COOKIE = 0x2112A442
+          server = (sys.argv[1], 3478)
+          client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+          client.connect(server)
+          client.settimeout(3)
+          peer = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+          peer.bind(('192.168.32.2', 0))
+          peer.settimeout(2)
+          receiver = None
+          key = None
+
+          def attribute(kind, value):
+              return struct.pack('!HH', kind, len(value)) + value + b'\0' * (-len(value) % 4)
+
+          def message(kind, body, transaction, signing_key=None):
+              header = struct.pack('!HHI12s', kind, len(body) + (24 if signing_key else 0), COOKIE, transaction)
+              if signing_key:
+                  body += attribute(8, hmac.new(signing_key, header + body, hashlib.sha1).digest())
+              return header + body
+
+          def decode(packet, signing_key=None):
+              kind, length, cookie, transaction = struct.unpack('!HHI12s', packet[:20])
+              assert cookie == COOKIE and length % 4 == 0 and len(packet) == 20 + length
+              values, offset, verified = {}, 20, False
+              while offset < len(packet):
+                  attr, size = struct.unpack('!HH', packet[offset:offset + 4])
+                  value = packet[offset + 4:offset + 4 + size]
+                  assert len(value) == size
+                  values[attr] = value
+                  if attr == 8 and signing_key:
+                      header = struct.pack('!HHI12s', kind, offset - 20 + 24, COOKIE, transaction)
+                      assert hmac.compare_digest(value, hmac.new(signing_key, header + packet[20:offset], hashlib.sha1).digest())
+                      verified = True
+                  offset += 4 + size + (-size % 4)
+              assert offset == len(packet) and (not signing_key or verified)
+              return kind, transaction, values
+
+          def request(kind, body, authenticated=False):
+              transaction = os.urandom(12)
+              if authenticated:
+                  body += attribute(6, username) + attribute(0x14, realm) + attribute(0x15, nonce)
+              packet = message(kind, body, transaction, key if authenticated else None)
+              for _ in range(3):
+                  client.send(packet)
+                  deadline = time.monotonic() + 3
+                  while time.monotonic() < deadline:
+                      try:
+                          response = decode(client.recv(65535), key if authenticated else None)
+                      except socket.timeout:
+                          break
+                      if response[1] == transaction:
+                          return response[0], response[2]
+              raise AssertionError('TURN response deadline')
+
+          def xor_address(address):
+              ip, port = address
+              return struct.pack('!BBHI', 0, 1, port ^ (COOKIE >> 16), int.from_bytes(socket.inet_aton(ip)) ^ COOKIE)
+
+          def address(value):
+              reserved, family, port, ip = struct.unpack('!BBHI', value)
+              assert reserved == 0 and family == 1
+              return socket.inet_ntoa((ip ^ COOKIE).to_bytes(4)), port ^ (COOKIE >> 16)
+
+          def error_code(values):
+              return (values[9][2] & 7) * 100 + values[9][3]
+
+          def send_to(destination, payload):
+              client.send(message(0x16, attribute(0x12, xor_address(destination)) + attribute(0x13, payload), os.urandom(12)))
+
+          def receive_from(destination, payload):
+              kind, _, values = decode(client.recv(65535))
+              assert kind == 0x17 and address(values[0x12]) == destination and values[0x13] == payload
+
+          try:
+              kind, values = request(1, b'')
+              assert kind == 0x101 and address(values[0x20])[1] > 0
+              print('PASS: public server port 3478 answers a real STUN binding request', flush=True)
+              transport = attribute(0x19, b'\x11\0\0\0')
+              kind, values = request(3, transport)
+              assert kind == 0x113 and error_code(values) == 401
+              realm, nonce = values[0x14], values[0x15]
+              secret = subprocess.run(['docker', 'exec', 'aps-conecta-talk', 'printenv', 'TURN_SECRET'],
+                                      capture_output=True, check=True).stdout.strip()
+              assert secret
+              username = (str(int(time.time()) + 600) + ':aps-187-probe').encode()
+              password = base64.b64encode(hmac.new(secret, username, hashlib.sha1).digest())
+              key = hashlib.md5(username + b':' + realm + b':' + password).digest()
+              kind, values = request(3, transport, authenticated=True)
+              assert kind == 0x103 and struct.unpack('!I', values[0x0d])[0] > 0
+              relay = address(values[0x16])
+              print('PASS: TURN authenticates a real UDP allocation with verified message integrity', flush=True)
+              talk_ip = subprocess.run(['docker', 'inspect', '--format',
+                  '{{(index .NetworkSettings.Networks "nextcloud-aio").IPAddress}}', 'aps-conecta-talk'],
+                  capture_output=True, text=True, check=True).stdout.strip()
+              assert talk_ip != '192.168.32.2' and relay[0] == talk_ip
+              control = (talk_ip, 40000)
+              receiver = subprocess.Popen(['docker', 'exec', '-i', 'aps-conecta-talk',
+                  'timeout', '30', 'nc', '-u', '-l', '-p', '40000'], stdin=subprocess.PIPE,
+                  stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+              kind, _ = request(8, attribute(0x12, xor_address(control)), authenticated=True)
+              assert kind == 0x108
+              payload = b'aps-turn-187-out\n'
+              for _ in range(3):
+                  send_to(control, payload)
+                  if select.select([receiver.stdout], [], [], 2)[0]:
+                      assert receiver.stdout.readline() == payload
+                      break
+              else:
+                  raise AssertionError('Allowed TURN peer did not receive relay data')
+              reply = b'aps-turn-187-back\n'
+              receiver.stdin.write(reply)
+              receiver.stdin.flush()
+              receive_from(control, reply)
+              print('PASS: the explicitly allowed private Talk peer exchanges actual relay data in both directions', flush=True)
+              lan = peer.getsockname()
+              kind, values = request(8, attribute(0x12, xor_address(lan)), authenticated=True)
+              if kind == 0x118:
+                  assert error_code(values) == 403
+                  send_to(lan, payload)
+                  try:
+                      peer.recvfrom(65535)
+                  except socket.timeout:
+                      pass
+                  else:
+                      raise AssertionError('A denied private LAN peer received relay data')
+                  print('PASS: TURN refuses the unlisted private LAN peer with authenticated 403 and forwards no data', flush=True)
+              else:
+                  assert kind == 0x108
+                  send_to(lan, payload)
+                  received, origin = peer.recvfrom(65535)
+                  assert received == payload and origin == relay
+                  peer.sendto(reply, origin)
+                  receive_from(lan, reply)
+                  print('PASS: the private LAN peer exchanges actual relay data in both directions', flush=True)
+          except Exception:
+              print('FAIL: the bounded STUN/TURN relay experiment did not establish its protocol verdict', file=sys.stderr)
+              sys.exit(1)
+          finally:
+              if key:
+                  try:
+                      request(4, attribute(0x0d, struct.pack('!I', 0)), authenticated=True)
+                  except Exception:
+                      pass
+              client.close()
+              peer.close()
+              if receiver:
+                  receiver.stdin.close()
+                  receiver.terminate()
+                  try:
+                      receiver.wait(timeout=3)
+                  except subprocess.TimeoutExpired:
+                      receiver.kill()
+                      receiver.wait()
+          PYTURN
       - name: Hand the checkout back to the runner
         if: always()
         run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
@@ -2204,6 +2372,7 @@ jobs:
           [ "$(docker inspect -f '{{.State.StartedAt}}' aps-conecta-apache)" = "$arranque" ] \
             || { echo "FAIL: the weekly run restarted apache with nothing renewed" >&2; exit 1; }
           sudo bash /opt/aps-conecta/instalador/scripts/appapi-smoke.sh
+          sudo bash /opt/aps-conecta/instalador/scripts/talk-smoke.sh
           sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
       # #176: an establishment has as many accounts as it has staff. Upstream counts every enabled
       # account against AIO's one-click limit inside createUser (web, OCS and occ user:add alike);

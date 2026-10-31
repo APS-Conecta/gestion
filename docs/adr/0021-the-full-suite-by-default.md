@@ -16,7 +16,13 @@ off until the measured hardware policy in #189/#190 permits it.
 This amends [ADR-0020](0020-spreed-is-a-fork-app-with-signed-releases.md): there is no Talk switch
 in the wizard, saved options, resolver, provisioning or acceptance. Spreed always follows its
 signed fork release and lock. Its wiring must converge during provisioning, replacing the
-next-boot policy. The latter implementation belongs to #187: #183 establishes the service set,
+next-boot policy. Implementation #187 calls the shared startup module directly after phase 12
+installs Spreed, including repeated provisioning. Native configuration imports carry changed
+settings through stdin. Its readiness gate verifies configured endpoints, the public welcome
+route with the suite CA and Talk's registered signaling diagnostic. Native diagnostics preserve
+wiring and may initialize token keys and record backend capabilities.
+
+#183 establishes the service set,
 #184–#186 supply antivirus, full-text and AppAPI integration, and #187 supplies provisioning-time
 Talk wiring. Container presence alone is not evidence that those integrations work.
 

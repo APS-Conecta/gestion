@@ -72,6 +72,9 @@ requests stay direct; bypasses include the inspected suite network and service i
 The native AppAPI daemon hostname also bypasses the proxy. HaRP trusts the public suite CA
 alongside system roots before its upstream agent starts; revalidation checks both directions (#186).
 Image discovery accepts Docker and OCI image manifests and their indexes from the suite registry (#243).
+Talk wiring has one boot/provisioning owner: phase 12 calls it after the signed release installs,
+and native imports carry changed settings through stdin. Revalidation checks the configured
+endpoints, verified public HTTPS welcome and native signaling diagnostics (#187).
 
 The wizard's complete start path catches failures and finishes its existing HTML stream
 with an explicit result. The host requires that result before reporting success. Image pulls

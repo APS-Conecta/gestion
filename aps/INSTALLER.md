@@ -271,8 +271,14 @@ the acceptance record. When updating a clinic:
 aps-conecta revalidate
 ```
 
-right after the update lands — smoke, office-smoke and the divergence gate, aggregated; a red
-names its failed gate. An install from v0.3.0 or earlier runs the suite under upstream's container
+right after the update lands — smoke, office, AppAPI, Talk and divergence, aggregated; a red
+names its failed gate. Phase 12 configures Talk immediately after its signed release installs,
+using the same owner as boot. Talk checks native TURN/STUN/signaling settings, the public
+CA-verified welcome route and Nextcloud's native signaling diagnostic. It preserves wiring;
+native diagnostics may initialize signing keys and record backend capabilities.
+The supported server's exact optional `changed-users` warning remains visible and additionally
+requires native Redis cache verification (ADR-0024). Every other signaling warning or error fails.
+An install from v0.3.0 or earlier runs the suite under upstream's container
 names; the suite now names them `aps-conecta-*` and does not migrate them: reinstall it. Three
 honest notes:
 

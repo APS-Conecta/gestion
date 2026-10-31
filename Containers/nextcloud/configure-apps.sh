@@ -138,7 +138,7 @@ startup_office() {
 }
 
 startup_talk() {
-    local TALK_HOST="${TALK_HOST:-}" TURN_DOMAIN="${TURN_DOMAIN:-}" HPB_PATH="${HPB_PATH:-}" STUN_SERVER turn_servers signaling_servers
+    local TALK_HOST="${TALK_HOST:-}" TURN_DOMAIN="${TURN_DOMAIN:-}" HPB_PATH="${HPB_PATH:-}" snapshot settings
     if [ "$TALK_ENABLED" = 'yes' ]; then
         if [ -z "$TALK_HOST" ] || echo "$TALK_HOST" | grep -q "aps-conecta-talk"; then
             TALK_HOST="$NC_DOMAIN"
@@ -151,26 +151,39 @@ startup_talk() {
         ensure_startup_app spreed || rc=$?
         [ "$rc" -ne 2 ] || return 0
         [ "$rc" -eq 0 ] || return "$rc"
-        # We auto-renew the certs via caddy so the outdated cert warning should not be displayed
-        startup_app_set spreed certificate_expiration_days --type=integer --value="2" || return 1
-        # Add turn server
-        # shellcheck disable=SC2153
-        turn_servers="$(startup_occ talk:turn:list --output=plain)" || return 1
-        if ! grep server <<< "$turn_servers" | grep -qF " $TURN_DOMAIN:$TALK_PORT"; then
-            php /var/www/html/occ talk:turn:add turn "$TURN_DOMAIN:$TALK_PORT" "udp,tcp" --secret="$TURN_SECRET" || return 1
-        fi
-        # Add stun server
-        STUN_SERVER="$(php /var/www/html/occ talk:stun:list --output="plain")" || return 1
-        if ! echo "$STUN_SERVER" | grep -q " $TURN_DOMAIN:$TALK_PORT"; then
-            php /var/www/html/occ talk:stun:add "$TURN_DOMAIN:$TALK_PORT" || return 1
-        fi
-        if [ -z "$STUN_SERVER" ] || echo "$STUN_SERVER" | grep -oP '[a-zA-Z.:0-9]+' | grep -q "^stun.nextcloud.com:443$"; then
-            php /var/www/html/occ talk:stun:delete "stun.nextcloud.com:443" || return 1
-        fi
-        # Add HPB
-        signaling_servers="$(startup_occ talk:signaling:list --output=plain)" || return 1
-        if ! grep -qF "https://$TALK_HOST$HPB_PATH" <<< "$signaling_servers"; then
-            php /var/www/html/occ talk:signaling:add "https://$TALK_HOST$HPB_PATH" "$SIGNALING_SECRET" --verify || return 1
+        snapshot="$(startup_occ config:list spreed --private --output=json 2>/dev/null)" || {
+            echo "app-startup: failed to read Talk configuration" >&2; return 1;
+        }
+        # Native import merges only changed keys. Secrets stay in stdin and the
+        # container environment, including when a secret changes on a warm server.
+        settings="$(printf '%s' "$snapshot" | php -r '
+            try {
+                $current = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+                $current = $current["apps"]["spreed"] ?? null;
+                if (!is_array($current)) { exit(1); }
+                $turn = getenv("TURN_SECRET");
+                $signaling = getenv("SIGNALING_SECRET");
+                if (!$turn || !$signaling) { exit(1); }
+                $desired = [
+                    "certificate_expiration_days" => "2",
+                    "stun_servers" => json_encode([$argv[2]], JSON_THROW_ON_ERROR),
+                    "turn_servers" => json_encode([["schemes" => "turn", "server" => $argv[2],
+                        "protocols" => "udp,tcp", "secret" => $turn]], JSON_THROW_ON_ERROR),
+                    "signaling_servers" => json_encode(["servers" => [["server" => $argv[1],
+                        "verify" => true]], "secret" => $signaling], JSON_THROW_ON_ERROR),
+                ];
+                $changed = array_filter($desired, static fn($value, $key) =>
+                    ($current[$key] ?? null) !== $value, ARRAY_FILTER_USE_BOTH);
+                if ($changed) { echo json_encode(["apps" => ["spreed" => $changed]], JSON_THROW_ON_ERROR); }
+            } catch (Throwable $e) { exit(1); }
+        ' "https://$TALK_HOST$HPB_PATH" "$TURN_DOMAIN:$TALK_PORT")" || {
+            echo "app-startup: cannot prepare Talk configuration" >&2; return 1;
+        }
+        if [ -n "$settings" ]; then
+            printf '%s' "$settings" | startup_occ config:import >/dev/null 2>&1 || {
+                echo "app-startup: failed to configure Talk" >&2; return 1;
+            }
+            echo "app-startup: app:spreed:wiring -> updated"
         fi
 
     else
@@ -307,6 +320,7 @@ configure_startup_apps() {
         eurooffice) startup_office || rc=$? ;;
         antivirus) startup_clam || rc=$? ;;
         fulltextsearch) startup_fts || rc=$? ;;
+        talk) startup_talk || rc=$? ;;
         boot)
             startup_notify && startup_office && startup_talk && startup_recording &&
                 startup_clam && startup_fts && startup_harp || rc=$? ;;

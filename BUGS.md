@@ -132,6 +132,10 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-076 | a fresh installation skips the published database image and then reports it missing (#186, #243) | the registry client accepts OCI indexes and Docker manifests but omits OCI image manifests; GHCR answers 404 for the new PostgreSQL descriptor despite its published digest | the native registry request accepts the OCI image manifest alongside its existing formats; public-method fixtures cover every descriptor and unavailable registries, and the native installation uses a new verified all-image rehearsal |
 
+| A-077 | Talk is installed but its first revalidation reports unconfigured signaling (#187) | boot defers wiring until Spreed exists, and phase 12 installs the signed release without calling the shared configuration owner | phase 12 invokes the boot module after a successful fresh or existing release; native stdin imports converge only changed settings, and the shared Talk gate checks configuration, verified public welcome and native signaling diagnostics |
+
+| A-078 | readiness rejects the officially supported signaling backend for an unreleased optimization (#187) | the native compatibility API returns HTTP 200 with an optional `changed-users` warning, while the first gate requires literal setup-check success | ADR-0024 recognizes only that complete native warning, retains it visibly and verifies native Redis cache health independently; other warnings and errors remain fatal, with removal tied to an official supported release and native acceptance |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and
