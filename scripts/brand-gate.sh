@@ -804,9 +804,10 @@ container_names() {  # 240: the suite's 14 containers are aps-conecta-*, and no 
     [ -d "$TREE/$x" ] || { echo "  no such directory: $TREE/$x — the sweep would pass over nothing" >&2; return 1; }
   done
   # [a-z0-9-]*: a bare prefix (a filter or a str_starts_with on «nextcloud-aio-») is a miss too
+  # Bundled AppAPI requires the HaRP alias; inventory container names remain branded above.
   left="$(cd "$TREE" && find_matches -rhoE --exclude='*.md' 'nextcloud-aio-[a-z0-9-]*' php/containers.json php/src php/public \
             php/templates php/tests Containers \
-          | sort -u | find_matches -vxE 'nextcloud-aio-(mastercontainer|mastercontainer-tests|test|rundeps)')" || return 1
+          | sort -u | find_matches -vxE 'nextcloud-aio-(harp|mastercontainer|mastercontainer-tests|test|rundeps)')" || return 1
   [ -z "$left" ] || { echo "  old names left in the swept files: $(echo "$left" | tr '\n' ' ')" >&2; fail=1; }
   [ "$fail" -eq 0 ]
 }

@@ -321,6 +321,12 @@ readonly class DockerActionManager {
                 $exposedPorts[$portWithProtocol] = null;
             }
             $requestBody['HostConfig']['NetworkMode'] = 'nextcloud-aio';
+            if ($container->identifier === 'aps-conecta-harp') {
+                // Bundled AppAPI registers this hostname before provisioning.
+                $requestBody['NetworkingConfig']['EndpointsConfig']['nextcloud-aio'] = [
+                    'Aliases' => ['nextcloud-aio-harp'],
+                ];
+            }
         } else {
             $requestBody['HostConfig']['NetworkMode'] = 'host';
         }

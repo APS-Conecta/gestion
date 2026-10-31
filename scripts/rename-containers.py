@@ -32,6 +32,7 @@ SWEEP = (
 )
 # nextcloud-aio-<...> tokens that stay: anything else left in the sweep is a miss
 KEPT = {
+    "nextcloud-aio-harp",  # bundled AppAPI's network alias, never the container name
     "nextcloud-aio-mastercontainer",  # the wizard itself (the host CLI's docker run, self-update)
     "nextcloud-aio-mastercontainer-tests",  # php/tests/package.json's npm name
     "nextcloud-aio-test",  # php/tests/compose.yaml's project name

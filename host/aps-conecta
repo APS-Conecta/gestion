@@ -716,6 +716,7 @@ prepare_proxy() {
     site_domain || true
     printf '%s\n' "${1:-}"
     suite_subnets || true
+    printf '%s\n' nextcloud-aio-harp  # Bundled AppAPI's internal daemon hostname.
     if [ -f "$ROOT/php/containers.json" ] && command -v python3 >/dev/null 2>&1; then
       python3 -c 'import json,sys; print("\n".join(c["container_name"] for c in json.load(open(sys.argv[1]))["aio_services_v1"]))' "$ROOT/php/containers.json"
     fi
