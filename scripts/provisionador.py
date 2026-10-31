@@ -234,7 +234,8 @@ TIMEOUTS = {"seed": 1800, "roster": 1800, "gate": 300, "suite": 900, "apps": 600
 PHASE_TITLES = {
     "05-security": "Seguridad de sesión", "06-jobs": "Tareas programadas",
     "07-certs": "Certificados del servidor", "10-locale": "Idioma y región (es-CL)",
-    "12-apps": "Aplicaciones de la suite", "14-office": "Oficina en línea",
+    "12-apps": "Aplicaciones de la suite", "14-antivirus": "Antivirus de archivos",
+    "14-office": "Oficina en línea",
     "15-branding": "Imagen de APS Conecta", "16-app-policy": "Aplicaciones por perfil",
     "20-groups": "Grupos: roles, categorías y equipos", "30-folders": "Carpetas compartidas",
     "40-acl": "Permisos de las carpetas", "41-intravox": "Portada del establecimiento",
