@@ -2970,7 +2970,9 @@ else:
                                 capture_output=True, text=True, timeout=20)
         assert (result.returncode == 0) == success, result.stdout + result.stderr
         assert 'synthetic secret must never escape' not in result.stdout + result.stderr
-        return json.loads(state_path.read_text())
+        state = json.loads(state_path.read_text())
+        state['output'] = result.stdout + result.stderr
+        return state
     state = run(base)
     assert any(call[0] == 'docker' and 'setupchecks' in call for call in state['calls']), 'Talk smoke must run the native signaling check'
     curl = next(call for call in state['calls'] if call[0] == 'curl')
@@ -2979,6 +2981,11 @@ else:
     assert not any(arg in ('-k', '--insecure', '-L', '--location') for arg in curl)
     state = copy.deepcopy(base); state['setup_exit'] = 1
     run(state)
+    state = copy.deepcopy(base)
+    state['native']['setupchecks'] = json.dumps({'talk': {check: {'severity': 'warning',
+        'description': 'synthetic secret must never escape; changed-users'}}})
+    result = run(state, success=False)
+    assert 'severity=warning; changed-users mentioned=yes' in result['output'], 'Native failure details must expose only safe diagnostic facts'
     for name, value in [('talk:signaling:list', '[]'), ('talk:turn:list', '[]'),
                         ('talk:stun:list', '["stun.nextcloud.com:443"]'), ('setupchecks', '{}'),
                         ('setupchecks', json.dumps({'talk': {check: {'severity': 'warning'}}})),
