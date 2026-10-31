@@ -31,6 +31,10 @@ fi
 # Delete all contents on startup to start fresh
 rm -fr /tmp/{*,.*}
 
+python3 /prepare-trust.py /etc/ssl/certs/ca-certificates.crt \
+    /usr/local/share/ca-certificates /conf || exit 1
+export SSL_CERT_FILE=/conf/ca-certificates.crt
+
 # Detect available hardware for transcoding and build the [ffmpeg] config section accordingly
 FFMPEG_SECTION="[ffmpeg]
 # common = ffmpeg -loglevel level+warning -n
