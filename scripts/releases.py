@@ -1042,7 +1042,7 @@ def selftest():
                   "source": "own", "repo": "APS-Conecta/totem", "tag": "v0.3.0",
                   "version": "0.3.0",
                   "sha256": sha256_file(store_file("totem", "v0.3.0"))})
-        # Legacy service selections cannot change signed Talk acquisition (ADR-0021).
+        # Legacy service selections leave official store apps outside the release resolver.
         os.environ["APS_APPS_LOCK"] = os.path.join(tmp, "sin-talk-lock.json")
         os.environ["APS_APPS_STORE"] = os.path.join(tmp, "sin-talk-store")
         with open(os.path.join(tmp, "prod-sin-talk"), "w", encoding="utf-8") as fh:
@@ -1051,10 +1051,10 @@ def selftest():
                               "--nextcloud", "34.0.4",
                               "--opciones", os.path.join(tmp, "prod-sin-talk")],
                              capture_output=True, text=True, timeout=120)
-        check("cli fetch ignores a legacy Talk-off selection and resolves the signed release (#183)",
+        check("cli fetch ignores legacy service selections and leaves official Talk to provisioning",
               run.returncode == 0
               and "spreed" not in read_lock()["apps"]
-              and os.path.exists(store_file("spreed", "v24.0.6"))
+              and not os.path.exists(store_file("spreed", "v24.0.6"))
               and read_lock()["apps"]["territorio"]["tag"] == "v0.80.0"
               and read_lock()["apps"]["farmacia"]["tag"] == "v0.12.0")
         # Plans and updates ignore the same legacy field.
@@ -1063,18 +1063,18 @@ def selftest():
                               "--opciones", os.path.join(tmp, "prod-sin-talk")],
                              capture_output=True, text=True, timeout=120)
         check("cli plan ignores a legacy Talk-off selection (#183)",
-              run.returncode == 0 and "spreed\tv24.0.6\tv24.0.6" in run.stdout
+              run.returncode == 0 and "spreed\t" not in run.stdout
               and "territorio\tv0.80.0" in run.stdout)
         candado_sin_talk = os.path.join(tmp, "sin-talk-lock.json")
         write_lock(candado_sin_talk, {"nextcloud": "34.0.4", "apps": {
             "spreed": {"source": "fork", "repo": "APS-Conecta/spreed", "tag": "v24.0.6",
-                       "version": "24.0.6", "sha256": sha256_file(store_file("spreed", "v24.0.6"))}}})
+                       "version": "24.0.6", "sha256": "0" * 64}}})
         nuevo_sin_talk = os.path.join(tmp, "sin-talk-lock.next.json")
         run = subprocess.run([sys.executable, os.path.abspath(__file__), "actualizar",
                               "--opciones", os.path.join(tmp, "prod-sin-talk"),
                               "--nuevo", nuevo_sin_talk, "--nextcloud", "34.0.4"],
                              capture_output=True, text=True, timeout=120)
-        check("cli actualizar verifies and refreshes spreed despite a legacy Talk-off selection (#183)",
+        check("cli actualizar preserves a stale store-transition lock without refreshing the retired fork",
               run.returncode == 0
               and read_lock(nuevo_sin_talk)["apps"]["spreed"]["tag"] == "v24.0.6")
         os.environ["APS_APPS_LOCK"] = os.path.join(tmp, "cli-lock.json")

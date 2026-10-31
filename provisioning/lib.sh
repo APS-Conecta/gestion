@@ -301,7 +301,7 @@ ensure_store_app() {  # APPID — install the store's newest compatible release,
     fi
   fi
 
-  conf_load
+  conf_load || return 1
   [ "$(conf_get app "$app" enabled 2>/dev/null || true)" = "yes" ] && { log "app $app enabled"; return 0; }
   # `app:enable` reads what is on disk and never contacts the store — no scope needed.
   if err="$(occ app:enable "$app" 2>&1)"; then
