@@ -16,6 +16,10 @@ checks CREATE on the parent of Nextcloud 34's generated
 probes delegate unchanged; core still enforces target UPDATE permissions. A share
 that permits updating but provides no writable staging location fails closed.
 
+Temporary chunk PUTs under `/dav/uploads/` retain core handling: Nextcloud probes
+them through its files view but writes them through a separate uploads view. The
+final MOVE still registers the guard and protects the assembled destination.
+
 This explicitly narrows AD-9 in ADR-0002 for this app to the standard private
 `OC\Files\Storage\Wrapper\Wrapper` base and that staging-name convention. Registration
 uses public events and `IStorageFactory`. A public-only decorator cannot preserve

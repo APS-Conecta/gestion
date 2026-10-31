@@ -118,6 +118,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-069 | an interrupted scanner connection returns an untranslated DAV HTTP 500 (#184) | unexpected connection exceptions bypass the antivirus app translation path | the existing ingress preserves HTTP 500 and supplies Spanish upload-recovery guidance; unrelated requests retain their original response |
 
+| A-070 | the first temporary chunk PUT returns HTTP 500 with the upload staging guard enabled (#184, #239) | Nextcloud probes chunk creatability through the files view but writes through the separate uploads view, so the guard rejects an absent parent in the wrong view | the signed guard leaves temporary PUTs under `/dav/uploads/` to core and retains guarded staging for final MOVE and ordinary file PUTs; the real two-chunk WebDAV probes cover infected assembly and the complete-file scan limit |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and
