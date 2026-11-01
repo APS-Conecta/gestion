@@ -136,6 +136,61 @@ PY
 }
 check service_secret_argv_cases
 
+aia_private_temp_cases() {
+  python3 - <<'PY'
+import json, os, pathlib, subprocess, tempfile, uuid
+with tempfile.TemporaryDirectory(prefix='aps ca test ') as directory:
+    root = pathlib.Path(directory)
+    for failure in ('none', 'copy', 'import'):
+        capture, cleanup = root / 'copy.json', root / 'cleanup.txt'
+        name = 'aps-196-' + uuid.uuid4().hex
+        env = dict(os.environ, CASE_CAPTURE=str(capture), CASE_CLEANUP=str(cleanup),
+                   CASE_CA_NAME=name, CASE_CA_FAILURE=failure)
+        result = subprocess.run(['bash', '-c', r'''
+set -e
+source scripts/env.sh
+source provisioning/lib.sh
+docker() {
+  if [ "$1" = cp ]; then
+    python3 - "$2" "$3" <<'CAPTURE'
+import json, os, pathlib, sys
+source = pathlib.Path(sys.argv[1])
+pathlib.Path(os.environ['CASE_CAPTURE']).write_text(json.dumps({
+    'source': str(source), 'destination': sys.argv[2],
+    'directory_mode': source.parent.stat().st_mode & 0o777,
+    'file_mode': source.stat().st_mode & 0o777}))
+CAPTURE
+    [ "$CASE_CA_FAILURE" != copy ]; return
+  fi
+  case "$*" in
+    *s_client*) printf 'http://example.test/%s.crt\n\nLEAF\n' "$CASE_CA_NAME" ;;
+    *'mktemp -d'*) echo /tmp/aps-ca.ABCDEF1234 ;;
+    *'openssl verify'*) echo PEM ;;
+    *'rm -rf'*) printf '%s\n' "$*" >> "$CASE_CLEANUP" ;;
+  esac
+  return 0
+}
+occ() {
+  case "$1" in
+    security:certificates) echo '[]' ;;
+    security:certificates:import) [ "$CASE_CA_FAILURE" != import ] ;;
+  esac
+}
+ensure_aia_intermediate example.test
+'''], env=env, capture_output=True, text=True, timeout=5)
+        assert result.returncode == 0, result.stderr
+        call = json.loads(capture.read_text())
+        assert call['directory_mode'] == 0o700, 'AIA certificate uses a shared temporary directory'
+        assert call['file_mode'] == 0o600, 'AIA certificate temporary file is not private'
+        source = pathlib.Path(call['source'])
+        assert source.name == name + '.pem' and not source.parent.exists()
+        assert call['destination'].endswith(':/tmp/aps-ca.ABCDEF1234/' + source.name)
+        assert '/tmp/aps-ca.ABCDEF1234' in cleanup.read_text()
+        assert ('imported ' in result.stdout) == (failure == 'none')
+PY
+}
+check aia_private_temp_cases
+
 trusted_proxy_network_cases() {
   python3 - <<'PY'
 import os, pathlib, subprocess, tempfile
