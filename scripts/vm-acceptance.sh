@@ -367,6 +367,8 @@ self_test() {
 case "$1" in
   estado) exit "$(cat "$SHIM_STATE/estado.rc" 2>/dev/null || echo 0)" ;;
   install) printf '%s\n' "$@" > "$SHIM_STATE/install.args"
+            rc="$(cat "$SHIM_STATE/install.rc" 2>/dev/null || echo 0)"
+            [ "$rc" = 0 ] || exit "$rc"
             printf 'INSTALACIÓN: ✓ — (shim)\n'; exit 0 ;;
   actualizar) if [ -x "$SHIM_STATE/revisar.hook" ]; then "$SHIM_STATE/revisar.hook"; fi
               cat "$SHIM_STATE/revisar.out" 2>/dev/null
@@ -517,6 +519,52 @@ HOOK
   check_actualizar_revisar >/dev/null
   t "revisar: red verdict when the lock moved" 0 '[ "$CHECKS_FAIL" = 1 ]'
   rm "$SHIM_STATE/revisar.hook"
+
+  # Drive the real main path with a failed command and otherwise healthy checks.
+  python3 - "$VMA_TREE/apps.json" "$fixtures" "$SHIM_STATE" <<'PY'
+import hashlib, json, pathlib, sys
+manifest, root, state = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]), pathlib.Path(sys.argv[3])
+lock = {"nextcloud": "34.0.5", "apps": {}}
+for app in json.loads(manifest.read_text()):
+    app_id = app["id"]
+    (state / f"occ.{app_id}.installed_version").write_text("1.2.0\n")
+    (state / f"occ.{app_id}.enabled").write_text("yes\n")
+    if app["source"] != "store":
+        package = root / "apps" / app_id / "v1.2.0.tar.gz"
+        package.parent.mkdir(parents=True, exist_ok=True)
+        package.write_bytes(b"verified fixture package\n")
+        lock["apps"][app_id] = {"source": app["source"], "tag": "v1.2.0", "version": "1.2.0",
+                                "sha256": hashlib.sha256(package.read_bytes()).hexdigest()}
+(root / "apps.lock.json").write_text(json.dumps(lock))
+PY
+  printf 'farmacia=1\nestadistica=1\ntotem=1\n' > "$fixtures/aio/opciones"
+  printf 'fixture CA\n' > "$fixtures/certificados/ca/aps-conecta-ca.crt"
+  printf 'Plan de actualización (modo --revisar: nada se escribe ni se cambia)\n' > "$SHIM_STATE/revisar.out"
+  printf '#!/bin/sh\nexit 0\n' > "$VMA_TREE/scripts/cleanboot-site.sh"
+  cat > "$SHIM_STATE/bootstrap.sh" <<'SH'
+#!/bin/sh
+printf 'firma verificada (signify, clave pública del proyecto)\n'
+printf 'Suite v1.0.0 en %s/instalador (paquete verificado en %s/paquete)\n' "$VMA_ROOT" "$VMA_ROOT"
+exit 0
+SH
+  cp "$shims/curl" "$SHIM_STATE/healthy-curl"
+  cat > "$shims/curl" <<'SH'
+#!/bin/sh
+case "$*" in
+  */releases/download/*-install.sh*) cat "$SHIM_STATE/bootstrap.sh" ;;
+  *) exec "$SHIM_STATE/healthy-curl" "$@" ;;
+esac
+SH
+  printf '#!/bin/sh\nprintf "Filesystem 1G-blocks Used Available Use%% Mounted on\\nfixture 40G 10G 30G 25%% /\\n"\n' > "$shims/df"
+  printf '#!/bin/sh\necho 0\n' > "$shims/id"
+  printf '#!/bin/sh\necho "1.1.1.1 dev eth0 src 10.0.0.9"\n' > "$shims/ip"
+  printf '#!/bin/sh\nexit 0\n' > "$shims/ss"
+  chmod +x "$shims"/* "$SHIM_STATE/healthy-curl"
+  printf '7\n' > "$SHIM_STATE/install.rc"
+  local main_rc=0
+  ( CHECKS_OK=0; CHECKS_FAIL=0; CHECKS_SKIP=0; main --tag v1.0.0 --continuar ) > "$SHIM_STATE/main.out" 2>&1 || main_rc=$?
+  t "main: a failed installation stays red when later checks pass" 0 \
+    '[ "$main_rc" = 1 ] && grep -q "✗ la instalación silenciosa" "$SHIM_STATE/main.out" && grep -q "^Veredicto:" "$SHIM_STATE/main.out"'
 
   # resolve_tag: the redirect resolves, the failure dies — both without the API
   cat > "$shims/curl" <<'SH'
