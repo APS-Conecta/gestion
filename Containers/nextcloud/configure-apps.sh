@@ -127,6 +127,28 @@ startup_wait() {
     done
 }
 
+startup_serverinfo() {
+    if [ -n "${SERVERINFO_TOKEN:-}" ] && \
+       [ -z "$(startup_occ config:app:get serverinfo token 2>/dev/null)" ]; then
+        startup_secret_set apps SERVERINFO_TOKEN serverinfo token || return 1
+    fi
+}
+
+startup_imaginary() {
+    if [ "${IMAGINARY_ENABLED:-}" = yes ]; then
+        startup_system_set enabledPreviewProviders 0 --value='OC\Preview\Imaginary' || return 1
+        startup_system_set enabledPreviewProviders 23 --value='OC\Preview\ImaginaryPDF' || return 1
+        startup_system_set preview_imaginary_url --value="http://$IMAGINARY_HOST:9000" || return 1
+        startup_secret_set system IMAGINARY_SECRET preview_imaginary_key || return 1
+    elif [ -n "$(startup_occ config:system:get preview_imaginary_url)" ]; then
+        local index
+        for index in 0 20 21 22 23; do
+            startup_occ config:system:delete enabledPreviewProviders "$index" || return 1
+        done
+        startup_occ config:system:delete preview_imaginary_url || return 1
+    fi
+}
+
 startup_office() {
     if [ "$EUROOFFICE_ENABLED" = 'yes' ]; then
         # Nextcloud 34 ships a first-party `office` overview app enabled by default. It is not this
@@ -384,7 +406,8 @@ configure_startup_apps() {
         talk) startup_talk || rc=$? ;;
         boot)
             startup_notify && startup_office && startup_talk && startup_recording &&
-                startup_clam && startup_fts && startup_harp || rc=$? ;;
+                startup_clam && startup_fts && startup_harp && startup_serverinfo &&
+                startup_imaginary || rc=$? ;;
         *) echo "app-startup: unknown target: $target" >&2; rc=1 ;;
     esac
     [ "$traced" -eq 0 ] || set -x

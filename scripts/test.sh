@@ -3275,10 +3275,15 @@ else:
         state_path.write_text(json.dumps(dict(enabled=list(enabled), disabled=list(disabled),
                                               config={}, calls=[], **extra)))
     def run(target='eurooffice', success=True, extra=None):
-        result = subprocess.run(['bash', '-x', str(module), target], env=dict(env, **(extra or {})),
+        effective = dict(env, **(extra or {}))
+        result = subprocess.run(['bash', '-x', str(module), target], env=effective,
                                 text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         assert (result.returncode == 0) == success, (result.returncode, result.stdout, result.stderr)
         assert 'synthetic secret must never escape' not in result.stdout + result.stderr
+        for key in ('EUROOFFICE_SECRET', 'TURN_SECRET', 'SIGNALING_SECRET', 'RECORDING_SECRET',
+                    'FULLTEXTSEARCH_PASSWORD', 'SERVERINFO_TOKEN', 'IMAGINARY_SECRET'):
+            value = effective.get(key)
+            assert not value or value not in result.stdout + result.stderr, f'{key} was printed'
         return json.loads(state_path.read_text()), result.stdout
     reset()
     state, output = run()

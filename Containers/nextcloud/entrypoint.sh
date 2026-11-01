@@ -637,9 +637,6 @@ if [ -n "$NEXTCLOUD_SKELETON_DIRECTORY" ]; then
         php /var/www/html/occ config:system:set skeletondirectory --value="$NEXTCLOUD_SKELETON_DIRECTORY"
     fi
 fi
-if [ -n "$SERVERINFO_TOKEN" ] && [ -z "$(php /var/www/html/occ config:app:get serverinfo token)" ]; then
-    php /var/www/html/occ config:app:set serverinfo token --value="$SERVERINFO_TOKEN"
-fi
 # Set maintenance window so that no warning is shown in the admin overview
 if [ -z "$NEXTCLOUD_MAINTENANCE_WINDOW" ]; then
     NEXTCLOUD_MAINTENANCE_WINDOW=100
@@ -707,23 +704,6 @@ fi
 
 # Managed apps share the same presence, enable and bounded configuration policy.
 configure_startup_apps || exit 1
-
-# Imaginary
-if [ "$IMAGINARY_ENABLED" = 'yes' ]; then
-    php /var/www/html/occ config:system:set enabledPreviewProviders 0 --value="OC\\Preview\\Imaginary"
-    php /var/www/html/occ config:system:set enabledPreviewProviders 23 --value="OC\\Preview\\ImaginaryPDF"
-    php /var/www/html/occ config:system:set preview_imaginary_url --value="http://$IMAGINARY_HOST:9000"
-    php /var/www/html/occ config:system:set preview_imaginary_key --value="$IMAGINARY_SECRET"
-else
-    if [ -n "$(php /var/www/html/occ config:system:get preview_imaginary_url)" ]; then
-        php /var/www/html/occ config:system:delete enabledPreviewProviders 0
-        php /var/www/html/occ config:system:delete preview_imaginary_url
-        php /var/www/html/occ config:system:delete enabledPreviewProviders 20
-        php /var/www/html/occ config:system:delete enabledPreviewProviders 21
-        php /var/www/html/occ config:system:delete enabledPreviewProviders 22
-        php /var/www/html/occ config:system:delete enabledPreviewProviders 23
-    fi
-fi
 
 # Remove the update skip file always
 rm -f "$NEXTCLOUD_DATA_DIR"/skip.update
