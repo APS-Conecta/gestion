@@ -6605,13 +6605,17 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   and ca_st1 == 200 and ca_suite_ip["ca"] == huella(os.path.join(publica, CA_PUBLICA))
                   and ca_st2 == 404 and ca_st3 == 200 and ca_suite_dom["ca"] == ""
                   and 'href="/api/ca" download' in screen_contenedores())
-            host = subprocess.run(["bash", HOST_CLI, "run-command", "203.0.113.10"],
-                                  env=dict(os.environ, APS_HOME=APS_HOME, APS_SUITE_TAG="v9.9.9"),
+            mount_env = {"PATH": old_path, "LANG": "C.UTF-8", "APS_HOME": os.path.join(tmp, "mount-home"),
+                         "APS_SUITE_TAG": "v9.9.9"}
+            configured = subprocess.run([sys.executable, "-c", defaults_query], cwd=HERE, env=mount_env,
+                                        capture_output=True, text=True, timeout=10)
+            paths = json.loads(configured.stdout) if configured.returncode == 0 else []
+            host = subprocess.run(["bash", HOST_CLI, "run-command", "203.0.113.10"], env=mount_env,
                                   capture_output=True, text=True, timeout=10)
             command = shlex.split(host.stdout.replace("\\\n", "")) if host.returncode == 0 else []
             check("suite certificate (R22): the host's two directories are the provisionador's own (one fact, two homes)",
-                  f"APS_TLS_DIR={CERT_DIR_DEFAULT}/{SUITE_TLS}" in command
-                  and f"NEXTCLOUD_TRUSTED_CACERTS_DIR={CERT_DIR_DEFAULT}/{SUITE_CA}" in command)
+                  len(paths) == 5 and f"APS_TLS_DIR={paths[4]}/{SUITE_TLS}" in command
+                  and f"NEXTCLOUD_TRUSTED_CACERTS_DIR={paths[4]}/{SUITE_CA}" in command)
             with open(os.path.join(ROOT_DIR, "provisioning", "lib.sh"), encoding="utf-8") as fh:
                 lib_txt = fh.read()
             check("suite certificate (R22): Nextcloud imports the CA by the file name this step writes (phase 07, mounted at the OS store)",
