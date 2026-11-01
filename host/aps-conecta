@@ -217,6 +217,7 @@ silent_suite() {
   # the daily backup, when the operator named a directory (#54): the browser step's own twin,
   # forwarded to the wizard drive — without it there is no backup scope and actualizar refuses
   [ -n "$SILENT_RESPALDO" ] && wizard_flags+=(--respaldo "$SILENT_RESPALDO")
+  [ "$SILENT_SKIP_DOMAIN_VALIDATION" = 0 ] || wizard_flags+=(--sin-validar-dominio)
   ( cmd_aio_wizard --dominio "$domain" "${wizard_flags[@]}" "${apps_flags[@]}" )
 }
 silent_equipos() { python3 "$(prov_path)" --paso usuarios --codigo "$(site_codigo)" --planilla "$SILENT_ROSTER"; }
