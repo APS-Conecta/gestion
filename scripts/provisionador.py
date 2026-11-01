@@ -6621,6 +6621,8 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
             check("suite certificate (R22): Nextcloud imports the CA by the file name this step writes (phase 07, mounted at the OS store)",
                   f"\nINSTALLER_CA=/usr/local/share/ca-certificates/{CA_PUBLICA}\n" in lib_txt)
             guias = []
+            with open(HOST_CLI, encoding="utf-8") as fh:
+                host_txt = fh.read()
             for rel in (("aps", "INSTALLER.md"), ("aps", "GUIA-CLINICA.md"), (".github", "workflows", "cleanboot.yml")):
                 with open(os.path.join(ROOT_DIR, *rel), encoding="utf-8") as fh:
                     guias.append(fh.read())
