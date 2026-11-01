@@ -150,6 +150,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-085 | Clean boot rejects a valid disk report between the existing minimum and recommended tiers (#197 prerequisite) | revisar succeeds at 23 GB and prints the 40 GB recommendation separately, but CI requires both tiers on one line | check the minimum disk result and either documented recommendation form; replaying the actual runner output passes, while removing the recommendation still fails; resource values remain unchanged |
 
+| A-086 | a fresh sector or unit member's first nested upload returns HTTP 500 (#198) | DAV's ancestor walk passes false FileInfo to its Directory constructor before a root listing materializes nested mount parents | the existing APS upload guard uses the public DAV event and Folder interface to initialize missing parents before resolution; native acceptance checks first-request creation, denied read-only/nonmember writes and unchanged official DAV integrity |
+
 | A-087 | pinned app releases bypass compatibility and downgrade checks; signed archives accept parent components and links (#199) | pin resolution returns before shared metadata validation; archive validation checks only the first path component | pins use signed Nextcloud metadata and the installed floor; archive validation rejects absolute paths, parent components and symbolic or hard links before storage |
 
 | A-088 | cached app archives bypass member validation during repair and unchanged updates (#199) | a matching stored hash returns before archive validation | revalidate cached members with the shared archive helper before reuse; unsafe cached packages stop both paths without advancing the lock |

@@ -33,3 +33,11 @@ successful overwrite uploads, rejected-overwrite preservation, chunk assembly,
 parent CREATE and target UPDATE enforcement, and the normal installation/update
 lifecycle. Remove the exception and app once an official supported release passes
 those same checks without the guard.
+
+## Amendment — 2026-11-01
+
+The app also initializes missing mount parents through the public DAV plugin event and
+Folder interface, after authentication and before target resolution. First uploads into
+sector and unit folders retain native permissions and official DAV integrity. The staging
+wrapper retires after its original checks pass without it; the mount listener retires when
+first-request acceptance passes without it. Remove the app after both fixes retire.
