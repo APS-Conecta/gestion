@@ -4055,7 +4055,10 @@ case "\$1 \$2" in
         fi
         echo '{"system":{}}' ;;
       *"config:app:get calendar"*) echo "4.7.15" ;;
-      *"config:system:get appstoreenabled"*) echo "\${TIENDA:-0}" ;;
+      *"config:system:get appstoreenabled"*)
+        [ ! -e "$act/store-state-read-failed" ] || exit 1
+        [ ! -e "$act/store-state-empty" ] || exit 0
+        echo "\${TIENDA:-0}" ;;
       *"occ app:enable territorio"*) if [ -e "$act/enable-failed" ]; then echo "synthetic enable failure"; exit 1; fi ;;
       *"occ app:getpath viejo"*) echo /var/www/html/custom_apps/viejo ;;
       *"occ app:getpath"*) exit 1 ;;
@@ -4242,6 +4245,20 @@ SHIM
         && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes" && [ ! -e "$act/home/apps.lock.json.next" ] \
         && ! grep -q "after-manifest-failure" "$act/docker.log"'
   done
+
+  : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"
+  cp "$act/lock.bytes" "$act/home/apps.lock.json"
+  rm -f "$act/aio.libre"; touch "$act/store-state-read-failed"
+  out="$( id() { echo 0; }; act46 2>&1 )"; arc=$?; rm -f "$act/store-state-read-failed"
+  check "actualizar: a failed final store-state read stops before lock promotion" \
+    '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "✗ tienda falló al aplicarse" \
+      && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes" && [ ! -e "$act/home/apps.lock.json.next" ]'
+  cp "$act/lock.bytes" "$act/home/apps.lock.json"
+  rm -f "$act/aio.libre"; touch "$act/store-state-empty"
+  out="$( id() { echo 0; }; act46 2>&1 )"; arc=$?; rm -f "$act/store-state-empty"
+  check "actualizar: a successful empty store-state read remains a valid false value" \
+    '[ "$arc" -eq 0 ] && printf "%s" "$out" | grep -qF "tienda cerrada (appstoreenabled=sin valor)" \
+      && grep -q "v0.80.0" "$act/home/apps.lock.json" && [ ! -e "$act/home/apps.lock.json.next" ]'
 
   # #172: an uninstall that fails is a failed apply like any other — named, nothing promoted
   : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"; cp "$act/lock.bytes" "$act/home/apps.lock.json"
