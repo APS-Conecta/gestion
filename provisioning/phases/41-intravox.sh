@@ -108,11 +108,11 @@ intravox_group_map
 # newline-joined: bash cannot export an array, render.py reads the environment.
 _lib="provisioning/intravox/es"
 _stage="$(mktemp -d)"
-trap 'rm -rf "$_stage" ${_import:+"$_import"}' EXIT   # every exit path, FATALs included (own subshell)
-chmod 755 "$_stage"   # mktemp gives 700 root:root and docker cp PRESERVES it — occ runs as
-# www-data, every file_exists() in the importer reads false, and the import exits 0 having
-# imported NOTHING (the silent-green this repo exists never to repeat; verified live). Files
-# inside land 644 via umask — the directory mode is the whole fix.
+_import=''; _container_stage=''
+trap '
+  rm -rf -- "$_stage" ${_import:+"$_import"} || true
+  [ -z "$_container_stage" ] || nc_exec -- rm -rf "$_container_stage" >/dev/null 2>&1 || true
+' EXIT
 # Nothing in sites/<slug>/site.sh is exported (seed.sh sources it; there is no set -a anywhere),
 # so EVERY value render.py reads is forwarded here by name — the identity block included. The
 # gate in scripts/test.sh asserts this list stays complete (a missing name is a FATAL on line one
@@ -195,24 +195,30 @@ if [ "$_first_run" = 1 ] || [ "${#_new_sections[@]}" -gt 0 ] || [ "${#_new_teams
   # every time any section or team is added — a deletion is a staff edit too.
   _import="$_stage"
   if [ "$_first_run" = 0 ]; then
-    _import="$(mktemp -d)"; chmod 755 "$_import"   # the same docker-cp mode trap as $_stage
+    _import="$(mktemp -d)"
     for _s in "${_new_sections[@]}"; do cp -a "$_stage/$_s" "$_import/"; done
     if [ "${#_new_teams[@]}" -gt 0 ] && [ ! -d "$_import/equipos" ]; then
       mkdir "$_import/equipos" && cp -a "$_stage/equipos/equipos.json" "$_import/equipos/"
       for _tg in "${_new_teams[@]}"; do cp -a "$_stage/equipos/$_tg" "$_import/equipos/"; done
     fi
   fi
-  # pre-clean: docker cp into an existing dir nests one level deeper and the retry imports
-  # nothing, silently (territorio cp's single files into /tmp/ for the same reason)
-  nc_exec -- rm -rf /tmp/intravox-welcome-es
-  nc_cp "$_import" /tmp/intravox-welcome-es
+  _candidate="$(nc_exec -- mktemp -d /tmp/aps-welcome.XXXXXXXXXX)" || {
+    echo "FATAL: could not prepare a private welcome import directory" >&2; exit 1;
+  }
+  [[ $_candidate =~ ^/tmp/aps-welcome\.[A-Za-z0-9]{10}$ ]] || {
+    echo "FATAL: invalid welcome import directory" >&2; exit 1;
+  }
+  _container_stage="$_candidate"
+  nc_cp "$_import/." "$_container_stage"
+  nc_exec -- chown -R www-data:www-data "$_container_stage"
   # --skip-existing is not optional, pruned import or not: without it the engine overwrites every
   # existing node it meets (the equipos hub above; a first run over a restored tree), so a failing
   # command is the correct outcome. An engine that predates the flag rejects it — promote the
   # engine first; never drop the flag to get past it.
-  occ intravox:import /tmp/intravox-welcome-es --language es --user admin --skip-existing >/dev/null \
+  occ intravox:import "$_container_stage" --language es --user admin --skip-existing >/dev/null \
     || { echo "FATAL: occ intravox:import --skip-existing failed — re-run it by hand without >/dev/null to see why; an IntraVox engine older than welcome-folders p3 rejects the flag: promote the engine before seeding (a tree is never overwritten to work around it)" >&2; exit 1; }
-  nc_exec -- rm -rf /tmp/intravox-welcome-es
+  nc_exec -- rm -rf "$_container_stage"
+  _container_stage=''
   if [ "$_first_run" = 1 ]; then
     log "  welcome: es tree created"
     for _s in "${_new_sections[@]}"; do log "  welcome: section $_s created"; done

@@ -429,6 +429,8 @@ if args and args[0] == "ps":
     else:
         print("aps-conecta-nextcloud")
     sys.exit(0)
+elif "mktemp" in args and "-d" in args:
+    print(args[-1].replace("XXXXXXXXXX", "abcdefghij"))
 elif "printenv" in args and "TALK_ENABLED" in args:   # the suite's Talk switch, as AIO sets it: yes or empty
     print(control.get("TALK_ENABLED", ""))
 elif "status" in args and "--output=json" in args:
