@@ -63,7 +63,10 @@ while IFS=$'\t' read -r -u 3 app repo; do
     ensure_store_app "$app" || exit 1
   fi
   if [ "$app" = spreed ]; then
-    nc_exec --user www-data -- bash /configure-apps.sh talk || exit 1
+    nc_exec --user www-data -- bash /configure-apps.sh talk || {
+      log "FAILED $app — falló la configuración de Talk"
+      exit 1
+    }
   fi
 done 3<<< "$manifest"
 
