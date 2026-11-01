@@ -2231,29 +2231,60 @@ print("ok")'
 
 comuna_archive_extraction_cases() {
   python3 - <<'PY'
-import os, pathlib, subprocess, sys, tempfile, zipfile
-source = pathlib.Path('scripts/comuna-package.sh').read_text()
-start = 'fetch_verify unidades-vecinales-2024 "$uv_url" "$uv_sha" "$work/uv.zip"\n'
-extract = source.split(start, 1)[1].split('shp=', 1)[0]
+import csv, hashlib, json, os, pathlib, shutil, subprocess, sys, tempfile, zipfile
+source = pathlib.Path.cwd()
+fixtures = source / 'tests/fixtures/comuna'
+uv = json.loads((fixtures / 'archive-uv-v1.geojson').read_text())
+cut = uv['features'][0]['properties']['t_com'].strip().zfill(5)
+with (fixtures / 'establecimientos-deis-v1.csv').open() as stream:
+    rows = list(csv.DictReader(stream, delimiter=';'))
+expected = [row for row in rows if row['ComunaCodigo'].strip().zfill(5) == cut]
+assert len(expected) == 1
 with tempfile.TemporaryDirectory(prefix='aps comuna archive ') as directory:
     root = pathlib.Path(directory)
     tools = root / 'bin'
     tools.mkdir()
+    for program in ('awk', 'curl', 'dirname', 'find', 'head', 'mkdir', 'mktemp', 'rm', 'sha256sum'):
+        (tools / program).symlink_to(shutil.which(program))
     (tools / 'python3').symlink_to(sys.executable)
+    converter = tools / 'ogr2ogr'
+    converter.write_text('#!' + sys.executable + '\n' + '''
+import pathlib, shutil, sys
+source, destination = pathlib.Path(sys.argv[-1]), pathlib.Path(sys.argv[-2])
+shutil.copyfile(source, destination)
+''')
+    converter.chmod(0o755)
     for valid in (True, False):
-        work = root / ('valid' if valid else 'invalid')
-        work.mkdir()
+        repo = root / ('valid' if valid else 'invalid')
+        for folder in ('scripts', 'provisioning/data', 'inputs', 'work'):
+            (repo / folder).mkdir(parents=True, exist_ok=True)
+        for name in ('scripts/env.sh', 'scripts/comuna-package.sh', 'provisioning/data/comunas-deis.csv'):
+            shutil.copyfile(source / name, repo / name)
+        archive_path = repo / 'inputs/unidades-vecinales-v1.zip'
         if valid:
-            with zipfile.ZipFile(work / 'uv.zip', 'w') as archive:
-                archive.writestr('nested/source.txt', b'archive boundary fixture\n')
+            with zipfile.ZipFile(archive_path, 'w') as archive:
+                archive.writestr('nested/source.shp', json.dumps(uv))
         else:
-            (work / 'uv.zip').write_bytes(b'invalid archive')
-        result = subprocess.run(['/bin/bash', '-e', '-c', extract],
-                                env=dict(os.environ, PATH=str(tools), work=str(work)),
-                                capture_output=True, text=True, timeout=5)
-        assert (result.returncode == 0) == valid, 'Comuna extraction requires an unavailable program or accepted an invalid archive'
+            archive_path.write_bytes(b'invalid archive')
+        csv_path = repo / 'inputs/establecimientos-deis-v1.csv'
+        shutil.copyfile(fixtures / csv_path.name, csv_path)
+        masters = [{'id': key, 'origin': path.as_uri(), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+                   for key, path in (('unidades-vecinales-2024', archive_path), ('minsal-deis-establecimientos', csv_path))]
+        (repo / 'provisioning/data/packages.json').write_text(json.dumps({'masters': masters}))
+        result = subprocess.run(['/bin/bash', 'scripts/comuna-package.sh', cut], cwd=repo,
+                                env=dict(os.environ, PATH=str(tools), WORK_DIR=str(repo / 'work')),
+                                capture_output=True, text=True, timeout=10)
+        assert (result.returncode == 0) == valid, 'Comuna extraction requires an unavailable program or accepted an invalid archive\n' + result.stderr
         if valid:
-            assert (work / 'uv/nested/source.txt').read_bytes() == b'archive boundary fixture\n'
+            package = next((repo / 'work').glob('comuna-package.*'))
+            areas = json.loads((package / ('uv-' + cut + '.geojson')).read_text())
+            places = json.loads((package / ('deis-establecimientos-' + cut + '.geojson')).read_text())
+            assert areas['comuna'] == places['comuna'] == cut
+            assert len(areas['features']) == len(places['features']) == 1
+            assert areas['features'][0]['properties']['uid'] == uv['features'][0]['properties']['t_id_uv_ca']
+            assert areas['features'][0]['properties']['name'] == uv['features'][0]['properties']['t_uv_nom']
+            assert places['features'][0]['properties']['uid'] == 'deis:' + expected[0]['EstablecimientoCodigo']
+            assert places['features'][0]['properties']['name'] == expected[0]['EstablecimientoGlosa']
 PY
 }
 check comuna_archive_extraction_cases
