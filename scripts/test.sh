@@ -77,8 +77,8 @@ testbed_install_command_cases() {
 STATE="$CASE_ROOT/state"
 check_ram() { :; }
 cmd_up > "$CASE_ROOT/without-passwords"
-printf 'fixture\n' > "$STATE/master.pw"
-printf 'fixture\n' > "$STATE/nextcloud.pw"
+rm -rf "$CASE_ROOT/state" "$CASE_ROOT/home"
+export CASE_PASSWORDS=1
 cmd_up > "$CASE_ROOT/with-passwords"
 SH
   cat > "$tmp/bin/docker" <<'SH'
@@ -88,6 +88,11 @@ case "$1" in
   info) printf '%s\n' "$CASE_ROOT" ;;
   inspect) exit 1 ;;
   run) printf 'run\n' >> "$CASE_ROOT/events"; printf '%s\0' "$@" > "$CASE_ROOT/run" ;;
+  exec)
+    if [ "${CASE_PASSWORDS:-}" = 1 ] && [[ "$*" == *'files:scan admin' ]]; then
+      printf 'fixture\n' > "$CASE_ROOT/state/master.pw"
+      printf 'fixture\n' > "$CASE_ROOT/state/nextcloud.pw"
+    fi ;;
 esac
 SH
   cat > "$tmp/bin/ip" <<'SH'
