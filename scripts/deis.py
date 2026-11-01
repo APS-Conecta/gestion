@@ -297,21 +297,19 @@ def write_site(row, snapshot, name, sectors, programs, path=None, domain=""):
     folders = ["Transversal"] + [f"Programas/{bare}" for _, _, bare in programs]
     folders += [f"Unidades/{u}" for u, _ in units] + [f"Sectores/{d}" for _, d, _ in sectors]
 
-    # Two levels, and the empty string is the point: phase 40 passes the third field UNQUOTED to
-    # gf_grant, so "" reaches it as no permission words at all — a bare grant, which is READ (#116).
-    # Every clinic written before 2026-08-01 got P on every row; that was the temporary widening for
-    # the tree reorganisation and it is over.
-    P, R = "read write delete", ""
+    # Owning groups manage and reshare; jefaturas also reshare units they can only read.
+    # Empty permission words keep Transversal read-only for all staff (#116, #144).
+    P, R = "read write delete share", ""
     acl = [f"Transversal|all-staff|{R}",          # staff read the shared area...
            f"Transversal|cat-jefaturas|{P}"]      # ...Jefaturas curate it
     for gid, _, bare in programs:
         acl += [f"Programas/{bare}|{gid}|{P}", f"Programas/{bare}|cat-jefaturas|{P}"]
     for unit, roles in units:
-        # A Jefatura READS a unit that has an owning role and MANAGES one that does not. Keyed on
+        # A Jefatura READS and SHARES a unit with an owning role and MANAGES one without. Keyed on
         # `roles` rather than on the name "Dirección", so a clinic that adds an unowned unit gets the
         # right answer without editing this, and one that gives Dirección an owner does too.
         acl += [f"Unidades/{unit}|{r}|{P}" for r in roles.split()]
-        acl += [f"Unidades/{unit}|cat-jefaturas|{R if roles.split() else P}"]
+        acl += [f"Unidades/{unit}|cat-jefaturas|{'read share' if roles.split() else P}"]
     for gid, display, _ in sectors:
         acl += [f"Sectores/{display}|{gid}|{P}", f"Sectores/{display}|cat-jefaturas|{P}"]
 

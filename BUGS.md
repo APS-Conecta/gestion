@@ -156,6 +156,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-090 | backup scope and completion instructions can use the default folder for a custom installation (#200) | a legacy host command writes an additional-directory file directly, and completion hardcodes the credentials path | remove the duplicate command, retain the wizard request as the configuration owner using APS_HOME, and print the selected credentials path |
 
+| A-091 | owning groups and read-only jefaturas cannot reshare library documents (#144) | generated managing and jefatura read grants omit the native share permission | add share to managing groups and read/share to jefaturas on units with owning roles; retain staff read-only access and verify native library sharing through Talk |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and

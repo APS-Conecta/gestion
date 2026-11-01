@@ -4333,6 +4333,13 @@ def selftest():
                                                             "reemplazar": True})
                     with open(sitio, encoding="utf-8") as fh:
                         despues = fh.read()
+                    acl_rows = subprocess.check_output(
+                        ["bash", "-c", 'source "$1"; printf "%s\\n" "${SITE_ACL[@]}"', "sh", sitio],
+                        text=True).splitlines()
+                    grants = {}
+                    for acl_row in acl_rows:
+                        mount, group, permissions = acl_row.split("|", 2)
+                        grants[mount, group] = set(permissions.split())
                     st5, viejo = api_generar({"codigo": "121567", "modo": "revision"})
                     with open(sitio, encoding="utf-8") as fh:   # a grant added by hand inside SITE_ACL
                         con_mano = fh.read().replace("SITE_ACL=(\n", "SITE_ACL=(\n  'Unidades/SOME|role-medico|'\n", 1)
@@ -4355,9 +4362,20 @@ def selftest():
                   st3 == 200 and hecho.get("reemplazados") is True
                   and "'sector-oriente|Sector Oriente'" in despues and "sector-sur" not in despues
                   and "'Sectores/Sector Oriente'" in despues
-                  and "'Sectores/Sector Oriente|sector-oriente|read write delete'" in despues
+                  and "'Sectores/Sector Oriente|sector-oriente|read write delete share'" in despues
                   and 'SITE_DOMINIO="clinica.example"' in despues and "SITE_WELCOME=(" in despues
                   and despues.count("SITE_ACL=(") == 1)
+            check("teams: owning groups manage and reshare while staff retain read access to Transversal (#144)",
+                  all(grants[owner] == {"read", "write", "delete", "share"} for owner in (
+                      ("Transversal", "cat-jefaturas"),
+                      ("Programas/Cardiovascular", "prog-cardiovascular"),
+                      ("Sectores/Sector Oriente", "sector-oriente"),
+                      ("Unidades/SOME", "role-administrativo-some"),
+                      ("Unidades/Dirección", "cat-jefaturas")))
+                  and grants["Transversal", "all-staff"] == set())
+            check("teams: jefaturas receive read and share on units with owning roles (#144)",
+                  all(grants["Unidades/" + unit, "cat-jefaturas"] == {"read", "share"}
+                      for unit in ("SOME", "Farmacia", "Dental", "OIRS", "Estadística-REM")))
             check("teams: a planilla naming a team «Reemplazar» removed is caught at «Revisar», with its line (R35)",
                   st_pl == 200 and st5 == 400
                   and "sector-sur" in " ".join(e["error"] for e in viejo.get("errores", []))
