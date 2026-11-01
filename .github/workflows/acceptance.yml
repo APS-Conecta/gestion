@@ -51,7 +51,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/acceptance"
           if sudo test -f "$RUNNER_TEMP/acceptance-private/bootstrap.out"; then
-            sudo cat "$RUNNER_TEMP/acceptance-private/bootstrap.out" > "$RUNNER_TEMP/acceptance/bootstrap.out"
+            sudo install -m 0644 "$RUNNER_TEMP/acceptance-private/bootstrap.out" "$RUNNER_TEMP/acceptance/bootstrap.out"
           fi
           docker ps -a --filter name=^aps-conecta- --filter name=^nextcloud-aio-mastercontainer$ \
             --format 'table {{.Names}}\t{{.Status}}' > "$RUNNER_TEMP/acceptance/containers.txt"
