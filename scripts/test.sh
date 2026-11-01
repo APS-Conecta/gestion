@@ -236,6 +236,57 @@ PY
 }
 check nextcloud_install_secret_cases
 
+nextcloud_database_secret_cases() {
+  python3 - <<'PY'
+import json, os, pathlib, re, subprocess, sys, tempfile
+source = pathlib.Path('Containers/nextcloud/start.sh').read_text()
+helper = re.search(r'(?ms)^repair_database_connection\(\) \(\n.*?^\)\n', source)
+start = source.index('# Fix false database connection')
+end = source.index('# Trust additional Cacerts', start)
+script = (helper.group() if helper else '') + '\n' + source[start:end]
+script = script.replace('"/var/www/html/', '"$CASE_ROOT/').replace('/var/www/html/', '"$CASE_ROOT"/')
+with tempfile.TemporaryDirectory(prefix='aps database repair ') as directory:
+    root = pathlib.Path(directory)
+    (root / 'config').mkdir()
+    (root / 'config/config.php').write_text("<?php $CONFIG = ['dbuser'=>'legacy', 'dbpassword'=>'old', 'dbname'=>'nextcloud_database'];\n")
+    calls, imported = root / 'calls.jsonl', root / 'import.json'
+    shim = root / 'su-exec'
+    shim.write_text('#!' + sys.executable + '\n' + '''
+import json, os, sys
+with open(os.environ['CASE_CALLS'], 'a') as output:
+    output.write(json.dumps({'argv': sys.argv[1:], 'password': os.environ.get('PGPASSWORD')}) + '\\n')
+os.execvp(sys.argv[2], sys.argv[2:])
+''')
+    shim.chmod(0o755)
+    for name in ('psql', 'sleep'):
+        path = root / name
+        path.write_text('#!/bin/sh\nexit 0\n')
+        path.chmod(0o755)
+    (root / 'occ').write_text('''<?php
+file_put_contents(getenv('CASE_IMPORT'), json_encode([
+    'data' => json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR),
+    'user' => getenv('NC_dbuser'), 'password' => getenv('NC_dbpassword'), 'database' => getenv('NC_dbname')], JSON_THROW_ON_ERROR));
+''')
+    for password in ('fixturecredential196', "synthetic repair password ' \" $ ;\nnext line"):
+        calls.unlink(missing_ok=True)
+        env = dict(os.environ, PATH=directory+':'+os.environ['PATH'], CASE_ROOT=directory,
+                   CASE_CALLS=str(calls), CASE_IMPORT=str(imported), POSTGRES_USER='oc_nextcloud',
+                   POSTGRES_DB='nextcloud_database', POSTGRES_HOST='database.invalid', POSTGRES_PORT='5432',
+                   POSTGRES_PASSWORD=password, AIO_LOG_LEVEL='debug')
+        result = subprocess.run(['bash', '-x', '-c', script], env=env, capture_output=True, text=True, timeout=5)
+        records = [json.loads(line) for line in calls.read_text().splitlines()]
+        assert all(password not in word for call in records for word in call['argv']), 'Database repair password entered process arguments'
+        assert result.returncode == 0
+        psql = [call for call in records if 'psql' in call['argv']]
+        assert len(psql) == 1 and psql[0]['password'] == password
+        data = json.loads(imported.read_text())
+        assert data['data'] == {'system': {'dbuser': 'oc_nextcloud', 'dbpassword': password, 'dbname': 'nextcloud_database'}}
+        assert (data['user'], data['password'], data['database']) == ('oc_nextcloud', password, 'nextcloud_database')
+        assert all(marker not in result.stdout + result.stderr for marker in ('fixturecredential196', 'synthetic repair password'))
+PY
+}
+check nextcloud_database_secret_cases
+
 aia_private_temp_cases() {
   python3 - <<'PY'
 import json, os, pathlib, subprocess, tempfile, uuid
