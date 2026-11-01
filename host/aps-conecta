@@ -4079,6 +4079,8 @@ case "\$1 \$2" in
         [ ! -e "$act/retirement-read-failed" ] || exit 124
         [ ! -e "$act/retirement-native-failed" ] || exit 1
         if [ -e "$act/retirement-invalid" ]; then echo 'synthetic invalid inventory'; exit 0; fi
+        if [ -e "$act/retirement-invalid-shape" ]; then echo '{"enabled":{},"disabled":["unexpected"]}'; exit 0; fi
+        if [ -e "$act/retirement-empty-disabled" ]; then echo '{"enabled":{"viejo":"1.0.0"},"disabled":[]}'; exit 0; fi
         echo '{"enabled":{"viejo":"1.0.0"},"disabled":{}}' ;;
       *"occ app:remove"*) if [ -e "$act/remove-mala" ]; then echo "viejo could not be removed"; exit 1; fi ;;
     esac ;;
@@ -4279,7 +4281,16 @@ SHIM
         && case "$fault" in spreed-install-failed) ! grep -q "/configure-apps.sh talk" "$act/docker.log" ;; talk-config-failed) grep -q "/configure-apps.sh talk" "$act/docker.log" ;; esac'
   done
 
-  for fault in retirement-read-failed retirement-native-failed retirement-invalid; do
+  : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"
+  cp "$act/lock.bytes" "$act/home/apps.lock.json"
+  rm -f "$act/aio.libre" "$act/home/apps.lock.json.next"; touch "$act/retirement-empty-disabled"
+  out="$( id() { echo 0; }; act46 2>&1 )"; arc=$?; rm -f "$act/retirement-empty-disabled"
+  check "actualizar: a native empty disabled-app group permits retirement and lock promotion" \
+    '[ "$arc" -eq 0 ] && grep -q "occ app:remove viejo" "$act/docker.log" \
+      && ! grep -q "viejo" "$act/home/apps.lock.json" && [ ! -e "$act/home/apps.lock.json.next" ] \
+      && printf "%s" "$out" | grep -qF "REVALIDACIÓN: PASS"'
+
+  for fault in retirement-read-failed retirement-native-failed retirement-invalid retirement-invalid-shape; do
     : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"
     cp "$act/lock.bytes" "$act/home/apps.lock.json"
     rm -f "$act/aio.libre" "$act/home/apps.lock.json.next"; touch "$act/$fault"
