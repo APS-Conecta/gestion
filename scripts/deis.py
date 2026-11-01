@@ -311,7 +311,7 @@ def write_site(row, snapshot, name, sectors, programs, path=None, domain=""):
         # `roles` rather than on the name "Dirección", so a clinic that adds an unowned unit gets the
         # right answer without editing this, and one that gives Dirección an owner does too.
         acl += [f"Unidades/{unit}|{r}|{P}" for r in roles.split()]
-        acl += [f"Unidades/{unit}|cat-jefaturas|{R if roles.split() else P}"]
+        acl += [f"Unidades/{unit}|cat-jefaturas|{'read share' if roles.split() else P}"]
     for gid, display, _ in sectors:
         acl += [f"Sectores/{display}|{gid}|{P}", f"Sectores/{display}|cat-jefaturas|{P}"]
 
