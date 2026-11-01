@@ -201,6 +201,20 @@ PY
 }
 check aia_private_temp_cases
 
+provisioning_has_no_shared_temp_paths() {
+  python3 - <<'PY'
+import pathlib, re
+for path in pathlib.Path('provisioning').rglob('*.sh'):
+    for number, line in enumerate(path.read_text().splitlines(), 1):
+        if line.lstrip().startswith('#') or '/tmp/' not in line:
+            continue
+        private_template = re.search(r'mktemp -d /tmp/[a-z-]+\.X{10}', line)
+        validated_result = '=~ ^/tmp/' in line
+        assert private_template or validated_result, f'{path}:{number}: shared temporary path'
+PY
+}
+check provisioning_has_no_shared_temp_paths
+
 trusted_proxy_network_cases() {
   python3 - <<'PY'
 import os, pathlib, subprocess, tempfile
