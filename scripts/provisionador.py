@@ -4517,6 +4517,42 @@ def selftest():
             site_pre = open(site_path("113314"), encoding="utf-8").read()
             cargos_113314 = [u for u in standing_uids(*site_arrays(site_path("113314"))) if u != "admin"]
 
+            import pwd, shutil
+            with tempfile.TemporaryDirectory(prefix="provisionador-home-") as isolated:
+                for relative in ("scripts/provisionador.py", "scripts/deis.py", "scripts/apps.py",
+                                 "scripts/images.py", "apps.json", "php/containers.json",
+                                 "provisioning/phases/20-groups.sh", "provisioning/standings.sh"):
+                    destination = os.path.join(isolated, relative)
+                    os.makedirs(os.path.dirname(destination), exist_ok=True)
+                    shutil.copy2(os.path.join(ROOT_DIR, relative), destination)
+                site = os.path.join(isolated, "sites", "113314", "site.sh")
+                os.makedirs(os.path.dirname(site))
+                with open(site, "w", encoding="utf-8") as fh:
+                    fh.write(site_pre)
+                roster = os.path.join(isolated, "people.csv")
+                with open(roster, "w", encoding="utf-8") as fh:
+                    fh.write(planilla(juan))
+                identity = {}
+                if os.geteuid() == 0:
+                    account = pwd.getpwnam("nobody")
+                    for directory, _dirs, files in os.walk(isolated):
+                        for path in [directory] + [os.path.join(directory, name) for name in files]:
+                            os.chown(path, account.pw_uid, account.pw_gid)
+                    identity = {"user": account.pw_uid, "group": account.pw_gid, "extra_groups": []}
+                home = os.path.join(isolated, "state")
+                child = subprocess.run([
+                    sys.executable, os.path.join(isolated, "scripts", "provisionador.py"),
+                    "--paso", "usuarios", "--codigo", "113314", "--planilla", roster,
+                ], env=dict(os.environ, APS_HOME=home), capture_output=True, text=True,
+                    timeout=30, **identity)
+                credentials = os.path.join(home, "credentials.txt")
+                check("--paso usuarios: APS_HOME owns the sealed credentials through the unprivileged CLI (#142)",
+                      child.returncode == 0 and os.path.isfile(credentials)
+                      and os.stat(credentials).st_mode & 0o777 == 0o600
+                      and f"Contraseñas selladas en {credentials}:" in child.stdout)
+                if child.returncode:
+                    print(child.stdout.strip() or child.stderr.strip())
+
             st, body = call("POST", "/api/usuarios", {"codigo": "113314",
                                                       "csv": "\ufeff" + planilla(maria, juan)})
             check("roster: a BOM semicolon CSV with accents validates (site team accepted)",
