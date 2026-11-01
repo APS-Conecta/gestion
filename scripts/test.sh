@@ -3697,7 +3697,8 @@ check bash scripts/env.sh --self-test
 # 1-4 and the connector answer) and a stub curl that records its argv and answers nothing; the gate's
 # FIRST curl is asserted, whatever its verdict.
 public_url_cases() {
-  local tmp gate first
+  local tmp gate first mode ca
+  local -a state
   tmp="$(mktemp -d)"; mkdir "$tmp/bin"; : > "$tmp/ca.crt"
   cat > "$tmp/bin/docker" <<'STUB'
 #!/usr/bin/env bash
@@ -3712,15 +3713,23 @@ exit 0
 STUB
   printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "$CURL_LOG"\nexit 7\n' > "$tmp/bin/curl"
   chmod +x "$tmp/bin/docker" "$tmp/bin/curl"
-  for gate in smoke:/status.php office-smoke:/eurooffice/healthcheck; do
+  mkdir -p "$tmp/home/certificados/ca"
+  : > "$tmp/home/certificados/ca/aps-conecta-ca.crt"
+  for mode in explicit home; do
+    ca="$tmp/ca.crt"; state=("SUITE_CA=$ca")
+    if [ "$mode" = home ]; then
+      ca="$tmp/home/certificados/ca/aps-conecta-ca.crt"; state=("APS_HOME=$tmp/home")
+    fi
+    for gate in smoke:/status.php office-smoke:/eurooffice/healthcheck; do
     : > "$tmp/curl.log"
-    PATH="$tmp/bin:$PATH" CURL_LOG="$tmp/curl.log" SUITE_CA="$tmp/ca.crt" HTTP_PORT=8180 \
+    PATH="$tmp/bin:$PATH" CURL_LOG="$tmp/curl.log" HTTP_PORT=8180 env -u SUITE_CA "${state[@]}" \
       bash "scripts/${gate%%:*}.sh" >/dev/null 2>&1
     first="$(head -1 "$tmp/curl.log")"
     case " $first " in
-      *" --cacert $tmp/ca.crt "*" https://203.0.113.10${gate#*:} "*|*" https://203.0.113.10${gate#*:} "*" --cacert $tmp/ca.crt "*) ;;
+      *" --cacert $ca "*" https://203.0.113.10${gate#*:} "*|*" https://203.0.113.10${gate#*:} "*" --cacert $ca "*) ;;
       *) echo "public URL: ${gate%%:*}'s first curl is «$first», not https://203.0.113.10${gate#*:} with the CA" >&2; rm -rf "$tmp"; return 1 ;;
     esac
+    done
   done
   rm -rf "$tmp"
 }
