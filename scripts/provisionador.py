@@ -129,7 +129,8 @@ UNKNOWN_GROUP = "no existe en este centro"   # the unknown-group line; the 400 k
 PHASE20 = os.path.join(HERE, "..", "provisioning", "phases", "20-groups.sh")
 # Where the sealed credentials sheet lives (FRD S5; the host bundle's directory — S7 wires
 # /opt/aps-conecta into backups). The self-test redirects it; this default is the only literal.
-CRED_PATH = "/opt/aps-conecta/credentials.txt"
+APS_HOME = os.environ.get("APS_HOME") or "/opt/aps-conecta"
+CRED_PATH = os.path.join(APS_HOME, "credentials.txt")
 ESTADO_PATH = "/opt/aps-conecta/estado.txt"   # the last execution's verdict (a10): 0644, «aps-conecta estado»
 AIO_STATE = "/opt/aps-conecta/aio"   # the host's wizard state (0700): passphrase, domain, Talk options — passed to it
 # The installer's own certificate authority and the leaf it signs for the link's address (L3 S1,
