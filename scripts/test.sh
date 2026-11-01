@@ -90,6 +90,27 @@ sys.exit(int(os.environ.get('CASE_FAIL', '0')))
         assert call['password'] == password, 'Redis did not receive its authentication environment'
         assert (result.returncode == 0) == (failure == '0')
         assert password not in result.stdout + result.stderr
+    client = root / 'curl'
+    client.write_text('#!' + sys.executable + '\n' + '''
+import json, os, pathlib, sys
+pathlib.Path(os.environ['CASE_CAPTURE']).write_text(json.dumps({
+    'argv': sys.argv[1:], 'stdin': sys.stdin.read()}))
+print(json.dumps({'status': os.environ['CASE_HEALTH']}))
+sys.exit(int(os.environ.get('CASE_FAIL', '0')))
+''')
+    client.chmod(0o755)
+    for status, failure in [('green', '0'), ('yellow', '0'), ('red', '0'), ('green', '1')]:
+        result = subprocess.run(['bash', 'Containers/fulltextsearch/healthcheck.sh'],
+                                env=dict(env, ELASTIC_PASSWORD=password, CASE_HEALTH=status, CASE_FAIL=failure),
+                                input='', capture_output=True, text=True, timeout=5)
+        call = json.loads(capture.read_text())
+        assert all(password not in word for word in call['argv']), 'Search health password entered process arguments'
+        assert '--config' in call['argv'] and '-' in call['argv']
+        import base64
+        encoded = call['stdin'].split('Authorization: Basic ', 1)[1].strip().strip('"')
+        assert base64.b64decode(encoded).decode() == 'elastic:' + password
+        assert (result.returncode == 0) == (failure == '0' and status != 'red')
+        assert password not in result.stdout + result.stderr
 PY
 }
 check service_secret_argv_cases
