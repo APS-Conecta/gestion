@@ -2161,7 +2161,7 @@ act_aplicar() {  # app by app (#46): the release rows through phase 12 itself â€
       present="$(printf '%s' "$inventory" | python3 -c '
 import json, sys
 data = json.load(sys.stdin)
-if not isinstance(data, dict) or not all(isinstance(data.get(key), dict) for key in ("enabled", "disabled")):
+if not isinstance(data, dict) or not all(isinstance(data.get(key), dict) or data.get(key) == [] for key in ("enabled", "disabled")):
     sys.exit(1)
 print(int(any(sys.argv[1] in data[key] for key in ("enabled", "disabled"))))
 ' "$app" 2>/dev/null)" || {
