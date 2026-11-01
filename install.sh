@@ -29,7 +29,7 @@
 #                             the one non-test case: a cross-file constant package-release.sh reads)
 set -euo pipefail
 
-BUNDLE_TAG="v0.6.0"             # the release commit sets this beside aps/CHANGELOG's dated entry
+BUNDLE_TAG="v0.6.0-ci.2032"             # the release commit sets this beside aps/CHANGELOG's dated entry
 TARBALL_SHA256=""               # ← the release job fills this; empty = the committed form, refuse
 # shellcheck disable=SC2034  # a cross-file constant: package-release.sh reads it back when filling
                               # the asset, and preflight/wizard print it — never dereferenced here

@@ -23,6 +23,17 @@ image digests live there and are deliberately not copied here — one fact, one 
   now seeds `default_timezone` from the Nextcloud container's `TZ`, so Totem's Día, opening-hours
   check and ticket times follow the clinic's clock instead of UTC.
 
+## [0.6.0-ci.2032] — 2026-11-01
+
+### Changed
+
+- Rehearse the current #175 suite with official Office and Talk packages and the verified
+  installation, provisioning, network, backup and recovery fixes.
+- Include signed upload-guard 0.1.2 and first-request team-folder acceptance with native
+  permission and official-source integrity checks (#198).
+- Publish the signed package for the real public-download acceptance workflow (#156).
+  The official Euro-Office startup credential requirement remains open in #196.
+
 ## [0.6.0] — 2026-10-27
 
 ### Added
