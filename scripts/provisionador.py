@@ -4634,6 +4634,20 @@ def selftest():
                           "apps": {"farmacia": True, "estadistica": False, "totem": False}}})
                 if answer.returncode:
                     print(answer.stderr.strip())
+                alternate = os.path.join(isolated, "wizard")
+                os.mkdir(alternate)
+                for name, text in (("dominio", "203.0.113.11\n"),
+                                   ("opciones", "farmacia=0 estadistica=1 totem=0\n")):
+                    with open(os.path.join(alternate, name), "w", encoding="utf-8") as fh:
+                        fh.write(text)
+                answer = subprocess.run([sys.executable, "-c", query],
+                                        cwd=os.path.join(isolated, "scripts"),
+                                        env=dict(api_env, AIO_STATE=alternate), capture_output=True,
+                                        text=True, timeout=30, **identity)
+                observed = json.loads(answer.stdout) if answer.returncode == 0 else {}
+                check("GET /api/suite: the host AIO_STATE override takes precedence over APS_HOME (#142)",
+                      observed == {"status": 200, "dominio": "203.0.113.11", "opciones": {
+                          "apps": {"farmacia": False, "estadistica": True, "totem": False}}})
 
             st, body = call("POST", "/api/usuarios", {"codigo": "113314",
                                                       "csv": "\ufeff" + planilla(maria, juan)})
