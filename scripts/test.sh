@@ -3047,7 +3047,8 @@ elif a[0] == 'config:list':
     save()
     print('{broken' if s.get('malformed_config') else json.dumps({
         'system': s.get('system', {}),
-        'apps': {key: value for key, value in s['config'].items() if isinstance(value, dict)}}))
+        'apps': {**dict.fromkeys(s['enabled'], {}),
+                 **{key: value for key, value in s['config'].items() if isinstance(value, dict)}}}))
 elif a[0] == 'config:import':
     payload = json.load(sys.stdin)
     assert set(payload) <= {'apps', 'system'}
@@ -3083,7 +3084,7 @@ else:
     env = dict(os.environ, PATH=str(commands) + ':' + os.environ['PATH'],
                APP_STATE=str(state_path), REAL_PHP=real_php,
                EUROOFFICE_ENABLED='yes', EUROOFFICE_HOST='aps-conecta-eurooffice',
-               EUROOFFICE_SECRET='synthetic secret must never escape', NC_DOMAIN='test.invalid',
+               EUROOFFICE_SECRET='synthetic secret must never escape " \\ $', NC_DOMAIN='test.invalid',
                TALK_ENABLED='no', TALK_RECORDING_ENABLED='no', CLAMAV_ENABLED='no',
                FULLTEXTSEARCH_ENABLED='no', HARP_ENABLED='no', REMOVE_DISABLED_APPS='no',
                NEXTCLOUD_DATA_DIR=str(root), CLAMAV_HOST='clam', CLAMAV_BLOCKLISTED_DIRECTORIES='', PHP_UPLOAD_LIMIT='1G',
@@ -3103,7 +3104,7 @@ else:
     state, output = run()
     assert 'deferred' in output
     assert not any(call[0] in ('app:install', 'config:app:set', 'config:system:set') for call in state['calls'])
-    reset(disabled=['eurooffice'])
+    reset(disabled=['eurooffice'], system={'eurooffice': {'custom_setting': 'keep'}})
     state, output = run()
     assert ['app:enable', 'eurooffice'] in state['calls']
     assert any(call[:3] == ['config:app:set', 'eurooffice', 'DocumentServerUrl'] and
@@ -3113,11 +3114,18 @@ else:
     assert state['system']['eurooffice']['jwt_secret'] == env['EUROOFFICE_SECRET']
     assert state['config']['eurooffice']['jwt_secret'] == env['EUROOFFICE_SECRET']
     assert output.count('system:eurooffice -> updated') == 3
-    first_config = state['config']
+    assert state['system']['eurooffice']['custom_setting'] == 'keep'
+    first_config, first_system = state['config'], state['system']
     state, output = run()
-    assert state['config'] == first_config and ' -> ' not in output
+    assert state['config'] == first_config and state['system'] == first_system and ' -> ' not in output
+    assert len(state['imports']) == 2, 'Repeated Office wiring must not import unchanged secrets'
     assert sum(call == ['app:enable', 'eurooffice'] for call in state['calls']) == 1
-    for failure in ('app:list', 'app:enable', 'config:app:set', 'config:system:set'):
+    rotated_office = env['EUROOFFICE_SECRET'] + ' rotated'
+    state, _ = run(extra={'EUROOFFICE_SECRET': rotated_office})
+    assert state['system']['eurooffice'] == {'custom_setting': 'keep', 'jwt_secret': rotated_office}
+    assert state['config']['eurooffice']['jwt_secret'] == rotated_office
+    assert len(state['imports']) == 4 and rotated_office not in json.dumps(state['calls'])
+    for failure in ('app:list', 'app:enable', 'config:app:set', 'config:system:set', 'config:list', 'config:import'):
         reset(disabled=['eurooffice'], fail=failure)
         run(success=False)
     reset(malformed=True)

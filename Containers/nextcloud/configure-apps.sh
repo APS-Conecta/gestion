@@ -69,6 +69,50 @@ startup_system_set() {
     [ "$before" = "$after" ] || echo "app-startup: system:$key -> updated"
 }
 
+# Import a string from a named environment variable, preserving sibling keys.
+startup_secret_set() (
+    set +x
+    local scope="$1" variable="$2" key="$3" label settings snapshot
+    shift 2
+    label="$scope:$key"
+    [ "$scope" != apps ] || label="app:$key:${2:-}"
+    snapshot="$(startup_occ config:list --private --output=json 2>/dev/null)" || {
+        echo "app-startup: failed to read configuration for $label" >&2; return 1;
+    }
+    settings="$(printf '%s' "$snapshot" | php -r '
+        try {
+            $current = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+            $scope = $argv[1];
+            $value = getenv($argv[2]);
+            $path = array_slice($argv, 3);
+            if (!in_array($scope, ["apps", "system"], true) || $value === false || $value === ""
+                || !is_array($current[$scope] ?? null) || count($path) > 2
+                || ($scope === "apps" && count($path) !== 2)) { exit(1); }
+            $key = $path[0];
+            $before = $current[$scope][$key] ?? null;
+            if (count($path) === 2) {
+                $desired = $before ?? [];
+                if (!is_array($desired)) { exit(1); }
+                if ($scope === "apps") {
+                    if (($desired[$path[1]] ?? null) === $value) { exit(0); }
+                    $desired = [];
+                }
+                $desired[$path[1]] = $value;
+            } else { $desired = $value; }
+            if ($before !== $desired) {
+                echo json_encode([$scope => [$key => $desired]], JSON_THROW_ON_ERROR);
+            }
+        } catch (Throwable $e) { exit(1); }
+    ' "$scope" "$variable" "$@")" || {
+        echo "app-startup: cannot prepare configuration for $label" >&2; return 1;
+    }
+    [ -n "$settings" ] || return 0
+    printf '%s' "$settings" | startup_occ config:import >/dev/null 2>&1 || {
+        echo "app-startup: failed to configure $label" >&2; return 1;
+    }
+    echo "app-startup: $label -> updated"
+)
+
 startup_wait() {
     local host="$1" port="$2" name="$3" deadline=$((SECONDS + 90)) remaining
     while ! nc -z -w 1 "$host" "$port"; do
@@ -108,8 +152,8 @@ startup_office() {
         [ "$rc" -eq 0 ] || return "$rc"
         # Set EuroOffice configuration
         startup_system_set eurooffice editors_check_interval --value="0" --type=integer || return 1
-        startup_system_set eurooffice jwt_secret --value="$EUROOFFICE_SECRET" || return 1
-        startup_app_set eurooffice jwt_secret --value="$EUROOFFICE_SECRET" || return 1
+        startup_secret_set system EUROOFFICE_SECRET eurooffice jwt_secret || return 1
+        startup_secret_set apps EUROOFFICE_SECRET eurooffice jwt_secret || return 1
         startup_system_set eurooffice jwt_header --value="AuthorizationJwt" || return 1
 
         # Adjust the EuroOffice host if using internal pattern
