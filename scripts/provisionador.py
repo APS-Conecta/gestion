@@ -3969,6 +3969,7 @@ def run_step(argv):
         if not path:
             print("✗ falta el sitio: --archivo <site.sh>")
             return 2
+        path = os.path.abspath(path)
         try:
             with open(path, encoding="utf-8-sig") as fh:
                 text = fh.read()
@@ -3989,6 +3990,7 @@ def run_step(argv):
         if not path:
             print("✗ falta la planilla: --planilla <archivo.csv>")
             return 2
+        path = os.path.abspath(path)
         try:
             with open(path, encoding="utf-8") as fh:
                 text = fh.read()
