@@ -1172,6 +1172,20 @@ def selftest():
         check("cli fetch: a refusal stops with one Spanish line naming the app and the retry command",
               run.returncode == 1 and run.stdout == "" and run.stderr.startswith("FATAL: malafirma: ")
               and "apps.pub" in run.stderr and RETRY in run.stderr)
+        missing_manifest = os.path.join(tmp, "missing-verifier.json")
+        with open(missing_manifest, "w", encoding="utf-8") as fh:
+            json.dump([fila("APS-Conecta/territorio")], fh)
+        missing_lock = os.path.join(tmp, "missing-verifier.lock.json")
+        run = subprocess.run([sys.executable, os.path.abspath(__file__), "fetch",
+                              "--manifest", missing_manifest, "--lock", missing_lock,
+                              "--store", os.path.join(tmp, "missing-verifier-store"),
+                              "--nextcloud", "34.0.4"], env=dict(os.environ, PATH=""),
+                             capture_output=True, text=True, timeout=30)
+        check("cli fetch: missing verifier names the package and executable bridge, without saving a lock (#141)",
+              run.returncode == 1 and run.stderr.startswith("FATAL: territorio: ")
+              and "sudo apt-get install signify-openbsd" in run.stderr
+              and "sudo ln -sf /usr/bin/signify-openbsd /usr/local/bin/signify" in run.stderr
+              and not os.path.exists(missing_lock))
         # ── #46: actualizar's own two legs — plan reads and names (--revisar's whole leg),
         #    actualizar fetches into a NEW lock the CLI promotes only on success ──
         # The server's posture: territorio at v0.79.0 (a v0.80.0 exists), suelo at v3.5.0
