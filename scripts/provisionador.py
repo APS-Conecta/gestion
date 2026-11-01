@@ -4550,7 +4550,7 @@ def selftest():
             import pwd, shutil
             with tempfile.TemporaryDirectory(prefix="provisionador-home-") as isolated:
                 for relative in ("scripts/provisionador.py", "scripts/deis.py", "scripts/apps.py",
-                                 "scripts/images.py", "apps.json", "php/containers.json",
+                                 "scripts/images.py", "scripts/releases.py", "apps.json", "php/containers.json",
                                  "provisioning/phases/20-groups.sh", "provisioning/standings.sh"):
                     destination = os.path.join(isolated, relative)
                     os.makedirs(os.path.dirname(destination), exist_ok=True)
@@ -4608,6 +4608,32 @@ def selftest():
                       and "la ejecución no terminó" in open(state_file, encoding="utf-8").read())
                 if not saved_state:
                     print((refused_run.stdout + refused_run.stderr).strip())
+                api_bin = os.path.join(isolated, "bin")
+                os.mkdir(api_bin)
+                docker = os.path.join(api_bin, "docker")
+                with open(docker, "w", encoding="ascii") as fh:
+                    fh.write("#!/bin/sh\nexit 0\n")
+                os.chmod(docker, 0o755)
+                wizard = os.path.join(home, "aio")
+                os.mkdir(wizard)
+                for name, text in (("dominio", "203.0.113.10\n"),
+                                   ("opciones", "farmacia=1 estadistica=0 totem=0\n")):
+                    with open(os.path.join(wizard, name), "w", encoding="utf-8") as fh:
+                        fh.write(text)
+                api_env = dict(os.environ, APS_HOME=home, PATH=api_bin + os.pathsep + old_path)
+                api_env.pop("AIO_STATE", None)
+                query = ("import json, provisionador; status, body = provisionador.estado_suite(); "
+                         "print(json.dumps({'status': status, 'dominio': body.get('dominio'), "
+                         "'opciones': body.get('opciones')}))")
+                answer = subprocess.run([sys.executable, "-c", query],
+                                        cwd=os.path.join(isolated, "scripts"), env=api_env,
+                                        capture_output=True, text=True, timeout=30, **identity)
+                observed = json.loads(answer.stdout) if answer.returncode == 0 else {}
+                check("GET /api/suite: APS_HOME supplies the wizard domain and chosen apps (#142)",
+                      observed == {"status": 200, "dominio": "203.0.113.10", "opciones": {
+                          "apps": {"farmacia": True, "estadistica": False, "totem": False}}})
+                if answer.returncode:
+                    print(answer.stderr.strip())
 
             st, body = call("POST", "/api/usuarios", {"codigo": "113314",
                                                       "csv": "\ufeff" + planilla(maria, juan)})
