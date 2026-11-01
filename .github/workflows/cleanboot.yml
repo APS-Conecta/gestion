@@ -1600,7 +1600,7 @@ jobs:
                                if group != 'cat-jefaturas' and (int(permissions) & 15) == 15)
                   cases.append((folder, group, group, 201))
               unit = next(folder for folder in folders if folder['mountPoint'].startswith('Unidades/')
-                          and folder['groups_list'].get('cat-jefaturas') == 1
+                          and (int(folder['groups_list'].get('cat-jefaturas', 0)) & 15) == 1
                           and 'all-staff' not in folder['groups_list'])
               writer = next(group for group, permissions in unit['groups_list'].items()
                             if group != 'cat-jefaturas' and (int(permissions) & 15) == 15)
