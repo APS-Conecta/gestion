@@ -146,6 +146,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-084 | the comuna data step depends on a moving DEIS edition and an untested archive tool (#197) | the current-edition URL changes bytes monthly, extraction requires an undeclared unzip binary, and both native jobs skip data loading | pin a literal dated DEIS snapshot by immutable commit and checksum, extract with Python's standard library, remove unused master metadata, and run the by-IP import with attributed public-data fixtures; ordinary staff reads the source names and coordinates through Territorio, and a repeated import creates zero records |
 
+| A-085 | Clean boot rejects a valid disk report between the existing minimum and recommended tiers (#197 prerequisite) | revisar succeeds at 23 GB and prints the 40 GB recommendation separately, but CI requires both tiers on one line | check the minimum disk result and either documented recommendation form; replaying the actual runner output passes, while removing the recommendation still fails; resource values remain unchanged |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and

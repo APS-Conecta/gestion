@@ -294,7 +294,8 @@ jobs:
           grep -q "Memoria .* GiB (mínimo 6" <<<"$out" \
             || { echo "FAIL: the RAM line does not name the floors" >&2; exit 1; }
           if [ "$rc" -eq 0 ]; then
-            grep -q "Disco .* GB libres (mínimo 20, recomendado 40)" <<<"$out" \
+            grep -q "Disco .* GB libres (mínimo 20" <<<"$out" \
+              && grep -qE 'Disco .*recomendado 40\)|se recomiendan 40 GB libres' <<<"$out" \
               || { echo "FAIL: a green disk line must name both tiers" >&2; exit 1; }
           else
             grep -qF "el mínimo es 20 GB" <<<"$out" && grep -qF "se recomiendan 40" <<<"$out" \
