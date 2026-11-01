@@ -2721,6 +2721,9 @@ EOF
   step_out="$(ID_U=1000 APS_HOME="$tmp/flag-home" bash "$HOST_DIR/aps-conecta" install --sin-validar-dominio 2>&1)"; rcs=$?
   check "install --sin-validar-dominio: the option requires the silent file pair (#158)" \
     '[ "$rcs" -eq 1 ] && case "$step_out" in *"--sin-validar-dominio va con la instalación silenciosa"*) ;; *) false;; esac'
+  step_out="$(APS_HOME="$tmp/flag-home" bash "$HOST_DIR/aps-conecta" --help 2>&1)"; rcs=$?
+  check "install --sin-validar-dominio: the public help names its silent option (#158)" \
+    '[ "$rcs" -eq 0 ] && case "$step_out" in *"install --sin-validar-dominio"*) ;; *) false;; esac'
   step_out="$( (cmd_install --respaldo) 2>&1)"; rcs=$?
   check "install --respaldo: without a directory it refuses — never a silently skipped backup" \
     '[ "$rcs" -eq 1 ] && [ "$step_out" = "✗ falta el directorio del respaldo: sudo aps-conecta install --respaldo <directorio>" ]'
