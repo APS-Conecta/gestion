@@ -162,6 +162,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-093 | developer provisioning writes outside its selected home or requires root to authorize its certificate (#142) | Provisionador, release defaults, testbed state, verification CA and optional-app choices use separate fixed paths; TLS handoff always changes ownership | derive state defaults from APS_HOME, preserve explicit overrides, retain root TLS handoff and grant only Apache a named ACL for an unprivileged owner; document the user-local signer and existing provisioning commands |
 
+| A-094 | the silent install rejects the wizard domain-validation option (#158) | install has a separate argument list and does not forward the option to the shared wizard command | accept and forward --sin-validar-dominio through the existing wizard parser, require silent input files, retain it in retry instructions, and document configuration ownership; existing CLI and wizard boundary self-tests cover the behavior |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and

@@ -104,6 +104,7 @@ STEPS=(
 MOTTO="La salud primaria que compartimos es la que mejora"
 STEP_RESULT=""   # a step that ends in a state other than its registry result says so here
 SILENT_SITE=""; SILENT_ROSTER=""; SILENT_LOG=""; SILENT_APPS=""; SILENT_RESPALDO=""   # install --sitio/--planilla/--app/--respaldo (a7, #39, #54): the files, the log, the optional apps, the backup dir
+SILENT_SKIP_DOMAIN_VALIDATION=0
 
 step_field() {  # N FIELD — field FIELD (1 id · 2 título · 3 dónde · 4 propósito · 5 resultado) of step N
   local IFS='|' f
@@ -216,6 +217,7 @@ silent_suite() {
   # the daily backup, when the operator named a directory (#54): the browser step's own twin,
   # forwarded to the wizard drive — without it there is no backup scope and actualizar refuses
   [ -n "$SILENT_RESPALDO" ] && wizard_flags+=(--respaldo "$SILENT_RESPALDO")
+  [ "$SILENT_SKIP_DOMAIN_VALIDATION" = 0 ] || wizard_flags+=(--sin-validar-dominio)
   ( cmd_aio_wizard --dominio "$domain" "${wizard_flags[@]}" "${apps_flags[@]}" )
 }
 silent_equipos() { python3 "$(prov_path)" --paso usuarios --codigo "$(site_codigo)" --planilla "$SILENT_ROSTER"; }
@@ -226,17 +228,19 @@ cmd_install() {  # the install: the welcome, then the steps in registry order. I
   # log and only Spanish lines on the console. A failed step stops the run on its own ✗ lines; a
   # re-run walks the steps again and each finds its own work done. The prompt waits only on an
   # interactive install's terminal.
+  SILENT_SKIP_DOMAIN_VALIDATION=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --sitio) [ -n "${2:-}" ] || die "falta el archivo: --sitio <site.sh>"; SILENT_SITE="$2"; shift 2 ;;
       --planilla) [ -n "${2:-}" ] || die "falta el archivo: --planilla <usuarios.csv>"; SILENT_ROSTER="$2"; shift 2 ;;
+      --sin-validar-dominio) SILENT_SKIP_DOMAIN_VALIDATION=1; shift ;;
       --app) app_opcion_requiere "${2:-}"
              case " $SILENT_APPS " in *" ${2:-} "*) ;; *) SILENT_APPS="$SILENT_APPS ${2:-}" ;; esac
              shift 2 ;;
       --respaldo) [ -n "${2:-}" ] \
                     || die "falta el directorio del respaldo: sudo aps-conecta install --respaldo <directorio>"
                   SILENT_RESPALDO="$2"; shift 2 ;;
-      *) die "opción desconocida: $1 — uso: sudo aps-conecta install [--sitio <site.sh> --planilla <usuarios.csv>] [--app <aplicación>] [--respaldo <directorio>]" ;;
+      *) die "opción desconocida: $1 — uso: sudo aps-conecta install [--sitio <site.sh> --planilla <usuarios.csv>] [--app <aplicación>] [--respaldo <directorio>] [--sin-validar-dominio]" ;;
     esac
   done
   local again="sudo aps-conecta install"
@@ -252,7 +256,10 @@ cmd_install() {  # the install: the welcome, then the steps in registry order. I
     [ -z "$SILENT_RESPALDO" ] || again="$again$(printf ' --respaldo %q' "$SILENT_RESPALDO")"
   elif [ -n "$SILENT_RESPALDO" ]; then
     die "--respaldo va con la instalación silenciosa: sudo aps-conecta install --sitio <site.sh> --planilla <usuarios.csv> --respaldo <directorio>"
+  elif [ "$SILENT_SKIP_DOMAIN_VALIDATION" = 1 ]; then
+    die "--sin-validar-dominio va con la instalación silenciosa: sudo aps-conecta install --sitio <site.sh> --planilla <usuarios.csv> --sin-validar-dominio"
   fi
+  [ "$SILENT_SKIP_DOMAIN_VALIDATION" = 0 ] || again="$again --sin-validar-dominio"
   is_root || die "la instalación necesita permisos de administrador: $again"
   if [ -n "$SILENT_SITE" ]; then
     SILENT_LOG="$APS_HOME/instalacion.log"
@@ -287,6 +294,7 @@ usage() {  # Spanish, generated from the registry — never a slice of this file
   echo "  sudo aps-conecta install --sitio S --planilla P   la misma instalación, sin preguntas ni navegador"
   echo "  sudo aps-conecta install --app A    además instala la aplicación opcional A (una por --app)"
   echo "  sudo aps-conecta install --respaldo R   configura el respaldo diario en R (sin él, actualizar no corre)"
+  echo "  sudo aps-conecta install --sin-validar-dominio   omite la validación del dominio en la instalación silenciosa"
   echo
   echo "Pasos sueltos, en el orden de la instalación:"
   for n in $(seq 1 "${#STEPS[@]}"); do
@@ -300,7 +308,7 @@ usage() {  # Spanish, generated from the registry — never a slice of this file
   echo "  aps-conecta run-command [IP]      solo el comando de arranque de la suite (por IP, con su certificado)"
   echo "  aps-conecta provision             abre el instalador web (lo mismo que el paso abrir)"
   echo "  aps-conecta provision --reponer   re-provisión semanal (la ejecuta el temporizador)"
-  echo "  aps-conecta asistente-aio --dominio D [--app A] [--preparar]   configura la suite por la API del asistente (--preparar: sin iniciarla; --app: una aplicación opcional por bandera)"
+  echo "  aps-conecta asistente-aio --dominio D [--app A] [--sin-validar-dominio] [--preparar]   configura la suite por la API del asistente (--preparar: sin iniciarla; --app: una aplicación opcional por bandera)"
   echo "  aps-conecta temporizadores        instala y activa la re-provisión semanal"
   echo "  aps-conecta estado                el último resultado de la re-provisión, con cada arreglo (sin sudo)"
   echo "  aps-conecta revalidate            revisa la instancia después de una actualización"
@@ -2707,6 +2715,16 @@ EOF
     '[ "$rcs" -eq 1 ] && case "$step_out" in *"opción desconocida: --otra"*"--sitio <site.sh> --planilla <usuarios.csv>"*) ;; *) false;; esac'
   check "install: the usage names the silent backup option (#54)" \
     'case "$step_out" in *"[--respaldo <directorio>]"*) ;; *) false;; esac'
+  step_out="$(APS_HOME="$tmp/flag-home" bash "$HOST_DIR/aps-conecta" install --sin-validar-dominio \
+    --sitio "$tmp/no-existe.sh" --planilla "$tmp/no-existe.csv" 2>&1)"; rcs=$?
+  check "install --sin-validar-dominio: the public CLI accepts the flag before validating its files (#158)" \
+    '[ "$rcs" -eq 1 ] && case "$step_out" in *"no se puede leer $tmp/no-existe.sh"*) ;; *) false;; esac'
+  step_out="$(ID_U=1000 APS_HOME="$tmp/flag-home" bash "$HOST_DIR/aps-conecta" install --sin-validar-dominio 2>&1)"; rcs=$?
+  check "install --sin-validar-dominio: the option requires the silent file pair (#158)" \
+    '[ "$rcs" -eq 1 ] && case "$step_out" in *"--sin-validar-dominio va con la instalación silenciosa"*) ;; *) false;; esac'
+  step_out="$(APS_HOME="$tmp/flag-home" bash "$HOST_DIR/aps-conecta" --help 2>&1)"; rcs=$?
+  check "install --sin-validar-dominio: the public help names its silent option (#158)" \
+    '[ "$rcs" -eq 0 ] && case "$step_out" in *"install --sin-validar-dominio"*) ;; *) false;; esac'
   step_out="$( (cmd_install --respaldo) 2>&1)"; rcs=$?
   check "install --respaldo: without a directory it refuses — never a silently skipped backup" \
     '[ "$rcs" -eq 1 ] && [ "$step_out" = "✗ falta el directorio del respaldo: sudo aps-conecta install --respaldo <directorio>" ]'
@@ -2738,6 +2756,10 @@ EOF
     '[ "$rcs" -eq 1 ] && case "$step_out" in *"no se puede leer $tmp/no-existe.sh"*) ;; *) false;; esac && case "$step_out" in *"Paso 1"*) false;; *) true;; esac'
   printf 'SITE_DEIS=113314\nSITE_DOMINIO="clinica.example"\nSITE_ROSTER=\n' > "$tmp/dado.sh"
   printf '\xef\xbb\xbfusuario;nombre;apellidos;correo;grupos;primer_admin\r\nana;Ana;Uno;;role-medico;si\r\n' > "$tmp/dado.csv"
+  step_out="$(ID_U=1000 APS_HOME="$tmp/flag-home" bash "$HOST_DIR/aps-conecta" install \
+    --sitio "$tmp/dado.sh" --planilla "$tmp/dado.csv" --sin-validar-dominio 2>&1)"; rcs=$?
+  check "install --sin-validar-dominio: the administrator retry retains the selected option (#158)" \
+    '[ "$rcs" -eq 1 ] && case "$step_out" in *"necesita permisos de administrador:"*"--sin-validar-dominio"*) ;; *) false;; esac'
   printf 'SITE_DEIS="113314"\nSITE_DOMINIO="c.example"\nSITE_ROSTER=\n' > "$tmp/mal1.sh"
   printf 'SITE_DEIS=113314\nSITE_DOMINIO=""\nSITE_ROSTER=\n' > "$tmp/mal2.sh"
   printf 'usuario;nombre\n' > "$tmp/mal.csv"
@@ -3336,6 +3358,26 @@ esac
 SHIM
   chmod +x "$tshim/curl" "$tshim/docker"
   if only_shims curl docker; then
+    out="$(
+      cp -a "$ROOT" "$tmp/domain-install"
+      ROOT="$tmp/domain-install"
+      mkdir -p "$ROOT/sites/113314"
+      cp "$tmp/dado.sh" "$ROOT/sites/113314/site.sh"
+      printf 'SITE=113314\n' > "$ROOT/.env"
+      step_revisar() { ok "revisar-stub"; }
+      step_preparar() { ok "preparar-stub"; }
+      step_descargar() { ok "descargar-stub"; }
+      install_timers() { ok "temporizadores-stub"; }
+      cmd_datos() { ok "datos-stub"; }
+      id() { echo 0; }
+      python3() { case "$*" in *--paso*) return 0;; *) command python3 "$@";; esac; }
+      cmd_install --sitio "$tmp/dado.sh" --planilla "$tmp/dado.csv" --sin-validar-dominio
+    )"; rc=$?
+    check "install --sin-validar-dominio: the silent flow posts the shared wizard's domain-validation option (#158)" \
+      '[ "$rc" -eq 0 ] && grep -q "domain=clinica.example skip_domain_validation=1$" "$tmp/aio.log"'
+    if [ "$rc" -ne 0 ]; then printf '%s\n' "$out" >&2; fi
+    rm -rf "$AIO_STATE"
+    : > "$tmp/aio.log"; : > "$tmp/aio.ps"; : > "$tmp/aio.argv"; rm -f "$tmp/aio.configured"
     out="$( (cmd_aio_wizard --dominio clinica.example --sin-validar-dominio) 2>&1)"; rc=$?
     check "asistente-aio: passphrase, login, domain, timezone, options, start with progress, the waits, the admin password — in order" \
       '[ "$rc" -eq 0 ] && case "$out" in *"✓ Contraseña del asistente guardada en $AIO_STATE/master.pw"*"✓ Ingreso al asistente"*"✓ Dominio: clinica.example"*"✓ Zona horaria: America/Santiago"*"✓ Servicios de la suite incluidos; sin aplicaciones opcionales"*"· contenedores en marcha: 3 de $AIO_EXPECTED"*"✓ Suite iniciada"*"✓ Suite en marcha: $AIO_EXPECTED contenedores, Nextcloud instalado"*"✓ Contraseña del administrador de Nextcloud guardada en $AIO_STATE/nextcloud.pw"*) ;; *) false;; esac'

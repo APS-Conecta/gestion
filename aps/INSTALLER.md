@@ -50,7 +50,7 @@ from the next run on. Continue with:
 
 which links `aps-conecta` into `/usr/local/bin` and walks the steps below. The bundle is
 `aps-conecta`: `install`, `preflight`, `run-command`, `provision`, `asistente-aio`,
-`temporizadores`, `revalidate`, `actualizar`, `respaldo`, `datos`, `red` — thin glue; every heavy
+`temporizadores`, `revalidate`, `actualizar`, `datos`, `red` — thin glue; every heavy
 thing lives where its own gate is.
 
 - **Verifying by hand** — an auditor, or anyone who wants to see it themselves — needs only the
@@ -108,24 +108,32 @@ lines. If preflight reds on the domain probe, do
 
 ## 4. The wizard (:8080)
 
-1. Paste the run command. The wizard, «APS Conecta Gestión AIO», comes up in Spanish (es-CL formal).
-2. The web installer's step 6 fills it: `aps-conecta asistente-aio --preparar` starts the
-   mastercontainer, captures the initial password (`GET /setup` shows it once; the installer keeps
-   it in `/opt/aps-conecta/aio/master.pw`, 0600, and shows it on step 6), and posts the domain (or this
-   server's IP, §13), the timezone, the options (Euro-Office, the suite's only office; Talk and its recording as the
-   server's memory and cores allow, port 3478 free; Imaginary off), the «Aplicaciones
-   opcionales» the operator checked (all off by default; today Farmacia, Estadística and Tótem, each
-   from its own signed release when chosen, absent otherwise — the choice rides the install options
-   and survives every re-provisioning; Estadística's DEIS figures download after install, by the app
-   itself, and only when it was chosen; Tótem's release carries its two bundled voices, so a chosen
-   install speaks offline) and the daily backup (§11).
-3. Log in to the wizard with that password and press Start, leaving the options as step 6 set them:
-   the installer's review lists Talk from step 6's choice, and the optional apps only when they were
-   checked. Step 6 follows the containers until
-   Nextcloud is installed. The wizard has no app store, no community containers and no other
-   office: a request to switch or disable the office is refused. Scheduled backups restart
-   the suite on its current images. The daily-backup screen lets you choose notifications
-   for successful backups; failures are always reported.
+1. Ejecute el comando de arranque. El asistente «APS Conecta Gestión AIO» se presenta en español de Chile.
+2. El paso 6 invoca `aps-conecta asistente-aio --preparar`, inicia el contenedor maestro y guarda
+   la contraseña inicial en `/opt/aps-conecta/aio/master.pw`, con permisos 0600. Configura el
+   dominio o la IP (§13), la zona horaria, los servicios incluidos, las aplicaciones opcionales
+   elegidas y el respaldo diario (§11). Farmacia, Estadística y Tótem se instalan desde sus
+   publicaciones firmadas cuando se seleccionan. La grabación continúa pendiente de su perfil de recursos.
+3. Ingrese con esa contraseña y pulse «Iniciar». El paso 6 sigue el arranque hasta confirmar la
+   instalación de Nextcloud. Los respaldos programados reinician las versiones actuales de la suite.
+
+El primer recorrido completado del asistente define la configuración inicial. Con la suite
+en marcha, las invocaciones posteriores conservan esos valores y el seed reconcilia el
+aprovisionamiento. Antes del inicio o con la suite detenida, el controlador puede aplicar
+la configuración; `--preparar` completa la preparación previa al arranque.
+
+- El banco de pruebas `scripts/aio-testbed.sh up` completa ese primer recorrido. Una instalación
+  silenciosa posterior utiliza la configuración que dejó el banco.
+- Con la suite en marcha, repetir `install --respaldo R` conserva la ubicación de respaldo
+  configurada inicialmente. Ajuste esa ubicación desde la sección de respaldos del asistente.
+
+Para omitir la validación del dominio en la configuración inicial de una instalación silenciosa,
+añada `--sin-validar-dominio`. El comando comparte el controlador del asistente:
+
+```bash
+sudo aps-conecta install --sitio site.sh --planilla usuarios.csv \
+  --respaldo /srv/aps-conecta/respaldos --sin-validar-dominio
+```
 
 La consola confirma el resultado final del asistente antes de informar que inició la suite.
 La espera continúa mientras avance la descarga o aparezcan estados nuevos de los contenedores;

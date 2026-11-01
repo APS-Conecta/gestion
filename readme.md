@@ -72,7 +72,7 @@ requests stay direct; bypasses include the inspected suite network and service i
 The native AppAPI daemon hostname also bypasses the proxy. HaRP trusts the public suite CA
 alongside system roots before its upstream agent starts; revalidation checks both directions (#186).
 Image discovery accepts Docker and OCI image manifests and their indexes from the suite registry (#243).
-Talk wiring has one boot/provisioning owner: phase 12 calls it after the signed release installs,
+Talk wiring has one boot/provisioning owner: phase 12 calls it after the official store app installs,
 and native imports carry changed settings through stdin. Revalidation checks the configured
 endpoints, verified public HTTPS welcome and native signaling diagnostics (#187).
 
@@ -96,6 +96,11 @@ instruction includes both the package and the compatibility link (#141).
 app paths and `AIO_STATE` retain precedence. Developer certificate renewal retains file
 ownership and grants Apache access through a named ACL; the no-root workflow lives in
 `aps/INSTALLER.md` §14 (#142).
+
+Silent installation forwards `--sin-validar-dominio` through the existing wizard parser.
+The first completed wizard drive supplies the initial configuration. While Apache runs, later
+drives retain it and the seed converges the establishment. Preparatory and stopped-suite drives
+can apply configuration before startup. INSTALLER §4 documents the testbed and backup consequences (#158).
 
 **Why some messages remain in English.** Upstream PHP messages remain for configuration
 validation, authentication and ordinary container operations. Their sources are:
