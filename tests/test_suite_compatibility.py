@@ -20,12 +20,13 @@ class CompatibilityTests(unittest.TestCase):
         (self.root / "VERSION").write_text("v9.9.9\n")
         self.docker = self.root / "docker"
         self.docker.write_text("#!" + sys.executable + "\n" + '''
-import json, os, sys
+import json, os, sys, time
 args = sys.argv[1:]
 if args[0] == 'inspect':
     print(json.dumps('ghcr.io/aps-conecta/all-in-one:v0.6.0') + '\\t' + os.environ.get('RUNNING', 'true'))
     sys.exit(int(os.environ.get('INSPECT_EXIT', '0')))
 assert args[0] == 'exec', 'Compatibility must not mutate Docker state'
+time.sleep(float(os.environ.get('PROBE_SLEEP', '0')))
 print('synthetic confidential Docker detail', file=sys.stderr)
 if os.environ.get('PROBE_EXIT') == '42':
     print('aps-incompatible')
@@ -37,7 +38,7 @@ sys.exit(int(os.environ.get('PROBE_EXIT', '0')))
         return subprocess.run(
             [sys.executable, str(ROOT / "scripts/suite_compatibility.py"), capability, "--root", str(self.root)],
             env=dict(os.environ, PATH=str(self.root) + ":" + os.environ["PATH"], **settings),
-            capture_output=True, text=True, timeout=5,
+            capture_output=True, text=True, timeout=20,
         )
 
     def test_supported_capability_accepts_different_version_labels(self):
@@ -61,6 +62,11 @@ sys.exit(int(os.environ.get('PROBE_EXIT', '0')))
                 self.assertIn("no se pudo comprobar", result.stdout)
                 self.assertNotIn("no corresponde a este instalador", result.stdout)
                 self.assertNotIn("confidential", result.stdout + result.stderr)
+
+    def test_hung_execution_is_bounded_and_unverifiable(self):
+        result = self.run_check(PROBE_SLEEP="30")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("no se pudo comprobar", result.stdout)
 
 
 if __name__ == "__main__":

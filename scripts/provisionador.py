@@ -372,9 +372,10 @@ try:
 except OSError:
     pass
 
-if control.get("SLOW") and "status" not in args:
+if (control.get("SLOW") and "status" not in args and args[:1] != ["inspect"]
+        and not ("sh" in args and "/configure-apps.sh" in args)):
     # `status` stays fast under SLOW: the wizard's version read (nc_version, #33) rides it, and
-    # the hung-SEED arm wants the seed hung, not the fetch leg — SLOW models a phase that hangs
+    # The version and compatibility probes stay fast: SLOW models a phase that hangs.
     time.sleep(30)
 if control.get("FAIL_ON") and control.get("FAIL_ON") in args:
     sys.exit(1)
@@ -6056,7 +6057,9 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                 delivered = {r[1]: r[2] for r in json.load(fh) if r[0] == "user_password_digest"}
             check("generar: named OC_PASS delivers the sealed passwords without command-line values",
                   len(oc) >= 2 and all("user:add" in l and "--password-from-env" in l for l in oc)
-                  and all("OC_PASS=" not in l for l in oc) and "inspect" not in log
+                  and all("OC_PASS=" not in l for l in oc)
+                  and all(line == 'inspect --format {{json .Config.Image}}\t{{json .State.Running}} aps-conecta-nextcloud'
+                          for line in log.splitlines() if line.startswith("inspect "))
                   and all(value[0] not in log for value in sealed_now.values())
                   and all(delivered.get(u) == hashlib.sha256(sealed_now[u][0].encode()).hexdigest()
                           for u in ("maria.perez", "elena.diaz")))
