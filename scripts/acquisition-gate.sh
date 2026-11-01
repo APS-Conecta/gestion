@@ -178,7 +178,8 @@ PYCODE
     echo "  a Talk selection gate remains in acquisition" >&2
     return 1
   fi
-  grep -qF 'nc_exec --user www-data -- bash /configure-apps.sh talk || exit 1' "$TREE/provisioning/phases/12-apps.sh"
+  grep -F -A3 'nc_exec --user www-data -- bash /configure-apps.sh talk || {' "$TREE/provisioning/phases/12-apps.sh" \
+    | grep -qF '      exit 1'
 }
 
 row 145 "Talk uses the official store channel and phase 12 configures it immediately after installation (ADR-0025)" \

@@ -53,7 +53,10 @@ while IFS=$'\t' read -r -u 3 app repo; do
   # before the seed, so its absence is a stopped install to re-run, and the seed is not the
   # door that improvises an app from a channel nobody verified.
   row=""
-  [ -z "$repo" ] || row="$(lock_row "$app")" || exit 1
+  [ -z "$repo" ] || row="$(lock_row "$app")" || {
+    printf '%s\n' "$row"
+    exit 1
+  }
   if [ -n "$row" ]; then
     ensure_release_app "$app" "$row" || exit 1
   elif [ -n "$repo" ]; then

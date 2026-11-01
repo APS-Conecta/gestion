@@ -300,7 +300,7 @@ ensure_store_app() {  # APPID — install the store's newest compatible release,
     if err="$(occ_store app:install "$app" 2>&1)"; then
       log "app $app -> installed from the store (NC_appstoreenabled=1, scoped to this command)"
     else
-      log "FAILED $app — falló occ app:install: $(printf '%s' "$err" | tr '\n' ' ' | tail -c 300)"
+      log "FAILED $app — falló la instalación desde la tienda: $(printf '%s' "$err" | tr '\n' ' ' | tail -c 300)"
       return 1
     fi
   fi

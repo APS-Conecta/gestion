@@ -273,7 +273,7 @@ cmd_install() {  # the install: the welcome, then the steps in registry order. I
     echo "INSTALACIÓN: la suite quedó instalada; falta lo marcado con ✗ arriba — ejecute el comando que nombra (registro: $SILENT_LOG)"
     exit 1
   fi
-  printf 'INSTALACIÓN: ✓ — entregue a cada persona su fila: sudo cat %s/credentials.txt\n' "$APS_HOME"
+  printf 'INSTALACIÓN: ✓ — entregue a cada persona su fila: sudo cat %q\n' "$APS_HOME/credentials.txt"
   echo "  y verifique la instancia: aps-conecta revalidate (registro: $SILENT_LOG)"
   staff_ca
 }
@@ -2149,9 +2149,26 @@ act_aplicar() {  # app by app (#46): the release rows through phase 12 itself �
     # destroy last (#172): an earlier FAILED leaves the app, its data and the old lock as they
     # were. An app whose code is already gone (a run that removed it, then failed before the
     # promote) is skipped, so the run converges instead of refusing forever.
+    inventory=""
     while IFS= read -r app; do
       [ -n "$app" ] || continue
-      if ! occ app:getpath "$app" >/dev/null 2>&1; then
+      if [ -z "$inventory" ]; then
+        inventory="$(occ app:list --output=json 2>/dev/null)" || {
+          log "FAILED $app — falló la lectura de aplicaciones instaladas"
+          exit 1
+        }
+      fi
+      present="$(printf '%s' "$inventory" | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+if not isinstance(data, dict) or not all(isinstance(data.get(key), dict) for key in ("enabled", "disabled")):
+    sys.exit(1)
+print(int(any(sys.argv[1] in data[key] for key in ("enabled", "disabled"))))
+' "$app" 2>/dev/null)" || {
+        log "FAILED $app — el inventario de aplicaciones es inválido"
+        exit 1
+      }
+      if [ "$present" = 0 ]; then
         log "$app ya no está instalada — su fila sale del candado"
         continue
       fi
@@ -4063,8 +4080,6 @@ case "\$1 \$2" in
         [ ! -e "$act/retirement-native-failed" ] || exit 1
         if [ -e "$act/retirement-invalid" ]; then echo 'synthetic invalid inventory'; exit 0; fi
         echo '{"enabled":{"viejo":"1.0.0"},"disabled":{}}' ;;
-      *"occ app:getpath viejo"*) echo /var/www/html/custom_apps/viejo ;;
-      *"occ app:getpath"*) exit 1 ;;
       *"occ app:remove"*) if [ -e "$act/remove-mala" ]; then echo "viejo could not be removed"; exit 1; fi ;;
     esac ;;
 esac
