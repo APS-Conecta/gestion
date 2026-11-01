@@ -4022,7 +4022,12 @@ case "\$1 \$2" in
       *backup_archives.list*) printf '%s\n' "nextcloud-aio-2026-10-25-18-00,Thu Oct 25 18:00:00 2026" "nextcloud-aio-2026-10-27-01-00,Tue Oct 27 01:00:00 2026" ;;
     esac ;;
   "exec aps-conecta-nextcloud") case "\$*" in *printenv\ AIO_TOKEN*) echo tok-act46 ;; *printenv*) echo yes ;; esac ;;
-  "exec -i") exit 0 ;;
+  "exec -i")
+    case "\$*" in
+      *"rm -rf custom_apps/territorio"*) [ ! -e "$act/clear-failed" ] || exit 1 ;;
+      *"tar xzf"*) [ ! -e "$act/unpack-failed" ] || exit 1 ;;
+    esac
+    exit 0 ;;
   "exec -e")
     case "\$*" in *"occ app:install spreed"*)
       if [ -e "$act/spreed-install-failed" ]; then echo "synthetic official-store installation failure"; exit 1; fi ;;
@@ -4032,7 +4037,9 @@ case "\$1 \$2" in
     case "\$*" in
       *"occ status"*) echo '{"installed":true,"version":"34.0.4"}' ;;
       *"/custom_apps/territorio/appinfo/info.xml"*)
-        if [ -e "$act/version-read-failed" ] && [ -e "$act/home/apps.lock.json.next" ]; then exit 124; fi ;;
+        if [ -e "$act/version-read-failed" ] && [ -e "$act/home/apps.lock.json.next" ]; then exit 124; fi
+        if [ -e "$act/clear-failed" ] || [ -e "$act/upgrade-failed" ]; then echo "0.79.0"; fi ;;
+      *"occ upgrade"*) [ ! -e "$act/upgrade-failed" ] || exit 1 ;;
       *"occ config:list"*)
         if [ -e "$act/home/apps.lock.json.next" ]; then
           if [ -e "$act/config-read-failed" ]; then exit 1; fi
@@ -4210,6 +4217,17 @@ SHIM
       && printf "%s" "$out" | grep -qF "→ para volver al estado anterior: el asistente de la suite (puerto 8080 de este servidor) → «Restaurar la copia de seguridad seleccionada»" \
       && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes" && [ ! -e "$act/home/apps.lock.json.next" ] \
       && grep -q "occ app:enable territorio$" "$act/docker.log" && ! grep -q "app:update calendar" "$act/docker.log"'
+
+  for fault in clear-failed unpack-failed upgrade-failed; do
+    : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"
+    cp "$act/lock.bytes" "$act/home/apps.lock.json"
+    rm -f "$act/aio.libre" "$act/home/apps.lock.json.next"; touch "$act/$fault"
+    out="$( id() { echo 0; }; act46 2>&1 )"; arc=$?; rm -f "$act/$fault"
+    check "actualizar: release installation failures name the app and preserve its lock ($fault)" \
+      '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "✗ territorio falló al aplicarse" \
+        && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes" && [ ! -e "$act/home/apps.lock.json.next" ] \
+        && ! grep -q "occ app:enable territorio" "$act/docker.log" && ! grep -q "app:update calendar" "$act/docker.log"'
+  done
 
   for fault in version-read-failed config-read-failed config-invalid; do
     : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"
