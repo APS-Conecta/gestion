@@ -1231,7 +1231,6 @@ provisioning/phases/30-folders.sh
 provisioning/phases/40-acl.sh
 provisioning/phases/41-intravox.sh
 provisioning/phases/50-users.sh
-provisioning/phases/60-fixtures.sh
 provisioning/seed.sh
 provisioning/standings.sh
 provisioning/usuarios.sh
@@ -3046,11 +3045,15 @@ elif a[0] in ('config:app:set', 'config:system:set'):
     print('Config value were not updated' if old == a[3:] else "Config value 'key' for app 'app' is now set to 'synthetic secret must never escape'")
 elif a[0] == 'config:list':
     save()
-    print('{broken' if s.get('malformed_config') else json.dumps({'apps': {'spreed': s['config'].get('spreed', {})}}))
+    print('{broken' if s.get('malformed_config') else json.dumps({
+        'system': s.get('system', {}),
+        'apps': {key: value for key, value in s['config'].items() if isinstance(value, dict)}}))
 elif a[0] == 'config:import':
     payload = json.load(sys.stdin)
-    assert set(payload) == {'apps'} and set(payload['apps']) == {'spreed'}
-    s['config'].setdefault('spreed', {}).update(payload['apps']['spreed'])
+    assert set(payload) <= {'apps', 'system'}
+    for app, values in payload.get('apps', {}).items():
+        s['config'].setdefault(app, {}).update(values)
+    s.setdefault('system', {}).update(payload.get('system', {}))
     s.setdefault('imports', []).append(payload)
     save()
 elif a[0] == 'config:system:get':
@@ -3106,6 +3109,9 @@ else:
     assert any(call[:3] == ['config:app:set', 'eurooffice', 'DocumentServerUrl'] and
                call[3] == '--value=https://test.invalid/eurooffice' for call in state['calls'])
     assert 'app:eurooffice:DocumentServerUrl -> updated' in output
+    assert 'synthetic secret must never escape' not in json.dumps(state['calls']), 'Office secrets entered process arguments'
+    assert state['system']['eurooffice']['jwt_secret'] == env['EUROOFFICE_SECRET']
+    assert state['config']['eurooffice']['jwt_secret'] == env['EUROOFFICE_SECRET']
     assert output.count('system:eurooffice -> updated') == 3
     first_config = state['config']
     state, output = run()
