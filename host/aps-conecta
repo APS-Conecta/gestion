@@ -4032,8 +4032,11 @@ case "\$1 \$2" in
     case "\$*" in
       *"occ status"*) echo '{"installed":true,"version":"34.0.4"}' ;;
       *"occ config:list"*)
-        if [ -e "$act/config-read-failed" ]; then exit 1; fi
-        if [ -e "$act/config-invalid" ]; then echo "synthetic confidential configuration"; else echo '{"system":{}}'; fi ;;
+        if [ -e "$act/home/apps.lock.json.next" ]; then
+          if [ -e "$act/config-read-failed" ]; then exit 1; fi
+          if [ -e "$act/config-invalid" ]; then echo "synthetic confidential configuration"; exit 0; fi
+        fi
+        echo '{"system":{}}' ;;
       *"config:app:get calendar"*) echo "4.7.15" ;;
       *"config:system:get appstoreenabled"*) echo "\${TIENDA:-0}" ;;
       *"occ app:enable territorio"*) if [ -e "$act/enable-failed" ]; then echo "synthetic enable failure"; exit 1; fi ;;
@@ -4201,6 +4204,7 @@ SHIM
   for fault in config-read-failed config-invalid; do
     : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"
     cp "$act/lock.bytes" "$act/home/apps.lock.json"
+    rm -f "$act/home/apps.lock.json.next"
     rm -f "$act/aio.libre"; touch "$act/$fault"
     out="$( id() { echo 0; }; act46 2>&1 )"; arc=$?; rm -f "$act/$fault"
     check "actualizar: failed configuration reads name the app and preserve its lock ($fault)" \
