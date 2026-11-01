@@ -132,7 +132,7 @@ PHASE20 = os.path.join(HERE, "..", "provisioning", "phases", "20-groups.sh")
 APS_HOME = os.environ.get("APS_HOME") or "/opt/aps-conecta"
 CRED_PATH = os.path.join(APS_HOME, "credentials.txt")
 ESTADO_PATH = os.path.join(APS_HOME, "estado.txt")   # the last execution's verdict (a10): 0644, «aps-conecta estado»
-AIO_STATE = "/opt/aps-conecta/aio"   # the host's wizard state (0700): passphrase, domain, Talk options — passed to it
+AIO_STATE = os.environ.get("AIO_STATE") or os.path.join(APS_HOME, "aio")  # the host's wizard state
 # The installer's own certificate authority and the leaf it signs for the link's address (L3 S1,
 # owner 2026-10-02). The CA is kept: the suite's certificate (L4, R22) hangs from the same one and
 # staff import it once. The self-test redirects this; the default is the only literal.
