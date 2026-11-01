@@ -158,6 +158,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-091 | owning groups and read-only jefaturas cannot reshare library documents (#144) | generated managing and jefatura read grants omit the native share permission | add share to managing groups and read/share to jefaturas on units with owning roles; retain staff read-only access and verify native library sharing through Talk |
 
+| A-092 | operator messages omit recovery steps, resolved paths and reserved accounts, or advertise absent credential files (#141) | the app-verifier refusal names only its package; generic executable lookup collides with an unrelated signify utility; summaries print password paths unconditionally; relative file and roster errors omit lookup context | prefer signify-openbsd, include package and bridge recovery steps, condition credential notices on file existence, resolve input paths before reporting, and list canonical reserved uids once; existing CLI, API and testbed self-tests cover each behavior |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and
