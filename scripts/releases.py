@@ -917,8 +917,12 @@ def selftest():
               tag == "v0.79.0" and dict(server.hits) == antes)
         antes = dict(server.hits)
         tag, entry = resolve(fila("APS-Conecta/clavada", pin="v1.5.0"), 34)
-        check("pin honoured: the exact tag, and not even the redirect was read",
-              tag == "v1.5.0" and dict(server.hits) == antes)
+        check("a compatible pin is verified without a latest-release lookup or API call",
+              tag == "v1.5.0" and entry and entry["version"] == "1.5.0"
+              and server.hits["latest"] == antes["latest"] and server.hits["api"] == antes["api"])
+        cause = refused(resolve, fila("APS-Conecta/vieja", pin="v2.0.0"), 34)
+        check("a pin built for another Nextcloud major is refused without falling back",
+              "v2.0.0" in cause and "Nextcloud 34" in cause)
         cause = refused(resolve, fila("APS-Conecta/clavada", pin="v1.5.0"), 34,
                         lock_entry={"tag": "v2.0.0", "version": "2.0.0"}, use_lock=False)
         check("a pin below the installed floor is refused, naming both releases",
