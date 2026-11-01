@@ -256,6 +256,8 @@ cmd_install() {  # the install: the welcome, then the steps in registry order. I
     [ -z "$SILENT_RESPALDO" ] || again="$again$(printf ' --respaldo %q' "$SILENT_RESPALDO")"
   elif [ -n "$SILENT_RESPALDO" ]; then
     die "--respaldo va con la instalación silenciosa: sudo aps-conecta install --sitio <site.sh> --planilla <usuarios.csv> --respaldo <directorio>"
+  elif [ "$SILENT_SKIP_DOMAIN_VALIDATION" = 1 ]; then
+    die "--sin-validar-dominio va con la instalación silenciosa: sudo aps-conecta install --sitio <site.sh> --planilla <usuarios.csv> --sin-validar-dominio"
   fi
   is_root || die "la instalación necesita permisos de administrador: $again"
   if [ -n "$SILENT_SITE" ]; then
