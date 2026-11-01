@@ -259,20 +259,14 @@ sys.exit(0 if sys.argv[2] in (d.get(sys.argv[1]) or []) else 1)' "$2" "$_uid" &&
   # design text said role-encargado-oirs, which does not exist — plan-local fix, design follow-up
 }
 
-# The version of an app as the INSTANCE has it, read in-container from custom_apps — the bake-wins
-# probe, shared by both app helpers below. A host-side read would be blind under AIO: no bind mount
-# means no host-side file, the probe answers "" for every app, `cur=""` means re-impose, and
-# seed-idempotent stays permanently red. The instance is the only source of truth for what the
-# instance runs.
-# ONE exec, no guard: awk's own open-failure IS the absent-app answer (a fresh install has not
-# unpacked anything yet), so `|| true` keeps the set -e/pipefail phases alive and empty output
-# carries the meaning the old `cur=""` initialization did. A transport-level failure reads the
-# same as "absent" and fails LOUDLY one step later at the unpack/enable.
-# busybox awk (the AIO image's Alpine base) parses -F'[<>]' identically to gawk — verified.
-app_installed_version() {  # APPID -> prints the installed version, or nothing when absent
+# Probe the instance's app files. A missing file is distinct from a failed read.
+app_installed_version() {  # APPID -> version, empty when absent, nonzero on read failure
   local app="$1"
-  nc_exec --user www-data -- awk -F'[<>]' '/<version>/ {print $3; exit}' \
-    "/var/www/html/custom_apps/$app/appinfo/info.xml" 2>/dev/null || true
+  nc_exec --user www-data -- sh -c '
+    [ -e "$2" ] || exit 0
+    awk -F"[<>]" "$1" "$2"
+  ' sh '/<version>/ {print $3; exit}' \
+    "/var/www/html/custom_apps/$app/appinfo/info.xml" 2>/dev/null
 }
 
 # --- apps from the store, scoped (#42) ---
@@ -297,7 +291,7 @@ occ_store() {  # OCC_ARGS… — one occ call with the store open, for this comm
 
 ensure_store_app() {  # APPID — install the store's newest compatible release, scoped, once
   local app="$1" cur err
-  cur="$(app_installed_version "$app")"
+  cur="$(app_installed_version "$app")" || { log "FAILED $app — falló la lectura de la versión instalada"; return 1; }
   if [ -n "$cur" ]; then
     log "app $app $cur already installed (the store's, untouched — nothing here updates)"
   else
@@ -365,7 +359,7 @@ ensure_release_app() {  # APPID ROW — install the release the lock names, from
   echo "$sha  $tgz" | sha256sum --check --status \
     || { log "FAILED $app — $tgz does not match the sha256 recorded in the lock; re-run the install"; return 1; }
 
-  cur="$(app_installed_version "$app")"
+  cur="$(app_installed_version "$app")" || { log "FAILED $app — falló la lectura de la versión instalada"; return 1; }
 
   # A release never carries appinfo/signature.json (the fetch refuses one that does), so the
   # file's presence on a same-version tree is PROOF the installed copy is not the release's
