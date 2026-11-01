@@ -371,6 +371,36 @@ PY
 }
 check talk_turn_secret_cases
 
+imaginary_secret_argv_cases() {
+  python3 - <<'PY'
+import json, os, pathlib, subprocess, sys, tempfile
+with tempfile.TemporaryDirectory(prefix='aps imaginary secret ') as directory:
+    root = pathlib.Path(directory)
+    capture = root / 'call.json'
+    client = root / 'imaginary'
+    client.write_text('#!' + sys.executable + '\n' + '''
+import json, os, pathlib, sys
+pathlib.Path(os.environ['CASE_CAPTURE']).write_text(json.dumps({
+    'argv': sys.argv[1:], 'secret': os.environ.get('IMAGINARY_SECRET')}))
+sys.exit(int(os.environ.get('CASE_FAIL', '0')))
+''')
+    client.chmod(0o755)
+    secret = "synthetic Imaginary secret ' \" \\ $ ;\nnext line"
+    env = dict(os.environ, PATH=directory+':'+os.environ['PATH'], CASE_CAPTURE=str(capture),
+               IMAGINARY_SECRET=secret, AIO_LOG_LEVEL='debug')
+    for failure in ('0', '1'):
+        result = subprocess.run(['bash', 'Containers/imaginary/start.sh', '-concurrency', '2'],
+                                env=dict(env, CASE_FAIL=failure), capture_output=True, text=True, timeout=5)
+        call = json.loads(capture.read_text())
+        assert all(secret not in word for word in call['argv']), 'Imaginary API key entered process arguments'
+        assert call['secret'] == secret, 'Imaginary did not receive the exact environment key'
+        assert call['argv'] == ['-return-size', '-max-allowed-resolution', '222.2', '-concurrency', '2']
+        assert (result.returncode == 0) == (failure == '0')
+        assert 'synthetic Imaginary secret' not in result.stdout + result.stderr
+PY
+}
+check imaginary_secret_argv_cases
+
 aia_private_temp_cases() {
   python3 - <<'PY'
 import json, os, pathlib, subprocess, tempfile, uuid
