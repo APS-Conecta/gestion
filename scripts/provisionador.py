@@ -4373,6 +4373,9 @@ def selftest():
                       ("Unidades/SOME", "role-administrativo-some"),
                       ("Unidades/Dirección", "cat-jefaturas")))
                   and grants["Transversal", "all-staff"] == set())
+            check("teams: jefaturas receive read and share on units with owning roles (#144)",
+                  all(grants["Unidades/" + unit, "cat-jefaturas"] == {"read", "share"}
+                      for unit in ("SOME", "Farmacia", "Dental", "OIRS", "Estadística-REM")))
             check("teams: a planilla naming a team «Reemplazar» removed is caught at «Revisar», with its line (R35)",
                   st_pl == 200 and st5 == 400
                   and "sector-sur" in " ".join(e["error"] for e in viejo.get("errores", []))
