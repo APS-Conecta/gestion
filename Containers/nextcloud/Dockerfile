@@ -39,7 +39,6 @@ ENV NC_appstoreenabled="0"
 ENV NC_skeletondirectory=""
 
 COPY --chmod=775 Containers/nextcloud/*.sh /
-COPY --chmod=644 Containers/nextcloud/occ-install.php /occ-install.php
 COPY --chmod=755 Containers/network-prefix.sh /network-prefix.sh
 COPY --chmod=755 Containers/antivirus-limit.sh /antivirus-limit.sh
 COPY --chmod=774 Containers/nextcloud/upgrade.exclude /upgrade.exclude
@@ -305,6 +304,8 @@ RUN set -ex; \
     \
     mkdir -p /nc-updater; \
     chmod -R 777 /nc-updater
+
+COPY --chmod=644 Containers/nextcloud/occ-install.php /occ-install.php
 
 # APS Conecta (#42, the retired bake's one survivor): the image carries the apsconecta theme
 # and NOTHING else of the suite's own — no app bytes at all. Apps arrive by their own
