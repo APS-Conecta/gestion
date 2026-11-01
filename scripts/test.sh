@@ -2229,6 +2229,99 @@ except SystemExit: pass
 else: print("fabricated sentinel-less corpus passed"); sys.exit(1)
 print("ok")'
 
+comuna_archive_extraction_cases() {
+  python3 - <<'PY'
+import csv, hashlib, json, os, pathlib, shutil, subprocess, sys, tempfile, zipfile
+source = pathlib.Path.cwd()
+fixtures = source / 'tests/fixtures/comuna'
+uv = json.loads((fixtures / 'archive-uv-v1.geojson').read_text())
+cut = uv['features'][0]['properties']['t_com'].strip().zfill(5)
+with (fixtures / 'establecimientos-deis-v1.csv').open() as stream:
+    rows = list(csv.DictReader(stream, delimiter=';'))
+expected = [row for row in rows if row['ComunaCodigo'].strip().zfill(5) == cut]
+assert len(expected) == 1
+with tempfile.TemporaryDirectory(prefix='aps comuna archive ') as directory:
+    root = pathlib.Path(directory)
+    tools = root / 'bin'
+    tools.mkdir()
+    for program in ('awk', 'curl', 'dirname', 'find', 'head', 'mkdir', 'mktemp', 'rm', 'sha256sum'):
+        (tools / program).symlink_to(shutil.which(program))
+    (tools / 'python3').symlink_to(sys.executable)
+    converter = tools / 'ogr2ogr'
+    converter.write_text('#!' + sys.executable + '\n' + '''
+import pathlib, shutil, sys
+source, destination = pathlib.Path(sys.argv[-1]), pathlib.Path(sys.argv[-2])
+shutil.copyfile(source, destination)
+''')
+    converter.chmod(0o755)
+    for valid in (True, False):
+        repo = root / ('valid' if valid else 'invalid')
+        for folder in ('scripts', 'provisioning/data', 'inputs', 'work'):
+            (repo / folder).mkdir(parents=True, exist_ok=True)
+        for name in ('scripts/env.sh', 'scripts/comuna-package.sh', 'provisioning/data/comunas-deis.csv'):
+            shutil.copyfile(source / name, repo / name)
+        archive_path = repo / 'inputs/unidades-vecinales-v1.zip'
+        if valid:
+            with zipfile.ZipFile(archive_path, 'w') as archive:
+                archive.writestr('nested/source.shp', json.dumps(uv))
+        else:
+            archive_path.write_bytes(b'invalid archive')
+        csv_path = repo / 'inputs/establecimientos-deis-v1.csv'
+        shutil.copyfile(fixtures / csv_path.name, csv_path)
+        masters = [{'id': key, 'origin': path.as_uri(), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+                   for key, path in (('unidades-vecinales-2024', archive_path), ('minsal-deis-establecimientos', csv_path))]
+        (repo / 'provisioning/data/packages.json').write_text(json.dumps({'masters': masters}))
+        result = subprocess.run(['/bin/bash', 'scripts/comuna-package.sh', cut], cwd=repo,
+                                env=dict(os.environ, PATH=str(tools), WORK_DIR=str(repo / 'work')),
+                                capture_output=True, text=True, timeout=10)
+        assert (result.returncode == 0) == valid, 'Comuna extraction requires an unavailable program or accepted an invalid archive\n' + result.stderr
+        if valid:
+            package = next((repo / 'work').glob('comuna-package.*'))
+            areas = json.loads((package / ('uv-' + cut + '.geojson')).read_text())
+            places = json.loads((package / ('deis-establecimientos-' + cut + '.geojson')).read_text())
+            assert areas['comuna'] == places['comuna'] == cut
+            assert len(areas['features']) == len(places['features']) == 1
+            assert areas['features'][0]['properties']['uid'] == uv['features'][0]['properties']['t_id_uv_ca']
+            assert areas['features'][0]['properties']['name'] == uv['features'][0]['properties']['t_uv_nom']
+            assert places['features'][0]['properties']['uid'] == 'deis:' + expected[0]['EstablecimientoCodigo']
+            assert places['features'][0]['properties']['name'] == expected[0]['EstablecimientoGlosa']
+PY
+}
+check comuna_archive_extraction_cases
+
+comuna_master_origins_versioned() {
+  python3 - <<'PY'
+import json, pathlib, re, subprocess, urllib.parse
+def versioned(origin):
+    url = urllib.parse.urlsplit(origin)
+    if url.scheme not in ('https', 'file') or url.query:
+        return False
+    if url.hostname == 'datos.gob.cl' and re.search(r'/resource/[^/]+/download(?:/|$)', url.path):
+        return False
+    if url.hostname == 'raw.githubusercontent.com':
+        parts = url.path.strip('/').split('/')
+        if len(parts) < 4 or not re.fullmatch('[0-9a-f]{40}', parts[2]):
+            return False
+    name = pathlib.PurePosixPath(url.path).name
+    return bool(re.search(r'(?:^|[-_])(?:20\d{2}(?:[-_]\d{2}[-_]\d{2}|\d{4})?|v\d+(?:\.\d+)*)\.(?:csv|zip)$', name))
+assert versioned('file:///fixture/unidades-vecinales-v1.zip')
+assert versioned('https://example.test/masters/establecimientos_20260908.csv')
+assert not versioned('https://datos.gob.cl/dataset/source/resource/resource-id/download/establecimientos_20260908.csv')
+assert not versioned('https://raw.githubusercontent.com/APS-Conecta/gestion/main/masters/establecimientos-deis-2026-11-01.csv')
+manifest = json.loads(pathlib.Path('provisioning/data/packages.json').read_text())
+for master in manifest['masters']:
+    assert versioned(master['origin']), master['id'] + ': master origin is not a versioned asset'
+assert 'geoportal-dpa-comunas-2023' not in {m['id'] for m in manifest['masters']}, 'An unused master remains'
+assert 'recipes' not in manifest, 'Recipe prose duplicates the packaging command'
+payload = b'original\r\nsource\r\n'
+def object_hash(*options):
+    return subprocess.run(['git', 'hash-object', '--stdin', *options], input=payload,
+                          capture_output=True, check=True).stdout
+assert object_hash('--path=provisioning/data/masters/establecimientos-deis-2026-11-01.csv') == object_hash('--no-filters'), 'Git changes literal source bytes'
+PY
+}
+check comuna_master_origins_versioned
+
 # --- gate: a21 (L5): the map is the suite's own route — the separate tiles server is gone -------------
 # The grep is a21's own clause, with the pattern assembled without its literals
 # ("nginx:alp""ine|TILES_""PORT|:80""84"): a21 covers scripts/ too, and a gate that spelled its

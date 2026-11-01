@@ -1,0 +1,46 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "OBJECTID": 5610,
+        "t_com": "09111",
+        "t_uv_nom": "EDUARDO FREI",
+        "t_id_uv_ca": "91114148",
+        "Shape__Len": 0.013061120374489
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -72.9386565979999,
+              -38.7295151900789
+            ],
+            [
+              -72.938533745,
+              -38.7335518010788
+            ],
+            [
+              -72.9411645039999,
+              -38.7333988500789
+            ],
+            [
+              -72.9411521879999,
+              -38.7295070340789
+            ],
+            [
+              -72.9386565979999,
+              -38.7295151900789
+            ]
+          ]
+        ]
+      }
+    }
+  ],
+  "source": "https://services.arcgis.com/r7t1P5pnkoOLRdhr/ArcGIS/rest/services/Unidades_Vecinales___2024/FeatureServer/0",
+  "attribution": "MIDESOF, republished by Esri Chile",
+  "license": "https://creativecommons.org/licenses/by/4.0/",
+  "captured": "2026-11-01"
+}

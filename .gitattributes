@@ -4,3 +4,4 @@
 themes/apsconecta/core/mapa/* -text
 sites/*.csv -text
 provisioning/data/*.csv -text
+provisioning/data/masters/*.csv -text

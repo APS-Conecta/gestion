@@ -294,7 +294,8 @@ jobs:
           grep -q "Memoria .* GiB (mínimo 6" <<<"$out" \
             || { echo "FAIL: the RAM line does not name the floors" >&2; exit 1; }
           if [ "$rc" -eq 0 ]; then
-            grep -q "Disco .* GB libres (mínimo 20, recomendado 40)" <<<"$out" \
+            grep -q "Disco .* GB libres (mínimo 20" <<<"$out" \
+              && grep -qE 'Disco .*recomendado 40\)|se recomiendan 40 GB libres' <<<"$out" \
               || { echo "FAIL: a green disk line must name both tiers" >&2; exit 1; }
           else
             grep -qF "el mínimo es 20 GB" <<<"$out" && grep -qF "se recomiendan 40" <<<"$out" \
@@ -996,6 +997,24 @@ jobs:
           sed -i "s|^SIGNIFY_PUBKEY=\"[^\"]*\"|SIGNIFY_PUBKEY=\"$(sed -n 2p "$ensayo/installer.pub")\"|" install.sh
           cp "$ensayo/installer.pub" installer.pub
           printf '%s\n' "$tag" > VERSION
+          python3 - <<'PYMASTERS'
+          import hashlib, json
+          from pathlib import Path
+          fixtures = Path('tests/fixtures/comuna')
+          installed = Path('/opt/aps-conecta/instalador') / fixtures
+          selected = {
+              'unidades-vecinales-2024': ('unidades-vecinales-v1.zip', 345),
+              'minsal-deis-establecimientos': ('establecimientos-deis-v1.csv', 344),
+          }
+          path = Path('provisioning/data/packages.json')
+          manifest = json.loads(path.read_text())
+          for master in manifest['masters']:
+              filename, records = selected[master['id']]
+              master.update(origin=(installed / filename).as_uri(),
+                            sha256=hashlib.sha256((fixtures / filename).read_bytes()).hexdigest(),
+                            records=records)
+          path.write_text(json.dumps(manifest, indent=2) + '\n')
+          PYMASTERS
           git config user.email cleanboot@invalid && git config user.name cleanboot
           git add -A && git commit -qm "rehearsal: the package at $tag" && git tag "$tag"
           RELEASE_TAG="$tag" \
@@ -1207,7 +1226,7 @@ jobs:
           # APS_SUITE_TAG: the package's VERSION is this run's throwaway ci-cleanboot-<sha>, but the
           # mastercontainer this job CREATES must run a published image — the resolved suite tag
           # (suite_tag() answers the override first; the rehearsal-window seam it exists for)
-          sudo env "PATH=$PATH" APS_SKIP_DATOS=1 MIN_DISK_GB=2 APS_SUITE_TAG="$SUITE_TAG" \
+          sudo env "PATH=$PATH" MIN_DISK_GB=2 APS_SUITE_TAG="$SUITE_TAG" \
             bash /opt/aps-conecta/instalador/host/aps-conecta install \
               --sitio "$RUNNER_TEMP/site.sh" --planilla "$RUNNER_TEMP/usuarios.csv" --app farmacia --app estadistica --app totem \
             < /dev/null | tee "$RUNNER_TEMP/install.out"
@@ -2277,6 +2296,76 @@ jobs:
           # absent (occ exits 1) or stored empty (exit 0, no value) are both "unset"; only a value is a failure
           tile_url="$(occ config:app:get territorio tile_url 2>/dev/null || true)"
           [ -z "$tile_url" ] || { echo "FAIL: territorio tile_url is set, but nothing provisions it any more: $tile_url" >&2; exit 1; }
+      - name: Staff can read the imported comuna fixtures through Territorio
+        run: |
+          set -euo pipefail
+          cd /opt/aps-conecta/instalador && source scripts/env.sh
+          cut="$(. "$RUNNER_TEMP/site.sh" && printf '%s' "$SITE_COMUNA_CUT")"
+          sudo python3 - "https://$SUITE_IP" "$RUNNER_TEMP/ca.crt" "$cut" <<'PYPLACES'
+          import base64, csv, http.cookiejar, json, ssl, sys, urllib.request
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, request, response, code, message, headers, new_url):
+                  return None
+
+          stage = 'reading the fixture expectations and protected staff credentials'
+          try:
+              with open('tests/fixtures/comuna/expected-v1.json', encoding='utf-8') as stream:
+                  expected = json.load(stream)[sys.argv[3]]
+              assert expected['establishment'] is not None
+              with open('/opt/aps-conecta/credentials.txt', encoding='utf-8', newline='') as stream:
+                  matches = [row for row in csv.reader(stream, delimiter=';')
+                             if len(row) > 2 and row[0] == 'beto.prueba']
+              assert len(matches) == 1 and matches[0][2]
+              authorization = base64.b64encode(('beto.prueba:' + matches[0][2]).encode()).decode('ascii')
+              opener = urllib.request.build_opener(
+                  urllib.request.HTTPSHandler(context=ssl.create_default_context(cafile=sys.argv[2])),
+                  urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()), RejectRedirects())
+
+              def get(path):
+                  request = urllib.request.Request(sys.argv[1] + path, headers={
+                      'Authorization': 'Basic ' + authorization, 'OCS-APIRequest': 'true',
+                      'Accept': 'application/json'})
+                  with opener.open(request, timeout=30) as response:
+                      assert response.status == 200
+                      return json.load(response)
+
+              stage = 'reading the exact published establishment'
+              establishment = expected['establishment']
+              result = get('/ocs/v2.php/apps/territorio/api/v1/subcategories/salud/'
+                           + establishment['subcategory'] + '/features?format=json')['ocs']
+              assert result['meta']['status'] == 'ok'
+              found = [feature for feature in result['data'] if feature['name'] == establishment['name']]
+              assert len(found) == 1
+              assert found[0]['geometry'] == {'type': 'Point', 'coordinates': establishment['coordinates']}
+
+              stage = 'reading the exact published area'
+              area = expected['uv']
+              result = get('/ocs/v2.php/apps/territorio/api/v1/subcategories/'
+                           'division_territorial/unidad_vecinal/features?format=json')['ocs']
+              assert result['meta']['status'] == 'ok'
+              found = [feature for feature in result['data'] if feature['name'] == area['name']]
+              assert len(found) == 1 and found[0]['geometry']['type'] in ('Polygon', 'MultiPolygon')
+              points = []
+
+              def collect(value):
+                  if isinstance(value[0], (int, float)):
+                      points.append(value[:2])
+                  else:
+                      for item in value:
+                          collect(item)
+
+              collect(found[0]['geometry']['coordinates'])
+              assert [min(p[0] for p in points), min(p[1] for p in points),
+                      max(p[0] for p in points), max(p[1] for p in points)] == area['bounds']
+          except Exception as error:
+              raise SystemExit(f'FAIL: {stage} ({type(error).__name__})') from None
+          print('PASS: ordinary staff sees the published establishment and area with their source coordinates')
+          PYPLACES
+          sudo aps-conecta datos --importar > "$RUNNER_TEMP/data-reimport.out" 2>&1
+          cat "$RUNNER_TEMP/data-reimport.out"
+          [ "$(grep -c 'Importado a ".*": 0 creados,' "$RUNNER_TEMP/data-reimport.out")" -eq 2 ] \
+            || { echo 'FAIL: the second import did not preserve both existing fixture records' >&2; exit 1; }
       # #33, by IP: territorio from its own release at its locked tag, no signature.json — the
       # same acceptance the domain job asserts, on an install that reached the suite by address
       - name: Territorio installed from its release, at its locked tag, with no signature.json

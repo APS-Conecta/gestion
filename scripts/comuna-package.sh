@@ -79,7 +79,7 @@ cut_count() {  # FILE MIN LABEL — the drift-exit: an empty cut is loud, never 
 uv_sha=$(python3 -c 'import json; print([m for m in json.load(open("provisioning/data/packages.json"))["masters"] if m["id"]=="unidades-vecinales-2024"][0]["sha256"])')
 uv_url=$(python3 -c 'import json; print([m for m in json.load(open("provisioning/data/packages.json"))["masters"] if m["id"]=="unidades-vecinales-2024"][0]["origin"])')
 fetch_verify unidades-vecinales-2024 "$uv_url" "$uv_sha" "$work/uv.zip"
-unzip -oq "$work/uv.zip" -d "$work/uv"   # the .shp inside; ogr2ogr converts (comuna-cut.php's own tool)
+python3 -m zipfile -e "$work/uv.zip" "$work/uv"
 shp=$(find "$work/uv" -name '*.shp' | head -1)
 ogr2ogr -f GeoJSON "$work/uv-national.geojson" "$shp"
 python3 - "$work/uv-national.geojson" "$work/uv-$CUT.geojson" "$CUT" <<'PY'
