@@ -136,6 +136,38 @@ PY
 }
 check service_secret_argv_cases
 
+postgres_secret_argv_cases() {
+  python3 - <<'PY'
+import json, os, pathlib, subprocess, sys, tempfile
+with tempfile.TemporaryDirectory(prefix='aps database secret ') as directory:
+    root = pathlib.Path(directory)
+    capture = root / 'call.json'
+    client = root / 'psql'
+    client.write_text('#!' + sys.executable + '\n' + '''
+import json, os, pathlib, sys
+pathlib.Path(os.environ['CASE_CAPTURE']).write_text(json.dumps({
+    'argv': sys.argv[1:], 'stdin': sys.stdin.read(), 'password': os.environ.get('POSTGRES_PASSWORD')}))
+sys.exit(int(os.environ['CASE_FAIL']))
+''')
+    client.chmod(0o755)
+    password = "synthetic database password ' \" $ ;"
+    env = dict(os.environ, PATH=directory + ':' + os.environ['PATH'], CASE_CAPTURE=str(capture),
+               DUMP_DIR=directory, POSTGRES_PASSWORD=password, POSTGRES_USER='nextcloud',
+               POSTGRES_DB='nextcloud_database', AIO_LOG_LEVEL='debug')
+    marker = root / 'initialization.failed'
+    for failure in ('0', '1'):
+        result = subprocess.run(['bash', 'Containers/postgresql/init-user-db.sh'], env=dict(env, CASE_FAIL=failure),
+                                capture_output=True, text=True, timeout=5)
+        call = json.loads(capture.read_text())
+        assert all(password not in word for word in call['argv']), 'PostgreSQL role password entered process arguments'
+        assert call['password'] == password and '\\getenv pg_new_password POSTGRES_PASSWORD' in call['stdin']
+        assert password not in call['stdin'] + result.stdout + result.stderr
+        assert (result.returncode == 0) == (failure == '0') and marker.exists() == (failure == '1')
+    assert 'pg_new_password=' not in pathlib.Path('Containers/postgresql/start.sh').read_text()
+PY
+}
+check postgres_secret_argv_cases
+
 aia_private_temp_cases() {
   python3 - <<'PY'
 import json, os, pathlib, subprocess, tempfile, uuid
@@ -1181,14 +1213,12 @@ check bash -c '
     return 0
   }
   survives
-  # `docker cp` fails for the most ordinary reason there is — a container still
-  # starting — and it was the one unguarded command left on the path. Fatal, and it took
-  # the second host with it, since the phase never got there.
+  # A failed transfer warns and leaves later certificate sources available.
   docker() {
     case "$*" in
       *s_client*) echo "http://secure.globalsign.com/cacert/ca.crt"; echo; echo LEAF ;;
       *"mktemp -d"*) echo /tmp/aps-ca.ABCDEF1234 ;;
-      *cp*) return 1 ;;
+      *"cat >"*) return 1 ;;
       *) echo PEM ;;
     esac
     return 0
