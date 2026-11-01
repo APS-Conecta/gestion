@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Disposable testbed using the installer's by-IP HTTPS path.
-# Run on a dedicated host with the suite ports available; use sudo for certificate files.
-# AIO_TEST_IMAGE selects the suite tag. State and private credentials: /tmp/aio-testbed.
+# Run with Docker access and the suite ports available.
+# AIO_TEST_IMAGE selects the suite tag; APS_HOME moves state and private credentials to its aio/.
 # SPDX-License-Identifier: AGPL-3.0-or-later
 set -uo pipefail
 
-STATE=/tmp/aio-testbed
+STATE="${AIO_STATE:-${APS_HOME:+$APS_HOME/aio}}"
+STATE="${STATE:-/tmp/aio-testbed}"
 MC=nextcloud-aio-mastercontainer            # fixed by Containers/mastercontainer/start.sh:164-170
 NC=aps-conecta-nextcloud                   # fixed by the fork's php/containers.json (patch 240)
 # The fork's suite, never upstream's: the suite renames the siblings (patch 240), so upstream's
