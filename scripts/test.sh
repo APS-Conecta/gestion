@@ -3157,6 +3157,8 @@ else:
     state, _ = run('fulltextsearch', extra={'FULLTEXTSEARCH_ENABLED': 'yes'})
     assert set(state['enabled']) == {'fulltextsearch', 'fulltextsearch_elasticsearch', 'files_fulltextsearch'}
     assert state['config']['app:fulltextsearch:search_platform'] == 'OCA\\FullTextSearch_Elasticsearch\\Platform\\ElasticSearchPlatform'
+    assert 'synthetic secret must never escape' not in json.dumps(state['calls']), 'Search secrets entered process arguments'
+    assert state['config']['fulltextsearch_elasticsearch']['elastic_host'] == 'http://test:synthetic%20secret%20must%20never%20escape@search:9200'
     assert state['config']['app:fulltextsearch_elasticsearch:elastic_index'] == 'test'
     assert state['config']['app:files_fulltextsearch:files_pdf'] is True
     assert state['config']['app:files_fulltextsearch:files_office'] is True
