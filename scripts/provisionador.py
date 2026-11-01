@@ -4909,7 +4909,7 @@ def selftest():
             check("generar: revision answers the plan — zero execs, zero writes",
                   st == 200 and body["modo"] == "revision" and body["usuarios"] == 2
                   and body["primer_admin"] == "elena.diaz" and body["contrasenas_selladas"] >= 2
-                  and len(body["fases"]) == 16 and "14-fulltextsearch.sh" in body["fases"]
+                  and len(body["fases"]) == 15 and "14-fulltextsearch.sh" in body["fases"]
                   and execs[0] == 0 and same
                   and body["env"]["FIXTURE_USER_PASSWORD"] == "se generará")
             check("generar: review mode downloads nothing — the release apps' fetch leg never ran (#33)",
@@ -4929,7 +4929,7 @@ def selftest():
                 subprocess.Popen = real_popen
             check("--paso generar --revision: the plan in one Spanish line, nothing executed, exit 0",
                   rc == 0 and execs[0] == 0
-                  and "✓ Revisión: 16 fases, 2 usuarios (administrador inicial elena.diaz)" in out)
+                  and "✓ Revisión: 15 fases, 2 usuarios (administrador inicial elena.diaz)" in out)
             st, plan = api_generar({"codigo": "113314", "modo": "revision"})
             visibles = json.dumps({k: plan.get(k) for k in ("centro", "sectores", "programas", "personas",
                                                             "componentes")}, ensure_ascii=False)
@@ -4970,9 +4970,9 @@ def selftest():
                        "✓ phase 14-antivirus\n", "✓ phase 14-fulltextsearch\n",
                        "✓ phase 14-office\n", "== roster: 3 usuario(s)\n"):
                 avance(ln)
-            check("ejecución: none yet answers «sin_ejecutar» with the 18 steps; a browser run's executor lines become the console's own titles, any other run's are not followed (a14)",
+            check("ejecución: none yet answers «sin_ejecutar» with the 17 steps; a browser run's executor lines become the console's own titles, any other run's are not followed (a14)",
                   st == 200 and nada["ejecucion"] == "sin_ejecutar" and nada["pasos"] == PASOS_EJECUCION
-                  and len(PASOS_EJECUCION) == 18 and fuera == []
+                  and len(PASOS_EJECUCION) == 17 and fuera == []
                   and EJECUCION["hechos"] == ["Seguridad de sesión", "Antivirus de archivos", "Búsqueda en documentos", "Oficina en línea", "Cuentas del personal"])
             EJECUCION.update(estado="sin_ejecutar", hechos=[])
             verdadero, suelta = globals()["api_generar"], threading.Event()
