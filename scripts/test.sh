@@ -2289,6 +2289,39 @@ PY
 }
 check comuna_archive_extraction_cases
 
+comuna_master_origins_versioned() {
+  python3 - <<'PY'
+import json, pathlib, re, subprocess, urllib.parse
+def versioned(origin):
+    url = urllib.parse.urlsplit(origin)
+    if url.scheme not in ('https', 'file') or url.query:
+        return False
+    if url.hostname == 'datos.gob.cl' and re.search(r'/resource/[^/]+/download(?:/|$)', url.path):
+        return False
+    if url.hostname == 'raw.githubusercontent.com':
+        parts = url.path.strip('/').split('/')
+        if len(parts) < 4 or not re.fullmatch('[0-9a-f]{40}', parts[2]):
+            return False
+    name = pathlib.PurePosixPath(url.path).name
+    return bool(re.search(r'(?:^|[-_])(?:20\d{2}(?:[-_]\d{2}[-_]\d{2}|\d{4})?|v\d+(?:\.\d+)*)\.(?:csv|zip)$', name))
+assert versioned('file:///fixture/unidades-vecinales-v1.zip')
+assert versioned('https://example.test/masters/establecimientos_20260908.csv')
+assert not versioned('https://datos.gob.cl/dataset/source/resource/resource-id/download/establecimientos_20260908.csv')
+assert not versioned('https://raw.githubusercontent.com/APS-Conecta/gestion/main/masters/establecimientos-deis-2026-11-01.csv')
+manifest = json.loads(pathlib.Path('provisioning/data/packages.json').read_text())
+for master in manifest['masters']:
+    assert versioned(master['origin']), master['id'] + ': master origin is not a versioned asset'
+assert 'geoportal-dpa-comunas-2023' not in {m['id'] for m in manifest['masters']}, 'An unused master remains'
+assert 'recipes' not in manifest, 'Recipe prose duplicates the packaging command'
+payload = b'original\r\nsource\r\n'
+def object_hash(*options):
+    return subprocess.run(['git', 'hash-object', '--stdin', *options], input=payload,
+                          capture_output=True, check=True).stdout
+assert object_hash('--path=provisioning/data/masters/establecimientos-deis-2026-11-01.csv') == object_hash('--no-filters'), 'Git changes literal source bytes'
+PY
+}
+check comuna_master_origins_versioned
+
 # --- gate: a21 (L5): the map is the suite's own route — the separate tiles server is gone -------------
 # The grep is a21's own clause, with the pattern assembled without its literals
 # ("nginx:alp""ine|TILES_""PORT|:80""84"): a21 covers scripts/ too, and a gate that spelled its
