@@ -1558,6 +1558,104 @@ jobs:
       - uses: ./.github/actions/assert-release-app
         with:
           app: files_fulltextsearch
+      - name: Fresh sector and unit members upload on their first WebDAV request
+        run: |
+          set -euo pipefail
+          sudo python3 - "https://$SUITE_IP" "$RUNNER_TEMP/ca.crt" <<'PYNESTED'
+          import base64, json, os, secrets, ssl, subprocess, sys, urllib.error, urllib.parse, urllib.request
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, request, response, code, message, headers, new_url):
+                  return None
+
+          def occ(*args, password=None):
+              command = ['docker', 'exec', '--user', 'www-data']
+              environment = dict(os.environ)
+              if password is not None:
+                  environment['OC_PASS'] = password
+                  command += ['--env', 'OC_PASS']
+              command += ['aps-conecta-nextcloud', 'php', '/var/www/html/occ', *args]
+              result = subprocess.run(command, env=environment, capture_output=True, text=True, timeout=60)
+              if result.returncode:
+                  raise RuntimeError('Native account command failed')
+              return result.stdout
+
+          stage = 'reading the provisioned team folders'
+          try:
+              folders = json.loads(occ('groupfolders:list', '--output=json'))
+              opener = urllib.request.build_opener(
+                  urllib.request.HTTPSHandler(context=ssl.create_default_context(cafile=sys.argv[2])),
+                  RejectRedirects())
+              for prefix in ('Sectores/', 'Unidades/'):
+                  folder = next(folder for folder in folders if folder['mountPoint'].startswith(prefix)
+                      and any(group != 'cat-jefaturas' and (int(permissions) & 7) == 7
+                              for group, permissions in folder['groups_list'].items()))
+                  group = next(group for group, permissions in folder['groups_list'].items()
+                               if group != 'cat-jefaturas' and (int(permissions) & 7) == 7)
+                  user = 'aps-198-' + secrets.token_hex(6)
+                  password = secrets.token_urlsafe(32)
+                  stage = 'creating a fresh member for ' + folder['mountPoint']
+                  occ('user:add', '--password-from-env', '--group=all-staff', '--group=' + group,
+                      '--display-name=Prueba de carga inicial', user, password=password)
+                  authorization = 'Basic ' + base64.b64encode((user + ':' + password).encode()).decode('ascii')
+                  base = sys.argv[1] + '/remote.php/dav/files/' + user + '/'
+                  path = '/'.join(urllib.parse.quote(part, safe='') for part in folder['mountPoint'].split('/'))
+                  url = base + path + '/aps-198-' + secrets.token_hex(12) + '.txt'
+                  marker = ('APS Conecta first upload ' + secrets.token_hex(16) + '\n').encode()
+                  methods = []
+                  removed = False
+                  failure = None
+
+                  def dav(method, target, data=None, headers=None):
+                      methods.append(method)
+                      request = urllib.request.Request(target, data=data, method=method,
+                          headers={'Authorization': authorization, **(headers or {})})
+                      try:
+                          response = opener.open(request, timeout=45)
+                      except urllib.error.HTTPError as error:
+                          response = error
+                      with response:
+                          return response.status, response.read()
+
+                  try:
+                      stage = 'the first WebDAV PUT into ' + folder['mountPoint']
+                      status, _ = dav('PUT', url, marker, {'Content-Type': 'text/plain'})
+                      assert methods == ['PUT']
+                      assert status == 201, f'first PUT returned {status}, expected 201'
+                      stage = 'reading the exact uploaded bytes'
+                      status, saved = dav('GET', url)
+                      assert status == 200 and saved == marker
+                      stage = 'removing the owned upload'
+                      status, _ = dav('DELETE', url)
+                      assert status == 204
+                      removed = True
+                  except Exception as error:
+                      failure = f'{stage}: {error}'
+                  finally:
+                      try:
+                          if not removed:
+                              status, _ = dav('PROPFIND', base, headers={'Depth': '1'})
+                              assert status == 207
+                              status, saved = dav('GET', url)
+                              if status == 200:
+                                  assert saved == marker
+                                  status, _ = dav('DELETE', url)
+                                  assert status == 204
+                              else:
+                                  assert status == 404
+                      except Exception:
+                          failure = (failure + '; ' if failure else '') + 'owned upload cleanup failed'
+                      finally:
+                          try:
+                              occ('user:delete', user)
+                          except Exception:
+                              failure = (failure + '; ' if failure else '') + 'owned account cleanup failed'
+                  if failure:
+                      raise RuntimeError(failure)
+                  print('PASS: first PUT returns 201 in ' + folder['mountPoint'] + '; bytes match and owned fixtures are removed')
+          except Exception as error:
+              raise SystemExit(f'FAIL: {stage} ({error})') from None
+          PYNESTED
       - name: Staff uploads are scanned and their contents can be searched
         run: |
           set -euo pipefail
