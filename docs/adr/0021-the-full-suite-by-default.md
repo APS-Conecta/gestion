@@ -9,13 +9,13 @@ Accepted, 2026-10-30. Part of #175; implemented in stages beginning with #183.
 
 Every establishment receives Office, Talk, full-text search, previews, antivirus and AppAPI
 through HaRP. Supporting a fixed service set gives installation, readiness and acceptance one
-contract. Farmacia, Estadística and Tótem remain optional apps. Talk recording stays off.
-On 2026-11-01 the owner removed workload qualification, measured resource thresholds, automatic
-recording activation and shared concurrency sizing from #175 (#189–#191).
+contract; resource limits must produce an explicit suitability verdict rather than silently
+remove a capability. Farmacia, Estadística and Tótem remain optional apps. Talk recording stays
+off until the measured hardware policy in #189/#190 permits it.
 
 This amends [ADR-0020](0020-spreed-is-a-fork-app-with-signed-releases.md): there is no Talk switch
-in the wizard, saved options, resolver, provisioning or acceptance. ADR-0025 supersedes its
-acquisition policy: Spreed uses its official store package and signature. Its wiring converges during provisioning, replacing the
+in the wizard, saved options, resolver, provisioning or acceptance. Spreed always follows its
+signed fork release and lock. Its wiring must converge during provisioning, replacing the
 next-boot policy. Implementation #187 calls the shared startup module directly after phase 12
 installs Spreed, including repeated provisioning. Native configuration imports carry changed
 settings through stdin. Its readiness gate verifies configured endpoints, the public welcome
@@ -30,3 +30,10 @@ Old saved service selections cannot disable an included service or enable record
 options record continues to represent optional app choices. Service settings are fixed at the
 configuration boundary, and readiness follows the service inventory rather than a separate
 six-container assumption.
+
+## Amendment — 2026-11-01
+
+The owner removed workload qualification, measured resource thresholds, automatic recording
+activation and shared concurrency sizing from #175 (#189–#191). Recording remains off.
+ADR-0025 supersedes the original acquisition policy above: Talk uses its official store
+package and signature. The fixed service set, functional checks and usage diagnostics remain.
