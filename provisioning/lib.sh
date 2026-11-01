@@ -666,8 +666,12 @@ aia_is_safe() {
   [[ $1 =~ ^[Hh][Tt][Tt][Pp][Ss]?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~%+/-]*)?(\?[A-Za-z0-9._~%+/=\&-]*)?$ ]]
 }
 
-ensure_aia_intermediate() {  # HOST
-  local host="$1" aia name
+ensure_aia_intermediate() (  # HOST
+  local host="$1" aia name host_temp='' container_temp='' candidate
+  trap '
+    [ -z "$host_temp" ] || rm -rf -- "$host_temp" || true
+    [ -z "$container_temp" ] || nc_exec -- rm -rf "$container_temp" >/dev/null 2>&1 || true
+  ' EXIT
 
   # occ security:certificates prints one row per imported file; the file name is the key.
   # One handshake, and it yields both halves: the pointer on the first line, the leaf after
@@ -715,6 +719,10 @@ ensure_aia_intermediate() {  # HOST
     *) log "certs: certificate list was unreadable — skipped, leaving $name as it is"; return 0 ;;
   esac
 
+  host_temp="$(mktemp -d)" || {
+    log "certs: could not prepare a private temporary directory — skipped"; return 0;
+  }
+
   # GlobalSign serves DER; others serve PEM. Try DER, fall back to PEM, and let openssl be the
   # gate: an HTML error page must never reach the bundle as a "certificate". Empty output means
   # one of fetch or parse failed, and either way there is nothing to import.
@@ -730,7 +738,8 @@ ensure_aia_intermediate() {  # HOST
   # both — verified by forging a leaf and its CA, which that form accepted and this one refuses.
   # Nothing legitimate is lost: an intermediate that does not reach a public root would not fix
   # the feed either.
-  nc_exec -e AIA="$aia" -e HOST="$host" -e LEAF="$leaf_pem" -- sh -c '
+  ( umask 077
+    nc_exec -e AIA="$aia" -e HOST="$host" -e LEAF="$leaf_pem" -- sh -c '
       leaf=$(mktemp); blob=$(mktemp); pem=$(mktemp)
       trap "rm -f $leaf $blob $pem" EXIT
       printf "%s\n" "$LEAF" > "$leaf"   # a PEM without its final newline is not one
@@ -739,40 +748,35 @@ ensure_aia_intermediate() {  # HOST
         || openssl x509 -in "$blob" -outform PEM > "$pem" 2>/dev/null || exit 1
       openssl verify -untrusted "$pem" -verify_hostname "$HOST" "$leaf" >/dev/null 2>&1 || exit 1
       cat "$pem"
-    ' > "/tmp/$name" 2>/dev/null || true
+    ' > "$host_temp/$name" 2>/dev/null
+  ) || true
 
-  # Every cleanup and copy below is `|| true` or guarded, for one reason: this helper
-  # warns and returns 0 on every failure it already knows about, and a phase that dies
-  # on the tidying instead is the same defect wearing a different hat. `docker cp` in
-  # particular fails for the ordinary reason of a container still starting.
-  if [ ! -s "/tmp/$name" ]; then
+  if [ ! -s "$host_temp/$name" ]; then
     log "certs: could not fetch or parse $aia — skipped, feeds from $host will fail"
-    rm -f "/tmp/$name" || true
     return 0
   fi
 
-  # The one transport site that is not an exec — docker cp takes the container name itself, so it
-  # rides env.sh's nc_cp (same resolution as nc_exec).
-  if ! nc_cp "/tmp/$name" "/tmp/$name" >/dev/null 2>&1; then
+  candidate="$(nc_exec -- mktemp -d /tmp/aps-ca.XXXXXXXXXX 2>/dev/null)" || candidate=''
+  if [[ ! $candidate =~ ^/tmp/aps-ca\.[A-Za-z0-9]{10}$ ]]; then
+    log "certs: could not prepare a private directory in the container — skipped"; return 0
+  fi
+  container_temp="$candidate"
+  if ! nc_cp "$host_temp/$name" "$container_temp/$name" >/dev/null 2>&1; then
     log "certs: could not copy $name into the container — skipped, feeds from $host will fail"
-    rm -f "/tmp/$name" || true
     return 0
   fi
-  rm -f "/tmp/$name" || true
+  if ! nc_exec -- chown -R www-data:www-data "$container_temp" >/dev/null 2>&1; then
+    log "certs: could not prepare certificate permissions — skipped"; return 0
+  fi
 
-  if occ security:certificates:import "/tmp/$name" >/dev/null 2>&1; then
+  if occ security:certificates:import "$container_temp/$name" >/dev/null 2>&1; then
     log "certs: imported $name for $host"
   else
     log "certs: import of $name FAILED"
   fi
 
-  # `docker cp` writes as root, so www-data cannot unlink it from a sticky /tmp. Left
-  # unguarded this was the LAST command in the function, so a failed cleanup became the function's
-  # exit status and killed the phase after the first host — caught by removing both certificates
-  # and re-running, which imported ispch and then aborted before the second host.
-  nc_exec -- rm -f "/tmp/$name" >/dev/null 2>&1 || true
   return 0
-}
+)
 
 # Whether Nextcloud's bundle already holds NAME (one row per imported file; the file name is the
 # key): 0 = it does, 1 = it does not, 2 = the list could not be read, 3 = it was read and is not

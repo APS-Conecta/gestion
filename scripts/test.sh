@@ -141,11 +141,15 @@ aia_private_temp_cases() {
 import json, os, pathlib, subprocess, tempfile, uuid
 with tempfile.TemporaryDirectory(prefix='aps ca test ') as directory:
     root = pathlib.Path(directory)
-    for failure in ('none', 'copy', 'import'):
+    host_tmp = root / 'host tmp'
+    host_tmp.mkdir()
+    for failure in ('none', 'copy', 'permissions', 'import', 'invalid_temp'):
         capture, cleanup = root / 'copy.json', root / 'cleanup.txt'
+        capture.unlink(missing_ok=True)
+        cleanup.unlink(missing_ok=True)
         name = 'aps-196-' + uuid.uuid4().hex
         env = dict(os.environ, CASE_CAPTURE=str(capture), CASE_CLEANUP=str(cleanup),
-                   CASE_CA_NAME=name, CASE_CA_FAILURE=failure)
+                   CASE_CA_NAME=name, CASE_CA_FAILURE=failure, TMPDIR=str(host_tmp))
         result = subprocess.run(['bash', '-c', r'''
 set -e
 source scripts/env.sh
@@ -164,8 +168,10 @@ CAPTURE
   fi
   case "$*" in
     *s_client*) printf 'http://example.test/%s.crt\n\nLEAF\n' "$CASE_CA_NAME" ;;
-    *'mktemp -d'*) echo /tmp/aps-ca.ABCDEF1234 ;;
+    *'mktemp -d'*)
+      if [ "$CASE_CA_FAILURE" = invalid_temp ]; then echo /tmp/unowned; else echo /tmp/aps-ca.ABCDEF1234; fi ;;
     *'openssl verify'*) echo PEM ;;
+    *'chown -R'*) [ "$CASE_CA_FAILURE" != permissions ]; return ;;
     *'rm -rf'*) printf '%s\n' "$*" >> "$CASE_CLEANUP" ;;
   esac
   return 0
@@ -179,6 +185,10 @@ occ() {
 ensure_aia_intermediate example.test
 '''], env=env, capture_output=True, text=True, timeout=5)
         assert result.returncode == 0, result.stderr
+        assert not list(host_tmp.iterdir()), 'Host certificate temporary files were not removed'
+        if failure == 'invalid_temp':
+            assert not capture.exists() and not cleanup.exists(), 'An unowned container path was used'
+            continue
         call = json.loads(capture.read_text())
         assert call['directory_mode'] == 0o700, 'AIA certificate uses a shared temporary directory'
         assert call['file_mode'] == 0o600, 'AIA certificate temporary file is not private'
@@ -1142,6 +1152,7 @@ check bash -c '
   docker() {
     case "$*" in
       *s_client*) echo "http://secure.globalsign.com/cacert/ca.crt"; echo; echo LEAF ;;
+      *"mktemp -d"*) echo /tmp/aps-ca.ABCDEF1234 ;;
       *cp*) return 1 ;;
       *) echo PEM ;;
     esac
@@ -1152,7 +1163,14 @@ check bash -c '
   # which this function reads as "absent" and answers with the re-import #143 exists to
   # prevent — a WRITE on a provisioned instance. It must read as unreadable instead, and
   # an empty list must still mean absent or the guard has swallowed the real answer too.
-  docker() { case "$*" in *s_client*) echo "http://x.test/ca.crt"; echo; echo LEAF ;; *) echo PEM ;; esac; return 0; }
+  docker() {
+    case "$*" in
+      *s_client*) echo "http://x.test/ca.crt"; echo; echo LEAF ;;
+      *"mktemp -d"*) echo /tmp/aps-ca.ABCDEF1234 ;;
+      *) echo PEM ;;
+    esac
+    return 0
+  }
   for shape in "{\"a\":1}" "\"x\"" "[1,2]"; do
     occ() { echo "$shape"; }
     ensure_aia_intermediate example.test 2>&1 | grep -q "unreadable" || exit 1
