@@ -4031,6 +4031,8 @@ case "\$1 \$2" in
   "exec --user")
     case "\$*" in
       *"occ status"*) echo '{"installed":true,"version":"34.0.4"}' ;;
+      *"/custom_apps/territorio/appinfo/info.xml"*)
+        if [ -e "$act/version-read-failed" ] && [ -e "$act/home/apps.lock.json.next" ]; then exit 124; fi ;;
       *"occ config:list"*)
         if [ -e "$act/home/apps.lock.json.next" ]; then
           if [ -e "$act/config-read-failed" ]; then exit 1; fi
@@ -4209,13 +4211,13 @@ SHIM
       && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes" && [ ! -e "$act/home/apps.lock.json.next" ] \
       && grep -q "occ app:enable territorio$" "$act/docker.log" && ! grep -q "app:update calendar" "$act/docker.log"'
 
-  for fault in config-read-failed config-invalid; do
+  for fault in version-read-failed config-read-failed config-invalid; do
     : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"
     cp "$act/lock.bytes" "$act/home/apps.lock.json"
     rm -f "$act/home/apps.lock.json.next"
     rm -f "$act/aio.libre"; touch "$act/$fault"
     out="$( id() { echo 0; }; act46 2>&1 )"; arc=$?; rm -f "$act/$fault"
-    check "actualizar: failed configuration reads name the app and preserve its lock ($fault)" \
+    check "actualizar: failed app reads name the app and preserve its lock ($fault)" \
       '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "✗ territorio falló al aplicarse" \
         && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes" && [ ! -e "$act/home/apps.lock.json.next" ] \
         && ! grep -q "occ app:enable territorio" "$act/docker.log" && ! grep -q "app:update calendar" "$act/docker.log" \
