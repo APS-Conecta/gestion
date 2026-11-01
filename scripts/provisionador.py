@@ -4595,6 +4595,19 @@ def selftest():
                       and f"Certificado para los equipos del personal: {public_ca}" in certificate.stdout)
                 if certificate.returncode:
                     print(certificate.stdout.strip() or certificate.stderr.strip())
+                refused_run = subprocess.run([
+                    sys.executable, os.path.join(isolated, "scripts", "provisionador.py"),
+                    "--paso", "generar", "--codigo", "999999",
+                ], env=dict(os.environ, APS_HOME=home), capture_output=True, text=True,
+                    timeout=30, **identity)
+                state_file = os.path.join(home, "estado.txt")
+                saved_state = os.path.isfile(state_file)
+                check("--paso generar: a refused unprivileged run saves its verdict under APS_HOME (#142)",
+                      refused_run.returncode == 1 and saved_state
+                      and os.stat(state_file).st_mode & 0o777 == 0o644
+                      and "la ejecución no terminó" in open(state_file, encoding="utf-8").read())
+                if not saved_state:
+                    print((refused_run.stdout + refused_run.stderr).strip())
 
             st, body = call("POST", "/api/usuarios", {"codigo": "113314",
                                                       "csv": "\ufeff" + planilla(maria, juan)})
