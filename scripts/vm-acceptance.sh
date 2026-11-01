@@ -328,7 +328,11 @@ main() {
     }
   fi
   sudo install -m 0644 "$VMA_ROOT/certificados/ca/aps-conecta-ca.crt" "$ca" 2>/dev/null \
-    || die "no se pudo copiar la CA del instalador ($VMA_ROOT/certificados/ca/)"
+    || {
+      verdict fail "el certificado del instalador" "no se pudo copiar la CA de $VMA_ROOT/certificados/ca/; comprobaciones HTTPS pendientes"
+      summarize
+      return 1
+    }
   printf '\n== Los cinco criterios del tiquete ==\n'
   if check_bootstrap "$tag"; then verdict ok "curl | sudo bash" "firma verificada, suite $tag en $VMA_ROOT/instalador"
   else verdict fail "curl | sudo bash" "el registro no muestra el camino verificado ($VMA_WORK/bootstrap.out)"; fi
