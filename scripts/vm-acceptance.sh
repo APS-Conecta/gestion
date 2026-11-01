@@ -2,11 +2,8 @@
 # SPDX-FileCopyrightText: 2026 APS Conecta
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# The #54 acceptance, as one command on a scratch Ubuntu 24.04 VM: the REAL one-liner from a
-# REAL release URL with no token, then the ticket's own checks. The rehearsal (Images + Clean
-# boot by dispatch, aps/RELEASING.md §4) is the CI half of «the rehearsal is green»; this
-# script is the VM half — it proves what CI cannot: the published bootstrap, fetched exactly
-# the way an establishment fetches it, on a pristine machine.
+# Release acceptance on Ubuntu 24.04: the public bootstrap, silent install and
+# operator-visible verdicts. acceptance.yml runs this same command in CI.
 #
 #   sudo bash scripts/vm-acceptance.sh [--tag vX.Y.Z|latest] [--repo-url URL]
 #                                      [--dominio D] [--sin-datos] [--solo-chequeos] [--continuar]
@@ -14,10 +11,10 @@
 #
 #   --tag        the suite release to install (default: latest — resolved by redirect, no token)
 #   --repo-url   where releases live (default: the public suite repo)
-#   --dominio    install by domain D (its DNS must reach this VM on 443; the certificate is
-#                ACME's, as upstream). Without it: install by this VM's own IPv4, with the
+#   --dominio    install by domain D (its DNS must reach this host on 443; acceptance pending #157).
+#                Without it: install by this host's routed IPv4, with the
 #                installer's own certificate.
-#   --sin-datos  skip the national data masters (a small VM's disk; Clean boot's own posture)
+#   --sin-datos  skip the national data masters
 #   --sin-respaldo  drive the wizard without the daily backup (criterion 5 will red: actualizar
 #                refuses without a configured backup, by design) — the honest no-backup posture
 #   --solo-chequeos  re-run only the checks against an already-installed VM
@@ -498,7 +495,7 @@ PY
   printf 'yes\n' > "$SHIM_STATE/occ.calendar.enabled"
   t "manifest: the walk reads every row" 0 '[ "$(manifest_rows | wc -l)" -ge 12 ]'
   t "manifest: every row answers its source" 0 'manifest_rows | grep -qxP "\w+\t(own|fork|store)\t[01]" || false'
-  t "apps walk: a missing signed Talk release is a failure verdict" 0 'check_apps "$VMA_APPS" 10.0.0.9 "$VMA_WORK/ca.crt" 2>/dev/null | grep "^  ✗ app spreed — " >/dev/null'
+  t "apps walk: a missing official Talk package is a failure verdict" 0 'check_apps "$VMA_APPS" 10.0.0.9 "$VMA_WORK/ca.crt" 2>/dev/null | grep "^  ✗ app spreed — " >/dev/null'
   t "status.php: green through the CA" 0 'check_status_php 10.0.0.9 "$VMA_WORK/ca.crt"'
   t "user login: green on the OCS body" 0 'check_user_login 10.0.0.9 "$VMA_WORK/ca.crt" ana.prueba CAFE-secret'
   printf '{"ocs":{"data":{"id":"otra.persona"}}}\n' > "$SHIM_STATE/user.body"
