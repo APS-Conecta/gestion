@@ -144,6 +144,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-082 | the recorder cannot verify by-IP HTTPS and Nextcloud can wait indefinitely during startup (#190) | the recorder receives no suite CA; Python callbacks and Firefox use separate trust stores; Redis and app-store waits have no deadline | mount the public CA read-only, prepare the Python bundle and native Firefox certificate policy, and bound the remaining waits; the existing by-IP job checks both official clients with and without the CA; hardware activation remains pending #189 |
 
+| A-084 | the comuna data step depends on a moving DEIS edition and an untested archive tool (#197) | the current-edition URL changes bytes monthly, extraction requires an undeclared unzip binary, and both native jobs skip data loading | pin a literal dated DEIS snapshot by immutable commit and checksum, extract with Python's standard library, remove unused master metadata, and run the by-IP import with attributed public-data fixtures; ordinary staff reads the source names and coordinates through Territorio, and a repeated import creates zero records |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and

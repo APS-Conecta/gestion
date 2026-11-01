@@ -996,6 +996,24 @@ jobs:
           sed -i "s|^SIGNIFY_PUBKEY=\"[^\"]*\"|SIGNIFY_PUBKEY=\"$(sed -n 2p "$ensayo/installer.pub")\"|" install.sh
           cp "$ensayo/installer.pub" installer.pub
           printf '%s\n' "$tag" > VERSION
+          python3 - <<'PYMASTERS'
+          import hashlib, json
+          from pathlib import Path
+          fixtures = Path('tests/fixtures/comuna')
+          installed = Path('/opt/aps-conecta/instalador') / fixtures
+          selected = {
+              'unidades-vecinales-2024': ('unidades-vecinales-v1.zip', 345),
+              'minsal-deis-establecimientos': ('establecimientos-deis-v1.csv', 344),
+          }
+          path = Path('provisioning/data/packages.json')
+          manifest = json.loads(path.read_text())
+          for master in manifest['masters']:
+              filename, records = selected[master['id']]
+              master.update(origin=(installed / filename).as_uri(),
+                            sha256=hashlib.sha256((fixtures / filename).read_bytes()).hexdigest(),
+                            records=records)
+          path.write_text(json.dumps(manifest, indent=2) + '\n')
+          PYMASTERS
           git config user.email cleanboot@invalid && git config user.name cleanboot
           git add -A && git commit -qm "rehearsal: the package at $tag" && git tag "$tag"
           RELEASE_TAG="$tag" \
@@ -1207,7 +1225,7 @@ jobs:
           # APS_SUITE_TAG: the package's VERSION is this run's throwaway ci-cleanboot-<sha>, but the
           # mastercontainer this job CREATES must run a published image — the resolved suite tag
           # (suite_tag() answers the override first; the rehearsal-window seam it exists for)
-          sudo env "PATH=$PATH" APS_SKIP_DATOS=1 MIN_DISK_GB=2 APS_SUITE_TAG="$SUITE_TAG" \
+          sudo env "PATH=$PATH" MIN_DISK_GB=2 APS_SUITE_TAG="$SUITE_TAG" \
             bash /opt/aps-conecta/instalador/host/aps-conecta install \
               --sitio "$RUNNER_TEMP/site.sh" --planilla "$RUNNER_TEMP/usuarios.csv" --app farmacia --app estadistica --app totem \
             < /dev/null | tee "$RUNNER_TEMP/install.out"
@@ -2283,7 +2301,7 @@ jobs:
           cd /opt/aps-conecta/instalador && source scripts/env.sh
           cut="$(. "$RUNNER_TEMP/site.sh" && printf '%s' "$SITE_COMUNA_CUT")"
           sudo python3 - "https://$SUITE_IP" "$RUNNER_TEMP/ca.crt" "$cut" <<'PYPLACES'
-          import base64, csv, http.cookiejar, json, ssl, sys, urllib.parse, urllib.request
+          import base64, csv, http.cookiejar, json, ssl, sys, urllib.request
 
           class RejectRedirects(urllib.request.HTTPRedirectHandler):
               def redirect_request(self, request, response, code, message, headers, new_url):
@@ -2322,10 +2340,10 @@ jobs:
 
               stage = 'reading the exact published area'
               area = expected['uv']
-              west, south, east, north = area['bounds']
-              query = urllib.parse.urlencode(dict(west=west, south=south, east=east, north=north))
-              result = get('/index.php/apps/territorio/boundaries?' + query)
-              found = [feature for feature in result['features'] if feature['name'] == area['name']]
+              result = get('/ocs/v2.php/apps/territorio/api/v1/subcategories/'
+                           'division_territorial/unidad_vecinal/features?format=json')['ocs']
+              assert result['meta']['status'] == 'ok'
+              found = [feature for feature in result['data'] if feature['name'] == area['name']]
               assert len(found) == 1 and found[0]['geometry']['type'] in ('Polygon', 'MultiPolygon')
               points = []
 
