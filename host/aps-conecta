@@ -240,7 +240,7 @@ cmd_install() {  # the install: the welcome, then the steps in registry order. I
       --respaldo) [ -n "${2:-}" ] \
                     || die "falta el directorio del respaldo: sudo aps-conecta install --respaldo <directorio>"
                   SILENT_RESPALDO="$2"; shift 2 ;;
-      *) die "opción desconocida: $1 — uso: sudo aps-conecta install [--sitio <site.sh> --planilla <usuarios.csv>] [--app <aplicación>] [--respaldo <directorio>]" ;;
+      *) die "opción desconocida: $1 — uso: sudo aps-conecta install [--sitio <site.sh> --planilla <usuarios.csv>] [--app <aplicación>] [--respaldo <directorio>] [--sin-validar-dominio]" ;;
     esac
   done
   local again="sudo aps-conecta install"
@@ -294,6 +294,7 @@ usage() {  # Spanish, generated from the registry — never a slice of this file
   echo "  sudo aps-conecta install --sitio S --planilla P   la misma instalación, sin preguntas ni navegador"
   echo "  sudo aps-conecta install --app A    además instala la aplicación opcional A (una por --app)"
   echo "  sudo aps-conecta install --respaldo R   configura el respaldo diario en R (sin él, actualizar no corre)"
+  echo "  sudo aps-conecta install --sin-validar-dominio   omite la validación del dominio en la instalación silenciosa"
   echo
   echo "Pasos sueltos, en el orden de la instalación:"
   for n in $(seq 1 "${#STEPS[@]}"); do
@@ -307,7 +308,7 @@ usage() {  # Spanish, generated from the registry — never a slice of this file
   echo "  aps-conecta run-command [IP]      solo el comando de arranque de la suite (por IP, con su certificado)"
   echo "  aps-conecta provision             abre el instalador web (lo mismo que el paso abrir)"
   echo "  aps-conecta provision --reponer   re-provisión semanal (la ejecuta el temporizador)"
-  echo "  aps-conecta asistente-aio --dominio D [--app A] [--preparar]   configura la suite por la API del asistente (--preparar: sin iniciarla; --app: una aplicación opcional por bandera)"
+  echo "  aps-conecta asistente-aio --dominio D [--app A] [--sin-validar-dominio] [--preparar]   configura la suite por la API del asistente (--preparar: sin iniciarla; --app: una aplicación opcional por bandera)"
   echo "  aps-conecta temporizadores        instala y activa la re-provisión semanal"
   echo "  aps-conecta estado                el último resultado de la re-provisión, con cada arreglo (sin sudo)"
   echo "  aps-conecta revalidate            revisa la instancia después de una actualización"
