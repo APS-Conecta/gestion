@@ -191,7 +191,7 @@ ensure_group() {  # GID DISPLAY
   GROUPS_CACHE="$gid"$'\n'"$GROUPS_CACHE"
 }
 
-# --- users (fixtures; query-before-create) ---
+# --- users (query-before-create) ---
 user_exists() { occ user:info "$1" >/dev/null 2>&1; }  # UID
 ensure_user() {  # UID DISPLAY PASSWORD
   local uid="$1" display="$2" pass="$3"
@@ -626,22 +626,6 @@ ensure_gf_subfolder() {  # MOUNT SUBFOLDER
   nc_exec --user www-data -- mkdir -p "$path"
   gf_scan "$mount"
   log "  subfolder $mount/$sub created"
-}
-
-# --- content fixtures (query-before-create): put a file in a user's Files, then index it ---
-ensure_sample_file() {  # UID RELPATH CONTENT
-  local uid="$1" rel="$2" content="$3"
-  # Datadir-derived (see datadir_load): a hand-written `data/$uid/files` is a phantom tree under
-  # AIO with every gate green. One load here, parent-side — this helper runs in the phase shell
-  # itself, no substitution, so the cache holds for the rest of the phase.
-  datadir_load || return 1
-  if nc_exec --user www-data -- test -f "$DATADIR/$uid/files/$rel" 2>/dev/null; then
-    log "file $uid:$rel exists"; return 0
-  fi
-  nc_exec --user www-data -e SAMPLE="$content" -e DEST="$DATADIR/$uid/files/$rel" -- \
-    sh -c 'mkdir -p "$(dirname "$DEST")" && printf "%s" "$SAMPLE" > "$DEST"'
-  occ files:scan "$uid" >/dev/null 2>&1 || true
-  log "file $uid:$rel created + indexed"
 }
 
 # --- TLS intermediates (#28) -------------------------------------------------
