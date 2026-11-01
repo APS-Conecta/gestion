@@ -738,7 +738,7 @@ def selftest():
 
         def mk_release(repo, tag, version, nc="34", nc_max=None, app=None, top=None,
                        firma="nuestra", suma_tocada=None, version_interna=None, con_firma_nc=False,
-                       id_asset=None):
+                       id_asset=None, extra_members=()):
             """One fixture release, exactly the four fixed-name assets the shared workflow
             publishes; every knob is one of the defects an arm refuses."""
             app = app or repo.split("/")[-1].lower().replace("-", "")
@@ -760,6 +760,8 @@ def selftest():
                     member = tarfile.TarInfo(name)
                     member.size = len(blob)
                     tar.addfile(member, io.BytesIO(blob))
+                for member in extra_members:
+                    tar.addfile(member)
             tgz = buf.getvalue()
             with open(os.path.join(d, f"{app}.tar.gz"), "wb") as fh:
                 fh.write(tgz)
@@ -852,6 +854,8 @@ def selftest():
         mk_release("APS-Conecta/mala-firma", "v1.0.0", "1.0.0", firma="ajena")
         mk_release("APS-Conecta/mala-suma", "v1.0.0", "1.0.0", suma_tocada="0" * 64)
         mk_release("APS-Conecta/mal-dir", "v1.0.0", "1.0.0", top="otro")
+        mk_release("APS-Conecta/mal-path", "v1.0.0", "1.0.0",
+                   extra_members=(tarfile.TarInfo("malpath/../x"),))
         mk_release("APS-Conecta/con-firma-nc", "v1.0.0", "1.0.0", con_firma_nc=True)
         mk_release("APS-Conecta/otra-id", "v1.0.0", "1.0.0", id_asset="distinto")
         mk_release("APS-Conecta/version-interna", "v1.0.0", "1.0.0", version_interna="0.9.0")
@@ -882,6 +886,9 @@ def selftest():
         causa = refused(fetch_release, fila("APS-Conecta/mal-dir"), "v1.0.0")
         check("wrong top directory refused — the message names both directories",
               "«otro/»" in causa and "«maldir/»" in causa)
+        cause = refused(fetch_release, fila("APS-Conecta/mal-path"), "v1.0.0")
+        check("an archive with an internal parent component is refused before storage",
+              bool(cause) and not os.path.exists(store_file("malpath", "v1.0.0")))
         check("a tarball carrying appinfo/signature.json refused",
               "signature.json" in refused(fetch_release, fila("APS-Conecta/con-firma-nc"), "v1.0.0"))
         check("a release declaring another app id refused",
