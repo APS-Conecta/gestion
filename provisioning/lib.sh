@@ -44,7 +44,17 @@ require_installed() {  # the FATAL names the container, and an override that mis
 CONF_CACHE=""
 conf_load() {
   [ -n "$CONF_CACHE" ] && return 0
-  CONF_CACHE="$(occ config:list --output=json 2>/dev/null)"
+  local listing
+  listing="$(occ config:list --output=json 2>/dev/null)" || return 1
+  printf '%s' "$listing" | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+valid = (isinstance(data, dict)
+         and all(isinstance(data.get(key, {}), dict) for key in ("system", "apps"))
+         and all(isinstance(app, dict) for app in data.get("apps", {}).values()))
+sys.exit(0 if valid else 1)
+' 2>/dev/null || return 1
+  CONF_CACHE="$listing"
 }
 
 # Prints a value from the cached listing, and EXITS 1 WHEN THE KEY IS ABSENT. That distinction is
@@ -301,7 +311,7 @@ ensure_store_app() {  # APPID — install the store's newest compatible release,
     fi
   fi
 
-  conf_load || return 1
+  conf_load || { log "FAILED $app — falló la lectura de configuración"; return 1; }
   [ "$(conf_get app "$app" enabled 2>/dev/null || true)" = "yes" ] && { log "app $app enabled"; return 0; }
   # `app:enable` reads what is on disk and never contacts the store — no scope needed.
   if err="$(occ app:enable "$app" 2>&1)"; then
