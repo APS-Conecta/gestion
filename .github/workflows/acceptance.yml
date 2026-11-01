@@ -1,0 +1,72 @@
+name: Release acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Published suite tag, or latest"
+        required: true
+        default: latest
+        type: string
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  acceptance:
+    name: Published release by IP
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Prepare the acceptance runner
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          [[ "$TAG" =~ ^(latest|v[0-9]+\.[0-9]+\.[0-9]+(-ci\.[0-9]+)?)$ ]] \
+            || { echo 'FATAL: select latest or a published suite version' >&2; exit 1; }
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android
+          mkdir -p "$RUNNER_TEMP/acceptance"
+          sudo install -d -m 0700 "$RUNNER_TEMP/acceptance-private"
+      - name: Install from the public release and print the verdicts
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          sudo env VMA_WORK="$RUNNER_TEMP/acceptance-private" \
+            bash scripts/vm-acceptance.sh --tag "$TAG" --sin-datos --continuar \
+            2>&1 | tee "$RUNNER_TEMP/acceptance/verdicts.log"
+      - name: Collect failure evidence
+        if: failure()
+        run: |
+          mkdir -p "$RUNNER_TEMP/acceptance"
+          if sudo test -f "$RUNNER_TEMP/acceptance-private/bootstrap.out"; then
+            sudo cat "$RUNNER_TEMP/acceptance-private/bootstrap.out" > "$RUNNER_TEMP/acceptance/bootstrap.out"
+          fi
+          docker ps -a --filter name=^aps-conecta- --filter name=^nextcloud-aio-mastercontainer$ \
+            --format 'table {{.Names}}\t{{.Status}}' > "$RUNNER_TEMP/acceptance/containers.txt"
+          df -h > "$RUNNER_TEMP/acceptance/disk.txt"
+      - name: Preserve acceptance verdicts and failure evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/acceptance/verdicts.log
+            ${{ runner.temp }}/acceptance/bootstrap.out
+            ${{ runner.temp }}/acceptance/containers.txt
+            ${{ runner.temp }}/acceptance/disk.txt
+          if-no-files-found: error
+      - name: Remove the acceptance installation
+        if: always()
+        run: sudo bash scripts/aio-testbed.sh down
