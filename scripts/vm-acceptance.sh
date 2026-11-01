@@ -555,7 +555,7 @@ case "$*" in
   *) exec "$SHIM_STATE/healthy-curl" "$@" ;;
 esac
 SH
-  printf '#!/bin/sh\nprintf "Filesystem 1G-blocks Used Available Use%% Mounted on\\nfixture 40G 10G 30G 25%% /\\n"\n' > "$shims/df"
+  printf '#!/bin/sh\necho 30G\n' > "$shims/df"
   printf '#!/bin/sh\necho 0\n' > "$shims/id"
   printf '#!/bin/sh\necho "1.1.1.1 dev eth0 src 10.0.0.9"\n' > "$shims/ip"
   printf '#!/bin/sh\nexit 0\n' > "$shims/ss"
