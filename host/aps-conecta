@@ -3944,7 +3944,21 @@ else:  # actualizar
 PYEOF
   cat > "$act/repo/scripts/apps.py" <<'PYEOF'
 #!/usr/bin/env python3
-import sys
+import os, sys
+fixture = os.environ.get("ACT46")
+operation = sys.argv[1] if len(sys.argv) > 1 else ""
+if fixture and os.path.exists(os.path.join(fixture, "home", "apps.lock.json.next")):
+    for requested in (1, 2):
+        fault = os.path.join(fixture, f"manifest-{operation}-{requested}-failed")
+        if os.path.exists(fault):
+            counter = os.path.join(fixture, f"manifest-{operation}.calls")
+            calls = int(open(counter).read()) + 1 if os.path.exists(counter) else 1
+            with open(counter, "w") as fh:
+                fh.write(str(calls))
+            if calls == requested:
+                open(os.path.join(fixture, "manifest-read-failed"), "w").close()
+                sys.stderr.write(f"FATAL: manifiesto: synthetic {operation} failure\n")
+                sys.exit(1)
 if sys.argv[1:] == ["repos"]:
     print("territorio\tAPS-Conecta/territorio")
     print("suelo\tAPS-Conecta/suelo")
@@ -3998,6 +4012,7 @@ EOF
   cat > "$tshim/docker" <<EOF
 #!/usr/bin/env bash
 printf 'docker %s\n' "\$*" >> "$act/docker.log"
+if [ -e "$act/manifest-read-failed" ]; then printf 'after-manifest-failure %s\n' "\$*" >> "$act/docker.log"; fi
 case "\$1 \$2" in
   "ps --format"|"ps -a")
     [ -e "$act/suite-caida" ] && exit 0
@@ -4212,6 +4227,18 @@ SHIM
         && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes" && [ ! -e "$act/home/apps.lock.json.next" ] \
         && ! grep -q "occ app:enable territorio" "$act/docker.log" && ! grep -q "app:update calendar" "$act/docker.log" \
         && ! printf "%s" "$out" | grep -qF "synthetic confidential configuration"'
+  done
+
+  for fault in manifest-repos-1-failed manifest-opcionales-1-failed manifest-repos-2-failed manifest-opcionales-2-failed; do
+    : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"
+    cp "$act/lock.bytes" "$act/home/apps.lock.json"
+    rm -f "$act/aio.libre" "$act/home/apps.lock.json.next" "$act/manifest-read-failed" "$act/manifest-repos.calls" "$act/manifest-opcionales.calls"
+    touch "$act/$fault"
+    out="$( id() { echo 0; }; act46 2>&1 )"; arc=$?; rm -f "$act/$fault" "$act/manifest-read-failed"
+    check "actualizar: manifest read errors stop further app commands and preserve the lock ($fault)" \
+      '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "FATAL: manifiesto:" \
+        && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes" && [ ! -e "$act/home/apps.lock.json.next" ] \
+        && ! grep -q "after-manifest-failure" "$act/docker.log"'
   done
 
   # #172: an uninstall that fails is a failed apply like any other — named, nothing promoted
