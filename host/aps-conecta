@@ -3360,6 +3360,7 @@ SHIM
     )"; rc=$?
     check "install --sin-validar-dominio: the silent flow posts the shared wizard's domain-validation option (#158)" \
       '[ "$rc" -eq 0 ] && grep -q "domain=clinica.example skip_domain_validation=1$" "$tmp/aio.log"'
+    if [ "$rc" -ne 0 ]; then printf '%s\n' "$out" >&2; fi
     rm -rf "$AIO_STATE"
     : > "$tmp/aio.log"; : > "$tmp/aio.ps"; : > "$tmp/aio.argv"; rm -f "$tmp/aio.configured"
     out="$( (cmd_aio_wizard --dominio clinica.example --sin-validar-dominio) 2>&1)"; rc=$?
