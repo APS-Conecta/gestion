@@ -3368,7 +3368,7 @@ case "\$1" in
       echo "/\$c \$status healthy"
     else echo "/\$c healthy"; fi
   done ;;
-  exec) case "\$*" in *"aps-start-result:"*) [ ! -e "$tmp/aio.legacy" ] || exit 1 ;; *"occ status"*) echo '{"installed":true}' ;; *"config:list"*) [ ! -e "$tmp/aio.config-fails" ] || exit 124; echo '{"system":{}}' ;; esac ;;
+  exec) case "\$*" in *"aps-start-result:"*) [ ! -e "$tmp/aio.legacy" ] || { echo aps-incompatible; exit 42; } ;; *"occ status"*) echo '{"installed":true}' ;; *"config:list"*) [ ! -e "$tmp/aio.config-fails" ] || exit 124; echo '{"system":{}}' ;; esac ;;
 esac
 SHIM
   chmod +x "$tshim/curl" "$tshim/docker"
@@ -4107,7 +4107,7 @@ case "\$1 \$2" in
     [ "\$n" -ge 2 ] ;;
   "exec nextcloud-aio-mastercontainer")
     case "\$*" in
-      *aps-start-result:*) [ ! -e "$act/legacy-wizard" ] || exit 1 ;;
+      *aps-start-result:*) [ ! -e "$act/legacy-wizard" ] || { echo aps-incompatible; exit 42; } ;;
       *configuration.json*) if [ -e "$act/sin-respaldo" ]; then exit 1; else echo '{"borg_backup_host_location":"/srv/aps-conecta/respaldos"}'; fi ;;
       *backup_archives.list*) printf '%s\n' "nextcloud-aio-2026-10-25-18-00,Thu Oct 25 18:00:00 2026" "nextcloud-aio-2026-10-27-01-00,Tue Oct 27 01:00:00 2026" ;;
     esac ;;

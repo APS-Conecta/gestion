@@ -13,10 +13,12 @@ import subprocess
 PROBES = {
     "wizard": ("nextcloud-aio-mastercontainer", "el resultado de inicio requerido", [
         "sh", "-c", "file=/var/www/docker-aio/php/src/Controller/DockerController.php; "
-        '[ -r "$file" ] || exit 2; grep -Fq "aps-start-result:" "$file"',
+        '[ -r "$file" ] || exit 2; grep -Fq "aps-start-result:" "$file"; status=$?; '
+        'if [ "$status" -eq 1 ]; then printf "aps-incompatible\\n"; exit 42; fi; exit "$status"',
     ]),
     "provision": ("aps-conecta-nextcloud", "la configuración de aplicaciones requerida", [
-        "sh", "-c", '[ -r / ] || exit 2; [ ! -e "$1" ] && exit 1; '
+        "sh", "-c", '[ -r / ] || exit 2; '
+        'if [ ! -e "$1" ]; then printf "aps-incompatible\\n"; exit 42; fi; '
         '[ -f "$1" ] && [ -r "$1" ] || exit 2', "check", "/configure-apps.sh",
     ]),
 }
@@ -44,7 +46,8 @@ def check(capability, root):
                                 capture_output=True, text=True, timeout=15)
         if result.returncode == 0:
             return 0, ""
-        if result.returncode != 1:
+        # Docker's own failures can exit 1; only the probe can prove a missing capability.
+        if result.returncode != 42 or result.stdout != "aps-incompatible\n":
             raise ValueError("probe unavailable")
     except (OSError, ValueError, subprocess.SubprocessError):
         return 2, (f"no se pudo comprobar la compatibilidad de {container} ({image}) con el instalador "

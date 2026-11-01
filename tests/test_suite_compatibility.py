@@ -27,6 +27,8 @@ if args[0] == 'inspect':
     sys.exit(int(os.environ.get('INSPECT_EXIT', '0')))
 assert args[0] == 'exec', 'Compatibility must not mutate Docker state'
 print('synthetic confidential Docker detail', file=sys.stderr)
+if os.environ.get('PROBE_EXIT') == '42':
+    print('aps-incompatible')
 sys.exit(int(os.environ.get('PROBE_EXIT', '0')))
 ''')
         self.docker.chmod(0o755)
@@ -44,14 +46,14 @@ sys.exit(int(os.environ.get('PROBE_EXIT', '0')))
 
     def test_proven_missing_capability_names_both_versions_and_preserves_data(self):
         for capability in ("wizard", "provision"):
-            result = self.run_check(capability, PROBE_EXIT="1")
+            result = self.run_check(capability, PROBE_EXIT="42")
             self.assertEqual(result.returncode, 1)
             for text in ("no corresponde a este instalador", "v0.6.0", "v9.9.9", "conserve los datos"):
                 self.assertIn(text, result.stdout)
             self.assertNotIn("confidential", result.stdout + result.stderr)
 
     def test_unknown_evidence_does_not_claim_incompatibility(self):
-        for settings in ({"INSPECT_EXIT": "1"}, {"PROBE_EXIT": "126"},
+        for settings in ({"INSPECT_EXIT": "1"}, {"PROBE_EXIT": "1"}, {"PROBE_EXIT": "126"},
                          {"PROBE_EXIT": "2"}, {"RUNNING": "false"}, {"RUNNING": "invalid"}):
             with self.subTest(settings=settings):
                 result = self.run_check(**settings)

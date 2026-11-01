@@ -378,6 +378,9 @@ if control.get("SLOW") and "status" not in args:
     time.sleep(30)
 if control.get("FAIL_ON") and control.get("FAIL_ON") in args:
     sys.exit(1)
+if control.get("MISSING_HELPER") and "/configure-apps.sh" in args:
+    print("aps-incompatible")
+    sys.exit(42)
 
 
 def exec_interactive(argv):
@@ -5984,7 +5987,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
             os.environ["APS_APPS_STORE"] = fixture_store
 
             with open(stubctl, "w", encoding="utf-8") as fh:
-                fh.write("FAIL_ON=/configure-apps.sh\n")
+                fh.write("MISSING_HELPER=yes\n")
             st, body = generar("ejecutar")
             check("compatibility: missing image helper refuses before downloads, env changes or phases",
                   st == 409 and "no corresponde a este instalador" in body.get("error", "")
