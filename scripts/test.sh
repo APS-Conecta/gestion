@@ -215,6 +215,20 @@ PY
 }
 check provisioning_has_no_shared_temp_paths
 
+secret_occ_arguments_absent() {
+  python3 - <<'PY'
+import pathlib, re
+for root in ('Containers', 'provisioning'):
+    for path in pathlib.Path(root).rglob('*.sh'):
+        for number, line in enumerate(path.read_text().splitlines(), 1):
+            if line.lstrip().startswith('#'):
+                continue
+            secret = re.search(r'--value[^\n]*\$\{?[A-Z_]*(?:SECRET|PASSWORD|TOKEN|RECORDING_SERVERS_STRING)', line)
+            assert not secret, f'{path}:{number}: secret passed to an occ value argument'
+PY
+}
+check secret_occ_arguments_absent
+
 trusted_proxy_network_cases() {
   python3 - <<'PY'
 import os, pathlib, subprocess, tempfile
@@ -3216,8 +3230,14 @@ elif a[0] == 'config:import':
     s.setdefault('system', {}).update(payload.get('system', {}))
     s.setdefault('imports', []).append(payload)
     save()
+elif a[0] == 'config:app:get':
+    save()
+    values = s['config'].get(a[1], {})
+    if a[2] not in values: sys.exit(1)
+    print(values[a[2]])
 elif a[0] == 'config:system:get':
-    save(); print('OCA\\Eurooffice\\Preview')
+    save()
+    print('OCA\\Eurooffice\\Preview' if a[1] == 'enabledPreviewProviders' else s.get('system', {}).get(a[1], ''))
 elif a[0].endswith(':configure'):
     app = a[0].split(':')[0]
     for key, value in json.loads(a[1]).items():
@@ -3246,6 +3266,7 @@ else:
                EUROOFFICE_SECRET='synthetic secret must never escape " \\ $', NC_DOMAIN='test.invalid',
                TALK_ENABLED='no', TALK_RECORDING_ENABLED='no', CLAMAV_ENABLED='no',
                FULLTEXTSEARCH_ENABLED='no', HARP_ENABLED='no', REMOVE_DISABLED_APPS='no',
+               SERVERINFO_TOKEN='', IMAGINARY_ENABLED='no', IMAGINARY_HOST='imaginary.invalid',
                NEXTCLOUD_DATA_DIR=str(root), CLAMAV_HOST='clam', CLAMAV_BLOCKLISTED_DIRECTORIES='', PHP_UPLOAD_LIMIT='1G',
                FULLTEXTSEARCH_HOST='search', FULLTEXTSEARCH_PORT='9200', FULLTEXTSEARCH_USER='test',
                FULLTEXTSEARCH_PASSWORD='synthetic secret must never escape', FULLTEXTSEARCH_INDEX='test')
@@ -3324,6 +3345,20 @@ else:
     assert not any(call[0] == 'app:install' for call in state['calls'])
     reset()
     run('unknown', success=False)
+    tokens = dict(SERVERINFO_TOKEN='synthetic server token " \\ $', IMAGINARY_ENABLED='yes',
+                  IMAGINARY_SECRET='synthetic image key " \\ $')
+    reset(enabled=['notify_push'])
+    state, _ = run('boot', extra=tokens)
+    assert state['config'].get('serverinfo', {}).get('token') == tokens['SERVERINFO_TOKEN'], 'Serverinfo token did not reach Nextcloud'
+    assert state['system']['preview_imaginary_key'] == tokens['IMAGINARY_SECRET']
+    assert all(value not in word for value in (tokens['SERVERINFO_TOKEN'], tokens['IMAGINARY_SECRET'])
+               for call in state['calls'] for word in call), 'Startup tokens entered process arguments'
+    state, output = run('boot', extra=tokens)
+    assert len(state['imports']) == 2 and ' -> ' not in output
+    changed = dict(tokens, SERVERINFO_TOKEN='different server token', IMAGINARY_SECRET=tokens['IMAGINARY_SECRET'] + ' rotated')
+    state, _ = run('boot', extra=changed)
+    assert state['config']['serverinfo']['token'] == tokens['SERVERINFO_TOKEN'], 'An existing server token was overwritten'
+    assert state['system']['preview_imaginary_key'] == changed['IMAGINARY_SECRET'] and len(state['imports']) == 3
     talk = dict(TALK_ENABLED='yes', TALK_HOST='aps-conecta-talk', TALK_PORT='3478',
                 TURN_SECRET='synthetic secret must never escape " \\ $',
                 SIGNALING_SECRET='synthetic secret must never escape " \\ $')
