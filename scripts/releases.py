@@ -280,11 +280,14 @@ def verify_signature(sums_path, sig_path):
     a suite release with (D7's rule: a format incompatibility reds CI, never a clinic). The
     signature is the ONLY trust root — the sums and the tarball below are attacker-controlled
     until this passes, so there is no sha-only fallback: without signify there is no install."""
-    if shutil.which("signify") is None:
+    verifier = shutil.which("signify-openbsd") or shutil.which("signify")
+    if verifier is None:
         raise Refusal("signify no está instalado y sin él no se puede verificar ninguna aplicación "
-                      "— el paso «preparar» lo instala (sudo apt-get install signify-openbsd)")
+                      "— ejecute sudo aps-conecta preparar, o instale el paquete y su enlace: "
+                      "sudo apt-get install signify-openbsd; "
+                      "sudo ln -sf /usr/bin/signify-openbsd /usr/local/bin/signify")
     try:
-        run = subprocess.run(["signify", "-V", "-p", pubkey_path(), "-m", sums_path, "-x", sig_path],
+        run = subprocess.run([verifier, "-V", "-p", pubkey_path(), "-m", sums_path, "-x", sig_path],
                              capture_output=True, timeout=60)
     except subprocess.TimeoutExpired:
         raise Refusal("signify no respondió en 60 s al verificar SHA256SUMS") from None
@@ -1172,6 +1175,36 @@ def selftest():
         check("cli fetch: a refusal stops with one Spanish line naming the app and the retry command",
               run.returncode == 1 and run.stdout == "" and run.stderr.startswith("FATAL: malafirma: ")
               and "apps.pub" in run.stderr and RETRY in run.stderr)
+        missing_manifest = os.path.join(tmp, "missing-verifier.json")
+        with open(missing_manifest, "w", encoding="utf-8") as fh:
+            json.dump([fila("APS-Conecta/territorio")], fh)
+        missing_lock = os.path.join(tmp, "missing-verifier.lock.json")
+        run = subprocess.run([sys.executable, os.path.abspath(__file__), "fetch",
+                              "--manifest", missing_manifest, "--lock", missing_lock,
+                              "--store", os.path.join(tmp, "missing-verifier-store"),
+                              "--nextcloud", "34.0.4"], env=dict(os.environ, PATH=""),
+                             capture_output=True, text=True, timeout=30)
+        check("cli fetch: missing verifier names the package and executable bridge, without saving a lock (#141)",
+              run.returncode == 1 and run.stderr.startswith("FATAL: territorio: ")
+              and "sudo apt-get install signify-openbsd" in run.stderr
+              and "sudo ln -sf /usr/bin/signify-openbsd /usr/local/bin/signify" in run.stderr
+              and not os.path.exists(missing_lock))
+        verifier_bin = os.path.join(tmp, "verifier-bin")
+        os.mkdir(verifier_bin)
+        os.symlink(shutil.which("signify-openbsd") or shutil.which("signify"),
+                   os.path.join(verifier_bin, "signify-openbsd"))
+        unrelated = os.path.join(verifier_bin, "signify")
+        with open(unrelated, "w", encoding="utf-8") as fh:
+            fh.write("#!/bin/sh\nexit 73\n")
+        os.chmod(unrelated, 0o755)
+        official_lock = os.path.join(tmp, "official-verifier.lock.json")
+        run = subprocess.run([sys.executable, os.path.abspath(__file__), "fetch",
+                              "--manifest", missing_manifest, "--lock", official_lock,
+                              "--store", os.path.join(tmp, "official-verifier-store"),
+                              "--nextcloud", "34.0.4"], env=dict(os.environ, PATH=verifier_bin),
+                             capture_output=True, text=True, timeout=30)
+        check("cli fetch: signify-openbsd verifies real signatures before an unrelated signify executable (#141)",
+              run.returncode == 0 and read_lock(official_lock)["apps"]["territorio"]["tag"] == "v0.80.0")
         # ── #46: actualizar's own two legs — plan reads and names (--revisar's whole leg),
         #    actualizar fetches into a NEW lock the CLI promotes only on success ──
         # The server's posture: territorio at v0.79.0 (a v0.80.0 exists), suelo at v3.5.0

@@ -85,6 +85,7 @@ case "$1" in
   info) printf '%s\n' "$CASE_ROOT" ;;
   inspect) exit 1 ;;
   run) printf 'run\n' >> "$CASE_ROOT/events"; printf '%s\0' "$@" > "$CASE_ROOT/run" ;;
+  exec) case "$*" in *'config:system:get appstoreenabled') echo 0;; esac ;;
 esac
 SH
   cat > "$tmp/bin/ip" <<'SH'
@@ -129,6 +130,31 @@ assert '/opt/aps-conecta/instalador/scripts/aio-testbed.sh up' in lifecycle[star
 
 PY
   local rc=$?
+  if [ "$rc" = 0 ]; then
+    printf '#!/bin/sh\nexit 0\n' > "$tmp/host/aps-conecta"
+    sed '/^case "${1:-}" in/,$d; s|\[ -S /var/run/docker.sock \]|true|' scripts/aio-testbed.sh > "$tmp/scripts/bed.sh"
+    cat >> "$tmp/scripts/bed.sh" <<'SH'
+STATE="$CASE_ROOT/banner-state"
+check_ram() { :; }
+cmd_up > "$CASE_ROOT/without-passwords"
+printf 'fixture\n' > "$STATE/master.pw"
+printf 'fixture\n' > "$STATE/nextcloud.pw"
+cmd_up > "$CASE_ROOT/with-passwords"
+SH
+    out="$(PATH="$tmp/bin:$PATH" CASE_ROOT="$tmp" AIO_TEST_IMAGE=ghcr.io/aps-conecta/all-in-one:v9.9.9 \
+      bash "$tmp/scripts/bed.sh" 2>&1)" || true
+    "$py" - "$tmp" <<'PY'
+import pathlib, sys
+root = pathlib.Path(sys.argv[1])
+without = (root / 'without-passwords').read_text().split('✓ probe instance up:', 1)[1]
+with_passwords = (root / 'with-passwords').read_text().split('✓ probe instance up:', 1)[1]
+for name in ('master.pw', 'nextcloud.pw'):
+    path = str(root / 'banner-state' / name)
+    assert path not in without, f'testbed advertises nonexistent credential file: {name}'
+    assert path in with_passwords, f'testbed omits existing credential file: {name}'
+PY
+    rc=$?
+  fi
   [ "$rc" = 0 ] || printf '%s\n' "$out" >&2
   rm -rf "$tmp"
   return "$rc"

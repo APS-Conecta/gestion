@@ -1174,6 +1174,7 @@ def roster_parse(text, reserved, universe):
     that spans lines is a row whose line numbers stop meaning anything to the person reading
     the error."""
     errors, rows, seen, si_lines = [], [], {}, []
+    reserved_collision = False
     reader = csv.reader(io.StringIO(text, newline=""), delimiter=";")
     try:
         head = next(reader, None)
@@ -1207,6 +1208,7 @@ def roster_parse(text, reserved, universe):
                 ok = False
             elif uid in reserved:
                 errors.append((start, f"el usuario «{uid}» es {reserved[uid]}: quítelo de la planilla"))
+                reserved_collision = True
                 ok = False
             else:
                 seen[uid] = start
@@ -1248,6 +1250,8 @@ def roster_parse(text, reserved, universe):
                        f"({', '.join(f'línea {n}' for n in si_lines)}): debe ser una"))
     elif not rows and not errors:
         errors.append((2, "la planilla no trae usuarios — agregue filas bajo la cabecera"))
+    if reserved_collision:
+        errors.append((0, "usuarios reservados: " + " ".join(sorted(reserved))))
     return rows, errors
 
 
@@ -3969,6 +3973,7 @@ def run_step(argv):
         if not path:
             print("✗ falta el sitio: --archivo <site.sh>")
             return 2
+        path = os.path.join(os.getcwd(), path)
         try:
             with open(path, encoding="utf-8-sig") as fh:
                 text = fh.read()
@@ -3989,6 +3994,7 @@ def run_step(argv):
         if not path:
             print("✗ falta la planilla: --planilla <archivo.csv>")
             return 2
+        path = os.path.join(os.getcwd(), path)
         try:
             with open(path, encoding="utf-8") as fh:
                 text = fh.read()
@@ -4610,6 +4616,10 @@ def selftest():
                   and "cuenta administradora" in msgs
                   and all(f"«{uid}»" in msgs
                           for uid in ("director", "jefe.estrella", "jefe.sar", "admin")))
+            check("roster: a collision lists every reserved account once, including site-derived positions (#141)",
+                  st == 400 and [e["error"] for e in body["errores"] if e["linea"] == 0
+                                and e["error"].startswith("usuarios reservados:")] ==
+                  ["usuarios reservados: admin director jefe.estrella jefe.farmacia jefe.sar jefe.some subdirector"])
 
             st, body = call("POST", "/api/usuarios", {"codigo": "113314",
                   "csv": planilla(("pedro.2", "Pedro", "Dos", "pedro2@example.cl",
@@ -5528,6 +5538,24 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
             rc, out = stepped(["--paso", "usuarios", "--codigo", "113314", "--planilla", broken + ".nada"])
             check("--paso usuarios: an unreadable planilla names its path and why, in Spanish, exit 1",
                   rc == 1 and "✗ no se pudo leer la planilla" in out and out.rstrip().endswith(": no existe"))
+            lookup = os.getcwd()
+            try:
+                os.chdir(tmp)
+                missing_site = stepped(["--paso", "sitio", "--archivo", "missing site.sh"])
+                missing_roster = stepped(["--paso", "usuarios", "--codigo", "113314",
+                                          "--planilla", "missing roster.csv"])
+                os.makedirs(os.path.join(tmp, "path-target", "child"))
+                os.symlink(os.path.join(tmp, "path-target", "child"), "path-link")
+                with open(os.path.join(tmp, "path-target", "linked-site.sh"), "wb") as fh:
+                    fh.write(b"\xff")
+                linked_site = stepped(["--paso", "sitio", "--archivo", "path-link/../linked-site.sh"])
+            finally:
+                os.chdir(lookup)
+            check("--paso: unreadable relative site and roster paths name the actual lookup directory (#141)",
+                  missing_site == (1, f"✗ no se pudo leer el sitio {tmp}/missing site.sh: no existe\n")
+                  and missing_roster == (1, f"✗ no se pudo leer la planilla {tmp}/missing roster.csv: no existe\n"))
+            check("--paso: displaying an absolute input path preserves symlink and parent traversal semantics (#141)",
+                  linked_site == (1, f"✗ el sitio {tmp}/path-link/../linked-site.sh no está en UTF-8\n"))
             rcs = [stepped(a)[0] for a in (["--paso"], ["--paso", "nada", "--codigo", "113314"],
                                            ["--otra"], ["--paso", "usuarios", "--codigo", "113314"],
                                            ["--paso", "generar", "--codigo", "--revision"])]

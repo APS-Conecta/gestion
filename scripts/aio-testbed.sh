@@ -107,8 +107,10 @@ cmd_up() {
 
   echo
   echo "✓ probe instance up: $IMAGE, store off, container set green"
-  echo "    wizard:      $WIZ  (password: $STATE/master.pw)"
-  echo "    nextcloud:   https://$domain/  (suite CA; admin password: $STATE/nextcloud.pw)"
+  echo "    Asistente:   $WIZ"
+  [ ! -f "$STATE/master.pw" ] || echo "    Contraseña del asistente: $STATE/master.pw"
+  echo "    Nextcloud:   https://$domain/  (CA de la suite)"
+  [ ! -f "$STATE/nextcloud.pw" ] || echo "    Contraseña del administrador: $STATE/nextcloud.pw"
   echo "    occ:         docker exec --user www-data $NC php /var/www/html/occ <command>"
   echo "    teardown:    $0 down"
   echo "  The probe arms (design slices 2-5) drive this instance through docker exec."

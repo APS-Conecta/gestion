@@ -59,8 +59,13 @@ thing lives where its own gate is.
   [`installer.pub`](https://github.com/APS-Conecta/gestion/blob/main/installer.pub), then
 
   ```bash
+  sudo apt-get install signify-openbsd
+  sudo ln -sf /usr/bin/signify-openbsd /usr/local/bin/signify
   signify -V -p installer.pub -m SHA256SUMS -x SHA256SUMS.minisig && sha256sum -c SHA256SUMS
   ```
+
+  The bootstrap, host checks and app resolver prefer `signify-openbsd`; the generic name is
+  retained for compatible installations.
 
   The signature covers `SHA256SUMS`, which names the tag's tarball: a signature that verifies
   is a signature for that tag's package. The key story — keygen, secrets, rotation — is
@@ -151,6 +156,10 @@ keys — and the chosen point rides «Confirmar centro» into the site file's `S
 the suite's containers, the teams and the users CSV (one screen, with the centre's own template),
 review, execute — is walked step by step in [`GUIA-CLINICA.md`](GUIA-CLINICA.md) §4–6. The pages
 follow the registry's steps 5–8 (`aps-conecta pasos`).
+
+Command-line site and roster imports resolve relative paths against the calling directory;
+an unreadable input reports its absolute path. A reserved-account collision lists all reserved
+uids for the establishment once, including its sector and role-derived positions.
 
 When «Revisar y ejecutar» comes back green, the installer closes itself: the port closes and the
 link stops working. The console then wires the timers (§6) and prints «Listo». Ctrl+C before that
@@ -317,6 +326,21 @@ and the wizard shows that hour. After the next DST change the backup runs at 03:
 Santiago time. To move it, the wizard's backup section takes a new time, in UTC.
 
 ## 12. Troubleshooting
+
+- **Data and log paths**: the running suite configures `/mnt/ncdata` as the data root and
+  `/var/www/html/data/nextcloud.log` as the Nextcloud log. Read the configured values with:
+
+  ```bash
+  sudo docker exec --user www-data aps-conecta-nextcloud php /var/www/html/occ config:system:get datadirectory
+  sudo docker exec --user www-data aps-conecta-nextcloud php /var/www/html/occ config:system:get logfile
+  ```
+
+  After an administrative out-of-band file transfer, update the file index. Replace `USER`
+  and `FOLDER` with the account and folder:
+
+  ```bash
+  sudo docker exec --user www-data aps-conecta-nextcloud php /var/www/html/occ files:scan --path='USER/files/FOLDER'
+  ```
 
 - **The log panel looks unstyled after a suite upgrade**: hard-refresh once. The overlay-log
   iframe pins its stylesheet URL in PHP the fork never touches (zero-PHP); a warm cache serves
