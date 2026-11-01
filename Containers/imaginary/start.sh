@@ -1,8 +1,6 @@
 #!/bin/bash
 
-if [ "$AIO_LOG_LEVEL" = 'debug' ]; then
-    set -x
-fi
+set +x
 
 GOLANG_LOG="$(case "$AIO_LOG_LEVEL" in
     debug) printf 'info' ;;
@@ -18,9 +16,5 @@ fi
 echo "Imaginary has started"
 
 IMAGINARY_ARGS=(-return-size -max-allowed-resolution 222.2)
-
-if [ -n "$IMAGINARY_SECRET" ]; then
-    IMAGINARY_ARGS+=(-key "$IMAGINARY_SECRET")
-fi
 
 exec imaginary "${IMAGINARY_ARGS[@]}" "$@"
