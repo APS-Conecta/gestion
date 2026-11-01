@@ -1,8 +1,8 @@
 #!/bin/bash
 # SPDX-FileCopyrightText: 2026 APS Conecta
 # SPDX-License-Identifier: AGPL-3.0-or-later
-# Shared boot/provisioning configuration. Missing signed apps defer to phase 12;
-# only notify_push may use the store (ADR-0018, ADR-0020). No app updates here.
+# Shared boot/provisioning configuration. Missing managed apps defer to phase 12
+# (ADR-0018, ADR-0025); notify_push installs here. No app updates here.
 
 startup_occ() { php /var/www/html/occ "$@"; }
 

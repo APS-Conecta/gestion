@@ -144,6 +144,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-082 | the recorder cannot verify by-IP HTTPS and Nextcloud can wait indefinitely during startup (#190) | the recorder receives no suite CA; Python callbacks and Firefox use separate trust stores; Redis and app-store waits have no deadline | mount the public CA read-only, prepare the Python bundle and native Firefox certificate policy, and bound the remaining waits; the existing by-IP job checks both official clients with and without the CA; hardware activation remains pending #189 |
 
+| A-083 | clinic provisioning writes development content into personal Files and exposes passwords in process arguments (#196) | the fixture phase runs during normal installs; credential values enter command options and fixed temporary paths | remove the development phase and fixture partition, deliver credentials through named environments or stdin with native configuration imports, initialize Imaginary's key through a build adapter, and use private temporary directories with cleanup; argv-recording local checks cover delivery and failures, while the Provisionador retains normal staff and role accounts |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and

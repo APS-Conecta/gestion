@@ -44,7 +44,7 @@ ensure_user fixture.staff 'Fixture User' "$CASE_PASSWORD"
     creations = [call for call in calls if 'user:add' in call['argv']]
     assert len(creations) == 1 and creations[0]['password'] == password, 'The named environment did not deliver the exact password'
     assert 'OC_PASS' in creations[0]['argv'] and '--password-from-env' in creations[0]['argv']
-    assert password not in result.stdout + result.stderr
+    assert "synthetic password" not in result.stdout + result.stderr
 PY
 }
 check user_secret_argv_cases
@@ -89,7 +89,7 @@ sys.exit(int(os.environ.get('CASE_FAIL', '0')))
         assert all(password not in word for word in call['argv']), 'Redis health password entered process arguments'
         assert call['password'] == password, 'Redis did not receive its authentication environment'
         assert (result.returncode == 0) == (failure == '0')
-        assert password not in result.stdout + result.stderr
+        assert "synthetic password" not in result.stdout + result.stderr
     client = root / 'curl'
     client.write_text('#!' + sys.executable + '\n' + '''
 import json, os, pathlib, sys
@@ -109,8 +109,9 @@ sys.exit(int(os.environ.get('CASE_FAIL', '0')))
         import base64
         encoded = call['stdin'].split('Authorization: Basic ', 1)[1].strip().strip('"')
         assert base64.b64decode(encoded).decode() == 'elastic:' + password
+        assert encoded not in result.stdout + result.stderr, 'Search health printed reusable authentication'
         assert (result.returncode == 0) == (failure == '0' and status != 'red')
-        assert password not in result.stdout + result.stderr
+        assert "synthetic password" not in result.stdout + result.stderr
     server = root / 'redis-server'
     server.write_text('#!' + sys.executable + '\n' + '''
 import json, os, pathlib, sys
@@ -131,7 +132,7 @@ pathlib.Path(os.environ['CASE_CAPTURE']).write_text(json.dumps({
         import hashlib
         expected = 'user default on resetpass #' + hashlib.sha256(password.encode()).hexdigest() + ' ~* &* +@all'
         assert call['stdin'].strip() == (expected if value else '')
-        assert password not in result.stdout + result.stderr
+        assert "synthetic password" not in result.stdout + result.stderr
 PY
 }
 check service_secret_argv_cases
@@ -162,7 +163,8 @@ sys.exit(int(os.environ['CASE_FAIL']))
         call = json.loads(capture.read_text())
         assert all(password not in word for word in call['argv']), 'PostgreSQL role password entered process arguments'
         assert call['password'] == password and '\\getenv pg_new_password POSTGRES_PASSWORD' in call['stdin']
-        assert password not in call['stdin'] + result.stdout + result.stderr
+        assert password not in call['stdin']
+        assert 'synthetic database password' not in result.stdout + result.stderr
         assert (result.returncode == 0) == (failure == '0') and marker.exists() == (failure == '1')
     assert 'pg_new_password=' not in pathlib.Path('Containers/postgresql/start.sh').read_text()
     nc = root / 'nc'
@@ -487,7 +489,7 @@ PY
 }
 check provisioning_has_no_shared_temp_paths
 
-secret_occ_arguments_absent() {
+secret_command_arguments_absent() {
   python3 - <<'PY'
 import pathlib, re
 for root in ('Containers', 'provisioning'):
@@ -497,9 +499,10 @@ for root in ('Containers', 'provisioning'):
                 continue
             secret = re.search(r'--value[^\n]*\$\{?[A-Z_]*(?:SECRET|PASSWORD|TOKEN|RECORDING_SERVERS_STRING|SUBSCRIPTION_KEY)', line)
             assert not secret, f'{path}:{number}: secret passed to an occ value argument'
+            assert not re.search(r'\bredis-cli\b[^\n]*\s-a(?:\s|=)', line), f'{path}:{number}: Redis password argument'
 PY
 }
-check secret_occ_arguments_absent
+check secret_command_arguments_absent
 
 trusted_proxy_network_cases() {
   python3 - <<'PY'
