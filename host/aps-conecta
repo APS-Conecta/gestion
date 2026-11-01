@@ -1579,7 +1579,17 @@ aio_progressing() {  # Optional stream file; repeated states and heartbeats neve
   [ "$((now - AIO_PROGRESS_TIME))" -lt 1200 ]
 }
 
+aio_compatibility() {
+  local reason
+  if ! reason="$(python3 "$HOST_DIR/../scripts/suite_compatibility.py" wizard --root "$ROOT")"; then
+    printf '%s\n' "$reason" > "$AIO_STATE/motivo"
+    bad "$reason" "guía de instalación, §14"
+    return 1
+  fi
+}
+
 aio_start() {  # Optional start flags; install and post-backup restart share one result contract.
+  aio_compatibility || return 1
   aio_select_services || return 1
   local f="$AIO_STATE/inicio.code" body="$AIO_STATE/inicio.html" pid n seen="" code result baseline baseline_known current transport
   info "iniciando la suite (la operación puede tardar varios minutos)"
@@ -1832,6 +1842,7 @@ cmd_aio_wizard() {  # --dominio D [--sin-validar-dominio] [--respaldo DIR] [--ap
     ok "La suite ya está en marcha — el asistente no se vuelve a configurar"
     [ "$preparar" = 0 ] || exit 0
   else
+    aio_compatibility || return 1
     # the web installer's record — the domain the wizard took and the Talk options it was given — is
     # written only once every post succeeded: a refusal halfway leaves none, and the page asks again
     rm -f "$AIO_STATE/dominio" "$AIO_STATE/opciones"
@@ -2044,6 +2055,7 @@ act_respaldo() {  # the full backup, through the wizard's own API (#46: the run 
   # and stops unless it succeeds). The endpoint stops the suite itself — that is AIO's own
   # consistency posture — and starts borg; the borg container's own exit code is the verdict
   # (the wizard's page reads the same one).
+  aio_compatibility || return 1
   aio_passphrase && aio_login || return 1
   info "respaldo completo: la suite se detiene mientras respalda (varios minutos)"
   local code ex archivo st="" inicio t0 i f="$AIO_STATE/respaldo-actualizar.log"
@@ -3346,6 +3358,9 @@ case "\$1" in
   info) echo "$tmp/docker-root" ;;
   ps) if [ "\$2" = -a ] && [ -e "$tmp/aio.state-unknown" ]; then exit 124; fi; cat "$tmp/aio.ps" ;;
   inspect) format="\$3"; if [[ "\$format" == *State.Status* ]] && [ -e "$tmp/aio.state-unknown" ]; then exit 124; fi
+    if [[ "\$format" == *Config.Image* ]]; then
+      printf '"ghcr.io/aps-conecta/all-in-one:v0.6.0"\ttrue\n'; exit 0
+    fi
     shift 3; for c in "\$@"; do
     if [[ "\$format" == *State.Status* ]]; then
       grep -qx "\$c" "$tmp/aio.ps" || continue
@@ -3353,11 +3368,19 @@ case "\$1" in
       echo "/\$c \$status healthy"
     else echo "/\$c healthy"; fi
   done ;;
-  exec) case "\$*" in *"occ status"*) echo '{"installed":true}' ;; *"config:list"*) [ ! -e "$tmp/aio.config-fails" ] || exit 124; echo '{"system":{}}' ;; esac ;;
+  exec) case "\$*" in *"aps-start-result:"*) [ ! -e "$tmp/aio.legacy" ] || exit 1 ;; *"occ status"*) echo '{"installed":true}' ;; *"config:list"*) [ ! -e "$tmp/aio.config-fails" ] || exit 124; echo '{"system":{}}' ;; esac ;;
 esac
 SHIM
   chmod +x "$tshim/curl" "$tshim/docker"
   if only_shims curl docker; then
+    touch "$tmp/aio.legacy"
+    printf missing > "$tmp/aio.result-mode"
+    out="$( (cmd_aio_wizard --dominio clinica.example --sin-validar-dominio) 2>&1)"; rc=$?
+    check "compatibility: legacy wizard refused with both versions before configuration or startup" \
+      '[ "$rc" -ne 0 ] && [[ "$out" == *"no corresponde a este instalador"* ]] && [[ "$out" == *"v0.6.0"* ]] && [[ "$out" == *"v9.9.9"* ]] && ! grep -qE "^POST (config|start)" "$tmp/aio.log"'
+    rm -f "$tmp/aio.legacy" "$tmp/aio.result-mode" "$tmp/aio.configured"
+    rm -rf "$AIO_STATE"
+    : > "$tmp/aio.log"; : > "$tmp/aio.ps"; : > "$tmp/aio.argv"
     out="$(
       cp -a "$ROOT" "$tmp/domain-install"
       ROOT="$tmp/domain-install"
@@ -3938,6 +3961,7 @@ SHIM
   # store opens scoped, one command at a time.
   local act="$tmp/act46"
   mkdir -p "$act/repo/scripts" "$act/repo/provisioning/phases" "$act/aio" "$act/home/apps/territorio" "$act/home/apps/suelo"
+  cp "$ROOT_BAK/VERSION" "$act/repo/VERSION"
   cp "$ROOT_BAK/scripts/env.sh" "$act/repo/scripts/env.sh"
   cp "$ROOT_BAK/provisioning/lib.sh" "$act/repo/provisioning/lib.sh"
   cp "$ROOT_BAK/provisioning/phases/12-apps.sh" "$act/repo/provisioning/phases/12-apps.sh"
@@ -4059,6 +4083,7 @@ EOF
 printf 'docker %s\n' "\$*" >> "$act/docker.log"
 if [ -e "$act/manifest-read-failed" ]; then printf 'after-manifest-failure %s\n' "\$*" >> "$act/docker.log"; fi
 case "\$1 \$2" in
+  "inspect --format") printf '"ghcr.io/aps-conecta/all-in-one:v0.6.0-ci.2032"\ttrue\n' ;;
   "ps --format"|"ps -a")
     [ -e "$act/suite-caida" ] && exit 0
     printf '%s\n' $AIO_SET ;;
@@ -4082,6 +4107,7 @@ case "\$1 \$2" in
     [ "\$n" -ge 2 ] ;;
   "exec nextcloud-aio-mastercontainer")
     case "\$*" in
+      *aps-start-result:*) [ ! -e "$act/legacy-wizard" ] || exit 1 ;;
       *configuration.json*) if [ -e "$act/sin-respaldo" ]; then exit 1; else echo '{"borg_backup_host_location":"/srv/aps-conecta/respaldos"}'; fi ;;
       *backup_archives.list*) printf '%s\n' "nextcloud-aio-2026-10-25-18-00,Thu Oct 25 18:00:00 2026" "nextcloud-aio-2026-10-27-01-00,Tue Oct 27 01:00:00 2026" ;;
     esac ;;
@@ -4150,6 +4176,12 @@ EOF
   check "actualizar --revisar: writes nothing — no backup POST, no fetch, the lock byte-identical, no new lock" \
     '! grep -q "api/docker/backup" "$act/aio.log" && ! grep -q "^actualizar" "$act/resolver.log" \
       && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes" && [ ! -e "$act/home/apps.lock.json.next" ]'
+  : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"
+  touch "$act/legacy-wizard"
+  out="$( id() { echo 0; }; act46 2>&1 )"; arc=$?
+  check "compatibility: an update refuses a legacy wizard before stopping the suite for backup" \
+    '[ "$arc" -eq 1 ] && [[ "$out" == *"no corresponde a este instalador"* ]] && ! grep -q "api/docker/backup" "$act/aio.log" && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes"'
+  rm -f "$act/legacy-wizard"
   : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"
   touch "$act/plan-mala"
   out="$( id() { echo 0; }; act46 --revisar 2>&1 )"; arc=$?

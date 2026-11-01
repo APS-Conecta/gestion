@@ -70,6 +70,7 @@ sys.path.insert(0, HERE)  # deis.py sits beside this file; the host bundle keeps
 import deis  # noqa: E402  — the path insert above is the import mechanism
 from images import runtime_services  # noqa: E402
 import apps as suite_apps  # noqa: E402  — the suite manifest (apps.json), beside deis
+import suite_compatibility  # noqa: E402
 
 # The bearer token: 32 bytes from the stdlib CSPRNG, HEX, never
 # base64 (B-004 — no character any layer treats as syntax). Printed ONCE, in the startup banner,
@@ -414,7 +415,9 @@ def find(word):
 
 
 rows = state()
-if args and args[0] == "ps":
+if args[:1] == ["inspect"] and any(".Config.Image" in arg for arg in args):
+    print('"ghcr.io/aps-conecta/aio-nextcloud:v0.6.0"\ttrue')
+elif args and args[0] == "ps":
     if control.get("PS_MODE") == "empty":
         sys.exit(0)
     # two --format shapes ride the same verb: the detection idiom asks for bare names
@@ -1679,6 +1682,9 @@ def _api_generar(payload):
                               "de nuevo"}
     log = None
     try:
+        compatibility, reason = suite_compatibility.check("provision", root)
+        if compatibility:
+            return (409 if compatibility == 1 else 503), {"error": reason}
         if payload.get("resumen") is True:
             log = open(os.path.join(root, ".install.log"), "w", encoding="utf-8", buffering=1)
         resumen = summary(log) if log else None
@@ -4560,7 +4566,8 @@ def selftest():
             import pwd, shutil
             with tempfile.TemporaryDirectory(prefix="provisionador-home-") as isolated:
                 for relative in ("scripts/provisionador.py", "scripts/deis.py", "scripts/apps.py",
-                                 "scripts/images.py", "scripts/releases.py", "apps.json", "php/containers.json",
+                                 "scripts/images.py", "scripts/releases.py", "scripts/suite_compatibility.py",
+                                 "apps.json", "php/containers.json",
                                  "provisioning/phases/20-groups.sh", "provisioning/standings.sh"):
                     destination = os.path.join(isolated, relative)
                     os.makedirs(os.path.dirname(destination), exist_ok=True)
@@ -5046,6 +5053,7 @@ def selftest():
                             ignore=shutil.ignore_patterns("__pycache__"), dirs_exist_ok=True)
             # the root files the phases read, whole: env.sh's placeholder table, apps.py's manifest
             shutil.copy(envex_src, os.path.join(tmp, ".env.example"))
+            shutil.copy(os.path.join(ROOT_DIR, "VERSION"), os.path.join(tmp, "VERSION"))
             shutil.copy(suite_apps.MANIFEST, os.path.join(tmp, "apps.json"))
 
             # — the fixture itself (#59): the scripts tree is taken WHOLE, so a script a phase
@@ -5799,7 +5807,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   p.returncode == 2 and "✗ falta el código" in p.stdout)
             with tempfile.TemporaryDirectory() as raiz:   # the start beside a suite manifest that is not JSON
                 os.makedirs(os.path.join(raiz, "scripts"))
-                for fuente in ("provisionador.py", "deis.py", "apps.py", "images.py"):
+                for fuente in ("provisionador.py", "deis.py", "apps.py", "images.py", "suite_compatibility.py"):
                     shutil.copy(os.path.join(HERE, fuente), os.path.join(raiz, "scripts", fuente))
                 with open(os.path.join(raiz, "apps.json"), "w", encoding="utf-8") as fh:
                     fh.write("{no es JSON")
@@ -5974,6 +5982,21 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
             with open(os.environ["APS_APPS_LOCK"], "w", encoding="utf-8") as fh:
                 json.dump({"nextcloud": "34.0.4", "apps": filas_lock}, fh)
             os.environ["APS_APPS_STORE"] = fixture_store
+
+            with open(stubctl, "w", encoding="utf-8") as fh:
+                fh.write("FAIL_ON=/configure-apps.sh\n")
+            st, body = generar("ejecutar")
+            check("compatibility: missing image helper refuses before downloads, env changes or phases",
+                  st == 409 and "no corresponde a este instalador" in body.get("error", "")
+                  and not os.path.exists(apps_argv) and not os.path.exists(env_path))
+            with open(stubctl, "w", encoding="utf-8") as fh:
+                fh.write("FAIL_ON=inspect\n")
+            st, body = generar("ejecutar")
+            check("compatibility: unavailable inspection is distinct and also stops before changes",
+                  st == 503 and "no se pudo comprobar" in body.get("error", "")
+                  and "no corresponde" not in body.get("error", "")
+                  and not os.path.exists(apps_argv) and not os.path.exists(env_path))
+            open(stubctl, "w").close()
 
             st, body = generar("ejecutar")
             if st != 200:  # B-028: abort with the seed's own output — never a bare .index() ValueError
