@@ -4612,6 +4612,10 @@ def selftest():
                   and "cuenta administradora" in msgs
                   and all(f"«{uid}»" in msgs
                           for uid in ("director", "jefe.estrella", "jefe.sar", "admin")))
+            check("roster: a collision lists every reserved account once, including site-derived positions (#141)",
+                  st == 400 and [e["error"] for e in body["errores"] if e["linea"] == 0
+                                and e["error"].startswith("usuarios reservados:")] ==
+                  ["usuarios reservados: admin director jefe.estrella jefe.farmacia jefe.sar jefe.some subdirector"])
 
             st, body = call("POST", "/api/usuarios", {"codigo": "113314",
                   "csv": planilla(("pedro.2", "Pedro", "Dos", "pedro2@example.cl",
