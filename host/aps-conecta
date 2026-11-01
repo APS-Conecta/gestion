@@ -3969,6 +3969,7 @@ if sys.argv[1:] == ["repos"]:
     print("suelo\tAPS-Conecta/suelo")
     print("farmacia\tAPS-Conecta/farmacia")
     print("calendar\t")
+    print("spreed\t")
 elif sys.argv[1:] == ["opcionales"]:
     print("farmacia\toff\tFarmacia")
 PYEOF
@@ -4047,7 +4048,11 @@ case "\$1 \$2" in
     esac ;;
   "exec aps-conecta-nextcloud") case "\$*" in *printenv\ AIO_TOKEN*) echo tok-act46 ;; *printenv*) echo yes ;; esac ;;
   "exec -i") exit 0 ;;
-  "exec -e") exit 0 ;;
+  "exec -e")
+    case "\$*" in *"occ app:install spreed"*)
+      if [ -e "$act/spreed-install-failed" ]; then echo "synthetic official-store installation failure"; exit 1; fi ;;
+    esac
+    exit 0 ;;
   "exec --user")
     case "\$*" in
       *"occ status"*) echo '{"installed":true,"version":"34.0.4"}' ;;
@@ -4063,6 +4068,7 @@ case "\$1 \$2" in
         [ ! -e "$act/store-state-empty" ] || exit 0
         echo "\${TIENDA:-0}" ;;
       *"occ app:enable territorio"*) if [ -e "$act/enable-failed" ]; then echo "synthetic enable failure"; exit 1; fi ;;
+      *"/configure-apps.sh talk"*) if [ -e "$act/talk-config-failed" ]; then echo "synthetic Talk configuration failure"; exit 1; fi ;;
       *"occ app:getpath viejo"*) echo /var/www/html/custom_apps/viejo ;;
       *"occ app:getpath"*) exit 1 ;;
       *"occ app:remove"*) if [ -e "$act/remove-mala" ]; then echo "viejo could not be removed"; exit 1; fi ;;
@@ -4152,6 +4158,10 @@ EOF
   check "actualizar: the store opened scoped — every app:update rode NC_appstoreenabled=1, and nothing else touched the store" \
     'while IFS= read -r l; do case "$l" in *NC_appstoreenabled=1*) ;; *) exit 1;; esac; done < <(grep "app:update" "$act/docker.log") \
       && grep -q "NC_appstoreenabled=1.*app:update calendar" "$act/docker.log"'
+  check "actualizar: official Talk installation completes before its immediate configuration" \
+    'grep -q "NC_appstoreenabled=1.*app:install spreed" "$act/docker.log" \
+      && [ "$(grep -c "/configure-apps.sh talk" "$act/docker.log")" -eq 1 ] \
+      && [ "$(grep -n "app:install spreed" "$act/docker.log" | head -1 | cut -d: -f1)" -lt "$(grep -n "/configure-apps.sh talk" "$act/docker.log" | head -1 | cut -d: -f1)" ]'
   # the shim: borg runs BORG_RUNS (2) inspects; apache deaf 2 probes, eurooffice starting 3 — ready on the 4th poll
   check "actualizar: the backup is awaited — the POST answers once borg STARTS, so borg's own state is polled until it exits, and the restart comes only after (A-036)" \
     '! grep -q "start con borg en curso" "$act/aio.log"'
@@ -4235,6 +4245,18 @@ SHIM
         && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes" && [ ! -e "$act/home/apps.lock.json.next" ] \
         && ! grep -q "occ app:enable territorio" "$act/docker.log" && ! grep -q "app:update calendar" "$act/docker.log" \
         && ! printf "%s" "$out" | grep -qF "synthetic confidential configuration"'
+  done
+
+  for fault in spreed-install-failed talk-config-failed; do
+    : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"
+    cp "$act/lock.bytes" "$act/home/apps.lock.json"
+    rm -f "$act/aio.libre" "$act/home/apps.lock.json.next"; touch "$act/$fault"
+    out="$( id() { echo 0; }; act46 2>&1 )"; arc=$?; rm -f "$act/$fault"
+    check "actualizar: official Talk failures name the app and preserve the prior lock ($fault)" \
+      '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "✗ spreed falló al aplicarse" \
+        && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes" && [ ! -e "$act/home/apps.lock.json.next" ] \
+        && ! grep -q "app:update" "$act/docker.log" \
+        && case "$fault" in spreed-install-failed) ! grep -q "/configure-apps.sh talk" "$act/docker.log" ;; talk-config-failed) grep -q "/configure-apps.sh talk" "$act/docker.log" ;; esac'
   done
 
   for fault in manifest-repos-1-failed manifest-opcionales-1-failed manifest-repos-2-failed manifest-opcionales-2-failed; do
