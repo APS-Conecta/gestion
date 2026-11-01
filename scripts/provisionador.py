@@ -4553,6 +4553,19 @@ def selftest():
                       and f"Contraseñas selladas en {credentials}:" in child.stdout)
                 if child.returncode:
                     print(child.stdout.strip() or child.stderr.strip())
+                certificate = subprocess.run([
+                    sys.executable, os.path.join(isolated, "scripts", "provisionador.py"),
+                    "--paso", "certificado-suite", "--ip", "203.0.113.10",
+                ], env=dict(os.environ, APS_HOME=home, PATH=old_path), capture_output=True,
+                    text=True, timeout=30, **identity)
+                public_ca = os.path.join(home, "certificados", "ca", "aps-conecta-ca.crt")
+                ca_key = os.path.join(home, "certificados", "ca.key")
+                check("--paso certificado-suite: an unprivileged APS_HOME signs by IP and keeps its CA key private (#142)",
+                      certificate.returncode == 0 and os.path.isfile(public_ca)
+                      and os.stat(ca_key).st_mode & 0o077 == 0
+                      and f"Certificado para los equipos del personal: {public_ca}" in certificate.stdout)
+                if certificate.returncode:
+                    print(certificate.stdout.strip() or certificate.stderr.strip())
 
             st, body = call("POST", "/api/usuarios", {"codigo": "113314",
                                                       "csv": "\ufeff" + planilla(maria, juan)})
