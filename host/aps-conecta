@@ -104,6 +104,7 @@ STEPS=(
 MOTTO="La salud primaria que compartimos es la que mejora"
 STEP_RESULT=""   # a step that ends in a state other than its registry result says so here
 SILENT_SITE=""; SILENT_ROSTER=""; SILENT_LOG=""; SILENT_APPS=""; SILENT_RESPALDO=""   # install --sitio/--planilla/--app/--respaldo (a7, #39, #54): the files, the log, the optional apps, the backup dir
+SILENT_SKIP_DOMAIN_VALIDATION=0
 
 step_field() {  # N FIELD — field FIELD (1 id · 2 título · 3 dónde · 4 propósito · 5 resultado) of step N
   local IFS='|' f
@@ -226,10 +227,12 @@ cmd_install() {  # the install: the welcome, then the steps in registry order. I
   # log and only Spanish lines on the console. A failed step stops the run on its own ✗ lines; a
   # re-run walks the steps again and each finds its own work done. The prompt waits only on an
   # interactive install's terminal.
+  SILENT_SKIP_DOMAIN_VALIDATION=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --sitio) [ -n "${2:-}" ] || die "falta el archivo: --sitio <site.sh>"; SILENT_SITE="$2"; shift 2 ;;
       --planilla) [ -n "${2:-}" ] || die "falta el archivo: --planilla <usuarios.csv>"; SILENT_ROSTER="$2"; shift 2 ;;
+      --sin-validar-dominio) SILENT_SKIP_DOMAIN_VALIDATION=1; shift ;;
       --app) app_opcion_requiere "${2:-}"
              case " $SILENT_APPS " in *" ${2:-} "*) ;; *) SILENT_APPS="$SILENT_APPS ${2:-}" ;; esac
              shift 2 ;;
