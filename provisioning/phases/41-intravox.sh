@@ -209,7 +209,7 @@ if [ "$_first_run" = 1 ] || [ "${#_new_sections[@]}" -gt 0 ] || [ "${#_new_teams
     echo "FATAL: invalid welcome import directory" >&2; exit 1;
   }
   _container_stage="$_candidate"
-  nc_cp "$_import/." "$_container_stage"
+  tar -C "$_import" -cf - . | nc_exec --interactive -- tar -xf - -C "$_container_stage"
   nc_exec -- chown -R www-data:www-data "$_container_stage"
   # --skip-existing is not optional, pruned import or not: without it the engine overwrites every
   # existing node it meets (the equipos hub above; a first run over a restored tree), so a failing

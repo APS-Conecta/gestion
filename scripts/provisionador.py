@@ -349,7 +349,6 @@ arms), SLOW (sleep before answering — the timeout arm).
 import hashlib
 import json
 import os
-import select
 import sys
 import time
 
@@ -383,7 +382,7 @@ def exec_interactive(argv):
     """`docker exec -i …`: the -i among the options before the container name."""
     i = 1
     while i < len(argv) and argv[i].startswith("-"):
-        if argv[i] == "-i":
+        if argv[i] in ("-i", "--interactive"):
             return True
         i += 2 if argv[i] in ("--user", "-u", "--env", "-e", "--workdir", "-w") else 1
     return False
@@ -392,7 +391,7 @@ def exec_interactive(argv):
 # The real client forwards its stdin into the container, so `docker exec -i` consumes whatever the
 # caller's stdin already holds — a loop that reads its own stdin loses the rest of it.
 if args[:1] == ["exec"] and exec_interactive(args):
-    while select.select([sys.stdin], [], [], 0)[0] and os.read(sys.stdin.fileno(), 65536):
+    while os.read(sys.stdin.fileno(), 65536):
         pass
 
 

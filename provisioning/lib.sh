@@ -761,8 +761,9 @@ ensure_aia_intermediate() (  # HOST
     log "certs: could not prepare a private directory in the container — skipped"; return 0
   fi
   container_temp="$candidate"
-  if ! nc_cp "$host_temp/$name" "$container_temp/$name" >/dev/null 2>&1; then
-    log "certs: could not copy $name into the container — skipped, feeds from $host will fail"
+  if ! nc_exec --interactive -- sh -c 'umask 077; cat > "$1"' _ "$container_temp/$name" \
+      < "$host_temp/$name" >/dev/null 2>&1; then
+    log "certs: could not transfer $name into the container — skipped, feeds from $host will fail"
     return 0
   fi
   if ! nc_exec -- chown -R www-data:www-data "$container_temp" >/dev/null 2>&1; then
