@@ -2776,7 +2776,7 @@ EOF
     cmd_install --sitio "$tmp/dado.sh" --planilla "$tmp/dado.csv" </dev/null 2>&1
   )"; rcs=$?
   check "install --sitio: the same eight steps in order — the browser ones from the files — then the verdict" \
-    '[ "$rcs" -eq 0 ] && case "$install_out" in *"sin preguntas ni navegador"*"Paso 1 de 8"*"Paso 4 de 8"*"Sin instalador web: modo silencioso."*"Paso 5 de 8 · Elegir el centro  servidor"*"centro-stub"*"Paso 6 de 8"*"suite-stub"*"Paso 7 de 8"*"equipos-stub"*"Paso 8 de 8"*"ejecutar-stub"*"temporizadores-stub"*"INSTALACIÓN: ✓"*"sudo cat /opt/aps-conecta/credentials.txt"*"aps-conecta revalidate (registro: $APS_HOME/instalacion.log)"*) ;; *) false;; esac && case "$install_out" in *"Enter para comenzar"*|*"  navegador"*|*"(navegador)"*|*"Comando   aps-conecta centro"*) false;; *) true;; esac'
+    '[ "$rcs" -eq 0 ] && case "$install_out" in *"sin preguntas ni navegador"*"Paso 1 de 8"*"Paso 4 de 8"*"Sin instalador web: modo silencioso."*"Paso 5 de 8 · Elegir el centro  servidor"*"centro-stub"*"Paso 6 de 8"*"suite-stub"*"Paso 7 de 8"*"equipos-stub"*"Paso 8 de 8"*"ejecutar-stub"*"temporizadores-stub"*"INSTALACIÓN: ✓"*"sudo cat $APS_HOME/credentials.txt"*"aps-conecta revalidate (registro: $APS_HOME/instalacion.log)"*) ;; *) false;; esac && case "$install_out" in *"Enter para comenzar"*|*"  navegador"*|*"(navegador)"*|*"Comando   aps-conecta centro"*) false;; *) true;; esac'
   check "install --sitio: a tool's own stderr goes to the log, never the console" \
     'case "$install_out" in *"Pulling from"*) false;; *) true;; esac && grep -q "Pulling from somewhere" "$APS_HOME/instalacion.log"'
   install_out="$(
