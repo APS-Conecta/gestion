@@ -322,7 +322,10 @@ main() {
     run_bootstrap "$tag" || { [ "$continuar" = 1 ] || exit 1; }
     bash "$VMA_TREE/scripts/cleanboot-site.sh" "$addr" "$VMA_WORK" \
       || die "no se pudo generar el sitio y la planilla de prueba"
-    silent_install "$VMA_WORK/site.sh" "$VMA_WORK/usuarios.csv" || { [ "$continuar" = 1 ] || exit 1; }
+    silent_install "$VMA_WORK/site.sh" "$VMA_WORK/usuarios.csv" || {
+      verdict fail "la instalación silenciosa" "registro privado: $VMA_WORK/install.out"
+      [ "$continuar" = 1 ] || { summarize; return 1; }
+    }
   fi
   sudo install -m 0644 "$VMA_ROOT/certificados/ca/aps-conecta-ca.crt" "$ca" 2>/dev/null \
     || die "no se pudo copiar la CA del instalador ($VMA_ROOT/certificados/ca/)"
