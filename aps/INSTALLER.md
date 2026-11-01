@@ -113,7 +113,7 @@ lines. If preflight reds on the domain probe, do
    la contraseña inicial en `/opt/aps-conecta/aio/master.pw`, con permisos 0600. Configura el
    dominio o la IP (§13), la zona horaria, los servicios incluidos, las aplicaciones opcionales
    elegidas y el respaldo diario (§11). Farmacia, Estadística y Tótem se instalan desde sus
-   publicaciones firmadas cuando se seleccionan. La grabación continúa pendiente de su perfil de recursos.
+   publicaciones firmadas cuando se seleccionan. La grabación permanece desactivada.
 3. Ingrese con esa contraseña y pulse «Iniciar». El paso 6 sigue el arranque hasta confirmar la
    instalación de Nextcloud. Los respaldos programados reinician las versiones actuales de la suite.
 

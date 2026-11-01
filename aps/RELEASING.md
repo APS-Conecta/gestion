@@ -188,7 +188,7 @@ la cadena de publicación; esta aceptación comprueba sus activos publicados.
 **Entorno del ensayo.** Ubuntu 24.04 x86-64, con los puertos 8080, 443 y 3478 disponibles.
 La instalación por IP utiliza el certificado del instalador. La instalación por dominio
 requiere que su DNS resuelva al servidor y que este reciba conexiones públicas en el puerto
-443; el certificado se obtiene mediante ACME. Los requisitos de capacidad se validan en #189.
+443; el certificado se obtiene mediante ACME.
 
 **Por IP, en GitHub Actions.** Ejecute el flujo manual sobre la versión publicada que
 contiene las correcciones:

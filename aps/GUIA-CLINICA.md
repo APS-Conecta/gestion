@@ -74,11 +74,11 @@ El asistente está en español. Lo importante:
   servidores DNS válidos del anfitrión y de su configuración anterior, sin duplicados ni bucles.
   Nextcloud y el servidor web calculan la red interna real para validar las direcciones reenviadas.
   Los registros y la protección de acceso conservan la dirección del cliente de la LAN.
-- **La oficina es Euro-Office**, la única de la suite: el asistente no ofrece cambiarla ni
-  desactivarla. No hay tienda de aplicaciones ni contenedores comunitarios: las apps de la suite
-  vienen incorporadas y el conjunto se actualiza junto, nunca por partes.
-- Talk e Imaginary parten apagados; el paso 6 activa Talk (y su grabación) si caben
-  en el servidor.
+- **La oficina es Euro-Office**, con su servidor y conector oficiales. La suite instala
+  las aplicaciones mediante el canal declarado en su manifiesto.
+- Euro-Office, Talk, búsqueda, vistas previas, antivirus y AppAPI integran el conjunto fijo.
+  Farmacia, Estadística y Tótem conservan su selección independiente. La grabación permanece
+  desactivada.
 - Tras «Iniciar», la tarjeta «Suite en marcha» remite a la pestaña del instalador web
   (`sudo aps-conecta abrir` si se cerró).
 - **Reinstalar desde cero** (una instalación fallida, o una frase del asistente que no se vio):
@@ -118,14 +118,14 @@ Después de la bienvenida, el navegador recorre los pasos 5 a 8 de la instalaci�
    si no carga, la pantalla lo dice y el punto se confirma igual. Se
    puede cambiar hasta cargar los equipos; desde ahí la instalación sirve a ese establecimiento y
    a ningún otro.
-2. **Iniciar la suite** — las cinco aplicaciones APS con su versión (se activan al ejecutar), y si
-   Talk y su grabación caben en este servidor, con el motivo. «Preparar el asistente» deja el
-   asistente listo con el dominio del servidor (o su dirección IP, §11), la hora de Santiago, Euro-Office, Talk según quepa y
+2. **Iniciar la suite** — revise los servicios incluidos y seleccione las aplicaciones opcionales.
+   «Preparar el asistente» deja el
+   asistente listo con el dominio del servidor (o su dirección IP, §11), la hora de Santiago, Euro-Office, Talk y
    el respaldo diario a las 04:00 hora de Santiago (el asistente la muestra en UTC: 07:00 en horario
    de verano, 08:00 en invierno; tras el cambio de hora corre a las 03:00 o a las 05:00). Marque «Omitir la validación del dominio» si el servidor no tiene
    acceso desde Internet. La pantalla muestra la frase de contraseña del asistente; ábralo con
    «Abrir el asistente e iniciar», ingrese con esa frase y pulse «Iniciar» sin cambiar las opciones (la
-   revisión lista Talk según este paso). El avance de cada
+   revisión lista los servicios incluidos). El avance de cada
    contenedor se ve aquí; con la suite instalada aparece «Siguiente».
 3. **Cargar equipos y personas** — en una sola pantalla:
    - los sectores y programas del establecimiento, uno por línea (nadie los conoce fuera del
