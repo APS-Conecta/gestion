@@ -189,6 +189,53 @@ PY
 }
 check postgres_secret_argv_cases
 
+nextcloud_install_secret_cases() {
+  python3 - <<'PY'
+import json, os, pathlib, re, subprocess, tempfile
+entrypoint = pathlib.Path('Containers/nextcloud/entrypoint.sh').read_text()
+helper = re.search(r'(?ms)^install_nextcloud\(\) \(\n.*?^\)\n', entrypoint)
+start = entrypoint.index('            INSTALL_OPTIONS=(')
+end = entrypoint.index('            # APS (R28):', start)
+script = (helper.group() if helper else '') + '\n' + entrypoint[start:end]
+script = script.replace('/var/www/html', '"$CASE_ROOT"').replace('/occ-install.php', '"$CASE_ADAPTER"')
+with tempfile.TemporaryDirectory(prefix='aps install secret ') as directory:
+    root = pathlib.Path(directory)
+    (root / 'config').mkdir()
+    (root / 'data').mkdir()
+    capture = root / 'call.json'
+    (root / 'occ').write_text('''<?php
+file_put_contents(getenv('CASE_CAPTURE'), json_encode([
+    'argv' => $argv, 'argc' => $argc, 'server_argv' => $_SERVER['argv'], 'server_argc' => $_SERVER['argc'],
+    'os_argv' => explode("\\0", file_get_contents('/proc/self/cmdline'))], JSON_THROW_ON_ERROR));
+exit((int)getenv('CASE_FAIL'));
+''')
+    admin = "synthetic admin password ' \" $ ;\nnext line"
+    database = "synthetic database password ' \" $ ;\nnext line"
+    env = dict(os.environ, CASE_ROOT=directory, CASE_CAPTURE=str(capture),
+               CASE_ADAPTER=str(pathlib.Path('Containers/nextcloud/occ-install.php').resolve()),
+               ADMIN_USER='fixture.admin', ADMIN_PASSWORD=admin, DATABASE_TYPE='pgsql',
+               POSTGRES_DB='fixture_database', POSTGRES_USER='fixture_user', POSTGRES_PASSWORD=database,
+               POSTGRES_HOST='database.invalid', POSTGRES_PORT='', NEXTCLOUD_DATA_DIR=str(root / 'data'))
+    for failure in ('0', '1'):
+        result = subprocess.run(['bash', '-x', '-c', script], env=dict(env, CASE_FAIL=failure),
+                                capture_output=True, text=True, timeout=5)
+        call = json.loads(capture.read_text())
+        assert all(value not in word for value in (admin, database) for word in call['os_argv']), 'Nextcloud installation passwords entered process arguments'
+        args = call['argv']
+        def option(name):
+            joined = next((word[len(name)+1:] for word in args if word.startswith(name+'=')), None)
+            return joined if joined is not None else args[args.index(name)+1]
+        assert args[1] == 'maintenance:install' and option('--admin-pass') == admin and option('--database-pass') == database
+        assert option('--admin-user') == 'fixture.admin' and option('--data-dir') == str(root / 'data')
+        assert option('--database-port') == '5432' and call['server_argv'] == args
+        assert call['argc'] == call['server_argc'] == len(args)
+        assert (result.returncode == 0) == (failure == '0')
+        assert (root / 'data/install.failed').exists() == (failure == '1')
+        assert all(marker not in result.stdout + result.stderr for marker in ('synthetic admin password', 'synthetic database password'))
+PY
+}
+check nextcloud_install_secret_cases
+
 aia_private_temp_cases() {
   python3 - <<'PY'
 import json, os, pathlib, subprocess, tempfile, uuid
