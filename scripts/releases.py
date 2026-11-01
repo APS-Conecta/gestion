@@ -487,6 +487,8 @@ def fetch_all(rows, nextcloud, path=None, store=None, eleccion=None):
             if registrado:
                 dest = store_file(app, registrado["tag"], store)
                 if os.path.isfile(dest) and sha256_file(dest) == registrado["sha256"]:
+                    with open(dest, "rb") as fh:
+                        prove_tarball(fh.read(), app, registrado["version"])
                     lines.append(f"✓ apps: {app} {registrado['tag']} ya está en este servidor — "
                                  "no se descarga nada")
                     continue
@@ -580,6 +582,8 @@ def fetch_next(rows, nextcloud, nuevo, path=None, store=None, eleccion=None, *, 
             if registrado and registrado["tag"] == tag:
                 dest = store_file(app, tag, store)
                 if os.path.isfile(dest) and sha256_file(dest) == registrado["sha256"]:
+                    with open(dest, "rb") as fh:
+                        prove_tarball(fh.read(), app, registrado["version"])
                     lines.append(f"✓ apps: {app} {tag} ya está en su última versión — no se descarga nada")
                     continue
                 lines.append(f"aplicaciones: {app} {tag} — descargando de nuevo y verificando")

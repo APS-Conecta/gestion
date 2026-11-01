@@ -150,6 +150,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-087 | pinned app releases bypass compatibility and downgrade checks; signed archives accept parent components and links (#199) | pin resolution returns before shared metadata validation; archive validation checks only the first path component | pins use signed Nextcloud metadata and the installed floor; archive validation rejects absolute paths, parent components and symbolic or hard links before storage |
 
+| A-088 | cached app archives bypass member validation during repair and unchanged updates (#199) | a matching stored hash returns before archive validation | revalidate cached members with the shared archive helper before reuse; unsafe cached packages stop both paths without advancing the lock |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and
