@@ -270,8 +270,9 @@ jobs:
           hex() { od -An -tx1 -N32 /dev/urandom | LC_ALL=C tr -d ' \n'; }
           # the template's fixture secret, hex — seed.sh's require_real_secrets refuses any
           # change-me left standing; the admin's are the testbed's own (the drift step logs in)
-          sed -e "s/^FIXTURE_USER_PASSWORD=.*/FIXTURE_USER_PASSWORD=$(hex)/" \
-              "$pkg/.env.example" > "$pkg/.env"
+          umask 077
+          sed '/^FIXTURE_USER_PASSWORD=/d' "$pkg/.env.example" > "$pkg/.env"
+          printf 'FIXTURE_USER_PASSWORD=%s\n' "$(hex)" >> "$pkg/.env"
           chmod 600 "$pkg/.env"
           {
             echo "NEXTCLOUD_ADMIN_USER=admin"
@@ -1016,8 +1017,9 @@ jobs:
           # the rehearsal's .env, in the package (the domain job's own step, same shape)
           pkg=/opt/aps-conecta/instalador
           hex() { od -An -tx1 -N32 /dev/urandom | LC_ALL=C tr -d ' \n'; }
-          sed -e "s/^FIXTURE_USER_PASSWORD=.*/FIXTURE_USER_PASSWORD=$(hex)/" \
-              "$pkg/.env.example" > "$pkg/.env"
+          umask 077
+          sed '/^FIXTURE_USER_PASSWORD=/d' "$pkg/.env.example" > "$pkg/.env"
+          printf 'FIXTURE_USER_PASSWORD=%s\n' "$(hex)" >> "$pkg/.env"
           chmod 600 "$pkg/.env"
       # The address the kernel routes by — the installer's own link probes the same.
       - name: The site and the planilla a clinic brings, by this runner's address
