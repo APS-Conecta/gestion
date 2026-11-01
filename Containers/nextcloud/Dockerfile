@@ -39,6 +39,7 @@ ENV NC_appstoreenabled="0"
 ENV NC_skeletondirectory=""
 
 COPY --chmod=775 Containers/nextcloud/*.sh /
+COPY --chmod=644 Containers/nextcloud/occ-install.php /occ-install.php
 COPY --chmod=755 Containers/network-prefix.sh /network-prefix.sh
 COPY --chmod=755 Containers/antivirus-limit.sh /antivirus-limit.sh
 COPY --chmod=774 Containers/nextcloud/upgrade.exclude /upgrade.exclude

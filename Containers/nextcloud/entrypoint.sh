@@ -3,6 +3,14 @@
 # shellcheck source=Containers/nextcloud/configure-apps.sh
 source /configure-apps.sh
 
+install_nextcloud() (
+    set +x
+    set -o pipefail
+    php -r 'echo json_encode(["admin-pass" => getenv("ADMIN_PASSWORD"),
+        "database-pass" => getenv("POSTGRES_PASSWORD")], JSON_THROW_ON_ERROR);' \
+        | php /occ-install.php "$@"
+)
+
 # version_greater A B returns whether A > B
 version_greater() {
     [ "$(printf '%s\n' "$@" | sort -t '.' -n -k1,1 -k2,2 -k3,3 -k4,4 | head -n 1)" != "$1" ]
@@ -336,7 +344,7 @@ if ! [ -f "$NEXTCLOUD_DATA_DIR/skip.update" ]; then
             exec > >(tee -i "/var/www/html/data/install.log")
             exec 2>&1
 
-            INSTALL_OPTIONS=(-n --admin-user "$ADMIN_USER" --admin-pass "$ADMIN_PASSWORD")
+            INSTALL_OPTIONS=(-n --admin-user "$ADMIN_USER")
             if [ -n "${NEXTCLOUD_DATA_DIR}" ]; then
                 INSTALL_OPTIONS+=(--data-dir "$NEXTCLOUD_DATA_DIR")
             fi
@@ -361,13 +369,12 @@ EOF
                 --database "$DATABASE_TYPE"
                 --database-name "$POSTGRES_DB"
                 --database-user "$POSTGRES_USER"
-                --database-pass "$POSTGRES_PASSWORD"
                 --database-host "$POSTGRES_HOST"
                 --database-port "$POSTGRES_PORT"
             )
             
             echo "Starting Nextcloud installation..."
-            if ! php /var/www/html/occ maintenance:install "${INSTALL_OPTIONS[@]}"; then
+            if ! install_nextcloud /var/www/html/occ maintenance:install "${INSTALL_OPTIONS[@]}"; then
                 echo "Installation of Nextcloud failed!"
                 touch "$NEXTCLOUD_DATA_DIR/install.failed"
                 exit 1
