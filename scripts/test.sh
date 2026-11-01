@@ -10,6 +10,45 @@ fail=0
 check() { if "$@" >/dev/null 2>&1; then echo "  ok:   $*"; else echo "  FAIL: $*"; fail=1; fi; }
 
 echo "== static checks (no running stack needed) =="
+user_secret_argv_cases() {
+  python3 - <<'PY'
+import json, os, pathlib, shutil, subprocess, sys, tempfile
+with tempfile.TemporaryDirectory(prefix='aps user secret ') as directory:
+    root = pathlib.Path(directory)
+    for name in ('scripts', 'provisioning', 'bin'):
+        (root / name).mkdir()
+    for name in ('scripts/env.sh', 'provisioning/lib.sh'):
+        shutil.copyfile(name, root / name)
+    capture = root / 'calls.jsonl'
+    docker = root / 'bin/docker'
+    docker.write_text('#!' + sys.executable + '\n' + '''
+import json, os, sys
+with open(os.environ['CASE_CAPTURE'], 'a') as output:
+    output.write(json.dumps({'argv': sys.argv[1:], 'password': os.environ.get('OC_PASS')}) + '\\n')
+sys.exit(1 if 'user:info' in sys.argv else 0)
+''')
+    docker.chmod(0o755)
+    password = "synthetic password ' \" $ ;"
+    env = dict(os.environ, PATH=str(root / 'bin') + ':' + os.environ['PATH'],
+               CASE_CAPTURE=str(capture), CASE_PASSWORD=password)
+    env.pop('OC_PASS', None)
+    result = subprocess.run(['bash', '-c', '''
+set -e
+source scripts/env.sh
+source provisioning/lib.sh
+ensure_user fixture.staff 'Fixture User' "$CASE_PASSWORD"
+'''], cwd=root, env=env, capture_output=True, text=True, timeout=5)
+    assert result.returncode == 0, result.stderr
+    calls = [json.loads(line) for line in capture.read_text().splitlines()]
+    assert all(password not in word for call in calls for word in call['argv']), 'A staff password entered Docker arguments'
+    creations = [call for call in calls if 'user:add' in call['argv']]
+    assert len(creations) == 1 and creations[0]['password'] == password, 'The named environment did not deliver the exact password'
+    assert 'OC_PASS' in creations[0]['argv'] and '--password-from-env' in creations[0]['argv']
+    assert password not in result.stdout + result.stderr
+PY
+}
+check user_secret_argv_cases
+
 trusted_proxy_network_cases() {
   python3 - <<'PY'
 import os, pathlib, subprocess, tempfile
