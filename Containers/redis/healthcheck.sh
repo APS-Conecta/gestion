@@ -1,7 +1,5 @@
 #!/bin/bash
 
-if [ "$AIO_LOG_LEVEL" = 'debug' ]; then
-    set -x
-fi
+set +x
 
-redis-cli -a "$REDIS_HOST_PASSWORD" PING || exit 1
+REDISCLI_AUTH="$REDIS_HOST_PASSWORD" redis-cli PING || exit 1

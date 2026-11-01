@@ -31,9 +31,8 @@ docker exec aps-conecta-database pg_isready -q 2>/dev/null \
   || fail "PostgreSQL (aps-conecta-database) is not accepting connections"
 
 # 4. Redis responding to PING. AIO's redis runs with requirepass — the password is read
-# IN-CONTAINER from its own env (REDIS_HOST_PASSWORD), never on the host argv (the OC_PASS
-# discipline): a bare `redis-cli ping` answers NOAUTH on every real AIO instance (FINDINGS.md P3).
-[ "$(docker exec aps-conecta-redis sh -c 'redis-cli -a "$REDIS_HOST_PASSWORD" ping' 2>/dev/null | tr -d '\r')" = "PONG" ] \
+# from the container environment through Redis's native authentication variable.
+[ "$(docker exec aps-conecta-redis sh -c 'REDISCLI_AUTH="$REDIS_HOST_PASSWORD" redis-cli ping' 2>/dev/null | tr -d '\r')" = "PONG" ] \
   || fail "Redis (aps-conecta-redis) is not responding to PING"
 
 # 5. HTTP surface: GET /status.php → 200, and the body carries OUR product name. The highest-value
@@ -93,7 +92,7 @@ print("; ".join(bad) if bad else "OK")
 # distributed cache, so on an instance whose cache was warm before the file existed this stays
 # core's until the cache is flushed — the symptom looks like the fix silently not working.
 printf '%s' "$login_html" | grep -q 'rel="manifest" href="[^"]*themes/apsconecta' \
-  || fail "login page still links Nextcloud's manifest, not ours — if the file exists, flush the cache (docker exec aps-conecta-redis sh -c 'redis-cli -a \"$REDIS_HOST_PASSWORD\" FLUSHALL')"
+  || fail "login page still links Nextcloud's manifest — check the theme file and clear the Redis cache before retrying"
 # The three icon links are the same static-file mechanism as the manifest and share its failure mode
 # (ADR-0004). They are here rather than beside it because they cost nothing extra — this HTML is
 # already fetched — and because imagePath() caches under a key holding NO cachebuster and NO theme,
@@ -101,7 +100,7 @@ printf '%s' "$login_html" | grep -q 'rel="manifest" href="[^"]*themes/apsconecta
 # silently Nextcloud's and the tab shows the vendor's mark on every screen.
 for rel in icon apple-touch-icon mask-icon; do
   printf '%s' "$login_html" | grep -q "rel=\"${rel}\"[^>]*href=\"[^\"]*themes/apsconecta" \
-    || fail "login page links Nextcloud's ${rel}, not ours — if themes/apsconecta/core/img/ has the file, flush the cache (docker exec aps-conecta-redis sh -c 'redis-cli -a \"$REDIS_HOST_PASSWORD\" FLUSHALL')"
+    || fail "login page links Nextcloud's ${rel} — check the theme file and clear the Redis cache before retrying"
 done
 
 # 8. App policy holds: staff do not see Nextcloud's product surface (phase 16-app-policy).

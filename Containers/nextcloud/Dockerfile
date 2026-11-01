@@ -26,8 +26,8 @@ ENV AIO_URL=localhost
 # direction: a command that prefixes its own NC_appstoreenabled=1 (the envCache beats both
 # config.php and this ENV for that process alone) opens the store for exactly one occ call —
 # the entrypoint's notify_push install when it is missing, provisioning's store installs.
-# Talk left this channel for its fork's signed releases (ADR-0020, #145), so notify_push is
-# the scoped open's only first-boot user. With the store on, occ upgrade would re-download every enabled app and no pin
+# Official application packages install in phase 12 (ADR-0025); notify_push is the
+# scoped open's only first-boot user. With the store on, occ upgrade would re-download every enabled app and no pin
 # could hold; scoped opens never survive their own command.
 ENV NC_appstoreenabled="0"
 
@@ -304,6 +304,8 @@ RUN set -ex; \
     \
     mkdir -p /nc-updater; \
     chmod -R 777 /nc-updater
+
+COPY --chmod=644 Containers/nextcloud/occ-install.php /occ-install.php
 
 # APS Conecta (#42, the retired bake's one survivor): the image carries the apsconecta theme
 # and NOTHING else of the suite's own — no app bytes at all. Apps arrive by their own

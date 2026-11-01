@@ -201,16 +201,13 @@ ensure_group() {  # GID DISPLAY
   GROUPS_CACHE="$gid"$'\n'"$GROUPS_CACHE"
 }
 
-# --- users (fixtures; query-before-create) ---
+# --- users (query-before-create) ---
 user_exists() { occ user:info "$1" >/dev/null 2>&1; }  # UID
 ensure_user() {  # UID DISPLAY PASSWORD
   local uid="$1" display="$2" pass="$3"
   if user_exists "$uid"; then log "user $uid exists"; return 0; fi
-  # OC_PASS must reach the php process INSIDE the container — `docker exec` does not forward host
-  # env either, so pass it explicitly with -e (never on the command line; --password-from-env reads
-  # it). Not via occ(): the seam's one job is occ's argv; the -e belongs to this site. The occ path
-  # is ABSOLUTE for the same reason it is in env.sh — the AIO image sets no WORKDIR.
-  if nc_exec --user www-data -e OC_PASS="$pass" -- \
+  # Docker copies the named variable from its client environment.
+  if OC_PASS="$pass" nc_exec --user www-data -e OC_PASS -- \
        php /var/www/html/occ user:add --password-from-env --display-name="$display" "$uid" >/dev/null; then
     log "user $uid created"
   else
@@ -635,22 +632,6 @@ ensure_gf_subfolder() {  # MOUNT SUBFOLDER
   log "  subfolder $mount/$sub created"
 }
 
-# --- content fixtures (query-before-create): put a file in a user's Files, then index it ---
-ensure_sample_file() {  # UID RELPATH CONTENT
-  local uid="$1" rel="$2" content="$3"
-  # Datadir-derived (see datadir_load): a hand-written `data/$uid/files` is a phantom tree under
-  # AIO with every gate green. One load here, parent-side — this helper runs in the phase shell
-  # itself, no substitution, so the cache holds for the rest of the phase.
-  datadir_load || return 1
-  if nc_exec --user www-data -- test -f "$DATADIR/$uid/files/$rel" 2>/dev/null; then
-    log "file $uid:$rel exists"; return 0
-  fi
-  nc_exec --user www-data -e SAMPLE="$content" -e DEST="$DATADIR/$uid/files/$rel" -- \
-    sh -c 'mkdir -p "$(dirname "$DEST")" && printf "%s" "$SAMPLE" > "$DEST"'
-  occ files:scan "$uid" >/dev/null 2>&1 || true
-  log "file $uid:$rel created + indexed"
-}
-
 # --- TLS intermediates (#28) -------------------------------------------------
 # Some hosts we read serve ONLY their leaf certificate and omit the intermediate. Browsers hide it
 # by chasing the leaf's authorityInfoAccess pointer; server-side clients do not, so Nextcloud's
@@ -689,8 +670,12 @@ aia_is_safe() {
   [[ $1 =~ ^[Hh][Tt][Tt][Pp][Ss]?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~%+/-]*)?(\?[A-Za-z0-9._~%+/=\&-]*)?$ ]]
 }
 
-ensure_aia_intermediate() {  # HOST
-  local host="$1" aia name
+ensure_aia_intermediate() (  # HOST
+  local host="$1" aia name host_temp='' container_temp='' candidate
+  trap '
+    [ -z "$host_temp" ] || rm -rf -- "$host_temp" || true
+    [ -z "$container_temp" ] || nc_exec -- rm -rf "$container_temp" >/dev/null 2>&1 || true
+  ' EXIT
 
   # occ security:certificates prints one row per imported file; the file name is the key.
   # One handshake, and it yields both halves: the pointer on the first line, the leaf after
@@ -738,6 +723,10 @@ ensure_aia_intermediate() {  # HOST
     *) log "certs: certificate list was unreadable — skipped, leaving $name as it is"; return 0 ;;
   esac
 
+  host_temp="$(mktemp -d)" || {
+    log "certs: could not prepare a private temporary directory — skipped"; return 0;
+  }
+
   # GlobalSign serves DER; others serve PEM. Try DER, fall back to PEM, and let openssl be the
   # gate: an HTML error page must never reach the bundle as a "certificate". Empty output means
   # one of fetch or parse failed, and either way there is nothing to import.
@@ -753,7 +742,8 @@ ensure_aia_intermediate() {  # HOST
   # both — verified by forging a leaf and its CA, which that form accepted and this one refuses.
   # Nothing legitimate is lost: an intermediate that does not reach a public root would not fix
   # the feed either.
-  nc_exec -e AIA="$aia" -e HOST="$host" -e LEAF="$leaf_pem" -- sh -c '
+  ( umask 077
+    nc_exec -e AIA="$aia" -e HOST="$host" -e LEAF="$leaf_pem" -- sh -c '
       leaf=$(mktemp); blob=$(mktemp); pem=$(mktemp)
       trap "rm -f $leaf $blob $pem" EXIT
       printf "%s\n" "$LEAF" > "$leaf"   # a PEM without its final newline is not one
@@ -762,40 +752,36 @@ ensure_aia_intermediate() {  # HOST
         || openssl x509 -in "$blob" -outform PEM > "$pem" 2>/dev/null || exit 1
       openssl verify -untrusted "$pem" -verify_hostname "$HOST" "$leaf" >/dev/null 2>&1 || exit 1
       cat "$pem"
-    ' > "/tmp/$name" 2>/dev/null || true
+    ' > "$host_temp/$name" 2>/dev/null
+  ) || true
 
-  # Every cleanup and copy below is `|| true` or guarded, for one reason: this helper
-  # warns and returns 0 on every failure it already knows about, and a phase that dies
-  # on the tidying instead is the same defect wearing a different hat. `docker cp` in
-  # particular fails for the ordinary reason of a container still starting.
-  if [ ! -s "/tmp/$name" ]; then
+  if [ ! -s "$host_temp/$name" ]; then
     log "certs: could not fetch or parse $aia — skipped, feeds from $host will fail"
-    rm -f "/tmp/$name" || true
     return 0
   fi
 
-  # The one transport site that is not an exec — docker cp takes the container name itself, so it
-  # rides env.sh's nc_cp (same resolution as nc_exec).
-  if ! nc_cp "/tmp/$name" "/tmp/$name" >/dev/null 2>&1; then
-    log "certs: could not copy $name into the container — skipped, feeds from $host will fail"
-    rm -f "/tmp/$name" || true
+  candidate="$(nc_exec -- mktemp -d /tmp/aps-ca.XXXXXXXXXX 2>/dev/null)" || candidate=''
+  if [[ ! $candidate =~ ^/tmp/aps-ca\.[A-Za-z0-9]{10}$ ]]; then
+    log "certs: could not prepare a private directory in the container — skipped"; return 0
+  fi
+  container_temp="$candidate"
+  if ! nc_exec --interactive -- sh -c 'umask 077; cat > "$1"' _ "$container_temp/$name" \
+      < "$host_temp/$name" >/dev/null 2>&1; then
+    log "certs: could not transfer $name into the container — skipped, feeds from $host will fail"
     return 0
   fi
-  rm -f "/tmp/$name" || true
+  if ! nc_exec -- chown -R www-data:www-data "$container_temp" >/dev/null 2>&1; then
+    log "certs: could not prepare certificate permissions — skipped"; return 0
+  fi
 
-  if occ security:certificates:import "/tmp/$name" >/dev/null 2>&1; then
+  if occ security:certificates:import "$container_temp/$name" >/dev/null 2>&1; then
     log "certs: imported $name for $host"
   else
     log "certs: import of $name FAILED"
   fi
 
-  # `docker cp` writes as root, so www-data cannot unlink it from a sticky /tmp. Left
-  # unguarded this was the LAST command in the function, so a failed cleanup became the function's
-  # exit status and killed the phase after the first host — caught by removing both certificates
-  # and re-running, which imported ispch and then aborted before the second host.
-  nc_exec -- rm -f "/tmp/$name" >/dev/null 2>&1 || true
   return 0
-}
+)
 
 # Whether Nextcloud's bundle already holds NAME (one row per imported file; the file name is the
 # key): 0 = it does, 1 = it does not, 2 = the list could not be read, 3 = it was read and is not

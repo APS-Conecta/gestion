@@ -10,6 +10,554 @@ fail=0
 check() { if "$@" >/dev/null 2>&1; then echo "  ok:   $*"; else echo "  FAIL: $*"; fail=1; fi; }
 
 echo "== static checks (no running stack needed) =="
+user_secret_argv_cases() {
+  python3 - <<'PY'
+import json, os, pathlib, shutil, subprocess, sys, tempfile
+with tempfile.TemporaryDirectory(prefix='aps user secret ') as directory:
+    root = pathlib.Path(directory)
+    for name in ('scripts', 'provisioning', 'bin'):
+        (root / name).mkdir()
+    for name in ('scripts/env.sh', 'provisioning/lib.sh'):
+        shutil.copyfile(name, root / name)
+    capture = root / 'calls.jsonl'
+    docker = root / 'bin/docker'
+    docker.write_text('#!' + sys.executable + '\n' + '''
+import json, os, sys
+with open(os.environ['CASE_CAPTURE'], 'a') as output:
+    output.write(json.dumps({'argv': sys.argv[1:], 'password': os.environ.get('OC_PASS')}) + '\\n')
+sys.exit(1 if 'user:info' in sys.argv else 0)
+''')
+    docker.chmod(0o755)
+    password = "synthetic password ' \" $ ;"
+    env = dict(os.environ, PATH=str(root / 'bin') + ':' + os.environ['PATH'],
+               CASE_CAPTURE=str(capture), CASE_PASSWORD=password)
+    env.pop('OC_PASS', None)
+    setup = 'set -e\nsource scripts/env.sh\nsource provisioning/lib.sh\n'
+    result = subprocess.run(['bash', '-c', setup + 'ensure_user fixture.staff \'Fixture User\' "$CASE_PASSWORD"\n'],
+                            cwd=root, env=env, capture_output=True, text=True, timeout=5)
+    assert result.returncode == 0, result.stderr
+    calls = [json.loads(line) for line in capture.read_text().splitlines()]
+    assert all(password not in word for call in calls for word in call['argv']), 'A staff password entered Docker arguments'
+    creations = [call for call in calls if 'user:add' in call['argv']]
+    assert len(creations) == 1 and creations[0]['password'] == password, 'The named environment did not deliver the exact password'
+    assert 'OC_PASS' in creations[0]['argv'] and '--password-from-env' in creations[0]['argv']
+    assert "synthetic password" not in result.stdout + result.stderr
+PY
+}
+check user_secret_argv_cases
+
+clinic_seed_has_no_personal_fixtures() {
+  python3 - <<'PY'
+import pathlib, re
+phases = pathlib.Path('provisioning/phases')
+assert not (phases / '60-fixtures.sh').exists(), 'Clinic installs still include the development content phase'
+for path in phases.glob('*.sh'):
+    code = '\n'.join(line for line in path.read_text().splitlines() if not line.lstrip().startswith('#'))
+    assert 'ensure_sample_file' not in code, f'{path}: development content in personal Files'
+    assert not re.search(r'\$(?:\{(?:uid|user)\}|(?:uid|user))/files', code), f'{path}: personal Files write'
+for name in ('provisioning/seed.sh', 'scripts/seed-idempotent.sh', 'scripts/provisionador.py'):
+    assert 'SEED_FIXTURES' not in pathlib.Path(name).read_text(), f'{name}: obsolete fixture partition'
+PY
+}
+check clinic_seed_has_no_personal_fixtures
+
+service_secret_argv_cases() {
+  python3 - <<'PY'
+import json, os, pathlib, subprocess, sys, tempfile
+with tempfile.TemporaryDirectory(prefix='aps service secret ') as directory:
+    root = pathlib.Path(directory)
+    capture = root / 'call.json'
+    client = root / 'redis-cli'
+    client.write_text('#!' + sys.executable + '\n' + '''
+import json, os, pathlib, sys
+pathlib.Path(os.environ['CASE_CAPTURE']).write_text(json.dumps({
+    'argv': sys.argv[1:], 'password': os.environ.get('REDISCLI_AUTH')}))
+print('PONG')
+sys.exit(int(os.environ.get('CASE_FAIL', '0')))
+''')
+    client.chmod(0o755)
+    password = "synthetic password ' \" $ ;"
+    env = dict(os.environ, PATH=directory + ':' + os.environ['PATH'], CASE_CAPTURE=str(capture),
+               REDIS_HOST_PASSWORD=password, AIO_LOG_LEVEL='debug')
+    for failure in ('0', '1'):
+        result = subprocess.run(['bash', 'Containers/redis/healthcheck.sh'],
+                                env=dict(env, CASE_FAIL=failure), capture_output=True, text=True, timeout=5)
+        call = json.loads(capture.read_text())
+        assert all(password not in word for word in call['argv']), 'Redis health password entered process arguments'
+        assert call['password'] == password, 'Redis did not receive its authentication environment'
+        assert (result.returncode == 0) == (failure == '0')
+        assert "synthetic password" not in result.stdout + result.stderr
+    client = root / 'curl'
+    client.write_text('#!' + sys.executable + '\n' + '''
+import json, os, pathlib, sys
+pathlib.Path(os.environ['CASE_CAPTURE']).write_text(json.dumps({
+    'argv': sys.argv[1:], 'stdin': sys.stdin.read()}))
+print(json.dumps({'status': os.environ['CASE_HEALTH']}))
+sys.exit(int(os.environ.get('CASE_FAIL', '0')))
+''')
+    client.chmod(0o755)
+    for status, failure in [('green', '0'), ('yellow', '0'), ('red', '0'), ('green', '1')]:
+        result = subprocess.run(['bash', 'Containers/fulltextsearch/healthcheck.sh'],
+                                env=dict(env, ELASTIC_PASSWORD=password, CASE_HEALTH=status, CASE_FAIL=failure),
+                                input='', capture_output=True, text=True, timeout=5)
+        call = json.loads(capture.read_text())
+        assert all(password not in word for word in call['argv']), 'Search health password entered process arguments'
+        assert '--config' in call['argv'] and '-' in call['argv']
+        import base64
+        encoded = call['stdin'].split('Authorization: Basic ', 1)[1].strip().strip('"')
+        assert base64.b64decode(encoded).decode() == 'elastic:' + password
+        assert encoded not in result.stdout + result.stderr, 'Search health printed reusable authentication'
+        assert (result.returncode == 0) == (failure == '0' and status != 'red')
+        assert "synthetic password" not in result.stdout + result.stderr
+    server = root / 'redis-server'
+    server.write_text('#!' + sys.executable + '\n' + '''
+import json, os, pathlib, sys
+pathlib.Path(os.environ['CASE_CAPTURE']).write_text(json.dumps({
+    'argv': sys.argv[1:], 'stdin': sys.stdin.read()}))
+''')
+    server.chmod(0o755)
+    sysctl = root / 'sysctl'
+    sysctl.write_text('#!/bin/sh\nprintf 1\n')
+    sysctl.chmod(0o755)
+    for value in (password, ''):
+        result = subprocess.run(['bash', 'Containers/redis/start.sh'], env=dict(env, REDIS_HOST_PASSWORD=value),
+                                input='', capture_output=True, text=True, timeout=5)
+        assert result.returncode == 0
+        call = json.loads(capture.read_text())
+        assert all(password not in word for word in call['argv']), 'Redis startup password entered process arguments'
+        assert call['argv'][0] == '-'
+        import hashlib
+        expected = 'user default on resetpass #' + hashlib.sha256(password.encode()).hexdigest() + ' ~* &* +@all'
+        assert call['stdin'].strip() == (expected if value else '')
+        assert "synthetic password" not in result.stdout + result.stderr
+PY
+}
+check service_secret_argv_cases
+
+postgres_secret_argv_cases() {
+  python3 - <<'PY'
+import json, os, pathlib, subprocess, sys, tempfile
+with tempfile.TemporaryDirectory(prefix='aps database secret ') as directory:
+    root = pathlib.Path(directory)
+    capture = root / 'call.json'
+    client = root / 'psql'
+    client.write_text('#!' + sys.executable + '\n' + '''
+import json, os, pathlib, sys
+pathlib.Path(os.environ['CASE_CAPTURE']).write_text(json.dumps({
+    'argv': sys.argv[1:], 'stdin': sys.stdin.read(), 'password': os.environ.get('POSTGRES_PASSWORD'),
+    'client_password': os.environ.get('PGPASSWORD')}))
+sys.exit(int(os.environ['CASE_FAIL']))
+''')
+    client.chmod(0o755)
+    password = "synthetic database password ' \" $ ;"
+    env = dict(os.environ, PATH=directory + ':' + os.environ['PATH'], CASE_CAPTURE=str(capture),
+               DUMP_DIR=directory, POSTGRES_PASSWORD=password, POSTGRES_USER='nextcloud',
+               POSTGRES_DB='nextcloud_database', AIO_LOG_LEVEL='debug')
+    marker = root / 'initialization.failed'
+    for failure in ('0', '1'):
+        result = subprocess.run(['bash', 'Containers/postgresql/init-user-db.sh'], env=dict(env, CASE_FAIL=failure),
+                                capture_output=True, text=True, timeout=5)
+        call = json.loads(capture.read_text())
+        assert all(password not in word for word in call['argv']), 'PostgreSQL role password entered process arguments'
+        assert call['password'] == password and '\\getenv pg_new_password POSTGRES_PASSWORD' in call['stdin']
+        assert password not in call['stdin']
+        assert 'synthetic database password' not in result.stdout + result.stderr
+        assert (result.returncode == 0) == (failure == '0') and marker.exists() == (failure == '1')
+    assert 'pg_new_password=' not in pathlib.Path('Containers/postgresql/start.sh').read_text()
+    nc = root / 'nc'
+    nc.write_text('#!/bin/sh\nexit 1\n')
+    nc.chmod(0o755)
+    health = pathlib.Path('Containers/postgresql/healthcheck.sh').read_text().replace(
+        '"/mnt/data/backup-is-running"', '"$CASE_BACKUP_MARKER"')
+    for failure in ('0', '1'):
+        result = subprocess.run(['bash', '-c', health],
+                                env=dict(env, CASE_FAIL=failure, CASE_BACKUP_MARKER=str(root / 'backup')),
+                                input='', capture_output=True, text=True, timeout=5)
+        call = json.loads(capture.read_text())
+        assert call['client_password'] == password
+        assert all(password not in word for word in call['argv'])
+        assert (result.returncode == 0) == (failure == '0')
+        assert 'synthetic database password' not in result.stdout + result.stderr, 'Database health check printed its password'
+    prefix = pathlib.Path('Containers/postgresql/start.sh').read_text().split("# Don't start database", 1)[0]
+    prefix += '\npython3 -c \'import os; assert os.environ["PGPASSWORD"] == os.environ["CASE_PASSWORD"]\'\n'
+    result = subprocess.run(['bash', '-x', '-c', prefix], env=dict(env, CASE_PASSWORD=password),
+                            capture_output=True, text=True, timeout=5)
+    assert result.returncode == 0
+    assert 'synthetic database password' not in result.stdout + result.stderr, 'Database startup printed its password'
+PY
+}
+check postgres_secret_argv_cases
+
+nextcloud_install_secret_cases() {
+  python3 - <<'PY'
+import json, os, pathlib, re, subprocess, tempfile
+entrypoint = pathlib.Path('Containers/nextcloud/entrypoint.sh').read_text()
+helper = re.search(r'(?ms)^install_nextcloud\(\) \(\n.*?^\)\n', entrypoint)
+start = entrypoint.index('            INSTALL_OPTIONS=(')
+end = entrypoint.index('            # APS (R28):', start)
+script = (helper.group() if helper else '') + '\n' + entrypoint[start:end]
+script = script.replace('/var/www/html', '"$CASE_ROOT"').replace('/occ-install.php', '"$CASE_ADAPTER"')
+with tempfile.TemporaryDirectory(prefix='aps install secret ') as directory:
+    root = pathlib.Path(directory)
+    (root / 'config').mkdir()
+    (root / 'data').mkdir()
+    capture = root / 'call.json'
+    (root / 'occ').write_text('''<?php
+file_put_contents(getenv('CASE_CAPTURE'), json_encode([
+    'argv' => $argv, 'argc' => $argc, 'server_argv' => $_SERVER['argv'], 'server_argc' => $_SERVER['argc'],
+    'os_argv' => explode("\\0", file_get_contents('/proc/self/cmdline'))], JSON_THROW_ON_ERROR));
+exit((int)getenv('CASE_FAIL'));
+''')
+    admin = "synthetic admin password ' \" $ ;\nnext line"
+    database = "synthetic database password ' \" $ ;\nnext line"
+    env = dict(os.environ, CASE_ROOT=directory, CASE_CAPTURE=str(capture),
+               CASE_ADAPTER=str(pathlib.Path('Containers/nextcloud/occ-install.php').resolve()),
+               ADMIN_USER='fixture.admin', ADMIN_PASSWORD=admin, DATABASE_TYPE='pgsql',
+               POSTGRES_DB='fixture_database', POSTGRES_USER='fixture_user', POSTGRES_PASSWORD=database,
+               POSTGRES_HOST='database.invalid', POSTGRES_PORT='', NEXTCLOUD_DATA_DIR=str(root / 'data'))
+    for failure in ('0', '1'):
+        result = subprocess.run(['bash', '-x', '-c', script], env=dict(env, CASE_FAIL=failure),
+                                capture_output=True, text=True, timeout=5)
+        call = json.loads(capture.read_text())
+        assert all(value not in word for value in (admin, database) for word in call['os_argv']), 'Nextcloud installation passwords entered process arguments'
+        args = call['argv']
+        def option(name):
+            joined = next((word[len(name)+1:] for word in args if word.startswith(name+'=')), None)
+            return joined if joined is not None else args[args.index(name)+1]
+        assert args[1] == 'maintenance:install' and option('--admin-pass') == admin and option('--database-pass') == database
+        assert option('--admin-user') == 'fixture.admin' and option('--data-dir') == str(root / 'data')
+        assert option('--database-port') == '5432' and call['server_argv'] == args
+        assert call['argc'] == call['server_argc'] == len(args)
+        assert (result.returncode == 0) == (failure == '0')
+        assert (root / 'data/install.failed').exists() == (failure == '1')
+        assert all(marker not in result.stdout + result.stderr for marker in ('synthetic admin password', 'synthetic database password'))
+PY
+}
+check nextcloud_install_secret_cases
+
+nextcloud_database_secret_cases() {
+  python3 - <<'PY'
+import json, os, pathlib, re, subprocess, sys, tempfile
+source = pathlib.Path('Containers/nextcloud/start.sh').read_text()
+helper = re.search(r'(?ms)^repair_database_connection\(\) \(\n.*?^\)\n', source)
+start = source.index('# Fix false database connection')
+end = source.index('# Trust additional Cacerts', start)
+script = (helper.group() if helper else '') + '\n' + source[start:end]
+script = script.replace('"/var/www/html/', '"$CASE_ROOT/').replace('/var/www/html/', '"$CASE_ROOT"/')
+with tempfile.TemporaryDirectory(prefix='aps database repair ') as directory:
+    root = pathlib.Path(directory)
+    (root / 'config').mkdir()
+    (root / 'config/config.php').write_text("<?php $CONFIG = ['dbuser'=>'legacy', 'dbpassword'=>'old', 'dbname'=>'nextcloud_database'];\n")
+    calls, imported = root / 'calls.jsonl', root / 'import.json'
+    shim = root / 'su-exec'
+    shim.write_text('#!' + sys.executable + '\n' + '''
+import json, os, sys
+with open(os.environ['CASE_CALLS'], 'a') as output:
+    output.write(json.dumps({'argv': sys.argv[1:], 'password': os.environ.get('PGPASSWORD')}) + '\\n')
+os.execvp(sys.argv[2], sys.argv[2:])
+''')
+    shim.chmod(0o755)
+    for name in ('psql', 'sleep'):
+        path = root / name
+        path.write_text('#!/bin/sh\nexit 0\n')
+        path.chmod(0o755)
+    (root / 'occ').write_text('''<?php
+file_put_contents(getenv('CASE_IMPORT'), json_encode([
+    'data' => json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR),
+    'user' => getenv('NC_dbuser'), 'password' => getenv('NC_dbpassword'), 'database' => getenv('NC_dbname')], JSON_THROW_ON_ERROR));
+''')
+    for password in ('fixturecredential196', "synthetic repair password ' \" $ ;\nnext line"):
+        calls.unlink(missing_ok=True)
+        env = dict(os.environ, PATH=directory+':'+os.environ['PATH'], CASE_ROOT=directory,
+                   CASE_CALLS=str(calls), CASE_IMPORT=str(imported), POSTGRES_USER='oc_nextcloud',
+                   POSTGRES_DB='nextcloud_database', POSTGRES_HOST='database.invalid', POSTGRES_PORT='5432',
+                   POSTGRES_PASSWORD=password, AIO_LOG_LEVEL='debug')
+        result = subprocess.run(['bash', '-x', '-c', script], env=env, capture_output=True, text=True, timeout=5)
+        records = [json.loads(line) for line in calls.read_text().splitlines()]
+        assert all(password not in word for call in records for word in call['argv']), 'Database repair password entered process arguments'
+        assert result.returncode == 0
+        psql = [call for call in records if 'psql' in call['argv']]
+        assert len(psql) == 1 and psql[0]['password'] == password
+        data = json.loads(imported.read_text())
+        assert data['data'] == {'system': {'dbuser': 'oc_nextcloud', 'dbpassword': password, 'dbname': 'nextcloud_database'}}
+        assert (data['user'], data['password'], data['database']) == ('oc_nextcloud', password, 'nextcloud_database')
+        assert all(marker not in result.stdout + result.stderr for marker in ('fixturecredential196', 'synthetic repair password'))
+PY
+}
+check nextcloud_database_secret_cases
+
+backup_secret_argv_cases() {
+  python3 - <<'PY'
+import json, os, pathlib, shutil, subprocess, sys, tempfile
+source = pathlib.Path('Containers/borgbackup/backupscript.sh').read_text()
+start = source.index('    # Reset the AIO password to the currently used one')
+end = source.index('    # Reset the datadir', start)
+script = source.split('# Functions', 1)[0] + '\n' + source[start:end]
+script = script.replace('/nextcloud_aio_volumes/nextcloud_aio_mastercontainer/data/configuration.json', '"$CASE_CONFIG"')
+with tempfile.TemporaryDirectory(prefix='aps backup secret ') as directory:
+    root = pathlib.Path(directory)
+    config, calls = root / 'config.json', root / 'calls.jsonl'
+    config.write_text(json.dumps({'password': 'old', 'retained': 'keep'}))
+    wrapper = root / 'jq'
+    wrapper.write_text('#!' + sys.executable + '\n' + '''
+import json, os, sys
+with open(os.environ['CASE_CALLS'], 'a') as output:
+    output.write(json.dumps(sys.argv[1:]) + '\\n')
+os.execv(os.environ['REAL_JQ'], [os.environ['REAL_JQ'], *sys.argv[1:]])
+''')
+    wrapper.chmod(0o755)
+    password = "synthetic backup password ' \" \\ $ ;\nnext line"
+    env = dict(os.environ, PATH=directory+':'+os.environ['PATH'], REAL_JQ=shutil.which('jq'),
+               CASE_CONFIG=str(config), CASE_CALLS=str(calls), AIO_PASSWORD=json.dumps(password), AIO_LOG_LEVEL='debug')
+    result = subprocess.run(['bash', '-c', script], env=env, capture_output=True, text=True, timeout=5)
+    assert result.returncode == 0
+    records = [json.loads(line) for line in calls.read_text().splitlines()]
+    assert all('synthetic backup password' not in word for call in records for word in call), 'Backup password entered process arguments'
+    assert json.loads(config.read_text()) == {'password': password, 'retained': 'keep'}
+    assert 'synthetic backup password' not in result.stdout + result.stderr
+    startup = pathlib.Path('Containers/borgbackup/start.sh').read_text().split('export BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK', 1)[0]
+    startup += '\npython3 -c \'import os; assert os.environ["BORG_PASSPHRASE"] == os.environ["CASE_EXPECTED"]\'\n'
+    for restored in ('', password + ' restored'):
+        result = subprocess.run(['bash', '-c', startup],
+                                env=dict(env, BORG_PASSWORD=password, BACKUP_RESTORE_PASSWORD=restored, CASE_EXPECTED=restored or password),
+                                capture_output=True, text=True, timeout=5)
+        assert result.returncode == 0
+        assert 'synthetic backup password' not in result.stdout + result.stderr
+PY
+}
+check backup_secret_argv_cases
+
+talk_turn_secret_cases() {
+  python3 - <<'PY'
+import json, os, pathlib, shutil, subprocess, sys, tempfile
+source = pathlib.Path('Containers/talk/start.sh').read_text()
+start = source.index('# Configure Janus to use the local TURN server')
+end = source.index('# Janus and eTURNAL share', start)
+script = source[start:end] + '\nprintf "%s\\n" "$JANUS_TURN_PWD"\n'
+with tempfile.TemporaryDirectory(prefix='aps turn secret ') as directory:
+    root = pathlib.Path(directory)
+    capture = root / 'calls.jsonl'
+    for program in ('openssl', 'erl'):
+        path = root / program
+        path.write_text('#!' + sys.executable + '\n' + '''
+import json, os, pathlib, sys
+program = pathlib.Path(sys.argv[0]).name
+with open(os.environ['CASE_CALLS'], 'a') as output:
+    output.write(json.dumps({'program': program, 'argv': sys.argv[1:],
+                            'secret': os.environ.get('TURN_SECRET'), 'user': os.environ.get('JANUS_TURN_USER')}) + '\\n')
+if program == 'openssl': os.execv(os.environ['REAL_OPENSSL'], [os.environ['REAL_OPENSSL'], *sys.argv[1:]])
+if os.environ.get('CASE_FAIL') == '1': sys.exit(1)
+print('fixture-derived-turn-password')
+''')
+        path.chmod(0o755)
+    secret = "synthetic TURN secret ' \" \\ $ ;\nnext line"
+    env = dict(os.environ, PATH=directory+':'+os.environ['PATH'], CASE_CALLS=str(capture),
+               REAL_OPENSSL=shutil.which('openssl'), TURN_SECRET=secret)
+    for failure in ('0', '1'):
+        capture.unlink(missing_ok=True)
+        result = subprocess.run(['bash', '-x', '-c', script], env=dict(env, CASE_FAIL=failure),
+                                capture_output=True, text=True, timeout=5)
+        calls = [json.loads(line) for line in capture.read_text().splitlines()]
+        assert all(secret not in word for call in calls for word in call['argv']), 'TURN shared secret entered process arguments'
+        clients = [call for call in calls if call['program'] == 'erl']
+        assert len(clients) == 1 and clients[0]['secret'] == secret
+        assert clients[0]['user'] and 'os:getenv("TURN_SECRET")' in clients[0]['argv'][-1]
+        assert (result.returncode == 0) == (failure == '0')
+        assert ('fixture-derived-turn-password' in result.stdout) == (failure == '0')
+        assert 'synthetic TURN secret' not in result.stdout + result.stderr
+        assert 'fixture-derived-turn-password' not in result.stderr
+PY
+}
+check talk_turn_secret_cases
+
+imaginary_secret_argv_cases() {
+  python3 - <<'PY'
+import json, os, pathlib, subprocess, sys, tempfile
+with tempfile.TemporaryDirectory(prefix='aps imaginary secret ') as directory:
+    root = pathlib.Path(directory)
+    capture = root / 'call.json'
+    client = root / 'imaginary'
+    client.write_text('#!' + sys.executable + '\n' + '''
+import json, os, pathlib, sys
+pathlib.Path(os.environ['CASE_CAPTURE']).write_text(json.dumps({
+    'argv': sys.argv[1:], 'secret': os.environ.get('IMAGINARY_SECRET')}))
+sys.exit(int(os.environ.get('CASE_FAIL', '0')))
+''')
+    client.chmod(0o755)
+    secret = "synthetic Imaginary secret ' \" \\ $ ;\nnext line"
+    env = dict(os.environ, PATH=directory+':'+os.environ['PATH'], CASE_CAPTURE=str(capture),
+               IMAGINARY_SECRET=secret, AIO_LOG_LEVEL='debug')
+    for failure in ('0', '1'):
+        result = subprocess.run(['bash', 'Containers/imaginary/start.sh', '-concurrency', '2'],
+                                env=dict(env, CASE_FAIL=failure), capture_output=True, text=True, timeout=5)
+        call = json.loads(capture.read_text())
+        assert all(secret not in word for word in call['argv']), 'Imaginary API key entered process arguments'
+        assert call['secret'] == secret, 'Imaginary did not receive the exact environment key'
+        assert call['argv'] == ['-return-size', '-max-allowed-resolution', '222.2', '-concurrency', '2']
+        assert (result.returncode == 0) == (failure == '0')
+        assert 'synthetic Imaginary secret' not in result.stdout + result.stderr
+PY
+}
+check imaginary_secret_argv_cases
+
+cleanboot_secret_argv_cases() {
+  python3 - <<'PY'
+import base64, json, os, pathlib, re, shutil, subprocess, sys, tempfile, textwrap
+source = pathlib.Path('.github/workflows/cleanboot.yml').read_text()
+anchor = 'grep -q "occ group:delete deriva-prueba" "$RUNNER_TEMP/estado.out"\n'
+fragment = source.split(anchor, 1)[1].split('          occ group:delete deriva-prueba', 1)[0]
+with tempfile.TemporaryDirectory(prefix='aps cleanboot secret ') as directory:
+    root = pathlib.Path(directory)
+    capture = root / 'call.json'
+    client = root / 'curl'
+    client.write_text('#!' + sys.executable + '\n' + '''
+import json, os, pathlib, sys
+pathlib.Path(os.environ['CASE_CAPTURE']).write_text(json.dumps({
+    'argv': sys.argv[1:], 'stdin': sys.stdin.read()}))
+print('deriva-prueba')
+sys.exit(int(os.environ.get('CASE_FAIL', '0')))
+''')
+    client.chmod(0o755)
+    password = "synthetic notification password ' \" \\ $ ;\nnext line"
+    env = dict(os.environ, PATH=directory+':'+os.environ['PATH'], CASE_CAPTURE=str(capture),
+               NEXTCLOUD_ADMIN_USER='fixture.admin', NEXTCLOUD_ADMIN_PASSWORD=password,
+               SUITE_CA='/public/ca.crt', SUITE_IP='192.0.2.1')
+    for failure in ('0', '1'):
+        result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-x', '-c', textwrap.dedent(fragment)],
+                                env=dict(env, CASE_FAIL=failure), input='', capture_output=True, text=True, timeout=5)
+        call = json.loads(capture.read_text())
+        assert all(password not in word for word in call['argv']), 'Cleanboot administrator password entered process arguments'
+        assert '--config' in call['argv'] and '--cacert' in call['argv'] and env['SUITE_CA'] in call['argv']
+        encoded = call['stdin'].split('Authorization: Basic ', 1)[1].strip().strip('"')
+        assert base64.b64decode(encoded).decode() == 'fixture.admin:' + password
+        assert (result.returncode == 0) == (failure == '0')
+        assert 'synthetic notification password' not in result.stdout + result.stderr
+        assert encoded not in result.stdout + result.stderr
+    client = root / 'sed'
+    client.write_text('#!' + sys.executable + '\n' + '''
+import json, os, pathlib, sys
+pathlib.Path(os.environ['CASE_CAPTURE']).write_text(json.dumps({'argv': sys.argv[1:]}))
+os.execv(os.environ['REAL_SED'], [os.environ['REAL_SED'], *sys.argv[1:]])
+''')
+    client.chmod(0o755)
+    (root / '.env.example').write_text('RETAINED=yes\nFIXTURE_USER_PASSWORD=change-me\n')
+    blocks = re.findall(r'^          pkg=/opt/aps-conecta/instalador\n.*?^          chmod 600 "\$pkg/.env"$', source, re.M | re.S)
+    assert len(blocks) == 2
+    for block in blocks:
+        script = textwrap.dedent(block).replace('pkg=/opt/aps-conecta/instalador', 'pkg="$CASE_PACKAGE"')
+        result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', script],
+                                env=dict(env, CASE_PACKAGE=directory, REAL_SED=shutil.which('sed')),
+                                input='', capture_output=True, text=True, timeout=5)
+        assert result.returncode == 0
+        settings = dict(line.split('=', 1) for line in (root / '.env').read_text().splitlines())
+        password = settings['FIXTURE_USER_PASSWORD']
+        assert re.fullmatch('[0-9a-f]{64}', password) and settings['RETAINED'] == 'yes'
+        assert all(password not in word for word in json.loads(capture.read_text())['argv']), 'Cleanboot fixture password entered process arguments'
+        assert password not in result.stdout + result.stderr
+        assert (root / '.env').stat().st_mode & 0o777 == 0o600
+PY
+}
+check cleanboot_secret_argv_cases
+
+aia_private_temp_cases() {
+  python3 - <<'PY'
+import json, os, pathlib, subprocess, tempfile, uuid
+with tempfile.TemporaryDirectory(prefix='aps ca test ') as directory:
+    root = pathlib.Path(directory)
+    host_tmp = root / 'host tmp'
+    host_tmp.mkdir()
+    for failure in ('none', 'transfer', 'permissions', 'import', 'invalid_temp'):
+        capture, cleanup = root / 'copy.json', root / 'cleanup.txt'
+        capture.unlink(missing_ok=True)
+        cleanup.unlink(missing_ok=True)
+        name = 'aps-196-' + uuid.uuid4().hex
+        env = dict(os.environ, CASE_CAPTURE=str(capture), CASE_CLEANUP=str(cleanup),
+                   CASE_CA_NAME=name, CASE_CA_FAILURE=failure, TMPDIR=str(host_tmp))
+        setup = 'set -e\nsource scripts/env.sh\nsource provisioning/lib.sh\n'
+        result = subprocess.run(['bash', '-c', setup + r'''
+docker() {
+  local source='' destination transport
+  if [ "$1" = cp ]; then
+    source="$2"; destination="$3"; transport=copy
+  elif [[ "$*" == *'cat > "$1"'* ]]; then
+    source=/proc/self/fd/0; destination="${@: -1}"; transport=stdin
+  fi
+  if [ -n "$source" ]; then
+    python3 -c '
+import json, os, pathlib, sys
+source = pathlib.Path(sys.argv[1]).resolve()
+pathlib.Path(os.environ["CASE_CAPTURE"]).write_text(json.dumps({
+    "source": str(source), "destination": sys.argv[2],
+    "directory_mode": source.parent.stat().st_mode & 0o777,
+    "file_mode": source.stat().st_mode & 0o777, "transport": sys.argv[3]}))
+' "$source" "$destination" "$transport"
+    [ "$CASE_CA_FAILURE" != transfer ]; return
+  fi
+  case "$*" in
+    *s_client*) printf 'http://example.test/%s.crt\n\nLEAF\n' "$CASE_CA_NAME" ;;
+    *'mktemp -d'*)
+      if [ "$CASE_CA_FAILURE" = invalid_temp ]; then echo /tmp/unowned; else echo /tmp/aps-ca.ABCDEF1234; fi ;;
+    *'openssl verify'*) echo PEM ;;
+    *'chown -R'*) [ "$CASE_CA_FAILURE" != permissions ]; return ;;
+    *'rm -rf'*) printf '%s\n' "$*" >> "$CASE_CLEANUP" ;;
+  esac
+  return 0
+}
+occ() {
+  case "$1" in
+    security:certificates) echo '[]' ;;
+    security:certificates:import) [ "$CASE_CA_FAILURE" != import ] ;;
+  esac
+}
+ensure_aia_intermediate example.test
+'''], env=env, capture_output=True, text=True, timeout=5)
+        assert result.returncode == 0, result.stderr
+        assert not list(host_tmp.iterdir()), 'Host certificate temporary files were not removed'
+        if failure == 'invalid_temp':
+            assert not capture.exists() and not cleanup.exists(), 'An unowned container path was used'
+            continue
+        call = json.loads(capture.read_text())
+        assert call['transport'] == 'stdin', 'Certificate transfer bypasses the running temporary mount'
+        assert call['directory_mode'] == 0o700, 'AIA certificate uses a shared temporary directory'
+        assert call['file_mode'] == 0o600, 'AIA certificate temporary file is not private'
+        source = pathlib.Path(call['source'])
+        assert source.name == name + '.pem' and not source.parent.exists()
+        assert call['destination'] == '/tmp/aps-ca.ABCDEF1234/' + source.name
+        assert '/tmp/aps-ca.ABCDEF1234' in cleanup.read_text()
+        assert ('imported ' in result.stdout) == (failure == 'none')
+PY
+}
+check aia_private_temp_cases
+
+provisioning_has_no_shared_temp_paths() {
+  python3 - <<'PY'
+import pathlib, re
+for path in pathlib.Path('provisioning').rglob('*.sh'):
+    for number, line in enumerate(path.read_text().splitlines(), 1):
+        if line.lstrip().startswith('#') or '/tmp/' not in line:
+            continue
+        private_template = re.search(r'mktemp -d /tmp/[a-z-]+\.X{10}', line)
+        validated_result = '=~ ^/tmp/' in line
+        assert private_template or validated_result, f'{path}:{number}: shared temporary path'
+PY
+}
+check provisioning_has_no_shared_temp_paths
+
+secret_command_arguments_absent() {
+  python3 - <<'PY'
+import pathlib, re
+for root in ('Containers', 'provisioning'):
+    for path in pathlib.Path(root).rglob('*.sh'):
+        for number, line in enumerate(path.read_text().splitlines(), 1):
+            if line.lstrip().startswith('#'):
+                continue
+            secret = re.search(r'--value[^\n]*\$\{?[A-Z_]*(?:SECRET|PASSWORD|TOKEN|RECORDING_SERVERS_STRING|SUBSCRIPTION_KEY)', line)
+            assert not secret, f'{path}:{number}: secret passed to an occ value argument'
+            assert not re.search(r'\bredis-cli\b[^\n]*\s-a(?:\s|=)', line), f'{path}:{number}: Redis password argument'
+PY
+}
+check secret_command_arguments_absent
+
 trusted_proxy_network_cases() {
   python3 - <<'PY'
 import os, pathlib, subprocess, tempfile
@@ -984,13 +1532,12 @@ check bash -c '
     return 0
   }
   survives
-  # `docker cp` fails for the most ordinary reason there is — a container still
-  # starting — and it was the one unguarded command left on the path. Fatal, and it took
-  # the second host with it, since the phase never got there.
+  # A failed transfer warns and leaves later certificate sources available.
   docker() {
     case "$*" in
       *s_client*) echo "http://secure.globalsign.com/cacert/ca.crt"; echo; echo LEAF ;;
-      *cp*) return 1 ;;
+      *"mktemp -d"*) echo /tmp/aps-ca.ABCDEF1234 ;;
+      *"cat >"*) return 1 ;;
       *) echo PEM ;;
     esac
     return 0
@@ -1000,7 +1547,14 @@ check bash -c '
   # which this function reads as "absent" and answers with the re-import #143 exists to
   # prevent — a WRITE on a provisioned instance. It must read as unreadable instead, and
   # an empty list must still mean absent or the guard has swallowed the real answer too.
-  docker() { case "$*" in *s_client*) echo "http://x.test/ca.crt"; echo; echo LEAF ;; *) echo PEM ;; esac; return 0; }
+  docker() {
+    case "$*" in
+      *s_client*) echo "http://x.test/ca.crt"; echo; echo LEAF ;;
+      *"mktemp -d"*) echo /tmp/aps-ca.ABCDEF1234 ;;
+      *) echo PEM ;;
+    esac
+    return 0
+  }
   for shape in "{\"a\":1}" "\"x\"" "[1,2]"; do
     occ() { echo "$shape"; }
     ensure_aia_intermediate example.test 2>&1 | grep -q "unreadable" || exit 1
@@ -1206,7 +1760,6 @@ provisioning/phases/30-folders.sh
 provisioning/phases/40-acl.sh
 provisioning/phases/41-intravox.sh
 provisioning/phases/50-users.sh
-provisioning/phases/60-fixtures.sh
 provisioning/seed.sh
 provisioning/standings.sh
 provisioning/usuarios.sh
@@ -3114,15 +3667,26 @@ elif a[0] in ('config:app:set', 'config:system:set'):
     print('Config value were not updated' if old == a[3:] else "Config value 'key' for app 'app' is now set to 'synthetic secret must never escape'")
 elif a[0] == 'config:list':
     save()
-    print('{broken' if s.get('malformed_config') else json.dumps({'apps': {'spreed': s['config'].get('spreed', {})}}))
+    print('{broken' if s.get('malformed_config') else json.dumps({
+        'system': s.get('system', {}),
+        'apps': {**dict.fromkeys(s['enabled'], {}),
+                 **{key: value for key, value in s['config'].items() if isinstance(value, dict)}}}))
 elif a[0] == 'config:import':
     payload = json.load(sys.stdin)
-    assert set(payload) == {'apps'} and set(payload['apps']) == {'spreed'}
-    s['config'].setdefault('spreed', {}).update(payload['apps']['spreed'])
+    assert set(payload) <= {'apps', 'system'}
+    for app, values in payload.get('apps', {}).items():
+        s['config'].setdefault(app, {}).update(values)
+    s.setdefault('system', {}).update(payload.get('system', {}))
     s.setdefault('imports', []).append(payload)
     save()
+elif a[0] == 'config:app:get':
+    save()
+    values = s['config'].get(a[1], {})
+    if a[2] not in values: sys.exit(1)
+    print(values[a[2]])
 elif a[0] == 'config:system:get':
-    save(); print('OCA\\Eurooffice\\Preview')
+    save()
+    print('OCA\\Eurooffice\\Preview' if a[1] == 'enabledPreviewProviders' else s.get('system', {}).get(a[1], ''))
 elif a[0].endswith(':configure'):
     app = a[0].split(':')[0]
     for key, value in json.loads(a[1]).items():
@@ -3148,9 +3712,10 @@ else:
     env = dict(os.environ, PATH=str(commands) + ':' + os.environ['PATH'],
                APP_STATE=str(state_path), REAL_PHP=real_php,
                EUROOFFICE_ENABLED='yes', EUROOFFICE_HOST='aps-conecta-eurooffice',
-               EUROOFFICE_SECRET='synthetic secret must never escape', NC_DOMAIN='test.invalid',
+               EUROOFFICE_SECRET='synthetic secret must never escape " \\ $', NC_DOMAIN='test.invalid',
                TALK_ENABLED='no', TALK_RECORDING_ENABLED='no', CLAMAV_ENABLED='no',
                FULLTEXTSEARCH_ENABLED='no', HARP_ENABLED='no', REMOVE_DISABLED_APPS='no',
+               SERVERINFO_TOKEN='', SUBSCRIPTION_KEY='', IMAGINARY_ENABLED='no', IMAGINARY_HOST='imaginary.invalid',
                NEXTCLOUD_DATA_DIR=str(root), CLAMAV_HOST='clam', CLAMAV_BLOCKLISTED_DIRECTORIES='', PHP_UPLOAD_LIMIT='1G',
                FULLTEXTSEARCH_HOST='search', FULLTEXTSEARCH_PORT='9200', FULLTEXTSEARCH_USER='test',
                FULLTEXTSEARCH_PASSWORD='synthetic secret must never escape', FULLTEXTSEARCH_INDEX='test')
@@ -3159,27 +3724,42 @@ else:
         state_path.write_text(json.dumps(dict(enabled=list(enabled), disabled=list(disabled),
                                               config={}, calls=[], **extra)))
     def run(target='eurooffice', success=True, extra=None):
-        result = subprocess.run(['bash', '-x', str(module), target], env=dict(env, **(extra or {})),
+        effective = dict(env, **(extra or {}))
+        result = subprocess.run(['bash', '-x', str(module), target], env=effective,
                                 text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         assert (result.returncode == 0) == success, (result.returncode, result.stdout, result.stderr)
         assert 'synthetic secret must never escape' not in result.stdout + result.stderr
+        for key in ('EUROOFFICE_SECRET', 'TURN_SECRET', 'SIGNALING_SECRET', 'RECORDING_SECRET',
+                    'FULLTEXTSEARCH_PASSWORD', 'SERVERINFO_TOKEN', 'IMAGINARY_SECRET', 'SUBSCRIPTION_KEY'):
+            value = effective.get(key)
+            assert not value or value not in result.stdout + result.stderr, f'{key} was printed'
         return json.loads(state_path.read_text()), result.stdout
     reset()
     state, output = run()
     assert 'deferred' in output
     assert not any(call[0] in ('app:install', 'config:app:set', 'config:system:set') for call in state['calls'])
-    reset(disabled=['eurooffice'])
+    reset(disabled=['eurooffice'], system={'eurooffice': {'custom_setting': 'keep'}})
     state, output = run()
     assert ['app:enable', 'eurooffice'] in state['calls']
     assert any(call[:3] == ['config:app:set', 'eurooffice', 'DocumentServerUrl'] and
                call[3] == '--value=https://test.invalid/eurooffice' for call in state['calls'])
     assert 'app:eurooffice:DocumentServerUrl -> updated' in output
+    assert 'synthetic secret must never escape' not in json.dumps(state['calls']), 'Office secrets entered process arguments'
+    assert state['system']['eurooffice']['jwt_secret'] == env['EUROOFFICE_SECRET']
+    assert state['config']['eurooffice']['jwt_secret'] == env['EUROOFFICE_SECRET']
     assert output.count('system:eurooffice -> updated') == 3
-    first_config = state['config']
+    assert state['system']['eurooffice']['custom_setting'] == 'keep'
+    first_config, first_system = state['config'], state['system']
     state, output = run()
-    assert state['config'] == first_config and ' -> ' not in output
+    assert state['config'] == first_config and state['system'] == first_system and ' -> ' not in output
+    assert len(state['imports']) == 2, 'Repeated Office wiring must not import unchanged secrets'
     assert sum(call == ['app:enable', 'eurooffice'] for call in state['calls']) == 1
-    for failure in ('app:list', 'app:enable', 'config:app:set', 'config:system:set'):
+    rotated_office = env['EUROOFFICE_SECRET'] + ' rotated'
+    state, _ = run(extra={'EUROOFFICE_SECRET': rotated_office})
+    assert state['system']['eurooffice'] == {'custom_setting': 'keep', 'jwt_secret': rotated_office}
+    assert state['config']['eurooffice']['jwt_secret'] == rotated_office
+    assert len(state['imports']) == 4 and rotated_office not in json.dumps(state['calls'])
+    for failure in ('app:list', 'app:enable', 'config:app:set', 'config:system:set', 'config:list', 'config:import'):
         reset(disabled=['eurooffice'], fail=failure)
         run(success=False)
     reset(malformed=True)
@@ -3211,12 +3791,32 @@ else:
     state, _ = run('fulltextsearch', extra={'FULLTEXTSEARCH_ENABLED': 'yes'})
     assert set(state['enabled']) == {'fulltextsearch', 'fulltextsearch_elasticsearch', 'files_fulltextsearch'}
     assert state['config']['app:fulltextsearch:search_platform'] == 'OCA\\FullTextSearch_Elasticsearch\\Platform\\ElasticSearchPlatform'
+    assert 'synthetic secret must never escape' not in json.dumps(state['calls']), 'Search secrets entered process arguments'
+    assert state['config']['fulltextsearch_elasticsearch']['elastic_host'] == 'http://test:synthetic%20secret%20must%20never%20escape@search:9200'
     assert state['config']['app:fulltextsearch_elasticsearch:elastic_index'] == 'test'
     assert state['config']['app:files_fulltextsearch:files_pdf'] is True
     assert state['config']['app:files_fulltextsearch:files_office'] is True
     assert not any(call[0] == 'app:install' for call in state['calls'])
     reset()
     run('unknown', success=False)
+    tokens = dict(SERVERINFO_TOKEN='synthetic server token " \\ $', IMAGINARY_ENABLED='yes',
+                  IMAGINARY_SECRET='synthetic image key " \\ $', SUBSCRIPTION_KEY='synthetic subscription key " \\ $')
+    reset(enabled=['notify_push'])
+    state, _ = run('boot', extra=tokens)
+    assert state['config'].get('serverinfo', {}).get('token') == tokens['SERVERINFO_TOKEN'], 'Serverinfo token did not reach Nextcloud'
+    assert state['system']['preview_imaginary_key'] == tokens['IMAGINARY_SECRET']
+    assert state['config'].get('support', {}).get('potential_subscription_key') == tokens['SUBSCRIPTION_KEY'], 'Subscription key did not reach Nextcloud'
+    assert all(value not in word for value in (tokens['SERVERINFO_TOKEN'], tokens['IMAGINARY_SECRET'], tokens['SUBSCRIPTION_KEY'])
+               for call in state['calls'] for word in call), 'Startup tokens entered process arguments'
+    state, output = run('boot', extra=tokens)
+    assert len(state['imports']) == 3 and ' -> ' not in output
+    changed = dict(tokens, SERVERINFO_TOKEN='different server token', IMAGINARY_SECRET=tokens['IMAGINARY_SECRET'] + ' rotated',
+                   SUBSCRIPTION_KEY='different subscription key')
+    state, _ = run('boot', extra=changed)
+    assert state['config']['serverinfo']['token'] == tokens['SERVERINFO_TOKEN'], 'An existing server token was overwritten'
+    assert state['config']['support']['potential_subscription_key'] == tokens['SUBSCRIPTION_KEY']
+    assert state['calls'].count(['config:app:delete', 'support', 'last_check']) == 1
+    assert state['system']['preview_imaginary_key'] == changed['IMAGINARY_SECRET'] and len(state['imports']) == 4
     talk = dict(TALK_ENABLED='yes', TALK_HOST='aps-conecta-talk', TALK_PORT='3478',
                 TURN_SECRET='synthetic secret must never escape " \\ $',
                 SIGNALING_SECRET='synthetic secret must never escape " \\ $')
@@ -3252,6 +3852,20 @@ else:
     reset(enabled=['notify_push', 'spreed'])
     state, _ = run('boot', extra=talk)
     assert len(state['imports']) == 1, 'Boot must use the same Talk configuration owner'
+    recording = dict(talk, TALK_RECORDING_ENABLED='yes', TALK_RECORDING_HOST='recording.invalid',
+                     RECORDING_SECRET='synthetic secret must never escape " \\ $')
+    reset(enabled=['notify_push', 'spreed'])
+    state, _ = run('boot', extra=recording)
+    assert 'synthetic secret must never escape' not in json.dumps(state['calls']), 'Recording secrets entered process arguments'
+    assert json.loads(state['config']['spreed']['recording_servers']) == {
+        'servers': [{'server': 'http://recording.invalid:1234/', 'verify': True}],
+        'secret': recording['RECORDING_SECRET']}
+    state, output = run('boot', extra=recording)
+    assert len(state['imports']) == 2 and ' -> ' not in output
+    rotated_recording = recording['RECORDING_SECRET'] + ' rotated'
+    state, _ = run('boot', extra=dict(recording, RECORDING_SECRET=rotated_recording))
+    assert len(state['imports']) == 3 and set(state['imports'][-1]['apps']['spreed']) == {'recording_servers'}
+    assert json.loads(state['config']['spreed']['recording_servers'])['secret'] == rotated_recording
     clock = root / 'clock.sh'
     clock.write_text('sleep() { SECONDS=$((SECONDS + $1)); }\n')
     (commands / 'nc').write_text('#!/bin/bash\nexit 1\n')
@@ -3514,6 +4128,7 @@ with tempfile.TemporaryDirectory() as directory:
         'mountpoint': 'exit 1',
         'hostname': 'echo 172.25.0.7',
         'dig': 'case "$*" in *" AAAA "*) ;; *) echo 172.25.0.7 ;; esac',
+        'erl': 'printf "%s\\n" fixture-derived-turn-password',
     }.items():
         command = commands / name
         command.write_text('#!/bin/bash\n' + body + '\n')

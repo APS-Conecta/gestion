@@ -2,8 +2,7 @@
 # provisioning/seed.sh — the single idempotent provisioning runner (Story 0.5, AD-2).
 # Run by the Provisionador (the install's «ejecutar», the weekly re-provision). Requires an installed
 # stack, then applies desired state by sourcing the numbered phase files under phases/ in fixed
-# order (05 -> 60). Idempotent: safe to re-run.
-# Fixture phases (>= 50) are skipped when SEED_FIXTURES=0 (the structure-vs-fixtures partition).
+# order (05 -> 50). Idempotent: safe to re-run.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -13,8 +12,6 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/../scripts/env.sh"
 # shellcheck source=lib.sh
 . "$HERE/lib.sh"
-
-SEED_FIXTURES="${SEED_FIXTURES:-1}"
 
 # The clinic this stack serves (#78). SITE names a directory under sites/ and arrives from .env like
 # every other setting. Sourced HERE, in the parent shell: each phase runs in a subshell of this one,
@@ -49,16 +46,12 @@ echo "== APS Conecta provisioning — instalador $(head -1 "$HERE/../VERSION" 2>
 nc_container   # once, after the header: phases (subshells) inherit it; occ in pipes/$(…) cannot cache
 require_installed
 
-run=0; skipped=0
+run=0
 for phase in "$HERE"/phases/[0-9]*.sh; do
   # A glob that matches nothing stays literal. This used to be `|| continue`, which turned "the
   # phases directory is gone" into `0 phase(s) run` and exit 0 — a green run that provisioned
   # nothing. Same detection, opposite conclusion.
   [ -e "$phase" ] || { echo "FATAL: no phase files matched $HERE/phases/[0-9]*.sh" >&2; exit 1; }
-  num="${phase##*/}"; num="${num%%-*}"
-  if [ "$num" -ge 50 ] && [ "$SEED_FIXTURES" != "1" ]; then
-    echo "▷ skipping $(basename "$phase") (SEED_FIXTURES=0)"; skipped=$((skipped + 1)); continue
-  fi
   # Run each phase in a subshell with `set -e` for fault isolation: a failing phase stops the run
   # (named), and no phase can leak shell state into the next — cross-phase state goes through
   # Nextcloud and is re-queried by the guard helpers (AD-2), never via shell vars.
@@ -76,4 +69,4 @@ for phase in "$HERE"/phases/[0-9]*.sh; do
   run=$((run + 1))
 done
 
-echo "== provisioning complete — ${run} phase(s) run, ${skipped} skipped =="
+echo "== provisioning complete — ${run} phase(s) run =="

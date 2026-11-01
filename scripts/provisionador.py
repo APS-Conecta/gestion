@@ -240,7 +240,7 @@ PHASE_TITLES = {
     "15-branding": "Imagen de APS Conecta", "16-app-policy": "Aplicaciones por perfil",
     "20-groups": "Grupos: roles, categorías y equipos", "30-folders": "Carpetas compartidas",
     "40-acl": "Permisos de las carpetas", "41-intravox": "Portada del establecimiento",
-    "50-users": "Cuentas de cargo", "60-fixtures": "Contenido de ejemplo"}
+    "50-users": "Cuentas de cargo"}
 # What the clinic gets, as the review step lists it (R37): one row per component staff see — its
 # app, its name, what it gives — in the suite manifest's order. Plumbing (no name) is not listed.
 try:
@@ -347,9 +347,9 @@ the fail-stop arm), GATE_EXTRA (a uid the user:list answer plants — the gate-r
 ('empty' — no suite running), PS_LISTA (the containers docker ps -a lists — the step-7
 arms), SLOW (sleep before answering — the timeout arm).
 """
+import hashlib
 import json
 import os
-import select
 import sys
 import time
 
@@ -383,7 +383,7 @@ def exec_interactive(argv):
     """`docker exec -i …`: the -i among the options before the container name."""
     i = 1
     while i < len(argv) and argv[i].startswith("-"):
-        if argv[i] == "-i":
+        if argv[i] in ("-i", "--interactive"):
             return True
         i += 2 if argv[i] in ("--user", "-u", "--env", "-e", "--workdir", "-w") else 1
     return False
@@ -392,7 +392,7 @@ def exec_interactive(argv):
 # The real client forwards its stdin into the container, so `docker exec -i` consumes whatever the
 # caller's stdin already holds — a loop that reads its own stdin loses the rest of it.
 if args[:1] == ["exec"] and exec_interactive(args):
-    while select.select([sys.stdin], [], [], 0)[0] and os.read(sys.stdin.fileno(), 65536):
+    while os.read(sys.stdin.fileno(), 65536):
         pass
 
 
@@ -429,6 +429,8 @@ if args and args[0] == "ps":
     else:
         print("aps-conecta-nextcloud")
     sys.exit(0)
+elif "mktemp" in args and "-d" in args:
+    print(args[-1].replace("XXXXXXXXXX", "abcdefghij"))
 elif "printenv" in args and "TALK_ENABLED" in args:   # the suite's Talk switch, as AIO sets it: yes or empty
     print(control.get("TALK_ENABLED", ""))
 elif "status" in args and "--output=json" in args:
@@ -437,7 +439,10 @@ elif "user:info" in args:
     uid = find("user:info")
     sys.exit(0 if any(r == ["user", uid] for r in rows) else 1)
 elif "user:add" in args:
-    rows.append(["user", args[-1]])
+    uid = args[-1]
+    rows.append(["user", uid])
+    rows.append(["user_password_digest", uid,
+                 hashlib.sha256(os.environ.get("OC_PASS", "").encode()).hexdigest()])
     save(rows)
 elif "user:list" in args:
     users = sorted(r[1] for r in rows if r[0] == "user")
@@ -1663,8 +1668,6 @@ def _api_generar(payload):
                      "contrasenas_selladas": len(sealed),
                      "env": {"SITE": codigo if est["site"] == codigo
                              else "se escribirá " + codigo,
-                             "SEED_FIXTURES": "1 (sin cambio)" if est["seed_fixtures"] == "1"
-                             else "se forzará a 1",
                              "FIXTURE_USER_PASSWORD": "presente" if est["fixture"]
                              else "se generará"},
                      "divergencia": "se comprueba al final de la ejecución",
@@ -1809,7 +1812,7 @@ def env_state(root):
     Values are never returned: SITE's line value only ever feeds the D13 comparison, and the
     fixture password only ever answers «presente» (print-WHERE-never-WHAT)."""
     path = os.path.join(root, ".env")
-    site, fixture, seed_fixtures = None, False, None
+    site, fixture = None, False
     if os.path.exists(path):
         with open(path, encoding="utf-8") as fh:
             for ln in fh:
@@ -1817,9 +1820,7 @@ def env_state(root):
                     site = ln[5:].strip().strip("\"'")
                 elif ln.startswith("FIXTURE_USER_PASSWORD="):
                     fixture = True
-                elif ln.startswith("SEED_FIXTURES="):
-                    seed_fixtures = ln[14:].strip()
-    return {"path": path, "site": site, "fixture": fixture, "seed_fixtures": seed_fixtures}
+    return {"path": path, "site": site, "fixture": fixture}
 
 
 def env_converge(root, codigo):
@@ -1827,9 +1828,7 @@ def env_converge(root, codigo):
     vars, so exporting SITE at the subprocess buys nothing — the file is the only carrier, and
     this is the write. SITE: absent → appended; equal → untouched; DIFFERENT → refused (D13: one
     establishment per install; re-pointing an install is a deliberate migration, never a side
-    effect — the /api/sitio converge-or-refuse rule). SEED_FIXTURES is forced to 1 — the
-    executor's locked posture runs the fixtures ON, and a .env carrying 0 would skip phase 50's
-    standing accounts while the roster still seeded, leaving the clinic without its cargos.
+    effect — the /api/sitio converge-or-refuse rule).
     FIXTURE_USER_PASSWORD: absent → generated (CSPRNG 24-hex) and appended —
     present → NEVER touched (a secret we did not invent is never rewritten);
     a placeholder that survived a hand-copy dies at the seed's own require_real_secrets with its
@@ -1845,12 +1844,9 @@ def env_converge(root, codigo):
         with open(st["path"], encoding="utf-8") as fh:
             lines = fh.read().splitlines()
     report = {"SITE": "ya era " + codigo if st["site"] == codigo else "escrito",
-              "SEED_FIXTURES": "1, sin cambio" if st["seed_fixtures"] == "1" else "forzado a 1",
               "FIXTURE_USER_PASSWORD": "presente" if st["fixture"] else "generada"}
     if st["site"] is None:
         lines.append(f"SITE={codigo}")
-    if st["seed_fixtures"] != "1":
-        lines = [ln for ln in lines if not ln.startswith("SEED_FIXTURES=")] + ["SEED_FIXTURES=1"]
     if not st["fixture"]:
         lines.append(f"FIXTURE_USER_PASSWORD={secrets.token_hex(SEAL_BYTES)}")
     text = "\n".join(lines) + "\n"
@@ -5134,7 +5130,7 @@ def selftest():
             check("generar: revision answers the plan — zero execs, zero writes",
                   st == 200 and body["modo"] == "revision" and body["usuarios"] == 2
                   and body["primer_admin"] == "elena.diaz" and body["contrasenas_selladas"] >= 2
-                  and len(body["fases"]) == 16 and "14-fulltextsearch.sh" in body["fases"]
+                  and len(body["fases"]) == 15 and "14-fulltextsearch.sh" in body["fases"]
                   and execs[0] == 0 and same
                   and body["env"]["FIXTURE_USER_PASSWORD"] == "se generará")
             check("generar: review mode downloads nothing — the release apps' fetch leg never ran (#33)",
@@ -5154,7 +5150,7 @@ def selftest():
                 subprocess.Popen = real_popen
             check("--paso generar --revision: the plan in one Spanish line, nothing executed, exit 0",
                   rc == 0 and execs[0] == 0
-                  and "✓ Revisión: 16 fases, 2 usuarios (administrador inicial elena.diaz)" in out)
+                  and "✓ Revisión: 15 fases, 2 usuarios (administrador inicial elena.diaz)" in out)
             st, plan = api_generar({"codigo": "113314", "modo": "revision"})
             visibles = json.dumps({k: plan.get(k) for k in ("centro", "sectores", "programas", "personas",
                                                             "componentes")}, ensure_ascii=False)
@@ -5195,9 +5191,9 @@ def selftest():
                        "✓ phase 14-antivirus\n", "✓ phase 14-fulltextsearch\n",
                        "✓ phase 14-office\n", "== roster: 3 usuario(s)\n"):
                 avance(ln)
-            check("ejecución: none yet answers «sin_ejecutar» with the 18 steps; a browser run's executor lines become the console's own titles, any other run's are not followed (a14)",
+            check("ejecución: none yet answers «sin_ejecutar» with the 17 steps; a browser run's executor lines become the console's own titles, any other run's are not followed (a14)",
                   st == 200 and nada["ejecucion"] == "sin_ejecutar" and nada["pasos"] == PASOS_EJECUCION
-                  and len(PASOS_EJECUCION) == 18 and fuera == []
+                  and len(PASOS_EJECUCION) == 17 and fuera == []
                   and EJECUCION["hechos"] == ["Seguridad de sesión", "Antivirus de archivos", "Búsqueda en documentos", "Oficina en línea", "Cuentas del personal"])
             EJECUCION.update(estado="sin_ejecutar", hechos=[])
             verdadero, suelta = globals()["api_generar"], threading.Event()
@@ -5987,9 +5983,9 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   and lista["servidor"]["pisos"] == pisos_servidor()
                   and all(t in __import__("inspect").getsource(screen_contenedores)
                           for t in ("pisos.ram_min", "Pisos del instalador")))
-            check("generar: ejecutar runs the whole world green — 16 phases, 2 roster users, gate clean",
+            check("generar: ejecutar runs the whole world green — 15 phases, 2 roster users, gate clean",
                   st == 200 and body["ok"] and body["divergencia_vacia"]
-                  and "16 phase(s) run" in body["salida"] and "== roster: 2 usuario(s) ==" in body["salida"]
+                  and "15 phase(s) run" in body["salida"] and "== roster: 2 usuario(s) ==" in body["salida"]
                   and "user elena.diaz added to group admin" in body["salida"]
                   and "nada en la instancia que el repositorio no declare" in body["divergencia"])
             check("generar: ejecutar resolves and fetches the release apps first, with the version the instance answers (#33)",
@@ -6007,7 +6003,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   st2 == 500
                   and body2["error"] == "FATAL: territorio: la firma de SHA256SUMS no verifica contra apps.pub"
                   and "== APS Conecta provisioning" not in body2["salida"]
-                  and "16 phase(s) run" not in body2["salida"])
+                  and "15 phase(s) run" not in body2["salida"])
             globals()["APPS_CMD"] = ["bash", apps_stub("lenta")]
             viejo = TIMEOUTS["apps"]
             TIMEOUTS["apps"] = 1
@@ -6020,18 +6016,23 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   and "== APS Conecta provisioning" not in body2["salida"])
             estado = open(ESTADO_PATH, encoding="utf-8").read()
             env_text = open(env_path, encoding="utf-8").read()
-            check("generar: ejecutar converges .env — SITE written, fixtures forced, fixture password generated, 0600",
-                  "SITE=113314" in env_text and "SEED_FIXTURES=1" in env_text
+            check("generar: ejecutar converges .env — SITE written, fallback password generated, 0600",
+                  "SITE=113314" in env_text and not any(ln.startswith("SEED_") for ln in env_text.splitlines())
                   and re.search(r"^FIXTURE_USER_PASSWORD=[0-9a-f]{24}$", env_text, re.M)
                   and oct(os.stat(env_path).st_mode & 0o777) == "0o600"
                   and body["env"]["SITE"] == "escrito")
             log = stub_log_text()
             oc = [l for l in log.splitlines() if "OC_PASS" in l]
             sealed_now = sealed_map(CRED_PATH)
-            check("generar: OC_PASS rides docker exec -e only on user:add — the sealed passwords delivered",
+            check("generar: clinic accounts receive no development files",
+                  all(f"/{uid}/files/" not in log for uid in sealed_now))
+            with open(stubstate, encoding="utf-8") as fh:
+                delivered = {r[1]: r[2] for r in json.load(fh) if r[0] == "user_password_digest"}
+            check("generar: named OC_PASS delivers the sealed passwords without command-line values",
                   len(oc) >= 2 and all("user:add" in l and "--password-from-env" in l for l in oc)
-                  and "inspect" not in log
-                  and all(any(sealed_now[u][0] in l for l in oc)
+                  and all("OC_PASS=" not in l for l in oc) and "inspect" not in log
+                  and all(value[0] not in log for value in sealed_now.values())
+                  and all(delivered.get(u) == hashlib.sha256(sealed_now[u][0].encode()).hexdigest()
                           for u in ("maria.perez", "elena.diaz")))
             check("generar: the AIO arm shares container Office configuration without duplicate URL writes",
                   "DocumentServerUrl" not in log and "sameTab" in log
@@ -6047,9 +6048,9 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
             # writes (Clean boot's seed-idempotent) and every fresh install converges one run late
             fixture_pw = re.search(r"^FIXTURE_USER_PASSWORD=([0-9a-f]{24})$", env_text, re.M).group(1)
             check("generar: each cargo account is created with its own sealed password — never the shared one (a8)",
-                  all(any(l.rstrip().endswith(f" {u}") and sealed_now[u][0] in l for l in oc)
+                  all(delivered.get(u) == hashlib.sha256(sealed_now[u][0].encode()).hexdigest()
                       for u in cargos_113314)
-                  and not any(fixture_pw in l for l in oc))
+                  and hashlib.sha256(fixture_pw.encode()).hexdigest() not in delivered.values())
             check("generar: a planilla user joins all-staff and the category of each role — only the role written (a8)",
                   "user elena.diaz added to group all-staff" in body["salida"]
                   and "user elena.diaz added to group cat-clinicos" in body["salida"]

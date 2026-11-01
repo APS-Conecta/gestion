@@ -16,22 +16,6 @@ set -uo pipefail
 # shellcheck source=env.sh
 . "$(dirname "$0")/env.sh"
 
-# Match the fixture setting of the seed that just ran, inferred from the instance so no state is
-# carried between runs: absent fixture users mean phases 50/60 did not run and must not run now.
-# Without this, a gate run after a SEED_FIXTURES=0 seed created the standing accounts for the FIRST
-# time and then reported those correct creations as a failure. Any caller can run a seed with
-# SEED_FIXTURES=0.
-# An explicit SEED_FIXTURES always wins.
-if [ -z "${SEED_FIXTURES:-}" ]; then
-  if occ user:info director >/dev/null 2>&1; then
-    SEED_FIXTURES=1
-  else
-    SEED_FIXTURES=0
-  fi
-  echo "SEED_FIXTURES not set — inferred ${SEED_FIXTURES} from the instance (fixture users $([ "$SEED_FIXTURES" = 1 ] && echo present || echo absent))"
-fi
-export SEED_FIXTURES
-
 # Write verbs, in lib.sh order: config/theming/restrict/disable/grant and app enable/unpack/install
 # (`->` — a store install and a release unpack ride it too, #42), group + user + groupfolder + file
 # + subfolder creation, group membership, schema reconcile after a re-imposed unpack.
