@@ -83,9 +83,10 @@ import apps  # noqa: E402  — the suite manifest: the one list of the apps the 
 GH_DEFAULT, API_DEFAULT = "https://github.com", "https://api.github.com"
 UA = "aps-conecta-instalador"   # GitHub answers 403 to a bare urllib UA on some routes
 TIMEOUT = 30                    # one HTTP request's bound — a wedged fetch never hangs an install
-LOCK_DEFAULT = "/opt/aps-conecta/apps.lock.json"   # inside the backup scope (S7 wires /opt/aps-conecta)
-STORE_DEFAULT = "/opt/aps-conecta/apps"            # the fetched tarballs, beside the lock
-OPCIONES_DEFAULT = "/opt/aps-conecta/aio"          # the wizard's state dir: the install-options record
+APS_HOME = os.environ.get("APS_HOME") or "/opt/aps-conecta"
+LOCK_DEFAULT = os.path.join(APS_HOME, "apps.lock.json")   # inside the backup scope
+STORE_DEFAULT = os.path.join(APS_HOME, "apps")           # the fetched tarballs, beside the lock
+OPCIONES_DEFAULT = os.path.join(APS_HOME, "aio")          # the wizard's install-options record
 PUBKEY_DEFAULT = os.path.join(HERE, "..", "apps.pub")
 # The retry the operator reads in every per-app refusal: both entrances re-run this leg —
 # the wizard's «Revisar y ejecutar» and the silent install (which also re-runs green).
