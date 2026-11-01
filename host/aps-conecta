@@ -2751,6 +2751,10 @@ EOF
     '[ "$rcs" -eq 1 ] && case "$step_out" in *"no se puede leer $tmp/no-existe.sh"*) ;; *) false;; esac && case "$step_out" in *"Paso 1"*) false;; *) true;; esac'
   printf 'SITE_DEIS=113314\nSITE_DOMINIO="clinica.example"\nSITE_ROSTER=\n' > "$tmp/dado.sh"
   printf '\xef\xbb\xbfusuario;nombre;apellidos;correo;grupos;primer_admin\r\nana;Ana;Uno;;role-medico;si\r\n' > "$tmp/dado.csv"
+  step_out="$(ID_U=1000 APS_HOME="$tmp/flag-home" bash "$HOST_DIR/aps-conecta" install \
+    --sitio "$tmp/dado.sh" --planilla "$tmp/dado.csv" --sin-validar-dominio 2>&1)"; rcs=$?
+  check "install --sin-validar-dominio: the administrator retry retains the selected option (#158)" \
+    '[ "$rcs" -eq 1 ] && case "$step_out" in *"necesita permisos de administrador:"*"--sin-validar-dominio"*) ;; *) false;; esac'
   printf 'SITE_DEIS="113314"\nSITE_DOMINIO="c.example"\nSITE_ROSTER=\n' > "$tmp/mal1.sh"
   printf 'SITE_DEIS=113314\nSITE_DOMINIO=""\nSITE_ROSTER=\n' > "$tmp/mal2.sh"
   printf 'usuario;nombre\n' > "$tmp/mal.csv"
