@@ -37,7 +37,7 @@ ID the gates' rows name:
 | 180 | the wizard laid out for a 360 px phone |
 | 190 | no community containers — the channel removed whole: no directory, no image creation, no PHP readers (#48) |
 | 200 | the office is Euro-Office only — other choices refused (PHP, declared) |
-| 210 | the included service set is fixed; recording stays off until the hardware policy (#183) |
+| 210 | the included service set is fixed; recording stays off (#183) |
 | 220 | a fresh install calls nothing it does not need — the announcements feed |
 | 230 | the fresh install skips circles' legacy-table probe (no «oc_circle_circles» error) |
 | 233 | an IP accepted as the domain while domain validation is skipped — the install by IP over HTTPS, reused by testbed and lifecycle acceptance (PHP, declared) |
