@@ -76,7 +76,10 @@ testbed_install_command_cases() {
   cat >> "$tmp/scripts/bed.sh" <<'SH'
 STATE="$CASE_ROOT/state"
 check_ram() { :; }
-cmd_up
+cmd_up > "$CASE_ROOT/without-passwords"
+printf 'fixture\n' > "$STATE/master.pw"
+printf 'fixture\n' > "$STATE/nextcloud.pw"
+cmd_up > "$CASE_ROOT/with-passwords"
 SH
   cat > "$tmp/bin/docker" <<'SH'
 #!/usr/bin/env bash
@@ -119,7 +122,13 @@ actual = (root / 'run').read_bytes().decode().rstrip('\0').split('\0')
 actual = [arg for arg in actual if arg != '-d']
 expected = shlex.split((root / 'expected').read_text().replace('\\\n', ''))[1:]
 assert actual == expected, f'testbed run differs from installer: {actual!r} != {expected!r}'
-assert (root / 'events').read_text().splitlines() == ['certificate', 'run'], 'certificate must precede installer run'
+assert (root / 'events').read_text().splitlines() == ['certificate', 'run'] * 2, 'certificate must precede each installer run'
+without = (root / 'without-passwords').read_text().split('✓ probe instance up:', 1)[1]
+with_passwords = (root / 'with-passwords').read_text().split('✓ probe instance up:', 1)[1]
+for name in ('master.pw', 'nextcloud.pw'):
+    path = str(root / 'state' / name)
+    assert path not in without, f'testbed advertises nonexistent credential file: {name}'
+    assert path in with_passwords, f'testbed omits existing credential file: {name}'
 workflow = pathlib.Path(sys.argv[2]).read_text()
 lifecycle = workflow.split('\n  cleanboot:', 1)[1].split('\n  cleanboot-ip:', 1)[0]
 bootstrap = lifecycle.index('- name: Build the rehearsal package, then install through the real bootstrap')
