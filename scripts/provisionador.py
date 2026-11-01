@@ -1174,6 +1174,7 @@ def roster_parse(text, reserved, universe):
     that spans lines is a row whose line numbers stop meaning anything to the person reading
     the error."""
     errors, rows, seen, si_lines = [], [], {}, []
+    reserved_collision = False
     reader = csv.reader(io.StringIO(text, newline=""), delimiter=";")
     try:
         head = next(reader, None)
@@ -1207,6 +1208,7 @@ def roster_parse(text, reserved, universe):
                 ok = False
             elif uid in reserved:
                 errors.append((start, f"el usuario «{uid}» es {reserved[uid]}: quítelo de la planilla"))
+                reserved_collision = True
                 ok = False
             else:
                 seen[uid] = start
@@ -1248,6 +1250,8 @@ def roster_parse(text, reserved, universe):
                        f"({', '.join(f'línea {n}' for n in si_lines)}): debe ser una"))
     elif not rows and not errors:
         errors.append((2, "la planilla no trae usuarios — agregue filas bajo la cabecera"))
+    if reserved_collision:
+        errors.append((0, "usuarios reservados: " + " ".join(sorted(reserved))))
     return rows, errors
 
 
