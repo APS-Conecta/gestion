@@ -331,7 +331,7 @@ app_elegida() {  # APPID — exit 0 when the operator chose APPID, non-zero when
                  # row, no release, no store install. Un-choosing on a warm server keeps what
                  # runs (nothing here uninstalls), exactly the manifest flip-back's doctrine:
                  # `occ app:remove`, by hand.
-  local archivo="${APS_APPS_OPCIONES:-${AIO_STATE:-/opt/aps-conecta/aio}/opciones}"
+  local archivo="${APS_APPS_OPCIONES:-${AIO_STATE:-${APS_HOME:-/opt/aps-conecta}/aio}/opciones}"
   [ -f "$archivo" ] && tr ' ' '\n' < "$archivo" | grep -qx -- "$1=1"
 }
 lock_row() {  # APPID — the lock's row (tag<TAB>version<TAB>sha256<TAB>tarball), or nothing when
