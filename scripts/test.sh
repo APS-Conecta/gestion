@@ -381,7 +381,7 @@ for root in ('Containers', 'provisioning'):
         for number, line in enumerate(path.read_text().splitlines(), 1):
             if line.lstrip().startswith('#'):
                 continue
-            secret = re.search(r'--value[^\n]*\$\{?[A-Z_]*(?:SECRET|PASSWORD|TOKEN|RECORDING_SERVERS_STRING)', line)
+            secret = re.search(r'--value[^\n]*\$\{?[A-Z_]*(?:SECRET|PASSWORD|TOKEN|RECORDING_SERVERS_STRING|SUBSCRIPTION_KEY)', line)
             assert not secret, f'{path}:{number}: secret passed to an occ value argument'
 PY
 }
@@ -3422,7 +3422,7 @@ else:
                EUROOFFICE_SECRET='synthetic secret must never escape " \\ $', NC_DOMAIN='test.invalid',
                TALK_ENABLED='no', TALK_RECORDING_ENABLED='no', CLAMAV_ENABLED='no',
                FULLTEXTSEARCH_ENABLED='no', HARP_ENABLED='no', REMOVE_DISABLED_APPS='no',
-               SERVERINFO_TOKEN='', IMAGINARY_ENABLED='no', IMAGINARY_HOST='imaginary.invalid',
+               SERVERINFO_TOKEN='', SUBSCRIPTION_KEY='', IMAGINARY_ENABLED='no', IMAGINARY_HOST='imaginary.invalid',
                NEXTCLOUD_DATA_DIR=str(root), CLAMAV_HOST='clam', CLAMAV_BLOCKLISTED_DIRECTORIES='', PHP_UPLOAD_LIMIT='1G',
                FULLTEXTSEARCH_HOST='search', FULLTEXTSEARCH_PORT='9200', FULLTEXTSEARCH_USER='test',
                FULLTEXTSEARCH_PASSWORD='synthetic secret must never escape', FULLTEXTSEARCH_INDEX='test')
@@ -3437,7 +3437,7 @@ else:
         assert (result.returncode == 0) == success, (result.returncode, result.stdout, result.stderr)
         assert 'synthetic secret must never escape' not in result.stdout + result.stderr
         for key in ('EUROOFFICE_SECRET', 'TURN_SECRET', 'SIGNALING_SECRET', 'RECORDING_SECRET',
-                    'FULLTEXTSEARCH_PASSWORD', 'SERVERINFO_TOKEN', 'IMAGINARY_SECRET'):
+                    'FULLTEXTSEARCH_PASSWORD', 'SERVERINFO_TOKEN', 'IMAGINARY_SECRET', 'SUBSCRIPTION_KEY'):
             value = effective.get(key)
             assert not value or value not in result.stdout + result.stderr, f'{key} was printed'
         return json.loads(state_path.read_text()), result.stdout
@@ -3507,19 +3507,23 @@ else:
     reset()
     run('unknown', success=False)
     tokens = dict(SERVERINFO_TOKEN='synthetic server token " \\ $', IMAGINARY_ENABLED='yes',
-                  IMAGINARY_SECRET='synthetic image key " \\ $')
+                  IMAGINARY_SECRET='synthetic image key " \\ $', SUBSCRIPTION_KEY='synthetic subscription key " \\ $')
     reset(enabled=['notify_push'])
     state, _ = run('boot', extra=tokens)
     assert state['config'].get('serverinfo', {}).get('token') == tokens['SERVERINFO_TOKEN'], 'Serverinfo token did not reach Nextcloud'
     assert state['system']['preview_imaginary_key'] == tokens['IMAGINARY_SECRET']
-    assert all(value not in word for value in (tokens['SERVERINFO_TOKEN'], tokens['IMAGINARY_SECRET'])
+    assert state['config'].get('support', {}).get('potential_subscription_key') == tokens['SUBSCRIPTION_KEY'], 'Subscription key did not reach Nextcloud'
+    assert all(value not in word for value in (tokens['SERVERINFO_TOKEN'], tokens['IMAGINARY_SECRET'], tokens['SUBSCRIPTION_KEY'])
                for call in state['calls'] for word in call), 'Startup tokens entered process arguments'
     state, output = run('boot', extra=tokens)
-    assert len(state['imports']) == 2 and ' -> ' not in output
-    changed = dict(tokens, SERVERINFO_TOKEN='different server token', IMAGINARY_SECRET=tokens['IMAGINARY_SECRET'] + ' rotated')
+    assert len(state['imports']) == 3 and ' -> ' not in output
+    changed = dict(tokens, SERVERINFO_TOKEN='different server token', IMAGINARY_SECRET=tokens['IMAGINARY_SECRET'] + ' rotated',
+                   SUBSCRIPTION_KEY='different subscription key')
     state, _ = run('boot', extra=changed)
     assert state['config']['serverinfo']['token'] == tokens['SERVERINFO_TOKEN'], 'An existing server token was overwritten'
-    assert state['system']['preview_imaginary_key'] == changed['IMAGINARY_SECRET'] and len(state['imports']) == 3
+    assert state['config']['support']['potential_subscription_key'] == tokens['SUBSCRIPTION_KEY']
+    assert state['calls'].count(['config:app:delete', 'support', 'last_check']) == 1
+    assert state['system']['preview_imaginary_key'] == changed['IMAGINARY_SECRET'] and len(state['imports']) == 4
     talk = dict(TALK_ENABLED='yes', TALK_HOST='aps-conecta-talk', TALK_PORT='3478',
                 TURN_SECRET='synthetic secret must never escape " \\ $',
                 SIGNALING_SECRET='synthetic secret must never escape " \\ $')
