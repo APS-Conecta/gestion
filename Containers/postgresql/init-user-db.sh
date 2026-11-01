@@ -8,8 +8,8 @@ set -ex
 
 touch "$DUMP_DIR/initialization.failed"
 
-psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
-	-v "pg_new_password=$POSTGRES_PASSWORD" <<-EOSQL
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+	\getenv pg_new_password POSTGRES_PASSWORD
 	CREATE USER "oc_$POSTGRES_USER" WITH PASSWORD :'pg_new_password' CREATEDB;
 	ALTER DATABASE "$POSTGRES_DB" OWNER TO "oc_$POSTGRES_USER";
 	GRANT ALL PRIVILEGES ON DATABASE "$POSTGRES_DB" TO "oc_$POSTGRES_USER";

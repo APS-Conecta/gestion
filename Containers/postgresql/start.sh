@@ -120,8 +120,8 @@ if ( [ -f "$DATADIR/PG_VERSION" ] && [ "$PG_MAJOR" != "$(cat "$DATADIR/PG_VERSIO
         exit 1
     elif [ "$DB_OWNER" != "oc_$POSTGRES_USER" ]; then
         DIFFERENT_DB_OWNER=1
-        psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
-            -v "pg_new_password=$POSTGRES_PASSWORD" <<-EOSQL
+        psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+            \getenv pg_new_password POSTGRES_PASSWORD
             CREATE USER "$DB_OWNER" WITH PASSWORD :'pg_new_password' CREATEDB;
             ALTER DATABASE "$POSTGRES_DB" OWNER TO "$DB_OWNER";
             GRANT ALL PRIVILEGES ON DATABASE "$POSTGRES_DB" TO "$DB_OWNER";
