@@ -306,12 +306,10 @@ compatible release.
 
 ## 11. Backups
 
-The wizard's own borg backup is the instance backup. Step 6 sets it daily at 04:00 Santiago time
-in `/srv/aps-conecta/respaldos`, with `/opt/aps-conecta` (the credentials and the site record) in its
-scope — the same folder on the same disk, so copy it off the server (an external disk, another
-machine). `aps-conecta respaldo` adds `/opt/aps-conecta` to an existing backup — idempotent, and it
-prints the **honest cost every time**: additional directories back up but never restore with the
-instance. `/opt/aps-conecta`'s restore is a manual `borg extract` (the recipe: upstream's
+The wizard's Borg backup covers the instance. Step 6 configures the daily backup at 04:00
+Santiago time and includes the selected installation directory (`APS_HOME`, default
+`/opt/aps-conecta`) through the wizard request. Keep a copy of the archive off the server.
+Restore additional host directories manually with `borg extract` (the recipe: upstream's
 [backup docs](https://github.com/nextcloud/all-in-one#pro-tip-backup-archives-access)).
 
 The wizard runs in UTC, so step 6 posts the UTC hour — 07:00 in summer time, 08:00 in winter —

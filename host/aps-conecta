@@ -13,7 +13,6 @@
 #   aps-conecta run-command [IP]     just the docker run string (one source, never re-typed)
 #   aps-conecta provision            start the Provisionador (interactive; Ctrl+C stops it)
 #   aps-conecta provision --reponer  headless weekly re-provision (the systemd timer's job)
-#   aps-conecta respaldo             wire /opt/aps-conecta into AIO's backup scope (idempotent)
 #   aps-conecta asistente-aio --dominio D   drive the AIO wizard through its API (no browser)
 #   aps-conecta revalidate          post-update: smoke, office, AppAPI, Talk and divergence
 #   aps-conecta actualizar [--revisar]  the update (#46): plan; full backup first; candidates fetched
@@ -307,7 +306,6 @@ usage() {  # Spanish, generated from the registry — never a slice of this file
   echo "  aps-conecta revalidate            revisa la instancia después de una actualización"
   echo "  aps-conecta actualizar [--revisar]  actualiza las aplicaciones de la suite: plan, respaldo completo primero, aplicación por aplicación y revalidación (--revisar: solo el plan, no escribe nada)"
   echo "  aps-conecta red --dominio D [--arreglar]   el reflejo del dominio: revisarlo y, con --arreglar, corregirlo (DNS local)"
-  echo "  aps-conecta respaldo              agrega /opt/aps-conecta a las copias de seguridad"
   echo "  aps-conecta datos [CUT] [--importar]  los paquetes de datos de la comuna (con --importar: además los carga)"
   echo "  aps-conecta --self-test           autoprueba de este programa (sin docker)"
 }
@@ -1915,29 +1913,6 @@ cmd_estado() {  # the last execution's verdict and each item with its fix — no
   fi
   cat "$f"
   case "$(head -1 "$f")" in *" · ✓ "*) return 0 ;; *) return 1 ;; esac
-}
-
-# ── respaldo ───────────────────────────────────────────────────────────────────────────────
-
-cmd_respaldo() {  # wire /opt/aps-conecta into AIO's backup scope — idempotent, via the
-  # mastercontainer's own data file: GetDataDirectory() is /mnt/docker-aio-config/data/
-  # (php/src/Data/DataConst.php:6-13 — start.sh:406 mkdirs it every start), so the file is
-  # /mnt/docker-aio-config/data/additional_backup_directories, one path per line
-  # (DataConst.php:39-40; the wizard's backup form loads the same file, so the line survives
-  # a later form save).
-  local target=/opt/aps-conecta mc=nextcloud-aio-mastercontainer
-  local datafile=/mnt/docker-aio-config/data/additional_backup_directories
-  if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$mc"; then
-    die "el mastercontainer ($mc) no está corriendo — el wiring va después del asistente"
-  fi
-  if docker exec "$mc" sh -c "grep -qxF '$target' '$datafile' 2>/dev/null"; then
-    ok "$target ya está en el alcance de las copias de seguridad"
-  else
-    docker exec "$mc" sh -c "echo '$target' >> '$datafile'" \
-      || die "no pude escribir el alcance en el mastercontainer"
-    ok "$target agregado al alcance de las copias de seguridad"
-  fi
-  info "ojo: los directorios adicionales se RESPALDAN pero no se restauran junto con la instancia (comportamiento propio de AIO, documentado en el asistente) — /opt/aps-conecta se restaura a mano desde el archivo borg"
 }
 
 # ── revalidate ─────────────────────────────────────────────────────────────────────────────
@@ -3562,7 +3537,7 @@ PARES
   check "errors print the Spanish console's ✗ marker, with no English prefix" \
     '[ "$out" = "✗ prueba" ]'
 
-  # ── respaldo: idempotent via the mastercontainer's own file ──
+  # A retired direct-file command cannot mutate backup scope through the public CLI.
   : > "$tmp/mc-additional"
   cat > "$tshim/docker" <<'DSHIM'
 #!/usr/bin/env bash
@@ -4869,7 +4844,6 @@ case "${1:-}" in
   revalidate)   cmd_revalidate ;;
   actualizar)   shift; cmd_actualizar "$@" ;;
   red)          shift; cmd_red "$@" ;;
-  respaldo)     cmd_respaldo ;;
   datos)        shift; cmd_datos "$@" ;;
   --self-test)  selftest ;;
   ""|-h|--help) usage ;;
