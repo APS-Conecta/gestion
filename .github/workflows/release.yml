@@ -192,7 +192,11 @@ jobs:
           [ "$tag_sha" = "$RELEASE_SHA" ] \
             || { echo "FAIL: the remote release tag no longer matches the proven commit" >&2; exit 1; }
           files=("dist/apsconecta-$RELEASE_TAG.tar.gz" "dist/SHA256SUMS" "dist/SHA256SUMS.minisig" \
-                 "dist/apsconecta-$RELEASE_TAG-install.sh" "suite-$RELEASE_TAG-manifest.json")
+                 "dist/apsconecta-$RELEASE_TAG-install.sh" "dist/apsconecta-install.sh" "suite-$RELEASE_TAG-manifest.json")
+          # apsconecta-install.sh — the stable-name alias of the tag's install asset: the
+          # runbooks' one-liner resolves through releases/latest/download, so every new
+          # Release serves itself without an operator editing the URL (ci.N rehearsals
+          # publish --latest=false and never shadow a full release's alias)
           # «APS Conecta Gestión vX.Y.Z» — the product name on the Release the wizard's
           # changelog arms land on (row 270 pins the shape); --generate-notes fills the body
           release_flags=()

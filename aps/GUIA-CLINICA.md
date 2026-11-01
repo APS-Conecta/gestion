@@ -44,12 +44,12 @@ está disponible.
 ### Instalación mediante un proxy institucional
 
 Ingrese la dirección del proxy de forma privada y conserve sus variables durante la descarga
-inicial. Sustituya `vX.Y.Z` por la versión elegida:
+inicial (la dirección es estable: siempre resuelve a la última Release publicada):
 
 ```bash
 read -r -s -p 'Dirección del proxy: ' HTTPS_PROXY; echo
 export HTTPS_PROXY HTTP_PROXY="$HTTPS_PROXY" https_proxy="$HTTPS_PROXY" http_proxy="$HTTPS_PROXY"
-curl -fsSL https://github.com/APS-Conecta/gestion/releases/download/vX.Y.Z/apsconecta-vX.Y.Z-install.sh \
+curl -fsSL https://github.com/APS-Conecta/gestion/releases/latest/download/apsconecta-install.sh \
   | sudo --preserve-env=HTTPS_PROXY,HTTP_PROXY,NO_PROXY,https_proxy,http_proxy,no_proxy bash
 ```
 

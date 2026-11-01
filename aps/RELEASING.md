@@ -100,7 +100,13 @@ The packager receives `RELEASE_SHA`, using it for archived bytes, date and prove
 without a local tag. Before publication, the remote tag (including annotated tags) must still
 resolve to that same commit. After the complete image set passes its native checks,
 package-release assembles the composite, SHA256SUMS, the signature, the verification proof
-against `installer.pub` and the install asset. The Release publishes those five assets.
+against `installer.pub` and the install asset. The Release publishes those six assets: the
+install asset twice — under its versioned name and as `apsconecta-install.sh`, the
+byte-identical stable-name copy `releases/latest/download` serves, so the runbooks'
+one-liner always resolves to the newest full Release without an operator editing the URL.
+The alias carries the tag pin inside its bytes (`BUNDLE_TAG` + `TARBALL_SHA256`, filled at
+cut time), so the verification chain is unchanged; `fail-on-prerelease` keeps `latest` a
+full Release, and ci.N rehearsals publish `--latest=false` and never shadow it.
 
 **The testbed pin follows**. Once the Release is green, one commit moves the pin in
 `scripts/aio-testbed.sh` to `vX.Y.Z` — the suite tag every PR-event and weekly Clean boot

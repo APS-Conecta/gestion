@@ -2,11 +2,13 @@
 # install.sh — the clinic's one-line entry (FRD S1: one signed tarball per suite tag + a
 # one-line bootstrap that unpacks, verifies sha256, starts the wizard).
 #
-#   curl -fsSL "$REPO_URL/releases/download/vX.Y.Z/apsconecta-vX.Y.Z-install.sh" | sudo --preserve-env=HTTPS_PROXY,HTTP_PROXY,NO_PROXY,https_proxy,http_proxy,no_proxy bash
+#   curl -fsSL "$REPO_URL/releases/latest/download/apsconecta-install.sh" | sudo --preserve-env=HTTPS_PROXY,HTTP_PROXY,NO_PROXY,https_proxy,http_proxy,no_proxy bash
 #
 # TRUST (the cargo-dist/Astral model, astral.sh/uv/install.sh): the one-liner's anchor is the
-# TAG-PINNED RELEASE URL + TLS, and this script embeds the package's expected sha256 — set by
-# the release job (scripts/package-release.sh) when it cuts the asset. The signature is
+# STABLE-NAME latest URL + TLS, and the tag pin travels INSIDE the bytes — this script embeds
+# BUNDLE_TAG and the package's expected sha256, set by the release job (scripts/package-release.sh)
+# when it cuts the asset (the versioned twin apsconecta-<tag>-install.sh ships beside the alias
+# for tag-pinned installs and audits, aps/RELEASING.md §6). The signature is
 # verified NOW when the host already carries `signify` (before anything unpacks — the minted
 # key is the constant below), and later by `aps-conecta preflight` on fresh hosts, once
 # `preparar` installs signify-openbsd (Ubuntu universe / Debian main): a fresh host needs no

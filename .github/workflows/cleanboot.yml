@@ -178,8 +178,11 @@ jobs:
              "$ensayo/dist/SHA256SUMS.minisig" "$ensayo/dist/apsconecta-$tag-install.sh" \
              "$ensayo/srv/releases/download/$tag/"
           # the one-liner's own shape, against a file:// release layout: verify (sha, SUMS
-          # parity, the signature) → unpack atomically → keep the package at paquete/
-          curl -fsSL "file://$ensayo/srv/releases/download/$tag/apsconecta-$tag-install.sh" \
+          # parity, the signature) → unpack atomically → keep the package at paquete/ — through
+          # the stable-name latest URL the runbooks teach, mirrored like GitHub serves it
+          mkdir -p "$ensayo/srv/releases/latest/download"
+          cp "$ensayo/dist/apsconecta-install.sh" "$ensayo/srv/releases/latest/download/"
+          curl -fsSL "file://$ensayo/srv/releases/latest/download/apsconecta-install.sh" \
             | sudo env REPO_URL="file://$ensayo/srv" bash 2>&1 | tee "$RUNNER_TEMP/bootstrap.out"
           grep -q "firma verificada (signify, clave pública del proyecto)" "$RUNNER_TEMP/bootstrap.out"
           grep -qF "Suite $tag en /opt/aps-conecta/instalador (paquete verificado en /opt/aps-conecta/paquete)" "$RUNNER_TEMP/bootstrap.out"
@@ -1027,7 +1030,9 @@ jobs:
           cp "$ensayo/dist/apsconecta-$tag.tar.gz" "$ensayo/dist/SHA256SUMS" \
              "$ensayo/dist/SHA256SUMS.minisig" "$ensayo/dist/apsconecta-$tag-install.sh" \
              "$ensayo/srv/releases/download/$tag/"
-          curl -fsSL "file://$ensayo/srv/releases/download/$tag/apsconecta-$tag-install.sh" \
+          mkdir -p "$ensayo/srv/releases/latest/download"
+          cp "$ensayo/dist/apsconecta-install.sh" "$ensayo/srv/releases/latest/download/"
+          curl -fsSL "file://$ensayo/srv/releases/latest/download/apsconecta-install.sh" \
             | sudo --preserve-env=HTTP_PROXY,HTTPS_PROXY,NO_PROXY,http_proxy,https_proxy,no_proxy \
                 env REPO_URL="file://$ensayo/srv" bash 2>&1 | tee "$RUNNER_TEMP/bootstrap.out"
           grep -q "firma verificada (signify, clave pública del proyecto)" "$RUNNER_TEMP/bootstrap.out"
