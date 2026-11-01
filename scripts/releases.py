@@ -906,6 +906,28 @@ def selftest():
             cause = refused(fetch_release, fila(f"APS-Conecta/{app}"), "v1.0.0")
             check(f"an archive with a {app} member is refused before storage",
                   bool(cause) and not os.path.exists(store_file(app, "v1.0.0")))
+        for app, repo in (("malpath", "APS-Conecta/mal-path"), ("symlink", "APS-Conecta/symlink")):
+            cached_store = os.path.join(tmp, "cached-members", app)
+            cached_lock = os.path.join(cached_store, "lock.json")
+            next_lock = os.path.join(cached_store, "next.json")
+            archive = store_file(app, "v1.0.0", cached_store)
+            os.makedirs(os.path.dirname(archive), exist_ok=True)
+            shutil.copyfile(os.path.join(tree, repo, "releases", "download", "v1.0.0", f"{app}.tar.gz"), archive)
+            entry = {"source": "own", "repo": repo, "tag": "v1.0.0", "version": "1.0.0",
+                     "sha256": sha256_file(archive)}
+            write_lock(cached_lock, {"nextcloud": "34.0.4", "apps": {app: entry}})
+            with open(cached_lock, "rb") as fh:
+                original_lock = fh.read()
+            cause = refused(fetch_all, [fila(repo)], "34.0.4", path=cached_lock,
+                            store=cached_store, eleccion={})
+            with open(cached_lock, "rb") as fh:
+                check(f"repair refuses a cached unsafe archive and preserves its lock: {app}",
+                      bool(cause) and fh.read() == original_lock)
+            cause = refused(fetch_next, [fila(repo)], "34.0.4", next_lock, path=cached_lock,
+                            store=cached_store, eleccion={}, ids={app})
+            with open(cached_lock, "rb") as fh:
+                check(f"update refuses a cached unsafe archive without writing a new lock: {app}",
+                      bool(cause) and not os.path.exists(next_lock) and fh.read() == original_lock)
         check("a tarball carrying appinfo/signature.json refused",
               "signature.json" in refused(fetch_release, fila("APS-Conecta/con-firma-nc"), "v1.0.0"))
         check("a release declaring another app id refused",
