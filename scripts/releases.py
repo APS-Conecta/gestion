@@ -9,17 +9,18 @@ apps.py beside it — the manifest is IMPORTED, never re-parsed.
                             [--opciones PATH] --nextcloud 34.0.4
       For every manifest row with release: resolve its newest release compatible with the
       running Nextcloud, download it WITHOUT a token, verify it against apps.pub, and record
-      the tag in the lock. A row already in the lock downloads nothing. An OPTIONAL row the
+      the tag in the lock. A locked row reuses verified stored bytes or re-fetches its locked
+      tag when needed. An OPTIONAL row the
       operator did not choose (#39) resolves nothing: the wizard's options record answers
       (default /opt/aps-conecta/aio/opciones), and an unchosen optional app stays absent — a
-      leftover lock row never overrides the choice. Spreed always resolves (ADR-0021).
+      leftover lock row never overrides the choice.
       One Spanish FATAL line per refusal, naming the app and the retry command (the wizard and
       the silent install both surface it verbatim).
   scripts/releases.py plan [--manifest PATH] [--lock PATH] [--pub PATH] \
                             [--opciones PATH] --nextcloud 34.0.4
       The plan `aps-conecta actualizar` prints (#46): per release row, current tag (the lock's
-      row, empty when none) and candidate tag — the lock as a FLOOR, never below it, a pin
-      never moving. Candidates are verified (signature, hashes, id, version) before they are
+      row, empty when none) and candidate tag — the lock as a FLOOR, including pins.
+      Candidates are verified (signature, hashes, id, version, Nextcloud range) before they are
       named; a refusal is one Spanish FATAL naming the app. WRITES NOTHING — `--revisar` stops
       here by contract. TSV: id<TAB>current<TAB>candidate, id<TAB>omitida for an unchosen
       optional row, or id<TAB>retirada for a lock row whose app left the manifest (#172).
@@ -40,19 +41,20 @@ apps.py beside it — the manifest is IMPORTED, never re-parsed.
 
 THE NORMAL PATH MAKES NO API CALL. `resolve` follows the /releases/latest redirect — one HEAD,
 no body, no api.github.com, no token — and verifies that release's info.xml + SHA256SUMS +
-signature before anything else moves. Only when the latest release is incompatible does it
-make ONE releases-API call (newest first, non-prerelease), GITHUB_TOKEN when set.
+signature before anything else moves. A missing, incompatible or floor-blocked latest uses
+ONE releases-API call (newest first, non-prerelease), GITHUB_TOKEN when set.
 
 THE LOCK WINS. A row already recorded installs from the lock and resolves nothing (a repair
 never turns into an upgrade, #33); `use_lock=False` — actualizar's stance, #46 — turns the
 lock into a floor instead: candidates below it are never picked. A `pin` takes exactly that
-tag, before even the redirect is read. The lock is written atomically (tmp + rename): a server
+tag after its signed metadata proves compatibility and its version meets the floor; no
+latest-release lookup is needed. The lock is written atomically (tmp + rename): a server
 never reads half a lock.
 
 WHAT `fetch` PROVES BEFORE ANYTHING IS UNPACKED: the SHA256SUMS signature against apps.pub
 (signify, the same apt package the clinic verifies with); the hashes of the tarball and of
-info.xml; the tarball's one top directory equals the app id, with nothing outside it; no
-appinfo/signature.json inside; and the tag equals the version info.xml declares.
+info.xml; the tarball's one top directory equals the app id, with no absolute paths, parent
+components or links; no appinfo/signature.json inside; and the tag matches info.xml's version.
 """
 import hashlib
 import io
@@ -322,17 +324,17 @@ def compatible(info, major):
 
 
 def prove_tarball(data, app, version):
-    """The tarball's own shape, checked BEFORE anything is unpacked: one top directory, equal to
-    the app id, nothing outside it (an absolute path or a ../ escape fails the same test — its
-    first component is not the id); no appinfo/signature.json (a release of ours never carries
-    one, #27's release decisions); and the info.xml inside declares the same version the release
-    claims — a mismatch would make the seed re-impose on every run, forever."""
+    """Before storage or extraction, require the app's top directory, relative paths without
+    parent components, and no symbolic or hard links. Refuse appinfo/signature.json and require
+    the inner info.xml version to match the signed release metadata."""
     try:
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
             members = tar.getmembers()
             for member in members:
                 if member.name.startswith("/") or ".." in member.name.split("/"):
                     raise Refusal(f"el paquete contiene una ruta no permitida «{member.name}»")
+                if member.issym() or member.islnk():
+                    raise Refusal(f"el paquete contiene un enlace «{member.name}»")
             tops = {m.name.split("/")[0] for m in members}
             if len(tops) != 1 or app not in tops:
                 raise Refusal(f"el paquete descomprime «{sorted(tops)[0] if tops else 'nada'}/», "
@@ -391,13 +393,11 @@ def order(tag):
 
 
 def resolve(row, major, lock_entry=None, use_lock=True, token=None):
-    """The tag this server installs for one manifest row, and (when the choice was already
-    proven) its entry: (tag, entry|None). The rules, in order — a pin beats everything and
-    reads nothing off the network; the LOCK WINS over any resolution (a repair never upgrades,
-    #33); `use_lock=False` (actualizar's stance, #46) keeps the lock only as a FLOOR no
-    candidate may fall below — and when nothing at-or-above the floor is compatible, the
-    refusal that follows is the major-bump guard (#46, user story 25); then the latest-release
-    redirect, and only when it is incompatible the ONE releases-API call, newest first."""
+    """Return (tag, entry|None). A repair uses its lock without network access. Otherwise the
+    lock is a floor for every candidate, including a pin. Verify a pin's signed metadata and
+    Nextcloud range without a latest-release lookup. Unpinned resolution checks the latest
+    redirect, then one API page when needed. Refuse when no compatible candidate meets the floor.
+    """
     floor = lock_entry["tag"] if lock_entry else None
     if use_lock and lock_entry:
         return lock_entry["tag"], None
@@ -525,8 +525,8 @@ def plan_all(rows, nextcloud, path=None, eleccion=None, *, ids):
     """The plan `aps-conecta actualizar` prints and `--revisar` stops on (#46): for every
     release row, the tag this server RUNS (the lock's row, empty when none) and the tag the run
     would move it to — resolved with the lock as a FLOOR, actualizar's stance, so a candidate
-    below the lock is never offered and a pinned row never moves. The three small assets are
-    downloaded and verified (a candidate is only named once the trust chain proved it), but
+    below the lock is never offered; pins meet the same floor and compatibility checks. The
+    three small assets are downloaded and verified before a candidate is named, but
     NOTHING IS WRITTEN: no lock move, no tarball — `--revisar` stops here by contract. TSV per
     row: id<TAB>current<TAB>candidate, or id<TAB>omitida for an unchosen optional one; then
     id<TAB>retirada per lock row whose app left the manifest (`ids`, #172)."""
@@ -938,9 +938,9 @@ def selftest():
         check("no downgrade: everything at-or-above an incompatible floor exhausted is the same guard — the line names the release that will not move (#46's wording of the old refusal)",
               "tampoco lo es" in causa and "«v3.5.0»" in causa)
         antes = dict(server.hits)
-        tag, entry = resolve(fila("APS-Conecta/territorio"), 34,
+        tag, entry = resolve(fila("APS-Conecta/territorio", pin="v0.80.0"), 34,
                              lock_entry={"tag": "v0.79.0", "version": "0.79.0"})
-        check("the lock wins: an existing entry installs from the lock, resolving nothing",
+        check("the lock wins over a pin: a repair preserves the installed tag without network access",
               tag == "v0.79.0" and dict(server.hits) == antes)
         antes = dict(server.hits)
         tag, entry = resolve(fila("APS-Conecta/clavada", pin="v1.5.0"), 34)
@@ -954,6 +954,11 @@ def selftest():
                         lock_entry={"tag": "v2.0.0", "version": "2.0.0"}, use_lock=False)
         check("a pin below the installed floor is refused, naming both releases",
               "v1.5.0" in cause and "v2.0.0" in cause)
+        for pin in ("v1.5.0", "v2.0.0"):
+            tag, entry = resolve(fila("APS-Conecta/clavada", pin=pin), 34,
+                                 lock_entry={"tag": "v1.5.0", "version": "1.5.0"}, use_lock=False)
+            check(f"a compatible pin at or above the installed floor is accepted: {pin}",
+                  tag == pin and bool(entry))
 
         # the atomic lock write: whole-replace, no tmp left behind, 0644, and a failed rename
         # leaves the previous lock intact

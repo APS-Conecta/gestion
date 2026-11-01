@@ -148,6 +148,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-085 | Clean boot rejects a valid disk report between the existing minimum and recommended tiers (#197 prerequisite) | revisar succeeds at 23 GB and prints the 40 GB recommendation separately, but CI requires both tiers on one line | check the minimum disk result and either documented recommendation form; replaying the actual runner output passes, while removing the recommendation still fails; resource values remain unchanged |
 
+| A-087 | pinned app releases bypass compatibility and downgrade checks; signed archives accept parent components and links (#199) | pin resolution returns before shared metadata validation; archive validation checks only the first path component | pins use signed Nextcloud metadata and the installed floor; archive validation rejects absolute paths, parent components and symbolic or hard links before storage |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and
