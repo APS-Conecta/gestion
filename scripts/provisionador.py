@@ -4609,6 +4609,52 @@ def selftest():
                       and f"Certificado para los equipos del personal: {public_ca}" in certificate.stdout)
                 if certificate.returncode:
                     print(certificate.stdout.strip() or certificate.stderr.strip())
+                suite_crt = os.path.join(home, "certificados", "suite", "tls.crt")
+                with open(suite_crt, "rb") as fh:
+                    original_leaf = fh.read()
+                with open(public_ca, "rb") as fh:
+                    original_ca = fh.read()
+                certificate_command = [sys.executable, os.path.join(isolated, "scripts", "provisionador.py"),
+                                       "--paso", "certificado-suite", "--ip"]
+                reused = subprocess.run(certificate_command + ["203.0.113.10"],
+                                        env=dict(os.environ, APS_HOME=home, PATH=old_path),
+                                        capture_output=True, text=True, timeout=30, **identity)
+                with open(suite_crt, "rb") as fh:
+                    reused_leaf = fh.read()
+                renewed = subprocess.run(certificate_command + ["203.0.113.11"],
+                                         env=dict(os.environ, APS_HOME=home, PATH=old_path),
+                                         capture_output=True, text=True, timeout=30, **identity)
+                with open(suite_crt, "rb") as fh:
+                    renewed_leaf = fh.read()
+                with open(public_ca, "rb") as fh:
+                    renewed_ca = fh.read()
+                check("--paso certificado-suite: an unprivileged owner reuses the leaf and renews its address with the same CA (#142)",
+                      reused.returncode == renewed.returncode == 0
+                      and "203.0.113.10: vigente," in reused.stdout
+                      and "203.0.113.11: emitido," in renewed.stdout
+                      and reused_leaf == original_leaf != renewed_leaf and renewed_ca == original_ca)
+                acl_bin = os.path.join(isolated, "acl-bin")
+                os.mkdir(acl_bin)
+                os.symlink(shutil.which("openssl", path=old_path), os.path.join(acl_bin, "openssl"))
+                real_setfacl = shutil.which("setfacl", path=old_path)
+                for failure in ("missing", "partial"):
+                    failure_home = os.path.join(isolated, failure)
+                    if failure == "partial":
+                        with open(os.path.join(acl_bin, "setfacl"), "w", encoding="utf-8") as fh:
+                            fh.write("#!/bin/sh\ncase \"$2\" in *u::r-x*) exit 1;; esac\n"
+                                     f"exec {shlex.quote(real_setfacl)} \"$@\"\n")
+                        os.chmod(os.path.join(acl_bin, "setfacl"), 0o755)
+                    refused = subprocess.run(certificate_command + ["203.0.113.10"],
+                                             env=dict(os.environ, APS_HOME=failure_home, PATH=acl_bin),
+                                             capture_output=True, text=True, timeout=30, **identity)
+                    leaf = os.path.join(failure_home, "certificados", "suite")
+                    hint = "instale el paquete acl" if failure == "missing" else "sistema de archivos admita ACL"
+                    check(f"--paso certificado-suite: {failure} ACL support refuses startup and revokes effective grants (#142)",
+                          refused.returncode == 1 and hint in refused.stdout
+                          and not os.path.exists(os.path.join(failure_home, "certificados", "ca", "aps-conecta-ca.crt"))
+                          and os.stat(leaf).st_mode & 0o777 == 0o500
+                          and all(os.stat(os.path.join(leaf, name)).st_mode & 0o777 == 0o400
+                                  for name in ("tls.crt", "tls.key")))
                 refused_run = subprocess.run([
                     sys.executable, os.path.join(isolated, "scripts", "provisionador.py"),
                     "--paso", "generar", "--codigo", "999999",
