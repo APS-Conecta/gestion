@@ -1057,6 +1057,39 @@ def selftest():
               run.returncode == 0 and "✓ apps: territorio v0.80.0" in run.stdout
               and read_lock()["apps"]["territorio"]["tag"] == "v0.80.0"
               and os.path.isfile(store_file("territorio", "v0.80.0")))
+        import pwd
+        with tempfile.TemporaryDirectory(prefix="releases-home-") as isolated:
+            home = os.path.join(isolated, "state")
+            os.makedirs(os.path.join(home, "aio"))
+            with open(os.path.join(home, "aio", "opciones"), "w", encoding="utf-8") as fh:
+                fh.write("farmacia=1 estadistica=0 totem=0\n")
+            manifest = os.path.join(isolated, "apps.json")
+            with open(manifest, "w", encoding="utf-8") as fh:
+                json.dump([fila("APS-Conecta/territorio"),
+                           fila("APS-Conecta/farmacia", optional="off")], fh)
+            public_key = os.path.join(isolated, "apps.pub")
+            shutil.copy2(os.environ["APS_APPS_PUB"], public_key)
+            identity = {}
+            if os.geteuid() == 0:
+                actor = pwd.getpwnam("nobody")
+                for directory, _dirs, files in os.walk(isolated):
+                    for path in [directory] + [os.path.join(directory, name) for name in files]:
+                        os.chown(path, actor.pw_uid, actor.pw_gid)
+                identity = {"user": actor.pw_uid, "group": actor.pw_gid, "extra_groups": []}
+            local_env = {k: v for k, v in os.environ.items()
+                         if k not in ("APS_APPS_LOCK", "APS_APPS_STORE", "APS_APPS_OPCIONES", "AIO_STATE")}
+            local_env.update(APS_HOME=home, APS_APPS_PUB=public_key)
+            run = subprocess.run([sys.executable, os.path.abspath(__file__), "fetch",
+                                  "--manifest", manifest, "--nextcloud", "34.0.4"],
+                                 env=local_env, capture_output=True, text=True, timeout=30, **identity)
+            lock = os.path.join(home, "apps.lock.json")
+            selected = json.load(open(lock, encoding="utf-8")) if os.path.isfile(lock) else {}
+            check("cli fetch: APS_HOME supplies options, lock and signed packages without privileged writes (#142)",
+                  run.returncode == 0 and set(selected.get("apps", {})) == {"territorio", "farmacia"}
+                  and os.path.isfile(os.path.join(home, "apps", "territorio", "v0.80.0.tar.gz"))
+                  and os.path.isfile(os.path.join(home, "apps", "farmacia", "v0.12.0.tar.gz")))
+            if run.returncode:
+                print(run.stderr.strip(), file=sys.stderr)
         # THE PRODUCTION ARGV, exactly as APPS_CMD spells it: `fetch --nextcloud V`, no --manifest.
         # This is the call the first clean boot crashed on (apps.load(None) → TypeError — every
         # other arm passed --manifest, and the wizard's stub hid the argv entirely), so it runs
