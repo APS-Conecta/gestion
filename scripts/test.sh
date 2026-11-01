@@ -32,12 +32,9 @@ sys.exit(1 if 'user:info' in sys.argv else 0)
     env = dict(os.environ, PATH=str(root / 'bin') + ':' + os.environ['PATH'],
                CASE_CAPTURE=str(capture), CASE_PASSWORD=password)
     env.pop('OC_PASS', None)
-    result = subprocess.run(['bash', '-c', '''
-set -e
-source scripts/env.sh
-source provisioning/lib.sh
-ensure_user fixture.staff 'Fixture User' "$CASE_PASSWORD"
-'''], cwd=root, env=env, capture_output=True, text=True, timeout=5)
+    setup = 'set -e\nsource scripts/env.sh\nsource provisioning/lib.sh\n'
+    result = subprocess.run(['bash', '-c', setup + 'ensure_user fixture.staff \'Fixture User\' "$CASE_PASSWORD"\n'],
+                            cwd=root, env=env, capture_output=True, text=True, timeout=5)
     assert result.returncode == 0, result.stderr
     calls = [json.loads(line) for line in capture.read_text().splitlines()]
     assert all(password not in word for call in calls for word in call['argv']), 'A staff password entered Docker arguments'
@@ -476,10 +473,8 @@ with tempfile.TemporaryDirectory(prefix='aps ca test ') as directory:
         name = 'aps-196-' + uuid.uuid4().hex
         env = dict(os.environ, CASE_CAPTURE=str(capture), CASE_CLEANUP=str(cleanup),
                    CASE_CA_NAME=name, CASE_CA_FAILURE=failure, TMPDIR=str(host_tmp))
-        result = subprocess.run(['bash', '-c', r'''
-set -e
-source scripts/env.sh
-source provisioning/lib.sh
+        setup = 'set -e\nsource scripts/env.sh\nsource provisioning/lib.sh\n'
+        result = subprocess.run(['bash', '-c', setup + r'''
 docker() {
   local source='' destination transport
   if [ "$1" = cp ]; then
@@ -3991,6 +3986,7 @@ with tempfile.TemporaryDirectory() as directory:
         'mountpoint': 'exit 1',
         'hostname': 'echo 172.25.0.7',
         'dig': 'case "$*" in *" AAAA "*) ;; *) echo 172.25.0.7 ;; esac',
+        'erl': 'printf "%s\\n" fixture-derived-turn-password',
     }.items():
         command = commands / name
         command.write_text('#!/bin/bash\n' + body + '\n')
