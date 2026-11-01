@@ -296,7 +296,7 @@ ensure_store_app() {  # APPID — install the store's newest compatible release,
     if err="$(occ_store app:install "$app" 2>&1)"; then
       log "app $app -> installed from the store (NC_appstoreenabled=1, scoped to this command)"
     else
-      log "FAILED to install $app from the store — occ said: $(printf '%s' "$err" | tr '\n' ' ' | tail -c 300)"
+      log "FAILED $app — falló occ app:install: $(printf '%s' "$err" | tr '\n' ' ' | tail -c 300)"
       return 1
     fi
   fi
@@ -307,7 +307,7 @@ ensure_store_app() {  # APPID — install the store's newest compatible release,
   if err="$(occ app:enable "$app" 2>&1)"; then
     log "app $app -> enabled"
   else
-    log "FAILED to enable app $app — occ said: $(printf '%s' "$err" | tr '\n' ' ' | tail -c 300)"
+    log "FAILED $app — falló occ app:enable: $(printf '%s' "$err" | tr '\n' ' ' | tail -c 300)"
     return 1
   fi
 }
@@ -398,7 +398,7 @@ ensure_release_app() {  # APPID ROW — install the release the lock names, from
   if err="$(occ app:enable "$app" 2>&1)"; then
     log "app $app -> enabled"
   else
-    log "FAILED to enable app $app — occ said: $(printf '%s' "$err" | tr '\n' ' ' | tail -c 300)"
+    log "FAILED $app — falló occ app:enable: $(printf '%s' "$err" | tr '\n' ' ' | tail -c 300)"
     return 1
   fi
 }
