@@ -1188,6 +1188,22 @@ def selftest():
               and "sudo apt-get install signify-openbsd" in run.stderr
               and "sudo ln -sf /usr/bin/signify-openbsd /usr/local/bin/signify" in run.stderr
               and not os.path.exists(missing_lock))
+        verifier_bin = os.path.join(tmp, "verifier-bin")
+        os.mkdir(verifier_bin)
+        os.symlink(shutil.which("signify-openbsd") or shutil.which("signify"),
+                   os.path.join(verifier_bin, "signify-openbsd"))
+        unrelated = os.path.join(verifier_bin, "signify")
+        with open(unrelated, "w", encoding="utf-8") as fh:
+            fh.write("#!/bin/sh\nexit 73\n")
+        os.chmod(unrelated, 0o755)
+        official_lock = os.path.join(tmp, "official-verifier.lock.json")
+        run = subprocess.run([sys.executable, os.path.abspath(__file__), "fetch",
+                              "--manifest", missing_manifest, "--lock", official_lock,
+                              "--store", os.path.join(tmp, "official-verifier-store"),
+                              "--nextcloud", "34.0.4"], env=dict(os.environ, PATH=verifier_bin),
+                             capture_output=True, text=True, timeout=30)
+        check("cli fetch: signify-openbsd verifies real signatures before an unrelated signify executable (#141)",
+              run.returncode == 0 and read_lock(official_lock)["apps"]["territorio"]["tag"] == "v0.80.0")
         # ── #46: actualizar's own two legs — plan reads and names (--revisar's whole leg),
         #    actualizar fetches into a NEW lock the CLI promotes only on success ──
         # The server's posture: territorio at v0.79.0 (a v0.80.0 exists), suelo at v3.5.0
