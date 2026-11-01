@@ -98,8 +98,9 @@ ownership and grants Apache access through a named ACL; the no-root workflow liv
 `aps/INSTALLER.md` §14 (#142).
 
 Silent installation forwards `--sin-validar-dominio` through the existing wizard parser.
-The first completed wizard drive owns the configuration; later drives keep it while the seed
-converges the establishment. INSTALLER §4 documents the testbed and backup consequences (#158).
+The first completed wizard drive supplies the initial configuration. While Apache runs, later
+drives retain it and the seed converges the establishment. Preparatory and stopped-suite drives
+can apply configuration before startup. INSTALLER §4 documents the testbed and backup consequences (#158).
 
 **Why some messages remain in English.** Upstream PHP messages remain for configuration
 validation, authentication and ordinary container operations. Their sources are:

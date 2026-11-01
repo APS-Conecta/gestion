@@ -117,14 +117,15 @@ lines. If preflight reds on the domain probe, do
 3. Ingrese con esa contraseña y pulse «Iniciar». El paso 6 sigue el arranque hasta confirmar la
    instalación de Nextcloud. Los respaldos programados reinician las versiones actuales de la suite.
 
-El primer recorrido completado del asistente define la configuración de la instancia. Cuando
-la suite está en marcha, las invocaciones posteriores conservan esa configuración; el seed
-reconcilia el aprovisionamiento del establecimiento.
+El primer recorrido completado del asistente define la configuración inicial. Con la suite
+en marcha, las invocaciones posteriores conservan esos valores y el seed reconcilia el
+aprovisionamiento. Antes del inicio o con la suite detenida, el controlador puede aplicar
+la configuración; `--preparar` completa la preparación previa al arranque.
 
 - El banco de pruebas `scripts/aio-testbed.sh up` completa ese primer recorrido. Una instalación
   silenciosa posterior utiliza la configuración que dejó el banco.
-- Al repetir `install --respaldo R`, se conserva la ubicación de respaldo configurada inicialmente.
-  Los ajustes posteriores se realizan en la sección de respaldos del asistente.
+- Con la suite en marcha, repetir `install --respaldo R` conserva la ubicación de respaldo
+  configurada inicialmente. Ajuste esa ubicación desde la sección de respaldos del asistente.
 
 Para omitir la validación del dominio en la configuración inicial de una instalación silenciosa,
 añada `--sin-validar-dominio`. El comando comparte el controlador del asistente:
