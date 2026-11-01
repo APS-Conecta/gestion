@@ -442,3 +442,80 @@ certutil -hashfile aps-conecta-ca.der SHA256
   with «Trust this CA to identify websites».
 - **Android**: Settings → Security → Encryption & credentials → Install a certificate → CA
   certificate (the names vary by maker; a screen lock is required). The Nextcloud app trusts it.
+
+## 14. Provisionar como usuario de desarrollo
+
+Utilice una cuenta con acceso a Docker y una copia propia del repositorio. El servidor debe
+contar con las dependencias del instalador, OpenSSL 3, el paquete `acl` y los puertos de la
+suite disponibles. La preparación del sistema corresponde al administrador (§3).
+
+`APS_HOME` selecciona una ruta absoluta para el estado de la instalación. Al omitirla,
+los componentes conservan `/opt/aps-conecta` como ruta predeterminada.
+
+| Estado | Ruta dentro de `APS_HOME` |
+|---|---|
+| Contraseñas selladas | `credentials.txt` |
+| Resultado de ejecución | `estado.txt` |
+| Estado y opciones del asistente | `aio/`, `aio/opciones` |
+| Autoridad y certificados | `certificados/` |
+| Versiones instaladas | `apps.lock.json` |
+| Paquetes verificados | `apps/` |
+
+`AIO_STATE` tiene prioridad para el estado del asistente. `APS_APPS_LOCK`, `APS_APPS_STORE`
+y `APS_APPS_OPCIONES` tienen prioridad para sus respectivas rutas. `SUITE_CA` permite
+seleccionar explícitamente el certificado público usado por las verificaciones HTTPS.
+El banco de pruebas conserva `/tmp/aio-testbed` cuando se omiten `APS_HOME` y `AIO_STATE`.
+
+Clone el repositorio y configure la misma sesión para todos los pasos:
+
+```bash
+git clone https://github.com/APS-Conecta/gestion.git "$HOME/aps-conecta/gestion"
+cd "$HOME/aps-conecta/gestion"
+export APS_HOME="$HOME/.local/share/aps-conecta"
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Instale el verificador OpenBSD en su directorio de usuario desde el paquete de la distribución:
+
+```bash
+mkdir -p "$HOME/.local/bin"
+signer_dir="$(mktemp -d)"
+(
+  cd "$signer_dir" || exit 1
+  apt-get download signify-openbsd &&
+    dpkg-deb --extract ./signify-openbsd_*.deb unpacked || exit 1
+  binary=unpacked/usr/bin/signify-openbsd
+  [ -f "$binary" ] || binary=unpacked/bin/signify-openbsd
+  install -m 0755 "$binary" "$HOME/.local/bin/signify"
+)
+rm -rf "$signer_dir"
+command -v signify
+```
+
+Inicie la suite mediante el banco de pruebas existente:
+
+```bash
+bash scripts/aio-testbed.sh up
+```
+
+El banco usa la versión fijada en el script; `AIO_TEST_IMAGE` permite seleccionar otra versión
+de ensayo aprobada. El estado queda en `$APS_HOME/aio`. El usuario conserva la propiedad
+del certificado para renovarlo; una ACL autoriza su lectura al servicio Apache. Las claves de
+la autoridad permanecen privadas. Configure la confianza de los equipos según §13.
+
+Prepare el archivo del establecimiento y la planilla de usuarios según §5. En la misma sesión,
+indique sus rutas y el código DEIS del establecimiento:
+
+```bash
+read -r -p 'Archivo site.sh: ' site_file
+read -r -p 'Planilla de usuarios: ' roster_file
+read -r -p 'Código DEIS: ' center_code
+python3 scripts/provisionador.py --paso sitio --archivo "$site_file"
+python3 scripts/provisionador.py --paso usuarios --codigo "$center_code" --planilla "$roster_file"
+python3 scripts/provisionador.py --paso generar --codigo "$center_code" --resumen
+bash scripts/divergence.sh --gate
+```
+
+La ejecución verifica los paquetes firmados, provisiona el establecimiento y exige divergencia
+vacía. Consulte `$APS_HOME/estado.txt` y `.install.log` para revisar el resultado. Ejecute
+`bash scripts/aio-testbed.sh down` para retirar los datos y servicios del banco de pruebas.

@@ -3482,6 +3482,15 @@ source provisioning/phases/12-apps.sh
     state_path.write_text(json.dumps({'enabled':False, 'wired':0, 'calls':[]}))
     state = run()
     assert state['wired'] == 1, 'Phase 12 must install an optional app selected under APS_HOME'
+    alternate = root / 'alternate'
+    alternate.mkdir()
+    (alternate / 'opciones').write_text('spreed=0\n')
+    env['AIO_STATE'] = str(alternate)
+    state_path.write_text(json.dumps({'enabled':False, 'wired':0, 'calls':[]}))
+    assert run()['wired'] == 0, 'AIO_STATE must retain precedence over APS_HOME'
+    env['APS_APPS_OPCIONES'] = str(home / 'aio/opciones')
+    state_path.write_text(json.dumps({'enabled':False, 'wired':0, 'calls':[]}))
+    assert run()['wired'] == 1, 'APS_APPS_OPCIONES must retain precedence over AIO_STATE'
 print('Phase 12 wires fresh and existing official Talk installs and propagates installation/configuration failures')
 PY
 }
@@ -3732,14 +3741,14 @@ STUB
       ca="$tmp/home/certificados/ca/aps-conecta-ca.crt"; state=("APS_HOME=$tmp/home")
     fi
     for gate in smoke:/status.php office-smoke:/eurooffice/healthcheck; do
-    : > "$tmp/curl.log"
-    PATH="$tmp/bin:$PATH" CURL_LOG="$tmp/curl.log" HTTP_PORT=8180 env -u SUITE_CA "${state[@]}" \
-      bash "scripts/${gate%%:*}.sh" >/dev/null 2>&1
-    first="$(head -1 "$tmp/curl.log")"
-    case " $first " in
-      *" --cacert $ca "*" https://203.0.113.10${gate#*:} "*|*" https://203.0.113.10${gate#*:} "*" --cacert $ca "*) ;;
-      *) echo "public URL: ${gate%%:*}'s first curl is «$first», not https://203.0.113.10${gate#*:} with the CA" >&2; rm -rf "$tmp"; return 1 ;;
-    esac
+      : > "$tmp/curl.log"
+      PATH="$tmp/bin:$PATH" CURL_LOG="$tmp/curl.log" HTTP_PORT=8180 env -u SUITE_CA "${state[@]}" \
+        bash "scripts/${gate%%:*}.sh" >/dev/null 2>&1
+      first="$(head -1 "$tmp/curl.log")"
+      case " $first " in
+        *" --cacert $ca "*" https://203.0.113.10${gate#*:} "*|*" https://203.0.113.10${gate#*:} "*" --cacert $ca "*) ;;
+        *) echo "public URL: ${gate%%:*}'s first curl is «$first», not https://203.0.113.10${gate#*:} with the CA" >&2; rm -rf "$tmp"; return 1 ;;
+      esac
     done
   done
   rm -rf "$tmp"
