@@ -319,6 +319,7 @@ main() {
   [ -n "$addr" ] || die "no se pudo determinar la dirección de esta VM (¿red?)"
   printf 'Aceptación: suite %s desde %s · por %s\n\n' "$tag" "$VMA_REPO_URL" "${VMA_DOMINIO:+dominio }${VMA_DOMINIO:-IP}"
   if [ "$solo" = 0 ]; then
+    # Later healthy checks must not erase a failed installation stage.
     run_bootstrap "$tag" || {
       verdict fail "curl | sudo bash" "registro: $VMA_WORK/bootstrap.out"
       [ "$continuar" = 1 ] || { summarize; return 1; }
@@ -586,6 +587,10 @@ SH
     '[ "$main_rc" = 1 ] && grep -q "✗ el certificado del instalador" "$SHIM_STATE/main.out" && grep -q "^Veredicto:" "$SHIM_STATE/main.out"'
   printf 'fixture CA\n' > "$fixtures/certificados/ca/aps-conecta-ca.crt"
   printf '0\n' > "$SHIM_STATE/install.rc"
+  main_rc=0
+  ( CHECKS_OK=0; CHECKS_FAIL=0; CHECKS_SKIP=0; main --tag v1.0.0 --continuar ) > "$SHIM_STATE/main.out" 2>&1 || main_rc=$?
+  t "main: a completed installation with healthy checks remains green" 0 \
+    '[ "$main_rc" = 0 ] && grep -q "^Veredicto: .* · 0 ✗ · 0 −$" "$SHIM_STATE/main.out"'
   printf '73\n' > "$SHIM_STATE/bootstrap.rc"
   rm "$VMA_TREE/scripts/cleanboot-site.sh"
   main_rc=0

@@ -198,7 +198,7 @@ contiene las correcciones:
 El valor predeterminado de `tag` es `latest`, resuelto por redirección pública. El flujo
 ejecuta `scripts/vm-acceptance.sh --tag "$TAG" --sin-datos --continuar` en Ubuntu 24.04,
 con la IPv4 enrutada del ejecutor, las tres aplicaciones opcionales y el respaldo diario.
-La opción `--continuar` conserva las comprobaciones tras un fallo de instalación. Un
+La opción `--continuar` conserva las comprobaciones disponibles tras un fallo de instalación. Un
 resultado fallido conserva la marca roja del flujo; su resultado es informativo, como
 Clean boot. Consulte la tabla de veredictos y el artefacto `release-acceptance-*`.
 
@@ -206,12 +206,13 @@ El artefacto conserva los veredictos y, ante un fallo, la salida del arranque, e
 de los contenedores y el disco. Las credenciales y la configuración privada permanecen
 en el directorio privado del ensayo.
 
-**Por dominio, ejecución manual.** Ejecute:
+**Por dominio, seguimiento manual.** La aceptación por dominio se completa en #157.
+Conserve este comando para su verificación:
 
     curl -fsSL https://github.com/APS-Conecta/gestion/raw/main/scripts/vm-acceptance.sh \
       | sudo bash -s -- --tag vX.Y.Z --dominio su.dominio
 
-Sin `--tag`, el comando selecciona `latest` mediante redirección. El ensayo comprueba
+Sin `--tag`, el comando selecciona `latest` mediante redirección. La ejecución por IP comprueba
 el arranque verificado, `aps-conecta estado`, la conexión HTTPS con su cadena de confianza,
 el acceso de una persona de la planilla mediante OCS, las aplicaciones de `apps.json`,
 las opciones registradas y `actualizar --revisar` sin escrituras. La salida identifica cada
