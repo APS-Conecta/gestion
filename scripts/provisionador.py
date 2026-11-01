@@ -5544,11 +5544,18 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                 missing_site = stepped(["--paso", "sitio", "--archivo", "missing site.sh"])
                 missing_roster = stepped(["--paso", "usuarios", "--codigo", "113314",
                                           "--planilla", "missing roster.csv"])
+                os.makedirs(os.path.join(tmp, "path-target", "child"))
+                os.symlink(os.path.join(tmp, "path-target", "child"), "path-link")
+                with open(os.path.join(tmp, "path-target", "linked-site.sh"), "wb") as fh:
+                    fh.write(b"\xff")
+                linked_site = stepped(["--paso", "sitio", "--archivo", "path-link/../linked-site.sh"])
             finally:
                 os.chdir(lookup)
             check("--paso: unreadable relative site and roster paths name the actual lookup directory (#141)",
                   missing_site == (1, f"✗ no se pudo leer el sitio {tmp}/missing site.sh: no existe\n")
                   and missing_roster == (1, f"✗ no se pudo leer la planilla {tmp}/missing roster.csv: no existe\n"))
+            check("--paso: displaying an absolute input path preserves symlink and parent traversal semantics (#141)",
+                  linked_site == (1, f"✗ el sitio {tmp}/path-link/../linked-site.sh no está en UTF-8\n"))
             rcs = [stepped(a)[0] for a in (["--paso"], ["--paso", "nada", "--codigo", "113314"],
                                            ["--otra"], ["--paso", "usuarios", "--codigo", "113314"],
                                            ["--paso", "generar", "--codigo", "--revision"])]
