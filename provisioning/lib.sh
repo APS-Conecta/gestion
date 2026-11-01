@@ -373,7 +373,7 @@ ensure_release_app() {  # APPID ROW — install the release the lock names, from
     # through the app's own migrations).
     if [ -n "$cur" ]; then
       occ_sh "rm -rf custom_apps/$app" \
-        || { log "FAILED to clear $app before re-imposing $want"; return 1; }
+        || { log "FAILED $app — could not clear the installed tree before re-imposing $want"; return 1; }
     fi
     if nc_exec -i --user www-data -- \
          tar xzf - -C /var/www/html/custom_apps < "$tgz"; then
@@ -383,13 +383,13 @@ ensure_release_app() {  # APPID ROW — install the release the lock names, from
         log "app $app ${cur:+$cur }-> $want unpacked from release $tag"
       fi
     else
-      log "FAILED to unpack $app from release $tag"; return 1
+      log "FAILED $app — could not unpack release $tag"; return 1
     fi
     if [ -n "$cur" ]; then
       if occ upgrade --no-interaction >/dev/null 2>&1; then
         log "app $app schema reconciled to $want (occ upgrade)"
       else
-        log "FAILED to reconcile $app to $want — 'occ upgrade' errored; instance may be mid-upgrade"
+        log "FAILED $app — could not reconcile $want: 'occ upgrade' errored; instance may be mid-upgrade"
         return 1
       fi
       CONF_CACHE=""   # installed_version moved under it
