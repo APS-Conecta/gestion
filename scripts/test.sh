@@ -287,6 +287,47 @@ PY
 }
 check nextcloud_database_secret_cases
 
+backup_secret_argv_cases() {
+  python3 - <<'PY'
+import json, os, pathlib, shutil, subprocess, sys, tempfile
+source = pathlib.Path('Containers/borgbackup/backupscript.sh').read_text()
+start = source.index('    # Reset the AIO password to the currently used one')
+end = source.index('    # Reset the datadir', start)
+script = source.split('# Functions', 1)[0] + '\n' + source[start:end]
+script = script.replace('/nextcloud_aio_volumes/nextcloud_aio_mastercontainer/data/configuration.json', '"$CASE_CONFIG"')
+with tempfile.TemporaryDirectory(prefix='aps backup secret ') as directory:
+    root = pathlib.Path(directory)
+    config, calls = root / 'config.json', root / 'calls.jsonl'
+    config.write_text(json.dumps({'password': 'old', 'retained': 'keep'}))
+    wrapper = root / 'jq'
+    wrapper.write_text('#!' + sys.executable + '\n' + '''
+import json, os, sys
+with open(os.environ['CASE_CALLS'], 'a') as output:
+    output.write(json.dumps(sys.argv[1:]) + '\\n')
+os.execv(os.environ['REAL_JQ'], [os.environ['REAL_JQ'], *sys.argv[1:]])
+''')
+    wrapper.chmod(0o755)
+    password = "synthetic backup password ' \" \\ $ ;\nnext line"
+    env = dict(os.environ, PATH=directory+':'+os.environ['PATH'], REAL_JQ=shutil.which('jq'),
+               CASE_CONFIG=str(config), CASE_CALLS=str(calls), AIO_PASSWORD=json.dumps(password), AIO_LOG_LEVEL='debug')
+    result = subprocess.run(['bash', '-c', script], env=env, capture_output=True, text=True, timeout=5)
+    assert result.returncode == 0
+    records = [json.loads(line) for line in calls.read_text().splitlines()]
+    assert all('synthetic backup password' not in word for call in records for word in call), 'Backup password entered process arguments'
+    assert json.loads(config.read_text()) == {'password': password, 'retained': 'keep'}
+    assert 'synthetic backup password' not in result.stdout + result.stderr
+    startup = pathlib.Path('Containers/borgbackup/start.sh').read_text().split('export BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK', 1)[0]
+    startup += '\npython3 -c \'import os; assert os.environ["BORG_PASSPHRASE"] == os.environ["CASE_EXPECTED"]\'\n'
+    for restored in ('', password + ' restored'):
+        result = subprocess.run(['bash', '-c', startup],
+                                env=dict(env, BORG_PASSWORD=password, BACKUP_RESTORE_PASSWORD=restored, CASE_EXPECTED=restored or password),
+                                capture_output=True, text=True, timeout=5)
+        assert result.returncode == 0
+        assert 'synthetic backup password' not in result.stdout + result.stderr
+PY
+}
+check backup_secret_argv_cases
+
 aia_private_temp_cases() {
   python3 - <<'PY'
 import json, os, pathlib, subprocess, tempfile, uuid
