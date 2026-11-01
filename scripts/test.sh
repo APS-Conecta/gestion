@@ -328,6 +328,49 @@ PY
 }
 check backup_secret_argv_cases
 
+talk_turn_secret_cases() {
+  python3 - <<'PY'
+import json, os, pathlib, shutil, subprocess, sys, tempfile
+source = pathlib.Path('Containers/talk/start.sh').read_text()
+start = source.index('# Configure Janus to use the local TURN server')
+end = source.index('# Janus and eTURNAL share', start)
+script = source[start:end] + '\nprintf "%s\\n" "$JANUS_TURN_PWD"\n'
+with tempfile.TemporaryDirectory(prefix='aps turn secret ') as directory:
+    root = pathlib.Path(directory)
+    capture = root / 'calls.jsonl'
+    for program in ('openssl', 'erl'):
+        path = root / program
+        path.write_text('#!' + sys.executable + '\n' + '''
+import json, os, pathlib, sys
+program = pathlib.Path(sys.argv[0]).name
+with open(os.environ['CASE_CALLS'], 'a') as output:
+    output.write(json.dumps({'program': program, 'argv': sys.argv[1:],
+                            'secret': os.environ.get('TURN_SECRET'), 'user': os.environ.get('JANUS_TURN_USER')}) + '\\n')
+if program == 'openssl': os.execv(os.environ['REAL_OPENSSL'], [os.environ['REAL_OPENSSL'], *sys.argv[1:]])
+if os.environ.get('CASE_FAIL') == '1': sys.exit(1)
+print('fixture-derived-turn-password')
+''')
+        path.chmod(0o755)
+    secret = "synthetic TURN secret ' \" \\ $ ;\nnext line"
+    env = dict(os.environ, PATH=directory+':'+os.environ['PATH'], CASE_CALLS=str(capture),
+               REAL_OPENSSL=shutil.which('openssl'), TURN_SECRET=secret)
+    for failure in ('0', '1'):
+        capture.unlink(missing_ok=True)
+        result = subprocess.run(['bash', '-x', '-c', script], env=dict(env, CASE_FAIL=failure),
+                                capture_output=True, text=True, timeout=5)
+        calls = [json.loads(line) for line in capture.read_text().splitlines()]
+        assert all(secret not in word for call in calls for word in call['argv']), 'TURN shared secret entered process arguments'
+        clients = [call for call in calls if call['program'] == 'erl']
+        assert len(clients) == 1 and clients[0]['secret'] == secret
+        assert clients[0]['user'] and 'os:getenv("TURN_SECRET")' in clients[0]['argv'][-1]
+        assert (result.returncode == 0) == (failure == '0')
+        assert ('fixture-derived-turn-password' in result.stdout) == (failure == '0')
+        assert 'synthetic TURN secret' not in result.stdout + result.stderr
+        assert 'fixture-derived-turn-password' not in result.stderr
+PY
+}
+check talk_turn_secret_cases
+
 aia_private_temp_cases() {
   python3 - <<'PY'
 import json, os, pathlib, subprocess, tempfile, uuid
