@@ -403,7 +403,10 @@ def resolve(row, major, lock_entry=None, use_lock=True, token=None):
         if floor is not None and order(pin) < order(floor):
             raise Refusal(f"la versión fijada «{pin}» es anterior a la instalada «{floor}» — "
                           "se conserva la versión instalada")
-        return pin, None
+        inspected = inspect_release(row, pin, major)
+        if not inspected["compatible"]:
+            raise Refusal(f"la versión fijada «{pin}» es incompatible con Nextcloud {major}")
+        return pin, inspected["entry"]
     seen, latest = set(), latest_tag(row["repo"])
     if latest is not None:
         seen.add(latest)
