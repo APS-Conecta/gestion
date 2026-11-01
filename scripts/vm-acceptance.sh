@@ -565,6 +565,7 @@ SH
   ( CHECKS_OK=0; CHECKS_FAIL=0; CHECKS_SKIP=0; main --tag v1.0.0 --continuar ) > "$SHIM_STATE/main.out" 2>&1 || main_rc=$?
   t "main: a failed installation stays red when later checks pass" 0 \
     '[ "$main_rc" = 1 ] && grep -q "✗ la instalación silenciosa" "$SHIM_STATE/main.out" && grep -q "^Veredicto:" "$SHIM_STATE/main.out"'
+  printf '0\n' > "$SHIM_STATE/install.rc"
 
   # resolve_tag: the redirect resolves, the failure dies — both without the API
   cat > "$shims/curl" <<'SH'
