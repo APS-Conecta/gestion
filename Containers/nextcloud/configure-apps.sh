@@ -248,9 +248,16 @@ startup_recording() {
             rc=0; startup_wait "$TALK_RECORDING_HOST" 1234 "Talk Recording" || rc=$?
             [ "$rc" -ne 2 ] || return 0
             [ "$rc" -eq 0 ] || return "$rc"
-            # TODO: migrate to occ command if that becomes available
-            RECORDING_SERVERS_STRING="{\"servers\":[{\"server\":\"http://$TALK_RECORDING_HOST:1234/\",\"verify\":true}],\"secret\":\"$RECORDING_SECRET\"}"
-            startup_app_set spreed recording_servers --value="$RECORDING_SERVERS_STRING" || return 1
+            local -x RECORDING_SERVERS_STRING
+            RECORDING_SERVERS_STRING="$(php -r '
+                $secret = getenv("RECORDING_SECRET");
+                if ($secret === false || $secret === "") { exit(1); }
+                echo json_encode(["servers" => [["server" => $argv[1], "verify" => true]],
+                    "secret" => $secret], JSON_THROW_ON_ERROR);
+            ' "http://$TALK_RECORDING_HOST:1234/")" || {
+                echo "app-startup: cannot prepare recording configuration" >&2; return 1;
+            }
+            startup_secret_set apps RECORDING_SERVERS_STRING spreed recording_servers || return 1
         else
             if [ "$REMOVE_DISABLED_APPS" = yes ]; then
                 php /var/www/html/occ config:app:delete spreed recording_servers || return 1
