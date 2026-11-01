@@ -109,6 +109,9 @@ SH
   printf '#!/bin/sh\nprintf "Avail\\n142\\n"\n' > "$tmp/bin/df"
   printf '#!/bin/sh\necho 1\n' > "$tmp/bin/seq"
   chmod +x "$tmp/bin/"*
+  out="$(PATH="$tmp/bin:$PATH" APS_HOME="$tmp/home" bash scripts/aio-testbed.sh status 2>&1)" || true
+  [[ "$out" == *"no secrets in $tmp/home/aio"* ]] \
+    || { echo "testbed status ignores APS_HOME: $out" >&2; rm -rf "$tmp"; return 1; }
   out="$(PATH="$tmp/bin:$PATH" CASE_ROOT="$tmp" CASE_PYTHON="$py" APS_HOME="$tmp/home" \
     AIO_POLL=0 AIO_TEST_IMAGE=ghcr.io/aps-conecta/all-in-one:v9.9.9 \
     bash "$tmp/scripts/bed.sh" 2>&1)" || true
