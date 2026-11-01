@@ -312,8 +312,18 @@ startup_fts() {
         [ "$rc" -ne 2 ] || return 0
         [ "$rc" -eq 0 ] || return "$rc"
         local FULLTEXTSEARCH_PROTOCOL="${FULLTEXTSEARCH_PROTOCOL:-http}"
+        local -x FULLTEXTSEARCH_ELASTIC_HOST
+        FULLTEXTSEARCH_ELASTIC_HOST="$(php -r '
+            $password = getenv("FULLTEXTSEARCH_PASSWORD");
+            if ($password === false || $password === "") { exit(1); }
+            echo $argv[1] . "://" . rawurlencode($argv[2]) . ":" . rawurlencode($password)
+                . "@" . $argv[3] . ":" . $argv[4];
+        ' "$FULLTEXTSEARCH_PROTOCOL" "$FULLTEXTSEARCH_USER" "$FULLTEXTSEARCH_HOST" "$FULLTEXTSEARCH_PORT")" || {
+            echo "app-startup: cannot prepare search configuration" >&2; return 1;
+        }
         php /var/www/html/occ fulltextsearch:configure '{"search_platform":"OCA\\FullTextSearch_Elasticsearch\\Platform\\ElasticSearchPlatform"}' >/dev/null 2>&1 || { echo "app-startup: fulltext configuration failed" >&2; return 1; }
-        php /var/www/html/occ fulltextsearch_elasticsearch:configure "{\"elastic_host\":\"$FULLTEXTSEARCH_PROTOCOL://$FULLTEXTSEARCH_USER:$FULLTEXTSEARCH_PASSWORD@$FULLTEXTSEARCH_HOST:$FULLTEXTSEARCH_PORT\",\"elastic_index\":\"$FULLTEXTSEARCH_INDEX\"}" >/dev/null 2>&1 || { echo "app-startup: fulltext configuration failed" >&2; return 1; }
+        startup_secret_set apps FULLTEXTSEARCH_ELASTIC_HOST fulltextsearch_elasticsearch elastic_host || return 1
+        php /var/www/html/occ fulltextsearch_elasticsearch:configure "{\"elastic_index\":\"$FULLTEXTSEARCH_INDEX\"}" >/dev/null 2>&1 || { echo "app-startup: fulltext configuration failed" >&2; return 1; }
         php /var/www/html/occ files_fulltextsearch:configure "{\"files_pdf\":true,\"files_office\":true}" >/dev/null 2>&1 || { echo "app-startup: fulltext configuration failed" >&2; return 1; }
 
         # Do the index
