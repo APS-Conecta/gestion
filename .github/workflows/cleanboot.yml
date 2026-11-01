@@ -1586,16 +1586,26 @@ jobs:
               opener = urllib.request.build_opener(
                   urllib.request.HTTPSHandler(context=ssl.create_default_context(cafile=sys.argv[2])),
                   RejectRedirects())
+              cases = []
               for prefix in ('Sectores/', 'Unidades/'):
                   folder = next(folder for folder in folders if folder['mountPoint'].startswith(prefix)
-                      and any(group != 'cat-jefaturas' and (int(permissions) & 7) == 7
+                      and any(group != 'cat-jefaturas' and (int(permissions) & 15) == 15
                               for group, permissions in folder['groups_list'].items()))
                   group = next(group for group, permissions in folder['groups_list'].items()
-                               if group != 'cat-jefaturas' and (int(permissions) & 7) == 7)
+                               if group != 'cat-jefaturas' and (int(permissions) & 15) == 15)
+                  cases.append((folder, group, group, 201))
+              unit = next(folder for folder in folders if folder['mountPoint'].startswith('Unidades/')
+                          and folder['groups_list'].get('cat-jefaturas') == 1
+                          and 'all-staff' not in folder['groups_list'])
+              writer = next(group for group, permissions in unit['groups_list'].items()
+                            if group != 'cat-jefaturas' and (int(permissions) & 15) == 15)
+              cases += [(unit, 'cat-jefaturas', writer, 403), (unit, None, writer, 404)]
+              for folder, group, writer, expected in cases:
                   user = 'aps-198-' + secrets.token_hex(6)
                   password = secrets.token_urlsafe(32)
                   stage = 'creating a fresh member for ' + folder['mountPoint']
-                  occ('user:add', '--password-from-env', '--group=all-staff', '--group=' + group,
+                  groups = ['--group=all-staff'] + (['--group=' + group] if group else [])
+                  occ('user:add', '--password-from-env', *groups,
                       '--display-name=Prueba de carga inicial', user, password=password)
                   authorization = 'Basic ' + base64.b64encode((user + ':' + password).encode()).decode('ascii')
                   base = sys.argv[1] + '/remote.php/dav/files/' + user + '/'
@@ -1621,19 +1631,26 @@ jobs:
                       stage = 'the first WebDAV PUT into ' + folder['mountPoint']
                       status, _ = dav('PUT', url, marker, {'Content-Type': 'text/plain'})
                       assert methods == ['PUT']
-                      assert status == 201, f'first PUT returned {status}, expected 201'
-                      stage = 'reading the exact uploaded bytes'
-                      status, saved = dav('GET', url)
-                      assert status == 200 and saved == marker
-                      stage = 'removing the owned upload'
-                      status, _ = dav('DELETE', url)
-                      assert status == 204
+                      assert status == expected, f'first PUT returned {status}, expected {expected}'
+                      if expected == 201:
+                          stage = 'reading the exact uploaded bytes'
+                          status, saved = dav('GET', url)
+                          assert status == 200 and saved == marker
+                          stage = 'removing the owned upload'
+                          status, _ = dav('DELETE', url)
+                          assert status == 204
+                      else:
+                          stage = 'checking that the denied upload is absent'
+                          status, _ = dav('GET', url)
+                          assert status == 404
                       removed = True
                   except Exception as error:
-                      failure = f'{stage}: {error}'
+                      failure = str(error)
                   finally:
                       try:
                           if not removed:
+                              if expected != 201:
+                                  occ('group:adduser', writer, user)
                               status, _ = dav('PROPFIND', base, headers={'Depth': '1'})
                               assert status == 207
                               status, saved = dav('GET', url)
@@ -1652,10 +1669,15 @@ jobs:
                               failure = (failure + '; ' if failure else '') + 'owned account cleanup failed'
                   if failure:
                       raise RuntimeError(failure)
-                  print('PASS: first PUT returns 201 in ' + folder['mountPoint'] + '; bytes match and owned fixtures are removed')
+                  print(f'PASS: first PUT returns {expected} in ' + folder['mountPoint'] + '; result verified and owned fixtures removed')
           except Exception as error:
               raise SystemExit(f'FAIL: {stage} ({error})') from None
           PYNESTED
+      - name: Official DAV source retains its native integrity
+        run: |
+          set -euo pipefail
+          docker exec aps-conecta-nextcloud test -s /var/www/html/apps/dav/appinfo/signature.json
+          docker exec --user www-data aps-conecta-nextcloud php /var/www/html/occ integrity:check-app dav
       - name: Staff uploads are scanned and their contents can be searched
         run: |
           set -euo pipefail
