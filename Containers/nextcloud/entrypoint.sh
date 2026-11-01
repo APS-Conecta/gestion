@@ -3,6 +3,14 @@
 # shellcheck source=Containers/nextcloud/configure-apps.sh
 source /configure-apps.sh
 
+install_nextcloud() (
+    set +x
+    set -o pipefail
+    php -r 'echo json_encode(["admin-pass" => getenv("ADMIN_PASSWORD"),
+        "database-pass" => getenv("POSTGRES_PASSWORD")], JSON_THROW_ON_ERROR);' \
+        | php /occ-install.php "$@"
+)
+
 # version_greater A B returns whether A > B
 version_greater() {
     [ "$(printf '%s\n' "$@" | sort -t '.' -n -k1,1 -k2,2 -k3,3 -k4,4 | head -n 1)" != "$1" ]
@@ -336,7 +344,7 @@ if ! [ -f "$NEXTCLOUD_DATA_DIR/skip.update" ]; then
             exec > >(tee -i "/var/www/html/data/install.log")
             exec 2>&1
 
-            INSTALL_OPTIONS=(-n --admin-user "$ADMIN_USER" --admin-pass "$ADMIN_PASSWORD")
+            INSTALL_OPTIONS=(-n --admin-user "$ADMIN_USER")
             if [ -n "${NEXTCLOUD_DATA_DIR}" ]; then
                 INSTALL_OPTIONS+=(--data-dir "$NEXTCLOUD_DATA_DIR")
             fi
@@ -361,13 +369,12 @@ EOF
                 --database "$DATABASE_TYPE"
                 --database-name "$POSTGRES_DB"
                 --database-user "$POSTGRES_USER"
-                --database-pass "$POSTGRES_PASSWORD"
                 --database-host "$POSTGRES_HOST"
                 --database-port "$POSTGRES_PORT"
             )
             
             echo "Starting Nextcloud installation..."
-            if ! php /var/www/html/occ maintenance:install "${INSTALL_OPTIONS[@]}"; then
+            if ! install_nextcloud /var/www/html/occ maintenance:install "${INSTALL_OPTIONS[@]}"; then
                 echo "Installation of Nextcloud failed!"
                 touch "$NEXTCLOUD_DATA_DIR/install.failed"
                 exit 1
@@ -602,10 +609,6 @@ cp "$SOURCE_LOCATION/config/aio.config.php" /var/www/html/config/aio.config.php
 php /var/www/html/occ config:system:delete one-click-instance
 php /var/www/html/occ config:system:delete one-click-instance.user-limit
 php /var/www/html/occ config:system:delete one-click-instance.link
-if [ -n "$SUBSCRIPTION_KEY" ] && [ -z "$(php /var/www/html/occ config:app:get support potential_subscription_key)" ]; then
-    php /var/www/html/occ config:app:set support potential_subscription_key --value="$SUBSCRIPTION_KEY"
-    php /var/www/html/occ config:app:delete support last_check
-fi
 if [ -n "$NEXTCLOUD_DEFAULT_QUOTA" ]; then
     if [ "$NEXTCLOUD_DEFAULT_QUOTA" = "unlimited" ]; then
         php /var/www/html/occ config:app:delete files default_quota
@@ -636,9 +639,6 @@ if [ -n "$NEXTCLOUD_SKELETON_DIRECTORY" ]; then
     else
         php /var/www/html/occ config:system:set skeletondirectory --value="$NEXTCLOUD_SKELETON_DIRECTORY"
     fi
-fi
-if [ -n "$SERVERINFO_TOKEN" ] && [ -z "$(php /var/www/html/occ config:app:get serverinfo token)" ]; then
-    php /var/www/html/occ config:app:set serverinfo token --value="$SERVERINFO_TOKEN"
 fi
 # Set maintenance window so that no warning is shown in the admin overview
 if [ -z "$NEXTCLOUD_MAINTENANCE_WINDOW" ]; then
@@ -707,23 +707,6 @@ fi
 
 # Managed apps share the same presence, enable and bounded configuration policy.
 configure_startup_apps || exit 1
-
-# Imaginary
-if [ "$IMAGINARY_ENABLED" = 'yes' ]; then
-    php /var/www/html/occ config:system:set enabledPreviewProviders 0 --value="OC\\Preview\\Imaginary"
-    php /var/www/html/occ config:system:set enabledPreviewProviders 23 --value="OC\\Preview\\ImaginaryPDF"
-    php /var/www/html/occ config:system:set preview_imaginary_url --value="http://$IMAGINARY_HOST:9000"
-    php /var/www/html/occ config:system:set preview_imaginary_key --value="$IMAGINARY_SECRET"
-else
-    if [ -n "$(php /var/www/html/occ config:system:get preview_imaginary_url)" ]; then
-        php /var/www/html/occ config:system:delete enabledPreviewProviders 0
-        php /var/www/html/occ config:system:delete preview_imaginary_url
-        php /var/www/html/occ config:system:delete enabledPreviewProviders 20
-        php /var/www/html/occ config:system:delete enabledPreviewProviders 21
-        php /var/www/html/occ config:system:delete enabledPreviewProviders 22
-        php /var/www/html/occ config:system:delete enabledPreviewProviders 23
-    fi
-fi
 
 # Remove the update skip file always
 rm -f "$NEXTCLOUD_DATA_DIR"/skip.update

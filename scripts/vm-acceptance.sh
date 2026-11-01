@@ -2,11 +2,8 @@
 # SPDX-FileCopyrightText: 2026 APS Conecta
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# The #54 acceptance, as one command on a scratch Ubuntu 24.04 VM: the REAL one-liner from a
-# REAL release URL with no token, then the ticket's own checks. The rehearsal (Images + Clean
-# boot by dispatch, aps/RELEASING.md §4) is the CI half of «the rehearsal is green»; this
-# script is the VM half — it proves what CI cannot: the published bootstrap, fetched exactly
-# the way an establishment fetches it, on a pristine machine.
+# Release acceptance on Ubuntu 24.04: the public bootstrap, silent install and
+# operator-visible verdicts. acceptance.yml runs this same command in CI.
 #
 #   sudo bash scripts/vm-acceptance.sh [--tag vX.Y.Z|latest] [--repo-url URL]
 #                                      [--dominio D] [--sin-datos] [--solo-chequeos] [--continuar]
@@ -14,10 +11,10 @@
 #
 #   --tag        the suite release to install (default: latest — resolved by redirect, no token)
 #   --repo-url   where releases live (default: the public suite repo)
-#   --dominio    install by domain D (its DNS must reach this VM on 443; the certificate is
-#                ACME's, as upstream). Without it: install by this VM's own IPv4, with the
+#   --dominio    install by domain D (its DNS must reach this host on 443; acceptance pending #157).
+#                Without it: install by this host's routed IPv4, with the
 #                installer's own certificate.
-#   --sin-datos  skip the national data masters (a small VM's disk; Clean boot's own posture)
+#   --sin-datos  skip the national data masters
 #   --sin-respaldo  drive the wizard without the daily backup (criterion 5 will red: actualizar
 #                refuses without a configured backup, by design) — the honest no-backup posture
 #   --solo-chequeos  re-run only the checks against an already-installed VM
@@ -319,13 +316,28 @@ main() {
   [ -n "$addr" ] || die "no se pudo determinar la dirección de esta VM (¿red?)"
   printf 'Aceptación: suite %s desde %s · por %s\n\n' "$tag" "$VMA_REPO_URL" "${VMA_DOMINIO:+dominio }${VMA_DOMINIO:-IP}"
   if [ "$solo" = 0 ]; then
-    run_bootstrap "$tag" || { [ "$continuar" = 1 ] || exit 1; }
+    # Later healthy checks must not erase a failed installation stage.
+    run_bootstrap "$tag" || {
+      verdict fail "curl | sudo bash" "registro: $VMA_WORK/bootstrap.out"
+      [ "$continuar" = 1 ] || { summarize; return 1; }
+    }
     bash "$VMA_TREE/scripts/cleanboot-site.sh" "$addr" "$VMA_WORK" \
-      || die "no se pudo generar el sitio y la planilla de prueba"
-    silent_install "$VMA_WORK/site.sh" "$VMA_WORK/usuarios.csv" || { [ "$continuar" = 1 ] || exit 1; }
+      || {
+        verdict fail "el sitio y la planilla de prueba" "generación pendiente tras el arranque"
+        summarize
+        return 1
+      }
+    silent_install "$VMA_WORK/site.sh" "$VMA_WORK/usuarios.csv" || {
+      verdict fail "la instalación silenciosa" "registro privado: $VMA_WORK/install.out"
+      [ "$continuar" = 1 ] || { summarize; return 1; }
+    }
   fi
   sudo install -m 0644 "$VMA_ROOT/certificados/ca/aps-conecta-ca.crt" "$ca" 2>/dev/null \
-    || die "no se pudo copiar la CA del instalador ($VMA_ROOT/certificados/ca/)"
+    || {
+      verdict fail "el certificado del instalador" "no se pudo copiar la CA de $VMA_ROOT/certificados/ca/; comprobaciones HTTPS pendientes"
+      summarize
+      return 1
+    }
   printf '\n== Los cinco criterios del tiquete ==\n'
   if check_bootstrap "$tag"; then verdict ok "curl | sudo bash" "firma verificada, suite $tag en $VMA_ROOT/instalador"
   else verdict fail "curl | sudo bash" "el registro no muestra el camino verificado ($VMA_WORK/bootstrap.out)"; fi
@@ -367,6 +379,8 @@ self_test() {
 case "$1" in
   estado) exit "$(cat "$SHIM_STATE/estado.rc" 2>/dev/null || echo 0)" ;;
   install) printf '%s\n' "$@" > "$SHIM_STATE/install.args"
+            rc="$(cat "$SHIM_STATE/install.rc" 2>/dev/null || echo 0)"
+            [ "$rc" = 0 ] || exit "$rc"
             printf 'INSTALACIÓN: ✓ — (shim)\n'; exit 0 ;;
   actualizar) if [ -x "$SHIM_STATE/revisar.hook" ]; then "$SHIM_STATE/revisar.hook"; fi
               cat "$SHIM_STATE/revisar.out" 2>/dev/null
@@ -481,7 +495,7 @@ PY
   printf 'yes\n' > "$SHIM_STATE/occ.calendar.enabled"
   t "manifest: the walk reads every row" 0 '[ "$(manifest_rows | wc -l)" -ge 12 ]'
   t "manifest: every row answers its source" 0 'manifest_rows | grep -qxP "\w+\t(own|fork|store)\t[01]" || false'
-  t "apps walk: a missing signed Talk release is a failure verdict" 0 'check_apps "$VMA_APPS" 10.0.0.9 "$VMA_WORK/ca.crt" 2>/dev/null | grep "^  ✗ app spreed — " >/dev/null'
+  t "apps walk: a missing official Talk package is a failure verdict" 0 'check_apps "$VMA_APPS" 10.0.0.9 "$VMA_WORK/ca.crt" 2>/dev/null | grep "^  ✗ app spreed — " >/dev/null'
   t "status.php: green through the CA" 0 'check_status_php 10.0.0.9 "$VMA_WORK/ca.crt"'
   t "user login: green on the OCS body" 0 'check_user_login 10.0.0.9 "$VMA_WORK/ca.crt" ana.prueba CAFE-secret'
   printf '{"ocs":{"data":{"id":"otra.persona"}}}\n' > "$SHIM_STATE/user.body"
@@ -517,6 +531,69 @@ HOOK
   check_actualizar_revisar >/dev/null
   t "revisar: red verdict when the lock moved" 0 '[ "$CHECKS_FAIL" = 1 ]'
   rm "$SHIM_STATE/revisar.hook"
+
+  # Drive the real main path with a failed command and otherwise healthy checks.
+  python3 - "$VMA_TREE/apps.json" "$fixtures" "$SHIM_STATE" <<'PY'
+import hashlib, json, pathlib, sys
+manifest, root, state = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]), pathlib.Path(sys.argv[3])
+lock = {"nextcloud": "34.0.5", "apps": {}}
+for app in json.loads(manifest.read_text()):
+    app_id = app["id"]
+    (state / f"occ.{app_id}.installed_version").write_text("1.2.0\n")
+    (state / f"occ.{app_id}.enabled").write_text("yes\n")
+    if app["source"] != "store":
+        package = root / "apps" / app_id / "v1.2.0.tar.gz"
+        package.parent.mkdir(parents=True, exist_ok=True)
+        package.write_bytes(b"verified fixture package\n")
+        lock["apps"][app_id] = {"source": app["source"], "tag": "v1.2.0", "version": "1.2.0",
+                                "sha256": hashlib.sha256(package.read_bytes()).hexdigest()}
+(root / "apps.lock.json").write_text(json.dumps(lock))
+PY
+  printf 'farmacia=1\nestadistica=1\ntotem=1\n' > "$fixtures/aio/opciones"
+  printf 'fixture CA\n' > "$fixtures/certificados/ca/aps-conecta-ca.crt"
+  printf 'Plan de actualización (modo --revisar: nada se escribe ni se cambia)\n' > "$SHIM_STATE/revisar.out"
+  printf '#!/bin/sh\nexit 0\n' > "$VMA_TREE/scripts/cleanboot-site.sh"
+  cat > "$SHIM_STATE/bootstrap.sh" <<'SH'
+#!/bin/sh
+printf 'firma verificada (signify, clave pública del proyecto)\n'
+printf 'Suite v1.0.0 en %s/instalador (paquete verificado en %s/paquete)\n' "$VMA_ROOT" "$VMA_ROOT"
+exit "$(cat "$SHIM_STATE/bootstrap.rc" 2>/dev/null || echo 0)"
+SH
+  cp "$shims/curl" "$SHIM_STATE/healthy-curl"
+  cat > "$shims/curl" <<'SH'
+#!/bin/sh
+case "$*" in
+  */releases/download/*-install.sh*) cat "$SHIM_STATE/bootstrap.sh" ;;
+  *) exec "$SHIM_STATE/healthy-curl" "$@" ;;
+esac
+SH
+  printf '#!/bin/sh\necho 30G\n' > "$shims/df"
+  printf '#!/bin/sh\necho 0\n' > "$shims/id"
+  printf '#!/bin/sh\necho "1.1.1.1 dev eth0 src 10.0.0.9"\n' > "$shims/ip"
+  printf '#!/bin/sh\nexit 0\n' > "$shims/ss"
+  chmod +x "$shims"/* "$SHIM_STATE/healthy-curl"
+  printf '7\n' > "$SHIM_STATE/install.rc"
+  local main_rc=0
+  ( CHECKS_OK=0; CHECKS_FAIL=0; CHECKS_SKIP=0; main --tag v1.0.0 --continuar ) > "$SHIM_STATE/main.out" 2>&1 || main_rc=$?
+  t "main: a failed installation stays red when later checks pass" 0 \
+    '[ "$main_rc" = 1 ] && grep -q "✗ la instalación silenciosa" "$SHIM_STATE/main.out" && grep -q "^Veredicto:" "$SHIM_STATE/main.out"'
+  rm "$fixtures/certificados/ca/aps-conecta-ca.crt"
+  main_rc=0
+  ( CHECKS_OK=0; CHECKS_FAIL=0; CHECKS_SKIP=0; main --tag v1.0.0 --continuar ) > "$SHIM_STATE/main.out" 2>&1 || main_rc=$?
+  t "main: an installation without its CA still prints failed verdicts" 0 \
+    '[ "$main_rc" = 1 ] && grep -q "✗ el certificado del instalador" "$SHIM_STATE/main.out" && grep -q "^Veredicto:" "$SHIM_STATE/main.out"'
+  printf 'fixture CA\n' > "$fixtures/certificados/ca/aps-conecta-ca.crt"
+  printf '0\n' > "$SHIM_STATE/install.rc"
+  main_rc=0
+  ( CHECKS_OK=0; CHECKS_FAIL=0; CHECKS_SKIP=0; main --tag v1.0.0 --continuar ) > "$SHIM_STATE/main.out" 2>&1 || main_rc=$?
+  t "main: a completed installation with healthy checks remains green" 0 \
+    '[ "$main_rc" = 0 ] && grep -q "^Veredicto: .* · 0 ✗ · 0 −$" "$SHIM_STATE/main.out"'
+  printf '73\n' > "$SHIM_STATE/bootstrap.rc"
+  rm "$VMA_TREE/scripts/cleanboot-site.sh"
+  main_rc=0
+  ( CHECKS_OK=0; CHECKS_FAIL=0; CHECKS_SKIP=0; main --tag v1.0.0 --continuar ) > "$SHIM_STATE/main.out" 2>&1 || main_rc=$?
+  t "main: a bootstrap failure without an installed tree prints its verdicts" 0 \
+    '[ "$main_rc" = 1 ] && grep -q "✗ curl | sudo bash" "$SHIM_STATE/main.out" && grep -q "^Veredicto:" "$SHIM_STATE/main.out"'
 
   # resolve_tag: the redirect resolves, the failure dies — both without the API
   cat > "$shims/curl" <<'SH'

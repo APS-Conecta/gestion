@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
 # Disposable testbed using the installer's by-IP HTTPS path.
-# Run on a dedicated host with the suite ports available; use sudo for certificate files.
-# AIO_TEST_IMAGE selects the suite tag. State and private credentials: /tmp/aio-testbed.
+# Run with Docker access and the suite ports available.
+# AIO_TEST_IMAGE selects the suite tag; APS_HOME moves state and private credentials to its aio/.
 # SPDX-License-Identifier: AGPL-3.0-or-later
 set -uo pipefail
 
-STATE=/tmp/aio-testbed
+STATE="${AIO_STATE:-${APS_HOME:+$APS_HOME/aio}}"
+STATE="${STATE:-/tmp/aio-testbed}"
 MC=nextcloud-aio-mastercontainer            # fixed by Containers/mastercontainer/start.sh:164-170
 NC=aps-conecta-nextcloud                   # fixed by the fork's php/containers.json (patch 240)
 # The fork's suite, never upstream's: the suite renames the siblings (patch 240), so upstream's
 # container names would match none of the suite's. Names the newest suite tag built from this
 # tree's image inputs: a release's, moved by the commit after each green Release (RELEASING §4),
 # or a rehearsal's while the inputs are ahead of it.
-IMAGE="${AIO_TEST_IMAGE:-ghcr.io/aps-conecta/all-in-one:v0.0.0-ci.1900}"
+IMAGE="${AIO_TEST_IMAGE:-ghcr.io/aps-conecta/all-in-one:v0.0.0-ci.1962}"
 WIZ="https://127.0.0.1:8080"
 
 die() { echo "FATAL: $*" >&2; exit 1; }
@@ -107,8 +108,10 @@ cmd_up() {
 
   echo
   echo "✓ probe instance up: $IMAGE, store off, container set green"
-  echo "    wizard:      $WIZ  (password: $STATE/master.pw)"
-  echo "    nextcloud:   https://$domain/  (suite CA; admin password: $STATE/nextcloud.pw)"
+  echo "    Asistente:   $WIZ"
+  [ ! -f "$STATE/master.pw" ] || echo "    Contraseña del asistente: $STATE/master.pw"
+  echo "    Nextcloud:   https://$domain/  (CA de la suite)"
+  [ ! -f "$STATE/nextcloud.pw" ] || echo "    Contraseña del administrador: $STATE/nextcloud.pw"
   echo "    occ:         docker exec --user www-data $NC php /var/www/html/occ <command>"
   echo "    teardown:    $0 down"
   echo "  The probe arms (design slices 2-5) drive this instance through docker exec."

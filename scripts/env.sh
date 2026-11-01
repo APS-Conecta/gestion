@@ -63,7 +63,7 @@ nc_cp() { nc_container; docker cp "$1" "$NC_CONTAINER:$2"; }  # HOST_PATH CONTAI
 # 4. The suite's public URL, the base every gate curl rides (#163, D10: the gates curl the suite
 #    the way its users reach it, from the host itself). Apache's own environment decides, never
 #    .env's HTTP_PORT. The suite uses its public HTTPS name; an IP also needs the installer's CA.
-SUITE_CA="${SUITE_CA:-/opt/aps-conecta/certificados/ca/aps-conecta-ca.crt}"
+SUITE_CA="${SUITE_CA:-${APS_HOME:-/opt/aps-conecta}/certificados/ca/aps-conecta-ca.crt}"
 suite_url_resolve() {  # sets SUITE_URL, SUITE_CURL and SUITE_D10, or prints a FAIL and returns 1
   local env dom
   env="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' aps-conecta-apache 2>/dev/null)" \

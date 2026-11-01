@@ -53,7 +53,7 @@ main() {
   [ -n "$TARBALL_SHA256" ] \
     || die "este archivo es la copia del repositorio (sin la suma del paquete): descargue el instalador de la versión $BUNDLE_TAG — $REPO_URL/releases"
 
-  local tag pkg base found tmp mint
+  local tag pkg base found tmp mint verifier
   tag="$BUNDLE_TAG"
   base="$REPO_URL/releases/download/$tag"
   pkg="$PAQUETE/apsconecta-$tag.tar.gz"
@@ -96,10 +96,11 @@ main() {
   # sha256 above already anchored the bytes to this tag-anchored script, and the suite's
   # «preparar» installs signify-openbsd so preflight verifies the kept package from the next
   # run on. A bad signature installs nothing — stronger than the sha, not weaker.
-  if command -v signify >/dev/null 2>&1; then
+  verifier="$(command -v signify-openbsd || command -v signify || true)"
+  if [ -n "$verifier" ]; then
     mint="$PAQUETE/.installer.pub"
     printf 'untrusted comment: APS Conecta instalador release key\n%s\n' "$SIGNIFY_PUBKEY" > "$mint"
-    if ( cd "$PAQUETE" && signify -V -p "$mint" -m SHA256SUMS -x SHA256SUMS.minisig ) >/dev/null 2>&1; then
+    if ( cd "$PAQUETE" && "$verifier" -V -p "$mint" -m SHA256SUMS -x SHA256SUMS.minisig ) >/dev/null 2>&1; then
       ok "firma verificada (signify, clave pública del proyecto)"
     else
       rm -f "$mint"
@@ -229,6 +230,17 @@ EOF
      && grep -q "^pub2=$(sed -n "s/^SIGNIFY_PUBKEY=\"\([^\"]*\)\".*/\1/p" "$0" | head -1)$" "$tmp/sig.log" \
      && case "$out" in *"✓ firma verificada (signify, clave pública del proyecto)"*) ;; *) false;; esac \
      && [ ! -e "$tmp/h6/paquete/.installer.pub" ]'
+  cp "$tshim/signify" "$tshim/signify-openbsd"
+  printf '#!/usr/bin/env bash\nexit 73\n' > "$tshim/signify"
+  run_main "$tmp/h6-openbsd" v9.8.7 "$pkgsha"
+  check "signature: the OpenBSD verifier takes precedence over an unrelated signify executable (#141)" \
+    '[ "$rc" -eq 0 ] && [ -f "$tmp/h6-openbsd/instalador/host/aps-conecta" ] \
+     && case "$out" in *"✓ firma verificada"*) ;; *) false;; esac'
+  rm -f "$tshim/signify"
+  run_main "$tmp/h6-openbsd-only" v9.8.7 "$pkgsha"
+  check "signature: the package-specific executable verifies without a generic bridge (#141)" \
+    '[ "$rc" -eq 0 ] && case "$out" in *"✓ firma verificada"*) ;; *) false;; esac'
+  mv "$tshim/signify-openbsd" "$tshim/signify"
   echo 1 > "$tmp/sig.rc"
   run_main "$tmp/h7" v9.8.7 "$pkgsha"
   check "signature: a signature that does not verify installs NOTHING — the refusal names the release page" \

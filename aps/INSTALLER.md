@@ -50,7 +50,7 @@ from the next run on. Continue with:
 
 which links `aps-conecta` into `/usr/local/bin` and walks the steps below. The bundle is
 `aps-conecta`: `install`, `preflight`, `run-command`, `provision`, `asistente-aio`,
-`temporizadores`, `revalidate`, `actualizar`, `respaldo`, `datos`, `red` — thin glue; every heavy
+`temporizadores`, `revalidate`, `actualizar`, `datos`, `red` — thin glue; every heavy
 thing lives where its own gate is.
 
 - **Verifying by hand** — an auditor, or anyone who wants to see it themselves — needs only the
@@ -59,8 +59,13 @@ thing lives where its own gate is.
   [`installer.pub`](https://github.com/APS-Conecta/gestion/blob/main/installer.pub), then
 
   ```bash
+  sudo apt-get install signify-openbsd
+  sudo ln -sf /usr/bin/signify-openbsd /usr/local/bin/signify
   signify -V -p installer.pub -m SHA256SUMS -x SHA256SUMS.minisig && sha256sum -c SHA256SUMS
   ```
+
+  The bootstrap, host checks and app resolver prefer `signify-openbsd`; the generic name is
+  retained for compatible installations.
 
   The signature covers `SHA256SUMS`, which names the tag's tarball: a signature that verifies
   is a signature for that tag's package. The key story — keygen, secrets, rotation — is
@@ -103,24 +108,32 @@ lines. If preflight reds on the domain probe, do
 
 ## 4. The wizard (:8080)
 
-1. Paste the run command. The wizard, «APS Conecta Gestión AIO», comes up in Spanish (es-CL formal).
-2. The web installer's step 6 fills it: `aps-conecta asistente-aio --preparar` starts the
-   mastercontainer, captures the initial password (`GET /setup` shows it once; the installer keeps
-   it in `/opt/aps-conecta/aio/master.pw`, 0600, and shows it on step 6), and posts the domain (or this
-   server's IP, §13), the timezone, the options (Euro-Office, the suite's only office; Talk and its recording as the
-   server's memory and cores allow, port 3478 free; Imaginary off), the «Aplicaciones
-   opcionales» the operator checked (all off by default; today Farmacia, Estadística and Tótem, each
-   from its own signed release when chosen, absent otherwise — the choice rides the install options
-   and survives every re-provisioning; Estadística's DEIS figures download after install, by the app
-   itself, and only when it was chosen; Tótem's release carries its two bundled voices, so a chosen
-   install speaks offline) and the daily backup (§11).
-3. Log in to the wizard with that password and press Start, leaving the options as step 6 set them:
-   the installer's review lists Talk from step 6's choice, and the optional apps only when they were
-   checked. Step 6 follows the containers until
-   Nextcloud is installed. The wizard has no app store, no community containers and no other
-   office: a request to switch or disable the office is refused. Scheduled backups restart
-   the suite on its current images. The daily-backup screen lets you choose notifications
-   for successful backups; failures are always reported.
+1. Ejecute el comando de arranque. El asistente «APS Conecta Gestión AIO» se presenta en español de Chile.
+2. El paso 6 invoca `aps-conecta asistente-aio --preparar`, inicia el contenedor maestro y guarda
+   la contraseña inicial en `/opt/aps-conecta/aio/master.pw`, con permisos 0600. Configura el
+   dominio o la IP (§13), la zona horaria, los servicios incluidos, las aplicaciones opcionales
+   elegidas y el respaldo diario (§11). Farmacia, Estadística y Tótem se instalan desde sus
+   publicaciones firmadas cuando se seleccionan. La grabación continúa pendiente de su perfil de recursos.
+3. Ingrese con esa contraseña y pulse «Iniciar». El paso 6 sigue el arranque hasta confirmar la
+   instalación de Nextcloud. Los respaldos programados reinician las versiones actuales de la suite.
+
+El primer recorrido completado del asistente define la configuración inicial. Con la suite
+en marcha, las invocaciones posteriores conservan esos valores y el seed reconcilia el
+aprovisionamiento. Antes del inicio o con la suite detenida, el controlador puede aplicar
+la configuración; `--preparar` completa la preparación previa al arranque.
+
+- El banco de pruebas `scripts/aio-testbed.sh up` completa ese primer recorrido. Una instalación
+  silenciosa posterior utiliza la configuración que dejó el banco.
+- Con la suite en marcha, repetir `install --respaldo R` conserva la ubicación de respaldo
+  configurada inicialmente. Ajuste esa ubicación desde la sección de respaldos del asistente.
+
+Para omitir la validación del dominio en la configuración inicial de una instalación silenciosa,
+añada `--sin-validar-dominio`. El comando comparte el controlador del asistente:
+
+```bash
+sudo aps-conecta install --sitio site.sh --planilla usuarios.csv \
+  --respaldo /srv/aps-conecta/respaldos --sin-validar-dominio
+```
 
 La consola confirma el resultado final del asistente antes de informar que inició la suite.
 La espera continúa mientras avance la descarga o aparezcan estados nuevos de los contenedores;
@@ -151,6 +164,10 @@ keys — and the chosen point rides «Confirmar centro» into the site file's `S
 the suite's containers, the teams and the users CSV (one screen, with the centre's own template),
 review, execute — is walked step by step in [`GUIA-CLINICA.md`](GUIA-CLINICA.md) §4–6. The pages
 follow the registry's steps 5–8 (`aps-conecta pasos`).
+
+Command-line site and roster imports resolve relative paths against the calling directory;
+an unreadable input reports its absolute path. A reserved-account collision lists all reserved
+uids for the establishment once, including its sector and role-derived positions.
 
 When «Revisar y ejecutar» comes back green, the installer closes itself: the port closes and the
 link stops working. The console then wires the timers (§6) and prints «Listo». Ctrl+C before that
@@ -306,12 +323,10 @@ compatible release.
 
 ## 11. Backups
 
-The wizard's own borg backup is the instance backup. Step 6 sets it daily at 04:00 Santiago time
-in `/srv/aps-conecta/respaldos`, with `/opt/aps-conecta` (the credentials and the site record) in its
-scope — the same folder on the same disk, so copy it off the server (an external disk, another
-machine). `aps-conecta respaldo` adds `/opt/aps-conecta` to an existing backup — idempotent, and it
-prints the **honest cost every time**: additional directories back up but never restore with the
-instance. `/opt/aps-conecta`'s restore is a manual `borg extract` (the recipe: upstream's
+The wizard's Borg backup covers the instance. Step 6 configures the daily backup at 04:00
+Santiago time and includes the selected installation directory (`APS_HOME`, default
+`/opt/aps-conecta`) through the wizard request. Keep a copy of the archive off the server.
+Restore additional host directories manually with `borg extract` (the recipe: upstream's
 [backup docs](https://github.com/nextcloud/all-in-one#pro-tip-backup-archives-access)).
 
 The wizard runs in UTC, so step 6 posts the UTC hour — 07:00 in summer time, 08:00 in winter —
@@ -319,6 +334,21 @@ and the wizard shows that hour. After the next DST change the backup runs at 03:
 Santiago time. To move it, the wizard's backup section takes a new time, in UTC.
 
 ## 12. Troubleshooting
+
+- **Data and log paths**: the running suite configures `/mnt/ncdata` as the data root and
+  `/var/www/html/data/nextcloud.log` as the Nextcloud log. Read the configured values with:
+
+  ```bash
+  sudo docker exec --user www-data aps-conecta-nextcloud php /var/www/html/occ config:system:get datadirectory
+  sudo docker exec --user www-data aps-conecta-nextcloud php /var/www/html/occ config:system:get logfile
+  ```
+
+  After an administrative out-of-band file transfer, update the file index. Replace `USER`
+  and `FOLDER` with the account and folder:
+
+  ```bash
+  sudo docker exec --user www-data aps-conecta-nextcloud php /var/www/html/occ files:scan --path='USER/files/FOLDER'
+  ```
 
 - **The log panel looks unstyled after a suite upgrade**: hard-refresh once. The overlay-log
   iframe pins its stylesheet URL in PHP the fork never touches (zero-PHP); a warm cache serves
@@ -420,3 +450,80 @@ certutil -hashfile aps-conecta-ca.der SHA256
   with «Trust this CA to identify websites».
 - **Android**: Settings → Security → Encryption & credentials → Install a certificate → CA
   certificate (the names vary by maker; a screen lock is required). The Nextcloud app trusts it.
+
+## 14. Provisionar como usuario de desarrollo
+
+Utilice una cuenta con acceso a Docker y una copia propia del repositorio. El servidor debe
+contar con las dependencias del instalador, OpenSSL 3, el paquete `acl` y los puertos de la
+suite disponibles. La preparación del sistema corresponde al administrador (§3).
+
+`APS_HOME` selecciona una ruta absoluta para el estado de la instalación. Al omitirla,
+los componentes conservan `/opt/aps-conecta` como ruta predeterminada.
+
+| Estado | Ruta dentro de `APS_HOME` |
+|---|---|
+| Contraseñas selladas | `credentials.txt` |
+| Resultado de ejecución | `estado.txt` |
+| Estado y opciones del asistente | `aio/`, `aio/opciones` |
+| Autoridad y certificados | `certificados/` |
+| Versiones instaladas | `apps.lock.json` |
+| Paquetes verificados | `apps/` |
+
+`AIO_STATE` tiene prioridad para el estado del asistente. `APS_APPS_LOCK`, `APS_APPS_STORE`
+y `APS_APPS_OPCIONES` tienen prioridad para sus respectivas rutas. `SUITE_CA` permite
+seleccionar explícitamente el certificado público usado por las verificaciones HTTPS.
+El banco de pruebas conserva `/tmp/aio-testbed` cuando se omiten `APS_HOME` y `AIO_STATE`.
+
+Clone el repositorio y configure la misma sesión para todos los pasos:
+
+```bash
+git clone https://github.com/APS-Conecta/gestion.git "$HOME/aps-conecta/gestion"
+cd "$HOME/aps-conecta/gestion"
+export APS_HOME="$HOME/.local/share/aps-conecta"
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Instale el verificador OpenBSD en su directorio de usuario desde el paquete de la distribución:
+
+```bash
+mkdir -p "$HOME/.local/bin"
+signer_dir="$(mktemp -d)"
+(
+  cd "$signer_dir" || exit 1
+  apt-get download signify-openbsd &&
+    dpkg-deb --extract ./signify-openbsd_*.deb unpacked || exit 1
+  binary=unpacked/usr/bin/signify-openbsd
+  [ -f "$binary" ] || binary=unpacked/bin/signify-openbsd
+  install -m 0755 "$binary" "$HOME/.local/bin/signify"
+)
+rm -rf "$signer_dir"
+command -v signify
+```
+
+Inicie la suite mediante el banco de pruebas existente:
+
+```bash
+bash scripts/aio-testbed.sh up
+```
+
+El banco usa la versión fijada en el script; `AIO_TEST_IMAGE` permite seleccionar otra versión
+de ensayo aprobada. El estado queda en `$APS_HOME/aio`. El usuario conserva la propiedad
+del certificado para renovarlo; una ACL autoriza su lectura al servicio Apache. Las claves de
+la autoridad permanecen privadas. Configure la confianza de los equipos según §13.
+
+Prepare el archivo del establecimiento y la planilla de usuarios según §5. En la misma sesión,
+indique sus rutas y el código DEIS del establecimiento:
+
+```bash
+read -r -p 'Archivo site.sh: ' site_file
+read -r -p 'Planilla de usuarios: ' roster_file
+read -r -p 'Código DEIS: ' center_code
+python3 scripts/provisionador.py --paso sitio --archivo "$site_file"
+python3 scripts/provisionador.py --paso usuarios --codigo "$center_code" --planilla "$roster_file"
+python3 scripts/provisionador.py --paso generar --codigo "$center_code" --resumen
+bash scripts/divergence.sh --gate
+```
+
+La ejecución verifica los paquetes firmados, provisiona el establecimiento y exige divergencia
+vacía. Consulte `$APS_HOME/estado.txt` y `.install.log` para revisar el resultado. Ejecute
+`bash scripts/aio-testbed.sh down` para retirar los datos y servicios del banco de pruebas.

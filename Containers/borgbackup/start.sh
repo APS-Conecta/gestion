@@ -1,8 +1,6 @@
 #!/bin/bash
 
-if [ "$AIO_LOG_LEVEL" = 'debug' ]; then
-    set -x
-fi
+set +x
 
 if [ "$AIO_LOG_LEVEL" = "warn" ]; then
     BORG_LOG_LEVEL_FLAG="--warning"

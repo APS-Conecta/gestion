@@ -129,13 +129,14 @@ UNKNOWN_GROUP = "no existe en este centro"   # the unknown-group line; the 400 k
 PHASE20 = os.path.join(HERE, "..", "provisioning", "phases", "20-groups.sh")
 # Where the sealed credentials sheet lives (FRD S5; the host bundle's directory — S7 wires
 # /opt/aps-conecta into backups). The self-test redirects it; this default is the only literal.
-CRED_PATH = "/opt/aps-conecta/credentials.txt"
-ESTADO_PATH = "/opt/aps-conecta/estado.txt"   # the last execution's verdict (a10): 0644, «aps-conecta estado»
-AIO_STATE = "/opt/aps-conecta/aio"   # the host's wizard state (0700): passphrase, domain, Talk options — passed to it
+APS_HOME = os.environ.get("APS_HOME") or "/opt/aps-conecta"
+CRED_PATH = os.path.join(APS_HOME, "credentials.txt")
+ESTADO_PATH = os.path.join(APS_HOME, "estado.txt")   # the last execution's verdict (a10): 0644, «aps-conecta estado»
+AIO_STATE = os.environ.get("AIO_STATE") or os.path.join(APS_HOME, "aio")  # the host's wizard state
 # The installer's own certificate authority and the leaf it signs for the link's address (L3 S1,
 # owner 2026-10-02). The CA is kept: the suite's certificate (L4, R22) hangs from the same one and
 # staff import it once. The self-test redirects this; the default is the only literal.
-CERT_DIR = CERT_DIR_DEFAULT = "/opt/aps-conecta/certificados"
+CERT_DIR = CERT_DIR_DEFAULT = os.path.join(APS_HOME, "certificados")
 # An install by IP (R22): the suite's leaf in CERT_DIR/suite (patch 235's APS_TLS_DIR), the CA's certificate
 # alone in CERT_DIR/ca (NEXTCLOUD_TRUSTED_CACERTS_DIR) under the name staff import and Nextcloud lists — the
 # host's run_command names the same two directories, phase 07 the same file; the self-test pins all three
@@ -239,7 +240,7 @@ PHASE_TITLES = {
     "15-branding": "Imagen de APS Conecta", "16-app-policy": "Aplicaciones por perfil",
     "20-groups": "Grupos: roles, categorías y equipos", "30-folders": "Carpetas compartidas",
     "40-acl": "Permisos de las carpetas", "41-intravox": "Portada del establecimiento",
-    "50-users": "Cuentas de cargo", "60-fixtures": "Contenido de ejemplo"}
+    "50-users": "Cuentas de cargo"}
 # What the clinic gets, as the review step lists it (R37): one row per component staff see — its
 # app, its name, what it gives — in the suite manifest's order. Plumbing (no name) is not listed.
 try:
@@ -346,9 +347,9 @@ the fail-stop arm), GATE_EXTRA (a uid the user:list answer plants — the gate-r
 ('empty' — no suite running), PS_LISTA (the containers docker ps -a lists — the step-7
 arms), SLOW (sleep before answering — the timeout arm).
 """
+import hashlib
 import json
 import os
-import select
 import sys
 import time
 
@@ -382,7 +383,7 @@ def exec_interactive(argv):
     """`docker exec -i …`: the -i among the options before the container name."""
     i = 1
     while i < len(argv) and argv[i].startswith("-"):
-        if argv[i] == "-i":
+        if argv[i] in ("-i", "--interactive"):
             return True
         i += 2 if argv[i] in ("--user", "-u", "--env", "-e", "--workdir", "-w") else 1
     return False
@@ -391,7 +392,7 @@ def exec_interactive(argv):
 # The real client forwards its stdin into the container, so `docker exec -i` consumes whatever the
 # caller's stdin already holds — a loop that reads its own stdin loses the rest of it.
 if args[:1] == ["exec"] and exec_interactive(args):
-    while select.select([sys.stdin], [], [], 0)[0] and os.read(sys.stdin.fileno(), 65536):
+    while os.read(sys.stdin.fileno(), 65536):
         pass
 
 
@@ -428,6 +429,8 @@ if args and args[0] == "ps":
     else:
         print("aps-conecta-nextcloud")
     sys.exit(0)
+elif "mktemp" in args and "-d" in args:
+    print(args[-1].replace("XXXXXXXXXX", "abcdefghij"))
 elif "printenv" in args and "TALK_ENABLED" in args:   # the suite's Talk switch, as AIO sets it: yes or empty
     print(control.get("TALK_ENABLED", ""))
 elif "status" in args and "--output=json" in args:
@@ -436,7 +439,10 @@ elif "user:info" in args:
     uid = find("user:info")
     sys.exit(0 if any(r == ["user", uid] for r in rows) else 1)
 elif "user:add" in args:
-    rows.append(["user", args[-1]])
+    uid = args[-1]
+    rows.append(["user", uid])
+    rows.append(["user_password_digest", uid,
+                 hashlib.sha256(os.environ.get("OC_PASS", "").encode()).hexdigest()])
     save(rows)
 elif "user:list" in args:
     users = sorted(r[1] for r in rows if r[0] == "user")
@@ -1174,6 +1180,7 @@ def roster_parse(text, reserved, universe):
     that spans lines is a row whose line numbers stop meaning anything to the person reading
     the error."""
     errors, rows, seen, si_lines = [], [], {}, []
+    reserved_collision = False
     reader = csv.reader(io.StringIO(text, newline=""), delimiter=";")
     try:
         head = next(reader, None)
@@ -1207,6 +1214,7 @@ def roster_parse(text, reserved, universe):
                 ok = False
             elif uid in reserved:
                 errors.append((start, f"el usuario «{uid}» es {reserved[uid]}: quítelo de la planilla"))
+                reserved_collision = True
                 ok = False
             else:
                 seen[uid] = start
@@ -1248,6 +1256,8 @@ def roster_parse(text, reserved, universe):
                        f"({', '.join(f'línea {n}' for n in si_lines)}): debe ser una"))
     elif not rows and not errors:
         errors.append((2, "la planilla no trae usuarios — agregue filas bajo la cabecera"))
+    if reserved_collision:
+        errors.append((0, "usuarios reservados: " + " ".join(sorted(reserved))))
     return rows, errors
 
 
@@ -1658,8 +1668,6 @@ def _api_generar(payload):
                      "contrasenas_selladas": len(sealed),
                      "env": {"SITE": codigo if est["site"] == codigo
                              else "se escribirá " + codigo,
-                             "SEED_FIXTURES": "1 (sin cambio)" if est["seed_fixtures"] == "1"
-                             else "se forzará a 1",
                              "FIXTURE_USER_PASSWORD": "presente" if est["fixture"]
                              else "se generará"},
                      "divergencia": "se comprueba al final de la ejecución",
@@ -1804,7 +1812,7 @@ def env_state(root):
     Values are never returned: SITE's line value only ever feeds the D13 comparison, and the
     fixture password only ever answers «presente» (print-WHERE-never-WHAT)."""
     path = os.path.join(root, ".env")
-    site, fixture, seed_fixtures = None, False, None
+    site, fixture = None, False
     if os.path.exists(path):
         with open(path, encoding="utf-8") as fh:
             for ln in fh:
@@ -1812,9 +1820,7 @@ def env_state(root):
                     site = ln[5:].strip().strip("\"'")
                 elif ln.startswith("FIXTURE_USER_PASSWORD="):
                     fixture = True
-                elif ln.startswith("SEED_FIXTURES="):
-                    seed_fixtures = ln[14:].strip()
-    return {"path": path, "site": site, "fixture": fixture, "seed_fixtures": seed_fixtures}
+    return {"path": path, "site": site, "fixture": fixture}
 
 
 def env_converge(root, codigo):
@@ -1822,9 +1828,7 @@ def env_converge(root, codigo):
     vars, so exporting SITE at the subprocess buys nothing — the file is the only carrier, and
     this is the write. SITE: absent → appended; equal → untouched; DIFFERENT → refused (D13: one
     establishment per install; re-pointing an install is a deliberate migration, never a side
-    effect — the /api/sitio converge-or-refuse rule). SEED_FIXTURES is forced to 1 — the
-    executor's locked posture runs the fixtures ON, and a .env carrying 0 would skip phase 50's
-    standing accounts while the roster still seeded, leaving the clinic without its cargos.
+    effect — the /api/sitio converge-or-refuse rule).
     FIXTURE_USER_PASSWORD: absent → generated (CSPRNG 24-hex) and appended —
     present → NEVER touched (a secret we did not invent is never rewritten);
     a placeholder that survived a hand-copy dies at the seed's own require_real_secrets with its
@@ -1840,12 +1844,9 @@ def env_converge(root, codigo):
         with open(st["path"], encoding="utf-8") as fh:
             lines = fh.read().splitlines()
     report = {"SITE": "ya era " + codigo if st["site"] == codigo else "escrito",
-              "SEED_FIXTURES": "1, sin cambio" if st["seed_fixtures"] == "1" else "forzado a 1",
               "FIXTURE_USER_PASSWORD": "presente" if st["fixture"] else "generada"}
     if st["site"] is None:
         lines.append(f"SITE={codigo}")
-    if st["seed_fixtures"] != "1":
-        lines = [ln for ln in lines if not ln.startswith("SEED_FIXTURES=")] + ["SEED_FIXTURES=1"]
     if not st["fixture"]:
         lines.append(f"FIXTURE_USER_PASSWORD={secrets.token_hex(SEAL_BYTES)}")
     text = "\n".join(lines) + "\n"
@@ -3787,10 +3788,41 @@ def tls_context(ip):
     return ctx, huella(crt)
 
 
+def _secure_suite_tls(directory):
+    files = [os.path.join(directory, name) for name in ("tls.crt", "tls.key")]
+    modes = [(path, 0o400) for path in files] + [(directory, 0o500)]
+    for path, mode in modes:
+        if os.geteuid() == 0:
+            os.chown(path, APACHE_UID, APACHE_UID)
+        os.chmod(path, mode)
+    if os.geteuid() in (0, APACHE_UID):
+        return ""
+    # The developer retains ownership for renewal; only Apache gains a named read grant.
+    granted = False
+    try:
+        subprocess.run(["setfacl", "--set", f"u::r--,u:{APACHE_UID}:r--,g::---,m::r--,o::---",
+                        "--", *files], check=True, capture_output=True, timeout=30)
+        subprocess.run(["setfacl", "--set", f"u::r-x,u:{APACHE_UID}:r-x,g::---,m::r-x,o::---",
+                        "--", directory], check=True, capture_output=True, timeout=30)
+        granted = True
+    except FileNotFoundError:
+        return "falta setfacl para autorizar el certificado: instale el paquete acl (sudo apt-get install acl)"
+    except subprocess.CalledProcessError:
+        return "no se pudo autorizar el certificado: compruebe que el sistema de archivos admita ACL"
+    except subprocess.TimeoutExpired:
+        return "setfacl no respondió en 30 s: revise el sistema de archivos y vuelva a ejecutar"
+    finally:
+        if not granted:
+            for path, mode in modes:
+                os.chmod(path, mode)
+    return ""
+
+
 def certificado_suite(ip):
     """The suite's own certificate for an install by IP (R22). The leaf for the address, signed by the
-    installer's CA, in CERT_DIR/suite owned by apache's uid (files 0400, directory 0500) — what patch
-    235 binds read-only as /aps-tls, never next to the CA's key; the CA's certificate alone in
+    installer's CA, in CERT_DIR/suite readable by apache's uid — what patch 235 binds read-only as
+    /aps-tls, never next to the CA's key. Root hands over ownership (0400 files, 0500 directory);
+    an unprivileged owner grants Apache a named ACL. The CA's certificate alone in
     CERT_DIR/ca (0644) — what Nextcloud and Talk trust and staff import. The leaf is kept while it
     names exactly this address, chains to this CA and has more than RENOVAR_DIAS left; else it is
     signed again, and the host restarts apache (it reads the files at start)."""
@@ -3820,11 +3852,9 @@ def certificado_suite(ip):
         # 0400 files are replaced, never written through
         os.replace(nueva_key, key)
         os.replace(nuevo_crt, crt)
-    for f in (crt, key):
-        os.chown(f, APACHE_UID, APACHE_UID)
-        os.chmod(f, 0o400)
-    os.chown(hoja, APACHE_UID, APACHE_UID)
-    os.chmod(hoja, 0o500)
+    error = _secure_suite_tls(hoja)
+    if error:
+        return 500, {"error": error}
     os.makedirs(publica, exist_ok=True)
     os.chmod(publica, 0o755)
     destino = os.path.join(publica, CA_PUBLICA)
@@ -3969,6 +3999,7 @@ def run_step(argv):
         if not path:
             print("✗ falta el sitio: --archivo <site.sh>")
             return 2
+        path = os.path.join(os.getcwd(), path)
         try:
             with open(path, encoding="utf-8-sig") as fh:
                 text = fh.read()
@@ -3989,6 +4020,7 @@ def run_step(argv):
         if not path:
             print("✗ falta la planilla: --planilla <archivo.csv>")
             return 2
+        path = os.path.join(os.getcwd(), path)
         try:
             with open(path, encoding="utf-8") as fh:
                 text = fh.read()
@@ -4057,6 +4089,20 @@ def selftest():
         for _name in bad:
             print(f"  FAIL: {_name}")
         return 1
+
+    defaults_query = ("import json, provisionador as p; print(json.dumps([p.CRED_PATH, p.ESTADO_PATH, "
+                      "p.AIO_STATE, p.CERT_DIR, p.CERT_DIR_DEFAULT]))")
+    for setting in (None, ""):
+        defaults_env = {"PATH": os.defpath, "LANG": "C.UTF-8"}
+        if setting is not None:
+            defaults_env["APS_HOME"] = setting
+        result = subprocess.run([sys.executable, "-c", defaults_query], cwd=HERE, env=defaults_env,
+                                capture_output=True, text=True, timeout=10)
+        paths = json.loads(result.stdout) if result.returncode == 0 else []
+        check(f"environment contract: {'unset' if setting is None else 'empty'} APS_HOME preserves every default (#142)",
+              paths == ["/opt/aps-conecta/credentials.txt", "/opt/aps-conecta/estado.txt",
+                        "/opt/aps-conecta/aio", "/opt/aps-conecta/certificados",
+                        "/opt/aps-conecta/certificados"])
 
     old = deis.HERE
     old_cred, old_p20 = CRED_PATH, PHASE20
@@ -4333,6 +4379,13 @@ def selftest():
                                                             "reemplazar": True})
                     with open(sitio, encoding="utf-8") as fh:
                         despues = fh.read()
+                    acl_rows = subprocess.check_output(
+                        ["bash", "-c", 'source "$1"; printf "%s\\n" "${SITE_ACL[@]}"', "sh", sitio],
+                        text=True).splitlines()
+                    grants = {}
+                    for acl_row in acl_rows:
+                        mount, group, permissions = acl_row.split("|", 2)
+                        grants[mount, group] = set(permissions.split())
                     st5, viejo = api_generar({"codigo": "121567", "modo": "revision"})
                     with open(sitio, encoding="utf-8") as fh:   # a grant added by hand inside SITE_ACL
                         con_mano = fh.read().replace("SITE_ACL=(\n", "SITE_ACL=(\n  'Unidades/SOME|role-medico|'\n", 1)
@@ -4355,9 +4408,20 @@ def selftest():
                   st3 == 200 and hecho.get("reemplazados") is True
                   and "'sector-oriente|Sector Oriente'" in despues and "sector-sur" not in despues
                   and "'Sectores/Sector Oriente'" in despues
-                  and "'Sectores/Sector Oriente|sector-oriente|read write delete'" in despues
+                  and "'Sectores/Sector Oriente|sector-oriente|read write delete share'" in despues
                   and 'SITE_DOMINIO="clinica.example"' in despues and "SITE_WELCOME=(" in despues
                   and despues.count("SITE_ACL=(") == 1)
+            check("teams: owning groups manage and reshare while staff retain read access to Transversal (#144)",
+                  all(grants[owner] == {"read", "write", "delete", "share"} for owner in (
+                      ("Transversal", "cat-jefaturas"),
+                      ("Programas/Cardiovascular", "prog-cardiovascular"),
+                      ("Sectores/Sector Oriente", "sector-oriente"),
+                      ("Unidades/SOME", "role-administrativo-some"),
+                      ("Unidades/Dirección", "cat-jefaturas")))
+                  and grants["Transversal", "all-staff"] == set())
+            check("teams: jefaturas receive read and share on units with owning roles (#144)",
+                  all(grants["Unidades/" + unit, "cat-jefaturas"] == {"read", "share"}
+                      for unit in ("SOME", "Farmacia", "Dental", "OIRS", "Estadística-REM")))
             check("teams: a planilla naming a team «Reemplazar» removed is caught at «Revisar», with its line (R35)",
                   st_pl == 200 and st5 == 400
                   and "sector-sur" in " ".join(e["error"] for e in viejo.get("errores", []))
@@ -4493,6 +4557,154 @@ def selftest():
             site_pre = open(site_path("113314"), encoding="utf-8").read()
             cargos_113314 = [u for u in standing_uids(*site_arrays(site_path("113314"))) if u != "admin"]
 
+            import pwd, shutil
+            with tempfile.TemporaryDirectory(prefix="provisionador-home-") as isolated:
+                for relative in ("scripts/provisionador.py", "scripts/deis.py", "scripts/apps.py",
+                                 "scripts/images.py", "scripts/releases.py", "apps.json", "php/containers.json",
+                                 "provisioning/phases/20-groups.sh", "provisioning/standings.sh"):
+                    destination = os.path.join(isolated, relative)
+                    os.makedirs(os.path.dirname(destination), exist_ok=True)
+                    shutil.copy2(os.path.join(ROOT_DIR, relative), destination)
+                site = os.path.join(isolated, "sites", "113314", "site.sh")
+                os.makedirs(os.path.dirname(site))
+                with open(site, "w", encoding="utf-8") as fh:
+                    fh.write(site_pre)
+                roster = os.path.join(isolated, "people.csv")
+                with open(roster, "w", encoding="utf-8") as fh:
+                    fh.write(planilla(juan))
+                identity = {}
+                if os.geteuid() == 0:
+                    account = pwd.getpwnam("nobody")
+                    for directory, _dirs, files in os.walk(isolated):
+                        for path in [directory] + [os.path.join(directory, name) for name in files]:
+                            os.chown(path, account.pw_uid, account.pw_gid)
+                    identity = {"user": account.pw_uid, "group": account.pw_gid, "extra_groups": []}
+                home = os.path.join(isolated, "state")
+                child = subprocess.run([
+                    sys.executable, os.path.join(isolated, "scripts", "provisionador.py"),
+                    "--paso", "usuarios", "--codigo", "113314", "--planilla", roster,
+                ], env=dict(os.environ, APS_HOME=home), capture_output=True, text=True,
+                    timeout=30, **identity)
+                credentials = os.path.join(home, "credentials.txt")
+                check("--paso usuarios: APS_HOME owns the sealed credentials through the unprivileged CLI (#142)",
+                      child.returncode == 0 and os.path.isfile(credentials)
+                      and os.stat(credentials).st_mode & 0o777 == 0o600
+                      and f"Contraseñas selladas en {credentials}:" in child.stdout)
+                if child.returncode:
+                    print(child.stdout.strip() or child.stderr.strip())
+                certificate = subprocess.run([
+                    sys.executable, os.path.join(isolated, "scripts", "provisionador.py"),
+                    "--paso", "certificado-suite", "--ip", "203.0.113.10",
+                ], env=dict(os.environ, APS_HOME=home, PATH=old_path), capture_output=True,
+                    text=True, timeout=30, **identity)
+                public_ca = os.path.join(home, "certificados", "ca", "aps-conecta-ca.crt")
+                ca_key = os.path.join(home, "certificados", "ca.key")
+                check("--paso certificado-suite: an unprivileged APS_HOME signs by IP and keeps its CA key private (#142)",
+                      certificate.returncode == 0 and os.path.isfile(public_ca)
+                      and os.stat(ca_key).st_mode & 0o077 == 0
+                      and f"Certificado para los equipos del personal: {public_ca}" in certificate.stdout)
+                if certificate.returncode:
+                    print(certificate.stdout.strip() or certificate.stderr.strip())
+                suite_crt = os.path.join(home, "certificados", "suite", "tls.crt")
+                with open(suite_crt, "rb") as fh:
+                    original_leaf = fh.read()
+                with open(public_ca, "rb") as fh:
+                    original_ca = fh.read()
+                certificate_command = [sys.executable, os.path.join(isolated, "scripts", "provisionador.py"),
+                                       "--paso", "certificado-suite", "--ip"]
+                reused = subprocess.run(certificate_command + ["203.0.113.10"],
+                                        env=dict(os.environ, APS_HOME=home, PATH=old_path),
+                                        capture_output=True, text=True, timeout=30, **identity)
+                with open(suite_crt, "rb") as fh:
+                    reused_leaf = fh.read()
+                renewed = subprocess.run(certificate_command + ["203.0.113.11"],
+                                         env=dict(os.environ, APS_HOME=home, PATH=old_path),
+                                         capture_output=True, text=True, timeout=30, **identity)
+                with open(suite_crt, "rb") as fh:
+                    renewed_leaf = fh.read()
+                with open(public_ca, "rb") as fh:
+                    renewed_ca = fh.read()
+                check("--paso certificado-suite: an unprivileged owner reuses the leaf and renews its address with the same CA (#142)",
+                      reused.returncode == renewed.returncode == 0
+                      and "203.0.113.10: vigente," in reused.stdout
+                      and "203.0.113.11: emitido," in renewed.stdout
+                      and reused_leaf == original_leaf != renewed_leaf and renewed_ca == original_ca)
+                acl_bin = os.path.join(isolated, "acl-bin")
+                os.mkdir(acl_bin)
+                os.symlink(shutil.which("openssl", path=old_path), os.path.join(acl_bin, "openssl"))
+                real_setfacl = shutil.which("setfacl", path=old_path)
+                for failure in ("missing", "partial"):
+                    failure_home = os.path.join(isolated, failure)
+                    if failure == "partial":
+                        with open(os.path.join(acl_bin, "setfacl"), "w", encoding="utf-8") as fh:
+                            fh.write("#!/bin/sh\ncase \"$2\" in *u::r-x*) exit 1;; esac\n"
+                                     f"exec {shlex.quote(real_setfacl)} \"$@\"\n")
+                        os.chmod(os.path.join(acl_bin, "setfacl"), 0o755)
+                    refused = subprocess.run(certificate_command + ["203.0.113.10"],
+                                             env=dict(os.environ, APS_HOME=failure_home, PATH=acl_bin),
+                                             capture_output=True, text=True, timeout=30, **identity)
+                    leaf = os.path.join(failure_home, "certificados", "suite")
+                    hint = "instale el paquete acl" if failure == "missing" else "sistema de archivos admita ACL"
+                    check(f"--paso certificado-suite: {failure} ACL support refuses startup and revokes effective grants (#142)",
+                          refused.returncode == 1 and hint in refused.stdout
+                          and not os.path.exists(os.path.join(failure_home, "certificados", "ca", "aps-conecta-ca.crt"))
+                          and os.stat(leaf).st_mode & 0o777 == 0o500
+                          and all(os.stat(os.path.join(leaf, name)).st_mode & 0o777 == 0o400
+                                  for name in ("tls.crt", "tls.key")))
+                refused_run = subprocess.run([
+                    sys.executable, os.path.join(isolated, "scripts", "provisionador.py"),
+                    "--paso", "generar", "--codigo", "999999",
+                ], env=dict(os.environ, APS_HOME=home), capture_output=True, text=True,
+                    timeout=30, **identity)
+                state_file = os.path.join(home, "estado.txt")
+                saved_state = os.path.isfile(state_file)
+                check("--paso generar: a refused unprivileged run saves its verdict under APS_HOME (#142)",
+                      refused_run.returncode == 1 and saved_state
+                      and os.stat(state_file).st_mode & 0o777 == 0o644
+                      and "la ejecución no terminó" in open(state_file, encoding="utf-8").read())
+                if not saved_state:
+                    print((refused_run.stdout + refused_run.stderr).strip())
+                api_bin = os.path.join(isolated, "bin")
+                os.mkdir(api_bin)
+                docker = os.path.join(api_bin, "docker")
+                with open(docker, "w", encoding="ascii") as fh:
+                    fh.write("#!/bin/sh\nexit 0\n")
+                os.chmod(docker, 0o755)
+                wizard = os.path.join(home, "aio")
+                os.mkdir(wizard)
+                for name, text in (("dominio", "203.0.113.10\n"),
+                                   ("opciones", "farmacia=1 estadistica=0 totem=0\n")):
+                    with open(os.path.join(wizard, name), "w", encoding="utf-8") as fh:
+                        fh.write(text)
+                api_env = dict(os.environ, APS_HOME=home, PATH=api_bin + os.pathsep + old_path)
+                api_env.pop("AIO_STATE", None)
+                query = ("import json, provisionador; status, body = provisionador.estado_suite(); "
+                         "print(json.dumps({'status': status, 'dominio': body.get('dominio'), "
+                         "'opciones': body.get('opciones')}))")
+                answer = subprocess.run([sys.executable, "-c", query],
+                                        cwd=os.path.join(isolated, "scripts"), env=api_env,
+                                        capture_output=True, text=True, timeout=30, **identity)
+                observed = json.loads(answer.stdout) if answer.returncode == 0 else {}
+                check("GET /api/suite: APS_HOME supplies the wizard domain and chosen apps (#142)",
+                      observed == {"status": 200, "dominio": "203.0.113.10", "opciones": {
+                          "apps": {"farmacia": True, "estadistica": False, "totem": False}}})
+                if answer.returncode:
+                    print(answer.stderr.strip())
+                alternate = os.path.join(isolated, "wizard")
+                os.mkdir(alternate)
+                for name, text in (("dominio", "203.0.113.11\n"),
+                                   ("opciones", "farmacia=0 estadistica=1 totem=0\n")):
+                    with open(os.path.join(alternate, name), "w", encoding="utf-8") as fh:
+                        fh.write(text)
+                answer = subprocess.run([sys.executable, "-c", query],
+                                        cwd=os.path.join(isolated, "scripts"),
+                                        env=dict(api_env, AIO_STATE=alternate), capture_output=True,
+                                        text=True, timeout=30, **identity)
+                observed = json.loads(answer.stdout) if answer.returncode == 0 else {}
+                check("GET /api/suite: the host AIO_STATE override takes precedence over APS_HOME (#142)",
+                      observed == {"status": 200, "dominio": "203.0.113.11", "opciones": {
+                          "apps": {"farmacia": False, "estadistica": True, "totem": False}}})
+
             st, body = call("POST", "/api/usuarios", {"codigo": "113314",
                                                       "csv": "\ufeff" + planilla(maria, juan)})
             check("roster: a BOM semicolon CSV with accents validates (site team accepted)",
@@ -4592,6 +4804,10 @@ def selftest():
                   and "cuenta administradora" in msgs
                   and all(f"«{uid}»" in msgs
                           for uid in ("director", "jefe.estrella", "jefe.sar", "admin")))
+            check("roster: a collision lists every reserved account once, including site-derived positions (#141)",
+                  st == 400 and [e["error"] for e in body["errores"] if e["linea"] == 0
+                                and e["error"].startswith("usuarios reservados:")] ==
+                  ["usuarios reservados: admin director jefe.estrella jefe.farmacia jefe.sar jefe.some subdirector"])
 
             st, body = call("POST", "/api/usuarios", {"codigo": "113314",
                   "csv": planilla(("pedro.2", "Pedro", "Dos", "pedro2@example.cl",
@@ -4914,7 +5130,7 @@ def selftest():
             check("generar: revision answers the plan — zero execs, zero writes",
                   st == 200 and body["modo"] == "revision" and body["usuarios"] == 2
                   and body["primer_admin"] == "elena.diaz" and body["contrasenas_selladas"] >= 2
-                  and len(body["fases"]) == 16 and "14-fulltextsearch.sh" in body["fases"]
+                  and len(body["fases"]) == 15 and "14-fulltextsearch.sh" in body["fases"]
                   and execs[0] == 0 and same
                   and body["env"]["FIXTURE_USER_PASSWORD"] == "se generará")
             check("generar: review mode downloads nothing — the release apps' fetch leg never ran (#33)",
@@ -4934,7 +5150,7 @@ def selftest():
                 subprocess.Popen = real_popen
             check("--paso generar --revision: the plan in one Spanish line, nothing executed, exit 0",
                   rc == 0 and execs[0] == 0
-                  and "✓ Revisión: 16 fases, 2 usuarios (administrador inicial elena.diaz)" in out)
+                  and "✓ Revisión: 15 fases, 2 usuarios (administrador inicial elena.diaz)" in out)
             st, plan = api_generar({"codigo": "113314", "modo": "revision"})
             visibles = json.dumps({k: plan.get(k) for k in ("centro", "sectores", "programas", "personas",
                                                             "componentes")}, ensure_ascii=False)
@@ -4975,9 +5191,9 @@ def selftest():
                        "✓ phase 14-antivirus\n", "✓ phase 14-fulltextsearch\n",
                        "✓ phase 14-office\n", "== roster: 3 usuario(s)\n"):
                 avance(ln)
-            check("ejecución: none yet answers «sin_ejecutar» with the 18 steps; a browser run's executor lines become the console's own titles, any other run's are not followed (a14)",
+            check("ejecución: none yet answers «sin_ejecutar» with the 17 steps; a browser run's executor lines become the console's own titles, any other run's are not followed (a14)",
                   st == 200 and nada["ejecucion"] == "sin_ejecutar" and nada["pasos"] == PASOS_EJECUCION
-                  and len(PASOS_EJECUCION) == 18 and fuera == []
+                  and len(PASOS_EJECUCION) == 17 and fuera == []
                   and EJECUCION["hechos"] == ["Seguridad de sesión", "Antivirus de archivos", "Búsqueda en documentos", "Oficina en línea", "Cuentas del personal"])
             EJECUCION.update(estado="sin_ejecutar", hechos=[])
             verdadero, suelta = globals()["api_generar"], threading.Event()
@@ -5510,6 +5726,24 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
             rc, out = stepped(["--paso", "usuarios", "--codigo", "113314", "--planilla", broken + ".nada"])
             check("--paso usuarios: an unreadable planilla names its path and why, in Spanish, exit 1",
                   rc == 1 and "✗ no se pudo leer la planilla" in out and out.rstrip().endswith(": no existe"))
+            lookup = os.getcwd()
+            try:
+                os.chdir(tmp)
+                missing_site = stepped(["--paso", "sitio", "--archivo", "missing site.sh"])
+                missing_roster = stepped(["--paso", "usuarios", "--codigo", "113314",
+                                          "--planilla", "missing roster.csv"])
+                os.makedirs(os.path.join(tmp, "path-target", "child"))
+                os.symlink(os.path.join(tmp, "path-target", "child"), "path-link")
+                with open(os.path.join(tmp, "path-target", "linked-site.sh"), "wb") as fh:
+                    fh.write(b"\xff")
+                linked_site = stepped(["--paso", "sitio", "--archivo", "path-link/../linked-site.sh"])
+            finally:
+                os.chdir(lookup)
+            check("--paso: unreadable relative site and roster paths name the actual lookup directory (#141)",
+                  missing_site == (1, f"✗ no se pudo leer el sitio {tmp}/missing site.sh: no existe\n")
+                  and missing_roster == (1, f"✗ no se pudo leer la planilla {tmp}/missing roster.csv: no existe\n"))
+            check("--paso: displaying an absolute input path preserves symlink and parent traversal semantics (#141)",
+                  linked_site == (1, f"✗ el sitio {tmp}/path-link/../linked-site.sh no está en UTF-8\n"))
             rcs = [stepped(a)[0] for a in (["--paso"], ["--paso", "nada", "--codigo", "113314"],
                                            ["--otra"], ["--paso", "usuarios", "--codigo", "113314"],
                                            ["--paso", "generar", "--codigo", "--revision"])]
@@ -5749,9 +5983,9 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   and lista["servidor"]["pisos"] == pisos_servidor()
                   and all(t in __import__("inspect").getsource(screen_contenedores)
                           for t in ("pisos.ram_min", "Pisos del instalador")))
-            check("generar: ejecutar runs the whole world green — 16 phases, 2 roster users, gate clean",
+            check("generar: ejecutar runs the whole world green — 15 phases, 2 roster users, gate clean",
                   st == 200 and body["ok"] and body["divergencia_vacia"]
-                  and "16 phase(s) run" in body["salida"] and "== roster: 2 usuario(s) ==" in body["salida"]
+                  and "15 phase(s) run" in body["salida"] and "== roster: 2 usuario(s) ==" in body["salida"]
                   and "user elena.diaz added to group admin" in body["salida"]
                   and "nada en la instancia que el repositorio no declare" in body["divergencia"])
             check("generar: ejecutar resolves and fetches the release apps first, with the version the instance answers (#33)",
@@ -5769,7 +6003,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   st2 == 500
                   and body2["error"] == "FATAL: territorio: la firma de SHA256SUMS no verifica contra apps.pub"
                   and "== APS Conecta provisioning" not in body2["salida"]
-                  and "16 phase(s) run" not in body2["salida"])
+                  and "15 phase(s) run" not in body2["salida"])
             globals()["APPS_CMD"] = ["bash", apps_stub("lenta")]
             viejo = TIMEOUTS["apps"]
             TIMEOUTS["apps"] = 1
@@ -5782,18 +6016,23 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   and "== APS Conecta provisioning" not in body2["salida"])
             estado = open(ESTADO_PATH, encoding="utf-8").read()
             env_text = open(env_path, encoding="utf-8").read()
-            check("generar: ejecutar converges .env — SITE written, fixtures forced, fixture password generated, 0600",
-                  "SITE=113314" in env_text and "SEED_FIXTURES=1" in env_text
+            check("generar: ejecutar converges .env — SITE written, fallback password generated, 0600",
+                  "SITE=113314" in env_text and not any(ln.startswith("SEED_") for ln in env_text.splitlines())
                   and re.search(r"^FIXTURE_USER_PASSWORD=[0-9a-f]{24}$", env_text, re.M)
                   and oct(os.stat(env_path).st_mode & 0o777) == "0o600"
                   and body["env"]["SITE"] == "escrito")
             log = stub_log_text()
             oc = [l for l in log.splitlines() if "OC_PASS" in l]
             sealed_now = sealed_map(CRED_PATH)
-            check("generar: OC_PASS rides docker exec -e only on user:add — the sealed passwords delivered",
+            check("generar: clinic accounts receive no development files",
+                  all(f"/{uid}/files/" not in log for uid in sealed_now))
+            with open(stubstate, encoding="utf-8") as fh:
+                delivered = {r[1]: r[2] for r in json.load(fh) if r[0] == "user_password_digest"}
+            check("generar: named OC_PASS delivers the sealed passwords without command-line values",
                   len(oc) >= 2 and all("user:add" in l and "--password-from-env" in l for l in oc)
-                  and "inspect" not in log
-                  and all(any(sealed_now[u][0] in l for l in oc)
+                  and all("OC_PASS=" not in l for l in oc) and "inspect" not in log
+                  and all(value[0] not in log for value in sealed_now.values())
+                  and all(delivered.get(u) == hashlib.sha256(sealed_now[u][0].encode()).hexdigest()
                           for u in ("maria.perez", "elena.diaz")))
             check("generar: the AIO arm shares container Office configuration without duplicate URL writes",
                   "DocumentServerUrl" not in log and "sameTab" in log
@@ -5809,9 +6048,9 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
             # writes (Clean boot's seed-idempotent) and every fresh install converges one run late
             fixture_pw = re.search(r"^FIXTURE_USER_PASSWORD=([0-9a-f]{24})$", env_text, re.M).group(1)
             check("generar: each cargo account is created with its own sealed password — never the shared one (a8)",
-                  all(any(l.rstrip().endswith(f" {u}") and sealed_now[u][0] in l for l in oc)
+                  all(delivered.get(u) == hashlib.sha256(sealed_now[u][0].encode()).hexdigest()
                       for u in cargos_113314)
-                  and not any(fixture_pw in l for l in oc))
+                  and hashlib.sha256(fixture_pw.encode()).hexdigest() not in delivered.values())
             check("generar: a planilla user joins all-staff and the category of each role — only the role written (a8)",
                   "user elena.diaz added to group all-staff" in body["salida"]
                   and "user elena.diaz added to group cat-clinicos" in body["salida"]
@@ -6413,16 +6652,24 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   and ca_st1 == 200 and ca_suite_ip["ca"] == huella(os.path.join(publica, CA_PUBLICA))
                   and ca_st2 == 404 and ca_st3 == 200 and ca_suite_dom["ca"] == ""
                   and 'href="/api/ca" download' in screen_contenedores())
-            with open(HOST_CLI, encoding="utf-8") as fh:
-                host_txt = fh.read()
+            mount_env = {"PATH": old_path, "LANG": "C.UTF-8", "APS_HOME": os.path.join(tmp, "mount-home"),
+                         "APS_SUITE_TAG": "v9.9.9"}
+            configured = subprocess.run([sys.executable, "-c", defaults_query], cwd=HERE, env=mount_env,
+                                        capture_output=True, text=True, timeout=10)
+            paths = json.loads(configured.stdout) if configured.returncode == 0 else []
+            host = subprocess.run(["bash", HOST_CLI, "run-command", "203.0.113.10"], env=mount_env,
+                                  capture_output=True, text=True, timeout=10)
+            command = shlex.split(host.stdout.replace("\\\n", "")) if host.returncode == 0 else []
             check("suite certificate (R22): the host's two directories are the provisionador's own (one fact, two homes)",
-                  f'"$APS_HOME/certificados/{SUITE_TLS}"' in host_txt and f'"$APS_HOME/certificados/{SUITE_CA}"' in host_txt
-                  and CERT_DIR_DEFAULT == "/opt/aps-conecta/certificados" and 'APS_HOME="${APS_HOME:-/opt/aps-conecta}"' in host_txt)
+                  len(paths) == 5 and f"APS_TLS_DIR={paths[4]}/{SUITE_TLS}" in command
+                  and f"NEXTCLOUD_TRUSTED_CACERTS_DIR={paths[4]}/{SUITE_CA}" in command)
             with open(os.path.join(ROOT_DIR, "provisioning", "lib.sh"), encoding="utf-8") as fh:
                 lib_txt = fh.read()
             check("suite certificate (R22): Nextcloud imports the CA by the file name this step writes (phase 07, mounted at the OS store)",
                   f"\nINSTALLER_CA=/usr/local/share/ca-certificates/{CA_PUBLICA}\n" in lib_txt)
             guias = []
+            with open(HOST_CLI, encoding="utf-8") as fh:
+                host_txt = fh.read()
             for rel in (("aps", "INSTALLER.md"), ("aps", "GUIA-CLINICA.md"), (".github", "workflows", "cleanboot.yml")):
                 with open(os.path.join(ROOT_DIR, *rel), encoding="utf-8") as fh:
                     guias.append(fh.read())

@@ -4,6 +4,25 @@ if [ "$AIO_LOG_LEVEL" = 'debug' ]; then
     set -x
 fi
 
+repair_database_connection() (
+    set +x
+    set -o pipefail
+    sleep 2
+    while ! PGPASSWORD="$POSTGRES_PASSWORD" su-exec www-data psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select now()"; do
+        echo "Waiting for the database to start..."
+        sleep 5
+    done
+    if [ "$POSTGRES_USER" = oc_nextcloud ] && [ "$POSTGRES_DB" = nextcloud_database ]; then
+        if ! php -r 'echo json_encode(["system" => ["dbuser" => getenv("POSTGRES_USER"),
+            "dbpassword" => getenv("POSTGRES_PASSWORD"), "dbname" => getenv("POSTGRES_DB")]], JSON_THROW_ON_ERROR);' 2>/dev/null \
+            | NC_dbuser="$POSTGRES_USER" NC_dbpassword="$POSTGRES_PASSWORD" NC_dbname="$POSTGRES_DB" \
+              su-exec www-data php /var/www/html/occ config:import >/dev/null 2>&1; then
+            echo "Database configuration could not be prepared." >&2
+            return 1
+        fi
+    fi
+)
+
 # Set a default value for POSTGRES_PORT
 if [ -z "$POSTGRES_PORT" ]; then
     POSTGRES_PORT=5432
@@ -28,17 +47,7 @@ fi
 
 # Fix false database connection on old instances
 if [ -f "/var/www/html/config/config.php" ]; then
-    sleep 2
-    while ! su-exec www-data env PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select now()"; do
-        echo "Waiting for the database to start..."
-        sleep 5
-    done
-    if [ "$POSTGRES_USER" = "oc_nextcloud" ] && [ "$POSTGRES_DB" = "nextcloud_database" ] && echo "$POSTGRES_PASSWORD" | grep -q '^[a-z0-9]\+$'; then
-        # This was introduced with https://github.com/nextcloud/all-in-one/pull/218
-        sed -i "s|'dbuser'.*=>.*$|'dbuser' => '$POSTGRES_USER',|" /var/www/html/config/config.php
-        sed -i "s|'dbpassword'.*=>.*$|'dbpassword' => '$POSTGRES_PASSWORD',|" /var/www/html/config/config.php
-        sed -i "s|'db_name'.*=>.*$|'db_name' => '$POSTGRES_DB',|" /var/www/html/config/config.php
-    fi
+    repair_database_connection || exit 1
 fi
 
 # Trust additional Cacerts, if the user provided $TRUSTED_CACERTS_DIR

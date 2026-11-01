@@ -1,8 +1,6 @@
 #!/bin/bash
 
-if [ "$AIO_LOG_LEVEL" = 'debug' ]; then
-    set -x
-fi
+set +x
 
 if [ "$AIO_LOG_LEVEL" = "warn" ]; then
     ETURNAL_LOG_LEVEL="warning"
@@ -170,8 +168,18 @@ SIGNALING_CONF
 #   password  = base64(HMAC-SHA1(TURN_SECRET, username))
 # eturnal validates both the HMAC and the embedded expiry on every Allocate,
 # so a captured credential stops working after at most 3 months.
+set +x
 JANUS_TURN_USER="$(( $(date +%s) + 7776000 )):$(openssl rand -hex 16)"
-JANUS_TURN_PWD="$(printf '%s' "$JANUS_TURN_USER" | openssl dgst -sha1 -hmac "$TURN_SECRET" -binary | openssl base64)"
+TURN_ERLANG_BIN=(/opt/eturnal/erts-*/bin)
+JANUS_TURN_PWD="$(PATH="${TURN_ERLANG_BIN[0]}:$PATH" JANUS_TURN_USER="$JANUS_TURN_USER" \
+    erl +S 1:1 +A 1 -boot /opt/eturnal/bin/no_dot_erlang -noshell -noinput -eval '
+        try
+            Key = unicode:characters_to_binary(os:getenv("TURN_SECRET")),
+            User = unicode:characters_to_binary(os:getenv("JANUS_TURN_USER")),
+            io:format("~s~n", [base64:encode(crypto:mac(hmac, sha, Key, User))]),
+            halt()
+        catch _:_ -> halt(1) end.
+    ')" || { echo "Talk TURN credentials could not be prepared." >&2; exit 1; }
 
 # Janus and eTURNAL share this container. A public domain can be unresolved
 # during bootstrap; resolving it here killed Janus before signaling became healthy.

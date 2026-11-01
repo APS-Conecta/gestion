@@ -3,7 +3,7 @@
 # groups phase 20 already created (this phase never creates structure — AD-2). The ordering that
 # guarantees is the runner's own: 20-groups -> 30-folders -> 40-acl -> here.
 #
-# GATED BY SEED_FIXTURES. These are POSITIONS, not people, each with its own first password: the
+# Each position has its own first password. The
 # Provisionador seals one per account with the planilla's (standings.sh standing_password); only
 # a seed without it — CI's — gives them all FIXTURE_USER_PASSWORD. Every jefe
 # de sector holds a role, a sector team and a category at once — the role-union this phase shows.

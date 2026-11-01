@@ -72,7 +72,7 @@ requests stay direct; bypasses include the inspected suite network and service i
 The native AppAPI daemon hostname also bypasses the proxy. HaRP trusts the public suite CA
 alongside system roots before its upstream agent starts; revalidation checks both directions (#186).
 Image discovery accepts Docker and OCI image manifests and their indexes from the suite registry (#243).
-Talk wiring has one boot/provisioning owner: phase 12 calls it after the signed release installs,
+Talk wiring has one boot/provisioning owner: phase 12 calls it after the official store app installs,
 and native imports carry changed settings through stdin. Revalidation checks the configured
 endpoints, verified public HTTPS welcome and native signaling diagnostics (#187).
 
@@ -86,6 +86,21 @@ its session once; an ambiguous start is never replayed automatically (#193).
 an already-installed instance greets with «APS Conecta Gestión AIO ya está instalado»; once the
 containers run, the page hands back to the web installer with «Suite en marcha». These are the shipped bytes
 — the brand gate proves them equal to this declaration on every run.
+
+Operator file errors name the absolute lookup path. Roster collisions include the complete
+establishment-specific list under «usuarios reservados:». The testbed summary names password
+files only when they exist; signature verification prefers `signify-openbsd`, and its missing-tool
+instruction includes both the package and the compatibility link (#141).
+
+`APS_HOME` selects the host, Provisionador and app-resolver state directory. Explicit
+app paths and `AIO_STATE` retain precedence. Developer certificate renewal retains file
+ownership and grants Apache access through a named ACL; the no-root workflow lives in
+`aps/INSTALLER.md` §14 (#142).
+
+Silent installation forwards `--sin-validar-dominio` through the existing wizard parser.
+The first completed wizard drive supplies the initial configuration. While Apache runs, later
+drives retain it and the seed converges the establishment. Preparatory and stopped-suite drives
+can apply configuration before startup. INSTALLER §4 documents the testbed and backup consequences (#158).
 
 **Why some messages remain in English.** Upstream PHP messages remain for configuration
 validation, authentication and ordinary container operations. Their sources are:

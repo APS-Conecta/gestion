@@ -41,10 +41,13 @@ REDIS_ARGS=(
     --hz 15 # Run background tasks 15×/s (default 10) for faster key expiry
 )
 
+set +x
+REDIS_ACL=''
 if [ -n "$REDIS_HOST_PASSWORD" ]; then
-    REDIS_ARGS+=(--requirepass "$REDIS_HOST_PASSWORD")
+    REDIS_PASSWORD_HASH="$(printf '%s' "$REDIS_HOST_PASSWORD" | sha256sum)" || exit 1
+    REDIS_ACL="user default on resetpass #${REDIS_PASSWORD_HASH%% *} ~* &* +@all"
 fi
 
 # Run redis with a password if provided
 echo "Redis has started"
-exec redis-server "${REDIS_ARGS[@]}"
+exec redis-server - "${REDIS_ARGS[@]}" <<< "$REDIS_ACL"

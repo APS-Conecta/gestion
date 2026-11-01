@@ -1,8 +1,8 @@
 #!/bin/bash
 # SPDX-FileCopyrightText: 2026 APS Conecta
 # SPDX-License-Identifier: AGPL-3.0-or-later
-# Shared boot/provisioning configuration. Missing signed apps defer to phase 12;
-# only notify_push may use the store (ADR-0018, ADR-0020). No app updates here.
+# Shared boot/provisioning configuration. Missing managed apps defer to phase 12
+# (ADR-0018, ADR-0025); notify_push installs here. No app updates here.
 
 startup_occ() { php /var/www/html/occ "$@"; }
 
@@ -69,6 +69,50 @@ startup_system_set() {
     [ "$before" = "$after" ] || echo "app-startup: system:$key -> updated"
 }
 
+# Import a string from a named environment variable, preserving sibling keys.
+startup_secret_set() (
+    set +x
+    local scope="$1" variable="$2" key="$3" label settings snapshot
+    shift 2
+    label="$scope:$key"
+    [ "$scope" != apps ] || label="app:$key:${2:-}"
+    snapshot="$(startup_occ config:list --private --output=json 2>/dev/null)" || {
+        echo "app-startup: failed to read configuration for $label" >&2; return 1;
+    }
+    settings="$(printf '%s' "$snapshot" | php -r '
+        try {
+            $current = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+            $scope = $argv[1];
+            $value = getenv($argv[2]);
+            $path = array_slice($argv, 3);
+            if (!in_array($scope, ["apps", "system"], true) || $value === false || $value === ""
+                || !is_array($current[$scope] ?? null) || count($path) > 2
+                || ($scope === "apps" && count($path) !== 2)) { exit(1); }
+            $key = $path[0];
+            $before = $current[$scope][$key] ?? null;
+            if (count($path) === 2) {
+                $desired = $before ?? [];
+                if (!is_array($desired)) { exit(1); }
+                if ($scope === "apps") {
+                    if (($desired[$path[1]] ?? null) === $value) { exit(0); }
+                    $desired = [];
+                }
+                $desired[$path[1]] = $value;
+            } else { $desired = $value; }
+            if ($before !== $desired) {
+                echo json_encode([$scope => [$key => $desired]], JSON_THROW_ON_ERROR);
+            }
+        } catch (Throwable $e) { exit(1); }
+    ' "$scope" "$variable" "$@")" || {
+        echo "app-startup: cannot prepare configuration for $label" >&2; return 1;
+    }
+    [ -n "$settings" ] || return 0
+    printf '%s' "$settings" | startup_occ config:import >/dev/null 2>&1 || {
+        echo "app-startup: failed to configure $label" >&2; return 1;
+    }
+    echo "app-startup: $label -> updated"
+)
+
 startup_wait() {
     local host="$1" port="$2" name="$3" deadline=$((SECONDS + 90)) remaining
     while ! nc -z -w 1 "$host" "$port"; do
@@ -81,6 +125,36 @@ startup_wait() {
         [ "$remaining" -le 5 ] || remaining=5
         sleep "$remaining"
     done
+}
+
+startup_serverinfo() {
+    if [ -n "${SERVERINFO_TOKEN:-}" ] && \
+       [ -z "$(startup_occ config:app:get serverinfo token 2>/dev/null)" ]; then
+        startup_secret_set apps SERVERINFO_TOKEN serverinfo token || return 1
+    fi
+}
+
+startup_subscription() {
+    if [ -n "${SUBSCRIPTION_KEY:-}" ] && \
+       [ -z "$(startup_occ config:app:get support potential_subscription_key 2>/dev/null)" ]; then
+        startup_secret_set apps SUBSCRIPTION_KEY support potential_subscription_key || return 1
+        startup_occ config:app:delete support last_check || return 1
+    fi
+}
+
+startup_imaginary() {
+    if [ "${IMAGINARY_ENABLED:-}" = yes ]; then
+        startup_system_set enabledPreviewProviders 0 --value='OC\Preview\Imaginary' || return 1
+        startup_system_set enabledPreviewProviders 23 --value='OC\Preview\ImaginaryPDF' || return 1
+        startup_system_set preview_imaginary_url --value="http://$IMAGINARY_HOST:9000" || return 1
+        startup_secret_set system IMAGINARY_SECRET preview_imaginary_key || return 1
+    elif [ -n "$(startup_occ config:system:get preview_imaginary_url)" ]; then
+        local index
+        for index in 0 20 21 22 23; do
+            startup_occ config:system:delete enabledPreviewProviders "$index" || return 1
+        done
+        startup_occ config:system:delete preview_imaginary_url || return 1
+    fi
 }
 
 startup_office() {
@@ -108,8 +182,8 @@ startup_office() {
         [ "$rc" -eq 0 ] || return "$rc"
         # Set EuroOffice configuration
         startup_system_set eurooffice editors_check_interval --value="0" --type=integer || return 1
-        startup_system_set eurooffice jwt_secret --value="$EUROOFFICE_SECRET" || return 1
-        startup_app_set eurooffice jwt_secret --value="$EUROOFFICE_SECRET" || return 1
+        startup_secret_set system EUROOFFICE_SECRET eurooffice jwt_secret || return 1
+        startup_secret_set apps EUROOFFICE_SECRET eurooffice jwt_secret || return 1
         startup_system_set eurooffice jwt_header --value="AuthorizationJwt" || return 1
 
         # Adjust the EuroOffice host if using internal pattern
@@ -204,9 +278,16 @@ startup_recording() {
             rc=0; startup_wait "$TALK_RECORDING_HOST" 1234 "Talk Recording" || rc=$?
             [ "$rc" -ne 2 ] || return 0
             [ "$rc" -eq 0 ] || return "$rc"
-            # TODO: migrate to occ command if that becomes available
-            RECORDING_SERVERS_STRING="{\"servers\":[{\"server\":\"http://$TALK_RECORDING_HOST:1234/\",\"verify\":true}],\"secret\":\"$RECORDING_SECRET\"}"
-            startup_app_set spreed recording_servers --value="$RECORDING_SERVERS_STRING" || return 1
+            local -x RECORDING_SERVERS_STRING
+            RECORDING_SERVERS_STRING="$(php -r '
+                $secret = getenv("RECORDING_SECRET");
+                if ($secret === false || $secret === "") { exit(1); }
+                echo json_encode(["servers" => [["server" => $argv[1], "verify" => true]],
+                    "secret" => $secret], JSON_THROW_ON_ERROR);
+            ' "http://$TALK_RECORDING_HOST:1234/")" || {
+                echo "app-startup: cannot prepare recording configuration" >&2; return 1;
+            }
+            startup_secret_set apps RECORDING_SERVERS_STRING spreed recording_servers || return 1
         else
             if [ "$REMOVE_DISABLED_APPS" = yes ]; then
                 php /var/www/html/occ config:app:delete spreed recording_servers || return 1
@@ -261,8 +342,18 @@ startup_fts() {
         [ "$rc" -ne 2 ] || return 0
         [ "$rc" -eq 0 ] || return "$rc"
         local FULLTEXTSEARCH_PROTOCOL="${FULLTEXTSEARCH_PROTOCOL:-http}"
+        local -x FULLTEXTSEARCH_ELASTIC_HOST
+        FULLTEXTSEARCH_ELASTIC_HOST="$(php -r '
+            $password = getenv("FULLTEXTSEARCH_PASSWORD");
+            if ($password === false || $password === "") { exit(1); }
+            echo $argv[1] . "://" . rawurlencode($argv[2]) . ":" . rawurlencode($password)
+                . "@" . $argv[3] . ":" . $argv[4];
+        ' "$FULLTEXTSEARCH_PROTOCOL" "$FULLTEXTSEARCH_USER" "$FULLTEXTSEARCH_HOST" "$FULLTEXTSEARCH_PORT")" || {
+            echo "app-startup: cannot prepare search configuration" >&2; return 1;
+        }
         php /var/www/html/occ fulltextsearch:configure '{"search_platform":"OCA\\FullTextSearch_Elasticsearch\\Platform\\ElasticSearchPlatform"}' >/dev/null 2>&1 || { echo "app-startup: fulltext configuration failed" >&2; return 1; }
-        php /var/www/html/occ fulltextsearch_elasticsearch:configure "{\"elastic_host\":\"$FULLTEXTSEARCH_PROTOCOL://$FULLTEXTSEARCH_USER:$FULLTEXTSEARCH_PASSWORD@$FULLTEXTSEARCH_HOST:$FULLTEXTSEARCH_PORT\",\"elastic_index\":\"$FULLTEXTSEARCH_INDEX\"}" >/dev/null 2>&1 || { echo "app-startup: fulltext configuration failed" >&2; return 1; }
+        startup_secret_set apps FULLTEXTSEARCH_ELASTIC_HOST fulltextsearch_elasticsearch elastic_host || return 1
+        php /var/www/html/occ fulltextsearch_elasticsearch:configure "{\"elastic_index\":\"$FULLTEXTSEARCH_INDEX\"}" >/dev/null 2>&1 || { echo "app-startup: fulltext configuration failed" >&2; return 1; }
         php /var/www/html/occ files_fulltextsearch:configure "{\"files_pdf\":true,\"files_office\":true}" >/dev/null 2>&1 || { echo "app-startup: fulltext configuration failed" >&2; return 1; }
 
         # Do the index
@@ -323,7 +414,8 @@ configure_startup_apps() {
         talk) startup_talk || rc=$? ;;
         boot)
             startup_notify && startup_office && startup_talk && startup_recording &&
-                startup_clam && startup_fts && startup_harp || rc=$? ;;
+                startup_clam && startup_fts && startup_harp && startup_serverinfo &&
+                startup_imaginary && startup_subscription || rc=$? ;;
         *) echo "app-startup: unknown target: $target" >&2; rc=1 ;;
     esac
     [ "$traced" -eq 0 ] || set -x
