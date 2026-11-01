@@ -136,7 +136,7 @@ AIO_STATE = "/opt/aps-conecta/aio"   # the host's wizard state (0700): passphras
 # The installer's own certificate authority and the leaf it signs for the link's address (L3 S1,
 # owner 2026-10-02). The CA is kept: the suite's certificate (L4, R22) hangs from the same one and
 # staff import it once. The self-test redirects this; the default is the only literal.
-CERT_DIR = CERT_DIR_DEFAULT = "/opt/aps-conecta/certificados"
+CERT_DIR = CERT_DIR_DEFAULT = os.path.join(APS_HOME, "certificados")
 # An install by IP (R22): the suite's leaf in CERT_DIR/suite (patch 235's APS_TLS_DIR), the CA's certificate
 # alone in CERT_DIR/ca (NEXTCLOUD_TRUSTED_CACERTS_DIR) under the name staff import and Nextcloud lists — the
 # host's run_command names the same two directories, phase 07 the same file; the self-test pins all three
@@ -3792,10 +3792,41 @@ def tls_context(ip):
     return ctx, huella(crt)
 
 
+def _secure_suite_tls(directory):
+    files = [os.path.join(directory, name) for name in ("tls.crt", "tls.key")]
+    modes = [(path, 0o400) for path in files] + [(directory, 0o500)]
+    for path, mode in modes:
+        if os.geteuid() == 0:
+            os.chown(path, APACHE_UID, APACHE_UID)
+        os.chmod(path, mode)
+    if os.geteuid() in (0, APACHE_UID):
+        return ""
+    # The developer retains ownership for renewal; only Apache gains a named read grant.
+    granted = False
+    try:
+        subprocess.run(["setfacl", "--set", f"u::r--,u:{APACHE_UID}:r--,g::---,m::r--,o::---",
+                        "--", *files], check=True, capture_output=True, timeout=30)
+        subprocess.run(["setfacl", "--set", f"u::r-x,u:{APACHE_UID}:r-x,g::---,m::r-x,o::---",
+                        "--", directory], check=True, capture_output=True, timeout=30)
+        granted = True
+    except FileNotFoundError:
+        return "falta setfacl para autorizar el certificado: instale el paquete acl (sudo apt-get install acl)"
+    except subprocess.CalledProcessError:
+        return "no se pudo autorizar el certificado: compruebe que el sistema de archivos admita ACL"
+    except subprocess.TimeoutExpired:
+        return "setfacl no respondió en 30 s: revise el sistema de archivos y vuelva a ejecutar"
+    finally:
+        if not granted:
+            for path, mode in modes:
+                os.chmod(path, mode)
+    return ""
+
+
 def certificado_suite(ip):
     """The suite's own certificate for an install by IP (R22). The leaf for the address, signed by the
-    installer's CA, in CERT_DIR/suite owned by apache's uid (files 0400, directory 0500) — what patch
-    235 binds read-only as /aps-tls, never next to the CA's key; the CA's certificate alone in
+    installer's CA, in CERT_DIR/suite readable by apache's uid — what patch 235 binds read-only as
+    /aps-tls, never next to the CA's key. Root hands over ownership (0400 files, 0500 directory);
+    an unprivileged owner grants Apache a named ACL. The CA's certificate alone in
     CERT_DIR/ca (0644) — what Nextcloud and Talk trust and staff import. The leaf is kept while it
     names exactly this address, chains to this CA and has more than RENOVAR_DIAS left; else it is
     signed again, and the host restarts apache (it reads the files at start)."""
@@ -3825,11 +3856,9 @@ def certificado_suite(ip):
         # 0400 files are replaced, never written through
         os.replace(nueva_key, key)
         os.replace(nuevo_crt, crt)
-    for f in (crt, key):
-        os.chown(f, APACHE_UID, APACHE_UID)
-        os.chmod(f, 0o400)
-    os.chown(hoja, APACHE_UID, APACHE_UID)
-    os.chmod(hoja, 0o500)
+    error = _secure_suite_tls(hoja)
+    if error:
+        return 500, {"error": error}
     os.makedirs(publica, exist_ok=True)
     os.chmod(publica, 0o755)
     destino = os.path.join(publica, CA_PUBLICA)
