@@ -1,8 +1,6 @@
 #!/bin/bash
 
-if [ "$AIO_LOG_LEVEL" = 'debug' ]; then
-    set -x
-fi
+set +x
 
 # Functions
 get_start_time(){
@@ -499,7 +497,7 @@ if [ "$BORG_MODE" = restore ]; then
     echo -E "${CONTENTS}" > /nextcloud_aio_volumes/nextcloud_aio_mastercontainer/data/configuration.json
 
     # Reset the AIO password to the currently used one
-    CONTENTS="$(jq ".password = $AIO_PASSWORD" /nextcloud_aio_volumes/nextcloud_aio_mastercontainer/data/configuration.json)"
+    CONTENTS="$(AIO_PASSWORD="$AIO_PASSWORD" jq '.password = (env.AIO_PASSWORD | fromjson)' /nextcloud_aio_volumes/nextcloud_aio_mastercontainer/data/configuration.json)"
     echo -E "${CONTENTS}" > /nextcloud_aio_volumes/nextcloud_aio_mastercontainer/data/configuration.json
 
     # Reset the datadir to the one that was used for the restore
