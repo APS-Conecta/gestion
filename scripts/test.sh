@@ -3471,6 +3471,17 @@ source provisioning/phases/12-apps.sh
         state_path.write_text(json.dumps({'enabled':False, 'wired':0, 'calls':[], 'fail':failure}))
         state = run(success=False)
         assert state['wired'] == (1 if failure == 'wire' else 0)
+    (root / 'apps.json').write_text(json.dumps([
+        {'id':'spreed', 'source':'store', 'optional':'off', 'containers':[]}]))
+    home = root / 'home'
+    (home / 'aio').mkdir(parents=True)
+    (home / 'aio/opciones').write_text('spreed=1\n')
+    env['APS_HOME'] = str(home)
+    env.pop('AIO_STATE', None)
+    env.pop('APS_APPS_OPCIONES', None)
+    state_path.write_text(json.dumps({'enabled':False, 'wired':0, 'calls':[]}))
+    state = run()
+    assert state['wired'] == 1, 'Phase 12 must install an optional app selected under APS_HOME'
 print('Phase 12 wires fresh and existing official Talk installs and propagates installation/configuration failures')
 PY
 }
