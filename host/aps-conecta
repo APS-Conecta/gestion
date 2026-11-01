@@ -3343,6 +3343,25 @@ esac
 SHIM
   chmod +x "$tshim/curl" "$tshim/docker"
   if only_shims curl docker; then
+    out="$(
+      cp -a "$ROOT" "$tmp/domain-install"
+      ROOT="$tmp/domain-install"
+      mkdir -p "$ROOT/sites/113314"
+      cp "$tmp/dado.sh" "$ROOT/sites/113314/site.sh"
+      printf 'SITE=113314\n' > "$ROOT/.env"
+      step_revisar() { ok "revisar-stub"; }
+      step_preparar() { ok "preparar-stub"; }
+      step_descargar() { ok "descargar-stub"; }
+      install_timers() { ok "temporizadores-stub"; }
+      cmd_datos() { ok "datos-stub"; }
+      id() { echo 0; }
+      python3() { case "$*" in *--paso*) return 0;; *) command python3 "$@";; esac; }
+      cmd_install --sitio "$tmp/dado.sh" --planilla "$tmp/dado.csv" --sin-validar-dominio
+    )"; rc=$?
+    check "install --sin-validar-dominio: the silent flow posts the shared wizard's domain-validation option (#158)" \
+      '[ "$rc" -eq 0 ] && grep -q "domain=clinica.example skip_domain_validation=1$" "$tmp/aio.log"'
+    rm -rf "$AIO_STATE"
+    : > "$tmp/aio.log"; : > "$tmp/aio.ps"; : > "$tmp/aio.argv"; rm -f "$tmp/aio.configured"
     out="$( (cmd_aio_wizard --dominio clinica.example --sin-validar-dominio) 2>&1)"; rc=$?
     check "asistente-aio: passphrase, login, domain, timezone, options, start with progress, the waits, the admin password — in order" \
       '[ "$rc" -eq 0 ] && case "$out" in *"✓ Contraseña del asistente guardada en $AIO_STATE/master.pw"*"✓ Ingreso al asistente"*"✓ Dominio: clinica.example"*"✓ Zona horaria: America/Santiago"*"✓ Servicios de la suite incluidos; sin aplicaciones opcionales"*"· contenedores en marcha: 3 de $AIO_EXPECTED"*"✓ Suite iniciada"*"✓ Suite en marcha: $AIO_EXPECTED contenedores, Nextcloud instalado"*"✓ Contraseña del administrador de Nextcloud guardada en $AIO_STATE/nextcloud.pw"*) ;; *) false;; esac'
