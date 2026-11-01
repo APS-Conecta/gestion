@@ -403,6 +403,43 @@ PY
 }
 check imaginary_secret_argv_cases
 
+cleanboot_secret_argv_cases() {
+  python3 - <<'PY'
+import base64, json, os, pathlib, subprocess, sys, tempfile, textwrap
+source = pathlib.Path('.github/workflows/cleanboot.yml').read_text()
+anchor = 'grep -q "occ group:delete deriva-prueba" "$RUNNER_TEMP/estado.out"\n'
+fragment = source.split(anchor, 1)[1].split('          occ group:delete deriva-prueba', 1)[0]
+with tempfile.TemporaryDirectory(prefix='aps cleanboot secret ') as directory:
+    root = pathlib.Path(directory)
+    capture = root / 'call.json'
+    client = root / 'curl'
+    client.write_text('#!' + sys.executable + '\n' + '''
+import json, os, pathlib, sys
+pathlib.Path(os.environ['CASE_CAPTURE']).write_text(json.dumps({
+    'argv': sys.argv[1:], 'stdin': sys.stdin.read()}))
+print('deriva-prueba')
+sys.exit(int(os.environ.get('CASE_FAIL', '0')))
+''')
+    client.chmod(0o755)
+    password = "synthetic notification password ' \" \\ $ ;\nnext line"
+    env = dict(os.environ, PATH=directory+':'+os.environ['PATH'], CASE_CAPTURE=str(capture),
+               NEXTCLOUD_ADMIN_USER='fixture.admin', NEXTCLOUD_ADMIN_PASSWORD=password,
+               SUITE_CA='/public/ca.crt', SUITE_IP='192.0.2.1')
+    for failure in ('0', '1'):
+        result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-x', '-c', textwrap.dedent(fragment)],
+                                env=dict(env, CASE_FAIL=failure), input='', capture_output=True, text=True, timeout=5)
+        call = json.loads(capture.read_text())
+        assert all(password not in word for word in call['argv']), 'Cleanboot administrator password entered process arguments'
+        assert '--config' in call['argv'] and '--cacert' in call['argv'] and env['SUITE_CA'] in call['argv']
+        encoded = call['stdin'].split('Authorization: Basic ', 1)[1].strip().strip('"')
+        assert base64.b64decode(encoded).decode() == 'fixture.admin:' + password
+        assert (result.returncode == 0) == (failure == '0')
+        assert 'synthetic notification password' not in result.stdout + result.stderr
+        assert encoded not in result.stdout + result.stderr
+PY
+}
+check cleanboot_secret_argv_cases
+
 aia_private_temp_cases() {
   python3 - <<'PY'
 import json, os, pathlib, subprocess, tempfile, uuid
