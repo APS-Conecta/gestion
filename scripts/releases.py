@@ -330,6 +330,9 @@ def prove_tarball(data, app, version):
     try:
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
             members = tar.getmembers()
+            for member in members:
+                if member.name.startswith("/") or ".." in member.name.split("/"):
+                    raise Refusal(f"el paquete contiene una ruta no permitida «{member.name}»")
             tops = {m.name.split("/")[0] for m in members}
             if len(tops) != 1 or app not in tops:
                 raise Refusal(f"el paquete descomprime «{sorted(tops)[0] if tops else 'nada'}/», "
@@ -856,6 +859,8 @@ def selftest():
         mk_release("APS-Conecta/mal-dir", "v1.0.0", "1.0.0", top="otro")
         mk_release("APS-Conecta/mal-path", "v1.0.0", "1.0.0",
                    extra_members=(tarfile.TarInfo("malpath/../x"),))
+        mk_release("APS-Conecta/mal-absolute", "v1.0.0", "1.0.0",
+                   extra_members=(tarfile.TarInfo("/malabsolute/x"),))
         mk_release("APS-Conecta/con-firma-nc", "v1.0.0", "1.0.0", con_firma_nc=True)
         mk_release("APS-Conecta/otra-id", "v1.0.0", "1.0.0", id_asset="distinto")
         mk_release("APS-Conecta/version-interna", "v1.0.0", "1.0.0", version_interna="0.9.0")
@@ -889,6 +894,9 @@ def selftest():
         cause = refused(fetch_release, fila("APS-Conecta/mal-path"), "v1.0.0")
         check("an archive with an internal parent component is refused before storage",
               bool(cause) and not os.path.exists(store_file("malpath", "v1.0.0")))
+        cause = refused(fetch_release, fila("APS-Conecta/mal-absolute"), "v1.0.0")
+        check("an archive with an absolute member is refused before storage",
+              bool(cause) and not os.path.exists(store_file("malabsolute", "v1.0.0")))
         check("a tarball carrying appinfo/signature.json refused",
               "signature.json" in refused(fetch_release, fila("APS-Conecta/con-firma-nc"), "v1.0.0"))
         check("a release declaring another app id refused",
