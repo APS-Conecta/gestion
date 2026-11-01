@@ -111,6 +111,27 @@ sys.exit(int(os.environ.get('CASE_FAIL', '0')))
         assert base64.b64decode(encoded).decode() == 'elastic:' + password
         assert (result.returncode == 0) == (failure == '0' and status != 'red')
         assert password not in result.stdout + result.stderr
+    server = root / 'redis-server'
+    server.write_text('#!' + sys.executable + '\n' + '''
+import json, os, pathlib, sys
+pathlib.Path(os.environ['CASE_CAPTURE']).write_text(json.dumps({
+    'argv': sys.argv[1:], 'stdin': sys.stdin.read()}))
+''')
+    server.chmod(0o755)
+    sysctl = root / 'sysctl'
+    sysctl.write_text('#!/bin/sh\nprintf 1\n')
+    sysctl.chmod(0o755)
+    for value in (password, ''):
+        result = subprocess.run(['bash', 'Containers/redis/start.sh'], env=dict(env, REDIS_HOST_PASSWORD=value),
+                                input='', capture_output=True, text=True, timeout=5)
+        assert result.returncode == 0
+        call = json.loads(capture.read_text())
+        assert all(password not in word for word in call['argv']), 'Redis startup password entered process arguments'
+        assert call['argv'][0] == '-'
+        import hashlib
+        expected = 'user default on resetpass #' + hashlib.sha256(password.encode()).hexdigest() + ' ~* &* +@all'
+        assert call['stdin'].strip() == (expected if value else '')
+        assert password not in result.stdout + result.stderr
 PY
 }
 check service_secret_argv_cases
