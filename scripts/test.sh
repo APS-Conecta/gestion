@@ -49,6 +49,21 @@ PY
 }
 check user_secret_argv_cases
 
+clinic_seed_has_no_personal_fixtures() {
+  python3 - <<'PY'
+import pathlib, re
+phases = pathlib.Path('provisioning/phases')
+assert not (phases / '60-fixtures.sh').exists(), 'Clinic installs still include the development content phase'
+for path in phases.glob('*.sh'):
+    code = '\n'.join(line for line in path.read_text().splitlines() if not line.lstrip().startswith('#'))
+    assert 'ensure_sample_file' not in code, f'{path}: development content in personal Files'
+    assert not re.search(r'\$(?:\{(?:uid|user)\}|(?:uid|user))/files', code), f'{path}: personal Files write'
+for name in ('provisioning/seed.sh', 'scripts/seed-idempotent.sh', 'scripts/provisionador.py'):
+    assert 'SEED_FIXTURES' not in pathlib.Path(name).read_text(), f'{name}: obsolete fixture partition'
+PY
+}
+check clinic_seed_has_no_personal_fixtures
+
 trusted_proxy_network_cases() {
   python3 - <<'PY'
 import os, pathlib, subprocess, tempfile
