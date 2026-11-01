@@ -346,6 +346,7 @@ the fail-stop arm), GATE_EXTRA (a uid the user:list answer plants — the gate-r
 ('empty' — no suite running), PS_LISTA (the containers docker ps -a lists — the step-7
 arms), SLOW (sleep before answering — the timeout arm).
 """
+import hashlib
 import json
 import os
 import select
@@ -436,7 +437,10 @@ elif "user:info" in args:
     uid = find("user:info")
     sys.exit(0 if any(r == ["user", uid] for r in rows) else 1)
 elif "user:add" in args:
-    rows.append(["user", args[-1]])
+    uid = args[-1]
+    rows.append(["user", uid])
+    rows.append(["user_password_digest", uid,
+                 hashlib.sha256(os.environ.get("OC_PASS", "").encode()).hexdigest()])
     save(rows)
 elif "user:list" in args:
     users = sorted(r[1] for r in rows if r[0] == "user")
@@ -5790,10 +5794,13 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
             log = stub_log_text()
             oc = [l for l in log.splitlines() if "OC_PASS" in l]
             sealed_now = sealed_map(CRED_PATH)
-            check("generar: OC_PASS rides docker exec -e only on user:add — the sealed passwords delivered",
+            with open(stubstate, encoding="utf-8") as fh:
+                delivered = {r[1]: r[2] for r in json.load(fh) if r[0] == "user_password_digest"}
+            check("generar: named OC_PASS delivers the sealed passwords without command-line values",
                   len(oc) >= 2 and all("user:add" in l and "--password-from-env" in l for l in oc)
-                  and "inspect" not in log
-                  and all(any(sealed_now[u][0] in l for l in oc)
+                  and all("OC_PASS=" not in l for l in oc) and "inspect" not in log
+                  and all(value[0] not in log for value in sealed_now.values())
+                  and all(delivered.get(u) == hashlib.sha256(sealed_now[u][0].encode()).hexdigest()
                           for u in ("maria.perez", "elena.diaz")))
             check("generar: the AIO arm shares container Office configuration without duplicate URL writes",
                   "DocumentServerUrl" not in log and "sameTab" in log
@@ -5809,9 +5816,9 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
             # writes (Clean boot's seed-idempotent) and every fresh install converges one run late
             fixture_pw = re.search(r"^FIXTURE_USER_PASSWORD=([0-9a-f]{24})$", env_text, re.M).group(1)
             check("generar: each cargo account is created with its own sealed password — never the shared one (a8)",
-                  all(any(l.rstrip().endswith(f" {u}") and sealed_now[u][0] in l for l in oc)
+                  all(delivered.get(u) == hashlib.sha256(sealed_now[u][0].encode()).hexdigest()
                       for u in cargos_113314)
-                  and not any(fixture_pw in l for l in oc))
+                  and hashlib.sha256(fixture_pw.encode()).hexdigest() not in delivered.values())
             check("generar: a planilla user joins all-staff and the category of each role — only the role written (a8)",
                   "user elena.diaz added to group all-staff" in body["salida"]
                   and "user elena.diaz added to group cat-clinicos" in body["salida"]

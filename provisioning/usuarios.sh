@@ -16,9 +16,7 @@
 # terminated by one empty line. This script does only what bash is good at: ride the lib.sh
 # helpers so the log verbs are EXACTLY the seed's own vocabulary (ensure_user's "user X created",
 # add_user_to_group's "user X added to group Y" — what seed-idempotent greps) and the password
-# reaches occ the only way it ever does here: -e OC_PASS on docker exec, --password-from-env
-# reading it (lib.sh:169-172's precedent — the value rides the exec argv for the moment of the
-# call, the container's own env stays clean for `docker inspect`).
+# reaches occ through the named OC_PASS environment variable and --password-from-env.
 #
 # Runs AFTER the seed (the executor's order): phase 20 has already created every group the
 # roster names, so the missing-group branch below is a loud skip, not an expected path. The

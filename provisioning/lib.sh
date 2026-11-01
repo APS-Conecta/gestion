@@ -196,11 +196,8 @@ user_exists() { occ user:info "$1" >/dev/null 2>&1; }  # UID
 ensure_user() {  # UID DISPLAY PASSWORD
   local uid="$1" display="$2" pass="$3"
   if user_exists "$uid"; then log "user $uid exists"; return 0; fi
-  # OC_PASS must reach the php process INSIDE the container — `docker exec` does not forward host
-  # env either, so pass it explicitly with -e (never on the command line; --password-from-env reads
-  # it). Not via occ(): the seam's one job is occ's argv; the -e belongs to this site. The occ path
-  # is ABSOLUTE for the same reason it is in env.sh — the AIO image sets no WORKDIR.
-  if nc_exec --user www-data -e OC_PASS="$pass" -- \
+  # Docker copies the named variable from its client environment.
+  if OC_PASS="$pass" nc_exec --user www-data -e OC_PASS -- \
        php /var/www/html/occ user:add --password-from-env --display-name="$display" "$uid" >/dev/null; then
     log "user $uid created"
   else
