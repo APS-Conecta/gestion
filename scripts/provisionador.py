@@ -4094,6 +4094,20 @@ def selftest():
             print(f"  FAIL: {_name}")
         return 1
 
+    defaults_query = ("import json, provisionador as p; print(json.dumps([p.CRED_PATH, p.ESTADO_PATH, "
+                      "p.AIO_STATE, p.CERT_DIR, p.CERT_DIR_DEFAULT]))")
+    for setting in (None, ""):
+        defaults_env = {"PATH": os.defpath, "LANG": "C.UTF-8"}
+        if setting is not None:
+            defaults_env["APS_HOME"] = setting
+        result = subprocess.run([sys.executable, "-c", defaults_query], cwd=HERE, env=defaults_env,
+                                capture_output=True, text=True, timeout=10)
+        paths = json.loads(result.stdout) if result.returncode == 0 else []
+        check(f"environment contract: {'unset' if setting is None else 'empty'} APS_HOME preserves every default (#142)",
+              paths == ["/opt/aps-conecta/credentials.txt", "/opt/aps-conecta/estado.txt",
+                        "/opt/aps-conecta/aio", "/opt/aps-conecta/certificados",
+                        "/opt/aps-conecta/certificados"])
+
     old = deis.HERE
     old_cred, old_p20 = CRED_PATH, PHASE20
     old_cert = CERT_DIR
@@ -6591,11 +6605,13 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   and ca_st1 == 200 and ca_suite_ip["ca"] == huella(os.path.join(publica, CA_PUBLICA))
                   and ca_st2 == 404 and ca_st3 == 200 and ca_suite_dom["ca"] == ""
                   and 'href="/api/ca" download' in screen_contenedores())
-            with open(HOST_CLI, encoding="utf-8") as fh:
-                host_txt = fh.read()
+            host = subprocess.run(["bash", HOST_CLI, "run-command", "203.0.113.10"],
+                                  env=dict(os.environ, APS_HOME=APS_HOME, APS_SUITE_TAG="v9.9.9"),
+                                  capture_output=True, text=True, timeout=10)
+            command = shlex.split(host.stdout.replace("\\\n", "")) if host.returncode == 0 else []
             check("suite certificate (R22): the host's two directories are the provisionador's own (one fact, two homes)",
-                  f'"$APS_HOME/certificados/{SUITE_TLS}"' in host_txt and f'"$APS_HOME/certificados/{SUITE_CA}"' in host_txt
-                  and CERT_DIR_DEFAULT == "/opt/aps-conecta/certificados" and 'APS_HOME="${APS_HOME:-/opt/aps-conecta}"' in host_txt)
+                  f"APS_TLS_DIR={CERT_DIR_DEFAULT}/{SUITE_TLS}" in command
+                  and f"NEXTCLOUD_TRUSTED_CACERTS_DIR={CERT_DIR_DEFAULT}/{SUITE_CA}" in command)
             with open(os.path.join(ROOT_DIR, "provisioning", "lib.sh"), encoding="utf-8") as fh:
                 lib_txt = fh.read()
             check("suite certificate (R22): Nextcloud imports the CA by the file name this step writes (phase 07, mounted at the OS store)",

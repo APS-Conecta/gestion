@@ -731,6 +731,18 @@ def selftest():
     real_env = dict(os.environ)
     tags = {}          # repo → [tags], NEWEST FIRST — the hub serves this order everywhere
     try:
+        query = ("import json,releases; print(json.dumps([releases.lock_path(), releases.store_path(), "
+                 "releases.opciones_path()]))")
+        for setting in (None, ""):
+            defaults_env = {"PATH": os.defpath, "LANG": "C.UTF-8"}
+            if setting is not None:
+                defaults_env["APS_HOME"] = setting
+            result = subprocess.run([sys.executable, "-c", query], cwd=HERE, env=defaults_env,
+                                    capture_output=True, text=True, timeout=10)
+            paths = json.loads(result.stdout) if result.returncode == 0 else []
+            check(f"environment contract: {'unset' if setting is None else 'empty'} APS_HOME preserves release defaults (#142)",
+                  paths == ["/opt/aps-conecta/apps.lock.json", "/opt/aps-conecta/apps",
+                            "/opt/aps-conecta/aio/opciones"])
         os.environ["APS_APPS_LOCK"] = os.path.join(tmp, "lock.json")
         os.environ["APS_APPS_STORE"] = os.path.join(tmp, "store")
 
@@ -1070,6 +1082,10 @@ def selftest():
                            fila("APS-Conecta/farmacia", optional="off")], fh)
             public_key = os.path.join(isolated, "apps.pub")
             shutil.copy2(os.environ["APS_APPS_PUB"], public_key)
+            overrides = os.path.join(isolated, "overrides")
+            os.mkdir(overrides)
+            with open(os.path.join(overrides, "opciones"), "w", encoding="utf-8") as fh:
+                fh.write("farmacia=0\n")
             identity = {}
             if os.geteuid() == 0:
                 actor = pwd.getpwnam("nobody")
@@ -1091,6 +1107,21 @@ def selftest():
                   and os.path.isfile(os.path.join(home, "apps", "farmacia", "v0.12.0.tar.gz")))
             if run.returncode:
                 print(run.stderr.strip(), file=sys.stderr)
+            for case_name, choice in (
+                    ("state", {"AIO_STATE": overrides}),
+                    ("options", {"AIO_STATE": os.path.join(home, "aio"),
+                                 "APS_APPS_OPCIONES": os.path.join(overrides, "opciones")})):
+                alternate_lock = os.path.join(overrides, case_name + ".lock.json")
+                alternate_store = os.path.join(overrides, case_name + "-apps")
+                override_env = dict(local_env, APS_APPS_LOCK=alternate_lock, APS_APPS_STORE=alternate_store,
+                                    **choice)
+                run = subprocess.run([sys.executable, os.path.abspath(__file__), "fetch",
+                                      "--manifest", manifest, "--nextcloud", "34.0.4"],
+                                     env=override_env, capture_output=True, text=True, timeout=30, **identity)
+                selected = json.load(open(alternate_lock, encoding="utf-8")) if os.path.isfile(alternate_lock) else {}
+                check(f"cli fetch: explicit lock, store and {case_name} overrides take precedence over APS_HOME (#142)",
+                      run.returncode == 0 and set(selected.get("apps", {})) == {"territorio"}
+                      and os.path.isfile(os.path.join(alternate_store, "territorio", "v0.80.0.tar.gz")))
         # THE PRODUCTION ARGV, exactly as APPS_CMD spells it: `fetch --nextcloud V`, no --manifest.
         # This is the call the first clean boot crashed on (apps.load(None) → TypeError — every
         # other arm passed --manifest, and the wizard's stub hid the argv entirely), so it runs
