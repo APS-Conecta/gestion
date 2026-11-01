@@ -152,6 +152,10 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-088 | cached app archives bypass member validation during repair and unchanged updates (#199) | a matching stored hash returns before archive validation | revalidate cached members with the shared archive helper before reuse; unsafe cached packages stop both paths without advancing the lock |
 
+| A-089 | app failures can report update success or lose the failed app name (#200) | conditional callers disable errexit through the apply phase; unchecked metadata and configuration reads suppress errors, and several refusal messages place the operation before the app | propagate phase and read status explicitly, validate configuration before caching, and name the app first; real apply-path host controls preserve the prior lock and stop later commands |
+
+| A-090 | backup scope and completion instructions can use the default folder for a custom installation (#200) | a legacy host command writes an additional-directory file directly, and completion hardcodes the credentials path | remove the duplicate command, retain the wizard request as the configuration owner using APS_HOME, and print the selected credentials path |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and

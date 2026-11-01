@@ -3393,7 +3393,7 @@ while args[0].startswith('-'):
 assert args.pop(0) == 'aps-conecta-nextcloud'
 state['calls'].append(args)
 def save(): path.write_text(json.dumps(state))
-if args[0] == 'awk':
+if args[-1] == '/var/www/html/custom_apps/spreed/appinfo/info.xml':
     save(); print(state.get('version', ''))
 elif args[:4] == ['php', '/var/www/html/occ', 'app:install', 'spreed']:
     assert '-e' in sys.argv and 'NC_appstoreenabled=1' in sys.argv, 'Store install must be scoped'

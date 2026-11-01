@@ -23,12 +23,9 @@
 # once, by hand.
 phase_begin "12-apps" "apps this instance runs"
 
-# An unreadable manifest is reported by apps.py itself — its one Spanish line is already on
-# stderr — and the seed's errexit stops the phase here. `repos` carries the fields this phase's
-# walk reads; `opcionales` names the rows the wizard offers (#39), so the choice gate below has
-# the manifest's own list — never a second one.
-manifest="$(python3 "$HERE/../scripts/apps.py" repos)"
-manifest_opcionales="$(python3 "$HERE/../scripts/apps.py" opcionales)"
+# Stop explicitly: conditional callers disable errexit in sourced phases.
+manifest="$(python3 "$HERE/../scripts/apps.py" repos)" || exit 1
+manifest_opcionales="$(python3 "$HERE/../scripts/apps.py" opcionales)" || exit 1
 # the optional ids once, cut ahead of the walk — the per-row question is then one grep, not a
 # pipeline per row over the same list
 opcionales_ids="$(printf '%s\n' "$manifest_opcionales" | cut -f1)"
@@ -56,7 +53,10 @@ while IFS=$'\t' read -r -u 3 app repo; do
   # before the seed, so its absence is a stopped install to re-run, and the seed is not the
   # door that improvises an app from a channel nobody verified.
   row=""
-  [ -z "$repo" ] || row="$(lock_row "$app")"
+  [ -z "$repo" ] || row="$(lock_row "$app")" || {
+    printf '%s\n' "$row"
+    exit 1
+  }
   if [ -n "$row" ]; then
     ensure_release_app "$app" "$row" || exit 1
   elif [ -n "$repo" ]; then
@@ -66,7 +66,10 @@ while IFS=$'\t' read -r -u 3 app repo; do
     ensure_store_app "$app" || exit 1
   fi
   if [ "$app" = spreed ]; then
-    nc_exec --user www-data -- bash /configure-apps.sh talk || exit 1
+    nc_exec --user www-data -- bash /configure-apps.sh talk || {
+      log "FAILED $app — falló la configuración de Talk"
+      exit 1
+    }
   fi
 done 3<<< "$manifest"
 

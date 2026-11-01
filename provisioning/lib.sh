@@ -44,7 +44,17 @@ require_installed() {  # the FATAL names the container, and an override that mis
 CONF_CACHE=""
 conf_load() {
   [ -n "$CONF_CACHE" ] && return 0
-  CONF_CACHE="$(occ config:list --output=json 2>/dev/null)"
+  local listing
+  listing="$(occ config:list --output=json 2>/dev/null)" || return 1
+  printf '%s' "$listing" | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+valid = (isinstance(data, dict)
+         and all(isinstance(data.get(key, {}), dict) for key in ("system", "apps"))
+         and all(isinstance(app, dict) for app in data.get("apps", {}).values()))
+sys.exit(0 if valid else 1)
+' 2>/dev/null || return 1
+  CONF_CACHE="$listing"
 }
 
 # Prints a value from the cached listing, and EXITS 1 WHEN THE KEY IS ABSENT. That distinction is
@@ -249,20 +259,14 @@ sys.exit(0 if sys.argv[2] in (d.get(sys.argv[1]) or []) else 1)' "$2" "$_uid" &&
   # design text said role-encargado-oirs, which does not exist — plan-local fix, design follow-up
 }
 
-# The version of an app as the INSTANCE has it, read in-container from custom_apps — the bake-wins
-# probe, shared by both app helpers below. A host-side read would be blind under AIO: no bind mount
-# means no host-side file, the probe answers "" for every app, `cur=""` means re-impose, and
-# seed-idempotent stays permanently red. The instance is the only source of truth for what the
-# instance runs.
-# ONE exec, no guard: awk's own open-failure IS the absent-app answer (a fresh install has not
-# unpacked anything yet), so `|| true` keeps the set -e/pipefail phases alive and empty output
-# carries the meaning the old `cur=""` initialization did. A transport-level failure reads the
-# same as "absent" and fails LOUDLY one step later at the unpack/enable.
-# busybox awk (the AIO image's Alpine base) parses -F'[<>]' identically to gawk — verified.
-app_installed_version() {  # APPID -> prints the installed version, or nothing when absent
+# Probe the instance's app files. A missing file is distinct from a failed read.
+app_installed_version() {  # APPID -> version, empty when absent, nonzero on read failure
   local app="$1"
-  nc_exec --user www-data -- awk -F'[<>]' '/<version>/ {print $3; exit}' \
-    "/var/www/html/custom_apps/$app/appinfo/info.xml" 2>/dev/null || true
+  nc_exec --user www-data -- sh -c '
+    [ -e "$2" ] || exit 0
+    awk -F"[<>]" "$1" "$2"
+  ' sh '/<version>/ {print $3; exit}' \
+    "/var/www/html/custom_apps/$app/appinfo/info.xml" 2>/dev/null
 }
 
 # --- apps from the store, scoped (#42) ---
@@ -287,7 +291,7 @@ occ_store() {  # OCC_ARGS… — one occ call with the store open, for this comm
 
 ensure_store_app() {  # APPID — install the store's newest compatible release, scoped, once
   local app="$1" cur err
-  cur="$(app_installed_version "$app")"
+  cur="$(app_installed_version "$app")" || { log "FAILED $app — falló la lectura de la versión instalada"; return 1; }
   if [ -n "$cur" ]; then
     log "app $app $cur already installed (the store's, untouched — nothing here updates)"
   else
@@ -296,18 +300,18 @@ ensure_store_app() {  # APPID — install the store's newest compatible release,
     if err="$(occ_store app:install "$app" 2>&1)"; then
       log "app $app -> installed from the store (NC_appstoreenabled=1, scoped to this command)"
     else
-      log "FAILED to install $app from the store — occ said: $(printf '%s' "$err" | tr '\n' ' ' | tail -c 300)"
+      log "FAILED $app — falló la instalación desde la tienda: $(printf '%s' "$err" | tr '\n' ' ' | tail -c 300)"
       return 1
     fi
   fi
 
-  conf_load || return 1
+  conf_load || { log "FAILED $app — falló la lectura de configuración"; return 1; }
   [ "$(conf_get app "$app" enabled 2>/dev/null || true)" = "yes" ] && { log "app $app enabled"; return 0; }
   # `app:enable` reads what is on disk and never contacts the store — no scope needed.
   if err="$(occ app:enable "$app" 2>&1)"; then
     log "app $app -> enabled"
   else
-    log "FAILED to enable app $app — occ said: $(printf '%s' "$err" | tr '\n' ' ' | tail -c 300)"
+    log "FAILED $app — falló occ app:enable: $(printf '%s' "$err" | tr '\n' ' ' | tail -c 300)"
     return 1
   fi
 }
@@ -355,7 +359,7 @@ ensure_release_app() {  # APPID ROW — install the release the lock names, from
   echo "$sha  $tgz" | sha256sum --check --status \
     || { log "FAILED $app — $tgz does not match the sha256 recorded in the lock; re-run the install"; return 1; }
 
-  cur="$(app_installed_version "$app")"
+  cur="$(app_installed_version "$app")" || { log "FAILED $app — falló la lectura de la versión instalada"; return 1; }
 
   # A release never carries appinfo/signature.json (the fetch refuses one that does), so the
   # file's presence on a same-version tree is PROOF the installed copy is not the release's
@@ -369,7 +373,7 @@ ensure_release_app() {  # APPID ROW — install the release the lock names, from
     # through the app's own migrations).
     if [ -n "$cur" ]; then
       occ_sh "rm -rf custom_apps/$app" \
-        || { log "FAILED to clear $app before re-imposing $want"; return 1; }
+        || { log "FAILED $app — could not clear the installed tree before re-imposing $want"; return 1; }
     fi
     if nc_exec -i --user www-data -- \
          tar xzf - -C /var/www/html/custom_apps < "$tgz"; then
@@ -379,13 +383,13 @@ ensure_release_app() {  # APPID ROW — install the release the lock names, from
         log "app $app ${cur:+$cur }-> $want unpacked from release $tag"
       fi
     else
-      log "FAILED to unpack $app from release $tag"; return 1
+      log "FAILED $app — could not unpack release $tag"; return 1
     fi
     if [ -n "$cur" ]; then
       if occ upgrade --no-interaction >/dev/null 2>&1; then
         log "app $app schema reconciled to $want (occ upgrade)"
       else
-        log "FAILED to reconcile $app to $want — 'occ upgrade' errored; instance may be mid-upgrade"
+        log "FAILED $app — could not reconcile $want: 'occ upgrade' errored; instance may be mid-upgrade"
         return 1
       fi
       CONF_CACHE=""   # installed_version moved under it
@@ -398,7 +402,7 @@ ensure_release_app() {  # APPID ROW — install the release the lock names, from
   if err="$(occ app:enable "$app" 2>&1)"; then
     log "app $app -> enabled"
   else
-    log "FAILED to enable app $app — occ said: $(printf '%s' "$err" | tr '\n' ' ' | tail -c 300)"
+    log "FAILED $app — falló occ app:enable: $(printf '%s' "$err" | tr '\n' ' ' | tail -c 300)"
     return 1
   fi
 }

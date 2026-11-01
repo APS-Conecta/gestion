@@ -13,7 +13,6 @@
 #   aps-conecta run-command [IP]     just the docker run string (one source, never re-typed)
 #   aps-conecta provision            start the Provisionador (interactive; Ctrl+C stops it)
 #   aps-conecta provision --reponer  headless weekly re-provision (the systemd timer's job)
-#   aps-conecta respaldo             wire /opt/aps-conecta into AIO's backup scope (idempotent)
 #   aps-conecta asistente-aio --dominio D   drive the AIO wizard through its API (no browser)
 #   aps-conecta revalidate          post-update: smoke, office, AppAPI, Talk and divergence
 #   aps-conecta actualizar [--revisar]  the update (#46): plan; full backup first; candidates fetched
@@ -274,7 +273,7 @@ cmd_install() {  # the install: the welcome, then the steps in registry order. I
     echo "INSTALACIÓN: la suite quedó instalada; falta lo marcado con ✗ arriba — ejecute el comando que nombra (registro: $SILENT_LOG)"
     exit 1
   fi
-  echo "INSTALACIÓN: ✓ — entregue a cada persona su fila: sudo cat /opt/aps-conecta/credentials.txt"
+  printf 'INSTALACIÓN: ✓ — entregue a cada persona su fila: sudo cat %q\n' "$APS_HOME/credentials.txt"
   echo "  y verifique la instancia: aps-conecta revalidate (registro: $SILENT_LOG)"
   staff_ca
 }
@@ -307,7 +306,6 @@ usage() {  # Spanish, generated from the registry — never a slice of this file
   echo "  aps-conecta revalidate            revisa la instancia después de una actualización"
   echo "  aps-conecta actualizar [--revisar]  actualiza las aplicaciones de la suite: plan, respaldo completo primero, aplicación por aplicación y revalidación (--revisar: solo el plan, no escribe nada)"
   echo "  aps-conecta red --dominio D [--arreglar]   el reflejo del dominio: revisarlo y, con --arreglar, corregirlo (DNS local)"
-  echo "  aps-conecta respaldo              agrega /opt/aps-conecta a las copias de seguridad"
   echo "  aps-conecta datos [CUT] [--importar]  los paquetes de datos de la comuna (con --importar: además los carga)"
   echo "  aps-conecta --self-test           autoprueba de este programa (sin docker)"
 }
@@ -1917,29 +1915,6 @@ cmd_estado() {  # the last execution's verdict and each item with its fix — no
   case "$(head -1 "$f")" in *" · ✓ "*) return 0 ;; *) return 1 ;; esac
 }
 
-# ── respaldo ───────────────────────────────────────────────────────────────────────────────
-
-cmd_respaldo() {  # wire /opt/aps-conecta into AIO's backup scope — idempotent, via the
-  # mastercontainer's own data file: GetDataDirectory() is /mnt/docker-aio-config/data/
-  # (php/src/Data/DataConst.php:6-13 — start.sh:406 mkdirs it every start), so the file is
-  # /mnt/docker-aio-config/data/additional_backup_directories, one path per line
-  # (DataConst.php:39-40; the wizard's backup form loads the same file, so the line survives
-  # a later form save).
-  local target=/opt/aps-conecta mc=nextcloud-aio-mastercontainer
-  local datafile=/mnt/docker-aio-config/data/additional_backup_directories
-  if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$mc"; then
-    die "el mastercontainer ($mc) no está corriendo — el wiring va después del asistente"
-  fi
-  if docker exec "$mc" sh -c "grep -qxF '$target' '$datafile' 2>/dev/null"; then
-    ok "$target ya está en el alcance de las copias de seguridad"
-  else
-    docker exec "$mc" sh -c "echo '$target' >> '$datafile'" \
-      || die "no pude escribir el alcance en el mastercontainer"
-    ok "$target agregado al alcance de las copias de seguridad"
-  fi
-  info "ojo: los directorios adicionales se RESPALDAN pero no se restauran junto con la instancia (comportamiento propio de AIO, documentado en el asistente) — /opt/aps-conecta se restaura a mano desde el archivo borg"
-}
-
 # ── revalidate ─────────────────────────────────────────────────────────────────────────────
 
 cmd_revalidate() {  # post-update: run every read-only gate against the running instance
@@ -2144,20 +2119,21 @@ act_aplicar() {  # app by app (#46): the release rows through phase 12 itself �
                 "$(act_lock)" "$(act_lock_next)")" || { ACT_FALLA="los candados no se pudieron comparar"; return 1; }
   salida="$( 
     set -e
-    cd "$ROOT"
-    . scripts/env.sh
-    . provisioning/lib.sh
+    cd "$ROOT" || exit 1
+    . scripts/env.sh || exit 1
+    . provisioning/lib.sh || exit 1
     HERE="$ROOT/provisioning"
     export SEED_CTX=actualizar      # phase_begin's own guard: phases answer to a runner, and this one is actualizar's
     APS_APPS_LOCK="$(act_lock_next)"; export APS_APPS_LOCK   # the seed installs from the NEW lock — the whole point of the run
-    ( set -e; . provisioning/phases/12-apps.sh )
+    # Conditional callers disable errexit through sourced phases; propagate their status.
+    ( set -e; . provisioning/phases/12-apps.sh ) || exit 1
     # the store rows, scoped: one occ app:update per app, the store open for that command
     # alone (occ_store, lib.sh) — notify_push included (the entrypoint installs it when the
     # binary is absent; nothing else ever moves an installed store app — this is that path).
-    # Talk is a release row now (#145, ADR-0020): its update rode the fetch above and phase
-    # 12's own Talk gate — the store walk never sees it, and an unchosen optional row stays
-    # untouched as always.
-    manifest_opcionales="$(python3 "$HERE/../scripts/apps.py" opcionales | cut -f1)"
+    # Official store rows include Talk; each update uses the scoped store command.
+    manifest_opcionales="$(python3 "$HERE/../scripts/apps.py" opcionales)" || exit 1
+    manifest_opcionales="$(printf '%s\n' "$manifest_opcionales" | cut -f1)" || exit 1
+    manifest="$(python3 "$HERE/../scripts/apps.py" repos)" || exit 1
     while IFS=$'\t' read -r app repo; do
       [ -z "$repo" ] || continue   # release rows: phase 12 above
       if printf '%s\n' "$manifest_opcionales" | grep -qx -- "$app" && ! app_elegida "$app"; then
@@ -2169,13 +2145,30 @@ act_aplicar() {  # app by app (#46): the release rows through phase 12 itself �
         exit 1
       fi
       log "app $app → actualizada o ya en su versión (tienda abierta solo para ese comando)${out:+ — occ: $(printf '%s' "$out" | tr '\n' ' ' | tail -c 120)}"
-    done < <(python3 "$HERE/../scripts/apps.py" repos)
+    done <<< "$manifest"
     # destroy last (#172): an earlier FAILED leaves the app, its data and the old lock as they
     # were. An app whose code is already gone (a run that removed it, then failed before the
     # promote) is skipped, so the run converges instead of refusing forever.
+    inventory=""
     while IFS= read -r app; do
       [ -n "$app" ] || continue
-      if ! occ app:getpath "$app" >/dev/null 2>&1; then
+      if [ -z "$inventory" ]; then
+        inventory="$(occ app:list --output=json 2>/dev/null)" || {
+          log "FAILED $app — falló la lectura de aplicaciones instaladas"
+          exit 1
+        }
+      fi
+      present="$(printf '%s' "$inventory" | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+if not isinstance(data, dict) or not all(isinstance(data.get(key), dict) or data.get(key) == [] for key in ("enabled", "disabled")):
+    sys.exit(1)
+print(int(any(sys.argv[1] in data[key] for key in ("enabled", "disabled"))))
+' "$app" 2>/dev/null)" || {
+        log "FAILED $app — el inventario de aplicaciones es inválido"
+        exit 1
+      }
+      if [ "$present" = 0 ]; then
         log "$app ya no está instalada — su fila sale del candado"
         continue
       fi
@@ -2187,7 +2180,10 @@ act_aplicar() {  # app by app (#46): the release rows through phase 12 itself �
     done <<< "$retired"
     # the run's last assertion (#46): the store closed again — every open above was scoped,
     # so the instance's standing value is what it always was; anything else is a red.
-    tienda="$(occ config:system:get appstoreenabled 2>/dev/null || true)"
+    tienda="$(occ config:system:get appstoreenabled 2>/dev/null)" || {
+      log "FAILED tienda — falló la lectura del estado"
+      exit 1
+    }
     case "$tienda" in ""|0) log "tienda cerrada (appstoreenabled=${tienda:-sin valor})" ;; *)
       log "FAILED tienda — quedó abierta (appstoreenabled=$tienda)"; exit 1 ;; esac
   )" 2>&1 || rc=$?
@@ -2680,7 +2676,7 @@ EOF
 
   # install runs as root: the stepper arms answer `id -u` from a shim (ID_U=1000 plays the operator)
   printf '#!/usr/bin/env bash\ncase "$1" in -u) echo "${ID_U:-0}" ;; -un) echo root ;; esac\n' > "$tshim/id"; chmod +x "$tshim/id"
-  APS_HOME="$tmp/aps-stepper"   # …and the install's own home answers from the fixture: CI's runner is uid 1001 and /opt is not theirs
+  APS_HOME="$tmp/aps stepper"   # …and the install's own home answers from the fixture: CI's runner is uid 1001 and /opt is not theirs
   fixture_installation
   # the stepper end to end with every server step stubbed: the order, the approved header/footer,
   # the hand-over to the browser, and no prompt without a terminal
@@ -2771,8 +2767,10 @@ EOF
     id() { echo "${ID_U:-0}"; }   # hash-proof: bash's command hash can reroute a PATH shim to the real uid (CI = 1001) — a function cannot be rerouted
     cmd_install --sitio "$tmp/dado.sh" --planilla "$tmp/dado.csv" </dev/null 2>&1
   )"; rcs=$?
+  local credentials_command
+  credentials_command="$(printf 'sudo cat %q' "$APS_HOME/credentials.txt")"
   check "install --sitio: the same eight steps in order — the browser ones from the files — then the verdict" \
-    '[ "$rcs" -eq 0 ] && case "$install_out" in *"sin preguntas ni navegador"*"Paso 1 de 8"*"Paso 4 de 8"*"Sin instalador web: modo silencioso."*"Paso 5 de 8 · Elegir el centro  servidor"*"centro-stub"*"Paso 6 de 8"*"suite-stub"*"Paso 7 de 8"*"equipos-stub"*"Paso 8 de 8"*"ejecutar-stub"*"temporizadores-stub"*"INSTALACIÓN: ✓"*"sudo cat /opt/aps-conecta/credentials.txt"*"aps-conecta revalidate (registro: $APS_HOME/instalacion.log)"*) ;; *) false;; esac && case "$install_out" in *"Enter para comenzar"*|*"  navegador"*|*"(navegador)"*|*"Comando   aps-conecta centro"*) false;; *) true;; esac'
+    '[ "$rcs" -eq 0 ] && case "$install_out" in *"sin preguntas ni navegador"*"Paso 1 de 8"*"Paso 4 de 8"*"Sin instalador web: modo silencioso."*"Paso 5 de 8 · Elegir el centro  servidor"*"centro-stub"*"Paso 6 de 8"*"suite-stub"*"Paso 7 de 8"*"equipos-stub"*"Paso 8 de 8"*"ejecutar-stub"*"temporizadores-stub"*"INSTALACIÓN: ✓"*"$credentials_command"*"aps-conecta revalidate (registro: $APS_HOME/instalacion.log)"*) ;; *) false;; esac && case "$install_out" in *"Enter para comenzar"*|*"  navegador"*|*"(navegador)"*|*"Comando   aps-conecta centro"*) false;; *) true;; esac'
   check "install --sitio: a tool's own stderr goes to the log, never the console" \
     'case "$install_out" in *"Pulling from"*) false;; *) true;; esac && grep -q "Pulling from somewhere" "$APS_HOME/instalacion.log"'
   install_out="$(
@@ -3356,9 +3354,14 @@ SHIM
     check "asistente-aio: a re-run on a running suite configures nothing and posts nothing" \
       '[ "$rc" -eq 0 ] && case "$out" in *"✓ La suite ya está en marcha — el asistente no se vuelve a configurar"*) ;; *) false;; esac && [ ! -s "$tmp/aio.log" ]'
     : > "$tmp/aio.ps"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; : > "$tmp/aio.log"
-    out="$( (cmd_aio_wizard --dominio backup.example --respaldo /mnt/backup) 2>&1)"; rc=$?
+    local custom_backup_home="$tmp/backup-custom"
+    mkdir -p "$custom_backup_home"
+    out="$( (APS_HOME="$custom_backup_home" cmd_aio_wizard --dominio backup.example --respaldo /mnt/backup) 2>&1)"; rc=$?
     check "asistente-aio: --respaldo posts the borg location and the daily time — a location alone schedules nothing" \
       '[ "$rc" -eq 0 ] && grep -q "borg_backup_host_location=/mnt/backup borg_remote_repo=$" "$tmp/aio.log" && grep -q "daily_backup_time=$(backup_hour_utc today)$" "$tmp/aio.log" && ! grep -q "daily_backup_time=04:00$" "$tmp/aio.log" && case "$out" in *"✓ Respaldo diario a las 04:00 hora de Santiago ($(backup_hour_utc today) UTC), en /mnt/backup"*) ;; *) false;; esac'
+    check "backup scope: the wizard request carries the selected installation directory once" \
+      '[ "$rc" -eq 0 ] && grep -q "additional_backup_directories=$custom_backup_home$" "$tmp/aio.log" \
+        && [ "$(grep -c "^POST config.*additional_backup_directories=" "$tmp/aio.log")" -eq 1 ]'
     # An empty TZDIR can fall back to system data. Model the resolver's observable failures.
     local date_fallback="$tmp/date-fallback" date_failure="$tmp/date-failure"
     mkdir -p "$date_fallback" "$date_failure"
@@ -3553,7 +3556,7 @@ PARES
   check "errors print the Spanish console's ✗ marker, with no English prefix" \
     '[ "$out" = "✗ prueba" ]'
 
-  # ── respaldo: idempotent via the mastercontainer's own file ──
+  # A retired direct-file command cannot mutate backup scope through the public CLI.
   : > "$tmp/mc-additional"
   cat > "$tshim/docker" <<'DSHIM'
 #!/usr/bin/env bash
@@ -3572,14 +3575,9 @@ exit 0
 DSHIM
   chmod +x "$tshim/docker"
   export MC_ADDITIONAL="$tmp/mc-additional"
-  out="$(cmd_respaldo 2>&1)"
-  check "respaldo: first wiring adds the target; the no-restore caveat prints (the honest cost)" \
-    'case "$out" in *"agregado al alcance"*"no se restauran"*) ;; *) false;; esac'
-  out="$(cmd_respaldo 2>&1)"
-  check "respaldo: second wiring is the idempotent no-op, caveat still printed" \
-    'case "$out" in *"ya está en el alcance"*"no se restauran"*) ;; *) false;; esac'
-  check "respaldo: the mastercontainer's file actually carries the line" \
-    'grep -qxF /opt/aps-conecta "$tmp/mc-additional"'
+  out="$(APS_HOME="$tmp/legacy-backup-home" bash "$ROOT_BAK/host/aps-conecta" respaldo 2>&1)"; rc=$?
+  check "backup scope: the retired direct-file command is rejected without writing scope" \
+    '[ "$rc" -eq 2 ] && case "$out" in *"subcomando desconocido: respaldo"*) ;; *) false;; esac && [ ! -s "$tmp/mc-additional" ]'
 
   # ── --reponer end to end: the provisionador's own step, run in-process — a stub that records its
   # argv and answers with the exit code the arm plants (the real step: provisionador.py --self-test)
@@ -3915,6 +3913,9 @@ def sha(app, tag):
 args = sys.argv[1:]
 if args[0] == "locked":
     app = args[1]
+    if os.path.exists(os.path.join(act, "lock-read-failed")):
+        sys.stderr.write(f"FATAL: {app}: synthetic lock read failure\n")
+        sys.exit(1)
     tag = "v0.80.0" if app == "territorio" else "v3.5.0"
     print(f"{tag}\t{tag[1:]}\t{sha(app, tag)}\t{act}/home/apps/{app}/{tag}.tar.gz")
 elif args[0] == "plan":
@@ -3945,12 +3946,27 @@ else:  # actualizar
 PYEOF
   cat > "$act/repo/scripts/apps.py" <<'PYEOF'
 #!/usr/bin/env python3
-import sys
+import os, sys
+fixture = os.environ.get("ACT46")
+operation = sys.argv[1] if len(sys.argv) > 1 else ""
+if fixture and os.path.exists(os.path.join(fixture, "home", "apps.lock.json.next")):
+    for requested in (1, 2):
+        fault = os.path.join(fixture, f"manifest-{operation}-{requested}-failed")
+        if os.path.exists(fault):
+            counter = os.path.join(fixture, f"manifest-{operation}.calls")
+            calls = int(open(counter).read()) + 1 if os.path.exists(counter) else 1
+            with open(counter, "w") as fh:
+                fh.write(str(calls))
+            if calls == requested:
+                open(os.path.join(fixture, "manifest-read-failed"), "w").close()
+                sys.stderr.write(f"FATAL: manifiesto: synthetic {operation} failure\n")
+                sys.exit(1)
 if sys.argv[1:] == ["repos"]:
     print("territorio\tAPS-Conecta/territorio")
     print("suelo\tAPS-Conecta/suelo")
     print("farmacia\tAPS-Conecta/farmacia")
     print("calendar\t")
+    print("spreed\t")
 elif sys.argv[1:] == ["opcionales"]:
     print("farmacia\toff\tFarmacia")
 PYEOF
@@ -3999,6 +4015,7 @@ EOF
   cat > "$tshim/docker" <<EOF
 #!/usr/bin/env bash
 printf 'docker %s\n' "\$*" >> "$act/docker.log"
+if [ -e "$act/manifest-read-failed" ]; then printf 'after-manifest-failure %s\n' "\$*" >> "$act/docker.log"; fi
 case "\$1 \$2" in
   "ps --format"|"ps -a")
     [ -e "$act/suite-caida" ] && exit 0
@@ -4027,16 +4044,44 @@ case "\$1 \$2" in
       *backup_archives.list*) printf '%s\n' "nextcloud-aio-2026-10-25-18-00,Thu Oct 25 18:00:00 2026" "nextcloud-aio-2026-10-27-01-00,Tue Oct 27 01:00:00 2026" ;;
     esac ;;
   "exec aps-conecta-nextcloud") case "\$*" in *printenv\ AIO_TOKEN*) echo tok-act46 ;; *printenv*) echo yes ;; esac ;;
-  "exec -i") exit 0 ;;
-  "exec -e") exit 0 ;;
+  "exec -i")
+    case "\$*" in
+      *"rm -rf custom_apps/territorio"*) [ ! -e "$act/clear-failed" ] || exit 1 ;;
+      *"tar xzf"*) [ ! -e "$act/unpack-failed" ] || exit 1 ;;
+    esac
+    exit 0 ;;
+  "exec -e")
+    case "\$*" in *"occ app:install spreed"*)
+      if [ -e "$act/spreed-install-failed" ]; then echo "synthetic official-store installation failure"; exit 1; fi ;;
+    esac
+    exit 0 ;;
   "exec --user")
     case "\$*" in
       *"occ status"*) echo '{"installed":true,"version":"34.0.4"}' ;;
-      *"occ config:list"*) echo '{"system":{}}' ;;
+      *"/custom_apps/territorio/appinfo/info.xml"*)
+        if [ -e "$act/version-read-failed" ] && [ -e "$act/home/apps.lock.json.next" ]; then exit 124; fi
+        if [ -e "$act/clear-failed" ] || [ -e "$act/upgrade-failed" ]; then echo "0.79.0"; fi ;;
+      *"occ upgrade"*) [ ! -e "$act/upgrade-failed" ] || exit 1 ;;
+      *"occ config:list"*)
+        if [ -e "$act/home/apps.lock.json.next" ]; then
+          if [ -e "$act/config-read-failed" ]; then exit 1; fi
+          if [ -e "$act/config-invalid" ]; then echo "synthetic confidential configuration"; exit 0; fi
+        fi
+        echo '{"system":{}}' ;;
       *"config:app:get calendar"*) echo "4.7.15" ;;
-      *"config:system:get appstoreenabled"*) echo "\${TIENDA:-0}" ;;
-      *"occ app:getpath viejo"*) echo /var/www/html/custom_apps/viejo ;;
-      *"occ app:getpath"*) exit 1 ;;
+      *"config:system:get appstoreenabled"*)
+        [ ! -e "$act/store-state-read-failed" ] || exit 1
+        [ ! -e "$act/store-state-empty" ] || exit 0
+        echo "\${TIENDA:-0}" ;;
+      *"occ app:enable territorio"*) if [ -e "$act/enable-failed" ]; then echo "synthetic enable failure"; exit 1; fi ;;
+      *"/configure-apps.sh talk"*) if [ -e "$act/talk-config-failed" ]; then echo "synthetic Talk configuration failure"; exit 1; fi ;;
+      *"occ app:list"*)
+        [ ! -e "$act/retirement-read-failed" ] || exit 124
+        [ ! -e "$act/retirement-native-failed" ] || exit 1
+        if [ -e "$act/retirement-invalid" ]; then echo 'synthetic invalid inventory'; exit 0; fi
+        if [ -e "$act/retirement-invalid-shape" ]; then echo '{"enabled":{},"disabled":["unexpected"]}'; exit 0; fi
+        if [ -e "$act/retirement-empty-disabled" ]; then echo '{"enabled":{"viejo":"1.0.0"},"disabled":[]}'; exit 0; fi
+        echo '{"enabled":{"viejo":"1.0.0"},"disabled":{}}' ;;
       *"occ app:remove"*) if [ -e "$act/remove-mala" ]; then echo "viejo could not be removed"; exit 1; fi ;;
     esac ;;
 esac
@@ -4124,6 +4169,10 @@ EOF
   check "actualizar: the store opened scoped — every app:update rode NC_appstoreenabled=1, and nothing else touched the store" \
     'while IFS= read -r l; do case "$l" in *NC_appstoreenabled=1*) ;; *) exit 1;; esac; done < <(grep "app:update" "$act/docker.log") \
       && grep -q "NC_appstoreenabled=1.*app:update calendar" "$act/docker.log"'
+  check "actualizar: official Talk installation completes before its immediate configuration" \
+    'grep -q "NC_appstoreenabled=1.*app:install spreed" "$act/docker.log" \
+      && [ "$(grep -c "/configure-apps.sh talk" "$act/docker.log")" -eq 1 ] \
+      && [ "$(grep -n "app:install spreed" "$act/docker.log" | head -1 | cut -d: -f1)" -lt "$(grep -n "/configure-apps.sh talk" "$act/docker.log" | head -1 | cut -d: -f1)" ]'
   # the shim: borg runs BORG_RUNS (2) inspects; apache deaf 2 probes, eurooffice starting 3 — ready on the 4th poll
   check "actualizar: the backup is awaited — the POST answers once borg STARTS, so borg's own state is polled until it exits, and the restart comes only after (A-036)" \
     '! grep -q "start con borg en curso" "$act/aio.log"'
@@ -4186,13 +4235,97 @@ SHIM
   rm -f "$tshim/python3"; hash -r
 
   # a failed apply: the app named, the lock unchanged, the new lock cleaned, the restore command
-  : > "$act/aio.log"; : > "$act/resolver.log"; cp "$act/lock.bytes" "$act/home/apps.lock.json"
+  : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"; cp "$act/lock.bytes" "$act/home/apps.lock.json"
   rm -f "$act/aio.libre"   # a fresh session: the wizard's block is back
-  out="$( id() { echo 0; }; act_aplicar() { ACT_FALLA="territorio falló al aplicarse — nada más se aplicó, el candado no cambió"; return 1; }; act46 2>&1 )"; arc=$?
+  touch "$act/enable-failed"
+  out="$( id() { echo 0; }; act46 2>&1 )"; arc=$?; rm -f "$act/enable-failed"
   check "actualizar: a failed apply names the app and the restore command, and moves neither lock" \
     '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "✗ territorio falló al aplicarse — nada más se aplicó, el candado no cambió" \
       && printf "%s" "$out" | grep -qF "→ para volver al estado anterior: el asistente de la suite (puerto 8080 de este servidor) → «Restaurar la copia de seguridad seleccionada»" \
+      && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes" && [ ! -e "$act/home/apps.lock.json.next" ] \
+      && grep -q "occ app:enable territorio$" "$act/docker.log" && ! grep -q "app:update calendar" "$act/docker.log"'
+
+  for fault in clear-failed unpack-failed upgrade-failed; do
+    : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"
+    cp "$act/lock.bytes" "$act/home/apps.lock.json"
+    rm -f "$act/aio.libre" "$act/home/apps.lock.json.next"; touch "$act/$fault"
+    out="$( id() { echo 0; }; act46 2>&1 )"; arc=$?; rm -f "$act/$fault"
+    check "actualizar: release installation failures name the app and preserve its lock ($fault)" \
+      '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "✗ territorio falló al aplicarse" \
+        && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes" && [ ! -e "$act/home/apps.lock.json.next" ] \
+        && ! grep -q "occ app:enable territorio" "$act/docker.log" && ! grep -q "app:update calendar" "$act/docker.log"'
+  done
+
+  for fault in lock-read-failed version-read-failed config-read-failed config-invalid; do
+    : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"
+    cp "$act/lock.bytes" "$act/home/apps.lock.json"
+    rm -f "$act/home/apps.lock.json.next"
+    rm -f "$act/aio.libre"; touch "$act/$fault"
+    out="$( id() { echo 0; }; act46 2>&1 )"; arc=$?; rm -f "$act/$fault"
+    check "actualizar: failed app reads name the app and preserve its lock ($fault)" \
+      '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "✗ territorio falló al aplicarse" \
+        && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes" && [ ! -e "$act/home/apps.lock.json.next" ] \
+        && ! grep -q "occ app:enable territorio" "$act/docker.log" && ! grep -q "app:update calendar" "$act/docker.log" \
+        && ! printf "%s" "$out" | grep -qF "synthetic confidential configuration"'
+  done
+
+  for fault in spreed-install-failed talk-config-failed; do
+    : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"
+    cp "$act/lock.bytes" "$act/home/apps.lock.json"
+    rm -f "$act/aio.libre" "$act/home/apps.lock.json.next"; touch "$act/$fault"
+    out="$( id() { echo 0; }; act46 2>&1 )"; arc=$?; rm -f "$act/$fault"
+    check "actualizar: official Talk failures name the app and preserve the prior lock ($fault)" \
+      '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "✗ spreed falló al aplicarse" \
+        && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes" && [ ! -e "$act/home/apps.lock.json.next" ] \
+        && ! grep -q "app:update" "$act/docker.log" \
+        && case "$fault" in spreed-install-failed) ! grep -q "/configure-apps.sh talk" "$act/docker.log" ;; talk-config-failed) grep -q "/configure-apps.sh talk" "$act/docker.log" ;; esac'
+  done
+
+  : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"
+  cp "$act/lock.bytes" "$act/home/apps.lock.json"
+  rm -f "$act/aio.libre" "$act/home/apps.lock.json.next"; touch "$act/retirement-empty-disabled"
+  out="$( id() { echo 0; }; act46 2>&1 )"; arc=$?; rm -f "$act/retirement-empty-disabled"
+  check "actualizar: a native empty disabled-app group permits retirement and lock promotion" \
+    '[ "$arc" -eq 0 ] && grep -q "occ app:remove viejo" "$act/docker.log" \
+      && ! grep -q "viejo" "$act/home/apps.lock.json" && [ ! -e "$act/home/apps.lock.json.next" ] \
+      && printf "%s" "$out" | grep -qF "REVALIDACIÓN: PASS"'
+
+  for fault in retirement-read-failed retirement-native-failed retirement-invalid retirement-invalid-shape; do
+    : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"
+    cp "$act/lock.bytes" "$act/home/apps.lock.json"
+    rm -f "$act/aio.libre" "$act/home/apps.lock.json.next"; touch "$act/$fault"
+    out="$( id() { echo 0; }; act46 2>&1 )"; arc=$?; rm -f "$act/$fault"
+    check "actualizar: retirement requires a successful inventory read before dropping a lock row ($fault)" \
+      '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "✗ ausente falló al aplicarse" \
+        && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes" && [ ! -e "$act/home/apps.lock.json.next" ] \
+        && ! grep -q "occ app:remove" "$act/docker.log"'
+  done
+
+  for fault in manifest-repos-1-failed manifest-opcionales-1-failed manifest-repos-2-failed manifest-opcionales-2-failed; do
+    : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"
+    cp "$act/lock.bytes" "$act/home/apps.lock.json"
+    rm -f "$act/aio.libre" "$act/home/apps.lock.json.next" "$act/manifest-read-failed" "$act/manifest-repos.calls" "$act/manifest-opcionales.calls"
+    touch "$act/$fault"
+    out="$( id() { echo 0; }; act46 2>&1 )"; arc=$?; rm -f "$act/$fault" "$act/manifest-read-failed"
+    check "actualizar: manifest read errors stop further app commands and preserve the lock ($fault)" \
+      '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "FATAL: manifiesto:" \
+        && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes" && [ ! -e "$act/home/apps.lock.json.next" ] \
+        && ! grep -q "after-manifest-failure" "$act/docker.log"'
+  done
+
+  : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"
+  cp "$act/lock.bytes" "$act/home/apps.lock.json"
+  rm -f "$act/aio.libre"; touch "$act/store-state-read-failed"
+  out="$( id() { echo 0; }; act46 2>&1 )"; arc=$?; rm -f "$act/store-state-read-failed"
+  check "actualizar: a failed final store-state read stops before lock promotion" \
+    '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "✗ tienda falló al aplicarse" \
       && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes" && [ ! -e "$act/home/apps.lock.json.next" ]'
+  cp "$act/lock.bytes" "$act/home/apps.lock.json"
+  rm -f "$act/aio.libre"; touch "$act/store-state-empty"
+  out="$( id() { echo 0; }; act46 2>&1 )"; arc=$?; rm -f "$act/store-state-empty"
+  check "actualizar: a successful empty store-state read remains a valid false value" \
+    '[ "$arc" -eq 0 ] && printf "%s" "$out" | grep -qF "tienda cerrada (appstoreenabled=sin valor)" \
+      && grep -q "v0.80.0" "$act/home/apps.lock.json" && [ ! -e "$act/home/apps.lock.json.next" ]'
 
   # #172: an uninstall that fails is a failed apply like any other — named, nothing promoted
   : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"; cp "$act/lock.bytes" "$act/home/apps.lock.json"
@@ -4778,7 +4911,6 @@ case "${1:-}" in
   revalidate)   cmd_revalidate ;;
   actualizar)   shift; cmd_actualizar "$@" ;;
   red)          shift; cmd_red "$@" ;;
-  respaldo)     cmd_respaldo ;;
   datos)        shift; cmd_datos "$@" ;;
   --self-test)  selftest ;;
   ""|-h|--help) usage ;;
