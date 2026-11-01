@@ -405,7 +405,7 @@ check imaginary_secret_argv_cases
 
 cleanboot_secret_argv_cases() {
   python3 - <<'PY'
-import base64, json, os, pathlib, subprocess, sys, tempfile, textwrap
+import base64, json, os, pathlib, re, shutil, subprocess, sys, tempfile, textwrap
 source = pathlib.Path('.github/workflows/cleanboot.yml').read_text()
 anchor = 'grep -q "occ group:delete deriva-prueba" "$RUNNER_TEMP/estado.out"\n'
 fragment = source.split(anchor, 1)[1].split('          occ group:delete deriva-prueba', 1)[0]
@@ -436,6 +436,28 @@ sys.exit(int(os.environ.get('CASE_FAIL', '0')))
         assert (result.returncode == 0) == (failure == '0')
         assert 'synthetic notification password' not in result.stdout + result.stderr
         assert encoded not in result.stdout + result.stderr
+    client = root / 'sed'
+    client.write_text('#!' + sys.executable + '\n' + '''
+import json, os, pathlib, sys
+pathlib.Path(os.environ['CASE_CAPTURE']).write_text(json.dumps({'argv': sys.argv[1:]}))
+os.execv(os.environ['REAL_SED'], [os.environ['REAL_SED'], *sys.argv[1:]])
+''')
+    client.chmod(0o755)
+    (root / '.env.example').write_text('RETAINED=yes\nFIXTURE_USER_PASSWORD=change-me\n')
+    blocks = re.findall(r'^          pkg=/opt/aps-conecta/instalador\n.*?^          chmod 600 "\$pkg/.env"$', source, re.M | re.S)
+    assert len(blocks) == 2
+    for block in blocks:
+        script = textwrap.dedent(block).replace('pkg=/opt/aps-conecta/instalador', 'pkg="$CASE_PACKAGE"')
+        result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', script],
+                                env=dict(env, CASE_PACKAGE=directory, REAL_SED=shutil.which('sed')),
+                                input='', capture_output=True, text=True, timeout=5)
+        assert result.returncode == 0
+        settings = dict(line.split('=', 1) for line in (root / '.env').read_text().splitlines())
+        password = settings['FIXTURE_USER_PASSWORD']
+        assert re.fullmatch('[0-9a-f]{64}', password) and settings['RETAINED'] == 'yes'
+        assert all(password not in word for word in json.loads(capture.read_text())['argv']), 'Cleanboot fixture password entered process arguments'
+        assert password not in result.stdout + result.stderr
+        assert (root / '.env').stat().st_mode & 0o777 == 0o600
 PY
 }
 check cleanboot_secret_argv_cases
