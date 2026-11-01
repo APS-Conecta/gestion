@@ -146,7 +146,8 @@ with tempfile.TemporaryDirectory(prefix='aps database secret ') as directory:
     client.write_text('#!' + sys.executable + '\n' + '''
 import json, os, pathlib, sys
 pathlib.Path(os.environ['CASE_CAPTURE']).write_text(json.dumps({
-    'argv': sys.argv[1:], 'stdin': sys.stdin.read(), 'password': os.environ.get('POSTGRES_PASSWORD')}))
+    'argv': sys.argv[1:], 'stdin': sys.stdin.read(), 'password': os.environ.get('POSTGRES_PASSWORD'),
+    'client_password': os.environ.get('PGPASSWORD')}))
 sys.exit(int(os.environ['CASE_FAIL']))
 ''')
     client.chmod(0o755)
@@ -164,6 +165,26 @@ sys.exit(int(os.environ['CASE_FAIL']))
         assert password not in call['stdin'] + result.stdout + result.stderr
         assert (result.returncode == 0) == (failure == '0') and marker.exists() == (failure == '1')
     assert 'pg_new_password=' not in pathlib.Path('Containers/postgresql/start.sh').read_text()
+    nc = root / 'nc'
+    nc.write_text('#!/bin/sh\nexit 1\n')
+    nc.chmod(0o755)
+    health = pathlib.Path('Containers/postgresql/healthcheck.sh').read_text().replace(
+        '"/mnt/data/backup-is-running"', '"$CASE_BACKUP_MARKER"')
+    for failure in ('0', '1'):
+        result = subprocess.run(['bash', '-c', health],
+                                env=dict(env, CASE_FAIL=failure, CASE_BACKUP_MARKER=str(root / 'backup')),
+                                input='', capture_output=True, text=True, timeout=5)
+        call = json.loads(capture.read_text())
+        assert call['client_password'] == password
+        assert all(password not in word for word in call['argv'])
+        assert (result.returncode == 0) == (failure == '0')
+        assert 'synthetic database password' not in result.stdout + result.stderr, 'Database health check printed its password'
+    prefix = pathlib.Path('Containers/postgresql/start.sh').read_text().split("# Don't start database", 1)[0]
+    prefix += '\npython3 -c \'import os; assert os.environ["PGPASSWORD"] == os.environ["CASE_PASSWORD"]\'\n'
+    result = subprocess.run(['bash', '-x', '-c', prefix], env=dict(env, CASE_PASSWORD=password),
+                            capture_output=True, text=True, timeout=5)
+    assert result.returncode == 0
+    assert 'synthetic database password' not in result.stdout + result.stderr, 'Database startup printed its password'
 PY
 }
 check postgres_secret_argv_cases
