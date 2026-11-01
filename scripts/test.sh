@@ -2229,6 +2229,35 @@ except SystemExit: pass
 else: print("fabricated sentinel-less corpus passed"); sys.exit(1)
 print("ok")'
 
+comuna_archive_extraction_cases() {
+  python3 - <<'PY'
+import os, pathlib, subprocess, sys, tempfile, zipfile
+source = pathlib.Path('scripts/comuna-package.sh').read_text()
+start = 'fetch_verify unidades-vecinales-2024 "$uv_url" "$uv_sha" "$work/uv.zip"\n'
+extract = source.split(start, 1)[1].split('shp=', 1)[0]
+with tempfile.TemporaryDirectory(prefix='aps comuna archive ') as directory:
+    root = pathlib.Path(directory)
+    tools = root / 'bin'
+    tools.mkdir()
+    (tools / 'python3').symlink_to(sys.executable)
+    for valid in (True, False):
+        work = root / ('valid' if valid else 'invalid')
+        work.mkdir()
+        if valid:
+            with zipfile.ZipFile(work / 'uv.zip', 'w') as archive:
+                archive.writestr('nested/source.txt', b'archive boundary fixture\n')
+        else:
+            (work / 'uv.zip').write_bytes(b'invalid archive')
+        result = subprocess.run(['/bin/bash', '-e', '-c', extract],
+                                env=dict(os.environ, PATH=str(tools), work=str(work)),
+                                capture_output=True, text=True, timeout=5)
+        assert (result.returncode == 0) == valid, 'Comuna extraction requires an unavailable program or accepted an invalid archive'
+        if valid:
+            assert (work / 'uv/nested/source.txt').read_bytes() == b'archive boundary fixture\n'
+PY
+}
+check comuna_archive_extraction_cases
+
 # --- gate: a21 (L5): the map is the suite's own route — the separate tiles server is gone -------------
 # The grep is a21's own clause, with the pattern assembled without its literals
 # ("nginx:alp""ine|TILES_""PORT|:80""84"): a21 covers scripts/ too, and a gate that spelled its
