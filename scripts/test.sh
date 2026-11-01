@@ -143,7 +143,7 @@ with tempfile.TemporaryDirectory(prefix='aps ca test ') as directory:
     root = pathlib.Path(directory)
     host_tmp = root / 'host tmp'
     host_tmp.mkdir()
-    for failure in ('none', 'copy', 'permissions', 'import', 'invalid_temp'):
+    for failure in ('none', 'transfer', 'permissions', 'import', 'invalid_temp'):
         capture, cleanup = root / 'copy.json', root / 'cleanup.txt'
         capture.unlink(missing_ok=True)
         cleanup.unlink(missing_ok=True)
@@ -155,16 +155,22 @@ set -e
 source scripts/env.sh
 source provisioning/lib.sh
 docker() {
+  local source='' destination transport
   if [ "$1" = cp ]; then
-    python3 - "$2" "$3" <<'CAPTURE'
+    source="$2"; destination="$3"; transport=copy
+  elif [[ "$*" == *'cat > "$1"'* ]]; then
+    source=/proc/self/fd/0; destination="${@: -1}"; transport=stdin
+  fi
+  if [ -n "$source" ]; then
+    python3 -c '
 import json, os, pathlib, sys
-source = pathlib.Path(sys.argv[1])
-pathlib.Path(os.environ['CASE_CAPTURE']).write_text(json.dumps({
-    'source': str(source), 'destination': sys.argv[2],
-    'directory_mode': source.parent.stat().st_mode & 0o777,
-    'file_mode': source.stat().st_mode & 0o777}))
-CAPTURE
-    [ "$CASE_CA_FAILURE" != copy ]; return
+source = pathlib.Path(sys.argv[1]).resolve()
+pathlib.Path(os.environ["CASE_CAPTURE"]).write_text(json.dumps({
+    "source": str(source), "destination": sys.argv[2],
+    "directory_mode": source.parent.stat().st_mode & 0o777,
+    "file_mode": source.stat().st_mode & 0o777, "transport": sys.argv[3]}))
+' "$source" "$destination" "$transport"
+    [ "$CASE_CA_FAILURE" != transfer ]; return
   fi
   case "$*" in
     *s_client*) printf 'http://example.test/%s.crt\n\nLEAF\n' "$CASE_CA_NAME" ;;
@@ -190,11 +196,12 @@ ensure_aia_intermediate example.test
             assert not capture.exists() and not cleanup.exists(), 'An unowned container path was used'
             continue
         call = json.loads(capture.read_text())
+        assert call['transport'] == 'stdin', 'Certificate transfer bypasses the running temporary mount'
         assert call['directory_mode'] == 0o700, 'AIA certificate uses a shared temporary directory'
         assert call['file_mode'] == 0o600, 'AIA certificate temporary file is not private'
         source = pathlib.Path(call['source'])
         assert source.name == name + '.pem' and not source.parent.exists()
-        assert call['destination'].endswith(':/tmp/aps-ca.ABCDEF1234/' + source.name)
+        assert call['destination'] == '/tmp/aps-ca.ABCDEF1234/' + source.name
         assert '/tmp/aps-ca.ABCDEF1234' in cleanup.read_text()
         assert ('imported ' in result.stdout) == (failure == 'none')
 PY
