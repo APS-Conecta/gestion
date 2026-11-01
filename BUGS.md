@@ -164,6 +164,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-094 | the silent install rejects the wizard domain-validation option (#158) | install has a separate argument list and does not forward the option to the shared wizard command | accept and forward --sin-validar-dominio through the existing wizard parser, require silent input files, retain it in retry instructions, and document configuration ownership; existing CLI and wizard boundary self-tests cover the behavior |
 
+| A-095 | release acceptance can report success after installation fails, or stop without its verdict table (#156) | --continuar discards failed stage status and early preparation or CA errors bypass summarize | record failed stages before continuing, summarize unavailable preparation or HTTPS trust, and exercise the real main path with healthy and failed command-boundary fixtures |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and
