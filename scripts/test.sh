@@ -64,6 +64,36 @@ PY
 }
 check clinic_seed_has_no_personal_fixtures
 
+service_secret_argv_cases() {
+  python3 - <<'PY'
+import json, os, pathlib, subprocess, sys, tempfile
+with tempfile.TemporaryDirectory(prefix='aps service secret ') as directory:
+    root = pathlib.Path(directory)
+    capture = root / 'call.json'
+    client = root / 'redis-cli'
+    client.write_text('#!' + sys.executable + '\n' + '''
+import json, os, pathlib, sys
+pathlib.Path(os.environ['CASE_CAPTURE']).write_text(json.dumps({
+    'argv': sys.argv[1:], 'password': os.environ.get('REDISCLI_AUTH')}))
+print('PONG')
+sys.exit(int(os.environ.get('CASE_FAIL', '0')))
+''')
+    client.chmod(0o755)
+    password = "synthetic password ' \" $ ;"
+    env = dict(os.environ, PATH=directory + ':' + os.environ['PATH'], CASE_CAPTURE=str(capture),
+               REDIS_HOST_PASSWORD=password, AIO_LOG_LEVEL='debug')
+    for failure in ('0', '1'):
+        result = subprocess.run(['bash', 'Containers/redis/healthcheck.sh'],
+                                env=dict(env, CASE_FAIL=failure), capture_output=True, text=True, timeout=5)
+        call = json.loads(capture.read_text())
+        assert all(password not in word for word in call['argv']), 'Redis health password entered process arguments'
+        assert call['password'] == password, 'Redis did not receive its authentication environment'
+        assert (result.returncode == 0) == (failure == '0')
+        assert password not in result.stdout + result.stderr
+PY
+}
+check service_secret_argv_cases
+
 trusted_proxy_network_cases() {
   python3 - <<'PY'
 import os, pathlib, subprocess, tempfile
