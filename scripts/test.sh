@@ -3198,6 +3198,20 @@ else:
     reset(enabled=['notify_push', 'spreed'])
     state, _ = run('boot', extra=talk)
     assert len(state['imports']) == 1, 'Boot must use the same Talk configuration owner'
+    recording = dict(talk, TALK_RECORDING_ENABLED='yes', TALK_RECORDING_HOST='recording.invalid',
+                     RECORDING_SECRET='synthetic secret must never escape " \\ $')
+    reset(enabled=['notify_push', 'spreed'])
+    state, _ = run('boot', extra=recording)
+    assert 'synthetic secret must never escape' not in json.dumps(state['calls']), 'Recording secrets entered process arguments'
+    assert json.loads(state['config']['spreed']['recording_servers']) == {
+        'servers': [{'server': 'http://recording.invalid:1234/', 'verify': True}],
+        'secret': recording['RECORDING_SECRET']}
+    state, output = run('boot', extra=recording)
+    assert len(state['imports']) == 2 and ' -> ' not in output
+    rotated_recording = recording['RECORDING_SECRET'] + ' rotated'
+    state, _ = run('boot', extra=dict(recording, RECORDING_SECRET=rotated_recording))
+    assert len(state['imports']) == 3 and set(state['imports'][-1]['apps']['spreed']) == {'recording_servers'}
+    assert json.loads(state['config']['spreed']['recording_servers'])['secret'] == rotated_recording
     clock = root / 'clock.sh'
     clock.write_text('sleep() { SECONDS=$((SECONDS + $1)); }\n')
     (commands / 'nc').write_text('#!/bin/bash\nexit 1\n')
