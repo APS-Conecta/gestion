@@ -2144,9 +2144,9 @@ act_aplicar() {  # app by app (#46): the release rows through phase 12 itself �
                 "$(act_lock)" "$(act_lock_next)")" || { ACT_FALLA="los candados no se pudieron comparar"; return 1; }
   salida="$( 
     set -e
-    cd "$ROOT"
-    . scripts/env.sh
-    . provisioning/lib.sh
+    cd "$ROOT" || exit 1
+    . scripts/env.sh || exit 1
+    . provisioning/lib.sh || exit 1
     HERE="$ROOT/provisioning"
     export SEED_CTX=actualizar      # phase_begin's own guard: phases answer to a runner, and this one is actualizar's
     APS_APPS_LOCK="$(act_lock_next)"; export APS_APPS_LOCK   # the seed installs from the NEW lock — the whole point of the run
@@ -2156,7 +2156,9 @@ act_aplicar() {  # app by app (#46): the release rows through phase 12 itself �
     # alone (occ_store, lib.sh) — notify_push included (the entrypoint installs it when the
     # binary is absent; nothing else ever moves an installed store app — this is that path).
     # Official store rows include Talk; each update uses the scoped store command.
-    manifest_opcionales="$(python3 "$HERE/../scripts/apps.py" opcionales | cut -f1)"
+    manifest_opcionales="$(python3 "$HERE/../scripts/apps.py" opcionales)" || exit 1
+    manifest_opcionales="$(printf '%s\n' "$manifest_opcionales" | cut -f1)" || exit 1
+    manifest="$(python3 "$HERE/../scripts/apps.py" repos)" || exit 1
     while IFS=$'\t' read -r app repo; do
       [ -z "$repo" ] || continue   # release rows: phase 12 above
       if printf '%s\n' "$manifest_opcionales" | grep -qx -- "$app" && ! app_elegida "$app"; then
@@ -2168,7 +2170,7 @@ act_aplicar() {  # app by app (#46): the release rows through phase 12 itself �
         exit 1
       fi
       log "app $app → actualizada o ya en su versión (tienda abierta solo para ese comando)${out:+ — occ: $(printf '%s' "$out" | tr '\n' ' ' | tail -c 120)}"
-    done < <(python3 "$HERE/../scripts/apps.py" repos)
+    done <<< "$manifest"
     # destroy last (#172): an earlier FAILED leaves the app, its data and the old lock as they
     # were. An app whose code is already gone (a run that removed it, then failed before the
     # promote) is skipped, so the run converges instead of refusing forever.
