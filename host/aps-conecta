@@ -784,7 +784,7 @@ install_packages() {  # required tools and the optional verifier use separate ap
     command -v "$t" >/dev/null 2>&1 || { missing+=("$t"); pkgs+=("$t"); }
   done
   command -v ogr2ogr >/dev/null 2>&1 || { missing+=(ogr2ogr); pkgs+=(gdal-bin); }
-  command -v signify >/dev/null 2>&1 || verifier_missing=1
+  { command -v signify-openbsd || command -v signify; } >/dev/null 2>&1 || verifier_missing=1
   if [ ${#missing[@]} -eq 0 ] && [ "$verifier_missing" = 0 ]; then
     ok "python3, curl, ogr2ogr y signify presentes"; return 0
   fi
@@ -2479,7 +2479,7 @@ check_paquete() {  # [TAG] — the kept package at $APS_HOME/paquete (D11: insta
   # embedded sha already anchored the bytes at download; «preparar» installs signify-openbsd and
   # the signature verifies from the next run). A package that IS there and does not verify is a
   # loud red, never a silent pass
-  local tag="${1:-}" paquete="$APS_HOME/paquete" pkg sums found
+  local tag="${1:-}" paquete="$APS_HOME/paquete" pkg sums found verifier
   [ -n "$tag" ] || tag="$(suite_tag)"
   if [ -z "$tag" ]; then
     info "la versión de la suite aún no se lee en esta copia — nada que verificar del canal firmado"
@@ -2490,7 +2490,7 @@ check_paquete() {  # [TAG] — the kept package at $APS_HOME/paquete (D11: insta
     info "no hay paquete guardado de la versión $tag (disco liberado) — nada que verificar"
     return 0
   fi
-  if ! command -v signify >/dev/null 2>&1; then
+  if ! verifier="$(command -v signify-openbsd || command -v signify)"; then
     info "signify no está instalado: la suma del instalador ya probó los bytes al descargar; «sudo aps-conecta preparar» instala signify-openbsd cuando está disponible; la firma queda pendiente hasta disponer de la herramienta"
     return 0
   fi
@@ -2512,7 +2512,7 @@ check_paquete() {  # [TAG] — the kept package at $APS_HOME/paquete (D11: insta
       "la suma y el paquete no son de la misma versión; re-descargue el instalador de la versión"
     return 0
   fi
-  if ! ( cd "$paquete" && signify -V -p "$ROOT/installer.pub" -m SHA256SUMS -x SHA256SUMS.minisig ) >/dev/null 2>&1; then
+  if ! ( cd "$paquete" && "$verifier" -V -p "$ROOT/installer.pub" -m SHA256SUMS -x SHA256SUMS.minisig ) >/dev/null 2>&1; then
     bad "la firma del paquete no verifica contra la clave pública de la suite" \
       "el paquete o la clave no son de esta versión; re-descargue el instalador: curl -fsSL $INSTALADOR_REPO_URL/releases/download/$tag/apsconecta-$tag-install.sh | sudo bash"
     return 0
