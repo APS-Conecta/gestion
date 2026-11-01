@@ -5528,6 +5528,17 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
             rc, out = stepped(["--paso", "usuarios", "--codigo", "113314", "--planilla", broken + ".nada"])
             check("--paso usuarios: an unreadable planilla names its path and why, in Spanish, exit 1",
                   rc == 1 and "✗ no se pudo leer la planilla" in out and out.rstrip().endswith(": no existe"))
+            lookup = os.getcwd()
+            try:
+                os.chdir(tmp)
+                missing_site = stepped(["--paso", "sitio", "--archivo", "missing site.sh"])
+                missing_roster = stepped(["--paso", "usuarios", "--codigo", "113314",
+                                          "--planilla", "missing roster.csv"])
+            finally:
+                os.chdir(lookup)
+            check("--paso: unreadable relative site and roster paths name the actual lookup directory (#141)",
+                  missing_site == (1, f"✗ no se pudo leer el sitio {tmp}/missing site.sh: no existe\n")
+                  and missing_roster == (1, f"✗ no se pudo leer la planilla {tmp}/missing roster.csv: no existe\n"))
             rcs = [stepped(a)[0] for a in (["--paso"], ["--paso", "nada", "--codigo", "113314"],
                                            ["--otra"], ["--paso", "usuarios", "--codigo", "113314"],
                                            ["--paso", "generar", "--codigo", "--revision"])]
