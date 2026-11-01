@@ -916,6 +916,10 @@ def selftest():
         tag, entry = resolve(fila("APS-Conecta/clavada", pin="v1.5.0"), 34)
         check("pin honoured: the exact tag, and not even the redirect was read",
               tag == "v1.5.0" and dict(server.hits) == antes)
+        cause = refused(resolve, fila("APS-Conecta/clavada", pin="v1.5.0"), 34,
+                        lock_entry={"tag": "v2.0.0", "version": "2.0.0"}, use_lock=False)
+        check("a pin below the installed floor is refused, naming both releases",
+              "v1.5.0" in cause and "v2.0.0" in cause)
 
         # the atomic lock write: whole-replace, no tmp left behind, 0644, and a failed rename
         # leaves the previous lock intact
