@@ -19,15 +19,21 @@ the suite's version is a signed release package (D12).
 
 A clinic installs a **signed release package**, never `main` (ADR-0005):
 
-    curl -fsSL https://github.com/APS-Conecta/gestion/releases/download/vX.Y.Z/apsconecta-vX.Y.Z-install.sh | sudo bash
+    curl -fsSL https://github.com/APS-Conecta/gestion/releases/latest/download/apsconecta-install.sh | sudo bash
+
+The URL is stable — it always resolves to the newest published Release — and the version pin
+travels inside the asset itself: the script carries the tag it installs and the package's
+sha256, so a Release cut after this change serves itself with no URL editing. (For a
+tag-pinned install or an audit, the same asset ships under its versioned name,
+`apsconecta-vX.Y.Z-install.sh`; aps/RELEASING.md §6 owns that ceremony.)
 
 On an institutional proxy network, enter its URL privately and preserve only its variables
-through sudo for the initial download. Replace `vX.Y.Z` with the chosen release:
+through sudo for the initial download:
 
 ```bash
 read -r -s -p 'Dirección del proxy: ' HTTPS_PROXY; echo
 export HTTPS_PROXY HTTP_PROXY="$HTTPS_PROXY" https_proxy="$HTTPS_PROXY" http_proxy="$HTTPS_PROXY"
-curl -fsSL https://github.com/APS-Conecta/gestion/releases/download/vX.Y.Z/apsconecta-vX.Y.Z-install.sh \
+curl -fsSL https://github.com/APS-Conecta/gestion/releases/latest/download/apsconecta-install.sh \
   | sudo --preserve-env=HTTPS_PROXY,HTTP_PROXY,NO_PROXY,https_proxy,http_proxy,no_proxy bash
 ```
 
@@ -38,8 +44,9 @@ Docker's systemd drop-in and restarts Docker when its configuration needs applic
 Localhost, the suite address, service names and the inspected network bypass the proxy.
 Keep the profile in the encrypted backup of `/opt/aps-conecta`.
 
-The one-liner's anchor is the tag-pinned release URL plus TLS, and the installer asset itself
-embeds the package's sha256 and the project's public key: the download is verified **before
+The one-liner's anchor is the stable `releases/latest` URL plus TLS, and the tag pin rides
+inside the delivered bytes: the installer asset itself embeds the package's sha256 and the
+project's public key. The download is verified **before
 anything unpacks** (a host that already carries `signify` verifies the signature too — the
 install refuses on a bad one), the unpack is atomic, and the suite lands at
 `/opt/aps-conecta/instalador` with the package kept — tarball, `SHA256SUMS`, `SHA256SUMS.minisig`

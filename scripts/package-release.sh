@@ -11,6 +11,9 @@
 #   SHA256SUMS                   one line: <sha256>  apsconecta-<tag>.tar.gz (install.sh greps -qx it)
 #   SHA256SUMS.minisig           signify-openbsd (minisign-format) signature over SHA256SUMS
 #   apsconecta-<tag>-install.sh  install.sh with BUNDLE_TAG + TARBALL_SHA256 filled (the one-liner)
+#   apsconecta-install.sh         the SAME bytes under a stable name — releases/latest/download
+#                                serves it, so the runbooks' one-liner never 404s on a new tag;
+#                                the tag pin travels inside the bytes (BUNDLE_TAG + TARBALL_SHA256)
 #
 # THE TRUST CHAIN (D7): Ed25519 over SHA256SUMS, made and PROVEN here with the same apt
 # signify-openbsd the clinic verifies with — a format incompatibility reds CI, never a clinic.
@@ -96,8 +99,8 @@ if [ "${1:-}" = "--self-test" ]; then
   mk_repo "$tmp/repo" "$tmp/installer.pub"
   run_pkg "$tmp/o1" "$tmp/repo" "$tmp/installer.sec" ""
   sha1="$(sha256sum "$tmp/o1/apsconecta-v9.8.7.tar.gz" 2>/dev/null | cut -d' ' -f1)"
-  check "round trip: rc 0 and the four assets exist" \
-    '[ "$rc" -eq 0 ] && [ -n "$sha1" ] && [ -f "$tmp/o1/SHA256SUMS" ] && [ -f "$tmp/o1/SHA256SUMS.minisig" ] && [ -f "$tmp/o1/apsconecta-v9.8.7-install.sh" ]'
+  check "round trip: rc 0 and the five assets exist" \
+    '[ "$rc" -eq 0 ] && [ -n "$sha1" ] && [ -f "$tmp/o1/SHA256SUMS" ] && [ -f "$tmp/o1/SHA256SUMS.minisig" ] && [ -f "$tmp/o1/apsconecta-v9.8.7-install.sh" ] && [ -f "$tmp/o1/apsconecta-install.sh" ]'
   check "composite: the tag tree alone (install.sh's contract, theme, data, register, the manifest) — and no app bytes in it (#42)" \
     'tar -tzf "$tmp/o1/apsconecta-v9.8.7.tar.gz" | grep -q "^instalador/host/aps-conecta$" \
       && tar -tzf "$tmp/o1/apsconecta-v9.8.7.tar.gz" | grep -q "^instalador/provisioning/data/packages.json$" \
@@ -116,6 +119,8 @@ if [ "${1:-}" = "--self-test" ]; then
     '[ "$(sed -n "s/^BUNDLE_TAG=\"\([^\"]*\)\".*/\1/p" "$tmp/o1/apsconecta-v9.8.7-install.sh" | head -1)" = v9.8.7 ] \
       && [ "$(sed -n "s/^TARBALL_SHA256=\"\([^\"]*\)\".*/\1/p" "$tmp/o1/apsconecta-v9.8.7-install.sh" | head -1)" = "$sha1" ] \
       && [ -x "$tmp/o1/apsconecta-v9.8.7-install.sh" ]'
+  check "alias: apsconecta-install.sh is the tag asset's exact bytes — the stable name the latest one-liner serves" \
+    'cmp -s "$tmp/o1/apsconecta-v9.8.7-install.sh" "$tmp/o1/apsconecta-install.sh"'
 
   run_pkg "$tmp/o2" "$tmp/repo" "$tmp/installer.sec" ""
   check "determinism: a second pass rebuilds the same bytes (any clone of the tag → one sha256)" \
@@ -285,6 +290,13 @@ chmod 0755 "$out/apsconecta-$tag-install.sh"
   || die "the install asset's TARBALL_SHA256 is not the measured sha — the fill drifted"
 bash "$out/apsconecta-$tag-install.sh" --self-test "$staging" >/dev/null 2>&1 \
   || die "the filled install asset fails its own self-test"
+
+# 10 — the stable-name alias: the same bytes as apsconecta-<tag>-install.sh, so the runbooks' latest
+#      one-liner (releases/latest/download/apsconecta-install.sh) always resolves; counted before
+#      checked — the alias must carry THIS tag's fill, never the committed placeholder form
+cp "$out/apsconecta-$tag-install.sh" "$out/apsconecta-install.sh"
+[ "$(sed -n 's/^BUNDLE_TAG="\([^"]*\)".*/\1/p' "$out/apsconecta-install.sh" | head -1)" = "$tag" ] \
+  || die "the stable-name alias is not this tag's filled asset — the copy drifted"
 
 say "package:    $out/$pkg  sha256=$pkg_sha"
 say "provenance: instalador $tag${manifest_sha:+ / manifest $manifest_sha}"

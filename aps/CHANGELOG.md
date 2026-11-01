@@ -13,6 +13,16 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Changed
 
+- **The install one-liner always resolves to the newest Release (#262).** Every Release now
+  publishes `apsconecta-install.sh` — the install asset under a stable name, byte-identical
+  to its versioned twin — and the runbooks serve it from `releases/latest/download`, so the
+  line an operator copies never 404s on a new version. The tag pin travels inside the bytes
+  (`BUNDLE_TAG` + `TARBALL_SHA256`, filled at cut time): the sha256+signature verification
+  before anything unpacks is unchanged, `fail-on-prerelease` keeps `latest` a full Release,
+  and the versioned asset still ships for tag-pinned installs and audits. Clean boot
+  rehearses the bootstrap through the mirrored `latest` URL; the alias exists only on
+  Releases cut after this change (published assets never move).
+
 - **`aps-conecta actualizar` uninstalls a release app whose row left the manifest (#172).** The plan
   names it, the run removes it last (`occ app:remove`, data included; the backup the run takes first
   is the way back) and the new lock drops its row, so a warm server converges on the suite's apps.
