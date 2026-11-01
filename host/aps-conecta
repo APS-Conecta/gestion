@@ -4035,6 +4035,7 @@ case "\$1 \$2" in
       *"occ config:list"*) echo '{"system":{}}' ;;
       *"config:app:get calendar"*) echo "4.7.15" ;;
       *"config:system:get appstoreenabled"*) echo "\${TIENDA:-0}" ;;
+      *"occ app:enable territorio"*) if [ -e "$act/enable-mala" ]; then echo "synthetic enable failure"; exit 1; fi ;;
       *"occ app:getpath viejo"*) echo /var/www/html/custom_apps/viejo ;;
       *"occ app:getpath"*) exit 1 ;;
       *"occ app:remove"*) if [ -e "$act/remove-mala" ]; then echo "viejo could not be removed"; exit 1; fi ;;
@@ -4186,13 +4187,15 @@ SHIM
   rm -f "$tshim/python3"; hash -r
 
   # a failed apply: the app named, the lock unchanged, the new lock cleaned, the restore command
-  : > "$act/aio.log"; : > "$act/resolver.log"; cp "$act/lock.bytes" "$act/home/apps.lock.json"
+  : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"; cp "$act/lock.bytes" "$act/home/apps.lock.json"
   rm -f "$act/aio.libre"   # a fresh session: the wizard's block is back
-  out="$( id() { echo 0; }; act_aplicar() { ACT_FALLA="territorio falló al aplicarse — nada más se aplicó, el candado no cambió"; return 1; }; act46 2>&1 )"; arc=$?
+  touch "$act/enable-mala"
+  out="$( id() { echo 0; }; act46 2>&1 )"; arc=$?; rm -f "$act/enable-mala"
   check "actualizar: a failed apply names the app and the restore command, and moves neither lock" \
     '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "✗ territorio falló al aplicarse — nada más se aplicó, el candado no cambió" \
       && printf "%s" "$out" | grep -qF "→ para volver al estado anterior: el asistente de la suite (puerto 8080 de este servidor) → «Restaurar la copia de seguridad seleccionada»" \
-      && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes" && [ ! -e "$act/home/apps.lock.json.next" ]'
+      && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes" && [ ! -e "$act/home/apps.lock.json.next" ] \
+      && grep -q "occ app:enable territorio$" "$act/docker.log" && ! grep -q "app:update calendar" "$act/docker.log"'
 
   # #172: an uninstall that fails is a failed apply like any other — named, nothing promoted
   : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"; cp "$act/lock.bytes" "$act/home/apps.lock.json"
