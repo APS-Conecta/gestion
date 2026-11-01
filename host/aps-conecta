@@ -3360,9 +3360,14 @@ SHIM
     check "asistente-aio: a re-run on a running suite configures nothing and posts nothing" \
       '[ "$rc" -eq 0 ] && case "$out" in *"✓ La suite ya está en marcha — el asistente no se vuelve a configurar"*) ;; *) false;; esac && [ ! -s "$tmp/aio.log" ]'
     : > "$tmp/aio.ps"; rm -rf "$AIO_STATE" "$tmp/aio.configured"; : > "$tmp/aio.log"
-    out="$( (cmd_aio_wizard --dominio backup.example --respaldo /mnt/backup) 2>&1)"; rc=$?
+    local custom_backup_home="$tmp/backup-custom"
+    mkdir -p "$custom_backup_home"
+    out="$( (APS_HOME="$custom_backup_home" cmd_aio_wizard --dominio backup.example --respaldo /mnt/backup) 2>&1)"; rc=$?
     check "asistente-aio: --respaldo posts the borg location and the daily time — a location alone schedules nothing" \
       '[ "$rc" -eq 0 ] && grep -q "borg_backup_host_location=/mnt/backup borg_remote_repo=$" "$tmp/aio.log" && grep -q "daily_backup_time=$(backup_hour_utc today)$" "$tmp/aio.log" && ! grep -q "daily_backup_time=04:00$" "$tmp/aio.log" && case "$out" in *"✓ Respaldo diario a las 04:00 hora de Santiago ($(backup_hour_utc today) UTC), en /mnt/backup"*) ;; *) false;; esac'
+    check "backup scope: the wizard request carries the selected installation directory once" \
+      '[ "$rc" -eq 0 ] && grep -q "additional_backup_directories=$custom_backup_home$" "$tmp/aio.log" \
+        && [ "$(grep -c "^POST config.*additional_backup_directories=" "$tmp/aio.log")" -eq 1 ]'
     # An empty TZDIR can fall back to system data. Model the resolver's observable failures.
     local date_fallback="$tmp/date-fallback" date_failure="$tmp/date-failure"
     mkdir -p "$date_fallback" "$date_failure"
@@ -3576,14 +3581,9 @@ exit 0
 DSHIM
   chmod +x "$tshim/docker"
   export MC_ADDITIONAL="$tmp/mc-additional"
-  out="$(cmd_respaldo 2>&1)"
-  check "respaldo: first wiring adds the target; the no-restore caveat prints (the honest cost)" \
-    'case "$out" in *"agregado al alcance"*"no se restauran"*) ;; *) false;; esac'
-  out="$(cmd_respaldo 2>&1)"
-  check "respaldo: second wiring is the idempotent no-op, caveat still printed" \
-    'case "$out" in *"ya está en el alcance"*"no se restauran"*) ;; *) false;; esac'
-  check "respaldo: the mastercontainer's file actually carries the line" \
-    'grep -qxF /opt/aps-conecta "$tmp/mc-additional"'
+  out="$(APS_HOME="$tmp/legacy-backup-home" bash "$ROOT_BAK/host/aps-conecta" respaldo 2>&1)"; rc=$?
+  check "backup scope: the retired direct-file command is rejected without writing scope" \
+    '[ "$rc" -eq 2 ] && case "$out" in *"subcomando desconocido: respaldo"*) ;; *) false;; esac && [ ! -s "$tmp/mc-additional" ]'
 
   # ── --reponer end to end: the provisionador's own step, run in-process — a stub that records its
   # argv and answers with the exit code the arm plants (the real step: provisionador.py --self-test)
