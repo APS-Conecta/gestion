@@ -861,6 +861,11 @@ def selftest():
                    extra_members=(tarfile.TarInfo("malpath/../x"),))
         mk_release("APS-Conecta/mal-absolute", "v1.0.0", "1.0.0",
                    extra_members=(tarfile.TarInfo("/malabsolute/x"),))
+        for app, kind in (("symlink", tarfile.SYMTYPE), ("hardlink", tarfile.LNKTYPE)):
+            link = tarfile.TarInfo(f"{app}/alias")
+            link.type = kind
+            link.linkname = f"{app}/ARCHIVO"
+            mk_release(f"APS-Conecta/{app}", "v1.0.0", "1.0.0", extra_members=(link,))
         mk_release("APS-Conecta/con-firma-nc", "v1.0.0", "1.0.0", con_firma_nc=True)
         mk_release("APS-Conecta/otra-id", "v1.0.0", "1.0.0", id_asset="distinto")
         mk_release("APS-Conecta/version-interna", "v1.0.0", "1.0.0", version_interna="0.9.0")
@@ -897,6 +902,10 @@ def selftest():
         cause = refused(fetch_release, fila("APS-Conecta/mal-absolute"), "v1.0.0")
         check("an archive with an absolute member is refused before storage",
               bool(cause) and not os.path.exists(store_file("malabsolute", "v1.0.0")))
+        for app in ("symlink", "hardlink"):
+            cause = refused(fetch_release, fila(f"APS-Conecta/{app}"), "v1.0.0")
+            check(f"an archive with a {app} member is refused before storage",
+                  bool(cause) and not os.path.exists(store_file(app, "v1.0.0")))
         check("a tarball carrying appinfo/signature.json refused",
               "signature.json" in refused(fetch_release, fila("APS-Conecta/con-firma-nc"), "v1.0.0"))
         check("a release declaring another app id refused",
