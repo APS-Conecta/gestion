@@ -319,9 +319,16 @@ main() {
   [ -n "$addr" ] || die "no se pudo determinar la dirección de esta VM (¿red?)"
   printf 'Aceptación: suite %s desde %s · por %s\n\n' "$tag" "$VMA_REPO_URL" "${VMA_DOMINIO:+dominio }${VMA_DOMINIO:-IP}"
   if [ "$solo" = 0 ]; then
-    run_bootstrap "$tag" || { [ "$continuar" = 1 ] || exit 1; }
+    run_bootstrap "$tag" || {
+      verdict fail "curl | sudo bash" "registro: $VMA_WORK/bootstrap.out"
+      [ "$continuar" = 1 ] || { summarize; return 1; }
+    }
     bash "$VMA_TREE/scripts/cleanboot-site.sh" "$addr" "$VMA_WORK" \
-      || die "no se pudo generar el sitio y la planilla de prueba"
+      || {
+        verdict fail "el sitio y la planilla de prueba" "generación pendiente tras el arranque"
+        summarize
+        return 1
+      }
     silent_install "$VMA_WORK/site.sh" "$VMA_WORK/usuarios.csv" || {
       verdict fail "la instalación silenciosa" "registro privado: $VMA_WORK/install.out"
       [ "$continuar" = 1 ] || { summarize; return 1; }
