@@ -280,13 +280,14 @@ def verify_signature(sums_path, sig_path):
     a suite release with (D7's rule: a format incompatibility reds CI, never a clinic). The
     signature is the ONLY trust root — the sums and the tarball below are attacker-controlled
     until this passes, so there is no sha-only fallback: without signify there is no install."""
-    if shutil.which("signify") is None:
+    verifier = shutil.which("signify-openbsd") or shutil.which("signify")
+    if verifier is None:
         raise Refusal("signify no está instalado y sin él no se puede verificar ninguna aplicación "
                       "— ejecute sudo aps-conecta preparar, o instale el paquete y su enlace: "
                       "sudo apt-get install signify-openbsd; "
                       "sudo ln -sf /usr/bin/signify-openbsd /usr/local/bin/signify")
     try:
-        run = subprocess.run(["signify", "-V", "-p", pubkey_path(), "-m", sums_path, "-x", sig_path],
+        run = subprocess.run([verifier, "-V", "-p", pubkey_path(), "-m", sums_path, "-x", sig_path],
                              capture_output=True, timeout=60)
     except subprocess.TimeoutExpired:
         raise Refusal("signify no respondió en 60 s al verificar SHA256SUMS") from None
