@@ -131,7 +131,7 @@ PHASE20 = os.path.join(HERE, "..", "provisioning", "phases", "20-groups.sh")
 # /opt/aps-conecta into backups). The self-test redirects it; this default is the only literal.
 APS_HOME = os.environ.get("APS_HOME") or "/opt/aps-conecta"
 CRED_PATH = os.path.join(APS_HOME, "credentials.txt")
-ESTADO_PATH = "/opt/aps-conecta/estado.txt"   # the last execution's verdict (a10): 0644, «aps-conecta estado»
+ESTADO_PATH = os.path.join(APS_HOME, "estado.txt")   # the last execution's verdict (a10): 0644, «aps-conecta estado»
 AIO_STATE = "/opt/aps-conecta/aio"   # the host's wizard state (0700): passphrase, domain, Talk options — passed to it
 # The installer's own certificate authority and the leaf it signs for the link's address (L3 S1,
 # owner 2026-10-02). The CA is kept: the suite's certificate (L4, R22) hangs from the same one and
