@@ -400,6 +400,9 @@ def resolve(row, major, lock_entry=None, use_lock=True, token=None):
         return lock_entry["tag"], None
     pin = row.get("pin")
     if pin:
+        if floor is not None and order(pin) < order(floor):
+            raise Refusal(f"la versión fijada «{pin}» es anterior a la instalada «{floor}» — "
+                          "se conserva la versión instalada")
         return pin, None
     seen, latest = set(), latest_tag(row["repo"])
     if latest is not None:
