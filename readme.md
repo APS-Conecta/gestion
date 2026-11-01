@@ -92,6 +92,11 @@ establishment-specific list under «usuarios reservados:». The testbed summary 
 files only when they exist; signature verification prefers `signify-openbsd`, and its missing-tool
 instruction includes both the package and the compatibility link (#141).
 
+`APS_HOME` selects the host, Provisionador and app-resolver state directory. Explicit
+app paths and `AIO_STATE` retain precedence. Developer certificate renewal retains file
+ownership and grants Apache access through a named ACL; the no-root workflow lives in
+`aps/INSTALLER.md` §14 (#142).
+
 **Why some messages remain in English.** Upstream PHP messages remain for configuration
 validation, authentication and ordinary container operations. Their sources are:
 

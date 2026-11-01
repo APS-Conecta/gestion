@@ -160,6 +160,8 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-092 | operator messages omit recovery steps, resolved paths and reserved accounts, or advertise absent credential files (#141) | the app-verifier refusal names only its package; generic executable lookup collides with an unrelated signify utility; summaries print password paths unconditionally; relative file and roster errors omit lookup context | prefer signify-openbsd, include package and bridge recovery steps, condition credential notices on file existence, resolve input paths before reporting, and list canonical reserved uids once; existing CLI, API and testbed self-tests cover each behavior |
 
+| A-093 | developer provisioning writes outside its selected home or requires root to authorize its certificate (#142) | Provisionador, release defaults, testbed state, verification CA and optional-app choices use separate fixed paths; TLS handoff always changes ownership | derive state defaults from APS_HOME, preserve explicit overrides, retain root TLS handoff and grant only Apache a named ACL for an unprivileged owner; document the user-local signer and existing provisioning commands |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and

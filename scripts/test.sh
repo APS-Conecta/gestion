@@ -109,6 +109,9 @@ SH
   printf '#!/bin/sh\nprintf "Avail\\n142\\n"\n' > "$tmp/bin/df"
   printf '#!/bin/sh\necho 1\n' > "$tmp/bin/seq"
   chmod +x "$tmp/bin/"*
+  out="$(PATH="$tmp/bin:$PATH" APS_HOME="$tmp/home" bash scripts/aio-testbed.sh status 2>&1)" || true
+  [[ "$out" == *"no secrets in $tmp/home/aio"* ]] \
+    || { echo "testbed status ignores APS_HOME: $out" >&2; rm -rf "$tmp"; return 1; }
   out="$(PATH="$tmp/bin:$PATH" CASE_ROOT="$tmp" CASE_PYTHON="$py" APS_HOME="$tmp/home" \
     AIO_POLL=0 AIO_TEST_IMAGE=ghcr.io/aps-conecta/all-in-one:v9.9.9 \
     bash "$tmp/scripts/bed.sh" 2>&1)" || true
@@ -3468,6 +3471,26 @@ source provisioning/phases/12-apps.sh
         state_path.write_text(json.dumps({'enabled':False, 'wired':0, 'calls':[], 'fail':failure}))
         state = run(success=False)
         assert state['wired'] == (1 if failure == 'wire' else 0)
+    (root / 'apps.json').write_text(json.dumps([
+        {'id':'spreed', 'source':'store', 'optional':'off', 'containers':[]}]))
+    home = root / 'home'
+    (home / 'aio').mkdir(parents=True)
+    (home / 'aio/opciones').write_text('spreed=1\n')
+    env['APS_HOME'] = str(home)
+    env.pop('AIO_STATE', None)
+    env.pop('APS_APPS_OPCIONES', None)
+    state_path.write_text(json.dumps({'enabled':False, 'wired':0, 'calls':[]}))
+    state = run()
+    assert state['wired'] == 1, 'Phase 12 must install an optional app selected under APS_HOME'
+    alternate = root / 'alternate'
+    alternate.mkdir()
+    (alternate / 'opciones').write_text('spreed=0\n')
+    env['AIO_STATE'] = str(alternate)
+    state_path.write_text(json.dumps({'enabled':False, 'wired':0, 'calls':[]}))
+    assert run()['wired'] == 0, 'AIO_STATE must retain precedence over APS_HOME'
+    env['APS_APPS_OPCIONES'] = str(home / 'aio/opciones')
+    state_path.write_text(json.dumps({'enabled':False, 'wired':0, 'calls':[]}))
+    assert run()['wired'] == 1, 'APS_APPS_OPCIONES must retain precedence over AIO_STATE'
 print('Phase 12 wires fresh and existing official Talk installs and propagates installation/configuration failures')
 PY
 }
@@ -3694,7 +3717,8 @@ check bash scripts/env.sh --self-test
 # 1-4 and the connector answer) and a stub curl that records its argv and answers nothing; the gate's
 # FIRST curl is asserted, whatever its verdict.
 public_url_cases() {
-  local tmp gate first
+  local tmp gate first mode ca
+  local -a state
   tmp="$(mktemp -d)"; mkdir "$tmp/bin"; : > "$tmp/ca.crt"
   cat > "$tmp/bin/docker" <<'STUB'
 #!/usr/bin/env bash
@@ -3709,15 +3733,23 @@ exit 0
 STUB
   printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "$CURL_LOG"\nexit 7\n' > "$tmp/bin/curl"
   chmod +x "$tmp/bin/docker" "$tmp/bin/curl"
-  for gate in smoke:/status.php office-smoke:/eurooffice/healthcheck; do
-    : > "$tmp/curl.log"
-    PATH="$tmp/bin:$PATH" CURL_LOG="$tmp/curl.log" SUITE_CA="$tmp/ca.crt" HTTP_PORT=8180 \
-      bash "scripts/${gate%%:*}.sh" >/dev/null 2>&1
-    first="$(head -1 "$tmp/curl.log")"
-    case " $first " in
-      *" --cacert $tmp/ca.crt "*" https://203.0.113.10${gate#*:} "*|*" https://203.0.113.10${gate#*:} "*" --cacert $tmp/ca.crt "*) ;;
-      *) echo "public URL: ${gate%%:*}'s first curl is «$first», not https://203.0.113.10${gate#*:} with the CA" >&2; rm -rf "$tmp"; return 1 ;;
-    esac
+  mkdir -p "$tmp/home/certificados/ca"
+  : > "$tmp/home/certificados/ca/aps-conecta-ca.crt"
+  for mode in explicit home; do
+    ca="$tmp/ca.crt"; state=("SUITE_CA=$ca")
+    if [ "$mode" = home ]; then
+      ca="$tmp/home/certificados/ca/aps-conecta-ca.crt"; state=("APS_HOME=$tmp/home")
+    fi
+    for gate in smoke:/status.php office-smoke:/eurooffice/healthcheck; do
+      : > "$tmp/curl.log"
+      PATH="$tmp/bin:$PATH" CURL_LOG="$tmp/curl.log" HTTP_PORT=8180 env -u SUITE_CA "${state[@]}" \
+        bash "scripts/${gate%%:*}.sh" >/dev/null 2>&1
+      first="$(head -1 "$tmp/curl.log")"
+      case " $first " in
+        *" --cacert $ca "*" https://203.0.113.10${gate#*:} "*|*" https://203.0.113.10${gate#*:} "*" --cacert $ca "*) ;;
+        *) echo "public URL: ${gate%%:*}'s first curl is «$first», not https://203.0.113.10${gate#*:} with the CA" >&2; rm -rf "$tmp"; return 1 ;;
+      esac
+    done
   done
   rm -rf "$tmp"
 }
