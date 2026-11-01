@@ -274,7 +274,7 @@ cmd_install() {  # the install: the welcome, then the steps in registry order. I
     echo "INSTALACIÓN: la suite quedó instalada; falta lo marcado con ✗ arriba — ejecute el comando que nombra (registro: $SILENT_LOG)"
     exit 1
   fi
-  echo "INSTALACIÓN: ✓ — entregue a cada persona su fila: sudo cat /opt/aps-conecta/credentials.txt"
+  printf 'INSTALACIÓN: ✓ — entregue a cada persona su fila: sudo cat %s/credentials.txt\n' "$APS_HOME"
   echo "  y verifique la instancia: aps-conecta revalidate (registro: $SILENT_LOG)"
   staff_ca
 }
