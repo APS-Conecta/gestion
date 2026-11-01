@@ -2188,7 +2188,10 @@ act_aplicar() {  # app by app (#46): the release rows through phase 12 itself �
     done <<< "$retired"
     # the run's last assertion (#46): the store closed again — every open above was scoped,
     # so the instance's standing value is what it always was; anything else is a red.
-    tienda="$(occ config:system:get appstoreenabled 2>/dev/null || true)"
+    tienda="$(occ config:system:get appstoreenabled 2>/dev/null)" || {
+      log "FAILED tienda — falló la lectura del estado"
+      exit 1
+    }
     case "$tienda" in ""|0) log "tienda cerrada (appstoreenabled=${tienda:-sin valor})" ;; *)
       log "FAILED tienda — quedó abierta (appstoreenabled=$tienda)"; exit 1 ;; esac
   )" 2>&1 || rc=$?
