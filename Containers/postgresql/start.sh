@@ -18,7 +18,11 @@ export GREP_STRING
 DATADIR="/var/lib/postgresql/data"
 export DUMP_DIR="/mnt/data"
 DUMP_FILE="$DUMP_DIR/database-dump.sql"
+set +x
 export PGPASSWORD="$POSTGRES_PASSWORD"
+if [ "$AIO_LOG_LEVEL" = 'debug' ]; then
+    set -x
+fi
 
 # Don't start database as long as backup is running
 while [ -f "$DUMP_DIR/backup-is-running" ]; do

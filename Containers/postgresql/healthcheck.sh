@@ -1,8 +1,6 @@
 #!/bin/bash
 
-if [ "$AIO_LOG_LEVEL" = 'debug' ]; then
-    set -x
-fi
+set +x
 
 test -f "/mnt/data/backup-is-running" && exit 0
 
