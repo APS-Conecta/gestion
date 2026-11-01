@@ -552,7 +552,7 @@ PY
 #!/bin/sh
 printf 'firma verificada (signify, clave pública del proyecto)\n'
 printf 'Suite v1.0.0 en %s/instalador (paquete verificado en %s/paquete)\n' "$VMA_ROOT" "$VMA_ROOT"
-exit 0
+exit "$(cat "$SHIM_STATE/bootstrap.rc" 2>/dev/null || echo 0)"
 SH
   cp "$shims/curl" "$SHIM_STATE/healthy-curl"
   cat > "$shims/curl" <<'SH'
@@ -579,6 +579,12 @@ SH
     '[ "$main_rc" = 1 ] && grep -q "✗ el certificado del instalador" "$SHIM_STATE/main.out" && grep -q "^Veredicto:" "$SHIM_STATE/main.out"'
   printf 'fixture CA\n' > "$fixtures/certificados/ca/aps-conecta-ca.crt"
   printf '0\n' > "$SHIM_STATE/install.rc"
+  printf '73\n' > "$SHIM_STATE/bootstrap.rc"
+  rm "$VMA_TREE/scripts/cleanboot-site.sh"
+  main_rc=0
+  ( CHECKS_OK=0; CHECKS_FAIL=0; CHECKS_SKIP=0; main --tag v1.0.0 --continuar ) > "$SHIM_STATE/main.out" 2>&1 || main_rc=$?
+  t "main: a bootstrap failure without an installed tree prints its verdicts" 0 \
+    '[ "$main_rc" = 1 ] && grep -q "✗ curl | sudo bash" "$SHIM_STATE/main.out" && grep -q "^Veredicto:" "$SHIM_STATE/main.out"'
 
   # resolve_tag: the redirect resolves, the failure dies — both without the API
   cat > "$shims/curl" <<'SH'
