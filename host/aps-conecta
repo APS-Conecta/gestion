@@ -2659,7 +2659,7 @@ EOF
 
   # install runs as root: the stepper arms answer `id -u` from a shim (ID_U=1000 plays the operator)
   printf '#!/usr/bin/env bash\ncase "$1" in -u) echo "${ID_U:-0}" ;; -un) echo root ;; esac\n' > "$tshim/id"; chmod +x "$tshim/id"
-  APS_HOME="$tmp/aps-stepper"   # …and the install's own home answers from the fixture: CI's runner is uid 1001 and /opt is not theirs
+  APS_HOME="$tmp/aps stepper"   # …and the install's own home answers from the fixture: CI's runner is uid 1001 and /opt is not theirs
   fixture_installation
   # the stepper end to end with every server step stubbed: the order, the approved header/footer,
   # the hand-over to the browser, and no prompt without a terminal
@@ -2750,8 +2750,10 @@ EOF
     id() { echo "${ID_U:-0}"; }   # hash-proof: bash's command hash can reroute a PATH shim to the real uid (CI = 1001) — a function cannot be rerouted
     cmd_install --sitio "$tmp/dado.sh" --planilla "$tmp/dado.csv" </dev/null 2>&1
   )"; rcs=$?
+  local credentials_command
+  credentials_command="$(printf 'sudo cat %q' "$APS_HOME/credentials.txt")"
   check "install --sitio: the same eight steps in order — the browser ones from the files — then the verdict" \
-    '[ "$rcs" -eq 0 ] && case "$install_out" in *"sin preguntas ni navegador"*"Paso 1 de 8"*"Paso 4 de 8"*"Sin instalador web: modo silencioso."*"Paso 5 de 8 · Elegir el centro  servidor"*"centro-stub"*"Paso 6 de 8"*"suite-stub"*"Paso 7 de 8"*"equipos-stub"*"Paso 8 de 8"*"ejecutar-stub"*"temporizadores-stub"*"INSTALACIÓN: ✓"*"sudo cat $APS_HOME/credentials.txt"*"aps-conecta revalidate (registro: $APS_HOME/instalacion.log)"*) ;; *) false;; esac && case "$install_out" in *"Enter para comenzar"*|*"  navegador"*|*"(navegador)"*|*"Comando   aps-conecta centro"*) false;; *) true;; esac'
+    '[ "$rcs" -eq 0 ] && case "$install_out" in *"sin preguntas ni navegador"*"Paso 1 de 8"*"Paso 4 de 8"*"Sin instalador web: modo silencioso."*"Paso 5 de 8 · Elegir el centro  servidor"*"centro-stub"*"Paso 6 de 8"*"suite-stub"*"Paso 7 de 8"*"equipos-stub"*"Paso 8 de 8"*"ejecutar-stub"*"temporizadores-stub"*"INSTALACIÓN: ✓"*"$credentials_command"*"aps-conecta revalidate (registro: $APS_HOME/instalacion.log)"*) ;; *) false;; esac && case "$install_out" in *"Enter para comenzar"*|*"  navegador"*|*"(navegador)"*|*"Comando   aps-conecta centro"*) false;; *) true;; esac'
   check "install --sitio: a tool's own stderr goes to the log, never the console" \
     'case "$install_out" in *"Pulling from"*) false;; *) true;; esac && grep -q "Pulling from somewhere" "$APS_HOME/instalacion.log"'
   install_out="$(
@@ -3894,6 +3896,9 @@ def sha(app, tag):
 args = sys.argv[1:]
 if args[0] == "locked":
     app = args[1]
+    if os.path.exists(os.path.join(act, "lock-read-failed")):
+        sys.stderr.write(f"FATAL: {app}: synthetic lock read failure\n")
+        sys.exit(1)
     tag = "v0.80.0" if app == "territorio" else "v3.5.0"
     print(f"{tag}\t{tag[1:]}\t{sha(app, tag)}\t{act}/home/apps/{app}/{tag}.tar.gz")
 elif args[0] == "plan":
@@ -4053,6 +4058,11 @@ case "\$1 \$2" in
         echo "\${TIENDA:-0}" ;;
       *"occ app:enable territorio"*) if [ -e "$act/enable-failed" ]; then echo "synthetic enable failure"; exit 1; fi ;;
       *"/configure-apps.sh talk"*) if [ -e "$act/talk-config-failed" ]; then echo "synthetic Talk configuration failure"; exit 1; fi ;;
+      *"occ app:list"*)
+        [ ! -e "$act/retirement-read-failed" ] || exit 124
+        [ ! -e "$act/retirement-native-failed" ] || exit 1
+        if [ -e "$act/retirement-invalid" ]; then echo 'synthetic invalid inventory'; exit 0; fi
+        echo '{"enabled":{"viejo":"1.0.0"},"disabled":{}}' ;;
       *"occ app:getpath viejo"*) echo /var/www/html/custom_apps/viejo ;;
       *"occ app:getpath"*) exit 1 ;;
       *"occ app:remove"*) if [ -e "$act/remove-mala" ]; then echo "viejo could not be removed"; exit 1; fi ;;
@@ -4229,7 +4239,7 @@ SHIM
         && ! grep -q "occ app:enable territorio" "$act/docker.log" && ! grep -q "app:update calendar" "$act/docker.log"'
   done
 
-  for fault in version-read-failed config-read-failed config-invalid; do
+  for fault in lock-read-failed version-read-failed config-read-failed config-invalid; do
     : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"
     cp "$act/lock.bytes" "$act/home/apps.lock.json"
     rm -f "$act/home/apps.lock.json.next"
@@ -4252,6 +4262,17 @@ SHIM
         && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes" && [ ! -e "$act/home/apps.lock.json.next" ] \
         && ! grep -q "app:update" "$act/docker.log" \
         && case "$fault" in spreed-install-failed) ! grep -q "/configure-apps.sh talk" "$act/docker.log" ;; talk-config-failed) grep -q "/configure-apps.sh talk" "$act/docker.log" ;; esac'
+  done
+
+  for fault in retirement-read-failed retirement-native-failed retirement-invalid; do
+    : > "$act/aio.log"; : > "$act/resolver.log"; : > "$act/docker.log"
+    cp "$act/lock.bytes" "$act/home/apps.lock.json"
+    rm -f "$act/aio.libre" "$act/home/apps.lock.json.next"; touch "$act/$fault"
+    out="$( id() { echo 0; }; act46 2>&1 )"; arc=$?; rm -f "$act/$fault"
+    check "actualizar: retirement requires a successful inventory read before dropping a lock row ($fault)" \
+      '[ "$arc" -eq 1 ] && printf "%s" "$out" | grep -qF "✗ ausente falló al aplicarse" \
+        && cmp -s "$act/home/apps.lock.json" "$act/lock.bytes" && [ ! -e "$act/home/apps.lock.json.next" ] \
+        && ! grep -q "occ app:remove" "$act/docker.log"'
   done
 
   for fault in manifest-repos-1-failed manifest-opcionales-1-failed manifest-repos-2-failed manifest-opcionales-2-failed; do
