@@ -609,10 +609,6 @@ cp "$SOURCE_LOCATION/config/aio.config.php" /var/www/html/config/aio.config.php
 php /var/www/html/occ config:system:delete one-click-instance
 php /var/www/html/occ config:system:delete one-click-instance.user-limit
 php /var/www/html/occ config:system:delete one-click-instance.link
-if [ -n "$SUBSCRIPTION_KEY" ] && [ -z "$(php /var/www/html/occ config:app:get support potential_subscription_key)" ]; then
-    php /var/www/html/occ config:app:set support potential_subscription_key --value="$SUBSCRIPTION_KEY"
-    php /var/www/html/occ config:app:delete support last_check
-fi
 if [ -n "$NEXTCLOUD_DEFAULT_QUOTA" ]; then
     if [ "$NEXTCLOUD_DEFAULT_QUOTA" = "unlimited" ]; then
         php /var/www/html/occ config:app:delete files default_quota

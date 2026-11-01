@@ -134,6 +134,14 @@ startup_serverinfo() {
     fi
 }
 
+startup_subscription() {
+    if [ -n "${SUBSCRIPTION_KEY:-}" ] && \
+       [ -z "$(startup_occ config:app:get support potential_subscription_key 2>/dev/null)" ]; then
+        startup_secret_set apps SUBSCRIPTION_KEY support potential_subscription_key || return 1
+        startup_occ config:app:delete support last_check || return 1
+    fi
+}
+
 startup_imaginary() {
     if [ "${IMAGINARY_ENABLED:-}" = yes ]; then
         startup_system_set enabledPreviewProviders 0 --value='OC\Preview\Imaginary' || return 1
@@ -407,7 +415,7 @@ configure_startup_apps() {
         boot)
             startup_notify && startup_office && startup_talk && startup_recording &&
                 startup_clam && startup_fts && startup_harp && startup_serverinfo &&
-                startup_imaginary || rc=$? ;;
+                startup_imaginary && startup_subscription || rc=$? ;;
         *) echo "app-startup: unknown target: $target" >&2; rc=1 ;;
     esac
     [ "$traced" -eq 0 ] || set -x
