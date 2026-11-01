@@ -9,17 +9,18 @@ apps.py beside it — the manifest is IMPORTED, never re-parsed.
                             [--opciones PATH] --nextcloud 34.0.4
       For every manifest row with release: resolve its newest release compatible with the
       running Nextcloud, download it WITHOUT a token, verify it against apps.pub, and record
-      the tag in the lock. A row already in the lock downloads nothing. An OPTIONAL row the
+      the tag in the lock. A locked row reuses verified stored bytes or re-fetches its locked
+      tag when needed. An OPTIONAL row the
       operator did not choose (#39) resolves nothing: the wizard's options record answers
       (default /opt/aps-conecta/aio/opciones), and an unchosen optional app stays absent — a
-      leftover lock row never overrides the choice. Spreed always resolves (ADR-0021).
+      leftover lock row never overrides the choice.
       One Spanish FATAL line per refusal, naming the app and the retry command (the wizard and
       the silent install both surface it verbatim).
   scripts/releases.py plan [--manifest PATH] [--lock PATH] [--pub PATH] \
                             [--opciones PATH] --nextcloud 34.0.4
       The plan `aps-conecta actualizar` prints (#46): per release row, current tag (the lock's
-      row, empty when none) and candidate tag — the lock as a FLOOR, never below it, a pin
-      never moving. Candidates are verified (signature, hashes, id, version) before they are
+      row, empty when none) and candidate tag — the lock as a FLOOR, including pins.
+      Candidates are verified (signature, hashes, id, version, Nextcloud range) before they are
       named; a refusal is one Spanish FATAL naming the app. WRITES NOTHING — `--revisar` stops
       here by contract. TSV: id<TAB>current<TAB>candidate, id<TAB>omitida for an unchosen
       optional row, or id<TAB>retirada for a lock row whose app left the manifest (#172).
@@ -40,19 +41,20 @@ apps.py beside it — the manifest is IMPORTED, never re-parsed.
 
 THE NORMAL PATH MAKES NO API CALL. `resolve` follows the /releases/latest redirect — one HEAD,
 no body, no api.github.com, no token — and verifies that release's info.xml + SHA256SUMS +
-signature before anything else moves. Only when the latest release is incompatible does it
-make ONE releases-API call (newest first, non-prerelease), GITHUB_TOKEN when set.
+signature before anything else moves. A missing, incompatible or floor-blocked latest uses
+ONE releases-API call (newest first, non-prerelease), GITHUB_TOKEN when set.
 
 THE LOCK WINS. A row already recorded installs from the lock and resolves nothing (a repair
 never turns into an upgrade, #33); `use_lock=False` — actualizar's stance, #46 — turns the
 lock into a floor instead: candidates below it are never picked. A `pin` takes exactly that
-tag, before even the redirect is read. The lock is written atomically (tmp + rename): a server
+tag after its signed metadata proves compatibility and its version meets the floor; no
+latest-release lookup is needed. The lock is written atomically (tmp + rename): a server
 never reads half a lock.
 
 WHAT `fetch` PROVES BEFORE ANYTHING IS UNPACKED: the SHA256SUMS signature against apps.pub
 (signify, the same apt package the clinic verifies with); the hashes of the tarball and of
-info.xml; the tarball's one top directory equals the app id, with nothing outside it; no
-appinfo/signature.json inside; and the tag equals the version info.xml declares.
+info.xml; the tarball's one top directory equals the app id, with no absolute paths, parent
+components or links; no appinfo/signature.json inside; and the tag matches info.xml's version.
 """
 import hashlib
 import io
@@ -81,9 +83,10 @@ import apps  # noqa: E402  — the suite manifest: the one list of the apps the 
 GH_DEFAULT, API_DEFAULT = "https://github.com", "https://api.github.com"
 UA = "aps-conecta-instalador"   # GitHub answers 403 to a bare urllib UA on some routes
 TIMEOUT = 30                    # one HTTP request's bound — a wedged fetch never hangs an install
-LOCK_DEFAULT = "/opt/aps-conecta/apps.lock.json"   # inside the backup scope (S7 wires /opt/aps-conecta)
-STORE_DEFAULT = "/opt/aps-conecta/apps"            # the fetched tarballs, beside the lock
-OPCIONES_DEFAULT = "/opt/aps-conecta/aio"          # the wizard's state dir: the install-options record
+APS_HOME = os.environ.get("APS_HOME") or "/opt/aps-conecta"
+LOCK_DEFAULT = os.path.join(APS_HOME, "apps.lock.json")   # inside the backup scope
+STORE_DEFAULT = os.path.join(APS_HOME, "apps")           # the fetched tarballs, beside the lock
+OPCIONES_DEFAULT = os.path.join(APS_HOME, "aio")          # the wizard's install-options record
 PUBKEY_DEFAULT = os.path.join(HERE, "..", "apps.pub")
 # The retry the operator reads in every per-app refusal: both entrances re-run this leg —
 # the wizard's «Revisar y ejecutar» and the silent install (which also re-runs green).
@@ -278,11 +281,14 @@ def verify_signature(sums_path, sig_path):
     a suite release with (D7's rule: a format incompatibility reds CI, never a clinic). The
     signature is the ONLY trust root — the sums and the tarball below are attacker-controlled
     until this passes, so there is no sha-only fallback: without signify there is no install."""
-    if shutil.which("signify") is None:
+    verifier = shutil.which("signify-openbsd") or shutil.which("signify")
+    if verifier is None:
         raise Refusal("signify no está instalado y sin él no se puede verificar ninguna aplicación "
-                      "— el paso «preparar» lo instala (sudo apt-get install signify-openbsd)")
+                      "— ejecute sudo aps-conecta preparar, o instale el paquete y su enlace: "
+                      "sudo apt-get install signify-openbsd; "
+                      "sudo ln -sf /usr/bin/signify-openbsd /usr/local/bin/signify")
     try:
-        run = subprocess.run(["signify", "-V", "-p", pubkey_path(), "-m", sums_path, "-x", sig_path],
+        run = subprocess.run([verifier, "-V", "-p", pubkey_path(), "-m", sums_path, "-x", sig_path],
                              capture_output=True, timeout=60)
     except subprocess.TimeoutExpired:
         raise Refusal("signify no respondió en 60 s al verificar SHA256SUMS") from None
@@ -322,14 +328,17 @@ def compatible(info, major):
 
 
 def prove_tarball(data, app, version):
-    """The tarball's own shape, checked BEFORE anything is unpacked: one top directory, equal to
-    the app id, nothing outside it (an absolute path or a ../ escape fails the same test — its
-    first component is not the id); no appinfo/signature.json (a release of ours never carries
-    one, #27's release decisions); and the info.xml inside declares the same version the release
-    claims — a mismatch would make the seed re-impose on every run, forever."""
+    """Before storage or extraction, require the app's top directory, relative paths without
+    parent components, and no symbolic or hard links. Refuse appinfo/signature.json and require
+    the inner info.xml version to match the signed release metadata."""
     try:
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
             members = tar.getmembers()
+            for member in members:
+                if member.name.startswith("/") or ".." in member.name.split("/"):
+                    raise Refusal(f"el paquete contiene una ruta no permitida «{member.name}»")
+                if member.issym() or member.islnk():
+                    raise Refusal(f"el paquete contiene un enlace «{member.name}»")
             tops = {m.name.split("/")[0] for m in members}
             if len(tops) != 1 or app not in tops:
                 raise Refusal(f"el paquete descomprime «{sorted(tops)[0] if tops else 'nada'}/», "
@@ -388,19 +397,23 @@ def order(tag):
 
 
 def resolve(row, major, lock_entry=None, use_lock=True, token=None):
-    """The tag this server installs for one manifest row, and (when the choice was already
-    proven) its entry: (tag, entry|None). The rules, in order — a pin beats everything and
-    reads nothing off the network; the LOCK WINS over any resolution (a repair never upgrades,
-    #33); `use_lock=False` (actualizar's stance, #46) keeps the lock only as a FLOOR no
-    candidate may fall below — and when nothing at-or-above the floor is compatible, the
-    refusal that follows is the major-bump guard (#46, user story 25); then the latest-release
-    redirect, and only when it is incompatible the ONE releases-API call, newest first."""
+    """Return (tag, entry|None). A repair uses its lock without network access. Otherwise the
+    lock is a floor for every candidate, including a pin. Verify a pin's signed metadata and
+    Nextcloud range without a latest-release lookup. Unpinned resolution checks the latest
+    redirect, then one API page when needed. Refuse when no compatible candidate meets the floor.
+    """
     floor = lock_entry["tag"] if lock_entry else None
     if use_lock and lock_entry:
         return lock_entry["tag"], None
     pin = row.get("pin")
     if pin:
-        return pin, None
+        if floor is not None and order(pin) < order(floor):
+            raise Refusal(f"la versión fijada «{pin}» es anterior a la instalada «{floor}» — "
+                          "se conserva la versión instalada")
+        inspected = inspect_release(row, pin, major)
+        if not inspected["compatible"]:
+            raise Refusal(f"la versión fijada «{pin}» es incompatible con Nextcloud {major}")
+        return pin, inspected["entry"]
     seen, latest = set(), latest_tag(row["repo"])
     if latest is not None:
         seen.add(latest)
@@ -478,6 +491,8 @@ def fetch_all(rows, nextcloud, path=None, store=None, eleccion=None):
             if registrado:
                 dest = store_file(app, registrado["tag"], store)
                 if os.path.isfile(dest) and sha256_file(dest) == registrado["sha256"]:
+                    with open(dest, "rb") as fh:
+                        prove_tarball(fh.read(), app, registrado["version"])
                     lines.append(f"✓ apps: {app} {registrado['tag']} ya está en este servidor — "
                                  "no se descarga nada")
                     continue
@@ -516,8 +531,8 @@ def plan_all(rows, nextcloud, path=None, eleccion=None, *, ids):
     """The plan `aps-conecta actualizar` prints and `--revisar` stops on (#46): for every
     release row, the tag this server RUNS (the lock's row, empty when none) and the tag the run
     would move it to — resolved with the lock as a FLOOR, actualizar's stance, so a candidate
-    below the lock is never offered and a pinned row never moves. The three small assets are
-    downloaded and verified (a candidate is only named once the trust chain proved it), but
+    below the lock is never offered; pins meet the same floor and compatibility checks. The
+    three small assets are downloaded and verified before a candidate is named, but
     NOTHING IS WRITTEN: no lock move, no tarball — `--revisar` stops here by contract. TSV per
     row: id<TAB>current<TAB>candidate, or id<TAB>omitida for an unchosen optional one; then
     id<TAB>retirada per lock row whose app left the manifest (`ids`, #172)."""
@@ -571,6 +586,8 @@ def fetch_next(rows, nextcloud, nuevo, path=None, store=None, eleccion=None, *, 
             if registrado and registrado["tag"] == tag:
                 dest = store_file(app, tag, store)
                 if os.path.isfile(dest) and sha256_file(dest) == registrado["sha256"]:
+                    with open(dest, "rb") as fh:
+                        prove_tarball(fh.read(), app, registrado["version"])
                     lines.append(f"✓ apps: {app} {tag} ya está en su última versión — no se descarga nada")
                     continue
                 lines.append(f"aplicaciones: {app} {tag} — descargando de nuevo y verificando")
@@ -714,6 +731,18 @@ def selftest():
     real_env = dict(os.environ)
     tags = {}          # repo → [tags], NEWEST FIRST — the hub serves this order everywhere
     try:
+        query = ("import json,releases; print(json.dumps([releases.lock_path(), releases.store_path(), "
+                 "releases.opciones_path()]))")
+        for setting in (None, ""):
+            defaults_env = {"PATH": os.defpath, "LANG": "C.UTF-8"}
+            if setting is not None:
+                defaults_env["APS_HOME"] = setting
+            result = subprocess.run([sys.executable, "-c", query], cwd=HERE, env=defaults_env,
+                                    capture_output=True, text=True, timeout=10)
+            paths = json.loads(result.stdout) if result.returncode == 0 else []
+            check(f"environment contract: {'unset' if setting is None else 'empty'} APS_HOME preserves release defaults (#142)",
+                  paths == ["/opt/aps-conecta/apps.lock.json", "/opt/aps-conecta/apps",
+                            "/opt/aps-conecta/aio/opciones"])
         os.environ["APS_APPS_LOCK"] = os.path.join(tmp, "lock.json")
         os.environ["APS_APPS_STORE"] = os.path.join(tmp, "store")
 
@@ -732,7 +761,7 @@ def selftest():
 
         def mk_release(repo, tag, version, nc="34", nc_max=None, app=None, top=None,
                        firma="nuestra", suma_tocada=None, version_interna=None, con_firma_nc=False,
-                       id_asset=None):
+                       id_asset=None, extra_members=()):
             """One fixture release, exactly the four fixed-name assets the shared workflow
             publishes; every knob is one of the defects an arm refuses."""
             app = app or repo.split("/")[-1].lower().replace("-", "")
@@ -754,6 +783,8 @@ def selftest():
                     member = tarfile.TarInfo(name)
                     member.size = len(blob)
                     tar.addfile(member, io.BytesIO(blob))
+                for member in extra_members:
+                    tar.addfile(member)
             tgz = buf.getvalue()
             with open(os.path.join(d, f"{app}.tar.gz"), "wb") as fh:
                 fh.write(tgz)
@@ -846,6 +877,15 @@ def selftest():
         mk_release("APS-Conecta/mala-firma", "v1.0.0", "1.0.0", firma="ajena")
         mk_release("APS-Conecta/mala-suma", "v1.0.0", "1.0.0", suma_tocada="0" * 64)
         mk_release("APS-Conecta/mal-dir", "v1.0.0", "1.0.0", top="otro")
+        mk_release("APS-Conecta/mal-path", "v1.0.0", "1.0.0",
+                   extra_members=(tarfile.TarInfo("malpath/../x"),))
+        mk_release("APS-Conecta/mal-absolute", "v1.0.0", "1.0.0",
+                   extra_members=(tarfile.TarInfo("/malabsolute/x"),))
+        for app, kind in (("symlink", tarfile.SYMTYPE), ("hardlink", tarfile.LNKTYPE)):
+            link = tarfile.TarInfo(f"{app}/alias")
+            link.type = kind
+            link.linkname = f"{app}/ARCHIVO"
+            mk_release(f"APS-Conecta/{app}", "v1.0.0", "1.0.0", extra_members=(link,))
         mk_release("APS-Conecta/con-firma-nc", "v1.0.0", "1.0.0", con_firma_nc=True)
         mk_release("APS-Conecta/otra-id", "v1.0.0", "1.0.0", id_asset="distinto")
         mk_release("APS-Conecta/version-interna", "v1.0.0", "1.0.0", version_interna="0.9.0")
@@ -876,6 +916,38 @@ def selftest():
         causa = refused(fetch_release, fila("APS-Conecta/mal-dir"), "v1.0.0")
         check("wrong top directory refused — the message names both directories",
               "«otro/»" in causa and "«maldir/»" in causa)
+        cause = refused(fetch_release, fila("APS-Conecta/mal-path"), "v1.0.0")
+        check("an archive with an internal parent component is refused before storage",
+              bool(cause) and not os.path.exists(store_file("malpath", "v1.0.0")))
+        cause = refused(fetch_release, fila("APS-Conecta/mal-absolute"), "v1.0.0")
+        check("an archive with an absolute member is refused before storage",
+              bool(cause) and not os.path.exists(store_file("malabsolute", "v1.0.0")))
+        for app in ("symlink", "hardlink"):
+            cause = refused(fetch_release, fila(f"APS-Conecta/{app}"), "v1.0.0")
+            check(f"an archive with a {app} member is refused before storage",
+                  bool(cause) and not os.path.exists(store_file(app, "v1.0.0")))
+        for app, repo in (("malpath", "APS-Conecta/mal-path"), ("symlink", "APS-Conecta/symlink")):
+            cached_store = os.path.join(tmp, "cached-members", app)
+            cached_lock = os.path.join(cached_store, "lock.json")
+            next_lock = os.path.join(cached_store, "next.json")
+            archive = store_file(app, "v1.0.0", cached_store)
+            os.makedirs(os.path.dirname(archive), exist_ok=True)
+            shutil.copyfile(os.path.join(tree, repo, "releases", "download", "v1.0.0", f"{app}.tar.gz"), archive)
+            entry = {"source": "own", "repo": repo, "tag": "v1.0.0", "version": "1.0.0",
+                     "sha256": sha256_file(archive)}
+            write_lock(cached_lock, {"nextcloud": "34.0.4", "apps": {app: entry}})
+            with open(cached_lock, "rb") as fh:
+                original_lock = fh.read()
+            cause = refused(fetch_all, [fila(repo)], "34.0.4", path=cached_lock,
+                            store=cached_store, eleccion={})
+            with open(cached_lock, "rb") as fh:
+                check(f"repair refuses a cached unsafe archive and preserves its lock: {app}",
+                      bool(cause) and fh.read() == original_lock)
+            cause = refused(fetch_next, [fila(repo)], "34.0.4", next_lock, path=cached_lock,
+                            store=cached_store, eleccion={}, ids={app})
+            with open(cached_lock, "rb") as fh:
+                check(f"update refuses a cached unsafe archive without writing a new lock: {app}",
+                      bool(cause) and not os.path.exists(next_lock) and fh.read() == original_lock)
         check("a tarball carrying appinfo/signature.json refused",
               "signature.json" in refused(fetch_release, fila("APS-Conecta/con-firma-nc"), "v1.0.0"))
         check("a release declaring another app id refused",
@@ -908,14 +980,27 @@ def selftest():
         check("no downgrade: everything at-or-above an incompatible floor exhausted is the same guard — the line names the release that will not move (#46's wording of the old refusal)",
               "tampoco lo es" in causa and "«v3.5.0»" in causa)
         antes = dict(server.hits)
-        tag, entry = resolve(fila("APS-Conecta/territorio"), 34,
+        tag, entry = resolve(fila("APS-Conecta/territorio", pin="v0.80.0"), 34,
                              lock_entry={"tag": "v0.79.0", "version": "0.79.0"})
-        check("the lock wins: an existing entry installs from the lock, resolving nothing",
+        check("the lock wins over a pin: a repair preserves the installed tag without network access",
               tag == "v0.79.0" and dict(server.hits) == antes)
         antes = dict(server.hits)
         tag, entry = resolve(fila("APS-Conecta/clavada", pin="v1.5.0"), 34)
-        check("pin honoured: the exact tag, and not even the redirect was read",
-              tag == "v1.5.0" and dict(server.hits) == antes)
+        check("a compatible pin is verified without a latest-release lookup or API call",
+              tag == "v1.5.0" and entry and entry["version"] == "1.5.0"
+              and server.hits["latest"] == antes["latest"] and server.hits["api"] == antes["api"])
+        cause = refused(resolve, fila("APS-Conecta/vieja", pin="v2.0.0"), 34)
+        check("a pin built for another Nextcloud major is refused without falling back",
+              "v2.0.0" in cause and "Nextcloud 34" in cause)
+        cause = refused(resolve, fila("APS-Conecta/clavada", pin="v1.5.0"), 34,
+                        lock_entry={"tag": "v2.0.0", "version": "2.0.0"}, use_lock=False)
+        check("a pin below the installed floor is refused, naming both releases",
+              "v1.5.0" in cause and "v2.0.0" in cause)
+        for pin in ("v1.5.0", "v2.0.0"):
+            tag, entry = resolve(fila("APS-Conecta/clavada", pin=pin), 34,
+                                 lock_entry={"tag": "v1.5.0", "version": "1.5.0"}, use_lock=False)
+            check(f"a compatible pin at or above the installed floor is accepted: {pin}",
+                  tag == pin and bool(entry))
 
         # the atomic lock write: whole-replace, no tmp left behind, 0644, and a failed rename
         # leaves the previous lock intact
@@ -985,6 +1070,58 @@ def selftest():
               run.returncode == 0 and "✓ apps: territorio v0.80.0" in run.stdout
               and read_lock()["apps"]["territorio"]["tag"] == "v0.80.0"
               and os.path.isfile(store_file("territorio", "v0.80.0")))
+        import pwd
+        with tempfile.TemporaryDirectory(prefix="releases-home-") as isolated:
+            home = os.path.join(isolated, "state")
+            os.makedirs(os.path.join(home, "aio"))
+            with open(os.path.join(home, "aio", "opciones"), "w", encoding="utf-8") as fh:
+                fh.write("farmacia=1 estadistica=0 totem=0\n")
+            manifest = os.path.join(isolated, "apps.json")
+            with open(manifest, "w", encoding="utf-8") as fh:
+                json.dump([fila("APS-Conecta/territorio"),
+                           fila("APS-Conecta/farmacia", optional="off")], fh)
+            public_key = os.path.join(isolated, "apps.pub")
+            shutil.copy2(os.environ["APS_APPS_PUB"], public_key)
+            overrides = os.path.join(isolated, "overrides")
+            os.mkdir(overrides)
+            with open(os.path.join(overrides, "opciones"), "w", encoding="utf-8") as fh:
+                fh.write("farmacia=0\n")
+            identity = {}
+            if os.geteuid() == 0:
+                actor = pwd.getpwnam("nobody")
+                for directory, _dirs, files in os.walk(isolated):
+                    for path in [directory] + [os.path.join(directory, name) for name in files]:
+                        os.chown(path, actor.pw_uid, actor.pw_gid)
+                identity = {"user": actor.pw_uid, "group": actor.pw_gid, "extra_groups": []}
+            local_env = {k: v for k, v in os.environ.items()
+                         if k not in ("APS_APPS_LOCK", "APS_APPS_STORE", "APS_APPS_OPCIONES", "AIO_STATE")}
+            local_env.update(APS_HOME=home, APS_APPS_PUB=public_key)
+            run = subprocess.run([sys.executable, os.path.abspath(__file__), "fetch",
+                                  "--manifest", manifest, "--nextcloud", "34.0.4"],
+                                 env=local_env, capture_output=True, text=True, timeout=30, **identity)
+            lock = os.path.join(home, "apps.lock.json")
+            selected = json.load(open(lock, encoding="utf-8")) if os.path.isfile(lock) else {}
+            check("cli fetch: APS_HOME supplies options, lock and signed packages without privileged writes (#142)",
+                  run.returncode == 0 and set(selected.get("apps", {})) == {"territorio", "farmacia"}
+                  and os.path.isfile(os.path.join(home, "apps", "territorio", "v0.80.0.tar.gz"))
+                  and os.path.isfile(os.path.join(home, "apps", "farmacia", "v0.12.0.tar.gz")))
+            if run.returncode:
+                print(run.stderr.strip(), file=sys.stderr)
+            for case_name, choice in (
+                    ("state", {"AIO_STATE": overrides}),
+                    ("options", {"AIO_STATE": os.path.join(home, "aio"),
+                                 "APS_APPS_OPCIONES": os.path.join(overrides, "opciones")})):
+                alternate_lock = os.path.join(overrides, case_name + ".lock.json")
+                alternate_store = os.path.join(overrides, case_name + "-apps")
+                override_env = dict(local_env, APS_APPS_LOCK=alternate_lock, APS_APPS_STORE=alternate_store,
+                                    **choice)
+                run = subprocess.run([sys.executable, os.path.abspath(__file__), "fetch",
+                                      "--manifest", manifest, "--nextcloud", "34.0.4"],
+                                     env=override_env, capture_output=True, text=True, timeout=30, **identity)
+                selected = json.load(open(alternate_lock, encoding="utf-8")) if os.path.isfile(alternate_lock) else {}
+                check(f"cli fetch: explicit lock, store and {case_name} overrides take precedence over APS_HOME (#142)",
+                      run.returncode == 0 and set(selected.get("apps", {})) == {"territorio"}
+                      and os.path.isfile(os.path.join(alternate_store, "territorio", "v0.80.0.tar.gz")))
         # THE PRODUCTION ARGV, exactly as APPS_CMD spells it: `fetch --nextcloud V`, no --manifest.
         # This is the call the first clean boot crashed on (apps.load(None) → TypeError — every
         # other arm passed --manifest, and the wizard's stub hid the argv entirely), so it runs
@@ -1103,6 +1240,36 @@ def selftest():
         check("cli fetch: a refusal stops with one Spanish line naming the app and the retry command",
               run.returncode == 1 and run.stdout == "" and run.stderr.startswith("FATAL: malafirma: ")
               and "apps.pub" in run.stderr and RETRY in run.stderr)
+        missing_manifest = os.path.join(tmp, "missing-verifier.json")
+        with open(missing_manifest, "w", encoding="utf-8") as fh:
+            json.dump([fila("APS-Conecta/territorio")], fh)
+        missing_lock = os.path.join(tmp, "missing-verifier.lock.json")
+        run = subprocess.run([sys.executable, os.path.abspath(__file__), "fetch",
+                              "--manifest", missing_manifest, "--lock", missing_lock,
+                              "--store", os.path.join(tmp, "missing-verifier-store"),
+                              "--nextcloud", "34.0.4"], env=dict(os.environ, PATH=""),
+                             capture_output=True, text=True, timeout=30)
+        check("cli fetch: missing verifier names the package and executable bridge, without saving a lock (#141)",
+              run.returncode == 1 and run.stderr.startswith("FATAL: territorio: ")
+              and "sudo apt-get install signify-openbsd" in run.stderr
+              and "sudo ln -sf /usr/bin/signify-openbsd /usr/local/bin/signify" in run.stderr
+              and not os.path.exists(missing_lock))
+        verifier_bin = os.path.join(tmp, "verifier-bin")
+        os.mkdir(verifier_bin)
+        os.symlink(shutil.which("signify-openbsd") or shutil.which("signify"),
+                   os.path.join(verifier_bin, "signify-openbsd"))
+        unrelated = os.path.join(verifier_bin, "signify")
+        with open(unrelated, "w", encoding="utf-8") as fh:
+            fh.write("#!/bin/sh\nexit 73\n")
+        os.chmod(unrelated, 0o755)
+        official_lock = os.path.join(tmp, "official-verifier.lock.json")
+        run = subprocess.run([sys.executable, os.path.abspath(__file__), "fetch",
+                              "--manifest", missing_manifest, "--lock", official_lock,
+                              "--store", os.path.join(tmp, "official-verifier-store"),
+                              "--nextcloud", "34.0.4"], env=dict(os.environ, PATH=verifier_bin),
+                             capture_output=True, text=True, timeout=30)
+        check("cli fetch: signify-openbsd verifies real signatures before an unrelated signify executable (#141)",
+              run.returncode == 0 and read_lock(official_lock)["apps"]["territorio"]["tag"] == "v0.80.0")
         # ── #46: actualizar's own two legs — plan reads and names (--revisar's whole leg),
         #    actualizar fetches into a NEW lock the CLI promotes only on success ──
         # The server's posture: territorio at v0.79.0 (a v0.80.0 exists), suelo at v3.5.0

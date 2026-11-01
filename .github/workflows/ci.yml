@@ -68,8 +68,8 @@ jobs:
       # The gate is the script. The signer rides along: package-release's self-test is real
       # crypto over a throwaway keypair, and it is the same apt package the clinic verifies
       # with (D7).
-      - name: Install the signer (the same apt package the clinic verifies with; symlinked to the short name it ships under)
-        run: sudo apt-get update -qq && sudo apt-get install -y signify-openbsd && sudo ln -sf /usr/bin/signify-openbsd /usr/local/bin/signify
+      - name: Install the signer and certificate ACL tool
+        run: sudo apt-get update -qq && sudo apt-get install -y signify-openbsd acl && sudo ln -sf /usr/bin/signify-openbsd /usr/local/bin/signify
       # The provisionador's browser arms (the Centro pane's tile policy) need Playwright with Chromium,
       # which this job does not install. A skipped browser arm is a FAILURE of the self-test, so this
       # job WAIVES it by name — printed in the log as SKIPPED, never counted as a pass. Whoever changes

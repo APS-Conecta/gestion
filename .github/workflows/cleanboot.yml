@@ -295,7 +295,8 @@ jobs:
           grep -q "Memoria .* GiB (mínimo 6" <<<"$out" \
             || { echo "FAIL: the RAM line does not name the floors" >&2; exit 1; }
           if [ "$rc" -eq 0 ]; then
-            grep -q "Disco .* GB libres (mínimo 20, recomendado 40)" <<<"$out" \
+            grep -q "Disco .* GB libres (mínimo 20" <<<"$out" \
+              && grep -qE 'Disco .*recomendado 40\)|se recomiendan 40 GB libres' <<<"$out" \
               || { echo "FAIL: a green disk line must name both tiers" >&2; exit 1; }
           else
             grep -qF "el mínimo es 20 GB" <<<"$out" && grep -qF "se recomiendan 40" <<<"$out" \
@@ -1000,6 +1001,24 @@ jobs:
           sed -i "s|^SIGNIFY_PUBKEY=\"[^\"]*\"|SIGNIFY_PUBKEY=\"$(sed -n 2p "$ensayo/installer.pub")\"|" install.sh
           cp "$ensayo/installer.pub" installer.pub
           printf '%s\n' "$tag" > VERSION
+          python3 - <<'PYMASTERS'
+          import hashlib, json
+          from pathlib import Path
+          fixtures = Path('tests/fixtures/comuna')
+          installed = Path('/opt/aps-conecta/instalador') / fixtures
+          selected = {
+              'unidades-vecinales-2024': ('unidades-vecinales-v1.zip', 345),
+              'minsal-deis-establecimientos': ('establecimientos-deis-v1.csv', 344),
+          }
+          path = Path('provisioning/data/packages.json')
+          manifest = json.loads(path.read_text())
+          for master in manifest['masters']:
+              filename, records = selected[master['id']]
+              master.update(origin=(installed / filename).as_uri(),
+                            sha256=hashlib.sha256((fixtures / filename).read_bytes()).hexdigest(),
+                            records=records)
+          path.write_text(json.dumps(manifest, indent=2) + '\n')
+          PYMASTERS
           git config user.email cleanboot@invalid && git config user.name cleanboot
           git add -A && git commit -qm "rehearsal: the package at $tag" && git tag "$tag"
           RELEASE_TAG="$tag" \
@@ -1212,7 +1231,7 @@ jobs:
           # APS_SUITE_TAG: the package's VERSION is this run's throwaway ci-cleanboot-<sha>, but the
           # mastercontainer this job CREATES must run a published image — the resolved suite tag
           # (suite_tag() answers the override first; the rehearsal-window seam it exists for)
-          sudo env "PATH=$PATH" APS_SKIP_DATOS=1 MIN_DISK_GB=2 APS_SUITE_TAG="$SUITE_TAG" \
+          sudo env "PATH=$PATH" MIN_DISK_GB=2 APS_SUITE_TAG="$SUITE_TAG" \
             bash /opt/aps-conecta/instalador/host/aps-conecta install \
               --sitio "$RUNNER_TEMP/site.sh" --planilla "$RUNNER_TEMP/usuarios.csv" --app farmacia --app estadistica --app totem \
             < /dev/null | tee "$RUNNER_TEMP/install.out"
@@ -2059,7 +2078,7 @@ jobs:
           printf '%s\n' "$out"
           [ "$rc" -eq 0 ] && grep -q '^REVALIDACIÓN: PASS' <<<"$out" \
             || { echo "FAIL: revalidate did not pass on the clinic's front" >&2; exit 1; }
-      - name: Staff chat text round-trips over the public suite HTTPS address
+      - name: Staff chat and library sharing work over public suite HTTPS
         run: |
           set -euo pipefail
           cd /opt/aps-conecta/instalador
@@ -2069,8 +2088,8 @@ jobs:
           # Stored chat alone cannot certify the current signaling connection.
           sudo bash scripts/talk-smoke.sh
           # Recording remains off on these four-core runners; its measured policy belongs to #189.
-          sudo python3 - "$SUITE_URL" "$SUITE_CA" <<'PYCHAT'
-          import base64, csv, json, ssl, sys, urllib.parse, urllib.request, uuid
+          sudo python3 - "$SUITE_URL" "$SUITE_CA" "$PWD/sites/$SITE/site.sh" <<'PYCHAT'
+          import base64, csv, json, ssl, subprocess, sys, urllib.parse, urllib.request, uuid
 
           class RejectRedirects(urllib.request.HTTPRedirectHandler):
               def redirect_request(self, request, response, code, message, headers, new_url):
@@ -2083,16 +2102,38 @@ jobs:
               with open('/opt/aps-conecta/credentials.txt', encoding='utf-8', newline='') as stream:
                   rows = list(csv.reader(stream, delimiter=';'))
               credentials = {}
-              for user in ('beto.prueba', 'carla.chat'):
+              for user in ('beto.prueba', 'carla.chat', 'jefe.some'):
                   matches = [row for row in rows if len(row) > 2 and row[0] == user]
                   assert len(matches) == 1 and matches[0][2]
                   credentials[user] = matches[0][2]
               opener = urllib.request.build_opener(
                   urllib.request.HTTPSHandler(context=ssl.create_default_context(cafile=sys.argv[2])),
                   RejectRedirects())
-              base = sys.argv[1] + '/ocs/v2.php/apps/spreed/api/'
+              stage = 'checking the declared and installed library grants'
+              acl_rows = subprocess.check_output(
+                  ['bash', '-c', 'source "$1"; printf "%s\\n" "${SITE_ACL[@]}"', 'sh', sys.argv[3]],
+                  text=True).splitlines()
+              profiles = {'': 1, 'read share': 17, 'read write delete share': 31}
+              declared = {}
+              for row in acl_rows:
+                  mount, group, words = row.split('|', 2)
+                  declared.setdefault(mount, {})[group] = profiles[words]
+              inventory = json.loads(subprocess.check_output([
+                  'docker', 'exec', '--user', 'www-data', 'aps-conecta-nextcloud',
+                  'php', '/var/www/html/occ', 'groupfolders:list', '--output=json']))
+              folders = inventory.values() if isinstance(inventory, dict) else inventory
+              installed = {(row.get('mountPoint') or row.get('mount_point')): row.get('groups_list') or {}
+                           for row in folders}
+              assert declared and all(installed.get(mount) == groups for mount, groups in declared.items())
+              for user in ('beto.prueba', 'jefe.some'):
+                  info = json.loads(subprocess.check_output([
+                      'docker', 'exec', '--user', 'www-data', 'aps-conecta-nextcloud',
+                      'php', '/var/www/html/occ', 'user:info', user, '--output=json']))
+                  assert 'admin' not in info['groups']
+                  assert ('cat-jefaturas' in info['groups']) == (user == 'jefe.some')
+              base = sys.argv[1] + '/ocs/v2.php/apps/'
 
-              def api(method, path, user, expected, fields=None):
+              def api(method, path, user, expected, fields=None, app='spreed'):
                   authorization = base64.b64encode((user + ':' + credentials[user]).encode()).decode('ascii')
                   headers = {'Authorization': 'Basic ' + authorization, 'OCS-APIRequest': 'true',
                              'Accept': 'application/json'}
@@ -2100,7 +2141,7 @@ jobs:
                   if fields is not None:
                       headers['Content-Type'] = 'application/x-www-form-urlencoded'
                       data = urllib.parse.urlencode(fields).encode()
-                  request = urllib.request.Request(base + path, data=data, headers=headers, method=method)
+                  request = urllib.request.Request(base + app + '/api/' + path, data=data, headers=headers, method=method)
                   with opener.open(request, timeout=30) as response:
                       assert response.status == expected
                       result = json.load(response)['ocs']
@@ -2131,8 +2172,36 @@ jobs:
                   message.get('actorType') == 'users' and message.get('actorId') == 'beto.prueba' and
                   message.get('messageType') == 'comment' and message.get('systemMessage') == '' and
                   message.get('message') == text for message in messages)
+              stage = 'adding the library owning-group member'
+              api('POST', room_path + '/participants', 'beto.prueba', 200,
+                  {'newParticipant': 'jefe.some', 'source': 'users'})
+              library = '/Transversal/LÉEME — Convenciones.md'
+              fields = {'path': library, 'shareType': 10, 'shareWith': token, 'permissions': 1}
+              stage = 'preserving staff read-only access to the library'
+              try:
+                  api('POST', 'v1/shares', 'beto.prueba', 200, fields, app='files_sharing')
+              except urllib.error.HTTPError as error:
+                  assert error.code == 403
+                  assert json.load(error)['ocs']['meta']['statuscode'] == 403
+              else:
+                  raise AssertionError('Read-only staff unexpectedly reshared the library document')
+              stage = 'sharing the seeded library document as its owning-group member'
+              share = api('POST', 'v1/shares', 'jefe.some', 200, fields, app='files_sharing')
+              assert int(share['share_type']) == 10 and share['share_with'] == token
+              assert int(share['permissions']) == 1
+              stage = 'reading the native file attachment as the other staff member'
+              messages = api('GET', chat_path + '?' + query, 'carla.chat', 200)
+              assert isinstance(messages, list) and any(
+                  message.get('token') == token and message.get('actorType') == 'users' and
+                  message.get('actorId') == 'jefe.some' and
+                  isinstance(message.get('messageParameters'), dict) and any(
+                      isinstance(value, dict) and value.get('type') == 'file' and
+                      str(value.get('id')) == str(share['file_source']) and
+                      value.get('name') == 'LÉEME — Convenciones.md'
+                      for value in message.get('messageParameters', {}).values())
+                  for message in messages)
           except Exception:
-              failure = 'FAIL: staff chat acceptance failed while ' + stage
+              failure = 'FAIL: staff communication acceptance failed while ' + stage
           finally:
               if isinstance(token, str) and token:
                   try:
@@ -2144,6 +2213,7 @@ jobs:
               print(failure, file=sys.stderr)
               sys.exit(1)
           print('PASS: ordinary staff chat text round-trips through the public HTTPS v4 room and v1 chat APIs')
+          print('PASS: declared library grants match the instance and its non-admin owning member shares a file into Talk')
           print('PASS: the creator removed its disposable conversation')
           PYCHAT
       - name: The wizard reports a terminal error when its configuration cannot be written
@@ -2282,6 +2352,76 @@ jobs:
           # absent (occ exits 1) or stored empty (exit 0, no value) are both "unset"; only a value is a failure
           tile_url="$(occ config:app:get territorio tile_url 2>/dev/null || true)"
           [ -z "$tile_url" ] || { echo "FAIL: territorio tile_url is set, but nothing provisions it any more: $tile_url" >&2; exit 1; }
+      - name: Staff can read the imported comuna fixtures through Territorio
+        run: |
+          set -euo pipefail
+          cd /opt/aps-conecta/instalador && source scripts/env.sh
+          cut="$(. "$RUNNER_TEMP/site.sh" && printf '%s' "$SITE_COMUNA_CUT")"
+          sudo python3 - "https://$SUITE_IP" "$RUNNER_TEMP/ca.crt" "$cut" <<'PYPLACES'
+          import base64, csv, http.cookiejar, json, ssl, sys, urllib.request
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, request, response, code, message, headers, new_url):
+                  return None
+
+          stage = 'reading the fixture expectations and protected staff credentials'
+          try:
+              with open('tests/fixtures/comuna/expected-v1.json', encoding='utf-8') as stream:
+                  expected = json.load(stream)[sys.argv[3]]
+              assert expected['establishment'] is not None
+              with open('/opt/aps-conecta/credentials.txt', encoding='utf-8', newline='') as stream:
+                  matches = [row for row in csv.reader(stream, delimiter=';')
+                             if len(row) > 2 and row[0] == 'beto.prueba']
+              assert len(matches) == 1 and matches[0][2]
+              authorization = base64.b64encode(('beto.prueba:' + matches[0][2]).encode()).decode('ascii')
+              opener = urllib.request.build_opener(
+                  urllib.request.HTTPSHandler(context=ssl.create_default_context(cafile=sys.argv[2])),
+                  urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()), RejectRedirects())
+
+              def get(path):
+                  request = urllib.request.Request(sys.argv[1] + path, headers={
+                      'Authorization': 'Basic ' + authorization, 'OCS-APIRequest': 'true',
+                      'Accept': 'application/json'})
+                  with opener.open(request, timeout=30) as response:
+                      assert response.status == 200
+                      return json.load(response)
+
+              stage = 'reading the exact published establishment'
+              establishment = expected['establishment']
+              result = get('/ocs/v2.php/apps/territorio/api/v1/subcategories/salud/'
+                           + establishment['subcategory'] + '/features?format=json')['ocs']
+              assert result['meta']['status'] == 'ok'
+              found = [feature for feature in result['data'] if feature['name'] == establishment['name']]
+              assert len(found) == 1
+              assert found[0]['geometry'] == {'type': 'Point', 'coordinates': establishment['coordinates']}
+
+              stage = 'reading the exact published area'
+              area = expected['uv']
+              result = get('/ocs/v2.php/apps/territorio/api/v1/subcategories/'
+                           'division_territorial/unidad_vecinal/features?format=json')['ocs']
+              assert result['meta']['status'] == 'ok'
+              found = [feature for feature in result['data'] if feature['name'] == area['name']]
+              assert len(found) == 1 and found[0]['geometry']['type'] in ('Polygon', 'MultiPolygon')
+              points = []
+
+              def collect(value):
+                  if isinstance(value[0], (int, float)):
+                      points.append(value[:2])
+                  else:
+                      for item in value:
+                          collect(item)
+
+              collect(found[0]['geometry']['coordinates'])
+              assert [min(p[0] for p in points), min(p[1] for p in points),
+                      max(p[0] for p in points), max(p[1] for p in points)] == area['bounds']
+          except Exception as error:
+              raise SystemExit(f'FAIL: {stage} ({type(error).__name__})') from None
+          print('PASS: ordinary staff sees the published establishment and area with their source coordinates')
+          PYPLACES
+          sudo aps-conecta datos --importar > "$RUNNER_TEMP/data-reimport.out" 2>&1
+          cat "$RUNNER_TEMP/data-reimport.out"
+          [ "$(grep -c 'Importado a ".*": 0 creados,' "$RUNNER_TEMP/data-reimport.out")" -eq 2 ] \
+            || { echo 'FAIL: the second import did not preserve both existing fixture records' >&2; exit 1; }
       # #33, by IP: territorio from its own release at its locked tag, no signature.json — the
       # same acceptance the domain job asserts, on an install that reached the suite by address
       - name: Territorio installed from its release, at its locked tag, with no signature.json

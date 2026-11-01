@@ -633,6 +633,7 @@ case "$1" in
   info) printf '%s\n' "$CASE_ROOT" ;;
   inspect) exit 1 ;;
   run) printf 'run\n' >> "$CASE_ROOT/events"; printf '%s\0' "$@" > "$CASE_ROOT/run" ;;
+  exec) case "$*" in *'config:system:get appstoreenabled') echo 0;; esac ;;
 esac
 SH
   cat > "$tmp/bin/ip" <<'SH'
@@ -656,6 +657,9 @@ SH
   printf '#!/bin/sh\nprintf "Avail\\n142\\n"\n' > "$tmp/bin/df"
   printf '#!/bin/sh\necho 1\n' > "$tmp/bin/seq"
   chmod +x "$tmp/bin/"*
+  out="$(PATH="$tmp/bin:$PATH" APS_HOME="$tmp/home" bash scripts/aio-testbed.sh status 2>&1)" || true
+  [[ "$out" == *"no secrets in $tmp/home/aio"* ]] \
+    || { echo "testbed status ignores APS_HOME: $out" >&2; rm -rf "$tmp"; return 1; }
   out="$(PATH="$tmp/bin:$PATH" CASE_ROOT="$tmp" CASE_PYTHON="$py" APS_HOME="$tmp/home" \
     AIO_POLL=0 AIO_TEST_IMAGE=ghcr.io/aps-conecta/all-in-one:v9.9.9 \
     bash "$tmp/scripts/bed.sh" 2>&1)" || true
@@ -677,6 +681,31 @@ assert '/opt/aps-conecta/instalador/scripts/aio-testbed.sh up' in lifecycle[star
 
 PY
   local rc=$?
+  if [ "$rc" = 0 ]; then
+    printf '#!/bin/sh\nexit 0\n' > "$tmp/host/aps-conecta"
+    sed '/^case "${1:-}" in/,$d; s|\[ -S /var/run/docker.sock \]|true|' scripts/aio-testbed.sh > "$tmp/scripts/bed.sh"
+    cat >> "$tmp/scripts/bed.sh" <<'SH'
+STATE="$CASE_ROOT/banner-state"
+check_ram() { :; }
+cmd_up > "$CASE_ROOT/without-passwords"
+printf 'fixture\n' > "$STATE/master.pw"
+printf 'fixture\n' > "$STATE/nextcloud.pw"
+cmd_up > "$CASE_ROOT/with-passwords"
+SH
+    out="$(PATH="$tmp/bin:$PATH" CASE_ROOT="$tmp" AIO_TEST_IMAGE=ghcr.io/aps-conecta/all-in-one:v9.9.9 \
+      bash "$tmp/scripts/bed.sh" 2>&1)" || true
+    "$py" - "$tmp" <<'PY'
+import pathlib, sys
+root = pathlib.Path(sys.argv[1])
+without = (root / 'without-passwords').read_text().split('✓ probe instance up:', 1)[1]
+with_passwords = (root / 'with-passwords').read_text().split('✓ probe instance up:', 1)[1]
+for name in ('master.pw', 'nextcloud.pw'):
+    path = str(root / 'banner-state' / name)
+    assert path not in without, f'testbed advertises nonexistent credential file: {name}'
+    assert path in with_passwords, f'testbed omits existing credential file: {name}'
+PY
+    rc=$?
+  fi
   [ "$rc" = 0 ] || printf '%s\n' "$out" >&2
   rm -rf "$tmp"
   return "$rc"
@@ -2782,6 +2811,99 @@ except SystemExit: pass
 else: print("fabricated sentinel-less corpus passed"); sys.exit(1)
 print("ok")'
 
+comuna_archive_extraction_cases() {
+  python3 - <<'PY'
+import csv, hashlib, json, os, pathlib, shutil, subprocess, sys, tempfile, zipfile
+source = pathlib.Path.cwd()
+fixtures = source / 'tests/fixtures/comuna'
+uv = json.loads((fixtures / 'archive-uv-v1.geojson').read_text())
+cut = uv['features'][0]['properties']['t_com'].strip().zfill(5)
+with (fixtures / 'establecimientos-deis-v1.csv').open() as stream:
+    rows = list(csv.DictReader(stream, delimiter=';'))
+expected = [row for row in rows if row['ComunaCodigo'].strip().zfill(5) == cut]
+assert len(expected) == 1
+with tempfile.TemporaryDirectory(prefix='aps comuna archive ') as directory:
+    root = pathlib.Path(directory)
+    tools = root / 'bin'
+    tools.mkdir()
+    for program in ('awk', 'curl', 'dirname', 'find', 'head', 'mkdir', 'mktemp', 'rm', 'sha256sum'):
+        (tools / program).symlink_to(shutil.which(program))
+    (tools / 'python3').symlink_to(sys.executable)
+    converter = tools / 'ogr2ogr'
+    converter.write_text('#!' + sys.executable + '\n' + '''
+import pathlib, shutil, sys
+source, destination = pathlib.Path(sys.argv[-1]), pathlib.Path(sys.argv[-2])
+shutil.copyfile(source, destination)
+''')
+    converter.chmod(0o755)
+    for valid in (True, False):
+        repo = root / ('valid' if valid else 'invalid')
+        for folder in ('scripts', 'provisioning/data', 'inputs', 'work'):
+            (repo / folder).mkdir(parents=True, exist_ok=True)
+        for name in ('scripts/env.sh', 'scripts/comuna-package.sh', 'provisioning/data/comunas-deis.csv'):
+            shutil.copyfile(source / name, repo / name)
+        archive_path = repo / 'inputs/unidades-vecinales-v1.zip'
+        if valid:
+            with zipfile.ZipFile(archive_path, 'w') as archive:
+                archive.writestr('nested/source.shp', json.dumps(uv))
+        else:
+            archive_path.write_bytes(b'invalid archive')
+        csv_path = repo / 'inputs/establecimientos-deis-v1.csv'
+        shutil.copyfile(fixtures / csv_path.name, csv_path)
+        masters = [{'id': key, 'origin': path.as_uri(), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+                   for key, path in (('unidades-vecinales-2024', archive_path), ('minsal-deis-establecimientos', csv_path))]
+        (repo / 'provisioning/data/packages.json').write_text(json.dumps({'masters': masters}))
+        result = subprocess.run(['/bin/bash', 'scripts/comuna-package.sh', cut], cwd=repo,
+                                env=dict(os.environ, PATH=str(tools), WORK_DIR=str(repo / 'work')),
+                                capture_output=True, text=True, timeout=10)
+        assert (result.returncode == 0) == valid, 'Comuna extraction requires an unavailable program or accepted an invalid archive\n' + result.stderr
+        if valid:
+            package = next((repo / 'work').glob('comuna-package.*'))
+            areas = json.loads((package / ('uv-' + cut + '.geojson')).read_text())
+            places = json.loads((package / ('deis-establecimientos-' + cut + '.geojson')).read_text())
+            assert areas['comuna'] == places['comuna'] == cut
+            assert len(areas['features']) == len(places['features']) == 1
+            assert areas['features'][0]['properties']['uid'] == uv['features'][0]['properties']['t_id_uv_ca']
+            assert areas['features'][0]['properties']['name'] == uv['features'][0]['properties']['t_uv_nom']
+            assert places['features'][0]['properties']['uid'] == 'deis:' + expected[0]['EstablecimientoCodigo']
+            assert places['features'][0]['properties']['name'] == expected[0]['EstablecimientoGlosa']
+PY
+}
+check comuna_archive_extraction_cases
+
+comuna_master_origins_versioned() {
+  python3 - <<'PY'
+import json, pathlib, re, subprocess, urllib.parse
+def versioned(origin):
+    url = urllib.parse.urlsplit(origin)
+    if url.scheme not in ('https', 'file') or url.query:
+        return False
+    if url.hostname == 'datos.gob.cl' and re.search(r'/resource/[^/]+/download(?:/|$)', url.path):
+        return False
+    if url.hostname == 'raw.githubusercontent.com':
+        parts = url.path.strip('/').split('/')
+        if len(parts) < 4 or not re.fullmatch('[0-9a-f]{40}', parts[2]):
+            return False
+    name = pathlib.PurePosixPath(url.path).name
+    return bool(re.search(r'(?:^|[-_])(?:20\d{2}(?:[-_]\d{2}[-_]\d{2}|\d{4})?|v\d+(?:\.\d+)*)\.(?:csv|zip)$', name))
+assert versioned('file:///fixture/unidades-vecinales-v1.zip')
+assert versioned('https://example.test/masters/establecimientos_20260908.csv')
+assert not versioned('https://datos.gob.cl/dataset/source/resource/resource-id/download/establecimientos_20260908.csv')
+assert not versioned('https://raw.githubusercontent.com/APS-Conecta/gestion/main/masters/establecimientos-deis-2026-11-01.csv')
+manifest = json.loads(pathlib.Path('provisioning/data/packages.json').read_text())
+for master in manifest['masters']:
+    assert versioned(master['origin']), master['id'] + ': master origin is not a versioned asset'
+assert 'geoportal-dpa-comunas-2023' not in {m['id'] for m in manifest['masters']}, 'An unused master remains'
+assert 'recipes' not in manifest, 'Recipe prose duplicates the packaging command'
+payload = b'original\r\nsource\r\n'
+def object_hash(*options):
+    return subprocess.run(['git', 'hash-object', '--stdin', *options], input=payload,
+                          capture_output=True, check=True).stdout
+assert object_hash('--path=provisioning/data/masters/establecimientos-deis-2026-11-01.csv') == object_hash('--no-filters'), 'Git changes literal source bytes'
+PY
+}
+check comuna_master_origins_versioned
+
 # --- gate: a21 (L5): the map is the suite's own route — the separate tiles server is gone -------------
 # The grep is a21's own clause, with the pattern assembled without its literals
 # ("nginx:alp""ine|TILES_""PORT|:80""84"): a21 covers scripts/ too, and a gate that spelled its
@@ -3914,7 +4036,7 @@ while args[0].startswith('-'):
 assert args.pop(0) == 'aps-conecta-nextcloud'
 state['calls'].append(args)
 def save(): path.write_text(json.dumps(state))
-if args[0] == 'awk':
+if args[-1] == '/var/www/html/custom_apps/spreed/appinfo/info.xml':
     save(); print(state.get('version', ''))
 elif args[:4] == ['php', '/var/www/html/occ', 'app:install', 'spreed']:
     assert '-e' in sys.argv and 'NC_appstoreenabled=1' in sys.argv, 'Store install must be scoped'
@@ -3963,6 +4085,26 @@ source provisioning/phases/12-apps.sh
         state_path.write_text(json.dumps({'enabled':False, 'wired':0, 'calls':[], 'fail':failure}))
         state = run(success=False)
         assert state['wired'] == (1 if failure == 'wire' else 0)
+    (root / 'apps.json').write_text(json.dumps([
+        {'id':'spreed', 'source':'store', 'optional':'off', 'containers':[]}]))
+    home = root / 'home'
+    (home / 'aio').mkdir(parents=True)
+    (home / 'aio/opciones').write_text('spreed=1\n')
+    env['APS_HOME'] = str(home)
+    env.pop('AIO_STATE', None)
+    env.pop('APS_APPS_OPCIONES', None)
+    state_path.write_text(json.dumps({'enabled':False, 'wired':0, 'calls':[]}))
+    state = run()
+    assert state['wired'] == 1, 'Phase 12 must install an optional app selected under APS_HOME'
+    alternate = root / 'alternate'
+    alternate.mkdir()
+    (alternate / 'opciones').write_text('spreed=0\n')
+    env['AIO_STATE'] = str(alternate)
+    state_path.write_text(json.dumps({'enabled':False, 'wired':0, 'calls':[]}))
+    assert run()['wired'] == 0, 'AIO_STATE must retain precedence over APS_HOME'
+    env['APS_APPS_OPCIONES'] = str(home / 'aio/opciones')
+    state_path.write_text(json.dumps({'enabled':False, 'wired':0, 'calls':[]}))
+    assert run()['wired'] == 1, 'APS_APPS_OPCIONES must retain precedence over AIO_STATE'
 print('Phase 12 wires fresh and existing official Talk installs and propagates installation/configuration failures')
 PY
 }
@@ -4190,7 +4332,8 @@ check bash scripts/env.sh --self-test
 # 1-4 and the connector answer) and a stub curl that records its argv and answers nothing; the gate's
 # FIRST curl is asserted, whatever its verdict.
 public_url_cases() {
-  local tmp gate first
+  local tmp gate first mode ca
+  local -a state
   tmp="$(mktemp -d)"; mkdir "$tmp/bin"; : > "$tmp/ca.crt"
   cat > "$tmp/bin/docker" <<'STUB'
 #!/usr/bin/env bash
@@ -4205,15 +4348,23 @@ exit 0
 STUB
   printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "$CURL_LOG"\nexit 7\n' > "$tmp/bin/curl"
   chmod +x "$tmp/bin/docker" "$tmp/bin/curl"
-  for gate in smoke:/status.php office-smoke:/eurooffice/healthcheck; do
-    : > "$tmp/curl.log"
-    PATH="$tmp/bin:$PATH" CURL_LOG="$tmp/curl.log" SUITE_CA="$tmp/ca.crt" HTTP_PORT=8180 \
-      bash "scripts/${gate%%:*}.sh" >/dev/null 2>&1
-    first="$(head -1 "$tmp/curl.log")"
-    case " $first " in
-      *" --cacert $tmp/ca.crt "*" https://203.0.113.10${gate#*:} "*|*" https://203.0.113.10${gate#*:} "*" --cacert $tmp/ca.crt "*) ;;
-      *) echo "public URL: ${gate%%:*}'s first curl is «$first», not https://203.0.113.10${gate#*:} with the CA" >&2; rm -rf "$tmp"; return 1 ;;
-    esac
+  mkdir -p "$tmp/home/certificados/ca"
+  : > "$tmp/home/certificados/ca/aps-conecta-ca.crt"
+  for mode in explicit home; do
+    ca="$tmp/ca.crt"; state=("SUITE_CA=$ca")
+    if [ "$mode" = home ]; then
+      ca="$tmp/home/certificados/ca/aps-conecta-ca.crt"; state=("APS_HOME=$tmp/home")
+    fi
+    for gate in smoke:/status.php office-smoke:/eurooffice/healthcheck; do
+      : > "$tmp/curl.log"
+      PATH="$tmp/bin:$PATH" CURL_LOG="$tmp/curl.log" HTTP_PORT=8180 env -u SUITE_CA "${state[@]}" \
+        bash "scripts/${gate%%:*}.sh" >/dev/null 2>&1
+      first="$(head -1 "$tmp/curl.log")"
+      case " $first " in
+        *" --cacert $ca "*" https://203.0.113.10${gate#*:} "*|*" https://203.0.113.10${gate#*:} "*" --cacert $ca "*) ;;
+        *) echo "public URL: ${gate%%:*}'s first curl is «$first», not https://203.0.113.10${gate#*:} with the CA" >&2; rm -rf "$tmp"; return 1 ;;
+      esac
+    done
   done
   rm -rf "$tmp"
 }

@@ -146,6 +146,28 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 
 | A-083 | clinic provisioning writes development content into personal Files and exposes passwords in process arguments (#196) | the fixture phase runs during normal installs; credential values enter command options and fixed temporary paths | remove the development phase and fixture partition, deliver credentials through named environments or stdin with native configuration imports, initialize Imaginary's key through a build adapter, and use private temporary directories with cleanup; argv-recording local checks cover delivery and failures, while the Provisionador retains normal staff and role accounts |
 
+| A-084 | the comuna data step depends on a moving DEIS edition and an untested archive tool (#197) | the current-edition URL changes bytes monthly, extraction requires an undeclared unzip binary, and both native jobs skip data loading | pin a literal dated DEIS snapshot by immutable commit and checksum, extract with Python's standard library, remove unused master metadata, and run the by-IP import with attributed public-data fixtures; ordinary staff reads the source names and coordinates through Territorio, and a repeated import creates zero records |
+
+| A-085 | Clean boot rejects a valid disk report between the existing minimum and recommended tiers (#197 prerequisite) | revisar succeeds at 23 GB and prints the 40 GB recommendation separately, but CI requires both tiers on one line | check the minimum disk result and either documented recommendation form; replaying the actual runner output passes, while removing the recommendation still fails; resource values remain unchanged |
+
+| A-087 | pinned app releases bypass compatibility and downgrade checks; signed archives accept parent components and links (#199) | pin resolution returns before shared metadata validation; archive validation checks only the first path component | pins use signed Nextcloud metadata and the installed floor; archive validation rejects absolute paths, parent components and symbolic or hard links before storage |
+
+| A-088 | cached app archives bypass member validation during repair and unchanged updates (#199) | a matching stored hash returns before archive validation | revalidate cached members with the shared archive helper before reuse; unsafe cached packages stop both paths without advancing the lock |
+
+| A-089 | app failures can report update success or lose the failed app name (#200) | conditional callers disable errexit through the apply phase; unchecked metadata and configuration reads suppress errors, and several refusal messages place the operation before the app | propagate phase and read status explicitly, validate configuration before caching, and name the app first; real apply-path host controls preserve the prior lock and stop later commands |
+
+| A-090 | backup scope and completion instructions can use the default folder for a custom installation (#200) | a legacy host command writes an additional-directory file directly, and completion hardcodes the credentials path | remove the duplicate command, retain the wizard request as the configuration owner using APS_HOME, and print the selected credentials path |
+
+| A-091 | owning groups and read-only jefaturas cannot reshare library documents (#144) | generated managing and jefatura read grants omit the native share permission | add share to managing groups and read/share to jefaturas on units with owning roles; retain staff read-only access and verify native library sharing through Talk |
+
+| A-092 | operator messages omit recovery steps, resolved paths and reserved accounts, or advertise absent credential files (#141) | the app-verifier refusal names only its package; generic executable lookup collides with an unrelated signify utility; summaries print password paths unconditionally; relative file and roster errors omit lookup context | prefer signify-openbsd, include package and bridge recovery steps, condition credential notices on file existence, resolve input paths before reporting, and list canonical reserved uids once; existing CLI, API and testbed self-tests cover each behavior |
+
+| A-093 | developer provisioning writes outside its selected home or requires root to authorize its certificate (#142) | Provisionador, release defaults, testbed state, verification CA and optional-app choices use separate fixed paths; TLS handoff always changes ownership | derive state defaults from APS_HOME, preserve explicit overrides, retain root TLS handoff and grant only Apache a named ACL for an unprivileged owner; document the user-local signer and existing provisioning commands |
+
+| A-094 | the silent install rejects the wizard domain-validation option (#158) | install has a separate argument list and does not forward the option to the shared wizard command | accept and forward --sin-validar-dominio through the existing wizard parser, require silent input files, retain it in retry instructions, and document configuration ownership; existing CLI and wizard boundary self-tests cover the behavior |
+
+| A-095 | release acceptance can report success after installation fails, or stop without its verdict table (#156) | --continuar discards failed stage status and early preparation or CA errors bypass summarize | record failed stages before continuing, summarize unavailable preparation or HTTPS trust, and exercise the real main path with healthy and failed command-boundary fixtures |
+
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and
