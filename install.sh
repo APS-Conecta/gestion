@@ -229,6 +229,17 @@ EOF
      && grep -q "^pub2=$(sed -n "s/^SIGNIFY_PUBKEY=\"\([^\"]*\)\".*/\1/p" "$0" | head -1)$" "$tmp/sig.log" \
      && case "$out" in *"✓ firma verificada (signify, clave pública del proyecto)"*) ;; *) false;; esac \
      && [ ! -e "$tmp/h6/paquete/.installer.pub" ]'
+  cp "$tshim/signify" "$tshim/signify-openbsd"
+  printf '#!/usr/bin/env bash\nexit 73\n' > "$tshim/signify"
+  run_main "$tmp/h6-openbsd" v9.8.7 "$pkgsha"
+  check "signature: the OpenBSD verifier takes precedence over an unrelated signify executable (#141)" \
+    '[ "$rc" -eq 0 ] && [ -f "$tmp/h6-openbsd/instalador/host/aps-conecta" ] \
+     && case "$out" in *"✓ firma verificada"*) ;; *) false;; esac'
+  rm -f "$tshim/signify"
+  run_main "$tmp/h6-openbsd-only" v9.8.7 "$pkgsha"
+  check "signature: the package-specific executable verifies without a generic bridge (#141)" \
+    '[ "$rc" -eq 0 ] && case "$out" in *"✓ firma verificada"*) ;; *) false;; esac'
+  mv "$tshim/signify-openbsd" "$tshim/signify"
   echo 1 > "$tmp/sig.rc"
   run_main "$tmp/h7" v9.8.7 "$pkgsha"
   check "signature: a signature that does not verify installs NOTHING — the refusal names the release page" \
