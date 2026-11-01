@@ -301,7 +301,7 @@ def write_site(row, snapshot, name, sectors, programs, path=None, domain=""):
     # gf_grant, so "" reaches it as no permission words at all — a bare grant, which is READ (#116).
     # Every clinic written before 2026-08-01 got P on every row; that was the temporary widening for
     # the tree reorganisation and it is over.
-    P, R = "read write delete", ""
+    P, R = "read write delete share", ""
     acl = [f"Transversal|all-staff|{R}",          # staff read the shared area...
            f"Transversal|cat-jefaturas|{P}"]      # ...Jefaturas curate it
     for gid, _, bare in programs:
