@@ -244,8 +244,10 @@ def main():
             stage = 'editing and saving a new document in Euro-Office'
             edit_document(contexts[0], page, first)
             wait_for(page, lambda: stored([first]), 90)
+            print('PASS: Office icon → native creation → Euro-Office edit → saved DOCX content', flush=True)
             stage = 'reopening the saved document from Office'
             page.goto(args.url + '/apps/office/')
+            page.get_by_text('Documentos', exact=True).first.click()
             page.get_by_text(filename, exact=True).first.click()
             find_in_document(contexts[0], page, first)
             edit_document(contexts[0], page, second)
@@ -257,6 +259,7 @@ def main():
                 {'path': '/' + filename, 'shareType': 0, 'shareWith': users[1], 'permissions': 1})
             shared = pages[1]
             shared.goto(args.url + '/apps/office/')
+            shared.get_by_text('Documentos', exact=True).first.click()
             shared.get_by_role('button', name='Compartido conmigo', exact=True).click()
             shared.get_by_text(filename, exact=True).first.click()
             viewer_page, viewer = editor(contexts[1], shared)
