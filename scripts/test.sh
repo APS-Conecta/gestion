@@ -10,6 +10,7 @@ fail=0
 check() { if "$@" >/dev/null 2>&1; then echo "  ok:   $*"; else echo "  FAIL: $*"; fail=1; fi; }
 
 echo "== static checks (no running stack needed) =="
+check python3 tests/test_suite_compatibility.py
 user_secret_argv_cases() {
   python3 - <<'PY'
 import json, os, pathlib, shutil, subprocess, sys, tempfile
