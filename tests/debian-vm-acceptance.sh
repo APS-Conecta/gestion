@@ -9,8 +9,7 @@ suite_tag="$1"
 work="${RUNNER_TEMP:?}/debian-acceptance"
 mkdir -p "$work/evidence"
 test -c /dev/kvm || { echo 'FAIL: this runner has no KVM device' >&2; exit 1; }
-sudo apt-get update -qq
-sudo apt-get install -y qemu-system-x86 qemu-utils cloud-image-utils
+bash scripts/cleanboot-apt.sh qemu-system-x86 qemu-utils cloud-image-utils
 # Match the existing cleanboot runner preparation; never execute on a shared host.
 sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
 available="$(df -B1 --output=avail "$work" | tail -n 1 | tr -d ' ')"
@@ -51,7 +50,7 @@ until ssh "${ssh_options[@]}" root@127.0.0.1 true 2>/dev/null; do
   [ "$SECONDS" -lt "$deadline" ] || { echo 'FAIL: Debian SSH did not start' >&2; exit 1; }
   sleep 3
 done
-ssh "${ssh_options[@]}" root@127.0.0.1 'cloud-init status --wait'
+timeout 600 ssh "${ssh_options[@]}" root@127.0.0.1 'cloud-init status --wait'
 git archive HEAD > "$work/source.tar"
 scp -i "$work/key" -o "UserKnownHostsFile=$work/known_hosts" -P 2222 "$work/source.tar" root@127.0.0.1:/root/source.tar
 cat > "$work/rehearse.sh" <<'GUEST'
@@ -97,4 +96,5 @@ bash host/aps-conecta revalidate
 printf 'PASS: Debian 12 IP installation and rerun preserve the CA and site configuration\n'
 GUEST
 scp -i "$work/key" -o "UserKnownHostsFile=$work/known_hosts" -P 2222 "$work/rehearse.sh" root@127.0.0.1:/root/rehearse.sh
+# shellcheck disable=SC2029  # The validated image tag must expand on the runner.
 ssh "${ssh_options[@]}" root@127.0.0.1 "bash /root/rehearse.sh '$suite_tag'" | tee "$work/evidence/verdicts.log"

@@ -2211,8 +2211,7 @@ jobs:
         timeout-minutes: 15
         run: |
           set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y python3-venv libnss3-tools
+          bash scripts/cleanboot-apt.sh python3-venv libnss3-tools
           python3 -m venv "$RUNNER_TEMP/browser-venv"
           "$RUNNER_TEMP/browser-venv/bin/pip" install playwright==1.58.0
           sudo "$RUNNER_TEMP/browser-venv/bin/playwright" install --with-deps chromium

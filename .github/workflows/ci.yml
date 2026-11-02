@@ -11,6 +11,12 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      suite-tag:
+        description: Optional candidate images for a disposable Debian 12 VM acceptance
+        type: string
+        required: false
+        default: ''
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
@@ -246,3 +252,23 @@ jobs:
           fi
           echo "ARM G green: the dropped install reds the gate"
           git checkout -- "$f"
+
+  debian:
+    if: github.event_name == 'workflow_dispatch' && inputs.suite-tag != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install and rerun the suite in a disposable Debian 12 VM
+        env:
+          SUITE_TAG: ${{ inputs.suite-tag }}
+        run: bash tests/debian-vm-acceptance.sh "$SUITE_TAG"
+      - name: Preserve environment and acceptance verdicts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: debian-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/debian-acceptance/evidence/
+          if-no-files-found: warn
