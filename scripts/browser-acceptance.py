@@ -108,6 +108,17 @@ def editor(context, page):
     return wait_for(page, find, 90)
 
 
+def find_in_document(context, page, marker):
+    editor_page, frame = editor(context, page)
+    frame.locator('#editor_sdk').click(position={'x': 300, 'y': 200})
+    editor_page.keyboard.press('Control+f')
+    search = frame.locator('#search-bar-text')
+    search.fill(marker)
+    search.press('Enter')
+    wait_for(editor_page, lambda: int(frame.locator('#search-bar-results').inner_text().split('/')[-1]) > 0)
+    search.press('Escape')
+
+
 def edit_document(context, page, marker):
     editor_page, frame = editor(context, page)
     frame.locator('#editor_sdk').click(position={'x': 300, 'y': 200})
@@ -232,6 +243,7 @@ def main():
             stage = 'reopening the saved document from Office'
             page.goto(args.url + '/apps/office/')
             page.get_by_text(filename, exact=True).first.click()
+            find_in_document(contexts[0], page, first)
             edit_document(contexts[0], page, second)
             wait_for(page, lambda: stored([first, second]), 90)
             print('PASS: Office icon → create → Euro-Office edit → saved DOCX → reopen → further saved edit', flush=True)
@@ -245,6 +257,7 @@ def main():
             shared.get_by_text(filename, exact=True).first.click()
             viewer_page, viewer = editor(contexts[1], shared)
             assert permissions[users[1]] == (False, 'view')
+            find_in_document(contexts[1], shared, first)
             denied = 'APS-DENIED-' + uuid.uuid4().hex
             viewer.locator('#editor_sdk').click(position={'x': 300, 'y': 200})
             viewer_page.keyboard.type(denied)
