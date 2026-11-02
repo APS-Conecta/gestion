@@ -84,6 +84,7 @@ cp /root/rehearsal-private/dist/apsconecta-"$tag".tar.gz \
    /root/rehearsal-private/dist/SHA256SUMS /root/rehearsal-private/dist/SHA256SUMS.minisig \
    /root/rehearsal-private/dist/apsconecta-"$tag"-install.sh /srv/rehearsal/releases/download/"$tag"/
 export VMA_WORK=/root/rehearsal-private/acceptance
+mkdir -p "$VMA_WORK"
 export VMA_INSTALL_ENV="APS_SUITE_TAG=$suite_tag MIN_DISK_GB=20"
 bash scripts/vm-acceptance.sh --tag "$tag" --repo-url file:///srv/rehearsal --sin-datos --continuar
 cd /opt/aps-conecta/instalador
