@@ -26,7 +26,7 @@ ID the gates' rows name:
 | 070 | the wizard re-skinned to the APS Conecta identity |
 | 080 | the three php/src registry references re-pointed at this fork |
 | 090 | the wizard's Playwright suite translated to assert the es-CL bytes |
-| 100 | the first-party `office` overview app disabled while Euro-Office is the suite's office |
+| 100 | the native `office` hub enabled for staff navigation; its document links use Euro-Office (#271) |
 | 110 | the wizard's content security policy lets its own brand fonts load |
 | 120 | the banner lockup drawn as outlines (`scripts/lockup.py`), so it needs no font |
 | 130 | the product named «APS Conecta Gestión AIO» on every wizard surface |
@@ -63,7 +63,8 @@ form handler, the Caddy trusted-proxy variable) and patch 239's basemap director
 its read-only bind, removed with the route). The office configuration and container lifecycle carry
 only the suite's Euro-Office backend (#177). Runtime control is limited to the suite's own
 versioned images, backup lifecycle and domain/IP setup (#179); maintenance never prunes the
-whole Docker host.
+whole Docker host. The container update indicator reports a difference only when both
+running and registry digests are available; missing information remains unknown (#268).
 
 Institutional proxy configuration persists in a private host profile. Docker reads its
 environment file; the wizard forwards the normalized proxy to Nextcloud, whose existing

@@ -11,6 +11,12 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      suite-tag:
+        description: Optional candidate images for a disposable Debian 12 VM acceptance
+        type: string
+        required: false
+        default: ''
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
@@ -69,7 +75,7 @@ jobs:
       # crypto over a throwaway keypair, and it is the same apt package the clinic verifies
       # with (D7).
       - name: Install the signer and certificate ACL tool
-        run: sudo apt-get update -qq && sudo apt-get install -y signify-openbsd acl && sudo ln -sf /usr/bin/signify-openbsd /usr/local/bin/signify
+        run: sudo apt-get update -qq && sudo apt-get install -y signify-openbsd acl php-cli && sudo ln -sf /usr/bin/signify-openbsd /usr/local/bin/signify
       # The provisionador's browser arms (the Centro pane's tile policy) need Playwright with Chromium,
       # which this job does not install. A skipped browser arm is a FAILURE of the self-test, so this
       # job WAIVES it by name — printed in the log as SKIPPED, never counted as a pass. Whoever changes
@@ -77,6 +83,22 @@ jobs:
       - run: bash scripts/test.sh
         env:
           APS_SELFTEST_SIN_NAVEGADOR: "1"
+
+  ip-routing:
+    name: Isolated IP routing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install namespace-test dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y iproute2 iptables php-cli openssl curl
+      - name: Verify container routes with trusted HTTPS and unchanged host policy
+        run: sudo bash tests/ip-routing-network.sh --repair
+      - name: Build the controller and verify the confined Docker helper
+        run: |
+          docker build -t aps-ip-routing:test -f Containers/mastercontainer/Dockerfile .
+          sudo bash tests/ip-routing-docker.sh aps-ip-routing:test
 
   # The gates, re-homed with the hard fork (D-rev 2026-10-19, Stage 3): the replay chain that
   # ran them against .aps-replay-tree retired — post-fork main IS the shipped tree, so the
@@ -230,3 +252,23 @@ jobs:
           fi
           echo "ARM G green: the dropped install reds the gate"
           git checkout -- "$f"
+
+  debian:
+    if: github.event_name == 'workflow_dispatch' && inputs.suite-tag != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install and rerun the suite in a disposable Debian 12 VM
+        env:
+          SUITE_TAG: ${{ inputs.suite-tag }}
+        run: bash tests/debian-vm-acceptance.sh "$SUITE_TAG"
+      - name: Preserve environment and acceptance verdicts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: debian-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/debian-acceptance/evidence/
+          if-no-files-found: warn

@@ -286,6 +286,11 @@ instalador, la misma que firma su enlace (§4).
   la suite (la fase 14 escribe las dos direcciones internas). Nada que configurar.
 - **HaRP** recibe el certificado público de la autoridad en modo de solo lectura y lo incorpora
   junto con los certificados del sistema antes de iniciar su agente de AppAPI.
+- **Conexión HTTPS interna por IP:** el controlador aplica rutas solo dentro de los
+  contenedores Nextcloud, Talk y HaRP hacia Apache. Conserva la dirección pública y
+  la verificación de certificados; vuelve a aplicar las rutas al reiniciar o recrear
+  contenedores. No modifica las reglas del cortafuegos del servidor. Requiere que
+  Docker permita auxiliares temporales con `NET_ADMIN` en esas redes de contenedor.
 
 Cada equipo que abre la suite importa la autoridad una vez. El paso 6 la ofrece («Descargar el
 certificado») con su huella SHA-256, y la consola imprime ambas al terminar la instalación; en el
@@ -294,6 +299,15 @@ servidor, la copia del propio operador:
 ```bash
 sudo install -m 0644 -o "$USER" /opt/aps-conecta/certificados/ca/aps-conecta-ca.crt .
 ```
+
+Aceptar la advertencia del certificado de una página no establece la confianza
+necesaria para Talk. Importe la autoridad en cada equipo, vuelva a abrir el
+navegador y use **Comprobar conexión segura de Talk** en el paso 6. Un resultado
+correcto verifica la conexión segura de señalización desde ese navegador; pruebe
+el audio en una llamada entre dos equipos. Un fallo puede deberse a la confianza
+en el certificado, la red o el servicio: el navegador no permite identificar
+la causa TLS exacta con este resultado. Las comprobaciones del servidor son
+independientes.
 
 La huella se compara antes de importar — en Linux y macOS:
 

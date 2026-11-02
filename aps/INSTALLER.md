@@ -309,7 +309,7 @@ honest notes:
 - On image-bump boots an **offline clinic sits at the app-store probe** (upstream behavior:
 an unbounded wait on `apps.nextcloud.com` while the store is off — documented upstream behavior,
 not patched; the wait ends when the probe times out or the network returns).
-- The wizard's update notifications are suppressed (040); the suite's releases are the source.
+- The wizard's automatic self-update paths are suppressed (040); the suite's releases are the source.
 
 ### The applications update: `aps-conecta actualizar` (#46)
 
@@ -407,6 +407,12 @@ goes: step 6, or `SITE_DOMINIO` in the site file of the silent install. The suit
   address, nor the reverse: it is reinstalled (§12).
 - **Nextcloud** trusts the CA (phase 07); **the office** reaches Nextcloud inside the suite's network
   (phase 14 writes the two internal URLs). Nothing to configure.
+- **Internal IP access**: the AIO controller routes Nextcloud, Talk and HaRP requests to the
+  suite IP's HTTPS port directly to Apache inside the suite network. The public URL and TLS
+  verification stay unchanged. Short-lived helpers apply only this route inside each client's
+  network namespace; they do not alter the host firewall or grant applications additional
+  capabilities. The controller reapplies routes after restarts, recreation or a changed Apache
+  address. A failed application is logged and retried; native readiness still has to pass.
 - **HaRP** receives the public CA certificate read-only and combines it with system certificates
   before starting its AppAPI agent.
 
@@ -417,6 +423,13 @@ on the server, the operator's own copy:
 ```bash
 sudo install -m 0644 -o "$USER" /opt/aps-conecta/certificados/ca/aps-conecta-ca.crt .
 ```
+
+Accepting a page certificate warning does not establish trust for Talk WebSockets.
+Import the CA on each device, reopen the browser, and use **Comprobar conexión
+segura de Talk** in step 6. A successful check proves a trusted signaling connection
+from that browser; verify audio separately in a two-device call. A failed check
+can mean certificate trust, network or service trouble; it cannot identify the
+TLS cause from the browser alone. Server-side diagnostics are separate.
 
 The fingerprint is compared before importing — on Linux and macOS:
 
@@ -514,7 +527,22 @@ bash scripts/aio-testbed.sh up
 ```
 
 El banco usa la versión fijada en el script; `AIO_TEST_IMAGE` permite seleccionar otra versión
-de ensayo aprobada. El estado queda en `$APS_HOME/aio`. El usuario conserva la propiedad
+de ensayo aprobada. Una versión publicada más antigua no necesariamente es compatible con
+el instalador de este árbol. Antes de configurar el asistente o aprovisionar, el instalador
+comprueba las capacidades requeridas de la imagen: el resultado de inicio del asistente y
+la configuración de aplicaciones de Nextcloud. Una incompatibilidad nombra ambas versiones;
+un problema de acceso a Docker se informa por separado.
+
+Si aparece una incompatibilidad:
+
+1. Conserve los datos, volúmenes, certificados y archivos del establecimiento.
+2. Use el instalador correspondiente a las imágenes instaladas; para un ensayo nuevo, quite
+   `AIO_TEST_IMAGE` y use la versión fijada por el árbol.
+3. Vuelva a ejecutar el paso que falló después de corregir la combinación. Cambiar
+   `AIO_TEST_IMAGE` no reemplaza por sí solo los contenedores existentes; no use `down` para
+   recuperar una instalación con datos que deba conservar.
+
+El estado queda en `$APS_HOME/aio`. El usuario conserva la propiedad
 del certificado para renovarlo; una ACL autoriza su lectura al servicio Apache. Las claves de
 la autoridad permanecen privadas. Configure la confianza de los equipos según §13.
 
@@ -534,3 +562,14 @@ bash scripts/divergence.sh --gate
 La ejecución verifica los paquetes firmados, provisiona el establecimiento y exige divergencia
 vacía. Consulte `$APS_HOME/estado.txt` y `.install.log` para revisar el resultado. Ejecute
 `bash scripts/aio-testbed.sh down` para retirar los datos y servicios del banco de pruebas.
+
+### Acceso Office
+
+El menú de la suite incluye **Office**, el espacio de documentos de Nextcloud.
+Abra sus documentos desde ese icono para editarlos con Euro-Office. Las opciones
+Todos y Compartidos permiten encontrar documentos de otras personas y carpetas
+compartidas; se conservan sus permisos de acceso. El inicio de los servicios y
+la fase 14 de aprovisionamiento habilitan este acceso también en instalaciones
+que lo tenían deshabilitado. Las preferencias personales del menú se conservan.
+La verificación final debe incluir crear, editar, guardar y volver a abrir un
+documento desde Office con una cuenta del personal.

@@ -14,10 +14,18 @@ talk_native_failed=0
 python3 - "$NC_CONTAINER" "$SUITE_URL" <<'PY' || talk_native_failed=1
 import json, re, subprocess, sys, urllib.parse
 native = ['docker', 'exec', '--user', 'www-data', sys.argv[1], 'php', '/var/www/html/occ']
+def run_native(arguments, timeout, allowed=(0,)):
+    command = ' '.join(arguments)
+    try:
+        result = subprocess.run(native + arguments, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise AssertionError(f'Nextcloud {command} superó el plazo de {timeout} segundos; verifique la conexión HTTPS desde los contenedores hacia la suite') from None
+    assert result.returncode in allowed, f'Falló Nextcloud {command}'
+    return result.stdout
+
 def read(command, allowed=(0,)):
-    result = subprocess.run(native + [command, '--output=json'], capture_output=True, text=True, timeout=180)
-    assert result.returncode in allowed, 'Talk native command failed'
-    return json.loads(result.stdout)
+    return json.loads(run_native([command, '--output=json'], 180, allowed))
+
 try:
     signaling = read('talk:signaling:list')
     expected = sys.argv[2] + '/standalone-signaling/'
@@ -49,9 +57,8 @@ try:
     if optional_warning:
         cache = checks['system']['OCA\\Settings\\SetupChecks\\MemcacheConfigured']
         assert cache['severity'] == 'success', 'The native memory cache check is not successful'
-        backend = subprocess.run(native + ['config:system:get', 'memcache.distributed'],
-            capture_output=True, text=True, timeout=30)
-        assert backend.returncode == 0 and backend.stdout.strip() == r'\OC\Memcache\Redis', 'Talk does not have the suite distributed cache'
+        backend = run_native(['config:system:get', 'memcache.distributed'], 30)
+        assert backend.strip() == r'\OC\Memcache\Redis', 'Talk does not have the suite distributed cache'
         print('WARN: supported signaling backend lacks the optional changed-users optimization', flush=True)
         print('PASS: native Talk compatibility has only the documented optional warning and verified Redis cache', flush=True)
     elif severity != 'success':

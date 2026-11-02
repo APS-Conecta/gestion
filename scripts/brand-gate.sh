@@ -186,12 +186,16 @@ row 050 "the eurooffice card is intact — static identity and CSS selector pres
 row 050 "the vendor logo assets are gone — img/collabora.svg, img/onlyoffice.svg (dead bytes post-deletion)" \
   files_absent "$TREE/php/public/img/collabora.svg" "$TREE/php/public/img/onlyoffice.svg"
 
-office_overview_disabled() {  # the entrypoint kills the first-party `office` app when EuroOffice is on
-  grep -q 'occ app:disable office' "$TREE/Containers/nextcloud/configure-apps.sh"
+office_overview_enabled() {
+  grep -q 'ensure_startup_app office' "$TREE/Containers/nextcloud/configure-apps.sh" &&
+    ! grep -q 'occ app:disable office' "$TREE/Containers/nextcloud/configure-apps.sh" &&
+    ( . "$TREE/provisioning/app-policy.sh"
+      case " $POLICY_DISABLED $POLICY_ADMIN_ONLY " in *" office "*) return 1 ;; esac
+    )
 }
 
-row 100 "the first-party 'office' overview app is disabled whenever the suite's office app is EuroOffice — NC34 ships it enabled by default, unwired to EuroOffice (no editor-url), a name-colliding dead surface; the entrypoint owns the kill so every install and reboot re-asserts it (the 2026-09-23 owner flip of the 2026-07-31 'not a duplicate' verdict)" \
-  office_overview_disabled
+row 100 "the native Office hub supplies staff navigation and opens documents with Euro-Office; startup enables it and app policy preserves it (#271)" \
+  office_overview_enabled
 
 upstream_changelog_urls_absent() {  # zero upstream changelog/releases URLs in the templates
   # (hits print). 060 repoints the operator-visible "changelog" arms at the fork's own releases

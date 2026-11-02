@@ -70,6 +70,7 @@ sys.path.insert(0, HERE)  # deis.py sits beside this file; the host bundle keeps
 import deis  # noqa: E402  — the path insert above is the import mechanism
 from images import runtime_services  # noqa: E402
 import apps as suite_apps  # noqa: E402  — the suite manifest (apps.json), beside deis
+import suite_compatibility  # noqa: E402
 
 # The bearer token: 32 bytes from the stdlib CSPRNG, HEX, never
 # base64 (B-004 — no character any layer treats as syntax). Printed ONCE, in the startup banner,
@@ -371,12 +372,16 @@ try:
 except OSError:
     pass
 
-if control.get("SLOW") and "status" not in args:
+if (control.get("SLOW") and "status" not in args and args[:1] != ["inspect"]
+        and not ("sh" in args and "/configure-apps.sh" in args)):
     # `status` stays fast under SLOW: the wizard's version read (nc_version, #33) rides it, and
-    # the hung-SEED arm wants the seed hung, not the fetch leg — SLOW models a phase that hangs
+    # The version and compatibility probes stay fast: SLOW models a phase that hangs.
     time.sleep(30)
 if control.get("FAIL_ON") and control.get("FAIL_ON") in args:
     sys.exit(1)
+if control.get("MISSING_HELPER") and "/configure-apps.sh" in args:
+    print("aps-incompatible")
+    sys.exit(42)
 
 
 def exec_interactive(argv):
@@ -414,7 +419,9 @@ def find(word):
 
 
 rows = state()
-if args and args[0] == "ps":
+if args[:1] == ["inspect"] and any(".Config.Image" in arg for arg in args):
+    print('"ghcr.io/aps-conecta/aio-nextcloud:v0.6.0"\ttrue')
+elif args and args[0] == "ps":
     if control.get("PS_MODE") == "empty":
         sys.exit(0)
     # two --format shapes ride the same verb: the detection idiom asks for bare names
@@ -1679,6 +1686,9 @@ def _api_generar(payload):
                               "de nuevo"}
     log = None
     try:
+        compatibility, reason = suite_compatibility.check("provision", root)
+        if compatibility:
+            return (409 if compatibility == 1 else 503), {"error": reason}
         if payload.get("resumen") is True:
             log = open(os.path.join(root, ".install.log"), "w", encoding="utf-8", buffering=1)
         resumen = summary(log) if log else None
@@ -2359,6 +2369,33 @@ contenedores se reinicia una vez durante la corrección.</p>
 (async () => {
   let reloj = null, visto = "", vistoDatos = "", vistoOpc = "", aviso = "", relojRed = null, pedido = null, reintentado = false, redVista = "";
   const coma = (x) => String(x).replace(".", ",");
+  function checkSecureTalk(host, button, result) {
+    let connection = null, finished = false;
+    button.disabled = true;
+    result.textContent = "Comprobando la conexión segura desde este navegador…";
+    const timer = setTimeout(() => finish(false), 10000);
+    function finish(connected) {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      window.removeEventListener("pagehide", abandon);
+      if (connection) {
+        connection.onopen = connection.onerror = connection.onclose = null;
+        connection.close();
+      }
+      button.disabled = false;
+      result.textContent = connected
+        ? "La conexión segura de Talk funciona en este navegador. Complete una llamada entre dos equipos para verificar el audio."
+        : "No se pudo establecer la conexión segura. Revise la confianza en el certificado de la suite, la red y el servicio Talk. Importe la autoridad en este equipo, cierre y vuelva a abrir el navegador, y reintente. Este resultado no identifica por sí solo la causa.";
+    }
+    function abandon() { finish(false); }
+    window.addEventListener("pagehide", abandon, {once: true});
+    try {
+      connection = new WebSocket("wss://" + host + "/standalone-signaling/spreed");
+      connection.onopen = () => finish(true);
+      connection.onerror = connection.onclose = () => finish(false);
+    } catch (error) { finish(false); }
+  }
   function pintar(s) {
     zona("m").innerHTML = "";
     zona("s-apps").innerHTML = "<table><tr><th>Aplicación</th><th>Versión</th><th>Función</th></tr>" +
@@ -2405,7 +2442,7 @@ contenedores se reinicia una vez durante la corrección.</p>
       escapear(t) + "</span></li>").join("") : "";
     zona("s-nota").hidden = p.estado !== "en_curso";
     zona("s-datos").hidden = !s.preparada;   // only what the wizard was given, never a guess
-    const datos = s.preparada ? JSON.stringify([s.dominio, s.opciones, s.opcionales, s.frase, s.asistente, s.ca]) : "";
+    const datos = s.preparada ? JSON.stringify([s.dominio, s.opciones, s.opcionales, s.frase, s.asistente, s.ca, s.instalada]) : "";
     if (datos && datos !== vistoDatos) {   // rebuilt only when it changes: a selection or a click survives the poll
       vistoDatos = datos;
       const appsDd = s.opcionales.length
@@ -2419,12 +2456,16 @@ contenedores se reinicia una vez durante la corrección.</p>
         "Incluido; grabación desactivada" + appsDd +
         "</dd><dt>Respaldo</dt><dd>Diario a las 04:00 hora de Santiago, en este servidor</dd>" +
         (s.ca ? '<dt>Certificado</dt><dd>Propio del instalador. <a href="/api/ca" download>Descargar el ' +
-          'certificado</a>: cada equipo del personal lo importa una vez (guía, §10). Huella SHA-256: ' +
+          'certificado</a>: importe esta autoridad en cada equipo del personal (guía, §10), después de comparar la huella con la consola del servidor. Aceptar la advertencia de una página no basta para conectar Talk. Huella SHA-256: ' +
           '<span class="frase" translate="no">' + escapear(s.ca) + "</span></dd>" : "") + "</dl>" +
+        (s.ca && s.instalada ? '<button type="button" id="s-trust-check">Comprobar conexión segura de Talk</button>' +
+          '<p id="s-trust-result" role="status" aria-live="polite"></p>' : "") +
         (s.frase ? '<div class="aviso"><strong>Frase de contraseña del asistente:</strong> <span ' +
           'class="frase" translate="no">' + escapear(s.frase) + "</span><br>El asistente la pide para ingresar.</div>" +
           '<div class="fila"><a class="btn" id="s-abrir" target="_blank" rel="noopener">Abrir el asistente ' +
           'e iniciar</a><span class="nota">Nueva pestaña; el avance, aquí.</span></div>' : "");
+      const trustCheck = document.getElementById("s-trust-check");
+      if (trustCheck) trustCheck.onclick = () => checkSecureTalk(s.dominio, trustCheck, zona("s-trust-result"));
       const abrir = document.getElementById("s-abrir");
       if (abrir) abrir.href = s.asistente;   // through the DOM: an attribute, never markup
     }
@@ -4560,7 +4601,8 @@ def selftest():
             import pwd, shutil
             with tempfile.TemporaryDirectory(prefix="provisionador-home-") as isolated:
                 for relative in ("scripts/provisionador.py", "scripts/deis.py", "scripts/apps.py",
-                                 "scripts/images.py", "scripts/releases.py", "apps.json", "php/containers.json",
+                                 "scripts/images.py", "scripts/releases.py", "scripts/suite_compatibility.py",
+                                 "apps.json", "php/containers.json",
                                  "provisioning/phases/20-groups.sh", "provisioning/standings.sh"):
                     destination = os.path.join(isolated, relative)
                     os.makedirs(os.path.dirname(destination), exist_ok=True)
@@ -5046,6 +5088,7 @@ def selftest():
                             ignore=shutil.ignore_patterns("__pycache__"), dirs_exist_ok=True)
             # the root files the phases read, whole: env.sh's placeholder table, apps.py's manifest
             shutil.copy(envex_src, os.path.join(tmp, ".env.example"))
+            shutil.copy(os.path.join(ROOT_DIR, "VERSION"), os.path.join(tmp, "VERSION"))
             shutil.copy(suite_apps.MANIFEST, os.path.join(tmp, "apps.json"))
 
             # — the fixture itself (#59): the scripts tree is taken WHOLE, so a script a phase
@@ -5799,7 +5842,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   p.returncode == 2 and "✗ falta el código" in p.stdout)
             with tempfile.TemporaryDirectory() as raiz:   # the start beside a suite manifest that is not JSON
                 os.makedirs(os.path.join(raiz, "scripts"))
-                for fuente in ("provisionador.py", "deis.py", "apps.py", "images.py"):
+                for fuente in ("provisionador.py", "deis.py", "apps.py", "images.py", "suite_compatibility.py"):
                     shutil.copy(os.path.join(HERE, fuente), os.path.join(raiz, "scripts", fuente))
                 with open(os.path.join(raiz, "apps.json"), "w", encoding="utf-8") as fh:
                     fh.write("{no es JSON")
@@ -5975,6 +6018,21 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                 json.dump({"nextcloud": "34.0.4", "apps": filas_lock}, fh)
             os.environ["APS_APPS_STORE"] = fixture_store
 
+            with open(stubctl, "w", encoding="utf-8") as fh:
+                fh.write("MISSING_HELPER=yes\n")
+            st, body = generar("ejecutar")
+            check("compatibility: missing image helper refuses before downloads, env changes or phases",
+                  st == 409 and "no corresponde a este instalador" in body.get("error", "")
+                  and not os.path.exists(apps_argv) and not os.path.exists(env_path))
+            with open(stubctl, "w", encoding="utf-8") as fh:
+                fh.write("FAIL_ON=inspect\n")
+            st, body = generar("ejecutar")
+            check("compatibility: unavailable inspection is distinct and also stops before changes",
+                  st == 503 and "no se pudo comprobar" in body.get("error", "")
+                  and "no corresponde" not in body.get("error", "")
+                  and not os.path.exists(apps_argv) and not os.path.exists(env_path))
+            open(stubctl, "w").close()
+
             st, body = generar("ejecutar")
             if st != 200:  # B-028: abort with the seed's own output — never a bare .index() ValueError
                 return seed_died(body, "generar: ejecutar runs the whole world green — the seed died (output above)")
@@ -6030,7 +6088,9 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                 delivered = {r[1]: r[2] for r in json.load(fh) if r[0] == "user_password_digest"}
             check("generar: named OC_PASS delivers the sealed passwords without command-line values",
                   len(oc) >= 2 and all("user:add" in l and "--password-from-env" in l for l in oc)
-                  and all("OC_PASS=" not in l for l in oc) and "inspect" not in log
+                  and all("OC_PASS=" not in l for l in oc)
+                  and all(line == 'inspect --format {{json .Config.Image}}\t{{json .State.Running}} aps-conecta-nextcloud'
+                          for line in log.splitlines() if line.startswith("inspect "))
                   and all(value[0] not in log for value in sealed_now.values())
                   and all(delivered.get(u) == hashlib.sha256(sealed_now[u][0].encode()).hexdigest()
                           for u in ("maria.perez", "elena.diaz")))
@@ -7230,6 +7290,58 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                         check("browser: step 6's edges — the passphrase and the link stay the same nodes while the page polls; a suite already running shows its progress, no form and no claimed configuration; the freeze's refusal is said (its one 409 the only console line)",
                               quieto is True and ya_corre and "ya terminó" in congelado and len(provocados) == 1
                               and not errores[desde:])
+                        # Device-trust UI: exercise the rendered page and WebSocket boundary.
+                        # This proves messages/lifecycle, not the browser's real CA store (#269).
+                        pg.goto("about:blank")
+                        trust_state = dict(estado=200, apps=[], opcionales=[],
+                            servidor=dict(gib=16, nucleos=4, suite_gib=8), preparada=True,
+                            instalada=True, en_marcha=True, dominio="192.0.2.50", ip="192.0.2.50",
+                            opciones={}, frase="", asistente="", ca="AA:BB:CC",
+                            preparacion=dict(estado="preparada", hechos=[], pasos=[]),
+                            contenedores=[["Apache", "en marcha"]])
+                        pg.route("**/api/suite", lambda route: route.fulfill(json=trust_state))
+                        try:
+                            pg.goto(f"https://127.0.0.1:{tport}/contenedores")
+                            pg.wait_for_selector("#s-trust-check", timeout=5000)
+                            trust_text = pg.inner_text("#s-datos")
+                            check("browser: IP onboarding exposes CA fingerprint and explains page exceptions are insufficient for Talk",
+                                  "AA:BB:CC" in trust_text and "Aceptar la advertencia" in trust_text
+                                  and pg.locator('a[href="/api/ca"][download]').count() == 1)
+                            pg.evaluate("""() => {
+                              window.trustMode = 'open'; window.trustClosed = 0;
+                              window.WebSocket = class {
+                                constructor(url) {
+                                  window.trustUrl = url;
+                                  setTimeout(() => {
+                                    if (window.trustMode === 'open') this.onopen();
+                                    if (window.trustMode === 'error') this.onerror();
+                                  }, 50);
+                                }
+                                close() { window.trustClosed++; }
+                              };
+                            }""")
+                            pg.click("#s-trust-check")
+                            pg.wait_for_function("document.getElementById('s-trust-result').textContent.startsWith('La conexión segura')")
+                            check("browser: secure signaling success closes the socket and still requires a call test",
+                                  pg.evaluate("window.trustUrl") == "wss://192.0.2.50/standalone-signaling/spreed"
+                                  and pg.evaluate("window.trustClosed") == 1
+                                  and "llamada" in pg.inner_text("#s-trust-result"))
+                            for mode in ("error", "timeout"):
+                                pg.evaluate("mode => { window.trustMode = mode; }", mode)
+                                pg.click("#s-trust-check")
+                                pg.wait_for_function("!document.getElementById('s-trust-check').disabled", timeout=12000)
+                                message = pg.inner_text("#s-trust-result")
+                                check(f"browser: signaling {mode} has bounded recovery without guessing the TLS cause",
+                                      "confianza" in message and "red" in message and "servicio" in message)
+                            trust_state.update(dominio="gestion.example.org", ca="")
+                            pg.reload()
+                            pg.wait_for_selector("#s-datos:not([hidden])")
+                            check("browser: domain installations have no private-CA check", pg.locator("#s-trust-check").count() == 0)
+                        except Exception as error:
+                            check("browser: device trust controls complete without a browser error", False)
+                            errores.append(str(error))
+                        finally:
+                            pg.unroute("**/api/suite")
                         limpio = nav.new_context(ignore_https_errors=True).new_page()
                         limpio.goto(f"https://127.0.0.1:{tport}/")
                         en_login = limpio.url.endswith("/login") and "Código de acceso" in limpio.content()

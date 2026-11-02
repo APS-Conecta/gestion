@@ -952,6 +952,11 @@ jobs:
           python3 scripts/usage.py "$RUNNER_TEMP/usage-series.jsonl" --interval 5 --duration 3600 \
             > "$RUNNER_TEMP/usage-series.log" 2>&1 < /dev/null &
           echo "$!" > "$RUNNER_TEMP/usage-series.pid"
+      - name: Free unused SDKs on the disposable runner
+        run: |
+          df -h /var/lib/docker
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android
+          df -h /var/lib/docker
       - name: Start the authenticated installation proxy
         run: |
           set -euo pipefail
@@ -1449,6 +1454,36 @@ jobs:
           printf 'user = "ana.prueba:%s"\n' "$pw" \
             | curl -fsS -K - --cacert "$RUNNER_TEMP/ca.crt" -H 'OCS-APIRequest: true' \
                 "https://$SUITE_IP/ocs/v2.php/cloud/user?format=json" | grep -q '"id":"ana.prueba"'
+      - name: Native Office and two-browser Talk acceptance on candidate images
+        if: github.event_name == 'workflow_dispatch' && inputs.suite-tag != ''
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          bash scripts/cleanboot-apt.sh python3-venv libnss3-tools
+          python3 -m venv "$RUNNER_TEMP/browser-venv"
+          "$RUNNER_TEMP/browser-venv/bin/pip" install playwright==1.64.1
+          sudo "$RUNNER_TEMP/browser-venv/bin/playwright" install --with-deps chromium
+          cd /opt/aps-conecta/instalador
+          source scripts/env.sh
+          test "$(occ config:app:get office enabled)" = yes
+          mkdir -p "$RUNNER_TEMP/browser-acceptance"
+          # Prove an ordinary browser rejects this private CA before importing it.
+          sudo env APS_DISPOSABLE_ACCEPTANCE=1 "$RUNNER_TEMP/browser-venv/bin/python" \
+            scripts/browser-acceptance.py --url "https://$SUITE_IP" --ca "$RUNNER_TEMP/ca.crt" \
+            --output "$RUNNER_TEMP/browser-acceptance" --untrusted-check
+          sudo mkdir -p /root/.pki/nssdb
+          sudo certutil -d sql:/root/.pki/nssdb -N --empty-password
+          sudo certutil -d sql:/root/.pki/nssdb -A -t 'C,,' -n aps-acceptance -i "$RUNNER_TEMP/ca.crt"
+          sudo env APS_DISPOSABLE_ACCEPTANCE=1 "$RUNNER_TEMP/browser-venv/bin/python" \
+            scripts/browser-acceptance.py --url "https://$SUITE_IP" --ca "$RUNNER_TEMP/ca.crt" \
+            --output "$RUNNER_TEMP/browser-acceptance"
+      - name: Preserve browser acceptance evidence
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.suite-tag != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: browser-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/browser-acceptance/
+          if-no-files-found: warn
       - name: Official recording clients verify suite HTTPS by IP
         timeout-minutes: 7
         run: |
@@ -2592,7 +2627,7 @@ jobs:
       # job chose it beside farmacia. Its release is the only channel that ever existed (the
       # bake never vendored a totem tarball — #41 shipped it optional from day one), and #42
       # made that the rule for every app; the release path is proven by what only the fetch leg
-      # writes — the lock's row naming v0.3.0, the verified tarball inside /opt/aps-conecta/apps,
+      # writes — the lock's row naming the selected stable release, the verified tarball inside /opt/aps-conecta/apps,
       # no signature.json — plus the app's own half: BOTH committed voices shipped inside the
       # release (the two Piper models under
       # js/tts/, docs/adr/0005 there), and the public display page loads, with the voice assets
@@ -2608,7 +2643,7 @@ jobs:
           read -r tag version sha <<< "$(sudo python3 -c 'import json; a = json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["totem"]; print(a["tag"], a["version"], a["sha256"])')"
           echo "lock: totem $tag ($version)"
           [ "${tag#v}" = "$version" ] || { echo "FAIL: the lock's tag and version disagree" >&2; exit 1; }
-          [ "$version" = "0.3.0" ] || { echo "FAIL: totem locked at $version, not its first release 0.3.0" >&2; exit 1; }
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "FAIL: totem lock does not name a stable release: $version" >&2; exit 1; }
           got="$(occ config:app:get totem installed_version)"
           [ "$got" = "$version" ] || { echo "FAIL: the instance runs totem $got, the lock names $version" >&2; exit 1; }
           sudo test -f "/opt/aps-conecta/apps/totem/$tag.tar.gz" || { echo "FAIL: the locked tarball is not in the store" >&2; exit 1; }
@@ -2752,6 +2787,9 @@ jobs:
           docker logs --tail=100 nextcloud-aio-mastercontainer || true
           docker logs --tail=100 aps-conecta-apache || true
           docker logs --tail=100 aps-conecta-nextcloud || true
+          docker logs --tail=100 aps-conecta-fulltextsearch || true
+          docker inspect --format '{{json .State.Health}}' aps-conecta-fulltextsearch || true
+          df -h /var/lib/docker
           sudo tail -n 100 /opt/aps-conecta/instalacion.log || true
       # The same scoped teardown as the domain job: the suite's containers, its volumes, the wizard.
       - name: Finish and validate the bounded usage series

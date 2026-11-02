@@ -10,6 +10,8 @@ fail=0
 check() { if "$@" >/dev/null 2>&1; then echo "  ok:   $*"; else echo "  FAIL: $*"; fail=1; fi; }
 
 echo "== static checks (no running stack needed) =="
+check python3 tests/test_suite_compatibility.py
+check python3 tests/test_ip_routing.py
 user_secret_argv_cases() {
   python3 - <<'PY'
 import json, os, pathlib, shutil, subprocess, sys, tempfile
@@ -2238,7 +2240,7 @@ territorio_phase16_cases() {
     out="$(AIO="$aio" SITE=lab SITE_DEIS=999001 SITE_TIPO=CESFAM SITE_COMUNA_CUT=09999 SITE_COMUNA="Comuna Prueba" \
       SEED_CTX=1 bash -e -o pipefail -c '
       phase_begin() { :; }; phase_end() { :; }
-      app_restrict_to_groups() { :; }; app_disable() { :; }
+      app_restrict_to_groups() { printf "RESTRICT %s\n" "$1"; }; app_disable() { printf "DISABLE %s\n" "$1"; }
       is_aio() { echo "ASKED is_aio"; [ "$AIO" = 1 ]; }
       conf_load() { echo "ASKED conf_load"; }
       conf_get() { echo "ASKED conf_get $*"; }
@@ -2249,6 +2251,8 @@ territorio_phase16_cases() {
     printf '%s\n' "$out" | grep -qx "SET territorio comuna_cut 09999" \
       && printf '%s\n' "$out" | grep -qx "SET territorio comuna_name Comuna Prueba" \
       || { echo "phase 16: territorio's comuna_cut / comuna_name were not written for aio=$aio: $out" >&2; return 1; }
+    ! printf '%s\n' "$out" | grep -Eq '^(DISABLE|RESTRICT) office$' \
+      || { echo "phase 16: Office navigation must remain available to staff" >&2; return 1; }
     ! printf '%s\n' "$out" | grep -q "tile_url" \
       || { echo "phase 16: a tile_url was written or mentioned for aio=$aio — nothing provisions the basemap any more: $out" >&2; return 1; }
     ! printf '%s\n' "$out" | grep -q "^ASKED" \
@@ -3323,19 +3327,17 @@ CASES
 }
 check office_pin_cases
 
-# A dependency timeout cannot remove an installed feature. The first-party office
-# overview remains deliberately disabled; it is not the Euro-Office connector.
+# A dependency timeout cannot remove an installed feature or its Office navigation.
 entrypoint_timeout_cases() {
   python3 - <<'PY'
 import pathlib, re, sys
-apps = ('eurooffice', 'files_antivirus', 'fulltextsearch',
+apps = ('office', 'eurooffice', 'files_antivirus', 'fulltextsearch',
         'fulltextsearch_elasticsearch', 'files_fulltextsearch')
 pattern = re.compile(
     r'^\s*(?:php\s+/var/www/html/occ|startup_occ)\s+app:disable\s+["\']?('
     + '|'.join(apps) + r')(?=["\'\s]|$)', re.M)
 for app in apps:
     assert pattern.search('php /var/www/html/occ app:disable ' + app)
-assert not pattern.search('php /var/www/html/occ app:disable office')
 text = '\n'.join(path.read_text() for path in pathlib.Path('Containers/nextcloud').glob('*.sh'))
 matches = pattern.findall(text)
 if matches:
@@ -3721,6 +3723,8 @@ else:
                FULLTEXTSEARCH_PASSWORD='synthetic secret must never escape', FULLTEXTSEARCH_INDEX='test')
     (root / 'fts-index.done').touch()
     def reset(enabled=(), disabled=(), **extra):
+        if 'eurooffice' in (*enabled, *disabled) and not extra.pop('missing_office', False):
+            disabled = (*disabled, 'office')
         state_path.write_text(json.dumps(dict(enabled=list(enabled), disabled=list(disabled),
                                               config={}, calls=[], **extra)))
     def run(target='eurooffice', success=True, extra=None):
@@ -3741,6 +3745,8 @@ else:
     reset(disabled=['eurooffice'], system={'eurooffice': {'custom_setting': 'keep'}})
     state, output = run()
     assert ['app:enable', 'eurooffice'] in state['calls']
+    assert 'office' in state['enabled'], 'The native Office navigation app must be enabled'
+    assert not any(call[:2] == ['app:disable', 'office'] for call in state['calls'])
     assert any(call[:3] == ['config:app:set', 'eurooffice', 'DocumentServerUrl'] and
                call[3] == '--value=https://test.invalid/eurooffice' for call in state['calls'])
     assert 'app:eurooffice:DocumentServerUrl -> updated' in output
@@ -3754,6 +3760,7 @@ else:
     assert state['config'] == first_config and state['system'] == first_system and ' -> ' not in output
     assert len(state['imports']) == 2, 'Repeated Office wiring must not import unchanged secrets'
     assert sum(call == ['app:enable', 'eurooffice'] for call in state['calls']) == 1
+    assert state['calls'].count(['app:enable', 'office']) == 1, 'Reruns must preserve the Office hub'
     rotated_office = env['EUROOFFICE_SECRET'] + ' rotated'
     state, _ = run(extra={'EUROOFFICE_SECRET': rotated_office})
     assert state['system']['eurooffice'] == {'custom_setting': 'keep', 'jwt_secret': rotated_office}
@@ -3762,6 +3769,8 @@ else:
     for failure in ('app:list', 'app:enable', 'config:app:set', 'config:system:set', 'config:list', 'config:import'):
         reset(disabled=['eurooffice'], fail=failure)
         run(success=False)
+    reset(disabled=['eurooffice'], missing_office=True)
+    run(success=False)
     reset(malformed=True)
     run(success=False)
     reset(fail='app:install')
@@ -3869,6 +3878,9 @@ else:
     clock = root / 'clock.sh'
     clock.write_text('sleep() { SECONDS=$((SECONDS + $1)); }\n')
     (commands / 'nc').write_text('#!/bin/bash\nexit 1\n')
+    reset(disabled=['eurooffice'])
+    state, _ = run(extra={'BASH_ENV': str(clock)})
+    assert 'office' in state['enabled'], 'A delayed editor must not hide the Office hub'
     reset(enabled=['notify_push', 'spreed'])
     state, output = run('boot', extra=dict(talk, TALK_RECORDING_ENABLED='yes',
         TALK_RECORDING_HOST='recording.invalid', RECORDING_SECRET='synthetic secret must never escape',
@@ -3898,7 +3910,7 @@ with tempfile.TemporaryDirectory() as directory:
     ca.touch()
     state_path = root / 'state.json'
     command = '#!' + sys.executable + '\n' + r'''
-import json, os, pathlib, sys
+import json, os, pathlib, sys, time
 p = pathlib.Path(os.environ['TALK_SMOKE_STATE'])
 s = json.loads(p.read_text())
 a = sys.argv[1:]
@@ -3916,6 +3928,7 @@ elif a[6:8] == ['integrity:check-app', 'spreed']:
 else:
     assert a[:5] == ['exec', '--user', 'www-data', 'aps-conecta-nextcloud', 'php']
     name = a[6]
+    if s.get('native_timeout') == name: time.sleep(60)
     assert name in s['native']
     if s.get('native_failure') == name: print('synthetic secret must never escape'); sys.exit(2)
     print(s['native'][name])
@@ -3938,7 +3951,7 @@ else:
     def run(state, success=True):
         state_path.write_text(json.dumps(state))
         result = subprocess.run(['bash', str(root / 'scripts/talk-smoke.sh')], env=env,
-                                capture_output=True, text=True, timeout=20)
+                                capture_output=True, text=True, timeout=40)
         assert (result.returncode == 0) == success, result.stdout + result.stderr
         assert 'synthetic secret must never escape' not in result.stdout + result.stderr
         state = json.loads(state_path.read_text())
@@ -3983,6 +3996,9 @@ else:
         checks['system'] = {} if cache_state == 'missing' else {'OCA\\Settings\\SetupChecks\\MemcacheConfigured': {'severity': cache_state}}
         state['native']['setupchecks'] = json.dumps(checks)
         run(state, success=False)
+    state = copy.deepcopy(compatible); state['native_timeout'] = 'config:system:get'
+    result = run(state, success=False)
+    assert 'config:system:get memcache.distributed' in result['output'] and '30 segundos' in result['output'], result['output']
     state = copy.deepcopy(compatible)
     state['native']['config:system:get'] = '\\OC\\Memcache\\NullCache'
     run(state, success=False)
