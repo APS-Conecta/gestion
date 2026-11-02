@@ -40,6 +40,7 @@ RUN set -ex; \
         dinit \
         su-exec \
         netcat-openbsd \
+        iptables \
         curl \
         grep; \
     \
