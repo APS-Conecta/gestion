@@ -171,6 +171,13 @@ startup_office() {
         ensure_startup_app eurooffice || rc=$?
         [ "$rc" -ne 2 ] || return 0
         [ "$rc" -eq 0 ] || return "$rc"
+        # The bundled Office hub supplies navigation and opens files through the
+        # default editor action registered by the official Euro-Office connector.
+        ensure_startup_app office || {
+            echo "app-startup: no se pudo habilitar el acceso Office incluido en la suite" >&2
+            return 1
+        }
+
         rc=0; startup_wait "$EUROOFFICE_HOST" "$EUROOFFICE_PORT" EuroOffice || rc=$?
         [ "$rc" -ne 2 ] || return 0
         [ "$rc" -eq 0 ] || return "$rc"
@@ -186,13 +193,6 @@ startup_office() {
         fi
 
         startup_app_set eurooffice DocumentServerUrl --value="https://$public_host" || return 1
-
-        # The bundled Office hub supplies navigation and opens files through the
-        # default editor action registered by the official Euro-Office connector.
-        ensure_startup_app office || {
-            echo "app-startup: no se pudo habilitar el acceso Office incluido en la suite" >&2
-            return 1
-        }
 
         # Register EuroOffice preview provider in the explicit allowlist.
         # Use a high fixed index (24) to avoid colliding with AIO's seeded indices (1-7, 23).

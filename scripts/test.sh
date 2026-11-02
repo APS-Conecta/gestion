@@ -3769,6 +3769,8 @@ else:
     for failure in ('app:list', 'app:enable', 'config:app:set', 'config:system:set', 'config:list', 'config:import'):
         reset(disabled=['eurooffice'], fail=failure)
         run(success=False)
+    reset(disabled=['eurooffice'], missing_office=True)
+    run(success=False)
     reset(malformed=True)
     run(success=False)
     reset(fail='app:install')
@@ -3876,6 +3878,9 @@ else:
     clock = root / 'clock.sh'
     clock.write_text('sleep() { SECONDS=$((SECONDS + $1)); }\n')
     (commands / 'nc').write_text('#!/bin/bash\nexit 1\n')
+    reset(disabled=['eurooffice'])
+    state, _ = run(extra={'BASH_ENV': str(clock)})
+    assert 'office' in state['enabled'], 'A delayed editor must not hide the Office hub'
     reset(enabled=['notify_push', 'spreed'])
     state, output = run('boot', extra=dict(talk, TALK_RECORDING_ENABLED='yes',
         TALK_RECORDING_HOST='recording.invalid', RECORDING_SECRET='synthetic secret must never escape',
