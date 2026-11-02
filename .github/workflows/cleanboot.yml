@@ -952,6 +952,11 @@ jobs:
           python3 scripts/usage.py "$RUNNER_TEMP/usage-series.jsonl" --interval 5 --duration 3600 \
             > "$RUNNER_TEMP/usage-series.log" 2>&1 < /dev/null &
           echo "$!" > "$RUNNER_TEMP/usage-series.pid"
+      - name: Free unused SDKs on the disposable runner
+        run: |
+          df -h /var/lib/docker
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android
+          df -h /var/lib/docker
       - name: Start the authenticated installation proxy
         run: |
           set -euo pipefail
@@ -2785,6 +2790,9 @@ jobs:
           docker logs --tail=100 nextcloud-aio-mastercontainer || true
           docker logs --tail=100 aps-conecta-apache || true
           docker logs --tail=100 aps-conecta-nextcloud || true
+          docker logs --tail=100 aps-conecta-fulltextsearch || true
+          docker inspect --format '{{json .State.Health}}' aps-conecta-fulltextsearch || true
+          df -h /var/lib/docker
           sudo tail -n 100 /opt/aps-conecta/instalacion.log || true
       # The same scoped teardown as the domain job: the suite's containers, its volumes, the wizard.
       - name: Finish and validate the bounded usage series
