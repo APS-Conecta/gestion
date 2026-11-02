@@ -3325,19 +3325,17 @@ CASES
 }
 check office_pin_cases
 
-# A dependency timeout cannot remove an installed feature. The first-party office
-# overview remains deliberately disabled; it is not the Euro-Office connector.
+# A dependency timeout cannot remove an installed feature or its Office navigation.
 entrypoint_timeout_cases() {
   python3 - <<'PY'
 import pathlib, re, sys
-apps = ('eurooffice', 'files_antivirus', 'fulltextsearch',
+apps = ('office', 'eurooffice', 'files_antivirus', 'fulltextsearch',
         'fulltextsearch_elasticsearch', 'files_fulltextsearch')
 pattern = re.compile(
     r'^\s*(?:php\s+/var/www/html/occ|startup_occ)\s+app:disable\s+["\']?('
     + '|'.join(apps) + r')(?=["\'\s]|$)', re.M)
 for app in apps:
     assert pattern.search('php /var/www/html/occ app:disable ' + app)
-assert not pattern.search('php /var/www/html/occ app:disable office')
 text = '\n'.join(path.read_text() for path in pathlib.Path('Containers/nextcloud').glob('*.sh'))
 matches = pattern.findall(text)
 if matches:
