@@ -134,6 +134,13 @@ def edit_document(context, page, marker):
         opened.goto('about:blank')
 
 
+def screenshot(page, path):
+    masks = [page.locator('#header, .login-form__headline, input[type="password"]')]
+    if '/apps/intravox' in page.url:
+        masks.append(page.locator('#content'))
+    page.screenshot(path=str(path), mask=masks)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--url', required=True)
@@ -187,7 +194,9 @@ def main():
                 return response.read()
 
         def ocs(user, method, path, data=None):
-            return json.loads(request(user, method, '/ocs/v2.php' + path, data))['ocs']['data']
+            result = json.loads(request(user, method, '/ocs/v2.php' + path, data))['ocs']
+            assert result['meta']['status'] == 'ok', 'OCS request did not succeed'
+            return result['data']
 
         def stored(markers):
             with zipfile.ZipFile(io.BytesIO(request(users[0], 'GET', dav))) as archive:
@@ -230,7 +239,7 @@ def main():
             icon = office_link.locator('img').first
             icon.wait_for(state='visible')
             wait_for(page, lambda: icon.evaluate('(image) => image.complete && image.naturalWidth > 0'))
-            page.screenshot(path=str(output / 'office-navigation.png'))
+            office_link.screenshot(path=str(output / 'office-navigation.png'))
             office_link.click()
             stage = 'creating a document through the native Office hub'
             page.get_by_text('Documentos', exact=True).first.click()
@@ -255,8 +264,10 @@ def main():
             print('PASS: Office icon → create → Euro-Office edit → saved DOCX → reopen → further saved edit', flush=True)
             assert permissions[users[0]] == (True, 'edit')
             stage = 'opening a read-only shared document from Office'
-            ocs(users[0], 'POST', '/apps/files_sharing/api/v1/shares',
+            share = ocs(users[0], 'POST', '/apps/files_sharing/api/v1/shares',
                 {'path': '/' + filename, 'shareType': 0, 'shareWith': users[1], 'permissions': 1})
+            assert int(share['permissions']) == 1
+            ocs(users[1], 'POST', '/apps/files_sharing/api/v1/shares/pending/' + str(share['id']))
             shared = pages[1]
             shared.goto(args.url + '/apps/office/')
             shared.get_by_text('Documentos', exact=True).first.click()
@@ -304,20 +315,19 @@ def main():
                 before = [page.evaluate(STATS) for page in pages]
                 pages[0].wait_for_timeout(3000)
                 after = [page.evaluate(STATS) for page in pages]
+                (output / 'talk-audio.json').write_text(json.dumps({'before': before, 'after': after}, indent=2))
                 if all(audio_progress(a, b) for a, b in zip(before, after)):
                     break
             else:
                 raise AssertionError('No bidirectional decoded audio')
-            (output / 'talk-audio.json').write_text(json.dumps({'before': before, 'after': after}, indent=2))
             for number, page in enumerate(pages):
-                page.screenshot(path=str(output / f'talk-{number + 1}.png'))
+                screenshot(page, output / f'talk-{number + 1}.png')
             print('PASS: both browsers send/receive increasing audio RTP and decode non-silent audio', flush=True)
             print('LIMIT: same-host browser media; physical devices and external WAN are not certified', flush=True)
         except Exception as error:
             for number, page in enumerate(pages):
                 if not page.is_closed():
-                    page.screenshot(path=str(output / f'failure-{number + 1}.png'),
-                                    mask=[page.locator('input[type="password"]')])
+                    screenshot(page, output / f'failure-{number + 1}.png')
             print('FAIL: ' + stage + ' (' + type(error).__name__ + ')', file=sys.stderr)
             raise SystemExit(1) from None
         finally:
