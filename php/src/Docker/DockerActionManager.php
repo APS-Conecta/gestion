@@ -95,11 +95,11 @@ readonly class DockerActionManager {
 
         $runningDigests = $this->GetRepoDigestsOfContainer($container->identifier);
         if ($runningDigests === null) {
-            return VersionState::Different;
+            return VersionState::Unknown;
         }
         $remoteDigest = $this->GetLatestDigestOfTag($container->containerName, $tag);
         if ($remoteDigest === null) {
-            return VersionState::Equal;
+            return VersionState::Unknown;
         }
 
         foreach ($runningDigests as $runningDigest) {
