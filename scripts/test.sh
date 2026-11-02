@@ -3899,7 +3899,7 @@ with tempfile.TemporaryDirectory() as directory:
     ca.touch()
     state_path = root / 'state.json'
     command = '#!' + sys.executable + '\n' + r'''
-import json, os, pathlib, sys
+import json, os, pathlib, sys, time
 p = pathlib.Path(os.environ['TALK_SMOKE_STATE'])
 s = json.loads(p.read_text())
 a = sys.argv[1:]
@@ -3917,6 +3917,7 @@ elif a[6:8] == ['integrity:check-app', 'spreed']:
 else:
     assert a[:5] == ['exec', '--user', 'www-data', 'aps-conecta-nextcloud', 'php']
     name = a[6]
+    if s.get('native_timeout') == name: time.sleep(60)
     assert name in s['native']
     if s.get('native_failure') == name: print('synthetic secret must never escape'); sys.exit(2)
     print(s['native'][name])
@@ -3939,7 +3940,7 @@ else:
     def run(state, success=True):
         state_path.write_text(json.dumps(state))
         result = subprocess.run(['bash', str(root / 'scripts/talk-smoke.sh')], env=env,
-                                capture_output=True, text=True, timeout=20)
+                                capture_output=True, text=True, timeout=40)
         assert (result.returncode == 0) == success, result.stdout + result.stderr
         assert 'synthetic secret must never escape' not in result.stdout + result.stderr
         state = json.loads(state_path.read_text())
@@ -3984,6 +3985,9 @@ else:
         checks['system'] = {} if cache_state == 'missing' else {'OCA\\Settings\\SetupChecks\\MemcacheConfigured': {'severity': cache_state}}
         state['native']['setupchecks'] = json.dumps(checks)
         run(state, success=False)
+    state = copy.deepcopy(compatible); state['native_timeout'] = 'config:system:get'
+    result = run(state, success=False)
+    assert 'config:system:get memcache.distributed' in result['output'] and '30 segundos' in result['output'], result['output']
     state = copy.deepcopy(compatible)
     state['native']['config:system:get'] = '\\OC\\Memcache\\NullCache'
     run(state, success=False)
