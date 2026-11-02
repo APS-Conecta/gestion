@@ -418,6 +418,13 @@ on the server, the operator's own copy:
 sudo install -m 0644 -o "$USER" /opt/aps-conecta/certificados/ca/aps-conecta-ca.crt .
 ```
 
+Accepting a page certificate warning does not establish trust for Talk WebSockets.
+Import the CA on each device, reopen the browser, and use **Comprobar conexión
+segura de Talk** in step 6. A successful check proves a trusted signaling connection
+from that browser; verify audio separately in a two-device call. A failed check
+can mean certificate trust, network or service trouble; it cannot identify the
+TLS cause from the browser alone. Server-side diagnostics are separate.
+
 The fingerprint is compared before importing — on Linux and macOS:
 
 ```bash
