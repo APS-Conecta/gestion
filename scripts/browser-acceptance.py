@@ -194,7 +194,7 @@ def main():
                     if '/apps/eurooffice/api/v1/config/' in response.url and response.ok:
                         config = response.json()
                         permissions[user] = (config.get('document', {}).get('permissions', {}).get('edit'),
-                                             config.get('editorConfig', {}).get('mode'))
+                                             config.get('editorConfig', {}).get('mode', 'edit'))
                 context.on('response', record_permissions)
                 context.add_init_script(OBSERVE)
                 page = context.new_page()
