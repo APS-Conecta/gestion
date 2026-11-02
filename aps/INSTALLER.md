@@ -407,6 +407,12 @@ goes: step 6, or `SITE_DOMINIO` in the site file of the silent install. The suit
   address, nor the reverse: it is reinstalled (§12).
 - **Nextcloud** trusts the CA (phase 07); **the office** reaches Nextcloud inside the suite's network
   (phase 14 writes the two internal URLs). Nothing to configure.
+- **Internal IP access**: the AIO controller routes Nextcloud, Talk and HaRP requests to the
+  suite IP's HTTPS port directly to Apache inside the suite network. The public URL and TLS
+  verification stay unchanged. Short-lived helpers apply only this route inside each client's
+  network namespace; they do not alter the host firewall or grant applications additional
+  capabilities. The controller reapplies routes after restarts, recreation or a changed Apache
+  address. A failed application is logged and retried; native readiness still has to pass.
 - **HaRP** receives the public CA certificate read-only and combines it with system certificates
   before starting its AppAPI agent.
 
