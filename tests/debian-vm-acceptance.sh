@@ -86,14 +86,20 @@ cp /root/rehearsal-private/dist/apsconecta-"$tag".tar.gz \
 export VMA_WORK=/root/rehearsal-private/acceptance
 mkdir -p "$VMA_WORK"
 export VMA_INSTALL_ENV="APS_SUITE_TAG=$suite_tag MIN_DISK_GB=20"
-bash scripts/vm-acceptance.sh --tag "$tag" --repo-url file:///srv/rehearsal --sin-datos --continuar
+acceptance_rc=0
+bash scripts/vm-acceptance.sh --tag "$tag" --repo-url file:///srv/rehearsal --sin-datos --continuar \
+  >/root/rehearsal-private/acceptance.log 2>&1 || acceptance_rc=$?
+# Fixture selection uses the public register; keep its names and all detailed logs private.
+grep -E '^  [✓✗−] |^Veredicto:' /root/rehearsal-private/acceptance.log || true
+[ "$acceptance_rc" -eq 0 ] || { echo 'FAIL: Debian installer acceptance'; exit "$acceptance_rc"; }
 cd /opt/aps-conecta/instalador
 ca_before="$(sha256sum /opt/aps-conecta/certificados/ca/aps-conecta-ca.crt)"
 config_before="$(sha256sum sites/*/site.sh)"
 bash host/aps-conecta provision --reponer >/root/rehearsal-private/rerun.log 2>&1
 test "$ca_before" = "$(sha256sum /opt/aps-conecta/certificados/ca/aps-conecta-ca.crt)"
 test "$config_before" = "$(sha256sum sites/*/site.sh)"
-bash host/aps-conecta revalidate
+bash host/aps-conecta revalidate >/root/rehearsal-private/revalidate.log 2>&1 \
+  || { echo 'FAIL: Debian revalidation after rerun'; exit 1; }
 printf 'PASS: Debian 12 IP installation and rerun preserve the CA and site configuration\n'
 GUEST
 scp -i "$work/key" -o "UserKnownHostsFile=$work/known_hosts" -P 2222 "$work/rehearse.sh" root@127.0.0.1:/root/rehearse.sh
