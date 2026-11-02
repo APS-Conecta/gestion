@@ -159,12 +159,6 @@ startup_imaginary() {
 
 startup_office() {
     if [ "$EUROOFFICE_ENABLED" = 'yes' ]; then
-        # Nextcloud 34 ships a first-party `office` overview app enabled by default. It is not this
-        # suite's editor (that is `eurooffice`, which has no nav entry and engages when a document is
-        # opened from Files) and is not wired to it — no editor-url state is ever injected, so the
-        # "Office" tile is an overview that bounces to /f/{fileid}. One office surface per install:
-        # disabled whenever the suite's office app is EuroOffice.
-        php /var/www/html/occ app:disable office || return 1
         local EUROOFFICE_PORT public_host="$EUROOFFICE_HOST"
         # Determine EuroOffice port based on host pattern
         if echo "$EUROOFFICE_HOST" | grep -q "aps-conecta-eurooffice"; then
@@ -177,6 +171,13 @@ startup_office() {
         ensure_startup_app eurooffice || rc=$?
         [ "$rc" -ne 2 ] || return 0
         [ "$rc" -eq 0 ] || return "$rc"
+        # The bundled Office hub supplies navigation and opens files through the
+        # default editor action registered by the official Euro-Office connector.
+        ensure_startup_app office || {
+            echo "app-startup: no se pudo habilitar el acceso Office incluido en la suite" >&2
+            return 1
+        }
+
         rc=0; startup_wait "$EUROOFFICE_HOST" "$EUROOFFICE_PORT" EuroOffice || rc=$?
         [ "$rc" -ne 2 ] || return 0
         [ "$rc" -eq 0 ] || return "$rc"
