@@ -514,7 +514,22 @@ bash scripts/aio-testbed.sh up
 ```
 
 El banco usa la versión fijada en el script; `AIO_TEST_IMAGE` permite seleccionar otra versión
-de ensayo aprobada. El estado queda en `$APS_HOME/aio`. El usuario conserva la propiedad
+de ensayo aprobada. Una versión publicada más antigua no necesariamente es compatible con
+el instalador de este árbol. Antes de configurar el asistente o aprovisionar, el instalador
+comprueba las capacidades requeridas de la imagen: el resultado de inicio del asistente y
+la configuración de aplicaciones de Nextcloud. Una incompatibilidad nombra ambas versiones;
+un problema de acceso a Docker se informa por separado.
+
+Si aparece una incompatibilidad:
+
+1. Conserve los datos, volúmenes, certificados y archivos del establecimiento.
+2. Use el instalador correspondiente a las imágenes instaladas; para un ensayo nuevo, quite
+   `AIO_TEST_IMAGE` y use la versión fijada por el árbol.
+3. Vuelva a ejecutar el paso que falló después de corregir la combinación. Cambiar
+   `AIO_TEST_IMAGE` no reemplaza por sí solo los contenedores existentes; no use `down` para
+   recuperar una instalación con datos que deba conservar.
+
+El estado queda en `$APS_HOME/aio`. El usuario conserva la propiedad
 del certificado para renovarlo; una ACL autoriza su lectura al servicio Apache. Las claves de
 la autoridad permanecen privadas. Configure la confianza de los equipos según §13.
 
