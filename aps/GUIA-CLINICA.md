@@ -286,6 +286,11 @@ instalador, la misma que firma su enlace (§4).
   la suite (la fase 14 escribe las dos direcciones internas). Nada que configurar.
 - **HaRP** recibe el certificado público de la autoridad en modo de solo lectura y lo incorpora
   junto con los certificados del sistema antes de iniciar su agente de AppAPI.
+- **Conexión HTTPS interna por IP:** el controlador aplica rutas solo dentro de los
+  contenedores Nextcloud, Talk y HaRP hacia Apache. Conserva la dirección pública y
+  la verificación de certificados; vuelve a aplicar las rutas al reiniciar o recrear
+  contenedores. No modifica las reglas del cortafuegos del servidor. Requiere que
+  Docker permita auxiliares temporales con `NET_ADMIN` en esas redes de contenedor.
 
 Cada equipo que abre la suite importa la autoridad una vez. El paso 6 la ofrece («Descargar el
 certificado») con su huella SHA-256, y la consola imprime ambas al terminar la instalación; en el
