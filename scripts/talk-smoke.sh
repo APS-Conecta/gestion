@@ -15,8 +15,11 @@ python3 - "$NC_CONTAINER" "$SUITE_URL" <<'PY' || talk_native_failed=1
 import json, re, subprocess, sys, urllib.parse
 native = ['docker', 'exec', '--user', 'www-data', sys.argv[1], 'php', '/var/www/html/occ']
 def read(command, allowed=(0,)):
-    result = subprocess.run(native + [command, '--output=json'], capture_output=True, text=True, timeout=180)
-    assert result.returncode in allowed, 'Talk native command failed'
+    try:
+        result = subprocess.run(native + [command, '--output=json'], capture_output=True, text=True, timeout=180)
+    except subprocess.TimeoutExpired:
+        raise AssertionError(f'Nextcloud {command} timed out after 180 seconds; verify container-to-suite HTTPS connectivity') from None
+    assert result.returncode in allowed, f'Nextcloud {command} failed'
     return json.loads(result.stdout)
 try:
     signaling = read('talk:signaling:list')
