@@ -209,13 +209,16 @@ def main():
                 context.on('response', record_permissions)
                 context.add_init_script(OBSERVE)
                 page = context.new_page()
+                pages.append(page)
                 page.goto(args.url + '/login')
+                stage = 'filling the native staff login form'
                 page.locator('#user').fill(user)
                 page.locator('#password').fill(credentials[user])
-                page.locator('#submit-form').click()
+                stage = 'submitting the native staff login form'
+                page.locator('[data-login-form-submit]').click()
+                stage = 'waiting for successful staff authentication'
                 page.wait_for_url(lambda url: '/login' not in url, timeout=60000)
                 contexts.append(context)
-                pages.append(page)
             print('PASS: both staff browsers use trusted suite HTTPS', flush=True)
             page = pages[0]
             stage = 'opening the visible Office icon'
@@ -309,7 +312,8 @@ def main():
         except Exception as error:
             for number, page in enumerate(pages):
                 if not page.is_closed():
-                    page.screenshot(path=str(output / f'failure-{number + 1}.png'))
+                    page.screenshot(path=str(output / f'failure-{number + 1}.png'),
+                                    mask=[page.locator('input[type="password"]')])
             print('FAIL: ' + stage + ' (' + type(error).__name__ + ')', file=sys.stderr)
             raise SystemExit(1) from None
         finally:
