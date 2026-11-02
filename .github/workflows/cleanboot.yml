@@ -2213,7 +2213,7 @@ jobs:
           set -euo pipefail
           bash scripts/cleanboot-apt.sh python3-venv libnss3-tools
           python3 -m venv "$RUNNER_TEMP/browser-venv"
-          "$RUNNER_TEMP/browser-venv/bin/pip" install playwright==1.58.0
+          "$RUNNER_TEMP/browser-venv/bin/pip" install playwright==1.64.1
           sudo "$RUNNER_TEMP/browser-venv/bin/playwright" install --with-deps chromium
           cd /opt/aps-conecta/instalador
           source scripts/env.sh
