@@ -3722,7 +3722,8 @@ SHIM
   sc_dom="$(APS_HOME="$tmp/aps-sc"; staff_ca)"
   check "staff CA (R22): by IP the install ends naming the CA's file and its fingerprint, and the guide's section; else nothing — both tails print it" \
     '[ "$sc_ip" = "  Certificado para los equipos del personal: $tmp/aps-sc/certificados/ca/aps-conecta-ca.crt (huella SHA-256 $sc_fp)
-  Cada equipo lo importa una vez: aps/GUIA-CLINICA.md §10" ] && [[ "$sc_fp" =~ ^([0-9A-F]{2}:){31}[0-9A-F]{2}$ ]] && [ -z "$sc_sin" ] && [ -z "$sc_dom" ] && declare -f step_abrir | grep -qE "^ +staff_ca;?$" && declare -f cmd_install | grep -qE "^ +staff_ca;?$"'
+  Cada equipo lo importa una vez: aps/GUIA-CLINICA.md §10
+  Aceptar la advertencia de una página no basta para Talk. Después de importar la autoridad, vuelva a abrir el navegador y pruebe una llamada con audio entre dos equipos." ] && [[ "$sc_fp" =~ ^([0-9A-F]{2}:){31}[0-9A-F]{2}$ ]] && [ -z "$sc_sin" ] && [ -z "$sc_dom" ] && declare -f step_abrir | grep -qE "^ +staff_ca;?$" && declare -f cmd_install | grep -qE "^ +staff_ca;?$"'
 
   # ── abrir (L3 S1): the web installer runs as a child; a green exit wires the timers and closes the
   # install with «Listo»; Ctrl+C or a failed start says how to reopen (the fake provisionador above)
