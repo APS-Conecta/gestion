@@ -26,7 +26,7 @@ ID the gates' rows name:
 | 070 | the wizard re-skinned to the APS Conecta identity |
 | 080 | the three php/src registry references re-pointed at this fork |
 | 090 | the wizard's Playwright suite translated to assert the es-CL bytes |
-| 100 | the first-party `office` overview app disabled while Euro-Office is the suite's office |
+| 100 | the native `office` hub enabled for staff navigation; its document links use Euro-Office (#271) |
 | 110 | the wizard's content security policy lets its own brand fonts load |
 | 120 | the banner lockup drawn as outlines (`scripts/lockup.py`), so it needs no font |
 | 130 | the product named «APS Conecta Gestión AIO» on every wizard surface |

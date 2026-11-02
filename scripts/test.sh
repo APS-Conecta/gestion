@@ -2238,7 +2238,7 @@ territorio_phase16_cases() {
     out="$(AIO="$aio" SITE=lab SITE_DEIS=999001 SITE_TIPO=CESFAM SITE_COMUNA_CUT=09999 SITE_COMUNA="Comuna Prueba" \
       SEED_CTX=1 bash -e -o pipefail -c '
       phase_begin() { :; }; phase_end() { :; }
-      app_restrict_to_groups() { :; }; app_disable() { :; }
+      app_restrict_to_groups() { printf "RESTRICT %s\n" "$1"; }; app_disable() { printf "DISABLE %s\n" "$1"; }
       is_aio() { echo "ASKED is_aio"; [ "$AIO" = 1 ]; }
       conf_load() { echo "ASKED conf_load"; }
       conf_get() { echo "ASKED conf_get $*"; }
@@ -2249,6 +2249,8 @@ territorio_phase16_cases() {
     printf '%s\n' "$out" | grep -qx "SET territorio comuna_cut 09999" \
       && printf '%s\n' "$out" | grep -qx "SET territorio comuna_name Comuna Prueba" \
       || { echo "phase 16: territorio's comuna_cut / comuna_name were not written for aio=$aio: $out" >&2; return 1; }
+    ! printf '%s\n' "$out" | grep -Eq '^(DISABLE|RESTRICT) office$' \
+      || { echo "phase 16: Office navigation must remain available to staff" >&2; return 1; }
     ! printf '%s\n' "$out" | grep -q "tile_url" \
       || { echo "phase 16: a tile_url was written or mentioned for aio=$aio — nothing provisions the basemap any more: $out" >&2; return 1; }
     ! printf '%s\n' "$out" | grep -q "^ASKED" \
@@ -3721,6 +3723,8 @@ else:
                FULLTEXTSEARCH_PASSWORD='synthetic secret must never escape', FULLTEXTSEARCH_INDEX='test')
     (root / 'fts-index.done').touch()
     def reset(enabled=(), disabled=(), **extra):
+        if 'eurooffice' in (*enabled, *disabled) and not extra.pop('missing_office', False):
+            disabled = (*disabled, 'office')
         state_path.write_text(json.dumps(dict(enabled=list(enabled), disabled=list(disabled),
                                               config={}, calls=[], **extra)))
     def run(target='eurooffice', success=True, extra=None):
@@ -3741,6 +3745,8 @@ else:
     reset(disabled=['eurooffice'], system={'eurooffice': {'custom_setting': 'keep'}})
     state, output = run()
     assert ['app:enable', 'eurooffice'] in state['calls']
+    assert 'office' in state['enabled'], 'The native Office navigation app must be enabled'
+    assert not any(call[:2] == ['app:disable', 'office'] for call in state['calls'])
     assert any(call[:3] == ['config:app:set', 'eurooffice', 'DocumentServerUrl'] and
                call[3] == '--value=https://test.invalid/eurooffice' for call in state['calls'])
     assert 'app:eurooffice:DocumentServerUrl -> updated' in output
@@ -3754,6 +3760,7 @@ else:
     assert state['config'] == first_config and state['system'] == first_system and ' -> ' not in output
     assert len(state['imports']) == 2, 'Repeated Office wiring must not import unchanged secrets'
     assert sum(call == ['app:enable', 'eurooffice'] for call in state['calls']) == 1
+    assert state['calls'].count(['app:enable', 'office']) == 1, 'Reruns must preserve the Office hub'
     rotated_office = env['EUROOFFICE_SECRET'] + ' rotated'
     state, _ = run(extra={'EUROOFFICE_SECRET': rotated_office})
     assert state['system']['eurooffice'] == {'custom_setting': 'keep', 'jwt_secret': rotated_office}

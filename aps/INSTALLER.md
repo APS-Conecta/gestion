@@ -534,3 +534,14 @@ bash scripts/divergence.sh --gate
 La ejecución verifica los paquetes firmados, provisiona el establecimiento y exige divergencia
 vacía. Consulte `$APS_HOME/estado.txt` y `.install.log` para revisar el resultado. Ejecute
 `bash scripts/aio-testbed.sh down` para retirar los datos y servicios del banco de pruebas.
+
+### Acceso Office
+
+El menú de la suite incluye **Office**, el espacio de documentos de Nextcloud.
+Abra sus documentos desde ese icono para editarlos con Euro-Office. Las opciones
+Todos y Compartidos permiten encontrar documentos de otras personas y carpetas
+compartidas; se conservan sus permisos de acceso. El inicio de los servicios y
+la fase 14 de aprovisionamiento habilitan este acceso también en instalaciones
+que lo tenían deshabilitado. Las preferencias personales del menú se conservan.
+La verificación final debe incluir crear, editar, guardar y volver a abrir un
+documento desde Office con una cuenta del personal.
