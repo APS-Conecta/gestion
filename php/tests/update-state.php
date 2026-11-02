@@ -11,6 +11,10 @@ namespace GuzzleHttp {
 
         public function request(string $method, string $url, array $options = []): \Psr\Http\Message\ResponseInterface {
             if (str_contains($url, '/containers/')) {
+                if (self::$image['containerMissing'] ?? false) {
+                    throw new \GuzzleHttp\Exception\RequestException('Container not found',
+                        new \GuzzleHttp\Psr7\Request($method, $url), new \GuzzleHttp\Psr7\Response(404));
+                }
                 return new \GuzzleHttp\Psr7\Response(200, [], json_encode([
                     'Image' => 'sha256:fixture', 'State' => ['Running' => true],
                 ]));
@@ -50,6 +54,7 @@ namespace {
     $digest = 'sha256:' . str_repeat('a', 64);
     $other = 'sha256:' . str_repeat('b', 64);
     $cases = [
+        'never-created container' => [['containerMissing' => true], $digest, 'unknown'],
         'missing digests' => [[], $digest, 'unknown'],
         'empty digests' => [['RepoDigests' => []], $digest, 'unknown'],
         'malformed digests' => [['RepoDigests' => null], $digest, 'unknown'],
