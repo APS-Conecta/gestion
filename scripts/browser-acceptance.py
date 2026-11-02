@@ -199,7 +199,7 @@ def main():
             contexts = []
             for user in users:
                 stage = 'trusted browser login for a staff account'
-                context = browser.new_context(locale='en-US', viewport={'width': 1440, 'height': 1000},
+                context = browser.new_context(locale='es-CL', viewport={'width': 1440, 'height': 1000},
                                               permissions=['microphone', 'camera'])
                 def record_permissions(response, user=user):
                     if '/apps/eurooffice/api/v1/config/' in response.url and response.ok:
@@ -228,15 +228,16 @@ def main():
                 office_link = page.locator('#side-menu a[href*="/apps/office"]:visible').first
             office_link.wait_for()
             icon = office_link.locator('img').first
-            assert icon.is_visible() and icon.evaluate('(image) => image.complete && image.naturalWidth > 0')
+            icon.wait_for(state='visible')
+            wait_for(page, lambda: icon.evaluate('(image) => image.complete && image.naturalWidth > 0'))
             page.screenshot(path=str(output / 'office-navigation.png'))
             office_link.click()
             stage = 'creating a document through the native Office hub'
-            page.get_by_text('Documents', exact=True).first.click()
-            page.locator('.template-card').filter(has_text='Blank').first.click()
+            page.get_by_text('Documentos', exact=True).first.click()
+            page.locator('.template-card').filter(has_text='Vacío').first.click()
             page.locator('.office-overview__create-form input').fill(filename)
             with page.expect_response(lambda response: '/api/v1/templates/create' in response.url) as creation:
-                page.get_by_role('button', name='Create', exact=True).click()
+                page.get_by_role('button', name='Crear', exact=True).click()
             assert creation.value.ok
             created = True
             first, second = 'APS-FIRST-' + uuid.uuid4().hex, 'APS-SECOND-' + uuid.uuid4().hex
@@ -256,7 +257,7 @@ def main():
                 {'path': '/' + filename, 'shareType': 0, 'shareWith': users[1], 'permissions': 1})
             shared = pages[1]
             shared.goto(args.url + '/apps/office/')
-            shared.get_by_role('button', name='Shared with me', exact=True).click()
+            shared.get_by_role('button', name='Compartido conmigo', exact=True).click()
             shared.get_by_text(filename, exact=True).first.click()
             viewer_page, viewer = editor(contexts[1], shared)
             assert permissions[users[1]] == (False, 'view')
@@ -284,11 +285,11 @@ def main():
                 wait_for(page, lambda: page.locator('.media-settings:visible, .leave-call:visible').count())
                 preview = page.locator('.media-settings:visible')
                 scope = preview if preview.count() else page
-                unmute = scope.get_by_role('button', name='Unmute audio', exact=True)
+                unmute = scope.get_by_role('button', name='Activar audio', exact=True)
                 if unmute.is_visible():
                     unmute.click()
-                scope.get_by_role('button', name='Mute audio', exact=True).wait_for()
-                video = scope.get_by_role('button', name='Disable video', exact=True)
+                scope.get_by_role('button', name='Silenciar audio', exact=True).wait_for()
+                video = scope.get_by_role('button', name='Desactivar video', exact=True)
                 if video.is_visible():
                     video.click()
                 if preview.count():
