@@ -63,7 +63,8 @@ form handler, the Caddy trusted-proxy variable) and patch 239's basemap director
 its read-only bind, removed with the route). The office configuration and container lifecycle carry
 only the suite's Euro-Office backend (#177). Runtime control is limited to the suite's own
 versioned images, backup lifecycle and domain/IP setup (#179); maintenance never prunes the
-whole Docker host.
+whole Docker host. The container update indicator reports a difference only when both
+running and registry digests are available; missing information remains unknown (#268).
 
 Institutional proxy configuration persists in a private host profile. Docker reads its
 environment file; the wizard forwards the normalized proxy to Nextcloud, whose existing

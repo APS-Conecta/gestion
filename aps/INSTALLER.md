@@ -309,7 +309,7 @@ honest notes:
 - On image-bump boots an **offline clinic sits at the app-store probe** (upstream behavior:
 an unbounded wait on `apps.nextcloud.com` while the store is off — documented upstream behavior,
 not patched; the wait ends when the probe times out or the network returns).
-- The wizard's update notifications are suppressed (040); the suite's releases are the source.
+- The wizard's automatic self-update paths are suppressed (040); the suite's releases are the source.
 
 ### The applications update: `aps-conecta actualizar` (#46)
 
