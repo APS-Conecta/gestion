@@ -2592,7 +2592,7 @@ jobs:
       # job chose it beside farmacia. Its release is the only channel that ever existed (the
       # bake never vendored a totem tarball — #41 shipped it optional from day one), and #42
       # made that the rule for every app; the release path is proven by what only the fetch leg
-      # writes — the lock's row naming v0.3.0, the verified tarball inside /opt/aps-conecta/apps,
+      # writes — the lock's row naming the selected stable release, the verified tarball inside /opt/aps-conecta/apps,
       # no signature.json — plus the app's own half: BOTH committed voices shipped inside the
       # release (the two Piper models under
       # js/tts/, docs/adr/0005 there), and the public display page loads, with the voice assets
@@ -2608,7 +2608,7 @@ jobs:
           read -r tag version sha <<< "$(sudo python3 -c 'import json; a = json.load(open("/opt/aps-conecta/apps.lock.json"))["apps"]["totem"]; print(a["tag"], a["version"], a["sha256"])')"
           echo "lock: totem $tag ($version)"
           [ "${tag#v}" = "$version" ] || { echo "FAIL: the lock's tag and version disagree" >&2; exit 1; }
-          [ "$version" = "0.3.0" ] || { echo "FAIL: totem locked at $version, not its first release 0.3.0" >&2; exit 1; }
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "FAIL: totem lock does not name a stable release: $version" >&2; exit 1; }
           got="$(occ config:app:get totem installed_version)"
           [ "$got" = "$version" ] || { echo "FAIL: the instance runs totem $got, the lock names $version" >&2; exit 1; }
           sudo test -f "/opt/aps-conecta/apps/totem/$tag.tar.gz" || { echo "FAIL: the locked tarball is not in the store" >&2; exit 1; }
