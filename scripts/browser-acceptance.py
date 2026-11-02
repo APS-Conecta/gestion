@@ -263,29 +263,6 @@ def main():
             wait_for(page, lambda: stored([first, second]), 90)
             print('PASS: Office icon → create → Euro-Office edit → saved DOCX → reopen → further saved edit', flush=True)
             assert permissions[users[0]] == (True, 'edit')
-            stage = 'opening a read-only shared document from Office'
-            share = ocs(users[0], 'POST', '/apps/files_sharing/api/v1/shares',
-                {'path': '/' + filename, 'shareType': 0, 'shareWith': users[1], 'permissions': 1})
-            assert int(share['permissions']) == 1
-            ocs(users[1], 'POST', '/apps/files_sharing/api/v1/shares/pending/' + str(share['id']))
-            shared = pages[1]
-            shared.goto(args.url + '/apps/office/')
-            shared.get_by_text('Documentos', exact=True).first.click()
-            shared.get_by_role('button', name='Compartido conmigo', exact=True).click()
-            shared.get_by_text(filename, exact=True).first.click()
-            viewer_page, viewer = editor(contexts[1], shared)
-            assert permissions[users[1]] == (False, 'view')
-            find_in_document(contexts[1], shared, first)
-            denied = 'APS-DENIED-' + uuid.uuid4().hex
-            viewer.locator('#editor_sdk').click(position={'x': 300, 'y': 200})
-            viewer_page.keyboard.type(denied)
-            viewer_page.wait_for_timeout(1000)
-            for opened in list(contexts[1].pages):
-                opened.goto('about:blank')
-            assert stored([first, second]) and not stored([denied])
-            print('PASS: shared Office document opens in view mode and preserves read-only permission', flush=True)
-
-
             stage = 'creating a staff Talk conversation'
             room = ocs(users[0], 'POST', '/apps/spreed/api/v4/room',
                        {'roomType': 2, 'roomName': 'Acceptance ' + uuid.uuid4().hex})
@@ -300,10 +277,14 @@ def main():
                 preview = page.locator('.media-settings:visible')
                 scope = preview if preview.count() else page
                 unmute = scope.get_by_role('button', name='Activar audio', exact=True)
+                mute = scope.get_by_role('button', name='Silenciar audio', exact=True)
+                wait_for(page, lambda: unmute.is_visible() or mute.is_visible())
                 if unmute.is_visible():
                     unmute.click()
-                scope.get_by_role('button', name='Silenciar audio', exact=True).wait_for()
+                mute.wait_for()
                 video = scope.get_by_role('button', name='Desactivar video', exact=True)
+                enable_video = scope.get_by_role('button', name='Activar vídeo', exact=True)
+                wait_for(page, lambda: video.is_visible() or enable_video.is_visible())
                 if video.is_visible():
                     video.click()
                 if preview.count():
@@ -324,6 +305,29 @@ def main():
                 screenshot(page, output / f'talk-{number + 1}.png')
             print('PASS: both browsers send/receive increasing audio RTP and decode non-silent audio', flush=True)
             print('LIMIT: same-host browser media; physical devices and external WAN are not certified', flush=True)
+            stage = 'opening a read-only shared document from Office'
+            share = ocs(users[0], 'POST', '/apps/files_sharing/api/v1/shares',
+                {'path': '/' + filename, 'shareType': 0, 'shareWith': users[1], 'permissions': 1})
+            assert int(share['permissions']) == 1
+            ocs(users[1], 'POST', '/apps/files_sharing/api/v1/shares/pending/' + str(share['id']))
+            shared = pages[1]
+            shared.goto(args.url + '/apps/office/')
+            shared.get_by_text('Documentos', exact=True).first.click()
+            shared.get_by_role('button', name='Todo', exact=True).click()
+            shared.get_by_text(filename, exact=True).first.click()
+            viewer_page, viewer = editor(contexts[1], shared)
+            assert permissions[users[1]] == (False, 'view')
+            find_in_document(contexts[1], shared, first)
+            denied = 'APS-DENIED-' + uuid.uuid4().hex
+            viewer.locator('#editor_sdk').click(position={'x': 300, 'y': 200})
+            viewer_page.keyboard.type(denied)
+            viewer_page.wait_for_timeout(1000)
+            for opened in list(contexts[1].pages):
+                opened.goto('about:blank')
+            assert stored([first, second]) and not stored([denied])
+            print('PASS: shared Office document opens in view mode and preserves read-only permission', flush=True)
+
+
         except Exception as error:
             for number, page in enumerate(pages):
                 if not page.is_closed():
