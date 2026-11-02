@@ -7321,7 +7321,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                               };
                             }""")
                             pg.click("#s-trust-check")
-                            pg.wait_for_function("document.getElementById('s-trust-result').textContent.includes('conexión segura')")
+                            pg.wait_for_function("document.getElementById('s-trust-result').textContent.startsWith('La conexión segura')")
                             check("browser: secure signaling success closes the socket and still requires a call test",
                                   pg.evaluate("window.trustUrl") == "wss://192.0.2.50/standalone-signaling/spreed"
                                   and pg.evaluate("window.trustClosed") == 1
