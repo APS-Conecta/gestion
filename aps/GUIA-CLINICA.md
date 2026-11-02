@@ -300,6 +300,15 @@ servidor, la copia del propio operador:
 sudo install -m 0644 -o "$USER" /opt/aps-conecta/certificados/ca/aps-conecta-ca.crt .
 ```
 
+Aceptar la advertencia del certificado de una página no establece la confianza
+necesaria para Talk. Importe la autoridad en cada equipo, vuelva a abrir el
+navegador y use **Comprobar conexión segura de Talk** en el paso 6. Un resultado
+correcto verifica la conexión segura de señalización desde ese navegador; pruebe
+el audio en una llamada entre dos equipos. Un fallo puede deberse a la confianza
+en el certificado, la red o el servicio: el navegador no permite identificar
+la causa TLS exacta con este resultado. Las comprobaciones del servidor son
+independientes.
+
 La huella se compara antes de importar — en Linux y macOS:
 
 ```bash

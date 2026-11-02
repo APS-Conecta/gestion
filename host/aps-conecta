@@ -67,6 +67,7 @@ staff_ca() {  # by IP (R22), the install's last lines: the CA each staff device 
   fp="$(openssl x509 -in "$ca" -noout -fingerprint -sha256 2>/dev/null)"; fp="${fp#*=}"
   printf '  Certificado para los equipos del personal: %s (huella SHA-256 %s)\n' "$ca" "$fp"
   printf '  Cada equipo lo importa una vez: aps/GUIA-CLINICA.md §10\n'
+  printf '  Aceptar la advertencia de una página no basta para Talk. Después de importar la autoridad, vuelva a abrir el navegador y pruebe una llamada con audio entre dos equipos.\n'
 }
 BIN_DIR="${BIN_DIR:-/usr/local/bin}"       # where the `aps-conecta` command is linked
 
