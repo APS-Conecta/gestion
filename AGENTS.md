@@ -41,7 +41,7 @@ A merge that re-introduces upstream identifiers is followed by the merge-time re
   and the static gate on the tag.
 
 A red gate is information: fix the cause, or change the contract deliberately in a commit
-that says so.
+that says so — never weaken a check to get a green run.
 
 ## Commits
 
