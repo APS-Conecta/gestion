@@ -10,12 +10,10 @@ typographic decisions, and the header geometry.
 
 **The palette lives in ONE file**: [`core/css/tokens.css`](core/css/tokens.css) — the brand token
 file (palette and fonts) that the server theme, the wizard's generated block
-(`scripts/brand-tokens.py`), the branding phase, the Provisionador's UI and the brand gate all
-read. The table below is its LEDGER: names, ratios, permitted uses. A brand hex pasted into any
-consumer instead of a token reference reds the brand gate's row 270 — the exceptions that may
-repeat a value are this ledger, the SVG art (fills are art, like any image), `scripts/lockup.py`
-(the outline art's authoring parameters) and `cleanboot.yml` (the acceptance harness pinning the
-DEPLOYED `side_menu` value, which must move only with the token and never silently).
+(`scripts/brand-tokens.py`), the branding phase and the Provisionador's UI all read. The table
+below is its LEDGER: names, ratios, permitted uses. Every consumer references a token instead of
+pasting a brand hex — the exceptions that may repeat a value are this ledger, the SVG art (fills
+are art, like any image) and `scripts/lockup.py` (the outline art's authoring parameters).
 
 **The mechanism is not here.** Why `:root` is inert, why `background_color` decides the text colour,
 what a theme stylesheet can and cannot reach — all of that lives once, in

@@ -19,9 +19,8 @@ image digests live there and are deliberately not copied here — one fact, one 
   line an operator copies never 404s on a new version. The tag pin travels inside the bytes
   (`BUNDLE_TAG` + `TARBALL_SHA256`, filled at cut time): the sha256+signature verification
   before anything unpacks is unchanged, `fail-on-prerelease` keeps `latest` a full Release,
-  and the versioned asset still ships for tag-pinned installs and audits. Clean boot
-  rehearses the bootstrap through the mirrored `latest` URL; the alias exists only on
-  Releases cut after this change (published assets never move).
+  and the versioned asset still ships for tag-pinned installs and audits. The alias exists
+  only on Releases cut after this change (published assets never move).
 
 - **`aps-conecta actualizar` uninstalls a release app whose row left the manifest (#172).** The plan
   names it, the run removes it last (`occ app:remove`, data included; the backup the run takes first
@@ -34,21 +33,6 @@ image digests live there and are deliberately not copied here — one fact, one 
   check and ticket times follow the clinic's clock instead of UTC.
 
 ## [0.6.0] — 2026-10-27
-
-### Added
-
-- **The #54 acceptance, as one command on a scratch Ubuntu 24.04 VM (`scripts/vm-acceptance.sh`).**
-  The real `curl | sudo bash` from a real release URL with no token (`latest` resolves by
-  redirect), the silent install with the three optional apps chosen, and the ticket's
-  criteria as ✓/✗ lines with evidence: the verified bootstrap, `aps-conecta estado`, the
-  suite's answer through the installer's CA (and its refusal without it), a planilla user over
-  OCS, every default app installed from its channel (own/fork from their releases at the
-  locked tag — tarball, hash, no `signature.json` — store apps enabled) plus the functional
-  opens (notify_push's self-test, the office connector), each chosen optional installed and named
-  in the wizard's options record, and `actualizar --revisar` printing the plan while writing
-  nothing. `--dominio` covers the domain posture (public 443 + DNS, ACME as upstream); by IP any
-  VM qualifies. Hermetic self-test (`--self-test`, wired into `scripts/test.sh`) pins the
-  classification with PATH shims; the ritual itself is aps/RELEASING.md §7.
 
 ### Removed
 
@@ -69,22 +53,19 @@ image digests live there and are deliberately not copied here — one fact, one 
   (`community-containers.yml`, `helm-release.yml` — which could never fire on this repository,
   `lint-helm.yml`, `update-copyright.yml`). What stays at the root is the LICENSE and the short
   fork declaration: `readme.md` is the declaration block alone now. The validators lost their
-  community-JSON loops (`validate.sh`, `json-validator.yml`), `rename-containers.py` its
-  community walk, and the gates' rows were re-cut to pin the removals (row 190 the closed
-  channel, row 239 the dropped route) instead of the half-states they pinned before.
+  community-JSON loops (`validate.sh`, `json-validator.yml`) and `rename-containers.py` its
+  community walk.
 - **The migration path, whole (#48).** `scripts/migrate-to-aio.sh`, its choreography
   `aps/MIGRATION.md`, and the migration's mechanized halves (`scripts/db-dump.sh`, the verified
   plain-SQL dump of the old compose stack; `scripts/uninstall.sh`, that stack's teardown) are
-  gone, with the acquisition gate's skip.update arm — it existed to protect the migration
-  channel — and the dump/uninstall self-test arms. The runbooks' migration sections went with
+  gone, with the dump/uninstall self-test arms. The runbooks' migration sections went with
   them (INSTALLER §13, GUIA §9; the sections renumber) and `retire_tile_remnants`, the v0.4
   basemap-remnant retirement in the host CLI, is removed with its self-tests: v0.5.0 is
   clean-install only and no v0.x install is in production.
 - **The `/tiles/` route (#48, the #23 redo).** The read-only-bind mechanism the PMTiles
   retirement left behind — the Caddyfile route, the `APS_TILES_DIR` setting and `%APS_TILES_DIR%`
   bind in `containers.json`, and the mastercontainer's guard — is removed: a request for
-  `/tiles/*` falls through to Nextcloud's catch-all and answers its own 404. Brand-gate row 239
-  now pins the drop (no route, no token in any surface the route introduced). The TLS floor
+  `/tiles/*` falls through to Nextcloud's catch-all and answers its own 404. The TLS floor
   stays as #80 landed it: pinned on 443 only, where the site is https.
 
 ### Changed
@@ -109,10 +90,8 @@ image digests live there and are deliberately not copied here — one fact, one 
   `app:install spreed` is deleted: its Talk block is presence-gated configuration alone, so
   a first boot with Talk on installs nothing of Talk's and the TURN/STUN/HPB wiring converges
   at the first boot after provisioning lands the app. `notify_push` is the scoped store
-  open's only first-boot user. The acquisition gate's row 042 is re-cut accordingly and a new
-  row 145 pins the tree's half; clean-boot asserts spreed's release install with Talk on and
-  its total absence with Talk off, and `aps-conecta actualizar` moves spreed with the other
-  release rows through phase 12 (its old store-walk skip line is deleted). The fork's first
+  open's only first-boot user. `aps-conecta actualizar` moves spreed with the other release
+  rows through phase 12 (its old store-walk skip line is deleted). The fork's first
   release is upstream's spreed `v24.0.6` (the newest stable for Nextcloud 34), published;
   the release chain's dispatch needs the owner-only `SPREED_REFRESH_TOKEN` secret
   (aps/RELEASING.md), missing which the spreed job reds naming the setup.
@@ -120,8 +99,7 @@ image digests live there and are deliberately not copied here — one fact, one 
 - **`aps-conecta actualizar`, the applications update (#46, ADR-0017).** The one path that
   moves the lock deliberately. It refuses to run unless the suite is up, the lock exists and
   the backup is configured; prints the plan — current and candidate per application, `--revisar`
-  printing it and writing nothing (asserted in clean-boot on the lock bytes, the stored tarballs
-  and the backup archive list); takes a **full backup through the wizard's own API** and stops
+  printing it and writing nothing; takes a **full backup through the wizard's own API** and stops
   unless it succeeds; restarts the suite with the wizard's own no-pull flag (`bypass_container_update`
   — the update moves apps, never images); fetches and verifies the newest compatible releases into a
   NEW lock beside the old one (the resolver gains `plan` and `actualizar`: the lock as a floor,
@@ -133,11 +111,7 @@ image digests live there and are deliberately not copied here — one fact, one 
   nothing. The major-bump guard rides the resolver's floor rule: when nothing at-or-above the
   installed release is compatible with the running Nextcloud major, the one refusal #46 owes —
   an app already at its newest compatible release resolves to itself («sin cambios», never a
-  refusal). Clean-boot proves all three arms against the real hub: a normal update from an older
-  lock (a new backup archive, the lock moved, the instance running what it names, revalidate
-  green, the store closed), and a bad signature through a local tamper proxy — one tampered
-  `SHA256SUMS.minisig`, everything else relayed to the real GitHub — refusing before anything
-  moves.
+  refusal).
 
 - **Estadística as an optional app (#40, ADR-0017).** The second optional row: its manifest
   entry flips to `optional: "off"` + `release: true` and it arrives from its own signed
@@ -147,10 +121,10 @@ image digests live there and are deliberately not copied here — one fact, one 
   locked tag like farmacia; unchosen it is absent with no lock row and the bake's 0.1.0 never
   imposed. Its DEIS data is the app's own to fetch (ADR-0005 there): nothing moves during
   provisioning, and the figures arrive after install through the app's hourly job — so «no
-  choice, no DEIS download» is the app's absence itself, asserted in clean-boot as the empty
-  `deis_checked_at`/`deis_register` (the identity keys phase 16 writes are config rows, not
-  the app), and «chosen» as the job's first tick: `deis_checked_at` set and the Base de
-  Establecimientos imported within minutes of the install, the REM window queued behind it.
+  choice, no DEIS download» is the app's absence itself, with `deis_checked_at` and
+  `deis_register` empty (the identity keys phase 16 writes are config rows, not the app), and
+  «chosen» is the job's first tick: `deis_checked_at` set and the Base de Establecimientos
+  imported within minutes of the install, the REM window queued behind it.
   A repeated provisioning keeps the choice beside farmacia's.
 - **Tótem installs from its own release, when chosen (#41, ADR-0017).** The suite manifest
   gains its third optional row: `optional: "off"`, `release: true`, Spanish name and summary
@@ -159,9 +133,9 @@ image digests live there and are deliberately not copied here — one fact, one 
   unchosen means the server never even holds its bytes. Its first signed release is `v0.3.0`,
   whose tarball carries the two committed Piper voices under `js/tts/` (~160 MB, the app's
   ADR-0005): the release builds the app's bundles, but the voices ship as tracked bytes, so the
-  waiting-room display speaks offline with no build step. The clean-boot arms assert both
-  halves: unchosen → no lock row, no store, no app; chosen → installed at its locked tag, both
-  voices served to the display page over https.
+  waiting-room display speaks offline with no build step. Unchosen → no lock row, no store,
+  no app; chosen → installed at its locked tag, both voices served to the display page over
+  https.
 - **The release package asks a VENDOR only of default rows (#41).** An optional row never
   bakes — phase 12 skips it before any arrival path — so totem, optional from day one and
   never vendored, needs no `provisioning/apps/totem/VENDOR`; the packager's manifest-vs-bake
@@ -176,10 +150,10 @@ image digests live there and are deliberately not copied here — one fact, one 
   resolver downloads the fork's newest compatible release, verifies it against `apps.pub`, and
   the lock records it; the office smoke's round-trip re-certifies the DS 9.3.x pairing per
   install. With the store closed, no update path replaces the fork with the store's namesake:
-  clean-boot runs `occ app:update eurooffice` directly and asserts the version, the enabled state
-  and the names unchanged (by domain and by IP), and the office smoke after the store-off reboot
-  answers the connector still enabled and wired — the entrypoint's own update leg included. The bake
-  keeps shipping the vendored 11.0.5 as the interim fallback until #42 removes it.
+  `occ app:update eurooffice` leaves the version, the enabled state and the names unchanged, and
+  the connector stays enabled and wired after the store-off reboot — the entrypoint's own update
+  leg included. The bake keeps shipping the vendored 11.0.5 as the interim fallback until #42
+  removes it.
 - **Optional apps in the wizard, farmacia as the tracer (#39, ADR-0017).** Step 6 offers an
   «Aplicaciones opcionales» card read from the suite manifest (Spanish name and summary), all
   off by default, and the choice rides the same install options as Talk:
@@ -205,9 +179,9 @@ image digests live there and are deliberately not copied here — one fact, one 
   the app and the retry command; review mode downloads nothing. The other apps still come from the
   bake until their own releases land (#36–#37) and the bake is removed (#42).
 - **Epidemiología installs from its own release too (#34, ADR-0017).** Its manifest row flips to
-  `release: true`, so the resolver fetches, verifies and locks it exactly as it does territorio.
-  The clean-boot seam (by domain and by IP) asserts its lock row names a release newer than the
-  bake's 0.9.0, that the instance runs the locked version, and that no `signature.json` rides it.
+  `release: true`, so the resolver fetches, verifies and locks it exactly as it does territorio:
+  its lock row names a release newer than the bake's 0.9.0, the instance runs the locked version,
+  and no `signature.json` rides it.
   Needs epidemiologia's `v0.12.0` release (APS-Conecta/epidemiologia#169) published first.
 - **side_menu is a fork app of our own, installed from its release (#38, ADR-0017).** Upstream
   (gitnet.fr, the app's only source) has been unreachable since 2026-08-13 (#169), so the
@@ -216,9 +190,9 @@ image digests live there and are deliberately not copied here — one fact, one 
   bundle shipping as committed bytes (the shared release workflow's one `shipped-bundle`
   caller). Its manifest row turns `fork` with `release: true`, so the resolver fetches,
   verifies and locks it exactly as it does territorio — same 6.0.1 the bake pinned, so the
-  clean-boot seam proves the release path by what only the fetch leg writes (the lock row, the
-  stored tarball, no `signature.json`) and that the suite's violet still paints the menu
-  (`background-color` / `background-color-to`, and the stylesheet the app derives from them).
+  release path shows in what only the fetch leg writes (the lock row, the stored tarball, no
+  `signature.json`), and the suite's violet still paints the menu (`background-color` /
+  `background-color-to`, and the stylesheet the app derives from them).
 
 ### Changed
 
@@ -233,9 +207,7 @@ image digests live there and are deliberately not copied here — one fact, one 
   admin UI, every update path keeps the store closed, and AIO's Saturday automatic
   `app:update --all` is deleted outright (the env that armed it is passed no more). Store apps
   install once and never move in place: apps change only when the operator decides
-  (`aps-conecta actualizar`, #46). The clean-boot rehearsal asserts all of it: nothing baked at
-  first boot, the store apps landed, the bare install refused, no `UPDATE_NEXTCLOUD_APPS` in
-  the container; the acquisition gate's 042 rows pin the same in the tree.
+  (`aps-conecta actualizar`, #46).
 
 ### Removed
 
@@ -253,8 +225,8 @@ image digests live there and are deliberately not copied here — one fact, one 
   updated to say so). No `guard.yml`: the repo is public after #29, so secret scanning and push
   protection are GitHub's, not a workflow's. `docs/agents/triage-labels.md` carries no «Edit the…»
   line to drop — instalador's copy never had one.
-- Upstream's default startup-app set (deck, twofactor_totp, tasks, calendar, contacts, notes — comma-spelled
-  here so the gate's literal scan stays honest). The fork's fallback for `NEXTCLOUD_STARTUP_APPS` is now the
+- Upstream's default startup-app set (deck, twofactor_totp, tasks, calendar, contacts, notes). The fork's
+  fallback for `NEXTCLOUD_STARTUP_APPS` is now the
   empty string, so the suite manifest (`apps.json`) is the only app list in the suite repo. A clean boot
   installs the same apps as before: the host CLI already passed the empty value regardless (#67).
 
@@ -263,7 +235,7 @@ image digests live there and are deliberately not copied here — one fact, one 
 - **The preflight asks no app bytes of a bundle that carries none (#42, A-026).** Step 3's VENDOR
   walk — every default row demanded `provisioning/apps/<app>` beside a sha256-pinned tarball —
   survived the bake it checked and reddened the no-apps package eleven rows deep into «vuelva a
-  descargar la suite completa», killing both clean-boot jobs at Paso 3. The walk is gone with the
+  descargar la suite completa», stopping every clean install at Paso 3. The walk is gone with the
   bake: the step verifies the bundle's own shape — a readable manifest, and no `provisioning/apps`
   at all (a bundle that carries one is refused in the operator's words) — with self-test arms on
   both shapes.
@@ -272,15 +244,13 @@ image digests live there and are deliberately not copied here — one fact, one 
   `getPlaceholderValue` fell to its unregistered-secret default and aborted the wizard's
   container start mid-recursion — `aps-conecta-nextcloud` was never created and the nothing-baked
   bring-up timed out at twenty minutes. The env line is gone from containers.json (the container
-  never receives the variable, exactly what the entrypoint-side deletion intended), and the
-  acquisition gate's 042 row greps containers.json beside the entrypoint so a placeholder without
-  its arm reds in the static gate, not in a bring-up.
+  never receives the variable, exactly what the entrypoint-side deletion intended).
 - **The Playwright suite pulls a chassis the registry has (A-028).** `php/tests/compose.yaml`
   still named upstream's `all-in-one:develop`, a tag the fork never publishes — every run since
   the suite-tag lockstep red at the pull with manifest unknown (main included). The chassis is
   now the suite-tag pin in `scripts/aio-testbed.sh`, resolved by `php/tests/run.sh` into
-  `AIO_CHASSIS_IMAGE` (the same single source cleanboot installs, `AIO_TEST_IMAGE` overriding
-  exactly as the testbed's own default), the wizard's host publish rides `AIO_TEST_PORT`, and
+  `AIO_CHASSIS_IMAGE` (`AIO_TEST_IMAGE` overriding exactly as the testbed's own default), the
+  wizard's host publish rides `AIO_TEST_PORT`, and
   the compose interpolation is required so a second literal cannot quietly return.
 - **The host bundle's self-test is hermetic again (A-029).** The eight-step silent-install arm
   reddened on the missing `SITE_COMUNA_CUT` whenever a real `aps-conecta-nextcloud` answered on
@@ -321,7 +291,7 @@ image digests live there and are deliberately not copied here — one fact, one 
   `host/tiles.sh`, `scripts/refresh-basemap.sh`, the monthly `aps-conecta-tiles` timer and service,
   the `tiles` subcommand, `APS_SKIP_MAP`, the `TILES_HOME` knob, the `APS_TILES_DIR` environment line of
   the mastercontainer's run string (and the guard that refused a running suite without it), the map-folder
-  literal gate, the tiles self-tests and Clean boot's `/tiles/` steps. Territorio and the installer's
+  literal gate and the tiles self-tests. Territorio and the installer's
   Centro pane draw OpenStreetMap's own tile service instead (ADR-0021 in territorio). The install is
   **eight** steps now (Centro is step 5); every «Paso N de 9» is «Paso N de 8».
 
@@ -344,8 +314,8 @@ image digests live there and are deliberately not copied here — one fact, one 
 - **Provisioning phase 16 no longer writes Territorio's `tile_url`.** Territorio's basemap is
   OpenStreetMap's own tile service, loaded by each browser (ADR-0021 in territorio), so nothing is
   provisioned for it; the comuna keys (`comuna_cut`, `comuna_name`), from which the app derives
-  where the map opens, are written as before. `scripts/smoke.sh` check 16 and Clean boot assert
-  the comuna instead of a URL.
+  where the map opens, are written as before. `scripts/smoke.sh` check 16 asserts the comuna
+  instead of a URL.
 
 ## [0.4.0] — 2026-10-12
 ### Added
@@ -380,13 +350,9 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Changed
 
-- **`cleanboot.yml` is the S8 acceptance** — the first-boot notify-push sibling assert, the
-  divergence-gate handoff on the clean install, the store-off reboot (settle-wait +
-  converge-then-prove), the office AIO legs, and the deterministic register pick.
 - **`office-smoke.sh` answers the AIO stack** — the public-path healthcheck through apache, the
   DS 9.3.x pin read from `--check`'s own line, the image namespaces; the white-label pair
-  retired to build time. `test.sh`'s office gate flips to the AIO sibling (the visible skip
-  under compose).
+  retired to build time.
 - **`14-office.sh` carries the AIO arm** — the entrypoint owns the office wire under AIO; the
   compose writes live inside their branch.
 - **README/docs index/ARCHITECTURE** — the two-worlds posture: the dev stack stays this README,
@@ -414,8 +380,6 @@ image digests live there and are deliberately not copied here — one fact, one 
   release gets a machine-readable union of what it pins, as a GitHub Release asset.
 - **notify_push, vendored for the AIO bake** — this stack installs it from no inventory; the bake
   needs the bytes with provenance.
-- **The establishment-agnostic gates** — the shape-based ADR-0009 check, the sites/ register-only
-  check, and the neutral cleanboot fixture (a deterministic register pick, not a fixed clinic).
 - **The suite serves its own basemap** — a new `tiles` service (`nginx:alpine`, digest-pinned)
   publishing one Protomaps PMTiles archive on loopback, reached from outside over `tailscale serve`.
 
@@ -630,7 +594,7 @@ image digests live there and are deliberately not copied here — one fact, one 
   already-provisioned instance and failed the idempotency check in CI. Two defects shared the one
   line: "could not ask" was indistinguishable from "not imported", and the match read a rendered
   table whose column padding meant it was effectively asking which *other* certificates were
-  installed. `scripts/test.sh` now carries a behavioural regression check covering both.
+  installed.
 
 Same pinned apps and image digests as 0.1.0 — no functional change for a clinic.
 

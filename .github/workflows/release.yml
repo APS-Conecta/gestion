@@ -3,12 +3,12 @@
 #
 #   gates   → INLINE since the hard fork (D-rev 2026-10-19, Stage 3): scripts/validate.sh
 #             (upstream's own three — codespell, docker-lint, json-validator) + twig-lint
-#             (PHP 8.5 + apcu, upstream's own setup) + the brand and acquisition gates, all
+#             (PHP 8.5 + apcu, upstream's own setup) + the static gate (scripts/test.sh), all
 #             against THE TAG TREE (this job's own checkout). contents: read, zero secrets —
 #             nothing in the chain pushes git refs anymore. The gates used to ride a
 #             workflow_call into the replay chain; the called-workflow graph class that
 #             produced b960d8d0/c33884f7/d4a54d87 retires with the call. Upstream's own
-#             validator workflows fire on push+PR (ci.yml's gates job rides alongside) but
+#             validator workflows fire on push+PR (ci.yml's static gate rides alongside) but
 #             never on tag pushes — this arm is where the tag's bytes are proven.
 #   images  → every suite image built from one resolved tag commit, then source-label
 #             verification, boot-smoke and a digest manifest. Signing waits for the whole call.
@@ -39,7 +39,7 @@
 # end-to-end — channel-valid, never mistaken for a release, deletable.
 #
 # The discipline is proven HERE, by every release's own gates run (validators, twig-lint,
-# both gates), before anything builds or signs.
+# the static gate), before anything builds or signs.
 name: Release
 
 on:
@@ -103,20 +103,8 @@ jobs:
           cd php
           composer install
           composer run lint:twig
-      # row 270's font-coverage check reads woff2 cmaps — fontTools is a gate dependency, not
-      # a nicety: without it the row fails loudly (never passes vacuously), so the chain installs it
-      - name: Install full-gate dependencies
-        run: |
-          python3 -m pip install --quiet fonttools brotli playwright==1.64.1
-          python3 -m playwright install --with-deps chromium
-          sudo apt-get update -qq && sudo apt-get install -y signify-openbsd shellcheck
-          command -v signify >/dev/null 2>&1 || sudo ln -sf /usr/bin/signify-openbsd /usr/local/bin/signify
-      - name: Full local gate, including browser checks
+      - name: Static gate
         run: bash scripts/test.sh
-      - name: Brand gate
-        run: bash scripts/brand-gate.sh .
-      - name: Acquisition gate
-        run: bash scripts/acquisition-gate.sh .
 
   images:
     name: Build and publish every suite image
@@ -198,7 +186,7 @@ jobs:
           # Release serves itself without an operator editing the URL (ci.N rehearsals
           # publish --latest=false and never shadow a full release's alias)
           # «APS Conecta Gestión vX.Y.Z» — the product name on the Release the wizard's
-          # changelog arms land on (row 270 pins the shape); --generate-notes fills the body
+          # changelog arms land on; --generate-notes fills the body
           release_flags=()
           if [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-ci\.[0-9]+$ ]]; then
             release_flags+=(--latest=false --prerelease)

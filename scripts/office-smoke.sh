@@ -72,8 +72,7 @@ case "$ver" in
 esac
 
 # The DS image: the one this distribution's channel shipped. Resolved through `docker ps` by
-# NAME (the transport port's rule), the same name
-# test.sh's office gate matches, so the two cannot drift.
+# NAME (the transport port's rule).
 img="$(docker inspect "$(docker ps -q --filter name=^aps-conecta-eurooffice$ | head -1)" --format '{{.Config.Image}}' 2>/dev/null || true)"
 # (P35, implement-time — measured on the probe) upstream's office image is named aio-eurooffice
 # (the aio- prefix, like aio-nextcloud); the fork builds it in its own namespace.

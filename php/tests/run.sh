@@ -12,8 +12,8 @@ cd "$(dirname "$0")/../.." || {
 
 DOCO="docker compose -f ./php/tests/compose.yaml"
 
-# The mastercontainer chassis rides the fork's pinned suite tag — the same single source
-# cleanboot resolves (scripts/aio-testbed.sh's one IMAGE line). The fork publishes no develop
+# The mastercontainer chassis rides the fork's pinned suite tag — the testbed's single source
+# (scripts/aio-testbed.sh's one IMAGE line). The fork publishes no develop
 # image, so a literal in compose.yaml cannot stay green; AIO_TEST_IMAGE overrides exactly as
 # aio-testbed.sh's own default does (a rehearsal tag, a repair pin).
 AIO_CHASSIS_IMAGE="${AIO_TEST_IMAGE:-$(sed -nE 's/^IMAGE="\$\{AIO_TEST_IMAGE:-(ghcr\.io\/aps-conecta\/all-in-one:[^}]+)\}"$/\1/p' scripts/aio-testbed.sh)}"

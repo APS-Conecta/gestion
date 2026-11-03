@@ -19,12 +19,11 @@ set -uo pipefail
 # Write verbs, in lib.sh order: config/theming/restrict/disable/grant and app enable/unpack/install
 # (`->` — a store install and a release unpack ride it too, #42), group + user + groupfolder + file
 # + subfolder creation, group membership, schema reconcile after a re-imposed unpack.
-# (`signature dropped` and `patch X applied` died with the bake's patch era, #42 — the meta-gate
-# in test.sh keeps this list honest against what provisioning/ can emit.)
+# (`signature dropped` and `patch X applied` died with the bake's patch era, #42.)
 # `^ +certs: imported ` is ANCHORED on purpose, and the anchor is the whole point: the noop line
 # for the same helper reads "certs: <name> already imported", so a bare ` imported` would match it
 # and redden every second seed. Added 2026-08-05 — it was the one write in provisioning/ that no
-# alternative covered, so a cert re-import reported PASS. test.sh asserts both halves.
+# alternative covered, so a cert re-import reported PASS.
 WRITES=' -> | created| added to group| schema reconciled |^ +certs: imported '
 
 out="$(provisioning/seed.sh 2>&1)"; rc=$?

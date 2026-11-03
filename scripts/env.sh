@@ -22,7 +22,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.." || { echo "FAIL: cannot cd to the repo ro
 #    stack fails loudly at require_installed. Callers call it after their first output, never at
 #    source time: occ inside a pipe or $(…) is a subshell, so scripts that make dozens of occ
 #    calls (seed, divergence, smoke) call nc_container once.
-#    is_aio = "the AIO stack is running", the question smoke, test.sh and phases 10 and 12
+#    is_aio = "the AIO stack is running", the question smoke and phases 10 and 12
 #    ask. `grep -x >/dev/null`, not `-qx`: grep reads to EOF, so
 #    docker never takes a SIGPIPE that a pipefail caller would read as "not running".
 AIO_NC=aps-conecta-nextcloud

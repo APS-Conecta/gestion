@@ -26,32 +26,28 @@ A merge that re-introduces upstream identifiers is followed by the merge-time re
 `python3 scripts/images.py rewrite-registry php/containers.json` and `scripts/rename-containers.py`.
 
 - NEVER force-push `main` — it is append-only; rollback is a revert.
-- NEVER edit the wizard's operator-visible strings without reading `readme.md`'s
-  `aps-fork-declaration` block: the brand gate asserts every declared string byte-exists in
-  the tree, so a drifted wording reds CI naming the string.
-- The gates' rows keyed by IDs (010…280) are attribution — which change owes which guarantee
-  — never a condition; every row runs on every push, PR and release.
 
 ## The gates
 
-- `scripts/brand-gate.sh` and `scripts/acquisition-gate.sh` assert the tree's identity and
-  its acquisition channels — ci.yml runs them on every push and PR, and the release chain's
-  gates arm on every tag.
-- `scripts/test.sh` is the static suite (secrets, shellcheck sweep, the comm, errexit and
-  SPDX-header arms). CI is the only mechanical gate; where a behavior is not observable in
-  CI, the check beside it says so instead of pretending.
-- `scripts/validate.sh` runs upstream's own three validators (codespell, docker-lint,
-  json-spec) against any tree.
-- `python3 scripts/images.py --self-test` is hermetic: fixture inventory, stub registry and GitHub, no network.
+- `.github/workflows/ci.yml`, on every push and PR: the PR-title check, the secret scan (the
+  pinned gitleaks over the full history) and the static gate, `scripts/test.sh` — the shell
+  lint over the fork's own scripts (`bash -n`, the comm tripwire that keeps every tracked
+  script in the sweep, the errexit arm), the SPDX-header arm and
+  `python3 scripts/images.py --self-test` (hermetic: fixture inventory, stub registry and
+  GitHub, no network).
+- Upstream's own workflows beside it: codespell, shellcheck, docker-lint and json-validator,
+  plus the PHP, Twig, YAML and Playwright checks on their paths. `scripts/validate.sh` runs
+  the codespell, docker-lint and json-spec trio against any tree; the release chain runs it
+  and the static gate on the tag.
 
-A red gate is information. Fix the bytes, or change the contract deliberately in a commit
-that says so — never weaken a row to get a green run.
+A red gate is information: fix the cause, or change the contract deliberately in a commit
+that says so.
 
 ## Commits
 
 Conventional Commits; the fork's own changes carry the `instalador` scope:
 
-    fix(instalador): the gates' rows fire unconditionally — the queue-era contract inverted
+    ci(instalador): CI fails on real breakage, not on moving bytes
 
 PR titles follow the same rule and language: Conventional Commits, English (ci.yml gates
 the shape; the org doctrine keeps issue and UI titles the Spanish ones).

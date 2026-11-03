@@ -75,8 +75,7 @@ def embed(src, dst, faces_spec, header_comment):
 if __name__ == "__main__":
     # Run this after ANY change to a lockup's text or to the brand fonts, then commit the SVG.
     # Needs fontTools + brotli on the host (`pip install fonttools brotli`); nothing in the stack
-    # or in CI runs it. scripts/test.sh fails if a theme SVG has <text> without an embedded face,
-    # which is what stops new art shipping with the Georgia fallback again.
+    # or in CI runs it.
     #
     #   python3 themes/apsconecta/tools/embed-fonts.py
     #

@@ -31,9 +31,8 @@ app_config_set theming productName "APS Conecta Gestión"
 
 # --- Colours ---
 # #49: the values live in the ONE brand token file — this phase READS it and owns no palette of
-# its own (a hex here would be a duplicate palette and reds the brand gate's row 270). The
-# sed is anchored to the declaration and fails loudly on a miss: an unset value must never
-# silently fall through to a stale literal.
+# its own (a hex here would be a duplicate palette). The sed is anchored to the declaration and
+# fails loudly on a miss: an unset value must never silently fall through to a stale literal.
 TOKENS=themes/apsconecta/core/css/tokens.css
 aps_token() {  # NAME — one declared colour from the token file
   local v

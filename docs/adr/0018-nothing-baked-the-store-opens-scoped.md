@@ -43,9 +43,7 @@ Three openings exist, and only three:
   the only apps whose install moment is a container boot rather than a provisioning run.
 - **Phase 12 installs the store rows** (calendar, contacts, groupfolders) through `occ_store` in
   `provisioning/lib.sh` — the scoped seam, the same per-command open.
-- Nothing else. A bare `occ app:install` fails against the image ENV; the acquisition gate's 042
-  rows pin that no bare install survives under `provisioning/` and that no update leg ever carries
-  the prefix.
+- Nothing else. A bare `occ app:install` fails against the image ENV.
 
 **Store apps are installed once, never updated in place.** Convergence for a store row is presence
 and enabled state, not a version: nothing in the suite updates a store app, so a warm server keeps
@@ -65,13 +63,10 @@ move in exactly two ways: a new suite tag for the image-borne halves, and `aps-c
   out the tag, the Dockerfile copies the theme from it, and the composite package archives it — no
   second repository, no freeze window, no `gestion-ref`.
 - A first boot needs the app store reachable from the server (the two entrypoint installs); a
-  CESFAM network that blocks `apps.nextcloud.com` will see those two installs fail loudly — the
-  acceptance's own arm — rather than a silently degraded push/Talk.
+  CESFAM network that blocks `apps.nextcloud.com` will see those two installs fail loudly rather
+  than a silently degraded push/Talk.
 - A store app that goes incompatible with a Nextcloud major upgrade is disabled by the upgrade
   dance, not silently replaced: the repair is a deliberate `occ app:remove` + re-provision (the
   scoped install fires again), or a future `actualizar` extension if operators ask for it.
 - The store's own `signature.json` stays true for store apps (unmodified upstream, nothing patches
   them), so the integrity check stays green by construction.
-- The clean-boot rehearsal owns the acceptance: nothing baked at first boot, the store apps
-  installed, a bare `app:install` refused, and no `UPDATE_NEXTCLOUD_APPS` in the container — the
-  acquisition gate's 042 rows pin the same in the tree, on every push and tag.

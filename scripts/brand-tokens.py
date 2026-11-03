@@ -8,8 +8,7 @@ Why a projection: the wizard's origin is the mastercontainer, and the token file
 suite's theme — the wizard cannot fetch it at run time. So the wizard's stylesheet carries a
 GENERATED block with the same declarations, committed like every other byte, and `--check`
 proves it byte-equal to the token file's own block: the ONE source stays the token file, the
-wizard's copy is a projection, and a value that drifts between the two reds the brand gate's
-row 270 (which runs this script in --check mode).
+wizard's copy is a projection, and a value that drifts between the two reds `--check`.
 
   scripts/brand-tokens.py --wizard [CSS]   rewrite the generated block (default
                                            php/public/style.css)
@@ -49,7 +48,7 @@ def block(tokens):
     """The generated block, byte-exact: what --wizard writes and --check expects."""
     lines = [
         f"/* {BEGIN} — GENERATED from {TOKENS}",
-        "   by scripts/brand-tokens.py; do not edit by hand (row 270 proves the projection). */",
+        "   by scripts/brand-tokens.py; do not edit by hand (its --check proves the projection). */",
         ":root {",
     ]
     lines += [f"    {name}: {value};" for name, value in tokens]

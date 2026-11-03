@@ -5,7 +5,7 @@
 #
 # Each position has its own first password. The
 # Provisionador seals one per account with the planilla's (standings.sh standing_password); only
-# a seed without it — CI's — gives them all FIXTURE_USER_PASSWORD. Every jefe
+# a seed without it gives them all FIXTURE_USER_PASSWORD. Every jefe
 # de sector holds a role, a sector team and a category at once — the role-union this phase shows.
 phase_begin "50-users" "The clinic's standing leadership accounts"
 

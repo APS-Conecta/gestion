@@ -46,9 +46,9 @@ subtracting.
 
 Collaborative editing runs on the Euro-Office document server, on an OSS image with no paid licence.
 `scripts/office-smoke.sh` proves the pipe end to end and asserts the image provenance. `12-apps`
-installs the connector and `14-office` configures it on every seed. The accepted costs are named where
-they are paid: [arquitectura](https://aps-conecta.github.io/documentation/administracion/arquitectura.html)
-(the ~8 GB floor) and `.github/workflows/cleanboot.yml` (the CI pull).
+installs the connector and `14-office` configures it on every seed. The accepted cost is named where
+it is paid: [arquitectura](https://aps-conecta.github.io/documentation/administracion/arquitectura.html)
+(the ~8 GB floor).
 
 ### AD-7 — Locale defaults are seeded, not forced
 

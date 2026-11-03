@@ -205,8 +205,8 @@ def block(row, snapshot):
     # zero-padded digits, and territorio's Comuna::of() accepts exactly that shape — it is
     # the value the import door (refuseAnotherComuna) compares a file's comuna claim against.
     # SITE_LON/SITE_LAT go through q() like the names: shlex.quote leaves plain degrees bare
-    # (SITE_LON=-70.57798, the shape scripts/test.sh holds every register row to) and quotes
-    # anything else, so a hand-edited register cannot put shell syntax in a sourced file.
+    # (SITE_LON=-70.57798) and quotes anything else, so a hand-edited register cannot put shell
+    # syntax in a sourced file.
     q = shlex.quote
     return f"""# --- Identity — DEIS {row['codigo']}, snapshot {snapshot} (scripts/deis.py {row['codigo']}) ---
 SITE_DEIS={row['codigo']}

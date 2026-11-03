@@ -28,12 +28,7 @@ the required search result. Renaming staff or weakening the exact result probe
 would not implement the product contract. The signed fork uses the established
 acquisition channel and keeps its small source difference reviewable.
 
-Acceptance keeps the same non-admin upload, indexed body and exact
-provider/file-ID/path/type search predicate. Only read searches repeat within a
-bounded visibility window; indexing runs once. Release signature/content checks
-and both complete installation jobs still gate adoption.
-
 Returning to the store requires a supported NC34 publication containing the fix
 and a deliberate, tested channel and lock migration through the normal update
-and backup process. Repeat the same acceptance against that package before
+and backup process. Repeat the by-IP probe against that package before
 retiring the fork; installation never switches channels automatically.

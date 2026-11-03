@@ -14,14 +14,12 @@
    - the wizard (php/public/style.css): cannot fetch this file at run time
      (its origin is the mastercontainer, not the suite), so
      scripts/brand-tokens.py projects it into a GENERATED block in the
-     wizard's stylesheet — committed bytes, proven byte-equal by the gate.
-   - the brand gate (scripts/brand-gate.sh): reads THIS file for its
-     expectations; it carries no palette of its own.
+     wizard's stylesheet — committed bytes, proven byte-equal by its --check.
 
-   The no-duplicate rule (row 270): a hex declared below appears in this
-   file alone. The ledger — contrast ratios and permitted uses — is
-   MAPEO.md §1; the exceptions that may repeat a value (the ledger itself,
-   the SVG art, the acceptance harness) are named there and in the gate.
+   The no-duplicate rule: a hex declared below appears in this file alone.
+   The ledger — contrast ratios and permitted uses — is MAPEO.md §1; the
+   exceptions that may repeat a value (the ledger itself, the SVG art) are
+   named there.
 
    Adding a colour: name it by ROLE (--aps-what-it-paints), give it a row
    in MAPEO.md §1 with its ratio, and never paste a brand hex into a
