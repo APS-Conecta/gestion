@@ -9,6 +9,12 @@ The suite repo: the bootstrap, the AIO fork, the Provisionador, the host CLI and
 
 ## Language
 
+**Upstream**:
+`nextcloud/all-in-one` at the release this repo last merged.
+
+**Keep-list**:
+The declared list of every place this repo differs from upstream, each with its reason.
+
 **Suite**:
 «APS Conecta Gestión», everything one establishment installs.
 
@@ -16,7 +22,26 @@ The suite repo: the bootstrap, the AIO fork, the Provisionador, the host CLI and
 One CESFAM, CECOSF or SAPU, with one installation of the suite.
 
 **Suite release**:
-A signed version of the suite repo: bootstrap, images, theme and data. It contains no apps.
+A published version of the suite repo: the bootstrap, our images, theme and data, plus the exact versions and
+checksums of every official image and app it installs. It carries no app files.
+
+**Bootstrap** (instalador de una línea):
+The one-line command that installs the suite on a plain server.
+_Avoid_: installer script, one-liner
+
+**Coolify install** (instalación por Coolify):
+The suite added as a resource on a Coolify server. It installs the same suite release as the bootstrap.
+
+**Nightly update** (actualización nocturna):
+The server moving itself to the newest suite release, right after its nightly backup.
+
+**APS name** (nombre APS):
+The establishment's address under `gestion.apsconecta.cl`, given by APS's name service. The default when the
+establishment has no domain of its own.
+_Avoid_: free domain, dedyn name
+
+**Own domain** (dominio propio):
+A domain the establishment already holds, used instead of the APS name.
 
 **Own app**:
 An app whose code lives in an APS-Conecta repo.
@@ -34,18 +59,13 @@ An app installed on every establishment, without a question.
 An app offered in the Provisionador, off by default.
 
 **App release**:
-A GitHub Release of an own or fork app with four assets: `<id>.tar.gz`, `info.xml`, `SHA256SUMS` and
-`SHA256SUMS.minisig`, signed with the app key (`apps.pub`).
+A GitHub Release of an own or fork app. A suite release pins its tag and checksum.
 
 **Suite manifest** (`apps.json`):
 The only list of the suite's apps. Every installer step and gate reads it; `scripts/apps.py` validates it.
 
-**Lock file**:
-The per-server record of the installed app tags (`/opt/aps-conecta/apps.lock.json`, written by the
-app-release resolver and moved only by `aps-conecta actualizar`; see ADR-0017).
-
 **Provisionador**:
-The web wizard that runs the install.
+The single web wizard that runs the install. During the install the operator uses no other page.
 
 **Brand token file** (ficha de tokens de marca):
 `themes/apsconecta/core/css/tokens.css` — the ONE committed source of the palette and the font
