@@ -1,181 +1,80 @@
-# RELEASING — cutting a signed suite release
+# RELEASING — test builds and release candidates
 
-The runbook for the maintainer who cuts a release. One tag on instalador is the whole ritual —
-the complete suite image set, the composite package, the manifest's release identity (D4). This file owns the parts only a person can do: the keypair, the secrets,
-the release commit, and what to do when a key must change. The machine's
-half — gates → images → package → sign → prove → Release — is
-[.github/workflows/release.yml](../.github/workflows/release.yml), and every guard it runs is
-self-tested in [scripts/package-release.sh](../scripts/package-release.sh).
+The runbook for the maintainer who builds a candidate of the suite. The machine's half is
+[.github/workflows/release.yml](../.github/workflows/release.yml), the candidate pipeline; this file
+owns the tags, the dispatch and the re-pin at an Upstream merge.
 
-## 1. The keypair (once)
+## 1. The tags
 
-The signature is Ed25519 in signify/minisign format, made and proven by `signify-openbsd` — the
-same apt package the clinic verifies with (Ubuntu universe, Debian main). Generate the pair on
-a machine you trust:
+- **Candidate tag** — `vX.Y.Z-ci.N` for a test build, `vX.Y.Z-rc.N` for a release candidate. It
+  is the git tag of a pre-release and the only tag the pipeline pushes our images under. Any tag
+  with a suffix is a pre-release.
+- **Version tag** — `vX.Y.Z`: the git tag of a final release, and the immutable tag of its images.
+- **Channel tag** — `latest`: the moving image tag servers run on. The mastercontainer runs as
+  `ghcr.io/aps-conecta/all-in-one:latest`, and the Nightly update follows it.
 
-    sudo apt-get install signify-openbsd
-    sudo ln -sf /usr/bin/signify-openbsd /usr/local/bin/signify   # Ubuntu ships the binary under its full name
-    signify -G -n -p installer.pub -s installer.sec -c "APS Conecta instalador release key"
+The version and channel tags move only when a release candidate is promoted after the release
+gate (#303). GitHub's "Latest" follows the same rules, which `aps/release/latest.py` checks after
+every publish: a pre-release never becomes "Latest", and a final version becomes "Latest" only
+when it is the highest published final version, so an older final never replaces a newer one.
 
-`-n` makes a passphrase-less key — simplest, and the key's protection is where it lives, not
-the passphrase. To carry one anyway, feed it on stdin (`printf 'la frase\n' | signify -G …`);
-the sign step reads the passphrase the same way, and `MINISIGN_KEY_PASSWORD` carries it in CI.
+X.Y.Z comes from the changes since the previous final release, by the changelog's Semantic
+Versioning: a feature is a minor bump, fixes alone a patch, a breaking change a major. The first
+stable release is v1.0.0. A test build that is not meant for a version uses `v0.0.0-ci.N`.
 
-Replace the placeholder **in one commit**: `installer.pub`'s two lines AND `install.sh`'s
-`SIGNIFY_PUBKEY` constant (the repo carries a placeholder on purpose — a placeholder that signs
-is a bug, not a state, and `package-release.sh` reds on the word until this commit lands). The
-same script proves the two readers equal at every release.
+## 2. Our images
 
-Keep `installer.sec` OUT of the repository. After registering the secrets (§2), store it where
-you store the farm's other keys, or delete it — rotation (§6) does not need the old secret key.
+- `ghcr.io/aps-conecta/all-in-one` — the mastercontainer: upstream's
+  `Containers/mastercontainer/Dockerfile` over this tree, with our Nextcloud and Caddy images
+  pinned by digest into its `php/containers.json` and `community-containers/caddy/caddy.json`.
+- `ghcr.io/aps-conecta/aio-nextcloud` — [aps/images/nextcloud](images/nextcloud/Dockerfile):
+  upstream's Nextcloud image without the one-click-instance user cap (#176).
+- `ghcr.io/aps-conecta/aio-caddy` — [aps/images/caddy](images/caddy/Dockerfile): upstream's
+  community Caddy rebuilt with the acme-dns DNS module.
 
-## 2. The Release environment and secrets (once)
+Every other container is the official upstream image, pinned by digest in `php/containers.json`
+to the set Upstream built from the Keep-list's base commit. The tree pins upstream's Nextcloud
+the same way, so upstream's browser tests run it; only the mastercontainer's copy names ours.
+`aps/release/pins.sh` checks the pins on every pull request and before every build.
 
-On this repository's Settings → Environments → **Release**, restrict deployment refs to
-**tags matching `v*`**. Use no required human reviewers or wait timer: successful automated
-gates permit progression. Disable administrator bypass of environment protection. The
-repository's active `v*` tag ruleset restricts creation, updates and deletion to the release
-owner's administrator role; it admits owner-managed numeric `vX.Y.Z-ci.N` rehearsals.
+## 3. A test build or a release candidate
 
-Store these secrets in that environment:
+Tag the commit, then dispatch the pipeline on the tag:
 
-- `MINISIGN_SECRET_KEY` — the CONTENTS of `installer.sec` (both lines, untrusted comment
-  included). The release job writes them to a 0600 trap-removed file; the key never reaches
-  argv, a URL, or a log line (the P45 rule).
-- `MINISIGN_KEY_PASSWORD` — the passphrase, or empty for a `-n` key.
-The signing pair reaches the package assembly step. The gates and image builds use their
-job permissions. App repositories retain the separate app-signing identity.
+    git push origin <commit>:refs/tags/v0.0.0-ci.N
+    gh workflow run release.yml --repo APS-Conecta/gestion --ref v0.0.0-ci.N
 
-Populate environment secrets through GitHub's UI or the CLI's masked interactive prompt:
+A release candidate's commit must be on `main`; a test build's may be on any branch. Use a
+number no tag has used. The repository's `v*` tag ruleset lets only administrators create, move
+or delete such a tag, and the pipeline never creates one.
 
-    gh secret set MINISIGN_SECRET_KEY --repo APS-Conecta/gestion --env Release < installer.sec
-    gh secret set MINISIGN_KEY_PASSWORD --repo APS-Conecta/gestion --env Release
+The pipeline refuses a candidate tag that already has a release: a published candidate's images
+never move. It proves the commit (the digest pins, `scripts/validate.sh`, Twig and the static
+gate), builds our three images from it, labels each with the commit and checks the label before
+it pushes the candidate tag, and publishes the pre-release with the three images by digest.
+Then it checks "Latest": a candidate leaves it where it was. A candidate needs no environment
+and reads no secret but the workflow's own token.
 
-Finish migration by removing the old repository-level copies of these names. Verify the
-Release environment's secret names and complete a protected rehearsal; secret values never
-belong in chat, argv, repository files or logs.
+## 4. An Upstream merge
 
-A wrong pair reds the package job loudly ("signing failed — the passphrase
-(MINISIGN_KEY_PASSWORD) or the key (MINISIGN_SECRET_KEY) is wrong"); nothing is released
-half-signed.
+The merge moves the Keep-list's base to the new Upstream tag (AGENTS.md). In the same pull
+request, re-pin the official images and our Nextcloud image's base to that release's set:
 
-Talk installs its official signed package through the scoped store command (ADR-0025).
+    aps/release/pins.sh <upstream image tag>
 
-Repository Settings → Actions → General → Workflow permissions must use **Read repository
-contents and packages permissions**, with **Allow GitHub Actions to create and approve pull
-requests** disabled. Publishing jobs declare their required writes explicitly; Images keeps
-its reusable-workflow package-write ceiling and narrows every non-publishing job to read.
-Read back the effective repository defaults after changing them:
+The upstream image tag is the one whose images carry the release's commit as their
+`org.opencontainers.image.revision`; v14.4.3's is `20261029_150718`. The script fails unless
+every pin resolves to an image built from the Keep-list's base. When upstream's community Caddy
+moves, `aps/images/caddy/Dockerfile`'s bases move with it, by digest.
+
+## 5. Repository settings
+
+Settings → Actions → General → Workflow permissions must use **Read repository contents and
+packages permissions**, with **Allow GitHub Actions to create and approve pull requests**
+disabled. Each job declares the writes it needs. Read back the effective defaults after a
+change:
 
     gh api repos/APS-Conecta/gestion/actions/permissions/workflow
 
 `scripts/ci-tool.sh` owns the raw gate binaries and their pinned checksums: the secret scan's and
 `scripts/validate.sh`'s. A tool update changes its version and publisher-verified checksum together.
-
-## 3. The release commit
-
-X.Y.Z is chosen from the changes, not from the last number plus one: read the commits since
-the previous tag — `git log --oneline $(git describe --tags --abbrev=0)..HEAD` — and apply the
-changelog's Semantic Versioning: a feature anywhere in the range is a minor bump, fixes alone
-a patch, a breaking change a major. (The 0.5.0 range was first proposed as v0.4.1, five
-features deep; the log is the count.)
-
-Three places, one commit, all saying the same tag (the CLI's self-test pins it; the release job
-asserts it):
-
-1. `VERSION` — the tag, one line.
-2. `install.sh`'s `BUNDLE_TAG` — the same tag.
-3. `aps/CHANGELOG.md` — the dated `## [X.Y.Z]` entry.
-
-## 4. The tag push
-
-    git tag vX.Y.Z && git push origin vX.Y.Z
-
-release.yml proves stable tags are contained in main, freezes the checked-out commit and runs
-the static gate, validators and Twig on that tree. Only numeric `vX.Y.Z-ci.N` rehearsals may
-be off main. Images and packaging check out the proven SHA, never a second resolution of the tag.
-The packager receives `RELEASE_SHA`, using it for archived bytes, date and provenance even
-without a local tag. Before publication, the remote tag (including annotated tags) must still
-resolve to that same commit. After the complete image set passes its native checks,
-package-release assembles the composite, SHA256SUMS, the signature, the verification proof
-against `installer.pub` and the install asset. The Release publishes those six assets: the
-install asset twice — under its versioned name and as `apsconecta-install.sh`, the
-byte-identical stable-name copy `releases/latest/download` serves, so the runbooks'
-one-liner always resolves to the newest full Release without an operator editing the URL.
-The alias carries the tag pin inside its bytes (`BUNDLE_TAG` + `TARBALL_SHA256`, filled at
-cut time), so the verification chain is unchanged; ci.N rehearsals publish `--latest=false`
-and never shadow it.
-
-**The testbed pin follows**. Once the Release is green, one commit moves the pin in
-`scripts/aio-testbed.sh` to `vX.Y.Z` — the suite tag the testbed and the Playwright suite
-install. It cannot ride the release commit: the tag's images do not exist until the push
-publishes them.
-
-**One source tree for every image.** Images resolves `build-ref` once, generates its build
-matrix from `php/containers.json` and the mastercontainer, and checks out that commit in every
-build. Every surviving `Containers/*/Dockerfile` must have a matrix entry. PostgreSQL is tested
-before publication; Euro-Office keeps its cache exception. The manifest verifies each image's
-source label (`https://github.com/APS-Conecta/gestion`) and revision against that commit.
-There is no previous-image copy step or base lock. Upstream updates arrive through deliberate
-merges into main, then ordinary builds.
-
-Before any build can push, Images checks the repository and target Release through GitHub.
-A published Release, including a prerelease, always refuses rebuilding, even with `force`.
-An unreadable publication state also refuses. `force` permits repairing a complete image set
-only while its Release is absent or still a draft.
-
-**Rehearse first, by dispatch.** One `gh` command publishes images without creating a git tag
-or Release:
-
-    gh workflow run images.yml --ref <branch> -f suite-tag=v0.0.0-ci.N -f build-ref=<commit-sha>
-
-Choose an unused rehearsal number above the testbed's pin. Reusing a complete unpublished
-rehearsal set requires `-f force=true`; use a new number when preserving prior evidence.
-Git tags, GitHub Releases and Latest changes require the release owner's authorization.
-
-**When a fresh Images dispatch is needed:** changes to any container directory or shared
-build input (including PHP, the application and themes) need new images. Independently
-released apps remain outside the images (ADR-0018).
-
-**Protected release rehearsal.** After the owner authorizes an exact rehearsal commit with
-matching VERSION, BUNDLE_TAG and changelog, the owner creates its numeric CI tag. Tag push
-runs the protected chain automatically. Its suite Release uses `--prerelease --latest=false`;
-record the current `/releases/latest` tag before and after to prove Latest stayed unchanged.
-
-For a repair, dispatch from the tag itself (`--ref vX.Y.Z`), not a branch: Release environment
-eligibility follows the workflow ref. The repair arm uses `suite-tag`, plus `force-images`
-only for a chain that died mid-publish, and exists for a chain that failed BEFORE `gh release create` — a
-published Release's assets never move (D12).
-
-## 5. Auditing a release offline
-
-An auditor (or an operator who wants to see it themselves) needs only the Release page and
-`signify-openbsd`:
-
-    curl -fsSLO https://github.com/APS-Conecta/gestion/releases/download/vX.Y.Z/{apsconecta-vX.Y.Z.tar.gz,SHA256SUMS,SHA256SUMS.minisig}
-    curl -fsSLO https://github.com/APS-Conecta/gestion/raw/main/installer.pub
-    signify -V -p installer.pub -m SHA256SUMS -x SHA256SUMS.minisig && sha256sum -c SHA256SUMS
-
-The signature covers `SHA256SUMS`, which names `apsconecta-vX.Y.Z.tar.gz`: a signature that
-verifies is a signature for that tag's package — the tag binds through the signed bytes. The
-public key is committed, printed by the wizard, and embedded in the install asset; matching the
-copy you audit against the one you already trust is the whole ceremony.
-
-## 6. Rotation and compromise
-
-Rotate cheaply and without ceremony — the design makes rotation non-eventual:
-
-1. Generate a new pair (§1) and replace `installer.pub` + `install.sh`'s constant in one commit.
-2. Register the new secrets (§2). The next release signs with the new key; old Releases keep
-   verifying with the old pubkey (deterministic Ed25519 — keep the retired `installer.pub`
-   beside the audit, or fetch it from the tag that last carried it).
-3. A clinic mid-flight is never stranded: the bootstrap it runs embeds the sha256 of the package
-   it fetches, and `preflight` verifies the kept package against the key the INSTALLED tree
-   carries (`$ROOT/installer.pub`) — a key change reaches a clinic at its next deliberate
-   update (INSTALLER §10), never as a surprise red.
-
-**Compromise of the key alone** (no repository access) cannot ship a package a clinic will
-install: the one-liner's asset embeds the expected sha256, and that asset lives at a tag-pinned
-URL inside the repository. A compromised key WITH repository access is repository compromise —
-rotate (above) and cut the next release; already-published Releases stay verifiable and their
-bytes never moved.

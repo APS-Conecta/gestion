@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The static gate, run locally and by .github/workflows/ci.yml: the shell lint over the fork's
 # own scripts (syntax, shellcheck's errors, sweep coverage, errexit in a tested subshell), their
-# SPDX headers, and the image CLI's hermetic self-test. No stack, no network. Exits non-zero if anything fails.
+# SPDX headers, and the "Latest" rules' self-test. No stack, no network. Exits non-zero if anything fails.
 # NOT `set -e`: we run every check and aggregate, so one failure doesn't hide the rest.
 set -uo pipefail
 
@@ -12,7 +12,7 @@ echo "== static checks (no running stack needed) =="
 # The fork's shell namespace, spelled once for the sweep below. Unquoted on purpose: the words
 # re-glob where they are used. The comm tripwire a few lines down keeps its own literal copy
 # deliberately — it is the alarm that reds when this list and the tree drift apart.
-SHELL_NAMESPACE='scripts/*.sh provisioning/*.sh provisioning/phases/*.sh host/*.sh install.sh'
+SHELL_NAMESPACE='scripts/*.sh provisioning/*.sh provisioning/phases/*.sh host/*.sh aps/release/*.sh install.sh'
 linted=()
 for s in $SHELL_NAMESPACE; do
   [ -e "$s" ] || continue
@@ -34,8 +34,8 @@ check shellcheck_row
 # two lists MATCH would be green on every machine and red only in CI. What matters is that nothing
 # TRACKED escapes the sweep, so subtract and require empty.
 check bash -c '
-  [ -z "$(comm -23 <(git ls-files "*.sh" | grep -E "^scripts/|^provisioning/|^host/|^install\.sh$" | sort) \
-                   <(ls scripts/*.sh provisioning/*.sh provisioning/phases/*.sh host/*.sh install.sh 2>/dev/null | sort))" ]'
+  [ -z "$(comm -23 <(git ls-files "*.sh" | grep -E "^scripts/|^provisioning/|^host/|^aps/|^install\.sh$" | sort) \
+                   <(ls scripts/*.sh provisioning/*.sh provisioning/phases/*.sh host/*.sh aps/release/*.sh install.sh 2>/dev/null | sort))" ]'
 # Regression guard (#39): a `set -e` subshell's status must not be consumed in a conditional
 # context — bash suppresses errexit inside it, so what reads as a guard runs on and reports
 # success. Two shapes, because the second is the one that shipped:
@@ -60,7 +60,7 @@ FROM_THE_RIGHT = re.compile(r"\(\s*" + ERREXIT + r"[^()]*\)[ \t]*(\|\||&&)")
 
 tracked = subprocess.run(["git", "ls-files", "-z", "*.sh"],
                          capture_output=True, text=True, check=True).stdout.split("\0")
-files = [f for f in tracked if re.match(r"^(scripts|provisioning|host)/", f) or f == "install.sh"]
+files = [f for f in tracked if re.match(r"^(scripts|provisioning|host|aps)/", f) or f == "install.sh"]
 bad = []
 for name in filter(None, files):
     with open(name, encoding="utf-8") as handle:
@@ -129,7 +129,7 @@ spdx_offenders() {
 }
 spdx_header_row() {
   local off
-  off="$(spdx_offenders $(git ls-files "*.sh" "*.py" | grep -E '^scripts/|^provisioning/|^host/|^install\.sh$'))"
+  off="$(spdx_offenders $(git ls-files "*.sh" "*.py" | grep -E '^scripts/|^provisioning/|^host/|^aps/|^install\.sh$'))"
   [ -z "$off" ] || { printf "tracked scripts lacking an SPDX header and not on the #63 baseline:\n%s\n" "$off" >&2; return 1; }
 }
 check spdx_header_row
@@ -191,10 +191,10 @@ gone.sh" spdx_baseline_row 2>&1 )"
 check spdx_baseline_cases
 
 echo "== self-tests (hermetic — no docker, no stack) =="
-# Hermetic image CLI checks use fixture inventories and read-only registry/GitHub shims.
-im_out="$(python3 scripts/images.py --self-test 2>&1)" \
-  && echo "  ok:   images --self-test ($(printf '%s\n' "$im_out" | tail -1))" \
-  || { echo "  FAIL: images --self-test"; printf '%s\n' "$im_out" | tail -25; fail=1; }
+# The release pipeline's "Latest" rules, against fixture releases.
+latest_out="$(python3 -I aps/release/latest-test.py 2>&1)" \
+  && echo "  ok:   aps/release/latest-test.py ($(printf '%s\n' "$latest_out" | grep '^Ran '))" \
+  || { echo "  FAIL: aps/release/latest-test.py"; printf '%s\n' "$latest_out" | tail -25; fail=1; }
 
 if [ "$fail" -eq 0 ]; then
   echo "PASS: local gate green"

@@ -5,7 +5,7 @@
 # Every path where this repo differs from Upstream, one per line: `<path> <reason>`. A path ending
 # in `/` covers everything under it. scripts/keep-list.py fails on an undeclared difference and on
 # an entry that no longer differs.
-aps/ our layer: the Keep-list, the operator runbooks, the changelog and the release ritual
+aps/ our layer: the Keep-list, the operator runbooks, the changelog, the release ritual, our three images and the release pipeline's tools
 docs/ our layer: ADRs and agent docs
 themes/ our layer: the apsconecta server theme and the brand token file
 AGENTS.md our agent steering replaces upstream's
@@ -14,9 +14,8 @@ BUGS.md our bug ledger
 readme.md our fork declaration replaces upstream's readme
 .codespellrc codespell's word list for our layer's Spanish
 .gitleaksignore our secret scan's reviewed false positives
-.github/workflows/ci.yml our gates: PR title, secret scan, static gate and the Keep-list check
-.github/workflows/images.yml our image builds
-.github/workflows/release.yml our release chain
+.github/workflows/ci.yml our gates: PR title, secret scan, static gate, the Keep-list check and the digest pins
+.github/workflows/release.yml our candidate pipeline: our three images under the candidate tag, and the pre-release
 .github/workflows/issue-linker.yml our issue linker
 scripts/.gitignore our scripts' bytecode stays untracked
 scripts/ci-tool.sh our CI tool pins
@@ -24,7 +23,7 @@ scripts/keep-list.py the Keep-list check
 scripts/keep-list-test.py the Keep-list check's self-test
 scripts/test.sh our static gate
 scripts/usage.py our resource-measurement collector
-scripts/validate.sh upstream's validators, run by our release chain against the tag tree
+scripts/validate.sh upstream's validators, run by our candidate pipeline against the candidate commit
 .env.example old host layer: the env template its scripts read
 VERSION old host layer: the suite version its install and release scripts read
 apps.json old host layer: the Suite manifest its resolver installs
@@ -42,7 +41,6 @@ scripts/db-image-test.sh old host layer: the old release's database image test
 scripts/deis.py old host layer: the DEIS search and site-file writer
 scripts/divergence.sh old host layer: the instance divergence report
 scripts/env.sh old host layer: the shared preamble of its scripts
-scripts/images.py old host layer: the old release's image tool
 scripts/office-smoke.sh old host layer: the Office smoke check
 scripts/package-release.sh old host layer: the old release's package and signature
 scripts/provisionador.py old host layer: the old Provisionador
@@ -50,9 +48,10 @@ scripts/releases.py old host layer: the app-release resolver
 scripts/seed-idempotent.sh old host layer: the seed idempotency check
 scripts/smoke.sh old host layer: the core smoke check
 scripts/talk-smoke.sh old host layer: the Talk smoke check
-Containers/nextcloud/config/aio.config.php the one-click-instance user-cap removal (#176): the image sets no cap
-Containers/nextcloud/entrypoint.sh the one-click-instance user-cap removal (#176): every boot removes a carried cap
-Containers/nextcloud/run-exec-commands.sh the one-click-instance user-cap removal (#176): exec commands run unguarded
+php/containers.json official images pinned by digest to upstream v14.4.3's set
+php/containers-schema.json an image_tag may be a sha256 digest pin
+php/src/Docker/DockerActionManager.php an image_tag that is a sha256 digest is requested as image@digest
+community-containers/caddy/caddy.json the reverse proxy is our thin Caddy image, pinned per release
 .github/dependabot.yml switched off: Dependabot would open upstream's dependency PRs here
 .github/workflows/collabora.yml switched off: opens upstream's Collabora update PRs
 .github/workflows/dependabot-approve-merge.yml switched off: approves and merges Dependabot's PRs

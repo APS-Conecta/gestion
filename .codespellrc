@@ -2,7 +2,7 @@
 # Our layer's operator language is es-CL — these are correct Spanish words that codespell's
 # English typo dictionary flags (momento→memento, comando→commando, ...). Listed here so the
 # codespell validator stays green over the tree: upstream's own codespell workflow on push and
-# PR, and scripts/validate.sh on the release chain's tag arm. Skip this file itself: it necessarily
+# PR, and scripts/validate.sh in the candidate pipeline's gates. Skip this file itself: it necessarily
 # contains the flagged words as list entries. Also skipped: the vendored Leaflet bytes (pinned,
 # never edited) and the DEIS register (establishment names, not prose).
 skip = .git,__pycache__,.codespellrc,leaflet.*,establecimientos-deis-*.csv

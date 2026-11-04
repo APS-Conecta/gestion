@@ -23,9 +23,8 @@ A clinic installs a **signed release package**, never `main` (ADR-0005):
 
 The URL is stable — it always resolves to the newest published Release — and the version pin
 travels inside the asset itself: the script carries the tag it installs and the package's
-sha256, so a Release cut after this change serves itself with no URL editing. (For a
-tag-pinned install or an audit, the same asset ships under its versioned name,
-`apsconecta-vX.Y.Z-install.sh`; aps/RELEASING.md §6 owns that ceremony.)
+sha256. (For a tag-pinned install or an audit, the same asset ships under its versioned name,
+`apsconecta-vX.Y.Z-install.sh`.)
 
 On an institutional proxy network, enter its URL privately and preserve only its variables
 through sudo for the initial download:
@@ -75,8 +74,7 @@ thing lives where its own gate is.
   retained for compatible installations.
 
   The signature covers `SHA256SUMS`, which names the tag's tarball: a signature that verifies
-  is a signature for that tag's package. The key story — keygen, secrets, rotation — is
-  [`RELEASING.md`](RELEASING.md).
+  is a signature for that tag's package.
 - **What the installer refuses**: the repository copy of `install.sh` (its embedded sha ships
   empty on purpose — only the Release asset runs), bytes that do not match the embedded sha, a
   `SHA256SUMS` that disagrees with it, and an existing `/opt/aps-conecta/instalador` of a

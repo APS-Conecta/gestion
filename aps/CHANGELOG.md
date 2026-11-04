@@ -1,7 +1,7 @@
 # Changelog — APS Conecta instalador
 
-Every version a clinic can install. `main` is the development trunk; a release is a tag, and a clinic
-installs the tag's signed package (the `install.sh` bootstrap; aps/RELEASING.md owns the ritual).
+Every version a clinic can install. `main` is the development trunk; a release is a tag
+(aps/RELEASING.md owns the ritual).
 
 Format: [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
@@ -13,20 +13,18 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Changed
 
+- **Test builds and release candidates come from one dispatch (#281).** A maintainer tags a commit
+  `vX.Y.Z-ci.N` or `vX.Y.Z-rc.N` and dispatches the release pipeline on that tag. It builds our three
+  images from the commit — the mastercontainer, a Nextcloud image without the one-click-instance
+  user cap (#176) and a Caddy image with the acme-dns DNS module — pushes them under that tag only,
+  and publishes a pre-release, which never becomes "Latest". Every other container is the official
+  upstream image, pinned by digest to upstream v14.4.3's set.
+
 - **The AIO tree is Upstream v14.4.3 plus the Keep-list (#280).** Every path outside
   `aps/keep-list.txt` is nextcloud/all-in-one v14.4.3's — its container and network names, its
   update machinery and notifications, its page and its runtime — except the one-click-instance
   user-cap removal (#176) in the Nextcloud image. A pull request that differs from Upstream
   outside the Keep-list, or leaves an entry that no longer differs, fails CI.
-
-- **The install one-liner always resolves to the newest Release (#262).** Every Release now
-  publishes `apsconecta-install.sh` — the install asset under a stable name, byte-identical
-  to its versioned twin — and the runbooks serve it from `releases/latest/download`, so the
-  line an operator copies never 404s on a new version. The tag pin travels inside the bytes
-  (`BUNDLE_TAG` + `TARBALL_SHA256`, filled at cut time): the sha256+signature verification
-  before anything unpacks is unchanged, and the versioned asset still ships for tag-pinned
-  installs and audits. The alias exists only on Releases cut after this change (published
-  assets never move).
 
 - **`aps-conecta actualizar` uninstalls a release app whose row left the manifest (#172).** The plan
   names it, the run removes it last (`occ app:remove`, data included; the backup the run takes first
@@ -83,7 +81,7 @@ image digests live there and are deliberately not copied here — one fact, one 
 - **Talk (spreed) from the fork's signed releases (#145, ADR-0020).** The last app-store
   reach at a container boot is gone: `APS-Conecta/spreed` is a zero-code-change fork of
   `nextcloud/spreed` hosting our App releases, refreshed from upstream's newest stable
-  release for the suite's Nextcloud major at each suite release — the release chain dispatches
+  release for the suite's Nextcloud major at each suite release — the release dispatches
   the fork's refresh (the app key never leaves the fork's release environment, ADR-0001),
   waits bounded, and verifies what it published against the tag tree's own `apps.pub` and
   against upstream's own bytes (the release is upstream's tarball minus exactly
@@ -98,7 +96,7 @@ image digests live there and are deliberately not copied here — one fact, one 
   open's only first-boot user. `aps-conecta actualizar` moves spreed with the other release
   rows through phase 12 (its old store-walk skip line is deleted). The fork's first
   release is upstream's spreed `v24.0.6` (the newest stable for Nextcloud 34), published;
-  the release chain's dispatch needs the owner-only `SPREED_REFRESH_TOKEN` secret
+  the release's dispatch needs the owner-only `SPREED_REFRESH_TOKEN` secret
   (aps/RELEASING.md), missing which the spreed job reds naming the setup.
 
 - **`aps-conecta actualizar`, the applications update (#46, ADR-0017).** The one path that
@@ -216,7 +214,7 @@ image digests live there and are deliberately not copied here — one fact, one 
 ### Removed
 
 - **The bake and the last read of the old gestion (#42, ADR-0018).** `scripts/bake.sh`, the
-  gestion clone in the Images workflow and its `gestion-ref` input, `provisioning/apps` in the
+  gestion clone in the image build and its `gestion-ref` input, `provisioning/apps` in the
   composite package, `.paquete.json`'s gestion provenance fields, the vendored fallback of
   phase 12 (a release row without a lock row is now a FATAL naming the repair, never an
   improvised install), the patch machinery (`apply_patch`) that fed on vendored tarballs, and

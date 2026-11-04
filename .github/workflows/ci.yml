@@ -70,12 +70,13 @@ jobs:
       # --no-config keeps upstream's zizmor.yml, which disables excessive-permissions and
       # artipacked, off our workflows; the token turns the online audits on.
       - name: zizmor over our workflows
-        run: uvx zizmor --no-config --min-severity medium .github/workflows/ci.yml .github/workflows/images.yml .github/workflows/release.yml .github/workflows/issue-linker.yml
+        run: uvx zizmor --no-config --min-severity medium .github/workflows/ci.yml .github/workflows/release.yml .github/workflows/issue-linker.yml
         env:
           ZIZMOR_GITHUB_TOKEN: ${{ github.token }}
 
   # The tree may differ from Upstream only where aps/keep-list.txt says so. The self-test runs
   # first: it plants an undeclared difference and a stale entry, and the check must red on each.
+  # Then every official image must be pinned by digest to the set Upstream built from the base.
   keep-list:
     name: Keep-list check
     runs-on: ubuntu-latest
@@ -86,3 +87,5 @@ jobs:
           fetch-depth: 0    # the check diffs against the Upstream commit the Keep-list names
       - run: python3 -I scripts/keep-list-test.py
       - run: python3 -I scripts/keep-list.py
+      - name: Every official image is pinned by digest to upstream's set
+        run: aps/release/pins.sh

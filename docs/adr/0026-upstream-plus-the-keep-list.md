@@ -20,9 +20,10 @@ the next merge, or in a clinic.
 and its tag in its header (`# base: <sha> upstream nextcloud/all-in-one <tag>`), then lists every
 path where this repository differs, one `<path> <reason>` line each; a path ending in `/` covers
 everything under it. The differences are our layer (the Keep-list, docs, runbooks, theme, our
-workflows and scripts), the old host layer until #301, the one-click-instance user-cap removal
-(#176) — the only change inside an upstream container — and the upstream automation this
-repository switches off.
+workflows and scripts, and our three images), the old host layer until #301, the official images'
+digest pins, and the upstream automation this repository switches off. Upstream's containers stay
+whole: our Nextcloud image is upstream's with the one-click-instance user-cap removal (#176) on
+top, built from `aps/images/nextcloud`.
 
 **Upstream's parts stay whole.** Upstream's container and network names, its update machinery
 and notifications, and the parts the suite does not use — the other office suites, Whiteboard,

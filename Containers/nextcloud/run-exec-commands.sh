@@ -13,8 +13,10 @@ done
 if [ -n "$NEXTCLOUD_EXEC_COMMANDS" ]; then
     echo "#!/bin/bash" > /tmp/nextcloud-exec-commands
     echo "$NEXTCLOUD_EXEC_COMMANDS" >> /tmp/nextcloud-exec-commands
-    bash /tmp/nextcloud-exec-commands
-    rm /tmp/nextcloud-exec-commands
+    if ! grep "one-click-instance" /tmp/nextcloud-exec-commands; then
+        bash /tmp/nextcloud-exec-commands
+        rm /tmp/nextcloud-exec-commands
+    fi
 else
     # Collabora must work also if using manual-install 
     if [ "$COLLABORA_ENABLED" = yes ]; then
