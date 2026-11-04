@@ -1,6 +1,6 @@
-# The cheap gate, seconds, on every PR and push: the PR title, the secret scan and the static
-# gate (scripts/test.sh). Upstream's own validators (codespell, docker-lint, json-validator,
-# shellcheck, twig-lint) run beside it from their own workflows.
+# The cheap gate, seconds, on every PR and push: the PR title, the secret scan, the static gate
+# (scripts/test.sh) and the Keep-list check. Upstream's own validators (codespell, docker-lint,
+# json-validator, shellcheck, twig-lint) run beside it from their own workflows.
 name: CI
 
 # `push` is limited to main so a PR is not checked twice: a branch push and its pull_request event
@@ -65,3 +65,16 @@ jobs:
           persist-credentials: false
       # No Makefile moved (gestion's dev lifecycle). The gate is the script.
       - run: bash scripts/test.sh
+
+  # The tree may differ from Upstream only where aps/keep-list.txt says so. The self-test runs
+  # first: it plants an undeclared difference and a stale entry, and the check must red on each.
+  keep-list:
+    name: Keep-list check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0    # the check diffs against the Upstream commit the Keep-list names
+      - run: python3 -I scripts/keep-list-test.py
+      - run: python3 -I scripts/keep-list.py
