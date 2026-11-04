@@ -302,14 +302,11 @@ CA-verified welcome route and Nextcloud's native signaling diagnostic. It preser
 native diagnostics may initialize signing keys and record backend capabilities.
 The supported server's exact optional `changed-users` warning remains visible and additionally
 requires native Redis cache verification (ADR-0024). Every other signaling warning or error fails.
-An install from v0.3.0 or earlier runs the suite under upstream's container
-names; the suite now names them `aps-conecta-*` and does not migrate them: reinstall it. Three
-honest notes:
+One honest note:
 
 - On image-bump boots an **offline clinic sits at the app-store probe** (upstream behavior:
 an unbounded wait on `apps.nextcloud.com` while the store is off — documented upstream behavior,
 not patched; the wait ends when the probe times out or the network returns).
-- The wizard's update notifications are suppressed (040); the suite's releases are the source.
 
 ### The applications update: `aps-conecta actualizar` (#46)
 
@@ -364,8 +361,7 @@ Santiago time. To move it, the wizard's backup section takes a new time, in UTC.
   — check `DocumentServerUrl` is the public form and open one from another machine yourself
   (the gate cannot do that leg for you).
 - **Reinstall from scratch** (a failed install, or a wizard password that was not seen). It deletes
-  the instance — the wizard and every container it created, under either generation's names
-  (upstream's up to v0.3.0, `aps-conecta-…` since), all carrying the label
+  the instance — the wizard and every container it created, all carrying the label
   `com.docker.compose.project=nextcloud-aio`, and every `nextcloud_aio_*` volume on the host — and
   everything in it: users, files, settings. The label and the name together keep any other project
   on the host out. Stop the containers in the wizard, then:
@@ -373,7 +369,7 @@ Santiago time. To move it, the wizard's backup section takes a new time, in UTC.
   ```bash
   sudo docker stop nextcloud-aio-mastercontainer
   sudo docker ps -a --filter label=com.docker.compose.project=nextcloud-aio --format '{{.Names}}' \
-    | grep -E '^(nextcloud-aio|aps-conecta)-' | xargs -r sudo docker rm -f
+    | grep '^nextcloud-aio-' | xargs -r sudo docker rm -f
   sudo docker network rm nextcloud-aio
   sudo docker volume ls --format '{{.Name}}' | grep '^nextcloud_aio_' | xargs -r sudo docker volume rm
   sudo rm -rf /opt/aps-conecta/aio

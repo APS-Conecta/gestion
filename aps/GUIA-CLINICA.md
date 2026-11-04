@@ -224,9 +224,6 @@ cambia nada), respalda completo antes de tocar algo, aplica una aplicación a la
 candado — el registro de versiones — solo si todo resultó. Si algo falla, nombra la aplicación
 que falló y el comando para restaurar. Véalo antes con `sudo aps-conecta actualizar --revisar`.
 
-Una instalación de la v0.3.0 o anterior no se actualiza a esta versión: los contenedores de la suite
-cambiaron de nombre (`aps-conecta-*`) y se reinstala (`INSTALLER.md` §12).
-
 ## 8. ¿Y el mapa?
 
 El fondo de mapa es el de **OpenStreetMap**: lo carga el navegador de cada persona directamente
