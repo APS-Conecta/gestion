@@ -1,0 +1,442 @@
+# SPDX-FileCopyrightText: 2026 APS Conecta
+# SPDX-License-Identifier: AGPL-3.0-or-later
+"""Seam 2: the Provisionador's HTTP API, in-process, against the fake suite port.
+
+Each test starts a real Provisionador over a throwaway state directory and a register written here, reads the link
+from what it prints to the mastercontainer's log, and drives the API as the page does. Caddy, which terminates TLS
+on AIO's interface in the image, is not here: the image test covers it. No browser, no Docker.
+"""
+
+import contextlib
+import http.client
+import io
+import json
+import os
+import re
+import tempfile
+import threading
+import unittest
+from pathlib import Path
+from unittest import mock
+from urllib.parse import urlencode, urlsplit
+
+import provisionador
+from suite import FakeSuite
+
+ADDRESS = "192.168.1.10"
+# The fingerprints of FakeSuite's certificate for ADDRESS, and of the one after a renewal, computed with sha256sum.
+FINGERPRINT = ("B6:FD:69:DC:D6:49:74:A5:71:24:7C:01:9B:A4:81:9D:"
+               "A1:FB:09:99:9A:A1:F3:76:82:1C:5C:5F:C2:3E:10:F2")
+RENEWED = ("FB:AA:97:FC:A8:28:2E:B6:23:D2:E5:67:61:E3:F6:3B:"
+           "79:DF:F6:45:8A:E7:BC:65:D8:9A:7B:F2:6C:AE:CF:FA")
+# A qrencode that shows what it was given: its arguments, then its input.
+QRENCODE = "#!/bin/sh\nprintf 'QR-ARGV:%s\\n' \"$*\"\nprintf 'QR-STDIN:'\ncat\nprintf '\\n'\n"
+
+# Fixture codes only: no real establishment is named here.
+HEADER = ("codigo,tipo,nombre,direccion,comuna_codigo,comuna,region_codigo,region,servicio_salud,dependencia,"
+          "latitud,longitud\r\n")
+REGISTER = HEADER + """\
+999001,CESFAM,Centro de Salud Familiar Los Castaños,Calle Uno 100,13101,Santiago,13,Metropolitana de Santiago,\
+Servicio de Salud Metropolitano Central,Municipal,-33.45,-70.66\r
+999002,CECOSF,CECOSF Estrecho,Avenida Dos 200,12101,Punta Arenas,12,Magallanes y de la Antártica Chilena,\
+Servicio de Salud Magallanes,Municipal,-53.16,-70.91\r
+999003,SAPU,SAPU Rapa Nui,Calle Tres 300,05201,Isla de Pascua,05,Valparaíso,Servicio de Salud Viña del Mar Quillota,\
+Municipal,-27.15,-109.43\r
+999004,CESFAM,Centro de Salud Familiar Doctor Juan Pérez,"Calle Cuatro 400, Villa Sur",13101,Santiago,13,\
+Metropolitana de Santiago,Servicio de Salud Metropolitano Central,Municipal,-33.47,-70.64\r
+"""
+
+
+def printed(call):
+    """What `call` prints to the mastercontainer's log."""
+    log = io.StringIO()
+    with contextlib.redirect_stdout(log):
+        call()
+    return log.getvalue()
+
+
+class Link:
+    """What the Provisionador printed at its start: the link, its QR code and the certificate's fingerprint."""
+
+    def __init__(self, log):
+        self.log = log
+        found = re.search(r"https://\S+", log)
+        self.url = found and found.group(0)
+        self.secret = self.url and urlsplit(self.url).fragment
+        found = re.search(r"(?:[0-9A-F]{2}:){31}[0-9A-F]{2}", log)
+        self.fingerprint = found and found.group(0)
+
+
+class Browser:
+    """The operator's browser behind Caddy: it keeps the session cookie and opens a link as the page does. It reaches
+    whichever Provisionador runs now, as Caddy does."""
+
+    def __init__(self, test):
+        self.test = test
+        self.cookie = None
+        self.headers = {}
+
+    def request(self, method, path, body=None, content_type="application/json"):
+        """`body` is sent as JSON, or as is when it is bytes."""
+        headers = {"Cookie": self.cookie} if self.cookie else {}
+        data = None
+        if body is not None:
+            data = body if isinstance(body, bytes) else json.dumps(body).encode()
+            headers["Content-Type"] = content_type
+        conn = http.client.HTTPConnection("127.0.0.1", self.test.server.server_address[1], timeout=10)
+        try:
+            conn.request(method, path, body=data, headers=headers)
+            response = conn.getresponse()
+            raw = response.read()
+            self.headers = dict(response.getheaders())
+        finally:
+            conn.close()
+        if "Set-Cookie" in self.headers:
+            self.cookie = self.headers["Set-Cookie"].split(";", 1)[0]
+        is_json = self.headers.get("Content-Type", "").startswith("application/json")
+        return response.status, json.loads(raw) if is_json else raw
+
+    def get(self, path):
+        return self.request("GET", path)
+
+    def open(self, link):
+        return self.request("POST", "/api/session", {"link": link.secret})
+
+
+class ProvisionadorTest(unittest.TestCase):
+    ADDRESS = ADDRESS
+
+    def setUp(self):
+        tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.state = tmp / "state"
+        self.register = self.register_file(tmp)
+        tools = tmp / "bin"
+        tools.mkdir()
+        (tools / "qrencode").write_text(QRENCODE, encoding="utf-8")
+        (tools / "qrencode").chmod(0o755)
+        self.enterContext(mock.patch.dict(os.environ, {"PATH": f"{tools}{os.pathsep}{os.environ['PATH']}"}))
+        self.suite = FakeSuite()
+        self.server = None
+        self.addCleanup(self.stop)
+        self.link = self.start()
+
+    def register_file(self, folder):
+        path = folder / "establecimientos-deis-2026-07-23.csv"
+        path.write_text(REGISTER, encoding="utf-8", newline="")
+        return path
+
+    def start(self):
+        """Start the Provisionador over the state directory, as the mastercontainer does at every start, and read the
+        link it printed."""
+        self.app = provisionador.Provisionador(self.state, self.register, self.suite, self.ADDRESS)
+        self.server = self.app.server(("127.0.0.1", 0))
+        link = Link(printed(self.app.announce))
+        self.thread = threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.05},
+                                       daemon=True)
+        self.thread.start()
+        return link
+
+    def stop(self):
+        if self.server:
+            self.server.shutdown()
+            self.server.server_close()
+            self.thread.join()
+            self.server = None
+
+    def restart(self):
+        self.stop()
+        return self.start()
+
+    def browser(self):
+        return Browser(self)
+
+    def operator(self):
+        """A browser that opened the link."""
+        browser = self.browser()
+        status, body = browser.open(self.link)
+        self.assertEqual(status, 200, body)
+        return browser
+
+
+class TheLog(ProvisionadorTest):
+    def test_the_log_prints_the_link_its_qr_code_and_the_certificate_fingerprint(self):
+        url = urlsplit(self.link.url)
+        self.assertEqual((url.scheme, url.hostname, url.port, url.path), ("https", ADDRESS, 8080, "/"))
+        self.assertGreaterEqual(len(self.link.secret), 43, "256 random bits")
+        self.assertIn(f"QR-STDIN:{self.link.url}\n", self.link.log)
+        self.assertEqual(self.link.fingerprint, FINGERPRINT)
+
+    def test_no_tool_receives_the_link_on_its_command_line(self):
+        argv = re.search(r"QR-ARGV:(.*)", self.link.log).group(1)
+        self.assertNotIn(self.link.secret, argv)
+
+    def test_the_secret_appears_only_in_the_link_and_its_qr_code(self):
+        lines = [line for line in self.link.log.splitlines() if self.link.secret in line]
+        self.assertEqual(len(lines), 2, lines)
+        self.assertTrue(all(self.link.url in line for line in lines), lines)
+
+
+class TheAddress(ProvisionadorTest):
+    ADDRESS = "gestion.example.cl:8443"
+
+    def test_the_link_takes_the_interface_address_and_its_port(self):
+        url = urlsplit(self.link.url)
+        self.assertEqual((url.hostname, url.port), ("gestion.example.cl", 8443))
+        self.assertEqual(self.link.fingerprint, "BB:60:23:3C:0F:AF:8B:AC:4E:9B:A8:1B:CC:09:82:E9:"
+                                                "C2:09:BE:83:DF:13:F6:FF:7A:7C:66:FF:52:37:3C:D8")
+
+
+class NoAddress(ProvisionadorTest):
+    ADDRESS = ""
+
+    def test_without_the_interface_address_the_log_says_how_to_give_it_and_prints_no_link(self):
+        self.assertIsNone(self.link.url)
+        self.assertIn(provisionador.ADDRESS, self.link.log)
+
+    def test_an_address_that_is_not_a_host_and_port_prints_no_link_either(self):
+        for address in ("192.168.1.10/instalar", "gestion.example.cl:99999", "user@gestion.example.cl", "a b"):
+            log = printed(provisionador.Provisionador(self.state, self.register, self.suite, address).announce)
+            self.assertNotIn("https://", log, address)
+            self.assertIn(provisionador.ADDRESS, log, address)
+
+
+class ThePage(ProvisionadorTest):
+    def test_the_link_opens_the_spanish_page_and_its_own_files_load(self):
+        browser = self.browser()
+        status, page = browser.get("/")
+        self.assertEqual(status, 200)
+        self.assertTrue(browser.headers["Content-Type"].startswith("text/html"))
+        page = page.decode()
+        self.assertIn('<html lang="es-CL">', page)
+        self.assertIn("<h1>Centro</h1>", page)
+        # /aps/ holds the brand files AIO's page serves; Caddy hands them out, and the image test loads them.
+        own = [path for path in re.findall(r'(?:src|href)="(/[^"]+)"', page) if not path.startswith("/aps/")]
+        self.assertEqual(sorted(own), ["/app.css", "/app.js"])
+        for path in own:
+            self.assertEqual(browser.get(path)[0], 200, path)
+        self.assertEqual(browser.get("/provisionador.py")[0], 404)
+
+
+class TheSession(ProvisionadorTest):
+    def test_the_link_opens_a_session_in_a_secure_http_only_strict_cookie(self):
+        browser = self.browser()
+        status, _ = browser.open(self.link)
+        self.assertEqual(status, 200)
+        cookie = browser.headers["Set-Cookie"]
+        self.assertTrue(cookie.startswith(f"{provisionador.COOKIE}="), cookie)
+        for attribute in ("Path=/", "Secure", "HttpOnly", "SameSite=Strict"):
+            self.assertIn(attribute, cookie)
+        self.assertEqual(browser.get("/api/state")[0], 200)
+
+    def test_every_call_without_a_session_is_refused(self):
+        browser = self.browser()
+        for method, path in (("GET", "/api/state"), ("GET", "/api/register"),
+                             ("GET", "/api/establishments?name=castanos"), ("POST", "/api/centre")):
+            status, body = browser.request(method, path, {} if method == "POST" else None)
+            self.assertEqual(status, 401, path)
+            self.assertIn("enlace", body["error"])
+        browser.cookie = f"{provisionador.COOKIE}=forged"
+        self.assertEqual(browser.get("/api/state")[0], 401)
+
+    def test_a_wrong_secret_opens_nothing(self):
+        for secret in ("wrong", "", 42, None, ["x"]):
+            browser = self.browser()
+            status, body = browser.request("POST", "/api/session", {"link": secret})
+            self.assertEqual(status, 401, secret)
+            self.assertNotIn("Set-Cookie", browser.headers)
+
+    def test_the_link_stays_valid_so_a_second_browser_opens_its_own_session(self):
+        first, second = self.operator(), self.operator()
+        self.assertNotEqual(first.cookie, second.cookie)
+        self.assertEqual(first.get("/api/state")[0], 200)
+        self.assertEqual(second.get("/api/state")[0], 200)
+
+    def test_a_post_that_is_not_json_is_refused_so_another_origin_needs_a_preflight(self):
+        browser = self.browser()
+        status, body = browser.request("POST", "/api/session", json.dumps({"link": self.link.secret}).encode(),
+                                       content_type="text/plain")
+        self.assertEqual(status, 415)
+        self.assertNotIn("Set-Cookie", browser.headers)
+
+    def test_the_state_keeps_neither_the_secret_nor_a_session_in_clear(self):
+        browser = self.operator()
+        session = browser.cookie.split("=", 1)[1]
+        for file in self.state.iterdir():
+            text = file.read_text(encoding="utf-8")
+            self.assertNotIn(self.link.secret, text, file.name)
+            self.assertNotIn(session, text, file.name)
+
+
+class TheRestart(ProvisionadorTest):
+    def test_a_restart_prints_a_fresh_link_and_the_one_before_still_opens_a_session(self):
+        before = self.link
+        self.link = self.restart()
+        self.assertNotEqual(self.link.secret, before.secret)
+        self.assertEqual(self.link.fingerprint, FINGERPRINT)
+        self.assertEqual(self.browser().open(before)[0], 200)
+        self.assertEqual(self.browser().open(self.link)[0], 200)
+
+    def test_a_session_survives_a_restart(self):
+        browser = self.operator()
+        self.restart()
+        self.assertEqual(browser.get("/api/state")[0], 200)
+
+
+class TheRenewal(ProvisionadorTest):
+    def test_a_renewed_certificate_prints_its_fingerprint_once_without_the_link(self):
+        self.assertEqual(printed(self.app.check_certificate), "", "the certificate is unchanged")
+        self.suite.renew()
+        log = printed(self.app.check_certificate)
+        self.assertEqual(Link(log).fingerprint, RENEWED)
+        self.assertNotIn(self.link.secret, log)
+        self.assertNotIn("https://", log)
+        self.assertEqual(printed(self.app.check_certificate), "", "printed once")
+
+    def test_a_check_while_the_interface_does_not_answer_is_not_fatal(self):
+        with mock.patch.object(self.suite, "certificate", side_effect=provisionador.Unreachable("no answer")):
+            self.assertEqual(printed(self.app.check_certificate), "")
+        self.suite.renew()
+        self.assertEqual(Link(printed(self.app.check_certificate)).fingerprint, RENEWED)
+
+
+class Listo(ProvisionadorTest):
+    def listo(self):
+        """«Listo», as the install's last step reaches it."""
+        (self.state / provisionador.LISTO).touch()
+
+    def test_listo_ends_every_session(self):
+        browser = self.operator()
+        self.listo()
+        status, body = browser.get("/api/state")
+        self.assertEqual(status, 410)
+        self.assertIn("«Listo»", body["error"])
+
+    def test_listo_ends_the_link(self):
+        self.listo()
+        browser = self.browser()
+        self.assertEqual(browser.open(self.link)[0], 410)
+        self.assertNotIn("Set-Cookie", browser.headers)
+
+
+class CentroSearch(ProvisionadorTest):
+    def codes(self, browser, **query):
+        status, body = browser.get("/api/establishments?" + urlencode(query))
+        self.assertEqual(status, 200, body)
+        return [row["code"] for row in body["rows"]]
+
+    def test_the_register_offers_its_regions_north_to_south_their_comunas_and_the_types(self):
+        status, register = self.operator().get("/api/register")
+        self.assertEqual(status, 200)
+        self.assertEqual(register["date"], "2026-07-23")
+        self.assertEqual(register["regions"], [{"code": "05", "name": "Valparaíso"},
+                                               {"code": "13", "name": "Metropolitana de Santiago"},
+                                               {"code": "12", "name": "Magallanes y de la Antártica Chilena"}])
+        self.assertEqual(register["comunas"], [{"code": "05201", "name": "Isla de Pascua", "region": "05"},
+                                               {"code": "12101", "name": "Punta Arenas", "region": "12"},
+                                               {"code": "13101", "name": "Santiago", "region": "13"}])
+        self.assertEqual(register["types"], [{"code": "CESFAM", "name": "Centro de Salud Familiar"},
+                                             {"code": "CECOSF", "name": "Centro Comunitario de Salud Familiar"},
+                                             {"code": "SAPU", "name": "Servicio de Atención Primaria de Urgencia"}])
+
+    def test_search_by_region_comuna_type_or_name(self):
+        browser = self.operator()
+        self.assertEqual(self.codes(browser, region="12"), ["999002"])
+        self.assertEqual(self.codes(browser, comuna="13101"), ["999004", "999001"], "by name")
+        self.assertEqual(self.codes(browser, type="SAPU"), ["999003"])
+        self.assertEqual(self.codes(browser, name="CASTANOS"), ["999001"])
+        self.assertEqual(self.codes(browser, name="juan perez", type="CESFAM", comuna="13101"), ["999004"])
+        self.assertEqual(self.codes(browser, region="12", type="SAPU"), [])
+        status, body = browser.get("/api/establishments?" + urlencode({"name": "los castaños"}))
+        self.assertEqual(body, {"total": 1, "rows": [{
+            "code": "999001", "type": "CESFAM", "name": "Centro de Salud Familiar Los Castaños",
+            "address": "Calle Uno 100", "comuna": "Santiago", "region": "Metropolitana de Santiago",
+            "point": {"latitude": -33.45, "longitude": -70.66}}]})
+
+
+class CentroChoice(ProvisionadorTest):
+    def choose(self, browser, **body):
+        return browser.request("POST", "/api/centre", body)
+
+    def test_choosing_an_establishment_keeps_its_identity_its_official_point_and_its_timezone(self):
+        browser = self.operator()
+        self.assertIsNone(browser.get("/api/state")[1]["centre"])
+        status, body = self.choose(browser, code="999004")
+        self.assertEqual(status, 200, body)
+        official = {"latitude": -33.47, "longitude": -70.64}
+        self.assertEqual(body["centre"], {
+            "code": "999004", "type": "CESFAM", "name": "Centro de Salud Familiar Doctor Juan Pérez",
+            "address": "Calle Cuatro 400, Villa Sur", "comuna": "Santiago", "comuna_code": "13101",
+            "region": "Metropolitana de Santiago", "region_code": "13",
+            "health_service": "Servicio de Salud Metropolitano Central", "dependency": "Municipal",
+            "official_point": official, "point": official, "timezone": "America/Santiago"})
+        self.assertEqual(browser.get("/api/state")[1]["centre"], body["centre"])
+
+    def test_a_point_moved_on_the_map_is_kept_beside_the_official_one(self):
+        browser = self.operator()
+        status, body = self.choose(browser, code="999001", point={"latitude": -33.4512, "longitude": -70.6634})
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["centre"]["point"], {"latitude": -33.4512, "longitude": -70.6634})
+        self.assertEqual(body["centre"]["official_point"], {"latitude": -33.45, "longitude": -70.66})
+        self.assertEqual(browser.get("/api/state")[1]["centre"]["point"], body["centre"]["point"])
+
+    def test_an_unknown_establishment_or_a_point_off_the_map_is_refused_and_changes_nothing(self):
+        browser = self.operator()
+        for code in ("999999", 999001, ["999001"], None):
+            status, body = self.choose(browser, code=code)
+            self.assertEqual(status, 404, code)
+            self.assertIn("registro DEIS", body["error"])
+        for point in ({"latitude": 91, "longitude": 0}, {"latitude": 0, "longitude": -181},
+                      {"latitude": "-33", "longitude": -70}, {"latitude": True, "longitude": -70},
+                      {"latitude": -33}, {"latitude": -33, "longitude": -70, "altitude": 0}, "-33,-70"):
+            status, body = self.choose(browser, code="999001", point=point)
+            self.assertEqual(status, 400, point)
+            self.assertIn("punto", body["error"])
+        self.assertIsNone(browser.get("/api/state")[1]["centre"])
+
+    def test_the_timezone_follows_magallanes_and_isla_de_pascua(self):
+        browser = self.operator()
+        for code, timezone in (("999002", "America/Punta_Arenas"), ("999003", "Pacific/Easter"),
+                               ("999001", "America/Santiago")):
+            status, body = self.choose(browser, code=code)
+            self.assertEqual((status, body["centre"]["timezone"]), (200, timezone), code)
+
+    def test_the_chosen_centre_survives_a_restart(self):
+        browser = self.operator()
+        centre = self.choose(browser, code="999002")[1]["centre"]
+        self.restart()
+        self.assertEqual(browser.get("/api/state")[1]["centre"], centre)
+
+
+class ShippedRegister(ProvisionadorTest):
+    """The register the image ships: aps/deis's newest, #250's verified snapshot."""
+
+    def register_file(self, folder):
+        return provisionador.deis.newest(provisionador.REGISTER)
+
+    def test_the_shipped_register_offers_every_region_north_to_south_and_every_type(self):
+        status, register = self.operator().get("/api/register")
+        self.assertEqual(status, 200)
+        self.assertEqual(register["date"], "2026-07-23")
+        self.assertEqual([r["code"] for r in register["regions"]],
+                         ["15", "01", "02", "03", "04", "05", "13", "06", "07", "16", "08", "09", "14", "10", "11",
+                          "12"])
+        self.assertEqual([t["code"] for t in register["types"]],
+                         ["CESFAM", "CECOSF", "PSR", "SAPU", "SUR", "SAR", "COSAM", "CGU", "CGR"])
+
+    def test_a_search_answers_at_most_fifty_rows_and_how_many_match(self):
+        status, body = self.operator().get("/api/establishments")
+        self.assertEqual(status, 200)
+        self.assertEqual(len(body["rows"]), 50)
+        self.assertGreater(body["total"], 50)
+
+    def test_a_shipped_establishment_comes_with_its_official_point_and_its_timezone(self):
+        browser = self.operator()
+        status, body = browser.get("/api/establishments?" + urlencode({"name": "posta cameron"}))
+        self.assertEqual(body["rows"][0]["point"], {"latitude": -53.64055, "longitude": -69.64585})
+        status, body = browser.request("POST", "/api/centre", {"code": body["rows"][0]["code"]})
+        self.assertEqual((status, body["centre"]["comuna"], body["centre"]["timezone"]),
+                         (200, "Timaukel", "America/Punta_Arenas"))
+
+
+if __name__ == "__main__":
+    unittest.main()

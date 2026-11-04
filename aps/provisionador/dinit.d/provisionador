@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: 2026 APS Conecta
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The Provisionador, on loopback behind AIO's interface until «Listo»; it starts with AIO's interface
+# (Containers/mastercontainer/dinit.d/caddy-internal). From «Listo» on it exits at once, for good.
+type = process
+command = /usr/bin/python3 -B /var/www/docker-aio/aps/provisionador/provisionador.py
+run-as = www-data
+term-signal = TERM
+restart = on-failure
+options = shares-console

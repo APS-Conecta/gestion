@@ -13,7 +13,8 @@
      ASSETS_ROOT and paints the Instalador UI with it.
    - AIO's page: Containers/mastercontainer/Dockerfile copies this file into
      php/public/aps/ and php/public/style.css @imports it, painting through
-     var(--aps-*).
+     var(--aps-*). The Provisionador in the mastercontainer (aps/provisionador/www/)
+     links that same copy.
 
    The no-duplicate rule: a hex declared below appears in this file alone.
    The ledger — contrast ratios and permitted uses — is MAPEO.md §1; the

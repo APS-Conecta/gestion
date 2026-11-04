@@ -1,0 +1,36 @@
+# The image test, on pull requests that touch the mastercontainer or the Provisionador: our mastercontainer built
+# from the pull request's tree, run as vanilla's command runs it and checked from outside
+# (aps/provisionador/image-test.py). No registry push, no tag, no release.
+name: Mastercontainer image
+
+on:
+  pull_request:
+    paths:
+      - 'Containers/mastercontainer/**'
+      - 'php/**'
+      - 'community-containers/**'
+      - 'themes/apsconecta/core/**'
+      - 'aps/provisionador/**'
+      - 'aps/deis/**'
+      - '.github/workflows/mastercontainer-image.yml'
+
+concurrency:
+  group: mastercontainer-image-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    name: The mastercontainer serves the Provisionador until «Listo»
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the mastercontainer from this tree
+        run: docker build --file Containers/mastercontainer/Dockerfile --tag aps-conecta/all-in-one:image-test .
+      - name: Run it as vanilla's command does and check it from outside
+        run: python3 -I aps/provisionador/image-test.py aps-conecta/all-in-one:image-test

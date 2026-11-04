@@ -34,6 +34,9 @@
 
 https://:8080 {
     import headers.Caddyfile
+    # Our layer: until «Listo», the Provisionador answers here. A glob, so that upstream's image, which upstream's
+    # browser tests run with this file, starts without it.
+    import /var/www/docker-aio/aps/provisionador/*.Caddyfile
 
 	root * /var/www/docker-aio/php/public
 	php_fastcgi unix//run/php.sock

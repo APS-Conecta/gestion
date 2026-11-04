@@ -36,16 +36,21 @@ the official images to the set Upstream built from it.
   keeps every tracked script in the sweep, the errexit arm), the SPDX-header arm, the AIO page
   arm (`scripts/aio-page.py`: AIO's page and its notifications in es-CL Spanish, never the other
   product's name, the brand's colours only through the token file; a planted English text, the
-  other product's name and a brand hex must each red) and `aps/release/latest-test.py` (the "Latest" rules against
-  fixture releases, no network) — then
-  its `zizmor over our workflows` step (zizmor at medium severity over `ci.yml`, `release.yml`
-  and `issue-linker.yml`, without upstream's `zizmor.yml` and with the online audits), and the
-  Keep-list check:
+  other product's name and a brand hex must each red), `aps/release/latest-test.py` (the "Latest" rules against
+  fixture releases, no network) and the Provisionador's Seam 2 tests (`aps/provisionador/test_provisionador.py`:
+  its HTTP API in-process against the fake suite port) — then
+  its `zizmor over our workflows` step (zizmor at medium severity over `ci.yml`, `release.yml`,
+  `issue-linker.yml` and `mastercontainer-image.yml`, without upstream's `zizmor.yml` and with the online
+  audits), and the Keep-list check:
   `scripts/keep-list-test.py` plants an undeclared difference and a stale entry and must see
   `scripts/keep-list.py` red on each, then `scripts/keep-list.py` compares the tree with the
   Upstream commit `aps/keep-list.txt` names and fails on an undeclared difference or a stale
   entry, and `aps/release/pins.sh` fails unless every official image is pinned by digest to the
   set Upstream built from that commit.
+- `.github/workflows/mastercontainer-image.yml`, on PRs that touch the mastercontainer or the Provisionador: the
+  image test (`aps/provisionador/image-test.py`) builds our mastercontainer from the PR's tree, runs it as vanilla's
+  command does and checks from outside the link, its QR code and fingerprint, a restart and the handoff to AIO's
+  page at «Listo». No push, no tag, no release.
 - Upstream's own workflows beside it: codespell, shellcheck, docker-lint and json-validator,
   plus the PHP, Twig, YAML and Playwright checks on their paths. `scripts/validate.sh` runs
   the codespell, docker-lint and json-spec trio against any tree; the candidate pipeline runs

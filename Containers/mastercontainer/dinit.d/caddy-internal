@@ -4,3 +4,5 @@ run-as = www-data
 term-signal = TERM
 restart = yes
 options = shares-console
+# Our layer: the Provisionador (aps/provisionador/dinit.d/provisionador) starts with AIO's interface.
+waits-for = provisionador

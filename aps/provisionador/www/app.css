@@ -1,0 +1,61 @@
+/* SPDX-FileCopyrightText: 2026 APS Conecta
+   SPDX-License-Identifier: AGPL-3.0-or-later */
+
+/* The palette and the font pairing come from the brand token file, /aps/tokens.css; the fonts are AIO's page's
+   copies under /aps/. */
+@font-face {
+  font-family: "Nunito Sans"; font-style: normal; font-weight: 400 800; font-display: swap;
+  src: url("/aps/NunitoSans.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Fraunces"; font-style: normal; font-weight: 400 800; font-display: swap;
+  src: url("/aps/Fraunces.woff2") format("woff2");
+}
+
+:root { --radius: 10px; --paper: white; --border: #d0d5dd; }
+
+* { box-sizing: border-box; }
+body { margin: 0; font: 15px/1.5 var(--aps-font-body); color: var(--aps-ink); background: var(--paper); }
+h1 { font: 600 1.75rem/1.2 var(--aps-font-display); margin: 0 0 .5rem; }
+[hidden] { display: none !important; }
+
+.header { display: flex; align-items: baseline; gap: .75rem; padding: .75rem 1.25rem; background: var(--aps-violet); color: var(--paper); }
+.brand { font: 600 1.2rem var(--aps-font-display); }
+.header-subtitle { opacity: .9; }
+.app-content { padding: 1.5rem 2rem; }
+.lead { max-width: 60rem; color: var(--aps-muted); margin: 0 0 1.25rem; }
+.muted { color: var(--aps-muted); }
+
+/* «Centro»: the filters, the result list and the map. */
+.filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: .75rem; margin-bottom: 1rem; }
+label { display: flex; flex-direction: column; gap: .25rem; font-weight: 600; }
+select, input { font: inherit; padding: .45rem .6rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--paper); color: inherit; }
+select:focus, input:focus, button:focus-visible, a:focus-visible { outline: 2px solid var(--aps-violet); outline-offset: 1px; }
+.columns { display: grid; grid-template-columns: minmax(18rem, 1fr) minmax(20rem, 1.3fr); gap: 1.5rem; align-items: start; }
+.results { list-style: none; margin: 0; padding: 0; max-height: 60vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+.results:empty { display: none; }
+.results button { display: block; width: 100%; padding: .6rem .75rem; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: none; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.results li:last-child button { border-bottom: 0; }
+.results button:hover { background: var(--aps-violet-tint); }
+.results button[aria-pressed="true"] { background: var(--aps-violet-tint-hover); }
+.results strong { display: block; }
+.results span { color: var(--aps-muted); font-size: .9rem; }
+.map { height: 22rem; border: 1px solid var(--border); border-radius: var(--radius); }
+.attribution { margin: .25rem 0 0; font-size: .8rem; color: var(--aps-muted); }
+.attribution a { color: var(--aps-violet-dark); }
+.pin-icon { background: none; border: 0; }
+.pin { display: block; width: 22px; height: 22px; border-radius: 50%; background: var(--aps-violet); border: 4px solid var(--paper); box-shadow: 0 0 0 2px var(--aps-violet-dark); }
+.actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
+.message { margin: .75rem 0 0; }
+.message.error { color: var(--aps-error-text); }
+
+/* Simple buttons: one primary action, the other secondary. */
+button { font: 600 1rem var(--aps-font-body); padding: .55rem 1.1rem; border-radius: var(--radius); border: 1px solid var(--border); background: var(--paper); color: var(--aps-ink); cursor: pointer; }
+button.primary { background: var(--aps-violet); border-color: var(--aps-violet); color: var(--paper); }
+button.primary:hover:enabled { background: var(--aps-violet-hover); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+
+@media (max-width: 800px) {
+  .app-content { padding: 1rem; }
+  .columns { grid-template-columns: 1fr; }
+}
