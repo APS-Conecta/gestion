@@ -33,8 +33,11 @@ the official images to the set Upstream built from it.
 - `.github/workflows/ci.yml`, on every push and PR: the PR-title check, the secret scan (the
   pinned gitleaks over the full history), the static gate, `scripts/test.sh` — the shell
   lint over the fork's own scripts (`bash -n`, shellcheck's errors, the comm tripwire that
-  keeps every tracked script in the sweep, the errexit arm), the SPDX-header arm and
-  `aps/release/latest-test.py` (the "Latest" rules against fixture releases, no network) — then
+  keeps every tracked script in the sweep, the errexit arm), the SPDX-header arm, the AIO page
+  arm (`scripts/aio-page.py`: AIO's page and its notifications in es-CL Spanish, never the other
+  product's name, the brand's colours only through the token file; a planted English text, the
+  other product's name and a brand hex must each red) and `aps/release/latest-test.py` (the "Latest" rules against
+  fixture releases, no network) — then
   its `zizmor over our workflows` step (zizmor at medium severity over `ci.yml`, `release.yml`
   and `issue-linker.yml`, without upstream's `zizmor.yml` and with the online audits), and the
   Keep-list check:

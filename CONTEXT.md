@@ -69,5 +69,5 @@ The single web wizard that runs the install. During the install the operator use
 
 **Brand token file** (ficha de tokens de marca):
 `themes/apsconecta/core/css/tokens.css` — the ONE committed source of the palette and the font
-pairing. The server theme, the branding phase and the Provisionador's UI read it; no other file
-may carry a brand hex.
+pairing. The server theme, the branding phase, the Provisionador's UI and AIO's page read it; no
+other file may carry a brand hex.

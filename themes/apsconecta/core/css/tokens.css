@@ -11,6 +11,9 @@
      colours Nextcloud's theming app needs from this file.
    - the Provisionador (scripts/provisionador.py): reads this file through
      ASSETS_ROOT and paints the Instalador UI with it.
+   - AIO's page: Containers/mastercontainer/Dockerfile copies this file into
+     php/public/aps/ and php/public/style.css @imports it, painting through
+     var(--aps-*).
 
    The no-duplicate rule: a hex declared below appears in this file alone.
    The ledger — contrast ratios and permitted uses — is MAPEO.md §1; the

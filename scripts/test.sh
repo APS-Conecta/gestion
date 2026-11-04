@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The static gate, run locally and by .github/workflows/ci.yml: the shell lint over the fork's
 # own scripts (syntax, shellcheck's errors, sweep coverage, errexit in a tested subshell), their
-# SPDX headers, and the "Latest" rules' self-test. No stack, no network. Exits non-zero if anything fails.
+# SPDX headers, AIO's page check, and the "Latest" rules' self-test. No stack, no network. Exits
+# non-zero if anything fails.
 # NOT `set -e`: we run every check and aggregate, so one failure doesn't hide the rest.
 set -uo pipefail
 
@@ -189,6 +190,35 @@ gone.sh" spdx_baseline_row 2>&1 )"
     || { echo "spdx baseline: a gained header or a vanished file did not red with its cause: $out" >&2; return 1; }
 }
 check spdx_baseline_cases
+# --- gate: AIO's page and its notifications are es-CL Spanish (#288) ---------------------------
+# scripts/aio-page.py reads what AIO's page and the mastercontainer's notifications show: an English
+# word, the other product's name or a colour of the brand token file outside it reds.
+aio_page_out="$(python3 -I scripts/aio-page.py 2>&1)" \
+  && echo "  ok:   scripts/aio-page.py" \
+  || { echo "  FAIL: scripts/aio-page.py"; printf '%s\n' "$aio_page_out" | head -40; fail=1; }
+# Its red test, in a scratch copy of what it reads: a planted English sentence, a notification
+# naming the other product and a brand hex in the stylesheet must each red, named.
+aio_page_cases() {
+  local tmp out brand other='APS Conecta Gestión AIO' # the name of the other product, APS-Conecta/gestion-aio
+  brand="$(grep -o -i -E '#[0-9a-f]{6}\b' themes/apsconecta/core/css/tokens.css | head -n1)"
+  tmp="$(mktemp -d)"
+  mkdir -p "$tmp/community-containers" "$tmp/themes/apsconecta/core/css"
+  cp -R php "$tmp/" && cp -R community-containers/caddy "$tmp/community-containers/" \
+    && cp themes/apsconecta/core/css/tokens.css "$tmp/themes/apsconecta/core/css/" \
+    || { rm -rf "$tmp"; return 1; }
+  printf '<p>Click here to continue.</p>\n' >> "$tmp/php/templates/login.twig"
+  printf '<?php $m->sendNotification($c, %s, %s);\n' "'$other'" "'Su copia de seguridad'" \
+    > "$tmp/php/src/Cron/Planted.php"
+  printf '.planted { color: %s; }\n' "$brand" >> "$tmp/php/public/style.css"
+  out="$(python3 -I scripts/aio-page.py "$tmp" 2>&1)" \
+    && { rm -rf "$tmp"; echo "aio-page: nothing planted went red" >&2; return 1; }
+  rm -rf "$tmp"
+  grep -q "login.twig:[0-9]*: English .*Click" <<<"$out" \
+    && grep -q "Planted.php:1: carries '${other#APS Conecta }'" <<<"$out" \
+    && grep -q "style.css:[0-9]*: carries '$brand'" <<<"$out" \
+    || { echo "aio-page: a planted English text, the other product's name or a brand hex went unnamed: $out" >&2; return 1; }
+}
+check aio_page_cases
 
 echo "== self-tests (hermetic — no docker, no stack) =="
 # The release pipeline's "Latest" rules, against fixture releases.

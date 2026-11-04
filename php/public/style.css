@@ -1,22 +1,34 @@
+@import url("aps/tokens.css");
+
+@font-face {
+    font-family: "Nunito Sans"; font-style: normal; font-weight: 400 800; font-display: swap;
+    src: url("aps/NunitoSans.woff2") format("woff2");
+}
+
+@font-face {
+    font-family: "Fraunces"; font-style: normal; font-weight: 400 800; font-display: swap;
+    src: url("aps/Fraunces.woff2") format("woff2");
+}
+
 :root {
-    --color-nextcloud-blue: #0082c9;
+    --color-nextcloud-blue: var(--aps-violet);
     --color-nextcloud-logo: var(--color-nextcloud-blue);
     --color-main-background: white;
     --color-input-background: white;
-    --color-main-text: black;
+    --color-main-text: var(--aps-ink);
     --color-main-border: black;
     --color-main-border-hover: var(--color-main-border);
-    --color-error: #db0606;
-    --color-error-hover: #df2525;
-    --color-error-text: #c20505;
-    --color-success: #46ba61;
+    --color-error: var(--aps-error);
+    --color-error-hover: var(--aps-error-text);
+    --color-error-text: var(--aps-error-text);
+    --color-success: var(--aps-success);
     --color-running: #ffd000;
-    --color-primary-element: #00679e;
-    --color-primary-element-hover: #005a8a;
+    --color-primary-element: var(--aps-violet);
+    --color-primary-element-hover: var(--aps-violet-hover);
     --color-primary-element-text: #ffffff;
-    --color-primary-element-light: #e5eff5;
-    --color-primary-element-light-hover: #dbe4ea;
-    --color-primary-element-light-text: #00293f;
+    --color-primary-element-light: var(--aps-violet-tint);
+    --color-primary-element-light-hover: var(--aps-violet-tint-hover);
+    --color-primary-element-light-text: var(--aps-violet-dark);
     --color-border-maxcontrast: #7d7d7d;
     --color-loader: #f3f3f3;
     --color-disabled: #d3d3d3; /* light gray background for disabled checkboxes */
@@ -53,15 +65,15 @@ Note: Unfortunately, it's not possible to calculate this dynamically using CSS v
     --color-nextcloud-logo: var(--color-main-text);
     --color-main-border: var(--color-border-maxcontrast);
     --color-main-border-hover: var(--color-main-text);
-    --color-error: #ff3333;
-    --color-error-hover: #ff6666;
-    --color-error-text: #ff8080;
-    --color-primary-element:#0091f2;
-    --color-primary-element-hover:#079cff;
+    --color-error: var(--aps-error-hover);
+    --color-error-hover: var(--aps-error);
+    --color-error-text: var(--aps-error-hover);
+    --color-primary-element: var(--aps-violet-tint);
+    --color-primary-element-hover: var(--aps-violet-tint-hover);
     --color-primary-element-text:#000000;
-    --color-primary-element-light:#14232c;
-    --color-primary-element-light-hover:#1e2d35;
-    --color-primary-element-light-text:#99d3f9;
+    --color-primary-element-light: var(--aps-violet-dark);
+    --color-primary-element-light-hover: var(--aps-violet);
+    --color-primary-element-light-text: var(--aps-violet-tint);
     --color-loader: var(--color-border-maxcontrast);
     --border-hover: var(--border);
 }
@@ -69,9 +81,13 @@ Note: Unfortunately, it's not possible to calculate this dynamically using CSS v
 html, body {
     padding: 0;
     margin: 0;
-    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Oxygen-Sans, Cantarell, Ubuntu, 'Helvetica Neue', 'Noto Sans', 'Liberation Sans', Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    font-family: var(--aps-font-body);
     background-color: var(--color-main-background);
     color: var(--color-main-text);
+}
+
+h1, h2, h3 {
+    font-family: var(--aps-font-display);
 }
 
 a {
@@ -255,7 +271,7 @@ svg:not(:has(use)) .fallback-text {
     min-width: 100vw;
     position: fixed;
     width: 100vw;
-    background-image: url("img/jo-myoung-hee-fluid.webp");
+    background-image: linear-gradient(135deg, var(--aps-violet), var(--aps-violet-dark));
     background-position: center;
     background-repeat: no-repeat;
     background-size: cover;
@@ -264,7 +280,7 @@ svg:not(:has(use)) .fallback-text {
 }
 
 html[data-theme="dark"] .wrapper {
-    background-image: url("img/jo-myoung-hee-fluid-dark.webp");
+    background-image: linear-gradient(135deg, var(--aps-violet-dark), var(--color-main-background));
 }
 
 form {
@@ -412,6 +428,14 @@ main {
     max-width: calc(var(--max-width) + calc(var(--main-padding) * 2));
     margin: 0 auto;
     padding-bottom: var(--main-padding);
+}
+
+.source-link {
+    position: fixed;
+    left: 20px;
+    bottom: 8px;
+    color: white;
+    font-size: var(--default-font-size);
 }
 
 .logo {
@@ -737,7 +761,7 @@ body.modal-open {
 
 .office-card:hover {
     border-color: var(--color-primary-element);
-    box-shadow: 0 4px 12px rgba(0, 130, 201, 0.15);
+    box-shadow: 0 4px 12px var(--aps-violet-tint-hover);
     transform: translateY(-2px);
 }
 
@@ -745,13 +769,13 @@ body.modal-open {
 #office-onlyoffice:checked + .office-card,
 #office-eurooffice:checked + .office-card {
     border-color: var(--color-nextcloud-blue);
-    background: linear-gradient(135deg, rgba(0, 130, 201, 0.08) 0%, rgba(0, 130, 201, 0.02) 100%);
+    background: linear-gradient(135deg, var(--aps-violet-tint) 0%, var(--color-main-background) 100%);
 }
 
 [data-theme="dark"] #office-collabora:checked + .office-card,
 [data-theme="dark"] #office-onlyoffice:checked + .office-card,
 [data-theme="dark"] #office-eurooffice:checked + .office-card {
-    background: linear-gradient(135deg, rgba(0, 145, 242, 0.15) 0%, rgba(0, 145, 242, 0.03) 100%);
+    background: linear-gradient(135deg, var(--aps-violet-dark) 0%, var(--color-main-background) 100%);
 }
 
 .office-card-header {

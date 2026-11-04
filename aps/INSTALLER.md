@@ -113,7 +113,7 @@ lines. If preflight reds on the domain probe, do
 
 ## 4. The wizard (:8080)
 
-1. Ejecute el comando de arranque. El asistente «APS Conecta Gestión AIO» se presenta en español de Chile.
+1. Ejecute el comando de arranque. El asistente «APS Conecta Gestión» se presenta en español de Chile.
 2. El paso 6 invoca `aps-conecta asistente-aio --preparar`, inicia el contenedor maestro y guarda
    la contraseña inicial en `/opt/aps-conecta/aio/master.pw`, con permisos 0600. Configura el
    dominio o la IP (§13), la zona horaria, los servicios incluidos, las aplicaciones opcionales
