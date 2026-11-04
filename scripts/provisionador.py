@@ -336,7 +336,7 @@ RED_GUARD = threading.Lock()
 
 
 STUB_DOCKER = r'''#!/usr/bin/env python3
-"""The stub docker — the test.sh #143 stub pattern as a PATH binary, for the executor's de-risk
+"""The stub docker — a PATH binary, for the executor's de-risk
 and self-test. Answers the seed/phases/driver/gate world against a state file, so a RE-RUN sees
 what the first run created (users, groups, memberships, folders): the executor's idempotent
 re-run arms are load-bearing (the weekly timer rides them) and a stateless stub would fake them
@@ -4121,8 +4121,8 @@ def selftest():
     _scrubbed = {k: os.environ.pop(k) for k in list(os.environ) if k.startswith(_scrub)}
     # The fixture reuses the register's real hostile shapes, measured from the shipped register
     # (2026-07-23): 201079's name holds double quotes, 113314's address holds a backtick, 121567
-    # carries accents — the exact rows scripts/test.sh's quoting gate exists for. Plain 110485 is
-    # the happy-path row. Each ends with its official point, as the register carries it.
+    # carries accents. Plain 110485 is the happy-path row. Each ends with its official point, as
+    # the register carries it.
     fixture_rows = [
         '110485,PSR,Posta de Salud Rural Loica,Calle Aldea Loica,13505,San Pedro,13,'
         'Metropolitana de Santiago,Servicio de Salud Metropolitano Occidente,Municipal,-33.976637,-71.468749',
@@ -5017,7 +5017,7 @@ def selftest():
                   rows2 == [("ana.9", "Ana", "Nueve", "", ("all-staff",), True)]
                   and errors2 == [(4, "el correo «mal» no es válido")])
             # ── slice 16: the executor (FRD S5) — /api/generar, the roster driver, the gate ──
-            # The stub oracle (the test.sh #143 pattern as a PATH binary, stateful for the
+            # The stub oracle (a PATH binary, stateful for the
             # driver's noops — a stateless stub would fake the idempotent arms red) answers the
             # whole seed/phases/driver/gate world. The fixture assembles a REAL repo tree around
             # the register fixture (provisioning/ copied sans the 89 MB apps/, which is
@@ -6045,7 +6045,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
                   and "app spreed" in body["salida"])
             # B-030: phase 50 creates the standing accounts AFTER phase 41 mapped the registry
             # groups into the engine's, so the FIRST seed must map them too — or the second seed
-            # writes (Clean boot's seed-idempotent) and every fresh install converges one run late
+            # writes (seed-idempotent reds) and every fresh install converges one run late
             fixture_pw = re.search(r"^FIXTURE_USER_PASSWORD=([0-9a-f]{24})$", env_text, re.M).group(1)
             check("generar: each cargo account is created with its own sealed password — never the shared one (a8)",
                   all(delivered.get(u) == hashlib.sha256(sealed_now[u][0].encode()).hexdigest()
@@ -6670,10 +6670,10 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
             guias = []
             with open(HOST_CLI, encoding="utf-8") as fh:
                 host_txt = fh.read()
-            for rel in (("aps", "INSTALLER.md"), ("aps", "GUIA-CLINICA.md"), (".github", "workflows", "cleanboot.yml")):
+            for rel in (("aps", "INSTALLER.md"), ("aps", "GUIA-CLINICA.md")):
                 with open(os.path.join(ROOT_DIR, *rel), encoding="utf-8") as fh:
                     guias.append(fh.read())
-            check("suite certificate (R22): the console's last lines, both guides and Clean boot by IP name this step's files (one fact, five homes)",
+            check("suite certificate (R22): the console's last lines and both guides name this step's files (one fact, four homes)",
                   f'"$(suite_ca_dir)/{CA_PUBLICA}"' in host_txt
                   and all(os.path.join(CERT_DIR_DEFAULT, SUITE_CA, CA_PUBLICA) in g
                           and os.path.join(CERT_DIR_DEFAULT, SUITE_TLS) in g for g in guias))
@@ -6682,7 +6682,7 @@ echo "✓ $d resuelve a 10.0.0.5 desde este servidor — re-intente el paso en e
             # arm is a FAILURE, never a pass (territorio ADR-0021's I2): the pane's tile policy is proven only
             # here, and a self-test that goes green by not running its browser says nothing. The one
             # way out is a waiver the operator of the run types on purpose, APS_SELFTEST_SIN_NAVEGADOR=1
-            # (CI's static job, which carries no browser), and it is printed as what it is: skipped,
+            # (a box that carries no browser), and it is printed as what it is: skipped,
             # waived, not counted as a pass.
             try:
                 from playwright.sync_api import sync_playwright

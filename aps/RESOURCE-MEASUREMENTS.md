@@ -18,7 +18,6 @@ Los controles actuales del instalador conservan sus valores anteriores.
 
 ## Registro de uso
 
-Clean boot conserva una serie por trabajo y la instantánea final del trabajo de ciclo de vida.
 El colector lee contadores del anfitrión y métricas de los servicios. Cada muestra identifica
 su fecha UTC, tiempo monotónico, arranque y unidades. El cierre registra PID, cantidad de
 muestras y motivo de término. Las lecturas ausentes se registran como no disponibles.

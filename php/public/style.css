@@ -3,7 +3,7 @@
    universe (Latin + es-CL accents + the punctuation the swept strings use) and instanced to
    the weights the wizard actually sets: Fraunces as a static 600 for the h1-h3 display, Nunito
    Sans keeping its weight axis for the 400-800 body range. Local files only — the wizard never
-   fetches a font from anywhere (the acquisition gate's install-time rule, applied to itself). */
+   fetches a font from anywhere. */
 @font-face {
     font-family: "Fraunces";
     font-style: normal;
@@ -25,7 +25,7 @@ h1, h2, h3 {
 }
 
 /* aps-brand-tokens begin — GENERATED from themes/apsconecta/core/css/tokens.css
-   by scripts/brand-tokens.py; do not edit by hand (row 270 proves the projection). */
+   by scripts/brand-tokens.py; do not edit by hand (its --check proves the projection). */
 :root {
     --aps-violet: #7f21fe;
     --aps-violet-dark: #5315a8;
@@ -50,7 +50,7 @@ h1, h2, h3 {
     /* The brand VALUES arrive in the generated --aps-* block above (the projection of
        themes/apsconecta/core/css/tokens.css — #49); this table only MAPS the wizard's own
        Nextcloud-named tokens onto them, because the templates and the rest of this sheet
-       reference these names. A value pasted here instead of a mapping reds row 270. */
+       reference these names. */
     --color-nextcloud-blue: var(--aps-violet);
     --color-nextcloud-logo: var(--color-nextcloud-blue);
     --color-main-background: white;

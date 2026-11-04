@@ -6,8 +6,7 @@
 The wizard (php/public) ships two woff2 subsets, not the theme's full fonts: Fraunces instanced
 to the one weight the wizard sets (600, the h1–h3 display) and Nunito Sans kept variable over
 the 400–800 body range. A wizard string that grows past the subset's character universe renders
-in the system fallback — a silent brand leak, exactly what this tool and the brand gate's row
-270 exist to prevent.
+in the system fallback — a silent brand leak, exactly what this tool exists to prevent.
 
 The universe is MEASURED from the tree: every character of the templates' text and attribute
 values, the public JS's string literals, and containers.json's display names — plus the two
@@ -19,7 +18,7 @@ wizard strings: they render in the mono face and are out of scope by design.
                                             full fonts (needs fonttools + brotli; run it after
                                             ANY new wizard string lands, then commit)
   scripts/wizard-fonts.py --check TREE      exit 0 iff both committed subsets cover the measured
-                                            universe (the gate's row runs this)
+                                            universe
   scripts/wizard-fonts.py --self-test       hermetic: a built-in fixture font, no network
 
 Coverage's honest edge: a character the SOURCE font does not carry can never be in a subset —
@@ -36,9 +35,8 @@ try:
     from fontTools.subset import Subsetter, Options
     from fontTools.ttLib import TTFont
     from fontTools.varLib.instancer import instantiateVariableFont
-except ImportError:  # pragma: no cover — the loud, never-vacuous failure the gate wants
-    sys.exit("FATAL: fontTools is required (pip install fonttools brotli) — every workflow job "
-             "that runs the gate installs it; without it this check cannot run")
+except ImportError:
+    sys.exit("FATAL: fontTools is required (pip install fonttools brotli)")
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 SOURCE_FONTS = pathlib.Path("themes/apsconecta/core/fonts")

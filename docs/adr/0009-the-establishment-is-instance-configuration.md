@@ -38,6 +38,3 @@ establishment; the register CSV and git history are exempt.
   **filter value**, not a pipeline.
 - Any REM read API takes the DEIS code as a **parameter**, not an implicit "ours", so a selector stays
   additive.
-- A shape-based runnable check holds agnosticism: no tracked file may hand `deis.py` a DEIS code (the gate
-  lives in `scripts/test.sh`). It must keep returning nothing in code, fixtures and tests included, or
-  agnosticism is untested.

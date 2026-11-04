@@ -215,8 +215,7 @@ signed=$(nc_exec --user www-data -- sh -c \
 # the apache container — the leg every posture shares; a clinic's 443 front serves only the suite's
 # own name (#163) — and asserts (a) it still holds: a drift to the raw page means the legacy screens
 # became HTTP-reachable; (b) the two branding inputs the legacy path reads when it does render: the
-# active theme's guest.css and defaults.php, read in-container through the seam (test.sh's
-# vendor-block style).
+# active theme's guest.css and defaults.php, read in-container through the seam.
 _oh="$(occ config:system:get overwritehost 2>/dev/null | tr -d '\r')"
 if [ -n "$_oh" ]; then
   _resp=$(docker exec aps-conecta-apache sh -c 'printf "GET / HTTP/1.0\r\nHost: untrusted.invalid\r\n\r\n" | nc -w 5 127.0.0.1 8000' 2>/dev/null | tr -d '\r')

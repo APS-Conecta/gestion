@@ -3,9 +3,9 @@
 # containers-schema.json), hermetic venv, against ANY tree directory. The sole survivor of
 # the replay engine (its cmd_validate), re-homed with the hard fork (D-rev 2026-10-19,
 # Stage 3): upstream's own validator workflows never fire on tag pushes, so the release
-# chain's inline gates arm (release.yml) runs this against the tag tree — ci.yml's gates
-# job and upstream's own workflows cover push/PR. twig-lint is not here: it needs PHP
-# 8.5 + apcu, so it rides the workflow's own setup-php step beside this script.
+# chain's inline gates arm (release.yml) runs this against the tag tree — upstream's own
+# workflows cover push/PR. twig-lint is not here: it needs PHP 8.5 + apcu, so it rides
+# the workflow's own setup-php step beside this script.
 #
 # Usage: scripts/validate.sh [--docker-lint] TREE     (TREE = the tree to validate, e.g. . — the checkout)
 set -uo pipefail

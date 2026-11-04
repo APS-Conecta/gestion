@@ -24,7 +24,7 @@ the sign step reads the passphrase the same way, and `MINISIGN_KEY_PASSWORD` car
 Replace the placeholder **in one commit**: `installer.pub`'s two lines AND `install.sh`'s
 `SIGNIFY_PUBKEY` constant (the repo carries a placeholder on purpose — a placeholder that signs
 is a bug, not a state, and `package-release.sh` reds on the word until this commit lands). The
-two readers are pinned equal by the gate (`scripts/test.sh`) and re-proven at every release.
+same script proves the two readers equal at every release.
 
 Keep `installer.sec` OUT of the repository. After registering the secrets (§2), store it where
 you store the farm's other keys, or delete it — rotation (§6) does not need the old secret key.
@@ -93,9 +93,8 @@ asserts it):
     git tag vX.Y.Z && git push origin vX.Y.Z
 
 release.yml proves stable tags are contained in main, freezes the checked-out commit and runs
-the full local gate (including existing browser checks), validators, Twig and both ownership
-gates on that tree. Only numeric `vX.Y.Z-ci.N` rehearsals may be off main. Images and
-packaging check out the proven SHA, never a second resolution of the tag.
+the static gate, validators and Twig on that tree. Only numeric `vX.Y.Z-ci.N` rehearsals may
+be off main. Images and packaging check out the proven SHA, never a second resolution of the tag.
 The packager receives `RELEASE_SHA`, using it for archived bytes, date and provenance even
 without a local tag. Before publication, the remote tag (including annotated tags) must still
 resolve to that same commit. After the complete image set passes its native checks,
@@ -109,8 +108,8 @@ cut time), so the verification chain is unchanged; `fail-on-prerelease` keeps `l
 full Release, and ci.N rehearsals publish `--latest=false` and never shadow it.
 
 **The testbed pin follows**. Once the Release is green, one commit moves the pin in
-`scripts/aio-testbed.sh` to `vX.Y.Z` — the suite tag every PR-event and weekly Clean boot
-installs. It cannot ride the release commit: the tag's images do not exist until the push
+`scripts/aio-testbed.sh` to `vX.Y.Z` — the suite tag the testbed and the Playwright suite
+install. It cannot ride the release commit: the tag's images do not exist until the push
 publishes them.
 
 **One source tree for every image.** Images resolves `build-ref` once, generates its build
@@ -126,21 +125,18 @@ A published Release, including a prerelease, always refuses rebuilding, even wit
 An unreadable publication state also refuses. `force` permits repairing a complete image set
 only while its Release is absent or still a draft.
 
-**Rehearse first, by dispatch.** Two `gh` commands publish images and test them without
-creating a git tag or Release:
+**Rehearse first, by dispatch.** One `gh` command publishes images without creating a git tag
+or Release:
 
-    gh workflow run images.yml    --ref <branch> -f suite-tag=v0.0.0-ci.N -f build-ref=<commit-sha>
-    gh workflow run cleanboot.yml --ref <branch> -f suite-tag=v0.0.0-ci.N
+    gh workflow run images.yml --ref <branch> -f suite-tag=v0.0.0-ci.N -f build-ref=<commit-sha>
 
 Choose an unused rehearsal number above the testbed's pin. Reusing a complete unpublished
 rehearsal set requires `-f force=true`; use a new number when preserving prior evidence.
 Git tags, GitHub Releases and Latest changes require the release owner's authorization.
 
 **When a fresh Images dispatch is needed:** changes to any container directory or shared
-build input (including PHP, the application and themes) need new images. When only the host
-bundle, provisioning or install scripts change, Clean boot can install the already-published
-suite images while checking out the new branch code. Independently released apps remain
-outside the images (ADR-0018).
+build input (including PHP, the application and themes) need new images. Independently
+released apps remain outside the images (ADR-0018).
 
 **Protected release rehearsal.** After the owner authorizes an exact rehearsal commit with
 matching VERSION, BUNDLE_TAG and changelog, the owner creates its numeric CI tag. Tag push
@@ -184,47 +180,3 @@ install: the one-liner's asset embeds the expected sha256, and that asset lives 
 URL inside the repository. A compromised key WITH repository access is repository compromise —
 rotate (above) and cut the next release; already-published Releases stay verifiable and their
 bytes never moved.
-
-## 7. The acceptance run (#54)
-
-La aceptación comprueba el paquete publicado mediante el comando del establecimiento.
-La descarga pública y la instalación se ejecutan sin token. El ensayo de §4 comprueba
-la cadena de publicación; esta aceptación comprueba sus activos publicados.
-
-**Entorno del ensayo.** Ubuntu 24.04 x86-64, con los puertos 8080, 443 y 3478 disponibles.
-La instalación por IP utiliza el certificado del instalador. La instalación por dominio
-requiere que su DNS resuelva al servidor y que este reciba conexiones públicas en el puerto
-443; el certificado se obtiene mediante ACME.
-
-**Por IP, en GitHub Actions.** Ejecute el flujo manual sobre la versión publicada que
-contiene las correcciones:
-
-    gh workflow run acceptance.yml --repo APS-Conecta/gestion --ref main -f tag=vX.Y.Z
-
-El valor predeterminado de `tag` es `latest`, resuelto por redirección pública. El flujo
-ejecuta `scripts/vm-acceptance.sh --tag "$TAG" --sin-datos --continuar` en Ubuntu 24.04,
-con la IPv4 enrutada del ejecutor, las tres aplicaciones opcionales y el respaldo diario.
-La opción `--continuar` conserva las comprobaciones disponibles tras un fallo de instalación. Un
-resultado fallido conserva la marca roja del flujo; su resultado es informativo, como
-Clean boot. Consulte la tabla de veredictos y el artefacto `release-acceptance-*`.
-
-El artefacto conserva los veredictos y, ante un fallo, la salida del arranque, el estado
-de los contenedores y el disco. Las credenciales y la configuración privada permanecen
-en el directorio privado del ensayo.
-
-**Por dominio, seguimiento manual.** La aceptación por dominio se completa en #157.
-Conserve este comando para su verificación:
-
-    curl -fsSL https://github.com/APS-Conecta/gestion/raw/main/scripts/vm-acceptance.sh \
-      | sudo bash -s -- --tag vX.Y.Z --dominio su.dominio
-
-Sin `--tag`, el comando selecciona `latest` mediante redirección. La ejecución por IP comprueba
-el arranque verificado, `aps-conecta estado`, la conexión HTTPS con su cadena de confianza,
-el acceso de una persona de la planilla mediante OCS, las aplicaciones de `apps.json`,
-las opciones registradas y `actualizar --revisar` sin escrituras. La salida identifica cada
-criterio y la ruta de sus registros. `--solo-chequeos` repite las comprobaciones de una
-instalación existente; `--sin-datos` omite los maestros nacionales. `--sin-respaldo` permite
-comprobar el rechazo de `actualizar` cuando falta el respaldo configurado.
-
-Un criterio fallido produce un estado de salida distinto de cero. La autoprueba
-`--self-test` forma parte de `scripts/test.sh`.

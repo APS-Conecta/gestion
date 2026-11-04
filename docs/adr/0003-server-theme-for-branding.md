@@ -44,8 +44,7 @@ Accepted, 2026-07-26.
 - **Fonts ship as woff2 only, with no TTF fallback.** Every browser Nextcloud 34 supports has had woff2
   since ~2016, so the fallback protected nobody, and it actively hid a bug: `server.css` declared four
   `.woff2` files that were never generated, and the TTF fallback swallowed the 404s. One format has no
-  hiding place. Payload dropped from 1.85 MB to 856 KB. `scripts/test.sh` asserts every `url()` in
-  `server.css` resolves to a file on disk, which is what replaces the fallback.
+  hiding place. Payload dropped from 1.85 MB to 856 KB.
 
 **Per-app icons (`apps/<appid>/img/`) are permitted but, as measured, empty.** An app's icon is
 overridden only if it clashes. Stock Material icons are kept: our own icons deliberately speak Material
@@ -74,8 +73,7 @@ does not need to.
   protected by trademark; colour tokens ship under the AGPL ([ADR-0006](0006-agpl-across-the-org.md)).
 - Gained: brand typography, radii, focus states and the header gradient, none reachable by config; the
   iOS banner leak fixed; images arrive with the theme, so a fresh bring-up is branded with no manual step.
-- Branding is gated: `scripts/smoke.sh` fails when `/status.php` says `Nextcloud`, and `scripts/test.sh`
-  parses every theme SVG.
+- Branding is gated: `scripts/smoke.sh` fails when `/status.php` says `Nextcloud`.
 - Rule for any future asset: runs on the server → this repository; feeds a designer or the website → the
   brand kit. Theming rules live in
   [tema.html](https://aps-conecta.github.io/documentation/desarrollo/tema.html).

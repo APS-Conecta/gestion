@@ -2,9 +2,8 @@
 # Usage: docker compose --profile local-code up
 #    or: docker compose --profile code-from-image up
 # The chassis image is not named here: ./php/tests/run.sh resolves the suite-tag pin from
-# scripts/aio-testbed.sh (the same single source cleanboot installs) and exports
-# AIO_CHASSIS_IMAGE — the fork publishes no develop image, so no literal here can stay green
-# across releases.
+# scripts/aio-testbed.sh and exports AIO_CHASSIS_IMAGE — the fork publishes no develop image, so
+# no literal here can stay green across releases.
 
 name: nextcloud-aio-test
 services:
@@ -25,7 +24,7 @@ services:
 
   app-base:
     # The chassis the tested code mounts over (local-code) or runs as (code-from-image):
-    # the fork's pinned suite tag, resolved by ./php/tests/run.sh — one source with cleanboot,
+    # the fork's pinned suite tag, resolved by ./php/tests/run.sh — one source with the testbed,
     # never a second literal to drift (upstream's develop reference died with the suite-tag
     # lockstep: the registry carries no develop, and the pull reds with manifest unknown).
     # x86-64 only (the suite's documented server requirement): no -arm64 suffixed tags exist.

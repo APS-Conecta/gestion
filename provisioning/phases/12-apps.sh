@@ -6,7 +6,7 @@
 # resolved and verified at install time by the wizard's download step, and this phase installs
 # it from the server's lock; a store row arrives from the Nextcloud app store through
 # ensure_store_app — the scoped, one-command open (#42; no image carries an app, and the store
-# is closed to everything else, the acquisition gate's 042 rows pin it).
+# is closed to everything else).
 #
 # NOTHING HERE DOWNLOADS A RELEASE: acquisition is the wizard's fetch leg (releases.py); the
 # seed only installs what that leg already verified and stored beside the lock. The store rows

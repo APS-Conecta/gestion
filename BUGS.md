@@ -173,5 +173,4 @@ a comment beside the code it protects, not here — a second copy desyncs the da
 ## Reporting a new one
 
 Add a row. Put the reasoning that makes the fix non-obvious in a comment beside the code, and
-the gate that stops it recurring in `scripts/brand-gate.sh`, `scripts/acquisition-gate.sh`,
-`scripts/test.sh` or the relevant script's own self-test.
+the check that stops it recurring in the relevant script's own self-test.

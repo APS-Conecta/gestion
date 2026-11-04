@@ -2463,7 +2463,7 @@ cmd_datos() {  # [CUT] [--importar] — S9's data-package leg: the national mast
 }
 
 datos_auto() {  # (the locked Slice-6 shape; the guard is inserted as the function's first lines)
-  if [ "${APS_SKIP_DATOS:-0}" = 1 ]; then   # CI only: the masters stay off the runner
+  if [ "${APS_SKIP_DATOS:-0}" = 1 ]; then   # a test install: the masters stay off the box
     info "datos de la comuna omitidos (APS_SKIP_DATOS): los carga «sudo aps-conecta datos --importar»"
     return 0
   fi
@@ -2844,7 +2844,7 @@ EOF
   check "revisar: inside the band — green at the minimum, the recommended tier as advice, never a red (D8)" \
     'case "$step_out" in *"✓ Memoria 7 GiB (mínimo 6)"*"· se recomiendan 8 GiB de memoria"*"✓ Disco 30 GB libres (mínimo 20)"*"· se recomiendan 40 GB libres"*"FAIL=0") ;; *) false;; esac && case "$step_out" in *"Memoria 7 GiB (mínimo 6, recomendado"*|*"Disco 30 GB libres (mínimo 20, recomendado"*) false;; *) true;; esac'
   step_out="$(MIN_RAM_GIB=4 RAM_GIB_RECOMENDADA=6 MIN_DISK_GB=10 DISCO_GB_RECOMENDADO=12; FAIL=0; step_revisar; echo "FAIL=$FAIL")"
-  check "revisar: all four floors answer their env overrides — the probe's own posture (D8; cleanboot's MIN_DISK_GB=2 rides the same seam)" \
+  check "revisar: all four floors answer their env overrides — the probe's own posture (D8)" \
     'case "$step_out" in *"✓ Memoria 7 GiB (mínimo 4, recomendado 6)"*"✓ Disco 30 GB libres (mínimo 10, recomendado 12)"*"FAIL=0") ;; *) false;; esac'
   printf '#!/usr/bin/env bash\nexit 7\n' > "$tshim/curl"; chmod +x "$tshim/curl"
   step_out="$(FAIL=0; check_network; echo "FAIL=$FAIL")"
@@ -3765,8 +3765,8 @@ EOF
   out2="$(site_domain() { echo c.example; }; start_suite() { bad "suite-muere" "x"; return 1; }; FAIL=0; silent_suite 2>&1; echo "FAIL=$FAIL")"
   out3="$(site_domain() { echo c.example; }; start_suite() { ok s; }; cmd_aio_wizard() { exit 1; }; FAIL=0; silent_suite >/dev/null 2>&1; echo "rc=$?")"
   # #39: the chosen optional apps ride the silent install into the wizard drive — one --app pair
-  # per id, exactly what cmd_aio_wizard parses (the first clean-boot run of #39 met the inverse:
-  # bare ids, and the drive died on «opción desconocida»)
+  # per id, exactly what cmd_aio_wizard parses (#39's first install met the inverse: bare ids,
+  # and the drive died on «opción desconocida»)
   argv_apps=""
   out4="$(site_domain() { echo c.example; }; start_suite() { ok s; }; cmd_aio_wizard() { printf '%s\n' "$*" >"$tmp/silent.argv"; }; \
            SILENT_APPS=" farmacia "; FAIL=0; silent_suite >/dev/null 2>&1; echo "rc=$?")"

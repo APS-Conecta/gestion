@@ -114,9 +114,8 @@ trap '
   [ -z "$_container_stage" ] || nc_exec -- rm -rf "$_container_stage" >/dev/null 2>&1 || true
 ' EXIT
 # Nothing in sites/<slug>/site.sh is exported (seed.sh sources it; there is no set -a anywhere),
-# so EVERY value render.py reads is forwarded here by name — the identity block included. The
-# gate in scripts/test.sh asserts this list stays complete (a missing name is a FATAL on line one
-# of every seed, and a gate that hands python its environment directly would never see it).
+# so EVERY value render.py reads is forwarded here by name — the identity block included. A
+# missing name is a FATAL on line one of every seed.
 env SITE_NOMBRE="$SITE_NOMBRE" SITE_NOMBRE_CORTO="$SITE_NOMBRE_CORTO" SITE_DIRECCION="$SITE_DIRECCION" \
     SITE_COMUNA="$SITE_COMUNA" SITE_SERVICIO_SALUD="$SITE_SERVICIO_SALUD" \
     SITE_WELCOME="$(printf '%s\n' "${SITE_WELCOME[@]}")" \

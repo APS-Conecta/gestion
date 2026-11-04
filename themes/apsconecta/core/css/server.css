@@ -27,28 +27,20 @@
    on every install, which is what keeps themes/ one committed artifact.
    IT IS NOT COMMITTED. Its content is a function of which establishment is installed, so it is
    gitignored exactly like the site file and .env, and no checkout names an establishment at rest.
-   scripts/test.sh resolves every themed path in this file on disk — including the one this @import
-   carries, which has no url() — so that guard skips this single generated path BY NAME, and only
-   this one. The var() fallbacks below are what renders in the window between checkout and first
+   The var() fallbacks below are what renders in the window between checkout and first
    seed, and they name the product rather than any clinic. A failed @import is ignored by CSS and
-   affects no other rule here.
-   DO NOT WRITE A THEMED PATH IN PROSE ANYWHERE IN THIS FILE. That gate greps the file, not the
-   CSS: a path mentioned in a comment is extracted and looked up on disk exactly like a real
-   reference, and the failure names the gate rather than the sentence. Third sibling of the
-   no-double-hyphen trap — see MAPEO.md. */
+   affects no other rule here. */
 @import "/themes/apsconecta/core/css/site.css";
 /* THE ONE BRAND TOKEN FILE (palette and fonts) — the second import before any rule. The rest
    of this file paints the brand through var(--aps-*); a brand hex written here instead of a
-   token reference is a duplicate palette and reds the brand gate's row 270. The ledger (ratios,
-   permitted uses) is MAPEO.md §1. */
+   token reference is a duplicate palette. The ledger (ratios, permitted uses) is MAPEO.md §1. */
 @import "/themes/apsconecta/core/css/tokens.css";
 
 /* ---- Self-hosted webfonts (zero egress) ----
    Absolute paths, as Nextcloud serves them; outside Nextcloud they 404.
    woff2 ONLY, no TTF fallback: it protected nobody (woff2 is universal since
    ~2016) and actively hid a missing or corrupt file by silently falling through.
-   One format has no hiding place, and scripts/test.sh asserts every asset referenced
-   below exists on disk.
+   One format has no hiding place.
    Regenerate after a font update:
      python3 -c "from fontTools.ttLib.woff2 import compress; compress('X.ttf','X.woff2')"
    THESE FILES ARE NOT SUBSET — format conversion is neither subsetting nor
@@ -327,8 +319,7 @@ textarea:focus-visible,
    text, never a skeleton: a skeleton must imitate each app's layout and cannot be agnostic.
    The spinner head follows primary_color (fill and icon use — ledger-permitted); the track is
    core's border variable. The reduced-motion block above freezes the rotation, and the text
-   carries the meaning. No asset references in this block: the themed-path gate reads this
-   file, and a path in prose is checked like a real one. */
+   carries the meaning. */
 .aps-mount-loading {
   display: flex;
   align-items: center;

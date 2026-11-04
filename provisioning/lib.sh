@@ -231,7 +231,7 @@ add_user_to_group() {  # UID GID  (query-before-add: accurate + idempotent)
 # query-before-set, one group:list json answers both sides. Phase 41 runs it once the engine's
 # setup has created the groups; phase 50 runs it again after the standing accounts exist, which on
 # a fresh instance they do not when phase 41 runs — without that second call the first seed maps
-# nobody and the second seed writes (B-030, Clean boot's seed-idempotent). Admins: engine default
+# nobody and the second seed writes (B-030, seed-idempotent). Admins: engine default
 # (setup seeds NC admins once). Adds-never-deletes: membership only grows; leavers keep read —
 # harmless, recorded (D5).
 intravox_group_map() {
@@ -272,8 +272,8 @@ app_installed_version() {  # APPID -> version, empty when absent, nonzero on rea
 # instance-wide — NC_appstoreenabled="0" is baked into the aio-nextcloud image and Config.php's
 # envCache beats config.php, so every bare store leg fails fast. The one exception is
 # occ_store: the command carries its own NC_appstoreenabled=1, which beats both the file and
-# the image ENV for that process alone, and dies with it. A bare app:install anywhere under
-# provisioning/ is the acquisition gate's row to catch — never this file's habit.
+# the image ENV for that process alone, and dies with it. Every store install under
+# provisioning/ rides occ_store.
 #
 # NO PIN, BY DESIGN — #98's reasoning, closed by #42. The vendored tarball pinned a version
 # because the bake served fixed bytes; the store row installs the newest release compatible
@@ -790,8 +790,8 @@ ensure_aia_intermediate() (  # HOST
 # "Not imported" and "could not ask" are DIFFERENT ANSWERS (#143). This used to pipe occ straight
 # into grep with stderr discarded, so a container that was briefly too busy to answer looked
 # exactly like an empty bundle — and re-importing a certificate that is already there is a WRITE
-# on a provisioned instance, which reddens seed-idempotent and, through cleanboot, CI. Capture
-# first and let the exit status decide whether the output means anything.
+# on a provisioned instance, which reddens seed-idempotent. Capture first and let the exit
+# status decide whether the output means anything.
 #
 # --output=json, not the rendered table: that table pads every column to its widest row, so
 # `grep -F " $name "` was really asking "which other certificates are installed?". Parsed the way
@@ -799,8 +799,8 @@ ensure_aia_intermediate() (  # HOST
 # `|| rc=$?`, never a bare pipeline followed by `rc=$?`: phases run under `set -e` (seed.sh), and
 # "certificate absent" is a legitimate non-zero that would kill the phase before the assignment
 # ran. An OR list is exempt from errexit; an `if` condition is too, which is why the old shape
-# never hit this. Caught by cleanboot, not locally — a machine that already holds both
-# certificates never takes the absent branch.
+# never hit this. Only a clean install takes the absent branch — a machine that already holds
+# both certificates never does.
 # The search is inside the `try` with the parse, not after it: valid JSON of the wrong
 # shape — an object, a string, a list of anything but objects — raises on `.get` rather
 # than on `load`, and an uncaught raise exits 1, which would read as "absent" and
