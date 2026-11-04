@@ -8,8 +8,8 @@
 Accepted, 2026-10-31.
 
 The supported store provider `files_fulltextsearch` 34.0.2 regex-escapes a canonical
-staff UID before using it for native user/file lookup. The by-IP probe in
-[run 41188524928](https://github.com/APS-Conecta/gestion/actions/runs/41188524928)
+staff UID before using it for native user/file lookup. A by-IP install
+([run 41188524928](https://github.com/APS-Conecta/gestion/actions/runs/41188524928))
 confirms the exact uploaded document and body term are indexed, then receives no
 matching result for dotted non-admin `beto.prueba` within 30 seconds. The
 [upstream stable34 correction](https://github.com/nextcloud/files_fulltextsearch/pull/463),
@@ -24,7 +24,7 @@ interface. Its runtime correction is the upstream fix. Core and store packages
 are not patched, and the existing app-signing identity remains unchanged.
 
 Waiting for an upstream publication would leave normal staff identities without
-the required search result. Renaming staff or weakening the exact result probe
+the required search result. Renaming staff or accepting a non-exact result
 would not implement the product contract. The signed fork uses the established
 acquisition channel and keeps its small source difference reviewable.
 
