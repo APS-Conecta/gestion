@@ -81,7 +81,7 @@ image digests live there and are deliberately not copied here — one fact, one 
 - **Talk (spreed) from the fork's signed releases (#145, ADR-0020).** The last app-store
   reach at a container boot is gone: `APS-Conecta/spreed` is a zero-code-change fork of
   `nextcloud/spreed` hosting our App releases, refreshed from upstream's newest stable
-  release for the suite's Nextcloud major at each suite release — the release chain dispatches
+  release for the suite's Nextcloud major at each suite release — the release dispatches
   the fork's refresh (the app key never leaves the fork's release environment, ADR-0001),
   waits bounded, and verifies what it published against the tag tree's own `apps.pub` and
   against upstream's own bytes (the release is upstream's tarball minus exactly
@@ -96,7 +96,7 @@ image digests live there and are deliberately not copied here — one fact, one 
   open's only first-boot user. `aps-conecta actualizar` moves spreed with the other release
   rows through phase 12 (its old store-walk skip line is deleted). The fork's first
   release is upstream's spreed `v24.0.6` (the newest stable for Nextcloud 34), published;
-  the release chain's dispatch needs the owner-only `SPREED_REFRESH_TOKEN` secret
+  the release's dispatch needs the owner-only `SPREED_REFRESH_TOKEN` secret
   (aps/RELEASING.md), missing which the spreed job reds naming the setup.
 
 - **`aps-conecta actualizar`, the applications update (#46, ADR-0017).** The one path that
@@ -214,7 +214,7 @@ image digests live there and are deliberately not copied here — one fact, one 
 ### Removed
 
 - **The bake and the last read of the old gestion (#42, ADR-0018).** `scripts/bake.sh`, the
-  gestion clone in the Images workflow and its `gestion-ref` input, `provisioning/apps` in the
+  gestion clone in the image build and its `gestion-ref` input, `provisioning/apps` in the
   composite package, `.paquete.json`'s gestion provenance fields, the vendored fallback of
   phase 12 (a release row without a lock row is now a FATAL naming the repair, never an
   improvised install), the patch machinery (`apply_patch`) that fed on vendored tarballs, and

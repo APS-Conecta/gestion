@@ -23,9 +23,8 @@ A clinic installs a **signed release package**, never `main` (ADR-0005):
 
 The URL is stable — it always resolves to the newest published Release — and the version pin
 travels inside the asset itself: the script carries the tag it installs and the package's
-sha256, so a Release cut after this change serves itself with no URL editing. (For a
-tag-pinned install or an audit, the same asset ships under its versioned name,
-`apsconecta-vX.Y.Z-install.sh`; aps/RELEASING.md §6 owns that ceremony.)
+sha256. (For a tag-pinned install or an audit, the same asset ships under its versioned name,
+`apsconecta-vX.Y.Z-install.sh`.)
 
 On an institutional proxy network, enter its URL privately and preserve only its variables
 through sudo for the initial download:
