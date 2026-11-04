@@ -74,8 +74,7 @@ thing lives where its own gate is.
   retained for compatible installations.
 
   The signature covers `SHA256SUMS`, which names the tag's tarball: a signature that verifies
-  is a signature for that tag's package. The key story — keygen, secrets, rotation — is
-  [`RELEASING.md`](RELEASING.md).
+  is a signature for that tag's package.
 - **What the installer refuses**: the repository copy of `install.sh` (its embedded sha ships
   empty on purpose — only the Release asset runs), bytes that do not match the embedded sha, a
   `SHA256SUMS` that disagrees with it, and an existing `/opt/aps-conecta/instalador` of a

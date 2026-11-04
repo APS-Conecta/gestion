@@ -3,8 +3,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # The digest pins: every container in php/containers.json that isn't ours, and the base of our thin Nextcloud
 # image, names an official image (ghcr.io/nextcloud-releases) by digest, and each digest resolves to an image
-# upstream built from the Keep-list's base commit; every base of our images is pinned by digest. At an Upstream
-# merge, `pins.sh <upstream image tag>` first re-pins the official images to that tag (v14.4.3's: 20261029_150718).
+# upstream built from the Keep-list's base commit; every base in aps/images/*/Dockerfile (the thin Nextcloud
+# and Caddy images) is pinned by digest. At an Upstream merge, `pins.sh <upstream image tag>` first re-pins
+# the official images to that tag (v14.4.3's: 20261029_150718).
 # Usage: pins.sh [<upstream image tag>]
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
