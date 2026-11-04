@@ -57,6 +57,7 @@ Containers/nextcloud/run-exec-commands.sh the one-click-instance user-cap remova
 .github/workflows/collabora.yml switched off: opens upstream's Collabora update PRs
 .github/workflows/dependabot-approve-merge.yml switched off: approves and merges Dependabot's PRs
 .github/workflows/dependency-updates.yml switched off: opens upstream's dependency update PRs
+.github/workflows/fail-on-prerelease.yml switched off: fails every PR while a pre-release is the newest release, as every candidate and rehearsal is
 .github/workflows/imaginary-update.yml switched off: opens upstream's Imaginary update PRs
 .github/workflows/lock-threads.yml switched off: would lock this repo's issues
 .github/workflows/nextcloud-update.yml switched off: opens upstream's Nextcloud update PRs

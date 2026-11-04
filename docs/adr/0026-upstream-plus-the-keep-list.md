@@ -31,11 +31,11 @@ flow, the major-upgrade script and ClamAV's milter — are carried as upstream s
 parts the suite does not use are switched off through AIO's own switches, never by deleting them.
 
 **Upstream automation is switched off in the tree.** A workflow that would publish, open pull
-requests or need upstream's secrets is deleted, with a Keep-list entry naming why; so is
-Dependabot's configuration. Repository settings and the Actions API are not used for it. A
-workflow already guarded to upstream's repository stays as it is. Upstream's own CI keeps
-running on upstream's files; where it would lint our layer, it skips those paths and
-`scripts/test.sh` lints them.
+requests, need upstream's secrets or fail our pull requests on upstream's release policy is
+deleted, with a Keep-list entry naming why; so is Dependabot's configuration. Repository settings
+and the Actions API are not used for it. A workflow already guarded to upstream's repository
+stays as it is. Upstream's own CI keeps running on upstream's files; where it would lint our
+layer, it skips those paths and `scripts/test.sh` lints them.
 
 **The Keep-list check runs on every pull request.** `scripts/keep-list.py` asks Upstream that the
 named tag points at the named commit, then compares the tree with it. It fails on an undeclared

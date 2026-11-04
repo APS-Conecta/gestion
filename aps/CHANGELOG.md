@@ -24,9 +24,9 @@ image digests live there and are deliberately not copied here — one fact, one 
   to its versioned twin — and the runbooks serve it from `releases/latest/download`, so the
   line an operator copies never 404s on a new version. The tag pin travels inside the bytes
   (`BUNDLE_TAG` + `TARBALL_SHA256`, filled at cut time): the sha256+signature verification
-  before anything unpacks is unchanged, `fail-on-prerelease` keeps `latest` a full Release,
-  and the versioned asset still ships for tag-pinned installs and audits. The alias exists
-  only on Releases cut after this change (published assets never move).
+  before anything unpacks is unchanged, and the versioned asset still ships for tag-pinned
+  installs and audits. The alias exists only on Releases cut after this change (published
+  assets never move).
 
 - **`aps-conecta actualizar` uninstalls a release app whose row left the manifest (#172).** The plan
   names it, the run removes it last (`occ app:remove`, data included; the backup the run takes first

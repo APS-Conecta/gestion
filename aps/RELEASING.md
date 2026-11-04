@@ -103,8 +103,8 @@ install asset twice — under its versioned name and as `apsconecta-install.sh`,
 byte-identical stable-name copy `releases/latest/download` serves, so the runbooks'
 one-liner always resolves to the newest full Release without an operator editing the URL.
 The alias carries the tag pin inside its bytes (`BUNDLE_TAG` + `TARBALL_SHA256`, filled at
-cut time), so the verification chain is unchanged; `fail-on-prerelease` keeps `latest` a
-full Release, and ci.N rehearsals publish `--latest=false` and never shadow it.
+cut time), so the verification chain is unchanged; ci.N rehearsals publish `--latest=false`
+and never shadow it.
 
 **The testbed pin follows**. Once the Release is green, one commit moves the pin in
 `scripts/aio-testbed.sh` to `vX.Y.Z` — the suite tag the testbed and the Playwright suite
