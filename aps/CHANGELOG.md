@@ -1,7 +1,7 @@
 # Changelog — APS Conecta instalador
 
-Every version a clinic can install. `main` is the development trunk; a release is a tag, and a clinic
-installs the tag's signed package (the `install.sh` bootstrap; aps/RELEASING.md owns the ritual).
+Every version a clinic can install. `main` is the development trunk; a release is a tag
+(aps/RELEASING.md owns the ritual).
 
 Format: [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
@@ -13,20 +13,18 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Changed
 
+- **Test builds and release candidates come from one dispatch (#281).** A maintainer tags a commit
+  `vX.Y.Z-ci.N` or `vX.Y.Z-rc.N` and dispatches the release pipeline on that tag. It builds our three
+  images from the commit — the mastercontainer, a Nextcloud image without the one-click-instance
+  user cap (#176) and a Caddy image with the acme-dns DNS module — pushes them under that tag only,
+  and publishes a pre-release, which never becomes "Latest". Every other container is the official
+  upstream image, pinned by digest to upstream v14.4.3's set.
+
 - **The AIO tree is Upstream v14.4.3 plus the Keep-list (#280).** Every path outside
   `aps/keep-list.txt` is nextcloud/all-in-one v14.4.3's — its container and network names, its
   update machinery and notifications, its page and its runtime — except the one-click-instance
   user-cap removal (#176) in the Nextcloud image. A pull request that differs from Upstream
   outside the Keep-list, or leaves an entry that no longer differs, fails CI.
-
-- **The install one-liner always resolves to the newest Release (#262).** Every Release now
-  publishes `apsconecta-install.sh` — the install asset under a stable name, byte-identical
-  to its versioned twin — and the runbooks serve it from `releases/latest/download`, so the
-  line an operator copies never 404s on a new version. The tag pin travels inside the bytes
-  (`BUNDLE_TAG` + `TARBALL_SHA256`, filled at cut time): the sha256+signature verification
-  before anything unpacks is unchanged, and the versioned asset still ships for tag-pinned
-  installs and audits. The alias exists only on Releases cut after this change (published
-  assets never move).
 
 - **`aps-conecta actualizar` uninstalls a release app whose row left the manifest (#172).** The plan
   names it, the run removes it last (`occ app:remove`, data included; the backup the run takes first

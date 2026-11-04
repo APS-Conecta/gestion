@@ -23,7 +23,8 @@ no patch queue, no mirror-parity fence, no replay machinery, no `upstream` remot
 deliberate merge into `main`, merged with a merge commit (never a squash) so `main` records
 Upstream as a parent, then an ordinary release (`aps/RELEASING.md` owns the ritual).
 Every path where the tree differs from Upstream is a line of `aps/keep-list.txt` with its
-reason; the merge moves the Keep-list's base to the new tag.
+reason; the merge moves the Keep-list's base to the new tag, and `aps/release/pins.sh` re-pins
+the official images to the set Upstream built from it.
 
 - NEVER force-push `main` — it is append-only; rollback is a revert.
 
@@ -33,18 +34,19 @@ reason; the merge moves the Keep-list's base to the new tag.
   pinned gitleaks over the full history), the static gate, `scripts/test.sh` — the shell
   lint over the fork's own scripts (`bash -n`, shellcheck's errors, the comm tripwire that
   keeps every tracked script in the sweep, the errexit arm), the SPDX-header arm and
-  `python3 scripts/images.py --self-test` (hermetic: fixture inventory, stub registry and
-  GitHub, no network) — then its `zizmor over our workflows` step (zizmor at medium severity
-  over `ci.yml`, `images.yml`, `release.yml` and `issue-linker.yml`, without upstream's
-  `zizmor.yml` and with the online audits), and the Keep-list check:
+  `aps/release/latest-test.py` (the "Latest" rules against fixture releases, no network) — then
+  its `zizmor over our workflows` step (zizmor at medium severity over `ci.yml`, `release.yml`
+  and `issue-linker.yml`, without upstream's `zizmor.yml` and with the online audits), and the
+  Keep-list check:
   `scripts/keep-list-test.py` plants an undeclared difference and a stale entry and must see
   `scripts/keep-list.py` red on each, then `scripts/keep-list.py` compares the tree with the
   Upstream commit `aps/keep-list.txt` names and fails on an undeclared difference or a stale
-  entry.
+  entry, and `aps/release/pins.sh` fails unless every official image is pinned by digest to the
+  set Upstream built from that commit.
 - Upstream's own workflows beside it: codespell, shellcheck, docker-lint and json-validator,
   plus the PHP, Twig, YAML and Playwright checks on their paths. `scripts/validate.sh` runs
-  the codespell, docker-lint and json-spec trio against any tree; the release chain runs it
-  and the static gate on the tag.
+  the codespell, docker-lint and json-spec trio against any tree; the candidate pipeline runs
+  it and the static gate on the candidate commit.
 
 CI is the only mechanical gate; where a behavior is not observable in CI, the check beside
 it says so instead of pretending.
@@ -78,7 +80,8 @@ trailer. Do not add `Signed-off-by` tags.
 ## Where things live
 
 - `aps/keep-list.txt` — every path where this repo differs from Upstream, with its reason.
-- `aps/RELEASING.md` — the release ritual (the frozen window, the tag push, the audit).
+- `aps/RELEASING.md` — the release ritual (the candidate, version and channel tags, and the
+  candidate pipeline).
 - `BUGS.md` — the bug ledger; rows are frozen at their era's bytes. Add rows, never rewrite.
 - `aps/INSTALLER.md`, `aps/GUIA-CLINICA.md` — the operator runbooks.
 - `readme.md`'s `aps-fork-declaration` block — the fork's own record; markers stay, content

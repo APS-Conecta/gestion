@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The static gate, run locally and by .github/workflows/ci.yml: the shell lint over the fork's
 # own scripts (syntax, shellcheck's errors, sweep coverage, errexit in a tested subshell), their
-# SPDX headers, and the image CLI's hermetic self-test. No stack, no network. Exits non-zero if anything fails.
+# SPDX headers, and the "Latest" rules' self-test. No stack, no network. Exits non-zero if anything fails.
 # NOT `set -e`: we run every check and aggregate, so one failure doesn't hide the rest.
 set -uo pipefail
 
@@ -191,10 +191,10 @@ gone.sh" spdx_baseline_row 2>&1 )"
 check spdx_baseline_cases
 
 echo "== self-tests (hermetic — no docker, no stack) =="
-# Hermetic image CLI checks use fixture inventories and read-only registry/GitHub shims.
-im_out="$(python3 scripts/images.py --self-test 2>&1)" \
-  && echo "  ok:   images --self-test ($(printf '%s\n' "$im_out" | tail -1))" \
-  || { echo "  FAIL: images --self-test"; printf '%s\n' "$im_out" | tail -25; fail=1; }
+# The release pipeline's "Latest" rules, against fixture releases.
+latest_out="$(python3 -I aps/release/latest-test.py 2>&1)" \
+  && echo "  ok:   aps/release/latest-test.py ($(printf '%s\n' "$latest_out" | grep '^Ran '))" \
+  || { echo "  FAIL: aps/release/latest-test.py"; printf '%s\n' "$latest_out" | tail -25; fail=1; }
 
 if [ "$fail" -eq 0 ]; then
   echo "PASS: local gate green"
