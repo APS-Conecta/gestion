@@ -199,7 +199,8 @@ aio_page_out="$(python3 -I scripts/aio-page.py 2>&1)" \
 # Its red test, in a scratch copy of what it reads: a planted English sentence, a notification
 # naming the other product and a brand hex in the stylesheet must each red, named.
 aio_page_cases() {
-  local tmp out other='APS Conecta Gestión AIO' # the name of the other product, APS-Conecta/gestion-aio
+  local tmp out brand other='APS Conecta Gestión AIO' # the name of the other product, APS-Conecta/gestion-aio
+  brand="$(grep -o -i -E '#[0-9a-f]{6}\b' themes/apsconecta/core/css/tokens.css | head -n1)"
   tmp="$(mktemp -d)"
   mkdir -p "$tmp/community-containers" "$tmp/themes/apsconecta/core/css"
   cp -R php "$tmp/" && cp -R community-containers/caddy "$tmp/community-containers/" \
@@ -208,13 +209,13 @@ aio_page_cases() {
   printf '<p>Click here to continue.</p>\n' >> "$tmp/php/templates/login.twig"
   printf '<?php $m->sendNotification($c, %s, %s);\n' "'$other'" "'Su copia de seguridad'" \
     > "$tmp/php/src/Cron/Planted.php"
-  printf '.planted { color: #7f21fe; }\n' >> "$tmp/php/public/style.css"
+  printf '.planted { color: %s; }\n' "$brand" >> "$tmp/php/public/style.css"
   out="$(python3 -I scripts/aio-page.py "$tmp" 2>&1)" \
     && { rm -rf "$tmp"; echo "aio-page: nothing planted went red" >&2; return 1; }
   rm -rf "$tmp"
   grep -q "login.twig:[0-9]*: English .*Click" <<<"$out" \
     && grep -q "Planted.php:1: carries '${other#APS Conecta }'" <<<"$out" \
-    && grep -q "style.css:[0-9]*: carries '#7f21fe'" <<<"$out" \
+    && grep -q "style.css:[0-9]*: carries '$brand'" <<<"$out" \
     || { echo "aio-page: a planted English text, the other product's name or a brand hex went unnamed: $out" >&2; return 1; }
 }
 check aio_page_cases
