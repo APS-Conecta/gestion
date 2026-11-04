@@ -9,7 +9,8 @@
 
 **What this fork changes.** The tree is Upstream — nextcloud/all-in-one v14.4.3 — plus the paths
 [`aps/keep-list.txt`](aps/keep-list.txt) declares, each with its reason — chiefly our layer (the
-Keep-list, the runbooks, the docs, the theme, our workflows and scripts, and our three images),
+Keep-list, the runbooks, the docs, the theme, the Provisionador and the DEIS register, our workflows
+and scripts, and our three images),
 AIO's page and its notifications in Spanish as «APS Conecta Gestión», the official images' digest
 pins, and the upstream automation this repository switches off. Our Nextcloud image is upstream's
 without the one-click-instance user cap (#176). The Keep-list check in CI fails on any other

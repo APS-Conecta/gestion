@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: 2026 APS Conecta
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Imported into AIO's interface, https://:8080 in Containers/mastercontainer/internal.Caddyfile. Until «Listo», the
+# file listo beside the Provisionador's state, the interface shows only the Provisionador: it gets every request but
+# those for the brand files AIO's page serves under /aps/, which the Provisionador's page loads too.
+@provisionador {
+	not {
+		path /aps/*
+		file
+	}
+	not file {
+		root /mnt/docker-aio-config/provisionador
+		try_files listo
+	}
+}
+
+# AIO's headers.Caddyfile with the two allowances «Centro»'s map needs. Images also from OpenStreetMap's tiles and
+# data: URLs, the blank image Leaflet sets to cancel a tile's download. And a default Trusted Types policy, which the
+# page defines to let through only the HTML Leaflet writes for it. A header block with a matcher runs before AIO's,
+# which has none, so these edits apply to AIO's policy once AIO has set it.
+header @provisionador {
+	defer
+	Content-Security-Policy "img-src 'self';" "img-src 'self' data: https://tile.openstreetmap.org;"
+	Content-Security-Policy "trusted-types 'none';" "trusted-types default;"
+}
+
+handle @provisionador {
+	reverse_proxy 127.0.0.1:8081
+}

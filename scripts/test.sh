@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # The static gate, run locally and by .github/workflows/ci.yml: the shell lint over the fork's
 # own scripts (syntax, shellcheck's errors, sweep coverage, errexit in a tested subshell), their
-# SPDX headers, AIO's page check, and the "Latest" rules' self-test. No stack, no network. Exits
-# non-zero if anything fails.
+# SPDX headers, AIO's page check, the "Latest" rules' self-test and the Provisionador's API tests.
+# No stack, no network. Exits non-zero if anything fails.
 # NOT `set -e`: we run every check and aggregate, so one failure doesn't hide the rest.
 set -uo pipefail
 
@@ -225,6 +225,10 @@ echo "== self-tests (hermetic — no docker, no stack) =="
 latest_out="$(python3 -I aps/release/latest-test.py 2>&1)" \
   && echo "  ok:   aps/release/latest-test.py ($(printf '%s\n' "$latest_out" | grep '^Ran '))" \
   || { echo "  FAIL: aps/release/latest-test.py"; printf '%s\n' "$latest_out" | tail -25; fail=1; }
+# Seam 2 (#282): the Provisionador's HTTP API in-process, against the fake suite port.
+provisionador_out="$(python3 -I -B -m unittest discover -s aps/provisionador 2>&1)" \
+  && echo "  ok:   aps/provisionador ($(printf '%s\n' "$provisionador_out" | grep '^Ran '))" \
+  || { echo "  FAIL: aps/provisionador"; printf '%s\n' "$provisionador_out" | tail -25; fail=1; }
 
 if [ "$fail" -eq 0 ]; then
   echo "PASS: local gate green"

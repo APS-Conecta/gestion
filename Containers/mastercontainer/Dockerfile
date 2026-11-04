@@ -22,8 +22,9 @@ COPY --from=docker /usr/local/bin/docker /usr/local/bin/docker
 
 COPY community-containers /var/www/docker-aio/community-containers
 COPY php /var/www/docker-aio/php
-# AIO's page paints the brand from the theme: the token file, the favicon and the two fonts.
-COPY themes/apsconecta/core/css/tokens.css themes/apsconecta/core/img/favicon.ico themes/apsconecta/core/fonts/NunitoSans.woff2 themes/apsconecta/core/fonts/Fraunces.woff2 /var/www/docker-aio/php/public/aps/
+# AIO's page and our Provisionador paint the brand from the theme: the token file, the favicon and the two fonts; the
+# Provisionador's map adds the theme's Leaflet.
+COPY themes/apsconecta/core/css/tokens.css themes/apsconecta/core/img/favicon.ico themes/apsconecta/core/fonts/NunitoSans.woff2 themes/apsconecta/core/fonts/Fraunces.woff2 themes/apsconecta/core/mapa/leaflet.js themes/apsconecta/core/mapa/leaflet.css /var/www/docker-aio/php/public/aps/
 COPY --chmod=775 Containers/mastercontainer/*.sh /
 COPY --chmod=664 Containers/mastercontainer/*.Caddyfile /
 COPY Containers/mastercontainer/dinit.d/ /etc/dinit.d/
@@ -97,6 +98,12 @@ RUN set -ex; \
     chown -R www-data:www-data /var/www; \
     rm -r php/data; \
     rm -r php/session;
+
+# Our layer: the Provisionador, which answers on AIO's interface until «Listo», with the DEIS register.
+COPY aps/deis/ /var/www/docker-aio/aps/deis/
+COPY aps/provisionador/ /var/www/docker-aio/aps/provisionador/
+COPY aps/provisionador/dinit.d/ /etc/dinit.d/
+RUN apk add --no-cache python3 libqrencode-tools
 
 # hadolint ignore=DL3048
 LABEL org.opencontainers.image.title="Nextcloud All-in-One Mastercontainer" \

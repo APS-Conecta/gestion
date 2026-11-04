@@ -5,7 +5,7 @@
 # Every path where this repo differs from Upstream, one per line: `<path> <reason>`. A path ending
 # in `/` covers everything under it. scripts/keep-list.py fails on an undeclared difference and on
 # an entry that no longer differs.
-aps/ our layer: the Keep-list, the operator runbooks, the changelog, the release ritual, our three images and the release pipeline's tools
+aps/ our layer: the Keep-list, the operator runbooks, the changelog, the release ritual, our three images, the release pipeline's tools, the Provisionador and the DEIS register
 docs/ our layer: ADRs and agent docs
 themes/ our layer: the apsconecta server theme and the brand token file
 AGENTS.md our agent steering replaces upstream's
@@ -17,6 +17,7 @@ readme.md our fork declaration replaces upstream's readme
 .github/workflows/ci.yml our gates: PR title, secret scan, static gate, the Keep-list check and the digest pins
 .github/workflows/release.yml our candidate pipeline: our three images under the candidate tag, and the pre-release
 .github/workflows/issue-linker.yml our issue linker
+.github/workflows/mastercontainer-image.yml our image test: the mastercontainer built from a pull request's tree, run as vanilla's command runs it and checked from outside
 scripts/.gitignore our scripts' bytecode stays untracked
 scripts/ci-tool.sh our CI tool pins
 scripts/keep-list.py the Keep-list check
@@ -33,7 +34,6 @@ host/ old host layer: the host CLI and its systemd units
 install.sh old host layer: the installer
 installer.pub old host layer: the installer's signing key
 provisioning/ old host layer: the provisioning phases and the data and welcome content they seed
-sites/ old host layer: the DEIS register its site files come from
 scripts/aio-testbed.sh old host layer: the by-IP testbed
 scripts/appapi-smoke.sh old host layer: the AppAPI smoke check
 scripts/apps.py old host layer: the Suite manifest tool
@@ -53,7 +53,9 @@ php/containers.json official images pinned by digest to upstream v14.4.3's set; 
 php/containers-schema.json an image_tag may be a sha256 digest pin
 php/src/Docker/DockerActionManager.php an image_tag that is a sha256 digest is requested as image@digest; Spanish «APS Conecta Gestión» text on AIO's page
 community-containers/caddy/caddy.json the reverse proxy is our thin Caddy image, pinned per release; Spanish display name
-Containers/mastercontainer/Dockerfile AIO's page takes the brand token file, the favicon and the fonts from the theme
+Containers/mastercontainer/Dockerfile AIO's page takes the brand token file, the favicon and the fonts from the theme; the image carries our Provisionador with Python, qrencode, the DEIS register and the theme's Leaflet
+Containers/mastercontainer/internal.Caddyfile until «Listo», AIO's interface shows our Provisionador: it imports aps/provisionador/provisionador.Caddyfile
+Containers/mastercontainer/dinit.d/caddy-internal our Provisionador starts with AIO's interface
 Containers/mastercontainer/headers.Caddyfile AIO's page serves its own fonts: its CSP allows fonts from itself
 php/public/click-handlers.js Spanish «APS Conecta Gestión» text on AIO's page
 php/public/containers-form-submit.js Spanish «APS Conecta Gestión» text on AIO's page
@@ -109,6 +111,6 @@ php/tests/tests/restore-instance.spec.js upstream's browser tests, their selecto
 .github/workflows/wg-easy-update.yml switched off: opens upstream's wg-easy update PRs
 .github/workflows/lint-php.yml its summary job runs on ubuntu-latest: ubuntu-latest-low is Nextcloud's own runner
 .github/workflows/shellcheck.yml skips our layer's shell, which scripts/test.sh lints
-.editorconfig editors leave the theme's vendored map files and the old host layer's CRLF CSVs alone
-.gitattributes the theme's vendored map files and the old host layer's CRLF CSVs keep their bytes
+.editorconfig editors leave the theme's vendored map files, the DEIS register and the old host layer's CRLF CSVs alone
+.gitattributes the theme's vendored map files, the DEIS register and the old host layer's CRLF CSVs keep their bytes
 .gitignore our layer's bytecode and the old host layer's per-install files stay untracked

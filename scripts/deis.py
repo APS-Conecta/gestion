@@ -12,7 +12,7 @@
 No establishment ships with this repository; running this is how an install gets one, and the file it
 writes is gitignored because its content depends on which establishment you chose.
 
-The register is the newest sites/establecimientos-deis-*.csv: public primary-care establishments in
+The register is the newest aps/deis/establecimientos-deis-*.csv: public primary-care establishments in
 operation, trimmed to the ten columns an install needs, then each establishment's official point
 (latitud, longitud) from MINSAL's Geoportal de Chile dataset (https://aps-conecta.github.io/documentation/desarrollo/licencias.html). It carries
 the whole APS network — CESFAM, PSR, CECOSF, CGR, CGU, COSAM, SAPU, SAR, SUR — and the filter is a
@@ -57,13 +57,13 @@ def fold(s):  # accent- and case-blind, so "julio cesar" finds "Julio César"
 
 
 def register_files():
-    return sorted(glob.glob(os.path.join(HERE, "..", "sites", "establecimientos-deis-*.csv")))
+    return sorted(glob.glob(os.path.join(HERE, "..", "aps", "deis", "establecimientos-deis-*.csv")))
 
 
 def register_path():
     files = register_files()
     if not files:
-        sys.exit("FATAL: no sites/establecimientos-deis-*.csv found")
+        sys.exit("FATAL: no aps/deis/establecimientos-deis-*.csv found")
     return files[-1]
 
 
@@ -106,7 +106,7 @@ def snapshot_from(root):
         sys.exit(f"FATAL: no data/raw/<date>/ under {root} — run `make fetch` there first")
     date = os.path.basename(captures[-1])
 
-    out = os.path.join(HERE, "..", "sites", f"establecimientos-deis-{date}.csv")
+    out = os.path.join(HERE, "..", "aps", "deis", f"establecimientos-deis-{date}.csv")
     n = 0
     with open(src, encoding="utf-8") as fh, open(out, "w", newline="", encoding="utf-8") as dst:
         w = csv.writer(dst)

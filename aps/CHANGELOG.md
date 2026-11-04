@@ -11,6 +11,15 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ## [Unreleased]
 
+### Added
+
+- **The Provisionador answers on AIO's interface until «Listo» (#282).** Our mastercontainer prints a link, its QR
+  code and the certificate's fingerprint to its log; the link opens the Provisionador on port 8080, with AIO's own
+  certificate. At «Centro» the operator finds the establishment in the DEIS register by región, comuna, type or
+  name, confirms or moves its point on the map, and the suite's timezone follows its location. The state survives a
+  reload, a restart or a reboot; at «Listo» the link and the sessions end and 8080 shows AIO's page. The start
+  command takes the server's address as `APS_INTERFACE_ADDRESS` (ADR-0027).
+
 ### Changed
 
 - **AIO's page speaks Spanish as «APS Conecta Gestión» (#288).** Its login, containers, backup,

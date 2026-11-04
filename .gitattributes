@@ -2,6 +2,6 @@
 # Byte-pinned or CRLF-native: the Leaflet files are vendored bytes kept as shipped, and the CSVs
 # are written by Python's csv module with CRLF row endings.
 themes/apsconecta/core/mapa/* -text
-sites/*.csv -text
+aps/deis/*.csv -text
 provisioning/data/*.csv -text
 provisioning/data/masters/*.csv -text
