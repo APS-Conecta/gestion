@@ -278,8 +278,8 @@ instalador, la misma que firma su enlace (§4).
   firmar 30 días antes de que venza y reinicia apache. La autoridad que lo firma no se vuelve a crear:
   si falta, la ejecución se detiene hasta restaurar `/opt/aps-conecta/certificados` desde el respaldo
   diario (`INSTALLER.md` §11).
-- **El comando de arranque** lleva dos líneas más, `--env APS_TLS_DIR=/opt/aps-conecta/certificados/suite`
-  y `--env NEXTCLOUD_TRUSTED_CACERTS_DIR=/opt/aps-conecta/certificados/ca`; el paso 6 y la instalación
+- **El comando de arranque** lleva dos líneas más, el directorio del certificado de la suite y
+  `--env NEXTCLOUD_TRUSTED_CACERTS_DIR=/opt/aps-conecta/certificados/ca`; el paso 6 y la instalación
   silenciosa firman el certificado antes de ejecutarlo. Una suite iniciada con un dominio no cambia a
   una dirección, ni al revés: se reinstala (`INSTALLER.md` §12).
 - **Nextcloud** confía en la autoridad (fase 07); **la oficina** llega a Nextcloud dentro de la red de

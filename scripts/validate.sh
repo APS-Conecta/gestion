@@ -7,28 +7,24 @@
 # workflows cover push/PR. twig-lint is not here: it needs PHP 8.5 + apcu, so it rides
 # the workflow's own setup-php step beside this script.
 #
-# Usage: scripts/validate.sh [--docker-lint] TREE     (TREE = the tree to validate, e.g. . — the checkout)
+# Usage: scripts/validate.sh TREE     (TREE = the tree to validate, e.g. . — the checkout)
 set -uo pipefail
 
 TMPD="$(mktemp -d)"; trap 'rm -rf "$TMPD"' EXIT
 
 die() { echo "FATAL: $*" >&2; exit 1; }
 
-docker_only=0
-if [ "${1:-}" = --docker-lint ]; then docker_only=1; shift; fi
-tree="${1:?usage: scripts/validate.sh [--docker-lint] TREE (the tree to validate, e.g. .)}"
+tree="${1:?usage: scripts/validate.sh TREE (the tree to validate, e.g. .)}"
 [ -d "$tree" ] || die "no tree at '$tree'"
-if [ "$docker_only" -eq 0 ]; then
-  venv="$TMPD/venv"
-  python3 -m venv "$venv" || die "cannot create the validator venv (PEP 668 — everything installs in here, never the system python)"
-  "$venv/bin/pip" install --quiet codespell json-spec || die "cannot install codespell+json-spec"
+venv="$TMPD/venv"
+python3 -m venv "$venv" || die "cannot create the validator venv (PEP 668 — everything installs in here, never the system python)"
+"$venv/bin/pip" install --quiet codespell json-spec || die "cannot install codespell+json-spec"
 
-  echo "== codespell (upstream's own flags — the es-CL strings of patch 060 ride this gate too) =="
-  "$venv/bin/codespell" --check-filenames --check-hidden "$tree" \
-    || { echo "VALIDATE: codespell FAIL — a misspelling entered the tree (upstream's own tree passes this)" >&2; exit 1; }
-fi
+echo "== codespell (upstream's own flags — our layer's es-CL strings ride this gate too) =="
+"$venv/bin/codespell" --check-filenames --check-hidden "$tree" \
+  || { echo "VALIDATE: codespell FAIL — a misspelling entered the tree (upstream's own tree passes this)" >&2; exit 1; }
 
-echo "== docker-lint (hadolint, upstream's own ignores — patches 020/030 edit this Dockerfile) =="
+echo "== docker-lint (hadolint, upstream's own ignores) =="
 bash "$(dirname "$0")/ci-tool.sh" hadolint "$TMPD/hadolint" || die "cannot acquire the pinned Dockerfile linter"
 : > "$TMPD/hadolint.log"
 find "$tree/Containers" -name "*Dockerfile" -print > "$TMPD/dockerfiles" || die "cannot enumerate Dockerfiles"
@@ -43,12 +39,7 @@ if [ -s "$TMPD/hadolint.log" ]; then
   exit 1
 fi
 
-if [ "$docker_only" -eq 1 ]; then
-  echo "VALIDATE: PASS — Dockerfile lint green against $tree"
-  exit 0
-fi
-
-echo "== json-validator (json-spec, upstream's exact commands — 010 edits containers.json) =="
+echo "== json-validator (json-spec, upstream's command for containers.json) =="
 if ! "$venv/bin/json" validate --schema-file="$tree/php/containers-schema.json" --document-file="$tree/php/containers.json"; then
   echo "VALIDATE: json FAIL — containers.json no longer validates against upstream's schema" >&2
   exit 1

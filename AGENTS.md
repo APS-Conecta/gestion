@@ -3,7 +3,7 @@
   - SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
-# Agent Guidelines for APS Conecta Gestión AIO — Instalador
+# Agent Guidelines for APS Conecta Gestión
 
 Instructions for AI coding agents operating on this repository. Read them before generating
 any code, commits, or pull requests.
@@ -11,30 +11,33 @@ any code, commits, or pull requests.
 This is APS Conecta's hard fork of [Nextcloud
 All-in-One](https://github.com/nextcloud/all-in-one), maintained for Chilean
 primary-healthcare clinics. It is **not** produced by, affiliated with, or endorsed by
-Nextcloud GmbH (the full attribution lives in `readme.md`'s declaration block). The upstream
-contribution policy this file used to carry — nextcloud's AI policy, all-in-one's
-CONTRIBUTING, HackerOne reporting — left with the hard fork (Stage 3): one tree, the fork's
-own rules.
+Nextcloud GmbH (the full attribution lives in `readme.md`'s declaration block). Upstream's own
+contribution files (`AI_POLICY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, the `.github`
+templates) are carried as upstream ships them; the rules below govern work on this repository.
 
 ## The one-tree doctrine
 
 `main` is ONE tree: upstream's history plus the fork's changes as committed bytes. There is
 no patch queue, no mirror-parity fence, no replay machinery, no `upstream` remote, no
 `aps/main` branch. An upstream release arrives the way every upstream change arrives: a
-deliberate merge into `main`, then an ordinary release (`aps/RELEASING.md` owns the ritual).
-A merge that re-introduces upstream identifiers is followed by the merge-time re-swap tools:
-`python3 scripts/images.py rewrite-registry php/containers.json` and `scripts/rename-containers.py`.
+deliberate merge into `main`, merged with a merge commit (never a squash) so `main` records
+Upstream as a parent, then an ordinary release (`aps/RELEASING.md` owns the ritual).
+Every path where the tree differs from Upstream is a line of `aps/keep-list.txt` with its
+reason; the merge moves the Keep-list's base to the new tag.
 
 - NEVER force-push `main` — it is append-only; rollback is a revert.
 
 ## The gates
 
 - `.github/workflows/ci.yml`, on every push and PR: the PR-title check, the secret scan (the
-  pinned gitleaks over the full history) and the static gate, `scripts/test.sh` — the shell
-  lint over the fork's own scripts (`bash -n`, the comm tripwire that keeps every tracked
-  script in the sweep, the errexit arm), the SPDX-header arm and
+  pinned gitleaks over the full history), the static gate, `scripts/test.sh` — the shell
+  lint over the fork's own scripts (`bash -n`, shellcheck's errors, the comm tripwire that
+  keeps every tracked script in the sweep, the errexit arm), the SPDX-header arm and
   `python3 scripts/images.py --self-test` (hermetic: fixture inventory, stub registry and
-  GitHub, no network).
+  GitHub, no network) — and the Keep-list check: `scripts/keep-list-test.py` plants an
+  undeclared difference and a stale entry and must see `scripts/keep-list.py` red on each,
+  then `scripts/keep-list.py` compares the tree with the Upstream commit `aps/keep-list.txt`
+  names and fails on an undeclared difference or a stale entry.
 - Upstream's own workflows beside it: codespell, shellcheck, docker-lint and json-validator,
   plus the PHP, Twig, YAML and Playwright checks on their paths. `scripts/validate.sh` runs
   the codespell, docker-lint and json-spec trio against any tree; the release chain runs it
@@ -71,6 +74,7 @@ trailer. Do not add `Signed-off-by` tags.
 
 ## Where things live
 
+- `aps/keep-list.txt` — every path where this repo differs from Upstream, with its reason.
 - `aps/RELEASING.md` — the release ritual (the frozen window, the tag push, the audit).
 - `BUGS.md` — the bug ledger; rows are frozen at their era's bytes. Add rows, never rewrite.
 - `aps/INSTALLER.md`, `aps/GUIA-CLINICA.md` — the operator runbooks.

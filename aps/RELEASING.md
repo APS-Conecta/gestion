@@ -69,9 +69,8 @@ Read back the effective repository defaults after changing them:
 
     gh api repos/APS-Conecta/gestion/actions/permissions/workflow
 
-`scripts/ci-tool.sh` owns the raw gate binaries and their pinned checksums. The Dockerfile
-workflow reuses `scripts/validate.sh --docker-lint`; it has no separate downloader or exit-status
-policy. A tool update changes its version and publisher-verified checksum together.
+`scripts/ci-tool.sh` owns the raw gate binaries and their pinned checksums: the secret scan's and
+`scripts/validate.sh`'s. A tool update changes its version and publisher-verified checksum together.
 
 ## 3. The release commit
 

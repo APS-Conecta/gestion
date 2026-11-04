@@ -176,21 +176,6 @@ def published_images(tag, sha):
     return digests
 
 
-def rewrite_registry(filename):
-    path = Path(filename)
-    try:
-        text = path.read_text().replace("ghcr.io/nextcloud-releases/", REGISTRY + "/")
-        if "ghcr.io/nextcloud-releases" in text:
-            raise ImageError(f"{path} contains an unsupported upstream registry reference")
-        path.write_text(text)
-    except OSError as exc:
-        raise ImageError(f"cannot rewrite {path}: {exc}") from exc
-    expected = len(inventory()) - 1  # The mastercontainer is not a containers.json sibling.
-    if text.count(REGISTRY + "/") != expected:
-        raise ImageError(f"{path} does not carry the suite's {expected} sibling image references")
-    print(f"registry rewritten: {expected} sibling image references; channel placeholders preserved")
-
-
 def self_test():
     checks = 0
     with tempfile.TemporaryDirectory(prefix="suite-images-") as tmp:
@@ -352,13 +337,6 @@ else:
         assert record["built_from"] == {"ref": "v0.5.0", "sha": sha}
         assert record["suite_tag"] == "v0.5.0" and set(record["images"]) == {*names, "all-in-one"}
         assert "retag_source" not in record
-
-        definition.write_text(json.dumps(data).replace(REGISTRY + "/", "ghcr.io/nextcloud-releases/"))
-        invoke("registry rewrite", "rewrite-registry", str(definition))
-        rewritten = definition.read_text()
-        assert "%AIO_CHANNEL%" in rewritten and "nextcloud-releases" not in rewritten
-        invoke("idempotent registry rewrite", "rewrite-registry", str(definition))
-        assert definition.read_text() == rewritten
     print(f"self-test: {checks} image checks OK")
 
 
@@ -378,8 +356,6 @@ def main():
         if name == "manifest":
             sub.add_argument("--ref", required=True)
     commands.add_parser("runtime-services")
-    rewrite = commands.add_parser("rewrite-registry")
-    rewrite.add_argument("file")
     args = parser.parse_args()
     if args.self_test:
         self_test()
@@ -389,9 +365,6 @@ def main():
         return
     if args.command == "preflight":
         preflight(args.tag, args.force)
-        return
-    if args.command == "rewrite-registry":
-        rewrite_registry(args.file)
         return
     if args.command in {"verify", "manifest"}:
         digests = published_images(args.tag, args.sha)

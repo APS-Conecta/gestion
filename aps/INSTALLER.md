@@ -313,13 +313,13 @@ not patched; the wait ends when the probe times out or the network returns).
 
 ### The applications update: `aps-conecta actualizar` (#46)
 
-The suite's images move with a suite tag (above); the **applications** move only when the
-administrator says so, with `sudo aps-conecta actualizar` (ADR-0017). It refuses to run unless the
+The suite's images move with a suite tag (above); the own and fork **applications** move when the
+administrator says so, with `sudo aps-conecta actualizar` (ADR-0017), and store applications also
+update the vanilla way (ADR-0018). It refuses to run unless the
 suite is up, the lock exists and the backup is configured — then it prints the plan (current and
 candidate version per application), takes a **full backup first** and stops if it fails, fetches
 and verifies the newest compatible releases into a new lock, applies them one application at a
-time (store applications with one scoped `occ app:update` each, the store closed to everything
-else), uninstalls last every release application whose row left the manifest (`occ app:remove`,
+time (store applications with one `occ app:update` each), uninstalls last every release application whose row left the manifest (`occ app:remove`,
 its lock row dropped), moves the lock only when everything succeeded, and revalidates.
 
 `sudo aps-conecta actualizar --revisar` prints the plan and **writes nothing** — the way to see
@@ -346,15 +346,15 @@ Santiago time. To move it, the wizard's backup section takes a new time, in UTC.
   `/var/www/html/data/nextcloud.log` as the Nextcloud log. Read the configured values with:
 
   ```bash
-  sudo docker exec --user www-data aps-conecta-nextcloud php /var/www/html/occ config:system:get datadirectory
-  sudo docker exec --user www-data aps-conecta-nextcloud php /var/www/html/occ config:system:get logfile
+  sudo docker exec --user www-data nextcloud-aio-nextcloud php /var/www/html/occ config:system:get datadirectory
+  sudo docker exec --user www-data nextcloud-aio-nextcloud php /var/www/html/occ config:system:get logfile
   ```
 
   After an administrative out-of-band file transfer, update the file index. Replace `USER`
   and `FOLDER` with the account and folder:
 
   ```bash
-  sudo docker exec --user www-data aps-conecta-nextcloud php /var/www/html/occ files:scan --path='USER/files/FOLDER'
+  sudo docker exec --user www-data nextcloud-aio-nextcloud php /var/www/html/occ files:scan --path='USER/files/FOLDER'
   ```
 
 - **The log panel looks unstyled after a suite upgrade**: hard-refresh once. The overlay-log
@@ -401,8 +401,8 @@ goes: step 6, or `SITE_DOMINIO` in the site file of the silent install. The suit
   `/opt/aps-conecta/certificados/suite` (apache's, read-only). The weekly run signs it again 30 days
   before it expires and restarts apache. The CA that signs it is never made again: if it goes missing,
   the run stops until `/opt/aps-conecta/certificados` is restored from the daily backup (§11).
-- **The run command** carries two more lines, `--env APS_TLS_DIR=/opt/aps-conecta/certificados/suite`
-  and `--env NEXTCLOUD_TRUSTED_CACERTS_DIR=/opt/aps-conecta/certificados/ca`; step 6 and the silent
+- **The run command** carries two more lines, the suite certificate's directory and
+  `--env NEXTCLOUD_TRUSTED_CACERTS_DIR=/opt/aps-conecta/certificados/ca`; step 6 and the silent
   install sign the certificate before they run it. A suite started for a domain does not switch to an
   address, nor the reverse: it is reinstalled (§12).
 - **Nextcloud** trusts the CA (phase 07); **the office** reaches Nextcloud inside the suite's network

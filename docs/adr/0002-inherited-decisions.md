@@ -63,8 +63,8 @@ the Nextcloud container's `TZ`. UI text is Spanish; all code, identifiers and co
 
 Container-to-container traffic uses the container name over the container network, never `localhost`
 and never a host-published port. That is why, on an install by IP, `14-office.sh` sets
-`DocumentServerInternalUrl=http://aps-conecta-eurooffice/` and
-`StorageUrl=http://aps-conecta-apache.nextcloud-aio:23973/` while `DocumentServerUrl` (the browser's
+`DocumentServerInternalUrl=http://nextcloud-aio-eurooffice/` and
+`StorageUrl=http://nextcloud-aio-apache.nextcloud-aio:23973/` while `DocumentServerUrl` (the browser's
 view) stays the suite's public address.
 
 `host.docker.internal` is reserved for the other direction, container → host, and on Linux it needs an
