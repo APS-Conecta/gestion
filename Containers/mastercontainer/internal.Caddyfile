@@ -33,14 +33,13 @@
 }
 
 https://:8080 {
-	import headers.Caddyfile
+    import headers.Caddyfile
 
 	root * /var/www/docker-aio/php/public
 	php_fastcgi unix//run/php.sock
 	file_server
 
 	tls {
-		protocols tls1.2 tls1.3
 		on_demand
 		issuer internal
 	}

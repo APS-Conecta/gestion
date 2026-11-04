@@ -12,16 +12,9 @@ cd "$(dirname "$0")/../.." || {
 
 DOCO="docker compose -f ./php/tests/compose.yaml"
 
-# The mastercontainer chassis rides the fork's pinned suite tag — the testbed's single source
-# (scripts/aio-testbed.sh's one IMAGE line). The fork publishes no develop
-# image, so a literal in compose.yaml cannot stay green; AIO_TEST_IMAGE overrides exactly as
-# aio-testbed.sh's own default does (a rehearsal tag, a repair pin).
-AIO_CHASSIS_IMAGE="${AIO_TEST_IMAGE:-$(sed -nE 's/^IMAGE="\$\{AIO_TEST_IMAGE:-(ghcr\.io\/aps-conecta\/all-in-one:[^}]+)\}"$/\1/p' scripts/aio-testbed.sh)}"
-if [[ -z "$AIO_CHASSIS_IMAGE" ]]; then
-    echo 'Could not read the pinned suite image from scripts/aio-testbed.sh — the compose suite has no chassis to pull' >&2
-    exit 1
+if [[ $(uname -m) = 'arm64' || $(uname -m) = 'aarch64' ]]; then
+    export ARM64_SUFFIX='-arm64'
 fi
-export AIO_CHASSIS_IMAGE
 
 # Rootless docker's socket isn't at /var/run/docker.sock. Docker Desktop etc. map that path into containers
 # themselves, even though their client endpoint differs, so only take the endpoint for rootless.
@@ -42,14 +35,14 @@ run_tests() {
     
     # Clean up old containers and volumes
     $DOCO --profile $profile down -v --remove-orphans
-    docker container rm --force nextcloud-aio-mastercontainer aps-conecta-{apache,notify-push,nextcloud,redis,database,domaincheck,imaginary,talk,eurooffice,borgbackup,clamav,fulltextsearch,harp,talk-recording} > /dev/null 2>&1
-    docker volume rm nextcloud_aio_{mastercontainer,apache,database,database_dump,nextcloud,nextcloud_data,redis,backup_cache,elasticsearch,eurooffice,eurooffice_data,clamav,harp,talk_recording} > /dev/null 2>&1
+    docker container rm --force nextcloud-aio-{mastercontainer,apache,notify-push,nextcloud,redis,database,domaincheck,whiteboard,imaginary,talk,collabora,borgbackup} > /dev/null 2>&1
+    docker volume rm nextcloud_aio_{mastercontainer,apache,database,database_dump,nextcloud,nextcloud_data,redis,backup_cache,elasticsearch} > /dev/null 2>&1
 
     echo -e "\n 📣  Running playwright tests for ${TESTS_FILE} with SKIP_DOMAIN_VALIDATION=$SKIP_DOMAIN_VALIDATION and profile '$profile'\n"
     $DOCO --profile $profile run --remove-orphans test-runner-$profile
     exitcode=$?
     if test $exitcode -gt 0; then
-        for container in nextcloud-aio-mastercontainer aps-conecta-borgbackup; do
+        for container in nextcloud-aio-{mastercontainer,borgbackup,desec-mock}; do
             if docker container list -a --format="{{ .Names }}" | grep -q "$container"; then
                 echo -e "\n 📣  Log output from container ${container}:\n"
                 docker logs "$container"
@@ -84,4 +77,10 @@ else
     sleep 1
     SKIP_DOMAIN_VALIDATION=false
     run_tests tests/restore-instance.spec.js
+    sleep 1
+    run_tests tests/desec-register.spec.js
+    sleep 1
+    run_tests tests/desec-existing.spec.js
+    sleep 1
+    run_tests tests/desec-existing-slug.spec.js
 fi

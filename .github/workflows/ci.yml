@@ -1,6 +1,6 @@
-# The cheap gate, seconds, on every PR and push: the PR title, the secret scan and the static
-# gate (scripts/test.sh). Upstream's own validators (codespell, docker-lint, json-validator,
-# shellcheck, twig-lint) run beside it from their own workflows.
+# The cheap gate, seconds, on every PR and push: the PR title, the secret scan, the static gate
+# (scripts/test.sh, then zizmor over our workflows) and the Keep-list check. Upstream's own validators (codespell, docker-lint,
+# json-validator, shellcheck, twig-lint) run beside it from their own workflows.
 name: CI
 
 # `push` is limited to main so a PR is not checked twice: a branch push and its pull_request event
@@ -65,3 +65,24 @@ jobs:
           persist-credentials: false
       # No Makefile moved (gestion's dev lifecycle). The gate is the script.
       - run: bash scripts/test.sh
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      # --no-config keeps upstream's zizmor.yml, which disables excessive-permissions and
+      # artipacked, off our workflows; the token turns the online audits on.
+      - name: zizmor over our workflows
+        run: uvx zizmor --no-config --min-severity medium .github/workflows/ci.yml .github/workflows/images.yml .github/workflows/release.yml .github/workflows/issue-linker.yml
+        env:
+          ZIZMOR_GITHUB_TOKEN: ${{ github.token }}
+
+  # The tree may differ from Upstream only where aps/keep-list.txt says so. The self-test runs
+  # first: it plants an undeclared difference and a stale entry, and the check must red on each.
+  keep-list:
+    name: Keep-list check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0    # the check diffs against the Upstream commit the Keep-list names
+      - run: python3 -I scripts/keep-list-test.py
+      - run: python3 -I scripts/keep-list.py

@@ -13,14 +13,20 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Changed
 
+- **The AIO tree is Upstream v14.4.3 plus the Keep-list (#280).** Every path outside
+  `aps/keep-list.txt` is nextcloud/all-in-one v14.4.3's — its container and network names, its
+  update machinery and notifications, its page and its runtime — except the one-click-instance
+  user-cap removal (#176) in the Nextcloud image. A pull request that differs from Upstream
+  outside the Keep-list, or leaves an entry that no longer differs, fails CI.
+
 - **The install one-liner always resolves to the newest Release (#262).** Every Release now
   publishes `apsconecta-install.sh` — the install asset under a stable name, byte-identical
   to its versioned twin — and the runbooks serve it from `releases/latest/download`, so the
   line an operator copies never 404s on a new version. The tag pin travels inside the bytes
   (`BUNDLE_TAG` + `TARBALL_SHA256`, filled at cut time): the sha256+signature verification
-  before anything unpacks is unchanged, `fail-on-prerelease` keeps `latest` a full Release,
-  and the versioned asset still ships for tag-pinned installs and audits. The alias exists
-  only on Releases cut after this change (published assets never move).
+  before anything unpacks is unchanged, and the versioned asset still ships for tag-pinned
+  installs and audits. The alias exists only on Releases cut after this change (published
+  assets never move).
 
 - **`aps-conecta actualizar` uninstalls a release app whose row left the manifest (#172).** The plan
   names it, the run removes it last (`occ app:remove`, data included; the backup the run takes first
@@ -53,8 +59,7 @@ image digests live there and are deliberately not copied here — one fact, one 
   (`community-containers.yml`, `helm-release.yml` — which could never fire on this repository,
   `lint-helm.yml`, `update-copyright.yml`). What stays at the root is the LICENSE and the short
   fork declaration: `readme.md` is the declaration block alone now. The validators lost their
-  community-JSON loops (`validate.sh`, `json-validator.yml`) and `rename-containers.py` its
-  community walk.
+  community-JSON loops (`validate.sh`, `json-validator.yml`).
 - **The migration path, whole (#48).** `scripts/migrate-to-aio.sh`, its choreography
   `aps/MIGRATION.md`, and the migration's mechanized halves (`scripts/db-dump.sh`, the verified
   plain-SQL dump of the old compose stack; `scripts/uninstall.sh`, that stack's teardown) are
@@ -200,8 +205,7 @@ image digests live there and are deliberately not copied here — one fact, one 
   Nextcloud image now carries the apsconecta theme from the tag tree and nothing else of the
   suite's. Own and fork apps were already on their own signed releases (ADR-0017); the store
   rows (calendar, contacts, groupfolders) now install during provisioning through `occ_store` —
-  a scoped command that carries its own `NC_appstoreenabled=1` (the env channel beats both
-  `config.php` and the image's own store-off ENV for that one process and dies with it) — and
+  a scoped command that opens the store for its own process alone — and
   the Nextcloud entrypoint installs notify_push and Talk the same way, only when they are
   missing. A bare `occ app:install` fails against the image ENV, the store reads closed in the
   admin UI, every update path keeps the store closed, and AIO's Saturday automatic
@@ -242,18 +246,16 @@ image digests live there and are deliberately not copied here — one fact, one 
 - **The nextcloud container is created again (#42, A-027).** `php/containers.json` still passed
   `%UPDATE_NEXTCLOUD_APPS%` after the arm that answered it died with the Saturday update leg, so
   `getPlaceholderValue` fell to its unregistered-secret default and aborted the wizard's
-  container start mid-recursion — `aps-conecta-nextcloud` was never created and the nothing-baked
+  container start mid-recursion — the Nextcloud container was never created and the nothing-baked
   bring-up timed out at twenty minutes. The env line is gone from containers.json (the container
   never receives the variable, exactly what the entrypoint-side deletion intended).
 - **The Playwright suite pulls a chassis the registry has (A-028).** `php/tests/compose.yaml`
   still named upstream's `all-in-one:develop`, a tag the fork never publishes — every run since
   the suite-tag lockstep red at the pull with manifest unknown (main included). The chassis is
-  now the suite-tag pin in `scripts/aio-testbed.sh`, resolved by `php/tests/run.sh` into
-  `AIO_CHASSIS_IMAGE` (`AIO_TEST_IMAGE` overriding exactly as the testbed's own default), the
-  wizard's host publish rides `AIO_TEST_PORT`, and
-  the compose interpolation is required so a second literal cannot quietly return.
+  now the suite-tag pin in `scripts/aio-testbed.sh`, resolved by `php/tests/run.sh`, and the
+  compose interpolation is required so a second literal cannot quietly return.
 - **The host bundle's self-test is hermetic again (A-029).** The eight-step silent-install arm
-  reddened on the missing `SITE_COMUNA_CUT` whenever a real `aps-conecta-nextcloud` answered on
+  reddened on the missing `SITE_COMUNA_CUT` whenever a real Nextcloud container answered on
   the box — green on a clean runner, red beside a live suite. The arm now stubs `cmd_datos` like
   its D9 siblings; the comuna tail keeps its own dedicated arms.
 - **Smoke's signature check watches a signal that can exist (#133, A-030).** Check 10 globbed

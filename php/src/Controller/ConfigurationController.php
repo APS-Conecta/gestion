@@ -44,13 +44,18 @@ readonly class ConfigurationController {
             }
 
             if (isset($request->getParsedBody()['daily_backup_time'])) {
+                if (isset($request->getParsedBody()['automatic_updates'])) {
+                    $enableAutomaticUpdates = true;
+                } else {
+                    $enableAutomaticUpdates = false;
+                }
                 if (isset($request->getParsedBody()['success_notification'])) {
                     $successNotification = true;
                 } else {
                     $successNotification = false;
                 }
                 $dailyBackupTime = $request->getParsedBody()['daily_backup_time'] ?? '';
-                $this->configurationManager->setDailyBackupTime($dailyBackupTime, $successNotification);
+                $this->configurationManager->setDailyBackupTime($dailyBackupTime, $enableAutomaticUpdates, $successNotification);
             }
 
             if (isset($request->getParsedBody()['delete_daily_backup_time'])) {
@@ -71,14 +76,52 @@ readonly class ConfigurationController {
                 $this->configurationManager->timezone = $timezone;
             }
 
-            if (isset($request->getParsedBody()['office_suite_choice'])) {
-                $inputValue = strval($request->getParsedBody()['office_suite_choice'] ?? '');
-                $officeSuite = OfficeSuite::tryFrom($inputValue) ?? OfficeSuite::None;
-                // APS (D12 b): the suite's office is Euro-Office; switching or disabling it is refused.
-                if ($officeSuite !== OfficeSuite::Eurooffice) {
-                    throw new InvalidSettingConfigurationException('La oficina de la suite es Euro-Office: no se puede cambiar ni desactivar.');
+            if (isset($request->getParsedBody()['options-form'])) {
+                if (isset($request->getParsedBody()['office_suite_choice'])) {
+                    $inputValue = strval($request->getParsedBody()['office_suite_choice'] ?? '');
+                    $officeSuite = OfficeSuite::tryFrom($inputValue) ?? OfficeSuite::None;
+                    $this->configurationManager->officeSuite = $officeSuite;
                 }
-                $this->configurationManager->officeSuite = $officeSuite;
+                $this->configurationManager->isClamavEnabled = isset($request->getParsedBody()['clamav']);
+                $this->configurationManager->isTalkEnabled = isset($request->getParsedBody()['talk']);
+                $this->configurationManager->isTalkRecordingEnabled = isset($request->getParsedBody()['talk-recording']);
+                $this->configurationManager->isImaginaryEnabled = isset($request->getParsedBody()['imaginary']);
+                $this->configurationManager->isFulltextsearchEnabled = isset($request->getParsedBody()['fulltextsearch']);
+                $this->configurationManager->isDockerSocketProxyEnabled = isset($request->getParsedBody()['docker-socket-proxy']);
+                $this->configurationManager->isHarpEnabled = isset($request->getParsedBody()['harp']);
+                $this->configurationManager->isWhiteboardEnabled = isset($request->getParsedBody()['whiteboard']);
+            }
+
+            if (isset($request->getParsedBody()['community-form'])) {
+                $cc = $this->configurationManager->listAvailableCommunityContainers();
+                $enabledCC = [];
+                /**
+                 * @psalm-suppress PossiblyNullIterator
+                 */
+                foreach ($request->getParsedBody() as $item) {
+                    if (array_key_exists($item , $cc)) {
+                        $enabledCC[] = $item;
+                    }
+                }
+                $this->configurationManager->aioCommunityContainers = $enabledCC;
+            }
+
+            if (isset($request->getParsedBody()['delete_collabora_dictionaries'])) {
+                $this->configurationManager->deleteCollaboraDictionaries();
+            }
+
+            if (isset($request->getParsedBody()['collabora_dictionaries'])) {
+                $collaboraDictionaries = $request->getParsedBody()['collabora_dictionaries'] ?? '';
+                $this->configurationManager->collaboraDictionaries = $collaboraDictionaries;
+            }
+
+            if (isset($request->getParsedBody()['delete_collabora_additional_options'])) {
+                $this->configurationManager->deleteAdditionalCollaboraOptions();
+            }
+
+            if (isset($request->getParsedBody()['collabora_additional_options'])) {
+                $additionalCollaboraOptions = $request->getParsedBody()['collabora_additional_options'] ?? '';
+                $this->configurationManager->collaboraAdditionalOptions = $additionalCollaboraOptions;
             }
 
             return $response->withStatus(201)->withHeader('Location', '.');

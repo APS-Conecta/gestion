@@ -11,9 +11,9 @@ Accepted, 2026-10-25.
 
 ## Context
 
-After [ADR-0018](0018-nothing-baked-the-store-opens-scoped.md), spreed was the one app still
-reaching the Nextcloud app store at a container boot: the entrypoint's scoped
-`NC_appstoreenabled=1 occ app:install spreed` on a first boot with Talk on. That install bought
+After [ADR-0018](0018-nothing-baked-the-store-is-open.md), spreed was the one app still
+reaching the Nextcloud app store at a container boot: the entrypoint's scoped store install,
+`occ app:install spreed`, on a first boot with Talk on. That install bought
 two things — no image rebuild, a working Talk before provisioning ran — and cost the supply-chain
 half the doctrine everywhere else already has: the store names no version (a repair could land a
 different Talk than yesterday's install), the bytes are verified by Nextcloud's own appstore

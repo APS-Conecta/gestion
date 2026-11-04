@@ -1,6 +1,0 @@
-type = process
-command = /start-icap.sh
-depends-on = clamd
-term-signal = TERM
-restart = yes
-options = shares-console

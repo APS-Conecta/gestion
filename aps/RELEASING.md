@@ -69,9 +69,8 @@ Read back the effective repository defaults after changing them:
 
     gh api repos/APS-Conecta/gestion/actions/permissions/workflow
 
-`scripts/ci-tool.sh` owns the raw gate binaries and their pinned checksums. The Dockerfile
-workflow reuses `scripts/validate.sh --docker-lint`; it has no separate downloader or exit-status
-policy. A tool update changes its version and publisher-verified checksum together.
+`scripts/ci-tool.sh` owns the raw gate binaries and their pinned checksums: the secret scan's and
+`scripts/validate.sh`'s. A tool update changes its version and publisher-verified checksum together.
 
 ## 3. The release commit
 
@@ -104,8 +103,8 @@ install asset twice — under its versioned name and as `apsconecta-install.sh`,
 byte-identical stable-name copy `releases/latest/download` serves, so the runbooks'
 one-liner always resolves to the newest full Release without an operator editing the URL.
 The alias carries the tag pin inside its bytes (`BUNDLE_TAG` + `TARBALL_SHA256`, filled at
-cut time), so the verification chain is unchanged; `fail-on-prerelease` keeps `latest` a
-full Release, and ci.N rehearsals publish `--latest=false` and never shadow it.
+cut time), so the verification chain is unchanged; ci.N rehearsals publish `--latest=false`
+and never shadow it.
 
 **The testbed pin follows**. Once the Release is green, one commit moves the pin in
 `scripts/aio-testbed.sh` to `vX.Y.Z` — the suite tag the testbed and the Playwright suite

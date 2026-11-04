@@ -54,8 +54,7 @@ def snapshot():
             "vm_counters": counters("/proc/vmstat", ("pswpin", "pswpout", "oom_kill"))}
     containers_status = "ok"
     try:
-        names = run("docker", "ps", "--filter", "name=^aps-conecta-",
-                    "--filter", "name=^nextcloud-aio-mastercontainer$", "--format", "{{.Names}}").splitlines()
+        names = run("docker", "ps", "--filter", "name=^nextcloud-aio-", "--format", "{{.Names}}").splitlines()
         stats = [json.loads(line) for line in run("docker", "stats", "--no-stream", "--format",
                                                  "{{json .}}", *names).splitlines() if line.strip()] if names else []
         if len(stats) != len(names) or {row["Name"].lstrip("/") for row in stats} != set(names):

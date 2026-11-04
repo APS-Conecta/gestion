@@ -1,6 +1,5 @@
 # syntax=docker/dockerfile:latest
-# Includes the native SDK parsing fix needed to save edited documents (Euro-Office/sdkjs#81).
-FROM ghcr.io/euro-office/documentserver:v9.3.7-1
+FROM ghcr.io/euro-office/documentserver:v9.3.7
 
 # USER root is probably used
 
@@ -13,6 +12,6 @@ LABEL com.centurylinklabs.watchtower.enable="false" \
     org.opencontainers.image.title="EuroOffice for Nextcloud AIO" \
     org.opencontainers.image.description="EuroOffice Document Server for Nextcloud All-in-One" \
     org.opencontainers.image.url="https://github.com/nextcloud/all-in-one" \
-    org.opencontainers.image.source="https://github.com/APS-Conecta/gestion" \
+    org.opencontainers.image.source="https://github.com/nextcloud/all-in-one" \
     org.opencontainers.image.vendor="Nextcloud" \
     org.opencontainers.image.documentation="https://github.com/nextcloud/all-in-one/blob/main/readme.md"

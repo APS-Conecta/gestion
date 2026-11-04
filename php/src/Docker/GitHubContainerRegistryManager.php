@@ -23,6 +23,7 @@ readonly class GitHubContainerRegistryManager
             return $cachedVersion;
         }
 
+        // If one of the links below should ever become outdated, we can still upgrade the mastercontainer via the webinterface manually by opening '/api/docker/getwatchtower'
 
         try {
             $authTokenRequest = $this->guzzleClient->request(
@@ -38,8 +39,7 @@ readonly class GitHubContainerRegistryManager
                     'https://ghcr.io/v2/' . $name . '/manifests/' . $tag,
                     [
                         'headers' => [
-                            'Accept' => 'application/vnd.oci.image.index.v1+json,application/vnd.oci.image.manifest.v1+json,'
-                                . 'application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.docker.distribution.manifest.v2+json',
+                            'Accept' => 'application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.docker.distribution.manifest.v2+json',
                             'Authorization' => 'Bearer ' . $authToken,
                         ],
                     ]

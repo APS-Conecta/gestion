@@ -29,7 +29,12 @@ while ! nc -z "$NEXTCLOUD_HOST" 9000; do
     sleep 5
 done
 
-SUITE_NETWORK="$(bash /network-prefix.sh --host "$APACHE_HOST")" || exit 1
+# Get ipv4-address of Apache
+# shellcheck disable=SC2153
+IPv4_ADDRESS="$(dig "$APACHE_HOST" A +short +search | head -1)"
+# Bring it in CIDR notation
+# shellcheck disable=SC2001
+IPv4_ADDRESS="$(echo "$IPv4_ADDRESS" | sed 's|[0-9]\+$|0/16|')"
 
 if [ -z "$APACHE_PORT" ]; then
     export APACHE_PORT="443"
@@ -51,7 +56,14 @@ else
 fi
 echo "$CADDYFILE" > /tmp/Caddyfile
 
-TRUSTED_PROXIES="trusted_proxies static $SUITE_NETWORK"
+# Determine the trusted_proxies in case of reverse proxies
+if [ "$APACHE_PORT" != '443' ]; then
+    # Here the 100.64.0.0/10 range gets added which is the CGNAT range used by Tailscale nodes
+    # See https://github.com/nextcloud/all-in-one/pull/6703 for reference
+    TRUSTED_PROXIES="trusted_proxies static private_ranges 100.64.0.0/10"
+else
+    TRUSTED_PROXIES="trusted_proxies static $IPv4_ADDRESS"
+fi
 
 # In case of reverse proxies the APACHE_PORT listener is plain http, so limit it to h1 to avoid
 # caddy warning that HTTP/2 and HTTP/3 were skipped. See the Caddyfile for further details.
@@ -69,27 +81,6 @@ if [ -z "$ADDITIONAL_TRUSTED_DOMAIN" ]; then
     CADDYFILE="$(sed '/ADDITIONAL_TRUSTED_DOMAIN/d' /tmp/Caddyfile)"
 fi
 echo "$CADDYFILE" > /tmp/Caddyfile
-
-# APS (R22): the installer's own certificate when one is mounted (an install by IP), else upstream's
-# ACME issuer. Only on 443: behind a reverse proxy (APACHE_PORT != 443) the site is plain http.
-if [ "$APACHE_PORT" = '443' ] && [ -r /aps-tls/tls.crt ] && [ -r /aps-tls/tls.key ]; then
-    TLS_STANZA='tls /aps-tls/tls.crt /aps-tls/tls.key'
-    DEFAULT_SNI="default_sni $NC_DOMAIN"
-else
-    TLS_STANZA='tls {\n\t\tissuer acme {\n\t\t\tprofile shortlived\n\t\t\tdisable_http_challenge\n\t\t}\n\t}'
-    DEFAULT_SNI=''
-    if [ -d /aps-tls ]; then
-        echo "APS_TLS_DIR is mounted, but its tls.crt and tls.key are not both readable by uid $(id -u) or APACHE_PORT is not 443: the ACME issuer stays"
-    fi
-fi
-CADDYFILE="$(sed -e "s|# tls placeholder|$TLS_STANZA|" -e "s|# default_sni placeholder|$DEFAULT_SNI|" /tmp/Caddyfile)"
-echo "$CADDYFILE" > /tmp/Caddyfile
-
-# An http listener takes no TLS policy: the floor goes only where the site is https.
-if [ "$APACHE_PORT" = '443' ]; then
-    CADDYFILE="$(sed 's|issuer acme {|protocols tls1.2 tls1.3\n\t\tissuer acme {|' /tmp/Caddyfile)"
-    echo "$CADDYFILE" > /tmp/Caddyfile
-fi
 
 # Fix the Caddyfile format
 caddy fmt --overwrite /tmp/Caddyfile

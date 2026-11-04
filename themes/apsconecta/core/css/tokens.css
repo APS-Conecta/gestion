@@ -11,10 +11,6 @@
      colours Nextcloud's theming app needs from this file.
    - the Provisionador (scripts/provisionador.py): reads this file through
      ASSETS_ROOT and paints the Instalador UI with it.
-   - the wizard (php/public/style.css): cannot fetch this file at run time
-     (its origin is the mastercontainer, not the suite), so
-     scripts/brand-tokens.py projects it into a GENERATED block in the
-     wizard's stylesheet — committed bytes, proven byte-equal by its --check.
 
    The no-duplicate rule: a hex declared below appears in this file alone.
    The ledger — contrast ratios and permitted uses — is MAPEO.md §1; the

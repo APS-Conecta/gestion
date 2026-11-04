@@ -1,6 +1,8 @@
 #!/bin/bash
 
-set +x
+if [ "$AIO_LOG_LEVEL" = 'debug' ]; then
+    set -x
+fi
 
 # Functions
 get_start_time(){
@@ -110,9 +112,9 @@ if [ "$BORG_MODE" = backup ]; then
         echo "Most likely was the database container not correctly shut down via the AIO interface."
         echo ""
         echo "You might want to try the database export again manually by running the three commands:"
-        echo "sudo docker start aps-conecta-database"
+        echo "sudo docker start nextcloud-aio-database"
         echo "sleep 10"
-        echo "sudo docker stop aps-conecta-database -t 1800"
+        echo "sudo docker stop nextcloud-aio-database -t 1800"
         echo ""
         echo "Afterwards try to create a backup again and it should hopefully work."
         echo "If it should still fail, feel free to report this to https://github.com/nextcloud/all-in-one/discussions/new?category=questions and post the database container logs and the borgbackup container logs into the thread. Thanks!"
@@ -497,7 +499,7 @@ if [ "$BORG_MODE" = restore ]; then
     echo -E "${CONTENTS}" > /nextcloud_aio_volumes/nextcloud_aio_mastercontainer/data/configuration.json
 
     # Reset the AIO password to the currently used one
-    CONTENTS="$(AIO_PASSWORD="$AIO_PASSWORD" jq '.password = (env.AIO_PASSWORD | fromjson)' /nextcloud_aio_volumes/nextcloud_aio_mastercontainer/data/configuration.json)"
+    CONTENTS="$(jq ".password = $AIO_PASSWORD" /nextcloud_aio_volumes/nextcloud_aio_mastercontainer/data/configuration.json)"
     echo -E "${CONTENTS}" > /nextcloud_aio_volumes/nextcloud_aio_mastercontainer/data/configuration.json
 
     # Reset the datadir to the one that was used for the restore
