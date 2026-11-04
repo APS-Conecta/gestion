@@ -34,8 +34,10 @@ parts the suite does not use are switched off through AIO's own switches, never 
 requests, need upstream's secrets or fail our pull requests on upstream's release policy is
 deleted, with a Keep-list entry naming why; so is Dependabot's configuration. Repository settings
 and the Actions API are not used for it. A workflow already guarded to upstream's repository
-stays as it is. Upstream's own CI keeps running on upstream's files; where it would lint our
-layer, it skips those paths and `scripts/test.sh` lints them.
+stays as it is. Upstream's own CI keeps running on upstream's files. Where it would lint our
+layer, our gate lints it at our strength: shellcheck skips our paths and `scripts/test.sh` lints
+them, and the static gate's `zizmor over our workflows` step runs without upstream's
+`zizmor.yml` and with the online audits.
 
 **The Keep-list check runs on every pull request.** `scripts/keep-list.py` asks Upstream that the
 named tag points at the named commit, then compares the tree with it. It fails on an undeclared

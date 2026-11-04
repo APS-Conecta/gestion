@@ -34,10 +34,13 @@ reason; the merge moves the Keep-list's base to the new tag.
   lint over the fork's own scripts (`bash -n`, shellcheck's errors, the comm tripwire that
   keeps every tracked script in the sweep, the errexit arm), the SPDX-header arm and
   `python3 scripts/images.py --self-test` (hermetic: fixture inventory, stub registry and
-  GitHub, no network) — and the Keep-list check: `scripts/keep-list-test.py` plants an
-  undeclared difference and a stale entry and must see `scripts/keep-list.py` red on each,
-  then `scripts/keep-list.py` compares the tree with the Upstream commit `aps/keep-list.txt`
-  names and fails on an undeclared difference or a stale entry.
+  GitHub, no network) — then its `zizmor over our workflows` step (zizmor at medium severity
+  over `ci.yml`, `images.yml`, `release.yml` and `issue-linker.yml`, without upstream's
+  `zizmor.yml` and with the online audits), and the Keep-list check:
+  `scripts/keep-list-test.py` plants an undeclared difference and a stale entry and must see
+  `scripts/keep-list.py` red on each, then `scripts/keep-list.py` compares the tree with the
+  Upstream commit `aps/keep-list.txt` names and fails on an undeclared difference or a stale
+  entry.
 - Upstream's own workflows beside it: codespell, shellcheck, docker-lint and json-validator,
   plus the PHP, Twig, YAML and Playwright checks on their paths. `scripts/validate.sh` runs
   the codespell, docker-lint and json-spec trio against any tree; the release chain runs it
