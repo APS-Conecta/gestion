@@ -5,35 +5,14 @@
 
 # 0021 — The full suite by default
 
-Accepted, 2026-10-30. Part of #175; implemented in stages beginning with #183.
+Accepted, 2026-11-04. Part of #278.
 
-Every establishment receives Office, Talk, full-text search, previews, antivirus and AppAPI
-through HaRP. Supporting a fixed service set gives installation, readiness and acceptance one
-contract; resource limits must produce an explicit suitability verdict rather than silently
-remove a capability. Farmacia, Estadística and Tótem remain optional apps. Talk recording stays
-off until the measured hardware policy in #189/#190 permits it.
+Every establishment receives Office (Euro-Office), Talk, full-text search, previews (Imaginary),
+antivirus (ClamAV) and AppAPI through HaRP. The install switches each of them on through AIO's own
+switches and asks no component questions. Afterwards, AIO's page keeps vanilla's options form, as
+upstream ships it ([ADR-0026](0026-upstream-plus-the-keep-list.md)). Farmacia, Estadística and
+Tótem remain optional apps. Talk recording stays off.
 
-This amends [ADR-0020](0020-spreed-is-a-fork-app-with-signed-releases.md): there is no Talk switch
-in the wizard, saved options, resolver, provisioning or acceptance. Spreed always follows its
-signed fork release and lock. Its wiring must converge during provisioning, replacing the
-next-boot policy. Implementation #187 calls the shared startup module directly after phase 12
-installs Spreed, including repeated provisioning. Native configuration imports carry changed
-settings through stdin. Its readiness gate verifies configured endpoints, the public welcome
-route with the suite CA and Talk's registered signaling diagnostic. Native diagnostics preserve
-wiring and may initialize token keys and record backend capabilities.
-
-#183 establishes the service set,
-#184–#186 supply antivirus, full-text and AppAPI integration, and #187 supplies provisioning-time
-Talk wiring. Container presence alone is not evidence that those integrations work.
-
-Old saved service selections cannot disable an included service or enable recording. The saved
-options record continues to represent optional app choices. Service settings are fixed at the
-configuration boundary, and readiness follows the service inventory rather than a separate
-six-container assumption.
-
-## Amendment — 2026-11-01
-
-The owner removed workload qualification, measured resource thresholds, automatic recording
-activation and shared concurrency sizing from #175 (#189–#191). Recording remains off.
-ADR-0025 supersedes the original acquisition policy above: Talk uses its official store
-package and signature. The fixed service set, functional checks and usage diagnostics remain.
+Talk, the Office connector and the other component apps use their official store packages
+([ADR-0025](0025-use-official-application-packages.md)). Container presence alone is not evidence
+that an integration works: readiness and acceptance check each one.

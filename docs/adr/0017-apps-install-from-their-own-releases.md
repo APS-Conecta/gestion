@@ -45,7 +45,7 @@ The rules that make it safe and boring:
   and convergence stays the seed's.
 
 The bake's interim fallback is gone: #42 removed it
-([ADR-0018](0018-nothing-baked-the-store-opens-scoped.md)), so a release row on a server whose
+([ADR-0018](0018-nothing-baked-the-store-is-open.md)), so a release row on a server whose
 wizard step has not run is a FATAL naming the repair, never an improvised install.
 
 ## Consequences
