@@ -12,7 +12,7 @@ uses the official DocumentServer and Nextcloud connector. Talk and Custom Menu a
 official store packages, retaining upstream signatures and identity. APS owns installation,
 configuration and functional checks. Phase 12 configures Talk immediately after installation.
 
-The store installs the newest compatible package once; subsequent provisioning preserves it
+The store installs the newest compatible package, and store apps then update the vanilla way
 (ADR-0018). Native checks require a signature file and a successful integrity check. Existing
 lock and downgrade protections remain in force. A fresh disposable installation validates the
 Office source transition because APS 11.0.7 exceeds official connector 11.0.6.
