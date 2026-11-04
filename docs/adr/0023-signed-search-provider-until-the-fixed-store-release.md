@@ -30,5 +30,7 @@ acquisition channel and keeps its small source difference reviewable.
 
 Returning to the store requires a supported NC34 publication containing the fix
 and a deliberate, tested channel and lock migration through the normal update
-and backup process. Repeat the by-IP probe against that package before
-retiring the fork; installation never switches channels automatically.
+and backup process. Before retiring the fork, prove on that package that a
+dotted non-admin staff UID (such as `beto.prueba`) gets the exact uploaded
+document as its search result for a term in its indexed body; installation
+never switches channels automatically.

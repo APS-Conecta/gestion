@@ -40,6 +40,9 @@ A merge that re-introduces upstream identifiers is followed by the merge-time re
   the codespell, docker-lint and json-spec trio against any tree; the release chain runs it
   and the static gate on the tag.
 
+CI is the only mechanical gate; where a behavior is not observable in CI, the check beside
+it says so instead of pretending.
+
 A red gate is information: fix the cause, or change the contract deliberately in a commit
 that says so — never weaken a check to get a green run.
 
