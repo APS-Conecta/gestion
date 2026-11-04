@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The static gate, run locally and by .github/workflows/ci.yml: the shell lint over the fork's
-# own scripts (syntax, sweep coverage, errexit in a tested subshell), their SPDX headers, and the
-# image CLI's hermetic self-test. No stack, no network. Exits non-zero if anything fails.
+# own scripts (syntax, shellcheck's errors, sweep coverage, errexit in a tested subshell), their
+# SPDX headers, and the image CLI's hermetic self-test. No stack, no network. Exits non-zero if anything fails.
 # NOT `set -e`: we run every check and aggregate, so one failure doesn't hide the rest.
 set -uo pipefail
 
@@ -13,11 +13,15 @@ echo "== static checks (no running stack needed) =="
 # re-glob where they are used. The comm tripwire a few lines down keeps its own literal copy
 # deliberately — it is the alarm that reds when this list and the tree drift apart.
 SHELL_NAMESPACE='scripts/*.sh provisioning/*.sh provisioning/phases/*.sh host/*.sh install.sh'
-linted=0
+linted=()
 for s in $SHELL_NAMESPACE; do
   [ -e "$s" ] || continue
-  linted=$((linted + 1)); check bash -n "$s"
+  linted+=("$s"); check bash -n "$s"
 done
+# Upstream's shellcheck.yml lints upstream's shell and skips these namespaces (aps/keep-list.txt);
+# this row holds the fork's shell, the extensionless host CLI included, to shellcheck's errors.
+shellcheck_row() { shellcheck --shell bash -S error "${linted[@]}" host/aps-conecta; }
+check shellcheck_row
 # A glob that matches nothing stays literal, `[ -e ]` skips it, and the gate reports only the checks
 # it did run — so a renamed directory would silently lint nothing and still print all-ok.
 #
@@ -107,11 +111,9 @@ scripts/comuna-package.sh
 scripts/deis.py
 scripts/divergence.sh
 scripts/env.sh
-scripts/lockup.py
 scripts/office-smoke.sh
 scripts/package-release.sh
 scripts/provisionador.py
-scripts/rename-containers.py
 scripts/seed-idempotent.sh
 scripts/smoke.sh
 scripts/test.sh
