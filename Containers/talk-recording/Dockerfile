@@ -3,7 +3,6 @@ FROM python:3.14.8-alpine3.24
 
 COPY --chmod=775 start.sh /start.sh
 COPY --chmod=775 healthcheck.sh /healthcheck.sh
-COPY prepare-trust.py /prepare-trust.py
 
 ENV RECORDING_VERSION=v0.3.0
 ENV ALLOW_ALL=false \
@@ -14,7 +13,6 @@ ENV ALLOW_ALL=false \
     AIO_LOG_LEVEL=warn
 
 SHELL ["/bin/ash", "-o", "pipefail", "-c"]
-# Prepared callbacks use certifi; Firefox uses its native certificate policy.
 RUN set -ex; \
     apk upgrade --no-cache -a; \
     apk add --no-cache \
@@ -44,9 +42,6 @@ RUN set -ex; \
     \
     git clone --recursive https://github.com/nextcloud/nextcloud-talk-recording --depth=1 --single-branch --branch "$RECORDING_VERSION" /src; \
     python3 -m pip install --no-cache-dir /src; \
-    ln -sf /conf/ca-certificates.crt "$(python3 -c 'import certifi; print(certifi.where())')"; \
-    mkdir -p /etc/firefox/policies; \
-    ln -s /conf/firefox-policies.json /etc/firefox/policies/policies.json; \
     rm -rf /src; \
     touch /etc/recording.conf; \
     chown recording:recording -R \
@@ -74,6 +69,6 @@ LABEL com.centurylinklabs.watchtower.enable="false" \
     org.opencontainers.image.title="Talk Recording for Nextcloud AIO" \
     org.opencontainers.image.description="Nextcloud Talk recording service for Nextcloud All-in-One" \
     org.opencontainers.image.url="https://github.com/nextcloud/all-in-one" \
-    org.opencontainers.image.source="https://github.com/APS-Conecta/gestion" \
+    org.opencontainers.image.source="https://github.com/nextcloud/all-in-one" \
     org.opencontainers.image.vendor="Nextcloud" \
     org.opencontainers.image.documentation="https://github.com/nextcloud/all-in-one/blob/main/readme.md"

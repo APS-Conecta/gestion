@@ -12,15 +12,7 @@ RUN set -ex; \
         vips-jxl \
         vips-poppler \
         build-base; \
-    go mod download github.com/h2non/imaginary@"$IMAGINARY_HASH"; \
-    IMAGINARY_SOURCE_DIR="$(go list -m -f '{{.Dir}}' github.com/h2non/imaginary@"$IMAGINARY_HASH")"; \
-    test -d "$IMAGINARY_SOURCE_DIR"; \
-    mkdir -p /usr/src/imaginary; \
-    cp -R "$IMAGINARY_SOURCE_DIR"/. /usr/src/imaginary/
-
-COPY api_key_env.go /usr/src/imaginary/api_key_env.go
-WORKDIR /usr/src/imaginary
-RUN go build -o /go/bin/imaginary .
+    go install github.com/h2non/imaginary@"$IMAGINARY_HASH";
 
 FROM alpine:3.24.2
 RUN set -ex; \
@@ -57,6 +49,6 @@ LABEL com.centurylinklabs.watchtower.enable="false" \
     org.opencontainers.image.title="Imaginary for Nextcloud AIO" \
     org.opencontainers.image.description="High-performance image processing service for Nextcloud All-in-One" \
     org.opencontainers.image.url="https://github.com/nextcloud/all-in-one" \
-    org.opencontainers.image.source="https://github.com/APS-Conecta/gestion" \
+    org.opencontainers.image.source="https://github.com/nextcloud/all-in-one" \
     org.opencontainers.image.vendor="Nextcloud" \
     org.opencontainers.image.documentation="https://github.com/nextcloud/all-in-one/blob/main/readme.md"

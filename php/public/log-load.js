@@ -16,7 +16,7 @@ class LogViewer {
 
     constructor() {
         const id = document.body.dataset.containerId;
-        if (typeof(id) !== 'string' || !(id.startsWith('aps-conecta-') || id === 'nextcloud-aio-mastercontainer')) {
+        if (typeof(id) !== 'string' || !id.startsWith('nextcloud-aio-')) {
             throw new Exception('Invalid container ID');
         }
         this.containerId = id;
@@ -110,13 +110,13 @@ class LogViewer {
             event.preventDefault();
             if (this.isAutoloadingEnabled()) {
                 this.stopAutoloading();
-                statusElem.textContent = 'desactivada';
-                button.textContent = 'Activar';
+                statusElem.textContent = 'disabled';
+                button.textContent = 'Enable';
                 this.autoloadingDisabledFromButton = true;
             } else {
                 this.startAutoloading();
-                statusElem.textContent = 'activada';
-                button.textContent = 'Desactivar';
+                statusElem.textContent = 'enabled';
+                button.textContent = 'Disable';
                 this.autoloadingDisabledFromButton = false;
             }
         });

@@ -14,7 +14,7 @@ if ! [ -f "$CONFIG_FILE" ] || (! grep -q "wasStartButtonClicked.*1" "$CONFIG_FIL
 fi
 
 # Exit early if the backup container is currently running a restore
-if docker ps --format "{{.Names}}" | grep -q "^aps-conecta-borgbackup$"; then
+if docker ps --format "{{.Names}}" | grep -q "^nextcloud-aio-borgbackup$"; then
     if grep -q '"backup-mode".*"restore"' "$CONFIG_FILE"; then
         echo "Backup container is running in restore mode. Exiting to not interrupt the restore..."
         rm -f "/mnt/docker-aio-config/data/daily_backup_running"
@@ -29,31 +29,59 @@ if [ "$DAILY_BACKUP" = 1 ] && [ "$CHECK_BACKUP" = 1 ]; then
 fi
 
 # Delete all active sessions and create a lock file
-# A resumed backup keeps the existing session lock.
+# But don't kick out the user if the mastercontainer was just updated since we block the interface either way with the lock file
 if [ "$LOCK_FILE_PRESENT" = 0 ] || ! [ -f "/mnt/docker-aio-config/data/daily_backup_running" ]; then
     find "/mnt/docker-aio-config/session/" -mindepth 1 -delete
 fi
 su-exec www-data touch "/mnt/docker-aio-config/data/daily_backup_running"
 
-# Check if apache is running/stopped and backupcontainer is stopped
-LOCAL_APACHE_PORT="$(docker inspect aps-conecta-apache --format "{{.Config.Env}}" | grep -o 'APACHE_PORT=[0-9]\+' | grep -o '[0-9]\+' | head -1)"
+# Check if apache is running/stopped, watchtower is stopped and backupcontainer is stopped
+LOCAL_APACHE_PORT="$(docker inspect nextcloud-aio-apache --format "{{.Config.Env}}" | grep -o 'APACHE_PORT=[0-9]\+' | grep -o '[0-9]\+' | head -1)"
 if [ -z "$LOCAL_APACHE_PORT" ]; then
     echo "APACHE_PORT is not set which is not expected..."
 else
-    # Connect mastercontainer to nextcloud-aio network to make sure that aps-conecta-apache is reachable
+    # Connect mastercontainer to nextcloud-aio network to make sure that nextcloud-aio-apache is reachable
     # Prevent issues like https://github.com/nextcloud/all-in-one/discussions/5222
     docker network connect nextcloud-aio nextcloud-aio-mastercontainer &>/dev/null
 
     # Wait for apache to start
-    while docker ps --format "{{.Names}}" | grep -q "^aps-conecta-apache$" && ! nc -z aps-conecta-apache "$LOCAL_APACHE_PORT"; do
+    while docker ps --format "{{.Names}}" | grep -q "^nextcloud-aio-apache$" && ! nc -z nextcloud-aio-apache "$LOCAL_APACHE_PORT"; do
         echo "Waiting for apache to become available"
         sleep 30
     done
 fi
-while docker ps --format "{{.Names}}" | grep -q "^aps-conecta-borgbackup$"; do
+while docker ps --format "{{.Names}}" | grep -q "^nextcloud-aio-watchtower$"; do
+    echo "Waiting for watchtower to stop"
+    sleep 30
+done
+while docker ps --format "{{.Names}}" | grep -q "^nextcloud-aio-borgbackup$"; do
     echo "Waiting for borgbackup to stop"
     sleep 30
 done
+
+# Update the mastercontainer
+if [ "$AUTOMATIC_UPDATES" = 1 ]; then
+    echo "Starting mastercontainer update..." 
+    echo "(The script might get exited due to that. In order to update all the other containers correctly, you need to run this script with the same settings a second time.)"
+    su-exec www-data php /var/www/docker-aio/php/src/Cron/UpdateMastercontainer.php
+fi
+
+# Wait for watchtower to stop
+if [ "$AUTOMATIC_UPDATES" = 1 ]; then
+    if ! docker ps --format "{{.Names}}" | grep -q "^nextcloud-aio-watchtower$"; then
+        echo "Something seems to be wrong: Watchtower should be started at this step."
+    fi
+    while docker ps --format "{{.Names}}" | grep -q "^nextcloud-aio-watchtower$"; do
+        echo "Waiting for watchtower to stop"
+        sleep 30
+    done
+fi
+
+# Update container images to reduce downtime later on
+if [ "$AUTOMATIC_UPDATES" = 1 ]; then
+    echo "Updating container images..."
+    su-exec www-data php /var/www/docker-aio/php/src/Cron/PullContainerImages.php
+fi
 
 # Stop containers if required
 # shellcheck disable=SC2235
@@ -66,10 +94,10 @@ fi
 if [ "$DAILY_BACKUP" = 1 ]; then
     echo "Creating daily backup..."
     su-exec www-data php /var/www/docker-aio/php/src/Cron/CreateBackup.php
-    if ! docker ps --format "{{.Names}}" | grep -q "^aps-conecta-borgbackup$"; then
+    if ! docker ps --format "{{.Names}}" | grep -q "^nextcloud-aio-borgbackup$"; then
         echo "Something seems to be wrong: the borg container should be started at this step."
     fi
-    while docker ps --format "{{.Names}}" | grep -q "^aps-conecta-borgbackup$"; do
+    while docker ps --format "{{.Names}}" | grep -q "^nextcloud-aio-borgbackup$"; do
         echo "Waiting for backup container to stop"
         sleep 30
     done
@@ -81,10 +109,15 @@ if [ "$CHECK_BACKUP" = 1 ]; then
     su-exec www-data php /var/www/docker-aio/php/src/Cron/CheckBackup.php
 fi
 
-# Restart the suite on its current image set when requested.
-if [ "$START_CONTAINERS" = 1 ]; then
-    echo "Starting containers without updating them..."
-    su-exec www-data php /var/www/docker-aio/php/src/Cron/StartContainers.php
+# Start and/or update containers
+if [ "$AUTOMATIC_UPDATES" = 1 ]; then
+    echo "Starting and updating containers..."
+    su-exec www-data php /var/www/docker-aio/php/src/Cron/StartAndUpdateContainers.php
+else
+    if [ "$START_CONTAINERS" = 1 ]; then
+        echo "Starting containers without updating them..."
+        su-exec www-data php /var/www/docker-aio/php/src/Cron/StartContainers.php
+    fi
 fi
 
 # Delete the lock file
@@ -92,15 +125,15 @@ rm -f "/mnt/docker-aio-config/data/daily_backup_running"
 
 # Send backup notification
 # shellcheck disable=SC2235
-if [ "$DAILY_BACKUP" = 1 ] && [ "$START_CONTAINERS" = 1 ]; then
+if [ "$DAILY_BACKUP" = 1 ] && ([ "$AUTOMATIC_UPDATES" = 1 ] || [ "$START_CONTAINERS" = 1 ]); then
     # Wait for the nextcloud container to start and send if the backup was successful
-    if ! docker ps --format "{{.Names}}" | grep -q "^aps-conecta-nextcloud$"; then
+    if ! docker ps --format "{{.Names}}" | grep -q "^nextcloud-aio-nextcloud$"; then
         echo "Something seems to be wrong: Nextcloud should be started at this step."
     else
-        while docker ps --format "{{.Names}}" | grep -q "^aps-conecta-nextcloud$" && ! nc -z aps-conecta-nextcloud 9000; do
+        while docker ps --format "{{.Names}}" | grep -q "^nextcloud-aio-nextcloud$" && ! nc -z nextcloud-aio-nextcloud 9000; do
             echo "Waiting for the Nextcloud container to start"
             sleep 30
-            if [ "$(docker inspect aps-conecta-nextcloud --format "{{.State.Restarting}}")" = "true" ]; then
+            if [ "$(docker inspect nextcloud-aio-nextcloud --format "{{.State.Restarting}}")" = "true" ]; then
                 echo "Nextcloud container restarting. Skipping this check!"
                 break
             fi

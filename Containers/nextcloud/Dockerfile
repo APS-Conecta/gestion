@@ -1,5 +1,13 @@
 # syntax=docker/dockerfile:latest
-FROM php:8.4.26-fpm-alpine3.24
+FROM php:8.4.27-fpm-alpine3.24
+
+ARG IGBINARY_VERSION=3.2.16
+ARG APCU_VERSION=5.1.28
+ARG MEMCACHED_VERSION=3.4.0
+ARG REDIS_VERSION=6.3.0
+ARG IMAGICK_VERSION=3.8.1
+ARG IMAP_VERSION=1.0.3
+ARG SMBCLIENT_VERSION=1.1.2
 
 ENV PHP_MEMORY_LIMIT=512M
 ENV PHP_UPLOAD_LIMIT=1G
@@ -17,35 +25,13 @@ ENV AIO_TOKEN=123456
 ENV AIO_URL=localhost
 # AIO settings end # Do not remove or change this line!
 
-# APS Conecta: the store is off at the image level (#42's posture, originally patch 020). The
-# suite's apps never ride an image — own and fork apps arrive from their own signed releases
-# (ADR-0017), store apps from scoped install commands — so nothing needs the store open.
-# NC_-prefixed env vars become config entries in the shipped server (lib/private/Config.php
-# ENV_PREFIX) and appstoreenabled is read via getSystemValueBool, so "0" casts to false and
-# every store leg fails fast. The one exception rides the same channel in the opposite
-# direction: a command that prefixes its own NC_appstoreenabled=1 (the envCache beats both
-# config.php and this ENV for that process alone) opens the store for exactly one occ call —
-# the entrypoint's notify_push install when it is missing, provisioning's store installs.
-# Official application packages install in phase 12 (ADR-0025); notify_push is the
-# scoped open's only first-boot user. With the store on, occ upgrade would re-download every enabled app and no pin
-# could hold; scoped opens never survive their own command.
-ENV NC_appstoreenabled="0"
-
-# APS Conecta: the skeleton posture, baked the same way (the compose stack's own key,
-# compose.yaml's NC_skeletondirectory=""). The AIO entrypoint forwards no skeleton env and
-# the wizard's admin is created at install time, before any seed phase can write config —
-# the NC_ channel is read before config.php, so "" arrives in time and the stock vendor
-# files never copy into the first account. "" and not unset: unset inherits the image default.
-ENV NC_skeletondirectory=""
-
 COPY --chmod=775 Containers/nextcloud/*.sh /
-COPY --chmod=755 Containers/network-prefix.sh /network-prefix.sh
-COPY --chmod=755 Containers/antivirus-limit.sh /antivirus-limit.sh
 COPY --chmod=774 Containers/nextcloud/upgrade.exclude /upgrade.exclude
 COPY Containers/nextcloud/config/*.php /
 COPY Containers/nextcloud/dinit.d/ /etc/dinit.d/
 
 # AIO cloning start # Do not remove or change this line!
+COPY app /usr/src/nextcloud/apps/nextcloud-aio
 COPY Containers/nextcloud/root.motd /root.motd
 # AIO cloning end # Do not remove or change this line!
 
@@ -88,9 +74,11 @@ RUN set -ex; \
         libwebp-dev \
         libxml2-dev \
         libzip-dev \
+        lz4-dev \
         openldap-dev \
         pcre-dev \
         postgresql-dev \
+        zstd-dev \
     ; \
     \
     docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp; \
@@ -110,21 +98,41 @@ RUN set -ex; \
         zip \
     ; \
     \
-# pecl will claim success even if one install fails, so we need to perform each install separately
-    pecl install -o igbinary-3.2.16; \
-    pecl install APCu-5.1.28; \
-    pecl install -D 'enable-memcached-igbinary="yes"' memcached-3.4.0; \
-    pecl install -oD 'enable-redis-igbinary="yes" enable-redis-zstd="yes" enable-redis-lz4="yes"' redis-6.3.0; \
-   pecl install -o imagick-3.8.1; \
+# build PECL extensions from their GitHub release sources as pecl.php.net is not reliably reachable from CI
+    mkdir -p \
+        /usr/src/php/ext/igbinary \
+        /usr/src/php/ext/apcu \
+        /usr/src/php/ext/memcached \
+        /usr/src/php/ext/redis \
+        /usr/src/php/ext/imagick \
+    ; \
+    curl -fsSL --retry 5 "https://github.com/igbinary/igbinary/archive/refs/tags/$IGBINARY_VERSION.tar.gz" \
+        | tar -xz --strip-components=1 -C /usr/src/php/ext/igbinary; \
+    curl -fsSL --retry 5 "https://github.com/krakjoe/apcu/archive/refs/tags/v$APCU_VERSION.tar.gz" \
+        | tar -xz --strip-components=1 -C /usr/src/php/ext/apcu; \
+    curl -fsSL --retry 5 "https://github.com/php-memcached-dev/php-memcached/archive/refs/tags/v$MEMCACHED_VERSION.tar.gz" \
+        | tar -xz --strip-components=1 -C /usr/src/php/ext/memcached; \
+    curl -fsSL --retry 5 "https://github.com/phpredis/phpredis/archive/refs/tags/$REDIS_VERSION.tar.gz" \
+        | tar -xz --strip-components=1 -C /usr/src/php/ext/redis; \
+    curl -fsSL --retry 5 "https://github.com/Imagick/imagick/archive/refs/tags/$IMAGICK_VERSION.tar.gz" \
+        | tar -xz --strip-components=1 -C /usr/src/php/ext/imagick; \
+# the imagick version placeholder is only replaced when packaging for PECL
+    grep -q '@PACKAGE_VERSION@' /usr/src/php/ext/imagick/php_imagick.h; \
+    sed -i "s/@PACKAGE_VERSION@/$IMAGICK_VERSION/" /usr/src/php/ext/imagick/php_imagick.h; \
     \
-    docker-php-ext-enable \
+# igbinary needs to be installed first as memcached and redis are built against it
+    docker-php-ext-install -j "$(nproc)" \
         igbinary \
         apcu \
+    ; \
+    docker-php-ext-configure memcached --enable-memcached-igbinary; \
+    docker-php-ext-configure redis --enable-redis-igbinary --enable-redis-zstd --enable-redis-lz4 --with-liblz4; \
+    docker-php-ext-install -j "$(nproc)" \
         memcached \
         redis \
         imagick \
     ; \
-    rm -r /tmp/pear; \
+    docker-php-source delete; \
     \
     runDeps="$( \
         scanelf --needed --nobanner --format '%n#p' --recursive /usr/local/lib/php/extensions \
@@ -236,10 +244,21 @@ RUN set -ex; \
         pgsql \
         ftp \
     ; \
-# imap was removed from PHP core in 8.4, so it needs to be installed from PECL from now on
-    pecl install -D 'with-kerberos="yes" with-imap-ssl="yes"' imap-1.0.3; \
-    pecl install smbclient-1.1.2; \
-    docker-php-ext-enable imap smbclient; \
+# imap was removed from PHP core in 8.4, so it needs to be installed from its PECL sources from now on
+    mkdir -p \
+        /usr/src/php/ext/imap \
+        /usr/src/php/ext/smbclient \
+    ; \
+    curl -fsSL --retry 5 "https://github.com/php/pecl-mail-imap/archive/refs/tags/$IMAP_VERSION.tar.gz" \
+        | tar -xz --strip-components=1 -C /usr/src/php/ext/imap; \
+    curl -fsSL --retry 5 "https://github.com/eduardok/libsmbclient-php/archive/refs/tags/$SMBCLIENT_VERSION.tar.gz" \
+        | tar -xz --strip-components=1 -C /usr/src/php/ext/smbclient; \
+    docker-php-ext-configure imap --with-kerberos --with-imap-ssl; \
+    docker-php-ext-install -j "$(nproc)" \
+        imap \
+        smbclient \
+    ; \
+    docker-php-source delete; \
     \
     runDeps="$( \
         scanelf --needed --nobanner --format '%n#p' --recursive /usr/local/lib/php/extensions \
@@ -252,7 +271,6 @@ RUN set -ex; \
     \
     apk add --no-cache \
         bash \
-        iproute2 \
         netcat-openbsd \
         openssl \
         gnupg \
@@ -305,23 +323,6 @@ RUN set -ex; \
     mkdir -p /nc-updater; \
     chmod -R 777 /nc-updater
 
-COPY --chmod=644 Containers/nextcloud/occ-install.php /occ-install.php
-
-# APS Conecta (#42, the retired bake's one survivor): the image carries the apsconecta theme
-# and NOTHING else of the suite's own — no app bytes at all. Apps arrive by their own
-# channels at run time: own and fork apps from their signed GitHub Releases (ADR-0017, the
-# wizard's fetch leg), store apps from scoped install commands. The theme comes from this
-# tree's own themes/apsconecta, so the tag IS the provenance — no second source, no clone,
-# no vendored tarball between the tag and the image.
-COPY themes/apsconecta/ /usr/src/nextcloud/themes/apsconecta
-
-# APS Conecta: the NC_ env channel (020's store-off, the skeleton) is only real while the
-# shipped server harvests NC_-prefixed env vars (lib/private/Config.php's ENV_PREFIX). A
-# server bump that renames it would flip the store back on with every repo gate still green —
-# the build dies here instead, naming the anchor to re-adopt.
-RUN grep -q "ENV_PREFIX = 'NC_'" /usr/src/nextcloud/lib/private/Config.php \
-    || { echo "FATAL: the shipped server no longer harvests NC_ env vars — 020's store-off and the skeleton posture are fiction; re-anchor against the new server" >&2; exit 1; }
-
 # hadolint ignore=DL3002
 USER root:root
 # The php-fpm base image sets STOPSIGNAL SIGQUIT, which dinit ignores, so the container would never stop gracefully
@@ -336,6 +337,6 @@ LABEL com.centurylinklabs.watchtower.enable="false" \
     org.opencontainers.image.title="Nextcloud for Nextcloud AIO" \
     org.opencontainers.image.description="Nextcloud server with all required PHP extensions for Nextcloud All-in-One" \
     org.opencontainers.image.url="https://github.com/nextcloud/all-in-one" \
-    org.opencontainers.image.source="https://github.com/APS-Conecta/gestion" \
+    org.opencontainers.image.source="https://github.com/nextcloud/all-in-one" \
     org.opencontainers.image.vendor="Nextcloud" \
     org.opencontainers.image.documentation="https://github.com/nextcloud/all-in-one/blob/main/readme.md"

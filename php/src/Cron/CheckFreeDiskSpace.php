@@ -16,7 +16,7 @@ $dockerActionManager = $container->get(\AIO\Docker\DockerActionManager::class);
 /** @var \AIO\ContainerDefinitionFetcher $containerDefinitionFetcher */
 $containerDefinitionFetcher = $container->get(\AIO\ContainerDefinitionFetcher::class);
 
-$id = 'aps-conecta-nextcloud';
+$id = 'nextcloud-aio-nextcloud';
 $nextcloudContainer = $containerDefinitionFetcher->GetContainerById($id);
 
 $df = disk_free_space(DataConst::GetDataDirectory());

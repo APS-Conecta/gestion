@@ -1,10 +1,11 @@
 # syntax=docker/dockerfile:latest
 FROM ghcr.io/nextcloud/nextcloud-appapi-harp:v0.4.5
 
-COPY --chmod=755 start.sh /start.sh
-ENTRYPOINT ["/start.sh"]
-
 # USER root is probably used
+
+SHELL ["/bin/ash", "-o", "pipefail", "-c"]
+RUN set -ex; \
+    apk upgrade --no-cache -a
 
 LABEL com.centurylinklabs.watchtower.enable="false" \
     wud.watch="false" \
@@ -12,7 +13,7 @@ LABEL com.centurylinklabs.watchtower.enable="false" \
     org.opencontainers.image.title="Nextcloud AppAPI HARP for Nextcloud AIO" \
     org.opencontainers.image.description="Nextcloud AppAPI HARP for Nextcloud All-in-One" \
     org.opencontainers.image.url="https://github.com/nextcloud/all-in-one" \
-    org.opencontainers.image.source="https://github.com/APS-Conecta/gestion" \
+    org.opencontainers.image.source="https://github.com/nextcloud/all-in-one" \
     org.opencontainers.image.vendor="Nextcloud" \
     org.opencontainers.image.documentation="https://github.com/nextcloud/all-in-one/blob/main/readme.md"
 

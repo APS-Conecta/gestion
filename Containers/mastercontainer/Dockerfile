@@ -1,12 +1,14 @@
 # syntax=docker/dockerfile:latest
 # Docker CLI is a requirement
-FROM docker:29.9.0-cli AS docker
+FROM docker:29.9.1-cli AS docker
 
 # Caddy is a requirement
 FROM caddy:2.11.7-alpine AS caddy
 
 # From https://github.com/docker-library/php/blob/master/8.5/alpine3.24/fpm/Dockerfile
-FROM php:8.5.11-fpm-alpine3.24
+FROM php:8.5.12-fpm-alpine3.24
+
+ARG APCU_VERSION=5.1.28
 
 EXPOSE 80
 EXPOSE 8080
@@ -18,6 +20,7 @@ ENV HOME=/var/www
 COPY --from=caddy /usr/bin/caddy /usr/bin/caddy
 COPY --from=docker /usr/local/bin/docker /usr/local/bin/docker
 
+COPY community-containers /var/www/docker-aio/community-containers
 COPY php /var/www/docker-aio/php
 COPY --chmod=775 Containers/mastercontainer/*.sh /
 COPY --chmod=664 Containers/mastercontainer/*.Caddyfile /
@@ -46,8 +49,11 @@ RUN set -ex; \
     apk add --no-cache --virtual .build-deps \
         autoconf \
         build-base; \
-    pecl install APCu-5.1.28; \
-    docker-php-ext-enable apcu; \
+    mkdir -p /usr/src/php/ext/apcu; \
+    curl -fsSL --retry 5 "https://github.com/krakjoe/apcu/archive/refs/tags/v$APCU_VERSION.tar.gz" \
+        | tar -xz --strip-components=1 -C /usr/src/php/ext/apcu; \
+    docker-php-ext-install apcu; \
+    docker-php-source delete; \
     { \
         echo 'apc.shm_size=32M'; \
     } >> /usr/local/etc/php/conf.d/docker-php-ext-apcu.ini; \
@@ -58,7 +64,6 @@ RUN set -ex; \
         echo 'opcache.max_accelerated_files=4000'; \
         echo 'opcache.validate_timestamps=0'; \
     } > /usr/local/etc/php/conf.d/docker-php-ext-opcache.ini; \
-    rm -r /tmp/pear; \
     runDeps="$( \
         scanelf --needed --nobanner --format '%n#p' --recursive /usr/local/lib/php/extensions \
             | tr ',' '\n' \
@@ -95,7 +100,7 @@ RUN set -ex; \
 LABEL org.opencontainers.image.title="Nextcloud All-in-One Mastercontainer" \
     org.opencontainers.image.description="Easy deployment and maintenance of a Nextcloud server with all dependencies and optional services" \
     org.opencontainers.image.url="https://github.com/nextcloud/all-in-one" \
-    org.opencontainers.image.source="https://github.com/APS-Conecta/gestion" \
+    org.opencontainers.image.source="https://github.com/nextcloud/all-in-one" \
     org.opencontainers.image.vendor="Nextcloud" \
     org.opencontainers.image.documentation="https://github.com/nextcloud/all-in-one/blob/main/readme.md" \
     wud.watch="false" \

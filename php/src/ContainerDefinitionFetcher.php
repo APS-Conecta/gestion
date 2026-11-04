@@ -49,34 +49,70 @@ readonly class ContainerDefinitionFetcher {
         }
         $data = json_decode($cachedJson, true, 512, JSON_THROW_ON_ERROR);
 
+        // We store this information for later because we need to use it to distinct between community containers and default containers.
+        $standardContainerNames = array_column($data['aio_services_v1'], 'container_name');
+
+        $additionalContainerNames = [];
+        $additionalTopLevelContainerNames = [];
+        foreach ($this->configurationManager->aioCommunityContainers as $communityContainer) {
+            if ($communityContainer !== '') {
+                $path = DataConst::GetCommunityContainersDirectory() . '/' . $communityContainer . '/' . $communityContainer . '.json';
+                $additionalData = json_decode((string)file_get_contents($path), true, 512, JSON_THROW_ON_ERROR);
+                $data = array_merge_recursive($data, $additionalData);
+                foreach ($additionalData['aio_services_v1'] as $additionalEntry) {
+                    $additionalContainerNames[] = $additionalEntry['container_name'];
+                }
+                if (isset($additionalData['aio_services_v1'][0]['display_name']) && $additionalData['aio_services_v1'][0]['display_name'] !== '') {
+                    // Store main container_name of community containers in variable for later
+                    $additionalTopLevelContainerNames[] = $additionalData['aio_services_v1'][0]['container_name'];
+                }
+            }
+        }
+
         $containers = [];
         foreach ($data['aio_services_v1'] as $entry) {
-            if ($entry['container_name'] === 'aps-conecta-clamav') {
+            if ($entry['container_name'] === 'nextcloud-aio-clamav') {
                 if (!$this->configurationManager->isClamavEnabled) {
                     continue;
                 }
-            } elseif ($entry['container_name'] === 'aps-conecta-eurooffice') {
+            } elseif ($entry['container_name'] === 'nextcloud-aio-onlyoffice') {
+                if ($this->configurationManager->officeSuite !== OfficeSuite::Onlyoffice) {
+                    continue;
+                }
+            } elseif ($entry['container_name'] === 'nextcloud-aio-eurooffice') {
                 if ($this->configurationManager->officeSuite !== OfficeSuite::Eurooffice) {
                     continue;
                 }
-            } elseif ($entry['container_name'] === 'aps-conecta-talk') {
+            } elseif ($entry['container_name'] === 'nextcloud-aio-collabora') {
+                if ($this->configurationManager->officeSuite !== OfficeSuite::Collabora) {
+                    continue;
+                }
+            } elseif ($entry['container_name'] === 'nextcloud-aio-talk') {
                 if (!$this->configurationManager->isTalkEnabled) {
                     continue;
                 }
-            } elseif ($entry['container_name'] === 'aps-conecta-talk-recording') {
+            } elseif ($entry['container_name'] === 'nextcloud-aio-talk-recording') {
                 if (!$this->configurationManager->isTalkRecordingEnabled) {
                     continue;
                 }
-            } elseif ($entry['container_name'] === 'aps-conecta-imaginary') {
+            } elseif ($entry['container_name'] === 'nextcloud-aio-imaginary') {
                 if (!$this->configurationManager->isImaginaryEnabled) {
                     continue;
                 }
-            } elseif ($entry['container_name'] === 'aps-conecta-fulltextsearch') {
+            } elseif ($entry['container_name'] === 'nextcloud-aio-fulltextsearch') {
                 if (!$this->configurationManager->isFulltextsearchEnabled) {
                     continue;
                 }
-            } elseif ($entry['container_name'] === 'aps-conecta-harp') {
+            } elseif ($entry['container_name'] === 'nextcloud-aio-docker-socket-proxy') {
+                if (!$this->configurationManager->isDockerSocketProxyEnabled) {
+                    continue;
+                }
+            } elseif ($entry['container_name'] === 'nextcloud-aio-harp') {
                 if (!$this->configurationManager->isHarpEnabled) {
+                    continue;
+                }
+            } elseif ($entry['container_name'] === 'nextcloud-aio-whiteboard') {
+                if (!$this->configurationManager->isWhiteboardEnabled) {
                     continue;
                 }
             }
@@ -113,18 +149,13 @@ readonly class ContainerDefinitionFetcher {
                         if ($value['source'] === '') {
                             continue;
                         }
-                    } elseif ($value['source'] === '%DOCKER_SOCKET_PATH%') {
+                    } elseif ($value['source'] === '%WATCHTOWER_DOCKER_SOCKET_PATH%') {
                         $value['source'] = $this->configurationManager->dockerSocketPath;
                         if($value['source'] === '') {
                             continue;
                         }
                     } elseif ($value['source'] === '%NEXTCLOUD_TRUSTED_CACERTS_DIR%') {
                         $value['source'] = $this->configurationManager->trustedCacertsDir;
-                        if($value['source'] === '') {
-                            continue;
-                        }
-                    } elseif ($value['source'] === '%APS_TLS_DIR%') {
-                        $value['source'] = $this->configurationManager->apsTlsDir;
                         if($value['source'] === '') {
                             continue;
                         }
@@ -148,33 +179,66 @@ readonly class ContainerDefinitionFetcher {
             $dependsOn = [];
             if (isset($entry['depends_on'])) {
                 $valueDependsOn = $entry['depends_on'];
+                if ($entry['container_name'] === 'nextcloud-aio-apache') {
+                    // Add community containers first and default ones last so that aio_variables works correctly
+                    $valueDependsOnTemp = [];
+                    foreach ($additionalTopLevelContainerNames as $containerName) {
+                        $valueDependsOnTemp[] = $containerName;
+                    }
+                    $valueDependsOn = array_merge_recursive($valueDependsOnTemp, $valueDependsOn);
+                }
                 foreach ($valueDependsOn as $value) {
-                    if ($value === 'aps-conecta-clamav') {
+                    if ($value === 'nextcloud-aio-clamav') {
                         if (!$this->configurationManager->isClamavEnabled) {
                             continue;
                         }
-                    } elseif ($value === 'aps-conecta-eurooffice') {
+                    } elseif ($value === 'nextcloud-aio-onlyoffice') {
+                        if ($this->configurationManager->officeSuite !== OfficeSuite::Onlyoffice) {
+                            continue;
+                        }
+                    } elseif ($value === 'nextcloud-aio-eurooffice') {
                         if ($this->configurationManager->officeSuite !== OfficeSuite::Eurooffice) {
                             continue;
                         }
-                    } elseif ($value === 'aps-conecta-talk') {
+                    } elseif ($value === 'nextcloud-aio-collabora') {
+                        if ($this->configurationManager->officeSuite !== OfficeSuite::Collabora) {
+                            continue;
+                        }
+                    } elseif ($value === 'nextcloud-aio-talk') {
                         if (!$this->configurationManager->isTalkEnabled) {
                             continue;
                         }
-                    } elseif ($value === 'aps-conecta-talk-recording') {
+                    } elseif ($value === 'nextcloud-aio-talk-recording') {
                         if (!$this->configurationManager->isTalkRecordingEnabled) {
                             continue;
                         }
-                    } elseif ($value === 'aps-conecta-imaginary') {
+                    } elseif ($value === 'nextcloud-aio-imaginary') {
                         if (!$this->configurationManager->isImaginaryEnabled) {
                             continue;
                         }
-                    } elseif ($value === 'aps-conecta-fulltextsearch') {
+                    } elseif ($value === 'nextcloud-aio-fulltextsearch') {
                         if (!$this->configurationManager->isFulltextsearchEnabled) {
                             continue;
                         }
-                    } elseif ($value === 'aps-conecta-harp') {
+                    } elseif ($value === 'nextcloud-aio-docker-socket-proxy') {
+                        if (!$this->configurationManager->isDockerSocketProxyEnabled) {
+                            continue;
+                        }
+                    } elseif ($value === 'nextcloud-aio-harp') {
                         if (!$this->configurationManager->isHarpEnabled) {
+                            continue;
+                        }
+                    } elseif ($value === 'nextcloud-aio-whiteboard') {
+                        if (!$this->configurationManager->isWhiteboardEnabled) {
+                            continue;
+                        }
+                    } else {
+                        // Skip dependencies on community containers that are not currently enabled.
+                        // Only apply this when the current entry is itself a community container,
+                        // and the dependency is not an enabled community container or a standard built-in container.
+                        if (in_array($entry['container_name'], $additionalContainerNames, true)
+                            && !in_array($value, $additionalContainerNames, true)
+                            && !in_array($value, $standardContainerNames, true)) {
                             continue;
                         }
                     }

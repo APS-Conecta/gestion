@@ -31,6 +31,7 @@ readonly class DockerHubManager {
             return $cachedVersion;
         }
 
+        // If one of the links below should ever become outdated, we can still upgrade the mastercontainer via the webinterface manually by opening '/api/docker/getwatchtower'
         $name = $this->normalizeImageName($name);
 
         try {

@@ -18,17 +18,13 @@ export GREP_STRING
 DATADIR="/var/lib/postgresql/data"
 export DUMP_DIR="/mnt/data"
 DUMP_FILE="$DUMP_DIR/database-dump.sql"
-set +x
 export PGPASSWORD="$POSTGRES_PASSWORD"
-if [ "$AIO_LOG_LEVEL" = 'debug' ]; then
-    set -x
-fi
 
 # Don't start database as long as backup is running
 while [ -f "$DUMP_DIR/backup-is-running" ]; do
     echo "Waiting for backup container to finish..."
     echo "If this is incorrect because the backup container is not running anymore (because it was forcefully killed), you might delete the lock file:"
-    echo "sudo docker exec --user root aps-conecta-database rm /mnt/data/backup-is-running"
+    echo "sudo docker exec --user root nextcloud-aio-database rm /mnt/data/backup-is-running"
     sleep 10
 done
 
@@ -124,8 +120,8 @@ if ( [ -f "$DATADIR/PG_VERSION" ] && [ "$PG_MAJOR" != "$(cat "$DATADIR/PG_VERSIO
         exit 1
     elif [ "$DB_OWNER" != "oc_$POSTGRES_USER" ]; then
         DIFFERENT_DB_OWNER=1
-        psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
-            \getenv pg_new_password POSTGRES_PASSWORD
+        psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
+            -v "pg_new_password=$POSTGRES_PASSWORD" <<-EOSQL
             CREATE USER "$DB_OWNER" WITH PASSWORD :'pg_new_password' CREATEDB;
             ALTER DATABASE "$POSTGRES_DB" OWNER TO "$DB_OWNER";
             GRANT ALL PRIVILEGES ON DATABASE "$POSTGRES_DB" TO "$DB_OWNER";
@@ -133,12 +129,9 @@ if ( [ -f "$DATADIR/PG_VERSION" ] && [ "$PG_MAJOR" != "$(cat "$DATADIR/PG_VERSIO
 EOSQL
     fi
 
-    # Restore database: the first failing statement stops the replay, so import.failed stays and
-    # Nextcloud never starts on a half-restored database. A suite dump's only role statements are
-    # ownerships and the schema grant to oc_$POSTGRES_USER, which init-user-db.sh creates before the
-    # replay, so stopping on error does not trip on a healthy dump
+    # Restore database
     echo "Restoring the database from database dump"
-    psql -v ON_ERROR_STOP=1 "$POSTGRES_DB" -U "$POSTGRES_USER" < "$DUMP_FILE"
+    psql "$POSTGRES_DB" -U "$POSTGRES_USER" < "$DUMP_FILE"
 
     # Correct permissions
     if [ -n "$DIFFERENT_DB_OWNER" ]; then
