@@ -56,7 +56,14 @@ class Suite:
 
 
 class FakeSuite:
-    """The suite port for the Seam 2 tests: a fixed certificate for each host, as Caddy issues one per address."""
+    """The suite port for the Seam 2 tests: a certificate for each host, as Caddy issues one per address, and new ones
+    after renew(), as Caddy's internal issuer renews them."""
+
+    def __init__(self):
+        self.renewals = 0
 
     def certificate(self, host):
-        return b"FakeSuite certificate for " + host.encode()
+        return b"FakeSuite certificate for " + host.encode() + b" renewed" * self.renewals
+
+    def renew(self):
+        self.renewals += 1

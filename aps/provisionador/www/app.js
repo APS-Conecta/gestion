@@ -157,7 +157,10 @@ function startMap() {
   L.control.zoom({zoomInText: ZOOM_IN, zoomOutText: ZOOM_OUT, zoomInTitle: "Acercar", zoomOutTitle: "Alejar"})
     .addTo(map);
   // crossOrigin: AIO's interface requires CORS or CORP of what it embeds (COEP), and the tiles answer CORS.
-  const tiles = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom: 19, crossOrigin: true});
+  // referrerPolicy: OpenStreetMap's tile policy requires a Referer, which AIO's no-referrer policy drops; the tiles
+  // get the page's origin only.
+  const tiles = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    {maxZoom: 19, crossOrigin: true, referrerPolicy: "strict-origin"});
   tiles.once("tileerror", () => {
     $("map-error").hidden = false;
   });

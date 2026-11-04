@@ -24,9 +24,11 @@ import provisionador
 from suite import FakeSuite
 
 ADDRESS = "192.168.1.10"
-# The fingerprint of FakeSuite's certificate for ADDRESS, computed with sha256sum.
+# The fingerprints of FakeSuite's certificate for ADDRESS, and of the one after a renewal, computed with sha256sum.
 FINGERPRINT = ("B6:FD:69:DC:D6:49:74:A5:71:24:7C:01:9B:A4:81:9D:"
                "A1:FB:09:99:9A:A1:F3:76:82:1C:5C:5F:C2:3E:10:F2")
+RENEWED = ("FB:AA:97:FC:A8:28:2E:B6:23:D2:E5:67:61:E3:F6:3B:"
+           "79:DF:F6:45:8A:E7:BC:65:D8:9A:7B:F2:6C:AE:CF:FA")
 # A qrencode that shows what it was given: its arguments, then its input.
 QRENCODE = "#!/bin/sh\nprintf 'QR-ARGV:%s\\n' \"$*\"\nprintf 'QR-STDIN:'\ncat\nprintf '\\n'\n"
 
@@ -45,11 +47,11 @@ Metropolitana de Santiago,Servicio de Salud Metropolitano Central,Municipal,-33.
 """
 
 
-def announced(app):
-    """What the Provisionador prints to the mastercontainer's log at its start."""
+def printed(call):
+    """What `call` prints to the mastercontainer's log."""
     log = io.StringIO()
     with contextlib.redirect_stdout(log):
-        app.announce()
+        call()
     return log.getvalue()
 
 
@@ -126,9 +128,9 @@ class ProvisionadorTest(unittest.TestCase):
     def start(self):
         """Start the Provisionador over the state directory, as the mastercontainer does at every start, and read the
         link it printed."""
-        app = provisionador.Provisionador(self.state, self.register, self.suite, self.ADDRESS)
-        self.server = app.server(("127.0.0.1", 0))
-        link = Link(announced(app))
+        self.app = provisionador.Provisionador(self.state, self.register, self.suite, self.ADDRESS)
+        self.server = self.app.server(("127.0.0.1", 0))
+        link = Link(printed(self.app.announce))
         self.thread = threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.05},
                                        daemon=True)
         self.thread.start()
@@ -193,7 +195,7 @@ class NoAddress(ProvisionadorTest):
 
     def test_an_address_that_is_not_a_host_and_port_prints_no_link_either(self):
         for address in ("192.168.1.10/instalar", "gestion.example.cl:99999", "user@gestion.example.cl", "a b"):
-            log = announced(provisionador.Provisionador(self.state, self.register, self.suite, address))
+            log = printed(provisionador.Provisionador(self.state, self.register, self.suite, address).announce)
             self.assertNotIn("https://", log, address)
             self.assertIn(provisionador.ADDRESS, log, address)
 
@@ -266,18 +268,35 @@ class TheSession(ProvisionadorTest):
 
 
 class TheRestart(ProvisionadorTest):
-    def test_a_restart_prints_a_fresh_link_and_the_one_before_stops_working(self):
+    def test_a_restart_prints_a_fresh_link_and_the_one_before_still_opens_a_session(self):
         before = self.link
         self.link = self.restart()
         self.assertNotEqual(self.link.secret, before.secret)
         self.assertEqual(self.link.fingerprint, FINGERPRINT)
-        self.assertEqual(self.browser().open(before)[0], 401)
+        self.assertEqual(self.browser().open(before)[0], 200)
         self.assertEqual(self.browser().open(self.link)[0], 200)
 
     def test_a_session_survives_a_restart(self):
         browser = self.operator()
         self.restart()
         self.assertEqual(browser.get("/api/state")[0], 200)
+
+
+class TheRenewal(ProvisionadorTest):
+    def test_a_renewed_certificate_prints_its_fingerprint_once_without_the_link(self):
+        self.assertEqual(printed(self.app.check_certificate), "", "the certificate is unchanged")
+        self.suite.renew()
+        log = printed(self.app.check_certificate)
+        self.assertEqual(Link(log).fingerprint, RENEWED)
+        self.assertNotIn(self.link.secret, log)
+        self.assertNotIn("https://", log)
+        self.assertEqual(printed(self.app.check_certificate), "", "printed once")
+
+    def test_a_check_while_the_interface_does_not_answer_is_not_fatal(self):
+        with mock.patch.object(self.suite, "certificate", side_effect=provisionador.Unreachable("no answer")):
+            self.assertEqual(printed(self.app.check_certificate), "")
+        self.suite.renew()
+        self.assertEqual(Link(printed(self.app.check_certificate)).fingerprint, RENEWED)
 
 
 class Listo(ProvisionadorTest):

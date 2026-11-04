@@ -10,10 +10,11 @@ operator's browser opens AIO's interface at, given as APS_INTERFACE_ADDRESS: a h
 port is not 8080.
 
 Its one public surface is the HTTP API under /api, which the page in www/ uses and the Seam 2 tests drive. The state
-is one JSON file in the mastercontainer's volume, so a reload, a restart or a reboot resumes it. The link's secret
-and the sessions are stored only as SHA-256 hashes. Any browser that opens the link exchanges its secret for a
-session of its own; a start mints a fresh link, and the one before stops working. «Listo» is the file `listo` beside
-the state: it ends the link and every session, and from then on Caddy serves AIO's page at the same address.
+is one JSON file in the mastercontainer's volume, so a reload, a restart or a reboot resumes it. The links' secrets
+and the sessions are stored only as SHA-256 hashes. Any browser that opens a link exchanges its secret for a session
+of its own; each start mints a fresh link, and every link printed stays valid until «Listo». «Listo» is the file
+`listo` beside the state: it ends every link and every session, and from then on Caddy serves AIO's page at the same
+address.
 """
 
 import base64
@@ -27,6 +28,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -43,6 +45,7 @@ DEFAULT_PORT = 8080  # the interface port of vanilla's start command
 LISTO = "listo"  # beside the state; provisionador.Caddyfile reads it too
 COOKIE = "__Host-session"
 MAX_BODY = 64 * 1024
+CERTIFICATE_CHECK = 5 * 60  # seconds; Caddy's internal issuer renews its 12 h certificates after about 8 h
 # The page and its own files, by request path: no request path is ever joined to a directory.
 STATIC = {"/": HERE / "www" / "index.html", "/app.js": HERE / "www" / "app.js", "/app.css": HERE / "www" / "app.css"}
 CONTENT_TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
@@ -60,8 +63,13 @@ la huella SHA-256 del certificado es:
 
     {fingerprint}
 
-El enlace sirve hasta «Listo». Si el servidor se reinicia, aquí aparecerá un enlace nuevo y el anterior dejará de
-servir.
+El enlace sirve hasta «Listo». Si el servidor se reinicia, aquí aparecerá un enlace nuevo, y este seguirá sirviendo.
+"""
+RENEWAL_LOG = """\
+El certificado del servidor se renovó. Si el navegador vuelve a advertir que la conexión no es privada, continúe solo
+si la huella SHA-256 del certificado es:
+
+    {fingerprint}
 """
 NO_ADDRESS = ("No hay enlace de instalación: falta la dirección con que se abre este servidor. Inicie el contenedor "
               f"maestro con --env {ADDRESS}=<dirección IP o nombre del servidor>, y su puerto si no es el {DEFAULT_PORT}"
@@ -69,8 +77,7 @@ NO_ADDRESS = ("No hay enlace de instalación: falta la dirección con que se abr
 NOT_JSON = "La solicitud no es JSON válido."
 JSON_ONLY = "La solicitud debe enviarse en formato JSON."
 NO_SESSION = "Abra el enlace de instalación que muestra el registro del servidor."
-LINK_REFUSED = ("Este enlace ya no sirve. Cada vez que el servidor se reinicia, su registro muestra un enlace nuevo: "
-                "abra el más reciente.")
+LINK_REFUSED = "Este enlace no sirve. Abra el enlace completo que muestra el registro del servidor."
 UNKNOWN = "Ruta desconocida."
 NOT_IN_REGISTER = "Ese establecimiento no está en el registro DEIS."
 OFF_THE_MAP = "El punto del mapa debe tener una latitud entre -90 y 90 y una longitud entre -180 y 180."
@@ -165,6 +172,7 @@ class Provisionador:
         self.register = deis.Register(register)
         self.suite = suite
         self.interface = interface(address)
+        self.shown = None  # the fingerprint the log printed last
 
     def server(self, address=("127.0.0.1", PORT)):
         httpd = Server(address, Handler)
@@ -172,25 +180,38 @@ class Provisionador:
         return httpd
 
     def announce(self):
-        """Print the one-time link, its QR code and the certificate's fingerprint to the log. The link replaces the
-        one before."""
+        """Print the one-time link, its QR code and the certificate's fingerprint to the log. The links printed before
+        stay valid."""
         if self.interface is None:
             print(NO_ADDRESS, flush=True)
             return
         host, port = self.interface
-        shown = fingerprint(self.suite.certificate(host))
+        self.shown = fingerprint(self.suite.certificate(host))
         secret = random_code()
-        self.state.change(lambda s: s.update(link=digest(secret)))
+        self.state.change(lambda s: s.update(links=s.get("links", []) + [digest(secret)]))
         url = f"https://{f'[{host}]' if ':' in host else host}:{port}/#{secret}"
-        print(LINK_LOG.format(url=url, qr=qr(url), fingerprint=shown), flush=True)
+        print(LINK_LOG.format(url=url, qr=qr(url), fingerprint=self.shown), flush=True)
+
+    def check_certificate(self):
+        """Print the fingerprint of the certificate AIO's interface presents now, without the link, when it is not the
+        one the log printed last: Caddy's internal issuer renews it while the links stay valid."""
+        if self.interface is None:
+            return
+        try:
+            shown = fingerprint(self.suite.certificate(self.interface[0]))
+        except Unreachable:
+            return  # the next check asks again
+        if shown != self.shown:
+            self.shown = shown
+            print(RENEWAL_LOG.format(fingerprint=shown), flush=True)
 
     def open_session(self, session, body):
-        """POST /api/session {"link": <the link's secret>}: a browser that already has a session keeps it; otherwise
-        the link opens one. Returns the new session, if any."""
+        """POST /api/session {"link": <a link's secret>}: a browser that already has a session keeps it; otherwise any
+        link printed since the install began opens one. Returns the new session, if any."""
         def exchange(s):
             if known(session, s.get("sessions", [])):
                 return 200, {"ok": True}, None
-            if not known(body.get("link"), [s["link"]] if s.get("link") else []):
+            if not known(body.get("link"), s.get("links", [])):
                 return 401, {"error": LINK_REFUSED}, None
             new = random_code()
             s["sessions"] = s.get("sessions", []) + [digest(new)]
@@ -327,6 +348,13 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
 
+def every(seconds, task):
+    """Call `task` every `seconds` seconds, for as long as the Provisionador runs."""
+    while True:
+        time.sleep(seconds)
+        task()
+
+
 def main():
     app = Provisionador(STATE_DIR, deis.newest(REGISTER), Suite(), os.environ.get(ADDRESS, ""))
     if app.state.listo():
@@ -338,6 +366,7 @@ def main():
     except Unreachable as outage:
         print(outage, file=sys.stderr, flush=True)
         return 1  # dinit starts it again
+    threading.Thread(target=every, args=(CERTIFICATE_CHECK, app.check_certificate), daemon=True).start()
     httpd.serve_forever()
     return 0
 

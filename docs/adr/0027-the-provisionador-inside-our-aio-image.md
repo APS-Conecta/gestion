@@ -35,13 +35,14 @@ after a failure.
 
 **The link and the session.** Each start mints a link, `https://<address>/#<secret>`, with 256 random bits, and
 prints it, its QR code and the certificate's fingerprint to the mastercontainer's log, which the Bootstrap and
-Coolify show. The secret rides in the URL fragment, which no request carries. Any browser that opens the link
+Coolify show. The secret rides in the URL fragment, which no request carries. Any browser that opens a link
 exchanges the secret for a session of its own (`POST /api/session`), kept in a `__Host-` cookie that is Secure,
-HttpOnly and SameSite=Strict. The link stays valid until «Listo» or until the next start replaces it. The state is
-one JSON file in the same folder and keeps the secret and the sessions only as SHA-256 hashes, so a reload, a
-restart or a reboot resumes it, and a session survives a restart. qrencode reads the link on stdin, because the
-host's `ps` shows the arguments of every process in the container; the request log is off. The API accepts only
-JSON bodies, so another origin would need a preflight that is never granted.
+HttpOnly and SameSite=Strict. Every link printed stays valid until «Listo»: a restart prints a fresh one, and the
+ones before still open a session. The state is one JSON file in the same folder and keeps the links' secrets and
+the sessions only as SHA-256 hashes, so a reload, a restart or a reboot resumes it, and a session survives a
+restart. qrencode reads the link on stdin, because the host's `ps` shows the arguments of every process in the
+container; the request log is off. The API accepts only JSON bodies, so another origin would need a preflight that
+is never granted.
 
 **The address is an environment value: `APS_INTERFACE_ADDRESS`.** It is the address the operator's browser opens
 AIO's interface at: a host, or `host:port` when the host's port is not 8080, with an IPv6 address in brackets. The
@@ -66,7 +67,11 @@ routes only: `img-src` also allows `data:` and `https://tile.openstreetmap.org`,
 becomes `trusted-types default`, which keeps `require-trusted-types-for 'script'`. The page defines that default
 policy, and it lets through only Leaflet's probe and the two labels. Leaflet's attribution control would write HTML
 too, so the page shows OpenStreetMap's attribution under the map, and the marker is an element. The tiles load in
-CORS mode, which OpenStreetMap answers, so COEP stays. AIO's page and the brand files keep AIO's policy as it is.
+CORS mode, which OpenStreetMap answers, so COEP stays. AIO's `Referrer-Policy: no-referrer` stays too, though
+OpenStreetMap's tile policy requires a Referer: without one, `tile.openstreetmap.org` answers every tile with its
+"403 Access blocked" image at HTTP 200, so Leaflet reports no error. So the tile layer sets
+`referrerPolicy: "strict-origin"` on its tile images, which overrides the page's policy for them alone: the tile
+requests carry the page's origin, never its path. AIO's page and the brand files keep AIO's policy as it is.
 
 **Timezone.** The centre's timezone follows its location: the comuna Isla de Pascua is `Pacific/Easter`, the Región
 de Magallanes y de la Antártica Chilena is `America/Punta_Arenas`, and every other place is `America/Santiago`.
@@ -77,8 +82,10 @@ de Magallanes y de la Antártica Chilena is `America/Punta_Arenas`, and every ot
   port in the static gate. The image test (`aps/provisionador/image-test.py`, the `Mastercontainer image`
   workflow) builds the image from a pull request's tree, runs it as vanilla's command does and checks the link, the
   fingerprint, a restart and the handoff from outside.
-- Caddy's internal issuer renews its certificates every few hours. A browser that opens the interface after a
-  renewal warns again, and the log's fingerprint is the one of that start; the next start prints the current one.
+- Caddy's internal issuer, which `internal.Caddyfile` gives no lifetime, issues 12-hour certificates and renews each
+  after about 8 hours, while the links stay valid until «Listo». A browser that opens the interface after a renewal
+  warns again, so the Provisionador reads the certificate every 5 minutes and, when it changed, prints the new
+  fingerprint to the log, without the link; a check that finds AIO's interface down waits for the next one.
 - Until #301 removes the old host layer, its own Provisionador and DEIS tool stay in the tree beside this one; the
   new code never imports or runs them, and `scripts/deis.py` reads the register from `aps/deis/`.
 - The Bootstrap (#283) and the Coolify install (#293) must pass `APS_INTERFACE_ADDRESS`.

@@ -164,7 +164,7 @@ def a_restart(first, operator):
     printed = FINGERPRINT.findall(log())
     check(len(printed) == 2 and printed[1] == fingerprint(served_certificate()),
           "the fingerprint printed again is the certificate served")
-    check(Browser().open(first)[0] == 401, "the link before the restart stops working")
+    check(Browser().open(first)[0] == 200, "the link before the restart still opens a session")
     check(Browser().open(second)[0] == 200, "the fresh link opens a session")
     status, body = operator.request("GET", "/api/state")
     check(status == 200 and body["centre"]["code"] == CODE, "the session and the state survive the restart")
