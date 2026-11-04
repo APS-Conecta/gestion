@@ -32,19 +32,19 @@ test('deSEC existing-account login flow', async ({ page: setupPage }) => {
   const slug = `aio-existing-${Math.floor(Math.random() * 2147483647)}`;
 
   // Open the deSEC registration entry point and launch the modal.
-  await containersPage.getByText("Don't have a domain? Get a free one from deSEC").click();
-  await containersPage.getByRole('button', { name: 'Register free domain via deSEC' }).click();
+  await containersPage.getByText('¿No tiene un dominio? Obtenga uno gratuito de deSEC').click();
+  await containersPage.getByRole('button', { name: 'Registrar un dominio gratuito con deSEC' }).click();
 
   const frame = containersPage.frameLocator('#desec-frame');
   await frame.locator('input[name="desec_email"]').fill(email);
   await frame.locator('input[name="desec_password"]').fill(password);
   await frame.locator('input[name="desec_slug"]').first().fill(slug);
-  await frame.getByRole('button', { name: 'Register free domain via deSEC' }).click();
+  await frame.getByRole('button', { name: 'Registrar un dominio gratuito con deSEC' }).click();
 
   // Supplying a valid password logs straight in and registers the domain in one step; the
   // modal view then reloads the parent containers page.
-  await expect(containersPage.getByRole('button', { name: 'Download and start containers' })).toBeVisible({ timeout: 60 * 1000 });
+  await expect(containersPage.getByRole('button', { name: 'Descargar e iniciar contenedores' })).toBeVisible({ timeout: 60 * 1000 });
   await expect(
-    containersPage.getByText("Don't have a domain? Get a free one from deSEC"),
+    containersPage.getByText('¿No tiene un dominio? Obtenga uno gratuito de deSEC'),
   ).toHaveCount(0);
 });

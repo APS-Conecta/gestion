@@ -45,19 +45,19 @@ test('deSEC reuses a slug the user already owns when over the domain limit', asy
 
   const containersPage = await logInToContainersPage(setupPage);
 
-  await containersPage.getByText("Don't have a domain? Get a free one from deSEC").click();
-  await containersPage.getByRole('button', { name: 'Register free domain via deSEC' }).click();
+  await containersPage.getByText('¿No tiene un dominio? Obtenga uno gratuito de deSEC').click();
+  await containersPage.getByRole('button', { name: 'Registrar un dominio gratuito con deSEC' }).click();
 
   const frame = containersPage.frameLocator('#desec-frame');
   await frame.locator('input[name="desec_email"]').fill(email);
   await frame.locator('input[name="desec_password"]').fill(password);
   await frame.locator('input[name="desec_slug"]').first().fill(slug);
-  await frame.getByRole('button', { name: 'Register free domain via deSEC' }).click();
+  await frame.getByRole('button', { name: 'Registrar un dominio gratuito con deSEC' }).click();
 
   // Despite the 403 on creation, the domain the user already owns is reused and registration
   // completes; the modal view then reloads the parent containers page.
-  await expect(containersPage.getByRole('button', { name: 'Download and start containers' })).toBeVisible({ timeout: 60 * 1000 });
+  await expect(containersPage.getByRole('button', { name: 'Descargar e iniciar contenedores' })).toBeVisible({ timeout: 60 * 1000 });
   await expect(
-    containersPage.getByText("Don't have a domain? Get a free one from deSEC"),
+    containersPage.getByText('¿No tiene un dominio? Obtenga uno gratuito de deSEC'),
   ).toHaveCount(0);
 });

@@ -2,7 +2,7 @@
     "aio_services_v1": [
         {
             "container_name": "nextcloud-aio-caddy",
-            "display_name": "Caddy with geoblocking",
+            "display_name": "Caddy con bloqueo geográfico",
             "documentation": "https://github.com/nextcloud/all-in-one/tree/main/community-containers/caddy",
             "image": "ghcr.io/aps-conecta/aio-caddy",
             "image_tag": "%AIO_CHANNEL%",

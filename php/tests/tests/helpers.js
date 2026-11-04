@@ -14,7 +14,7 @@ export async function logInToContainersPage(setupPage) {
   await setupPage.goto('./setup');
   const password = await setupPage.locator('#initial-password').innerText()
   const containersPagePromise = setupPage.waitForEvent('popup');
-  await setupPage.getByRole('link', { name: 'Open Nextcloud AIO login ↗' }).click();
+  await setupPage.getByRole('link', { name: 'Abrir el inicio de sesión de APS Conecta Gestión ↗' }).click();
   const containersPage = await containersPagePromise;
 
   // Typing must not reveal the passphrase; only the reveal button toggles it
@@ -22,13 +22,13 @@ export async function logInToContainersPage(setupPage) {
   await passwordField.click();
   await passwordField.fill(password);
   await expect(passwordField).toHaveAttribute('type', 'password');
-  await containersPage.getByRole('button', { name: 'Show passphrase' }).click();
+  await containersPage.getByRole('button', { name: 'Mostrar la frase de contraseña' }).click();
   await expect(passwordField).toHaveAttribute('type', 'text');
-  await containersPage.getByRole('button', { name: 'Hide passphrase' }).click();
+  await containersPage.getByRole('button', { name: 'Ocultar la frase de contraseña' }).click();
   await expect(passwordField).toHaveAttribute('type', 'password');
 
   // Log in and wait for redirect
-  await containersPage.getByRole('button', { name: 'Log in' }).click();
+  await containersPage.getByRole('button', { name: 'Iniciar sesión' }).click();
   await containersPage.waitForURL('./containers');
   return containersPage;
 }

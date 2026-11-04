@@ -22,6 +22,8 @@ COPY --from=docker /usr/local/bin/docker /usr/local/bin/docker
 
 COPY community-containers /var/www/docker-aio/community-containers
 COPY php /var/www/docker-aio/php
+# AIO's page paints the brand from the theme: the token file, the favicon and the two fonts.
+COPY themes/apsconecta/core/css/tokens.css themes/apsconecta/core/img/favicon.svg themes/apsconecta/core/fonts/NunitoSans.woff2 themes/apsconecta/core/fonts/Fraunces.woff2 /var/www/docker-aio/php/public/aps/
 COPY --chmod=775 Containers/mastercontainer/*.sh /
 COPY --chmod=664 Containers/mastercontainer/*.Caddyfile /
 COPY Containers/mastercontainer/dinit.d/ /etc/dinit.d/

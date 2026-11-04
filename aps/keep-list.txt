@@ -21,6 +21,7 @@ scripts/.gitignore our scripts' bytecode stays untracked
 scripts/ci-tool.sh our CI tool pins
 scripts/keep-list.py the Keep-list check
 scripts/keep-list-test.py the Keep-list check's self-test
+scripts/aio-page.py the check that AIO's page and its notifications are Spanish, never use the other product's name and take the brand from the token file
 scripts/test.sh our static gate
 scripts/usage.py our resource-measurement collector
 scripts/validate.sh upstream's validators, run by our candidate pipeline against the candidate commit
@@ -48,10 +49,47 @@ scripts/releases.py old host layer: the app-release resolver
 scripts/seed-idempotent.sh old host layer: the seed idempotency check
 scripts/smoke.sh old host layer: the core smoke check
 scripts/talk-smoke.sh old host layer: the Talk smoke check
-php/containers.json official images pinned by digest to upstream v14.4.3's set
+php/containers.json official images pinned by digest to upstream v14.4.3's set; Spanish display names
 php/containers-schema.json an image_tag may be a sha256 digest pin
-php/src/Docker/DockerActionManager.php an image_tag that is a sha256 digest is requested as image@digest
-community-containers/caddy/caddy.json the reverse proxy is our thin Caddy image, pinned per release
+php/src/Docker/DockerActionManager.php an image_tag that is a sha256 digest is requested as image@digest; Spanish «APS Conecta Gestión» text on AIO's page
+community-containers/caddy/caddy.json the reverse proxy is our thin Caddy image, pinned per release; Spanish display name
+Containers/mastercontainer/Dockerfile AIO's page takes the brand token file, the favicon and the fonts from the theme
+php/public/click-handlers.js Spanish «APS Conecta Gestión» text on AIO's page
+php/public/containers-form-submit.js Spanish «APS Conecta Gestión» text on AIO's page
+php/public/forms.js Spanish «APS Conecta Gestión» text on AIO's page
+php/public/log-load.js Spanish «APS Conecta Gestión» text on AIO's page
+php/public/second-tab-warning.js Spanish «APS Conecta Gestión» text on AIO's page
+php/public/img/nextcloud-logo.svg APS Conecta Gestión logo under upstream's file name and symbol ids
+php/public/style.css the brand token file's palette and fonts, and the source-code link, on AIO's page
+php/src/Auth/AuthManager.php Spanish «APS Conecta Gestión» text on AIO's page
+php/src/Controller/DockerController.php Spanish «APS Conecta Gestión» text on AIO's page
+php/src/Controller/LoginController.php Spanish «APS Conecta Gestión» text on AIO's page
+php/src/Cron/BackupNotification.php AIO's notifications in Spanish, naming «APS Conecta Gestión»
+php/src/Cron/CheckFreeDiskSpace.php AIO's notifications in Spanish, naming «APS Conecta Gestión»
+php/src/Cron/OutdatedNotification.php AIO's notifications in Spanish, naming «APS Conecta Gestión»
+php/src/Cron/UpdateNotification.php AIO's notifications in Spanish, naming «APS Conecta Gestión»
+php/src/Data/ConfigurationManager.php Spanish «APS Conecta Gestión» text on AIO's page
+php/src/Desec/DesecManager.php Spanish «APS Conecta Gestión» text on AIO's page
+php/templates/already-installed.twig Spanish «APS Conecta Gestión» text on AIO's page
+php/templates/components/container-state.twig Spanish «APS Conecta Gestión» text on AIO's page
+php/templates/containers.twig Spanish «APS Conecta Gestión» text on AIO's page; upstream's switch for the unused Nextcloud major upgrade turned off
+php/templates/desec.twig Spanish «APS Conecta Gestión» text on AIO's page
+php/templates/includes/aio-config.twig Spanish «APS Conecta Gestión» text on AIO's page
+php/templates/includes/backup-dirs.twig Spanish «APS Conecta Gestión» text on AIO's page
+php/templates/includes/community-containers.twig Spanish «APS Conecta Gestión» text on AIO's page
+php/templates/includes/desec-domain-notice.twig Spanish «APS Conecta Gestión» text on AIO's page
+php/templates/includes/desec-register.twig Spanish «APS Conecta Gestión» text on AIO's page
+php/templates/includes/optional-containers.twig Spanish «APS Conecta Gestión» text on AIO's page
+php/templates/layout.twig Spanish «APS Conecta Gestión» text on AIO's page, its favicon and the AGPL source-code link
+php/templates/log.twig Spanish «APS Conecta Gestión» text on AIO's page
+php/templates/login.twig Spanish «APS Conecta Gestión» text on AIO's page
+php/templates/setup.twig Spanish «APS Conecta Gestión» text on AIO's page
+php/tests/tests/desec-existing-slug.spec.js upstream's browser tests, their selectors in the page's Spanish
+php/tests/tests/desec-existing.spec.js upstream's browser tests, their selectors in the page's Spanish
+php/tests/tests/desec-register.spec.js upstream's browser tests, their selectors in the page's Spanish
+php/tests/tests/helpers.js upstream's browser tests, their selectors in the page's Spanish
+php/tests/tests/initial-setup.spec.js upstream's browser tests, their selectors in the page's Spanish
+php/tests/tests/restore-instance.spec.js upstream's browser tests, their selectors in the page's Spanish
 .github/dependabot.yml switched off: Dependabot would open upstream's dependency PRs here
 .github/workflows/collabora.yml switched off: opens upstream's Collabora update PRs
 .github/workflows/dependabot-approve-merge.yml switched off: approves and merges Dependabot's PRs

@@ -13,6 +13,13 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Changed
 
+- **AIO's page speaks Spanish as «APS Conecta Gestión» (#288).** Its login, containers, backup,
+  restore and deSEC screens and the mastercontainer's notifications are in es-CL Spanish, formal
+  «usted». The page paints the brand token file's palette and fonts, shows our logo and favicon and
+  links its source code. `scripts/aio-page.py` in the static gate fails on English operator text, on
+  the other product's name and on a brand colour outside the token file; upstream's browser tests
+  read the Spanish page.
+
 - **Test builds and release candidates come from one dispatch (#281).** A maintainer tags a commit
   `vX.Y.Z-ci.N` or `vX.Y.Z-rc.N` and dispatches the release pipeline on that tag. It builds our three
   images from the commit — the mastercontainer, a Nextcloud image without the one-click-instance

@@ -28,8 +28,8 @@ test('deSEC register -> verify -> domain flow', async ({ page: setupPage }) => {
   const slug = `aio-e2e-${Math.floor(Math.random() * 2147483647)}`;
 
   // Open the deSEC registration entry point and launch the modal.
-  await containersPage.getByText("Don't have a domain? Get a free one from deSEC").click();
-  await containersPage.getByRole('button', { name: 'Register free domain via deSEC' }).click();
+  await containersPage.getByText('¿No tiene un dominio? Obtenga uno gratuito de deSEC').click();
+  await containersPage.getByRole('button', { name: 'Registrar un dominio gratuito con deSEC' }).click();
 
   // The flow lives inside the modal iframe (the /desec view).
   const frame = containersPage.frameLocator('#desec-frame');
@@ -39,16 +39,16 @@ test('deSEC register -> verify -> domain flow', async ({ page: setupPage }) => {
   //    reloads into the awaiting-verification step inside the modal.
   await frame.locator('input[name="desec_email"]').fill(email);
   await frame.locator('input[name="desec_slug"]').first().fill(slug);
-  await frame.getByRole('button', { name: 'Register free domain via deSEC' }).click();
-  await expect(frame.getByText('check your inbox')).toBeVisible({ timeout: 30 * 1000 });
+  await frame.getByRole('button', { name: 'Registrar un dominio gratuito con deSEC' }).click();
+  await expect(frame.getByText('Revise su bandeja de entrada')).toBeVisible({ timeout: 30 * 1000 });
   await expect(
-    frame.getByRole('button', { name: 'I have verified my email – register domain' }),
+    frame.getByRole('button', { name: 'Ya verifiqué mi correo electrónico – registrar el dominio' }),
   ).toBeVisible();
 
   // 2) Re-submit BEFORE verifying -> login still fails (mock 403) -> friendly hint shown.
   //    The error is a transient toast rendered inside the iframe.
-  await frame.getByRole('button', { name: 'I have verified my email – register domain' }).click();
-  await expect(frame.locator('.toast.error')).toContainText('Could not log in to deSEC', { timeout: 8 * 1000 });
+  await frame.getByRole('button', { name: 'Ya verifiqué mi correo electrónico – registrar el dominio' }).click();
+  await expect(frame.locator('.toast.error')).toContainText('Aún no se pudo iniciar sesión en deSEC', { timeout: 8 * 1000 });
 
   // 3) Simulate the user clicking the verification link in their email.
   const verifyResponse = await fetch(`${DESEC_MOCK_URL}/__control/verify`, { method: 'POST' });
@@ -57,9 +57,9 @@ test('deSEC register -> verify -> domain flow', async ({ page: setupPage }) => {
   // 4) Re-submit after verification -> login succeeds, the domain is registered and the
   //    modal view reloads the parent page, where the deSEC entry point is gone and the
   //    container-start UI appears.
-  await frame.getByRole('button', { name: 'I have verified my email – register domain' }).click();
-  await expect(containersPage.getByRole('button', { name: 'Download and start containers' })).toBeVisible({ timeout: 60 * 1000 });
+  await frame.getByRole('button', { name: 'Ya verifiqué mi correo electrónico – registrar el dominio' }).click();
+  await expect(containersPage.getByRole('button', { name: 'Descargar e iniciar contenedores' })).toBeVisible({ timeout: 60 * 1000 });
   await expect(
-    containersPage.getByText("Don't have a domain? Get a free one from deSEC"),
+    containersPage.getByText('¿No tiene un dominio? Obtenga uno gratuito de deSEC'),
   ).toHaveCount(0);
 });
