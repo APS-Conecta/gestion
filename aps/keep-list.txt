@@ -54,6 +54,7 @@ php/containers-schema.json an image_tag may be a sha256 digest pin
 php/src/Docker/DockerActionManager.php an image_tag that is a sha256 digest is requested as image@digest; Spanish «APS Conecta Gestión» text on AIO's page
 community-containers/caddy/caddy.json the reverse proxy is our thin Caddy image, pinned per release; Spanish display name
 Containers/mastercontainer/Dockerfile AIO's page takes the brand token file, the favicon and the fonts from the theme
+Containers/mastercontainer/headers.Caddyfile AIO's page serves its own fonts: its CSP allows fonts from itself
 php/public/click-handlers.js Spanish «APS Conecta Gestión» text on AIO's page
 php/public/containers-form-submit.js Spanish «APS Conecta Gestión» text on AIO's page
 php/public/forms.js Spanish «APS Conecta Gestión» text on AIO's page
