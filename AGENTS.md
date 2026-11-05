@@ -40,8 +40,8 @@ the official images to the set Upstream built from it.
   fixture releases, no network) and the Provisionador's Seam 2 tests (`aps/provisionador/test_provisionador.py`:
   its HTTP API in-process against the fake suite port) — then
   its `zizmor over our workflows` step (zizmor at medium severity over `ci.yml`, `release.yml`,
-  `issue-linker.yml`, `mastercontainer-image.yml` and `aps-name.yml`, without upstream's `zizmor.yml` and with the
-  online audits), and the Keep-list check:
+  `issue-linker.yml`, `mastercontainer-image.yml`, `aps-name.yml` and `acceptance.yml`, without upstream's
+  `zizmor.yml` and with the online audits), and the Keep-list check:
   `scripts/keep-list-test.py` plants an undeclared difference and a stale entry and must see
   `scripts/keep-list.py` red on each, then `scripts/keep-list.py` compares the tree with the
   Upstream commit `aps/keep-list.txt` names and fails on an undeclared difference or a stale
@@ -55,6 +55,10 @@ the official images to the set Upstream built from it.
   dispatch: the CI proof (`aps/provisionador/name-test.py`) builds our Caddy image, claims a CI name with one of
   gestion's reserved DEIS codes (`aps/provisionador/ci-codes.txt`) on the name service's CI deployment, waits for a
   Let's Encrypt staging certificate with no inbound port, and frees the name with its own credential.
+- `.github/workflows/acceptance.yml`, on a maintainer's dispatch for a pre-release and through `workflow_call`: the
+  clean-machine acceptance harness (Seam 1). `aps/acceptance/run.sh` boots a fresh Debian 12 VM, runs the candidate's
+  published Bootstrap exactly as the manual prints it, then each check module in `aps/acceptance/checks/` through the
+  interface its header documents; a failing check is named and attaches every container's log and the disk usage.
 - Upstream's own workflows beside it: codespell, shellcheck, docker-lint and json-validator,
   plus the PHP, Twig, YAML and Playwright checks on their paths. `scripts/validate.sh` runs
   the codespell, docker-lint and json-spec trio against any tree; the candidate pipeline runs

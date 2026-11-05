@@ -5,7 +5,7 @@
 # Every path where this repo differs from Upstream, one per line: `<path> <reason>`. A path ending
 # in `/` covers everything under it. scripts/keep-list.py fails on an undeclared difference and on
 # an entry that no longer differs.
-aps/ our layer: the Keep-list, the operator runbooks, the changelog, the release ritual, our three images, the release pipeline's tools, the Provisionador and the DEIS register
+aps/ our layer: the Keep-list, the operator runbooks, the changelog, the release ritual, our three images, the release pipeline's tools, the acceptance harness, the Provisionador and the DEIS register
 docs/ our layer: ADRs and agent docs
 themes/ our layer: the apsconecta server theme and the brand token file
 AGENTS.md our agent steering replaces upstream's
@@ -19,6 +19,7 @@ readme.md our fork declaration replaces upstream's readme
 .github/workflows/issue-linker.yml our issue linker
 .github/workflows/mastercontainer-image.yml our image test: the mastercontainer built from a pull request's tree, run as vanilla's command runs it and checked from outside
 .github/workflows/aps-name.yml our CI proof of the APS name: our Caddy image gets a staging certificate for a CI name with no inbound port, and the run frees the name
+.github/workflows/acceptance.yml our acceptance harness: a published candidate's Bootstrap on a fresh VM, then the release gate's check modules
 scripts/.gitignore our scripts' bytecode stays untracked
 scripts/ci-tool.sh our CI tool pins
 scripts/keep-list.py the Keep-list check
