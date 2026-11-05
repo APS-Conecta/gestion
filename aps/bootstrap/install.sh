@@ -31,6 +31,12 @@ TRUSTED_CACERTS=""
 # The hardware minimum: the old installer's memory and disk floors, until #300 measures the suite's.
 MIN_MEMORY_GIB=6
 MIN_DISK_GB=20
+# Talk's recording threshold: a server with at least these cores, and this memory rounded as the floor's, records Talk
+# calls. The Provisionador reads it here (provisionador/steps/components.py). Until #300 measures it: the memory floor
+# and the acceptance VM's 2 cores, plus one recording's 2 cores and 2 GiB browser (nextcloud-talk-recording's
+# «Hardware requirements»).
+RECORDING_MIN_CPUS=4
+RECORDING_MIN_MEMORY_GIB=8
 # What AIO publishes on the host (php/containers.json): Apache's 443, Talk's 3478 and the interface's 8080.
 PORTS="tcp/443 udp/443 tcp/3478 udp/3478 tcp/8080"
 CONTAINER=nextcloud-aio-mastercontainer

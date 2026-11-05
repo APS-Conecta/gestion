@@ -10,6 +10,7 @@ or in the port file of its concern: nextcloud.py for Nextcloud's command line, w
 
 import ipaddress
 import json
+import os
 import re
 import socket
 import ssl
@@ -146,6 +147,9 @@ class SuitePort(Protocol):
 
     def server_address(self) -> str:
         """The server's address on the network its default route leaves by: the clinic's network."""
+
+    def hardware(self) -> dict:
+        """The server's CPU cores (`cpus`) and its memory in GiB (`memory_gib`), rounded as the Bootstrap rounds it."""
 
     def use_name(self, credential: dict) -> None:
         """Set AIO up to serve the claimed name with our Caddy, in reverse-proxy mode."""
@@ -309,6 +313,12 @@ class Suite:
             raise Unreachable(NO_SERVER_ADDRESS) from None
 
     @staticmethod
+    def hardware():
+        """The mastercontainer shares the host's kernel, which gives it the host's cores and memory."""
+        memory = int(re.search(r"^MemTotal:\s+(\d+) kB$", Path("/proc/meminfo").read_text(), re.M)[1])
+        return {"cpus": len(os.sched_getaffinity(0)), "memory_gib": (memory + 524288) // 1048576}
+
+    @staticmethod
     def aio(script, values, failed, timeout=120):
         """What `script`, AIO's own code, printed with `values` on its stdin; Unreachable with `failed` when it fails."""
         try:
@@ -371,9 +381,9 @@ class FakeSuite:
     centro-<code>.gestion.apsconecta.cl once, refuses the codes another installation holds, and fails while `outage`
     is set; the nameservers of its zone answer the addresses it was given once propagate() brings them. Its AIO keeps
     its settings file in `aio` and its daily backup file in `daily_backup_time`, the server's address is `server` until
-    DHCP changes it and cannot be read while `no_server_address` is set, and a browser whose resolver answers the
-    server's address says hello() to AIO's interface at a name. AIO's start makes each of its CONTAINERS starting, until
-    up() makes their ports answer."""
+    DHCP changes it and cannot be read while `no_server_address` is set, its hardware is `machine`, and a browser whose
+    resolver answers the server's address says hello() to AIO's interface at a name. AIO's start makes each of its
+    CONTAINERS starting, until up() makes their ports answer."""
 
     CONTAINERS = {"nextcloud-aio-apache": "Apache & Caddy", "nextcloud-aio-nextcloud": "Servidor de aplicaciones",
                   "nextcloud-aio-talk": "Talk", "nextcloud-aio-eurooffice": "EuroOffice"}  # by id, AIO's names
@@ -390,6 +400,7 @@ class FakeSuite:
         self.nameservers = {}  # by name, the address the zone's nameservers answer
         self.server = "192.168.1.10"
         self.no_server_address = False
+        self.machine = {"cpus": 2, "memory_gib": 6}  # the acceptance VM's: the Bootstrap's memory floor and 2 cores
         self.aio = {}
         self.daily_backup_time = None
         self.hellos = set()  # the names a TLS client asked AIO's interface for
@@ -444,6 +455,9 @@ class FakeSuite:
         if self.no_server_address:
             raise Unreachable(NO_SERVER_ADDRESS)
         return self.server
+
+    def hardware(self):
+        return dict(self.machine)
 
     def use_name(self, credential):
         """What AIO's configuration code writes: the domain, the community container and the variables of its
