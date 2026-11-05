@@ -121,9 +121,17 @@ class FakeNextcloud:
     that serve only their leaf. It does not answer while `down` is set, an import silently keeps the `ignored` settings
     out, the issuers of the `unreachable` hosts cannot be fetched, and Euro-Office answers Nextcloud while `editor` is
     set. Its app store has the apps of `store`, and an app installed from a tarball runs the version its info.xml
-    declares."""
+    declares. Its first start sets up the apps of each component AIO's switches turn on, as vanilla's start does, but
+    none of a component of `late`, whose container does not answer that start in time."""
+
+    # The apps vanilla's start sets up for a component, by AIO's switch: the antivirus, whose background scan only logs
+    # what it finds infected, and full-text search's three apps, the store's files provider among them.
+    COMPONENTS = {"isClamavEnabled": {"files_antivirus": {"av_infected_action": "only_log"}},
+                  "isFulltextsearchEnabled": dict.fromkeys(("fulltextsearch", "fulltextsearch_elasticsearch",
+                                                            "files_fulltextsearch"), {})}
 
     def __init__(self):
+        self.late = set()  # the components, by AIO's switch, whose container does not answer Nextcloud's start in time
         self.down = False
         self.editor = True  # Euro-Office's document server answers Nextcloud: its connector's own check passes
         self.system = {}
@@ -177,6 +185,12 @@ class FakeNextcloud:
         for app in apps:
             if app in self.store:
                 self.apps[app] = {"enabled": "yes", "installed_version": self.store[app]}
+
+    def set_up_components(self, switches):
+        """The apps of each component the switches turn on, enabled with vanilla's settings, but a late one's."""
+        for switch, apps in self.COMPONENTS.items():
+            if switches.get(switch) and switch not in self.late:
+                self.apps.update({app: {"enabled": "yes", **settings} for app, settings in apps.items()})
 
     def install_app(self, app, tarball):
         if self.down:
