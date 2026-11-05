@@ -13,6 +13,12 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Added
 
+- **Office: Euro-Office by default, with the Office entry (#291).** Staff create, edit, save and reopen documents in
+  Euro-Office from Nextcloud's own Office entry, its navigation icon and document hub, as in any Nextcloud; Collabora
+  and OnlyOffice stay off. An install step keeps our Office defaults: ODF opens and edits in Euro-Office, the editor
+  keeps the light theme, and a document opens in a tab of its own. It is done once Euro-Office answers Nextcloud, and
+  a test build's acceptance run creates, edits, saves and reopens a document from the Office entry in a browser.
+
 - **The install step runner (#287).** «Instalar» runs its work as install steps, each declaring the steps it needs:
   AIO's settings and start, then the baseline on the running suite. Sessions end after 15 idle minutes with no
   «Recordarme», the audit log records administrative actions, background jobs run from AIO's cron, everyone gets
