@@ -13,6 +13,12 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Added
 
+- **Office: Euro-Office by default, with the Office entry (#291).** Staff create, edit, save and reopen documents in
+  Euro-Office from Nextcloud's own Office entry, its navigation icon and document hub, as in any Nextcloud; Collabora
+  and OnlyOffice stay off. An install step keeps our Office defaults: ODF opens and edits in Euro-Office, the editor
+  keeps the light theme, and a document opens in a tab of its own. It is done once Euro-Office answers Nextcloud, and
+  a test build's acceptance run creates, edits, saves and reopens a document from the Office entry in a browser.
+
 - **Talk verified, with recording above the hardware threshold (#290).** Talk's recording server is on for a server
   with at least the cores and memory the Bootstrap declares beside its hardware floors (provisional until #300
   measures them), and off on any other. The acceptance harness holds a two-browser Talk call with camera and
