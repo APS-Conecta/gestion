@@ -170,6 +170,9 @@ def kept():
 line = f"APS-OFICINA-{secrets.token_hex(4)}"
 with chromium() as browser:
     context = browser.new_context(locale="es-CL", viewport={"width": 1600, "height": 1000})
+    # Right after «Listo» the suite is still settling (full-text search's first index, ClamAV's signatures), and a
+    # staff member's first sign-in copies Nextcloud's sample files: each step may take longer than Playwright's 30 s.
+    context.set_default_timeout(120_000)
     context.add_init_script(EDITOR_EVENTS)
     page = context.new_page()
     try:
@@ -177,7 +180,7 @@ with chromium() as browser:
         page.fill("#user", USER)
         page.fill("#password", password)
         page.click("[data-login-form-submit]")
-        page.wait_for_url(lambda url: "/login" not in url, timeout=60_000)
+        page.wait_for_url(lambda url: "/login" not in url)
         office(page)
         page.get_by_role("button", name="Vacío", exact=True).first.click()
         page.get_by_role("dialog").get_by_role("textbox").fill(FILE)
