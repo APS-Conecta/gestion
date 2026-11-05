@@ -138,7 +138,7 @@ def office(page):
     """Nextcloud's Office entry, opened from its icon in the suite's custom menu (side_menu, a default app) as staff open
     it, at its documents."""
     page.goto(suite)
-    page.locator("#side-menu .cm-opener").click()  # the custom menu's button
+    page.locator("#header .cm-opener").click()  # the custom menu's button, beside the logo
     page.locator('#side-menu a[href*="/apps/office"]').click()
     page.get_by_text("Documentos", exact=True).first.click()
 
