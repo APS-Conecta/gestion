@@ -4,6 +4,7 @@
 them is neither read for a decision nor changed."""
 
 import fcntl
+import json
 import os
 import pty
 import re
@@ -29,8 +30,12 @@ DROP_IN = "/etc/sysctl.d/90-apsconecta-gestion.conf"
 BLOCK = LINK_LOG.format(url="https://10.0.0.5:8080/#c2VjcmV0IGRlbCBlbmxhY2U", qr="█▀▀▀█ ▄ █\n█▄▄▄█ ▀ █\n",
                         fingerprint=":".join(["AB"] * 32))
 LOG = f"Trying to fix docker.sock permissions internally...\n{BLOCK}\nInitial startup of AIO complete!\n"
-TOOLS = ("awk", "cat", "date", "grep", "sed", "sleep", "sort")  # the real commands the Bootstrap may run here
+TOOLS = ("awk", "cat", "date", "grep", "sed", "sleep", "sort", "tar")  # the real commands the Bootstrap may run here
 READS = ("uname", "id", "df", "ss", "ip", "sysctl -n", "docker info", "docker inspect")  # they change nothing
+# The mastercontainer's volume, /mnt/docker-aio-config, as fixture files: «Listo», and AIO's configuration.json, which
+# its ConfigurationManager writes with JSON_PRETTY_PRINT.
+LISTO = "volume/provisionador/listo"
+CONFIGURATION = "volume/data/configuration.json"
 UBUNTU = 'PRETTY_NAME="Ubuntu 24.04.3 LTS"\nNAME="Ubuntu"\nID=ubuntu\nVERSION_CODENAME=noble\nUBUNTU_CODENAME=noble\n'
 # Each shim logs its command line to $CALLS, then runs its body. The SHIM_* variables set the server's answers; the
 # defaults are a server that meets every requirement.
@@ -46,7 +51,8 @@ SHIMS = {
     "docker": """case "$1" in
   info) [ -n "${SHIM_DOCKER_ROOT-/var/lib/docker}" ] && echo "${SHIM_DOCKER_ROOT-/var/lib/docker}" ;;
   inspect) [ -n "${SHIM_IMAGE:-}" ] && echo "$SHIM_IMAGE ${SHIM_RUNNING:-true}" ;;
-  exec) case "$*" in *" test -e "*) [ -n "${SHIM_LISTO:-}" ] ;; *" php "*) echo "${SHIM_DOMAIN:-}" ;; esac ;;
+  exec) [ "${SHIM_RUNNING:-true}" = true ] && [ "$3" = cat ] && cat "$SHIM_VOLUME${4#/mnt/docker-aio-config}" ;;
+  cp) tar -cf - -C "$SHIM_VOLUME" "${2#*:/mnt/docker-aio-config/}" ;;
   logs) cat "$SHIM_LOGS" ;;
 esac""",
 }
@@ -64,10 +70,12 @@ class Server(unittest.TestCase):
             subprocess.run(["bash", str(FILL), TAG, PINNED], stdout=out, check=True)
         self.env = {"MEMINFO": self.file("meminfo", "MemTotal:       16384000 kB\n"),
                     "OS_RELEASE": self.file("os-release", UBUNTU), "FUSE_DEVICE": "/dev/null",
-                    "SHIM_TEE": str(self.dir / "tee"), "SHIM_LOGS": self.file("logs", LOG)}
+                    "SHIM_TEE": str(self.dir / "tee"), "SHIM_LOGS": self.file("logs", LOG),
+                    "SHIM_VOLUME": str(self.dir / "volume")}
 
     def file(self, name, text):
         path = self.dir / name
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
         return str(path)
 
@@ -146,7 +154,7 @@ class Refusals(Server):
 
 def changes(calls):
     """The calls that change the server: everything but the reads."""
-    return [call for call in calls if not call.startswith(READS + ("docker logs", "docker exec"))]
+    return [call for call in calls if not call.startswith(READS + ("docker logs", "docker exec", f"docker cp {NAME}:"))]
 
 
 class Start(Server):
@@ -177,15 +185,27 @@ class Reruns(Server):
         self.assertTrue(out.endswith(BLOCK), out)
         self.assertEqual(changes(calls), [f"docker restart {NAME}"])
 
-    def test_a_stopped_mastercontainer_is_started_before_its_state_is_read(self):
-        code, _, err, calls = self.run_bootstrap(SHIM_IMAGE=CHANNEL, SHIM_RUNNING="false", SHIM_LISTO="1")
+    def test_a_stopped_mastercontainer_before_listo_is_restarted_once_and_prints_its_fresh_link_block(self):
+        code, out, err, calls = self.run_bootstrap(SHIM_IMAGE=CHANNEL, SHIM_RUNNING="false")
         self.assertEqual(code, 0, err)
-        self.assertEqual(changes(calls), [f"docker start {NAME}"])
+        self.assertTrue(out.endswith(BLOCK), out)
+        self.assertEqual(changes(calls), [f"docker restart {NAME}"])
+
+    def test_a_stopped_mastercontainer_after_listo_stays_stopped_and_prints_the_suite_address(self):
+        self.file(LISTO, "")
+        self.file(CONFIGURATION, json.dumps({"AIO_TOKEN": "c2VjcmV0", "domain": "cesfam.example.cl"}, indent=4))
+        code, out, err, calls = self.run_bootstrap(SHIM_IMAGE=CHANNEL, SHIM_RUNNING="false")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(out, "APS Conecta Gestión ya está instalada en este servidor: https://cesfam.example.cl\n")
+        self.assertEqual(changes(calls), [])
 
     def test_a_rerun_after_listo_changes_nothing_and_prints_the_suite_address(self):
-        for domain, address in (("", "https://10.0.0.5:8080"), ("cesfam.example.cl", "https://cesfam.example.cl")):
-            with self.subTest(domain or "no domain yet"):
-                code, out, err, calls = self.run_bootstrap(SHIM_IMAGE=CHANNEL, SHIM_LISTO="1", SHIM_DOMAIN=domain)
+        self.file(LISTO, "")
+        for configuration, address in (({}, "https://10.0.0.5:8080"),
+                                       ({"domain": "cesfam.example.cl"}, "https://cesfam.example.cl")):
+            with self.subTest(configuration.get("domain", "no domain yet")):
+                self.file(CONFIGURATION, json.dumps({"AIO_TOKEN": "c2VjcmV0", **configuration}, indent=4))
+                code, out, err, calls = self.run_bootstrap(SHIM_IMAGE=CHANNEL)
                 self.assertEqual(code, 0, err)
                 self.assertEqual(out, f"APS Conecta Gestión ya está instalada en este servidor: {address}\n")
                 self.assertEqual(changes(calls), [])

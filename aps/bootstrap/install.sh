@@ -8,10 +8,11 @@
 # Order: check the server without changing it; install Docker Engine when it is missing; set the kernel settings
 # Redis and Elasticsearch need; pull our mastercontainer by the release's digest, tag it as the channel tag and start
 # it as vanilla's documented command does, with the server's address; print the link block it logs (ADR-0027), then
-# exit. The mastercontainer runs on its own, so closing SSH never stops the install. A rerun before «Listo» restarts
-# the mastercontainer and prints its fresh link, and the links before keep working; after «Listo» it changes nothing
-# and prints the suite's address. The same command with one argument, after a typed confirmation, removes what the
-# install created and leaves Docker installed:
+# exit. The mastercontainer runs on its own, so closing SSH never stops the install. A rerun reads «Listo» before it
+# starts anything. Before «Listo» it restarts the mastercontainer, stopped or running, and prints its fresh link, and
+# the links before keep working; after «Listo» it changes nothing, so a stopped mastercontainer stays stopped, and
+# prints the suite's address. The same command with one argument, after a typed confirmation, removes what the install
+# created and leaves Docker installed:
 #   curl -fsSL https://github.com/APS-Conecta/gestion/releases/latest/download/apsconecta-install.sh | sudo bash -s restablecer
 #
 # The release pipeline fills RELEASE_TAG and MASTERCONTAINER (aps/release/bootstrap.sh); the committed copy refuses
@@ -157,21 +158,27 @@ relay_link() {
   sed -n "/^$LINK_FIRST/,/^$LINK_LAST/p" <<<"$log"
 }
 
-# The suite's address: AIO's domain once one is set, otherwise AIO's page on the interface port.
+# Prints the file $2 of the mastercontainer's volume without starting the mastercontainer: docker exec reads it in a
+# running one ($1 is true), and docker cp in a stopped one.
+volume_file() {
+  if [ "$1" = true ]; then docker exec "$CONTAINER" cat "$2"; else docker cp "$CONTAINER:$2" - | tar -xOf -; fi
+}
+
+# The suite's address: AIO's domain once one is set, otherwise AIO's page on the interface port. $1 is whether the
+# mastercontainer runs; AIO writes its configuration with JSON_PRETTY_PRINT, one key on each line.
 suite_address() {
   local domain
-  domain="$(docker exec "$CONTAINER" php -r \
-    'echo json_decode((string) @file_get_contents($argv[1]), true)["domain"] ?? "";' "$AIO_CONFIGURATION")" \
+  domain="$(volume_file "$1" "$AIO_CONFIGURATION" 2>/dev/null | sed -n 's/^ *"domain": "\([^"]*\)".*/\1/p')" \
     || domain=""
   if [ -n "$domain" ]; then say "https://$domain"; else say "https://$(server_address):8080"; fi
 }
 
-# $1 is whether the mastercontainer runs: docker exec reads «Listo» only in a running one.
+# $1 is whether the mastercontainer runs. «Listo» is read before any start: after it nothing changes, and before it one
+# docker restart, which also starts a stopped mastercontainer, makes it log a fresh link block.
 rerun() {
   local since
-  [ "$1" = true ] || docker start "$CONTAINER" >/dev/null
-  if docker exec "$CONTAINER" test -e "$LISTO"; then
-    say "APS Conecta Gestión ya está instalada en este servidor: $(suite_address)"
+  if volume_file "$1" "$LISTO" >/dev/null 2>&1; then
+    say "APS Conecta Gestión ya está instalada en este servidor: $(suite_address "$1")"
     return 0
   fi
   say "La instalación sigue en curso: el contenedor maestro se reinicia y muestra un enlace nuevo." \
