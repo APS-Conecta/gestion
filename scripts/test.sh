@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The static gate, run locally and by .github/workflows/ci.yml: the shell lint over the fork's
 # own scripts (syntax, shellcheck's errors, sweep coverage, errexit in a tested subshell), their
-# SPDX headers, AIO's page check, the "Latest" rules' self-test and the Provisionador's API tests.
+# SPDX headers, AIO's page check, the "Latest" rules' self-test, the Provisionador's API tests and
+# the Bootstrap's tests.
 # No stack, no network. Exits non-zero if anything fails.
 # NOT `set -e`: we run every check and aggregate, so one failure doesn't hide the rest.
 set -uo pipefail
@@ -13,7 +14,7 @@ echo "== static checks (no running stack needed) =="
 # The fork's shell namespace, spelled once for the sweep below. Unquoted on purpose: the words
 # re-glob where they are used. The comm tripwire a few lines down keeps its own literal copy
 # deliberately — it is the alarm that reds when this list and the tree drift apart.
-SHELL_NAMESPACE='scripts/*.sh provisioning/*.sh provisioning/phases/*.sh host/*.sh aps/release/*.sh install.sh'
+SHELL_NAMESPACE='scripts/*.sh provisioning/*.sh provisioning/phases/*.sh host/*.sh aps/release/*.sh aps/bootstrap/*.sh install.sh'
 linted=()
 for s in $SHELL_NAMESPACE; do
   [ -e "$s" ] || continue
@@ -36,7 +37,7 @@ check shellcheck_row
 # TRACKED escapes the sweep, so subtract and require empty.
 check bash -c '
   [ -z "$(comm -23 <(git ls-files "*.sh" | grep -E "^scripts/|^provisioning/|^host/|^aps/|^install\.sh$" | sort) \
-                   <(ls scripts/*.sh provisioning/*.sh provisioning/phases/*.sh host/*.sh aps/release/*.sh install.sh 2>/dev/null | sort))" ]'
+                   <(ls scripts/*.sh provisioning/*.sh provisioning/phases/*.sh host/*.sh aps/release/*.sh aps/bootstrap/*.sh install.sh 2>/dev/null | sort))" ]'
 # Regression guard (#39): a `set -e` subshell's status must not be consumed in a conditional
 # context — bash suppresses errexit inside it, so what reads as a guard runs on and reports
 # success. Two shapes, because the second is the one that shipped:
@@ -229,6 +230,11 @@ latest_out="$(python3 -I aps/release/latest-test.py 2>&1)" \
 provisionador_out="$(python3 -I -B -m unittest discover -s aps/provisionador 2>&1)" \
   && echo "  ok:   aps/provisionador ($(printf '%s\n' "$provisionador_out" | grep '^Ran '))" \
   || { echo "  FAIL: aps/provisionador"; printf '%s\n' "$provisionador_out" | tail -25; fail=1; }
+# The Bootstrap (#283): its refusals, its start and its reruns on a server of PATH shims and fixtures; its text has no
+# second command, no Enter prompt, no host service and no host timer.
+bootstrap_out="$(python3 -I -B -m unittest discover -s aps/bootstrap 2>&1)" \
+  && echo "  ok:   aps/bootstrap ($(printf '%s\n' "$bootstrap_out" | grep '^Ran '))" \
+  || { echo "  FAIL: aps/bootstrap"; printf '%s\n' "$bootstrap_out" | tail -25; fail=1; }
 
 if [ "$fail" -eq 0 ]; then
   echo "PASS: local gate green"

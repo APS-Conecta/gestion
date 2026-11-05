@@ -5,8 +5,10 @@
 #             is pinned by digest to upstream's set, and the commit passes the validators, Twig and the static gate.
 #   images  → our three images (the mastercontainer, the thin Nextcloud and the thin Caddy) built from that commit,
 #             each labelled with it and checked against it, pushed under the candidate tag only.
-#   release → the pre-release, naming the three images by digest; then "Latest" is checked against the rules in
+#   release → the pre-release, naming the three images by digest, with the Bootstrap as apsconecta-install.sh, filled
+#             with the tag and the mastercontainer's digest; then "Latest" is checked against the rules in
 #             aps/release/latest.py, so a candidate never moves it.
+#   bootstrap → that Bootstrap on a fresh runner, run as the manual prints it: the link block, a rerun and the reset.
 #
 # The version and channel tags move only when a release candidate is promoted after the release gate.
 name: Release
@@ -134,7 +136,7 @@ jobs:
           echo "pinned=$pinned" >> "$GITHUB_OUTPUT"
 
   release:
-    name: Publish the pre-release, "Latest" unmoved
+    name: Publish the pre-release with the Bootstrap, "Latest" unmoved
     needs: [gates, images]
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -152,17 +154,90 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ needs.gates.outputs.commit }}
-      - name: Publish the pre-release, then check "Latest"
+      - name: Publish the pre-release with the Bootstrap, then check "Latest"
         run: |
           latest() { gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null || true; }
           [ "$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha)" = "$COMMIT" ] \
             || { echo "::error::$TAG no longer points at $COMMIT, the commit the images were built from"; exit 1; }
+          aps/release/bootstrap.sh "$TAG" "$PINNED_MASTERCONTAINER" > "$RUNNER_TEMP/apsconecta-install.sh"
           before="$(latest)"
           published="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq '.[] | select(.draft | not) | .tag_name')"
-          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --prerelease --latest=false \
+          gh release create "$TAG" "$RUNNER_TEMP/apsconecta-install.sh" --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --prerelease --latest=false \
             --title "APS Conecta Gestión $TAG" \
             --notes "$(printf 'Versión preliminar de APS Conecta Gestión, construida desde %s; no está aprobada para establecimientos.\n\nImágenes:\n- %s\n- %s\n- %s\n' \
               "$COMMIT" "$PINNED_MASTERCONTAINER" "$PINNED_NEXTCLOUD" "$PINNED_CADDY")"
           [ "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease)" = true ]
           # shellcheck disable=SC2086 # one tag per word
           python3 -I aps/release/latest.py "$TAG" "$before" "$(latest)" $published
+
+  # The published Bootstrap on a fresh runner, exactly as the manual prints it; #284 makes it the harness. The link's
+  # secret stays out of the log: its line and its QR code are never printed.
+  bootstrap:
+    name: The Bootstrap on a fresh runner
+    needs: [images, release]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions: {}
+    env:
+      URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/apsconecta-install.sh
+      PINNED_MASTERCONTAINER: ${{ needs.images.outputs.mastercontainer }}
+    steps:
+      - name: Make the runner a plain server (no Docker, room for the disk floor)
+        run: |
+          sudo systemctl stop docker.socket docker.service containerd.service || true
+          packages="$(dpkg-query -W -f '${db:Status-Abbrev} ${Package}\n' 'docker*' 'moby-*' 'containerd*' 2>/dev/null || true)"
+          printf '%s\n' "$packages" | awk '/^ii/ {print $2}' | xargs --no-run-if-empty sudo apt-get -qq purge -y
+          { grep -rlF download.docker.com /etc/apt/sources.list.d || true; } | xargs --no-run-if-empty sudo rm -f
+          sudo rm -rf /var/lib/docker /var/lib/containerd /etc/docker /etc/apt/keyrings/docker* \
+            /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache
+          [ -z "$(command -v docker)" ]
+          df -h /
+      - name: The one command prints the link, its QR code and the fingerprint, then returns
+        run: |
+          rc=0
+          timeout 20m bash -c 'curl -fsSL "$URL" | sudo bash' > first.log 2>&1 || rc=$?
+          grep -v -F -e '/#' -e $'\e' -e '▀' -e '▄' -e '█' first.log || true
+          [ "$rc" -eq 0 ]
+          grep -qE '^ +https://[0-9.]+:8080/#[A-Za-z0-9_-]{43}$' first.log
+          grep -q -F -e '▀' -e '▄' -e '█' first.log
+          grep -qE '^ +([0-9A-F]{2}:){31}[0-9A-F]{2}$' first.log
+      - name: The mastercontainer runs the release's digest on the channel tag
+        run: |
+          [ "$(sudo docker inspect --format '{{.Config.Image}}' nextcloud-aio-mastercontainer)" = ghcr.io/aps-conecta/all-in-one:latest ]
+          image="$(sudo docker inspect --format '{{.Image}}' nextcloud-aio-mastercontainer)"
+          sudo docker image inspect --format '{{join .RepoDigests "\n"}}' "$image" | grep -qxF "$PINNED_MASTERCONTAINER"
+          [ "$(sudo docker image inspect --format '{{.Id}}' ghcr.io/aps-conecta/all-in-one:latest)" = "$image" ]
+      - name: A rerun prints a fresh link, and the first link still opens a session
+        run: |
+          rc=0
+          timeout 20m bash -c 'curl -fsSL "$URL" | sudo bash' > second.log 2>&1 || rc=$?
+          grep -v -F -e '/#' -e $'\e' -e '▀' -e '▄' -e '█' second.log || true
+          [ "$rc" -eq 0 ]
+          first="$(grep -oE 'https://\S+/#\S+' first.log)"
+          second="$(grep -oE 'https://\S+/#\S+' second.log)"
+          [ -n "$second" ] && [ "$second" != "$first" ]
+          printf '{"link": "%s"}' "${first#*#}" > session.json
+          status="$(curl -sk -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' \
+            -H 'Sec-Fetch-Site: same-origin' --data @session.json "${first%%#*}api/session")"
+          [ "$status" = 200 ]
+      - name: The reset leaves nothing of the install, and leaves an unrelated container, volume and file alone
+        run: |
+          sudo docker run --detach --name keep-nextcloud-aio-x busybox:1.37 sleep infinity > /dev/null
+          sudo docker volume create keep_nextcloud_aio_x > /dev/null
+          echo '# not the install' | sudo tee /etc/sysctl.d/99-keep.conf > /dev/null
+          printf 'ELIMINAR\n' | timeout 10m script -qec "curl -fsSL '$URL' | sudo bash -s restablecer" /dev/null
+          [ -z "$(sudo docker ps --all --format '{{.Names}}' | grep '^nextcloud-aio-')" ]
+          [ -z "$(sudo docker volume ls --format '{{.Name}}' | grep '^nextcloud_aio_')" ]
+          [ -z "$(sudo docker network ls --quiet --filter name=^nextcloud-aio$)" ]
+          [ -z "$(sudo docker images --quiet ghcr.io/aps-conecta/all-in-one)" ]
+          [ ! -e /etc/sysctl.d/90-apsconecta-gestion.conf ]
+          [ "$(sudo docker inspect --format '{{.State.Running}}' keep-nextcloud-aio-x)" = true ]
+          sudo docker volume inspect keep_nextcloud_aio_x > /dev/null
+          [ -f /etc/sysctl.d/99-keep.conf ]
+          command -v docker > /dev/null
+      - name: Show the containers and the mastercontainer's log, without the link
+        if: failure()
+        run: |
+          sudo docker ps --all || true
+          sudo docker logs nextcloud-aio-mastercontainer 2>&1 | grep -v -F -e '/#' -e $'\e' -e '▀' -e '▄' -e '█' | tail -n 80 || true

@@ -37,8 +37,10 @@ the official images to the set Upstream built from it.
   arm (`scripts/aio-page.py`: AIO's page and its notifications in es-CL Spanish, never the other
   product's name, the brand's colours only through the token file; a planted English text, the
   other product's name and a brand hex must each red), `aps/release/latest-test.py` (the "Latest" rules against
-  fixture releases, no network) and the Provisionador's Seam 2 tests (`aps/provisionador/test_provisionador.py`:
-  its HTTP API in-process against the fake suite port) — then
+  fixture releases, no network), the Provisionador's Seam 2 tests (`aps/provisionador/test_provisionador.py`:
+  its HTTP API in-process against the fake suite port) and the Bootstrap's tests (`aps/bootstrap/test_install.py`:
+  its refusals, start and reruns on a server of PATH shims, and its text without a second command, an Enter prompt,
+  a host service or a host timer) — then
   its `zizmor over our workflows` step (zizmor at medium severity over `ci.yml`, `release.yml`,
   `issue-linker.yml` and `mastercontainer-image.yml`, without upstream's `zizmor.yml` and with the online
   audits), and the Keep-list check:
@@ -54,7 +56,7 @@ the official images to the set Upstream built from it.
 - Upstream's own workflows beside it: codespell, shellcheck, docker-lint and json-validator,
   plus the PHP, Twig, YAML and Playwright checks on their paths. `scripts/validate.sh` runs
   the codespell, docker-lint and json-spec trio against any tree; the candidate pipeline runs
-  it and the static gate on the candidate commit.
+  it and the static gate on the candidate commit, and the candidate's Bootstrap on a fresh runner.
 
 CI is the only mechanical gate; where a behavior is not observable in CI, the check beside
 it says so instead of pretending.
