@@ -7,11 +7,11 @@ ODF opens and edits in Euro-Office, the editor keeps the light theme, and a docu
 
 The step is done once Euro-Office answers Nextcloud, by the connector's own check: Nextcloud asks Euro-Office's
 document server for its version, the document server converts a file it fetches from Nextcloud, and Nextcloud fetches
-the result. Each calls the other at the suite's name, which AIO's network resolves to our Caddy (ADR 0028), and each
-verifies the name's certificate with its own trust: Nextcloud with the CAs the certificates step adds, a test build's
-staging roots among them, and the document server's Node with those release.yml gives it. There the name resolves to a
-private address, which the document server's filter refuses unless the URL comes in a request signed with AIO's JWT
-secret, as the connector signs each of its own."""
+the result. Each calls the other at the suite's address and verifies its certificate with its own trust: Nextcloud
+with the CAs the certificates step adds, a test build's staging roots among them, and the document server's Node with
+those release.yml gives it. On the APS name, AIO's network resolves the name to our Caddy (ADR 0028), a private
+address, which the document server's filter refuses unless the URL comes in a request signed with AIO's JWT secret, as
+the connector signs each of its own."""
 
 import json
 
