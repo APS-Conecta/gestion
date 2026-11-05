@@ -3,11 +3,15 @@
 """The Bootstrap's tests: its command line on a server made of PATH shims and fixture files, so the machine that runs
 them is neither read for a decision nor changed."""
 
+import fcntl
+import os
+import pty
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import termios
 import unittest
 from pathlib import Path
 
@@ -39,6 +43,7 @@ SHIMS = {
     "ip": 'echo "${SHIM_ROUTE-192.0.2.1 via 10.0.0.1 dev eth0 src 10.0.0.5 uid 0}"',
     "sysctl": '[ "$1" != -n ] || echo "${SHIM_MAP_COUNT:-65530}"',
     "tee": 'cat > "$SHIM_TEE"',
+    "rm": ":",  # it only logs, so a removal shows up as a call
     "docker": """case "$1" in
   info) [ -n "${SHIM_DOCKER_ROOT-/var/lib/docker}" ] && echo "${SHIM_DOCKER_ROOT-/var/lib/docker}" ;;
   inspect) [ -n "${SHIM_IMAGE:-}" ] && echo "$SHIM_IMAGE ${SHIM_RUNNING:-true}" ;;
@@ -67,9 +72,10 @@ class Server(unittest.TestCase):
         path.write_text(text)
         return str(path)
 
-    def run_bootstrap(self, *args, script=None, without=(), **env):
+    def run_bootstrap(self, *args, script=None, without=(), typed=None, **env):
         """The Bootstrap as `curl … | sudo bash -s <args>` runs it, on this server with `env` and without the commands
-        `without`: (exit code, stdout, stderr, the shims' calls)."""
+        `without`, in a session of its own: without a terminal, or with the line `typed` waiting on a pty that is its
+        terminal. Returns (exit code, stdout, stderr, the shims' calls)."""
         bin_dir = Path(tempfile.mkdtemp(dir=self.dir))
         for tool in TOOLS:
             (bin_dir / tool).symlink_to(shutil.which(tool))
@@ -78,9 +84,16 @@ class Server(unittest.TestCase):
                 (bin_dir / name).write_text(f'#!/bin/bash\nprintf "%s\\n" "{name} $*" >> "$CALLS"\n{body}\n')
                 (bin_dir / name).chmod(0o755)
         calls = bin_dir / "calls"
+        session = {"start_new_session": True}  # without a terminal, /dev/tty does not open
+        if typed is not None:
+            controller, terminal = pty.openpty()
+            for fd in (controller, terminal):
+                self.addCleanup(os.close, fd)
+            os.write(controller, f"{typed}\n".encode())
+            session["preexec_fn"] = lambda: fcntl.ioctl(terminal, termios.TIOCSCTTY, 0)
         with open(script or self.asset, "rb") as stdin:
             done = subprocess.run(["/bin/bash", "-s", *args], stdin=stdin, capture_output=True, text=True, timeout=60,
-                                  env=dict(self.env, PATH=str(bin_dir), CALLS=str(calls), **env))
+                                  env=dict(self.env, PATH=str(bin_dir), CALLS=str(calls), **env), **session)
         return done.returncode, done.stdout, done.stderr, calls.read_text().splitlines() if calls.exists() else []
 
     def assertNoChange(self, calls):
@@ -185,6 +198,26 @@ class Reruns(Server):
         self.assertIn("ya tiene un contenedor maestro de AIO que no es de APS Conecta Gestión "
                       "(ghcr.io/nextcloud-releases/all-in-one:latest). No se modificó nada.", err)
         self.assertEqual(changes(calls), [])
+
+
+class Reset(Server):
+    def test_each_refusal_removes_nothing(self):
+        cases = {
+            "a wrong typed answer": (("restablecer",), {"typed": "eliminar"},
+                                     "la confirmación no coincide. No se eliminó nada."),
+            "no terminal": (("restablecer",), {},
+                            "no se pudo leer la confirmación desde la terminal. No se eliminó nada."),
+            "a Docker that does not answer": (("restablecer",), {"SHIM_DOCKER_ROOT": ""},
+                                              "Docker está instalado, pero no responde. No se eliminó nada."),
+            "an unknown argument": (("restablecr",), {}, "el instalador no conoce «restablecr». Sin argumentos instala "
+                                    "APS Conecta Gestión; con «restablecer», la elimina de este servidor."),
+        }
+        for case, (args, options, refusal) in cases.items():
+            with self.subTest(case):
+                code, out, err, calls = self.run_bootstrap(*args, **options)
+                self.assertEqual(code, 1, out)
+                self.assertTrue(err.endswith(f"\nError: {refusal}\n"), err)
+                self.assertNoChange(calls)
 
 
 def findings(text):
