@@ -6,8 +6,9 @@ claims its CI name (claim.py); the page goes on to «Revisar», which summarises
 components and the backup. «Instalar» shows each container's progress as AIO reads it, while AIO's interface still
 answers with the Provisionador alone, and «Listo» shows the suite's address. At «Listo», exactly the suite's
 containers run, the components on, Talk's recording server among them only on a machine that passes the recording
-threshold, and AIO's interface serves AIO's page, which keeps the settings «Instalar» wrote. Any other candidate's
-names and certificates are production ones, which a run never claims: there it says so and passes."""
+threshold, and our Caddy only on the Bootstrap's way in, since a Coolify resource sits behind Coolify's proxy; and
+AIO's interface serves AIO's page, which keeps the settings «Instalar» wrote. Any other candidate's names and
+certificates are production ones, which a run never claims: there it says so and passes."""
 
 import json
 import os
@@ -26,9 +27,9 @@ from steps import backups, components  # noqa: E402
 LISTO_WAIT = 20 * 60  # seconds: AIO's start, Nextcloud's first setup and each component's own
 PROBE = 60  # seconds between two looks at AIO's pages during the install
 LISTO = "/mnt/docker-aio-config/provisionador/listo"
-# The suite «Instalar» starts: AIO's core, our Caddy, and Talk, Euro-Office, ClamAV, Imaginary, full-text search and
-# HaRP; Talk's recording server too on a machine that records.
-SUITE = ("apache", "caddy", "clamav", "database", "eurooffice", "fulltextsearch", "harp", "imaginary", "nextcloud",
+# The suite «Instalar» starts: AIO's core, and Talk, Euro-Office, ClamAV, Imaginary, full-text search and HaRP; Talk's
+# recording server too on a machine that records, and our Caddy behind no other proxy.
+SUITE = ("apache", "clamav", "database", "eurooffice", "fulltextsearch", "harp", "imaginary", "nextcloud",
          "notify-push", "redis", "talk")
 
 if os.environ["TEST_BUILD"] != "true":
@@ -40,7 +41,8 @@ hardware = {"cpus": int(cores), "memory_gib": (int(memory) + 524288) // 1048576}
 recording = components.records(hardware)
 print(f"the machine has {hardware['cpus']} cores and {hardware['memory_gib']} GiB, the recording threshold "
       f"{components.THRESHOLD}: Talk's recording server is {'' if recording else 'not '}part of the suite")
-suite = sorted(f"nextcloud-aio-{c}" for c in SUITE + (("talk-recording",) if recording else ()))
+caddy = ("caddy",) if os.environ["WAY"] == "bootstrap" else ()
+suite = sorted(f"nextcloud-aio-{c}" for c in SUITE + caddy + (("talk-recording",) if recording else ()))
 link, printed = printed_link(Path(os.environ["CONSOLE"]).read_text(encoding="utf-8"))
 url = urlsplit(link)
 interface = f"https://{url.netloc}"  # AIO's interface, where the Provisionador answers until «Listo»

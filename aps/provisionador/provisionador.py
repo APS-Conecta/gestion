@@ -18,11 +18,14 @@ address.
 
 At «Dirección» it claims the establishment's APS name and keeps the name's credential beside the state, readable
 only by its own account; or, for a domain the establishment holds, it runs vanilla's domain check and sets AIO up the
-vanilla way, freeing an APS name claimed before. Run as `provisionador.py update-address`, it is the address updater
-that keeps running after «Listo» (dinit.d/aps-address-updater): every 10 minutes it points the name at the server's
-address. Run as
-`provisionador.py release-name`, it frees the name whose credential arrives on stdin, never on a command line: the
-Bootstrap's reset runs it before it removes anything, and the acceptance harness for each CI name it claimed.
+vanilla way, freeing an APS name claimed before. On a Coolify server, where the suite runs as a Coolify resource
+behind Coolify's proxy (ADR 0029), it first checks that the proxy runs with AIO's Traefik settings, which it shows for
+the admin to paste once, then writes the route from the address to AIO's Apache into Coolify's dynamic folder, and the
+APS name points at the address the internet reaches the server at. Run as `provisionador.py update-address`, it is the
+address updater that keeps running after «Listo» (dinit.d/aps-address-updater): every 10 minutes it points the name at
+the server's address. Run as `provisionador.py release-name`, it frees the name whose credential arrives on stdin,
+never on a command line: the Bootstrap's reset runs it before it removes anything, and the acceptance harness for each
+CI name it claimed.
 
 «Instalar» runs the install's steps (steps/) through the step runner (runner.py): AIO's settings and AIO's own start,
 then our layer on the running suite. AIO's page stays hidden until «Listo», which comes once every step is green and
@@ -38,6 +41,7 @@ import ipaddress
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import threading
@@ -114,6 +118,22 @@ NOT_A_DOMAIN = "Escriba el dominio propio del establecimiento."
 DOMAIN_REFUSED = "La comprobación del dominio {domain} falló: {reason} Corrija lo indicado y presione «Reintentar»."
 TALK_PORTS = ("Para que las llamadas conecten, Talk necesita además el puerto 3478 abierto hacia este servidor, en TCP "
               "y en UDP. Ábralo en el router o el cortafuegos antes de presionar «Instalar».")
+# AIO's Traefik settings (reverse-proxy.md, «Traefik 3»), on the https entry point of Coolify's proxy: the read timeout,
+# 10 seconds above Nextcloud's own 3600, so that Nextcloud and not the proxy ends a long upload, and the encoded
+# characters Nextcloud's paths carry, which Traefik refuses by default. They hold for the whole proxy, so the admin
+# pastes them once into Coolify's proxy configuration; Traefik reads its flags whatever their case.
+PROXY_SETTINGS = [
+    "--entrypoints.https.transport.respondingTimeouts.readTimeout=3610s",
+    "--entrypoints.https.http.encodedCharacters.allowEncodedSlash=true",
+    "--entrypoints.https.http.encodedCharacters.allowEncodedQuestionMark=true",
+    "--entrypoints.https.http.encodedCharacters.allowEncodedPercent=true",
+]
+NO_PUBLIC_ADDRESS = ("No se pudo leer la dirección pública del servidor: la variable APS_PUBLIC_ADDRESS del recurso en "
+                     "Coolify debe ser su dirección IPv4. Corríjala y vuelva a desplegar el recurso.")
+PROXY_MISSING = ("El proxy de Coolify aún no tiene los ajustes de AIO para Nextcloud. En Coolify, abra el servidor, su "
+                 "pestaña «Proxy» y la configuración del proxy; agregue estas líneas a la lista «command» del servicio "
+                 "traefik, presione «Save» y reinicie el proxy con «Restart Proxy». Los ajustes valen para todo el "
+                 "proxy. Luego presione «Reintentar».")
 
 
 def digest(value):
@@ -150,6 +170,18 @@ def interface(address):
         if not DNS_NAME.fullmatch(host):
             return None
     return host, port
+
+
+def server_address(suite, at):
+    """The address the APS name points at. On a Coolify server, the one the internet reaches the server at: the host of
+    `at`, the (host, port) of APS_INTERFACE_ADDRESS, which the Coolify install gives as that address (ADR 0027).
+    Elsewhere, the server's address on the clinic's network."""
+    if not suite.coolify():
+        return suite.server_address()
+    try:
+        return socket.gethostbyname(at[0])
+    except (TypeError, OSError):
+        raise Unreachable(NO_PUBLIC_ADDRESS) from None
 
 
 def qr(url):
@@ -292,7 +324,8 @@ class Provisionador:
         interface at it: the page asks for it there, and a resolver that drops answers pointing to private addresses
         keeps that request from the server. Once they publish it, neither they nor the server's address are read again;
         until then, an address that cannot be read is not published yet. An own domain, which passed vanilla's domain
-        check, comes instead with the notice that Talk also needs port 3478."""
+        check, comes instead with the notice that Talk also needs port 3478, and so does the APS name on a Coolify
+        server, where Talk publishes that port itself."""
         address = state.get("address")
         if address is None:
             return None
@@ -300,12 +333,13 @@ class Provisionador:
             return {**address, "notice": TALK_PORTS}
         name, published = address["name"], address.get("published", False)
         try:
-            if not published and self.suite.published(name, self.suite.server_address()):
+            if not published and self.suite.published(name, server_address(self.suite, self.interface)):
                 published = True
                 self.state.change(lambda s: s["address"].update(published=True))
         except Unreachable:
             pass  # the page's next reading asks again
-        return {"name": name, "published": published, "opened": self.suite.opened(name)}
+        answer = {"name": name, "published": published, "opened": self.suite.opened(name)}
+        return {**answer, "coolify": True, "notice": TALK_PORTS} if address.get("coolify") else answer
 
     def get_state(self, query, body):
         state = self.state.read()
@@ -406,7 +440,8 @@ class Provisionador:
         """POST /api/address: the centre's APS name, or, with {"domain"}, the establishment's own domain (own_domain).
         The first call for the APS name claims it from the name service by the centre's DEIS code and keeps its
         credential, so the name is claimed once; every call sets AIO up to serve the name and points the name at the
-        server's address."""
+        server's address. On a Coolify server, it goes on only once Coolify's proxy runs with AIO's Traefik settings,
+        and routes the name to AIO's Apache through that proxy instead of our Caddy."""
         centre = self.state.read().get("centre")
         if centre is None:
             return 409, {"error": NO_CENTRE}
@@ -415,29 +450,51 @@ class Provisionador:
         with self.claiming:
             credential = self.credential.read()
             try:
+                if missing := self.proxy_missing():
+                    return 409, {"error": PROXY_MISSING, "settings": missing}
                 if credential is None:
                     credential = self.suite.claim(centre["code"])
                     self.credential.write(credential)
-                self.suite.use_name(credential)
-                self.suite.publish(credential, self.suite.server_address())
+                coolify = self.suite.coolify()
+                if coolify:
+                    self.suite.route(credential["name"])
+                    self.suite.behind_coolify(credential["name"])
+                else:
+                    self.suite.use_name(credential)
+                self.suite.publish(credential, server_address(self.suite, self.interface))
             except Held:
                 return 409, {"error": HELD}
             except Unreachable as outage:
                 return 503, {"error": str(outage)}
-            self.state.change(lambda s: s.update(address={"name": credential["name"]}))
+            address = {"name": credential["name"]}
+            if coolify:
+                address["coolify"] = True
+            self.state.change(lambda s: s.update(address=address))
         return 200, {"address": self.address(self.state.read())}
+
+    def proxy_missing(self):
+        """On a Coolify server, AIO's Traefik settings that Coolify's proxy does not run with yet; elsewhere none."""
+        if not self.suite.coolify():
+            return []
+        running = {argument.lower() for argument in self.suite.proxy()}
+        return [setting for setting in PROXY_SETTINGS if setting.lower() not in running]
 
     def own_domain(self, domain):
         """The establishment's own domain instead of the APS name: AIO's vanilla setup, which keeps the domain once
         vanilla's domain check passes, and until then serves no address. Then an APS name claimed before is freed with
         its credential; a domain the check refuses leaves it claimed, so that the APS name comes back without a new
-        claim."""
+        claim. On a Coolify server, the domain's route goes into Coolify's dynamic folder first, once the proxy runs
+        with AIO's Traefik settings: the check reaches the domain through that proxy."""
         if not isinstance(domain, str):
             return 400, {"error": NOT_A_DOMAIN}
         with self.claiming:
             self.state.change(lambda s: s.pop("address", None))
             credential = self.credential.read()
             try:
+                if missing := self.proxy_missing():
+                    return 409, {"error": PROXY_MISSING, "settings": missing}
+                if self.suite.coolify():
+                    self.suite.route(domain)  # vanilla's check reaches the domain through Coolify's proxy
                 self.suite.own_domain(domain)
                 if credential is not None:
                     self.suite.release(credential)
@@ -559,14 +616,15 @@ def every(seconds, task):
         task()
 
 
-def update_address(state_dir, suite: SuitePort):
-    """Point the APS name at the server's address, once «Dirección» claimed it, so that the name follows a DHCP
-    change. An unchanged address changes nothing at the name service; an outage waits for the next update."""
+def update_address(state_dir, suite: SuitePort, at):
+    """Point the APS name at the server's address (server_address, with `at`), once «Dirección» claimed it, so that the
+    name follows a DHCP change. An unchanged address changes nothing at the name service; an outage waits for the next
+    update."""
     credential = Credential(state_dir).read()
     if credential is None:
         return
     try:
-        suite.publish(credential, suite.server_address())
+        suite.publish(credential, server_address(suite, at))
     except Unreachable as outage:
         print(outage, file=sys.stderr, flush=True)
 
@@ -587,8 +645,9 @@ def main(argv, suite=None):
     if argv == ["release-name"]:  # the Bootstrap's reset, and the acceptance harness: the credential on stdin
         return release_name(suite, json.load(sys.stdin))
     if argv == ["update-address"]:  # the address updater, aps/provisionador/dinit.d/aps-address-updater
-        update_address(STATE_DIR, suite)
-        every(ADDRESS_UPDATE, lambda: update_address(STATE_DIR, suite))
+        at = interface(os.environ.get(ADDRESS, ""))
+        update_address(STATE_DIR, suite, at)
+        every(ADDRESS_UPDATE, lambda: update_address(STATE_DIR, suite, at))
     app = Provisionador(STATE_DIR, deis.newest(REGISTER), suite, os.environ.get(ADDRESS, ""))
     if app.state.listo():
         print(CLOSED, flush=True)

@@ -5,7 +5,8 @@
 # one its mastercontainer pins in AIO's php/containers.json or in a community container's file. On a test build it runs
 # once «Instalar» started the suite (40-install), so it covers each of the suite's containers. Any other candidate's
 # names and certificates are production ones, which a run never claims, so no suite starts: it covers the
-# mastercontainer, and says the suite's containers are checked on a test build only.
+# mastercontainer, and says the suite's containers are checked on a test build only. On the Coolify way in, Coolify's
+# own containers, coolify and coolify-*, run Coolify's images, not the candidate's.
 set -euo pipefail
 [ "$TEST_BUILD" = true ] || echo "the suite's containers are checked on a v0.0.0-ci.N test build only: $TAG's" \
   "names and certificates are production ones"
@@ -20,9 +21,10 @@ pins="$(
 grep -q '^ghcr\.io/aps-conecta/all-in-one@sha256:' <<< "$pins" \
   || { echo "the release $TAG names no mastercontainer by digest" >&2; exit 1; }
 # Each container on the machine, with the digests its image was pulled by.
-containers="$("$MACHINE" sudo bash -s << 'CONTAINERS'
+containers="$("$MACHINE" sudo bash -s "$WAY" << 'CONTAINERS'
 set -euo pipefail
 for name in $(docker ps --all --format '{{.Names}}'); do
+  [[ "$1" = coolify && "$name" =~ ^coolify(-|$) ]] && continue
   echo "$name $(docker image inspect --format '{{join .RepoDigests " "}}' "$(docker inspect --format '{{.Image}}' "$name")")"
 done
 CONTAINERS

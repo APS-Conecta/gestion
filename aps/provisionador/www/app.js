@@ -44,7 +44,9 @@ async function api(method, path, body) {
   } catch {
     throw new Error("No se pudo comunicar con el Provisionador. Revise la conexión e intente nuevamente.");
   }
-  if (!response.ok) throw new Error(answer.error || "Ocurrió un error inesperado. Intente nuevamente.");
+  if (!response.ok) {
+    throw Object.assign(new Error(answer.error || "Ocurrió un error inesperado. Intente nuevamente."), {answer});
+  }
   return answer;
 }
 
@@ -170,7 +172,7 @@ async function direccion(body = {}) {
   attempt = "domain" in body ? "own" : "name";
   clearTimeout(looking);
   for (const id of ["retry", "direccion-next", "use-name"]) $(id).hidden = true;
-  for (const id of ["address-name", "reach", "ports"]) $(id).textContent = "";
+  for (const id of ["address-name", "reach", "ports", "proxy-settings"]) $(id).textContent = "";
   say(body.domain ? `Comprobando el dominio ${body.domain}…` : "Obteniendo la dirección del establecimiento…", false,
     "address-status");
   let address;
@@ -178,11 +180,18 @@ async function direccion(body = {}) {
     ({address} = await api("POST", "/api/address", body));
   } catch (e) {
     say(e.message, true, "address-status");
+    proxySettings(e.answer?.settings);
     $("retry").hidden = false;
     $("use-name").hidden = !body.domain;
     return;
   }
   addressed(address);
+}
+
+// On a Coolify server, the AIO settings Coolify's proxy does not run with yet, as the lines the admin adds to the
+// «command» list of its configuration, a compose file.
+function proxySettings(settings = []) {
+  $("proxy-settings").textContent = settings.map((setting) => `      - '${setting}'`).join("\n");
 }
 
 // «Dirección» with the domain the «Dominio propio» field holds now: from the form, and from «Reintentar» after an own
@@ -191,8 +200,8 @@ function ownDomain() {
   direccion({domain: $("own-domain").domain.value.trim()});
 }
 
-// An own domain comes with Talk's port notice, which «Revisar» shows again; the APS name, with the look from this
-// browser.
+// An own domain comes with Talk's port notice, which «Revisar» shows again, and so does the APS name on a Coolify
+// server; the APS name, with the look from this browser.
 function addressed(address) {
   $("address-name").textContent = `https://${address.name}`;
   $("direccion-next").hidden = false;
@@ -201,7 +210,10 @@ function addressed(address) {
   if (address.own) {
     return say("Dominio comprobado: apunta a este servidor y responde en el puerto 443.", false, "address-status");
   }
-  say("Dirección asignada. Apunta a este servidor en la red del establecimiento.", false, "address-status");
+  say(address.coolify
+    ? "Dirección asignada. Apunta a la dirección pública de este servidor, donde el proxy de Coolify obtiene su "
+      + "certificado."
+    : "Dirección asignada. Apunta a este servidor en la red del establecimiento.", false, "address-status");
   reach(address);
 }
 
