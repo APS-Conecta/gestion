@@ -5,9 +5,9 @@
 claims its CI name (claim.py); the page goes on to «Revisar», which summarises the centre, the name, its timezone, the
 components and the backup. «Instalar» shows each container's progress as AIO reads it, while AIO's interface still
 answers with the Provisionador alone, and «Listo» shows the suite's address. At «Listo», exactly the suite's
-containers run, the components on, and AIO's interface serves AIO's page, which keeps the settings «Instalar» wrote.
-Any other candidate's names and certificates are production ones, which a run never claims: there it says so and
-passes."""
+containers run, the components on, Talk's recording server among them only on a machine that passes the recording
+threshold, and AIO's interface serves AIO's page, which keeps the settings «Instalar» wrote. Any other candidate's
+names and certificates are production ones, which a run never claims: there it says so and passes."""
 
 import json
 import os
@@ -27,14 +27,20 @@ LISTO_WAIT = 20 * 60  # seconds: AIO's start, Nextcloud's first setup and each c
 PROBE = 60  # seconds between two looks at AIO's pages during the install
 LISTO = "/mnt/docker-aio-config/provisionador/listo"
 # The suite «Instalar» starts: AIO's core, our Caddy, and Talk, Euro-Office, ClamAV, Imaginary, full-text search and
-# HaRP; Talk's recording server waits for #290.
-SUITE = sorted(f"nextcloud-aio-{c}" for c in ("apache", "caddy", "clamav", "database", "eurooffice", "fulltextsearch",
-                                              "harp", "imaginary", "nextcloud", "notify-push", "redis", "talk"))
+# HaRP; Talk's recording server too on a machine that records.
+SUITE = ("apache", "caddy", "clamav", "database", "eurooffice", "fulltextsearch", "harp", "imaginary", "nextcloud",
+         "notify-push", "redis", "talk")
 
 if os.environ["TEST_BUILD"] != "true":
     print(f"«Revisar» and «Instalar» run on a v0.0.0-ci.N test build only: {os.environ['TAG']}'s names and "
           "certificates are production ones")
     sys.exit()
+cores, memory = machine("nproc; awk '/^MemTotal:/ {print $2}' /proc/meminfo").split()
+hardware = {"cpus": int(cores), "memory_gib": (int(memory) + 524288) // 1048576}  # rounded as the Bootstrap rounds it
+recording = components.records(hardware)
+print(f"the machine has {hardware['cpus']} cores and {hardware['memory_gib']} GiB, the recording threshold "
+      f"{components.THRESHOLD}: Talk's recording server is {'' if recording else 'not '}part of the suite")
+suite = sorted(f"nextcloud-aio-{c}" for c in SUITE + (("talk-recording",) if recording else ()))
 link, printed = printed_link(Path(os.environ["CONSOLE"]).read_text(encoding="utf-8"))
 url = urlsplit(link)
 interface = f"https://{url.netloc}"  # AIO's interface, where the Provisionador answers until «Listo»
@@ -102,10 +108,10 @@ with chromium(pinned=[verified(url.hostname, url.port, printed)]) as browser:
 running = machine("sudo docker ps --all --filter name=^nextcloud-aio- --format '{{.Names}} {{.State}}'").split("\n")
 started = dict(line.split() for line in running if line and not line.startswith("nextcloud-aio-mastercontainer "))
 print("".join(f"{container} {state}\n" for container, state in sorted(started.items())), end="")
-if sorted(started) != SUITE or set(started.values()) != {"running"}:
+if sorted(started) != suite or set(started.values()) != {"running"}:
     sys.exit(f"at «Listo», these containers do not run exactly the suite's: {started}")
-if len(seen) != len(SUITE) or not any(len(states) > 1 for states in seen.values()):
-    sys.exit(f"the page did not show the progress of each of the suite's {len(SUITE)} containers: {seen}")
+if len(seen) != len(suite) or not any(len(states) > 1 for states in seen.values()):
+    sys.exit(f"the page did not show the progress of each of the suite's {len(suite)} containers: {seen}")
 config = json.loads(mastercontainer_file("/mnt/docker-aio-config/data/configuration.json"))  # its secrets stay unprinted
 written = {key: config.get(key) for key in ("domain", "officeSuite", "isTalkEnabled", "isClamavEnabled",
                                             "isImaginaryEnabled", "isFulltextsearchEnabled", "isHarpEnabled",
@@ -115,7 +121,7 @@ backup = mastercontainer_file("/mnt/docker-aio-config/data/daily_backup_time").s
 print(f"AIO keeps {written}; its daily backup file: {backup}")
 if written != {"domain": name, "officeSuite": "eurooffice", "isTalkEnabled": True, "isClamavEnabled": True,
                "isImaginaryEnabled": True, "isFulltextsearchEnabled": True, "isHarpEnabled": True,
-               "isTalkRecordingEnabled": False, "isDockerSocketProxyEnabled": False, "isWhiteboardEnabled": False,
+               "isTalkRecordingEnabled": recording, "isDockerSocketProxyEnabled": False, "isWhiteboardEnabled": False,
                "timezone": centre["timezone"], "borg_backup_host_location": "/var/backups/apsconecta-gestion"} \
         or backup[:2] != ["06:00", "automaticUpdatesAreNotEnabled"]:
     sys.exit("AIO does not keep the settings «Instalar» wrote for each choice")
