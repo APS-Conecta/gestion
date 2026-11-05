@@ -3,13 +3,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # The reset, the Bootstrap with «restablecer» and its confirmation typed at a terminal, leaves nothing of the install:
 # no nextcloud-aio-* container, no image they ran, no nextcloud_aio_* volume, no nextcloud-aio network, no kernel
-# drop-in, no test build's CAs and no backup folder, with the file planted in it. A container, a volume and a file
-# planted beside them under look-alike names survive. On a test build it first frees the APS name with its own
-# credential, and a reinstall on the same machine then claims the same name again (claim.py keeps its credential,
-# which run.sh frees). Any other candidate's names and certificates are production ones, which a run never claims:
-# there the check says the name's freeing and the reinstall run on a test build only. On the Coolify way in, the
-# removal is the manual's (ADR 0029): the same reset, then the resource deleted in Coolify, and Coolify keeps running;
-# the reinstall adds the resource again and deploys it. It runs last.
+# drop-in, no suite's route in Coolify's dynamic folder, no test build's CAs and no backup folder, with the file
+# planted in it. A container, a volume and a file planted beside them under look-alike names survive. On a test build
+# it first frees the APS name with its own credential, and a reinstall on the same machine then claims the same name
+# again (claim.py keeps its credential, which run.sh frees). Any other candidate's names and certificates are
+# production ones, which a run never claims: there the check says the name's freeing and the reinstall run on a test
+# build only. On the Coolify way in, the removal is the manual's (ADR 0029): the same reset, then the resource deleted
+# in Coolify, and Coolify keeps running; the reinstall adds the resource again and deploys it. It runs last.
 set -euo pipefail
 domain() { # AIO's domain: the suite's name, once «Dirección» claimed it
   "$MACHINE" 'sudo docker exec nextcloud-aio-mastercontainer cat /mnt/docker-aio-config/data/configuration.json' \
@@ -55,7 +55,8 @@ docker ps --all --format 'container {{.Names}}' | grep ' nextcloud-aio-'
 docker volume ls --format 'volume {{.Name}}' | grep ' nextcloud_aio_'
 docker network ls --format 'network {{.Name}}' | grep -x 'network nextcloud-aio'
 for image in "$@"; do docker image inspect --format "image $image {{.RepoTags}}" "$image" 2> /dev/null; done
-ls -d /etc/sysctl.d/90-apsconecta-gestion.conf /etc/ssl/apsconecta-gestion /var/backups/apsconecta-gestion 2> /dev/null
+ls -d /etc/sysctl.d/90-apsconecta-gestion.conf /data/coolify/proxy/dynamic/nextcloud-aio.yaml /etc/ssl/apsconecta-gestion \
+  /var/backups/apsconecta-gestion 2> /dev/null
 true
 LEFT
 )"

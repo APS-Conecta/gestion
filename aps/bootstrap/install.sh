@@ -46,6 +46,7 @@ NAME_CREDENTIAL=/mnt/docker-aio-config/provisionador/aps-name.json  # the APS na
 AIO_CONFIGURATION=/mnt/docker-aio-config/data/configuration.json  # AIO's own: its domain, once one is set
 PROVISIONADOR=/var/www/docker-aio/aps/provisionador/provisionador.py  # in the mastercontainer's image
 DROP_IN=/etc/sysctl.d/90-apsconecta-gestion.conf
+ROUTE=/data/coolify/proxy/dynamic/nextcloud-aio.yaml  # the suite's route in Coolify's proxy (provisionador/suite.py)
 BACKUPS=/var/backups/apsconecta-gestion  # AIO's nightly backup, as «Instalar» sets it (provisionador/steps/backups.py)
 # The first and the last line of the link block the Provisionador logs: LINK_LOG in aps/provisionador/provisionador.py.
 LINK_FIRST="Abra este enlace"
@@ -259,8 +260,8 @@ free_name() {
 
 # After a typed confirmation, the reset frees the APS name, with the mastercontainer's image or, once it was removed,
 # the release's; then it removes what the install created: its containers, the images they ran, its volumes, its
-# network, the kernel drop-in, a test build's CAs and AIO's nightly backup, which a reinstall's AIO could not open.
-# Docker stays installed.
+# network, the kernel drop-in, the suite's route in Coolify's dynamic folder, a test build's CAs and AIO's nightly
+# backup, which a reinstall's AIO could not open. Docker stays installed.
 reset_suite() {
   local answer image ran="" containers images volumes
   if command -v docker >/dev/null 2>&1 && ! docker info >/dev/null 2>&1; then
@@ -269,8 +270,8 @@ reset_suite() {
   printf '%s\n' \
     "Esto libera el nombre APS del establecimiento, para que otra instalación del mismo establecimiento lo obtenga, y" \
     "elimina APS Conecta Gestión de este servidor con todos sus datos: los contenedores nextcloud-aio-*, las imágenes" \
-    "que ejecutan, los volúmenes nextcloud_aio_*, la red nextcloud-aio, las copias de seguridad de $BACKUPS" \
-    "y $DROP_IN. Docker queda instalado." >&2
+    "que ejecutan, los volúmenes nextcloud_aio_*, la red nextcloud-aio, las copias de seguridad de $BACKUPS," \
+    "$DROP_IN y $ROUTE. Docker queda instalado." >&2
   printf 'Para confirmar, escriba %s: ' "$CONFIRMATION" >&2
   read -r answer < /dev/tty || die "no se pudo leer la confirmación desde la terminal. No se eliminó nada."
   [ "$answer" = "$CONFIRMATION" ] || die "la confirmación no coincide. No se eliminó nada."
@@ -293,6 +294,7 @@ reset_suite() {
     if docker network inspect nextcloud-aio >/dev/null 2>&1; then docker network rm nextcloud-aio >/dev/null; fi
   fi
   rm -f "$DROP_IN"
+  rm -f "$ROUTE"
   rm -rf "$CACERTS" "$BACKUPS"
   say "APS Conecta Gestión se eliminó de este servidor. Docker sigue instalado."
 }

@@ -82,10 +82,10 @@ older version, and never pins one.
 - to stop the suite, stop its containers in AIO's page first, then stop the resource in Coolify, which removes only
   the mastercontainer; to start it again, deploy the resource, then start the containers in AIO's page;
 - to remove the suite, run the Bootstrap's reset on the server first (`… | sudo bash -s restablecer`): it frees the APS
-  name with its credential and removes the suite's containers, the images they ran, its volumes, its network and its
-  backups, and leaves Docker and Coolify; then delete the resource in Coolify. In the other order, deleting the
-  resource may delete its volumes, the mastercontainer's among them, and the name's credential with it, so that the
-  name stays held;
+  name with its credential and removes the suite's containers, the images they ran, its volumes, its network, its
+  backups and its route from Coolify's dynamic folder, and leaves Docker and Coolify; then delete the resource in
+  Coolify. In the other order, deleting the resource may delete its volumes, the mastercontainer's among them, and the
+  name's credential with it, so that the name stays held;
 - keep «Delete Unused Volumes» and «Delete Unused Networks» off in the server's Docker cleanup in Coolify: a stopped
   suite's volumes and network are unused, and so is the mastercontainer's volume once Coolify stops the resource; and
   keep the cleanup's schedule, midnight by default, away from AIO's nightly backup at 06:00 UTC, during which, and

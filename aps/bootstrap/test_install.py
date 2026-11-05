@@ -20,6 +20,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "provisionador"))
 from provisionador import LINK_LOG  # noqa: E402  the block our mastercontainer logs at every start (ADR-0027)
 from steps import backups  # noqa: E402  «Instalar» sends AIO's nightly backup to backups.FOLDER
+from suite import COOLIFY, ROUTE  # noqa: E402  on a Coolify server, «Dirección» writes the suite's route there
 
 BOOTSTRAP = HERE / "install.sh"
 FILL = HERE.parent / "release" / "bootstrap.sh"
@@ -319,9 +320,11 @@ class Reset(Server):
         code, _, err, calls = self.reset()
         self.assertEqual(code, 0, err)
         self.assertEqual(changes(calls)[0], RELEASE_NAME)
-        self.assertEqual(changes(calls)[-2:],
-                         [f"rm -f {DROP_IN}", f"rm -rf /etc/ssl/apsconecta-gestion {backups.FOLDER}"],
-                         "the kernel drop-in, a test build's CAs and AIO's nightly backup go last")
+        self.assertEqual(changes(calls)[-3:],
+                         [f"rm -f {DROP_IN}", f"rm -f {COOLIFY / ROUTE}",
+                          f"rm -rf /etc/ssl/apsconecta-gestion {backups.FOLDER}"],
+                         "the kernel drop-in, the suite's route in Coolify's proxy, a test build's CAs and AIO's "
+                         "nightly backup go last")
         self.assertIn(f"las copias de seguridad de {backups.FOLDER}", err.replace("\n", " "))
 
     def test_a_reset_before_any_claim_has_no_name_to_free(self):
