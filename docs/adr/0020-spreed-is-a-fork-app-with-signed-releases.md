@@ -85,4 +85,4 @@ container boot, and the store's only scoped opening in the entrypoint.
   suite's own resolver before a suite Release exists, so a drifted copy reds there, never on
   a clinic.
 - The first release needs the fork's `release` environment and app-key secrets — owner-only,
-  once, like every app repo ([aps/RELEASING.md](../aps/RELEASING.md)).
+  once, like every app repo.

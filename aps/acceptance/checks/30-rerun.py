@@ -3,20 +3,26 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """A rerun of the Bootstrap before «Listo» is harmless and prints a fresh link: the machine's containers, images,
 volumes, networks, packages and the install's files stay as they were, and the first link and the fresh one each
-open «Centro» at the machine's address, in a browser that pins the certificate whose fingerprint was printed."""
+open «Centro» at the machine's address, in a browser that pins the certificate whose fingerprint was printed. The
+mastercontainer pulls the suite's images at each start; the check waits for the first start's pull, and the rerun's
+own pull then changes nothing."""
 
 import difflib
 import os
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
 ACCEPTANCE = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ACCEPTANCE))
+sys.path[:0] = [str(ACCEPTANCE), str(ACCEPTANCE.parent / "provisionador")]
 from browser import chromium, machine, printed_link, verified  # noqa: E402
 from playwright.sync_api import expect  # noqa: E402
+from provisionador import PULLED  # noqa: E402
+
+PULL_WAIT = 15 * 60  # seconds for the suite's images, several GB
 
 # What the rerun must leave as it was; the mastercontainer restarts, so its start time is left out.
 STATE = """set -euo pipefail
@@ -28,6 +34,11 @@ find /etc/apt /etc/sysctl.d -type f -exec sha256sum {} + | sort -k 2
 dpkg-query --show
 """
 
+deadline = time.monotonic() + PULL_WAIT
+while PULLED not in machine("sudo docker logs nextcloud-aio-mastercontainer 2>&1"):  # the log stays unprinted
+    if time.monotonic() > deadline:
+        sys.exit(f"the mastercontainer did not log «{PULLED}» within {PULL_WAIT // 60} minutes of its start")
+    time.sleep(10)
 before = machine("sudo bash -s", STATE)
 first = printed_link(Path(os.environ["CONSOLE"]).read_text(encoding="utf-8"))
 with tempfile.NamedTemporaryFile() as console:  # the fresh link stays out of the log and the evidence

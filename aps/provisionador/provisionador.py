@@ -18,7 +18,13 @@ address.
 
 At «Dirección» it claims the establishment's APS name and keeps the name's credential beside the state, readable
 only by its own account. Run as `provisionador.py update-address`, it is the address updater that keeps running after
-«Listo» (dinit.d/aps-address-updater): every 10 minutes it points the name at the server's address.
+«Listo» (dinit.d/aps-address-updater): every 10 minutes it points the name at the server's address. Run as
+`provisionador.py release-name`, it frees the name whose credential arrives on stdin, never on a command line: the
+Bootstrap's reset runs it before it removes anything, and the acceptance harness for each CI name it claimed.
+
+«Instalar» sets AIO up through its settings file and starts the suite with AIO's own start (INSTALL, steps/); AIO's
+page stays hidden until «Listo», which comes once AIO reads every container of the suite running. At every start
+until «Listo», the Provisionador pulls the suite's images with AIO's own code, so that «Instalar» waits less.
 """
 
 import base64
@@ -33,11 +39,14 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
 import deis
+from steps import backups, components, start, timezone
 from suite import Held, Suite, SuitePort, Unreachable
 
 HERE = Path(__file__).resolve().parent
@@ -89,10 +98,19 @@ NOT_IN_REGISTER = "Ese establecimiento no está en el registro DEIS."
 OFF_THE_MAP = "El punto del mapa debe tener una latitud entre -90 y 90 y una longitud entre -180 y 180."
 CLOSED = ("La instalación terminó en «Listo»: esta dirección muestra ahora la administración de APS Conecta Gestión, "
           "y el enlace de instalación ya no sirve.")
+LISTO_LOG = "La instalación terminó en «Listo»: el personal abre APS Conecta Gestión en https://{}"
+PULLED = "Las imágenes de la suite están descargadas."  # acceptance's 30-rerun waits for it
+FREED = "Se liberó el nombre APS {}."
+FREE_ALREADY = "El nombre APS {} ya estaba libre."
 NO_CENTRE = "Confirme primero el centro en «Centro»: la dirección es el nombre APS del establecimiento."
 CENTRE_KEPT = "El centro ya no puede cambiarse: su dirección, {}, ya se obtuvo."
 HELD = ("Otra instalación ya tiene el nombre APS de este establecimiento. Si es una instalación anterior del mismo "
         "establecimiento, APS Conecta puede liberarlo; después presione «Reintentar».")
+NO_ADDRESS_YET = "Obtenga primero la dirección del establecimiento en «Dirección»."
+UNEXPECTED = ("La instalación se detuvo por un error inesperado. Presione «Reintentar»; si vuelve a ocurrir, contacte a "
+              "APS Conecta e indique el registro del contenedor maestro.")
+# «Instalar»'s steps (steps/), in their order: AIO's settings for the choices, then AIO's own start.
+INSTALL = (components, timezone, backups, start)
 
 
 def digest(value):
@@ -211,6 +229,8 @@ class Provisionador:
         self.suite = suite
         self.interface = interface(address)
         self.shown = None  # the fingerprint the log printed last
+        self.installing = threading.Lock()  # one install at a time
+        self.worker = None  # the thread that runs «Instalar»'s steps
 
     def server(self, address=("127.0.0.1", PORT)):
         httpd = Server(address, Handler)
@@ -260,14 +280,92 @@ class Provisionador:
         return known(session, self.state.read().get("sessions", []))
 
     def address(self, state):
-        """The APS name «Dirección» set up, and whether a browser opened AIO's interface at it: the page asks for it
-        there, and a resolver that drops answers pointing to private addresses keeps that request from the server."""
-        name = state.get("address", {}).get("name")
-        return name and {"name": name, "opened": self.suite.opened(name)}
+        """The APS name «Dirección» set up; whether every nameserver of its zone publishes the server's current address
+        for it, the one the address updater publishes, before which the page asks no resolver for the name: one asked
+        earlier keeps finding nothing for the zone's SOA minimum, 30 minutes; and whether a browser opened AIO's
+        interface at it: the page asks for it there, and a resolver that drops answers pointing to private addresses
+        keeps that request from the server. Once they publish it, neither they nor the server's address are read again;
+        until then, an address that cannot be read is not published yet."""
+        address = state.get("address")
+        if address is None:
+            return None
+        name, published = address["name"], address.get("published", False)
+        try:
+            if not published and self.suite.published(name, self.suite.server_address()):
+                published = True
+                self.state.change(lambda s: s["address"].update(published=True))
+        except Unreachable:
+            pass  # the page's next reading asks again
+        return {"name": name, "published": published, "opened": self.suite.opened(name)}
 
     def get_state(self, query, body):
         state = self.state.read()
-        return 200, {"centre": state.get("centre"), "address": self.address(state)}
+        # «Revisar», once «Dirección» claimed the name: what «Instalar» sets up beside the centre, its name and timezone.
+        review = state.get("address") and {"components": components.NAMES,
+                                           "backup": {"folder": backups.FOLDER, "time": backups.TIME}}
+        return 200, {"centre": state.get("centre"), "address": self.address(state), "review": review,
+                     "install": self.progress(state)}
+
+    def progress(self, state):
+        """None before «Instalar»; then whether the install runs or failed, with its reasons, and each container of the
+        suite with its state as AIO reads it. A reading that fails says why, and the next one asks again."""
+        install = state.get("install")
+        if install is None:
+            return None
+        try:
+            return {**install, "containers": [{"name": c["name"], "state": c["state"]} for c in self.suite.containers()]}
+        except Unreachable as outage:
+            return {**install, "containers": [], "error": str(outage)}
+
+    def post_install(self, query, body):
+        """POST /api/install, «Instalar» and «Reintentar»: the steps run in the background, and GET /api/state shows
+        their progress. While they run, pressing it again starts nothing more."""
+        if not self.state.read().get("address"):
+            return 409, {"error": NO_ADDRESS_YET}
+        self.install()
+        return 202, {"install": self.progress(self.state.read())}
+
+    def pull_images(self):
+        """At a start of the Provisionador, until «Listo»: the images of the suite «Instalar» starts, pulled with AIO's
+        own code, so that «Instalar» waits less. A pull that fails is logged; «Instalar» pulls them again."""
+        try:
+            self.suite.pull(components.SETTINGS)
+        except Unreachable as outage:
+            print(outage, file=sys.stderr, flush=True)
+            return
+        print(PULLED, flush=True)
+
+    def resume(self):
+        """At a start of the Provisionador: an install a restart cut short goes on by itself, its steps being
+        idempotent."""
+        if (self.state.read().get("install") or {}).get("status") == "installing":
+            self.install()
+
+    def install(self):
+        """Run INSTALL's steps in the background, unless they run already."""
+        with self.installing:
+            if self.worker is not None and self.worker.is_alive():
+                return
+            self.state.change(lambda s: s.update(install={"status": "installing"}))
+            self.worker = threading.Thread(target=self.run_install, daemon=True)
+            self.worker.start()
+
+    def run_install(self):
+        """Each step in order; the first that fails ends the install with its reasons. The last one done is «Listo»."""
+        context = SimpleNamespace(suite=self.suite, centre=self.state.read()["centre"], interface=self.interface)
+        for step in INSTALL:
+            try:
+                reasons = step.run(context) or []
+            except Unreachable as outage:
+                reasons = [str(outage)]
+            except Exception:  # a defect: the log gets the traceback, the operator a reason
+                traceback.print_exc()
+                reasons = [UNEXPECTED]
+            if reasons:
+                self.state.change(lambda s: s.update(install={"status": "failed", "reasons": reasons}))
+                return
+        (self.state.dir / LISTO).touch()
+        print(LISTO_LOG.format(self.state.read()["address"]["name"]), flush=True)
 
     def get_register(self, query, body):
         return 200, self.register.facets()
@@ -323,6 +421,7 @@ class Provisionador:
         ("GET", "/api/establishments"): get_establishments,
         ("POST", "/api/centre"): post_centre,
         ("POST", "/api/address"): post_address,
+        ("POST", "/api/install"): post_install,
     }
 
     def call(self, method, path, query, body):
@@ -438,12 +537,25 @@ def update_address(state_dir, suite: SuitePort):
         print(outage, file=sys.stderr, flush=True)
 
 
-def main(argv):
+def release_name(suite: SuitePort, credential):
+    """Free the APS name with its own credential. A name the name service no longer knows is free already."""
+    try:
+        freed = suite.release(credential)
+    except Unreachable as outage:
+        print(outage, file=sys.stderr, flush=True)
+        return 1
+    print((FREED if freed else FREE_ALREADY).format(credential["name"]), flush=True)
+    return 0
+
+
+def main(argv, suite=None):
+    suite = suite or Suite()
+    if argv == ["release-name"]:  # the Bootstrap's reset, and the acceptance harness: the credential on stdin
+        return release_name(suite, json.load(sys.stdin))
     if argv == ["update-address"]:  # the address updater, aps/provisionador/dinit.d/aps-address-updater
-        suite = Suite()
         update_address(STATE_DIR, suite)
         every(ADDRESS_UPDATE, lambda: update_address(STATE_DIR, suite))
-    app = Provisionador(STATE_DIR, deis.newest(REGISTER), Suite(), os.environ.get(ADDRESS, ""))
+    app = Provisionador(STATE_DIR, deis.newest(REGISTER), suite, os.environ.get(ADDRESS, ""))
     if app.state.listo():
         print(CLOSED, flush=True)
         return 0
@@ -453,6 +565,8 @@ def main(argv):
     except Unreachable as outage:
         print(outage, file=sys.stderr, flush=True)
         return 1  # dinit starts it again
+    app.resume()
+    threading.Thread(target=app.pull_images, daemon=True).start()
     threading.Thread(target=every, args=(CERTIFICATE_CHECK, app.check_certificate), daemon=True).start()
     httpd.serve_forever()
     return 0

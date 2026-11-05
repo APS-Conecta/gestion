@@ -5,12 +5,14 @@ Let's Encrypt's staging roots, which the suite's certificate comes from in CI, a
 after verifying them itself, such as the Provisionador's, by the fingerprint the Bootstrap printed. No check ignores
 certificate errors.
 
-Checks import it after `sys.path.insert(0, <aps/acceptance>)`. It also runs a check's command lines on the machine.
+Checks import it after `sys.path.insert(0, <aps/acceptance>)`. It also runs a check's command lines on the machine and
+reads the files of the mastercontainer there.
 """
 
 import base64
 import contextlib
 import hashlib
+import json
 import os
 import re
 import ssl
@@ -30,6 +32,17 @@ def machine(command, stdin=""):
     if run.returncode:
         sys.exit(f"on the machine, {command!r} failed:\n{run.stderr}")
     return run.stdout
+
+
+def mastercontainer_file(path):
+    """A file of the mastercontainer on the machine, such as AIO's settings file; never print a secret it holds."""
+    return machine(f"sudo docker exec nextcloud-aio-mastercontainer cat {path}")
+
+
+def suite_name():
+    """The suite's name: AIO's domain, which «Dirección» set."""
+    return json.loads(mastercontainer_file("/mnt/docker-aio-config/data/configuration.json")).get("domain") \
+        or sys.exit("AIO has no domain: «Dirección» claimed no name")
 
 
 def fingerprint(pem):

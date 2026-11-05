@@ -19,9 +19,11 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "provisionador"))
 from provisionador import LINK_LOG  # noqa: E402  the block our mastercontainer logs at every start (ADR-0027)
+from steps import backups  # noqa: E402  «Instalar» sends AIO's nightly backup to backups.FOLDER
 
 BOOTSTRAP = HERE / "install.sh"
 FILL = HERE.parent / "release" / "bootstrap.sh"
+STAGING_ROOTS = HERE.parent / "acceptance" / "letsencrypt-staging-roots.pem"  # what a test build's suite trusts
 TAG = "v9.9.9-ci.1"
 PINNED = "ghcr.io/aps-conecta/all-in-one@sha256:" + "a" * 64
 CHANNEL = "ghcr.io/aps-conecta/all-in-one:latest"
@@ -30,15 +32,27 @@ DROP_IN = "/etc/sysctl.d/90-apsconecta-gestion.conf"
 BLOCK = LINK_LOG.format(url="https://10.0.0.5:8080/#c2VjcmV0IGRlbCBlbmxhY2U", qr="█▀▀▀█ ▄ █\n█▄▄▄█ ▀ █\n",
                         fingerprint=":".join(["AB"] * 32))
 LOG = f"Trying to fix docker.sock permissions internally...\n{BLOCK}\nInitial startup of AIO complete!\n"
-TOOLS = ("awk", "cat", "date", "grep", "sed", "sleep", "sort", "tar")  # the real commands the Bootstrap may run here
+TOOLS = ("awk", "base64", "cat", "date", "grep", "mkdir", "sed", "sh", "sleep", "sort", "tar")  # real ones, here
 READS = ("uname", "id", "df", "ss", "ip", "sysctl -n", "docker info", "docker inspect")  # they change nothing
 # The mastercontainer's volume, /mnt/docker-aio-config, as fixture files: «Listo», and AIO's configuration.json, which
 # its ConfigurationManager writes with JSON_PRETTY_PRINT.
 LISTO = "volume/provisionador/listo"
 CONFIGURATION = "volume/data/configuration.json"
+# The APS name's credential, as «Dirección» keeps it there (aps/provisionador/provisionador.py's Credential).
+NAME_CREDENTIAL = "volume/provisionador/aps-name.json"
+ACME_PASSWORD = "prueba.prueba.prueba.prueba"
+CREDENTIAL = json.dumps({"name": "centro-101406.ci.gestion.apsconecta.cl", "username": "101406",
+                         "password": ACME_PASSWORD, "subdomain": "centro-101406",
+                         "server_url": "https://gestion-nombres-ci.apsconecta.workers.dev"})
+RELEASE_NAME = (f"docker run --rm --interactive --entrypoint python3 {CHANNEL} -B "
+                "/var/www/docker-aio/aps/provisionador/provisionador.py release-name")
 UBUNTU = 'PRETTY_NAME="Ubuntu 24.04.3 LTS"\nNAME="Ubuntu"\nID=ubuntu\nVERSION_CODENAME=noble\nUBUNTU_CODENAME=noble\n'
+# A short-lived container that reads the mastercontainer's volume, mounted read-only: it changes nothing.
+VOLUME_READ = "docker run --rm --volume nextcloud_aio_mastercontainer:/mnt/docker-aio-config:ro"
 # Each shim logs its command line to $CALLS, then runs its body. The SHIM_* variables set the server's answers; the
-# defaults are a server that meets every requirement.
+# defaults are a server that meets every requirement. A restarting or paused mastercontainer runs, as Docker reports it
+# (SHIM_RUNNING), and refuses docker exec (SHIM_STATUS). A container that mounts the mastercontainer's volume runs its
+# command on the fixture volume.
 SHIMS = {
     "uname": 'echo "${SHIM_ARCH:-x86_64}"',
     "id": 'echo "${SHIM_UID:-0}"',
@@ -50,10 +64,21 @@ SHIMS = {
     "rm": ":",  # it only logs, so a removal shows up as a call
     "docker": """case "$1" in
   info) [ -n "${SHIM_DOCKER_ROOT-/var/lib/docker}" ] && echo "${SHIM_DOCKER_ROOT-/var/lib/docker}" ;;
-  inspect) [ -n "${SHIM_IMAGE:-}" ] && echo "$SHIM_IMAGE ${SHIM_RUNNING:-true}" ;;
-  exec) [ "${SHIM_RUNNING:-true}" = true ] && [ "$3" = cat ] && cat "$SHIM_VOLUME${4#/mnt/docker-aio-config}" ;;
+  inspect) [ -n "${SHIM_IMAGE:-}" ] || exit 1
+           case "$3" in *.State.Running*) echo "$SHIM_IMAGE ${SHIM_RUNNING:-true}" ;; *) echo "$SHIM_IMAGE" ;; esac ;;
+  exec) [ "${SHIM_RUNNING:-true}" = true ] && [ "${SHIM_STATUS:-running}" = running ] && [ "$3" = cat ] \
+          && cat "$SHIM_VOLUME${4#/mnt/docker-aio-config}" ;;
   cp) tar -cf - -C "$SHIM_VOLUME" "${2#*:/mnt/docker-aio-config/}" ;;
   logs) cat "$SHIM_LOGS" ;;
+  volume) [ "$2" != ls ] || printf '%s\n' ${SHIM_VOLUMES-nextcloud_aio_mastercontainer} ;;
+  run) case " $* " in
+         *" --interactive "*) cat > "$SHIM_STDIN"; echo "Se liberó el nombre APS (prueba)." ;;
+         *" nextcloud_aio_mastercontainer:/mnt/docker-aio-config:ro "*)
+           while [ "$1" != --entrypoint ]; do shift; done
+           entrypoint="$2"; shift 3
+           exec "$entrypoint" "${@//\/mnt\/docker-aio-config/$SHIM_VOLUME}" ;;
+       esac
+       exit "${SHIM_RUN_EXIT:-0}" ;;
 esac""",
 }
 REFUSED = "\nEste servidor no cumple los requisitos de APS Conecta Gestión. No se modificó nada.\n"
@@ -159,7 +184,8 @@ class Refusals(Server):
 
 def changes(calls):
     """The calls that change the server: everything but the reads."""
-    return [call for call in calls if not call.startswith(READS + ("docker logs", "docker exec", f"docker cp {NAME}:"))]
+    reads = READS + ("docker logs", "docker exec", f"docker cp {NAME}:", "docker volume ls", VOLUME_READ)
+    return [call for call in calls if not call.startswith(reads)]
 
 
 class Start(Server):
@@ -176,6 +202,25 @@ class Start(Server):
             "--env APS_INTERFACE_ADDRESS=10.0.0.5 --volume nextcloud_aio_mastercontainer:/mnt/docker-aio-config "
             f"--volume /var/run/docker.sock:/var/run/docker.sock:ro {CHANNEL}"])
         self.assertEqual((self.dir / "tee").read_text(), "vm.overcommit_memory = 1\nvm.max_map_count = 262144\n")
+
+    def test_a_test_builds_bootstrap_gives_the_suite_the_staging_roots_through_aios_trusted_cacerts_dir(self):
+        with self.asset.open("w") as out:
+            subprocess.run(["bash", str(FILL), TAG, PINNED, str(STAGING_ROOTS)], stdout=out, check=True)
+        cacerts = self.dir / "cacerts"
+        code, _, err, calls = self.run_bootstrap(CACERTS=str(cacerts))
+        self.assertEqual(code, 0, err)
+        self.assertEqual(changes(calls)[-1],
+                         f"docker run --init --sig-proxy=false --name {NAME} --restart always --detach --publish "
+                         f"8080:8080 --env APS_INTERFACE_ADDRESS=10.0.0.5 --env NEXTCLOUD_TRUSTED_CACERTS_DIR={cacerts} "
+                         "--volume nextcloud_aio_mastercontainer:/mnt/docker-aio-config "
+                         f"--volume /var/run/docker.sock:/var/run/docker.sock:ro {CHANNEL}")
+        roots = re.findall(r"-----BEGIN CERTIFICATE-----\n.+?-----END CERTIFICATE-----\n", STAGING_ROOTS.read_text(),
+                           re.S)
+        self.assertEqual(len(roots), 4)
+        self.assertEqual([path.name for path in cacerts.iterdir()], ["ca.crt"])
+        self.assertEqual((cacerts / "ca.crt").read_text(), "".join(roots),
+                         "the roots in one file: AIO's Nextcloud and Talk read every file, and Node's "
+                         "NODE_EXTRA_CA_CERTS, Euro-Office's, takes one")
 
     def test_the_kernel_settings_keep_a_higher_map_count(self):
         code, _, err, _ = self.run_bootstrap(SHIM_MAP_COUNT="1048576")
@@ -224,6 +269,80 @@ class Reruns(Server):
 
 
 class Reset(Server):
+    def setUp(self):
+        super().setUp()
+        self.file(NAME_CREDENTIAL, CREDENTIAL)  # «Dirección» claimed the name
+
+    def reset(self, **env):
+        """The reset of an install whose mastercontainer runs, confirmed as the operator types it."""
+        return self.run_bootstrap("restablecer", typed="ELIMINAR",
+                                  **{"SHIM_IMAGE": CHANNEL, "SHIM_STDIN": str(self.dir / "stdin"), **env})
+
+    def test_the_reset_frees_the_aps_name_first_with_its_own_credential_on_stdin(self):
+        code, out, err, calls = self.reset()
+        self.assertEqual(code, 0, err)
+        self.assertEqual(changes(calls)[:2], [RELEASE_NAME, f"docker rm --force {NAME}"])
+        self.assertEqual((self.dir / "stdin").read_text(), CREDENTIAL + "\n")
+        self.assertEqual([call for call in calls if ACME_PASSWORD in call], [], "the credential reaches no command line")
+        self.assertIn("Se liberó el nombre APS", out)
+        self.assertIn("Esto libera el nombre APS del establecimiento", err, "the confirmation says so first")
+
+    def test_a_stopped_mastercontainer_gives_its_credential_too(self):
+        code, _, err, calls = self.reset(SHIM_RUNNING="false")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(changes(calls)[:2], [RELEASE_NAME, f"docker rm --force {NAME}"])
+        self.assertEqual((self.dir / "stdin").read_text(), CREDENTIAL + "\n")
+
+    def test_a_restarting_mastercontainer_gives_its_credential_too(self):
+        code, _, err, calls = self.reset(SHIM_STATUS="restarting")  # crash-looping: it runs, and refuses docker exec
+        self.assertEqual(code, 0, err)
+        self.assertEqual(changes(calls)[:2], [RELEASE_NAME, f"docker rm --force {NAME}"])
+        self.assertEqual((self.dir / "stdin").read_text(), CREDENTIAL + "\n")
+
+    def test_a_removed_mastercontainer_s_volume_frees_the_name_first_with_the_release_image(self):
+        code, _, err, calls = self.reset(SHIM_IMAGE="")  # removed, as AIO's readme has operators recreate it
+        self.assertEqual(code, 0, err)
+        self.assertEqual(changes(calls)[0], RELEASE_NAME.replace(CHANNEL, PINNED))
+        self.assertEqual((self.dir / "stdin").read_text(), CREDENTIAL + "\n")
+        self.assertNotIn(f"docker rm --force {NAME}", calls)
+
+    def test_a_credential_that_cannot_be_read_stops_the_reset_with_nothing_removed(self):
+        (self.dir / NAME_CREDENTIAL).unlink()
+        (self.dir / NAME_CREDENTIAL).mkdir()  # there, and no file to read
+        code, _, err, calls = self.reset()
+        self.assertEqual(code, 1)
+        self.assertTrue(err.endswith(" No se eliminó nada.\n"), err)
+        self.assertIn("no se pudo leer la credencial del nombre APS del establecimiento", err)
+        self.assertEqual(changes(calls), [])
+
+    def test_the_reset_removes_the_backup_folder_last_and_its_confirmation_names_it(self):
+        code, _, err, calls = self.reset()
+        self.assertEqual(code, 0, err)
+        self.assertEqual(changes(calls)[0], RELEASE_NAME)
+        self.assertEqual(changes(calls)[-2:],
+                         [f"rm -f {DROP_IN}", f"rm -rf /etc/ssl/apsconecta-gestion {backups.FOLDER}"],
+                         "the kernel drop-in, a test build's CAs and AIO's nightly backup go last")
+        self.assertIn(f"las copias de seguridad de {backups.FOLDER}", err.replace("\n", " "))
+
+    def test_a_reset_before_any_claim_has_no_name_to_free(self):
+        (self.dir / NAME_CREDENTIAL).unlink()
+        code, _, err, calls = self.reset()
+        self.assertEqual(code, 0, err)
+        self.assertEqual(changes(calls)[0], f"docker rm --force {NAME}")
+        self.assertNotIn(RELEASE_NAME, calls)
+
+    def test_a_reset_with_no_mastercontainer_volume_has_no_name_to_free(self):
+        code, _, err, calls = self.reset(SHIM_IMAGE="", SHIM_VOLUMES="")
+        self.assertEqual(code, 0, err)
+        self.assertEqual([call for call in calls if call.startswith("docker run")], [], "no container, no image pulled")
+
+    def test_a_name_that_cannot_be_freed_stops_the_reset_with_nothing_removed(self):
+        code, _, err, calls = self.reset(SHIM_RUN_EXIT="1")
+        self.assertEqual(code, 1)
+        self.assertTrue(err.endswith("Vuelva a ejecutar el restablecimiento cuando el servidor tenga conexión a internet. "
+                                     "No se eliminó nada.\n"), err)
+        self.assertEqual(changes(calls), [RELEASE_NAME])
+
     def test_each_refusal_removes_nothing(self):
         cases = {
             "a wrong typed answer": (("restablecer",), {"typed": "eliminar"},

@@ -55,11 +55,26 @@ it pushes the candidate tag, and publishes the pre-release with the three images
 the Bootstrap as `apsconecta-install.sh`, filled with the tag and the mastercontainer's digest
 (`aps/release/bootstrap.sh`). The Bootstrap pulls the mastercontainer by that digest and tags it
 as the channel tag on the server; it never pulls `latest`. Then the pipeline checks "Latest": a
-candidate leaves it where it was. Last, it runs the published Bootstrap on a fresh runner as the
-manual prints it: the link block prints and the command returns, the mastercontainer runs the
-release's digest on the channel tag, a rerun prints a fresh link while the first still opens a
-session, and the reset removes the install and leaves an unrelated container, volume and file
-alone. A candidate needs no environment and reads no secret but the workflow's own token.
+candidate leaves it where it was. Last, it runs the clean-machine acceptance harness
+(`.github/workflows/acceptance.yml`) on the pre-release: the published Bootstrap on a fresh VM as
+the manual prints it, then every check module in `aps/acceptance/checks/`. A candidate needs no
+environment and reads no secret but the workflow's own token.
+
+A test build of no version, `v0.0.0-ci.N`, runs against the services of
+`aps/acceptance/test-build.json`, which the pipeline stamps into it at release time: its
+Provisionador claims names on the name service's CI deployment, its Caddy gets Let's Encrypt
+staging certificates, and its Bootstrap gives the suite the staging roots to trust, through AIO's
+`NEXTCLOUD_TRUSTED_CACERTS_DIR`, whose file the pipeline also gives Euro-Office as
+`NODE_EXTRA_CA_CERTS`. Its acceptance run installs the suite to «Listo» on a CI name, checks the
+name's certificate, every container's digest and the suite's own address, resets the machine,
+which frees the name first, and claims it again on a reinstall; the run frees every name it
+claimed.
+
+A version candidate, `vX.Y.Z-rc.N` or a versioned `vX.Y.Z-ci.N`, runs against production, as the
+tree is committed, and an acceptance run never claims a production name. Its run covers the
+Bootstrap, the mastercontainer's digest on the channel tag, a harmless rerun, the
+mastercontainer's pinned digest and a reset that leaves nothing of the install; the checks that
+need a name say they run on a `v0.0.0-ci.N` test build only.
 
 ## 4. An Upstream merge
 

@@ -13,6 +13,7 @@ on:
       - 'aps/provisionador/suite.py'
       - 'aps/provisionador/name-test.py'
       - 'aps/provisionador/ci-codes.txt'
+      - 'aps/acceptance/test-build.json'
       - '.github/workflows/aps-name.yml'
   workflow_dispatch:
 

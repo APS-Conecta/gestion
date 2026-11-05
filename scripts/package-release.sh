@@ -145,7 +145,7 @@ if [ "${1:-}" = "--self-test" ]; then
     '[ "$rc" -ne 0 ] && [ ! -e "$tmp/o3/apsconecta-v9.8.7.tar.gz" ]'
   mk_repo "$tmp/repo" "$tmp/installer.pub"   # restore (flip-then-revert): the later arms read a clean repo
 
-  printf 'untrusted comment: APS Conecta instalador release key (placeholder — aps/RELEASING.md replaces this)\nRWQf6LgoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n' > "$tmp/placeholder.pub"
+  printf 'untrusted comment: APS Conecta instalador release key (placeholder)\nRWQf6LgoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n' > "$tmp/placeholder.pub"
   mk_repo "$tmp/repo4" "$tmp/placeholder.pub"
   run_pkg "$tmp/o4" "$tmp/repo4" "$tmp/installer.sec" ""
   check "placeholder pubkey reds — the release gate reds on 'placeholder'" '[ "$rc" -ne 0 ]'
@@ -223,7 +223,7 @@ ver="$(head -1 "$staging/VERSION")"
 # 3 — the pubkey gates: no placeholder signs a release; the two readers agree (quote-scoped
 #     reads — the real constant lines carry trailing comments)
 grep -qi 'placeholder' "$staging/installer.pub" \
-  && die "installer.pub still carries the placeholder key — aps/RELEASING.md's keygen replaces it first; the release gate reds on 'placeholder'"
+  && die "installer.pub still carries the placeholder key; the release gate reds on 'placeholder'"
 pub_line="$(sed -n 2p "$staging/installer.pub")"
 emb_line="$(sed -n 's/^SIGNIFY_PUBKEY="\([^"]*\)".*/\1/p' "$staging/install.sh" | head -1)"
 [ -n "$emb_line" ] || die "install.sh carries no SIGNIFY_PUBKEY constant"
@@ -270,14 +270,14 @@ pkg_sha="$(sha256sum "$out/$pkg" | cut -d' ' -f1)"
 printf '%s  %s\n' "$pkg_sha" "$pkg" > "$out/SHA256SUMS"
 keydir="$work/keys"; ( umask 077 && mkdir -p "$keydir" )
 seckey="$keydir/installer.sec"
-[ -n "${MINISIGN_SECRET_KEY:-}" ] || die "MINISIGN_SECRET_KEY is empty — a release signs, always (aps/RELEASING.md)"
+[ -n "${MINISIGN_SECRET_KEY:-}" ] || die "MINISIGN_SECRET_KEY is empty — a release signs, always"
 printf '%s\n' "$MINISIGN_SECRET_KEY" > "$seckey"
 printf '%s\n' "${MINISIGN_KEY_PASSWORD:-}" | signify -S -s "$seckey" -m "$out/SHA256SUMS" -x "$out/SHA256SUMS.minisig" \
   || die "signing failed — the passphrase (MINISIGN_KEY_PASSWORD) or the key (MINISIGN_SECRET_KEY) is wrong"
 rm -f "$seckey"
 sed -i "1s|.*|untrusted comment: APS Conecta suite $tag $(date -u +%F)|" "$out/SHA256SUMS.minisig"
 signify -V -p "$staging/installer.pub" -m "$out/SHA256SUMS" -x "$out/SHA256SUMS.minisig" \
-  || die "the PROOF failed — the signature does not verify against the committed installer.pub (key rotation half-done? aps/RELEASING.md)"
+  || die "the PROOF failed — the signature does not verify against the committed installer.pub (key rotation half-done?)"
 ( cd "$out" && sha256sum -c SHA256SUMS ) >/dev/null || die "SHA256SUMS does not verify the tarball beside it"
 
 # 9 — the constants-filled install asset, proven in its final shape (quote-scoped fills: the

@@ -8,7 +8,14 @@
 #   release → the pre-release, naming the three images by digest, with the Bootstrap as apsconecta-install.sh, filled
 #             with the tag and the mastercontainer's digest; then "Latest" is checked against the rules in
 #             aps/release/latest.py, so a candidate never moves it.
-#   bootstrap → that Bootstrap on a fresh runner, run as the manual prints it: the link block, a rerun and the reset.
+#   acceptance → the clean-machine acceptance harness (acceptance.yml) on that pre-release: its Bootstrap on a fresh VM,
+#             as the manual prints it, then every check module.
+#
+# A test build of no version, v0.0.0-ci.N, runs against the services of aps/acceptance/test-build.json (ADR 0028): its
+# mastercontainer claims names on the name service's CI deployment, its Caddy gets Let's Encrypt staging certificates,
+# and its Bootstrap gives the suite the staging roots to trust, which its Euro-Office reads as NODE_EXTRA_CA_CERTS.
+# Every other candidate runs against production, as the tree is committed. The choice is made here, at release time:
+# the shipped code has no runtime switch.
 #
 # The version and channel tags move only when a release candidate is promoted after the release gate.
 name: Release
@@ -40,6 +47,7 @@ jobs:
       contents: read
     outputs:
       commit: ${{ steps.candidate.outputs.commit }}
+      test-build: ${{ steps.candidate.outputs.test-build }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -62,6 +70,7 @@ jobs:
             git merge-base --is-ancestor HEAD origin/main || { echo "::error::a release candidate must be on main"; exit 1; }
           fi
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          if [[ "$TAG" == v0.0.0-ci.* ]]; then echo "test-build=true"; else echo "test-build=false"; fi >> "$GITHUB_OUTPUT"
       - name: Every official image is pinned by digest to upstream's set
         run: aps/release/pins.sh
       - name: Upstream validators — codespell, docker-lint, json-validator
@@ -94,6 +103,7 @@ jobs:
     env:
       TAG: ${{ github.ref_name }}
       COMMIT: ${{ needs.gates.outputs.commit }}
+      TEST_BUILD: ${{ needs.gates.outputs.test-build }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -132,6 +142,21 @@ jobs:
           }
           pin php/containers.json nextcloud-aio-nextcloud "$PINNED_NEXTCLOUD"
           pin community-containers/caddy/caddy.json nextcloud-aio-caddy "$PINNED_CADDY"
+          if [ "$TEST_BUILD" = true ]; then # the name service's CI deployment, and Let's Encrypt's staging directory
+            jq '{name_service}' aps/acceptance/test-build.json > aps/provisionador/services.json
+            jq --arg ca "$(jq -r .acme_ca aps/acceptance/test-build.json)" \
+              '(.aio_services_v1[] | select(.container_name == "nextcloud-aio-caddy") | .environment) += ["ACME_CA=" + $ca]' \
+              community-containers/caddy/caddy.json > "$RUNNER_TEMP/caddy.json"
+            mv "$RUNNER_TEMP/caddy.json" community-containers/caddy/caddy.json
+            # Euro-Office trusts the staging roots too: AIO mounts the Bootstrap's CAs folder there as it does for Talk,
+            # and Node, which runs its document server, adds the file the Bootstrap writes in it to the roots it trusts.
+            jq '(.aio_services_v1[] | select(.container_name == "nextcloud-aio-eurooffice"))
+                  |= (.environment += ["NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/ca.crt"]
+                      | .volumes += [{source: "%NEXTCLOUD_TRUSTED_CACERTS_DIR%",
+                                      destination: "/usr/local/share/ca-certificates", writeable: false}])' \
+              php/containers.json > "$RUNNER_TEMP/containers.json"
+            mv "$RUNNER_TEMP/containers.json" php/containers.json
+          fi
           pinned="$(aps/release/build-image.sh "$MASTERCONTAINER" Containers/mastercontainer/Dockerfile . "$TAG" "$COMMIT")"
           echo "pinned=$pinned" >> "$GITHUB_OUTPUT"
 
@@ -145,6 +170,7 @@ jobs:
     env:
       TAG: ${{ github.ref_name }}
       COMMIT: ${{ needs.gates.outputs.commit }}
+      TEST_BUILD: ${{ needs.gates.outputs.test-build }}
       PINNED_MASTERCONTAINER: ${{ needs.images.outputs.mastercontainer }}
       PINNED_NEXTCLOUD: ${{ needs.images.outputs.nextcloud }}
       PINNED_CADDY: ${{ needs.images.outputs.caddy }}
@@ -159,7 +185,9 @@ jobs:
           latest() { gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null || true; }
           [ "$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha)" = "$COMMIT" ] \
             || { echo "::error::$TAG no longer points at $COMMIT, the commit the images were built from"; exit 1; }
-          aps/release/bootstrap.sh "$TAG" "$PINNED_MASTERCONTAINER" > "$RUNNER_TEMP/apsconecta-install.sh"
+          trusted=() # a test build's suite trusts Let's Encrypt's staging roots
+          [ "$TEST_BUILD" != true ] || trusted=(aps/acceptance/letsencrypt-staging-roots.pem)
+          aps/release/bootstrap.sh "$TAG" "$PINNED_MASTERCONTAINER" "${trusted[@]}" > "$RUNNER_TEMP/apsconecta-install.sh"
           before="$(latest)"
           published="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq '.[] | select(.draft | not) | .tag_name')"
           gh release create "$TAG" "$RUNNER_TEMP/apsconecta-install.sh" --repo "$GITHUB_REPOSITORY" --verify-tag \
@@ -171,73 +199,13 @@ jobs:
           # shellcheck disable=SC2086 # one tag per word
           python3 -I aps/release/latest.py "$TAG" "$before" "$(latest)" $published
 
-  # The published Bootstrap on a fresh runner, exactly as the manual prints it; #284 makes it the harness. The link's
-  # secret stays out of the log: its line and its QR code are never printed.
-  bootstrap:
-    name: The Bootstrap on a fresh runner
-    needs: [images, release]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 40
-    permissions: {}
-    env:
-      URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/apsconecta-install.sh
-      PINNED_MASTERCONTAINER: ${{ needs.images.outputs.mastercontainer }}
-    steps:
-      - name: Make the runner a plain server (no Docker, room for the disk floor)
-        run: |
-          sudo systemctl stop docker.socket docker.service containerd.service || true
-          packages="$(dpkg-query -W -f '${db:Status-Abbrev} ${Package}\n' 'docker*' 'moby-*' 'containerd*' 2>/dev/null || true)"
-          printf '%s\n' "$packages" | awk '/^ii/ {print $2}' | xargs --no-run-if-empty sudo apt-get -qq purge -y
-          { grep -rlF download.docker.com /etc/apt/sources.list.d || true; } | xargs --no-run-if-empty sudo rm -f
-          sudo rm -rf /var/lib/docker /var/lib/containerd /etc/docker /etc/apt/keyrings/docker* \
-            /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache
-          [ -z "$(command -v docker)" ]
-          df -h /
-      - name: The one command prints the link, its QR code and the fingerprint, then returns
-        run: |
-          rc=0
-          timeout 20m bash -c 'curl -fsSL "$URL" | sudo bash' > first.log 2>&1 || rc=$?
-          grep -v -F -e '/#' -e $'\e' -e '▀' -e '▄' -e '█' first.log || true
-          [ "$rc" -eq 0 ]
-          grep -qE '^ +https://[0-9.]+:8080/#[A-Za-z0-9_-]{43}$' first.log
-          grep -q -F -e '▀' -e '▄' -e '█' first.log
-          grep -qE '^ +([0-9A-F]{2}:){31}[0-9A-F]{2}$' first.log
-      - name: The mastercontainer runs the release's digest on the channel tag
-        run: |
-          [ "$(sudo docker inspect --format '{{.Config.Image}}' nextcloud-aio-mastercontainer)" = ghcr.io/aps-conecta/all-in-one:latest ]
-          image="$(sudo docker inspect --format '{{.Image}}' nextcloud-aio-mastercontainer)"
-          sudo docker image inspect --format '{{join .RepoDigests "\n"}}' "$image" | grep -qxF "$PINNED_MASTERCONTAINER"
-          [ "$(sudo docker image inspect --format '{{.Id}}' ghcr.io/aps-conecta/all-in-one:latest)" = "$image" ]
-      - name: A rerun prints a fresh link, and the first link still opens a session
-        run: |
-          rc=0
-          timeout 20m bash -c 'curl -fsSL "$URL" | sudo bash' > second.log 2>&1 || rc=$?
-          grep -v -F -e '/#' -e $'\e' -e '▀' -e '▄' -e '█' second.log || true
-          [ "$rc" -eq 0 ]
-          first="$(grep -oE 'https://\S+/#\S+' first.log)"
-          second="$(grep -oE 'https://\S+/#\S+' second.log)"
-          [ -n "$second" ] && [ "$second" != "$first" ]
-          printf '{"link": "%s"}' "${first#*#}" > session.json
-          status="$(curl -sk -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' \
-            -H 'Sec-Fetch-Site: same-origin' --data @session.json "${first%%#*}api/session")"
-          [ "$status" = 200 ]
-      - name: The reset leaves nothing of the install, and leaves an unrelated container, volume and file alone
-        run: |
-          sudo docker run --detach --name keep-nextcloud-aio-x busybox:1.37 sleep infinity > /dev/null
-          sudo docker volume create keep_nextcloud_aio_x > /dev/null
-          echo '# not the install' | sudo tee /etc/sysctl.d/99-keep.conf > /dev/null
-          printf 'ELIMINAR\n' | timeout 10m script -qec "curl -fsSL '$URL' | sudo bash -s restablecer" /dev/null
-          [ -z "$(sudo docker ps --all --format '{{.Names}}' | grep '^nextcloud-aio-')" ]
-          [ -z "$(sudo docker volume ls --format '{{.Name}}' | grep '^nextcloud_aio_')" ]
-          [ -z "$(sudo docker network ls --quiet --filter name=^nextcloud-aio$)" ]
-          [ -z "$(sudo docker images --quiet ghcr.io/aps-conecta/all-in-one)" ]
-          [ ! -e /etc/sysctl.d/90-apsconecta-gestion.conf ]
-          [ "$(sudo docker inspect --format '{{.State.Running}}' keep-nextcloud-aio-x)" = true ]
-          sudo docker volume inspect keep_nextcloud_aio_x > /dev/null
-          [ -f /etc/sysctl.d/99-keep.conf ]
-          command -v docker > /dev/null
-      - name: Show the containers and the mastercontainer's log, without the link
-        if: failure()
-        run: |
-          sudo docker ps --all || true
-          sudo docker logs nextcloud-aio-mastercontainer 2>&1 | grep -v -F -e '/#' -e $'\e' -e '▀' -e '▄' -e '█' | tail -n 80 || true
+  # The clean-machine acceptance harness on the pre-release (Seam 1): its Bootstrap on a fresh VM, as the manual prints
+  # it, then every check module in aps/acceptance/checks/.
+  acceptance:
+    name: Clean-machine acceptance
+    needs: release
+    permissions:
+      contents: read
+    uses: ./.github/workflows/acceptance.yml
+    with:
+      tag: ${{ github.ref_name }}

@@ -2,9 +2,9 @@
 # Debian 12 VM, exactly as the manual prints it, then every check module in aps/acceptance/checks/, each reported on
 # its own. It tests the candidate's release, never this tree; the harness and its checks come from the ref it runs on.
 #
-# It runs on a maintainer's dispatch for a pre-release, and from another workflow through workflow_call. A pull
-# request that touches our images or the Bootstrap gets it on demand: publish the pull request's test build
-# (aps/RELEASING.md, section 3), then dispatch this workflow for that tag:
+# The candidate pipeline (release.yml) calls it through workflow_call on every candidate it publishes, and a maintainer
+# dispatches it for a pre-release. A pull request that touches our images or the Bootstrap gets it on demand: publish
+# the pull request's test build (aps/RELEASING.md, section 3), which runs it, or dispatch this workflow for that tag:
 #
 #   gh workflow run acceptance.yml --repo APS-Conecta/gestion -f tag=v0.0.0-ci.N
 #
@@ -34,7 +34,7 @@ jobs:
   clean-machine:
     name: The candidate's Bootstrap on a fresh Debian 12 VM, then every check
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 90 # a whole install to «Listo», its checks, the reset and a reinstall
     permissions:
       contents: read
     steps:
@@ -46,11 +46,11 @@ jobs:
           df -h /
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache /usr/share/swift
           df -h /
-      - name: Install the VM tools and the browser driver (Playwright with Chromium)
+      - name: Install the VM tools, dig and the browser driver (Playwright with Chromium)
         run: |
           sudo apt-get -qq update
           sudo apt-get -qq install -y qemu-system-x86 qemu-utils cloud-image-utils dnsmasq-base python3-venv \
-            libnss3-tools > /dev/null
+            libnss3-tools dnsutils > /dev/null
           python3 -m venv "$RUNNER_TEMP/browser"
           "$RUNNER_TEMP/browser/bin/pip" install --quiet playwright==1.64.1
           "$RUNNER_TEMP/browser/bin/playwright" install --with-deps chromium > /dev/null

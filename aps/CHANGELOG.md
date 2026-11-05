@@ -13,6 +13,16 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Added
 
+- **«Revisar» and «Instalar»: the suite starts on its APS name with every component on (#286).** «Revisar»
+  summarises the centre, its APS name and timezone, the components and the nightly backup. «Instalar» writes AIO's
+  settings with AIO's own code: Talk, Euro-Office, ClamAV, Imaginary, full-text search and HaRP on, the centre's
+  timezone, and a backup every night at 06:00 UTC to `/var/backups/apsconecta-gestion`; then AIO's own start, with each
+  container's progress as AIO reads it. «Listo» shows the suite's address once every container runs, and AIO's page
+  stays hidden until then. The mastercontainer pulls the suite's images at its start, and the reset frees the APS name
+  before it removes anything, the nightly backup's folder included. Every candidate runs the acceptance harness; a test
+  build (`v0.0.0-ci.N`) claims its name on the name service's CI deployment and gets Let's Encrypt staging
+  certificates, whose roots its suite trusts.
+
 - **The clean-machine acceptance harness (#284).** `.github/workflows/acceptance.yml`, on a maintainer's dispatch for a
   pre-release or through `workflow_call`, runs the candidate's published Bootstrap on a fresh Debian 12 VM with the
   memory and disk floor that Bootstrap declares, plus a fixed CPU count, then each check on its own: the
@@ -133,8 +143,8 @@ image digests live there and are deliberately not copied here — one fact, one 
   open's only first-boot user. `aps-conecta actualizar` moves spreed with the other release
   rows through phase 12 (its old store-walk skip line is deleted). The fork's first
   release is upstream's spreed `v24.0.6` (the newest stable for Nextcloud 34), published;
-  the release's dispatch needs the owner-only `SPREED_REFRESH_TOKEN` secret
-  (aps/RELEASING.md), missing which the spreed job reds naming the setup.
+  the release's dispatch needs the owner-only `SPREED_REFRESH_TOKEN` secret, missing which
+  the spreed job reds naming the setup.
 
 - **`aps-conecta actualizar`, the applications update (#46, ADR-0017).** The one path that
   moves the lock deliberately. It refuses to run unless the suite is up, the lock exists and

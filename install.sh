@@ -8,13 +8,13 @@
 # STABLE-NAME latest URL + TLS, and the tag pin travels INSIDE the bytes — this script embeds
 # BUNDLE_TAG and the package's expected sha256, set by the release job (scripts/package-release.sh)
 # when it cuts the asset (the versioned twin apsconecta-<tag>-install.sh ships beside the alias
-# for tag-pinned installs and audits, aps/RELEASING.md §6). The signature is
+# for tag-pinned installs and audits). The signature is
 # verified NOW when the host already carries `signify` (before anything unpacks — the minted
 # key is the constant below), and later by `aps-conecta preflight` on fresh hosts, once
 # `preparar` installs signify-openbsd (Ubuntu universe / Debian main): a fresh host needs no
 # crypto tool to be safe — it needs the bytes to match the number this tag-anchored script
 # carries. The pubkey is embedded below,
-# committed at installer.pub, and printed by the wizard; aps/RELEASING.md owns the key story.
+# committed at installer.pub, and printed by the wizard.
 #
 # `main(){}` wraps everything (Docker's get.docker.com guard): a truncated download is a syntax
 # error, never a half-executed installer. Code/comments English; the operator's lines es-CL
@@ -35,7 +35,7 @@ BUNDLE_TAG="v0.6.0"             # the release commit sets this beside aps/CHANGE
 TARBALL_SHA256=""               # ← the release job fills this; empty = the committed form, refuse
 # shellcheck disable=SC2034  # a cross-file constant: package-release.sh reads it back when filling
                               # the asset, and preflight/wizard print it — never dereferenced here
-SIGNIFY_PUBKEY="RWTLqv+WUjHCKc4S0crtk33Otcda2exszJdn6BBvGPmZEcTbVRrVn9kK"  # installer.pub's base64 line — both readers flip together (aps/RELEASING.md §1)
+SIGNIFY_PUBKEY="RWTLqv+WUjHCKc4S0crtk33Otcda2exszJdn6BBvGPmZEcTbVRrVn9kK"  # installer.pub's base64 line — both readers flip together
 APS_HOME="${APS_HOME:-/opt/aps-conecta}"
 REPO_URL="${REPO_URL:-https://github.com/APS-Conecta/gestion}"
 DEST="$APS_HOME/instalador"     # the bundle home (an old gestion clone beside it is inert: no path reads it)

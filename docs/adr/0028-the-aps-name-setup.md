@@ -55,8 +55,11 @@ change is followed. It starts with AIO's interface, by one more line in
 outage waits for the next round.
 
 **Blocked private answers are detected from the operator's browser.** Some resolvers drop the answers that point to
-private addresses, as a protection against DNS rebinding. After the claim, the page asks for AIO's interface at the
-name. When the browser's resolver answers the server's address, the request reaches AIO's interface, and its Caddy
+private addresses, as a protection against DNS rebinding. Once every nameserver of the name's zone publishes the
+server's address, the page asks for AIO's interface at the name; until then it says that the address is being
+published. A resolver asked earlier would keep finding nothing for the zone's SOA minimum, 30 minutes, so the suite
+port asks those nameservers directly, with dig, and `POST /api/address` and `GET /api/state` say whether they publish
+it. When the browser's resolver answers the server's address, the request reaches AIO's interface, and its Caddy
 issues a certificate for the name on demand, before the browser refuses it (ADR 0027): the request fails in the
 browser, and the certificate stays in Caddy's storage. The suite port looks for it there, and `GET /api/state` says
 whether a browser opened the interface at the name. When none did, the page shows the router change: a DNS-rebinding
@@ -68,7 +71,8 @@ signaling calls Nextcloud back; Office calls back and push is checked there too 
 On AIO's network, `nextcloud-aio`, the name is a network alias of our Caddy, which `DockerActionManager.php` adds when
 it creates that container. That is the Docker mechanism AIO already uses on that network, which gives its domain check
 Apache's name. Docker's resolver answers an alias before any outside resolver, so these calls never meet the host's
-firewall, a router's hairpin NAT or the clinic's resolver. #286's Seam 1 run proves it.
+firewall, a router's hairpin NAT or the clinic's resolver. The acceptance harness proves it from inside the Talk and
+Euro-Office containers while the host drops everything its containers send it (`aps/acceptance/checks/`).
 
 **CI names.** gestion claims names only on the name service's CI deployment,
 `https://gestion-nombres-ci.apsconecta.workers.dev`, whose names live under `ci.gestion.apsconecta.cl`, with the DEIS
@@ -85,9 +89,18 @@ is freed by APS Conecta with gestion-aio's «APS name release» workflow.
   the Provisionador's name setup or our Caddy image, and on dispatch. On a GitHub runner, which takes no inbound
   connections, our Caddy image built from the tree gets a Let's Encrypt staging certificate for a CI name, with the
   environment `caddy.json` gives it, and the run then frees the name.
-- The Provisionador claims from the name service's production deployment, and Caddy uses Let's Encrypt's production
-  directory unless `ACME_CA` names another. The release gate's test builds (#286, #303) need the CI deployment and the
-  staging directory.
+- The Provisionador claims from the name service its build's `aps/provisionador/services.json` names, the production
+  deployment as committed, and Caddy uses Let's Encrypt's production directory unless `ACME_CA` names another. The
+  candidate pipeline stamps a test build (`v0.0.0-ci.N`) at release time with the CI deployment and the staging
+  directory (`aps/acceptance/test-build.json`), and its Bootstrap gives the suite the staging roots through AIO's
+  `NEXTCLOUD_TRUSTED_CACERTS_DIR`, so Nextcloud and Talk trust them. The pipeline also mounts that folder in a test
+  build's Euro-Office and names its file in `NODE_EXTRA_CA_CERTS`, so the Node of Euro-Office's document server trusts
+  them for its calls to the name; shipped code has no runtime switch.
 - The detection reads where Caddy keeps the interface's certificates, `/mnt/docker-aio-config/caddy-internal/`, as the
   image test reads AIO's authority there.
-- The Bootstrap's reset frees the name with the stored credential (#286).
+- The Bootstrap's reset frees the name with the stored credential before it removes anything, and a reinstall claims
+  the name again. A short-lived container of the mastercontainer's image, or of the release's once the mastercontainer
+  was removed, reads the credential from the mastercontainer's volume mounted read-only, whatever the mastercontainer's
+  state; the credential goes on stdin to `provisionador.py release-name`. Only a confirmed absence, no volume or no
+  credential in it, means no name to free; any other failed read stops the reset with nothing removed. The acceptance
+  harness frees every CI name it claimed the same way at its end.
