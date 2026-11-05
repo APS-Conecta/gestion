@@ -4,11 +4,9 @@
 """The suite's login page answers at its CI APS name with a valid Let's Encrypt staging certificate: our Caddy got it
 through the name service's DNS challenge with no inbound port, as the machine sits behind the runner's NAT. The
 certificate it serves for the name verifies against the staging roots alone; the name's own nameservers publish the
-machine's address for it; and a browser that trusts the staging roots alone opens the login page at the name, at that
-address. The browser takes the published answer, not the runner's resolver's: the Provisionador's page looks the name
-up right after the claim, and a resolver that answered before the record was published keeps that negative answer
-for the zone's SOA minimum, 30 minutes. Any other candidate's names and certificates are production ones, which a run
-never claims: there it says so and passes."""
+machine's address for it; and a browser that trusts the staging roots alone opens the login page at the name the
+runner's resolver answers. Any other candidate's names and certificates are production ones, which a run never claims:
+there it says so and passes."""
 
 import os
 import socket
@@ -67,7 +65,7 @@ while (answer := published()) != [address]:
     time.sleep(10)
 print(f"{name}'s nameservers publish the machine's address, {address}")
 
-with chromium(resolved={name: address}) as browser:
+with chromium() as browser:
     page = browser.new_page(viewport={"width": 1280, "height": 900})
     try:
         response = page.goto(f"https://{name}/login")

@@ -80,9 +80,8 @@ def spki(pem):
 
 
 @contextlib.contextmanager
-def chromium(pinned=(), resolved=None):
-    """A Chromium browser trusting the staging roots (in its own NSS database) and the pinned PEM certificates; it looks
-    up each name `resolved` maps as the address it maps it to."""
+def chromium(pinned=()):
+    """A Chromium browser trusting the staging roots (in its own NSS database) and the pinned PEM certificates."""
     with tempfile.TemporaryDirectory() as home, sync_playwright() as playwright:
         nssdb = Path(home, ".pki", "nssdb")
         nssdb.mkdir(parents=True)
@@ -91,10 +90,8 @@ def chromium(pinned=(), resolved=None):
         for n, root in enumerate(roots):
             subprocess.run(["certutil", "-A", "-d", f"sql:{nssdb}", "-n", f"staging-{n}", "-t", "C,,", "-a"],
                            input=root, text=True, check=True)
-        args = [f"--ignore-certificate-errors-spki-list={','.join(spki(pem) for pem in pinned)}"] if pinned else []
-        if resolved:
-            args.append("--host-resolver-rules=" + ",".join(f"MAP {host} {ip}" for host, ip in resolved.items()))
-        browser = playwright.chromium.launch(env={**os.environ, "HOME": home}, args=args)
+        pins = [f"--ignore-certificate-errors-spki-list={','.join(spki(pem) for pem in pinned)}"] if pinned else []
+        browser = playwright.chromium.launch(env={**os.environ, "HOME": home}, args=pins)
         try:
             yield browser
         finally:
