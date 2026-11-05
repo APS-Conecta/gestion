@@ -7,7 +7,8 @@
 
 El plan [#175](https://github.com/APS-Conecta/gestion/issues/175) conserva las comprobaciones
 funcionales y el registro de uso. El dimensionamiento automático y el ensayo de capacidad
-quedaron retirados el 2026-11-01. La grabación permanece desactivada.
+quedaron retirados el 2026-11-01. La grabación de Talk se activa en un servidor que alcanza el
+umbral de grabación, declarado junto a los mínimos de hardware de `aps/bootstrap/install.sh`.
 
 ## Referencia oficial
 

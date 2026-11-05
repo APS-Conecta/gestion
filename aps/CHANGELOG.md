@@ -20,6 +20,12 @@ image digests live there and are deliberately not copied here — one fact, one 
   needs port 3478 open, TCP and UDP. A switch between the APS name and an own domain leaves nothing of the other, and
   frees an APS name claimed before with its credential (ADR 0028).
 
+- **Talk verified, with recording above the hardware threshold (#290).** Talk's recording server is on for a server
+  with at least the cores and memory the Bootstrap declares beside its hardware floors (provisional until #300
+  measures them), and off on any other. The acceptance harness holds a two-browser Talk call with camera and
+  microphone, in browsers that trust no certificate of the suite's own, and each decodes the other's audio through
+  the suite's TURN server on port 443.
+
 - **The install step runner (#287).** «Instalar» runs its work as install steps, each declaring the steps it needs:
   AIO's settings and start, then the baseline on the running suite. Sessions end after 15 idle minutes with no
   «Recordarme», the audit log records administrative actions, background jobs run from AIO's cron, everyone gets

@@ -343,7 +343,7 @@ class Provisionador:
         """At a start of the Provisionador, until «Listo»: the images of the suite «Instalar» starts, pulled with AIO's
         own code, so that «Instalar» waits less. A pull that fails is logged; «Instalar» pulls them again."""
         try:
-            self.suite.pull(components.SETTINGS)
+            self.suite.pull(components.settings(self.suite.hardware()))
         except Unreachable as outage:
             print(outage, file=sys.stderr, flush=True)
             return
