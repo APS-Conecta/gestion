@@ -77,6 +77,13 @@ with its reason, and «Reintentar» runs only those again.
 The comparison of the running suite with what each install step declared. «Listo» needs every step green and this
 check clean.
 
+**Team** (equipo):
+A sector or a program of the establishment, typed at «Equipos»: it gets a group and a group folder of its own.
+
+**Cargo account** (cuenta de cargo):
+An account for a position every establishment has: the director, the subdirector and the jefaturas, one per sector.
+The install creates each under a username it reserves.
+
 **Brand token file** (ficha de tokens de marca):
 `themes/apsconecta/core/css/tokens.css` — the ONE committed source of the palette and the font
 pairing. The server theme, the branding phase, the Provisionador's UI and AIO's page read it; no

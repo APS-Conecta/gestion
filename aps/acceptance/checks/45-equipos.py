@@ -139,11 +139,12 @@ with chromium() as browser:
     page.fill("#password", password)
     page.click("[data-login-form-submit]")
     page.wait_for_url(lambda url: "/login" not in url)
+    print(f"{STAFF}'s login lands on {page.url}")
+    if "/apps/intravox" not in page.url:
+        page.screenshot(path=evidence / "bienvenida.png")
+        sys.exit("\n".join([*wrong, f"{STAFF}'s login lands on {page.url}, not on the welcome page"]))
     expect(page.get_by_text(centre["name"], exact=True).first).to_be_visible(timeout=120_000)
     page.screenshot(path=evidence / "bienvenida.png")
-    print(f"{STAFF}'s login lands on {page.url}, which names {centre['name']}")
-    if "/apps/intravox" not in page.url:
-        wrong.append(f"{STAFF}'s login lands on {page.url}, not on the welcome page")
 
 jefe = next(account["user"] for account in accounts if sector["id"] in account["groups"])
 first = json.loads(mastercontainer_file(PASSWORDS)).get(jefe)  # never printed

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 APS Conecta
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // The Provisionador's page: it exchanges the link's secret (the URL fragment, never sent in a request line) for a
-// session, then drives «Centro», «Dirección», «Revisar» and «Instalar» through the HTTP API, until «Listo».
+// session, then drives «Centro», «Dirección», «Equipos», «Revisar» and «Instalar» through the HTTP API, until «Listo».
 "use strict";
 
 // AIO's interface enforces Trusted Types; on the Provisionador's routes it also allows a default policy
@@ -19,6 +19,7 @@ const CHILE = [-35.7, -71.5];
 const PUBLISHING = 5000; // between two readings of whether the name's nameservers publish the server's address
 const NEXT_LOOK = 15000;
 const PROGRESS = 3000; // between two readings of the install's progress
+const TYPING = 400; // after the last key, what «Equipos» holds is kept
 const STATES = {stopped: "Detenido", starting: "Iniciando", running: "En ejecución"}; // as AIO's page names them
 const STEP_STATES = {pending: "Pendiente", running: "En curso", green: "Completado", failed: "No se completó",
   waiting: "En espera"};
@@ -29,6 +30,7 @@ let marker = null;
 let searching = null;
 let looking = null;
 let polling = null;
+let typing = null;
 let attempt = "name"; // what «Dirección» tried last, the APS name or an "own" domain, which «Reintentar» tries again
 
 async function api(method, path, body) {
@@ -67,7 +69,7 @@ function locked(message) {
 }
 
 function show(screen) {
-  for (const id of ["centro", "direccion", "revisar", "listo"]) $(id).hidden = id !== screen;
+  for (const id of ["centro", "direccion", "equipos", "revisar", "listo"]) $(id).hidden = id !== screen;
 }
 
 function fillFilters() {
@@ -268,13 +270,49 @@ async function look(name) {
   looking = setTimeout(() => look(name), NEXT_LOOK);
 }
 
-// «Revisar»: the centre, its name and timezone, what «Instalar» sets up beside them, and the optional apps, off by
-// default.
+// «Equipos»: the sectors and programs, one per line, and the team each becomes, as the Provisionador names it, with the
+// cargo accounts they bring. What is typed is kept as it changes, so that «Revisar» and «Instalar» follow it.
+async function equipos() {
+  clearTimeout(looking);
+  try {
+    const state = await api("GET", "/api/state");
+    for (const kind of ["sector", "program"]) {
+      $(`${kind}s`).value = state.teams.filter((team) => team.kind === kind).map((team) => team.name).join("\n");
+    }
+    showTeams(state);
+  } catch (e) {
+    say(e.message, true, "teams-status");
+  }
+  show("equipos"); // once its fields hold what was kept, so that nothing typed is replaced
+}
+
+function showTeams({teams, cargo_accounts: accounts}) {
+  $("teams").replaceChildren(...teams.map((team) => item(team.name, "", `Grupo ${team.id} · carpeta ${team.folder}`)));
+  const users = new Intl.ListFormat("es", {type: "conjunction"}).format(accounts.map((account) => account.user));
+  $("cargo-accounts").textContent = `La instalación creará además estas cuentas de cargo: ${users}.`;
+}
+
+async function keepTeams() {
+  clearTimeout(typing);
+  try {
+    showTeams(await api("POST", "/api/teams", {sectors: $("sectors").value.split("\n"),
+      programs: $("programs").value.split("\n")}));
+  } catch (e) {
+    say(e.message, true, "teams-status");
+    return false;
+  }
+  say("", false, "teams-status");
+  return true;
+}
+
+// «Revisar»: the centre, its name and timezone, the teams, what «Instalar» sets up beside them, and the optional apps,
+// off by default.
 async function revisar() {
+  if (!(await keepTeams())) return;
   try {
     review(await api("GET", "/api/state"));
   } catch (e) {
-    say(e.message, true, "reach");
+    say(e.message, true, "teams-status");
   }
 }
 
@@ -287,6 +325,8 @@ function review(state) {
   $("summary-address").textContent = suite;
   $("review-ports").textContent = address.notice || "";
   $("summary-timezone").textContent = centre.timezone;
+  $("summary-teams").replaceChildren(...(state.teams.length ? state.teams.map((team) => element("li", team.name))
+    : [element("li", "Ninguno")]));
   $("summary-components").replaceChildren(...chosen.components.map((name) => element("li", name)));
   $("summary-backup").textContent = `Cada noche, a las ${chosen.backup.time} UTC, en la carpeta `
     + `${chosen.backup.folder} del servidor.`;
@@ -405,6 +445,13 @@ async function start() {
     e.preventDefault();
     ownDomain();
   });
+  $("to-equipos").addEventListener("click", equipos);
+  for (const list of ["sectors", "programs"]) {
+    $(list).addEventListener("input", () => {
+      clearTimeout(typing);
+      typing = setTimeout(keepTeams, TYPING);
+    });
+  }
   $("to-revisar").addEventListener("click", revisar);
   $("install").addEventListener("click", install);
   let state;

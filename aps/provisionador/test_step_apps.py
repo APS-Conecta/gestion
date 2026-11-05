@@ -47,6 +47,8 @@ class Apps(Installing):
         self.assertEqual(progress.pop(APPS), (
             "failed", "«Inicio»: No se pudo descargar su publicación desde GitHub. Revise la conexión a internet del "
                       "servidor y presione «Reintentar»."))
+        self.assertEqual(progress.pop("Página de bienvenida"), ("waiting", "Espera a que se complete «Aplicaciones»."),
+                         "the welcome page needs IntraVox")
         self.assertEqual(set(progress.values()), {("green", None)}, "no other step needs the apps")
         self.assertEqual({app for app in PINNED if app in self.suite.nextcloud.apps}, set(PINNED) - {"intravox"})
         self.suite.releases[intravox["repo"], intravox["pin"], "intravox.tar.gz"] = release

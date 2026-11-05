@@ -28,6 +28,9 @@ the server's address. Run as `provisionador.py release-name`, it frees the name 
 never on a command line: the Bootstrap's reset runs it before it removes anything, and the acceptance harness for each
 CI name it claimed.
 
+At «Equipos» the operator types the establishment's sectors and programs, and sees the team each becomes and the
+cargo accounts they bring (teams.py).
+
 «Instalar» runs the install's steps (steps/) through the step runner (runner.py): AIO's settings and AIO's own start,
 then our layer on the running suite. AIO's page stays hidden until «Listo», which comes once every step is green and
 the end-of-install check is clean. At every start until «Listo», the Provisionador pulls the suite's images with AIO's
@@ -55,6 +58,7 @@ from urllib.parse import parse_qs, urlsplit
 import deis
 import runner
 import steps
+import teams
 from steps import apps, backups, components
 from suite import Held, Refused, Suite, SuitePort, Unreachable
 
@@ -66,6 +70,7 @@ ADDRESS = "APS_INTERFACE_ADDRESS"
 DEFAULT_PORT = 8080  # the interface port of vanilla's start command
 LISTO = "listo"  # beside the state; provisionador.Caddyfile reads it too
 NAME_CREDENTIAL = "aps-name.json"  # beside the state: the APS name's credential
+FIRST_PASSWORDS = "first-passwords.json"  # beside the state: the first password of each account the install creates
 COOKIE = "__Host-session"
 MAX_BODY = 64 * 1024
 CERTIFICATE_CHECK = 5 * 60  # seconds; Caddy's internal issuer renews its 12 h certificates after about 8 h
@@ -118,6 +123,7 @@ HELD = ("Otra instalación ya tiene el nombre APS de este establecimiento. Si es
         "establecimiento, APS Conecta puede liberarlo; después presione «Reintentar».")
 NO_ADDRESS_YET = "Obtenga primero la dirección del establecimiento en «Dirección»."
 NOT_OFFERED = "Elija las aplicaciones opcionales entre las que ofrece «Revisar»."
+TEAMS_KEPT = "Los equipos ya no pueden cambiarse: se presionó «Instalar»."
 NOT_A_DOMAIN = "Escriba el dominio propio del establecimiento."
 DOMAIN_REFUSED = "La comprobación del dominio {domain} falló: {reason} Corrija lo indicado y presione «Reintentar»."
 TALK_PORTS = ("Para que las llamadas conecten, Talk necesita además el puerto 3478 abierto hacia este servidor, en TCP "
@@ -199,6 +205,14 @@ def qr(url):
                           check=True).stdout.decode()
 
 
+def equipos(state):
+    """What «Equipos» shows: the teams declared and, once «Centro» confirmed the centre, the cargo accounts they bring,
+    each with its username and name."""
+    declared, centre = state.get("teams", []), state.get("centre")
+    accounts = teams.cargo_accounts(declared, centre["type"]) if centre else []
+    return {"teams": declared, "cargo_accounts": [{"user": a["user"], "name": a["name"]} for a in accounts]}
+
+
 def json_object(data):
     """`data` as a JSON object, or None when it is not one."""
     try:
@@ -238,12 +252,12 @@ class State:
 
 
 class Credential:
-    """The APS name's credential, as the name service answered the claim: one file beside the state that only the
-    Provisionador's account reads. The mastercontainer's start opens its whole volume to the group (upstream's
-    start.sh), so each process that keeps the file closes it again."""
+    """A secret the Provisionador keeps, by default the APS name's credential as the name service answered the claim:
+    one file beside the state that only the Provisionador's account reads. The mastercontainer's start opens its whole
+    volume to the group (upstream's start.sh), so each process that keeps the file closes it again."""
 
-    def __init__(self, directory):
-        self.path = Path(directory) / NAME_CREDENTIAL
+    def __init__(self, directory, name=NAME_CREDENTIAL):
+        self.path = Path(directory) / name
         try:
             os.chmod(self.path, 0o600)
         except FileNotFoundError:
@@ -357,7 +371,7 @@ class Provisionador:
                                            "backup": {"folder": backups.FOLDER, "time": backups.TIME},
                                            "optional_apps": [{key: app[key] for key in ("id", "name", "summary")}
                                                              for app in apps.optional()]}
-        return 200, {"centre": state.get("centre"), "address": self.address(state), "review": review,
+        return 200, {"centre": state.get("centre"), "address": self.address(state), **equipos(state), "review": review,
                      "install": self.progress(state)}
 
     def progress(self, state):
@@ -389,6 +403,21 @@ class Provisionador:
         self.state.change(lambda s: s.setdefault("optional", [app for app in offered if app in ticked]))
         self.install(again=True)
         return 202, {"install": self.progress(self.state.read())}
+
+    def post_teams(self, query, body):
+        """POST /api/teams {"sectors": [<name>…], "programs": [<name>…]}, «Equipos»: the team each name becomes and the
+        cargo accounts they bring. «Instalar» builds the last ones posted, which stay from then on."""
+        try:
+            declared = teams.declare(body.get("sectors", []), body.get("programs", []))
+        except ValueError as refusal:
+            return 400, {"error": str(refusal)}
+
+        def keep(s):
+            if "install" in s:
+                return 409, {"error": TEAMS_KEPT}
+            s["teams"] = declared
+            return 200, equipos(s)
+        return self.state.change(keep)
 
     def pull_images(self):
         """At a start of the Provisionador, until «Listo»: the images of the suite «Instalar» starts, pulled with AIO's
@@ -423,7 +452,8 @@ class Provisionador:
         clean."""
         state = self.state.read()
         context = SimpleNamespace(suite=self.suite, centre=state["centre"], interface=self.interface,
-                                  optional=state["optional"])
+                                  optional=state["optional"], teams=state.get("teams", []),
+                                  passwords=Credential(self.state.dir, FIRST_PASSWORDS))
         if not runner.run(self.state, context):
             return
         (self.state.dir / LISTO).touch()
@@ -536,6 +566,7 @@ class Provisionador:
         ("POST", "/api/centre"): post_centre,
         ("POST", "/api/address"): post_address,
         ("POST", "/api/install"): post_install,
+        ("POST", "/api/teams"): post_teams,
     }
 
     def call(self, method, path, query, body):

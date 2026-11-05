@@ -13,6 +13,16 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Added
 
+- **«Equipos»: teams, team folders, the app policy, the welcome page and the cargo accounts (#296).** At «Equipos» the
+  operator types the establishment's sectors and programs and sees the team each becomes, with its group and its
+  folder, and the cargo accounts they bring; «Revisar» lists the teams. «Instalar» then builds old gestion's access
+  model as install steps: the staff-wide group, the four categories, the 23 shared roles and a group per team;
+  Transversal with its subfolders and a group folder per unit and per team, each with the declared groups' permissions
+  and no other's; the app policy, with Nextcloud's admin tooling for the administrator alone and no first-run tour,
+  usage survey, announcements or breached-password lookup; IntraVox's welcome page, where every login lands; and the
+  cargo accounts (director, subdirector, jefaturas) by their reserved usernames, whose first passwords stay beside the
+  Provisionador's state. Running the steps again changes nothing, and a staff member's first upload into a nested team
+  folder succeeds.
 - **The Coolify install (#293).** A Coolify 4 admin adds the suite as a Git-based Docker Compose resource of this
   repository, in Raw mode, with `aps/coolify.yaml`: our mastercontainer on the channel tag, AIO behind Coolify's proxy
   and its interface on port 8443, its link in the resource's logs. «Dirección» shows AIO's Traefik settings to paste

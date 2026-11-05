@@ -645,9 +645,12 @@ class Installing(ProvisionadorTest):
     def install(self):
         return self.browser.request("POST", "/api/install", {})
 
-    def install_the_suite(self):
-        """«Centro» and «Dirección», then «Instalar»; the suite's containers come up once AIO starts them."""
+    def install_the_suite(self, **teams):
+        """«Centro», «Dirección» and, with `teams`, «Equipos», then «Instalar»; the suite's containers come up once AIO
+        starts them."""
         claimed(self.browser)
+        if teams:
+            self.assertEqual(self.browser.request("POST", "/api/teams", teams)[0], 200)
         self.install()
         self.eventually(lambda: self.suite.starts, "AIO's start")
         self.suite.up()
