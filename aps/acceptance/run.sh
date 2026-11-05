@@ -11,7 +11,7 @@
 #
 # A check is an executable file aps/acceptance/checks/<NN>-<name>.<sh|py>; NN orders it. It runs on the runner, from
 # the repo root, with:
-#   TAG       the candidate: the release whose Bootstrap the machine ran; gh reads the release with the job's token
+#   TAG       the candidate: the release the machine installs; gh reads the release with the job's token
 #   WAY       the way in: bootstrap or coolify
 #   COMMAND   the way in, run on the machine: the Bootstrap, as the manual prints it for that release; or the resource's
 #             deploy through Coolify's API, which prints the resource's logs
