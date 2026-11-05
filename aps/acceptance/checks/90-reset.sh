@@ -79,8 +79,9 @@ fi
 echo "the reset left nothing of the install, and the planted container, volume and file are there"
 [ "$TEST_BUILD" = true ] || exit 0
 
-# The reinstall: the Bootstrap again, as the manual prints it, and «Dirección» with its fresh link claims the name of the
-# same DEIS code, which the reset freed.
+# The reinstall: the way in again (one-command.sh runs $COMMAND: the Bootstrap, as the manual prints it, or on the
+# Coolify way in the resource added again and deployed), and «Dirección» with its fresh link claims the name of the same
+# DEIS code, which the reset freed.
 console="$(mktemp)" # the fresh link stays out of the log and the evidence
 aps/acceptance/one-command.sh "$console"
 python3 aps/acceptance/claim.py "$console" "$code"

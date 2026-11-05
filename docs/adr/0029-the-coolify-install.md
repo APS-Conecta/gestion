@@ -44,10 +44,13 @@ logs» is «Hide locked values only». The resource holds no secret, so the Cool
 **«Dirección» goes on once Coolify's proxy runs with AIO's Traefik settings.** The Provisionador reads the arguments
 `coolify-proxy` runs with and answers 409 with those of AIO's Traefik settings (upstream's `reverse-proxy.md`,
 «Traefik 3») it lacks: the https entry point's read timeout, 3610 s, ten seconds above Nextcloud's own, and its
-allowances for encoded slashes, question marks and percent signs, which Traefik refuses by default. The page shows
-them as lines for the `command` list of Coolify's proxy configuration. They hold for the whole proxy, so the admin
-pastes them once, saves, restarts the proxy and presses «Reintentar»; Traefik reads its flags whatever their case, and
-so does the check. A proxy that cannot be read, stopped or not Traefik, answers 503 with «Reintentar». Then:
+allowances for encoded slashes, question marks and percent signs, which Traefik refuses by default. The page shows them
+as lines for the `command` list of Coolify's proxy configuration. Traefik has the encoded-character options from v3.6.3
+on. An older Traefik refuses a flag it does not know and does not start, which takes down every route of the proxy. So
+the page and the manual name that minimum and tell the admin to change an older `image` line to `traefik:v3.7`, Coolify
+4.6.0's own, in the same edit. The settings hold for the whole proxy, so the admin pastes them once, saves, restarts the
+proxy and presses «Reintentar»; Traefik reads its flags whatever their case, and so does the check. A proxy that cannot
+be read, stopped or not Traefik, answers 503 with «Reintentar». Then:
 
 - the APS name is claimed as elsewhere (ADR 0028) and points at the server's public address, the host of
   `APS_INTERFACE_ADDRESS`, which the address updater keeps publishing;

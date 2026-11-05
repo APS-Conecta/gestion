@@ -180,8 +180,10 @@ echo "$COMMAND"
 aps/acceptance/one-command.sh "$CONSOLE"
 
 stage="read whether the candidate is a test build"
-# The one place a run tells a test build from any other candidate: the name service its build's own services.json
-# names, which release.yml stamps from aps/acceptance/test-build.json into a test build's mastercontainer.
+# How a run tells a test build from any other candidate: the name service its build's own services.json names, which
+# release.yml stamps from aps/acceptance/test-build.json into a test build's mastercontainer. On the Coolify way in,
+# coolify.sh's setup applies the same rule to the candidate's image first, since its proxy configuration needs it before
+# the deploy.
 services=/var/www/docker-aio/aps/provisionador/services.json
 claims="$("$MACHINE" "sudo docker exec nextcloud-aio-mastercontainer cat $services" | jq -r .name_service)"
 TEST_BUILD=false

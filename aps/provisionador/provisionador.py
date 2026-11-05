@@ -137,9 +137,11 @@ NOT_PUBLISHED = ("Los servidores de nombres de internet aún no publican la dire
 NO_PUBLIC_ADDRESS = ("No se pudo leer la dirección pública del servidor: la variable APS_PUBLIC_ADDRESS del recurso en "
                      "Coolify debe ser su dirección IPv4. Corríjala y vuelva a desplegar el recurso.")
 PROXY_MISSING = ("El proxy de Coolify aún no tiene los ajustes de AIO para Nextcloud. En Coolify, abra el servidor, su "
-                 "pestaña «Proxy» y la configuración del proxy; agregue estas líneas a la lista «command» del servicio "
-                 "traefik, presione «Save» y reinicie el proxy con «Restart Proxy». Los ajustes valen para todo el "
-                 "proxy. Luego presione «Reintentar».")
+                 "pestaña «Proxy» y la configuración del proxy. Estos ajustes requieren Traefik 3.6.3 o posterior: si "
+                 "la línea «image» del servicio traefik indica una versión anterior, cámbiela por traefik:v3.7, pues "
+                 "una versión anterior no reconoce estas líneas y el proxy no inicia. Agregue estas líneas a la lista "
+                 "«command» del servicio traefik, presione «Save» y reinicie el proxy con «Restart Proxy». Los ajustes "
+                 "valen para todo el proxy. Luego presione «Reintentar».")
 
 
 def digest(value):
