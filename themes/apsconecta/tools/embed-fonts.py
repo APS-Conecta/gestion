@@ -79,7 +79,7 @@ if __name__ == "__main__":
     #
     #   python3 themes/apsconecta/tools/embed-fonts.py
     #
-    # Source of the header lockup is the brand kit, per AGENTS.md: art is designed there, and only
+    # Source of the header lockup is the brand kit: art is designed there, and only
     # the server-ready result lives here.
     KIT = REPO.parent / "APS Conecta Nextcloud"
     LOGO = REPO / "themes/apsconecta/core/img/logo"

@@ -143,8 +143,8 @@ image digests live there and are deliberately not copied here — one fact, one 
   open's only first-boot user. `aps-conecta actualizar` moves spreed with the other release
   rows through phase 12 (its old store-walk skip line is deleted). The fork's first
   release is upstream's spreed `v24.0.6` (the newest stable for Nextcloud 34), published;
-  the release's dispatch needs the owner-only `SPREED_REFRESH_TOKEN` secret
-  (aps/RELEASING.md), missing which the spreed job reds naming the setup.
+  the release's dispatch needs the owner-only `SPREED_REFRESH_TOKEN` secret, missing which
+  the spreed job reds naming the setup.
 
 - **`aps-conecta actualizar`, the applications update (#46, ADR-0017).** The one path that
   moves the lock deliberately. It refuses to run unless the suite is up, the lock exists and
