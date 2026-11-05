@@ -18,6 +18,7 @@ readme.md our fork declaration replaces upstream's readme
 .github/workflows/release.yml our candidate pipeline: our three images under the candidate tag, and the pre-release
 .github/workflows/issue-linker.yml our issue linker
 .github/workflows/mastercontainer-image.yml our image test: the mastercontainer built from a pull request's tree, run as vanilla's command runs it and checked from outside
+.github/workflows/aps-name.yml our CI proof of the APS name: our Caddy image gets a staging certificate for a CI name with no inbound port, and the run frees the name
 .github/workflows/acceptance.yml our acceptance harness: a published candidate's Bootstrap on a fresh VM, then the release gate's check modules
 scripts/.gitignore our scripts' bytecode stays untracked
 scripts/ci-tool.sh our CI tool pins
@@ -52,11 +53,11 @@ scripts/smoke.sh old host layer: the core smoke check
 scripts/talk-smoke.sh old host layer: the Talk smoke check
 php/containers.json official images pinned by digest to upstream v14.4.3's set; Spanish display names
 php/containers-schema.json an image_tag may be a sha256 digest pin
-php/src/Docker/DockerActionManager.php an image_tag that is a sha256 digest is requested as image@digest; Spanish «APS Conecta Gestión» text on AIO's page
-community-containers/caddy/caddy.json the reverse proxy is our thin Caddy image, pinned per release; Spanish display name
+php/src/Docker/DockerActionManager.php an image_tag that is a sha256 digest is requested as image@digest; Spanish «APS Conecta Gestión» text on AIO's page; on the suite's network the domain resolves to our Caddy
+community-containers/caddy/caddy.json the reverse proxy is our thin Caddy image, pinned per release, with the APS name's acme-dns credential from AIO's secrets; Spanish display name
 Containers/mastercontainer/Dockerfile AIO's page takes the brand token file, the favicon and the fonts from the theme; the image carries our Provisionador with Python, qrencode, the DEIS register and the theme's Leaflet
 Containers/mastercontainer/internal.Caddyfile until «Listo», AIO's interface shows our Provisionador: it imports aps/provisionador/provisionador.Caddyfile
-Containers/mastercontainer/dinit.d/caddy-internal our Provisionador starts with AIO's interface
+Containers/mastercontainer/dinit.d/caddy-internal our Provisionador and the APS name's address updater start with AIO's interface
 Containers/mastercontainer/headers.Caddyfile AIO's page serves its own fonts: its CSP allows fonts from itself
 php/public/click-handlers.js Spanish «APS Conecta Gestión» text on AIO's page
 php/public/containers-form-submit.js Spanish «APS Conecta Gestión» text on AIO's page

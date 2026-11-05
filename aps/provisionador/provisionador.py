@@ -15,6 +15,10 @@ and the sessions are stored only as SHA-256 hashes. Any browser that opens a lin
 of its own; each start mints a fresh link, and every link printed stays valid until «Listo». «Listo» is the file
 `listo` beside the state: it ends every link and every session, and from then on Caddy serves AIO's page at the same
 address.
+
+At «Dirección» it claims the establishment's APS name and keeps the name's credential beside the state, readable
+only by its own account. Run as `provisionador.py update-address`, it is the address updater that keeps running after
+«Listo» (dinit.d/aps-address-updater): every 10 minutes it points the name at the server's address.
 """
 
 import base64
@@ -34,7 +38,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import deis
-from suite import Suite, SuitePort, Unreachable
+from suite import Held, Suite, SuitePort, Unreachable
 
 HERE = Path(__file__).resolve().parent
 REGISTER = HERE.parent / "deis"
@@ -43,9 +47,11 @@ PORT = 8081  # on loopback: provisionador.Caddyfile hands AIO's interface to it
 ADDRESS = "APS_INTERFACE_ADDRESS"
 DEFAULT_PORT = 8080  # the interface port of vanilla's start command
 LISTO = "listo"  # beside the state; provisionador.Caddyfile reads it too
+NAME_CREDENTIAL = "aps-name.json"  # beside the state: the APS name's credential
 COOKIE = "__Host-session"
 MAX_BODY = 64 * 1024
 CERTIFICATE_CHECK = 5 * 60  # seconds; Caddy's internal issuer renews its 12 h certificates after about 8 h
+ADDRESS_UPDATE = 10 * 60  # seconds, as upstream's desec-ip-updater updates a deSEC domain's address
 # The page and its own files, by request path: no request path is ever joined to a directory.
 STATIC = {"/": HERE / "www" / "index.html", "/app.js": HERE / "www" / "app.js", "/app.css": HERE / "www" / "app.css"}
 CONTENT_TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
@@ -83,6 +89,10 @@ NOT_IN_REGISTER = "Ese establecimiento no está en el registro DEIS."
 OFF_THE_MAP = "El punto del mapa debe tener una latitud entre -90 y 90 y una longitud entre -180 y 180."
 CLOSED = ("La instalación terminó en «Listo»: esta dirección muestra ahora la administración de APS Conecta Gestión, "
           "y el enlace de instalación ya no sirve.")
+NO_CENTRE = "Confirme primero el centro en «Centro»: la dirección es el nombre APS del establecimiento."
+CENTRE_KEPT = "El centro ya no puede cambiarse: su dirección, {}, ya se obtuvo."
+HELD = ("Otra instalación ya tiene el nombre APS de este establecimiento. Si es una instalación anterior del mismo "
+        "establecimiento, APS Conecta puede liberarlo; después presione «Reintentar».")
 
 
 def digest(value):
@@ -166,9 +176,37 @@ class State:
             return answer
 
 
+class Credential:
+    """The APS name's credential, as the name service answered the claim: one file beside the state that only the
+    Provisionador's account reads. The mastercontainer's start opens its whole volume to the group (upstream's
+    start.sh), so each process that keeps the file closes it again."""
+
+    def __init__(self, directory):
+        self.path = Path(directory) / NAME_CREDENTIAL
+        try:
+            os.chmod(self.path, 0o600)
+        except FileNotFoundError:
+            pass
+
+    def read(self):
+        try:
+            return json.loads(self.path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return None
+
+    def write(self, credential):
+        tmp = self.path.with_suffix(".tmp")
+        tmp.unlink(missing_ok=True)
+        with os.fdopen(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w", encoding="utf-8") as file:
+            json.dump(credential, file)
+        os.replace(tmp, self.path)
+
+
 class Provisionador:
     def __init__(self, state_dir, register, suite: SuitePort, address):
         self.state = State(state_dir)
+        self.credential = Credential(state_dir)
+        self.claiming = threading.Lock()  # one claim at a time, so a name is claimed once
         self.register = deis.Register(register)
         self.suite = suite
         self.interface = interface(address)
@@ -221,8 +259,15 @@ class Provisionador:
     def has_session(self, session):
         return known(session, self.state.read().get("sessions", []))
 
+    def address(self, state):
+        """The APS name «Dirección» set up, and whether a browser opened AIO's interface at it: the page asks for it
+        there, and a resolver that drops answers pointing to private addresses keeps that request from the server."""
+        name = state.get("address", {}).get("name")
+        return name and {"name": name, "opened": self.suite.opened(name)}
+
     def get_state(self, query, body):
-        return 200, {"centre": self.state.read().get("centre")}
+        state = self.state.read()
+        return 200, {"centre": state.get("centre"), "address": self.address(state)}
 
     def get_register(self, query, body):
         return 200, self.register.facets()
@@ -243,15 +288,41 @@ class Provisionador:
         point = None if moved is None else deis.point(moved)
         if moved is not None and point is None:
             return 400, {"error": OFF_THE_MAP}
+        claimed = self.credential.read()
+        if claimed and claimed["username"] != code:
+            return 409, {"error": CENTRE_KEPT.format(claimed["name"])}
         centre = deis.centre(row, point)
         self.state.change(lambda s: s.update(centre=centre))
         return 200, {"centre": centre}
+
+    def post_address(self, query, body):
+        """POST /api/address: the centre's APS name. The first call claims it from the name service by the centre's
+        DEIS code and keeps its credential, so the name is claimed once; every call sets AIO up to serve the name and
+        points the name at the server's address."""
+        centre = self.state.read().get("centre")
+        if centre is None:
+            return 409, {"error": NO_CENTRE}
+        with self.claiming:
+            credential = self.credential.read()
+            try:
+                if credential is None:
+                    credential = self.suite.claim(centre["code"])
+                    self.credential.write(credential)
+                self.suite.use_name(credential)
+                self.suite.publish(credential, self.suite.server_address())
+            except Held:
+                return 409, {"error": HELD}
+            except Unreachable as outage:
+                return 503, {"error": str(outage)}
+        self.state.change(lambda s: s.update(address={"name": credential["name"]}))
+        return 200, {"address": self.address(self.state.read())}
 
     ROUTES = {
         ("GET", "/api/state"): get_state,
         ("GET", "/api/register"): get_register,
         ("GET", "/api/establishments"): get_establishments,
         ("POST", "/api/centre"): post_centre,
+        ("POST", "/api/address"): post_address,
     }
 
     def call(self, method, path, query, body):
@@ -349,13 +420,29 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def every(seconds, task):
-    """Call `task` every `seconds` seconds, for as long as the Provisionador runs."""
+    """Call `task` every `seconds` seconds, for as long as the process runs."""
     while True:
         time.sleep(seconds)
         task()
 
 
-def main():
+def update_address(state_dir, suite: SuitePort):
+    """Point the APS name at the server's address, once «Dirección» claimed it, so that the name follows a DHCP
+    change. An unchanged address changes nothing at the name service; an outage waits for the next update."""
+    credential = Credential(state_dir).read()
+    if credential is None:
+        return
+    try:
+        suite.publish(credential, suite.server_address())
+    except Unreachable as outage:
+        print(outage, file=sys.stderr, flush=True)
+
+
+def main(argv):
+    if argv == ["update-address"]:  # the address updater, aps/provisionador/dinit.d/aps-address-updater
+        suite = Suite()
+        update_address(STATE_DIR, suite)
+        every(ADDRESS_UPDATE, lambda: update_address(STATE_DIR, suite))
     app = Provisionador(STATE_DIR, deis.newest(REGISTER), Suite(), os.environ.get(ADDRESS, ""))
     if app.state.listo():
         print(CLOSED, flush=True)
@@ -372,4 +459,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: 2026 APS Conecta
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The DEIS codes gestion's CI claims APS names with, on the name service's CI deployment, whose names live under
+# ci.gestion.apsconecta.cl (ADR 0028). gestion-aio's CI may claim any code, so a run that finds one held takes the
+# next. One code per line; a # starts a comment.
+101406  # Posta de Salud Rural Codpa, Camarones
+102413  # Posta de Salud Rural San Marcos, Iquique
+103413  # Posta de Salud Rural Paposo, Taltal
+104411  # Posta de Salud Rural Incahuasi, Vallenar
+105479  # Posta de Salud Rural Guangualí, Los Vilos
+106414  # Posta de Salud Rural San Enrique, Santo Domingo
+124536  # Posta de Salud Rural El Malito, Palena
+125425  # Posta de Salud Rural Villa O'Higgins, O'Higgins
