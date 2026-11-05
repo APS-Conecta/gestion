@@ -49,10 +49,15 @@ select:focus, input:focus, button:focus-visible, a:focus-visible { outline: 2px 
 .message { margin: .75rem 0 0; max-width: 60rem; }
 .message.error { color: var(--aps-error-text); }
 
-/* «Dirección» and «Listo»: the APS name. */
+/* «Dirección» and «Listo»: the address, the APS name or an own domain, which «Dirección» offers below it and whose
+   port notice is in gold here and at «Revisar». */
 .address { font: 600 1.25rem/1.3 var(--aps-font-display); margin: 0; overflow-wrap: anywhere; }
 .address:empty { display: none; }
 .address a { color: var(--aps-violet-dark); }
+.message.notice { color: var(--aps-gold-dark); }
+.message.notice:empty { display: none; }
+.own-domain { max-width: 40rem; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+.own-domain p { margin: 0 0 .75rem; }
 
 /* «Revisar»: the summary, then each step's progress, a failed or waiting one in red with its reason and a notice in
    gold, then each container's. */

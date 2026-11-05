@@ -13,6 +13,13 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Added
 
+- **«Dirección» takes the establishment's own domain (#292).** Instead of the APS name, the operator may type a domain
+  the establishment holds. The Provisionador runs vanilla's domain check, whose every refusal shows its Spanish reason
+  with «Reintentar», and sets AIO up the vanilla way through its settings file, with no mastercontainer recreate:
+  Nextcloud on 443 with its own certificate, Talk on 3478, no Caddy. Before «Instalar», the page says that Talk also
+  needs port 3478 open, TCP and UDP. A switch between the APS name and an own domain leaves nothing of the other, and
+  frees an APS name claimed before with its credential (ADR 0028).
+
 - **The install step runner (#287).** «Instalar» runs its work as install steps, each declaring the steps it needs:
   AIO's settings and start, then the baseline on the running suite. Sessions end after 15 idle minutes with no
   «Recordarme», the audit log records administrative actions, background jobs run from AIO's cron, everyone gets
