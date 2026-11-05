@@ -18,10 +18,12 @@ address may be none of its interfaces' own. GitHub's runners take no inbound con
 
 ## Decision
 
-**The resource is a Git-based Docker Compose resource of this repository, in Raw mode, with `aps/coolify.yaml` as its
-compose file.** Raw mode deploys the file as written, with only Coolify's labels added, so the container stays
-`nextcloud-aio-mastercontainer` and its volume `nextcloud_aio_mastercontainer`. The file has AIO's own shape
-(`compose.yaml`), plus:
+**The resource is a Git-based Docker Compose resource of this repository at the latest final release's tag, `vX.Y.Z`
+in Coolify's branch field, in Raw mode, with `aps/coolify.yaml` as its compose file.** Coolify clones the branch field
+with `git clone -b`, which checks a tag out too, and looks for the branch's newest commit under `refs/heads/` only,
+where it finds none for a tag, so the deploy stays on the tag. Raw mode deploys the file as written, with only
+Coolify's labels added, so the container stays `nextcloud-aio-mastercontainer` and its volume
+`nextcloud_aio_mastercontainer`. The file has AIO's own shape (`compose.yaml`), plus:
 
 - our mastercontainer on the channel tag, `ghcr.io/aps-conecta/all-in-one:latest`;
 - reverse-proxy mode: Apache on 11000 (`APACHE_PORT`), bound to the host's loopback (`APACHE_IP_BINDING=127.0.0.1`)
@@ -71,11 +73,13 @@ it.
 **The suite's calls to its own address go to the server's public address**, through Coolify's proxy, as vanilla's do
 behind a reverse proxy: the server is internet-reachable, so they need no alias on AIO's network.
 
-**AIO owns the version.** The compose file names no version, only the channel tag, which only a release moves, and
-forward (`aps/RELEASING.md`). Coolify pulls every image-only service at each deploy, so a redeploy runs the channel's
-newest final release, the one AIO's own update follows; and it recreates the mastercontainer alone, so the suite's
-containers keep the images AIO started them on until AIO's update moves them. A redeploy never runs a candidate or an
-older version, and never pins one.
+**AIO owns the version.** The resource follows a release's tag, which only a release creates, and not `main`: main's
+`aps/coolify.yaml`, image line included, would otherwise reach every server at its next redeploy, before the release
+gate. The compose file names no version, only the channel tag, which only a release moves, and forward
+(`aps/RELEASING.md`). Coolify pulls every image-only service at each deploy, so a redeploy runs the channel's newest
+final release, the one AIO's own update follows; and it recreates the mastercontainer alone, so the suite's containers
+keep the images AIO started them on until AIO's update moves them. A redeploy never runs a candidate or an older
+version, and never pins one.
 
 **Stopping, removing and cleaning up safely**, which the manual's Coolify section (#302) gives the admin:
 
@@ -94,10 +98,10 @@ older version, and never pins one.
 **The Coolify test (Seam 1)** is the acceptance harness's second way in (`aps/acceptance/run.sh <tag> coolify`, a job
 of `acceptance.yml` beside the Bootstrap's). On its own fresh Debian 12 VM, `aps/acceptance/coolify.sh` installs Coolify
 4.6.0 with Coolify's install script, pastes the Provisionador's settings into the proxy configuration as an admin
-does, adds the candidate's commit as the resource through Coolify's API, deploys it and reads the link from the
-resource's logs through the API. Every check module then runs as on the Bootstrap's way: the way's rerun is a
-redeploy, `80-again` proves after «Listo» that a redeploy keeps the running version, and the removal is the one above.
-Two things differ from an admin's server, each for CI's sake:
+does, adds the resource through Coolify's API with the candidate's tag in its branch field, as an admin gives a
+release's, deploys it and reads the link from the resource's logs through the API. Every check module then runs as on
+the Bootstrap's way: the way's rerun is a redeploy, `80-again` proves after «Listo» that a redeploy keeps the running
+version, and the removal is the one above. Two things differ from an admin's server, each for CI's sake:
 
 - the HTTP challenge cannot reach the test's proxy. On a test build, the test's proxy configuration gives Coolify's
   `letsencrypt` resolver Let's Encrypt's staging directory and the DNS challenge through acme-dns, whose account lego

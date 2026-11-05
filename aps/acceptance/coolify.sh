@@ -5,9 +5,9 @@
 # aps-coolify. It sets Coolify up as its admin does and adds the suite as a resource of it: Coolify's own install
 # script, then its API, with a token of its root user that stays in /root/.aps-coolify, never on a command line or in
 # a log.
-#   aps-coolify setup <repository> <commit> <address> <files> <mastercontainer>
+#   aps-coolify setup <repository> <tag> <address> <files> <mastercontainer>
 #       Coolify 4.6.0; its proxy configuration with AIO's Traefik settings pasted, as the Provisionador shows them (the
-#       file <files>/settings, one per line), and the proxy restarted; the resource's source: the candidate's commit of
+#       file <files>/settings, one per line), and the proxy restarted; the resource's source: the candidate's tag of
 #       <repository> on GitHub, and its one variable: <address>, the machine's address, as its public one. On a test
 #       build, whose mastercontainer's services.json names the name service of <files>/test-build.json (as run.sh tells
 #       a test build, from aps/acceptance/test-build.json): Traefik gets the CI name's certificate from
@@ -53,7 +53,7 @@ token() { # Coolify's API switched on, and a token of its root user as the heade
 }
 
 setup() {
-  local repository="$1" commit="$2" address="$3" files="$4" password server proxy services waited=0 test_build=false
+  local repository="$1" tag="$2" address="$3" files="$4" password server proxy services waited=0 test_build=false
   install -d -m 700 "$STATE"
   curl -fsSL --retry 5 -o "$STATE/install.sh" \
     https://raw.githubusercontent.com/coollabsio/coolify/v4.6.0/scripts/install.sh
@@ -119,18 +119,18 @@ setup() {
   done
   printf '%s\n' "$server" > "$STATE/server"
   api POST /projects '{"name": "APS Conecta Gestión"}' | jq -er .uuid > "$STATE/project"
-  jq -n --arg repository "$repository" --arg commit "$commit" --arg address "$address" \
+  jq -n --arg repository "$repository" --arg tag "$tag" --arg address "$address" \
     --arg cacerts "$([ "$test_build" != true ] || echo "$CACERTS")" \
-    '{repository: $repository, commit: $commit, address: $address, cacerts: $cacerts}' > "$STATE/resource.json"
+    '{repository: $repository, tag: $tag, address: $address, cacerts: $cacerts}' > "$STATE/resource.json"
   echo "Coolify 4.6.0 runs, and its proxy with AIO's Traefik settings"
 }
 
-create() { # the resource, as the admin adds it: this repository's compose file for Coolify, in Raw mode
+create() { # the resource, as the admin adds it: this repository's compose file for Coolify at the tag, in Raw mode
   local app
   app="$(api POST /applications/public "$(jq --arg project "$(cat "$STATE/project")" \
     --arg server "$(cat "$STATE/server")" '{
       project_uuid: $project, server_uuid: $server, environment_name: "production", name: "aps-conecta-gestion",
-      git_repository: "https://github.com/\(.repository)", git_branch: "main", git_commit_sha: .commit,
+      git_repository: "https://github.com/\(.repository)", git_branch: .tag,
       build_pack: "dockercompose", docker_compose_location: "/aps/coolify.yaml",
       is_raw_compose_deployment_enabled: true, redact_all_env_values_in_logs: false,
       docker_compose_custom_build_command: "docker compose build", instant_deploy: false}' "$STATE/resource.json")" \
@@ -191,7 +191,7 @@ case "${1:-}" in
   setup) shift; setup "$@" ;;
   deploy) shift; deploy "$@" ;;
   delete) delete ;;
-  *) echo "usage: aps-coolify setup <repository> <commit> <address> <files> <mastercontainer>" \
+  *) echo "usage: aps-coolify setup <repository> <tag> <address> <files> <mastercontainer>" \
        "| deploy <mastercontainer> | delete" >&2
      exit 2 ;;
 esac

@@ -1,7 +1,7 @@
 # The clean-machine acceptance harness (Seam 1, aps/acceptance/run.sh): a published candidate on a fresh Debian 12 VM by
 # each way in, then every check module in aps/acceptance/checks/, each reported on its own. The ways in are the
 # candidate's Bootstrap, exactly as the manual prints it, and the Coolify install: Coolify on the VM, set up as its admin
-# does, and the candidate's commit as a resource of it, deployed through Coolify's API (ADR 0029). It tests the
+# does, and the candidate's tag as a resource of it, deployed through Coolify's API (ADR 0029). It tests the
 # candidate's release, never this tree; the harness and its checks come from the ref it runs on.
 #
 # The candidate pipeline (release.yml) calls it through workflow_call on every candidate it publishes, and a maintainer

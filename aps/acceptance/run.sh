@@ -6,7 +6,7 @@
 # one of its ways in; then run every check in aps/acceptance/checks/ in name order. It tests the candidate's release,
 # never this tree. The ways in:
 #   bootstrap  the candidate's Bootstrap, exactly as the manual prints it
-#   coolify    Coolify on the machine, set up as its admin does, then the candidate's commit as a resource of it,
+#   coolify    Coolify on the machine, set up as its admin does, then the candidate's tag as a resource of it,
 #              deployed through Coolify's API (coolify.sh, ADR 0029)
 #
 # A check is an executable file aps/acceptance/checks/<NN>-<name>.<sh|py>; NN orders it. It runs on the runner, from
@@ -174,8 +174,7 @@ print(*provisionador.PROXY_SETTINGS, sep="\n")' aps/provisionador > "$work/cooli
     < aps/acceptance/coolify.sh
   tar -C "$work/coolify" -cf - . \
     | "$MACHINE" 'sudo install -d -m 700 /root/.aps-files && sudo tar -C /root/.aps-files -xf -'
-  "$MACHINE" "sudo aps-coolify setup $GITHUB_REPOSITORY $(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha) \
-    $ADDRESS /root/.aps-files $mastercontainer"
+  "$MACHINE" "sudo aps-coolify setup $GITHUB_REPOSITORY $TAG $ADDRESS /root/.aps-files $mastercontainer"
   export COMMAND="sudo aps-coolify deploy $mastercontainer"
 fi
 
