@@ -557,10 +557,10 @@ class FakeSuite:
     domain of `refused` with the reason given there. The server's address is `server` until DHCP changes it and cannot
     be read while `no_server_address` is set, its hardware is `machine`, and a browser whose resolver answers the
     server's address says hello() to AIO's interface at a name. AIO's start makes each of its CONTAINERS starting,
-    until up() makes their ports answer, and the first one installs its startup apps from the app store. Its GitHub
-    serves the files of the App releases in `releases`, by repo, tag and file name. On a Coolify server, `dynamic` is
-    Coolify's dynamic proxy folder, and Coolify's proxy runs with the arguments of `traefik`, which cannot be read while
-    it is None."""
+    until up() makes their ports answer, and the first one installs its startup apps from the app store and sets up
+    the apps of the components it switches on (FakeNextcloud). Its GitHub serves the files of the App releases in
+    `releases`, by repo, tag and file name. On a Coolify server, `dynamic` is Coolify's dynamic proxy folder, and
+    Coolify's proxy runs with the arguments of `traefik`, which cannot be read while it is None."""
 
     CONTAINERS = {"nextcloud-aio-apache": "Apache & Caddy", "nextcloud-aio-nextcloud": "Servidor de aplicaciones",
                   "nextcloud-aio-talk": "Talk", "nextcloud-aio-eurooffice": "EuroOffice"}  # by id, AIO's names
@@ -714,8 +714,9 @@ class FakeSuite:
         self.starts += 1
         self.aio.update(AIO_URL=aio_url, wasStartButtonClicked=True)
         self.startup_apps = startup_apps
-        if self.starts == 1:  # Nextcloud's first start installs vanilla's startup apps
+        if self.starts == 1:  # Nextcloud's first start installs vanilla's startup apps and sets up the components'
             self.nextcloud.from_store(startup_apps)
+            self.nextcloud.set_up_components(self.aio)
         for container in self.CONTAINERS:
             if self.states.get(container, "stopped") == "stopped":
                 self.states[container] = "starting"

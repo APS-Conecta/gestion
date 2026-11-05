@@ -13,6 +13,11 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Added
 
+- **Full-text search and the antivirus (#295).** Staff find a word inside a document with Nextcloud's search: vanilla's
+  full-text search, with our fork of its files provider, which also finds it for a user ID with a dot, as staff's are.
+  The antivirus is vanilla's ClamAV in daemon mode: an infected upload is refused and deleted, while encrypted PDFs and
+  large files upload normally, and what its background scan finds infected is deleted too. Each has an install step,
+  which fails with its reason when AIO left the component off, and a test build's acceptance run checks both.
 - **The Coolify install (#293).** A Coolify 4 admin adds the suite as a Git-based Docker Compose resource of this
   repository, in Raw mode, with `aps/coolify.yaml`: our mastercontainer on the channel tag, AIO behind Coolify's proxy
   and its interface on port 8443, its link in the resource's logs. «Dirección» shows AIO's Traefik settings to paste

@@ -6,8 +6,9 @@ after verifying them itself, such as the Provisionador's, by the fingerprint the
 certificate errors. A check that calls gets fake media devices: Chromium's fake camera and a microphone that plays a
 steady tone.
 
-Checks import it after `sys.path.insert(0, <aps/acceptance>)`. It also runs a check's command lines and the way in on
-the machine, reads the machine's state and the files of the mastercontainer there.
+Checks import it after `sys.path.insert(0, <aps/acceptance>)`. It also runs a check's command lines, Nextcloud's
+command line and the way in on the machine, reads the machine's state and the files of the mastercontainer there, and
+makes staff accounts and their requests at the suite.
 """
 
 import base64
@@ -18,11 +19,14 @@ import json
 import math
 import os
 import re
+import secrets
 import ssl
 import struct
 import subprocess
 import sys
 import tempfile
+import urllib.error
+import urllib.request
 import wave
 from pathlib import Path
 
@@ -41,6 +45,38 @@ def machine(command, stdin=""):
     if run.returncode:
         sys.exit(f"on the machine, {command!r} failed:\n{run.stderr}")
     return run.stdout
+
+
+NEXTCLOUD = "sudo docker exec --interactive --user www-data nextcloud-aio-nextcloud"  # a command line in its container
+
+
+def occ(command, stdin=""):
+    """What Nextcloud's command line printed for `command`, its arguments as one shell command line."""
+    return machine(f"{NEXTCLOUD} php /var/www/html/occ --no-ansi {command}", stdin)
+
+
+def person(user, name):
+    """A new staff account, made with occ, and its password: a fresh one, masked in the CI log, which reaches the
+    machine on stdin only."""
+    password = secrets.token_urlsafe(18)
+    print(f"::add-mask::{password}", flush=True)
+    machine(f"{NEXTCLOUD} sh -c 'read -r OC_PASS && export OC_PASS && php /var/www/html/occ user:add "
+            f"--password-from-env --display-name \"{name}\" {user}'", stdin=f"{password}\n")
+    return password
+
+
+def as_person(user, password, method, url, body=None, headers=None):
+    """The status and the body the suite answers a request that a person's own client makes with their password, over
+    TLS that trusts the staging roots alone."""
+    login = base64.b64encode(f"{user}:{password}".encode()).decode()
+    request = urllib.request.Request(url, body, {"Authorization": f"Basic {login}", "OCS-APIRequest": "true",
+                                                 **(headers or {})}, method=method)
+    try:
+        with urllib.request.urlopen(request, timeout=600,
+                                    context=ssl.create_default_context(cafile=STAGING_ROOTS)) as answer:
+            return answer.status, answer.read()
+    except urllib.error.HTTPError as error:
+        return error.code, error.read()
 
 
 # The machine's containers, images, volumes, networks, packages and the install's files; the mastercontainer's start
