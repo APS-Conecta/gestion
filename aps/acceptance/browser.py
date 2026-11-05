@@ -6,12 +6,13 @@ after verifying them itself, such as the Provisionador's, by the fingerprint the
 certificate errors. A check that calls gets fake media devices: Chromium's fake camera and a microphone that plays a
 steady tone.
 
-Checks import it after `sys.path.insert(0, <aps/acceptance>)`. It also runs a check's command lines on the machine,
-reads the machine's state and the files of the mastercontainer there.
+Checks import it after `sys.path.insert(0, <aps/acceptance>)`. It also runs a check's command lines and the way in on
+the machine, reads the machine's state and the files of the mastercontainer there.
 """
 
 import base64
 import contextlib
+import difflib
 import hashlib
 import json
 import math
@@ -62,6 +63,22 @@ def state():
     if os.environ["WAY"] == "coolify":
         found = re.sub(r"^(/nextcloud-aio-mastercontainer) [0-9a-f]+ ", r"\1 ", found, flags=re.M)
     return found
+
+
+def rerun(what):
+    """What the way in, run again on the machine as the operator does (one-command.sh), printed, its fresh link whole,
+    which stays out of the log and the evidence; it fails the check, named by `what`, if the run fails or changes the
+    machine's state."""
+    before = state()
+    with tempfile.NamedTemporaryFile() as console:
+        if subprocess.run([Path(__file__).with_name("one-command.sh"), console.name], check=False).returncode:
+            sys.exit(f"{what} failed")
+        printed = Path(console.name).read_text(encoding="utf-8")
+    after = state()
+    if after != before:
+        sys.exit(f"{what} changed the machine:\n" + "".join(difflib.unified_diff(
+            before.splitlines(keepends=True), after.splitlines(keepends=True), "before", "after")))
+    return printed
 
 
 def mastercontainer_file(path):

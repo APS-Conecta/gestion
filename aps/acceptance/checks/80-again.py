@@ -9,17 +9,14 @@ and AIO's interface still serves AIO's page, in a browser that pins the certific
 other candidate's names and certificates are production ones, which a run never claims, so no suite runs: there it
 says so and passes."""
 
-import difflib
 import os
-import subprocess
 import sys
-import tempfile
 from pathlib import Path
 from urllib.parse import urlsplit
 
 ACCEPTANCE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ACCEPTANCE))
-from browser import chromium, machine, printed_link, state, verified  # noqa: E402
+from browser import chromium, machine, printed_link, rerun, verified  # noqa: E402
 
 if os.environ["TEST_BUILD"] != "true":
     print(f"the way in after «Listo» runs on a v0.0.0-ci.N test build only: {os.environ['TAG']}'s names and "
@@ -27,14 +24,7 @@ if os.environ["TEST_BUILD"] != "true":
     sys.exit()
 link, printed = printed_link(Path(os.environ["CONSOLE"]).read_text(encoding="utf-8"))
 url = urlsplit(link)
-before = state()
-with tempfile.NamedTemporaryFile() as console:
-    if subprocess.run([ACCEPTANCE / "one-command.sh", console.name], check=False).returncode:
-        sys.exit(f"the way in again after «Listo» failed: {os.environ['WAY']}")
-after = state()
-if after != before:
-    sys.exit("the way in again after «Listo» changed the machine:\n" + "".join(difflib.unified_diff(
-        before.splitlines(keepends=True), after.splitlines(keepends=True), "before", "after")))
+rerun("the way in again after «Listo»")
 running = machine("sudo docker ps --all --filter name=^nextcloud-aio- --format '{{.Names}} {{.State}}'").split()
 stopped = [name for name, status in zip(running[::2], running[1::2]) if status != "running"]
 if stopped:

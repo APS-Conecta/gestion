@@ -8,18 +8,15 @@ each open «Centro» at the machine's address, in a browser that pins the certif
 mastercontainer pulls the suite's images at each start; the check waits for the first start's pull, and the rerun's
 own pull then changes nothing."""
 
-import difflib
 import os
-import subprocess
 import sys
-import tempfile
 import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
 ACCEPTANCE = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ACCEPTANCE), str(ACCEPTANCE.parent / "provisionador")]
-from browser import chromium, machine, printed_link, state, verified  # noqa: E402
+from browser import chromium, machine, printed_link, rerun, verified  # noqa: E402
 from playwright.sync_api import expect  # noqa: E402
 from provisionador import PULLED  # noqa: E402
 
@@ -30,16 +27,8 @@ while PULLED not in machine("sudo docker logs nextcloud-aio-mastercontainer 2>&1
     if time.monotonic() > deadline:
         sys.exit(f"the mastercontainer did not log «{PULLED}» within {PULL_WAIT // 60} minutes of its start")
     time.sleep(10)
-before = state()
 first = printed_link(Path(os.environ["CONSOLE"]).read_text(encoding="utf-8"))
-with tempfile.NamedTemporaryFile() as console:  # the fresh link stays out of the log and the evidence
-    if subprocess.run([ACCEPTANCE / "one-command.sh", console.name], check=False).returncode:
-        sys.exit("the rerun of the way in failed")
-    fresh = printed_link(Path(console.name).read_text(encoding="utf-8"))
-after = state()
-if after != before:
-    sys.exit("the rerun changed the machine:\n" + "".join(difflib.unified_diff(
-        before.splitlines(keepends=True), after.splitlines(keepends=True), "before", "after")))
+fresh = printed_link(rerun("the rerun of the way in"))
 if fresh[0] == first[0]:
     sys.exit("the rerun printed the first link again, not a fresh one")
 links = [(urlsplit(link), printed) for link, printed in (first, fresh)]
