@@ -3,9 +3,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Office as in any Nextcloud, on a test build. Nextcloud's Office entry is on, with our Office defaults, and neither
 Collabora's nor OnlyOffice's connector is (40-install holds their containers off). A staff member signed in at the
-suite's name opens the Office entry from its navigation icon and creates a blank DOCX in its document hub, which opens
-in Euro-Office; they type a line, save and close it, and the DOCX Nextcloud keeps holds the line. Reopened from the
-Office entry, Euro-Office shows it. Any other candidate's names and certificates are production ones, which a run
+suite's name opens the Office entry from its navigation icon, in Nextcloud's app menu, and creates a blank DOCX in its
+document hub, which opens in Euro-Office; they type a line, save and close it, and the DOCX Nextcloud keeps holds the
+line. Reopened from the Office entry, Euro-Office shows it. Any other candidate's names and certificates are production ones, which a run
 never claims: there it says so and passes."""
 
 import base64
@@ -135,9 +135,10 @@ def shown(data):
 
 
 def office(page):
-    """Nextcloud's Office entry, opened from its navigation icon as staff open it, at its documents."""
+    """Nextcloud's Office entry, opened from its icon in Nextcloud's app menu as staff open it, at its documents."""
     page.goto(suite)
-    page.locator('#header a[href*="/apps/office"]').first.click()
+    page.locator(".app-menu__waffle").click()  # the app menu's button, beside the logo
+    page.locator('a[role="menuitem"][href*="/apps/office"]').click()
     page.get_by_text("Documentos", exact=True).first.click()
 
 
