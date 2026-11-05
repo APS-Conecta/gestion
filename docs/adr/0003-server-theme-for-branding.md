@@ -27,10 +27,11 @@ Accepted, 2026-07-26.
 
 - `core/css/server.css`: brand tokens mapped onto Nextcloud's CSS variables.
 - `core/fonts/*.woff2`: Fraunces and Nunito Sans, self-hosted, zero egress.
-- `core/img/`: logo, favicon and login background live here as files, and `15-branding.sh` registers
-  them with the Theming app via `theming:config <key> <absolute-path>`, pointing at the theme directory
+- `core/img/`: logo, favicon and login background live here as files, and the theme install step
+  (`aps/provisionador/steps/theme.py`) registers them with the Theming app via
+  `theming:config <key> <absolute-path>`, pointing at the theme directory
   (`/var/www/html/themes/apsconecta/core/img/…`). Still config-as-code, with no upload, no API call and
-  no admin credentials in the seed runner, so AD-2 is intact ([ADR-0002](0002-inherited-decisions.md)).
+  no admin credentials in the install step, so AD-2 is intact ([ADR-0002](0002-inherited-decisions.md)).
   Registration, rather than relying on theme-first lookup, is what makes favicon rasterisation, the
   webmanifest and branded emails work, and it is the only way to set `background`, since core ships no
   background image for a theme to override. `background` is the whole-UI background, not only the login
@@ -38,9 +39,10 @@ Accepted, 2026-07-26.
 - **No `defaults.php` for the iOS banner.** `customclient_ios_appid ""` kills the "Nextcloud — Abrir"
   banner. Identity stays with `occ`, except on the screens where Nextcloud never consults the Theming
   app ([ADR-0004](0004-branding-the-legacy-render-path.md)).
-- Activation is `occ config:system:set theme --value apsconecta`, still config-as-code, applied by
-  `provisioning/phases/15-branding.sh` so the seed remains the only thing that mutates instance state
-  (AD-2). No standalone theming script: it would be a second state-changing entry point.
+- Activation is `occ config:system:set theme --value apsconecta`, still config-as-code, applied by the
+  theme install step, which first installs the theme into Nextcloud's themes folder, so the
+  Provisionador's install steps remain the only thing that mutates instance state (AD-2). No standalone
+  theming script: it would be a second state-changing entry point.
 - **Fonts ship as woff2 only, with no TTF fallback.** Every browser Nextcloud 34 supports has had woff2
   since ~2016, so the fallback protected nobody, and it actively hid a bug: `server.css` declared four
   `.woff2` files that were never generated, and the TTF fallback swallowed the 404s. One format has no
@@ -73,7 +75,8 @@ does not need to.
   protected by trademark; colour tokens ship under the AGPL ([ADR-0006](0006-agpl-across-the-org.md)).
 - Gained: brand typography, radii, focus states and the header gradient, none reachable by config; the
   iOS banner leak fixed; images arrive with the theme, so a fresh bring-up is branded with no manual step.
-- Branding is gated: `scripts/smoke.sh` fails when `/status.php` says `Nextcloud`.
+- Branding is gated: the acceptance check `aps/acceptance/checks/65-theme.py` fails when the login page
+  lacks the theme or a page staff open says `Nextcloud`.
 - Rule for any future asset: runs on the server → this repository; feeds a designer or the website → the
   brand kit. Theming rules live in
   [tema.html](https://aps-conecta.github.io/documentation/desarrollo/tema.html).

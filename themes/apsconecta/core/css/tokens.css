@@ -7,8 +7,10 @@
    Every hex the brand paints lives HERE and nowhere else. The readers:
    - the server theme: server.css @imports this file and paints through
      var(--aps-*); guest.css maps its legacy-screen variables the same way.
-   - the branding phase (provisioning/phases/15-branding.sh): reads the two
-     colours Nextcloud's theming app needs from this file.
+   - the theme and custom menu install steps (aps/provisionador/steps/
+     theme.py, menu.py): read the colours Nextcloud's theming app and the
+     custom menu need from this file, as defaults.php does for the screens
+     theming never serves.
    - the Provisionador (scripts/provisionador.py): reads this file through
      ASSETS_ROOT and paints the Instalador UI with it.
    - AIO's page: Containers/mastercontainer/Dockerfile copies this file into

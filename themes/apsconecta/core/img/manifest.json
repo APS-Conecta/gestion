@@ -3,8 +3,6 @@
 	"short_name": "APS Conecta Gestión",
 	"description": "La salud primaria que compartimos es la que mejora",
 	"start_url": "../../../../",
-	"theme_color": "#7f21fe",
-	"background_color": "#7f21fe",
 	"icons": [
 		{
 			"src": "../../../../apps/theming/icon",

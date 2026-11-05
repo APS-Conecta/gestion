@@ -1,0 +1,12 @@
+{
+    "translations": {
+        "Check if the ExApp is registered in Nextcloud before deployment": "Verificar si la ExApp está registrada en APS Conecta Gestión antes del despliegue",
+        "For HTTPS daemon, Nextcloud URL should be HTTPS": "Para el daemon HTTPS, la URL de APS Conecta Gestión debe ser HTTPS",
+        "Nextcloud AppAPI": "AppAPI de APS Conecta Gestión",
+        "Nextcloud URL": "URL de APS Conecta Gestión",
+        "Register ExApp in Nextcloud": "Registrar ExApp en APS Conecta Gestión",
+        "This app has no maximum Nextcloud version assigned. This will be an error in the future.": "Esta app no tiene una versión máxima de APS Conecta Gestión asignada. Esto será un error en el futuro.",
+        "This app has no minimum Nextcloud version assigned. This will be an error in the future.": "Esta app no tiene una versión mínima de APS Conecta Gestión asignada. Esto será un error en el futuro.",
+        "This app is not marked as compatible with your Nextcloud version. If you continue you will still be able to install the app. Note that the app might not work as expected.": "Esta app no está marcada como compatible con su versión de APS Conecta Gestión. Si continúa podrá instalar la app, pero tenga en cuenta que podría no funcionar según lo esperado."
+    }
+}

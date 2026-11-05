@@ -21,9 +21,13 @@ test_step_<id>.py: no other file lists the steps.
 """
 
 import json
+import re
 import time
+from pathlib import Path
 
 POLL = 2  # seconds between two readings of the suite while a step waits for it
+THEME = Path(__file__).resolve().parents[3] / "themes" / "apsconecta"  # beside aps/, in the repo and our image
+TOKENS = THEME / "core" / "css" / "tokens.css"  # the brand token file: the only place a brand colour is written
 DIFFERS = ("Nextcloud no conserva estos ajustes: {}. Presione «Reintentar»; si vuelve a ocurrir, contacte a APS "
            "Conecta.")
 
@@ -31,6 +35,11 @@ DIFFERS = ("Nextcloud no conserva estos ajustes: {}. Presione «Reintentar»; si
 class Notice(str):
     """A reason that only warns: its step is done, so it stays green, with the notice beside it in the progress and in
     the log, since «Listo» may close the page before the operator reads it."""
+
+
+def token(name):
+    """The value the brand token file declares for the token `name`, such as --aps-violet."""
+    return re.search(rf"^\s*{re.escape(name)}\s*:\s*([^;]+?)\s*;", TOKENS.read_text(encoding="utf-8"), re.M)[1]
 
 
 def until(read, done, wait):

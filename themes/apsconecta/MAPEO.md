@@ -9,8 +9,8 @@ What you need in order to work on `core/css/server.css`: the palette with its co
 typographic decisions, and the header geometry.
 
 **The palette lives in ONE file**: [`core/css/tokens.css`](core/css/tokens.css) — the brand token
-file (palette and fonts) that the server theme, the branding phase, the Provisionador's UI and
-AIO's page all read. The table below is its LEDGER: names, ratios, permitted uses. Every consumer
+file (palette and fonts) that the server theme, the theme and custom menu install steps, the
+Provisionador's UI and AIO's page all read. The table below is its LEDGER: names, ratios, permitted uses. Every consumer
 references a token instead of pasting a brand hex — the exceptions that may repeat a value are
 this ledger and the SVG art (fills are art, like any image).
 

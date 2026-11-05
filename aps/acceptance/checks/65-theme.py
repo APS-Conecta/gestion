@@ -141,7 +141,8 @@ def tour(context, browser):
     for name, (path, ready) in PAGES.items():
         page.goto(f"{suite}{path}")
         page.wait_for_selector(ready, timeout=60_000)
-        problems += (themed(page, f"{browser}-{name}") if name == "dashboard" else []) + shows(page, f"{browser}-{name}")
+        label = f"{browser}-{name}"
+        problems += (themed(page, label) if name == "dashboard" else []) + shows(page, label)
         if name == "dashboard" and not page.locator("#header .cm-opener").is_visible():
             problems.append(f"{browser}: the dashboard's header has no custom menu")
     for what, href in (("source code", SOURCE), ("licence", LICENCE)):
@@ -219,5 +220,5 @@ problems += stale_talk_texts() + quiet()
 if problems:
     sys.exit("after a restart of Nextcloud's container:\n" + "\n".join(problems))
 print("in Chromium and Firefox the theme is on every page staff open, with no «Nextcloud», the source code and licence "
-      "linked and the custom menu in the brand's dark violet; Nextcloud's own voice is off, and stays off after a restart "
-      "of its container, whose start keeps the theme and rebuilds Talk's browser texts")
+      "linked and the custom menu in the brand's dark violet; Nextcloud's own voice is off, and stays off after a "
+      "restart of its container, whose start keeps the theme and rebuilds Talk's browser texts")

@@ -99,11 +99,12 @@ RUN set -ex; \
     rm -r php/data; \
     rm -r php/session;
 
-# Our layer: the Provisionador, which answers on AIO's interface until «Listo», with the DEIS register and the
-# Bootstrap, whose recording threshold the components step reads.
+# Our layer: the Provisionador, which answers on AIO's interface until «Listo», with the DEIS register, the
+# Bootstrap, whose recording threshold the components step reads, and the theme, which the theme step installs.
 COPY aps/deis/ /var/www/docker-aio/aps/deis/
 COPY aps/bootstrap/install.sh /var/www/docker-aio/aps/bootstrap/install.sh
 COPY aps/provisionador/ /var/www/docker-aio/aps/provisionador/
+COPY themes/apsconecta/ /var/www/docker-aio/themes/apsconecta/
 COPY aps/provisionador/dinit.d/ /etc/dinit.d/
 RUN apk add --no-cache python3 libqrencode-tools bind-tools
 
