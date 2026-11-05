@@ -478,18 +478,37 @@ class Direccion(ProvisionadorTest):
         self.assertEqual((status, body["address"]["name"]), (200, NAME))
         self.assertEqual(self.suite.claims, ["999001"])
 
+    def test_the_first_look_waits_until_the_names_nameservers_publish_the_servers_address(self):
+        browser = self.operator()
+        status, body = self.claim(browser)
+        # The name service has the server's address, which the nameservers of its zone do not answer yet: a resolver
+        # the page asked now would keep finding nothing for the zone's SOA minimum, 30 minutes.
+        self.assertEqual((status, body["address"]), (200, {"name": NAME, "published": False, "opened": False}))
+        self.suite.propagate()
+        self.assertEqual(browser.get("/api/state")[1]["address"], {"name": NAME, "published": True, "opened": False})
+
+    def test_the_look_after_a_reload_waits_for_them_too(self):
+        browser = self.operator()
+        self.assertEqual(self.claim(browser)[0], 200)
+        # The page loads again right after the claim and reads the state.
+        self.assertEqual(browser.get("/api/state")[1]["address"], {"name": NAME, "published": False, "opened": False})
+        self.suite.propagate()
+        self.assertEqual(browser.get("/api/state")[1]["address"], {"name": NAME, "published": True, "opened": False})
+
     def test_a_resolver_that_drops_the_private_answer_is_detected_from_the_browser(self):
         browser = self.operator()
         self.assertEqual(self.claim(browser)[0], 200)
+        self.suite.propagate()
         # The page asks for AIO's interface at the name. This network's resolver drops the answer, which points to
         # the server's private address, so the request never reaches the server.
-        self.assertEqual(browser.get("/api/state")[1]["address"], {"name": NAME, "opened": False})
+        self.assertEqual(browser.get("/api/state")[1]["address"], {"name": NAME, "published": True, "opened": False})
 
     def test_a_browser_whose_resolver_answers_the_server_opens_the_name(self):
         browser = self.operator()
         self.assertEqual(self.claim(browser)[0], 200)
+        self.suite.propagate()
         self.suite.hello(NAME)  # the page's request reaches AIO's interface at the name
-        self.assertEqual(browser.get("/api/state")[1]["address"], {"name": NAME, "opened": True})
+        self.assertEqual(browser.get("/api/state")[1]["address"], {"name": NAME, "published": True, "opened": True})
 
     def test_the_address_updater_points_the_name_at_the_servers_new_address(self):
         self.assertEqual(self.claim(self.operator())[0], 200)

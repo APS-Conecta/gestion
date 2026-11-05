@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 APS Conecta
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The suite port: the only code that talks to AIO, the APS name service, Coolify's proxy folder and Nextcloud's
-command line (occ).
+"""The suite port: the only code that talks to AIO, the APS name service and the nameservers of its zone, Coolify's
+proxy folder and Nextcloud's command line (occ).
 
 The Provisionador is built with one implementation: `Suite` inside the mastercontainer, `FakeSuite` in the Seam 2
 tests. A screen or an install step that needs the suite adds its method to the port and to both implementations.
@@ -147,6 +147,9 @@ class SuitePort(Protocol):
     def use_name(self, credential: dict) -> None:
         """Set AIO up to serve the claimed name with our Caddy, in reverse-proxy mode."""
 
+    def published(self, name: str, address: str) -> bool:
+        """Whether every nameserver a resolver may ask for `name` answers `address` for it."""
+
     def opened(self, name: str) -> bool:
         """Whether a browser opened AIO's interface at `name`."""
 
@@ -191,6 +194,13 @@ def acmedns(credential):
 
 def docker(*args):
     return subprocess.run(["docker", *args], check=True, capture_output=True, text=True, timeout=120).stdout.strip()
+
+
+def dig(*query):
+    """The words of dig's answer to `query`, asked over IPv4, without dig's comments."""
+    answer = subprocess.run(["dig", "-4", "+time=2", "+tries=2", *query], check=True, capture_output=True, text=True,
+                            timeout=30).stdout
+    return " ".join(line for line in answer.splitlines() if not line.startswith(";")).split()
 
 
 class NameService:
@@ -309,6 +319,18 @@ class Suite:
                   "secrets": acmedns(credential)}
         self.aio(USE_NAME, values, AIO_REFUSED.format("la dirección del establecimiento"))
 
+    def published(self, name, address):
+        """A resolver may ask any nameserver of the name's zone, so each one is asked directly, and no resolver keeps
+        its answer. The zone is the one whose SOA record answers for the name's parent: a resolver asked about the name
+        itself before its record is published keeps finding nothing, and the server's resolver may be the browser's."""
+        try:
+            zone = dig("+noall", "+answer", "+authority", "SOA", name.partition(".")[2])[0]
+            servers = dig("+short", "NS", zone)
+            return bool(servers) and all(dig("+short", "+norecurse", f"@{server}", "A", name) == [address]
+                                         for server in servers)
+        except (OSError, IndexError, subprocess.SubprocessError):
+            return False
+
     def opened(self, name):
         """Caddy issues AIO's interface certificate for a name the first time a TLS client asks for it there, before
         the client judges the certificate, and keeps it in its storage."""
@@ -342,9 +364,10 @@ class FakeSuite:
     """The suite port for the Seam 2 tests: a certificate for each host, as Caddy issues one per address, and new ones
     after renew(), as Caddy's internal issuer renews them. Its name service gives the DEIS code <code> the name
     centro-<code>.gestion.apsconecta.cl once, refuses the codes another installation holds, and fails while `outage`
-    is set. Its AIO keeps its settings file in `aio` and its daily backup file in `daily_backup_time`, the server's
-    address is `server` until DHCP changes it, and a browser whose resolver answers the server's address says hello() to
-    AIO's interface at a name. AIO's start makes each of its CONTAINERS starting, until up() makes their ports answer."""
+    is set; the nameservers of its zone answer the addresses it was given once propagate() brings them. Its AIO keeps
+    its settings file in `aio` and its daily backup file in `daily_backup_time`, the server's address is `server` until
+    DHCP changes it, and a browser whose resolver answers the server's address says hello() to AIO's interface at a
+    name. AIO's start makes each of its CONTAINERS starting, until up() makes their ports answer."""
 
     CONTAINERS = {"nextcloud-aio-apache": "Apache & Caddy", "nextcloud-aio-nextcloud": "Servidor de aplicaciones",
                   "nextcloud-aio-talk": "Talk", "nextcloud-aio-eurooffice": "EuroOffice"}  # by id, AIO's names
@@ -356,6 +379,7 @@ class FakeSuite:
         self.outage = False  # the name service, or the internet, does not answer
         self.credentials = {}  # by name, the credential the name service gave
         self.addresses = {}  # by name, the address it points at
+        self.nameservers = {}  # by name, the address the zone's nameservers answer
         self.server = "192.168.1.10"
         self.aio = {}
         self.daily_backup_time = None
@@ -399,6 +423,13 @@ class FakeSuite:
         del self.credentials[credential["name"]]
         self.addresses.pop(credential["name"], None)
         return True
+
+    def published(self, name, address):
+        return self.nameservers.get(name) == address
+
+    def propagate(self):
+        """The name service's records reach every nameserver of its zone."""
+        self.nameservers = dict(self.addresses)
 
     def server_address(self):
         return self.server

@@ -16,9 +16,7 @@ if (window.trustedTypes) {
 
 const $ = (id) => document.getElementById(id);
 const CHILE = [-35.7, -71.5];
-// «Dirección» points the name at the server's address. The first look at the name waits a little, so that the
-// resolver does not ask before the new record answers and then remember finding nothing.
-const FIRST_LOOK = 10000;
+const PUBLISHING = 5000; // between two readings of whether the name's nameservers publish the server's address
 const NEXT_LOOK = 15000;
 const PROGRESS = 3000; // between two readings of the install's progress
 const STATES = {stopped: "Detenido", starting: "Iniciando", running: "En ejecución"}; // as AIO's page names them
@@ -175,16 +173,35 @@ async function direccion() {
     $("retry").hidden = false;
     return;
   }
-  addressed(address, FIRST_LOOK);
+  addressed(address);
 }
 
-function addressed(address, delay) {
+function addressed(address) {
   $("address-name").textContent = `https://${address.name}`;
   say("Dirección asignada. Apunta a este servidor en la red del establecimiento.", false, "address-status");
-  say(`Comprobando que este equipo encuentra el servidor en ${address.name}…`, false, "reach");
   $("direccion-next").hidden = false;
+  reach(address);
+}
+
+// The browser asks its resolver for the name only once every nameserver of the name's zone publishes the server's
+// address, as the Provisionador reads them: a resolver asked before keeps finding nothing for the zone's SOA minimum,
+// 30 minutes.
+function reach(address) {
   clearTimeout(looking);
-  looking = setTimeout(() => look(address.name), delay);
+  if (address.published) {
+    say(`Comprobando que este equipo encuentra el servidor en ${address.name}…`, false, "reach");
+    look(address.name);
+    return;
+  }
+  say("La dirección se está publicando en internet. Cuando esté publicada, esta página comprobará por sí sola que "
+    + "este equipo encuentra el servidor en ella.", false, "reach");
+  looking = setTimeout(async () => {
+    try {
+      reach((await api("GET", "/api/state")).address);
+    } catch (e) {
+      say(e.message, true, "reach");
+    }
+  }, PUBLISHING);
 }
 
 // The browser asks for this interface at the name. When this network's resolver answers the server's address, the
@@ -321,7 +338,7 @@ async function start() {
     if (state.install) return review(state);
     if (state.address) {
       show("direccion");
-      return addressed(state.address, 0);
+      return addressed(state.address);
     }
     register = await api("GET", "/api/register");
   } catch (e) {

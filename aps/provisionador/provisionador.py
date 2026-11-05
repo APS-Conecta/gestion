@@ -280,10 +280,19 @@ class Provisionador:
         return known(session, self.state.read().get("sessions", []))
 
     def address(self, state):
-        """The APS name «Dirección» set up, and whether a browser opened AIO's interface at it: the page asks for it
-        there, and a resolver that drops answers pointing to private addresses keeps that request from the server."""
-        name = state.get("address", {}).get("name")
-        return name and {"name": name, "opened": self.suite.opened(name)}
+        """The APS name «Dirección» set up; whether every nameserver of its zone publishes the server's address for it,
+        before which the page asks no resolver for the name: one asked earlier keeps finding nothing for the zone's SOA
+        minimum, 30 minutes; and whether a browser opened AIO's interface at it: the page asks for it there, and a
+        resolver that drops answers pointing to private addresses keeps that request from the server. Once they
+        publish it, they are not asked again."""
+        address = state.get("address")
+        if address is None:
+            return None
+        name, published = address["name"], address.get("published", False)
+        if not published and self.suite.published(name, address["server_address"]):
+            published = True
+            self.state.change(lambda s: s["address"].update(published=True))
+        return {"name": name, "published": published, "opened": self.suite.opened(name)}
 
     def get_state(self, query, body):
         state = self.state.read()
@@ -394,12 +403,13 @@ class Provisionador:
                     credential = self.suite.claim(centre["code"])
                     self.credential.write(credential)
                 self.suite.use_name(credential)
-                self.suite.publish(credential, self.suite.server_address())
+                server_address = self.suite.server_address()
+                self.suite.publish(credential, server_address)
             except Held:
                 return 409, {"error": HELD}
             except Unreachable as outage:
                 return 503, {"error": str(outage)}
-        self.state.change(lambda s: s.update(address={"name": credential["name"]}))
+        self.state.change(lambda s: s.update(address={"name": credential["name"], "server_address": server_address}))
         return 200, {"address": self.address(self.state.read())}
 
     ROUTES = {

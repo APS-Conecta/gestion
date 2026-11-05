@@ -55,8 +55,11 @@ change is followed. It starts with AIO's interface, by one more line in
 outage waits for the next round.
 
 **Blocked private answers are detected from the operator's browser.** Some resolvers drop the answers that point to
-private addresses, as a protection against DNS rebinding. After the claim, the page asks for AIO's interface at the
-name. When the browser's resolver answers the server's address, the request reaches AIO's interface, and its Caddy
+private addresses, as a protection against DNS rebinding. Once every nameserver of the name's zone publishes the
+server's address, the page asks for AIO's interface at the name; until then it says that the address is being
+published. A resolver asked earlier would keep finding nothing for the zone's SOA minimum, 30 minutes, so the suite
+port asks those nameservers directly, with dig, and `POST /api/address` and `GET /api/state` say whether they publish
+it. When the browser's resolver answers the server's address, the request reaches AIO's interface, and its Caddy
 issues a certificate for the name on demand, before the browser refuses it (ADR 0027): the request fails in the
 browser, and the certificate stays in Caddy's storage. The suite port looks for it there, and `GET /api/state` says
 whether a browser opened the interface at the name. When none did, the page shows the router change: a DNS-rebinding

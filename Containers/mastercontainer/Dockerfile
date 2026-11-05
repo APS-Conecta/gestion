@@ -103,7 +103,7 @@ RUN set -ex; \
 COPY aps/deis/ /var/www/docker-aio/aps/deis/
 COPY aps/provisionador/ /var/www/docker-aio/aps/provisionador/
 COPY aps/provisionador/dinit.d/ /etc/dinit.d/
-RUN apk add --no-cache python3 libqrencode-tools
+RUN apk add --no-cache python3 libqrencode-tools bind-tools
 
 # hadolint ignore=DL3048
 LABEL org.opencontainers.image.title="Nextcloud All-in-One Mastercontainer" \
