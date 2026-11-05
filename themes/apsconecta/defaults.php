@@ -35,8 +35,8 @@ declare(strict_types=1);
  * DELIBERATELY NOT OVERRIDDEN: getDocBaseUrl and the sync-client URLs. They point at real
  * destinations — documentation that exists and clients that can actually be installed — and
  * renaming them would ship a lie. That is the vendor-reference exemption, not an oversight. The
- * iTunes banner is already gone by another route: 15-branding.sh writes customclient_ios_appid ""
- * and OC_Defaults reads that system key.
+ * iTunes banner is already gone by another route: the theme step (aps/provisionador/steps/theme.py)
+ * writes customclient_ios_appid "" and OC_Defaults reads that system key.
  *
  * getBaseUrl IS overridden, and the distinction is the whole of the exemption rule. A doc link
  * reading "documentación" and pointing at docs.nextcloud.com NAMES a real external system, which is
@@ -49,7 +49,8 @@ declare(strict_types=1);
  * so that is an install-time cost, never a runtime one — but it is why the identity below must stay
  * the PRODUCT's. A clinic name here would
  * make the theme per-install and reintroduce a restart on every seed. Values are duplicated from
- * provisioning/phases/15-branding.sh, which stays the source of truth.
+ * the theme step, which stays the source of truth; the two colours are read from the brand token
+ * file beside this one, the only place a brand colour is written.
  *
  * Record: docs/adr/0004-branding-the-legacy-render-path.md
  */
@@ -86,13 +87,20 @@ class OC_Theme {
 	/** Read by the guest layout for <meta name="theme-color"> and the mask-icon colour — both of
 	 *  which rendered as #00679e on the untrusted-domain screen before this file existed. */
 	public function getColorPrimary(): string {
-		return '#7f21fe';
+		return self::token('--aps-violet');
 	}
 
 	/** Must stay the dominant tone of background.svg: Nextcloud derives the plain-text colour from
 	 *  it, and a bright value here computes BLACK text over the violet backdrop. Same trap
-	 *  15-branding.sh documents for the theming key. */
+	 *  the theme step documents for the theming key. */
 	public function getColorBackground(): string {
-		return '#5315a8';
+		return self::token('--aps-violet-dark');
+	}
+
+	/** A colour the brand token file declares, by its token's name. */
+	private static function token(string $name): string {
+		$tokens = (string)file_get_contents(__DIR__ . '/core/css/tokens.css');
+		preg_match('/^\s*' . preg_quote($name, '/') . '\s*:\s*(#[0-9a-f]{6})\s*;/mi', $tokens, $found);
+		return $found[1] ?? '';
 	}
 }

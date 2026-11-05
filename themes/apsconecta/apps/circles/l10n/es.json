@@ -1,0 +1,10 @@
+{
+    "translations": {
+        "Choose from Nextcloud Files": "Elegir desde Archivos de APS Conecta Gestión",
+        "Connect your account to an external OIDC provider to automatically sync your memberships with Nextcloud teams.": "Conectar su cuenta a un proveedor OIDC externo para sincronizar automáticamente sus membresías con los equipos de APS Conecta Gestión.",
+        "Nextcloud Account": "Cuenta de APS Conecta Gestión",
+        "Nextcloud App": "App APS Conecta Gestión",
+        "Nextcloud Group": "Grupo de APS Conecta Gestión",
+        "Nextcloud Initialization": "Inicialización de APS Conecta Gestión"
+    }
+}

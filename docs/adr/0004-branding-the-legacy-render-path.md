@@ -86,8 +86,9 @@ so later keys win and a two-key file overrides exactly two strings.
 - **`defaults.php` brings an opcache dependency.** Editing it needs a container restart. The file is
   static and committed, so the cost is install-time, never per-seed.
 - **Identity here is the product's, never the clinic's.** These screens stay byte-identical on every
-  install, with no dependency on the generated `site.css`. The values duplicate `15-branding.sh`, which
-  stays the source of truth.
+  install, with no dependency on the generated `site.css`. The values duplicate the theme install
+  step's (`aps/provisionador/steps/theme.py`), which stays the source of truth; the two colours are read
+  from the brand token file.
 - **One vendor exemption is named, not assumed.** The admin documentation link on the untrusted-domain
   screen (`docs.nextcloud.com`, visible label "documentación") and the sync-client URL point at real
   destinations. Renaming them would ship a lie, which is the worse defect. `getBaseUrl` is deliberately

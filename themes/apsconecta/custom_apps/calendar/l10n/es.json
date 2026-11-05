@@ -1,0 +1,7 @@
+{
+    "translations": {
+        "Access Nextcloud calendars from other apps and devices": "Acceder a los calendarios de APS Conecta Gestión desde otras aplicaciones y dispositivos",
+        "Nextcloud Talk": "Talk",
+        "The recurrence definition of this event is not fully supported by Nextcloud. If you edit the recurrence-options, certain recurrences may be lost.": "APS Conecta Gestión no soporta completamente la definición de recurrencia de este evento. Si edita las opciones de recurrencia, ciertas repeticiones pueden perderse."
+    }
+}

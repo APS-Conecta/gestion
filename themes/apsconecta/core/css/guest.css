@@ -35,7 +35,7 @@
 
    Product values, never the clinic's — these screens stay byte-identical on every install. The
    palette now arrives through the token file (server.css imports it; this file maps onto it),
-   and the same two colours reach the theming app through provisioning/phases/15-branding.sh —
+   and the same two colours reach the theming app through the theme install step —
    which reads the SAME file, so no surface owns a value of its own anymore.
    ===================================================================== */
 

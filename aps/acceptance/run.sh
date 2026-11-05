@@ -28,9 +28,10 @@
 #             gets Let's Encrypt staging certificates, as the candidate's own services.json says; false for any other
 #             candidate, whose names and certificates are production ones. What needs an APS name runs on a test build
 #             only, and on any other candidate the check says so
-# A check never prints a secret. python3 has Playwright with Chromium (acceptance.yml installs it); browser.py is the
-# one way to open it. Exit 0 passes. A failing check is named in the log, its EVIDENCE gets every container's log, with
-# the link's secret and AIO's credentials blanked out, and the disk usage, and the workflow attaches it to the run.
+# A check never prints a secret. python3 has Playwright with Chromium and Firefox (acceptance.yml installs them);
+# browser.py is the one way to open them. Exit 0 passes. A failing check is named in the log, its EVIDENCE gets every
+# container's log, with the link's secret and AIO's credentials blanked out, and the disk usage, and the workflow
+# attaches it to the run.
 # The VM gets the memory and disk floor the candidate's Bootstrap declares (MIN_MEMORY_GIB, MIN_DISK_GB), with room for
 # Coolify itself on the Coolify way in, plus a fixed
 # CPU count until #300 measures one, so a green run proves that floor.

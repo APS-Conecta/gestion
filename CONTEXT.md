@@ -79,5 +79,5 @@ check clean.
 
 **Brand token file** (ficha de tokens de marca):
 `themes/apsconecta/core/css/tokens.css` — the ONE committed source of the palette and the font
-pairing. The server theme, the branding phase, the Provisionador's UI and AIO's page read it; no
-other file may carry a brand hex.
+pairing. The server theme, the theme and custom menu install steps, the Provisionador's UI and AIO's
+page read it; no other file of our layer may carry a brand colour but its ledger (MAPEO.md) and SVG art.

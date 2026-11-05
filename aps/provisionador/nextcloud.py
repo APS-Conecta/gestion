@@ -1,14 +1,15 @@
 # SPDX-FileCopyrightText: 2026 APS Conecta
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Nextcloud's part of the suite port (suite.py), in the Nextcloud container: its command line, occ, the CAs that its
-own requests trust, and the apps in its apps folder. `Suite` holds the real one as `suite.nextcloud` and `FakeSuite` the
-fake one, which the Seam 2 tests drive."""
+own requests trust, the apps in its apps folder and the theme in its themes folder. `Suite` holds the real one as
+`suite.nextcloud` and `FakeSuite` the fake one, which the Seam 2 tests drive."""
 
 import io
 import json
 import subprocess
 import sys
 import tarfile
+import time
 import xml.etree.ElementTree as ET
 
 from suite import Unreachable
@@ -19,6 +20,8 @@ DOWN = ("El servidor de aplicaciones de la suite no responde. Presione «Reinten
 FAILED = "Nextcloud no completó «occ {}». Presione «Reintentar»; si vuelve a ocurrir, contacte a APS Conecta."
 ISSUER_FAILED = "No se pudo obtener ni verificar el certificado intermedio de {}."
 INSTALL_FAILED = "Nextcloud no pudo instalarla. Presione «Reintentar»; si vuelve a ocurrir, contacte a APS Conecta."
+THEME_FAILED = ("Nextcloud no pudo instalar el tema de APS Conecta. Presione «Reintentar»; si vuelve a ocurrir, "
+                "contacte a APS Conecta.")
 # Nextcloud's command line with its input from a file: config:import reads its input without waiting for it.
 OCC = """input=$(mktemp) && cat > "$input" && php /var/www/html/occ --no-ansi --no-interaction "$@" < "$input"
 status=$?; rm -f "$input"; exit $status"""
@@ -76,6 +79,33 @@ php /var/www/html/occ --no-ansi --no-interaction app:enable "$app"
 """
 
 
+# The theme $1 from the tarball on stdin, in place of any copy in Nextcloud's themes folder, which upstream's updates
+# keep; then the browser's texts of the apps it overrides texts of, as our Nextcloud image builds them
+# (aps/images/nextcloud/browser-texts.php).
+THEME = r"""
+set -eu
+theme=$1
+themes=/var/www/html/themes
+dir=$(mktemp -d "$themes/.$theme.XXXXXX")
+trap 'rm -rf "$dir"' EXIT
+tar -xzf - -C "$dir"
+rm -rf "${themes:?}/$theme"
+mv "$dir/$theme" "$themes/$theme"
+php /browser-texts.php
+"""
+
+
+def packed(folder, files):
+    """A gzipped tarball of `files`, each by its path in `folder`, dated now so that no browser keeps an older copy."""
+    data, now = io.BytesIO(), time.time()
+    with tarfile.open(fileobj=data, mode="w:gz") as tar:
+        for name, content in sorted(files.items()):
+            member = tarfile.TarInfo(f"{folder}/{name}")
+            member.size, member.mtime = len(content), now
+            tar.addfile(member, io.BytesIO(content))
+    return data.getvalue()
+
+
 class Nextcloud:
     """The real one: each command runs in the Nextcloud container as its web user, through the Docker socket."""
 
@@ -114,6 +144,17 @@ class Nextcloud:
         """The app `app` runs from `tarball`, an App release's, in place of any copy Nextcloud held."""
         self.execute(INSTALL, app, stdin=tarball, failed=INSTALL_FAILED, timeout=600)
 
+    def place_theme(self, theme, files):
+        """Nextcloud runs the theme `theme` from `files`, each by its path in the theme's folder, in place of any copy
+        it held, its text overrides in the browser too."""
+        self.execute(THEME, theme, stdin=packed(theme, files), failed=THEME_FAILED)
+
+
+# What occ theming:config sets (UpdateConfig::SUPPORTED_KEYS), and its images (ImageManager::SUPPORTED_IMAGE_KEYS).
+THEMING = ("name", "url", "imprintUrl", "privacyUrl", "slogan", "color", "primary_color", "background_color",
+           "disable-user-theming")
+IMAGES = ("background", "logo", "logoheader", "favicon")
+
 
 class FakeNextcloud:
     """The fake one: Nextcloud's settings, `system` and `apps` by app, the latter for every app it has, and the CAs its
@@ -121,23 +162,27 @@ class FakeNextcloud:
     that serve only their leaf. It does not answer while `down` is set, an import silently keeps the `ignored` settings
     out, the issuers of the `unreachable` hosts cannot be fetched, and Euro-Office answers Nextcloud while `editor` is
     set. Its app store has the apps of `store`, and an app installed from a tarball runs the version its info.xml
-    declares."""
+    declares. Its themes folder keeps each theme placed in it, and theming takes an image only from a file of one."""
 
     def __init__(self):
         self.down = False
         self.editor = True  # Euro-Office's document server answers Nextcloud: its connector's own check passes
         self.system = {}
-        self.apps = {"core": {}, "admin_audit": {"enabled": "no"}, "office": {"enabled": "yes"}}  # as Nextcloud ships
+        self.apps = {"core": {}, "admin_audit": {"enabled": "no"}, "office": {"enabled": "yes"},  # as Nextcloud ships
+                     **{app: {"enabled": "yes"} for app in ("nextcloud_announcements", "firstrunwizard",
+                                                             "survey_client", "support")}}  # support: as AIO's start
         self.ignored = set()
         self.cacerts = []  # the files of AIO's folder of trusted CAs: a test build's; a release has none
         self.trusted = set()  # those among Nextcloud's trusted certificates
         self.issuers = set()  # the hosts whose issuer is among them
         self.unreachable = set()
         self.store = {}  # the app store's apps, by id: the version it installs
+        self.themes = {}  # the themes in its themes folder, by name: their files, by their path in the theme's folder
+        self.images = {}  # theming's images, by key: the file each came from
 
     def occ(self, *args, stdin=""):
         """The commands the install steps run: settings out and in, an app on, from the app store when Nextcloud does
-        not have it, and Euro-Office's connector's check."""
+        not have it, an app off, theming, and Euro-Office's connector's check."""
         if self.down:
             raise Unreachable(DOWN)
         if args == ("eurooffice:documentserver", "--check"):
@@ -152,6 +197,12 @@ class FakeNextcloud:
             for app, values in settings.get("apps", {}).items():
                 self.apps.setdefault(app, {}).update({k: v for k, v in values.items() if k not in self.ignored})
             return ""
+        if args[0] == "app:disable" and len(args) == 2:
+            if args[1] in self.apps:  # occ answers alike for an app it does not have
+                self.apps[args[1]]["enabled"] = "no"
+            return ""
+        if args[0] == "theming:config" and len(args) == 3:
+            return self.theming(*args[1:])
         if args[0] == "app:enable" and len(args) == 2:
             app = args[1]
             if app not in self.apps and app not in self.store:
@@ -159,6 +210,24 @@ class FakeNextcloud:
             self.apps.setdefault(app, {"installed_version": self.store.get(app)})["enabled"] = "yes"
             return ""
         raise AssertionError(f"the fake Nextcloud runs no occ {args}")
+
+    def theming(self, key, value):
+        """occ theming:config: an image from a file of a theme in its themes folder, which it must find; a flag as a
+        boolean; any other key as text."""
+        theming = self.apps.setdefault("theming", {})
+        if key in IMAGES:
+            theme, _, path = value.removeprefix("/var/www/html/themes/").partition("/")
+            if path not in self.themes.get(theme, {}):
+                raise Unreachable(FAILED.format(f"theming:config {key} {value}"))
+            self.images[key] = value
+            theming[f"{key}Mime"] = "image/svg+xml" if value.endswith(".svg") else "image/png"
+        elif key == "disable-user-theming":
+            theming[key] = value in ("1", "true", "yes", "on")
+        elif key in THEMING:
+            theming[key] = value
+        else:
+            raise Unreachable(FAILED.format(f"theming:config {key} {value}"))
+        return ""
 
     def trust_issuer(self, host):
         if self.down:
@@ -177,6 +246,11 @@ class FakeNextcloud:
         for app in apps:
             if app in self.store:
                 self.apps[app] = {"enabled": "yes", "installed_version": self.store[app]}
+
+    def place_theme(self, theme, files):
+        if self.down:
+            raise Unreachable(DOWN)
+        self.themes[theme] = dict(files)
 
     def install_app(self, app, tarball):
         if self.down:

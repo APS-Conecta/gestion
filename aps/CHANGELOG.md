@@ -13,6 +13,16 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Added
 
+- **The APS Conecta theme, branding and custom menu (#294).** «Tema y marca» installs the theme into Nextcloud's
+  themes folder, which upstream's updates keep, with the establishment's name on the login page; theming says «APS
+  Conecta Gestión» in the brand token file's colours, light only, with the theme's logos and background, and the
+  theme's Spanish says «APS Conecta Gestión» where Nextcloud and its apps say «Nextcloud», on screens and in emails,
+  and in the browser, whose texts our Nextcloud image rebuilds at every start. Nextcloud's announcements, first-run
+  wizard, usage survey and support app, its help links, free-account link, update banners and iOS app banner are
+  off, a new person's home starts without Nextcloud's sample files, and everyone's personal settings link the suite's
+  source code and licence. «Menú personalizado» installs side_menu in the token file's dark violet. The static gate
+  holds the token file as the only place in our layer that writes a brand colour, and the acceptance harness opens
+  the pages staff see in Chromium and Firefox.
 - **The Coolify install (#293).** A Coolify 4 admin adds the suite as a Git-based Docker Compose resource of this
   repository, in Raw mode, with `aps/coolify.yaml`: our mastercontainer on the channel tag, AIO behind Coolify's proxy
   and its interface on port 8443, its link in the resource's logs. «Dirección» shows AIO's Traefik settings to paste

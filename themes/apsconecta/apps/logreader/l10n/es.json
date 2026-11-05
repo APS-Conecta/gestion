@@ -1,0 +1,5 @@
+{
+    "translations": {
+        "If you feel this is an error, please verify {setting} in your {config} and check the Nextcloud Administration Manual.": "Si cree que se trata de un error, verifique {setting} en su {config} y revise el manual de administración."
+    }
+}

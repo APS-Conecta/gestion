@@ -14,7 +14,9 @@ The operator text is what an administrator reads there:
 A text fails when it carries one of ENGLISH's words; URLs, quoted literals, commands and
 identifiers are not prose. Every file read, the stylesheets included, also fails on the name of the
 other product (APS-Conecta/gestion-aio), on an English page language and on a colour of the token
-file: the page reads the tokens instead (the logo and favicon art may repeat them).
+file: the page reads the tokens instead (the logo and favicon art may repeat them). So does every
+file of our layer (aps/, themes/) on a colour of the token file, which stays the only place a brand
+colour is written; its ledger (MAPEO.md) and SVG art may repeat them.
 Usage: scripts/aio-page.py [TREE]   (TREE defaults to this repository)
 """
 import html.parser
@@ -48,6 +50,8 @@ wrong yes you your
 """.split())
 FORBIDDEN = r"Gesti(?:ó|o|&oacute;)n\s+AIO|\blang=[\"']en\b"
 TOKENS = "themes/apsconecta/core/css/tokens.css"
+LEDGER = "themes/apsconecta/MAPEO.md"  # the token file's ledger: each colour with its contrast ratio
+OUR_LAYER = ("aps", "themes")
 
 URL = re.compile(r"\b(?:https?|ssh)://\S+")
 QUOTED = re.compile(r"(?<!\w)'[^'\n]*'(?!\w)")  # a value or a command quoted inside a sentence
@@ -163,11 +167,34 @@ SURFACES = [
 ]
 
 
-def banned(tree):
-    """FORBIDDEN, and each colour of the token file as hex or as rgb()."""
+def brand(tree):
+    """Each colour of the token file as hex, with or without alpha, or as rgb()."""
     colours = re.findall(r"#([0-9a-f]{6})\b", (tree / TOKENS).read_text(encoding="utf-8"), re.IGNORECASE)
     rgb = [r"rgba?\(\s*{}\s*,\s*{}\s*,\s*{}\b".format(*(int(c[i:i + 2], 16) for i in (0, 2, 4))) for c in colours]
-    return re.compile("|".join([FORBIDDEN] + [rf"#{c}\b" for c in colours] + rgb), re.IGNORECASE)
+    return "|".join([rf"#{c}(?:[0-9a-f]{{2}})?\b" for c in colours] + rgb)
+
+
+def banned(tree):
+    """FORBIDDEN, and each colour of the token file."""
+    return re.compile(f"{FORBIDDEN}|{brand(tree)}", re.IGNORECASE)
+
+
+def our_layer(tree):
+    """Where a file of our layer writes a colour of the token file, but the token file, its ledger and SVG art."""
+    colour, bad = re.compile(brand(tree), re.IGNORECASE), []
+    for root in OUR_LAYER:
+        if not (tree / root).is_dir():
+            bad.append(f"{root}/: no such folder, so nothing would be checked")
+        for path in sorted(p for p in (tree / root).rglob("*") if p.is_file() and p.suffix != ".svg"):
+            name = path.relative_to(tree).as_posix()
+            try:
+                src = path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                continue  # a font or an image
+            if name not in (TOKENS, LEDGER):
+                bad += [f"{name}:{src.count(chr(10), 0, m.start()) + 1}: carries {m.group(0)!r}"
+                        for m in colour.finditer(src)]
+    return bad
 
 
 def main():
@@ -185,12 +212,14 @@ def main():
                 words = sorted({w for w in prose(text) if w.lower() in ENGLISH})
                 if words:
                     bad.append(f"{name}:{line}: English {', '.join(words)}: {' '.join(text.split())[:100]!r}")
+    bad += our_layer(tree)
     if bad:
         print("AIO's page or its notifications: English, the other product's name,"
-              " or a brand colour outside the token file:")
+              " or a brand colour outside the token file, there or in our layer:")
         print("\n".join(f"  {line}" for line in bad))
         return 1
-    print("AIO's page and its notifications: es-CL Spanish, our name only, brand colours from the token file")
+    print("AIO's page and its notifications: es-CL Spanish, our name only, brand colours from the token file, as in"
+          " our layer")
     return 0
 
 

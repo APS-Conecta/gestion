@@ -1,0 +1,5 @@
+{
+    "translations": {
+        "Nextcloud is not permitted to read the OPcache status (\"opcache.restrict_api\").": "APS Conecta Gestión no tiene permiso para leer el estado de OPcache (\"opcache.restrict_api\")."
+    }
+}
