@@ -32,7 +32,8 @@ export TAG="$1" ADDRESS=192.168.77.10 MACHINE="$work/machine" CONSOLE="$work/con
 export COMMAND="curl -fsSL $bootstrap | sudo bash"
 
 aio_configuration=/mnt/docker-aio-config/data/configuration.json # in the mastercontainer
-aio_credentials='(.password // empty), (.secrets // {} | to_entries[] | select(.key | test("PASSWORD|SECRET")) | .value | strings)'
+aio_credentials='(.password // empty),
+  (.secrets // {} | to_entries[] | select(.key | test("PASSWORD|SECRET")) | .value | strings)'
 masked=()
 mask_secrets() { # AIO's passphrase and, once AIO made them, its passwords and secrets, each masked in the log once found
   local config found
@@ -47,7 +48,8 @@ blanked() { # <command>: what it printed on the machine, without the links' secr
   local log found
   log="$("$MACHINE" "$1" 2>&1 || true)"
   for found in "${masked[@]}"; do log="${log//"$found"/[secret]}"; done
-  printf '%s\n' "$log" | { grep -v -F -e '▀' -e '▄' -e '█' || true; } | sed -E 's/(https:[^[:space:]]*#)[A-Za-z0-9_-]+/\1[secret]/g'
+  printf '%s\n' "$log" | { grep -v -F -e '▀' -e '▄' -e '█' || true; } \
+    | sed -E 's/(https:[^[:space:]]*#)[A-Za-z0-9_-]+/\1[secret]/g'
 }
 collect() { # <dir>: every container's log, blanked, and the disk usage of the runner and the machine
   local name

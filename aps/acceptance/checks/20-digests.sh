@@ -5,10 +5,11 @@
 # one its mastercontainer pins in AIO's php/containers.json or in a community container's file.
 set -euo pipefail
 aio=/var/www/docker-aio # AIO's tree in the mastercontainer
+files="$aio/php/containers.json $aio/community-containers/*/*.json"
 pins="$(
   gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body \
     | { grep -oE '[a-z0-9._/-]+@sha256:[0-9a-f]{64}' || true; }
-  "$MACHINE" "sudo docker exec nextcloud-aio-mastercontainer sh -c 'cat $aio/php/containers.json $aio/community-containers/*/*.json'" \
+  "$MACHINE" "sudo docker exec nextcloud-aio-mastercontainer sh -c 'cat $files'" \
     | jq -r '.aio_services_v1[]? | select((.image_tag // "") | startswith("sha256:")) | "\(.image)@\(.image_tag)"'
 )"
 grep -q '^ghcr\.io/aps-conecta/all-in-one@sha256:' <<< "$pins" \
