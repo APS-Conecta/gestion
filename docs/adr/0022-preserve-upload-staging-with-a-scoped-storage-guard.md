@@ -25,8 +25,8 @@ This explicitly narrows AD-9 in ADR-0002 for this app to the standard private
 uses public events and `IStorageFactory`. A public-only decorator cannot preserve
 the private storage type and wrapper traversal; copying its many methods would add
 an unsafe compatibility layer. Core and store apps remain unmodified. ADR-0017 and
-ADR-0018 still apply: phase 12 installs the app from its signed own release, using
-the existing app key and lock file. No app is embedded in an image.
+ADR-0018 still apply: the app installs from the App release the Suite manifest pins,
+and no app is embedded in an image.
 
 The app declares Nextcloud 34 compatibility only. Release checks must prove new and
 successful overwrite uploads, rejected-overwrite preservation, chunk assembly,

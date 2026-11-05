@@ -13,6 +13,15 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Added
 
+- **Apps from their pinned App releases, an open store and optional apps (#289).** The Suite manifest,
+  `aps/provisionador/apps.json`, pins each own and fork app (epidemiologia, territorio, files_upload_guard, IntraVox
+  and files_fulltextsearch, and the optional Farmacia, Estadística and Tótem) to its App release's tag and SHA-256
+  checksum, and «Instalar» refuses a download that does not match. «Revisar» offers the optional apps, off by default,
+  and «Aplicaciones opcionales» installs the ticked ones after every core step. The default store apps are vanilla's
+  startup apps on AIO's start, and each component brings its own apps. The store stays open, and no store update
+  replaces a pinned app: its folder reads as installed from git, which Nextcloud's store never updates.
+  `aps/release/pin.py` writes an app's pin from its GitHub Release.
+
 - **The install step runner (#287).** «Instalar» runs its work as install steps, each declaring the steps it needs:
   AIO's settings and start, then the baseline on the running suite. Sessions end after 15 idle minutes with no
   «Recordarme», the audit log records administrative actions, background jobs run from AIO's cron, everyone gets

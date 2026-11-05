@@ -1,10 +1,13 @@
 # SPDX-FileCopyrightText: 2026 APS Conecta
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """«Aplicaciones», the apps step: the suite's default apps, as the Suite manifest (apps.json, beside the Provisionador)
-lists them. Each own and fork app comes from its App release, at the tag the manifest pins, and only when the download's
-SHA-256 checksum is the one the manifest pins: a download that does not match is refused, and nothing of it is
-installed. It then goes into Nextcloud's apps folder. An app that fails is named with its reason while every other app
-installs, and «Reintentar» installs them all again."""
+lists them; AIO's components bring their own apps. Each own and fork app comes from its App release, at the tag the
+manifest pins, and only when the download's SHA-256 checksum is the one the manifest pins: a download that does not
+match is refused, and nothing of it is installed. It then goes into Nextcloud's apps folder, marked so that no store
+update replaces it (nextcloud.py). The default store apps are vanilla's startup apps, which Nextcloud's first start
+installs from the store (the start step); the step enables each, which installs from the store one that the first start
+did not. An app that fails is named with its reason while every other app installs, and «Reintentar» installs them all
+again. Its part of the end-of-install check: each default app enabled, an own or fork app at its pinned version."""
 
 import hashlib
 import json

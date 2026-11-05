@@ -119,8 +119,8 @@ class FakeNextcloud:
     """The fake one: Nextcloud's settings, `system` and `apps` by app, the latter for every app it has, and the CAs its
     own requests trust beside the ones it ships: the files of AIO's folder of trusted CAs, and the issuers of the hosts
     that serve only their leaf. It does not answer while `down` is set, an import silently keeps the `ignored` settings
-    out, and the issuers of the `unreachable` hosts cannot be fetched. An app installed from a tarball runs the version
-    its info.xml declares."""
+    out, and the issuers of the `unreachable` hosts cannot be fetched. Its app store has the apps of `store`, and an app
+    installed from a tarball runs the version its info.xml declares."""
 
     def __init__(self):
         self.down = False

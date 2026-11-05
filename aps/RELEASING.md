@@ -66,10 +66,17 @@ Provisionador claims names on the name service's CI deployment, its Caddy gets L
 staging certificates, and its Bootstrap gives the suite the staging roots to trust, through AIO's
 `NEXTCLOUD_TRUSTED_CACERTS_DIR`, whose file the pipeline also gives Euro-Office as
 `NODE_EXTRA_CA_CERTS`. Its acceptance run installs the suite to «Listo» on a CI name, checks the
-install steps and the baseline settings on the suite, the name's certificate, every container's
-digest and the suite's own address, resets the machine,
+install steps and the baseline settings on the suite, each pinned app at its pin before and after a
+store update, the name's certificate, every container's digest and the suite's own address, resets
+the machine,
 which frees the name first, and claims it again on a reinstall; the run frees every name it
 claimed.
+
+A candidate installs the own and fork apps its Suite manifest pins. An app moves in a pull request
+that runs the pin tool, which writes the tag and the checksum of the App release into
+`aps/provisionador/apps.json`:
+
+    aps/release/pin.py <app id> [<tag>]
 
 A version candidate, `vX.Y.Z-rc.N` or a versioned `vX.Y.Z-ci.N`, runs against production, as the
 tree is committed, and an acceptance run never claims a production name. Its run covers the

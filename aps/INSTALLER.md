@@ -309,7 +309,7 @@ not patched; the wait ends when the probe times out or the network returns).
 ### The applications update: `aps-conecta actualizar` (#46)
 
 The suite's images move with a suite tag (above); the own and fork **applications** move when the
-administrator says so, with `sudo aps-conecta actualizar` (ADR-0017), and store applications also
+administrator says so, with `sudo aps-conecta actualizar`, and store applications also
 update the vanilla way (ADR-0018). It refuses to run unless the
 suite is up, the lock exists and the backup is configured — then it prints the plan (current and
 candidate version per application), takes a **full backup first** and stops if it fails, fetches

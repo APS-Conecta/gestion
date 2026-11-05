@@ -47,6 +47,7 @@ NOT_PULLED = "No se pudieron descargar las imágenes de la suite; «Instalar» l
 NO_RELEASE = ("No se pudo descargar su publicación desde GitHub. Revise la conexión a internet del servidor y presione "
               "«Reintentar».")
 CREDENTIAL = ("name", "username", "password", "subdomain", "server_url")  # a claim's answer
+DOWNLOAD_TRIES = 3  # GitHub's download address answers an error now and then; the next try usually gets the file
 
 # AIO's own code, as its cron scripts run it (php/src/Cron), with the values on stdin: the host's ps shows the arguments
 # of every process in the container. Each script below follows it.
@@ -374,15 +375,19 @@ class Suite:
 
     @staticmethod
     def app_release(repo, tag, asset):
-        """From GitHub's download address for a release's file, without a token or an API call."""
+        """From GitHub's download address for a release's file, without a token or an API call, asked again after an
+        error up to DOWNLOAD_TRIES times."""
         url = f"https://github.com/{repo}/releases/download/{tag}/{asset}"
         request = urllib.request.Request(url, headers={"User-Agent": "aps-conecta-gestion"})
-        try:
-            with urllib.request.urlopen(request, timeout=60) as response:
-                return response.read()
-        except (OSError, ValueError) as error:
-            print(f"{url}: {error}", file=sys.stderr, flush=True)
-            raise Unreachable(NO_RELEASE) from None
+        for attempt in range(1, DOWNLOAD_TRIES + 1):
+            try:
+                with urllib.request.urlopen(request, timeout=60) as response:
+                    return response.read()
+            except (OSError, ValueError) as error:
+                print(f"{url}, attempt {attempt}: {error}", file=sys.stderr, flush=True)
+                if attempt == DOWNLOAD_TRIES:
+                    raise Unreachable(NO_RELEASE) from None
+                time.sleep(10 * attempt)
 
 
 class FakeSuite:
@@ -393,8 +398,8 @@ class FakeSuite:
     its settings file in `aio` and its daily backup file in `daily_backup_time`, the server's address is `server` until
     DHCP changes it and cannot be read while `no_server_address` is set, and a browser whose resolver answers the
     server's address says hello() to AIO's interface at a name. AIO's start makes each of its CONTAINERS starting, until
-    up() makes their ports answer. Its GitHub serves the files of the App releases in `releases`, by repo, tag and
-    file name."""
+    up() makes their ports answer, and the first one installs its startup apps from the app store. Its GitHub serves
+    the files of the App releases in `releases`, by repo, tag and file name."""
 
     CONTAINERS = {"nextcloud-aio-apache": "Apache & Caddy", "nextcloud-aio-nextcloud": "Servidor de aplicaciones",
                   "nextcloud-aio-talk": "Talk", "nextcloud-aio-eurooffice": "EuroOffice"}  # by id, AIO's names

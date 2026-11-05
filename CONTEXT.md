@@ -61,8 +61,10 @@ An app offered in the Provisionador, off by default.
 **App release**:
 A GitHub Release of an own or fork app. A suite release pins its tag and checksum.
 
-**Suite manifest** (`apps.json`):
-The only list of the suite's apps. Every installer step and gate reads it; `scripts/apps.py` validates it.
+**Suite manifest** (`aps/provisionador/apps.json`):
+The list of the apps the suite installs beside its components' own: each own and fork app at the tag and checksum of
+the App release it pins, and the default store apps. The install steps and the acceptance checks read it, and the pin
+tool (`aps/release/pin.py`) writes its pins.
 
 **Provisionador**:
 The single web wizard that runs the install. During the install the operator uses no other page.
