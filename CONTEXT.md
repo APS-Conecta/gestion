@@ -66,6 +66,10 @@ The list of the apps the suite installs beside its components' own: each own and
 the App release it pins, and the default store apps. The install steps and the acceptance checks read it, and the pin
 tool (`aps/release/pin.py`) writes its pins.
 
+**Comuna data** (datos comunales):
+Territorio's records of the establishment's comuna, its unidades vecinales and its health establishments. The install
+cuts them from the national masters the suite release pins by checksum (`aps/comunas/packages.json`).
+
 **Provisionador**:
 The single web wizard that runs the install. During the install the operator uses no other page.
 
