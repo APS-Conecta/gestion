@@ -22,7 +22,7 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 - **One command installs on a plain x86-64 server (#283).** Every candidate carries the Bootstrap as
   `apsconecta-install.sh`, with its tag and the mastercontainer's digest. Before any change it checks the
-  architecture, the floors until #300 measures them (6 GiB of memory, two cores, 20 GB of disk), Ubuntu or Debian when
+  architecture, the floors until #300 measures them (6 GiB of memory, 20 GB of disk), Ubuntu or Debian when
   Docker is missing, ports 443, 3478 and 8080, `/dev/fuse` and Docker's Snap package, and names each gap in Spanish.
   Then it installs Docker from Docker's packages, sets the kernel settings Redis and Elasticsearch need, starts our
   mastercontainer by digest on the channel tag with the server's address, prints its link block and exits. A rerun

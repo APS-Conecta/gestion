@@ -23,9 +23,8 @@ RELEASE_TAG=""
 MASTERCONTAINER=""
 CHANNEL="${MASTERCONTAINER%@*}:latest"  # the channel tag (aps/RELEASING.md), which the Nightly update moves
 
-# The hardware minimum: the old installer's memory and disk floors, two CPU cores, until #300 measures the suite's.
+# The hardware minimum: the old installer's memory and disk floors, until #300 measures the suite's.
 MIN_MEMORY_GIB=6
-MIN_CPUS=2
 MIN_DISK_GB=20
 # What AIO publishes on the host (php/containers.json): Apache's 443, Talk's 3478 and the interface's 8080.
 PORTS="tcp/443 udp/443 tcp/3478 udp/3478 tcp/8080"
@@ -57,14 +56,12 @@ server_address() {
 }
 
 check_host() {
-  local gaps=() arch memory_gib cpus disk_dir=/var/lib disk_gb listening spec protocol
+  local gaps=() arch memory_gib disk_dir=/var/lib disk_gb listening spec protocol
   arch="$(uname -m)"
   [ "$arch" = x86_64 ] || gaps+=("la arquitectura del procesador es $arch; se requiere x86_64")
   memory_gib=$(( ($(awk '/^MemTotal:/ {print $2}' "$MEMINFO") + 524288) / 1048576 ))
   [ "$memory_gib" -ge "$MIN_MEMORY_GIB" ] \
     || gaps+=("tiene $memory_gib GiB de memoria; se requieren al menos $MIN_MEMORY_GIB GiB")
-  cpus="$(nproc)"
-  [ "$cpus" -ge "$MIN_CPUS" ] || gaps+=("tiene $cpus núcleo(s) de CPU; se requieren al menos $MIN_CPUS")
   if command -v docker >/dev/null 2>&1; then
     if ! disk_dir="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null)"; then
       gaps+=("Docker está instalado, pero no responde")

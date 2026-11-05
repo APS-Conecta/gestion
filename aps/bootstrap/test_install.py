@@ -30,14 +30,13 @@ BLOCK = LINK_LOG.format(url="https://10.0.0.5:8080/#c2VjcmV0IGRlbCBlbmxhY2U", qr
                         fingerprint=":".join(["AB"] * 32))
 LOG = f"Trying to fix docker.sock permissions internally...\n{BLOCK}\nInitial startup of AIO complete!\n"
 TOOLS = ("awk", "cat", "date", "grep", "sed", "sleep", "sort")  # the real commands the Bootstrap may run here
-READS = ("uname", "id", "nproc", "df", "ss", "ip", "sysctl -n", "docker info", "docker inspect")  # they change nothing
+READS = ("uname", "id", "df", "ss", "ip", "sysctl -n", "docker info", "docker inspect")  # they change nothing
 UBUNTU = 'PRETTY_NAME="Ubuntu 24.04.3 LTS"\nNAME="Ubuntu"\nID=ubuntu\nVERSION_CODENAME=noble\nUBUNTU_CODENAME=noble\n'
 # Each shim logs its command line to $CALLS, then runs its body. The SHIM_* variables set the server's answers; the
 # defaults are a server that meets every requirement.
 SHIMS = {
     "uname": 'echo "${SHIM_ARCH:-x86_64}"',
     "id": 'echo "${SHIM_UID:-0}"',
-    "nproc": 'echo "${SHIM_CPUS:-4}"',
     "df": 'printf "Avail\\n%s\\n" "${SHIM_FREE_BYTES:-100000000000}"',
     "ss": 'printf "%b" "${SHIM_LISTENING:-}"',
     "ip": 'echo "${SHIM_ROUTE-192.0.2.1 via 10.0.0.1 dev eth0 src 10.0.0.5 uid 0}"',
@@ -120,7 +119,6 @@ class Refusals(Server):
                                "la arquitectura del procesador es aarch64; se requiere x86_64"),
             "4 GiB of memory": ({"MEMINFO": self.file("small", "MemTotal:        4096000 kB\n")}, (),
                                 "tiene 4 GiB de memoria; se requieren al menos 6 GiB"),
-            "one CPU core": ({"SHIM_CPUS": "1"}, (), "tiene 1 núcleo(s) de CPU; se requieren al menos 2"),
             "12 GB of free disk": ({"SHIM_FREE_BYTES": "12500000000"}, (),
                                    "tiene 12 GB libres en /var/lib/docker; se requieren al menos 20 GB"),
             "Fedora without Docker": (
