@@ -5,7 +5,9 @@
 and fork app and each optional app ticked at «Revisar», runs the version of the App release the manifest pins; no other
 optional app is installed, and every default store app is enabled. The store is reachable from the Apps page: the list
 the administrator's Apps page draws holds the store's apps beside the installed ones, and offers no store update for a
-pinned app. Then a store update, as AIO's update runs it (occ app:update --all), leaves every pinned app at its pin. Any
+pinned app. The mark the apps step gives a pinned app is what keeps the store away: an older release of a store app
+the suite does not install, which the store offers to update, is marked the same way. Then a store update, as AIO's
+update runs it (occ app:update --all), leaves every pinned app at its pin and the marked app at its older release. Any
 other candidate's names are production ones, which a run never claims: there it says so and passes."""
 
 import base64
@@ -23,8 +25,10 @@ from steps import apps  # noqa: E402
 
 STATE = "/mnt/docker-aio-config/provisionador/state.json"
 CONFIGURATION = "/mnt/docker-aio-config/data/configuration.json"  # AIO's, the administrator's password in its secrets
-OCC = "sudo docker exec --user www-data nextcloud-aio-nextcloud php /var/www/html/occ --no-ansi"
-APPS_PAGE = "/ocs/v2.php/apps/appstore/api/v1/apps?format=json"  # the list the Apps page draws
+NEXTCLOUD = "sudo docker exec --user www-data nextcloud-aio-nextcloud"
+OCC = f"{NEXTCLOUD} php /var/www/html/occ --no-ansi"
+APPS_PAGE = "/ocs/v2.php/apps/appstore/api/v1/apps?format=json&details=true"  # the Apps page's list, the store's data in
+SAMPLES = ("quota_warning", "groupquota")  # small store apps the suite does not install; the first with an older release
 
 if os.environ["TEST_BUILD"] != "true":
     print(f"the apps run after «Listo», on a v0.0.0-ci.N test build only: {os.environ['TAG']}'s names are production "
@@ -70,7 +74,22 @@ if not offered:
 if updates := [app["id"] for app in pinned if "update" in page.get(app["id"], {})]:
     sys.exit(f"the Apps page offers a store update for the pinned apps {updates}")
 
+found = next(((app, page[app]["appstoreData"]["releases"][:2]) for app in SAMPLES
+              if len(page.get(app, {}).get("appstoreData", {}).get("releases", [])) > 1), None)
+if found is None:
+    sys.exit(f"the store lists no older release of {' or '.join(SAMPLES)}, so no mark can be proven on one")
+sample, (newest, older) = found
+machine(f"{NEXTCLOUD} sh -c 'curl -fsSL --retry 3 {older['download']} | tar -xz -C /var/www/html/custom_apps' "
+        f"&& {OCC} app:enable {sample}")
+print(f"{sample}: {older['version']} installed from the store's release; the store's newest is {newest['version']}")
+if f"{sample} new version available: {newest['version']}" not in machine(f"{OCC} app:update --showonly {sample}"):
+    sys.exit(f"the store offers no update for {sample} {older['version']}, so its mark would prove nothing")
+machine(f"{NEXTCLOUD} mkdir /var/www/html/custom_apps/{sample}/.git")  # the mark the apps step gives a pinned app
+pinned.append({"id": sample, "pin": f"v{older['version']}"})
+
 print(machine(f"{OCC} app:update --all"), end="")
 if wrong := differences():
     sys.exit("after a store update:\n" + "\n".join(wrong))
-print("every pinned app runs its pin, before and after a store update, and the Apps page lists the store's apps")
+machine(f"{OCC} app:remove {sample}")
+print(f"every pinned app runs its pin before and after a store update, which left the marked {sample} at "
+      f"{older['version']} although the store offered {newest['version']}, and the Apps page lists the store's apps")
