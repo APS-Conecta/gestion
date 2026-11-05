@@ -1,11 +1,11 @@
 # SPDX-FileCopyrightText: 2026 APS Conecta
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The install step runner: «Instalar» runs every step of steps/ in an order where each comes after the steps it needs,
-the core steps first and the optional ones last. A step that fails gets its Spanish reason; the steps that need it wait, and say for what; a step that does not need it
-still runs. «Reintentar» runs the failed and waiting steps again, never a green one. Once every step is green, the
-end-of-install check runs each step's check: the differences between what the step declared and the running suite. A
-step whose part differs turns red again. «Listo» needs every step green and a clean check. A part of a step's work
-that only warns gives a notice, which keeps the step green.
+the core steps first and the optional ones last. A step that fails gets its Spanish reason; the steps that need it wait,
+and say for what; a step that does not need it still runs. «Reintentar» runs the failed and waiting steps again, never
+a green one. Once every step is green, the end-of-install check runs each step's check: the differences between what
+the step declared and the running suite. A step whose part differs turns red again. «Listo» needs every step green and
+a clean check. A part of a step's work that only warns gives a notice, which keeps the step green.
 
 Each step's status is kept in the Provisionador's state as it changes: pending, running, green, failed or waiting, so
 a restart of the Provisionador resumes the steps it cut short.
@@ -28,9 +28,9 @@ def discover():
     """Every step module of steps/, by its id: the core steps, each after the steps it needs, then the optional ones the
     same way; the steps of one rank by id. A core step cannot need an optional one."""
     found = {m.name: importlib.import_module(f"steps.{m.name}") for m in pkgutil.iter_modules(steps.__path__)}
+    optional = {name for name, step in found.items() if getattr(step, "OPTIONAL", False)}
     ordered = []
-    for optional in (False, True):
-        group = {name for name, step in found.items() if getattr(step, "OPTIONAL", False) is optional}
+    for group in (set(found) - optional, optional):
         while group - set(ordered):
             ready = sorted(name for name in group - set(ordered) if set(found[name].NEEDS) <= set(ordered))
             if not ready:

@@ -22,7 +22,7 @@ from browser import STAGING_ROOTS, machine, mastercontainer_file, suite_name  # 
 from steps import apps  # noqa: E402
 
 STATE = "/mnt/docker-aio-config/provisionador/state.json"
-CONFIGURATION = "/mnt/docker-aio-config/data/configuration.json"  # AIO's: the administrator's password among its secrets
+CONFIGURATION = "/mnt/docker-aio-config/data/configuration.json"  # AIO's, the administrator's password in its secrets
 OCC = "sudo docker exec --user www-data nextcloud-aio-nextcloud php /var/www/html/occ --no-ansi"
 APPS_PAGE = "/ocs/v2.php/apps/appstore/api/v1/apps?format=json"  # the list the Apps page draws
 
@@ -46,7 +46,7 @@ def differences():
           end="")
     return ([f"{app['id']} does not run {app['pin']}" for app in pinned if f"v{enabled.get(app['id'])}" != app["pin"]]
             + [f"{app['id']} is not enabled" for app in store if app["id"] not in enabled]
-            + [f"{app['id']} was not ticked at «Revisar» but is installed" for app in unticked if app["id"] in installed])
+            + [f"{app['id']} is installed, unticked at «Revisar»" for app in unticked if app["id"] in installed])
 
 
 if wrong := differences():

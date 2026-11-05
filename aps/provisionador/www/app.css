@@ -54,8 +54,8 @@ select:focus, input:focus, button:focus-visible, a:focus-visible { outline: 2px 
 .address:empty { display: none; }
 .address a { color: var(--aps-violet-dark); }
 
-/* «Revisar»: the summary with the optional apps to tick, then each step's progress, a failed or waiting one in red with its reason and a notice in
-   gold, then each container's. */
+/* «Revisar»: the summary and the optional apps to tick, then each step's progress, a failed or waiting one in red with
+   its reason and a notice in gold, then each container's. */
 .summary { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .5rem 1.5rem; max-width: 60rem; margin: 0; }
 .summary dt { font-weight: 600; }
 .summary dd { margin: 0; overflow-wrap: anywhere; }

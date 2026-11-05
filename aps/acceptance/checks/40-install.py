@@ -3,11 +3,11 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """«Revisar» and «Instalar» on a test build. «Centro» confirms one of gestion's reserved DEIS codes and «Dirección»
 claims its CI name (claim.py); the page goes on to «Revisar», which summarises the centre, the name, its timezone, the
-components and the backup, and offers the optional apps unticked; the check ticks Farmacia. «Instalar» shows each container's progress as AIO reads it, while AIO's interface still
-answers with the Provisionador alone, and «Listo» shows the suite's address. At «Listo», exactly the suite's
-containers run, the components on, and AIO's interface serves AIO's page, which keeps the settings «Instalar» wrote.
-Any other candidate's names and certificates are production ones, which a run never claims: there it says so and
-passes."""
+components and the backup, and offers the optional apps unticked; the check ticks Farmacia. «Instalar» shows each
+container's progress as AIO reads it, while AIO's interface still answers with the Provisionador alone, and «Listo»
+shows the suite's address. At «Listo», exactly the suite's containers run, the components on, and AIO's interface
+serves AIO's page, which keeps the settings «Instalar» wrote. Any other candidate's names and certificates are
+production ones, which a run never claims: there it says so and passes."""
 
 import json
 import os

@@ -66,8 +66,8 @@ class Apps(Installing):
         self.install_the_suite()
         self.eventually(lambda: self.status() == "failed", "a failed install")
         self.assertEqual(self.steps()[APPS], (
-            "failed", "«Calendario»: Nextcloud no completó «occ app:enable calendar». Presione «Reintentar»; si vuelve a "
-                      "ocurrir, contacte a APS Conecta."))
+            "failed", "«Calendario»: Nextcloud no completó «occ app:enable calendar». Presione «Reintentar»; si "
+                      "vuelve a ocurrir, contacte a APS Conecta."))
         self.suite.nextcloud.store["calendar"] = version
         self.assertEqual(self.install()[0], 202)  # «Reintentar»
         self.eventually(self.listo, "«Listo»")
@@ -85,8 +85,8 @@ class Apps(Installing):
             self.install_the_suite()
             self.eventually(lambda: self.status() == "failed", "a failed install")
         self.assertEqual(self.steps()[APPS], (
-            "failed", "Nextcloud no tiene activadas estas aplicaciones en la versión que fija la suite: Inicio. Presione "
-                      "«Reintentar»; si vuelve a ocurrir, contacte a APS Conecta."))
+            "failed", "Nextcloud no tiene activadas estas aplicaciones en la versión que fija la suite: Inicio. "
+                      "Presione «Reintentar»; si vuelve a ocurrir, contacte a APS Conecta."))
         self.assertEqual(self.install()[0], 202)  # «Reintentar»
         self.eventually(self.listo, "«Listo»")
         self.assertEqual(nextcloud.apps["intravox"]["installed_version"], "3.2.0")

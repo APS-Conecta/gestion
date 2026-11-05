@@ -605,8 +605,8 @@ class Revisar(ProvisionadorTest):
                  "summary": "Arsenal farmacológico del establecimiento con información de seguridad clínica."},
                 {"id": "estadistica", "name": "Estadística",
                  "summary": "Cifras REM frente al promedio nacional y de pares, y avance de las Metas Sanitarias."},
-                {"id": "totem", "name": "Tótem",
-                 "summary": "Turnos de atención en la sala de espera: el paciente toma su turno y la pantalla lo llama."}]})
+                {"id": "totem", "name": "Tótem", "summary": "Turnos de atención en la sala de espera: el paciente "
+                                                            "toma su turno y la pantalla lo llama."}]})
 
 
 class Installing(ProvisionadorTest):

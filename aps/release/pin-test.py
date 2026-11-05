@@ -85,7 +85,8 @@ class Pin(unittest.TestCase):
         code, out = self.pin("territorio", "v0.80.0")
         self.assertEqual(code, 0, out)
         self.assertEqual(self.rows()[1], {**MANIFEST[1], "sha256": "8" * 64})
-        self.assertEqual(self.calls.read_text(), "release view v0.80.0 -R APS-Conecta/territorio --json tagName,assets\n")
+        self.assertEqual(self.calls.read_text(),
+                         "release view v0.80.0 -R APS-Conecta/territorio --json tagName,assets\n")
 
     def test_a_release_without_the_apps_tarball_or_its_checksum_pins_nothing(self):
         before = self.manifest.read_text(encoding="utf-8")

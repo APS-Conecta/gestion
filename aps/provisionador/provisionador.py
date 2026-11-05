@@ -323,8 +323,8 @@ class Provisionador:
             return {**answer, "containers": [], "error": str(outage)}
 
     def post_install(self, query, body):
-        """POST /api/install {"optional"?: [<id>…]}, «Instalar» and «Reintentar»: the steps run in the background, and GET
-        /api/state shows their progress. The first «Instalar» keeps the optional apps ticked at «Revisar» as the
+        """POST /api/install {"optional"?: [<id>…]}, «Instalar» and «Reintentar»: the steps run in the background, and
+        GET /api/state shows their progress. The first «Instalar» keeps the optional apps ticked at «Revisar» as the
         install's own, which «Reintentar» does not change. While the steps run, pressing it again starts nothing
         more."""
         if not self.state.read().get("address"):
