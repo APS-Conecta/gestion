@@ -66,10 +66,15 @@ def default():
     return [app for app in MANIFEST if not app.get("optional")]
 
 
+def optional():
+    """The optional apps, in the manifest's order."""
+    return [app for app in MANIFEST if app.get("optional")]
+
+
 def startup():
     """The default store apps: vanilla's startup-apps switch, which the start step gives AIO's start, installs them at
     Nextcloud's first start."""
-    return [app["id"] for app in MANIFEST if app["source"] == "store" and not app.get("optional")]
+    return [app["id"] for app in default() if app["source"] == "store"]
 
 
 def run(context):

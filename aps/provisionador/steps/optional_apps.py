@@ -12,7 +12,7 @@ OPTIONAL = True
 
 
 def chosen(context):
-    return [app for app in apps.MANIFEST if app.get("optional") and app["id"] in context.optional]
+    return [app for app in apps.optional() if app["id"] in context.optional]
 
 
 def run(context):

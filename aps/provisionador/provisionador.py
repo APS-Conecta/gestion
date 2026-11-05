@@ -315,7 +315,7 @@ class Provisionador:
         review = state.get("address") and {"components": components.NAMES,
                                            "backup": {"folder": backups.FOLDER, "time": backups.TIME},
                                            "optional_apps": [{key: app[key] for key in ("id", "name", "summary")}
-                                                             for app in apps.MANIFEST if app.get("optional")]}
+                                                             for app in apps.optional()]}
         return 200, {"centre": state.get("centre"), "address": self.address(state), "review": review,
                      "install": self.progress(state)}
 
@@ -342,7 +342,7 @@ class Provisionador:
         if not self.state.read().get("address"):
             return 409, {"error": NO_ADDRESS_YET}
         ticked = body.get("optional", [])
-        offered = [app["id"] for app in apps.MANIFEST if app.get("optional")]
+        offered = [app["id"] for app in apps.optional()]
         if not (isinstance(ticked, list) and all(isinstance(app, str) and app in offered for app in ticked)):
             return 400, {"error": NOT_OFFERED}
         self.state.change(lambda s: s.setdefault("optional", [app for app in offered if app in ticked]))
