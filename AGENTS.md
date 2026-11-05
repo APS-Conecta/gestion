@@ -42,8 +42,8 @@ the official images to the set Upstream built from it.
   its refusals, start and reruns on a server of PATH shims, and its text without a second command, an Enter prompt,
   a host service or a host timer) — then
   its `zizmor over our workflows` step (zizmor at medium severity over `ci.yml`, `release.yml`,
-  `issue-linker.yml` and `mastercontainer-image.yml`, without upstream's `zizmor.yml` and with the online
-  audits), and the Keep-list check:
+  `issue-linker.yml`, `mastercontainer-image.yml` and `aps-name.yml`, without upstream's `zizmor.yml` and with the
+  online audits), and the Keep-list check:
   `scripts/keep-list-test.py` plants an undeclared difference and a stale entry and must see
   `scripts/keep-list.py` red on each, then `scripts/keep-list.py` compares the tree with the
   Upstream commit `aps/keep-list.txt` names and fails on an undeclared difference or a stale
@@ -53,6 +53,10 @@ the official images to the set Upstream built from it.
   image test (`aps/provisionador/image-test.py`) builds our mastercontainer from the PR's tree, runs it as vanilla's
   command does and checks from outside the link, its QR code and fingerprint, a restart and the handoff to AIO's
   page at «Listo». No push, no tag, no release.
+- `.github/workflows/aps-name.yml`, on PRs that touch the Provisionador's name setup or our Caddy image, and on
+  dispatch: the CI proof (`aps/provisionador/name-test.py`) builds our Caddy image, claims a CI name with one of
+  gestion's reserved DEIS codes (`aps/provisionador/ci-codes.txt`) on the name service's CI deployment, waits for a
+  Let's Encrypt staging certificate with no inbound port, and frees the name with its own credential.
 - Upstream's own workflows beside it: codespell, shellcheck, docker-lint and json-validator,
   plus the PHP, Twig, YAML and Playwright checks on their paths. `scripts/validate.sh` runs
   the codespell, docker-lint and json-spec trio against any tree; the candidate pipeline runs

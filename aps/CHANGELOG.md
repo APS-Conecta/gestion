@@ -20,6 +20,12 @@ image digests live there and are deliberately not copied here — one fact, one 
   reload, a restart or a reboot; at «Listo» the link and the sessions end and 8080 shows AIO's page. The start
   command takes the server's address as `APS_INTERFACE_ADDRESS` (ADR-0027).
 
+- **«Dirección» claims the establishment's APS name (#285).** The Provisionador claims
+  `<centro>.gestion.apsconecta.cl` from APS's name service by DEIS code, once, and keeps its credential readable by its
+  own account only. AIO serves the name in reverse-proxy mode through our Caddy, which gets a real certificate by the
+  DNS challenge with no open port, and the name follows the server's address every 10 minutes. The page detects a
+  resolver that drops private answers and shows the router's DNS-rebinding exception (ADR-0028).
+
 - **One command installs on a plain x86-64 server (#283).** Every candidate carries the Bootstrap as
   `apsconecta-install.sh`, with its tag and the mastercontainer's digest. Before any change it checks the
   architecture, the floors until #300 measures them (6 GiB of memory, 20 GB of disk), Ubuntu or Debian when
