@@ -15,9 +15,10 @@ A step module, whose name is its id, declares:
                   core step
 Both answer the same way; only the suite port raises, Unreachable with its Spanish reason, which the runner records as
 the step's reason too. The context holds the suite port (`suite`), the centre «Centro» confirmed (`centre`), the
-address the operator's browser opens AIO's interface at (`interface`, the (host, port) of APS_INTERFACE_ADDRESS) and the
-ids of the optional apps ticked at «Revisar» (`optional`). A new step is a new module, with its Seam 2 tests in
-test_step_<id>.py: no other file lists the steps.
+address the operator's browser opens AIO's interface at (`interface`, the (host, port) of APS_INTERFACE_ADDRESS), the
+ids of the optional apps ticked at «Revisar» (`optional`), the teams «Equipos» declared (`teams`, teams.py) and the
+first passwords of the accounts the install creates (`passwords`, kept beside the state, readable by the Provisionador
+alone). A new step is a new module, with its Seam 2 tests in test_step_<id>.py: no other file lists the steps.
 """
 
 import json

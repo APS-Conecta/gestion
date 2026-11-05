@@ -3,9 +3,11 @@
 """Seam 2: the install step runner, through «Instalar» and «Reintentar», with the fake suite port injecting failures.
 Each step's own tests are in test_step_<id>.py."""
 
+import copy
 import threading
 from unittest import mock
 
+import provisionador
 from suite import Unreachable
 from test_provisionador import Installing, claimed
 
@@ -118,3 +120,22 @@ class Runner(Installing):
         self.assertEqual(list(steps)[-1], "Aplicaciones opcionales")
         self.assertEqual({status for name, (status, _) in steps.items() if name != "Aplicaciones opcionales"},
                          {"green"}, "every core step ran before the optional one")
+
+    def test_a_restart_that_cut_every_step_short_runs_each_again_which_changes_nothing(self):
+        self.install_the_suite(sectors=["Norte", "Sur"], programs=["Atención Domiciliaria"])
+        self.eventually(self.listo, "«Listo»")
+        before = self.held()
+        (self.state / provisionador.LISTO).unlink()  # each step did its work, and a restart came before any was green
+        self.app.state.change(lambda s: [step.update(status="running") for step in s["install"]["steps"].values()])
+        self.restart()
+        self.eventually(self.listo, "«Listo» again")
+        self.assertEqual(self.held(), before)
+        self.assertEqual(self.suite.starts, 1, "the suite runs, so AIO's start was not sent again")
+
+    def held(self):
+        """What the install made: AIO's settings, Nextcloud's settings, groups, group folders, accounts and page index,
+        and the first passwords kept beside the state."""
+        nextcloud = self.suite.nextcloud
+        return copy.deepcopy((self.suite.aio, self.suite.daily_backup_time, nextcloud.system, nextcloud.apps,
+                              nextcloud.groups, nextcloud.folders, nextcloud.users, nextcloud.indexed,
+                              (self.state / provisionador.FIRST_PASSWORDS).read_text(encoding="utf-8")))

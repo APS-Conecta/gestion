@@ -84,6 +84,24 @@
       </div>
     </form>
     <div class="actions" id="direccion-next" hidden>
+      <button type="button" class="primary" id="to-equipos">Continuar</button>
+    </div>
+  </section>
+
+  <section id="equipos" hidden>
+    <h1>Equipos</h1>
+    <p class="lead">Escriba los sectores y los programas del establecimiento, uno por línea. Cada uno será un equipo,
+      con su grupo y su carpeta compartida, y cada sector tendrá su cuenta de jefatura.</p>
+    <div class="columns">
+      <label>Sectores<textarea id="sectors" rows="6" spellcheck="false"
+        placeholder="Por ejemplo: Norte"></textarea></label>
+      <label>Programas<textarea id="programs" rows="6" spellcheck="false"
+        placeholder="Por ejemplo: Cardiovascular"></textarea></label>
+    </div>
+    <ul class="progress" id="teams" aria-label="Equipos del establecimiento" aria-live="polite"></ul>
+    <p class="muted" id="cargo-accounts"></p>
+    <p class="message" id="teams-status" role="status"></p>
+    <div class="actions">
       <button type="button" class="primary" id="to-revisar">Continuar</button>
     </div>
   </section>
@@ -96,6 +114,7 @@
       <dt>Centro</dt><dd id="summary-centre"></dd>
       <dt>Dirección</dt><dd id="summary-address"></dd>
       <dt>Zona horaria</dt><dd id="summary-timezone"></dd>
+      <dt>Equipos</dt><dd><ul id="summary-teams"></ul></dd>
       <dt>Componentes</dt><dd><ul id="summary-components"></ul></dd>
       <dt>Copias de seguridad</dt><dd id="summary-backup"></dd>
       <dt id="optional-apps-label">Aplicaciones opcionales</dt>

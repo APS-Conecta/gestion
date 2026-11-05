@@ -68,11 +68,12 @@ Provisionador claims names on the name service's CI deployment, its Caddy gets L
 staging certificates, and its Bootstrap gives the suite the staging roots to trust, through AIO's
 `NEXTCLOUD_TRUSTED_CACERTS_DIR`, whose file the pipeline also gives Euro-Office as
 `NODE_EXTRA_CA_CERTS`. Its acceptance run installs the suite to «Listo» on a CI name, checks the
-install steps and the baseline settings on the suite, each pinned app at its pin before and after a
-store update, the name's certificate, every container's digest, the suite's own address and an
-Office document created, edited, saved and reopened in Euro-Office from the Office entry, resets
-the machine,
-which frees the name first, and claims it again on a reinstall; the run frees every name it
+install steps and the baseline settings on the suite, the groups, group folders and cargo accounts
+the teams typed at «Equipos» become, with a staff member's first upload into a nested team folder
+and the welcome page, each pinned app at its pin before and after a store update, the name's
+certificate, every container's digest, the suite's own address and an Office document created,
+edited, saved and reopened in Euro-Office from the Office entry, resets the machine, which frees
+the name first, and claims it again on a reinstall; the run frees every name it
 claimed.
 
 A candidate installs the own and fork apps its Suite manifest pins. An app moves in a pull request

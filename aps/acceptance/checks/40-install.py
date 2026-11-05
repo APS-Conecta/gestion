@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: 2026 APS Conecta
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""«Revisar» and «Instalar» on a test build. «Centro» confirms one of gestion's reserved DEIS codes and «Dirección»
-claims its CI name (claim.py); the page goes on to «Revisar», which summarises the centre, the name, its timezone, the
-components and the backup, and offers the optional apps unticked; the check ticks Farmacia. «Instalar» shows each
-container's progress as AIO reads it, while AIO's interface still answers with the Provisionador alone, and «Listo»
-shows the suite's address. At «Listo», exactly the suite's containers run, the components on, Talk's recording server
-among them only on a machine that passes the recording threshold, and our Caddy only on the Bootstrap's way in, since
-a Coolify resource sits behind Coolify's proxy; and AIO's interface serves AIO's page, which keeps the settings
-«Instalar» wrote. Any other candidate's names and certificates are production ones, which a run never claims: there it
-says so and passes."""
+"""«Equipos», «Revisar» and «Instalar» on a test build. «Centro» confirms one of gestion's reserved DEIS codes and
+«Dirección» claims its CI name (claim.py); the page goes on to «Equipos», where the check types two sectors and a
+program and sees the team each becomes, then to «Revisar», which summarises the centre, the name, its timezone, the
+teams, the components and the backup, and offers the optional apps unticked; the check ticks Farmacia. 45-equipos
+checks the teams in the installed suite. «Instalar» shows each container's progress as AIO reads it, while AIO's
+interface still answers with the Provisionador alone, and «Listo» shows the suite's address. At «Listo», exactly the
+suite's containers run, the components on, Talk's recording server among them only on a machine that passes the
+recording threshold, and our Caddy only on the Bootstrap's way in, since a Coolify resource sits behind Coolify's
+proxy; and AIO's interface serves AIO's page, which keeps the settings «Instalar» wrote. Any other candidate's names
+and certificates are production ones, which a run never claims: there it says so and passes."""
 
 import json
 import os
@@ -29,6 +30,8 @@ LISTO_WAIT = 20 * 60  # seconds: AIO's start, Nextcloud's first setup and each c
 PROBE = 60  # seconds between two looks at AIO's pages during the install
 LISTO = "/mnt/docker-aio-config/provisionador/listo"
 TICKED = "farmacia"  # the optional app the install ticks at «Revisar», with a small App release
+SECTORS, PROGRAMS = ("Norte", "Sector Sur"), ("Atención Domiciliaria",)  # as an operator types them at «Equipos»
+TEAMS = ["Sector Norte", "Sector Sur", "Programa Atención Domiciliaria"]  # the teams they become
 # The suite «Instalar» starts: AIO's core, and Talk, Euro-Office, ClamAV, Imaginary, full-text search and HaRP; Talk's
 # recording server too on a machine that records, and our Caddy behind no other proxy.
 SUITE = ("apache", "clamav", "database", "eurooffice", "fulltextsearch", "harp", "imaginary", "nextcloud",
@@ -71,8 +74,15 @@ with chromium(pinned=[verified(url.hostname, url.port, printed)]) as browser:
     name = claim(page, reserved())
     page.reload()
     expect(page.locator("#address-name")).to_have_text(f"https://{name}", timeout=30_000)
+    page.click("#to-equipos")
+    expect(page.get_by_role("heading", name="Equipos", exact=True)).to_be_visible()
+    page.fill("#sectors", "\n".join(SECTORS))
+    page.fill("#programs", "\n".join(PROGRAMS))
+    expect(page.locator("#teams li strong")).to_have_text(TEAMS)
+    page.screenshot(path=evidence / "equipos.png")
     page.click("#to-revisar")
     expect(page.get_by_role("heading", name="Revisar", exact=True)).to_be_visible()
+    expect(page.locator("#summary-teams li")).to_have_text(TEAMS)
     centre = api(page, "GET", "/api/state")[1]["centre"]
     expect(page.locator("#summary-centre")).to_contain_text(f"{centre['name']}, {centre['comuna']}")
     expect(page.locator("#summary-address")).to_have_text(f"https://{name}")
