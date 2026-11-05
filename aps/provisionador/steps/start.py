@@ -3,7 +3,8 @@
 """The suite's start, with AIO's own start command, which pulls, creates and starts each container; then each container
 answers in turn. The step goes by AIO's own reading of the containers: it sends AIO's start while one of them is
 stopped, which starts only the containers not running, so that «Reintentar» or a restart of the Provisionador does not
-start the suite twice, and it is done once AIO reads every container running."""
+start the suite twice, and it is done once AIO reads every container running. Its part of the end-of-install check:
+AIO still reads every container running."""
 
 from steps import until
 from suite import Unreachable
@@ -34,3 +35,7 @@ def run(context):
     if any(c["state"] == "stopped" for c in context.suite.containers()):
         context.suite.start(aio_url(context.interface))
     return until(lambda: unready(context.suite), lambda reasons: not reasons, WAIT)
+
+
+def check(context):
+    return unready(context.suite)

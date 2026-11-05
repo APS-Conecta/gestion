@@ -28,9 +28,9 @@ which the Provisionador's page loads too. The operator's browser sees AIO's own 
 certificate warning.
 
 **«Listo» hands 8080 to AIO's page.** «Listo» is the file `listo` beside the Provisionador's state in the
-mastercontainer's volume (`/mnt/docker-aio-config/provisionador/`), written by the Provisionador once «Instalar» started
-the suite and AIO reads every one of its containers running. Caddy's `file`
-matcher reads it on every request: from then on 8080 serves AIO's page, and the Provisionador ends the link and
+mastercontainer's volume (`/mnt/docker-aio-config/provisionador/`), written by the Provisionador once every install
+step is green and the end-of-install check is clean (`aps/provisionador/runner.py`). Caddy's `file` matcher reads it on
+every request: from then on 8080 serves AIO's page, and the Provisionador ends the link and
 every session. At a later start the Provisionador prints that the install ended and exits; dinit restarts it only
 after a failure.
 
@@ -79,8 +79,8 @@ de Magallanes y de la Antártica Chilena is `America/Punta_Arenas`, and every ot
 
 ## Consequences
 
-- The Seam 2 tests (`aps/provisionador/test_provisionador.py`) drive the HTTP API in-process against the fake suite
-  port in the static gate. The image test (`aps/provisionador/image-test.py`, the `Mastercontainer image`
+- The Seam 2 tests (`aps/provisionador/test_*.py`) drive the HTTP API in-process against the fake suite port in the
+  static gate. The image test (`aps/provisionador/image-test.py`, the `Mastercontainer image`
   workflow) builds the image from a pull request's tree, runs it as vanilla's command does and checks the link, the
   fingerprint, a restart and the handoff from outside.
 - Caddy's internal issuer, which `internal.Caddyfile` gives no lifetime, issues 12-hour certificates and renews each

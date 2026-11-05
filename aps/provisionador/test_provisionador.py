@@ -588,8 +588,10 @@ class Revisar(ProvisionadorTest):
             "backup": {"folder": "/var/backups/apsconecta-gestion", "time": "06:00"}})
 
 
-class Instalar(ProvisionadorTest):
-    """«Instalar» runs in the background, as against the real suite; each test waits for what the operator would see."""
+class Installing(ProvisionadorTest):
+    """The harness of «Instalar»'s tests: these, the step runner's (test_runner.py) and each step's
+    (test_step_<id>.py). «Instalar» runs in the background, as against the real suite; each test waits for what the
+    operator would see."""
 
     def setUp(self):
         super().setUp()
@@ -607,8 +609,23 @@ class Instalar(ProvisionadorTest):
     def install(self):
         return self.browser.request("POST", "/api/install", {})
 
+    def install_the_suite(self):
+        """«Centro» and «Dirección», then «Instalar»; the suite's containers come up once AIO starts them."""
+        claimed(self.browser)
+        self.install()
+        self.eventually(lambda: self.suite.starts, "AIO's start")
+        self.suite.up()
+
     def status(self):
         return self.browser.get("/api/state")[1]["install"]["status"]
+
+    def steps(self):
+        """Each step as the progress shows it, by its Spanish name: its status and its reason, if it has one."""
+        return {step["name"]: (step["status"], step.get("reason"))
+                for step in self.browser.get("/api/state")[1]["install"]["steps"]}
+
+    def listo(self):
+        return (self.state / provisionador.LISTO).exists()
 
     def eventually(self, condition, what, timeout=10):
         deadline = time.monotonic() + timeout
@@ -617,6 +634,8 @@ class Instalar(ProvisionadorTest):
                 self.fail(f"no {what} within {timeout} s")
             time.sleep(0.01)
 
+
+class Instalar(Installing):
     def test_instalar_needs_the_aps_name_first(self):
         self.assertEqual(self.browser.request("POST", "/api/centre", {"code": "999001"})[0], 200)
         status, body = self.install()
@@ -637,39 +656,6 @@ class Instalar(ProvisionadorTest):
         self.assertEqual(self.suite.daily_backup_time, "06:00\nautomaticUpdatesAreNotEnabled\n",
                          "nightly at 06:00 UTC, with success notifications and without automatic updates")
         self.assertEqual(self.suite.starts, 1)
-
-    def test_the_progress_shows_each_container_as_aio_reads_it_and_listo_waits_for_every_one(self):
-        claimed(self.browser)
-        self.install()
-        self.eventually(lambda: self.suite.starts, "AIO's start")
-        self.suite.up("nextcloud-aio-nextcloud")
-        self.assertEqual(self.browser.get("/api/state")[1]["install"], {"status": "installing", "containers": [
-            {"name": "Apache & Caddy", "state": "starting"}, {"name": "Servidor de aplicaciones", "state": "running"},
-            {"name": "Talk", "state": "starting"}, {"name": "EuroOffice", "state": "starting"}]})
-        self.suite.up("nextcloud-aio-talk", "nextcloud-aio-eurooffice")
-        time.sleep(0.3)  # many readings of the containers
-        self.assertFalse((self.state / provisionador.LISTO).exists(), "Apache still starts")
-        self.suite.up("nextcloud-aio-apache")
-        self.eventually(lambda: (self.state / provisionador.LISTO).exists(), "«Listo»")
-        self.assertEqual(self.browser.get("/api/state")[0], 410, "«Listo» ends the session; AIO's page takes 8080")
-        self.assertIn("«Listo»: el personal abre APS Conecta Gestión en https://centro-999001.gestion.apsconecta.cl",
-                      self.log.getvalue())
-
-    def test_a_container_that_never_runs_fails_the_install_with_its_name_until_reintentar_finds_it_running(self):
-        self.enterContext(mock.patch.object(steps.start, "WAIT", 0.3))
-        claimed(self.browser)
-        self.install()
-        self.eventually(lambda: self.suite.starts, "AIO's start")
-        self.suite.up("nextcloud-aio-apache", "nextcloud-aio-nextcloud", "nextcloud-aio-eurooffice")
-        self.eventually(lambda: self.status() == "failed", "a failed install")
-        self.assertEqual(self.browser.get("/api/state")[1]["install"]["reasons"], [
-            "Estos contenedores de la suite no quedaron en ejecución: Talk. Presione «Reintentar»; si vuelve a ocurrir, "
-            "contacte a APS Conecta."])
-        self.assertFalse((self.state / provisionador.LISTO).exists())
-        self.suite.up("nextcloud-aio-talk")
-        self.assertEqual(self.install()[0], 202)  # «Reintentar»
-        self.eventually(lambda: (self.state / provisionador.LISTO).exists(), "«Listo»")
-        self.assertEqual(self.suite.starts, 1, "AIO's start is not sent again while no container is stopped")
 
     def test_reintentar_sends_aios_start_again_for_a_container_that_stopped(self):
         self.enterContext(mock.patch.object(steps.start, "WAIT", 0.3))
@@ -703,15 +689,6 @@ class Instalar(ProvisionadorTest):
         self.assertEqual(self.status(), "installing")
         self.suite.up()
         self.eventually(lambda: (self.state / provisionador.LISTO).exists(), "«Listo»")
-
-    def test_a_suite_that_does_not_start_fails_the_install_with_aios_reason(self):
-        claimed(self.browser)
-        with mock.patch.object(self.suite, "start", side_effect=provisionador.Unreachable("El contenedor maestro no "
-                                                                                         "logró iniciar la suite.")):
-            self.install()
-            self.eventually(lambda: self.status() == "failed", "a failed install")
-        self.assertEqual(self.browser.get("/api/state")[1]["install"]["reasons"],
-                         ["El contenedor maestro no logró iniciar la suite."])
 
 
 class ImagePulls(ProvisionadorTest):

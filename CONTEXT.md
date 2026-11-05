@@ -67,6 +67,14 @@ The only list of the suite's apps. Every installer step and gate reads it; `scri
 **Provisionador**:
 The single web wizard that runs the install. During the install the operator uses no other page.
 
+**Install step** (paso de instalación):
+One idempotent part of «Instalar», a module that declares the steps it needs. A failed or waiting step shows in red
+with its reason, and «Reintentar» runs only those again.
+
+**End-of-install check** (revisión final):
+The comparison of the running suite with what each install step declared. «Listo» needs every step green and this
+check clean.
+
 **Brand token file** (ficha de tokens de marca):
 `themes/apsconecta/core/css/tokens.css` — the ONE committed source of the palette and the font
 pairing. The server theme, the branding phase, the Provisionador's UI and AIO's page read it; no

@@ -20,6 +20,8 @@ const PUBLISHING = 5000; // between two readings of whether the name's nameserve
 const NEXT_LOOK = 15000;
 const PROGRESS = 3000; // between two readings of the install's progress
 const STATES = {stopped: "Detenido", starting: "Iniciando", running: "En ejecución"}; // as AIO's page names them
+const STEP_STATES = {pending: "Pendiente", running: "En curso", green: "Completado", failed: "No se completó",
+  waiting: "En espera"};
 let register = null;
 let selected = null;
 let map = null;
@@ -264,20 +266,29 @@ async function install() {
   }
 }
 
-// Each container of the suite as AIO reads it, until «Listo» or a failure with its reasons.
+function item(name, state, label, reason) {
+  const node = document.createElement("li");
+  node.dataset.state = state;
+  node.append(element("strong", name), element("span", label));
+  if (reason) node.append(element("p", reason));
+  return node;
+}
+
+// Each step as the Provisionador declares it, a failed or waiting one in red with its reason, and each container of
+// the suite as AIO reads it, until «Listo» or a failure; «Reintentar» runs the failed and waiting steps again.
 function progress(install) {
-  $("progress").replaceChildren(...install.containers.map((container) => {
-    const item = document.createElement("li");
-    item.dataset.state = container.state;
-    item.append(element("strong", container.name), element("span", STATES[container.state]));
-    return item;
-  }));
+  $("steps").replaceChildren(...install.steps.map(
+    (step) => item(step.name, step.status, STEP_STATES[step.status], step.reason)));
+  $("progress").replaceChildren(...install.containers.map((c) => item(c.name, c.state, STATES[c.state])));
   const failed = install.status === "failed";
   $("install").disabled = !failed;
   $("install").textContent = failed ? "Reintentar" : "Instalar";
-  if (failed) return say(install.reasons.join(" "), true, "install-status");
-  say(install.error || "Instalando la suite. «Listo» aparece cuando todos sus contenedores estén en ejecución.", false,
-    "install-status");
+  if (failed) {
+    return say("Algunos pasos no se completaron; su motivo aparece en rojo. Presione «Reintentar».", true,
+      "install-status");
+  }
+  say(install.error || "Instalando la suite: cada paso sigue por sí solo. «Listo» aparece cuando todos estén completos.",
+    false, "install-status");
   clearTimeout(polling);
   polling = setTimeout(poll, PROGRESS);
 }

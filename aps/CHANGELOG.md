@@ -13,6 +13,15 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Added
 
+- **The install step runner (#287).** «Instalar» runs its work as install steps, each declaring the steps it needs:
+  AIO's settings and start, then the baseline on the running suite. Sessions end after 15 idle minutes with no
+  «Recordarme», the audit log records administrative actions, background jobs run from AIO's cron, everyone gets
+  Spanish with Chile's formats, and Nextcloud's own requests trust AIO's folder of trusted CAs and the ISP's
+  intermediate certificate, which only warns when it cannot be fetched. A failed step blocks only the steps that need
+  it, the progress shows every failed or waiting step in red with its reason, and «Reintentar» runs only those again.
+  «Listo» needs every step green and a clean end-of-install check, which compares the running suite with what each
+  step declared; a restart of the Provisionador resumes the steps it cut short.
+
 - **«Revisar» and «Instalar»: the suite starts on its APS name with every component on (#286).** «Revisar»
   summarises the centre, its APS name and timezone, the components and the nightly backup. «Instalar» writes AIO's
   settings with AIO's own code: Talk, Euro-Office, ClamAV, Imaginary, full-text search and HaRP on, the centre's

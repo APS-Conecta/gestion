@@ -4,7 +4,8 @@
 proxy folder and Nextcloud's command line (occ).
 
 The Provisionador is built with one implementation: `Suite` inside the mastercontainer, `FakeSuite` in the Seam 2
-tests. A screen or an install step that needs the suite adds its method to the port and to both implementations.
+tests. A screen or an install step that needs the suite adds its method to the port and to both implementations, here
+or in the port file of its concern: nextcloud.py for Nextcloud's command line, which each holds as `nextcloud`.
 """
 
 import ipaddress
@@ -127,6 +128,8 @@ class Unknown(Unreachable):
 
 
 class SuitePort(Protocol):
+    nextcloud: object  # Nextcloud's part of the port (nextcloud.py)
+
     def certificate(self, host: str) -> bytes:
         """The certificate, in DER, that AIO's interface presents to a browser that opens it at `host`."""
 
@@ -256,7 +259,9 @@ class Suite:
     """The suite port inside the mastercontainer."""
 
     def __init__(self):
+        from nextcloud import Nextcloud  # it imports this module
         self.names = NameService(json.loads(SERVICES.read_text(encoding="utf-8"))["name_service"])
+        self.nextcloud = Nextcloud()
 
     def certificate(self, host, timeout=60):
         """Caddy issues AIO's interface certificate on demand: for the server name a browser sends, or, for an IP
@@ -374,6 +379,8 @@ class FakeSuite:
                   "nextcloud-aio-talk": "Talk", "nextcloud-aio-eurooffice": "EuroOffice"}  # by id, AIO's names
 
     def __init__(self):
+        from nextcloud import FakeNextcloud  # it imports this module
+        self.nextcloud = FakeNextcloud()
         self.renewals = 0
         self.claims = []  # the DEIS codes claimed, in order
         self.held = set()  # the DEIS codes another installation holds
