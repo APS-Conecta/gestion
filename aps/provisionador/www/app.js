@@ -29,7 +29,7 @@ let marker = null;
 let searching = null;
 let looking = null;
 let polling = null;
-let attempt = {}; // what «Dirección» sent last, which «Reintentar» sends again
+let attempt = "name"; // what «Dirección» tried last, the APS name or an "own" domain, which «Reintentar» tries again
 
 async function api(method, path, body) {
   let response;
@@ -167,7 +167,7 @@ async function confirm() {
 // suite's vanilla setup. A name already held, a domain the check refuses or an outage comes with «Reintentar».
 async function direccion(body = {}) {
   show("direccion");
-  attempt = body;
+  attempt = "domain" in body ? "own" : "name";
   clearTimeout(looking);
   for (const id of ["retry", "direccion-next", "use-name"]) $(id).hidden = true;
   for (const id of ["address-name", "reach", "ports"]) $(id).textContent = "";
@@ -183,6 +183,12 @@ async function direccion(body = {}) {
     return;
   }
   addressed(address);
+}
+
+// «Dirección» with the domain the «Dominio propio» field holds now: from the form, and from «Reintentar» after an own
+// domain, so that a domain corrected in the field is the one checked.
+function ownDomain() {
+  direccion({domain: $("own-domain").domain.value.trim()});
 }
 
 // An own domain comes with Talk's port notice, which «Revisar» shows again; the APS name, with the look from this
@@ -362,11 +368,11 @@ async function start() {
       return locked(e.message);
     }
   }
-  $("retry-button").addEventListener("click", () => direccion(attempt));
+  $("retry-button").addEventListener("click", () => (attempt === "own" ? ownDomain() : direccion()));
   $("use-name").addEventListener("click", () => direccion());
   $("own-domain").addEventListener("submit", (e) => {
     e.preventDefault();
-    direccion({domain: e.target.domain.value.trim()});
+    ownDomain();
   });
   $("to-revisar").addEventListener("click", revisar);
   $("install").addEventListener("click", install);

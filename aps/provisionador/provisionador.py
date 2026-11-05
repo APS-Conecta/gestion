@@ -309,7 +309,8 @@ class Provisionador:
 
     def get_state(self, query, body):
         state = self.state.read()
-        # «Revisar», once «Dirección» claimed the name: what «Instalar» sets up beside the centre, its name and timezone.
+        # «Revisar», once «Dirección» set the address (the APS name or an own domain): what «Instalar» sets up beside
+        # the centre, its name and timezone.
         review = state.get("address") and {"components": components.NAMES,
                                            "backup": {"folder": backups.FOLDER, "time": backups.TIME}}
         return 200, {"centre": state.get("centre"), "address": self.address(state), "review": review,

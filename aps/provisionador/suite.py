@@ -269,7 +269,8 @@ class NameService:
 
     def release(self, credential):
         """Free the name with its own credential: the Bootstrap's reset, the CI proof and the acceptance harness free
-        the names they claimed; the Provisionador's install never frees one."""
+        the names they claimed, and «Dirección» frees a name claimed before when the operator switches to an own
+        domain; «Instalar» never frees one."""
         self.call(f"{credential['server_url']}/release", {"code": credential["username"]}, credential)
 
     @staticmethod
