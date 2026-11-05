@@ -5,8 +5,8 @@
 Collabora's nor OnlyOffice's connector is (40-install holds their containers off). A staff member signed in at the
 suite's name opens the Office entry from its navigation icon, in Nextcloud's app menu, and creates a blank DOCX in its
 document hub, which opens in Euro-Office; they type a line, save and close it, and the DOCX Nextcloud keeps holds the
-line. Reopened from the Office entry, Euro-Office shows it. Any other candidate's names and certificates are production ones, which a run
-never claims: there it says so and passes."""
+line. Reopened from the Office entry, Euro-Office shows it. Any other candidate's names and certificates are
+production ones, which a run never claims: there it says so and passes."""
 
 import base64
 import contextlib

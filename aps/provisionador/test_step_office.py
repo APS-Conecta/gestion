@@ -19,9 +19,9 @@ class Office(Installing):
     def test_odf_documents_open_and_edit_in_euro_office_in_its_light_theme_each_in_a_tab_of_its_own(self):
         self.install_the_suite()
         self.eventually(self.listo, "«Listo»")
+        expected = {"defFormats": ODF, "editFormats": ODF, "customizationTheme": "default-light", "sameTab": "false"}
         connector = self.suite.nextcloud.apps.get("eurooffice", {})
-        self.assertEqual({key: connector.get(key) for key in ("defFormats", "editFormats", "customizationTheme", "sameTab")},
-                         {"defFormats": ODF, "editFormats": ODF, "customizationTheme": "default-light", "sameTab": "false"})
+        self.assertEqual({key: connector.get(key) for key in expected}, expected)
 
     def test_listo_waits_until_euro_office_answers_nextcloud(self):
         self.suite.nextcloud.editor = False  # Euro-Office's document server does not answer Nextcloud yet
