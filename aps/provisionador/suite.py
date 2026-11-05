@@ -10,6 +10,7 @@ or in the port file of its concern: nextcloud.py for Nextcloud's command line, w
 
 import ipaddress
 import json
+import os
 import re
 import socket
 import ssl
@@ -59,13 +60,16 @@ $container = \AIO\DependencyInjection::GetContainer();
 $config = $container->get(\AIO\Data\ConfigurationManager::class);
 $in = json_decode(stream_get_contents(STDIN), true, 8, JSON_THROW_ON_ERROR);
 """
-# AIO's settings for the APS name: its first-run setup, so that AIO's passphrase exists as the first visit to its page
-# would make it; the name as the domain, without vanilla's domain check, as upstream's Caddy DNS-challenge recipe and its
-# deSEC registration set it; our Caddy as the one community container, with the settings its definition gives AIO
-# (reverse-proxy mode: Apache's port and binding); and, among AIO's secrets, the name's acme-dns credential, which
-# community-containers/caddy/caddy.json passes to Caddy.
-USE_NAME = AIO + r"""
+# AIO's first-run setup, so that AIO's passphrase exists as the first visit to its page would make it. Each setup of the
+# establishment's address follows it.
+SETUP = AIO + r"""
 $container->get(\AIO\Data\Setup::class)->Setup();
+"""
+# AIO's settings for the APS name: the name as the domain, without vanilla's domain check, as upstream's Caddy
+# DNS-challenge recipe and its deSEC registration set it; our Caddy as the one community container, with the settings
+# its definition gives AIO (reverse-proxy mode: Apache's port and binding); and, among AIO's secrets, the name's
+# acme-dns credential, which community-containers/caddy/caddy.json passes to Caddy.
+USE_NAME = SETUP + r"""
 $config->aioCommunityContainers = ['caddy'];
 $config->setDomain($in['domain'], true);
 $config->setAioVariables($in['aio_variables']);
@@ -73,6 +77,38 @@ $config->setAioVariables($in['aio_variables']);
     $this->set('secrets', array_merge($this->get('secrets', []), $secrets));
 })->call($config, $in['secrets']);
 """
+# AIO's settings for an own domain, vanilla's: no community container, AIO's own values for the settings our Caddy's
+# definition gives it, none of the APS name's secrets and no domain yet. Then what AIO's page does before it takes a
+# domain: it starts the domaincheck container, which answers on Apache's port, and once that answers, vanilla's domain
+# check keeps the domain if it resolves to a public address that answers on 443. It prints the check's Spanish reason
+# when it refuses the domain.
+OWN_DOMAIN = SETUP + r"""
+$config->aioCommunityContainers = [];
+$config->setAioVariables($in['aio_variables']);
+(function (array $names): void {
+    $this->set('secrets', array_diff_key($this->get('secrets', []), array_flip($names)));
+    $this->unset('domain');
+})->call($config, $in['secrets']);
+$container->get(\AIO\Docker\DockerActionManager::class)->ConnectMasterContainerToNetwork();
+$container->get(\AIO\Controller\DockerController::class)->StartDomaincheckContainer();
+$domaincheck = $container->get(\AIO\ContainerDefinitionFetcher::class)->GetContainerById('nextcloud-aio-domaincheck');
+for ($wait = 30; $wait > 0 && $domaincheck->GetStartingState() !== \AIO\Container\ContainerState::Running; $wait--) {
+    sleep(1);
+}
+try {
+    $config->setDomain($in['domain'], false);
+    $refused = null;
+} catch (\AIO\Data\InvalidSettingConfigurationException $refusal) {
+    $refused = $refusal->getMessage();
+}
+echo json_encode(['refused' => $refused], JSON_THROW_ON_ERROR);
+"""
+# AIO's own values for the settings our Caddy's definition gives it (community-containers/caddy/caddy.json), as its
+# ConfigurationManager defaults them: Apache on 443 on every address of the host, and Talk on 3478 at the domain.
+VANILLA = ["apache_ip_binding=", "apache_port=443", "turn_domain=", "talk_port=3478"]
+# The name's acme-dns credential among AIO's secrets, under the names community-containers/caddy/caddy.json passes.
+ACMEDNS = {"ACMEDNS_USERNAME": "username", "ACMEDNS_PASSWORD": "password", "ACMEDNS_SUBDOMAIN": "subdomain",
+           "ACMEDNS_SERVER_URL": "server_url"}
 # AIO's switches, as its options form sets them (ConfigurationController::SetConfig); the office suite is one choice.
 SWITCH = r"""
 $config->startTransaction();
@@ -132,6 +168,10 @@ class Unknown(Unreachable):
     """The name service does not know the credential: its name is free."""
 
 
+class Refused(Exception):
+    """Vanilla's domain check refused the own domain; the Spanish reason is AIO's."""
+
+
 class SuitePort(Protocol):
     nextcloud: object  # Nextcloud's part of the port (nextcloud.py)
 
@@ -152,8 +192,15 @@ class SuitePort(Protocol):
     def server_address(self) -> str:
         """The server's address on the network its default route leaves by: the clinic's network."""
 
+    def hardware(self) -> dict:
+        """The server's CPU cores (`cpus`) and its memory in GiB (`memory_gib`), rounded as the Bootstrap rounds it."""
+
     def use_name(self, credential: dict) -> None:
         """Set AIO up to serve the claimed name with our Caddy, in reverse-proxy mode."""
+
+    def own_domain(self, domain: str) -> None:
+        """Set AIO up the vanilla way for the establishment's own domain, which AIO keeps once vanilla's domain check
+        passes; Refused, with the check's Spanish reason, when it does not."""
 
     def published(self, name: str, address: str) -> bool:
         """Whether every nameserver a resolver may ask for `name` answers `address` for it."""
@@ -200,8 +247,7 @@ def caddy():
 
 def acmedns(credential):
     """The name's acme-dns credential, under the names of the secrets community-containers/caddy/caddy.json passes."""
-    return {"ACMEDNS_USERNAME": credential["username"], "ACMEDNS_PASSWORD": credential["password"],
-            "ACMEDNS_SUBDOMAIN": credential["subdomain"], "ACMEDNS_SERVER_URL": credential["server_url"]}
+    return {secret: credential[key] for secret, key in ACMEDNS.items()}
 
 
 def docker(*args):
@@ -236,7 +282,8 @@ class NameService:
 
     def release(self, credential):
         """Free the name with its own credential: the Bootstrap's reset, the CI proof and the acceptance harness free
-        the names they claimed; the Provisionador's install never frees one."""
+        the names they claimed, and «Dirección» frees a name claimed before when the operator switches to an own
+        domain; «Instalar» never frees one."""
         self.call(f"{credential['server_url']}/release", {"code": credential["username"]}, credential)
 
     @staticmethod
@@ -318,6 +365,12 @@ class Suite:
             raise Unreachable(NO_SERVER_ADDRESS) from None
 
     @staticmethod
+    def hardware():
+        """The mastercontainer shares the host's kernel, which gives it the host's cores and memory."""
+        memory = int(re.search(r"^MemTotal:\s+(\d+) kB$", Path("/proc/meminfo").read_text(), re.M)[1])
+        return {"cpus": len(os.sched_getaffinity(0)), "memory_gib": (memory + 524288) // 1048576}
+
+    @staticmethod
     def aio(script, values, failed, timeout=120):
         """What `script`, AIO's own code, printed with `values` on its stdin; Unreachable with `failed` when it fails."""
         try:
@@ -332,6 +385,19 @@ class Suite:
         values = {"domain": credential["name"], "aio_variables": caddy()["aio_variables"],
                   "secrets": acmedns(credential)}
         self.aio(USE_NAME, values, AIO_REFUSED.format("la dirección del establecimiento"))
+
+    def own_domain(self, domain):
+        """AIO's vanilla settings and vanilla's domain check, through AIO's own code (OWN_DOMAIN). The domaincheck
+        container's image may have to download first."""
+        failed = AIO_REFUSED.format("el dominio propio")
+        answer = self.aio(OWN_DOMAIN, {"domain": domain, "aio_variables": VANILLA, "secrets": list(ACMEDNS)}, failed,
+                          timeout=600)
+        try:
+            refused = json.loads(answer)["refused"]
+        except (ValueError, KeyError, TypeError):
+            raise Unreachable(failed) from None
+        if refused is not None:
+            raise Refused(refused)
 
     def published(self, name, address):
         """A resolver may ask any nameserver of the name's zone, so each one is asked directly, and no resolver keeps
@@ -395,11 +461,12 @@ class FakeSuite:
     after renew(), as Caddy's internal issuer renews them. Its name service gives the DEIS code <code> the name
     centro-<code>.gestion.apsconecta.cl once, refuses the codes another installation holds, and fails while `outage`
     is set; the nameservers of its zone answer the addresses it was given once propagate() brings them. Its AIO keeps
-    its settings file in `aio` and its daily backup file in `daily_backup_time`, the server's address is `server` until
-    DHCP changes it and cannot be read while `no_server_address` is set, and a browser whose resolver answers the
-    server's address says hello() to AIO's interface at a name. AIO's start makes each of its CONTAINERS starting, until
-    up() makes their ports answer, and the first one installs its startup apps from the app store. Its GitHub serves
-    the files of the App releases in `releases`, by repo, tag and file name."""
+    its settings file in `aio` and its daily backup file in `daily_backup_time`, and its domain check refuses each
+    domain of `refused` with the reason given there. The server's address is `server` until DHCP changes it and cannot
+    be read while `no_server_address` is set, its hardware is `machine`, and a browser whose resolver answers the
+    server's address says hello() to AIO's interface at a name. AIO's start makes each of its CONTAINERS starting,
+    until up() makes their ports answer, and the first one installs its startup apps from the app store. Its GitHub
+    serves the files of the App releases in `releases`, by repo, tag and file name."""
 
     CONTAINERS = {"nextcloud-aio-apache": "Apache & Caddy", "nextcloud-aio-nextcloud": "Servidor de aplicaciones",
                   "nextcloud-aio-talk": "Talk", "nextcloud-aio-eurooffice": "EuroOffice"}  # by id, AIO's names
@@ -416,7 +483,9 @@ class FakeSuite:
         self.nameservers = {}  # by name, the address the zone's nameservers answer
         self.server = "192.168.1.10"
         self.no_server_address = False
+        self.machine = {"cpus": 2, "memory_gib": 6}  # the acceptance VM's: the Bootstrap's memory floor and 2 cores
         self.aio = {}
+        self.refused = {}  # by domain, the Spanish reason vanilla's domain check refuses it with
         self.daily_backup_time = None
         self.hellos = set()  # the names a TLS client asked AIO's interface for
         self.starts = 0  # how often AIO's start was sent
@@ -477,6 +546,9 @@ class FakeSuite:
             raise Unreachable(NO_SERVER_ADDRESS)
         return self.server
 
+    def hardware(self):
+        return dict(self.machine)
+
     def use_name(self, credential):
         """What AIO's configuration code writes: the domain, the community container and the variables of its
         definition, and the secrets."""
@@ -486,6 +558,17 @@ class FakeSuite:
             key, value = variable.split("=", 1)
             self.aio[key] = value.replace("%NC_DOMAIN%", name)
         self.aio["secrets"] = {**self.aio.get("secrets", {}), **acmedns(credential)}
+
+    def own_domain(self, domain):
+        """What AIO's configuration code writes for an own domain: vanilla's settings, with no community container and
+        none of the name's secrets, then the domain, which vanilla's domain check keeps."""
+        self.aio["aio_community_containers"] = ""
+        self.aio.update(variable.split("=", 1) for variable in VANILLA)
+        self.aio["secrets"] = {k: v for k, v in self.aio.get("secrets", {}).items() if k not in ACMEDNS}
+        self.aio.pop("domain", None)
+        if domain in self.refused:
+            raise Refused(self.refused[domain])
+        self.aio["domain"] = domain
 
     def opened(self, name):
         return name in self.hellos

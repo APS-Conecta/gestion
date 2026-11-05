@@ -61,14 +61,27 @@
 
   <section id="direccion" hidden>
     <h1>Dirección</h1>
-    <p class="lead">El personal abrirá la suite en el nombre APS del establecimiento, con un certificado válido y sin
-      abrir puertos en el router. El Provisionador lo obtiene del servicio de nombres de APS Conecta.</p>
+    <p class="lead">Con el nombre APS del establecimiento, el personal abre la suite con un certificado válido y sin
+      abrir puertos en el router; el Provisionador lo obtiene del servicio de nombres de APS Conecta.</p>
     <p class="address" id="address-name"></p>
     <p class="message" id="address-status" role="status"></p>
     <div class="actions" id="retry" hidden>
       <button type="button" class="primary" id="retry-button">Reintentar</button>
     </div>
     <p class="message" id="reach" role="status"></p>
+    <p class="message notice" id="ports"></p>
+    <form id="own-domain" class="own-domain">
+      <p class="muted">Si el establecimiento tiene un dominio propio, puede usarlo en vez del nombre APS. El dominio
+        debe apuntar a la dirección pública del servidor, con el puerto 443 abierto hacia él. Así la suite queda abierta
+        a internet: el personal y las aplicaciones del teléfono la abren también desde fuera del establecimiento,
+        protegida solo por las protecciones propias de Nextcloud.</p>
+      <label>Dominio propio<input name="domain" required autocomplete="off" spellcheck="false"
+        placeholder="Por ejemplo: gestion.cesfam-loscastanos.cl"></label>
+      <div class="actions">
+        <button type="submit">Usar el dominio propio</button>
+        <button type="button" id="use-name" hidden>Usar el nombre APS</button>
+      </div>
+    </form>
     <div class="actions" id="direccion-next" hidden>
       <button type="button" class="primary" id="to-revisar">Continuar</button>
     </div>
@@ -87,6 +100,7 @@
       <dt id="optional-apps-label">Aplicaciones opcionales</dt>
       <dd><fieldset class="choices" id="optional-apps" aria-labelledby="optional-apps-label"></fieldset></dd>
     </dl>
+    <p class="message notice" id="review-ports"></p>
     <div class="actions">
       <button type="button" class="primary" id="install">Instalar</button>
     </div>

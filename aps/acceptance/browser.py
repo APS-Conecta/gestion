@@ -3,7 +3,8 @@
 """The acceptance harness's one way to open a browser: Chromium through Playwright, whose context adds trust only for
 Let's Encrypt's staging roots, which the suite's certificate comes from in CI, and for the certificates a check pins
 after verifying them itself, such as the Provisionador's, by the fingerprint the Bootstrap printed. No check ignores
-certificate errors.
+certificate errors. A check that calls gets fake media devices: Chromium's fake camera and a microphone that plays a
+steady tone.
 
 Checks import it after `sys.path.insert(0, <aps/acceptance>)`. It also runs a check's command lines on the machine and
 reads the files of the mastercontainer there.
@@ -13,17 +14,24 @@ import base64
 import contextlib
 import hashlib
 import json
+import math
 import os
 import re
 import ssl
+import struct
 import subprocess
 import sys
 import tempfile
+import wave
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
 STAGING_ROOTS = Path(__file__).with_name("letsencrypt-staging-roots.pem")
+# Fake media devices, granted to every page (a headless browser refuses them otherwise), whose sound and video a page
+# plays without a click.
+FAKE_MEDIA = ("--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream",
+              "--autoplay-policy=no-user-gesture-required")
 
 
 def machine(command, stdin=""):
@@ -79,9 +87,19 @@ def spki(pem):
     return base64.b64encode(hashlib.sha256(der).digest()).decode()
 
 
+def tone(path):
+    """Five seconds of a 440 Hz tone, which the fake microphone plays in a loop."""
+    with wave.open(str(path), "wb") as out:
+        out.setparams((1, 2, 48000, 0, "NONE", "not compressed"))
+        out.writeframes(b"".join(struct.pack("<h", round(12000 * math.sin(2 * math.pi * 440 * n / 48000)))
+                                 for n in range(5 * 48000)))
+    return path
+
+
 @contextlib.contextmanager
-def chromium(pinned=()):
-    """A Chromium browser trusting the staging roots (in its own NSS database) and the pinned PEM certificates."""
+def chromium(pinned=(), media=False):
+    """A Chromium browser trusting the staging roots (in its own NSS database) and the pinned PEM certificates; with
+    `media`, its camera and its microphone are the fake ones."""
     with tempfile.TemporaryDirectory() as home, sync_playwright() as playwright:
         nssdb = Path(home, ".pki", "nssdb")
         nssdb.mkdir(parents=True)
@@ -91,7 +109,8 @@ def chromium(pinned=()):
             subprocess.run(["certutil", "-A", "-d", f"sql:{nssdb}", "-n", f"staging-{n}", "-t", "C,,", "-a"],
                            input=root, text=True, check=True)
         pins = [f"--ignore-certificate-errors-spki-list={','.join(spki(pem) for pem in pinned)}"] if pinned else []
-        browser = playwright.chromium.launch(env={**os.environ, "HOME": home}, args=pins)
+        fake = [*FAKE_MEDIA, f"--use-file-for-fake-audio-capture={tone(Path(home, 'tone.wav'))}"] if media else []
+        browser = playwright.chromium.launch(env={**os.environ, "HOME": home}, args=pins + fake)
         try:
             yield browser
         finally:

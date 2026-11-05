@@ -29,6 +29,7 @@ let marker = null;
 let searching = null;
 let looking = null;
 let polling = null;
+let attempt = "name"; // what «Dirección» tried last, the APS name or an "own" domain, which «Reintentar» tries again
 
 async function api(method, path, body) {
   let response;
@@ -162,26 +163,45 @@ async function confirm() {
 }
 
 // «Dirección»: the Provisionador claims the centre's APS name, sets the suite up to serve it and points it at the
-// server's address. A name already held or an outage comes with «Reintentar».
-async function direccion() {
+// server's address. With `body.domain`, the establishment's own domain instead: vanilla's domain check, then the
+// suite's vanilla setup. A name already held, a domain the check refuses or an outage comes with «Reintentar».
+async function direccion(body = {}) {
   show("direccion");
-  $("retry").hidden = true;
-  say("Obteniendo la dirección del establecimiento…", false, "address-status");
+  attempt = "domain" in body ? "own" : "name";
+  clearTimeout(looking);
+  for (const id of ["retry", "direccion-next", "use-name"]) $(id).hidden = true;
+  for (const id of ["address-name", "reach", "ports"]) $(id).textContent = "";
+  say(body.domain ? `Comprobando el dominio ${body.domain}…` : "Obteniendo la dirección del establecimiento…", false,
+    "address-status");
   let address;
   try {
-    ({address} = await api("POST", "/api/address", {}));
+    ({address} = await api("POST", "/api/address", body));
   } catch (e) {
     say(e.message, true, "address-status");
     $("retry").hidden = false;
+    $("use-name").hidden = !body.domain;
     return;
   }
   addressed(address);
 }
 
+// «Dirección» with the domain the «Dominio propio» field holds now: from the form, and from «Reintentar» after an own
+// domain, so that a domain corrected in the field is the one checked.
+function ownDomain() {
+  direccion({domain: $("own-domain").domain.value.trim()});
+}
+
+// An own domain comes with Talk's port notice, which «Revisar» shows again; the APS name, with the look from this
+// browser.
 function addressed(address) {
   $("address-name").textContent = `https://${address.name}`;
-  say("Dirección asignada. Apunta a este servidor en la red del establecimiento.", false, "address-status");
   $("direccion-next").hidden = false;
+  $("use-name").hidden = !address.own;
+  $("ports").textContent = address.notice || "";
+  if (address.own) {
+    return say("Dominio comprobado: apunta a este servidor y responde en el puerto 443.", false, "address-status");
+  }
+  say("Dirección asignada. Apunta a este servidor en la red del establecimiento.", false, "address-status");
   reach(address);
 }
 
@@ -199,11 +219,17 @@ function reach(address) {
     + "este equipo encuentra el servidor en ella.", false, "reach");
   looking = setTimeout(async () => {
     try {
-      reach((await api("GET", "/api/state")).address);
+      const now = (await api("GET", "/api/state")).address;
+      if (same(now, address.name)) reach(now);
     } catch (e) {
       say(e.message, true, "reach");
     }
   }, PUBLISHING);
+}
+
+// Whether `address` is still the APS name `name`: «Dirección» may have moved on to an own domain meanwhile.
+function same(address, name) {
+  return address?.name === name && !address.own;
 }
 
 // The browser asks for this interface at the name. When this network's resolver answers the server's address, the
@@ -219,6 +245,7 @@ async function look(name) {
   } catch (e) {
     return say(e.message, true, "reach");
   }
+  if (!same(address, name)) return;
   if (address.opened) {
     return say(`Este equipo encuentra el servidor en ${name}.`, false, "reach");
   }
@@ -246,6 +273,7 @@ function review(state) {
   $("summary-centre").textContent = `${centre.name}, ${centre.comuna}, región ${centre.region} (código DEIS `
     + `${centre.code})`;
   $("summary-address").textContent = suite;
+  $("review-ports").textContent = address.notice || "";
   $("summary-timezone").textContent = centre.timezone;
   $("summary-components").replaceChildren(...chosen.components.map((name) => element("li", name)));
   $("summary-backup").textContent = `Cada noche, a las ${chosen.backup.time} UTC, en la carpeta `
@@ -359,7 +387,12 @@ async function start() {
       return locked(e.message);
     }
   }
-  $("retry-button").addEventListener("click", direccion);
+  $("retry-button").addEventListener("click", () => (attempt === "own" ? ownDomain() : direccion()));
+  $("use-name").addEventListener("click", () => direccion());
+  $("own-domain").addEventListener("submit", (e) => {
+    e.preventDefault();
+    ownDomain();
+  });
   $("to-revisar").addEventListener("click", revisar);
   $("install").addEventListener("click", install);
   let state;
