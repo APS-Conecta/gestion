@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: 2026 APS Conecta
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""A rerun of the one command before «Listo» is harmless and prints a fresh link: the machine's containers, images,
+"""A rerun of the Bootstrap before «Listo» is harmless and prints a fresh link: the machine's containers, images,
 volumes, networks, packages and the install's files stay as they were, and the first link and the fresh one each
 open «Centro» at the machine's address, in a browser that pins the certificate whose fingerprint was printed."""
 
@@ -32,7 +32,7 @@ before = machine("sudo bash -s", STATE)
 first = printed_link(Path(os.environ["CONSOLE"]).read_text(encoding="utf-8"))
 with tempfile.NamedTemporaryFile() as console:  # the fresh link stays out of the log and the evidence
     if subprocess.run([ACCEPTANCE / "one-command.sh", console.name], check=False).returncode:
-        sys.exit("the rerun of the one command failed")
+        sys.exit("the rerun of the Bootstrap failed")
     fresh = printed_link(Path(console.name).read_text(encoding="utf-8"))
 after = machine("sudo bash -s", STATE)
 if after != before:

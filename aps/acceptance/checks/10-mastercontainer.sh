@@ -4,7 +4,7 @@
 # The mastercontainer runs the image the candidate's release names by digest, as the channel tag.
 set -euo pipefail
 channel=ghcr.io/aps-conecta/all-in-one:latest
-released="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body \
+released="$(gh release view "$TAG" --json body --jq .body \
   | { grep -oE "${channel%:*}@sha256:[0-9a-f]{64}" || true; } | sort -u)"
 [[ "$released" =~ ^[^[:space:]]+$ ]] \
   || { echo "the release $TAG names no one mastercontainer by digest: ${released:-none}" >&2; exit 1; }

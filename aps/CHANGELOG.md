@@ -14,9 +14,10 @@ image digests live there and are deliberately not copied here — one fact, one 
 ### Added
 
 - **The clean-machine acceptance harness (#284).** `.github/workflows/acceptance.yml`, on a maintainer's dispatch for a
-  pre-release or through `workflow_call`, runs the candidate's published Bootstrap on a fresh Debian 12 VM at its
-  hardware floor, then each check on its own: the mastercontainer's digest on the channel tag, pinned digests, a
-  harmless rerun whose fresh link opens «Centro» in Chromium, and a reset that leaves nothing of the install.
+  pre-release or through `workflow_call`, runs the candidate's published Bootstrap on a fresh Debian 12 VM with the
+  memory and disk floor that Bootstrap declares, plus a fixed CPU count, then each check on its own: the
+  mastercontainer's digest on the channel tag, pinned digests, a harmless rerun whose fresh link opens «Centro» in
+  Chromium, and a reset that leaves nothing of the install.
 
 - **The Provisionador answers on AIO's interface until «Listo» (#282).** Our mastercontainer prints a link, its QR
   code and the certificate's fingerprint to its log; the link opens the Provisionador on port 8080, with AIO's own

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The acceptance harness's one way to open a browser: Chromium through Playwright, whose context adds trust only for
 Let's Encrypt's staging roots, which the suite's certificate comes from in CI, and for the certificates a check pins
-after verifying them itself, such as the Provisionador's, by the fingerprint the one command printed. No check ignores
+after verifying them itself, such as the Provisionador's, by the fingerprint the Bootstrap printed. No check ignores
 certificate errors.
 
 Checks import it after `sys.path.insert(0, <aps/acceptance>)`. It also runs a check's command lines on the machine.
@@ -47,7 +47,7 @@ def verified(host, port, printed):
 
 
 def printed_link(output):
-    """The link and the certificate's fingerprint in what the one command printed last. The link's secret is masked
+    """The link and the certificate's fingerprint in what the Bootstrap printed last. The link's secret is masked
     in the CI log first."""
     links = re.findall(r"https://\S+#[\w-]+", output)
     printed = re.findall(r"(?:[0-9A-F]{2}:){31}[0-9A-F]{2}", output)

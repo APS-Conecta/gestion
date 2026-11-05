@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: 2026 APS Conecta
 # SPDX-License-Identifier: AGPL-3.0-or-later
-# The reset, the one command with «restablecer» and its confirmation typed at a terminal, leaves nothing of the
+# The reset, the Bootstrap with «restablecer» and its confirmation typed at a terminal, leaves nothing of the
 # install: no nextcloud-aio-* container, no image they ran, no nextcloud_aio_* volume, no nextcloud-aio network and
 # no kernel drop-in. A container, a volume and a file planted beside it under look-alike names survive. It runs last.
 set -euo pipefail
