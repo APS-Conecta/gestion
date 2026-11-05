@@ -6,11 +6,11 @@
 # script, then its API, with a token of its root user that stays in /root/.aps-coolify, never on a command line or in
 # a log.
 #   aps-coolify setup <repository> <tag> <address> <files> <mastercontainer>
-#       Coolify 4.6.0; its proxy configuration with AIO's Traefik settings pasted, as the Provisionador shows them (the
-#       file <files>/settings, one per line), and the proxy restarted; the resource's source: the candidate's tag of
-#       <repository> on GitHub, and its one variable: <address>, the machine's address, as its public one. On a test
-#       build, whose mastercontainer's services.json names the name service of <files>/test-build.json (as run.sh tells
-#       a test build, from aps/acceptance/test-build.json): Traefik gets the CI name's certificate from
+#       Coolify 4.6.0; its proxy configuration with AIO's Traefik settings pasted, read from the candidate's
+#       mastercontainer as its Provisionador shows them, and the proxy restarted; the resource's source: the candidate's
+#       tag of <repository> on GitHub, and its one variable: <address>, the machine's address, as its public one. On a
+#       test build, whose mastercontainer's services.json names the name service of <files>/test-build.json (as run.sh
+#       tells a test build, from aps/acceptance/test-build.json): Traefik gets the CI name's certificate from
 #       Let's Encrypt's staging service by the DNS challenge through the name service, as our Caddy does, since the
 #       runner takes no inbound connection: Coolify's resolver takes the staging directory and acme-dns, whose account
 #       lego reads from a storage on the machine (<files>/acme-dns-storage.py); and the suite trusts the staging roots
@@ -80,10 +80,12 @@ setup() {
     sleep 5
   done
   [ -n "$server" ] || { echo "Coolify's own server never became usable" >&2; exit 1; }
+  docker pull --quiet "$5" > /dev/null
+  docker run --rm --entrypoint python3 "$5" -I -B -c 'import sys; sys.path.insert(0, sys.argv[1]); import provisionador
+print(*provisionador.PROXY_SETTINGS, sep="\n")' /var/www/docker-aio/aps/provisionador > "$STATE/settings"
   # The proxy configuration, as the admin edits it: AIO's settings added to the command of Coolify's Traefik; and on a
   # test build, its resolver on the staging service by the DNS challenge through acme-dns, in place of the HTTP one.
-  proxy="$(jq -R . "$files/settings" | jq -s '{add: ., remove: [], environment: {}}')"
-  docker pull --quiet "$5" > /dev/null
+  proxy="$(jq -R . "$STATE/settings" | jq -s '{add: ., remove: [], environment: {}}')"
   services="$(docker run --rm --entrypoint cat "$5" /var/www/docker-aio/aps/provisionador/services.json)"
   [ "$(jq -r .name_service <<< "$services")" != "$(jq -r .name_service "$files/test-build.json")" ] || test_build=true
   if [ "$test_build" = true ]; then
@@ -112,7 +114,7 @@ setup() {
     || { tail -n 20 "$STATE/proxy.out" >&2; exit 1; }
   waited=0
   until docker inspect --format '{{json .Config.Cmd}}' coolify-proxy 2> /dev/null | jq -e --slurpfile want \
-      <(jq -R . "$files/settings") '. as $running | $want | all(. as $setting | $running | index($setting))' \
+      <(jq -R . "$STATE/settings") '. as $running | $want | all(. as $setting | $running | index($setting))' \
       > /dev/null; do
     ((++waited < 60)) || { tail -n 20 "$STATE/proxy.out" >&2; echo "the proxy lacks AIO's settings" >&2; exit 1; }
     sleep 5

@@ -159,15 +159,12 @@ OS
 
 stage="Coolify, set up as its admin does"
 if [ "$WAY" = coolify ]; then
-  # The candidate's mastercontainer by the digest its release names; AIO's Traefik settings, as the candidate's
-  # Provisionador shows them; and what a test build's Coolify needs (coolify.sh).
+  # The candidate's mastercontainer by the digest its release names, and what a test build's Coolify needs (coolify.sh).
   mastercontainer="$(gh release view "$TAG" --json body --jq .body \
     | { grep -oE 'ghcr\.io/aps-conecta/all-in-one@sha256:[0-9a-f]{64}' || true; } | sort -u)"
   [[ "$mastercontainer" =~ ^[^[:space:]]+$ ]] \
     || { echo "the release $TAG names no one mastercontainer by digest" >&2; exit 1; }
   mkdir -p "$work/coolify"
-  python3 -I -B -c 'import sys; sys.path.insert(0, sys.argv[1]); import provisionador
-print(*provisionador.PROXY_SETTINGS, sep="\n")' aps/provisionador > "$work/coolify/settings"
   cp aps/acceptance/test-build.json aps/acceptance/acme-dns-storage.py "$work/coolify/"
   cp aps/acceptance/letsencrypt-staging-roots.pem "$work/coolify/ca.crt"
   "$MACHINE" 'sudo tee /usr/local/sbin/aps-coolify > /dev/null && sudo chmod 755 /usr/local/sbin/aps-coolify' \
