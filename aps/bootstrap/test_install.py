@@ -39,7 +39,7 @@ LISTO = "volume/provisionador/listo"
 CONFIGURATION = "volume/data/configuration.json"
 # The APS name's credential, as «Dirección» keeps it there (aps/provisionador/provisionador.py's Credential).
 NAME_CREDENTIAL = "volume/provisionador/aps-name.json"
-ACME_PASSWORD = "Y29udHJhc2XDsWEgZGUgYWNtZS1kbnM"
+ACME_PASSWORD = "prueba.prueba.prueba.prueba"
 CREDENTIAL = json.dumps({"name": "centro-101406.ci.gestion.apsconecta.cl", "username": "101406",
                          "password": ACME_PASSWORD, "subdomain": "centro-101406",
                          "server_url": "https://gestion-nombres-ci.apsconecta.workers.dev"})

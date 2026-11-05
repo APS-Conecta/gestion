@@ -1,4 +1,4 @@
-# gitleaks 8.18.2 (pinned by .github/workflows/ci.yml) — 13 false positives, two groups.
+# gitleaks 8.18.2 (pinned by .github/workflows/ci.yml) — 14 false positives, three groups.
 # Group 1 (fork-infra): the Provisionador's es-CL STATUS DICTS that report whether the
 # env key FIXTURE_USER_PASSWORD is set: the
 # matched "values" are status words ("presente" / "se generará"), not secrets — the real
@@ -23,3 +23,6 @@ dd02dc82a5fe8a45b6598a6e4399ba99883534bb:php/public/forms.js:hashicorp-tf-passwo
 e8ed7aa236e301f356c2523b9f5cc0b3afcd789a:php/public/forms.js:hashicorp-tf-password:47
 d637827c5989a00b6914a0d653b9a9f36c1e3de9:Containers/talk/server.conf.in:generic-api-key:210
 e28a2c4559ce5eeb9ddd9f0dfe1af9a12510a7a4:tests/QA/assets/backup-archive/borg/config:generic-api-key:9
+# Group 3 (fork test fixtures): the Bootstrap test's fixture password for the APS name's credential, as the commit
+# the test build v0.0.0-ci.2860 is tagged on carries it; the test has used a low-entropy fixture since.
+344484210472109e449aa747ae09acddcb022b38:aps/bootstrap/test_install.py:generic-api-key:42
