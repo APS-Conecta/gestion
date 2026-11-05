@@ -20,8 +20,9 @@ At «Dirección» it claims the establishment's APS name and keeps the name's cr
 only by its own account; or, for a domain the establishment holds, it runs vanilla's domain check and sets AIO up the
 vanilla way, freeing an APS name claimed before. On a Coolify server, where the suite runs as a Coolify resource
 behind Coolify's proxy (ADR 0029), it first checks that the proxy runs with AIO's Traefik settings, which it shows for
-the admin to paste once, then writes the route from the address to AIO's Apache into Coolify's dynamic folder, and the
-APS name points at the address the internet reaches the server at. Run as `provisionador.py update-address`, it is the
+the admin to paste once; the APS name points at the address the internet reaches the server at, and once the name's
+nameservers publish it, the Provisionador writes the route from the address to AIO's Apache into Coolify's dynamic
+folder. Run as `provisionador.py update-address`, it is the
 address updater that keeps running after «Listo» (dinit.d/aps-address-updater): every 10 minutes it points the name at
 the server's address. Run as `provisionador.py release-name`, it frees the name whose credential arrives on stdin,
 never on a command line: the Bootstrap's reset runs it before it removes anything, and the acceptance harness for each
@@ -53,6 +54,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import deis
 import runner
+import steps
 from steps import backups, components
 from suite import Held, Refused, Suite, SuitePort, Unreachable
 
@@ -68,6 +70,7 @@ COOKIE = "__Host-session"
 MAX_BODY = 64 * 1024
 CERTIFICATE_CHECK = 5 * 60  # seconds; Caddy's internal issuer renews its 12 h certificates after about 8 h
 ADDRESS_UPDATE = 10 * 60  # seconds, as upstream's desec-ip-updater updates a deSEC domain's address
+PUBLISHING = 2 * 60  # seconds «Dirección» waits, on a Coolify server, for the name's nameservers to publish it
 # The page and its own files, by request path: no request path is ever joined to a directory.
 STATIC = {"/": HERE / "www" / "index.html", "/app.js": HERE / "www" / "app.js", "/app.css": HERE / "www" / "app.css"}
 CONTENT_TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
@@ -128,6 +131,8 @@ PROXY_SETTINGS = [
     "--entrypoints.https.http.encodedCharacters.allowEncodedQuestionMark=true",
     "--entrypoints.https.http.encodedCharacters.allowEncodedPercent=true",
 ]
+NOT_PUBLISHED = ("Los servidores de nombres de internet aún no publican la dirección {} para este servidor. Presione "
+                 "«Reintentar» en un momento.")
 NO_PUBLIC_ADDRESS = ("No se pudo leer la dirección pública del servidor: la variable APS_PUBLIC_ADDRESS del recurso en "
                      "Coolify debe ser su dirección IPv4. Corríjala y vuelva a desplegar el recurso.")
 PROXY_MISSING = ("El proxy de Coolify aún no tiene los ajustes de AIO para Nextcloud. En Coolify, abra el servidor, su "
@@ -441,7 +446,8 @@ class Provisionador:
         The first call for the APS name claims it from the name service by the centre's DEIS code and keeps its
         credential, so the name is claimed once; every call sets AIO up to serve the name and points the name at the
         server's address. On a Coolify server, it goes on only once Coolify's proxy runs with AIO's Traefik settings,
-        and routes the name to AIO's Apache through that proxy instead of our Caddy."""
+        and it routes the name to AIO's Apache through that proxy instead of our Caddy once the name's nameservers
+        publish the server's address, which it waits for."""
         centre = self.state.read().get("centre")
         if centre is None:
             return 409, {"error": NO_CENTRE}
@@ -455,20 +461,23 @@ class Provisionador:
                 if credential is None:
                     credential = self.suite.claim(centre["code"])
                     self.credential.write(credential)
-                coolify = self.suite.coolify()
+                name, at, coolify = credential["name"], server_address(self.suite, self.interface), self.suite.coolify()
                 if coolify:
-                    self.suite.route(credential["name"])
-                    self.suite.behind_coolify(credential["name"])
+                    self.suite.behind_coolify(name)
                 else:
                     self.suite.use_name(credential)
-                self.suite.publish(credential, server_address(self.suite, self.interface))
+                self.suite.publish(credential, at)
+                if coolify:
+                    # Traefik's HTTP challenge and the suite's calls to its own address ask resolvers for the name, and
+                    # a resolver asked before its nameservers publish it keeps finding nothing for 30 minutes.
+                    if not steps.until(lambda: self.suite.published(name, at), bool, PUBLISHING):
+                        return 503, {"error": NOT_PUBLISHED.format(name)}
+                    self.suite.route(name)
             except Held:
                 return 409, {"error": HELD}
             except Unreachable as outage:
                 return 503, {"error": str(outage)}
-            address = {"name": credential["name"]}
-            if coolify:
-                address["coolify"] = True
+            address = {"name": name, "coolify": True, "published": True} if coolify else {"name": name}
             self.state.change(lambda s: s.update(address=address))
         return 200, {"address": self.address(self.state.read())}
 

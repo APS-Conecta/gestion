@@ -8,8 +8,11 @@ and a fake proxy stand for Coolify's."""
 import json
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 import provisionador
+import steps
+from suite import FakeSuite
 from test_provisionador import NAME, ProvisionadorTest, printed
 
 PUBLIC = "203.0.113.10"  # TEST-NET-3: the server's public address, where the internet reaches it
@@ -61,6 +64,12 @@ class Coolify(ProvisionadorTest):
         super().setUp()
         self.suite.dynamic = Path(self.enterContext(tempfile.TemporaryDirectory()))  # Coolify's dynamic proxy folder
         self.suite.traefik = list(COOLIFY_PROXY)
+        self.enterContext(mock.patch.object(self.suite, "published", side_effect=self.nameservers))
+
+    def nameservers(self, name, address):
+        """The zone's nameservers, which publish what the name service holds by the time «Dirección» asks them."""
+        self.suite.propagate()
+        return FakeSuite.published(self.suite, name, address)
 
     def direccion(self, browser, body=None):
         """«Centro» confirmed, then «Dirección»."""
@@ -89,6 +98,23 @@ class Coolify(ProvisionadorTest):
         self.assertEqual(status, 503, body)
         self.assertIn("«Reintentar»", body["error"])
         self.assertEqual((self.suite.claims, list(self.suite.dynamic.iterdir()), self.suite.aio), ([], [], {}))
+
+    def test_direccion_routes_the_name_only_once_its_nameservers_publish_it_and_comes_with_reintentar_until_then(self):
+        self.suite.traefik += SETTINGS
+        self.enterContext(mock.patch.object(provisionador, "PUBLISHING", 0.05))
+        self.enterContext(mock.patch.object(steps, "POLL", 0.01))
+        browser = self.operator()
+        with mock.patch.object(self.suite, "published", return_value=False):  # the zone's nameservers lag
+            status, body = self.direccion(browser)
+        self.assertEqual(status, 503, body)
+        self.assertIn("«Reintentar»", body["error"])
+        self.assertEqual(list(self.suite.dynamic.iterdir()), [],
+                         "no route yet: Traefik's challenge, like the suite's own calls, would ask a resolver too early")
+        self.assertIsNone(browser.get("/api/state")[1]["address"])
+        status, body = browser.request("POST", "/api/address", {})  # «Reintentar», once they publish it
+        self.assertEqual((status, body["address"]["published"]), (200, True), body)
+        self.assertEqual(self.suite.claims, ["999001"], "the name is claimed once")
+        self.assertEqual(self.route(), ROUTE)
 
     def test_the_route_from_the_name_to_aios_apache_goes_into_coolifys_dynamic_folder(self):
         self.suite.traefik += SETTINGS

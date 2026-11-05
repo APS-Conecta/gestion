@@ -35,7 +35,9 @@ compose file.** Raw mode deploys the file as written, with only Coolify's labels
 - vanilla's `NEXTCLOUD_TRUSTED_CACERTS_DIR`, empty unless the resource gives it a folder.
 
 The Provisionador's link, QR code and fingerprint go to the mastercontainer's log, which Coolify shows as the
-resource's logs.
+resource's logs. Its live logs show them whole; its API and its copied or downloaded logs hide the value of every
+variable of the resource, the public address in the link among them, unless the resource's «Environment values in
+logs» is «Hide locked values only». The resource holds no secret, so the Coolify test sets it so.
 
 **«Dirección» goes on once Coolify's proxy runs with AIO's Traefik settings.** The Provisionador reads the arguments
 `coolify-proxy` runs with and answers 409 with those of AIO's Traefik settings (upstream's `reverse-proxy.md`,
@@ -50,9 +52,12 @@ so does the check. A proxy that cannot be read, stopped or not Traefik, answers 
 - AIO gets the vanilla settings of an own domain, with the name as its domain and vanilla's domain check skipped, as
   for the APS name: no community container, since Coolify's proxy stands where our Caddy stands; Talk on 3478 at the
   domain; none of the name's acme-dns secrets. The mastercontainer's environment keeps Apache behind the proxy;
-- the Provisionador writes the route from the name to AIO's Apache into Coolify's dynamic folder, `nextcloud-aio.yaml`,
-  as AIO's «Traefik 3» sample declares it: on the https entry point, with Coolify's `letsencrypt` resolver and AIO's
-  headers, and on the http entry point, a redirect to https. Traefik reads YAML, and the file is JSON, which is YAML.
+- once every nameserver of the name's zone publishes that address, which «Dirección» waits for (two minutes, then
+  503 with «Reintentar»), the Provisionador writes the route from the name to AIO's Apache into Coolify's dynamic
+  folder, `nextcloud-aio.yaml`: Traefik's HTTP challenge and the suite's own calls ask resolvers for the name, and a
+  resolver asked before then keeps finding nothing for the zone's SOA minimum, 30 minutes (ADR 0028). The route is
+  AIO's «Traefik 3» sample: on the https entry point, with Coolify's `letsencrypt` resolver and AIO's headers, and on
+  the http entry point, a redirect to https. Traefik reads YAML, and the file is JSON, which is YAML.
   Coolify keeps the folder to its own account, so the route goes in as root through the Docker socket AIO already
   holds, by `docker exec` into the mastercontainer, with a rename. Traefik then gets the name's certificate by its
   usual HTTP challenge;
@@ -60,7 +65,8 @@ so does the check. A proxy that cannot be read, stopped or not Traefik, answers 
   proxy: until the proxy holds the domain's certificate, the check refuses, and «Reintentar» checks again. A switch
   either way replaces the route.
 
-**Talk publishes 3478 itself**, TCP and UDP, on the host, as for an own domain; «Dirección» and «Revisar» say to open it.
+**Talk publishes 3478 itself**, TCP and UDP, on the host, as for an own domain; «Dirección» and «Revisar» say to open
+it.
 
 **The suite's calls to its own address go to the server's public address**, through Coolify's proxy, as vanilla's do
 behind a reverse proxy: the server is internet-reachable, so they need no alias on AIO's network.
@@ -106,8 +112,9 @@ Two things differ from an admin's server, each for CI's sake:
 ## Consequences
 
 - The Seam 2 tests (`aps/provisionador/test_coolify.py`) drive «Dirección» against a fake Coolify folder and proxy:
-  the settings asked for first, whatever their case, an unreadable proxy, the route file, AIO's settings with Talk's
-  notice, the public address the name and the address updater publish, and an own domain with the switch.
+  the settings asked for first, whatever their case, an unreadable proxy, the route file once the nameservers publish
+  the name, AIO's settings with Talk's notice, the public address the name and the address updater publish, and an own
+  domain with the switch.
 - Traefik's HTTP challenge, the own domain's check through Coolify's proxy and a redeploy's pull of a released channel
   tag are not observable in CI; they are Traefik's, vanilla's and Coolify's own.
 - The host's port 8443 must be free on the server; an app that holds it stops the deploy, which says so.
