@@ -248,8 +248,9 @@ reset_suite() {
     die "Docker está instalado, pero no responde. No se eliminó nada."
   fi
   printf '%s\n' \
-    "Esto elimina APS Conecta Gestión de este servidor con todos sus datos: los contenedores nextcloud-aio-*, las" \
-    "imágenes que ejecutan, los volúmenes nextcloud_aio_*, la red nextcloud-aio y $DROP_IN. Docker queda instalado." >&2
+    "Esto libera el nombre APS del establecimiento, para que otra instalación del mismo establecimiento lo obtenga, y" \
+    "elimina APS Conecta Gestión de este servidor con todos sus datos: los contenedores nextcloud-aio-*, las imágenes" \
+    "que ejecutan, los volúmenes nextcloud_aio_*, la red nextcloud-aio y $DROP_IN. Docker queda instalado." >&2
   printf 'Para confirmar, escriba %s: ' "$CONFIRMATION" >&2
   read -r answer < /dev/tty || die "no se pudo leer la confirmación desde la terminal. No se eliminó nada."
   [ "$answer" = "$CONFIRMATION" ] || die "la confirmación no coincide. No se eliminó nada."

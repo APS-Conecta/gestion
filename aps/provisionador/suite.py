@@ -41,7 +41,7 @@ NO_SERVER_ADDRESS = ("No se pudo leer la dirección del servidor en la red del e
 AIO_REFUSED = "AIO no aceptó {}. Presione «Reintentar»; si vuelve a ocurrir, contacte a APS Conecta."
 NOT_STARTED = ("El contenedor maestro no logró iniciar la suite. Presione «Reintentar»; si vuelve a ocurrir, contacte a "
                "APS Conecta.")
-NO_STATES = "No se pudo leer el estado de los contenedores de la suite; se vuelve a intentar."
+NO_STATES = "AIO no pudo leer el estado de los contenedores de la suite."
 NOT_PULLED = "No se pudieron descargar las imágenes de la suite; «Instalar» las descarga."
 CREDENTIAL = ("name", "username", "password", "subdomain", "server_url")  # a claim's answer
 

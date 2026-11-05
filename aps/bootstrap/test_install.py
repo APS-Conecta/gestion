@@ -269,6 +269,7 @@ class Reset(Server):
         self.assertIn("Se liberó el nombre APS", out)
         self.assertEqual(changes(calls)[-2:], [f"rm -f {DROP_IN}", "rm -rf /etc/ssl/apsconecta-gestion"],
                          "the kernel drop-in and a test build's CAs go too")
+        self.assertIn("Esto libera el nombre APS del establecimiento", err, "the confirmation says so first")
 
     def test_a_stopped_mastercontainer_gives_its_credential_too(self):
         code, _, err, calls = self.reset(SHIM_RUNNING="false")
