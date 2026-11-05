@@ -6,7 +6,9 @@ Chromium and in Firefox. The login page loads the theme's stylesheet in the bran
 theme's fonts, and names the establishment above its heading. A staff member who signs in sees no «Nextcloud» and no
 link to nextcloud.com on the login page, the dashboard, Files, Talk or the personal settings, which link the suite's
 source code and its licence; the custom menu is there, in the token file's dark violet. No page reports a content
-security policy violation or a console error. Nextcloud's announcements, first-run wizard, usage survey and support app
+security policy violation, and no request or script of our layer fails: the theme's, theming's and the custom menu's;
+each page's console errors and failed requests are printed, Nextcloud's own among them, such as a new account's
+missing status. Nextcloud's announcements, first-run wizard, usage survey and support app
 are off, and stay off when Nextcloud's container restarts, whose start keeps the theme and rebuilds the browser's texts
 of the apps the theme overrides: Talk's, left stale before the restart, are Talk's own Spanish with the theme's
 overrides on top. Any other candidate's names and certificates are production ones, which a run never claims: there it
@@ -36,6 +38,7 @@ OFF = ("nextcloud_announcements", "firstrunwizard", "survey_client", "support")
 WINDOW = {"locale": "es-CL", "viewport": {"width": 1280, "height": 900}}
 PAGES = {"dashboard": ("/apps/dashboard/", "#app-dashboard"), "files": ("/apps/files/", "#app-navigation-vue"),
          "talk": ("/apps/spreed/", "#app-navigation-vue"), "settings": ("/settings/user", ".development-notice")}
+OURS = ("/themes/", "/apps/theming/", "/apps/side_menu/")  # what our layer serves or sets: a failure there is ours
 TALK = "/var/www/html/custom_apps/spreed/l10n/es"  # Talk's own Spanish, .json and .js
 OVERRIDES = "/var/www/html/themes/apsconecta/custom_apps/spreed/l10n/es.json"  # the theme's overrides of Talk's texts
 BROWSER = "/var/www/html/themes/apsconecta/core/spreed/l10n/es.js"  # Talk's browser texts, loaded in place of its own
@@ -70,36 +73,40 @@ password = secrets.token_urlsafe(18)  # the staff account's, on stdin only
 print(f"::add-mask::{password}", flush=True)
 machine(f"{NEXTCLOUD} sh -c 'read -r OC_PASS && export OC_PASS && php /var/www/html/occ user:add --password-from-env "
         f"--display-name \"Prueba Tema\" {USER}'", stdin=f"{password}\n")
-
-
-errors = []  # the console errors and uncaught errors of the page the check has open
+errors, failures = [], []  # the console and uncaught errors, and the failed requests, of the page the check has open
 
 
 def watched(context):
-    """A page of the context whose console errors and uncaught errors go to `errors`."""
+    """A page of the context whose console and uncaught errors go to `errors`, and its failed requests to `failures`."""
     page = context.new_page()
     page.on("console", lambda message: message.type == "error" and errors.append(message.text))
     page.on("pageerror", lambda error: errors.append(str(error)))
+    page.on("response", lambda answer: answer.status >= 400 and failures.append(f"{answer.status} {answer.url}"))
+    page.on("requestfailed", lambda request: "ABORTED" not in (request.failure or "")  # not when the page moves on
+            and failures.append(f"{request.failure} {request.url}"))
     return page
 
 
 def shows(page, label):
-    """The page shows no «Nextcloud», links no nextcloud.com, and reports no policy violation or console error; its
-    screenshot goes to the evidence."""
+    """The page shows no «Nextcloud», links no nextcloud.com, reports no policy violation, and no request or script of
+    our layer fails on it; its screenshot goes to the evidence."""
     page.wait_for_timeout(3000)  # the app's own requests fill it in
     page.screenshot(path=evidence / f"{label}.png", full_page=True)
     text = page.title() + "\n" + page.inner_text("body")
     named = [line.strip() for line in text.splitlines() if "Nextcloud" in line]
     links = page.eval_on_selector_all("a[href*='nextcloud.com']",
                                       "links => links.filter(a => a.offsetParent).map(a => a.href)")
-    violations, reported = page.evaluate("window.violations"), errors[:]
+    violations, reported, failed = page.evaluate("window.violations"), errors[:], failures[:]
     errors.clear()
+    failures.clear()
+    ours = [line for line in failed if any(path in line for path in OURS)] + [line for line in reported
+                                                                              if "/themes/" in line]
     print(f"{label}: title {page.title()!r}, lines naming Nextcloud {named}, links to nextcloud.com {links}, "
-          f"policy violations {violations}, console errors {reported}")
+          f"policy violations {violations}, console errors {reported}, failed requests {failed}")
     return ([f"{label} shows «Nextcloud»: {named}"] if named else []) + (
         [f"{label} links nextcloud.com: {links}"] if links else []) + (
         [f"{label} reports content security policy violations: {violations}"] if violations else []) + (
-        [f"{label} reports console errors: {reported}"] if reported else [])
+        [f"{label}: our layer's requests or scripts fail: {ours}"] if ours else [])
 
 
 def themed(page, label):
