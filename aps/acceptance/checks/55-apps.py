@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: 2026 APS Conecta
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""After «Listo» on a test build: the Suite manifest's apps in the installed suite. Every pinned app, each default own
-and fork app and each optional app ticked at «Revisar», runs the version of the App release the manifest pins; no other
-optional app is installed, and every default store app is enabled. The store is reachable from the Apps page: the list
-the administrator's Apps page draws holds the store's apps beside the installed ones, and offers no store update for a
-pinned app. The mark the apps step gives a pinned app is what keeps the store away: an older release of a store app
-the suite does not install, which the store offers to update, is marked the same way. Then a store update, as AIO's
-update runs it (occ app:update --all), leaves every pinned app at its pin and the marked app at its older release. Any
+"""After «Listo» on a test build: the Suite manifest's apps in the installed suite, the default ones and the optional
+ones ticked at «Revisar». Every pinned app among them, an own or fork app, runs the version of the App release the
+manifest pins, and the check finds on every pinned app the mark the apps step gives it, a .git folder in its folder;
+every store app among them is enabled, and no other optional app is installed. The store is reachable from the Apps
+page: the list the administrator's Apps page draws holds the store's apps beside the installed ones, and offers no
+store update for a pinned app. The mark is what keeps the store away: an older release of a store app the suite does
+not install, which the store offers to update, is marked the same way. Then a store update, as AIO's update runs it
+(occ app:update --all), leaves every pinned app at its pin with its mark, and the marked app at its older release. Any
 other candidate's names are production ones, which a run never claims: there it says so and passes."""
 
 import base64
@@ -28,6 +29,7 @@ STATE = "/mnt/docker-aio-config/provisionador/state.json"
 CONFIGURATION = "/mnt/docker-aio-config/data/configuration.json"  # AIO's, the administrator's password in its secrets
 NEXTCLOUD = "sudo docker exec --user www-data nextcloud-aio-nextcloud"
 OCC = f"{NEXTCLOUD} php /var/www/html/occ --no-ansi"
+MARK = "/var/www/html/custom_apps/{}/.git"  # the mark the apps step gives a pinned app, by its id
 APPS_PAGE = "/ocs/v2.php/apps/appstore/api/v1/apps?format=json"  # the list the Apps page draws
 STORE = "https://apps.nextcloud.com/api/v1/platform/{}/apps.json"  # the app store's releases for a Nextcloud version
 SAMPLES = ("quota_warning", "groupquota")  # small store apps the suite never installs; the first with an older release
@@ -39,19 +41,24 @@ if os.environ["TEST_BUILD"] != "true":
     sys.exit()
 
 ticked = json.loads(mastercontainer_file(STATE)).get("optional", [])
-pinned = [app for app in apps.MANIFEST if "pin" in app and (not app.get("optional") or app["id"] in ticked)]
-store = [app for app in apps.MANIFEST if app["source"] == "store"]
-unticked = [app for app in apps.MANIFEST if app.get("optional") and app["id"] not in ticked]
+chosen = apps.default() + [app for app in apps.optional() if app["id"] in ticked]
+pinned = [app for app in chosen if "pin" in app]
+store = [app for app in chosen if app["source"] == "store"]
+unticked = [app for app in apps.optional() if app["id"] not in ticked]
 print(f"ticked at «Revisar»: {ticked}")
 
 
 def differences():
-    """What the suite runs that the manifest does not pin, after printing each pinned app's version."""
+    """What the suite runs that the manifest does not pin, and each pinned app without its mark, after printing each
+    pinned app's version."""
     listed = json.loads(machine(f"{OCC} app:list --output=json"))
+    unmarked = machine(f"{NEXTCLOUD} sh -c 'for a in \"$@\"; do [ -d {MARK.format('$a')} ] || echo $a; done' sh "
+                       + " ".join(app["id"] for app in pinned)).split()
     enabled, installed = listed["enabled"], {**listed["enabled"], **listed["disabled"]}
     print("".join(f"{app['id']}: {enabled.get(app['id'], 'not enabled')}, pinned {app['pin']}\n" for app in pinned),
           end="")
     return ([f"{app['id']} does not run {app['pin']}" for app in pinned if f"v{enabled.get(app['id'])}" != app["pin"]]
+            + [f"{app} has no mark: {MARK.format(app)} is not a folder" for app in unmarked]
             + [f"{app['id']} is not enabled" for app in store if app["id"] not in enabled]
             + [f"{app['id']} is installed, unticked at «Revisar»" for app in unticked if app["id"] in installed])
 
@@ -98,12 +105,12 @@ machine(f"{NEXTCLOUD} sh -c 'curl -fsSL --retry 3 {older['download']} | tar -xz 
 print(f"{sample}: {older['version']} installed from the store's release; the store's newest is {newest['version']}")
 if f"{sample} new version available: {newest['version']}" not in machine(f"{OCC} app:update --showonly {sample}"):
     sys.exit(f"the store offers no update for {sample} {older['version']}, so its mark would prove nothing")
-machine(f"{NEXTCLOUD} mkdir /var/www/html/custom_apps/{sample}/.git")  # the mark the apps step gives a pinned app
+machine(f"{NEXTCLOUD} mkdir {MARK.format(sample)}")
 pinned.append({"id": sample, "pin": f"v{older['version']}"})
 
 print(machine(f"{OCC} app:update --all"), end="")
 if wrong := differences():
     sys.exit("after a store update:\n" + "\n".join(wrong))
 machine(f"{OCC} app:remove {sample}")
-print(f"every pinned app runs its pin before and after a store update, which left the marked {sample} at "
-      f"{older['version']} although the store offered {newest['version']}, and the Apps page lists the store's apps")
+print(f"every pinned app runs its pin, with its mark, before and after a store update, which left the marked {sample} "
+      f"at {older['version']} although the store offered {newest['version']}, and the Apps page lists the store's apps")

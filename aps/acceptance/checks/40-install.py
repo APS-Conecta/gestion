@@ -77,7 +77,7 @@ with chromium(pinned=[verified(url.hostname, url.port, printed)]) as browser:
     expect(page.locator("#summary-timezone")).to_have_text(centre["timezone"])
     expect(page.locator("#summary-components li")).to_have_text(components.NAMES)
     expect(page.locator("#summary-backup")).to_contain_text(f"{backups.TIME} UTC, en la carpeta {backups.FOLDER}")
-    expect(page.locator("#optional-apps input")).to_have_count(sum(1 for app in apps.MANIFEST if app.get("optional")))
+    expect(page.locator("#optional-apps input")).to_have_count(len(apps.optional()))
     expect(page.locator("#optional-apps input:checked")).to_have_count(0)
     page.check(f"#optional-{TICKED}")
     page.screenshot(path=evidence / "revisar.png")
