@@ -51,9 +51,15 @@ or delete such a tag, and the pipeline never creates one.
 The pipeline refuses a candidate tag that already has a release: a published candidate's images
 never move. It proves the commit (the digest pins, `scripts/validate.sh`, Twig and the static
 gate), builds our three images from it, labels each with the commit and checks the label before
-it pushes the candidate tag, and publishes the pre-release with the three images by digest.
-Then it checks "Latest": a candidate leaves it where it was. A candidate needs no environment
-and reads no secret but the workflow's own token.
+it pushes the candidate tag, and publishes the pre-release with the three images by digest and
+the Bootstrap as `apsconecta-install.sh`, filled with the tag and the mastercontainer's digest
+(`aps/release/bootstrap.sh`). The Bootstrap pulls the mastercontainer by that digest and tags it
+as the channel tag on the server; it never pulls `latest`. Then the pipeline checks "Latest": a
+candidate leaves it where it was. Last, it runs the published Bootstrap on a fresh runner as the
+manual prints it: the link block prints and the command returns, the mastercontainer runs the
+release's digest on the channel tag, a rerun prints a fresh link while the first still opens a
+session, and the reset removes the install and leaves an unrelated container, volume and file
+alone. A candidate needs no environment and reads no secret but the workflow's own token.
 
 ## 4. An Upstream merge
 

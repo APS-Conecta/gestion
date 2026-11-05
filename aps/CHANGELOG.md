@@ -32,6 +32,15 @@ image digests live there and are deliberately not copied here — one fact, one 
   DNS challenge with no open port, and the name follows the server's address every 10 minutes. The page detects a
   resolver that drops private answers and shows the router's DNS-rebinding exception (ADR-0028).
 
+- **One command installs on a plain x86-64 server (#283).** Every candidate carries the Bootstrap as
+  `apsconecta-install.sh`, with its tag and the mastercontainer's digest. Before any change it checks the
+  architecture, the floors until #300 measures them (6 GiB of memory, 20 GB of disk), Ubuntu or Debian when
+  Docker is missing, ports 443, 3478 and 8080, `/dev/fuse` and Docker's Snap package, and names each gap in Spanish.
+  Then it installs Docker from Docker's packages, sets the kernel settings Redis and Elasticsearch need, starts our
+  mastercontainer by digest on the channel tag with the server's address, prints its link block and exits. A rerun
+  prints a fresh link, or the suite's address after «Listo»; `… | sudo bash -s restablecer` removes the install after
+  a typed confirmation and keeps Docker.
+
 ### Changed
 
 - **AIO's page speaks Spanish as «APS Conecta Gestión» (#288).** Its login, containers, backup,
