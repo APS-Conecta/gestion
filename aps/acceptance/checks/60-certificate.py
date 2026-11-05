@@ -3,13 +3,17 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The suite's login page answers at its CI APS name with a valid Let's Encrypt staging certificate: our Caddy got it
 through the name service's DNS challenge with no inbound port, as the machine sits behind the runner's NAT. The
-certificate it serves for the name verifies against the staging roots alone, and a browser that trusts those alone
-opens the login page at the name the runner's resolver answers. Any other candidate's names and certificates are
-production ones, which a run never claims: there it says so and passes."""
+certificate it serves for the name verifies against the staging roots alone; the name's own nameservers publish the
+machine's address for it; and a browser that trusts the staging roots alone opens the login page at the name, at that
+address. The browser takes the published answer, not the runner's resolver's: the Provisionador's page looks the name
+up right after the claim, and a resolver that answered before the record was published keeps that negative answer
+for the zone's SOA minimum, 30 minutes. Any other candidate's names and certificates are production ones, which a run
+never claims: there it says so and passes."""
 
 import os
 import socket
 import ssl
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -26,6 +30,14 @@ if os.environ["TEST_BUILD"] != "true":
     sys.exit()
 address, name = os.environ["ADDRESS"], suite_name()
 evidence = Path(os.environ["EVIDENCE"])
+
+
+def published():
+    """The addresses the name's own nameservers publish for it: the zone's primary nameserver, from its SOA record."""
+    def dig(*query):
+        return subprocess.run(["dig", "+time=5", "+tries=2", *query], capture_output=True, text=True).stdout.split()
+    soa = dig("+noall", "+answer", "+authority", "SOA", name)
+    return dig("+short", f"@{soa[4]}", "A", name) if len(soa) > 4 else []
 
 
 def issuer():
@@ -49,8 +61,13 @@ while True:
 print(f"{name} at {address}: a certificate the staging roots verify, issued by {certificate}")
 if "(STAGING)" not in certificate:
     sys.exit(f"{name}'s certificate comes from {certificate}, not from Let's Encrypt's staging service")
+while (answer := published()) != [address]:
+    if time.monotonic() > deadline:
+        sys.exit(f"{name}'s nameservers publish {answer or 'no address'} for it, not the machine's {address}")
+    time.sleep(10)
+print(f"{name}'s nameservers publish the machine's address, {address}")
 
-with chromium() as browser:
+with chromium(resolved={name: address}) as browser:
     page = browser.new_page(viewport={"width": 1280, "height": 900})
     try:
         response = page.goto(f"https://{name}/login")

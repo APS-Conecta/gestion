@@ -9,13 +9,16 @@
 # which run.sh frees). Any other candidate's names and certificates are production ones, which a run never claims:
 # there the check says the name's freeing and the reinstall run on a test build only. It runs last.
 set -euo pipefail
-name="$("$MACHINE" 'sudo docker exec nextcloud-aio-mastercontainer cat /mnt/docker-aio-config/data/configuration.json' \
-  | jq -r '.domain // empty')"
+domain() { # AIO's domain: the suite's name, once «Dirección» claimed it
+  "$MACHINE" 'sudo docker exec nextcloud-aio-mastercontainer cat /mnt/docker-aio-config/data/configuration.json' \
+    | jq -r '.domain // empty'
+}
 if [ "$TEST_BUILD" = true ]; then
   credentials=("$NAMES"/*.json)
   [[ "${#credentials[@]}" -eq 1 && -e "${credentials[0]}" ]] \
     || { echo "the run kept no one claimed name's credential (40-install claims one): ${credentials[*]}" >&2; exit 1; }
   code="$(basename "${credentials[0]}" .json)"
+  name="$(domain)"
 else
   echo "the name's freeing and the reinstall run on a v0.0.0-ci.N test build only: $TAG's names and certificates" \
     "are production ones"
@@ -68,7 +71,6 @@ console="$(mktemp)" # the fresh link stays out of the log and the evidence
 aps/acceptance/one-command.sh "$console"
 python3 aps/acceptance/claim.py "$console" "$code"
 rm -f "$console"
-again="$("$MACHINE" 'sudo docker exec nextcloud-aio-mastercontainer cat /mnt/docker-aio-config/data/configuration.json' \
-  | jq -r '.domain // empty')"
+again="$(domain)"
 [ "$again" = "$name" ] || { echo "the reinstall claimed ${again:-no name}, not $name" >&2; exit 1; }
 echo "the reset freed $name first, and a reinstall on the same machine claimed it again"
