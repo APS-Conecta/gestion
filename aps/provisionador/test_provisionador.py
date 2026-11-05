@@ -14,12 +14,14 @@ import io
 import json
 import os
 import re
+import struct
 import sys
 import tarfile
 import tempfile
 import threading
 import time
 import unittest
+import zipfile
 from pathlib import Path
 from unittest import mock
 from urllib.parse import urlencode, urlsplit
@@ -62,6 +64,59 @@ def app_tarball(app, version, folder=None):
     with tarfile.open(fileobj=data, mode="w:gz") as tar:
         tar.addfile(member, io.BytesIO(info))
     return data.getvalue()
+
+
+# The national masters, cut short to the register's comunas: areas of the unidades vecinales cadastre and rows of the
+# DEIS master. An area's parts are closed rings of [lon, lat]: an outer ring is clockwise, a hole counter-clockwise.
+SQUARE = [[-70.66, -33.44], [-70.65, -33.44], [-70.65, -33.45], [-70.66, -33.45], [-70.66, -33.44]]
+OUTER = [[-70.64, -33.44], [-70.62, -33.44], [-70.62, -33.46], [-70.64, -33.46], [-70.64, -33.44]]
+HOLE = [[-70.635, -33.445], [-70.635, -33.455], [-70.625, -33.455], [-70.625, -33.445], [-70.635, -33.445]]
+WEST = [[-70.70, -33.44], [-70.68, -33.44], [-70.68, -33.46], [-70.70, -33.46], [-70.70, -33.44]]
+EAST = [[-70.672, -33.44], [-70.668, -33.44], [-70.668, -33.46], [-70.672, -33.46], [-70.672, -33.44]]
+WEST_HOLE = [[-70.695, -33.445], [-70.695, -33.455], [-70.685, -33.455], [-70.685, -33.445], [-70.695, -33.445]]
+STRAIT = [[-70.92, -53.15], [-70.90, -53.15], [-70.90, -53.17], [-70.92, -53.17], [-70.92, -53.15]]
+ISLAND = [[-109.44, -27.14], [-109.42, -27.14], [-109.42, -27.16], [-109.44, -27.16], [-109.44, -27.14]]
+# Each area: t_com, t_id_uv_ca and t_uv_nom, as the cadastre names them, then its parts. One t_com carries a leading
+# space, as one of the cadastre's does; the last hole lies in the first of the two outer rings before it.
+AREAS = (("13101", "131011", "SANTA LUCÍA", [SQUARE]), (" 13101", "131012", "2", [OUTER, HOLE]),
+         ("13101", "131013", "PARQUE O'HIGGINS", [WEST, EAST, WEST_HOLE]), ("12101", "121011", "ESTRECHO", [STRAIT]),
+         ("05201", "52011", "HANGA ROA", [ISLAND]))
+DEIS_MASTER = """\
+EstablecimientoCodigo;EstablecimientoGlosa;TipoEstablecimientoGlosa;ComunaCodigo;TipoViaGlosa;NombreVia;Numero;\
+Latitud;Longitud
+999001;Centro de Salud Familiar Los Castaños;Centro de Salud Familiar (CESFAM);13101;Calle;Uno;100;-33.45;-70.66
+999002;CECOSF Estrecho;Centro Comunitario de Salud Familiar (CECOSF);12101;Avenida;Dos;200;-53.16;-70.91
+999003;SAPU Rapa Nui;Servicio de Atención Primaria de Urgencia (SAPU);05201;Calle;Tres;300;-27.15;-109.43
+999004;SAPU Doctor Juan Pérez;Servicio de Atención Primaria de Urgencia (SAPU);13101;Avenida;Cuatro;400;-33.47;-70.64
+999005;Posta de Salud Rural Sin Punto;Posta de Salud Rural (PSR);13101;Camino;Rural;;;
+999006;Hospital Doctor Seis;Hospital;13101;Calle;Seis;;-33.46;-70.65
+"""
+
+
+def shapefile(areas, encoding="latin-1"):
+    """The cadastre's archive: a zipped shapefile of `areas`, in a folder of its own as the cadastre's; its attributes
+    in `encoding`, which a .cpg file names when it is not GDAL's default, Latin-1."""
+    fields = (("t_com", 10), ("t_id_uv_ca", 20), ("t_uv_nom", 60))
+    shapes = b""
+    for number, (*_, parts) in enumerate(areas, 1):
+        points = [point for part in parts for point in part]
+        lons, lats = [lon for lon, _ in points], [lat for _, lat in points]
+        starts = [sum(len(part) for part in parts[:i]) for i in range(len(parts))]
+        content = struct.pack(f"<i4d2i{len(parts)}i{2 * len(points)}d", 5, min(lons), min(lats), max(lons), max(lats),
+                              len(parts), len(points), *starts, *(c for point in points for c in point))
+        shapes += struct.pack(">2i", number, len(content) // 2) + content
+    shp = struct.pack(">7i", 9994, 0, 0, 0, 0, 0, 50 + len(shapes) // 2) + struct.pack("<2i8d", 1000, 5, *[0.0] * 8)
+    dbf = struct.pack("<4BI2H20x", 3, 124, 1, 1, len(areas), 33 + 32 * len(fields), 1 + sum(n for _, n in fields))
+    dbf += b"".join(name.encode().ljust(11, b"\0") + b"C" + bytes(4) + bytes((n, 0)) + bytes(14) for name, n in fields)
+    dbf += b"\r" + b"".join(b" " + b"".join(value.encode(encoding).ljust(n) for value, (_, n) in zip(area, fields))
+                            for area in areas) + b"\x1a"
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as zipped:
+        zipped.writestr("UnidadesVecinales_2024/UnidadesVecinales_2024.shp", shp + shapes)
+        zipped.writestr("UnidadesVecinales_2024/UnidadesVecinales_2024.dbf", dbf)
+        if encoding != "latin-1":
+            zipped.writestr("UnidadesVecinales_2024/UnidadesVecinales_2024.cpg", encoding.upper())
+    return archive.getvalue()
 
 
 def printed(call):
@@ -624,7 +679,14 @@ class Installing(ProvisionadorTest):
 
     def publish(self):
         """Each own and fork app of the Suite manifest has its App release on the fake GitHub, at its pin, and the
-        manifest pins that tarball's checksum; the fake app store has its store apps."""
+        manifest pins that tarball's checksum; the fake app store has its store apps. Each national master is at its
+        origin, cut short to the register's comunas, and its checksum pinned."""
+        masters = {"unidades-vecinales-2024": shapefile(AREAS), "minsal-deis-establecimientos": DEIS_MASTER.encode()}
+        for master, data in masters.items():
+            self.suite.masters[steps.territorio.MASTERS[master]["origin"]] = data
+        self.enterContext(mock.patch.object(steps.territorio, "MASTERS", {
+            master: {**pin, "sha256": hashlib.sha256(masters[master]).hexdigest()}
+            for master, pin in steps.territorio.MASTERS.items()}))
         manifest = []
         for app in steps.apps.MANIFEST:
             if app["source"] == "store":

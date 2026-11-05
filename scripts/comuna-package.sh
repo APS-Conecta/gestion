@@ -2,7 +2,7 @@
 # scripts/comuna-package.sh — cut one comuna's data packages out of the national masters.
 #
 # CUT-ON-DEMAND: the masters are national (hundreds of MB, refreshed upstream), the cut is
-# seconds, and one install needs exactly one comuna. The manifest (provisioning/data/packages.json)
+# seconds, and one install needs exactly one comuna. The manifest (aps/comunas/packages.json)
 # pins the masters by sha256 — a release certifies the bytes it certified — and a moved master
 # fails the fetch-verify LOUDLY rather than silently cutting different data (the re-record is an
 # edit, the drift is the report).
@@ -14,7 +14,7 @@
 set -eu
 
 . "$(dirname -- "$0")/env.sh"
-DATA="provisioning/data"
+DATA="aps/comunas"
 
 cut_of() {  # [ref] CUT — membership + comuna-ness; prints the glosa
   local ref="$DATA/comunas-deis.csv"; [ $# -gt 1 ] && { ref="$1"; shift; }
@@ -76,8 +76,8 @@ cut_count() {  # FILE MIN LABEL — the drift-exit: an empty cut is loud, never 
 
 # --- recipe 1: the UV cadastre ------------------------------------------------------------
 # sha/URL/records read from the manifest at run time, not restated here (single source).
-uv_sha=$(python3 -c 'import json; print([m for m in json.load(open("provisioning/data/packages.json"))["masters"] if m["id"]=="unidades-vecinales-2024"][0]["sha256"])')
-uv_url=$(python3 -c 'import json; print([m for m in json.load(open("provisioning/data/packages.json"))["masters"] if m["id"]=="unidades-vecinales-2024"][0]["origin"])')
+uv_sha=$(python3 -c 'import json; print([m for m in json.load(open("aps/comunas/packages.json"))["masters"] if m["id"]=="unidades-vecinales-2024"][0]["sha256"])')
+uv_url=$(python3 -c 'import json; print([m for m in json.load(open("aps/comunas/packages.json"))["masters"] if m["id"]=="unidades-vecinales-2024"][0]["origin"])')
 fetch_verify unidades-vecinales-2024 "$uv_url" "$uv_sha" "$work/uv.zip"
 python3 -m zipfile -e "$work/uv.zip" "$work/uv"
 shp=$(find "$work/uv" -name '*.shp' | head -1)
@@ -106,8 +106,8 @@ PY
 uv_n=$(cut_count "$work/uv-$CUT.geojson" 1 "the UV cut")
 
 # --- recipe 2: the DEIS establishments ----------------------------------------------------
-deis_sha=$(python3 -c 'import json; print([m for m in json.load(open("provisioning/data/packages.json"))["masters"] if m["id"]=="minsal-deis-establecimientos"][0]["sha256"])')
-deis_url=$(python3 -c 'import json; print([m for m in json.load(open("provisioning/data/packages.json"))["masters"] if m["id"]=="minsal-deis-establecimientos"][0]["origin"])')
+deis_sha=$(python3 -c 'import json; print([m for m in json.load(open("aps/comunas/packages.json"))["masters"] if m["id"]=="minsal-deis-establecimientos"][0]["sha256"])')
+deis_url=$(python3 -c 'import json; print([m for m in json.load(open("aps/comunas/packages.json"))["masters"] if m["id"]=="minsal-deis-establecimientos"][0]["origin"])')
 fetch_verify minsal-deis-establecimientos "$deis_url" "$deis_sha" "$work/deis.csv"
 python3 - "$work/deis.csv" "$work/deis-establecimientos-$CUT.geojson" "$CUT" <<'PY'
 import csv, json, sys

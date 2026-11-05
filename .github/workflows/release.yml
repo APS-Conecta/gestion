@@ -13,7 +13,9 @@
 #
 # A test build of no version, v0.0.0-ci.N, runs against the services of aps/acceptance/test-build.json (ADR 0028): its
 # mastercontainer claims names on the name service's CI deployment, its Caddy gets Let's Encrypt staging certificates,
-# and its Bootstrap gives the suite the staging roots to trust, which its Euro-Office reads as NODE_EXTRA_CA_CERTS.
+# its Bootstrap gives the suite the staging roots to trust, which its Euro-Office reads as NODE_EXTRA_CA_CERTS, and its
+# comuna data step cuts the unidades vecinales from the cadastre's CI subset, since the ministry's server, the
+# cadastre's origin, does not answer GitHub's runners.
 # Every other candidate runs against production, as the tree is committed. The choice is made here, at release time:
 # the shipped code has no runtime switch.
 #
@@ -142,8 +144,12 @@ jobs:
           }
           pin php/containers.json nextcloud-aio-nextcloud "$PINNED_NEXTCLOUD"
           pin community-containers/caddy/caddy.json nextcloud-aio-caddy "$PINNED_CADDY"
-          if [ "$TEST_BUILD" = true ]; then # the name service's CI deployment, and Let's Encrypt's staging directory
+          if [ "$TEST_BUILD" = true ]; then # the name service's CI deployment, Let's Encrypt's staging directory and
+            # the cadastre's CI subset
             jq '{name_service}' aps/acceptance/test-build.json > aps/provisionador/services.json
+            jq --argjson masters "$(jq .masters aps/acceptance/test-build.json)" \
+              '.masters |= map(. + ($masters[.id] // {}))' aps/comunas/packages.json > "$RUNNER_TEMP/packages.json"
+            mv "$RUNNER_TEMP/packages.json" aps/comunas/packages.json
             jq --arg ca "$(jq -r .acme_ca aps/acceptance/test-build.json)" \
               '(.aio_services_v1[] | select(.container_name == "nextcloud-aio-caddy") | .environment) += ["ACME_CA=" + $ca]' \
               community-containers/caddy/caddy.json > "$RUNNER_TEMP/caddy.json"
