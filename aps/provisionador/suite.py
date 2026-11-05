@@ -421,12 +421,18 @@ class Suite:
     @staticmethod
     def proxy():
         """Coolify starts its proxy from its proxy configuration, a compose file whose `command` lists Traefik's
-        settings."""
+        settings. Only a running Traefik answers: by the container's status, since Docker keeps `Running` true for a
+        restarting or paused container, and by its image's name without registry path, tag or digest, `traefik` as in
+        Coolify 4.6.0's `traefik:v3.7`."""
         try:
-            arguments = json.loads(docker("inspect", "--format", "{{json .Config.Cmd}}", COOLIFY_PROXY))
+            status, image, arguments = json.loads(docker(
+                "inspect", "--format", "[{{json .State.Status}},{{json .Config.Image}},{{json .Config.Cmd}}]",
+                COOLIFY_PROXY))
         except (OSError, ValueError, subprocess.SubprocessError) as error:
             print(f"Coolify's proxy: {getattr(error, 'stderr', None) or error}", file=sys.stderr, flush=True)
             raise Unreachable(NO_PROXY) from None
+        if status != "running" or image.split("@")[0].rsplit("/", 1)[-1].split(":")[0] != "traefik":
+            raise Unreachable(NO_PROXY)
         return arguments if isinstance(arguments, list) else []
 
     @staticmethod
