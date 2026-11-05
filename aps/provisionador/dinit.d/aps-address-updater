@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: 2026 APS Conecta
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The APS name's address updater: once «Dirección» claimed the name, it points the name at the server's address every
+# 10 minutes, as upstream's desec-ip-updater does for a deSEC domain, so that the name follows a DHCP change. It starts
+# with AIO's interface (Containers/mastercontainer/dinit.d/caddy-internal) and keeps running after «Listo».
+type = process
+command = /usr/bin/python3 -B /var/www/docker-aio/aps/provisionador/provisionador.py update-address
+run-as = www-data
+term-signal = TERM
+restart = yes
+options = shares-console

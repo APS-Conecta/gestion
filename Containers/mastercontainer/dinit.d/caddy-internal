@@ -4,5 +4,7 @@ run-as = www-data
 term-signal = TERM
 restart = yes
 options = shares-console
-# Our layer: the Provisionador (aps/provisionador/dinit.d/provisionador) starts with AIO's interface.
+# Our layer: the Provisionador (aps/provisionador/dinit.d/provisionador) starts with AIO's interface, and so does the
+# APS name's address updater (aps/provisionador/dinit.d/aps-address-updater).
 waits-for = provisionador
+waits-for = aps-address-updater

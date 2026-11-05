@@ -231,7 +231,8 @@ class TheSession(ProvisionadorTest):
     def test_every_call_without_a_session_is_refused(self):
         browser = self.browser()
         for method, path in (("GET", "/api/state"), ("GET", "/api/register"),
-                             ("GET", "/api/establishments?name=castanos"), ("POST", "/api/centre")):
+                             ("GET", "/api/establishments?name=castanos"), ("POST", "/api/centre"),
+                             ("POST", "/api/address")):
             status, body = browser.request(method, path, {} if method == "POST" else None)
             self.assertEqual(status, 401, path)
             self.assertIn("enlace", body["error"])
@@ -405,6 +406,123 @@ class CentroChoice(ProvisionadorTest):
         centre = self.choose(browser, code="999002")[1]["centre"]
         self.restart()
         self.assertEqual(browser.get("/api/state")[1]["centre"], centre)
+
+
+NAME = "centro-999001.gestion.apsconecta.cl"  # the name FakeSuite's name service gives 999001
+
+
+class Direccion(ProvisionadorTest):
+    def claim(self, browser, code="999001"):
+        """«Centro» confirmed, then «Dirección», as the page goes from one to the other."""
+        self.assertEqual(browser.request("POST", "/api/centre", {"code": code})[0], 200)
+        return browser.request("POST", "/api/address", {})
+
+    def test_the_name_is_claimed_once_by_the_centres_deis_code_and_its_credential_is_reused(self):
+        browser = self.operator()
+        status, body = self.claim(browser)
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["address"]["name"], NAME)
+        self.restart()
+        status, body = browser.request("POST", "/api/address", {})
+        self.assertEqual((status, body["address"]["name"]), (200, NAME))
+        self.assertEqual(self.suite.claims, ["999001"], "a name is claimed once")
+        self.assertEqual(self.suite.addresses, {NAME: "192.168.1.10"}, "published with the stored credential")
+        password = self.suite.credentials[NAME]["password"]
+        stored = [f for f in self.state.iterdir() if password in f.read_text(encoding="utf-8")]
+        self.assertEqual([oct(f.stat().st_mode & 0o777) for f in stored], ["0o600"], "one file, its owner's only")
+
+    def test_after_direccion_aios_settings_name_the_name_reverse_proxy_mode_and_our_caddy(self):
+        self.assertEqual(self.claim(self.operator())[0], 200)
+        credential = self.suite.credentials[NAME]
+        self.assertEqual(self.suite.aio, {
+            "domain": NAME, "aio_community_containers": "caddy", "apache_port": "11000",
+            "apache_ip_binding": "@INTERNAL", "turn_domain": NAME, "talk_port": "443",
+            "secrets": {"ACMEDNS_USERNAME": "999001", "ACMEDNS_PASSWORD": credential["password"],
+                        "ACMEDNS_SUBDOMAIN": "centro-999001", "ACMEDNS_SERVER_URL": "https://nombres.example"}})
+
+    def test_a_name_another_installation_holds_says_aps_conecta_can_release_it(self):
+        self.suite.held.add("999001")
+        browser = self.operator()
+        status, body = self.claim(browser)
+        self.assertEqual(status, 409, body)
+        self.assertIn("APS Conecta puede liberarlo", body["error"])
+        self.assertIn("«Reintentar»", body["error"])
+        self.assertEqual(self.suite.aio, {}, "AIO is not set up for a name the server does not hold")
+        self.suite.held.clear()  # APS Conecta released it
+        status, body = browser.request("POST", "/api/address", {})
+        self.assertEqual((status, body["address"]["name"]), (200, NAME))
+
+    def test_a_name_service_or_internet_outage_comes_with_reintentar(self):
+        self.suite.outage = True
+        browser = self.operator()
+        status, body = self.claim(browser)
+        self.assertEqual(status, 503, body)
+        self.assertIn("servicio de nombres de APS Conecta", body["error"])
+        self.assertIn("conexión a internet", body["error"])
+        self.assertIn("«Reintentar»", body["error"])
+        self.assertIsNone(browser.get("/api/state")[1]["address"])
+        self.suite.outage = False
+        status, body = browser.request("POST", "/api/address", {})
+        self.assertEqual((status, body["address"]["name"]), (200, NAME))
+
+    def test_an_outage_after_the_claim_keeps_the_credential_for_reintentar(self):
+        browser = self.operator()
+        self.assertEqual(browser.request("POST", "/api/centre", {"code": "999001"})[0], 200)
+        with mock.patch.object(self.suite, "publish", side_effect=provisionador.Unreachable("sin respuesta")):
+            self.assertEqual(browser.request("POST", "/api/address", {})[0], 503)
+        status, body = browser.request("POST", "/api/address", {})
+        self.assertEqual((status, body["address"]["name"]), (200, NAME))
+        self.assertEqual(self.suite.claims, ["999001"])
+
+    def test_a_resolver_that_drops_the_private_answer_is_detected_from_the_browser(self):
+        browser = self.operator()
+        self.assertEqual(self.claim(browser)[0], 200)
+        # The page asks for AIO's interface at the name. This network's resolver drops the answer, which points to
+        # the server's private address, so the request never reaches the server.
+        self.assertEqual(browser.get("/api/state")[1]["address"], {"name": NAME, "opened": False})
+
+    def test_a_browser_whose_resolver_answers_the_server_opens_the_name(self):
+        browser = self.operator()
+        self.assertEqual(self.claim(browser)[0], 200)
+        self.suite.hello(NAME)  # the page's request reaches AIO's interface at the name
+        self.assertEqual(browser.get("/api/state")[1]["address"], {"name": NAME, "opened": True})
+
+    def test_the_address_updater_points_the_name_at_the_servers_new_address(self):
+        self.assertEqual(self.claim(self.operator())[0], 200)
+        self.suite.server = "192.168.1.23"  # DHCP gave the server another address
+        provisionador.update_address(self.state, self.suite)
+        self.assertEqual(self.suite.addresses, {NAME: "192.168.1.23"})
+
+    def test_an_update_during_an_outage_waits_for_the_next_one(self):
+        self.assertEqual(self.claim(self.operator())[0], 200)
+        self.suite.server, self.suite.outage = "192.168.1.23", True
+        with contextlib.redirect_stderr(io.StringIO()) as log:
+            provisionador.update_address(self.state, self.suite)
+        self.assertIn("servicio de nombres", log.getvalue())
+        self.suite.outage = False
+        provisionador.update_address(self.state, self.suite)
+        self.assertEqual(self.suite.addresses, {NAME: "192.168.1.23"})
+
+    def test_before_the_claim_the_address_updater_publishes_nothing(self):
+        provisionador.update_address(self.state, self.suite)
+        self.assertEqual(self.suite.addresses, {})
+
+    def test_the_claimed_name_keeps_its_centre_though_the_point_still_moves(self):
+        browser = self.operator()
+        self.assertEqual(self.claim(browser)[0], 200)
+        status, body = browser.request("POST", "/api/centre", {"code": "999002"})
+        self.assertEqual(status, 409, body)
+        self.assertIn(NAME, body["error"])
+        self.assertEqual(browser.get("/api/state")[1]["centre"]["code"], "999001")
+        moved = {"latitude": -33.4512, "longitude": -70.6634}
+        status, body = browser.request("POST", "/api/centre", {"code": "999001", "point": moved})
+        self.assertEqual((status, body["centre"]["point"]), (200, moved))
+
+    def test_direccion_needs_the_centre_first(self):
+        status, body = self.operator().request("POST", "/api/address", {})
+        self.assertEqual(status, 409, body)
+        self.assertIn("«Centro»", body["error"])
+        self.assertEqual(self.suite.claims, [])
 
 
 class ShippedRegister(ProvisionadorTest):

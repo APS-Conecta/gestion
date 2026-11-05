@@ -1,0 +1,43 @@
+# The CI proof of the APS name setup (ADR 0028), on pull requests that touch the Provisionador's name setup or our
+# Caddy image, and on dispatch: on this runner, which takes no inbound connections, our Caddy image built from the
+# tree gets a Let's Encrypt staging certificate for a CI name of the name service's CI deployment, through the DNS
+# challenge, and the run frees the name with its own credential, even when an earlier step failed
+# (aps/provisionador/name-test.py). No push, no tag, no release.
+name: APS name
+
+on:
+  pull_request:
+    paths:
+      - 'aps/images/caddy/**'
+      - 'community-containers/caddy/**'
+      - 'aps/provisionador/suite.py'
+      - 'aps/provisionador/name-test.py'
+      - 'aps/provisionador/ci-codes.txt'
+      - '.github/workflows/aps-name.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: aps-name-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  certificate:
+    name: Our Caddy gets a staging certificate for a CI name with no inbound port
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build our Caddy image from this tree
+        run: docker build --file aps/images/caddy/Dockerfile --tag aps-conecta/aio-caddy:name-test aps/images/caddy
+      - name: Claim a CI name with gestion's first free reserved DEIS code
+        run: python3 -I aps/provisionador/name-test.py claim "$RUNNER_TEMP/aps-name.json"
+      - name: Our Caddy gets a Let's Encrypt staging certificate for it through the DNS challenge
+        run: python3 -I aps/provisionador/name-test.py certificate "$RUNNER_TEMP/aps-name.json" aps-conecta/aio-caddy:name-test
+      - name: Free the name with its own credential
+        if: always()
+        run: python3 -I aps/provisionador/name-test.py release "$RUNNER_TEMP/aps-name.json"

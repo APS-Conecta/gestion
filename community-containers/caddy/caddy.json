@@ -22,7 +22,10 @@
                 "APACHE_IP_BINDING=%APACHE_IP_BINDING%",
                 "NEXTCLOUD_EXPORTER_CADDY_PASSWORD=%NEXTCLOUD_EXPORTER_CADDY_PASSWORD%",
                 "NEXTCLOUD_GLANCES_CADDY_PASSWORD=%NEXTCLOUD_GLANCES_CADDY_PASSWORD%",
-                "DESEC_TOKEN=%DESEC_TOKEN%"
+                "ACMEDNS_USERNAME=%ACMEDNS_USERNAME%",
+                "ACMEDNS_PASSWORD=%ACMEDNS_PASSWORD%",
+                "ACMEDNS_SUBDOMAIN=%ACMEDNS_SUBDOMAIN%",
+                "ACMEDNS_SERVER_URL=%ACMEDNS_SERVER_URL%"
             ],
             "volumes": [
                 {
@@ -38,7 +41,11 @@
             ],
             "secrets": [
                 "NEXTCLOUD_EXPORTER_CADDY_PASSWORD",
-                "NEXTCLOUD_GLANCES_CADDY_PASSWORD"
+                "NEXTCLOUD_GLANCES_CADDY_PASSWORD",
+                "ACMEDNS_USERNAME",
+                "ACMEDNS_PASSWORD",
+                "ACMEDNS_SUBDOMAIN",
+                "ACMEDNS_SERVER_URL"
             ],
             "aio_variables": [
                 "apache_ip_binding=@INTERNAL",
