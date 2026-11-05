@@ -119,13 +119,15 @@ class FakeNextcloud:
     """The fake one: Nextcloud's settings, `system` and `apps` by app, the latter for every app it has, and the CAs its
     own requests trust beside the ones it ships: the files of AIO's folder of trusted CAs, and the issuers of the hosts
     that serve only their leaf. It does not answer while `down` is set, an import silently keeps the `ignored` settings
-    out, and the issuers of the `unreachable` hosts cannot be fetched. Its app store has the apps of `store`, and an app
-    installed from a tarball runs the version its info.xml declares."""
+    out, the issuers of the `unreachable` hosts cannot be fetched, and Euro-Office answers Nextcloud while `editor` is
+    set. Its app store has the apps of `store`, and an app installed from a tarball runs the version its info.xml
+    declares."""
 
     def __init__(self):
         self.down = False
+        self.editor = True  # Euro-Office's document server answers Nextcloud: its connector's own check passes
         self.system = {}
-        self.apps = {"core": {}, "admin_audit": {"enabled": "no"}}
+        self.apps = {"core": {}, "admin_audit": {"enabled": "no"}, "office": {"enabled": "yes"}}  # as Nextcloud ships
         self.ignored = set()
         self.cacerts = []  # the files of AIO's folder of trusted CAs: a test build's; a release has none
         self.trusted = set()  # those among Nextcloud's trusted certificates
@@ -134,10 +136,14 @@ class FakeNextcloud:
         self.store = {}  # the app store's apps, by id: the version it installs
 
     def occ(self, *args, stdin=""):
-        """The commands the install steps run: settings out and in, and an app on, from the app store when Nextcloud
-        does not have it."""
+        """The commands the install steps run: settings out and in, an app on, from the app store when Nextcloud does
+        not have it, and Euro-Office's connector's check."""
         if self.down:
             raise Unreachable(DOWN)
+        if args == ("eurooffice:documentserver", "--check"):
+            if not self.editor:
+                raise Unreachable(FAILED.format(" ".join(args)))
+            return ""
         if args == ("config:list",):
             return json.dumps({"system": self.system, "apps": self.apps})
         if args == ("config:import",):

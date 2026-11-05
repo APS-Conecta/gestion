@@ -22,6 +22,12 @@ image digests live there and are deliberately not copied here — one fact, one 
   replaces a pinned app: its folder reads as installed from git, which Nextcloud's store never updates.
   `aps/release/pin.py` writes an app's pin from its GitHub Release.
 
+- **Office: Euro-Office by default, with the Office entry (#291).** Staff create, edit, save and reopen documents in
+  Euro-Office from Nextcloud's own Office entry, its navigation icon and document hub, as in any Nextcloud; Collabora
+  and OnlyOffice stay off. An install step keeps our Office defaults: ODF opens and edits in Euro-Office, the editor
+  keeps the light theme, and a document opens in a tab of its own. It is done once Euro-Office answers Nextcloud, and
+  a test build's acceptance run creates, edits, saves and reopens a document from the Office entry in a browser.
+
 - **«Dirección» takes the establishment's own domain (#292).** Instead of the APS name, the operator may type a domain
   the establishment holds. The Provisionador runs vanilla's domain check, whose every refusal shows its Spanish reason
   with «Reintentar», and sets AIO up the vanilla way through its settings file, with no mastercontainer recreate:
