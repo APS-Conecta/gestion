@@ -3,9 +3,9 @@
   - SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
-# 0028 — The APS name setup
+# 0028 — The APS name and own-domain setups
 
-Accepted, 2026-11-05. Part of #278; implemented by #285.
+Accepted, 2026-11-05. Part of #278; implemented by #285, the own domain by #292.
 
 ## Context
 
@@ -14,7 +14,7 @@ DEIS code, given by APS's name service (`aps/name-service/` in APS-Conecta/gesti
 is a client). Staff open it inside the clinic, so the name must point to the server's address there and carry a real
 certificate, with no port open on the clinic's router. The mastercontainer sits on Docker's bridge network, the
 Provisionador runs as `www-data` and exits for good after «Listo» (ADR 0027), and the install has no host service and
-no timer.
+no timer. An establishment that holds a domain of its own may use it instead, as vanilla AIO allows.
 
 ## Decision
 
@@ -81,10 +81,40 @@ finds a code held takes the next one. A run frees every name it claims with the 
 earlier step failed. gestion never deploys the name service and holds no Cloudflare token; a name a lost run left held
 is freed by APS Conecta with gestion-aio's «APS name release» workflow.
 
+**An own domain is vanilla's setup, chosen through AIO's settings file.** At «Dirección» the operator may type the
+establishment's own domain instead: `POST /api/address` with `{"domain"}` runs AIO's own code as AIO's page does on a
+vanilla install (`OWN_DOMAIN` in `aps/provisionador/suite.py`):
+
+- AIO's first-run setup, as for the APS name;
+- vanilla's values for what our Caddy's definition sets, which are AIO's own defaults: no community container, Apache
+  on 443 on every address of the host, and Talk on 3478 at the domain; and none of the name's acme-dns secrets. AIO
+  reads Apache's port and binding from its settings file whenever the mastercontainer's environment does not give them,
+  and the Bootstrap's start command never does, so the choice needs no recreate of the mastercontainer;
+- AIO's domaincheck container, which AIO's page starts before it takes a domain, then vanilla's domain check: from
+  inside the mastercontainer, the domain must resolve to a public address where 443 answers with the domaincheck's
+  instance ID. Each refusal answers 409 with the check's own Spanish reason and «Reintentar».
+
+Nextcloud then answers at the domain on 443, with the certificate vanilla's Apache container obtains for it. Staff and
+the phone apps reach the suite from outside too, protected only by vanilla's protections. Talk also needs port 3478,
+TCP and UDP: the own domain's address carries that notice, which «Dirección» and «Revisar» show before «Instalar».
+There is no name to publish or to look up from the browser, so neither the address updater nor the router advice
+applies.
+
+**A switch of address before «Instalar» leaves nothing of the other.** Each setup writes every setting the other wrote:
+the domain, the community container, Apache's port and binding, Talk's port and domain, and the acme-dns secrets. An
+APS name claimed before is freed with its credential once the own domain passed vanilla's check, and its credential's
+file is removed, so the address updater publishes nothing and the Bootstrap's reset finds no name to free. A domain the
+check refuses leaves the name claimed, so the APS name comes back without a new claim. AIO's start stops the domaincheck
+container, as on a vanilla install.
+
 ## Consequences
 
 - The Seam 2 tests drive «Dirección» against the fake suite port: the claim and the credential's reuse, a name already
-  held, an outage and «Reintentar», blocked private answers, and the name following the server's new address.
+  held, an outage and «Reintentar», blocked private answers, and the name following the server's new address; and, in
+  `aps/provisionador/test_own_domain.py`, the own domain: each refusal of vanilla's check with «Reintentar», the
+  settings AIO keeps, Talk's port notice and the switch both ways. The own-domain setup itself is vanilla's, which
+  upstream tests; the acceptance harness runs on GitHub runners, which take no inbound connections, so it covers the
+  APS name only.
 - The CI proof, `.github/workflows/aps-name.yml` (`aps/provisionador/name-test.py`), runs on pull requests that touch
   the Provisionador's name setup or our Caddy image, and on dispatch. On a GitHub runner, which takes no inbound
   connections, our Caddy image built from the tree gets a Let's Encrypt staging certificate for a CI name, with the

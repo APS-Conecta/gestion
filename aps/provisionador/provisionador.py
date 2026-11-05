@@ -17,8 +17,10 @@ of its own; each start mints a fresh link, and every link printed stays valid un
 address.
 
 At «Dirección» it claims the establishment's APS name and keeps the name's credential beside the state, readable
-only by its own account. Run as `provisionador.py update-address`, it is the address updater that keeps running after
-«Listo» (dinit.d/aps-address-updater): every 10 minutes it points the name at the server's address. Run as
+only by its own account; or, for a domain the establishment holds, it runs vanilla's domain check and sets AIO up the
+vanilla way, freeing an APS name claimed before. Run as `provisionador.py update-address`, it is the address updater
+that keeps running after «Listo» (dinit.d/aps-address-updater): every 10 minutes it points the name at the server's
+address. Run as
 `provisionador.py release-name`, it frees the name whose credential arrives on stdin, never on a command line: the
 Bootstrap's reset runs it before it removes anything, and the acceptance harness for each CI name it claimed.
 
@@ -48,7 +50,7 @@ from urllib.parse import parse_qs, urlsplit
 import deis
 import runner
 from steps import backups, components
-from suite import Held, Suite, SuitePort, Unreachable
+from suite import Held, Refused, Suite, SuitePort, Unreachable
 
 HERE = Path(__file__).resolve().parent
 REGISTER = HERE.parent / "deis"
@@ -108,6 +110,10 @@ CENTRE_KEPT = "El centro ya no puede cambiarse: su dirección, {}, ya se obtuvo.
 HELD = ("Otra instalación ya tiene el nombre APS de este establecimiento. Si es una instalación anterior del mismo "
         "establecimiento, APS Conecta puede liberarlo; después presione «Reintentar».")
 NO_ADDRESS_YET = "Obtenga primero la dirección del establecimiento en «Dirección»."
+NOT_A_DOMAIN = "Escriba el dominio propio del establecimiento."
+DOMAIN_REFUSED = "La comprobación del dominio {domain} falló: {reason} Corrija lo indicado y presione «Reintentar»."
+TALK_PORTS = ("Para que las llamadas conecten, Talk necesita además el puerto 3478 abierto hacia este servidor, en TCP "
+              "y en UDP. Ábralo en el router o el cortafuegos antes de presionar «Instalar».")
 
 
 def digest(value):
@@ -216,6 +222,9 @@ class Credential:
             json.dump(credential, file)
         os.replace(tmp, self.path)
 
+    def remove(self):
+        self.path.unlink(missing_ok=True)
+
 
 class Provisionador:
     def __init__(self, state_dir, register, suite: SuitePort, address):
@@ -282,10 +291,13 @@ class Provisionador:
         earlier keeps finding nothing for the zone's SOA minimum, 30 minutes; and whether a browser opened AIO's
         interface at it: the page asks for it there, and a resolver that drops answers pointing to private addresses
         keeps that request from the server. Once they publish it, neither they nor the server's address are read again;
-        until then, an address that cannot be read is not published yet."""
+        until then, an address that cannot be read is not published yet. An own domain, which passed vanilla's domain
+        check, comes instead with the notice that Talk also needs port 3478."""
         address = state.get("address")
         if address is None:
             return None
+        if address.get("own"):
+            return {**address, "notice": TALK_PORTS}
         name, published = address["name"], address.get("published", False)
         try:
             if not published and self.suite.published(name, self.suite.server_address()):
@@ -297,7 +309,8 @@ class Provisionador:
 
     def get_state(self, query, body):
         state = self.state.read()
-        # «Revisar», once «Dirección» claimed the name: what «Instalar» sets up beside the centre, its name and timezone.
+        # «Revisar», once «Dirección» set the address (the APS name or an own domain): what «Instalar» sets up beside
+        # the centre, its name and timezone.
         review = state.get("address") and {"components": components.NAMES,
                                            "backup": {"folder": backups.FOLDER, "time": backups.TIME}}
         return 200, {"centre": state.get("centre"), "address": self.address(state), "review": review,
@@ -390,12 +403,15 @@ class Provisionador:
         return 200, {"centre": centre}
 
     def post_address(self, query, body):
-        """POST /api/address: the centre's APS name. The first call claims it from the name service by the centre's
-        DEIS code and keeps its credential, so the name is claimed once; every call sets AIO up to serve the name and
-        points the name at the server's address."""
+        """POST /api/address: the centre's APS name, or, with {"domain"}, the establishment's own domain (own_domain).
+        The first call for the APS name claims it from the name service by the centre's DEIS code and keeps its
+        credential, so the name is claimed once; every call sets AIO up to serve the name and points the name at the
+        server's address."""
         centre = self.state.read().get("centre")
         if centre is None:
             return 409, {"error": NO_CENTRE}
+        if "domain" in body:
+            return self.own_domain(body["domain"])
         with self.claiming:
             credential = self.credential.read()
             try:
@@ -408,7 +424,29 @@ class Provisionador:
                 return 409, {"error": HELD}
             except Unreachable as outage:
                 return 503, {"error": str(outage)}
-        self.state.change(lambda s: s.update(address={"name": credential["name"]}))
+            self.state.change(lambda s: s.update(address={"name": credential["name"]}))
+        return 200, {"address": self.address(self.state.read())}
+
+    def own_domain(self, domain):
+        """The establishment's own domain instead of the APS name: AIO's vanilla setup, which keeps the domain once
+        vanilla's domain check passes, and until then serves no address. Then an APS name claimed before is freed with
+        its credential; a domain the check refuses leaves it claimed, so that the APS name comes back without a new
+        claim."""
+        if not isinstance(domain, str):
+            return 400, {"error": NOT_A_DOMAIN}
+        with self.claiming:
+            self.state.change(lambda s: s.pop("address", None))
+            credential = self.credential.read()
+            try:
+                self.suite.own_domain(domain)
+                if credential is not None:
+                    self.suite.release(credential)
+                    self.credential.remove()
+            except Refused as refusal:
+                return 409, {"error": DOMAIN_REFUSED.format(domain=domain, reason=refusal)}
+            except Unreachable as outage:
+                return 503, {"error": str(outage)}
+            self.state.change(lambda s: s.update(address={"name": domain, "own": True}))
         return 200, {"address": self.address(self.state.read())}
 
     ROUTES = {

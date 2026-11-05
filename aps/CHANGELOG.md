@@ -13,6 +13,13 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Added
 
+- **«Dirección» takes the establishment's own domain (#292).** Instead of the APS name, the operator may type a domain
+  the establishment holds. The Provisionador runs vanilla's domain check, whose every refusal shows its Spanish reason
+  with «Reintentar», and sets AIO up the vanilla way through its settings file, with no mastercontainer recreate:
+  Nextcloud on 443 with its own certificate, Talk on 3478, no Caddy. Before «Instalar», the page says that Talk also
+  needs port 3478 open, TCP and UDP. A switch between the APS name and an own domain leaves nothing of the other, and
+  frees an APS name claimed before with its credential (ADR 0028).
+
 - **Talk verified, with recording above the hardware threshold (#290).** Talk's recording server is on for a server
   with at least the cores and memory the Bootstrap declares beside its hardware floors (provisional until #300
   measures them), and off on any other. The acceptance harness holds a two-browser Talk call with camera and
