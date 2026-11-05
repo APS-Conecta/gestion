@@ -164,8 +164,8 @@ class NameService:
 class Suite:
     """The suite port inside the mastercontainer."""
 
-    def __init__(self, names=None):
-        self.names = names or NameService(NAME_SERVICE)
+    def __init__(self):
+        self.names = NameService(NAME_SERVICE)
 
     def certificate(self, host, timeout=60):
         """Caddy issues AIO's interface certificate on demand: for the server name a browser sends, or, for an IP
