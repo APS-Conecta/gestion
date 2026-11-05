@@ -65,11 +65,14 @@ own token.
 A test build of no version, `v0.0.0-ci.N`, runs against the services of
 `aps/acceptance/test-build.json`, which the pipeline stamps into it at release time: its
 Provisionador claims names on the name service's CI deployment, its Caddy gets Let's Encrypt
-staging certificates, and its Bootstrap gives the suite the staging roots to trust, through AIO's
+staging certificates, its Bootstrap gives the suite the staging roots to trust, through AIO's
 `NEXTCLOUD_TRUSTED_CACERTS_DIR`, whose file the pipeline also gives Euro-Office as
-`NODE_EXTRA_CA_CERTS`. Its acceptance run installs the suite to «Listo» on a CI name, checks the
-install steps and the baseline settings on the suite, each pinned app at its pin before and after a
-store update, the name's certificate, every container's digest, the suite's own address and an
+`NODE_EXTRA_CA_CERTS`, and its comuna data step cuts the unidades vecinales from the cadastre's CI
+subset that the file pins, one area a comuna, since the ministry's server, the cadastre's origin,
+does not answer GitHub's runners. Its acceptance run installs the suite to «Listo» on a CI name,
+checks the install steps and the baseline settings on the suite, each pinned app at its pin before
+and after a store update, Territorio's comuna data, the name's certificate, every container's
+digest, the suite's own address and an
 Office document created, edited, saved and reopened in Euro-Office from the Office entry, resets
 the machine,
 which frees the name first, and claims it again on a reinstall; the run frees every name it

@@ -99,9 +99,11 @@ RUN set -ex; \
     rm -r php/data; \
     rm -r php/session;
 
-# Our layer: the Provisionador, which answers on AIO's interface until «Listo», with the DEIS register and the
-# Bootstrap, whose recording threshold the components step reads.
+# Our layer: the Provisionador, which answers on AIO's interface until «Listo», with the DEIS register, the pins of the
+# national masters its comuna data step cuts with the DEIS comuna reference, and the Bootstrap, whose recording
+# threshold the components step reads.
 COPY aps/deis/ /var/www/docker-aio/aps/deis/
+COPY aps/comunas/packages.json aps/comunas/comunas-deis.csv /var/www/docker-aio/aps/comunas/
 COPY aps/bootstrap/install.sh /var/www/docker-aio/aps/bootstrap/install.sh
 COPY aps/provisionador/ /var/www/docker-aio/aps/provisionador/
 COPY aps/provisionador/dinit.d/ /etc/dinit.d/

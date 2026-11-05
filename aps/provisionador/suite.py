@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 APS Conecta
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The suite port: the only code that talks to AIO, the APS name service and the nameservers of its zone, Coolify's
-proxy folder, Nextcloud's command line (occ) and the App releases on GitHub.
+proxy folder, Nextcloud's command line (occ), the App releases on GitHub and the national masters at their origins.
 
 The Provisionador is built with one implementation: `Suite` inside the mastercontainer, `FakeSuite` in the Seam 2
 tests. A screen or an install step that needs the suite adds its method to the port and to both implementations, here
@@ -58,8 +58,10 @@ NO_ROUTE = ("No se pudo escribir la ruta de la suite en la carpeta dinámica del
             "«Reintentar»; si vuelve a ocurrir, contacte a APS Conecta.")
 NO_RELEASE = ("No se pudo descargar su publicación desde GitHub. Revise la conexión a internet del servidor y presione "
               "«Reintentar».")
+NO_MASTER = ("No se pudo descargar su fuente nacional desde {}. Revise la conexión a internet del servidor y presione "
+             "«Reintentar».")
 CREDENTIAL = ("name", "username", "password", "subdomain", "server_url")  # a claim's answer
-DOWNLOAD_TRIES = 3  # GitHub's download address answers an error now and then; the next try usually gets the file
+DOWNLOAD_TRIES = 3  # a download address answers an error now and then; the next try usually gets the file
 
 # AIO's own code, as its cron scripts run it (php/src/Cron), with the values on stdin: the host's ps shows the arguments
 # of every process in the container. Each script below follows it.
@@ -261,6 +263,9 @@ class SuitePort(Protocol):
     def app_release(self, repo: str, tag: str, asset: str) -> bytes:
         """The file `asset` of the GitHub Release `tag` of the APS-Conecta repo `repo`: an App release's."""
 
+    def master(self, url: str) -> bytes:
+        """The national master at `url`, its origin."""
+
 
 def arrival():
     """This network's address on its default route: the mastercontainer's on Docker's bridge network, where the host's
@@ -300,6 +305,21 @@ def traefik_route(host):
             "nextcloud-aio-https": {"redirectScheme": {"scheme": "https"}},
         },
     }}
+
+
+def download(url, failed):
+    """The file at `url`, without a token or an API call, asked again after an error up to DOWNLOAD_TRIES times;
+    Unreachable with `failed` when the last try fails too."""
+    request = urllib.request.Request(url, headers={"User-Agent": "aps-conecta-gestion"})
+    for attempt in range(1, DOWNLOAD_TRIES + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                return response.read()
+        except (OSError, ValueError) as error:
+            print(f"{url}, attempt {attempt}: {error}", file=sys.stderr, flush=True)
+            if attempt == DOWNLOAD_TRIES:
+                raise Unreachable(failed) from None
+            time.sleep(10 * attempt)
 
 
 def docker(*args, stdin=None):
@@ -533,19 +553,12 @@ class Suite:
 
     @staticmethod
     def app_release(repo, tag, asset):
-        """From GitHub's download address for a release's file, without a token or an API call, asked again after an
-        error up to DOWNLOAD_TRIES times."""
-        url = f"https://github.com/{repo}/releases/download/{tag}/{asset}"
-        request = urllib.request.Request(url, headers={"User-Agent": "aps-conecta-gestion"})
-        for attempt in range(1, DOWNLOAD_TRIES + 1):
-            try:
-                with urllib.request.urlopen(request, timeout=60) as response:
-                    return response.read()
-            except (OSError, ValueError) as error:
-                print(f"{url}, attempt {attempt}: {error}", file=sys.stderr, flush=True)
-                if attempt == DOWNLOAD_TRIES:
-                    raise Unreachable(NO_RELEASE) from None
-                time.sleep(10 * attempt)
+        """From GitHub's download address for a release's file."""
+        return download(f"https://github.com/{repo}/releases/download/{tag}/{asset}", NO_RELEASE)
+
+    @staticmethod
+    def master(url):
+        return download(url, NO_MASTER.format(urlsplit(url).hostname))
 
 
 class FakeSuite:
@@ -558,9 +571,9 @@ class FakeSuite:
     be read while `no_server_address` is set, its hardware is `machine`, and a browser whose resolver answers the
     server's address says hello() to AIO's interface at a name. AIO's start makes each of its CONTAINERS starting,
     until up() makes their ports answer, and the first one installs its startup apps from the app store. Its GitHub
-    serves the files of the App releases in `releases`, by repo, tag and file name. On a Coolify server, `dynamic` is
-    Coolify's dynamic proxy folder, and Coolify's proxy runs with the arguments of `traefik`, which cannot be read while
-    it is None."""
+    serves the files of the App releases in `releases`, by repo, tag and file name, and the internet the national
+    masters in `masters`, by origin. On a Coolify server, `dynamic` is Coolify's dynamic proxy folder, and Coolify's
+    proxy runs with the arguments of `traefik`, which cannot be read while it is None."""
 
     CONTAINERS = {"nextcloud-aio-apache": "Apache & Caddy", "nextcloud-aio-nextcloud": "Servidor de aplicaciones",
                   "nextcloud-aio-talk": "Talk", "nextcloud-aio-eurooffice": "EuroOffice"}  # by id, AIO's names
@@ -589,6 +602,7 @@ class FakeSuite:
         self.states = {}  # by container, AIO's reading of it once AIO's start created it
         self.pulled = []  # the switches of each image pull
         self.releases = {}  # by (repo, tag, file name), the files of the App releases on GitHub
+        self.masters = {}  # by origin, the national masters
         self.dynamic = None  # Coolify's dynamic proxy folder, a directory on a Coolify server
         self.traefik = None  # the arguments Coolify's proxy runs with
 
@@ -610,6 +624,11 @@ class FakeSuite:
         if (repo, tag, asset) not in self.releases:
             raise Unreachable(NO_RELEASE)
         return self.releases[repo, tag, asset]
+
+    def master(self, url):
+        if url not in self.masters:
+            raise Unreachable(NO_MASTER.format(urlsplit(url).hostname))
+        return self.masters[url]
 
     def certificate(self, host):
         return b"FakeSuite certificate for " + host.encode() + b" renewed" * self.renewals

@@ -5,7 +5,7 @@
 # Every path where this repo differs from Upstream, one per line: `<path> <reason>`. A path ending
 # in `/` covers everything under it. scripts/keep-list.py fails on an undeclared difference and on
 # an entry that no longer differs.
-aps/ our layer: the Keep-list, the operator runbooks, the changelog, the release ritual, our three images, the release pipeline's tools, the Bootstrap, the Coolify compose file, the acceptance harness, the Provisionador and the DEIS register
+aps/ our layer: the Keep-list, the operator runbooks, the changelog, the release ritual, our three images, the release pipeline's tools, the Bootstrap, the Coolify compose file, the acceptance harness, the Provisionador, the DEIS register and the comuna masters
 docs/ our layer: ADRs and agent docs
 themes/ our layer: the apsconecta server theme and the brand token file
 AGENTS.md our agent steering replaces upstream's

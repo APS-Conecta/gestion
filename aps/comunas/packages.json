@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "purpose": "Checksummed national master versions consumed by scripts/comuna-package.sh.",
+  "purpose": "Checksummed national master versions, cut at install by aps/provisionador/steps/territorio.py and on demand by scripts/comuna-package.sh.",
   "comuna_reference": {
     "file": "comunas-deis.csv",
     "origin": "the DEIS comuna reference sheet ('Codigo Comuna DEIS.ods') — the coding authority: 346 comunas incl. 12202 Antártica, zero numeric conflicts with any in-repo source",

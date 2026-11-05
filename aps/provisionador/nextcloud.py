@@ -120,8 +120,8 @@ class FakeNextcloud:
     own requests trust beside the ones it ships: the files of AIO's folder of trusted CAs, and the issuers of the hosts
     that serve only their leaf. It does not answer while `down` is set, an import silently keeps the `ignored` settings
     out, the issuers of the `unreachable` hosts cannot be fetched, and Euro-Office answers Nextcloud while `editor` is
-    set. Its app store has the apps of `store`, and an app installed from a tarball runs the version its info.xml
-    declares."""
+    set. Its app store has the apps of `store`, an app installed from a tarball runs the version its info.xml
+    declares, and Territorio keeps the datasets it imports in `territorio`."""
 
     def __init__(self):
         self.down = False
@@ -134,10 +134,11 @@ class FakeNextcloud:
         self.issuers = set()  # the hosts whose issuer is among them
         self.unreachable = set()
         self.store = {}  # the app store's apps, by id: the version it installs
+        self.territorio = {}  # Territorio's datasets, by slug: their label and their records, by uid
 
     def occ(self, *args, stdin=""):
         """The commands the install steps run: settings out and in, an app on, from the app store when Nextcloud does
-        not have it, and Euro-Office's connector's check."""
+        not have it, Euro-Office's connector's check and Territorio's import of a GeoJSON file into a dataset."""
         if self.down:
             raise Unreachable(DOWN)
         if args == ("eurooffice:documentserver", "--check"):
@@ -157,6 +158,17 @@ class FakeNextcloud:
             if app not in self.apps and app not in self.store:
                 raise Unreachable(FAILED.format(" ".join(args)))
             self.apps.setdefault(app, {"installed_version": self.store.get(app)})["enabled"] = "yes"
+            return ""
+        if args[:2] == ("territorio:import", "/dev/stdin"):  # only an enabled Territorio has the command
+            collection, options = json.loads(stdin), dict(arg[2:].split("=", 1) for arg in args[2:])
+            claim, own = collection.get("comuna"), self.apps.get("territorio", {}).get("comuna_cut")
+            if self.apps.get("territorio", {}).get("enabled") != "yes" or claim and own and claim != own:
+                raise Unreachable(FAILED.format(" ".join(args)))  # or Territorio refuses a file cut for another comuna
+            dataset = self.territorio.setdefault(options["dataset"], {"label": options["label"], "records": {}})
+            for feature in collection["features"]:  # a re-import updates the records it already holds, by uid
+                uid, properties = feature["properties"]["uid"], dict(feature["properties"])
+                del properties["uid"]
+                dataset["records"][uid] = {**properties, "geometry": feature["geometry"]}
             return ""
         raise AssertionError(f"the fake Nextcloud runs no occ {args}")
 
@@ -186,4 +198,4 @@ class FakeNextcloud:
                 version = ET.parse(tar.extractfile(f"{app}/appinfo/info.xml")).findtext("version")
         except (tarfile.TarError, KeyError, ET.ParseError):
             raise Unreachable(INSTALL_FAILED) from None
-        self.apps[app] = {"enabled": "yes", "installed_version": version}
+        self.apps.setdefault(app, {}).update(enabled="yes", installed_version=version)  # its settings stay

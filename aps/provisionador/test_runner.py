@@ -115,6 +115,7 @@ class Runner(Installing):
             steps = self.steps()
             released.set()
             self.eventually(self.listo, "«Listo»")
-        self.assertEqual(list(steps)[-1], "Aplicaciones opcionales")
-        self.assertEqual({status for name, (status, _) in steps.items() if name != "Aplicaciones opcionales"},
-                         {"green"}, "every core step ran before the optional one")
+        optional = ["Aplicaciones opcionales", "Datos comunales de Territorio"]
+        self.assertEqual(list(steps)[-len(optional):], optional)
+        self.assertEqual({status for name, (status, _) in steps.items() if name not in optional},
+                         {"green"}, "every core step ran before the optional ones")

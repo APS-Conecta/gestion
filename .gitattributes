@@ -3,5 +3,5 @@
 # are written by Python's csv module with CRLF row endings.
 themes/apsconecta/core/mapa/* -text
 aps/deis/*.csv -text
-provisioning/data/*.csv -text
-provisioning/data/masters/*.csv -text
+aps/comunas/*.csv -text
+aps/comunas/masters/*.csv -text

@@ -1,1 +1,1 @@
-{"name_service": "https://gestion-nombres-ci.apsconecta.workers.dev", "acme_ca": "https://acme-staging-v02.api.letsencrypt.org/directory"}
+{"name_service": "https://gestion-nombres-ci.apsconecta.workers.dev", "acme_ca": "https://acme-staging-v02.api.letsencrypt.org/directory", "masters": {"unidades-vecinales-2024": {"origin": "https://raw.githubusercontent.com/APS-Conecta/gestion/4c8f7e26ff9ad9e667aec61c545a9d0638c428e4/tests/fixtures/comuna/unidades-vecinales-v1.zip", "sha256": "ccf22aff120328c800e3d0cf5eaf577a6fc96e6207148e67aabac6f4d9870839", "records": 345}}}

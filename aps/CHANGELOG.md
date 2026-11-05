@@ -13,6 +13,11 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Added
 
+- **Territorio's comuna data at install (#297).** «Datos comunales de Territorio», an optional step that runs once
+  Territorio is installed and after every core step, gives Territorio the centre's comuna, then imports the comuna's
+  unidades vecinales and health establishments, cut from the national masters `aps/comunas/packages.json` pins by
+  SHA-256 checksum, each fetched from its origin. A master that does not download, does not match or holds nothing of
+  the comuna fails the step alone with its reason, and «Reintentar» imports it again; no separate data command is left.
 - **The Coolify install (#293).** A Coolify 4 admin adds the suite as a Git-based Docker Compose resource of this
   repository, in Raw mode, with `aps/coolify.yaml`: our mastercontainer on the channel tag, AIO behind Coolify's proxy
   and its interface on port 8443, its link in the resource's logs. «Dirección» shows AIO's Traefik settings to paste
@@ -444,7 +449,7 @@ image digests live there and are deliberately not copied here — one fact, one 
   preservation-doc template.
 - **Territorio ships** — v0.74.0, from lab app to own app: the tarball, the LICENSING row, the
   inventory move.
-- **The comuna data packages** — the national masters pinned in `provisioning/data/packages.json`,
+- **The comuna data packages** — the national masters pinned in `aps/comunas/packages.json`,
   the DEIS comuna reference derived beside them, and `scripts/comuna-package.sh`: one fetch, one
   seconds-long cut, the exact import commands printed.
 - **The release manifest** — `scripts/release-manifest.sh` + the tag-triggered workflow: every
