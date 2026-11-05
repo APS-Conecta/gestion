@@ -13,14 +13,17 @@ import io
 import json
 import os
 import re
+import sys
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
 from urllib.parse import urlencode, urlsplit
 
 import provisionador
+import steps
 from suite import FakeSuite
 
 ADDRESS = "192.168.1.10"
@@ -131,6 +134,7 @@ class ProvisionadorTest(unittest.TestCase):
         self.app = provisionador.Provisionador(self.state, self.register, self.suite, self.ADDRESS)
         self.server = self.app.server(("127.0.0.1", 0))
         link = Link(printed(self.app.announce))
+        self.app.resume()
         self.thread = threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.05},
                                        daemon=True)
         self.thread.start()
@@ -523,6 +527,192 @@ class Direccion(ProvisionadorTest):
         self.assertEqual(status, 409, body)
         self.assertIn("«Centro»", body["error"])
         self.assertEqual(self.suite.claims, [])
+
+
+def claimed(browser, code="999001"):
+    """«Centro» confirmed and «Dirección» claimed its APS name, as the page goes from one to the other."""
+    for path, body in (("/api/centre", {"code": code}), ("/api/address", {})):
+        status, answer = browser.request("POST", path, body)
+        assert status == 200, answer
+    return answer["address"]["name"]
+
+
+class Revisar(ProvisionadorTest):
+    def test_revisar_summarises_the_centre_the_name_the_timezone_the_components_and_the_backup(self):
+        browser = self.operator()
+        self.assertIsNone(browser.get("/api/state")[1]["review"], "nothing to review before «Dirección»")
+        claimed(browser, "999002")
+        state = browser.get("/api/state")[1]
+        self.assertEqual((state["centre"]["name"], state["centre"]["timezone"], state["address"]["name"]),
+                         ("CECOSF Estrecho", "America/Punta_Arenas", "centro-999002.gestion.apsconecta.cl"))
+        self.assertEqual(state["review"], {
+            "components": ["Talk", "Euro-Office", "ClamAV (antivirus)", "Imaginary (vistas previas de imágenes)",
+                           "Búsqueda de texto completo", "HaRP (aplicaciones externas)"],
+            "backup": {"folder": "/var/backups/apsconecta-gestion", "time": "06:00"}})
+
+
+class Instalar(ProvisionadorTest):
+    """«Instalar» runs in the background, as against the real suite; each test waits for what the operator would see."""
+
+    def setUp(self):
+        super().setUp()
+        self.enterContext(mock.patch.object(steps, "POLL", 0.01))
+        self.log = self.enterContext(contextlib.redirect_stdout(io.StringIO()))
+        self.addCleanup(self.finish)
+        self.browser = self.operator()
+
+    def finish(self):
+        """The suite comes up, so the install a test left running ends before its state goes."""
+        self.suite.up()
+        if self.app.worker:
+            self.app.worker.join()
+
+    def install(self):
+        return self.browser.request("POST", "/api/install", {})
+
+    def status(self):
+        return self.browser.get("/api/state")[1]["install"]["status"]
+
+    def eventually(self, condition, what, timeout=10):
+        deadline = time.monotonic() + timeout
+        while not condition():
+            if time.monotonic() > deadline:
+                self.fail(f"no {what} within {timeout} s")
+            time.sleep(0.01)
+
+    def test_instalar_needs_the_aps_name_first(self):
+        self.assertEqual(self.browser.request("POST", "/api/centre", {"code": "999001"})[0], 200)
+        status, body = self.install()
+        self.assertEqual(status, 409, body)
+        self.assertIn("«Dirección»", body["error"])
+        self.assertEqual((self.suite.aio, self.suite.starts), ({}, 0))
+
+    def test_instalar_writes_aios_settings_for_each_choice_then_starts_the_suite_with_aios_own_start(self):
+        claimed(self.browser, "999002")
+        self.assertEqual(self.install()[0], 202)
+        self.eventually(lambda: self.suite.starts, "AIO's start")
+        written = {"officeSuite": "eurooffice", "isTalkEnabled": True, "isClamavEnabled": True,
+                   "isImaginaryEnabled": True, "isFulltextsearchEnabled": True, "isHarpEnabled": True,
+                   "isTalkRecordingEnabled": False, "isDockerSocketProxyEnabled": False, "isWhiteboardEnabled": False,
+                   "timezone": "America/Punta_Arenas", "borg_backup_host_location": "/var/backups/apsconecta-gestion",
+                   "borg_remote_repo": "", "wasStartButtonClicked": True, "AIO_URL": "192.168.1.10:8080"}
+        self.assertEqual({key: self.suite.aio.get(key) for key in written}, written)
+        self.assertEqual(self.suite.daily_backup_time, "06:00\nautomaticUpdatesAreNotEnabled\n",
+                         "nightly at 06:00 UTC, with success notifications and without automatic updates")
+        self.assertEqual(self.suite.starts, 1)
+
+    def test_the_progress_shows_each_container_as_aio_reads_it_and_listo_waits_for_every_one(self):
+        claimed(self.browser)
+        self.install()
+        self.eventually(lambda: self.suite.starts, "AIO's start")
+        self.suite.up("nextcloud-aio-nextcloud")
+        self.assertEqual(self.browser.get("/api/state")[1]["install"], {"status": "installing", "containers": [
+            {"name": "Apache & Caddy", "state": "starting"}, {"name": "Servidor de aplicaciones", "state": "running"},
+            {"name": "Talk", "state": "starting"}, {"name": "EuroOffice", "state": "starting"}]})
+        self.suite.up("nextcloud-aio-talk", "nextcloud-aio-eurooffice")
+        time.sleep(0.3)  # many readings of the containers
+        self.assertFalse((self.state / provisionador.LISTO).exists(), "Apache still starts")
+        self.suite.up("nextcloud-aio-apache")
+        self.eventually(lambda: (self.state / provisionador.LISTO).exists(), "«Listo»")
+        self.assertEqual(self.browser.get("/api/state")[0], 410, "«Listo» ends the session; AIO's page takes 8080")
+        self.assertIn("«Listo»: el personal abre APS Conecta Gestión en https://centro-999001.gestion.apsconecta.cl",
+                      self.log.getvalue())
+
+    def test_a_container_that_never_runs_fails_the_install_with_its_name_until_reintentar_finds_it_running(self):
+        self.enterContext(mock.patch.object(steps.start, "WAIT", 0.3))
+        claimed(self.browser)
+        self.install()
+        self.eventually(lambda: self.suite.starts, "AIO's start")
+        self.suite.up("nextcloud-aio-apache", "nextcloud-aio-nextcloud", "nextcloud-aio-eurooffice")
+        self.eventually(lambda: self.status() == "failed", "a failed install")
+        self.assertEqual(self.browser.get("/api/state")[1]["install"]["reasons"], [
+            "Estos contenedores de la suite no quedaron en ejecución: Talk. Presione «Reintentar»; si vuelve a ocurrir, "
+            "contacte a APS Conecta."])
+        self.assertFalse((self.state / provisionador.LISTO).exists())
+        self.suite.up("nextcloud-aio-talk")
+        self.assertEqual(self.install()[0], 202)  # «Reintentar»
+        self.eventually(lambda: (self.state / provisionador.LISTO).exists(), "«Listo»")
+        self.assertEqual(self.suite.starts, 1, "AIO's start is not sent again while no container is stopped")
+
+    def test_reintentar_sends_aios_start_again_for_a_container_that_stopped(self):
+        self.enterContext(mock.patch.object(steps.start, "WAIT", 0.3))
+        claimed(self.browser)
+        self.install()
+        self.eventually(lambda: self.status() == "failed", "a failed install")
+        self.suite.states["nextcloud-aio-talk"] = "stopped"  # Talk exited
+        self.install()
+        self.eventually(lambda: self.suite.starts == 2, "AIO's start again")
+        self.suite.up()
+        self.eventually(lambda: (self.state / provisionador.LISTO).exists(), "«Listo»")
+
+    def test_instalar_pressed_again_while_the_install_runs_starts_nothing_more(self):
+        claimed(self.browser)
+        self.assertEqual(self.install()[0], 202)
+        self.eventually(lambda: self.suite.starts, "AIO's start")
+        status, body = self.install()
+        self.assertEqual((status, body["install"]["status"]), (202, "installing"))
+        self.suite.up()
+        self.eventually(lambda: (self.state / provisionador.LISTO).exists(), "«Listo»")
+        self.assertEqual(self.suite.starts, 1)
+
+    def test_an_install_a_restart_cut_short_goes_on_by_itself(self):
+        claimed(self.browser)
+        cut_short = threading.Event()  # never set: the Provisionador that sent AIO's start is gone
+        with mock.patch.object(self.suite, "start", side_effect=lambda url: cut_short.wait()) as first:
+            self.install()
+            self.eventually(lambda: first.called, "AIO's start")
+        self.restart()  # the mastercontainer restarted while AIO started the suite
+        self.eventually(lambda: self.suite.starts, "AIO's start, from the Provisionador that started again")
+        self.assertEqual(self.status(), "installing")
+        self.suite.up()
+        self.eventually(lambda: (self.state / provisionador.LISTO).exists(), "«Listo»")
+
+    def test_a_suite_that_does_not_start_fails_the_install_with_aios_reason(self):
+        claimed(self.browser)
+        with mock.patch.object(self.suite, "start", side_effect=provisionador.Unreachable("El contenedor maestro no "
+                                                                                         "logró iniciar la suite.")):
+            self.install()
+            self.eventually(lambda: self.status() == "failed", "a failed install")
+        self.assertEqual(self.browser.get("/api/state")[1]["install"]["reasons"],
+                         ["El contenedor maestro no logró iniciar la suite."])
+
+
+class ImagePulls(ProvisionadorTest):
+    def test_at_its_start_the_provisionador_pulls_the_images_of_the_suite_instalar_starts_writing_no_setting(self):
+        log = printed(self.app.pull_images)  # what the mastercontainer's start runs beside the link, in the background
+        self.assertEqual(self.suite.pulled, [{
+            "officeSuite": "eurooffice", "isTalkEnabled": True, "isClamavEnabled": True, "isImaginaryEnabled": True,
+            "isFulltextsearchEnabled": True, "isHarpEnabled": True, "isTalkRecordingEnabled": False,
+            "isDockerSocketProxyEnabled": False, "isWhiteboardEnabled": False}])
+        self.assertEqual(self.suite.aio, {}, "AIO's settings wait for «Instalar»")
+        self.assertIn("Las imágenes de la suite están descargadas.", log)
+
+    def test_a_pull_that_fails_is_logged_and_instalar_pulls_again(self):
+        with mock.patch.object(self.suite, "pull", side_effect=provisionador.Unreachable("Sin conexión.")), \
+                contextlib.redirect_stderr(io.StringIO()) as errors:
+            self.assertNotIn("descargadas", printed(self.app.pull_images))
+        self.assertIn("Sin conexión.", errors.getvalue())
+
+
+class ReleaseName(ProvisionadorTest):
+    """provisionador.py release-name, which the Bootstrap's reset runs and the acceptance harness for each CI name it
+    claimed: the name is freed with its own credential, given on stdin."""
+
+    def release(self, credential):
+        with mock.patch.object(sys, "stdin", io.StringIO(credential)):
+            return printed(lambda: self.assertEqual(provisionador.main(["release-name"], self.suite), 0))
+
+    def test_the_name_whose_credential_arrives_on_stdin_is_freed_so_that_its_centre_claims_it_again(self):
+        claimed(self.operator())
+        credential = (self.state / provisionador.NAME_CREDENTIAL).read_text(encoding="utf-8")
+        self.assertIn(NAME, self.release(credential))
+        self.assertEqual(self.suite.claim("999001")["name"], NAME, "a reinstall claims the name again")
+
+    def test_a_name_freed_already_stays_free(self):
+        claimed(self.operator())
+        credential = (self.state / provisionador.NAME_CREDENTIAL).read_text(encoding="utf-8")
+        self.release(credential)
+        self.assertIn("ya estaba libre", self.release(credential))
 
 
 class ShippedRegister(ProvisionadorTest):

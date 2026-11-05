@@ -15,7 +15,7 @@ readme.md our fork declaration replaces upstream's readme
 .codespellrc codespell's word list for our layer's Spanish
 .gitleaksignore our secret scan's reviewed false positives
 .github/workflows/ci.yml our gates: PR title, secret scan, static gate, the Keep-list check and the digest pins
-.github/workflows/release.yml our candidate pipeline: our three images under the candidate tag, and the pre-release
+.github/workflows/release.yml our candidate pipeline: our three images under the candidate tag, the pre-release, and the acceptance harness on it
 .github/workflows/issue-linker.yml our issue linker
 .github/workflows/mastercontainer-image.yml our image test: the mastercontainer built from a pull request's tree, run as vanilla's command runs it and checked from outside
 .github/workflows/aps-name.yml our CI proof of the APS name: our Caddy image gets a staging certificate for a CI name with no inbound port, and the run frees the name

@@ -25,7 +25,9 @@ HERE = Path(__file__).resolve().parent
 INTERFACE = 8080  # AIO's interface inside the mastercontainer: Caddy, Containers/mastercontainer/internal.Caddyfile
 # The certificates Caddy issues AIO's interface on demand, a folder per server name (its storage, internal.Caddyfile).
 INTERFACE_CERTIFICATES = Path("/mnt/docker-aio-config/caddy-internal/certificates/local")
-NAME_SERVICE = "https://gestion-nombres.apsconecta.workers.dev"  # APS's name service (APS-Conecta/gestion-aio)
+# The services of this build: APS's name service (APS-Conecta/gestion-aio), its production deployment as committed. The
+# candidate pipeline stamps a test build's at release time (aps/acceptance/test-build.json): no runtime switch.
+SERVICES = HERE / "services.json"
 CADDY = HERE.parents[1] / "community-containers" / "caddy" / "caddy.json"  # our Caddy, as AIO's community container
 MASTERCONTAINER = "nextcloud-aio-mastercontainer"  # the name AIO requires of its own container
 INTERFACE_DOWN = "La interfaz de AIO no responde en el puerto 8080 del contenedor maestro."
@@ -36,29 +38,79 @@ LIMITED = ("El servicio de nombres de APS Conecta limita las solicitudes que rec
 REFUSED = "El servicio de nombres de APS Conecta rechazó la solicitud (HTTP {code}). Contacte a APS Conecta."
 NO_SERVER_ADDRESS = ("No se pudo leer la dirección del servidor en la red del establecimiento. Presione «Reintentar»; "
                      "si vuelve a ocurrir, contacte a APS Conecta.")
-AIO_REFUSED = ("AIO no aceptó la dirección del establecimiento. Presione «Reintentar»; si vuelve a ocurrir, contacte "
-               "a APS Conecta.")
+AIO_REFUSED = "AIO no aceptó {}. Presione «Reintentar»; si vuelve a ocurrir, contacte a APS Conecta."
+NOT_STARTED = ("El contenedor maestro no logró iniciar la suite. Presione «Reintentar»; si vuelve a ocurrir, contacte a "
+               "APS Conecta.")
+NO_STATES = "No se pudo leer el estado de los contenedores de la suite; se vuelve a intentar."
+NOT_PULLED = "No se pudieron descargar las imágenes de la suite; «Instalar» las descarga."
 CREDENTIAL = ("name", "username", "password", "subdomain", "server_url")  # a claim's answer
 
-# AIO's settings for the APS name, written by AIO's own configuration code: its first-run setup, so that AIO's
-# passphrase exists as the first visit to its page would make it; the name as the domain, without vanilla's domain
-# check, as upstream's Caddy DNS-challenge recipe and its deSEC registration set it; our Caddy as the one community
-# container, with the settings its definition gives AIO (reverse-proxy mode: Apache's port and binding); and, among
-# AIO's secrets, the name's acme-dns credential, which community-containers/caddy/caddy.json passes to Caddy. The values
-# arrive on stdin: the host's ps shows the arguments of every process in the container.
-USE_NAME = r"""
+# AIO's own code, as its cron scripts run it (php/src/Cron), with the values on stdin: the host's ps shows the arguments
+# of every process in the container. Each script below follows it.
+AIO = r"""
 ini_set('display_errors', 'stderr');
+ini_set('memory_limit', '2048M');
 require '/var/www/docker-aio/php/vendor/autoload.php';
 $container = \AIO\DependencyInjection::GetContainer();
-$container->get(\AIO\Data\Setup::class)->Setup();
 $config = $container->get(\AIO\Data\ConfigurationManager::class);
-$in = json_decode(stream_get_contents(STDIN), true, 4, JSON_THROW_ON_ERROR);
+$in = json_decode(stream_get_contents(STDIN), true, 8, JSON_THROW_ON_ERROR);
+"""
+# AIO's settings for the APS name: its first-run setup, so that AIO's passphrase exists as the first visit to its page
+# would make it; the name as the domain, without vanilla's domain check, as upstream's Caddy DNS-challenge recipe and its
+# deSEC registration set it; our Caddy as the one community container, with the settings its definition gives AIO
+# (reverse-proxy mode: Apache's port and binding); and, among AIO's secrets, the name's acme-dns credential, which
+# community-containers/caddy/caddy.json passes to Caddy.
+USE_NAME = AIO + r"""
+$container->get(\AIO\Data\Setup::class)->Setup();
 $config->aioCommunityContainers = ['caddy'];
 $config->setDomain($in['domain'], true);
 $config->setAioVariables($in['aio_variables']);
 (function (array $secrets): void {
     $this->set('secrets', array_merge($this->get('secrets', []), $secrets));
 })->call($config, $in['secrets']);
+"""
+# AIO's switches, as its options form sets them (ConfigurationController::SetConfig); the office suite is one choice.
+SWITCH = r"""
+$config->startTransaction();
+foreach ($in['settings'] as $key => $value) {
+    $config->$key = $key === 'officeSuite' ? \AIO\Data\OfficeSuite::from($value) : $value;
+}
+"""
+COMPONENTS = AIO + SWITCH + "$config->commitTransaction();\n"
+# AIO's own pull of every image its start runs for those switches and our Caddy, the switches never committed: AIO's
+# settings stay as they are until «Instalar».
+PULL = AIO + SWITCH + r"""
+$config->aioCommunityContainers = ['caddy'];
+$container->get(\AIO\Controller\DockerController::class)->PullAllContainerImages();
+"""
+TIMEZONE = AIO + "$config->timezone = $in['timezone'];\n"
+# AIO's backup form: the folder on the server, then the daily time, without automatic updates and with success
+# notifications, as AIO's page writes them.
+BACKUPS = AIO + r"""
+$config->setBorgLocationVars($in['folder'], '');
+$config->setDailyBackupTime($in['time'], false, true);
+"""
+# AIO's start button (DockerController::StartContainer): it records the interface's address and the start, then pulls,
+# creates and starts every container in order, Apache last.
+START = AIO + r"""
+$config->startTransaction();
+$config->aioUrl = $in['aio_url'];
+$config->wasStartButtonClicked = true;
+$config->commitTransaction();
+$container->get(\AIO\Controller\DockerController::class)->startTopContainer(true);
+"""
+# The containers AIO's page lists, with AIO's reading of their state: stopped, starting (running, its port does not
+# answer yet) or running. Like AIO's page, it first joins the mastercontainer to the suite's network, where those
+# ports answer.
+CONTAINERS = AIO + r"""
+$container->get(\AIO\Docker\DockerActionManager::class)->ConnectMasterContainerToNetwork();
+$listed = [];
+foreach ($container->get(\AIO\ContainerDefinitionFetcher::class)->FetchDefinition() as $c) {
+    if (!$c->hideFromList) {
+        $listed[] = ['id' => $c->identifier, 'name' => $c->displayName, 'state' => $c->GetStartingState()->value];
+    }
+}
+echo json_encode($listed, JSON_THROW_ON_ERROR);
 """
 
 
@@ -68,6 +120,10 @@ class Unreachable(Exception):
 
 class Held(Exception):
     """Another installation holds the name of that DEIS code."""
+
+
+class Unknown(Unreachable):
+    """The name service does not know the credential: its name is free."""
 
 
 class SuitePort(Protocol):
@@ -81,6 +137,10 @@ class SuitePort(Protocol):
     def publish(self, credential: dict, address: str) -> None:
         """Point the claimed name at `address`."""
 
+    def release(self, credential: dict) -> bool:
+        """Free the claimed name with its own credential: True, or False when the name service no longer knows the
+        credential, so the name is free already."""
+
     def server_address(self) -> str:
         """The server's address on the network its default route leaves by: the clinic's network."""
 
@@ -89,6 +149,25 @@ class SuitePort(Protocol):
 
     def opened(self, name: str) -> bool:
         """Whether a browser opened AIO's interface at `name`."""
+
+    def pull(self, settings: dict) -> None:
+        """Pull the images AIO's start runs with these switches and our Caddy, writing none of AIO's settings."""
+
+    def components(self, settings: dict) -> None:
+        """Set AIO's switches for its optional containers, as AIO's settings file keeps them."""
+
+    def timezone(self, zone: str) -> None:
+        """Set AIO's timezone, which AIO gives every container of the suite."""
+
+    def backups(self, folder: str, time: str) -> None:
+        """Set AIO's nightly backup: to `folder` on the server, daily at `time` (UTC)."""
+
+    def start(self, aio_url: str) -> None:
+        """Start the suite with AIO's own start, which pulls, creates and starts each container."""
+
+    def containers(self) -> list:
+        """Each container AIO's page lists, by its `id` and AIO's `name` for it, with its `state` as AIO reads it:
+        stopped, starting or running."""
 
 
 def arrival():
@@ -134,8 +213,8 @@ class NameService:
         self.call(f"{credential['server_url']}/address", {"address": address}, credential)
 
     def release(self, credential):
-        """Free the name with its own credential. The CI proof frees each name it claims; the Provisionador never
-        frees one."""
+        """Free the name with its own credential: the Bootstrap's reset, the CI proof and the acceptance harness free
+        the names they claimed; the Provisionador's install never frees one."""
         self.call(f"{credential['server_url']}/release", {"code": credential["username"]}, credential)
 
     @staticmethod
@@ -153,6 +232,8 @@ class NameService:
                   flush=True)
             if error.code == 409:
                 raise Held() from None
+            if error.code == 401 and credential:
+                raise Unknown(REFUSED.format(code=401)) from None
             if error.code == 429:
                 raise Unreachable(LIMITED) from None
             raise Unreachable(UNREACHABLE if error.code >= 500 else REFUSED.format(code=error.code)) from None
@@ -165,7 +246,7 @@ class Suite:
     """The suite port inside the mastercontainer."""
 
     def __init__(self):
-        self.names = NameService(NAME_SERVICE)
+        self.names = NameService(json.loads(SERVICES.read_text(encoding="utf-8"))["name_service"])
 
     def certificate(self, host, timeout=60):
         """Caddy issues AIO's interface certificate on demand: for the server name a browser sends, or, for an IP
@@ -192,6 +273,13 @@ class Suite:
     def publish(self, credential, address):
         self.names.publish(credential, address)
 
+    def release(self, credential):
+        try:
+            self.names.release(credential)
+        except Unknown:
+            return False
+        return True
+
     def server_address(self):
         """The mastercontainer sits on Docker's bridge network, which hides the host's address. So a short-lived
         container of the mastercontainer's own image reads it on the host's network, through the Docker socket."""
@@ -205,29 +293,61 @@ class Suite:
             print(f"server address: {getattr(error, 'stderr', None) or error}", file=sys.stderr, flush=True)
             raise Unreachable(NO_SERVER_ADDRESS) from None
 
+    @staticmethod
+    def aio(script, values, failed, timeout=120):
+        """What `script`, AIO's own code, printed with `values` on its stdin; Unreachable with `failed` when it fails."""
+        try:
+            return subprocess.run(["php", "-r", script], input=json.dumps(values), capture_output=True, text=True,
+                                  check=True, timeout=timeout).stdout
+        except (OSError, subprocess.SubprocessError) as error:
+            print(f"AIO: {getattr(error, 'stderr', None) or error}", file=sys.stderr, flush=True)
+            raise Unreachable(failed) from None
+
     def use_name(self, credential):
         """AIO's settings for the name, through AIO's own configuration code (USE_NAME)."""
         values = {"domain": credential["name"], "aio_variables": caddy()["aio_variables"],
                   "secrets": acmedns(credential)}
-        try:
-            subprocess.run(["php", "-r", USE_NAME], input=json.dumps(values), capture_output=True, text=True,
-                           check=True, timeout=120)
-        except (OSError, subprocess.SubprocessError) as error:
-            print(f"AIO's settings: {getattr(error, 'stderr', None) or error}", file=sys.stderr, flush=True)
-            raise Unreachable(AIO_REFUSED) from None
+        self.aio(USE_NAME, values, AIO_REFUSED.format("la dirección del establecimiento"))
 
     def opened(self, name):
         """Caddy issues AIO's interface certificate for a name the first time a TLS client asks for it there, before
         the client judges the certificate, and keeps it in its storage."""
         return (INTERFACE_CERTIFICATES / name / f"{name}.crt").exists()
 
+    def pull(self, settings):
+        self.aio(PULL, {"settings": settings}, NOT_PULLED, timeout=3600)
+
+    def components(self, settings):
+        self.aio(COMPONENTS, {"settings": settings}, AIO_REFUSED.format("los componentes de la suite"))
+
+    def timezone(self, zone):
+        self.aio(TIMEZONE, {"timezone": zone}, AIO_REFUSED.format("la zona horaria del establecimiento"))
+
+    def backups(self, folder, time):
+        self.aio(BACKUPS, {"folder": folder, "time": time}, AIO_REFUSED.format("las copias de seguridad"))
+
+    def start(self, aio_url):
+        """AIO's start answers once it started every container; their images may still be downloading."""
+        self.aio(START, {"aio_url": aio_url}, NOT_STARTED, timeout=3600)
+
+    def containers(self):
+        try:
+            listed = json.loads(self.aio(CONTAINERS, {}, NO_STATES))
+        except ValueError:
+            raise Unreachable(NO_STATES) from None
+        return [{**c, "state": c["state"] if c["state"] in ("starting", "running") else "stopped"} for c in listed]
+
 
 class FakeSuite:
     """The suite port for the Seam 2 tests: a certificate for each host, as Caddy issues one per address, and new ones
     after renew(), as Caddy's internal issuer renews them. Its name service gives the DEIS code <code> the name
     centro-<code>.gestion.apsconecta.cl once, refuses the codes another installation holds, and fails while `outage`
-    is set. Its AIO keeps its settings file in `aio`, the server's address is `server` until DHCP changes it, and a
-    browser whose resolver answers the server's address says hello() to AIO's interface at a name."""
+    is set. Its AIO keeps its settings file in `aio` and its daily backup file in `daily_backup_time`, the server's
+    address is `server` until DHCP changes it, and a browser whose resolver answers the server's address says hello() to
+    AIO's interface at a name. AIO's start makes each of its CONTAINERS starting, until up() makes their ports answer."""
+
+    CONTAINERS = {"nextcloud-aio-apache": "Apache & Caddy", "nextcloud-aio-nextcloud": "Servidor de aplicaciones",
+                  "nextcloud-aio-talk": "Talk", "nextcloud-aio-eurooffice": "EuroOffice"}  # by id, AIO's names
 
     def __init__(self):
         self.renewals = 0
@@ -238,7 +358,14 @@ class FakeSuite:
         self.addresses = {}  # by name, the address it points at
         self.server = "192.168.1.10"
         self.aio = {}
+        self.daily_backup_time = None
         self.hellos = set()  # the names a TLS client asked AIO's interface for
+        self.starts = 0  # how often AIO's start was sent
+        self.states = {}  # by container, AIO's reading of it once AIO's start created it
+        self.pulled = []  # the switches of each image pull
+
+    def pull(self, settings):
+        self.pulled.append(settings)
 
     def certificate(self, host):
         return b"FakeSuite certificate for " + host.encode() + b" renewed" * self.renewals
@@ -261,8 +388,17 @@ class FakeSuite:
         if self.outage:
             raise Unreachable(UNREACHABLE)
         if self.credentials.get(credential["name"]) != credential:
-            raise Unreachable(REFUSED.format(code=401))
+            raise Unknown(REFUSED.format(code=401))
         self.addresses[credential["name"]] = address
+
+    def release(self, credential):
+        if self.outage:
+            raise Unreachable(UNREACHABLE)
+        if self.credentials.get(credential["name"]) != credential:
+            return False
+        del self.credentials[credential["name"]]
+        self.addresses.pop(credential["name"], None)
+        return True
 
     def server_address(self):
         return self.server
@@ -282,3 +418,31 @@ class FakeSuite:
 
     def hello(self, name):
         self.hellos.add(name)
+
+    def components(self, settings):
+        self.aio.update(settings)
+
+    def timezone(self, zone):
+        self.aio["timezone"] = zone
+
+    def backups(self, folder, time):
+        """AIO's backup location in its settings file, and its daily backup file as AIO writes it: the time, then that
+        automatic updates are off; success notifications are on."""
+        self.aio.update(borg_backup_host_location=folder, borg_remote_repo="")
+        self.daily_backup_time = f"{time}\nautomaticUpdatesAreNotEnabled\n"
+
+    def start(self, aio_url):
+        self.starts += 1
+        self.aio.update(AIO_URL=aio_url, wasStartButtonClicked=True)
+        for container in self.CONTAINERS:
+            if self.states.get(container, "stopped") == "stopped":
+                self.states[container] = "starting"
+
+    def containers(self):
+        return [{"id": container, "name": name, "state": self.states.get(container, "stopped")}
+                for container, name in self.CONTAINERS.items()]
+
+    def up(self, *containers):
+        """The containers' ports answer, all of them by default: AIO reads them running."""
+        for container in containers or self.CONTAINERS:
+            self.states[container] = "running"

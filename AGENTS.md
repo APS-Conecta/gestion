@@ -57,14 +57,15 @@ the official images to the set Upstream built from it.
   dispatch: the CI proof (`aps/provisionador/name-test.py`) builds our Caddy image, claims a CI name with one of
   gestion's reserved DEIS codes (`aps/provisionador/ci-codes.txt`) on the name service's CI deployment, waits for a
   Let's Encrypt staging certificate with no inbound port, and frees the name with its own credential.
-- `.github/workflows/acceptance.yml`, on a maintainer's dispatch for a pre-release and through `workflow_call`: the
-  clean-machine acceptance harness (Seam 1). `aps/acceptance/run.sh` boots a fresh Debian 12 VM, runs the candidate's
-  published Bootstrap exactly as the manual prints it, then each check module in `aps/acceptance/checks/` through the
-  interface its header documents; a failing check is named and attaches every container's log and the disk usage.
+- `.github/workflows/acceptance.yml`, called by the candidate pipeline on every candidate and on a maintainer's dispatch
+  for a pre-release: the clean-machine acceptance harness (Seam 1). `aps/acceptance/run.sh` boots a fresh Debian 12 VM,
+  runs the candidate's published Bootstrap exactly as the manual prints it, then each check module in
+  `aps/acceptance/checks/` through the interface its header documents; a failing check is named and attaches every
+  container's log and the disk usage. Every run frees each CI name it claimed, with the name's own credential.
 - Upstream's own workflows beside it: codespell, shellcheck, docker-lint and json-validator,
   plus the PHP, Twig, YAML and Playwright checks on their paths. `scripts/validate.sh` runs
   the codespell, docker-lint and json-spec trio against any tree; the candidate pipeline runs
-  it and the static gate on the candidate commit, and the candidate's Bootstrap on a fresh runner.
+  it and the static gate on the candidate commit, and the acceptance harness on the candidate.
 
 CI is the only mechanical gate; where a behavior is not observable in CI, the check beside
 it says so instead of pretending.

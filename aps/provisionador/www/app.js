@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 APS Conecta
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // The Provisionador's page: it exchanges the link's secret (the URL fragment, never sent in a request line) for a
-// session, then drives «Centro» and «Dirección» through the HTTP API.
+// session, then drives «Centro», «Dirección», «Revisar» and «Instalar» through the HTTP API, until «Listo».
 "use strict";
 
 // AIO's interface enforces Trusted Types; on the Provisionador's routes it also allows a default policy
@@ -20,12 +20,15 @@ const CHILE = [-35.7, -71.5];
 // resolver does not ask before the new record answers and then remember finding nothing.
 const FIRST_LOOK = 10000;
 const NEXT_LOOK = 15000;
+const PROGRESS = 3000; // between two readings of the install's progress
+const STATES = {stopped: "Detenido", starting: "Iniciando", running: "En ejecución"}; // as AIO's page names them
 let register = null;
 let selected = null;
 let map = null;
 let marker = null;
 let searching = null;
 let looking = null;
+let polling = null;
 
 async function api(method, path, body) {
   let response;
@@ -61,7 +64,7 @@ function locked(message) {
 }
 
 function show(screen) {
-  for (const id of ["centro", "direccion"]) $(id).hidden = id !== screen;
+  for (const id of ["centro", "direccion", "revisar", "listo"]) $(id).hidden = id !== screen;
 }
 
 function fillFilters() {
@@ -179,6 +182,7 @@ function addressed(address, delay) {
   $("address-name").textContent = `https://${address.name}`;
   say("Dirección asignada. Apunta a este servidor en la red del establecimiento.", false, "address-status");
   say(`Comprobando que este equipo encuentra el servidor en ${address.name}…`, false, "reach");
+  $("direccion-next").hidden = false;
   clearTimeout(looking);
   looking = setTimeout(() => look(address.name), delay);
 }
@@ -204,6 +208,81 @@ async function look(name) {
     + "excepción a la protección contra «DNS rebinding») y vuelva a conectar este equipo a la red. Esta página lo "
     + "comprobará de nuevo por sí sola.", true, "reach");
   looking = setTimeout(() => look(name), NEXT_LOOK);
+}
+
+// «Revisar»: the centre, its name and timezone, and what «Instalar» sets up beside them.
+async function revisar() {
+  try {
+    review(await api("GET", "/api/state"));
+  } catch (e) {
+    say(e.message, true, "reach");
+  }
+}
+
+function review(state) {
+  const {centre, address, review: chosen} = state;
+  const suite = `https://${address.name}`;
+  clearTimeout(looking);
+  $("summary-centre").textContent = `${centre.name}, ${centre.comuna}, región ${centre.region} (código DEIS `
+    + `${centre.code})`;
+  $("summary-address").textContent = suite;
+  $("summary-timezone").textContent = centre.timezone;
+  $("summary-components").replaceChildren(...chosen.components.map((name) => element("li", name)));
+  $("summary-backup").textContent = `Cada noche, a las ${chosen.backup.time} UTC, en la carpeta `
+    + `${chosen.backup.folder} del servidor.`;
+  Object.assign($("suite-address"), {textContent: suite, href: suite});
+  show("revisar");
+  if (state.install) progress(state.install);
+}
+
+// «Instalar», and «Reintentar» after a failure: the Provisionador sets AIO up and starts the suite.
+async function install() {
+  $("install").disabled = true;
+  say("Iniciando la instalación…", false, "install-status");
+  try {
+    progress((await api("POST", "/api/install", {})).install);
+  } catch (e) {
+    $("install").disabled = false;
+    say(e.message, true, "install-status");
+  }
+}
+
+// Each container of the suite as AIO reads it, until «Listo» or a failure with its reasons.
+function progress(install) {
+  $("progress").replaceChildren(...install.containers.map((container) => {
+    const item = document.createElement("li");
+    item.dataset.state = container.state;
+    item.append(element("strong", container.name), element("span", STATES[container.state]));
+    return item;
+  }));
+  const failed = install.status === "failed";
+  $("install").disabled = !failed;
+  $("install").textContent = failed ? "Reintentar" : "Instalar";
+  if (failed) return say(install.reasons.join(" "), true, "install-status");
+  say(install.error || "Instalando la suite. «Listo» aparece cuando todos sus contenedores estén en ejecución.", false,
+    "install-status");
+  clearTimeout(polling);
+  polling = setTimeout(poll, PROGRESS);
+}
+
+async function poll() {
+  let state;
+  try {
+    state = await api("GET", "/api/state");
+  } catch (e) {
+    if (await closed()) return show("listo");
+    say(e.message, true, "install-status");
+    polling = setTimeout(poll, PROGRESS);
+    return;
+  }
+  progress(state.install);
+}
+
+// «Listo» hands this address to AIO's page, which answers its root with a redirect, where the Provisionador served
+// this page.
+async function closed() {
+  const answer = await fetch("/", {redirect: "manual", cache: "no-store"}).catch(() => null);
+  return answer?.type === "opaqueredirect";
 }
 
 // Leaflet's own attribution control writes HTML, so the page shows OpenStreetMap's under the map.
@@ -234,9 +313,12 @@ async function start() {
     }
   }
   $("retry-button").addEventListener("click", direccion);
+  $("to-revisar").addEventListener("click", revisar);
+  $("install").addEventListener("click", install);
   let state;
   try {
     state = await api("GET", "/api/state");
+    if (state.install) return review(state);
     if (state.address) {
       show("direccion");
       return addressed(state.address, 0);

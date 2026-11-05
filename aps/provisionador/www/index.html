@@ -69,6 +69,35 @@
       <button type="button" class="primary" id="retry-button">Reintentar</button>
     </div>
     <p class="message" id="reach" role="status"></p>
+    <div class="actions" id="direccion-next" hidden>
+      <button type="button" class="primary" id="to-revisar">Continuar</button>
+    </div>
+  </section>
+
+  <section id="revisar" hidden>
+    <h1>Revisar</h1>
+    <p class="lead">Revise lo que se instalará. «Instalar» configura la suite con estas opciones y la inicia; tarda unos
+      minutos, y esta página muestra el avance de cada contenedor.</p>
+    <dl class="summary">
+      <dt>Centro</dt><dd id="summary-centre"></dd>
+      <dt>Dirección</dt><dd id="summary-address"></dd>
+      <dt>Zona horaria</dt><dd id="summary-timezone"></dd>
+      <dt>Componentes</dt><dd><ul id="summary-components"></ul></dd>
+      <dt>Copias de seguridad</dt><dd id="summary-backup"></dd>
+    </dl>
+    <div class="actions">
+      <button type="button" class="primary" id="install">Instalar</button>
+    </div>
+    <p class="message" id="install-status" role="status"></p>
+    <ul class="progress" id="progress"></ul>
+  </section>
+
+  <section id="listo" hidden>
+    <h1>Listo</h1>
+    <p class="lead">La instalación terminó. El personal abre APS Conecta Gestión en:</p>
+    <p class="address"><a id="suite-address"></a></p>
+    <p class="muted">El enlace de instalación ya no sirve: esta dirección del servidor muestra ahora la administración
+      de la suite.</p>
   </section>
 </main>
 </body>

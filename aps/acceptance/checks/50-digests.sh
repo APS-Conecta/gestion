@@ -2,7 +2,8 @@
 # SPDX-FileCopyrightText: 2026 APS Conecta
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Every started container runs an image the candidate pins by digest: one of the three images its release names, or
-# one its mastercontainer pins in AIO's php/containers.json or in a community container's file.
+# one its mastercontainer pins in AIO's php/containers.json or in a community container's file. It runs once «Instalar»
+# started the suite (40-install), so it covers each of the suite's containers.
 set -euo pipefail
 aio=/var/www/docker-aio # AIO's tree in the mastercontainer
 files="$aio/php/containers.json $aio/community-containers/*/*.json"

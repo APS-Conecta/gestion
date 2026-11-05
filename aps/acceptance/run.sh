@@ -16,6 +16,8 @@
 #             stdin through: "$MACHINE" "sudo docker ps"
 #   ADDRESS   the VM's address on the shared network, where the runner's browser reaches it
 #   EVIDENCE  an empty directory for the check's own files, such as screenshots
+#   NAMES     a directory where a check that claims an APS name keeps its credential, one file per DEIS code
+#             (claim.py does): the harness frees each name with its own credential at its end, even when a check failed
 # A check never prints a secret. python3 has Playwright with Chromium (acceptance.yml installs it); browser.py is the
 # one way to open it. Exit 0 passes. A failing check is named in the log, its EVIDENCE gets every container's log, with
 # the link's secret and AIO's credentials blanked out, and the disk usage, and the workflow attaches it to the run.
@@ -27,9 +29,9 @@ set -euo pipefail
 [[ "${GITHUB_ACTIONS:-}" = true && -c /dev/kvm ]] || { echo "$0 runs on a disposable GitHub runner with KVM only" >&2; exit 2; }
 cd "$(git rev-parse --show-toplevel)"
 work="$RUNNER_TEMP/acceptance"
-mkdir -p "$work/evidence"
+mkdir -p "$work/evidence" "$work/names"
 bootstrap="https://github.com/$GITHUB_REPOSITORY/releases/download/$1/apsconecta-install.sh"
-export TAG="$1" ADDRESS=192.168.77.10 MACHINE="$work/machine" CONSOLE="$work/console.txt"
+export TAG="$1" ADDRESS=192.168.77.10 MACHINE="$work/machine" CONSOLE="$work/console.txt" NAMES="$work/names"
 export COMMAND="curl -fsSL $bootstrap | sudo bash"
 
 aio_configuration=/mnt/docker-aio-config/data/configuration.json # in the mastercontainer
@@ -61,9 +63,25 @@ collect() { # <dir>: every container's log, blanked, and the disk usage of the r
     blanked "sudo docker logs --timestamps $name" > "$1/$name.log"
   done
 }
-on_exit() { # a failure outside the checks names its stage and collects the same evidence
+free_names() { # every APS name a check claimed, freed with its own credential on stdin, as the reset frees one
+  local credential held=0
+  for credential in "$NAMES"/*.json; do
+    [ -e "$credential" ] || continue
+    if python3 -B aps/provisionador/provisionador.py release-name < "$credential"; then
+      rm -f "$credential"
+    else
+      echo "::error title=CI name held::the name of DEIS code $(basename "$credential" .json) stays held; APS Conecta" \
+        "frees it with gestion-aio's «APS name release» workflow on the ci deployment"
+      held=1
+    fi
+  done
+  return "$held"
+}
+on_exit() { # a failure outside the checks names its stage and collects the same evidence; every claimed name is freed
   local rc=$?
   [ "$rc" -eq 0 ] || [ -z "$stage" ] || { echo "::error title=Acceptance run failed::$stage"; collect "$work/evidence/run"; }
+  free_names || rc=1
+  exit "$rc"
 }
 stage="read the hardware floor from the candidate's Bootstrap"
 trap on_exit EXIT
@@ -137,7 +155,7 @@ for check in aps/acceptance/checks/*; do
   export EVIDENCE="$work/evidence/$name"
   mkdir -p "$EVIDENCE"
   echo "::group::$name"
-  if timeout 15m "$check" < /dev/null; then
+  if timeout 25m "$check" < /dev/null; then # 40-install waits up to 20 minutes for «Listo»
     mask_secrets
     echo "::endgroup::"
     echo "passed: $name"

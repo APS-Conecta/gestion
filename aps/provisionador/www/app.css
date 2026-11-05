@@ -49,9 +49,22 @@ select:focus, input:focus, button:focus-visible, a:focus-visible { outline: 2px 
 .message { margin: .75rem 0 0; max-width: 60rem; }
 .message.error { color: var(--aps-error-text); }
 
-/* «Dirección»: the APS name. */
+/* «Dirección» and «Listo»: the APS name. */
 .address { font: 600 1.25rem/1.3 var(--aps-font-display); margin: 0; overflow-wrap: anywhere; }
 .address:empty { display: none; }
+.address a { color: var(--aps-violet-dark); }
+
+/* «Revisar»: the summary, then each container's progress. */
+.summary { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .5rem 1.5rem; max-width: 60rem; margin: 0; }
+.summary dt { font-weight: 600; }
+.summary dd { margin: 0; overflow-wrap: anywhere; }
+.summary ul { margin: 0; padding-left: 1.1rem; }
+.progress { list-style: none; margin: 1rem 0 0; padding: 0; max-width: 40rem; border: 1px solid var(--border); border-radius: var(--radius); }
+.progress:empty { display: none; }
+.progress li { display: flex; justify-content: space-between; gap: 1rem; padding: .45rem .75rem; border-bottom: 1px solid var(--border); }
+.progress li:last-child { border-bottom: 0; }
+.progress li span { color: var(--aps-muted); }
+.progress li[data-state="running"] span { color: var(--aps-success); font-weight: 600; }
 
 /* Simple buttons: one primary action, the other secondary. */
 button { font: 600 1rem var(--aps-font-body); padding: .55rem 1.1rem; border-radius: var(--radius); border: 1px solid var(--border); background: var(--paper); color: var(--aps-ink); cursor: pointer; }

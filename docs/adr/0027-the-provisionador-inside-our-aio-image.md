@@ -28,7 +28,8 @@ which the Provisionador's page loads too. The operator's browser sees AIO's own 
 certificate warning.
 
 **«Listo» hands 8080 to AIO's page.** «Listo» is the file `listo` beside the Provisionador's state in the
-mastercontainer's volume (`/mnt/docker-aio-config/provisionador/`), written by the Provisionador. Caddy's `file`
+mastercontainer's volume (`/mnt/docker-aio-config/provisionador/`), written by the Provisionador once «Instalar» started
+the suite and AIO reads every one of its containers running. Caddy's `file`
 matcher reads it on every request: from then on 8080 serves AIO's page, and the Provisionador ends the link and
 every session. At a later start the Provisionador prints that the install ended and exits; dinit restarts it only
 after a failure.

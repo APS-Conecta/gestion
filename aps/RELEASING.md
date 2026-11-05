@@ -55,11 +55,18 @@ it pushes the candidate tag, and publishes the pre-release with the three images
 the Bootstrap as `apsconecta-install.sh`, filled with the tag and the mastercontainer's digest
 (`aps/release/bootstrap.sh`). The Bootstrap pulls the mastercontainer by that digest and tags it
 as the channel tag on the server; it never pulls `latest`. Then the pipeline checks "Latest": a
-candidate leaves it where it was. Last, it runs the published Bootstrap on a fresh runner as the
-manual prints it: the link block prints and the command returns, the mastercontainer runs the
-release's digest on the channel tag, a rerun prints a fresh link while the first still opens a
-session, and the reset removes the install and leaves an unrelated container, volume and file
-alone. A candidate needs no environment and reads no secret but the workflow's own token.
+candidate leaves it where it was. Last, it runs the clean-machine acceptance harness
+(`.github/workflows/acceptance.yml`) on the pre-release: the published Bootstrap on a fresh VM as
+the manual prints it, then every check module in `aps/acceptance/checks/`, which installs the
+suite to «Listo» on a CI name and frees every name it claimed. A candidate needs no environment
+and reads no secret but the workflow's own token.
+
+A test build of no version, `v0.0.0-ci.N`, runs against the services of
+`aps/acceptance/test-build.json`, which the pipeline stamps into it at release time: its
+Provisionador claims names on the name service's CI deployment, its Caddy gets Let's Encrypt
+staging certificates, and its Bootstrap gives the suite the staging roots to trust, through AIO's
+`NEXTCLOUD_TRUSTED_CACERTS_DIR`. Every other candidate runs against production, as the tree is
+committed; the acceptance run claims CI names on a test build only.
 
 ## 4. An Upstream merge
 

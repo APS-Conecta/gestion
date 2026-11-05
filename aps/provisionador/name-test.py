@@ -32,8 +32,9 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import suite  # noqa: E402
 
-CI = "https://gestion-nombres-ci.apsconecta.workers.dev"  # the name service's CI deployment
-STAGING = "https://acme-staging-v02.api.letsencrypt.org/directory"
+# A test build's services: the name service's CI deployment and Let's Encrypt's staging directory.
+TEST_BUILD = json.loads((HERE.parent / "acceptance" / "test-build.json").read_text(encoding="utf-8"))
+CI, STAGING = TEST_BUILD["name_service"], TEST_BUILD["acme_ca"]
 CODES = HERE / "ci-codes.txt"
 WAIT = 12 * 60  # seconds; the DNS challenge usually takes a minute or two
 
