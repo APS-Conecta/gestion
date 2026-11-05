@@ -366,8 +366,9 @@ class FakeSuite:
     centro-<code>.gestion.apsconecta.cl once, refuses the codes another installation holds, and fails while `outage`
     is set; the nameservers of its zone answer the addresses it was given once propagate() brings them. Its AIO keeps
     its settings file in `aio` and its daily backup file in `daily_backup_time`, the server's address is `server` until
-    DHCP changes it, and a browser whose resolver answers the server's address says hello() to AIO's interface at a
-    name. AIO's start makes each of its CONTAINERS starting, until up() makes their ports answer."""
+    DHCP changes it and cannot be read while `no_server_address` is set, and a browser whose resolver answers the
+    server's address says hello() to AIO's interface at a name. AIO's start makes each of its CONTAINERS starting, until
+    up() makes their ports answer."""
 
     CONTAINERS = {"nextcloud-aio-apache": "Apache & Caddy", "nextcloud-aio-nextcloud": "Servidor de aplicaciones",
                   "nextcloud-aio-talk": "Talk", "nextcloud-aio-eurooffice": "EuroOffice"}  # by id, AIO's names
@@ -381,6 +382,7 @@ class FakeSuite:
         self.addresses = {}  # by name, the address it points at
         self.nameservers = {}  # by name, the address the zone's nameservers answer
         self.server = "192.168.1.10"
+        self.no_server_address = False
         self.aio = {}
         self.daily_backup_time = None
         self.hellos = set()  # the names a TLS client asked AIO's interface for
@@ -432,6 +434,8 @@ class FakeSuite:
         self.nameservers = dict(self.addresses)
 
     def server_address(self):
+        if self.no_server_address:
+            raise Unreachable(NO_SERVER_ADDRESS)
         return self.server
 
     def use_name(self, credential):

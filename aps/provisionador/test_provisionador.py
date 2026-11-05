@@ -495,6 +495,24 @@ class Direccion(ProvisionadorTest):
         self.suite.propagate()
         self.assertEqual(browser.get("/api/state")[1]["address"], {"name": NAME, "published": True, "opened": False})
 
+    def test_the_look_starts_once_the_nameservers_publish_the_servers_new_address(self):
+        browser = self.operator()
+        self.assertEqual(self.claim(browser)[0], 200)
+        self.suite.server = "192.168.1.23"  # DHCP gave the server another address
+        provisionador.update_address(self.state, self.suite)
+        self.suite.propagate()
+        self.assertEqual(browser.get("/api/state")[1]["address"], {"name": NAME, "published": True, "opened": False})
+
+    def test_a_look_while_the_servers_address_cannot_be_read_waits_for_the_next_one(self):
+        browser = self.operator()
+        self.assertEqual(self.claim(browser)[0], 200)
+        self.suite.propagate()
+        self.suite.no_server_address = True
+        status, body = browser.get("/api/state")
+        self.assertEqual((status, body["address"]), (200, {"name": NAME, "published": False, "opened": False}))
+        self.suite.no_server_address = False
+        self.assertEqual(browser.get("/api/state")[1]["address"], {"name": NAME, "published": True, "opened": False})
+
     def test_a_resolver_that_drops_the_private_answer_is_detected_from_the_browser(self):
         browser = self.operator()
         self.assertEqual(self.claim(browser)[0], 200)
