@@ -31,7 +31,6 @@ scripts/validate.sh upstream's validators, run by our candidate pipeline against
 .env.example old host layer: the env template its scripts read
 VERSION old host layer: the suite version its install and release scripts read
 apps.json old host layer: the Suite manifest its resolver installs
-apps.pub old host layer: the app-release key its resolver verifies
 host/ old host layer: the host CLI and its systemd units
 install.sh old host layer: the installer
 installer.pub old host layer: the installer's signing key

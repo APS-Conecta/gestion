@@ -3,6 +3,7 @@
 """Seam 2: the install step runner, through «Instalar» and «Reintentar», with the fake suite port injecting failures.
 Each step's own tests are in test_step_<id>.py."""
 
+import threading
 from unittest import mock
 
 from suite import Unreachable
@@ -94,3 +95,26 @@ class Runner(Installing):
                                                    "Idioma y formato regional", "Sesiones y registro de auditoría")},
                          {("failed", NEXTCLOUD_DOWN)})
         self.assertFalse(self.listo())
+
+    def test_the_core_steps_run_first_and_the_optional_ones_last(self):
+        claimed(self.browser)
+        released = threading.Event()
+        self.addCleanup(released.set)
+        app_release = self.suite.app_release
+
+        def farmacia_waits(repo, tag, asset):  # Farmacia's download lasts while the progress is read
+            if asset == "farmacia.tar.gz":
+                released.wait()
+            return app_release(repo, tag, asset)
+
+        with mock.patch.object(self.suite, "app_release", side_effect=farmacia_waits):
+            self.browser.request("POST", "/api/install", {"optional": ["farmacia"]})
+            self.eventually(lambda: self.suite.starts, "AIO's start")
+            self.suite.up()
+            self.eventually(lambda: self.steps()["Aplicaciones opcionales"][0] == "running", "the optional step")
+            steps = self.steps()
+            released.set()
+            self.eventually(self.listo, "«Listo»")
+        self.assertEqual(list(steps)[-1], "Aplicaciones opcionales")
+        self.assertEqual({status for name, (status, _) in steps.items() if name != "Aplicaciones opcionales"},
+                         {"green"}, "every core step ran before the optional one")

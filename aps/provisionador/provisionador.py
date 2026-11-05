@@ -55,7 +55,7 @@ from urllib.parse import parse_qs, urlsplit
 import deis
 import runner
 import steps
-from steps import backups, components
+from steps import apps, backups, components
 from suite import Held, Refused, Suite, SuitePort, Unreachable
 
 HERE = Path(__file__).resolve().parent
@@ -117,6 +117,7 @@ CENTRE_KEPT = "El centro ya no puede cambiarse: su dirección, {}, ya se obtuvo.
 HELD = ("Otra instalación ya tiene el nombre APS de este establecimiento. Si es una instalación anterior del mismo "
         "establecimiento, APS Conecta puede liberarlo; después presione «Reintentar».")
 NO_ADDRESS_YET = "Obtenga primero la dirección del establecimiento en «Dirección»."
+NOT_OFFERED = "Elija las aplicaciones opcionales entre las que ofrece «Revisar»."
 NOT_A_DOMAIN = "Escriba el dominio propio del establecimiento."
 DOMAIN_REFUSED = "La comprobación del dominio {domain} falló: {reason} Corrija lo indicado y presione «Reintentar»."
 TALK_PORTS = ("Para que las llamadas conecten, Talk necesita además el puerto 3478 abierto hacia este servidor, en TCP "
@@ -349,32 +350,41 @@ class Provisionador:
     def get_state(self, query, body):
         state = self.state.read()
         # «Revisar», once «Dirección» set the address (the APS name or an own domain): what «Instalar» sets up beside
-        # the centre, its name and timezone.
+        # the centre, its name and timezone, and the optional apps it offers, off by default.
         review = state.get("address") and {"components": components.NAMES,
-                                           "backup": {"folder": backups.FOLDER, "time": backups.TIME}}
+                                           "backup": {"folder": backups.FOLDER, "time": backups.TIME},
+                                           "optional_apps": [{key: app[key] for key in ("id", "name", "summary")}
+                                                             for app in apps.optional()]}
         return 200, {"centre": state.get("centre"), "address": self.address(state), "review": review,
                      "install": self.progress(state)}
 
     def progress(self, state):
-        """None before «Instalar»; then whether the install runs or failed, each step with its status and, when it has
-        one, its reason, and each container of the suite with its state as AIO reads it. A reading of the containers
-        that fails says why, and the next one asks again."""
+        """None before «Instalar»; then whether the install runs or failed, the optional apps it installs, each step with
+        its status and, when it has one, its reason, and each container of the suite with its state as AIO reads it. A
+        reading of the containers that fails says why, and the next one asks again."""
         install = state.get("install")
         if install is None:
             return None
         busy = self.worker is not None and self.worker.is_alive()
         answer = {"status": "failed" if runner.failed(install) and not busy else "installing",
-                  "steps": runner.progress(install)}
+                  "optional": state["optional"], "steps": runner.progress(install)}
         try:
             return {**answer, "containers": [{"name": c["name"], "state": c["state"]} for c in self.suite.containers()]}
         except Unreachable as outage:
             return {**answer, "containers": [], "error": str(outage)}
 
     def post_install(self, query, body):
-        """POST /api/install, «Instalar» and «Reintentar»: the steps run in the background, and GET /api/state shows
-        their progress. While they run, pressing it again starts nothing more."""
+        """POST /api/install {"optional"?: [<id>…]}, «Instalar» and «Reintentar»: the steps run in the background, and
+        GET /api/state shows their progress. The first «Instalar» keeps the optional apps ticked at «Revisar» as the
+        install's own, which «Reintentar» does not change. While the steps run, pressing it again starts nothing
+        more."""
         if not self.state.read().get("address"):
             return 409, {"error": NO_ADDRESS_YET}
+        ticked = body.get("optional", [])
+        offered = [app["id"] for app in apps.optional()]
+        if not (isinstance(ticked, list) and all(isinstance(app, str) and app in offered for app in ticked)):
+            return 400, {"error": NOT_OFFERED}
+        self.state.change(lambda s: s.setdefault("optional", [app for app in offered if app in ticked]))
         self.install(again=True)
         return 202, {"install": self.progress(self.state.read())}
 
@@ -409,7 +419,9 @@ class Provisionador:
     def run_install(self):
         """The steps, through the step runner; «Listo» once every step is green and the end-of-install check is
         clean."""
-        context = SimpleNamespace(suite=self.suite, centre=self.state.read()["centre"], interface=self.interface)
+        state = self.state.read()
+        context = SimpleNamespace(suite=self.suite, centre=state["centre"], interface=self.interface,
+                                  optional=state["optional"])
         if not runner.run(self.state, context):
             return
         (self.state.dir / LISTO).touch()

@@ -105,10 +105,9 @@ docker run --init --sig-proxy=false --name nextcloud-aio-mastercontainer \
   ghcr.io/aps-conecta/all-in-one:<suite-tag>
 ```
 
-`NEXTCLOUD_STARTUP_APPS` is deliberately **empty**: no image carries an app (D4, ADR-0018) — the
-theme is the one suite thing aboard, the apps arrive from their own signed releases and the
-scoped store — so boot-time installs would be noise. By IP (§13) the command carries two more
-lines. If preflight reds on the domain probe, do
+The command leaves `NEXTCLOUD_STARTUP_APPS` **empty**: the Provisionador gives AIO's start the
+default store apps (ADR-0018), and own and fork apps come from their pinned App releases
+(ADR-0017). By IP (§13) the command carries two more lines. If preflight reds on the domain probe, do
 §7 before continuing — the wizard will not pass the check either.
 
 ## 4. The wizard (:8080)
@@ -309,7 +308,7 @@ not patched; the wait ends when the probe times out or the network returns).
 ### The applications update: `aps-conecta actualizar` (#46)
 
 The suite's images move with a suite tag (above); the own and fork **applications** move when the
-administrator says so, with `sudo aps-conecta actualizar` (ADR-0017), and store applications also
+administrator says so, with `sudo aps-conecta actualizar`, and store applications also
 update the vanilla way (ADR-0018). It refuses to run unless the
 suite is up, the lock exists and the backup is configured — then it prints the plan (current and
 candidate version per application), takes a **full backup first** and stops if it fails, fetches

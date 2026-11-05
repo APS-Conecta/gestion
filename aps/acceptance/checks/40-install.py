@@ -3,12 +3,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """«Revisar» and «Instalar» on a test build. «Centro» confirms one of gestion's reserved DEIS codes and «Dirección»
 claims its CI name (claim.py); the page goes on to «Revisar», which summarises the centre, the name, its timezone, the
-components and the backup. «Instalar» shows each container's progress as AIO reads it, while AIO's interface still
-answers with the Provisionador alone, and «Listo» shows the suite's address. At «Listo», exactly the suite's
-containers run, the components on, Talk's recording server among them only on a machine that passes the recording
-threshold, and our Caddy only on the Bootstrap's way in, since a Coolify resource sits behind Coolify's proxy; and
-AIO's interface serves AIO's page, which keeps the settings «Instalar» wrote. Any other candidate's names and
-certificates are production ones, which a run never claims: there it says so and passes."""
+components and the backup, and offers the optional apps unticked; the check ticks Farmacia. «Instalar» shows each
+container's progress as AIO reads it, while AIO's interface still answers with the Provisionador alone, and «Listo»
+shows the suite's address. At «Listo», exactly the suite's containers run, the components on, Talk's recording server
+among them only on a machine that passes the recording threshold, and our Caddy only on the Bootstrap's way in, since
+a Coolify resource sits behind Coolify's proxy; and AIO's interface serves AIO's page, which keeps the settings
+«Instalar» wrote. Any other candidate's names and certificates are production ones, which a run never claims: there it
+says so and passes."""
 
 import json
 import os
@@ -22,11 +23,12 @@ sys.path[:0] = [str(ACCEPTANCE), str(ACCEPTANCE.parent / "provisionador")]
 from browser import chromium, machine, mastercontainer_file, printed_link, verified  # noqa: E402
 from claim import api, claim, reserved  # noqa: E402
 from playwright.sync_api import expect  # noqa: E402
-from steps import backups, components  # noqa: E402
+from steps import apps, backups, components  # noqa: E402
 
 LISTO_WAIT = 20 * 60  # seconds: AIO's start, Nextcloud's first setup and each component's own
 PROBE = 60  # seconds between two looks at AIO's pages during the install
 LISTO = "/mnt/docker-aio-config/provisionador/listo"
+TICKED = "farmacia"  # the optional app the install ticks at «Revisar», with a small App release
 # The suite «Instalar» starts: AIO's core, and Talk, Euro-Office, ClamAV, Imaginary, full-text search and HaRP; Talk's
 # recording server too on a machine that records, and our Caddy behind no other proxy.
 SUITE = ("apache", "clamav", "database", "eurooffice", "fulltextsearch", "harp", "imaginary", "nextcloud",
@@ -77,6 +79,9 @@ with chromium(pinned=[verified(url.hostname, url.port, printed)]) as browser:
     expect(page.locator("#summary-timezone")).to_have_text(centre["timezone"])
     expect(page.locator("#summary-components li")).to_have_text(components.NAMES)
     expect(page.locator("#summary-backup")).to_contain_text(f"{backups.TIME} UTC, en la carpeta {backups.FOLDER}")
+    expect(page.locator("#optional-apps input")).to_have_count(len(apps.optional()))
+    expect(page.locator("#optional-apps input:checked")).to_have_count(0)
+    page.check(f"#optional-{TICKED}")
     page.screenshot(path=evidence / "revisar.png")
     page.click("#install")
     expect(page.locator("#progress li")).not_to_have_count(0, timeout=60_000)

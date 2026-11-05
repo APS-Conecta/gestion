@@ -5,56 +5,32 @@
 
 # 0017 — Apps install from their own releases
 
-Accepted, 2026-10-24.
+Accepted, 2026-11-05. Part of #278.
 
 ## Context
 
-Own and fork apps were hand-built tarballs committed to the old gestion and baked into the Nextcloud
-image: a new app version needed a manual rebuild of the whole suite, and installs shipped stale
-versions (territorio was baked at 0.74.0 while 0.80.0 was already released). The suite's own
-releases contain no apps on purpose ([ADR-0001](0001-two-signing-keys.md) split the keys for
-exactly this), so the apps need their own channel.
+The suite's own apps (epidemiologia, territorio and files_upload_guard, and the optional farmacia, estadistica and
+totem) and its fork apps (IntraVox and files_fulltextsearch) live in APS-Conecta repos, each publishing App releases
+on GitHub. A suite release carries no app files, and every establishment that installs it must get the same apps.
 
 ## Decision
 
-Every own and fork app installs **at run time, from its own repo's newest GitHub Release compatible
-with the running Nextcloud**. The Provisionador's execution resolves it, downloads it without a
-token, verifies it against `apps.pub`, installs it, and records the tag in the per-server lock file
-(`/opt/aps-conecta/apps.lock.json`, inside the backup scope). Territorio is the first app on this
-path (#33); each app switches as its first signed release lands, by turning on `release` in its
-suite-manifest row (#34–#38).
+**Each own and fork app installs from the App release its suite release pins**, at the tag and checksum of the Suite
+manifest ([ADR-0001](0001-checksums-instead-of-keys.md)). The Provisionador downloads the app's tarball from the
+release's download address, with no token and no API call, refuses it unless its checksum is the pinned one, and puts
+it in Nextcloud's apps folder in place of any copy there, which Nextcloud upgrades as it enables the app:
 
-The rules that make it safe and boring:
+- «Aplicaciones», a core install step, installs the default apps;
+- «Aplicaciones opcionales», an optional step, which the runner runs after every core step, installs the optional apps
+  ticked at «Revisar», off by default.
 
-- **The normal path makes no GitHub API call.** The resolver follows the `/releases/latest`
-  redirect — one HEAD, no body, no token. Only an incompatible latest makes it fall back to one
-  releases-API call (newest first, non-prerelease, `GITHUB_TOKEN` when set), so GitHub's
-  unauthenticated rate limit never bites a normal install.
-- **The lock wins.** A row already recorded installs from the lock and downloads nothing: a repair
-  never turns into an upgrade. A missing stored tarball re-downloads the *locked* tag. Candidates
-  never fall below the lock; a `pin` takes exactly that tag.
-- **Proven before unpacked.** The SHA256SUMS signature against `apps.pub` (signify — the same apt
-  package the clinic verifies a suite release with), the hashes of the tarball and of `info.xml`,
-  one top directory equal to the app id with nothing outside it, no `appinfo/signature.json`, and
-  the tag equal to the version `info.xml` declares. Any refusal stops the install with one Spanish
-  line naming the app and the retry command.
-- **Review mode downloads nothing.** Only the execute path (`--paso generar`: the wizard's
-  «Revisar y ejecutar», the silent install, the weekly reponer) runs the fetch leg.
-- **The seed never downloads.** Phase 12 installs what the lock names, from the verified tarball
-  stored beside it (`/opt/aps-conecta/apps/<id>/<tag>.tar.gz`); acquisition is the fetch leg's job,
-  and convergence stays the seed's.
+An app that fails is named with its reason while the others install, and «Reintentar» installs again. The
+end-of-install check confirms that each of them runs its pinned version.
 
-The bake's interim fallback is gone: #42 removed it
-([ADR-0018](0018-nothing-baked-the-store-is-open.md)), so a release row on a server whose
-wizard step has not run is a FATAL naming the repair, never an improvised install.
+**The pin is the version.** Nothing looks for a newer release and nothing keeps a lock file.
 
 ## Consequences
 
-- A fresh install gets the newest compatible versions; a repeated provisioning is byte-stable and
-  downloads nothing.
-- The lock and the fetched tarballs ride the daily backup (the wizard wires `/opt/aps-conecta` into
-  the backup scope), so a restored server re-installs its exact app versions with no downloads.
-- A compromised app repo can sign an app, never a suite release ([ADR-0001](0001-two-signing-keys.md));
-  and only releases signed with the app key install.
-- `actualizar` (#46) is the only path that moves the lock deliberately: backup first, app by app,
-  the lock promoted only when everything succeeded.
+- Every establishment on a suite release runs the same app versions, and a rerun installs the same bytes.
+- An app moves only with a suite release that pins its new App release.
+- An App release stays on GitHub, at its tag, for as long as a suite release pins it.
