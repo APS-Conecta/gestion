@@ -43,7 +43,7 @@ SHIMS = {
     "uname": 'echo "${SHIM_ARCH:-x86_64}"',
     "id": 'echo "${SHIM_UID:-0}"',
     "df": 'printf "Avail\\n%s\\n" "${SHIM_FREE_BYTES:-100000000000}"',
-    "ss": 'printf "%b" "${SHIM_LISTENING:-}"',
+    "ss": '[ "${SHIM_LISTENING:-}" != unreadable ] && printf "%b" "${SHIM_LISTENING:-}"',
     "ip": 'echo "${SHIM_ROUTE-192.0.2.1 via 10.0.0.1 dev eth0 src 10.0.0.5 uid 0}"',
     "sysctl": '[ "$1" != -n ] || echo "${SHIM_MAP_COUNT:-65530}"',
     "tee": 'cat > "$SHIM_TEE"',
@@ -136,9 +136,14 @@ class Refusals(Server):
             "Docker's Snap package": ({"SHIM_DOCKER_ROOT": "/var/snap/docker/common/var-lib-docker"}, (),
                                       "Docker instalado mediante Snap no es compatible"),
             "a Docker that does not answer": ({"SHIM_DOCKER_ROOT": ""}, (), "Docker está instalado, pero no responde"),
-            "8080 and 3478/udp taken": (
-                {"SHIM_LISTENING": "tcp LISTEN 0 4096 0.0.0.0:8080 0.0.0.0:*\\nudp UNCONN 0 0 [::]:3478 [::]:*\\n"}, (),
-                "el puerto 3478 (UDP) está en uso\n  - el puerto 8080 (TCP) está en uso"),
+            "every port taken": (
+                {"SHIM_LISTENING": "udp UNCONN 0 0 0.0.0.0:443 0.0.0.0:*\\nudp UNCONN 0 0 [::]:3478 [::]:*\\n"
+                                   "tcp LISTEN 0 4096 0.0.0.0:443 0.0.0.0:*\\ntcp LISTEN 0 4096 [::]:3478 [::]:*\\n"
+                                   "tcp LISTEN 0 4096 0.0.0.0:8080 0.0.0.0:*\\n"}, (),
+                "\n  - ".join(f"el puerto {port} está en uso"
+                              for port in ("443 (TCP)", "443 (UDP)", "3478 (TCP)", "3478 (UDP)", "8080 (TCP)"))),
+            "unreadable sockets": ({"SHIM_LISTENING": "unreadable"}, (),
+                                   "no se pudo revisar si los puertos 443, 3478 y 8080 están libres"),
             "no /dev/fuse": ({"FUSE_DEVICE": str(self.dir / "no-fuse")}, (),
                              "falta el dispositivo /dev/fuse para los respaldos"),
             "no default route": ({"SHIM_ROUTE": ""}, (), "no tiene una ruta de red predeterminada, de la que el "
