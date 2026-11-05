@@ -13,6 +13,7 @@ other candidate's names are production ones, which a run never claims: there it 
 import base64
 import json
 import os
+import re
 import ssl
 import sys
 import urllib.request
@@ -27,8 +28,10 @@ STATE = "/mnt/docker-aio-config/provisionador/state.json"
 CONFIGURATION = "/mnt/docker-aio-config/data/configuration.json"  # AIO's, the administrator's password in its secrets
 NEXTCLOUD = "sudo docker exec --user www-data nextcloud-aio-nextcloud"
 OCC = f"{NEXTCLOUD} php /var/www/html/occ --no-ansi"
-APPS_PAGE = "/ocs/v2.php/apps/appstore/api/v1/apps?format=json&details=true"  # the Apps page's list, the store's data in
-SAMPLES = ("quota_warning", "groupquota")  # small store apps the suite does not install; the first with an older release
+APPS_PAGE = "/ocs/v2.php/apps/appstore/api/v1/apps?format=json"  # the list the Apps page draws
+STORE = "https://apps.nextcloud.com/api/v1/platform/{}/apps.json"  # the app store's releases for a Nextcloud version
+SAMPLES = ("quota_warning", "groupquota")  # small store apps the suite never installs; the first with an older release
+VERSION = re.compile(r"\d+(\.\d+)*")  # a stable release's
 
 if os.environ["TEST_BUILD"] != "true":
     print(f"the apps run after «Listo», on a v0.0.0-ci.N test build only: {os.environ['TAG']}'s names are production "
@@ -74,8 +77,19 @@ if not offered:
 if updates := [app["id"] for app in pinned if "update" in page.get(app["id"], {})]:
     sys.exit(f"the Apps page offers a store update for the pinned apps {updates}")
 
-found = next(((app, page[app]["appstoreData"]["releases"][:2]) for app in SAMPLES
-              if len(page.get(app, {}).get("appstoreData", {}).get("releases", [])) > 1), None)
+platform = json.loads(machine(f"{OCC} status --output=json"))["versionstring"]
+request = urllib.request.Request(STORE.format(platform), headers={"User-Agent": "aps-conecta-gestion"})
+with urllib.request.urlopen(request, timeout=300) as answer:
+    catalog = {app["id"]: app["releases"] for app in json.load(answer)}
+
+
+def stable(app):
+    """The app's stable releases in the store for this Nextcloud, newest first."""
+    releases = [release for release in catalog.get(app, []) if VERSION.fullmatch(release["version"])]
+    return sorted(releases, key=lambda release: [int(n) for n in release["version"].split(".")], reverse=True)
+
+
+found = next(((app, stable(app)[:2]) for app in SAMPLES if len(stable(app)) > 1), None)
 if found is None:
     sys.exit(f"the store lists no older release of {' or '.join(SAMPLES)}, so no mark can be proven on one")
 sample, (newest, older) = found
