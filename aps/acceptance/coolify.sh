@@ -42,24 +42,36 @@ tinker() { # <PHP>: run in Coolify's own application, as its artisan tinker does
   docker exec --env APS_PROXY="${APS_PROXY:-}" coolify php artisan tinker --execute "$1"
 }
 
+token() { # Coolify's API switched on, and a token of its root user as the header of each API call
+  tinker 'App\Models\InstanceSettings::get()->update(["is_api_enabled" => true]);
+    echo "APS-TOKEN ".App\Models\User::findOrFail(0)->createToken("acceptance", ["root"], null, 0)->plainTextToken;' \
+    > "$STATE/tinker.out" 2>&1 || return 1
+  sed -n 's/^APS-TOKEN /Authorization: Bearer /p' "$STATE/tinker.out" > "$STATE/header"
+  [ -s "$STATE/header" ]
+}
+
 setup() {
   local repository="$1" commit="$2" address="$3" files="$4" password server proxy services waited=0 test_build=false
   install -d -m 700 "$STATE"
   curl -fsSL --retry 5 -o "$STATE/install.sh" \
     https://raw.githubusercontent.com/coollabsio/coolify/v4.6.0/scripts/install.sh
   echo "c221f81e0bc9b47541f47bf671da76c79cfb61ce4741c3cb0800d7a18b99f137  $STATE/install.sh" | sha256sum --check --quiet
-  password="$(openssl rand -hex 16)Aa1!"
-  ROOT_USERNAME=acceptance ROOT_USER_EMAIL=acceptance@example.org ROOT_USER_PASSWORD="$password" AUTOUPDATE=false \
+  password="$(openssl rand -hex 16)Aa1!"  # Coolify's rules: mixed case, a number and a symbol
+  # Coolify checks the root user's email domain in DNS: the org's own domain, which sends this instance no mail.
+  ROOT_USERNAME=acceptance ROOT_USER_EMAIL=acceptance@apsconecta.cl ROOT_USER_PASSWORD="$password" AUTOUPDATE=false \
     bash "$STATE/install.sh" 4.6.0 > "$STATE/install.log" 2>&1 \
     || { tail -n 40 "$STATE/install.log" >&2; exit 1; }
   until curl -fsS http://localhost:8000/api/health > /dev/null 2>&1; do
     ((++waited < 60)) || { echo "Coolify does not answer on port 8000" >&2; exit 1; }
     sleep 5
   done
-  tinker 'App\Models\InstanceSettings::get()->update(["is_api_enabled" => true]);
-    echo "APS-TOKEN ".App\Models\User::find(0)->createToken("acceptance", ["root"], null, 0)->plainTextToken.PHP_EOL;' \
-    | sed -n 's/^APS-TOKEN /Authorization: Bearer /p' > "$STATE/header"
-  [ -s "$STATE/header" ] || { echo "Coolify gave no API token" >&2; exit 1; }
+  # Coolify's seeder makes its root user while Coolify already answers, so the token comes once that user exists.
+  waited=0
+  until token; do
+    ((++waited < 36)) || { grep -v '^APS-TOKEN' "$STATE/tinker.out" | tail -n 20 >&2; exit 1; }
+    sleep 5
+  done
+  rm -f "$STATE/tinker.out"
   for _ in $(seq 60); do
     server="$(api GET /servers | jq -r '.[] | select(.name == "localhost" and .is_reachable and .is_usable) | .uuid')"
     [ -z "$server" ] || break
@@ -94,12 +106,13 @@ setup() {
     $traefik["environment"] = array_merge($traefik["environment"] ?? [], $proxy["environment"]);
     $config["services"]["traefik"] = $traefik;
     App\Actions\Proxy\SaveProxyConfiguration::run($server, Symfony\Component\Yaml\Yaml::dump($config, 12, 2));
-    App\Actions\Proxy\StartProxy::run($server, false, true);' > /dev/null
+    App\Actions\Proxy\StartProxy::run($server, false, true);' > "$STATE/proxy.out" 2>&1 \
+    || { tail -n 20 "$STATE/proxy.out" >&2; exit 1; }
   waited=0
   until docker inspect --format '{{json .Config.Cmd}}' coolify-proxy 2> /dev/null | jq -e --slurpfile want \
       <(jq -R . "$files/settings") '. as $running | $want | all(. as $setting | $running | index($setting))' \
       > /dev/null; do
-    ((++waited < 60)) || { echo "Coolify's proxy does not run with AIO's settings" >&2; exit 1; }
+    ((++waited < 60)) || { tail -n 20 "$STATE/proxy.out" >&2; echo "the proxy lacks AIO's settings" >&2; exit 1; }
     sleep 5
   done
   printf '%s\n' "$server" > "$STATE/server"
