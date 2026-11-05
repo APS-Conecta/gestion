@@ -1,0 +1,14 @@
+[
+    {"id": "intravox", "name": "Inicio", "source": "fork", "repo": "APS-Conecta/IntraVox", "pin": "v3.2.0", "sha256": "f13580cc9d7133750eddbdbab2d69db0cb39ac7c2bf772f13e0af7d7c6ef6973"},
+    {"id": "epidemiologia", "name": "Epidemiología", "source": "own", "repo": "APS-Conecta/epidemiologia", "pin": "v0.12.0", "sha256": "a10f7325a7d8a8c03340b77f000f1857d2d3b09ba6ccc752c71d8e7165c34c0f"},
+    {"id": "territorio", "name": "Territorio", "source": "own", "repo": "APS-Conecta/territorio", "pin": "v0.81.0", "sha256": "f0795788ac3c0d3d3273f441ed6c6c72e7fd9c01e21afdbf9c0ca9fde54d26af"},
+    {"id": "files_upload_guard", "name": "Protección de cargas de archivos", "source": "own", "repo": "APS-Conecta/files-upload-guard", "pin": "v0.1.2", "sha256": "2a7a81ec45b60e1e35a5dd7caa41ec82f666b643c3a19fb3663c9ac8d8479b93"},
+    {"id": "files_fulltextsearch", "name": "Búsqueda en archivos", "source": "fork", "repo": "APS-Conecta/files-fulltextsearch", "pin": "v34.0.3", "sha256": "ad33faaae9e9003f96d9569bab6908765f37e858ba73edce86c229dfdd14243a"},
+    {"id": "groupfolders", "name": "Carpetas de equipo", "source": "store"},
+    {"id": "calendar", "name": "Calendario", "source": "store"},
+    {"id": "contacts", "name": "Contactos", "source": "store"},
+    {"id": "side_menu", "name": "Menú personalizado", "source": "store"},
+    {"id": "farmacia", "name": "Farmacia", "source": "own", "repo": "APS-Conecta/farmacia", "pin": "v0.13.0", "sha256": "4d8abfa1276bf40d57637d2048cdb3f17b621c40bd96f4f3184967a14b9590f8", "optional": true, "summary": "Arsenal farmacológico del establecimiento con información de seguridad clínica."},
+    {"id": "estadistica", "name": "Estadística", "source": "own", "repo": "APS-Conecta/estadistica", "pin": "v0.2.0", "sha256": "55aa6aff42b04b6e48e814405bd887ffcc4c16fc36d6e5af2e0e913e9ca0f3d4", "optional": true, "summary": "Cifras REM frente al promedio nacional y de pares, y avance de las Metas Sanitarias."},
+    {"id": "totem", "name": "Tótem", "source": "own", "repo": "APS-Conecta/totem", "pin": "v0.4.0", "sha256": "9067e1658faae34226eef3c574337d5761c6fe39362aae2dd84c02a4f82f9ad3", "optional": true, "summary": "Turnos de atención en la sala de espera: el paciente toma su turno y la pantalla lo llama."}
+]

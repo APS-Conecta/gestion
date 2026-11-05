@@ -8,12 +8,14 @@ on AIO's interface in the image, is not here: the image test covers it. No brows
 """
 
 import contextlib
+import hashlib
 import http.client
 import io
 import json
 import os
 import re
 import sys
+import tarfile
 import tempfile
 import threading
 import time
@@ -48,6 +50,18 @@ Municipal,-27.15,-109.43\r
 999004,CESFAM,Centro de Salud Familiar Doctor Juan Pérez,"Calle Cuatro 400, Villa Sur",13101,Santiago,13,\
 Metropolitana de Santiago,Servicio de Salud Metropolitano Central,Municipal,-33.47,-70.64\r
 """
+
+
+def app_tarball(app, version, folder=None):
+    """An App release's tarball: the app's folder, `folder` when it is another one, with the version its info.xml
+    declares."""
+    info = f'<?xml version="1.0"?>\n<info><id>{app}</id><version>{version}</version></info>\n'.encode()
+    member = tarfile.TarInfo(f"{folder or app}/appinfo/info.xml")
+    member.size = len(info)
+    data = io.BytesIO()
+    with tarfile.open(fileobj=data, mode="w:gz") as tar:
+        tar.addfile(member, io.BytesIO(info))
+    return data.getvalue()
 
 
 def printed(call):
@@ -575,7 +589,7 @@ def claimed(browser, code="999001"):
 
 
 class Revisar(ProvisionadorTest):
-    def test_revisar_summarises_the_centre_the_name_the_timezone_the_components_and_the_backup(self):
+    def test_revisar_summarises_the_centre_the_name_the_timezone_the_components_the_backup_and_the_optional_apps(self):
         browser = self.operator()
         self.assertIsNone(browser.get("/api/state")[1]["review"], "nothing to review before «Dirección»")
         claimed(browser, "999002")
@@ -585,7 +599,14 @@ class Revisar(ProvisionadorTest):
         self.assertEqual(state["review"], {
             "components": ["Talk", "Euro-Office", "ClamAV (antivirus)", "Imaginary (vistas previas de imágenes)",
                            "Búsqueda de texto completo", "HaRP (aplicaciones externas)"],
-            "backup": {"folder": "/var/backups/apsconecta-gestion", "time": "06:00"}})
+            "backup": {"folder": "/var/backups/apsconecta-gestion", "time": "06:00"},
+            "optional_apps": [
+                {"id": "farmacia", "name": "Farmacia",
+                 "summary": "Arsenal farmacológico del establecimiento con información de seguridad clínica."},
+                {"id": "estadistica", "name": "Estadística",
+                 "summary": "Cifras REM frente al promedio nacional y de pares, y avance de las Metas Sanitarias."},
+                {"id": "totem", "name": "Tótem",
+                 "summary": "Turnos de atención en la sala de espera: el paciente toma su turno y la pantalla lo llama."}]})
 
 
 class Installing(ProvisionadorTest):
@@ -599,6 +620,21 @@ class Installing(ProvisionadorTest):
         self.log = self.enterContext(contextlib.redirect_stdout(io.StringIO()))
         self.addCleanup(self.finish)
         self.browser = self.operator()
+        self.publish()
+
+    def publish(self):
+        """Each own and fork app of the Suite manifest has its App release on the fake GitHub, at its pin, and the
+        manifest pins that tarball's checksum; the fake app store has its store apps."""
+        manifest = []
+        for app in steps.apps.MANIFEST:
+            if app["source"] == "store":
+                self.suite.nextcloud.store[app["id"]] = "1.0.0"
+                manifest.append(app)
+                continue
+            tarball = app_tarball(app["id"], app["pin"].removeprefix("v"))
+            self.suite.releases[(app["repo"], app["pin"], f"{app['id']}.tar.gz")] = tarball
+            manifest.append({**app, "sha256": hashlib.sha256(tarball).hexdigest()})
+        self.enterContext(mock.patch.object(steps.apps, "MANIFEST", manifest))
 
     def finish(self):
         """The suite comes up, so the install a test left running ends before its state goes."""
@@ -681,7 +717,7 @@ class Instalar(Installing):
     def test_an_install_a_restart_cut_short_goes_on_by_itself(self):
         claimed(self.browser)
         cut_short = threading.Event()  # never set: the Provisionador that sent AIO's start is gone
-        with mock.patch.object(self.suite, "start", side_effect=lambda url: cut_short.wait()) as first:
+        with mock.patch.object(self.suite, "start", side_effect=lambda *start: cut_short.wait()) as first:
             self.install()
             self.eventually(lambda: first.called, "AIO's start")
         self.restart()  # the mastercontainer restarted while AIO started the suite

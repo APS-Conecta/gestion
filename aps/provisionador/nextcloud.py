@@ -1,12 +1,15 @@
 # SPDX-FileCopyrightText: 2026 APS Conecta
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Nextcloud's part of the suite port (suite.py), in the Nextcloud container: its command line, occ, and the CAs that
-its own requests trust. `Suite` holds the real one as `suite.nextcloud` and `FakeSuite` the fake one, which the Seam 2
-tests drive."""
+"""Nextcloud's part of the suite port (suite.py), in the Nextcloud container: its command line, occ, the CAs that its
+own requests trust, and the apps in its apps folder. `Suite` holds the real one as `suite.nextcloud` and `FakeSuite` the
+fake one, which the Seam 2 tests drive."""
 
+import io
 import json
 import subprocess
 import sys
+import tarfile
+import xml.etree.ElementTree as ET
 
 from suite import Unreachable
 
@@ -15,6 +18,7 @@ DOWN = ("El servidor de aplicaciones de la suite no responde. Presione «Reinten
         "APS Conecta.")
 FAILED = "Nextcloud no completó «occ {}». Presione «Reintentar»; si vuelve a ocurrir, contacte a APS Conecta."
 ISSUER_FAILED = "No se pudo obtener ni verificar el certificado intermedio de {}."
+INSTALL_FAILED = "Nextcloud no pudo instalarla. Presione «Reintentar»; si vuelve a ocurrir, contacte a APS Conecta."
 # Nextcloud's command line with its input from a file: config:import reads its input without waiting for it.
 OCC = """input=$(mktemp) && cat > "$input" && php /var/www/html/occ --no-ansi --no-interaction "$@" < "$input"
 status=$?; rm -f "$input"; exit $status"""
@@ -50,27 +54,48 @@ for ca in /usr/local/share/ca-certificates/*.crt; do
   php /var/www/html/occ --no-ansi --no-interaction security:certificates:import "$ca"
 done
 """
+# The app $1 from the App release tarball on stdin, in place of any copy in Nextcloud's apps folder: Nextcloud upgrades
+# the app it held as it enables it again. The app's folder gets a .git folder, so that Nextcloud's app store takes it for
+# an app installed from git, which it never updates (Installer::isUpdateAvailable): no store update, from the Apps page,
+# occ app:update or AIO's, replaces it.
+INSTALL = r"""
+set -eu
+app=$1
+apps=/var/www/html/custom_apps
+dir=$(mktemp -d)
+trap 'rm -rf "$dir"' EXIT
+tar -xzf - -C "$dir"
+[ -f "$dir/$app/appinfo/info.xml" ] || { echo "the tarball holds no $app/appinfo/info.xml" >&2; exit 1; }
+mkdir -p "$dir/$app/.git"
+if [ -d "$apps/$app" ]; then
+  php /var/www/html/occ --no-ansi --no-interaction app:disable "$app"
+fi
+rm -rf "${apps:?}/$app"
+mv "$dir/$app" "$apps/"
+php /var/www/html/occ --no-ansi --no-interaction app:enable "$app"
+"""
 
 
 class Nextcloud:
     """The real one: each command runs in the Nextcloud container as its web user, through the Docker socket."""
 
     @staticmethod
-    def execute(script, *args, stdin="", failed):
-        """What the shell script printed in the container, run with `args`; Unreachable with `failed` when it fails, or
-        with DOWN when the container does not answer. Only the errors are logged."""
+    def execute(script, *args, stdin="", failed, timeout=120):
+        """What the shell script printed in the container, run with `args` and `stdin`, text or bytes; Unreachable with
+        `failed` when it fails, or with DOWN when the container does not answer. Only the errors are logged."""
         try:
             run = subprocess.run(["docker", "exec", "--interactive", "--user", "www-data", CONTAINER, "sh", "-c",
-                                  script, "sh", *args], input=stdin, capture_output=True, text=True, timeout=120,
-                                 check=False)
+                                  script, "sh", *args], input=stdin.encode() if isinstance(stdin, str) else stdin,
+                                 capture_output=True, timeout=timeout, check=False)
         except (OSError, subprocess.TimeoutExpired) as error:
             print(f"{CONTAINER}: {error}", file=sys.stderr, flush=True)
             raise Unreachable(DOWN) from None
+        errors = run.stderr.decode(errors="replace")
         if run.returncode:
-            print(f"{CONTAINER} {args[:1]}: {run.stderr}", file=sys.stderr, flush=True)
-            answered = "Error response from daemon" not in run.stderr and "No such container" not in run.stderr
+            print(f"{CONTAINER} {args[:1]}: {errors}", file=sys.stderr, flush=True)
+            answered = "Error response from daemon" not in errors and "No such container" not in errors
             raise Unreachable(failed if answered else DOWN)
-        return run.stdout
+        return run.stdout.decode()
 
     def occ(self, *args, stdin=""):
         """What Nextcloud's command line printed."""
@@ -85,12 +110,17 @@ class Nextcloud:
         """Nextcloud's own requests trust the CAs of AIO's folder of trusted CAs, as Talk does; a release has none."""
         self.execute(CACERTS, failed=FAILED.format("security:certificates:import"))
 
+    def install_app(self, app, tarball):
+        """The app `app` runs from `tarball`, an App release's, in place of any copy Nextcloud held."""
+        self.execute(INSTALL, app, stdin=tarball, failed=INSTALL_FAILED, timeout=600)
+
 
 class FakeNextcloud:
     """The fake one: Nextcloud's settings, `system` and `apps` by app, the latter for every app it has, and the CAs its
     own requests trust beside the ones it ships: the files of AIO's folder of trusted CAs, and the issuers of the hosts
     that serve only their leaf. It does not answer while `down` is set, an import silently keeps the `ignored` settings
-    out, and the issuers of the `unreachable` hosts cannot be fetched."""
+    out, and the issuers of the `unreachable` hosts cannot be fetched. An app installed from a tarball runs the version
+    its info.xml declares."""
 
     def __init__(self):
         self.down = False
@@ -101,9 +131,11 @@ class FakeNextcloud:
         self.trusted = set()  # those among Nextcloud's trusted certificates
         self.issuers = set()  # the hosts whose issuer is among them
         self.unreachable = set()
+        self.store = {}  # the app store's apps, by id: the version it installs
 
     def occ(self, *args, stdin=""):
-        """The commands the install steps run: settings out and in, and an app on."""
+        """The commands the install steps run: settings out and in, and an app on, from the app store when Nextcloud
+        does not have it."""
         if self.down:
             raise Unreachable(DOWN)
         if args == ("config:list",):
@@ -115,9 +147,10 @@ class FakeNextcloud:
                 self.apps.setdefault(app, {}).update({k: v for k, v in values.items() if k not in self.ignored})
             return ""
         if args[0] == "app:enable" and len(args) == 2:
-            if args[1] not in self.apps:
+            app = args[1]
+            if app not in self.apps and app not in self.store:
                 raise Unreachable(FAILED.format(" ".join(args)))
-            self.apps[args[1]]["enabled"] = "yes"
+            self.apps.setdefault(app, {"installed_version": self.store.get(app)})["enabled"] = "yes"
             return ""
         raise AssertionError(f"the fake Nextcloud runs no occ {args}")
 
@@ -132,3 +165,19 @@ class FakeNextcloud:
         if self.down:
             raise Unreachable(DOWN)
         self.trusted |= set(self.cacerts)
+
+    def from_store(self, apps):
+        """Each of the apps the app store has, installed from it and enabled."""
+        for app in apps:
+            if app in self.store:
+                self.apps[app] = {"enabled": "yes", "installed_version": self.store[app]}
+
+    def install_app(self, app, tarball):
+        if self.down:
+            raise Unreachable(DOWN)
+        try:
+            with tarfile.open(fileobj=io.BytesIO(tarball), mode="r:gz") as tar:
+                version = ET.parse(tar.extractfile(f"{app}/appinfo/info.xml")).findtext("version")
+        except (tarfile.TarError, KeyError, ET.ParseError):
+            raise Unreachable(INSTALL_FAILED) from None
+        self.apps[app] = {"enabled": "yes", "installed_version": version}

@@ -1,12 +1,13 @@
 # SPDX-FileCopyrightText: 2026 APS Conecta
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The suite's start, with AIO's own start command, which pulls, creates and starts each container; then each container
-answers in turn. The step goes by AIO's own reading of the containers: it sends AIO's start while one of them is
+"""The suite's start, with AIO's own start command, which pulls, creates and starts each container, with the default
+store apps as vanilla's startup apps (steps/apps.py); then each container answers in turn. The step goes by AIO's own
+reading of the containers: it sends AIO's start while one of them is
 stopped, which starts only the containers not running, so that «Reintentar» or a restart of the Provisionador does not
 start the suite twice, and it is done once AIO reads every container running. Its part of the end-of-install check:
 AIO still reads every container running."""
 
-from steps import until
+from steps import apps, until
 from suite import Unreachable
 
 NAME = "Inicio de la suite"
@@ -33,7 +34,7 @@ def unready(suite):
 
 def run(context):
     if any(c["state"] == "stopped" for c in context.suite.containers()):
-        context.suite.start(aio_url(context.interface))
+        context.suite.start(aio_url(context.interface), apps.startup())
     return until(lambda: unready(context.suite), lambda reasons: not reasons, WAIT)
 
 
