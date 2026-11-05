@@ -22,9 +22,10 @@ only by its own account. Run as `provisionador.py update-address`, it is the add
 `provisionador.py release-name`, it frees the name whose credential arrives on stdin, never on a command line: the
 Bootstrap's reset runs it before it removes anything, and the acceptance harness for each CI name it claimed.
 
-«Instalar» sets AIO up through its settings file and starts the suite with AIO's own start (INSTALL, steps/); AIO's
-page stays hidden until «Listo», which comes once AIO reads every container of the suite running. At every start
-until «Listo», the Provisionador pulls the suite's images with AIO's own code, so that «Instalar» waits less.
+«Instalar» runs the install's steps (steps/) through the step runner (runner.py): AIO's settings and AIO's own start,
+then our layer on the running suite. AIO's page stays hidden until «Listo», which comes once every step is green and
+the end-of-install check is clean. At every start until «Listo», the Provisionador pulls the suite's images with AIO's
+own code, so that «Instalar» waits less.
 """
 
 import base64
@@ -39,14 +40,14 @@ import subprocess
 import sys
 import threading
 import time
-import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
 import deis
-from steps import backups, components, start, timezone
+import runner
+from steps import backups, components
 from suite import Held, Suite, SuitePort, Unreachable
 
 HERE = Path(__file__).resolve().parent
@@ -107,10 +108,6 @@ CENTRE_KEPT = "El centro ya no puede cambiarse: su dirección, {}, ya se obtuvo.
 HELD = ("Otra instalación ya tiene el nombre APS de este establecimiento. Si es una instalación anterior del mismo "
         "establecimiento, APS Conecta puede liberarlo; después presione «Reintentar».")
 NO_ADDRESS_YET = "Obtenga primero la dirección del establecimiento en «Dirección»."
-UNEXPECTED = ("La instalación se detuvo por un error inesperado. Presione «Reintentar»; si vuelve a ocurrir, contacte a "
-              "APS Conecta e indique el registro del contenedor maestro.")
-# «Instalar»'s steps (steps/), in their order: AIO's settings for the choices, then AIO's own start.
-INSTALL = (components, timezone, backups, start)
 
 
 def digest(value):
@@ -307,22 +304,26 @@ class Provisionador:
                      "install": self.progress(state)}
 
     def progress(self, state):
-        """None before «Instalar»; then whether the install runs or failed, with its reasons, and each container of the
-        suite with its state as AIO reads it. A reading that fails says why, and the next one asks again."""
+        """None before «Instalar»; then whether the install runs or failed, each step with its status and, when it has
+        one, its reason, and each container of the suite with its state as AIO reads it. A reading of the containers
+        that fails says why, and the next one asks again."""
         install = state.get("install")
         if install is None:
             return None
+        busy = self.worker is not None and self.worker.is_alive()
+        answer = {"status": "failed" if runner.failed(install) and not busy else "installing",
+                  "steps": runner.progress(install)}
         try:
-            return {**install, "containers": [{"name": c["name"], "state": c["state"]} for c in self.suite.containers()]}
+            return {**answer, "containers": [{"name": c["name"], "state": c["state"]} for c in self.suite.containers()]}
         except Unreachable as outage:
-            return {**install, "containers": [], "error": str(outage)}
+            return {**answer, "containers": [], "error": str(outage)}
 
     def post_install(self, query, body):
         """POST /api/install, «Instalar» and «Reintentar»: the steps run in the background, and GET /api/state shows
         their progress. While they run, pressing it again starts nothing more."""
         if not self.state.read().get("address"):
             return 409, {"error": NO_ADDRESS_YET}
-        self.install()
+        self.install(again=True)
         return 202, {"install": self.progress(self.state.read())}
 
     def pull_images(self):
@@ -336,34 +337,29 @@ class Provisionador:
         print(PULLED, flush=True)
 
     def resume(self):
-        """At a start of the Provisionador: an install a restart cut short goes on by itself, its steps being
-        idempotent."""
-        if (self.state.read().get("install") or {}).get("status") == "installing":
+        """At a start of the Provisionador: the steps a restart cut short run again by themselves, being idempotent; an
+        install that ended with a step failed or waiting waits for «Reintentar»."""
+        install = self.state.read().get("install")
+        if install and (runner.unfinished(install) or not runner.failed(install)):
             self.install()
 
-    def install(self):
-        """Run INSTALL's steps in the background, unless they run already."""
+    def install(self, again=False):
+        """Run the steps in the background, unless they run already: after «Instalar» or «Reintentar» (`again`) every
+        step that is not green, otherwise the steps a restart cut short."""
         with self.installing:
             if self.worker is not None and self.worker.is_alive():
                 return
-            self.state.change(lambda s: s.update(install={"status": "installing"}))
+            if again:
+                runner.begin(self.state)
             self.worker = threading.Thread(target=self.run_install, daemon=True)
             self.worker.start()
 
     def run_install(self):
-        """Each step in order; the first that fails ends the install with its reasons. The last one done is «Listo»."""
+        """The steps, through the step runner; «Listo» once every step is green and the end-of-install check is
+        clean."""
         context = SimpleNamespace(suite=self.suite, centre=self.state.read()["centre"], interface=self.interface)
-        for step in INSTALL:
-            try:
-                reasons = step.run(context) or []
-            except Unreachable as outage:
-                reasons = [str(outage)]
-            except Exception:  # a defect: the log gets the traceback, the operator a reason
-                traceback.print_exc()
-                reasons = [UNEXPECTED]
-            if reasons:
-                self.state.change(lambda s: s.update(install={"status": "failed", "reasons": reasons}))
-                return
+        if not runner.run(self.state, context):
+            return
         (self.state.dir / LISTO).touch()
         print(LISTO_LOG.format(self.state.read()["address"]["name"]), flush=True)
 

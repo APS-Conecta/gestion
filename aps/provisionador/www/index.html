@@ -77,7 +77,7 @@
   <section id="revisar" hidden>
     <h1>Revisar</h1>
     <p class="lead">Revise lo que se instalará. «Instalar» configura la suite con estas opciones y la inicia; tarda unos
-      minutos, y esta página muestra el avance de cada contenedor.</p>
+      minutos, y esta página muestra el avance de cada paso y de cada contenedor.</p>
     <dl class="summary">
       <dt>Centro</dt><dd id="summary-centre"></dd>
       <dt>Dirección</dt><dd id="summary-address"></dd>
@@ -89,7 +89,8 @@
       <button type="button" class="primary" id="install">Instalar</button>
     </div>
     <p class="message" id="install-status" role="status"></p>
-    <ul class="progress" id="progress"></ul>
+    <ul class="progress" id="steps" aria-label="Avance de la instalación"></ul>
+    <ul class="progress" id="progress" aria-label="Avance de los contenedores"></ul>
   </section>
 
   <section id="listo" hidden>

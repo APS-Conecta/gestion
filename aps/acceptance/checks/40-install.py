@@ -4,9 +4,10 @@
 """«Revisar» and «Instalar» on a test build. «Centro» confirms one of gestion's reserved DEIS codes and «Dirección»
 claims its CI name (claim.py); the page goes on to «Revisar», which summarises the centre, the name, its timezone, the
 components and the backup. «Instalar» shows each container's progress as AIO reads it, while AIO's interface still
-answers with the Provisionador alone, and «Listo» shows the suite's address once every container runs: exactly the
-suite's, the components on. Then AIO's interface serves AIO's page, which keeps the settings «Instalar» wrote. Any
-other candidate's names and certificates are production ones, which a run never claims: there it says so and passes."""
+answers with the Provisionador alone, and «Listo» shows the suite's address. At «Listo», exactly the suite's
+containers run, the components on, and AIO's interface serves AIO's page, which keeps the settings «Instalar» wrote.
+Any other candidate's names and certificates are production ones, which a run never claims: there it says so and
+passes."""
 
 import json
 import os
@@ -118,4 +119,4 @@ if written != {"domain": name, "officeSuite": "eurooffice", "isTalkEnabled": Tru
                "timezone": centre["timezone"], "borg_backup_host_location": "/var/backups/apsconecta-gestion"} \
         or backup[:2] != ["06:00", "automaticUpdatesAreNotEnabled"]:
     sys.exit("AIO does not keep the settings «Instalar» wrote for each choice")
-print(f"«Listo» shows https://{name} once the suite's {len(started)} containers run; AIO's page was hidden until then")
+print(f"«Listo» shows https://{name} and the suite's {len(started)} containers run; AIO's page was hidden until then")
