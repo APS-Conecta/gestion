@@ -19,8 +19,10 @@
 #       The way in: the candidate's mastercontainer, by digest, as the channel tag, which a release would give it on the
 #       registry, as the Bootstrap loads it; the resource, created first when Coolify has none, as the admin adds it;
 #       its deploy, through the API; then the resource's logs, through the API, once they show the Provisionador's link
-#       or the end of the install. A candidate is never on the channel tag, so the resource's custom build command, the
-#       one setting the admin does not make, skips Coolify's pull of it.
+#       or the end of the install. A candidate is never on the channel tag, so the resource's custom build command, a
+#       setting the admin does not make, skips Coolify's pull of it. Coolify's live logs show the link whole, while its
+#       API hides every variable's value by default, the public address among them: the resource's "Environment values
+#       in logs" is "Hide locked values only", since it has no secret.
 #   aps-coolify delete
 #       The resource deleted in Coolify, the end of the manual's removal.
 set -euo pipefail
@@ -130,7 +132,7 @@ create() { # the resource, as the admin adds it: this repository's compose file 
       project_uuid: $project, server_uuid: $server, environment_name: "production", name: "aps-conecta-gestion",
       git_repository: "https://github.com/\(.repository)", git_branch: "main", git_commit_sha: .commit,
       build_pack: "dockercompose", docker_compose_location: "/aps/coolify.yaml",
-      is_raw_compose_deployment_enabled: true,
+      is_raw_compose_deployment_enabled: true, redact_all_env_values_in_logs: false,
       docker_compose_custom_build_command: "docker compose build", instant_deploy: false}' "$STATE/resource.json")" \
     | jq -er .uuid)"
   variable "$app" APS_PUBLIC_ADDRESS "$(jq -r .address "$STATE/resource.json")"
