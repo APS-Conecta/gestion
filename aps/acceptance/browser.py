@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The acceptance harness's one way to open a browser: Chromium through Playwright, whose context adds trust only for
 Let's Encrypt's staging roots, which the suite's certificate comes from in CI, and for the certificates a check pins
-after verifying them itself, such as the Provisionador's, by the fingerprint the way in printed. No check ignores
+after verifying them itself, such as the Provisionador's, by the fingerprint the way in printed; and Firefox, for a
+check that opens the suite's pages in both, trusting the staging roots alone. No check ignores
 certificate errors. A check that calls gets fake media devices: Chromium's fake camera and a microphone that plays a
 steady tone.
 
@@ -135,18 +136,22 @@ def tone(path):
     return path
 
 
+def trust_staging(nssdb):
+    """A new NSS database in the folder `nssdb` that trusts the staging roots, as a browser reads its own."""
+    nssdb.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["certutil", "-N", "-d", f"sql:{nssdb}", "--empty-password"], check=True)
+    roots = re.findall(r"-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----\n", STAGING_ROOTS.read_text(), re.S)
+    for n, root in enumerate(roots):
+        subprocess.run(["certutil", "-A", "-d", f"sql:{nssdb}", "-n", f"staging-{n}", "-t", "C,,", "-a"],
+                       input=root, text=True, check=True)
+
+
 @contextlib.contextmanager
 def chromium(pinned=(), media=False):
     """A Chromium browser trusting the staging roots (in its own NSS database) and the pinned PEM certificates; with
     `media`, its camera and its microphone are the fake ones."""
     with tempfile.TemporaryDirectory() as home, sync_playwright() as playwright:
-        nssdb = Path(home, ".pki", "nssdb")
-        nssdb.mkdir(parents=True)
-        subprocess.run(["certutil", "-N", "-d", f"sql:{nssdb}", "--empty-password"], check=True)
-        roots = re.findall(r"-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----\n", STAGING_ROOTS.read_text(), re.S)
-        for n, root in enumerate(roots):
-            subprocess.run(["certutil", "-A", "-d", f"sql:{nssdb}", "-n", f"staging-{n}", "-t", "C,,", "-a"],
-                           input=root, text=True, check=True)
+        trust_staging(Path(home, ".pki", "nssdb"))
         pins = [f"--ignore-certificate-errors-spki-list={','.join(spki(pem) for pem in pinned)}"] if pinned else []
         fake = [*FAKE_MEDIA, f"--use-file-for-fake-audio-capture={tone(Path(home, 'tone.wav'))}"] if media else []
         browser = playwright.chromium.launch(env={**os.environ, "HOME": home}, args=pins + fake)
@@ -154,3 +159,15 @@ def chromium(pinned=(), media=False):
             yield browser
         finally:
             browser.close()
+
+
+@contextlib.contextmanager
+def firefox(**options):
+    """A Firefox browsing context with the context `options`, its profile's NSS database trusting the staging roots."""
+    with tempfile.TemporaryDirectory() as profile, sync_playwright() as playwright:
+        trust_staging(Path(profile))
+        context = playwright.firefox.launch_persistent_context(profile, **options)
+        try:
+            yield context
+        finally:
+            context.close()
