@@ -70,7 +70,7 @@ jobs:
       # --no-config keeps upstream's zizmor.yml, which disables excessive-permissions and
       # artipacked, off our workflows; the token turns the online audits on.
       - name: zizmor over our workflows
-        run: uvx zizmor --no-config --min-severity medium .github/workflows/ci.yml .github/workflows/release.yml .github/workflows/issue-linker.yml .github/workflows/mastercontainer-image.yml
+        run: uvx zizmor --no-config --min-severity medium .github/workflows/ci.yml .github/workflows/release.yml .github/workflows/issue-linker.yml .github/workflows/mastercontainer-image.yml .github/workflows/acceptance.yml
         env:
           ZIZMOR_GITHUB_TOKEN: ${{ github.token }}
 
