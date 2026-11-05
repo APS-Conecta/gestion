@@ -31,4 +31,4 @@ language the project doesn't use (reconsider) or there's a real gap (note it for
 If your output contradicts an existing ADR, surface it explicitly rather than silently
 overriding:
 
-> _Contradicts ADR-0001 (two signing keys), but worth reopening because…_
+> _Contradicts ADR-0001 (checksums instead of keys), but worth reopening because…_

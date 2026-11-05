@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 APS Conecta
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The suite port: the only code that talks to AIO, the APS name service and the nameservers of its zone, Coolify's
-proxy folder and Nextcloud's command line (occ).
+proxy folder, Nextcloud's command line (occ) and the App releases on GitHub.
 
 The Provisionador is built with one implementation: `Suite` inside the mastercontainer, `FakeSuite` in the Seam 2
 tests. A screen or an install step that needs the suite adds its method to the port and to both implementations, here
@@ -45,7 +45,10 @@ NOT_STARTED = ("El contenedor maestro no logró iniciar la suite. Presione «Rei
                "APS Conecta.")
 NO_STATES = "AIO no pudo leer el estado de los contenedores de la suite."
 NOT_PULLED = "No se pudieron descargar las imágenes de la suite; «Instalar» las descarga."
+NO_RELEASE = ("No se pudo descargar su publicación desde GitHub. Revise la conexión a internet del servidor y presione "
+              "«Reintentar».")
 CREDENTIAL = ("name", "username", "password", "subdomain", "server_url")  # a claim's answer
+DOWNLOAD_TRIES = 3  # GitHub's download address answers an error now and then; the next try usually gets the file
 
 # AIO's own code, as its cron scripts run it (php/src/Cron), with the values on stdin: the host's ps shows the arguments
 # of every process in the container. Each script below follows it.
@@ -128,8 +131,10 @@ $config->setBorgLocationVars($in['folder'], '');
 $config->setDailyBackupTime($in['time'], false, true);
 """
 # AIO's start button (DockerController::StartContainer): it records the interface's address and the start, then pulls,
-# creates and starts every container in order, Apache last.
+# creates and starts every container in order, Apache last. Vanilla's startup-apps switch, NEXTCLOUD_STARTUP_APPS, which
+# AIO reads from its environment, gives the Nextcloud container the apps its first start installs from the store.
 START = AIO + r"""
+putenv('NEXTCLOUD_STARTUP_APPS=' . implode(' ', $in['startup_apps']));
 $config->startTransaction();
 $config->aioUrl = $in['aio_url'];
 $config->wasStartButtonClicked = true;
@@ -215,12 +220,16 @@ class SuitePort(Protocol):
     def backups(self, folder: str, time: str) -> None:
         """Set AIO's nightly backup: to `folder` on the server, daily at `time` (UTC)."""
 
-    def start(self, aio_url: str) -> None:
-        """Start the suite with AIO's own start, which pulls, creates and starts each container."""
+    def start(self, aio_url: str, startup_apps: list) -> None:
+        """Start the suite with AIO's own start, which pulls, creates and starts each container, with the store apps
+        `startup_apps` as vanilla's startup apps, which Nextcloud's first start installs."""
 
     def containers(self) -> list:
         """Each container AIO's page lists, by its `id` and AIO's `name` for it, with its `state` as AIO reads it:
         stopped, starting or running."""
+
+    def app_release(self, repo: str, tag: str, asset: str) -> bytes:
+        """The file `asset` of the GitHub Release `tag` of the APS-Conecta repo `repo`: an App release's."""
 
 
 def arrival():
@@ -419,9 +428,9 @@ class Suite:
     def backups(self, folder, time):
         self.aio(BACKUPS, {"folder": folder, "time": time}, AIO_REFUSED.format("las copias de seguridad"))
 
-    def start(self, aio_url):
+    def start(self, aio_url, startup_apps):
         """AIO's start answers once it started every container; their images may still be downloading."""
-        self.aio(START, {"aio_url": aio_url}, NOT_STARTED, timeout=3600)
+        self.aio(START, {"aio_url": aio_url, "startup_apps": startup_apps}, NOT_STARTED, timeout=3600)
 
     def containers(self):
         try:
@@ -429,6 +438,22 @@ class Suite:
         except ValueError:
             raise Unreachable(NO_STATES) from None
         return [{**c, "state": c["state"] if c["state"] in ("starting", "running") else "stopped"} for c in listed]
+
+    @staticmethod
+    def app_release(repo, tag, asset):
+        """From GitHub's download address for a release's file, without a token or an API call, asked again after an
+        error up to DOWNLOAD_TRIES times."""
+        url = f"https://github.com/{repo}/releases/download/{tag}/{asset}"
+        request = urllib.request.Request(url, headers={"User-Agent": "aps-conecta-gestion"})
+        for attempt in range(1, DOWNLOAD_TRIES + 1):
+            try:
+                with urllib.request.urlopen(request, timeout=60) as response:
+                    return response.read()
+            except (OSError, ValueError) as error:
+                print(f"{url}, attempt {attempt}: {error}", file=sys.stderr, flush=True)
+                if attempt == DOWNLOAD_TRIES:
+                    raise Unreachable(NO_RELEASE) from None
+                time.sleep(10 * attempt)
 
 
 class FakeSuite:
@@ -440,7 +465,8 @@ class FakeSuite:
     domain of `refused` with the reason given there. The server's address is `server` until DHCP changes it and cannot
     be read while `no_server_address` is set, its hardware is `machine`, and a browser whose resolver answers the
     server's address says hello() to AIO's interface at a name. AIO's start makes each of its CONTAINERS starting,
-    until up() makes their ports answer."""
+    until up() makes their ports answer, and the first one installs its startup apps from the app store. Its GitHub
+    serves the files of the App releases in `releases`, by repo, tag and file name."""
 
     CONTAINERS = {"nextcloud-aio-apache": "Apache & Caddy", "nextcloud-aio-nextcloud": "Servidor de aplicaciones",
                   "nextcloud-aio-talk": "Talk", "nextcloud-aio-eurooffice": "EuroOffice"}  # by id, AIO's names
@@ -465,9 +491,15 @@ class FakeSuite:
         self.starts = 0  # how often AIO's start was sent
         self.states = {}  # by container, AIO's reading of it once AIO's start created it
         self.pulled = []  # the switches of each image pull
+        self.releases = {}  # by (repo, tag, file name), the files of the App releases on GitHub
 
     def pull(self, settings):
         self.pulled.append(settings)
+
+    def app_release(self, repo, tag, asset):
+        if (repo, tag, asset) not in self.releases:
+            raise Unreachable(NO_RELEASE)
+        return self.releases[repo, tag, asset]
 
     def certificate(self, host):
         return b"FakeSuite certificate for " + host.encode() + b" renewed" * self.renewals
@@ -556,9 +588,12 @@ class FakeSuite:
         self.aio.update(borg_backup_host_location=folder, borg_remote_repo="")
         self.daily_backup_time = f"{time}\nautomaticUpdatesAreNotEnabled\n"
 
-    def start(self, aio_url):
+    def start(self, aio_url, startup_apps):
         self.starts += 1
         self.aio.update(AIO_URL=aio_url, wasStartButtonClicked=True)
+        self.startup_apps = startup_apps
+        if self.starts == 1:  # Nextcloud's first start installs vanilla's startup apps
+            self.nextcloud.from_store(startup_apps)
         for container in self.CONTAINERS:
             if self.states.get(container, "stopped") == "stopped":
                 self.states[container] = "starting"

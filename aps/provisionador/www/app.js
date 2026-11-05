@@ -256,7 +256,8 @@ async function look(name) {
   looking = setTimeout(() => look(name), NEXT_LOOK);
 }
 
-// «Revisar»: the centre, its name and timezone, and what «Instalar» sets up beside them.
+// «Revisar»: the centre, its name and timezone, what «Instalar» sets up beside them, and the optional apps, off by
+// default.
 async function revisar() {
   try {
     review(await api("GET", "/api/state"));
@@ -277,17 +278,32 @@ function review(state) {
   $("summary-components").replaceChildren(...chosen.components.map((name) => element("li", name)));
   $("summary-backup").textContent = `Cada noche, a las ${chosen.backup.time} UTC, en la carpeta `
     + `${chosen.backup.folder} del servidor.`;
+  $("optional-apps").replaceChildren(...chosen.optional_apps.map(choice));
   Object.assign($("suite-address"), {textContent: suite, href: suite});
   show("revisar");
   if (state.install) progress(state.install);
 }
 
-// «Instalar», and «Reintentar» after a failure: the Provisionador sets AIO up and starts the suite.
+function choice(app) {
+  const box = Object.assign(document.createElement("input"), {type: "checkbox", id: `optional-${app.id}`,
+    value: app.id});
+  const label = document.createElement("label");
+  label.className = "choice";
+  label.append(box, element("strong", app.name), element("span", app.summary));
+  return label;
+}
+
+function ticked() {
+  return [...$("optional-apps").querySelectorAll("input:checked")].map((box) => box.value);
+}
+
+// «Instalar», and «Reintentar» after a failure: the Provisionador sets AIO up and starts the suite, with the optional
+// apps ticked at the first «Instalar».
 async function install() {
   $("install").disabled = true;
   say("Iniciando la instalación…", false, "install-status");
   try {
-    progress((await api("POST", "/api/install", {})).install);
+    progress((await api("POST", "/api/install", {optional: ticked()})).install);
   } catch (e) {
     $("install").disabled = false;
     say(e.message, true, "install-status");
@@ -305,6 +321,9 @@ function item(name, state, label, reason) {
 // Each step as the Provisionador declares it, a failed or waiting one in red with its reason, and each container of
 // the suite as AIO reads it, until «Listo» or a failure; «Reintentar» runs the failed and waiting steps again.
 function progress(install) {
+  for (const box of $("optional-apps").querySelectorAll("input")) {
+    Object.assign(box, {checked: install.optional.includes(box.value), disabled: true});
+  }
   $("steps").replaceChildren(...install.steps.map(
     (step) => item(step.name, step.status, STEP_STATES[step.status], step.reason)));
   $("progress").replaceChildren(...install.containers.map((c) => item(c.name, c.state, STATES[c.state])));

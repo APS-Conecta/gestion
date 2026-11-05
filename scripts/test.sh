@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # The static gate, run locally and by .github/workflows/ci.yml: the shell lint over the fork's
 # own scripts (syntax, shellcheck's errors, sweep coverage, errexit in a tested subshell), their
-# SPDX headers, AIO's page check, the "Latest" rules' self-test, the Provisionador's API tests and
-# the Bootstrap's tests.
+# SPDX headers, AIO's page check, the "Latest" rules' and the pin tool's self-tests, the Provisionador's
+# API tests and the Bootstrap's tests.
 # No stack, no network. Exits non-zero if anything fails.
 # NOT `set -e`: we run every check and aggregate, so one failure doesn't hide the rest.
 set -uo pipefail
@@ -222,10 +222,12 @@ aio_page_cases() {
 check aio_page_cases
 
 echo "== self-tests (hermetic — no docker, no stack) =="
-# The release pipeline's "Latest" rules, against fixture releases.
-latest_out="$(python3 -I aps/release/latest-test.py 2>&1)" \
-  && echo "  ok:   aps/release/latest-test.py ($(printf '%s\n' "$latest_out" | grep '^Ran '))" \
-  || { echo "  FAIL: aps/release/latest-test.py"; printf '%s\n' "$latest_out" | tail -25; fail=1; }
+# The release pipeline's "Latest" rules and the pin tool (#289), against fixture releases.
+for release_test in aps/release/latest-test.py aps/release/pin-test.py; do
+  release_out="$(python3 -I "$release_test" 2>&1)" \
+    && echo "  ok:   $release_test ($(printf '%s\n' "$release_out" | grep '^Ran '))" \
+    || { echo "  FAIL: $release_test"; printf '%s\n' "$release_out" | tail -25; fail=1; }
+done
 # Seam 2 (#282): the Provisionador's HTTP API in-process, against the fake suite port.
 provisionador_out="$(python3 -I -B -m unittest discover -s aps/provisionador 2>&1)" \
   && echo "  ok:   aps/provisionador ($(printf '%s\n' "$provisionador_out" | grep '^Ran '))" \
