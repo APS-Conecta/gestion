@@ -5,13 +5,14 @@
 of gestion's reserved DEIS codes (aps/provisionador/ci-codes.txt) whose CI name no one holds, on the name service's CI
 deployment. The claimed name's credential goes to NAMES, which run.sh frees at its end with that credential.
 
-  claim.py <console> <code>   open the link the Bootstrap printed to <console>, in a browser that pins the certificate
+  claim.py <console> <code>   open the link the way in printed to <console>, in a browser that pins the certificate
                               whose fingerprint it printed, and claim the name of <code>, as a reinstall does
 """
 
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -48,23 +49,30 @@ def keep(code):
         json.dump(credential, file)
 
 
-def claim(page, codes):
+def claim(page, codes, patience=0):
     """The name «Dirección» claims for the first of `codes` no one holds, «Centro» confirming each code in turn. Only a
-    test build claims, as run.sh tells (TEST_BUILD): any other candidate's names are production ones."""
+    test build claims, as run.sh tells (TEST_BUILD): any other candidate's names are production ones. The name service
+    shows a name it has just freed held for some seconds more, so a code held is asked again for `patience` seconds."""
     if os.environ["TEST_BUILD"] != "true":
         sys.exit(f"{os.environ['TAG']} is not a test build: its names are production ones, and a run claims CI names "
                  "only")
     for code in codes:
+        deadline = time.monotonic() + patience
         status, answer = api(page, "POST", "/api/centre", {"code": code})
         if status != 200:
             sys.exit(f"«Centro» refused DEIS code {code}: HTTP {status} {answer}")
         status, answer = api(page, "POST", "/api/address", {})
+        while status == 409 and "settings" not in answer and time.monotonic() < deadline:
+            time.sleep(10)
+            status, answer = api(page, "POST", "/api/address", {})
         if status == 200:
             keep(code)
             print(f"{answer['address']['name']} claimed for DEIS code {code}")
             return answer["address"]["name"]
         if status != 409:
             sys.exit(f"«Dirección» answered HTTP {status}: {answer}")
+        if "settings" in answer:  # on a Coolify server, the AIO settings its proxy does not run with yet
+            sys.exit(f"«Dirección» asks for these settings in Coolify's proxy first: {answer['settings']}")
         print(f"::notice::DEIS code {code} holds a CI name already; the run takes the next reserved code.")
     sys.exit(f"every reserved DEIS code ({', '.join(codes)}) holds a CI name. APS Conecta frees a leftover one with "
              "gestion-aio's «APS name release» workflow on the ci deployment.")
@@ -77,7 +85,7 @@ def main(console, code):
         page = browser.new_page()
         page.goto(link)
         expect(page.get_by_role("heading", name="Centro", exact=True)).to_be_visible(timeout=30_000)
-        claim(page, [code])
+        claim(page, [code], patience=120)  # the reset freed this code's name moments ago
 
 
 if __name__ == "__main__":

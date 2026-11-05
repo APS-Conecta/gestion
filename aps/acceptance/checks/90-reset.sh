@@ -3,11 +3,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # The reset, the Bootstrap with «restablecer» and its confirmation typed at a terminal, leaves nothing of the install:
 # no nextcloud-aio-* container, no image they ran, no nextcloud_aio_* volume, no nextcloud-aio network, no kernel
-# drop-in, no test build's CAs and no backup folder, with the file planted in it. A container, a volume and a file
-# planted beside them under look-alike names survive. On a test build it first frees the APS name with its own
-# credential, and a reinstall on the same machine then claims the same name again (claim.py keeps its credential,
-# which run.sh frees). Any other candidate's names and certificates are production ones, which a run never claims:
-# there the check says the name's freeing and the reinstall run on a test build only. It runs last.
+# drop-in, no suite's route in Coolify's dynamic folder, no test build's CAs and no backup folder, with the file
+# planted in it. A container, a volume and a file planted beside them under look-alike names survive. On a test build
+# it first frees the APS name with its own credential, and a reinstall on the same machine then claims the same name
+# again (claim.py keeps its credential, which run.sh frees). Any other candidate's names and certificates are
+# production ones, which a run never claims: there the check says the name's freeing and the reinstall run on a test
+# build only. On the Coolify way in, the removal is the manual's (ADR 0029): the same reset, then the resource deleted
+# in Coolify, and Coolify keeps running; the reinstall adds the resource again and deploys it. It runs last.
 set -euo pipefail
 domain() { # AIO's domain: the suite's name, once «Dirección» claimed it
   "$MACHINE" 'sudo docker exec nextcloud-aio-mastercontainer cat /mnt/docker-aio-config/data/configuration.json' \
@@ -37,10 +39,14 @@ ran="$("$MACHINE" sudo bash -s << 'RAN'
 docker ps --all --format '{{.Names}}' | grep '^nextcloud-aio-' | xargs --no-run-if-empty docker inspect --format '{{.Image}}'
 RAN
 )"
-echo "$COMMAND -s restablecer"
+echo "$BOOTSTRAP -s restablecer"
 # The Bootstrap reads the confirmation from the terminal, as the operator types it there: script(1) gives it one.
-reset="$(timeout 10m "$MACHINE" "script --quiet --return --command '$COMMAND -s restablecer' /dev/null" <<< ELIMINAR)"
+reset="$(timeout 10m "$MACHINE" "script --quiet --return --command '$BOOTSTRAP -s restablecer' /dev/null" <<< ELIMINAR)"
 printf '%s\n' "$reset"
+if [ "$WAY" = coolify ]; then
+  "$MACHINE" 'sudo aps-coolify delete'
+  echo "the resource is deleted in Coolify"
+fi
 if [ "$TEST_BUILD" = true ]; then
   grep -qF "Se liberó el nombre APS $name." <<< "$reset" || { echo "the reset did not free $name first" >&2; exit 1; }
 fi
@@ -49,7 +55,8 @@ docker ps --all --format 'container {{.Names}}' | grep ' nextcloud-aio-'
 docker volume ls --format 'volume {{.Name}}' | grep ' nextcloud_aio_'
 docker network ls --format 'network {{.Name}}' | grep -x 'network nextcloud-aio'
 for image in "$@"; do docker image inspect --format "image $image {{.RepoTags}}" "$image" 2> /dev/null; done
-ls -d /etc/sysctl.d/90-apsconecta-gestion.conf /etc/ssl/apsconecta-gestion /var/backups/apsconecta-gestion 2> /dev/null
+ls -d /etc/sysctl.d/90-apsconecta-gestion.conf /data/coolify/proxy/dynamic/nextcloud-aio.yaml /etc/ssl/apsconecta-gestion \
+  /var/backups/apsconecta-gestion 2> /dev/null
 true
 LEFT
 )"
@@ -62,11 +69,19 @@ KEPT
 )"
 [ "$kept" = $'true\nkeep_nextcloud_aio\n# not the install' ] \
   || { printf 'the reset took what it did not install; left of it:\n%s\n' "$kept" >&2; exit 1; }
+if [ "$WAY" = coolify ]; then
+  coolify="$("$MACHINE" "sudo docker ps --filter status=running --format '{{.Names}}'" | grep -xE 'coolify(-proxy)?' \
+    | sort | tr '\n' ' ')"
+  [ "$coolify" = "coolify coolify-proxy " ] \
+    || { echo "Coolify does not run after the removal: ${coolify:-none}" >&2; exit 1; }
+  echo "Coolify and its proxy keep running"
+fi
 echo "the reset left nothing of the install, and the planted container, volume and file are there"
 [ "$TEST_BUILD" = true ] || exit 0
 
-# The reinstall: the Bootstrap again, as the manual prints it, and «Dirección» with its fresh link claims the name of the
-# same DEIS code, which the reset freed.
+# The reinstall: the way in again (one-command.sh runs $COMMAND: the Bootstrap, as the manual prints it, or on the
+# Coolify way in the resource added again and deployed), and «Dirección» with its fresh link claims the name of the same
+# DEIS code, which the reset freed.
 console="$(mktemp)" # the fresh link stays out of the log and the evidence
 aps/acceptance/one-command.sh "$console"
 python3 aps/acceptance/claim.py "$console" "$code"

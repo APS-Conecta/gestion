@@ -32,6 +32,13 @@ INTERFACE_CERTIFICATES = Path("/mnt/docker-aio-config/caddy-internal/certificate
 SERVICES = HERE / "services.json"
 CADDY = HERE.parents[1] / "community-containers" / "caddy" / "caddy.json"  # our Caddy, as AIO's community container
 MASTERCONTAINER = "nextcloud-aio-mastercontainer"  # the name AIO requires of its own container
+# Coolify's dynamic proxy folder, which the Coolify install's compose file mounts at its own path (aps/coolify.yaml),
+# and Coolify's proxy, its Traefik, which reads it.
+COOLIFY = Path("/data/coolify/proxy/dynamic")
+COOLIFY_PROXY = "coolify-proxy"
+ROUTE = "nextcloud-aio.yaml"  # the suite's route in that folder, one file
+# AIO's Apache on its reverse-proxy port, as the Coolify compose file sets it, which AIO joins to Coolify's network.
+APACHE = "http://nextcloud-aio-apache:11000"
 INTERFACE_DOWN = "La interfaz de AIO no responde en el puerto 8080 del contenedor maestro."
 UNREACHABLE = ("No se pudo conectar con el servicio de nombres de APS Conecta. Revise la conexión a internet del "
                "servidor y presione «Reintentar».")
@@ -45,6 +52,10 @@ NOT_STARTED = ("El contenedor maestro no logró iniciar la suite. Presione «Rei
                "APS Conecta.")
 NO_STATES = "AIO no pudo leer el estado de los contenedores de la suite."
 NOT_PULLED = "No se pudieron descargar las imágenes de la suite; «Instalar» las descarga."
+NO_PROXY = ("No se pudo leer la configuración del proxy de Coolify, el contenedor coolify-proxy. Revise en Coolify que "
+            "el proxy del servidor sea Traefik y esté en ejecución, y presione «Reintentar».")
+NO_ROUTE = ("No se pudo escribir la ruta de la suite en la carpeta dinámica del proxy de Coolify. Presione "
+            "«Reintentar»; si vuelve a ocurrir, contacte a APS Conecta.")
 NO_RELEASE = ("No se pudo descargar su publicación desde GitHub. Revise la conexión a internet del servidor y presione "
               "«Reintentar».")
 CREDENTIAL = ("name", "username", "password", "subdomain", "server_url")  # a claim's answer
@@ -77,18 +88,24 @@ $config->setAioVariables($in['aio_variables']);
     $this->set('secrets', array_merge($this->get('secrets', []), $secrets));
 })->call($config, $in['secrets']);
 """
-# AIO's settings for an own domain, vanilla's: no community container, AIO's own values for the settings our Caddy's
-# definition gives it, none of the APS name's secrets and no domain yet. Then what AIO's page does before it takes a
-# domain: it starts the domaincheck container, which answers on Apache's port, and once that answers, vanilla's domain
-# check keeps the domain if it resolves to a public address that answers on 443. It prints the check's Spanish reason
-# when it refuses the domain.
-OWN_DOMAIN = SETUP + r"""
+# AIO's vanilla settings: no community container, AIO's own values for the settings our Caddy's definition gives it,
+# none of the APS name's secrets and no domain yet. An own domain and, on a Coolify server, the APS name follow them.
+VANILLA_SETUP = SETUP + r"""
 $config->aioCommunityContainers = [];
 $config->setAioVariables($in['aio_variables']);
 (function (array $names): void {
     $this->set('secrets', array_diff_key($this->get('secrets', []), array_flip($names)));
     $this->unset('domain');
 })->call($config, $in['secrets']);
+"""
+# AIO's settings for the APS name behind Coolify's proxy: the vanilla ones, with the name as the domain and vanilla's
+# domain check skipped, as for the APS name.
+COOLIFY_NAME = VANILLA_SETUP + "$config->setDomain($in['domain'], true);\n"
+# AIO's settings for an own domain, the vanilla ones; then what AIO's page does before it takes a domain: it starts the
+# domaincheck container, which answers on Apache's port, and once that answers, vanilla's domain check keeps the domain
+# if it resolves to a public address that answers on 443. It prints the check's Spanish reason when it refuses the
+# domain.
+OWN_DOMAIN = VANILLA_SETUP + r"""
 $container->get(\AIO\Docker\DockerActionManager::class)->ConnectMasterContainerToNetwork();
 $container->get(\AIO\Controller\DockerController::class)->StartDomaincheckContainer();
 $domaincheck = $container->get(\AIO\ContainerDefinitionFetcher::class)->GetContainerById('nextcloud-aio-domaincheck');
@@ -195,8 +212,21 @@ class SuitePort(Protocol):
     def hardware(self) -> dict:
         """The server's CPU cores (`cpus`) and its memory in GiB (`memory_gib`), rounded as the Bootstrap rounds it."""
 
+    def coolify(self) -> bool:
+        """Whether the suite runs as a Coolify resource, whose compose file mounts Coolify's dynamic proxy folder."""
+
+    def proxy(self) -> list:
+        """The arguments Coolify's proxy, its Traefik, runs with: its static settings."""
+
+    def route(self, host: str) -> None:
+        """Write the route from `host` to AIO's Apache into Coolify's dynamic proxy folder, in place of the one
+        before."""
+
     def use_name(self, credential: dict) -> None:
         """Set AIO up to serve the claimed name with our Caddy, in reverse-proxy mode."""
+
+    def behind_coolify(self, name: str) -> None:
+        """Set AIO up to serve the claimed name `name` behind Coolify's proxy, the vanilla way, without our Caddy."""
 
     def own_domain(self, domain: str) -> None:
         """Set AIO up the vanilla way for the establishment's own domain, which AIO keeps once vanilla's domain check
@@ -250,8 +280,31 @@ def acmedns(credential):
     return {secret: credential[key] for secret, key in ACMEDNS.items()}
 
 
-def docker(*args):
-    return subprocess.run(["docker", *args], check=True, capture_output=True, text=True, timeout=120).stdout.strip()
+def traefik_route(host):
+    """The route from `host` to AIO's Apache, as AIO's «Traefik 3» sample (reverse-proxy.md) declares it, on the entry
+    points of Coolify's proxy and with its certificate resolver, which gets the certificate by its HTTP challenge: the
+    https router through AIO's headers, and the http one redirected to https. Traefik reads YAML, and JSON is YAML."""
+    rule = f"Host(`{host}`)"
+    return {"http": {
+        "routers": {
+            "nextcloud-aio": {"rule": rule, "entryPoints": ["https"], "service": "nextcloud-aio",
+                              "middlewares": ["nextcloud-aio-headers"], "tls": {"certResolver": "letsencrypt"}},
+            "nextcloud-aio-http": {"rule": rule, "entryPoints": ["http"], "service": "nextcloud-aio",
+                                   "middlewares": ["nextcloud-aio-https"]},
+        },
+        "services": {"nextcloud-aio": {"loadBalancer": {"servers": [{"url": APACHE}]}}},
+        "middlewares": {
+            "nextcloud-aio-headers": {"headers": {"hostsProxyHeaders": ["X-Forwarded-Host"],
+                                                  "referrerPolicy": "same-origin",
+                                                  "customRequestHeaders": {"X-Forwarded-Proto": "https"}}},
+            "nextcloud-aio-https": {"redirectScheme": {"scheme": "https"}},
+        },
+    }}
+
+
+def docker(*args, stdin=None):
+    return subprocess.run(["docker", *args], input=stdin, check=True, capture_output=True, text=True,
+                          timeout=120).stdout.strip()
 
 
 def dig(*query):
@@ -371,6 +424,40 @@ class Suite:
         return {"cpus": len(os.sched_getaffinity(0)), "memory_gib": (memory + 524288) // 1048576}
 
     @staticmethod
+    def coolify():
+        return COOLIFY.is_dir()
+
+    @staticmethod
+    def proxy():
+        """Coolify starts its proxy from its proxy configuration, a compose file whose `command` lists Traefik's
+        settings. Only a running Traefik answers: by the container's status, since Docker keeps `Running` true for a
+        restarting or paused container, and by its image's name without registry path, tag or digest, `traefik` as in
+        Coolify 4.6.0's `traefik:v3.7`."""
+        try:
+            status, image, arguments = json.loads(docker(
+                "inspect", "--format", "[{{json .State.Status}},{{json .Config.Image}},{{json .Config.Cmd}}]",
+                COOLIFY_PROXY))
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            print(f"Coolify's proxy: {getattr(error, 'stderr', None) or error}", file=sys.stderr, flush=True)
+            raise Unreachable(NO_PROXY) from None
+        if status != "running" or image.split("@")[0].rsplit("/", 1)[-1].split(":")[0] != "traefik":
+            raise Unreachable(NO_PROXY)
+        return arguments if isinstance(arguments, list) else []
+
+    @staticmethod
+    def route(host):
+        """Coolify keeps its dynamic folder to its own account, so the route goes in as root, through the Docker socket
+        AIO already uses: in the mastercontainer, where the compose file mounts the folder. A rename puts it in place
+        whole; Traefik's watch skips the temporary file, which has no YAML extension."""
+        try:
+            docker("exec", "--interactive", "--user", "root", MASTERCONTAINER, "sh", "-c",
+                   'cat > "$1.tmp" && mv -f "$1.tmp" "$1"', "sh", str(COOLIFY / ROUTE),
+                   stdin=json.dumps(traefik_route(host), indent=1))
+        except (OSError, subprocess.SubprocessError) as error:
+            print(f"Coolify route: {getattr(error, 'stderr', None) or error}", file=sys.stderr, flush=True)
+            raise Unreachable(NO_ROUTE) from None
+
+    @staticmethod
     def aio(script, values, failed, timeout=120):
         """What `script`, AIO's own code, printed with `values` on its stdin; Unreachable with `failed` when it fails."""
         try:
@@ -385,6 +472,11 @@ class Suite:
         values = {"domain": credential["name"], "aio_variables": caddy()["aio_variables"],
                   "secrets": acmedns(credential)}
         self.aio(USE_NAME, values, AIO_REFUSED.format("la dirección del establecimiento"))
+
+    def behind_coolify(self, name):
+        """AIO's vanilla settings with the name, through AIO's own configuration code (COOLIFY_NAME)."""
+        values = {"domain": name, "aio_variables": VANILLA, "secrets": list(ACMEDNS)}
+        self.aio(COOLIFY_NAME, values, AIO_REFUSED.format("la dirección del establecimiento"))
 
     def own_domain(self, domain):
         """AIO's vanilla settings and vanilla's domain check, through AIO's own code (OWN_DOMAIN). The domaincheck
@@ -466,10 +558,15 @@ class FakeSuite:
     be read while `no_server_address` is set, its hardware is `machine`, and a browser whose resolver answers the
     server's address says hello() to AIO's interface at a name. AIO's start makes each of its CONTAINERS starting,
     until up() makes their ports answer, and the first one installs its startup apps from the app store. Its GitHub
-    serves the files of the App releases in `releases`, by repo, tag and file name."""
+    serves the files of the App releases in `releases`, by repo, tag and file name. On a Coolify server, `dynamic` is
+    Coolify's dynamic proxy folder, and Coolify's proxy runs with the arguments of `traefik`, which cannot be read while
+    it is None."""
 
     CONTAINERS = {"nextcloud-aio-apache": "Apache & Caddy", "nextcloud-aio-nextcloud": "Servidor de aplicaciones",
                   "nextcloud-aio-talk": "Talk", "nextcloud-aio-eurooffice": "EuroOffice"}  # by id, AIO's names
+    # Vanilla's domain check refusing a domain that does not reach the domaincheck container (ConfigurationManager.php).
+    UNPROXIED = ("El dominio no apunta a este servidor o el proxy inverso no está bien configurado. Vea más detalles "
+                 "en los registros del mastercontainer. ('sudo docker logs -f nextcloud-aio-mastercontainer')")
 
     def __init__(self):
         from nextcloud import FakeNextcloud  # it imports this module
@@ -492,6 +589,19 @@ class FakeSuite:
         self.states = {}  # by container, AIO's reading of it once AIO's start created it
         self.pulled = []  # the switches of each image pull
         self.releases = {}  # by (repo, tag, file name), the files of the App releases on GitHub
+        self.dynamic = None  # Coolify's dynamic proxy folder, a directory on a Coolify server
+        self.traefik = None  # the arguments Coolify's proxy runs with
+
+    def coolify(self):
+        return self.dynamic is not None
+
+    def proxy(self):
+        if self.traefik is None:
+            raise Unreachable(NO_PROXY)
+        return list(self.traefik)
+
+    def route(self, host):
+        (self.dynamic / ROUTE).write_text(json.dumps(traefik_route(host), indent=1), encoding="utf-8")
 
     def pull(self, settings):
         self.pulled.append(settings)
@@ -559,13 +669,25 @@ class FakeSuite:
             self.aio[key] = value.replace("%NC_DOMAIN%", name)
         self.aio["secrets"] = {**self.aio.get("secrets", {}), **acmedns(credential)}
 
-    def own_domain(self, domain):
-        """What AIO's configuration code writes for an own domain: vanilla's settings, with no community container and
-        none of the name's secrets, then the domain, which vanilla's domain check keeps."""
+    def vanilla(self):
+        """What AIO's configuration code writes as vanilla's settings: no community container and none of the name's
+        secrets, and no domain yet."""
         self.aio["aio_community_containers"] = ""
         self.aio.update(variable.split("=", 1) for variable in VANILLA)
         self.aio["secrets"] = {k: v for k, v in self.aio.get("secrets", {}).items() if k not in ACMEDNS}
         self.aio.pop("domain", None)
+
+    def behind_coolify(self, name):
+        self.vanilla()
+        self.aio["domain"] = name
+
+    def own_domain(self, domain):
+        """Vanilla's settings, then the domain, which vanilla's domain check keeps. On a Coolify server the check
+        reaches the domain through Coolify's proxy, so it refuses a domain whose route there does not lead to Apache."""
+        self.vanilla()
+        if self.coolify() and not ((self.dynamic / ROUTE).exists() and json.loads(
+                (self.dynamic / ROUTE).read_text(encoding="utf-8")) == traefik_route(domain)):
+            raise Refused(self.UNPROXIED)
         if domain in self.refused:
             raise Refused(self.refused[domain])
         self.aio["domain"] = domain

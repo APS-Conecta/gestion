@@ -1,6 +1,8 @@
-# The clean-machine acceptance harness (Seam 1, aps/acceptance/run.sh): a published candidate's Bootstrap on a fresh
-# Debian 12 VM, exactly as the manual prints it, then every check module in aps/acceptance/checks/, each reported on
-# its own. It tests the candidate's release, never this tree; the harness and its checks come from the ref it runs on.
+# The clean-machine acceptance harness (Seam 1, aps/acceptance/run.sh): a published candidate on a fresh Debian 12 VM by
+# each way in, then every check module in aps/acceptance/checks/, each reported on its own. The ways in are the
+# candidate's Bootstrap, exactly as the manual prints it, and the Coolify install: Coolify on the VM, set up as its admin
+# does, and the candidate's tag as a resource of it, deployed through Coolify's API (ADR 0029). It tests the
+# candidate's release, never this tree; the harness and its checks come from the ref it runs on.
 #
 # The candidate pipeline (release.yml) calls it through workflow_call on every candidate it publishes, and a maintainer
 # dispatches it for a pre-release. A pull request that touches our images or the Bootstrap gets it on demand: publish
@@ -32,11 +34,15 @@ defaults:
 
 jobs:
   clean-machine:
-    name: The candidate's Bootstrap on a fresh Debian 12 VM, then every check
+    name: The candidate on a fresh Debian 12 VM by ${{ matrix.way }}, then every check
     runs-on: ubuntu-24.04
-    timeout-minutes: 90 # a whole install to «Listo», its checks, the reset and a reinstall
+    timeout-minutes: 120 # a whole install to «Listo», its checks, the reset and a reinstall; Coolify's own install too
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        way: [bootstrap, coolify]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -55,14 +61,15 @@ jobs:
           "$RUNNER_TEMP/browser/bin/pip" install --quiet playwright==1.64.1
           "$RUNNER_TEMP/browser/bin/playwright" install --with-deps chromium > /dev/null
           echo "$RUNNER_TEMP/browser/bin" >> "$GITHUB_PATH"
-      - name: Run the candidate's Bootstrap on the VM, then every check
+      - name: Install the candidate on the VM by its way in, then run every check
         env:
           TAG: ${{ inputs.tag }}
+          WAY: ${{ matrix.way }}
           GH_TOKEN: ${{ github.token }}
-        run: aps/acceptance/run.sh "$TAG"
+        run: aps/acceptance/run.sh "$TAG" "$WAY"
       - name: Attach the evidence (each failing check's container logs and disk usage)
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: acceptance-evidence
+          name: acceptance-evidence-${{ matrix.way }}
           path: ${{ runner.temp }}/acceptance/evidence

@@ -1,0 +1,36 @@
+# SPDX-FileCopyrightText: 2026 APS Conecta
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The Coolify install (ADR 0029): APS Conecta Gestión as a Git-based Docker Compose resource of an internet-reachable
+# Coolify 4 server, from this repository with this file as its compose file, in Raw mode, the only mode that keeps the
+# container and volume names AIO requires. The resource needs one variable, APS_PUBLIC_ADDRESS: the server's public
+# IPv4 address. The resource's logs then show the Provisionador's link.
+#
+# AIO's own shape (compose.yaml), with our mastercontainer on the channel tag and AIO in reverse-proxy mode behind
+# Coolify's proxy: Apache on its internal port, bound to the host's loopback and joined to Coolify's network, where the
+# route the Provisionador writes into Coolify's dynamic proxy folder leads. AIO's interface is on a free host port,
+# because Coolify's proxy holds 8080. A deploy pulls the channel tag, which only a release moves; AIO's own update moves
+# the suite after that.
+name: nextcloud-aio
+services:
+  nextcloud-aio-mastercontainer:
+    image: ghcr.io/aps-conecta/all-in-one:latest  # the channel tag (aps/RELEASING.md)
+    init: true
+    restart: always
+    container_name: nextcloud-aio-mastercontainer  # AIO requires this name
+    volumes:
+      - nextcloud_aio_mastercontainer:/mnt/docker-aio-config  # AIO requires this volume, there
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /data/coolify/proxy/dynamic:/data/coolify/proxy/dynamic  # Coolify's dynamic proxy folder: the suite's route
+    network_mode: bridge
+    ports:
+      - 8443:8080  # AIO's interface
+    environment:
+      APS_INTERFACE_ADDRESS: "${APS_PUBLIC_ADDRESS:?indique en las variables del recurso la dirección IPv4 pública del servidor}:8443"
+      APACHE_PORT: 11000
+      APACHE_IP_BINDING: 127.0.0.1
+      APACHE_ADDITIONAL_NETWORK: coolify
+      NEXTCLOUD_TRUSTED_CACERTS_DIR: ${NEXTCLOUD_TRUSTED_CACERTS_DIR:-}  # vanilla's: a folder of CAs the suite trusts
+volumes:
+  nextcloud_aio_mastercontainer:
+    name: nextcloud_aio_mastercontainer

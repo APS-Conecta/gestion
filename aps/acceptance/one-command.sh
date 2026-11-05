@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: 2026 APS Conecta
 # SPDX-License-Identifier: AGPL-3.0-or-later
-# Runs the Bootstrap on the machine as the operator does and prints what it printed without the link's secret: the
-# secret is masked in the log (::add-mask::) before anything is printed, and blank-link-secret.sh leaves out the QR
-# code and blanks the secret. The whole output goes to <file>, outside the evidence, for the checks.
+# Runs the way in ($COMMAND: the Bootstrap, or the Coolify resource's deploy) on the machine as the operator does and
+# prints what it printed without the link's secret: the secret is masked in the log (::add-mask::) before anything is
+# printed, and blank-link-secret.sh leaves out the QR code and blanks the secret. The whole output goes to <file>,
+# outside the evidence, for the checks.
 # Usage: one-command.sh <file>
 set -euo pipefail
 rc=0

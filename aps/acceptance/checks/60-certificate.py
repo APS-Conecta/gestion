@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: 2026 APS Conecta
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The suite's login page answers at its CI APS name with a valid Let's Encrypt staging certificate: our Caddy got it
-through the name service's DNS challenge with no inbound port, as the machine sits behind the runner's NAT. The
-certificate it serves for the name verifies against the staging roots alone; the name's own nameservers publish the
-machine's address for it; and a browser that trusts the staging roots alone opens the login page at the name the
-runner's resolver answers. Any other candidate's names and certificates are production ones, which a run never claims:
-there it says so and passes."""
+"""The suite's login page answers at its CI APS name with a valid Let's Encrypt staging certificate: the suite's proxy
+(our Caddy, or on the Coolify way in Coolify's Traefik) got it through the name service's DNS challenge with no inbound
+port, as the machine sits behind the runner's NAT. The certificate it serves for the name verifies against the staging
+roots alone; the name's own nameservers publish the machine's address for it; and a browser that trusts the staging
+roots alone opens the login page at the name the runner's resolver answers. Any other candidate's names and certificates
+are production ones, which a run never claims: there it says so and passes."""
 
 import os
 import socket
@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from browser import STAGING_ROOTS, chromium, suite_name  # noqa: E402
 from playwright.sync_api import Error, expect  # noqa: E402
 
-WAIT = 12 * 60  # seconds; the DNS challenge usually takes a minute or two once Caddy runs
+WAIT = 12 * 60  # seconds; the DNS challenge usually takes a minute or two once the proxy runs
 
 if os.environ["TEST_BUILD"] != "true":
     print(f"the certificate check runs on a v0.0.0-ci.N test build only: {os.environ['TAG']}'s names and "

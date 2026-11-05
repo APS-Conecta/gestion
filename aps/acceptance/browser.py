@@ -2,16 +2,17 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The acceptance harness's one way to open a browser: Chromium through Playwright, whose context adds trust only for
 Let's Encrypt's staging roots, which the suite's certificate comes from in CI, and for the certificates a check pins
-after verifying them itself, such as the Provisionador's, by the fingerprint the Bootstrap printed. No check ignores
+after verifying them itself, such as the Provisionador's, by the fingerprint the way in printed. No check ignores
 certificate errors. A check that calls gets fake media devices: Chromium's fake camera and a microphone that plays a
 steady tone.
 
-Checks import it after `sys.path.insert(0, <aps/acceptance>)`. It also runs a check's command lines on the machine and
-reads the files of the mastercontainer there.
+Checks import it after `sys.path.insert(0, <aps/acceptance>)`. It also runs a check's command lines and the way in on
+the machine, reads the machine's state and the files of the mastercontainer there.
 """
 
 import base64
 import contextlib
+import difflib
 import hashlib
 import json
 import math
@@ -42,6 +43,44 @@ def machine(command, stdin=""):
     return run.stdout
 
 
+# The machine's containers, images, volumes, networks, packages and the install's files; the mastercontainer's start
+# time is left out, since a rerun restarts it.
+STATE = """set -euo pipefail
+docker ps --all --quiet | xargs --no-run-if-empty docker inspect --format '{{.Name}} {{.Id}} {{.Image}}' | sort
+docker image ls --all --quiet --no-trunc | sort -u
+docker volume ls --quiet | sort
+docker network ls --quiet --no-trunc | sort
+find /etc/apt /etc/sysctl.d -type f -exec sha256sum {} + | sort -k 2
+dpkg-query --show
+"""
+
+
+def state():
+    """The machine's state, as a harmless run of the way in again leaves it: the Bootstrap restarts the mastercontainer,
+    and a redeploy of the Coolify resource recreates it from the image it ran, so on that way its container's ID is
+    left out."""
+    found = machine("sudo bash -s", STATE)
+    if os.environ["WAY"] == "coolify":
+        found = re.sub(r"^(/nextcloud-aio-mastercontainer) [0-9a-f]+ ", r"\1 ", found, flags=re.M)
+    return found
+
+
+def rerun(what):
+    """What the way in, run again on the machine as the operator does (one-command.sh), printed, its fresh link whole,
+    which stays out of the log and the evidence; it fails the check, named by `what`, if the run fails or changes the
+    machine's state."""
+    before = state()
+    with tempfile.NamedTemporaryFile() as console:
+        if subprocess.run([Path(__file__).with_name("one-command.sh"), console.name], check=False).returncode:
+            sys.exit(f"{what} failed")
+        printed = Path(console.name).read_text(encoding="utf-8")
+    after = state()
+    if after != before:
+        sys.exit(f"{what} changed the machine:\n" + "".join(difflib.unified_diff(
+            before.splitlines(keepends=True), after.splitlines(keepends=True), "before", "after")))
+    return printed
+
+
 def mastercontainer_file(path):
     """A file of the mastercontainer on the machine, such as AIO's settings file; never print a secret it holds."""
     return machine(f"sudo docker exec nextcloud-aio-mastercontainer cat {path}")
@@ -68,8 +107,8 @@ def verified(host, port, printed):
 
 
 def printed_link(output):
-    """The link and the certificate's fingerprint in what the Bootstrap printed last. The link's secret is masked
-    in the CI log first."""
+    """The link and the certificate's fingerprint in what the way in printed last (the Bootstrap, or the Coolify
+    resource's logs). The link's secret is masked in the CI log first."""
     links = re.findall(r"https://\S+#[\w-]+", output)
     printed = re.findall(r"(?:[0-9A-F]{2}:){31}[0-9A-F]{2}", output)
     if not (links and printed):
