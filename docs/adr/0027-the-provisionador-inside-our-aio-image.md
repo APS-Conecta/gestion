@@ -58,7 +58,7 @@ mastercontainer's address on its default route, where the host's published port 
 browser at `host` sends, or none for an IP address, and the Provisionador prints that certificate's SHA-256
 fingerprint. The image test compares it with the certificate a TLS client receives at the link's address.
 
-**The Provisionador's routes keep AIO's headers with two allowances.** 8080 sends AIO's
+**The Provisionador's routes keep AIO's headers with two allowances for «Centro»'s map.** 8080 sends AIO's
 `Containers/mastercontainer/headers.Caddyfile`, with Trusted Types `'none'`, images from itself only and COEP
 `require-corp`, and «Centro»'s map breaks under it: Leaflet 1.9.4 probes inline SVG through `innerHTML` when it
 loads and writes its zoom buttons' labels the same way, the tiles are OpenStreetMap's, and Leaflet cancels a tile's

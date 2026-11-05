@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 APS Conecta
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // The Provisionador's page: it exchanges the link's secret (the URL fragment, never sent in a request line) for a
-// session, then drives «Centro» through the HTTP API.
+// session, then drives «Centro» and «Dirección» through the HTTP API.
 "use strict";
 
 // AIO's interface enforces Trusted Types; on the Provisionador's routes it also allows a default policy
@@ -16,11 +16,16 @@ if (window.trustedTypes) {
 
 const $ = (id) => document.getElementById(id);
 const CHILE = [-35.7, -71.5];
+// «Dirección» points the name at the server's address. The first look at the name waits a little, so that the
+// resolver does not ask before the new record answers and then remember finding nothing.
+const FIRST_LOOK = 10000;
+const NEXT_LOOK = 15000;
 let register = null;
 let selected = null;
 let map = null;
 let marker = null;
 let searching = null;
+let looking = null;
 
 async function api(method, path, body) {
   let response;
@@ -45,14 +50,18 @@ function element(tag, text) {
   return node;
 }
 
-function say(text, isError = false) {
-  $("message").textContent = text;
-  $("message").classList.toggle("error", isError);
+function say(text, isError = false, id = "message") {
+  $(id).textContent = text;
+  $(id).classList.toggle("error", isError);
 }
 
 function locked(message) {
   $("locked-message").textContent = message;
   $("locked").hidden = false;
+}
+
+function show(screen) {
+  for (const id of ["centro", "direccion"]) $(id).hidden = id !== screen;
 }
 
 function fillFilters() {
@@ -142,13 +151,59 @@ async function confirm() {
   const at = marker.getLatLng().wrap();
   const round = (degrees) => Math.round(degrees * 1e6) / 1e6;
   try {
-    const {centre} = await api("POST", "/api/centre", {
-      code: selected.code, point: {latitude: round(at.lat), longitude: round(at.lng)},
-    });
-    confirmed(centre);
+    await api("POST", "/api/centre", {code: selected.code, point: {latitude: round(at.lat), longitude: round(at.lng)}});
   } catch (e) {
-    say(e.message, true);
+    return say(e.message, true);
   }
+  direccion();
+}
+
+// «Dirección»: the Provisionador claims the centre's APS name, sets the suite up to serve it and points it at the
+// server's address. A name already held or an outage comes with «Reintentar».
+async function direccion() {
+  show("direccion");
+  $("retry").hidden = true;
+  say("Obteniendo la dirección del establecimiento…", false, "address-status");
+  let address;
+  try {
+    ({address} = await api("POST", "/api/address", {}));
+  } catch (e) {
+    say(e.message, true, "address-status");
+    $("retry").hidden = false;
+    return;
+  }
+  addressed(address, FIRST_LOOK);
+}
+
+function addressed(address, delay) {
+  $("address-name").textContent = `https://${address.name}`;
+  say("Dirección asignada. Apunta a este servidor en la red del establecimiento.", false, "address-status");
+  say(`Comprobando que este equipo encuentra el servidor en ${address.name}…`, false, "reach");
+  clearTimeout(looking);
+  looking = setTimeout(() => look(address.name), delay);
+}
+
+// The browser asks for this interface at the name. When this network's resolver answers the server's address, the
+// request reaches the server, which tells; a resolver that drops answers pointing to private addresses keeps it away.
+// The request itself fails: the interface's certificate is AIO's own, which this browser accepted for the link only.
+async function look(name) {
+  await fetch(`https://${name}:${location.port || 443}/`, {
+    mode: "no-cors", cache: "no-store", signal: AbortSignal.timeout(8000),
+  }).catch(() => {});
+  let address;
+  try {
+    ({address} = await api("GET", "/api/state"));
+  } catch (e) {
+    return say(e.message, true, "reach");
+  }
+  if (address.opened) {
+    return say(`Este equipo encuentra el servidor en ${name}.`, false, "reach");
+  }
+  say(`Este equipo no encuentra el servidor en ${name}: el DNS de esta red descarta las respuestas que apuntan a `
+    + `direcciones internas. En el router, permita esas respuestas para ${name.split(".").slice(1).join(".")} (una `
+    + "excepción a la protección contra «DNS rebinding») y vuelva a conectar este equipo a la red. Esta página lo "
+    + "comprobará de nuevo por sí sola.", true, "reach");
+  looking = setTimeout(() => look(name), NEXT_LOOK);
 }
 
 // Leaflet's own attribution control writes HTML, so the page shows OpenStreetMap's under the map.
@@ -178,16 +233,21 @@ async function start() {
       return locked(e.message);
     }
   }
+  $("retry-button").addEventListener("click", direccion);
   let state;
   try {
     state = await api("GET", "/api/state");
+    if (state.address) {
+      show("direccion");
+      return addressed(state.address, 0);
+    }
     register = await api("GET", "/api/register");
   } catch (e) {
     return locked(e.message);
   }
   $("register-date").textContent = ` del ${register.date.split("-").reverse().join("-")}`;
   fillFilters();
-  $("centro").hidden = false;
+  show("centro");
   startMap();
   if (state.centre) {
     select({...state.centre, point: state.centre.official_point}, state.centre.point);
