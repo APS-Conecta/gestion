@@ -20,7 +20,8 @@ from suite import Unreachable
 
 UNEXPECTED = ("La instalación se detuvo por un error inesperado. Presione «Reintentar»; si vuelve a ocurrir, contacte a "
               "APS Conecta e indique el registro del contenedor maestro.")
-WAITING = "Espera a que se complete: {}."
+WAITING = "Espera a que se complete {}."
+WAITING_SEVERAL = "Espera a que se completen {} y {}."
 
 
 def discover():
@@ -86,7 +87,9 @@ def run(state, context):
             continue
         blocked = [f"«{STEPS[need].NAME}»" for need in step.NEEDS if install["steps"][need]["status"] != "green"]
         if blocked:
-            record(state, name, "waiting", [WAITING.format(", ".join(blocked))])
+            *others, last = blocked
+            record(state, name, "waiting", [WAITING_SEVERAL.format(", ".join(others), last) if others
+                                            else WAITING.format(last)])
             continue
         record(state, name, "running")
         found = problems(step.run, context)

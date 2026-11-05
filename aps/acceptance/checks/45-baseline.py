@@ -3,9 +3,11 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """After «Listo» on a test build: the Provisionador's end-of-install check was clean, every install step green in its
 state, and the baseline settings are in place on the real suite. Nextcloud holds the security, background-job and
-locale settings, and the certificates its own requests trust verify the suite's name, whose certificate comes from a
-staging root of AIO's folder of trusted CAs, and the ISP's site, which serves only its leaf. Any other candidate's
-names and certificates are production ones, which a run never claims: there it says so and passes."""
+locale settings, the centre's timezone for its clock and its log among them, and the certificates its own requests
+trust verify the suite's name, whose certificate comes from a staging root of AIO's folder of trusted CAs, and the
+ISP's site, which serves only its leaf. That site is outside the suite and its step only warns: when the site gives no
+answer, or the certificates step recorded its notice, the check says so and passes. Any other candidate's names and
+certificates are production ones, which a run never claims: there it says so and passes."""
 
 import json
 import os
@@ -22,6 +24,7 @@ NEXTCLOUD = "sudo docker exec --interactive --user www-data nextcloud-aio-nextcl
 SYSTEM = {"remember_login_cookie_lifetime": 0, "session_lifetime": 900, "session_keepalive": False,
           "default_language": "es", "force_language": "es", "default_locale": "es_CL", "default_phone_region": "CL"}
 APPS = {"admin_audit": {"enabled": "yes"}, "core": {"backgroundjobs_mode": "cron"}}
+VERIFIED = "Verify return code: 0 (ok)"
 # In the Nextcloud container, for each host in "$@": the verdict of a TLS handshake against the bundle Nextcloud's own
 # HTTP client verifies with.
 VERIFY = r"""
@@ -40,20 +43,35 @@ if os.environ["TEST_BUILD"] != "true":
           "certificates are production ones")
     sys.exit()
 
-steps = json.loads(mastercontainer_file(STATE))["install"]["steps"]
+state = json.loads(mastercontainer_file(STATE))
+steps = state.get("install", {}).get("steps", {})
 print("".join(f"{name}: {step['status']} {step.get('reason', '')}\n" for name, step in steps.items()), end="")
+if not steps:
+    sys.exit("at «Listo», the Provisionador's state has no install steps")
 if any(step["status"] != "green" for step in steps.values()):
     sys.exit("at «Listo», the Provisionador's state has an install step that is not green")
 
+zone = state["centre"]["timezone"]
+system = {**SYSTEM, "default_timezone": zone, "logtimezone": zone}
 held = json.loads(machine(f"{NEXTCLOUD} php /var/www/html/occ config:list --output=json"))
-found = {"system": {key: held["system"].get(key) for key in SYSTEM},
+found = {"system": {key: held["system"].get(key) for key in system},
          "apps": {app: {key: held["apps"].get(app, {}).get(key) for key in values} for app, values in APPS.items()}}
 print(f"Nextcloud holds {found}")
-if found != {"system": SYSTEM, "apps": APPS}:
+if found != {"system": system, "apps": APPS}:
     sys.exit("Nextcloud does not hold the baseline settings the install steps declare")
 
-verdicts = machine(f"{NEXTCLOUD} sh -s {suite_name()} {certificates.ISP}", stdin=VERIFY)
-print(verdicts, end="")
-if verdicts.count("Verify return code: 0 (ok)") != 2:
-    sys.exit("Nextcloud's own requests do not verify both the suite's name and the ISP's site")
+domain = suite_name()
+answers = machine(f"{NEXTCLOUD} sh -s {domain} {certificates.ISP}", stdin=VERIFY)
+print(answers, end="")
+verdicts = {host: verdict.strip() for host, verdict in (line.split(": ", 1) for line in answers.splitlines())}
+if verdicts[domain] != VERIFIED:
+    sys.exit("Nextcloud's own requests do not verify the suite's name")
+if verdicts[certificates.ISP] != VERIFIED:
+    if certificates.ISP_UNTRUSTED.format(certificates.ISP) in steps.get("certificates", {}).get("reason", ""):
+        print("the ISP's site is not verified, as the certificates step's notice says")
+    elif verdicts[certificates.ISP] == "no answer":
+        print("the ISP's site gives no answer")
+    else:
+        sys.exit("the ISP's site answers and Nextcloud's own requests do not verify it, with no notice from the "
+                 "certificates step")
 print("every install step is green and the baseline settings are in place on the suite")

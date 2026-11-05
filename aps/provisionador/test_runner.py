@@ -24,10 +24,19 @@ class Runner(Installing):
             self.eventually(lambda: self.status() == "failed", "a failed install")
         steps = self.steps()
         self.assertEqual(steps["Copias de seguridad"], ("failed", BACKUPS_REFUSED))
-        self.assertEqual(steps["Inicio de la suite"], ("waiting", "Espera a que se complete: «Copias de seguridad»."))
+        self.assertEqual(steps["Inicio de la suite"], ("waiting", "Espera a que se complete «Copias de seguridad»."))
         self.assertEqual((steps["Componentes"], steps["Zona horaria"]), (("green", None), ("green", None)))
         self.assertEqual(self.suite.starts, 0)
         self.assertFalse(self.listo())
+
+    def test_a_step_that_waits_for_several_steps_names_them_all_in_the_plural(self):
+        claimed(self.browser)
+        for method in ("components", "timezone", "backups"):  # AIO does not answer while «Instalar» writes to it
+            self.enterContext(mock.patch.object(self.suite, method, side_effect=Unreachable("AIO no responde.")))
+        self.install()
+        self.eventually(lambda: self.status() == "failed", "a failed install")
+        self.assertEqual(self.steps()["Inicio de la suite"], (
+            "waiting", "Espera a que se completen «Componentes», «Zona horaria» y «Copias de seguridad»."))
 
     def test_reintentar_runs_the_failed_and_waiting_steps_again_and_never_a_green_one(self):
         claimed(self.browser)
