@@ -18,6 +18,10 @@
 #   EVIDENCE  an empty directory for the check's own files, such as screenshots
 #   NAMES     a directory where a check that claims an APS name keeps its credential, one file per DEIS code
 #             (claim.py does): the harness frees each name with its own credential at its end, even when a check failed
+#   TEST_BUILD  true for a test build (v0.0.0-ci.N), which claims its names on the name service's CI deployment and
+#             gets Let's Encrypt staging certificates, as the candidate's own services.json says; false for any other
+#             candidate, whose names and certificates are production ones. What needs an APS name runs on a test build
+#             only, and on any other candidate the check says so
 # A check never prints a secret. python3 has Playwright with Chromium (acceptance.yml installs it); browser.py is the
 # one way to open it. Exit 0 passes. A failing check is named in the log, its EVIDENCE gets every container's log, with
 # the link's secret and AIO's credentials blanked out, and the disk usage, and the workflow attaches it to the run.
@@ -147,6 +151,16 @@ OS
 stage="the Bootstrap"
 echo "$COMMAND"
 aps/acceptance/one-command.sh "$CONSOLE"
+
+stage="read whether the candidate is a test build"
+# The one place a run tells a test build from any other candidate: the name service its build's own services.json
+# names, which release.yml stamps from aps/acceptance/test-build.json into a test build's mastercontainer.
+services=/var/www/docker-aio/aps/provisionador/services.json
+claims="$("$MACHINE" "sudo docker exec nextcloud-aio-mastercontainer cat $services" | jq -r .name_service)"
+TEST_BUILD=false
+[ "$claims" != "$(jq -r .name_service aps/acceptance/test-build.json)" ] || TEST_BUILD=true
+export TEST_BUILD
+echo "test build: $TEST_BUILD; $TAG claims its names from $claims"
 
 stage=""
 failed=()

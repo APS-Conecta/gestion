@@ -90,9 +90,14 @@ is freed by APS Conecta with gestion-aio's «APS name release» workflow.
   deployment as committed, and Caddy uses Let's Encrypt's production directory unless `ACME_CA` names another. The
   candidate pipeline stamps a test build (`v0.0.0-ci.N`) at release time with the CI deployment and the staging
   directory (`aps/acceptance/test-build.json`), and its Bootstrap gives the suite the staging roots through AIO's
-  `NEXTCLOUD_TRUSTED_CACERTS_DIR`, so Nextcloud and Talk trust them; shipped code has no runtime switch.
+  `NEXTCLOUD_TRUSTED_CACERTS_DIR`, so Nextcloud and Talk trust them. The pipeline also mounts that folder in a test
+  build's Euro-Office and names its file in `NODE_EXTRA_CA_CERTS`, so the Node of Euro-Office's document server trusts
+  them for its calls to the name; shipped code has no runtime switch.
 - The detection reads where Caddy keeps the interface's certificates, `/mnt/docker-aio-config/caddy-internal/`, as the
   image test reads AIO's authority there.
-- The Bootstrap's reset frees the name with the stored credential before it removes anything: the credential goes on
-  stdin to `provisionador.py release-name` in a short-lived container of the mastercontainer's image, and a reinstall
-  claims the name again. The acceptance harness frees every CI name it claimed the same way at its end.
+- The Bootstrap's reset frees the name with the stored credential before it removes anything, and a reinstall claims
+  the name again. A short-lived container of the mastercontainer's image, or of the release's once the mastercontainer
+  was removed, reads the credential from the mastercontainer's volume mounted read-only, whatever the mastercontainer's
+  state; the credential goes on stdin to `provisionador.py release-name`. Only a confirmed absence, no volume or no
+  credential in it, means no name to free; any other failed read stops the reset with nothing removed. The acceptance
+  harness frees every CI name it claimed the same way at its end.

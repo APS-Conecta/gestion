@@ -21,8 +21,6 @@ from browser import chromium, mastercontainer_file, printed_link, verified  # no
 from playwright.sync_api import expect  # noqa: E402
 
 CODES = ACCEPTANCE.parent / "provisionador" / "ci-codes.txt"
-TEST_BUILD = json.loads((ACCEPTANCE / "test-build.json").read_text(encoding="utf-8"))
-SERVICES = "/var/www/docker-aio/aps/provisionador/services.json"  # the build's own, in the mastercontainer
 CREDENTIAL = "/mnt/docker-aio-config/provisionador/aps-name.json"  # where «Dirección» keeps the name's credential
 
 
@@ -52,11 +50,10 @@ def keep(code):
 
 def claim(page, codes):
     """The name «Dirección» claims for the first of `codes` no one holds, «Centro» confirming each code in turn. Only a
-    test build claims: a version candidate's names are production ones."""
-    services = json.loads(mastercontainer_file(SERVICES))
-    if services["name_service"] != TEST_BUILD["name_service"]:
-        sys.exit(f"{os.environ['TAG']} claims names from {services['name_service']}, not from the name service's CI "
-                 "deployment: only a test build (v0.0.0-ci.N) claims CI names in this run")
+    test build claims, as run.sh tells (TEST_BUILD): any other candidate's names are production ones."""
+    if os.environ["TEST_BUILD"] != "true":
+        sys.exit(f"{os.environ['TAG']} is not a test build: its names are production ones, and a run claims CI names "
+                 "only")
     for code in codes:
         status, answer = api(page, "POST", "/api/centre", {"code": code})
         if status != 200:

@@ -19,8 +19,9 @@ image digests live there and are deliberately not copied here — one fact, one 
   timezone, and a backup every night at 06:00 UTC to `/var/backups/apsconecta-gestion`; then AIO's own start, with each
   container's progress as AIO reads it. «Listo» shows the suite's address once every container runs, and AIO's page
   stays hidden until then. The mastercontainer pulls the suite's images at its start, and the reset frees the APS name
-  before it removes anything. Every candidate runs the acceptance harness; a test build (`v0.0.0-ci.N`) claims its
-  name on the name service's CI deployment and gets Let's Encrypt staging certificates, whose roots its suite trusts.
+  before it removes anything, the nightly backup's folder included. Every candidate runs the acceptance harness; a test
+  build (`v0.0.0-ci.N`) claims its name on the name service's CI deployment and gets Let's Encrypt staging
+  certificates, whose roots its suite trusts.
 
 - **The clean-machine acceptance harness (#284).** `.github/workflows/acceptance.yml`, on a maintainer's dispatch for a
   pre-release or through `workflow_call`, runs the candidate's published Bootstrap on a fresh Debian 12 VM with the

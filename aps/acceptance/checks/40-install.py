@@ -5,7 +5,8 @@
 claims its CI name (claim.py); the page goes on to «Revisar», which summarises the centre, the name, its timezone, the
 components and the backup. «Instalar» shows each container's progress as AIO reads it, while AIO's interface still
 answers with the Provisionador alone, and «Listo» shows the suite's address once every container runs: exactly the
-suite's, the components on. Then AIO's interface serves AIO's page, which keeps the settings «Instalar» wrote."""
+suite's, the components on. Then AIO's interface serves AIO's page, which keeps the settings «Instalar» wrote. Any
+other candidate's names and certificates are production ones, which a run never claims: there it says so and passes."""
 
 import json
 import os
@@ -29,6 +30,10 @@ LISTO = "/mnt/docker-aio-config/provisionador/listo"
 SUITE = sorted(f"nextcloud-aio-{c}" for c in ("apache", "caddy", "clamav", "database", "eurooffice", "fulltextsearch",
                                               "harp", "imaginary", "nextcloud", "notify-push", "redis", "talk"))
 
+if os.environ["TEST_BUILD"] != "true":
+    print(f"«Revisar» and «Instalar» run on a v0.0.0-ci.N test build only: {os.environ['TAG']}'s names and "
+          "certificates are production ones")
+    sys.exit()
 link, printed = printed_link(Path(os.environ["CONSOLE"]).read_text(encoding="utf-8"))
 url = urlsplit(link)
 interface = f"https://{url.netloc}"  # AIO's interface, where the Provisionador answers until «Listo»

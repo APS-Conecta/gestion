@@ -2,9 +2,13 @@
 # SPDX-FileCopyrightText: 2026 APS Conecta
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Every started container runs an image the candidate pins by digest: one of the three images its release names, or
-# one its mastercontainer pins in AIO's php/containers.json or in a community container's file. It runs once «Instalar»
-# started the suite (40-install), so it covers each of the suite's containers.
+# one its mastercontainer pins in AIO's php/containers.json or in a community container's file. On a test build it runs
+# once «Instalar» started the suite (40-install), so it covers each of the suite's containers. Any other candidate's
+# names and certificates are production ones, which a run never claims, so no suite starts: it covers the
+# mastercontainer, and says the suite's containers are checked on a test build only.
 set -euo pipefail
+[ "$TEST_BUILD" = true ] || echo "the suite's containers are checked on a v0.0.0-ci.N test build only: $TAG's" \
+  "names and certificates are production ones"
 aio=/var/www/docker-aio # AIO's tree in the mastercontainer
 files="$aio/php/containers.json $aio/community-containers/*/*.json"
 pins="$(

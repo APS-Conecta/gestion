@@ -4,7 +4,8 @@
 """The suite's login page answers at its CI APS name with a valid Let's Encrypt staging certificate: our Caddy got it
 through the name service's DNS challenge with no inbound port, as the machine sits behind the runner's NAT. The
 certificate it serves for the name verifies against the staging roots alone, and a browser that trusts those alone
-opens the login page at the name the runner's resolver answers."""
+opens the login page at the name the runner's resolver answers. Any other candidate's names and certificates are
+production ones, which a run never claims: there it says so and passes."""
 
 import os
 import socket
@@ -19,6 +20,10 @@ from playwright.sync_api import Error, expect  # noqa: E402
 
 WAIT = 12 * 60  # seconds; the DNS challenge usually takes a minute or two once Caddy runs
 
+if os.environ["TEST_BUILD"] != "true":
+    print(f"the certificate check runs on a v0.0.0-ci.N test build only: {os.environ['TAG']}'s names and "
+          "certificates are production ones")
+    sys.exit()
 address, name = os.environ["ADDRESS"], suite_name()
 evidence = Path(os.environ["EVIDENCE"])
 

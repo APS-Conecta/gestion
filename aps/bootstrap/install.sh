@@ -13,7 +13,7 @@
 # restarts the mastercontainer, stopped or running, and prints its fresh link, and the links before keep working; after
 # «Listo» it changes nothing, so a stopped mastercontainer stays stopped, and prints the suite's address. The same
 # command with one argument, after a typed confirmation, frees the establishment's APS name, then removes what the
-# install created and leaves Docker installed:
+# install created, its nightly backup included, and leaves Docker installed:
 #   curl -fsSL https://github.com/APS-Conecta/gestion/releases/latest/download/apsconecta-install.sh | sudo bash -s restablecer
 #
 # The release pipeline fills RELEASE_TAG, MASTERCONTAINER and a test build's TRUSTED_CACERTS (aps/release/bootstrap.sh);
@@ -34,11 +34,13 @@ MIN_DISK_GB=20
 # What AIO publishes on the host (php/containers.json): Apache's 443, Talk's 3478 and the interface's 8080.
 PORTS="tcp/443 udp/443 tcp/3478 udp/3478 tcp/8080"
 CONTAINER=nextcloud-aio-mastercontainer
+VOLUME=nextcloud_aio_mastercontainer:/mnt/docker-aio-config       # its volume, where vanilla's command mounts it
 LISTO=/mnt/docker-aio-config/provisionador/listo                  # «Listo», in the mastercontainer's volume
 NAME_CREDENTIAL=/mnt/docker-aio-config/provisionador/aps-name.json  # the APS name's, once «Dirección» claimed it
 AIO_CONFIGURATION=/mnt/docker-aio-config/data/configuration.json  # AIO's own: its domain, once one is set
 PROVISIONADOR=/var/www/docker-aio/aps/provisionador/provisionador.py  # in the mastercontainer's image
 DROP_IN=/etc/sysctl.d/90-apsconecta-gestion.conf
+BACKUPS=/var/backups/apsconecta-gestion  # AIO's nightly backup, as «Instalar» sets it (provisionador/steps/backups.py)
 # The first and the last line of the link block the Provisionador logs: LINK_LOG in aps/provisionador/provisionador.py.
 LINK_FIRST="Abra este enlace"
 LINK_LAST="El enlace sirve hasta «Listo»."
@@ -140,14 +142,13 @@ tune_kernel() {
   sysctl -p "$DROP_IN" >/dev/null || die "no se pudieron aplicar los ajustes del kernel de $DROP_IN."
 }
 
-# A test build's CAs, each in a file of its own, for AIO's NEXTCLOUD_TRUSTED_CACERTS_DIR: AIO gives that folder to the
-# Nextcloud and Talk containers, which trust them.
+# A test build's CAs, in one file of AIO's NEXTCLOUD_TRUSTED_CACERTS_DIR: AIO gives that folder to the Nextcloud and
+# Talk containers, which trust every certificate of each file in it, and release.yml gives it to a test build's
+# Euro-Office, whose NODE_EXTRA_CA_CERTS names this one file.
 trust_cacerts() {
   mkdir -p "$CACERTS"
-  base64 -d <<<"$TRUSTED_CACERTS" | awk -v dir="$CACERTS" '
-    /-----BEGIN CERTIFICATE-----/ { out = sprintf("%s/ca-%d.crt", dir, ++n) }
-    out { print > out }
-    /-----END CERTIFICATE-----/ { close(out); out = "" }'
+  base64 -d <<<"$TRUSTED_CACERTS" | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' \
+    > "$CACERTS/ca.crt"
 }
 
 start_mastercontainer() {
@@ -162,7 +163,7 @@ start_mastercontainer() {
     trusted=(--env "NEXTCLOUD_TRUSTED_CACERTS_DIR=$CACERTS")
   fi
   docker run --init --sig-proxy=false --name "$CONTAINER" --restart always --detach --publish 8080:8080 \
-    --env "APS_INTERFACE_ADDRESS=$1" "${trusted[@]}" --volume nextcloud_aio_mastercontainer:/mnt/docker-aio-config \
+    --env "APS_INTERFACE_ADDRESS=$1" "${trusted[@]}" --volume "$VOLUME" \
     --volume /var/run/docker.sock:/var/run/docker.sock:ro "$CHANNEL" >/dev/null \
     || { docker rm --force "$CONTAINER" >/dev/null 2>&1 || true
          die "no se pudo iniciar el contenedor maestro. Vuelva a ejecutar el instalador."; }
@@ -230,35 +231,48 @@ install_suite() {
 }
 
 # Frees the APS name «Dirección» claimed, with its own credential, before the reset removes anything, so that a reinstall
-# claims it again. The credential goes on stdin, never on a command line, to the Provisionador's release-name, in a
-# short-lived container of the mastercontainer's image $1; $2 is whether the mastercontainer runs. No credential, no name.
+# claims it again. A short-lived container of the mastercontainer's image $1 reads the credential from the
+# mastercontainer's volume, mounted read-only: whatever the mastercontainer's state, as docker exec is refused on a
+# restarting or paused one, and after it was removed. The credential goes on stdin, never on a command line, to the
+# Provisionador's release-name, in another one. Only a confirmed absence, no volume or no credential in it, means no
+# name; any other failure stops the reset.
 free_name() {
-  local credential
-  credential="$(volume_file "$2" "$NAME_CREDENTIAL" 2>/dev/null)" && [ -n "$credential" ] || return 0
+  local volume="${VOLUME%%:*}" volumes credential
+  volumes="$(docker volume ls --format '{{.Name}}')" \
+    || die "no se pudo leer la lista de volúmenes de Docker. No se eliminó nada."
+  grep -qxF "$volume" <<<"$volumes" || return 0
+  credential="$(docker run --rm --volume "$VOLUME:ro" --entrypoint sh "$1" \
+                  -c '[ ! -e "$1" ] || { [ -s "$1" ] && cat "$1"; }' sh "$NAME_CREDENTIAL")" \
+    || die "no se pudo leer la credencial del nombre APS del establecimiento en el volumen $volume, y sin ella el" \
+           "nombre no se puede liberar. No se eliminó nada."
+  [ -n "$credential" ] || return 0
   docker run --rm --interactive --entrypoint python3 "$1" -B "$PROVISIONADOR" release-name <<<"$credential" \
     || die "no se pudo liberar el nombre APS del establecimiento con el servicio de nombres de APS Conecta. Vuelva a" \
            "ejecutar el restablecimiento cuando el servidor tenga conexión a internet. No se eliminó nada."
 }
 
-# After a typed confirmation, the reset frees the APS name, then removes what the install created: its containers, the
-# images they ran, its volumes, its network, the kernel drop-in and a test build's CAs. Docker stays installed.
+# After a typed confirmation, the reset frees the APS name, with the mastercontainer's image or, once it was removed,
+# the release's; then it removes what the install created: its containers, the images they ran, its volumes, its
+# network, the kernel drop-in, a test build's CAs and AIO's nightly backup, which a reinstall's AIO could not open.
+# Docker stays installed.
 reset_suite() {
-  local answer state ran="" containers images volumes
+  local answer image ran="" containers images volumes
   if command -v docker >/dev/null 2>&1 && ! docker info >/dev/null 2>&1; then
     die "Docker está instalado, pero no responde. No se eliminó nada."
   fi
   printf '%s\n' \
     "Esto libera el nombre APS del establecimiento, para que otra instalación del mismo establecimiento lo obtenga, y" \
     "elimina APS Conecta Gestión de este servidor con todos sus datos: los contenedores nextcloud-aio-*, las imágenes" \
-    "que ejecutan, los volúmenes nextcloud_aio_*, la red nextcloud-aio y $DROP_IN. Docker queda instalado." >&2
+    "que ejecutan, los volúmenes nextcloud_aio_*, la red nextcloud-aio, las copias de seguridad de $BACKUPS" \
+    "y $DROP_IN. Docker queda instalado." >&2
   printf 'Para confirmar, escriba %s: ' "$CONFIRMATION" >&2
   read -r answer < /dev/tty || die "no se pudo leer la confirmación desde la terminal. No se eliminó nada."
   [ "$answer" = "$CONFIRMATION" ] || die "la confirmación no coincide. No se eliminó nada."
   if command -v docker >/dev/null 2>&1; then
-    if docker inspect "$CONTAINER" >/dev/null 2>&1; then
-      state="$(docker inspect --format '{{.Image}} {{.State.Running}}' "$CONTAINER")"
-      ran="${state% *}"
-      free_name "$ran" "${state##* }"
+    image="$(docker inspect --format '{{.Image}}' "$CONTAINER" 2>/dev/null)" || image=""
+    free_name "${image:-$MASTERCONTAINER}"
+    if [ -n "$image" ]; then
+      ran="$image"
       docker rm --force "$CONTAINER" >/dev/null  # first, so it starts none of the others again
     fi
     mapfile -t containers < <(docker ps --all --format '{{.Names}}' | grep '^nextcloud-aio-' || true)
@@ -273,7 +287,7 @@ reset_suite() {
     if docker network inspect nextcloud-aio >/dev/null 2>&1; then docker network rm nextcloud-aio >/dev/null; fi
   fi
   rm -f "$DROP_IN"
-  rm -rf "$CACERTS"
+  rm -rf "$CACERTS" "$BACKUPS"
   say "APS Conecta Gestión se eliminó de este servidor. Docker sigue instalado."
 }
 
