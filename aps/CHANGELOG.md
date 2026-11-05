@@ -163,28 +163,7 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Added
 
-- **Talk (spreed) from the fork's signed releases (#145, ADR-0020).** The last app-store
-  reach at a container boot is gone: `APS-Conecta/spreed` is a zero-code-change fork of
-  `nextcloud/spreed` hosting our App releases, refreshed from upstream's newest stable
-  release for the suite's Nextcloud major at each suite release — the release dispatches
-  the fork's refresh (the app key never leaves the fork's release environment, ADR-0001),
-  waits bounded, and verifies what it published against the tag tree's own `apps.pub` and
-  against upstream's own bytes (the release is upstream's tarball minus exactly
-  `appinfo/signature.json`, at upstream's own commit) before the suite Release exists. The
-  manifest's spreed row is `source: fork, release: true`; installs resolve it through the
-  resolver's usual proof chain and pin it in the lock, gated on the record's Talk switch
-  (Talk off resolves nothing — the same gate phase 12 reads through `TALK_ENABLED`; the
-  absent-record case never turns Talk off). The nextcloud entrypoint's scoped
-  `app:install spreed` is deleted: its Talk block is presence-gated configuration alone, so
-  a first boot with Talk on installs nothing of Talk's and the TURN/STUN/HPB wiring converges
-  at the first boot after provisioning lands the app. `notify_push` is the scoped store
-  open's only first-boot user. `aps-conecta actualizar` moves spreed with the other release
-  rows through phase 12 (its old store-walk skip line is deleted). The fork's first
-  release is upstream's spreed `v24.0.6` (the newest stable for Nextcloud 34), published;
-  the release's dispatch needs the owner-only `SPREED_REFRESH_TOKEN` secret, missing which
-  the spreed job reds naming the setup.
-
-- **`aps-conecta actualizar`, the applications update (#46, ADR-0017).** The one path that
+- **`aps-conecta actualizar`, the applications update (#46).** The one path that
   moves the lock deliberately. It refuses to run unless the suite is up, the lock exists and
   the backup is configured; prints the plan — current and candidate per application, `--revisar`
   printing it and writing nothing; takes a **full backup through the wizard's own API** and stops
@@ -202,7 +181,7 @@ image digests live there and are deliberately not copied here — one fact, one 
   refusal).
 
 - **Estadística as an optional app (#40, ADR-0017).** The second optional row: its manifest
-  entry flips to `optional: "off"` + `release: true` and it arrives from its own signed
+  entry flips to `optional: "off"` + `release: true` and it arrives from its own
   release (APS-Conecta/estadistica `v0.2.0`, the app repo's first: shared workflow, untracked
   bundles, `.nextcloudignore`, the vendored docs checker gone — Docs-SSOT S2a riding its PR).
   Chosen (`--app estadistica`, the wizard's checkbox or the silent flag), it installs at its
@@ -218,7 +197,7 @@ image digests live there and are deliberately not copied here — one fact, one 
   gains its third optional row: `optional: "off"`, `release: true`, Spanish name and summary
   in the wizard's «Aplicaciones opcionales» card, installed only when the operator checks it
   (the same options record farmacia rides, #39), absent otherwise — nothing bakes totem, so
-  unchosen means the server never even holds its bytes. Its first signed release is `v0.3.0`,
+  unchosen means the server never even holds its bytes. Its first release is `v0.3.0`,
   whose tarball carries the two committed Piper voices under `js/tts/` (~160 MB, the app's
   ADR-0005): the release builds the app's bundles, but the voices ship as tracked bytes, so the
   waiting-room display speaks offline with no build step. Unchosen → no lock row, no store,
@@ -229,15 +208,15 @@ image digests live there and are deliberately not copied here — one fact, one 
   never vendored, needs no `provisioning/apps/totem/VENDOR`; the packager's manifest-vs-bake
   gate now reads that as the expected shape (a default row without its VENDOR still reds).
 
-- **Euro-Office installs from its own release (#36, ADR-0017).** The connector is no longer
+- **Euro-Office installs from its own release (#36).** The connector is no longer
   the store's `eurooffice` plus two bake-time white-label patches: it is the fork
   `APS-Conecta/eurooffice` (upstream main plus our two renames — the admin section and the app
-  name — as two commits), it publishes signed releases through the org's shared workflow (first
+  name — as two commits), it publishes releases through the org's shared workflow (first
   release `v11.0.7`, monotonic: one patch above upstream's newest tag, so no app-store version is
   ever "newer"), and its manifest row is `source: fork` with `release: true`. At install time the
-  resolver downloads the fork's newest compatible release, verifies it against `apps.pub`, and
-  the lock records it; the office smoke's round-trip re-certifies the DS 9.3.x pairing per
-  install. With the store closed, no update path replaces the fork with the store's namesake:
+  resolver downloads the fork's newest compatible release, checks the tarball and `info.xml`
+  hashes, and the lock records it; the office smoke's round-trip re-certifies the DS 9.3.x
+  pairing per install. With the store closed, no update path replaces the fork with the store's namesake:
   `occ app:update eurooffice` leaves the version, the enabled state and the names unchanged, and
   the connector stays enabled and wired after the store-off reboot — the entrypoint's own update
   leg included. The bake keeps shipping the vendored 11.0.5 as the interim fallback until #42
@@ -249,7 +228,7 @@ image digests live there and are deliberately not copied here — one fact, one 
   optional row in the wizard's options record. Without the choice the app installs never: the
   fetch leg resolves nothing, phase 12 skips the row before any of its three paths, and the seed
   never imposes or enables the bake's copy (the image still carries its bytes until #42 — an
-  uninstalled directory, not an app). With it, farmacia arrives from its own signed release at
+  uninstalled directory, not an app). With it, farmacia arrives from its own release at
   its locked tag — its manifest row flips to `optional: "off"` + `release: true`, and needs
   APS-Conecta/farmacia's `v0.12.0` published first. A repeated provisioning keeps the choice:
   the record is re-read, the lock does not move, nothing downloads. Un-choosing on a warm server
@@ -259,9 +238,8 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 - **Territorio installs from its own release (#33, ADR-0017).** At install time the Provisionador
   resolves the app's newest GitHub Release compatible with the running Nextcloud (the latest-release
-  redirect — no API call, no token), downloads it, verifies it against `apps.pub` (signify: the
-  SHA256SUMS signature, the tarball and `info.xml` hashes, the top directory, no
-  `appinfo/signature.json`), installs it, and records its tag in the per-server lock file
+  redirect — no API call, no token), downloads it, checks it (the tarball and `info.xml` hashes, the
+  top directory, no `appinfo/signature.json`), installs it, and records its tag in the per-server lock file
   (`/opt/aps-conecta/apps.lock.json`, inside the backup scope). A repeated provisioning installs
   from the lock and downloads nothing; a failed download or verification stops the install naming
   the app and the retry command; review mode downloads nothing. The other apps still come from the
@@ -271,7 +249,7 @@ image digests live there and are deliberately not copied here — one fact, one 
   its lock row names a release newer than the bake's 0.9.0, the instance runs the locked version,
   and no `signature.json` rides it.
   Needs epidemiologia's `v0.12.0` release (APS-Conecta/epidemiologia#169) published first.
-- **side_menu is a fork app of our own, installed from its release (#38, ADR-0017).** Upstream
+- **side_menu is a fork app of our own, installed from its release (#38).** Upstream
   (gitnet.fr, the app's only source) has been unreachable since 2026-08-13 (#169), so the
   decision there — "mirror the tarball somewhere we control" — became APS-Conecta/side_menu:
   a repo seeded from our AGPL 6.0.1 tarball, byte for byte, with no build manifest and its
@@ -284,9 +262,9 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Changed
 
-- **No image carries an app — the store opens scoped, nothing else does (#42, ADR-0018).** The
+- **No image carries an app — the store opens scoped, nothing else does (#42).** The
   Nextcloud image now carries the apsconecta theme from the tag tree and nothing else of the
-  suite's. Own and fork apps were already on their own signed releases (ADR-0017); the store
+  suite's. Own and fork apps were already on their own releases; the store
   rows (calendar, contacts, groupfolders) now install during provisioning through `occ_store` —
   a scoped command that opens the store for its own process alone — and
   the Nextcloud entrypoint installs notify_push and Talk the same way, only when they are
