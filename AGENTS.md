@@ -59,12 +59,13 @@ the official images to the set Upstream built from it.
   Let's Encrypt staging certificate with no inbound port, and frees the name with its own credential.
 - `.github/workflows/acceptance.yml`, called by the candidate pipeline on every candidate and on a maintainer's dispatch
   for a pre-release: the clean-machine acceptance harness (Seam 1). `aps/acceptance/run.sh` boots a fresh Debian 12 VM,
-  runs the candidate's published Bootstrap exactly as the manual prints it, then each check module in
-  `aps/acceptance/checks/` through the interface its header documents; a failing check is named and attaches every
-  container's log and the disk usage. On a `v0.0.0-ci.N` test build the checks install the suite to «Listo» on a CI
-  name, and the run frees each CI name it claimed, with the name's own credential. A version candidate's names are
-  production ones, which a run never claims: its run covers the Bootstrap, the mastercontainer, a rerun and a reset
-  that leaves nothing (`aps/RELEASING.md`, section 3).
+  installs the candidate by one way in, its published Bootstrap exactly as the manual prints it or the Coolify install
+  (`aps/acceptance/coolify.sh`: Coolify set up as its admin does, the resource deployed through its API), a job each,
+  then each check module in `aps/acceptance/checks/` through the interface its header documents; a failing check is
+  named and attaches every container's log and the disk usage. On a `v0.0.0-ci.N` test build the checks install the
+  suite to «Listo» on a CI name, and the run frees each CI name it claimed, with the name's own credential. A version
+  candidate's names are production ones, which a run never claims: its run covers the Bootstrap, the mastercontainer,
+  a rerun and a reset that leaves nothing (`aps/RELEASING.md`, section 3).
 - Upstream's own workflows beside it: codespell, shellcheck, docker-lint and json-validator,
   plus the PHP, Twig, YAML and Playwright checks on their paths. `scripts/validate.sh` runs
   the codespell, docker-lint and json-spec trio against any tree; the candidate pipeline runs

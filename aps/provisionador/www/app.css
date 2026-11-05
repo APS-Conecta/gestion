@@ -56,6 +56,10 @@ select:focus, input:focus, button:focus-visible, a:focus-visible { outline: 2px 
 .address a { color: var(--aps-violet-dark); }
 .message.notice { color: var(--aps-gold-dark); }
 .message.notice:empty { display: none; }
+/* On a Coolify server, the AIO settings to paste into Coolify's proxy configuration, as its lines. */
+.settings { margin: .75rem 0 0; max-width: 60rem; padding: .75rem 1rem; overflow-x: auto;
+  background: var(--aps-violet-tint); border-radius: .5rem; font-size: .875rem; }
+.settings:empty { display: none; }
 .own-domain { max-width: 40rem; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border); }
 .own-domain p { margin: 0 0 .75rem; }
 

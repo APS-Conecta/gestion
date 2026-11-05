@@ -13,6 +13,15 @@ image digests live there and are deliberately not copied here — one fact, one 
 
 ### Added
 
+- **The Coolify install (#293).** A Coolify 4 admin adds the suite as a Git-based Docker Compose resource of this
+  repository, in Raw mode, with `aps/coolify.yaml`: our mastercontainer on the channel tag, AIO behind Coolify's proxy
+  and its interface on port 8443, its link in the resource's logs. «Dirección» shows AIO's Traefik settings to paste
+  once into Coolify's proxy configuration and goes on only once the proxy runs with them; then it writes the route from
+  the APS name, which points at the server's public address, or from an own domain, to AIO's Apache into Coolify's
+  dynamic folder, and Traefik gets the certificate. Talk publishes 3478 itself, and the page says to open it. A
+  redeploy runs only the released channel and keeps the suite's containers. The acceptance harness installs each
+  candidate through Coolify too, on a fresh machine through Coolify's API, and runs every check (ADR 0029).
+
 - **«Dirección» takes the establishment's own domain (#292).** Instead of the APS name, the operator may type a domain
   the establishment holds. The Provisionador runs vanilla's domain check, whose every refusal shows its Spanish reason
   with «Reintentar», and sets AIO up the vanilla way through its settings file, with no mastercontainer recreate:

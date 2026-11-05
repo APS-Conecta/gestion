@@ -4,7 +4,8 @@
 """A Talk call on a test build, as staff on the clinic network hold one: two staff members, each in a browser on the
 runner, which shares the machine's network as a laptop shares the clinic's, join one call from Talk's page with a fake
 camera and a microphone that plays a tone, and each browser decodes the other's audio through the TURN server at the
-suite's name on port 443, where ADR 0028 puts Talk. On this network a direct path through Docker's NAT also reaches
+suite's name on Talk's port: 443, where ADR 0028 puts Talk behind our Caddy, or, on the Coolify way in, 3478, which Talk
+publishes itself (ADR 0029). On this network a direct path through Docker's NAT also reaches
 Talk, so the browsers take relay candidates only: audio they decode went through TURN. The browsers trust Let's
 Encrypt's staging roots alone, as staff's browsers trust its production ones: no certificate of the suite's own is
 installed. Any other candidate's names and certificates are production ones, which a run never claims: there it says
@@ -27,7 +28,7 @@ from browser import STAGING_ROOTS, chromium, machine, suite_name  # noqa: E402
 from playwright.sync_api import Error, expect  # noqa: E402
 
 STAFF = ("llamada.uno", "llamada.dos")
-TURN_PORT = 443  # Talk's port, where ADR 0028 puts it
+TURN_PORT = 3478 if os.environ["WAY"] == "coolify" else 443  # Talk's port, where ADR 0029 or ADR 0028 puts it
 NEXTCLOUD = "sudo docker exec --interactive --user www-data nextcloud-aio-nextcloud"
 # Before Talk loads: every peer connection Talk opens, on relay candidates only.
 OBSERVE = """window.talkPeers = [];

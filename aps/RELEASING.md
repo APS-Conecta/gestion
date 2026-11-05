@@ -57,8 +57,10 @@ the Bootstrap as `apsconecta-install.sh`, filled with the tag and the mastercont
 as the channel tag on the server; it never pulls `latest`. Then the pipeline checks "Latest": a
 candidate leaves it where it was. Last, it runs the clean-machine acceptance harness
 (`.github/workflows/acceptance.yml`) on the pre-release: the published Bootstrap on a fresh VM as
-the manual prints it, then every check module in `aps/acceptance/checks/`. A candidate needs no
-environment and reads no secret but the workflow's own token.
+the manual prints it, and the Coolify install on another, Coolify set up as its admin does and the
+candidate's commit deployed through its API (ADR 0029), each then every check module in
+`aps/acceptance/checks/`. A candidate needs no environment and reads no secret but the workflow's
+own token.
 
 A test build of no version, `v0.0.0-ci.N`, runs against the services of
 `aps/acceptance/test-build.json`, which the pipeline stamps into it at release time: its

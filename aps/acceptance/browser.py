@@ -6,8 +6,8 @@ after verifying them itself, such as the Provisionador's, by the fingerprint the
 certificate errors. A check that calls gets fake media devices: Chromium's fake camera and a microphone that plays a
 steady tone.
 
-Checks import it after `sys.path.insert(0, <aps/acceptance>)`. It also runs a check's command lines on the machine and
-reads the files of the mastercontainer there.
+Checks import it after `sys.path.insert(0, <aps/acceptance>)`. It also runs a check's command lines on the machine,
+reads the machine's state and the files of the mastercontainer there.
 """
 
 import base64
@@ -40,6 +40,28 @@ def machine(command, stdin=""):
     if run.returncode:
         sys.exit(f"on the machine, {command!r} failed:\n{run.stderr}")
     return run.stdout
+
+
+# The machine's containers, images, volumes, networks, packages and the install's files; the mastercontainer's start
+# time is left out, since a rerun restarts it.
+STATE = """set -euo pipefail
+docker ps --all --quiet | xargs --no-run-if-empty docker inspect --format '{{.Name}} {{.Id}} {{.Image}}' | sort
+docker image ls --all --quiet --no-trunc | sort -u
+docker volume ls --quiet | sort
+docker network ls --quiet --no-trunc | sort
+find /etc/apt /etc/sysctl.d -type f -exec sha256sum {} + | sort -k 2
+dpkg-query --show
+"""
+
+
+def state():
+    """The machine's state, as a harmless run of the way in again leaves it: the Bootstrap restarts the mastercontainer,
+    and a redeploy of the Coolify resource recreates it from the image it ran, so on that way its container's ID is
+    left out."""
+    found = machine("sudo bash -s", STATE)
+    if os.environ["WAY"] == "coolify":
+        found = re.sub(r"^(/nextcloud-aio-mastercontainer) [0-9a-f]+ ", r"\1 ", found, flags=re.M)
+    return found
 
 
 def mastercontainer_file(path):

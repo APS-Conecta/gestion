@@ -2,14 +2,20 @@
 # SPDX-FileCopyrightText: 2026 APS Conecta
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # The clean-machine acceptance harness (Seam 1), for a disposable GitHub runner with KVM only: boot a fresh Debian 12
-# VM on a network it shares with the runner, as a laptop shares the clinic's; run a published candidate's Bootstrap in
-# it exactly as the manual prints it; then run every check in aps/acceptance/checks/ in name order. It tests the
-# candidate's release, never this tree.
+# VM on a network it shares with the runner, as a laptop shares the clinic's; install a published candidate in it by
+# one of its ways in; then run every check in aps/acceptance/checks/ in name order. It tests the candidate's release,
+# never this tree. The ways in:
+#   bootstrap  the candidate's Bootstrap, exactly as the manual prints it
+#   coolify    Coolify on the machine, set up as its admin does, then the candidate's commit as a resource of it,
+#              deployed through Coolify's API (coolify.sh, ADR 0029)
 #
 # A check is an executable file aps/acceptance/checks/<NN>-<name>.<sh|py>; NN orders it. It runs on the runner, from
 # the repo root, with:
 #   TAG       the candidate: the release whose Bootstrap the machine ran; gh reads the release with the job's token
-#   COMMAND   the Bootstrap, as the manual prints it for that release
+#   WAY       the way in: bootstrap or coolify
+#   COMMAND   the way in, run on the machine: the Bootstrap, as the manual prints it for that release; or the resource's
+#             deploy through Coolify's API, which prints the resource's logs
+#   BOOTSTRAP the Bootstrap, as the manual prints it for that release, whichever the way in
 #   CONSOLE   a file holding what the first run of COMMAND printed, link included; it stays out of the evidence, and
 #             one-command.sh runs COMMAND again with the link's secret masked
 #   MACHINE   runs one shell command line on the VM as the operator, whose sudo needs no password; like ssh, it passes
@@ -25,18 +31,20 @@
 # A check never prints a secret. python3 has Playwright with Chromium (acceptance.yml installs it); browser.py is the
 # one way to open it. Exit 0 passes. A failing check is named in the log, its EVIDENCE gets every container's log, with
 # the link's secret and AIO's credentials blanked out, and the disk usage, and the workflow attaches it to the run.
-# The VM gets the memory and disk floor the candidate's Bootstrap declares (MIN_MEMORY_GIB, MIN_DISK_GB), plus a fixed
+# The VM gets the memory and disk floor the candidate's Bootstrap declares (MIN_MEMORY_GIB, MIN_DISK_GB), with room for
+# Coolify itself on the Coolify way in, plus a fixed
 # CPU count until #300 measures one, so a green run proves that floor.
-# Usage: run.sh <tag>
+# Usage: run.sh <tag> <bootstrap|coolify>
 set -euo pipefail
-[[ "$#" -eq 1 && "$1" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "usage: $0 <tag>" >&2; exit 2; }
+[[ "$#" -eq 2 && "$1" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ && "$2" =~ ^(bootstrap|coolify)$ ]] \
+  || { echo "usage: $0 <tag> <bootstrap|coolify>" >&2; exit 2; }
 [[ "${GITHUB_ACTIONS:-}" = true && -c /dev/kvm ]] || { echo "$0 runs on a disposable GitHub runner with KVM only" >&2; exit 2; }
 cd "$(git rev-parse --show-toplevel)"
 work="$RUNNER_TEMP/acceptance"
 mkdir -p "$work/evidence" "$work/names"
 bootstrap="https://github.com/$GITHUB_REPOSITORY/releases/download/$1/apsconecta-install.sh"
-export TAG="$1" ADDRESS=192.168.77.10 MACHINE="$work/machine" CONSOLE="$work/console.txt" NAMES="$work/names"
-export COMMAND="curl -fsSL $bootstrap | sudo bash"
+export TAG="$1" WAY="$2" ADDRESS=192.168.77.10 MACHINE="$work/machine" CONSOLE="$work/console.txt" NAMES="$work/names"
+export BOOTSTRAP="curl -fsSL $bootstrap | sudo bash" COMMAND="curl -fsSL $bootstrap | sudo bash"
 
 aio_configuration=/mnt/docker-aio-config/data/configuration.json # in the mastercontainer
 aio_credentials='(.password // empty),
@@ -94,6 +102,7 @@ floor() { sed -n "s/^$1=\([0-9][0-9]*\)\$/\1/p" "$work/apsconecta-install.sh"; }
 memory="$(floor MIN_MEMORY_GIB)" disk="$(floor MIN_DISK_GB)"
 [[ -n "$memory" && -n "$disk" ]] \
   || { echo "the Bootstrap of $TAG declares no MIN_MEMORY_GIB or MIN_DISK_GB, the floor the VM gets" >&2; exit 1; }
+[ "$WAY" != coolify ] || memory=$((memory + 2)) disk=$((disk + 8))  # Coolify's own containers and images
 
 stage="boot a fresh Debian 12 VM"
 image=debian-12-genericcloud-amd64-20261026-2643.qcow2
@@ -148,7 +157,29 @@ echo "$PRETTY_NAME, $(uname -m), $(nproc) CPUs, $(awk '/^MemTotal:/ {print $2}' 
 [ "$ID $VERSION_ID" = "debian 12" ]
 OS
 
-stage="the Bootstrap"
+stage="Coolify, set up as its admin does"
+if [ "$WAY" = coolify ]; then
+  # The candidate's mastercontainer by the digest its release names; AIO's Traefik settings, as the candidate's
+  # Provisionador shows them; and what a test build's Coolify needs (coolify.sh).
+  mastercontainer="$(gh release view "$TAG" --json body --jq .body \
+    | { grep -oE 'ghcr\.io/aps-conecta/all-in-one@sha256:[0-9a-f]{64}' || true; } | sort -u)"
+  [[ "$mastercontainer" =~ ^[^[:space:]]+$ ]] \
+    || { echo "the release $TAG names no one mastercontainer by digest" >&2; exit 1; }
+  mkdir -p "$work/coolify"
+  python3 -I -B -c 'import sys; sys.path.insert(0, sys.argv[1]); import provisionador
+print(*provisionador.PROXY_SETTINGS, sep="\n")' aps/provisionador > "$work/coolify/settings"
+  cp aps/acceptance/test-build.json aps/acceptance/acme-dns-storage.py "$work/coolify/"
+  cp aps/acceptance/letsencrypt-staging-roots.pem "$work/coolify/ca.crt"
+  "$MACHINE" 'sudo tee /usr/local/sbin/aps-coolify > /dev/null && sudo chmod 755 /usr/local/sbin/aps-coolify' \
+    < aps/acceptance/coolify.sh
+  tar -C "$work/coolify" -cf - . \
+    | "$MACHINE" 'sudo install -d -m 700 /root/.aps-files && sudo tar -C /root/.aps-files -xf -'
+  "$MACHINE" "sudo aps-coolify setup $GITHUB_REPOSITORY $(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha) \
+    $ADDRESS /root/.aps-files $mastercontainer"
+  export COMMAND="sudo aps-coolify deploy $mastercontainer"
+fi
+
+stage="the way in: $WAY"
 echo "$COMMAND"
 aps/acceptance/one-command.sh "$CONSOLE"
 

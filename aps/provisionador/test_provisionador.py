@@ -499,7 +499,7 @@ class Direccion(ProvisionadorTest):
         browser = self.operator()
         self.assertEqual(self.claim(browser)[0], 200)
         self.suite.server = "192.168.1.23"  # DHCP gave the server another address
-        provisionador.update_address(self.state, self.suite)
+        provisionador.update_address(self.state, self.suite, self.app.interface)
         self.suite.propagate()
         self.assertEqual(browser.get("/api/state")[1]["address"], {"name": NAME, "published": True, "opened": False})
 
@@ -531,21 +531,21 @@ class Direccion(ProvisionadorTest):
     def test_the_address_updater_points_the_name_at_the_servers_new_address(self):
         self.assertEqual(self.claim(self.operator())[0], 200)
         self.suite.server = "192.168.1.23"  # DHCP gave the server another address
-        provisionador.update_address(self.state, self.suite)
+        provisionador.update_address(self.state, self.suite, self.app.interface)
         self.assertEqual(self.suite.addresses, {NAME: "192.168.1.23"})
 
     def test_an_update_during_an_outage_waits_for_the_next_one(self):
         self.assertEqual(self.claim(self.operator())[0], 200)
         self.suite.server, self.suite.outage = "192.168.1.23", True
         with contextlib.redirect_stderr(io.StringIO()) as log:
-            provisionador.update_address(self.state, self.suite)
+            provisionador.update_address(self.state, self.suite, self.app.interface)
         self.assertIn("servicio de nombres", log.getvalue())
         self.suite.outage = False
-        provisionador.update_address(self.state, self.suite)
+        provisionador.update_address(self.state, self.suite, self.app.interface)
         self.assertEqual(self.suite.addresses, {NAME: "192.168.1.23"})
 
     def test_before_the_claim_the_address_updater_publishes_nothing(self):
-        provisionador.update_address(self.state, self.suite)
+        provisionador.update_address(self.state, self.suite, self.app.interface)
         self.assertEqual(self.suite.addresses, {})
 
     def test_the_claimed_name_keeps_its_centre_though_the_point_still_moves(self):

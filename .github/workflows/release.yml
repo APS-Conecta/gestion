@@ -9,7 +9,7 @@
 #             with the tag and the mastercontainer's digest; then "Latest" is checked against the rules in
 #             aps/release/latest.py, so a candidate never moves it.
 #   acceptance → the clean-machine acceptance harness (acceptance.yml) on that pre-release: its Bootstrap on a fresh VM,
-#             as the manual prints it, then every check module.
+#             as the manual prints it, and its Coolify install on another, each then every check module.
 #
 # A test build of no version, v0.0.0-ci.N, runs against the services of aps/acceptance/test-build.json (ADR 0028): its
 # mastercontainer claims names on the name service's CI deployment, its Caddy gets Let's Encrypt staging certificates,
@@ -200,7 +200,7 @@ jobs:
           python3 -I aps/release/latest.py "$TAG" "$before" "$(latest)" $published
 
   # The clean-machine acceptance harness on the pre-release (Seam 1): its Bootstrap on a fresh VM, as the manual prints
-  # it, then every check module in aps/acceptance/checks/.
+  # it, and its Coolify install on another, each then every check module in aps/acceptance/checks/.
   acceptance:
     name: Clean-machine acceptance
     needs: release

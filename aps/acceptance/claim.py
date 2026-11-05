@@ -65,6 +65,8 @@ def claim(page, codes):
             return answer["address"]["name"]
         if status != 409:
             sys.exit(f"«Dirección» answered HTTP {status}: {answer}")
+        if "settings" in answer:  # on a Coolify server, the AIO settings its proxy does not run with yet
+            sys.exit(f"«Dirección» asks for these settings in Coolify's proxy first: {answer['settings']}")
         print(f"::notice::DEIS code {code} holds a CI name already; the run takes the next reserved code.")
     sys.exit(f"every reserved DEIS code ({', '.join(codes)}) holds a CI name. APS Conecta frees a leftover one with "
              "gestion-aio's «APS name release» workflow on the ci deployment.")
